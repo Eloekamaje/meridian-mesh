@@ -3,6 +3,9 @@
 ## Problème d'origine (résumé)
 Construire Méridian non pas comme un Atlas/graphe centré sur les jumeaux, mais comme un **système de compréhension et de décision pour le SI**, organisé autour de l'objet **Situation**. Repositionnement v2 (utilisateur) : **système qui apprend continuellement la structure et le comportement du SI** — cycle Découverte candidate → Compréhension validée → Décision éclairée → Mémoire du Mesh. L'accueil devient un Observatoire des découvertes (3 colonnes Découvert / À comprendre / À décider), l'Atlas montre l'évolution du savoir (6 états de relations, maturité des domaines, 3 dynamiques temps réel), les investigations couvrent relations/comportements/connaissances/contradictions, chaque décision enrichit la mémoire du Mesh. Code couleur : Découvrir cyan, Comprendre violet, Décider ambre.
 
+## Implémenté (25/06/2026 — v7.2, documentation)
+- **`/app/README.md`** rédigé : présentation, espaces, modèle d'interaction de l'Atlas (sélection vs focus, hiérarchie de zoom, portes), Aurora (synchronisation bidirectionnelle), RBAC par personas/espaces, pile technique, démarrage, seed, API principale, tests.
+
 ## Implémenté (25/06/2026 — v7.1, correctif zoom jumeau)
 - **Bug utilisateur corrigé** : « zoom sur le jumeau très grand + remontée au moindre dézoom ». Cadrage d'entrée du focus jumeau élargi (fitBounds 690×480 → 1090×740, zoom d'entrée ~0.92 au lieu de ~1.5, tous les voisins visibles) ; seuils de remontée molette abaissés (jumeau 55 % → 38 % du zoom d'entrée, domaine 55 % → 45 %). Vérifié : ~6 crans réels de dézoom restent en focus, ~8 crans francs remontent au domaine. Tests : iteration_13 → correctif validé, 0 régression.
 
