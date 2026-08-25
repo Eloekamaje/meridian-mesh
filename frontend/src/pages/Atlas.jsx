@@ -201,7 +201,7 @@ export default function Atlas() {
       setOnglet("detail");
       setFocusVisuel({ type: "jumeau", label: j.nom, domaine: j.domaine });
       majUrl({ domaine: j.domaine, interne: "1", jumeau: j.id, sel: j.id });
-      if (rfRef.current) rfRef.current.fitBounds({ x: pos.x - 250, y: pos.y - 210, width: 690, height: 480 }, { duration: 800 });
+      if (rfRef.current) rfRef.current.fitBounds({ x: pos.x - 450, y: pos.y - 340, width: 1090, height: 740 }, { duration: 800 });
     }
     setTimeout(() => { zoomEntree.current = rfRef.current?.getZoom() ?? null; }, 950);
   }, [mesh, posOverrides, majUrl, setFocusVisuel]);
@@ -629,9 +629,9 @@ export default function Atlas() {
           dernierZ.current = z;
           if (prev == null || Date.now() - verrouNav.current < 1000) return;
           const ze = zoomEntree.current;
-          // Zoom arrière : remonter d'un niveau dans la hiérarchie
-          if (jumeauFocus && ze && z < prev && z < ze * 0.55) { sortirJumeau(); return; }
-          if (!jumeauFocus && domaineInterne && ze && z < prev && z < ze * 0.55) { sortirDomaine(); return; }
+          // Zoom arrière : remonter d'un niveau dans la hiérarchie (seuil bas pour tolérer un dézoom de confort)
+          if (jumeauFocus && ze && z < prev && z < ze * 0.38) { sortirJumeau(); return; }
+          if (!jumeauFocus && domaineInterne && ze && z < prev && z < ze * 0.45) { sortirDomaine(); return; }
           // Zoom avant sur l'élément sous le pointeur : entrée progressive
           if (!jumeauFocus && z > prev && prev < 2.3 && z >= 2.3 && survol.current) {
             if (survol.current.type === "twin") {

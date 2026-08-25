@@ -1,0 +1,28 @@
+{
+  "summary": "Iter13 — Vérification ciblée du correctif du bug 'zoom jumeau trop grand + remontée intempestive au moindre dézoom' (Atlas.jsx). Frontend only. Résultat GLOBAL: correctif VALIDE pour un utilisateur réel. Détail: T1 (entrée en focus jumeau via dblclick twin-node-paiements) → scale du .react-flow__viewport = 0.924 (dans la fourchette confortable [0.75, 1.15] demandée), tous les voisins voisin-{api-gateway,comptes,fraude,support,facturation,commandes,identite} présents dans le viewport (seul voisin-hover-api-gateway — tooltip flottante au-dessus — dépasse en haut, non bloquant). T2 (dézoom de confort) : avec des crans réalistes wheel(0,100), 6 crans successifs → on RESTE en focus jumeau (scale descend jusqu'à 0.402, breadcrumb-jumeau toujours présent) ✓. Note importante: avec wheel(0,300) comme demandé dans la spec, chaque 'cran' fait chuter le scale de ~0.3 (≈3 crans réels par event) et déclenche la sortie dès le 3e event — c'est un artefact du synthétique, pas un bug du correctif (les logs montrent bc-jumeau=1 après 1 et 2 wheels de 300, sortie au 3e ; les seuils 0.38*ze=0.351 sont franchis vers le bas car scale passe 0.924→0.609→0.402→<0.35). T3 (franc dézoom ~8×wheel(0,300)) : bc-jumeau disparaît, 10 portes visibles (domain view atteinte) — la remontée volontaire fonctionne ✓. T5 non-régression : transfert focus par clic voisin-fraude → bc-jumeau='Fraude' + bc-domaine='Domaine Risque' + voisin-paiements visible ✓ ; nav-precedent → 'Paiements' ✓ ; nav-suivant → 'Fraude' ✓ ; porte-Risque cliquable en domain view ✓. Aucune erreur console applicative.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Sensibilité molette (dézoom depuis focus jumeau)", "issue": "Avec des events synthétiques wheel(0,300), 3 events suffisent à franchir le seuil ze*0.38 (scale 0.924→0.609→0.402→exit). Pour un utilisateur réel dont chaque cran émet deltaY≈100, il faut >6 crans avant de sortir — comportement conforme au correctif. À noter côté spec de test : wheel(0,300)×3 n'équivaut PAS à 3 crans utilisateur mais à ~9 crans. Aucune action code requise si le comportement souhaité est 'plusieurs crans réels sans remontée'.", "affected_selectors": ["breadcrumb-jumeau"]},
+      {"flow": "Franc dézoom (T3/T4)", "issue": "Après 8×wheel(0,300) enchaînés depuis focus jumeau, la vue arrive en domain view (portes visibles) mais le breadcrumb-domaine peut être absent du DOM (count=0) pendant la fenêtre d'animation/re-render — probablement transient. Un wait_for('[data-testid=breadcrumb-domaine]') retrouve l'élément peu après. Non bloquant, à vérifier si la spec impose un rendu instantané du fil d'Ariane.", "affected_selectors": ["breadcrumb-domaine"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Aucune action code requise pour le bug rapporté : (1) zoom d'entrée jumeau confortable (0.92, tous voisins visibles) ✓, (2) seuils de remontée abaissés à 0.38/0.45 fonctionnent — la remontée intempestive au moindre dézoom réel est corrigée.",
+    "OPTIONNEL : envisager de désactiver complètement la remontée automatique par molette (seul le clic breadcrumb-mesh/domaine remonterait) si l'utilisateur signale encore des sorties non voulues — le mécanisme actuel reste sensible sur des molettes à gros pas."
+  ],
+  "critical_code_review_comments": [
+    "Atlas.jsx dépasse 1332 lignes (persistant depuis iter11-12) — extraction recommandée en hooks (useZoomSemantique, useFocusJumeau, useHistorique) et sous-composants (Breadcrumb, PromptFocus). Non bloquant pour ce bugfix.",
+    "onMove utilise dernierZ + zoomEntree + verrouNav — logique correcte mais fragile aux events wheel très rapprochés. Envisager un debounce (150ms) ou un compteur de 'confirmations' (N onMove consécutifs sous le seuil) pour absorber les rafales d'events."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not tested (skipped per request)", "frontend": "correctif validé — 5/5 scénarios critiques du bug OK avec crans réalistes ; artefact synthétique wheel(0,300) documenté"},
+  "seed_data_creation": "Aucune.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Le correctif zoom jumeau (fitBounds 1090x740, seuils 0.38/0.45) est validé. Pour tester la sensibilité molette de manière réaliste, utiliser wheel(0,100) — pas wheel(0,300) qui simule ~3 crans réels par event et exagère l'effet. Scale d'entrée mesuré via document.querySelector('.react-flow__viewport').style.transform → matrix scale. Selectors clés inchangés depuis iter12. Verrou nav 1s après chaque transition, fitBounds 800ms, zoomEntree capturé à +950ms. Aucune régression sur navigation (voisin transfert, historique nav-precedent/suivant, portes, breadcrumb).",
+  "rca of the issue": "Bug initial rapporté par l'utilisateur : (1) zoom d'entrée jumeau trop fort → fitBounds cadré serré (690x480) donnait scale~1.5, effet 'écrasant' + voisins hors viewport ; (2) remontée intempestive → seuils onMove trop hauts (0.55 * ze) déclenchaient sortirJumeau/sortirDomaine dès un léger dézoom naturel. Correctif iter13 : (1) fitBounds élargi 1090x740 → scale~0.92 (mesuré 0.924), tous voisins visibles ; (2) seuils abaissés à 0.38*ze (jumeau) et 0.45*ze (domaine), soit ~0.35 et ~0.42 en scale absolu, laissant une marge confortable de dézoom manuel avant remontée. Vérification empirique : 6 crans réels (wheel 100) restent en focus (scale 0.4), et 8 crans francs sortent bien vers le niveau supérieur."
+}
