@@ -5,6 +5,23 @@ import { couleurDomaine } from "@/lib/domaines";
 export default function TwinNode({ data, selected }) {
   const j = data.jumeau;
 
+  if (j.porte) {
+    return (
+      <div
+        className={`w-[200px] rounded-lg border border-dashed bg-[#0E0E0E]/90 px-3 py-2.5 transition-opacity duration-500 ${data.dim ? "opacity-15" : "opacity-100"}`}
+        style={{ borderColor: `${couleurDomaine(j.domaine)}88` }}
+        data-testid={`porte-${j.domaine}`}
+      >
+        <Handle type="target" position={Position.Left} className="!h-2 !w-2 !border-0 !bg-transparent" />
+        <div className="font-code text-[10px] font-medium" style={{ color: couleurDomaine(j.domaine) }}>
+          ⇢ {j.nom}
+        </div>
+        <div className="mt-1 font-code text-[9px] uppercase tracking-[0.18em] text-white/30">porte externe — cliquer pour explorer</div>
+        <Handle type="source" position={Position.Right} className="!h-2 !w-2 !border-0 !bg-transparent" />
+      </div>
+    );
+  }
+
   if (j.anonyme) {
     return (
       <div

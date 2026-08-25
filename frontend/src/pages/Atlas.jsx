@@ -88,7 +88,61 @@ export default function Atlas() {
   const [zoomNiveau, setZoomNiveau] = useState(2);
   const [nomVue, setNomVue] = useState("");
   const [posOverrides, setPosOverrides] = useState({});
+  const [domaineSel, setDomaineSel] = useState(null);
+  const [domaineInterne, setDomaineInterne] = useState(null);
+  const [porteFocus, setPorteFocus] = useState(null);
+  const [perimetreTravail, setPerimetreTravail] = useState(null);
+  const [relDom, setRelDom] = useState("aucun");
+  const [zonesFaibles, setZonesFaibles] = useState(false);
+  const [attenteComparaison, setAttenteComparaison] = useState(false);
+  const [comparaison, setComparaison] = useState(null);
   const rfRef = useRef(null);
+  const dernierClicRegion = useRef({ label: null, t: 0 });
+
+  const domDe = useMemo(() => {
+    const m = {};
+    (mesh?.jumeaux || []).forEach((j) => { m[j.id] = j.domaine; });
+    return m;
+  }, [mesh]);
+
+  const entrerDomaine = useCallback((label) => {
+    setDomaineInterne(label);
+    setDomaineSel(label);
+    setPorteFocus(null);
+    setRelFocus(false);
+    const reg = mesh?.regions?.find((r) => r.label === label);
+    if (reg && rfRef.current) {
+      const ray = Math.max(reg.w, reg.h) / 2 + 130;
+      const cx = reg.x + reg.w / 2;
+      const cy = reg.y + reg.h / 2;
+      rfRef.current.fitBounds({ x: cx - ray - 120, y: cy - ray - 120, width: 2 * (ray + 120), height: 2 * (ray + 120) }, { duration: 800 });
+    }
+  }, [mesh]);
+
+  const sortirDomaine = useCallback(() => {
+    setDomaineInterne(null);
+    setPorteFocus(null);
+    rfRef.current?.fitView({ duration: 800, padding: 0.15 });
+  }, []);
+
+  const statsDomaine = useCallback((label) => {
+    if (!mesh || !label) return null;
+    const twins = mesh.jumeaux.filter((j) => !j.anonyme && j.domaine === label);
+    const couv = twins.length ? Math.round(twins.reduce((a, j) => a + (j.couverture || 0), 0) / twins.length) : 0;
+    const ext = {};
+    mesh.relations.forEach((r) => {
+      const a = domDe[r.source] === label;
+      const b = domDe[r.cible] === label;
+      if (a === b) return;
+      const autre = a ? domDe[r.cible] : domDe[r.source];
+      if (!autre) return;
+      ext[autre] = (ext[autre] || 0) + 1;
+    });
+    const sits = situations.filter((s) => (s.jumeaux || []).some((j) => domDe[j] === label));
+    const equipes = [...new Set(twins.map((j) => j.proprietaire).filter(Boolean))];
+    const reg = (mesh.regions || []).find((r) => r.label === label);
+    return { twins, couv, ext, sits, equipes, reg };
+  }, [mesh, situations, domDe]);
 
   const onNodesChange = useCallback((changes) => {
     setSelection((prev) => {
@@ -173,6 +227,77 @@ export default function Atlas() {
     }
     if (vueActive?.type === "vigilance") {
       mesh.jumeaux.forEach((j) => { if ((j.couverture ?? 100) >= 70) dims.add(j.id); });
+    }
+    if (perimetreTravail && mode === "territoire") {
+      mesh.jumeaux.forEach((j) => { if (!j.anonyme && j.domaine !== perimetreTravail) dims.add(j.id); });
+    }
+    if (zonesFaibles && domaineSel) {
+      mesh.jumeaux.forEach((j) => { if (j.domaine === domaineSel && (j.couverture ?? 0) >= 70) dims.add(j.id); });
+    }
+
+    // Vue interne d'un domaine : jumeaux du domaine + portes externes
+    if (mode === "territoire" && domaineInterne) {
+      const internes = mesh.jumeaux.filter((j) => !j.anonyme && j.domaine === domaineInterne);
+      const reg = (mesh.regions || []).find((r) => r.label === domaineInterne);
+      const cx = reg ? reg.x + reg.w / 2 : 600;
+      const cy = reg ? reg.y + reg.h / 2 : 350;
+      const ray = reg ? Math.max(reg.w, reg.h) / 2 + 130 : 260;
+      const extCount = {};
+      mesh.relations.forEach((r) => {
+        const a = domDe[r.source] === domaineInterne;
+        const b = domDe[r.cible] === domaineInterne;
+        if (a === b) return;
+        const ext = a ? domDe[r.cible] : domDe[r.source];
+        if (!ext) return;
+        if (!extCount[ext]) extCount[ext] = { n: 0 };
+        extCount[ext].n += 1;
+      });
+      const porteIds = {};
+      const portes = Object.keys(extCount);
+      let nsInt = reg
+        ? [{ id: reg.id, type: "region", position: { x: reg.x, y: reg.y }, data: reg, draggable: false, selectable: false, zIndex: -10 }]
+        : [];
+      portes.forEach((dom, i) => {
+        const regExt = (mesh.regions || []).find((r) => r.label === dom);
+        const ang = regExt
+          ? Math.atan2(regExt.y + regExt.h / 2 - cy, regExt.x + regExt.w / 2 - cx)
+          : (i / portes.length) * 2 * Math.PI;
+        const pid = `porte-${dom}`;
+        porteIds[dom] = pid;
+        nsInt.push({
+          id: pid,
+          type: "twin",
+          position: { x: cx + Math.cos(ang) * ray - 90, y: cy + Math.sin(ang) * ray },
+          data: { jumeau: { id: pid, nom: `Vers ${dom} · ${extCount[dom].n} relation${extCount[dom].n > 1 ? "s" : ""}`, domaine: dom, porte: true, statut: "porte" }, porte: dom, dim: porteFocus && porteFocus !== dom },
+          draggable: false,
+          selectable: false,
+        });
+      });
+      nsInt = nsInt.concat(
+        internes.map((j) => ({
+          id: j.id,
+          type: "twin",
+          position: posOverrides[j.id] || j.position,
+          data: { jumeau: j, dim: false, halo: halo === j.id, evenements: compteurs[j.id] || 0, etape: null },
+          selected: selection.includes(j.id),
+        }))
+      );
+      const esInt = [];
+      mesh.relations.forEach((r) => {
+        const a = domDe[r.source] === domaineInterne;
+        const b = domDe[r.cible] === domaineInterne;
+        if (a && b) {
+          esInt.push(makeEdge(r, zoomNiveau));
+        } else if (a !== b) {
+          const ext = a ? domDe[r.cible] : domDe[r.source];
+          const pid = porteIds[ext];
+          if (!pid) return;
+          const e = makeEdge({ ...r, id: `${r.id}-porte`, source: a ? r.source : r.cible, cible: pid }, zoomNiveau);
+          if (porteFocus && porteFocus !== ext) e.style = { ...e.style, opacity: 0.12 };
+          esInt.push(e);
+        }
+      });
+      return { nodes: nsInt, edges: esInt };
     }
 
     // Focus contextuel : sélection → voisins éclairés, reste translucide
@@ -260,9 +385,17 @@ export default function Atlas() {
       if (relFocus && selection.length > 1) {
         es = es.filter((e) => selection.includes(e.source) && selection.includes(e.target));
       }
+      if (relDom !== "aucun" && domaineSel) {
+        const domTwins = new Set(mesh.jumeaux.filter((j) => j.domaine === domaineSel).map((j) => j.id));
+        if (relDom === "inconnues") {
+          es = es.filter((e) => e.data?.etat && e.data.etat !== "confirmee" && (domTwins.has(e.source) || domTwins.has(e.target)));
+        } else if (relDom === "externes") {
+          es = es.filter((e) => domTwins.has(e.source) !== domTwins.has(e.target));
+        }
+      }
     }
     return { nodes: ns, edges: es };
-  }, [mesh, mode, situationId, parcoursId, focus, halo, compteurs, selection, relFocus, zoomNiveau, situation, vueActive, posOverrides]);
+  }, [mesh, mode, situationId, parcoursId, focus, halo, compteurs, selection, relFocus, zoomNiveau, situation, vueActive, posOverrides, domaineSel, domaineInterne, porteFocus, perimetreTravail, relDom, zonesFaibles, domDe]);
 
   const eventsVisibles = events.filter((e) => couches[e.dynamique || "operationnelle"]);
   const modeInfo = MODES.find((m) => m.id === mode);
@@ -297,6 +430,7 @@ export default function Atlas() {
         fitViewOptions={{ padding: 0.15 }}
         minZoom={0.3}
         maxZoom={2.2}
+        zoomOnDoubleClick={false}
         onInit={(inst) => { rfRef.current = inst; }}
         onMove={(_, vp) => setZoomNiveau(vp.zoom < 0.6 ? 1 : vp.zoom > 1.15 ? 3 : 2)}
         onNodesChange={onNodesChange}
@@ -304,11 +438,39 @@ export default function Atlas() {
         selectionOnDrag={outil === "lasso"}
         selectionMode={SelectionMode.Partial}
         multiSelectionKeyCode={["Meta", "Control", "Shift"]}
-        onNodeClick={(event, node) => {
+        onNodeClick={(_, node) => {
+          if (node.type === "region") {
+            const label = node.data.label;
+            const dc = dernierClicRegion.current;
+            dernierClicRegion.current = { label, t: Date.now() };
+            if (dc.label === label && Date.now() - dc.t < 450 && !domaineInterne) {
+              entrerDomaine(label);
+              return;
+            }
+            if (attenteComparaison && domaineSel && label !== domaineSel) {
+              setComparaison({ a: domaineSel, b: label });
+              setAttenteComparaison(false);
+            } else {
+              setDomaineSel(label);
+            }
+            setSelected(null);
+            setSelectedRelation(null);
+            setOnglet("detail");
+            return;
+          }
+          if (node.data?.porte) {
+            setPorteFocus((p) => (p === node.data.porte ? null : node.data.porte));
+            setOnglet("detail");
+            return;
+          }
           if (node.type !== "twin") return;
           setSelected(node.data.jumeau);
           setSelectedRelation(null);
+          setDomaineSel(null);
           setOnglet("detail");
+        }}
+        onNodeDoubleClick={(_, node) => {
+          if (node.type === "region") entrerDomaine(node.data.label);
         }}
         onEdgeClick={(_, edge) => {
           const rel = mesh?.relations.find((r) => r.id === edge.id);
@@ -317,7 +479,19 @@ export default function Atlas() {
           setSelected(null);
           setOnglet("detail");
         }}
-        onPaneClick={() => { setSelected(null); setSelectedRelation(null); setSelection([]); setRelFocus(false); }}
+        onPaneClick={(e) => {
+          const dc = dernierClicRegion.current;
+          dernierClicRegion.current = { label: null, t: 0 };
+          if (!domaineInterne && dc.label && Date.now() - dc.t < 450 && rfRef.current && mesh) {
+            const p = rfRef.current.screenToFlowPosition({ x: e.clientX, y: e.clientY });
+            const reg = (mesh.regions || []).find((r) => r.label === dc.label);
+            if (reg && p.x >= reg.x && p.x <= reg.x + reg.w && p.y >= reg.y && p.y <= reg.y + reg.h) {
+              entrerDomaine(dc.label);
+              return;
+            }
+          }
+          setSelected(null); setSelectedRelation(null); setDomaineSel(null); setSelection([]); setRelFocus(false); setComparaison(null);
+        }}
         nodesDraggable={mode === "territoire"}
         nodesConnectable={false}
         colorMode="dark"
@@ -488,6 +662,114 @@ export default function Atlas() {
         </div>
       )}
 
+      {/* Fil d'Ariane domaine */}
+      {domaineInterne && (
+        <div className="glass absolute left-1/2 top-4 z-10 flex -translate-x-1/2 items-center gap-2 rounded-xl px-4 py-2" data-testid="breadcrumb">
+          <button onClick={sortirDomaine} className="text-xs text-white/50 transition-colors hover:text-white" data-testid="breadcrumb-mesh">
+            Mesh global
+          </button>
+          <span className="text-white/30">›</span>
+          <span className="text-xs font-semibold text-white">Domaine {domaineInterne}</span>
+          {perimetreTravail === domaineInterne && (
+            <span className="rounded-full border border-[#22D3EE]/40 bg-[#22D3EE]/10 px-2 py-0.5 font-code text-[9px] text-[#22D3EE]">
+              périmètre de travail (filtre, pas sécurité)
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Barre d'actions du domaine sélectionné */}
+      {domaineSel && selection.length < 2 && (
+        <div className="glass rise absolute bottom-24 left-1/2 z-20 max-w-[720px] -translate-x-1/2 rounded-xl px-4 py-3" data-testid="domaine-bar">
+          <div className="flex items-center gap-3">
+            <span className="font-code text-[11px] font-medium" style={{ color: couleurDomaine(domaineSel) }} data-testid="domaine-bar-titre">
+              Domaine {domaineSel}
+            </span>
+            {statsDomaine(domaineSel) && (
+              <span className="font-code text-[10px] text-white/40">
+                {statsDomaine(domaineSel).twins.length} jumeaux · couverture {statsDomaine(domaineSel).couv} % · {statsDomaine(domaineSel).sits.length} situation(s)
+              </span>
+            )}
+          </div>
+          <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent("meridian:aurora-ask", { detail: `Analyse le domaine ${domaineSel} : découvertes, dépendances externes, zones mal connues` }))}
+              data-testid="dom-aurora-btn"
+              className="rounded-md bg-[#3B82F6] px-2.5 py-1.5 text-[11px] font-semibold text-white transition-colors hover:bg-[#2F6FDB]"
+            >
+              Demander à Aurora
+            </button>
+            <button onClick={() => navigate("/investigations")} data-testid="dom-investigation-btn" className="rounded-md border border-white/15 px-2.5 py-1.5 text-[11px] text-white/70 transition-colors hover:border-[#A78BFA]/50 hover:text-white">
+              Créer une investigation
+            </button>
+            <button
+              onClick={() => setRelDom(relDom === "inconnues" ? "aucun" : "inconnues")}
+              data-testid="dom-inconnues-btn"
+              className={`rounded-md border px-2.5 py-1.5 text-[11px] transition-colors ${relDom === "inconnues" ? "border-[#22D3EE]/60 text-[#22D3EE]" : "border-white/15 text-white/70 hover:text-white"}`}
+            >
+              Relations inconnues
+            </button>
+            <button
+              onClick={() => setRelDom(relDom === "externes" ? "aucun" : "externes")}
+              data-testid="dom-externes-btn"
+              className={`rounded-md border px-2.5 py-1.5 text-[11px] transition-colors ${relDom === "externes" ? "border-[#FBBF24]/60 text-[#FBBF24]" : "border-white/15 text-white/70 hover:text-white"}`}
+            >
+              Dépendances externes
+            </button>
+            <button
+              onClick={() => setZonesFaibles((v) => !v)}
+              data-testid="dom-zones-btn"
+              className={`rounded-md border px-2.5 py-1.5 text-[11px] transition-colors ${zonesFaibles ? "border-[#F87171]/60 text-[#F87171]" : "border-white/15 text-white/70 hover:text-white"}`}
+            >
+              Zones mal connues
+            </button>
+            <button
+              onClick={() => { setAttenteComparaison(true); toast.info("Cliquez un second domaine pour comparer"); }}
+              data-testid="dom-comparer-btn"
+              className="rounded-md border border-white/15 px-2.5 py-1.5 text-[11px] text-white/70 transition-colors hover:text-white"
+            >
+              Comparer…
+            </button>
+            <button
+              onClick={async () => {
+                const stats = statsDomaine(domaineSel);
+                if (!stats) return;
+                try {
+                  await api.post("/vues", { nom: `Domaine ${domaineSel}`, type: "selection", jumeaux: stats.twins.map((j) => j.id) });
+                  rechargerVues();
+                  toast.success(`Domaine ${domaineSel} enregistré comme espace de travail (vue)`);
+                } catch {
+                  toast.error("Enregistrement impossible");
+                }
+              }}
+              data-testid="dom-enregistrer-btn"
+              className="rounded-md border border-white/15 px-2.5 py-1.5 text-[11px] text-white/70 transition-colors hover:border-[#10B981]/50 hover:text-[#10B981]"
+            >
+              Enregistrer comme espace
+            </button>
+            <button
+              onClick={() => setPerimetreTravail(perimetreTravail === domaineSel ? null : domaineSel)}
+              data-testid="dom-perimetre-btn"
+              className={`rounded-md border px-2.5 py-1.5 text-[11px] font-semibold transition-colors ${perimetreTravail === domaineSel ? "border-[#22D3EE]/60 bg-[#22D3EE]/10 text-[#22D3EE]" : "border-white/15 text-white/70 hover:border-[#22D3EE]/50 hover:text-white"}`}
+            >
+              {perimetreTravail === domaineSel ? "Retirer le périmètre" : "Utiliser comme périmètre"}
+            </button>
+            {domaineInterne ? (
+              <button onClick={sortirDomaine} data-testid="dom-quitter-btn" className="rounded-md border border-white/15 px-2.5 py-1.5 text-[11px] text-white/70 transition-colors hover:text-white">
+                Quitter le domaine
+              </button>
+            ) : (
+              <button onClick={() => entrerDomaine(domaineSel)} data-testid="dom-explorer-btn" className="rounded-md bg-[#22D3EE] px-2.5 py-1.5 text-[11px] font-semibold text-black transition-colors hover:bg-[#17B8D4]">
+                Explorer ce domaine
+              </button>
+            )}
+            <button onClick={() => { setDomaineSel(null); setRelDom("aucun"); setZonesFaibles(false); setComparaison(null); }} data-testid="dom-clear-btn" className="rounded-md p-1.5 text-white/40 transition-colors hover:text-white">
+              <X size={14} />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Niveau de zoom sémantique */}
       {mode === "territoire" && (
         <div className="glass absolute bottom-4 left-1/2 z-10 -translate-x-1/2 rounded-lg px-3 py-1.5 font-code text-[10px] text-white/50" data-testid="zoom-niveau">
@@ -595,13 +877,19 @@ export default function Atlas() {
         </div>
         <div className="flex-1 overflow-y-auto p-4">
           {onglet === "detail" ? (
-            selectedRelation ? (
+            comparaison ? (
+              <ComparaisonDomaines a={comparaison.a} b={comparaison.b} statsDomaine={statsDomaine} />
+            ) : porteFocus && domaineInterne ? (
+              <PorteDetail interne={domaineInterne} externe={porteFocus} mesh={mesh} domDe={domDe} />
+            ) : selectedRelation ? (
               <RelationDetail rel={selectedRelation} jumeauPar={jumeauPar} onConfirmer={confirmerRelation} />
             ) : selected ? (
               <TwinDetail selected={selected} />
+            ) : domaineSel ? (
+              <DomaineDetail label={domaineSel} stats={statsDomaine(domaineSel)} />
             ) : (
               <p className="text-xs text-white/35">
-                Sélectionnez un jumeau ou une relation. Le zoom modifie le contenu : Entreprise (corridors) → Domaine → Jumeau (détail des relations) → Relation et preuves ici même.
+                Sélectionnez un jumeau, une relation ou un domaine. Double-clic sur un domaine pour y entrer ; le zoom révèle progressivement le contenu.
               </p>
             )
           ) : (
@@ -703,6 +991,120 @@ function RelationDetail({ rel, jumeauPar, onConfirmer }) {
           Confirmer la relation — enrichir la mémoire
         </button>
       )}
+    </div>
+  );
+}
+
+function DomaineDetail({ label, stats }) {
+  if (!stats) return null;
+  const m = stats.reg?.maturite;
+  return (
+    <div data-testid="domaine-detail">
+      <div className="flex items-center gap-2">
+        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: couleurDomaine(label) }} />
+        <h3 className="font-display text-base font-bold text-white">Domaine {label}</h3>
+      </div>
+      {m && <div className="mt-1 font-code text-[10px] text-white/45">{m.niveau} · {m.zones_inconnues} zone(s) inconnue(s)</div>}
+      <dl className="mt-3 space-y-2 text-xs">
+        <div className="flex justify-between"><dt className="text-white/40">Jumeaux</dt><dd className="font-code text-white/85">{stats.twins.length}</dd></div>
+        <div className="flex justify-between"><dt className="text-white/40">Couverture moyenne</dt><dd className="font-code text-white/85">{stats.couv} %</dd></div>
+        <div className="flex justify-between"><dt className="text-white/40">Situations liées</dt><dd className="font-code text-white/85">{stats.sits.length}</dd></div>
+      </dl>
+      {stats.equipes.length > 0 && (
+        <div className="mt-3">
+          <div className="font-code text-[9px] uppercase tracking-[0.2em] text-white/35">Équipes responsables</div>
+          <ul className="mt-1 space-y-1">
+            {stats.equipes.map((e, i) => <li key={i} className="text-xs text-white/60">→ {e}</li>)}
+          </ul>
+        </div>
+      )}
+      <div className="mt-3">
+        <div className="font-code text-[9px] uppercase tracking-[0.2em] text-white/35">Capacités métier</div>
+        <ul className="mt-1 space-y-1">
+          {stats.twins.map((j) => <li key={j.id} className="text-xs text-white/60">→ {j.nom} — {(j.mission || "").slice(0, 60)}</li>)}
+        </ul>
+      </div>
+      {Object.keys(stats.ext).length > 0 && (
+        <div className="mt-3">
+          <div className="font-code text-[9px] uppercase tracking-[0.2em] text-white/35">Dépendances vers l'extérieur</div>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {Object.entries(stats.ext).map(([dom, n]) => (
+              <span key={dom} className="rounded-full border px-2 py-0.5 font-code text-[10px]" style={{ color: couleurDomaine(dom), borderColor: `${couleurDomaine(dom)}44`, backgroundColor: `${couleurDomaine(dom)}0D` }}>
+                Vers {dom} · {n}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      {stats.sits.length > 0 && (
+        <div className="mt-3">
+          <div className="font-code text-[9px] uppercase tracking-[0.2em] text-white/35">Découvertes & investigations</div>
+          <ul className="mt-1 space-y-1.5">
+            {stats.sits.slice(0, 4).map((s) => <li key={s.id} className="text-xs leading-snug text-white/55">→ {s.titre}</li>)}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PorteDetail({ interne, externe, mesh, domDe }) {
+  const relations = (mesh?.relations || []).filter((r) => {
+    const a = domDe[r.source];
+    const b = domDe[r.cible];
+    return (a === interne && b === externe) || (a === externe && b === interne);
+  });
+  return (
+    <div data-testid="porte-detail">
+      <div className="font-code text-[9px] uppercase tracking-[0.2em] text-white/35">Porte externe</div>
+      <h3 className="mt-1.5 font-display text-base font-bold text-white">
+        {interne} ↔ {externe}
+      </h3>
+      <p className="mt-1 font-code text-[10px] text-white/45">{relations.length} relation(s) entre les deux domaines</p>
+      <ul className="mt-3 space-y-2">
+        {relations.map((r) => {
+          const etat = ETATS_RELATION[r.etat] || ETATS_RELATION.confirmee;
+          return (
+            <li key={r.id} className="rounded-md border border-white/[0.07] bg-white/[0.02] px-3 py-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-code text-[10px] text-white/80">{r.source} → {r.cible}</span>
+                <span className="font-code text-[9px]" style={{ color: etat.couleur }}>{etat.label}</span>
+              </div>
+              {r.label && <p className="mt-1 text-[11px] text-white/45">{r.label}</p>}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function ComparaisonDomaines({ a, b, statsDomaine }) {
+  const sa = statsDomaine(a);
+  const sb = statsDomaine(b);
+  if (!sa || !sb) return null;
+  const lignes = [
+    ["Jumeaux", sa.twins.length, sb.twins.length],
+    ["Couverture moyenne", `${sa.couv} %`, `${sb.couv} %`],
+    ["Dépendances externes", Object.values(sa.ext).reduce((x, y) => x + y, 0), Object.values(sb.ext).reduce((x, y) => x + y, 0)],
+    ["Situations liées", sa.sits.length, sb.sits.length],
+    ["Zones inconnues", sa.reg?.maturite?.zones_inconnues ?? "—", sb.reg?.maturite?.zones_inconnues ?? "—"],
+  ];
+  return (
+    <div data-testid="comparaison-domaines">
+      <div className="font-code text-[9px] uppercase tracking-[0.2em] text-white/35">Comparaison de domaines</div>
+      <div className="mt-2 grid grid-cols-3 gap-2 font-code text-[11px]">
+        <div />
+        <div className="font-semibold" style={{ color: couleurDomaine(a) }}>{a}</div>
+        <div className="font-semibold" style={{ color: couleurDomaine(b) }}>{b}</div>
+        {lignes.map(([label, va, vb]) => (
+          <div key={label} className="contents">
+            <div className="py-1 text-white/40">{label}</div>
+            <div className="py-1 text-white/85">{va}</div>
+            <div className="py-1 text-white/85">{vb}</div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
