@@ -31,7 +31,7 @@ const STATUTS = {
   "en construction": { label: "en construction", couleur: "#3B82F6" },
 };
 
-export default function Registry() {
+export default function Jumeaux() {
   const [jumeaux, setJumeaux] = useState([]);
   const { recharger } = useMesh();
   const [dialogue, setDialogue] = useState(false);
@@ -43,7 +43,7 @@ export default function Registry() {
   const admettre = async (j) => {
     try {
       await api.post(`/jumeaux/${j.id}/admettre`);
-      toast.success(`${j.nom} admis dans le Mesh`);
+      toast.success(`${j.nom} admis dans le Mesh — mémoire enrichie`);
       charger();
       recharger();
     } catch {
@@ -61,12 +61,12 @@ export default function Registry() {
   };
 
   return (
-    <div className="h-full overflow-y-auto px-8 py-8 pb-44" data-testid="registry-page">
+    <div className="h-full overflow-y-auto px-8 py-8 pb-44" data-testid="jumeaux-page">
       <header className="rise flex flex-wrap items-end justify-between gap-4">
         <div>
-          <div className="font-code text-[10px] uppercase tracking-[0.3em] text-[#3B82F6]">Agir</div>
-          <h1 className="mt-1 font-display text-4xl font-black text-white">Registry</h1>
-          <p className="mt-2 text-base text-white/50">Administrer le réseau : jumeaux, sources, couverture, admission dans le Mesh.</p>
+          <div className="font-code text-[10px] uppercase tracking-[0.3em] text-[#22D3EE]">Découvrir · Décider</div>
+          <h1 className="mt-1 font-display text-4xl font-black text-white">Jumeaux</h1>
+          <p className="mt-2 text-base text-white/50">Le réseau de jumeaux applicatifs : admission, autonomie, couverture de connaissance.</p>
         </div>
         <button
           onClick={() => setDialogue(true)}
@@ -77,7 +77,7 @@ export default function Registry() {
         </button>
       </header>
 
-      <div className="rise mt-8 overflow-hidden rounded-xl border border-white/[0.08]" style={{ animationDelay: "80ms" }} data-testid="registry-table">
+      <div className="rise mt-8 overflow-hidden rounded-xl border border-white/[0.08]" style={{ animationDelay: "80ms" }} data-testid="jumeaux-table">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-white/[0.08] bg-white/[0.03] font-code text-[10px] uppercase tracking-wider text-white/40">
@@ -96,7 +96,7 @@ export default function Registry() {
               const st = STATUTS[j.statut] || { label: j.statut, couleur: "#9CA3AF" };
               const c = couleurDomaine(j.domaine);
               return (
-                <tr key={j.id} className="border-b border-white/[0.05] transition-colors hover:bg-white/[0.02]" data-testid={`registry-row-${j.id}`}>
+                <tr key={j.id} className="border-b border-white/[0.05] transition-colors hover:bg-white/[0.02]" data-testid={`jumeau-row-${j.id}`}>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: c }} />
@@ -135,7 +135,7 @@ export default function Registry() {
                         <Eye size={12} /> Examiner
                       </button>
                       {j.statut !== "actif" && (
-                        <button onClick={() => admettre(j)} data-testid={`admettre-${j.id}`} className="flex items-center gap-1 rounded bg-[#3B82F6] px-2 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-[#2F6FDB]">
+                        <button onClick={() => admettre(j)} data-testid={`admettre-${j.id}`} className="flex items-center gap-1 rounded bg-[#FBBF24] px-2 py-1 text-[11px] font-semibold text-black transition-colors hover:bg-[#E5A910]">
                           <SealCheck size={12} /> Admettre
                         </button>
                       )}
@@ -164,7 +164,7 @@ export default function Registry() {
                 <div className="font-code text-[10px] uppercase tracking-[0.2em] text-white/40">Relations supposées</div>
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
                   {examen.relations_supposees.map((r, i) => (
-                    <span key={i} className="rounded-full border border-[#F59E0B]/40 bg-[#F59E0B]/10 px-2 py-0.5 font-code text-[10px] text-[#F59E0B]">
+                    <span key={i} className="rounded-full border border-[#A78BFA]/40 bg-[#A78BFA]/10 px-2 py-0.5 font-code text-[10px] text-[#A78BFA]">
                       {r.jumeau} · {r.confiance} %
                     </span>
                   ))}
@@ -231,7 +231,7 @@ function CommandeDialog({ ouvert, onFermer, onCree }) {
     try {
       const { data: jumeau } = await api.post("/jumeaux", { ...form, sources });
       await api.post(`/jumeaux/${jumeau.id}/admettre`);
-      toast.success(`${form.nom} admis dans le Mesh`);
+      toast.success(`${form.nom} admis dans le Mesh — mémoire enrichie`);
       onCree();
       onFermer();
       reinitialiser();
@@ -257,7 +257,7 @@ function CommandeDialog({ ouvert, onFermer, onCree }) {
         <div className="flex items-center gap-1" data-testid="commande-stepper">
           {ETAPES.map((label, i) => (
             <div key={label} className="flex flex-1 flex-col gap-1">
-              <div className={`h-0.5 rounded-full transition-colors duration-300 ${i + 1 <= etape ? "bg-[#3B82F6]" : "bg-white/10"}`} />
+              <div className={`h-0.5 rounded-full transition-colors duration-300 ${i + 1 <= etape ? "bg-[#22D3EE]" : "bg-white/10"}`} />
               <span className={`font-code text-[9px] uppercase tracking-wider ${i + 1 === etape ? "text-white" : "text-white/35"}`}>{label}</span>
             </div>
           ))}
@@ -296,7 +296,7 @@ function CommandeDialog({ ouvert, onFermer, onCree }) {
                       checked={!!sources[k]}
                       onChange={(e) => setSources({ ...sources, [k]: e.target.checked })}
                       data-testid={`source-${k}`}
-                      className="h-4 w-4 accent-[#3B82F6]"
+                      className="h-4 w-4 accent-[#22D3EE]"
                     />
                     <span className="text-sm text-white/80">{label}</span>
                   </label>
@@ -309,7 +309,7 @@ function CommandeDialog({ ouvert, onFermer, onCree }) {
             <div data-testid="etape-observer">
               <p className="text-sm text-white/55">Le jumeau apprend sans rejoindre le Mesh.</p>
               <div className="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-white/[0.07]">
-                <div className="h-full rounded-full bg-[#3B82F6] transition-[width] duration-500" style={{ width: `${progression}%` }} data-testid="observation-progress" />
+                <div className="h-full rounded-full bg-[#22D3EE] transition-[width] duration-500" style={{ width: `${progression}%` }} data-testid="observation-progress" />
               </div>
               <ul className="mt-4 space-y-2">
                 {lignes.map((l, i) => (
@@ -345,8 +345,8 @@ function CommandeDialog({ ouvert, onFermer, onCree }) {
                   <option value="restreint">restreint — observe et signale</option>
                 </select>
               </div>
-              <div className="rounded-md border border-[#3B82F6]/30 bg-[#3B82F6]/[0.06] p-3 text-xs leading-relaxed text-white/65">
-                Une fois admis, le jumeau devient une nouvelle source de compréhension pour Aurora et rejoint la System Map.
+              <div className="rounded-md border border-[#22D3EE]/30 bg-[#22D3EE]/[0.06] p-3 text-xs leading-relaxed text-white/65">
+                Une fois admis, le jumeau devient une nouvelle source de compréhension pour Aurora et rejoint l'Atlas.
               </div>
             </div>
           )}
@@ -375,7 +375,7 @@ function CommandeDialog({ ouvert, onFermer, onCree }) {
               onClick={confirmer}
               disabled={envoi}
               data-testid="confirmer-admission-btn"
-              className="flex items-center gap-1.5 rounded-md bg-[#10B981] px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#0DA271] disabled:opacity-40"
+              className="flex items-center gap-1.5 rounded-md bg-[#FBBF24] px-4 py-2 text-xs font-semibold text-black transition-colors hover:bg-[#E5A910] disabled:opacity-40"
             >
               <SealCheck size={14} /> Admettre dans le Mesh
             </button>
@@ -395,7 +395,7 @@ function Champ({ label, value, onChange, placeholder, testid }) {
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         data-testid={testid}
-        className="mt-1.5 w-full rounded-md border border-white/10 bg-black/50 px-3 py-2 text-sm text-white placeholder:text-white/25 focus:border-[#3B82F6]/60 focus:outline-none"
+        className="mt-1.5 w-full rounded-md border border-white/10 bg-black/50 px-3 py-2 text-sm text-white placeholder:text-white/25 focus:border-[#22D3EE]/60 focus:outline-none"
       />
     </div>
   );

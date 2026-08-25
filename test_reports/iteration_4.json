@@ -1,0 +1,21 @@
+{
+  "summary": "Régression UI Playwright complète sur Méridian (frontend uniquement). Toutes les fonctionnalités clés ont été validées avec succès : Observatoire (3 colonnes 4/3/4, ticker), fiche découverte (4 blocs + Surveiller/toast), Atlas (6 états de relations avec labels 'validation A2A — 82 %' et 'contestée — contradiction', légende, couches, régions avec chips de maturité, modes territoire/situation/parcours, panneau détail relation r6 complet), Investigations (filtres nature), Décisions (r6/r12/r14 + Change Lab intégré → scenario → dossier DC-xxxx), Jumeaux (12 lignes, parcours Commander complet en 5 étapes créant test-cartographie), Administration (couverture 74 %, sources, propriétaires, admissions), Aurora (chips Exploration/Explication/Recommandation + action /atlas?focus=paiements), Parcours Olympiade (3 actes → close), redirections /carte→/atlas, /change-lab→/decisions, /registry→/jumeaux. Aucune erreur console détectée sur aucune page. État démo restauré via pymongo (test-cartographie supprimé, statut sit-relation-emergente remis à 'active').",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_4.json"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Atlas.jsx (478 lignes) approche de la limite recommandée (>700 = split) — encore acceptable mais à surveiller.",
+    "Modes d'Atlas définis : territoire / situation / parcours (pas de mode 'libre' comme mentionné dans la requête — utiliser 'territoire' comme mode neutre)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (déjà exécuté 23/23)", "frontend": "100%"},
+  "seed_data_creation": "Aucune. Restaurations pymongo effectuées : db.jumeaux.delete_one({'id':'test-cartographie'}) et db.situations.update_one({'id':'sit-relation-emergente'},{'$set':{'statut':'active'}}) sur mongodb://localhost:27017/test_database.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Suite Playwright régression complète a passé (Aujourd'hui/Atlas/Investigations/Decisions/Jumeaux/Administration/Aurora/DemoTour/redirections). Le mode Atlas s'appelle 'territoire' (pas 'libre'). Les edges React Flow sont identifiables par attribut data-id (ex. .react-flow__edge[data-id='r6']). Pour tester le parcours Commander : utiliser champs testid champ-nom / champ-proprietaire / champ-mission (pas de textarea). Attendre ~8s pendant étape 3 (observer) jusqu'à ce que etape-suivante-btn soit activé. Toujours restaurer l'état démo via pymongo après tests mutants."
+}

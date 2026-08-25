@@ -1,9 +1,10 @@
 import { NavLink, Outlet } from "react-router-dom";
 import {
-  Crosshair,
+  Sun,
+  Compass,
   MagnifyingGlass,
-  Flask,
-  MapTrifold,
+  Scales,
+  CirclesThree,
   Database,
   Play,
 } from "@phosphor-icons/react";
@@ -13,11 +14,12 @@ import AuroraBar from "./AuroraBar";
 import DemoTour from "./DemoTour";
 
 const NAV = [
-  { to: "/", label: "Radar", icon: Crosshair, end: true, testid: "nav-radar" },
+  { to: "/", label: "Aujourd'hui", icon: Sun, end: true, testid: "nav-aujourdhui" },
+  { to: "/atlas", label: "Atlas", icon: Compass, testid: "nav-atlas" },
   { to: "/investigations", label: "Investigations", icon: MagnifyingGlass, testid: "nav-investigations" },
-  { to: "/change-lab", label: "Change Lab", icon: Flask, testid: "nav-change-lab" },
-  { to: "/carte", label: "System Map", icon: MapTrifold, testid: "nav-system-map" },
-  { to: "/registry", label: "Registry", icon: Database, testid: "nav-registry" },
+  { to: "/decisions", label: "Décisions", icon: Scales, testid: "nav-decisions" },
+  { to: "/jumeaux", label: "Jumeaux", icon: CirclesThree, testid: "nav-jumeaux" },
+  { to: "/administration", label: "Administration", icon: Database, testid: "nav-administration" },
 ];
 
 export default function Layout() {
@@ -34,8 +36,12 @@ export default function Layout() {
             <span className="pulse-soft h-2.5 w-2.5 rounded-full bg-[#3B82F6]" />
             <span className="font-display text-xl font-black tracking-[0.18em] text-white">MÉRIDIAN</span>
           </div>
-          <div className="mt-1.5 font-code text-[10px] tracking-[0.2em] text-white/35">
-            DÉTECTER · COMPRENDRE · DÉCIDER
+          <div className="mt-1.5 font-code text-[10px] tracking-[0.2em]">
+            <span className="text-[#22D3EE]">DÉCOUVRIR</span>
+            <span className="text-white/30"> · </span>
+            <span className="text-[#A78BFA]">COMPRENDRE</span>
+            <span className="text-white/30"> · </span>
+            <span className="text-[#FBBF24]">DÉCIDER</span>
           </div>
         </div>
 

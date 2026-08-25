@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { useMesh } from "@/lib/mesh";
 import TrustBadges from "@/components/TrustBadges";
-import { couleurDomaine, couleurConfiance, NATURES_EVENEMENT } from "@/lib/domaines";
+import { couleurDomaine, couleurConfiance, NATURES_EVENEMENT, NATURES, VERBES } from "@/lib/domaines";
 
 export default function InvestigationDetail() {
   const { id } = useParams();
@@ -38,6 +38,48 @@ export default function InvestigationDetail() {
     }
   };
 
+  const agirDecision = async (d) => {
+    const x = d.toLowerCase();
+    try {
+      if (x.includes("confirmer la relation") && sit.relation_id) {
+        await api.post(`/relations/${sit.relation_id}/confirmer`);
+        toast.success("Relation confirmée — mémoire du Mesh enrichie");
+        return;
+      }
+      if (x.includes("coïncidence")) {
+        await api.post(`/situations/${sit.id}/action`, { action: "coincidence" });
+        setSit({ ...sit, statut: "classée" });
+        toast.success("Classée comme coïncidence");
+        return;
+      }
+      if (x.includes("investigation")) {
+        await api.post(`/situations/${sit.id}/action`, { action: "investiguer" });
+        setSit({ ...sit, statut: "en investigation" });
+        toast.success("Investigation ouverte");
+        return;
+      }
+      if (x.includes("surveiller")) {
+        await api.post(`/situations/${sit.id}/action`, { action: "surveiller" });
+        setSit({ ...sit, statut: "surveillée" });
+        toast.success("Placée sous surveillance");
+        return;
+      }
+      if (x.includes("observations")) {
+        await api.post(`/situations/${sit.id}/action`, { action: "observer" });
+        toast.success("Observations supplémentaires demandées aux jumeaux");
+        return;
+      }
+      if (x.includes("admettre")) { navigate("/jumeaux"); return; }
+      if (x.includes("change") || x.includes("scénario") || x.includes("dossier")) { navigate("/decisions"); return; }
+      decider(d);
+    } catch {
+      toast.error("Action impossible");
+    }
+  };
+
+  const nature = NATURES[sit.nature] || null;
+  const verbe = VERBES[sit.verbe] || null;
+
   return (
     <div className="h-full overflow-y-auto px-8 py-8 pb-44" data-testid="investigation-detail">
       <button onClick={() => navigate("/investigations")} className="flex items-center gap-1.5 text-xs text-white/45 transition-colors hover:text-white" data-testid="back-to-investigations">
@@ -46,7 +88,25 @@ export default function InvestigationDetail() {
 
       {/* Zone 1 — La question */}
       <section className="rise mt-5" data-testid="zone-question">
-        <div className="font-code text-[10px] uppercase tracking-[0.3em] text-[#3B82F6]">La question</div>
+        <div className="font-code text-[10px] uppercase tracking-[0.3em] text-[#A78BFA]">La question</div>
+        {(nature || verbe) && (
+          <div className="mt-2 flex items-center gap-2">
+            {nature && (
+              <span
+                className="rounded border px-1.5 py-0.5 font-code text-[10px] uppercase tracking-wider"
+                style={{ color: nature.couleur, borderColor: `${nature.couleur}44`, backgroundColor: `${nature.couleur}10` }}
+                data-testid="nature-badge"
+              >
+                Investigation · {nature.label}
+              </span>
+            )}
+            {verbe && (
+              <span className="font-code text-[10px] uppercase tracking-wider" style={{ color: verbe.couleur }}>
+                {verbe.label}
+              </span>
+            )}
+          </div>
+        )}
         <h1 className="mt-2 max-w-3xl font-display text-4xl font-black leading-tight text-white">
           {sit.question || sit.titre}
         </h1>
@@ -68,6 +128,47 @@ export default function InvestigationDetail() {
           )}
         </div>
       </section>
+
+      {/* Fiche découverte : Découvrir → Comprendre → Décider */}
+      {(sit.decouverte_quoi || (sit.decouverte_pourquoi || []).length > 0) && (
+        <section className="rise mt-8 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4" data-testid="fiche-decouverte" style={{ animationDelay: "60ms" }}>
+          <div className="rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/[0.04] p-4">
+            <div className="font-code text-[10px] uppercase tracking-[0.2em] text-[#22D3EE]">Ce qui a été découvert</div>
+            <p className="mt-2 text-sm leading-relaxed text-white/75" data-testid="fiche-quoi">{sit.decouverte_quoi}</p>
+          </div>
+          <div className="rounded-xl border border-[#A78BFA]/20 bg-[#A78BFA]/[0.04] p-4">
+            <div className="font-code text-[10px] uppercase tracking-[0.2em] text-[#A78BFA]">Pourquoi Méridian le pense</div>
+            <ul className="mt-2 space-y-1.5" data-testid="fiche-pourquoi">
+              {(sit.decouverte_pourquoi || []).map((p, i) => (
+                <li key={i} className="text-xs leading-snug text-white/65">→ {p}</li>
+              ))}
+            </ul>
+          </div>
+          <div className="rounded-xl border border-[#A78BFA]/20 bg-[#A78BFA]/[0.04] p-4">
+            <div className="font-code text-[10px] uppercase tracking-[0.2em] text-[#A78BFA]">Ce qui reste à comprendre</div>
+            <ul className="mt-2 space-y-1.5" data-testid="fiche-reste">
+              {(sit.reste_a_comprendre || []).map((p, i) => (
+                <li key={i} className="text-xs leading-snug italic text-white/55">? {p}</li>
+              ))}
+            </ul>
+          </div>
+          <div className="rounded-xl border border-[#FBBF24]/20 bg-[#FBBF24]/[0.04] p-4">
+            <div className="font-code text-[10px] uppercase tracking-[0.2em] text-[#FBBF24]">Décision attendue</div>
+            <div className="mt-2 flex flex-col gap-1.5" data-testid="fiche-decisions">
+              {(sit.decisions_attendues || []).map((d, i) => (
+                <button
+                  key={i}
+                  onClick={() => agirDecision(d)}
+                  data-testid={`fiche-decision-${i}`}
+                  className="rounded-md border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-left text-xs text-white/75 transition-colors duration-200 hover:border-[#FBBF24]/50 hover:text-white"
+                >
+                  {d}
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       <div className="mt-10 grid grid-cols-12 gap-8">
         {/* Zone 2 — La chronologie */}

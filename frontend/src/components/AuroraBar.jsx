@@ -7,11 +7,17 @@ import { couleurDomaine } from "@/lib/domaines";
 
 function contexteDepuis(pathname) {
   if (pathname.startsWith("/investigations")) return "investigation";
-  if (pathname.startsWith("/change-lab")) return "change-lab";
-  if (pathname.startsWith("/carte")) return "carte";
-  if (pathname.startsWith("/registry")) return "registry";
-  return "radar";
+  if (pathname.startsWith("/decisions") || pathname.startsWith("/change-lab")) return "decisions";
+  if (pathname.startsWith("/atlas") || pathname.startsWith("/carte")) return "atlas";
+  if (pathname.startsWith("/jumeaux") || pathname.startsWith("/registry") || pathname.startsWith("/administration")) return "jumeaux";
+  return "aujourdhui";
 }
+
+const COMPORTEMENTS = {
+  explorer: { label: "Exploration", couleur: "#22D3EE" },
+  expliquer: { label: "Explication", couleur: "#A78BFA" },
+  recommander: { label: "Recommandation", couleur: "#FBBF24" },
+};
 
 export default function AuroraBar() {
   const location = useLocation();
@@ -64,6 +70,19 @@ export default function AuroraBar() {
             <div>
               <div className="flex items-center gap-2 font-code text-[10px] uppercase tracking-[0.25em] text-white/45">
                 <Sparkle size={13} className="text-[#3B82F6]" /> Réponse Aurora
+                {reponse.comportement && COMPORTEMENTS[reponse.comportement] && (
+                  <span
+                    className="rounded border px-1.5 py-0.5"
+                    style={{
+                      color: COMPORTEMENTS[reponse.comportement].couleur,
+                      borderColor: `${COMPORTEMENTS[reponse.comportement].couleur}44`,
+                      backgroundColor: `${COMPORTEMENTS[reponse.comportement].couleur}12`,
+                    }}
+                    data-testid="aurora-comportement"
+                  >
+                    {COMPORTEMENTS[reponse.comportement].label}
+                  </span>
+                )}
               </div>
               <div className="mt-1 text-sm font-semibold text-white/85">{questionPosee}</div>
             </div>

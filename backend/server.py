@@ -30,8 +30,17 @@ NO_ID = {"_id": 0}
 logger = logging.getLogger("meridian")
 
 
+SEED_VERSION = 2
+
+
 @app.on_event("startup")
 async def seed_database():
+    meta = await db.meta.find_one({"id": "seed"})
+    if not meta or meta.get("version") != SEED_VERSION:
+        for col in ["jumeaux", "relations", "situations", "change_lab", "dossiers"]:
+            await db[col].delete_many({})
+        await db.meta.replace_one({"id": "seed"}, {"id": "seed", "version": SEED_VERSION}, upsert=True)
+        logger.info("Seed version %s — réinitialisation des données de démo", SEED_VERSION)
     for name, docs in [("jumeaux", TWINS), ("relations", RELATIONS), ("situations", SITUATIONS)]:
         if await db[name].count_documents({}) == 0:
             await db[name].insert_many([dict(d) for d in docs])
@@ -170,7 +179,7 @@ class ActionSituation(BaseModel):
 
 @api_router.post("/situations/{sid}/action")
 async def agir_situation(sid: str, payload: ActionSituation):
-    mapping = {"ignorer": "ignorée", "surveiller": "surveillée", "investiguer": "en investigation", "examiner": None}
+    mapping = {"ignorer": "ignorée", "surveiller": "surveillée", "investiguer": "en investigation", "examiner": None, "coincidence": "classée", "observer": "en observation"}
     if payload.action not in mapping:
         raise HTTPException(400, "Action inconnue")
     nouveau = mapping[payload.action]
@@ -194,6 +203,31 @@ async def decider_situation(sid: str, payload: DecisionSituation):
     if res.matched_count == 0:
         raise HTTPException(404, "Situation introuvable")
     return {"ok": True, "decision": payload.decision}
+
+
+# ---------- Relations (mémoire du Mesh) ----------
+
+@api_router.post("/relations/{rid}/confirmer")
+async def confirmer_relation(rid: str):
+    res = await db.relations.update_one(
+        {"id": rid},
+        {"$set": {"etat": "confirmee"}, "$addToSet": {"confirmee_par": "Validation humaine"}},
+    )
+    if res.matched_count == 0:
+        raise HTTPException(404, "Relation introuvable")
+    return {"ok": True, "etat": "confirmee", "memoire": "enrichie"}
+
+
+# ---------- Décisions ----------
+
+@api_router.get("/decisions")
+async def lister_decisions():
+    situations = await db.situations.find(
+        {"verbe": "a_decider", "statut": {"$nin": ["ignorée", "classée", "décidée"]}}, NO_ID
+    ).to_list(50)
+    admissions = await db.jumeaux.find({"statut": {"$ne": "actif"}}, NO_ID).to_list(50)
+    relations = await db.relations.find({"etat": {"$in": ["supposee", "validation", "contestee"]}}, NO_ID).to_list(50)
+    return {"situations": situations, "admissions": admissions, "relations": relations}
 
 
 # ---------- Change Lab ----------

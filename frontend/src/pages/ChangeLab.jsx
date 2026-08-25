@@ -37,7 +37,7 @@ const DOM = { paiements: "Paiement", facturation: "Paiement", comptes: "Client",
 const nomDe = (id) => NOMS[id] || id || "…";
 const domaineDe = (id) => DOM[id] || "Non classé";
 
-export default function ChangeLab() {
+export default function ChangeLab({ integre = false }) {
   const [description, setDescription] = useState("Remplacer settlementDate par settlementTimestamp dans l'événement PaymentSettled");
   const [resultat, setResultat] = useState(null);
   const [scenarioChoisi, setScenarioChoisi] = useState(null);
@@ -79,12 +79,20 @@ export default function ChangeLab() {
   };
 
   return (
-    <div className="h-full overflow-y-auto px-8 py-8 pb-44" data-testid="changelab-page">
-      <header className="rise">
-        <div className="font-code text-[10px] uppercase tracking-[0.3em] text-[#3B82F6]">Décider</div>
-        <h1 className="mt-1 font-display text-4xl font-black text-white">Change Lab</h1>
-        <p className="mt-2 text-base text-white/50">Préparer et simuler les changements avant qu'ils ne touchent le SI.</p>
-      </header>
+    <div className={integre ? "" : "h-full overflow-y-auto px-8 py-8 pb-44"} data-testid="changelab-page">
+      {!integre && (
+        <header className="rise">
+          <div className="font-code text-[10px] uppercase tracking-[0.3em] text-[#FBBF24]">Décider</div>
+          <h1 className="mt-1 font-display text-4xl font-black text-white">Change Lab</h1>
+          <p className="mt-2 text-base text-white/50">Préparer et simuler les changements avant qu'ils ne touchent le SI.</p>
+        </header>
+      )}
+      {integre && (
+        <div className="mb-6">
+          <div className="font-code text-[10px] uppercase tracking-[0.25em] text-white/40">Simulateur</div>
+          <h2 className="mt-1 font-display text-xl font-bold text-white">Change Lab</h2>
+        </div>
+      )}
 
       <div className="mt-8 grid grid-cols-12 gap-8">
         <section className="rise col-span-12 lg:col-span-4">

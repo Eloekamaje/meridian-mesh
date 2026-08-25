@@ -18,7 +18,10 @@ export default function DemoTour() {
 
   return (
     <div className="glass rise fixed bottom-6 left-[276px] z-50 w-[340px] rounded-xl p-5" data-testid="demo-panel">
-      <div className="font-code text-[10px] uppercase tracking-[0.25em] text-[#3B82F6]">
+      <div
+        className="font-code text-[10px] uppercase tracking-[0.25em]"
+        style={{ color: ["#22D3EE", "#A78BFA", "#FBBF24"][(a.acte - 1) % 3] }}
+      >
         Parcours Olympiade — Acte {a.acte} / {actes.length}
       </div>
       <div className="mt-1.5 font-display text-lg font-bold text-white">{a.titre}</div>
