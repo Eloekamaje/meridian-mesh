@@ -573,7 +573,7 @@ export default function Atlas() {
             className="mt-2 w-full rounded-md border border-white/10 bg-black/60 px-2 py-1.5 text-xs text-white focus:outline-none"
           >
             {situations.filter((s) => (s.jumeaux || []).length > 0).map((s) => (
-              <option key={s.id} value={s.id}>{s.titre}</option>
+              <option key={s.id} value={s.id} label={s.titre} />
             ))}
           </select>
         )}
@@ -585,7 +585,7 @@ export default function Atlas() {
             className="mt-2 w-full rounded-md border border-white/10 bg-black/60 px-2 py-1.5 text-xs text-white focus:outline-none"
           >
             {(mesh?.parcours || []).map((p) => (
-              <option key={p.id} value={p.id}>{p.nom}</option>
+              <option key={p.id} value={p.id} label={p.nom} />
             ))}
           </select>
         )}

@@ -3,6 +3,9 @@
 ## Problème d'origine (résumé)
 Construire Méridian non pas comme un Atlas/graphe centré sur les jumeaux, mais comme un **système de compréhension et de décision pour le SI**, organisé autour de l'objet **Situation**. Repositionnement v2 (utilisateur) : **système qui apprend continuellement la structure et le comportement du SI** — cycle Découverte candidate → Compréhension validée → Décision éclairée → Mémoire du Mesh. L'accueil devient un Observatoire des découvertes (3 colonnes Découvert / À comprendre / À décider), l'Atlas montre l'évolution du savoir (6 états de relations, maturité des domaines, 3 dynamiques temps réel), les investigations couvrent relations/comportements/connaissances/contradictions, chaque décision enrichit la mémoire du Mesh. Code couleur : Découvrir cyan, Comprendre violet, Décider ambre.
 
+## Implémenté (25/06/2026 — v5.1, correctif cosmétique)
+- **Warning hydration `<span>` dans `<option>` éliminé** : l'instrumentation Emergent injectait un span autour des expressions dynamiques enfants des `<option>`. Les options des sélecteurs (Topbar périmètre/persona, Atlas situation/parcours) utilisent désormais l'attribut `label` (HTML standard) au lieu d'enfants texte. Console 100 % propre (0 warning, 0 erreur), affichage et changements de sélection inchangés.
+
 ## Implémenté (25/06/2026 — v5, P1 + domaine premier niveau)
 - **Réinitialiser la démo** : `POST /api/demo/reinitialiser` (vide/re-seed les collections + journal d'audit) ; section « Zone de démonstration » dans Administration avec confirmation en 2 clics, toast + reload.
 - **Recherche plein texte Aurora** : fallback des scénarios prescriptés — recherche serveur dans jumeaux (nom/mission/domaine/propriétaire), relations (claims, extrémités) et situations (titres), **filtrée par le périmètre RBAC**, scoring par tokens distincts matchés (nom > mission > domaine), désinence du pluriel français ; réponse avec contributions + action de navigation (`/atlas?focus=`). Hors périmètre et fallback « connaissances manquantes » préservés.
@@ -86,7 +89,7 @@ Construire Méridian non pas comme un Atlas/graphe centré sur les jumeaux, mais
 
 ## Backlog priorisé
 - **P0** : — (rien de bloquant).
-- **P1** : warning hydration `<span>` dans `<option>` (Topbar/DemoProvider — cosmétique, pollue la console).
+- **P1** : — (tous les P1 sont traités).
 - **P2** : scission d'Atlas.jsx (~1200 lignes — hook useDomainNavigation + composant DomainView) ; migration `on_event` → lifespan FastAPI ; durcissement CORS pour la production ; découverte automatique de relations pour les nouveaux jumeaux admis ; vue Parcours éditable ; double-clic sur une porte externe = traverser vers le domaine voisin (suggéré, en attente du retour utilisateur).
 - **Si vraie IA un jour** : brancher Aurora sur un LLM via la clé universelle Emergent (budget : Profile → Manage plan → Universal Key).
 

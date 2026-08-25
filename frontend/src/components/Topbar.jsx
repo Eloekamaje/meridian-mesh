@@ -21,13 +21,13 @@ export default function Topbar() {
       >
         <optgroup label="Espaces">
           {espaces.map((e) => (
-            <option key={e.id} value={e.id}>{e.global ? `${e.label} (autorisé)` : e.label}</option>
+            <option key={e.id} value={e.id} label={e.global ? `${e.label} (autorisé)` : e.label} />
           ))}
         </optgroup>
         {vues.length > 0 && (
           <optgroup label="Vues enregistrées">
             {vues.map((v) => (
-              <option key={v.id} value={`vue:${v.id}`}>Vue — {v.nom}</option>
+              <option key={v.id} value={`vue:${v.id}`} label={`Vue — ${v.nom}`} />
             ))}
           </optgroup>
         )}
@@ -59,7 +59,7 @@ export default function Topbar() {
           className="rounded-md border border-white/10 bg-black/60 px-2.5 py-1.5 text-xs text-white/80 focus:outline-none"
         >
           {personas.map((p) => (
-            <option key={p.id} value={p.id}>{p.nom} — {p.role}</option>
+            <option key={p.id} value={p.id} label={`${p.nom} — ${p.role}`} />
           ))}
         </select>
       </div>
