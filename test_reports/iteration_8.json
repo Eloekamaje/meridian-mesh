@@ -1,0 +1,24 @@
+{
+  "summary": "RETEST du correctif HIGH sur la sélection par clics dans Atlas (React Flow v12) + non-régression. TOUS LES POINTS PRINCIPAUX PASSENT. La sélection native RF gère désormais correctement clic simple (remplace) et Ctrl+clic (cumule / toggle), la barre de sélection reste visible >12s (aucune disparition par polling), le clic sur fond vide la sélection, la Pause ne vide plus la chronologie (aucun reset observé). Aucune erreur 'Maximum update depth' pendant les interactions. Les 5 pages en régression chargent sans erreur.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Global (toutes pages)", "issues": ["Hydration warning <span> enfant de <option> provenant de DemoProvider (instrumentation Emergent) — non applicatif, pollue la console (6 occurrences)."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Atlas.jsx toujours volumineux (~746 lignes) — envisager scission (Toolbar, SelectionBar, SidePanel, hooks).",
+    "Effet reset [version] (l.124-127) sépare bien la logique de vidage des events du polling — bon correctif."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100% sur les scénarios retestés"},
+  "seed_data_creation": "Aucune vue créée durant ce run (Enregistrer la sélection non déclenché) — pas de nettoyage nécessaire.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Vérifications effectuées avec succès (viewport 1920x1080, URL preview /atlas) :\n- clic simple twin-node-paiements → pas de barre (1 seul sélectionné, cohérent, seuil ≥2)\n- Ctrl+clic twin-node-fraude → data-testid=selection-bar visible, '2 jumeaux sélectionnés · Paiements · Fraude'\n- Ctrl+clic twin-node-facturation → '3 jumeaux sélectionnés · Paiements · Fraude · Facturation'\n- Ctrl+clic à nouveau sur Fraude → retire → '2 jumeaux sélectionnés · Paiements · Facturation'\n- clic simple sur twin-node-identite → barre disparaît (remplace par single-select)\n- clic sur le fond (mouse click 1700,200) → barre disparaît\n- Persistance : sélection 2 twins puis attente 12 s → barre TOUJOURS visible avec même texte (aucune disparition par polling)\n- Pause : clic pause-btn → chronologie inchangée sur 8 s (aucun reset), Direct-btn opère le retour\n- Régression pages / /investigations /decisions /jumeaux /administration → chargent OK\n- Console : 0 erreur 'Maximum update depth', 0 erreur applicative ; seules 6 warnings hydration DemoProvider (Emergent, non applicatif).\nBug HIGH précédent RÉSOLU. L'itération 7 est complète 11/11.",
+  "rca of the issue": "Correctif validé : multiSelectionKeyCode=['Meta','Control','Shift'] sur ReactFlow + onNodesChange qui reflète les 'select' changes émis par RF v12 lorsque la sélection native gère elle-même le clic. La suppression du setSelection manuel dans onNodeClick évite les collisions, et le split de l'effet [version] (setEvents([]) séparé du polling) empêche la chronologie de se vider lors du toggle Pause."
+}

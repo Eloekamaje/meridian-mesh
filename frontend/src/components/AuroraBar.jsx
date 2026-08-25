@@ -42,8 +42,16 @@ export default function AuroraBar() {
         inputRef.current?.focus();
       }
     };
+    const ask = (e) => {
+      if (e.detail) setQuestion(e.detail);
+      inputRef.current?.focus();
+    };
     window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
+    window.addEventListener("meridian:aurora-ask", ask);
+    return () => {
+      window.removeEventListener("keydown", handler);
+      window.removeEventListener("meridian:aurora-ask", ask);
+    };
   }, []);
 
   const demander = async (q) => {

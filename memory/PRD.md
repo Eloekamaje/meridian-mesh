@@ -3,7 +3,16 @@
 ## Problème d'origine (résumé)
 Construire Méridian non pas comme un Atlas/graphe centré sur les jumeaux, mais comme un **système de compréhension et de décision pour le SI**, organisé autour de l'objet **Situation**. Repositionnement v2 (utilisateur) : **système qui apprend continuellement la structure et le comportement du SI** — cycle Découverte candidate → Compréhension validée → Décision éclairée → Mémoire du Mesh. L'accueil devient un Observatoire des découvertes (3 colonnes Découvert / À comprendre / À décider), l'Atlas montre l'évolution du savoir (6 états de relations, maturité des domaines, 3 dynamiques temps réel), les investigations couvrent relations/comportements/connaissances/contradictions, chaque décision enrichit la mémoire du Mesh. Code couleur : Découvrir cyan, Comprendre violet, Décider ambre.
 
-## Implémenté (24/06/2026 — v3.1, Atlas « Orbite 3D »)
+## Implémenté (24/06/2026 — v4, Atlas 2D à zoom sémantique — direction finale)
+- **Suppression du mode Orbite 3D** (force-directed/3D écartés par l'utilisateur). Atlas = carte 2D type Google Maps.
+- **Zoom sémantique 3 niveaux** (le zoom change le contenu) : Niveau 1 Entreprise (jumeaux masqués, corridors agrégés inter-domaines « Paiement ↔ Risque · N relations · activité élevée ») ; Niveau 2 Domaine (jumeaux + relations principales) ; Niveau 3 Jumeau (labels de relations détaillés). Niveaux 4 (relation) et 5 (preuves) via le panneau de détail existant.
+- **Territoires souples type archipel** : blobs très arrondis à teinte discrète, nom toujours lisible, maturité + stats (jumeaux/découvertes/zones inconnues).
+- **Barre d'outils cartographique gauche** : déplacement, lasso (sélection multiple), exploration parcours, recentrage. **Direct/Pause** pour le temps réel (la pause fige la chronologie sans la vider).
+- **Focus contextuel** : sélection → voisins éclairés, reste translucide. **Barre contextuelle basse** (≥2 jumeaux) : Demander à Aurora (pré-remplit), Ouvrir une investigation, Rechercher des relations, Analyser un impact, Optimiser le parcours, Enregistrer la sélection (→ vue).
+- Sélection native React Flow : clic simple remplace, Ctrl/Meta/Shift+clic cumule, lasso en rectangle partiel ; positions de nœuds déplacés persistées en session ; correctif boucle onNodesChange (garde d'identité).
+- Tests : iteration_8 → 11/11, 0 erreur console.
+
+## Implémenté (24/06/2026 — v3.1, Atlas « Orbite 3D » — retiré en v4)
 - Mode optionnel **Orbite 3D** dans l'Atlas (`react-force-graph-3d` + three.js) : rotation libre sur tous les axes (drag), zoom/dézoom (molette), translation, auto-rotation lente ; sphères colorées par domaine (taille ∝ couverture), liens colorés par état (validation A2A violet, contestée rouge, supposée cyan), particules directionnelles sur les flux actifs ; hover = identité du jumeau (masquée pour les dépendances restreintes) ; clic → panneau Détail. Respecte le périmètre serveur (données déjà filtrées).
 
 ## Implémenté (24/06/2026 — v3, périmètres & autorisations)

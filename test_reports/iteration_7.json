@@ -1,0 +1,35 @@
+{
+  "summary": "Frontend-only testing of Atlas refactor (2D cartographique + zoom sémantique, sans Orbite 3D). Zoom sémantique (Niveau 1/2/3), toolbar (déplacement/lasso/parcours/recentrage), barre de sélection multiple, drag persistant, Pause/Direct, mode situation, régression pages: TOUS OK. Un bug fonctionnel bloquant: la sélection par clics simples ne cumule pas (contredit l'énoncé). Régression des 5 autres pages (/, /investigations, /decisions, /jumeaux, /administration) OK. Vue de test 'Sélection ...' nettoyée via pymongo.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Atlas — sélection par clics",
+        "issue": "Cliquer sur un jumeau (ex. Paiements puis Fraude) NE SÉLECTIONNE aucun jumeau : la classe .selected n'apparaît pas sur les .react-flow__node-twin et selection-bar n'apparaît jamais. Ni clic simple, ni Ctrl+clic, ni Meta+clic n'ajoutent d'ID à `selection`. Cause probable : React Flow v12 ne propage pas les changements de type 'select' via onNodesChange lorsque le nœud est complètement contrôlé (prop `selected` calculé depuis l'état) sans applyNodeChanges. Le seul chemin qui alimente `selection` aujourd'hui est le lasso (drag box) — les clics ouvrent uniquement le panneau Détail via onNodeClick sans toucher à `selection`. Correctif suggéré : dans onNodeClick, faire toggle manuel dans setSelection (ex. si event.ctrlKey/metaKey → toggle, sinon single-select) plutôt que de compter sur RF pour émettre le change.",
+        "selector": "[data-testid=\"selection-bar\"] absent après clic ; .react-flow__node-twin.selected vide",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Global (toutes pages)", "issues": ["Warning console (hydration : <span> enfant de <option>) provenant de l'instrumentation Emergent visual editor (DemoProvider) — pas de code applicatif à corriger, mais pollue la console."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Corriger la sélection multiple par clic : dans onNodeClick, mettre à jour `selection` manuellement (single click = [id], ctrl/meta = toggle). Sans ce fix, seul le lasso permet d'atteindre selection.length >= 2, ce qui contredit le cas de test « cliquer 2 jumeaux cumule la sélection »."
+  ],
+  "critical_code_review_comments": [
+    "Atlas.jsx est monolithique (~740 lignes) et gagnerait à être scindé (Toolbar, SelectionBar, SidePanel, hooks de sélection/zoom).",
+    "onPaneClick fait setSelection([]) — cohérent, mais couplé à un clic sur une région (selectable=false, sûrement OK).",
+    "L'effet polling (useEffect avec [version, direct]) déclenche un setEvents([]) + tick() à chaque bascule Direct/Pause : l'utilisateur voit la Chronologie vidée puis re-remplie lorsqu'il met en pause, ce qui peut sembler contre-intuitif (attendu : figer telle quelle). Envisager de séparer le rafraîchissement initial du toggle Pause.",
+    "Zoom sémantique : passer de niveau 1 (jumeaux masqués) à 2 sans repositionner peut laisser l'utilisateur perdu — le seuil vp.zoom < 0.6 masque tout d'un coup ; considérer un fade progressif."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "~90% (10/11 cas OK, 1 bug HIGH)"},
+  "seed_data_creation": "Vue 'Sélection 12 jumeaux' créée durant test puis supprimée via pymongo (db.vues.delete_many({'nom': {'$regex': '^Sélection'}})) — 1 vue supprimée.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Résultats vérifiés :\n- 12 jumeaux + 6 régions rendus ; blobs souples avec label/maturité/stats ; relations validation A2A violette animée + contestée rouge présentes ; légende OK.\n- Zoom sémantique : molette bas → Niveau 1 (twins cachés, corridors agrégés avec label 'Domaine ↔ Domaine · N relations · activité élevée') ; molette haut → Niveau 3 (labels de relations) ; par défaut Niveau 2.\n- Toolbar : outil-lasso sélectionne (drag rectangle Partial) → selection-bar avec « N jumeaux sélectionnés » + noms + non-sélectionnés translucides ; outil-deplacement restaure pan ; outil-recentrage fait un fitView animé (viewport réellement modifié après pan/zoom) ; outil-parcours bascule mode.\n- Selection-bar : Demander à Aurora pré-remplit correctement l'input aurora ('Analyse ce groupe de jumeaux : …') via event meridian:aurora-ask ; Rechercher des relations réduit les arêtes (14 → 2 sur sélection lasso incluant paiements+facturation+fraude) ; Enregistrer la sélection produit toast 'Sélection enregistrée comme vue' ; sel-clear-btn ferme la barre.\n- Drag jumeau (outil-deplacement, Territoire) : nœud persiste à sa nouvelle position (transform passe de translate(140px,240px) à translate(222.183px,289.31px)).\n- Direct/Pause : après clic pause, chronologie reste stable sur 6 items pendant 8.5s (aucun nouveau fetch), Direct/Pause opérationnels.\n- Régression Situation : bandeau map-situation-banner apparaît, label 'contestée — contradiction' visible.\n- Régression pages / /investigations /decisions /jumeaux /administration : chargent sans erreur runtime.\n\nBUG BLOQUANT (à retester après fix) : clic simple sur twin ne l'ajoute pas à `selection`. Le test 'cliquer 2 jumeaux → selection ≥ 2' échoue. Après fix, revérifier : (a) clic-clic accumule OU (b) clic remplace + Ctrl+clic toggle, selon décision produit.",
+  "rca of the issue": "React Flow v12 : quand l'app fournit un prop `selected` calculé (contrôlé) sans passer par applyNodeChanges, le change de type 'select' déclenché par un clic simple n'est pas relayé vers `onNodesChange` de manière fiable — RF considère le nœud déjà à jour et n'émet pas l'événement de sélection. Seuls les changements pilotés par le SelectionMode (drag lasso) déclenchent des 'select' changes reçus par notre onNodesChange. Fix : dans onNodeClick (Atlas.jsx ligne 303-308), ajouter setSelection((s) => e.ctrlKey||e.metaKey ? (s.includes(node.id) ? s.filter(x=>x!==node.id) : [...s, node.id]) : [node.id])."
+}

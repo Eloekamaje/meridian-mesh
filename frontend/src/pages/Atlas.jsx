@@ -1,10 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams, Link } from "react-router-dom";
-import { ReactFlow, Background, BackgroundVariant, Controls } from "@xyflow/react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams, Link, useNavigate } from "react-router-dom";
+import { ReactFlow, Background, BackgroundVariant, Controls, SelectionMode } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import ForceGraph3D from "react-force-graph-3d";
-import * as THREE from "three";
-import SpriteText from "three-spritetext";
+import { Hand, Lasso, Path, Crosshair, Pulse, Pause, X } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useMesh } from "@/lib/mesh";
@@ -19,7 +17,6 @@ const MODES = [
   { id: "territoire", label: "Territoire", question: "Comment le SI est-il organisé ?" },
   { id: "situation", label: "Situation", question: "Que se passe-t-il ici ?" },
   { id: "parcours", label: "Parcours", question: "Comment cette activité fonctionne-t-elle ?" },
-  { id: "orbite", label: "Orbite 3D", question: "Explorer le Mesh en trois dimensions — tourner, zoomer, survoler" },
 ];
 
 const COUCHES = [
@@ -28,36 +25,7 @@ const COUCHES = [
   ["mesh", "Mesh", "#A78BFA"],
 ];
 
-const renduNoeud3D = (n) => {
-  const estDomaine = n.id.startsWith("dom-");
-  const r = n.anonyme ? 1.4 : estDomaine ? 4.5 + n.membres * 1.1 : 2 + (n.couverture || 40) / 35;
-  const group = new THREE.Group();
-  const sphere = new THREE.Mesh(
-    new THREE.SphereGeometry(r, 24, 24),
-    new THREE.MeshLambertMaterial({ color: n.couleur, transparent: n.anonyme, opacity: n.anonyme ? 0.45 : 0.95 })
-  );
-  group.add(sphere);
-  if (!estDomaine && !n.anonyme && n.jumeau?.sante === "dégradé") {
-    const halo = new THREE.Mesh(
-      new THREE.SphereGeometry(r + 1.4, 16, 16),
-      new THREE.MeshBasicMaterial({ color: "#EF4444", transparent: true, opacity: 0.2, wireframe: true })
-    );
-    group.add(halo);
-  }
-  const statutTxt = !estDomaine && !n.anonyme && n.jumeau?.statut !== "actif" ? ` (${n.jumeau?.statut})` : "";
-  const texte = new SpriteText(
-    n.anonyme
-      ? "restreint"
-      : estDomaine
-        ? `${n.nom}${n.maturite ? ` · ${n.maturite.niveau}` : ""}\n${n.membres} jumeau${n.membres > 1 ? "x" : ""}`
-        : `${n.nom}${statutTxt}`
-  );
-  texte.color = n.anonyme ? "#6B7280" : estDomaine ? n.couleur : "rgba(255,255,255,0.85)";
-  texte.textHeight = estDomaine ? 4.2 : 2.8;
-  texte.position.y = -(r + 4);
-  group.add(texte);
-  return group;
-};
+const NIVEAUX_ZOOM = { 1: "Entreprise", 2: "Domaine", 3: "Jumeau" };
 
 const styleParEtat = (r) => {
   switch (r.etat) {
@@ -76,31 +44,31 @@ const styleParEtat = (r) => {
   }
 };
 
-const makeEdge = (r) => ({
+const makeEdge = (r, niveau) => ({
   id: r.id,
   source: r.source,
   target: r.cible,
   animated: !!r.active || r.etat === "validation",
   data: { etat: r.etat, restreinte: !!r.restreinte },
-  style: r.restreinte
-    ? { ...styleParEtat(r), opacity: 0.35, strokeDasharray: "3 5" }
-    : styleParEtat(r),
+  style: r.restreinte ? { ...styleParEtat(r), opacity: 0.35, strokeDasharray: "3 5" } : styleParEtat(r),
   label:
     r.etat === "validation"
       ? `validation A2A${r.confiance ? ` — ${r.confiance} %` : ""}`
       : r.etat === "contestee"
         ? "contestée — contradiction"
-        : undefined,
-  labelStyle: { fill: r.etat === "validation" ? "#A78BFA" : "#F87171", fontSize: 10, fontFamily: "IBM Plex Mono" },
+        : niveau >= 3 && r.label
+          ? r.label
+          : undefined,
+  labelStyle: { fill: r.etat === "validation" ? "#A78BFA" : r.etat === "contestee" ? "#F87171" : "rgba(255,255,255,0.55)", fontSize: 10, fontFamily: "IBM Plex Mono" },
   labelBgStyle: { fill: "rgba(5,5,5,0.85)" },
 });
 
 export default function Atlas() {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const { mesh, jumeauPar, recharger } = useMesh();
   const { version, vueActive, rechargerVues } = usePerimetre();
   const [situations, setSituations] = useState([]);
-  const [nomVue, setNomVue] = useState("");
   const modeParam = searchParams.get("mode");
   const [mode, setMode] = useState(modeParam || "territoire");
   const [situationId, setSituationId] = useState(searchParams.get("situation") || "sit-relation-emergente");
@@ -113,7 +81,37 @@ export default function Atlas() {
   const [compteurs, setCompteurs] = useState({});
   const [onglet, setOnglet] = useState("chrono");
   const [couches, setCouches] = useState({ operationnelle: true, connaissance: true, mesh: true });
-  const [orbiteAgrege, setOrbiteAgrege] = useState(false);
+  const [direct, setDirect] = useState(true);
+  const [outil, setOutil] = useState("deplacement");
+  const [selection, setSelection] = useState([]);
+  const [relFocus, setRelFocus] = useState(false);
+  const [zoomNiveau, setZoomNiveau] = useState(2);
+  const [nomVue, setNomVue] = useState("");
+  const [posOverrides, setPosOverrides] = useState({});
+  const rfRef = useRef(null);
+
+  const onNodesChange = useCallback((changes) => {
+    setSelection((prev) => {
+      let next = prev;
+      for (const ch of changes) {
+        if (ch.type !== "select" || ch.id.startsWith("reg-")) continue;
+        const has = next.includes(ch.id);
+        if (ch.selected && !has) next = next === prev ? [...prev, ch.id] : [...next, ch.id];
+        if (!ch.selected && has) next = (next === prev ? [...prev] : next).filter((x) => x !== ch.id);
+      }
+      return next;
+    });
+    setPosOverrides((prev) => {
+      let next = prev;
+      for (const ch of changes) {
+        if (ch.type === "position" && ch.position) {
+          if (next === prev) next = { ...prev };
+          next[ch.id] = ch.position;
+        }
+      }
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     if (modeParam) setMode(modeParam);
@@ -126,6 +124,9 @@ export default function Atlas() {
   useEffect(() => {
     setEvents([]);
     setCompteurs({});
+  }, [version]);
+
+  useEffect(() => {
     let stop = false;
     let timer;
     const tick = async () => {
@@ -144,9 +145,10 @@ export default function Atlas() {
       } catch {}
     };
     tick();
+    if (!direct) return;
     const t = setInterval(tick, 6000);
     return () => { stop = true; clearInterval(t); clearTimeout(timer); };
-  }, [version]);
+  }, [version, direct]);
 
   const situation = situations.find((s) => s.id === situationId);
 
@@ -173,6 +175,16 @@ export default function Atlas() {
       mesh.jumeaux.forEach((j) => { if ((j.couverture ?? 100) >= 70) dims.add(j.id); });
     }
 
+    // Focus contextuel : sélection → voisins éclairés, reste translucide
+    if (selection.length > 0 && mode === "territoire" && !focus) {
+      const voisins = new Set(selection);
+      mesh.relations.forEach((r) => {
+        if (selection.includes(r.source)) voisins.add(r.cible);
+        if (selection.includes(r.cible)) voisins.add(r.source);
+      });
+      mesh.jumeaux.forEach((j) => { if (!voisins.has(j.id)) dims.add(j.id); });
+    }
+
     let ns = [];
     if (mode === "territoire") {
       ns = (mesh.regions || []).map((r) => ({
@@ -186,100 +198,75 @@ export default function Atlas() {
       twins = mesh.jumeaux.filter((j) => parcours.etapes.includes(j.id));
     }
 
+    const entreprise = mode === "territoire" && zoomNiveau === 1;
+
     ns = ns.concat(
       twins.map((j) => {
         const etape = mode === "parcours" && parcours ? parcours.etapes.indexOf(j.id) + 1 : null;
-        const position = etape ? { x: (etape - 1) * 250, y: 280 + (etape % 2) * 46 } : j.position;
+        const position = posOverrides[j.id] || (etape ? { x: (etape - 1) * 250, y: 280 + (etape % 2) * 46 } : j.position);
         return {
           id: j.id,
           type: "twin",
           position,
+          hidden: entreprise && !j.anonyme ? true : entreprise,
           data: { jumeau: j, dim: dims.has(j.id), halo: halo === j.id, evenements: compteurs[j.id] || 0, etape },
-          selected: selected?.id === j.id,
+          selected: selection.includes(j.id),
         };
       })
     );
 
     let es = [];
-    if (mode === "parcours" && parcours) {
+    if (entreprise) {
+      // Zoom Entreprise : corridors agrégés inter-domaines
+      const domDe = {};
+      mesh.jumeaux.forEach((j) => { domDe[j.id] = j.domaine; });
+      const regParDom = {};
+      (mesh.regions || []).forEach((r) => { regParDom[r.label] = r.id; });
+      const corridors = {};
+      mesh.relations.forEach((r) => {
+        const a = domDe[r.source];
+        const b = domDe[r.cible];
+        if (!a || !b || a === b || !regParDom[a] || !regParDom[b]) return;
+        const [x, y] = [a, b].sort();
+        const key = `${x}::${y}`;
+        if (!corridors[key]) corridors[key] = { a: x, b: y, n: 0, actif: false };
+        corridors[key].n += 1;
+        if (r.active) corridors[key].actif = true;
+      });
+      es = Object.values(corridors).map((c) => ({
+        id: `corridor-${c.a}-${c.b}`,
+        source: regParDom[c.a],
+        target: regParDom[c.b],
+        animated: c.actif,
+        style: { stroke: "rgba(255,255,255,0.28)", strokeWidth: 2.5, opacity: 0.8 },
+        label: `${c.a} ↔ ${c.b} · ${c.n} relation${c.n > 1 ? "s" : ""}${c.actif ? " · activité élevée" : ""}`,
+        labelStyle: { fill: "rgba(255,255,255,0.65)", fontSize: 10, fontFamily: "IBM Plex Mono" },
+        labelBgStyle: { fill: "rgba(5,5,5,0.85)" },
+      }));
+    } else if (mode === "parcours" && parcours) {
       es = parcours.etapes.slice(1).map((id, i) =>
-        makeEdge({ id: `p-${i}`, source: parcours.etapes[i], cible: id, active: true, etat: "confirmee" })
+        makeEdge({ id: `p-${i}`, source: parcours.etapes[i], cible: id, active: true, etat: "confirmee" }, zoomNiveau)
       );
     } else {
       es = mesh.relations
         .filter((r) => (mode === "situation" && implique.length ? implique.includes(r.source) && implique.includes(r.cible) : true))
         .filter((r) => !focus || r.source === focus || r.cible === focus)
-        .map(makeEdge);
-    }
-    if (vueActive?.type === "relations_non_confirmees") {
-      es = es.map((e) =>
-        e.data?.etat === "confirmee" ? { ...e, animated: false, style: { ...e.style, opacity: 0.1 } } : e
-      );
+        .map((r) => makeEdge(r, zoomNiveau));
+      if (vueActive?.type === "relations_non_confirmees") {
+        es = es.map((e) =>
+          e.data?.etat === "confirmee" ? { ...e, animated: false, style: { ...e.style, opacity: 0.1 } } : e
+        );
+      }
+      if (relFocus && selection.length > 1) {
+        es = es.filter((e) => selection.includes(e.source) && selection.includes(e.target));
+      }
     }
     return { nodes: ns, edges: es };
-  }, [mesh, mode, situationId, parcoursId, focus, halo, compteurs, selected, situation, vueActive]);
+  }, [mesh, mode, situationId, parcoursId, focus, halo, compteurs, selection, relFocus, zoomNiveau, situation, vueActive, posOverrides]);
 
   const eventsVisibles = events.filter((e) => couches[e.dynamique || "operationnelle"]);
   const modeInfo = MODES.find((m) => m.id === mode);
-
-  const fgRef = useRef();
-  useEffect(() => {
-    if (mode !== "orbite" || !fgRef.current) return;
-    const controls = fgRef.current.controls();
-    controls.autoRotate = true;
-    controls.autoRotateSpeed = 0.55;
-    const t = setTimeout(() => fgRef.current?.cameraPosition({ x: 0, y: 0, z: 240 }), 1500);
-    return () => clearTimeout(t);
-  }, [mode]);
-
-  const graphData = useMemo(() => {
-    if (!mesh) return { nodes: [], links: [] };
-
-    if (orbiteAgrege) {
-      const doms = {};
-      mesh.jumeaux.forEach((j) => {
-        const d = j.anonyme ? "Restreint" : j.domaine || "Non classé";
-        if (!doms[d]) {
-          doms[d] = { id: `dom-${d}`, nom: d, domaine: d, couleur: d === "Restreint" ? "#374151" : couleurDomaine(d), membres: 0, anonyme: d === "Restreint", maturite: null };
-        }
-        doms[d].membres += 1;
-      });
-      (mesh.regions || []).forEach((r) => {
-        if (doms[r.label]) doms[r.label].maturite = r.maturite;
-      });
-      const domDe = {};
-      mesh.jumeaux.forEach((j) => { domDe[j.id] = j.anonyme ? "Restreint" : j.domaine || "Non classé"; });
-      const liens = {};
-      mesh.relations.forEach((r) => {
-        const a = domDe[r.source];
-        const b = domDe[r.cible];
-        if (!a || !b || a === b) return;
-        const [x, y] = [a, b].sort();
-        const key = `${x}::${y}`;
-        if (!liens[key]) liens[key] = { id: `agg-${key}`, source: `dom-${x}`, target: `dom-${y}`, count: 0, active: false, etat: null };
-        liens[key].count += 1;
-        if (r.active) liens[key].active = true;
-        if (["validation", "contestee", "supposee"].includes(r.etat)) liens[key].etat = r.etat;
-      });
-      return { nodes: Object.values(doms), links: Object.values(liens) };
-    }
-
-    const ids = new Set(mesh.jumeaux.map((j) => j.id));
-    return {
-      nodes: mesh.jumeaux.map((j) => ({
-        id: j.id,
-        nom: j.nom,
-        domaine: j.domaine,
-        anonyme: !!j.anonyme,
-        couleur: j.anonyme ? "#374151" : couleurDomaine(j.domaine),
-        couverture: j.couverture || 40,
-        jumeau: j,
-      })),
-      links: mesh.relations
-        .filter((r) => ids.has(r.source) && ids.has(r.cible))
-        .map((r) => ({ id: r.id, source: r.source, target: r.cible, etat: r.etat, active: !!r.active, restreinte: !!r.restreinte, confiance: r.confiance })),
-    };
-  }, [mesh, orbiteAgrege]);
+  const nomsSelection = selection.map((id) => jumeauPar(id)?.nom || id);
 
   const confirmerRelation = async (r) => {
     try {
@@ -288,66 +275,19 @@ export default function Atlas() {
       setSelectedRelation(null);
       recharger();
     } catch {
-      toast.error("Confirmation impossible");
+      toast.error("Confirmation impossible — permission « Valider » requise");
     }
   };
 
+  const outils = [
+    { id: "deplacement", icon: Hand, label: "Déplacement" },
+    { id: "lasso", icon: Lasso, label: "Sélection multiple / lasso" },
+    { id: "parcours", icon: Path, label: "Explorer un parcours" },
+    { id: "recentrage", icon: Crosshair, label: "Recentrage" },
+  ];
+
   return (
     <div className="relative h-full w-full overflow-hidden" data-testid="system-map">
-      {mode === "orbite" ? (
-        <div className="absolute inset-0" data-testid="atlas-orbite">
-          <ForceGraph3D
-            key={orbiteAgrege ? "agg" : "detail"}
-            ref={fgRef}
-            graphData={graphData}
-            backgroundColor="#050505"
-            nodeThreeObject={renduNoeud3D}
-            nodeLabel={(n) => {
-              if (n.anonyme) return "Périmètre restreint — identité masquée";
-              if (n.id.startsWith("dom-")) {
-                const m = n.maturite;
-                return `<b>${n.nom}</b> — ${n.membres} jumeau(x)${m ? `<br/>${m.niveau} · ${m.jumeaux} connus · ${m.relations_emergentes} émergente(s) · ${m.zones_inconnues} zone(s) inconnue(s)` : ""}`;
-              }
-              const j = n.jumeau || {};
-              return `<b>${n.nom}</b> · ${n.domaine}<br/>${(j.mission || "").slice(0, 90)}<br/>couverture ${j.couverture ?? "—"} % · ${j.fraicheur ?? "—"} · ${j.statut ?? ""}${j.sante === "dégradé" ? ' · <span style="color:#EF4444">santé dégradée</span>' : ""}`;
-            }}
-            linkLabel={(l) =>
-              l.id?.startsWith("agg-")
-                ? `${l.count} relation(s) inter-domaines${l.active ? " · flux actif" : ""}`
-                : `${ETATS_RELATION[l.etat]?.label || "Relation"}${l.confiance ? ` — ${l.confiance} %` : ""}${l.active ? " · flux actif" : ""}${l.restreinte ? " · restreinte" : ""}`
-            }
-            linkColor={(l) =>
-              l.restreinte
-                ? "rgba(255,255,255,0.14)"
-                : l.etat === "validation"
-                  ? "#A78BFA"
-                  : l.etat === "contestee"
-                    ? "#F87171"
-                    : l.etat === "supposee"
-                      ? "#22D3EE"
-                      : l.etat === "obsolete"
-                        ? "rgba(255,255,255,0.10)"
-                        : l.active
-                          ? "#3B82F6"
-                          : "rgba(255,255,255,0.22)"
-            }
-            linkWidth={(l) => (l.etat === "validation" ? 1.8 : l.active ? 1.4 : 0.8)}
-            linkOpacity={0.55}
-            linkDirectionalParticles={(l) => (l.active || l.etat === "validation" ? 2 : 0)}
-            linkDirectionalParticleWidth={1.6}
-            linkDirectionalParticleSpeed={0.005}
-            onNodeClick={(n) => {
-              if (n.anonyme || n.id.startsWith("dom-")) return;
-              setSelected(n.jumeau);
-              setSelectedRelation(null);
-              setOnglet("detail");
-            }}
-            onBackgroundClick={() => { setSelected(null); setSelectedRelation(null); }}
-            cooldownTicks={140}
-            enableNodeDrag={false}
-          />
-        </div>
-      ) : (
       <ReactFlow
         key={`${mode}-${situationId}-${parcoursId}-${focus || ""}`}
         nodes={nodes}
@@ -356,8 +296,15 @@ export default function Atlas() {
         fitView
         fitViewOptions={{ padding: 0.15 }}
         minZoom={0.3}
-        maxZoom={1.6}
-        onNodeClick={(_, node) => {
+        maxZoom={2.2}
+        onInit={(inst) => { rfRef.current = inst; }}
+        onMove={(_, vp) => setZoomNiveau(vp.zoom < 0.6 ? 1 : vp.zoom > 1.15 ? 3 : 2)}
+        onNodesChange={onNodesChange}
+        panOnDrag={outil === "deplacement"}
+        selectionOnDrag={outil === "lasso"}
+        selectionMode={SelectionMode.Partial}
+        multiSelectionKeyCode={["Meta", "Control", "Shift"]}
+        onNodeClick={(event, node) => {
           if (node.type !== "twin") return;
           setSelected(node.data.jumeau);
           setSelectedRelation(null);
@@ -370,17 +317,16 @@ export default function Atlas() {
           setSelected(null);
           setOnglet("detail");
         }}
-        onPaneClick={() => { setSelected(null); setSelectedRelation(null); }}
+        onPaneClick={() => { setSelected(null); setSelectedRelation(null); setSelection([]); setRelFocus(false); }}
         nodesDraggable={mode === "territoire"}
         nodesConnectable={false}
         colorMode="dark"
       >
-        <Background variant={BackgroundVariant.Dots} gap={30} size={1} color="rgba(255,255,255,0.06)" />
+        <Background variant={BackgroundVariant.Dots} gap={30} size={1} color="rgba(255,255,255,0.05)" />
         <Controls showInteractive={false} position="bottom-right" />
       </ReactFlow>
-      )}
 
-      {/* Sélecteur de mode + couches */}
+      {/* Panneau de contrôle haut-gauche */}
       <div className="glass absolute left-4 top-4 z-10 rounded-xl p-3" data-testid="map-mode-switcher">
         <div className="flex gap-1">
           {MODES.map((m) => (
@@ -397,6 +343,7 @@ export default function Atlas() {
           ))}
         </div>
         <p className="mt-2 px-1 font-code text-[10px] text-white/40">{modeInfo?.question}</p>
+
         {mode === "situation" && (
           <select
             value={situationId}
@@ -433,6 +380,44 @@ export default function Atlas() {
           </div>
         )}
 
+        {/* Direct / Pause */}
+        <div className="mt-3 flex items-center gap-1 border-t border-white/[0.08] pt-2.5">
+          <span className="px-1 font-code text-[9px] uppercase tracking-[0.2em] text-white/35">Temps réel</span>
+          <button
+            onClick={() => setDirect(true)}
+            data-testid="direct-btn"
+            className={`flex items-center gap-1 rounded px-2 py-1 font-code text-[10px] transition-colors ${direct ? "bg-[#10B981]/15 text-[#10B981]" : "text-white/45 hover:text-white"}`}
+          >
+            <Pulse size={12} /> Direct
+          </button>
+          <button
+            onClick={() => setDirect(false)}
+            data-testid="pause-btn"
+            className={`flex items-center gap-1 rounded px-2 py-1 font-code text-[10px] transition-colors ${!direct ? "bg-[#F59E0B]/15 text-[#F59E0B]" : "text-white/45 hover:text-white"}`}
+          >
+            <Pause size={12} /> Pause
+          </button>
+        </div>
+
+        <div className="mt-2.5 border-t border-white/[0.08] pt-2.5">
+          <div className="px-1 font-code text-[9px] uppercase tracking-[0.2em] text-white/35">Dynamiques visibles</div>
+          <div className="mt-1.5 space-y-1">
+            {COUCHES.map(([id, label, c]) => (
+              <label key={id} className="flex cursor-pointer items-center gap-2 px-1 py-0.5" data-testid={`couche-${id}`}>
+                <input
+                  type="checkbox"
+                  checked={couches[id]}
+                  onChange={(e) => setCouches({ ...couches, [id]: e.target.checked })}
+                  className="h-3 w-3"
+                  style={{ accentColor: c }}
+                />
+                <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: c }} />
+                <span className="text-[11px] text-white/60">{label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+
         {mode === "territoire" && !mesh?.perimetre?.global && (
           <div className="mt-2 flex gap-1.5 px-1">
             <input
@@ -461,49 +446,59 @@ export default function Atlas() {
             </button>
           </div>
         )}
+      </div>
 
-        {mode === "orbite" && (
-          <label className="mt-2 flex cursor-pointer items-center gap-2 px-1" data-testid="orbite-agregation-toggle">
-            <input
-              type="checkbox"
-              checked={orbiteAgrege}
-              onChange={(e) => setOrbiteAgrege(e.target.checked)}
-              className="h-3 w-3 accent-[#22D3EE]"
-            />
-            <span className="text-[11px] text-white/60">Agréger par domaine (maturité incluse)</span>
-          </label>
-        )}
-
-        <div className="mt-3 border-t border-white/[0.08] pt-2.5">
-          <div className="px-1 font-code text-[9px] uppercase tracking-[0.2em] text-white/35">Dynamiques visibles</div>
-          <div className="mt-1.5 space-y-1">
-            {COUCHES.map(([id, label, c]) => (
-              <label key={id} className="flex cursor-pointer items-center gap-2 px-1 py-0.5" data-testid={`couche-${id}`}>
-                <input
-                  type="checkbox"
-                  checked={couches[id]}
-                  onChange={(e) => setCouches({ ...couches, [id]: e.target.checked })}
-                  className="h-3 w-3"
-                  style={{ accentColor: c }}
-                />
-                <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: c }} />
-                <span className="text-[11px] text-white/60">{label}</span>
-              </label>
-            ))}
-          </div>
-        </div>
+      {/* Barre d'outils cartographique gauche */}
+      <div className="glass absolute left-4 top-1/2 z-10 flex -translate-y-1/2 flex-col gap-1 rounded-xl p-1.5" data-testid="map-toolbar">
+        {outils.map(({ id, icon: Icon, label }) => (
+          <button
+            key={id}
+            title={label}
+            data-testid={`outil-${id}`}
+            onClick={() => {
+              if (id === "recentrage") {
+                rfRef.current?.fitView({ duration: 600, padding: 0.15 });
+                return;
+              }
+              if (id === "parcours") {
+                setMode("parcours");
+                return;
+              }
+              setOutil(id);
+            }}
+            className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors ${
+              outil === id && id !== "recentrage" && id !== "parcours"
+                ? "bg-[#22D3EE]/15 text-[#22D3EE]"
+                : "text-white/45 hover:bg-white/[0.06] hover:text-white"
+            }`}
+          >
+            <Icon size={16} />
+          </button>
+        ))}
       </div>
 
       {/* Bandeau situation */}
       {mode === "situation" && situation && (
         <div className="glass absolute left-1/2 top-4 z-10 max-w-md -translate-x-1/2 rounded-xl px-4 py-2.5" data-testid="map-situation-banner">
-          <div className="font-code text-[9px] uppercase tracking-[0.25em] text-[#A78BFA]">Situation en cours de compréhension</div>
+          <div className="font-code text-[9px] uppercase tracking-[0.25em] text-[#A78BFA]">Focus — situation</div>
           <div className="text-xs font-semibold text-white">{situation.titre}</div>
+          <div className="mt-0.5 font-code text-[9px] text-white/40">
+            {situation.jumeaux.length} jumeaux · contexte réduit au pertinent
+          </div>
+        </div>
+      )}
+
+      {/* Niveau de zoom sémantique */}
+      {mode === "territoire" && (
+        <div className="glass absolute bottom-4 left-1/2 z-10 -translate-x-1/2 rounded-lg px-3 py-1.5 font-code text-[10px] text-white/50" data-testid="zoom-niveau">
+          Niveau {zoomNiveau} — {NIVEAUX_ZOOM[zoomNiveau]}
+          {zoomNiveau === 1 && " · corridors agrégés"}
+          {zoomNiveau === 3 && " · détail des relations"}
         </div>
       )}
 
       {/* Légende : états des relations */}
-      <div className="glass absolute bottom-4 left-4 z-10 max-w-[420px] rounded-lg px-3 py-2" data-testid="map-legend">
+      <div className="glass absolute bottom-4 left-4 z-10 max-w-[400px] rounded-lg px-3 py-2" data-testid="map-legend">
         <div className="flex flex-wrap gap-x-3 gap-y-1">
           {Object.entries(ETATS_RELATION).map(([k, v]) => (
             <span key={k} className="flex items-center gap-1.5 font-code text-[9px] uppercase tracking-wider text-white/50">
@@ -527,7 +522,62 @@ export default function Atlas() {
         </div>
       </div>
 
-      {/* Panneau latéral */}
+      {/* Barre contextuelle de sélection multiple */}
+      {selection.length >= 2 && (
+        <div className="glass rise absolute bottom-24 left-1/2 z-20 -translate-x-1/2 rounded-xl px-4 py-3" data-testid="selection-bar">
+          <div className="flex items-center gap-3">
+            <span className="font-code text-[11px] font-medium text-white" data-testid="selection-count">
+              {selection.length} jumeaux sélectionnés
+            </span>
+            <span className="font-code text-[10px] text-white/40">{nomsSelection.join(" · ")}</span>
+          </div>
+          <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent("meridian:aurora-ask", { detail: `Analyse ce groupe de jumeaux : ${nomsSelection.join(", ")}` }))}
+              data-testid="sel-aurora-btn"
+              className="rounded-md bg-[#3B82F6] px-2.5 py-1.5 text-[11px] font-semibold text-white transition-colors hover:bg-[#2F6FDB]"
+            >
+              Demander à Aurora
+            </button>
+            <button onClick={() => navigate("/investigations")} data-testid="sel-investigation-btn" className="rounded-md border border-white/15 px-2.5 py-1.5 text-[11px] text-white/70 transition-colors hover:border-[#A78BFA]/50 hover:text-white">
+              Ouvrir une investigation
+            </button>
+            <button
+              onClick={() => setRelFocus((v) => !v)}
+              data-testid="sel-relations-btn"
+              className={`rounded-md border px-2.5 py-1.5 text-[11px] transition-colors ${relFocus ? "border-[#22D3EE]/60 text-[#22D3EE]" : "border-white/15 text-white/70 hover:text-white"}`}
+            >
+              Rechercher des relations
+            </button>
+            <button onClick={() => navigate("/decisions")} data-testid="sel-impact-btn" className="rounded-md border border-white/15 px-2.5 py-1.5 text-[11px] text-white/70 transition-colors hover:border-[#FBBF24]/50 hover:text-white">
+              Analyser un impact
+            </button>
+            <button onClick={() => setMode("parcours")} data-testid="sel-parcours-btn" className="rounded-md border border-white/15 px-2.5 py-1.5 text-[11px] text-white/70 transition-colors hover:text-white">
+              Optimiser le parcours
+            </button>
+            <button
+              onClick={async () => {
+                try {
+                  await api.post("/vues", { nom: `Sélection ${selection.length} jumeaux`, type: "selection", jumeaux: selection });
+                  rechargerVues();
+                  toast.success("Sélection enregistrée comme vue");
+                } catch {
+                  toast.error("Enregistrement impossible");
+                }
+              }}
+              data-testid="sel-enregistrer-btn"
+              className="rounded-md border border-white/15 px-2.5 py-1.5 text-[11px] text-white/70 transition-colors hover:border-[#10B981]/50 hover:text-[#10B981]"
+            >
+              Enregistrer la sélection
+            </button>
+            <button onClick={() => { setSelection([]); setRelFocus(false); }} data-testid="sel-clear-btn" className="rounded-md p-1.5 text-white/40 transition-colors hover:text-white">
+              <X size={14} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Panneau latéral droit */}
       <aside className="glass absolute right-4 top-4 z-10 flex max-h-[calc(100%-6rem)] w-80 flex-col overflow-hidden rounded-xl" data-testid="map-side-panel">
         <div className="flex border-b border-white/[0.08]">
           {[["detail", "Détail"], ["chrono", "Chronologie"]].map(([id, label]) => (
@@ -551,7 +601,7 @@ export default function Atlas() {
               <TwinDetail selected={selected} />
             ) : (
               <p className="text-xs text-white/35">
-                Sélectionnez un jumeau ou une relation pour voir ce que Méridian connaît, vient de découvrir ou cherche encore à comprendre.
+                Sélectionnez un jumeau ou une relation. Le zoom modifie le contenu : Entreprise (corridors) → Domaine → Jumeau (détail des relations) → Relation et preuves ici même.
               </p>
             )
           ) : (
@@ -666,9 +716,9 @@ function TwinDetail({ selected }) {
       </div>
       <p className="mt-2 text-xs leading-relaxed text-white/60">{selected.mission}</p>
       <dl className="mt-4 space-y-2 text-xs">
-        <div className="flex justify-between"><dt className="text-white/40">Propriétaire</dt><dd className="text-white/80">{selected.proprietaire}</dd></div>
+        <div className="flex justify-between"><dt className="text-white/40">Propriétaire</dt><dd className="text-white/80">{selected.proprietaire || "—"}</dd></div>
         <div className="flex justify-between"><dt className="text-white/40">Statut</dt><dd className="font-code text-white/80">{selected.statut}</dd></div>
-        <div className="flex justify-between"><dt className="text-white/40">Autonomie</dt><dd className="font-code text-white/80">{selected.autonomie}</dd></div>
+        <div className="flex justify-between"><dt className="text-white/40">Autonomie</dt><dd className="font-code text-white/80">{selected.autonomie || "—"}</dd></div>
         <div className="flex justify-between"><dt className="text-white/40">Fraîcheur</dt><dd className="font-code text-white/80">{selected.fraicheur}</dd></div>
       </dl>
       <div className="mt-3">
@@ -677,14 +727,16 @@ function TwinDetail({ selected }) {
           <div className="h-full rounded-full" style={{ width: `${selected.couverture}%`, backgroundColor: couleurDomaine(selected.domaine) }} />
         </div>
       </div>
-      <div className="mt-4">
-        <div className="font-code text-[9px] uppercase tracking-[0.2em] text-white/35">Sources</div>
-        <div className="mt-1.5 flex gap-1.5">
-          {Object.entries(selected.sources || {}).map(([k, v]) => (
-            <span key={k} title={k} className={`h-2 w-2 rounded-full ${v ? "bg-[#10B981]" : "bg-white/15"}`} />
-          ))}
+      {selected.sources && (
+        <div className="mt-4">
+          <div className="font-code text-[9px] uppercase tracking-[0.2em] text-white/35">Sources</div>
+          <div className="mt-1.5 flex gap-1.5">
+            {Object.entries(selected.sources).map(([k, v]) => (
+              <span key={k} title={k} className={`h-2 w-2 rounded-full ${v ? "bg-[#10B981]" : "bg-white/15"}`} />
+            ))}
+          </div>
         </div>
-      </div>
+      )}
       <Link to="/jumeaux" className="mt-4 inline-block text-xs text-[#3B82F6] hover:underline" data-testid="map-goto-registry">
         Administrer dans Jumeaux →
       </Link>
