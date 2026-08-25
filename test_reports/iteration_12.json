@@ -1,0 +1,25 @@
+{
+  "summary": "Iter12 — hiérarchie de zoom Mesh → Domaine → Jumeau + navigation validée end-to-end (frontend only, backend skip). 12/12 scénarios OK, 0 erreur console applicative. Focus jumeau (dblclick twin-node-paiements) : twin-focus-ring visible, breadcrumb-jumeau 'Paiements', voisin-fraude/comptes/identite présents, URL ?jumeau=paiements&sel=paiements. Survol voisin-fraude : voisin-hover-fraude affiche 'Fraude · Confirmée · Relation : paiements → fraude · 1 claim(s)'. Transfert focus par clic voisin-fraude : breadcrumb-jumeau='Fraude' + breadcrumb-domaine='Domaine Risque', voisin-paiements présent. Historique nav-precedent/nav-suivant fonctionnels (Paiements ↔ Fraude). Fil d'Ariane : breadcrumb-domaine → domain view avec 10 portes (5 domaines × porte+aperçu), breadcrumb-mesh → 6 régions. Portes navigation : porte-apercu-Risque='Risque · 2 jumeaux accessibles · 1 relation(s) avec Paiement · Cliquer pour explorer', clic porte-Risque → twin-node-fraude visible + porte-Paiement en périphérie + aurora-focus-visuel='Focus visuel : Domaine Risque'. Aurora prompt : avec sélection Paiements + entrée dans Risque via porte → aurora-prompt-focus affiché avec les 3 actions ; Conserver garde la chip ; Retirer la retire ; Ajouter les jumeaux de Risque ajoute fraude+conformite. nav-selection='Revenir à ma sélection (3)' → chips préservées. Distinction click (chip sans focus-ring) vs dblclick (chip+focus-ring) validée. Molette sémantique : wheel(0,400)*6 depuis domain view → retour global (6 régions, breadcrumb-mesh disparu). Non-régression /atlas?jumeau=fraude → focus jumeau restauré ; /atlas?domaine=Paiement&interne=1 → twin-node-paiements visible.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "nav-selection (Revenir à ma sélection)", "issue": "Après clic, l'URL devient '?domaine=Risque&sel=fraude' — les chips (paiements+fraude+conformite) restent bien présentes, mais l'URL ne reflète qu'un seul jumeau (fraude) et reste dans le domaine Risque au lieu de revenir à la vue globale demandée par la spec. Impact fonctionnel faible : chips OK, mais la 'vue globale' spec n'est pas atteinte visuellement (on reste au niveau domaine). À vérifier si voulu (retour au niveau où la sélection a été faite) ou bug.", "affected_selectors": ["nav-selection", "breadcrumb-mesh"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "OPTIONNEL : ajuster nav-selection pour revenir explicitement en vue globale (fitBounds mesh entier) plutôt que de rester dans le domaine courant, si c'est la spec attendue. Sinon documenter le comportement (chips conservées + retour au niveau d'origine)."
+  ],
+  "critical_code_review_comments": [
+    "Atlas.jsx : 1332 lignes (encore au-dessus de 700 lignes, en croissance depuis iter11). Extraction hooks (useZoomSemantique, useFocusJumeau, useHistorique) et composants (Breadcrumb, PromptFocus) recommandée pour maintenabilité."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not tested (skipped per request)", "frontend": "100% (12/12 scénarios critiques)"},
+  "seed_data_creation": "Aucune.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Iter12 refonte complète Atlas hiérarchique validée. Selectors clés : twin-focus-ring, voisin-{twinId}, voisin-hover-{twinId}, breadcrumb-mesh/domaine/jumeau, nav-precedent/suivant/selection, porte-{Domaine}, porte-apercu-{Domaine}, aurora-focus-visuel, aurora-prompt-focus + aurora-prompt-conserver/retirer/voisins. PorteDetail (porte-detail) supprimé — le clic sur porte navigue directement. Verrou navigation ~1s après chaque transition (fitBounds 800ms) : insérer wait 2s avant tests molette. Molette sémantique : wheel(0,400)*6 sort d'un niveau. La sélection simple d'un jumeau via click ajoute (chip) sans changer de niveau, dblclick entre en focus. Portes visibles en domain view : 5 domaines voisins × 2 testids (porte-* et porte-apercu-*).",
+  "rca of the issue": "nav-selection : le handler probablement fait un setDomaineFocus(null) + setFocusJumeau(null) mais ne réinitialise pas le queryparam domaine ni ne remet la vue à l'échelle mesh. Vérifier revenirSelection() dans Atlas.jsx (autour de l'usage nav-selection)."
+}

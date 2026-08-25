@@ -3,6 +3,16 @@
 ## Problème d'origine (résumé)
 Construire Méridian non pas comme un Atlas/graphe centré sur les jumeaux, mais comme un **système de compréhension et de décision pour le SI**, organisé autour de l'objet **Situation**. Repositionnement v2 (utilisateur) : **système qui apprend continuellement la structure et le comportement du SI** — cycle Découverte candidate → Compréhension validée → Décision éclairée → Mémoire du Mesh. L'accueil devient un Observatoire des découvertes (3 colonnes Découvert / À comprendre / À décider), l'Atlas montre l'évolution du savoir (6 états de relations, maturité des domaines, 3 dynamiques temps réel), les investigations couvrent relations/comportements/connaissances/contradictions, chaque décision enrichit la mémoire du Mesh. Code couleur : Découvrir cyan, Comprendre violet, Décider ambre.
 
+## Implémenté (25/06/2026 — v7, hiérarchie complète du zoom Mesh → Domaine → Jumeau)
+- **Règle sélection vs focus** : clic = sélection dans le contexte Aurora (la carte ne change pas de niveau) ; double-clic/molette = prise de focus (navigation dans l'élément).
+- **Niveau jumeau** : double-clic sur un jumeau → vue locale radiale : jumeau centré (anneau `twin-focus-ring`), voisins en portes périphériques (`voisin-{id}`) avec état de la relation ; survol voisin = aperçu relation (nature, échangé, confiance, claims) ; **clic voisin = transfert de focus** (caméra suit, fil d'Ariane actualisé, Aurora conserve l'historique).
+- **Portes = navigation** : clic sur un domaine pointillé → transfert du focus domaine (le corridor s'illumine, la caméra suit) ; survol = aperçu (« Risque · 2 jumeaux accessibles · 1 relation avec Paiement · Cliquer pour explorer ») ; cadenas + « accès limité » si domaine restreint. PorteDetail supprimé (remplacé par aperçu + navigation).
+- **Molette sémantique** : zoom avant ≥ 2.3 sur l'élément survolé → entrée ; zoom arrière < 55 % du zoom d'entrée → remontée d'un niveau (jumeau → domaine → Mesh) ; verrou 1 s après chaque transition ; maxZoom 2.6.
+- **Navigation** : fil d'Ariane 3 niveaux cliquables + historique ←/→ (`nav-precedent`/`nav-suivant`) + « Revenir à ma sélection (N) » (`nav-selection`, retour vue globale + fitBounds sur la sélection) ; MiniMap existante.
+- **Aurora** : « Focus visuel : X » distinct de la sélection analytique ; entrer dans un domaine avec une sélection externe → prompt « Conserver / Retirer / Ajouter les jumeaux de X » (jamais de suppression automatique) ; focusVisuel ajouté au store partagé.
+- **Correctif URL** : `majUrl` cumulatif via ref (les appels multiples dans un même tick ne se perdent plus).
+- Tests : iteration_12 → 12/12 scénarios frontend, 0 erreur console ; point mineur nav-selection corrigé et retesté.
+
 ## Implémenté (25/06/2026 — v6, Aurora interface contextuelle native de l'Atlas)
 - **Store partagé Atlas ↔ Aurora** (`lib/contexte.jsx`) : sélection, domaine courant, commandes carte (focusCarte). Synchronisation bidirectionnelle réelle.
 - **Atlas épuré** : barre « N jumeaux sélectionnés » supprimée, boutons « Demander à Aurora » supprimés, **barre d'actions du domaine supprimée** (analyse validée par l'utilisateur : 5 actions sur 8 redondantes avec Aurora) — « Explorer / Comparer / Enregistrer comme espace / Utiliser comme périmètre » déplacées dans le panneau latéral DomaineDetail ; indicateur « Périmètre de travail » réinstallé en chip carte (avec retrait ×). Lasso = union avec la sélection existante. Clics inhibés quand l'outil lasso est actif.
@@ -99,7 +109,7 @@ Construire Méridian non pas comme un Atlas/graphe centré sur les jumeaux, mais
 ## Backlog priorisé
 - **P0** : — (rien de bloquant).
 - **P1** : valider manuellement le lasso en union sur un vrai navigateur (automate Playwright non concluant, code vérifié).
-- **P2** : scission d'Atlas.jsx (~1130 lignes — hook useDomainNavigation + composant DomainView) ; persistance du contexte Aurora en sessionStorage (perdu au reload complet) ; migration `on_event` → lifespan FastAPI ; durcissement CORS pour la production ; découverte automatique de relations pour les nouveaux jumeaux admis ; vue Parcours éditable ; double-clic sur une porte externe = traverser vers le domaine voisin (suggéré, en attente du retour utilisateur).
+- **P2** : scission d'Atlas.jsx (~1330 lignes — extraction hooks useZoomSemantique/useFocusJumeau/useHistorique + composants Breadcrumb/PromptFocus) ; persistance sessionStorage du contexte Aurora (perdu au reload complet) ; migration `on_event` → lifespan FastAPI ; durcissement CORS pour la production ; découverte automatique de relations pour les nouveaux jumeaux admis ; vue Parcours éditable ; niveaux de zoom Claim → Preuve (drill-down relation, aujourd'hui via panneau latéral).
 - **Si vraie IA un jour** : brancher Aurora sur un LLM via la clé universelle Emergent (budget : Profile → Manage plan → Universal Key).
 
 ## Prochaines tâches

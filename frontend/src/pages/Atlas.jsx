@@ -83,27 +83,35 @@ export default function Atlas() {
   const [couches, setCouches] = useState({ operationnelle: true, connaissance: true, mesh: true });
   const [direct, setDirect] = useState(true);
   const [outil, setOutil] = useState("deplacement");
-  const { selection, setSelection, domaineSel, setDomaineSel, focusCarte, commanderCarte } = useContexte();
+  const { selection, setSelection, domaineSel, setDomaineSel, focusCarte, commanderCarte, setFocusVisuel } = useContexte();
   const [relFocus, setRelFocus] = useState(false);
   const [zoomNiveau, setZoomNiveau] = useState(2);
   const [nomVue, setNomVue] = useState("");
   const [posOverrides, setPosOverrides] = useState({});
   const [domaineInterne, setDomaineInterne] = useState(null);
-  const [porteFocus, setPorteFocus] = useState(null);
+  const [jumeauFocus, setJumeauFocus] = useState(null);
+  const [historique, setHistorique] = useState([{ type: "mesh" }]);
+  const [indexHist, setIndexHist] = useState(0);
   const [perimetreTravail, setPerimetreTravail] = useState(null);
   const [attenteComparaison, setAttenteComparaison] = useState(false);
   const [comparaison, setComparaison] = useState(null);
   const rfRef = useRef(null);
-  const dernierClicRegion = useRef({ label: null, t: 0 });
+  const dernierClicRegion = useRef({ kind: null, t: 0 });
   const restaure = useRef(false);
   const selAvantLasso = useRef([]);
+  const histRef = useRef({ h: [{ type: "mesh" }], i: 0 });
+  const survol = useRef(null);
+  const verrouNav = useRef(0);
+  const zoomEntree = useRef(null);
+  const dernierZ = useRef(null);
 
+  const urlRef = useRef(null);
+  useEffect(() => { urlRef.current = new URLSearchParams(searchParams); }, [searchParams]);
   const majUrl = useCallback((updates) => {
-    setSearchParams((prev) => {
-      const p = new URLSearchParams(prev);
-      Object.entries(updates).forEach(([k, v]) => (v == null ? p.delete(k) : p.set(k, v)));
-      return p;
-    }, { replace: true });
+    const p = new URLSearchParams(urlRef.current || undefined);
+    Object.entries(updates).forEach(([k, v]) => (v == null ? p.delete(k) : p.set(k, v)));
+    urlRef.current = p;
+    setSearchParams(p, { replace: true });
   }, [setSearchParams]);
 
   const domDe = useMemo(() => {
@@ -142,6 +150,11 @@ export default function Atlas() {
       const j = mesh.jumeaux.find((x) => x.id === s && !x.anonyme);
       if (j) { setSelected(j); setOnglet("detail"); }
     }
+    const jf = searchParams.get("jumeau");
+    if (jf) {
+      const j = mesh.jumeaux.find((x) => x.id === jf && !x.anonyme);
+      if (j) { setDomaineInterne(j.domaine); setJumeauFocus(j.id); setSelected(j); setOnglet("detail"); }
+    }
   }, [mesh]);
 
   // Commandes carte envoyées par Aurora (éclairer des relations, isoler un parcours, aller à un domaine)
@@ -155,27 +168,97 @@ export default function Atlas() {
     }
   }, [focusCarte]);
 
-  const entrerDomaine = useCallback((label) => {
-    setDomaineInterne(label);
-    setDomaineSel(label);
-    setPorteFocus(null);
-    setRelFocus(false);
-    majUrl({ domaine: label, interne: "1", sel: null });
-    const reg = mesh?.regions?.find((r) => r.label === label);
-    if (reg && rfRef.current) {
-      const ray = Math.max(reg.w, reg.h) / 2 + 130;
-      const cx = reg.x + reg.w / 2;
-      const cy = reg.y + reg.h / 2;
-      rfRef.current.fitBounds({ x: cx - ray - 120, y: cy - ray - 120, width: 2 * (ray + 120), height: 2 * (ray + 120) }, { duration: 800 });
+  const appliquerNiveau = useCallback((niveau) => {
+    verrouNav.current = Date.now();
+    if (niveau.type === "mesh") {
+      setDomaineInterne(null);
+      setJumeauFocus(null);
+      setFocusVisuel(null);
+      majUrl({ interne: null, jumeau: null });
+      rfRef.current?.fitView({ duration: 800, padding: 0.15 });
+    } else if (niveau.type === "domaine") {
+      setDomaineInterne(niveau.label);
+      setJumeauFocus(null);
+      setDomaineSel(niveau.label);
+      setOnglet("detail");
+      setRelFocus(false);
+      setFocusVisuel({ type: "domaine", label: niveau.label });
+      majUrl({ domaine: niveau.label, interne: "1", jumeau: null, sel: null });
+      const reg = mesh?.regions?.find((r) => r.label === niveau.label);
+      if (reg && rfRef.current) {
+        const ray = Math.max(reg.w, reg.h) / 2 + 130;
+        const cx = reg.x + reg.w / 2;
+        const cy = reg.y + reg.h / 2;
+        rfRef.current.fitBounds({ x: cx - ray - 120, y: cy - ray - 120, width: 2 * (ray + 120), height: 2 * (ray + 120) }, { duration: 800 });
+      }
+    } else if (niveau.type === "jumeau") {
+      const j = mesh?.jumeaux.find((x) => x.id === niveau.id);
+      if (!j) return;
+      const pos = posOverrides[j.id] || j.position;
+      setDomaineInterne(j.domaine);
+      setJumeauFocus(j.id);
+      setSelected(j);
+      setOnglet("detail");
+      setFocusVisuel({ type: "jumeau", label: j.nom, domaine: j.domaine });
+      majUrl({ domaine: j.domaine, interne: "1", jumeau: j.id, sel: j.id });
+      if (rfRef.current) rfRef.current.fitBounds({ x: pos.x - 250, y: pos.y - 210, width: 690, height: 480 }, { duration: 800 });
     }
-  }, [mesh, majUrl]);
+    setTimeout(() => { zoomEntree.current = rfRef.current?.getZoom() ?? null; }, 950);
+  }, [mesh, posOverrides, majUrl, setFocusVisuel]);
+
+  const pousserHist = useCallback((entree) => {
+    const base = histRef.current.h.slice(0, histRef.current.i + 1);
+    histRef.current = { h: [...base, entree], i: base.length };
+    setHistorique(histRef.current.h);
+    setIndexHist(histRef.current.i);
+  }, []);
+
+  const entrerDomaine = useCallback((label) => {
+    appliquerNiveau({ type: "domaine", label });
+    pousserHist({ type: "domaine", label });
+  }, [appliquerNiveau, pousserHist]);
 
   const sortirDomaine = useCallback(() => {
-    setDomaineInterne(null);
-    setPorteFocus(null);
-    majUrl({ interne: null });
-    rfRef.current?.fitView({ duration: 800, padding: 0.15 });
-  }, [majUrl]);
+    appliquerNiveau({ type: "mesh" });
+    pousserHist({ type: "mesh" });
+  }, [appliquerNiveau, pousserHist]);
+
+  const entrerJumeau = useCallback((j) => {
+    appliquerNiveau({ type: "jumeau", id: j.id });
+    pousserHist({ type: "jumeau", id: j.id, label: j.nom, domaine: j.domaine });
+  }, [appliquerNiveau, pousserHist]);
+
+  const sortirJumeau = useCallback(() => {
+    if (!jumeauFocus) return;
+    const j = jumeauPar(jumeauFocus);
+    const dom = j?.domaine || domaineInterne;
+    if (!dom) return;
+    appliquerNiveau({ type: "domaine", label: dom });
+    pousserHist({ type: "domaine", label: dom });
+  }, [jumeauFocus, jumeauPar, domaineInterne, appliquerNiveau, pousserHist]);
+
+  const allerHist = useCallback((idx) => {
+    const entree = histRef.current.h[idx];
+    if (!entree) return;
+    histRef.current = { ...histRef.current, i: idx };
+    setIndexHist(idx);
+    appliquerNiveau(entree);
+  }, [appliquerNiveau]);
+
+  const revenirSelection = useCallback(() => {
+    appliquerNiveau({ type: "mesh" });
+    setDomaineSel(null);
+    majUrl({ domaine: null });
+    pousserHist({ type: "mesh" });
+    setTimeout(() => {
+      const pts = selection.map((id) => { const j = jumeauPar(id); return j ? posOverrides[id] || j.position : null; }).filter(Boolean);
+      if (pts.length && rfRef.current) {
+        const xs = pts.map((p) => p.x);
+        const ys = pts.map((p) => p.y);
+        rfRef.current.fitBounds({ x: Math.min(...xs) - 160, y: Math.min(...ys) - 120, width: Math.max(...xs) - Math.min(...xs) + 350, height: Math.max(...ys) - Math.min(...ys) + 260 }, { duration: 800 });
+      }
+    }, 850);
+  }, [appliquerNiveau, pousserHist, selection, jumeauPar, posOverrides]);
 
   const statsDomaine = useCallback((label) => {
     if (!mesh || !label) return null;
@@ -284,6 +367,47 @@ export default function Atlas() {
       mesh.jumeaux.forEach((j) => { if (!j.anonyme && j.domaine !== perimetreTravail) dims.add(j.id); });
     }
 
+    // Focus jumeau : le jumeau au centre, ses voisins en portes périphériques
+    if (mode === "territoire" && jumeauFocus) {
+      const jf = mesh.jumeaux.find((j) => j.id === jumeauFocus);
+      if (!jf) return { nodes: [], edges: [] };
+      const posF = posOverrides[jf.id] || jf.position;
+      const cFx = posF.x + 95;
+      const cFy = posF.y + 32;
+      const relsV = (mesh.relations || []).filter((r) => r.source === jf.id || r.cible === jf.id);
+      const voisins = [...new Set(relsV.map((r) => (r.source === jf.id ? r.cible : r.source)))]
+        .map((id) => mesh.jumeaux.find((j) => j.id === id))
+        .filter(Boolean);
+      const rayF = Math.max(300, 150 + voisins.length * 26);
+      const nsF = [{
+        id: jf.id, type: "twin", position: posF, initialWidth: 190, initialHeight: 64,
+        data: { jumeau: jf, focusCentral: true, evenements: compteurs[jf.id] || 0, halo: halo === jf.id },
+        draggable: false, selectable: false, zIndex: 5,
+      }];
+      voisins.forEach((v, i) => {
+        const ang = -Math.PI / 2 + (i * 2 * Math.PI) / voisins.length;
+        const rel = relsV.find((r) => r.source === v.id || r.cible === v.id);
+        nsF.push({
+          id: `voisin-${v.id}`, type: "twin",
+          position: { x: cFx + Math.cos(ang) * rayF - 95, y: cFy + Math.sin(ang) * rayF - 35 },
+          initialWidth: 190, initialHeight: 70,
+          data: { jumeau: v, voisinRel: rel },
+          draggable: false, selectable: false, zIndex: 4,
+        });
+      });
+      const esF = relsV.map((r) => {
+        const e = makeEdge(r, 3);
+        return {
+          ...e,
+          source: r.source === jf.id ? jf.id : `voisin-${r.source}`,
+          target: r.cible === jf.id ? jf.id : `voisin-${r.cible}`,
+          animated: true,
+          style: { ...e.style, strokeWidth: 2.4, opacity: 1 },
+        };
+      });
+      return { nodes: nsF, edges: esF };
+    }
+
     // Vue interne d'un domaine : jumeaux du domaine + portes externes
     if (mode === "territoire" && domaineInterne) {
       const internes = mesh.jumeaux.filter((j) => !j.anonyme && j.domaine === domaineInterne);
@@ -319,7 +443,18 @@ export default function Atlas() {
           position: { x: cx + Math.cos(ang) * ray - 90, y: cy + Math.sin(ang) * ray },
           initialWidth: 190,
           initialHeight: 70,
-          data: { jumeau: { id: pid, nom: `Vers ${dom} · ${extCount[dom].n} relation${extCount[dom].n > 1 ? "s" : ""}`, domaine: dom, porte: true, statut: "porte" }, porte: dom, dim: porteFocus && porteFocus !== dom },
+          data: {
+            jumeau: { id: pid, nom: `Vers ${dom} · ${extCount[dom].n} relation${extCount[dom].n > 1 ? "s" : ""}`, domaine: dom, porte: true, statut: "porte" },
+            porte: dom,
+            apercuPorte: {
+              domaine: dom,
+              domaineFocus: domaineInterne,
+              jumeaux: mesh.jumeaux.filter((t) => !t.anonyme && t.domaine === dom).length,
+              restreint: mesh.jumeaux.filter((t) => !t.anonyme && t.domaine === dom).length === 0,
+              relations: extCount[dom].n,
+              decouvertes: statsRegions[dom]?.decouvertes ?? 0,
+            },
+          },
           draggable: false,
           selectable: false,
         });
@@ -346,7 +481,6 @@ export default function Atlas() {
           const pid = porteIds[ext];
           if (!pid) return;
           const e = makeEdge({ ...r, id: `${r.id}-porte`, source: a ? r.source : r.cible, cible: pid }, zoomNiveau);
-          if (porteFocus && porteFocus !== ext) e.style = { ...e.style, opacity: 0.12 };
           esInt.push(e);
         }
       });
@@ -452,7 +586,7 @@ export default function Atlas() {
       }
     }
     return { nodes: ns, edges: es };
-  }, [mesh, mode, situationId, parcoursId, focus, halo, compteurs, selection, relFocus, zoomNiveau, situation, vueActive, posOverrides, domaineSel, domaineInterne, porteFocus, perimetreTravail, domDe, statsRegions, focusCarte]);
+  }, [mesh, mode, situationId, parcoursId, focus, halo, compteurs, selection, relFocus, zoomNiveau, situation, vueActive, posOverrides, domaineSel, domaineInterne, jumeauFocus, perimetreTravail, domDe, statsRegions, focusCarte]);
 
   const eventsVisibles = events.filter((e) => couches[e.dynamique || "operationnelle"]);
   const modeInfo = MODES.find((m) => m.id === mode);
@@ -485,10 +619,34 @@ export default function Atlas() {
         fitView
         fitViewOptions={{ padding: 0.15 }}
         minZoom={0.3}
-        maxZoom={2.2}
+        maxZoom={2.6}
         zoomOnDoubleClick={false}
         onInit={(inst) => { rfRef.current = inst; }}
-        onMove={(_, vp) => setZoomNiveau(vp.zoom < 0.6 ? 1 : vp.zoom > 1.15 ? 3 : 2)}
+        onMove={(_, vp) => {
+          const z = vp.zoom;
+          setZoomNiveau(z < 0.6 ? 1 : z > 1.15 ? 3 : 2);
+          const prev = dernierZ.current;
+          dernierZ.current = z;
+          if (prev == null || Date.now() - verrouNav.current < 1000) return;
+          const ze = zoomEntree.current;
+          // Zoom arrière : remonter d'un niveau dans la hiérarchie
+          if (jumeauFocus && ze && z < prev && z < ze * 0.55) { sortirJumeau(); return; }
+          if (!jumeauFocus && domaineInterne && ze && z < prev && z < ze * 0.55) { sortirDomaine(); return; }
+          // Zoom avant sur l'élément sous le pointeur : entrée progressive
+          if (!jumeauFocus && z > prev && prev < 2.3 && z >= 2.3 && survol.current) {
+            if (survol.current.type === "twin") {
+              const j = jumeauPar(survol.current.id);
+              if (j && !j.anonyme) { entrerJumeau(j); return; }
+            }
+            if (survol.current.type === "region" && !domaineInterne) entrerDomaine(survol.current.label);
+          }
+        }}
+        onNodeMouseEnter={(_, node) => {
+          if (node.type === "region") survol.current = { type: "region", label: node.data.label };
+          else if (node.type === "twin" && !node.data?.porte && !node.data?.voisinRel && !node.data?.jumeau?.anonyme) survol.current = { type: "twin", id: node.data.jumeau.id };
+          else survol.current = null;
+        }}
+        onNodeMouseLeave={() => { survol.current = null; }}
         onNodesChange={onNodesChange}
         panOnDrag={outil === "deplacement"}
         selectionOnDrag={outil === "lasso"}
@@ -504,8 +662,8 @@ export default function Atlas() {
           if (node.type === "region") {
             const label = node.data.label;
             const dc = dernierClicRegion.current;
-            dernierClicRegion.current = { label, t: Date.now() };
-            if (dc.label === label && Date.now() - dc.t < 450 && !domaineInterne) {
+            dernierClicRegion.current = { kind: "region", label, t: Date.now() };
+            if (dc.kind === "region" && dc.label === label && Date.now() - dc.t < 450 && !domaineInterne && !jumeauFocus) {
               entrerDomaine(label);
               return;
             }
@@ -522,11 +680,20 @@ export default function Atlas() {
             return;
           }
           if (node.data?.porte) {
-            setPorteFocus((p) => (p === node.data.porte ? null : node.data.porte));
-            setOnglet("detail");
+            entrerDomaine(node.data.porte);
+            return;
+          }
+          if (node.data?.voisinRel) {
+            if (!node.data.jumeau.anonyme) entrerJumeau(node.data.jumeau);
             return;
           }
           if (node.type !== "twin") return;
+          const dcT = dernierClicRegion.current;
+          dernierClicRegion.current = { kind: "twin", id: node.data.jumeau.id, t: Date.now() };
+          if (dcT.kind === "twin" && dcT.id === node.data.jumeau.id && Date.now() - dcT.t < 450 && !jumeauFocus && !node.data.jumeau.anonyme) {
+            entrerJumeau(node.data.jumeau);
+            return;
+          }
           setSelected(node.data.jumeau);
           setSelectedRelation(null);
           setDomaineSel(null);
@@ -535,7 +702,12 @@ export default function Atlas() {
         }}
         onNodeDoubleClick={(_, node) => {
           if (outil === "lasso") return;
-          if (node.type === "region") entrerDomaine(node.data.label);
+          if (node.type === "region") {
+            if (!domaineInterne && !jumeauFocus) entrerDomaine(node.data.label);
+            return;
+          }
+          if (node.data?.porte) { entrerDomaine(node.data.porte); return; }
+          if (node.type === "twin" && node.data?.jumeau && !node.data.jumeau.anonyme && !jumeauFocus) entrerJumeau(node.data.jumeau);
         }}
         onEdgeClick={(_, edge) => {
           const rel = mesh?.relations.find((r) => r.id === edge.id);
@@ -546,17 +718,26 @@ export default function Atlas() {
         }}
         onPaneClick={(e) => {
           const dc = dernierClicRegion.current;
-          dernierClicRegion.current = { label: null, t: 0 };
-          if (!domaineInterne && dc.label && Date.now() - dc.t < 450 && rfRef.current && mesh) {
+          dernierClicRegion.current = { kind: null, t: 0 };
+          if (Date.now() - dc.t < 450 && rfRef.current && mesh) {
             const p = rfRef.current.screenToFlowPosition({ x: e.clientX, y: e.clientY });
-            const reg = (mesh.regions || []).find((r) => r.label === dc.label);
-            if (reg && p.x >= reg.x && p.x <= reg.x + reg.w && p.y >= reg.y && p.y <= reg.y + reg.h) {
-              entrerDomaine(dc.label);
-              return;
+            if (dc.kind === "twin" && !jumeauFocus) {
+              const j = mesh.jumeaux.find((x) => x.id === dc.id && !x.anonyme);
+              if (j) {
+                const pos = posOverrides[j.id] || j.position;
+                if (Math.abs(p.x - (pos.x + 95)) < 140 && Math.abs(p.y - (pos.y + 32)) < 75) { entrerJumeau(j); return; }
+              }
+            }
+            if (dc.kind === "region" && !domaineInterne && !jumeauFocus) {
+              const reg = (mesh.regions || []).find((r) => r.label === dc.label);
+              if (reg && p.x >= reg.x && p.x <= reg.x + reg.w && p.y >= reg.y && p.y <= reg.y + reg.h) {
+                entrerDomaine(dc.label);
+                return;
+              }
             }
           }
           setSelected(null); setSelectedRelation(null); setDomaineSel(null); setSelection([]); setRelFocus(false); setComparaison(null); setAttenteComparaison(false); commanderCarte(null);
-          majUrl(domaineInterne ? { sel: null } : { sel: null, domaine: null, interne: null });
+          majUrl(domaineInterne ? { sel: null } : { sel: null, domaine: null, interne: null, jumeau: null });
         }}
         nodesDraggable={mode === "territoire"}
         nodesConnectable={false}
@@ -728,18 +909,61 @@ export default function Atlas() {
         </div>
       )}
 
-      {/* Fil d'Ariane domaine */}
-      {domaineInterne && (
+      {/* Fil d'Ariane + historique de navigation */}
+      {(domaineInterne || jumeauFocus) && (
         <div className="glass absolute left-1/2 top-4 z-10 flex -translate-x-1/2 items-center gap-2 rounded-xl px-4 py-2" data-testid="breadcrumb">
+          <button
+            onClick={() => allerHist(indexHist - 1)}
+            disabled={indexHist <= 0}
+            data-testid="nav-precedent"
+            title="Précédent"
+            className="text-xs text-white/50 transition-colors hover:text-white disabled:opacity-25"
+          >
+            ←
+          </button>
+          <button
+            onClick={() => allerHist(indexHist + 1)}
+            disabled={indexHist >= historique.length - 1}
+            data-testid="nav-suivant"
+            title="Suivant"
+            className="text-xs text-white/50 transition-colors hover:text-white disabled:opacity-25"
+          >
+            →
+          </button>
           <button onClick={sortirDomaine} className="text-xs text-white/50 transition-colors hover:text-white" data-testid="breadcrumb-mesh">
             Mesh global
           </button>
-          <span className="text-white/30">›</span>
-          <span className="text-xs font-semibold text-white">Domaine {domaineInterne}</span>
+          {domaineInterne && (
+            <>
+              <span className="text-white/30">›</span>
+              {jumeauFocus ? (
+                <button onClick={sortirJumeau} className="text-xs text-white/50 transition-colors hover:text-white" data-testid="breadcrumb-domaine">
+                  Domaine {domaineInterne}
+                </button>
+              ) : (
+                <span className="text-xs font-semibold text-white">Domaine {domaineInterne}</span>
+              )}
+            </>
+          )}
+          {jumeauFocus && (
+            <>
+              <span className="text-white/30">›</span>
+              <span className="text-xs font-semibold text-white" data-testid="breadcrumb-jumeau">{jumeauPar(jumeauFocus)?.nom}</span>
+            </>
+          )}
           {perimetreTravail === domaineInterne && (
             <span className="rounded-full border border-[#22D3EE]/40 bg-[#22D3EE]/10 px-2 py-0.5 font-code text-[9px] text-[#22D3EE]">
               périmètre de travail (filtre, pas sécurité)
             </span>
+          )}
+          {selection.length > 0 && (
+            <button
+              onClick={revenirSelection}
+              data-testid="nav-selection"
+              className="rounded-md border border-white/15 px-2 py-0.5 font-code text-[9px] text-white/55 transition-colors hover:border-[#3B82F6]/50 hover:text-white"
+            >
+              Revenir à ma sélection ({selection.length})
+            </button>
           )}
         </div>
       )}
@@ -760,9 +984,13 @@ export default function Atlas() {
       {/* Niveau de zoom sémantique */}
       {mode === "territoire" && (
         <div className="glass absolute bottom-4 left-1/2 z-10 -translate-x-1/2 rounded-lg px-3 py-1.5 font-code text-[10px] text-white/50" data-testid="zoom-niveau">
-          Niveau {zoomNiveau} — {NIVEAUX_ZOOM[zoomNiveau]}
-          {zoomNiveau === 1 && " · corridors agrégés"}
-          {zoomNiveau === 3 && " · détail des relations"}
+          {jumeauFocus
+            ? `Focus jumeau — ${jumeauPar(jumeauFocus)?.nom} · zoom arrière pour remonter`
+            : domaineInterne
+              ? `Domaine ${domaineInterne} — zoom arrière pour remonter`
+              : `Niveau ${zoomNiveau} — ${NIVEAUX_ZOOM[zoomNiveau]}`}
+          {!jumeauFocus && !domaineInterne && zoomNiveau === 1 && " · corridors agrégés"}
+          {!jumeauFocus && !domaineInterne && zoomNiveau === 3 && " · détail des relations"}
         </div>
       )}
 
@@ -822,8 +1050,6 @@ export default function Atlas() {
           {onglet === "detail" ? (
             comparaison ? (
               <ComparaisonDomaines a={comparaison.a} b={comparaison.b} statsDomaine={statsDomaine} />
-            ) : porteFocus && domaineInterne ? (
-              <PorteDetail interne={domaineInterne} externe={porteFocus} mesh={mesh} domDe={domDe} />
             ) : selectedRelation ? (
               <RelationDetail rel={selectedRelation} jumeauPar={jumeauPar} onConfirmer={confirmerRelation} />
             ) : selected ? (
@@ -1037,37 +1263,6 @@ function DomaineDetail({ label, stats, actions }) {
           </ul>
         </div>
       )}
-    </div>
-  );
-}
-
-function PorteDetail({ interne, externe, mesh, domDe }) {
-  const relations = (mesh?.relations || []).filter((r) => {
-    const a = domDe[r.source];
-    const b = domDe[r.cible];
-    return (a === interne && b === externe) || (a === externe && b === interne);
-  });
-  return (
-    <div data-testid="porte-detail">
-      <div className="font-code text-[9px] uppercase tracking-[0.2em] text-white/35">Porte externe</div>
-      <h3 className="mt-1.5 font-display text-base font-bold text-white">
-        {interne} ↔ {externe}
-      </h3>
-      <p className="mt-1 font-code text-[10px] text-white/45">{relations.length} relation(s) entre les deux domaines</p>
-      <ul className="mt-3 space-y-2">
-        {relations.map((r) => {
-          const etat = ETATS_RELATION[r.etat] || ETATS_RELATION.confirmee;
-          return (
-            <li key={r.id} className="rounded-md border border-white/[0.07] bg-white/[0.02] px-3 py-2">
-              <div className="flex items-center justify-between gap-2">
-                <span className="font-code text-[10px] text-white/80">{r.source} → {r.cible}</span>
-                <span className="font-code text-[9px]" style={{ color: etat.couleur }}>{etat.label}</span>
-              </div>
-              {r.label && <p className="mt-1 text-[11px] text-white/45">{r.label}</p>}
-            </li>
-          );
-        })}
-      </ul>
     </div>
   );
 }

@@ -43,7 +43,7 @@ export default function AuroraBar() {
   const location = useLocation();
   const navigate = useNavigate();
   const contexte = contexteDepuis(location.pathname);
-  const { selection, domaineSel, retirerJumeau, setDomaineSel, ajouterJumeau, commanderCarte } = useContexte();
+  const { selection, setSelection, domaineSel, retirerJumeau, setDomaineSel, ajouterJumeau, commanderCarte, focusVisuel } = useContexte();
   const { jumeauPar, mesh } = useMesh();
   const [question, setQuestion] = useState("");
   const [reponse, setReponse] = useState(null);
@@ -53,6 +53,8 @@ export default function AuroraBar() {
   const [replie, setReplie] = useState(false);
   const [propsEtat, setPropsEtat] = useState({});
   const [justifOuverte, setJustifOuverte] = useState(null);
+  const [promptFocus, setPromptFocus] = useState(null);
+  const prevFocusRef = useRef(null);
   const inputRef = useRef(null);
 
   const selJumeaux = selection.map(jumeauPar).filter(Boolean);
@@ -63,6 +65,16 @@ export default function AuroraBar() {
     setReponse(null);
     api.get(`/aurora/suggestions?contexte=${contexte}`).then((r) => setSuggestions(r.data)).catch(() => {});
   }, [contexte]);
+
+  // Changer de focus visuel ne supprime jamais la sélection — Aurora propose de l'ajuster
+  useEffect(() => {
+    const f = focusVisuel;
+    if (f?.type === "domaine" && prevFocusRef.current?.label !== f.label) {
+      const hors = selection.map(jumeauPar).filter(Boolean).filter((j) => j.domaine !== f.label);
+      setPromptFocus(hors.length > 0 ? { domaine: f.label, noms: hors.map((j) => j.nom) } : null);
+    }
+    if (f) prevFocusRef.current = f;
+  }, [focusVisuel]);
 
   useEffect(() => {
     const handler = (e) => {
@@ -246,6 +258,41 @@ export default function AuroraBar() {
       )}
 
       <div className="glass pointer-events-auto rounded-xl p-2.5">
+        {focusVisuel && (
+          <div className="mb-1.5 px-1 font-code text-[9px] uppercase tracking-[0.2em] text-white/30" data-testid="aurora-focus-visuel">
+            Focus visuel : {focusVisuel.type === "domaine" ? `Domaine ${focusVisuel.label}` : focusVisuel.label}
+          </div>
+        )}
+        {promptFocus && (
+          <div className="mb-2 rounded-lg border border-[#A78BFA]/25 bg-[#A78BFA]/[0.05] px-3 py-2" data-testid="aurora-prompt-focus">
+            <p className="text-[11px] leading-snug text-white/70">
+              Vous êtes entré dans le domaine <span className="font-semibold text-white">{promptFocus.domaine}</span>. Voulez-vous conserver {promptFocus.noms.join(", ")} dans le contexte ?
+            </p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              <button onClick={() => setPromptFocus(null)} data-testid="aurora-prompt-conserver" className="rounded-md bg-[#A78BFA] px-2 py-1 text-[10px] font-semibold text-black transition-colors hover:bg-[#8B5CF6]">
+                Conserver
+              </button>
+              <button
+                onClick={() => { setSelection(selection.filter((id) => jumeauPar(id)?.domaine === promptFocus.domaine)); setPromptFocus(null); }}
+                data-testid="aurora-prompt-retirer"
+                className="rounded-md border border-white/15 px-2 py-1 text-[10px] text-white/65 transition-colors hover:text-white"
+              >
+                Retirer
+              </button>
+              <button
+                onClick={() => {
+                  const voisins = (mesh?.jumeaux || []).filter((j) => !j.anonyme && j.domaine === promptFocus.domaine).map((j) => j.id);
+                  setSelection([...new Set([...selection, ...voisins])]);
+                  setPromptFocus(null);
+                }}
+                data-testid="aurora-prompt-voisins"
+                className="rounded-md border border-white/15 px-2 py-1 text-[10px] text-white/65 transition-colors hover:border-[#22D3EE]/50 hover:text-[#22D3EE]"
+              >
+                Ajouter les jumeaux de {promptFocus.domaine}
+              </button>
+            </div>
+          </div>
+        )}
         {(selection.length > 0 || domaineSel) && (
           <div className="mb-2 flex flex-wrap items-center gap-1.5 border-b border-white/[0.06] px-1 pb-2" data-testid="aurora-contexte">
             <span className="font-code text-[9px] uppercase tracking-[0.2em] text-white/35">
