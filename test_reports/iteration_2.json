@@ -1,0 +1,22 @@
+{
+  "summary": "Frontend-only regression to confirm the ResizeObserver runtime overlay is suppressed. Navigated Radar (/), System Map (/carte), Investigation (/investigations/sit-latence-paiements), Change Lab (/change-lab), Registry (/registry). On /carte: waited ~10s of live flux, zoomed in/out via ReactFlow Controls, clicked twin-node-paiements (side panel opened), switched modes territoire/situation/parcours, and forced two viewport resizes. Aurora suggestion (aurora-suggestion-0) clicked on Radar. Result: 0 console errors, 0 pageerror events, 0 ResizeObserver messages, and no dev-server error overlay iframe on any page. Filter in /app/frontend/public/index.html works as intended.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Overlay filter in public/index.html is correct (capture=true, stopImmediatePropagation + preventDefault, covers both known ResizeObserver messages). No changes required.",
+    "System Map currently renders 18 ReactFlow nodes (>12) – confirmed as expected demo state per agent-to-agent note (extra Mongo twins). The dashed 'relation non documentée — 82 %' edge is present."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100%"},
+  "seed_data_creation": "",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "ResizeObserver overlay fix verified. Nav testids used: nav-system-map, map-mode-{territoire|situation|parcours}, twin-node-paiements, map-side-panel, aurora-suggestion-0 — all functional. Demo currently exposes 18 twins on the map (accepted).",
+  "rca of the issue": "Root cause: benign 'ResizeObserver loop completed with undelivered notifications' bubbled to window 'error' and was picked up by CRA/webpack-dev-server overlay. Mitigation applied and verified: inline capture-phase window error listener in public/index.html filters the two known ResizeObserver messages via stopImmediatePropagation + preventDefault, preventing the overlay while leaving genuine errors intact."
+}
