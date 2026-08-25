@@ -1,0 +1,122 @@
+{
+  "project_name": "Méridian",
+  "theme": "dark",
+  "archetype": "Swiss Brutalist mixed with Luxury Ops (Mission Control)",
+  "language": "fr",
+  "typography": {
+    "headings": "Chivo",
+    "body": "IBM Plex Sans",
+    "mono": "IBM Plex Mono",
+    "forbidden_fonts": ["Space Grotesk", "Inter", "Roboto"]
+  },
+  "colors": {
+    "background": "#050505",
+    "surface": "#0F0F0F",
+    "surface_elevated": "#1A1A1A",
+    "border": "rgba(255, 255, 255, 0.1)",
+    "primary": "#3B82F6",
+    "success": "#10B981",
+    "warning": "#F59E0B",
+    "danger": "#EF4444",
+    "aurora_ai": "#E2E8F0",
+    "forbidden_colors": ["#1B93A4", "#7351B7"]
+  },
+  "visual_enhancers": {
+    "surfaces": "Use 'Grid Borders' for technical data (Registry, Change Lab). Use 'Crystal Glass' (backdrop-blur-xl bg-black/60 border border-white/10) for Aurora and floating overlays.",
+    "borders": "1px solid rgba(255,255,255,0.08) for structure.",
+    "shadows": "Avoid generic drop shadows. Use glowing halos (box-shadow) for active nodes/twins.",
+    "animations": "Nodes breathe using Framer Motion (scale/opacity pulses). Edges flow using CSS stroke-dashoffset."
+  },
+  "layouts": {
+    "spacing": "Generous spacing (p-6, p-8) around main sections, dense spacing (p-2, gap-2) inside data tables/lists.",
+    "grid_system": "Bento Grid Protocol. High density for dashboards. No centered default layouts."
+  },
+  "spaces": {
+    "radar": {
+      "description": "Page d'accueil. Flux priorisé de situations, not a KPI dashboard.",
+      "layout": "Vertical feed (max-w-3xl) of Situation items.",
+      "components": "Cardless list items with bottom borders, rich metadata. Quick actions on hover: Examiner, Créer, Ignorer, Surveiller."
+    },
+    "investigations": {
+      "description": "Cœur opérationnel.",
+      "layout": "4-zone Bento grid (grid-cols-12).",
+      "zones": {
+        "question": "col-span-12 (Large Chivo heading).",
+        "chronologie": "col-span-4 (Vertical timeline).",
+        "hypotheses": "col-span-8 (Grid of evidence pro/con with trust indicators).",
+        "conclusion": "col-span-12 (Distinct surface for Aurora synthesis and human decision)."
+      }
+    },
+    "change_lab": {
+      "description": "Simulation and impact analysis.",
+      "layout": "Split view. Controls on left, results/table on right.",
+      "components": "Tableau Risque/Effort/Compatibilité, Visual impact radius (mini map)."
+    },
+    "system_map": {
+      "description": "L'Atlas contextuel du Mesh.",
+      "layout": "Full screen absolute canvas with floating UI panels on top.",
+      "features": "Stable domain positioning (mémoire spatiale), significant movement only. Active relation flows, temporary halos for events.",
+      "modes": ["Territoire", "Situation", "Parcours"]
+    },
+    "registry": {
+      "description": "Administration du réseau.",
+      "layout": "Dense data table.",
+      "components": "Shadcn Table, Stepper for 5-step admission (Déclarer -> Connecter -> Observer -> Examiner -> Admettre)."
+    }
+  },
+  "global_components": {
+    "aurora": {
+      "description": "Copilote permanent contextuel.",
+      "type": "Floating Command Bar",
+      "styling": "Glassmorphism, fixed bottom center or floating contextually. Prescripted simulated responses with Twin Contributions and Evidence."
+    },
+    "trust_indicators": {
+      "description": "Four indicators present on all conclusions and hypotheses.",
+      "metrics": ["Confiance (Score %)", "Couverture (Jauge)", "Fraîcheur (Temps)", "Contradictions (Warning Icon)"],
+      "styling": "Dense Shadcn Badges."
+    }
+  },
+  "libraries": {
+    "system_map": "reactflow (Best for stable layouts, custom React nodes, animated SVG edges)",
+    "ui": "shadcn/ui",
+    "icons": "@phosphor-icons/react",
+    "animations": "framer-motion",
+    "toast": "sonner"
+  },
+  "demo_flow": {
+    "name": "Parcours Olympiade (7 actes)",
+    "steps": [
+      "Signal (Radar: dérive latence Paiements)",
+      "Situation créée",
+      "Investigation (hypothèses croisées)",
+      "Découverte (relation non documentée Paiements <-> Support)",
+      "Explication (preuves, incident ServiceNow similaire)",
+      "Décision (action proposée, rayon d'impact Change Lab)",
+      "Révélation (zoom arrière Mesh)"
+    ]
+  },
+  "image_urls": {
+    "background_elements": [
+      {
+        "url": "https://images.pexels.com/photos/30766684/pexels-photo-30766684.png?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "3D geometric network structure. Use at 5-10% opacity as a background texture for the map loading state or empty states."
+      }
+    ]
+  },
+  "instructions_to_main_agent": [
+    "Build the UI entirely in French.",
+    "Do NOT build a generic SaaS dashboard. The aesthetic is 'Ops Intelligence / Mission Control' - dark, technical, dense, and precise.",
+    "System Map must be implemented using 'reactflow'. Nodes must be custom components with pulsing animations for 'vivant' effect.",
+    "Aurora is not a chat page; it is a floating command bar component.",
+    "Pre-load the application with the 'Jeu de données de démonstration riche' (Paiements, Comptes, Fraude, Support) to support the Olympiade demo.",
+    "Never use completely transparent backgrounds behind text; use glassmorphism (backdrop-blur + bg-opacity) for overlays."
+  ],
+  "UNIVERSAL GUIDELINES FOR MAIN AGENT": [
+    "Always include 'data-testid' attributes in kebab-case on all interactive and key informational elements (e.g. data-testid='radar-item-1').",
+    "Do not center-align the app container. Text should flow naturally (left-aligned for data and reading).",
+    "Create depth with z-index hierarchy and glassmorphism (12-24px blur).",
+    "Never apply 'transition: all'. Explicitly animate specific properties.",
+    "Do not use AI emojis for icons. Use the specified icon library (@phosphor-icons/react).",
+    "Ensure all contrast ratios pass accessibility standards, especially in dark mode."
+  ]
+}

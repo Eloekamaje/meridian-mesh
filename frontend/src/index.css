@@ -1,0 +1,106 @@
+@import url('https://fonts.googleapis.com/css2?family=Chivo:wght@500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    :root {
+        --background: 0 0% 2%;
+        --foreground: 0 0% 93%;
+        --card: 0 0% 6%;
+        --card-foreground: 0 0% 93%;
+        --popover: 0 0% 6%;
+        --popover-foreground: 0 0% 93%;
+        --primary: 217 91% 60%;
+        --primary-foreground: 0 0% 100%;
+        --secondary: 0 0% 10%;
+        --secondary-foreground: 0 0% 93%;
+        --muted: 0 0% 10%;
+        --muted-foreground: 0 0% 58%;
+        --accent: 0 0% 12%;
+        --accent-foreground: 0 0% 95%;
+        --destructive: 0 72% 51%;
+        --destructive-foreground: 0 0% 98%;
+        --border: 0 0% 13%;
+        --input: 0 0% 16%;
+        --ring: 217 91% 60%;
+        --radius: 0.5rem;
+    }
+}
+
+@layer base {
+    * {
+        @apply border-border;
+    }
+    body {
+        @apply bg-background text-foreground;
+        font-family: 'IBM Plex Sans', sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+    }
+}
+
+@layer utilities {
+    .font-display {
+        font-family: 'Chivo', sans-serif;
+    }
+    .font-code {
+        font-family: 'IBM Plex Mono', monospace;
+    }
+    .glass {
+        background: rgba(5, 5, 5, 0.72);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+}
+
+@keyframes rise {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.rise { animation: rise 0.5s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
+
+@keyframes pulse-soft {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+}
+.pulse-soft { animation: pulse-soft 2.2s ease-in-out infinite; }
+
+@keyframes halo-out {
+    0% { opacity: 0.9; transform: scale(0.96); }
+    100% { opacity: 0; transform: scale(1.3); }
+}
+.halo-anim { animation: halo-out 1.6s ease-out infinite; }
+
+@keyframes ticker {
+    from { opacity: 0; transform: translateY(-6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.ticker-item { animation: ticker 0.4s ease-out both; }
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.22); }
+
+::selection { background: rgba(59, 130, 246, 0.35); }
+
+.xyflow__controls { box-shadow: none; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; overflow: hidden; }
+.xyflow__controls-button { background: #101010; border-bottom: 1px solid rgba(255, 255, 255, 0.08); fill: #aaa; }
+.xyflow__controls-button:hover { background: #1a1a1a; }
+.xyflow__attribution { background: transparent; color: rgba(255, 255, 255, 0.25); }
+.react-flow__node.selectable:focus { outline: none; }
+
+@layer base {
+    [data-debug-wrapper="true"] { display: contents !important; }
+    [data-debug-wrapper="true"] > * {
+        margin-left: inherit; margin-right: inherit; margin-top: inherit; margin-bottom: inherit;
+        padding-left: inherit; padding-right: inherit; padding-top: inherit; padding-bottom: inherit;
+        column-gap: inherit; row-gap: inherit; gap: inherit;
+        border-left-width: inherit; border-right-width: inherit; border-top-width: inherit; border-bottom-width: inherit;
+        border-left-style: inherit; border-right-style: inherit; border-top-style: inherit; border-bottom-style: inherit;
+        border-left-color: inherit; border-right-color: inherit; border-top-color: inherit; border-bottom-color: inherit;
+    }
+}

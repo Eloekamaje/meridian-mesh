@@ -1,0 +1,24 @@
+{
+  "summary": "Premier test E2E complet de Méridian. Backend : 18/18 tests pytest passent (santé, mesh, situations tri+actions+décision+persistance, change-lab GET/simuler/dossier, aurora scripté+fallback+suggestions, jumeaux liste/création/admettre/examiner, demo/actes, activité). Frontend : tous les data-testid critiques sont présents et fonctionnels — Radar (7 cartes triées, actions au hover, Ignorer persiste après reload, Créer investigation navigue), Investigations (4 zones + 4 hypothèses OK, décision humaine bien enregistrée et persistée — statut « décidée » remplace les boutons par le label 'Décision humaine'), Change Lab (3 scénarios, simuler met à jour le titre, Créer dossier retourne DC-xxxx), System Map (3 modes territoire/situation/parcours, twin-node-paiements ouvre map-side-panel avec onglets détail/chrono, relation pointillée 82 % visible), Registry (13 lignes, Admettre logistique passe au statut actif, Examiner ouvre le dialogue capacités, Commander parcours 5 étapes fonctionne — l'étape 3 attend ~4 s d'animation avant de débloquer Continuer, admission ajoute le jumeau au tableau), Aurora (suggestion radar affiche panel, question hors script retourne le fallback 'connaissances manquantes', action-btn sur /carte navigue vers /carte?focus=paiements), Parcours Olympiade (Acte 1 s'affiche, next navigue à travers les 7 actes jusqu'à /carte?mode=territoire, quit ferme le panneau). Aucun bug bloquant détecté.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py utilise @app.on_event('startup'/'shutdown') déprécié depuis FastAPI 0.109 — préférer le pattern lifespan.",
+    "CORS_ORIGINS='*' + allow_credentials=True est refusé par les navigateurs modernes ; à durcir en production.",
+    "SystemMap.jsx et Registry.jsx approchent 400 lignes — surveiller la croissance pour éviter le seuil des 700 lignes.",
+    "/api/activite retourne un échantillon aléatoire à chaque appel (choix de démo assumé, mais rend les tests non déterministes)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "Le test Registry a créé le jumeau 'TEST Cartes QA' (admis actif) et un jumeau backend 'TEST Remboursements' (actif) via /api/jumeaux. La situation sit-optimisation-facturation a été passée au statut 'ignorée' et sit-latence-paiements au statut 'décidée' avec décision 'Basculer R-118 en mode asynchrone' — ces états sont persistés en Mongo (comportement attendu de la démo).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Les données Mongo conservent l'état des tests précédents (situations décidées/ignorées/surveillées, jumeaux TEST_* actifs). Pour retester la décision humaine, réinitialiser db.situations ou utiliser une autre situation. L'étape 3 du parcours Commander (Observer) nécessite d'attendre ~4-5 s que la progression atteigne 100 % avant que 'etape-suivante-btn' soit débloqué."
+}
