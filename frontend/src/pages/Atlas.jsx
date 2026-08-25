@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, Link } from "react-router-dom";
 import { ReactFlow, Background, BackgroundVariant, Controls } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import ForceGraph3D from "react-force-graph-3d";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useMesh } from "@/lib/mesh";
+import { usePerimetre } from "@/lib/perimetre";
 import TwinNode from "@/components/map/TwinNode";
 import RegionNode from "@/components/map/RegionNode";
 import { couleurDomaine, DOMAINES, NATURES_EVENEMENT, ETATS_RELATION } from "@/lib/domaines";
@@ -15,6 +17,7 @@ const MODES = [
   { id: "territoire", label: "Territoire", question: "Comment le SI est-il organisé ?" },
   { id: "situation", label: "Situation", question: "Que se passe-t-il ici ?" },
   { id: "parcours", label: "Parcours", question: "Comment cette activité fonctionne-t-elle ?" },
+  { id: "orbite", label: "Orbite 3D", question: "Explorer le Mesh en trois dimensions — tourner, zoomer, survoler" },
 ];
 
 const COUCHES = [
@@ -45,7 +48,10 @@ const makeEdge = (r) => ({
   source: r.source,
   target: r.cible,
   animated: !!r.active || r.etat === "validation",
-  style: styleParEtat(r),
+  data: { etat: r.etat, restreinte: !!r.restreinte },
+  style: r.restreinte
+    ? { ...styleParEtat(r), opacity: 0.35, strokeDasharray: "3 5" }
+    : styleParEtat(r),
   label:
     r.etat === "validation"
       ? `validation A2A${r.confiance ? ` — ${r.confiance} %` : ""}`
@@ -59,7 +65,9 @@ const makeEdge = (r) => ({
 export default function Atlas() {
   const [searchParams] = useSearchParams();
   const { mesh, jumeauPar, recharger } = useMesh();
+  const { version, vueActive, rechargerVues } = usePerimetre();
   const [situations, setSituations] = useState([]);
+  const [nomVue, setNomVue] = useState("");
   const modeParam = searchParams.get("mode");
   const [mode, setMode] = useState(modeParam || "territoire");
   const [situationId, setSituationId] = useState(searchParams.get("situation") || "sit-relation-emergente");
@@ -79,9 +87,11 @@ export default function Atlas() {
 
   useEffect(() => {
     api.get("/situations").then((r) => setSituations(r.data)).catch(() => {});
-  }, []);
+  }, [version]);
 
   useEffect(() => {
+    setEvents([]);
+    setCompteurs({});
     let stop = false;
     let timer;
     const tick = async () => {
@@ -102,7 +112,7 @@ export default function Atlas() {
     tick();
     const t = setInterval(tick, 6000);
     return () => { stop = true; clearInterval(t); clearTimeout(timer); };
-  }, []);
+  }, [version]);
 
   const situation = situations.find((s) => s.id === situationId);
 
@@ -121,6 +131,12 @@ export default function Atlas() {
       mesh.jumeaux.forEach((j) => { if (!deps.has(j.id)) dims.add(j.id); });
     } else if (mode === "situation" && implique.length) {
       mesh.jumeaux.forEach((j) => { if (!implique.includes(j.id)) dims.add(j.id); });
+    }
+    if (vueActive?.type === "selection") {
+      mesh.jumeaux.forEach((j) => { if (!j.anonyme && !vueActive.jumeaux.includes(j.id)) dims.add(j.id); });
+    }
+    if (vueActive?.type === "vigilance") {
+      mesh.jumeaux.forEach((j) => { if ((j.couverture ?? 100) >= 70) dims.add(j.id); });
     }
 
     let ns = [];
@@ -161,11 +177,45 @@ export default function Atlas() {
         .filter((r) => !focus || r.source === focus || r.cible === focus)
         .map(makeEdge);
     }
+    if (vueActive?.type === "relations_non_confirmees") {
+      es = es.map((e) =>
+        e.data?.etat === "confirmee" ? { ...e, animated: false, style: { ...e.style, opacity: 0.1 } } : e
+      );
+    }
     return { nodes: ns, edges: es };
-  }, [mesh, mode, situationId, parcoursId, focus, halo, compteurs, selected, situation]);
+  }, [mesh, mode, situationId, parcoursId, focus, halo, compteurs, selected, situation, vueActive]);
 
   const eventsVisibles = events.filter((e) => couches[e.dynamique || "operationnelle"]);
   const modeInfo = MODES.find((m) => m.id === mode);
+
+  const fgRef = useRef();
+  useEffect(() => {
+    if (mode !== "orbite" || !fgRef.current) return;
+    const controls = fgRef.current.controls();
+    controls.autoRotate = true;
+    controls.autoRotateSpeed = 0.55;
+    const t = setTimeout(() => fgRef.current?.cameraPosition({ x: 0, y: 0, z: 240 }), 1500);
+    return () => clearTimeout(t);
+  }, [mode]);
+
+  const graphData = useMemo(() => {
+    if (!mesh) return { nodes: [], links: [] };
+    const ids = new Set(mesh.jumeaux.map((j) => j.id));
+    return {
+      nodes: mesh.jumeaux.map((j) => ({
+        id: j.id,
+        nom: j.nom,
+        domaine: j.domaine,
+        anonyme: !!j.anonyme,
+        couleur: j.anonyme ? "#374151" : couleurDomaine(j.domaine),
+        couverture: j.couverture || 40,
+        jumeau: j,
+      })),
+      links: mesh.relations
+        .filter((r) => ids.has(r.source) && ids.has(r.cible))
+        .map((r) => ({ id: r.id, source: r.source, target: r.cible, etat: r.etat, active: !!r.active, restreinte: !!r.restreinte })),
+    };
+  }, [mesh]);
 
   const confirmerRelation = async (r) => {
     try {
@@ -180,6 +230,49 @@ export default function Atlas() {
 
   return (
     <div className="relative h-full w-full overflow-hidden" data-testid="system-map">
+      {mode === "orbite" ? (
+        <div className="absolute inset-0" data-testid="atlas-orbite">
+          <ForceGraph3D
+            ref={fgRef}
+            graphData={graphData}
+            backgroundColor="#050505"
+            nodeColor={(n) => n.couleur}
+            nodeVal={(n) => (n.anonyme ? 0.6 : Math.max(0.8, (n.couverture || 40) / 22))}
+            nodeOpacity={0.95}
+            nodeResolution={24}
+            nodeLabel={(n) => (n.anonyme ? "Périmètre restreint — identité masquée" : `${n.nom} · ${n.domaine}`)}
+            linkColor={(l) =>
+              l.restreinte
+                ? "rgba(255,255,255,0.14)"
+                : l.etat === "validation"
+                  ? "#A78BFA"
+                  : l.etat === "contestee"
+                    ? "#F87171"
+                    : l.etat === "supposee"
+                      ? "#22D3EE"
+                      : l.etat === "obsolete"
+                        ? "rgba(255,255,255,0.10)"
+                        : l.active
+                          ? "#3B82F6"
+                          : "rgba(255,255,255,0.22)"
+            }
+            linkWidth={(l) => (l.etat === "validation" ? 1.8 : l.active ? 1.4 : 0.8)}
+            linkOpacity={0.55}
+            linkDirectionalParticles={(l) => (l.active || l.etat === "validation" ? 2 : 0)}
+            linkDirectionalParticleWidth={1.6}
+            linkDirectionalParticleSpeed={0.005}
+            onNodeClick={(n) => {
+              if (n.anonyme) return;
+              setSelected(n.jumeau);
+              setSelectedRelation(null);
+              setOnglet("detail");
+            }}
+            onBackgroundClick={() => { setSelected(null); setSelectedRelation(null); }}
+            cooldownTicks={140}
+            enableNodeDrag={false}
+          />
+        </div>
+      ) : (
       <ReactFlow
         key={`${mode}-${situationId}-${parcoursId}-${focus || ""}`}
         nodes={nodes}
@@ -210,6 +303,7 @@ export default function Atlas() {
         <Background variant={BackgroundVariant.Dots} gap={30} size={1} color="rgba(255,255,255,0.06)" />
         <Controls showInteractive={false} position="bottom-right" />
       </ReactFlow>
+      )}
 
       {/* Sélecteur de mode + couches */}
       <div className="glass absolute left-4 top-4 z-10 rounded-xl p-3" data-testid="map-mode-switcher">
@@ -256,6 +350,41 @@ export default function Atlas() {
           <Link to="/atlas" className="mt-2 block px-1 font-code text-[10px] text-[#3B82F6] hover:underline" data-testid="map-clear-focus">
             ← Retirer le filtre « {focus} »
           </Link>
+        )}
+
+        {mesh?.perimetre?.nb_restreints > 0 && (
+          <div className="mt-2 rounded border border-dashed border-white/15 px-2 py-1.5 font-code text-[9px] leading-relaxed text-white/45" data-testid="badge-dependances-restreintes">
+            {mesh.perimetre.nb_restreints} dépendance(s) restreinte(s) — politique « {mesh.perimetre.politique === "anonymisee" ? "dépendance anonymisée" : mesh.perimetre.politique === "resume" ? "résumé autorisé" : "masquage complet"} »
+          </div>
+        )}
+
+        {mode === "territoire" && !mesh?.perimetre?.global && (
+          <div className="mt-2 flex gap-1.5 px-1">
+            <input
+              value={nomVue}
+              onChange={(e) => setNomVue(e.target.value)}
+              placeholder="Nom de la vue…"
+              data-testid="nom-vue-input"
+              className="h-7 w-full rounded border border-white/10 bg-black/50 px-2 text-[11px] text-white placeholder:text-white/25 focus:outline-none"
+            />
+            <button
+              onClick={async () => {
+                if (!nomVue.trim()) return;
+                try {
+                  await api.post("/vues", { nom: nomVue.trim(), type: "selection", jumeaux: (mesh?.jumeaux || []).filter((j) => !j.anonyme).map((j) => j.id) });
+                  setNomVue("");
+                  rechargerVues();
+                  toast.success("Vue enregistrée — disponible dans le sélecteur de périmètre");
+                } catch {
+                  toast.error("Enregistrement impossible");
+                }
+              }}
+              data-testid="enregistrer-vue-btn"
+              className="h-7 shrink-0 rounded border border-white/15 px-2 text-[10px] text-white/60 transition-colors hover:border-white/40 hover:text-white"
+            >
+              Enregistrer
+            </button>
+          </div>
         )}
 
         <div className="mt-3 border-t border-white/[0.08] pt-2.5">

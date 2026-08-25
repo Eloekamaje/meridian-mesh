@@ -4,15 +4,17 @@ import { SealCheck, ArrowRight, GitBranch, CirclesThree } from "@phosphor-icons/
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useMesh } from "@/lib/mesh";
+import { usePerimetre } from "@/lib/perimetre";
 import ChangeLab from "./ChangeLab";
 import { NATURES, ETATS_RELATION, PRIORITES } from "@/lib/domaines";
 
 export default function Decisions() {
   const [data, setData] = useState(null);
   const { jumeauPar, recharger } = useMesh();
+  const { version } = usePerimetre();
 
   const charger = () => api.get("/decisions").then((r) => setData(r.data)).catch(() => {});
-  useEffect(() => { charger(); }, []);
+  useEffect(() => { charger(); }, [version]);
 
   const confirmer = async (r) => {
     try {

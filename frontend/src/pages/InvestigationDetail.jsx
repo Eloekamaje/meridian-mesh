@@ -4,6 +4,7 @@ import { ArrowLeft, CheckCircle, XCircle, Flask, Lightning, SealCheck, Prohibit 
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useMesh } from "@/lib/mesh";
+import { usePerimetre } from "@/lib/perimetre";
 import TrustBadges from "@/components/TrustBadges";
 import { couleurDomaine, couleurConfiance, NATURES_EVENEMENT, NATURES, VERBES } from "@/lib/domaines";
 
@@ -11,12 +12,15 @@ export default function InvestigationDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { jumeauPar } = useMesh();
+  const { version } = usePerimetre();
   const [sit, setSit] = useState(null);
   const [erreur, setErreur] = useState(false);
 
   useEffect(() => {
+    setErreur(false);
+    setSit(null);
     api.get(`/situations/${id}`).then((r) => setSit(r.data)).catch(() => setErreur(true));
-  }, [id]);
+  }, [id, version]);
 
   if (erreur) {
     return (
@@ -170,9 +174,23 @@ export default function InvestigationDetail() {
         </section>
       )}
 
+      {/* Périmètre de l'investigation : collaboratif et temporaire */}
+      {sit.perimetre_investigation && (
+        <section className="rise mt-8 rounded-xl border border-white/[0.08] bg-white/[0.02] p-4" data-testid="perimetre-investigation" style={{ animationDelay: "100ms" }}>
+          <div className="font-code text-[10px] uppercase tracking-[0.2em] text-white/40">Périmètre de l'investigation — collaboratif et temporaire</div>
+          <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 text-xs md:grid-cols-3">
+            <div><span className="text-white/35">Propriétaire</span><p className="mt-0.5 text-white/80">{sit.perimetre_investigation.proprietaire}</p></div>
+            <div><span className="text-white/35">Participants</span><p className="mt-0.5 text-white/80">{sit.perimetre_investigation.participants.join(" · ")}</p></div>
+            <div><span className="text-white/35">Jumeaux autorisés</span><p className="mt-0.5 text-white/80">{sit.perimetre_investigation.jumeaux_autorises.join(" · ")}</p></div>
+            <div><span className="text-white/35">Confidentialité</span><p className="mt-0.5 font-code text-[#F59E0B]">{sit.perimetre_investigation.confidentialite}</p></div>
+            <div><span className="text-white/35">Expiration des droits</span><p className="mt-0.5 font-code text-white/70">{sit.perimetre_investigation.expire}</p></div>
+            <div><span className="text-white/35">Export</span><p className="mt-0.5 font-code text-white/70">{sit.perimetre_investigation.export}</p></div>
+          </div>
+        </section>
+      )}
+
       <div className="mt-10 grid grid-cols-12 gap-8">
-        {/* Zone 2 — La chronologie */}
-        <section className="rise col-span-12 lg:col-span-4" data-testid="zone-chronologie" style={{ animationDelay: "80ms" }}>
+        {/* Zone 2 — La chronologie */}        <section className="rise col-span-12 lg:col-span-4" data-testid="zone-chronologie" style={{ animationDelay: "80ms" }}>
           <h2 className="font-code text-[10px] uppercase tracking-[0.3em] text-white/45">Chronologie</h2>
           <ol className="mt-5 space-y-0">
             {(sit.chronologie || []).map((e, i) => {

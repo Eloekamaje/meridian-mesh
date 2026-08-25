@@ -101,6 +101,7 @@ SITUATIONS = [
         ],
         "synthese": "Le ralentissement semble provenir d'une augmentation des contrôles synchrones effectués par Fraude depuis la modification de la règle R-118 à 13 h 58. La relation émergente avec Support amplifie l'impact ressenti par les clients. Un incident similaire (INC-4471) avait été résolu en rendant le contrôle R-118 asynchrone.",
         "actions_proposees": ["Basculer le contrôle R-118 en mode asynchrone", "Créer un dossier de changement dans Change Lab", "Surveiller la relation Paiements ↔ Support"],
+        "perimetre_investigation": {"proprietaire": "L. Marchand (Équipe Paiements)", "participants": ["Équipe Paiements", "Équipe Risque", "Équipe Support"], "jumeaux_autorises": ["Paiements", "Fraude", "Comptes", "Support"], "confidentialite": "restreinte", "expire": "7 jours", "export": "preuves non exportables"},
         "decision": None,
     },
     {
@@ -139,6 +140,7 @@ SITUATIONS = [
         "preuves": [{"source": "Splunk", "detail": "23 périodes concordantes sur 28 observées"}, {"source": "ServiceNow", "detail": "INC-4471 : même signature en mars 2026"}],
         "synthese": "La corrélation est forte mais le mécanisme reste à confirmer : aucune relation n'est documentée entre Paiements et Support. La validation A2A est en cours entre les deux jumeaux.",
         "actions_proposees": ["Confirmer la relation", "Surveiller la relation"],
+        "perimetre_investigation": {"proprietaire": "L. Marchand (Équipe Paiements)", "participants": ["Équipe Paiements", "Équipe Support"], "jumeaux_autorises": ["Paiements", "Support"], "confidentialite": "standard", "expire": "14 jours", "export": "résumé exportable, preuves restreintes"},
         "decision": None,
     },
     {
@@ -566,4 +568,26 @@ DEMO_ACTES = [
     {"acte": 1, "titre": "Découvrir", "route": "/atlas", "texte": "Méridian observe Comptes, Paiements, Fraude et Support en continu. Une relation non déclarée entre Paiements et Support apparaît progressivement dans l'Atlas — en validation A2A, confiance 82 %."},
     {"acte": 2, "titre": "Comprendre", "route": "/investigations/sit-relation-emergente", "texte": "Aurora ouvre une investigation de relation : elle croise les comportements, consulte les incidents historiques, mobilise les jumeaux et expose preuves et contradictions."},
     {"acte": 3, "titre": "Décider", "route": "/decisions", "texte": "Méridian propose : surveillance renforcée, confirmation de la relation, enrichissement de la cartographie. La décision humaine enrichit la mémoire du Mesh — et le cycle recommence."},
+]
+
+# ---------- Périmètres : personas, espaces, vues ----------
+
+PERSONAS = [
+    {"id": "architecte", "nom": "A. Rousseau", "role": "Architecture d'entreprise", "espaces": ["mesh-global", "espace-architecture", "espace-paiements", "espace-support", "espace-risque"], "par_defaut": "mesh-global"},
+    {"id": "paiements", "nom": "L. Marchand", "role": "Équipe Paiements", "espaces": ["espace-paiements"], "par_defaut": "espace-paiements"},
+    {"id": "support", "nom": "J. Morel", "role": "Équipe Support", "espaces": ["espace-support"], "par_defaut": "espace-support"},
+]
+
+ESPACES = [
+    {"id": "mesh-global", "label": "Mesh global", "description": "Connaissance complète du SI — réservé aux rôles autorisés", "global": True, "politique_dependances": "masquage", "jumeaux": "*"},
+    {"id": "espace-architecture", "label": "Architecture d'entreprise", "description": "Relations globales, sans preuves sensibles", "global": False, "politique_dependances": "resume", "jumeaux": {"*": "relations"}},
+    {"id": "espace-paiements", "label": "Équipe Paiements", "description": "Périmètre habituel de l'équipe Paiements", "global": False, "politique_dependances": "resume", "jumeaux": {"paiements": "complet", "facturation": "complet", "comptes": "relations"}},
+    {"id": "espace-support", "label": "Équipe Support", "description": "Périmètre habituel de l'équipe Support", "global": False, "politique_dependances": "anonymisee", "jumeaux": {"support": "complet", "notifications": "complet", "paiements": "existence"}},
+    {"id": "espace-risque", "label": "Domaine Risque", "description": "Périmètre très sensible", "global": False, "politique_dependances": "masquage", "jumeaux": {"fraude": "complet", "conformite": "complet"}},
+]
+
+VUES = [
+    {"id": "vue-critiques", "persona": "paiements", "nom": "Mes applications critiques", "type": "selection", "jumeaux": ["paiements", "facturation", "comptes"]},
+    {"id": "vue-relations-nc", "persona": "paiements", "nom": "Relations non confirmées", "type": "relations_non_confirmees", "jumeaux": []},
+    {"id": "vue-vigilance", "persona": "architecte", "nom": "Jumeaux en vigilance", "type": "vigilance", "jumeaux": []},
 ]

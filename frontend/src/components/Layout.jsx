@@ -12,6 +12,7 @@ import { useMesh } from "@/lib/mesh";
 import { useDemo } from "@/lib/demo";
 import AuroraBar from "./AuroraBar";
 import DemoTour from "./DemoTour";
+import Topbar from "./Topbar";
 
 const NAV = [
   { to: "/", label: "Aujourd'hui", icon: Sun, end: true, testid: "nav-aujourdhui" },
@@ -88,8 +89,11 @@ export default function Layout() {
         </div>
       </aside>
 
-      <main className="relative flex-1 overflow-hidden">
-        <Outlet />
+      <main className="relative flex flex-1 flex-col overflow-hidden">
+        <Topbar />
+        <div className="relative flex-1 overflow-hidden">
+          <Outlet />
+        </div>
       </main>
 
       <AuroraBar />

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Database, CheckCircle, Clock, Users } from "@phosphor-icons/react";
+import { Database, CheckCircle, Clock, Users, Scroll } from "@phosphor-icons/react";
 import api from "@/lib/api";
+import { usePerimetre } from "@/lib/perimetre";
 import { couleurDomaine } from "@/lib/domaines";
 
 const SOURCES = [
@@ -13,7 +14,12 @@ const SOURCES = [
 
 export default function Administration() {
   const [jumeaux, setJumeaux] = useState([]);
-  useEffect(() => { api.get("/jumeaux").then((r) => setJumeaux(r.data)).catch(() => {}); }, []);
+  const [journal, setJournal] = useState([]);
+  const { version } = usePerimetre();
+  useEffect(() => {
+    api.get("/jumeaux").then((r) => setJumeaux(r.data)).catch(() => {});
+    api.get("/journal").then((r) => setJournal(r.data)).catch(() => {});
+  }, [version]);
 
   const couvertureMoy = jumeaux.length ? Math.round(jumeaux.reduce((a, j) => a + (j.couverture || 0), 0) / jumeaux.length) : 0;
   const parStatut = jumeaux.reduce((acc, j) => ({ ...acc, [j.statut]: (acc[j.statut] || 0) + 1 }), {});
@@ -113,6 +119,43 @@ export default function Administration() {
               </li>
             ))}
           </ul>
+        </section>
+
+        <section className="rise col-span-12 rounded-xl border border-white/[0.08] bg-white/[0.02] p-5" style={{ animationDelay: "300ms" }} data-testid="admin-journal">
+          <h2 className="flex items-center gap-2 font-code text-[10px] uppercase tracking-[0.25em] text-white/45">
+            <Scroll size={14} className="text-[#22D3EE]" /> Journal d'accès et de décisions
+          </h2>
+          <div className="mt-4 overflow-hidden rounded-lg border border-white/[0.06]">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-white/[0.03] font-code text-[9px] uppercase tracking-wider text-white/35">
+                  <th className="px-3 py-2 text-left font-medium">Quand</th>
+                  <th className="px-3 py-2 text-left font-medium">Identité</th>
+                  <th className="px-3 py-2 text-left font-medium">Espace</th>
+                  <th className="px-3 py-2 text-left font-medium">Action</th>
+                  <th className="px-3 py-2 text-left font-medium">Cible</th>
+                  <th className="px-3 py-2 text-left font-medium">Détail</th>
+                </tr>
+              </thead>
+              <tbody>
+                {journal.map((e, i) => (
+                  <tr key={i} className="border-t border-white/[0.05]" data-testid={`journal-entry-${i}`}>
+                    <td className="whitespace-nowrap px-3 py-2 font-code text-[10px] text-white/45">
+                      {new Date(e.quand).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                    </td>
+                    <td className="px-3 py-2 font-code text-[10px] text-white/70">{e.persona}</td>
+                    <td className="px-3 py-2 font-code text-[10px] text-white/45">{e.espace || "—"}</td>
+                    <td className="px-3 py-2 text-white/75">{e.action}</td>
+                    <td className="px-3 py-2 font-code text-[10px] text-white/50">{e.cible || "—"}</td>
+                    <td className="max-w-[280px] truncate px-3 py-2 text-white/45">{e.detail || "—"}</td>
+                  </tr>
+                ))}
+                {journal.length === 0 && (
+                  <tr><td colSpan={6} className="px-3 py-6 text-center text-white/30">Aucune entrée pour l'instant.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </section>
       </div>
     </div>

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { ArrowRight, Question } from "@phosphor-icons/react";
 import api from "@/lib/api";
 import { useMesh } from "@/lib/mesh";
+import { usePerimetre } from "@/lib/perimetre";
 import { couleurDomaine, couleurConfiance, NATURES, VERBES } from "@/lib/domaines";
 
 const FILTRES = ["tous", "relation", "comportement", "connaissance", "contradiction", "incident", "changement"];
@@ -11,12 +12,13 @@ export default function Investigations() {
   const [situations, setSituations] = useState([]);
   const [filtre, setFiltre] = useState("tous");
   const { jumeauPar } = useMesh();
+  const { version } = usePerimetre();
 
   useEffect(() => {
     api.get("/situations").then((r) => {
       setSituations(r.data.filter((s) => !["ignorée", "classée"].includes(s.statut)));
     }).catch(() => {});
-  }, []);
+  }, [version]);
 
   const visibles = situations.filter((s) => filtre === "tous" || s.nature === filtre);
 

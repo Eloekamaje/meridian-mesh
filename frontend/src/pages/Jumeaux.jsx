@@ -3,6 +3,7 @@ import { Plus, SealCheck, Eye, ArrowLeft, ArrowRight } from "@phosphor-icons/rea
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useMesh } from "@/lib/mesh";
+import { usePerimetre } from "@/lib/perimetre";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { couleurDomaine } from "@/lib/domaines";
 
@@ -34,11 +35,12 @@ const STATUTS = {
 export default function Jumeaux() {
   const [jumeaux, setJumeaux] = useState([]);
   const { recharger } = useMesh();
+  const { version } = usePerimetre();
   const [dialogue, setDialogue] = useState(false);
   const [examen, setExamen] = useState(null);
 
   const charger = () => api.get("/jumeaux").then((r) => setJumeaux(r.data)).catch(() => {});
-  useEffect(() => { charger(); }, []);
+  useEffect(() => { charger(); }, [version]);
 
   const admettre = async (j) => {
     try {
@@ -134,7 +136,7 @@ export default function Jumeaux() {
                       <button onClick={() => examiner(j)} data-testid={`examiner-${j.id}`} className="flex items-center gap-1 rounded border border-white/15 px-2 py-1 text-[11px] text-white/60 transition-colors hover:border-white/40 hover:text-white">
                         <Eye size={12} /> Examiner
                       </button>
-                      {j.statut !== "actif" && (
+                      {j.statut !== "actif" && j.niveau === "complet" && (
                         <button onClick={() => admettre(j)} data-testid={`admettre-${j.id}`} className="flex items-center gap-1 rounded bg-[#FBBF24] px-2 py-1 text-[11px] font-semibold text-black transition-colors hover:bg-[#E5A910]">
                           <SealCheck size={12} /> Admettre
                         </button>

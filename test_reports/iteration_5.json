@@ -1,0 +1,30 @@
+{
+  "summary": "Tests v3 (périmètres) complets — 20/20 backend + validation UI. Créé /app/backend/tests/backend_test_perimetres.py couvrant la matrice de refus (personas × espaces × niveaux) : personas/espaces, /perimetre, /mesh filtré côté serveur (paiements=résumé autorisé avec 'Application restreinte — domaine X', support=anonymisée sans domaine, risque=masquage total), /situations filtrées (sit-connaissance-support 404 en paiements, restreinte:true sur sit-latence-paiements), Aurora hors_perimetre:true pour question mentionnant Support en persona paiements, suggestions filtrées, guards : POST /relations/r6/confirmer OK en espace-support (complet sur cible), /relations/r12/confirmer 403 en espace-paiements, /jumeaux/conformite/admettre 404 en paiements et 200 en architecte/mesh-global, /activite pool restreint aux 3 jumeaux, /decisions sans r12/r14 en paiements, CRUD /vues (2 vues seed + création/suppression), /journal accessible. Toutes les mutations sont restaurées via pymongo. UI vérifiée sur URL publique : topbar (selecteur-perimetre + selecteur-persona) présents partout, badge 'Vérité complète du Mesh' en mesh-global, 'Filtré côté serveur · 3 jumeaux · résumé autorisé' en persona paiements, mon-espace-strip 'Mon espace · Équipe Paiements · 3 jumeaux autorisés' sur Aujourd'hui, badge-dependances-restreintes présent sur Atlas, page /jumeaux → 3 lignes en paiements / 12 en architecte, /investigations/sit-connaissance-support → 'Situation introuvable' (404), /investigations/sit-latence-paiements → section perimetre-investigation (L. Marchand, participants, jumeaux autorisés, expiration), /administration → admin-journal peuplé, sélection 'Vue — Mes applications critiques' fonctionne, création+persistence+toast d'une vue via nom-vue-input + enregistrer-vue-btn OK.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Topbar (dev mode uniquement)", "issues": ["Avertissements React de hydration 'span cannot be a child of option' émis par l'instrumentation d'aperçu Emergent (attributs x-file-name/x-source-* injectés dans les <option>). Non bloquant, absent en build de production."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test_perimetres.py",
+    "/app/test_reports/pytest/perimetres.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py (571 lignes) reste en dessous du seuil 700 mais s'en approche — un split en modules (perimetre.py / aurora.py / crud.py) serait bienvenu.",
+    "Aurora détection hors-périmètre repose sur match par nom de jumeau > 4 caractères dans la question. Suffisant pour la démo mais fragile aux paraphrases (« équipe support », « domaine risque »). OK pour l'usage prescripté actuel.",
+    "seed_data.py (593 lignes) — envisager séparation SEED/PERSONAS/ESPACES pour lisibilité si nouvelles personas."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test_perimetres.py"
+  ],
+  "success_rate": {"backend": "100% (20/20)", "frontend": "100%"},
+  "seed_data_creation": "Aucune persistée. Toutes les créations de test (vue TEST_playwright_vue, confirmation r6, admission conformite) ont été restaurées via pymongo.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "SEED_VERSION 3. Backend test v2 (backend_test.py, 23 tests) + backend test v3 périmètres (backend_test_perimetres.py, 20 tests) fonctionnent tous. La matrice de refus est le cœur des tests v3. En-têtes X-Persona/X-Espace pilotent tout. Personas : architecte (mesh-global par défaut, tous espaces), paiements (espace-paiements seul), support (espace-support seul). Politiques : masquage (rien), anonymisee ('Dépendance externe restreinte'), resume ('Application restreinte — domaine X'). Guards clés : confirmer relation → complet sur une extrémité sinon 403 ; admettre → complet sinon 404 (si pas dans aut) ou 403 ; examiner → preuves. Restauration OBLIGATOIRE pour r6 (etat validation, pull 'Validation humaine' de confirmee_par) et conformite (statut 'en construction', autonomie 'aucune'). Le fetch UI est déclenché par version bumped dans PerimetreProvider quand persona/cible change (invalidation des caches SWR-like).",
+  "rca of the issue": "N/A — aucune régression détectée."
+}

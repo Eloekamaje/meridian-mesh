@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "@/components/ui/sonner";
 import { DemoProvider } from "@/lib/demo";
 import { MeshProvider } from "@/lib/mesh";
+import { PerimetreProvider } from "@/lib/perimetre";
 import Layout from "@/components/Layout";
 import Aujourdhui from "@/pages/Aujourdhui";
 import Atlas from "@/pages/Atlas";
@@ -15,8 +16,9 @@ import Administration from "@/pages/Administration";
 function App() {
   return (
     <BrowserRouter>
-      <DemoProvider>
-        <MeshProvider>
+      <PerimetreProvider>
+        <DemoProvider>
+          <MeshProvider>
           <Routes>
             <Route element={<Layout />}>
               <Route path="/" element={<Aujourdhui />} />
@@ -32,8 +34,9 @@ function App() {
             </Route>
           </Routes>
           <Toaster theme="dark" position="top-right" />
-        </MeshProvider>
-      </DemoProvider>
+          </MeshProvider>
+        </DemoProvider>
+      </PerimetreProvider>
     </BrowserRouter>
   );
 }

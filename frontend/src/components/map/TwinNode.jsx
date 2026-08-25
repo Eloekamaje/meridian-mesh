@@ -1,8 +1,27 @@
 import { Handle, Position } from "@xyflow/react";
+import { LockSimple } from "@phosphor-icons/react";
 import { couleurDomaine } from "@/lib/domaines";
 
 export default function TwinNode({ data, selected }) {
   const j = data.jumeau;
+
+  if (j.anonyme) {
+    return (
+      <div
+        className={`w-[180px] rounded-lg border border-dashed border-white/20 bg-white/[0.02] px-3 py-2.5 transition-opacity duration-500 ${data.dim ? "opacity-20" : "opacity-80"}`}
+        data-testid={`twin-node-${j.id}`}
+      >
+        <Handle type="target" position={Position.Left} className="!h-2 !w-2 !border-0 !bg-transparent" />
+        <div className="flex items-center gap-2">
+          <LockSimple size={13} className="shrink-0 text-white/35" />
+          <span className="truncate font-code text-[10px] text-white/45">{j.nom}</span>
+        </div>
+        <div className="mt-1 font-code text-[9px] uppercase tracking-[0.18em] text-white/25">périmètre restreint</div>
+        <Handle type="source" position={Position.Right} className="!h-2 !w-2 !border-0 !bg-transparent" />
+      </div>
+    );
+  }
+
   const couleur = couleurDomaine(j.domaine);
   const degrade = j.sante === "dégradé";
   const actif = j.statut === "actif";

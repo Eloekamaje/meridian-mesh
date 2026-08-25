@@ -4,6 +4,7 @@ import { X } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useMesh } from "@/lib/mesh";
+import { usePerimetre } from "@/lib/perimetre";
 import { VERBES, NATURES, couleurDomaine } from "@/lib/domaines";
 
 const COLONNES = ["decouvert", "a_comprendre", "a_decider"];
@@ -11,6 +12,7 @@ const COLONNES = ["decouvert", "a_comprendre", "a_decider"];
 export default function Aujourdhui() {
   const navigate = useNavigate();
   const { jumeauPar } = useMesh();
+  const { version, info, vueActive } = usePerimetre();
   const [situations, setSituations] = useState([]);
   const [activite, setActivite] = useState([]);
   const [tickIdx, setTickIdx] = useState(0);
@@ -20,9 +22,10 @@ export default function Aujourdhui() {
       .get("/situations")
       .then((r) => setSituations(r.data.filter((s) => !["ignorée", "classée"].includes(s.statut))))
       .catch(() => {});
-  }, []);
+  }, [version]);
 
   useEffect(() => {
+    setActivite([]);
     let stop = false;
     const tick = async () => {
       try {
@@ -34,7 +37,7 @@ export default function Aujourdhui() {
     const t = setInterval(tick, 8000);
     const rot = setInterval(() => setTickIdx((i) => i + 1), 4000);
     return () => { stop = true; clearInterval(t); clearInterval(rot); };
-  }, []);
+  }, [version]);
 
   const ignorer = async (e, sit) => {
     e.stopPropagation();
@@ -58,6 +61,27 @@ export default function Aujourdhui() {
         <p className="mt-2 text-base text-white/50">
           Ce que Méridian a découvert, compris ou soumis à décision depuis votre dernière visite.
         </p>
+        {info && (
+          <div className="mt-3 flex flex-wrap items-center gap-2" data-testid="mon-espace-strip">
+            <span className="font-code text-[10px] uppercase tracking-[0.2em] text-white/35">
+              {info.espace.global ? "Mesh global" : `Mon espace · ${info.espace.label}`}
+            </span>
+            <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 font-code text-[10px] text-white/55">
+              {info.nb_autorises} jumeaux autorisés
+            </span>
+            <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 font-code text-[10px] text-white/55">
+              {situations.length} découvertes pertinentes
+            </span>
+            <span className="rounded-full border border-[#FBBF24]/30 bg-[#FBBF24]/[0.06] px-2 py-0.5 font-code text-[10px] text-[#FBBF24]">
+              {situations.filter((s) => s.verbe === "a_decider").length} décisions en attente
+            </span>
+            {vueActive && (
+              <span className="rounded-full border border-[#22D3EE]/30 bg-[#22D3EE]/[0.06] px-2 py-0.5 font-code text-[10px] text-[#22D3EE]">
+                Vue « {vueActive.nom} » — filtre personnel, aucun droit supplémentaire
+              </span>
+            )}
+          </div>
+        )}
         {live && (
           <div className="mt-4 flex items-center gap-2.5 font-code text-[11px]" data-testid="live-ticker">
             <span className="pulse-soft h-1.5 w-1.5 rounded-full bg-[#10B981]" />
@@ -73,7 +97,10 @@ export default function Aujourdhui() {
       <div className="mt-8 grid grid-cols-1 gap-6 xl:grid-cols-3" data-testid="observatoire-colonnes">
         {COLONNES.map((col, ci) => {
           const v = VERBES[col];
-          const items = situations.filter((s) => s.verbe === col);
+          let items = situations.filter((s) => s.verbe === col);
+          if (vueActive?.type === "selection") {
+            items = items.filter((s) => (s.jumeaux || []).some((j) => vueActive.jumeaux.includes(j)));
+          }
           return (
             <section
               key={col}

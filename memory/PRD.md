@@ -3,7 +3,20 @@
 ## Problème d'origine (résumé)
 Construire Méridian non pas comme un Atlas/graphe centré sur les jumeaux, mais comme un **système de compréhension et de décision pour le SI**, organisé autour de l'objet **Situation**. Repositionnement v2 (utilisateur) : **système qui apprend continuellement la structure et le comportement du SI** — cycle Découverte candidate → Compréhension validée → Décision éclairée → Mémoire du Mesh. L'accueil devient un Observatoire des découvertes (3 colonnes Découvert / À comprendre / À décider), l'Atlas montre l'évolution du savoir (6 états de relations, maturité des domaines, 3 dynamiques temps réel), les investigations couvrent relations/comportements/connaissances/contradictions, chaque décision enrichit la mémoire du Mesh. Code couleur : Découvrir cyan, Comprendre violet, Décider ambre.
 
-## Implémenté (24/06/2026 — v2, repositionnement « système qui apprend »)
+## Implémenté (24/06/2026 — v3.1, Atlas « Orbite 3D »)
+- Mode optionnel **Orbite 3D** dans l'Atlas (`react-force-graph-3d` + three.js) : rotation libre sur tous les axes (drag), zoom/dézoom (molette), translation, auto-rotation lente ; sphères colorées par domaine (taille ∝ couverture), liens colorés par état (validation A2A violet, contestée rouge, supposée cyan), particules directionnelles sur les flux actifs ; hover = identité du jumeau (masquée pour les dépendances restreintes) ; clic → panneau Détail. Respecte le périmètre serveur (données déjà filtrées).
+
+## Implémenté (24/06/2026 — v3, périmètres & autorisations)
+- **Modèle 4 concepts** : Mesh global (vérité complète) / Espace (périmètre organisationnel) / Vue (filtre personnel, jamais de droits) / Investigation (périmètre collaboratif temporaire). Chaque requête évaluée côté serveur : identité + espace actif + autorisations (`resoudre_perimetre`, deny-by-default).
+- **Personas & Espaces** : 3 personas (architecte, paiements, support), 5 espaces avec niveaux existence/resume/relations/preuves/complet et politiques de dépendances non autorisées (masquage complet / anonymisée « Dépendance externe restreinte » / résumé autorisé « Application restreinte — domaine X »). En-têtes `X-Persona`/`X-Espace` (intercepteur axios + localStorage).
+- **Filtrage serveur** sur mesh, situations (404 si hors périmètre), activité temps réel, décisions, jumeaux, Aurora (question hors périmètre → refus explicite ; contributions/preuves filtrées ; suggestions filtrées).
+- **Sélecteur de périmètre permanent** (topbar) : espaces + vues enregistrées + Mesh global si autorisé ; badge « Filtré côté serveur » / « Vérité complète du Mesh » ; sélecteur de persona.
+- **Atlas contextualisé** : nœuds restreints anonymisés (pointillés, cadenas), badge dépendances restreintes, enregistrement de vues, application des vues (sélection / relations non confirmées / vigilance).
+- **Périmètre d'investigation** affiché sur la fiche (propriétaire, participants, jumeaux autorisés, confidentialité, expiration, export).
+- **Journal d'accès et de décisions** (collection `journal`, section Administration) ; guards : admettre/examiner/confirmer avec 403/404 appropriés.
+- **Tests** : backend_test_perimetres.py 20/20 (matrice de refus) + régression UI 100 % (iteration_5).
+
+
 - **Aujourd'hui** (`/`) : Observatoire en 3 colonnes verbes (Découvert / À comprendre / À décider), ticker live « En direct », 11 situations typées (nature : relation/comportement/connaissance/contradiction/incident/changement).
 - **Atlas** (`/atlas`) : carte de la connaissance — 6 états de relations (observée/supposée/validation A2A/confirmée/contestée/obsolète) avec rendus distincts + légende, panneau détail de relation (découverte, source, confirmée par, claims, observations contraires, évolution, bouton « Confirmer » → mémoire enrichie), 3 couches de dynamiques togglables (opérationnelle/connaissance/mesh), régions avec maturité (« 2 jumeaux · 1 relation émergente · 2 zones inconnues »), modes Territoire/Situation/Parcours conservés, hover card sur les jumeaux.
 - **Investigations** : filtres par nature + fiche découverte en 4 blocs (ce qui a été découvert / pourquoi / reste à comprendre / décision attendue) avec actions (investiguer, surveiller, confirmer la relation, classer coïncidence, plus d'observations).
