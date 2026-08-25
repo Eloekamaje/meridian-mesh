@@ -3,6 +3,13 @@
 ## Problème d'origine (résumé)
 Construire Méridian non pas comme un Atlas/graphe centré sur les jumeaux, mais comme un **système de compréhension et de décision pour le SI**, organisé autour de l'objet **Situation**. Repositionnement v2 (utilisateur) : **système qui apprend continuellement la structure et le comportement du SI** — cycle Découverte candidate → Compréhension validée → Décision éclairée → Mémoire du Mesh. L'accueil devient un Observatoire des découvertes (3 colonnes Découvert / À comprendre / À décider), l'Atlas montre l'évolution du savoir (6 états de relations, maturité des domaines, 3 dynamiques temps réel), les investigations couvrent relations/comportements/connaissances/contradictions, chaque décision enrichit la mémoire du Mesh. Code couleur : Découvrir cyan, Comprendre violet, Décider ambre.
 
+## Implémenté (25/06/2026 — v5, P1 + domaine premier niveau)
+- **Réinitialiser la démo** : `POST /api/demo/reinitialiser` (vide/re-seed les collections + journal d'audit) ; section « Zone de démonstration » dans Administration avec confirmation en 2 clics, toast + reload.
+- **Recherche plein texte Aurora** : fallback des scénarios prescriptés — recherche serveur dans jumeaux (nom/mission/domaine/propriétaire), relations (claims, extrémités) et situations (titres), **filtrée par le périmètre RBAC**, scoring par tokens distincts matchés (nom > mission > domaine), désinence du pluriel français ; réponse avec contributions + action de navigation (`/atlas?focus=`). Hors périmètre et fallback « connaissances manquantes » préservés.
+- **Persistance du contexte carte dans l'URL** : `?sel=<jumeau>` au clic jumeau, `?domaine=X&interne=1` à l'entrée dans un domaine (replace, pas de spam d'historique) ; restauration au chargement (lien profond) ; clic pane en vue interne conserve le domaine.
+- **Résumé de territoire dynamique** : « N jumeaux · N découvertes · N investigations · N zones inconnues » calculé depuis les situations actives (verbe decouvert / a_comprendre) + **point d'activité temps réel** pulsant sur le header du domaine quand un de ses jumeaux émet un événement (`region-activite-{id}`).
+- Tests : iteration_10 → backend 7/7 pytest + frontend 8/8, 0 erreur console applicative.
+
 ## Implémenté (25/06/2026 — v4.1, domaines interactifs : zoom hiérarchique)
 - **Correctif P0 double-clic domaine** : le `onNodeDoubleClick` de React Flow v12 ne se déclenchait jamais (reciblage du 2ᵉ clic vers le pane lors du pan/capture d3). Solution déterministe : détection manuelle du double-clic dans `onNodeClick`/`onPaneClick` (fenêtre 450 ms + `screenToFlowPosition` pour retrouver la région sous le curseur si le 2ᵉ clic est reciblé), `zoomOnDoubleClick={false}`, classe `nopan` sur le header de région (`RegionNode.jsx`).
 - **Zoom hiérarchique Mesh → Domaine** : double-clic sur un domaine → vue interne (jumeaux du domaine uniquement) + fil d'Ariane « Mesh global › Domaine X » (clic = sortie, fitView animé) ; fitBounds élargi (rayon = max(w,h)/2+130+120) pour cadrer les portes.
@@ -79,8 +86,8 @@ Construire Méridian non pas comme un Atlas/graphe centré sur les jumeaux, mais
 
 ## Backlog priorisé
 - **P0** : — (rien de bloquant).
-- **P1** : réinitialisation de l'état démo (bouton « réinitialiser la démo ») ; recherche plein texte dans Aurora ; persistance du focus carte dans l'URL au clic ; warning hydration `<span>` dans `<option>` (Topbar/DemoProvider — cosmétique).
-- **P2** : scission d'Atlas.jsx (~1150 lignes — hook useDomainNavigation + composant DomainView) ; migration `on_event` → lifespan FastAPI ; durcissement CORS pour la production ; découverte automatique de relations pour les nouveaux jumeaux admis ; vue Parcours éditable.
+- **P1** : warning hydration `<span>` dans `<option>` (Topbar/DemoProvider — cosmétique, pollue la console).
+- **P2** : scission d'Atlas.jsx (~1200 lignes — hook useDomainNavigation + composant DomainView) ; migration `on_event` → lifespan FastAPI ; durcissement CORS pour la production ; découverte automatique de relations pour les nouveaux jumeaux admis ; vue Parcours éditable ; double-clic sur une porte externe = traverser vers le domaine voisin (suggéré, en attente du retour utilisateur).
 - **Si vraie IA un jour** : brancher Aurora sur un LLM via la clé universelle Emergent (budget : Profile → Manage plan → Universal Key).
 
 ## Prochaines tâches

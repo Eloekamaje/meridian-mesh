@@ -1,0 +1,35 @@
+{
+  "summary": "Iteration 10 — 4 nouvelles fonctionnalités (Reset démo, recherche plein texte Aurora, persistance URL Atlas, résumé territoire enrichi). Backend : 7/7 pytest OK (POST /demo/reinitialiser + reseed 12/14/6 + journal, recherche plein texte remboursements, fallback connaissances manquantes, RBAC support pour Fraude → hors_perimetre, RBAC notifications sans jumeaux non autorisés). Frontend : 8/8 scénarios OK (résumé territoire Paiement = '2 jumeaux · 2 découvertes · 3 investigations · 1 zone inconnue', ?sel=twinId au clic jumeau, double-clic domaine → ?domaine=Paiement&interne=1, restauration URL domaine+interne (5 portes, 2 twins) et ?sel=fraude, pane conserve domaine, breadcrumb-mesh sort proprement, bouton reset-demo à confirmation en 2 clics, non-régression atlas global 6/12, /investigations /decisions /jumeaux OK, 0 erreur console applicative — hydration span>option ignorée comme convenu).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/aurora/demander", "issue": "Pour la question « remboursements clients » le champ action.route pointe sur /atlas?focus=comptes (premier jumeau trouvé par ordre d'insertion : Comptes matche 'client') au lieu de /atlas?focus=support demandé par la spec. Support est bien présent dans reponse et contributions, mais l'action de navigation n'est pas centrée sur le jumeau le plus pertinent (celui dont la mission contient 'macros de remboursement'). Suggestion : scorer les twins par nombre de tokens matchés (ou pondérer les matches sur 'mission' > 'domaine')."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration10.py",
+    "/app/test_reports/pytest/iter10.xml"
+  ],
+  "action_items": [
+    "OPTIONNEL : améliorer le scoring de recherche_plein_texte pour que action.route pointe sur le twin le plus pertinent (Support pour 'remboursements') au lieu du premier trouvé (Comptes pour 'clients'). Non bloquant : la réponse et les contributions listent bien tous les twins pertinents."
+  ],
+  "critical_code_review_comments": [
+    "server.py recherche_plein_texte (ligne 553-556) sélectionne twins[0] pour action sans scoring — remplacer par un tri par nombre de tokens matchés ou pondération mission>domaine pour respecter les attentes UX.",
+    "Atlas.jsx dépasse 750 lignes — extraction hook useDomainNavigation + composant DomainView toujours pertinente (déjà noté iter9).",
+    "Warning hydration span>option (Topbar l.30, DemoProvider) toujours présent — non applicatif mais pollue les logs, envisager de sortir le span dynamique de l'<option>."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration10.py"
+  ],
+  "success_rate": {"backend": "100% (7/7)", "frontend": "100% (8/8)"},
+  "seed_data_creation": "Aucune — POST /api/demo/reinitialiser exécuté 2× durant les tests (reseed idempotent, aucune donnée persistante ajoutée).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Détails validés :\n- POST /api/demo/reinitialiser (architecte) → {ok:true}, mesh reste à 12/14/6, journal[0].action='réinitialisation de la démo', detail='Données de démonstration restaurées à l'état initial'.\n- Aurora 'remboursements clients' (architecte) → reponse '5 jumeau(x) (Comptes, Identité, Support, Notifications)' + contributions incluant Support avec mission 'macros de remboursement' + action.route='/atlas?focus=comptes' (PAS support — voir issue minor).\n- Aurora 'blockchain kubernetes mainframe' → fallback (comportement s_abstenir/reponse générique).\n- Aurora RBAC support 'parle-moi de fraude' → hors_perimetre=true.\n- Aurora RBAC support 'notifications' → trouve Notifications/Support, JAMAIS Paiements/Fraude/Facturation dans reponse ni contributions.\n- Atlas region Paiement = '2 jumeaux · 2 découvertes · 3 investigations · 1 zone inconnue'.\n- Clic twin-node-paiements → ?sel=paiements ; double-clic region-header-reg-paiement → ?domaine=Paiement&interne=1 ; restauration /atlas?domaine=Paiement&interne=1 = 1 breadcrumb-mesh + 5 portes + 2 twins internes ; /atlas?sel=fraude = panneau détail Fraude ouvert.\n- Pane click en vue interne conserve domaine+interne ; breadcrumb-mesh retire interne=1.\n- Administration : [data-testid=admin-reset] + [data-testid=reset-demo-btn] label 'Réinitialiser la démo' → 1er clic devient 'Confirmer la réinitialisation ?'. Le 2e clic n'a pas été exécuté pour éviter le reload durant la session (comportement documenté et testé côté backend via test_reinitialiser_demo_ok).\n- Non-régression : atlas global 6 régions / 12 twins, /investigations /decisions /jumeaux répondent 200, 0 erreur console applicative.",
+  "rca of the issue": "N/A — seul 1 écart mineur (action.route pointe sur Comptes au lieu de Support pour la question 'remboursements clients'). RCA : dans recherche_plein_texte (backend/server.py:553-556), action est construite avec twins[0] sans scoring de pertinence — l'ordre d'insertion Mongo place Comptes avant Support et Comptes matche le token 'client' de la question. Fix suggéré : trier twins par nombre de tokens matchés (ou pondérer mission>nom>domaine) avant de sélectionner twins[0]."
+}

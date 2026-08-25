@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Database, CheckCircle, Clock, Users, Scroll } from "@phosphor-icons/react";
+import { Database, CheckCircle, Clock, Users, Scroll, ArrowCounterClockwise } from "@phosphor-icons/react";
+import { toast } from "sonner";
 import api from "@/lib/api";
 import { usePerimetre } from "@/lib/perimetre";
 import { couleurDomaine } from "@/lib/domaines";
@@ -15,11 +16,31 @@ const SOURCES = [
 export default function Administration() {
   const [jumeaux, setJumeaux] = useState([]);
   const [journal, setJournal] = useState([]);
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [resetEnCours, setResetEnCours] = useState(false);
   const { version } = usePerimetre();
   useEffect(() => {
     api.get("/jumeaux").then((r) => setJumeaux(r.data)).catch(() => {});
     api.get("/journal").then((r) => setJournal(r.data)).catch(() => {});
   }, [version]);
+
+  const reinitialiser = async () => {
+    if (!confirmReset) {
+      setConfirmReset(true);
+      setTimeout(() => setConfirmReset(false), 4000);
+      return;
+    }
+    setResetEnCours(true);
+    try {
+      await api.post("/demo/reinitialiser");
+      toast.success("Données de démonstration réinitialisées — rechargement…");
+      setTimeout(() => window.location.reload(), 800);
+    } catch {
+      toast.error("Réinitialisation impossible");
+      setResetEnCours(false);
+      setConfirmReset(false);
+    }
+  };
 
   const couvertureMoy = jumeaux.length ? Math.round(jumeaux.reduce((a, j) => a + (j.couverture || 0), 0) / jumeaux.length) : 0;
   const parStatut = jumeaux.reduce((acc, j) => ({ ...acc, [j.statut]: (acc[j.statut] || 0) + 1 }), {});
@@ -119,6 +140,27 @@ export default function Administration() {
               </li>
             ))}
           </ul>
+        </section>
+
+        <section className="rise col-span-12 rounded-xl border border-[#F87171]/20 bg-[#F87171]/[0.03] p-5" style={{ animationDelay: "360ms" }} data-testid="admin-reset">
+          <h2 className="flex items-center gap-2 font-code text-[10px] uppercase tracking-[0.25em] text-white/45">
+            <ArrowCounterClockwise size={14} className="text-[#F87171]" /> Zone de démonstration
+          </h2>
+          <p className="mt-2 text-xs text-white/45">
+            Restaure le jeu de données initial : situations ignorées ou décidées, jumeaux admis, vues enregistrées, dossiers de changement et journal sont remis à zéro.
+          </p>
+          <button
+            onClick={reinitialiser}
+            disabled={resetEnCours}
+            data-testid="reset-demo-btn"
+            className={`mt-3 rounded-md border px-3 py-2 text-xs font-semibold transition-colors ${
+              confirmReset
+                ? "border-[#F87171] bg-[#F87171]/15 text-[#F87171]"
+                : "border-white/15 text-white/60 hover:border-[#F87171]/50 hover:text-[#F87171]"
+            } disabled:opacity-50`}
+          >
+            {resetEnCours ? "Réinitialisation…" : confirmReset ? "Confirmer la réinitialisation ?" : "Réinitialiser la démo"}
+          </button>
         </section>
 
         <section className="rise col-span-12 rounded-xl border border-white/[0.08] bg-white/[0.02] p-5" style={{ animationDelay: "300ms" }} data-testid="admin-journal">

@@ -64,7 +64,7 @@ const makeEdge = (r, niveau) => ({
 });
 
 export default function Atlas() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const { mesh, jumeauPar, recharger } = useMesh();
   const { version, vueActive, rechargerVues } = usePerimetre();
@@ -98,6 +98,15 @@ export default function Atlas() {
   const [comparaison, setComparaison] = useState(null);
   const rfRef = useRef(null);
   const dernierClicRegion = useRef({ label: null, t: 0 });
+  const restaure = useRef(false);
+
+  const majUrl = useCallback((updates) => {
+    setSearchParams((prev) => {
+      const p = new URLSearchParams(prev);
+      Object.entries(updates).forEach(([k, v]) => (v == null ? p.delete(k) : p.set(k, v)));
+      return p;
+    }, { replace: true });
+  }, [setSearchParams]);
 
   const domDe = useMemo(() => {
     const m = {};
@@ -105,11 +114,44 @@ export default function Atlas() {
     return m;
   }, [mesh]);
 
+  // Découvertes et investigations actives par domaine (situations non closes touchant le domaine)
+  const statsRegions = useMemo(() => {
+    const stats = {};
+    situations.forEach((s) => {
+      if (["ignorée", "classée", "décidée"].includes(s.statut)) return;
+      const doms = new Set((s.jumeaux || []).map((j) => domDe[j]).filter(Boolean));
+      doms.forEach((d) => {
+        if (!stats[d]) stats[d] = { decouvertes: 0, investigations: 0 };
+        if (s.verbe === "a_comprendre") stats[d].investigations += 1;
+        else if (s.verbe === "decouvert") stats[d].decouvertes += 1;
+      });
+    });
+    return stats;
+  }, [situations, domDe]);
+
+  // Restauration du contexte depuis l'URL au chargement (?domaine=X&interne=1&sel=y)
+  useEffect(() => {
+    if (!mesh || restaure.current) return;
+    restaure.current = true;
+    const d = searchParams.get("domaine");
+    const s = searchParams.get("sel");
+    if (d && (mesh.regions || []).some((r) => r.label === d)) {
+      setDomaineSel(d);
+      setOnglet("detail");
+      if (searchParams.get("interne") === "1") setDomaineInterne(d);
+    }
+    if (s) {
+      const j = mesh.jumeaux.find((x) => x.id === s && !x.anonyme);
+      if (j) { setSelected(j); setOnglet("detail"); }
+    }
+  }, [mesh]);
+
   const entrerDomaine = useCallback((label) => {
     setDomaineInterne(label);
     setDomaineSel(label);
     setPorteFocus(null);
     setRelFocus(false);
+    majUrl({ domaine: label, interne: "1", sel: null });
     const reg = mesh?.regions?.find((r) => r.label === label);
     if (reg && rfRef.current) {
       const ray = Math.max(reg.w, reg.h) / 2 + 130;
@@ -117,13 +159,14 @@ export default function Atlas() {
       const cy = reg.y + reg.h / 2;
       rfRef.current.fitBounds({ x: cx - ray - 120, y: cy - ray - 120, width: 2 * (ray + 120), height: 2 * (ray + 120) }, { duration: 800 });
     }
-  }, [mesh]);
+  }, [mesh, majUrl]);
 
   const sortirDomaine = useCallback(() => {
     setDomaineInterne(null);
     setPorteFocus(null);
+    majUrl({ interne: null });
     rfRef.current?.fitView({ duration: 800, padding: 0.15 });
-  }, []);
+  }, [majUrl]);
 
   const statsDomaine = useCallback((label) => {
     if (!mesh || !label) return null;
@@ -255,7 +298,7 @@ export default function Atlas() {
       const porteIds = {};
       const portes = Object.keys(extCount);
       let nsInt = reg
-        ? [{ id: reg.id, type: "region", position: { x: reg.x, y: reg.y }, data: reg, draggable: false, selectable: false, zIndex: -10 }]
+        ? [{ id: reg.id, type: "region", position: { x: reg.x, y: reg.y }, data: { ...reg, investigations: statsRegions[reg.label]?.investigations ?? 0, decouvertes: statsRegions[reg.label]?.decouvertes ?? 0, halo: false }, draggable: false, selectable: false, zIndex: -10 }]
         : [];
       portes.forEach((dom, i) => {
         const regExt = (mesh.regions || []).find((r) => r.label === dom);
@@ -313,7 +356,8 @@ export default function Atlas() {
     let ns = [];
     if (mode === "territoire") {
       ns = (mesh.regions || []).map((r) => ({
-        id: r.id, type: "region", position: { x: r.x, y: r.y }, data: r,
+        id: r.id, type: "region", position: { x: r.x, y: r.y },
+        data: { ...r, investigations: statsRegions[r.label]?.investigations ?? 0, decouvertes: statsRegions[r.label]?.decouvertes ?? 0, halo: !!halo && domDe[halo] === r.label },
         draggable: false, selectable: false, zIndex: -10,
       }));
     }
@@ -395,7 +439,7 @@ export default function Atlas() {
       }
     }
     return { nodes: ns, edges: es };
-  }, [mesh, mode, situationId, parcoursId, focus, halo, compteurs, selection, relFocus, zoomNiveau, situation, vueActive, posOverrides, domaineSel, domaineInterne, porteFocus, perimetreTravail, relDom, zonesFaibles, domDe]);
+  }, [mesh, mode, situationId, parcoursId, focus, halo, compteurs, selection, relFocus, zoomNiveau, situation, vueActive, posOverrides, domaineSel, domaineInterne, porteFocus, perimetreTravail, relDom, zonesFaibles, domDe, statsRegions]);
 
   const eventsVisibles = events.filter((e) => couches[e.dynamique || "operationnelle"]);
   const modeInfo = MODES.find((m) => m.id === mode);
@@ -453,6 +497,7 @@ export default function Atlas() {
             } else {
               setDomaineSel(label);
             }
+            majUrl({ domaine: label, sel: null, ...(domaineInterne ? {} : { interne: null }) });
             setSelected(null);
             setSelectedRelation(null);
             setOnglet("detail");
@@ -468,6 +513,7 @@ export default function Atlas() {
           setSelectedRelation(null);
           setDomaineSel(null);
           setOnglet("detail");
+          majUrl({ sel: node.data.jumeau.id, ...(domaineInterne ? {} : { domaine: null, interne: null }) });
         }}
         onNodeDoubleClick={(_, node) => {
           if (node.type === "region") entrerDomaine(node.data.label);
@@ -491,6 +537,7 @@ export default function Atlas() {
             }
           }
           setSelected(null); setSelectedRelation(null); setDomaineSel(null); setSelection([]); setRelFocus(false); setComparaison(null);
+          majUrl(domaineInterne ? { sel: null } : { sel: null, domaine: null, interne: null });
         }}
         nodesDraggable={mode === "territoire"}
         nodesConnectable={false}

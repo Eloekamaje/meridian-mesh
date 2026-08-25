@@ -34,6 +34,15 @@ logger = logging.getLogger("meridian")
 SEED_VERSION = 3
 
 
+async def peupler_demo():
+    for name, docs in [("jumeaux", TWINS), ("relations", RELATIONS), ("situations", SITUATIONS), ("vues", VUES)]:
+        if await db[name].count_documents({}) == 0:
+            await db[name].insert_many([dict(d) for d in docs])
+            logger.info("Seeded %s (%d documents)", name, len(docs))
+    if await db.change_lab.count_documents({}) == 0:
+        await db.change_lab.insert_one(dict(CHANGE_LAB))
+
+
 @app.on_event("startup")
 async def seed_database():
     meta = await db.meta.find_one({"id": "seed"})
@@ -42,12 +51,7 @@ async def seed_database():
             await db[col].delete_many({})
         await db.meta.replace_one({"id": "seed"}, {"id": "seed", "version": SEED_VERSION}, upsert=True)
         logger.info("Seed version %s — réinitialisation des données de démo", SEED_VERSION)
-    for name, docs in [("jumeaux", TWINS), ("relations", RELATIONS), ("situations", SITUATIONS), ("vues", VUES)]:
-        if await db[name].count_documents({}) == 0:
-            await db[name].insert_many([dict(d) for d in docs])
-            logger.info("Seeded %s (%d documents)", name, len(docs))
-    if await db.change_lab.count_documents({}) == 0:
-        await db.change_lab.insert_one(dict(CHANGE_LAB))
+    await peupler_demo()
 
 
 def slugify(nom: str) -> str:
@@ -504,6 +508,77 @@ class AuroraDemande(BaseModel):
     question: str
 
 
+AURORA_STOPWORDS = {
+    "que", "qui", "quoi", "dont", "pour", "avec", "dans", "sur", "les", "des", "une", "est", "sont", "quel", "quelle",
+    "quels", "quelles", "pourquoi", "comment", "combien", "entre", "vers", "chez", "aux", "par", "pas", "plus", "tout",
+    "tous", "toute", "toutes", "cette", "cet", "ces", "mon", "ma", "mes", "ton", "ta", "tes", "son", "sa", "ses",
+    "leur", "leurs", "notre", "nos", "votre", "vos", "ils", "elles", "elle", "nous", "vous", "ont", "fait", "faire",
+}
+
+
+def normalise_txt(t) -> str:
+    return unicodedata.normalize("NFKD", t or "").encode("ascii", "ignore").decode().lower()
+
+
+async def recherche_plein_texte(q: str, aut: dict):
+    tokens = [t for t in re.split(r"[^a-z0-9]+", normalise_txt(q)) if len(t) > 2 and t not in AURORA_STOPWORDS]
+    tokens = [t[:-1] if t.endswith("s") and len(t) > 3 else t for t in tokens]
+    if not tokens:
+        return None
+
+    def corresponde(texte) -> bool:
+        t = normalise_txt(texte)
+        return any(tok in t for tok in tokens)
+
+    def score_champs(champs_poids):
+        texte = normalise_txt(" ".join(c for c, _ in champs_poids))
+        distincts = sum(1 for tok in tokens if tok in texte)
+        poids = 0
+        for texte_c, p in champs_poids:
+            t = normalise_txt(texte_c)
+            poids += sum(p for tok in tokens if tok in t)
+        return (distincts, poids)
+
+    jumeaux = await db.jumeaux.find({}, NO_ID).to_list(200)
+    id_vers_nom = {j["id"]: j["nom"] for j in jumeaux}
+    champs_j = lambda j: [(j.get("nom", ""), 3), (j.get("mission", ""), 2), (j.get("domaine", ""), 1), (j.get("proprietaire", ""), 1)]
+    twins = [j for j in jumeaux if j["id"] in aut and score_champs(champs_j(j))[0] > 0]
+    twins.sort(key=lambda j: score_champs(champs_j(j)), reverse=True)
+    relations = await db.relations.find({}, NO_ID).to_list(200)
+    rels = [
+        r for r in relations
+        if r["source"] in aut and r["cible"] in aut
+        and corresponde(" ".join([id_vers_nom.get(r["source"], r["source"]), id_vers_nom.get(r["cible"], r["cible"]), r.get("label") or "", " ".join(r.get("claims", []))]))
+    ]
+    situations = await db.situations.find({}, NO_ID).to_list(100)
+    sits = [s for s in situations if any(j in aut for j in s.get("jumeaux", [])) and corresponde(s.get("titre", ""))]
+    if not twins and not rels and not sits:
+        return None
+    morceaux = []
+    if twins:
+        morceaux.append(f"{len(twins)} jumeau(x) ({', '.join(j['nom'] for j in twins[:4])})")
+    if rels:
+        noms_rels = [id_vers_nom.get(r["source"], r["source"]) + " → " + id_vers_nom.get(r["cible"], r["cible"]) for r in rels[:3]]
+        morceaux.append(f"{len(rels)} relation(s) ({', '.join(noms_rels)})")
+    if sits:
+        morceaux.append(f"{len(sits)} situation(s) ({', '.join(s['titre'] for s in sits[:2])})")
+    action = None
+    if twins:
+        action = {"route": f"/atlas?focus={twins[0]['id']}", "label": f"Centrer l'Atlas sur {twins[0]['nom']}"}
+    elif sits:
+        action = {"route": "/investigations", "label": "Ouvrir les investigations"}
+    out = {
+        "comportement": "explorer",
+        "reponse": "Recherche dans votre périmètre — " + " · ".join(morceaux) + ".",
+        "contributions": [{"jumeau": j["nom"], "domaine": j["domaine"], "texte": j.get("mission", "")} for j in twins[:3]],
+        "preuves": [{"source": "Recherche plein texte", "detail": f"{len(twins) + len(rels) + len(sits)} élément(s) du Mesh correspondent aux termes de la question"}],
+        "indicateurs": {"confiance": 61, "couverture": 58, "fraicheur": "à l'instant", "contradictions": 0},
+    }
+    if action:
+        out["action"] = action
+    return out
+
+
 @api_router.post("/aurora/demander")
 async def aurora_demander(payload: AuroraDemande, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
     _, espace = resoudre_perimetre(x_persona, x_espace)
@@ -521,6 +596,9 @@ async def aurora_demander(payload: AuroraDemande, x_persona: str = Header("archi
             if not any(niveau_au_moins(n, "preuves") for n in aut.values()):
                 out["preuves"] = []
             return out
+    trouve = await recherche_plein_texte(q, aut)
+    if trouve:
+        return trouve
     return AURORA_FALLBACK
 
 
@@ -537,6 +615,15 @@ async def aurora_suggestions(contexte: str = "global", x_persona: str = Header("
 
 
 # ---------- Démo & activité ----------
+
+@api_router.post("/demo/reinitialiser")
+async def reinitialiser_demo(x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+    for col in ["jumeaux", "relations", "situations", "change_lab", "dossiers", "vues", "journal"]:
+        await db[col].delete_many({})
+    await peupler_demo()
+    await journaler(x_persona, x_espace, "réinitialisation de la démo", "mesh", "Données de démonstration restaurées à l'état initial")
+    return {"ok": True}
+
 
 @api_router.get("/demo/actes")
 async def demo_actes():

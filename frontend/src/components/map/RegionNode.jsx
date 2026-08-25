@@ -26,6 +26,9 @@ export default function RegionNode({ data }) {
         data-testid={`region-header-${data.id}`}
       >
         <div className="flex items-center gap-2.5">
+          {data.halo && (
+            <span className="halo-anim h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: data.couleur }} data-testid={`region-activite-${data.id}`} />
+          )}
           <span className="font-code text-[11px] font-medium uppercase tracking-[0.3em]" style={{ color: data.couleur }}>
             {data.label}
           </span>
@@ -40,7 +43,7 @@ export default function RegionNode({ data }) {
         </div>
         {m && (
           <div className="mt-1 font-code text-[9px] text-white/35">
-            {m.jumeaux} jumeaux · {m.relations_emergentes} découverte{m.relations_emergentes > 1 ? "s" : ""} · {m.zones_inconnues} zone{m.zones_inconnues > 1 ? "s" : ""} inconnue{m.zones_inconnues > 1 ? "s" : ""}
+            {m.jumeaux} jumeaux · {data.decouvertes ?? 0} découverte{(data.decouvertes ?? 0) > 1 ? "s" : ""} · {data.investigations ?? 0} investigation{(data.investigations ?? 0) > 1 ? "s" : ""} · {m.zones_inconnues} zone{m.zones_inconnues > 1 ? "s" : ""} inconnue{m.zones_inconnues > 1 ? "s" : ""}
           </div>
         )}
       </div>
