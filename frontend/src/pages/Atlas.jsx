@@ -3,6 +3,8 @@ import { useSearchParams, Link } from "react-router-dom";
 import { ReactFlow, Background, BackgroundVariant, Controls } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import ForceGraph3D from "react-force-graph-3d";
+import * as THREE from "three";
+import SpriteText from "three-spritetext";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useMesh } from "@/lib/mesh";
@@ -25,6 +27,37 @@ const COUCHES = [
   ["connaissance", "Connaissance", "#22D3EE"],
   ["mesh", "Mesh", "#A78BFA"],
 ];
+
+const renduNoeud3D = (n) => {
+  const estDomaine = n.id.startsWith("dom-");
+  const r = n.anonyme ? 1.4 : estDomaine ? 4.5 + n.membres * 1.1 : 2 + (n.couverture || 40) / 35;
+  const group = new THREE.Group();
+  const sphere = new THREE.Mesh(
+    new THREE.SphereGeometry(r, 24, 24),
+    new THREE.MeshLambertMaterial({ color: n.couleur, transparent: n.anonyme, opacity: n.anonyme ? 0.45 : 0.95 })
+  );
+  group.add(sphere);
+  if (!estDomaine && !n.anonyme && n.jumeau?.sante === "dégradé") {
+    const halo = new THREE.Mesh(
+      new THREE.SphereGeometry(r + 1.4, 16, 16),
+      new THREE.MeshBasicMaterial({ color: "#EF4444", transparent: true, opacity: 0.2, wireframe: true })
+    );
+    group.add(halo);
+  }
+  const statutTxt = !estDomaine && !n.anonyme && n.jumeau?.statut !== "actif" ? ` (${n.jumeau?.statut})` : "";
+  const texte = new SpriteText(
+    n.anonyme
+      ? "restreint"
+      : estDomaine
+        ? `${n.nom}${n.maturite ? ` · ${n.maturite.niveau}` : ""}\n${n.membres} jumeau${n.membres > 1 ? "x" : ""}`
+        : `${n.nom}${statutTxt}`
+  );
+  texte.color = n.anonyme ? "#6B7280" : estDomaine ? n.couleur : "rgba(255,255,255,0.85)";
+  texte.textHeight = estDomaine ? 4.2 : 2.8;
+  texte.position.y = -(r + 4);
+  group.add(texte);
+  return group;
+};
 
 const styleParEtat = (r) => {
   switch (r.etat) {
@@ -80,6 +113,7 @@ export default function Atlas() {
   const [compteurs, setCompteurs] = useState({});
   const [onglet, setOnglet] = useState("chrono");
   const [couches, setCouches] = useState({ operationnelle: true, connaissance: true, mesh: true });
+  const [orbiteAgrege, setOrbiteAgrege] = useState(false);
 
   useEffect(() => {
     if (modeParam) setMode(modeParam);
@@ -200,6 +234,36 @@ export default function Atlas() {
 
   const graphData = useMemo(() => {
     if (!mesh) return { nodes: [], links: [] };
+
+    if (orbiteAgrege) {
+      const doms = {};
+      mesh.jumeaux.forEach((j) => {
+        const d = j.anonyme ? "Restreint" : j.domaine || "Non classé";
+        if (!doms[d]) {
+          doms[d] = { id: `dom-${d}`, nom: d, domaine: d, couleur: d === "Restreint" ? "#374151" : couleurDomaine(d), membres: 0, anonyme: d === "Restreint", maturite: null };
+        }
+        doms[d].membres += 1;
+      });
+      (mesh.regions || []).forEach((r) => {
+        if (doms[r.label]) doms[r.label].maturite = r.maturite;
+      });
+      const domDe = {};
+      mesh.jumeaux.forEach((j) => { domDe[j.id] = j.anonyme ? "Restreint" : j.domaine || "Non classé"; });
+      const liens = {};
+      mesh.relations.forEach((r) => {
+        const a = domDe[r.source];
+        const b = domDe[r.cible];
+        if (!a || !b || a === b) return;
+        const [x, y] = [a, b].sort();
+        const key = `${x}::${y}`;
+        if (!liens[key]) liens[key] = { id: `agg-${key}`, source: `dom-${x}`, target: `dom-${y}`, count: 0, active: false, etat: null };
+        liens[key].count += 1;
+        if (r.active) liens[key].active = true;
+        if (["validation", "contestee", "supposee"].includes(r.etat)) liens[key].etat = r.etat;
+      });
+      return { nodes: Object.values(doms), links: Object.values(liens) };
+    }
+
     const ids = new Set(mesh.jumeaux.map((j) => j.id));
     return {
       nodes: mesh.jumeaux.map((j) => ({
@@ -213,9 +277,9 @@ export default function Atlas() {
       })),
       links: mesh.relations
         .filter((r) => ids.has(r.source) && ids.has(r.cible))
-        .map((r) => ({ id: r.id, source: r.source, target: r.cible, etat: r.etat, active: !!r.active, restreinte: !!r.restreinte })),
+        .map((r) => ({ id: r.id, source: r.source, target: r.cible, etat: r.etat, active: !!r.active, restreinte: !!r.restreinte, confiance: r.confiance })),
     };
-  }, [mesh]);
+  }, [mesh, orbiteAgrege]);
 
   const confirmerRelation = async (r) => {
     try {
@@ -233,14 +297,25 @@ export default function Atlas() {
       {mode === "orbite" ? (
         <div className="absolute inset-0" data-testid="atlas-orbite">
           <ForceGraph3D
+            key={orbiteAgrege ? "agg" : "detail"}
             ref={fgRef}
             graphData={graphData}
             backgroundColor="#050505"
-            nodeColor={(n) => n.couleur}
-            nodeVal={(n) => (n.anonyme ? 0.6 : Math.max(0.8, (n.couverture || 40) / 22))}
-            nodeOpacity={0.95}
-            nodeResolution={24}
-            nodeLabel={(n) => (n.anonyme ? "Périmètre restreint — identité masquée" : `${n.nom} · ${n.domaine}`)}
+            nodeThreeObject={renduNoeud3D}
+            nodeLabel={(n) => {
+              if (n.anonyme) return "Périmètre restreint — identité masquée";
+              if (n.id.startsWith("dom-")) {
+                const m = n.maturite;
+                return `<b>${n.nom}</b> — ${n.membres} jumeau(x)${m ? `<br/>${m.niveau} · ${m.jumeaux} connus · ${m.relations_emergentes} émergente(s) · ${m.zones_inconnues} zone(s) inconnue(s)` : ""}`;
+              }
+              const j = n.jumeau || {};
+              return `<b>${n.nom}</b> · ${n.domaine}<br/>${(j.mission || "").slice(0, 90)}<br/>couverture ${j.couverture ?? "—"} % · ${j.fraicheur ?? "—"} · ${j.statut ?? ""}${j.sante === "dégradé" ? ' · <span style="color:#EF4444">santé dégradée</span>' : ""}`;
+            }}
+            linkLabel={(l) =>
+              l.id?.startsWith("agg-")
+                ? `${l.count} relation(s) inter-domaines${l.active ? " · flux actif" : ""}`
+                : `${ETATS_RELATION[l.etat]?.label || "Relation"}${l.confiance ? ` — ${l.confiance} %` : ""}${l.active ? " · flux actif" : ""}${l.restreinte ? " · restreinte" : ""}`
+            }
             linkColor={(l) =>
               l.restreinte
                 ? "rgba(255,255,255,0.14)"
@@ -262,7 +337,7 @@ export default function Atlas() {
             linkDirectionalParticleWidth={1.6}
             linkDirectionalParticleSpeed={0.005}
             onNodeClick={(n) => {
-              if (n.anonyme) return;
+              if (n.anonyme || n.id.startsWith("dom-")) return;
               setSelected(n.jumeau);
               setSelectedRelation(null);
               setOnglet("detail");
@@ -385,6 +460,18 @@ export default function Atlas() {
               Enregistrer
             </button>
           </div>
+        )}
+
+        {mode === "orbite" && (
+          <label className="mt-2 flex cursor-pointer items-center gap-2 px-1" data-testid="orbite-agregation-toggle">
+            <input
+              type="checkbox"
+              checked={orbiteAgrege}
+              onChange={(e) => setOrbiteAgrege(e.target.checked)}
+              className="h-3 w-3 accent-[#22D3EE]"
+            />
+            <span className="text-[11px] text-white/60">Agréger par domaine (maturité incluse)</span>
+          </label>
         )}
 
         <div className="mt-3 border-t border-white/[0.08] pt-2.5">

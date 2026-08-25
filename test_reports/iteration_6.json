@@ -1,0 +1,21 @@
+{
+  "summary": "Frontend-only regression of Atlas Orbite 3D fix (SpriteText labels + orbite-agregation-toggle). All 5 acceptance criteria validated on the public URL. Orbite mode is no longer 'muet': permanent white labels on twin nodes (Paiements, Comptes, Fraude, Support, Facturation, Notifications, Portail Web, API Gateway, Commandes, Logistique, Conformité, Identité) are visible without hover. Aggregation toggle produces domain spheres with 'Domaine · maturité / N jumeaux' labels (e.g. 'Support · insuffisamment couvert / 2 jumeaux', 'Client · bien connu / 2 jumeaux', 'Risque · instable / 2 jumeaux', 'Paiement · en transformation / 2 jumeaux', 'Distribution · partiellement découvert / 2 jumeaux', 'Opérations · partiellement découvert / 2 jumeaux'). Toggling off restores twin view. Persona switch to L. Marchand (paiements) correctly shows only 3 authorized twin labels + greyed 'restreint' nodes in detail; in aggregation the restricted nodes are grouped under a grey 'restreint' sphere — no unauthorized twin names leak into 3D labels. 2D Territoire and Aujourd'hui pages still render fine. Only console noise = benign WebGL swiftshader ReadPixels performance warnings; no JS errors.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Atlas.jsx approaches large-file territory; consider extracting the Orbite 3D rendering (renduNoeud3D, orbite aggregation logic) into a dedicated module for maintainability.",
+    "SpriteText instances are re-created on every re-render via nodeThreeObject; if perf regresses on larger meshes, memoize per-node sprites."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100%"},
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "three-spritetext already installed and hot-reload works. Persona selector options: architecte / paiements / support. Aggregation toggle only appears in Orbite mode. WebGL runs via swiftshader — expect ~3s stabilization before capturing 3D scene."
+}
