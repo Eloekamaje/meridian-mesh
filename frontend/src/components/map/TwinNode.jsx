@@ -9,9 +9,30 @@ export default function TwinNode({ data, selected }) {
 
   return (
     <div
-      className={`relative transition-opacity duration-500 ${data.dim ? "opacity-20" : "opacity-100"}`}
+      className={`group relative transition-opacity duration-500 ${data.dim ? "opacity-20" : "opacity-100"}`}
       data-testid={`twin-node-${j.id}`}
     >
+      {/* Aperçu au survol */}
+      <div
+        className="pointer-events-none absolute -top-3 left-1/2 z-50 w-[240px] -translate-x-1/2 -translate-y-full rounded-lg border border-white/10 bg-black/85 p-3 opacity-0 shadow-none backdrop-blur-xl transition-opacity duration-200 group-hover:opacity-100"
+        data-testid={`twin-hover-${j.id}`}
+      >
+        <div className="flex items-center gap-2">
+          <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: couleur }} />
+          <span className="font-display text-xs font-bold text-white">{j.nom}</span>
+          <span className="ml-auto font-code text-[9px] uppercase tracking-wider text-white/40">{j.statut}</span>
+        </div>
+        <p className="mt-1.5 line-clamp-2 text-[11px] leading-snug text-white/60">{j.mission}</p>
+        <div className="mt-2 flex items-center justify-between font-code text-[9px] text-white/40">
+          <span>Couverture <span className="text-white/80">{j.couverture} %</span></span>
+          <span>{j.fraicheur}</span>
+        </div>
+        <div className="mt-1 h-0.5 overflow-hidden rounded-full bg-white/10">
+          <div className="h-full rounded-full" style={{ width: `${j.couverture}%`, backgroundColor: couleur }} />
+        </div>
+        <div className="mt-2 font-code text-[9px] text-white/30">Cliquer pour le détail complet →</div>
+      </div>
+
       {data.halo && (
         <span className="halo-anim pointer-events-none absolute -inset-3 rounded-xl" style={{ border: `1.5px solid ${couleur}` }} />
       )}
