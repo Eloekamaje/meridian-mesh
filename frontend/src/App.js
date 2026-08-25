@@ -4,6 +4,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { DemoProvider } from "@/lib/demo";
 import { MeshProvider } from "@/lib/mesh";
 import { PerimetreProvider } from "@/lib/perimetre";
+import { ContexteProvider } from "@/lib/contexte";
 import Layout from "@/components/Layout";
 import Aujourdhui from "@/pages/Aujourdhui";
 import Atlas from "@/pages/Atlas";
@@ -18,6 +19,7 @@ function App() {
     <BrowserRouter>
       <PerimetreProvider>
         <DemoProvider>
+          <ContexteProvider>
           <MeshProvider>
           <Routes>
             <Route element={<Layout />}>
@@ -35,6 +37,7 @@ function App() {
           </Routes>
           <Toaster theme="dark" position="top-right" />
           </MeshProvider>
+          </ContexteProvider>
         </DemoProvider>
       </PerimetreProvider>
     </BrowserRouter>

@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams, Link, useNavigate } from "react-router-dom";
+import { useSearchParams, Link } from "react-router-dom";
 import { ReactFlow, Background, BackgroundVariant, Controls, SelectionMode } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Hand, Lasso, Path, Crosshair, Pulse, Pause, X } from "@phosphor-icons/react";
+import { Hand, Lasso, Path, Crosshair, Pulse, Pause, X, Sparkle } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useMesh } from "@/lib/mesh";
 import { usePerimetre } from "@/lib/perimetre";
+import { useContexte } from "@/lib/contexte";
 import TwinNode from "@/components/map/TwinNode";
 import RegionNode from "@/components/map/RegionNode";
 import { couleurDomaine, DOMAINES, NATURES_EVENEMENT, ETATS_RELATION } from "@/lib/domaines";
@@ -65,7 +66,6 @@ const makeEdge = (r, niveau) => ({
 
 export default function Atlas() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const navigate = useNavigate();
   const { mesh, jumeauPar, recharger } = useMesh();
   const { version, vueActive, rechargerVues } = usePerimetre();
   const [situations, setSituations] = useState([]);
@@ -83,22 +83,20 @@ export default function Atlas() {
   const [couches, setCouches] = useState({ operationnelle: true, connaissance: true, mesh: true });
   const [direct, setDirect] = useState(true);
   const [outil, setOutil] = useState("deplacement");
-  const [selection, setSelection] = useState([]);
+  const { selection, setSelection, domaineSel, setDomaineSel, focusCarte, commanderCarte } = useContexte();
   const [relFocus, setRelFocus] = useState(false);
   const [zoomNiveau, setZoomNiveau] = useState(2);
   const [nomVue, setNomVue] = useState("");
   const [posOverrides, setPosOverrides] = useState({});
-  const [domaineSel, setDomaineSel] = useState(null);
   const [domaineInterne, setDomaineInterne] = useState(null);
   const [porteFocus, setPorteFocus] = useState(null);
   const [perimetreTravail, setPerimetreTravail] = useState(null);
-  const [relDom, setRelDom] = useState("aucun");
-  const [zonesFaibles, setZonesFaibles] = useState(false);
   const [attenteComparaison, setAttenteComparaison] = useState(false);
   const [comparaison, setComparaison] = useState(null);
   const rfRef = useRef(null);
   const dernierClicRegion = useRef({ label: null, t: 0 });
   const restaure = useRef(false);
+  const selAvantLasso = useRef([]);
 
   const majUrl = useCallback((updates) => {
     setSearchParams((prev) => {
@@ -145,6 +143,17 @@ export default function Atlas() {
       if (j) { setSelected(j); setOnglet("detail"); }
     }
   }, [mesh]);
+
+  // Commandes carte envoyées par Aurora (éclairer des relations, isoler un parcours, aller à un domaine)
+  useEffect(() => {
+    if (!focusCarte) return;
+    if (focusCarte.type === "parcours" && focusCarte.ids?.length) {
+      setSelection(focusCarte.ids.filter((id) => mesh?.jumeaux.some((j) => j.id === id)));
+      setRelFocus(true);
+    } else if (focusCarte.type === "domaine" && focusCarte.domaine) {
+      entrerDomaine(focusCarte.domaine);
+    }
+  }, [focusCarte]);
 
   const entrerDomaine = useCallback((label) => {
     setDomaineInterne(label);
@@ -274,9 +283,6 @@ export default function Atlas() {
     if (perimetreTravail && mode === "territoire") {
       mesh.jumeaux.forEach((j) => { if (!j.anonyme && j.domaine !== perimetreTravail) dims.add(j.id); });
     }
-    if (zonesFaibles && domaineSel) {
-      mesh.jumeaux.forEach((j) => { if (j.domaine === domaineSel && (j.couverture ?? 0) >= 70) dims.add(j.id); });
-    }
 
     // Vue interne d'un domaine : jumeaux du domaine + portes externes
     if (mode === "territoire" && domaineInterne) {
@@ -298,7 +304,7 @@ export default function Atlas() {
       const porteIds = {};
       const portes = Object.keys(extCount);
       let nsInt = reg
-        ? [{ id: reg.id, type: "region", position: { x: reg.x, y: reg.y }, data: { ...reg, investigations: statsRegions[reg.label]?.investigations ?? 0, decouvertes: statsRegions[reg.label]?.decouvertes ?? 0, halo: false }, draggable: false, selectable: false, zIndex: -10 }]
+        ? [{ id: reg.id, type: "region", position: { x: reg.x, y: reg.y }, initialWidth: reg.w, initialHeight: reg.h, data: { ...reg, investigations: statsRegions[reg.label]?.investigations ?? 0, decouvertes: statsRegions[reg.label]?.decouvertes ?? 0, halo: false }, draggable: false, selectable: false, zIndex: -10 }]
         : [];
       portes.forEach((dom, i) => {
         const regExt = (mesh.regions || []).find((r) => r.label === dom);
@@ -311,6 +317,8 @@ export default function Atlas() {
           id: pid,
           type: "twin",
           position: { x: cx + Math.cos(ang) * ray - 90, y: cy + Math.sin(ang) * ray },
+          initialWidth: 190,
+          initialHeight: 70,
           data: { jumeau: { id: pid, nom: `Vers ${dom} · ${extCount[dom].n} relation${extCount[dom].n > 1 ? "s" : ""}`, domaine: dom, porte: true, statut: "porte" }, porte: dom, dim: porteFocus && porteFocus !== dom },
           draggable: false,
           selectable: false,
@@ -321,6 +329,8 @@ export default function Atlas() {
           id: j.id,
           type: "twin",
           position: posOverrides[j.id] || j.position,
+          initialWidth: 190,
+          initialHeight: 64,
           data: { jumeau: j, dim: false, halo: halo === j.id, evenements: compteurs[j.id] || 0, etape: null },
           selected: selection.includes(j.id),
         }))
@@ -357,6 +367,8 @@ export default function Atlas() {
     if (mode === "territoire") {
       ns = (mesh.regions || []).map((r) => ({
         id: r.id, type: "region", position: { x: r.x, y: r.y },
+        initialWidth: r.w,
+        initialHeight: r.h,
         data: { ...r, investigations: statsRegions[r.label]?.investigations ?? 0, decouvertes: statsRegions[r.label]?.decouvertes ?? 0, halo: !!halo && domDe[halo] === r.label },
         draggable: false, selectable: false, zIndex: -10,
       }));
@@ -377,6 +389,8 @@ export default function Atlas() {
           id: j.id,
           type: "twin",
           position,
+          initialWidth: 190,
+          initialHeight: 64,
           hidden: entreprise && !j.anonyme ? true : entreprise,
           data: { jumeau: j, dim: dims.has(j.id), halo: halo === j.id, evenements: compteurs[j.id] || 0, etape },
           selected: selection.includes(j.id),
@@ -429,21 +443,19 @@ export default function Atlas() {
       if (relFocus && selection.length > 1) {
         es = es.filter((e) => selection.includes(e.source) && selection.includes(e.target));
       }
-      if (relDom !== "aucun" && domaineSel) {
-        const domTwins = new Set(mesh.jumeaux.filter((j) => j.domaine === domaineSel).map((j) => j.id));
-        if (relDom === "inconnues") {
-          es = es.filter((e) => e.data?.etat && e.data.etat !== "confirmee" && (domTwins.has(e.source) || domTwins.has(e.target)));
-        } else if (relDom === "externes") {
-          es = es.filter((e) => domTwins.has(e.source) !== domTwins.has(e.target));
-        }
+      if (focusCarte?.type === "relations" && focusCarte.ids?.length) {
+        es = es.map((e) =>
+          focusCarte.ids.includes(e.id)
+            ? { ...e, animated: true, style: { ...e.style, opacity: 1, strokeWidth: 2.6 } }
+            : { ...e, animated: false, style: { ...e.style, opacity: 0.08 } }
+        );
       }
     }
     return { nodes: ns, edges: es };
-  }, [mesh, mode, situationId, parcoursId, focus, halo, compteurs, selection, relFocus, zoomNiveau, situation, vueActive, posOverrides, domaineSel, domaineInterne, porteFocus, perimetreTravail, relDom, zonesFaibles, domDe, statsRegions]);
+  }, [mesh, mode, situationId, parcoursId, focus, halo, compteurs, selection, relFocus, zoomNiveau, situation, vueActive, posOverrides, domaineSel, domaineInterne, porteFocus, perimetreTravail, domDe, statsRegions, focusCarte]);
 
   const eventsVisibles = events.filter((e) => couches[e.dynamique || "operationnelle"]);
   const modeInfo = MODES.find((m) => m.id === mode);
-  const nomsSelection = selection.map((id) => jumeauPar(id)?.nom || id);
 
   const confirmerRelation = async (r) => {
     try {
@@ -482,7 +494,13 @@ export default function Atlas() {
         selectionOnDrag={outil === "lasso"}
         selectionMode={SelectionMode.Partial}
         multiSelectionKeyCode={["Meta", "Control", "Shift"]}
+        onSelectionStart={() => { selAvantLasso.current = selection; }}
+        onSelectionEnd={() => {
+          const ids = (rfRef.current?.getNodes() || []).filter((n) => n.selected && n.type === "twin").map((n) => n.id);
+          if (ids.length) setSelection([...new Set([...selAvantLasso.current, ...ids])]);
+        }}
         onNodeClick={(_, node) => {
+          if (outil === "lasso") return;
           if (node.type === "region") {
             const label = node.data.label;
             const dc = dernierClicRegion.current;
@@ -516,6 +534,7 @@ export default function Atlas() {
           majUrl({ sel: node.data.jumeau.id, ...(domaineInterne ? {} : { domaine: null, interne: null }) });
         }}
         onNodeDoubleClick={(_, node) => {
+          if (outil === "lasso") return;
           if (node.type === "region") entrerDomaine(node.data.label);
         }}
         onEdgeClick={(_, edge) => {
@@ -536,7 +555,7 @@ export default function Atlas() {
               return;
             }
           }
-          setSelected(null); setSelectedRelation(null); setDomaineSel(null); setSelection([]); setRelFocus(false); setComparaison(null);
+          setSelected(null); setSelectedRelation(null); setDomaineSel(null); setSelection([]); setRelFocus(false); setComparaison(null); setAttenteComparaison(false); commanderCarte(null);
           majUrl(domaineInterne ? { sel: null } : { sel: null, domaine: null, interne: null });
         }}
         nodesDraggable={mode === "territoire"}
@@ -725,95 +744,16 @@ export default function Atlas() {
         </div>
       )}
 
-      {/* Barre d'actions du domaine sélectionné */}
-      {domaineSel && selection.length < 2 && (
-        <div className="glass rise absolute bottom-24 left-1/2 z-20 max-w-[720px] -translate-x-1/2 rounded-xl px-4 py-3" data-testid="domaine-bar">
-          <div className="flex items-center gap-3">
-            <span className="font-code text-[11px] font-medium" style={{ color: couleurDomaine(domaineSel) }} data-testid="domaine-bar-titre">
-              Domaine {domaineSel}
-            </span>
-            {statsDomaine(domaineSel) && (
-              <span className="font-code text-[10px] text-white/40">
-                {statsDomaine(domaineSel).twins.length} jumeaux · couverture {statsDomaine(domaineSel).couv} % · {statsDomaine(domaineSel).sits.length} situation(s)
-              </span>
-            )}
-          </div>
-          <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-            <button
-              onClick={() => window.dispatchEvent(new CustomEvent("meridian:aurora-ask", { detail: `Analyse le domaine ${domaineSel} : découvertes, dépendances externes, zones mal connues` }))}
-              data-testid="dom-aurora-btn"
-              className="rounded-md bg-[#3B82F6] px-2.5 py-1.5 text-[11px] font-semibold text-white transition-colors hover:bg-[#2F6FDB]"
-            >
-              Demander à Aurora
-            </button>
-            <button onClick={() => navigate("/investigations")} data-testid="dom-investigation-btn" className="rounded-md border border-white/15 px-2.5 py-1.5 text-[11px] text-white/70 transition-colors hover:border-[#A78BFA]/50 hover:text-white">
-              Créer une investigation
-            </button>
-            <button
-              onClick={() => setRelDom(relDom === "inconnues" ? "aucun" : "inconnues")}
-              data-testid="dom-inconnues-btn"
-              className={`rounded-md border px-2.5 py-1.5 text-[11px] transition-colors ${relDom === "inconnues" ? "border-[#22D3EE]/60 text-[#22D3EE]" : "border-white/15 text-white/70 hover:text-white"}`}
-            >
-              Relations inconnues
-            </button>
-            <button
-              onClick={() => setRelDom(relDom === "externes" ? "aucun" : "externes")}
-              data-testid="dom-externes-btn"
-              className={`rounded-md border px-2.5 py-1.5 text-[11px] transition-colors ${relDom === "externes" ? "border-[#FBBF24]/60 text-[#FBBF24]" : "border-white/15 text-white/70 hover:text-white"}`}
-            >
-              Dépendances externes
-            </button>
-            <button
-              onClick={() => setZonesFaibles((v) => !v)}
-              data-testid="dom-zones-btn"
-              className={`rounded-md border px-2.5 py-1.5 text-[11px] transition-colors ${zonesFaibles ? "border-[#F87171]/60 text-[#F87171]" : "border-white/15 text-white/70 hover:text-white"}`}
-            >
-              Zones mal connues
-            </button>
-            <button
-              onClick={() => { setAttenteComparaison(true); toast.info("Cliquez un second domaine pour comparer"); }}
-              data-testid="dom-comparer-btn"
-              className="rounded-md border border-white/15 px-2.5 py-1.5 text-[11px] text-white/70 transition-colors hover:text-white"
-            >
-              Comparer…
-            </button>
-            <button
-              onClick={async () => {
-                const stats = statsDomaine(domaineSel);
-                if (!stats) return;
-                try {
-                  await api.post("/vues", { nom: `Domaine ${domaineSel}`, type: "selection", jumeaux: stats.twins.map((j) => j.id) });
-                  rechargerVues();
-                  toast.success(`Domaine ${domaineSel} enregistré comme espace de travail (vue)`);
-                } catch {
-                  toast.error("Enregistrement impossible");
-                }
-              }}
-              data-testid="dom-enregistrer-btn"
-              className="rounded-md border border-white/15 px-2.5 py-1.5 text-[11px] text-white/70 transition-colors hover:border-[#10B981]/50 hover:text-[#10B981]"
-            >
-              Enregistrer comme espace
-            </button>
-            <button
-              onClick={() => setPerimetreTravail(perimetreTravail === domaineSel ? null : domaineSel)}
-              data-testid="dom-perimetre-btn"
-              className={`rounded-md border px-2.5 py-1.5 text-[11px] font-semibold transition-colors ${perimetreTravail === domaineSel ? "border-[#22D3EE]/60 bg-[#22D3EE]/10 text-[#22D3EE]" : "border-white/15 text-white/70 hover:border-[#22D3EE]/50 hover:text-white"}`}
-            >
-              {perimetreTravail === domaineSel ? "Retirer le périmètre" : "Utiliser comme périmètre"}
-            </button>
-            {domaineInterne ? (
-              <button onClick={sortirDomaine} data-testid="dom-quitter-btn" className="rounded-md border border-white/15 px-2.5 py-1.5 text-[11px] text-white/70 transition-colors hover:text-white">
-                Quitter le domaine
-              </button>
-            ) : (
-              <button onClick={() => entrerDomaine(domaineSel)} data-testid="dom-explorer-btn" className="rounded-md bg-[#22D3EE] px-2.5 py-1.5 text-[11px] font-semibold text-black transition-colors hover:bg-[#17B8D4]">
-                Explorer ce domaine
-              </button>
-            )}
-            <button onClick={() => { setDomaineSel(null); setRelDom("aucun"); setZonesFaibles(false); setComparaison(null); }} data-testid="dom-clear-btn" className="rounded-md p-1.5 text-white/40 transition-colors hover:text-white">
-              <X size={14} />
-            </button>
-          </div>
+      {/* Indicateur de périmètre de travail actif (filtre volontaire, distinct de la sécurité) */}
+      {perimetreTravail && perimetreTravail !== domaineInterne && (
+        <div className="glass absolute left-1/2 top-4 z-10 flex -translate-x-1/2 items-center gap-2 rounded-xl px-4 py-2" data-testid="perimetre-travail-chip">
+          <span className="h-1.5 w-1.5 rounded-full bg-[#22D3EE]" />
+          <span className="font-code text-[10px] text-white/60">
+            Périmètre de travail : <span style={{ color: couleurDomaine(perimetreTravail) }}>{perimetreTravail}</span> — filtre volontaire, pas sécurité
+          </span>
+          <button onClick={() => setPerimetreTravail(null)} data-testid="perimetre-travail-clear" className="text-white/40 transition-colors hover:text-white">
+            <X size={12} />
+          </button>
         </div>
       )}
 
@@ -851,58 +791,14 @@ export default function Atlas() {
         </div>
       </div>
 
-      {/* Barre contextuelle de sélection multiple */}
-      {selection.length >= 2 && (
-        <div className="glass rise absolute bottom-24 left-1/2 z-20 -translate-x-1/2 rounded-xl px-4 py-3" data-testid="selection-bar">
-          <div className="flex items-center gap-3">
-            <span className="font-code text-[11px] font-medium text-white" data-testid="selection-count">
-              {selection.length} jumeaux sélectionnés
-            </span>
-            <span className="font-code text-[10px] text-white/40">{nomsSelection.join(" · ")}</span>
-          </div>
-          <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-            <button
-              onClick={() => window.dispatchEvent(new CustomEvent("meridian:aurora-ask", { detail: `Analyse ce groupe de jumeaux : ${nomsSelection.join(", ")}` }))}
-              data-testid="sel-aurora-btn"
-              className="rounded-md bg-[#3B82F6] px-2.5 py-1.5 text-[11px] font-semibold text-white transition-colors hover:bg-[#2F6FDB]"
-            >
-              Demander à Aurora
-            </button>
-            <button onClick={() => navigate("/investigations")} data-testid="sel-investigation-btn" className="rounded-md border border-white/15 px-2.5 py-1.5 text-[11px] text-white/70 transition-colors hover:border-[#A78BFA]/50 hover:text-white">
-              Ouvrir une investigation
-            </button>
-            <button
-              onClick={() => setRelFocus((v) => !v)}
-              data-testid="sel-relations-btn"
-              className={`rounded-md border px-2.5 py-1.5 text-[11px] transition-colors ${relFocus ? "border-[#22D3EE]/60 text-[#22D3EE]" : "border-white/15 text-white/70 hover:text-white"}`}
-            >
-              Rechercher des relations
-            </button>
-            <button onClick={() => navigate("/decisions")} data-testid="sel-impact-btn" className="rounded-md border border-white/15 px-2.5 py-1.5 text-[11px] text-white/70 transition-colors hover:border-[#FBBF24]/50 hover:text-white">
-              Analyser un impact
-            </button>
-            <button onClick={() => setMode("parcours")} data-testid="sel-parcours-btn" className="rounded-md border border-white/15 px-2.5 py-1.5 text-[11px] text-white/70 transition-colors hover:text-white">
-              Optimiser le parcours
-            </button>
-            <button
-              onClick={async () => {
-                try {
-                  await api.post("/vues", { nom: `Sélection ${selection.length} jumeaux`, type: "selection", jumeaux: selection });
-                  rechargerVues();
-                  toast.success("Sélection enregistrée comme vue");
-                } catch {
-                  toast.error("Enregistrement impossible");
-                }
-              }}
-              data-testid="sel-enregistrer-btn"
-              className="rounded-md border border-white/15 px-2.5 py-1.5 text-[11px] text-white/70 transition-colors hover:border-[#10B981]/50 hover:text-[#10B981]"
-            >
-              Enregistrer la sélection
-            </button>
-            <button onClick={() => { setSelection([]); setRelFocus(false); }} data-testid="sel-clear-btn" className="rounded-md p-1.5 text-white/40 transition-colors hover:text-white">
-              <X size={14} />
-            </button>
-          </div>
+      {/* Chip « vue commandée par Aurora » */}
+      {focusCarte && (
+        <div className="glass absolute bottom-16 left-4 z-10 flex items-center gap-2 rounded-lg px-3 py-1.5" data-testid="focus-aurora-chip">
+          <Sparkle size={12} className="text-[#3B82F6]" />
+          <span className="font-code text-[10px] text-white/55">Vue commandée par Aurora</span>
+          <button onClick={() => commanderCarte(null)} data-testid="focus-aurora-clear" className="text-white/40 transition-colors hover:text-white">
+            <X size={12} />
+          </button>
         </div>
       )}
 
@@ -933,7 +829,29 @@ export default function Atlas() {
             ) : selected ? (
               <TwinDetail selected={selected} />
             ) : domaineSel ? (
-              <DomaineDetail label={domaineSel} stats={statsDomaine(domaineSel)} />
+              <DomaineDetail
+                label={domaineSel}
+                stats={statsDomaine(domaineSel)}
+                actions={{
+                  dedans: domaineInterne === domaineSel,
+                  onExplorer: () => entrerDomaine(domaineSel),
+                  onQuitter: sortirDomaine,
+                  onComparer: () => { setAttenteComparaison(true); toast.info("Cliquez un second domaine pour comparer"); },
+                  onEnregistrer: async () => {
+                    const stats = statsDomaine(domaineSel);
+                    if (!stats) return;
+                    try {
+                      await api.post("/vues", { nom: `Domaine ${domaineSel}`, type: "selection", jumeaux: stats.twins.map((j) => j.id) });
+                      rechargerVues();
+                      toast.success(`Domaine ${domaineSel} enregistré comme espace de travail (vue)`);
+                    } catch {
+                      toast.error("Enregistrement impossible");
+                    }
+                  },
+                  perimetre: perimetreTravail === domaineSel,
+                  onPerimetre: () => setPerimetreTravail(perimetreTravail === domaineSel ? null : domaineSel),
+                }}
+              />
             ) : (
               <p className="text-xs text-white/35">
                 Sélectionnez un jumeau, une relation ou un domaine. Double-clic sur un domaine pour y entrer ; le zoom révèle progressivement le contenu.
@@ -1042,7 +960,7 @@ function RelationDetail({ rel, jumeauPar, onConfirmer }) {
   );
 }
 
-function DomaineDetail({ label, stats }) {
+function DomaineDetail({ label, stats, actions }) {
   if (!stats) return null;
   const m = stats.reg?.maturite;
   return (
@@ -1052,6 +970,34 @@ function DomaineDetail({ label, stats }) {
         <h3 className="font-display text-base font-bold text-white">Domaine {label}</h3>
       </div>
       {m && <div className="mt-1 font-code text-[10px] text-white/45">{m.niveau} · {m.zones_inconnues} zone(s) inconnue(s)</div>}
+      {actions && (
+        <div className="mt-3 space-y-1.5" data-testid="domaine-actions">
+          {actions.dedans ? (
+            <button onClick={actions.onQuitter} data-testid="dom-quitter-btn" className="w-full rounded-md border border-white/15 px-3 py-2 text-xs text-white/70 transition-colors hover:text-white">
+              Quitter le domaine
+            </button>
+          ) : (
+            <button onClick={actions.onExplorer} data-testid="dom-explorer-btn" className="w-full rounded-md bg-[#22D3EE] px-3 py-2 text-xs font-semibold text-black transition-colors hover:bg-[#17B8D4]">
+              Explorer ce domaine
+            </button>
+          )}
+          <div className="flex flex-wrap gap-1.5">
+            <button onClick={actions.onComparer} data-testid="dom-comparer-btn" className="flex-1 rounded-md border border-white/15 px-2 py-1.5 text-[11px] text-white/70 transition-colors hover:text-white">
+              Comparer…
+            </button>
+            <button onClick={actions.onEnregistrer} data-testid="dom-enregistrer-btn" className="flex-1 rounded-md border border-white/15 px-2 py-1.5 text-[11px] text-white/70 transition-colors hover:border-[#10B981]/50 hover:text-[#10B981]">
+              Enregistrer comme espace
+            </button>
+          </div>
+          <button
+            onClick={actions.onPerimetre}
+            data-testid="dom-perimetre-btn"
+            className={`w-full rounded-md border px-3 py-2 text-xs font-semibold transition-colors ${actions.perimetre ? "border-[#22D3EE]/60 bg-[#22D3EE]/10 text-[#22D3EE]" : "border-white/15 text-white/70 hover:border-[#22D3EE]/50 hover:text-white"}`}
+          >
+            {actions.perimetre ? "Retirer le périmètre de travail" : "Utiliser comme périmètre de travail"}
+          </button>
+        </div>
+      )}
       <dl className="mt-3 space-y-2 text-xs">
         <div className="flex justify-between"><dt className="text-white/40">Jumeaux</dt><dd className="font-code text-white/85">{stats.twins.length}</dd></div>
         <div className="flex justify-between"><dt className="text-white/40">Couverture moyenne</dt><dd className="font-code text-white/85">{stats.couv} %</dd></div>

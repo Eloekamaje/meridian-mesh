@@ -3,6 +3,15 @@
 ## Problème d'origine (résumé)
 Construire Méridian non pas comme un Atlas/graphe centré sur les jumeaux, mais comme un **système de compréhension et de décision pour le SI**, organisé autour de l'objet **Situation**. Repositionnement v2 (utilisateur) : **système qui apprend continuellement la structure et le comportement du SI** — cycle Découverte candidate → Compréhension validée → Décision éclairée → Mémoire du Mesh. L'accueil devient un Observatoire des découvertes (3 colonnes Découvert / À comprendre / À décider), l'Atlas montre l'évolution du savoir (6 états de relations, maturité des domaines, 3 dynamiques temps réel), les investigations couvrent relations/comportements/connaissances/contradictions, chaque décision enrichit la mémoire du Mesh. Code couleur : Découvrir cyan, Comprendre violet, Décider ambre.
 
+## Implémenté (25/06/2026 — v6, Aurora interface contextuelle native de l'Atlas)
+- **Store partagé Atlas ↔ Aurora** (`lib/contexte.jsx`) : sélection, domaine courant, commandes carte (focusCarte). Synchronisation bidirectionnelle réelle.
+- **Atlas épuré** : barre « N jumeaux sélectionnés » supprimée, boutons « Demander à Aurora » supprimés, **barre d'actions du domaine supprimée** (analyse validée par l'utilisateur : 5 actions sur 8 redondantes avec Aurora) — « Explorer / Comparer / Enregistrer comme espace / Utiliser comme périmètre » déplacées dans le panneau latéral DomaineDetail ; indicateur « Périmètre de travail » réinstallé en chip carte (avec retrait ×). Lasso = union avec la sélection existante. Clics inhibés quand l'outil lasso est actif.
+- **AuroraBar contextuelle** : chips de sélection (× pour retirer), puce « Domaine X · N jumeaux accessibles », suggestions contextuelles (Comprendre les relations · Dépendances inconnues · Analyser un changement · Points critiques · Optimiser le parcours · Ouvrir une investigation), propositions Aurora→Atlas (Ajouter au contexte / Examiner la justification / Ignorer — jamais sans confirmation), repli en pastille flottante sans perte de contexte. Aucune analyse automatique à la sélection.
+- **Backend** : `/api/aurora/demander` reçoit l'enveloppe {selection, domaine} — intentions calculées depuis le vrai Mesh (relations internes, non confirmées, impact, points critiques avec proposition de jumeau dégradé, parcours, investigation), accusé de contexte sans analyse, scénarios prescriptés Olympiade préservés sans sélection ; sélection analytique filtrée RBAC niveau « résumé » minimum.
+- **Commandes carte** : Aurora éclaire les relations (commande_carte relations), isole un parcours, navigue vers un domaine ; chip « Vue commandée par Aurora » avec retrait.
+- **Correctif robustesse carte** : initialWidth/initialHeight sur tous les nœuds — fini la fenêtre d'invisibilité (visibility:hidden en attente ResizeObserver) qui rendait la carte noire par intermittence et cassait le hit-testing des clics.
+- Tests : iteration_11 → backend 10/10, frontend 12/13 (lasso union non concluant côté automate, code correct + garde ajoutée) ; correctifs RBAC/lasso retestés par curl et screenshots.
+
 ## Implémenté (25/06/2026 — v5.1, correctif cosmétique)
 - **Warning hydration `<span>` dans `<option>` éliminé** : l'instrumentation Emergent injectait un span autour des expressions dynamiques enfants des `<option>`. Les options des sélecteurs (Topbar périmètre/persona, Atlas situation/parcours) utilisent désormais l'attribut `label` (HTML standard) au lieu d'enfants texte. Console 100 % propre (0 warning, 0 erreur), affichage et changements de sélection inchangés.
 
@@ -89,8 +98,8 @@ Construire Méridian non pas comme un Atlas/graphe centré sur les jumeaux, mais
 
 ## Backlog priorisé
 - **P0** : — (rien de bloquant).
-- **P1** : — (tous les P1 sont traités).
-- **P2** : scission d'Atlas.jsx (~1200 lignes — hook useDomainNavigation + composant DomainView) ; migration `on_event` → lifespan FastAPI ; durcissement CORS pour la production ; découverte automatique de relations pour les nouveaux jumeaux admis ; vue Parcours éditable ; double-clic sur une porte externe = traverser vers le domaine voisin (suggéré, en attente du retour utilisateur).
+- **P1** : valider manuellement le lasso en union sur un vrai navigateur (automate Playwright non concluant, code vérifié).
+- **P2** : scission d'Atlas.jsx (~1130 lignes — hook useDomainNavigation + composant DomainView) ; persistance du contexte Aurora en sessionStorage (perdu au reload complet) ; migration `on_event` → lifespan FastAPI ; durcissement CORS pour la production ; découverte automatique de relations pour les nouveaux jumeaux admis ; vue Parcours éditable ; double-clic sur une porte externe = traverser vers le domaine voisin (suggéré, en attente du retour utilisateur).
 - **Si vraie IA un jour** : brancher Aurora sur un LLM via la clé universelle Emergent (budget : Profile → Manage plan → Universal Key).
 
 ## Prochaines tâches

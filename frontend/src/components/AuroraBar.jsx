@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Sparkle, PaperPlaneRight, FileText, X } from "@phosphor-icons/react";
+import { Sparkle, PaperPlaneRight, FileText, X, CaretDown, Plus, Eye } from "@phosphor-icons/react";
+import { toast } from "sonner";
 import api from "@/lib/api";
 import TrustBadges from "./TrustBadges";
 import { couleurDomaine } from "@/lib/domaines";
+import { useContexte } from "@/lib/contexte";
+import { useMesh } from "@/lib/mesh";
 
 function contexteDepuis(pathname) {
   if (pathname.startsWith("/investigations")) return "investigation";
@@ -19,16 +22,42 @@ const COMPORTEMENTS = {
   recommander: { label: "Recommandation", couleur: "#FBBF24" },
 };
 
+const SUGGESTIONS_SELECTION = [
+  "Comprendre leurs relations",
+  "Rechercher des dépendances inconnues",
+  "Analyser un changement",
+  "Trouver les points critiques",
+  "Optimiser ce parcours",
+  "Ouvrir une investigation",
+];
+
+const SUGGESTIONS_DOMAINE = [
+  "Comprendre les relations internes",
+  "Rechercher des dépendances inconnues",
+  "Analyser un changement",
+  "Trouver les points critiques",
+  "Ouvrir une investigation",
+];
+
 export default function AuroraBar() {
   const location = useLocation();
   const navigate = useNavigate();
   const contexte = contexteDepuis(location.pathname);
+  const { selection, domaineSel, retirerJumeau, setDomaineSel, ajouterJumeau, commanderCarte } = useContexte();
+  const { jumeauPar, mesh } = useMesh();
   const [question, setQuestion] = useState("");
   const [reponse, setReponse] = useState(null);
   const [questionPosee, setQuestionPosee] = useState("");
   const [chargement, setChargement] = useState(false);
   const [suggestions, setSuggestions] = useState([]);
+  const [replie, setReplie] = useState(false);
+  const [propsEtat, setPropsEtat] = useState({});
+  const [justifOuverte, setJustifOuverte] = useState(null);
   const inputRef = useRef(null);
+
+  const selJumeaux = selection.map(jumeauPar).filter(Boolean);
+  const nbDomaine = domaineSel && mesh ? mesh.jumeaux.filter((j) => !j.anonyme && j.domaine === domaineSel).length : 0;
+  const suggestionsActives = selection.length > 0 ? SUGGESTIONS_SELECTION : domaineSel ? SUGGESTIONS_DOMAINE : suggestions;
 
   useEffect(() => {
     setReponse(null);
@@ -39,11 +68,13 @@ export default function AuroraBar() {
     const handler = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
+        setReplie(false);
         inputRef.current?.focus();
       }
     };
     const ask = (e) => {
       if (e.detail) setQuestion(e.detail);
+      setReplie(false);
       inputRef.current?.focus();
     };
     window.addEventListener("keydown", handler);
@@ -61,14 +92,32 @@ export default function AuroraBar() {
     setQuestionPosee(finale);
     setQuestion("");
     try {
-      const { data } = await api.post("/aurora/demander", { contexte, question: finale });
+      const { data } = await api.post("/aurora/demander", { contexte, question: finale, selection, domaine: domaineSel });
       setReponse(data);
+      setPropsEtat({});
+      setJustifOuverte(null);
+      if (data.commande_carte) commanderCarte(data.commande_carte);
     } catch {
       setReponse({ reponse: "Aurora est momentanément injoignable.", contributions: [], preuves: [], indicateurs: null });
     } finally {
       setChargement(false);
     }
   };
+
+  if (replie) {
+    return (
+      <button
+        onClick={() => setReplie(false)}
+        data-testid="aurora-pill"
+        className="glass rise fixed bottom-5 right-5 z-40 flex items-center gap-2 rounded-full px-4 py-2.5 text-xs font-semibold text-white/80 transition-colors hover:text-white"
+      >
+        <Sparkle size={15} weight="fill" className="text-[#3B82F6]" />
+        Aurora
+        {selection.length > 0 && <span className="font-code text-[10px] text-white/45">· {selection.length} jumeau{selection.length > 1 ? "x" : ""}</span>}
+        {reponse && <span className="h-1.5 w-1.5 rounded-full bg-[#22D3EE]" />}
+      </button>
+    );
+  }
 
   return (
     <div className="pointer-events-none fixed bottom-5 left-1/2 z-40 w-[min(700px,92vw)] -translate-x-1/2" data-testid="aurora-bar">
@@ -100,6 +149,53 @@ export default function AuroraBar() {
           </div>
 
           <p className="mt-3 text-sm leading-relaxed text-white/80" data-testid="aurora-reponse">{reponse.reponse}</p>
+
+          {reponse.propositions?.some((_, i) => !propsEtat[i]) && (
+            <div className="mt-4" data-testid="aurora-propositions">
+              <div className="font-code text-[10px] uppercase tracking-[0.2em] text-white/40">Proposition pour la carte</div>
+              {reponse.propositions.map((p, i) =>
+                propsEtat[i] ? null : (
+                  <div key={i} className="mt-2 rounded-lg border border-[#22D3EE]/20 bg-[#22D3EE]/[0.04] px-3 py-2.5" data-testid={`aurora-proposition-${i}`}>
+                    <p className="text-xs text-white/75">
+                      J'ai identifié <span className="font-semibold" style={{ color: couleurDomaine(p.domaine) }}>{p.nom}</span> comme voisin pertinent.
+                    </p>
+                    {justifOuverte === i && (
+                      <p className="mt-1.5 border-l-2 border-[#22D3EE]/40 pl-2 text-[11px] leading-relaxed text-white/55" data-testid={`aurora-prop-justif-${i}`}>
+                        {p.justification}
+                      </p>
+                    )}
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      <button
+                        onClick={() => {
+                          ajouterJumeau(p.jumeau_id);
+                          setPropsEtat((s) => ({ ...s, [i]: "ajoute" }));
+                          toast.success(`${p.nom} ajouté au contexte`);
+                        }}
+                        data-testid={`aurora-prop-ajouter-${i}`}
+                        className="flex items-center gap-1 rounded-md bg-[#22D3EE] px-2 py-1 text-[10px] font-semibold text-black transition-colors hover:bg-[#17B8D4]"
+                      >
+                        <Plus size={11} /> Ajouter au contexte
+                      </button>
+                      <button
+                        onClick={() => setJustifOuverte(justifOuverte === i ? null : i)}
+                        data-testid={`aurora-prop-examiner-${i}`}
+                        className="flex items-center gap-1 rounded-md border border-white/15 px-2 py-1 text-[10px] text-white/65 transition-colors hover:text-white"
+                      >
+                        <Eye size={11} /> {justifOuverte === i ? "Masquer la justification" : "Examiner la justification"}
+                      </button>
+                      <button
+                        onClick={() => setPropsEtat((s) => ({ ...s, [i]: "ignore" }))}
+                        data-testid={`aurora-prop-ignorer-${i}`}
+                        className="rounded-md px-2 py-1 text-[10px] text-white/40 transition-colors hover:text-white/70"
+                      >
+                        Ignorer
+                      </button>
+                    </div>
+                  </div>
+                )
+              )}
+            </div>
+          )}
 
           {reponse.contributions?.length > 0 && (
             <div className="mt-4" data-testid="aurora-contributions">
@@ -150,9 +246,33 @@ export default function AuroraBar() {
       )}
 
       <div className="glass pointer-events-auto rounded-xl p-2.5">
-        {!reponse && suggestions.length > 0 && (
+        {(selection.length > 0 || domaineSel) && (
+          <div className="mb-2 flex flex-wrap items-center gap-1.5 border-b border-white/[0.06] px-1 pb-2" data-testid="aurora-contexte">
+            <span className="font-code text-[9px] uppercase tracking-[0.2em] text-white/35">
+              Contexte actif{selection.length > 0 ? ` — ${selection.length} jumeau${selection.length > 1 ? "x" : ""}` : ""}
+            </span>
+            {domaineSel && (
+              <span className="flex items-center gap-1.5 rounded-full border px-2 py-0.5 font-code text-[10px]" style={{ color: couleurDomaine(domaineSel), borderColor: `${couleurDomaine(domaineSel)}55`, backgroundColor: `${couleurDomaine(domaineSel)}12` }} data-testid="aurora-domaine-chip">
+                Domaine {domaineSel} · {nbDomaine} jumeaux accessibles
+                <button onClick={() => setDomaineSel(null)} className="opacity-60 transition-opacity hover:opacity-100" data-testid="aurora-domaine-chip-retirer">
+                  <X size={10} />
+                </button>
+              </span>
+            )}
+            {selJumeaux.map((j) => (
+              <span key={j.id} className="flex items-center gap-1.5 rounded-full border px-2 py-0.5 font-code text-[10px]" style={{ color: couleurDomaine(j.domaine), borderColor: `${couleurDomaine(j.domaine)}55`, backgroundColor: `${couleurDomaine(j.domaine)}12` }} data-testid={`aurora-chip-${j.id}`}>
+                {j.nom}
+                <button onClick={() => retirerJumeau(j.id)} className="opacity-60 transition-opacity hover:opacity-100" data-testid={`aurora-chip-retirer-${j.id}`}>
+                  <X size={10} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
+        {!reponse && suggestionsActives.length > 0 && (
           <div className="mb-2 flex flex-wrap gap-1.5 px-1">
-            {suggestions.map((s, i) => (
+            {suggestionsActives.map((s, i) => (
               <button
                 key={i}
                 onClick={() => demander(s)}
@@ -164,16 +284,22 @@ export default function AuroraBar() {
             ))}
           </div>
         )}
-        <form
-          onSubmit={(e) => { e.preventDefault(); demander(); }}
-          className="flex items-center gap-2"
-        >
+
+        <form onSubmit={(e) => { e.preventDefault(); demander(); }} className="flex items-center gap-2">
           <Sparkle size={18} weight="fill" className="ml-2 shrink-0 text-[#3B82F6]" />
           <input
             ref={inputRef}
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
-            placeholder={chargement ? "Aurora croise les sources…" : "Demander à Aurora…  (⌘K)"}
+            placeholder={
+              chargement
+                ? "Aurora croise les sources…"
+                : selection.length > 0
+                  ? "Que voulez-vous comprendre sur cette sélection ?"
+                  : domaineSel
+                    ? `Interroger le domaine ${domaineSel}…`
+                    : "Demander à Aurora…  (⌘K)"
+            }
             disabled={chargement}
             data-testid="aurora-input"
             className="h-9 flex-1 bg-transparent text-sm text-white placeholder:text-white/35 focus:outline-none"
@@ -185,6 +311,15 @@ export default function AuroraBar() {
             className="flex h-9 w-9 items-center justify-center rounded-md bg-[#3B82F6] text-white transition-colors hover:bg-[#2F6FDB] disabled:opacity-30"
           >
             <PaperPlaneRight size={16} weight="fill" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setReplie(true)}
+            title="Réduire Aurora (le contexte est conservé)"
+            data-testid="aurora-reduire-btn"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-white/40 transition-colors hover:bg-white/[0.06] hover:text-white"
+          >
+            <CaretDown size={16} />
           </button>
         </form>
       </div>

@@ -505,7 +505,165 @@ async def creer_dossier(payload: DossierDemande):
 
 class AuroraDemande(BaseModel):
     contexte: str = "global"
-    question: str
+    question: str = ""
+    selection: list = []
+    domaine: Optional[str] = None
+
+
+ETAT_REL_LABELS = {"observee": "observée", "supposee": "supposée", "validation": "validation A2A", "contestee": "contestée", "obsolete": "obsolète", "confirmee": "confirmée"}
+
+
+def intention_selection(q: str):
+    if any(k in q for k in ["inconnue", "inconnu", "non documente", "cache"]):
+        return "inconnues"
+    if any(k in q for k in ["impact", "changement"]):
+        return "impact"
+    if any(k in q for k in ["critique", "fragile"]):
+        return "critiques"
+    if any(k in q for k in ["parcours", "chemin"]):
+        return "parcours"
+    if "investigation" in q:
+        return "investigation"
+    if any(k in q for k in ["comprendre", "relation", "relient", "connecte"]):
+        return "relations"
+    return None
+
+
+async def liens_selection(sel, aut):
+    relations = await db.relations.find({}, NO_ID).to_list(200)
+    sset = set(sel)
+    internes = [r for r in relations if r["source"] in sset and r["cible"] in sset]
+    externes = [r for r in relations if (r["source"] in sset) != (r["cible"] in sset) and r["source"] in aut and r["cible"] in aut]
+    return internes, externes
+
+
+async def reponse_selection(intent, sel, aut, tous, id_vers_nom):
+    par_id = {j["id"]: j for j in tous}
+    noms = [par_id[j]["nom"] for j in sel if j in par_id]
+    internes, externes = await liens_selection(sel, aut)
+    sset = set(sel)
+
+    def nom_rel(r):
+        return id_vers_nom.get(r["source"], r["source"]) + " → " + id_vers_nom.get(r["cible"], r["cible"])
+
+    indicateurs = {"confiance": 72, "couverture": 64, "fraicheur": "à l'instant", "contradictions": len([r for r in internes if r["etat"] == "contestee"])}
+
+    if intent == "relations":
+        if not internes:
+            return {
+                "comportement": "expliquer",
+                "reponse": f"Aucune relation n'est encore connue entre {', '.join(noms)} — c'est une zone inconnue du Mesh. Je peux surveiller leurs émissions pour détecter une relation émergente.",
+                "contributions": [], "preuves": [{"source": "Mesh", "detail": "0 relation connue dans la sélection"}],
+                "indicateurs": indicateurs,
+            }
+        lignes = [f"{nom_rel(r)} ({ETAT_REL_LABELS.get(r['etat'], 'confirmée')})" for r in internes]
+        txt = f"{len(internes)} relation(s) connue(s) au sein de la sélection : " + " · ".join(lignes) + "."
+        contestees = [r for r in internes if r["etat"] == "contestee"]
+        if contestees:
+            txt += f" Contradiction active sur {nom_rel(contestees[0])} — à trancher."
+        return {
+            "comportement": "expliquer", "reponse": txt,
+            "contributions": [
+                {"jumeau": par_id[r["source"]]["nom"], "domaine": par_id[r["source"]].get("domaine", ""), "texte": f"Relation vers {id_vers_nom.get(r['cible'], r['cible'])} ({ETAT_REL_LABELS.get(r['etat'], 'confirmée')})"}
+                for r in internes[:3] if r["source"] in par_id
+            ],
+            "preuves": [{"source": "Mesh", "detail": f"{len(internes)} relation(s) éclairée(s) sur la carte"}],
+            "indicateurs": indicateurs,
+            "commande_carte": {"type": "relations", "ids": [r["id"] for r in internes]},
+        }
+
+    if intent == "inconnues":
+        non_conf = [r for r in internes + externes if r["etat"] != "confirmee"]
+        compte_ext = {}
+        for r in externes:
+            if r["etat"] == "confirmee":
+                continue
+            autre = r["cible"] if r["source"] in sset else r["source"]
+            compte_ext[autre] = compte_ext.get(autre, 0) + 1
+        out = {
+            "comportement": "explorer",
+            "reponse": (
+                f"{len(non_conf)} relation(s) non confirmée(s) autour de la sélection : "
+                + " · ".join(f"{nom_rel(r)} ({ETAT_REL_LABELS.get(r['etat'], '')})" for r in non_conf[:4]) + "."
+                if non_conf else
+                f"Aucune relation douteuse autour de {', '.join(noms)} — la zone est entièrement confirmée."
+            ),
+            "contributions": [], "preuves": [{"source": "Mesh", "detail": f"{len(non_conf)} relation(s) à l'état observé, supposé, validé A2A ou contesté"}],
+            "indicateurs": indicateurs,
+        }
+        if non_conf:
+            out["commande_carte"] = {"type": "relations", "ids": [r["id"] for r in non_conf]}
+        if compte_ext:
+            candidat = max(compte_ext, key=compte_ext.get)
+            if candidat in par_id:
+                j = par_id[candidat]
+                out["propositions"] = [{"jumeau_id": candidat, "nom": j["nom"], "domaine": j.get("domaine", ""), "justification": f"{compte_ext[candidat]} relation(s) non confirmée(s) avec votre sélection — l'ajouter éclairerait la zone"}]
+        return out
+
+    if intent == "impact":
+        voisins = sorted({(r["cible"] if r["source"] in sset else r["source"]) for r in externes})
+        noms_v = [id_vers_nom.get(v, v) for v in voisins]
+        risque = [r for r in externes if r["etat"] in ("contestee", "validation", "supposee")]
+        txt = f"Un changement sur {', '.join(noms)} exposerait directement {len(voisins)} voisin(s) : {', '.join(noms_v) if noms_v else 'aucun'}."
+        if risque:
+            txt += f" Point de vigilance : {nom_rel(risque[0])} ({ETAT_REL_LABELS.get(risque[0]['etat'], '')}) — non confirmée, dans la zone d'impact."
+        out = {
+            "comportement": "recommander", "reponse": txt,
+            "contributions": [], "preuves": [{"source": "Mesh", "detail": f"{len(externes)} relation(s) entrante(s) ou sortante(s)"}],
+            "indicateurs": indicateurs,
+            "action": {"route": "/decisions", "label": "Approfondir dans Change Lab"},
+        }
+        if externes:
+            out["commande_carte"] = {"type": "relations", "ids": [r["id"] for r in externes]}
+        return out
+
+    if intent == "critiques":
+        touches = sorted({*sel, *(r["source"] for r in externes), *(r["cible"] for r in externes)})
+        degrades = [par_id[t] for t in touches if t in par_id and par_id[t].get("sante") == "dégradé"]
+        contest = [r for r in internes + externes if r["etat"] in ("contestee", "validation")]
+        elements = []
+        if degrades:
+            elements.append("santé dégradée : " + ", ".join(j["nom"] for j in degrades))
+        if contest:
+            elements.append("relations à trancher : " + " · ".join(nom_rel(r) for r in contest[:3]))
+        out = {
+            "comportement": "recommander",
+            "reponse": ("Points critiques autour de la sélection — " + " ; ".join(elements) + ".") if elements else f"Aucun point critique détecté autour de {', '.join(noms)} — santé nominale, relations confirmées.",
+            "contributions": [], "preuves": [{"source": "Mesh", "detail": "Santé des jumeaux et états des relations croisés"}],
+            "indicateurs": indicateurs,
+        }
+        if contest:
+            out["commande_carte"] = {"type": "relations", "ids": [r["id"] for r in contest]}
+        ajout = next((j for j in degrades if j["id"] not in sset), None)
+        if ajout:
+            out["propositions"] = [{"jumeau_id": ajout["id"], "nom": ajout["nom"], "domaine": ajout.get("domaine", ""), "justification": "Santé dégradée et directement lié à votre sélection"}]
+        return out
+
+    if intent == "parcours":
+        confirmees = [r for r in internes if r["etat"] == "confirmee"]
+        return {
+            "comportement": "recommander",
+            "reponse": f"Parcours proposé : {' → '.join(noms)} — {len(confirmees)} relation(s) confirmée(s), {len(internes) - len(confirmees)} à vérifier. La carte isole ce parcours.",
+            "contributions": [], "preuves": [{"source": "Mesh", "detail": f"{len(internes)} relation(s) entre les étapes"}],
+            "indicateurs": indicateurs,
+            "commande_carte": {"type": "parcours", "ids": sel},
+        }
+
+    if intent == "investigation":
+        return {
+            "comportement": "recommander",
+            "reponse": f"Cette sélection peut devenir une investigation : je conserve les {len(sel)} jumeaux, la question posée, la période observée et les preuves déjà rassemblées — rien n'est perdu. L'investigation reprendra ce fil avec hypothèses et contradictoires.",
+            "contributions": [], "preuves": [{"source": "Sélection", "detail": f"{len(sel)} jumeau(x), {len(internes)} relation(s) interne(s)"}],
+            "indicateurs": indicateurs,
+            "action": {"route": "/investigations", "label": "Transformer en investigation"},
+        }
+
+    return {
+        "comportement": "explorer",
+        "reponse": f"Contexte actif : {len(sel)} jumeau(x) — {', '.join(noms)}. {len(internes)} relation(s) connue(s) entre eux, {len(externes)} vers l'extérieur. Choisissez une intention ou précisez votre question.",
+        "contributions": [], "preuves": [],
+        "indicateurs": {"confiance": 100, "couverture": 64, "fraicheur": "à l'instant", "contradictions": 0},
+    }
 
 
 AURORA_STOPWORDS = {
@@ -582,15 +740,23 @@ async def recherche_plein_texte(q: str, aut: dict):
 @api_router.post("/aurora/demander")
 async def aurora_demander(payload: AuroraDemande, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
     _, espace = resoudre_perimetre(x_persona, x_espace)
-    tous = await db.jumeaux.find({}, {"_id": 0, "id": 1, "nom": 1}).to_list(200)
+    tous = await db.jumeaux.find({}, NO_ID).to_list(200)
     aut = autorisations(espace, [j["id"] for j in tous])
     nom_vers_id = {j["nom"]: j["id"] for j in tous}
-    q = payload.question.lower()
+    id_vers_nom = {j["id"]: j["nom"] for j in tous}
+    q = normalise_txt(payload.question)
     for j in tous:
-        if j["id"] not in aut and len(j["nom"]) > 4 and j["nom"].lower() in q:
+        if j["id"] not in aut and len(j["nom"]) > 4 and normalise_txt(j["nom"]) in q:
             return HORS_PERIMETRE
+    sel = [j for j in (payload.selection or []) if j in aut and niveau_au_moins(aut[j], "resume")]
+    if not sel and payload.domaine:
+        sel = [j["id"] for j in tous if j.get("domaine") == payload.domaine and j["id"] in aut and niveau_au_moins(aut[j["id"]], "resume")]
+    if sel:
+        intent = intention_selection(q)
+        if intent:
+            return await reponse_selection(intent, sel, aut, tous, id_vers_nom)
     for script in AURORA_SCRIPTS:
-        if script["contexte"] in (payload.contexte, "global") and any(k in q for k in script["mots_cles"]):
+        if script["contexte"] in (payload.contexte, "global") and any(normalise_txt(k) in q for k in script["mots_cles"]):
             out = dict(script)
             out["contributions"] = [c for c in script.get("contributions", []) if nom_vers_id.get(c.get("jumeau", "")) in aut]
             if not any(niveau_au_moins(n, "preuves") for n in aut.values()):
@@ -599,6 +765,8 @@ async def aurora_demander(payload: AuroraDemande, x_persona: str = Header("archi
     trouve = await recherche_plein_texte(q, aut)
     if trouve:
         return trouve
+    if sel:
+        return await reponse_selection(None, sel, aut, tous, id_vers_nom)
     return AURORA_FALLBACK
 
 
