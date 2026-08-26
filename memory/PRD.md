@@ -1,5 +1,14 @@
 # Méridian — PRD
 
+## Implémenté (26/08/2026 — v18, GRAMMAIRE D'INTERACTION DU MESH, Phases A+B)
+Application du manifeste « grammaire d'interaction » (utilisateur, 26/08) : qui peut demander quoi, qui peut initier quoi, jusqu'où sans validation humaine.
+- **Initiative du Mesh** (concept central) : collection `initiatives` + seed cohérent démo (confirmation contrat v2/v3 et délai 7j/5j → propriétaire Paiements ; investigation recommandée + décision UTC + admission Conformité → architecte ; « à surveiller » + information ambiantes) avec champs complets (déclencheur, raison, preuves, confiance, impact, urgence, destinataire, pourquoi_vous, attendu, autonomie, interruption). Endpoints `/api/initiatives` (vues RBAC), `/compteurs`, `POST /{id}/repondre` (confirmer / rejeter **avec motif conservé** / ajouter à un travail / créer un travail investigation / surveiller — 409 si déjà répondu, écriture journal = apprentissage).
+- **Actualités en 4 vues** : [Brief] · [Radar] (situations candidates, ambiants) · **[À traiter · badge]** (initiatives exigeant une réponse, niveau sollicitation) · [Suivis] (phénomènes suivis + délégations actives). Carte initiative structurée par les **7 questions** (pourquoi vous / découverte+preuves / confiance / impact / attendu). Les cartes répondues quittent « À traiter » (visibles via `vue=traitees` côté API).
+- **« Déléguer »** : tâches bornées depuis Flore (`flore-deleguer-surveillance/comparaison/confirmation` sur la sélection Atlas) — périmètre, durée, sources, livrable et limite de validation affichés dans Suivis.
+- **Gouvernance de l'autonomie par type d'action** (jamais globale) : `gouvernance` par jumeau (Délégué/Supervisé/Interdit), table dans la Revue jumeau ; niveau 6 limité aux actions bornées préautorisées (modèle en place, exécution non ouverte).
+- Bug corrigé en cours de route : `"ajouter" in string` (TypeError après POST réussi → faux toast d'erreur) ; `/demo/reinitialiser` étendu à initiatives/délégations (SEED_VERSION 8).
+- Tests : **iteration_24 → 100 %** (backend 96/96 dont 8 tests initiatives ; frontend 11/11 scénarios, 0 erreur console).
+
 ## Implémenté (26/08/2026 — v17b, cohérence de navigation + registre Jumeaux)
 - **Registre Jumeaux : liste plate avec colonne Domaine** (choix utilisateur — le regroupement par domaine était redondant avec le filtre domaine) ; tri : jumeaux à traiter en tête, puis couverture croissante ; sélecteur « Grouper par » supprimé ; puce domaine colorée par ligne.
 - **Registre Jumeaux corrigé** : intercalaires de groupes restés noirs après le codemod (`bg-[#0C0C0C]` → clair sticky), colonnes Fraîcheur élargies avec info-bulle (troncature « il y a… »), titres harmonisés.

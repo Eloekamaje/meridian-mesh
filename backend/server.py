@@ -16,10 +16,12 @@ from uuid import uuid4
 
 from cases_routes import build_cases_router
 from actualites_routes import build_actualites_router
+from initiatives_routes import build_initiatives_router
 from seed_data import (
     TWINS, RELATIONS, REGIONS, SITUATIONS, CHANGE_LAB, ACTIVITE,
     AURORA_SCRIPTS, AURORA_FALLBACK, AURORA_SUGGESTIONS, DEMO_ACTES, SOURCES_LABELS,
     PERSONAS, ESPACES, VUES, CONNECTEURS, CONTRIBUTIONS, PROFILS, COMMANDE_DEMO, CASES, NOTIFS,
+    INITIATIVES, DELEGATIONS,
 )
 
 ROOT_DIR = Path(__file__).parent
@@ -35,11 +37,11 @@ NO_ID = {"_id": 0}
 logger = logging.getLogger("meridian")
 
 
-SEED_VERSION = 7
+SEED_VERSION = 8
 
 
 async def peupler_demo():
-    for name, docs in [("jumeaux", TWINS), ("relations", RELATIONS), ("situations", SITUATIONS), ("vues", VUES), ("cases", CASES), ("notifications", NOTIFS)]:
+    for name, docs in [("jumeaux", TWINS), ("relations", RELATIONS), ("situations", SITUATIONS), ("vues", VUES), ("cases", CASES), ("notifications", NOTIFS), ("initiatives", INITIATIVES), ("delegations", DELEGATIONS)]:
         if await db[name].count_documents({}) == 0:
             await db[name].insert_many([dict(d) for d in docs])
             logger.info("Seeded %s (%d documents)", name, len(docs))
@@ -53,7 +55,7 @@ async def peupler_demo():
 async def seed_database():
     meta = await db.meta.find_one({"id": "seed"})
     if not meta or meta.get("version") != SEED_VERSION:
-        for col in ["jumeaux", "relations", "situations", "change_lab", "dossiers", "vues", "journal", "commandes", "cases", "notifications"]:
+        for col in ["jumeaux", "relations", "situations", "change_lab", "dossiers", "vues", "journal", "commandes", "cases", "notifications", "initiatives", "delegations"]:
             await db[col].delete_many({})
         await db.meta.replace_one({"id": "seed"}, {"id": "seed", "version": SEED_VERSION}, upsert=True)
         logger.info("Seed version %s — réinitialisation des données de démo", SEED_VERSION)
@@ -99,7 +101,7 @@ def projete_jumeau(j: dict, niveau: str):
         base["sources"] = j.get("sources")
         base["sources_detail"] = j.get("sources_detail")
     if niveau == "complet":
-        base.update({"proprietaire": j.get("proprietaire"), "autonomie": j.get("autonomie"), "environnement": j.get("environnement")})
+        base.update({"proprietaire": j.get("proprietaire"), "autonomie": j.get("autonomie"), "environnement": j.get("environnement"), "gouvernance": j.get("gouvernance")})
     return base
 
 
@@ -1051,6 +1053,18 @@ api_router.include_router(build_actualites_router({
 }))
 
 
+# ---------- Initiatives du Mesh & délégations (grammaire d'interaction) ----------
+
+api_router.include_router(build_initiatives_router({
+    "db": db,
+    "resoudre_perimetre": resoudre_perimetre,
+    "autorisations": autorisations,
+    "journaler": journaler,
+    "slugify": slugify,
+    "NO_ID": NO_ID,
+}))
+
+
 # ---------- Notifications ----------
 
 @api_router.get("/notifications")
@@ -1074,7 +1088,7 @@ async def notifications_tout_lire(x_persona: str = Header("architecte")):
 
 @api_router.post("/demo/reinitialiser")
 async def reinitialiser_demo(x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
-    for col in ["jumeaux", "relations", "situations", "change_lab", "dossiers", "vues", "journal", "commandes", "cases", "notifications"]:
+    for col in ["jumeaux", "relations", "situations", "change_lab", "dossiers", "vues", "journal", "commandes", "cases", "notifications", "initiatives", "delegations"]:
         await db[col].delete_many({})
     await peupler_demo()
     await journaler(x_persona, x_espace, "réinitialisation de la démo", "mesh", "Données de démonstration restaurées à l'état initial")

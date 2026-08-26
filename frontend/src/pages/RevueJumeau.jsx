@@ -103,6 +103,24 @@ export default function RevueJumeau() {
           {examen && jumeau && (
             <>
               <RevueContenu examen={examen} jumeau={jumeau} />
+              {(jumeau.gouvernance || []).length > 0 && (
+                <section className="mt-6 rounded-xl border border-[#E5E5E3] bg-white p-5" data-testid="revue-gouvernance">
+                  <h2 className="font-code text-[10px] uppercase tracking-[0.25em] text-[#52524F]">Gouvernance de l'autonomie</h2>
+                  <p className="mt-1 text-[11px] text-[#71716D]">L'autonomie dépend du type d'action — jamais globale.</p>
+                  <div className="mt-3 space-y-1">
+                    {jumeau.gouvernance.map((g) => {
+                      const c = { delegue: "#047857", supervise: "#B45309", interdit: "#B91C1C", observe: "#71716D" }[g.niveau] || "#71716D";
+                      const l = { delegue: "Délégué", supervise: "Supervisé", interdit: "Interdit", observe: "Observé" }[g.niveau] || g.niveau;
+                      return (
+                        <div key={g.action} className="flex items-center justify-between border-b border-[#F0F0EE] py-1.5 last:border-b-0" data-testid={`gouv-${g.action.slice(0, 20)}`}>
+                          <span className="text-xs text-[#3F3F3C]">{g.action}</span>
+                          <span className="rounded border px-1.5 py-0.5 font-code text-[9px] uppercase tracking-wider" style={{ color: c, borderColor: `${c}44`, backgroundColor: `${c}0D` }}>{l}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
               {jumeau.statut !== "actif" && jumeau.niveau === "complet" && (
                 <button onClick={admettre} disabled={admission} data-testid="confirmer-admission-btn" className="mt-6 flex w-full items-center justify-center gap-2 rounded-md bg-[#B45309] px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#92400E] disabled:opacity-50">
                   <SealCheck size={16} /> {admission ? "Admission en cours…" : "Confirmer l'admission dans le Mesh"}

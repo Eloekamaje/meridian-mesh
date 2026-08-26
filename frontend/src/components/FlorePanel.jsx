@@ -534,6 +534,33 @@ export default function FlorePanel() {
 
       {/* Suggestions + composer */}
       <div className="shrink-0 border-t border-[#E5E5E3] px-4 py-3">
+        {selection.length > 0 && (
+          <div className="mb-2.5 flex flex-wrap items-center gap-1.5" data-testid="flore-deleguer">
+            <span className="font-code text-[9px] uppercase tracking-[0.18em] text-[#71716D]">Déléguer au Mesh :</span>
+            {[
+              ["surveillance", "Surveiller 24 h"],
+              ["comparaison", "Comparer les scénarios"],
+              ["confirmation", "Demander confirmation"],
+            ].map(([type, label]) => (
+              <button
+                key={type}
+                onClick={async () => {
+                  try {
+                    const { data } = await api.post("/delegations", { type, jumeaux: selection, duree_h: 24 });
+                    toast.success(`Délégation enregistrée — « ${data.tache} » visible dans Suivis`);
+                  } catch (e) {
+                    toast.error(e.response?.data?.detail || "Délégation impossible");
+                  }
+                }}
+                data-testid={`flore-deleguer-${type}`}
+                title="Tâche bornée : périmètre, durée, livrable et limites connus — visible dans Actualités → Suivis"
+                className="rounded-full border border-[#0E7490]/30 bg-[#0E7490]/[0.06] px-2.5 py-1 text-[11px] text-[#0E7490] transition-colors hover:bg-[#0E7490]/15"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
         {suggestionsActives.length > 0 && (
           <div className="mb-2.5 flex flex-wrap gap-1.5">
             {suggestionsActives.slice(0, 4).map((s, i) => (

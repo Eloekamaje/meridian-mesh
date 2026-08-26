@@ -7,6 +7,14 @@ import { useMesh } from "@/lib/mesh";
 import { useContexte } from "@/lib/contexte";
 import { couleurDomaine } from "@/lib/domaines";
 import { fmtDateLongue, fmtDateInput, finDeJournee, fmtDate } from "@/lib/temps";
+import CarteInitiative from "@/components/CarteInitiative";
+
+const VUES_ACTUS = [
+  ["brief", "Brief"],
+  ["radar", "Radar"],
+  ["a_traiter", "À traiter"],
+  ["suivis", "Suivis"],
+];
 
 const GENRES = {
   relation: ["Découverte", "#0E7490"],
@@ -228,6 +236,10 @@ export default function Actualites() {
   const [portee, setPortee] = useState("personnel");
   const [data, setData] = useState(null);
   const [nouvelles, setNouvelles] = useState(0);
+  const [vue, setVue] = useState("brief");
+  const [initiatives, setInitiatives] = useState(null);
+  const [compteurs, setCompteurs] = useState(null);
+  const [delegations, setDelegations] = useState([]);
 
   const dateCible = useMemo(() => {
     const d = new Date();
@@ -245,6 +257,32 @@ export default function Actualites() {
     setNouvelles(0);
     charger();
   }, [charger, version, persona]);
+
+  const chargerCompteurs = useCallback(
+    () => api.get("/initiatives/compteurs").then((r) => setCompteurs(r.data)).catch(() => {}),
+    []
+  );
+  useEffect(() => {
+    chargerCompteurs();
+    const t = setInterval(chargerCompteurs, 20000);
+    return () => clearInterval(t);
+  }, [chargerCompteurs, version, persona]);
+
+  useEffect(() => {
+    if (vue === "brief") return;
+    const v = vue === "a_traiter" ? "a_traiter" : vue;
+    api.get(`/initiatives?vue=${v}`).then((r) => setInitiatives(r.data)).catch(() => {});
+    if (vue === "suivis") api.get("/delegations").then((r) => setDelegations(r.data)).catch(() => {});
+  }, [vue, version, persona]);
+
+  const initiativeRepondue = (maj) => {
+    setInitiatives((liste) => (liste || []).map((i) => (i.id === maj.id ? maj : i)).filter((i) => vue === "suivis" || i.vue === vue || i.statut === "en_attente" ? true : i.vue === vue));
+    chargerCompteurs();
+    if (vue !== "brief") {
+      const v = vue === "a_traiter" ? "a_traiter" : vue;
+      api.get(`/initiatives?vue=${v}`).then((r) => setInitiatives(r.data)).catch(() => {});
+    }
+  };
 
   // Temps réel calme : les nouvelles actualités attendent un geste de l'utilisateur
   useEffect(() => {
@@ -338,7 +376,71 @@ export default function Actualites() {
             </span>
           </div>
           {data?.note_portee && <p className="mt-2 font-code text-[10px] text-[#B45309]" data-testid="portee-avertissement">{data.note_portee}</p>}
+
+          {/* Quatre vues : Brief · Radar · À traiter · Suivis */}
+          <div className="mt-5 flex flex-wrap gap-1 border-b border-[#E5E5E3]" data-testid="vues-actualites">
+            {VUES_ACTUS.map(([id, label]) => {
+              const n = id === "brief" ? null : compteurs?.[id === "a_traiter" ? "a_traiter" : id];
+              return (
+                <button
+                  key={id}
+                  onClick={() => setVue(id)}
+                  data-testid={`vue-${id}`}
+                  className={`flex items-center gap-1.5 border-b-2 px-3.5 py-2 text-xs font-medium transition-colors ${
+                    vue === id ? "border-[#3730A3] text-[#111110]" : "border-transparent text-[#71716D] hover:text-[#111110]"
+                  }`}
+                >
+                  {label}
+                  {n > 0 && (
+                    <span className={`rounded-full px-1.5 font-code text-[9px] ${id === "a_traiter" ? "bg-[#B45309] text-white" : "bg-[#F0F0EE] text-[#52524F]"}`} data-testid={`vue-${id}-badge`}>
+                      {n}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
         </header>
+
+        {vue !== "brief" && (
+          <div className="mt-6 space-y-4" data-testid={`panneau-${vue}`}>
+            {initiatives === null && <p className="py-10 text-center font-code text-[11px] text-[#71716D]">Le Mesh prépare ses propositions…</p>}
+            {(initiatives || []).map((init) => (
+              <CarteInitiative key={init.id} init={init} mesh={mesh} onChange={initiativeRepondue} />
+            ))}
+            {initiatives && initiatives.length === 0 && (
+              <div className="rounded-xl border border-dashed border-[#D4D4D0] bg-white p-8 text-center" data-testid={`${vue}-vide`}>
+                <p className="text-sm text-[#52524F]">
+                  {vue === "a_traiter" ? "Rien n'attend votre décision — le Mesh vous sollicite seulement quand c'est nécessaire."
+                    : vue === "radar" ? "Aucune situation candidate — le Mesh ne détecte rien d'inhabituel dans votre périmètre."
+                    : "Aucun phénomène suivi pour le moment."}
+                </p>
+              </div>
+            )}
+            {vue === "suivis" && delegations.length > 0 && (
+              <div className="space-y-3" data-testid="delegations-liste">
+                <h2 className="font-code text-[10px] uppercase tracking-[0.25em] text-[#52524F]">Délégations actives</h2>
+                {delegations.map((d) => (
+                  <div key={d.id} className="rounded-xl border border-[#E5E5E3] bg-white p-4" data-testid={`delegation-${d.id}`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-semibold text-[#111110]">{d.tache}</span>
+                      <span className="rounded-full border border-[#047857]/30 bg-[#E8F5E9] px-2 py-0.5 font-code text-[9px] text-[#1B4332]">{d.statut === "active" ? "active" : d.statut}</span>
+                    </div>
+                    <div className="mt-2 grid gap-1.5 font-code text-[10px] text-[#52524F] sm:grid-cols-2">
+                      <span>Périmètre : {(d.jumeaux || []).map((jid) => mesh?.jumeaux.find((x) => x.id === jid)?.nom || jid).join(", ")}</span>
+                      <span>Durée : {d.duree} · jusqu'au {new Date(d.jusqu_a).toLocaleString("fr-FR", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })}</span>
+                      <span>Sources : {d.sources}</span>
+                      <span>Produira : {d.livrable}</span>
+                    </div>
+                    <p className="mt-2 border-l-2 border-[#B45309]/40 pl-2.5 text-[11px] italic text-[#B45309]">{d.validation_requise}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {vue === "brief" && (<>
 
         {/* Consultation historique : le direct est suspendu visuellement */}
         {!estAujourdhui && (
@@ -443,6 +545,7 @@ export default function Actualites() {
           )}
           {!data && <p className="py-10 text-center font-code text-[11px] text-[#71716D]" data-testid="feed-chargement">Flore prépare votre briefing…</p>}
         </div>
+        </>)}
       </div>
     </div>
   );
