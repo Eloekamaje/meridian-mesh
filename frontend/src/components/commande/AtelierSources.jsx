@@ -109,7 +109,7 @@ export default function AtelierSources({ sources, catalogue, sourceActiveId, onS
         {groupes.map(([groupe, lignes]) => (
           <div key={groupe || "toutes"}>
             {groupe && (
-              <button onClick={() => setPliés({ ...pliés, [groupe]: !pliés[groupe] })} data-testid={`groupe-${groupe}`} className="sticky top-0 flex w-full items-center gap-2 border-b border-[#E5E5E3] bg-[#0C0C0C] px-4 py-2 text-left">
+              <button onClick={() => setPliés({ ...pliés, [groupe]: !pliés[groupe] })} data-testid={`groupe-${groupe}`} className="sticky top-0 flex w-full items-center gap-2 border-b border-[#E5E5E3] bg-[#F0F0EE] px-4 py-2 text-left">
                 {pliés[groupe] ? <CaretRight size={12} className="text-[#71716D]" /> : <CaretDown size={12} className="text-[#71716D]" />}
                 <span className="font-code text-[10px] uppercase tracking-[0.15em] text-[#52524F]">Groupe {groupe} · {lignes.length} instance{lignes.length > 1 ? "s" : ""}</span>
               </button>

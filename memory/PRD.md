@@ -1,5 +1,10 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v23, « Ajouter une source » dans le panneau droit — choix utilisateur)
+- La palette modale centrée (CatalogueTiroir) est remplacée par le **panneau droit existant de l'atelier** : « Ajouter une source » ouvre le catalogue dans la colonne inspecteur (recherche, catégories, navigation clavier ↑↓/⏎/esc conservées) ; après ajout, le panneau bascule directement sur l'inspecteur de la nouvelle source à configurer. Aucun overlay modal dans ce flux (ImportModal conservé pour l'import massif seul).
+- Correctif visuel au passage : intercalaires de groupes de la file des sources repassés en clair (`#0C0C0C` → `#F0F0EE`, reliquat du thème sombre).
+- Vérifié par navigateur : catalogue dans le panneau droit, 0 overlay, ajout Oracle → inspecteur de la nouvelle instance, démo réinitialisée.
+
 ## Implémenté (06/2026 — v22, activité visible de Flore — « elle travaille avant de répondre »)
 - **Demande utilisateur** : lors des transitions vers le chat, une animation montre que Flore *cherche / s'informe / comprend / a tout ce qu'il faut* — façon chats IA conventionnels.
 - **`FloreActivite.jsx`** (composant partagé) : séquence d'étapes progressives (750 ms/pas, étape active = Sparkle pulsante + points animés, étapes passées = ✓ discret, finale verte « A tout ce qu'il faut. »), **wording contextuel par genre** (incident : « Analyse la dérive… croise traces, incidents passés… » ; relation/phénomène : signaux/preuves/confiance ; changement : rejoue le scénario ; travail : relit la mémoire, repère où vous étiez ; rapport : se saisit → rassemble → rédige). Helper `delaiMin()` : la séquence a toujours le temps de se dérouler même si l'API (prescriptée) répond instantanément.

@@ -222,7 +222,17 @@ export default function Commande() {
               />
             </div>
             <div className="col-span-4 min-h-0">
-              <InspecteurSource source={sourceActive} connecteur={connecteurActif} onChange={majSource} onTester={tester} onFermer={() => setSourceActiveId(null)} />
+              {tiroirOuvert ? (
+                <CatalogueTiroir
+                  catalogue={catalogue}
+                  sources={commande.sources}
+                  onAjoute={ajouterDepuisCatalogue}
+                  onImport={(mode) => { setImportMode(mode); setImportOuvert(true); }}
+                  onFermer={() => setTiroirOuvert(false)}
+                />
+              ) : (
+                <InspecteurSource source={sourceActive} connecteur={connecteurActif} onChange={majSource} onTester={tester} onFermer={() => setSourceActiveId(null)} />
+              )}
             </div>
           </div>
         )}
@@ -239,15 +249,6 @@ export default function Commande() {
         </div>
       </div>
 
-      {tiroirOuvert && (
-        <CatalogueTiroir
-          catalogue={catalogue}
-          sources={commande.sources}
-          onAjoute={ajouterDepuisCatalogue}
-          onImport={(mode) => { setImportMode(mode); setImportOuvert(true); }}
-          onFermer={() => setTiroirOuvert(false)}
-        />
-      )}
       {importOuvert && <ImportModal key={importMode} commandeId={cid} modeInitial={importMode} onImporte={importer} onFermer={() => setImportOuvert(false)} />}
     </div>
   );
