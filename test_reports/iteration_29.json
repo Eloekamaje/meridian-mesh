@@ -1,0 +1,23 @@
+{
+  "summary": "Testé la nouvelle page Comprendre (v21) — conversation dédiée avec Flore ouverte sur son rapport de la situation. Backend (8 tests pytest sur GET /api/actualites/histoire/{hid}) et frontend (Playwright bout-en-bout) : tout fonctionne. Navigation depuis Actualités, rapport structuré (quoi/pourquoi/reste à comprendre/décisions attendues), preuves pliables, propositions cliquables remplissant le composer, envoi de message (3→5 bulles), retour vers /actualites feed intact, deep-link, id inconnu → erreur propre. Non-régression /actualites OK.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_comprendre.py",
+    "/app/test_reports/pytest/comprendre_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Comprendre.jsx : useEffect ne dépend pas de `mesh` ce qui est OK (seulement utilisé pour affichage domaine des jumeaux) ; propre.",
+    "actualites_routes.py : la branche jrn- utilise un regex sur j['action'] extrait du fragment de hid — fragile si l'action commence par les mêmes 8 caractères qu'une autre ; à surveiller si un item jrn ambigu apparaît (aucun cas rencontré en test).",
+    "RBAC support sur sit-sit-latence-paiements : le backend renvoie 200 (histoire filtrée) — ce n'est pas une fuite car filtre_situation restreint les jumeaux exposés. Vérifié : cohérent avec la politique 'restreinte' documentée."
+  ],
+  "updated_files": ["/app/backend/tests/test_comprendre.py"],
+  "success_rate": {"backend": "100% (8/8)", "frontend": "100% (13/13 checks)"},
+  "test_credentials": "Personas via header X-Persona (architecte/support) + X-Espace. Pas d'auth.",
+  "seed_data_creation": "aucune",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend test file /app/backend/tests/test_comprendre.py couvre GET /api/actualites/histoire/{hid} pour sit-/rel-/case-/jrn- + id inconnu + RBAC support. Réutilisable en régression. FilComprendre inline bien supprimé de /actualites (fil-comprendre-* absent). Route /actualites/comprendre/:hid opérationnelle avec data-testid comprendre-page/entete/genre/titre/conversation/preuves-toggle/preuves/prop-*/msg-input/msg-send-btn/retour-btn/erreur/erreur-retour.",
+  "rca of the issue": "n/a - aucun bug trouvé"
+}

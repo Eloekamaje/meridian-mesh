@@ -1,5 +1,11 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v21, « Comprendre » = conversation dédiée avec Flore sur la situation)
+- **Demande utilisateur** : dans Actualités, « Comprendre » ouvre désormais une **page de conversation dédiée** (`/actualites/comprendre/:hid`, `Comprendre.jsx`) au lieu du fil inline dans la carte. Le fil s'ouvre sur le **rapport de Flore sur la situation** (quoi / pourquoi cela compte / reste à comprendre / décisions attendues, preuves pliables, propositions cliquables), composer ancré (POST `/aurora/demander`), **retour ← Actualités**. Valable pour tous les genres : incident, découverte/relation, phénomène possible (badge « non confirmée »), transformation, gouvernance ; les items « travail » gardent « Reprendre » (+ proposition « Reprendre le travail » dans la page).
+- **Backend** : `GET /api/actualites/histoire/{hid}` (`actualites_routes.py`) reconstruit l'histoire par préfixe (`sit-`/`rel-`/`case-`/`jrn-`) avec **RBAC identique au feed** (filtre_situation, autorisations) et génère le rapport prescripté structuré — deep-linkable, id inconnu → 404 propre.
+- `FilComprendre` inline supprimé d'`Actualites.jsx` ; `GENRES` exporté pour réutilisation.
+- Tests : **iteration_29 → 100 %** (backend 8/8 pytest `tests/test_comprendre.py` : 4 préfixes + 404 + RBAC support ; frontend 13/13 : navigation, rapport, preuves, propositions, envoi, retour, deep-link, erreur propre, non-régression feed).
+
 ## Implémenté (06/2026 — v20c, cohérence du seed : tout travail naît d'une conversation)
 - **Bug utilisateur** : certains travaux affichaient un Aperçu fourni mais une Conversation vide — incohérent avec le paradigme « un travail est une conversation conservée ».
 - Cause : 3 cases seedés (`case-migration-oracle`, `case-revue-rgpd`, `case-dette-files`) avaient rapport (questions/résumé/décision) mais `conversation: []`.

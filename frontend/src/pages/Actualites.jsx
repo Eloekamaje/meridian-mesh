@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { CaretLeft, CaretRight, Sparkle, Compass, ArrowRight, CalendarBlank, DotsThree, Eye, ArrowSquareOut, ArrowsLeftRight } from "@phosphor-icons/react";
+import { CaretLeft, CaretRight, Sparkle, Compass, ArrowRight, CalendarBlank, DotsThree, ArrowSquareOut, ArrowsLeftRight } from "@phosphor-icons/react";
 import api from "@/lib/api";
 import { usePerimetre } from "@/lib/perimetre";
 import { useMesh } from "@/lib/mesh";
@@ -17,7 +17,7 @@ const VUES_ACTUS = [
   ["suivis", "Suivis"],
 ];
 
-const GENRES = {
+export const GENRES = {
   relation: ["Découverte", "#0E7490"],
   contradiction: ["Contradiction", "#B91C1C"],
   connaissance: ["Connaissance", "#0369A1"],
@@ -46,93 +46,8 @@ const PRESETS = [
 
 const heure = (iso) => new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
 
-// Flore répond directement dans l'actualité — la conversation reste dans son contexte
-function FilComprendre({ histoire }) {
-  const [fil, setFil] = useState([]);
-  const [q, setQ] = useState("");
-  const [charge, setCharge] = useState(false);
-  const [preuves, setPreuves] = useState(false);
-
-  const demander = async (question) => {
-    if (charge) return;
-    setCharge(true);
-    setFil((f) => [...f, { role: "moi", texte: question }]);
-    try {
-      const { data } = await api.post("/aurora/demander", {
-        contexte: "actualites",
-        question,
-        selection: histoire.jumeaux || [],
-      });
-      setFil((f) => [...f, { role: "flore", data }]);
-    } catch {
-      setFil((f) => [...f, { role: "flore", data: { reponse: "Flore est indisponible pour le moment." } }]);
-    } finally {
-      setCharge(false);
-    }
-  };
-
-  const init = useRef(false);
-  useEffect(() => {
-    if (init.current) return;
-    init.current = true;
-    demander(`Pourquoi est-ce important : ${histoire.titre} ?`);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  return (
-    <div className="mt-3 space-y-2.5 border-t border-[#F0F0EE] pt-3" data-testid={`fil-comprendre-${histoire.id}`}>
-      {fil.map((m, i) =>
-        m.role === "moi" ? (
-          <p key={i} className="text-right text-xs italic text-[#52524F]">« {m.texte} »</p>
-        ) : (
-          <div key={i} className="rounded-lg bg-[#EEECFA] p-3" data-testid={`fil-reponse-${histoire.id}-${i}`}>
-            <div className="flex items-center gap-1.5 font-code text-[9px] uppercase tracking-[0.2em] text-[#312E81]">
-              <Sparkle size={10} weight="fill" /> Flore
-            </div>
-            <p className="mt-1 text-xs leading-relaxed text-[#3F3F3C]">{m.data.reponse || m.data.texte}</p>
-            {(m.data.contributions || []).length > 0 && (
-              <>
-                <button
-                  onClick={() => setPreuves((p) => !p)}
-                  data-testid={`fil-preuves-${histoire.id}-${i}`}
-                  className="mt-2 flex items-center gap-1 font-code text-[10px] text-[#3730A3] hover:underline"
-                >
-                  <Eye size={11} /> Cette conclusion repose sur {m.data.contributions.length} preuve{m.data.contributions.length > 1 ? "s" : ""} · {preuves ? "masquer" : "afficher"}
-                </button>
-                {preuves && (
-                  <ul className="mt-1.5 space-y-1 border-l-2 border-[#3730A3]/25 pl-2.5">
-                    {m.data.contributions.map((c, k) => (
-                      <li key={k} className="font-code text-[10px] leading-snug text-[#52524F]">
-                        <span className="font-semibold text-[#312E81]">{c.jumeau}</span> — {c.texte}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </>
-            )}
-          </div>
-        )
-      )}
-      {charge && <p className="font-code text-[10px] text-[#71716D]">Flore consulte le Mesh…</p>}
-      <form
-        onSubmit={(e) => { e.preventDefault(); if (q.trim()) { demander(q.trim()); setQ(""); } }}
-        className="flex gap-1.5"
-      >
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Continuer : « Est-ce aussi vrai pour… ? »"
-          data-testid={`fil-input-${histoire.id}`}
-          className="h-8 w-full rounded-md border border-[#E5E5E3] bg-white px-2.5 text-xs text-[#111110] placeholder:text-[#71716D] focus:border-[#3730A3]/50 focus:outline-none"
-        />
-      </form>
-    </div>
-  );
-}
-
 function CarteHistoire({ h, vedette, dateCible, estAujourdhui, navigate, mesh }) {
   const [menu, setMenu] = useState(false);
-  const [comprendre, setComprendre] = useState(false);
   const g = GENRES[h.genre] || [h.genre, "#71716D"];
   // Les histoires de relation/transformation s'ouvrent en Avant/Après à la date du phénomène
   const jourPhenomene = fmtDateInput(finDeJournee(h.quand));
@@ -155,13 +70,13 @@ function CarteHistoire({ h, vedette, dateCible, estAujourdhui, navigate, mesh })
     }
     if (h.incertain) {
       return (
-        <button onClick={() => setComprendre(true)} data-testid={`histoire-suivre-${h.id}`} className="flex items-center gap-1.5 rounded-md bg-[#6D28D9] px-3 py-1.5 text-[11px] font-semibold text-white transition-colors hover:bg-[#7C3AED]">
+        <button onClick={() => navigate(`/actualites/comprendre/${h.id}`)} data-testid={`histoire-suivre-${h.id}`} className="flex items-center gap-1.5 rounded-md bg-[#6D28D9] px-3 py-1.5 text-[11px] font-semibold text-white transition-colors hover:bg-[#7C3AED]">
           Suivre la vérification
         </button>
       );
     }
     return (
-      <button onClick={() => setComprendre((c) => !c)} data-testid={`histoire-comprendre-${h.id}`} className="flex items-center gap-1.5 rounded-md bg-[#3730A3] px-3 py-1.5 text-[11px] font-semibold text-white transition-colors hover:bg-[#4338CA]">
+      <button onClick={() => navigate(`/actualites/comprendre/${h.id}`)} data-testid={`histoire-comprendre-${h.id}`} className="flex items-center gap-1.5 rounded-md bg-[#3730A3] px-3 py-1.5 text-[11px] font-semibold text-white transition-colors hover:bg-[#4338CA]">
         <Sparkle size={11} weight="fill" /> Comprendre
       </button>
     );
@@ -221,8 +136,6 @@ function CarteHistoire({ h, vedette, dateCible, estAujourdhui, navigate, mesh })
           )}
         </div>
       </div>
-
-      {comprendre && <FilComprendre histoire={h} />}
     </article>
   );
 }

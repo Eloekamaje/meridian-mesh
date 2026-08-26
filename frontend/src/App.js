@@ -8,6 +8,7 @@ import { ContexteProvider } from "@/lib/contexte";
 import Layout from "@/components/Layout";
 import Accueil from "@/pages/Accueil";
 import Actualites from "@/pages/Actualites";
+import Comprendre from "@/pages/Comprendre";
 import Atlas from "@/pages/Atlas";
 import Commande from "@/pages/Commande";
 import Investigations from "@/pages/Investigations";
@@ -34,6 +35,7 @@ function App() {
             <Route element={<Layout />}>
               <Route path="/" element={<Accueil />} />
               <Route path="/actualites" element={<Actualites />} />
+              <Route path="/actualites/comprendre/:hid" element={<Comprendre />} />
               <Route path="/atlas" element={<Atlas />} />
               <Route path="/investigations" element={<Investigations />} />
               <Route path="/investigations/:id" element={<InvestigationDetail />} />

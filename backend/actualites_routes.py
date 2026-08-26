@@ -2,7 +2,7 @@ import re
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Header
+from fastapi import APIRouter, Header, HTTPException
 
 ETATS_REL = {
     "observee": "observée", "supposee": "supposée", "validation": "en validation A2A",
@@ -362,6 +362,135 @@ def build_actualites_router(deps):
                 "relations_confirmees": 0,
             },
         }
+
+    @router.get("/actualites/histoire/{hid}")
+    async def histoire_detail(hid: str, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+        """Reconstruit une histoire du fil par son id préfixé + rapport de Flore sur la situation."""
+        now = datetime.now(timezone.utc)
+        persona, espace = resoudre_perimetre(x_persona, x_espace)
+        tous = await db.jumeaux.find({}, NO_ID).to_list(200)
+        aut = autorisations(espace, [j["id"] for j in tous])
+        nom_vers_id = {j["nom"]: j["id"] for j in tous}
+        id_vers_nom = {j["id"]: j["nom"] for j in tous}
+
+        histoire = None
+        rapport = None
+
+        if hid.startswith("sit-"):
+            s = await db.situations.find_one({"id": hid[4:]}, NO_ID)
+            if not s:
+                raise HTTPException(404, "Actualité introuvable")
+            f = filtre_situation(s, aut, nom_vers_id)
+            if not f:
+                raise HTTPException(404, "Actualité hors de votre périmètre")
+            nature = s.get("nature", "connaissance")
+            genre = GENRES_SITUATION.get(nature, "connaissance")
+            ts = parse_quand(s.get("detectee", ""), now)
+            histoire = {
+                "id": hid, "genre": genre, "titre": s["titre"],
+                "recit": s.get("resume") or s.get("decouverte_quoi") or "",
+                "quand": ts.isoformat() if ts else None,
+                "jumeaux": f.get("jumeaux", []), "restreinte": f.get("restreinte", False),
+                "confiance": confiance_label(s.get("score") or 50),
+                "liens": {"investigation": f"/investigations/{s['id']}", "atlas": f"/atlas?situation={s['id']}"},
+            }
+            morceaux = [s.get("decouverte_quoi") or s.get("resume") or s["titre"]]
+            pq = s.get("decouverte_pourquoi")
+            if pq:
+                morceaux.append("Pourquoi cela compte :\n" + "\n".join(f"— {p}" for p in pq) if isinstance(pq, list) else f"Pourquoi cela compte : {pq}")
+            rc = s.get("reste_a_comprendre")
+            if rc:
+                morceaux.append("Reste à comprendre :\n" + "\n".join(f"— {p}" for p in rc) if isinstance(rc, list) else f"Reste à comprendre : {rc}")
+            att = s.get("decisions_attendues") or []
+            if att:
+                morceaux.append("Décisions attendues :\n" + "\n".join(f"— {a}" for a in att))
+            preuves = (s.get("preuves") or [])[:6]
+            preuves = [p if isinstance(p, dict) else {"source": "Mesh", "detail": str(p)} for p in preuves]
+            rapport = {
+                "texte": "\n\n".join(morceaux),
+                "preuves": preuves,
+                "propositions": [
+                    {"label": "Que reste-t-il à comprendre ?", "question": f"Que reste-t-il à comprendre sur : {s['titre']} ?"},
+                    {"label": "Quels jumeaux sont concernés ?", "question": f"Quels jumeaux sont concernés par : {s['titre']} ?"},
+                    {"label": "Que puis-je faire maintenant ?", "question": f"Que puis-je faire maintenant pour : {s['titre']} ?"},
+                ],
+            }
+
+        elif hid.startswith("rel-"):
+            rid = hid[4:].split("-ev-")[0]
+            r = await db.relations.find_one({"id": rid}, NO_ID)
+            if not r or r["source"] not in aut or r["cible"] not in aut:
+                raise HTTPException(404, "Actualité introuvable")
+            ns, nc = id_vers_nom.get(r["source"], r["source"]), id_vers_nom.get(r["cible"], r["cible"])
+            etat = ETATS_REL.get(r.get("etat"), r.get("etat", ""))
+            incertain = r.get("etat") == "supposee"
+            ts = parse_quand(r.get("decouverte_quand", ""), now)
+            histoire = {
+                "id": hid, "genre": "phenomene" if incertain else "relation",
+                "titre": f"Relation {'possible : ' if incertain else 'découverte : '}{ns} → {nc}",
+                "recit": f"Découverte via {r.get('source_decouverte', 'le Mesh')} — état « {etat} ».",
+                "quand": ts.isoformat() if ts else None,
+                "jumeaux": [r["source"], r["cible"]], "incertain": incertain,
+                "confiance": confiance_label(r.get("confiance") or (35 if incertain else 75)),
+                "liens": {"atlas": f"/atlas?sel={r['source']}"},
+            }
+            morceaux = [f"J'observe une relation entre {ns} et {nc}, à l'état « {etat} »"
+                        + (f", avec une confiance de {r['confiance']} %." if r.get("confiance") else ".")]
+            if incertain:
+                morceaux.append("Les signaux sont concordants mais les preuves restent insuffisantes : je la traite comme un phénomène possible, pas comme une vérité du Mesh.")
+            if r.get("source_decouverte"):
+                morceaux.append(f"Source de la découverte : {r['source_decouverte']}.")
+            rapport = {
+                "texte": "\n\n".join(morceaux),
+                "preuves": [],
+                "propositions": [
+                    {"label": "Quelles preuves la soutiennent ?", "question": f"Quelles preuves soutiennent la relation entre {ns} et {nc} ?"},
+                    {"label": "Faut-il la confirmer ?", "question": f"Faut-il confirmer la relation entre {ns} et {nc} ?"},
+                ],
+            }
+
+        elif hid.startswith("case-"):
+            c = await db.cases.find_one({"id": hid[5:]}, NO_ID)
+            if not c or (c.get("jumeaux") and not any(j in aut for j in c["jumeaux"])):
+                raise HTTPException(404, "Actualité introuvable")
+            histoire = {
+                "id": hid, "genre": "travail", "titre": c["titre"],
+                "recit": c.get("objectif") or "", "quand": c.get("maj_le"),
+                "jumeaux": [j for j in c.get("jumeaux", []) if j in aut],
+                "confiance": confiance_label(70), "liens": {"travail": f"/travaux/{c['id']}"},
+            }
+            morceaux = [c.get("objectif") or c["titre"]]
+            if c.get("resume"):
+                morceaux.append(f"Compréhension actuelle : {c['resume']}")
+            if c.get("prochaine_etape"):
+                morceaux.append(f"Prochaine étape : {c['prochaine_etape']}")
+            rapport = {
+                "texte": "\n\n".join(morceaux),
+                "preuves": [],
+                "propositions": [{"label": "Reprendre le travail", "question": None, "lien": f"/travaux/{c['id']}"}],
+            }
+
+        elif hid.startswith("jrn-"):
+            frag = hid.split("-", 2)[-1]
+            j = await db.journal.find_one({"action": {"$regex": f"^{re.escape(frag)}", "$options": "i"}}, NO_ID, sort=[("quand", -1)])
+            if not j:
+                raise HTTPException(404, "Actualité introuvable")
+            ts = parse_quand(j.get("quand", ""), now)
+            histoire = {
+                "id": hid, "genre": "gouvernance", "titre": f"{j.get('action', '')} — {j.get('cible', '')}",
+                "recit": j.get("detail") or "", "quand": ts.isoformat() if ts else None,
+                "jumeaux": [], "confiance": confiance_label(80), "liens": {},
+            }
+            rapport = {
+                "texte": f"{j.get('action', '')} sur « {j.get('cible', '')} ».\n\n{j.get('detail') or 'Événement de gouvernance consigné au journal du Mesh.'}",
+                "preuves": [],
+                "propositions": [{"label": "Que change cette décision ?", "question": f"Que change : {j.get('action', '')} — {j.get('cible', '')} ?"}],
+            }
+
+        else:
+            raise HTTPException(404, "Actualité introuvable")
+
+        return {"histoire": histoire, "rapport": rapport}
 
     def persona_espaces(persona_id):
         from seed_data import PERSONAS
