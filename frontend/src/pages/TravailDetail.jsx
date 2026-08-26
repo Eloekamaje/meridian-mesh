@@ -173,11 +173,11 @@ export default function TravailDetail() {
         </nav>
       </div>
 
-      {/* Contenu de la vue */}
-      <div className="flex-1 overflow-y-auto px-8 py-5">
-        <div className="mx-auto max-w-6xl">
-          {cas.a_revoir && vue === "travail" && (
-            <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-[#B91C1C]/30 bg-[#B91C1C]/[0.04] px-4 py-3" data-testid="travail-arevoir-banner">
+      {cas.a_revoir && (
+        <div className="shrink-0 px-8 pt-4">
+          <div className="mx-auto max-w-2xl">
+{cas.a_revoir && (
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-[#B91C1C]/30 bg-[#B91C1C]/[0.04] px-4 py-3" data-testid="travail-arevoir-banner">
               <p className="text-xs text-[#B91C1C]">
                 <span className="font-semibold uppercase tracking-wider">À revoir</span> — une connaissance du Mesh liée à ce travail a changé ; les conclusions peuvent être remises en cause.
               </p>
@@ -186,12 +186,22 @@ export default function TravailDetail() {
               </button>
             </div>
           )}
-          {vue === "apercu" && <OngletApercu cas={cas} maj={maj} setCas={setCas} />}
-          {vue === "travail" && <OngletTravail cas={cas} maj={maj} setCas={setCas} situations={situations} />}
+          </div>
+        </div>
+      )}
+
+      {/* Contenu de la vue — la Conversation occupe toute la hauteur, composer ancré */}
+      <div className={vue === "travail" ? "flex min-h-0 flex-1 flex-col overflow-hidden" : "flex-1 overflow-y-auto px-8 py-5"}>
+        {vue === "travail" ? (
+          <OngletTravail cas={cas} setCas={setCas} />
+        ) : (
+        <div className="mx-auto max-w-6xl">
+          {vue === "apercu" && <OngletApercu cas={cas} maj={maj} setCas={setCas} situations={situations} />}
           {vue === "atlas" && <OngletAtlas cas={cas} mesh={mesh} />}
           {vue === "decisions" && <OngletDecisions cas={cas} maj={maj} setCas={setCas} />}
           {vue === "activite" && <OngletActivite cas={cas} maj={maj} setCas={setCas} />}
         </div>
+        )}
       </div>
     </div>
   );

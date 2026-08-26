@@ -3,6 +3,7 @@ import { Sparkle, CheckCircle, Circle, Flag, Question, TrendUp, Compass, Scales,
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { rel } from "./utils";
+import ObjetsTravail from "./ObjetsTravail";
 
 function Bloc({ titre, question, icon: Icon, couleur, children, testid }) {
   return (
@@ -19,7 +20,7 @@ function Bloc({ titre, question, icon: Icon, couleur, children, testid }) {
   );
 }
 
-export default function OngletApercu({ cas, maj, setCas }) {
+export default function OngletApercu({ cas, maj, setCas, situations }) {
   const [actualisation, setActualisation] = useState(false);
   const questions = cas.questions || [];
   const ouvertes = questions.filter((q) => !q.resolue);
@@ -97,25 +98,6 @@ export default function OngletApercu({ cas, maj, setCas }) {
           )}
         </Bloc>
 
-        <Bloc titre="Questions ouvertes" question="Qu'est-ce qui reste à comprendre ?" icon={Question} couleur="#B45309" testid="apercu-questions">
-          <ul className="space-y-1.5">
-            {ouvertes.slice(0, 4).map((q) => {
-              const i = questions.indexOf(q);
-              return (
-                <li key={i} className="flex items-center gap-2 text-xs text-[#3F3F3C]">
-                  <button onClick={() => maj({ questions: questions.map((x, xi) => (xi === i ? { ...x, resolue: true } : x)) })} data-testid={`apercu-question-${i}`} className="text-[#71716D] transition-colors hover:text-[#047857]">
-                    <Circle size={14} />
-                  </button>
-                  {q.texte}
-                </li>
-              );
-            })}
-            {ouvertes.length === 0 && (
-              <li className="flex items-center gap-2 text-xs text-[#047857]"><CheckCircle size={14} weight="fill" /> Toutes les questions sont levées.</li>
-            )}
-          </ul>
-        </Bloc>
-
         <Bloc titre="Décisions attendues" question="Sur quoi un humain doit-il se prononcer ?" icon={Scales} couleur="#6D28D9" testid="apercu-decisions">
           {optionsATrancher.length > 0 ? (
             <ul className="space-y-1">
@@ -141,6 +123,11 @@ export default function OngletApercu({ cas, maj, setCas }) {
             className="w-full resize-none rounded-md border border-transparent bg-transparent text-sm leading-relaxed text-[#3F3F3C] placeholder:italic placeholder:text-[#71716D] focus:border-[#E5E5E3] focus:bg-[#F7F7F6] focus:px-2 focus:outline-none"
           />
         </Bloc>
+      </div>
+
+      {/* Objets structurés du travail (déplacés de l'onglet Conversation) */}
+      <div className="mt-4 grid gap-4 lg:grid-cols-2" data-testid="apercu-objets">
+        <ObjetsTravail cas={cas} maj={maj} setCas={setCas} situations={situations} />
       </div>
     </div>
   );

@@ -1,5 +1,10 @@
 # Méridian — PRD
 
+## Implémenté (26/08/2026 — v19e, Travail = conversation pleine page, parité création/continuation)
+- **L'onglet Conversation est identique à la vue de création** (demande utilisateur, façon ChatGPT/emergent.sh) : colonne centrée (max-w-2xl), résumé « Session précédente — Flore vous replace » en tête, fil nu (bulles), **composer ancré en bas** (Entrée pour envoyer, scroll auto en fin de fil). Continuer un travail = même lecture que le créer, avec l'en-tête du travail en plus.
+- **Objets de travail déplacés dans l'Aperçu** (`ObjetsTravail.jsx` partagé : Questions/Hypothèses/Investigations/Analyses & livrables) ; bloc « Questions ouvertes » retiré (doublon) ; bannière « À revoir » désormais visible sur tous les onglets (code mort corrigé).
+- Tests : **iteration_27 → 100 %** (parité création/continuation, envoi +2 messages, autoscroll, objets dans Aperçu, 0 erreur console).
+
 ## Implémenté (26/08/2026 — v19d, esprit « reprendre une conversation » + navigation)
 - **Retour « ← Travaux »** sur la page de création conversationnelle (`/travaux/nouveau`) — manquait (bug utilisateur).
 - **Détail d'un travail = reprise de conversation** (bug utilisateur) : l'onglet Conversation s'ouvre sur le **résumé de la session précédente** (« Session précédente — Flore vous replace ») suivi du fil dominant (2/3) avec composer inline ; les objets de travail (questions/hypothèses/investigations/livrables) sont relégués dans un rail droit (1/3).

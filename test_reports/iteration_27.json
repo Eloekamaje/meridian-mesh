@@ -1,0 +1,21 @@
+{
+  "summary": "Frontend-only regression on the refactored /travaux/:cid layout. Verified Conversation tab is full-page (colonne centrée + reprise-flore en-tête + case-conversation + composer ancré), objets (Questions/Hypothèses/Investigations/Livrables) are absent from Conversation and correctly moved into Aperçu under apercu-objets. Message send delta = +2, autoscroll OK. Aperçu shows the 5 blocs (Situation, Compréhension, Évolution, Décisions, Prochaine étape) plus the 4 object cards. Cycle statut hypothèse À valider → Confirmée OK. Investigation form toggle OK. produire-synthese-btn creates livrable (0 → 1). Onglets Atlas / Décisions & actions / Activité navigent correctement. travail-retour-btn revient à /travaux. /travaux/nouveau charge sans erreur. 0 erreur console sur toutes les pages testées.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "TravailDetail.jsx: le bloc 'travail-arevoir-banner' est encapsulé sous `vue !== 'travail'` mais conditionné par `vue === 'travail'` — code mort/inaccessible. Si on veut la bannière 'À revoir' aussi dans l'onglet Conversation, il faut la sortir du else. Sinon la retirer.",
+    "OngletTravail.jsx: l'effect de scroll dépend de `envoiMsg` — inoffensif, mais `nbEchanges` seul suffirait."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "n/a", "frontend": "100%" },
+  "seed_data_creation": "Utilisé le case 'case-olympiade' existant. Ajouté 1 message conversationnel, 1 question, 1 cycle hypothèse, 1 livrable via produire-synthese-btn.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "La refonte de l'onglet Conversation (pleine page style ChatGPT) est validée. Objets déplacés dans Aperçu sous apercu-objets. Testids conservés. Attention au code mort travail-arevoir-banner dans TravailDetail.jsx (conditionné vue==='travail' mais placé dans la branche else)."
+}
