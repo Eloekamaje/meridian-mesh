@@ -1,5 +1,10 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v20c, cohérence du seed : tout travail naît d'une conversation)
+- **Bug utilisateur** : certains travaux affichaient un Aperçu fourni mais une Conversation vide — incohérent avec le paradigme « un travail est une conversation conservée ».
+- Cause : 3 cases seedés (`case-migration-oracle`, `case-revue-rgpd`, `case-dette-files`) avaient rapport (questions/résumé/décision) mais `conversation: []`.
+- Correctif : conversations seedées cohérentes avec chaque rapport (2 échanges minimum, datés avec le cycle de vie du travail ; `case-dette-files` clos mène à sa décision). `SEED_VERSION` 8 → 9. Vérifié par API (5/5 travaux avec fil) et navigateur.
+
 ## Implémenté (06/2026 — v20b, en-tête du Travail épuré — choix utilisateur)
 - **Supprimés de l'en-tête** : le bouton « Continuer avec Flore » (redondant — l'onglet Conversation *est* la continuation), les sélecteurs **Responsable** et **Statut** (contrôles d'administration sans place dans le paradigme ; Clore/Rouvrir reste dans le menu ⋯), et « Ouvrir dans Atlas » (l'Atlas reste accessible par la sidebar).
 - **L'en-tête ne garde que** : ← Travaux, identité (CASE-0xx, type, sensibilité, titre), participants + dernière évolution, badge « À revoir », Partager, menu ⋯ (Marquer revu / Clore-Rouvrir). Vérifié par navigateur (menu fonctionnel, 0 erreur).

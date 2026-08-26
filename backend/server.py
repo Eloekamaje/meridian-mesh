@@ -37,7 +37,7 @@ NO_ID = {"_id": 0}
 logger = logging.getLogger("meridian")
 
 
-SEED_VERSION = 8
+SEED_VERSION = 9
 
 
 async def peupler_demo():
