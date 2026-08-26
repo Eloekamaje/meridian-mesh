@@ -55,7 +55,16 @@ export default function InspecteurSource({ source, connecteur, onChange, onTeste
         <div className="mt-3 rounded-lg border border-[#F87171]/30 bg-[#F87171]/[0.05] p-3" data-testid="inspecteur-erreur">
           <div className="flex items-center gap-1.5 text-xs font-semibold text-[#F87171]"><WarningCircle size={13} /> {source.erreur.titre}</div>
           <p className="mt-1 text-[11px] leading-relaxed text-white/60">{source.erreur.detail}</p>
-          <p className="mt-1.5 font-code text-[10px] text-[#FBBF24]">Action : {source.erreur.action}</p>
+          <button
+            onClick={() => {
+              const manquant = (connecteur?.champs || []).find((c) => c.requis && !source.config?.[c.cle]);
+              document.querySelector(`[data-testid="insp-${manquant ? manquant.cle : "perimetre"}"]`)?.focus();
+            }}
+            data-testid="inspecteur-action-btn"
+            className="mt-2 rounded-md bg-[#FBBF24]/90 px-2.5 py-1 text-[10px] font-semibold text-black transition-colors hover:bg-[#FBBF24]"
+          >
+            {source.erreur.action} →
+          </button>
         </div>
       )}
 

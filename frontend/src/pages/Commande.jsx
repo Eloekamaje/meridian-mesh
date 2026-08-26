@@ -4,6 +4,7 @@ import { ArrowRight } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useMesh } from "@/lib/mesh";
+import { useContexte } from "@/lib/contexte";
 import { nouvelleInstance, statutCalcule } from "@/lib/sources";
 import EnteteCommande from "@/components/commande/EnteteCommande";
 import AtelierSources from "@/components/commande/AtelierSources";
@@ -17,6 +18,7 @@ export default function Commande() {
   const { cid } = useParams();
   const navigate = useNavigate();
   const { recharger } = useMesh();
+  const { setLot } = useContexte();
   const [commande, setCommande] = useState(null);
   const [catalogue, setCatalogue] = useState(null);
   const [sauvegarde, setSauvegarde] = useState(null);
@@ -46,10 +48,6 @@ export default function Commande() {
     }, 900);
     return () => clearTimeout(t);
   }, [commande, cid]);
-
-  if (!commande || !catalogue) {
-    return <div className="flex h-full items-center justify-center font-code text-xs text-white/40" data-testid="commande-chargement">Chargement de la commande…</div>;
-  }
 
   const maj = (patch) => setCommande((c) => ({ ...c, ...patch }));
   const majJumeau = (patch) => maj({ jumeau: { ...commande.jumeau, ...patch } });
@@ -117,6 +115,10 @@ export default function Commande() {
   };
 
   const actionLot = (type, valeur) => {
+    if (type === "tester") {
+      tester(selLot);
+      return;
+    }
     if (type === "supprimer") {
       maj({ sources: commande.sources.filter((s) => !selLot.includes(s.id)) });
       if (selLot.includes(sourceActiveId)) setSourceActiveId(null);
@@ -153,6 +155,20 @@ export default function Commande() {
       setLancement(false);
     }
   };
+
+  // La sélection en lot morphe la barre Aurora en barre d'actions (store partagé)
+  useEffect(() => {
+    if (commande && catalogue && selLot.length > 0) {
+      setLot({ ids: selLot, profils: catalogue.profils, onAction: actionLot, onAnnuler: () => setSelLot([]) });
+    } else {
+      setLot(null);
+    }
+    return () => setLot(null);
+  }, [selLot, commande, catalogue]);
+
+  if (!commande || !catalogue) {
+    return <div className="flex h-full items-center justify-center font-code text-xs text-white/40" data-testid="commande-chargement">Chargement de la commande…</div>;
+  }
 
   const etape = commande.etape;
   const sourceActive = commande.sources.find((s) => s.id === sourceActiveId) || null;
@@ -191,7 +207,8 @@ export default function Commande() {
 
         {etape === 2 && (
           <div className="grid h-full min-h-0 grid-cols-12 gap-5" data-testid="etape-atelier">
-            <div className={`min-h-0 ${sourceActive ? "col-span-7" : "col-span-12"}`}>
+            {/* Grille fixe 8/4 : la file ne se re-fluide jamais quand l'inspecteur s'ouvre */}
+            <div className="col-span-8 min-h-0">
               <AtelierSources
                 sources={commande.sources}
                 catalogue={catalogue}
@@ -202,14 +219,11 @@ export default function Commande() {
                 onTester={tester}
                 onOuvrirTiroir={() => setTiroirOuvert(true)}
                 onOuvrirImport={() => { setImportMode("fichier"); setImportOuvert(true); }}
-                onLot={actionLot}
               />
             </div>
-            {sourceActive && (
-              <div className="col-span-5 min-h-0">
-                <InspecteurSource source={sourceActive} connecteur={connecteurActif} onChange={majSource} onTester={tester} onFermer={() => setSourceActiveId(null)} />
-              </div>
-            )}
+            <div className="col-span-4 min-h-0">
+              <InspecteurSource source={sourceActive} connecteur={connecteurActif} onChange={majSource} onTester={tester} onFermer={() => setSourceActiveId(null)} />
+            </div>
           </div>
         )}
 

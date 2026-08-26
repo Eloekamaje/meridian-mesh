@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { CaretDown, CaretRight, MagnifyingGlass, Plus, UploadSimple, Lightning } from "@phosphor-icons/react";
+import { CaretDown, CaretRight, MagnifyingGlass, Plus, UploadSimple } from "@phosphor-icons/react";
 import { STATUTS_SOURCE, estErreurSource, ENVIRONNEMENTS } from "@/lib/sources";
 
 const REGROUPEMENTS = [
@@ -10,7 +10,7 @@ const REGROUPEMENTS = [
   ["statut", "Par statut"],
 ];
 
-export default function AtelierSources({ sources, catalogue, sourceActiveId, onSelect, selLot, setSelLot, onTester, onOuvrirTiroir, onOuvrirImport, onLot }) {
+export default function AtelierSources({ sources, catalogue, sourceActiveId, onSelect, selLot, setSelLot, onTester, onOuvrirTiroir, onOuvrirImport }) {
   const [recherche, setRecherche] = useState("");
   const [filtreStatut, setFiltreStatut] = useState(null);
   const [filtreConnecteur, setFiltreConnecteur] = useState("");
@@ -122,7 +122,8 @@ export default function AtelierSources({ sources, catalogue, sourceActiveId, onS
                   key={s.id}
                   onClick={() => onSelect(s.id)}
                   data-testid={`source-ligne-${s.id}`}
-                  className={`rise flex cursor-pointer items-center gap-3 border-b border-white/[0.04] px-4 py-2.5 transition-colors ${active ? "bg-[#22D3EE]/[0.06]" : "hover:bg-white/[0.02]"}`}
+                  style={{ borderLeft: `2px solid ${st.couleur}` }}
+                  className={`rise flex cursor-pointer items-center gap-3 border-b border-white/[0.04] px-4 py-2.5 transition-[background-color,transform] duration-150 hover:translate-x-0.5 ${active ? "bg-[#22D3EE]/[0.06]" : "hover:bg-white/[0.02]"}`}
                 >
                   <input type="checkbox" checked={selLot.includes(s.id)} onClick={(e) => e.stopPropagation()} onChange={() => basculerLot(s.id)} data-testid={`lot-check-${s.id}`} className="h-3.5 w-3.5 shrink-0 accent-[#22D3EE]" />
                   <div className="min-w-0 flex-1">
@@ -149,32 +150,6 @@ export default function AtelierSources({ sources, catalogue, sourceActiveId, onS
           <div className="px-4 py-10 text-center text-sm text-white/35" data-testid="file-vide">Aucune source ne correspond — ajoutez une source ou élargissez les filtres.</div>
         )}
       </div>
-
-      {/* Barre d'actions en lot */}
-      {selLot.length > 0 && (
-        <div className="glass rise mt-3 flex flex-wrap items-center gap-2 rounded-xl px-4 py-2.5" data-testid="lot-bar">
-          <span className="font-code text-[11px] font-medium text-white" data-testid="lot-count">{selLot.length} source{selLot.length > 1 ? "s" : ""} sélectionnée{selLot.length > 1 ? "s" : ""}</span>
-          <select onChange={(e) => e.target.value && onLot("profil", e.target.value)} value="" data-testid="lot-profil" className="rounded-md border border-white/15 bg-black/40 px-2 py-1.5 text-[11px] text-white/70 focus:outline-none">
-            <option value="">Appliquer un profil…</option>
-            {catalogue.profils.map((p) => <option key={p.id} value={p.id}>{p.nom}</option>)}
-          </select>
-          <select onChange={(e) => e.target.value && onLot("environnement", e.target.value)} value="" data-testid="lot-environnement" className="rounded-md border border-white/15 bg-black/40 px-2 py-1.5 text-[11px] text-white/70 focus:outline-none">
-            <option value="">Définir l'environnement…</option>
-            {ENVIRONNEMENTS.map((e) => <option key={e} value={e}>{e}</option>)}
-          </select>
-          <select onChange={(e) => e.target.value && onLot("frequence", e.target.value)} value="" data-testid="lot-frequence" className="rounded-md border border-white/15 bg-black/40 px-2 py-1.5 text-[11px] text-white/70 focus:outline-none">
-            <option value="">Modifier la fréquence…</option>
-            {["horaire", "quotidienne", "hebdomadaire"].map((f) => <option key={f} value={f}>{f}</option>)}
-          </select>
-          <button onClick={() => onTester(selLot)} data-testid="lot-tester-btn" className="flex items-center gap-1.5 rounded-md border border-[#3B82F6]/40 px-2.5 py-1.5 text-[11px] text-[#3B82F6] transition-colors hover:bg-[#3B82F6]/10">
-            <Lightning size={12} /> Tester les connexions
-          </button>
-          <button onClick={() => onLot("supprimer")} data-testid="lot-supprimer-btn" className="rounded-md border border-[#F87171]/40 px-2.5 py-1.5 text-[11px] text-[#F87171] transition-colors hover:bg-[#F87171]/10">
-            Supprimer de la commande
-          </button>
-          <button onClick={() => setSelLot([])} data-testid="lot-annuler-btn" className="text-[11px] text-white/40 hover:text-white">✕</button>
-        </div>
-      )}
     </div>
   );
 }

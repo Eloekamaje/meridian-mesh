@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Sparkle, PaperPlaneRight, FileText, X, CaretDown, Plus, Eye } from "@phosphor-icons/react";
+import { motion } from "framer-motion";
+import { Sparkle, PaperPlaneRight, FileText, X, CaretDown, Plus, Eye, Lightning } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import TrustBadges from "./TrustBadges";
@@ -43,7 +44,7 @@ export default function AuroraBar() {
   const location = useLocation();
   const navigate = useNavigate();
   const contexte = contexteDepuis(location.pathname);
-  const { selection, setSelection, domaineSel, retirerJumeau, setDomaineSel, ajouterJumeau, commanderCarte, focusVisuel } = useContexte();
+  const { selection, setSelection, domaineSel, retirerJumeau, setDomaineSel, ajouterJumeau, commanderCarte, focusVisuel, lot } = useContexte();
   const { jumeauPar, mesh } = useMesh();
   const [question, setQuestion] = useState("");
   const [reponse, setReponse] = useState(null);
@@ -116,7 +117,7 @@ export default function AuroraBar() {
     }
   };
 
-  if (replie) {
+  if (replie && !lot) {
     return (
       <button
         onClick={() => setReplie(false)}
@@ -133,7 +134,7 @@ export default function AuroraBar() {
 
   return (
     <div className="pointer-events-none fixed bottom-5 left-1/2 z-40 w-[min(700px,92vw)] -translate-x-1/2" data-testid="aurora-bar">
-      {reponse && (
+      {reponse && !lot && (
         <div className="glass rise pointer-events-auto mb-3 max-h-[52vh] overflow-y-auto rounded-xl p-5" data-testid="aurora-panel">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -257,7 +258,39 @@ export default function AuroraBar() {
         </div>
       )}
 
-      <div className="glass pointer-events-auto rounded-xl p-2.5">
+      <motion.div
+        layout
+        transition={{ type: "spring", stiffness: 380, damping: 32 }}
+        className={`glass pointer-events-auto rounded-xl p-2.5 ${lot ? "w-[min(780px,94vw)]" : "w-[min(700px,92vw)]"}`}
+      >
+        {lot ? (
+          <div className="flex flex-wrap items-center gap-2 px-1" data-testid="lot-bar">
+            <Sparkle size={15} weight="fill" className="shrink-0 text-[#3B82F6]" />
+            <span className="font-code text-[11px] font-medium text-white" data-testid="lot-count">
+              {lot.ids.length} source{lot.ids.length > 1 ? "s" : ""} sélectionnée{lot.ids.length > 1 ? "s" : ""}
+            </span>
+            <select onChange={(e) => e.target.value && lot.onAction("profil", e.target.value)} value="" data-testid="lot-profil" className="rounded-md border border-white/15 bg-black/40 px-2 py-1.5 text-[11px] text-white/70 focus:outline-none">
+              <option value="">Appliquer un profil…</option>
+              {lot.profils.map((p) => <option key={p.id} value={p.id}>{p.nom}</option>)}
+            </select>
+            <select onChange={(e) => e.target.value && lot.onAction("environnement", e.target.value)} value="" data-testid="lot-environnement" className="rounded-md border border-white/15 bg-black/40 px-2 py-1.5 text-[11px] text-white/70 focus:outline-none">
+              <option value="">Définir l'environnement…</option>
+              {["production", "préproduction", "recette", "développement"].map((e) => <option key={e} value={e}>{e}</option>)}
+            </select>
+            <select onChange={(e) => e.target.value && lot.onAction("frequence", e.target.value)} value="" data-testid="lot-frequence" className="rounded-md border border-white/15 bg-black/40 px-2 py-1.5 text-[11px] text-white/70 focus:outline-none">
+              <option value="">Modifier la fréquence…</option>
+              {["horaire", "quotidienne", "hebdomadaire"].map((f) => <option key={f} value={f}>{f}</option>)}
+            </select>
+            <button onClick={() => lot.onAction("tester")} data-testid="lot-tester-btn" className="flex items-center gap-1.5 rounded-md border border-[#3B82F6]/40 px-2.5 py-1.5 text-[11px] text-[#3B82F6] transition-colors hover:bg-[#3B82F6]/10">
+              <Lightning size={12} /> Tester les connexions
+            </button>
+            <button onClick={() => lot.onAction("supprimer")} data-testid="lot-supprimer-btn" className="rounded-md border border-[#F87171]/40 px-2.5 py-1.5 text-[11px] text-[#F87171] transition-colors hover:bg-[#F87171]/10">
+              Supprimer
+            </button>
+            <button onClick={lot.onAnnuler} data-testid="lot-annuler-btn" className="ml-auto text-[11px] text-white/40 transition-colors hover:text-white">✕</button>
+          </div>
+        ) : (
+          <>
         {focusVisuel && (
           <div className="mb-1.5 px-1 font-code text-[9px] uppercase tracking-[0.2em] text-white/30" data-testid="aurora-focus-visuel">
             Focus visuel : {focusVisuel.type === "domaine" ? `Domaine ${focusVisuel.label}` : focusVisuel.label}
@@ -369,7 +402,9 @@ export default function AuroraBar() {
             <CaretDown size={16} />
           </button>
         </form>
-      </div>
+          </>
+        )}
+      </motion.div>
     </div>
   );
 }

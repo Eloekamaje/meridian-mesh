@@ -1,122 +1,103 @@
 {
-  "project_name": "Méridian",
-  "theme": "dark",
-  "archetype": "Swiss Brutalist mixed with Luxury Ops (Mission Control)",
-  "language": "fr",
+  "project_context": "Meridian Twin Configuration Workshop (Banking Ops)",
+  "theme_and_identity": {
+    "aesthetic": "High-End Mission Control",
+    "mode": "Dark Theme Strict",
+    "description": "A dense, high-performance banking ops workshop. Avoids generic enterprise tables. Prioritizes spatial memory, rapid keyboard navigation, and immediate error resolution."
+  },
+  "expert_critique_and_strategy": {
+    "1_what_to_keep": [
+      "The 'Mission Control' dark aesthetic (#0A0A0A, Cyan, Blue).",
+      "Side-by-side Master/Detail view for Step 2.",
+      "Clickable KPI indicators acting as active filters.",
+      "Discreet autosave and functional animations (no full reloads)."
+    ],
+    "2_what_an_expert_would_do_differently": [
+      "Density & Architecture: A generic flex-row list fails at 100 items. Shrinking from 12 to 7 columns when the Inspector opens causes catastrophic layout shifts and loss of spatial memory.",
+      "Drawer Collision: A 440px right drawer for the Catalog conflicts with the right-side Inspector, causing UI claustrophobia.",
+      "Aurora Bar Collision: Floating an AI bar AND a bulk-action bar simultaneously at the bottom creates visual pollution.",
+      "Status Hierarchy: Badges are decorative. In ops, errors must dictate row priority and offer immediate contextual fixes, not just a red label.",
+      "Stepper Dominance: A large horizontal stepper wastes critical vertical real estate needed for the data queue."
+    ],
+    "3_concrete_proposals_and_priorities": [
+      "Priority 1 (Layout Stability): Implement a permanent 12-column grid. Queue takes 8 cols, Inspector takes 4 cols. If no item is selected, the 4 cols show an elegant empty state. Zero layout shifting.",
+      "Priority 2 (The Catalog): Replace the right-drawer Catalog with a \u2318K Command Palette overlay (Spotlight style). It is temporary, keyboard-first, and preserves workspace.",
+      "Priority 3 (Morphing Action Bar): Merge the bottom bars. The Aurora AI pill morphs seamlessly into a wide Batch Actions glass bar when checkboxes are selected.",
+      "Priority 4 (Error Context): Use left-border color coding on rows for status. In the Inspector, errors must feature an inline 'Action Corrective' block.",
+      "Priority 5 (Compact Header): Move the stepper into the persistent header as a compact Breadcrumb (e.g., 'Meridian Twin / Step 2: Sources')."
+    ]
+  },
   "typography": {
-    "headings": "Chivo",
-    "body": "IBM Plex Sans",
-    "mono": "IBM Plex Mono",
-    "forbidden_fonts": ["Space Grotesk", "Inter", "Roboto"]
+    "fonts": [
+      {
+        "usage": "Headings & Main Labels",
+        "family": "Space Grotesk",
+        "css_class": "font-sans"
+      },
+      {
+        "usage": "UI Text & Instructions",
+        "family": "IBM Plex Sans",
+        "css_class": "font-ui"
+      },
+      {
+        "usage": "Data, IDs, Dates, Status",
+        "family": "IBM Plex Mono",
+        "css_class": "font-mono"
+      }
+    ],
+    "rules": [
+      "CRITICAL: All numbers, metrics, and timestamps MUST use IBM Plex Mono to ensure tabular alignment.",
+      "Headings must use tracking-tight to look sharp, not playful.",
+      "Small labels (overline) must be uppercase with tracking-widest."
+    ]
   },
   "colors": {
-    "background": "#050505",
-    "surface": "#0F0F0F",
-    "surface_elevated": "#1A1A1A",
-    "border": "rgba(255, 255, 255, 0.1)",
-    "primary": "#3B82F6",
-    "success": "#10B981",
-    "warning": "#F59E0B",
-    "danger": "#EF4444",
-    "aurora_ai": "#E2E8F0",
-    "forbidden_colors": ["#1B93A4", "#7351B7"]
+    "background": "#0A0A0A",
+    "surface_primary": "#121212",
+    "surface_secondary": "#1A1A1A",
+    "border": "rgba(255,255,255,0.08)",
+    "brand_cyan": "#22D3EE",
+    "brand_blue": "#3B82F6",
+    "status_error": "#F87171",
+    "status_success": "#34D399",
+    "status_warning": "#FBBF24",
+    "text_primary": "#FFFFFF",
+    "text_secondary": "rgba(255,255,255,0.5)"
   },
-  "visual_enhancers": {
-    "surfaces": "Use 'Grid Borders' for technical data (Registry, Change Lab). Use 'Crystal Glass' (backdrop-blur-xl bg-black/60 border border-white/10) for Aurora and floating overlays.",
-    "borders": "1px solid rgba(255,255,255,0.08) for structure.",
-    "shadows": "Avoid generic drop shadows. Use glowing halos (box-shadow) for active nodes/twins.",
-    "animations": "Nodes breathe using Framer Motion (scale/opacity pulses). Edges flow using CSS stroke-dashoffset."
+  "spacing_and_layout": {
+    "strategy": "The Bento Grid Protocol (Mode B: High Density Grid)",
+    "grid_system": "12-column CSS grid (Queue: span 8, Inspector: span 4)",
+    "queue_density": "Tight vertical spacing (py-2, gap-2). Every pixel is utilized for scanning efficiency.",
+    "surfaces": "Retro-Futurism / Terminal look. 1px solid borders (`border-white/10`), no soft shadows on flat elements. Glassmorphism reserved strictly for floating components."
   },
-  "layouts": {
-    "spacing": "Generous spacing (p-6, p-8) around main sections, dense spacing (p-2, gap-2) inside data tables/lists.",
-    "grid_system": "Bento Grid Protocol. High density for dashboards. No centered default layouts."
+  "components": {
+    "persistent_header": "Fixed top, backdrop-blur-md bg-[#0A0A0A]/80. Contains Breadcrumb Stepper (Left), Twin Name (Center), Autosave/Exit (Right).",
+    "kpi_filters": "4 interactive blocks. Layout: Massive Mono number above small uppercase label. Active state gets a 1px cyan border and 10% cyan bg.",
+    "source_queue": "Grid-based list. Collapsible group headers (sticky). Rows have 1px left-border colored by status. Columns: Checkbox | Name (bold) | Meta (mono 10px) | Status | Date.",
+    "adaptive_inspector": "Sticky right column. Adaptive form. Top of inspector highlights status. If error, display a tinted alert box with a primary 'Fix' CTA.",
+    "command_palette_catalog": "Replaces the drawer. Centered floating overlay (`backdrop-blur-xl`). Search input auto-focused. Keyboard navigable list of connectors.",
+    "aurora_morph_bar": "Floating pill at bottom center. Default: AI Copilot. When rows selected: Framer Motion animates it expanding into Batch Actions (Delete, Verify, Group)."
   },
-  "spaces": {
-    "radar": {
-      "description": "Page d'accueil. Flux priorisé de situations, not a KPI dashboard.",
-      "layout": "Vertical feed (max-w-3xl) of Situation items.",
-      "components": "Cardless list items with bottom borders, rich metadata. Quick actions on hover: Examiner, Créer, Ignorer, Surveiller."
-    },
-    "investigations": {
-      "description": "Cœur opérationnel.",
-      "layout": "4-zone Bento grid (grid-cols-12).",
-      "zones": {
-        "question": "col-span-12 (Large Chivo heading).",
-        "chronologie": "col-span-4 (Vertical timeline).",
-        "hypotheses": "col-span-8 (Grid of evidence pro/con with trust indicators).",
-        "conclusion": "col-span-12 (Distinct surface for Aurora synthesis and human decision)."
-      }
-    },
-    "change_lab": {
-      "description": "Simulation and impact analysis.",
-      "layout": "Split view. Controls on left, results/table on right.",
-      "components": "Tableau Risque/Effort/Compatibilité, Visual impact radius (mini map)."
-    },
-    "system_map": {
-      "description": "L'Atlas contextuel du Mesh.",
-      "layout": "Full screen absolute canvas with floating UI panels on top.",
-      "features": "Stable domain positioning (mémoire spatiale), significant movement only. Active relation flows, temporary halos for events.",
-      "modes": ["Territoire", "Situation", "Parcours"]
-    },
-    "registry": {
-      "description": "Administration du réseau.",
-      "layout": "Dense data table.",
-      "components": "Shadcn Table, Stepper for 5-step admission (Déclarer -> Connecter -> Observer -> Examiner -> Admettre)."
-    }
-  },
-  "global_components": {
-    "aurora": {
-      "description": "Copilote permanent contextuel.",
-      "type": "Floating Command Bar",
-      "styling": "Glassmorphism, fixed bottom center or floating contextually. Prescripted simulated responses with Twin Contributions and Evidence."
-    },
-    "trust_indicators": {
-      "description": "Four indicators present on all conclusions and hypotheses.",
-      "metrics": ["Confiance (Score %)", "Couverture (Jauge)", "Fraîcheur (Temps)", "Contradictions (Warning Icon)"],
-      "styling": "Dense Shadcn Badges."
-    }
-  },
-  "libraries": {
-    "system_map": "reactflow (Best for stable layouts, custom React nodes, animated SVG edges)",
-    "ui": "shadcn/ui",
-    "icons": "@phosphor-icons/react",
-    "animations": "framer-motion",
-    "toast": "sonner"
-  },
-  "demo_flow": {
-    "name": "Parcours Olympiade (7 actes)",
-    "steps": [
-      "Signal (Radar: dérive latence Paiements)",
-      "Situation créée",
-      "Investigation (hypothèses croisées)",
-      "Découverte (relation non documentée Paiements <-> Support)",
-      "Explication (preuves, incident ServiceNow similaire)",
-      "Décision (action proposée, rayon d'impact Change Lab)",
-      "Révélation (zoom arrière Mesh)"
-    ]
-  },
-  "image_urls": {
-    "background_elements": [
-      {
-        "url": "https://images.pexels.com/photos/30766684/pexels-photo-30766684.png?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
-        "description": "3D geometric network structure. Use at 5-10% opacity as a background texture for the map loading state or empty states."
-      }
-    ]
+  "motion_and_interactions": {
+    "row_hover": "Background shifts to surface_secondary, slight right translation (translateX(2px)) for the row action icon.",
+    "aurora_morph": "Layout animation transitioning width and border-radius from a pill to a wide toolbar.",
+    "inspector_enter": "Fade and slight slide-up (`y: 10 -> 0`) for content inside the 4-col container.",
+    "palette_enter": "Scale up (`scale: 0.95 -> 1`) with backdrop fade in."
   },
   "instructions_to_main_agent": [
-    "Build the UI entirely in French.",
-    "Do NOT build a generic SaaS dashboard. The aesthetic is 'Ops Intelligence / Mission Control' - dark, technical, dense, and precise.",
-    "System Map must be implemented using 'reactflow'. Nodes must be custom components with pulsing animations for 'vivant' effect.",
-    "Aurora is not a chat page; it is a floating command bar component.",
-    "Pre-load the application with the 'Jeu de données de démonstration riche' (Paiements, Comptes, Fraude, Support) to support the Olympiade demo.",
-    "Never use completely transparent backgrounds behind text; use glassmorphism (backdrop-blur + bg-opacity) for overlays."
+    "Implement the layout using a strict 12-column grid. Do NOT shrink the list to 7 columns dynamically.",
+    "Build a centralized Command Palette (`\u2318K`) for the Catalog instead of a side drawer.",
+    "Combine the AI Aurora bar and Batch Actions into a single morphing Framer Motion component.",
+    "Use IBM Plex Mono for all numerical data, IDs, and timestamps. Use Space Grotesk strictly for high-level headings.",
+    "Ensure all clickable elements have semantic HTML tags and `data-testid` attributes."
   ],
   "UNIVERSAL GUIDELINES FOR MAIN AGENT": [
-    "Always include 'data-testid' attributes in kebab-case on all interactive and key informational elements (e.g. data-testid='radar-item-1').",
-    "Do not center-align the app container. Text should flow naturally (left-aligned for data and reading).",
-    "Create depth with z-index hierarchy and glassmorphism (12-24px blur).",
-    "Never apply 'transition: all'. Explicitly animate specific properties.",
-    "Do not use AI emojis for icons. Use the specified icon library (@phosphor-icons/react).",
-    "Ensure all contrast ratios pass accessibility standards, especially in dark mode."
+    "Create depth through layered design elements with z-index hierarchy.",
+    "Use glass-morphism effects with backdrop filters (12-24px blur) ONLY for floating overlays (Palette, Batch Bar).",
+    "You MUST NOT apply universal transition (e.g., `transition: all`). Add transitions for specific properties to prevent breaking transforms.",
+    "You MUST NOT center align the app container. Keep natural left-aligned reading flows for data.",
+    "Every interaction needs micro-animations - hover states, transitions, entrance animations. Static = dead.",
+    "Subtle grain textures, custom selection states: separates good from extraordinary.",
+    "All interactive and key informational elements MUST include a `data-testid` attribute."
   ]
 }

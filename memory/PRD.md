@@ -3,6 +3,15 @@
 ## Problème d'origine (résumé)
 Construire Méridian non pas comme un Atlas/graphe centré sur les jumeaux, mais comme un **système de compréhension et de décision pour le SI**, organisé autour de l'objet **Situation**. Repositionnement v2 (utilisateur) : **système qui apprend continuellement la structure et le comportement du SI** — cycle Découverte candidate → Compréhension validée → Décision éclairée → Mémoire du Mesh. L'accueil devient un Observatoire des découvertes (3 colonnes Découvert / À comprendre / À décider), l'Atlas montre l'évolution du savoir (6 états de relations, maturité des domaines, 3 dynamiques temps réel), les investigations couvrent relations/comportements/connaissances/contradictions, chaque décision enrichit la mémoire du Mesh. Code couleur : Découvrir cyan, Comprendre violet, Décider ambre.
 
+## Implémenté (25/06/2026 — v8.1, refonte UX de l'atelier — critique design experte)
+- Critique design via design_agent (`/app/design_guidelines.json`) : 5 corrections appliquées.
+- **P1 Stabilité spatiale** : grille fixe 8/4 permanente (la file ne se re-fluide plus à l'ouverture de l'inspecteur ; état vide élégant permanent).
+- **P2 Palette ⌘K** : le catalogue tiroir latéral devient une palette de commande centrée (auto-focus, navigation ↑↓/Enter/Esc, animation scale+fade) — fini la collision tiroir/inspecteur.
+- **P3 Barre morphing** : la barre Aurora globale se transforme en barre d'actions en lot (framer-motion layout) quand des sources sont cochées — lot partagé via `contexte.jsx` (lot/setLot), purge à la navigation ; plus de double barre flottante.
+- **P4 Hiérarchie des statuts** : bordure gauche colorée par statut sur chaque ligne (scannable sur 100 sources) + CTA primaire « Corriger → » dans l'inspecteur (focus le premier champ manquant).
+- **P5 Stepper compact** : fil d'Ariane dans l'en-tête avec ligne de progression (libère la hauteur verticale).
+- Tests : iteration_15 → 14/14, non-régression Atlas/Aujourd'hui/Investigations OK, 0 erreur console.
+
 ## Implémenté (25/06/2026 — v8, atelier de commande d'un jumeau)
 - **Nouvelle page `/commande/:cid`** (plein écran, remplace la modale à onglets) : 4 étapes — Identité → Sources et connexions → Plan de découverte → Vérifier et lancer ; en-tête persistant (nom, APP-id, domaine, « Brouillon enregistré », quitter, stepper cliquable) ; **brouillons persistés côté serveur** (collection `commandes`, autosauvegarde debounce 900 ms) ; reprise depuis la page Jumeaux (« commandes en cours »).
 - **Atelier des sources** : indicateurs de préparation cliquables (filtrent la file), file d'instances avec colonnes (connecteur, environnement, périmètre, propriétaire, état, dernier test), recherche + filtres + regroupement repliable (connecteur/environnement/statut/équipe), cases à cocher → **barre d'actions en lot** (profil, environnement, fréquence, tester, supprimer).
