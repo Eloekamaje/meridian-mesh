@@ -1,4 +1,7 @@
-import { Users, ShieldCheck, LockSimple, Sparkle } from "@phosphor-icons/react";
+import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Users, ShieldCheck, LockSimple, Sparkle, Bell } from "@phosphor-icons/react";
+import api from "@/lib/api";
 import { usePerimetre } from "@/lib/perimetre";
 import { useContexte } from "@/lib/contexte";
 
@@ -8,9 +11,43 @@ const POLITIQUES = {
   resume: "résumé autorisé",
 };
 
+const TYPES_NOTIF = { mention: "#3B82F6", assignation: "#FBBF24", a_revoir: "#F87171" };
+
 export default function Topbar() {
   const { personas, persona, espaces, vues, cible, info, changerPersona, changerCible } = usePerimetre();
   const { selection, floreOuverte, basculerFlore } = useContexte();
+  const navigate = useNavigate();
+  const [notifs, setNotifs] = useState([]);
+  const [nonLues, setNonLues] = useState(0);
+  const [panneau, setPanneau] = useState(false);
+  const refPanneau = useRef(null);
+
+  const chargerNotifs = () =>
+    api.get("/notifications").then((r) => {
+      setNotifs(r.data.notifications);
+      setNonLues(r.data.non_lues);
+    }).catch(() => {});
+
+  useEffect(() => {
+    chargerNotifs();
+    const t = setInterval(chargerNotifs, 15000);
+    return () => clearInterval(t);
+  }, [persona]);
+
+  useEffect(() => {
+    const fermer = (e) => {
+      if (refPanneau.current && !refPanneau.current.contains(e.target)) setPanneau(false);
+    };
+    document.addEventListener("mousedown", fermer);
+    return () => document.removeEventListener("mousedown", fermer);
+  }, []);
+
+  const ouvrirNotif = async (n) => {
+    setPanneau(false);
+    await api.post(`/notifications/${n.id}/lue`).catch(() => {});
+    chargerNotifs();
+    if (n.lien) navigate(n.lien);
+  };
 
   return (
     <header className="flex h-12 shrink-0 items-center gap-3 border-b border-white/[0.08] bg-[#0A0A0A] px-4" data-testid="topbar">
@@ -71,6 +108,57 @@ export default function Topbar() {
             </span>
           )}
         </button>
+
+        {/* Notifications */}
+        <div className="relative" ref={refPanneau}>
+          <button
+            onClick={() => setPanneau(!panneau)}
+            data-testid="notif-btn"
+            title="Notifications"
+            className={`relative flex h-8 w-8 items-center justify-center rounded-md border transition-colors ${panneau ? "border-[#FBBF24]/50 bg-[#FBBF24]/10 text-[#FBBF24]" : "border-white/10 text-white/55 hover:text-white"}`}
+          >
+            <Bell size={14} />
+            {nonLues > 0 && (
+              <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#F87171] px-1 font-code text-[9px] font-bold text-black" data-testid="notif-badge">
+                {nonLues}
+              </span>
+            )}
+          </button>
+          {panneau && (
+            <div className="glass absolute right-0 top-10 z-50 w-96 max-w-[90vw] rounded-xl p-2" data-testid="notif-panel">
+              <div className="flex items-center justify-between px-2 py-1.5">
+                <span className="font-code text-[10px] uppercase tracking-[0.2em] text-white/40">Notifications</span>
+                {nonLues > 0 && (
+                  <button
+                    onClick={async () => { await api.post("/notifications/tout-lire").catch(() => {}); chargerNotifs(); }}
+                    data-testid="notif-tout-lire"
+                    className="font-code text-[10px] text-white/40 transition-colors hover:text-white"
+                  >
+                    Tout marquer lu
+                  </button>
+                )}
+              </div>
+              <div className="max-h-80 overflow-y-auto">
+                {notifs.map((n) => (
+                  <button
+                    key={n.id}
+                    onClick={() => ouvrirNotif(n)}
+                    data-testid={`notif-item-${n.id}`}
+                    className={`flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2.5 text-left transition-colors hover:bg-white/[0.05] ${n.lu ? "opacity-45" : ""}`}
+                  >
+                    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: TYPES_NOTIF[n.type] || "#94A3B8" }} />
+                    <span className="min-w-0">
+                      <span className="block text-xs leading-snug text-white/80">{n.texte}</span>
+                      <span className="mt-0.5 block font-code text-[9px] text-white/30">{new Date(n.quand).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
+                    </span>
+                  </button>
+                ))}
+                {notifs.length === 0 && <p className="px-2 py-4 text-center text-xs text-white/30">Aucune notification.</p>}
+              </div>
+            </div>
+          )}
+        </div>
+
         <Users size={14} className="text-white/40" />
         <select
           value={persona}

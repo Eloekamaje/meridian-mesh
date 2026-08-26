@@ -20,6 +20,7 @@ export default function CaseDetail() {
   const { setSelection, ouvrirFlore } = useContexte();
   const [cas, setCas] = useState(null);
   const [situations, setSituations] = useState([]);
+  const [personas, setPersonas] = useState([]);
   const [erreur, setErreur] = useState(null);
   const [message, setMessage] = useState("");
   const [envoiMsg, setEnvoiMsg] = useState(false);
@@ -34,7 +35,13 @@ export default function CaseDetail() {
     setErreur(null);
     charger();
     api.get("/situations").then((r) => setSituations(r.data)).catch(() => {});
+    api.get("/personas").then((r) => setPersonas(r.data)).catch(() => {});
   }, [cid, version]);
+
+  const nomPersona = (id) => {
+    const p = personas.find((x) => x.id === id);
+    return p ? `${p.nom} — ${p.role}` : id;
+  };
 
   const maj = async (champs) => {
     try {
@@ -136,11 +143,14 @@ export default function CaseDetail() {
                 <h1 className="font-display text-xl font-bold tracking-tight text-white" data-testid="case-titre">{cas.titre}</h1>
               </div>
               <p className="mt-0.5 flex items-center gap-1.5 font-code text-[10px] text-white/40">
-                <Users size={11} /> {(cas.participants || []).join(" · ") || "—"} · créé le {new Date(cas.cree_le).toLocaleDateString("fr-FR")}
+                <Users size={11} /> {(cas.participants || []).map(nomPersona).join(" · ") || "—"} · créé le {new Date(cas.cree_le).toLocaleDateString("fr-FR")}
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <select value={cas.responsable || ""} onChange={(e) => maj({ responsable: e.target.value })} data-testid="case-responsable-select" title="Responsable du case" className="rounded-md border border-white/10 bg-black/50 px-2.5 py-1.5 text-xs text-white focus:outline-none">
+              {personas.map((p) => <option key={p.id} value={p.id} label={`Resp. ${p.nom}`} />)}
+            </select>
             <select value={cas.statut} onChange={(e) => maj({ statut: e.target.value })} data-testid="case-statut-select" className="rounded-md border border-white/10 bg-black/50 px-2.5 py-1.5 text-xs text-white focus:outline-none">
               {Object.entries(STATUTS_CASE).map(([k, [l]]) => <option key={k} value={k} label={l} />)}
             </select>
@@ -155,6 +165,18 @@ export default function CaseDetail() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-8 py-6">
+        <div className="mx-auto max-w-6xl">
+          {cas.a_revoir && (
+            <div className="mb-5 flex items-center justify-between gap-3 rounded-xl border border-[#F87171]/30 bg-[#F87171]/[0.05] px-4 py-3" data-testid="case-arevoir-banner">
+              <p className="text-xs text-[#F87171]">
+                <span className="font-semibold uppercase tracking-wider">À revoir</span> — une connaissance du Mesh liée à ce case a changé ; les conclusions peuvent être remises en cause.
+              </p>
+              <button onClick={() => maj({ a_revoir: false })} data-testid="case-marquer-revu-btn" className="shrink-0 rounded-md border border-[#F87171]/40 px-2.5 py-1.5 text-[11px] font-semibold text-[#F87171] transition-colors hover:bg-[#F87171]/10">
+                Marquer comme revu
+              </button>
+            </div>
+          )}
+        </div>
         <div className="mx-auto grid max-w-6xl gap-5 lg:grid-cols-[minmax(0,1fr)_330px]">
           {/* Colonne principale */}
           <div className="space-y-5">

@@ -12,11 +12,13 @@ import logging
 import secrets
 import unicodedata
 from pathlib import Path
+from uuid import uuid4
 
+from cases_routes import build_cases_router
 from seed_data import (
     TWINS, RELATIONS, REGIONS, SITUATIONS, CHANGE_LAB, ACTIVITE,
     AURORA_SCRIPTS, AURORA_FALLBACK, AURORA_SUGGESTIONS, DEMO_ACTES, SOURCES_LABELS,
-    PERSONAS, ESPACES, VUES, CONNECTEURS, CONTRIBUTIONS, PROFILS, COMMANDE_DEMO, CASES,
+    PERSONAS, ESPACES, VUES, CONNECTEURS, CONTRIBUTIONS, PROFILS, COMMANDE_DEMO, CASES, NOTIFS,
 )
 
 ROOT_DIR = Path(__file__).parent
@@ -32,11 +34,11 @@ NO_ID = {"_id": 0}
 logger = logging.getLogger("meridian")
 
 
-SEED_VERSION = 5
+SEED_VERSION = 6
 
 
 async def peupler_demo():
-    for name, docs in [("jumeaux", TWINS), ("relations", RELATIONS), ("situations", SITUATIONS), ("vues", VUES), ("cases", CASES)]:
+    for name, docs in [("jumeaux", TWINS), ("relations", RELATIONS), ("situations", SITUATIONS), ("vues", VUES), ("cases", CASES), ("notifications", NOTIFS)]:
         if await db[name].count_documents({}) == 0:
             await db[name].insert_many([dict(d) for d in docs])
             logger.info("Seeded %s (%d documents)", name, len(docs))
@@ -50,7 +52,7 @@ async def peupler_demo():
 async def seed_database():
     meta = await db.meta.find_one({"id": "seed"})
     if not meta or meta.get("version") != SEED_VERSION:
-        for col in ["jumeaux", "relations", "situations", "change_lab", "dossiers", "vues", "journal", "commandes", "cases"]:
+        for col in ["jumeaux", "relations", "situations", "change_lab", "dossiers", "vues", "journal", "commandes", "cases", "notifications"]:
             await db[col].delete_many({})
         await db.meta.replace_one({"id": "seed"}, {"id": "seed", "version": SEED_VERSION}, upsert=True)
         logger.info("Seed version %s — réinitialisation des données de démo", SEED_VERSION)
@@ -121,9 +123,32 @@ async def journaler(persona_id: str, espace_id, action: str, cible: str, detail:
     })
 
 
+async def notifier(persona_ids, type_, texte, lien):
+    now = datetime.now(timezone.utc).isoformat()
+    docs = [
+        {"id": f"notif-{uuid4().hex[:8]}", "persona": p, "type": type_, "texte": texte, "lien": lien, "lu": False, "quand": now}
+        for p in set(persona_ids or []) if p
+    ]
+    if docs:
+        await db.notifications.insert_many(docs)
+
+
+async def marquer_cases_a_revoir(jumeaux_ids, raison):
+    now = datetime.now(timezone.utc).isoformat()
+    cibles = set(jumeaux_ids)
+    async for case in db.cases.find({"statut": {"$ne": "clos"}}, NO_ID):
+        if not cibles & set(case.get("jumeaux", [])):
+            continue
+        await db.cases.update_one(
+            {"id": case["id"]},
+            {"$set": {"a_revoir": True, "maj_le": now}, "$push": {"historique": {"quand": now, "texte": f"À revoir — {raison}"}}},
+        )
+        await notifier(case.get("participants", []), "a_revoir", f"Le case « {case['titre']} » est à revoir : {raison}", f"/cases/{case['id']}")
+
+
 HORS_PERIMETRE = {
     "comportement": "expliquer",
-    "reponse": "Cette question sort de votre périmètre d'autorisation. Aurora construit ses réponses uniquement depuis le sous-graphe autorisé de votre espace actif — demandez un élargissement de périmètre au propriétaire du jumeau concerné.",
+    "reponse": "Cette question sort de votre périmètre d'autorisation. Flore construit ses réponses uniquement depuis le sous-graphe autorisé de votre espace actif — demandez un élargissement de périmètre au propriétaire du jumeau concerné.",
     "contributions": [],
     "preuves": [],
     "indicateurs": {"confiance": 0, "couverture": 0, "fraicheur": "—", "contradictions": 0},
@@ -323,6 +348,8 @@ async def admettre_jumeau(jid: str, x_persona: str = Header("architecte"), x_esp
     if res.matched_count == 0:
         raise HTTPException(404, "Jumeau introuvable")
     await journaler(x_persona, espace["id"], "admission d'un jumeau", jid)
+    jumeau = await db.jumeaux.find_one({"id": jid}, NO_ID)
+    await marquer_cases_a_revoir([jid], f"le jumeau {jumeau['nom'] if jumeau else jid} a été admis dans le Mesh")
     return {"ok": True, "statut": "actif"}
 
 
@@ -440,6 +467,7 @@ async def confirmer_relation(rid: str, x_persona: str = Header("architecte"), x_
         {"$set": {"etat": "confirmee"}, "$addToSet": {"confirmee_par": "Validation humaine"}},
     )
     await journaler(x_persona, espace["id"], "confirmation d'une relation", rid, f"{rel['source']} → {rel['cible']}")
+    await marquer_cases_a_revoir([rel["source"], rel["cible"]], f"la relation {rel['source']} → {rel['cible']} a été confirmée")
     return {"ok": True, "etat": "confirmee", "memoire": "enrichie"}
 
 
@@ -976,222 +1004,40 @@ async def aurora_suggestions(contexte: str = "global", x_persona: str = Header("
     ]
 
 
-# ---------- Cases (espace de travail durable et collaboratif) ----------
+# ---------- Cases (module dédié) ----------
 
-class CaseCreate(BaseModel):
-    titre: str
-    type: str = "demande"
-    objectif: str = ""
-    jumeaux: list = []
-    situations: list = []
-    participants: list = []
-    conversation: list = []
-
-
-class CasePatch(BaseModel):
-    statut: Optional[str] = None
-    objectif: Optional[str] = None
-    questions: Optional[list] = None
-    jumeaux: Optional[list] = None
-    situations: Optional[list] = None
+api_router.include_router(build_cases_router({
+    "db": db,
+    "resoudre_perimetre": resoudre_perimetre,
+    "autorisations": autorisations,
+    "journaler": journaler,
+    "notifier": notifier,
+    "generer_reponse_flore": generer_reponse_flore,
+    "slugify": slugify,
+    "NO_ID": NO_ID,
+    "datetime": datetime,
+    "timezone": timezone,
+}))
 
 
-class MessageCase(BaseModel):
-    texte: str
+# ---------- Notifications ----------
+
+@api_router.get("/notifications")
+async def lister_notifications(x_persona: str = Header("architecte")):
+    docs = await db.notifications.find({"persona": x_persona}, NO_ID).sort("quand", -1).to_list(30)
+    return {"notifications": docs, "non_lues": sum(1 for d in docs if not d.get("lu"))}
 
 
-class DecisionCase(BaseModel):
-    texte: str
-    type: str = "arbitrage"
+@api_router.post("/notifications/{nid}/lue")
+async def notification_lue(nid: str, x_persona: str = Header("architecte")):
+    await db.notifications.update_one({"id": nid, "persona": x_persona}, {"$set": {"lu": True}})
+    return {"ok": True}
 
 
-class OptionCase(BaseModel):
-    titre: str
-    description: str = ""
-    impacts: list = []
-    risque: str = "moyen"
-
-
-async def charger_case(cid: str, espace: dict):
-    case = await db.cases.find_one({"id": cid}, NO_ID)
-    if not case:
-        raise HTTPException(404, "Case introuvable")
-    tous = await db.jumeaux.find({}, {"_id": 0, "id": 1}).to_list(200)
-    aut = autorisations(espace, [j["id"] for j in tous])
-    if case.get("jumeaux") and not any(j in aut for j in case["jumeaux"]):
-        raise HTTPException(403, "Ce case est hors de votre périmètre")
-    return case
-
-
-@api_router.get("/cases")
-async def lister_cases(x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
-    _, espace = resoudre_perimetre(x_persona, x_espace)
-    tous = await db.jumeaux.find({}, {"_id": 0, "id": 1}).to_list(200)
-    aut = autorisations(espace, [j["id"] for j in tous])
-    cases = await db.cases.find({}, NO_ID).to_list(200)
-    visibles = [c for c in cases if not c.get("jumeaux") or any(j in aut for j in c["jumeaux"])]
-    visibles.sort(key=lambda c: c.get("maj_le", ""), reverse=True)
-    for c in visibles:
-        c["nb_messages"] = len(c.get("conversation", []))
-        c["nb_decisions"] = len(c.get("decisions", []))
-        c["nb_options"] = len(c.get("options", []))
-        c.pop("conversation", None)
-        c.pop("historique", None)
-    return visibles
-
-
-@api_router.post("/cases", status_code=201)
-async def creer_case(payload: CaseCreate, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
-    _, espace = resoudre_perimetre(x_persona, x_espace)
-    base = slugify(payload.titre) or "case"
-    cid = base
-    n = 2
-    while await db.cases.find_one({"id": cid}):
-        cid = f"{base}-{n}"
-        n += 1
-    now = datetime.now(timezone.utc).isoformat()
-    doc = {
-        "id": cid,
-        "titre": payload.titre.strip(),
-        "type": payload.type,
-        "statut": "ouvert",
-        "objectif": payload.objectif,
-        "questions": [],
-        "jumeaux": payload.jumeaux,
-        "situations": payload.situations,
-        "participants": payload.participants,
-        "conversation": payload.conversation,
-        "options": [],
-        "decisions": [],
-        "livrables": [],
-        "historique": [{"quand": now, "texte": "Case créé"}],
-        "cree_le": now,
-        "maj_le": now,
-    }
-    await db.cases.insert_one(doc)
-    await journaler(x_persona, espace["id"], "création d'un case", cid, doc["titre"])
-    doc.pop("_id", None)
-    return doc
-
-
-@api_router.get("/cases/{cid}")
-async def obtenir_case(cid: str, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
-    _, espace = resoudre_perimetre(x_persona, x_espace)
-    return await charger_case(cid, espace)
-
-
-@api_router.patch("/cases/{cid}")
-async def maj_case(cid: str, payload: CasePatch, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
-    _, espace = resoudre_perimetre(x_persona, x_espace)
-    case = await charger_case(cid, espace)
-    champs = {k: v for k, v in payload.model_dump().items() if v is not None}
-    if not champs:
-        return case
-    now = datetime.now(timezone.utc).isoformat()
-    histo = []
-    if "statut" in champs and champs["statut"] != case.get("statut"):
-        histo.append({"quand": now, "texte": f"Statut : {case.get('statut')} → {champs['statut']}"})
-    if "objectif" in champs and champs["objectif"] != case.get("objectif"):
-        histo.append({"quand": now, "texte": "Objectif mis à jour"})
-    if "jumeaux" in champs and champs["jumeaux"] != case.get("jumeaux"):
-        histo.append({"quand": now, "texte": "Contexte SI ajusté"})
-    maj = {**champs, "maj_le": now}
-    update = {"$set": maj}
-    if histo:
-        update["$push"] = {"historique": {"$each": histo}}
-    await db.cases.update_one({"id": cid}, update)
-    return await db.cases.find_one({"id": cid}, NO_ID)
-
-
-@api_router.post("/cases/{cid}/messages", status_code=201)
-async def message_case(cid: str, payload: MessageCase, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
-    _, espace = resoudre_perimetre(x_persona, x_espace)
-    case = await charger_case(cid, espace)
-    if not payload.texte.strip():
-        raise HTTPException(400, "Message vide")
-    now = datetime.now(timezone.utc).isoformat()
-    msg_user = {"role": "utilisateur", "texte": payload.texte.strip(), "quand": now}
-    rep = await generer_reponse_flore("case", payload.texte, case.get("jumeaux", []), None, x_persona, x_espace)
-    msg_flore = {"role": "flore", "texte": rep.get("reponse", ""), "comportement": rep.get("comportement"), "quand": datetime.now(timezone.utc).isoformat()}
-    await db.cases.update_one(
-        {"id": cid},
-        {
-            "$push": {"conversation": {"$each": [msg_user, msg_flore]}, "historique": {"quand": now, "texte": "Échange avec Flore"}},
-            "$set": {"maj_le": now},
-        },
-    )
-    return {"utilisateur": msg_user, "flore": msg_flore, "reponse_complete": rep}
-
-
-@api_router.post("/cases/{cid}/decisions", status_code=201)
-async def decider_case(cid: str, payload: DecisionCase, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
-    _, espace = resoudre_perimetre(x_persona, x_espace)
-    await charger_case(cid, espace)
-    if not payload.texte.strip():
-        raise HTTPException(400, "Décision vide")
-    now = datetime.now(timezone.utc).isoformat()
-    dec = {"texte": payload.texte.strip(), "type": payload.type, "quand": now, "par": x_persona}
-    await db.cases.update_one(
-        {"id": cid},
-        {"$push": {"decisions": dec, "historique": {"quand": now, "texte": f"Décision enregistrée — {payload.type}"}}, "$set": {"maj_le": now}},
-    )
-    await journaler(x_persona, espace["id"], "décision sur un case", cid, payload.texte.strip()[:120])
-    return dec
-
-
-@api_router.post("/cases/{cid}/options", status_code=201)
-async def ajouter_option_case(cid: str, payload: OptionCase, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
-    _, espace = resoudre_perimetre(x_persona, x_espace)
-    case = await charger_case(cid, espace)
-    if not payload.titre.strip():
-        raise HTTPException(400, "Option sans titre")
-    now = datetime.now(timezone.utc).isoformat()
-    opt = {
-        "id": f"opt-{len(case.get('options', [])) + 1}-{slugify(payload.titre)[:24]}",
-        "titre": payload.titre.strip(),
-        "description": payload.description,
-        "impacts": payload.impacts,
-        "risque": payload.risque,
-        "statut": "a_evaluer",
-    }
-    await db.cases.update_one(
-        {"id": cid},
-        {"$push": {"options": opt, "historique": {"quand": now, "texte": f"Option ajoutée — {opt['titre']}"}}, "$set": {"maj_le": now}},
-    )
-    return opt
-
-
-@api_router.post("/cases/{cid}/livrables", status_code=201)
-async def produire_synthese_case(cid: str, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
-    _, espace = resoudre_perimetre(x_persona, x_espace)
-    case = await charger_case(cid, espace)
-    now = datetime.now(timezone.utc).isoformat()
-    questions = case.get("questions", [])
-    resolues = [q for q in questions if q.get("resolue")]
-    lignes = [
-        f"Synthèse du Case « {case['titre']} »",
-        f"Objectif : {case.get('objectif') or '—'}",
-        f"Jumeaux mobilisés : {len(case.get('jumeaux', []))} · Questions : {len(resolues)}/{len(questions)} résolues · Options : {len(case.get('options', []))} · Décisions : {len(case.get('decisions', []))}",
-    ]
-    if case.get("decisions"):
-        lignes.append("Décision retenue : " + case["decisions"][-1]["texte"])
-    if case.get("options"):
-        lignes.append("Options étudiées : " + " · ".join(o["titre"] for o in case["options"]))
-    restantes = [q["texte"] for q in questions if not q.get("resolue")]
-    lignes.append("Inconnues restantes : " + (" · ".join(restantes) if restantes else "aucune"))
-    liv = {
-        "id": f"liv-{len(case.get('livrables', [])) + 1}",
-        "titre": f"Synthèse — {case['titre']}",
-        "contenu": "\n".join(lignes),
-        "cree_le": now,
-    }
-    await db.cases.update_one(
-        {"id": cid},
-        {"$push": {"livrables": liv, "historique": {"quand": now, "texte": "Synthèse produite par Flore"}}, "$set": {"maj_le": now}},
-    )
-    await journaler(x_persona, espace["id"], "production d'un livrable", cid, liv["titre"])
-    return liv
-
+@api_router.post("/notifications/tout-lire")
+async def notifications_tout_lire(x_persona: str = Header("architecte")):
+    await db.notifications.update_many({"persona": x_persona}, {"$set": {"lu": True}})
+    return {"ok": True}
 
 # ---------- Démo & activité ----------
 

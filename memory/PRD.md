@@ -1,5 +1,12 @@
 # Méridian — PRD
 
+## Implémenté (26/08/2026 — v13, Aujourd'hui personnel + équipes + « hypothèse fausse » + refactor)
+- **Aujourd'hui refondu en tableau de bord personnel** (choix utilisateur : suivre le modèle produit, pas l'existant) : « Bonjour, {persona} » + date, 4 KPI (cases en cours, décisions en attente, découvertes, alertes connaissance), sections Mes cases, Décisions en attente (situations + cases), Nouvelles découvertes (→ Atlas focus profond), Alertes de connaissance (→ revue jumeau), Activité des jumeaux (live), Suggestions de Flore (→ panneau prérempli), Changements sur le périmètre (journal). L'ancien observatoire 3 colonnes est supprimé.
+- **Espaces d'équipe complets** : cases avec `responsable` (persona), `participants` (ids personas) et `espace` ; filtre « Mes cases » ; sélecteur de responsable à la création et dans le détail ; **notifications** (collection + GET/lue/tout-lire + cloche Topbar avec badge et panneau, polling 15 s) ; assignation → notification au responsable.
+- **Hypothèse devenue fausse** : confirmation de relation ou admission de jumeau → cases non clos concernés passent `a_revoir` (badge partout + bandeau + « Marquer comme revu »), historique enrichi, participants notifiés. C'est la « connaissance vivante » du modèle.
+- **Refactor** : endpoints cases extraits dans `backend/cases_routes.py` (`build_cases_router` avec injection de dépendances) — server.py 1237 → ~1060 lignes, signatures inchangées.
+- Tests : iteration_20 → **100 %** (22/22 pytest dont 8 nouveaux `test_notifications_arevoir.py`, frontend complet, 0 erreur console, seed restauré).
+
 ## Implémenté (26/06/2026 — v12, PIVOT PRODUIT : Atlas + Cases + Flore)
 **Décision utilisateur (modèle produit recommandé)** : Méridian = plateforme de connaissance vivante ; navigation finale « Aujourd'hui · Atlas · Cases · Jumeaux · Administration » + Flore dans l'en-tête. « Voir avec l'Atlas. Travailler dans un Case. Dialoguer avec Flore. »
 - **Aurora → Flore** : la barre du bas a disparu ; Flore est un **panneau dédié docké à droite** (`FlorePanel.jsx`, `flore-panel`) ouvert depuis l'en-tête (`flore-btn` + badge de contexte), ⌘K, ou `meridian:flore-ask`. Conversation **multi-tours** persistée en mémoire, contributions/preuves/propositions/TrustBadges conservées, commandes carte actives. La barre d'actions en lot de l'Atelier (`lot-bar`) y est préservée. Anciens testids `aurora-*` → `flore-*`.

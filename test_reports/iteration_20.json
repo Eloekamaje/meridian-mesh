@@ -1,0 +1,28 @@
+{
+  "summary": "Iteration 20 — Validation E2E complete du chantier 1 (dashboard Aujourd'hui refondu), chantier 2 (notifications + responsable + Mes cases) et chantier 3 (trigger 'à revoir'). BACKEND: 22/22 pytest passent (14/14 legacy test_cases_flore.py inchangé + 8/8 nouveau test_notifications_arevoir.py couvrant GET /notifications architecte&paiements, POST /notifications/{id}/lue, POST /notifications/tout-lire, POST /relations/r6/confirmer déclenche a_revoir=true + historique + notif participants, PATCH a_revoir=false ajoute 'Revue effectuée', création avec responsable notifie support, reassignation via PATCH responsable notifie le nouveau responsable). FRONTEND: aujourdhui-titre = 'Bonjour, A. Rousseau', 4 KPI OK (kpi-cases=2, kpi-decisions=6, kpi-decouvertes=4, kpi-alertes=3), 7 sections visibles (section-mes-cases, decisions-attente, decouvertes, alertes, activite, suggestions-flore, changements). Cloche notif-btn ouvre notif-panel, notif-badge=1 pour architecte après ré-init (2 seedées mais notif-1 était marquée lue par test précédent — comportement correct), click sur notif-item la marque lue et fait disparaître le badge. Filtre-mes-cases: architecte 5→4, paiements 5→1 (case-olympiade). Persona switch OK. TRIGGER À REVOIR: POST /api/relations/r6/confirmer via evaluate → case-olympiade a_revoir=true, badge case-arevoir-case-olympiade PRESENT en Liste + Kanban + Chrono + Dashboard section-mes-cases (persona paiements), bandeau case-arevoir-banner + bouton case-marquer-revu-btn dans /cases/case-olympiade fonctionnels (clic → banner disparaît). Navigation Aujourd'hui: voir-atlas-{id} → /atlas?situation=..., alerte-{id} → /jumeaux/{id}/revue, suggestion-flore-0 → panneau Flore ouvert avec question préremplie ('Qu'as-tu découvert récemment autour de Paiements ?'). Création de case avec case-responsable-select=support → case créé (responsable=support, participants=[architecte,support]), notification d'assignation reçue par support ('Vous êtes responsable du case « TEST_UI_assign_support »'). 0 erreur console sur la session finale. POST /api/demo/reinitialiser exécuté en fin de test.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_cases_flore.py",
+    "/app/backend/tests/test_notifications_arevoir.py",
+    "/app/test_reports/pytest/pytest_cases_flore_iter20.xml",
+    "/app/test_reports/pytest/pytest_notifs_iter20.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "cases_routes.py: bonne extraction avec injection de dépendances (build_cases_router(deps)) — server.py réduit ~1080 lignes. Signatures et endpoints identiques, tests legacy verts.",
+    "notifier() insère en batch avec un id/quand/lu par défaut — bon pattern. Vérifie que persona_ids est une liste non vide implicitement via insert_many (vide → pas d'erreur, docs=[] passe).",
+    "marquer_cases_a_revoir() cible les cases NON clos dont les jumeaux intersectent — logique correcte. Bien : notifie participants (pas juste responsable), historique enrichi.",
+    "PATCH /cases/{cid}: la comparaison 'if nouveau_resp and nouveau_resp != case.get(\"responsable\")' garantit qu'on ne renotifie pas si aucun changement. La notif n'est pas envoyée si le nouveau responsable = x_persona (auto-assignation), comportement volontaire.",
+    "Topbar.jsx: le polling/refetch des notifs se déclenche à l'ouverture du panneau — pattern OK. À terme, envisager un websocket ou un polling léger pour un badge live.",
+    "Aujourdhui.jsx: la section 'décisions en attente' fusionne situations à_decider + cases avec options sans décision — cohérent avec le brief produit. KPI cohérents avec le contenu affiché."
+  ],
+  "updated_files": ["/app/backend/tests/test_notifications_arevoir.py"],
+  "success_rate": {"backend": "100% (22/22 tests pytest passants — 14 legacy + 8 nouveaux ; 1 skipped)", "frontend": "100% — dashboard, notifications, filtre Mes cases, responsable+notif d'assignation, trigger à revoir (liste/kanban/chrono/dashboard) tous validés, 0 erreur console"},
+  "test_credentials": "X-Persona: architecte (défaut) / paiements / support",
+  "seed_data_creation": "Cases TEST_* créés pendant tests, nettoyés par POST /api/demo/reinitialiser en fin de suite (fixture autouse) et à la fin du frontend test.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Iteration 20 validée à 100%. Nouveaux testids opérationnels : notif-btn, notif-badge, notif-panel, notif-item-{id}, notif-tout-lire, filtre-mes-cases, case-responsable-select (création ET détail), case-arevoir-{id}, case-arevoir-banner, case-marquer-revu-btn, aujourdhui-titre, kpi-cases/decisions/decouvertes/alertes, section-mes-cases, section-decisions-attente, decision-attente-{id}, section-decouvertes, decouverte-{id}, voir-atlas-{id}, section-alertes, alerte-{id}, section-activite, section-suggestions-flore, suggestion-flore-{i}, section-changements. Cases: nouveau-case-btn pour ouvrir le formulaire, case-titre-input, case-creer-submit. Modules backend : cases_routes.py (build_cases_router), endpoints notifs ligne ~1025-1041 server.py, marquer_cases_a_revoir ligne 136, notifier ligne 126, triggers dans confirmer_relation (ligne 470) et admettre_jumeau (ligne 352). Toujours reset via POST /api/demo/reinitialiser après tests destructifs. Suite pytest : /app/backend/tests/test_cases_flore.py (14) + /app/backend/tests/test_notifications_arevoir.py (8).",
+  "rca of the issue": "N/A — aucun bug détecté."
+}

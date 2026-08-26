@@ -41,29 +41,33 @@ export default function Cases() {
   const [creation, setCreation] = useState(false);
   const [form, setForm] = useState({ titre: "", type: "demande", objectif: "", jumeaux: [] });
   const [envoi, setEnvoi] = useState(false);
+  const [mesSeulement, setMesSeulement] = useState(false);
+  const [personas, setPersonas] = useState([]);
   const { mesh } = useMesh();
-  const { version } = usePerimetre();
+  const { version, persona, info } = usePerimetre();
   const navigate = useNavigate();
 
   useEffect(() => {
     api.get("/cases").then((r) => setCases(r.data)).catch(() => {});
+    api.get("/personas").then((r) => setPersonas(r.data)).catch(() => {});
   }, [version]);
 
   const filtres = useMemo(() => {
     const q = recherche.trim().toLowerCase();
     return cases.filter(
       (c) =>
+        (!mesSeulement || c.responsable === persona) &&
         (filtreType === "tous" || c.type === filtreType) &&
         (filtreStatut === "tous" || c.statut === filtreStatut) &&
         (!q || c.titre.toLowerCase().includes(q) || (c.objectif || "").toLowerCase().includes(q))
     );
-  }, [cases, filtreType, filtreStatut, recherche]);
+  }, [cases, filtreType, filtreStatut, recherche, mesSeulement, persona]);
 
   const creer = async () => {
     if (!form.titre.trim() || envoi) return;
     setEnvoi(true);
     try {
-      const { data } = await api.post("/cases", form);
+      const { data } = await api.post("/cases", { ...form, responsable: form.responsable || persona, espace: info?.espace?.id });
       toast.success("Case créé");
       navigate(`/cases/${data.id}`);
     } catch {
@@ -71,6 +75,10 @@ export default function Cases() {
       setEnvoi(false);
     }
   };
+
+  const BadgeArevoir = ({ id }) => (
+    <span className="rounded border border-[#F87171]/40 bg-[#F87171]/[0.08] px-1.5 py-0.5 font-code text-[9px] uppercase tracking-wider text-[#F87171]" data-testid={`case-arevoir-${id}`}>À revoir</span>
+  );
 
   const BadgeType = ({ type }) => {
     const t = TYPES_CASE[type] || [type, "#9CA3AF"];
@@ -146,6 +154,10 @@ export default function Cases() {
             <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} data-testid="case-type-select" className="rounded-md border border-white/10 bg-black/50 px-3 py-2.5 text-sm text-white focus:outline-none">
               {Object.entries(TYPES_CASE).map(([k, [l]]) => <option key={k} value={k} label={l} />)}
             </select>
+            <select value={form.responsable || ""} onChange={(e) => setForm({ ...form, responsable: e.target.value || undefined })} data-testid="case-responsable-select" className="rounded-md border border-white/10 bg-black/50 px-3 py-2.5 text-sm text-white focus:outline-none">
+              <option value="" label="Responsable : moi" />
+              {personas.map((p) => <option key={p.id} value={p.id} label={`${p.nom} — ${p.role}`} />)}
+            </select>
             <input
               value={form.objectif}
               onChange={(e) => setForm({ ...form, objectif: e.target.value })}
@@ -183,6 +195,13 @@ export default function Cases() {
 
       {/* Filtres */}
       <div className="mt-5 flex flex-wrap items-center gap-2">
+        <button
+          onClick={() => setMesSeulement(!mesSeulement)}
+          data-testid="filtre-mes-cases"
+          className={`rounded-full border px-3 py-1.5 text-xs transition-colors ${mesSeulement ? "border-[#3B82F6]/60 bg-[#3B82F6]/15 text-white" : "border-white/10 text-white/50 hover:text-white"}`}
+        >
+          Mes cases
+        </button>
         <select value={filtreType} onChange={(e) => setFiltreType(e.target.value)} data-testid="filtre-type-case" className="rounded-md border border-white/10 bg-black/40 px-2.5 py-1.5 text-xs text-white/70 focus:outline-none">
           <option value="tous" label="Tous les types" />
           {Object.entries(TYPES_CASE).map(([k, [l]]) => <option key={k} value={k} label={l} />)}
@@ -212,7 +231,10 @@ export default function Cases() {
               className="grid cursor-pointer grid-cols-[minmax(0,2.4fr)_110px_110px_minmax(0,1.6fr)_150px_80px] items-center gap-3 border-b border-white/[0.04] px-5 py-3.5 transition-colors last:border-0 hover:bg-white/[0.03] max-lg:grid-cols-[minmax(0,1fr)_auto]"
             >
               <div className="min-w-0">
-                <div className="truncate text-sm font-semibold text-white/90">{c.titre}</div>
+                <div className="flex items-center gap-2 truncate text-sm font-semibold text-white/90">
+                  <span className="truncate">{c.titre}</span>
+                  {c.a_revoir && <BadgeArevoir id={c.id} />}
+                </div>
                 {c.objectif && <div className="mt-0.5 truncate text-[11px] text-white/40">{c.objectif}</div>}
               </div>
               <div className="max-lg:hidden"><BadgeType type={c.type} /></div>
@@ -244,7 +266,10 @@ export default function Cases() {
                     <div key={c.id} onClick={() => navigate(`/cases/${c.id}`)} data-testid={`case-card-${c.id}`} className="cursor-pointer rounded-lg border border-white/[0.07] bg-[#0D0D0D] p-3 transition-colors hover:border-white/20">
                       <div className="flex items-start justify-between gap-2">
                         <div className="text-xs font-semibold leading-snug text-white/90">{c.titre}</div>
-                        <BadgeType type={c.type} />
+                        <div className="flex shrink-0 flex-col items-end gap-1">
+                          <BadgeType type={c.type} />
+                          {c.a_revoir && <BadgeArevoir id={c.id} />}
+                        </div>
                       </div>
                       <div className="mt-2"><ChipsJumeaux ids={c.jumeaux} /></div>
                       <div className="mt-2 flex items-center justify-between font-code text-[9px] text-white/35">
@@ -275,6 +300,7 @@ export default function Cases() {
                   <div className="flex items-center gap-2">
                     <BadgeType type={c.type} />
                     <BadgeStatut statut={c.statut} />
+                    {c.a_revoir && <BadgeArevoir id={c.id} />}
                     <span className="ml-auto font-code text-[9px] text-white/30">{rel(c.maj_le)}</span>
                   </div>
                   <div className="mt-1.5 text-sm font-semibold text-white/90">{c.titre}</div>

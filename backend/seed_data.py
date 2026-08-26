@@ -560,6 +560,12 @@ AURORA_SUGGESTIONS = {
     "global": ["Que sais-tu du Mesh ?"],
 }
 
+NOTIFS = [
+    {"id": "notif-1", "persona": "architecte", "type": "mention", "texte": "L'investigation « Relation émergente Paiements → Support » a été liée au case Olympiade", "lien": "/cases/case-olympiade", "lu": False, "quand": "2026-06-25T15:05:00+00:00"},
+    {"id": "notif-2", "persona": "architecte", "type": "a_revoir", "texte": "Le case « Revue réglementaire — données personnelles » attend Conformité, encore en construction (43 %)", "lien": "/cases/case-revue-rgpd", "lu": False, "quand": "2026-06-25T09:30:00+00:00"},
+    {"id": "notif-3", "persona": "paiements", "type": "assignation", "texte": "Vous êtes responsable du case « Dégradation des paiements — relation émergente »", "lien": "/cases/case-olympiade", "lu": False, "quand": "2026-06-25T14:31:00+00:00"},
+]
+
 CASES = [
     {
         "id": "case-paiement-differe",
@@ -574,7 +580,10 @@ CASES = [
         ],
         "jumeaux": ["paiements", "comptes", "fraude", "conformite", "facturation"],
         "situations": [],
-        "participants": ["C. Fabre — Métier", "L. Marchand — Checkout", "S. Petit — Risque"],
+        "participants": ["architecte", "paiements"],
+        "responsable": "architecte",
+        "espace": "espace-architecture",
+        "a_revoir": False,
         "conversation": [
             {"role": "utilisateur", "texte": "Peut-on proposer le paiement différé aux clients professionnels ?", "quand": "2026-06-24T09:12:00+00:00"},
             {"role": "flore", "comportement": "explorer", "texte": "J'ai mobilisé Paiements, Comptes, Fraude et Conformité. Trois inconnues restent à lever : la clôture quotidienne, l'évaluation fraude à J+30 et l'export comptable (connaissance 58 %).", "quand": "2026-06-24T09:12:20+00:00"},
@@ -604,7 +613,10 @@ CASES = [
         ],
         "jumeaux": ["paiements", "support"],
         "situations": ["sit-relation-emergente"],
-        "participants": ["L. Marchand — Checkout", "J. Morel — Care"],
+        "participants": ["paiements", "support"],
+        "responsable": "paiements",
+        "espace": "espace-paiements",
+        "a_revoir": False,
         "conversation": [
             {"role": "utilisateur", "texte": "Pourquoi les ralentissements Paiements provoquent-ils des tickets Support ?", "quand": "2026-06-25T14:36:00+00:00"},
             {"role": "flore", "comportement": "expliquer", "texte": "La corrélation persiste hors pic sur 12 des 23 périodes. La relation est en validation A2A (confiance 82 %) : les macros de remboursement appellent Paiements de façon synchrone, ce qui propage la latence.", "quand": "2026-06-25T14:36:18+00:00"},
@@ -635,7 +647,10 @@ CASES = [
         ],
         "jumeaux": ["comptes", "facturation", "logistique"],
         "situations": ["sit-changement-settlement"],
-        "participants": ["N. Roche — Architecture"],
+        "participants": ["architecte"],
+        "responsable": "architecte",
+        "espace": "espace-architecture",
+        "a_revoir": False,
         "conversation": [],
         "options": [],
         "decisions": [],
@@ -656,7 +671,10 @@ CASES = [
         ],
         "jumeaux": ["identite", "comptes", "notifications", "conformite"],
         "situations": [],
-        "participants": ["S. Petit — Risque", "M. Diallo — Client"],
+        "participants": ["architecte"],
+        "responsable": "architecte",
+        "espace": "espace-risque",
+        "a_revoir": False,
         "conversation": [],
         "options": [],
         "decisions": [],
@@ -677,7 +695,10 @@ CASES = [
         "questions": [{"texte": "Quelles files sont communes aux trois domaines ?", "resolue": True}],
         "jumeaux": ["paiements", "logistique", "notifications"],
         "situations": [],
-        "participants": ["N. Roche — Architecture", "L. Marchand — Checkout"],
+        "participants": ["architecte", "paiements"],
+        "responsable": "architecte",
+        "espace": "espace-architecture",
+        "a_revoir": False,
         "conversation": [],
         "options": [],
         "decisions": [{"texte": "Sortie des files legacy planifiée au T3 — FileAttente partagée retirée en premier.", "type": "arbitrage", "quand": "2026-06-18T16:45:00+00:00", "par": "architecte"}],
