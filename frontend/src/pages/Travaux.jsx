@@ -125,6 +125,7 @@ export default function Travaux() {
   useEffect(() => {
     api.get("/cases").then((r) => setCases(r.data)).catch(() => {});
     api.get("/personas").then((r) => setPersonas(r.data)).catch(() => {});
+    if (new URLSearchParams(window.location.search).get("nouveau")) setCreation(true);
   }, [version]);
 
   const filtres = useMemo(() => {

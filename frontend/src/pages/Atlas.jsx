@@ -16,6 +16,7 @@ import AtlasLegende from "@/components/map/AtlasLegende";
 import AtlasPanneau from "@/components/map/AtlasPanneau";
 import FilAriane from "@/components/map/FilAriane";
 import ExpliquerCarte from "@/components/map/ExpliquerCarte";
+import ComposerFlore from "@/components/ComposerFlore";
 import useNavigationAtlas from "@/components/map/useNavigationAtlas";
 import useZoomSemantique from "@/components/map/useZoomSemantique";
 import { NIVEAUX_ZOOM, construireGraphe, statsDuDomaine } from "@/lib/atlasGraph";
@@ -340,7 +341,8 @@ export default function Atlas() {
     : null;
 
   return (
-    <div className="relative h-full w-full overflow-hidden" data-testid="system-map">
+    <div className="flex h-full flex-col">
+    <div className="relative min-h-0 flex-1 overflow-hidden" data-testid="system-map">
       <ReactFlow
         key={focus || situationParam || "mesh"}
         nodes={nodes}
@@ -468,7 +470,7 @@ export default function Atlas() {
 
       {/* Bandeau temporel — photographie ou avant/après */}
       {(modeTemps === "historique" || modeTemps === "replay") && dateRef && (
-        <div className="glass absolute bottom-16 left-1/2 z-10 flex -translate-x-1/2 items-center gap-3 rounded-xl px-4 py-2" data-testid="bandeau-temps">
+        <div className="glass absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-3 rounded-xl px-4 py-2" data-testid="bandeau-temps">
           <span className="font-code text-[10px] text-[#52524F]">
             {modeTemps === "replay" ? "Relecture du Mesh" : "Photographie du Mesh"} au <strong className="text-[#111110]">{fmtDate(dateRef)}</strong>
           </span>
@@ -478,7 +480,7 @@ export default function Atlas() {
         </div>
       )}
       {modeTemps === "avantapres" && dateRef && (
-        <div className="glass absolute bottom-16 left-1/2 z-10 flex -translate-x-1/2 items-center gap-3 rounded-xl px-4 py-2" data-testid="bandeau-avant-apres">
+        <div className="glass absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-3 rounded-xl px-4 py-2" data-testid="bandeau-avant-apres">
           <span className="h-2 w-2 rounded-sm border-2 border-dashed border-[#0E7490]" />
           <span className="font-code text-[10px] text-[#52524F]">
             Avant/Après depuis le <strong className="text-[#111110]">{fmtDate(dateRef)}</strong> — {nbNouvelles} nouvelle{nbNouvelles > 1 ? "s" : ""} relation{nbNouvelles > 1 ? "s" : ""}
@@ -553,7 +555,7 @@ export default function Atlas() {
 
       {/* Chip « vue commandée par Flore » */}
       {focusCarte && (
-        <div className="glass absolute bottom-16 left-4 z-10 flex items-center gap-2 rounded-lg px-3 py-1.5" data-testid="focus-flore-chip">
+        <div className="glass absolute bottom-4 left-4 z-10 flex items-center gap-2 rounded-lg px-3 py-1.5" data-testid="focus-flore-chip">
           <Sparkle size={12} className="text-[#3730A3]" />
           <span className="font-code text-[10px] text-[#52524F]">Vue commandée par Flore</span>
           <button onClick={() => commanderCarte(null)} data-testid="focus-flore-clear" className="text-[#71716D] transition-colors hover:text-[#111110]">
@@ -570,6 +572,14 @@ export default function Atlas() {
         confirmerRelation={confirmerRelation}
         eventsVisibles={eventsVisibles} jumeauPar={jumeauPar}
       />
+    </div>
+
+    {/* Composer compact — place réservée dans le layout, jamais flottant au-dessus de la carte */}
+    <div className="shrink-0 border-t border-[#E5E5E3] bg-white px-4 py-2.5" data-testid="atlas-composer-zone">
+      <div className="mx-auto max-w-3xl">
+        <ComposerFlore compact placeholder="Interrogez cette carte…" testidPrefix="atlas-composer" />
+      </div>
+    </div>
     </div>
   );
 }

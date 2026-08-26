@@ -6,6 +6,7 @@ import { MeshProvider } from "@/lib/mesh";
 import { PerimetreProvider } from "@/lib/perimetre";
 import { ContexteProvider } from "@/lib/contexte";
 import Layout from "@/components/Layout";
+import Accueil from "@/pages/Accueil";
 import Actualites from "@/pages/Actualites";
 import Atlas from "@/pages/Atlas";
 import Commande from "@/pages/Commande";
@@ -31,7 +32,8 @@ function App() {
           <MeshProvider>
           <Routes>
             <Route element={<Layout />}>
-              <Route path="/" element={<Actualites />} />
+              <Route path="/" element={<Accueil />} />
+              <Route path="/actualites" element={<Actualites />} />
               <Route path="/atlas" element={<Atlas />} />
               <Route path="/investigations" element={<Investigations />} />
               <Route path="/investigations/:id" element={<InvestigationDetail />} />
@@ -41,7 +43,7 @@ function App() {
               <Route path="/jumeaux/:jid/revue" element={<RevueJumeau />} />
               <Route path="/commande/:cid" element={<Commande />} />
               <Route path="/administration" element={<Administration />} />
-              <Route path="/aujourdhui" element={<Navigate to="/" replace />} />
+              <Route path="/aujourdhui" element={<Navigate to="/actualites" replace />} />
               <Route path="/carte" element={<Navigate to="/atlas" replace />} />
               <Route path="/cases" element={<Navigate to="/travaux" replace />} />
               <Route path="/cases/:cid" element={<RedirectTravail />} />

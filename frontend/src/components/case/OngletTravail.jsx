@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Plus, CheckCircle, Circle, FileText, Flask } from "@phosphor-icons/react";
+import { Plus, CheckCircle, Circle, FileText, Flask, Sparkle } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
+import { rel } from "./utils";
 
 const STATUTS_HYP = {
   a_valider: ["À valider", "#B45309"],
@@ -55,8 +56,52 @@ export default function OngletTravail({ cas, maj, setCas, situations }) {
     }
   };
 
+  const dernierMessage = [...(cas.conversation || [])].reverse().find((m) => m.role === "flore") || [...(cas.conversation || [])].slice(-1)[0];
+  const evolutions = cas.evolutions_recentes || [];
+  const hypAValider = hypotheses.filter((h) => h.statut === "a_valider");
+  const optionsATrancher = (cas.options || []).filter((o) => o.statut === "a_evaluer");
+  const premiereVisite = !cas.derniere_visite;
+
   return (
     <div className="grid gap-4 lg:grid-cols-2" data-testid="onglet-travail">
+      {/* Où en sommes-nous ? — la reprise précède le travail */}
+      {!premiereVisite && (
+        <div className="rounded-xl border border-[#3730A3]/25 bg-[#EEECFA] p-4 lg:col-span-2" data-testid="reprise-flore">
+          <div className="flex items-center gap-2">
+            <Sparkle size={14} weight="fill" className="text-[#3730A3]" />
+            <span className="font-code text-[10px] uppercase tracking-[0.2em] text-[#312E81]">Où en sommes-nous ? — Flore vous replace</span>
+            {cas.derniere_visite && <span className="font-code text-[9px] text-[#71716D]">dernière visite {rel(cas.derniere_visite)}</span>}
+          </div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div>
+              <div className="font-code text-[9px] uppercase tracking-wider text-[#71716D]">Vous étiez ici</div>
+              <p className="mt-1 text-xs leading-snug text-[#3F3F3C]" data-testid="reprise-arret">
+                {dernierMessage ? `Dernier échange : « ${(dernierMessage.texte || "").slice(0, 110)}${(dernierMessage.texte || "").length > 110 ? "…" : ""} »` : "Le travail n'a pas encore de conversation."}
+              </p>
+            </div>
+            <div>
+              <div className="font-code text-[9px] uppercase tracking-wider text-[#71716D]">Depuis</div>
+              <p className="mt-1 text-xs leading-snug text-[#3F3F3C]" data-testid="reprise-changements">
+                {evolutions.length > 0 ? `${evolutions.length} évolution${evolutions.length > 1 ? "s" : ""} : ${evolutions[0].texte}` : "Rien de nouveau depuis votre dernière visite."}
+              </p>
+            </div>
+            <div>
+              <div className="font-code text-[9px] uppercase tracking-wider text-[#71716D]">Reste incertain</div>
+              <p className="mt-1 text-xs leading-snug text-[#3F3F3C]" data-testid="reprise-incertain">
+                {hypAValider.length > 0 || questions.some((q) => !q.resolue)
+                  ? `${questions.filter((q) => !q.resolue).length} question${questions.filter((q) => !q.resolue).length > 1 ? "s" : ""} ouverte${questions.filter((q) => !q.resolue).length > 1 ? "s" : ""} · ${hypAValider.length} hypothèse${hypAValider.length > 1 ? "s" : ""} à valider`
+                  : "Aucune incertitude ouverte."}
+              </p>
+            </div>
+            <div>
+              <div className="font-code text-[9px] uppercase tracking-wider text-[#71716D]">Prochaine étape</div>
+              <p className="mt-1 text-xs font-semibold leading-snug text-[#312E81]" data-testid="reprise-action">
+                {cas.prochaine_etape || (optionsATrancher.length > 0 ? `Trancher « ${optionsATrancher[0].titre} »` : "Continuer la discussion avec Flore.")}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
       <Carte titre={`Questions — ${questions.filter((q) => q.resolue).length}/${questions.length} levées`} testid="case-questions">
         <ul className="space-y-1.5">
           {questions.map((q, i) => (

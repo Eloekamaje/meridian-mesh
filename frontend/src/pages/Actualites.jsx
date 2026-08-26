@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { CaretLeft, CaretRight, Sparkle, Compass, ArrowRight, CalendarBlank, DotsThree, Eye, ArrowSquareOut, ArrowsLeftRight } from "@phosphor-icons/react";
 import api from "@/lib/api";
 import { usePerimetre } from "@/lib/perimetre";
@@ -8,6 +8,7 @@ import { useContexte } from "@/lib/contexte";
 import { couleurDomaine } from "@/lib/domaines";
 import { fmtDateLongue, fmtDateInput, finDeJournee, fmtDate } from "@/lib/temps";
 import CarteInitiative from "@/components/CarteInitiative";
+import ComposerFlore from "@/components/ComposerFlore";
 
 const VUES_ACTUS = [
   ["brief", "Brief"],
@@ -236,7 +237,11 @@ export default function Actualites() {
   const [portee, setPortee] = useState("personnel");
   const [data, setData] = useState(null);
   const [nouvelles, setNouvelles] = useState(0);
-  const [vue, setVue] = useState("brief");
+  const [searchParams, setSearchParams] = useSearchParams();
+  // La vue est pilotée par l'URL (source unique de vérité — la pillule « À traiter » doit toujours basculer)
+  const vueParam = searchParams.get("vue");
+  const vue = ["brief", "radar", "a_traiter", "suivis"].includes(vueParam) ? vueParam : "brief";
+  const setVue = (v) => setSearchParams(v === "brief" ? {} : { vue: v }, { replace: true });
   const [initiatives, setInitiatives] = useState(null);
   const [compteurs, setCompteurs] = useState(null);
   const [delegations, setDelegations] = useState([]);
@@ -544,6 +549,11 @@ export default function Actualites() {
             </div>
           )}
           {!data && <p className="py-10 text-center font-code text-[11px] text-[#71716D]" data-testid="feed-chargement">Flore prépare votre briefing…</p>}
+        </div>
+
+        {/* Composer compact — contextualisé au fil d'actualités */}
+        <div className="mt-8" data-testid="actualites-composer-zone">
+          <ComposerFlore compact placeholder="Interrogez ce fil d'actualités…" testidPrefix="actualites-composer" />
         </div>
         </>)}
       </div>

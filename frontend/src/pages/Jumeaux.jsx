@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, HourglassMedium, MagnifyingGlass, DotsThree } from "@phosphor-icons/react";
+import { Plus, HourglassMedium, MagnifyingGlass, DotsThree, Sparkle } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { usePerimetre } from "@/lib/perimetre";
 import { useContexte } from "@/lib/contexte";
 import { couleurDomaine } from "@/lib/domaines";
 import { STATUTS, STRATE_LABELS, FRAICHEUR_ETATS, AUTONOMIE, STATUTS_SOURCES, ACTION_LIGNE, qualifConnaissance, resumeStrates, estEnAttention } from "@/lib/jumeaux";
+import ComposerFlore from "@/components/ComposerFlore";
 
 const VUES_ENREGISTREES = [
   ["tous", "Tous les jumeaux"],
@@ -30,6 +31,19 @@ export default function Jumeaux() {
   const [filtreAutonomie, setFiltreAutonomie] = useState("");
   const [vue, setVue] = useState("tous");
   const [menuOuvert, setMenuOuvert] = useState(null);
+  const [suggestionMasquee, setSuggestionMasquee] = useState(false);
+
+  // Suggestion locale de Flore : un jumeau dont la connaissance vieillit
+  const suggestionFlore = useMemo(() => {
+    if (suggestionMasquee) return null;
+    const j = (jumeaux || []).find((x) => x.fraicheur_etat === "ancienne" && x.statut === "actif") || (jumeaux || []).find((x) => x.statut === "observation");
+    if (!j) return null;
+    return {
+      jumeau: j.id,
+      texte: `${j.nom} manque de connaissances fraîches — ${j.fraicheur_etat === "ancienne" ? "ses preuves vieillissent" : "sa phase d'observation est en cours"}${(j.sources_detail || []).some((s) => s.statut !== "prete") ? " et une source est en retard" : ""}.`,
+      question: `Pourquoi le jumeau ${j.nom} manque-t-il de connaissances fraîches, et que faire ?`,
+    };
+  }, [jumeaux, suggestionMasquee]);
 
   const charger = () => api.get("/jumeaux").then((r) => setJumeaux(r.data)).catch(() => {});
   useEffect(() => {
@@ -274,6 +288,32 @@ export default function Jumeaux() {
           <div className="px-4 py-10 text-center text-sm text-[#71716D]" data-testid="registre-vide">Aucun jumeau ne correspond — élargissez la recherche ou les filtres.</div>
         )}
       </div>
+
+      {/* Suggestion de Flore — locale, discrète, ignorable */}
+      {suggestionFlore && (
+        <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-[#3730A3]/20 bg-[#EEECFA] px-4 py-3" data-testid="registre-suggestion-flore">
+          <p className="text-xs leading-snug text-[#3F3F3C]">
+            <Sparkle size={12} weight="fill" className="mr-1.5 inline text-[#3730A3]" />
+            <span className="font-semibold text-[#312E81]">Suggestion de Flore — </span>
+            {suggestionFlore.texte}
+          </p>
+          <div className="flex shrink-0 gap-1.5">
+            <button onClick={() => window.dispatchEvent(new CustomEvent("meridian:flore-ask", { detail: suggestionFlore.question }))} data-testid="suggestion-comprendre-btn" className="rounded-md bg-[#3730A3] px-2.5 py-1.5 text-[11px] font-semibold text-white transition-colors hover:bg-[#4338CA]">
+              Comprendre
+            </button>
+            <button onClick={() => navigate(`/jumeaux/${suggestionFlore.jumeau}/revue`)} data-testid="suggestion-examiner-btn" className="rounded-md border border-[#E5E5E3] bg-white px-2.5 py-1.5 text-[11px] text-[#52524F] transition-colors hover:text-[#111110]">
+              Examiner
+            </button>
+            <button onClick={() => setSuggestionMasquee(true)} data-testid="suggestion-ignorer-btn" title="Masquer la suggestion" className="rounded-md px-2 py-1.5 text-[11px] text-[#71716D] transition-colors hover:text-[#111110]">
+              ×
+            </button>
+          </div>
+        </div>
+      )}
+        {/* Composer compact — contextualisé au registre */}
+        <div className="mt-4" data-testid="jumeaux-composer-zone">
+          <ComposerFlore compact placeholder="Interrogez le registre…" testidPrefix="jumeaux-composer" />
+        </div>
 
     </div>
   );

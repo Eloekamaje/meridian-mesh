@@ -1,36 +1,20 @@
 import { useEffect, useRef, useState } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
-import { Users, ShieldCheck, LockSimple, Sparkle, Bell, Play, Newspaper, Compass, Briefcase, CirclesThree, Database } from "@phosphor-icons/react";
+import { useNavigate } from "react-router-dom";
+import { ShieldCheck, LockSimple, Bell, Flag, Users } from "@phosphor-icons/react";
 import api from "@/lib/api";
 import { usePerimetre } from "@/lib/perimetre";
-import { useContexte } from "@/lib/contexte";
 import { useMesh } from "@/lib/mesh";
-import { useDemo } from "@/lib/demo";
-
-const POLITIQUES = {
-  masquage: "masquage complet",
-  anonymisee: "dépendance anonymisée",
-  resume: "résumé autorisé",
-};
 
 const TYPES_NOTIF = { mention: "#3730A3", assignation: "#B45309", a_revoir: "#B91C1C" };
 
-const NAV = [
-  { to: "/", label: "Actualités", icon: Newspaper, end: true, testid: "nav-actualites" },
-  { to: "/atlas", label: "Atlas", icon: Compass, testid: "nav-atlas" },
-  { to: "/travaux", label: "Travaux", icon: Briefcase, testid: "nav-travaux" },
-  { to: "/jumeaux", label: "Jumeaux", icon: CirclesThree, testid: "nav-jumeaux" },
-  { to: "/administration", label: "Administration", icon: Database, testid: "nav-administration" },
-];
-
+// En-tête contextuel : espace actif · état du Mesh · sollicitations · identité
 export default function Topbar() {
   const { personas, persona, espaces, vues, cible, info, changerPersona, changerCible } = usePerimetre();
-  const { selection, floreOuverte, basculerFlore } = useContexte();
   const { mesh } = useMesh();
-  const { demarrer, courant } = useDemo();
   const navigate = useNavigate();
   const [notifs, setNotifs] = useState([]);
   const [nonLues, setNonLues] = useState(0);
+  const [aTraiter, setATraiter] = useState(0);
   const [panneau, setPanneau] = useState(false);
   const refPanneau = useRef(null);
 
@@ -44,9 +28,13 @@ export default function Topbar() {
 
   useEffect(() => {
     chargerNotifs();
-    const t = setInterval(chargerNotifs, 15000);
+    api.get("/initiatives/compteurs").then((r) => setATraiter(r.data.a_traiter)).catch(() => {});
+    const t = setInterval(() => {
+      chargerNotifs();
+      api.get("/initiatives/compteurs").then((r) => setATraiter(r.data.a_traiter)).catch(() => {});
+    }, 20000);
     return () => clearInterval(t);
-  }, [persona]);
+  }, [persona, cible]);
 
   useEffect(() => {
     const fermer = (e) => {
@@ -64,25 +52,19 @@ export default function Topbar() {
   };
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-4 border-b border-[#E5E5E3] bg-white px-4" data-testid="topbar">
-      {/* Marque */}
-      <div className="flex shrink-0 items-center gap-2.5">
-        <span className="pulse-soft h-2 w-2 rounded-full bg-[#3730A3]" />
-        <span className="font-display text-base font-black tracking-[0.18em] text-[#111110]">MÉRIDIAN</span>
-      </div>
-
-      {/* Équipe / espace */}
-      <div className="flex shrink-0 items-center gap-2">
+    <header className="flex h-12 shrink-0 items-center gap-3 border-b border-[#E5E5E3] bg-white px-4" data-testid="topbar">
+      {/* Espace actif */}
+      <div className="flex min-w-0 items-center gap-2">
         <select
           value={cible}
           onChange={(e) => changerCible(e.target.value)}
           data-testid="selecteur-perimetre"
           title="Équipe / espace actif"
-          className="h-8 max-w-44 rounded-md border border-[#E5E5E3] bg-white px-2 text-xs font-semibold text-[#111110] focus:border-[#3730A3]/60 focus:outline-none"
+          className="h-8 max-w-44 truncate rounded-md border border-[#E5E5E3] bg-white px-2 text-xs font-semibold text-[#111110] focus:border-[#3730A3]/60 focus:outline-none"
         >
           <optgroup label="Espaces">
             {espaces.map((e) => (
-              <option key={e.id} value={e.id} label={e.global ? `${e.label} (autorisé)` : e.label} />
+              <option key={e.id} value={e.id} label={e.global ? `${e.label} · autorisé` : e.label} />
             ))}
           </optgroup>
           {vues.length > 0 && (
@@ -95,7 +77,7 @@ export default function Topbar() {
         </select>
         {info && (
           <span
-            className="hidden items-center gap-1.5 rounded border px-2 py-1 font-code text-[9px] uppercase tracking-wider 2xl:inline-flex"
+            className="hidden items-center gap-1.5 rounded border px-2 py-1 font-code text-[9px] uppercase tracking-wider xl:inline-flex"
             style={
               info.espace.global
                 ? { color: "#047857", borderColor: "#04785744", backgroundColor: "#0478570D" }
@@ -104,68 +86,29 @@ export default function Topbar() {
             data-testid="perimetre-badge"
           >
             {info.espace.global ? <ShieldCheck size={12} /> : <LockSimple size={12} />}
-            {info.espace.global
-              ? "Vue complète du périmètre autorisé"
-              : `Filtré côté serveur · ${info.nb_autorises} jumeaux`}
+            {info.espace.global ? "Vue complète du périmètre autorisé" : `Filtré côté serveur · ${info.nb_autorises} jumeaux`}
           </span>
         )}
       </div>
 
-      {/* Navigation principale */}
-      <nav className="flex min-w-0 flex-1 items-center justify-center gap-0.5" data-testid="nav-principale">
-        {NAV.map(({ to, label, icon: Icon, end, testid }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={end}
-            data-testid={testid}
-            className={({ isActive }) =>
-              `flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors duration-200 ${
-                isActive
-                  ? "bg-[#EEECFA] font-semibold text-[#312E81]"
-                  : "text-[#52524F] hover:bg-[#F0F0EE] hover:text-[#111110]"
-              }`
-            }
-          >
-            <Icon size={15} weight="regular" />
-            <span className="hidden lg:inline">{label}</span>
-          </NavLink>
-        ))}
-      </nav>
+      <div className="flex-1" />
 
-      {/* Droite : Mesh vivant, démo, Flore, notifications, profil */}
-      <div className="flex shrink-0 items-center gap-2">
-        <span className="hidden items-center gap-1.5 font-code text-[10px] uppercase tracking-[0.15em] text-[#52524F] xl:flex" data-testid="mesh-status">
+      {/* État du Mesh + sollicitations + identité */}
+      <div className="flex shrink-0 items-center gap-2.5">
+        <span className="hidden items-center gap-1.5 font-code text-[10px] uppercase tracking-[0.15em] text-[#52524F] lg:flex" data-testid="mesh-status">
           <span className="pulse-soft h-1.5 w-1.5 rounded-full bg-[#047857]" />
           Mesh vivant · {actifs} jumeaux
         </span>
 
         <button
-          onClick={demarrer}
-          data-testid="demo-start-btn"
-          title="Parcours guidé Olympiade"
-          className="flex h-8 w-8 items-center justify-center rounded-md border border-[#E5E5E3] text-[#52524F] transition-colors hover:border-[#3730A3]/50 hover:text-[#3730A3]"
-        >
-          <Play size={14} weight={courant >= 0 ? "fill" : "regular"} />
-        </button>
-
-        <button
-          onClick={basculerFlore}
-          data-testid="flore-btn"
-          title="Parler à Flore (⌘K)"
-          className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
-            floreOuverte
-              ? "border-[#3730A3]/60 bg-[#3730A3] text-white"
-              : "border-[#3730A3]/30 bg-[#EEECFA] text-[#312E81] hover:bg-[#3730A3] hover:text-white"
+          onClick={() => navigate("/actualites?vue=a_traiter")}
+          data-testid="a-traiter-pill"
+          title="Sollicitations du Mesh en attente"
+          className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
+            aTraiter > 0 ? "border-[#B45309]/40 bg-[#FFFBEB] text-[#B45309] hover:bg-[#B45309]/10" : "border-[#E5E5E3] text-[#71716D]"
           }`}
         >
-          <Sparkle size={13} weight="fill" />
-          <span className="hidden sm:inline">Parler à Flore</span>
-          {selection.length > 0 && (
-            <span className="rounded-full bg-white/25 px-1.5 font-code text-[9px]" data-testid="flore-btn-badge">
-              {selection.length}
-            </span>
-          )}
+          <Flag size={12} /> {aTraiter} à traiter
         </button>
 
         {/* Notifications */}
@@ -199,12 +142,8 @@ export default function Topbar() {
               </div>
               <div className="max-h-80 overflow-y-auto">
                 {notifs.map((n) => (
-                  <button
-                    key={n.id}
-                    onClick={() => ouvrirNotif(n)}
-                    data-testid={`notif-item-${n.id}`}
-                    className={`flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2.5 text-left transition-colors hover:bg-[#F0F0EE] ${n.lu ? "opacity-45" : ""}`}
-                  >
+                  <button key={n.id} onClick={() => ouvrirNotif(n)} data-testid={`notif-item-${n.id}`}
+                    className={`flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2.5 text-left transition-colors hover:bg-[#F0F0EE] ${n.lu ? "opacity-45" : ""}`}>
                     <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: TYPES_NOTIF[n.type] || "#71716D" }} />
                     <span className="min-w-0">
                       <span className="block text-xs leading-snug text-[#3F3F3C]">{n.texte}</span>
@@ -218,8 +157,8 @@ export default function Topbar() {
           )}
         </div>
 
-        {/* Profil */}
-        <div className="flex items-center gap-1.5 border-l border-[#E5E5E3] pl-2">
+        {/* Identité */}
+        <div className="flex items-center gap-1.5 border-l border-[#E5E5E3] pl-2.5">
           <Users size={14} className="text-[#71716D]" />
           <select
             value={persona}

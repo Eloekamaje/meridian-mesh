@@ -1,0 +1,42 @@
+{
+  "summary": "Iteration 25 — Validation refonte IA-native (shell sidebar + composer central + composers bottom). BACKEND pytest : 94 passed / 2 failed (flaky, passent isolément) / 1 skipped. Les 2 échecs sont dans test_notifications_arevoir.py (test_confirmer_relation_r6_marque_case_a_revoir + test_patch_a_revoir_false_ajoute_historique) — pollution d'état entre workers pytest-xdist (POST /api/demo/reinitialiser fait entre tests parallèles) : passent 8/8 en exécution isolée. FRONTEND E2E : 13/15 scénarios OK, 0 erreur console/pageerror. Deux régressions détectées : (A) nav-administration jamais visible même pour architecte (l'API /api/personas retourne [{id,nom,role}] sans champ 'espaces', mais Layout.jsx L30 fait `personas.find(...).espaces || []` qui est toujours vide) ; (B) la pillule « À traiter » ne bascule PAS la vue quand l'utilisateur est déjà sur /actualites?vue=a_traiter et a cliqué sur l'onglet Brief (l'onglet Brief change le state interne SANS mettre à jour l'URL, du coup un second clic sur la pillule navigue vers la même URL et useSearchParams ne déclenche pas de re-render). Tous les autres flux du brief (accueil composer, cap-explorer/comparer/surveiller, chips contexte, atlas/jumeaux composers, travail-vue-travail par défaut + reprise-flore, registre-suggestion-flore, sidebar-recents, sidebar-toggle, ?nouveau=1 → travail-form, RBAC support/architect) sont OK.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/personas", "issue": "Ne renvoie pas le champ 'espaces' attendu par Layout.jsx pour calculer adminAutorise. À aligner (soit l'API renvoie 'espaces', soit Layout se base sur /api/perimetre.espace.global)."},
+      {"endpoint": "pytest -n auto (xdist)", "issue": "test_notifications_arevoir.py 2 tests flaky en parallèle (passent seuls). Pollution seed entre workers. Considérer @pytest.mark.serial ou fixture module-scoped avec reset."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Layout.jsx", "issue": "nav-administration JAMAIS visible, même pour persona architecte (Mesh global). Cause : `personas.find(p=>p.id===persona)?.espaces` est toujours undefined car GET /api/personas ne renvoie pas 'espaces'. adminAutorise = false pour tous. Correctif suggéré : utiliser `info?.espace?.global` (déjà dispo via usePerimetre) ou `espaces.some(e=>e.global)`.", "selector": "[data-testid=\"nav-administration\"]", "priority": "HIGH"},
+      {"component": "Actualites.jsx", "issue": "Le fix useSearchParams n'est PAS complet. Reproduction : (1) charger /actualites?vue=a_traiter, (2) cliquer onglet Brief → URL reste ?vue=a_traiter mais state affiche Brief (désync), (3) re-cliquer pillule 'à traiter' → navigate vers la même URL, useSearchParams ne déclenche pas de changement, panneau-a_traiter reste caché. Correctif : soit synchroniser les clics onglets Brief/Radar/À traiter/Suivis avec setSearchParams, soit dériver la vue exclusivement de searchParams (source unique de vérité).", "selector": "[data-testid=\"a-traiter-pill\"]", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_notifications_arevoir.py",
+    "/app/backend/tests/test_initiatives.py",
+    "/app/test_reports/pytest/iter25.xml"
+  ],
+  "action_items": [
+    "Corriger Layout.jsx : baser adminAutorise sur info.espace.global (ou espaces.some(e=>e.global)) au lieu de personas[...].espaces qui n'existe pas côté API.",
+    "Corriger Actualites.jsx : synchroniser les clics d'onglets (Brief/Radar/À traiter/Suivis) avec setSearchParams pour que la pillule fasse toujours basculer la vue depuis n'importe quel onglet.",
+    "Optionnel : stabiliser test_notifications_arevoir.py en parallèle xdist (marker serial ou fixture avec lock)."
+  ],
+  "critical_code_review_comments": [
+    "Layout.jsx L30 : `personas.find(...).espaces || []` — anti-pattern car /api/personas ne retourne pas ce champ. Utiliser `usePerimetre().info?.espace?.global` qui est déjà chargé et fiable.",
+    "Actualites.jsx : la 'vue' devrait être dérivée de searchParams (source unique) plutôt qu'un useState local synchronisé via useEffect. Ce dernier patron génère les bugs de re-navigate vers la même URL.",
+    "ComposerFlore.jsx : bon design (data-testid préfixables, capacités bien découplées). Petit code smell : le contexte-menu utilise `label.slice(0,16)` comme testid — risque de collisions avec des libellés très proches ; préférer un `id` explicite.",
+    "Sidebar : bon UX (Recents, Espaces, Parcours guidé). Le badge 'nav-administration' devrait tester `info.espace.global` OU une capability serveur `perimetre.admin=true` — préférer le second pour ne pas coupler UI et modèle d'espaces."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "97% (94/96 passed en parallèle, 96/96 en isolation)", "frontend": "87% (13/15 scénarios OK, 2 bugs bloquants : admin nav + pillule toggle)"},
+  "test_credentials": "Personas via [data-testid='selecteur-persona'] : architecte / paiements / support. Pas d'auth.",
+  "seed_data_creation": "POST /api/demo/reinitialiser en début de session (SEED_VERSION 8).",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter25 = refonte shell IA-native. Deux bugs restants à valider après fix : (a) nav-administration doit apparaître pour architecte (Mesh global) et être absent pour support — actuellement absent partout ; (b) sur /actualites, cliquer onglet Brief puis re-cliquer pillule 'à traiter' doit basculer la vue vers À traiter (actuellement reste sur Brief car URL ne change pas). Tous les autres flux (accueil composer, capacités, chips, atlas/jumeaux composers, travail-vue-travail par défaut, reprise-flore, registre-suggestion-flore, ?nouveau=1 → travail-form, sidebar recents/toggle) sont validés OK. 0 erreur console. Backend pytest 94/96 verts en parallèle, 96/96 en isolation.",
+  "rca of the issue": "Bug A (admin nav) : Layout.jsx L30 dépend d'un champ `espaces` sur les objets personas qui n'est jamais renvoyé par /api/personas (le backend renvoie seulement id/nom/role). Bug B (pillule) : Actualites gère 'vue' via useState local et n'écrit pas dans les searchParams quand l'utilisateur clique un onglet. Par conséquent quand l'URL est déjà `?vue=a_traiter` mais l'utilisateur a cliqué Brief, un nouveau navigate('/actualites?vue=a_traiter') ne provoque pas de re-render car searchParams identiques."
+}

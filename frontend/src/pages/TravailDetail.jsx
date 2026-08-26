@@ -15,8 +15,8 @@ import OngletDecisions from "@/components/case/OngletDecisions";
 import OngletActivite from "@/components/case/OngletActivite";
 
 const VUES = [
+  ["travail", "Conversation"],
   ["apercu", "Aperçu"],
-  ["travail", "Travail"],
   ["atlas", "Atlas"],
   ["decisions", "Décisions & actions"],
   ["activite", "Activité"],
@@ -25,7 +25,7 @@ const VUES = [
 export default function TravailDetail() {
   const { cid } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
-  const vue = searchParams.get("vue") || "apercu";
+  const vue = searchParams.get("vue") || "travail";
   const navigate = useNavigate();
   const { mesh } = useMesh();
   const { version } = usePerimetre();
@@ -176,7 +176,7 @@ export default function TravailDetail() {
       {/* Contenu de la vue */}
       <div className="flex-1 overflow-y-auto px-8 py-5">
         <div className="mx-auto max-w-6xl">
-          {cas.a_revoir && vue === "apercu" && (
+          {cas.a_revoir && vue === "travail" && (
             <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-[#B91C1C]/30 bg-[#B91C1C]/[0.04] px-4 py-3" data-testid="travail-arevoir-banner">
               <p className="text-xs text-[#B91C1C]">
                 <span className="font-semibold uppercase tracking-wider">À revoir</span> — une connaissance du Mesh liée à ce travail a changé ; les conclusions peuvent être remises en cause.

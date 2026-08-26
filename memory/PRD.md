@@ -1,5 +1,14 @@
 # Méridian — PRD
 
+## Implémenté (26/08/2026 — v19, REFONTE IA-NATIVE inspirée ChatGPT — document MERIDIAN_REDESIGN_UI_AI_NATIVE.md appliqué intégralement)
+- **Shell ChatGPT-style** : barre latérale repliable (marque, « + Nouveau travail », nav Accueil/Actualités/Atlas/Travaux/Jumeaux, **Espaces**, **Récents** (3 derniers travaux), Parcours guidé, **Administration masquée selon le rôle**) + en-tête contextuel fin (espace+badge, ● Mesh vivant, **pillule « N à traiter »** → À traiter, notifications, persona). Plus de bouton Flore dans l'en-tête : l'entrée Flore = composer.
+- **Composer unique Flore** (`ComposerFlore.jsx`) : textarea + [+ Contexte] (chips retirables : sélection Atlas, périodes, actualité) + [Capacités] (Explorer le Mesh, Comparer deux états → Atlas avant/après, Analyser un changement, Surveiller un phénomène → délégation, Préparer une décision, Créer une synthèse) + [Micro] (toast bientôt) + [Envoyer] → événement flore-ask + panneau Flore. Présent : plein sur Accueil, compact en bas d'Atlas/Actualités/Jumeaux — jamais flottant.
+- **Accueil conversationnel** (route `/`) : « Que voulez-vous comprendre dans votre SI ? », composer central, 3 suggestions adaptées au rôle, cartes rapides (Changements du jour / Reprendre un travail / Explorer mon espace). Actualités déplacées sur `/actualites` (vue pilotée par `?vue=`, source de vérité URL).
+- **Travail = conversation d'abord** : onglet « Conversation » par défaut avec panneau « Où en sommes-nous ? — Flore vous replace » (reprise) en tête ; Aperçu/Atlas/Décisions/Activité en secondaire.
+- **Jumeaux** : suggestion locale de Flore en bas de registre (Comprendre/Examiner/masquer) + composer compact. Registre plat + colonne Domaine conservé (choix utilisateur antérieur).
+- Bugs corrigés en itération 25 : gating Administration (champ `espaces` absent de /api/personas → `espaces.some(global)`), désync onglets Actualités/pillule (vue dérivée de l'URL).
+- Tests : **iteration_25 → 15/15 après corrections** ; backend 96/96 (2 flaky xdist connus, passent isolément).
+
 ## Implémenté (26/08/2026 — v18, GRAMMAIRE D'INTERACTION DU MESH, Phases A+B)
 Application du manifeste « grammaire d'interaction » (utilisateur, 26/08) : qui peut demander quoi, qui peut initier quoi, jusqu'où sans validation humaine.
 - **Initiative du Mesh** (concept central) : collection `initiatives` + seed cohérent démo (confirmation contrat v2/v3 et délai 7j/5j → propriétaire Paiements ; investigation recommandée + décision UTC + admission Conformité → architecte ; « à surveiller » + information ambiantes) avec champs complets (déclencheur, raison, preuves, confiance, impact, urgence, destinataire, pourquoi_vous, attendu, autonomie, interruption). Endpoints `/api/initiatives` (vues RBAC), `/compteurs`, `POST /{id}/repondre` (confirmer / rejeter **avec motif conservé** / ajouter à un travail / créer un travail investigation / surveiller — 409 si déjà répondu, écriture journal = apprentissage).
