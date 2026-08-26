@@ -118,7 +118,7 @@ export default function InvestigationDetail() {
             )}
           </div>
         )}
-        <h1 className="mt-2 max-w-3xl font-display text-4xl font-black leading-tight text-[#111110]">
+        <h1 className="mt-2 max-w-3xl font-display text-3xl font-black leading-tight text-[#111110]">
           {sit.question || sit.titre}
         </h1>
         <p className="mt-3 max-w-2xl text-sm leading-relaxed text-[#52524F]">{sit.resume}</p>

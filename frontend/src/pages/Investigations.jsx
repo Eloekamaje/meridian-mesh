@@ -25,8 +25,8 @@ export default function Investigations() {
   return (
     <div className="h-full overflow-y-auto px-8 py-8 pb-40" data-testid="investigations-page">
       <header className="rise">
-        <div className="font-code text-[10px] uppercase tracking-[0.3em] text-[#6D28D9]">Comprendre</div>
-        <h1 className="mt-1 font-display text-4xl font-black text-[#111110]">Investigations</h1>
+        <div className="font-code text-[10px] uppercase tracking-[0.3em] text-[#3730A3]">Comprendre</div>
+        <h1 className="mt-1 font-display text-3xl font-black tracking-tight text-[#111110]">Investigations</h1>
         <p className="mt-2 text-base text-[#52524F]">
           Relations, comportements, connaissances, contradictions — pas seulement des incidents.
         </p>

@@ -65,7 +65,7 @@ export default function RevueJumeau() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-4">
             <button onClick={() => navigate("/jumeaux")} data-testid="revue-retour-btn" className="flex items-center gap-1.5 rounded-md border border-[#E5E5E3] px-2.5 py-1.5 text-xs text-[#52524F] transition-colors hover:text-[#111110]">
-              <ArrowLeft size={13} /> Registre
+              <ArrowLeft size={13} /> Jumeaux
             </button>
             <div>
               <h1 className="font-display text-xl font-bold tracking-tight text-[#111110]" data-testid="revue-titre">
@@ -93,7 +93,7 @@ export default function RevueJumeau() {
             <div className="rounded-xl border border-[#B91C1C]/25 bg-[#B91C1C]/[0.05] px-5 py-6" data-testid="revue-erreur">
               <p className="text-sm text-[#B91C1C]">{erreur}</p>
               <button onClick={() => navigate("/jumeaux")} className="mt-3 rounded-md border border-[#E5E5E3] px-3 py-1.5 text-xs text-[#52524F] transition-colors hover:text-[#111110]" data-testid="revue-erreur-retour-btn">
-                ← Retour au registre
+                ← Retour aux jumeaux
               </button>
             </div>
           )}

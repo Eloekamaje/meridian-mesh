@@ -100,8 +100,8 @@ export default function Jumeaux() {
     <div className="h-full overflow-y-auto p-8 pb-44" data-testid="jumeaux-page">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="font-code text-[11px] uppercase tracking-[0.3em] text-[#71716D]">Parc de jumeaux</p>
-          <h1 className="mt-1 font-display text-2xl font-bold tracking-tight text-[#111110]">Registre des jumeaux</h1>
+          <p className="font-code text-[10px] uppercase tracking-[0.3em] text-[#3730A3]">Parc de jumeaux</p>
+          <h1 className="mt-1 font-display text-3xl font-black tracking-tight text-[#111110]">Registre des jumeaux</h1>
           <p className="mt-1 max-w-xl text-sm text-[#52524F]">
             Consultez les jumeaux de votre périmètre, leur niveau de connaissance, leurs sources et leur état d'admission.
           </p>
@@ -168,7 +168,7 @@ export default function Jumeaux() {
         {groupes.map(([groupe, lignes]) => (
           <div key={groupe || "tous"}>
             {groupe && (
-              <button onClick={() => setPlies({ ...plies, [groupe]: !plies[groupe] })} data-testid={`groupe-${groupe}`} className="sticky top-0 flex w-full items-center gap-2 border-b border-[#E5E5E3] bg-[#0C0C0C] px-4 py-2 text-left">
+              <button onClick={() => setPlies({ ...plies, [groupe]: !plies[groupe] })} data-testid={`groupe-${groupe}`} className="sticky top-0 z-10 flex w-full items-center gap-2 border-b border-[#E5E5E3] bg-[#F0F0EE] px-4 py-2 text-left">
                 {plies[groupe] ? <CaretRight size={12} className="text-[#71716D]" /> : <CaretDown size={12} className="text-[#71716D]" />}
                 <span className="font-code text-[10px] uppercase tracking-[0.18em]" style={{ color: groupement === "domaine" ? couleurDomaine(groupe) : "#71716D" }}>
                   {groupe} · {lignes.length} jumeau{lignes.length > 1 ? "x" : ""}
@@ -225,9 +225,9 @@ export default function Jumeaux() {
                     </div>
                   </div>
                   {/* Fraîcheur qualifiée */}
-                  <div className="w-36 shrink-0" data-testid={`fraicheur-${j.id}`}>
+                  <div className="w-44 shrink-0" data-testid={`fraicheur-${j.id}`}>
                     <div className="font-code text-[11px]" style={{ color: fr[1] }}>{fr[0]}</div>
-                    <div className="truncate font-code text-[9px] text-[#71716D]">Dernière connaissance : {j.fraicheur}</div>
+                    <div className="truncate font-code text-[9px] text-[#71716D]" title={`Dernière connaissance : ${j.fraicheur}`}>Dernière connaissance : {j.fraicheur}</div>
                   </div>
                   {/* Autonomie contextualisée */}
                   <div className="w-36 shrink-0" title={`${aut[0]} — ${aut[1]}`} data-testid={`autonomie-${j.id}`}>

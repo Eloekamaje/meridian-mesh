@@ -52,8 +52,8 @@ export default function Administration() {
   return (
     <div className="h-full overflow-y-auto px-8 py-8 pb-44" data-testid="administration-page">
       <header className="rise">
-        <div className="font-code text-[10px] uppercase tracking-[0.3em] text-[#71716D]">Administration</div>
-        <h1 className="mt-1 font-display text-4xl font-black text-[#111110]">Administration</h1>
+        <div className="font-code text-[10px] uppercase tracking-[0.3em] text-[#3730A3]">Administration</div>
+        <h1 className="mt-1 font-display text-3xl font-black tracking-tight text-[#111110]">Administration</h1>
         <p className="mt-2 text-base text-[#52524F]">Sources, propriétaires, couverture et fraîcheur de la connaissance du Mesh.</p>
       </header>
 
