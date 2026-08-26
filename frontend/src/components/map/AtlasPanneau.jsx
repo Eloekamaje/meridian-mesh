@@ -11,7 +11,8 @@ export default function AtlasPanneau({
   eventsVisibles, jumeauPar,
 }) {
   // Refermé par défaut sur les petits écrans pour laisser la carte respirer
-  const [ouvert, setOuvert] = useState(() => typeof window !== "undefined" && window.innerWidth >= 1500);
+  // Fermé par défaut : le détail s'ouvre sur une sélection ou à la demande
+  const [ouvert, setOuvert] = useState(false);
 
   // Repli automatique quand la fenêtre devient petite (redimensionnement)
   useEffect(() => {

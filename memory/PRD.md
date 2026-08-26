@@ -4,6 +4,7 @@
 - **Une seule rangée de contrôle** : vues segmentées (Brief/Radar/À traiter·badge/Suivis) à gauche ; portées compactes (Personnel/Espace/Global) + **calendrier du Mesh** (‹ date › + popover presets/date) à droite. Fini les 4 rangées de contrôles empilées ; l'overline redondante disparaît (la sidebar porte le contexte).
 - Briefing éditorial immédiat (salutation, accroche forte, points, lecture rôle) ; bannière historique et synthèse de période inchangées.
 - Bug corrigé : le popover calendrier passait **sous** le briefing (contextes d'empilement dus à l'animation `rise`) → en-tête élevé (`relative z-30`).
+- **Atlas épuré par défaut** (retour utilisateur) : panneaux « Calques/réglages » et « Détail/Chronologie » désormais **fermés à l'ouverture** (plus d'auto-expansion sur grand écran) — dépliage uniquement à la demande ; le panneau Détail continue de s'ouvrir sur une sélection (action utilisateur).
 - Vérifié E2E : preset 7j via popover → titre « Du 20 au 26 août » + synthèse ; portées compactes ; pillule « À traiter ».
 
 ## Implémenté (26/08/2026 — v19, REFONTE IA-NATIVE inspirée ChatGPT — document MERIDIAN_REDESIGN_UI_AI_NATIVE.md appliqué intégralement)

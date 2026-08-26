@@ -20,15 +20,8 @@ export default function AtlasControle({
   couches, setCouches, rechargerVues,
 }) {
   const [nomVue, setNomVue] = useState("");
-  // Façon Google Maps : un bouton « calques » discret ; les réglages se déplient à la demande
-  const [deplie, setDeplie] = useState(() => typeof window !== "undefined" && window.innerWidth >= 1500);
-
-  useEffect(() => {
-    const mq = window.matchMedia("(min-width: 1500px)");
-    const maj = (e) => { if (!e.matches) setDeplie(false); };
-    mq.addEventListener("change", maj);
-    return () => mq.removeEventListener("change", maj);
-  }, []);
+  // Fermé par défaut : les réglages se déplient uniquement à la demande
+  const [deplie, setDeplie] = useState(false);
 
   useEffect(() => {
     if (modeTemps !== "direct" && modeTemps !== "pause") setDeplie(true);
