@@ -1,5 +1,11 @@
 # Méridian — PRD
 
+## Implémenté (26/08/2026 — v19d, esprit « reprendre une conversation » + navigation)
+- **Retour « ← Travaux »** sur la page de création conversationnelle (`/travaux/nouveau`) — manquait (bug utilisateur).
+- **Détail d'un travail = reprise de conversation** (bug utilisateur) : l'onglet Conversation s'ouvre sur le **résumé de la session précédente** (« Session précédente — Flore vous replace ») suivi du fil dominant (2/3) avec composer inline ; les objets de travail (questions/hypothèses/investigations/livrables) sont relégués dans un rail droit (1/3).
+- 404 parasites éliminées : le panneau Flore ne cherche plus le case « nouveau ».
+- Tests : **iteration_26 → 100 %** (frontend, agent de test) — retour création, naissance du travail par conversation, résumé + fil + rail, composer inline (+2 messages sans rechargement), 5 onglets, aucun formulaire résiduel.
+
 ## Implémenté (26/08/2026 — v19c, création conversationnelle des Travaux — « comme ChatGPT »)
 - **Le formulaire de création de travail est supprimé** (retour utilisateur : un formulaire n'a pas sa place dans un écosystème intelligent). « + Nouveau travail » (sidebar + page) ouvre `/travaux/nouveau` : une conversation (« Que voulez-vous comprendre ou accomplir ? ») ; **le premier échange fait naître le travail** (titre = question, jumeaux = contexte, conversation injectée) puis bascule dans l'onglet Conversation. Accueil général conserve la proposition « Conserver comme travail » pour les consultations.
 - **Le fil de conversation vit dans l'onglet Conversation** (`case-conversation` : bulles, contributions, propositions cliquables, composer inline via `POST /cases/{id}/messages`) — auparavant il n'existait que dans le panneau latéral. Reprise Flore en tête, objets structurés (questions/hypothèses/investigations/livrables) en dessous.

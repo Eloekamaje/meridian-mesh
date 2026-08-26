@@ -168,6 +168,13 @@ export default function Accueil({ mode = "accueil" }) {
     <div className="flex h-full flex-col overflow-hidden" data-testid="accueil-page">
       {/* Zone de contenu : accueil ou fil de conversation — le chat VIT ici, pas en latéral */}
       <div className="flex-1 overflow-y-auto px-6">
+        {creation && !enConversation && (
+          <div className="mx-auto w-full max-w-2xl pt-4">
+            <button onClick={() => navigate("/travaux")} data-testid="creation-retour-travaux" className="flex items-center gap-1.5 rounded-md border border-[#E5E5E3] bg-white px-2.5 py-1.5 text-xs text-[#52524F] transition-colors hover:text-[#111110]">
+              ← Travaux
+            </button>
+          </div>
+        )}
         <div className="mx-auto w-full max-w-2xl pb-8">
           {!enConversation ? (
             <div className="flex min-h-[70vh] flex-col items-center justify-center py-10">

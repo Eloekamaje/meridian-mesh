@@ -1,0 +1,25 @@
+{
+  "summary": "Frontend-only test of the two UX bug fixes (creation-retour-travaux + esprit conversation) plus regressions. All targeted flows pass: navigation retour from /travaux/nouveau, creation-by-conversation navigates to /travaux/{id}, case detail opens on Conversation tab with reprise-flore + case-conversation + right rail, inline composer posts messages (delta +2 without reload), all 5 tabs switchable, no travail-form on /travaux or /travaux/nouveau.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Minor: 2 console 404 errors observed during session (likely a static asset or optional API). Investigate network tab to identify the failing resource and clean up.",
+    "Minor observation: when creating a travail via conversation, the returned id becomes a slug (e.g. /travaux/comment-moderniser-oracle) rather than a case-XXX id like the demo cases. Not a bug per the spec (navigate uses data.id from POST /api/cases), but worth confirming backend behavior is intentional."
+  ],
+  "critical_code_review_comments": [
+    "TravailDetail default vue is 'travail' (Conversation) — matches spec. OK.",
+    "OngletTravail composer uses POST /api/cases/{id}/messages and appends both {utilisateur, flore} without reload. Works.",
+    "Accueil creation mode: creation-retour-travaux only shown when !enConversation — correct given after first send we navigate to /travaux/{id}."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not tested", "frontend": "100%"},
+  "seed_data_creation": "None. Used existing case-olympiade demo and created one ephemeral 'Comment moderniser Oracle ?' travail.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Both reported bugs (1) creation-retour-travaux visible + functional, (2) reprise-flore + case-conversation + right rail all present with inline composer working — verified. All 5 travail tabs clickable. Backend was not tested (frontend-only request). 2 minor 404 console errors during session (non-blocking)."
+}

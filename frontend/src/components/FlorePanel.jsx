@@ -204,7 +204,7 @@ export default function FlorePanel() {
   const navigate = useNavigate();
   const contexte = contexteDepuis(location.pathname);
   const caseMatch = location.pathname.match(/^\/(?:travaux|cases)\/([^/?]+)/);
-  const caseId = caseMatch?.[1] || null;
+  const caseId = caseMatch && caseMatch[1] !== "nouveau" ? caseMatch[1] : null;
   const {
     selection, setSelection, domaineSel, retirerJumeau, setDomaineSel, ajouterJumeau,
     commanderCarte, focusVisuel, lot, floreOuverte, ouvrirFlore, fermerFlore,

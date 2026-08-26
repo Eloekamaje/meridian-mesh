@@ -65,13 +65,14 @@ export default function OngletTravail({ cas, maj, setCas, situations }) {
   const premiereVisite = !cas.derniere_visite;
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2" data-testid="onglet-travail">
-      {/* Où en sommes-nous ? — la reprise précède le travail */}
+    <div className="grid gap-4 lg:grid-cols-3" data-testid="onglet-travail">
+    <div className="space-y-4 lg:col-span-2">
+      {/* Session précédente — le résumé qui replace, puis la conversation reprend */}
       {!premiereVisite && (
-        <div className="rounded-xl border border-[#3730A3]/25 bg-[#EEECFA] p-4 lg:col-span-2" data-testid="reprise-flore">
+        <div className="rounded-xl border border-[#3730A3]/25 bg-[#EEECFA] p-4" data-testid="reprise-flore">
           <div className="flex items-center gap-2">
             <Sparkle size={14} weight="fill" className="text-[#3730A3]" />
-            <span className="font-code text-[10px] uppercase tracking-[0.2em] text-[#312E81]">Où en sommes-nous ? — Flore vous replace</span>
+            <span className="font-code text-[10px] uppercase tracking-[0.2em] text-[#312E81]">Session précédente — Flore vous replace</span>
             {cas.derniere_visite && <span className="font-code text-[9px] text-[#71716D]">dernière visite {rel(cas.derniere_visite)}</span>}
           </div>
           <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -106,7 +107,7 @@ export default function OngletTravail({ cas, maj, setCas, situations }) {
       )}
 
       {/* La conversation durable — le fil EST le contenu du travail */}
-      <div className="rounded-xl border border-[#E5E5E3] bg-white p-4 lg:col-span-2" data-testid="case-conversation">
+      <div className="rounded-xl border border-[#E5E5E3] bg-white p-4" data-testid="case-conversation">
         <div className="flex items-center gap-2 font-code text-[10px] uppercase tracking-[0.18em] text-[#52524F]">
           <Sparkle size={11} weight="fill" className="text-[#3730A3]" /> Conversation avec Flore
         </div>
@@ -177,6 +178,10 @@ export default function OngletTravail({ cas, maj, setCas, situations }) {
         </form>
       </div>
 
+    </div>
+
+    {/* Objets de travail — rail secondaire, la conversation domine */}
+    <div className="space-y-4">
       <Carte titre={`Questions — ${questions.filter((q) => q.resolue).length}/${questions.length} levées`} testid="case-questions">
         <ul className="space-y-1.5">
           {questions.map((q, i) => (
@@ -273,6 +278,7 @@ export default function OngletTravail({ cas, maj, setCas, situations }) {
           {(cas.livrables || []).length === 0 && <p className="text-xs text-[#71716D]">Aucune analyse — Flore peut produire une synthèse du travail.</p>}
         </div>
       </Carte>
+    </div>
     </div>
   );
 }
