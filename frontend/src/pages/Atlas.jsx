@@ -48,6 +48,8 @@ export default function Atlas() {
   const dernierClicRegion = useRef({ kind: null, t: 0 });
   const restaure = useRef(false);
   const selAvantLasso = useRef([]);
+  const centreFocusFait = useRef(null);
+  const selectionFocusFaite = useRef(null);
 
   const urlRef = useRef(null);
   useEffect(() => { urlRef.current = new URLSearchParams(searchParams); }, [searchParams]);
@@ -190,6 +192,37 @@ export default function Atlas() {
   }, [version, direct]);
 
   const situation = situations.find((s) => s.id === situationParam);
+
+  // Focus profond : la caméra cadre les jumeaux concernés (situation ou jumeau filtré)
+  useEffect(() => {
+    const cle = situation?.id || focus || null;
+    if (!mesh || !cle || domaineInterne || jumeauFocus || centreFocusFait.current === cle) return;
+    const cibles = situation
+      ? (situation.jumeaux || []).map((id) => mesh.jumeaux.find((j) => j.id === id)).filter(Boolean)
+      : [mesh.jumeaux.find((j) => j.id === focus)].filter(Boolean);
+    if (!cibles.length) return;
+    centreFocusFait.current = cle;
+    const t = setTimeout(() => {
+      const pts = cibles.map((j) => posOverrides[j.id] || j.position);
+      const xs = pts.map((p) => p.x);
+      const ys = pts.map((p) => p.y);
+      rfRef.current?.fitBounds(
+        { x: Math.min(...xs) - 230, y: Math.min(...ys) - 190, width: Math.max(...xs) - Math.min(...xs) + 460, height: Math.max(...ys) - Math.min(...ys) + 380 },
+        { duration: 800 }
+      );
+    }, 350);
+    return () => clearTimeout(t);
+  }, [mesh, situation, focus, domaineInterne, jumeauFocus]);
+
+  // Le contexte Aurora suit toujours le focus profond : les jumeaux concernés deviennent la sélection
+  useEffect(() => {
+    if (!mesh || !situation || selectionFocusFaite.current === situation.id) return;
+    const ids = (situation.jumeaux || []).filter((id) => mesh.jumeaux.some((j) => j.id === id && !j.anonyme));
+    if (ids.length) {
+      selectionFocusFaite.current = situation.id;
+      setSelection(ids);
+    }
+  }, [mesh, situation]);
 
   const { nodes, edges } = useMemo(
     () =>
