@@ -30,6 +30,7 @@ class CasePatch(BaseModel):
     prochaine_etape: Optional[str] = None
     hypotheses: Optional[list] = None
     options: Optional[list] = None
+    conversation: Optional[list] = None
     sensibilite: Optional[str] = None
 
 
@@ -185,6 +186,8 @@ def build_cases_router(deps):
             histo.append({"quand": now, "texte": "Objectif mis à jour"})
         if "jumeaux" in champs and champs["jumeaux"] != case.get("jumeaux"):
             histo.append({"quand": now, "texte": "Contexte SI ajusté"})
+        if "conversation" in champs:
+            histo.append({"quand": now, "texte": "Une exploration avec Flore a été ajoutée au travail"})
         if "a_revoir" in champs and champs["a_revoir"] is False and case.get("a_revoir"):
             histo.append({"quand": now, "texte": "Revue effectuée — hypothèses confirmées à jour"})
         nouveau_resp = champs.get("responsable")

@@ -88,7 +88,7 @@ function FilComprendre({ histoire }) {
                   data-testid={`fil-preuves-${histoire.id}-${i}`}
                   className="mt-2 flex items-center gap-1 font-code text-[10px] text-[#3730A3] hover:underline"
                 >
-                  <Eye size={11} /> {preuves ? "Masquer les preuves" : "Afficher les preuves"}
+                  <Eye size={11} /> Cette conclusion repose sur {m.data.contributions.length} preuve{m.data.contributions.length > 1 ? "s" : ""} · {preuves ? "masquer" : "afficher"}
                 </button>
                 {preuves && (
                   <ul className="mt-1.5 space-y-1 border-l-2 border-[#3730A3]/25 pl-2.5">
@@ -125,7 +125,16 @@ function CarteHistoire({ h, vedette, dateCible, estAujourdhui, navigate, mesh })
   const [menu, setMenu] = useState(false);
   const [comprendre, setComprendre] = useState(false);
   const g = GENRES[h.genre] || [h.genre, "#71716D"];
-  const lienAtlas = estAujourdhui ? h.liens?.atlas : h.liens?.atlas ? `${h.liens.atlas}${h.liens.atlas.includes("?") ? "&" : "?"}date=${fmtDateInput(finDeJournee(dateCible))}` : null;
+  // Les histoires de relation/transformation s'ouvrent en Avant/Après à la date du phénomène
+  const jourPhenomene = fmtDateInput(finDeJournee(h.quand));
+  const sep = h.liens?.atlas?.includes("?") ? "&" : "?";
+  const lienAtlas = h.liens?.atlas
+    ? ["relation", "phenomene", "changement"].includes(h.genre)
+      ? `${h.liens.atlas}${sep}avant-apres=${jourPhenomene}`
+      : estAujourdhui
+        ? h.liens.atlas
+        : `${h.liens.atlas}${sep}date=${fmtDateInput(finDeJournee(dateCible))}`
+    : null;
 
   const actionPrincipale = () => {
     if (h.genre === "travail" || h.genre === "decision") {
@@ -357,7 +366,8 @@ export default function Actualites() {
               <span className="font-code text-[10px] uppercase tracking-[0.2em] text-[#3730A3]">{data.briefing.titre}</span>
               <span className="rounded-full border border-[#E5E5E3] px-2 py-0.5 font-code text-[9px] text-[#71716D]">{data.briefing.lecture}</span>
             </div>
-            <p className="mt-2.5 text-sm leading-relaxed text-[#3F3F3C]">{data.briefing.texte}</p>
+            <p className="mt-2.5 text-sm font-medium leading-relaxed text-[#1d1d1b]">{data.briefing.accroche || data.briefing.texte}</p>
+            {data.briefing.detail && <p className="mt-1 text-xs italic text-[#71716D]">{data.briefing.detail}</p>}
             {data.briefing.points.length > 0 && (
               <ul className="mt-2 space-y-1">
                 {data.briefing.points.map((p, i) => (

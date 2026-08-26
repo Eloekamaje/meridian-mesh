@@ -55,19 +55,19 @@ export default function OngletApercu({ cas, maj, setCas }) {
           </div>
           <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <div>
-              <div className="font-code text-[9px] uppercase tracking-wider text-[#71716D]">Où vous étiez</div>
+              <div className="font-code text-[9px] uppercase tracking-wider text-[#71716D]">Vous étiez ici</div>
               <p className="mt-1 text-xs leading-snug text-[#3F3F3C]" data-testid="reprise-arret">
                 {dernierMessage ? `Dernier échange : « ${(dernierMessage.texte || "").slice(0, 110)}${(dernierMessage.texte || "").length > 110 ? "…" : ""} »` : "Le travail n'a pas encore de conversation."}
               </p>
             </div>
             <div>
-              <div className="font-code text-[9px] uppercase tracking-wider text-[#71716D]">Ce qui a changé</div>
+              <div className="font-code text-[9px] uppercase tracking-wider text-[#71716D]">Depuis</div>
               <p className="mt-1 text-xs leading-snug text-[#3F3F3C]" data-testid="reprise-changements">
                 {evolutions.length > 0 ? `${evolutions.length} évolution${evolutions.length > 1 ? "s" : ""} : ${evolutions[0].texte}` : "Rien de nouveau depuis votre dernière visite."}
               </p>
             </div>
             <div>
-              <div className="font-code text-[9px] uppercase tracking-wider text-[#71716D]">Ce qui reste incertain</div>
+              <div className="font-code text-[9px] uppercase tracking-wider text-[#71716D]">Reste incertain</div>
               <p className="mt-1 text-xs leading-snug text-[#3F3F3C]" data-testid="reprise-incertain">
                 {hypAValider.length > 0 || ouvertes.length > 0
                   ? `${ouvertes.length} question${ouvertes.length > 1 ? "s" : ""} ouverte${ouvertes.length > 1 ? "s" : ""} · ${hypAValider.length} hypothèse${hypAValider.length > 1 ? "s" : ""} à valider`
@@ -75,7 +75,7 @@ export default function OngletApercu({ cas, maj, setCas }) {
               </p>
             </div>
             <div>
-              <div className="font-code text-[9px] uppercase tracking-wider text-[#71716D]">Prochaine action</div>
+              <div className="font-code text-[9px] uppercase tracking-wider text-[#71716D]">Prochaine étape</div>
               <p className="mt-1 text-xs font-semibold leading-snug text-[#312E81]" data-testid="reprise-action">
                 {cas.prochaine_etape || (optionsATrancher.length > 0 ? `Trancher « ${optionsATrancher[0].titre} »` : "Continuer la discussion avec Flore.")}
               </p>

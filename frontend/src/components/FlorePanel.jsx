@@ -219,6 +219,8 @@ export default function FlorePanel() {
   const [promptFocus, setPromptFocus] = useState(null);
   const [creationCase, setCreationCase] = useState(false);
   const [propTravailMasquee, setPropTravailMasquee] = useState(false);
+  const [choixTravail, setChoixTravail] = useState(null); // liste des travaux ouverts proposés à l'ajout
+  const [ajoutEnCours, setAjoutEnCours] = useState(false);
   const [caseCtx, setCaseCtx] = useState(null);
   const prevFocusRef = useRef(null);
   const inputRef = useRef(null);
@@ -321,9 +323,37 @@ export default function FlorePanel() {
     }
   };
 
+  const ajouterATravail = async (cid) => {
+    if (ajoutEnCours) return;
+    setAjoutEnCours(true);
+    const now = new Date().toISOString();
+    try {
+      const { data: c } = await api.get(`/cases/${cid}`);
+      const fusion = [
+        ...(c.conversation || []),
+        ...echanges.flatMap((e) => [
+          { role: "utilisateur", texte: e.question, quand: now },
+          { role: "flore", comportement: e.data.comportement, texte: e.data.reponse, quand: now },
+        ]),
+      ];
+      await api.patch(`/cases/${cid}`, { conversation: fusion });
+      toast.success(`Exploration ajoutée à « ${c.titre} »`);
+      fermerFlore();
+      navigate(`/travaux/${cid}`);
+    } catch {
+      toast.error("Ajout impossible");
+    } finally {
+      setAjoutEnCours(false);
+    }
+  };
+
+  const proposerAjout = () => {
+    setChoixTravail("chargement");
+    api.get("/cases").then((r) => setChoixTravail(r.data.filter((c) => c.statut !== "clos"))).catch(() => setChoixTravail([]));
+  };
+
   if (lot) return <LotBar lot={lot} />;
   if (!floreOuverte) return null;
-
   return (
     <motion.aside
       initial={{ x: 60, opacity: 0 }}
@@ -442,10 +472,34 @@ export default function FlorePanel() {
             <button onClick={() => { setPropTravailMasquee(true); creerCase(); }} disabled={creationCase} data-testid="flore-prop-conserver-btn" className="rounded-md bg-[#B45309] px-2.5 py-1.5 text-[10px] font-semibold text-white transition-colors hover:bg-[#92400E] disabled:opacity-50">
               Conserver comme travail
             </button>
+            <button onClick={proposerAjout} data-testid="flore-prop-ajouter-btn" className="rounded-md border border-[#B45309]/40 bg-white px-2.5 py-1.5 text-[10px] font-semibold text-[#B45309] transition-colors hover:bg-[#FFFBEB]">
+              Ajouter à un travail existant
+            </button>
             <button onClick={() => setPropTravailMasquee(true)} data-testid="flore-prop-ignorer-btn" className="rounded-md border border-[#E5E5E3] bg-white px-2.5 py-1.5 text-[10px] text-[#52524F] transition-colors hover:text-[#111110]">
               Continuer sans conserver
             </button>
           </div>
+          {choixTravail && (
+            <div className="mt-2 border-t border-[#B45309]/20 pt-2" data-testid="flore-prop-choix-travail">
+              {choixTravail === "chargement" ? (
+                <p className="font-code text-[10px] text-[#71716D]">Chargement des travaux ouverts…</p>
+              ) : choixTravail.length === 0 ? (
+                <p className="font-code text-[10px] text-[#71716D]">Aucun travail ouvert — conservez celui-ci.</p>
+              ) : (
+                choixTravail.slice(0, 4).map((c) => (
+                  <button
+                    key={c.id}
+                    onClick={() => ajouterATravail(c.id)}
+                    disabled={ajoutEnCours}
+                    data-testid={`flore-prop-travail-${c.id}`}
+                    className="mt-1 block w-full truncate rounded-md border border-[#E5E5E3] bg-white px-2.5 py-1.5 text-left text-[11px] text-[#3F3F3C] transition-colors hover:border-[#B45309]/50 hover:text-[#111110] disabled:opacity-50"
+                  >
+                    {c.titre}
+                  </button>
+                ))
+              )}
+            </div>
+          )}
         </div>
       )}
 

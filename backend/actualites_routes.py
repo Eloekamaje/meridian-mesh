@@ -301,17 +301,23 @@ def build_actualites_router(deps):
         salutation = f"Bonjour {persona.get('nom', '')}".strip()
         top = histoires[:3]
         if histoires:
-            texte = (
+            top1 = histoires[0]
+            accroche = (
                 f"{len(histoires)} évolution{'s' if len(histoires) > 1 else ''} mérite{'nt' if len(histoires) > 1 else ''} votre attention. "
-                f"La plus importante concerne : « {histoires[0]['titre']} ». {profil['phrase']}"
+                f"La plus importante : {top1['titre']}"
+                + (" — encore supposée, non confirmée." if top1.get("incertain") else ".")
             )
+            texte = f"{accroche} {profil['phrase']}"
             points = [h["titre"] for h in top]
         else:
-            texte = "Rien d'important ne nécessite votre attention aujourd'hui. Le Mesh reste actif."
+            accroche = "Rien d'important ne nécessite votre attention aujourd'hui."
+            texte = f"{accroche} Le Mesh reste actif."
             points = []
         briefing = {
             "salutation": salutation,
             "titre": "L'essentiel aujourd'hui" if est_aujourdhui else "L'essentiel de la période",
+            "accroche": accroche,
+            "detail": profil["phrase"],
             "texte": texte,
             "points": points,
             "lecture": profil["label"],

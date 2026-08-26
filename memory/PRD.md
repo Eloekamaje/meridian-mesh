@@ -1,5 +1,15 @@
 # Méridian — PRD
 
+## Implémenté (26/08/2026 — v17, alignement sur le manuscrit validé par l'utilisateur)
+Après relecture critique de la vision, rédaction d'un **déroulé-manuscrit d'une journée type** (5 actes) validé par l'utilisateur, puis alignement de l'interface :
+- **Briefing honnête sur le doute** : accroche « La plus importante : … — encore supposée, non confirmée » quand l'histoire vedette est incertaine (`briefing.accroche`/`detail` séparés dans l'API).
+- **Preuves comptées dans le fil Flore inline** : « Cette conclusion repose sur N preuves · afficher ».
+- **Conservation à 3 options** : [Conserver comme travail] / **[Ajouter à un travail existant]** (fusion de la conversation dans le travail choisi via PATCH conversation + entrée d'historique, endpoint `CasePatch.conversation` ajouté) / [Continuer sans conserver].
+- **Reprise de travail** : libellés du manuscrit (« Vous étiez ici / Depuis / Reste incertain / Prochaine étape »).
+- **Liens Atlas contextuels** : histoires relation/phénomène/transformation → `?avant-apres=<date du phénomène>` (la carte montre la forme du problème) ; autres → photographie `?date=`.
+- **Fragment Atlas retiré des actualités** (veto utilisateur) : l'Atlas est le lieu du regard, Actualités celui du récit.
+- Processus retenu pour la suite : principes d'abord, déroulé en texte validé par l'utilisateur, puis code (documenté dans cette section).
+
 ## Implémenté (26/08/2026 — v16, seconde passe « briefing vivant du Mesh »)
 Alignement profond sur l'esprit du document de vision (pas seulement la surface) après retour utilisateur.
 - **Actualités = briefing intelligent et vivant** (« Voici ce qui a changé dans le Mesh, pourquoi cela compte pour vous, ce que vous pouvez faire maintenant ») : salutation + « L'essentiel aujourd'hui » rédigé par Flore, **adapté au rôle** (Lecture architecte/exploitation/décideur — classement ET formulation changent, jamais la vérité) ; feed organisé en **sections de signification** (L'essentiel / Vos travaux / Découvertes / Transformations / À surveiller / Dans votre espace / Mesh global) ; histoire vedette mise en valeur par la typographie uniquement (pas de fragment Atlas embarqué — **choix utilisateur 26/08 : pas de fragment Atlas dans l'actualité, l'Atlas reste le lieu du regard, Actualités celui du récit** ; « Voir dans l'Atlas » reste le pont visuel avec contexte conservé) ; **une action principale par histoire** ([Reprendre]/[Comprendre]/[Suivre la vérification]) + menu ••• ; **« Comprendre » = fil Flore inline** dans la carte (question auto, réponse, « Afficher les preuves », conversation multi-tours contextualisée) ; relations « supposées » affichées en **PHÉNOMÈNE POSSIBLE** ; périodes 7j/30j → **synthèse** (compteurs + tendance principale + « Comparer le X et le Y » → `/atlas?avant-apres=`) ; états du feed : vide (« Rien d'important… » + compteurs Mesh + Explorer), historique, insertion temps réel.
