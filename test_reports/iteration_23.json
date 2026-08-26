@@ -1,0 +1,36 @@
+{
+  "summary": "Iteration 23 — Seconde passe « briefing vivant du Mesh ». BACKEND pytest complet : 88 passed, 1 skipped (0 régression). FRONTEND E2E : tous les scénarios du brief valident sans erreur console. (1) BRIEFING Actualités : briefing-flore présente salutation « Bonjour A. Rousseau », titre « L'essentiel aujourd'hui », badge « Lecture architecte », 3 briefing-point-{i}, briefing-explorer-btn et bouton Atlas. Persona=support → salutation « Bonjour J. Morel » + badge « Lecture exploitation » + réordonnancement (8 histoires, phrase « Comportements et dégradations transversales d'abord »). (2) SECTIONS aujourdhui architecte global : section-essentiel, section-decouvertes, section-transformations, section-espace (« Dans votre espace ») visibles. section-surveillance présente en preset 30j avec « CONTRADICTION » et « PHÉNOMÈNE POSSIBLE / Relation possible : Fraude … » + action « Suivre la vérification ». (3) HISTOIRE VEDETTE : fragment-atlas interactif rendu (@xyflow, Paiements→Comptes→Fraude→Support, 4 chips jumeaux, « Confiance : élevée »). (4) FIL FLORE INLINE : clic Comprendre sur sit-sit-latence-paiements ouvre fil-comprendre-{id} avec question auto « Pourquoi est-ce important … ? » (1 seule occurrence — pas de doublon), réponse Flore, fil-input-* fonctionnel, 2e question envoie et obtient 2 réponses successives, fil-preuves-* présent (« Afficher les preuves »). (5) MENU ••• : histoire-menu-{id} ouvre panel avec « Voir dans l'Atlas » + « Approfondir » ; clic sur histoire-atlas-{id} navigue vers /atlas?situation=…&date=2026-08-25 (paramètre &date= présent en consultation historique). (6) SYNTHÈSE PÉRIODE : preset 7j → synthese-periode affiche « SYNTHÈSE DE LA PÉRIODE » + 4 compteurs (9 relations / 8 transformations / 0 décisions / 2 surveillance) + synthese-tendance « Le domaine Paiement se rapproche progressivement du domaine Support » + comparer-atlas-btn → /atlas?avant-apres=2026-08-20 avec bandeau-avant-apres visible « Avant/Après depuis le 20 août — 4 nouvelles relations ». (7) ÉTATS : banniere-historique sur hier ; date 2026-01-01 → feed-vide « Rien d'important ne nécessite votre attention » + compteurs Mesh + explorer-mesh-btn. (8) TRAVAUX narratif : travaux-section-attention (2 travaux, bordure ambrée, badges 2 décisions/1 décision) et travaux-section-autres (3 travaux). Cartes minimalistes avec bouton [Continuer] + menu ••• (travail-menu-{id} → travail-atlas-{id} navigue vers /atlas avec sélection). Menu « Récits ▾ » (travaux-vues) expose vue-liste/vue-kanban/vue-chrono, tous cliquables. travaux-section-progres = 0 (aucun autre persona n'a agi — comportement conforme, mécanisme n'altère pas l'affichage). (9) FLORE PROPOSITION-TRAVAIL : ouvre flore-panel, envoie 2 questions → flore-proposition-travail apparaît « Cette exploration implique plusieurs jumeaux … » + flore-prop-ignorer-btn (masque bien la proposition) + flore-prop-conserver-btn (crée travail et navigue vers /travaux/quels-jumeaux-sont-concernes). (10) ATLAS ?avant-apres=2026-08-20 : bandeau-avant-apres visible directement au chargement, panneau Temps ouvert sur mode Avant/Après avec date pré-remplie. (11) NON-RÉGRESSION : cockpit /travaux/case-olympiade 5 onglets (apercu/travail/atlas/decisions/activite) tous présents ; expliquer-carte-btn présent sur /atlas. Aucune erreur console sur / /travaux /atlas.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_actualites.py",
+    "/app/backend/tests/"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "actualites_routes.py (366 lignes) : le fichier reste raisonnable mais SECTIONS_ORDRE / TITRES_SECTION / SECTION_PAR_GENRE sont couplés au module. Envisager d'extraire dans un module `briefing_regles.py` pour les prochaines itérations (rôles, boost, phrase).",
+    "actualites_routes.py L322 : `if jours > 1` déclenche la synthèse même sur 2 jours ; c'est correct pour 7j/30j (brief) mais le libellé UI est identique — si un preset 2j est ajouté un jour, prévoir des seuils explicites (jours>=7).",
+    "Actualites.jsx L46 : `preuves` est un state SCALAIRE au niveau FilComprendre — si plusieurs réponses Flore contiennent preuves, un seul toggle affiche/masque toutes les preuves. Envisager un state map par index (`preuvesOuvertes: {[i]: bool}`) pour une UX plus fine.",
+    "FragmentAtlas.jsx : le fragment interactif @xyflow est joli et perf-OK avec 4 nœuds ; toutefois zoom désactivé + pan actif — vérifier accessibilité clavier (tab-focus) pour respect WCAG.",
+    "Actualites.jsx briefing-explorer-btn dispatch `meridian:flore-ask` — bon pattern découplé ; à documenter pour éviter que d'autres pages consomment cet event et déclenchent une double ouverture.",
+    "Travaux.jsx section-progres : la logique dépend de `nb_nouveautes/nouveaute_texte` renvoyés par cases_routes.py ; non testable dans cette session car un seul persona actif. Prévoir un smoke test backend qui simule 2 personas + revisite."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (88/88 passed, 1 skipped)",
+    "frontend": "100% — 11/11 scénarios du brief validés, 0 erreur console"
+  },
+  "test_credentials": "Personas via [data-testid='selecteur-persona'] : architecte (défaut) / paiements / support. Pas d'authentification. Voir /app/memory/test_credentials.md.",
+  "seed_data_creation": "1 travail « quels-jumeaux-sont-concernes » créé via flore-prop-conserver-btn (démo). Reste de la base intacte.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Iteration 23 valide entièrement la seconde passe « briefing vivant ». Testids clés (en plus de ceux d'iter22) : briefing-flore, briefing-point-{0..2}, briefing-explorer-btn, section-{essentiel|travaux|decouvertes|transformations|surveillance|espace|global}, synthese-periode, synthese-{relations|transformations|decisions|surveillance|tendance}, comparer-atlas-btn, fragment-atlas, fil-comprendre-{id}, fil-reponse-{id}-{i}, fil-preuves-{id}-{i}, fil-input-{id}, histoire-menu-{id}, histoire-menu-panel-{id}, histoire-atlas-{id}, feed-vide, explorer-mesh-btn, travaux-section-{attention|progres|autres}, travail-menu-{id}, travail-menu-panel-{id}, travail-atlas-{id}, travaux-vues, vues-menu, vue-{liste|kanban|chrono}, flore-proposition-travail, flore-prop-conserver-btn, flore-prop-ignorer-btn. Rappels : (a) preset 7j/30j déclenche synthese uniquement si jours>1 ; (b) section-travaux dans le feed n'apparaît que si l'historique tombe dans la période (seed 24-25 juin → 30j depuis 26 août = fenêtre 28 juil-26 août, donc travaux hors fenêtre — comportement normal) ; (c) Atlas contrôles temporels sont cachés par défaut, cliquer controle-toggle pour les révéler ; (d) pytest doit tourner avec `-o addopts=''` pour désactiver -n auto. Aucune action requise du main agent — l'app est prête pour la démo.",
+  "rca of the issue": "Aucun bug détecté durant cette itération. Le fix « jrn-0 » d'iter22 tient bien (0 warning React). La seule observation minime est le state `preuves` scalaire dans FilComprendre (code review), sans impact fonctionnel dans les scénarios du brief."
+}

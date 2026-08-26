@@ -97,6 +97,10 @@ def build_cases_router(deps):
             c["nb_options_a_trancher"] = sum(1 for o in c.get("options", []) if o.get("statut") == "a_evaluer")
             histo = c.get("historique", [])
             c["derniere_modif"] = histo[-1]["texte"] if histo else None
+            visite = (c.get("visites") or {}).get(x_persona)
+            nouveautes = [h for h in histo if visite and h.get("quand", "") > visite]
+            c["nb_nouveautes"] = len(nouveautes)
+            c["nouveaute_texte"] = nouveautes[-1]["texte"] if nouveautes else None
             c.pop("conversation", None)
             c.pop("historique", None)
             c.pop("questions", None)

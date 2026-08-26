@@ -1,5 +1,14 @@
 # Méridian — PRD
 
+## Implémenté (26/08/2026 — v16, seconde passe « briefing vivant du Mesh »)
+Alignement profond sur l'esprit du document de vision (pas seulement la surface) après retour utilisateur.
+- **Actualités = briefing intelligent et vivant** (« Voici ce qui a changé dans le Mesh, pourquoi cela compte pour vous, ce que vous pouvez faire maintenant ») : salutation + « L'essentiel aujourd'hui » rédigé par Flore, **adapté au rôle** (Lecture architecte/exploitation/décideur — classement ET formulation changent, jamais la vérité) ; feed organisé en **sections de signification** (L'essentiel / Vos travaux / Découvertes / Transformations / À surveiller / Dans votre espace / Mesh global) ; histoire vedette avec **fragment vivant de l'Atlas** interactif (@xyflow, `FragmentAtlas.jsx`) ; **une action principale par histoire** ([Reprendre]/[Comprendre]/[Suivre la vérification]) + menu ••• ; **« Comprendre » = fil Flore inline** dans la carte (question auto, réponse, « Afficher les preuves », conversation multi-tours contextualisée) ; relations « supposées » affichées en **PHÉNOMÈNE POSSIBLE** ; périodes 7j/30j → **synthèse** (compteurs + tendance principale + « Comparer le X et le Y » → `/atlas?avant-apres=`) ; états du feed : vide (« Rien d'important… » + compteurs Mesh + Explorer), historique, insertion temps réel.
+- **Backend `/api/actualites` v2** : sections, regroupement des événements d'un travail en une histoire par période, briefing rôle-adapté (`profil_de`), synthèse de période avec tendance domaines, marquage incertain.
+- **Travaux = mémoire narrative** : sections « Ce qui attend votre attention » / « Ce qui a progressé sans vous » (backend : `nb_nouveautes`/`nouveaute_texte` depuis la dernière visite) / « Tous les travaux » ; cartes minimalistes (titre + intention + nouveauté + [Continuer] + •••) ; Kanban/Chronologie relégués dans le menu « Récits ▾ ».
+- **Flore propose la conservation** : après ≥2 échanges, encart « Cette exploration implique N jumeaux… [Conserver comme travail] [Continuer sans conserver] ».
+- **Atlas** : paramètre `?avant-apres=DATE` ouvre directement le mode Avant/Après (lien depuis la synthèse).
+- Tests : **iteration_23 → 100 %** (backend 88/88, frontend 11/11 scénarios, 0 erreur console).
+
 ## Implémenté (26/08/2026 — v15, REFONTE UX/UI « nouveau paradigme » complète)
 Application intégrale du document `MERIDIAN_UX_UI_NOUVEAU_PARADIGME.md` (choix utilisateur validés : renommage, périmètre maximal, thème clair d'abord, backend adapté librement).
 - **Thème clair global** (codemod sur 39 fichiers + design system `/app/design_guidelines.json`) : fond #F7F7F6, surfaces blanches, encre #111110, primaire indigo #3730A3, états sémantiques couleur+libellé ; palette domaines/relations adaptée au clair (`lib/domaines.js`) ; `glass` clair ; focus-visible AA ; `prefers-reduced-motion`.

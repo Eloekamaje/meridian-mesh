@@ -218,6 +218,7 @@ export default function FlorePanel() {
   const [justifOuverte, setJustifOuverte] = useState(null);
   const [promptFocus, setPromptFocus] = useState(null);
   const [creationCase, setCreationCase] = useState(false);
+  const [propTravailMasquee, setPropTravailMasquee] = useState(false);
   const [caseCtx, setCaseCtx] = useState(null);
   const prevFocusRef = useRef(null);
   const inputRef = useRef(null);
@@ -430,6 +431,23 @@ export default function FlorePanel() {
           </div>
         )}
       </div>
+
+      {/* Une exploration qui s'approfondit peut devenir un Travail — Flore propose sans imposer */}
+      {echanges.length >= 2 && !caseId && !propTravailMasquee && (
+        <div className="mx-4 mb-2 rounded-lg border border-[#B45309]/30 bg-[#FFFBEB] px-3 py-2.5" data-testid="flore-proposition-travail">
+          <p className="text-[11px] leading-snug text-[#3F3F3C]">
+            Cette exploration implique {selection.length > 0 ? `${selection.length} jumeau${selection.length > 1 ? "x" : ""}` : "plusieurs jumeaux"} et pourrait mériter une mémoire persistante.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <button onClick={() => { setPropTravailMasquee(true); creerCase(); }} disabled={creationCase} data-testid="flore-prop-conserver-btn" className="rounded-md bg-[#B45309] px-2.5 py-1.5 text-[10px] font-semibold text-white transition-colors hover:bg-[#92400E] disabled:opacity-50">
+              Conserver comme travail
+            </button>
+            <button onClick={() => setPropTravailMasquee(true)} data-testid="flore-prop-ignorer-btn" className="rounded-md border border-[#E5E5E3] bg-white px-2.5 py-1.5 text-[10px] text-[#52524F] transition-colors hover:text-[#111110]">
+              Continuer sans conserver
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Conversation */}
       <div ref={conversationRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4" data-testid="flore-echanges">

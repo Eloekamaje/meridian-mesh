@@ -87,7 +87,7 @@ export default function Atlas() {
     return vals.length ? Math.min(...vals) : Date.now() - 30 * 864e5;
   }, [relTs]);
 
-  // ?date=AAAA-MM-JJ — photographie historique demandée (depuis Actualités)
+  // ?date=AAAA-MM-JJ — photographie historique ; ?avant-apres=AAAA-MM-JJ — comparaison
   const dateParam = searchParams.get("date");
   useEffect(() => {
     if (!dateParam) return;
@@ -96,6 +96,15 @@ export default function Atlas() {
     setModeTemps("historique");
     setDateRef(finDeJournee(d).getTime());
   }, [dateParam]);
+
+  const aaParam = searchParams.get("avant-apres");
+  useEffect(() => {
+    if (!aaParam) return;
+    const d = new Date(`${aaParam.slice(0, 10)}T12:00:00`);
+    if (Number.isNaN(d.getTime())) return;
+    setModeTemps("avantapres");
+    setDateRef(finDeJournee(d).getTime());
+  }, [aaParam]);
 
   // Replay : relecture accélérée de la construction du Mesh (de la 1re relation à maintenant)
   useEffect(() => {

@@ -26,8 +26,9 @@ def test_actualites_aujourdhui(s):
     assert d["portee"] == "personnel"
     assert len(d["histoires"]) > 0
     h = d["histoires"][0]
-    assert {"id", "genre", "titre", "recit", "quand", "score", "liens"} <= set(h)
-    assert d["resume_flore"]["texte"]
+    assert {"id", "genre", "section", "titre", "recit", "quand", "score", "liens"} <= set(h)
+    assert d["briefing"]["texte"]
+    assert d["briefing"]["salutation"].startswith("Bonjour")
 
 
 def test_actualites_periode_7j(s):
@@ -36,6 +37,7 @@ def test_actualites_periode_7j(s):
     assert d["jours"] == 7
     assert d["est_aujourdhui"] is False
     assert len(d["histoires"]) >= 10  # situations + relations + historique des travaux
+    assert d["synthese"] and "debut" in d["synthese"]  # synthèse de période, pas 7 feeds collés
 
 
 def test_actualites_date_passee(s):
