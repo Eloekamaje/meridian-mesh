@@ -5,17 +5,17 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 
 const STATUTS_HYP = {
-  a_valider: ["À valider", "#FBBF24"],
-  confirmee: ["Confirmée", "#10B981"],
-  rejetee: ["Rejetée", "#F87171"],
+  a_valider: ["À valider", "#B45309"],
+  confirmee: ["Confirmée", "#047857"],
+  rejetee: ["Rejetée", "#B91C1C"],
 };
 const CYCLE = ["a_valider", "confirmee", "rejetee"];
 
 function Carte({ titre, children, testid, action }) {
   return (
-    <section className="rounded-xl border border-white/[0.07] p-4" data-testid={testid}>
+    <section className="rounded-xl border border-[#E5E5E3] p-4" data-testid={testid}>
       <div className="flex items-center justify-between">
-        <div className="font-code text-[10px] uppercase tracking-[0.2em] text-white/40">{titre}</div>
+        <div className="font-code text-[10px] uppercase tracking-[0.2em] text-[#71716D]">{titre}</div>
         {action}
       </div>
       <div className="mt-2.5">{children}</div>
@@ -64,11 +64,11 @@ export default function OngletTravail({ cas, maj, setCas, situations }) {
               <button
                 onClick={() => maj({ questions: questions.map((x, xi) => (xi === i ? { ...x, resolue: !x.resolue } : x)) })}
                 data-testid={`question-toggle-${i}`}
-                className={q.resolue ? "text-[#10B981]" : "text-white/30 hover:text-white/60"}
+                className={q.resolue ? "text-[#047857]" : "text-[#71716D] hover:text-[#52524F]"}
               >
                 {q.resolue ? <CheckCircle size={16} weight="fill" /> : <Circle size={16} />}
               </button>
-              <span className={q.resolue ? "text-white/40 line-through" : "text-white/80"}>{q.texte}</span>
+              <span className={q.resolue ? "text-[#71716D] line-through" : "text-[#3F3F3C]"}>{q.texte}</span>
             </li>
           ))}
         </ul>
@@ -81,8 +81,8 @@ export default function OngletTravail({ cas, maj, setCas, situations }) {
           }}
           className="mt-2.5 flex gap-2"
         >
-          <input value={nouvelleQuestion} onChange={(e) => setNouvelleQuestion(e.target.value)} placeholder="Ajouter une question…" data-testid="question-add-input" className="h-8 flex-1 rounded-md border border-white/10 bg-black/40 px-2.5 text-xs text-white placeholder:text-white/30 focus:outline-none" />
-          <button type="submit" data-testid="question-add-btn" className="flex h-8 items-center gap-1 rounded-md border border-white/15 px-2.5 text-[11px] text-white/60 hover:text-white"><Plus size={12} /> Ajouter</button>
+          <input value={nouvelleQuestion} onChange={(e) => setNouvelleQuestion(e.target.value)} placeholder="Ajouter une question…" data-testid="question-add-input" className="h-8 flex-1 rounded-md border border-[#E5E5E3] bg-white px-2.5 text-xs text-[#111110] placeholder:text-[#71716D] focus:outline-none" />
+          <button type="submit" data-testid="question-add-btn" className="flex h-8 items-center gap-1 rounded-md border border-[#E5E5E3] px-2.5 text-[11px] text-[#52524F] hover:text-[#111110]"><Plus size={12} /> Ajouter</button>
         </form>
       </Carte>
 
@@ -91,7 +91,7 @@ export default function OngletTravail({ cas, maj, setCas, situations }) {
           {hypotheses.map((h, i) => {
             const s = STATUTS_HYP[h.statut] || STATUTS_HYP.a_valider;
             return (
-              <li key={h.id} className="flex items-center gap-2.5 rounded-lg border border-white/[0.06] px-2.5 py-2" data-testid={`hypothese-${h.id}`}>
+              <li key={h.id} className="flex items-center gap-2.5 rounded-lg border border-[#E5E5E3] px-2.5 py-2" data-testid={`hypothese-${h.id}`}>
                 <button
                   onClick={() => maj({ hypotheses: hypotheses.map((x) => (x.id === h.id ? { ...x, statut: CYCLE[(CYCLE.indexOf(h.statut) + 1) % 3] } : x)) })}
                   data-testid={`hypothese-statut-${h.id}`}
@@ -101,40 +101,40 @@ export default function OngletTravail({ cas, maj, setCas, situations }) {
                 >
                   {s[0]}
                 </button>
-                <span className={`text-xs ${h.statut === "rejetee" ? "text-white/35 line-through" : "text-white/75"}`}>{h.texte}</span>
+                <span className={`text-xs ${h.statut === "rejetee" ? "text-[#71716D] line-through" : "text-[#3F3F3C]"}`}>{h.texte}</span>
               </li>
             );
           })}
-          {hypotheses.length === 0 && <li className="text-xs text-white/30">Aucune hypothèse formulée.</li>}
+          {hypotheses.length === 0 && <li className="text-xs text-[#71716D]">Aucune hypothèse formulée.</li>}
         </ul>
         <form onSubmit={(e) => { e.preventDefault(); ajouterHypothese(); }} className="mt-2.5 flex gap-2">
-          <input value={nouvelleHyp} onChange={(e) => setNouvelleHyp(e.target.value)} placeholder="Formuler une hypothèse…" data-testid="hypothese-add-input" className="h-8 flex-1 rounded-md border border-white/10 bg-black/40 px-2.5 text-xs text-white placeholder:text-white/30 focus:outline-none" />
-          <button type="submit" data-testid="hypothese-add-btn" className="flex h-8 items-center gap-1 rounded-md border border-white/15 px-2.5 text-[11px] text-white/60 hover:text-white"><Plus size={12} /> Ajouter</button>
+          <input value={nouvelleHyp} onChange={(e) => setNouvelleHyp(e.target.value)} placeholder="Formuler une hypothèse…" data-testid="hypothese-add-input" className="h-8 flex-1 rounded-md border border-[#E5E5E3] bg-white px-2.5 text-xs text-[#111110] placeholder:text-[#71716D] focus:outline-none" />
+          <button type="submit" data-testid="hypothese-add-btn" className="flex h-8 items-center gap-1 rounded-md border border-[#E5E5E3] px-2.5 text-[11px] text-[#52524F] hover:text-[#111110]"><Plus size={12} /> Ajouter</button>
         </form>
       </Carte>
 
       <Carte
         titre="Investigations"
         testid="case-investigations"
-        action={<button onClick={() => setNouvelleInv(nouvelleInv === null ? "" : null)} data-testid="investigation-add-toggle" className="flex items-center gap-1 font-code text-[10px] text-white/40 transition-colors hover:text-white"><Plus size={12} /> Ouvrir une investigation</button>}
+        action={<button onClick={() => setNouvelleInv(nouvelleInv === null ? "" : null)} data-testid="investigation-add-toggle" className="flex items-center gap-1 font-code text-[10px] text-[#71716D] transition-colors hover:text-[#111110]"><Plus size={12} /> Ouvrir une investigation</button>}
       >
         <ul className="space-y-1.5">
           {(cas.situations || []).map((sid) => {
             const s = situations.find((x) => x.id === sid);
             return (
               <li key={sid}>
-                <Link to={`/investigations/${sid}`} data-testid={`case-situation-${sid}`} className="text-xs text-[#3B82F6] hover:underline">
+                <Link to={`/investigations/${sid}`} data-testid={`case-situation-${sid}`} className="text-xs text-[#3730A3] hover:underline">
                   → {s?.titre || sid}
                 </Link>
               </li>
             );
           })}
-          {(cas.situations || []).length === 0 && <li className="text-xs text-white/30">Aucune investigation — une incertitude qui demande une recherche structurée peut en ouvrir une.</li>}
+          {(cas.situations || []).length === 0 && <li className="text-xs text-[#71716D]">Aucune investigation — une incertitude qui demande une recherche structurée peut en ouvrir une.</li>}
         </ul>
         {nouvelleInv !== null && (
           <form onSubmit={(e) => { e.preventDefault(); ouvrirInvestigation(); }} className="mt-2.5 flex gap-2" data-testid="investigation-form">
-            <input value={nouvelleInv} onChange={(e) => setNouvelleInv(e.target.value)} placeholder="Objet de l'investigation…" data-testid="investigation-add-input" className="h-8 flex-1 rounded-md border border-white/10 bg-black/40 px-2.5 text-xs text-white placeholder:text-white/30 focus:outline-none" />
-            <button type="submit" data-testid="investigation-add-submit" className="flex h-8 items-center gap-1 rounded-md border border-[#A78BFA]/40 px-2.5 text-[11px] text-[#A78BFA] hover:bg-[#A78BFA]/10"><Flask size={12} /> Ouvrir</button>
+            <input value={nouvelleInv} onChange={(e) => setNouvelleInv(e.target.value)} placeholder="Objet de l'investigation…" data-testid="investigation-add-input" className="h-8 flex-1 rounded-md border border-[#E5E5E3] bg-white px-2.5 text-xs text-[#111110] placeholder:text-[#71716D] focus:outline-none" />
+            <button type="submit" data-testid="investigation-add-submit" className="flex h-8 items-center gap-1 rounded-md border border-[#6D28D9]/40 px-2.5 text-[11px] text-[#6D28D9] hover:bg-[#6D28D9]/10"><Flask size={12} /> Ouvrir</button>
           </form>
         )}
       </Carte>
@@ -142,15 +142,15 @@ export default function OngletTravail({ cas, maj, setCas, situations }) {
       <Carte titre="Analyses & livrables" testid="case-livrables" action={<ProduireSynthese cas={cas} setCas={setCas} />}>
         <div className="space-y-2">
           {(cas.livrables || []).map((l) => (
-            <div key={l.id} className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-3" data-testid={`livrable-${l.id}`}>
+            <div key={l.id} className="rounded-lg border border-[#E5E5E3] bg-white p-3" data-testid={`livrable-${l.id}`}>
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-white/85">{l.titre}</span>
-                <span className="font-code text-[9px] text-white/30">{new Date(l.cree_le).toLocaleString("fr-FR")}</span>
+                <span className="text-xs font-semibold text-[#111110]">{l.titre}</span>
+                <span className="font-code text-[9px] text-[#71716D]">{new Date(l.cree_le).toLocaleString("fr-FR")}</span>
               </div>
-              <pre className="mt-2 whitespace-pre-wrap font-sans text-xs leading-relaxed text-white/60">{l.contenu}</pre>
+              <pre className="mt-2 whitespace-pre-wrap font-sans text-xs leading-relaxed text-[#52524F]">{l.contenu}</pre>
             </div>
           ))}
-          {(cas.livrables || []).length === 0 && <p className="text-xs text-white/30">Aucune analyse — Flore peut produire une synthèse du case.</p>}
+          {(cas.livrables || []).length === 0 && <p className="text-xs text-[#71716D]">Aucune analyse — Flore peut produire une synthèse du travail.</p>}
         </div>
       </Carte>
     </div>
@@ -174,7 +174,7 @@ function ProduireSynthese({ cas, setCas }) {
         }
       }}
       data-testid="produire-synthese-btn"
-      className="flex items-center gap-1.5 rounded-md border border-[#A78BFA]/40 bg-[#A78BFA]/[0.07] px-2.5 py-1.5 text-[11px] font-semibold text-[#A78BFA] transition-colors hover:bg-[#A78BFA]/15"
+      className="flex items-center gap-1.5 rounded-md border border-[#6D28D9]/40 bg-[#6D28D9]/[0.07] px-2.5 py-1.5 text-[11px] font-semibold text-[#6D28D9] transition-colors hover:bg-[#6D28D9]/15"
     >
       <FileText size={12} /> {envoi ? "Production…" : "Produire une synthèse"}
     </button>

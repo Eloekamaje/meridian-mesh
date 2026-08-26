@@ -18,7 +18,7 @@ export default function AtlasLegende() {
       <button
         onClick={() => setPliee(false)}
         data-testid="legende-toggle"
-        className="glass absolute bottom-4 left-4 z-10 flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-code text-[10px] text-white/50 transition-colors hover:text-white"
+        className="glass absolute bottom-4 left-4 z-10 flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-code text-[10px] text-[#52524F] transition-colors hover:text-[#111110]"
       >
         Légende <CaretDown size={11} />
       </button>
@@ -30,7 +30,7 @@ export default function AtlasLegende() {
       <div className="flex items-center justify-between gap-3">
         <div className="flex flex-wrap gap-x-3 gap-y-1">
           {Object.entries(ETATS_RELATION).map(([k, v]) => (
-            <span key={k} className="flex items-center gap-1.5 font-code text-[9px] uppercase tracking-wider text-white/50">
+            <span key={k} className="flex items-center gap-1.5 font-code text-[9px] uppercase tracking-wider text-[#52524F]">
               <span
                 className="inline-block h-0 w-4 border-t-2"
                 style={{
@@ -42,13 +42,13 @@ export default function AtlasLegende() {
             </span>
           ))}
         </div>
-        <button onClick={() => setPliee(true)} data-testid="legende-replier" className="shrink-0 text-white/35 transition-colors hover:text-white" title="Replier la légende">
+        <button onClick={() => setPliee(true)} data-testid="legende-replier" className="shrink-0 text-[#71716D] transition-colors hover:text-[#111110]" title="Replier la légende">
           <CaretUp size={11} />
         </button>
       </div>
-      <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 border-t border-white/[0.06] pt-1.5">
+      <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 border-t border-[#E5E5E3] pt-1.5">
         {Object.entries(DOMAINES).filter(([d]) => d !== "Non classé").map(([d, c]) => (
-          <span key={d} className="flex items-center gap-1.5 font-code text-[9px] uppercase tracking-wider text-white/40">
+          <span key={d} className="flex items-center gap-1.5 font-code text-[9px] uppercase tracking-wider text-[#71716D]">
             <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: c }} /> {d}
           </span>
         ))}

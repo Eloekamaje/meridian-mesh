@@ -1,60 +1,60 @@
 export const DOMAINES = {
-  Paiement: "#3B82F6",
-  Client: "#34D399",
-  Risque: "#F87171",
-  Support: "#FB923C",
-  "Opérations": "#38BDF8",
-  Distribution: "#F0ABFC",
-  "Non classé": "#9CA3AF",
+  Paiement: "#3730A3",
+  Client: "#047857",
+  Risque: "#B91C1C",
+  Support: "#C2410C",
+  "Opérations": "#0369A1",
+  Distribution: "#A21CAF",
+  "Non classé": "#71716D",
 };
 
-export const couleurDomaine = (d) => DOMAINES[d] || "#9CA3AF";
+export const couleurDomaine = (d) => DOMAINES[d] || "#71716D";
 
 export const VERBES = {
-  decouvert: { label: "Découvert", verbe: "Découvrir", couleur: "#22D3EE", accroche: "Nouvelles connaissances candidates" },
-  a_comprendre: { label: "À comprendre", verbe: "Comprendre", couleur: "#A78BFA", accroche: "Confiance insuffisante, validation requise" },
-  a_decider: { label: "À décider", verbe: "Décider", couleur: "#FBBF24", accroche: "Conclusions et actions en attente d'approbation" },
+  decouvert: { label: "Découvert", verbe: "Découvrir", couleur: "#0E7490", accroche: "Nouvelles connaissances candidates" },
+  a_comprendre: { label: "À comprendre", verbe: "Comprendre", couleur: "#6D28D9", accroche: "Confiance insuffisante, validation requise" },
+  a_decider: { label: "À décider", verbe: "Décider", couleur: "#B45309", accroche: "Conclusions et actions en attente d'approbation" },
 };
 
 export const NATURES = {
-  relation: { label: "Relation", couleur: "#22D3EE" },
-  comportement: { label: "Comportement", couleur: "#A78BFA" },
-  connaissance: { label: "Connaissance", couleur: "#38BDF8" },
-  contradiction: { label: "Contradiction", couleur: "#F87171" },
-  incident: { label: "Incident", couleur: "#EF4444" },
-  changement: { label: "Changement", couleur: "#FBBF24" },
+  relation: { label: "Relation", couleur: "#0E7490" },
+  comportement: { label: "Comportement", couleur: "#6D28D9" },
+  connaissance: { label: "Connaissance", couleur: "#0369A1" },
+  contradiction: { label: "Contradiction", couleur: "#B91C1C" },
+  incident: { label: "Incident", couleur: "#B91C1C" },
+  changement: { label: "Changement", couleur: "#B45309" },
 };
 
 export const ETATS_RELATION = {
-  observee: { label: "Observée", couleur: "rgba(255,255,255,0.35)" },
-  supposee: { label: "Supposée", couleur: "#22D3EE" },
-  validation: { label: "Validation A2A", couleur: "#A78BFA" },
-  confirmee: { label: "Confirmée", couleur: "rgba(255,255,255,0.6)" },
-  contestee: { label: "Contestée", couleur: "#F87171" },
-  obsolete: { label: "Obsolète", couleur: "rgba(255,255,255,0.25)" },
+  observee: { label: "Observée", couleur: "rgba(17,17,16,0.45)" },
+  supposee: { label: "Supposée", couleur: "#0E7490" },
+  validation: { label: "Validation A2A", couleur: "#6D28D9" },
+  confirmee: { label: "Confirmée", couleur: "rgba(17,17,16,0.7)" },
+  contestee: { label: "Contestée", couleur: "#B91C1C" },
+  obsolete: { label: "Obsolète", couleur: "rgba(17,17,16,0.35)" },
 };
 
 export const MATURITES = {
-  "bien connu": "#10B981",
-  "partiellement découvert": "#22D3EE",
-  "instable": "#F59E0B",
-  "en transformation": "#3B82F6",
-  "insuffisamment couvert": "#F87171",
+  "bien connu": "#047857",
+  "partiellement découvert": "#0E7490",
+  "instable": "#B45309",
+  "en transformation": "#3730A3",
+  "insuffisamment couvert": "#B91C1C",
 };
 
 export const PRIORITES = {
-  critique: { label: "Critique", couleur: "#EF4444" },
-  haute: { label: "Haute", couleur: "#F59E0B" },
-  moyenne: { label: "Moyenne", couleur: "#3B82F6" },
-  basse: { label: "Basse", couleur: "#6B7280" },
+  critique: { label: "Critique", couleur: "#B91C1C" },
+  haute: { label: "Haute", couleur: "#B45309" },
+  moyenne: { label: "Moyenne", couleur: "#3730A3" },
+  basse: { label: "Basse", couleur: "#71716D" },
 };
 
 export const NATURES_EVENEMENT = {
-  signal: "#3B82F6",
-  preuve: "#34D399",
-  alerte: "#EF4444",
-  decouverte: "#22D3EE",
-  trace: "#6B7280",
+  signal: "#3730A3",
+  preuve: "#047857",
+  alerte: "#B91C1C",
+  decouverte: "#0E7490",
+  trace: "#71716D",
 };
 
-export const couleurConfiance = (v) => (v >= 70 ? "#10B981" : v >= 40 ? "#F59E0B" : "#EF4444");
+export const couleurConfiance = (v) => (v >= 70 ? "#047857" : v >= 40 ? "#B45309" : "#B91C1C");

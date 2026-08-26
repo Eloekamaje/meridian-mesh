@@ -1,14 +1,14 @@
 export const STATUTS_SOURCE = {
-  ajoutee: { label: "Ajoutée", couleur: "#94A3B8" },
-  a_configurer: { label: "À configurer", couleur: "#FBBF24" },
-  prete_a_tester: { label: "Prête à tester", couleur: "#3B82F6" },
-  test_en_cours: { label: "Test en cours…", couleur: "#3B82F6" },
-  prete: { label: "Prête", couleur: "#10B981" },
-  erreur_connexion: { label: "Erreur de connexion", couleur: "#F87171" },
-  autorisation_insuffisante: { label: "Autorisation insuffisante", couleur: "#F87171" },
-  secret_expire: { label: "Secret expiré", couleur: "#F87171" },
-  perimetre_vide: { label: "Périmètre vide", couleur: "#F59E0B" },
-  configuration_incomplete: { label: "Configuration incomplète", couleur: "#F59E0B" },
+  ajoutee: { label: "Ajoutée", couleur: "#64748B" },
+  a_configurer: { label: "À configurer", couleur: "#B45309" },
+  prete_a_tester: { label: "Prête à tester", couleur: "#3730A3" },
+  test_en_cours: { label: "Test en cours…", couleur: "#3730A3" },
+  prete: { label: "Prête", couleur: "#047857" },
+  erreur_connexion: { label: "Erreur de connexion", couleur: "#B91C1C" },
+  autorisation_insuffisante: { label: "Autorisation insuffisante", couleur: "#B91C1C" },
+  secret_expire: { label: "Secret expiré", couleur: "#B91C1C" },
+  perimetre_vide: { label: "Périmètre vide", couleur: "#B45309" },
+  configuration_incomplete: { label: "Configuration incomplète", couleur: "#B45309" },
 };
 
 export const CLES_ERREUR = ["erreur_connexion", "autorisation_insuffisante", "secret_expire", "perimetre_vide", "configuration_incomplete"];

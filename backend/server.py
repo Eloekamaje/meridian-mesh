@@ -15,6 +15,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from cases_routes import build_cases_router
+from actualites_routes import build_actualites_router
 from seed_data import (
     TWINS, RELATIONS, REGIONS, SITUATIONS, CHANGE_LAB, ACTIVITE,
     AURORA_SCRIPTS, AURORA_FALLBACK, AURORA_SUGGESTIONS, DEMO_ACTES, SOURCES_LABELS,
@@ -143,7 +144,7 @@ async def marquer_cases_a_revoir(jumeaux_ids, raison):
             {"id": case["id"]},
             {"$set": {"a_revoir": True, "maj_le": now}, "$push": {"historique": {"quand": now, "texte": f"À revoir — {raison}"}}},
         )
-        await notifier(case.get("participants", []), "a_revoir", f"Le case « {case['titre']} » est à revoir : {raison}", f"/cases/{case['id']}")
+        await notifier(case.get("participants", []), "a_revoir", f"Le travail « {case['titre']} » est à revoir : {raison}", f"/travaux/{case['id']}")
 
 
 HORS_PERIMETRE = {
@@ -1033,6 +1034,19 @@ api_router.include_router(build_cases_router({
     "slugify": slugify,
     "NO_ID": NO_ID,
     "datetime": datetime,
+    "timezone": timezone,
+}))
+
+
+# ---------- Actualités (module dédié) ----------
+
+api_router.include_router(build_actualites_router({
+    "db": db,
+    "resoudre_perimetre": resoudre_perimetre,
+    "autorisations": autorisations,
+    "filtre_situation": filtre_situation,
+    "ESPACES": ESPACES,
+    "NO_ID": NO_ID,
     "timezone": timezone,
 }))
 

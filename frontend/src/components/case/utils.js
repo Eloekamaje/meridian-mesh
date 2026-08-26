@@ -1,9 +1,9 @@
 export const numeroCase = (c) => `CASE-${String(c.num ?? 0).padStart(3, "0")}`;
 
 export const SENSIBILITES = {
-  publique: ["Publique", "#10B981"],
-  interne: ["Interne", "#3B82F6"],
-  restreinte: ["Restreinte", "#F87171"],
+  publique: ["Publique", "#047857"],
+  interne: ["Interne", "#3730A3"],
+  restreinte: ["Restreinte", "#B91C1C"],
 };
 
 export const rel = (iso) => {

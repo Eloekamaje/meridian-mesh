@@ -142,13 +142,13 @@ def build_cases_router(deps):
             "livrables": [],
             "a_revoir": False,
             "visites": {},
-            "historique": [{"quand": now, "texte": "Case créé"}],
+            "historique": [{"quand": now, "texte": "Travail conservé"}],
             "cree_le": now,
             "maj_le": now,
         }
         await db.cases.insert_one(doc)
         if responsable != x_persona:
-            await notifier([responsable], "assignation", f"Vous êtes responsable du case « {doc['titre']} »", f"/cases/{cid}")
+            await notifier([responsable], "assignation", f"Vous êtes responsable du travail « {doc['titre']} »", f"/travaux/{cid}")
         await journaler(x_persona, espace["id"], "création d'un case", cid, doc["titre"])
         doc.pop("_id", None)
         return doc
@@ -187,7 +187,7 @@ def build_cases_router(deps):
         if nouveau_resp and nouveau_resp != case.get("responsable"):
             histo.append({"quand": now, "texte": f"Responsable : {nouveau_resp}"})
             if nouveau_resp != x_persona:
-                await notifier([nouveau_resp], "assignation", f"Vous êtes responsable du case « {case['titre']} »", f"/cases/{cid}")
+                await notifier([nouveau_resp], "assignation", f"Vous êtes responsable du travail « {case['titre']} »", f"/travaux/{cid}")
         update = {"$set": {**champs, "maj_le": now}}
         if histo:
             update["$push"] = {"historique": {"$each": histo}}
@@ -351,7 +351,7 @@ def build_cases_router(deps):
             "nature": "investigation",
             "type": "investigation",
             "titre": payload.texte.strip(),
-            "resume": f"Investigation ouverte depuis le case « {case['titre']} ».",
+            "resume": f"Investigation ouverte depuis le travail « {case['titre']} ».",
             "priorite": "normale",
             "statut": "active",
             "score": 50,

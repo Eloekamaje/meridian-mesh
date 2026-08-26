@@ -10,17 +10,17 @@ import { useContexte } from "@/lib/contexte";
 import { useMesh } from "@/lib/mesh";
 
 function contexteDepuis(pathname) {
-  if (pathname.startsWith("/cases")) return "case";
+  if (pathname.startsWith("/travaux") || pathname.startsWith("/cases")) return "case";
   if (pathname.startsWith("/investigations")) return "investigation";
   if (pathname.startsWith("/atlas") || pathname.startsWith("/carte")) return "atlas";
   if (pathname.startsWith("/jumeaux") || pathname.startsWith("/registry") || pathname.startsWith("/administration")) return "jumeaux";
-  return "aujourdhui";
+  return "actualites";
 }
 
 const COMPORTEMENTS = {
-  explorer: { label: "Exploration", couleur: "#22D3EE" },
-  expliquer: { label: "Explication", couleur: "#A78BFA" },
-  recommander: { label: "Recommandation", couleur: "#FBBF24" },
+  explorer: { label: "Exploration", couleur: "#0E7490" },
+  expliquer: { label: "Explication", couleur: "#6D28D9" },
+  recommander: { label: "Recommandation", couleur: "#B45309" },
 };
 
 const SUGGESTIONS_SELECTION = [
@@ -52,29 +52,29 @@ function LotBar({ lot }) {
     <div className="pointer-events-none fixed bottom-5 left-1/2 z-40 w-[min(780px,94vw)] -translate-x-1/2">
       <motion.div layout transition={{ type: "spring", stiffness: 380, damping: 32 }} className="glass pointer-events-auto rounded-xl p-2.5">
         <div className="flex flex-wrap items-center gap-2 px-1" data-testid="lot-bar">
-          <Sparkle size={15} weight="fill" className="shrink-0 text-[#3B82F6]" />
-          <span className="font-code text-[11px] font-medium text-white" data-testid="lot-count">
+          <Sparkle size={15} weight="fill" className="shrink-0 text-[#3730A3]" />
+          <span className="font-code text-[11px] font-medium text-[#111110]" data-testid="lot-count">
             {lot.ids.length} source{lot.ids.length > 1 ? "s" : ""} sélectionnée{lot.ids.length > 1 ? "s" : ""}
           </span>
-          <select onChange={(e) => e.target.value && lot.onAction("profil", e.target.value)} value="" data-testid="lot-profil" className="rounded-md border border-white/15 bg-black/40 px-2 py-1.5 text-[11px] text-white/70 focus:outline-none">
+          <select onChange={(e) => e.target.value && lot.onAction("profil", e.target.value)} value="" data-testid="lot-profil" className="rounded-md border border-[#E5E5E3] bg-white px-2 py-1.5 text-[11px] text-[#3F3F3C] focus:outline-none">
             <option value="">Appliquer un profil…</option>
             {lot.profils.map((p) => <option key={p.id} value={p.id}>{p.nom}</option>)}
           </select>
-          <select onChange={(e) => e.target.value && lot.onAction("environnement", e.target.value)} value="" data-testid="lot-environnement" className="rounded-md border border-white/15 bg-black/40 px-2 py-1.5 text-[11px] text-white/70 focus:outline-none">
+          <select onChange={(e) => e.target.value && lot.onAction("environnement", e.target.value)} value="" data-testid="lot-environnement" className="rounded-md border border-[#E5E5E3] bg-white px-2 py-1.5 text-[11px] text-[#3F3F3C] focus:outline-none">
             <option value="">Définir l'environnement…</option>
             {["production", "préproduction", "recette", "développement"].map((e) => <option key={e} value={e}>{e}</option>)}
           </select>
-          <select onChange={(e) => e.target.value && lot.onAction("frequence", e.target.value)} value="" data-testid="lot-frequence" className="rounded-md border border-white/15 bg-black/40 px-2 py-1.5 text-[11px] text-white/70 focus:outline-none">
+          <select onChange={(e) => e.target.value && lot.onAction("frequence", e.target.value)} value="" data-testid="lot-frequence" className="rounded-md border border-[#E5E5E3] bg-white px-2 py-1.5 text-[11px] text-[#3F3F3C] focus:outline-none">
             <option value="">Modifier la fréquence…</option>
             {["horaire", "quotidienne", "hebdomadaire"].map((f) => <option key={f} value={f}>{f}</option>)}
           </select>
-          <button onClick={() => lot.onAction("tester")} data-testid="lot-tester-btn" className="flex items-center gap-1.5 rounded-md border border-[#3B82F6]/40 px-2.5 py-1.5 text-[11px] text-[#3B82F6] transition-colors hover:bg-[#3B82F6]/10">
+          <button onClick={() => lot.onAction("tester")} data-testid="lot-tester-btn" className="flex items-center gap-1.5 rounded-md border border-[#3730A3]/40 px-2.5 py-1.5 text-[11px] text-[#3730A3] transition-colors hover:bg-[#3730A3]/10">
             <Lightning size={12} /> Tester les connexions
           </button>
-          <button onClick={() => lot.onAction("supprimer")} data-testid="lot-supprimer-btn" className="rounded-md border border-[#F87171]/40 px-2.5 py-1.5 text-[11px] text-[#F87171] transition-colors hover:bg-[#F87171]/10">
+          <button onClick={() => lot.onAction("supprimer")} data-testid="lot-supprimer-btn" className="rounded-md border border-[#B91C1C]/40 px-2.5 py-1.5 text-[11px] text-[#B91C1C] transition-colors hover:bg-[#B91C1C]/10">
             Supprimer
           </button>
-          <button onClick={lot.onAnnuler} data-testid="lot-annuler-btn" className="ml-auto text-[11px] text-white/40 transition-colors hover:text-white">✕</button>
+          <button onClick={lot.onAnnuler} data-testid="lot-annuler-btn" className="ml-auto text-[11px] text-[#71716D] transition-colors hover:text-[#111110]">✕</button>
         </div>
       </motion.div>
     </div>
@@ -83,9 +83,9 @@ function LotBar({ lot }) {
 
 function CarteReponse({ data, index, propsEtat, setPropsEtat, justifOuverte, setJustifOuverte, ajouterJumeau, navigate }) {
   return (
-    <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-4" data-testid={`flore-reponse-${index}`}>
-      <div className="flex items-center gap-2 font-code text-[9px] uppercase tracking-[0.25em] text-white/45">
-        <Sparkle size={12} className="text-[#3B82F6]" /> Flore
+    <div className="rounded-xl border border-[#E5E5E3] bg-white p-4" data-testid={`flore-reponse-${index}`}>
+      <div className="flex items-center gap-2 font-code text-[9px] uppercase tracking-[0.25em] text-[#71716D]">
+        <Sparkle size={12} className="text-[#3730A3]" /> Flore
         {data.comportement && COMPORTEMENTS[data.comportement] && (
           <span
             className="rounded border px-1.5 py-0.5"
@@ -101,19 +101,19 @@ function CarteReponse({ data, index, propsEtat, setPropsEtat, justifOuverte, set
         )}
       </div>
 
-      <p className="mt-2 text-sm leading-relaxed text-white/80" data-testid={`flore-texte-${index}`}>{data.reponse}</p>
+      <p className="mt-2 text-sm leading-relaxed text-[#3F3F3C]" data-testid={`flore-texte-${index}`}>{data.reponse}</p>
 
       {data.propositions?.some((_, pi) => !propsEtat[`${index}-${pi}`]) && (
         <div className="mt-3" data-testid={`flore-propositions-${index}`}>
-          <div className="font-code text-[9px] uppercase tracking-[0.2em] text-white/40">Proposition pour la carte</div>
+          <div className="font-code text-[9px] uppercase tracking-[0.2em] text-[#71716D]">Proposition pour la carte</div>
           {data.propositions.map((p, pi) =>
             propsEtat[`${index}-${pi}`] ? null : (
-              <div key={pi} className="mt-2 rounded-lg border border-[#22D3EE]/20 bg-[#22D3EE]/[0.04] px-3 py-2.5" data-testid={`flore-proposition-${index}-${pi}`}>
-                <p className="text-xs text-white/75">
+              <div key={pi} className="mt-2 rounded-lg border border-[#0E7490]/20 bg-[#0E7490]/[0.04] px-3 py-2.5" data-testid={`flore-proposition-${index}-${pi}`}>
+                <p className="text-xs text-[#3F3F3C]">
                   J'ai identifié <span className="font-semibold" style={{ color: couleurDomaine(p.domaine) }}>{p.nom}</span> comme voisin pertinent.
                 </p>
                 {justifOuverte === `${index}-${pi}` && (
-                  <p className="mt-1.5 border-l-2 border-[#22D3EE]/40 pl-2 text-[11px] leading-relaxed text-white/55" data-testid={`flore-prop-justif-${index}-${pi}`}>
+                  <p className="mt-1.5 border-l-2 border-[#0E7490]/40 pl-2 text-[11px] leading-relaxed text-[#52524F]" data-testid={`flore-prop-justif-${index}-${pi}`}>
                     {p.justification}
                   </p>
                 )}
@@ -125,21 +125,21 @@ function CarteReponse({ data, index, propsEtat, setPropsEtat, justifOuverte, set
                       toast.success(`${p.nom} ajouté au contexte`);
                     }}
                     data-testid={`flore-prop-ajouter-${index}-${pi}`}
-                    className="flex items-center gap-1 rounded-md bg-[#22D3EE] px-2 py-1 text-[10px] font-semibold text-black transition-colors hover:bg-[#17B8D4]"
+                    className="flex items-center gap-1 rounded-md bg-[#0E7490] px-2 py-1 text-[10px] font-semibold text-white transition-colors hover:bg-[#0891B2]"
                   >
                     <Plus size={11} /> Ajouter au contexte
                   </button>
                   <button
                     onClick={() => setJustifOuverte(justifOuverte === `${index}-${pi}` ? null : `${index}-${pi}`)}
                     data-testid={`flore-prop-examiner-${index}-${pi}`}
-                    className="flex items-center gap-1 rounded-md border border-white/15 px-2 py-1 text-[10px] text-white/65 transition-colors hover:text-white"
+                    className="flex items-center gap-1 rounded-md border border-[#E5E5E3] px-2 py-1 text-[10px] text-[#52524F] transition-colors hover:text-[#111110]"
                   >
                     <Eye size={11} /> {justifOuverte === `${index}-${pi}` ? "Masquer la justification" : "Examiner la justification"}
                   </button>
                   <button
                     onClick={() => setPropsEtat((s) => ({ ...s, [`${index}-${pi}`]: "ignore" }))}
                     data-testid={`flore-prop-ignorer-${index}-${pi}`}
-                    className="rounded-md px-2 py-1 text-[10px] text-white/40 transition-colors hover:text-white/70"
+                    className="rounded-md px-2 py-1 text-[10px] text-[#71716D] transition-colors hover:text-[#3F3F3C]"
                   >
                     Ignorer
                   </button>
@@ -152,7 +152,7 @@ function CarteReponse({ data, index, propsEtat, setPropsEtat, justifOuverte, set
 
       {data.contributions?.length > 0 && (
         <div className="mt-3" data-testid={`flore-contributions-${index}`}>
-          <div className="font-code text-[9px] uppercase tracking-[0.2em] text-white/40">Contributions des jumeaux</div>
+          <div className="font-code text-[9px] uppercase tracking-[0.2em] text-[#71716D]">Contributions des jumeaux</div>
           <ul className="mt-2 space-y-1.5">
             {data.contributions.map((c, ci) => (
               <li key={ci} className="flex items-baseline gap-2 text-sm">
@@ -162,7 +162,7 @@ function CarteReponse({ data, index, propsEtat, setPropsEtat, justifOuverte, set
                 >
                   {c.jumeau}
                 </span>
-                <span className="text-white/65">{c.texte}</span>
+                <span className="text-[#52524F]">{c.texte}</span>
               </li>
             ))}
           </ul>
@@ -171,12 +171,12 @@ function CarteReponse({ data, index, propsEtat, setPropsEtat, justifOuverte, set
 
       {data.preuves?.length > 0 && (
         <div className="mt-3" data-testid={`flore-preuves-${index}`}>
-          <div className="font-code text-[9px] uppercase tracking-[0.2em] text-white/40">Preuves</div>
+          <div className="font-code text-[9px] uppercase tracking-[0.2em] text-[#71716D]">Preuves</div>
           <ul className="mt-2 space-y-1">
             {data.preuves.map((p, pi) => (
-              <li key={pi} className="flex items-baseline gap-2 text-sm text-white/65">
-                <FileText size={13} className="shrink-0 translate-y-0.5 text-white/35" />
-                <span><span className="font-code text-[11px] text-white/85">{p.source}</span> — {p.detail}</span>
+              <li key={pi} className="flex items-baseline gap-2 text-sm text-[#52524F]">
+                <FileText size={13} className="shrink-0 translate-y-0.5 text-[#71716D]" />
+                <span><span className="font-code text-[11px] text-[#111110]">{p.source}</span> — {p.detail}</span>
               </li>
             ))}
           </ul>
@@ -188,7 +188,7 @@ function CarteReponse({ data, index, propsEtat, setPropsEtat, justifOuverte, set
         {data.action && (
           <button
             onClick={() => navigate(data.action.route)}
-            className="rounded-md bg-[#3B82F6] px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-[#2F6FDB]"
+            className="rounded-md bg-[#3730A3] px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-[#4338CA]"
             data-testid={`flore-action-btn-${index}`}
           >
             {data.action.label}
@@ -203,7 +203,7 @@ export default function FlorePanel() {
   const location = useLocation();
   const navigate = useNavigate();
   const contexte = contexteDepuis(location.pathname);
-  const caseMatch = location.pathname.match(/^\/cases\/([^/?]+)/);
+  const caseMatch = location.pathname.match(/^\/(?:travaux|cases)\/([^/?]+)/);
   const caseId = caseMatch?.[1] || null;
   const {
     selection, setSelection, domaineSel, retirerJumeau, setDomaineSel, ajouterJumeau,
@@ -310,11 +310,11 @@ export default function FlorePanel() {
           { role: "flore", comportement: e.data.comportement, texte: e.data.reponse, quand: now },
         ]),
       });
-      toast.success("Case créé depuis la conversation");
+      toast.success("Travail conservé depuis la conversation");
       fermerFlore();
-      navigate(`/cases/${data.id}`);
+      navigate(`/travaux/${data.id}`);
     } catch {
-      toast.error("Création du case impossible");
+      toast.error("Conservation du travail impossible");
     } finally {
       setCreationCase(false);
     }
@@ -328,50 +328,50 @@ export default function FlorePanel() {
       initial={{ x: 60, opacity: 0 }}
       animate={{ x: 0, opacity: 1 }}
       transition={{ type: "spring", stiffness: 320, damping: 30 }}
-      className="fixed bottom-0 right-0 top-12 z-40 flex w-[440px] max-w-[94vw] flex-col border-l border-white/[0.08] bg-[#0A0A0A]/95 backdrop-blur-xl"
+      className="fixed bottom-0 right-0 top-14 z-40 flex w-[440px] max-w-[94vw] flex-col border-l border-[#E5E5E3] bg-white/95 backdrop-blur-xl"
       data-testid="flore-panel"
     >
       {/* En-tête */}
-      <div className="shrink-0 border-b border-white/[0.08] px-4 py-3">
+      <div className="shrink-0 border-b border-[#E5E5E3] px-4 py-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Sparkle size={16} weight="fill" className="text-[#3B82F6]" />
-            <span className="font-display text-sm font-bold text-white">Flore</span>
-            {caseCtx && <span className="font-code text-[10px] text-white/45" data-testid="flore-case-num">— CASE-{String(caseCtx.num ?? 0).padStart(3, "0")}</span>}
-            {!caseCtx && <span className="font-code text-[9px] uppercase tracking-[0.2em] text-white/35">orchestre les jumeaux du Mesh</span>}
+            <Sparkle size={16} weight="fill" className="text-[#3730A3]" />
+            <span className="font-display text-sm font-bold text-[#111110]">Flore</span>
+            {caseCtx && <span className="font-code text-[10px] text-[#71716D]" data-testid="flore-case-num">— CASE-{String(caseCtx.num ?? 0).padStart(3, "0")}</span>}
+            {!caseCtx && <span className="font-code text-[9px] uppercase tracking-[0.2em] text-[#71716D]">orchestre les jumeaux du Mesh</span>}
           </div>
           <div className="flex items-center gap-1.5">
             {echanges.length > 0 && (
               <button
                 onClick={creerCase}
                 disabled={creationCase}
-                data-testid="flore-creer-case-btn"
-                title="Transformer cet échange en Case de travail"
-                className="flex items-center gap-1.5 rounded-md border border-[#FBBF24]/40 bg-[#FBBF24]/[0.07] px-2.5 py-1.5 text-[11px] font-semibold text-[#FBBF24] transition-colors hover:bg-[#FBBF24]/15 disabled:opacity-50"
+                data-testid="flore-creer-travail-btn"
+                title="Conserver cet échange comme travail"
+                className="flex items-center gap-1.5 rounded-md border border-[#B45309]/40 bg-[#B45309]/[0.07] px-2.5 py-1.5 text-[11px] font-semibold text-[#B45309] transition-colors hover:bg-[#B45309]/15 disabled:opacity-50"
               >
-                <FolderOpen size={12} /> {creationCase ? "Création…" : "Créer un Case"}
+                <FolderOpen size={12} /> {creationCase ? "Création…" : "Conserver comme travail"}
               </button>
             )}
-            <button onClick={fermerFlore} data-testid="flore-fermer-btn" title="Fermer Flore (Échap)" className="rounded-md p-1.5 text-white/40 transition-colors hover:bg-white/[0.06] hover:text-white">
+            <button onClick={fermerFlore} data-testid="flore-fermer-btn" title="Fermer Flore (Échap)" className="rounded-md p-1.5 text-[#71716D] transition-colors hover:bg-[#F0F0EE] hover:text-[#111110]">
               <X size={15} />
             </button>
           </div>
         </div>
 
         {caseCtx && (
-          <div className="mt-2 rounded-lg border border-[#3B82F6]/25 bg-[#3B82F6]/[0.05] px-3 py-2" data-testid="flore-contexte-case">
-            <div className="font-code text-[9px] uppercase tracking-[0.2em] text-[#3B82F6]/70">Contexte actif</div>
-            <div className="mt-1 space-y-0.5 font-code text-[10px] text-white/60">
-              <div>• Case : {caseCtx.titre}</div>
+          <div className="mt-2 rounded-lg border border-[#3730A3]/25 bg-[#3730A3]/[0.05] px-3 py-2" data-testid="flore-contexte-case">
+            <div className="font-code text-[9px] uppercase tracking-[0.2em] text-[#3730A3]/70">Contexte actif</div>
+            <div className="mt-1 space-y-0.5 font-code text-[10px] text-[#52524F]">
+              <div>• Travail : {caseCtx.titre}</div>
               <div>• {(caseCtx.jumeaux || []).length} jumeau{(caseCtx.jumeaux || []).length > 1 ? "x" : ""} mobilisé{(caseCtx.jumeaux || []).length > 1 ? "s" : ""}</div>
             </div>
-            <div className="mt-1.5 text-[11px] italic text-white/45">Que souhaitez-vous approfondir ?</div>
+            <div className="mt-1.5 text-[11px] italic text-[#71716D]">Que souhaitez-vous approfondir ?</div>
           </div>
         )}
 
         {(selection.length > 0 || domaineSel) && (
           <div className="mt-2 flex flex-wrap items-center gap-1.5" data-testid="flore-contexte">
-            <span className="font-code text-[9px] uppercase tracking-[0.2em] text-white/35">
+            <span className="font-code text-[9px] uppercase tracking-[0.2em] text-[#71716D]">
               Contexte{selection.length > 0 ? ` — ${selection.length} jumeau${selection.length > 1 ? "x" : ""}` : ""}
             </span>
             {domaineSel && (
@@ -394,24 +394,24 @@ export default function FlorePanel() {
         )}
 
         {focusVisuel && (
-          <div className="mt-1.5 font-code text-[9px] uppercase tracking-[0.2em] text-white/30" data-testid="flore-focus-visuel">
+          <div className="mt-1.5 font-code text-[9px] uppercase tracking-[0.2em] text-[#71716D]" data-testid="flore-focus-visuel">
             Focus visuel : {focusVisuel.type === "domaine" ? `Domaine ${focusVisuel.label}` : focusVisuel.label}
           </div>
         )}
 
         {promptFocus && (
-          <div className="mt-2 rounded-lg border border-[#A78BFA]/25 bg-[#A78BFA]/[0.05] px-3 py-2" data-testid="flore-prompt-focus">
-            <p className="text-[11px] leading-snug text-white/70">
-              Vous êtes entré dans le domaine <span className="font-semibold text-white">{promptFocus.domaine}</span>. Voulez-vous conserver {promptFocus.noms.join(", ")} dans le contexte ?
+          <div className="mt-2 rounded-lg border border-[#6D28D9]/25 bg-[#6D28D9]/[0.05] px-3 py-2" data-testid="flore-prompt-focus">
+            <p className="text-[11px] leading-snug text-[#3F3F3C]">
+              Vous êtes entré dans le domaine <span className="font-semibold text-[#111110]">{promptFocus.domaine}</span>. Voulez-vous conserver {promptFocus.noms.join(", ")} dans le contexte ?
             </p>
             <div className="mt-2 flex flex-wrap gap-1.5">
-              <button onClick={() => setPromptFocus(null)} data-testid="flore-prompt-conserver" className="rounded-md bg-[#A78BFA] px-2 py-1 text-[10px] font-semibold text-black transition-colors hover:bg-[#8B5CF6]">
+              <button onClick={() => setPromptFocus(null)} data-testid="flore-prompt-conserver" className="rounded-md bg-[#6D28D9] px-2 py-1 text-[10px] font-semibold text-white transition-colors hover:bg-[#7C3AED]">
                 Conserver
               </button>
               <button
                 onClick={() => { setSelection(selection.filter((id) => jumeauPar(id)?.domaine === promptFocus.domaine)); setPromptFocus(null); }}
                 data-testid="flore-prompt-retirer"
-                className="rounded-md border border-white/15 px-2 py-1 text-[10px] text-white/65 transition-colors hover:text-white"
+                className="rounded-md border border-[#E5E5E3] px-2 py-1 text-[10px] text-[#52524F] transition-colors hover:text-[#111110]"
               >
                 Retirer
               </button>
@@ -422,7 +422,7 @@ export default function FlorePanel() {
                   setPromptFocus(null);
                 }}
                 data-testid="flore-prompt-voisins"
-                className="rounded-md border border-white/15 px-2 py-1 text-[10px] text-white/65 transition-colors hover:border-[#22D3EE]/50 hover:text-[#22D3EE]"
+                className="rounded-md border border-[#E5E5E3] px-2 py-1 text-[10px] text-[#52524F] transition-colors hover:border-[#0E7490]/50 hover:text-[#0E7490]"
               >
                 Ajouter les jumeaux de {promptFocus.domaine}
               </button>
@@ -435,15 +435,15 @@ export default function FlorePanel() {
       <div ref={conversationRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4" data-testid="flore-echanges">
         {echanges.length === 0 && !chargement && (
           <div className="mt-8 text-center">
-            <Sparkle size={22} weight="fill" className="mx-auto text-[#3B82F6]/60" />
-            <p className="mt-3 text-sm text-white/55">Posez une question — Flore mobilise les jumeaux concernés et montre leurs preuves.</p>
-            <p className="mt-1 font-code text-[10px] text-white/30">Une conversation importante peut devenir un Case.</p>
+            <Sparkle size={22} weight="fill" className="mx-auto text-[#3730A3]/60" />
+            <p className="mt-3 text-sm text-[#52524F]">Posez une question — Flore mobilise les jumeaux concernés et montre leurs preuves.</p>
+            <p className="mt-1 font-code text-[10px] text-[#71716D]">Une conversation importante peut devenir un travail.</p>
           </div>
         )}
         {echanges.map((e, i) => (
           <div key={i} className="space-y-2">
-            <div className="ml-8 rounded-xl rounded-br-sm bg-[#3B82F6]/15 px-3.5 py-2.5" data-testid={`flore-question-${i}`}>
-              <p className="text-sm text-white/90">{e.question}</p>
+            <div className="ml-8 rounded-xl rounded-br-sm bg-[#3730A3]/15 px-3.5 py-2.5" data-testid={`flore-question-${i}`}>
+              <p className="text-sm text-[#111110]">{e.question}</p>
             </div>
             <CarteReponse
               data={e.data} index={i}
@@ -454,14 +454,14 @@ export default function FlorePanel() {
           </div>
         ))}
         {chargement && (
-          <div className="flex items-center gap-2 px-1 font-code text-[11px] text-white/40" data-testid="flore-chargement">
-            <Sparkle size={13} className="animate-pulse text-[#3B82F6]" /> Flore croise les sources…
+          <div className="flex items-center gap-2 px-1 font-code text-[11px] text-[#71716D]" data-testid="flore-chargement">
+            <Sparkle size={13} className="animate-pulse text-[#3730A3]" /> Flore croise les sources…
           </div>
         )}
       </div>
 
       {/* Suggestions + composer */}
-      <div className="shrink-0 border-t border-white/[0.08] px-4 py-3">
+      <div className="shrink-0 border-t border-[#E5E5E3] px-4 py-3">
         {suggestionsActives.length > 0 && (
           <div className="mb-2.5 flex flex-wrap gap-1.5">
             {suggestionsActives.slice(0, 4).map((s, i) => (
@@ -469,7 +469,7 @@ export default function FlorePanel() {
                 key={i}
                 onClick={() => demander(s)}
                 data-testid={`flore-suggestion-${i}`}
-                className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] text-white/55 transition-colors duration-200 hover:border-[#3B82F6]/50 hover:text-white"
+                className="rounded-full border border-[#E5E5E3] bg-[#F7F7F6] px-2.5 py-1 text-[11px] text-[#52524F] transition-colors duration-200 hover:border-[#3730A3]/50 hover:text-[#111110]"
               >
                 {s}
               </button>
@@ -492,13 +492,13 @@ export default function FlorePanel() {
             }
             disabled={chargement}
             data-testid="flore-input"
-            className="h-10 flex-1 rounded-lg border border-white/10 bg-black/40 px-3 text-sm text-white placeholder:text-white/35 focus:border-[#3B82F6]/60 focus:outline-none"
+            className="h-10 flex-1 rounded-lg border border-[#E5E5E3] bg-white px-3 text-sm text-[#111110] placeholder:text-[#71716D] focus:border-[#3730A3]/60 focus:outline-none"
           />
           <button
             type="submit"
             disabled={chargement || !question.trim()}
             data-testid="flore-send-btn"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#3B82F6] text-white transition-colors hover:bg-[#2F6FDB] disabled:opacity-30"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#3730A3] text-white transition-colors hover:bg-[#4338CA] disabled:opacity-30"
           >
             <PaperPlaneRight size={16} weight="fill" />
           </button>

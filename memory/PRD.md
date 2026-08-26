@@ -1,5 +1,17 @@
 # Méridian — PRD
 
+## Implémenté (26/08/2026 — v15, REFONTE UX/UI « nouveau paradigme » complète)
+Application intégrale du document `MERIDIAN_UX_UI_NOUVEAU_PARADIGME.md` (choix utilisateur validés : renommage, périmètre maximal, thème clair d'abord, backend adapté librement).
+- **Thème clair global** (codemod sur 39 fichiers + design system `/app/design_guidelines.json`) : fond #F7F7F6, surfaces blanches, encre #111110, primaire indigo #3730A3, états sémantiques couleur+libellé ; palette domaines/relations adaptée au clair (`lib/domaines.js`) ; `glass` clair ; focus-visible AA ; `prefers-reduced-motion`.
+- **En-tête global unique** (sidebar supprimée) : MÉRIDIAN · sélecteur équipe/espace + badge « Vue complète du périmètre autorisé » · nav centrée **Actualités · Atlas · Travaux · Jumeaux · Administration** · chip « ● Mesh vivant » · bouton Parcours · pilule « Parler à Flore » · notifications · persona (`Topbar.jsx`, `Layout.jsx` allégé).
+- **Renommage Cases → Travaux** : routes canoniques `/travaux`, `/travaux/:cid` ; redirections `/cases`→`/travaux`, `/cases/:cid`→`/travaux/:cid`, `/decisions`→`/travaux`, `/aujourdhui`→`/` ; libellés, toasts, notifications et seed alignés ; testids renommés (`travaux-*`, `travail-*`, `flore-creer-travail-btn`) ; « CASE-0xx » conservé comme identifiant interne discret. API backend `/api/cases` inchangée (Case reste l'objet interne).
+- **Actualités (nouvelle page `/`)** : feed temporel narratif (histoires regroupées, pas de KPI) — navigation ‹/› + presets (Aujourd'hui/Hier/Il y a 2 jours/7 j/30 j) + date précise, portées **Personnel / Mon espace / Mesh global** (repli + note si non autorisé), bannière « le direct est suspendu » en consultation passée, insertion temps réel sans interruption (« N nouvelles actualités », polling 15 s), actions par histoire (Comprendre → Flore préremplie, Voir dans l'Atlas avec date, Ouvrir le travail, Approfondir), **Résumé par Flore** (déterministe) et « Voir la journée dans l'Atlas ».
+- **Backend `GET /api/actualites`** (`actualites_routes.py`, paramètres date/jours/portee) : agrège situations, découvertes/évolutions de relations, historique des travaux, journal de gouvernance ; parser de dates relatives françaises ; tri par score ; **RBAC strict** (jumeaux projetés sur le périmètre — fuite corrigée sur les histoires de travaux).
+- **Reprise intelligente** : panneau « Reprise — Flore vous replace » à l'onglet Aperçu dès la 2ᵉ visite (où vous étiez / ce qui a changé / ce qui reste incertain / prochaine action), composé depuis evolutions_recentes/hypothèses/options existants.
+- **Atlas temporel** : modes **Direct / Pause / Replay / Historique / Avant-Après** (panneau calques) — Historique masque les relations découvertes après la date (parser `lib/temps.js`, `appliquerTemps` dans `atlasGraph.js`), Replay = relecture animée de la construction du Mesh, Avant/Après surligne les nouvelles relations (tirets cyan) avec compteur ; bandeaux temporels + « Revenir au direct » ; `?date=AAAA-MM-JJ` ouvre l'Atlas en photographie historique (lien depuis Actualités).
+- **« Expliquer cette carte »** (WCAG) : bouton toolbar → panneau textuel structuré (résumé Mesh, position, domaines+maturités, relations par état, sélection), `role="complementary"`.
+- Tests : **iteration_22 → 100 %** (backend 88/88 dont 6 nouveaux `test_actualites.py` : périodes, portées, RBAC support/paiements ; frontend complet, 0 erreur console). Bug trouvé/corrigé par l'agent de test : clés React dupliquées `jrn-*` (projection `_id` + variable de boucle). Parcours démo acte 3 → `/travaux/case-olympiade`.
+
 ## Implémenté (26/08/2026 — v14, le Case devient un cockpit de situation)
 Spécification utilisateur appliquée à la lettre : le Case ne s'ouvre plus sur la conversation mais sur un cockpit lisible en moins d'une minute.
 - **En-tête permanent** : numéro `CASE-0xx` (num auto-incrémenté), titre, badges type/sensibilité/« À revoir », participants (personas), dernière évolution ; actions « Continuer avec Flore » (ouvre le panneau avec les jumeaux du case en contexte), « Ouvrir dans Atlas », « Partager » (copie du lien), menu ••• (Marquer revu / Clore-Rouvrir).
@@ -184,11 +196,11 @@ Construire Méridian non pas comme un Atlas/graphe centré sur les jumeaux, mais
 
 ## Backlog priorisé
 - **P0** : — (rien de bloquant).
-- **P1** : valider manuellement le lasso en union sur un vrai navigateur (automate Playwright non concluant, code vérifié).
-- **P2** : split de seed_data.py si le catalogue de connecteurs grandit ; persistance sessionStorage du contexte Aurora ; migration `on_event` → lifespan FastAPI ; durcissement CORS pour la production ; découverte automatique de relations pour les nouveaux jumeaux admis ; vue Parcours éditable ; niveaux de zoom Claim → Preuve (drill-down relation, aujourd'hui via panneau latéral) ; choix des colonnes secondaires de la file des sources (actuellement fixes).
-- **Si vraie IA un jour** : brancher Aurora sur un LLM via la clé universelle Emergent (budget : Profile → Manage plan → Universal Key).
+- **P1** : Flore sur vrai LLM via clé universelle Emergent (utilisateur : « mime le LLM pour le moment ») — réponses, résumés d'Actualités et reprises de Travaux réellement générés ; auto-régénération de la « Compréhension actuelle » quand un travail passe « À revoir » ; thème sombre (utilisateur : « on fera sombre après » — bascule clair/sombre) ; valider manuellement le lasso en union sur un vrai navigateur.
+- **P2** : surfaces génératives dynamiques dans les Travaux (fragment Atlas intégré, matrice d'impact, avant/après, comparaison de scénarios nommables/partageables) ; proposition de conservation de Flore (« Ce travail implique 4 jumeaux… [Le conserver] ») ; zoom Atlas Capacité → Connaissance → Preuve ; parcours éditables ; investigation agentique observable (progression ✓/◌/○ + contrôles humains) ; split de seed_data.py ; migration `on_event` → lifespan FastAPI ; durcissement CORS production ; persistance sessionStorage du contexte Flore.
+- **Si vraie IA un jour** : brancher Flore sur un LLM via la clé universelle Emergent (budget : Profile → Manage plan → Universal Key).
 
 ## Prochaines tâches
-1. Recueillir le retour de l'utilisateur sur le parcours Olympiade.
-2. Étoffer les situations secondaires (chronologies/hypothèses complètes).
-3. Éventuellement : mode édition du Mesh (ajout manuel de relations).
+1. Recueillir le retour de l'utilisateur sur la refonte (thème clair, Actualités, Travaux, Atlas temporel).
+2. Flore LLM réel (P1) si l'utilisateur valide la base visuelle.
+3. Thème sombre + bascule utilisateur (P1).

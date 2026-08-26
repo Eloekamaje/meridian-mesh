@@ -1,31 +1,31 @@
 export const STATUTS = {
-  actif: ["Actif", "#10B981"],
-  "en construction": ["Construction", "#FBBF24"],
-  observation: ["Observation", "#3B82F6"],
+  actif: ["Actif", "#047857"],
+  "en construction": ["Construction", "#B45309"],
+  observation: ["Observation", "#3730A3"],
 };
 
 export const STRATE_LABELS = { identite: "Identité", comportement: "Comportement normal", relations: "Relations", trajectoire: "Trajectoire", memoire: "Mémoire interprétée" };
 
 export const FRAICHEUR_ETATS = {
-  a_jour: ["À jour", "#10B981"],
-  partiel: ["Partiellement à jour", "#FBBF24"],
-  sync: ["Synchronisation en cours", "#3B82F6"],
-  retard: ["Source en retard", "#F87171"],
-  obsolete: ["Connaissance obsolète", "#F87171"],
+  a_jour: ["À jour", "#047857"],
+  partiel: ["Partiellement à jour", "#B45309"],
+  sync: ["Synchronisation en cours", "#3730A3"],
+  retard: ["Source en retard", "#B91C1C"],
+  obsolete: ["Connaissance obsolète", "#B91C1C"],
 };
 
 export const AUTONOMIE = {
-  aucune: ["Désactivé", "observation seulement", "#94A3B8"],
-  restreint: ["Conseiller", "recommandations uniquement", "#22D3EE"],
-  supervisé: ["Supervisé", "prépare des actions avec approbation", "#FBBF24"],
-  contrôlé: ["Contrôlé", "actions réversibles autorisées", "#A78BFA"],
+  aucune: ["Désactivé", "observation seulement", "#64748B"],
+  restreint: ["Conseiller", "recommandations uniquement", "#0E7490"],
+  supervisé: ["Supervisé", "prépare des actions avec approbation", "#B45309"],
+  contrôlé: ["Contrôlé", "actions réversibles autorisées", "#6D28D9"],
 };
 
 export const STATUTS_SOURCES = {
-  prete: ["prête", "#10B981"],
-  secret_expire: ["secret expiré", "#F87171"],
-  en_retard: ["en retard", "#F87171"],
-  a_configurer: ["à configurer", "#FBBF24"],
+  prete: ["prête", "#047857"],
+  secret_expire: ["secret expiré", "#B91C1C"],
+  en_retard: ["en retard", "#B91C1C"],
+  a_configurer: ["à configurer", "#B45309"],
 };
 
 export const ACTION_LIGNE = {

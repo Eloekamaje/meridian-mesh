@@ -41,8 +41,8 @@ export default function OngletAtlas({ cas, mesh }) {
 
   if (ids.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-white/10 p-10 text-center" data-testid="onglet-atlas-vide">
-        <p className="text-sm text-white/40">Aucun jumeau mobilisé — le sous-graphe du case apparaîtra ici.</p>
+      <div className="rounded-xl border border-dashed border-[#E5E5E3] p-10 text-center" data-testid="onglet-atlas-vide">
+        <p className="text-sm text-[#71716D]">Aucun jumeau mobilisé — le sous-graphe du travail apparaîtra ici.</p>
       </div>
     );
   }
@@ -50,18 +50,18 @@ export default function OngletAtlas({ cas, mesh }) {
   return (
     <div data-testid="onglet-atlas">
       <div className="mb-3 flex items-center justify-between">
-        <p className="font-code text-[10px] uppercase tracking-[0.2em] text-white/40">
-          Sous-graphe du case — {ids.length} jumeau{ids.length > 1 ? "x" : ""} mobilisé{ids.length > 1 ? "s" : ""}
+        <p className="font-code text-[10px] uppercase tracking-[0.2em] text-[#71716D]">
+          Sous-graphe du travail — {ids.length} jumeau{ids.length > 1 ? "x" : ""} mobilisé{ids.length > 1 ? "s" : ""}
         </p>
         <button
           onClick={() => { setSelection(ids); navigate("/atlas"); }}
           data-testid="case-atlas-complet-btn"
-          className="flex items-center gap-1.5 rounded-md border border-[#22D3EE]/30 bg-[#22D3EE]/[0.06] px-3 py-1.5 text-xs text-[#22D3EE] transition-colors hover:bg-[#22D3EE]/15"
+          className="flex items-center gap-1.5 rounded-md border border-[#0E7490]/30 bg-[#0E7490]/[0.06] px-3 py-1.5 text-xs text-[#0E7490] transition-colors hover:bg-[#0E7490]/15"
         >
           <Compass size={13} /> Ouvrir dans l'Atlas complet
         </button>
       </div>
-      <div className="h-[460px] overflow-hidden rounded-xl border border-white/[0.07] bg-[#050505]" data-testid="case-minimap">
+      <div className="h-[460px] overflow-hidden rounded-xl border border-[#E5E5E3] bg-[#F7F7F6]" data-testid="case-minimap">
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -75,7 +75,7 @@ export default function OngletAtlas({ cas, mesh }) {
           zoomOnDoubleClick={false}
           colorMode="dark"
         >
-          <Background variant={BackgroundVariant.Dots} gap={30} size={1} color="rgba(255,255,255,0.05)" />
+          <Background variant={BackgroundVariant.Dots} gap={30} size={1} color="rgba(17,17,16,0.05)" />
           <Controls showInteractive={false} position="bottom-right" />
         </ReactFlow>
       </div>

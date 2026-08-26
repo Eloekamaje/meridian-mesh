@@ -552,6 +552,7 @@ AURORA_FALLBACK = {
 
 AURORA_SUGGESTIONS = {
     "aujourdhui": ["Qu'as-tu découvert récemment autour de Paiements ?", "Pourquoi cette relation est-elle en validation A2A ?"],
+    "actualites": ["Résume les transformations récentes du Mesh.", "Qu'as-tu découvert récemment autour de Paiements ?", "Pourquoi cette relation est-elle en validation A2A ?"],
     "investigation": ["Pourquoi considères-tu que Paiements influence Support ?", "Compare cette hypothèse aux incidents antérieurs."],
     "decisions": ["Que devrions-nous faire concernant cette relation ?", "Propose un scénario rétrocompatible."],
     "atlas": ["Montre uniquement les dépendances critiques de Paiements.", "Que cherches-tu encore à comprendre ?"],
@@ -561,9 +562,9 @@ AURORA_SUGGESTIONS = {
 }
 
 NOTIFS = [
-    {"id": "notif-1", "persona": "architecte", "type": "mention", "texte": "L'investigation « Relation émergente Paiements → Support » a été liée au case Olympiade", "lien": "/cases/case-olympiade", "lu": False, "quand": "2026-06-25T15:05:00+00:00"},
-    {"id": "notif-2", "persona": "architecte", "type": "a_revoir", "texte": "Le case « Revue réglementaire — données personnelles » attend Conformité, encore en construction (43 %)", "lien": "/cases/case-revue-rgpd", "lu": False, "quand": "2026-06-25T09:30:00+00:00"},
-    {"id": "notif-3", "persona": "paiements", "type": "assignation", "texte": "Vous êtes responsable du case « Dégradation des paiements — relation émergente »", "lien": "/cases/case-olympiade", "lu": False, "quand": "2026-06-25T14:31:00+00:00"},
+    {"id": "notif-1", "persona": "architecte", "type": "mention", "texte": "L'investigation « Relation émergente Paiements → Support » a été liée au case Olympiade", "lien": "/travaux/case-olympiade", "lu": False, "quand": "2026-06-25T15:05:00+00:00"},
+    {"id": "notif-2", "persona": "architecte", "type": "a_revoir", "texte": "Le case « Revue réglementaire — données personnelles » attend Conformité, encore en construction (43 %)", "lien": "/travaux/case-revue-rgpd", "lu": False, "quand": "2026-06-25T09:30:00+00:00"},
+    {"id": "notif-3", "persona": "paiements", "type": "assignation", "texte": "Vous êtes responsable du travail « Dégradation des paiements — relation émergente »", "lien": "/travaux/case-olympiade", "lu": False, "quand": "2026-06-25T14:31:00+00:00"},
 ]
 
 CASES = [
@@ -601,7 +602,7 @@ CASES = [
         "decisions": [],
         "livrables": [],
         "historique": [
-            {"quand": "2026-06-24T09:12:00+00:00", "texte": "Case créé par C. Fabre"},
+            {"quand": "2026-06-24T09:12:00+00:00", "texte": "Travail conservé par C. Fabre"},
             {"quand": "2026-06-24T14:03:00+00:00", "texte": "Conformité mobilisée — revue réglementaire demandée"},
         ],
         "cree_le": "2026-06-24T09:12:00+00:00",
@@ -640,7 +641,7 @@ CASES = [
         "decisions": [],
         "livrables": [],
         "historique": [
-            {"quand": "2026-06-25T14:31:00+00:00", "texte": "Case créé depuis la découverte « Relation émergente »"},
+            {"quand": "2026-06-25T14:31:00+00:00", "texte": "Travail conservé depuis la découverte « Relation émergente »"},
             {"quand": "2026-06-25T14:36:00+00:00", "texte": "Investigation liée : Relation émergente Paiements → Support"},
             {"quand": "2026-06-25T15:02:00+00:00", "texte": "Flore a préparé 2 options avec impacts et risques"},
         ],
@@ -673,7 +674,7 @@ CASES = [
         "options": [],
         "decisions": [],
         "livrables": [],
-        "historique": [{"quand": "2026-06-23T10:05:00+00:00", "texte": "Case créé par N. Roche"}],
+        "historique": [{"quand": "2026-06-23T10:05:00+00:00", "texte": "Travail conservé par N. Roche"}],
         "cree_le": "2026-06-23T10:05:00+00:00",
         "maj_le": "2026-06-23T10:05:00+00:00",
     },
@@ -704,7 +705,7 @@ CASES = [
         "decisions": [],
         "livrables": [],
         "historique": [
-            {"quand": "2026-06-20T11:00:00+00:00", "texte": "Case créé par S. Petit"},
+            {"quand": "2026-06-20T11:00:00+00:00", "texte": "Travail conservé par S. Petit"},
             {"quand": "2026-06-22T09:30:00+00:00", "texte": "En attente — Conformité encore en construction (couverture 43 %)"},
         ],
         "cree_le": "2026-06-20T11:00:00+00:00",
@@ -734,7 +735,7 @@ CASES = [
         "decisions": [{"texte": "Sortie des files legacy planifiée au T3 — FileAttente partagée retirée en premier.", "type": "arbitrage", "quand": "2026-06-18T16:45:00+00:00", "par": "architecte"}],
         "livrables": [],
         "historique": [
-            {"quand": "2026-06-15T09:00:00+00:00", "texte": "Case créé par N. Roche"},
+            {"quand": "2026-06-15T09:00:00+00:00", "texte": "Travail conservé par N. Roche"},
             {"quand": "2026-06-18T16:45:00+00:00", "texte": "Décision enregistrée — arbitrage"},
         ],
         "cree_le": "2026-06-15T09:00:00+00:00",
@@ -745,7 +746,7 @@ CASES = [
 DEMO_ACTES = [
     {"acte": 1, "titre": "Découvrir", "route": "/atlas", "texte": "Méridian observe Comptes, Paiements, Fraude et Support en continu. Une relation non déclarée entre Paiements et Support apparaît progressivement dans l'Atlas — en validation A2A, confiance 82 %."},
     {"acte": 2, "titre": "Comprendre", "route": "/investigations/sit-relation-emergente", "texte": "Flore ouvre une investigation de relation : elle croise les comportements, consulte les incidents historiques, mobilise les jumeaux et expose preuves et contradictions."},
-    {"acte": 3, "titre": "Décider", "route": "/cases/case-olympiade", "texte": "Dans le Case, Flore a préparé deux options : surveillance renforcée ou re-routage temporaire. La décision humaine enrichit la mémoire du Mesh — et le cycle recommence."},
+    {"acte": 3, "titre": "Décider", "route": "/travaux/case-olympiade", "texte": "Dans le Travail, Flore a préparé deux options : surveillance renforcée ou re-routage temporaire. La décision humaine enrichit la mémoire du Mesh — et le cycle recommence."},
 ]
 
 # ---------- Périmètres : personas, espaces, vues ----------

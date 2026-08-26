@@ -15,10 +15,12 @@ import AtlasToolbar from "@/components/map/AtlasToolbar";
 import AtlasLegende from "@/components/map/AtlasLegende";
 import AtlasPanneau from "@/components/map/AtlasPanneau";
 import FilAriane from "@/components/map/FilAriane";
+import ExpliquerCarte from "@/components/map/ExpliquerCarte";
 import useNavigationAtlas from "@/components/map/useNavigationAtlas";
 import useZoomSemantique from "@/components/map/useZoomSemantique";
 import { NIVEAUX_ZOOM, construireGraphe, statsDuDomaine } from "@/lib/atlasGraph";
 import { couleurDomaine } from "@/lib/domaines";
+import { parseQuand, finDeJournee, fmtDate } from "@/lib/temps";
 
 const nodeTypes = { twin: TwinNode, region: RegionNode };
 
@@ -36,7 +38,11 @@ export default function Atlas() {
   const [compteurs, setCompteurs] = useState({});
   const [onglet, setOnglet] = useState("chrono");
   const [couches, setCouches] = useState({ operationnelle: true, connaissance: true, mesh: true });
-  const [direct, setDirect] = useState(true);
+  const [modeTemps, setModeTemps] = useState("direct"); // direct | pause | replay | historique | avantapres
+  const [dateRef, setDateRef] = useState(null); // ms — curseur temporel
+  const [replaying, setReplaying] = useState(false);
+  const [expliquerOuvert, setExpliquerOuvert] = useState(false);
+  const direct = modeTemps === "direct";
   const [outil, setOutil] = useState("deplacement");
   const { selection, setSelection, domaineSel, setDomaineSel, focusCarte, commanderCarte, setFocusVisuel } = useContexte();
   const [relFocus, setRelFocus] = useState(false);
@@ -65,6 +71,61 @@ export default function Atlas() {
     (mesh?.jumeaux || []).forEach((j) => { m[j.id] = j.domaine; });
     return m;
   }, [mesh]);
+
+  // Dates de découverte des relations (projection temporelle du Mesh)
+  const relTs = useMemo(() => {
+    const m = {};
+    (mesh?.relations || []).forEach((r) => {
+      const d = parseQuand(r.decouverte_quand);
+      if (d) m[r.id] = d.getTime();
+    });
+    return m;
+  }, [mesh]);
+
+  const plageMin = useMemo(() => {
+    const vals = Object.values(relTs);
+    return vals.length ? Math.min(...vals) : Date.now() - 30 * 864e5;
+  }, [relTs]);
+
+  // ?date=AAAA-MM-JJ — photographie historique demandée (depuis Actualités)
+  const dateParam = searchParams.get("date");
+  useEffect(() => {
+    if (!dateParam) return;
+    const d = new Date(`${dateParam.slice(0, 10)}T12:00:00`);
+    if (Number.isNaN(d.getTime())) return;
+    setModeTemps("historique");
+    setDateRef(finDeJournee(d).getTime());
+  }, [dateParam]);
+
+  // Replay : relecture accélérée de la construction du Mesh (de la 1re relation à maintenant)
+  useEffect(() => {
+    if (!replaying) return undefined;
+    const fin = Date.now();
+    const pas = Math.max((fin - plageMin) / 50, 3600e3);
+    setDateRef(plageMin);
+    const t = setInterval(() => {
+      setDateRef((d) => {
+        const n = (d ?? plageMin) + pas;
+        if (n >= fin) {
+          clearInterval(t);
+          setReplaying(false);
+          return fin;
+        }
+        return n;
+      });
+    }, 160);
+    return () => clearInterval(t);
+  }, [replaying, plageMin]);
+
+  const temps = useMemo(() => {
+    if (modeTemps === "direct" || modeTemps === "pause" || !dateRef) return null;
+    return { mode: modeTemps === "avantapres" ? "avantapres" : "historique", dateTs: dateRef, relTs };
+  }, [modeTemps, dateRef, relTs]);
+
+  const nbNouvelles = useMemo(
+    () => (modeTemps === "avantapres" && dateRef ? Object.values(relTs).filter((ts) => ts > dateRef).length : 0),
+    [modeTemps, dateRef, relTs]
+  );
 
   // Découvertes et investigations actives par domaine (situations non closes touchant le domaine)
   const statsRegions = useMemo(() => {
@@ -229,9 +290,9 @@ export default function Atlas() {
       construireGraphe({
         mesh, situation, focus, vueActive, perimetreTravail,
         jumeauFocus, domaineInterne, posOverrides, compteurs, halo, selection,
-        zoomNiveau, relFocus, focusCarte, domDe, statsRegions,
+        zoomNiveau, relFocus, focusCarte, domDe, statsRegions, temps,
       }),
-    [mesh, focus, situation, halo, compteurs, selection, relFocus, zoomNiveau, vueActive, posOverrides, domaineSel, domaineInterne, jumeauFocus, perimetreTravail, domDe, statsRegions, focusCarte]
+    [mesh, focus, situation, halo, compteurs, selection, relFocus, zoomNiveau, vueActive, posOverrides, domaineSel, domaineInterne, jumeauFocus, perimetreTravail, domDe, statsRegions, focusCarte, temps]
   );
 
   const eventsVisibles = events.filter((e) => couches[e.dynamique || "operationnelle"]);
@@ -379,32 +440,68 @@ export default function Atlas() {
         }}
         nodesDraggable
         nodesConnectable={false}
-        colorMode="dark"
+        colorMode="light"
       >
-        <Background variant={BackgroundVariant.Dots} gap={30} size={1} color="rgba(255,255,255,0.05)" />
+        <Background variant={BackgroundVariant.Dots} gap={30} size={1} color="rgba(17,17,16,0.08)" />
         <Controls showInteractive={false} position="bottom-right" />
       </ReactFlow>
 
       <AtlasControle
         mesh={mesh} focus={focus}
-        direct={direct} setDirect={setDirect}
+        modeTemps={modeTemps} setModeTemps={(m) => { setModeTemps(m); if (m === "direct" || m === "pause") { setReplaying(false); setDateRef(null); } }}
+        dateRef={dateRef} setDateRef={setDateRef}
+        replaying={replaying} onRejouer={() => setReplaying(true)}
         couches={couches} setCouches={setCouches}
         rechargerVues={rechargerVues}
       />
 
-      <AtlasToolbar outil={outil} setOutil={setOutil} rfRef={rfRef} />
+      <AtlasToolbar outil={outil} setOutil={setOutil} rfRef={rfRef} onExpliquer={() => setExpliquerOuvert((o) => !o)} expliquerOuvert={expliquerOuvert} />
+
+      {/* Bandeau temporel — photographie ou avant/après */}
+      {(modeTemps === "historique" || modeTemps === "replay") && dateRef && (
+        <div className="glass absolute bottom-16 left-1/2 z-10 flex -translate-x-1/2 items-center gap-3 rounded-xl px-4 py-2" data-testid="bandeau-temps">
+          <span className="font-code text-[10px] text-[#52524F]">
+            {modeTemps === "replay" ? "Relecture du Mesh" : "Photographie du Mesh"} au <strong className="text-[#111110]">{fmtDate(dateRef)}</strong>
+          </span>
+          <button onClick={() => { setModeTemps("direct"); setReplaying(false); setDateRef(null); majUrl({ date: null }); }} data-testid="retour-direct-btn" className="rounded-md border border-[#3730A3]/40 px-2 py-0.5 font-code text-[10px] font-semibold text-[#3730A3] transition-colors hover:bg-[#3730A3]/10">
+            Revenir au direct
+          </button>
+        </div>
+      )}
+      {modeTemps === "avantapres" && dateRef && (
+        <div className="glass absolute bottom-16 left-1/2 z-10 flex -translate-x-1/2 items-center gap-3 rounded-xl px-4 py-2" data-testid="bandeau-avant-apres">
+          <span className="h-2 w-2 rounded-sm border-2 border-dashed border-[#0E7490]" />
+          <span className="font-code text-[10px] text-[#52524F]">
+            Avant/Après depuis le <strong className="text-[#111110]">{fmtDate(dateRef)}</strong> — {nbNouvelles} nouvelle{nbNouvelles > 1 ? "s" : ""} relation{nbNouvelles > 1 ? "s" : ""}
+          </span>
+          <button onClick={() => { setModeTemps("direct"); setDateRef(null); }} data-testid="retour-direct-btn-aa" className="rounded-md border border-[#3730A3]/40 px-2 py-0.5 font-code text-[10px] font-semibold text-[#3730A3] transition-colors hover:bg-[#3730A3]/10">
+            Revenir au direct
+          </button>
+        </div>
+      )}
+
+      {expliquerOuvert && (
+        <ExpliquerCarte
+          mesh={mesh}
+          fermer={() => setExpliquerOuvert(false)}
+          domaineInterne={domaineInterne}
+          jumeauFocus={jumeauFocus}
+          jumeauPar={jumeauPar}
+          selection={selection}
+        />
+      )}
 
       {/* Bandeau situation (focus profond depuis Aujourd'hui / Investigations) */}
       {situation && (
         <div className="glass absolute left-1/2 top-4 z-10 flex max-w-md -translate-x-1/2 items-center gap-3 rounded-xl px-4 py-2.5" data-testid="map-situation-banner">
           <div>
-            <div className="font-code text-[9px] uppercase tracking-[0.25em] text-[#A78BFA]">Focus — situation</div>
-            <div className="text-xs font-semibold text-white">{situation.titre}</div>
-            <div className="mt-0.5 font-code text-[9px] text-white/40">
+            <div className="font-code text-[9px] uppercase tracking-[0.25em] text-[#6D28D9]">Focus — situation</div>
+            <div className="text-xs font-semibold text-[#111110]">{situation.titre}</div>
+            <div className="mt-0.5 font-code text-[9px] text-[#71716D]">
               {situation.jumeaux.length} jumeaux · contexte réduit au pertinent
             </div>
           </div>
-          <button onClick={() => majUrl({ situation: null })} data-testid="map-clear-situation" title="Retirer le focus situation" className="shrink-0 text-white/40 transition-colors hover:text-white">
+          <button onClick={() => majUrl({ situation: null })} data-testid="map-clear-situation" title="Retirer le focus situation" className="shrink-0 text-[#71716D] transition-colors hover:text-[#111110]">
             <X size={13} />
           </button>
         </div>
@@ -420,11 +517,11 @@ export default function Atlas() {
       {/* Indicateur de périmètre de travail actif (filtre volontaire, distinct de la sécurité) */}
       {perimetreTravail && perimetreTravail !== domaineInterne && (
         <div className="glass absolute left-1/2 top-4 z-10 flex -translate-x-1/2 items-center gap-2 rounded-xl px-4 py-2" data-testid="perimetre-travail-chip">
-          <span className="h-1.5 w-1.5 rounded-full bg-[#22D3EE]" />
-          <span className="font-code text-[10px] text-white/60">
+          <span className="h-1.5 w-1.5 rounded-full bg-[#0E7490]" />
+          <span className="font-code text-[10px] text-[#52524F]">
             Périmètre de travail : <span style={{ color: couleurDomaine(perimetreTravail) }}>{perimetreTravail}</span> — filtre volontaire, pas sécurité
           </span>
-          <button onClick={() => setPerimetreTravail(null)} data-testid="perimetre-travail-clear" className="text-white/40 transition-colors hover:text-white">
+          <button onClick={() => setPerimetreTravail(null)} data-testid="perimetre-travail-clear" className="text-[#71716D] transition-colors hover:text-[#111110]">
             <X size={12} />
           </button>
         </div>
@@ -432,7 +529,7 @@ export default function Atlas() {
 
       {/* Niveau de zoom sémantique */}
       {(
-        <div className="glass absolute bottom-4 left-1/2 z-10 -translate-x-1/2 rounded-lg px-3 py-1.5 font-code text-[10px] text-white/50" data-testid="zoom-niveau">
+        <div className="glass absolute bottom-4 left-1/2 z-10 -translate-x-1/2 rounded-lg px-3 py-1.5 font-code text-[10px] text-[#52524F]" data-testid="zoom-niveau">
           {jumeauFocus
             ? `Focus jumeau — ${jumeauPar(jumeauFocus)?.nom} · zoom arrière pour remonter`
             : domaineInterne
@@ -448,9 +545,9 @@ export default function Atlas() {
       {/* Chip « vue commandée par Flore » */}
       {focusCarte && (
         <div className="glass absolute bottom-16 left-4 z-10 flex items-center gap-2 rounded-lg px-3 py-1.5" data-testid="focus-flore-chip">
-          <Sparkle size={12} className="text-[#3B82F6]" />
-          <span className="font-code text-[10px] text-white/55">Vue commandée par Flore</span>
-          <button onClick={() => commanderCarte(null)} data-testid="focus-flore-clear" className="text-white/40 transition-colors hover:text-white">
+          <Sparkle size={12} className="text-[#3730A3]" />
+          <span className="font-code text-[10px] text-[#52524F]">Vue commandée par Flore</span>
+          <button onClick={() => commanderCarte(null)} data-testid="focus-flore-clear" className="text-[#71716D] transition-colors hover:text-[#111110]">
             <X size={12} />
           </button>
         </div>

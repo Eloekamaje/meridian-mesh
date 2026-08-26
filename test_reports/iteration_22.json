@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 22 — Validation refonte UX/UI (thème clair + renommage Cases→Travaux/Aujourd'hui→Actualités + Atlas temporel + Expliquer cette carte + Reprise Flore). BACKEND: 88 passed, 1 skipped (suite complète, séquentiel -o addopts=''). Le nouveau module test_actualites.py (6 tests) est vert : aujourd'hui/périodes/date passée/portée global/RBAC support/paiements. FRONTEND: E2E complet OK — Topbar (10 testids visibles : nav-actualites/atlas/travaux/jumeaux/administration + mesh-status + flore-btn + notif-btn + selecteur-persona + selecteur-perimetre). Actualités : titre 'Aujourd'hui · mercredi 26 août', › désactivé aujourd'hui, portées Personnel/Mon espace/Mesh global, 32 histoires, resume-flore-btn ouvre resume-flore-panel, preset 'hier' déclenche banniere-historique + retour-aujourdhui-btn, voir-journee-atlas-btn navigue vers /atlas?date=2026-08-26. Travaux : liste, nouveau-travail-btn → travail-titre-input → travail-creer-submit crée un travail et navigue vers /travaux/test-ui-iter22. Redirection /cases/case-olympiade → /travaux/case-olympiade OK. Détail travail : 5 onglets (apercu/travail/atlas/decisions/activite) tous visibles ; panneau reprise-flore apparaît à la 2e visite (bloc 4 sous-blocs). Atlas temporel : controle-toggle ouvre controle-details, historique-btn + temps-date-input=2026-06-20 → bandeau-temps 'Photographie du Mesh au 20 juin' ; avant-apres-btn → 'Avant/Après depuis le 20 juin — 4 nouvelles relations' ; replay-btn → replay-etat + rejouer-btn visibles ; direct-btn revient au live. Expliquer cette carte : expliquer-carte-btn dans la toolbar ouvre expliquer-carte-panel avec résumé WCAG ('Cette carte représente le Mesh : 6 domaines, 12 jumeaux visibles et 14 relations connues.'), fermer OK. Flore : flore-btn ouvre flore-panel. Non-régression thème clair : /jumeaux, /administration, /investigations chargent sans texte illisible (backgrounds clairs). BUG DÉTECTÉ ET CORRIGÉ : actualites_routes.py ligne 210 utilisait `f\"jrn-{j.get('_id', k)}\"` — `_id` masqué par NO_ID, et `k` est un identifiant en fuite d'une boucle précédente → toutes les entrées journal recevaient la MÊME clé React 'jrn-0', déclenchant 8+ warnings console 'Encountered two children with the same key jrn-0' sur / et /atlas. Fix appliqué : compteur idx_jrn incrémenté. Après redémarrage backend : 0 erreur console, 6/6 tests actualites toujours verts.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_actualites.py",
+    "/app/test_reports/pytest/pytest_iter22.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "actualites_routes.py : la clé d'histoire 'jrn-{j.get(\\'_id\\', k)}' utilisait une variable `k` non définie dans le scope journal (leak d'une itération précédente sur les jumeaux) ET `_id` est retiré via NO_ID → clés dupliquées côté React. Corrigé avec un compteur local idx_jrn. Recommandation E1 : préférer un slug déterministe (`f\"jrn-{action}-{cible}-{quand}\"`) ou générer un uuid côté serveur pour ce type d'agrégat.",
+    "AtlasControle.jsx : `deplie` par défaut à true (visible via localStorage/persist) — bon, mais rappeler dans le brief que controle-toggle bascule DEPLIE, pas ouvrir. Le test initial du panneau était correct dès le chargement.",
+    "Résumé Flore Actualités : le texte est déterministe (par_genre count) — robuste pour tests, conforme au brief 'Flore reste simulée'.",
+    "server.py : le code base grossit (>1099 lignes). Sortir /api/actualites déjà OK dans actualites_routes.py — continuer l'extraction relations/situations.",
+    "OngletApercu.jsx : reprise-flore visible uniquement à partir de la 2e visite (evolutions_recentes non vide) — conforme au brief. Rappel : la logique de 'dernière visite' est côté backend cases_routes.py."
+  ],
+  "updated_files": [
+    "/app/backend/actualites_routes.py"
+  ],
+  "success_rate": {
+    "backend": "100% (88/88 passed + 1 skipped)",
+    "frontend": "100% — tous les flux critiques du brief (topbar, actualités temporelles, travaux CRUD + redirect legacy, cockpit 5 vues, reprise-flore, atlas 4 modes temporels + expliquer-carte + retour direct, flore panel) valident, 0 erreur console après fix"
+  },
+  "test_credentials": "Personas via [data-testid='selecteur-persona'] : architecte (défaut) / paiements / support. Pas d'authentification.",
+  "seed_data_creation": "1 travail 'TEST_UI iter22' créé (/travaux/test-ui-iter22). POST /api/demo/reinitialiser exécuté en fin de session.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Iteration 22 valide toute la refonte UX/UI. Testids clés à connaître : Topbar (nav-actualites/atlas/travaux/jumeaux/administration, mesh-status, flore-btn, notif-btn, selecteur-persona, selecteur-perimetre, perimetre-badge) ; Actualités (actualites-page/titre, date-prec/suiv-btn, date-preset-select, date-input, portee-{personnel|espace|global}, portee-note, portee-avertissement, banniere-historique, retour-aujourdhui-btn, resume-flore-btn/panel, voir-journee-atlas-btn, histoire-{id}, histoire-{comprendre|atlas|travail|investigation}-{id}) ; Travaux (travaux-page, nouveau-travail-btn, travail-{titre|type|objectif|responsable}-input/select, travail-creer-submit, travail-jumeaux-select, travail-jumeau-{id}, travail-row-{id}, filtre-{mes|type|statut}-travail, vue-{liste|kanban|chrono}, travaux-vide, travaux-liste) ; TravailDetail (travail-detail/entete/numero/type/sensibilite/titre, travail-vue-{apercu|travail|atlas|decisions|activite}, travail-continuer-flore-btn/atlas-btn/partager-btn/menu-btn/menu/marquer-revu-btn/clore-btn, travail-arevoir-{entete|banner}, reprise-flore + reprise-{arret|changements|incertain|action}) ; Atlas (controle-toggle, controle-details, direct-btn, pause-btn, replay-btn, historique-btn, avant-apres-btn, temps-date-input, temps-etat, rejouer-btn, replay-etat, bandeau-temps, bandeau-avant-apres, retour-direct-btn/retour-direct-btn-aa, expliquer-carte-btn/panel/fermer/resume/position/selection, expliquer-domaine-{label}, expliquer-etat-{k}, couche-{id}) ; Flore (flore-panel/fermer-btn, flore-input/send-btn, flore-echanges, flore-reponse-{i}, flore-contexte-case, flore-creer-travail-btn). Redirection legacy validée : /cases/:cid→/travaux/:cid, /cases→/travaux, /decisions→/travaux, /aujourdhui→/. Bug jrn-0 corrigé côté backend. Rappel connu : pytest doit tourner avec `-o addopts=''` pour désactiver -n auto (flakiness ingress).",
+  "rca of the issue": "Bug clés dupliquées 'jrn-0' : dans /app/backend/actualites_routes.py, la boucle `async for j in db.journal.find({}, NO_ID)` construisait `f\"jrn-{j.get('_id', k)}\"`. Deux problèmes : (1) la projection NO_ID retire `_id` de chaque document ; (2) `k` référence une variable hors-scope (probable reliquat d'une boucle précédente sur les jumeaux). Résultat : chaque histoire de journal recevait 'jrn-<valeur_de_k_persistée>', identique → React déclenchait 'Encountered two children with the same key jrn-0'. Reproduction : ouvrir / puis observer la console (8+ warnings). Fix : compteur local `idx_jrn` incrémenté à chaque itération admise, id devient `f\"jrn-{idx_jrn}-{action[:8]}\"`. Vérifié : 6/6 test_actualites.py verts, 0 erreur console sur / et /atlas après restart backend."
+}

@@ -54,9 +54,9 @@ export default function AtelierSources({ sources, catalogue, sourceActiveId, onS
 
   const INDICS = [
     { cle: null, label: "sources ajoutées", n: compteurs.total, couleur: "#E5E7EB", testid: "indic-total" },
-    { cle: "prete", label: "prêtes", n: compteurs.pretes, couleur: "#10B981", testid: "indic-pretes" },
-    { cle: "a_configurer", label: "à configurer", n: compteurs.aConfigurer, couleur: "#FBBF24", testid: "indic-a-configurer" },
-    { cle: "erreur", label: "en erreur", n: compteurs.erreurs, couleur: "#F87171", testid: "indic-erreurs" },
+    { cle: "prete", label: "prêtes", n: compteurs.pretes, couleur: "#047857", testid: "indic-pretes" },
+    { cle: "a_configurer", label: "à configurer", n: compteurs.aConfigurer, couleur: "#B45309", testid: "indic-a-configurer" },
+    { cle: "erreur", label: "en erreur", n: compteurs.erreurs, couleur: "#B91C1C", testid: "indic-erreurs" },
   ];
 
   return (
@@ -68,17 +68,17 @@ export default function AtelierSources({ sources, catalogue, sourceActiveId, onS
             key={i.label}
             onClick={() => setFiltreStatut(filtreStatut === i.cle ? null : i.cle)}
             data-testid={i.testid}
-            className={`flex items-baseline gap-1.5 rounded-lg border px-3 py-1.5 transition-colors ${filtreStatut === i.cle || (i.cle === null && !filtreStatut) ? "border-white/30 bg-white/[0.06]" : "border-white/[0.08] hover:border-white/20"}`}
+            className={`flex items-baseline gap-1.5 rounded-lg border px-3 py-1.5 transition-colors ${filtreStatut === i.cle || (i.cle === null && !filtreStatut) ? "border-[#D4D4D0] bg-[#F0F0EE]" : "border-[#E5E5E3] hover:border-[#D4D4D0]"}`}
           >
             <span className="font-display text-lg font-bold" style={{ color: i.couleur }}>{i.n}</span>
-            <span className="font-code text-[10px] text-white/50">{i.label}</span>
+            <span className="font-code text-[10px] text-[#52524F]">{i.label}</span>
           </button>
         ))}
         <div className="ml-auto flex items-center gap-2">
-          <button onClick={onOuvrirImport} data-testid="import-btn" className="flex items-center gap-1.5 rounded-md border border-white/15 px-2.5 py-1.5 text-[11px] text-white/70 transition-colors hover:text-white">
+          <button onClick={onOuvrirImport} data-testid="import-btn" className="flex items-center gap-1.5 rounded-md border border-[#E5E5E3] px-2.5 py-1.5 text-[11px] text-[#3F3F3C] transition-colors hover:text-[#111110]">
             <UploadSimple size={13} /> Importer
           </button>
-          <button onClick={onOuvrirTiroir} data-testid="ajouter-source-btn" className="flex items-center gap-1.5 rounded-md bg-[#3B82F6] px-3 py-1.5 text-[11px] font-semibold text-white transition-colors hover:bg-[#2F6FDB]">
+          <button onClick={onOuvrirTiroir} data-testid="ajouter-source-btn" className="flex items-center gap-1.5 rounded-md bg-[#3730A3] px-3 py-1.5 text-[11px] font-semibold text-white transition-colors hover:bg-[#4338CA]">
             <Plus size={13} /> Ajouter une source
           </button>
         </div>
@@ -87,31 +87,31 @@ export default function AtelierSources({ sources, catalogue, sourceActiveId, onS
       {/* Barre de recherche et filtres */}
       <div className="mt-3 flex flex-wrap items-center gap-2" data-testid="file-outils">
         <div className="relative">
-          <MagnifyingGlass size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-white/30" />
+          <MagnifyingGlass size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#71716D]" />
           <input value={recherche} onChange={(e) => setRecherche(e.target.value)} placeholder="Rechercher une instance…" data-testid="file-recherche"
-            className="w-56 rounded-md border border-white/10 bg-black/40 py-1.5 pl-8 pr-3 text-xs text-white placeholder:text-white/25 focus:border-[#22D3EE]/50 focus:outline-none" />
+            className="w-56 rounded-md border border-[#E5E5E3] bg-white py-1.5 pl-8 pr-3 text-xs text-[#111110] placeholder:text-[#71716D] focus:border-[#0E7490]/50 focus:outline-none" />
         </div>
-        <select value={filtreConnecteur} onChange={(e) => setFiltreConnecteur(e.target.value)} data-testid="filtre-connecteur" className="rounded-md border border-white/10 bg-black/40 px-2 py-1.5 text-xs text-white/70 focus:outline-none">
+        <select value={filtreConnecteur} onChange={(e) => setFiltreConnecteur(e.target.value)} data-testid="filtre-connecteur" className="rounded-md border border-[#E5E5E3] bg-white px-2 py-1.5 text-xs text-[#3F3F3C] focus:outline-none">
           <option value="">Tous connecteurs</option>
           {[...new Set(sources.map((s) => s.connecteur))].map((c) => <option key={c} value={c}>{nomConnecteur(c)}</option>)}
         </select>
-        <select value={filtreEnv} onChange={(e) => setFiltreEnv(e.target.value)} data-testid="filtre-environnement" className="rounded-md border border-white/10 bg-black/40 px-2 py-1.5 text-xs text-white/70 focus:outline-none">
+        <select value={filtreEnv} onChange={(e) => setFiltreEnv(e.target.value)} data-testid="filtre-environnement" className="rounded-md border border-[#E5E5E3] bg-white px-2 py-1.5 text-xs text-[#3F3F3C] focus:outline-none">
           <option value="">Tous environnements</option>
           {ENVIRONNEMENTS.map((e) => <option key={e} value={e}>{e}</option>)}
         </select>
-        <select value={groupement} onChange={(e) => setGroupement(e.target.value)} data-testid="groupement" className="rounded-md border border-white/10 bg-black/40 px-2 py-1.5 text-xs text-white/70 focus:outline-none">
+        <select value={groupement} onChange={(e) => setGroupement(e.target.value)} data-testid="groupement" className="rounded-md border border-[#E5E5E3] bg-white px-2 py-1.5 text-xs text-[#3F3F3C] focus:outline-none">
           {REGROUPEMENTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
       </div>
 
       {/* File des sources */}
-      <div className="mt-3 min-h-0 flex-1 overflow-y-auto rounded-xl border border-white/[0.07]" data-testid="file-sources">
+      <div className="mt-3 min-h-0 flex-1 overflow-y-auto rounded-xl border border-[#E5E5E3]" data-testid="file-sources">
         {groupes.map(([groupe, lignes]) => (
           <div key={groupe || "toutes"}>
             {groupe && (
-              <button onClick={() => setPliés({ ...pliés, [groupe]: !pliés[groupe] })} data-testid={`groupe-${groupe}`} className="sticky top-0 flex w-full items-center gap-2 border-b border-white/[0.07] bg-[#0C0C0C] px-4 py-2 text-left">
-                {pliés[groupe] ? <CaretRight size={12} className="text-white/40" /> : <CaretDown size={12} className="text-white/40" />}
-                <span className="font-code text-[10px] uppercase tracking-[0.15em] text-white/55">Groupe {groupe} · {lignes.length} instance{lignes.length > 1 ? "s" : ""}</span>
+              <button onClick={() => setPliés({ ...pliés, [groupe]: !pliés[groupe] })} data-testid={`groupe-${groupe}`} className="sticky top-0 flex w-full items-center gap-2 border-b border-[#E5E5E3] bg-[#0C0C0C] px-4 py-2 text-left">
+                {pliés[groupe] ? <CaretRight size={12} className="text-[#71716D]" /> : <CaretDown size={12} className="text-[#71716D]" />}
+                <span className="font-code text-[10px] uppercase tracking-[0.15em] text-[#52524F]">Groupe {groupe} · {lignes.length} instance{lignes.length > 1 ? "s" : ""}</span>
               </button>
             )}
             {!pliés[groupe] && lignes.map((s) => {
@@ -123,22 +123,22 @@ export default function AtelierSources({ sources, catalogue, sourceActiveId, onS
                   onClick={() => onSelect(s.id)}
                   data-testid={`source-ligne-${s.id}`}
                   style={{ borderLeft: `2px solid ${st.couleur}` }}
-                  className={`rise flex cursor-pointer items-center gap-3 border-b border-white/[0.04] px-4 py-2.5 transition-[background-color,transform] duration-150 hover:translate-x-0.5 ${active ? "bg-[#22D3EE]/[0.06]" : "hover:bg-white/[0.02]"}`}
+                  className={`rise flex cursor-pointer items-center gap-3 border-b border-[#E5E5E3] px-4 py-2.5 transition-[background-color,transform] duration-150 hover:translate-x-0.5 ${active ? "bg-[#0E7490]/[0.06]" : "hover:bg-[#F7F7F6]"}`}
                 >
-                  <input type="checkbox" checked={selLot.includes(s.id)} onClick={(e) => e.stopPropagation()} onChange={() => basculerLot(s.id)} data-testid={`lot-check-${s.id}`} className="h-3.5 w-3.5 shrink-0 accent-[#22D3EE]" />
+                  <input type="checkbox" checked={selLot.includes(s.id)} onClick={(e) => e.stopPropagation()} onChange={() => basculerLot(s.id)} data-testid={`lot-check-${s.id}`} className="h-3.5 w-3.5 shrink-0 accent-[#0E7490]" />
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-[13px] font-medium text-white/90">{s.nom}</div>
-                    <div className="truncate font-code text-[9px] text-white/35">{nomConnecteur(s.connecteur)} · {s.environnement}{s.perimetre ? ` · ${s.perimetre}` : ""}{s.proprietaire ? ` · ${s.proprietaire}` : ""}</div>
+                    <div className="truncate text-[13px] font-medium text-[#111110]">{s.nom}</div>
+                    <div className="truncate font-code text-[9px] text-[#71716D]">{nomConnecteur(s.connecteur)} · {s.environnement}{s.perimetre ? ` · ${s.perimetre}` : ""}{s.proprietaire ? ` · ${s.proprietaire}` : ""}</div>
                   </div>
                   {s.statut === "test_en_cours" && (
-                    <div className="h-1 w-16 overflow-hidden rounded-full bg-white/10">
-                      <div className="h-full w-1/2 animate-pulse rounded-full bg-[#3B82F6]" />
+                    <div className="h-1 w-16 overflow-hidden rounded-full bg-[#E5E5E3]">
+                      <div className="h-full w-1/2 animate-pulse rounded-full bg-[#3730A3]" />
                     </div>
                   )}
                   <span className="shrink-0 rounded border px-1.5 py-0.5 font-code text-[9px]" style={{ color: st.couleur, borderColor: `${st.couleur}44`, backgroundColor: `${st.couleur}12` }} data-testid={`source-statut-${s.id}`}>
                     {st.label}
                   </span>
-                  <span className="w-20 shrink-0 text-right font-code text-[9px] text-white/30">
+                  <span className="w-20 shrink-0 text-right font-code text-[9px] text-[#71716D]">
                     {s.dernier_test ? `${s.dernier_test.date}` : "jamais testé"}
                   </span>
                 </div>
@@ -147,7 +147,7 @@ export default function AtelierSources({ sources, catalogue, sourceActiveId, onS
           </div>
         ))}
         {filtrees.length === 0 && (
-          <div className="px-4 py-10 text-center text-sm text-white/35" data-testid="file-vide">Aucune source ne correspond — ajoutez une source ou élargissez les filtres.</div>
+          <div className="px-4 py-10 text-center text-sm text-[#71716D]" data-testid="file-vide">Aucune source ne correspond — ajoutez une source ou élargissez les filtres.</div>
         )}
       </div>
     </div>

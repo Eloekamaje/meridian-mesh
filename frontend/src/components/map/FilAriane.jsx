@@ -10,7 +10,7 @@ export default function FilAriane({
         disabled={indexHist <= 0}
         data-testid="nav-precedent"
         title="Précédent"
-        className="text-xs text-white/50 transition-colors hover:text-white disabled:opacity-25"
+        className="text-xs text-[#52524F] transition-colors hover:text-[#111110] disabled:opacity-25"
       >
         ←
       </button>
@@ -19,33 +19,33 @@ export default function FilAriane({
         disabled={indexHist >= historique.length - 1}
         data-testid="nav-suivant"
         title="Suivant"
-        className="text-xs text-white/50 transition-colors hover:text-white disabled:opacity-25"
+        className="text-xs text-[#52524F] transition-colors hover:text-[#111110] disabled:opacity-25"
       >
         →
       </button>
-      <button onClick={sortirDomaine} className="text-xs text-white/50 transition-colors hover:text-white" data-testid="breadcrumb-mesh">
+      <button onClick={sortirDomaine} className="text-xs text-[#52524F] transition-colors hover:text-[#111110]" data-testid="breadcrumb-mesh">
         Mesh global
       </button>
       {domaineInterne && (
         <>
-          <span className="text-white/30">›</span>
+          <span className="text-[#71716D]">›</span>
           {jumeauFocus ? (
-            <button onClick={sortirJumeau} className="text-xs text-white/50 transition-colors hover:text-white" data-testid="breadcrumb-domaine">
+            <button onClick={sortirJumeau} className="text-xs text-[#52524F] transition-colors hover:text-[#111110]" data-testid="breadcrumb-domaine">
               Domaine {domaineInterne}
             </button>
           ) : (
-            <span className="text-xs font-semibold text-white" data-testid="breadcrumb-domaine-inactif">Domaine {domaineInterne}</span>
+            <span className="text-xs font-semibold text-[#111110]" data-testid="breadcrumb-domaine-inactif">Domaine {domaineInterne}</span>
           )}
         </>
       )}
       {jumeauFocus && (
         <>
-          <span className="text-white/30">›</span>
-          <span className="text-xs font-semibold text-white" data-testid="breadcrumb-jumeau">{jumeauPar(jumeauFocus)?.nom}</span>
+          <span className="text-[#71716D]">›</span>
+          <span className="text-xs font-semibold text-[#111110]" data-testid="breadcrumb-jumeau">{jumeauPar(jumeauFocus)?.nom}</span>
         </>
       )}
       {perimetreTravail === domaineInterne && (
-        <span className="rounded-full border border-[#22D3EE]/40 bg-[#22D3EE]/10 px-2 py-0.5 font-code text-[9px] text-[#22D3EE]">
+        <span className="rounded-full border border-[#0E7490]/40 bg-[#0E7490]/10 px-2 py-0.5 font-code text-[9px] text-[#0E7490]">
           périmètre de travail (filtre, pas sécurité)
         </span>
       )}
@@ -53,7 +53,7 @@ export default function FilAriane({
         <button
           onClick={revenirSelection}
           data-testid="nav-selection"
-          className="rounded-md border border-white/15 px-2 py-0.5 font-code text-[9px] text-white/55 transition-colors hover:border-[#3B82F6]/50 hover:text-white"
+          className="rounded-md border border-[#E5E5E3] px-2 py-0.5 font-code text-[9px] text-[#52524F] transition-colors hover:border-[#3730A3]/50 hover:text-[#111110]"
         >
           Revenir à ma sélection ({selection.length})
         </button>

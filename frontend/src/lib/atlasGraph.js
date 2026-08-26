@@ -1,7 +1,7 @@
 export const COUCHES = [
-  ["operationnelle", "Opérationnelle", "#3B82F6"],
-  ["connaissance", "Connaissance", "#22D3EE"],
-  ["mesh", "Mesh", "#A78BFA"],
+  ["operationnelle", "Opérationnelle", "#3730A3"],
+  ["connaissance", "Connaissance", "#0E7490"],
+  ["mesh", "Mesh", "#6D28D9"],
 ];
 
 export const NIVEAUX_ZOOM = { 1: "Entreprise", 2: "Domaine", 3: "Jumeau" };
@@ -9,17 +9,17 @@ export const NIVEAUX_ZOOM = { 1: "Entreprise", 2: "Domaine", 3: "Jumeau" };
 export const styleParEtat = (r) => {
   switch (r.etat) {
     case "observee":
-      return { stroke: "rgba(255,255,255,0.16)", strokeWidth: 1 };
+      return { stroke: "rgba(17,17,16,0.3)", strokeWidth: 1 };
     case "supposee":
-      return { stroke: "#22D3EE", strokeWidth: 1.3, strokeDasharray: "4 5", opacity: 0.75 };
+      return { stroke: "#0E7490", strokeWidth: 1.3, strokeDasharray: "4 5", opacity: 0.8 };
     case "validation":
-      return { stroke: "#A78BFA", strokeWidth: 1.8, strokeDasharray: "8 6" };
+      return { stroke: "#6D28D9", strokeWidth: 1.8, strokeDasharray: "8 6" };
     case "contestee":
-      return { stroke: "#F87171", strokeWidth: 1.8, strokeDasharray: "12 3 3 3" };
+      return { stroke: "#B91C1C", strokeWidth: 1.8, strokeDasharray: "12 3 3 3" };
     case "obsolete":
-      return { stroke: "rgba(255,255,255,0.3)", strokeWidth: 1, strokeDasharray: "2 6", opacity: 0.22 };
+      return { stroke: "rgba(17,17,16,0.4)", strokeWidth: 1, strokeDasharray: "2 6", opacity: 0.25 };
     default:
-      return { stroke: r.active ? "#3B82F6" : "rgba(255,255,255,0.4)", strokeWidth: 1.5, opacity: r.active ? 0.9 : 0.5 };
+      return { stroke: r.active ? "#3730A3" : "rgba(17,17,16,0.45)", strokeWidth: 1.5, opacity: r.active ? 0.9 : 0.55 };
   }
 };
 
@@ -38,9 +38,41 @@ export const makeEdge = (r, niveau) => ({
         : niveau >= 3 && r.label
           ? r.label
           : undefined,
-  labelStyle: { fill: r.etat === "validation" ? "#A78BFA" : r.etat === "contestee" ? "#F87171" : "rgba(255,255,255,0.55)", fontSize: 10, fontFamily: "IBM Plex Mono" },
-  labelBgStyle: { fill: "rgba(5,5,5,0.85)" },
+  labelStyle: { fill: r.etat === "validation" ? "#6D28D9" : r.etat === "contestee" ? "#B91C1C" : "rgba(17,17,16,0.6)", fontSize: 10, fontFamily: "IBM Plex Mono" },
+  labelBgStyle: { fill: "rgba(255,255,255,0.92)" },
 });
+
+const NOUVELLE_STYLE = { stroke: "#0E7490", strokeWidth: 2.6, strokeDasharray: "2 4", opacity: 1 };
+
+// Projection temporelle des relations : historique/replay masquent le futur,
+// avant-après met en évidence ce qui est apparu depuis la date de référence.
+export function appliquerTemps(edges, temps) {
+  if (!temps?.mode) return edges;
+  const { mode, dateTs, relTs } = temps;
+  const tsDe = (id) => relTs?.[String(id).replace(/-porte$/, "")];
+  if (mode === "avantapres") {
+    return edges.map((e) => {
+      const ts = tsDe(e.id);
+      const nouvelle = ts && dateTs && ts > dateTs;
+      if (nouvelle) {
+        return {
+          ...e,
+          animated: true,
+          data: { ...e.data, nouvelle: true },
+          style: { ...NOUVELLE_STYLE },
+          label: `${e.label ? `${e.label} · ` : ""}nouvelle`,
+          labelStyle: { fill: "#0E7490", fontSize: 10, fontFamily: "IBM Plex Mono" },
+          labelBgStyle: { fill: "rgba(255,255,255,0.92)" },
+        };
+      }
+      return { ...e, animated: false, style: { ...e.style, opacity: 0.15 } };
+    });
+  }
+  return edges.filter((e) => {
+    const ts = tsDe(e.id);
+    return !ts || !dateTs || ts <= dateTs;
+  });
+}
 
 export function statsDuDomaine(mesh, situations, domDe, label) {
   if (!mesh || !label) return null;
@@ -64,7 +96,7 @@ export function statsDuDomaine(mesh, situations, domDe, label) {
 export function construireGraphe({
   mesh, situation, focus, vueActive, perimetreTravail,
   jumeauFocus, domaineInterne, posOverrides, compteurs, halo, selection,
-  zoomNiveau, relFocus, focusCarte, domDe, statsRegions,
+  zoomNiveau, relFocus, focusCarte, domDe, statsRegions, temps,
 }) {
   if (!mesh) return { nodes: [], edges: [] };
   const implique = situation?.jumeaux || [];
@@ -128,7 +160,7 @@ export function construireGraphe({
         style: { ...e.style, strokeWidth: 2.4, opacity: 1 },
       };
     });
-    return { nodes: nsF, edges: esF };
+    return { nodes: nsF, edges: appliquerTemps(esF, temps) };
   }
 
   // Vue interne d'un domaine : jumeaux du domaine + portes externes
@@ -207,7 +239,7 @@ export function construireGraphe({
         esInt.push(e);
       }
     });
-    return { nodes: nsInt, edges: esInt };
+    return { nodes: nsInt, edges: appliquerTemps(esInt, temps) };
   }
 
   // Focus contextuel : sélection → voisins éclairés, reste translucide
@@ -268,10 +300,10 @@ export function construireGraphe({
       source: regParDom[c.a],
       target: regParDom[c.b],
       animated: c.actif,
-      style: { stroke: "rgba(255,255,255,0.28)", strokeWidth: 2.5, opacity: 0.8 },
+      style: { stroke: "rgba(17,17,16,0.3)", strokeWidth: 2.5, opacity: 0.8 },
       label: `${c.a} ↔ ${c.b} · ${c.n} relation${c.n > 1 ? "s" : ""}${c.actif ? " · activité élevée" : ""}`,
-      labelStyle: { fill: "rgba(255,255,255,0.65)", fontSize: 10, fontFamily: "IBM Plex Mono" },
-      labelBgStyle: { fill: "rgba(5,5,5,0.85)" },
+      labelStyle: { fill: "rgba(17,17,16,0.7)", fontSize: 10, fontFamily: "IBM Plex Mono" },
+      labelBgStyle: { fill: "rgba(255,255,255,0.92)" },
     }));
   } else {
     es = mesh.relations
@@ -294,5 +326,5 @@ export function construireGraphe({
       );
     }
   }
-  return { nodes: ns, edges: es };
+  return { nodes: ns, edges: appliquerTemps(es, temps) };
 }

@@ -167,7 +167,7 @@ export default function Commande() {
   }, [selLot, commande, catalogue]);
 
   if (!commande || !catalogue) {
-    return <div className="flex h-full items-center justify-center font-code text-xs text-white/40" data-testid="commande-chargement">Chargement de la commande…</div>;
+    return <div className="flex h-full items-center justify-center font-code text-xs text-[#71716D]" data-testid="commande-chargement">Chargement de la commande…</div>;
   }
 
   const etape = commande.etape;
@@ -184,7 +184,7 @@ export default function Commande() {
       <div className="min-h-0 flex-1 overflow-y-auto px-8 py-6 pb-36">
         {etape === 1 && (
           <div className="mx-auto max-w-xl space-y-4" data-testid="etape-identite">
-            <h2 className="font-display text-lg font-bold text-white">Identité du jumeau</h2>
+            <h2 className="font-display text-lg font-bold text-[#111110]">Identité du jumeau</h2>
             {[
               ["nom", "Nom de l'application", "Ex. Remboursements"],
               ["domaine", "Domaine", "Ex. Paiement"],
@@ -192,13 +192,13 @@ export default function Commande() {
               ["mission", "Mission métier", "Ex. Traite les demandes de remboursement clients"],
             ].map(([cle, label, ph]) => (
               <div key={cle}>
-                <label className="font-code text-[10px] uppercase tracking-[0.2em] text-white/40">{label}</label>
-                <input value={commande.jumeau[cle] || ""} onChange={(e) => majJumeau({ [cle]: e.target.value })} placeholder={ph} data-testid={`identite-${cle}`} className="mt-1.5 w-full rounded-md border border-white/10 bg-black/50 px-3 py-2.5 text-sm text-white placeholder:text-white/25 focus:border-[#22D3EE]/60 focus:outline-none" />
+                <label className="font-code text-[10px] uppercase tracking-[0.2em] text-[#71716D]">{label}</label>
+                <input value={commande.jumeau[cle] || ""} onChange={(e) => majJumeau({ [cle]: e.target.value })} placeholder={ph} data-testid={`identite-${cle}`} className="mt-1.5 w-full rounded-md border border-[#E5E5E3] bg-white px-3 py-2.5 text-sm text-[#111110] placeholder:text-[#71716D] focus:border-[#0E7490]/60 focus:outline-none" />
               </div>
             ))}
             <div>
-              <label className="font-code text-[10px] uppercase tracking-[0.2em] text-white/40">Environnement</label>
-              <select value={commande.jumeau.environnement} onChange={(e) => majJumeau({ environnement: e.target.value })} data-testid="identite-environnement" className="mt-1.5 w-full rounded-md border border-white/10 bg-black/50 px-3 py-2.5 text-sm text-white focus:outline-none">
+              <label className="font-code text-[10px] uppercase tracking-[0.2em] text-[#71716D]">Environnement</label>
+              <select value={commande.jumeau.environnement} onChange={(e) => majJumeau({ environnement: e.target.value })} data-testid="identite-environnement" className="mt-1.5 w-full rounded-md border border-[#E5E5E3] bg-white px-3 py-2.5 text-sm text-[#111110] focus:outline-none">
                 {["production", "préproduction", "recette", "développement"].map((e) => <option key={e} value={e}>{e}</option>)}
               </select>
             </div>
@@ -232,7 +232,7 @@ export default function Commande() {
 
         <div className="mt-6 flex justify-end">
           {etape < 4 && (
-            <button onClick={() => maj({ etape: etape + 1 })} disabled={!peutContinuer} data-testid="etape-suivante-btn" className="flex items-center gap-1.5 rounded-md bg-[#3B82F6] px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#2F6FDB] disabled:opacity-30">
+            <button onClick={() => maj({ etape: etape + 1 })} disabled={!peutContinuer} data-testid="etape-suivante-btn" className="flex items-center gap-1.5 rounded-md bg-[#3730A3] px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#4338CA] disabled:opacity-30">
               Continuer <ArrowRight size={14} />
             </button>
           )}

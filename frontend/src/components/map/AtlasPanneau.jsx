@@ -32,7 +32,7 @@ export default function AtlasPanneau({
         onClick={() => setOuvert(true)}
         data-testid="panneau-ouvrir-btn"
         title="Ouvrir le panneau Détail / Chronologie"
-        className="glass absolute right-4 top-4 z-10 flex items-center gap-1.5 rounded-xl px-3 py-2 font-code text-[10px] uppercase tracking-[0.15em] text-white/55 transition-colors hover:text-white"
+        className="glass absolute right-4 top-4 z-10 flex items-center gap-1.5 rounded-xl px-3 py-2 font-code text-[10px] uppercase tracking-[0.15em] text-[#52524F] transition-colors hover:text-[#111110]"
       >
         <SidebarSimple size={14} /> Détail
       </button>
@@ -41,20 +41,20 @@ export default function AtlasPanneau({
 
   return (
     <aside className="glass absolute right-4 top-4 z-10 flex max-h-[calc(100%-6rem)] w-72 flex-col overflow-hidden rounded-xl xl:w-80" data-testid="map-side-panel">
-      <div className="flex border-b border-white/[0.08]">
+      <div className="flex border-b border-[#E5E5E3]">
         {[["detail", "Détail"], ["chrono", "Chronologie"]].map(([id, label]) => (
           <button
             key={id}
             onClick={() => setOnglet(id)}
             data-testid={`map-tab-${id}`}
             className={`flex-1 px-3 py-2.5 font-code text-[10px] uppercase tracking-[0.2em] transition-colors ${
-              onglet === id ? "bg-white/[0.06] text-white" : "text-white/40 hover:text-white/70"
+              onglet === id ? "bg-[#F0F0EE] text-[#111110]" : "text-[#71716D] hover:text-[#3F3F3C]"
             }`}
           >
             {label}
           </button>
         ))}
-        <button onClick={() => setOuvert(false)} data-testid="panneau-fermer-btn" title="Replier le panneau" className="px-2.5 text-white/35 transition-colors hover:text-white">
+        <button onClick={() => setOuvert(false)} data-testid="panneau-fermer-btn" title="Replier le panneau" className="px-2.5 text-[#71716D] transition-colors hover:text-[#111110]">
           <X size={13} />
         </button>
       </div>
@@ -69,7 +69,7 @@ export default function AtlasPanneau({
           ) : domaineSel ? (
             <DomaineDetail label={domaineSel} stats={statsDomaine(domaineSel)} actions={actionsDomaine} />
           ) : (
-            <p className="text-xs text-white/35">
+            <p className="text-xs text-[#71716D]">
               Sélectionnez un jumeau, une relation ou un domaine. Double-clic sur un domaine pour y entrer ; le zoom révèle progressivement le contenu.
             </p>
           )
@@ -77,7 +77,7 @@ export default function AtlasPanneau({
           <ul className="space-y-3" data-testid="map-chrono-list">
             {eventsVisibles.map((e) => {
               const j = jumeauPar(e.jumeau);
-              const c = NATURES_EVENEMENT[e.nature] || "#6B7280";
+              const c = NATURES_EVENEMENT[e.nature] || "#71716D";
               const dyn = COUCHES.find(([id]) => id === (e.dynamique || "operationnelle"));
               return (
                 <li key={e.uid} className="ticker-item flex items-start gap-2">
@@ -85,14 +85,14 @@ export default function AtlasPanneau({
                   <div>
                     <div className="flex items-center gap-1.5">
                       <span className="font-code text-[10px]" style={{ color: couleurDomaine(j?.domaine) }}>{j?.nom || e.jumeau}</span>
-                      {dyn && <span className="font-code text-[8px] uppercase tracking-wider text-white/25">{dyn[1]}</span>}
+                      {dyn && <span className="font-code text-[8px] uppercase tracking-wider text-[#71716D]">{dyn[1]}</span>}
                     </div>
-                    <p className="text-xs leading-snug text-white/55">{e.texte}</p>
+                    <p className="text-xs leading-snug text-[#52524F]">{e.texte}</p>
                   </div>
                 </li>
               );
             })}
-            {eventsVisibles.length === 0 && <li className="text-xs text-white/30">Aucun événement sur les dynamiques visibles.</li>}
+            {eventsVisibles.length === 0 && <li className="text-xs text-[#71716D]">Aucun événement sur les dynamiques visibles.</li>}
           </ul>
         )}
       </div>

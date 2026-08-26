@@ -52,52 +52,52 @@ export default function Administration() {
   return (
     <div className="h-full overflow-y-auto px-8 py-8 pb-44" data-testid="administration-page">
       <header className="rise">
-        <div className="font-code text-[10px] uppercase tracking-[0.3em] text-white/40">Administration</div>
-        <h1 className="mt-1 font-display text-4xl font-black text-white">Administration</h1>
-        <p className="mt-2 text-base text-white/50">Sources, propriétaires, couverture et fraîcheur de la connaissance du Mesh.</p>
+        <div className="font-code text-[10px] uppercase tracking-[0.3em] text-[#71716D]">Administration</div>
+        <h1 className="mt-1 font-display text-4xl font-black text-[#111110]">Administration</h1>
+        <p className="mt-2 text-base text-[#52524F]">Sources, propriétaires, couverture et fraîcheur de la connaissance du Mesh.</p>
       </header>
 
       <div className="mt-8 grid grid-cols-12 gap-6">
-        <section className="rise col-span-12 rounded-xl border border-white/[0.08] bg-white/[0.02] p-5 lg:col-span-5" style={{ animationDelay: "60ms" }} data-testid="admin-couverture">
-          <h2 className="flex items-center gap-2 font-code text-[10px] uppercase tracking-[0.25em] text-white/45">
-            <CheckCircle size={14} className="text-[#22D3EE]" /> Couverture de connaissance
+        <section className="rise col-span-12 rounded-xl border border-[#E5E5E3] bg-white p-5 lg:col-span-5" style={{ animationDelay: "60ms" }} data-testid="admin-couverture">
+          <h2 className="flex items-center gap-2 font-code text-[10px] uppercase tracking-[0.25em] text-[#71716D]">
+            <CheckCircle size={14} className="text-[#0E7490]" /> Couverture de connaissance
           </h2>
           <div className="mt-3 flex items-baseline gap-2">
-            <span className="font-display text-4xl font-black text-white" data-testid="couverture-moyenne">{couvertureMoy} %</span>
-            <span className="font-code text-[10px] text-white/40">moyenne du Mesh</span>
+            <span className="font-display text-4xl font-black text-[#111110]" data-testid="couverture-moyenne">{couvertureMoy} %</span>
+            <span className="font-code text-[10px] text-[#71716D]">moyenne du Mesh</span>
           </div>
           <ul className="mt-4 space-y-2.5">
             {[...jumeaux].sort((a, b) => a.couverture - b.couverture).map((j) => (
               <li key={j.id} className="flex items-center gap-3">
-                <span className="w-28 truncate text-xs text-white/60">{j.nom}</span>
-                <div className="h-1 flex-1 overflow-hidden rounded-full bg-white/[0.07]">
+                <span className="w-28 truncate text-xs text-[#52524F]">{j.nom}</span>
+                <div className="h-1 flex-1 overflow-hidden rounded-full bg-[#E5E5E3]">
                   <div className="h-full rounded-full" style={{ width: `${j.couverture}%`, backgroundColor: couleurDomaine(j.domaine) }} />
                 </div>
-                <span className="w-10 text-right font-code text-[10px] text-white/60">{j.couverture} %</span>
+                <span className="w-10 text-right font-code text-[10px] text-[#52524F]">{j.couverture} %</span>
               </li>
             ))}
           </ul>
         </section>
 
-        <section className="rise col-span-12 rounded-xl border border-white/[0.08] bg-white/[0.02] p-5 lg:col-span-7" style={{ animationDelay: "120ms" }} data-testid="admin-sources">
-          <h2 className="flex items-center gap-2 font-code text-[10px] uppercase tracking-[0.25em] text-white/45">
-            <Database size={14} className="text-[#3B82F6]" /> Sources connectées
+        <section className="rise col-span-12 rounded-xl border border-[#E5E5E3] bg-white p-5 lg:col-span-7" style={{ animationDelay: "120ms" }} data-testid="admin-sources">
+          <h2 className="flex items-center gap-2 font-code text-[10px] uppercase tracking-[0.25em] text-[#71716D]">
+            <Database size={14} className="text-[#3730A3]" /> Sources connectées
           </h2>
           <div className="mt-4 overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
-                <tr className="font-code text-[9px] uppercase tracking-wider text-white/35">
+                <tr className="font-code text-[9px] uppercase tracking-wider text-[#71716D]">
                   <th className="pb-2 text-left font-medium">Jumeau</th>
                   {SOURCES.map(([k, label]) => <th key={k} className="pb-2 text-center font-medium">{label}</th>)}
                 </tr>
               </thead>
               <tbody>
                 {jumeaux.map((j) => (
-                  <tr key={j.id} className="border-t border-white/[0.05]" data-testid={`admin-source-${j.id}`}>
-                    <td className="py-2 pr-3 text-white/70">{j.nom}</td>
+                  <tr key={j.id} className="border-t border-[#E5E5E3]" data-testid={`admin-source-${j.id}`}>
+                    <td className="py-2 pr-3 text-[#3F3F3C]">{j.nom}</td>
                     {SOURCES.map(([k]) => (
                       <td key={k} className="py-2 text-center">
-                        <span className={`inline-block h-2 w-2 rounded-full ${j.sources?.[k] ? "bg-[#10B981]" : "bg-white/12"}`} />
+                        <span className={`inline-block h-2 w-2 rounded-full ${j.sources?.[k] ? "bg-[#047857]" : "bg-[#E5E5E3]"}`} />
                       </td>
                     ))}
                   </tr>
@@ -107,27 +107,27 @@ export default function Administration() {
           </div>
         </section>
 
-        <section className="rise col-span-12 rounded-xl border border-white/[0.08] bg-white/[0.02] p-5 lg:col-span-6" style={{ animationDelay: "180ms" }} data-testid="admin-proprietaires">
-          <h2 className="flex items-center gap-2 font-code text-[10px] uppercase tracking-[0.25em] text-white/45">
-            <Users size={14} className="text-[#A78BFA]" /> Propriétaires
+        <section className="rise col-span-12 rounded-xl border border-[#E5E5E3] bg-white p-5 lg:col-span-6" style={{ animationDelay: "180ms" }} data-testid="admin-proprietaires">
+          <h2 className="flex items-center gap-2 font-code text-[10px] uppercase tracking-[0.25em] text-[#71716D]">
+            <Users size={14} className="text-[#6D28D9]" /> Propriétaires
           </h2>
           <ul className="mt-4 space-y-3">
             {Object.entries(proprios).map(([p, js]) => (
               <li key={p} className="flex items-start justify-between gap-3">
-                <span className="text-sm text-white/75">{p}</span>
-                <span className="text-right font-code text-[10px] text-white/40">{js.join(" · ")}</span>
+                <span className="text-sm text-[#3F3F3C]">{p}</span>
+                <span className="text-right font-code text-[10px] text-[#71716D]">{js.join(" · ")}</span>
               </li>
             ))}
           </ul>
         </section>
 
-        <section className="rise col-span-12 rounded-xl border border-white/[0.08] bg-white/[0.02] p-5 lg:col-span-6" style={{ animationDelay: "240ms" }} data-testid="admin-admissions">
-          <h2 className="flex items-center gap-2 font-code text-[10px] uppercase tracking-[0.25em] text-white/45">
-            <Clock size={14} className="text-[#FBBF24]" /> Admissions & fraîcheur
+        <section className="rise col-span-12 rounded-xl border border-[#E5E5E3] bg-white p-5 lg:col-span-6" style={{ animationDelay: "240ms" }} data-testid="admin-admissions">
+          <h2 className="flex items-center gap-2 font-code text-[10px] uppercase tracking-[0.25em] text-[#71716D]">
+            <Clock size={14} className="text-[#B45309]" /> Admissions & fraîcheur
           </h2>
           <div className="mt-4 flex flex-wrap gap-2">
             {Object.entries(parStatut).map(([s, n]) => (
-              <span key={s} className="rounded border border-white/10 bg-white/[0.04] px-2.5 py-1 font-code text-[11px] text-white/70">
+              <span key={s} className="rounded border border-[#E5E5E3] bg-[#F7F7F6] px-2.5 py-1 font-code text-[11px] text-[#3F3F3C]">
                 {s} · {n}
               </span>
             ))}
@@ -135,18 +135,18 @@ export default function Administration() {
           <ul className="mt-4 space-y-2">
             {[...jumeaux].sort((a, b) => (a.statut === "actif" ? 1 : 0) - (b.statut === "actif" ? 1 : 0)).map((j) => (
               <li key={j.id} className="flex items-center justify-between text-xs">
-                <span className="text-white/65">{j.nom}</span>
-                <span className="font-code text-[10px] text-white/40">{j.fraicheur}</span>
+                <span className="text-[#52524F]">{j.nom}</span>
+                <span className="font-code text-[10px] text-[#71716D]">{j.fraicheur}</span>
               </li>
             ))}
           </ul>
         </section>
 
-        <section className="rise col-span-12 rounded-xl border border-[#F87171]/20 bg-[#F87171]/[0.03] p-5" style={{ animationDelay: "360ms" }} data-testid="admin-reset">
-          <h2 className="flex items-center gap-2 font-code text-[10px] uppercase tracking-[0.25em] text-white/45">
-            <ArrowCounterClockwise size={14} className="text-[#F87171]" /> Zone de démonstration
+        <section className="rise col-span-12 rounded-xl border border-[#B91C1C]/20 bg-[#B91C1C]/[0.03] p-5" style={{ animationDelay: "360ms" }} data-testid="admin-reset">
+          <h2 className="flex items-center gap-2 font-code text-[10px] uppercase tracking-[0.25em] text-[#71716D]">
+            <ArrowCounterClockwise size={14} className="text-[#B91C1C]" /> Zone de démonstration
           </h2>
-          <p className="mt-2 text-xs text-white/45">
+          <p className="mt-2 text-xs text-[#71716D]">
             Restaure le jeu de données initial : situations ignorées ou décidées, jumeaux admis, vues enregistrées, dossiers de changement et journal sont remis à zéro.
           </p>
           <button
@@ -155,22 +155,22 @@ export default function Administration() {
             data-testid="reset-demo-btn"
             className={`mt-3 rounded-md border px-3 py-2 text-xs font-semibold transition-colors ${
               confirmReset
-                ? "border-[#F87171] bg-[#F87171]/15 text-[#F87171]"
-                : "border-white/15 text-white/60 hover:border-[#F87171]/50 hover:text-[#F87171]"
+                ? "border-[#B91C1C] bg-[#B91C1C]/15 text-[#B91C1C]"
+                : "border-[#E5E5E3] text-[#52524F] hover:border-[#B91C1C]/50 hover:text-[#B91C1C]"
             } disabled:opacity-50`}
           >
             {resetEnCours ? "Réinitialisation…" : confirmReset ? "Confirmer la réinitialisation ?" : "Réinitialiser la démo"}
           </button>
         </section>
 
-        <section className="rise col-span-12 rounded-xl border border-white/[0.08] bg-white/[0.02] p-5" style={{ animationDelay: "300ms" }} data-testid="admin-journal">
-          <h2 className="flex items-center gap-2 font-code text-[10px] uppercase tracking-[0.25em] text-white/45">
-            <Scroll size={14} className="text-[#22D3EE]" /> Journal d'accès et de décisions
+        <section className="rise col-span-12 rounded-xl border border-[#E5E5E3] bg-white p-5" style={{ animationDelay: "300ms" }} data-testid="admin-journal">
+          <h2 className="flex items-center gap-2 font-code text-[10px] uppercase tracking-[0.25em] text-[#71716D]">
+            <Scroll size={14} className="text-[#0E7490]" /> Journal d'accès et de décisions
           </h2>
-          <div className="mt-4 overflow-hidden rounded-lg border border-white/[0.06]">
+          <div className="mt-4 overflow-hidden rounded-lg border border-[#E5E5E3]">
             <table className="w-full text-xs">
               <thead>
-                <tr className="bg-white/[0.03] font-code text-[9px] uppercase tracking-wider text-white/35">
+                <tr className="bg-[#F7F7F6] font-code text-[9px] uppercase tracking-wider text-[#71716D]">
                   <th className="px-3 py-2 text-left font-medium">Quand</th>
                   <th className="px-3 py-2 text-left font-medium">Identité</th>
                   <th className="px-3 py-2 text-left font-medium">Espace</th>
@@ -181,19 +181,19 @@ export default function Administration() {
               </thead>
               <tbody>
                 {journal.map((e, i) => (
-                  <tr key={i} className="border-t border-white/[0.05]" data-testid={`journal-entry-${i}`}>
-                    <td className="whitespace-nowrap px-3 py-2 font-code text-[10px] text-white/45">
+                  <tr key={i} className="border-t border-[#E5E5E3]" data-testid={`journal-entry-${i}`}>
+                    <td className="whitespace-nowrap px-3 py-2 font-code text-[10px] text-[#71716D]">
                       {new Date(e.quand).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
                     </td>
-                    <td className="px-3 py-2 font-code text-[10px] text-white/70">{e.persona}</td>
-                    <td className="px-3 py-2 font-code text-[10px] text-white/45">{e.espace || "—"}</td>
-                    <td className="px-3 py-2 text-white/75">{e.action}</td>
-                    <td className="px-3 py-2 font-code text-[10px] text-white/50">{e.cible || "—"}</td>
-                    <td className="max-w-[280px] truncate px-3 py-2 text-white/45">{e.detail || "—"}</td>
+                    <td className="px-3 py-2 font-code text-[10px] text-[#3F3F3C]">{e.persona}</td>
+                    <td className="px-3 py-2 font-code text-[10px] text-[#71716D]">{e.espace || "—"}</td>
+                    <td className="px-3 py-2 text-[#3F3F3C]">{e.action}</td>
+                    <td className="px-3 py-2 font-code text-[10px] text-[#52524F]">{e.cible || "—"}</td>
+                    <td className="max-w-[280px] truncate px-3 py-2 text-[#71716D]">{e.detail || "—"}</td>
                   </tr>
                 ))}
                 {journal.length === 0 && (
-                  <tr><td colSpan={6} className="px-3 py-6 text-center text-white/30">Aucune entrée pour l'instant.</td></tr>
+                  <tr><td colSpan={6} className="px-3 py-6 text-center text-[#71716D]">Aucune entrée pour l'instant.</td></tr>
                 )}
               </tbody>
             </table>

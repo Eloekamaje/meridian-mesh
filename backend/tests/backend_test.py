@@ -251,7 +251,7 @@ def test_demo_actes_3(s):
     assert [a["acte"] for a in d] == [1, 2, 3]
     assert d[0]["route"] == "/atlas"
     assert d[1]["route"] == "/investigations/sit-relation-emergente"
-    assert d[2]["route"] == "/cases/case-olympiade"
+    assert d[2]["route"] == "/travaux/case-olympiade"
 
 
 def test_activite(s):

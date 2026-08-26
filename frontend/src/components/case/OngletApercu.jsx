@@ -6,12 +6,12 @@ import { rel } from "./utils";
 
 function Bloc({ titre, question, icon: Icon, couleur, children, testid }) {
   return (
-    <div className="rounded-xl border border-white/[0.07] bg-white/[0.015] p-4" data-testid={testid}>
+    <div className="rounded-xl border border-[#E5E5E3] bg-white p-4" data-testid={testid}>
       <div className="flex items-center gap-2">
         <Icon size={14} style={{ color: couleur }} />
         <div>
-          <div className="font-code text-[10px] uppercase tracking-[0.18em] text-white/50">{titre}</div>
-          <div className="font-code text-[9px] italic text-white/30">{question}</div>
+          <div className="font-code text-[10px] uppercase tracking-[0.18em] text-[#52524F]">{titre}</div>
+          <div className="font-code text-[9px] italic text-[#71716D]">{question}</div>
         </div>
       </div>
       <div className="mt-2.5">{children}</div>
@@ -27,6 +27,8 @@ export default function OngletApercu({ cas, maj, setCas }) {
   const evolutions = cas.evolutions_recentes || [];
   const premiereVisite = !cas.derniere_visite;
   const histoRecents = [...(cas.historique || [])].slice(-3).reverse();
+  const hypAValider = (cas.hypotheses || []).filter((h) => h.statut === "a_valider");
+  const dernierMessage = [...(cas.conversation || [])].reverse().find((m) => m.role === "flore") || [...(cas.conversation || [])].slice(-1)[0];
 
   const actualiserResume = async () => {
     setActualisation(true);
@@ -42,102 +44,143 @@ export default function OngletApercu({ cas, maj, setCas }) {
   };
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2" data-testid="onglet-apercu">
-      <Bloc titre="Situation" question="Pourquoi ce Case existe-t-il ?" icon={Compass} couleur="#3B82F6" testid="apercu-situation">
-        <textarea
-          value={cas.objectif || ""}
-          onChange={(e) => setCas({ ...cas, objectif: e.target.value })}
-          onBlur={(e) => maj({ objectif: e.target.value })}
-          rows={2}
-          placeholder="Pourquoi ce case existe-t-il ?"
-          data-testid="case-objectif"
-          className="w-full resize-none rounded-md border border-transparent bg-transparent px-0 py-0 text-sm leading-relaxed text-white/80 focus:border-white/10 focus:bg-black/30 focus:px-2 focus:outline-none"
-        />
-      </Bloc>
+    <div data-testid="onglet-apercu">
+      {/* Reprise intelligente — Flore résume où en est le travail */}
+      {!premiereVisite && (
+        <div className="mb-4 rounded-xl border border-[#3730A3]/25 bg-[#EEECFA] p-4" data-testid="reprise-flore">
+          <div className="flex items-center gap-2">
+            <Sparkle size={14} weight="fill" className="text-[#3730A3]" />
+            <span className="font-code text-[10px] uppercase tracking-[0.2em] text-[#312E81]">Reprise — Flore vous replace</span>
+            {cas.derniere_visite && <span className="font-code text-[9px] text-[#71716D]">dernière visite {rel(cas.derniere_visite)}</span>}
+          </div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div>
+              <div className="font-code text-[9px] uppercase tracking-wider text-[#71716D]">Où vous étiez</div>
+              <p className="mt-1 text-xs leading-snug text-[#3F3F3C]" data-testid="reprise-arret">
+                {dernierMessage ? `Dernier échange : « ${(dernierMessage.texte || "").slice(0, 110)}${(dernierMessage.texte || "").length > 110 ? "…" : ""} »` : "Le travail n'a pas encore de conversation."}
+              </p>
+            </div>
+            <div>
+              <div className="font-code text-[9px] uppercase tracking-wider text-[#71716D]">Ce qui a changé</div>
+              <p className="mt-1 text-xs leading-snug text-[#3F3F3C]" data-testid="reprise-changements">
+                {evolutions.length > 0 ? `${evolutions.length} évolution${evolutions.length > 1 ? "s" : ""} : ${evolutions[0].texte}` : "Rien de nouveau depuis votre dernière visite."}
+              </p>
+            </div>
+            <div>
+              <div className="font-code text-[9px] uppercase tracking-wider text-[#71716D]">Ce qui reste incertain</div>
+              <p className="mt-1 text-xs leading-snug text-[#3F3F3C]" data-testid="reprise-incertain">
+                {hypAValider.length > 0 || ouvertes.length > 0
+                  ? `${ouvertes.length} question${ouvertes.length > 1 ? "s" : ""} ouverte${ouvertes.length > 1 ? "s" : ""} · ${hypAValider.length} hypothèse${hypAValider.length > 1 ? "s" : ""} à valider`
+                  : "Aucune incertitude ouverte."}
+              </p>
+            </div>
+            <div>
+              <div className="font-code text-[9px] uppercase tracking-wider text-[#71716D]">Prochaine action</div>
+              <p className="mt-1 text-xs font-semibold leading-snug text-[#312E81]" data-testid="reprise-action">
+                {cas.prochaine_etape || (optionsATrancher.length > 0 ? `Trancher « ${optionsATrancher[0].titre} »` : "Continuer la discussion avec Flore.")}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
-      <Bloc titre="Compréhension actuelle" question="Que savons-nous maintenant ?" icon={Sparkle} couleur="#22D3EE" testid="apercu-comprehension">
-        <textarea
-          value={cas.resume || ""}
-          onChange={(e) => setCas({ ...cas, resume: e.target.value })}
-          onBlur={(e) => maj({ resume: e.target.value })}
-          rows={3}
-          placeholder="Aucune compréhension consolidée — laissez Flore synthétiser."
-          data-testid="case-resume"
-          className="w-full resize-none rounded-md border border-transparent bg-transparent text-sm leading-relaxed text-white/75 focus:border-white/10 focus:bg-black/30 focus:px-2 focus:outline-none"
-        />
-        <button onClick={actualiserResume} disabled={actualisation} data-testid="actualiser-resume-btn" className="mt-1.5 flex items-center gap-1.5 rounded-md border border-[#22D3EE]/30 bg-[#22D3EE]/[0.06] px-2.5 py-1.5 text-[11px] font-semibold text-[#22D3EE] transition-colors hover:bg-[#22D3EE]/15 disabled:opacity-50">
-          <Sparkle size={12} /> {actualisation ? "Flore synthétise…" : "Actualiser par Flore"}
-        </button>
-      </Bloc>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Bloc titre="Situation" question="Pourquoi ce travail existe-t-il ?" icon={Compass} couleur="#3730A3" testid="apercu-situation">
+          <textarea
+            value={cas.objectif || ""}
+            onChange={(e) => setCas({ ...cas, objectif: e.target.value })}
+            onBlur={(e) => maj({ objectif: e.target.value })}
+            rows={2}
+            placeholder="Pourquoi ce travail existe-t-il ?"
+            data-testid="case-objectif"
+            className="w-full resize-none rounded-md border border-transparent bg-transparent px-0 py-0 text-sm leading-relaxed text-[#3F3F3C] focus:border-[#E5E5E3] focus:bg-[#F7F7F6] focus:px-2 focus:outline-none"
+          />
+        </Bloc>
 
-      <Bloc titre="Évolution récente" question="Qu'est-ce qui a changé depuis ma dernière visite ?" icon={TrendUp} couleur="#10B981" testid="apercu-evolution">
-        {premiereVisite ? (
-          <ul className="space-y-1">
-            {histoRecents.map((h, i) => (
-              <li key={i} className="flex gap-2 text-xs">
-                <span className="shrink-0 font-code text-[9px] leading-5 text-white/30">{rel(h.quand)}</span>
-                <span className="text-white/60">{h.texte}</span>
-              </li>
-            ))}
-          </ul>
-        ) : evolutions.length > 0 ? (
-          <ul className="space-y-1">
-            {evolutions.map((h, i) => (
-              <li key={i} className="flex gap-2 text-xs" data-testid={`evolution-${i}`}>
-                <span className="shrink-0 font-code text-[9px] leading-5 text-[#10B981]">{rel(h.quand)}</span>
-                <span className="text-white/70">{h.texte}</span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-xs text-white/35">Rien de nouveau depuis votre dernière visite.</p>
-        )}
-      </Bloc>
+        <Bloc titre="Compréhension actuelle" question="Que savons-nous maintenant ?" icon={Sparkle} couleur="#0E7490" testid="apercu-comprehension">
+          <textarea
+            value={cas.resume || ""}
+            onChange={(e) => setCas({ ...cas, resume: e.target.value })}
+            onBlur={(e) => maj({ resume: e.target.value })}
+            rows={3}
+            placeholder="Aucune compréhension consolidée — laissez Flore synthétiser."
+            data-testid="case-resume"
+            className="w-full resize-none rounded-md border border-transparent bg-transparent text-sm leading-relaxed text-[#3F3F3C] focus:border-[#E5E5E3] focus:bg-[#F7F7F6] focus:px-2 focus:outline-none"
+          />
+          <button onClick={actualiserResume} disabled={actualisation} data-testid="actualiser-resume-btn" className="mt-1.5 flex items-center gap-1.5 rounded-md border border-[#0E7490]/30 bg-[#0E7490]/[0.06] px-2.5 py-1.5 text-[11px] font-semibold text-[#0E7490] transition-colors hover:bg-[#0E7490]/15 disabled:opacity-50">
+            <Sparkle size={12} /> {actualisation ? "Flore synthétise…" : "Actualiser par Flore"}
+          </button>
+        </Bloc>
 
-      <Bloc titre="Questions ouvertes" question="Qu'est-ce qui reste à comprendre ?" icon={Question} couleur="#FBBF24" testid="apercu-questions">
-        <ul className="space-y-1.5">
-          {ouvertes.slice(0, 4).map((q) => {
-            const i = questions.indexOf(q);
-            return (
-              <li key={i} className="flex items-center gap-2 text-xs text-white/75">
-                <button onClick={() => maj({ questions: questions.map((x, xi) => (xi === i ? { ...x, resolue: true } : x)) })} data-testid={`apercu-question-${i}`} className="text-white/30 transition-colors hover:text-[#10B981]">
-                  <Circle size={14} />
-                </button>
-                {q.texte}
-              </li>
-            );
-          })}
-          {ouvertes.length === 0 && (
-            <li className="flex items-center gap-2 text-xs text-[#10B981]"><CheckCircle size={14} weight="fill" /> Toutes les questions sont levées.</li>
+        <Bloc titre="Évolution récente" question="Qu'est-ce qui a changé depuis ma dernière visite ?" icon={TrendUp} couleur="#047857" testid="apercu-evolution">
+          {premiereVisite ? (
+            <ul className="space-y-1">
+              {histoRecents.map((h, i) => (
+                <li key={i} className="flex gap-2 text-xs">
+                  <span className="shrink-0 font-code text-[9px] leading-5 text-[#71716D]">{rel(h.quand)}</span>
+                  <span className="text-[#52524F]">{h.texte}</span>
+                </li>
+              ))}
+            </ul>
+          ) : evolutions.length > 0 ? (
+            <ul className="space-y-1">
+              {evolutions.map((h, i) => (
+                <li key={i} className="flex gap-2 text-xs" data-testid={`evolution-${i}`}>
+                  <span className="shrink-0 font-code text-[9px] leading-5 text-[#047857]">{rel(h.quand)}</span>
+                  <span className="text-[#3F3F3C]">{h.texte}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-xs text-[#71716D]">Rien de nouveau depuis votre dernière visite.</p>
           )}
-        </ul>
-      </Bloc>
+        </Bloc>
 
-      <Bloc titre="Décisions attendues" question="Sur quoi un humain doit-il se prononcer ?" icon={Scales} couleur="#A78BFA" testid="apercu-decisions">
-        {optionsATrancher.length > 0 ? (
-          <ul className="space-y-1">
-            {optionsATrancher.map((o) => (
-              <li key={o.id} className="text-xs text-white/75" data-testid={`apercu-option-${o.id}`}>
-                <Flag size={11} className="mr-1 inline text-[#A78BFA]" /> Trancher : {o.titre}
-              </li>
-            ))}
+        <Bloc titre="Questions ouvertes" question="Qu'est-ce qui reste à comprendre ?" icon={Question} couleur="#B45309" testid="apercu-questions">
+          <ul className="space-y-1.5">
+            {ouvertes.slice(0, 4).map((q) => {
+              const i = questions.indexOf(q);
+              return (
+                <li key={i} className="flex items-center gap-2 text-xs text-[#3F3F3C]">
+                  <button onClick={() => maj({ questions: questions.map((x, xi) => (xi === i ? { ...x, resolue: true } : x)) })} data-testid={`apercu-question-${i}`} className="text-[#71716D] transition-colors hover:text-[#047857]">
+                    <Circle size={14} />
+                  </button>
+                  {q.texte}
+                </li>
+              );
+            })}
+            {ouvertes.length === 0 && (
+              <li className="flex items-center gap-2 text-xs text-[#047857]"><CheckCircle size={14} weight="fill" /> Toutes les questions sont levées.</li>
+            )}
           </ul>
-        ) : (
-          <p className="text-xs text-white/35">Aucune décision en attente{optionsATrancher.length === 0 && (cas.decisions || []).length > 0 ? ` — dernière : ${cas.decisions[cas.decisions.length - 1].texte.slice(0, 80)}` : ""}.</p>
-        )}
-      </Bloc>
+        </Bloc>
 
-      <Bloc titre="Prochaine étape" question="Que devons-nous faire maintenant ?" icon={Footprints} couleur="#F97316" testid="apercu-prochaine-etape">
-        <textarea
-          value={cas.prochaine_etape || ""}
-          onChange={(e) => setCas({ ...cas, prochaine_etape: e.target.value })}
-          onBlur={(e) => maj({ prochaine_etape: e.target.value })}
-          rows={2}
-          placeholder={optionsATrancher.length > 0 ? `Suggestion : trancher « ${optionsATrancher[0].titre} »` : "Définir la prochaine étape…"}
-          data-testid="case-prochaine-etape"
-          className="w-full resize-none rounded-md border border-transparent bg-transparent text-sm leading-relaxed text-white/80 placeholder:italic placeholder:text-white/30 focus:border-white/10 focus:bg-black/30 focus:px-2 focus:outline-none"
-        />
-      </Bloc>
+        <Bloc titre="Décisions attendues" question="Sur quoi un humain doit-il se prononcer ?" icon={Scales} couleur="#6D28D9" testid="apercu-decisions">
+          {optionsATrancher.length > 0 ? (
+            <ul className="space-y-1">
+              {optionsATrancher.map((o) => (
+                <li key={o.id} className="text-xs text-[#3F3F3C]" data-testid={`apercu-option-${o.id}`}>
+                  <Flag size={11} className="mr-1 inline text-[#6D28D9]" /> Trancher : {o.titre}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-xs text-[#71716D]">Aucune décision en attente{optionsATrancher.length === 0 && (cas.decisions || []).length > 0 ? ` — dernière : ${cas.decisions[cas.decisions.length - 1].texte.slice(0, 80)}` : ""}.</p>
+          )}
+        </Bloc>
+
+        <Bloc titre="Prochaine étape" question="Que devons-nous faire maintenant ?" icon={Footprints} couleur="#C2410C" testid="apercu-prochaine-etape">
+          <textarea
+            value={cas.prochaine_etape || ""}
+            onChange={(e) => setCas({ ...cas, prochaine_etape: e.target.value })}
+            onBlur={(e) => maj({ prochaine_etape: e.target.value })}
+            rows={2}
+            placeholder={optionsATrancher.length > 0 ? `Suggestion : trancher « ${optionsATrancher[0].titre} »` : "Définir la prochaine étape…"}
+            data-testid="case-prochaine-etape"
+            className="w-full resize-none rounded-md border border-transparent bg-transparent text-sm leading-relaxed text-[#3F3F3C] placeholder:italic placeholder:text-[#71716D] focus:border-[#E5E5E3] focus:bg-[#F7F7F6] focus:px-2 focus:outline-none"
+          />
+        </Bloc>
+      </div>
     </div>
   );
 }

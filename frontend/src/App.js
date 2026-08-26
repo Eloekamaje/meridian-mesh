@@ -1,21 +1,26 @@
 import "@/App.css";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useParams } from "react-router-dom";
 import { Toaster } from "@/components/ui/sonner";
 import { DemoProvider } from "@/lib/demo";
 import { MeshProvider } from "@/lib/mesh";
 import { PerimetreProvider } from "@/lib/perimetre";
 import { ContexteProvider } from "@/lib/contexte";
 import Layout from "@/components/Layout";
-import Aujourdhui from "@/pages/Aujourdhui";
+import Actualites from "@/pages/Actualites";
 import Atlas from "@/pages/Atlas";
 import Commande from "@/pages/Commande";
 import Investigations from "@/pages/Investigations";
 import InvestigationDetail from "@/pages/InvestigationDetail";
-import Cases from "@/pages/Cases";
-import CaseDetail from "@/pages/CaseDetail";
+import Travaux from "@/pages/Travaux";
+import TravailDetail from "@/pages/TravailDetail";
 import Jumeaux from "@/pages/Jumeaux";
 import RevueJumeau from "@/pages/RevueJumeau";
 import Administration from "@/pages/Administration";
+
+const RedirectTravail = () => {
+  const { cid } = useParams();
+  return <Navigate to={`/travaux/${cid}`} replace />;
+};
 
 function App() {
   return (
@@ -26,23 +31,26 @@ function App() {
           <MeshProvider>
           <Routes>
             <Route element={<Layout />}>
-              <Route path="/" element={<Aujourdhui />} />
+              <Route path="/" element={<Actualites />} />
               <Route path="/atlas" element={<Atlas />} />
               <Route path="/investigations" element={<Investigations />} />
               <Route path="/investigations/:id" element={<InvestigationDetail />} />
-              <Route path="/cases" element={<Cases />} />
-              <Route path="/cases/:cid" element={<CaseDetail />} />
+              <Route path="/travaux" element={<Travaux />} />
+              <Route path="/travaux/:cid" element={<TravailDetail />} />
               <Route path="/jumeaux" element={<Jumeaux />} />
               <Route path="/jumeaux/:jid/revue" element={<RevueJumeau />} />
               <Route path="/commande/:cid" element={<Commande />} />
               <Route path="/administration" element={<Administration />} />
+              <Route path="/aujourdhui" element={<Navigate to="/" replace />} />
               <Route path="/carte" element={<Navigate to="/atlas" replace />} />
-              <Route path="/decisions" element={<Navigate to="/cases" replace />} />
-              <Route path="/change-lab" element={<Navigate to="/cases/case-olympiade" replace />} />
+              <Route path="/cases" element={<Navigate to="/travaux" replace />} />
+              <Route path="/cases/:cid" element={<RedirectTravail />} />
+              <Route path="/decisions" element={<Navigate to="/travaux" replace />} />
+              <Route path="/change-lab" element={<Navigate to="/travaux/case-olympiade" replace />} />
               <Route path="/registry" element={<Navigate to="/jumeaux" replace />} />
             </Route>
           </Routes>
-          <Toaster theme="dark" position="top-right" />
+          <Toaster theme="light" position="top-right" />
           </MeshProvider>
           </ContexteProvider>
         </DemoProvider>

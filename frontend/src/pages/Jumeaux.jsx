@@ -100,16 +100,16 @@ export default function Jumeaux() {
     <div className="h-full overflow-y-auto p-8 pb-44" data-testid="jumeaux-page">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="font-code text-[11px] uppercase tracking-[0.3em] text-white/40">Parc de jumeaux</p>
-          <h1 className="mt-1 font-display text-2xl font-bold tracking-tight text-white">Registre des jumeaux</h1>
-          <p className="mt-1 max-w-xl text-sm text-white/55">
+          <p className="font-code text-[11px] uppercase tracking-[0.3em] text-[#71716D]">Parc de jumeaux</p>
+          <h1 className="mt-1 font-display text-2xl font-bold tracking-tight text-[#111110]">Registre des jumeaux</h1>
+          <p className="mt-1 max-w-xl text-sm text-[#52524F]">
             Consultez les jumeaux de votre périmètre, leur niveau de connaissance, leurs sources et leur état d'admission.
           </p>
-          <p className="mt-2 font-code text-[10px] text-white/40" data-testid="registre-compteurs">
-            {compteurs.actifs} actifs · {compteurs.construction} en construction · {compteurs.observation} en observation · <span className={compteurs.attention ? "text-[#FBBF24]" : ""}>{compteurs.attention} à traiter</span>
+          <p className="mt-2 font-code text-[10px] text-[#71716D]" data-testid="registre-compteurs">
+            {compteurs.actifs} actifs · {compteurs.construction} en construction · {compteurs.observation} en observation · <span className={compteurs.attention ? "text-[#B45309]" : ""}>{compteurs.attention} à traiter</span>
           </p>
         </div>
-        <button onClick={commander} data-testid="commander-jumeau-btn" className="flex items-center gap-2 rounded-md bg-[#3B82F6] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#2F6FDB]">
+        <button onClick={commander} data-testid="commander-jumeau-btn" className="flex items-center gap-2 rounded-md bg-[#3730A3] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#4338CA]">
           <Plus size={16} weight="bold" /> Commander un jumeau
         </button>
       </header>
@@ -117,11 +117,11 @@ export default function Jumeaux() {
       {brouillons.length > 0 && (
         <div className="rise mt-5 flex flex-wrap gap-2" data-testid="commandes-en-cours">
           {brouillons.map((c) => (
-            <button key={c.id} onClick={() => navigate(`/commande/${c.id}`)} data-testid={`reprendre-${c.id}`} className="flex items-center gap-2 rounded-lg border border-[#FBBF24]/25 bg-[#FBBF24]/[0.04] px-3 py-2 text-left transition-colors hover:border-[#FBBF24]/50">
-              <HourglassMedium size={14} className="text-[#FBBF24]" />
+            <button key={c.id} onClick={() => navigate(`/commande/${c.id}`)} data-testid={`reprendre-${c.id}`} className="flex items-center gap-2 rounded-lg border border-[#B45309]/25 bg-[#B45309]/[0.04] px-3 py-2 text-left transition-colors hover:border-[#B45309]/50">
+              <HourglassMedium size={14} className="text-[#B45309]" />
               <div>
-                <div className="text-xs font-semibold text-white">Commande en cours — {c.jumeau?.nom || "sans nom"}</div>
-                <div className="font-code text-[9px] text-white/40">étape {c.etape}/4 · {c.sources?.length || 0} source(s) · reprendre →</div>
+                <div className="text-xs font-semibold text-[#111110]">Commande en cours — {c.jumeau?.nom || "sans nom"}</div>
+                <div className="font-code text-[9px] text-[#71716D]">étape {c.etape}/4 · {c.sources?.length || 0} source(s) · reprendre →</div>
               </div>
             </button>
           ))}
@@ -131,52 +131,52 @@ export default function Jumeaux() {
       {/* Outils de gestion à grande échelle */}
       <div className="mt-5 flex flex-wrap items-center gap-2" data-testid="registre-outils">
         <div className="relative">
-          <MagnifyingGlass size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-white/30" />
-          <input value={recherche} onChange={(e) => setRecherche(e.target.value)} placeholder="Rechercher un jumeau…" data-testid="registre-recherche" className="w-56 rounded-md border border-white/10 bg-black/40 py-1.5 pl-8 pr-3 text-xs text-white placeholder:text-white/25 focus:border-[#22D3EE]/50 focus:outline-none" />
+          <MagnifyingGlass size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#71716D]" />
+          <input value={recherche} onChange={(e) => setRecherche(e.target.value)} placeholder="Rechercher un jumeau…" data-testid="registre-recherche" className="w-56 rounded-md border border-[#E5E5E3] bg-white py-1.5 pl-8 pr-3 text-xs text-[#111110] placeholder:text-[#71716D] focus:border-[#0E7490]/50 focus:outline-none" />
         </div>
-        <div className="flex overflow-hidden rounded-md border border-white/10">
+        <div className="flex overflow-hidden rounded-md border border-[#E5E5E3]">
           {CHIPS.map(([v, l]) => (
-            <button key={v} onClick={() => setFiltreStatut(v)} data-testid={`chip-${v}`} className={`px-2.5 py-1.5 text-[11px] transition-colors ${filtreStatut === v ? "bg-[#22D3EE]/15 text-[#22D3EE]" : "text-white/50 hover:text-white"}`}>
+            <button key={v} onClick={() => setFiltreStatut(v)} data-testid={`chip-${v}`} className={`px-2.5 py-1.5 text-[11px] transition-colors ${filtreStatut === v ? "bg-[#0E7490]/15 text-[#0E7490]" : "text-[#52524F] hover:text-[#111110]"}`}>
               {l}
             </button>
           ))}
         </div>
-        <select value={filtreDomaine} onChange={(e) => setFiltreDomaine(e.target.value)} data-testid="filtre-domaine" className="rounded-md border border-white/10 bg-black/40 px-2 py-1.5 text-xs text-white/70 focus:outline-none">
+        <select value={filtreDomaine} onChange={(e) => setFiltreDomaine(e.target.value)} data-testid="filtre-domaine" className="rounded-md border border-[#E5E5E3] bg-white px-2 py-1.5 text-xs text-[#3F3F3C] focus:outline-none">
           <option value="">Domaine ▾</option>
           {domaines.map((d) => <option key={d} value={d}>{d}</option>)}
         </select>
-        <select value={filtreProprio} onChange={(e) => setFiltreProprio(e.target.value)} data-testid="filtre-proprietaire" className="rounded-md border border-white/10 bg-black/40 px-2 py-1.5 text-xs text-white/70 focus:outline-none">
+        <select value={filtreProprio} onChange={(e) => setFiltreProprio(e.target.value)} data-testid="filtre-proprietaire" className="rounded-md border border-[#E5E5E3] bg-white px-2 py-1.5 text-xs text-[#3F3F3C] focus:outline-none">
           <option value="">Propriétaire ▾</option>
           {proprios.map((p) => <option key={p} value={p}>{p}</option>)}
         </select>
-        <select value={filtreAutonomie} onChange={(e) => setFiltreAutonomie(e.target.value)} data-testid="filtre-autonomie" className="rounded-md border border-white/10 bg-black/40 px-2 py-1.5 text-xs text-white/70 focus:outline-none">
+        <select value={filtreAutonomie} onChange={(e) => setFiltreAutonomie(e.target.value)} data-testid="filtre-autonomie" className="rounded-md border border-[#E5E5E3] bg-white px-2 py-1.5 text-xs text-[#3F3F3C] focus:outline-none">
           <option value="">Autonomie ▾</option>
           {Object.entries(AUTONOMIE).map(([v, [l]]) => <option key={v} value={v}>{l}</option>)}
         </select>
-        <select value={groupement} onChange={(e) => setGroupement(e.target.value)} data-testid="registre-groupement" className="rounded-md border border-white/10 bg-black/40 px-2 py-1.5 text-xs text-white/70 focus:outline-none">
+        <select value={groupement} onChange={(e) => setGroupement(e.target.value)} data-testid="registre-groupement" className="rounded-md border border-[#E5E5E3] bg-white px-2 py-1.5 text-xs text-[#3F3F3C] focus:outline-none">
           <option value="domaine">Grouper par : Domaine</option>
           <option value="statut">Grouper par : Statut</option>
           <option value="aucun">Sans regroupement</option>
         </select>
-        <select value={vue} onChange={(e) => appliquerVue(e.target.value)} data-testid="registre-vues" className="rounded-md border border-[#A78BFA]/30 bg-[#A78BFA]/[0.06] px-2 py-1.5 text-xs text-[#A78BFA] focus:outline-none">
+        <select value={vue} onChange={(e) => appliquerVue(e.target.value)} data-testid="registre-vues" className="rounded-md border border-[#6D28D9]/30 bg-[#6D28D9]/[0.06] px-2 py-1.5 text-xs text-[#6D28D9] focus:outline-none">
           {VUES_ENREGISTREES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
       </div>
 
       {/* Registre groupé */}
-      <div className="mt-4 overflow-hidden rounded-xl border border-white/[0.07]" data-testid="registre-table">
+      <div className="mt-4 overflow-hidden rounded-xl border border-[#E5E5E3]" data-testid="registre-table">
         {groupes.map(([groupe, lignes]) => (
           <div key={groupe || "tous"}>
             {groupe && (
-              <button onClick={() => setPlies({ ...plies, [groupe]: !plies[groupe] })} data-testid={`groupe-${groupe}`} className="sticky top-0 flex w-full items-center gap-2 border-b border-white/[0.07] bg-[#0C0C0C] px-4 py-2 text-left">
-                {plies[groupe] ? <CaretRight size={12} className="text-white/40" /> : <CaretDown size={12} className="text-white/40" />}
-                <span className="font-code text-[10px] uppercase tracking-[0.18em]" style={{ color: groupement === "domaine" ? couleurDomaine(groupe) : "#9CA3AF" }}>
+              <button onClick={() => setPlies({ ...plies, [groupe]: !plies[groupe] })} data-testid={`groupe-${groupe}`} className="sticky top-0 flex w-full items-center gap-2 border-b border-[#E5E5E3] bg-[#0C0C0C] px-4 py-2 text-left">
+                {plies[groupe] ? <CaretRight size={12} className="text-[#71716D]" /> : <CaretDown size={12} className="text-[#71716D]" />}
+                <span className="font-code text-[10px] uppercase tracking-[0.18em]" style={{ color: groupement === "domaine" ? couleurDomaine(groupe) : "#71716D" }}>
                   {groupe} · {lignes.length} jumeau{lignes.length > 1 ? "x" : ""}
                 </span>
               </button>
             )}
             {!plies[groupe] && lignes.map((j) => {
-              const st = STATUTS[j.statut] || [j.statut, "#9CA3AF"];
+              const st = STATUTS[j.statut] || [j.statut, "#71716D"];
               const fr = FRAICHEUR_ETATS[j.fraicheur_etat] || FRAICHEUR_ETATS.partiel;
               const aut = AUTONOMIE[j.autonomie] || AUTONOMIE.aucune;
               const det = j.sources_detail || [];
@@ -189,7 +189,7 @@ export default function Jumeaux() {
                 <div
                   onClick={() => navigate(`/jumeaux/${j.id}/revue`)}
                   data-testid={`jumeau-row-${j.id}`}
-                  className={`rise flex cursor-pointer items-center gap-3 border-b border-white/[0.04] px-4 py-3 transition-colors hover:bg-white/[0.025] ${attention ? "border-l-2 border-l-[#FBBF24]/60" : "border-l-2 border-l-transparent"}`}
+                  className={`rise flex cursor-pointer items-center gap-3 border-b border-[#E5E5E3] px-4 py-3 transition-colors hover:bg-[#F7F7F6] ${attention ? "border-l-2 border-l-[#B45309]/60" : "border-l-2 border-l-transparent"}`}
                 >
                   <input
                     type="checkbox"
@@ -198,28 +198,28 @@ export default function Jumeaux() {
                     onChange={() => (coche ? retirerJumeau(j.id) : ajouterJumeau(j.id))}
                     data-testid={`registre-check-${j.id}`}
                     title="Ajouter au contexte de Flore"
-                    className="h-3.5 w-3.5 shrink-0 accent-[#22D3EE]"
+                    className="h-3.5 w-3.5 shrink-0 accent-[#0E7490]"
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="truncate text-[13px] font-medium text-white/90">{j.nom}</span>
-                      {attention && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#FBBF24]" title="Nécessite une attention" />}
+                      <span className="truncate text-[13px] font-medium text-[#111110]">{j.nom}</span>
+                      {attention && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#B45309]" title="Nécessite une attention" />}
                     </div>
-                    <div className="truncate font-code text-[9px] text-white/35">{j.domaine}{j.proprietaire ? ` · ${j.proprietaire}` : ""}</div>
+                    <div className="truncate font-code text-[9px] text-[#71716D]">{j.domaine}{j.proprietaire ? ` · ${j.proprietaire}` : ""}</div>
                   </div>
                   <span className="w-24 shrink-0 rounded border px-1.5 py-0.5 text-center font-code text-[9px]" style={{ color: st[1], borderColor: `${st[1]}44`, backgroundColor: `${st[1]}12` }} data-testid={`statut-${j.id}`}>
                     {st[0]}
                   </span>
                   {/* Connaissance : score + qualification + strates au survol */}
                   <div className="group relative w-40 shrink-0" data-testid={`connaissance-${j.id}`}>
-                    <div className="font-code text-[11px] text-white/85">{j.couverture} % · {qualifConnaissance(j.couverture)}</div>
-                    <div className="truncate font-code text-[9px] text-white/35">{resumeStrates(j)}</div>
-                    <div className="pointer-events-none absolute -top-2 left-0 z-50 w-52 -translate-y-full rounded-lg border border-white/10 bg-black/90 p-3 opacity-0 backdrop-blur-xl transition-opacity duration-150 group-hover:opacity-100" data-testid={`connaissance-tip-${j.id}`}>
-                      <div className="font-code text-[9px] uppercase tracking-[0.15em] text-white/40">Strates de connaissance</div>
+                    <div className="font-code text-[11px] text-[#111110]">{j.couverture} % · {qualifConnaissance(j.couverture)}</div>
+                    <div className="truncate font-code text-[9px] text-[#71716D]">{resumeStrates(j)}</div>
+                    <div className="pointer-events-none absolute -top-2 left-0 z-50 w-52 -translate-y-full rounded-lg border border-[#E5E5E3] bg-white/95 p-3 opacity-0 backdrop-blur-xl transition-opacity duration-150 group-hover:opacity-100" data-testid={`connaissance-tip-${j.id}`}>
+                      <div className="font-code text-[9px] uppercase tracking-[0.15em] text-[#71716D]">Strates de connaissance</div>
                       {Object.entries(STRATE_LABELS).map(([k, l]) => (
                         <div key={k} className="mt-1 flex items-center justify-between font-code text-[10px]">
-                          <span className="text-white/55">{l}</span>
-                          <span className="text-white/90">{j.strates?.[k] ?? "—"} %</span>
+                          <span className="text-[#52524F]">{l}</span>
+                          <span className="text-[#111110]">{j.strates?.[k] ?? "—"} %</span>
                         </div>
                       ))}
                     </div>
@@ -227,23 +227,23 @@ export default function Jumeaux() {
                   {/* Fraîcheur qualifiée */}
                   <div className="w-36 shrink-0" data-testid={`fraicheur-${j.id}`}>
                     <div className="font-code text-[11px]" style={{ color: fr[1] }}>{fr[0]}</div>
-                    <div className="truncate font-code text-[9px] text-white/35">Dernière connaissance : {j.fraicheur}</div>
+                    <div className="truncate font-code text-[9px] text-[#71716D]">Dernière connaissance : {j.fraicheur}</div>
                   </div>
                   {/* Autonomie contextualisée */}
                   <div className="w-36 shrink-0" title={`${aut[0]} — ${aut[1]}`} data-testid={`autonomie-${j.id}`}>
                     <div className="font-code text-[11px]" style={{ color: aut[2] }}>{aut[0]}</div>
-                    <div className="truncate font-code text-[9px] text-white/35">{aut[1]}</div>
+                    <div className="truncate font-code text-[9px] text-[#71716D]">{aut[1]}</div>
                   </div>
                   {/* Sources : N/M prêtes + détail au survol */}
                   <div className="group relative w-24 shrink-0" data-testid={`sources-${j.id}`}>
-                    <div className={`font-code text-[11px] ${ko.length ? "text-[#F87171]" : "text-[#10B981]"}`}>{nbOk}/{det.length} prêtes</div>
-                    {ko.length > 0 && <div className="truncate font-code text-[9px] text-[#F87171]/80">{ko.length} {ko[0] && STATUTS_SOURCES[ko[0].statut]?.[0]}</div>}
-                    <div className="pointer-events-none absolute -top-2 right-0 z-50 w-52 -translate-y-full rounded-lg border border-white/10 bg-black/90 p-3 opacity-0 backdrop-blur-xl transition-opacity duration-150 group-hover:opacity-100" data-testid={`sources-tip-${j.id}`}>
+                    <div className={`font-code text-[11px] ${ko.length ? "text-[#B91C1C]" : "text-[#047857]"}`}>{nbOk}/{det.length} prêtes</div>
+                    {ko.length > 0 && <div className="truncate font-code text-[9px] text-[#B91C1C]/80">{ko.length} {ko[0] && STATUTS_SOURCES[ko[0].statut]?.[0]}</div>}
+                    <div className="pointer-events-none absolute -top-2 right-0 z-50 w-52 -translate-y-full rounded-lg border border-[#E5E5E3] bg-white/95 p-3 opacity-0 backdrop-blur-xl transition-opacity duration-150 group-hover:opacity-100" data-testid={`sources-tip-${j.id}`}>
                       {det.map((s) => {
-                        const ss = STATUTS_SOURCES[s.statut] || [s.statut, "#9CA3AF"];
+                        const ss = STATUTS_SOURCES[s.statut] || [s.statut, "#71716D"];
                         return (
                           <div key={s.cle} className="mt-1 flex items-center justify-between font-code text-[10px]">
-                            <span className="text-white/55">{s.nom}</span>
+                            <span className="text-[#52524F]">{s.nom}</span>
                             <span style={{ color: ss[1] }}>{ss[0]}</span>
                           </div>
                         );
@@ -255,25 +255,25 @@ export default function Jumeaux() {
                     <button
                       onClick={(e) => { e.stopPropagation(); navigate(`/jumeaux/${j.id}/revue`); }}
                       data-testid={j.statut === "observation" ? `revoir-admission-${j.id}` : `examiner-${j.id}`}
-                      className={`rounded px-2.5 py-1 text-[11px] transition-colors ${j.statut === "observation" ? "bg-[#FBBF24] font-semibold text-black hover:bg-[#E5A910]" : "border border-white/15 text-white/60 hover:border-white/40 hover:text-white"}`}
+                      className={`rounded px-2.5 py-1 text-[11px] transition-colors ${j.statut === "observation" ? "bg-[#B45309] font-semibold text-white hover:bg-[#92400E]" : "border border-[#E5E5E3] text-[#52524F] hover:border-[#D4D4D0] hover:text-[#111110]"}`}
                     >
                       {ACTION_LIGNE[j.statut] || "Ouvrir"}
                     </button>
                     <div className="relative">
-                      <button onClick={(e) => { e.stopPropagation(); setMenuOuvert(menuOuvert === j.id ? null : j.id); }} data-testid={`menu-${j.id}`} className="rounded p-1 text-white/35 transition-colors hover:text-white">
+                      <button onClick={(e) => { e.stopPropagation(); setMenuOuvert(menuOuvert === j.id ? null : j.id); }} data-testid={`menu-${j.id}`} className="rounded p-1 text-[#71716D] transition-colors hover:text-[#111110]">
                         <DotsThree size={16} weight="bold" />
                       </button>
                       {menuOuvert === j.id && (
                         <>
                           <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); setMenuOuvert(null); }} />
-                          <div className="absolute right-0 top-7 z-50 w-48 rounded-lg border border-white/10 bg-[#0D0D0D] p-1 shadow-xl" data-testid={`menu-panel-${j.id}`}>
-                            <button onClick={(e) => { e.stopPropagation(); setMenuOuvert(null); navigate(`/atlas?focus=${j.id}`); }} className="w-full rounded px-2.5 py-1.5 text-left text-[11px] text-white/65 hover:bg-white/[0.06] hover:text-white" data-testid={`menu-atlas-${j.id}`}>
+                          <div className="absolute right-0 top-7 z-50 w-48 rounded-lg border border-[#E5E5E3] bg-white p-1 shadow-xl" data-testid={`menu-panel-${j.id}`}>
+                            <button onClick={(e) => { e.stopPropagation(); setMenuOuvert(null); navigate(`/atlas?focus=${j.id}`); }} className="w-full rounded px-2.5 py-1.5 text-left text-[11px] text-[#52524F] hover:bg-[#F0F0EE] hover:text-[#111110]" data-testid={`menu-atlas-${j.id}`}>
                               Centrer dans l'Atlas
                             </button>
-                            <button onClick={(e) => { e.stopPropagation(); setMenuOuvert(null); window.dispatchEvent(new CustomEvent("meridian:flore-ask", { detail: `Parle-moi du jumeau ${j.nom}` })); }} className="w-full rounded px-2.5 py-1.5 text-left text-[11px] text-white/65 hover:bg-white/[0.06] hover:text-white" data-testid={`menu-flore-${j.id}`}>
+                            <button onClick={(e) => { e.stopPropagation(); setMenuOuvert(null); window.dispatchEvent(new CustomEvent("meridian:flore-ask", { detail: `Parle-moi du jumeau ${j.nom}` })); }} className="w-full rounded px-2.5 py-1.5 text-left text-[11px] text-[#52524F] hover:bg-[#F0F0EE] hover:text-[#111110]" data-testid={`menu-flore-${j.id}`}>
                               Demander à Flore
                             </button>
-                            <button onClick={async (e) => { e.stopPropagation(); setMenuOuvert(null); try { await navigator.clipboard.writeText(j.id); toast.success("Identifiant copié"); } catch { toast.error("Copie impossible — identifiant : " + j.id); } }} className="w-full rounded px-2.5 py-1.5 text-left text-[11px] text-white/65 hover:bg-white/[0.06] hover:text-white" data-testid={`menu-copier-${j.id}`}>
+                            <button onClick={async (e) => { e.stopPropagation(); setMenuOuvert(null); try { await navigator.clipboard.writeText(j.id); toast.success("Identifiant copié"); } catch { toast.error("Copie impossible — identifiant : " + j.id); } }} className="w-full rounded px-2.5 py-1.5 text-left text-[11px] text-[#52524F] hover:bg-[#F0F0EE] hover:text-[#111110]" data-testid={`menu-copier-${j.id}`}>
                               Copier l'identifiant
                             </button>
                           </div>
@@ -288,7 +288,7 @@ export default function Jumeaux() {
           </div>
         ))}
         {filtres.length === 0 && (
-          <div className="px-4 py-10 text-center text-sm text-white/35" data-testid="registre-vide">Aucun jumeau ne correspond — élargissez la recherche ou les filtres.</div>
+          <div className="px-4 py-10 text-center text-sm text-[#71716D]" data-testid="registre-vide">Aucun jumeau ne correspond — élargissez la recherche ou les filtres.</div>
         )}
       </div>
 

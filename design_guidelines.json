@@ -1,103 +1,225 @@
 {
-  "project_context": "Meridian Twin Configuration Workshop (Banking Ops)",
-  "theme_and_identity": {
-    "aesthetic": "High-End Mission Control",
-    "mode": "Dark Theme Strict",
-    "description": "A dense, high-performance banking ops workshop. Avoids generic enterprise tables. Prioritizes spatial memory, rapid keyboard navigation, and immediate error resolution."
-  },
-  "expert_critique_and_strategy": {
-    "1_what_to_keep": [
-      "The 'Mission Control' dark aesthetic (#0A0A0A, Cyan, Blue).",
-      "Side-by-side Master/Detail view for Step 2.",
-      "Clickable KPI indicators acting as active filters.",
-      "Discreet autosave and functional animations (no full reloads)."
-    ],
-    "2_what_an_expert_would_do_differently": [
-      "Density & Architecture: A generic flex-row list fails at 100 items. Shrinking from 12 to 7 columns when the Inspector opens causes catastrophic layout shifts and loss of spatial memory.",
-      "Drawer Collision: A 440px right drawer for the Catalog conflicts with the right-side Inspector, causing UI claustrophobia.",
-      "Aurora Bar Collision: Floating an AI bar AND a bulk-action bar simultaneously at the bottom creates visual pollution.",
-      "Status Hierarchy: Badges are decorative. In ops, errors must dictate row priority and offer immediate contextual fixes, not just a red label.",
-      "Stepper Dominance: A large horizontal stepper wastes critical vertical real estate needed for the data queue."
-    ],
-    "3_concrete_proposals_and_priorities": [
-      "Priority 1 (Layout Stability): Implement a permanent 12-column grid. Queue takes 8 cols, Inspector takes 4 cols. If no item is selected, the 4 cols show an elegant empty state. Zero layout shifting.",
-      "Priority 2 (The Catalog): Replace the right-drawer Catalog with a \u2318K Command Palette overlay (Spotlight style). It is temporary, keyboard-first, and preserves workspace.",
-      "Priority 3 (Morphing Action Bar): Merge the bottom bars. The Aurora AI pill morphs seamlessly into a wide Batch Actions glass bar when checkboxes are selected.",
-      "Priority 4 (Error Context): Use left-border color coding on rows for status. In the Inspector, errors must feature an inline 'Action Corrective' block.",
-      "Priority 5 (Compact Header): Move the stepper into the persistent header as a compact Breadcrumb (e.g., 'Meridian Twin / Step 2: Sources')."
-    ]
-  },
+  "project_name": "Méridian",
+  "theme": "light",
+  "language": "fr",
   "typography": {
-    "fonts": [
-      {
-        "usage": "Headings & Main Labels",
-        "family": "Space Grotesk",
-        "css_class": "font-sans"
-      },
-      {
-        "usage": "UI Text & Instructions",
-        "family": "IBM Plex Sans",
-        "css_class": "font-ui"
-      },
-      {
-        "usage": "Data, IDs, Dates, Status",
-        "family": "IBM Plex Mono",
-        "css_class": "font-mono"
-      }
-    ],
+    "fonts": {
+      "heading": "Chivo, sans-serif",
+      "body": "IBM Plex Sans, sans-serif",
+      "mono": "IBM Plex Mono, monospace"
+    },
+    "scale": {
+      "h1": "text-4xl sm:text-5xl tracking-tighter font-black text-ink-900 leading-none",
+      "h2": "text-2xl sm:text-3xl tracking-tight font-bold text-ink-900 leading-tight",
+      "h3": "text-xl sm:text-2xl tracking-tight font-semibold text-ink-900",
+      "h4": "text-lg font-medium text-ink-800",
+      "body": "text-base font-normal text-ink-700 leading-relaxed",
+      "body-sm": "text-sm font-normal text-ink-600 leading-relaxed",
+      "overline": "text-xs font-bold uppercase tracking-[0.2em] text-ink-500",
+      "data-label": "text-xs font-medium font-mono uppercase tracking-wider text-ink-500",
+      "data-value": "text-sm font-semibold font-mono text-ink-900"
+    },
     "rules": [
-      "CRITICAL: All numbers, metrics, and timestamps MUST use IBM Plex Mono to ensure tabular alignment.",
-      "Headings must use tracking-tight to look sharp, not playful.",
-      "Small labels (overline) must be uppercase with tracking-widest."
+      "No Inter or Roboto allowed.",
+      "Headlines > 32px must use tracking-tight or tracking-tighter.",
+      "Use IBM Plex Mono for all data points, dates, timestamps, and state badges.",
+      "Never center-align long text or dense data; use optical left-alignment.",
+      "Jump between heading and subheading must not exceed 2 Tailwind steps."
     ]
   },
   "colors": {
-    "background": "#0A0A0A",
-    "surface_primary": "#121212",
-    "surface_secondary": "#1A1A1A",
-    "border": "rgba(255,255,255,0.08)",
-    "brand_cyan": "#22D3EE",
-    "brand_blue": "#3B82F6",
-    "status_error": "#F87171",
-    "status_success": "#34D399",
-    "status_warning": "#FBBF24",
-    "text_primary": "#FFFFFF",
-    "text_secondary": "rgba(255,255,255,0.5)"
+    "foundation": {
+      "background": "#F7F7F6",
+      "surface": "#FFFFFF",
+      "surface-raised": "#FAFAFA",
+      "border": "#E5E5E3",
+      "border-strong": "#D4D4D0"
+    },
+    "ink": {
+      "900": "#111110",
+      "800": "#272725",
+      "700": "#3F3F3C",
+      "600": "#52524F",
+      "500": "#71716D"
+    },
+    "primary": {
+      "default": "#3730A3",
+      "hover": "#4338CA",
+      "subtle": "#EEECFA",
+      "text": "#312E81"
+    },
+    "semantic_states": {
+      "stable": {
+        "color": "#1B4332",
+        "bg": "#E8F5E9",
+        "shape": "circle",
+        "label": "Stable"
+      },
+      "en_construction": {
+        "color": "#1E3A8A",
+        "bg": "#EFF6FF",
+        "shape": "square",
+        "label": "En construction"
+      },
+      "en_observation": {
+        "color": "#5B21B6",
+        "bg": "#F5F3FF",
+        "shape": "diamond",
+        "label": "En observation"
+      },
+      "attention": {
+        "color": "#B45309",
+        "bg": "#FFFBEB",
+        "shape": "triangle",
+        "label": "Attention"
+      },
+      "information_ancienne": {
+        "color": "#475569",
+        "bg": "#F8FAFC",
+        "shape": "dotted-circle",
+        "label": "Information ancienne"
+      },
+      "acces_restreint": {
+        "color": "#7F1D1D",
+        "bg": "#FEF2F2",
+        "shape": "hexagon",
+        "label": "Accès restreint"
+      },
+      "erreur": {
+        "color": "#991B1B",
+        "bg": "#FEF2F2",
+        "shape": "cross",
+        "label": "Erreur"
+      }
+    },
+    "rules": [
+      "Never use pure black (#000000) or pure white without structure.",
+      "Semantic states MUST ALWAYS combine color + shape + label. Never rely on color alone (WCAG 2.2 AA).",
+      "Use primary color sparingly for key CTAs and Mesh activity indicators.",
+      "Avoid teal or cyan in this light theme (reserved for future dark theme)."
+    ]
   },
-  "spacing_and_layout": {
-    "strategy": "The Bento Grid Protocol (Mode B: High Density Grid)",
-    "grid_system": "12-column CSS grid (Queue: span 8, Inspector: span 4)",
-    "queue_density": "Tight vertical spacing (py-2, gap-2). Every pixel is utilized for scanning efficiency.",
-    "surfaces": "Retro-Futurism / Terminal look. 1px solid borders (`border-white/10`), no soft shadows on flat elements. Glassmorphism reserved strictly for floating components."
+  "visual_enhancers": {
+    "surfaces": {
+      "glass": "bg-white/80 backdrop-blur-xl border border-white/40 shadow-sm",
+      "card": "bg-white border border-border rounded-none shadow-[0_2px_8px_rgba(0,0,0,0.04)]",
+      "panel": "bg-surface-raised border border-border shadow-[0_8px_32px_rgba(0,0,0,0.08)]",
+      "flore_dock": "bg-white/95 backdrop-blur-2xl border-l border-border shadow-[-8px_0_32px_rgba(0,0,0,0.05)]"
+    },
+    "borders": {
+      "sharp": "rounded-none",
+      "subtle": "rounded-sm",
+      "control": "rounded-md"
+    },
+    "rules": [
+      "No generic soft shadows everywhere. Use crisp 1px borders.",
+      "The Atlas workspace uses full bleed background with floating glass panels over it.",
+      "Completely transparent backgrounds are FORBIDDEN on elements containing text over the Atlas."
+    ]
   },
   "components": {
-    "persistent_header": "Fixed top, backdrop-blur-md bg-[#0A0A0A]/80. Contains Breadcrumb Stepper (Left), Twin Name (Center), Autosave/Exit (Right).",
-    "kpi_filters": "4 interactive blocks. Layout: Massive Mono number above small uppercase label. Active state gets a 1px cyan border and 10% cyan bg.",
-    "source_queue": "Grid-based list. Collapsible group headers (sticky). Rows have 1px left-border colored by status. Columns: Checkbox | Name (bold) | Meta (mono 10px) | Status | Date.",
-    "adaptive_inspector": "Sticky right column. Adaptive form. Top of inspector highlights status. If error, display a tinted alert box with a primary 'Fix' CTA.",
-    "command_palette_catalog": "Replaces the drawer. Centered floating overlay (`backdrop-blur-xl`). Search input auto-focused. Keyboard navigable list of connectors.",
-    "aurora_morph_bar": "Floating pill at bottom center. Default: AI Copilot. When rows selected: Framer Motion animates it expanding into Batch Actions (Delete, Verify, Group)."
+    "global_header": {
+      "layout": "flex items-center justify-between h-14 px-4 bg-white border-b border-border z-50",
+      "elements": [
+        "[Équipe/espace ▾]: Left-aligned, heavy Chivo font, subtle hover.",
+        "Navigation: Centered, transparent background, text-ink-600 hover:text-ink-900. Links: Actualités, Atlas, Travaux, Jumeaux, Administration.",
+        "[● Mesh vivant]: Pulsing semantic green indicator with tiny IBM Plex Mono timestamp.",
+        "[✦ Parler à Flore]: Right-aligned pill button, primary subtle background.",
+        "[Profil]: Simple avatar or initial block."
+      ]
+    },
+    "actualites_feed": {
+      "layout": "Bento-style or timeline layout. Max width container, left aligned.",
+      "elements": [
+        "Navigation date ‹/›: Mono font header, large typography for Current Date.",
+        "Scopes: Tabs for Personnel / Mon espace / Mesh global.",
+        "Narrative Cards: Not generic social feeds. Dense, structured memory cards.",
+        "Actions: Clear 'Comprendre' and 'Voir dans l'Atlas' buttons."
+      ]
+    },
+    "travaux_cockpit": {
+      "description": "Replaces standard admin tables with a narrative, situation-focused workspace.",
+      "layout": "2-column dense layout or full-screen modal.",
+      "tabs": "Aperçu / Travail / Atlas / Décisions / Activité",
+      "style": "Strict, technical, high-contrast borders. Grid-lines visible (border-collapse style).",
+      "ai_integration": "Reprise intelligente par Flore displayed as a distinctive inset panel with a subtle primary tint."
+    },
+    "atlas_2d": {
+      "technology": "React Flow (@xyflow/react)",
+      "background": "Light dotted grid or subtle topographic lines on #F7F7F6.",
+      "nodes": "Sharp, angular nodes representing 'Territoires' and 'Jumeaux'. Colored by domain (pastels with dark ink text).",
+      "toolbar": "Floating glassmorphism panel at the bottom center. Controls: Lasso, Direct, Pause, Replay, Avant-Après, Historique.",
+      "accessibility": "Must include an 'Expliquer cette carte' button (WCAG screen reader summary)."
+    },
+    "flore_panel": {
+      "layout": "Docked right sidebar, 400px width.",
+      "visual": "flore_dock style from visual_enhancers.",
+      "content": "Multi-turn conversation, active context visible at top, 'TrustBadges' for sources (small mono pill tags)."
+    }
   },
-  "motion_and_interactions": {
-    "row_hover": "Background shifts to surface_secondary, slight right translation (translateX(2px)) for the row action icon.",
-    "aurora_morph": "Layout animation transitioning width and border-radius from a pill to a wide toolbar.",
-    "inspector_enter": "Fade and slight slide-up (`y: 10 -> 0`) for content inside the 4-col container.",
-    "palette_enter": "Scale up (`scale: 0.95 -> 1`) with backdrop fade in."
+  "grids_and_layouts": {
+    "spacing_scale": {
+      "dense": "p-2 gap-2",
+      "standard": "p-4 gap-4",
+      "relaxed": "p-8 gap-8"
+    },
+    "rules": [
+      "Use generative spacing: 2-3x more spacing between distinct semantic sections.",
+      "Grid children must be direct children. Use align-items: start to prevent generic stretching unless intended.",
+      "Use optical alignment for icons + text (4px right padding vs 6px on all sides for left-icon buttons)."
+    ]
   },
-  "instructions_to_main_agent": [
-    "Implement the layout using a strict 12-column grid. Do NOT shrink the list to 7 columns dynamically.",
-    "Build a centralized Command Palette (`\u2318K`) for the Catalog instead of a side drawer.",
-    "Combine the AI Aurora bar and Batch Actions into a single morphing Framer Motion component.",
-    "Use IBM Plex Mono for all numerical data, IDs, and timestamps. Use Space Grotesk strictly for high-level headings.",
-    "Ensure all clickable elements have semantic HTML tags and `data-testid` attributes."
-  ],
-  "UNIVERSAL GUIDELINES FOR MAIN AGENT": [
-    "Create depth through layered design elements with z-index hierarchy.",
-    "Use glass-morphism effects with backdrop filters (12-24px blur) ONLY for floating overlays (Palette, Batch Bar).",
-    "You MUST NOT apply universal transition (e.g., `transition: all`). Add transitions for specific properties to prevent breaking transforms.",
-    "You MUST NOT center align the app container. Keep natural left-aligned reading flows for data.",
-    "Every interaction needs micro-animations - hover states, transitions, entrance animations. Static = dead.",
-    "Subtle grain textures, custom selection states: separates good from extraordinary.",
-    "All interactive and key informational elements MUST include a `data-testid` attribute."
+  "motion": {
+    "philosophy": "Calm, controlled, precise. No bouncing. No chaotic staggering.",
+    "transitions": {
+      "default": "transition-all duration-200 ease-in-out",
+      "panel": "transition-transform duration-300 cubic-bezier(0.16, 1, 0.3, 1)"
+    },
+    "atlas": "Smooth pan/zoom. State changes (Replay/Avant-Après) should crossfade elegantly.",
+    "rules": [
+      "Never use 'transition: all' globally in CSS.",
+      "Respect prefers-reduced-motion."
+    ]
+  },
+  "accessibility": {
+    "wcag": "2.2 AA Compliance",
+    "contrast": "Text against background must meet 4.5:1. Large text 3:1.",
+    "focus": "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-default focus-visible:ring-offset-2",
+    "semantic_state": "All status indicators MUST have a visual shape and a text label, e.g., <CircleIcon/> + <span className='sr-only'>Stable</span>."
+  },
+  "css_tokens": {
+    "root": {
+      "--mdn-bg": "#F7F7F6",
+      "--mdn-surface": "#FFFFFF",
+      "--mdn-border": "#E5E5E3",
+      "--mdn-ink-main": "#111110",
+      "--mdn-ink-muted": "#52524F",
+      "--mdn-primary": "#3730A3",
+      "--mdn-state-stable-c": "#1B4332",
+      "--mdn-state-stable-bg": "#E8F5E9",
+      "--mdn-state-construct-c": "#1E3A8A",
+      "--mdn-state-construct-bg": "#EFF6FF",
+      "--mdn-state-obs-c": "#5B21B6",
+      "--mdn-state-obs-bg": "#F5F3FF",
+      "--mdn-state-attn-c": "#B45309",
+      "--mdn-state-attn-bg": "#FFFBEB",
+      "--mdn-state-old-c": "#475569",
+      "--mdn-state-old-bg": "#F8FAFC",
+      "--mdn-state-restr-c": "#7F1D1D",
+      "--mdn-state-restr-bg": "#FEF2F2",
+      "--mdn-state-err-c": "#991B1B",
+      "--mdn-state-err-bg": "#FEF2F2"
+    }
+  },
+  "universal_guidelines_for_main_agent": [
+    "You tend to converge toward generic outputs. Break the mold: use the defined sharp borders, tight tracking for headings, and mono fonts for data.",
+    "No generic centered layouts. Optical left-alignment is strictly preferred.",
+    "Create depth through layered design elements with z-index hierarchy, particularly for the Atlas and Flore panel.",
+    "Use glass-morphism effects carefully; only use the specified 'glass' token.",
+    "DO NOT add `.App { text-align: center; }`.",
+    "All interactive and key informational elements MUST include a `data-testid` attribute (e.g., data-testid='atlas-lasso-button').",
+    "For the Atlas map, maintain cartographic soul: subtle background grids, clear legends, floating controls.",
+    "Ensure all text is completely legible over the Atlas using proper background blurring or solid backgrounds.",
+    "The app must be entirely in French, reflecting an intelligent, calm, and highly professional enterprise decision platform."
   ]
 }
