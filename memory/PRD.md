@@ -1,5 +1,11 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v24, lisibilité de l'Atlas — fond de carte adapté)
+- **Demande utilisateur** : améliorer la lisibilité de l'Atlas avec un fond adapté.
+- **Canvas « papier cartographique »** : dégradé radial (centre #FDFDFB → bords #EDECE6) qui détache la carte du fond applicatif et concentre le regard ; trame de points resserrée et plus visible (gap 26, opacité 13 %).
+- **Territoires rehaussés** : remplissage des régions 3 % → 6 % d'opacité, bordures colorées 18 % → 27 %, légère ombre portée — l'archipel des domaines se lit d'un coup d'œil.
+- Vérifié par capture : contraste nettement supérieur, identité couleur par domaine préservée.
+
 ## Implémenté (06/2026 — v23, « Ajouter une source » dans le panneau droit — choix utilisateur)
 - La palette modale centrée (CatalogueTiroir) est remplacée par le **panneau droit existant de l'atelier** : « Ajouter une source » ouvre le catalogue dans la colonne inspecteur (recherche, catégories, navigation clavier ↑↓/⏎/esc conservées) ; après ajout, le panneau bascule directement sur l'inspecteur de la nouvelle source à configurer. Aucun overlay modal dans ce flux (ImportModal conservé pour l'import massif seul).
 - Correctif visuel au passage : intercalaires de groupes de la file des sources repassés en clair (`#0C0C0C` → `#F0F0EE`, reliquat du thème sombre).

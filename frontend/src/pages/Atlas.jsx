@@ -342,7 +342,7 @@ export default function Atlas() {
 
   return (
     <div className="flex h-full flex-col">
-    <div className="relative min-h-0 flex-1 overflow-hidden" data-testid="system-map">
+    <div className="relative min-h-0 flex-1 overflow-hidden" data-testid="system-map" style={{ background: "radial-gradient(ellipse at 50% 38%, #FDFDFB 0%, #F5F4F0 65%, #EDECE6 100%)" }}>
       <ReactFlow
         key={focus || situationParam || "mesh"}
         nodes={nodes}
@@ -453,7 +453,7 @@ export default function Atlas() {
         nodesConnectable={false}
         colorMode="light"
       >
-        <Background variant={BackgroundVariant.Dots} gap={30} size={1} color="rgba(17,17,16,0.08)" />
+        <Background variant={BackgroundVariant.Dots} gap={26} size={1.3} color="rgba(17,17,16,0.13)" />
         <Controls showInteractive={false} position="bottom-right" />
       </ReactFlow>
 

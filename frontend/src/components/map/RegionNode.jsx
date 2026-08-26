@@ -11,8 +11,9 @@ export default function RegionNode({ data }) {
         height: data.h,
         pointerEvents: "none",
         borderRadius: 56,
-        border: `1px solid ${data.couleur}2E`,
-        background: `${data.couleur}08`,
+        border: `1px solid ${data.couleur}45`,
+        background: `${data.couleur}0F`,
+        boxShadow: "0 1px 4px rgba(17,17,16,0.05)",
       }}
       className="relative"
       data-testid={`region-${data.id}`}
