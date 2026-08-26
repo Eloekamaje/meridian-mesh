@@ -1,5 +1,11 @@
 # Méridian — PRD
 
+## Implémenté (26/08/2026 — v19b, Actualités repensée « le brief EST la page »)
+- **Une seule rangée de contrôle** : vues segmentées (Brief/Radar/À traiter·badge/Suivis) à gauche ; portées compactes (Personnel/Espace/Global) + **calendrier du Mesh** (‹ date › + popover presets/date) à droite. Fini les 4 rangées de contrôles empilées ; l'overline redondante disparaît (la sidebar porte le contexte).
+- Briefing éditorial immédiat (salutation, accroche forte, points, lecture rôle) ; bannière historique et synthèse de période inchangées.
+- Bug corrigé : le popover calendrier passait **sous** le briefing (contextes d'empilement dus à l'animation `rise`) → en-tête élevé (`relative z-30`).
+- Vérifié E2E : preset 7j via popover → titre « Du 20 au 26 août » + synthèse ; portées compactes ; pillule « À traiter ».
+
 ## Implémenté (26/08/2026 — v19, REFONTE IA-NATIVE inspirée ChatGPT — document MERIDIAN_REDESIGN_UI_AI_NATIVE.md appliqué intégralement)
 - **Shell ChatGPT-style** : barre latérale repliable (marque, « + Nouveau travail », nav Accueil/Actualités/Atlas/Travaux/Jumeaux, **Espaces**, **Récents** (3 derniers travaux), Parcours guidé, **Administration masquée selon le rôle**) + en-tête contextuel fin (espace+badge, ● Mesh vivant, **pillule « N à traiter »** → À traiter, notifications, persona). Plus de bouton Flore dans l'en-tête : l'entrée Flore = composer.
 - **Composer unique Flore** (`ComposerFlore.jsx`) : textarea + [+ Contexte] (chips retirables : sélection Atlas, périodes, actualité) + [Capacités] (Explorer le Mesh, Comparer deux états → Atlas avant/après, Analyser un changement, Surveiller un phénomène → délégation, Préparer une décision, Créer une synthèse) + [Micro] (toast bientôt) + [Envoyer] → événement flore-ask + panneau Flore. Présent : plein sur Accueil, compact en bas d'Atlas/Actualités/Jumeaux — jamais flottant.

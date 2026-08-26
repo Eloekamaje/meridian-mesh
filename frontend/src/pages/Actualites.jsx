@@ -245,6 +245,16 @@ export default function Actualites() {
   const [initiatives, setInitiatives] = useState(null);
   const [compteurs, setCompteurs] = useState(null);
   const [delegations, setDelegations] = useState([]);
+  const [calendrier, setCalendrier] = useState(false);
+  const refCalendrier = useRef(null);
+
+  useEffect(() => {
+    const fermer = (e) => {
+      if (refCalendrier.current && !refCalendrier.current.contains(e.target)) setCalendrier(false);
+    };
+    document.addEventListener("mousedown", fermer);
+    return () => document.removeEventListener("mousedown", fermer);
+  }, []);
 
   const dateCible = useMemo(() => {
     const d = new Date();
@@ -321,15 +331,16 @@ export default function Actualites() {
     : decalage === 0 && jours === 7 ? "7j"
     : decalage === 0 && jours === 30 ? "30j" : "";
 
-  const titrePage = useMemo(() => {
+  const titreCourt = useMemo(() => {
+    const court = dateCible.toLocaleDateString("fr-FR", { day: "numeric", month: "long" });
     if (jours > 1) {
       const debut = new Date(dateCible);
       debut.setDate(debut.getDate() - jours + 1);
-      return `Du ${debut.toLocaleDateString("fr-FR", { day: "numeric", month: "long" })} au ${dateCible.toLocaleDateString("fr-FR", { day: "numeric", month: "long" })}`;
+      return `Du ${debut.toLocaleDateString("fr-FR", { day: "numeric", month: "long" })} au ${court}`;
     }
-    if (decalage === 0) return `Aujourd'hui · ${fmtDateLongue(dateCible)}`;
-    if (decalage === 1) return `Hier · ${fmtDateLongue(dateCible)}`;
-    return fmtDateLongue(dateCible);
+    if (decalage === 0) return `Aujourd'hui · ${court}`;
+    if (decalage === 1) return `Hier · ${court}`;
+    return court;
   }, [decalage, jours, dateCible]);
 
   const histoires = data?.histoires || [];
@@ -340,70 +351,87 @@ export default function Actualites() {
   return (
     <div className="h-full overflow-y-auto px-6 py-8 pb-20 sm:px-8" data-testid="actualites-page">
       <div className="mx-auto max-w-3xl">
-        {/* En-tête temporel */}
-        <header className="rise">
-          <div className="font-code text-[10px] uppercase tracking-[0.3em] text-[#3730A3]">Actualités</div>
-          <div className="mt-2 flex flex-wrap items-center gap-2.5">
-            <button onClick={() => setDecalage((d) => d + 1)} data-testid="date-prec-btn" title="Période précédente" className="flex h-9 w-9 items-center justify-center rounded-md border border-[#E5E5E3] bg-white text-[#52524F] transition-colors hover:text-[#111110]">
-              <CaretLeft size={15} />
-            </button>
-            <h1 className="font-display text-3xl font-black tracking-tight text-[#111110]" data-testid="actualites-titre">{titrePage}</h1>
-            <button onClick={() => setDecalage((d) => Math.max(0, d - 1))} disabled={decalage === 0} data-testid="date-suiv-btn" title="Période suivante" className="flex h-9 w-9 items-center justify-center rounded-md border border-[#E5E5E3] bg-white text-[#52524F] transition-colors hover:text-[#111110] disabled:opacity-30">
-              <CaretRight size={15} />
-            </button>
-            <select value={presetActif} onChange={(e) => e.target.value && appliquerPreset(e.target.value)} data-testid="date-preset-select" className="h-9 rounded-md border border-[#E5E5E3] bg-white px-2.5 text-xs text-[#3F3F3C] focus:outline-none">
-              <option value="" label="Période…" />
-              {PRESETS.map(([v, l]) => <option key={v} value={v} label={l} />)}
-            </select>
-            <label className="flex items-center gap-1.5 text-xs text-[#71716D]">
-              <CalendarBlank size={14} />
-              <input type="date" value={fmtDateInput(dateCible)} max={fmtDateInput(new Date())}
-                onChange={(e) => {
-                  if (!e.target.value) return;
-                  const d = new Date(`${e.target.value}T12:00:00`);
-                  setDecalage(Math.max(0, Math.round((new Date().setHours(12, 0, 0, 0) - d.getTime()) / 86400000)));
-                  setJours(1);
-                }}
-                data-testid="date-input" className="h-9 rounded-md border border-[#E5E5E3] bg-white px-2 text-xs text-[#3F3F3C] focus:outline-none" />
-            </label>
-          </div>
+        {/* Barre de lecture unique : vues · portées · temps */}
+        <header className="rise relative z-30" ref={refCalendrier}>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex gap-0.5 rounded-lg border border-[#E5E5E3] bg-white p-0.5" data-testid="vues-actualites">
+              {VUES_ACTUS.map(([id, label]) => {
+                const n = id === "brief" ? null : compteurs?.[id === "a_traiter" ? "a_traiter" : id];
+                return (
+                  <button
+                    key={id}
+                    onClick={() => setVue(id)}
+                    data-testid={`vue-${id}`}
+                    className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                      vue === id ? "bg-[#3730A3] font-semibold text-white" : "text-[#52524F] hover:bg-[#F0F0EE] hover:text-[#111110]"
+                    }`}
+                  >
+                    {label}
+                    {n > 0 && (
+                      <span className={`rounded-full px-1.5 font-code text-[9px] ${vue === id ? "bg-white/25 text-white" : id === "a_traiter" ? "bg-[#B45309] text-white" : "bg-[#F0F0EE] text-[#52524F]"}`} data-testid={`vue-${id}-badge`}>
+                        {n}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
 
-          {/* Trois portées très lisibles */}
-          <div className="mt-4 flex flex-wrap items-center gap-2" data-testid="portees">
-            {PORTEES.map(([id, label]) => (
-              <button key={id} onClick={() => setPortee(id)} data-testid={`portee-${id}`}
-                className={`rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors ${portee === id ? "border-[#3730A3] bg-[#3730A3] text-white" : "border-[#E5E5E3] bg-white text-[#52524F] hover:text-[#111110]"}`}>
-                {label}
-              </button>
-            ))}
+            <div className="flex items-center gap-2">
+              <div className="flex gap-0.5 rounded-lg border border-[#E5E5E3] bg-white p-0.5" data-testid="portees" title="Portée — vue limitée à vos autorisations">
+                {PORTEES.map(([id, label]) => (
+                  <button key={id} onClick={() => setPortee(id)} data-testid={`portee-${id}`}
+                    className={`rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors ${portee === id ? "bg-[#111110] text-white" : "text-[#52524F] hover:bg-[#F0F0EE] hover:text-[#111110]"}`}>
+                    {label === "Mon espace" ? "Espace" : label === "Mesh global" ? "Global" : label}
+                  </button>
+                ))}
+              </div>
+              <div className="relative flex items-center gap-0.5 rounded-lg border border-[#E5E5E3] bg-white p-0.5" data-testid="nav-temps">
+                <button onClick={() => setDecalage((d) => d + 1)} data-testid="date-prec-btn" title="Période précédente" className="flex h-7 w-7 items-center justify-center rounded-md text-[#52524F] transition-colors hover:bg-[#F0F0EE] hover:text-[#111110]">
+                  <CaretLeft size={13} />
+                </button>
+                <button onClick={() => setCalendrier((c) => !c)} data-testid="actualites-titre" title="Choisir la période" className="rounded-md px-2 py-1 text-xs font-semibold text-[#111110] transition-colors hover:bg-[#F0F0EE]">
+                  {titreCourt}
+                </button>
+                <button onClick={() => setDecalage((d) => Math.max(0, d - 1))} disabled={decalage === 0} data-testid="date-suiv-btn" title="Période suivante" className="flex h-7 w-7 items-center justify-center rounded-md text-[#52524F] transition-colors hover:bg-[#F0F0EE] hover:text-[#111110] disabled:opacity-30">
+                  <CaretRight size={13} />
+                </button>
+                {calendrier && (
+                  <div className="glass absolute right-0 top-10 z-40 w-56 rounded-xl p-2" data-testid="calendrier-popover">
+                    <div className="space-y-0.5">
+                      {PRESETS.map(([v, l]) => (
+                        <button key={v} onClick={() => { appliquerPreset(v); setCalendrier(false); }} data-testid={`preset-${v}`}
+                          className={`w-full rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${presetActif === v ? "bg-[#EEECFA] font-semibold text-[#312E81]" : "text-[#52524F] hover:bg-[#F0F0EE] hover:text-[#111110]"}`}>
+                          {l}
+                        </button>
+                      ))}
+                    </div>
+                    <select value={presetActif} onChange={(e) => { if (e.target.value) { appliquerPreset(e.target.value); setCalendrier(false); } }} data-testid="date-preset-select" className="mt-2 h-8 w-full rounded-md border border-[#E5E5E3] bg-white px-2 text-xs text-[#3F3F3C] focus:outline-none">
+                      <option value="" label="Période…" />
+                      {PRESETS.map(([v, l]) => <option key={v} value={v} label={l} />)}
+                    </select>
+                    <label className="mt-2 flex items-center gap-1.5 text-[11px] text-[#71716D]">
+                      <CalendarBlank size={13} />
+                      <input type="date" value={fmtDateInput(dateCible)} max={fmtDateInput(new Date())}
+                        onChange={(e) => {
+                          if (!e.target.value) return;
+                          const d = new Date(`${e.target.value}T12:00:00`);
+                          setDecalage(Math.max(0, Math.round((new Date().setHours(12, 0, 0, 0) - d.getTime()) / 86400000)));
+                          setJours(1);
+                          setCalendrier(false);
+                        }}
+                        data-testid="date-input" className="h-8 w-full rounded-md border border-[#E5E5E3] bg-white px-2 text-xs text-[#3F3F3C] focus:outline-none" />
+                    </label>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="mt-1.5 flex items-center gap-2">
             <span className="font-code text-[10px] text-[#71716D]" data-testid="portee-note">
               Vue limitée à vos autorisations{data?.espace_label ? ` · ${data.espace_label}` : ""}
             </span>
-          </div>
-          {data?.note_portee && <p className="mt-2 font-code text-[10px] text-[#B45309]" data-testid="portee-avertissement">{data.note_portee}</p>}
-
-          {/* Quatre vues : Brief · Radar · À traiter · Suivis */}
-          <div className="mt-5 flex flex-wrap gap-1 border-b border-[#E5E5E3]" data-testid="vues-actualites">
-            {VUES_ACTUS.map(([id, label]) => {
-              const n = id === "brief" ? null : compteurs?.[id === "a_traiter" ? "a_traiter" : id];
-              return (
-                <button
-                  key={id}
-                  onClick={() => setVue(id)}
-                  data-testid={`vue-${id}`}
-                  className={`flex items-center gap-1.5 border-b-2 px-3.5 py-2 text-xs font-medium transition-colors ${
-                    vue === id ? "border-[#3730A3] text-[#111110]" : "border-transparent text-[#71716D] hover:text-[#111110]"
-                  }`}
-                >
-                  {label}
-                  {n > 0 && (
-                    <span className={`rounded-full px-1.5 font-code text-[9px] ${id === "a_traiter" ? "bg-[#B45309] text-white" : "bg-[#F0F0EE] text-[#52524F]"}`} data-testid={`vue-${id}-badge`}>
-                      {n}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+            {data?.note_portee && <span className="font-code text-[10px] text-[#B45309]" data-testid="portee-avertissement">{data.note_portee}</span>}
           </div>
         </header>
 
