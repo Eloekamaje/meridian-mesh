@@ -721,3 +721,33 @@ COMMANDE_DEMO = {
         {"id": "src-github", "connecteur": "github", "nom": "GitHub pay-remboursements", "environnement": "production", "perimetre": "dépôt principal", "proprietaire": "Équipe Paiements", "statut": "prete", "erreur": None, "dernier_test": {"date": "25/06 09:02", "resultat": "ok"}, "config": {"organisation": "banque", "depots": "pay-remboursements", "branches": "main", "secret": "coffre/gh-token"}},
     ],
 }
+
+# ---------- Registre : connaissance par strates, sources détaillées, fraîcheur qualifiée ----------
+
+_SOURCES_NOMS = {"code": "GitHub", "bdd": "PostgreSQL", "observabilite": "Datadog", "incidents": "ServiceNow", "documentation": "Confluence"}
+
+_STRATES = {
+    "paiements": (100, 94, 82, 90, 88), "facturation": (96, 78, 70, 85, 76), "comptes": (100, 90, 80, 88, 84),
+    "identite": (92, 80, 64, 78, 66), "fraude": (96, 88, 76, 82, 72), "conformite": (58, 30, 22, 44, 35),
+    "support": (80, 66, 48, 62, 55), "notifications": (88, 74, 56, 70, 62), "commandes": (94, 82, 68, 80, 74),
+    "logistique": (70, 46, 30, 52, 40), "portail-web": (86, 72, 50, 66, 58), "api-gateway": (98, 92, 84, 86, 82),
+}
+
+_SOURCES_EXTRA = {
+    "paiements": [("evenements", "Splunk", "secret_expire")],
+    "conformite": [("evenements", "Splunk", "en_retard")],
+    "logistique": [("observabilite", "Datadog", "a_configurer")],
+}
+
+_FRAICHEUR_ETATS = {
+    "paiements": "a_jour", "facturation": "a_jour", "comptes": "a_jour", "identite": "partiel",
+    "fraude": "a_jour", "conformite": "retard", "support": "partiel", "notifications": "partiel",
+    "commandes": "a_jour", "logistique": "retard", "portail-web": "partiel", "api-gateway": "a_jour",
+}
+
+for _t in TWINS:
+    _i, _c, _r, _tr, _m = _STRATES[_t["id"]]
+    _t["strates"] = {"identite": _i, "comportement": _c, "relations": _r, "trajectoire": _tr, "memoire": _m}
+    _t["sources_detail"] = [{"cle": k, "nom": _SOURCES_NOMS[k], "statut": "prete"} for k, v in _t["sources"].items() if v]
+    _t["sources_detail"] += [{"cle": k, "nom": n, "statut": s} for k, n, s in _SOURCES_EXTRA.get(_t["id"], [])]
+    _t["fraicheur_etat"] = _FRAICHEUR_ETATS[_t["id"]]

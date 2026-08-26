@@ -40,6 +40,13 @@ const SUGGESTIONS_DOMAINE = [
   "Ouvrir une investigation",
 ];
 
+const SUGGESTIONS_REGISTRE = [
+  "Pourquoi leur connaissance est-elle faible ?",
+  "Lequel peut être admis ?",
+  "Comparer leurs sources",
+  "Rechercher les blocages communs",
+];
+
 export default function AuroraBar() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -60,7 +67,7 @@ export default function AuroraBar() {
 
   const selJumeaux = selection.map(jumeauPar).filter(Boolean);
   const nbDomaine = domaineSel && mesh ? mesh.jumeaux.filter((j) => !j.anonyme && j.domaine === domaineSel).length : 0;
-  const suggestionsActives = selection.length > 0 ? SUGGESTIONS_SELECTION : domaineSel ? SUGGESTIONS_DOMAINE : suggestions;
+  const suggestionsActives = selection.length > 0 ? (contexte === "jumeaux" ? SUGGESTIONS_REGISTRE : SUGGESTIONS_SELECTION) : domaineSel ? SUGGESTIONS_DOMAINE : suggestions;
 
   useEffect(() => {
     setReponse(null);

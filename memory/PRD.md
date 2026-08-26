@@ -1,5 +1,13 @@
 # Méridian — PRD
 
+## Implémenté (25/06/2026 — v9, suppression des modales — revue d'admission)
+- **Choix utilisateur : zéro modale, zéro panneau latéral.** La revue d'admission (ex-`examen-dialog`, seule modale de l'app) est remplacée par :
+  - **Expansion inline** dans le registre (`Jumeaux.jsx`) : clic sur une ligne (ou « Ouvrir ») → la ligne se déplie et affiche la revue complète (strates, sources, capacités, comportements, relations A2A, contradictions, manquantes, propriétaire, autonomie) + lien « Ouvrir la revue complète → ». Données d'examen chargées paresseusement et mises en cache (`revues`), purgées au changement de périmètre.
+  - **Page dédiée plein écran `/jumeaux/:jid/revue`** (`RevueJumeau.jsx`) : en-tête façon Atelier (retour Registre, titre « Revue d'admission — X » en observation, badge statut, « Centrer dans l'Atlas »), contenu complet, bouton « Confirmer l'admission dans le Mesh » (niveau complet requis) → toast + retour au registre. « Revoir l'admission » y navigue directement.
+- **Composant partagé `RevueContenu.jsx`** (expansion + page) ; constantes/helpers du registre extraits dans `lib/jumeaux.js`.
+- **Bug P0 Topbar non reproduit** : en-tête du registre entièrement cliquable (vérifié par elementFromPoint, plusieurs viewports) — le chevauchement reporté n'existe plus.
+- Tests : iteration_16 → 9/9 scénarios frontend, 0 erreur console, aucun role=dialog résiduel, admission + reset démo validés. Correctif mineur : feedback toast si copie presse-papiers impossible.
+
 ## Problème d'origine (résumé)
 Construire Méridian non pas comme un Atlas/graphe centré sur les jumeaux, mais comme un **système de compréhension et de décision pour le SI**, organisé autour de l'objet **Situation**. Repositionnement v2 (utilisateur) : **système qui apprend continuellement la structure et le comportement du SI** — cycle Découverte candidate → Compréhension validée → Décision éclairée → Mémoire du Mesh. L'accueil devient un Observatoire des découvertes (3 colonnes Découvert / À comprendre / À décider), l'Atlas montre l'évolution du savoir (6 états de relations, maturité des domaines, 3 dynamiques temps réel), les investigations couvrent relations/comportements/connaissances/contradictions, chaque décision enrichit la mémoire du Mesh. Code couleur : Découvrir cyan, Comprendre violet, Décider ambre.
 

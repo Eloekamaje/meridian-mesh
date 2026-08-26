@@ -32,7 +32,7 @@ NO_ID = {"_id": 0}
 logger = logging.getLogger("meridian")
 
 
-SEED_VERSION = 3
+SEED_VERSION = 4
 
 
 async def peupler_demo():
@@ -91,9 +91,10 @@ def niveau_au_moins(niveau, seuil):
 def projete_jumeau(j: dict, niveau: str):
     base = {"id": j["id"], "nom": j["nom"], "domaine": j.get("domaine"), "statut": j.get("statut"), "position": j.get("position")}
     if niveau_au_moins(niveau, "resume"):
-        base.update({"mission": j.get("mission"), "sante": j.get("sante"), "couverture": j.get("couverture"), "fraicheur": j.get("fraicheur")})
+        base.update({"mission": j.get("mission"), "sante": j.get("sante"), "couverture": j.get("couverture"), "fraicheur": j.get("fraicheur"), "strates": j.get("strates"), "fraicheur_etat": j.get("fraicheur_etat")})
     if niveau_au_moins(niveau, "preuves"):
         base["sources"] = j.get("sources")
+        base["sources_detail"] = j.get("sources_detail")
     if niveau == "complet":
         base.update({"proprietaire": j.get("proprietaire"), "autonomie": j.get("autonomie"), "environnement": j.get("environnement")})
     return base
@@ -519,6 +520,8 @@ ETAT_REL_LABELS = {"observee": "observée", "supposee": "supposée", "validation
 def intention_selection(q: str):
     if any(k in q for k in ["inconnue", "inconnu", "non documente", "cache"]):
         return "inconnues"
+    if any(k in q for k in ["connaissance", "faible", "admis", "admission", "blocage", "sources"]):
+        return "registre"
     if any(k in q for k in ["impact", "changement"]):
         return "impact"
     if any(k in q for k in ["critique", "fragile"]):
@@ -550,6 +553,30 @@ async def reponse_selection(intent, sel, aut, tous, id_vers_nom):
         return id_vers_nom.get(r["source"], r["source"]) + " → " + id_vers_nom.get(r["cible"], r["cible"])
 
     indicateurs = {"confiance": 72, "couverture": 64, "fraicheur": "à l'instant", "contradictions": len([r for r in internes if r["etat"] == "contestee"])}
+
+    if intent == "registre":
+        twins = [par_id[j] for j in sel if j in par_id]
+        lignes = []
+        for t in twins[:6]:
+            det = t.get("sources_detail") or []
+            nb_ok = sum(1 for s in det if s.get("statut") == "prete")
+            lignes.append(f"{t['nom']} — connaissance {t.get('couverture', 0)} %, sources {nb_ok}/{len(det)} prêtes, autonomie {t.get('autonomie', '—')}")
+        txt = "Registre — " + " · ".join(lignes) + "."
+        admissibles = [t for t in twins if t.get("statut") == "observation"]
+        if admissibles:
+            txt += f" Prêt(s) pour une revue d'admission : {', '.join(t['nom'] for t in admissibles)}."
+        faibles = [t for t in twins if t.get("couverture", 100) < 60]
+        if faibles:
+            txt += f" Connaissance insuffisante : {', '.join(t['nom'] for t in faibles)} — leurs sources méritent d'être complétées."
+        blocages = [s for t in twins for s in (t.get("sources_detail") or []) if s.get("statut") not in (None, "prete")]
+        if blocages:
+            txt += f" Blocage(s) commun(s) : {', '.join(sorted({s['nom'] + ' (' + s['statut'] + ')' for s in blocages}))}."
+        return {
+            "comportement": "expliquer", "reponse": txt, "contributions": [],
+            "preuves": [{"source": "Registre des jumeaux", "detail": f"{len(twins)} jumeau(x) analysé(s) dans votre périmètre"}],
+            "indicateurs": {"confiance": 85, "couverture": round(sum(t.get("couverture", 0) for t in twins) / max(len(twins), 1)), "fraicheur": "à l'instant", "contradictions": 0},
+            "action": {"route": "/jumeaux", "label": "Ouvrir le registre"},
+        }
 
     if intent == "relations":
         if not internes:

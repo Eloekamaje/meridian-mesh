@@ -13,6 +13,7 @@ import Investigations from "@/pages/Investigations";
 import InvestigationDetail from "@/pages/InvestigationDetail";
 import Decisions from "@/pages/Decisions";
 import Jumeaux from "@/pages/Jumeaux";
+import RevueJumeau from "@/pages/RevueJumeau";
 import Administration from "@/pages/Administration";
 
 function App() {
@@ -30,6 +31,7 @@ function App() {
               <Route path="/investigations/:id" element={<InvestigationDetail />} />
               <Route path="/decisions" element={<Decisions />} />
               <Route path="/jumeaux" element={<Jumeaux />} />
+              <Route path="/jumeaux/:jid/revue" element={<RevueJumeau />} />
               <Route path="/commande/:cid" element={<Commande />} />
               <Route path="/administration" element={<Administration />} />
               <Route path="/carte" element={<Navigate to="/atlas" replace />} />

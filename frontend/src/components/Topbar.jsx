@@ -45,7 +45,7 @@ export default function Topbar() {
         >
           {info.espace.global ? <ShieldCheck size={12} /> : <LockSimple size={12} />}
           {info.espace.global
-            ? "Vérité complète du Mesh"
+            ? "Vue complète du périmètre autorisé"
             : `Filtré côté serveur · ${info.nb_autorises} jumeaux · ${POLITIQUES[info.espace.politique_dependances] || ""}`}
         </span>
       )}
