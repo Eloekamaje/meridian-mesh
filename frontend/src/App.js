@@ -38,6 +38,7 @@ function App() {
               <Route path="/investigations" element={<Investigations />} />
               <Route path="/investigations/:id" element={<InvestigationDetail />} />
               <Route path="/travaux" element={<Travaux />} />
+              <Route path="/travaux/nouveau" element={<Accueil mode="creation" />} />
               <Route path="/travaux/:cid" element={<TravailDetail />} />
               <Route path="/jumeaux" element={<Jumeaux />} />
               <Route path="/jumeaux/:jid/revue" element={<RevueJumeau />} />

@@ -43,7 +43,7 @@ export default function Layout() {
 
         <div className="p-2.5">
           <button
-            onClick={() => navigate("/travaux?nouveau=1")}
+            onClick={() => navigate("/travaux/nouveau")}
             data-testid="sidebar-nouveau-travail"
             title="Nouveau travail"
             className={`flex w-full items-center gap-2 rounded-lg bg-[#3730A3] px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#4338CA] ${repliee ? "justify-center px-0" : ""}`}

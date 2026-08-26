@@ -106,11 +106,7 @@ export default function Travaux() {
   const [filtreType, setFiltreType] = useState("tous");
   const [filtreStatut, setFiltreStatut] = useState("tous");
   const [recherche, setRecherche] = useState("");
-  const [creation, setCreation] = useState(false);
-  const [form, setForm] = useState({ titre: "", type: "demande", objectif: "", jumeaux: [] });
-  const [envoi, setEnvoi] = useState(false);
   const [mesSeulement, setMesSeulement] = useState(false);
-  const [personas, setPersonas] = useState([]);
   const { mesh } = useMesh();
   const { version, persona, info } = usePerimetre();
   const { setSelection } = useContexte();
@@ -118,8 +114,6 @@ export default function Travaux() {
 
   useEffect(() => {
     api.get("/cases").then((r) => setCases(r.data)).catch(() => {});
-    api.get("/personas").then((r) => setPersonas(r.data)).catch(() => {});
-    if (new URLSearchParams(window.location.search).get("nouveau")) setCreation(true);
   }, [version]);
 
   const filtres = useMemo(() => {
@@ -144,19 +138,6 @@ export default function Travaux() {
       ["autres", "Tous les travaux", autres],
     ].filter(([, , l]) => l.length);
   }, [filtres]);
-
-  const creer = async () => {
-    if (!form.titre.trim() || envoi) return;
-    setEnvoi(true);
-    try {
-      const { data } = await api.post("/cases", { ...form, responsable: form.responsable || persona, espace: info?.espace?.id });
-      toast.success("Travail conservé");
-      navigate(`/travaux/${data.id}`);
-    } catch {
-      toast.error("Création impossible");
-      setEnvoi(false);
-    }
-  };
 
   const BadgeType = ({ type }) => {
     const t = TYPES_CASE[type] || [type, "#71716D"];
@@ -223,52 +204,13 @@ export default function Travaux() {
                 <option value="tous" label="Tous les statuts" />
                 {Object.entries(STATUTS_CASE).map(([k, [l]]) => <option key={k} value={k} label={l} />)}
               </select>
-              <button onClick={() => setCreation(!creation)} data-testid="nouveau-travail-btn" title="Nouveau travail" className="flex h-8 w-8 items-center justify-center rounded-md bg-[#3730A3] text-white transition-colors hover:bg-[#4338CA]">
-                {creation ? <X size={14} /> : <Plus size={14} weight="bold" />}
+              <button onClick={() => navigate("/travaux/nouveau")} data-testid="nouveau-travail-btn" title="Nouveau travail — né de la conversation" className="flex h-8 w-8 items-center justify-center rounded-md bg-[#3730A3] text-white transition-colors hover:bg-[#4338CA]">
+                <Plus size={14} weight="bold" />
               </button>
             </div>
           </div>
           <p className="mt-1 font-code text-[10px] text-[#71716D]">{filtres.length} travail{filtres.length > 1 ? "aux" : ""} · la conversation est le contenu, la liste est l'index</p>
         </header>
-
-        {/* Création inline */}
-        {creation && (
-          <div className="rise mt-5 rounded-xl border border-[#3730A3]/25 bg-[#EEECFA] p-5" data-testid="travail-form">
-            <div className="grid gap-3 md:grid-cols-2">
-              <input value={form.titre} onChange={(e) => setForm({ ...form, titre: e.target.value })} placeholder="Titre du travail — ex. Peut-on proposer le paiement différé aux clients professionnels ?" data-testid="travail-titre-input"
-                className="rounded-md border border-[#E5E5E3] bg-white px-3 py-2.5 text-sm text-[#111110] placeholder:text-[#71716D] focus:border-[#3730A3]/60 focus:outline-none md:col-span-2" />
-              <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} data-testid="travail-type-select" className="rounded-md border border-[#E5E5E3] bg-white px-3 py-2.5 text-sm text-[#111110] focus:outline-none">
-                {Object.entries(TYPES_CASE).map(([k, [l]]) => <option key={k} value={k} label={l} />)}
-              </select>
-              <select value={form.responsable || ""} onChange={(e) => setForm({ ...form, responsable: e.target.value || undefined })} data-testid="travail-responsable-select" className="rounded-md border border-[#E5E5E3] bg-white px-3 py-2.5 text-sm text-[#111110] focus:outline-none">
-                <option value="" label="Responsable : moi" />
-                {personas.map((p) => <option key={p.id} value={p.id} label={`${p.nom} — ${p.role}`} />)}
-              </select>
-              <input value={form.objectif} onChange={(e) => setForm({ ...form, objectif: e.target.value })} placeholder="Intention — que cherche-t-on à comprendre ou accomplir ?" data-testid="travail-objectif-input"
-                className="rounded-md border border-[#E5E5E3] bg-white px-3 py-2.5 text-sm text-[#111110] placeholder:text-[#71716D] focus:border-[#3730A3]/60 focus:outline-none" />
-            </div>
-            <div className="mt-3">
-              <div className="font-code text-[9px] uppercase tracking-[0.2em] text-[#52524F]">Jumeaux à mobiliser</div>
-              <div className="mt-1.5 flex flex-wrap gap-1.5" data-testid="travail-jumeaux-select">
-                {(mesh?.jumeaux || []).filter((j) => !j.anonyme).map((j) => {
-                  const actif = form.jumeaux.includes(j.id);
-                  return (
-                    <button key={j.id} onClick={() => setForm({ ...form, jumeaux: actif ? form.jumeaux.filter((x) => x !== j.id) : [...form.jumeaux, j.id] })} data-testid={`travail-jumeau-${j.id}`}
-                      className={`rounded-full border px-2.5 py-1 font-code text-[10px] transition-colors ${actif ? "border-[#3730A3]/60 bg-[#3730A3]/15 text-white" : "border-[#E5E5E3] text-[#52524F] hover:text-[#111110]"}`}>
-                      {j.nom}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-            <div className="mt-4 flex justify-end gap-2">
-              <button onClick={() => setCreation(false)} className="rounded-md px-3 py-2 text-xs text-[#52524F] transition-colors hover:text-[#111110]">Annuler</button>
-              <button onClick={creer} disabled={!form.titre.trim() || envoi} data-testid="travail-creer-submit" className="rounded-md bg-[#3730A3] px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#4338CA] disabled:opacity-40">
-                {envoi ? "Création…" : "Conserver le travail"}
-              </button>
-            </div>
-          </div>
-        )}
 
         {filtres.length === 0 && (
           <p className="mt-12 text-center text-sm text-[#71716D]" data-testid="travaux-vide">Aucun travail dans ce périmètre — conservez-en un depuis une conversation avec Flore.</p>

@@ -26,6 +26,8 @@ function Carte({ titre, children, testid, action }) {
 
 export default function OngletTravail({ cas, maj, setCas, situations }) {
   const [nouvelleQuestion, setNouvelleQuestion] = useState("");
+  const [nouveauMsg, setNouveauMsg] = useState("");
+  const [envoiMsg, setEnvoiMsg] = useState(false);
   const [nouvelleHyp, setNouvelleHyp] = useState("");
   const [nouvelleInv, setNouvelleInv] = useState(null);
   const questions = cas.questions || [];
@@ -102,6 +104,79 @@ export default function OngletTravail({ cas, maj, setCas, situations }) {
           </div>
         </div>
       )}
+
+      {/* La conversation durable — le fil EST le contenu du travail */}
+      <div className="rounded-xl border border-[#E5E5E3] bg-white p-4 lg:col-span-2" data-testid="case-conversation">
+        <div className="flex items-center gap-2 font-code text-[10px] uppercase tracking-[0.18em] text-[#52524F]">
+          <Sparkle size={11} weight="fill" className="text-[#3730A3]" /> Conversation avec Flore
+        </div>
+        <div className="mt-3 max-h-96 space-y-3 overflow-y-auto pr-1">
+          {(cas.conversation || []).map((m, i) =>
+            m.role === "utilisateur" ? (
+              <p key={i} className="ml-auto w-fit max-w-[80%] rounded-2xl rounded-br-md bg-[#EEECFA] px-3.5 py-2 text-xs text-[#1d1d1b]" data-testid={`case-msg-${i}`}>
+                {m.texte}
+              </p>
+            ) : (
+              <div key={i} data-testid={`case-msg-${i}`}>
+                <p className="whitespace-pre-line text-xs leading-relaxed text-[#3F3F3C]">{m.texte}</p>
+                {(m.contributions || []).length > 0 && (
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {m.contributions.map((c, k) => (
+                      <span key={k} className="rounded-full border border-[#E5E5E3] bg-[#F7F7F6] px-2 py-0.5 font-code text-[9px] text-[#52524F]">
+                        {c.jumeau} — {c.texte}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {(m.propositions || []).length > 0 && (
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {m.propositions.map((p, k) => (
+                      <button key={k} onClick={() => { setNouveauMsg(p.question || p.label); }} data-testid={`case-prop-${i}-${k}`}
+                        className="rounded-full border border-[#E5E5E3] bg-white px-2.5 py-1 text-[10px] text-[#52524F] transition-colors hover:border-[#3730A3]/40 hover:text-[#3730A3]">
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          )}
+          {(cas.conversation || []).length === 0 && (
+            <p className="text-xs text-[#71716D]">La conversation est la mémoire du travail — commencez ci-dessous.</p>
+          )}
+          {envoiMsg && <p className="font-code text-[10px] text-[#71716D]">Flore consulte le Mesh…</p>}
+        </div>
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const q = nouveauMsg.trim();
+            if (!q || envoiMsg) return;
+            setEnvoiMsg(true);
+            setNouveauMsg("");
+            try {
+              const { data } = await api.post(`/cases/${cas.id}/messages`, { texte: q });
+              setCas((c) => ({ ...c, conversation: [...(c.conversation || []), data.utilisateur, data.flore] }));
+            } catch {
+              toast.error("Message impossible");
+            } finally {
+              setEnvoiMsg(false);
+            }
+          }}
+          className="mt-3 flex gap-2 border-t border-[#F0F0EE] pt-3"
+        >
+          <input
+            value={nouveauMsg}
+            onChange={(e) => setNouveauMsg(e.target.value)}
+            placeholder="Continuez avec Flore — chaque échange enrichit la mémoire du travail…"
+            data-testid="case-msg-input"
+            className="h-9 flex-1 rounded-md border border-[#E5E5E3] bg-white px-3 text-xs text-[#111110] placeholder:text-[#71716D] focus:border-[#3730A3]/50 focus:outline-none"
+          />
+          <button type="submit" disabled={envoiMsg || !nouveauMsg.trim()} data-testid="case-msg-send-btn" className="h-9 rounded-md bg-[#3730A3] px-4 text-xs font-semibold text-white transition-colors hover:bg-[#4338CA] disabled:opacity-40">
+            Envoyer
+          </button>
+        </form>
+      </div>
+
       <Carte titre={`Questions — ${questions.filter((q) => q.resolue).length}/${questions.length} levées`} testid="case-questions">
         <ul className="space-y-1.5">
           {questions.map((q, i) => (

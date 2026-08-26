@@ -77,7 +77,7 @@ function BulleFlore({ data, index, onSuite }) {
   );
 }
 
-export default function Accueil() {
+export default function Accueil({ mode = "accueil" }) {
   const navigate = useNavigate();
   const { persona, personas, version, info } = usePerimetre();
   const { selection } = useContexte();
@@ -86,6 +86,7 @@ export default function Accueil() {
   const [envoi, setEnvoi] = useState(false);
   const [propMasquee, setPropMasquee] = useState(false);
   const [conservation, setConservation] = useState(false);
+  const creation = mode === "creation";
   const role = personas.find((p) => p.id === persona)?.role || "";
   const suggestions = /architect|urbanisation/i.test(role) ? SUGGESTIONS.architecte : SUGGESTIONS.default;
   const nom = personas.find((p) => p.id === persona)?.nom || "";
@@ -94,13 +95,38 @@ export default function Accueil() {
     api.get("/cases").then((r) => setRecents(r.data.filter((c) => c.statut !== "clos").slice(0, 2))).catch(() => {});
   }, [version]);
 
+  // Pas de formulaire : la première question fait naître le travail, la conversation continue dedans
+  const faireNaitreLeTravail = async (question, reponseData) => {
+    try {
+      const now = new Date().toISOString();
+      const { data } = await api.post("/cases", {
+        titre: question.length > 90 ? `${question.slice(0, 87)}…` : question,
+        type: "demande",
+        objectif: question,
+        jumeaux: selection,
+        espace: info?.espace?.id,
+      });
+      await api.patch(`/cases/${data.id}`, {
+        conversation: [
+          { role: "utilisateur", texte: question, quand: now },
+          { role: "flore", comportement: reponseData.comportement, texte: reponseData.reponse, quand: now },
+        ],
+      });
+      toast.success("Travail né de la conversation");
+      navigate(`/travaux/${data.id}`, { replace: true });
+    } catch {
+      toast.error("Création du travail impossible — la conversation reste ici");
+    }
+  };
+
   const demander = async (q) => {
     if (envoi || !q.trim()) return;
     setEnvoi(true);
     setEchanges((e) => [...e, { role: "moi", texte: q }]);
     try {
-      const { data } = await api.post("/aurora/demander", { contexte: "accueil", question: q, selection });
+      const { data } = await api.post("/aurora/demander", { contexte: creation ? "case" : "accueil", question: q, selection });
       setEchanges((e) => [...e, { role: "flore", data }]);
+      if (creation) await faireNaitreLeTravail(q, data);
     } catch {
       setEchanges((e) => [...e, { role: "flore", data: { reponse: "Flore est indisponible pour le moment — réessayez." } }]);
     } finally {
@@ -146,38 +172,44 @@ export default function Accueil() {
           {!enConversation ? (
             <div className="flex min-h-[70vh] flex-col items-center justify-center py-10">
               <h1 className="rise text-center font-display text-3xl font-black tracking-tight text-[#111110] sm:text-4xl" data-testid="accueil-titre">
-                Que voulez-vous comprendre<br />dans votre SI ?
+                {creation ? "Que voulez-vous comprendre\nou accomplir ?" : <>Que voulez-vous comprendre<br />dans votre SI ?</>}
               </h1>
               <p className="rise mt-3 text-center text-sm text-[#52524F]" style={{ animationDelay: "60ms" }}>
-                Flore mobilise les jumeaux et compose la représentation utile{nom ? ` — bonjour ${nom}` : ""}.
+                {creation
+                  ? "Décrivez-le simplement — le travail naît de votre première question, la conversation devient sa mémoire."
+                  : `Flore mobilise les jumeaux et compose la représentation utile${nom ? ` — bonjour ${nom}` : ""}.`}
               </p>
-              <div className="rise mt-5 flex flex-wrap justify-center gap-2" style={{ animationDelay: "120ms" }} data-testid="accueil-suggestions">
-                {suggestions.map((s) => (
-                  <button key={s} onClick={() => demander(s)} data-testid={`accueil-suggestion-${s.slice(0, 18)}`}
-                    className="rounded-full border border-[#E5E5E3] bg-white px-3.5 py-1.5 text-xs text-[#52524F] transition-colors hover:border-[#3730A3]/40 hover:text-[#3730A3]">
-                    {s}
-                  </button>
-                ))}
-              </div>
-              <div className="rise mt-10 grid w-full gap-2 sm:grid-cols-3" style={{ animationDelay: "180ms" }}>
-                <button onClick={() => navigate("/actualites")} data-testid="accueil-actus" className="rounded-xl border border-[#E5E5E3] bg-white p-4 text-left transition-colors hover:border-[#3730A3]/40">
-                  <Newspaper size={16} className="text-[#3730A3]" />
-                  <div className="mt-2 text-xs font-semibold text-[#111110]">Changements d'aujourd'hui</div>
-                  <div className="mt-0.5 font-code text-[9px] text-[#71716D]">Le briefing du Mesh</div>
-                </button>
-                {recents[0] && (
-                  <button onClick={() => navigate(`/travaux/${recents[0].id}`)} data-testid="accueil-reprendre" className="rounded-xl border border-[#E5E5E3] bg-white p-4 text-left transition-colors hover:border-[#3730A3]/40">
-                    <Sparkle size={16} className="text-[#B45309]" />
-                    <div className="mt-2 truncate text-xs font-semibold text-[#111110]">Reprendre « {recents[0].titre} »</div>
-                    <div className="mt-0.5 font-code text-[9px] text-[#71716D]">Continuité du travail</div>
-                  </button>
-                )}
-                <button onClick={() => navigate("/atlas")} data-testid="accueil-explorer" className="rounded-xl border border-[#E5E5E3] bg-white p-4 text-left transition-colors hover:border-[#3730A3]/40">
-                  <Compass size={16} className="text-[#0E7490]" />
-                  <div className="mt-2 text-xs font-semibold text-[#111110]">Explorer mon espace</div>
-                  <div className="mt-0.5 font-code text-[9px] text-[#71716D]">L'Atlas du Mesh</div>
-                </button>
-              </div>
+              {!creation && (
+                <>
+                  <div className="rise mt-5 flex flex-wrap justify-center gap-2" style={{ animationDelay: "120ms" }} data-testid="accueil-suggestions">
+                    {suggestions.map((s) => (
+                      <button key={s} onClick={() => demander(s)} data-testid={`accueil-suggestion-${s.slice(0, 18)}`}
+                        className="rounded-full border border-[#E5E5E3] bg-white px-3.5 py-1.5 text-xs text-[#52524F] transition-colors hover:border-[#3730A3]/40 hover:text-[#3730A3]">
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="rise mt-10 grid w-full gap-2 sm:grid-cols-3" style={{ animationDelay: "180ms" }}>
+                    <button onClick={() => navigate("/actualites")} data-testid="accueil-actus" className="rounded-xl border border-[#E5E5E3] bg-white p-4 text-left transition-colors hover:border-[#3730A3]/40">
+                      <Newspaper size={16} className="text-[#3730A3]" />
+                      <div className="mt-2 text-xs font-semibold text-[#111110]">Changements d'aujourd'hui</div>
+                      <div className="mt-0.5 font-code text-[9px] text-[#71716D]">Le briefing du Mesh</div>
+                    </button>
+                    {recents[0] && (
+                      <button onClick={() => navigate(`/travaux/${recents[0].id}`)} data-testid="accueil-reprendre" className="rounded-xl border border-[#E5E5E3] bg-white p-4 text-left transition-colors hover:border-[#3730A3]/40">
+                        <Sparkle size={16} className="text-[#B45309]" />
+                        <div className="mt-2 truncate text-xs font-semibold text-[#111110]">Reprendre « {recents[0].titre} »</div>
+                        <div className="mt-0.5 font-code text-[9px] text-[#71716D]">Continuité du travail</div>
+                      </button>
+                    )}
+                    <button onClick={() => navigate("/atlas")} data-testid="accueil-explorer" className="rounded-xl border border-[#E5E5E3] bg-white p-4 text-left transition-colors hover:border-[#3730A3]/40">
+                      <Compass size={16} className="text-[#0E7490]" />
+                      <div className="mt-2 text-xs font-semibold text-[#111110]">Explorer mon espace</div>
+                      <div className="mt-0.5 font-code text-[9px] text-[#71716D]">L'Atlas du Mesh</div>
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           ) : (
             <div className="space-y-6 py-8" data-testid="accueil-fil">
@@ -193,7 +225,7 @@ export default function Accueil() {
               {envoi && <p className="font-code text-[10px] text-[#71716D]" data-testid="accueil-attente">Flore consulte le Mesh…</p>}
 
               {/* Une conversation qui s'approfondit peut devenir un Travail */}
-              {echanges.length >= 2 && !propMasquee && !envoi && (
+              {echanges.length >= 2 && !propMasquee && !envoi && !creation && (
                 <div className="rounded-xl border border-[#B45309]/30 bg-[#FFFBEB] px-4 py-3" data-testid="accueil-conservation">
                   <p className="text-xs leading-snug text-[#3F3F3C]">
                     Cette exploration {selection.length > 0 ? `implique ${selection.length} jumeau${selection.length > 1 ? "x" : ""} et ` : ""}pourrait mériter une mémoire persistante.

@@ -1,5 +1,10 @@
 # Méridian — PRD
 
+## Implémenté (26/08/2026 — v19c, création conversationnelle des Travaux — « comme ChatGPT »)
+- **Le formulaire de création de travail est supprimé** (retour utilisateur : un formulaire n'a pas sa place dans un écosystème intelligent). « + Nouveau travail » (sidebar + page) ouvre `/travaux/nouveau` : une conversation (« Que voulez-vous comprendre ou accomplir ? ») ; **le premier échange fait naître le travail** (titre = question, jumeaux = contexte, conversation injectée) puis bascule dans l'onglet Conversation. Accueil général conserve la proposition « Conserver comme travail » pour les consultations.
+- **Le fil de conversation vit dans l'onglet Conversation** (`case-conversation` : bulles, contributions, propositions cliquables, composer inline via `POST /cases/{id}/messages`) — auparavant il n'existait que dans le panneau latéral. Reprise Flore en tête, objets structurés (questions/hypothèses/investigations/livrables) en dessous.
+- Vérifié E2E : création par conversation (CASE créé + toast + navigation), envoi de message dans le fil (2→4), récents sidebar à jour.
+
 ## Implémenté (26/08/2026 — v19b, Actualités repensée « le brief EST la page »)
 - **Une seule rangée de contrôle** : vues segmentées (Brief/Radar/À traiter·badge/Suivis) à gauche ; portées compactes (Personnel/Espace/Global) + **calendrier du Mesh** (‹ date › + popover presets/date) à droite. Fini les 4 rangées de contrôles empilées ; l'overline redondante disparaît (la sidebar porte le contexte).
 - Briefing éditorial immédiat (salutation, accroche forte, points, lecture rôle) ; bannière historique et synthèse de période inchangées.
