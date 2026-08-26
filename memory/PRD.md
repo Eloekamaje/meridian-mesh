@@ -1,5 +1,9 @@
 # Méridian — PRD
 
+## Implémenté (26/08/2026 — v19f, Conversation pure + Aperçu en rapport structuré)
+- **Conversation = replonger là où le travail s'est arrêté** (demande utilisateur) : le panneau de résumé sort du fil ; à la place, un marqueur « — Nouveau depuis votre dernière visite — » placé au point de reprise (messages postérieurs à la dernière visite) avec scroll automatique sur la coupure. Fil nu + composer ancré, identique à la création.
+- **Aperçu = rapport structuré du travail** (pas de mini-cartes) : en-tête « Rapport du travail » (méta : activité, participants, échanges), § Session précédente (définitions Vous étiez ici / Depuis / Reste incertain / Prochaine étape), puis sections numérotées 01–09 : Situation, Compréhension actuelle (Actualiser par Flore), Évolution récente, Décisions & options, Questions, Hypothèses, Investigations, Analyses & livrables, Prochaine étape — édition inline conservée, testids préservés. `ObjetsTravail.jsx` supprimé (contenu fusionné dans le rapport).
+
 ## Implémenté (26/08/2026 — v19e, Travail = conversation pleine page, parité création/continuation)
 - **L'onglet Conversation est identique à la vue de création** (demande utilisateur, façon ChatGPT/emergent.sh) : colonne centrée (max-w-2xl), résumé « Session précédente — Flore vous replace » en tête, fil nu (bulles), **composer ancré en bas** (Entrée pour envoyer, scroll auto en fin de fil). Continuer un travail = même lecture que le créer, avec l'en-tête du travail en plus.
 - **Objets de travail déplacés dans l'Aperçu** (`ObjetsTravail.jsx` partagé : Questions/Hypothèses/Investigations/Analyses & livrables) ; bloc « Questions ouvertes » retiré (doublon) ; bannière « À revoir » désormais visible sur tous les onglets (code mort corrigé).

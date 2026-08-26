@@ -4,25 +4,29 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { rel } from "./utils";
 
-// Onglet Conversation — identique à la vue de création (fil centré, composer ancré),
-// précédé du résumé de la session précédente
+// Onglet Conversation — on replonge simplement dans le fil, là où la session s'était arrêtée
 export default function OngletTravail({ cas, setCas }) {
   const [nouveauMsg, setNouveauMsg] = useState("");
   const [envoiMsg, setEnvoiMsg] = useState(false);
   const finFilRef = useRef(null);
+  const coupureRef = useRef(null);
+  const monte = useRef(false);
 
-  const questions = cas.questions || [];
-  const hypotheses = cas.hypotheses || [];
-  const dernierMessage = [...(cas.conversation || [])].reverse().find((m) => m.role === "flore") || [...(cas.conversation || [])].slice(-1)[0];
-  const evolutions = cas.evolutions_recentes || [];
-  const hypAValider = hypotheses.filter((h) => h.statut === "a_valider");
-  const optionsATrancher = (cas.options || []).filter((o) => o.statut === "a_evaluer");
-  const premiereVisite = !cas.derniere_visite;
-  const nbEchanges = (cas.conversation || []).length;
+  const messages = cas.conversation || [];
+  const coupure = cas.derniere_visite;
+  const idxCoupure = coupure ? messages.findIndex((m) => m.quand && m.quand > coupure) : -1;
 
   useEffect(() => {
-    finFilRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [nbEchanges, envoiMsg]);
+    if (monte.current) {
+      finFilRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+      return;
+    }
+    monte.current = true;
+    // À l'arrivée : se replacer là où la session s'était arrêtée
+    if (idxCoupure > 0) coupureRef.current?.scrollIntoView({ block: "center" });
+    else finFilRef.current?.scrollIntoView({ block: "end" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages.length, envoiMsg]);
 
   const envoyer = async (e) => {
     e?.preventDefault();
@@ -42,82 +46,53 @@ export default function OngletTravail({ cas, setCas }) {
 
   return (
     <div className="flex h-full flex-col" data-testid="onglet-travail">
-      {/* Fil — même lecture que la création : colonne centrée */}
       <div className="flex-1 overflow-y-auto px-6">
         <div className="mx-auto max-w-2xl space-y-5 py-5">
-          {!premiereVisite && (
-            <div className="rounded-xl border border-[#3730A3]/25 bg-[#EEECFA] p-4" data-testid="reprise-flore">
-              <div className="flex items-center gap-2">
-                <Sparkle size={13} weight="fill" className="text-[#3730A3]" />
-                <span className="font-code text-[10px] uppercase tracking-[0.2em] text-[#312E81]">Session précédente — Flore vous replace</span>
-                {cas.derniere_visite && <span className="font-code text-[9px] text-[#71716D]">dernière visite {rel(cas.derniere_visite)}</span>}
-              </div>
-              <div className="mt-2.5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <div>
-                  <div className="font-code text-[9px] uppercase tracking-wider text-[#71716D]">Vous étiez ici</div>
-                  <p className="mt-1 text-[11px] leading-snug text-[#3F3F3C]" data-testid="reprise-arret">
-                    {dernierMessage ? `« ${(dernierMessage.texte || "").slice(0, 110)}${(dernierMessage.texte || "").length > 110 ? "…" : ""} »` : "Le travail n'a pas encore de conversation."}
-                  </p>
-                </div>
-                <div>
-                  <div className="font-code text-[9px] uppercase tracking-wider text-[#71716D]">Depuis</div>
-                  <p className="mt-1 text-[11px] leading-snug text-[#3F3F3C]" data-testid="reprise-changements">
-                    {evolutions.length > 0 ? `${evolutions.length} évolution${evolutions.length > 1 ? "s" : ""} : ${evolutions[0].texte}` : "Rien de nouveau depuis votre dernière visite."}
-                  </p>
-                </div>
-                <div>
-                  <div className="font-code text-[9px] uppercase tracking-wider text-[#71716D]">Reste incertain</div>
-                  <p className="mt-1 text-[11px] leading-snug text-[#3F3F3C]" data-testid="reprise-incertain">
-                    {hypAValider.length > 0 || questions.some((q) => !q.resolue)
-                      ? `${questions.filter((q) => !q.resolue).length} question${questions.filter((q) => !q.resolue).length > 1 ? "s" : ""} · ${hypAValider.length} hypothèse${hypAValider.length > 1 ? "s" : ""}`
-                      : "Aucune incertitude ouverte."}
-                  </p>
-                </div>
-                <div>
-                  <div className="font-code text-[9px] uppercase tracking-wider text-[#71716D]">Prochaine étape</div>
-                  <p className="mt-1 text-[11px] font-semibold leading-snug text-[#312E81]" data-testid="reprise-action">
-                    {cas.prochaine_etape || (optionsATrancher.length > 0 ? `Trancher « ${optionsATrancher[0].titre} »` : "Continuer la discussion avec Flore.")}
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
           <div className="space-y-5" data-testid="case-conversation">
-            {(cas.conversation || []).map((m, i) =>
-              m.role === "utilisateur" ? (
-                <p key={i} className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-[#EEECFA] px-4 py-2.5 text-sm text-[#1d1d1b]" data-testid={`case-msg-${i}`}>
-                  {m.texte}
-                </p>
-              ) : (
-                <div key={i} className="rise" data-testid={`case-msg-${i}`}>
-                  <div className="flex items-center gap-1.5 font-code text-[9px] uppercase tracking-[0.2em] text-[#312E81]">
-                    <Sparkle size={10} weight="fill" /> Flore
+            {messages.map((m, i) => (
+              <div key={i}>
+                {i === idxCoupure && idxCoupure > 0 && (
+                  <div ref={coupureRef} className="my-2 flex items-center gap-3" data-testid="reprise-coupure">
+                    <span className="h-px flex-1 bg-[#3730A3]/25" />
+                    <span className="font-code text-[9px] uppercase tracking-[0.2em] text-[#3730A3]">Nouveau depuis votre dernière visite</span>
+                    <span className="h-px flex-1 bg-[#3730A3]/25" />
                   </div>
-                  <p className="mt-1 whitespace-pre-line text-sm leading-relaxed text-[#1d1d1b]">{m.texte}</p>
-                  {(m.contributions || []).length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {m.contributions.map((c, k) => (
-                        <span key={k} className="rounded-full border border-[#E5E5E3] bg-white px-2 py-0.5 font-code text-[9px] text-[#52524F]">
-                          {c.jumeau} — {c.texte}
-                        </span>
-                      ))}
+                )}
+                {m.role === "utilisateur" ? (
+                  <p className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-[#EEECFA] px-4 py-2.5 text-sm text-[#1d1d1b]" data-testid={`case-msg-${i}`}>
+                    {m.texte}
+                  </p>
+                ) : (
+                  <div className="rise" data-testid={`case-msg-${i}`}>
+                    <div className="flex items-center gap-1.5 font-code text-[9px] uppercase tracking-[0.2em] text-[#312E81]">
+                      <Sparkle size={10} weight="fill" /> Flore
+                      {m.quand && <span className="text-[#71716D] normal-case tracking-normal">· {rel(m.quand)}</span>}
                     </div>
-                  )}
-                  {(m.propositions || []).length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {m.propositions.map((p, k) => (
-                        <button key={k} onClick={() => setNouveauMsg(p.question || p.label)} data-testid={`case-prop-${i}-${k}`}
-                          className="rounded-full border border-[#E5E5E3] bg-white px-3 py-1.5 text-[11px] text-[#52524F] transition-colors hover:border-[#3730A3]/40 hover:text-[#3730A3]">
-                          {p.label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )
-            )}
-            {(cas.conversation || []).length === 0 && (
+                    <p className="mt-1 whitespace-pre-line text-sm leading-relaxed text-[#1d1d1b]">{m.texte}</p>
+                    {(m.contributions || []).length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {m.contributions.map((c, k) => (
+                          <span key={k} className="rounded-full border border-[#E5E5E3] bg-white px-2 py-0.5 font-code text-[9px] text-[#52524F]">
+                            {c.jumeau} — {c.texte}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {(m.propositions || []).length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {m.propositions.map((p, k) => (
+                          <button key={k} onClick={() => setNouveauMsg(p.question || p.label)} data-testid={`case-prop-${i}-${k}`}
+                            className="rounded-full border border-[#E5E5E3] bg-white px-3 py-1.5 text-[11px] text-[#52524F] transition-colors hover:border-[#3730A3]/40 hover:text-[#3730A3]">
+                            {p.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+            {messages.length === 0 && (
               <p className="py-6 text-center text-sm text-[#71716D]">La conversation est la mémoire du travail — commencez ci-dessous.</p>
             )}
             {envoiMsg && <p className="font-code text-[10px] text-[#71716D]" data-testid="case-msg-attente">Flore consulte le Mesh…</p>}
