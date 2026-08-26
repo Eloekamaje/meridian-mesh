@@ -7,7 +7,6 @@ import { useMesh } from "@/lib/mesh";
 import { useContexte } from "@/lib/contexte";
 import { couleurDomaine } from "@/lib/domaines";
 import { fmtDateLongue, fmtDateInput, finDeJournee, fmtDate } from "@/lib/temps";
-import FragmentAtlas from "@/components/FragmentAtlas";
 
 const GENRES = {
   relation: ["Découverte", "#0E7490"],
@@ -161,14 +160,8 @@ function CarteHistoire({ h, vedette, dateCible, estAujourdhui, navigate, mesh })
         <span className="text-[#71716D]">· {heure(h.quand)}</span>
         {h.restreinte && <span className="rounded border border-[#B45309]/40 px-1 py-0.5 text-[#B45309]">périmètre partiel</span>}
       </div>
-      <h3 className={`mt-2 font-semibold leading-snug text-[#111110] ${vedette ? "text-base" : "text-sm"}`}>{h.titre}</h3>
-      {h.recit && <p className="mt-1.5 text-xs leading-relaxed text-[#52524F]">{h.recit}</p>}
-
-      {vedette && (h.jumeaux || []).length > 0 && (
-        <div className="mt-3" data-testid={`histoire-fragment-${h.id}`}>
-          <FragmentAtlas mesh={mesh} jumeaux={h.jumeaux} />
-        </div>
-      )}
+      <h3 className={`mt-2 font-semibold leading-snug text-[#111110] ${vedette ? "font-display text-lg" : "text-sm"}`}>{h.titre}</h3>
+      {h.recit && <p className={`mt-1.5 leading-relaxed text-[#52524F] ${vedette ? "text-sm" : "text-xs"}`}>{h.recit}</p>}
 
       <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1">
         {(h.jumeaux || []).slice(0, 5).map((jid) => {
