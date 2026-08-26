@@ -203,6 +203,8 @@ export default function FlorePanel() {
   const location = useLocation();
   const navigate = useNavigate();
   const contexte = contexteDepuis(location.pathname);
+  const caseMatch = location.pathname.match(/^\/cases\/([^/?]+)/);
+  const caseId = caseMatch?.[1] || null;
   const {
     selection, setSelection, domaineSel, retirerJumeau, setDomaineSel, ajouterJumeau,
     commanderCarte, focusVisuel, lot, floreOuverte, ouvrirFlore, fermerFlore,
@@ -216,9 +218,19 @@ export default function FlorePanel() {
   const [justifOuverte, setJustifOuverte] = useState(null);
   const [promptFocus, setPromptFocus] = useState(null);
   const [creationCase, setCreationCase] = useState(false);
+  const [caseCtx, setCaseCtx] = useState(null);
   const prevFocusRef = useRef(null);
   const inputRef = useRef(null);
   const conversationRef = useRef(null);
+
+  // Contexte actif : le Case courant quand le panneau est ouvert depuis un case
+  useEffect(() => {
+    if (!caseId) {
+      setCaseCtx(null);
+      return;
+    }
+    api.get(`/cases/${caseId}`).then((r) => setCaseCtx(r.data)).catch(() => setCaseCtx(null));
+  }, [caseId]);
 
   const selJumeaux = selection.map(jumeauPar).filter(Boolean);
   const nbDomaine = domaineSel && mesh ? mesh.jumeaux.filter((j) => !j.anonyme && j.domaine === domaineSel).length : 0;
@@ -325,7 +337,8 @@ export default function FlorePanel() {
           <div className="flex items-center gap-2">
             <Sparkle size={16} weight="fill" className="text-[#3B82F6]" />
             <span className="font-display text-sm font-bold text-white">Flore</span>
-            <span className="font-code text-[9px] uppercase tracking-[0.2em] text-white/35">orchestre les jumeaux du Mesh</span>
+            {caseCtx && <span className="font-code text-[10px] text-white/45" data-testid="flore-case-num">— CASE-{String(caseCtx.num ?? 0).padStart(3, "0")}</span>}
+            {!caseCtx && <span className="font-code text-[9px] uppercase tracking-[0.2em] text-white/35">orchestre les jumeaux du Mesh</span>}
           </div>
           <div className="flex items-center gap-1.5">
             {echanges.length > 0 && (
@@ -344,6 +357,17 @@ export default function FlorePanel() {
             </button>
           </div>
         </div>
+
+        {caseCtx && (
+          <div className="mt-2 rounded-lg border border-[#3B82F6]/25 bg-[#3B82F6]/[0.05] px-3 py-2" data-testid="flore-contexte-case">
+            <div className="font-code text-[9px] uppercase tracking-[0.2em] text-[#3B82F6]/70">Contexte actif</div>
+            <div className="mt-1 space-y-0.5 font-code text-[10px] text-white/60">
+              <div>• Case : {caseCtx.titre}</div>
+              <div>• {(caseCtx.jumeaux || []).length} jumeau{(caseCtx.jumeaux || []).length > 1 ? "x" : ""} mobilisé{(caseCtx.jumeaux || []).length > 1 ? "s" : ""}</div>
+            </div>
+            <div className="mt-1.5 text-[11px] italic text-white/45">Que souhaitez-vous approfondir ?</div>
+          </div>
+        )}
 
         {(selection.length > 0 || domaineSel) && (
           <div className="mt-2 flex flex-wrap items-center gap-1.5" data-testid="flore-contexte">

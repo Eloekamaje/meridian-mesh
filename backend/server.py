@@ -34,7 +34,7 @@ NO_ID = {"_id": 0}
 logger = logging.getLogger("meridian")
 
 
-SEED_VERSION = 6
+SEED_VERSION = 7
 
 
 async def peupler_demo():
@@ -351,6 +351,23 @@ async def admettre_jumeau(jid: str, x_persona: str = Header("architecte"), x_esp
     jumeau = await db.jumeaux.find_one({"id": jid}, NO_ID)
     await marquer_cases_a_revoir([jid], f"le jumeau {jumeau['nom'] if jumeau else jid} a été admis dans le Mesh")
     return {"ok": True, "statut": "actif"}
+
+
+@api_router.delete("/jumeaux/{jid}")
+async def supprimer_jumeau(jid: str, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+    _, espace = resoudre_perimetre(x_persona, x_espace)
+    aut = autorisations(espace, [jid])
+    if aut.get(jid) is None:
+        raise HTTPException(404, "Jumeau introuvable")
+    if aut[jid] != "complet":
+        raise HTTPException(403, "Niveau « complet » requis pour retirer ce jumeau")
+    res = await db.jumeaux.delete_one({"id": jid})
+    if res.deleted_count == 0:
+        raise HTTPException(404, "Jumeau introuvable")
+    await db.relations.delete_many({"$or": [{"source": jid}, {"cible": jid}]})
+    await db.cases.update_many({}, {"$pull": {"jumeaux": jid}})
+    await journaler(x_persona, espace["id"], "retrait d'un jumeau", jid)
+    return {"ok": True}
 
 
 @api_router.post("/jumeaux/{jid}/examiner")
@@ -1043,7 +1060,7 @@ async def notifications_tout_lire(x_persona: str = Header("architecte")):
 
 @api_router.post("/demo/reinitialiser")
 async def reinitialiser_demo(x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
-    for col in ["jumeaux", "relations", "situations", "change_lab", "dossiers", "vues", "journal", "commandes", "cases"]:
+    for col in ["jumeaux", "relations", "situations", "change_lab", "dossiers", "vues", "journal", "commandes", "cases", "notifications"]:
         await db[col].delete_many({})
     await peupler_demo()
     await journaler(x_persona, x_espace, "réinitialisation de la démo", "mesh", "Données de démonstration restaurées à l'état initial")

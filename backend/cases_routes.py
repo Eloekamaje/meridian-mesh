@@ -13,6 +13,7 @@ class CaseCreate(BaseModel):
     participants: list = []
     responsable: Optional[str] = None
     espace: Optional[str] = None
+    sensibilite: str = "interne"
     conversation: list = []
 
 
@@ -25,6 +26,19 @@ class CasePatch(BaseModel):
     responsable: Optional[str] = None
     participants: Optional[list] = None
     a_revoir: Optional[bool] = None
+    resume: Optional[str] = None
+    prochaine_etape: Optional[str] = None
+    hypotheses: Optional[list] = None
+    options: Optional[list] = None
+    sensibilite: Optional[str] = None
+
+
+class HypotheseCase(BaseModel):
+    texte: str
+
+
+class InvestigationCase(BaseModel):
+    texte: str
 
 
 class MessageCase(BaseModel):
@@ -79,8 +93,17 @@ def build_cases_router(deps):
             c["nb_messages"] = len(c.get("conversation", []))
             c["nb_decisions"] = len(c.get("decisions", []))
             c["nb_options"] = len(c.get("options", []))
+            c["nb_questions_ouvertes"] = sum(1 for q in c.get("questions", []) if not q.get("resolue"))
+            c["nb_options_a_trancher"] = sum(1 for o in c.get("options", []) if o.get("statut") == "a_evaluer")
+            histo = c.get("historique", [])
+            c["derniere_modif"] = histo[-1]["texte"] if histo else None
             c.pop("conversation", None)
             c.pop("historique", None)
+            c.pop("questions", None)
+            c.pop("options", None)
+            c.pop("decisions", None)
+            c.pop("hypotheses", None)
+            c.pop("livrables", None)
         return visibles
 
     @router.post("/cases", status_code=201)
@@ -94,13 +117,20 @@ def build_cases_router(deps):
             n += 1
         now = datetime.now(timezone.utc).isoformat()
         responsable = payload.responsable or x_persona
+        dernier = await db.cases.find({}, {"_id": 0, "num": 1}).sort("num", -1).to_list(1)
+        num = (dernier[0]["num"] if dernier and dernier[0].get("num") else 40) + 1
         doc = {
             "id": cid,
+            "num": num,
             "titre": payload.titre.strip(),
             "type": payload.type,
             "statut": "ouvert",
+            "sensibilite": payload.sensibilite,
             "objectif": payload.objectif,
+            "resume": "",
+            "prochaine_etape": "",
             "questions": [],
+            "hypotheses": [],
             "jumeaux": payload.jumeaux,
             "situations": payload.situations,
             "participants": list({*payload.participants, x_persona, responsable}),
@@ -111,6 +141,7 @@ def build_cases_router(deps):
             "decisions": [],
             "livrables": [],
             "a_revoir": False,
+            "visites": {},
             "historique": [{"quand": now, "texte": "Case créé"}],
             "cree_le": now,
             "maj_le": now,
@@ -125,7 +156,15 @@ def build_cases_router(deps):
     @router.get("/cases/{cid}")
     async def obtenir_case(cid: str, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
         _, espace = resoudre_perimetre(x_persona, x_espace)
-        return await charger_case(cid, espace)
+        case = await charger_case(cid, espace)
+        # Évolution depuis la dernière visite de ce persona, puis la visite est enregistrée
+        visites = case.get("visites", {})
+        derniere = visites.get(x_persona)
+        evolutions = [h for h in case.get("historique", []) if derniere and h.get("quand", "") > derniere]
+        case["evolutions_recentes"] = evolutions
+        case["derniere_visite"] = derniere
+        await db.cases.update_one({"id": cid}, {"$set": {f"visites.{x_persona}": datetime.now(timezone.utc).isoformat()}})
+        return case
 
     @router.patch("/cases/{cid}")
     async def maj_case(cid: str, payload: CasePatch, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
@@ -164,7 +203,16 @@ def build_cases_router(deps):
         now = datetime.now(timezone.utc).isoformat()
         msg_user = {"role": "utilisateur", "texte": payload.texte.strip(), "quand": now}
         rep = await generer_reponse_flore("case", payload.texte, case.get("jumeaux", []), None, x_persona, x_espace)
-        msg_flore = {"role": "flore", "texte": rep.get("reponse", ""), "comportement": rep.get("comportement"), "quand": datetime.now(timezone.utc).isoformat()}
+        msg_flore = {
+            "role": "flore",
+            "texte": rep.get("reponse", ""),
+            "comportement": rep.get("comportement"),
+            "preuves": rep.get("preuves") or [],
+            "propositions": rep.get("propositions") or [],
+            "contributions": rep.get("contributions") or [],
+            "action": rep.get("action"),
+            "quand": datetime.now(timezone.utc).isoformat(),
+        }
         await db.cases.update_one(
             {"id": cid},
             {
@@ -240,5 +288,86 @@ def build_cases_router(deps):
         )
         await journaler(x_persona, espace["id"], "production d'un livrable", cid, liv["titre"])
         return liv
+
+    @router.post("/cases/{cid}/resume", status_code=201)
+    async def actualiser_resume_case(cid: str, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+        _, espace = resoudre_perimetre(x_persona, x_espace)
+        case = await charger_case(cid, espace)
+        questions = case.get("questions", [])
+        resolues = [q for q in questions if q.get("resolue")]
+        options = case.get("options", [])
+        phrases = []
+        if case.get("objectif"):
+            phrases.append(case["objectif"])
+        if options:
+            phrases.append(f"{len(options)} option(s) sur la table : " + " · ".join(o["titre"] for o in options) + ".")
+        if case.get("decisions"):
+            phrases.append("Dernière décision : " + case["decisions"][-1]["texte"])
+        restantes = [q["texte"] for q in questions if not q.get("resolue")]
+        if restantes:
+            phrases.append("Reste à comprendre : " + " · ".join(restantes))
+        elif questions:
+            phrases.append(f"Les {len(resolues)} questions sont levées.")
+        if case.get("a_revoir"):
+            phrases.append("Attention : une connaissance du Mesh a changé — ce résumé est à revoir.")
+        resume = " ".join(phrases) or "Aucune compréhension consolidée pour l'instant."
+        now = datetime.now(timezone.utc).isoformat()
+        await db.cases.update_one(
+            {"id": cid},
+            {"$set": {"resume": resume, "maj_le": now}, "$push": {"historique": {"quand": now, "texte": "Résumé actualisé par Flore"}}},
+        )
+        return {"resume": resume}
+
+    @router.post("/cases/{cid}/hypotheses", status_code=201)
+    async def ajouter_hypothese_case(cid: str, payload: HypotheseCase, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+        _, espace = resoudre_perimetre(x_persona, x_espace)
+        case = await charger_case(cid, espace)
+        if not payload.texte.strip():
+            raise HTTPException(400, "Hypothèse vide")
+        now = datetime.now(timezone.utc).isoformat()
+        hyp = {"id": f"hyp-{len(case.get('hypotheses', [])) + 1}", "texte": payload.texte.strip(), "statut": "a_valider", "quand": now}
+        await db.cases.update_one(
+            {"id": cid},
+            {"$push": {"hypotheses": hyp, "historique": {"quand": now, "texte": f"Hypothèse ajoutée — {hyp['texte'][:80]}"}}, "$set": {"maj_le": now}},
+        )
+        return hyp
+
+    @router.post("/cases/{cid}/investigations", status_code=201)
+    async def ouvrir_investigation_case(cid: str, payload: InvestigationCase, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+        _, espace = resoudre_perimetre(x_persona, x_espace)
+        case = await charger_case(cid, espace)
+        if not payload.texte.strip():
+            raise HTTPException(400, "Investigation sans objet")
+        now = datetime.now(timezone.utc).isoformat()
+        base = slugify(payload.texte)[:40] or "investigation"
+        sid = f"sit-{base}"
+        n = 2
+        while await db.situations.find_one({"id": sid}):
+            sid = f"sit-{base}-{n}"
+            n += 1
+        situation = {
+            "id": sid,
+            "verbe": "a_comprendre",
+            "nature": "investigation",
+            "type": "investigation",
+            "titre": payload.texte.strip(),
+            "resume": f"Investigation ouverte depuis le case « {case['titre']} ».",
+            "priorite": "normale",
+            "statut": "active",
+            "score": 50,
+            "detectee": "à l'instant",
+            "question": payload.texte.strip(),
+            "jumeaux": case.get("jumeaux", []),
+            "indicateurs": {"confiance": 50, "couverture": 50, "fraicheur": "à l'instant", "contradictions": 0},
+            "cree_le": now,
+        }
+        await db.situations.insert_one(situation)
+        await db.cases.update_one(
+            {"id": cid},
+            {"$push": {"situations": sid, "historique": {"quand": now, "texte": f"Investigation ouverte — {payload.texte.strip()[:80]}"}}, "$set": {"maj_le": now}},
+        )
+        await journaler(x_persona, espace["id"], "ouverture d'une investigation", sid, payload.texte.strip()[:120])
+        situation.pop("_id", None)
+        return situation
 
     return router

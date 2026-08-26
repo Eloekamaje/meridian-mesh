@@ -6,6 +6,7 @@ import api from "@/lib/api";
 import { useMesh } from "@/lib/mesh";
 import { usePerimetre } from "@/lib/perimetre";
 import { couleurDomaine } from "@/lib/domaines";
+import { numeroCase } from "@/components/case/utils";
 
 export const TYPES_CASE = {
   demande: ["Demande", "#3B82F6"],
@@ -217,35 +218,49 @@ export default function Cases() {
         <p className="mt-10 text-center text-sm text-white/35" data-testid="cases-vide">Aucun case dans ce périmètre — créez-en un, ou depuis une conversation avec Flore.</p>
       )}
 
-      {/* Vue liste */}
+      {/* Vue liste — cartes de situation réelle du travail */}
       {vue === "liste" && filtres.length > 0 && (
-        <div className="mt-4 overflow-hidden rounded-xl border border-white/[0.06]" data-testid="cases-liste">
-          <div className="grid grid-cols-[minmax(0,2.4fr)_110px_110px_minmax(0,1.6fr)_150px_80px] gap-3 border-b border-white/[0.06] px-5 py-2.5 font-code text-[9px] uppercase tracking-[0.2em] text-white/35 max-lg:hidden">
-            <span>Case</span><span>Type</span><span>Statut</span><span>Jumeaux mobilisés</span><span>Contenu</span><span className="text-right">Màj</span>
-          </div>
-          {filtres.map((c) => (
-            <div
-              key={c.id}
-              onClick={() => navigate(`/cases/${c.id}`)}
-              data-testid={`case-row-${c.id}`}
-              className="grid cursor-pointer grid-cols-[minmax(0,2.4fr)_110px_110px_minmax(0,1.6fr)_150px_80px] items-center gap-3 border-b border-white/[0.04] px-5 py-3.5 transition-colors last:border-0 hover:bg-white/[0.03] max-lg:grid-cols-[minmax(0,1fr)_auto]"
-            >
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 truncate text-sm font-semibold text-white/90">
-                  <span className="truncate">{c.titre}</span>
+        <div className="mt-4 space-y-3" data-testid="cases-liste">
+          {filtres.map((c) => {
+            const s = STATUTS_CASE[c.statut] || [c.statut, "#9CA3AF"];
+            return (
+              <div key={c.id} data-testid={`case-row-${c.id}`} className="rounded-xl border border-white/[0.07] bg-white/[0.015] p-4 transition-colors hover:border-white/[0.14]">
+                <div className="flex items-center gap-2">
+                  <span className="rounded border border-white/15 bg-white/[0.04] px-1.5 py-0.5 font-code text-[10px] text-white/55">{numeroCase(c)}</span>
+                  <BadgeType type={c.type} />
+                  <span className="flex items-center gap-1.5 text-xs" style={{ color: s[1] }}><span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: s[1] }} />{s[0]}</span>
                   {c.a_revoir && <BadgeArevoir id={c.id} />}
+                  <span className="ml-auto font-code text-[9px] text-white/30">Dernière activité : {rel(c.maj_le)}</span>
                 </div>
-                {c.objectif && <div className="mt-0.5 truncate text-[11px] text-white/40">{c.objectif}</div>}
+                <div onClick={() => navigate(`/cases/${c.id}`)} className="mt-1.5 cursor-pointer text-base font-semibold text-white/90 hover:text-white">{c.titre}</div>
+                {c.objectif && <p className="mt-0.5 text-xs leading-snug text-white/45">{c.objectif}</p>}
+                {c.resume && (
+                  <p className="mt-1.5 border-l-2 border-[#22D3EE]/30 pl-2.5 text-xs italic leading-snug text-white/55" data-testid={`case-resume-extrait-${c.id}`}>
+                    <span className="font-code text-[9px] not-italic uppercase tracking-wider text-[#22D3EE]/60">Compréhension actuelle — </span>{c.resume}
+                  </p>
+                )}
+                <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 font-code text-[10px] text-white/40">
+                  <span>● {c.jumeaux?.length || 0} jumeau{(c.jumeaux?.length || 0) > 1 ? "x" : ""}</span>
+                  <span>◉ {(c.participants || []).length} participant{(c.participants || []).length > 1 ? "s" : ""}</span>
+                  <span>? {c.nb_questions_ouvertes} question{c.nb_questions_ouvertes > 1 ? "s" : ""}</span>
+                  <span>⚑ {c.nb_options_a_trancher} décision{c.nb_options_a_trancher > 1 ? "s" : ""} attendue{c.nb_options_a_trancher > 1 ? "s" : ""}</span>
+                </div>
+                <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.05] pt-2.5">
+                  <span className="min-w-0 truncate font-code text-[10px] text-white/30">
+                    {c.derniere_modif ? <>Modification importante : {c.derniere_modif}</> : "—"}
+                  </span>
+                  <div className="flex shrink-0 gap-1.5">
+                    <button onClick={() => navigate(`/cases/${c.id}`)} data-testid={`case-apercu-${c.id}`} className="rounded-md border border-white/15 px-3 py-1.5 text-[11px] text-white/65 transition-colors hover:border-white/40 hover:text-white">
+                      Voir l'aperçu
+                    </button>
+                    <button onClick={() => navigate(`/cases/${c.id}?vue=activite`)} data-testid={`case-continuer-${c.id}`} className="rounded-md bg-[#3B82F6] px-3 py-1.5 text-[11px] font-semibold text-white transition-colors hover:bg-[#2F6FDB]">
+                      Continuer
+                    </button>
+                  </div>
+                </div>
               </div>
-              <div className="max-lg:hidden"><BadgeType type={c.type} /></div>
-              <div className="max-lg:hidden"><BadgeStatut statut={c.statut} /></div>
-              <ChipsJumeaux ids={c.jumeaux} />
-              <div className="font-code text-[10px] text-white/45 max-lg:hidden">
-                {c.nb_options} option{c.nb_options > 1 ? "s" : ""} · {c.nb_decisions} décision{c.nb_decisions > 1 ? "s" : ""} · {c.nb_messages} msg
-              </div>
-              <div className="text-right font-code text-[10px] text-white/40">{rel(c.maj_le)}</div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -275,6 +290,14 @@ export default function Cases() {
                       <div className="mt-2 flex items-center justify-between font-code text-[9px] text-white/35">
                         <span>{c.nb_decisions} décision{c.nb_decisions > 1 ? "s" : ""} · {c.nb_messages} msg</span>
                         <span>{rel(c.maj_le)}</span>
+                      </div>
+                      <div className="mt-2 flex gap-1.5 border-t border-white/[0.05] pt-2">
+                        <button onClick={(e) => { e.stopPropagation(); navigate(`/cases/${c.id}`); }} data-testid={`case-apercu-${c.id}`} className="flex-1 rounded border border-white/15 px-2 py-1 text-[10px] text-white/60 transition-colors hover:text-white">
+                          Aperçu
+                        </button>
+                        <button onClick={(e) => { e.stopPropagation(); navigate(`/cases/${c.id}?vue=activite`); }} data-testid={`case-continuer-${c.id}`} className="flex-1 rounded bg-[#3B82F6] px-2 py-1 text-[10px] font-semibold text-white transition-colors hover:bg-[#2F6FDB]">
+                          Continuer
+                        </button>
                       </div>
                     </div>
                   ))}
