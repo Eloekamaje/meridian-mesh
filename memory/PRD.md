@@ -1,5 +1,10 @@
 # Méridian — PRD
 
+## Implémenté (26/06/2026 — v10, refactor Atlas + petit écran)
+- **Refactor d'Atlas.jsx (1335 → 441 lignes), sans changement de comportement** : `lib/atlasGraph.js` (MODES/COUCHES/NIVEAUX_ZOOM, styleParEtat, makeEdge, statsDuDomaine, construireGraphe — pur, testable) ; hooks `components/map/useNavigationAtlas.js` (focus domaine/jumeau, historique, fil d'Ariane, majUrl) et `useZoomSemantique.js` (molette sémantique, seuils, survol) ; composants `AtlasControle` (modes, Direct/Pause, couches, vues), `AtlasToolbar`, `FilAriane`, `AtlasLegende`, `AtlasPanneau` (+ `details.jsx` : RelationDetail/DomaineDetail/ComparaisonDomaines/TwinDetail). Tous les data-testid préservés.
+- **Petit écran (<1500px)** : panneau latéral démarre replié (bouton « Détail », `panneau-ouvrir-btn`), légende démarre pliée (`legende-toggle`) ; toute sélection rouvre le panneau ; `panneau-fermer-btn` replie ; repli automatique au redimensionnement (matchMedia) ; légende dépliée surélevée (`bottom-24`) sous 1500 px pour ne pas chevaucher la barre Aurora. Toute la carte est visible en 1366×768.
+- Tests : iteration_17 → ~95 % (non-régression Atlas complète 1920 + petit écran 1366, 0 erreur console) ; correctif chevauchement légende/Aurora vérifié. Note outillage : dans cet environnement, `set_viewport_size`/`reload` ne changent pas `innerWidth` — utiliser un nouveau contexte Playwright ou l'émulation CDP.
+
 ## Implémenté (25/06/2026 — v9, suppression des modales — revue d'admission)
 - **Choix utilisateur : zéro modale, zéro panneau latéral.** La revue d'admission (ex-`examen-dialog`, seule modale de l'app) est remplacée par :
   - **Expansion inline** dans le registre (`Jumeaux.jsx`) : clic sur une ligne (ou « Ouvrir ») → la ligne se déplie et affiche la revue complète (strates, sources, capacités, comportements, relations A2A, contradictions, manquantes, propriétaire, autonomie) + lien « Ouvrir la revue complète → ». Données d'examen chargées paresseusement et mises en cache (`revues`), purgées au changement de périmètre.
@@ -144,7 +149,7 @@ Construire Méridian non pas comme un Atlas/graphe centré sur les jumeaux, mais
 ## Backlog priorisé
 - **P0** : — (rien de bloquant).
 - **P1** : valider manuellement le lasso en union sur un vrai navigateur (automate Playwright non concluant, code vérifié).
-- **P2** : scission d'Atlas.jsx (~1330 lignes — extraction hooks useZoomSemantique/useFocusJumeau/useHistorique + composants Breadcrumb/PromptFocus) ; split de seed_data.py si le catalogue de connecteurs grandit ; persistance sessionStorage du contexte Aurora ; migration `on_event` → lifespan FastAPI ; durcissement CORS pour la production ; découverte automatique de relations pour les nouveaux jumeaux admis ; vue Parcours éditable ; niveaux de zoom Claim → Preuve (drill-down relation, aujourd'hui via panneau latéral) ; choix des colonnes secondaires de la file des sources (actuellement fixes).
+- **P2** : split de seed_data.py si le catalogue de connecteurs grandit ; persistance sessionStorage du contexte Aurora ; migration `on_event` → lifespan FastAPI ; durcissement CORS pour la production ; découverte automatique de relations pour les nouveaux jumeaux admis ; vue Parcours éditable ; niveaux de zoom Claim → Preuve (drill-down relation, aujourd'hui via panneau latéral) ; choix des colonnes secondaires de la file des sources (actuellement fixes).
 - **Si vraie IA un jour** : brancher Aurora sur un LLM via la clé universelle Emergent (budget : Profile → Manage plan → Universal Key).
 
 ## Prochaines tâches

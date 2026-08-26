@@ -1,0 +1,32 @@
+{
+  "summary": "Frontend E2E validation du refactor Atlas.jsx (441 lignes) + nouveau comportement 'petit écran (<1500px)'. Tests menés sur 1920x1080 (grand écran, non-régression) et 1366x768 via NOUVEAU contexte Playwright (petit écran). Résultat GLOBAL: OK. Grand écran: map-side-panel ouvert par défaut, map-legend déployée, tabs map-tab-detail/map-tab-chrono OK, map-chrono-list alimentée en direct, zoom-niveau présent ('Niveau 2 — Domaine' sans focus). Clic simple sur twin-node-paiements → map-twin-detail visible + URL ?sel=paiements ✓. Double-clic sur région PAIEMENT → entrée domaine (breadcrumb-mesh présent, span 'Domaine Paiement', URL ?domaine=Paiement&interne=1, 5 portes externes affichées, panneau bascule sur DomaineDetail avec dom-explorer/comparer/enregistrer/perimetre visibles) ✓. Toolbar outil-deplacement/lasso/parcours/recentrage présents, map-mode-territoire/situation/parcours OK, direct-btn/pause-btn OK. Petit écran (contexte 1366x768, innerWidth=1366): panneau REPLIÉ initialement (panneau-ouvrir-btn visible, map-side-panel absent) ✓ ; légende PLIÉE (legende-toggle chip visible, map-legend absent) ✓ ; clic twin → panneau se rouvre + map-twin-detail ✓ ; panneau-fermer-btn replie ✓ ; legende-toggle déploie map-legend ✓ ; legende-replier (partiellement testé: AuroraBar chevauche légèrement la zone en bas — voir ci-dessous). Régions distantes (Logistique, Notifications, Conformité) visibles à droite/bas dans le fitView. Aucune erreur console sur /atlas (1920 et 1366) ni sur /, /investigations, /decisions, /jumeaux.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Petit écran (1366) — clic sur legende-replier après déploiement de la légende", "issue": "AuroraBar (aurora-suggestion-*) chevauche la partie droite de la légende déployée à 1366px et peut intercepter les clics sur le bouton legende-replier (bouton positionné à ~x=400px, AuroraBar centrée occupe 333-1033px). Le container aurora-bar a pointer-events-none mais les boutons enfants (suggestions) l'annulent. Non bloquant côté logique — le repli fonctionne (vérifié par force click), mais l'ergonomie souffre à cette largeur.", "affected_selectors": ["legende-replier", "aurora-suggestion-*"]}
+    ],
+    "design_issues": [
+      {"screen": "Atlas 1366x768 — légende déployée + AuroraBar", "issues": ["Chevauchement horizontal légende (bottom-4 left-4, max-w-400px) ↔ AuroraBar (bottom-5 center, min(700px,92vw)) : 80px de recouvrement env. Envisager de rétrécir la légende ou décaler AuroraBar/légende au-dessus du bandeau à <1500px."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "OPTIONNEL: résoudre le chevauchement AuroraBar / map-legend à <1500px (soit décaler la légende en bottom-16, soit rétrécir AuroraBar). Non bloquant, mais impacte l'accessibilité du bouton legende-replier.",
+    "OPTIONNEL: harmoniser breadcrumb — la vue 'domaine sans jumeau focus' rend le domaine dans un <span> sans data-testid ; ajouter data-testid=breadcrumb-domaine-inactif faciliterait les tests futurs."
+  ],
+  "critical_code_review_comments": [
+    "Atlas.jsx refactor est propre (441 lignes, en-dessous du seuil 700). Extraction en hooks (useNavigationAtlas, useZoomSemantique) et sous-composants (AtlasControle, AtlasToolbar, AtlasLegende, AtlasPanneau, FilAriane, details) bien découpée.",
+    "AtlasPanneau.jsx: matchMedia listener correct (change → false); l'auto-ouverture via useEffect sur [comparaison, selectedRelation, selected, domaineSel] est idiomatique. Attention: si l'utilisateur ferme volontairement le panneau alors qu'une sélection reste active, tout changement de sélection le rouvrira (comportement conforme à la spec).",
+    "AtlasLegende.jsx: SSR-safe (typeof window !== 'undefined' à l'init). RAS.",
+    "atlasGraph.js: bonne extraction pure des constantes/utilitaires. Aucune dépendance à React → testable unitairement."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped as requested)", "frontend": "~95% — toutes les fonctionnalités critiques validées; 1 chevauchement UI mineur à 1366px"},
+  "test_credentials": "Header X-Persona: architecte (injecté par intercepteur axios). Pas de login.",
+  "seed_data_creation": "Aucune. Aucune admission testée, pas de reset demo nécessaire.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "IMPORTANT: pour tester le comportement petit écran (<1500px), TOUJOURS créer un NOUVEAU contexte Playwright avec viewport={'width':1366,'height':768}. page.set_viewport_size() ne change PAS innerWidth dans cet environnement (matchMedia ne réagit pas). Vérifié: innerWidth=1366 avec new_context. Selectors nouveaux confirmés: panneau-ouvrir-btn, panneau-fermer-btn, legende-toggle, legende-replier. Tous testids anciens préservés. Le breadcrumb-domaine n'existe qu'en focus jumeau (sinon rendu en span non testable). Aucune erreur console sur /atlas, /, /investigations, /decisions, /jumeaux.",
+  "rca of the issue": "N/A — pas de bug bloquant. Seul point d'attention: chevauchement UI AuroraBar/légende à 1366px lorsque l'utilisateur déploie la légende via legende-toggle. Cause: positionnement absolu de map-legend (bottom-4 left-4, max-w-400px) + AuroraBar centrée (min(700px,92vw)) → overlap ~80px de 333→416px. Mitigation possible: rehausser la légende à bottom-16 sur petit écran, ou réduire max-w."
+}
