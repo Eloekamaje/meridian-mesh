@@ -9,13 +9,14 @@ import os
 import re
 import random
 import logging
+import secrets
 import unicodedata
 from pathlib import Path
 
 from seed_data import (
     TWINS, RELATIONS, REGIONS, SITUATIONS, CHANGE_LAB, PARCOURS, ACTIVITE,
     AURORA_SCRIPTS, AURORA_FALLBACK, AURORA_SUGGESTIONS, DEMO_ACTES, SOURCES_LABELS,
-    PERSONAS, ESPACES, VUES,
+    PERSONAS, ESPACES, VUES, CONNECTEURS, CONTRIBUTIONS, PROFILS, COMMANDE_DEMO,
 )
 
 ROOT_DIR = Path(__file__).parent
@@ -41,13 +42,15 @@ async def peupler_demo():
             logger.info("Seeded %s (%d documents)", name, len(docs))
     if await db.change_lab.count_documents({}) == 0:
         await db.change_lab.insert_one(dict(CHANGE_LAB))
+    if await db.commandes.count_documents({}) == 0:
+        await db.commandes.insert_one(dict(COMMANDE_DEMO))
 
 
 @app.on_event("startup")
 async def seed_database():
     meta = await db.meta.find_one({"id": "seed"})
     if not meta or meta.get("version") != SEED_VERSION:
-        for col in ["jumeaux", "relations", "situations", "change_lab", "dossiers", "vues", "journal"]:
+        for col in ["jumeaux", "relations", "situations", "change_lab", "dossiers", "vues", "journal", "commandes"]:
             await db[col].delete_many({})
         await db.meta.replace_one({"id": "seed"}, {"id": "seed", "version": SEED_VERSION}, upsert=True)
         logger.info("Seed version %s — réinitialisation des données de démo", SEED_VERSION)
@@ -737,6 +740,167 @@ async def recherche_plein_texte(q: str, aut: dict):
     return out
 
 
+# ---------- Atelier de commande d'un jumeau ----------
+
+class CommandeCreate(BaseModel):
+    nom: str = "Nouveau jumeau"
+    domaine: str = "Non classé"
+    mission: str = ""
+    proprietaire: str = ""
+    environnement: str = "production"
+
+
+class CommandePatch(BaseModel):
+    jumeau: Optional[dict] = None
+    etape: Optional[int] = None
+    sources: Optional[list] = None
+
+
+class TestLot(BaseModel):
+    ids: list
+
+
+class ImportApercu(BaseModel):
+    mode: str = "cmdb"
+
+
+@api_router.get("/connecteurs")
+async def lister_connecteurs():
+    return {"connecteurs": CONNECTEURS, "contributions": CONTRIBUTIONS, "profils": PROFILS}
+
+
+@api_router.post("/commandes", status_code=201)
+async def creer_commande(payload: CommandeCreate, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+    _, espace = resoudre_perimetre(x_persona, x_espace)
+    cid = f"cmd-{secrets.token_hex(4)}"
+    doc = {
+        "id": cid,
+        "etat": "brouillon",
+        "etape": 1,
+        "jumeau": {"nom": payload.nom, "domaine": payload.domaine, "mission": payload.mission, "proprietaire": payload.proprietaire, "environnement": payload.environnement},
+        "sources": [],
+        "cree_par": x_persona,
+        "cree_le": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.commandes.insert_one(doc)
+    await journaler(x_persona, espace["id"], "ouverture d'une commande", cid, payload.nom)
+    doc.pop("_id", None)
+    return doc
+
+
+@api_router.get("/commandes")
+async def lister_commandes():
+    return await db.commandes.find({"etat": "brouillon"}, NO_ID).to_list(50)
+
+
+@api_router.get("/commandes/{cid}")
+async def lire_commande(cid: str):
+    doc = await db.commandes.find_one({"id": cid}, NO_ID)
+    if not doc:
+        raise HTTPException(404, "Commande introuvable")
+    return doc
+
+
+@api_router.patch("/commandes/{cid}")
+async def maj_commande(cid: str, payload: CommandePatch):
+    patch = {k: v for k, v in payload.model_dump().items() if v is not None}
+    if not patch:
+        return {"ok": True}
+    patch["maj_le"] = datetime.now(timezone.utc).isoformat()
+    res = await db.commandes.update_one({"id": cid}, {"$set": patch})
+    if res.matched_count == 0:
+        raise HTTPException(404, "Commande introuvable")
+    return {"ok": True, "maj_le": patch["maj_le"]}
+
+
+def _simuler_test(source):
+    """Test de connexion simulé mais déterministe : champs requis manquants → configuration incomplète ; sinon échec réaliste pour certains, succès pour la plupart."""
+    conn = next((c for c in CONNECTEURS if c["id"] == source["connecteur"]), None)
+    manquants = [ch["label"] for ch in (conn["champs"] if conn else []) if ch.get("requis") and not source.get("config", {}).get(ch["cle"])]
+    maintenant = datetime.now(timezone.utc).strftime("%d/%m %H:%M")
+    if manquants:
+        return {"statut": "configuration_incomplete", "erreur": {"titre": "Configuration incomplète", "detail": f"Champs requis manquants : {', '.join(manquants)}.", "action": "Compléter la configuration"}, "dernier_test": {"date": maintenant, "resultat": "echec"}}
+    if not source.get("perimetre"):
+        return {"statut": "perimetre_vide", "erreur": {"titre": "Périmètre vide", "detail": "Aucun schéma, projet ou index n'est renseigné — la découverte ne rapporterait rien.", "action": "Définir le périmètre"}, "dernier_test": {"date": maintenant, "resultat": "echec"}}
+    if "legacy" in (source.get("config", {}).get("hote") or ""):
+        return {"statut": "erreur_connexion", "erreur": {"titre": "Erreur de connexion", "detail": "L'hôte ne répond pas (délai dépassé sur le port configuré).", "action": "Vérifier le réseau et le port"}, "dernier_test": {"date": maintenant, "resultat": "echec"}}
+    return {"statut": "prete", "erreur": None, "dernier_test": {"date": maintenant, "resultat": "ok"}}
+
+
+@api_router.post("/commandes/{cid}/tester")
+async def tester_sources(cid: str, payload: TestLot, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+    _, espace = resoudre_perimetre(x_persona, x_espace)
+    doc = await db.commandes.find_one({"id": cid}, NO_ID)
+    if not doc:
+        raise HTTPException(404, "Commande introuvable")
+    resultats = {}
+    modifie = False
+    for s in doc["sources"]:
+        if s["id"] in payload.ids:
+            resultats[s["id"]] = _simuler_test(s)
+            s.update(resultats[s["id"]])
+            modifie = True
+    if modifie:
+        await db.commandes.update_one({"id": cid}, {"$set": {"sources": doc["sources"], "maj_le": datetime.now(timezone.utc).isoformat()}})
+        await journaler(x_persona, espace["id"], "test de connexions", cid, f"{len(resultats)} source(s) testée(s)")
+    return {"resultats": resultats}
+
+
+@api_router.post("/commandes/{cid}/import/apercu")
+async def apercu_import(cid: str, payload: ImportApercu):
+    doc = await db.commandes.find_one({"id": cid}, NO_ID)
+    if not doc:
+        raise HTTPException(404, "Commande introuvable")
+    existants = {(s["connecteur"], s["nom"]) for s in doc["sources"]}
+    candidats = [
+        {"connecteur": "postgresql", "nom": "PostgreSQL Settlement", "environnement": "production", "perimetre": "schéma settlement", "proprietaire": "Équipe Finance", "config": {"hote": "pg-settle.intra", "port": 5432, "base": "settlement", "schemas": "settlement", "frequence": "quotidienne"}},
+        {"connecteur": "oracle", "nom": "Oracle Clearing", "environnement": "production", "perimetre": "schéma CLEARING", "proprietaire": "Équipe Finance", "config": {"hote": "ora-clear.intra", "service": "CLEARING", "schemas": "CLEARING", "frequence": "quotidienne"}},
+        {"connecteur": "jira", "nom": "Jira Projet CORE", "environnement": "production", "perimetre": "projet CORE", "proprietaire": "Équipe Paiements", "config": {"site": "banque.atlassian.net", "projets": "CORE", "periode": "12 mois", "auth": "jeton API"}},
+        {"connecteur": "confluence", "nom": "Confluence Espace PAY", "environnement": "production", "perimetre": "espace PAY", "proprietaire": "Équipe Paiements", "config": {"site": "banque.atlassian.net/wiki", "espaces": "PAY", "periode": "24 mois"}},
+        {"connecteur": "cmdb", "nom": "CMDB Centrale", "environnement": "production", "perimetre": "classe Application", "proprietaire": "Équipe Architecture", "config": {"instance": "cmdb.intra", "classes": "Application", "filtre": "domaine=Paiement"}},
+        {"connecteur": "postgresql", "nom": "PostgreSQL Production", "environnement": "production", "perimetre": "schémas public, pay", "proprietaire": "Équipe Paiements", "config": {}},
+    ]
+    nouvelles, presentes, a_mapper = [], [], []
+    for c in candidats:
+        if (c["connecteur"], c["nom"]) in existants:
+            presentes.append(c)
+        else:
+            nouvelles.append(c)
+    a_mapper.append({"connecteur": "sap", "nom": "SAP FI", "note": "Connecteur à correspondre manuellement"})
+    return {"mode": payload.mode, "detectees": len(candidats) + 1, "nouvelles": nouvelles, "presentes": presentes, "a_mapper": a_mapper}
+
+
+@api_router.post("/commandes/{cid}/lancer")
+async def lancer_commande(cid: str, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+    _, espace = resoudre_perimetre(x_persona, x_espace)
+    doc = await db.commandes.find_one({"id": cid}, NO_ID)
+    if not doc:
+        raise HTTPException(404, "Commande introuvable")
+    j = doc["jumeau"]
+    if not j.get("nom") or not j.get("mission") or not j.get("proprietaire"):
+        raise HTTPException(422, "Identité incomplète (nom, mission, propriétaire requis)")
+    pretes = [s for s in doc["sources"] if s["statut"] == "prete"]
+    if not pretes:
+        raise HTTPException(422, "Au moins une source prête est requise pour lancer")
+    jid = slugify(j["nom"])
+    if await db.jumeaux.find_one({"id": jid}):
+        raise HTTPException(409, "Un jumeau porte déjà ce nom")
+    nouveau = {
+        "id": jid, "nom": j["nom"], "domaine": j.get("domaine", "Non classé"), "mission": j["mission"],
+        "proprietaire": j["proprietaire"], "environnement": j.get("environnement", "production"),
+        "statut": "observation", "autonomie": "aucune",
+        "couverture": min(20 + len(pretes) * 9, 88), "fraicheur": "à l'instant", "sante": "inconnu",
+        "position": {"x": 1260, "y": 40},
+        "sources": {s["connecteur"]: True for s in pretes},
+    }
+    await db.jumeaux.insert_one(nouveau)
+    if isinstance(espace.get("jumeaux"), dict) and "*" not in espace["jumeaux"]:
+        espace["jumeaux"][jid] = "complet"
+    await db.commandes.update_one({"id": cid}, {"$set": {"etat": "lancee", "jumeau_id": jid, "lancee_le": datetime.now(timezone.utc).isoformat()}})
+    await journaler(x_persona, espace["id"], "lancement d'une commande", jid, f"{j['nom']} — {len(pretes)} source(s) prête(s)")
+    return {"ok": True, "jumeau_id": jid, "sources_lancees": len(pretes), "sources_reportees": len(doc["sources"]) - len(pretes)}
+
+
 @api_router.post("/aurora/demander")
 async def aurora_demander(payload: AuroraDemande, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
     _, espace = resoudre_perimetre(x_persona, x_espace)
@@ -786,7 +950,7 @@ async def aurora_suggestions(contexte: str = "global", x_persona: str = Header("
 
 @api_router.post("/demo/reinitialiser")
 async def reinitialiser_demo(x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
-    for col in ["jumeaux", "relations", "situations", "change_lab", "dossiers", "vues", "journal"]:
+    for col in ["jumeaux", "relations", "situations", "change_lab", "dossiers", "vues", "journal", "commandes"]:
         await db[col].delete_many({})
     await peupler_demo()
     await journaler(x_persona, x_espace, "réinitialisation de la démo", "mesh", "Données de démonstration restaurées à l'état initial")

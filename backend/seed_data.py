@@ -591,3 +591,133 @@ VUES = [
     {"id": "vue-relations-nc", "persona": "paiements", "nom": "Relations non confirmées", "type": "relations_non_confirmees", "jumeaux": []},
     {"id": "vue-vigilance", "persona": "architecte", "nom": "Jumeaux en vigilance", "type": "vigilance", "jumeaux": []},
 ]
+
+# ---------- Atelier de commande : connecteurs, profils, brouillon de démo ----------
+
+CONNECTEURS = [
+    {"id": "postgresql", "nom": "PostgreSQL", "categorie": "Bases de données", "capacites": "Schémas, tables, contraintes et relations",
+     "champs": [
+        {"cle": "hote", "label": "Hôte", "type": "texte", "requis": True},
+        {"cle": "port", "label": "Port", "type": "nombre", "requis": True, "defaut": 5432},
+        {"cle": "base", "label": "Base", "type": "texte", "requis": True},
+        {"cle": "schemas", "label": "Schémas", "type": "liste"},
+        {"cle": "secret", "label": "Référence du secret", "type": "secret", "requis": True},
+        {"cle": "frequence", "label": "Fréquence", "type": "select", "options": ["horaire", "quotidienne", "hebdomadaire"], "defaut": "quotidienne"},
+     ]},
+    {"id": "oracle", "nom": "Oracle", "categorie": "Bases de données", "capacites": "Schémas, vues matérialisées, procédures",
+     "champs": [
+        {"cle": "hote", "label": "Hôte", "type": "texte", "requis": True},
+        {"cle": "service", "label": "Service", "type": "texte", "requis": True},
+        {"cle": "schemas", "label": "Schémas", "type": "liste"},
+        {"cle": "secret", "label": "Référence du secret", "type": "secret", "requis": True},
+        {"cle": "frequence", "label": "Fréquence", "type": "select", "options": ["horaire", "quotidienne", "hebdomadaire"], "defaut": "quotidienne"},
+     ]},
+    {"id": "jira", "nom": "Jira", "categorie": "Gestion de projet", "capacites": "Billets, projets, trajectoire fonctionnelle",
+     "champs": [
+        {"cle": "site", "label": "Site Atlassian", "type": "texte", "requis": True},
+        {"cle": "projets", "label": "Projets", "type": "liste", "requis": True},
+        {"cle": "types_billets", "label": "Types de billets", "type": "liste"},
+        {"cle": "periode", "label": "Période historique", "type": "select", "options": ["3 mois", "6 mois", "12 mois", "24 mois"], "defaut": "12 mois"},
+        {"cle": "auth", "label": "Méthode d'authentification", "type": "select", "options": ["jeton API", "OAuth"], "defaut": "jeton API"},
+     ]},
+    {"id": "datadog", "nom": "Datadog", "categorie": "Observabilité", "capacites": "Métriques, traces, comportement normal",
+     "champs": [
+        {"cle": "site", "label": "Site", "type": "select", "options": ["datadoghq.eu", "datadoghq.com"], "defaut": "datadoghq.eu", "requis": True},
+        {"cle": "services", "label": "Services", "type": "liste", "requis": True},
+        {"cle": "tags", "label": "Tags", "type": "liste"},
+        {"cle": "periode", "label": "Période initiale", "type": "select", "options": ["7 jours", "30 jours", "90 jours"], "defaut": "30 jours"},
+        {"cle": "secret", "label": "Clé d'API (référence)", "type": "secret", "requis": True},
+     ]},
+    {"id": "splunk", "nom": "Splunk", "categorie": "Observabilité", "capacites": "Événements observés, journaux, corrélations",
+     "champs": [
+        {"cle": "hote", "label": "Hôte", "type": "texte", "requis": True},
+        {"cle": "index", "label": "Index", "type": "liste", "requis": True},
+        {"cle": "periode", "label": "Période historique", "type": "select", "options": ["7 jours", "30 jours", "90 jours"], "defaut": "30 jours"},
+        {"cle": "secret", "label": "Référence du secret", "type": "secret", "requis": True},
+     ]},
+    {"id": "servicenow", "nom": "ServiceNow", "categorie": "ITSM", "capacites": "Incidents, changements, mémoire opérationnelle",
+     "champs": [
+        {"cle": "instance", "label": "Instance", "type": "texte", "requis": True},
+        {"cle": "tables", "label": "Tables", "type": "liste", "defaut": "incident, change_request"},
+        {"cle": "groupes", "label": "Groupes d'affectation", "type": "liste"},
+        {"cle": "periode", "label": "Période historique", "type": "select", "options": ["6 mois", "12 mois", "24 mois"], "defaut": "12 mois"},
+        {"cle": "oauth", "label": "Compte OAuth", "type": "secret", "requis": True},
+     ]},
+    {"id": "github", "nom": "GitHub", "categorie": "Code source", "capacites": "Capacités, APIs, événements et règles",
+     "champs": [
+        {"cle": "organisation", "label": "Organisation", "type": "texte", "requis": True},
+        {"cle": "depots", "label": "Dépôts", "type": "liste", "requis": True},
+        {"cle": "branches", "label": "Branches", "type": "liste", "defaut": "main"},
+        {"cle": "secret", "label": "Jeton (référence)", "type": "secret", "requis": True},
+     ]},
+    {"id": "confluence", "nom": "Confluence", "categorie": "Documentation", "capacites": "Contexte métier et décisions",
+     "champs": [
+        {"cle": "site", "label": "Site", "type": "texte", "requis": True},
+        {"cle": "espaces", "label": "Espaces", "type": "liste", "requis": True},
+        {"cle": "periode", "label": "Période", "type": "select", "options": ["12 mois", "24 mois", "tout"], "defaut": "24 mois"},
+     ]},
+    {"id": "cmdb", "nom": "CMDB", "categorie": "CMDB", "capacites": "Relations déclarées et propriétaires",
+     "champs": [
+        {"cle": "instance", "label": "Instance", "type": "texte", "requis": True},
+        {"cle": "classes", "label": "Classes CI", "type": "liste"},
+        {"cle": "filtre", "label": "Filtre", "type": "texte"},
+     ]},
+    {"id": "kafka", "nom": "Kafka", "categorie": "Événements", "capacites": "Topics, événements produits et consommés",
+     "champs": [
+        {"cle": "brokers", "label": "Brokers", "type": "liste", "requis": True},
+        {"cle": "topics", "label": "Topics", "type": "liste", "requis": True},
+        {"cle": "secret", "label": "Référence du secret", "type": "secret"},
+     ]},
+    {"id": "apigee", "nom": "Apigee", "categorie": "API Management", "capacites": "APIs exposées, quotas, consommateurs",
+     "champs": [
+        {"cle": "organisation", "label": "Organisation", "type": "texte", "requis": True},
+        {"cle": "proxies", "label": "Proxies", "type": "liste"},
+        {"cle": "secret", "label": "Référence du secret", "type": "secret", "requis": True},
+     ]},
+    {"id": "aws", "nom": "AWS", "categorie": "Cloud", "capacites": "Infrastructure, déploiements, tags",
+     "champs": [
+        {"cle": "compte", "label": "Compte", "type": "texte", "requis": True},
+        {"cle": "regions", "label": "Régions", "type": "liste"},
+        {"cle": "services", "label": "Services", "type": "liste"},
+        {"cle": "secret", "label": "Rôle IAM (référence)", "type": "secret", "requis": True},
+     ]},
+]
+
+CONTRIBUTIONS = {
+    "postgresql": {"objectif": "Comprendre les données", "contribution": "Modèle de données et relations"},
+    "oracle": {"objectif": "Comprendre les données", "contribution": "Modèle de données et relations"},
+    "github": {"objectif": "Comprendre le code", "contribution": "Capacités, APIs, événements et règles"},
+    "apigee": {"objectif": "Comprendre le code", "contribution": "APIs exposées et consommateurs"},
+    "jira": {"objectif": "Comprendre le métier", "contribution": "Trajectoire fonctionnelle"},
+    "confluence": {"objectif": "Comprendre le métier", "contribution": "Contexte métier et décisions"},
+    "datadog": {"objectif": "Comprendre le comportement", "contribution": "Comportement normal"},
+    "splunk": {"objectif": "Comprendre le comportement", "contribution": "Événements observés"},
+    "kafka": {"objectif": "Comprendre le comportement", "contribution": "Événements produits et consommés"},
+    "servicenow": {"objectif": "Comprendre l'historique", "contribution": "Mémoire des incidents et changements"},
+    "cmdb": {"objectif": "Découvrir les voisins", "contribution": "Relations déclarées et propriétaires"},
+    "aws": {"objectif": "Comprendre les données", "contribution": "Infrastructure et déploiements"},
+}
+
+PROFILS = [
+    {"id": "profil-bdd-prod", "nom": "Base de données Production", "applicable": ["postgresql", "oracle"],
+     "regles": {"environnement": "production", "config": {"frequence": "horaire", "lecture_seule": True, "politique_secret": "coffre central", "historique": "90 jours"}}},
+    {"id": "profil-obs-std", "nom": "Observabilité standard", "applicable": ["datadog", "splunk"],
+     "regles": {"environnement": "production", "config": {"periode": "30 jours", "lecture_seule": True, "politique_secret": "coffre central"}}},
+]
+
+COMMANDE_DEMO = {
+    "id": "cmd-remboursements",
+    "etat": "brouillon",
+    "etape": 2,
+    "jumeau": {"nom": "Remboursements", "domaine": "Paiement", "mission": "Traite les demandes de remboursement clients", "proprietaire": "Équipe Paiements — L. Marchand", "environnement": "production"},
+    "sources": [
+        {"id": "src-pg-prod", "connecteur": "postgresql", "nom": "PostgreSQL Production", "environnement": "production", "perimetre": "schémas public, pay", "proprietaire": "Équipe Paiements", "statut": "prete", "erreur": None, "dernier_test": {"date": "25/06 09:12", "resultat": "ok"}, "config": {"hote": "pg-prod.intra", "port": 5432, "base": "remboursements", "schemas": "public, pay", "secret": "coffre/pg-prod", "frequence": "horaire"}},
+        {"id": "src-pg-prep", "connecteur": "postgresql", "nom": "PostgreSQL Préproduction", "environnement": "préproduction", "perimetre": "schéma public", "proprietaire": "Équipe Paiements", "statut": "prete", "erreur": None, "dernier_test": {"date": "25/06 09:10", "resultat": "ok"}, "config": {"hote": "pg-prep.intra", "port": 5432, "base": "remboursements", "schemas": "public", "secret": "coffre/pg-prep", "frequence": "quotidienne"}},
+        {"id": "src-oracle", "connecteur": "oracle", "nom": "Oracle Settlement", "environnement": "production", "perimetre": "schéma SETTLEMENT", "proprietaire": "Équipe Finance", "statut": "a_configurer", "erreur": None, "dernier_test": None, "config": {"hote": "", "service": "", "schemas": "SETTLEMENT", "secret": "", "frequence": "quotidienne"}},
+        {"id": "src-jira", "connecteur": "jira", "nom": "Jira Projet PAY", "environnement": "production", "perimetre": "projet PAY", "proprietaire": "Équipe Paiements", "statut": "prete", "erreur": None, "dernier_test": {"date": "24/06 18:44", "resultat": "ok"}, "config": {"site": "banque.atlassian.net", "projets": "PAY", "types_billets": "Story, Bug", "periode": "12 mois", "auth": "jeton API"}},
+        {"id": "src-datadog", "connecteur": "datadog", "nom": "Datadog Production", "environnement": "production", "perimetre": "services pay-*", "proprietaire": "Équipe RUN", "statut": "autorisation_insuffisante", "erreur": {"titre": "Autorisation insuffisante", "detail": "Le compte peut lire les métriques, mais pas les services pay-*.", "action": "Corriger les permissions"}, "dernier_test": {"date": "25/06 08:57", "resultat": "echec"}, "config": {"site": "datadoghq.eu", "services": "pay-*", "tags": "env:prod", "periode": "30 jours", "secret": "coffre/dd-ro"}},
+        {"id": "src-splunk", "connecteur": "splunk", "nom": "Splunk Paiements", "environnement": "production", "perimetre": "index pay", "proprietaire": "Équipe RUN", "statut": "a_configurer", "erreur": None, "dernier_test": None, "config": {"hote": "", "index": "pay", "periode": "30 jours", "secret": ""}},
+        {"id": "src-snow", "connecteur": "servicenow", "nom": "ServiceNow ITSM", "environnement": "production", "perimetre": "groupe PAY-APP", "proprietaire": "Équipe Support", "statut": "prete", "erreur": None, "dernier_test": {"date": "25/06 07:31", "resultat": "ok"}, "config": {"instance": "banque.service-now.com", "tables": "incident, change_request", "groupes": "PAY-APP", "periode": "12 mois", "oauth": "coffre/snow-oauth"}},
+        {"id": "src-github", "connecteur": "github", "nom": "GitHub pay-remboursements", "environnement": "production", "perimetre": "dépôt principal", "proprietaire": "Équipe Paiements", "statut": "prete", "erreur": None, "dernier_test": {"date": "25/06 09:02", "resultat": "ok"}, "config": {"organisation": "banque", "depots": "pay-remboursements", "branches": "main", "secret": "coffre/gh-token"}},
+    ],
+}

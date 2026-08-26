@@ -1,0 +1,26 @@
+{
+  "summary": "Iter14 — Nouvelle fonctionnalité 'Atelier de commande d'un jumeau' (page /commande/:cid) testée backend + frontend. BACKEND : 10/10 tests pytest passent (test_commandes.py) — catalogue /connecteurs (12 connecteurs, 10 catégories, champs PostgreSQL complets), brouillon cmd-remboursements seedé avec 8 sources, POST /commandes crée un brouillon, PATCH persiste, POST /tester renvoie configuration_incomplete pour src-oracle (persistant après GET) et prete pour src-pg-prod, POST /import/apercu {mode:cmdb} renvoie detectees=7 + PostgreSQL Production détecté dans presentes + SAP FI dans a_mapper, POST /lancer refuse 422 sans identité, réussit sur cmd-remboursements et renvoie 409 pour un jumeau existant, POST /demo/reinitialiser restaure l'état. FRONTEND : parcours utilisateur validé sur /jumeaux → reprendre-cmd-remboursements → titre 'Commande du jumeau Remboursements', stepper 4 étapes (Identité/Sources/Plan/Vérifier), indicateurs 8/5/2/1 conformes au seed, inspecteur Oracle affiche hôte/service/schémas, insp-tester-btn passe à 'Configuration incomplète' avec bloc erreur, autosauvegarde OK (modification insp-hote → 'ora-remb.intra' persiste après reload), indic-erreurs filtre à 1 ligne (Datadog), recherche 'oracle' filtre à 1 ligne, catalogue-tiroir 'observ' → 2 connecteurs (Datadog+Splunk), import-modal mode cmdb → apercu affiché, Quitter → retour /jumeaux, commander-jumeau-btn → nouvelle commande étape 1 avec suivant désactivé si identité vide, activé après nom/mission/propriétaire, navigation stepper via 'Continuer' vers étapes 2/3/4 (avec >=1 source pour passer 2→3). Non-régression : /atlas, /investigations, /decisions, /administration chargent sans erreur console. 0 erreur console applicative. Demo réinitialisée après tests.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_commandes.py",
+    "/app/test_reports/pytest/commandes_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py — l'endpoint POST /commandes/:cid/import/apercu utilise `payload: dict` (pas de modèle Pydantic) : accepte n'importe quelle forme. Envisager un modèle typé (mode: Literal['cmdb','manifeste','fichier']).",
+    "Commande.jsx — la navigation via stepper (etape-nav-{n}) n'est autorisée que pour n ≤ commande.etape. Cela signifie qu'après avoir atteint l'étape 4, on peut revenir en arrière, mais depuis l'étape 2 seedée on ne peut PAS cliquer directement sur etape-nav-3 : il faut passer par 'Continuer'. Comportement volontaire mais peut surprendre. Aucun message d'aide n'indique pourquoi l'étape 3 est grisée.",
+    "seed_data.py — CONNECTEURS/CONTRIBUTIONS/PROFILS/COMMANDE_DEMO tous dans un seul fichier volumineux : envisager split par domaine si le catalogue grandit."
+  ],
+  "updated_files": ["/app/backend/tests/test_commandes.py"],
+  "success_rate": {"backend": "100% (10/10)", "frontend": "100% (parcours critique complet OK)"},
+  "seed_data_creation": "Aucune. Réinitialisation démo appelée en fin de tests (POST /api/demo/reinitialiser) pour restaurer cmd-remboursements.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "L'atelier de commande est fonctionnel de bout en bout. Selectors clés : commande-page, commande-titre, commande-stepper, etape-nav-{1..4}, etape-suivante-btn, indic-{total,pretes,a-configurer,erreurs}, source-ligne-{id}, insp-{cle}, insp-tester-btn, inspecteur-statut, inspecteur-erreur, ajouter-source-btn, catalogue-tiroir, catalogue-recherche, connecteur-{id}, mode-{nouvelle,profil,dupliquer,manifeste,importer}, import-btn, import-modal, import-mode-{cmdb,manifeste,fichier}, import-analyser-btn, import-apercu, import-confirmer-btn, plan-decouverte, verification, lancer-btn, commander-jumeau-btn, reprendre-{cid}. Attention : autosauvegarde debounce ~900ms + test simulé ~1300ms côté front — prévoir wait_for_timeout(1500-2000). La navigation stepper ne va que 'jusqu'à etape courante' — pour tester les étapes 3/4 il faut cliquer 'Continuer' (etape-suivante-btn) et non pas etape-nav-N directement (mon 1er run est tombé sur ce piège).",
+  "rca of the issue": "N/A — aucune anomalie détectée."
+}

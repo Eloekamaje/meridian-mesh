@@ -3,6 +3,16 @@
 ## Problème d'origine (résumé)
 Construire Méridian non pas comme un Atlas/graphe centré sur les jumeaux, mais comme un **système de compréhension et de décision pour le SI**, organisé autour de l'objet **Situation**. Repositionnement v2 (utilisateur) : **système qui apprend continuellement la structure et le comportement du SI** — cycle Découverte candidate → Compréhension validée → Décision éclairée → Mémoire du Mesh. L'accueil devient un Observatoire des découvertes (3 colonnes Découvert / À comprendre / À décider), l'Atlas montre l'évolution du savoir (6 états de relations, maturité des domaines, 3 dynamiques temps réel), les investigations couvrent relations/comportements/connaissances/contradictions, chaque décision enrichit la mémoire du Mesh. Code couleur : Découvrir cyan, Comprendre violet, Décider ambre.
 
+## Implémenté (25/06/2026 — v8, atelier de commande d'un jumeau)
+- **Nouvelle page `/commande/:cid`** (plein écran, remplace la modale à onglets) : 4 étapes — Identité → Sources et connexions → Plan de découverte → Vérifier et lancer ; en-tête persistant (nom, APP-id, domaine, « Brouillon enregistré », quitter, stepper cliquable) ; **brouillons persistés côté serveur** (collection `commandes`, autosauvegarde debounce 900 ms) ; reprise depuis la page Jumeaux (« commandes en cours »).
+- **Atelier des sources** : indicateurs de préparation cliquables (filtrent la file), file d'instances avec colonnes (connecteur, environnement, périmètre, propriétaire, état, dernier test), recherche + filtres + regroupement repliable (connecteur/environnement/statut/équipe), cases à cocher → **barre d'actions en lot** (profil, environnement, fréquence, tester, supprimer).
+- **Inspecteur adaptatif** : formulaire spécifique par connecteur (PostgreSQL, Oracle, Jira, Datadog, Splunk, ServiceNow, GitHub, Confluence, CMDB, Kafka, Apigee, AWS), test de connexion simulé (progression dans la ligne, erreurs explicites : configuration incomplète / périmètre vide / erreur de connexion + action corrective), cycle de statuts complet.
+- **Catalogue tiroir** : recherche prioritaire (nom/besoin/catégorie), capacités, « N instances déjà configurées », 5 modes d'ajout (nouvelle instance, profil, dupliquer, import, CMDB).
+- **Import massif** avec aperçu chiffré (détectées/nouvelles/présentes/à mapper) avant confirmation.
+- **Plan de découverte** par objectif de connaissance avec contribution de chaque source ; **vérification finale** (prêtes/reportées/erreurs avec détails, couverture attendue, manifeste) et lancement réel du jumeau dans le Mesh (statut observation).
+- Backend : `GET /api/connecteurs`, CRUD `/api/commandes`, `POST tester` (simulation déterministe), `import/apercu`, `lancer` — tout journalisé ; brouillon de démo « Remboursements » seedé (8 sources, états variés).
+- Tests : iteration_14 → backend 10/10 pytest (`tests/test_commandes.py`), parcours frontend complet validé, 0 erreur console.
+
 ## Implémenté (25/06/2026 — v7.2, documentation)
 - **`/app/README.md`** rédigé : présentation, espaces, modèle d'interaction de l'Atlas (sélection vs focus, hiérarchie de zoom, portes), Aurora (synchronisation bidirectionnelle), RBAC par personas/espaces, pile technique, démarrage, seed, API principale, tests.
 
@@ -115,7 +125,7 @@ Construire Méridian non pas comme un Atlas/graphe centré sur les jumeaux, mais
 ## Backlog priorisé
 - **P0** : — (rien de bloquant).
 - **P1** : valider manuellement le lasso en union sur un vrai navigateur (automate Playwright non concluant, code vérifié).
-- **P2** : scission d'Atlas.jsx (~1330 lignes — extraction hooks useZoomSemantique/useFocusJumeau/useHistorique + composants Breadcrumb/PromptFocus) ; persistance sessionStorage du contexte Aurora (perdu au reload complet) ; migration `on_event` → lifespan FastAPI ; durcissement CORS pour la production ; découverte automatique de relations pour les nouveaux jumeaux admis ; vue Parcours éditable ; niveaux de zoom Claim → Preuve (drill-down relation, aujourd'hui via panneau latéral).
+- **P2** : scission d'Atlas.jsx (~1330 lignes — extraction hooks useZoomSemantique/useFocusJumeau/useHistorique + composants Breadcrumb/PromptFocus) ; split de seed_data.py si le catalogue de connecteurs grandit ; persistance sessionStorage du contexte Aurora ; migration `on_event` → lifespan FastAPI ; durcissement CORS pour la production ; découverte automatique de relations pour les nouveaux jumeaux admis ; vue Parcours éditable ; niveaux de zoom Claim → Preuve (drill-down relation, aujourd'hui via panneau latéral) ; choix des colonnes secondaires de la file des sources (actuellement fixes).
 - **Si vraie IA un jour** : brancher Aurora sur un LLM via la clé universelle Emergent (budget : Profile → Manage plan → Universal Key).
 
 ## Prochaines tâches
