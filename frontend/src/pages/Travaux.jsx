@@ -34,74 +34,68 @@ const rel = (iso) => {
   return `il y a ${Math.round(s / 86400)} j`;
 };
 
-// Un travail est une histoire : titre, intention, nouveauté, une action principale
+// Un travail tient sur une ligne dense : titre, intention, signal, fraîcheur — actions au survol
 function CarteTravail({ c, navigate, setSelection, attention }) {
   const [menu, setMenu] = useState(false);
-  const t = TYPES_CASE[c.type] || [c.type, "#71716D"];
   const s = STATUTS_CASE[c.statut] || [c.statut, "#71716D"];
 
   return (
-    <article
-      className={`rounded-xl border bg-white p-5 transition-colors hover:border-[#D4D4D0] ${attention ? "border-l-2 border-l-[#B45309] border-[#E5E5E3]" : "border-[#E5E5E3]"}`}
+    <div
+      onClick={() => navigate(`/travaux/${c.id}`)}
+      className={`group relative flex cursor-pointer items-center gap-3 rounded-lg border-b border-[#E5E5E3] px-2 py-2.5 transition-colors last:border-b-0 hover:bg-white ${attention ? "border-l-2 border-l-[#B45309]/60" : ""}`}
       data-testid={`travail-row-${c.id}`}
     >
-      <div className="flex items-start justify-between gap-3">
-        <h3 onClick={() => navigate(`/travaux/${c.id}`)} className="cursor-pointer text-base font-semibold leading-snug text-[#111110] hover:text-[#3730A3]">
-          {c.titre}
-        </h3>
-        <div className="flex shrink-0 items-center gap-1.5">
+      <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: s[1] }} title={s[0]} />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline gap-2">
+          <span className="truncate text-sm font-medium text-[#111110]">{c.titre}</span>
           {c.a_revoir && (
-            <span className="rounded border border-[#B91C1C]/40 bg-[#B91C1C]/[0.06] px-1.5 py-0.5 font-code text-[9px] uppercase tracking-wider text-[#B91C1C]" data-testid={`travail-arevoir-${c.id}`}>À revoir</span>
+            <span className="shrink-0 rounded border border-[#B91C1C]/40 bg-[#B91C1C]/[0.06] px-1.5 py-px font-code text-[9px] uppercase tracking-wider text-[#B91C1C]" data-testid={`travail-arevoir-${c.id}`}>À revoir</span>
           )}
           {(c.nb_options_a_trancher || 0) > 0 && (
-            <span className="flex items-center gap-1 rounded border border-[#6D28D9]/30 bg-[#6D28D9]/[0.06] px-1.5 py-0.5 font-code text-[9px] text-[#6D28D9]">
+            <span className="flex shrink-0 items-center gap-1 rounded border border-[#6D28D9]/30 bg-[#6D28D9]/[0.06] px-1.5 py-px font-code text-[9px] text-[#6D28D9]">
               <Flag size={9} /> {c.nb_options_a_trancher} décision{c.nb_options_a_trancher > 1 ? "s" : ""}
             </span>
           )}
         </div>
-      </div>
-
-      <p className="mt-1.5 text-sm leading-relaxed text-[#52524F]">
-        {c.objectif || c.resume || "Travail conservé — la mémoire s'écrit au fil des échanges."}
-      </p>
-
-      {(c.nb_nouveautes || 0) > 0 && (
-        <p className="mt-2 flex items-baseline gap-1.5 text-xs text-[#047857]" data-testid={`travail-nouveau-${c.id}`}>
-          <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[#047857]" />
-          <span>Nouveau depuis votre dernière visite : {c.nouveaute_texte}</span>
-        </p>
-      )}
-
-      <div className="mt-3.5 flex items-center justify-between gap-2">
-        <span className="truncate font-code text-[9px] text-[#71716D]">
-          {numeroCase(c)} · {t[0]} · <span style={{ color: s[1] }}>{s[0]}</span> · {c.jumeaux?.length || 0} jumeau{(c.jumeaux?.length || 0) > 1 ? "x" : ""} · {rel(c.maj_le)}
-        </span>
-        <div className="flex shrink-0 items-center gap-1.5">
-          <button
-            onClick={() => navigate(`/travaux/${c.id}`)}
-            data-testid={`travail-continuer-${c.id}`}
-            className="flex items-center gap-1.5 rounded-md bg-[#3730A3] px-3 py-1.5 text-[11px] font-semibold text-white transition-colors hover:bg-[#4338CA]"
-          >
-            Continuer <ArrowRight size={11} />
-          </button>
-          <div className="relative">
-            <button onClick={() => setMenu((m) => !m)} data-testid={`travail-menu-${c.id}`} title="Autres actions" className="flex h-7 w-7 items-center justify-center rounded-md border border-[#E5E5E3] text-[#71716D] transition-colors hover:text-[#111110]">
-              <DotsThree size={15} weight="bold" />
-            </button>
-            {menu && (
-              <div className="glass absolute right-0 top-8 z-30 w-52 rounded-xl p-1.5" data-testid={`travail-menu-panel-${c.id}`}>
-                <button onClick={() => navigate(`/travaux/${c.id}?vue=activite`)} data-testid={`travail-apercu-${c.id}`} className="w-full rounded px-2.5 py-1.5 text-left text-[11px] text-[#52524F] hover:bg-[#F0F0EE] hover:text-[#111110]">
-                  Reprendre là où vous étiez
-                </button>
-                <button onClick={() => { setSelection(c.jumeaux || []); navigate("/atlas"); }} data-testid={`travail-atlas-${c.id}`} className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] text-[#52524F] hover:bg-[#F0F0EE] hover:text-[#111110]">
-                  <Compass size={12} /> Voir dans l'Atlas
-                </button>
-              </div>
-            )}
-          </div>
+        <div className="flex items-baseline gap-2">
+          {(c.nb_nouveautes || 0) > 0 ? (
+            <p className="truncate text-[11px] text-[#047857]" data-testid={`travail-nouveau-${c.id}`}>
+              <span className="mr-1 inline-block h-1 w-1 rounded-full bg-[#047857]" />
+              Nouveau depuis votre dernière visite : {c.nouveaute_texte}
+            </p>
+          ) : (
+            <p className="truncate text-[11px] text-[#71716D]">{c.objectif || c.resume || "La mémoire s'écrit au fil des échanges."}</p>
+          )}
         </div>
       </div>
-    </article>
+      <span className="shrink-0 font-code text-[9px] text-[#71716D]" title={`${TYPES_CASE[c.type]?.[0] || c.type} · ${s[0]} · ${c.jumeaux?.length || 0} jumeaux`}>{rel(c.maj_le)}</span>
+      <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+        <button
+          onClick={(e) => { e.stopPropagation(); navigate(`/travaux/${c.id}`); }}
+          data-testid={`travail-continuer-${c.id}`}
+          className="flex items-center gap-1 rounded-md bg-[#3730A3] px-2.5 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-[#4338CA]"
+        >
+          Continuer <ArrowRight size={10} />
+        </button>
+        <button onClick={(e) => { e.stopPropagation(); setMenu((m) => !m); }} data-testid={`travail-menu-${c.id}`} title="Autres actions" className="flex h-6 w-6 items-center justify-center rounded-md border border-[#E5E5E3] bg-white text-[#71716D] transition-colors hover:text-[#111110]">
+          <DotsThree size={14} weight="bold" />
+        </button>
+      </div>
+      {menu && (
+        <div className="glass absolute right-2 top-9 z-30 w-52 rounded-xl p-1.5" data-testid={`travail-menu-panel-${c.id}`} onClick={(e) => e.stopPropagation()}>
+          <button onClick={() => navigate(`/travaux/${c.id}?vue=activite`)} data-testid={`travail-apercu-${c.id}`} className="w-full rounded px-2.5 py-1.5 text-left text-[11px] text-[#52524F] hover:bg-[#F0F0EE] hover:text-[#111110]">
+            Reprendre là où vous étiez
+          </button>
+          <button onClick={() => { setSelection(c.jumeaux || []); navigate("/atlas"); }} data-testid={`travail-atlas-${c.id}`} className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] text-[#52524F] hover:bg-[#F0F0EE] hover:text-[#111110]">
+            <Compass size={12} /> Voir dans l'Atlas
+          </button>
+          <p className="border-t border-[#F0F0EE] px-2.5 pt-1.5 font-code text-[9px] text-[#71716D]">
+            {numeroCase(c)} · {TYPES_CASE[c.type]?.[0] || c.type} · {c.jumeaux?.length || 0} jumeau{(c.jumeaux?.length || 0) > 1 ? "x" : ""}
+          </p>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -189,39 +183,52 @@ export default function Travaux() {
 
   return (
     <div className="h-full overflow-y-auto px-6 py-8 pb-20 sm:px-8" data-testid="travaux-page">
-      <div className="mx-auto max-w-3xl">
-        <header className="rise flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <div className="font-code text-[10px] uppercase tracking-[0.3em] text-[#3730A3]">Travaux</div>
-            <h1 className="mt-1 font-display text-3xl font-black tracking-tight text-[#111110]" data-testid="travaux-titre">La mémoire de ce que l'entreprise cherche à comprendre</h1>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <MagnifyingGlass size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#71716D]" />
-              <input value={recherche} onChange={(e) => setRecherche(e.target.value)} placeholder="Rechercher un travail…" data-testid="recherche-travail"
-                className="h-9 w-52 rounded-md border border-[#E5E5E3] bg-white pl-8 pr-3 text-xs text-[#111110] placeholder:text-[#71716D] focus:border-[#3730A3]/60 focus:outline-none" />
-            </div>
-            <div className="relative">
-              <button onClick={() => setVuesMenu((v) => !v)} data-testid="travaux-vues" className="flex h-9 items-center gap-1.5 rounded-md border border-[#E5E5E3] bg-white px-3 text-xs text-[#52524F] transition-colors hover:text-[#111110]">
-                {vue === "liste" ? <Rows size={14} /> : vue === "kanban" ? <KanbanIcon size={14} /> : <ClockCounterClockwise size={14} />}
-                <span className="hidden lg:inline">{vue === "liste" ? "Récits" : vue === "kanban" ? "Kanban" : "Chronologie"}</span>
-                <CaretDown size={11} />
+      <div className="mx-auto max-w-4xl">
+        <header className="rise">
+          <div className="font-code text-[10px] uppercase tracking-[0.3em] text-[#3730A3]">Travaux</div>
+          <div className="mt-1 flex flex-wrap items-center justify-between gap-3">
+            <h1 className="font-display text-xl font-black tracking-tight text-[#111110]" data-testid="travaux-titre">La mémoire de ce que l'entreprise cherche à comprendre</h1>
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <MagnifyingGlass size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#71716D]" />
+                <input value={recherche} onChange={(e) => setRecherche(e.target.value)} placeholder="Rechercher un travail…" data-testid="recherche-travail"
+                  className="h-8 w-48 rounded-md border border-[#E5E5E3] bg-white pl-7 pr-3 text-xs text-[#111110] placeholder:text-[#71716D] focus:border-[#3730A3]/60 focus:outline-none" />
+              </div>
+              <div className="relative">
+                <button onClick={() => setVuesMenu((v) => !v)} data-testid="travaux-vues" className="flex h-8 items-center gap-1.5 rounded-md border border-[#E5E5E3] bg-white px-2.5 text-xs text-[#52524F] transition-colors hover:text-[#111110]">
+                  {vue === "liste" ? <Rows size={13} /> : vue === "kanban" ? <KanbanIcon size={13} /> : <ClockCounterClockwise size={13} />}
+                  <span className="hidden lg:inline">{vue === "liste" ? "Récits" : vue === "kanban" ? "Kanban" : "Chronologie"}</span>
+                  <CaretDown size={10} />
+                </button>
+                {vuesMenu && (
+                  <div className="glass absolute right-0 top-9 z-30 w-44 rounded-xl p-1.5" data-testid="vues-menu">
+                    {[["liste", Rows, "Récits"], ["kanban", KanbanIcon, "Kanban"], ["chrono", ClockCounterClockwise, "Chronologie"]].map(([v, Icon, label]) => (
+                      <button key={v} onClick={() => { setVue(v); setVuesMenu(false); }} data-testid={`vue-${v}`}
+                        className={`flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] ${vue === v ? "bg-[#EEECFA] font-semibold text-[#312E81]" : "text-[#52524F] hover:bg-[#F0F0EE] hover:text-[#111110]"}`}>
+                        <Icon size={13} /> {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <button onClick={() => setMesSeulement(!mesSeulement)} data-testid="filtre-mes-travaux"
+                className={`h-8 rounded-full border px-3 text-xs transition-colors ${mesSeulement ? "border-[#3730A3] bg-[#3730A3] text-white" : "border-[#E5E5E3] bg-white text-[#52524F] hover:text-[#111110]"}`}>
+                Mes travaux
               </button>
-              {vuesMenu && (
-                <div className="glass absolute right-0 top-10 z-30 w-44 rounded-xl p-1.5" data-testid="vues-menu">
-                  {[["liste", Rows, "Récits"], ["kanban", KanbanIcon, "Kanban"], ["chrono", ClockCounterClockwise, "Chronologie"]].map(([v, Icon, label]) => (
-                    <button key={v} onClick={() => { setVue(v); setVuesMenu(false); }} data-testid={`vue-${v}`}
-                      className={`flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] ${vue === v ? "bg-[#EEECFA] font-semibold text-[#312E81]" : "text-[#52524F] hover:bg-[#F0F0EE] hover:text-[#111110]"}`}>
-                      <Icon size={13} /> {label}
-                    </button>
-                  ))}
-                </div>
-              )}
+              <select value={filtreType} onChange={(e) => setFiltreType(e.target.value)} data-testid="filtre-type-travail" className="h-8 rounded-md border border-[#E5E5E3] bg-white px-2 text-xs text-[#3F3F3C] focus:outline-none">
+                <option value="tous" label="Tous les types" />
+                {Object.entries(TYPES_CASE).map(([k, [l]]) => <option key={k} value={k} label={l} />)}
+              </select>
+              <select value={filtreStatut} onChange={(e) => setFiltreStatut(e.target.value)} data-testid="filtre-statut-travail" className="h-8 rounded-md border border-[#E5E5E3] bg-white px-2 text-xs text-[#3F3F3C] focus:outline-none">
+                <option value="tous" label="Tous les statuts" />
+                {Object.entries(STATUTS_CASE).map(([k, [l]]) => <option key={k} value={k} label={l} />)}
+              </select>
+              <button onClick={() => setCreation(!creation)} data-testid="nouveau-travail-btn" title="Nouveau travail" className="flex h-8 w-8 items-center justify-center rounded-md bg-[#3730A3] text-white transition-colors hover:bg-[#4338CA]">
+                {creation ? <X size={14} /> : <Plus size={14} weight="bold" />}
+              </button>
             </div>
-            <button onClick={() => setCreation(!creation)} data-testid="nouveau-travail-btn" className="flex items-center gap-2 rounded-md bg-[#3730A3] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#4338CA]">
-              {creation ? <X size={15} /> : <Plus size={15} weight="bold" />} Nouveau travail
-            </button>
           </div>
+          <p className="mt-1 font-code text-[10px] text-[#71716D]">{filtres.length} travail{filtres.length > 1 ? "aux" : ""} · la conversation est le contenu, la liste est l'index</p>
         </header>
 
         {/* Création inline */}
@@ -263,34 +270,17 @@ export default function Travaux() {
           </div>
         )}
 
-        {/* Filtres discrets */}
-        <div className="mt-5 flex flex-wrap items-center gap-2">
-          <button onClick={() => setMesSeulement(!mesSeulement)} data-testid="filtre-mes-travaux"
-            className={`rounded-full border px-3 py-1.5 text-xs transition-colors ${mesSeulement ? "border-[#3730A3] bg-[#3730A3] text-white" : "border-[#E5E5E3] bg-white text-[#52524F] hover:text-[#111110]"}`}>
-            Mes travaux
-          </button>
-          <select value={filtreType} onChange={(e) => setFiltreType(e.target.value)} data-testid="filtre-type-travail" className="rounded-md border border-[#E5E5E3] bg-white px-2.5 py-1.5 text-xs text-[#3F3F3C] focus:outline-none">
-            <option value="tous" label="Tous les types" />
-            {Object.entries(TYPES_CASE).map(([k, [l]]) => <option key={k} value={k} label={l} />)}
-          </select>
-          <select value={filtreStatut} onChange={(e) => setFiltreStatut(e.target.value)} data-testid="filtre-statut-travail" className="rounded-md border border-[#E5E5E3] bg-white px-2.5 py-1.5 text-xs text-[#3F3F3C] focus:outline-none">
-            <option value="tous" label="Tous les statuts" />
-            {Object.entries(STATUTS_CASE).map(([k, [l]]) => <option key={k} value={k} label={l} />)}
-          </select>
-          <span className="font-code text-[10px] text-[#71716D]">{filtres.length} travail{filtres.length > 1 ? "aux" : ""}</span>
-        </div>
-
         {filtres.length === 0 && (
           <p className="mt-12 text-center text-sm text-[#71716D]" data-testid="travaux-vide">Aucun travail dans ce périmètre — conservez-en un depuis une conversation avec Flore.</p>
         )}
 
         {/* Vue récits — mémoire narrative regroupée par signification */}
         {vue === "liste" && filtres.length > 0 && (
-          <div className="mt-6 space-y-8" data-testid="travaux-liste">
+          <div className="mt-4 space-y-6" data-testid="travaux-liste">
             {sections.map(([id, titre, liste]) => (
               <section key={id} data-testid={`travaux-section-${id}`}>
                 <h2 className="font-code text-[10px] uppercase tracking-[0.25em] text-[#52524F]">{titre}</h2>
-                <div className="mt-3 space-y-3">
+                <div className="mt-1.5">
                   {liste.map((c) => (
                     <CarteTravail key={c.id} c={c} navigate={navigate} setSelection={setSelection} attention={id === "attention"} />
                   ))}
