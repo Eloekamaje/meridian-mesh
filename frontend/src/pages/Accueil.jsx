@@ -6,6 +6,7 @@ import api from "@/lib/api";
 import { usePerimetre } from "@/lib/perimetre";
 import { useContexte } from "@/lib/contexte";
 import ComposerFlore from "@/components/ComposerFlore";
+import FloreActivite, { delaiMin } from "@/components/FloreActivite";
 
 const SUGGESTIONS = {
   architecte: [
@@ -124,7 +125,7 @@ export default function Accueil({ mode = "accueil" }) {
     setEnvoi(true);
     setEchanges((e) => [...e, { role: "moi", texte: q }]);
     try {
-      const { data } = await api.post("/aurora/demander", { contexte: creation ? "case" : "accueil", question: q, selection });
+      const { data } = await delaiMin(api.post("/aurora/demander", { contexte: creation ? "case" : "accueil", question: q, selection }));
       setEchanges((e) => [...e, { role: "flore", data }]);
       if (creation) await faireNaitreLeTravail(q, data);
     } catch {
@@ -229,7 +230,7 @@ export default function Accueil({ mode = "accueil" }) {
                   <BulleFlore key={i} data={e.data} index={i} onSuite={demander} />
                 )
               )}
-              {envoi && <p className="font-code text-[10px] text-[#71716D]" data-testid="accueil-attente">Flore consulte le Mesh…</p>}
+              {envoi && <FloreActivite testid="accueil-attente" />}
 
               {/* Une conversation qui s'approfondit peut devenir un Travail */}
               {echanges.length >= 2 && !propMasquee && !envoi && !creation && (

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, Sparkle, PaperPlaneTilt, Eye, ArrowSquareOut } from "@phosphor-icons/react";
 import api from "@/lib/api";
+import FloreActivite, { delaiMin } from "@/components/FloreActivite";
 import { usePerimetre } from "@/lib/perimetre";
 import { useMesh } from "@/lib/mesh";
 import { couleurDomaine } from "@/lib/domaines";
@@ -24,7 +25,7 @@ export default function Comprendre() {
     setData(null);
     setErreur(null);
     setFil([]);
-    api.get(`/actualites/histoire/${hid}`)
+    delaiMin(api.get(`/actualites/histoire/${hid}`), 2900)
       .then((r) => {
         setData(r.data);
         setFil([{ role: "flore", texte: r.data.rapport.texte, preuves: r.data.rapport.preuves || [], propositions: r.data.rapport.propositions || [], rapport: true }]);
@@ -44,11 +45,11 @@ export default function Comprendre() {
     setQ("");
     setFil((f) => [...f, { role: "utilisateur", texte: question }]);
     try {
-      const { data: rep } = await api.post("/aurora/demander", {
+      const { data: rep } = await delaiMin(api.post("/aurora/demander", {
         contexte: "actualites",
         question,
         selection: data?.histoire?.jumeaux || [],
-      });
+      }));
       setFil((f) => [...f, { role: "flore", texte: rep.reponse || rep.texte, contributions: rep.contributions || [] }]);
     } catch {
       setFil((f) => [...f, { role: "flore", texte: "Flore est indisponible pour le moment." }]);
@@ -65,7 +66,13 @@ export default function Comprendre() {
       </div>
     );
   }
-  if (!data) return <div className="p-8 font-code text-[11px] text-[#71716D]" data-testid="comprendre-chargement">Flore prépare son rapport…</div>;
+  if (!data) {
+    return (
+      <div className="flex h-full items-center justify-center" data-testid="comprendre-chargement">
+        <FloreActivite genre="rapport" testid="comprendre-chargement-activite" />
+      </div>
+    );
+  }
 
   const h = data.histoire;
   const g = GENRES[h.genre] || [h.genre, "#71716D"];
@@ -157,7 +164,7 @@ export default function Comprendre() {
                 </div>
               )
             )}
-            {envoi && <p className="font-code text-[10px] text-[#71716D]" data-testid="comprendre-attente">Flore consulte le Mesh…</p>}
+            {envoi && <FloreActivite genre={h.genre} testid="comprendre-attente" />}
             <div ref={finFilRef} />
           </div>
         </div>

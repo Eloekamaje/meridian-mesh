@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Sparkle, PaperPlaneTilt } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
+import FloreActivite, { delaiMin } from "@/components/FloreActivite";
 import { rel } from "./utils";
 
 // Onglet Conversation — on replonge simplement dans le fil, là où la session s'était arrêtée
@@ -35,7 +36,7 @@ export default function OngletTravail({ cas, setCas }) {
     setEnvoiMsg(true);
     setNouveauMsg("");
     try {
-      const { data } = await api.post(`/cases/${cas.id}/messages`, { texte: q });
+      const { data } = await delaiMin(api.post(`/cases/${cas.id}/messages`, { texte: q }));
       setCas((c) => ({ ...c, conversation: [...(c.conversation || []), data.utilisateur, data.flore] }));
     } catch {
       toast.error("Message impossible");
@@ -95,7 +96,7 @@ export default function OngletTravail({ cas, setCas }) {
             {messages.length === 0 && (
               <p className="py-6 text-center text-sm text-[#71716D]">La conversation est la mémoire du travail — commencez ci-dessous.</p>
             )}
-            {envoiMsg && <p className="font-code text-[10px] text-[#71716D]" data-testid="case-msg-attente">Flore consulte le Mesh…</p>}
+            {envoiMsg && <FloreActivite genre="travail" testid="case-msg-attente" />}
             <div ref={finFilRef} />
           </div>
         </div>

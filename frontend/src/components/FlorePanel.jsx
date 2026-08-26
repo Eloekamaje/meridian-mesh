@@ -5,6 +5,7 @@ import { Sparkle, PaperPlaneRight, FileText, X, Plus, Eye, Lightning, FolderOpen
 import { toast } from "sonner";
 import api from "@/lib/api";
 import TrustBadges from "./TrustBadges";
+import FloreActivite, { delaiMin } from "./FloreActivite";
 import { couleurDomaine } from "@/lib/domaines";
 import { useContexte } from "@/lib/contexte";
 import { useMesh } from "@/lib/mesh";
@@ -286,7 +287,7 @@ export default function FlorePanel() {
     setChargement(true);
     setQuestion("");
     try {
-      const { data } = await api.post("/aurora/demander", { contexte, question: finale, selection, domaine: domaineSel });
+      const { data } = await delaiMin(api.post("/aurora/demander", { contexte, question: finale, selection, domaine: domaineSel }));
       setEchanges((e) => [...e, { question: finale, data }]);
       setJustifOuverte(null);
       if (data.commande_carte) commanderCarte(data.commande_carte);
@@ -526,8 +527,8 @@ export default function FlorePanel() {
           </div>
         ))}
         {chargement && (
-          <div className="flex items-center gap-2 px-1 font-code text-[11px] text-[#71716D]" data-testid="flore-chargement">
-            <Sparkle size={13} className="animate-pulse text-[#3730A3]" /> Flore croise les sources…
+          <div className="px-1" data-testid="flore-chargement">
+            <FloreActivite testid="flore-chargement-activite" />
           </div>
         )}
       </div>
