@@ -1,5 +1,9 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v20b, en-tête du Travail épuré — choix utilisateur)
+- **Supprimés de l'en-tête** : le bouton « Continuer avec Flore » (redondant — l'onglet Conversation *est* la continuation), les sélecteurs **Responsable** et **Statut** (contrôles d'administration sans place dans le paradigme ; Clore/Rouvrir reste dans le menu ⋯), et « Ouvrir dans Atlas » (l'Atlas reste accessible par la sidebar).
+- **L'en-tête ne garde que** : ← Travaux, identité (CASE-0xx, type, sensibilité, titre), participants + dernière évolution, badge « À revoir », Partager, menu ⋯ (Marquer revu / Clore-Rouvrir). Vérifié par navigateur (menu fonctionnel, 0 erreur).
+
 ## Implémenté (06/2026 — v20, Travail : deux onglets seulement — Conversation + Aperçu)
 - **Demande utilisateur appliquée** : fini les 5 onglets. `TravailDetail.jsx` n'expose plus que **Conversation** (fil pur, composer ancré, reprise au point d'arrêt) et **Aperçu** (rapport structuré). Une URL obsolète (`?vue=decisions|atlas|activite`) retombe proprement sur Conversation.
 - **Fusion dans `OngletApercu.jsx`** : l'ex-onglet Décisions & actions devient la section **04** (options avec Retenir/Écarter + ajout d'option, décisions humaines + ajout, testids `option-*`/`decision-*` préservés) ; l'ex-onglet Activité devient la section **09** (flux unifié + 6 filtres + promotions Flore : question/investigation/preuves/ignorer — **sans composer**, le chat vit dans Conversation). Sections renumérotées 01–10, « Prochaine étape » clôt le rapport.

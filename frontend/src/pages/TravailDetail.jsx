@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { ArrowLeft, Compass, Sparkle, Users, ShareNetwork, DotsThree, SealCheck } from "@phosphor-icons/react";
+import { ArrowLeft, Users, ShareNetwork, DotsThree, SealCheck } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { usePerimetre } from "@/lib/perimetre";
-import { useContexte } from "@/lib/contexte";
-import { TYPES_CASE, STATUTS_CASE } from "./Travaux";
+import { TYPES_CASE } from "./Travaux";
 import { numeroCase, SENSIBILITES, rel } from "@/components/case/utils";
 import OngletApercu from "@/components/case/OngletApercu";
 import OngletTravail from "@/components/case/OngletTravail";
@@ -23,7 +22,6 @@ export default function TravailDetail() {
   const vue = vueParam === "apercu" ? "apercu" : "travail";
   const navigate = useNavigate();
   const { version } = usePerimetre();
-  const { setSelection, ouvrirFlore } = useContexte();
   const [cas, setCas] = useState(null);
   const [situations, setSituations] = useState([]);
   const [personas, setPersonas] = useState([]);
@@ -50,16 +48,6 @@ export default function TravailDetail() {
   const nomPersona = (id) => {
     const p = personas.find((x) => x.id === id);
     return p ? `${p.nom} — ${p.role}` : id;
-  };
-
-  const continuerFlore = () => {
-    setSelection(cas.jumeaux || []);
-    ouvrirFlore();
-  };
-
-  const ouvrirAtlas = () => {
-    setSelection(cas.jumeaux || []);
-    navigate("/atlas");
   };
 
   const partager = async () => {
@@ -111,18 +99,6 @@ export default function TravailDetail() {
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <select value={cas.responsable || ""} onChange={(e) => maj({ responsable: e.target.value })} data-testid="travail-responsable-select" title="Responsable du travail" className="rounded-md border border-[#E5E5E3] bg-white px-2.5 py-1.5 text-xs text-[#111110] focus:outline-none">
-              {personas.map((p) => <option key={p.id} value={p.id} label={`Resp. ${p.nom}`} />)}
-            </select>
-            <select value={cas.statut} onChange={(e) => maj({ statut: e.target.value })} data-testid="travail-statut-select" className="rounded-md border border-[#E5E5E3] bg-white px-2.5 py-1.5 text-xs text-[#111110] focus:outline-none">
-              {Object.entries(STATUTS_CASE).map(([k, [l]]) => <option key={k} value={k} label={l} />)}
-            </select>
-            <button onClick={continuerFlore} data-testid="travail-continuer-flore-btn" className="flex items-center gap-1.5 rounded-md bg-[#3730A3] px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-[#4338CA]">
-              <Sparkle size={13} weight="fill" /> Continuer avec Flore
-            </button>
-            <button onClick={ouvrirAtlas} data-testid="travail-atlas-btn" className="flex items-center gap-1.5 rounded-md border border-[#0E7490]/30 bg-[#0E7490]/[0.06] px-3 py-1.5 text-xs text-[#0E7490] transition-colors hover:bg-[#0E7490]/15">
-              <Compass size={13} /> Ouvrir dans Atlas
-            </button>
             <button onClick={partager} data-testid="travail-partager-btn" title="Copier le lien du travail" className="flex h-8 w-8 items-center justify-center rounded-md border border-[#E5E5E3] text-[#52524F] transition-colors hover:text-[#111110]">
               <ShareNetwork size={14} />
             </button>
