@@ -6,7 +6,6 @@ import api from "@/lib/api";
 import { usePerimetre } from "@/lib/perimetre";
 import { useContexte } from "@/lib/contexte";
 import { couleurDomaine } from "@/lib/domaines";
-import RevueContenu from "@/components/jumeaux/RevueContenu";
 import { STATUTS, STRATE_LABELS, FRAICHEUR_ETATS, AUTONOMIE, STATUTS_SOURCES, ACTION_LIGNE, qualifConnaissance, resumeStrates, estEnAttention } from "@/lib/jumeaux";
 
 const VUES_ENREGISTREES = [
@@ -24,8 +23,6 @@ export default function Jumeaux() {
   const { version } = usePerimetre();
   const { selection, ajouterJumeau, retirerJumeau } = useContexte();
   const navigate = useNavigate();
-  const [deplieId, setDeplieId] = useState(null);
-  const [revues, setRevues] = useState({});
   const [recherche, setRecherche] = useState("");
   const [filtreStatut, setFiltreStatut] = useState("tous");
   const [filtreDomaine, setFiltreDomaine] = useState("");
@@ -39,8 +36,6 @@ export default function Jumeaux() {
   const charger = () => api.get("/jumeaux").then((r) => setJumeaux(r.data)).catch(() => {});
   useEffect(() => {
     charger();
-    setRevues({});
-    setDeplieId(null);
     api.get("/commandes").then((r) => setBrouillons(r.data)).catch(() => {});
   }, [version]);
 
@@ -50,22 +45,6 @@ export default function Jumeaux() {
       navigate(`/commande/${data.id}`);
     } catch {
       toast.error("Création de la commande impossible");
-    }
-  };
-
-  const basculer = async (j) => {
-    if (deplieId === j.id) {
-      setDeplieId(null);
-      return;
-    }
-    setDeplieId(j.id);
-    if (revues[j.id]) return;
-    setRevues((r) => ({ ...r, [j.id]: "chargement" }));
-    try {
-      const { data } = await api.post(`/jumeaux/${j.id}/examiner`);
-      setRevues((r) => ({ ...r, [j.id]: data }));
-    } catch {
-      setRevues((r) => ({ ...r, [j.id]: "erreur" }));
     }
   };
 
@@ -208,7 +187,7 @@ export default function Jumeaux() {
               return (
                 <div key={j.id}>
                 <div
-                  onClick={() => basculer(j)}
+                  onClick={() => navigate(`/jumeaux/${j.id}/revue`)}
                   data-testid={`jumeau-row-${j.id}`}
                   className={`rise flex cursor-pointer items-center gap-3 border-b border-white/[0.04] px-4 py-3 transition-colors hover:bg-white/[0.025] ${attention ? "border-l-2 border-l-[#FBBF24]/60" : "border-l-2 border-l-transparent"}`}
                 >
@@ -303,22 +282,6 @@ export default function Jumeaux() {
                     </div>
                   </div>
                 </div>
-                {deplieId === j.id && (
-                  <div className="border-b border-white/[0.04] border-l-2 border-l-[#22D3EE]/50 bg-white/[0.02] px-8 py-4" data-testid={`expansion-${j.id}`}>
-                    {revues[j.id] === "chargement" && <p className="font-code text-[11px] text-white/40">Examen en cours…</p>}
-                    {revues[j.id] === "erreur" && <p className="font-code text-[11px] text-[#F87171]">Examen indisponible à ce niveau d'autorisation.</p>}
-                    {revues[j.id] && typeof revues[j.id] === "object" && (
-                      <div>
-                        <RevueContenu examen={revues[j.id]} jumeau={j} />
-                        <div className="mt-4">
-                          <button onClick={(e) => { e.stopPropagation(); navigate(`/jumeaux/${j.id}/revue`); }} data-testid={`revue-complete-${j.id}`} className="rounded-md border border-[#22D3EE]/30 bg-[#22D3EE]/[0.06] px-3 py-1.5 text-[11px] font-semibold text-[#22D3EE] transition-colors hover:bg-[#22D3EE]/15">
-                            Ouvrir la revue complète →
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
                 </div>
               );
             })}
