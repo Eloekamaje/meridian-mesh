@@ -1,5 +1,6 @@
-import { Users, ShieldCheck, LockSimple } from "@phosphor-icons/react";
+import { Users, ShieldCheck, LockSimple, Sparkle } from "@phosphor-icons/react";
 import { usePerimetre } from "@/lib/perimetre";
+import { useContexte } from "@/lib/contexte";
 
 const POLITIQUES = {
   masquage: "masquage complet",
@@ -9,6 +10,7 @@ const POLITIQUES = {
 
 export default function Topbar() {
   const { personas, persona, espaces, vues, cible, info, changerPersona, changerCible } = usePerimetre();
+  const { selection, floreOuverte, basculerFlore } = useContexte();
 
   return (
     <header className="flex h-12 shrink-0 items-center gap-3 border-b border-white/[0.08] bg-[#0A0A0A] px-4" data-testid="topbar">
@@ -51,6 +53,24 @@ export default function Topbar() {
       )}
 
       <div className="ml-auto flex items-center gap-2">
+        <button
+          onClick={basculerFlore}
+          data-testid="flore-btn"
+          title="Ouvrir Flore (⌘K)"
+          className={`flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors ${
+            floreOuverte
+              ? "border-[#3B82F6]/60 bg-[#3B82F6]/15 text-white"
+              : "border-white/10 text-white/70 hover:border-[#3B82F6]/50 hover:text-white"
+          }`}
+        >
+          <Sparkle size={13} weight="fill" className="text-[#3B82F6]" />
+          Flore
+          {selection.length > 0 && (
+            <span className="rounded-full bg-[#3B82F6]/25 px-1.5 font-code text-[9px] text-white" data-testid="flore-btn-badge">
+              {selection.length}
+            </span>
+          )}
+        </button>
         <Users size={14} className="text-white/40" />
         <select
           value={persona}

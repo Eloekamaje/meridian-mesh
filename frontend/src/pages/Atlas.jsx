@@ -445,12 +445,12 @@ export default function Atlas() {
 
       <AtlasLegende />
 
-      {/* Chip « vue commandée par Aurora » */}
+      {/* Chip « vue commandée par Flore » */}
       {focusCarte && (
-        <div className="glass absolute bottom-16 left-4 z-10 flex items-center gap-2 rounded-lg px-3 py-1.5" data-testid="focus-aurora-chip">
+        <div className="glass absolute bottom-16 left-4 z-10 flex items-center gap-2 rounded-lg px-3 py-1.5" data-testid="focus-flore-chip">
           <Sparkle size={12} className="text-[#3B82F6]" />
-          <span className="font-code text-[10px] text-white/55">Vue commandée par Aurora</span>
-          <button onClick={() => commanderCarte(null)} data-testid="focus-aurora-clear" className="text-white/40 transition-colors hover:text-white">
+          <span className="font-code text-[10px] text-white/55">Vue commandée par Flore</span>
+          <button onClick={() => commanderCarte(null)} data-testid="focus-flore-clear" className="text-white/40 transition-colors hover:text-white">
             <X size={12} />
           </button>
         </div>

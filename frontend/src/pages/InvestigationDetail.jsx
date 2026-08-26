@@ -260,7 +260,7 @@ export default function InvestigationDetail() {
               </div>
             ))}
             {(sit.hypotheses || []).length === 0 && (
-              <p className="text-sm text-white/35">Aurora n'a pas encore formulé d'hypothèse pour cette situation.</p>
+              <p className="text-sm text-white/35">Flore n'a pas encore formulé d'hypothèse pour cette situation.</p>
             )}
           </div>
         </section>
@@ -270,7 +270,7 @@ export default function InvestigationDetail() {
       <section className="rise mt-10 rounded-xl border border-white/[0.1] bg-[#0D0D0D] p-6" data-testid="zone-conclusion" style={{ animationDelay: "200ms" }}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="flex items-center gap-2 font-code text-[10px] uppercase tracking-[0.3em] text-white/45">
-            <Lightning size={14} className="text-[#3B82F6]" /> Conclusion — synthèse Aurora
+            <Lightning size={14} className="text-[#3B82F6]" /> Conclusion — synthèse Flore
           </h2>
           <TrustBadges indicateurs={sit.indicateurs} />
         </div>

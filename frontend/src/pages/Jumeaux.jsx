@@ -197,7 +197,7 @@ export default function Jumeaux() {
                     onClick={(e) => e.stopPropagation()}
                     onChange={() => (coche ? retirerJumeau(j.id) : ajouterJumeau(j.id))}
                     data-testid={`registre-check-${j.id}`}
-                    title="Ajouter au contexte Aurora"
+                    title="Ajouter au contexte de Flore"
                     className="h-3.5 w-3.5 shrink-0 accent-[#22D3EE]"
                   />
                   <div className="min-w-0 flex-1">
@@ -270,8 +270,8 @@ export default function Jumeaux() {
                             <button onClick={(e) => { e.stopPropagation(); setMenuOuvert(null); navigate(`/atlas?focus=${j.id}`); }} className="w-full rounded px-2.5 py-1.5 text-left text-[11px] text-white/65 hover:bg-white/[0.06] hover:text-white" data-testid={`menu-atlas-${j.id}`}>
                               Centrer dans l'Atlas
                             </button>
-                            <button onClick={(e) => { e.stopPropagation(); setMenuOuvert(null); window.dispatchEvent(new CustomEvent("meridian:aurora-ask", { detail: `Parle-moi du jumeau ${j.nom}` })); }} className="w-full rounded px-2.5 py-1.5 text-left text-[11px] text-white/65 hover:bg-white/[0.06] hover:text-white" data-testid={`menu-aurora-${j.id}`}>
-                              Demander à Aurora
+                            <button onClick={(e) => { e.stopPropagation(); setMenuOuvert(null); window.dispatchEvent(new CustomEvent("meridian:flore-ask", { detail: `Parle-moi du jumeau ${j.nom}` })); }} className="w-full rounded px-2.5 py-1.5 text-left text-[11px] text-white/65 hover:bg-white/[0.06] hover:text-white" data-testid={`menu-flore-${j.id}`}>
+                              Demander à Flore
                             </button>
                             <button onClick={async (e) => { e.stopPropagation(); setMenuOuvert(null); try { await navigator.clipboard.writeText(j.id); toast.success("Identifiant copié"); } catch { toast.error("Copie impossible — identifiant : " + j.id); } }} className="w-full rounded px-2.5 py-1.5 text-left text-[11px] text-white/65 hover:bg-white/[0.06] hover:text-white" data-testid={`menu-copier-${j.id}`}>
                               Copier l'identifiant

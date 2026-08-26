@@ -2,23 +2,21 @@ import { NavLink, Outlet } from "react-router-dom";
 import {
   Sun,
   Compass,
-  MagnifyingGlass,
-  Scales,
+  Briefcase,
   CirclesThree,
   Database,
   Play,
 } from "@phosphor-icons/react";
 import { useMesh } from "@/lib/mesh";
 import { useDemo } from "@/lib/demo";
-import AuroraBar from "./AuroraBar";
+import FlorePanel from "./FlorePanel";
 import DemoTour from "./DemoTour";
 import Topbar from "./Topbar";
 
 const NAV = [
   { to: "/", label: "Aujourd'hui", icon: Sun, end: true, testid: "nav-aujourdhui" },
   { to: "/atlas", label: "Atlas", icon: Compass, testid: "nav-atlas" },
-  { to: "/investigations", label: "Investigations", icon: MagnifyingGlass, testid: "nav-investigations" },
-  { to: "/decisions", label: "Décisions", icon: Scales, testid: "nav-decisions" },
+  { to: "/cases", label: "Cases", icon: Briefcase, testid: "nav-cases" },
   { to: "/jumeaux", label: "Jumeaux", icon: CirclesThree, testid: "nav-jumeaux" },
   { to: "/administration", label: "Administration", icon: Database, testid: "nav-administration" },
 ];
@@ -96,7 +94,7 @@ export default function Layout() {
         </div>
       </main>
 
-      <AuroraBar />
+      <FlorePanel />
       <DemoTour />
     </div>
   );

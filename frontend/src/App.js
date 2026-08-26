@@ -11,7 +11,8 @@ import Atlas from "@/pages/Atlas";
 import Commande from "@/pages/Commande";
 import Investigations from "@/pages/Investigations";
 import InvestigationDetail from "@/pages/InvestigationDetail";
-import Decisions from "@/pages/Decisions";
+import Cases from "@/pages/Cases";
+import CaseDetail from "@/pages/CaseDetail";
 import Jumeaux from "@/pages/Jumeaux";
 import RevueJumeau from "@/pages/RevueJumeau";
 import Administration from "@/pages/Administration";
@@ -29,13 +30,15 @@ function App() {
               <Route path="/atlas" element={<Atlas />} />
               <Route path="/investigations" element={<Investigations />} />
               <Route path="/investigations/:id" element={<InvestigationDetail />} />
-              <Route path="/decisions" element={<Decisions />} />
+              <Route path="/cases" element={<Cases />} />
+              <Route path="/cases/:cid" element={<CaseDetail />} />
               <Route path="/jumeaux" element={<Jumeaux />} />
               <Route path="/jumeaux/:jid/revue" element={<RevueJumeau />} />
               <Route path="/commande/:cid" element={<Commande />} />
               <Route path="/administration" element={<Administration />} />
               <Route path="/carte" element={<Navigate to="/atlas" replace />} />
-              <Route path="/change-lab" element={<Navigate to="/decisions" replace />} />
+              <Route path="/decisions" element={<Navigate to="/cases" replace />} />
+              <Route path="/change-lab" element={<Navigate to="/cases/case-olympiade" replace />} />
               <Route path="/registry" element={<Navigate to="/jumeaux" replace />} />
             </Route>
           </Routes>

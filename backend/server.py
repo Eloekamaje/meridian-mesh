@@ -16,7 +16,7 @@ from pathlib import Path
 from seed_data import (
     TWINS, RELATIONS, REGIONS, SITUATIONS, CHANGE_LAB, ACTIVITE,
     AURORA_SCRIPTS, AURORA_FALLBACK, AURORA_SUGGESTIONS, DEMO_ACTES, SOURCES_LABELS,
-    PERSONAS, ESPACES, VUES, CONNECTEURS, CONTRIBUTIONS, PROFILS, COMMANDE_DEMO,
+    PERSONAS, ESPACES, VUES, CONNECTEURS, CONTRIBUTIONS, PROFILS, COMMANDE_DEMO, CASES,
 )
 
 ROOT_DIR = Path(__file__).parent
@@ -32,11 +32,11 @@ NO_ID = {"_id": 0}
 logger = logging.getLogger("meridian")
 
 
-SEED_VERSION = 4
+SEED_VERSION = 5
 
 
 async def peupler_demo():
-    for name, docs in [("jumeaux", TWINS), ("relations", RELATIONS), ("situations", SITUATIONS), ("vues", VUES)]:
+    for name, docs in [("jumeaux", TWINS), ("relations", RELATIONS), ("situations", SITUATIONS), ("vues", VUES), ("cases", CASES)]:
         if await db[name].count_documents({}) == 0:
             await db[name].insert_many([dict(d) for d in docs])
             logger.info("Seeded %s (%d documents)", name, len(docs))
@@ -50,7 +50,7 @@ async def peupler_demo():
 async def seed_database():
     meta = await db.meta.find_one({"id": "seed"})
     if not meta or meta.get("version") != SEED_VERSION:
-        for col in ["jumeaux", "relations", "situations", "change_lab", "dossiers", "vues", "journal", "commandes"]:
+        for col in ["jumeaux", "relations", "situations", "change_lab", "dossiers", "vues", "journal", "commandes", "cases"]:
             await db[col].delete_many({})
         await db.meta.replace_one({"id": "seed"}, {"id": "seed", "version": SEED_VERSION}, upsert=True)
         logger.info("Seed version %s — réinitialisation des données de démo", SEED_VERSION)
@@ -927,26 +927,25 @@ async def lancer_commande(cid: str, x_persona: str = Header("architecte"), x_esp
     return {"ok": True, "jumeau_id": jid, "sources_lancees": len(pretes), "sources_reportees": len(doc["sources"]) - len(pretes)}
 
 
-@api_router.post("/aurora/demander")
-async def aurora_demander(payload: AuroraDemande, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+async def generer_reponse_flore(contexte, question, selection, domaine, x_persona, x_espace):
     _, espace = resoudre_perimetre(x_persona, x_espace)
     tous = await db.jumeaux.find({}, NO_ID).to_list(200)
     aut = autorisations(espace, [j["id"] for j in tous])
     nom_vers_id = {j["nom"]: j["id"] for j in tous}
     id_vers_nom = {j["id"]: j["nom"] for j in tous}
-    q = normalise_txt(payload.question)
+    q = normalise_txt(question)
     for j in tous:
         if j["id"] not in aut and len(j["nom"]) > 4 and normalise_txt(j["nom"]) in q:
             return HORS_PERIMETRE
-    sel = [j for j in (payload.selection or []) if j in aut and niveau_au_moins(aut[j], "resume")]
-    if not sel and payload.domaine:
-        sel = [j["id"] for j in tous if j.get("domaine") == payload.domaine and j["id"] in aut and niveau_au_moins(aut[j["id"]], "resume")]
+    sel = [j for j in (selection or []) if j in aut and niveau_au_moins(aut[j], "resume")]
+    if not sel and domaine:
+        sel = [j["id"] for j in tous if j.get("domaine") == domaine and j["id"] in aut and niveau_au_moins(aut[j["id"]], "resume")]
     if sel:
         intent = intention_selection(q)
         if intent:
             return await reponse_selection(intent, sel, aut, tous, id_vers_nom)
     for script in AURORA_SCRIPTS:
-        if script["contexte"] in (payload.contexte, "global") and any(normalise_txt(k) in q for k in script["mots_cles"]):
+        if script["contexte"] in (contexte, "global") and any(normalise_txt(k) in q for k in script["mots_cles"]):
             out = dict(script)
             out["contributions"] = [c for c in script.get("contributions", []) if nom_vers_id.get(c.get("jumeau", "")) in aut]
             if not any(niveau_au_moins(n, "preuves") for n in aut.values()):
@@ -958,6 +957,11 @@ async def aurora_demander(payload: AuroraDemande, x_persona: str = Header("archi
     if sel:
         return await reponse_selection(None, sel, aut, tous, id_vers_nom)
     return AURORA_FALLBACK
+
+
+@api_router.post("/aurora/demander")
+async def aurora_demander(payload: AuroraDemande, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+    return await generer_reponse_flore(payload.contexte, payload.question, payload.selection, payload.domaine, x_persona, x_espace)
 
 
 @api_router.get("/aurora/suggestions")
@@ -972,11 +976,228 @@ async def aurora_suggestions(contexte: str = "global", x_persona: str = Header("
     ]
 
 
+# ---------- Cases (espace de travail durable et collaboratif) ----------
+
+class CaseCreate(BaseModel):
+    titre: str
+    type: str = "demande"
+    objectif: str = ""
+    jumeaux: list = []
+    situations: list = []
+    participants: list = []
+    conversation: list = []
+
+
+class CasePatch(BaseModel):
+    statut: Optional[str] = None
+    objectif: Optional[str] = None
+    questions: Optional[list] = None
+    jumeaux: Optional[list] = None
+    situations: Optional[list] = None
+
+
+class MessageCase(BaseModel):
+    texte: str
+
+
+class DecisionCase(BaseModel):
+    texte: str
+    type: str = "arbitrage"
+
+
+class OptionCase(BaseModel):
+    titre: str
+    description: str = ""
+    impacts: list = []
+    risque: str = "moyen"
+
+
+async def charger_case(cid: str, espace: dict):
+    case = await db.cases.find_one({"id": cid}, NO_ID)
+    if not case:
+        raise HTTPException(404, "Case introuvable")
+    tous = await db.jumeaux.find({}, {"_id": 0, "id": 1}).to_list(200)
+    aut = autorisations(espace, [j["id"] for j in tous])
+    if case.get("jumeaux") and not any(j in aut for j in case["jumeaux"]):
+        raise HTTPException(403, "Ce case est hors de votre périmètre")
+    return case
+
+
+@api_router.get("/cases")
+async def lister_cases(x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+    _, espace = resoudre_perimetre(x_persona, x_espace)
+    tous = await db.jumeaux.find({}, {"_id": 0, "id": 1}).to_list(200)
+    aut = autorisations(espace, [j["id"] for j in tous])
+    cases = await db.cases.find({}, NO_ID).to_list(200)
+    visibles = [c for c in cases if not c.get("jumeaux") or any(j in aut for j in c["jumeaux"])]
+    visibles.sort(key=lambda c: c.get("maj_le", ""), reverse=True)
+    for c in visibles:
+        c["nb_messages"] = len(c.get("conversation", []))
+        c["nb_decisions"] = len(c.get("decisions", []))
+        c["nb_options"] = len(c.get("options", []))
+        c.pop("conversation", None)
+        c.pop("historique", None)
+    return visibles
+
+
+@api_router.post("/cases", status_code=201)
+async def creer_case(payload: CaseCreate, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+    _, espace = resoudre_perimetre(x_persona, x_espace)
+    base = slugify(payload.titre) or "case"
+    cid = base
+    n = 2
+    while await db.cases.find_one({"id": cid}):
+        cid = f"{base}-{n}"
+        n += 1
+    now = datetime.now(timezone.utc).isoformat()
+    doc = {
+        "id": cid,
+        "titre": payload.titre.strip(),
+        "type": payload.type,
+        "statut": "ouvert",
+        "objectif": payload.objectif,
+        "questions": [],
+        "jumeaux": payload.jumeaux,
+        "situations": payload.situations,
+        "participants": payload.participants,
+        "conversation": payload.conversation,
+        "options": [],
+        "decisions": [],
+        "livrables": [],
+        "historique": [{"quand": now, "texte": "Case créé"}],
+        "cree_le": now,
+        "maj_le": now,
+    }
+    await db.cases.insert_one(doc)
+    await journaler(x_persona, espace["id"], "création d'un case", cid, doc["titre"])
+    doc.pop("_id", None)
+    return doc
+
+
+@api_router.get("/cases/{cid}")
+async def obtenir_case(cid: str, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+    _, espace = resoudre_perimetre(x_persona, x_espace)
+    return await charger_case(cid, espace)
+
+
+@api_router.patch("/cases/{cid}")
+async def maj_case(cid: str, payload: CasePatch, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+    _, espace = resoudre_perimetre(x_persona, x_espace)
+    case = await charger_case(cid, espace)
+    champs = {k: v for k, v in payload.model_dump().items() if v is not None}
+    if not champs:
+        return case
+    now = datetime.now(timezone.utc).isoformat()
+    histo = []
+    if "statut" in champs and champs["statut"] != case.get("statut"):
+        histo.append({"quand": now, "texte": f"Statut : {case.get('statut')} → {champs['statut']}"})
+    if "objectif" in champs and champs["objectif"] != case.get("objectif"):
+        histo.append({"quand": now, "texte": "Objectif mis à jour"})
+    if "jumeaux" in champs and champs["jumeaux"] != case.get("jumeaux"):
+        histo.append({"quand": now, "texte": "Contexte SI ajusté"})
+    maj = {**champs, "maj_le": now}
+    update = {"$set": maj}
+    if histo:
+        update["$push"] = {"historique": {"$each": histo}}
+    await db.cases.update_one({"id": cid}, update)
+    return await db.cases.find_one({"id": cid}, NO_ID)
+
+
+@api_router.post("/cases/{cid}/messages", status_code=201)
+async def message_case(cid: str, payload: MessageCase, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+    _, espace = resoudre_perimetre(x_persona, x_espace)
+    case = await charger_case(cid, espace)
+    if not payload.texte.strip():
+        raise HTTPException(400, "Message vide")
+    now = datetime.now(timezone.utc).isoformat()
+    msg_user = {"role": "utilisateur", "texte": payload.texte.strip(), "quand": now}
+    rep = await generer_reponse_flore("case", payload.texte, case.get("jumeaux", []), None, x_persona, x_espace)
+    msg_flore = {"role": "flore", "texte": rep.get("reponse", ""), "comportement": rep.get("comportement"), "quand": datetime.now(timezone.utc).isoformat()}
+    await db.cases.update_one(
+        {"id": cid},
+        {
+            "$push": {"conversation": {"$each": [msg_user, msg_flore]}, "historique": {"quand": now, "texte": "Échange avec Flore"}},
+            "$set": {"maj_le": now},
+        },
+    )
+    return {"utilisateur": msg_user, "flore": msg_flore, "reponse_complete": rep}
+
+
+@api_router.post("/cases/{cid}/decisions", status_code=201)
+async def decider_case(cid: str, payload: DecisionCase, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+    _, espace = resoudre_perimetre(x_persona, x_espace)
+    await charger_case(cid, espace)
+    if not payload.texte.strip():
+        raise HTTPException(400, "Décision vide")
+    now = datetime.now(timezone.utc).isoformat()
+    dec = {"texte": payload.texte.strip(), "type": payload.type, "quand": now, "par": x_persona}
+    await db.cases.update_one(
+        {"id": cid},
+        {"$push": {"decisions": dec, "historique": {"quand": now, "texte": f"Décision enregistrée — {payload.type}"}}, "$set": {"maj_le": now}},
+    )
+    await journaler(x_persona, espace["id"], "décision sur un case", cid, payload.texte.strip()[:120])
+    return dec
+
+
+@api_router.post("/cases/{cid}/options", status_code=201)
+async def ajouter_option_case(cid: str, payload: OptionCase, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+    _, espace = resoudre_perimetre(x_persona, x_espace)
+    case = await charger_case(cid, espace)
+    if not payload.titre.strip():
+        raise HTTPException(400, "Option sans titre")
+    now = datetime.now(timezone.utc).isoformat()
+    opt = {
+        "id": f"opt-{len(case.get('options', [])) + 1}-{slugify(payload.titre)[:24]}",
+        "titre": payload.titre.strip(),
+        "description": payload.description,
+        "impacts": payload.impacts,
+        "risque": payload.risque,
+        "statut": "a_evaluer",
+    }
+    await db.cases.update_one(
+        {"id": cid},
+        {"$push": {"options": opt, "historique": {"quand": now, "texte": f"Option ajoutée — {opt['titre']}"}}, "$set": {"maj_le": now}},
+    )
+    return opt
+
+
+@api_router.post("/cases/{cid}/livrables", status_code=201)
+async def produire_synthese_case(cid: str, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+    _, espace = resoudre_perimetre(x_persona, x_espace)
+    case = await charger_case(cid, espace)
+    now = datetime.now(timezone.utc).isoformat()
+    questions = case.get("questions", [])
+    resolues = [q for q in questions if q.get("resolue")]
+    lignes = [
+        f"Synthèse du Case « {case['titre']} »",
+        f"Objectif : {case.get('objectif') or '—'}",
+        f"Jumeaux mobilisés : {len(case.get('jumeaux', []))} · Questions : {len(resolues)}/{len(questions)} résolues · Options : {len(case.get('options', []))} · Décisions : {len(case.get('decisions', []))}",
+    ]
+    if case.get("decisions"):
+        lignes.append("Décision retenue : " + case["decisions"][-1]["texte"])
+    if case.get("options"):
+        lignes.append("Options étudiées : " + " · ".join(o["titre"] for o in case["options"]))
+    restantes = [q["texte"] for q in questions if not q.get("resolue")]
+    lignes.append("Inconnues restantes : " + (" · ".join(restantes) if restantes else "aucune"))
+    liv = {
+        "id": f"liv-{len(case.get('livrables', [])) + 1}",
+        "titre": f"Synthèse — {case['titre']}",
+        "contenu": "\n".join(lignes),
+        "cree_le": now,
+    }
+    await db.cases.update_one(
+        {"id": cid},
+        {"$push": {"livrables": liv, "historique": {"quand": now, "texte": "Synthèse produite par Flore"}}, "$set": {"maj_le": now}},
+    )
+    await journaler(x_persona, espace["id"], "production d'un livrable", cid, liv["titre"])
+    return liv
+
+
 # ---------- Démo & activité ----------
 
 @api_router.post("/demo/reinitialiser")
 async def reinitialiser_demo(x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
-    for col in ["jumeaux", "relations", "situations", "change_lab", "dossiers", "vues", "journal", "commandes"]:
+    for col in ["jumeaux", "relations", "situations", "change_lab", "dossiers", "vues", "journal", "commandes", "cases"]:
         await db[col].delete_many({})
     await peupler_demo()
     await journaler(x_persona, x_espace, "réinitialisation de la démo", "mesh", "Données de démonstration restaurées à l'état initial")
