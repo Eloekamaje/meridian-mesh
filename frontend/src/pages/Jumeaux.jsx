@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, HourglassMedium, MagnifyingGlass, CaretDown, CaretRight, DotsThree } from "@phosphor-icons/react";
+import { Plus, HourglassMedium, MagnifyingGlass, DotsThree } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { usePerimetre } from "@/lib/perimetre";
@@ -28,9 +28,7 @@ export default function Jumeaux() {
   const [filtreDomaine, setFiltreDomaine] = useState("");
   const [filtreProprio, setFiltreProprio] = useState("");
   const [filtreAutonomie, setFiltreAutonomie] = useState("");
-  const [groupement, setGroupement] = useState("domaine");
   const [vue, setVue] = useState("tous");
-  const [plies, setPlies] = useState({});
   const [menuOuvert, setMenuOuvert] = useState(null);
 
   const charger = () => api.get("/jumeaux").then((r) => setJumeaux(r.data)).catch(() => {});
@@ -76,16 +74,11 @@ export default function Jumeaux() {
     });
   }, [jumeaux, recherche, filtreStatut, filtreDomaine, filtreProprio, filtreAutonomie, vue]);
 
-  const groupes = useMemo(() => {
-    if (groupement === "aucun") return [["", [...filtres].sort((a, b) => Number(estEnAttention(b)) - Number(estEnAttention(a)) || (a.couverture ?? 0) - (b.couverture ?? 0))]];
-    const map = {};
-    filtres.forEach((j) => {
-      const cle = groupement === "domaine" ? j.domaine || "Non classé" : STATUTS[j.statut]?.[0] || j.statut;
-      (map[cle] = map[cle] || []).push(j);
-    });
-    Object.values(map).forEach((l) => l.sort((a, b) => Number(estEnAttention(b)) - Number(estEnAttention(a)) || (a.couverture ?? 0) - (b.couverture ?? 0)));
-    return Object.entries(map).sort((a, b) => a[0].localeCompare(b[0]));
-  }, [filtres, groupement]);
+  // Liste plate : le domaine devient une colonne (le filtre domaine existe déjà)
+  const lignes = useMemo(
+    () => [...filtres].sort((a, b) => Number(estEnAttention(b)) - Number(estEnAttention(a)) || (a.couverture ?? 0) - (b.couverture ?? 0)),
+    [filtres]
+  );
 
   const compteurs = useMemo(() => ({
     actifs: jumeaux.filter((j) => j.statut === "actif").length,
@@ -153,60 +146,53 @@ export default function Jumeaux() {
           <option value="">Autonomie ▾</option>
           {Object.entries(AUTONOMIE).map(([v, [l]]) => <option key={v} value={v}>{l}</option>)}
         </select>
-        <select value={groupement} onChange={(e) => setGroupement(e.target.value)} data-testid="registre-groupement" className="rounded-md border border-[#E5E5E3] bg-white px-2 py-1.5 text-xs text-[#3F3F3C] focus:outline-none">
-          <option value="domaine">Grouper par : Domaine</option>
-          <option value="statut">Grouper par : Statut</option>
-          <option value="aucun">Sans regroupement</option>
-        </select>
         <select value={vue} onChange={(e) => appliquerVue(e.target.value)} data-testid="registre-vues" className="rounded-md border border-[#6D28D9]/30 bg-[#6D28D9]/[0.06] px-2 py-1.5 text-xs text-[#6D28D9] focus:outline-none">
           {VUES_ENREGISTREES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
       </div>
 
-      {/* Registre groupé */}
+      {/* Registre — liste plate, domaine en colonne */}
       <div className="mt-4 overflow-hidden rounded-xl border border-[#E5E5E3]" data-testid="registre-table">
-        {groupes.map(([groupe, lignes]) => (
-          <div key={groupe || "tous"}>
-            {groupe && (
-              <button onClick={() => setPlies({ ...plies, [groupe]: !plies[groupe] })} data-testid={`groupe-${groupe}`} className="sticky top-0 z-10 flex w-full items-center gap-2 border-b border-[#E5E5E3] bg-[#F0F0EE] px-4 py-2 text-left">
-                {plies[groupe] ? <CaretRight size={12} className="text-[#71716D]" /> : <CaretDown size={12} className="text-[#71716D]" />}
-                <span className="font-code text-[10px] uppercase tracking-[0.18em]" style={{ color: groupement === "domaine" ? couleurDomaine(groupe) : "#71716D" }}>
-                  {groupe} · {lignes.length} jumeau{lignes.length > 1 ? "x" : ""}
-                </span>
-              </button>
-            )}
-            {!plies[groupe] && lignes.map((j) => {
-              const st = STATUTS[j.statut] || [j.statut, "#71716D"];
-              const fr = FRAICHEUR_ETATS[j.fraicheur_etat] || FRAICHEUR_ETATS.partiel;
-              const aut = AUTONOMIE[j.autonomie] || AUTONOMIE.aucune;
-              const det = j.sources_detail || [];
-              const nbOk = det.filter((s) => s.statut === "prete").length;
-              const ko = det.filter((s) => s.statut !== "prete");
-              const attention = estEnAttention(j);
-              const coche = selection.includes(j.id);
-              return (
-                <div key={j.id}>
-                <div
-                  onClick={() => navigate(`/jumeaux/${j.id}/revue`)}
-                  data-testid={`jumeau-row-${j.id}`}
-                  className={`rise flex cursor-pointer items-center gap-3 border-b border-[#E5E5E3] px-4 py-3 transition-colors hover:bg-[#F7F7F6] ${attention ? "border-l-2 border-l-[#B45309]/60" : "border-l-2 border-l-transparent"}`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={coche}
-                    onClick={(e) => e.stopPropagation()}
-                    onChange={() => (coche ? retirerJumeau(j.id) : ajouterJumeau(j.id))}
-                    data-testid={`registre-check-${j.id}`}
-                    title="Ajouter au contexte de Flore"
-                    className="h-3.5 w-3.5 shrink-0 accent-[#0E7490]"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate text-[13px] font-medium text-[#111110]">{j.nom}</span>
-                      {attention && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#B45309]" title="Nécessite une attention" />}
-                    </div>
-                    <div className="truncate font-code text-[9px] text-[#71716D]">{j.domaine}{j.proprietaire ? ` · ${j.proprietaire}` : ""}</div>
-                  </div>
+        {lignes.map((j) => {
+          const st = STATUTS[j.statut] || [j.statut, "#71716D"];
+          const fr = FRAICHEUR_ETATS[j.fraicheur_etat] || FRAICHEUR_ETATS.partiel;
+          const aut = AUTONOMIE[j.autonomie] || AUTONOMIE.aucune;
+          const det = j.sources_detail || [];
+          const nbOk = det.filter((s) => s.statut === "prete").length;
+          const ko = det.filter((s) => s.statut !== "prete");
+          const attention = estEnAttention(j);
+          const coche = selection.includes(j.id);
+          return (
+            <div
+              key={j.id}
+              onClick={() => navigate(`/jumeaux/${j.id}/revue`)}
+              data-testid={`jumeau-row-${j.id}`}
+              className={`rise flex cursor-pointer items-center gap-3 border-b border-[#E5E5E3] bg-white px-4 py-3 transition-colors last:border-b-0 hover:bg-[#F7F7F6] ${attention ? "border-l-2 border-l-[#B45309]/60" : "border-l-2 border-l-transparent"}`}
+            >
+              <input
+                type="checkbox"
+                checked={coche}
+                onClick={(e) => e.stopPropagation()}
+                onChange={() => (coche ? retirerJumeau(j.id) : ajouterJumeau(j.id))}
+                data-testid={`registre-check-${j.id}`}
+                title="Ajouter au contexte de Flore"
+                className="h-3.5 w-3.5 shrink-0 accent-[#0E7490]"
+              />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="truncate text-[13px] font-medium text-[#111110]">{j.nom}</span>
+                  {attention && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#B45309]" title="Nécessite une attention" />}
+                </div>
+                <div className="truncate font-code text-[9px] text-[#71716D]">{j.proprietaire || "—"}</div>
+              </div>
+              {/* Domaine en colonne */}
+              <span
+                className="w-28 shrink-0 truncate rounded border px-1.5 py-0.5 text-center font-code text-[9px]"
+                style={{ color: couleurDomaine(j.domaine), borderColor: `${couleurDomaine(j.domaine)}44`, backgroundColor: `${couleurDomaine(j.domaine)}0D` }}
+                data-testid={`domaine-${j.id}`}
+              >
+                {j.domaine}
+              </span>
                   <span className="w-24 shrink-0 rounded border px-1.5 py-0.5 text-center font-code text-[9px]" style={{ color: st[1], borderColor: `${st[1]}44`, backgroundColor: `${st[1]}12` }} data-testid={`statut-${j.id}`}>
                     {st[0]}
                   </span>
@@ -281,12 +267,9 @@ export default function Jumeaux() {
                       )}
                     </div>
                   </div>
-                </div>
-                </div>
-              );
-            })}
-          </div>
-        ))}
+            </div>
+          );
+        })}
         {filtres.length === 0 && (
           <div className="px-4 py-10 text-center text-sm text-[#71716D]" data-testid="registre-vide">Aucun jumeau ne correspond — élargissez la recherche ou les filtres.</div>
         )}

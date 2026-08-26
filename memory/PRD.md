@@ -1,6 +1,7 @@
 # Méridian — PRD
 
 ## Implémenté (26/08/2026 — v17b, cohérence de navigation + registre Jumeaux)
+- **Registre Jumeaux : liste plate avec colonne Domaine** (choix utilisateur — le regroupement par domaine était redondant avec le filtre domaine) ; tri : jumeaux à traiter en tête, puis couverture croissante ; sélecteur « Grouper par » supprimé ; puce domaine colorée par ligne.
 - **Registre Jumeaux corrigé** : intercalaires de groupes restés noirs après le codemod (`bg-[#0C0C0C]` → clair sticky), colonnes Fraîcheur élargies avec info-bulle (troncature « il y a… »), titres harmonisés.
 - **Hiérarchie typographique unifiée** sur toutes les pages : overline `font-code` indigo + H1 `font-display text-3xl font-black` (Jumeaux/Investigations/Administration/InvestigationDetail alignés sur Actualités/Travaux).
 - **Libellés de retour cohérents** : Revue jumeau « ← Jumeaux » (était « Registre »).
