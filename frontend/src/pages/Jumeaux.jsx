@@ -274,7 +274,7 @@ export default function Jumeaux() {
                   {/* Action contextuelle + menu secondaire */}
                   <div className="flex w-48 shrink-0 items-center justify-end gap-1.5">
                     <button
-                      onClick={(e) => { e.stopPropagation(); j.statut === "observation" ? navigate(`/jumeaux/${j.id}/revue`) : basculer(j); }}
+                      onClick={(e) => { e.stopPropagation(); navigate(`/jumeaux/${j.id}/revue`); }}
                       data-testid={j.statut === "observation" ? `revoir-admission-${j.id}` : `examiner-${j.id}`}
                       className={`rounded px-2.5 py-1 text-[11px] transition-colors ${j.statut === "observation" ? "bg-[#FBBF24] font-semibold text-black hover:bg-[#E5A910]" : "border border-white/15 text-white/60 hover:border-white/40 hover:text-white"}`}
                     >
