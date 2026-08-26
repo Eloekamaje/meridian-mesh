@@ -1,0 +1,21 @@
+{
+  "summary": "Frontend-only test of the new 2-tab TravailDetail structure on /travaux/case-olympiade. Validated (a) only 2 tabs 'Conversation' + 'Aperçu' (no Atlas/Décisions/Activité), (b) Conversation tab renders fil de chat with anchored composer and message envoi ajoute bulle utilisateur + réponse Flore sans reload, (c) Aperçu shows 'Rapport du travail' header with all 10 sections (01→10), (d) section 04 options Retenir/Écarter + add option + add décision, (e) section 05 questions toggle + add, (f) section 06 hypothèses add + cycle statut, (g) section 07 investigation add avec toast, (h) section 08 produire-synthese-btn OK, (i) section 09 filtres activité tout/discussions/flore/decouvertes/decisions/mesh + promouvoir/voir-preuves/ignorer sur messages Flore, (j) section 02 actualiser-resume-btn OK, (k) édition inline case-objectif persistée au blur, (l) /travaux/case-olympiade?vue=decisions retombe sur Conversation sans erreur, (m) actions d'en-tête (Continuer avec Flore, Ouvrir dans Atlas, Partager, menu Clore) présentes et fonctionnelles. Aucune erreur console. Aucune référence résiduelle à OngletDecisions/OngletActivite/OngletAtlas dans le code.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "TravailDetail.jsx ligne 173: doublon de la condition `{cas.a_revoir && (...)}` — le bloc a-revoir-banner est déjà encapsulé dans un `{cas.a_revoir && (` extérieur (ligne 170), la seconde vérification interne est redondante et rend le JSX plus difficile à lire. Nettoyage recommandé (main agent).",
+    "OngletApercu.jsx: fichier volumineux (~515 lignes) — envisager de re-splitter les sous-sections (Options/Décisions, Questions, Hypothèses, Activité) en petits composants pour la maintenabilité, sans revenir à des onglets séparés."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped)", "frontend": "100%"},
+  "seed_data_creation": "Ajouté via UI sur case-olympiade : 1 option 'Option test T1', 1 décision 'Décision test T1', 1 question, 1 hypothèse, 1 investigation, 1 synthèse. À nettoyer si nécessaire.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "La nouvelle structure à 2 onglets (Conversation + Aperçu) est stable et complète. Toutes les fonctionnalités des anciens onglets Atlas/Décisions/Activité sont bien accessibles dans les sections 04 et 09 de l'Aperçu avec data-testid préservés. Les rapports iteration_22–27 concernent l'ancienne structure et sont obsolètes."
+}

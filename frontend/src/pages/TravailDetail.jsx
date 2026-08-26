@@ -3,31 +3,25 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Compass, Sparkle, Users, ShareNetwork, DotsThree, SealCheck } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
-import { useMesh } from "@/lib/mesh";
 import { usePerimetre } from "@/lib/perimetre";
 import { useContexte } from "@/lib/contexte";
 import { TYPES_CASE, STATUTS_CASE } from "./Travaux";
 import { numeroCase, SENSIBILITES, rel } from "@/components/case/utils";
 import OngletApercu from "@/components/case/OngletApercu";
 import OngletTravail from "@/components/case/OngletTravail";
-import OngletAtlas from "@/components/case/OngletAtlas";
-import OngletDecisions from "@/components/case/OngletDecisions";
-import OngletActivite from "@/components/case/OngletActivite";
 
+// Deux onglets seulement : Conversation (le fil) et Aperçu (le rapport structuré)
 const VUES = [
   ["travail", "Conversation"],
   ["apercu", "Aperçu"],
-  ["atlas", "Atlas"],
-  ["decisions", "Décisions & actions"],
-  ["activite", "Activité"],
 ];
 
 export default function TravailDetail() {
   const { cid } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
-  const vue = searchParams.get("vue") || "travail";
+  const vueParam = searchParams.get("vue");
+  const vue = vueParam === "apercu" ? "apercu" : "travail";
   const navigate = useNavigate();
-  const { mesh } = useMesh();
   const { version } = usePerimetre();
   const { setSelection, ouvrirFlore } = useContexte();
   const [cas, setCas] = useState(null);
@@ -156,7 +150,7 @@ export default function TravailDetail() {
           </div>
         </div>
 
-        {/* Navigation interne — 5 vues */}
+        {/* Navigation interne — 2 vues */}
         <nav className="mt-3 flex gap-1" data-testid="travail-vues">
           {VUES.map(([id, label]) => (
             <button
@@ -176,17 +170,15 @@ export default function TravailDetail() {
       {cas.a_revoir && (
         <div className="shrink-0 px-8 pt-4">
           <div className="mx-auto max-w-2xl">
-{cas.a_revoir && (
-            <div className="flex items-center justify-between gap-3 rounded-xl border border-[#B91C1C]/30 bg-[#B91C1C]/[0.04] px-4 py-3" data-testid="travail-arevoir-banner">
-              <p className="text-xs text-[#B91C1C]">
-                <span className="font-semibold uppercase tracking-wider">À revoir</span> — une connaissance du Mesh liée à ce travail a changé ; les conclusions peuvent être remises en cause.
-              </p>
-              <button onClick={() => maj({ a_revoir: false })} className="shrink-0 rounded-md border border-[#B91C1C]/40 px-2.5 py-1.5 text-[11px] font-semibold text-[#B91C1C] transition-colors hover:bg-[#B91C1C]/10">
-                Marquer comme revu
-              </button>
-            </div>
-          )}
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-[#B91C1C]/30 bg-[#B91C1C]/[0.04] px-4 py-3" data-testid="travail-arevoir-banner">
+            <p className="text-xs text-[#B91C1C]">
+              <span className="font-semibold uppercase tracking-wider">À revoir</span> — une connaissance du Mesh liée à ce travail a changé ; les conclusions peuvent être remises en cause.
+            </p>
+            <button onClick={() => maj({ a_revoir: false })} className="shrink-0 rounded-md border border-[#B91C1C]/40 px-2.5 py-1.5 text-[11px] font-semibold text-[#B91C1C] transition-colors hover:bg-[#B91C1C]/10">
+              Marquer comme revu
+            </button>
           </div>
+        </div>
         </div>
       )}
 
@@ -197,9 +189,6 @@ export default function TravailDetail() {
         ) : (
         <div className="mx-auto max-w-6xl">
           {vue === "apercu" && <OngletApercu cas={cas} maj={maj} setCas={setCas} situations={situations} />}
-          {vue === "atlas" && <OngletAtlas cas={cas} mesh={mesh} />}
-          {vue === "decisions" && <OngletDecisions cas={cas} maj={maj} setCas={setCas} />}
-          {vue === "activite" && <OngletActivite cas={cas} maj={maj} setCas={setCas} />}
         </div>
         )}
       </div>
