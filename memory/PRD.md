@@ -7,6 +7,7 @@
 - **Travail = conversation d'abord** : onglet « Conversation » par défaut avec panneau « Où en sommes-nous ? — Flore vous replace » (reprise) en tête ; Aperçu/Atlas/Décisions/Activité en secondaire.
 - **Jumeaux** : suggestion locale de Flore en bas de registre (Comprendre/Examiner/masquer) + composer compact. Registre plat + colonne Domaine conservé (choix utilisateur antérieur).
 - Bugs corrigés en itération 25 : gating Administration (champ `espaces` absent de /api/personas → `espaces.some(global)`), désync onglets Actualités/pillule (vue dérivée de l'URL).
+- **Accueil = hôte de conversation** (retour utilisateur : le chat latéral n'a pas de sens sur l'Accueil) : après la 1ʳᵉ question, le fil se déroule **dans la page** (à la ChatGPT) — bulles utilisateur, réponses Flore avec contributions jumeaux / preuves pliables / propositions cliquables qui prolongent le fil / périmètre d'investigation ; proposition de conservation en Travail après ≥2 échanges (fusion de la conversation) ; le panneau latéral reste réservé aux autres pages.
 - Tests : **iteration_25 → 15/15 après corrections** ; backend 96/96 (2 flaky xdist connus, passent isolément).
 
 ## Implémenté (26/08/2026 — v18, GRAMMAIRE D'INTERACTION DU MESH, Phases A+B)
