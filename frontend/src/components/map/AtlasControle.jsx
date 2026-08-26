@@ -3,15 +3,11 @@ import { Link } from "react-router-dom";
 import { Pulse, Pause, Stack, X } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
-import { MODES, COUCHES } from "@/lib/atlasGraph";
+import { COUCHES } from "@/lib/atlasGraph";
 
-export default function AtlasControle({
-  mode, setMode, situations, situationId, setSituationId,
-  parcoursId, setParcoursId, mesh, focus, direct, setDirect,
-  couches, setCouches, rechargerVues,
-}) {
+export default function AtlasControle({ mesh, focus, direct, setDirect, couches, setCouches, rechargerVues }) {
   const [nomVue, setNomVue] = useState("");
-  // Façon Google Maps : par défaut seule la barre de modes est visible ; les réglages se rangent derrière un bouton « calques »
+  // Façon Google Maps : un bouton « calques » discret ; les réglages se déplient à la demande
   const [deplie, setDeplie] = useState(() => typeof window !== "undefined" && window.innerWidth >= 1500);
 
   useEffect(() => {
@@ -20,8 +16,6 @@ export default function AtlasControle({
     mq.addEventListener("change", maj);
     return () => mq.removeEventListener("change", maj);
   }, []);
-
-  const modeInfo = MODES.find((m) => m.id === mode);
 
   const enregistrerVue = async () => {
     if (!nomVue.trim()) return;
@@ -38,53 +32,19 @@ export default function AtlasControle({
   return (
     <div className="glass absolute left-4 top-4 z-10 rounded-xl p-2" data-testid="map-mode-switcher">
       <div className="flex items-center gap-1">
-        {MODES.map((m) => (
-          <button
-            key={m.id}
-            onClick={() => setMode(m.id)}
-            data-testid={`map-mode-${m.id}`}
-            className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors duration-200 ${
-              mode === m.id ? "bg-[#3B82F6] text-white" : "text-white/55 hover:bg-white/[0.06] hover:text-white"
-            }`}
-          >
-            {m.label}
-          </button>
-        ))}
         <button
           onClick={() => setDeplie(!deplie)}
           data-testid="controle-toggle"
           title={deplie ? "Replier les réglages" : "Calques et réglages"}
-          className={`ml-1 flex h-7 w-7 items-center justify-center rounded-md transition-colors ${deplie ? "bg-[#22D3EE]/15 text-[#22D3EE]" : "text-white/45 hover:bg-white/[0.06] hover:text-white"}`}
+          className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors ${deplie ? "bg-[#22D3EE]/15 text-[#22D3EE]" : "text-white/45 hover:bg-white/[0.06] hover:text-white"}`}
         >
           {deplie ? <X size={14} /> : <Stack size={14} />}
         </button>
+        {!deplie && (
+          <span className="px-1 font-code text-[10px] uppercase tracking-[0.15em] text-white/40">Calques</span>
+        )}
       </div>
 
-      {/* Sélecteurs de contexte : toujours visibles quand le mode l'exige */}
-      {mode === "situation" && (
-        <select
-          value={situationId}
-          onChange={(e) => setSituationId(e.target.value)}
-          data-testid="map-situation-select"
-          className="mt-2 w-full rounded-md border border-white/10 bg-black/60 px-2 py-1.5 text-xs text-white focus:outline-none"
-        >
-          {situations.filter((s) => (s.jumeaux || []).length > 0).map((s) => (
-            <option key={s.id} value={s.id} label={s.titre} />
-          ))}
-        </select>
-      )}
-      {mode === "parcours" && (
-        <select
-          value={parcoursId}
-          onChange={(e) => setParcoursId(e.target.value)}
-          data-testid="map-parcours-select"
-          className="mt-2 w-full rounded-md border border-white/10 bg-black/60 px-2 py-1.5 text-xs text-white focus:outline-none"
-        >
-          {(mesh?.parcours || []).map((p) => (
-            <option key={p.id} value={p.id} label={p.nom} />
-          ))}
-        </select>
-      )}
       {focus && (
         <Link to="/atlas" className="mt-2 block px-1 font-code text-[10px] text-[#3B82F6] hover:underline" data-testid="map-clear-focus">
           ← Retirer le filtre « {focus} »
@@ -93,8 +53,6 @@ export default function AtlasControle({
 
       {deplie && (
         <div data-testid="controle-details">
-          <p className="mt-2 px-1 font-code text-[10px] text-white/40">{modeInfo?.question}</p>
-
           {mesh?.perimetre?.nb_restreints > 0 && (
             <div className="mt-2 rounded border border-dashed border-white/15 px-2 py-1.5 font-code text-[9px] leading-relaxed text-white/45" data-testid="badge-dependances-restreintes">
               {mesh.perimetre.nb_restreints} dépendance(s) restreinte(s) — politique « {mesh.perimetre.politique === "anonymisee" ? "dépendance anonymisée" : mesh.perimetre.politique === "resume" ? "résumé autorisé" : "masquage complet"} »
@@ -102,7 +60,7 @@ export default function AtlasControle({
           )}
 
           {/* Direct / Pause */}
-          <div className="mt-3 flex items-center gap-1 border-t border-white/[0.08] pt-2.5">
+          <div className="mt-2 flex items-center gap-1 border-t border-white/[0.08] pt-2.5">
             <span className="px-1 font-code text-[9px] uppercase tracking-[0.2em] text-white/35">Temps réel</span>
             <button
               onClick={() => setDirect(true)}
@@ -139,7 +97,7 @@ export default function AtlasControle({
             </div>
           </div>
 
-          {mode === "territoire" && !mesh?.perimetre?.global && (
+          {!mesh?.perimetre?.global && (
             <div className="mt-2 flex gap-1.5 px-1">
               <input
                 value={nomVue}

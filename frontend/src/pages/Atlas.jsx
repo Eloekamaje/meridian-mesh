@@ -27,11 +27,8 @@ export default function Atlas() {
   const { mesh, jumeauPar, recharger } = useMesh();
   const { version, vueActive, rechargerVues } = usePerimetre();
   const [situations, setSituations] = useState([]);
-  const modeParam = searchParams.get("mode");
-  const [mode, setMode] = useState(modeParam || "territoire");
-  const [situationId, setSituationId] = useState(searchParams.get("situation") || "sit-relation-emergente");
-  const [parcoursId, setParcoursId] = useState("parcours-paiement");
   const focus = searchParams.get("focus");
+  const situationParam = searchParams.get("situation");
   const [selected, setSelected] = useState(null);
   const [selectedRelation, setSelectedRelation] = useState(null);
   const [events, setEvents] = useState([]);
@@ -160,10 +157,6 @@ export default function Atlas() {
   }, []);
 
   useEffect(() => {
-    if (modeParam) setMode(modeParam);
-  }, [modeParam]);
-
-  useEffect(() => {
     api.get("/situations").then((r) => setSituations(r.data)).catch(() => {});
   }, [version]);
 
@@ -196,16 +189,16 @@ export default function Atlas() {
     return () => { stop = true; clearInterval(t); clearTimeout(timer); };
   }, [version, direct]);
 
-  const situation = situations.find((s) => s.id === situationId);
+  const situation = situations.find((s) => s.id === situationParam);
 
   const { nodes, edges } = useMemo(
     () =>
       construireGraphe({
-        mesh, situation, parcoursId, focus, mode, vueActive, perimetreTravail,
+        mesh, situation, focus, vueActive, perimetreTravail,
         jumeauFocus, domaineInterne, posOverrides, compteurs, halo, selection,
         zoomNiveau, relFocus, focusCarte, domDe, statsRegions,
       }),
-    [mesh, mode, situationId, parcoursId, focus, halo, compteurs, selection, relFocus, zoomNiveau, situation, vueActive, posOverrides, domaineSel, domaineInterne, jumeauFocus, perimetreTravail, domDe, statsRegions, focusCarte]
+    [mesh, focus, situation, halo, compteurs, selection, relFocus, zoomNiveau, vueActive, posOverrides, domaineSel, domaineInterne, jumeauFocus, perimetreTravail, domDe, statsRegions, focusCarte]
   );
 
   const eventsVisibles = events.filter((e) => couches[e.dynamique || "operationnelle"]);
@@ -246,7 +239,7 @@ export default function Atlas() {
   return (
     <div className="relative h-full w-full overflow-hidden" data-testid="system-map">
       <ReactFlow
-        key={`${mode}-${situationId}-${parcoursId}-${focus || ""}`}
+        key={focus || situationParam || "mesh"}
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
@@ -351,7 +344,7 @@ export default function Atlas() {
           setSelected(null); setSelectedRelation(null); setDomaineSel(null); setSelection([]); setRelFocus(false); setComparaison(null); setAttenteComparaison(false); commanderCarte(null);
           majUrl(domaineInterne ? { sel: null } : { sel: null, domaine: null, interne: null, jumeau: null });
         }}
-        nodesDraggable={mode === "territoire"}
+        nodesDraggable
         nodesConnectable={false}
         colorMode="dark"
       >
@@ -360,25 +353,27 @@ export default function Atlas() {
       </ReactFlow>
 
       <AtlasControle
-        mode={mode} setMode={setMode}
-        situations={situations} situationId={situationId} setSituationId={setSituationId}
-        parcoursId={parcoursId} setParcoursId={setParcoursId}
         mesh={mesh} focus={focus}
         direct={direct} setDirect={setDirect}
         couches={couches} setCouches={setCouches}
         rechargerVues={rechargerVues}
       />
 
-      <AtlasToolbar outil={outil} setOutil={setOutil} setMode={setMode} rfRef={rfRef} />
+      <AtlasToolbar outil={outil} setOutil={setOutil} rfRef={rfRef} />
 
-      {/* Bandeau situation */}
-      {mode === "situation" && situation && (
-        <div className="glass absolute left-1/2 top-4 z-10 max-w-md -translate-x-1/2 rounded-xl px-4 py-2.5" data-testid="map-situation-banner">
-          <div className="font-code text-[9px] uppercase tracking-[0.25em] text-[#A78BFA]">Focus — situation</div>
-          <div className="text-xs font-semibold text-white">{situation.titre}</div>
-          <div className="mt-0.5 font-code text-[9px] text-white/40">
-            {situation.jumeaux.length} jumeaux · contexte réduit au pertinent
+      {/* Bandeau situation (focus profond depuis Aujourd'hui / Investigations) */}
+      {situation && (
+        <div className="glass absolute left-1/2 top-4 z-10 flex max-w-md -translate-x-1/2 items-center gap-3 rounded-xl px-4 py-2.5" data-testid="map-situation-banner">
+          <div>
+            <div className="font-code text-[9px] uppercase tracking-[0.25em] text-[#A78BFA]">Focus — situation</div>
+            <div className="text-xs font-semibold text-white">{situation.titre}</div>
+            <div className="mt-0.5 font-code text-[9px] text-white/40">
+              {situation.jumeaux.length} jumeaux · contexte réduit au pertinent
+            </div>
           </div>
+          <button onClick={() => majUrl({ situation: null })} data-testid="map-clear-situation" title="Retirer le focus situation" className="shrink-0 text-white/40 transition-colors hover:text-white">
+            <X size={13} />
+          </button>
         </div>
       )}
 
@@ -403,7 +398,7 @@ export default function Atlas() {
       )}
 
       {/* Niveau de zoom sémantique */}
-      {mode === "territoire" && (
+      {(
         <div className="glass absolute bottom-4 left-1/2 z-10 -translate-x-1/2 rounded-lg px-3 py-1.5 font-code text-[10px] text-white/50" data-testid="zoom-niveau">
           {jumeauFocus
             ? `Focus jumeau — ${jumeauPar(jumeauFocus)?.nom} · zoom arrière pour remonter`

@@ -1,9 +1,3 @@
-export const MODES = [
-  { id: "territoire", label: "Territoire", question: "Comment le SI est-il organisé ?" },
-  { id: "situation", label: "Situation", question: "Que se passe-t-il ici ?" },
-  { id: "parcours", label: "Parcours", question: "Comment cette activité fonctionne-t-elle ?" },
-];
-
 export const COUCHES = [
   ["operationnelle", "Opérationnelle", "#3B82F6"],
   ["connaissance", "Connaissance", "#22D3EE"],
@@ -68,13 +62,12 @@ export function statsDuDomaine(mesh, situations, domDe, label) {
 }
 
 export function construireGraphe({
-  mesh, situation, parcoursId, focus, mode, vueActive, perimetreTravail,
+  mesh, situation, focus, vueActive, perimetreTravail,
   jumeauFocus, domaineInterne, posOverrides, compteurs, halo, selection,
   zoomNiveau, relFocus, focusCarte, domDe, statsRegions,
 }) {
   if (!mesh) return { nodes: [], edges: [] };
   const implique = situation?.jumeaux || [];
-  const parcours = (mesh.parcours || []).find((p) => p.id === parcoursId);
 
   const dims = new Set();
   if (focus) {
@@ -84,7 +77,7 @@ export function construireGraphe({
       if (r.cible === focus && r.active) deps.add(r.source);
     });
     mesh.jumeaux.forEach((j) => { if (!deps.has(j.id)) dims.add(j.id); });
-  } else if (mode === "situation" && implique.length) {
+  } else if (situation && implique.length) {
     mesh.jumeaux.forEach((j) => { if (!implique.includes(j.id)) dims.add(j.id); });
   }
   if (vueActive?.type === "selection") {
@@ -93,12 +86,12 @@ export function construireGraphe({
   if (vueActive?.type === "vigilance") {
     mesh.jumeaux.forEach((j) => { if ((j.couverture ?? 100) >= 70) dims.add(j.id); });
   }
-  if (perimetreTravail && mode === "territoire") {
+  if (perimetreTravail) {
     mesh.jumeaux.forEach((j) => { if (!j.anonyme && j.domaine !== perimetreTravail) dims.add(j.id); });
   }
 
   // Focus jumeau : le jumeau au centre, ses voisins en portes périphériques
-  if (mode === "territoire" && jumeauFocus) {
+  if (jumeauFocus) {
     const jf = mesh.jumeaux.find((j) => j.id === jumeauFocus);
     if (!jf) return { nodes: [], edges: [] };
     const posF = posOverrides[jf.id] || jf.position;
@@ -139,7 +132,7 @@ export function construireGraphe({
   }
 
   // Vue interne d'un domaine : jumeaux du domaine + portes externes
-  if (mode === "territoire" && domaineInterne) {
+  if (domaineInterne) {
     const internes = mesh.jumeaux.filter((j) => !j.anonyme && j.domaine === domaineInterne);
     const reg = (mesh.regions || []).find((r) => r.label === domaineInterne);
     const cx = reg ? reg.x + reg.w / 2 : 600;
@@ -218,7 +211,7 @@ export function construireGraphe({
   }
 
   // Focus contextuel : sélection → voisins éclairés, reste translucide
-  if (selection.length > 0 && mode === "territoire" && !focus) {
+  if (selection.length > 0 && !focus) {
     const voisins = new Set(selection);
     mesh.relations.forEach((r) => {
       if (selection.includes(r.source)) voisins.add(r.cible);
@@ -227,28 +220,20 @@ export function construireGraphe({
     mesh.jumeaux.forEach((j) => { if (!voisins.has(j.id)) dims.add(j.id); });
   }
 
-  let ns = [];
-  if (mode === "territoire") {
-    ns = (mesh.regions || []).map((r) => ({
-      id: r.id, type: "region", position: { x: r.x, y: r.y },
-      initialWidth: r.w,
-      initialHeight: r.h,
-      data: { ...r, investigations: statsRegions[r.label]?.investigations ?? 0, decouvertes: statsRegions[r.label]?.decouvertes ?? 0, halo: !!halo && domDe[halo] === r.label },
-      draggable: false, selectable: false, zIndex: -10,
-    }));
-  }
+  let ns = (mesh.regions || []).map((r) => ({
+    id: r.id, type: "region", position: { x: r.x, y: r.y },
+    initialWidth: r.w,
+    initialHeight: r.h,
+    data: { ...r, investigations: statsRegions[r.label]?.investigations ?? 0, decouvertes: statsRegions[r.label]?.decouvertes ?? 0, halo: !!halo && domDe[halo] === r.label },
+    draggable: false, selectable: false, zIndex: -10,
+  }));
 
-  let twins = mesh.jumeaux;
-  if (mode === "parcours" && parcours) {
-    twins = mesh.jumeaux.filter((j) => parcours.etapes.includes(j.id));
-  }
-
-  const entreprise = mode === "territoire" && zoomNiveau === 1;
+  const twins = mesh.jumeaux;
+  const entreprise = zoomNiveau === 1;
 
   ns = ns.concat(
     twins.map((j) => {
-      const etape = mode === "parcours" && parcours ? parcours.etapes.indexOf(j.id) + 1 : null;
-      const position = posOverrides[j.id] || (etape ? { x: (etape - 1) * 250, y: 280 + (etape % 2) * 46 } : j.position);
+      const position = posOverrides[j.id] || j.position;
       return {
         id: j.id,
         type: "twin",
@@ -256,7 +241,7 @@ export function construireGraphe({
         initialWidth: 190,
         initialHeight: 64,
         hidden: entreprise && !j.anonyme ? true : entreprise,
-        data: { jumeau: j, dim: dims.has(j.id), halo: halo === j.id, evenements: compteurs[j.id] || 0, etape },
+        data: { jumeau: j, dim: dims.has(j.id), halo: halo === j.id, evenements: compteurs[j.id] || 0, etape: null },
         selected: selection.includes(j.id),
       };
     })
@@ -288,13 +273,9 @@ export function construireGraphe({
       labelStyle: { fill: "rgba(255,255,255,0.65)", fontSize: 10, fontFamily: "IBM Plex Mono" },
       labelBgStyle: { fill: "rgba(5,5,5,0.85)" },
     }));
-  } else if (mode === "parcours" && parcours) {
-    es = parcours.etapes.slice(1).map((id, i) =>
-      makeEdge({ id: `p-${i}`, source: parcours.etapes[i], cible: id, active: true, etat: "confirmee" }, zoomNiveau)
-    );
   } else {
     es = mesh.relations
-      .filter((r) => (mode === "situation" && implique.length ? implique.includes(r.source) && implique.includes(r.cible) : true))
+      .filter((r) => (situation && implique.length ? implique.includes(r.source) && implique.includes(r.cible) : true))
       .filter((r) => !focus || r.source === focus || r.cible === focus)
       .map((r) => makeEdge(r, zoomNiveau));
     if (vueActive?.type === "relations_non_confirmees") {

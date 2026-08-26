@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { X } from "@phosphor-icons/react";
+import { X, Compass } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useMesh } from "@/lib/mesh";
@@ -151,6 +151,17 @@ export default function Aujourdhui() {
                           <span style={{ color: v.couleur }}>confiance {sit.indicateurs.confiance} %</span>
                         )}
                       </div>
+                      {(sit.jumeaux || []).length > 0 && (
+                        <div className="mt-2 flex justify-end">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); navigate(`/atlas?situation=${sit.id}`); }}
+                            data-testid={`voir-atlas-${sit.id}`}
+                            className="flex items-center gap-1 font-code text-[10px] text-white/35 opacity-0 transition-opacity duration-200 hover:text-[#22D3EE] group-hover:opacity-100"
+                          >
+                            <Compass size={12} /> Voir dans l'Atlas
+                          </button>
+                        </div>
+                      )}
                     </article>
                   );
                 })}

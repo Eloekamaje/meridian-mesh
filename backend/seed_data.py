@@ -367,11 +367,6 @@ CHANGE_LAB = {
     ],
 }
 
-PARCOURS = [
-    {"id": "parcours-paiement", "nom": "Parcours de paiement", "etapes": ["portail-web", "api-gateway", "paiements", "fraude", "comptes", "facturation"]},
-    {"id": "parcours-remboursement", "nom": "Parcours de remboursement", "etapes": ["support", "paiements", "comptes", "notifications"]},
-]
-
 ACTIVITE = [
     {"jumeau": "paiements", "texte": "Transaction validée en 312 ms", "nature": "trace", "dynamique": "operationnelle"},
     {"jumeau": "comptes", "texte": "Lecture de solde — 45 ms", "nature": "trace", "dynamique": "operationnelle"},

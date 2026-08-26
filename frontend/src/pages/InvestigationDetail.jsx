@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { ArrowLeft, CheckCircle, XCircle, Flask, Lightning, SealCheck, Prohibit } from "@phosphor-icons/react";
+import { ArrowLeft, CheckCircle, XCircle, Flask, Lightning, SealCheck, Prohibit, Compass } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useMesh } from "@/lib/mesh";
@@ -86,9 +86,16 @@ export default function InvestigationDetail() {
 
   return (
     <div className="h-full overflow-y-auto px-8 py-8 pb-44" data-testid="investigation-detail">
-      <button onClick={() => navigate("/investigations")} className="flex items-center gap-1.5 text-xs text-white/45 transition-colors hover:text-white" data-testid="back-to-investigations">
-        <ArrowLeft size={14} /> Investigations
-      </button>
+      <div className="flex items-center justify-between gap-3">
+        <button onClick={() => navigate("/investigations")} className="flex items-center gap-1.5 text-xs text-white/45 transition-colors hover:text-white" data-testid="back-to-investigations">
+          <ArrowLeft size={14} /> Investigations
+        </button>
+        {(sit.jumeaux || []).length > 0 && (
+          <button onClick={() => navigate(`/atlas?situation=${sit.id}`)} data-testid="voir-atlas-btn" className="flex items-center gap-1.5 rounded-md border border-[#22D3EE]/30 bg-[#22D3EE]/[0.06] px-3 py-1.5 text-xs text-[#22D3EE] transition-colors hover:bg-[#22D3EE]/15">
+            <Compass size={13} /> Voir dans l'Atlas
+          </button>
+        )}
+      </div>
 
       {/* Zone 1 — La question */}
       <section className="rise mt-5" data-testid="zone-question">

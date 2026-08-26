@@ -1,5 +1,12 @@
 # Méridian — PRD
 
+## Implémenté (26/06/2026 — v11, Atlas sans modes — Territoire unique)
+- **Décision utilisateur : suppression des modes Situation et Parcours** (redondants avec le paradigme Découvrir/Comprendre/Décider et avec Aurora). L'Atlas = Territoire, point. La barre de modes disparaît ; le panneau haut-gauche devient un simple bouton « Calques » (`controle-toggle` → `controle-details` : Direct/Pause, dynamiques, badge périmètre, enregistrement de vue). L'outil « Explorer un parcours » est retiré de la toolbar (restent déplacement/lasso/recentrage).
+- **Focus profond situation** : `/atlas?situation=<id>` estompe les jumeaux non impliqués + bandeau `map-situation-banner` avec sortie `map-clear-situation`. Liens « Voir dans l'Atlas » ajoutés : cartes d'Aujourd'hui (`voir-atlas-<id>`, au survol) et InvestigationDetail (`voir-atlas-btn`).
+- **Nettoyage** : `PARCOURS` statiques retirés du seed et du payload `/api/mesh` (plus aucun lecteur). L'isolation de parcours dynamique par Aurora (commande_carte type parcours) est conservée. Un futur parcours viendrait d'Aurora ou de parcours éditables (backlog P2).
+- Testids retirés (intentionnel) : `map-mode-*`, `map-situation-select`, `map-parcours-select`, `outil-parcours`.
+- Tests : iteration_18 → 100 % (opacités vérifiées au focus, liens profonds, non-régression zoom/portes/fil d'Ariane/lasso/Aurora, petit écran, Olympiade acte 1, 0 erreur console).
+
 ## Implémenté (26/06/2026 — v10, refactor Atlas + petit écran)
 - **Refactor d'Atlas.jsx (1335 → 441 lignes), sans changement de comportement** : `lib/atlasGraph.js` (MODES/COUCHES/NIVEAUX_ZOOM, styleParEtat, makeEdge, statsDuDomaine, construireGraphe — pur, testable) ; hooks `components/map/useNavigationAtlas.js` (focus domaine/jumeau, historique, fil d'Ariane, majUrl) et `useZoomSemantique.js` (molette sémantique, seuils, survol) ; composants `AtlasControle` (modes, Direct/Pause, couches, vues), `AtlasToolbar`, `FilAriane`, `AtlasLegende`, `AtlasPanneau` (+ `details.jsx` : RelationDetail/DomaineDetail/ComparaisonDomaines/TwinDetail). Tous les data-testid préservés.
 - **Petit écran (<1500px)** : panneau latéral démarre replié (bouton « Détail », `panneau-ouvrir-btn`), légende démarre pliée (`legende-toggle`) ; toute sélection rouvre le panneau ; `panneau-fermer-btn` replie ; repli automatique au redimensionnement (matchMedia) ; légende dépliée surélevée (`bottom-24`) sous 1500 px pour ne pas chevaucher la barre Aurora. Toute la carte est visible en 1366×768.

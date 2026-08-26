@@ -1,0 +1,27 @@
+{
+  "summary": "Frontend E2E validation du refactor Atlas — suppression des modes Territoire/Situation/Parcours + FOCUS PROFOND via ?situation=<id>. Tous les points de la spec ont été vérifiés avec succès. 1) /atlas: aucun des anciens testids modes (map-mode-territoire/situation/parcours, map-situation-select, map-parcours-select, outil-parcours) n'est présent (count=0 chacun). Le bouton Calques (controle-toggle) est visible ; à 1920px, controle-details est déplié par défaut (direct-btn, pause-btn, couche-operationnelle/connaissance/mesh présents — 3 couches). Le repli/dépli via controle-toggle fonctionne (details=0 → 1). 2) Focus profond: /atlas?situation=sit-relation-emergente → map-situation-banner visible avec texte 'Focus — situation Relation émergente : ralentissements Paiements → demandes Support · 2 jumeaux · contexte réduit au pertinent'. Opacité vérifiée: twin-node-paiements=1, twin-node-support=1, tous les autres (facturation, comptes, identite, fraude, conformite, notifications, commandes, logistique, portail-web, api-gateway)=0.2. Clic map-clear-situation retire le paramètre URL et le bandeau (count=0). 3) Lien Aujourd'hui: 11 cartes présentes, hover sur la 1ère (sit-propagation) → voir-atlas-sit-propagation apparaît → clic navigue vers /atlas?situation=sit-propagation avec bandeau. 4) InvestigationDetail sit-relation-emergente → voir-atlas-btn visible → clic → /atlas?situation=sit-relation-emergente avec bandeau. 5) Non-régression Atlas: 12 twin-nodes détectés, clic → map-twin-detail visible, zoom-niveau visible (count=1). 6) Petit écran (nouveau contexte Playwright 1366x768, innerWidth confirmé 1366): controle-details=0 par défaut (replié, controle-toggle seul visible), map-side-panel=0 (panneau-ouvrir-btn visible), map-legend=0 (legende-toggle visible). Toggles fonctionnels: controle-toggle → details=1, panneau-ouvrir-btn → map-side-panel=1. 7) Parcours Olympiade: demo-start-btn trouvé sur /, clic → chargement acte 1 sur /atlas sans erreur. 8) Zéro erreur console sur /atlas (avec et sans ?situation=), /, /investigations/sit-relation-emergente, /decisions, /jumeaux.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "AtlasControle.jsx: refactor propre en bouton Calques 'à la Google Maps'. matchMedia listener correct (auto-repli sous 1500px). RAS.",
+    "AtlasToolbar.jsx: 3 outils uniquement (deplacement/lasso/recentrage) — outil-parcours bien retiré. Recentrage n'est pas un mode toggle mais une action instantanée sur fitView, comportement correct.",
+    "Atlas.jsx: focus profond via URL param ?situation=<id> — le bandeau map-situation-banner + bouton map-clear-situation sont bien conditionnés à la présence de la situation dans mesh.situations. Bonne pratique.",
+    "Aujourdhui.jsx: le bouton voir-atlas-<id> est conditionné à (sit.jumeaux||[]).length > 0 — évite les liens morts. Le stopPropagation avant navigate évite le double clic vers /investigations.",
+    "InvestigationDetail.jsx: voir-atlas-btn bien placé en haut à droite près du retour. Navigation directe vers /atlas?situation=<id>.",
+    "Le seed conserve 2 parcours statiques dans mesh.parcours qui ne sont plus utilisés — pas gênant, mais à nettoyer côté backend/seed dans une itération future pour éviter la confusion."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped as requested)", "frontend": "100% — tous les critères de la spec validés, 0 erreur console"},
+  "test_credentials": "Header X-Persona: architecte (par défaut). Pas de login.",
+  "seed_data_creation": "Aucune.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Refactor Atlas 'sans modes' validé complètement. Nouveaux testids en place: controle-toggle, controle-details, map-situation-banner, map-clear-situation, voir-atlas-<id> (Aujourd'hui, visible au survol de la carte), voir-atlas-btn (InvestigationDetail). Anciens testids définitivement retirés: map-mode-territoire/situation/parcours, map-situation-select, map-parcours-select, outil-parcours. Pour tester petit écran, TOUJOURS créer un nouveau contexte Playwright avec viewport={'width':1366,'height':768} — set_viewport_size ne change PAS innerWidth. Situation de référence: sit-relation-emergente (jumeaux paiements+support).",
+  "rca of the issue": "N/A — aucun bug détecté."
+}

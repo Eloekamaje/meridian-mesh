@@ -14,7 +14,7 @@ import unicodedata
 from pathlib import Path
 
 from seed_data import (
-    TWINS, RELATIONS, REGIONS, SITUATIONS, CHANGE_LAB, PARCOURS, ACTIVITE,
+    TWINS, RELATIONS, REGIONS, SITUATIONS, CHANGE_LAB, ACTIVITE,
     AURORA_SCRIPTS, AURORA_FALLBACK, AURORA_SUGGESTIONS, DEMO_ACTES, SOURCES_LABELS,
     PERSONAS, ESPACES, VUES, CONNECTEURS, CONTRIBUTIONS, PROFILS, COMMANDE_DEMO,
 )
@@ -250,7 +250,6 @@ async def get_mesh(x_persona: str = Header("architecte"), x_espace: Optional[str
         "jumeaux": visibles + list(anon.values()),
         "relations": rels_out,
         "regions": REGIONS,
-        "parcours": PARCOURS,
         "perimetre": {"espace": espace["label"], "global": espace.get("global", False), "politique": politique, "nb_autorises": len(visibles), "nb_restreints": len(anon)},
     }
 
