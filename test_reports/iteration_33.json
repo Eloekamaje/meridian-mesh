@@ -1,0 +1,33 @@
+{
+  "summary": "Atlas v29 — moteur de routage orthogonal maison validé end-to-end (frontend uniquement, per demande). (1) 14 arêtes visibles sur 2 reloads (arete-r1..r14) — toutes rendues par AreteOrthogonale (edgeType 'ortho'), aucune arête React Flow smoothstep résiduelle. (2) Aucune diagonale : parse des attributs `d` de tous les paths visibles — seulement des segments H/V (delta x=0 ou delta y=0 entre points L) et des Q comme coins arrondis (rayon 6). Le seul 'faux positif' était le petit triangle marqueur directionnel `M -3 -3 L 4 0 L -3 3 Z`, pas la géométrie de l'arête. (3) Ponts aux croisements confirmés : les arêtes r2, r3, r8, r13, r14 ont Q=3 (un hump supplémentaire), les autres Q=2 (juste 2 coins) — la Q supplémentaire est le pont arrondi de 7 px décrit dans routeur.js `construireD`. Croisement bien visible près d'Opérations. (4) Contournement des robots : visuellement confirmé (screenshots) — les routes s'écartent des rectangles des avatars via les canaux extra dans routeOrthogonale. (5) Survol arête (getPointAtLength+CTM sur `path[stroke=transparent]`) : relation-tooltip s'affiche avec `IDsource → IDcible / Relation confirmée / preuve / Clic : qualifier`, 13/14 autres arêtes passent à opacité <0.5 (~0.18–0.20), sort de la zone = tooltip disparaît. (6) Clic arête verrouillé : validé sur arete-r5 → panneau droit ouvre `Support → Notifications` avec `Confirmée / Découverte / Source / Confirmée par`, autres arêtes restent estompées 13/14. (7) Flèches d'arrivée : `marker-end` présent sur toutes les arêtes visibles (14/14 après vérification DOM). (8) Stabilité : 0/14 arêtes ont un `d` modifié après toggle couche Écarts off/on, et 0/14 après +/− zoom — le cache `routeStable` fonctionne. (9) Étiquettes de domaine via ViewportPortal (region-header-*) — double-clic sur region-header-reg-distribution → entrée Domaine (zoom-niveau devient 'Domaine Distribution — zoom arrière pour remonter'). (10) Non-régression : outil-edition → mode-edition-chip visible ; drag d'un twin en mode édition maintient 14 arêtes pendant tout le drag + robot-fantome affiché ; recherche 'frau' → résultat Fraude 7312 · Risque ; niveau 3 rendu avec labels 'contestée — contradiction' et 'validation A2A — 82 %'. (11) 0 erreur console. RAS.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/demo/reinitialiser", "issue": "Appelé sans cookies/credentials retourne 403 Forbidden. Non bloquant car l'app front l'appelle authentifié, mais la restauration seed depuis un runner externe requiert la session persona architecte."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_33.json"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Atlas.jsx dépasse 1200 lignes (v29 a ajouté onEdgeMouseEnter/Leave, relSurvolee, edgesVisibles fade). Extraire un hook `useSurvolRelation` et `useCouchesRelations` ramènerait le fichier sous 900 lignes.",
+    "AreteOrthogonale.jsx rend deux `<path>` (transparent hit + visible) : le visible ne fixe pas `pointerEvents: 'none'`, il capte donc aussi les événements. Fonctionnellement correct (RF détecte l'edge click sur les deux), mais pour cohérence sémantique, ajouter `pointerEvents='none'` sur le path visible garantirait que le seul hit-path (10 px de large) capture les événements — plus prévisible pour les micro-arêtes.",
+    "routeur.js `detecterCroisements` a une complexité O(N² × segments²) — acceptable pour 14 arêtes mais devra être surveillée si N > 50 (envisager un R-tree ou une passe par balayage).",
+    "atlasGraph.js `makeEdge` (ancien renderer smoothstep) et `repartirOffsets` ne sont utilisés que pour les corridors niveau 1 : documenter clairement dans le code que ces fonctions sont hors du chemin v29 pour les arêtes 'ortho', sinon un développeur peut confondre les deux moteurs.",
+    "AreteOrthogonale calcule la largeur du label via `label.length * 6.8` — approximation OK monospace mais fragile si la police change. Une capsule `<rect>` dimensionnée par un `<text>` mesuré (getBBox) serait plus robuste."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A — frontend only", "frontend": "100% (10/10 flux v29 validés + non-régression drag/recherche/dblclick domaine OK)"},
+  "test_credentials": "Persona architecte par défaut, pas d'authentification côté UI. Le POST /api/demo/reinitialiser depuis un contexte hors navigateur retourne 403.",
+  "seed_data_creation": "Aucune ; drag effectué en mode édition (positions modifiées non restaurées côté test — POST /api/demo/reinitialiser a renvoyé 403 sans cookies). Le prochain testeur peut reset via l'UI (bouton dev) ou depuis le navigateur authentifié.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Atlas v29 pleinement validé. Détails testids : arete-r1..r14 sont des <g> contenant [0] path transparent (hit width=10 avec pointerEvents=stroke) + [1] path visible + optionnels triangles + circle animé + capsule label. Pour hit-tester une arête : `document.querySelector('[data-testid=arete-XX]').querySelector('path[stroke=\\\"transparent\\\"]').getPointAtLength(L/2)` puis CTM screen. relation-tooltip apparaît uniquement quand un edge est survolé ; le panneau droit d'AtlasPanneau s'ouvre sur clic edge (validé sur r5). Ponts détectables via Q>2 dans le `d`. Stabilité vérifiable en snapshotant tous les `d` avant/après une action puis diff. Le drag exige `outil-edition` (mode-edition-chip). POST /api/demo/reinitialiser requiert une session ; utiliser le navigateur pour reset.",
+  "rca of the issue": "Aucun bug bloquant. Note d'implémentation : le POST /api/demo/reinitialiser en 403 depuis un runner externe est attendu (garde de session). Pas d'action requise."
+}

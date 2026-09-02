@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ReactFlow, Background, BackgroundVariant, Controls, ControlButton, MiniMap, SelectionMode } from "@xyflow/react";
+import { ReactFlow, Background, BackgroundVariant, Controls, ControlButton, MiniMap, SelectionMode, ViewportPortal } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { X, Sparkle, CornersOut, MagnifyingGlass } from "@phosphor-icons/react";
 import { toast } from "sonner";
@@ -10,6 +10,7 @@ import { usePerimetre } from "@/lib/perimetre";
 import { useContexte } from "@/lib/contexte";
 import TwinNode from "@/components/map/TwinNode";
 import RegionNode from "@/components/map/RegionNode";
+import AreteOrthogonale from "@/components/map/AreteOrthogonale";
 import AtlasControle from "@/components/map/AtlasControle";
 import AtlasToolbar from "@/components/map/AtlasToolbar";
 import AtlasLegende from "@/components/map/AtlasLegende";
@@ -20,10 +21,11 @@ import ComposerFlore from "@/components/ComposerFlore";
 import useNavigationAtlas from "@/components/map/useNavigationAtlas";
 import useZoomSemantique from "@/components/map/useZoomSemantique";
 import { NIVEAUX_ZOOM, construireGraphe, statsDuDomaine, idNumerique } from "@/lib/atlasGraph";
-import { couleurDomaine } from "@/lib/domaines";
+import { couleurDomaine, ETATS_RELATION, MATURITES } from "@/lib/domaines";
 import { parseQuand, finDeJournee, fmtDate } from "@/lib/temps";
 
 const nodeTypes = { twin: TwinNode, region: RegionNode };
+const edgeTypes = { ortho: AreteOrthogonale };
 
 export default function Atlas() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -50,11 +52,14 @@ export default function Atlas() {
   const [posOverrides, setPosOverrides] = useState({});
   const [epingle, setEpingle] = useState(null); // jumeau épinglé (panneau flottant persistant)
   const [survolJumeau, setSurvolJumeau] = useState(null);
+  const [relSurvolee, setRelSurvolee] = useState(null); // relation survolée (arête)
+  const [relTooltipPos, setRelTooltipPos] = useState(null);
   const [couchesRel, setCouchesRel] = useState({ bcm: true, realite: true, ecarts: true });
   const [recherche, setRecherche] = useState("");
   const carteRef = useRef(null);
   const [amorce, setAmorce] = useState(0);
   const [mesures, setMesures] = useState({}); // dimensions mesurées par React Flow, réinjectées dans le graphe
+  const [zoomActuel, setZoomActuel] = useState(1);
   const [regionSurvolee, setRegionSurvolee] = useState(null); // membrane survolée {id, label} (proximité frontière)
   const [regionTooltip, setRegionTooltip] = useState(null);
   const [modeEdition, setModeEdition] = useState(false); // déplacement des robots uniquement en mode explicite
@@ -333,6 +338,7 @@ export default function Atlas() {
       mesh, situation, focus, vueActive, perimetreTravail,
       jumeauFocus, domaineInterne, posOverrides, compteurs, halo, selection,
       zoomNiveau, relFocus, focusCarte, domDe, statsRegions, temps,
+      zoomFort: zoomActuel >= 1.5,
     });
     // Conserve les dimensions mesurées par React Flow : le graphe est reconstruit à chaque
     // tick de drag — sans cela les nœuds perdent leur mesure et les arêtes disparaissent.
@@ -366,6 +372,14 @@ export default function Atlas() {
       if (n.type === "twin" && regionSurvolee && n.data.jumeau && !n.data.jumeau.porte && n.data.jumeau.domaine !== regionSurvolee.label) {
         n = { ...n, data: { ...n.data, adouci: true } };
       }
+      // Robots source/cible de la relation survolée ou sélectionnée : anneau turquoise
+      const relActive = relSurvolee || selectedRelation?.id;
+      if (n.type === "twin" && relActive && mesh) {
+        const rel = mesh.relations.find((r) => r.id === relActive);
+        if (rel && n.data.jumeau && (rel.source === n.data.jumeau.id || rel.cible === n.data.jumeau.id)) {
+          n = { ...n, data: { ...n.data, relLiee: true } };
+        }
+      }
       const prev = parId.get(n.id);
       const dim = mesures[n.id];
       const base = prev?.measured ? { ...n, measured: prev.measured, dragging: prev.dragging || undefined } : n;
@@ -373,7 +387,7 @@ export default function Atlas() {
     });
     ciblesCoques.current = nouvellesCibles;
     return g;
-  }, [mesh, focus, situation, halo, compteurs, selection, relFocus, zoomNiveau, vueActive, posOverrides, domaineSel, domaineInterne, jumeauFocus, perimetreTravail, domDe, statsRegions, focusCarte, temps, amorce, mesures, regionSurvolee, tickCoques]);
+  }, [mesh, focus, situation, halo, compteurs, selection, relFocus, zoomNiveau, vueActive, posOverrides, domaineSel, domaineInterne, jumeauFocus, perimetreTravail, domDe, statsRegions, focusCarte, temps, amorce, mesures, regionSurvolee, tickCoques, relSurvolee, selectedRelation, zoomActuel]);
 
   // Couches de relations (BCM déclaré / Réalité découverte / Écarts) + accentuation au survol/épinglage
   const edgesVisibles = useMemo(() => {
@@ -389,11 +403,22 @@ export default function Atlas() {
       es = es.map((e) =>
         e.source === actif || e.target === actif || e.source === `voisin-${actif}` || e.target === `voisin-${actif}`
           ? { ...e, zIndex: 20, style: { ...e.style, strokeWidth: (e.style?.strokeWidth || 1.5) + 1, opacity: 1 } }
-          : { ...e, label: undefined, style: { ...e.style, opacity: 0.12 } }
+          : { ...e, label: undefined, data: { ...e.data, estompee: true }, style: { ...e.style, opacity: 0.12 } }
       );
     }
+    // Survol/sélection d'une relation : trajet mis en avant, les autres estompées (15–30 % d'opacité)
+    const relActive = relSurvolee || selectedRelation?.id;
+    if (relActive) {
+      es = es.map((e) =>
+        e.id === relActive
+          ? { ...e, zIndex: 30, data: { ...e.data, survolee: true, estompee: false }, style: { ...e.style, opacity: 1 } }
+          : { ...e, data: { ...e.data, estompee: true }, style: { ...e.style, opacity: 0.2 } }
+      );
+      // la relation active se dessine au-dessus des autres
+      es = [...es.filter((e) => e.id !== relActive), ...es.filter((e) => e.id === relActive)];
+    }
     return es;
-  }, [edges, couchesRel, epingle, survolJumeau]);
+  }, [edges, couchesRel, epingle, survolJumeau, relSurvolee, selectedRelation]);
 
   // Jumeau survolé ou épinglé → panneau flottant à gauche
   const jumeauSurvole = useMemo(() => {
@@ -487,6 +512,7 @@ export default function Atlas() {
     if (!rfRef.current || !mesh || jumeauFocus) return;
     const rect = carteRef.current?.getBoundingClientRect();
     if (!rect) return;
+    if (relSurvolee) setRelTooltipPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
     const p = rfRef.current.screenToFlowPosition({ x: e.clientX, y: e.clientY });
     const zoom = rfRef.current.getZoom() || 1;
     let trouve = null;
@@ -522,6 +548,10 @@ export default function Atlas() {
   // Inertie de déplacement : échantillonnage du viewport, décélération progressive au relâchement
   const surMove = (e, vp) => {
     onMove(e, vp);
+    setZoomActuel((z) => {
+      const arr = Math.round(vp.zoom * 20) / 20;
+      return Math.abs(arr - z) >= 0.05 ? arr : z;
+    });
     if (inertie.current) return;
     const t = Date.now();
     mouvements.current.push({ t, x: vp.x, y: vp.y, zoom: vp.zoom });
@@ -676,6 +706,7 @@ export default function Atlas() {
         nodes={nodes}
         edges={edgesVisibles}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         fitView
         fitViewOptions={{ padding: 0.15 }}
         minZoom={0.3}
@@ -766,6 +797,12 @@ export default function Atlas() {
           setSelected(null);
           setOnglet("detail");
         }}
+        onEdgeMouseEnter={(e, edge) => {
+          setRelSurvolee(edge.id);
+          const rect = carteRef.current?.getBoundingClientRect();
+          if (rect) setRelTooltipPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+        }}
+        onEdgeMouseLeave={() => { setRelSurvolee(null); setRelTooltipPos(null); }}
         onPaneClick={(e) => {
           // Double-clic sur une zone vide : zoom centré sur le pointeur (façon Google Maps)
           const dcP = dernierClicPane.current;
@@ -818,7 +855,79 @@ export default function Atlas() {
           maskColor="rgba(247,247,246,0.6)"
           data-testid="minimap"
         />
+        {/* Étiquettes de domaines — ViewportPortal, à l'intérieur des membranes sans chevaucher les flux */}
+        <ViewportPortal>
+          {nodes.filter((n) => n.type === "region").map((n) => {
+            const d = n.data;
+            const m = d.maturite;
+            const mc = m ? MATURITES[m.niveau] || "#71716D" : null;
+            const sx = d.w / (d.wCible || d.w);
+            const sy = d.h / (d.hCible || d.h);
+            const lx = n.position.x + (d.labelX ?? d.w / 2) * sx;
+            const ly = n.position.y + (d.labelY ?? 30) * sy;
+            return (
+              <div
+                key={n.id}
+                className="nopan"
+                style={{ position: "absolute", left: lx, top: ly, transform: "translate(-50%, -50%)", pointerEvents: "auto", cursor: "pointer" }}
+                title="Clic : sélectionner le domaine · Double-clic : entrer dans le domaine"
+                data-testid={`region-header-${d.id}`}
+                onClick={() => {
+                  setSelected(null);
+                  setSelectedRelation(null);
+                  setDomaineSel(d.label);
+                  setOnglet("detail");
+                  majUrl({ domaine: d.label, sel: null, ...(domaineInterne ? {} : { interne: null }) });
+                }}
+                onDoubleClick={() => { if (!domaineInterne && !jumeauFocus) entrerDomaine(d.label); }}
+              >
+                <div className="flex flex-col items-center gap-0.5">
+                  <div className="flex items-center justify-center gap-2">
+                    {d.halo && (
+                      <span className="halo-anim h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: d.couleur }} data-testid={`region-activite-${d.id}`} />
+                    )}
+                    <span className="whitespace-nowrap rounded bg-white/60 px-1.5 py-0.5 font-code text-[11px] font-semibold uppercase tracking-[0.25em] backdrop-blur-[2px]" style={{ color: d.couleur }}>
+                      {d.label}
+                    </span>
+                  </div>
+                  {mc && !d.macro && (
+                    <span className="rounded-full border bg-white/80 px-1.5 py-0.5 font-code text-[8px] uppercase tracking-wider" style={{ color: mc, borderColor: `${mc}44` }}>
+                      {m.niveau}
+                    </span>
+                  )}
+                </div>
+                {d.macro && m && (
+                  <div className="mt-1 flex items-center justify-center gap-2 font-code text-[10px] text-[#52524F]" data-testid={`region-macro-${d.id}`}>
+                    <span>{m.jumeaux} jumeau{m.jumeaux > 1 ? "x" : ""}</span>
+                    <span className="text-[#71716D]">·</span>
+                    <span>{d.flux ?? 0} flux</span>
+                    <span className="text-[#71716D]">·</span>
+                    <span className={(d.ecarts ?? 0) > 0 ? "text-[#D97706]" : ""}>{d.ecarts ?? 0} écart{(d.ecarts ?? 0) > 1 ? "s" : ""}</span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </ViewportPortal>
       </ReactFlow>
+
+      {/* Marqueurs de flèches partagés par les arêtes orthogonales */}
+      <svg width="0" height="0" style={{ position: "absolute" }}>
+        <defs>
+          <marker id="marqueur-ardoise" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="rgba(17,17,16,0.5)" />
+          </marker>
+          <marker id="marqueur-teal" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="#0E7490" />
+          </marker>
+          <marker id="marqueur-orange" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="#D97706" />
+          </marker>
+          <marker id="marqueur-violet" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="#6D28D9" />
+          </marker>
+        </defs>
+      </svg>
 
       {/* Sélecteur de couches de relations + recherche */}
       <div className={`pointer-events-none absolute left-32 top-3 z-10 flex items-start justify-between gap-3 transition-all ${selected || selectedRelation || domaineSel ? "right-[400px]" : "right-24"}`}>
@@ -886,6 +995,10 @@ export default function Atlas() {
             </div>
           </div>
           <dl className="mt-3 space-y-1.5 border-t border-[#F0F0EE] pt-3 text-xs">
+            <div className="flex items-center justify-between">
+              <dt className="text-[#71716D]">Statut</dt>
+              <dd className="font-code font-semibold text-[#111110]" data-testid="panneau-jumeau-statut">{jumeauSurvole.statut}</dd>
+            </div>
             <div className="flex items-center justify-between">
               <dt className="text-[#71716D]">Confiance</dt>
               <dd className="font-code font-semibold text-[#0E7490]" data-testid="panneau-jumeau-confiance">{jumeauSurvole.confiance?.valeur ?? jumeauSurvole.couverture ?? "—"} %</dd>
@@ -1045,6 +1158,32 @@ export default function Atlas() {
 
       <AtlasLegende />
 
+      {/* Infobulle de relation — survol d'une arête, près du pointeur */}
+      {relSurvolee && !selectedRelation && relTooltipPos && mesh && (() => {
+        const r = mesh.relations.find((x) => x.id === relSurvolee);
+        if (!r) return null;
+        const e = edgesVisibles.find((x) => x.id === relSurvolee);
+        const etat = ETATS_RELATION[r.etat] || { label: r.etat, couleur: "#71716D" };
+        return (
+          <div
+            className="pointer-events-none absolute z-30 w-56 rounded-xl border border-[#E5E5E3] bg-white p-3 shadow-lg"
+            style={{ left: Math.min(relTooltipPos.x + 14, (carteRef.current?.clientWidth || 1200) - 240), top: Math.max(relTooltipPos.y + 14, 8) }}
+            data-testid="relation-tooltip"
+          >
+            <div className="font-code text-[11px] font-semibold text-[#111110]">
+              {idNumerique(r.source)} → {idNumerique(r.cible)}
+            </div>
+            <div className="mt-1.5 space-y-0.5 font-code text-[10px] text-[#52524F]">
+              <div style={{ color: etat.couleur }}>Relation {etat.label.toLowerCase()}</div>
+              {e?.data?.label && <div>{e.data.label}</div>}
+              {r.confiance != null && <div>Confiance : {r.confiance} %</div>}
+              {(r.claims?.length ?? 0) > 0 && <div>{r.claims.length} preuve{r.claims.length > 1 ? "s" : ""}</div>}
+            </div>
+            <div className="mt-2 font-code text-[9px] text-[#0E7490]">Clic : qualifier la relation →</div>
+          </div>
+        );
+      })()}
+
       {/* Infobulle de membrane — proche de la frontière survolée */}
       {regionTooltip && regionSurvolee && (
         <div
@@ -1081,12 +1220,12 @@ export default function Atlas() {
         confirmerRelation={confirmerRelation}
         eventsVisibles={eventsVisibles} jumeauPar={jumeauPar}
       />
-    </div>
 
-    {/* Composer compact — place réservée dans le layout, jamais flottant au-dessus de la carte */}
-    <div className="shrink-0 border-t border-[#E5E5E3] bg-white px-4 py-2.5" data-testid="atlas-composer-zone">
-      <div className="mx-auto max-w-3xl">
-        <ComposerFlore compact placeholder="Interrogez cette carte…" testidPrefix="atlas-composer" />
+      {/* Composer cartographique — flottant, repliable, au-dessus de la carte */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-center" data-testid="atlas-composer-zone">
+        <div className="pointer-events-auto w-[min(560px,92%)] opacity-95 transition-opacity hover:opacity-100">
+          <ComposerFlore compact flottant placeholder="Interrogez cette carte…" testidPrefix="atlas-composer" />
+        </div>
       </div>
     </div>
     </div>

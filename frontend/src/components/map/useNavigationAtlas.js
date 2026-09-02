@@ -29,11 +29,16 @@ export default function useNavigationAtlas({
       setFocusVisuel({ type: "domaine", label: niveau.label });
       majUrl({ domaine: niveau.label, interne: "1", jumeau: null, sel: null });
       const reg = mesh?.regions?.find((r) => r.label === niveau.label);
-      if (reg && rfRef.current) {
-        const ray = Math.max(reg.w, reg.h) / 2 + 130;
-        const cx = reg.x + reg.w / 2;
-        const cy = reg.y + reg.h / 2;
-        rfRef.current.fitBounds({ x: cx - ray - 120, y: cy - ray - 120, width: 2 * (ray + 120), height: 2 * (ray + 120) }, { duration: 800 });
+      const membres = mesh?.jumeaux.filter((j) => j.domaine === niveau.label && !j.anonyme) || [];
+      if (membres.length && rfRef.current) {
+        // Fit bounds sur les membres réels + portes externes en périphérie, marge ~15 %
+        const xs = membres.map((j) => (posOverrides[j.id] || j.position).x);
+        const ys = membres.map((j) => (posOverrides[j.id] || j.position).y);
+        const x0 = Math.min(Math.min(...xs) - 120, reg ? reg.x - 310 : Infinity) - 70;
+        const x1 = Math.max(Math.max(...xs) + 190, reg ? reg.x + reg.w + 40 : -Infinity) + 70;
+        const y0 = Math.min(...ys) - 120;
+        const y1 = Math.max(...ys) + 150;
+        rfRef.current.fitBounds({ x: x0, y: y0, width: x1 - x0, height: y1 - y0 }, { duration: 800, maxZoom: 1.35 });
       }
     } else if (niveau.type === "jumeau") {
       const j = mesh?.jumeaux.find((x) => x.id === niveau.id);

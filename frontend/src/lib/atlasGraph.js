@@ -1,5 +1,7 @@
 import { MarkerType } from "@xyflow/react";
 import concaveman from "concaveman";
+import { couleurDomaine } from "@/lib/domaines";
+import { choixCotes, routeStable, detecterCroisements, decalagesParalleles } from "./routeur";
 
 export const COUCHES = [
   ["operationnelle", "Opérationnelle", "#3730A3"],
@@ -66,9 +68,9 @@ function arrondiCoins(pts, r = 12) {
   return `${d} Z`;
 }
 
-export function coqueOrganique(centres, marge = 42) {
+export function coqueOrganique(centres, marge = 50) {
   if (!centres.length) return null;
-  // Chaque avatar est gonflé (rayon ≈ avatar + 18 px) : la membrane colle aux robots extrêmes
+  // Chaque avatar est gonflé (rayon ≈ avatar + 26 px) : membrane territoriale, marge généreuse
   const gonfle = [];
   centres.forEach((p) => {
     for (let k = 0; k < 8; k++) {
@@ -77,14 +79,13 @@ export function coqueOrganique(centres, marge = 42) {
     }
   });
   let poly;
-  if (centres.length < 3) {
+  try {
+    // concaveman aussi à 2 membres : sommets polygonaux perceptibles au lieu d'une capsule lisse
+    poly = centres.length === 1
+      ? hullConvexe(gonfle.map(([x, y]) => ({ x, y })))
+      : concaveman(gonfle, 2.2, 52).map(([x, y]) => ({ x, y }));
+  } catch {
     poly = hullConvexe(gonfle.map(([x, y]) => ({ x, y })));
-  } else {
-    try {
-      poly = concaveman(gonfle, 2.2, 52).map(([x, y]) => ({ x, y }));
-    } catch {
-      poly = hullConvexe(gonfle.map(([x, y]) => ({ x, y })));
-    }
   }
   if (poly.length < 3) return null;
   const cx = centres.reduce((a, p) => a + p.x, 0) / centres.length;
@@ -94,6 +95,23 @@ export function coqueOrganique(centres, marge = 42) {
   const x0 = Math.min(...xs);
   const y0 = Math.min(...ys);
   const rel = poly.map((p) => ({ x: p.x - x0, y: p.y - y0 }));
+  // Titre du domaine : au centre pour un territoire étendu, décalé perpendiculairement au flux pour 2 membres
+  let labelX;
+  let labelY;
+  if (centres.length === 1) {
+    labelX = centres[0].x - x0;
+    labelY = centres[0].y - y0 - 50;
+  } else if (centres.length === 2) {
+    const [a, b] = centres;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const L = Math.hypot(dx, dy) || 1;
+    labelX = (a.x + b.x) / 2 - x0 + (-dy / L) * 32;
+    labelY = (a.y + b.y) / 2 - y0 + (dx / L) * 32;
+  } else {
+    labelX = cx - x0;
+    labelY = cy - y0;
+  }
   return {
     x: x0,
     y: y0,
@@ -101,7 +119,8 @@ export function coqueOrganique(centres, marge = 42) {
     h: Math.max(...ys) - y0,
     path: arrondiCoins(rel, 14),
     points: rel,
-    labelX: cx - x0,
+    labelX,
+    labelY,
   };
 }
 
@@ -124,6 +143,77 @@ export const styleParEtat = (r) => {
       return { stroke: r.active ? "#3730A3" : "rgba(17,17,16,0.45)", strokeWidth: 1.3, opacity: r.active ? 0.9 : 0.6 };
   }
 };
+
+// --- Routage orthogonal dédié (moteur maison) ---
+const PRIORITES = { supposee: 2, validation: 2.5, observee: 3, confirmee: 4, obsolete: 5 };
+
+// Centre de l'avatar (ou de la pastille) selon la variante de nœud
+function ancreJumeau(j, pos) {
+  if (j?.porte) return { x: pos.x + 30, y: pos.y + 8, marge: 12 };
+  if (j?.anonyme) return { x: pos.x + 30, y: pos.y + 10, marge: 12 };
+  return { x: pos.x + 30, y: pos.y + 40, marge: 26 };
+}
+
+// Obstacles = rectangles des robots (avatar + App ID + dégagement), extrémités exclues
+function obstaclesDe(ns, exclure) {
+  return ns
+    .filter((n) => n.type === "twin" && !n.data?.jumeau?.porte && !n.data?.jumeau?.anonyme && !exclure.has(n.id))
+    .map((n) => ({ x0: n.position.x - 16, y0: n.position.y - 8, x1: n.position.x + 76, y1: n.position.y + 84 }));
+}
+
+// Fabrique d'arêtes orthogonales : ports directionnels, corridors, ponts, cache de stabilité
+function fabriqueOrtho(relations, ns, posDe, niveau, zoomFort = false) {
+  const jumeauxParId = {};
+  ns.forEach((n) => {
+    if (n.data?.jumeau) jumeauxParId[n.id] = n.data.jumeau;
+  });
+  const rels = relations.filter((r) => posDe[r.source] && posDe[r.cible]);
+  const choix = {};
+  rels.forEach((r) => {
+    choix[r.id] = choixCotes(ancreJumeau(jumeauxParId[r.source], posDe[r.source]), ancreJumeau(jumeauxParId[r.cible], posDe[r.cible]));
+  });
+  const decalages = decalagesParalleles(rels, choix);
+  const routes = [];
+  const edges = [];
+  rels.forEach((r) => {
+    const cs = ancreJumeau(jumeauxParId[r.source], posDe[r.source]);
+    const ct = ancreJumeau(jumeauxParId[r.cible], posDe[r.cible]);
+    const obstacles = obstaclesDe(ns, new Set([r.source, r.cible]));
+    const points = routeStable(r.id, cs, ct, choix[r.id][0], choix[r.id][1], obstacles, decalages[r.id] || 0);
+    routes.push({ id: r.id, points, priorite: PRIORITES[r.etat] ?? 4 });
+    const bidi = relations.some((o) => o.source === r.cible && o.cible === r.source && o.id !== r.id);
+    const label =
+      r.etat === "validation"
+        ? `validation A2A${r.confiance ? ` — ${r.confiance} %` : ""}`
+        : r.etat === "contestee"
+          ? "contestée — contradiction"
+          : r.label;
+    edges.push({
+      id: r.id,
+      source: r.source,
+      target: r.cible,
+      sourceHandle: `s-${choix[r.id][0]}`,
+      targetHandle: `t-${choix[r.id][1]}`,
+      type: "ortho",
+      data: {
+        etat: r.etat,
+        restreinte: !!r.restreinte,
+        points,
+        label,
+        confiance: r.confiance,
+        bidi,
+        niveau,
+        zoomFort,
+        couleurCible: couleurDomaine(jumeauxParId[r.cible]?.domaine),
+      },
+    });
+  });
+  const sauts = detecterCroisements(routes);
+  edges.forEach((e) => {
+    if (sauts[e.id]?.length) e.data.sauts = sauts[e.id];
+  });
+  return edges;
+}
 
 // Ports directionnels : source et cible s'attachent côté gauche ou droit selon la géographie
 export const makeEdge = (r, niveau, positions) => {
@@ -242,7 +332,7 @@ export function statsDuDomaine(mesh, situations, domDe, label) {
 export function construireGraphe({
   mesh, situation, focus, vueActive, perimetreTravail,
   jumeauFocus, domaineInterne, posOverrides, compteurs, halo, selection,
-  zoomNiveau, relFocus, focusCarte, domDe, statsRegions, temps,
+  zoomNiveau, relFocus, focusCarte, domDe, statsRegions, temps, zoomFort,
 }) {
   if (!mesh) return { nodes: [], edges: [] };
   const implique = situation?.jumeaux || [];
@@ -309,22 +399,13 @@ export function construireGraphe({
       });
     });
     const posFocus = Object.fromEntries(nsF.map((n) => [n.id, n.position]));
-    const esF = relsV.map((r) => {
-      const e = makeEdge(r, 3);
-      const source = r.source === jf.id ? jf.id : `voisin-${r.source}`;
-      const target = r.cible === jf.id ? jf.id : `voisin-${r.cible}`;
-      const droite = posFocus[target].x - posFocus[source].x >= 0;
-      return {
-        ...e,
-        source,
-        target,
-        sourceHandle: droite ? "s-r" : "s-l",
-        targetHandle: droite ? "t-l" : "t-r",
-        animated: true,
-        style: { ...e.style, strokeWidth: 2.4, opacity: 1 },
-      };
-    });
-    return { nodes: nsF, edges: repartirOffsets(appliquerTemps(esF, temps)) };
+    const relsF = relsV.map((r) => ({
+      ...r,
+      source: r.source === jf.id ? jf.id : `voisin-${r.source}`,
+      cible: r.cible === jf.id ? jf.id : `voisin-${r.cible}`,
+    }));
+    const esF = fabriqueOrtho(relsF, nsF, posFocus, 3, true).map((e) => ({ ...e, data: { ...e.data, focus: true } }));
+    return { nodes: nsF, edges: appliquerTemps(esF, temps) };
   }
 
   // Vue interne d'un domaine : jumeaux du domaine + portes externes
@@ -396,21 +477,21 @@ export function construireGraphe({
       }))
     );
     const posInt = Object.fromEntries(nsInt.filter((n) => n.type === "twin").map((n) => [n.id, n.position]));
-    const esInt = [];
+    const relsInt = [];
     mesh.relations.forEach((r) => {
       const a = domDe[r.source] === domaineInterne;
       const b = domDe[r.cible] === domaineInterne;
       if (a && b) {
-        esInt.push(makeEdge(r, zoomNiveau, posInt));
+        relsInt.push(r);
       } else if (a !== b) {
         const ext = a ? domDe[r.cible] : domDe[r.source];
         const pid = porteIds[ext];
         if (!pid) return;
-        const e = makeEdge({ ...r, id: `${r.id}-porte`, source: a ? r.source : r.cible, cible: pid }, zoomNiveau, posInt);
-        esInt.push(e);
+        relsInt.push({ ...r, id: `${r.id}-porte`, source: a ? r.source : r.cible, cible: pid });
       }
     });
-    return { nodes: nsInt, edges: repartirOffsets(appliquerTemps(esInt, temps)) };
+    const esInt = fabriqueOrtho(relsInt, nsInt, posInt, 2, false);
+    return { nodes: nsInt, edges: appliquerTemps(esInt, temps) };
   }
 
   // Focus contextuel : sélection → voisins éclairés, reste translucide
@@ -496,10 +577,15 @@ export function construireGraphe({
       };
     });
   } else {
-    es = mesh.relations
-      .filter((r) => (situation && implique.length ? implique.includes(r.source) && implique.includes(r.cible) : true))
-      .filter((r) => !focus || r.source === focus || r.cible === focus)
-      .map((r) => makeEdge(r, zoomNiveau, posMain));
+    es = fabriqueOrtho(
+      mesh.relations
+        .filter((r) => (situation && implique.length ? implique.includes(r.source) && implique.includes(r.cible) : true))
+        .filter((r) => !focus || r.source === focus || r.cible === focus),
+      ns,
+      posMain,
+      zoomNiveau,
+      zoomFort
+    );
     if (vueActive?.type === "relations_non_confirmees") {
       es = es.map((e) =>
         e.data?.etat === "confirmee" ? { ...e, animated: false, style: { ...e.style, opacity: 0.1 } } : e
@@ -523,5 +609,5 @@ export function construireGraphe({
       .map((n) => ({ ...n, data: { ...n.data, macro: true } }));
     return { nodes: macro, edges: repartirOffsets(appliquerTemps(es, temps)) };
   }
-  return { nodes: ns, edges: repartirOffsets(appliquerTemps(es, temps)) };
+  return { nodes: ns, edges: appliquerTemps(es, temps) };
 }

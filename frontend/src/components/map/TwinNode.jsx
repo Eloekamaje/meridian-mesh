@@ -6,7 +6,7 @@ import { idNumerique } from "@/lib/atlasGraph";
 const ROBOT = "/assets/robot-jumeau.jpg";
 
 // Avatar robot du jumeau : tête blanche arrondie, écran facial sombre, yeux turquoise, antenne
-function AvatarJumeau({ selected, actif, grand, ports }) {
+function AvatarJumeau({ selected, actif, grand, ports, relLiee }) {
   const cls = "!h-2 !w-2 !min-w-0 !border-0 !bg-transparent";
   const taille = grand ? "h-14 w-14" : "h-12 w-12";
   return (
@@ -15,6 +15,10 @@ function AvatarJumeau({ selected, actif, grand, ports }) {
       <Handle type="source" id="s-l" position={Position.Left} className={cls} style={{ left: -2, top: "46%" }} />
       <Handle type="target" id="t-r" position={Position.Right} className={cls} style={{ right: -2, top: "46%" }} />
       <Handle type="source" id="s-r" position={Position.Right} className={cls} style={{ right: -2, top: "46%" }} />
+      <Handle type="target" id="t-t" position={Position.Top} className={cls} style={{ top: -2, left: "46%" }} />
+      <Handle type="source" id="s-t" position={Position.Top} className={cls} style={{ top: -2, left: "46%" }} />
+      <Handle type="target" id="t-b" position={Position.Bottom} className={cls} style={{ bottom: -2, left: "46%" }} />
+      <Handle type="source" id="s-b" position={Position.Bottom} className={cls} style={{ bottom: -2, left: "46%" }} />
       {ports && (
         <>
           <span className="absolute -left-1 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-[#71716D]" data-testid="port-entree" />
@@ -28,7 +32,9 @@ function AvatarJumeau({ selected, actif, grand, ports }) {
         className={`relative flex ${taille} items-center justify-center overflow-hidden rounded-full bg-white transition-shadow duration-200 ${
           selected
             ? "shadow-[0_0_18px_rgba(14,116,144,0.5)] ring-2 ring-[#0E7490]"
-            : "shadow-sm ring-1 ring-black/10 group-hover:shadow-[0_0_14px_rgba(14,116,144,0.45)] group-hover:ring-2 group-hover:ring-[#0E7490]/70"
+            : relLiee
+              ? "shadow-[0_0_14px_rgba(14,116,144,0.4)] ring-2 ring-[#0E7490]/70"
+              : "shadow-sm ring-1 ring-black/10 group-hover:shadow-[0_0_14px_rgba(14,116,144,0.45)] group-hover:ring-2 group-hover:ring-[#0E7490]/70"
         }`}
       >
         <img src={ROBOT} alt="" draggable={false} className={`${grand ? "h-[3.25rem] w-[3.25rem]" : "h-11 w-11"} scale-[1.65] object-cover`} />
@@ -82,14 +88,11 @@ export default function TwinNode({ data, selected }) {
         )}
         <div className={`flex flex-col items-center gap-0.5 transition-opacity duration-500 ${data.dim ? "opacity-15" : "opacity-100"}`}>
           <PointJumeau couleur={c} dashed />
-          <div className="text-center">
-            <div className="flex items-center justify-center gap-1.5 whitespace-nowrap text-[12px] font-semibold" style={{ color: c }}>
-              {ap?.restreint && <LockSimple size={11} className="shrink-0 text-[#71716D]" />}
-              ⇢ {j.nom}
-            </div>
-            <div className="font-code text-[8px] uppercase tracking-[0.18em] text-[#71716D]">
-              {ap?.restreint ? "domaine restreint" : "porte externe"}
-            </div>
+          {/* Porte externe : connecteur compact en périphérie — nom du domaine cible + compteur */}
+          <div className="flex items-center gap-1.5 whitespace-nowrap rounded-full border border-[#E5E5E3] bg-white/85 px-2 py-0.5">
+            {ap?.restreint && <LockSimple size={10} className="shrink-0 text-[#71716D]" />}
+            <span className="font-code text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: c }}>{ap?.domaine || j.nom}</span>
+            <span className="font-code text-[9px] text-[#71716D]">· {ap?.relations ?? 0}</span>
           </div>
         </div>
       </div>
@@ -162,11 +165,15 @@ export default function TwinNode({ data, selected }) {
         <span className="flex items-center gap-1 font-code text-[10px] font-semibold tracking-wide text-[#3F3F3C] transition-colors group-hover:text-[#0E7490]">
           {idNumerique(j.id)}
           {data.evenements > 0 && (
-            <span className="rounded-full bg-[#E5E5E3] px-1 py-px font-code text-[8px] text-[#3F3F3C]">+{data.evenements}</span>
+            <span
+              title={`${data.evenements} événement${data.evenements > 1 ? "s" : ""} récent${data.evenements > 1 ? "s" : ""} observé${data.evenements > 1 ? "s" : ""} par le Mesh`}
+              className="rounded-full bg-[#E5E5E3] px-1 py-px font-code text-[8px] text-[#3F3F3C]"
+            >
+              +{data.evenements}
+            </span>
           )}
-          {j.statut !== "actif" && <span className="font-code text-[8px] text-[#B45309]">{j.statut}</span>}
         </span>
-        <AvatarJumeau actif={j.statut === "actif"} selected={selected} grand={niveau3} ports={niveau3} />
+        <AvatarJumeau actif={j.statut === "actif"} selected={selected} grand={niveau3} ports={niveau3} relLiee={data.relLiee} />
         {niveau3 && (
           <span className="whitespace-nowrap text-[11px] font-semibold text-[#111110]" data-testid={`twin-nom-${j.id}`}>{j.nom}</span>
         )}

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, SquaresFour, Microphone, PaperPlaneTilt, X, Compass, ArrowsLeftRight, Eye, Scales, FileText, ChartLineUp, Warning } from "@phosphor-icons/react";
+import { Plus, SquaresFour, Microphone, PaperPlaneTilt, X, Compass, ArrowsLeftRight, Eye, Scales, FileText, ChartLineUp, Warning, Sparkle, CaretDown } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useMesh } from "@/lib/mesh";
@@ -16,8 +16,8 @@ const CAPACITES = [
   { id: "synthese", label: "Créer une synthèse", icon: FileText },
 ];
 
-// Composer unique de Flore — jamais flottant, une place réservée dans le layout
-export default function ComposerFlore({ placeholder = "Demandez à Flore…", compact = false, onEnvoyer, testidPrefix = "composer" }) {
+// Composer unique de Flore — ancré dans le layout, ou flottant repliable (carte)
+export default function ComposerFlore({ placeholder = "Demandez à Flore…", compact = false, onEnvoyer, testidPrefix = "composer", flottant = false }) {
   const navigate = useNavigate();
   const { mesh } = useMesh();
   const { selection, retirerJumeau, ouvrirFlore } = useContexte();
@@ -25,7 +25,9 @@ export default function ComposerFlore({ placeholder = "Demandez à Flore…", co
   const [menuContexte, setMenuContexte] = useState(false);
   const [menuCapacites, setMenuCapacites] = useState(false);
   const [chips, setChips] = useState([]); // contexte attaché hors sélection Atlas
+  const [replie, setReplie] = useState(flottant);
   const refMenus = useRef(null);
+  const refInput = useRef(null);
 
   useEffect(() => {
     const fermer = (e) => {
@@ -79,6 +81,21 @@ export default function ComposerFlore({ placeholder = "Demandez à Flore…", co
     if (!chips.some((c) => c.label === label)) setChips([...chips, { label }]);
     setMenuContexte(false);
   };
+
+  // Mode flottant repliable (Atlas) : une pill discrète qui s'étend à la saisie
+  if (flottant && replie) {
+    return (
+      <button
+        onClick={() => { setReplie(false); setTimeout(() => document.querySelector(`[data-testid="${testidPrefix}-input"]`)?.focus(), 60); }}
+        data-testid={`${testidPrefix}-deplie`}
+        className="glass flex w-full items-center gap-2 rounded-full px-4 py-2.5 text-left shadow-lg transition-shadow hover:shadow-xl"
+      >
+        <Sparkle size={13} weight="fill" className="shrink-0 text-[#3730A3]" />
+        <span className="flex-1 text-sm text-[#71716D]">{placeholder}</span>
+        <PaperPlaneTilt size={13} className="shrink-0 text-[#71716D]" />
+      </button>
+    );
+  }
 
   return (
     <div className={compact ? "" : "w-full"} data-testid={testidPrefix}>
@@ -156,6 +173,11 @@ export default function ComposerFlore({ placeholder = "Demandez à Flore…", co
           <button onClick={() => toast.info("La dictée vocale arrive prochainement.")} data-testid={`${testidPrefix}-micro`} title="Dicter (bientôt)" className="flex h-7 w-7 items-center justify-center rounded-full border border-[#E5E5E3] text-[#71716D] transition-colors hover:text-[#111110]">
             <Microphone size={13} />
           </button>
+          {flottant && (
+            <button onClick={() => setReplie(true)} data-testid={`${testidPrefix}-replie`} title="Replier la barre" className="flex h-7 w-7 items-center justify-center rounded-full border border-[#E5E5E3] text-[#71716D] transition-colors hover:text-[#111110]">
+              <CaretDown size={13} />
+            </button>
+          )}
           <button onClick={envoyer} disabled={!texte.trim()} data-testid={`${testidPrefix}-envoyer`} title="Envoyer" className="ml-auto flex h-8 w-8 items-center justify-center rounded-full bg-[#3730A3] text-white transition-colors hover:bg-[#4338CA] disabled:opacity-30">
             <PaperPlaneTilt size={14} weight="fill" />
           </button>
