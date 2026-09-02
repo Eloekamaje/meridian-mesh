@@ -1,5 +1,12 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v26, géographie organique élastique + symbole jumeau)
+- **Demande utilisateur** : les domaines ne sont plus des formes rondes fixes — chaque région est une **coque organique** qui épouse la disposition de ses nœuds internes et se déforme élastiquement (déplacement, ajout, suppression).
+- **`coqueOrganique()` (`atlasGraph.js`)** : chaque nœud membre est gonflé en octogone → enveloppe convexe (monotone chain) → élargie depuis le centroïde → lissée par Catmull-Rom fermé. Calculée dans `construireGraphe` depuis les positions vivantes (`posOverrides`), donc recalculée à chaque drag — la coque suit le nœud déplacé. Fonctionne à 1, 2 ou N membres (vue globale + vue interne de domaine).
+- **`RegionNode.jsx`** : rendu SVG `<path>` (remplissage teinté + contour coloré), titre du domaine positionné au centroïde haut, interactions (clic/double-clic) et testids préservés.
+- **Symbole jumeau** : deux cercles concentriques (l'application + son reflet numérique), couleur de domaine, lueur si sélectionné/dégradé, ping si actif — variantes porte/anonyme en pointillés.
+- Vérifié par navigateur : coques organiques visibles, déformation élastique au drag (avant/après), entrée domaine + portes + fil d'Ariane OK, 0 erreur console.
+
 ## Implémenté (06/2026 — v25, refonte visuelle de l'Atlas sur image de référence utilisateur)
 - **Image de référence fournie par l'utilisateur** (atlas « SI Banque » : points+labels, blobs pastel, flux animés) appliquée à notre Atlas.
 - **Nœuds jumeaux = point + label** (`TwinNode.jsx` réécrit) : anneau coloré par domaine sur fond blanc (halo ping si actif, lueur si sélectionné/dégradé), nom en gras + domaine en petites capitales — fini les cartes rectangulaires de 180 px. Variantes cohérentes : voisin (point + état de relation), porte externe (pointillé), anonyme (cadenas gris). Aperçus au survol, halos, focus ring et testids préservés.

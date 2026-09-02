@@ -6,6 +6,75 @@ export const COUCHES = [
 
 export const NIVEAUX_ZOOM = { 1: "Entreprise", 2: "Domaine", 3: "Jumeau" };
 
+// --- Coque organique : enveloppe convexe des nœuds, gonflée puis lissée (Catmull-Rom fermé) ---
+// Élastique par construction : recalculée à chaque déplacement/ajout/suppression de nœud.
+function hullConvexe(pts) {
+  const P = [...pts].sort((a, b) => a.x - b.x || a.y - b.y);
+  if (P.length <= 2) return P;
+  const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const bas = [];
+  const haut = [];
+  for (const p of P) {
+    while (bas.length >= 2 && cross(bas[bas.length - 2], bas[bas.length - 1], p) <= 0) bas.pop();
+    bas.push(p);
+  }
+  for (let i = P.length - 1; i >= 0; i--) {
+    const p = P[i];
+    while (haut.length >= 2 && cross(haut[haut.length - 2], haut[haut.length - 1], p) <= 0) haut.pop();
+    haut.push(p);
+  }
+  bas.pop();
+  haut.pop();
+  return bas.concat(haut);
+}
+
+function cheminLisse(pts) {
+  const n = pts.length;
+  let d = `M ${pts[0].x} ${pts[0].y}`;
+  for (let i = 0; i < n; i++) {
+    const p0 = pts[(i - 1 + n) % n];
+    const p1 = pts[i];
+    const p2 = pts[(i + 1) % n];
+    const p3 = pts[(i + 2) % n];
+    d += ` C ${p1.x + (p2.x - p0.x) / 6} ${p1.y + (p2.y - p0.y) / 6}, ${p2.x - (p3.x - p1.x) / 6} ${p2.y - (p3.y - p1.y) / 6}, ${p2.x} ${p2.y}`;
+  }
+  return `${d} Z`;
+}
+
+export function coqueOrganique(centres, marge = 110) {
+  if (!centres.length) return null;
+  // Chaque nœud est gonflé en octogone : la coque épouse les points même à 1 ou 2 membres
+  const gonfle = [];
+  const R = marge * 0.72;
+  centres.forEach((p) => {
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * 2 * Math.PI;
+      gonfle.push({ x: p.x + Math.cos(a) * R, y: p.y + Math.sin(a) * R });
+    }
+  });
+  let coque = hullConvexe(gonfle);
+  const cx = centres.reduce((a, p) => a + p.x, 0) / centres.length;
+  const cy = centres.reduce((a, p) => a + p.y, 0) / centres.length;
+  coque = coque.map((p) => {
+    const dx = p.x - cx;
+    const dy = p.y - cy;
+    const d = Math.hypot(dx, dy) || 1;
+    return { x: p.x + (dx / d) * marge * 0.38, y: p.y + (dy / d) * marge * 0.38 };
+  });
+  const xs = coque.map((p) => p.x);
+  const ys = coque.map((p) => p.y);
+  const x0 = Math.min(...xs);
+  const y0 = Math.min(...ys);
+  return {
+    x: x0,
+    y: y0,
+    w: Math.max(...xs) - x0,
+    h: Math.max(...ys) - y0,
+    path: cheminLisse(coque.map((p) => ({ x: p.x - x0, y: p.y - y0 }))),
+    labelX: cx - x0,
+  };
+}
+
 export const styleParEtat = (r) => {
   switch (r.etat) {
     // Réalité découverte : flux de points animés (vert d'eau)
@@ -185,9 +254,15 @@ export function construireGraphe({
     });
     const porteIds = {};
     const portes = Object.keys(extCount);
-    let nsInt = reg
-      ? [{ id: reg.id, type: "region", position: { x: reg.x, y: reg.y }, initialWidth: reg.w, initialHeight: reg.h, data: { ...reg, investigations: statsRegions[reg.label]?.investigations ?? 0, decouvertes: statsRegions[reg.label]?.decouvertes ?? 0, halo: false }, draggable: false, selectable: false, zIndex: -10 }]
-      : [];
+    let nsInt = [];
+    if (reg) {
+      const centres = internes.map((j) => {
+        const p = posOverrides[j.id] || j.position;
+        return { x: p.x + 8, y: p.y + 10 };
+      });
+      const coque = coqueOrganique(centres) || { x: reg.x, y: reg.y, w: reg.w, h: reg.h, path: null, labelX: reg.w / 2 };
+      nsInt = [{ id: reg.id, type: "region", position: { x: coque.x, y: coque.y }, initialWidth: coque.w, initialHeight: coque.h, data: { ...reg, w: coque.w, h: coque.h, path: coque.path, labelX: coque.labelX, investigations: statsRegions[reg.label]?.investigations ?? 0, decouvertes: statsRegions[reg.label]?.decouvertes ?? 0, halo: false }, draggable: false, selectable: false, zIndex: -10 }];
+    }
     portes.forEach((dom, i) => {
       const regExt = (mesh.regions || []).find((r) => r.label === dom);
       const ang = regExt
@@ -255,16 +330,23 @@ export function construireGraphe({
     mesh.jumeaux.forEach((j) => { if (!voisins.has(j.id)) dims.add(j.id); });
   }
 
-  let ns = (mesh.regions || []).map((r) => ({
-    id: r.id, type: "region", position: { x: r.x, y: r.y },
-    initialWidth: r.w,
-    initialHeight: r.h,
-    data: { ...r, investigations: statsRegions[r.label]?.investigations ?? 0, decouvertes: statsRegions[r.label]?.decouvertes ?? 0, halo: !!halo && domDe[halo] === r.label },
-    draggable: false, selectable: false, zIndex: -10,
-  }));
-
   const twins = mesh.jumeaux;
   const entreprise = zoomNiveau === 1;
+
+  let ns = (mesh.regions || []).map((r) => {
+    const centres = twins.filter((j) => domDe[j.id] === r.label).map((j) => {
+      const p = posOverrides[j.id] || j.position;
+      return { x: p.x + 8, y: p.y + 10 };
+    });
+    const coque = coqueOrganique(centres) || { x: r.x, y: r.y, w: r.w, h: r.h, path: null, labelX: r.w / 2 };
+    return {
+      id: r.id, type: "region", position: { x: coque.x, y: coque.y },
+      initialWidth: coque.w,
+      initialHeight: coque.h,
+      data: { ...r, w: coque.w, h: coque.h, path: coque.path, labelX: coque.labelX, investigations: statsRegions[r.label]?.investigations ?? 0, decouvertes: statsRegions[r.label]?.decouvertes ?? 0, halo: !!halo && domDe[halo] === r.label },
+      draggable: false, selectable: false, zIndex: -10,
+    };
+  });
 
   ns = ns.concat(
     twins.map((j) => {

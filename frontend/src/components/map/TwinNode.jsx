@@ -2,7 +2,7 @@ import { Handle, Position } from "@xyflow/react";
 import { LockSimple } from "@phosphor-icons/react";
 import { couleurDomaine, couleurConfiance, ETATS_RELATION } from "@/lib/domaines";
 
-// Nœud jumeau = point + label (métaphore cartographique, pas de carte rectangulaire)
+// Symbole du jumeau : deux cercles concentriques — l'application et son reflet numérique
 function PointJumeau({ couleur, actif, selected, degrade, dashed }) {
   return (
     <span className="relative flex h-4 w-4 shrink-0 items-center justify-center">
@@ -10,12 +10,14 @@ function PointJumeau({ couleur, actif, selected, degrade, dashed }) {
         <span className="absolute inline-flex h-full w-full animate-ping rounded-full opacity-40" style={{ backgroundColor: couleur }} />
       )}
       <span
-        className={`relative inline-flex h-3.5 w-3.5 rounded-full border-2 bg-white ${dashed ? "border-dashed" : ""}`}
+        className={`relative inline-flex h-4 w-4 items-center justify-center rounded-full border-2 bg-white ${dashed ? "border-dashed" : ""}`}
         style={{
           borderColor: couleur,
           boxShadow: selected || degrade ? `0 0 14px ${couleur}55` : "0 1px 3px rgba(17,17,16,0.15)",
         }}
-      />
+      >
+        <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: couleur }} />
+      </span>
     </span>
   );
 }
