@@ -26,8 +26,8 @@ export const NATURES = {
 };
 
 export const ETATS_RELATION = {
-  observee: { label: "Observée", couleur: "rgba(17,17,16,0.45)" },
-  supposee: { label: "Supposée", couleur: "#0E7490" },
+  observee: { label: "Observée", couleur: "#0E7490" },
+  supposee: { label: "Supposée", couleur: "#D97706" },
   validation: { label: "Validation A2A", couleur: "#6D28D9" },
   confirmee: { label: "Confirmée", couleur: "rgba(17,17,16,0.7)" },
   contestee: { label: "Contestée", couleur: "#B91C1C" },

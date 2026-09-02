@@ -2,20 +2,38 @@ import { Handle, Position } from "@xyflow/react";
 import { LockSimple } from "@phosphor-icons/react";
 import { couleurDomaine, couleurConfiance, ETATS_RELATION } from "@/lib/domaines";
 
+// Nœud jumeau = point + label (métaphore cartographique, pas de carte rectangulaire)
+function PointJumeau({ couleur, actif, selected, degrade, dashed }) {
+  return (
+    <span className="relative flex h-4 w-4 shrink-0 items-center justify-center">
+      {actif && (
+        <span className="absolute inline-flex h-full w-full animate-ping rounded-full opacity-40" style={{ backgroundColor: couleur }} />
+      )}
+      <span
+        className={`relative inline-flex h-3.5 w-3.5 rounded-full border-2 bg-white ${dashed ? "border-dashed" : ""}`}
+        style={{
+          borderColor: couleur,
+          boxShadow: selected || degrade ? `0 0 14px ${couleur}55` : "0 1px 3px rgba(17,17,16,0.15)",
+        }}
+      />
+    </span>
+  );
+}
+
 export default function TwinNode({ data, selected }) {
   const j = data.jumeau;
 
   if (j.porte) {
     const ap = data.apercuPorte;
+    const c = couleurDomaine(j.domaine);
     return (
       <div className="group relative" data-testid={`porte-${j.domaine}`}>
-        {/* Aperçu avant navigation (savoir où l'on va) */}
         {ap && (
           <div
             className="pointer-events-none absolute -top-3 left-1/2 z-50 w-[230px] -translate-x-1/2 -translate-y-full rounded-lg border border-[#E5E5E3] bg-white p-3 opacity-0 backdrop-blur-xl transition-opacity duration-200 group-hover:opacity-100"
             data-testid={`porte-apercu-${j.domaine}`}
           >
-            <div className="font-display text-xs font-bold" style={{ color: couleurDomaine(j.domaine) }}>{ap.domaine}</div>
+            <div className="font-display text-xs font-bold" style={{ color: c }}>{ap.domaine}</div>
             <div className="mt-1.5 space-y-0.5 font-code text-[10px] text-[#52524F]">
               <div>{ap.jumeaux} jumeaux accessibles</div>
               <div>{ap.relations} relation(s) avec {ap.domaineFocus}</div>
@@ -26,17 +44,17 @@ export default function TwinNode({ data, selected }) {
             </div>
           </div>
         )}
-        <div
-          className={`w-[200px] rounded-lg border border-dashed bg-white px-3 py-2.5 transition-opacity duration-500 ${data.dim ? "opacity-15" : "opacity-100"}`}
-          style={{ borderColor: `${couleurDomaine(j.domaine)}88` }}
-        >
+        <div className={`flex items-center gap-2 transition-opacity duration-500 ${data.dim ? "opacity-15" : "opacity-100"}`}>
           <Handle type="target" position={Position.Left} className="!h-2 !w-2 !border-0 !bg-transparent" />
-          <div className="flex items-center gap-1.5 font-code text-[10px] font-medium" style={{ color: couleurDomaine(j.domaine) }}>
-            {ap?.restreint && <LockSimple size={11} className="shrink-0 text-[#71716D]" />}
-            ⇢ {j.nom}
-          </div>
-          <div className="mt-1 font-code text-[9px] uppercase tracking-[0.18em] text-[#71716D]">
-            {ap?.restreint ? "domaine restreint" : "porte externe — cliquer pour explorer"}
+          <PointJumeau couleur={c} dashed />
+          <div>
+            <div className="flex items-center gap-1.5 text-[12px] font-semibold" style={{ color: c }}>
+              {ap?.restreint && <LockSimple size={11} className="shrink-0 text-[#71716D]" />}
+              ⇢ {j.nom}
+            </div>
+            <div className="font-code text-[8px] uppercase tracking-[0.18em] text-[#71716D]">
+              {ap?.restreint ? "domaine restreint" : "porte externe"}
+            </div>
           </div>
           <Handle type="source" position={Position.Right} className="!h-2 !w-2 !border-0 !bg-transparent" />
         </div>
@@ -47,9 +65,9 @@ export default function TwinNode({ data, selected }) {
   if (data.voisinRel) {
     const rel = data.voisinRel;
     const etat = ETATS_RELATION[rel.etat] || ETATS_RELATION.confirmee;
+    const c = couleurDomaine(j.domaine);
     return (
       <div className="group relative" data-testid={`voisin-${j.id}`}>
-        {/* Aperçu de la relation au survol */}
         <div
           className="pointer-events-none absolute -top-3 left-1/2 z-50 w-[230px] -translate-x-1/2 -translate-y-full rounded-lg border border-[#E5E5E3] bg-white p-3 opacity-0 backdrop-blur-xl transition-opacity duration-200 group-hover:opacity-100"
           data-testid={`voisin-hover-${j.id}`}
@@ -66,13 +84,13 @@ export default function TwinNode({ data, selected }) {
           </div>
           <div className="mt-2 font-code text-[9px] text-[#0E7490]">Cliquer pour transférer le focus →</div>
         </div>
-        <div className="w-[180px] rounded-lg border border-dashed bg-white px-3 py-2.5" style={{ borderColor: `${couleurDomaine(j.domaine)}77` }}>
+        <div className="flex items-center gap-2">
           <Handle type="target" position={Position.Left} className="!h-2 !w-2 !border-0 !bg-transparent" />
-          <div className="flex items-center gap-2">
-            <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: couleurDomaine(j.domaine) }} />
-            <span className="truncate font-display text-[12px] font-bold text-[#111110]">{j.nom}</span>
+          <PointJumeau couleur={c} />
+          <div>
+            <div className="text-[12px] font-semibold text-[#111110]">{j.nom}</div>
+            <div className="font-code text-[8px] uppercase tracking-[0.15em]" style={{ color: etat.couleur }}>{etat.label}</div>
           </div>
-          <div className="mt-1 font-code text-[9px]" style={{ color: etat.couleur }}>{etat.label}</div>
           <Handle type="source" position={Position.Right} className="!h-2 !w-2 !border-0 !bg-transparent" />
         </div>
       </div>
@@ -82,15 +100,17 @@ export default function TwinNode({ data, selected }) {
   if (j.anonyme) {
     return (
       <div
-        className={`w-[180px] rounded-lg border border-dashed border-[#D4D4D0] bg-white px-3 py-2.5 transition-opacity duration-500 ${data.dim ? "opacity-20" : "opacity-80"}`}
+        className={`flex items-center gap-2 transition-opacity duration-500 ${data.dim ? "opacity-20" : "opacity-75"}`}
         data-testid={`twin-node-${j.id}`}
       >
         <Handle type="target" position={Position.Left} className="!h-2 !w-2 !border-0 !bg-transparent" />
-        <div className="flex items-center gap-2">
-          <LockSimple size={13} className="shrink-0 text-[#71716D]" />
-          <span className="truncate font-code text-[10px] text-[#71716D]">{j.nom}</span>
+        <PointJumeau couleur="#A3A39E" dashed />
+        <div>
+          <div className="flex items-center gap-1.5 font-code text-[10px] text-[#71716D]">
+            <LockSimple size={11} className="shrink-0" /> {j.nom}
+          </div>
+          <div className="font-code text-[8px] uppercase tracking-[0.18em] text-[#71716D]">périmètre restreint</div>
         </div>
-        <div className="mt-1 font-code text-[9px] uppercase tracking-[0.18em] text-[#71716D]">périmètre restreint</div>
         <Handle type="source" position={Position.Right} className="!h-2 !w-2 !border-0 !bg-transparent" />
       </div>
     );
@@ -127,41 +147,29 @@ export default function TwinNode({ data, selected }) {
       </div>
 
       {data.halo && (
-        <span className="halo-anim pointer-events-none absolute -inset-3 rounded-xl" style={{ border: `1.5px solid ${couleur}` }} />
+        <span className="halo-anim pointer-events-none absolute -inset-2 rounded-full" style={{ border: `1.5px solid ${couleur}` }} />
       )}
       {data.focusCentral && (
-        <span className="pointer-events-none absolute -inset-2 rounded-xl border-2" style={{ borderColor: couleur }} data-testid="twin-focus-ring" />
+        <span className="pointer-events-none absolute -inset-1.5 rounded-full border-2" style={{ borderColor: couleur }} data-testid="twin-focus-ring" />
       )}
-      <div
-        className="w-[180px] rounded-lg border bg-white px-3 py-2.5 backdrop-blur-sm transition-colors duration-300"
-        style={{
-          borderColor: selected ? couleur : `${couleur}55`,
-          boxShadow: degrade ? `0 0 26px ${couleur}30` : selected ? `0 0 20px ${couleur}30` : "none",
-        }}
-      >
+
+      <div className="flex items-center gap-2">
         <Handle type="target" position={Position.Left} className="!h-2 !w-2 !border-0 !bg-transparent" />
-        <div className="flex items-center gap-2">
-          <span className="relative flex h-2 w-2 shrink-0">
-            {actif && (
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full opacity-50" style={{ backgroundColor: couleur }} />
+        <PointJumeau couleur={couleur} actif={actif} selected={selected} degrade={degrade} />
+        <div>
+          <div className="flex items-center gap-1.5">
+            <span className="whitespace-nowrap text-[13px] font-semibold leading-tight text-[#111110]">{j.nom}</span>
+            {data.evenements > 0 && (
+              <span className="shrink-0 rounded-full bg-[#E5E5E3] px-1.5 py-0.5 font-code text-[9px] text-[#3F3F3C]">
+                +{data.evenements}
+              </span>
             )}
-            <span className="relative inline-flex h-2 w-2 rounded-full" style={{ backgroundColor: couleur }} />
-          </span>
-          <span className="truncate font-display text-[13px] font-bold text-[#111110]">{j.nom}</span>
-          {data.evenements > 0 && (
-            <span className="ml-auto shrink-0 rounded-full bg-[#E5E5E3] px-1.5 py-0.5 font-code text-[9px] text-[#3F3F3C]">
-              +{data.evenements}
-            </span>
-          )}
-        </div>
-        <div className="mt-1 flex items-center justify-between">
-          <span className="font-code text-[9px] uppercase tracking-[0.18em] text-[#71716D]">{j.domaine}</span>
-          {data.etape != null && (
-            <span className="font-code text-[9px] text-[#52524F]">étape {data.etape}</span>
-          )}
-          {j.statut !== "actif" && (
-            <span className="font-code text-[9px] text-[#B45309]">{j.statut}</span>
-          )}
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="font-code text-[8px] uppercase tracking-[0.18em] text-[#71716D]">{j.domaine}</span>
+            {data.etape != null && <span className="font-code text-[9px] text-[#52524F]">étape {data.etape}</span>}
+            {j.statut !== "actif" && <span className="font-code text-[9px] text-[#B45309]">{j.statut}</span>}
+          </div>
         </div>
         <Handle type="source" position={Position.Right} className="!h-2 !w-2 !border-0 !bg-transparent" />
       </div>

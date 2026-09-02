@@ -10,10 +10,9 @@ export default function RegionNode({ data }) {
         width: data.w,
         height: data.h,
         pointerEvents: "none",
-        borderRadius: 56,
-        border: `1px solid ${data.couleur}45`,
-        background: `${data.couleur}0F`,
-        boxShadow: "0 1px 4px rgba(17,17,16,0.05)",
+        borderRadius: "47% 53% 55% 45% / 52% 46% 54% 48%",
+        border: `1.5px solid ${data.couleur}3A`,
+        background: `${data.couleur}17`,
       }}
       className="relative"
       data-testid={`region-${data.id}`}
@@ -21,8 +20,8 @@ export default function RegionNode({ data }) {
       <Handle type="target" position={Position.Left} className="!h-0 !w-0 !border-0 !bg-transparent" />
       <Handle type="source" position={Position.Right} className="!h-0 !w-0 !border-0 !bg-transparent" />
       <div
-        className="nopan absolute left-0 top-0 w-full cursor-pointer px-7 pb-3 pt-5 transition-colors hover:bg-[#F7F7F6]"
-        style={{ pointerEvents: "auto", borderRadius: "56px 56px 0 0" }}
+        className="nopan absolute left-0 top-0 w-full cursor-pointer px-9 pb-3 pt-6 transition-colors"
+        style={{ pointerEvents: "auto", borderRadius: "47% 53% 0 0 / 100% 100% 0 0" }}
         title="Clic : sélectionner le domaine · Double-clic : entrer dans le domaine"
         data-testid={`region-header-${data.id}`}
       >
@@ -30,7 +29,7 @@ export default function RegionNode({ data }) {
           {data.halo && (
             <span className="halo-anim h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: data.couleur }} data-testid={`region-activite-${data.id}`} />
           )}
-          <span className="font-code text-[11px] font-medium uppercase tracking-[0.3em]" style={{ color: data.couleur }}>
+          <span className="font-code text-xs font-semibold uppercase tracking-[0.25em]" style={{ color: data.couleur }}>
             {data.label}
           </span>
           {mc && (

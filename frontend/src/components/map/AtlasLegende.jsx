@@ -35,7 +35,7 @@ export default function AtlasLegende() {
                 className="inline-block h-0 w-4 border-t-2"
                 style={{
                   borderColor: v.couleur,
-                  borderStyle: ["supposee", "validation", "obsolete"].includes(k) ? "dashed" : k === "contestee" ? "dotted" : "solid",
+                  borderStyle: ["supposee", "validation", "obsolete"].includes(k) ? "dashed" : k === "observee" || k === "contestee" ? "dotted" : "solid",
                 }}
               />
               {v.label}

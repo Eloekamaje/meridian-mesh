@@ -1,0 +1,20 @@
+{
+  "summary": "Refonte visuelle Atlas (v25) testée end-to-end sur /atlas. Toutes les fonctionnalités listées passent : nœuds jumeaux en point+label (12 twin-node-*), régions en blobs pastel organiques (6 region-header-*), relations avec styles corrects (observée pointillée #0E7490, supposée dashed #D97706, contestée, validation A2A violet, confirmée gris), légende alignée. Clic sur twin-node-paiements ouvre le panneau Détail (map-side-panel/map-twin-detail) avec chip de sélection. Survol montre twin-hover-*. Double-clic region-header-reg-paiement entre dans le domaine avec fil d'Ariane 'Mesh global › Domaine Paiement', portes externes présentes (5 porte-* + 5 porte-apercu-*). Double-clic sur jumeau => vue radiale avec 7 voisin-* et voisin-hover-* fonctionnels. Composer 'Interrogez cette carte…' présent. AUCUNE erreur console sur l'ensemble du parcours.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Légende: 'observee' utilise borderStyle 'dotted' pour représenter les points animés (strokeDasharray 0.1 10). Visuellement cohérent, mais l'échantillon SVG de la légende n'anime pas comme les vraies arêtes — acceptable (statique) mais à noter."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100%"},
+  "seed_data_creation": "aucune",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Atlas v25 validé. Twin nodes sont maintenant des points compacts (~4x4 px) + label — cibler toujours data-testid, pas de coordonnées. testids clés : twin-node-{id}, twin-hover-{id}, region-{id}, region-header-{id}, voisin-{id}, voisin-hover-{id}, porte-{domaine}, porte-apercu-{domaine}, map-legend, legende-toggle, map-side-panel, map-tab-detail, panneau-fermer-btn."
+}

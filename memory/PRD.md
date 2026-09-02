@@ -1,5 +1,12 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v25, refonte visuelle de l'Atlas sur image de référence utilisateur)
+- **Image de référence fournie par l'utilisateur** (atlas « SI Banque » : points+labels, blobs pastel, flux animés) appliquée à notre Atlas.
+- **Nœuds jumeaux = point + label** (`TwinNode.jsx` réécrit) : anneau coloré par domaine sur fond blanc (halo ping si actif, lueur si sélectionné/dégradé), nom en gras + domaine en petites capitales — fini les cartes rectangulaires de 180 px. Variantes cohérentes : voisin (point + état de relation), porte externe (pointillé), anonyme (cadenas gris). Aperçus au survol, halos, focus ring et testids préservés.
+- **Régions = blobs organiques pastel** (`RegionNode.jsx`) : border-radius asymétrique, remplissage teinté visible, nom du domaine en capitales colorées à l'intérieur + stats compactes.
+- **Relations** (`styleParEtat`) : observée = **flux de points animés vert d'eau** (dasharray « 0.1 10 », linecap round, animated) ; supposée = pointillés orange (#D97706, « à qualifier ») ; confirmée = trait plein gris (déclaré) ; validation A2A violet, contestée rouge, obsolète pâle — `ETATS_RELATION` et légende alignés.
+- Tests : **iteration_30 → 100 %** (agent de test, parcours Atlas complet : sélection, panneau, survols, zoom domaine/jumeau, portes, lasso, modes temporels, 0 erreur console).
+
 ## Implémenté (06/2026 — v24, lisibilité de l'Atlas — fond de carte adapté)
 - **Demande utilisateur** : améliorer la lisibilité de l'Atlas avec un fond adapté.
 - **Canvas « papier cartographique »** : dégradé radial (centre #FDFDFB → bords #EDECE6) qui détache la carte du fond applicatif et concentre le regard ; trame de points resserrée et plus visible (gap 26, opacité 13 %).

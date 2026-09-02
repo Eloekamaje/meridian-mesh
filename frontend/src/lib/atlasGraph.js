@@ -8,18 +8,21 @@ export const NIVEAUX_ZOOM = { 1: "Entreprise", 2: "Domaine", 3: "Jumeau" };
 
 export const styleParEtat = (r) => {
   switch (r.etat) {
+    // Réalité découverte : flux de points animés (vert d'eau)
     case "observee":
-      return { stroke: "rgba(17,17,16,0.3)", strokeWidth: 1 };
+      return { stroke: "#0E7490", strokeWidth: 2.2, strokeDasharray: "0.1 10", strokeLinecap: "round" };
+    // À qualifier : pointillés orange
     case "supposee":
-      return { stroke: "#0E7490", strokeWidth: 1.3, strokeDasharray: "4 5", opacity: 0.8 };
+      return { stroke: "#D97706", strokeWidth: 1.7, strokeDasharray: "5 6", opacity: 0.9 };
     case "validation":
-      return { stroke: "#6D28D9", strokeWidth: 1.8, strokeDasharray: "8 6" };
+      return { stroke: "#6D28D9", strokeWidth: 1.8, strokeDasharray: "7 5" };
     case "contestee":
-      return { stroke: "#B91C1C", strokeWidth: 1.8, strokeDasharray: "12 3 3 3" };
+      return { stroke: "#B91C1C", strokeWidth: 1.8, strokeDasharray: "9 4 2 4" };
     case "obsolete":
       return { stroke: "rgba(17,17,16,0.4)", strokeWidth: 1, strokeDasharray: "2 6", opacity: 0.25 };
+    // Déclaré / confirmé : trait plein gris
     default:
-      return { stroke: r.active ? "#3730A3" : "rgba(17,17,16,0.45)", strokeWidth: 1.5, opacity: r.active ? 0.9 : 0.55 };
+      return { stroke: r.active ? "#3730A3" : "rgba(17,17,16,0.4)", strokeWidth: 1.3, opacity: r.active ? 0.9 : 0.6 };
   }
 };
 
@@ -27,7 +30,7 @@ export const makeEdge = (r, niveau) => ({
   id: r.id,
   source: r.source,
   target: r.cible,
-  animated: !!r.active || r.etat === "validation",
+  animated: !!r.active || r.etat === "validation" || r.etat === "observee",
   data: { etat: r.etat, restreinte: !!r.restreinte },
   style: r.restreinte ? { ...styleParEtat(r), opacity: 0.35, strokeDasharray: "3 5" } : styleParEtat(r),
   label:
