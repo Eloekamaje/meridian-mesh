@@ -52,10 +52,10 @@ export default function TwinNode({ data, selected }) {
             </div>
           </div>
         )}
-        <div className={`flex items-center gap-2 transition-opacity duration-500 ${data.dim ? "opacity-15" : "opacity-100"}`}>
+        <div className={`flex flex-col items-center gap-0.5 transition-opacity duration-500 ${data.dim ? "opacity-15" : "opacity-100"}`}>
           <PointJumeau couleur={c} dashed />
-          <div>
-            <div className="flex items-center gap-1.5 text-[12px] font-semibold" style={{ color: c }}>
+          <div className="text-center">
+            <div className="flex items-center justify-center gap-1.5 whitespace-nowrap text-[12px] font-semibold" style={{ color: c }}>
               {ap?.restreint && <LockSimple size={11} className="shrink-0 text-[#71716D]" />}
               ⇢ {j.nom}
             </div>
@@ -90,10 +90,10 @@ export default function TwinNode({ data, selected }) {
           </div>
           <div className="mt-2 font-code text-[9px] text-[#0E7490]">Cliquer pour transférer le focus →</div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col items-center gap-0.5">
           <PointJumeau couleur={c} />
-          <div>
-            <div className="text-[12px] font-semibold text-[#111110]">{j.nom}</div>
+          <div className="text-center">
+            <div className="whitespace-nowrap text-[12px] font-semibold text-[#111110]">{j.nom}</div>
             <div className="font-code text-[8px] uppercase tracking-[0.15em]" style={{ color: etat.couleur }}>{etat.label}</div>
           </div>
         </div>
@@ -104,12 +104,12 @@ export default function TwinNode({ data, selected }) {
   if (j.anonyme) {
     return (
       <div
-        className={`flex items-center gap-2 transition-opacity duration-500 ${data.dim ? "opacity-20" : "opacity-75"}`}
+        className={`flex flex-col items-center gap-0.5 transition-opacity duration-500 ${data.dim ? "opacity-20" : "opacity-75"}`}
         data-testid={`twin-node-${j.id}`}
       >
         <PointJumeau couleur="#A3A39E" dashed />
-        <div>
-          <div className="flex items-center gap-1.5 font-code text-[10px] text-[#71716D]">
+        <div className="text-center">
+          <div className="flex items-center justify-center gap-1.5 whitespace-nowrap font-code text-[10px] text-[#71716D]">
             <LockSimple size={11} className="shrink-0" /> {j.nom}
           </div>
           <div className="font-code text-[8px] uppercase tracking-[0.18em] text-[#71716D]">périmètre restreint</div>
@@ -149,16 +149,16 @@ export default function TwinNode({ data, selected }) {
       </div>
 
       {data.halo && (
-        <span className="halo-anim pointer-events-none absolute -inset-2 rounded-full" style={{ border: `1.5px solid ${couleur}` }} />
+        <span className="pointer-events-none absolute -inset-2 rounded-2xl" style={{ backgroundColor: `${couleur}12`, border: `1px solid ${couleur}30` }} />
       )}
       {data.focusCentral && (
-        <span className="pointer-events-none absolute -inset-1.5 rounded-full border-2" style={{ borderColor: couleur }} data-testid="twin-focus-ring" />
+        <span className="pointer-events-none absolute -inset-1.5 rounded-2xl border-2" style={{ borderColor: couleur }} data-testid="twin-focus-ring" />
       )}
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-col items-center gap-0.5">
         <PointJumeau couleur={couleur} actif={actif} selected={selected} degrade={degrade} />
-        <div>
-          <div className="flex items-center gap-1.5">
+        <div className="text-center">
+          <div className="flex items-center justify-center gap-1.5">
             <span className="whitespace-nowrap text-[13px] font-semibold leading-tight text-[#111110]">{j.nom}</span>
             {data.evenements > 0 && (
               <span className="shrink-0 rounded-full bg-[#E5E5E3] px-1.5 py-0.5 font-code text-[9px] text-[#3F3F3C]">
@@ -166,7 +166,7 @@ export default function TwinNode({ data, selected }) {
               </span>
             )}
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center justify-center gap-1.5">
             <span className="font-code text-[8px] uppercase tracking-[0.18em] text-[#71716D]">{j.domaine}</span>
             {data.etape != null && <span className="font-code text-[9px] text-[#52524F]">étape {data.etape}</span>}
             {j.statut !== "actif" && <span className="font-code text-[9px] text-[#B45309]">{j.statut}</span>}

@@ -1,5 +1,10 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v26e, contacts arêtes/jumeaux revalidés)
+- **Retouche demandée** : les arêtes orthogonales traversaient les labels (qui étaient à droite du point, à hauteur du port). Le label passe **sous le point** (point au-dessus, nom + domaine centrés en dessous) — les arêtes arrivent horizontalement sur le point sans jamais croiser le texte, sur les 4 variantes (jumeau, voisin, porte, anonyme).
+- Halo d'activité restylé en surbrillance douce arrondie (fond teinté + bord légère) au lieu d'un anneau ovale autour du bloc.
+- Vérifié zoom avant + vue globale : contacts propres, 14/14 arêtes, labels dégagés.
+
 ## Implémenté (06/2026 — v26d, routage orthogonal assaini — ports directionnels)
 - **Bug signalé** : arêtes « sans sens » (boucles), confuses sur les nœuds, croisements — toutes sortaient à droite et entraient à gauche quelle que soit la géographie.
 - **Ports directionnels** : chaque jumeau/région/porte expose 4 ports (entrée/sortie × gauche/droite, centrés sur le point jumeau) ; `makeEdge` choisit le côté selon la position relative source→cible (`atlasGraph.js`, toutes les vues : globale, domaine, focus, corridors entreprise).
