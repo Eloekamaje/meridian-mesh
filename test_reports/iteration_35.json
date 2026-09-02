@@ -1,0 +1,44 @@
+{
+  "summary": "Atlas iter_35 — (A) RETRAIT NIVEAU 4 : validé 100 %. Aucun testid twin-n4-*/twin-sources-*/twin-strates-*/twin-event- dans le DOM avant ou après zoom max ; chip data-testid='zoom-niveau' plafonne à 'Niveau 3 · Applications & flux · détail des relations' au niveau global (au zoom max on entre en fait dans un jumeau : chip devient 'Focus jumeau — Paiements · zoom arrière pour remonter') ; jamais 'Niveau 4'. Aucune capsule 'N preuve(s)' sur les arêtes. (B) PROPULSION : globalement fonctionnelle. Zone morte (18 px NE) → pas de chip, pan classique ✓. Engagement 140 px NE (depuis 960,420) → chip 'Distribution' 59 % (cible détectée ≠ 'Risque' attendu dans la spec car les jumeaux ont été déplacés par des tests précédents — cf. iter_34, non bloquant), membrane cible renforcée (data.propulsion propagée sur région et robots), viewport interpolé (smoothstep) ✓. Annulation par retour dans la zone morte : chip disparaît, PAS d'entrée dans le domaine, caméra stabilisée ✓. Stabilisation ~50 % → relâche sans entrée, VP conservé où il est (aucun retour brutal) ✓. Arrivée complète 205 px NE → progress 100 %, texte 'Relâcher pour entrer →', relâche → URL devient /atlas?domaine=Distribution&interne=1, fil d'Ariane 'Mesh global › Domaine Distribution' ✓. En vue domaine (/atlas?domaine=Paiement&interne=1), 5 portes visibles (porte-Distribution, porte-Client, porte-Risque, porte-Support, porte-Opérations) ; propulsion SW ~210 px → chip 'Opérations' 100 %, relâche → /atlas?domaine=Opérations&interne=1 ✓. (C) NON-RÉGRESSION : 14 arêtes arete-r1..r14 rendues, 'libavoid actif' présent, 0 warning 'Worker libavoid en échec', 0 erreur console, 0 warning. BUG identifié : la garde 'pointerdown sur le fond' est trop permissive.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Atlas.jsx — surPointerDown (ligne 549-553)",
+        "issue": "La propulsion se déclenche AUSSI quand l'utilisateur fait un pointerdown sur un twin-node ou une region (pas seulement sur le fond). Le guard `if (!e.target.closest('.react-flow__pane')) return;` retourne toujours truthy sur un nœud car dans React Flow v11 les .react-flow__node sont des descendants de .react-flow__pane (structure vérifiée : twin.closest('.react-flow__pane') → 'react-flow__pane draggable'). Résultat : cliquer-glisser sur un robot déclenche la propulsion et entre dans un domaine, y compris en mode réorganisation où l'utilisateur veut juste déplacer un jumeau. Reproduction : /atlas (outil déplacement, mode édition off) → pointerdown au centre d'un twin-node → glissement 150 px NE → propulsion-chip apparaît, relâche → entrée dans Domaine Risque (observé lors du test). Correction suggérée : remplacer par `if (!e.target.classList.contains('react-flow__pane')) return;` (ou vérifier que e.target === le div pane, pas un descendant).",
+        "selector": "[data-testid^='twin-node-'], [data-testid^='region-']",
+        "priority": "HIGH"
+      },
+      {
+        "component": "AtlasToolbar / Atlas.jsx (mode édition)",
+        "issue": "Le bouton data-testid='outil-edition' toggle `modeEdition` mais NE change PAS `outil` (qui reste 'deplacement'). Donc en mode édition, la garde `if (outil !== 'deplacement') return;` de surPointerDown n'inhibe rien : cumulé au bug ci-dessus, un drag de twin en mode édition déclenche la propulsion au lieu de simplement repositionner le jumeau. Un pointerdown sur pane vide en mode édition déclenche aussi propulsion (probablement pas voulu — l'édition devrait bloquer la navigation par propulsion).",
+        "selector": "[data-testid='outil-edition']",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_35.json"],
+  "action_items": [
+    "Atlas.jsx surPointerDown : renforcer la garde pour n'accepter la propulsion QUE si le pointerdown vise directement l'élément .react-flow__pane (e.target.classList.contains('react-flow__pane')) — actuellement closest() capture aussi les clics sur les nœuds.",
+    "Atlas.jsx surPointerDown : ajouter également `|| modeEdition` dans la condition d'early-return pour interdire la propulsion en mode réorganisation (l'utilisateur veut déplacer des robots, pas naviguer)."
+  ],
+  "critical_code_review_comments": [
+    "Atlas.jsx dépasse maintenant 1378 lignes (vs 1200+ en iter_34) après ajout de la propulsion. Refactor recommandé en hook useNavigationPropulsion(nodes, domaineInterne, entrerDomaine).",
+    "surSurvolCarte fait de plus en plus de travail par mousemove (proximité arête + propulsion + tooltip). Envisager rAF-throttling.",
+    "Le pointerup global est attaché à window (ligne 569) mais surPointerDown est attaché via onPointerDown de la div carte : si l'utilisateur presse la souris sur la carte puis relâche hors du composant, terminerGeste est bien appelé (OK), mais si un modal se superpose entre-temps, propulsionAuRelachement.current reste true et bloquera une inertie légitime. Cas rare.",
+    "Le calcul de candidats dans surSurvolCarte itère tous les nodes à chaque mousemove pendant un geste — envisager de calculer une seule fois au pointerdown."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "N/A — frontend only",
+    "frontend": "85% — retrait niveau 4 : 100 % (5/5) ; propulsion : 6/7 flux OK (zone morte, engagement, arrivée complète, annulation, stabilisation, vue domaine) ; 1 bug HIGH : pointerdown sur un twin déclenche la propulsion au lieu d'être ignoré (guard closest() trop permissive)."
+  },
+  "test_credentials": "Persona architecte par défaut, aucune auth.",
+  "seed_data_creation": "Aucune — positions des jumeaux non réinitialisées (drags des tests précédents conservés).",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "iter_35 : retrait niveau 4 = OK complet. Propulsion = OK sauf que le guard `e.target.closest('.react-flow__pane')` de surPointerDown (Atlas.jsx L551) capture aussi les clics sur les nœuds (dans React Flow v11, les nœuds sont enfants de .react-flow__pane). Fix : `e.target.classList.contains('react-flow__pane')`. Après fix, re-tester : (a) pointerdown sur twin → aucun chip propulsion ; (b) pointerdown sur région → aucun chip propulsion ; (c) pointerdown sur pane vide + glissement → propulsion normale ; (d) en mode édition, drag d'un twin repositionne le jumeau sans déclencher propulsion.",
+  "rca of the issue": "Structure DOM React Flow v11 : `.react-flow__pane` (fond draggable) englobe `.react-flow__nodes` (conteneur de nœuds) qui contient les `.react-flow__node-twin` / `.react-flow__node-region`. Un `Element.closest('.react-flow__pane')` depuis n'importe quel nœud remonte donc jusqu'au pane et retourne truthy. Le guard actuel ne distingue pas un clic sur le fond d'un clic sur un nœud. Bonne pratique : comparer `e.target` (pas `e.currentTarget`) directement au pane ou vérifier `classList.contains`."
+}

@@ -66,6 +66,9 @@ export default function Atlas() {
   const [modeEdition, setModeEdition] = useState(false); // déplacement des robots uniquement en mode explicite
   const [provisoire, setProvisoire] = useState(false); // drag en cours : routage maison simple, recalcul final au relâchement
   const { routesFin, pousser } = useRoutageFinal(); // routes finales calculées par libavoid (Web Worker)
+  const [propulsion, setPropulsion] = useState(null); // navigation directionnelle { label, progress, x, y }
+  const geste = useRef(null); // geste de propulsion en cours
+  const propulsionAuRelachement = useRef(false); // inhibe l'inertie si le geste était une propulsion
   const [fantome, setFantome] = useState(null); // position de départ du robot pendant le drag
   const coquesRef = useRef({}); // rect actuellement affiché de chaque membrane
   const ciblesCoques = useRef({}); // rect cible calculé
@@ -342,7 +345,7 @@ export default function Atlas() {
       jumeauFocus, domaineInterne, posOverrides, compteurs, halo, selection,
       zoomNiveau, relFocus, focusCarte, domDe, statsRegions, temps,
       zoomFort: zoomActuel >= 1.5,
-      routesFin, provisoire,
+      routesFin, provisoire, propulsion,
     });
     // Conserve les dimensions mesurées par React Flow : le graphe est reconstruit à chaque
     // tick de drag — sans cela les nœuds perdent leur mesure et les arêtes disparaissent.
@@ -391,7 +394,7 @@ export default function Atlas() {
     });
     ciblesCoques.current = nouvellesCibles;
     return g;
-  }, [mesh, focus, situation, halo, compteurs, selection, relFocus, zoomNiveau, vueActive, posOverrides, domaineSel, domaineInterne, jumeauFocus, perimetreTravail, domDe, statsRegions, focusCarte, temps, amorce, mesures, regionSurvolee, tickCoques, relSurvolee, selectedRelation, zoomActuel, routesFin, provisoire]);
+  }, [mesh, focus, situation, halo, compteurs, selection, relFocus, zoomNiveau, vueActive, posOverrides, domaineSel, domaineInterne, jumeauFocus, perimetreTravail, domDe, statsRegions, focusCarte, temps, amorce, mesures, regionSurvolee, tickCoques, relSurvolee, selectedRelation, zoomActuel, routesFin, provisoire, propulsion]);
 
   // Routage final : nouveau snapshot géométrique → Web Worker libavoid
   // (jamais pendant le drag, jamais pendant le pan/zoom — la signature géométrique est stable)
@@ -408,6 +411,18 @@ export default function Atlas() {
       if (etat === "supposee" || etat === "contestee") return couchesRel.ecarts;
       return true;
     });
+    // Propulsion : les relations avec le territoire ciblé sont renforcées progressivement
+    if (propulsion?.label) {
+      const cible = propulsion.label;
+      es = es.map((e) => {
+        const touche =
+          domDe[e.source] === cible || domDe[e.target] === cible ||
+          e.source === `porte-${cible}` || e.target === `porte-${cible}`;
+        return touche
+          ? { ...e, style: { ...e.style, opacity: 0.55 + 0.45 * propulsion.progress, strokeWidth: (e.style?.strokeWidth || 1.5) + 0.8 * propulsion.progress } }
+          : e;
+      });
+    }
     const actif = epingle || survolJumeau;
     if (actif) {
       es = es.map((e) =>
@@ -436,7 +451,7 @@ export default function Atlas() {
       es = [...es.filter((e) => e.id !== relActive), ...es.filter((e) => e.id === relActive)];
     }
     return es;
-  }, [edges, couchesRel, epingle, survolJumeau, relSurvolee, selectedRelation]);
+  }, [edges, couchesRel, epingle, survolJumeau, relSurvolee, selectedRelation, propulsion, domDe]);
 
   // Jumeau survolé ou épinglé → panneau flottant à gauche
   const jumeauSurvole = useMemo(() => {
@@ -525,11 +540,85 @@ export default function Atlas() {
     }
   }, [nodes, poursuite]);
 
+  // --- Navigation par propulsion (exploration directionnelle) ---
+  // Glissement prolongé sur le fond : la caméra avance et zoome progressivement vers le
+  // territoire dans la direction du geste. Zone morte 30 px, attraction par cône (±41°).
+  const ZONE_MORTE = 30;
+  const DIST_MAX = 220;
+
+  const surPointerDown = (e) => {
+    // Uniquement un clic franc sur le FOND (jamais sur un robot/région), hors mode réorganisation
+    if (outil !== "deplacement" || modeEdition || e.button !== 0 || !rfRef.current) return;
+    if (!e.target.classList?.contains("react-flow__pane")) return;
+    geste.current = { origin: { x: e.clientX, y: e.clientY }, vp: rfRef.current.getViewport(), actif: false, cible: null, progress: 0 };
+  };
+
+  const terminerGeste = useCallback(() => {
+    const g = geste.current;
+    geste.current = null;
+    if (!g) return;
+    if (g.actif) {
+      propulsionAuRelachement.current = true; // pas d'inertie après une propulsion
+      // Progression suffisante : l'Atlas achève l'arrivée sur le territoire (fil d'Ariane mis à jour)
+      if (g.cible && g.progress >= 0.85) entrerDomaine(g.cible.label);
+    }
+    setPropulsion(null);
+  }, [entrerDomaine]);
+
+  useEffect(() => {
+    const h = () => terminerGeste();
+    window.addEventListener("pointerup", h);
+    return () => window.removeEventListener("pointerup", h);
+  }, [terminerGeste]);
+
   // Survol des membranes par proximité de la frontière (les zones d'interaction des arêtes les recouvrent)
   const surSurvolCarte = (e) => {
     if (!rfRef.current || !mesh || jumeauFocus) return;
     const rect = carteRef.current?.getBoundingClientRect();
     if (!rect) return;
+    // --- Propulsion : geste engagé sur le fond → caméra interpolée vers le territoire ciblé ---
+    const g = geste.current;
+    if (g) {
+      const dx = e.clientX - g.origin.x;
+      const dy = e.clientY - g.origin.y;
+      const dist = Math.hypot(dx, dy);
+      const progress = Math.min(1, Math.max(0, (dist - ZONE_MORTE) / (DIST_MAX - ZONE_MORTE)));
+      let cible = null;
+      if (progress > 0) {
+        const candidats = domaineInterne
+          ? nodes.filter((n) => n.data?.porte).map((n) => ({ label: n.data.porte, cx: n.position.x + 30, cy: n.position.y + 8 }))
+          : nodes.filter((n) => n.type === "region").map((n) => ({ label: n.data.label, cx: n.position.x + (n.data.w || 0) / 2, cy: n.position.y + (n.data.h || 0) / 2 }));
+        let meilleurScore = 0;
+        for (const c of candidats) {
+          const sx = rect.left + c.cx * g.vp.zoom + g.vp.x;
+          const sy = rect.top + c.cy * g.vp.zoom + g.vp.y;
+          const vx = sx - g.origin.x;
+          const vy = sy - g.origin.y;
+          const vd = Math.hypot(vx, vy);
+          if (vd < 60) continue;
+          const cos = (vx * dx + vy * dy) / (vd * dist);
+          if (cos < 0.75) continue; // cône de ±41° autour de la direction du geste
+          const score = (cos * cos) / (1 + vd / 3000); // l'alignement prime sur la proximité
+          if (score > meilleurScore) { meilleurScore = score; cible = c; }
+        }
+      }
+      if (cible) {
+        g.actif = true;
+        g.cible = cible;
+        g.progress = progress;
+        const eased = progress * progress * (3 - 2 * progress); // smoothstep
+        const zCible = domaineInterne ? 1.0 : 1.2;
+        const vpCible = { x: rect.width / 2 - cible.cx * zCible, y: rect.height / 2 - cible.cy * zCible, zoom: zCible };
+        rfRef.current.setViewport({
+          x: g.vp.x + (vpCible.x - g.vp.x) * eased,
+          y: g.vp.y + (vpCible.y - g.vp.y) * eased,
+          zoom: g.vp.zoom + (vpCible.zoom - g.vp.zoom) * eased,
+        });
+        setPropulsion({ label: cible.label, progress, x: e.clientX - rect.left, y: e.clientY - rect.top });
+        return;
+      }
+      if (g.actif) { g.actif = false; g.cible = null; g.progress = 0; setPropulsion(null); }
+    }
     if (relSurvolee) setRelTooltipPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
     const p = rfRef.current.screenToFlowPosition({ x: e.clientX, y: e.clientY });
     const zoom = rfRef.current.getZoom() || 1;
@@ -577,6 +666,7 @@ export default function Atlas() {
   };
 
   const surMoveEnd = () => {
+    if (propulsionAuRelachement.current) { propulsionAuRelachement.current = false; mouvements.current = []; return; }
     const ms = mouvements.current;
     mouvements.current = [];
     if (!rfRef.current || ms.length < 2) return;
@@ -720,7 +810,7 @@ export default function Atlas() {
 
   return (
     <div className="flex h-full flex-col">
-    <div ref={carteRef} onPointerMove={surSurvolCarte} onPointerLeave={() => { setRegionSurvolee(null); setRegionTooltip(null); }} className="relative min-h-0 flex-1 overflow-hidden" data-testid="system-map" style={{ background: "radial-gradient(ellipse at 50% 38%, #FDFDFB 0%, #F5F4F0 65%, #EDECE6 100%)" }}>
+    <div ref={carteRef} onPointerMove={surSurvolCarte} onPointerDown={surPointerDown} onPointerUp={terminerGeste} onPointerLeave={() => { setRegionSurvolee(null); setRegionTooltip(null); }} className="relative min-h-0 flex-1 overflow-hidden" data-testid="system-map" style={{ background: "radial-gradient(ellipse at 50% 38%, #FDFDFB 0%, #F5F4F0 65%, #EDECE6 100%)" }}>
       <ReactFlow
         key={focus || situationParam || "mesh"}
         nodes={nodes}
@@ -1237,6 +1327,23 @@ export default function Atlas() {
             <div>{regionTooltip.data.ecarts ?? 0} écart{(regionTooltip.data.ecarts ?? 0) > 1 ? "s" : ""} structurel{(regionTooltip.data.ecarts ?? 0) > 1 ? "s" : ""}</div>
           </div>
           <div className="mt-2 font-code text-[9px] text-[#0E7490]">Double-clic : explorer le domaine →</div>
+        </div>
+      )}
+
+      {/* Chip de propulsion — territoire ciblé près du pointeur */}
+      {propulsion && (
+        <div
+          className="pointer-events-none absolute z-30 flex -translate-y-full items-center gap-2 rounded-lg border bg-white/95 px-2.5 py-1.5 shadow-md"
+          style={{ left: Math.min(propulsion.x + 16, (carteRef.current?.clientWidth || 1200) - 220), top: Math.max(propulsion.y - 10, 30), borderColor: `${couleurDomaine(propulsion.label)}55` }}
+          data-testid="propulsion-chip"
+        >
+          <span className="font-code text-[10px] font-semibold uppercase tracking-[0.15em]" style={{ color: couleurDomaine(propulsion.label) }} data-testid="propulsion-cible">
+            {propulsion.label}
+          </span>
+          <span className="font-code text-[9px] text-[#71716D]" data-testid="propulsion-progress">{Math.round(propulsion.progress * 100)} %</span>
+          <span className="font-code text-[9px] text-[#0E7490]">
+            {propulsion.progress >= 0.85 ? "Relâcher pour entrer →" : "Continuer pour entrer"}
+          </span>
         </div>
       )}
 

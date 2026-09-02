@@ -436,7 +436,7 @@ export function construireGraphe({
   mesh, situation, focus, vueActive, perimetreTravail,
   jumeauFocus, domaineInterne, posOverrides, compteurs, halo, selection,
   zoomNiveau, relFocus, focusCarte, domDe, statsRegions, temps, zoomFort,
-  routesFin, provisoire,
+  routesFin, provisoire, propulsion,
 }) {
   if (!mesh) return { nodes: [], edges: [], snapshot: null };
   const implique = situation?.jumeaux || [];
@@ -568,6 +568,7 @@ export function construireGraphe({
             relations: extCount[dom].n,
             decouvertes: statsRegions[dom]?.decouvertes ?? 0,
           },
+          propulsion: propulsion?.label === dom ? propulsion.progress : undefined,
         },
         draggable: false,
         selectable: false,
@@ -625,7 +626,7 @@ export function construireGraphe({
       id: r.id, type: "region", position: { x: coque.x, y: coque.y },
       initialWidth: coque.w,
       initialHeight: coque.h,
-      data: { ...r, w: coque.w, h: coque.h, path: coque.path, points: coque.points, labelX: coque.labelX, investigations: statsRegions[r.label]?.investigations ?? 0, decouvertes: statsRegions[r.label]?.decouvertes ?? 0, flux: statsRel[r.label]?.flux ?? 0, ecarts: statsRel[r.label]?.ecarts ?? 0, halo: !!halo && domDe[halo] === r.label },
+      data: { ...r, w: coque.w, h: coque.h, path: coque.path, points: coque.points, labelX: coque.labelX, investigations: statsRegions[r.label]?.investigations ?? 0, decouvertes: statsRegions[r.label]?.decouvertes ?? 0, flux: statsRel[r.label]?.flux ?? 0, ecarts: statsRel[r.label]?.ecarts ?? 0, halo: !!halo && domDe[halo] === r.label, propulsion: propulsion?.label === r.label ? propulsion.progress : undefined },
       draggable: false, selectable: false, zIndex: -10,
     };
   });
@@ -640,7 +641,7 @@ export function construireGraphe({
         initialWidth: 64,
         initialHeight: 78,
         hidden: entreprise && !j.anonyme ? true : entreprise,
-        data: { jumeau: j, dim: dims.has(j.id), halo: halo === j.id, evenements: compteurs[j.id] || 0, etape: null, niveau: zoomNiveau },
+        data: { jumeau: j, dim: dims.has(j.id), halo: halo === j.id, evenements: compteurs[j.id] || 0, etape: null, niveau: zoomNiveau, propulsion: propulsion && domDe[j.id] === propulsion.label ? propulsion.progress : undefined },
         selected: selection.includes(j.id),
       };
     })
