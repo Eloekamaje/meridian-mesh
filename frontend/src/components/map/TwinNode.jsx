@@ -1,10 +1,37 @@
 import { Handle, Position } from "@xyflow/react";
 import { LockSimple } from "@phosphor-icons/react";
 import { couleurDomaine, couleurConfiance, ETATS_RELATION } from "@/lib/domaines";
+import { idNumerique } from "@/lib/atlasGraph";
 
-// Symbole du jumeau : deux cercles concentriques — l'application et son reflet numérique
-// Ports directionnels : les arêtes s'attachent côté gauche ou droit selon la géographie
-function PointJumeau({ couleur, actif, selected, degrade, dashed }) {
+const ROBOT = "/assets/robot-jumeau.jpg";
+
+// Avatar robot du jumeau : tête blanche arrondie, écran facial sombre, yeux turquoise, antenne
+function AvatarJumeau({ selected, actif }) {
+  const cls = "!h-2 !w-2 !min-w-0 !border-0 !bg-transparent";
+  return (
+    <span className="relative flex h-12 w-12 shrink-0 items-center justify-center">
+      <Handle type="target" id="t-l" position={Position.Left} className={cls} style={{ left: -2, top: 22 }} />
+      <Handle type="source" id="s-l" position={Position.Left} className={cls} style={{ left: -2, top: 22 }} />
+      <Handle type="target" id="t-r" position={Position.Right} className={cls} style={{ right: -2, top: 22 }} />
+      <Handle type="source" id="s-r" position={Position.Right} className={cls} style={{ right: -2, top: 22 }} />
+      {actif && (
+        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#0E7490] opacity-25" />
+      )}
+      <span
+        className={`relative flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-white transition-shadow duration-200 ${
+          selected
+            ? "shadow-[0_0_18px_rgba(14,116,144,0.5)] ring-2 ring-[#0E7490]"
+            : "shadow-sm ring-1 ring-black/10 group-hover:shadow-[0_0_14px_rgba(14,116,144,0.45)] group-hover:ring-2 group-hover:ring-[#0E7490]/70"
+        }`}
+      >
+        <img src={ROBOT} alt="" draggable={false} className="h-11 w-11 scale-[1.65] object-cover" />
+      </span>
+    </span>
+  );
+}
+
+// Pastille discrète (portes externes, périmètres restreints — pas de robot)
+function PointJumeau({ couleur, dashed }) {
   const cls = "!h-2 !w-2 !min-w-0 !border-0 !bg-transparent";
   return (
     <span className="relative flex h-4 w-4 shrink-0 items-center justify-center">
@@ -12,15 +39,9 @@ function PointJumeau({ couleur, actif, selected, degrade, dashed }) {
       <Handle type="source" id="s-l" position={Position.Left} className={cls} style={{ left: -2, top: 7 }} />
       <Handle type="target" id="t-r" position={Position.Right} className={cls} style={{ right: -2, top: 7 }} />
       <Handle type="source" id="s-r" position={Position.Right} className={cls} style={{ right: -2, top: 7 }} />
-      {actif && (
-        <span className="absolute inline-flex h-full w-full animate-ping rounded-full opacity-40" style={{ backgroundColor: couleur }} />
-      )}
       <span
         className={`relative inline-flex h-4 w-4 items-center justify-center rounded-full border-2 bg-white ${dashed ? "border-dashed" : ""}`}
-        style={{
-          borderColor: couleur,
-          boxShadow: selected || degrade ? `0 0 14px ${couleur}55` : "0 1px 3px rgba(17,17,16,0.15)",
-        }}
+        style={{ borderColor: couleur, boxShadow: "0 1px 3px rgba(17,17,16,0.15)" }}
       >
         <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: couleur }} />
       </span>
@@ -71,7 +92,6 @@ export default function TwinNode({ data, selected }) {
   if (data.voisinRel) {
     const rel = data.voisinRel;
     const etat = ETATS_RELATION[rel.etat] || ETATS_RELATION.confirmee;
-    const c = couleurDomaine(j.domaine);
     return (
       <div className="group relative" data-testid={`voisin-${j.id}`}>
         <div
@@ -91,11 +111,9 @@ export default function TwinNode({ data, selected }) {
           <div className="mt-2 font-code text-[9px] text-[#0E7490]">Cliquer pour transférer le focus →</div>
         </div>
         <div className="flex flex-col items-center gap-0.5">
-          <PointJumeau couleur={c} />
-          <div className="text-center">
-            <div className="whitespace-nowrap text-[12px] font-semibold text-[#111110]">{j.nom}</div>
-            <div className="font-code text-[8px] uppercase tracking-[0.15em]" style={{ color: etat.couleur }}>{etat.label}</div>
-          </div>
+          <span className="font-code text-[10px] font-semibold text-[#3F3F3C]">{idNumerique(j.id)}</span>
+          <AvatarJumeau actif={j.statut === "actif"} />
+          <div className="whitespace-nowrap font-code text-[8px] uppercase tracking-[0.15em]" style={{ color: etat.couleur }}>{etat.label}</div>
         </div>
       </div>
     );
@@ -119,59 +137,28 @@ export default function TwinNode({ data, selected }) {
   }
 
   const couleur = couleurDomaine(j.domaine);
-  const degrade = j.sante === "dégradé";
-  const actif = j.statut === "actif";
 
+  // Jumeau = identifiant numérique + robot (le nom complet reste hors de la carte)
   return (
     <div
       className={`group relative transition-opacity duration-500 ${data.dim ? "opacity-20" : "opacity-100"}`}
       data-testid={`twin-node-${j.id}`}
     >
-      {/* Aperçu au survol */}
-      <div
-        className="pointer-events-none absolute -top-3 left-1/2 z-50 w-[240px] -translate-x-1/2 -translate-y-full rounded-lg border border-[#E5E5E3] bg-white p-3 opacity-0 shadow-none backdrop-blur-xl transition-opacity duration-200 group-hover:opacity-100"
-        data-testid={`twin-hover-${j.id}`}
-      >
-        <div className="flex items-center gap-2">
-          <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: couleur }} />
-          <span className="font-display text-xs font-bold text-[#111110]">{j.nom}</span>
-          <span className="ml-auto font-code text-[9px] uppercase tracking-wider text-[#71716D]">{j.statut}</span>
-        </div>
-        <p className="mt-1.5 line-clamp-2 text-[11px] leading-snug text-[#52524F]">{j.mission}</p>
-        <div className="mt-2 flex items-center justify-between font-code text-[9px] text-[#71716D]">
-          <span>Couverture <span className="text-[#3F3F3C]">{j.couverture} %</span></span>
-          <span>{j.fraicheur}</span>
-        </div>
-        <div className="mt-1 h-0.5 overflow-hidden rounded-full bg-[#E5E5E3]">
-          <div className="h-full rounded-full" style={{ width: `${j.couverture}%`, backgroundColor: couleur }} />
-        </div>
-        <div className="mt-2 font-code text-[9px] text-[#71716D]">Cliquer pour le détail complet →</div>
-      </div>
-
       {data.halo && (
-        <span className="pointer-events-none absolute -inset-2 rounded-2xl" style={{ backgroundColor: `${couleur}12`, border: `1px solid ${couleur}30` }} />
+        <span className="pointer-events-none absolute -inset-2 rounded-2xl" style={{ backgroundColor: `${couleur}10`, border: `1px solid ${couleur}2A` }} />
       )}
       {data.focusCentral && (
         <span className="pointer-events-none absolute -inset-1.5 rounded-2xl border-2" style={{ borderColor: couleur }} data-testid="twin-focus-ring" />
       )}
-
       <div className="flex flex-col items-center gap-0.5">
-        <PointJumeau couleur={couleur} actif={actif} selected={selected} degrade={degrade} />
-        <div className="text-center">
-          <div className="flex items-center justify-center gap-1.5">
-            <span className="whitespace-nowrap text-[13px] font-semibold leading-tight text-[#111110]">{j.nom}</span>
-            {data.evenements > 0 && (
-              <span className="shrink-0 rounded-full bg-[#E5E5E3] px-1.5 py-0.5 font-code text-[9px] text-[#3F3F3C]">
-                +{data.evenements}
-              </span>
-            )}
-          </div>
-          <div className="flex items-center justify-center gap-1.5">
-            <span className="font-code text-[8px] uppercase tracking-[0.18em] text-[#71716D]">{j.domaine}</span>
-            {data.etape != null && <span className="font-code text-[9px] text-[#52524F]">étape {data.etape}</span>}
-            {j.statut !== "actif" && <span className="font-code text-[9px] text-[#B45309]">{j.statut}</span>}
-          </div>
-        </div>
+        <span className="flex items-center gap-1 font-code text-[10px] font-semibold tracking-wide text-[#3F3F3C]">
+          {idNumerique(j.id)}
+          {data.evenements > 0 && (
+            <span className="rounded-full bg-[#E5E5E3] px-1 py-px font-code text-[8px] text-[#3F3F3C]">+{data.evenements}</span>
+          )}
+          {j.statut !== "actif" && <span className="font-code text-[8px] text-[#B45309]">{j.statut}</span>}
+        </span>
+        <AvatarJumeau actif={j.statut === "actif"} selected={selected} />
       </div>
     </div>
   );

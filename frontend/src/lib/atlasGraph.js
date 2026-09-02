@@ -1,3 +1,6 @@
+import { MarkerType } from "@xyflow/react";
+import concaveman from "concaveman";
+
 export const COUCHES = [
   ["operationnelle", "Opérationnelle", "#3730A3"],
   ["connaissance", "Connaissance", "#0E7490"],
@@ -6,8 +9,16 @@ export const COUCHES = [
 
 export const NIVEAUX_ZOOM = { 1: "Entreprise", 2: "Domaine", 3: "Jumeau" };
 
-// --- Coque organique : enveloppe convexe des nœuds, gonflée puis lissée (Catmull-Rom fermé) ---
+// Identifiant numérique court affiché au-dessus du robot (le nom reste hors de la carte)
+export const idNumerique = (id) => {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) % 100003;
+  return String(1000 + (h % 9000));
+};
+
+// --- Membrane polygonale : coque CONCAVE (alpha-shape) des avatars, angles adoucis ---
 // Élastique par construction : recalculée à chaque déplacement/ajout/suppression de nœud.
+// La géométrie ne dépend que des centres des avatars — jamais des labels ou infobulles.
 function hullConvexe(pts) {
   const P = [...pts].sort((a, b) => a.x - b.x || a.y - b.y);
   if (P.length <= 2) return P;
@@ -28,70 +39,89 @@ function hullConvexe(pts) {
   return bas.concat(haut);
 }
 
-function cheminLisse(pts) {
+// Coins adoucis (quadratiques) mais géométrie clairement polygonale
+function arrondiCoins(pts, r = 12) {
   const n = pts.length;
-  let d = `M ${pts[0].x} ${pts[0].y}`;
+  if (n < 3) return "";
+  const seg = pts.map((p, i) => {
+    const q = pts[(i + 1) % n];
+    const dx = q.x - p.x;
+    const dy = q.y - p.y;
+    const len = Math.hypot(dx, dy) || 1;
+    return { ux: dx / len, uy: dy / len, len };
+  });
+  let d = "";
   for (let i = 0; i < n; i++) {
-    const p0 = pts[(i - 1 + n) % n];
-    const p1 = pts[i];
-    const p2 = pts[(i + 1) % n];
-    const p3 = pts[(i + 2) % n];
-    d += ` C ${p1.x + (p2.x - p0.x) / 6} ${p1.y + (p2.y - p0.y) / 6}, ${p2.x - (p3.x - p1.x) / 6} ${p2.y - (p3.y - p1.y) / 6}, ${p2.x} ${p2.y}`;
+    const p = pts[i];
+    const sPrev = seg[(i - 1 + n) % n];
+    const sNext = seg[i];
+    const rc = Math.min(r, sPrev.len / 2.5, sNext.len / 2.5);
+    const ax = p.x - sPrev.ux * rc;
+    const ay = p.y - sPrev.uy * rc;
+    const bx = p.x + sNext.ux * rc;
+    const by = p.y + sNext.uy * rc;
+    d += i === 0 ? `M ${ax} ${ay}` : ` L ${ax} ${ay}`;
+    d += ` Q ${p.x} ${p.y} ${bx} ${by}`;
   }
   return `${d} Z`;
 }
 
-export function coqueOrganique(centres, marge = 110) {
+export function coqueOrganique(centres, marge = 42) {
   if (!centres.length) return null;
-  // Chaque nœud est gonflé en octogone : la coque épouse les points même à 1 ou 2 membres
+  // Chaque avatar est gonflé (rayon ≈ avatar + 18 px) : la membrane colle aux robots extrêmes
   const gonfle = [];
-  const R = marge * 0.72;
   centres.forEach((p) => {
     for (let k = 0; k < 8; k++) {
       const a = (k / 8) * 2 * Math.PI;
-      gonfle.push({ x: p.x + Math.cos(a) * R, y: p.y + Math.sin(a) * R });
+      gonfle.push([p.x + Math.cos(a) * marge, p.y + Math.sin(a) * marge]);
     }
   });
-  let coque = hullConvexe(gonfle);
+  let poly;
+  if (centres.length < 3) {
+    poly = hullConvexe(gonfle.map(([x, y]) => ({ x, y })));
+  } else {
+    try {
+      poly = concaveman(gonfle, 2.2, 52).map(([x, y]) => ({ x, y }));
+    } catch {
+      poly = hullConvexe(gonfle.map(([x, y]) => ({ x, y })));
+    }
+  }
+  if (poly.length < 3) return null;
   const cx = centres.reduce((a, p) => a + p.x, 0) / centres.length;
   const cy = centres.reduce((a, p) => a + p.y, 0) / centres.length;
-  coque = coque.map((p) => {
-    const dx = p.x - cx;
-    const dy = p.y - cy;
-    const d = Math.hypot(dx, dy) || 1;
-    return { x: p.x + (dx / d) * marge * 0.38, y: p.y + (dy / d) * marge * 0.38 };
-  });
-  const xs = coque.map((p) => p.x);
-  const ys = coque.map((p) => p.y);
+  const xs = poly.map((p) => p.x);
+  const ys = poly.map((p) => p.y);
   const x0 = Math.min(...xs);
   const y0 = Math.min(...ys);
+  const rel = poly.map((p) => ({ x: p.x - x0, y: p.y - y0 }));
   return {
     x: x0,
     y: y0,
     w: Math.max(...xs) - x0,
     h: Math.max(...ys) - y0,
-    path: cheminLisse(coque.map((p) => ({ x: p.x - x0, y: p.y - y0 }))),
+    path: arrondiCoins(rel, 14),
+    points: rel,
     labelX: cx - x0,
   };
 }
 
 export const styleParEtat = (r) => {
   switch (r.etat) {
-    // Réalité découverte : flux de points animés (vert d'eau)
+    // Réalité découverte : ligne turquoise continue + marqueur directionnel (dans makeEdge)
     case "observee":
-      return { stroke: "#0E7490", strokeWidth: 2.2, strokeDasharray: "0.1 10", strokeLinecap: "round" };
-    // À qualifier : pointillés orange
+      return { stroke: "#0E7490", strokeWidth: 2 };
+    // Écarts (contradictoire ou à qualifier) : pointillés orange
     case "supposee":
-      return { stroke: "#D97706", strokeWidth: 1.7, strokeDasharray: "5 6", opacity: 0.9 };
+      return { stroke: "#D97706", strokeWidth: 1.7, strokeDasharray: "6 6", opacity: 0.9 };
+    case "contestee":
+      return { stroke: "#D97706", strokeWidth: 2, strokeDasharray: "6 6" };
     case "validation":
       return { stroke: "#6D28D9", strokeWidth: 1.8, strokeDasharray: "7 5" };
-    case "contestee":
-      return { stroke: "#B91C1C", strokeWidth: 1.8, strokeDasharray: "9 4 2 4" };
     case "obsolete":
       return { stroke: "rgba(17,17,16,0.4)", strokeWidth: 1, strokeDasharray: "2 6", opacity: 0.25 };
-    // Déclaré / confirmé : trait plein gris
+    // BCM déclaré : ligne gris ardoise continue
     default:
-      return { stroke: r.active ? "#3730A3" : "rgba(17,17,16,0.4)", strokeWidth: 1.3, opacity: r.active ? 0.9 : 0.6 };
+      return { stroke: r.active ? "#3730A3" : "rgba(17,17,16,0.45)", strokeWidth: 1.3, opacity: r.active ? 0.9 : 0.6 };
   }
 };
 
@@ -111,7 +141,11 @@ export const makeEdge = (r, niveau, positions) => {
     ...cotes,
     type: "smoothstep",
     pathOptions: { borderRadius: 10 },
-    animated: !!r.active || r.etat === "validation" || r.etat === "observee",
+    animated: !!r.active || r.etat === "validation",
+    // Marqueur directionnel turquoise sur les relations observées par le Mesh
+    ...(r.etat === "observee" && !r.restreinte
+      ? { markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: "#0E7490" } }
+      : {}),
     data: { etat: r.etat, restreinte: !!r.restreinte },
     style: r.restreinte ? { ...styleParEtat(r), opacity: 0.35, strokeDasharray: "3 5" } : styleParEtat(r),
     label:
@@ -212,6 +246,18 @@ export function construireGraphe({
   if (!mesh) return { nodes: [], edges: [] };
   const implique = situation?.jumeaux || [];
 
+  // Flux observés et écarts par domaine (infobulle des membranes)
+  const statsRel = {};
+  (mesh.relations || []).forEach((r) => {
+    [r.source, r.cible].forEach((jid) => {
+      const d = domDe[jid];
+      if (!d) return;
+      const s = (statsRel[d] = statsRel[d] || { flux: 0, ecarts: 0 });
+      if (r.etat === "observee") s.flux += 1;
+      if (r.etat === "supposee" || r.etat === "contestee") s.ecarts += 1;
+    });
+  });
+
   const dims = new Set();
   if (focus) {
     const deps = new Set([focus]);
@@ -246,7 +292,7 @@ export function construireGraphe({
       .filter(Boolean);
     const rayF = Math.max(300, 150 + voisins.length * 26);
     const nsF = [{
-      id: jf.id, type: "twin", position: posF, initialWidth: 150, initialHeight: 36,
+      id: jf.id, type: "twin", position: posF, initialWidth: 64, initialHeight: 78,
       data: { jumeau: jf, focusCentral: true, evenements: compteurs[jf.id] || 0, halo: halo === jf.id },
       draggable: false, selectable: false, zIndex: 5,
     }];
@@ -256,7 +302,7 @@ export function construireGraphe({
       nsF.push({
         id: `voisin-${v.id}`, type: "twin",
         position: { x: cFx + Math.cos(ang) * rayF - 95, y: cFy + Math.sin(ang) * rayF - 35 },
-        initialWidth: 150, initialHeight: 40,
+        initialWidth: 64, initialHeight: 78,
         data: { jumeau: v, voisinRel: rel },
         draggable: false, selectable: false, zIndex: 4,
       });
@@ -303,10 +349,10 @@ export function construireGraphe({
     if (reg) {
       const centres = internes.map((j) => {
         const p = posOverrides[j.id] || j.position;
-        return { x: p.x + 8, y: p.y + 10 };
+        return { x: p.x + 30, y: p.y + 40 };
       });
       const coque = coqueOrganique(centres) || { x: reg.x, y: reg.y, w: reg.w, h: reg.h, path: null, labelX: reg.w / 2 };
-      nsInt = [{ id: reg.id, type: "region", position: { x: coque.x, y: coque.y }, initialWidth: coque.w, initialHeight: coque.h, data: { ...reg, w: coque.w, h: coque.h, path: coque.path, labelX: coque.labelX, investigations: statsRegions[reg.label]?.investigations ?? 0, decouvertes: statsRegions[reg.label]?.decouvertes ?? 0, halo: false }, draggable: false, selectable: false, zIndex: -10 }];
+      nsInt = [{ id: reg.id, type: "region", position: { x: coque.x, y: coque.y }, initialWidth: coque.w, initialHeight: coque.h, data: { ...reg, w: coque.w, h: coque.h, path: coque.path, points: coque.points, labelX: coque.labelX, investigations: statsRegions[reg.label]?.investigations ?? 0, decouvertes: statsRegions[reg.label]?.decouvertes ?? 0, flux: statsRel[reg.label]?.flux ?? 0, ecarts: statsRel[reg.label]?.ecarts ?? 0, halo: false }, draggable: false, selectable: false, zIndex: -10 }];
     }
     portes.forEach((dom, i) => {
       const regExt = (mesh.regions || []).find((r) => r.label === dom);
@@ -319,8 +365,8 @@ export function construireGraphe({
         id: pid,
         type: "twin",
         position: { x: cx + Math.cos(ang) * ray - 90, y: cy + Math.sin(ang) * ray },
-        initialWidth: 150,
-        initialHeight: 40,
+        initialWidth: 64,
+        initialHeight: 78,
         data: {
           jumeau: { id: pid, nom: `Vers ${dom} · ${extCount[dom].n} relation${extCount[dom].n > 1 ? "s" : ""}`, domaine: dom, porte: true, statut: "porte" },
           porte: dom,
@@ -342,8 +388,8 @@ export function construireGraphe({
         id: j.id,
         type: "twin",
         position: posOverrides[j.id] || j.position,
-        initialWidth: 150,
-        initialHeight: 36,
+        initialWidth: 64,
+        initialHeight: 78,
         data: { jumeau: j, dim: false, halo: halo === j.id, evenements: compteurs[j.id] || 0, etape: null },
         selected: selection.includes(j.id),
       }))
@@ -382,14 +428,14 @@ export function construireGraphe({
   let ns = (mesh.regions || []).map((r) => {
     const centres = twins.filter((j) => domDe[j.id] === r.label).map((j) => {
       const p = posOverrides[j.id] || j.position;
-      return { x: p.x + 8, y: p.y + 10 };
+      return { x: p.x + 30, y: p.y + 40 };
     });
     const coque = coqueOrganique(centres) || { x: r.x, y: r.y, w: r.w, h: r.h, path: null, labelX: r.w / 2 };
     return {
       id: r.id, type: "region", position: { x: coque.x, y: coque.y },
       initialWidth: coque.w,
       initialHeight: coque.h,
-      data: { ...r, w: coque.w, h: coque.h, path: coque.path, labelX: coque.labelX, investigations: statsRegions[r.label]?.investigations ?? 0, decouvertes: statsRegions[r.label]?.decouvertes ?? 0, halo: !!halo && domDe[halo] === r.label },
+      data: { ...r, w: coque.w, h: coque.h, path: coque.path, points: coque.points, labelX: coque.labelX, investigations: statsRegions[r.label]?.investigations ?? 0, decouvertes: statsRegions[r.label]?.decouvertes ?? 0, flux: statsRel[r.label]?.flux ?? 0, ecarts: statsRel[r.label]?.ecarts ?? 0, halo: !!halo && domDe[halo] === r.label },
       draggable: false, selectable: false, zIndex: -10,
     };
   });
@@ -401,8 +447,8 @@ export function construireGraphe({
         id: j.id,
         type: "twin",
         position,
-        initialWidth: 150,
-        initialHeight: 36,
+        initialWidth: 64,
+        initialHeight: 78,
         hidden: entreprise && !j.anonyme ? true : entreprise,
         data: { jumeau: j, dim: dims.has(j.id), halo: halo === j.id, evenements: compteurs[j.id] || 0, etape: null },
         selected: selection.includes(j.id),

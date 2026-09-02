@@ -1,0 +1,21 @@
+{
+  "summary": "Refonte Atlas v27 testée end-to-end sur /atlas (frontend uniquement, backend skipped comme demandé). TOUS les points de la spec passent : (1) 14 arêtes visibles dès le premier rendu ET au 2e rechargement (14/14 sur 2 reloads) ; 12 twin-node-* rendus ; aucun nom de jumeau dans les nœuds (seulement IDs 4 chiffres monospace, ex '3384', '7884'). (2) Hover twin-node-paiements → panneau-jumeau-flottant s'ouvre en aperçu. (3) Clic → panneau épinglé avec panneau-jumeau-interroger/-ouvrir/-fermer visibles ; Interroger ouvre Flore ; Ouvrir ouvre map-side-panel Détail ; Échap ferme le panneau épinglé. (4) Survol frontière membrane region-paiement (via getPointAtLength + getScreenCTM) → tooltip region-tooltip-reg-paiement contenant 'Domaine Paiement / 2 jumeaux / 0 flux observés / 1 écart structurel / Double-clic : explorer le domaine →' ; tooltip disparaît quand la souris quitte ; le survol d'une membrane N'OUVRE PAS le panneau jumeau. (5) Couche 'Écarts' masquée retire les 2 arêtes orange dashed (2 → 0), réactivation OK. (6) Recherche 'frau' → suggestion recherche-jumeau-fraude ; clic centre + épingle le jumeau. (7) Minimap + plein-ecran-btn présents. (8) Drag d'un robot : 14 arêtes maintenues à chaque tick du drag (14/14 sur 5 échantillons). (9) Chip Écarts (atlas-composer-ecarts-btn) présent dans le composer. Aucune erreur console bloquante.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Atlas.jsx approche ~880 lignes : encore lisible mais commence à concentrer beaucoup de responsabilités (survol membrane, couches, recherche, temps, épinglage). Envisager d'extraire la logique de proximité de frontière (surSurvolCarte) et le sous-composant PanneauFlottantJumeau dans des fichiers dédiés pour améliorer la maintenabilité.",
+    "Le hook useEffect qui gère l'amorce (deux ticks 250ms + 700ms) fonctionne mais reste un contournement d'une race React Flow — un commentaire explicite ou un test unitaire couvrant les mesures aiderait pour la régression future."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped)", "frontend": "100%"},
+  "seed_data_creation": "aucune",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Atlas v27 entièrement validé. testids clés à réutiliser : twin-node-{id} (contient uniquement ID 4 chiffres + badge évènements, PAS de nom), panneau-jumeau-flottant / panneau-jumeau-nom / panneau-jumeau-confiance / panneau-jumeau-flux / panneau-jumeau-ecarts / panneau-jumeau-interroger / panneau-jumeau-ouvrir / panneau-jumeau-fermer, region-membrane-reg-{domaine} (path SVG — pour survoler la frontière, utiliser page.evaluate avec getPointAtLength(len*0.25) + getScreenCTM puis mouse.move), region-tooltip-reg-{domaine}, couche-rel-{bcm|realite|ecarts}, atlas-recherche + atlas-recherche-resultats + recherche-{jumeau|domaine}-{id}, plein-ecran-btn, minimap (classe .react-flow__minimap), atlas-composer-ecarts-btn. Les 14 arêtes attendues sont stables sur 2 reloads consécutifs et pendant le drag."
+}

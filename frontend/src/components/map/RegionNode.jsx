@@ -1,10 +1,13 @@
 import { MATURITES } from "@/lib/domaines";
 import { Handle, Position } from "@xyflow/react";
 
-// Région = coque organique (SVG) qui épouse ses nœuds internes et se déforme avec eux
+// Membrane polygonale translucide — coque concave qui épouse les avatars du domaine
+// Le survol est géré par proximité au niveau de la carte (les zones d'interaction des arêtes recouvrent les frontières)
 export default function RegionNode({ data }) {
   const m = data.maturite;
   const mc = m ? MATURITES[m.niveau] || "#71716D" : null;
+  const survol = !!data.survol;
+
   return (
     <div
       style={{ width: data.w, height: data.h, pointerEvents: "none" }}
@@ -17,11 +20,20 @@ export default function RegionNode({ data }) {
       <Handle type="source" id="s-r" position={Position.Right} className="!h-0 !w-0 !border-0 !bg-transparent" style={{ top: "50%" }} />
       <svg width={data.w} height={data.h} className="absolute inset-0" style={{ overflow: "visible" }}>
         {data.path ? (
-          <path d={data.path} fill={`${data.couleur}13`} stroke={`${data.couleur}38`} strokeWidth={1.5} strokeLinejoin="round" />
+          <path
+            d={data.path}
+            fill={survol ? `${data.couleur}1F` : `${data.couleur}13`}
+            stroke={survol ? `${data.couleur}66` : `${data.couleur}38`}
+            strokeWidth={survol ? 2 : 1.5}
+            strokeLinejoin="round"
+            style={{ transition: "fill 200ms, stroke 200ms" }}
+            data-testid={`region-membrane-${data.id}`}
+          />
         ) : (
           <rect width={data.w} height={data.h} rx={56} fill={`${data.couleur}13`} stroke={`${data.couleur}38`} strokeWidth={1.5} />
         )}
       </svg>
+
       <div
         className="nopan absolute top-4 cursor-pointer text-center"
         style={{ pointerEvents: "auto", left: data.labelX ?? data.w / 2, transform: "translateX(-50%)" }}
@@ -44,11 +56,6 @@ export default function RegionNode({ data }) {
             </span>
           )}
         </div>
-        {m && (
-          <div className="mt-1 whitespace-nowrap font-code text-[9px] text-[#71716D]">
-            {m.jumeaux} jumeaux · {data.decouvertes ?? 0} découverte{(data.decouvertes ?? 0) > 1 ? "s" : ""} · {data.investigations ?? 0} investigation{(data.investigations ?? 0) > 1 ? "s" : ""} · {m.zones_inconnues} zone{m.zones_inconnues > 1 ? "s" : ""} inconnue{m.zones_inconnues > 1 ? "s" : ""}
-          </div>
-        )}
       </div>
     </div>
   );

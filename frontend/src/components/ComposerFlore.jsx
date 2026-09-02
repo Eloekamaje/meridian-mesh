@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, SquaresFour, Microphone, PaperPlaneTilt, X, Compass, ArrowsLeftRight, Eye, Scales, FileText, ChartLineUp } from "@phosphor-icons/react";
+import { Plus, SquaresFour, Microphone, PaperPlaneTilt, X, Compass, ArrowsLeftRight, Eye, Scales, FileText, ChartLineUp, Warning } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useMesh } from "@/lib/mesh";
@@ -150,6 +150,9 @@ export default function ComposerFlore({ placeholder = "Demandez à Flore…", co
               </div>
             )}
           </div>
+          <button onClick={() => ajouterChip("Écarts au BCM")} data-testid={`${testidPrefix}-ecarts-btn`} title="Contexte : écarts détectés" className="flex items-center gap-1 rounded-full border border-[#E5E5E3] px-2.5 py-1 text-[11px] text-[#52524F] transition-colors hover:border-[#D4D4D0] hover:text-[#111110]">
+            <Warning size={12} /> Écarts
+          </button>
           <button onClick={() => toast.info("La dictée vocale arrive prochainement.")} data-testid={`${testidPrefix}-micro`} title="Dicter (bientôt)" className="flex h-7 w-7 items-center justify-center rounded-full border border-[#E5E5E3] text-[#71716D] transition-colors hover:text-[#111110]">
             <Microphone size={13} />
           </button>

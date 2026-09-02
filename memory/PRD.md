@@ -1,5 +1,15 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v27, refonte complète de l'Atlas selon la spec « cartographie vivante » utilisateur)
+- **Jumeaux = avatars robot** (`/assets/robot-jumeau.jpg`, image générée : tête blanche arrondie, écran facial sombre, yeux turquoise, antenne) dans un médaillon blanc, **identifiant numérique monospace à 4 chiffres au-dessus** (`idNumerique`, hash stable) — le nom complet n'apparaît plus sur la carte. Halo turquoise au survol, ping si actif.
+- **Membranes = coques CONCAVES polygonales** (`concaveman`, concavité 2.2, replis entre nœuds éloignés, marge ~18 px autour des avatars, angles adoucis mais géométrie polygonale) — géométrie calculée uniquement sur les centres des avatars, élastique (drag/ajout/suppression).
+- **Arêtes orthogonales à 3 sémantiques** : gris ardoise plein (BCM déclaré/confirmée), **turquoise pleine + flèche directionnelle** (observée), orange pointillés (supposée/contestée = écarts) ; ports directionnels + offsets conservés.
+- **Panneau flottant gauche** au survol robot (aperçu) épinglé au clic : ID, nom, « Jumeau applicatif », confiance, relations observées, écarts au BCM, boutons **Interroger** (ouvre Flore avec le contexte) / **Ouvrir le jumeau** (panneau détail droit) ; Échap/2e clic/clic fond ferme. Arêtes connectées accentuées, autres estompées.
+- **Survol membrane par proximité de frontière** (les zones d'interaction des arêtes recouvrent le SVG) : contour renforcé + infobulle (jumeaux, flux observés, écarts, hint « Double-clic : explorer »). N'ouvre jamais le panneau jumeau.
+- **Sélecteur de couches** (BCM déclaré / Réalité découverte / Écarts — filtre les arêtes) + **barre de recherche** (jumeau par nom ou ID, domaine → centrage) en haut de carte ; **mini-carte** bas-droite restaurée ; **plein écran** dans les contrôles ; chip **Écarts** ajouté au composer.
+- **Correctif de fond (race React Flow)** : les changements de dimensions sont désormais réinjectés dans les nœuds dérivés (`mesures`) — sans cela le store interne ne connaissait pas les ports et les arêtes disparaissaient par intermittence au premier rendu. + amorce post-montage. 4 chargements consécutifs OK.
+- Tests : **iteration_31 → 100 % frontend** (agent de test, 10 scénarios : 2 reloads 14/14 arêtes, hover/épinglage, tooltip membrane, couches, recherche, drag 14/14, non-régression zooms/temporel).
+
 ## Implémenté (06/2026 — v26e, contacts arêtes/jumeaux revalidés)
 - **Retouche demandée** : les arêtes orthogonales traversaient les labels (qui étaient à droite du point, à hauteur du port). Le label passe **sous le point** (point au-dessus, nom + domaine centrés en dessous) — les arêtes arrivent horizontalement sur le point sans jamais croiser le texte, sur les 4 variantes (jumeau, voisin, porte, anonyme).
 - Halo d'activité restylé en surbrillance douce arrondie (fond teinté + bord légère) au lieu d'un anneau ovale autour du bloc.

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ReactFlow, Background, BackgroundVariant, Controls, SelectionMode } from "@xyflow/react";
+import { ReactFlow, Background, BackgroundVariant, Controls, ControlButton, MiniMap, SelectionMode } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { X, Sparkle } from "@phosphor-icons/react";
+import { X, Sparkle, CornersOut, MagnifyingGlass } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useMesh } from "@/lib/mesh";
@@ -19,7 +19,7 @@ import ExpliquerCarte from "@/components/map/ExpliquerCarte";
 import ComposerFlore from "@/components/ComposerFlore";
 import useNavigationAtlas from "@/components/map/useNavigationAtlas";
 import useZoomSemantique from "@/components/map/useZoomSemantique";
-import { NIVEAUX_ZOOM, construireGraphe, statsDuDomaine } from "@/lib/atlasGraph";
+import { NIVEAUX_ZOOM, construireGraphe, statsDuDomaine, idNumerique } from "@/lib/atlasGraph";
 import { couleurDomaine } from "@/lib/domaines";
 import { parseQuand, finDeJournee, fmtDate } from "@/lib/temps";
 
@@ -45,9 +45,18 @@ export default function Atlas() {
   const [expliquerOuvert, setExpliquerOuvert] = useState(false);
   const direct = modeTemps === "direct";
   const [outil, setOutil] = useState("deplacement");
-  const { selection, setSelection, domaineSel, setDomaineSel, focusCarte, commanderCarte, setFocusVisuel } = useContexte();
+  const { selection, setSelection, domaineSel, setDomaineSel, focusCarte, commanderCarte, setFocusVisuel, ouvrirFlore } = useContexte();
   const [relFocus, setRelFocus] = useState(false);
   const [posOverrides, setPosOverrides] = useState({});
+  const [epingle, setEpingle] = useState(null); // jumeau épinglé (panneau flottant persistant)
+  const [survolJumeau, setSurvolJumeau] = useState(null);
+  const [couchesRel, setCouchesRel] = useState({ bcm: true, realite: true, ecarts: true });
+  const [recherche, setRecherche] = useState("");
+  const carteRef = useRef(null);
+  const [amorce, setAmorce] = useState(0);
+  const [mesures, setMesures] = useState({}); // dimensions mesurées par React Flow, réinjectées dans le graphe
+  const [regionSurvoleeId, setRegionSurvoleeId] = useState(null); // membrane survolée (proximité frontière)
+  const [regionTooltip, setRegionTooltip] = useState(null);
   const [perimetreTravail, setPerimetreTravail] = useState(null);
   const [attenteComparaison, setAttenteComparaison] = useState(false);
   const [comparaison, setComparaison] = useState(null);
@@ -207,6 +216,21 @@ export default function Atlas() {
   );
 
   const onNodesChange = useCallback((changes) => {
+    // Changements de dimensions : les réinjecter dans nos nœuds dérivés — sinon le store
+    // interne ne connaît jamais les ports et les arêtes restent invisibles (course au montage)
+    const dims = changes.filter((c) => c.type === "dimensions" && c.dimensions);
+    if (dims.length) {
+      setMesures((m) => {
+        let next = m;
+        for (const c of dims) {
+          const cur = m[c.id];
+          if (cur && Math.abs(cur.width - c.dimensions.width) < 1 && Math.abs(cur.height - c.dimensions.height) < 1) continue;
+          if (next === m) next = { ...m };
+          next[c.id] = { width: c.dimensions.width, height: c.dimensions.height };
+        }
+        return next;
+      });
+    }
     setSelection((prev) => {
       let next = prev;
       for (const ch of changes) {
@@ -304,15 +328,132 @@ export default function Atlas() {
     // Conserve les dimensions mesurées par React Flow : le graphe est reconstruit à chaque
     // tick de drag — sans cela les nœuds perdent leur mesure et les arêtes disparaissent.
     const internes = rfRef.current?.getNodes?.() || [];
-    if (internes.length) {
-      const parId = new Map(internes.map((n) => [n.id, n]));
-      g.nodes = g.nodes.map((n) => {
-        const a = parId.get(n.id);
-        return a?.measured ? { ...n, measured: a.measured, dragging: a.dragging || undefined } : n;
-      });
-    }
+    const parId = new Map(internes.map((n) => [n.id, n]));
+    g.nodes = g.nodes.map((n) => {
+      if (n.type === "region" && n.data.id === regionSurvoleeId) n = { ...n, data: { ...n.data, survol: true } };
+      const a = parId.get(n.id);
+      const dim = mesures[n.id];
+      const base = a?.measured ? { ...n, measured: a.measured, dragging: a.dragging || undefined } : n;
+      return dim ? { ...base, width: dim.width, height: dim.height, measured: { width: dim.width, height: dim.height } } : base;
+    });
     return g;
-  }, [mesh, focus, situation, halo, compteurs, selection, relFocus, zoomNiveau, vueActive, posOverrides, domaineSel, domaineInterne, jumeauFocus, perimetreTravail, domDe, statsRegions, focusCarte, temps]);
+  }, [mesh, focus, situation, halo, compteurs, selection, relFocus, zoomNiveau, vueActive, posOverrides, domaineSel, domaineInterne, jumeauFocus, perimetreTravail, domDe, statsRegions, focusCarte, temps, amorce, mesures, regionSurvoleeId]);
+
+  // Couches de relations (BCM déclaré / Réalité découverte / Écarts) + accentuation au survol/épinglage
+  const edgesVisibles = useMemo(() => {
+    let es = edges.filter((e) => {
+      const etat = e.data?.etat;
+      if (etat === "confirmee" || etat === "obsolete") return couchesRel.bcm;
+      if (etat === "observee" || etat === "validation") return couchesRel.realite;
+      if (etat === "supposee" || etat === "contestee") return couchesRel.ecarts;
+      return true;
+    });
+    const actif = epingle || survolJumeau;
+    if (actif) {
+      es = es.map((e) =>
+        e.source === actif || e.target === actif || e.source === `voisin-${actif}` || e.target === `voisin-${actif}`
+          ? { ...e, zIndex: 20, style: { ...e.style, strokeWidth: (e.style?.strokeWidth || 1.5) + 1, opacity: 1 } }
+          : { ...e, label: undefined, style: { ...e.style, opacity: 0.12 } }
+      );
+    }
+    return es;
+  }, [edges, couchesRel, epingle, survolJumeau]);
+
+  // Jumeau survolé ou épinglé → panneau flottant à gauche
+  const jumeauSurvole = useMemo(() => {
+    const id = epingle || survolJumeau;
+    return id && mesh ? mesh.jumeaux.find((x) => x.id === id && !x.anonyme) || null : null;
+  }, [epingle, survolJumeau, mesh]);
+  const statsJumeau = useMemo(() => {
+    if (!jumeauSurvole || !mesh) return null;
+    const liees = mesh.relations.filter((r) => r.source === jumeauSurvole.id || r.cible === jumeauSurvole.id);
+    return {
+      flux: liees.filter((r) => r.etat === "observee").length,
+      ecarts: liees.filter((r) => r.etat === "supposee" || r.etat === "contestee").length,
+    };
+  }, [jumeauSurvole, mesh]);
+
+  const resultatsRecherche = useMemo(() => {
+    const q = recherche.trim().toLowerCase();
+    if (!q || !mesh) return [];
+    const js = mesh.jumeaux
+      .filter((j) => !j.anonyme && (j.nom.toLowerCase().includes(q) || idNumerique(j.id).includes(q)))
+      .slice(0, 5)
+      .map((j) => ({ type: "jumeau", id: j.id, label: j.nom, sub: `${idNumerique(j.id)} · ${j.domaine}` }));
+    const ds = (mesh.regions || [])
+      .filter((r) => r.label.toLowerCase().includes(q))
+      .slice(0, 3)
+      .map((r) => ({ type: "domaine", id: r.label, label: r.label, sub: "domaine" }));
+    return [...js, ...ds];
+  }, [recherche, mesh]);
+
+  // Échap ferme la sélection épinglée
+  useEffect(() => {
+    const h = (e) => { if (e.key === "Escape") setEpingle(null); };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, []);
+
+  // Amorce : force une reconstruction du graphe après le montage pour que React Flow
+  // ait mesuré les ports (sinon les arêtes peuvent rester invisibles au premier rendu)
+  useEffect(() => {
+    if (amorce >= 2) return undefined;
+    const t = setTimeout(() => setAmorce((a) => a + 1), amorce === 0 ? 250 : 700);
+    return () => clearTimeout(t);
+  }, [amorce]);
+
+  const pleinEcran = () => {
+    const el = carteRef.current;
+    if (!el) return;
+    if (document.fullscreenElement) document.exitFullscreen();
+    else el.requestFullscreen?.();
+  };
+
+  // Survol des membranes par proximité de la frontière (les zones d'interaction des arêtes les recouvrent)
+  const surSurvolCarte = (e) => {
+    if (!rfRef.current || !mesh || jumeauFocus) return;
+    const rect = carteRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const p = rfRef.current.screenToFlowPosition({ x: e.clientX, y: e.clientY });
+    const zoom = rfRef.current.getZoom() || 1;
+    let trouve = null;
+    for (const n of nodes) {
+      if (n.type !== "region" || !n.data.points) continue;
+      const ox = n.position.x;
+      const oy = n.position.y;
+      const pts = n.data.points;
+      let min = Infinity;
+      for (let i = 0; i < pts.length; i++) {
+        const ax = pts[i].x + ox;
+        const ay = pts[i].y + oy;
+        const bx = pts[(i + 1) % pts.length].x + ox;
+        const by = pts[(i + 1) % pts.length].y + oy;
+        const dx = bx - ax;
+        const dy = by - ay;
+        const L2 = dx * dx + dy * dy || 1;
+        const t = Math.max(0, Math.min(1, ((p.x - ax) * dx + (p.y - ay) * dy) / L2));
+        const d = Math.hypot(p.x - (ax + t * dx), p.y - (ay + t * dy));
+        if (d < min) min = d;
+      }
+      if (min < 18 / zoom) { trouve = n; break; }
+    }
+    if (trouve) {
+      if (regionSurvoleeId !== trouve.data.id) setRegionSurvoleeId(trouve.data.id);
+      setRegionTooltip({ x: e.clientX - rect.left, y: e.clientY - rect.top, data: trouve.data });
+    } else if (regionSurvoleeId) {
+      setRegionSurvoleeId(null);
+      setRegionTooltip(null);
+    }
+  };
+
+  const centrerSurJumeau = (id) => {
+    const j = mesh?.jumeaux.find((x) => x.id === id);
+    if (!j) return;
+    const pos = posOverrides[id] || j.position;
+    setEpingle(id);
+    rfRef.current?.setCenter(pos.x + 30, pos.y + 40, { zoom: 1.4, duration: 600 });
+    setRecherche("");
+  };
 
   const eventsVisibles = events.filter((e) => couches[e.dynamique || "operationnelle"]);
 
@@ -351,21 +492,29 @@ export default function Atlas() {
 
   return (
     <div className="flex h-full flex-col">
-    <div className="relative min-h-0 flex-1 overflow-hidden" data-testid="system-map" style={{ background: "radial-gradient(ellipse at 50% 38%, #FDFDFB 0%, #F5F4F0 65%, #EDECE6 100%)" }}>
+    <div ref={carteRef} onPointerMove={surSurvolCarte} onPointerLeave={() => { setRegionSurvoleeId(null); setRegionTooltip(null); }} className="relative min-h-0 flex-1 overflow-hidden" data-testid="system-map" style={{ background: "radial-gradient(ellipse at 50% 38%, #FDFDFB 0%, #F5F4F0 65%, #EDECE6 100%)" }}>
       <ReactFlow
         key={focus || situationParam || "mesh"}
         nodes={nodes}
-        edges={edges}
+        edges={edgesVisibles}
         nodeTypes={nodeTypes}
         fitView
         fitViewOptions={{ padding: 0.15 }}
         minZoom={0.3}
         maxZoom={2.6}
         zoomOnDoubleClick={false}
-        onInit={(inst) => { rfRef.current = inst; }}
+        onInit={(inst) => {
+          rfRef.current = inst;
+          setTimeout(() => {
+            try { inst.updateNodeInternals(inst.getNodes().map((n) => n.id)); } catch { /* mesure ultérieure */ }
+          }, 120);
+        }}
         onMove={onMove}
-        onNodeMouseEnter={onNodeMouseEnter}
-        onNodeMouseLeave={onNodeMouseLeave}
+        onNodeMouseEnter={(e, node) => {
+          onNodeMouseEnter(e, node);
+          if (node.type === "twin" && !node.data?.porte && !node.data?.voisinRel && !node.data?.jumeau?.anonyme) setSurvolJumeau(node.data.jumeau.id);
+        }}
+        onNodeMouseLeave={(e, node) => { onNodeMouseLeave(e, node); setSurvolJumeau(null); }}
         onNodesChange={onNodesChange}
         panOnDrag={outil === "deplacement"}
         selectionOnDrag={outil === "lasso"}
@@ -413,6 +562,7 @@ export default function Atlas() {
             entrerJumeau(node.data.jumeau);
             return;
           }
+          setEpingle((p) => (p === node.data.jumeau.id ? null : node.data.jumeau.id));
           setSelected(node.data.jumeau);
           setSelectedRelation(null);
           setDomaineSel(null);
@@ -444,7 +594,7 @@ export default function Atlas() {
               const j = mesh.jumeaux.find((x) => x.id === dc.id && !x.anonyme);
               if (j) {
                 const pos = posOverrides[j.id] || j.position;
-                if (Math.abs(p.x - (pos.x + 95)) < 140 && Math.abs(p.y - (pos.y + 32)) < 75) { entrerJumeau(j); return; }
+                if (Math.abs(p.x - (pos.x + 30)) < 90 && Math.abs(p.y - (pos.y + 40)) < 85) { entrerJumeau(j); return; }
               }
             }
             if (dc.kind === "region" && !domaineInterne && !jumeauFocus) {
@@ -455,7 +605,7 @@ export default function Atlas() {
               }
             }
           }
-          setSelected(null); setSelectedRelation(null); setDomaineSel(null); setSelection([]); setRelFocus(false); setComparaison(null); setAttenteComparaison(false); commanderCarte(null);
+          setSelected(null); setSelectedRelation(null); setDomaineSel(null); setSelection([]); setRelFocus(false); setComparaison(null); setAttenteComparaison(false); commanderCarte(null); setEpingle(null);
           majUrl(domaineInterne ? { sel: null } : { sel: null, domaine: null, interne: null, jumeau: null });
         }}
         nodesDraggable
@@ -463,8 +613,124 @@ export default function Atlas() {
         colorMode="light"
       >
         <Background variant={BackgroundVariant.Dots} gap={26} size={1.3} color="rgba(17,17,16,0.13)" />
-        <Controls showInteractive={false} position="bottom-right" />
+        <Controls showInteractive={false} position="bottom-right" style={{ marginBottom: 128 }}>
+          <ControlButton onClick={pleinEcran} title="Plein écran" data-testid="plein-ecran-btn">
+            <CornersOut size={14} />
+          </ControlButton>
+        </Controls>
+        <MiniMap
+          position="bottom-right"
+          pannable
+          zoomable
+          style={{ width: 168, height: 112 }}
+          nodeColor={(n) => (n.type === "region" ? `${n.data?.couleur || "#71716D"}66` : couleurDomaine(n.data?.jumeau?.domaine))}
+          maskColor="rgba(247,247,246,0.6)"
+          data-testid="minimap"
+        />
       </ReactFlow>
+
+      {/* Sélecteur de couches de relations + recherche */}
+      <div className={`pointer-events-none absolute left-32 top-3 z-10 flex items-start justify-between gap-3 transition-all ${selected || selectedRelation || domaineSel ? "right-[400px]" : "right-24"}`}>
+        <div className="glass pointer-events-auto flex items-center gap-1 rounded-xl p-1" data-testid="couches-relations">
+          {[
+            ["bcm", "BCM déclaré", "rgba(17,17,16,0.45)", "solid"],
+            ["realite", "Réalité découverte", "#0E7490", "solid"],
+            ["ecarts", "Écarts", "#D97706", "dashed"],
+          ].map(([id, label, coul, st]) => (
+            <button
+              key={id}
+              onClick={() => setCouchesRel((c) => ({ ...c, [id]: !c[id] }))}
+              data-testid={`couche-rel-${id}`}
+              title={label}
+              className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-code text-[10px] transition-colors ${couchesRel[id] ? "bg-white text-[#111110] shadow-sm" : "text-[#71716D] opacity-50"}`}
+            >
+              <span className="inline-block w-5 border-t-2" style={{ borderColor: coul, borderTopStyle: st }} />
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="pointer-events-auto relative">
+          <div className="glass flex items-center gap-2 rounded-xl px-3 py-2">
+            <MagnifyingGlass size={13} className="shrink-0 text-[#71716D]" />
+            <input
+              value={recherche}
+              onChange={(e) => setRecherche(e.target.value)}
+              placeholder="Rechercher un jumeau, domaine, flux…"
+              data-testid="atlas-recherche"
+              className="w-60 bg-transparent text-xs text-[#111110] placeholder:text-[#71716D] focus:outline-none"
+            />
+          </div>
+          {resultatsRecherche.length > 0 && (
+            <div className="glass absolute right-0 top-11 z-30 w-72 rounded-xl p-1.5" data-testid="atlas-recherche-resultats">
+              {resultatsRecherche.map((r) => (
+                <button
+                  key={`${r.type}-${r.id}`}
+                  onClick={() => (r.type === "jumeau" ? centrerSurJumeau(r.id) : (setDomaineSel(r.id), setRecherche("")))}
+                  data-testid={`recherche-${r.type}-${r.id}`}
+                  className="w-full rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-[#F0F0EE]"
+                >
+                  <div className="text-xs font-semibold text-[#111110]">{r.label}</div>
+                  <div className="font-code text-[9px] text-[#71716D]">{r.sub}</div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Panneau flottant du jumeau — survol (aperçu) ou épinglé au clic */}
+      {jumeauSurvole && statsJumeau && (
+        <div
+          className={`absolute left-4 top-20 z-20 w-64 rounded-2xl border border-[#E5E5E3] bg-white p-4 shadow-lg ${epingle ? "" : "pointer-events-none"}`}
+          data-testid="panneau-jumeau-flottant"
+        >
+          <div className="flex items-center gap-3">
+            <span className={`flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white ${epingle ? "ring-2 ring-[#0E7490]" : "ring-1 ring-black/10"}`}>
+              <img src="/assets/robot-jumeau.jpg" alt="" draggable={false} className="h-11 w-11 scale-[1.65] object-cover" />
+            </span>
+            <div className="min-w-0">
+              <div className="font-code text-[10px] font-semibold tracking-wide text-[#71716D]">{idNumerique(jumeauSurvole.id)}</div>
+              <div className="truncate font-display text-base font-bold text-[#111110]" data-testid="panneau-jumeau-nom">{jumeauSurvole.nom}</div>
+              <div className="font-code text-[9px] uppercase tracking-[0.15em] text-[#71716D]">Jumeau applicatif</div>
+            </div>
+          </div>
+          <dl className="mt-3 space-y-1.5 border-t border-[#F0F0EE] pt-3 text-xs">
+            <div className="flex items-center justify-between">
+              <dt className="text-[#71716D]">Confiance</dt>
+              <dd className="font-code font-semibold text-[#0E7490]" data-testid="panneau-jumeau-confiance">{jumeauSurvole.confiance?.valeur ?? jumeauSurvole.couverture ?? "—"} %</dd>
+            </div>
+            <div className="flex items-center justify-between">
+              <dt className="text-[#71716D]">Relations observées</dt>
+              <dd className="font-code font-semibold text-[#111110]" data-testid="panneau-jumeau-flux">{statsJumeau.flux}</dd>
+            </div>
+            <div className="flex items-center justify-between">
+              <dt className="text-[#71716D]">Écarts au BCM</dt>
+              <dd className={`font-code font-semibold ${statsJumeau.ecarts > 0 ? "text-[#D97706]" : "text-[#111110]"}`} data-testid="panneau-jumeau-ecarts">{statsJumeau.ecarts}</dd>
+            </div>
+          </dl>
+          <div className="mt-3 space-y-1.5">
+            <button
+              onClick={() => { setSelection([jumeauSurvole.id]); ouvrirFlore(); }}
+              data-testid="panneau-jumeau-interroger"
+              className="w-full rounded-lg bg-[#0E7490] px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#155E75]"
+            >
+              Interroger
+            </button>
+            <button
+              onClick={() => { setSelected(jumeauSurvole); setSelectedRelation(null); setDomaineSel(null); setOnglet("detail"); }}
+              data-testid="panneau-jumeau-ouvrir"
+              className="w-full rounded-lg border border-[#0E7490]/40 px-3 py-2 text-xs font-semibold text-[#0E7490] transition-colors hover:bg-[#0E7490]/10"
+            >
+              Ouvrir le jumeau
+            </button>
+          </div>
+          {epingle && (
+            <button onClick={() => setEpingle(null)} data-testid="panneau-jumeau-fermer" title="Fermer (Échap)" className="absolute right-2.5 top-2.5 text-[#71716D] transition-colors hover:text-[#111110]">
+              <X size={13} />
+            </button>
+          )}
+        </div>
+      )}
 
       <AtlasControle
         mesh={mesh} focus={focus}
@@ -561,6 +827,23 @@ export default function Atlas() {
       )}
 
       <AtlasLegende />
+
+      {/* Infobulle de membrane — proche de la frontière survolée */}
+      {regionTooltip && regionSurvoleeId && (
+        <div
+          className="pointer-events-none absolute z-30 w-52 rounded-xl border border-[#E5E5E3] bg-white p-3 shadow-lg"
+          style={{ left: Math.min(regionTooltip.x + 16, (carteRef.current?.clientWidth || 1200) - 230), top: Math.max(regionTooltip.y + 16, 8) }}
+          data-testid={`region-tooltip-${regionSurvoleeId}`}
+        >
+          <div className="font-display text-xs font-bold" style={{ color: regionTooltip.data.couleur }}>Domaine {regionTooltip.data.label}</div>
+          <div className="mt-1.5 space-y-0.5 font-code text-[10px] text-[#52524F]">
+            <div>{regionTooltip.data.maturite?.jumeaux ?? "—"} jumeaux</div>
+            <div>{regionTooltip.data.flux ?? 0} flux observés</div>
+            <div>{regionTooltip.data.ecarts ?? 0} écart{(regionTooltip.data.ecarts ?? 0) > 1 ? "s" : ""} structurel{(regionTooltip.data.ecarts ?? 0) > 1 ? "s" : ""}</div>
+          </div>
+          <div className="mt-2 font-code text-[9px] text-[#0E7490]">Double-clic : explorer le domaine →</div>
+        </div>
+      )}
 
       {/* Chip « vue commandée par Flore » */}
       {focusCarte && (
