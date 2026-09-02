@@ -1,0 +1,37 @@
+{
+  "summary": "Atlas v28 testé end-to-end (backend + frontend). Toutes les nouveautés v28 fonctionnent : (1) pan avec inertie confirmée — le transform du viewport continue à évoluer entre mouseup et +450ms (translate change de -369→-417 px). Curseur grab natif React Flow. (2) Double-clic sur zone vide → zoom centré pointeur (scale 1.059 → 1.43). Touches +/− modifient le scale ; 0 = fitView. (3) Niveau 1 « Capacités » atteint via wheel-out (scale 0.3) : 0 twin visible, 6 corridors agrégés, 6 region-macro-reg-* avec pattern « N jumeaux · N flux · N écarts », indicateur « Niveau 1 · Capacités · corridors agrégés ». (4) Niveau 3 « Applications & flux · détail des relations » : 12 twin-nom-* rendus, 12 port-entree + 12 port-sortie, labels de flux visibles (« contestée — contradiction », « validation A2A — 82 % »). (5) Mode réorganisation : clic outil-edition → mode-edition-chip visible ; drag twin-node-paiements → robot-fantome apparaît, 14 arêtes maintenues pendant le drag ; relâchement → fantôme disparaît. PATCH /api/jumeaux/{id} persiste la position (vérifié via GET /mesh). (6) Survol frontière membrane region-membrane-reg-paiement (getPointAtLength+getScreenCTM) → tooltip region-tooltip-reg-paiement s'affiche. (7) Recherche « frau » → suggestion recherche-jumeau-fraude → clic centre + halo (panneau-jumeau-flottant s'ouvre). (8) Couches BCM/Réalité/Écarts : toggle Écarts → 14→12 arêtes (retrait des 2 écarts). (9) Stabilité 2 reloads : 14/14 arêtes. (10) API /api/demo/reinitialiser retourne 200. Aucune erreur console bloquante.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "PATCH /api/jumeaux/{id}", "issue": "Un jumeau inexistant retourne 200 (autorisations() retourne un niveau par défaut) au lieu de 404. Non bloquant pour l'usage réel (le front n'envoie que des IDs valides), mais couvre mal les erreurs client."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "RegionNode.jsx (macro niveau 1)", "issue": "Libellé grammatical : « 1 écarts » et « 1 flux » (pluriel forcé). Devrait être « 1 écart » / « 1 flux » au singulier.", "selector": "[data-testid^=\"region-macro-\"]", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_atlas_v28.py",
+    "/app/test_reports/pytest/atlas_v28.xml"
+  ],
+  "action_items": [
+    "(Mineur) Corriger la pluralisation dans RegionNode.jsx lignes 68-72 : appliquer `s` conditionnel sur jumeaux/flux/écarts pour le niveau 1 macro.",
+    "(Mineur) PATCH /api/jumeaux/{id} devrait renvoyer 404 si l'id n'existe pas (vérifier via db.jumeaux.find_one avant update)."
+  ],
+  "critical_code_review_comments": [
+    "Atlas.jsx dépasse maintenant 1090 lignes : trois responsabilités majeures (surSurvolCarte + surMove/surMoveEnd inertie + debutDrag/finDrag + poursuite ressort) mériteraient d'être extraites en hooks dédiés (useMembraneProximite, usePanInertie, useDragTwin) pour ramener le fichier sous 700 lignes et faciliter les tests unitaires.",
+    "L'amorçage double-tick (250ms + 700ms) reste un contournement d'une course React Flow — un commentaire est présent mais l'idéal serait un test qui bloque la régression sur `updateNodeInternals` au mount.",
+    "Le seuil d'inertie (Math.hypot(vx,vy) < 80) est un magic number ; à extraire en constante nommée SEUIL_INERTIE_PX_S."
+  ],
+  "updated_files": ["/app/backend/tests/test_atlas_v28.py"],
+  "success_rate": {"backend": "83% (5/6, l'échec 404 étant un bug backend mineur non bloquant)", "frontend": "100% des flux v28 + non-régression validés"},
+  "test_credentials": "Pas d'authentification (persona architecte par défaut)",
+  "seed_data_creation": "Aucune — POST /api/demo/reinitialiser appelé en fin de tests drag pour restaurer les positions seed",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Atlas v28 entièrement validé. Nouveautés confirmées et testids clés : outil-edition (toolbar gauche), mode-edition-chip, robot-fantome, region-macro-reg-* (niveau 1), region-membrane-reg-* + region-tooltip-reg-* (survol frontière — utiliser getPointAtLength+getScreenCTM), twin-nom-*, port-entree/port-sortie (niveau 3), zoom-niveau. Pour tester l'inertie : `page.mouse.move` doit toujours précéder `page.mouse.wheel` sinon le wheel event est perdu ; comparer le transform du .react-flow__viewport à mouseup vs +400-600ms. Niveau 1 atteint à scale<0.6 (minZoom 0.3), Niveau 3 à scale>1.15. Backend PATCH /api/jumeaux/{id} accepte position (int/float) et domaine ; retourne 400 si payload vide, 200 si id inconnu (bug mineur).",
+  "rca of the issue": "Bug 404 mineur : autorisations(espace, [jid]) dans server.py retourne par défaut 'complet' pour tout id (n'interroge pas la collection jumeaux), donc la garde `aut.get(jid) is None` ne se déclenche jamais pour un id inexistant. Correctif suggéré : ajouter `if not await db.jumeaux.find_one({'id': jid}, {'_id':0,'id':1}): raise HTTPException(404, ...)` en tête de deplacer_jumeau."
+}

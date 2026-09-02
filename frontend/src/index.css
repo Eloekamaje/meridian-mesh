@@ -114,3 +114,8 @@
         border-left-color: inherit; border-right-color: inherit; border-top-color: inherit; border-bottom-color: inherit;
     }
 }
+
+/* Navigation cartographique façon Google Maps */
+.react-flow__pane { cursor: grab; }
+.react-flow__pane.dragging { cursor: grabbing; }
+.react-flow__pane, .react-flow__node, .react-flow__edge { user-select: none; -webkit-user-select: none; }

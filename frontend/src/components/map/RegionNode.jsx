@@ -18,7 +18,14 @@ export default function RegionNode({ data }) {
       <Handle type="source" id="s-l" position={Position.Left} className="!h-0 !w-0 !border-0 !bg-transparent" style={{ top: "50%" }} />
       <Handle type="target" id="t-r" position={Position.Right} className="!h-0 !w-0 !border-0 !bg-transparent" style={{ top: "50%" }} />
       <Handle type="source" id="s-r" position={Position.Right} className="!h-0 !w-0 !border-0 !bg-transparent" style={{ top: "50%" }} />
-      <svg width={data.w} height={data.h} className="absolute inset-0" style={{ overflow: "visible" }}>
+      <svg
+        viewBox={`0 0 ${data.wCible || data.w} ${data.hCible || data.h}`}
+        width={data.w}
+        height={data.h}
+        preserveAspectRatio="none"
+        className={`absolute inset-0 transition-opacity duration-300 ${data.attenue ? "opacity-40" : "opacity-100"}`}
+        style={{ overflow: "visible" }}
+      >
         {data.path ? (
           <path
             d={data.path}
@@ -36,7 +43,7 @@ export default function RegionNode({ data }) {
 
       <div
         className="nopan absolute top-4 cursor-pointer text-center"
-        style={{ pointerEvents: "auto", left: data.labelX ?? data.w / 2, transform: "translateX(-50%)" }}
+        style={{ pointerEvents: "auto", left: `${(((data.labelX ?? data.w / 2) / (data.wCible || data.w)) * 100).toFixed(2)}%`, transform: "translateX(-50%)" }}
         title="Clic : sélectionner le domaine · Double-clic : entrer dans le domaine"
         data-testid={`region-header-${data.id}`}
       >
@@ -56,6 +63,15 @@ export default function RegionNode({ data }) {
             </span>
           )}
         </div>
+        {data.macro && m && (
+          <div className="mt-1.5 flex items-center justify-center gap-2 font-code text-[10px] text-[#52524F]" data-testid={`region-macro-${data.id}`}>
+            <span>{m.jumeaux} jumeau{m.jumeaux > 1 ? "x" : ""}</span>
+            <span className="text-[#71716D]">·</span>
+            <span>{data.flux ?? 0} flux</span>
+            <span className="text-[#71716D]">·</span>
+            <span className={(data.ecarts ?? 0) > 0 ? "text-[#D97706]" : ""}>{data.ecarts ?? 0} écart{(data.ecarts ?? 0) > 1 ? "s" : ""}</span>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -7,7 +7,7 @@ export const COUCHES = [
   ["mesh", "Mesh", "#6D28D9"],
 ];
 
-export const NIVEAUX_ZOOM = { 1: "Entreprise", 2: "Domaine", 3: "Jumeau" };
+export const NIVEAUX_ZOOM = { 1: "Capacités", 2: "Domaines", 3: "Applications & flux" };
 
 // Identifiant numérique court affiché au-dessus du robot (le nom reste hors de la carte)
 export const idNumerique = (id) => {
@@ -141,6 +141,7 @@ export const makeEdge = (r, niveau, positions) => {
     ...cotes,
     type: "smoothstep",
     pathOptions: { borderRadius: 10 },
+    interactionWidth: 8, // zone de clic raisonnable sans bloquer le déplacement de la carte
     animated: !!r.active || r.etat === "validation",
     // Marqueur directionnel turquoise sur les relations observées par le Mesh
     ...(r.etat === "observee" && !r.restreinte
@@ -450,7 +451,7 @@ export function construireGraphe({
         initialWidth: 64,
         initialHeight: 78,
         hidden: entreprise && !j.anonyme ? true : entreprise,
-        data: { jumeau: j, dim: dims.has(j.id), halo: halo === j.id, evenements: compteurs[j.id] || 0, etape: null },
+        data: { jumeau: j, dim: dims.has(j.id), halo: halo === j.id, evenements: compteurs[j.id] || 0, etape: null, niveau: zoomNiveau },
         selected: selection.includes(j.id),
       };
     })
@@ -486,6 +487,7 @@ export function construireGraphe({
         targetHandle: droite ? "t-l" : "t-r",
         type: "smoothstep",
         pathOptions: { borderRadius: 10 },
+        interactionWidth: 8,
         animated: c.actif,
         style: { stroke: "rgba(17,17,16,0.3)", strokeWidth: 2.5, opacity: 0.8 },
         label: `${c.a} ↔ ${c.b} · ${c.n} relation${c.n > 1 ? "s" : ""}${c.actif ? " · activité élevée" : ""}`,
@@ -513,6 +515,13 @@ export function construireGraphe({
           : { ...e, animated: false, style: { ...e.style, opacity: 0.08 } }
       );
     }
+  }
+  if (entreprise) {
+    // Niveau 1 — Capacités et macro-territoires : agrégats par territoire, robots masqués
+    const macro = ns
+      .filter((n) => n.type !== "twin")
+      .map((n) => ({ ...n, data: { ...n.data, macro: true } }));
+    return { nodes: macro, edges: repartirOffsets(appliquerTemps(es, temps)) };
   }
   return { nodes: ns, edges: repartirOffsets(appliquerTemps(es, temps)) };
 }

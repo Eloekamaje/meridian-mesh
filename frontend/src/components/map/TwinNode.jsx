@@ -6,25 +6,32 @@ import { idNumerique } from "@/lib/atlasGraph";
 const ROBOT = "/assets/robot-jumeau.jpg";
 
 // Avatar robot du jumeau : tête blanche arrondie, écran facial sombre, yeux turquoise, antenne
-function AvatarJumeau({ selected, actif }) {
+function AvatarJumeau({ selected, actif, grand, ports }) {
   const cls = "!h-2 !w-2 !min-w-0 !border-0 !bg-transparent";
+  const taille = grand ? "h-14 w-14" : "h-12 w-12";
   return (
-    <span className="relative flex h-12 w-12 shrink-0 items-center justify-center">
-      <Handle type="target" id="t-l" position={Position.Left} className={cls} style={{ left: -2, top: 22 }} />
-      <Handle type="source" id="s-l" position={Position.Left} className={cls} style={{ left: -2, top: 22 }} />
-      <Handle type="target" id="t-r" position={Position.Right} className={cls} style={{ right: -2, top: 22 }} />
-      <Handle type="source" id="s-r" position={Position.Right} className={cls} style={{ right: -2, top: 22 }} />
+    <span className={`relative flex ${taille} shrink-0 items-center justify-center transition-transform duration-200 group-hover:scale-[1.06]`}>
+      <Handle type="target" id="t-l" position={Position.Left} className={cls} style={{ left: -2, top: "46%" }} />
+      <Handle type="source" id="s-l" position={Position.Left} className={cls} style={{ left: -2, top: "46%" }} />
+      <Handle type="target" id="t-r" position={Position.Right} className={cls} style={{ right: -2, top: "46%" }} />
+      <Handle type="source" id="s-r" position={Position.Right} className={cls} style={{ right: -2, top: "46%" }} />
+      {ports && (
+        <>
+          <span className="absolute -left-1 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-[#71716D]" data-testid="port-entree" />
+          <span className="absolute -right-1 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-[#0E7490]" data-testid="port-sortie" />
+        </>
+      )}
       {actif && (
         <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#0E7490] opacity-25" />
       )}
       <span
-        className={`relative flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-white transition-shadow duration-200 ${
+        className={`relative flex ${taille} items-center justify-center overflow-hidden rounded-full bg-white transition-shadow duration-200 ${
           selected
             ? "shadow-[0_0_18px_rgba(14,116,144,0.5)] ring-2 ring-[#0E7490]"
             : "shadow-sm ring-1 ring-black/10 group-hover:shadow-[0_0_14px_rgba(14,116,144,0.45)] group-hover:ring-2 group-hover:ring-[#0E7490]/70"
         }`}
       >
-        <img src={ROBOT} alt="" draggable={false} className="h-11 w-11 scale-[1.65] object-cover" />
+        <img src={ROBOT} alt="" draggable={false} className={`${grand ? "h-[3.25rem] w-[3.25rem]" : "h-11 w-11"} scale-[1.65] object-cover`} />
       </span>
     </span>
   );
@@ -137,11 +144,12 @@ export default function TwinNode({ data, selected }) {
   }
 
   const couleur = couleurDomaine(j.domaine);
+  const niveau3 = (data.niveau || 2) >= 3;
 
-  // Jumeau = identifiant numérique + robot (le nom complet reste hors de la carte)
+  // Jumeau = identifiant numérique + robot (le nom complet apparaît au niveau 3 — applications & flux)
   return (
     <div
-      className={`group relative transition-opacity duration-500 ${data.dim ? "opacity-20" : "opacity-100"}`}
+      className={`group relative transition-opacity duration-500 ${data.dim ? "opacity-20" : data.adouci ? "opacity-60" : "opacity-100"}`}
       data-testid={`twin-node-${j.id}`}
     >
       {data.halo && (
@@ -151,14 +159,17 @@ export default function TwinNode({ data, selected }) {
         <span className="pointer-events-none absolute -inset-1.5 rounded-2xl border-2" style={{ borderColor: couleur }} data-testid="twin-focus-ring" />
       )}
       <div className="flex flex-col items-center gap-0.5">
-        <span className="flex items-center gap-1 font-code text-[10px] font-semibold tracking-wide text-[#3F3F3C]">
+        <span className="flex items-center gap-1 font-code text-[10px] font-semibold tracking-wide text-[#3F3F3C] transition-colors group-hover:text-[#0E7490]">
           {idNumerique(j.id)}
           {data.evenements > 0 && (
             <span className="rounded-full bg-[#E5E5E3] px-1 py-px font-code text-[8px] text-[#3F3F3C]">+{data.evenements}</span>
           )}
           {j.statut !== "actif" && <span className="font-code text-[8px] text-[#B45309]">{j.statut}</span>}
         </span>
-        <AvatarJumeau actif={j.statut === "actif"} selected={selected} />
+        <AvatarJumeau actif={j.statut === "actif"} selected={selected} grand={niveau3} ports={niveau3} />
+        {niveau3 && (
+          <span className="whitespace-nowrap text-[11px] font-semibold text-[#111110]" data-testid={`twin-nom-${j.id}`}>{j.nom}</span>
+        )}
       </div>
     </div>
   );

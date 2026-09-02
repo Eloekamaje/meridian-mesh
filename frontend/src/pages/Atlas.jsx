@@ -55,13 +55,22 @@ export default function Atlas() {
   const carteRef = useRef(null);
   const [amorce, setAmorce] = useState(0);
   const [mesures, setMesures] = useState({}); // dimensions mesurées par React Flow, réinjectées dans le graphe
-  const [regionSurvoleeId, setRegionSurvoleeId] = useState(null); // membrane survolée (proximité frontière)
+  const [regionSurvolee, setRegionSurvolee] = useState(null); // membrane survolée {id, label} (proximité frontière)
   const [regionTooltip, setRegionTooltip] = useState(null);
+  const [modeEdition, setModeEdition] = useState(false); // déplacement des robots uniquement en mode explicite
+  const [fantome, setFantome] = useState(null); // position de départ du robot pendant le drag
+  const coquesRef = useRef({}); // rect actuellement affiché de chaque membrane
+  const ciblesCoques = useRef({}); // rect cible calculé
+  const rafCoques = useRef(null);
+  const [tickCoques, setTickCoques] = useState(0);
+  const mouvements = useRef([]); // échantillons du viewport pour l'inertie
+  const inertie = useRef(false);
   const [perimetreTravail, setPerimetreTravail] = useState(null);
   const [attenteComparaison, setAttenteComparaison] = useState(false);
   const [comparaison, setComparaison] = useState(null);
   const rfRef = useRef(null);
   const dernierClicRegion = useRef({ kind: null, t: 0 });
+  const dernierClicPane = useRef(0);
   const restaure = useRef(false);
   const selAvantLasso = useRef([]);
   const centreFocusFait = useRef(null);
@@ -329,15 +338,42 @@ export default function Atlas() {
     // tick de drag — sans cela les nœuds perdent leur mesure et les arêtes disparaissent.
     const internes = rfRef.current?.getNodes?.() || [];
     const parId = new Map(internes.map((n) => [n.id, n]));
+    const nouvellesCibles = {};
     g.nodes = g.nodes.map((n) => {
-      if (n.type === "region" && n.data.id === regionSurvoleeId) n = { ...n, data: { ...n.data, survol: true } };
-      const a = parId.get(n.id);
+      if (n.type === "region") {
+        const cible = { x: n.position.x, y: n.position.y, w: n.data.w, h: n.data.h };
+        nouvellesCibles[n.id] = cible;
+        const cur = coquesRef.current[n.id];
+        if (!cur) coquesRef.current[n.id] = { ...cible };
+        // Ressort : la membrane affichée poursuit sa cible (matière souple, stabilisation ~300 ms)
+        const a = coquesRef.current[n.id];
+        n = {
+          ...n,
+          position: { x: a.x, y: a.y },
+          initialWidth: a.w,
+          initialHeight: a.h,
+          data: {
+            ...n.data,
+            w: a.w,
+            h: a.h,
+            wCible: cible.w,
+            hCible: cible.h,
+            survol: regionSurvolee?.id === n.data.id,
+            attenue: !!regionSurvolee && regionSurvolee.id !== n.data.id,
+          },
+        };
+      }
+      if (n.type === "twin" && regionSurvolee && n.data.jumeau && !n.data.jumeau.porte && n.data.jumeau.domaine !== regionSurvolee.label) {
+        n = { ...n, data: { ...n.data, adouci: true } };
+      }
+      const prev = parId.get(n.id);
       const dim = mesures[n.id];
-      const base = a?.measured ? { ...n, measured: a.measured, dragging: a.dragging || undefined } : n;
+      const base = prev?.measured ? { ...n, measured: prev.measured, dragging: prev.dragging || undefined } : n;
       return dim ? { ...base, width: dim.width, height: dim.height, measured: { width: dim.width, height: dim.height } } : base;
     });
+    ciblesCoques.current = nouvellesCibles;
     return g;
-  }, [mesh, focus, situation, halo, compteurs, selection, relFocus, zoomNiveau, vueActive, posOverrides, domaineSel, domaineInterne, jumeauFocus, perimetreTravail, domDe, statsRegions, focusCarte, temps, amorce, mesures, regionSurvoleeId]);
+  }, [mesh, focus, situation, halo, compteurs, selection, relFocus, zoomNiveau, vueActive, posOverrides, domaineSel, domaineInterne, jumeauFocus, perimetreTravail, domDe, statsRegions, focusCarte, temps, amorce, mesures, regionSurvolee, tickCoques]);
 
   // Couches de relations (BCM déclaré / Réalité découverte / Écarts) + accentuation au survol/épinglage
   const edgesVisibles = useMemo(() => {
@@ -387,9 +423,16 @@ export default function Atlas() {
     return [...js, ...ds];
   }, [recherche, mesh]);
 
-  // Échap ferme la sélection épinglée
+  // Échap ferme la sélection épinglée ; +/−/0 pilotent le zoom (comme Google Maps)
   useEffect(() => {
-    const h = (e) => { if (e.key === "Escape") setEpingle(null); };
+    const h = (e) => {
+      const cible = e.target?.tagName;
+      if (cible === "INPUT" || cible === "TEXTAREA") return;
+      if (e.key === "Escape") setEpingle(null);
+      if (e.key === "+" || e.key === "=") rfRef.current?.zoomIn({ duration: 220 });
+      if (e.key === "-") rfRef.current?.zoomOut({ duration: 220 });
+      if (e.key === "0") rfRef.current?.fitView({ duration: 300, padding: 0.15 });
+    };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
   }, []);
@@ -408,6 +451,36 @@ export default function Atlas() {
     if (document.fullscreenElement) document.exitFullscreen();
     else el.requestFullscreen?.();
   };
+
+  // Ressort des membranes : poursuite exponentielle (~300 ms, sans vibration)
+  const poursuite = useCallback(() => {
+    let actif = false;
+    const alpha = 1 - Math.exp(-(1 / 60) * 9);
+    for (const [id, cible] of Object.entries(ciblesCoques.current)) {
+      const cur = coquesRef.current[id] || { ...cible };
+      const n = {
+        x: cur.x + (cible.x - cur.x) * alpha,
+        y: cur.y + (cible.y - cur.y) * alpha,
+        w: cur.w + (cible.w - cur.w) * alpha,
+        h: cur.h + (cible.h - cur.h) * alpha,
+      };
+      const fini = Math.abs(n.x - cible.x) + Math.abs(n.y - cible.y) + Math.abs(n.w - cible.w) + Math.abs(n.h - cible.h) < 0.6;
+      coquesRef.current[id] = fini ? { ...cible } : n;
+      if (!fini) actif = true;
+    }
+    if (actif) {
+      setTickCoques((t) => t + 1);
+      rafCoques.current = requestAnimationFrame(poursuite);
+    } else {
+      rafCoques.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!rafCoques.current && Object.keys(ciblesCoques.current).length > 0) {
+      rafCoques.current = requestAnimationFrame(poursuite);
+    }
+  }, [nodes, poursuite]);
 
   // Survol des membranes par proximité de la frontière (les zones d'interaction des arêtes les recouvrent)
   const surSurvolCarte = (e) => {
@@ -438,11 +511,114 @@ export default function Atlas() {
       if (min < 18 / zoom) { trouve = n; break; }
     }
     if (trouve) {
-      if (regionSurvoleeId !== trouve.data.id) setRegionSurvoleeId(trouve.data.id);
+      if (regionSurvolee?.id !== trouve.data.id) setRegionSurvolee({ id: trouve.data.id, label: trouve.data.label });
       setRegionTooltip({ x: e.clientX - rect.left, y: e.clientY - rect.top, data: trouve.data });
-    } else if (regionSurvoleeId) {
-      setRegionSurvoleeId(null);
+    } else if (regionSurvolee) {
+      setRegionSurvolee(null);
       setRegionTooltip(null);
+    }
+  };
+
+  // Inertie de déplacement : échantillonnage du viewport, décélération progressive au relâchement
+  const surMove = (e, vp) => {
+    onMove(e, vp);
+    if (inertie.current) return;
+    const t = Date.now();
+    mouvements.current.push({ t, x: vp.x, y: vp.y, zoom: vp.zoom });
+    mouvements.current = mouvements.current.filter((m) => t - m.t < 180);
+  };
+
+  const surMoveEnd = () => {
+    const ms = mouvements.current;
+    mouvements.current = [];
+    if (!rfRef.current || ms.length < 2) return;
+    const a = ms[0];
+    const b = ms[ms.length - 1];
+    const dt = (b.t - a.t) / 1000;
+    if (dt <= 0.02) return;
+    let vx = (b.x - a.x) / dt;
+    let vy = (b.y - a.y) / dt;
+    if (Math.hypot(vx, vy) < 80) return; // trop lent : pas d'inertie
+    inertie.current = true;
+    let px = b.x;
+    let py = b.y;
+    let dernier = performance.now();
+    const pas = (t) => {
+      const d = Math.min((t - dernier) / 1000, 0.05);
+      dernier = t;
+      const fr = Math.exp(-d * 5.5); // amortissement rapide
+      vx *= fr;
+      vy *= fr;
+      px += vx * d;
+      py += vy * d;
+      rfRef.current?.setViewport({ x: px, y: py, zoom: rfRef.current.getZoom() });
+      if (Math.hypot(vx, vy) > 14) requestAnimationFrame(pas);
+      else inertie.current = false;
+    };
+    requestAnimationFrame(pas);
+  };
+
+  // Déplacement d'un robot — uniquement en mode réorganisation
+  const debutDrag = (_, node) => {
+    if (node.type !== "twin" || !node.data?.jumeau || node.data.jumeau.porte || node.data.voisinRel) return;
+    const rect = carteRef.current?.getBoundingClientRect();
+    if (!rect || !rfRef.current) return;
+    const sp = rfRef.current.flowToScreenPosition({ x: node.position.x + 30, y: node.position.y + 40 });
+    setFantome({ x: sp.x - rect.left, y: sp.y - rect.top });
+  };
+
+  const finDrag = async (_, node) => {
+    setFantome(null);
+    if (node.type !== "twin" || !node.data?.jumeau || node.data.jumeau.porte || node.data.voisinRel) return;
+    const j = node.data.jumeau;
+    const pos = node.position;
+    try {
+      await api.patch(`/jumeaux/${j.id}`, { position: { x: Math.round(pos.x), y: Math.round(pos.y) } });
+    } catch {
+      toast.error("Position non enregistrée");
+      return;
+    }
+    // Reclassification jamais automatique : proposition à l'humain
+    const centre = { x: pos.x + 30, y: pos.y + 40 };
+    const dansPolygone = (pts, ox, oy) => {
+      let dedans = false;
+      for (let i = 0, k = pts.length - 1; i < pts.length; k = i++) {
+        const xi = pts[i].x + ox;
+        const yi = pts[i].y + oy;
+        const xj = pts[k].x + ox;
+        const yj = pts[k].y + oy;
+        if (yi > centre.y !== yj > centre.y && centre.x < ((xj - xi) * (centre.y - yi)) / (yj - yi) + xi) dedans = !dedans;
+      }
+      return dedans;
+    };
+    let domaineHote = null;
+    let minDist = Infinity;
+    for (const n of nodes) {
+      if (n.type !== "region" || !n.data.points) continue;
+      if (dansPolygone(n.data.points, n.position.x, n.position.y)) domaineHote = n.data.label;
+      for (const p of n.data.points) {
+        minDist = Math.min(minDist, Math.hypot(centre.x - (p.x + n.position.x), centre.y - (p.y + n.position.y)));
+      }
+    }
+    if (domaineHote && domaineHote !== j.domaine) {
+      toast(`${j.nom} semble appartenir au domaine ${domaineHote}`, {
+        description: "La reclassification n'est jamais automatique — elle vous appartient.",
+        duration: 9000,
+        action: {
+          label: `Reclasser dans ${domaineHote}`,
+          onClick: async () => {
+            try {
+              await api.patch(`/jumeaux/${j.id}`, { domaine: domaineHote });
+              toast.success(`${j.nom} reclassé dans ${domaineHote}`);
+              recharger();
+            } catch {
+              toast.error("Reclassification impossible");
+            }
+          },
+        },
+      });
+    } else if (!domaineHote && minDist > 160) {
+      toast.info(`${j.nom} s'éloigne fortement de « ${j.domaine} » — appartenance à qualifier.`, { duration: 7000 });
     }
   };
 
@@ -451,6 +627,8 @@ export default function Atlas() {
     if (!j) return;
     const pos = posOverrides[id] || j.position;
     setEpingle(id);
+    setHalo(id); // membrane + robot brièvement mis en évidence
+    setTimeout(() => setHalo((h) => (h === id ? null : h)), 2000);
     rfRef.current?.setCenter(pos.x + 30, pos.y + 40, { zoom: 1.4, duration: 600 });
     setRecherche("");
   };
@@ -492,7 +670,7 @@ export default function Atlas() {
 
   return (
     <div className="flex h-full flex-col">
-    <div ref={carteRef} onPointerMove={surSurvolCarte} onPointerLeave={() => { setRegionSurvoleeId(null); setRegionTooltip(null); }} className="relative min-h-0 flex-1 overflow-hidden" data-testid="system-map" style={{ background: "radial-gradient(ellipse at 50% 38%, #FDFDFB 0%, #F5F4F0 65%, #EDECE6 100%)" }}>
+    <div ref={carteRef} onPointerMove={surSurvolCarte} onPointerLeave={() => { setRegionSurvolee(null); setRegionTooltip(null); }} className="relative min-h-0 flex-1 overflow-hidden" data-testid="system-map" style={{ background: "radial-gradient(ellipse at 50% 38%, #FDFDFB 0%, #F5F4F0 65%, #EDECE6 100%)" }}>
       <ReactFlow
         key={focus || situationParam || "mesh"}
         nodes={nodes}
@@ -509,7 +687,10 @@ export default function Atlas() {
             try { inst.updateNodeInternals(inst.getNodes().map((n) => n.id)); } catch { /* mesure ultérieure */ }
           }, 120);
         }}
-        onMove={onMove}
+        onMove={surMove}
+        onMoveEnd={surMoveEnd}
+        onNodeDragStart={debutDrag}
+        onNodeDragStop={finDrag}
         onNodeMouseEnter={(e, node) => {
           onNodeMouseEnter(e, node);
           if (node.type === "twin" && !node.data?.porte && !node.data?.voisinRel && !node.data?.jumeau?.anonyme) setSurvolJumeau(node.data.jumeau.id);
@@ -586,6 +767,16 @@ export default function Atlas() {
           setOnglet("detail");
         }}
         onPaneClick={(e) => {
+          // Double-clic sur une zone vide : zoom centré sur le pointeur (façon Google Maps)
+          const dcP = dernierClicPane.current;
+          dernierClicPane.current = Date.now();
+          if (Date.now() - dcP < 420 && rfRef.current && carteRef.current) {
+            const rect = carteRef.current.getBoundingClientRect();
+            const f = rfRef.current.screenToFlowPosition({ x: e.clientX, y: e.clientY });
+            const vp = rfRef.current.getViewport();
+            const z2 = Math.min(vp.zoom * 1.35, 2.6);
+            rfRef.current.setViewport({ x: e.clientX - rect.left - f.x * z2, y: e.clientY - rect.top - f.y * z2, zoom: z2 }, { duration: 240 });
+          }
           const dc = dernierClicRegion.current;
           dernierClicRegion.current = { kind: null, t: 0 };
           if (Date.now() - dc.t < 450 && rfRef.current && mesh) {
@@ -608,7 +799,7 @@ export default function Atlas() {
           setSelected(null); setSelectedRelation(null); setDomaineSel(null); setSelection([]); setRelFocus(false); setComparaison(null); setAttenteComparaison(false); commanderCarte(null); setEpingle(null);
           majUrl(domaineInterne ? { sel: null } : { sel: null, domaine: null, interne: null, jumeau: null });
         }}
-        nodesDraggable
+        nodesDraggable={modeEdition}
         nodesConnectable={false}
         colorMode="light"
       >
@@ -741,7 +932,33 @@ export default function Atlas() {
         rechargerVues={rechargerVues}
       />
 
-      <AtlasToolbar outil={outil} setOutil={setOutil} rfRef={rfRef} onExpliquer={() => setExpliquerOuvert((o) => !o)} expliquerOuvert={expliquerOuvert} />
+      <AtlasToolbar outil={outil} setOutil={setOutil} rfRef={rfRef} onExpliquer={() => setExpliquerOuvert((o) => !o)} expliquerOuvert={expliquerOuvert} modeEdition={modeEdition} setModeEdition={setModeEdition} />
+
+      {/* Indicateur du mode réorganisation */}
+      {modeEdition && (
+        <div className="glass absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-lg px-3 py-1.5" data-testid="mode-edition-chip" style={{ transform: "translateX(-50%) translateY(-28px)" }}>
+          <span className="h-1.5 w-1.5 rounded-full bg-[#B45309]" />
+          <span className="font-code text-[10px] text-[#52524F]">
+            Mode réorganisation — glissez un robot ; la reclassification est toujours proposée, jamais automatique
+          </span>
+          <button onClick={() => setModeEdition(false)} data-testid="mode-edition-quitter" className="text-[#71716D] transition-colors hover:text-[#111110]">
+            <X size={12} />
+          </button>
+        </div>
+      )}
+
+      {/* Position fantôme du robot en cours de déplacement */}
+      {fantome && (
+        <div
+          className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-1/2"
+          style={{ left: fantome.x, top: fantome.y }}
+          data-testid="robot-fantome"
+        >
+          <span className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-dashed border-[#71716D]/50 bg-white/50">
+            <img src="/assets/robot-jumeau.jpg" alt="" className="h-10 w-10 scale-[1.65] rounded-full object-cover opacity-35" />
+          </span>
+        </div>
+      )}
 
       {/* Bandeau temporel — photographie ou avant/après */}
       {(modeTemps === "historique" || modeTemps === "replay") && dateRef && (
@@ -820,7 +1037,7 @@ export default function Atlas() {
             ? `Focus jumeau — ${jumeauPar(jumeauFocus)?.nom} · zoom arrière pour remonter`
             : domaineInterne
               ? `Domaine ${domaineInterne} — zoom arrière pour remonter`
-              : `Niveau ${zoomNiveau} — ${NIVEAUX_ZOOM[zoomNiveau]}`}
+              : `Niveau ${zoomNiveau} · ${NIVEAUX_ZOOM[zoomNiveau]}`}
           {!jumeauFocus && !domaineInterne && zoomNiveau === 1 && " · corridors agrégés"}
           {!jumeauFocus && !domaineInterne && zoomNiveau === 3 && " · détail des relations"}
         </div>
@@ -829,11 +1046,11 @@ export default function Atlas() {
       <AtlasLegende />
 
       {/* Infobulle de membrane — proche de la frontière survolée */}
-      {regionTooltip && regionSurvoleeId && (
+      {regionTooltip && regionSurvolee && (
         <div
           className="pointer-events-none absolute z-30 w-52 rounded-xl border border-[#E5E5E3] bg-white p-3 shadow-lg"
           style={{ left: Math.min(regionTooltip.x + 16, (carteRef.current?.clientWidth || 1200) - 230), top: Math.max(regionTooltip.y + 16, 8) }}
-          data-testid={`region-tooltip-${regionSurvoleeId}`}
+          data-testid={`region-tooltip-${regionSurvolee.id}`}
         >
           <div className="font-display text-xs font-bold" style={{ color: regionTooltip.data.couleur }}>Domaine {regionTooltip.data.label}</div>
           <div className="mt-1.5 space-y-0.5 font-code text-[10px] text-[#52524F]">

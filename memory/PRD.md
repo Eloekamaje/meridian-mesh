@@ -1,5 +1,15 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v28, navigation cartographique façon Google Maps — spec utilisateur)
+- **Pan avec inertie** : échantillonnage du viewport pendant le glissement, décélération exponentielle amortie au relâchement (~300-500 ms), curseurs grab/grabbing, sélection de texte désactivée. **Cause racine d'un blocage du pan** : les zones d'interaction invisibles des arêtes (20 px par défaut) interceptaient le glisser — réduites à `interactionWidth: 8`.
+- **Zoom** : molette centrée pointeur (natif RF), **double-clic sur zone vide = zoom centré sur le pointeur** (viewport recalculé, 240 ms), raccourcis **+/−/0**, boutons ±, ajuster à la vue. Niveau sémantique affiché « Niveau 2 · Domaines ».
+- **Zoom sémantique enrichi** : Niveau 1 « Capacités » = robots masqués, membranes macro avec agrégats « N jumeaux · N flux · N écarts », corridors agrégés ; Niveau 2 = robots + IDs + membranes ; Niveau 3 « Applications & flux » = robots agrandis, **noms sous les App ID**, **ports d'entrée/sortie visibles**, labels de flux sur les arêtes.
+- **Membranes à ressort** : le rect affiché poursuit sa cible par rAF (α≈9/s, stabilisation ~300 ms, sans vibration) pendant/après le drag — matière souple professionnelle.
+- **Mode réorganisation explicite** (`outil-edition`, chip d'aide) : robots déplaçables uniquement dans ce mode ; **position fantôme** au point de départ ; halo renforcé ; au relâchement : arêtes recalculées, **position persistée** (`PATCH /api/jumeaux/{id}`, nouvelle route backend), **reclassification proposée par toast si le robot atterrit dans un autre domaine — jamais automatique** (action « Reclasser dans X »), « appartenance à qualifier » si éloigné de tout cluster.
+- **Survol membrane** : autres domaines atténués (membranes + robots) ; **survol robot** : avatar +6 %, App ID accentué ; recherche → caméra animée + **halo bref membrane+robot** + panneau épinglé.
+- Correctifs post-test : 404 sur PATCH jumeau inconnu (était 200), pluriel « 1 écart ».
+- Tests : **iteration_32 → 100 % frontend + backend 6/6** (inertie mesurée au transform, dblclick zoom, niveaux 1/3, fantôme, persistance vérifiée via GET /mesh, couches, tooltip, 2 reloads 14/14 arêtes).
+
 ## Implémenté (06/2026 — v27, refonte complète de l'Atlas selon la spec « cartographie vivante » utilisateur)
 - **Jumeaux = avatars robot** (`/assets/robot-jumeau.jpg`, image générée : tête blanche arrondie, écran facial sombre, yeux turquoise, antenne) dans un médaillon blanc, **identifiant numérique monospace à 4 chiffres au-dessus** (`idNumerique`, hash stable) — le nom complet n'apparaît plus sur la carte. Halo turquoise au survol, ping si actif.
 - **Membranes = coques CONCAVES polygonales** (`concaveman`, concavité 2.2, replis entre nœuds éloignés, marge ~18 px autour des avatars, angles adoucis mais géométrie polygonale) — géométrie calculée uniquement sur les centres des avatars, élastique (drag/ajout/suppression).

@@ -373,6 +373,31 @@ async def supprimer_jumeau(jid: str, x_persona: str = Header("architecte"), x_es
     return {"ok": True}
 
 
+@api_router.patch("/jumeaux/{jid}")
+async def deplacer_jumeau(jid: str, payload: dict, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+    """Position cartographique (mode réorganisation) et reclassification de domaine — toujours validées par un humain."""
+    _, espace = resoudre_perimetre(x_persona, x_espace)
+    if not await db.jumeaux.find_one({"id": jid}, {"_id": 0, "id": 1}):
+        raise HTTPException(404, "Jumeau introuvable")
+    aut = autorisations(espace, [jid])
+    if aut.get(jid) is None:
+        raise HTTPException(404, "Jumeau introuvable")
+    if aut[jid] != "complet":
+        raise HTTPException(403, "Niveau « complet » requis pour déplacer ce jumeau")
+    champs = {}
+    pos = payload.get("position")
+    if pos and isinstance(pos.get("x"), (int, float)) and isinstance(pos.get("y"), (int, float)):
+        champs["position"] = {"x": pos["x"], "y": pos["y"]}
+    if payload.get("domaine"):
+        champs["domaine"] = payload["domaine"]
+    if not champs:
+        raise HTTPException(400, "Rien à mettre à jour")
+    await db.jumeaux.update_one({"id": jid}, {"$set": champs})
+    if "domaine" in champs:
+        await journaler(x_persona, espace["id"], "reclassification d'un jumeau", jid)
+    return {"ok": True}
+
+
 @api_router.post("/jumeaux/{jid}/examiner")
 async def examiner_jumeau(jid: str, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
     _, espace = resoudre_perimetre(x_persona, x_espace)

@@ -1,4 +1,4 @@
-import { Hand, Lasso, Crosshair, Article } from "@phosphor-icons/react";
+import { Hand, Lasso, Crosshair, Article, PencilSimple } from "@phosphor-icons/react";
 
 const OUTILS = [
   { id: "deplacement", icon: Hand, label: "Déplacement" },
@@ -6,7 +6,7 @@ const OUTILS = [
   { id: "recentrage", icon: Crosshair, label: "Recentrage" },
 ];
 
-export default function AtlasToolbar({ outil, setOutil, rfRef, onExpliquer, expliquerOuvert }) {
+export default function AtlasToolbar({ outil, setOutil, rfRef, onExpliquer, expliquerOuvert, modeEdition, setModeEdition }) {
   return (
     <div className="glass absolute left-4 top-1/2 z-10 flex -translate-y-1/2 flex-col gap-1 rounded-xl p-1.5" data-testid="map-toolbar">
       {OUTILS.map(({ id, icon: Icon, label }) => (
@@ -30,6 +30,16 @@ export default function AtlasToolbar({ outil, setOutil, rfRef, onExpliquer, expl
           <Icon size={16} />
         </button>
       ))}
+      <button
+        title="Mode réorganisation — déplacer les robots (positions enregistrées, reclassification jamais automatique)"
+        data-testid="outil-edition"
+        onClick={() => setModeEdition((m) => !m)}
+        className={`mt-1 flex h-8 w-8 items-center justify-center rounded-md border-t border-[#E5E5E3] pt-1 transition-colors ${
+          modeEdition ? "bg-[#B45309]/15 text-[#B45309]" : "text-[#71716D] hover:bg-[#F0F0EE] hover:text-[#111110]"
+        }`}
+      >
+        <PencilSimple size={16} />
+      </button>
       <button
         title="Expliquer cette carte — description textuelle accessible"
         aria-label="Expliquer cette carte"
