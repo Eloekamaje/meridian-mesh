@@ -207,7 +207,7 @@ export function construireGraphe({
       .filter(Boolean);
     const rayF = Math.max(300, 150 + voisins.length * 26);
     const nsF = [{
-      id: jf.id, type: "twin", position: posF, initialWidth: 190, initialHeight: 64,
+      id: jf.id, type: "twin", position: posF, initialWidth: 150, initialHeight: 36,
       data: { jumeau: jf, focusCentral: true, evenements: compteurs[jf.id] || 0, halo: halo === jf.id },
       draggable: false, selectable: false, zIndex: 5,
     }];
@@ -217,7 +217,7 @@ export function construireGraphe({
       nsF.push({
         id: `voisin-${v.id}`, type: "twin",
         position: { x: cFx + Math.cos(ang) * rayF - 95, y: cFy + Math.sin(ang) * rayF - 35 },
-        initialWidth: 190, initialHeight: 70,
+        initialWidth: 150, initialHeight: 40,
         data: { jumeau: v, voisinRel: rel },
         draggable: false, selectable: false, zIndex: 4,
       });
@@ -274,8 +274,8 @@ export function construireGraphe({
         id: pid,
         type: "twin",
         position: { x: cx + Math.cos(ang) * ray - 90, y: cy + Math.sin(ang) * ray },
-        initialWidth: 190,
-        initialHeight: 70,
+        initialWidth: 150,
+        initialHeight: 40,
         data: {
           jumeau: { id: pid, nom: `Vers ${dom} · ${extCount[dom].n} relation${extCount[dom].n > 1 ? "s" : ""}`, domaine: dom, porte: true, statut: "porte" },
           porte: dom,
@@ -297,8 +297,8 @@ export function construireGraphe({
         id: j.id,
         type: "twin",
         position: posOverrides[j.id] || j.position,
-        initialWidth: 190,
-        initialHeight: 64,
+        initialWidth: 150,
+        initialHeight: 36,
         data: { jumeau: j, dim: false, halo: halo === j.id, evenements: compteurs[j.id] || 0, etape: null },
         selected: selection.includes(j.id),
       }))
@@ -355,8 +355,8 @@ export function construireGraphe({
         id: j.id,
         type: "twin",
         position,
-        initialWidth: 190,
-        initialHeight: 64,
+        initialWidth: 150,
+        initialHeight: 36,
         hidden: entreprise && !j.anonyme ? true : entreprise,
         data: { jumeau: j, dim: dims.has(j.id), halo: halo === j.id, evenements: compteurs[j.id] || 0, etape: null },
         selected: selection.includes(j.id),

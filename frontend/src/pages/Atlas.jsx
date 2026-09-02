@@ -295,15 +295,24 @@ export default function Atlas() {
     }
   }, [mesh, situation]);
 
-  const { nodes, edges } = useMemo(
-    () =>
-      construireGraphe({
-        mesh, situation, focus, vueActive, perimetreTravail,
-        jumeauFocus, domaineInterne, posOverrides, compteurs, halo, selection,
-        zoomNiveau, relFocus, focusCarte, domDe, statsRegions, temps,
-      }),
-    [mesh, focus, situation, halo, compteurs, selection, relFocus, zoomNiveau, vueActive, posOverrides, domaineSel, domaineInterne, jumeauFocus, perimetreTravail, domDe, statsRegions, focusCarte, temps]
-  );
+  const { nodes, edges } = useMemo(() => {
+    const g = construireGraphe({
+      mesh, situation, focus, vueActive, perimetreTravail,
+      jumeauFocus, domaineInterne, posOverrides, compteurs, halo, selection,
+      zoomNiveau, relFocus, focusCarte, domDe, statsRegions, temps,
+    });
+    // Conserve les dimensions mesurées par React Flow : le graphe est reconstruit à chaque
+    // tick de drag — sans cela les nœuds perdent leur mesure et les arêtes disparaissent.
+    const internes = rfRef.current?.getNodes?.() || [];
+    if (internes.length) {
+      const parId = new Map(internes.map((n) => [n.id, n]));
+      g.nodes = g.nodes.map((n) => {
+        const a = parId.get(n.id);
+        return a?.measured ? { ...n, measured: a.measured, dragging: a.dragging || undefined } : n;
+      });
+    }
+    return g;
+  }, [mesh, focus, situation, halo, compteurs, selection, relFocus, zoomNiveau, vueActive, posOverrides, domaineSel, domaineInterne, jumeauFocus, perimetreTravail, domDe, statsRegions, focusCarte, temps]);
 
   const eventsVisibles = events.filter((e) => couches[e.dynamique || "operationnelle"]);
 

@@ -1,5 +1,10 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v26b, correctif : arêtes qui disparaissaient pendant le drag)
+- **Bug signalé** : les arêtes disparaissaient pendant le déplacement d'un nœud. Cause : le graphe est reconstruit à chaque tick de drag (`posOverrides` → `construireGraphe`) ; les nœuds remplacés perdaient leurs dimensions mesurées par React Flow → ancres d'arêtes perdues jusqu'à re-mesure.
+- Correctif (`Atlas.jsx`) : les `measured` (+ `dragging`) des nœuds internes React Flow sont **reportertés sur les nœuds reconstruits** ; dimensions initiales des nœuds compacts alignées (150×36/40 au lieu de 190×64). Vérifié tick par tick : le nœud suit le pointeur en direct, 14/14 arêtes visibles pendant tout le drag, coque élastique intacte.
+- Note : l'avertissement console React Flow #015 (« drag a node that is not initialized ») persiste — bénin (pattern controlled-flow sans applyNodeChanges), aucun impact fonctionnel constaté.
+
 ## Implémenté (06/2026 — v26, géographie organique élastique + symbole jumeau)
 - **Demande utilisateur** : les domaines ne sont plus des formes rondes fixes — chaque région est une **coque organique** qui épouse la disposition de ses nœuds internes et se déforme élastiquement (déplacement, ajout, suppression).
 - **`coqueOrganique()` (`atlasGraph.js`)** : chaque nœud membre est gonflé en octogone → enveloppe convexe (monotone chain) → élargie depuis le centroïde → lissée par Catmull-Rom fermé. Calculée dans `construireGraphe` depuis les positions vivantes (`posOverrides`), donc recalculée à chaque drag — la coque suit le nœud déplacé. Fonctionne à 1, 2 ou N membres (vue globale + vue interne de domaine).
