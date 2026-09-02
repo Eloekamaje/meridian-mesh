@@ -1,5 +1,8 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v26c, arêtes orthogonales)
+- **Demande utilisateur** : routage orthogonal des relations — `makeEdge` passe en `type: "smoothstep"` (segments horizontaux/verticaux, coins légèrement arrondis). Les flux de points animés (observées) et les pointillés (supposées/validation/contestée) suivent les chemins orthogonaux. Vérifié : 14/14 arêtes en smoothstep, lecture façon schéma.
+
 ## Implémenté (06/2026 — v26b, correctif : arêtes qui disparaissaient pendant le drag)
 - **Bug signalé** : les arêtes disparaissaient pendant le déplacement d'un nœud. Cause : le graphe est reconstruit à chaque tick de drag (`posOverrides` → `construireGraphe`) ; les nœuds remplacés perdaient leurs dimensions mesurées par React Flow → ancres d'arêtes perdues jusqu'à re-mesure.
 - Correctif (`Atlas.jsx`) : les `measured` (+ `dragging`) des nœuds internes React Flow sont **reportertés sur les nœuds reconstruits** ; dimensions initiales des nœuds compacts alignées (150×36/40 au lieu de 190×64). Vérifié tick par tick : le nœud suit le pointeur en direct, 14/14 arêtes visibles pendant tout le drag, coque élastique intacte.

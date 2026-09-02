@@ -99,6 +99,7 @@ export const makeEdge = (r, niveau) => ({
   id: r.id,
   source: r.source,
   target: r.cible,
+  type: "smoothstep",
   animated: !!r.active || r.etat === "validation" || r.etat === "observee",
   data: { etat: r.etat, restreinte: !!r.restreinte },
   style: r.restreinte ? { ...styleParEtat(r), opacity: 0.35, strokeDasharray: "3 5" } : styleParEtat(r),
