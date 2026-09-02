@@ -52,6 +52,10 @@ function PointJumeau({ couleur, dashed }) {
       <Handle type="source" id="s-l" position={Position.Left} className={cls} style={{ left: -2, top: 7 }} />
       <Handle type="target" id="t-r" position={Position.Right} className={cls} style={{ right: -2, top: 7 }} />
       <Handle type="source" id="s-r" position={Position.Right} className={cls} style={{ right: -2, top: 7 }} />
+      <Handle type="target" id="t-t" position={Position.Top} className={cls} style={{ top: -2, left: 7 }} />
+      <Handle type="source" id="s-t" position={Position.Top} className={cls} style={{ top: -2, left: 7 }} />
+      <Handle type="target" id="t-b" position={Position.Bottom} className={cls} style={{ bottom: -2, left: 7 }} />
+      <Handle type="source" id="s-b" position={Position.Bottom} className={cls} style={{ bottom: -2, left: 7 }} />
       <span
         className={`relative inline-flex h-4 w-4 items-center justify-center rounded-full border-2 bg-white ${dashed ? "border-dashed" : ""}`}
         style={{ borderColor: couleur, boxShadow: "0 1px 3px rgba(17,17,16,0.15)" }}

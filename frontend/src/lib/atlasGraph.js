@@ -144,8 +144,12 @@ export const styleParEtat = (r) => {
   }
 };
 
-// --- Routage orthogonal dédié (moteur maison) ---
-const PRIORITES = { supposee: 2, validation: 2.5, observee: 3, confirmee: 4, obsolete: 5 };
+// --- Routage : routeur maison (provisoire/secours) + routeur final libavoid en Web Worker ---
+// Priorité de routage (spec) : contestée > observée/validation > supposée > déclarée > obsolète
+const PRIORITES = { contestee: 80, validation: 60, observee: 60, supposee: 50, confirmee: 40, obsolete: 20 };
+
+// Nos côtés de handles (r/l/t/b) ↔ ports libavoid (e/w/n/s)
+const COTE_VERS_PORT = { r: "e", l: "w", t: "n", b: "s" };
 
 // Centre de l'avatar (ou de la pastille) selon la variante de nœud
 function ancreJumeau(j, pos) {
@@ -154,15 +158,53 @@ function ancreJumeau(j, pos) {
   return { x: pos.x + 30, y: pos.y + 40, marge: 26 };
 }
 
-// Obstacles = rectangles des robots (avatar + App ID + dégagement), extrémités exclues
+// Obstacles = rectangles des robots (avatar + App ID + dégagement), extrémités exclues — routeur maison
 function obstaclesDe(ns, exclure) {
   return ns
     .filter((n) => n.type === "twin" && !n.data?.jumeau?.porte && !n.data?.jumeau?.anonyme && !exclure.has(n.id))
     .map((n) => ({ x0: n.position.x - 16, y0: n.position.y - 8, x1: n.position.x + 76, y1: n.position.y + 84 }));
 }
 
-// Fabrique d'arêtes orthogonales : ports directionnels, corridors, ponts, cache de stabilité
-function fabriqueOrtho(relations, ns, posDe, niveau, zoomFort = false) {
+// Géométrie d'un nœud jumeau pour le routeur final : forme connectable (avatar/pastille, ports N/E/S/W)
+// + obstacles non connectables (App ID, badge +N, nom, pastille de passerelle)
+function geometrieNoeud(n) {
+  const pos = n.position;
+  const j = n.data?.jumeau || {};
+  if (j.porte || j.anonyme) {
+    const nom = n.data?.apercuPorte?.domaine || j.nom || "";
+    const lw = nom.length * 6.5 + 34;
+    return {
+      forme: { id: n.id, x0: pos.x + 22, y0: pos.y, x1: pos.x + 38, y1: pos.y + 16 },
+      obstacles: [{ x0: pos.x + 30 - lw / 2, y0: pos.y + 18, x1: pos.x + 30 + lw / 2, y1: pos.y + 36 }],
+    };
+  }
+  const grand = (n.data?.niveau || 2) >= 3;
+  const w = grand ? 56 : 48;
+  const x0 = pos.x + (64 - w) / 2;
+  const y0 = pos.y + 16;
+  const obstacles = [{ x0: pos.x + 8, y0: pos.y - 2, x1: pos.x + 58, y1: pos.y + 14 }]; // App ID + badge +N
+  if (grand && j.nom) {
+    const lw = j.nom.length * 7 + 10;
+    obstacles.push({ x0: pos.x + 32 - lw / 2, y0: y0 + w + 2, x1: pos.x + 32 + lw / 2, y1: y0 + w + 18 }); // nom
+  }
+  return { forme: { id: n.id, x0, y0, x1: x0 + w, y1: y0 + w }, obstacles };
+}
+
+// Titre de domaine = obstacle (les relations ne traversent jamais les étiquettes)
+function obstacleTitreRegion(n) {
+  const d = n.data || {};
+  if (!d.label) return null;
+  const lx = d.labelX ?? d.w / 2;
+  const ly = d.labelY ?? 30;
+  const lw = d.label.length * 9 + 26;
+  const h = d.macro ? 48 : 28;
+  return { x0: n.position.x + lx - lw / 2, y0: n.position.y + ly - 14, x1: n.position.x + lx + lw / 2, y1: n.position.y + ly - 14 + h };
+}
+
+// Fabrique d'arêtes orthogonales : ports directionnels, routes finales (Worker libavoid) ou
+// provisoires (routeur maison pendant le drag / en secours), ponts, agrégation « N flux » (> 5).
+// Retourne aussi le snapshot géométrique à pousser vers le Worker.
+function fabriqueOrtho(relations, ns, posDe, niveau, zoomFort = false, routesFin = null, provisoire = false) {
   const jumeauxParId = {};
   ns.forEach((n) => {
     if (n.data?.jumeau) jumeauxParId[n.id] = n.data.jumeau;
@@ -173,14 +215,40 @@ function fabriqueOrtho(relations, ns, posDe, niveau, zoomFort = false) {
     choix[r.id] = choixCotes(ancreJumeau(jumeauxParId[r.source], posDe[r.source]), ancreJumeau(jumeauxParId[r.cible], posDe[r.cible]));
   });
   const decalages = decalagesParalleles(rels, choix);
+
+  // Snapshot pour le Worker : toutes les formes sont des obstacles pour libavoid,
+  // la membrane n'en est JAMAIS un (les relations peuvent la traverser)
+  const snapshot = { shapes: [], obstacles: [], edges: [] };
+  ns.forEach((n) => {
+    if (n.type !== "twin") {
+      const o = n.type === "region" ? obstacleTitreRegion(n) : null;
+      if (o) snapshot.obstacles.push(o);
+      return;
+    }
+    const g = geometrieNoeud(n);
+    snapshot.shapes.push(g.forme);
+    snapshot.obstacles.push(...g.obstacles);
+  });
+  snapshot.edges = rels.map((r) => ({
+    id: r.id,
+    source: r.source,
+    target: r.cible,
+    sourcePort: COTE_VERS_PORT[choix[r.id][0]],
+    targetPort: COTE_VERS_PORT[choix[r.id][1]],
+    priorite: PRIORITES[r.etat] ?? 40,
+  }));
+
   const routes = [];
   const edges = [];
   rels.forEach((r) => {
     const cs = ancreJumeau(jumeauxParId[r.source], posDe[r.source]);
     const ct = ancreJumeau(jumeauxParId[r.cible], posDe[r.cible]);
-    const obstacles = obstaclesDe(ns, new Set([r.source, r.cible]));
-    const points = routeStable(r.id, cs, ct, choix[r.id][0], choix[r.id][1], obstacles, decalages[r.id] || 0);
-    routes.push({ id: r.id, points, priorite: PRIORITES[r.etat] ?? 4 });
+    const fin = !provisoire && routesFin ? routesFin[r.id] : null;
+    const valide = fin && fin.points?.length >= 2 && fin.sp === choix[r.id][0] && fin.tp === choix[r.id][1];
+    // Provisoire (drag) : trajet simple sans obstacles ; final : points du Worker ; secours : routeur maison
+    const obstacles = provisoire ? [] : obstaclesDe(ns, new Set([r.source, r.cible]));
+    const points = valide ? fin.points : routeStable(r.id, cs, ct, choix[r.id][0], choix[r.id][1], obstacles, decalages[r.id] || 0);
+    routes.push({ id: r.id, points, priorite: PRIORITES[r.etat] ?? 40 });
     const bidi = relations.some((o) => o.source === r.cible && o.cible === r.source && o.id !== r.id);
     const label =
       r.etat === "validation"
@@ -212,7 +280,42 @@ function fabriqueOrtho(relations, ns, posDe, niveau, zoomFort = false) {
   edges.forEach((e) => {
     if (sauts[e.id]?.length) e.data.sauts = sauts[e.id];
   });
-  return edges;
+
+  // Agrégation : au-delà de 5 relations entre le même couple, une seule voie « N flux »
+  // (le survol déploie temporairement les routes membres)
+  const parPaire = {};
+  rels.forEach((r) => {
+    const cle = [r.source, r.cible].sort().join("::");
+    (parPaire[cle] = parPaire[cle] || []).push(r.id);
+  });
+  Object.entries(parPaire).forEach(([cle, ids]) => {
+    if (ids.length <= 5) return;
+    const aggId = `agg-${cle}`;
+    const membres = edges.filter((e) => ids.includes(e.id));
+    membres.forEach((e) => {
+      e.hidden = true;
+      e.data.groupe = aggId;
+    });
+    const ref = membres.find((e) => e.data.etat === "contestee") || membres[0];
+    edges.push({
+      id: aggId,
+      source: ref.source,
+      target: ref.target,
+      sourceHandle: ref.sourceHandle,
+      targetHandle: ref.targetHandle,
+      type: "ortho",
+      data: {
+        etat: "observee",
+        points: ref.data.points,
+        label: `${ids.length} flux`,
+        agregat: ids,
+        niveau,
+        zoomFort: true,
+        couleurCible: ref.data.couleurCible,
+      },
+    });
+  });
+  return { edges, snapshot };
 }
 
 // Ports directionnels : source et cible s'attachent côté gauche ou droit selon la géographie
@@ -333,8 +436,9 @@ export function construireGraphe({
   mesh, situation, focus, vueActive, perimetreTravail,
   jumeauFocus, domaineInterne, posOverrides, compteurs, halo, selection,
   zoomNiveau, relFocus, focusCarte, domDe, statsRegions, temps, zoomFort,
+  routesFin, provisoire,
 }) {
-  if (!mesh) return { nodes: [], edges: [] };
+  if (!mesh) return { nodes: [], edges: [], snapshot: null };
   const implique = situation?.jumeaux || [];
 
   // Flux observés et écarts par domaine (infobulle des membranes)
@@ -404,8 +508,12 @@ export function construireGraphe({
       source: r.source === jf.id ? jf.id : `voisin-${r.source}`,
       cible: r.cible === jf.id ? jf.id : `voisin-${r.cible}`,
     }));
-    const esF = fabriqueOrtho(relsF, nsF, posFocus, 3, true).map((e) => ({ ...e, data: { ...e.data, focus: true } }));
-    return { nodes: nsF, edges: appliquerTemps(esF, temps) };
+    const esF = fabriqueOrtho(relsF, nsF, posFocus, 3, true, routesFin, provisoire);
+    return {
+      nodes: nsF,
+      edges: appliquerTemps(esF.edges.map((e) => ({ ...e, data: { ...e.data, focus: true } })), temps),
+      snapshot: esF.snapshot,
+    };
   }
 
   // Vue interne d'un domaine : jumeaux du domaine + portes externes
@@ -490,8 +598,8 @@ export function construireGraphe({
         relsInt.push({ ...r, id: `${r.id}-porte`, source: a ? r.source : r.cible, cible: pid });
       }
     });
-    const esInt = fabriqueOrtho(relsInt, nsInt, posInt, 2, false);
-    return { nodes: nsInt, edges: appliquerTemps(esInt, temps) };
+    const esInt = fabriqueOrtho(relsInt, nsInt, posInt, 2, false, routesFin, provisoire);
+    return { nodes: nsInt, edges: appliquerTemps(esInt.edges, temps), snapshot: esInt.snapshot };
   }
 
   // Focus contextuel : sélection → voisins éclairés, reste translucide
@@ -539,6 +647,7 @@ export function construireGraphe({
   );
 
   let es = [];
+  let snapMain = null;
   const posMain = Object.fromEntries(twins.map((j) => [j.id, posOverrides[j.id] || j.position]));
   if (entreprise) {
     // Zoom Entreprise : corridors agrégés inter-domaines
@@ -584,8 +693,12 @@ export function construireGraphe({
       ns,
       posMain,
       zoomNiveau,
-      zoomFort
+      zoomFort,
+      routesFin,
+      provisoire
     );
+    snapMain = es.snapshot;
+    es = es.edges;
     if (vueActive?.type === "relations_non_confirmees") {
       es = es.map((e) =>
         e.data?.etat === "confirmee" ? { ...e, animated: false, style: { ...e.style, opacity: 0.1 } } : e
@@ -607,7 +720,7 @@ export function construireGraphe({
     const macro = ns
       .filter((n) => n.type !== "twin")
       .map((n) => ({ ...n, data: { ...n.data, macro: true } }));
-    return { nodes: macro, edges: repartirOffsets(appliquerTemps(es, temps)) };
+    return { nodes: macro, edges: repartirOffsets(appliquerTemps(es, temps)), snapshot: null };
   }
-  return { nodes: ns, edges: appliquerTemps(es, temps) };
+  return { nodes: ns, edges: appliquerTemps(es, temps), snapshot: snapMain };
 }

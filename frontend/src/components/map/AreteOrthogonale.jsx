@@ -12,7 +12,7 @@ const STYLES = {
 };
 
 export default memo(function AreteOrthogonale({ id, data, selected, style: styleProp }) {
-  const { points, sauts, etat, restreinte, nouvelle, label, survolee, estompee, niveau } = data;
+  const { points, sauts, etat, restreinte, nouvelle, label, survolee, estompee, niveau, agregat } = data;
   const base = STYLES[etat] || STYLES.confirmee;
   const actif = survolee || selected;
 
@@ -20,13 +20,14 @@ export default memo(function AreteOrthogonale({ id, data, selected, style: style
   const labelPos = useMemo(() => ancreLabel(points), [points]);
   const marqueurs = useMemo(() => (etat === "observee" ? pointsMarqueurs(points) : []), [points, etat]);
 
-  // Libellés : survol/sélection, ou zoom Application prononcé (jamais par défaut en vue Domaines)
-  const afficheLabel = label && (actif || data.zoomFort);
+  // Libellés : survol/sélection, voie agrégée « N flux », ou zoom Application prononcé (jamais par défaut en vue Domaines)
+  const afficheLabel = label && (actif || data.zoomFort || agregat);
   // Animation directionnelle discrète : uniquement survol, sélection ou nouveauté
-  const anime = etat === "observee" && (actif || nouvelle) && !estompee;
+  const anime = etat === "observee" && (actif || nouvelle) && !estompee && !agregat;
 
   const style = {
     ...base,
+    ...(agregat ? { strokeWidth: 3 } : {}),
     ...(data.focus ? { strokeWidth: 2.4, opacity: 1 } : {}),
     ...(restreinte ? { opacity: 0.35, strokeDasharray: "3 5" } : {}),
     ...(styleProp || {}),

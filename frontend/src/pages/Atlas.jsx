@@ -21,6 +21,7 @@ import ComposerFlore from "@/components/ComposerFlore";
 import useNavigationAtlas from "@/components/map/useNavigationAtlas";
 import useZoomSemantique from "@/components/map/useZoomSemantique";
 import { NIVEAUX_ZOOM, construireGraphe, statsDuDomaine, idNumerique } from "@/lib/atlasGraph";
+import { useRoutageFinal } from "@/lib/routage";
 import { couleurDomaine, ETATS_RELATION, MATURITES } from "@/lib/domaines";
 import { parseQuand, finDeJournee, fmtDate } from "@/lib/temps";
 
@@ -63,6 +64,8 @@ export default function Atlas() {
   const [regionSurvolee, setRegionSurvolee] = useState(null); // membrane survolée {id, label} (proximité frontière)
   const [regionTooltip, setRegionTooltip] = useState(null);
   const [modeEdition, setModeEdition] = useState(false); // déplacement des robots uniquement en mode explicite
+  const [provisoire, setProvisoire] = useState(false); // drag en cours : routage maison simple, recalcul final au relâchement
+  const { routesFin, pousser } = useRoutageFinal(); // routes finales calculées par libavoid (Web Worker)
   const [fantome, setFantome] = useState(null); // position de départ du robot pendant le drag
   const coquesRef = useRef({}); // rect actuellement affiché de chaque membrane
   const ciblesCoques = useRef({}); // rect cible calculé
@@ -333,12 +336,13 @@ export default function Atlas() {
     }
   }, [mesh, situation]);
 
-  const { nodes, edges } = useMemo(() => {
+  const { nodes, edges, snapshot } = useMemo(() => {
     const g = construireGraphe({
       mesh, situation, focus, vueActive, perimetreTravail,
       jumeauFocus, domaineInterne, posOverrides, compteurs, halo, selection,
       zoomNiveau, relFocus, focusCarte, domDe, statsRegions, temps,
       zoomFort: zoomActuel >= 1.5,
+      routesFin, provisoire,
     });
     // Conserve les dimensions mesurées par React Flow : le graphe est reconstruit à chaque
     // tick de drag — sans cela les nœuds perdent leur mesure et les arêtes disparaissent.
@@ -387,7 +391,13 @@ export default function Atlas() {
     });
     ciblesCoques.current = nouvellesCibles;
     return g;
-  }, [mesh, focus, situation, halo, compteurs, selection, relFocus, zoomNiveau, vueActive, posOverrides, domaineSel, domaineInterne, jumeauFocus, perimetreTravail, domDe, statsRegions, focusCarte, temps, amorce, mesures, regionSurvolee, tickCoques, relSurvolee, selectedRelation, zoomActuel]);
+  }, [mesh, focus, situation, halo, compteurs, selection, relFocus, zoomNiveau, vueActive, posOverrides, domaineSel, domaineInterne, jumeauFocus, perimetreTravail, domDe, statsRegions, focusCarte, temps, amorce, mesures, regionSurvolee, tickCoques, relSurvolee, selectedRelation, zoomActuel, routesFin, provisoire]);
+
+  // Routage final : nouveau snapshot géométrique → Web Worker libavoid
+  // (jamais pendant le drag, jamais pendant le pan/zoom — la signature géométrique est stable)
+  useEffect(() => {
+    if (!provisoire && snapshot) pousser(snapshot);
+  }, [snapshot, provisoire, pousser]);
 
   // Couches de relations (BCM déclaré / Réalité découverte / Écarts) + accentuation au survol/épinglage
   const edgesVisibles = useMemo(() => {
@@ -405,6 +415,14 @@ export default function Atlas() {
           ? { ...e, zIndex: 20, style: { ...e.style, strokeWidth: (e.style?.strokeWidth || 1.5) + 1, opacity: 1 } }
           : { ...e, label: undefined, data: { ...e.data, estompee: true }, style: { ...e.style, opacity: 0.12 } }
       );
+    }
+    // Survol d'une voie agrégée « N flux » : déploiement temporaire des routes membres
+    if (relSurvolee?.startsWith("agg-")) {
+      return es.map((e) => {
+        if (e.id === relSurvolee) return { ...e, hidden: true };
+        if (e.data?.groupe === relSurvolee) return { ...e, hidden: false, zIndex: 25, style: { ...e.style, opacity: 1 } };
+        return { ...e, label: undefined, data: { ...e.data, estompee: true }, style: { ...e.style, opacity: 0.15 } };
+      });
     }
     // Survol/sélection d'une relation : trajet mis en avant, les autres estompées (15–30 % d'opacité)
     const relActive = relSurvolee || selectedRelation?.id;
@@ -591,6 +609,7 @@ export default function Atlas() {
   // Déplacement d'un robot — uniquement en mode réorganisation
   const debutDrag = (_, node) => {
     if (node.type !== "twin" || !node.data?.jumeau || node.data.jumeau.porte || node.data.voisinRel) return;
+    setProvisoire(true);
     const rect = carteRef.current?.getBoundingClientRect();
     if (!rect || !rfRef.current) return;
     const sp = rfRef.current.flowToScreenPosition({ x: node.position.x + 30, y: node.position.y + 40 });
@@ -599,6 +618,7 @@ export default function Atlas() {
 
   const finDrag = async (_, node) => {
     setFantome(null);
+    setProvisoire(false); // déclenche le routage final (Worker) + interpolation des trajets
     if (node.type !== "twin" || !node.data?.jumeau || node.data.jumeau.porte || node.data.voisinRel) return;
     const j = node.data.jumeau;
     const pos = node.position;
@@ -1159,7 +1179,26 @@ export default function Atlas() {
       <AtlasLegende />
 
       {/* Infobulle de relation — survol d'une arête, près du pointeur */}
-      {relSurvolee && !selectedRelation && relTooltipPos && mesh && (() => {
+      {relSurvolee?.startsWith("agg-") && !selectedRelation && relTooltipPos && (() => {
+        const agg = edges.find((x) => x.id === relSurvolee);
+        if (!agg?.data?.agregat) return null;
+        return (
+          <div
+            className="pointer-events-none absolute z-30 w-56 rounded-xl border border-[#E5E5E3] bg-white p-3 shadow-lg"
+            style={{ left: Math.min(relTooltipPos.x + 14, (carteRef.current?.clientWidth || 1200) - 240), top: Math.max(relTooltipPos.y + 14, 8) }}
+            data-testid="agregat-tooltip"
+          >
+            <div className="font-code text-[11px] font-semibold text-[#111110]">
+              {idNumerique(agg.source)} ↔ {idNumerique(agg.target)}
+            </div>
+            <div className="mt-1.5 font-code text-[10px] text-[#52524F]">
+              {agg.data.agregat.length} flux partagent ce corridor
+            </div>
+            <div className="mt-2 font-code text-[9px] text-[#0E7490]">Routes déployées au survol</div>
+          </div>
+        );
+      })()}
+      {relSurvolee && !relSurvolee.startsWith("agg-") && !selectedRelation && relTooltipPos && mesh && (() => {
         const r = mesh.relations.find((x) => x.id === relSurvolee);
         if (!r) return null;
         const e = edgesVisibles.find((x) => x.id === relSurvolee);
