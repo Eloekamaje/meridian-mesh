@@ -1,5 +1,12 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v26d, routage orthogonal assaini — ports directionnels)
+- **Bug signalé** : arêtes « sans sens » (boucles), confuses sur les nœuds, croisements — toutes sortaient à droite et entraient à gauche quelle que soit la géographie.
+- **Ports directionnels** : chaque jumeau/région/porte expose 4 ports (entrée/sortie × gauche/droite, centrés sur le point jumeau) ; `makeEdge` choisit le côté selon la position relative source→cible (`atlasGraph.js`, toutes les vues : globale, domaine, focus, corridors entreprise).
+- **`repartirOffsets()`** : les arêtes partageant un même port sont écartées (offset smoothstep) — fini la superposition confuse sur un nœud.
+- Correctif en passant : `posById` non défini en vue domaine (crash) → carte des positions dérivée des nœuds construits.
+- Vérifié : 0 erreur, 14/14 arêtes pendant/après drag avec réattachement directionnel en direct, vue domaine + portes OK, coques élastiques intactes.
+
 ## Implémenté (06/2026 — v26c, arêtes orthogonales)
 - **Demande utilisateur** : routage orthogonal des relations — `makeEdge` passe en `type: "smoothstep"` (segments horizontaux/verticaux, coins légèrement arrondis). Les flux de points animés (observées) et les pointillés (supposées/validation/contestée) suivent les chemins orthogonaux. Vérifié : 14/14 arêtes en smoothstep, lecture façon schéma.
 

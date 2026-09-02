@@ -11,8 +11,10 @@ export default function RegionNode({ data }) {
       className="relative"
       data-testid={`region-${data.id}`}
     >
-      <Handle type="target" position={Position.Left} className="!h-0 !w-0 !border-0 !bg-transparent" />
-      <Handle type="source" position={Position.Right} className="!h-0 !w-0 !border-0 !bg-transparent" />
+      <Handle type="target" id="t-l" position={Position.Left} className="!h-0 !w-0 !border-0 !bg-transparent" style={{ top: "50%" }} />
+      <Handle type="source" id="s-l" position={Position.Left} className="!h-0 !w-0 !border-0 !bg-transparent" style={{ top: "50%" }} />
+      <Handle type="target" id="t-r" position={Position.Right} className="!h-0 !w-0 !border-0 !bg-transparent" style={{ top: "50%" }} />
+      <Handle type="source" id="s-r" position={Position.Right} className="!h-0 !w-0 !border-0 !bg-transparent" style={{ top: "50%" }} />
       <svg width={data.w} height={data.h} className="absolute inset-0" style={{ overflow: "visible" }}>
         {data.path ? (
           <path d={data.path} fill={`${data.couleur}13`} stroke={`${data.couleur}38`} strokeWidth={1.5} strokeLinejoin="round" />

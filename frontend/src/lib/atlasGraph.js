@@ -95,25 +95,63 @@ export const styleParEtat = (r) => {
   }
 };
 
-export const makeEdge = (r, niveau) => ({
-  id: r.id,
-  source: r.source,
-  target: r.cible,
-  type: "smoothstep",
-  animated: !!r.active || r.etat === "validation" || r.etat === "observee",
-  data: { etat: r.etat, restreinte: !!r.restreinte },
-  style: r.restreinte ? { ...styleParEtat(r), opacity: 0.35, strokeDasharray: "3 5" } : styleParEtat(r),
-  label:
-    r.etat === "validation"
-      ? `validation A2A${r.confiance ? ` — ${r.confiance} %` : ""}`
-      : r.etat === "contestee"
-        ? "contestée — contradiction"
-        : niveau >= 3 && r.label
-          ? r.label
-          : undefined,
-  labelStyle: { fill: r.etat === "validation" ? "#6D28D9" : r.etat === "contestee" ? "#B91C1C" : "rgba(17,17,16,0.6)", fontSize: 10, fontFamily: "IBM Plex Mono" },
-  labelBgStyle: { fill: "rgba(255,255,255,0.92)" },
-});
+// Ports directionnels : source et cible s'attachent côté gauche ou droit selon la géographie
+export const makeEdge = (r, niveau, positions) => {
+  const ps = positions?.[r.source];
+  const pt = positions?.[r.cible];
+  const cotes = ps && pt
+    ? (pt.x - ps.x >= 0
+      ? { sourceHandle: "s-r", targetHandle: "t-l" }
+      : { sourceHandle: "s-l", targetHandle: "t-r" })
+    : {};
+  return {
+    id: r.id,
+    source: r.source,
+    target: r.cible,
+    ...cotes,
+    type: "smoothstep",
+    pathOptions: { borderRadius: 10 },
+    animated: !!r.active || r.etat === "validation" || r.etat === "observee",
+    data: { etat: r.etat, restreinte: !!r.restreinte },
+    style: r.restreinte ? { ...styleParEtat(r), opacity: 0.35, strokeDasharray: "3 5" } : styleParEtat(r),
+    label:
+      r.etat === "validation"
+        ? `validation A2A${r.confiance ? ` — ${r.confiance} %` : ""}`
+        : r.etat === "contestee"
+          ? "contestée — contradiction"
+          : niveau >= 3 && r.label
+            ? r.label
+            : undefined,
+    labelStyle: { fill: r.etat === "validation" ? "#6D28D9" : r.etat === "contestee" ? "#B91C1C" : "rgba(17,17,16,0.6)", fontSize: 10, fontFamily: "IBM Plex Mono" },
+    labelBgStyle: { fill: "rgba(255,255,255,0.92)" },
+  };
+};
+
+// Écarte les arêtes qui partagent un même port (évite les superpositions confuses)
+export function repartirOffsets(edges) {
+  const groupes = {};
+  const ajouter = (cle, e, role) => {
+    if (!cle) return;
+    groupes[cle] = groupes[cle] || [];
+    groupes[cle].push({ e, role });
+  };
+  edges.forEach((e) => {
+    ajouter(`${e.source}|${e.sourceHandle || ""}`, e, "source");
+    ajouter(`${e.target}|${e.targetHandle || ""}`, e, "cible");
+  });
+  const decalages = {};
+  Object.values(groupes).forEach((g) => {
+    if (g.length < 2) return;
+    g.forEach(({ e }, i) => {
+      decalages[e.id] = (decalages[e.id] || 0) + (i - (g.length - 1) / 2) * 18;
+    });
+  });
+  return edges.map((e) => {
+    const off = decalages[e.id];
+    if (!off) return e;
+    return { ...e, pathOptions: { ...(e.pathOptions || {}), offset: Math.max(-60, Math.min(60, off)) } };
+  });
+}
 
 const NOUVELLE_STYLE = { stroke: "#0E7490", strokeWidth: 2.6, strokeDasharray: "2 4", opacity: 1 };
 
@@ -223,17 +261,23 @@ export function construireGraphe({
         draggable: false, selectable: false, zIndex: 4,
       });
     });
+    const posFocus = Object.fromEntries(nsF.map((n) => [n.id, n.position]));
     const esF = relsV.map((r) => {
       const e = makeEdge(r, 3);
+      const source = r.source === jf.id ? jf.id : `voisin-${r.source}`;
+      const target = r.cible === jf.id ? jf.id : `voisin-${r.cible}`;
+      const droite = posFocus[target].x - posFocus[source].x >= 0;
       return {
         ...e,
-        source: r.source === jf.id ? jf.id : `voisin-${r.source}`,
-        target: r.cible === jf.id ? jf.id : `voisin-${r.cible}`,
+        source,
+        target,
+        sourceHandle: droite ? "s-r" : "s-l",
+        targetHandle: droite ? "t-l" : "t-r",
         animated: true,
         style: { ...e.style, strokeWidth: 2.4, opacity: 1 },
       };
     });
-    return { nodes: nsF, edges: appliquerTemps(esF, temps) };
+    return { nodes: nsF, edges: repartirOffsets(appliquerTemps(esF, temps)) };
   }
 
   // Vue interne d'un domaine : jumeaux du domaine + portes externes
@@ -304,21 +348,22 @@ export function construireGraphe({
         selected: selection.includes(j.id),
       }))
     );
+    const posInt = Object.fromEntries(nsInt.filter((n) => n.type === "twin").map((n) => [n.id, n.position]));
     const esInt = [];
     mesh.relations.forEach((r) => {
       const a = domDe[r.source] === domaineInterne;
       const b = domDe[r.cible] === domaineInterne;
       if (a && b) {
-        esInt.push(makeEdge(r, zoomNiveau));
+        esInt.push(makeEdge(r, zoomNiveau, posInt));
       } else if (a !== b) {
         const ext = a ? domDe[r.cible] : domDe[r.source];
         const pid = porteIds[ext];
         if (!pid) return;
-        const e = makeEdge({ ...r, id: `${r.id}-porte`, source: a ? r.source : r.cible, cible: pid }, zoomNiveau);
+        const e = makeEdge({ ...r, id: `${r.id}-porte`, source: a ? r.source : r.cible, cible: pid }, zoomNiveau, posInt);
         esInt.push(e);
       }
     });
-    return { nodes: nsInt, edges: appliquerTemps(esInt, temps) };
+    return { nodes: nsInt, edges: repartirOffsets(appliquerTemps(esInt, temps)) };
   }
 
   // Focus contextuel : sélection → voisins éclairés, reste translucide
@@ -366,10 +411,12 @@ export function construireGraphe({
   );
 
   let es = [];
+  const posMain = Object.fromEntries(twins.map((j) => [j.id, posOverrides[j.id] || j.position]));
   if (entreprise) {
     // Zoom Entreprise : corridors agrégés inter-domaines
     const regParDom = {};
     (mesh.regions || []).forEach((r) => { regParDom[r.label] = r.id; });
+    const posRegions = Object.fromEntries(ns.filter((n) => n.type === "region").map((n) => [n.id, { x: n.position.x + n.initialWidth / 2, y: n.position.y + n.initialHeight / 2 }]));
     const corridors = {};
     mesh.relations.forEach((r) => {
       const a = domDe[r.source];
@@ -381,21 +428,30 @@ export function construireGraphe({
       corridors[key].n += 1;
       if (r.active) corridors[key].actif = true;
     });
-    es = Object.values(corridors).map((c) => ({
-      id: `corridor-${c.a}-${c.b}`,
-      source: regParDom[c.a],
-      target: regParDom[c.b],
-      animated: c.actif,
-      style: { stroke: "rgba(17,17,16,0.3)", strokeWidth: 2.5, opacity: 0.8 },
-      label: `${c.a} ↔ ${c.b} · ${c.n} relation${c.n > 1 ? "s" : ""}${c.actif ? " · activité élevée" : ""}`,
-      labelStyle: { fill: "rgba(17,17,16,0.7)", fontSize: 10, fontFamily: "IBM Plex Mono" },
-      labelBgStyle: { fill: "rgba(255,255,255,0.92)" },
-    }));
+    es = Object.values(corridors).map((c) => {
+      const ps = posRegions[regParDom[c.a]];
+      const pt = posRegions[regParDom[c.b]];
+      const droite = ps && pt ? pt.x - ps.x >= 0 : true;
+      return {
+        id: `corridor-${c.a}-${c.b}`,
+        source: regParDom[c.a],
+        target: regParDom[c.b],
+        sourceHandle: droite ? "s-r" : "s-l",
+        targetHandle: droite ? "t-l" : "t-r",
+        type: "smoothstep",
+        pathOptions: { borderRadius: 10 },
+        animated: c.actif,
+        style: { stroke: "rgba(17,17,16,0.3)", strokeWidth: 2.5, opacity: 0.8 },
+        label: `${c.a} ↔ ${c.b} · ${c.n} relation${c.n > 1 ? "s" : ""}${c.actif ? " · activité élevée" : ""}`,
+        labelStyle: { fill: "rgba(17,17,16,0.7)", fontSize: 10, fontFamily: "IBM Plex Mono" },
+        labelBgStyle: { fill: "rgba(255,255,255,0.92)" },
+      };
+    });
   } else {
     es = mesh.relations
       .filter((r) => (situation && implique.length ? implique.includes(r.source) && implique.includes(r.cible) : true))
       .filter((r) => !focus || r.source === focus || r.cible === focus)
-      .map((r) => makeEdge(r, zoomNiveau));
+      .map((r) => makeEdge(r, zoomNiveau, posMain));
     if (vueActive?.type === "relations_non_confirmees") {
       es = es.map((e) =>
         e.data?.etat === "confirmee" ? { ...e, animated: false, style: { ...e.style, opacity: 0.1 } } : e
@@ -412,5 +468,5 @@ export function construireGraphe({
       );
     }
   }
-  return { nodes: ns, edges: appliquerTemps(es, temps) };
+  return { nodes: ns, edges: repartirOffsets(appliquerTemps(es, temps)) };
 }
