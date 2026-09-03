@@ -1,0 +1,52 @@
+{
+  "summary": "Atlas v37 frontend testing (clustering L2 + responsive complet + suppression portes). VALIDÉ à ~93%. (A) CLUSTERING L2 : 9 grappes présentes à scale 0.843 (Client-0 ×3, Client-2/Paiement-0/Paiement-1/Risque-0/Support-1/Opérations-1/Distribution-0/Distribution-1 tous ×2), tooltip hover liste les membres correctement (ex: 'Paiement — 2 jumeaux regroupés 4125 · Prélèvements 4209 · Litiges Clic : zoom avant pour déployer ×2'), clic grappe-grappe-Client-0 → viewport passe à scale(1.35) exactement (setCenter zoom 1.35 conforme spec) + 0 grappes / 38 twins visibles (dissolution niveau 3) ; retour zoom arrière → 9 grappes réapparaissent aux mêmes ids. (B) CAMÉRA RESIZE : 1920→1280 : scale strictement identique (0.743182→0.743182), world center identique (692.4993→692.4998, delta <1e-3) ; 1920→400h (paysage court) : scale conservé 0.743182, aucun fitView auto. (C) MOBILE 390×844 : minimap masquée ✓, btn-vue-ensemble / btn-flore / btn-recherche présents ✓, sidebar repliée à 56px ✓, btn-flore ouvre composer + btn-flore-fermer le referme ✓, btn-recherche ouvre le champ input ✓. Bottom sheet : tap twin (twin-node-paiements) → feuillet-poignee + feuillet-titre='Paiements' + map-tab-detail + map-tab-chrono, viewport strictement immobile (vp identique avant/après tap ET après clic poignée) ✓. (D) NON-RÉGRESSION desktop 1920×900 : 38 twins, 45 edges, 0 portes (v36 respecté), pan à zoom constant (scale 2.6 avant/après drag), 0 erreurs console, 0 warnings, 0 message 'libavoid Worker en échec'. (E) SUPPRESSION PORTES : 0 élément [data-testid^='porte-'] à tous zooms ✓.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Atlas.jsx recherche mobile",
+        "issue": "Sur mobile 390px, ouvrir btn-recherche → saisir 'frau' → presser Enter ne recentre pas la carte (viewport transform inchangé). Sur desktop, la recherche affiche bien 'Fraude 7312 · Risque' en dropdown mais aucun [data-testid^='recherche-resultat'] n'est exposé pour permettre un tap programmatique ; l'utilisateur doit cliquer manuellement le résultat. Enter devrait sélectionner/centrer le premier résultat pour un flow mobile complet.",
+        "selector": "input[placeholder*='Rechercher']",
+        "priority": "MEDIUM"
+      },
+      {
+        "component": "Atlas.jsx tap fond mobile",
+        "issue": "Sur mobile 390×844, après ouverture du feuillet pour un jumeau, un tap à (20,200) — zone visuelle hors membrane et hors panneau-jumeau-flottant — ne ferme pas le feuillet (feuillet-poignee toujours présent). La spec exige 'tap fond hors membrane → sélection effacée'. Possible que le tap ait été absorbé par le panneau-jumeau-flottant qui se superpose ; à vérifier avec un tap en (20, 700) par exemple.",
+        "selector": "[data-testid='feuillet-poignee']",
+        "priority": "LOW"
+      },
+      {
+        "component": "Atlas.jsx panneau-jumeau-flottant sur mobile",
+        "issue": "Sur mobile, le panneau flottant 'panneau-jumeau-flottant' (hover panel desktop) reste rendu simultanément avec le feuillet (bottom sheet). Cela crée un double-affichage visuel du même jumeau (card haut + sheet bas). L'un des deux devrait être masqué sur mobile/tablette (idéalement le panneau flottant, qui est un artefact hover desktop).",
+        "selector": "[data-testid='panneau-jumeau-flottant']",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_37.json"],
+  "action_items": [
+    "Recherche mobile : ajouter la sélection auto du 1er résultat sur Enter (setCenter vers le jumeau/domaine trouvé) OU exposer [data-testid='recherche-resultat-N'] pour permettre le tap.",
+    "Sur mobile/tablette (estTablette=true), masquer le panneau-jumeau-flottant quand un feuillet est actif — sinon le même jumeau apparaît en haut ET en bas simultanément.",
+    "Vérifier que le tap sur le fond hors membrane (onPaneClick tactile) ferme bien le feuillet — actuellement non observé ; probablement bloqué par le layer panneau-jumeau-flottant.",
+    "L1 (macro) : les tests n'ont pas trouvé de testid [data-testid^='domaine-label-'] ou similaire pour valider la visibilité des labels de domaines au dézoom extrême — considérer l'ajout d'un testid stable pour les labels macro."
+  ],
+  "critical_code_review_comments": [
+    "atlasGraph.js clusteriser() : le calcul en O(n²) via Math.hypot dans la boucle grappes.find est OK pour n=38 mais devrait être borné explicitement (ne pas laisser grandir sans limite).",
+    "AtlasPanneau.jsx presentation='feuillet' : bien fait avec feuillet-poignee/feuillet-titre. Suggestion : exposer les 3 états 'fermée/réduite/complète' via data-state='ferme|reduit|complet' pour permettre des tests plus précis du comportement de la poignée.",
+    "Atlas.jsx dépasse 1340 lignes ; la logique mobile (useMedia, btn-vue-ensemble, btn-flore, btn-recherche, feuillet management) mériterait d'être extraite en hook useAtlasMobileChrome pour la lisibilité.",
+    "Camera préservation au resize : IMPLÉMENTATION EXCELLENTE (world center delta <1e-3 px sur redimensionnement 1920→1280). Bon usage de ResizeObserver."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "N/A — frontend only",
+    "frontend": "93% — clustering L2 parfait, camera-preserve resize parfait, bottom sheet mobile fonctionnel, non-régression desktop OK. 3 bugs mineurs mobile (search Enter, double-affichage panneau/feuillet, tap fond)."
+  },
+  "test_credentials": "Persona architecte par défaut, aucune auth.",
+  "seed_data_creation": "Aucune — pas d'appel à /api/demo/reinitialiser.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "iter_37 : v37 clustering + responsive est majoritairement fonctionnelle. Points forts : (1) 9 grappes L2 avec testids grappe-grappe-<Domaine>-<i> et compteurs ×N corrects, tooltip enrichi, clic → setCenter zoom=1.35 exact, dissolution/re-formation propres ; (2) camera preservation au resize IMPECCABLE (world center identique à 1e-3 px près) ; (3) bottom sheet mobile (feuillet-poignee/feuillet-titre + map-tab-detail/chrono) fonctionnel, viewport strictement immobile ; (4) 0 porte partout (v36) ; (5) libavoid stable (0 warning). Points à corriger côté E1 : (a) recherche mobile Enter ne recentre pas ; (b) panneau-jumeau-flottant reste rendu sur mobile en surimpression du feuillet — masquer si estTablette ; (c) tap fond mobile pour effacer sélection à valider (possiblement absorbé par le panneau flottant en overlay). Les 'N flux' labels n'apparaissent qu'au survol/sélection (pas à l'affichage par défaut) — comportement conforme mais non vérifiable via snapshot texte simple.",
+  "rca of the issue": "(a) Recherche mobile Enter : le handler Enter du champ recherche ne déclenche pas centerOn(premierResultat). Fix : capturer onKeyDown='Enter' et appeler l'action de navigation avec le 1er item filtré. (b) Double-affichage panneau/feuillet mobile : le rendu du panneau-jumeau-flottant (L1082 Atlas.jsx) n'est pas conditionné par !estTablette ; ajouter une condition {!estTablette && ...} autour du bloc panneau-jumeau-flottant. (c) Tap fond mobile inefficace : le panneau-jumeau-flottant en position absolute couvre potentiellement la zone tapée ; corollaire du fix (b)."
+}

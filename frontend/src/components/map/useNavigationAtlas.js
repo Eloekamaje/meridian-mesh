@@ -8,7 +8,7 @@ import { useCallback, useRef, useState } from "react";
 // - le fil d'Ariane est un contexte passif : domaine sous le centre du viewport,
 //   stabilisé 400 ms, sans jamais déplacer la caméra.
 
-function dansPolygone(p, pts, ox, oy) {
+export function dansPolygone(p, pts, ox, oy) {
   let dedans = false;
   for (let i = 0, k = pts.length - 1; i < pts.length; k = i++) {
     const xi = pts[i].x + ox;

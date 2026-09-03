@@ -119,3 +119,9 @@
 .react-flow__pane { cursor: grab; }
 .react-flow__pane.dragging { cursor: grabbing; }
 .react-flow__pane, .react-flow__node, .react-flow__edge { user-select: none; -webkit-user-select: none; }
+
+/* Cibles tactiles ≥ 44 px (règle responsive de l'Atlas) */
+@media (pointer: coarse) {
+  .react-flow__controls button { min-width: 44px; min-height: 44px; }
+  .react-flow__controls button svg { width: 18px; height: 18px; }
+}

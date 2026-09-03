@@ -38,7 +38,7 @@ export default memo(function AreteOrthogonale({ id, data, selected, style: style
   return (
     <g data-testid={`arete-${id}`}>
       {/* Zone d'interaction fine — ne bloque pas le déplacement de la carte */}
-      <path d={d} fill="none" stroke="transparent" strokeWidth={10} style={{ pointerEvents: "stroke" }} />
+      <path d={d} fill="none" stroke="transparent" strokeWidth={data.tactile ? 22 : 10} style={{ pointerEvents: "stroke" }} />
       <path
         d={d}
         fill="none"

@@ -151,6 +151,45 @@ const PRIORITES = { contestee: 80, validation: 60, observee: 60, supposee: 50, c
 // Nos côtés de handles (r/l/t/b) ↔ ports libavoid (e/w/n/s)
 const COTE_VERS_PORT = { r: "e", l: "w", t: "n", b: "s" };
 
+// Regroupement visuel — niveau 2 uniquement (jamais selon la taille d'écran) :
+// les domaines denses regroupent leurs jumeaux proches en grappes « ×N » qui se
+// dissolvent au zoom avant (niveau 3). Agrège aussi les relations vers une grappe.
+const SEUIL_DENSITE = 5; // domaine dense à partir de 5 jumeaux
+const RAYON_GRAPPE = 130; // distance monde de regroupement
+const VISIBLES_PAR_DOMAINE = 2; // les 2 jumeaux les plus couverts restent individuels
+
+function clusteriser(twins, posDe, zoomNiveau) {
+  if (zoomNiveau !== 2) return { clusters: {}, groupes: [] };
+  const parDomaine = {};
+  twins.filter((j) => !j.anonyme).forEach((j) => { (parDomaine[j.domaine] = parDomaine[j.domaine] || []).push(j); });
+  const clusters = {}; // twinId -> grappeId
+  const groupes = [];
+  Object.entries(parDomaine).forEach(([dom, js]) => {
+    if (js.length < SEUIL_DENSITE) return;
+    const tries = [...js].sort((a, b) => (b.couverture || 0) - (a.couverture || 0));
+    const restants = tries.slice(VISIBLES_PAR_DOMAINE);
+    const grappes = [];
+    restants.forEach((j) => {
+      const p = posDe[j.id];
+      if (!p) return;
+      const g = grappes.find((gr) => Math.hypot(gr.cx - (p.x + 30), gr.cy - (p.y + 40)) < RAYON_GRAPPE);
+      if (g) {
+        g.membres.push(j);
+        g.cx = g.membres.reduce((a, m) => a + posDe[m.id].x + 30, 0) / g.membres.length;
+        g.cy = g.membres.reduce((a, m) => a + posDe[m.id].y + 40, 0) / g.membres.length;
+      } else {
+        grappes.push({ id: `grappe-${dom}-${grappes.length}`, domaine: dom, membres: [j], cx: p.x + 30, cy: p.y + 40 });
+      }
+    });
+    grappes.forEach((g) => {
+      if (g.membres.length === 1) return; // un seul jumeau : pas de grappe
+      g.membres.forEach((j) => { clusters[j.id] = g.id; });
+      groupes.push(g);
+    });
+  });
+  return { clusters, groupes };
+}
+
 // Centre de l'avatar (ou de la pastille) selon la variante de nœud
 function ancreJumeau(j, pos) {
   if (j?.porte) return { x: pos.x + 30, y: pos.y + 8, marge: 12 };
@@ -170,7 +209,7 @@ function obstaclesDe(ns, exclure) {
 function geometrieNoeud(n) {
   const pos = n.position;
   const j = n.data?.jumeau || {};
-  if (j.porte || j.anonyme) {
+  if (j.porte || j.anonyme || n.data?.grappe) {
     const nom = n.data?.apercuPorte?.domaine || j.nom || "";
     const lw = nom.length * 6.5 + 34;
     return {
@@ -204,7 +243,7 @@ function obstacleTitreRegion(n) {
 // Fabrique d'arêtes orthogonales : ports directionnels, routes finales (Worker libavoid) ou
 // provisoires (routeur maison pendant le drag / en secours), ponts, agrégation « N flux » (> 5).
 // Retourne aussi le snapshot géométrique à pousser vers le Worker.
-function fabriqueOrtho(relations, ns, posDe, niveau, zoomFort = false, routesFin = null, provisoire = false) {
+function fabriqueOrtho(relations, ns, posDe, niveau, zoomFort = false, routesFin = null, provisoire = false, tactile = false) {
   const jumeauxParId = {};
   ns.forEach((n) => {
     if (n.data?.jumeau) jumeauxParId[n.id] = n.data.jumeau;
@@ -251,11 +290,13 @@ function fabriqueOrtho(relations, ns, posDe, niveau, zoomFort = false, routesFin
     routes.push({ id: r.id, points, priorite: PRIORITES[r.etat] ?? 40 });
     const bidi = relations.some((o) => o.source === r.cible && o.cible === r.source && o.id !== r.id);
     const label =
-      r.etat === "validation"
-        ? `validation A2A${r.confiance ? ` — ${r.confiance} %` : ""}`
-        : r.etat === "contestee"
-          ? "contestée — contradiction"
-          : r.label;
+      r.grappeCompte > 1
+        ? `${r.grappeCompte} flux`
+        : r.etat === "validation"
+          ? `validation A2A${r.confiance ? ` — ${r.confiance} %` : ""}`
+          : r.etat === "contestee"
+            ? "contestée — contradiction"
+            : r.label;
     edges.push({
       id: r.id,
       source: r.source,
@@ -272,6 +313,7 @@ function fabriqueOrtho(relations, ns, posDe, niveau, zoomFort = false, routesFin
         bidi,
         niveau,
         zoomFort,
+        tactile,
         couleurCible: couleurDomaine(jumeauxParId[r.cible]?.domaine),
       },
     });
@@ -436,7 +478,7 @@ export function construireGraphe({
   mesh, situation, focus, vueActive, perimetreTravail,
   posOverrides, compteurs, halo, selection,
   zoomNiveau, relFocus, focusCarte, domDe, statsRegions, temps, zoomFort,
-  routesFin, provisoire,
+  routesFin, provisoire, tactile,
 }) {
   if (!mesh) return { nodes: [], edges: [], snapshot: null };
   const implique = situation?.jumeaux || [];
@@ -502,8 +544,13 @@ export function construireGraphe({
     };
   });
 
+  // Regroupement visuel (niveau 2, domaines denses) — avant toute construction d'arêtes
+  const { clusters, groupes } = entreprise
+    ? { clusters: {}, groupes: [] }
+    : clusteriser(twins, Object.fromEntries(twins.map((j) => [j.id, posOverrides[j.id] || j.position])), zoomNiveau);
+
   ns = ns.concat(
-    twins.map((j) => {
+    twins.filter((j) => !clusters[j.id]).map((j) => {
       const position = posOverrides[j.id] || j.position;
       return {
         id: j.id,
@@ -517,10 +564,26 @@ export function construireGraphe({
       };
     })
   );
+  // Nœuds « grappe » (jumeaux regroupés au niveau 2 dans les domaines denses)
+  groupes.forEach((g) => {
+    ns.push({
+      id: g.id,
+      type: "twin",
+      position: { x: g.cx - 30, y: g.cy - 40 },
+      initialWidth: 64,
+      initialHeight: 78,
+      hidden: entreprise,
+      data: { grappe: g, niveau: zoomNiveau, halo: !!halo && g.membres.some((j) => j.id === halo) },
+      draggable: false,
+      selectable: false,
+      zIndex: 3,
+    });
+  });
 
   let es = [];
   let snapMain = null;
   const posMain = Object.fromEntries(twins.map((j) => [j.id, posOverrides[j.id] || j.position]));
+  groupes.forEach((g) => { posMain[g.id] = { x: g.cx - 30, y: g.cy - 40 }; });
   if (entreprise) {
     // Zoom Entreprise : corridors agrégés inter-domaines
     const regParDom = {};
@@ -558,17 +621,24 @@ export function construireGraphe({
       };
     });
   } else {
-    es = fabriqueOrtho(
-      mesh.relations
-        .filter((r) => (situation && implique.length ? implique.includes(r.source) && implique.includes(r.cible) : true))
-        .filter((r) => !focus || r.source === focus || r.cible === focus),
-      ns,
-      posMain,
-      zoomNiveau,
-      zoomFort,
-      routesFin,
-      provisoire
-    );
+    // Extrémités regroupées : une relation touchant un membre pointe vers sa grappe ;
+    // les relations entre mêmes extrémités sont agrégées (compte) — densité maîtrisée
+    const relsMappees = mesh.relations
+      .filter((r) => (situation && implique.length ? implique.includes(r.source) && implique.includes(r.cible) : true))
+      .filter((r) => !focus || r.source === focus || r.cible === focus)
+      .map((r) => ({ ...r, source: clusters[r.source] || r.source, cible: clusters[r.cible] || r.cible }))
+      .filter((r) => r.source !== r.cible)
+      .reduce((acc, r) => {
+        const ex = acc.find((o) => o.source === r.source && o.cible === r.cible);
+        if (ex) {
+          ex.grappeCompte = (ex.grappeCompte || 1) + 1;
+          if ((PRIORITES[r.etat] ?? 40) > (PRIORITES[ex.etat] ?? 40)) ex.etat = r.etat;
+        } else {
+          acc.push({ ...r });
+        }
+        return acc;
+      }, []);
+    es = fabriqueOrtho(relsMappees, ns, posMain, zoomNiveau, zoomFort, routesFin, provisoire, tactile);
     snapMain = es.snapshot;
     es = es.edges;
     if (vueActive?.type === "relations_non_confirmees") {

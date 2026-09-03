@@ -20,7 +20,7 @@ export default function Layout() {
   const { espaces, personas, persona, changerCible, version } = usePerimetre();
   const { demarrer, courant } = useDemo();
   const navigate = useNavigate();
-  const [repliee, setRepliee] = useState(false);
+  const [repliee, setRepliee] = useState(() => typeof window !== "undefined" && window.matchMedia("(max-width: 1024px)").matches); // repliée par défaut sur tablette/mobile
   const [recents, setRecents] = useState([]);
 
   useEffect(() => {

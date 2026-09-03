@@ -68,11 +68,11 @@ function PointJumeau({ couleur, dashed }) {
 
 export default function TwinNode({ data, selected }) {
   const j = data.jumeau;
-  const couleur = couleurDomaine(j.domaine);
+  const couleur = couleurDomaine(j?.domaine || data.grappe?.domaine);
   const niveau3 = (data.niveau || 2) >= 3;
 
   // Jumeau hors périmètre : pastille pointillée + résumé au survol uniquement
-  if (j.anonyme) {
+  if (j?.anonyme) {
     return (
       <div className="group relative" data-testid={`twin-node-${j.id}`}>
         <div className="absolute -top-3 left-1/2 z-50 w-56 -translate-x-1/2 -translate-y-full rounded-lg border border-[#E5E5E3] bg-white p-3 opacity-0 backdrop-blur-xl transition-opacity duration-200 group-hover:opacity-100" data-testid={`anonyme-apercu-${j.id}`}>
@@ -89,6 +89,35 @@ export default function TwinNode({ data, selected }) {
           <span className="flex items-center gap-1 rounded-full bg-[#EDECE6] px-1.5 py-px font-code text-[8px] text-[#71716D]">
             <LockSimple size={8} />
             résumé
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  // Grappe de jumeaux (niveau 2, domaines denses) : avatar + compteur, membres au survol
+  if (data.grappe) {
+    const g = data.grappe;
+    return (
+      <div className="group relative" data-testid={`grappe-${g.id}`}>
+        <div className="pointer-events-none absolute -top-3 left-1/2 z-50 w-52 -translate-x-1/2 -translate-y-full rounded-lg border border-[#E5E5E3] bg-white p-3 opacity-0 backdrop-blur-xl transition-opacity duration-200 group-hover:opacity-100">
+          <div className="font-display text-xs font-bold" style={{ color: couleur }}>{g.domaine} — {g.membres.length} jumeaux regroupés</div>
+          <div className="mt-1.5 space-y-0.5 font-code text-[10px] text-[#52524F]">
+            {g.membres.map((j) => <div key={j.id}>{idNumerique(j.id)} · {j.nom}</div>)}
+          </div>
+          <div className="mt-2 font-code text-[9px] text-[#0E7490]">Clic : zoom avant pour déployer</div>
+        </div>
+        <div className={`relative transition-opacity duration-500 ${data.dim ? "opacity-20" : ""}`}>
+          {data.halo && (
+            <span className="pointer-events-none absolute -inset-2 rounded-2xl" style={{ backgroundColor: `${couleur}10`, border: `1px solid ${couleur}2A` }} />
+          )}
+          <AvatarJumeau actif ports={false} />
+          <span
+            className="absolute -bottom-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full border border-white px-1 font-code text-[9px] font-bold text-white shadow"
+            style={{ backgroundColor: couleur }}
+            data-testid={`grappe-compteur-${g.id}`}
+          >
+            ×{g.membres.length}
           </span>
         </div>
       </div>

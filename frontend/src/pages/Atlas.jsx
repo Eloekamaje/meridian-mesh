@@ -18,10 +18,22 @@ import AtlasPanneau from "@/components/map/AtlasPanneau";
 import FilAriane from "@/components/map/FilAriane";
 import ExpliquerCarte from "@/components/map/ExpliquerCarte";
 import ComposerFlore from "@/components/ComposerFlore";
-import useNavigationAtlas from "@/components/map/useNavigationAtlas";
+import useNavigationAtlas, { dansPolygone } from "@/components/map/useNavigationAtlas";
 import useZoomSemantique from "@/components/map/useZoomSemantique";
 import { NIVEAUX_ZOOM, construireGraphe, statsDuDomaine, idNumerique } from "@/lib/atlasGraph";
 import { useRoutageFinal } from "@/lib/routage";
+
+// Détection du dispositif : le responsive n'agit que sur le chrome, jamais sur le monde
+function useMedia(requete) {
+  const [m, setM] = useState(() => typeof window !== "undefined" && window.matchMedia(requete).matches);
+  useEffect(() => {
+    const mm = window.matchMedia(requete);
+    const h = () => setM(mm.matches);
+    mm.addEventListener("change", h);
+    return () => mm.removeEventListener("change", h);
+  }, [requete]);
+  return m;
+}
 import { couleurDomaine, ETATS_RELATION, MATURITES } from "@/lib/domaines";
 import { parseQuand, finDeJournee, fmtDate } from "@/lib/temps";
 
@@ -66,6 +78,13 @@ export default function Atlas() {
   const [modeEdition, setModeEdition] = useState(false); // déplacement des robots uniquement en mode explicite
   const [provisoire, setProvisoire] = useState(false); // drag en cours : routage maison simple, recalcul final au relâchement
   const { routesFin, pousser } = useRoutageFinal(); // routes finales calculées par libavoid (Web Worker)
+  // Responsive : chrome uniquement — la géographie du Mesh ne change jamais avec l'écran
+  const estMobile = useMedia("(max-width: 640px)");
+  const estTablette = useMedia("(max-width: 1024px)");
+  const estTactile = useMedia("(pointer: coarse)");
+  const [composerOuvert, setComposerOuvert] = useState(false);
+  const [rechercheMobileOuverte, setRechercheMobileOuverte] = useState(false);
+  const centreMonde = useRef(null); // point monde au centre du viewport (conservation caméra)
   const [fantome, setFantome] = useState(null); // position de départ du robot pendant le drag
   const coquesRef = useRef({}); // rect actuellement affiché de chaque membrane
   const ciblesCoques = useRef({}); // rect cible calculé
@@ -333,7 +352,7 @@ export default function Atlas() {
       posOverrides, compteurs, halo, selection,
       zoomNiveau, relFocus, focusCarte, domDe, statsRegions, temps,
       zoomFort: zoomActuel >= 1.5,
-      routesFin, provisoire,
+      routesFin, provisoire, tactile: estTactile,
     });
     // Conserve les dimensions mesurées par React Flow : le graphe est reconstruit à chaque
     // tick de drag — sans cela les nœuds perdent leur mesure et les arêtes disparaissent.
@@ -382,7 +401,7 @@ export default function Atlas() {
     });
     ciblesCoques.current = nouvellesCibles;
     return g;
-  }, [mesh, focus, situation, halo, compteurs, selection, relFocus, zoomNiveau, vueActive, posOverrides, domaineSel, perimetreTravail, domDe, statsRegions, focusCarte, temps, amorce, mesures, regionSurvolee, tickCoques, relSurvolee, selectedRelation, zoomActuel, routesFin, provisoire]);
+  }, [mesh, focus, situation, halo, compteurs, selection, relFocus, zoomNiveau, vueActive, posOverrides, domaineSel, perimetreTravail, domDe, statsRegions, focusCarte, temps, amorce, mesures, regionSurvolee, tickCoques, relSurvolee, selectedRelation, zoomActuel, routesFin, provisoire, estTactile]);
 
   // Routage final : nouveau snapshot géométrique → Web Worker libavoid
   // (jamais pendant le drag, jamais pendant le pan/zoom — la signature géométrique est stable)
@@ -554,6 +573,26 @@ export default function Atlas() {
     }
   };
 
+  // Conservation de la caméra au redimensionnement / changement d'orientation :
+  // même zoom, même point monde au centre — seule la translation est recalculée
+  useEffect(() => {
+    const el = carteRef.current;
+    if (!el) return undefined;
+    let derniere = { w: el.clientWidth, h: el.clientHeight };
+    const ro = new ResizeObserver(() => {
+      const rf = rfRef.current;
+      const c = centreMonde.current;
+      const { clientWidth: w, clientHeight: h } = el;
+      if (w === derniere.w && h === derniere.h) return;
+      derniere = { w, h };
+      if (!rf || !c) return;
+      const vp = rf.getViewport();
+      rf.setViewport({ x: w / 2 - c.x * vp.zoom, y: h / 2 - c.y * vp.zoom, zoom: vp.zoom });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   // Inertie de déplacement : échantillonnage du viewport, décélération progressive au relâchement
   const surMove = (e, vp) => {
     onMove(e, vp);
@@ -562,8 +601,8 @@ export default function Atlas() {
       return Math.abs(arr - z) >= 0.05 ? arr : z;
     });
     // Contexte passif : domaine sous le centre du viewport (stabilisé 400 ms, caméra jamais déplacée)
-    if (rfRef.current && carteRef.current) {
-      const rect = carteRef.current.getBoundingClientRect();
+    const rect = carteRef.current?.getBoundingClientRect();
+    if (rfRef.current && rect) {
       const centre = rfRef.current.screenToFlowPosition({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
       majContexte(centre, nodes.filter((n) => n.type === "region" && n.data.points).map((n) => ({ label: n.data.label, points: n.data.points, ox: n.position.x, oy: n.position.y })));
     }
@@ -573,6 +612,8 @@ export default function Atlas() {
     // l'inertie avec ces échantillons, sinon un zoom-out rapide déclenche une translation
     const dernier = mouvements.current[mouvements.current.length - 1];
     if (dernier && Math.abs(dernier.zoom - vp.zoom) > 0.0001) mouvements.current = [];
+    // Point monde au centre du viewport (conservation de la caméra au redimensionnement)
+    if (rect) centreMonde.current = { x: (rect.width / 2 - vp.x) / vp.zoom, y: (rect.height / 2 - vp.y) / vp.zoom };
     mouvements.current.push({ t, x: vp.x, y: vp.y, zoom: vp.zoom });
     mouvements.current = mouvements.current.filter((m) => t - m.t < 180);
   };
@@ -681,6 +722,8 @@ export default function Atlas() {
     setHalo(id); // membrane + robot brièvement mis en évidence
     setTimeout(() => setHalo((h) => (h === id ? null : h)), 2000);
     rfRef.current?.setCenter(pos.x + 30, pos.y + 40, { zoom: 1.4, duration: 600 });
+    // Sur tablette/mobile, le panneau flottant d'épingle n'existe pas : ouvrir la bottom sheet
+    if (estTablette) { setSelected(j); setOnglet("detail"); }
     setRecherche("");
   };
 
@@ -735,6 +778,11 @@ export default function Atlas() {
         zoomOnDoubleClick={false}
         onInit={(inst) => {
           rfRef.current = inst;
+          requestAnimationFrame(() => {
+            const r = carteRef.current?.getBoundingClientRect();
+            const vp = inst.getViewport();
+            if (r) centreMonde.current = { x: (r.width / 2 - vp.x) / vp.zoom, y: (r.height / 2 - vp.y) / vp.zoom };
+          });
           setTimeout(() => {
             try { inst.updateNodeInternals(inst.getNodes().map((n) => n.id)); } catch { /* mesure ultérieure */ }
           }, 120);
@@ -744,7 +792,7 @@ export default function Atlas() {
         onNodeDragStart={debutDrag}
         onNodeDragStop={finDrag}
         onNodeMouseEnter={(e, node) => {
-          if (node.type === "twin" && !node.data?.porte && !node.data?.jumeau?.anonyme) setSurvolJumeau(node.data.jumeau.id);
+          if (node.type === "twin" && node.data?.jumeau && !node.data.jumeau.anonyme) setSurvolJumeau(node.data.jumeau.id);
         }}
         onNodeMouseLeave={() => setSurvolJumeau(null)}
         onNodesChange={onNodesChange}
@@ -777,6 +825,11 @@ export default function Atlas() {
             setSelected(null);
             setSelectedRelation(null);
             setOnglet("detail");
+            return;
+          }
+          if (node.data?.grappe) {
+            // Clic sur une grappe : zoom avant explicite centré — les jumeaux se déploient (niveau 3)
+            rfRef.current?.setCenter(node.position.x + 30, node.position.y + 40, { zoom: 1.35, duration: 600 });
             return;
           }
           if (node.type !== "twin") return;
@@ -844,6 +897,20 @@ export default function Atlas() {
               }
             }
           }
+          // Tactile : le tap dans une zone vide d'une membrane sélectionne son domaine
+          // (remplace le survol, qui n'existe pas au toucher) — le tap sur un robot reste prioritaire
+          if (estTactile && rfRef.current) {
+            const p = rfRef.current.screenToFlowPosition({ x: e.clientX, y: e.clientY });
+            const membrane = nodes.find((n) => n.type === "region" && n.data.points && dansPolygone(p, n.data.points, n.position.x, n.position.y));
+            if (membrane) {
+              setSelected(null);
+              setSelectedRelation(null);
+              setDomaineSel(membrane.data.label);
+              setOnglet("detail");
+              majUrl({ domaine: membrane.data.label, sel: null });
+              return;
+            }
+          }
           setSelected(null); setSelectedRelation(null); setDomaineSel(null); setSelection([]); setRelFocus(false); setComparaison(null); setAttenteComparaison(false); commanderCarte(null); setEpingle(null);
           majUrl({ sel: null, domaine: null, jumeau: null });
         }}
@@ -857,15 +924,18 @@ export default function Atlas() {
             <CornersOut size={14} />
           </ControlButton>
         </Controls>
-        <MiniMap
-          position="bottom-right"
-          pannable
-          zoomable
-          style={{ width: 168, height: 112 }}
-          nodeColor={(n) => (n.type === "region" ? `${n.data?.couleur || "#71716D"}66` : couleurDomaine(n.data?.jumeau?.domaine))}
-          maskColor="rgba(247,247,246,0.6)"
-          data-testid="minimap"
-        />
+        {/* Mini-carte : masquée sur mobile (remplacée par le bouton « Vue d'ensemble ») */}
+        {!estMobile && (
+          <MiniMap
+            position="bottom-right"
+            pannable
+            zoomable
+            style={{ width: 168, height: 112 }}
+            nodeColor={(n) => (n.type === "region" ? `${n.data?.couleur || "#71716D"}66` : couleurDomaine(n.data?.jumeau?.domaine))}
+            maskColor="rgba(247,247,246,0.6)"
+            data-testid="minimap"
+          />
+        )}
         {/* Étiquettes de domaines — révélées au survol de la membrane (niveaux 2-3) ;
             toujours visibles au niveau 1 (vue macro, elles sont le contenu) */}
         <ViewportPortal>
@@ -949,7 +1019,7 @@ export default function Atlas() {
       </svg>
 
       {/* Sélecteur de couches de relations + recherche */}
-      <div className={`pointer-events-none absolute left-32 top-3 z-10 flex items-start justify-between gap-3 transition-all ${selected || selectedRelation || domaineSel ? "right-[400px]" : "right-24"}`}>
+      <div className={`pointer-events-none absolute left-14 top-3 z-10 flex items-start justify-between gap-3 transition-all sm:left-32 ${estTablette ? "right-3" : selected || selectedRelation || domaineSel ? "right-[400px]" : "right-24"}`}>
         <div className="glass pointer-events-auto flex items-center gap-1 rounded-xl p-1" data-testid="couches-relations">
           {[
             ["bcm", "BCM déclaré", "rgba(17,17,16,0.45)", "solid"],
@@ -969,16 +1039,34 @@ export default function Atlas() {
           ))}
         </div>
         <div className="pointer-events-auto relative">
-          <div className="glass flex items-center gap-2 rounded-xl px-3 py-2">
-            <MagnifyingGlass size={13} className="shrink-0 text-[#71716D]" />
-            <input
-              value={recherche}
-              onChange={(e) => setRecherche(e.target.value)}
-              placeholder="Rechercher un jumeau, domaine, flux…"
-              data-testid="atlas-recherche"
-              className="w-60 bg-transparent text-xs text-[#111110] placeholder:text-[#71716D] focus:outline-none"
-            />
-          </div>
+          {estMobile && !rechercheMobileOuverte ? (
+            // Mobile : la recherche s'ouvre à la demande (bouton), puis ramène vers le résultat
+            <button onClick={() => setRechercheMobileOuverte(true)} data-testid="btn-recherche" title="Rechercher" className="glass rounded-xl p-2.5 text-[#52524F] transition-colors hover:text-[#111110]">
+              <MagnifyingGlass size={14} />
+            </button>
+          ) : (
+            <div className="glass flex items-center gap-2 rounded-xl px-3 py-2">
+              <MagnifyingGlass size={13} className="shrink-0 text-[#71716D]" />
+              <input
+                value={recherche}
+                onChange={(e) => setRecherche(e.target.value)}
+                onKeyDown={(e) => {
+                  // Enter : sélectionne le premier résultat et ramène la carte vers lui
+                  if (e.key !== "Enter" || resultatsRecherche.length === 0) return;
+                  const r = resultatsRecherche[0];
+                  if (r.type === "jumeau") centrerSurJumeau(r.id);
+                  else { setDomaineSel(r.id); setRecherche(""); }
+                  if (estMobile) setRechercheMobileOuverte(false);
+                }}
+                placeholder="Rechercher un jumeau, domaine, flux…"
+                data-testid="atlas-recherche"
+                className={`${estMobile ? "w-[44vw]" : "w-60"} bg-transparent text-xs text-[#111110] placeholder:text-[#71716D] focus:outline-none`}
+              />
+              {estMobile && (
+                <button onClick={() => { setRechercheMobileOuverte(false); setRecherche(""); }} data-testid="btn-recherche-fermer" className="text-[#71716D]"><X size={13} /></button>
+              )}
+            </div>
+          )}
           {resultatsRecherche.length > 0 && (
             <div className="glass absolute right-0 top-11 z-30 w-72 rounded-xl p-1.5" data-testid="atlas-recherche-resultats">
               {resultatsRecherche.map((r) => (
@@ -997,8 +1085,9 @@ export default function Atlas() {
         </div>
       </div>
 
-      {/* Panneau flottant du jumeau — survol (aperçu) ou épinglé au clic */}
-      {jumeauSurvole && statsJumeau && (
+      {/* Panneau flottant du jumeau — survol (aperçu) ou épinglé au clic ; desktop uniquement
+          (sur tablette/mobile, la bottom sheet porte le détail — jamais de double affichage) */}
+      {!estTablette && jumeauSurvole && statsJumeau && (
         <div
           className={`absolute left-4 top-20 z-20 w-64 rounded-2xl border border-[#E5E5E3] bg-white p-4 shadow-lg ${epingle ? "" : "pointer-events-none"}`}
           data-testid="panneau-jumeau-flottant"
@@ -1243,6 +1332,17 @@ export default function Atlas() {
         </div>
       )}
 
+      {/* Mobile : la mini-carte devient un bouton « Vue d'ensemble » (fitView explicite) */}
+      {estMobile && (
+        <button
+          onClick={() => rfRef.current?.fitView({ duration: 600, padding: 0.15 })}
+          data-testid="btn-vue-ensemble"
+          className="glass absolute bottom-24 right-3 z-10 rounded-full px-3 py-2.5 font-code text-[10px] uppercase tracking-[0.12em] text-[#52524F] transition-colors hover:text-[#111110]"
+        >
+          Vue d'ensemble
+        </button>
+      )}
+
       <AtlasPanneau
         onglet={onglet} setOnglet={setOnglet}
         comparaison={comparaison} selectedRelation={selectedRelation}
@@ -1250,14 +1350,29 @@ export default function Atlas() {
         statsDomaine={statsDomaine} actionsDomaine={actionsDomaine}
         confirmerRelation={confirmerRelation}
         eventsVisibles={eventsVisibles} jumeauPar={jumeauPar}
+        presentation={estTablette ? "feuillet" : "flottant"}
       />
 
-      {/* Composer cartographique — flottant, repliable, au-dessus de la carte */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-center" data-testid="atlas-composer-zone">
-        <div className="pointer-events-auto w-[min(560px,92%)] opacity-95 transition-opacity hover:opacity-100">
-          <ComposerFlore compact flottant placeholder="Interrogez cette carte…" testidPrefix="atlas-composer" />
+      {/* Composer cartographique — flottant ; bouton dédié sur mobile */}
+      {estMobile && !composerOuvert ? (
+        <button
+          onClick={() => setComposerOuvert(true)}
+          data-testid="btn-flore"
+          title="Interroger cette carte"
+          className="glass absolute bottom-4 left-1/2 z-20 -translate-x-1/2 rounded-full p-3.5 text-[#0E7490] shadow-lg"
+        >
+          <Sparkle size={18} />
+        </button>
+      ) : (
+        <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-center" data-testid="atlas-composer-zone">
+          <div className="pointer-events-auto w-[min(560px,92%)] opacity-95 transition-opacity hover:opacity-100">
+            {estMobile && (
+              <button onClick={() => setComposerOuvert(false)} data-testid="btn-flore-fermer" className="mb-1 ml-auto flex text-[#71716D]"><X size={14} /></button>
+            )}
+            <ComposerFlore compact flottant placeholder="Interrogez cette carte…" testidPrefix="atlas-composer" />
+          </div>
         </div>
-      </div>
+      )}
     </div>
     </div>
   );

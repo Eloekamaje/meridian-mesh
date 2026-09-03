@@ -1,5 +1,14 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v37, clustering niveau 2 + responsive complet — spec utilisateur 20 règles)
+- **Clustering (niveau 2 uniquement, jamais lié à l'écran)** : domaines ≥ 5 jumeaux → les 2 plus couverts restent visibles, les autres sont regroupés spatialement (rayon 130 px monde) en grappes « ×N » (`grappe-grappe-<Domaine>-<i>`, badge `grappe-compteur-*`, tooltip membres au survol). Clic sur une grappe = zoom avant explicite (setCenter 1.35) → dissolution au niveau 3 ; elles se reforment au retour niveau 2. Les relations des membres pointent vers la grappe et sont agrégées par paire (« N flux »).
+- **Caméra conservée au redimensionnement/orientation** : ResizeObserver — même zoom, même point monde au centre, seule la translation est recalculée ; jamais de fitView automatique (delta centre < 1e-3 px vérifié).
+- **Chrome responsive** : mobile ≤640px — minimap remplacée par « Vue d'ensemble » (`btn-vue-ensemble`), composer Flore → bouton flottant (`btn-flore`), recherche → bouton (`btn-recherche`, Enter = premier résultat + recentrage), sidebar applicative repliée par défaut ≤1024px (Layout.jsx), barre du haut compacte.
+- **Bottom sheet** (`AtlasPanneau presentation="feuillet"`, tablette ≤1024px et mobile) : poignée + titre (`feuillet-poignee`, `feuillet-titre`, `data-state` reduit/complet), max 60vh, superposée à la carte (jamais de redimensionnement ni recentrage), sélection conservée. Le panneau flottant d'épingle desktop est masqué sur tablette/mobile (pas de double affichage).
+- **Tactile (pointer: coarse)** : tap zone vide de membrane = sélection du domaine (priorité au robot) ; zones d'arêtes 22 px (10 px desktop) ; contrôles zoom ≥ 44 px (CSS). Drag des robots toujours uniquement en mode réorganisation.
+- Rappels inchangés : monde invariant, niveaux sémantiques par zoom seul, routes/membranes jamais recalculées au resize.
+- Tests : **iteration_37 → 93 %**, puis les 3 bugs mobile corrigés et revérifiés (recherche Enter, double affichage, tap fond). Console propre, libavoid intact.
+
 ## Implémenté (06/2026 — v34-v36, épuration visuelle + peuplement déséquilibré)
 - **Portes supprimées de la carte** (choix utilisateur) : les arêtes inter-domaines suffisent ; la navigation vers un domaine voisin se fait via le panneau détail (chips « Vers X · N » cliquables, `vers-<Domaine>`) et le survol des membranes. Code retiré : bloc portes d'`atlasGraph.js`, branche porte de `TwinNode.jsx`, logique « chemin » d'Atlas.jsx.
 - **Labels de domaines révélés au survol** (règle utilisateur) : au repos (niveaux 2-3), les titres PAIEMENT/RISQUE/… et la puce de maturité sont masqués ; l'approche de la frontière d'une membrane les révèle (+ tooltip de synthèse). Au niveau 1 (macro), ils restent toujours visibles (c'est le contenu). Le domaine sélectionné garde son label visible.
