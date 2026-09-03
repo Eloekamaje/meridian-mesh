@@ -33,7 +33,8 @@ function App() {
           <MeshProvider>
           <Routes>
             <Route element={<Layout />}>
-              <Route path="/" element={<Accueil />} />
+              {/* L'Atlas est l'accueil ; les autres fonctions sont de vraies pages (zone centrale) */}
+              <Route path="/" element={<Navigate to="/atlas" replace />} />
               <Route path="/actualites" element={<Actualites />} />
               <Route path="/actualites/comprendre/:hid" element={<Comprendre />} />
               <Route path="/atlas" element={<Atlas />} />

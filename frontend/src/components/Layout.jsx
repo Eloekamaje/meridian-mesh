@@ -9,9 +9,8 @@ import DemoTour from "./DemoTour";
 import Topbar from "./Topbar";
 
 const NAV = [
-  { to: "/", label: "Accueil", icon: House, end: true, testid: "nav-accueil" },
-  { to: "/actualites", label: "Actualités", icon: Newspaper, testid: "nav-actualites" },
   { to: "/atlas", label: "Atlas", icon: Compass, testid: "nav-atlas" },
+  { to: "/actualites", label: "Actualités", icon: Newspaper, testid: "nav-actualites" },
   { to: "/travaux", label: "Travaux", icon: Briefcase, testid: "nav-travaux" },
   { to: "/jumeaux", label: "Jumeaux", icon: CirclesThree, testid: "nav-jumeaux" },
 ];
@@ -20,7 +19,7 @@ export default function Layout() {
   const { espaces, personas, persona, changerCible, version } = usePerimetre();
   const { demarrer, courant } = useDemo();
   const navigate = useNavigate();
-  const [repliee, setRepliee] = useState(() => typeof window !== "undefined" && window.matchMedia("(max-width: 1024px)").matches); // repliée par défaut sur tablette/mobile
+  const [repliee, setRepliee] = useState(true); // menu réduit par défaut (icônes seules) ; déplié à la demande
   const [recents, setRecents] = useState([]);
 
   useEffect(() => {
@@ -28,14 +27,12 @@ export default function Layout() {
   }, [version]);
 
   const adminAutorise = espaces.some((e) => e.global);
-  // Atlas = cartographie plein écran : la sidebar globale se retire, la topbar devient un îlot flottant
   const location = useLocation();
-  const surAtlas = location.pathname === "/atlas";
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-[#F7F7F6] text-foreground" data-testid="layout">
-      {/* Barre latérale — mémoire et grands espaces (retirée sur l'Atlas : le hub flottant prend le relais) */}
-      <aside className={surAtlas ? "hidden" : `flex shrink-0 flex-col border-r border-[#E5E5E3] bg-white transition-all duration-200 ${repliee ? "w-14" : "w-60"}`} data-testid="sidebar">
+      {/* Barre latérale — mémoire et grands espaces (réduite par défaut, dépliée à la demande) */}
+      <aside className={`flex shrink-0 flex-col border-r border-[#E5E5E3] bg-white transition-all duration-200 ${repliee ? "w-14" : "w-60"}`} data-testid="sidebar">
         <div className="flex h-12 items-center gap-2.5 border-b border-[#E5E5E3] px-3.5">
           <span className="pulse-soft h-2 w-2 shrink-0 rounded-full bg-[#3730A3]" />
           {!repliee && <span className="font-display text-sm font-black tracking-[0.18em] text-[#111110]">MÉRIDIAN</span>}
@@ -110,9 +107,11 @@ export default function Layout() {
 
       {/* Colonne principale */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar flottante={surAtlas} />
+        <Topbar />
         <main className="relative flex-1 overflow-hidden">
-          <Outlet />
+          <div key={location.pathname} className="page-transition h-full">
+            <Outlet />
+          </div>
         </main>
       </div>
 

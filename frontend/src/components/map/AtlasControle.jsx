@@ -56,7 +56,7 @@ export default function AtlasControle({
   };
 
   return (
-    <div className="glass absolute left-4 top-16 z-10 rounded-xl p-2" data-testid="map-mode-switcher">
+    <div className="glass absolute left-4 top-4 z-10 rounded-xl p-2" data-testid="map-mode-switcher">
       <div className="flex items-center gap-1">
         <button
           onClick={() => setDeplie(!deplie)}

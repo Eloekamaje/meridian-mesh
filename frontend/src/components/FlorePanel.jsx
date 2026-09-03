@@ -208,7 +208,7 @@ export default function FlorePanel() {
   const caseId = caseMatch && caseMatch[1] !== "nouveau" ? caseMatch[1] : null;
   const {
     selection, setSelection, domaineSel, retirerJumeau, setDomaineSel, ajouterJumeau,
-    commanderCarte, focusVisuel, lot, floreOuverte, ouvrirFlore, fermerFlore,
+    commanderCarte, focusVisuel, lot, floreOuverte, ouvrirFlore, fermerFlore, atlasCtx,
   } = useContexte();
   const { jumeauPar, mesh } = useMesh();
   const [question, setQuestion] = useState("");
@@ -224,8 +224,22 @@ export default function FlorePanel() {
   const [ajoutEnCours, setAjoutEnCours] = useState(false);
   const [caseCtx, setCaseCtx] = useState(null);
   const prevFocusRef = useRef(null);
+  const prevAtlasSig = useRef(null);
   const inputRef = useRef(null);
   const conversationRef = useRef(null);
+
+  // Conversation persistante, contexte évolutif : si la sélection Atlas change en cours
+  // de conversation, le fil n'est JAMAIS réinitialisé — un marqueur signale la transition
+  useEffect(() => {
+    if (!atlasCtx) return;
+    const sig = `${atlasCtx.domaine || ""}|${atlasCtx.jumeau || ""}|${atlasCtx.relation || ""}`;
+    if (prevAtlasSig.current && prevAtlasSig.current !== sig && floreOuverte && echanges.length > 0) {
+      const cible = atlasCtx.jumeau ? `jumeau ${atlasCtx.jumeau}` : atlasCtx.relation ? `relation ${atlasCtx.relation}` : atlasCtx.domaine ? `domaine ${atlasCtx.domaine}` : "Mesh global";
+      setEchanges((e) => [...e, { marqueur: true, texte: `Contexte actualisé : ${cible}` }]);
+    }
+    prevAtlasSig.current = sig;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [atlasCtx?.domaine, atlasCtx?.jumeau, atlasCtx?.relation]);
 
   // Contexte actif : le Case courant quand le panneau est ouvert depuis un case
   useEffect(() => {
@@ -425,8 +439,22 @@ export default function FlorePanel() {
           </div>
         )}
 
-        {focusVisuel && (
-          <div className="mt-1.5 font-code text-[9px] uppercase tracking-[0.2em] text-[#71716D]" data-testid="flore-focus-visuel">
+        {/* Instantané Atlas — Flore sait où se trouve l'utilisateur et ce qu'il regarde */}
+        {atlasCtx && contexte === "atlas" && (
+          <div className="mt-2 rounded-lg border border-[#0E7490]/25 bg-[#0E7490]/[0.04] px-3 py-2" data-testid="flore-contexte-atlas">
+            <div className="font-code text-[9px] uppercase tracking-[0.2em] text-[#0E7490]">
+              Atlas · {atlasCtx.zoomLabel || "Domaines"}
+            </div>
+            <div className="mt-0.5 font-code text-[10px] leading-relaxed text-[#52524F]" data-testid="flore-contexte-atlas-detail">
+              {atlasCtx.domaine ? `Domaine ${atlasCtx.domaine}` : "Mesh global"}
+              {atlasCtx.jumeau ? ` · Sélection : ${atlasCtx.jumeau}` : ""}
+              {atlasCtx.relation ? ` · Relation : ${atlasCtx.relation}` : ""}
+              {atlasCtx.couches?.length ? ` · Couches : ${atlasCtx.couches.join(", ")}` : ""}
+            </div>
+          </div>
+        )}
+
+        {focusVisuel && (          <div className="mt-1.5 font-code text-[9px] uppercase tracking-[0.2em] text-[#71716D]" data-testid="flore-focus-visuel">
             Focus visuel : {focusVisuel.type === "domaine" ? `Domaine ${focusVisuel.label}` : focusVisuel.label}
           </div>
         )}
@@ -513,7 +541,14 @@ export default function FlorePanel() {
             <p className="mt-1 font-code text-[10px] text-[#71716D]">Une conversation importante peut devenir un travail.</p>
           </div>
         )}
-        {echanges.map((e, i) => (
+        {echanges.map((e, i) =>
+          e.marqueur ? (
+            <div key={i} className="flex items-center gap-2 px-1 py-0.5" data-testid={`flore-marqueur-${i}`}>
+              <span className="h-px flex-1 bg-[#E5E5E3]" />
+              <span className="font-code text-[9px] uppercase tracking-[0.15em] text-[#0E7490]">{e.texte}</span>
+              <span className="h-px flex-1 bg-[#E5E5E3]" />
+            </div>
+          ) : (
           <div key={i} className="space-y-2">
             <div className="ml-8 rounded-xl rounded-br-sm bg-[#3730A3]/15 px-3.5 py-2.5" data-testid={`flore-question-${i}`}>
               <p className="text-sm text-[#111110]">{e.question}</p>
@@ -525,7 +560,8 @@ export default function FlorePanel() {
               ajouterJumeau={ajouterJumeau} navigate={navigate}
             />
           </div>
-        ))}
+          )
+        )}
         {chargement && (
           <div className="px-1" data-testid="flore-chargement">
             <FloreActivite testid="flore-chargement-activite" />

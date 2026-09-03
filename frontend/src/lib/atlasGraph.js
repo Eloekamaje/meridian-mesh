@@ -715,7 +715,43 @@ export function construireGraphe({
         }
         return acc;
       }, []);
-    es = fabriqueOrtho(relsMappees, ns, posMain, zoomNiveau, zoomFort, routesFin, provisoire, tactile);
+    // Niveau 2 — Domaines : les relations inter-domaines se regroupent en corridors
+    // « N flux » (façon routes principales Google Maps) ; les petites rues (relations
+    // individuelles inter-domaines) apparaissent au niveau 3. Relations internes inchangées.
+    let relsPourRoutage = relsMappees;
+    if (zoomNiveau === 2) {
+      const intra = [];
+      const inter = new Map();
+      relsMappees.forEach((r) => {
+        const da = domDe[r.source];
+        const db = domDe[r.cible];
+        if (!da || !db || da === db) {
+          intra.push(r);
+          return;
+        }
+        const cle = [da, db].sort().join("~");
+        if (!inter.has(cle)) inter.set(cle, []);
+        inter.get(cle).push(r);
+      });
+      const corridorsN2 = [...inter.values()].map((membres) => {
+        // extrémités = paire de jumeaux la plus proche entre les deux domaines
+        let best = membres[0];
+        let dMin = Infinity;
+        membres.forEach((r) => {
+          const pa = posMain[r.source];
+          const pb = posMain[r.cible];
+          const d = Math.hypot(pa.x - pb.x, pa.y - pb.y);
+          if (d < dMin) {
+            dMin = d;
+            best = r;
+          }
+        });
+        const etatFort = membres.reduce((a, r) => ((PRIORITES[r.etat] ?? 40) > (PRIORITES[a] ?? 40) ? r.etat : a), membres[0].etat);
+        return { ...best, id: `corridor2-${best.source}-${best.cible}`, etat: etatFort, grappeCompte: membres.length };
+      });
+      relsPourRoutage = [...intra, ...corridorsN2];
+    }
+    es = fabriqueOrtho(relsPourRoutage, ns, posMain, zoomNiveau, zoomFort, routesFin, provisoire, tactile);
     snapMain = es.snapshot;
     es = es.edges;
     // Moteur de labels des relations (niveau 3+) : collision → le moins prioritaire disparaît

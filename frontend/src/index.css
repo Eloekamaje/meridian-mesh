@@ -131,3 +131,12 @@
   body.atlas-immersif [data-testid="sidebar"],
   body.atlas-immersif [data-testid="topbar"] { display: none; }
 }
+
+/* Transition de page discrète — navigation applicative (150-220 ms, léger déplacement) */
+@keyframes page-fade {
+  from { opacity: 0; transform: translateX(6px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.page-transition {
+  animation: page-fade 180ms ease-out;
+}

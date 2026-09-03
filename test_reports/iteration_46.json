@@ -1,0 +1,63 @@
+{
+  "summary": "Frontend-only regression on Atlas-first refonte. 20+ scenarios validated. Core refonte is largely operational: redirections /→/atlas, /travaux|/actualites|/jumeaux|/administration → surfaces (with administration MAXIMISÉE par défaut, ratio 98.7%×97.7%), Flore global panneau droit (delta X open=-220, close=0, ⌘K OK, marker flore-marqueur-0 « Contexte actualisé » inséré mid-conversation SANS reset, flore-contexte-atlas contextuel), corridors N2 (5 corridor2-* visibles au niveau 2, 0 au niveau 3 après zoom scale 2.6), rail-atlas ferme la surface, /travaux/<id> conserve le chrome classique (no atlas-rail), mobile 390×844 OK (rail + btn-parler-flore + flore-panel width 366 < 94vw), 0 erreur console, ancien btn-flore + atlas-composer-zone bien SUPPRIMÉS. 2 bugs à corriger dont 1 HIGH (rouvrir surface cassé) et 2 déviations data-testid/libellé par rapport à la spec.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Surface.jsx — état réduit → rouvrir",
+        "issue": "Clic sur [data-testid=\"surface-rouvrir-travaux\"] ne réouvre PAS la surface. Séquence testée : ouvrir surface-travaux ✓ → cliquer surface-reduire-travaux ✓ (surface-reduite-travaux apparaît, surface-travaux disparaît) → cliquer surface-rouvrir-travaux → RIEN : surface-travaux reste absent ET surface-reduite-travaux reste visible. La barre flottante ne rebascule pas vers l'état ouvert. Fermer directement (sans réduire) fonctionne correctement (URL revient à /atlas, surface disparaît).",
+        "selector": "[data-testid=\"surface-rouvrir-travaux\"]",
+        "priority": "HIGH"
+      },
+      {
+        "component": "AtlasHub.jsx (rail) + hub-menu — data-testid non-normalisés",
+        "issue": "Les data-testid pour Actualités utilisent l'accent français : `rail-actualités` et `hub-compteur-actualités` (code fait `label.toLowerCase()` sur 'Actualités'). La spec explicite le pattern ASCII : `rail-actualites`, `hub-compteur-actualites`. Impact : tests automatisés utilisant les IDs spec-conformes échouent. Correctif : normaliser via slugification (retirer les diacritiques) avant construction du testid.",
+        "selector": "[data-testid=\"rail-actualites\"] (absent) — actuellement rail-actualités",
+        "priority": "MEDIUM"
+      },
+      {
+        "component": "Topbar.jsx — libellé btn-parler-flore",
+        "issue": "Le bouton [data-testid=\"btn-parler-flore\"] affiche « Flore » en desktop (viewport 1920). La spec impose le libellé « Parler à Flore » sur desktop.",
+        "selector": "[data-testid=\"btn-parler-flore\"]",
+        "priority": "MEDIUM"
+      },
+      {
+        "component": "Compteur jumeaux (données)",
+        "issue": "hub-compteur-jumeaux = 38, la spec annonce 30. Vérifier que le filtre `!j.anonyme` est correctement appliqué ou que le mesh seed correspond.",
+        "selector": "[data-testid=\"hub-compteur-jumeaux\"]",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Réduire surface → Rouvrir",
+        "issue": "L'onClick de surface-rouvrir-<id> semble ne pas remonter l'état à Atlas.jsx (ou le state local Surface ne rebascule pas). La surface reste dans un état intermédiaire irrécupérable, seul surface-fermer-reduite-<id> permet ensuite de sortir (à vérifier).",
+        "affected_selectors": ["[data-testid=\"surface-rouvrir-travaux\"]", "[data-testid=\"surface-travaux\"]", "[data-testid=\"surface-reduite-travaux\"]"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_46.json"],
+  "action_items": [
+    "FIX HIGH : réparer la ré-ouverture d'une surface réduite. Dans Surface.jsx, la callback onRouvrir du bouton `surface-rouvrir-<id>` doit basculer l'état parent (Atlas.jsx) de `reduit → ouvert`. Vérifier que le state est bien remonté (probablement un setter manquant ou une double source of truth similaire au bug panneau iteration_45).",
+    "FIX MEDIUM : slugifier les libellés dans AtlasHub.jsx (lignes 64 et 104) — remplacer `label.toLowerCase()` par un helper qui retire les diacritiques (`label.normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').toLowerCase()`) pour produire `rail-actualites` et `hub-compteur-actualites` conformes à la spec.",
+    "FIX MEDIUM : dans Topbar.jsx l.129, afficher « Parler à Flore » sur desktop (le libellé actuel « Flore » ne matche pas la spec).",
+    "VÉRIFIER : hub-compteur-jumeaux affiche 38 (spec = 30). Le filtre !j.anonyme applique-t-il la définition attendue de « jumeau visible » ?"
+  ],
+  "critical_code_review_comments": [
+    "Surface.jsx : le pattern des 3 états (ouvert / réduit / maximisé) semble avoir la même dérive que AtlasPanneau iteration_45 — double state (local Surface ↔ parent Atlas.jsx `surface` param). La rouvrir-callback ne propage sans doute pas au parent qui contrôle l'affichage.",
+    "AtlasHub.jsx : la construction dynamique de data-testid via `label.toLowerCase()` sur des libellés accentués génère des ids non-portables — pattern à éviter, préférer un `id` explicite dans ENTREES.",
+    "Bonne pratique respectée : 0 erreur console, corridors N2/N3 basculent proprement sur le zoom (5 → 0 au scale 2.6), la fermeture directe d'une surface clean l'URL correctement, ⌘K raccourci Flore fonctionne, mobile respecte max-w-94vw."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "N/A — frontend only",
+    "frontend": "88% — 20/23 scénarios validés. Écarts : (1) rouvrir surface réduite cassé (HIGH), (2) data-testid rail/hub avec accents non-conformes, (3) libellé btn-parler-flore incorrect."
+  },
+  "test_credentials": "Persona architecte par défaut (aucune auth).",
+  "seed_data_creation": "Aucune. Chaque test commence par localStorage.clear().",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Pour reproduire le bug HIGH : (1) localStorage.clear(); (2) goto /atlas?surface=travaux; wait 2.5s; (3) surface-travaux visible; (4) click surface-reduire-travaux → surface-reduite-travaux apparaît, surface-travaux disparaît ; (5) click surface-rouvrir-travaux → ATTENDU: surface-travaux réapparaît; OBSERVÉ: rien ne bouge, surface-reduite-travaux reste, surface-travaux reste absent. Pour la mesure du pan Flore : tf initial `translate(255.669px, 59.79px) scale(1.035)` ; après btn-parler-flore : `translate(35.669px,...)` (delta -220px) ; après flore-fermer-btn : retour à 255.669 (delta net 0). Pour marker Flore : il faut D'ABORD envoyer un message (cliquer une suggestion type « Montre uniquement les dépendances critiques de Paiements » puis attendre 3s pour la réponse mockée) AVANT de cliquer un twin, sinon aucun flore-marqueur-N n'est inséré (comportement conforme à la spec « en cours de conversation »).",
+  "rca of the issue": "Bug HIGH (rouvrir surface) : très probablement identique en nature au bug fermer-panneau d'iteration_45 — double source of truth entre l'état local du composant Surface (probablement un useState `reduit`) et le param URL `surface=<id>` géré par Atlas.jsx. Le clic sur surface-rouvrir déclenche uniquement le toggle local sans propager au parent qui pilote l'affichage du bloc Surface complet. Correctif suggéré : lever le state `reduit` dans Atlas.jsx (ou dans un context) et faire de Surface un composant contrôlé via props {ouvert, reduit, onReduire, onRouvrir, onFermer, onMaximiser}. À défaut, exposer un `onRouvrir` qui appelle setSurfaceEtat('ouvert') dans Atlas."
+}

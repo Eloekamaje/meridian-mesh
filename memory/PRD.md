@@ -1,5 +1,23 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v45, pivot : vraies pages + état Atlas mémorisé)
+Réorientation utilisateur (annule le modèle surfaces superposées de v44) : l'Atlas est la **page d'accueil**, les autres fonctions sont de **vraies pages** dans un shell permanent.
+- **Shell permanent** : en-tête (topbar avec « ✦ Parler à Flore ») + rail latéral réduit par défaut (w-14, icônes, dépliable) sur TOUTES les pages ; seule la zone centrale change ; transition de page discrète (fade 180 ms, `page-transition`).
+- **Routes** : `/` → `/atlas` ; `/actualites`, `/travaux`, `/travaux/nouveau`, `/jumeaux`, `/administration` restaurées en vraies pages ; URLs partageables/rechargeables ; entrée « Accueil » supprimée (l'Atlas est l'accueil).
+- **État Atlas mémorisé** (`atlasEtat` dans contexte) : viewport (x, y, zoom), jumeau/domaine/relation sélectionnés, couches actives sauvegardés au démontage et restaurés au retour au **pixel près** — jamais de `fitView` au retour ; sauvegarde protégée contre le double-montage StrictMode (n'écrase jamais avec un viewport nul) ; les paramètres d'URL priment (liens partagés).
+- **Supprimé** : mécanisme de surfaces (`Surface.jsx`, param `?surface=`), rail interne `AtlasHub.jsx`, composer Flore en bas de carte.
+- **Conservé** : Flore globale (en-tête, panneau droit contextuel, marqueurs « Contexte actualisé »), corridors agrégés niveau 2, tout le moteur Atlas (zéro chevauchement, niveaux sémantiques 1-4, routage libavoid).
+- Tests : **iteration_47 → 96 %** (23/24) ; mémorisation d'état vérifiée 2× (StrictMode compris) ; 0 erreur console. Déviation LOW : testids corridors présents sous la forme `rf__edge-corridor2-*` (React Flow natif).
+
+## Implémenté (06/2026 — v44, refonte Atlas-first + Flore présence globale)
+Grande refonte validée par l'utilisateur (en une phase) : l'Atlas devient le territoire permanent, Flore la présence conversationnelle globale.
+- **Flore globale** : composer en bas de l'Atlas SUPPRIMÉ ; bouton libellé « ✦ Parler à Flore » dans l'en-tête (`btn-parler-flore`, état actif violet, ⌘K conservé) ; panneau droit 440 px avec en-tête contextuel Atlas (`flore-contexte-atlas` : domaine, sélection, couches actives, niveau de zoom via `atlasCtx` du store partagé) ; la carte se translate de 220 px à l'ouverture (zoom constant, coordonnées Mesh inchangées) ; marqueurs « Contexte actualisé » (`flore-marqueur-N`) insérés en conversation SANS reset quand la sélection change. Réponses toujours simulées (choix utilisateur).
+- **Surfaces de travail Atlas-first** : `/`, `/travaux`, `/actualites`, `/jumeaux`, `/administration`, `/travaux/nouveau` redirigent vers `/atlas?surface=xxx` ; les pages s'ouvrent en surface centrale superposée (`Surface.jsx` : ouvert 78 %×82 %, réduit = barre flottante Rouvrir/Fermer, maximisé ; voile d'atténuation sans flou). L'Atlas n'est jamais démonté → viewport/zoom/sélection/couches préservés à la fermeture. Pages détail (`/travaux/:id`…) conservent le chrome classique.
+- **Rail de navigation permanent** (`AtlasHub.jsx` réécrit) : rail vertical d'icônes à gauche (Atlas/Actualités/Travaux/Jumeaux + Nouveau travail, Parcours guidé, Administration) ; la marque MÉRIDIAN déplie le menu flottant avec compteurs ; testids ASCII (`rail-actualites`…).
+- **Corridors niveau 2** : relations inter-domaines agrégées en corridors « N flux » (extrémités = paire de jumeaux la plus proche, état dominant) ; relations individuelles inter-domaines au niveau 3 uniquement ; intra-domaines inchangées.
+- **Menu** : entrée « Accueil » supprimée — l'Atlas est l'accueil.
+- Tests : **iteration_46 → 88 %** puis correctifs auto-vérifiés Playwright (Rouvrir cassé — prop `onMaximiser` fantôme, testids accentués, libellé Flore) : tous PASS, 0 erreur console.
+
 ## Implémenté (06/2026 — v43, revue product owner UX/UI de l'Atlas)
 Suite à la revue d'expert (`/app/design_guidelines.json`), identité Méridian conservée (teal #0E7490, Space Grotesk).
 - **P0 — Routage resserré** : `shapeBufferDistance` libavoid 16→6 px. Le buffer trop large fermait les corridors entre rangées de jumeaux (séparation 105 px) et forçait des détours rectangulaires géants qui « superposaient » visuellement les domaines. Fix provisoire aussi : `margeBas` (50 px) pour que le routeur maison attache les ports SOUS l'App ID.

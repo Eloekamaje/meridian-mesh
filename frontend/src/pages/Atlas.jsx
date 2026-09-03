@@ -12,13 +12,11 @@ import TwinNode from "@/components/map/TwinNode";
 import RegionNode from "@/components/map/RegionNode";
 import AreteOrthogonale from "@/components/map/AreteOrthogonale";
 import AtlasControle from "@/components/map/AtlasControle";
-import AtlasHub from "@/components/map/AtlasHub";
 import AtlasToolbar from "@/components/map/AtlasToolbar";
 import AtlasLegende from "@/components/map/AtlasLegende";
 import AtlasPanneau from "@/components/map/AtlasPanneau";
 import FilAriane from "@/components/map/FilAriane";
 import ExpliquerCarte from "@/components/map/ExpliquerCarte";
-import ComposerFlore from "@/components/ComposerFlore";
 import useNavigationAtlas, { dansPolygone } from "@/components/map/useNavigationAtlas";
 import useZoomSemantique from "@/components/map/useZoomSemantique";
 import { NIVEAUX_ZOOM, construireGraphe, statsDuDomaine, idNumerique, placerLabels } from "@/lib/atlasGraph";
@@ -49,6 +47,8 @@ export default function Atlas() {
   const [situations, setSituations] = useState([]);
   const focus = searchParams.get("focus");
   const situationParam = searchParams.get("situation");
+  const selParam = searchParams.get("sel");
+  const domaineParam = searchParams.get("domaine");
   const [selected, setSelected] = useState(null);
   const [selectedRelation, setSelectedRelation] = useState(null);
   const [events, setEvents] = useState([]);
@@ -62,7 +62,14 @@ export default function Atlas() {
   const [expliquerOuvert, setExpliquerOuvert] = useState(false);
   const direct = modeTemps === "direct";
   const [outil, setOutil] = useState("deplacement");
-  const { selection, setSelection, domaineSel, setDomaineSel, focusCarte, commanderCarte, setFocusVisuel, ouvrirFlore } = useContexte();
+  const { selection, setSelection, domaineSel, setDomaineSel, focusCarte, commanderCarte, setFocusVisuel, ouvrirFlore, floreOuverte, setAtlasCtx, atlasEtat, setAtlasEtat } = useContexte();
+
+  // Conservation de l'état de l'Atlas entre les pages : au retour, on restaure exactement
+  // viewport, zoom, sélection et couches — jamais de fitView au retour (les liens partagés
+  // avec paramètres d'URL priment sur l'état mémorisé)
+  const restaurerEtat = !!(atlasEtat?.viewport) && !selParam && !domaineParam && !focus && !situationParam;
+  const etatVif = useRef({});
+  const etatRestaure = useRef(false);
   const [relFocus, setRelFocus] = useState(false);
   const [posOverrides, setPosOverrides] = useState({});
   const [epingle, setEpingle] = useState(null); // jumeau épinglé (panneau flottant persistant)
@@ -91,7 +98,6 @@ export default function Atlas() {
   const estMobile = useMedia("(max-width: 640px)");
   const estTablette = useMedia("(max-width: 1024px)");
   const estTactile = useMedia("(pointer: coarse)");
-  const [composerOuvert, setComposerOuvert] = useState(false);
   const [rechercheMobileOuverte, setRechercheMobileOuverte] = useState(false);
 
   const centreMonde = useRef(null); // point monde au centre du viewport (conservation caméra)
@@ -451,21 +457,75 @@ export default function Atlas() {
     return placerLabels(candidats);
   }, [nodes, zoomNiveau, regionSurvolee, domaineSel, couchesCarte.capacites]);
 
-  // P2 — Élégance contextuelle : à l'ouverture du panneau contextuel, la carte glisse
-  // doucement vers la gauche pour dégager l'espace (pan pur, zoom strictement constant)
-  const panneauOuvert = !!(comparaison || selectedRelation || selected || domaineSel || vueListe);
-  const prevPanneauOuvert = useRef(false);
+  // Instantané contextuel transmis à Flore : surface, sélection, couches actives, niveau de zoom
   useEffect(() => {
-    if (estTablette) { prevPanneauOuvert.current = panneauOuvert; return; }
+    setAtlasCtx({
+      domaine: domaineSel,
+      jumeau: selected && !selected.anonyme ? `${idNumerique(selected.id)} · ${selected.nom}` : null,
+      relation: selectedRelation ? `${idNumerique(selectedRelation.source)} → ${idNumerique(selectedRelation.cible)}` : null,
+      couches: [
+        couchesRel.bcm && "BCM", couchesRel.realite && "Réalité observée", couchesRel.ecarts && "Écarts",
+        couchesCarte.situations && "Situations", couchesCarte.capacites && "Capacités", couchesCarte.transformations && "Transformations",
+      ].filter(Boolean),
+      zoomLabel: NIVEAUX_ZOOM[zoomNiveau],
+    });
+    return () => setAtlasCtx(null);
+  }, [domaineSel, selected?.id, selectedRelation, couchesRel, couchesCarte, zoomNiveau, setAtlasCtx]);
+
+  // Miroir vivant des états à mémoriser (évite les closures périmées au démontage)
+  useEffect(() => {
+    etatVif.current = { selected, domaineSel, selectedRelation, couchesRel, couchesCarte };
+  });
+
+  // Sauvegarde à la sortie de la page (navigation vers Travaux, Jumeaux, …)
+  useEffect(() => () => {
     const vp = rfRef.current?.getViewport?.();
-    if (!vp) { prevPanneauOuvert.current = panneauOuvert; return; }
-    if (panneauOuvert && !prevPanneauOuvert.current) {
-      rfRef.current.setViewport({ x: vp.x - 170, y: vp.y, zoom: vp.zoom }, { duration: 400 });
-    } else if (!panneauOuvert && prevPanneauOuvert.current) {
-      rfRef.current.setViewport({ x: vp.x + 170, y: vp.y, zoom: vp.zoom }, { duration: 400 });
+    // Montage StrictMode sans instance : ne JAMAIS écraser l'état mémorisé avec du vide
+    if (!vp) return;
+    const c = etatVif.current;
+    setAtlasEtat({
+      viewport: vp || null,
+      twinId: c.selected?.id || null,
+      domaine: c.domaineSel || null,
+      relationId: c.selectedRelation?.id || null,
+      couchesRel: c.couchesRel,
+      couchesCarte: c.couchesCarte,
+    });
+  }, [setAtlasEtat]);
+
+  // Restauration au retour : couches + sélection (le viewport est restauré à l'init React Flow)
+  useEffect(() => {
+    if (!mesh || etatRestaure.current || !restaurerEtat) return;
+    etatRestaure.current = true;
+    if (atlasEtat.couchesRel) setCouchesRel(atlasEtat.couchesRel);
+    if (atlasEtat.couchesCarte) setCouchesCarte(atlasEtat.couchesCarte);
+    if (atlasEtat.domaine) setDomaineSel(atlasEtat.domaine);
+    if (atlasEtat.twinId) {
+      const j = (mesh.jumeaux || []).find((x) => x.id === atlasEtat.twinId);
+      if (j) { setSelected(j); setOnglet("detail"); }
     }
-    prevPanneauOuvert.current = panneauOuvert;
-  }, [panneauOuvert, estTablette]);
+    if (atlasEtat.relationId) {
+      const r = (mesh.relations || []).find((x) => x.id === atlasEtat.relationId);
+      if (r) { setSelectedRelation(r); setOnglet("detail"); }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mesh]);
+
+  // Pan contextuel : la carte glisse doucement pour dégager l'espace occupé à droite
+  // (panneau contextuel 170 px + panneau Flore 220 px) — pan pur, zoom strictement constant,
+  // coordonnées du Mesh inchangées : on change la fenêtre sur le territoire, pas le territoire.
+  const panneauOuvert = !!(comparaison || selectedRelation || selected || domaineSel || vueListe);
+  const decalageCible = (panneauOuvert ? 170 : 0) + (floreOuverte ? 220 : 0);
+  const decalageApplique = useRef(0);
+  useEffect(() => {
+    if (estTablette) return;
+    const delta = decalageCible - decalageApplique.current;
+    if (delta === 0) return;
+    const vp = rfRef.current?.getViewport?.();
+    if (!vp) return;
+    decalageApplique.current = decalageCible;
+    rfRef.current.setViewport({ x: vp.x - delta, y: vp.y, zoom: vp.zoom }, { duration: 400 });
+  }, [decalageCible, estTablette]);
 
   // Routage final : nouveau snapshot géométrique → Web Worker libavoid
   // (jamais pendant le drag, jamais pendant le pan/zoom — la signature géométrique est stable)
@@ -835,13 +895,17 @@ export default function Atlas() {
         edges={edgesVisibles}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
-        fitView
+        fitView={!restaurerEtat}
         fitViewOptions={{ padding: 0.15 }}
         minZoom={0.3}
         maxZoom={2.6}
         zoomOnDoubleClick={false}
         onInit={(inst) => {
           rfRef.current = inst;
+          if (restaurerEtat && atlasEtat?.viewport) {
+            // Retour à l'Atlas : on restaure la fenêtre exacte, sans fitView
+            requestAnimationFrame(() => inst.setViewport(atlasEtat.viewport));
+          }
           requestAnimationFrame(() => {
             const r = carteRef.current?.getBoundingClientRect();
             const vp = inst.getViewport();
@@ -1140,7 +1204,7 @@ export default function Atlas() {
           (sur tablette/mobile, la bottom sheet porte le détail — jamais de double affichage) */}
       {!estTablette && jumeauSurvole && statsJumeau && zoomNiveau > 1 && (
         <div
-          className={`absolute left-4 top-28 z-20 w-64 rounded-2xl border border-[#E5E5E3] bg-white p-4 shadow-lg ${epingle ? "" : "pointer-events-none"}`}
+          className={`absolute left-4 top-20 z-20 w-64 rounded-2xl border border-[#E5E5E3] bg-white p-4 shadow-lg ${epingle ? "" : "pointer-events-none"}`}
           data-testid="panneau-jumeau-flottant"
         >
           <div className="flex items-center gap-3">
@@ -1195,7 +1259,6 @@ export default function Atlas() {
         </div>
       )}
 
-      <AtlasHub />
       <AtlasControle
         mesh={mesh} focus={focus}
         modeTemps={modeTemps} setModeTemps={(m) => { setModeTemps(m); if (m === "direct" || m === "pause") { setReplaying(false); setDateRef(null); } }}
@@ -1413,47 +1476,6 @@ export default function Atlas() {
         onRelancerRecherche={(t) => { setRecherche(t); if (estMobile) setRechercheMobileOuverte(true); }}
         onFermer={() => { setSelected(null); setSelectedRelation(null); setDomaineSel(null); setComparaison(null); setVueListe(null); majUrl({ sel: null, domaine: null }); }}
       />
-
-      {/* Composer Flore — flottant et repliable (jamais un pied de page) :
-          mobile = FAB centré puis barre pleine largeur ; desktop = FAB au-dessus de la mini-carte puis carte flottante */}
-      {estMobile ? (
-        !composerOuvert ? (
-          <button
-            onClick={() => setComposerOuvert(true)}
-            data-testid="btn-flore"
-            title="Interroger cette carte"
-            className="glass absolute bottom-4 left-1/2 z-20 -translate-x-1/2 rounded-full p-3.5 text-[#0E7490] shadow-lg"
-          >
-            <Sparkle size={18} />
-          </button>
-        ) : (
-          <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-center" data-testid="atlas-composer-zone">
-            <div className="pointer-events-auto w-[min(560px,92%)] opacity-95 transition-opacity hover:opacity-100">
-              <button onClick={() => setComposerOuvert(false)} data-testid="btn-flore-fermer" title="Replier" className="mb-1 ml-auto flex text-[#71716D]"><X size={14} /></button>
-              <ComposerFlore compact placeholder="Interrogez cette carte…" testidPrefix="atlas-composer" />
-            </div>
-          </div>
-        )
-      ) : (
-        !composerOuvert ? (
-          <button
-            onClick={() => setComposerOuvert(true)}
-            data-testid="btn-flore"
-            title="Interroger cette carte"
-            className="glass absolute bottom-40 right-4 z-20 rounded-full p-3.5 text-[#0E7490] shadow-lg transition-shadow hover:shadow-xl"
-          >
-            <Sparkle size={18} />
-          </button>
-        ) : (
-          <div className="glass absolute bottom-40 right-4 z-20 w-[min(360px,92vw)] rounded-2xl p-2 shadow-xl" data-testid="atlas-composer-zone">
-            <div className="mb-1 flex items-center justify-between px-1">
-              <span className="font-code text-[9px] uppercase tracking-[0.2em] text-[#71716D]">Flore</span>
-              <button onClick={() => setComposerOuvert(false)} data-testid="btn-flore-fermer" title="Replier" className="text-[#71716D] transition-colors hover:text-[#111110]"><X size={13} /></button>
-            </div>
-            <ComposerFlore compact placeholder="Interrogez cette carte…" testidPrefix="atlas-composer" />
-          </div>
-        )
-      )}
     </div>
     </div>
   );

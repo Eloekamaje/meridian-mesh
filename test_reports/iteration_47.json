@@ -1,0 +1,36 @@
+{
+  "summary": "Frontend regression on Méridian réorientation vers vraies pages + shell permanent. 24 scénarios validés. Le pivot est un SUCCÈS : (1) shell permanent (topbar + sidebar réduite w-14 → dépliée w-60) présent sur /atlas, /travaux, /actualites, /jumeaux, /administration ; (2) plus aucun résidu du modèle surfaces (surface-*, atlas-rail, hub-menu → count 0) ; (3) nav-atlas/nav-actualites/nav-travaux/nav-jumeaux fonctionnels, / → /atlas, URLs rechargeables, bouton retour navigateur OK ; (4) ATLAS STATE MEMORIZATION PARFAIT : après zoom (scale 2.6) + sélection twin `paiements`, transform = translate(-1007.24px, -690.154px) scale(2.6) ; aller-retour /travaux → /atlas restore transform IDENTIQUE au pixel + map-twin-detail visible ; 2e aller-retour identique (StrictMode OK) ; (5) Flore permanent : sur /atlas delta X open=-220px, close net=0px ; sur /travaux ouvre/ferme proprement ; (6) 0 erreur console ; (7) mobile 390×844 : sidebar reduite 56px, topbar + btn-parler-flore visibles. Seule déviation : les corridors niveau 2 sont bien rendus visuellement (labels 'validation A2A — 82 %' visibles au N2, 'corridors agrégés' au N1) mais aucun data-testid corridor2-* n'existe plus, ce qui régresse la testabilité (iteration_46 en comptait 5).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Atlas.jsx — corridors niveau 2",
+        "issue": "Les corridors N2 sont rendus visuellement (edges avec label 'validation A2A — 82 %' au niveau 2, label 'corridors agrégés' au niveau 1) mais aucun data-testid corridor2-* n'est exposé (iteration_46 en comptait 5). Impact : perte de testabilité, aucun blocage fonctionnel utilisateur.",
+        "selector": "[data-testid^=\"corridor2-\"]",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_47.json"],
+  "action_items": [
+    "Optionnel LOW : réintroduire un data-testid stable sur les edges corridors niveau 2 (ex : corridor2-<src>-<dst>) pour la testabilité automatisée. Aucun impact utilisateur."
+  ],
+  "critical_code_review_comments": [
+    "Layout.jsx L111 : `<div key={location.pathname}>` utilise le global `window.location` implicite. `useLocation` est importé mais pas appelé. Fonctionne mais fragile — il faudrait `const location = useLocation();` en tête du composant pour être explicite et éviter tout bug si React strict-mode change (window.location est mis à jour de manière synchrone par le routeur, donc OK en pratique, mais code smell).",
+    "Atlas.jsx : la logique `restaurerEtat = !!(atlasEtat?.viewport) && !selParam && !domaineParam && !focus && !situationParam` + `fitView={!restaurerEtat}` + `onInit → inst.setViewport(atlasEtat.viewport)` est correcte et robuste au StrictMode (double-montage). La sauvegarde ignore les démontages sans instance → viewport JAMAIS écrasé par vide. Bien implémenté.",
+    "App.js : anciennes routes préservées via <Navigate> (/aujourdhui, /carte, /cases, /decisions, /change-lab, /registry) — bonne rétrocompatibilité."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "N/A — frontend only",
+    "frontend": "96% — 23/24 scénarios validés. Seule déviation : data-testid corridor2-* manquants (visuel OK)."
+  },
+  "test_credentials": "Persona architecte par défaut (aucune auth).",
+  "seed_data_creation": "Aucune. localStorage.clear() en début de chaque scénario.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Pour re-vérifier l'ATLAS STATE MEMORIZATION : (1) localStorage.clear() ; (2) /atlas → wait 2.5s ; (3) mouse.wheel(0,-500) ×2 sur .react-flow__pane → tf devient scale(2.6) ; (4) click node data-id=paiements → map-twin-detail apparaît, tf devient translate(-1007.24px, -690.154px) scale(2.6) ; (5) nav-travaux ; (6) nav-atlas → tf IDENTIQUE + map-twin-detail visible ; (7) répéter (5)(6) une 2e fois pour StrictMode. TOUTES CES ASSERTIONS PASSENT.",
+  "rca of the issue": "N/A — pas de bug bloquant. La seule déviation (data-testid corridor2-*) est cosmétique côté testabilité."
+}

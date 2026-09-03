@@ -205,7 +205,7 @@ export default function AtlasPanneau({
         onClick={() => { setOnglet("detail"); setOuvert(true); }}
         data-testid="panneau-ouvrir-btn"
         title="Ouvrir le panneau Détail / Chronologie"
-        className="glass absolute right-4 top-16 z-10 flex items-center gap-1.5 rounded-xl px-3 py-2 font-code text-[10px] uppercase tracking-[0.15em] text-[#52524F] transition-colors hover:text-[#111110]"
+        className="glass absolute right-4 top-4 z-10 flex items-center gap-1.5 rounded-xl px-3 py-2 font-code text-[10px] uppercase tracking-[0.15em] text-[#52524F] transition-colors hover:text-[#111110]"
       >
         <SidebarSimple size={14} /> Détail
       </button>
@@ -241,7 +241,7 @@ export default function AtlasPanneau({
   }
 
   return (
-    <aside className="glass absolute right-4 top-16 z-10 flex max-h-[calc(100%-9rem)] w-72 flex-col overflow-hidden rounded-xl xl:w-80" data-testid="map-side-panel">
+    <aside className="glass absolute right-4 top-4 z-10 flex max-h-[calc(100%-6rem)] w-72 flex-col overflow-hidden rounded-xl xl:w-80" data-testid="map-side-panel">
       {entete}
       {contenu}
     </aside>

@@ -1,6 +1,6 @@
 # Atlas — Documentation technique détaillée
 
-L'Atlas est la cartographie vivante du Mesh : une **carte mondiale unique et continue** (façon Google Maps) sur laquelle les jumeaux applicatifs, leurs domaines et leurs relations sont rendus. Ce document décrit son implémentation.
+L'Atlas est la cartographie vivante du Mesh et **la page d'accueil de Méridian** : une **carte mondiale unique et continue** (façon Google Maps) sur laquelle les jumeaux applicatifs, leurs domaines et leurs relations sont rendus. L'application suit un shell classique (en-tête + rail latéral permanents, zone centrale interchangeable) : l'Atlas partage la zone centrale avec les pages Actualités, Travaux, Jumeaux et Administration, et **son état (viewport, zoom, sélection, couches) est mémorisé entre les navigations**. Flore est la présence conversationnelle globale (en-tête + panneau droit). Ce document décrit son implémentation.
 
 ---
 
