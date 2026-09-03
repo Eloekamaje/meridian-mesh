@@ -974,6 +974,11 @@ export default function Atlas() {
           setDomaineSel(null);
           setVueListe(null);
           setOnglet("detail");
+          // Moteur d'interaction : un seul point chaud à la fois — le clic remplace le survol
+          setSurvolJumeau(null);
+          setRelSurvolee(null);
+          setRelTooltipPos(null);
+          setRegionTooltip(null);
           majUrl({ sel: node.data.jumeau.id, domaine: null });
         }}
         onNodeDoubleClick={(_, node) => {
@@ -990,6 +995,10 @@ export default function Atlas() {
           setSelectedRelation(rel);
           setSelected(null);
           setVueListe(null);
+          setSurvolJumeau(null);
+          setRelSurvolee(null);
+          setRelTooltipPos(null);
+          setRegionTooltip(null);
           setOnglet("detail");
         }}
         onEdgeMouseEnter={(e, edge) => {
@@ -1050,7 +1059,7 @@ export default function Atlas() {
         colorMode="light"
       >
         <Background variant={BackgroundVariant.Dots} gap={26} size={1.3} color="rgba(17,17,16,0.13)" />
-        <Controls showInteractive={false} position="bottom-right" style={{ marginBottom: 128 }}>
+        <Controls showInteractive={false} showFitView={false} position="bottom-right" style={{ marginBottom: estTablette ? 8 : 148, marginRight: 14 }}>
           <ControlButton onClick={pleinEcran} title="Plein écran" data-testid="plein-ecran-btn">
             <CornersOut size={14} />
           </ControlButton>
@@ -1201,8 +1210,9 @@ export default function Atlas() {
       </div>
 
       {/* Panneau flottant du jumeau — survol (aperçu) ou épinglé au clic ; desktop uniquement
-          (sur tablette/mobile, la bottom sheet porte le détail — jamais de double affichage) */}
-      {!estTablette && jumeauSurvole && statsJumeau && zoomNiveau > 1 && (
+          (sur tablette/mobile, la bottom sheet porte le détail — jamais de double affichage).
+          Règle d'unicité : masqué dès qu'un panneau de détail est ouvert à droite. */}
+      {!estTablette && jumeauSurvole && statsJumeau && zoomNiveau > 1 && !panneauOuvert && (
         <div
           className={`absolute left-4 top-20 z-20 w-64 rounded-2xl border border-[#E5E5E3] bg-white p-4 shadow-lg ${epingle ? "" : "pointer-events-none"}`}
           data-testid="panneau-jumeau-flottant"

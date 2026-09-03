@@ -1,0 +1,25 @@
+{
+  "summary": "Testing des 3 correctifs UX Atlas + régressions. RCA d'un bug critique bloquant : `setJumeauSurvole is not defined` (référence à un setter inexistant) + `setAgregatOuvert is not defined` — deux ReferenceError lancés dans onNodeClick (twin) et onEdgeClick d'Atlas.jsx (lignes 977-979 et 996-997). L'état s'appelle `[survolJumeau, setSurvolJumeau]` (ligne 76), pas `setJumeauSurvole`, et `agregatOuvert` n'existe pas dans le composant. Corrigé en renommant vers `setSurvolJumeau(null)` et en remplaçant l'inexistant `setAgregatOuvert` par le nettoyage des tooltips (`setRelSurvolee(null)`, `setRelTooltipPos(null)`, `setRegionTooltip(null)`) — cohérent avec l'intention 'un seul point chaud à la fois'. Après correctif : 0 erreur console, toutes les règles d'unicité validées, toolbar 6 icônes, bibliothèque + popover fonctionnels, zoom block 3 boutons sans chevauchement (gap 21 px au-dessus de la mini-carte), recherche fonctionnelle.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Vérifier qu'il n'existe pas d'autres références obsolètes (`setAgregatOuvert`, `setJumeauSurvole`) ailleurs dans le code ; grep -r a confirmé aucune autre occurrence après correctif.",
+    "La régression 'corridors N flux' n'a pas pu être formellement vérifiée pendant ce run (aucun texte 'N flux' détecté au niveau 3 courant) — comportement attendu au niveau 2 macro. À revalider par le principal si nécessaire."
+  ],
+  "critical_code_review_comments": [
+    "Atlas.jsx dépasse 1200 lignes — envisager d'extraire les handlers ReactFlow (onNodeClick, onEdgeClick, onPaneClick) dans un hook `useAtlasInteractions` : le bug corrigé aurait été détecté plus tôt par un test unitaire ciblé sur ces callbacks.",
+    "L'usage de setters inexistants sans erreur au build (linter passe car ce sont des ReferenceError runtime) indique qu'un lint strict `no-undef` sur les blocs JSX serait bénéfique."
+  ],
+  "updated_files": ["/app/frontend/src/pages/Atlas.jsx"],
+  "success_rate": { "backend": "N/A", "frontend": "100%" },
+  "seed_data_creation": "aucune",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Correctifs UX Atlas validés (règle d'unicité, zoom 3 boutons, toolbar 6 icônes + bibliothèque popover). Bug ReferenceError corrigé dans Atlas.jsx (setJumeauSurvole → setSurvolJumeau ; setAgregatOuvert supprimé, remplacé par nettoyage tooltips). 0 erreur console. Si régression 'N flux' à vérifier, se placer explicitement au niveau 2 (Domaines).",
+  "rca of the issue": "onNodeClick de ReactFlow (Atlas.jsx L978-979) appelait `setJumeauSurvole(null)` alors que l'état déclaré ligne 76 est `[survolJumeau, setSurvolJumeau]` — l'ancien nom du setter n'a jamais existé dans cette version. `setAgregatOuvert(null)` référençait un setter jamais défini. Les deux ReferenceError étaient lancées après les state updates réussies, donc l'UI paraissait fonctionnelle mais chaque clic sur un jumeau/arête polluait la console avec un PAGEERROR. Reproduction : cliquer n'importe quel twin → PAGEERROR: setJumeauSurvole is not defined. Mitigation : renommer setJumeauSurvole→setSurvolJumeau et remplacer setAgregatOuvert par les nettoyages de tooltips équivalents (setRelSurvolee/setRelTooltipPos/setRegionTooltip à null)."
+}

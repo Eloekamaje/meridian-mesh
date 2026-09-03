@@ -1,5 +1,13 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v48, polissage interactionnel de l'Atlas)
+Audit UX sur demande utilisateur (« superpositions, bloc zoom masqué, barre d'outils trop présente ») :
+- **Moteur d'interaction à règle d'unicité** : un seul point chaud à la fois — le clic sur un jumeau/arête ferme le panneau de survol et les tooltips (`setSurvolJumeau/setRelSurvolee/setRelTooltipPos/setRegionTooltip`) ; le panneau de survol est masqué tant qu'un panneau de détail est ouvert (plus de double présentation d'un même jumeau).
+- **Bloc zoom dégagé** : 3 boutons seulement (+, −, plein écran — fitView intégré et verrou retirés), marge augmentée au-dessus de la mini-carte (21 px de jour mesuré).
+- **Barre d'outils compacte** : 10 → 6 icônes ; la navigation personnelle (Favoris/Récents/Investigations/Situations) vit dans le popover « Bibliothèque » (`outil-bibliotheque` → `bibliotheque-menu`).
+- Correctif d'un bug introduit (ReferenceError setters inexistants) intercepté et corrigé par l'agent de test.
+- Tests : **iteration_49 → 100 %** (règles d'unicité, zoom, bibliothèque, régressions ; 0 erreur console).
+
 ## Implémenté (06/2026 — v47, marges pages + Flore retirée des pages Travail)
 - **Marges harmonisées** : Travaux et Jumeaux en pleine largeur avec marges identiques généreuses (`px-10 sm:px-12`) — Travaux n'est plus centrée `max-w-4xl` ; Actualités reste centrée mais contenu élargi (`max-w-3xl → max-w-4xl`).
 - **Flore sur pages Travail** : le panneau global ne s'ouvre plus sur `/travaux/:id` (la conversation du dossier existe déjà dans l'onglet Conversation) — double sécurité (auto-fermeture à l'arrivée + rendu null) ; bouton « Analyser avec Flore » retiré de l'en-tête Travail, conservé sur Investigation.
