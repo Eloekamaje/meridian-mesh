@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Hand, Lasso, Crosshair, Article, PencilSimple, Star, ClockCounterClockwise, SealQuestion, WarningDiamond, Bookmarks } from "@phosphor-icons/react";
+import { Hand, Lasso, Crosshair, Article, PencilSimple, Star, ClockCounterClockwise, SealQuestion, WarningDiamond, Bookmarks, DotsSixVertical } from "@phosphor-icons/react";
+import useGlissable from "./useGlissable";
 
 const OUTILS = [
   { id: "deplacement", icon: Hand, label: "Déplacement" },
@@ -15,12 +16,34 @@ const LISTES = [
   { id: "situations", icon: WarningDiamond, label: "Situations actives" },
 ];
 
-export default function AtlasToolbar({ outil, setOutil, rfRef, onExpliquer, expliquerOuvert, modeEdition, setModeEdition, vueListe, onOuvrirListe }) {
+export default function AtlasToolbar({ outil, setOutil, rfRef, onExpliquer, expliquerOuvert, modeEdition, setModeEdition, vueListe, onOuvrirListe, conteneurRef }) {
   const [biblioOuverte, setBiblioOuverte] = useState(false);
+  // Barre glissable : poignée en tête, position mémorisée entre les sessions.
+  // Ancrage FIXE (façon Google Maps) : la barre ne bouge jamais d'elle-même.
+  const { ref, decal, surPoigneeDown, reinitialiser } = useGlissable("toolbar", conteneurRef);
 
   return (
-    <div className="absolute left-4 top-1/2 z-10 -translate-y-1/2" data-testid="map-toolbar">
+    <div
+      ref={ref}
+      className="absolute z-10"
+      style={{
+        left: 16,
+        top: "50%",
+        transform: `translateY(-50%) translate(${decal.x}px, ${decal.y}px)`,
+      }}
+      data-testid="map-toolbar"
+    >
       <div className="glass flex flex-col gap-1 rounded-xl p-1.5">
+        <button
+          onPointerDown={surPoigneeDown}
+          onDoubleClick={reinitialiser}
+          title="Déplacer la barre (double-clic : repositionner)"
+          aria-label="Déplacer la barre d'outils"
+          data-testid="toolbar-grip"
+          className="flex h-5 w-8 shrink-0 cursor-grab touch-none items-center justify-center text-[#A3A39E] transition-colors hover:text-[#52524F] active:cursor-grabbing"
+        >
+          <DotsSixVertical size={14} />
+        </button>
         {OUTILS.map(({ id, icon: Icon, label }) => (
           <button
             key={id}
@@ -96,4 +119,3 @@ export default function AtlasToolbar({ outil, setOutil, rfRef, onExpliquer, expl
     </div>
   );
 }
-

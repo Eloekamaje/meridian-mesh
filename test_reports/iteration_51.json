@@ -1,0 +1,25 @@
+{
+  "summary": "Frontend UI regression testing on Atlas map at 1920x800 (desktop) and 1024x768 (tablet). Validated: 1) high stack (search/breadcrumb/banner) - no overlap and breadcrumb correctly stacks below search after Paiements search (search.bottom=85, breadcrumb.y=102); 2) toolbar shifts to x=424 when Calques panel expands (panel ends at x=412), no overlap; 3) toolbar drag via toolbar-grip works, persisted in localStorage 'atlas.chrome.decals' (survived reload with 0px diff), double-click resets to x=72; 4) Calques panel drag via calques-grip works, persisted, double-click resets; 5) bandeau-temps in history mode stacks above zoom-niveau (bandeau.bottom=747, zoom.y=755); 6) side panel (x=1584,w=320) forces minimap left to x=1394 and controls to x=1536 with no overlap, panel bottom=499 above minimap top=673; 7) all 6 toolbar buttons present and functional; bibliotheque menu shows 4 items; 8) ExpliquerCarte panel (x=1524,y=112,b=640) does not overlap minimap or controls; 10) navigation /travaux -> /atlas restores react-flow correctly. Tablet: search top-right, breadcrumb stacks right-aligned below search, breadcrumb.y=154 vs search.b=137.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Atlas @ tablet 1024x768", "issues": ["When Calques panel is expanded (fixed width 340px starting at x=72), the toolbar (x=72,w=46) is COMPLETELY hidden behind the panel. Toolbar does not shift right on tablet (only on desktop). User must drag the panel to access toolbar. Expected behavior per spec was ambiguous ('signaler tout chevauchement') - flagging as-is. Suggested fix: on tablet also apply decalChromeDroit shift OR overlay the toolbar above the panel via z-index."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Consider addressing the tablet-view Calques-panel-hides-Toolbar overlap: either apply the same right shift as desktop, or increase z-index / add a visual affordance so users know they can drag the panel."
+  ],
+  "critical_code_review_comments": [
+    "Atlas.jsx is large (>1000 lines) - continues to grow. Consider extracting the high/low stack render blocks into subcomponents.",
+    "localStorage key 'atlas.chrome.decals' is stored as a merged JSON blob (toolbar+calques) - resetting one keeps the other; verified working."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped)", "frontend": "100% desktop / 90% tablet (1 minor overlap on default tablet state)"},
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All 10 requested checks executed. Bounding-box measurements captured for every anchor (desktop). Tablet passed T9 partially: search/breadcrumb OK, but expanded Calques hides toolbar on 1024px. Persistence verified via reload. Search test uses input[data-testid='atlas-recherche'] with query 'Paiements' and clicking first result in [data-testid='atlas-recherche-resultats']."
+}

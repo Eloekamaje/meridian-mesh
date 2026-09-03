@@ -14,7 +14,7 @@ export default function ExpliquerCarte({ mesh, fermer, domaineActif, jumeauPar, 
     <aside
       role="complementary"
       aria-label="Description textuelle de la carte du Mesh"
-      className="glass absolute bottom-4 right-4 top-16 z-20 flex w-[380px] max-w-[92vw] flex-col overflow-hidden rounded-xl"
+      className="glass absolute bottom-40 right-4 top-16 z-20 flex w-[380px] max-w-[92vw] flex-col overflow-hidden rounded-xl"
       data-testid="expliquer-carte-panel"
     >
       <div className="flex items-center justify-between border-b border-[#E5E5E3] px-4 py-3">

@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Star } from "@phosphor-icons/react";
+import { Star, Sparkle } from "@phosphor-icons/react";
 import { couleurDomaine, ETATS_RELATION } from "@/lib/domaines";
 
 export function RelationDetail({ rel, jumeauPar, onConfirmer }) {
@@ -192,7 +192,7 @@ export function ComparaisonDomaines({ a, b, statsDomaine }) {
   );
 }
 
-export function TwinDetail({ selected, favori, onBasculerFavori }) {
+export function TwinDetail({ selected, favori, onBasculerFavori, statsTwin, onInterroger }) {
   return (
     <div data-testid="map-twin-detail">
       <div className="flex items-center gap-2">
@@ -232,9 +232,41 @@ export function TwinDetail({ selected, favori, onBasculerFavori }) {
           </div>
         </div>
       )}
-      <Link to="/jumeaux" className="mt-4 inline-block text-xs text-[#3730A3] hover:underline" data-testid="map-goto-registry">
-        Administrer dans Jumeaux →
-      </Link>
+      {statsTwin && (
+        <div className="mt-4 grid grid-cols-3 gap-2" data-testid="twin-kpis">
+          <div className="rounded-lg border border-[#F0F0EE] bg-[#FAFAF9] px-2 py-2 text-center">
+            <div className="font-code text-sm font-bold text-[#0E7490]" data-testid="twin-kpi-confiance">{selected.confiance?.valeur ?? selected.couverture ?? "—"} %</div>
+            <div className="font-code text-[8px] uppercase tracking-wider text-[#71716D]">Confiance</div>
+          </div>
+          <div className="rounded-lg border border-[#F0F0EE] bg-[#FAFAF9] px-2 py-2 text-center">
+            <div className="font-code text-sm font-bold text-[#111110]" data-testid="twin-kpi-flux">{statsTwin.flux}</div>
+            <div className="font-code text-[8px] uppercase tracking-wider text-[#71716D]">Rel. observées</div>
+          </div>
+          <div className="rounded-lg border border-[#F0F0EE] bg-[#FAFAF9] px-2 py-2 text-center">
+            <div className={`font-code text-sm font-bold ${statsTwin.ecarts > 0 ? "text-[#B45309]" : "text-[#111110]"}`} data-testid="twin-kpi-ecarts">{statsTwin.ecarts}</div>
+            <div className="font-code text-[8px] uppercase tracking-wider text-[#71716D]">Écarts BCM</div>
+          </div>
+        </div>
+      )}
+      <div className="mt-4 flex gap-2">
+        {onInterroger && (
+          <button
+            onClick={onInterroger}
+            data-testid="twin-interroger-btn"
+            title="Ouvrir Flore avec ce jumeau en contexte"
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-[#0E7490] px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#155E75]"
+          >
+            <Sparkle size={13} weight="fill" /> Interroger
+          </button>
+        )}
+        <Link
+          to={`/jumeaux/${selected.id}/revue`}
+          data-testid="twin-ouvrir-fiche"
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-[#0E7490]/40 px-3 py-2 text-xs font-semibold text-[#0E7490] transition-colors hover:bg-[#0E7490]/10"
+        >
+          Ouvrir la fiche
+        </Link>
+      </div>
     </div>
   );
 }

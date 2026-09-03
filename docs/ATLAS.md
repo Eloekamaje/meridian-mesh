@@ -14,6 +14,7 @@ Ces règles sont des **principes**, jamais des options :
 4. **Responsive = chrome uniquement** : la taille d'écran ne change que l'interface autour de la carte (panneaux, boutons). La géographie du Mesh est invariante.
 5. **Caméra conservée** : au redimensionnement ou changement d'orientation, le zoom et le point monde au centre sont strictement conservés. Jamais de `fitView` automatique.
 6. **Glisser = pan pur** : le zoom reste **strictement constant** pendant un déplacement. Le zoom est toujours une action explicite (molette, boutons, double-clic, raccourcis).
+7. **Chrome immobile** : les ancres d'interface (barre d'outils, zoom, mini-carte, recherche) ne se déplacent **jamais automatiquement**. Les panneaux prennent leur place dans le layout (colonne) ou en tiroir à côté — rien n'est jamais caché visuellement.
 
 ---
 
@@ -251,6 +252,16 @@ Le panneau ne décrit que l'élément actif (jumeau, relation, domaine, comparai
 - **Mode réorganisation** (explicite) : seul mode où les robots sont déplaçables. Position fantôme au départ ; au relâchement, persistance (`PATCH /api/jumeaux/{id}`) et **reclassification proposée, jamais automatique** si le robot atterrit dans un autre domaine.
 - **Recherche** : jumeau (nom ou App ID) ou domaine → caméra animée + halo.
 - **Focus profond** (`?situation=` / `?focus=`) : cadre les jumeaux concernés, estompe les autres, bandeau de contexte.
+
+### Positionnement du chrome — modèle Google Maps (invariant 7)
+
+Le **chrome ne bouge jamais** : barre d'outils (gauche, centrée), contrôles zoom et mini-carte (bas-droite), recherche (haut-centre) ont des ancrages fixes. Aucun décalage automatique.
+
+- **Panneau détail = colonne de layout** à droite (`AtlasPanneau presentation="colonne"`, 320/336 px, pleine hauteur). La carte se redimensionne (`flex`) : la mini-carte et le zoom restent ancrés aux coins du conteneur carte — jamais cachés, jamais déplacés. Panneau fermé avec sélection active : rail fin de 40 px (bouton de réouverture). La caméra est conservée par le `ResizeObserver` (centre monde invariant).
+- **Panneau Calques = tiroir** : déplié, il s'ouvre à `left:74px`, à droite de la barre d'outils qui reste fixe ; rétracté, simple chip à `left:16px`.
+- **Piles verticales** : recherche + fil d'Ariane + bannières (situation, périmètre) empilés en haut ; chips contextuelles (vue Flore, mode réorganisation, bandeaux temporels) + niveau de zoom empilés en bas — chaque élément occupe sa propre ligne, jamais de superposition.
+- **Déplacement manuel** : la barre d'outils et le panneau Calques restent glissables par poignée (`useGlissable`, persistance `localStorage atlas.chrome.decals`, bornés au conteneur, double-clic sur la poignée = retour à l'ancrage par défaut).
+- **Flore** reste un overlay fixe à droite (440 px) : la caméra glisse de 220 px pour compenser (pan pur, zoom constant).
 
 ---
 

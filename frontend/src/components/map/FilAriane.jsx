@@ -3,7 +3,7 @@
 export default function FilAriane({ domaineActif, selection, revenirSelection, ajusterVue }) {
   if (!domaineActif && selection.length === 0) return null;
   return (
-    <div className="glass absolute left-1/2 top-4 z-10 flex -translate-x-1/2 items-center gap-2 rounded-xl px-4 py-2" data-testid="breadcrumb">
+    <div className="glass pointer-events-auto flex items-center gap-2 rounded-xl px-4 py-2" data-testid="breadcrumb">
       <button
         onClick={ajusterVue}
         className="text-xs text-[#52524F] transition-colors hover:text-[#111110]"

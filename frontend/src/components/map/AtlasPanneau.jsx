@@ -91,10 +91,10 @@ export default function AtlasPanneau({
   comparaison, selectedRelation, selected, domaineSel,
   statsDomaine, actionsDomaine, confirmerRelation,
   eventsVisibles, jumeauPar,
-  presentation = "flottant", // "flottant" (desktop, panneau latéral) | "feuillet" (tablette/mobile, bottom sheet)
+  presentation = "colonne", // "colonne" (desktop, panneau latéral dans le layout) | "feuillet" (tablette/mobile, bottom sheet)
   mesh, situations, vueListe, setVueListe,
   favorisIds = [], onBasculerFavori, onChoisirJumeau, onChoisirSituation, onRelancerRecherche,
-  onFermer,
+  onFermer, statsTwin, onInterroger,
 }) {
   const feuillet = presentation === "feuillet";
   // Refermé par défaut sur les petits écrans pour laisser la carte respirer
@@ -153,7 +153,7 @@ export default function AtlasPanneau({
         ) : selectedRelation ? (
           <RelationDetail rel={selectedRelation} jumeauPar={jumeauPar} onConfirmer={confirmerRelation} />
         ) : selected ? (
-          <TwinDetail selected={selected} favori={favorisIds.includes(selected.id)} onBasculerFavori={onBasculerFavori} />
+          <TwinDetail selected={selected} favori={favorisIds.includes(selected.id)} onBasculerFavori={onBasculerFavori} statsTwin={statsTwin} onInterroger={onInterroger} />
         ) : domaineSel ? (
           <DomaineDetail label={domaineSel} stats={statsDomaine(domaineSel)} actions={actionsDomaine} />
         ) : (
@@ -201,14 +201,17 @@ export default function AtlasPanneau({
         <SidebarSimple size={14} /> Détail
       </button>
     ) : (
-      <button
-        onClick={() => { setOnglet("detail"); setOuvert(true); }}
-        data-testid="panneau-ouvrir-btn"
-        title="Ouvrir le panneau Détail / Chronologie"
-        className="glass absolute right-4 top-4 z-10 flex items-center gap-1.5 rounded-xl px-3 py-2 font-code text-[10px] uppercase tracking-[0.15em] text-[#52524F] transition-colors hover:text-[#111110]"
-      >
-        <SidebarSimple size={14} /> Détail
-      </button>
+      // Rail de réouverture : colonne fixe de 40 px à droite — rien ne flotte sur la carte
+      <div className="flex w-10 shrink-0 flex-col items-center border-l border-[#E5E5E3] bg-white/70 py-3 backdrop-blur-xl" data-testid="panneau-rail">
+        <button
+          onClick={() => { setOnglet("detail"); setOuvert(true); }}
+          data-testid="panneau-ouvrir-btn"
+          title="Ouvrir le panneau Détail / Chronologie"
+          className="flex h-8 w-8 items-center justify-center rounded-md text-[#71716D] transition-colors hover:bg-[#F0F0EE] hover:text-[#111110]"
+        >
+          <SidebarSimple size={14} />
+        </button>
+      </div>
     );
   }
 
@@ -240,8 +243,10 @@ export default function AtlasPanneau({
     );
   }
 
+  // Colonne latérale (façon Google Maps) : le panneau prend sa place dans le layout —
+  // la carte se redimensionne, la mini-carte et les contrôles restent ancrés à leurs coins.
   return (
-    <aside className="glass absolute right-4 top-4 z-10 flex max-h-[calc(100%-6rem)] w-72 flex-col overflow-hidden rounded-xl xl:w-80" data-testid="map-side-panel">
+    <aside className="flex h-full w-80 shrink-0 flex-col overflow-hidden border-l border-[#E5E5E3] bg-white/85 backdrop-blur-xl xl:w-[336px]" data-testid="map-side-panel">
       {entete}
       {contenu}
     </aside>

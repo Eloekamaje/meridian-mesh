@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Pulse, Pause, Stack, X, Play, ClockCounterClockwise, ArrowsLeftRight } from "@phosphor-icons/react";
+import { Pulse, Pause, Stack, X, Play, ClockCounterClockwise, ArrowsLeftRight, DotsSixVertical } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { COUCHES } from "@/lib/atlasGraph";
 import { fmtDate, fmtDateInput } from "@/lib/temps";
+import useGlissable from "./useGlissable";
 
 const MODES_TEMPS = [
   ["direct", "Direct", Pulse],
@@ -19,10 +20,11 @@ export default function AtlasControle({
   modeTemps, setModeTemps, dateRef, setDateRef, replaying, onRejouer,
   couches, setCouches, rechargerVues,
   couchesRel, setCouchesRel, couchesCarte, setCouchesCarte,
+  deplie, setDeplie, conteneurRef,
 }) {
   const [nomVue, setNomVue] = useState("");
-  // Fermé par défaut : les réglages se déplient uniquement à la demande
-  const [deplie, setDeplie] = useState(false);
+  // Panneau glissable : poignée en en-tête, position mémorisée (double-clic = ancrage par défaut)
+  const { ref, decal, surPoigneeDown, reinitialiser } = useGlissable("calques", conteneurRef);
 
   useEffect(() => {
     if (modeTemps !== "direct" && modeTemps !== "pause") setDeplie(true);
@@ -56,8 +58,23 @@ export default function AtlasControle({
   };
 
   return (
-    <div className="glass absolute left-4 top-4 z-10 rounded-xl p-2" data-testid="map-mode-switcher">
+    <div
+      ref={ref}
+      className={`glass absolute top-4 z-10 rounded-xl p-2 ${deplie ? "w-[340px] max-w-[86vw]" : ""}`}
+      style={{ left: deplie ? 74 : 16, transform: `translate(${decal.x}px, ${decal.y}px)`, transition: "left .3s ease" }}
+      data-testid="map-mode-switcher"
+    >
       <div className="flex items-center gap-1">
+        <button
+          onPointerDown={surPoigneeDown}
+          onDoubleClick={reinitialiser}
+          title="Déplacer le panneau (double-clic : repositionner)"
+          aria-label="Déplacer le panneau Calques"
+          data-testid="calques-grip"
+          className="flex h-7 w-5 shrink-0 cursor-grab touch-none items-center justify-center text-[#A3A39E] transition-colors hover:text-[#52524F] active:cursor-grabbing"
+        >
+          <DotsSixVertical size={13} />
+        </button>
         <button
           onClick={() => setDeplie(!deplie)}
           data-testid="controle-toggle"

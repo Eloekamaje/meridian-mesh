@@ -1,5 +1,17 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v49, chrome immobile façon Google Maps)
+Plainte utilisateur (« le champ de recherche semble superposé à un autre », « l'apparition du détail déplace le zoom et la mini-carte pourquoi ? », « dérouler les calques déplace la barre d'outils pourquoi ? », « je ne veux pas des choses cachées visuellement ») — refonte du positionnement sur le modèle Google Maps : **le chrome ne bouge jamais ; les panneaux prennent leur place dans le layout**.
+- **Panneau détail = colonne de layout** (`AtlasPanneau presentation="colonne"`, 320/336 px pleine hauteur) : la carte se redimensionne en flex, la mini-carte et les contrôles zoom restent ancrés aux coins du conteneur carte — jamais cachés, jamais déplacés ; le `ResizeObserver` conserve le centre monde. Fermé avec sélection active : rail fin de 40 px (`panneau-rail` / `panneau-ouvrir-btn`). Présentation « flottant » supprimée ; feuillet (bottom sheet) inchangé sur tablette/mobile.
+- **Panneau Calques = tiroir** : déplié, il s'ouvre à `left:74px` (à droite de la barre d'outils qui reste fixe), largeur fixe 340 px, transition douce. Résout aussi l'issue tablette de l'itération 51 (le panneau cachait la barre à 1024 px).
+- **Piles verticales anti-superposition** : en haut — recherche, fil d'Ariane, bannière situation, chip périmètre empilés (ils étaient tous ancrés en absolu `top` centré → superposés) ; en bas — chip « vue Flore », mode réorganisation, bandeaux temporels, niveau de zoom empilés (hack `translateY(-28px)` supprimé).
+- **Déplacement manuel conservé** : barre d'outils et panneau Calques glissables par poignée (`useGlissable.js`, `toolbar-grip` / `calques-grip`), persistance `localStorage atlas.chrome.decals`, bornés au conteneur, double-clic sur la poignée = retour à l'ancrage par défaut.
+- **Tous les décalages automatiques du chrome supprimés** : plus de `marginRight` dynamique sur mini-carte/contrôles ; le pan contextuel ne s'applique plus qu'à Flore (overlay fixe, 220 px). `ExpliquerCarte` remonté à `bottom-40` (dégage mini-carte + zoom).
+- **Restauration navigation complétée** : au retour sur `/atlas`, viewport restauré au pixel près + sélection/panneau restaurés (existant) + **fil d'Ariane recalculé** — `majContexte` exige 400 ms de stabilité (double appel espacé 450/950 ms) ; la garde « une seule fois » est posée dans le timer pour survivre au double-effet StrictMode.
+- Tests : **iteration_52 → 8/9** (immobilité du chrome vérifiée par bounding boxes, colonne, tiroir, rail <1500 px, tablette) ; le seul échec (restauration) corrigé et auto-vérifié Playwright : viewport identique au pixel près, sélection « Paiements » et breadcrumb « Domaine Support » restaurés.
+- Doc : `/app/docs/ATLAS.md` — invariant 7 « Chrome immobile » + section « Positionnement du chrome — modèle Google Maps ».
+
+
 ## Implémenté (06/2026 — v48, polissage interactionnel de l'Atlas)
 Audit UX sur demande utilisateur (« superpositions, bloc zoom masqué, barre d'outils trop présente ») :
 - **Moteur d'interaction à règle d'unicité** : un seul point chaud à la fois — le clic sur un jumeau/arête ferme le panneau de survol et les tooltips (`setSurvolJumeau/setRelSurvolee/setRelTooltipPos/setRegionTooltip`) ; le panneau de survol est masqué tant qu'un panneau de détail est ouvert (plus de double présentation d'un même jumeau).

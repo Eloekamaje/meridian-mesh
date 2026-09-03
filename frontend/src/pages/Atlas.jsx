@@ -72,8 +72,8 @@ export default function Atlas() {
   const etatRestaure = useRef(false);
   const [relFocus, setRelFocus] = useState(false);
   const [posOverrides, setPosOverrides] = useState({});
-  const [epingle, setEpingle] = useState(null); // jumeau épinglé (panneau flottant persistant)
   const [survolJumeau, setSurvolJumeau] = useState(null);
+  const [tooltipPos, setTooltipPos] = useState(null); // position de la mini-infobulle de survol (coords carte)
   const [relSurvolee, setRelSurvolee] = useState(null); // relation survolée (arête)
   const [relTooltipPos, setRelTooltipPos] = useState(null);
   const [couchesRel, setCouchesRel] = useState({ bcm: true, realite: true, ecarts: true });
@@ -99,6 +99,7 @@ export default function Atlas() {
   const estTablette = useMedia("(max-width: 1024px)");
   const estTactile = useMedia("(pointer: coarse)");
   const [rechercheMobileOuverte, setRechercheMobileOuverte] = useState(false);
+  const [calquesOuverts, setCalquesOuverts] = useState(false); // Calques déplié → la barre d'outils se range à droite du panneau
 
   const centreMonde = useRef(null); // point monde au centre du viewport (conservation caméra)
   const [fantome, setFantome] = useState(null); // position de départ du robot pendant le drag
@@ -511,11 +512,34 @@ export default function Atlas() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mesh]);
 
+  // Fil d'Ariane restauré au retour : le contexte passif (domaine sous le centre) est recalculé
+  // sur le viewport restauré — sinon il ne réapparaît qu'au prochain mouvement de caméra.
+  // majContexte exige 400 ms de stabilité : double appel espacé.
+  const contexteRestaure = useRef(false);
+  useEffect(() => {
+    if (!restaurerEtat || contexteRestaure.current || !nodes.length || !rfRef.current) return;
+    const recalculer = () => {
+      // Marquage à l'exécution réelle : le cleanup StrictMode annule les timers du premier
+      // passage avant tout marquage — le second passage repose alors les timers.
+      contexteRestaure.current = true;
+      const rect = carteRef.current?.getBoundingClientRect();
+      if (!rect || !rfRef.current) return;
+      const centre = rfRef.current.screenToFlowPosition({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+      majContexte(centre, nodes.filter((n) => n.type === "region" && n.data.points).map((n) => ({ label: n.data.label, points: n.data.points, ox: n.position.x, oy: n.position.y })));
+    };
+    const t1 = setTimeout(recalculer, 450);
+    const t2 = setTimeout(recalculer, 950);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodes, restaurerEtat]);
+
   // Pan contextuel : la carte glisse doucement pour dégager l'espace occupé à droite
   // (panneau contextuel 170 px + panneau Flore 220 px) — pan pur, zoom strictement constant,
   // coordonnées du Mesh inchangées : on change la fenêtre sur le territoire, pas le territoire.
   const panneauOuvert = !!(comparaison || selectedRelation || selected || domaineSel || vueListe);
-  const decalageCible = (panneauOuvert ? 170 : 0) + (floreOuverte ? 220 : 0);
+  // Panneau détail = colonne de layout : la carte se redimensionne et le ResizeObserver conserve
+  // la caméra — le chrome (mini-carte, zoom, barre d'outils) ne bouge jamais. Seul Flore (overlay) décale le monde.
+  const decalageCible = floreOuverte ? 220 : 0;
   const decalageApplique = useRef(0);
   useEffect(() => {
     if (estTablette) return;
@@ -542,7 +566,7 @@ export default function Atlas() {
       if (etat === "supposee" || etat === "contestee") return couchesRel.ecarts;
       return true;
     });
-    const actif = epingle || survolJumeau;
+    const actif = survolJumeau;
     if (actif) {
       es = es.map((e) =>
         e.source === actif || e.target === actif || e.source === `voisin-${actif}` || e.target === `voisin-${actif}`
@@ -570,21 +594,22 @@ export default function Atlas() {
       es = [...es.filter((e) => e.id !== relActive), ...es.filter((e) => e.id === relActive)];
     }
     return es;
-  }, [edges, couchesRel, epingle, survolJumeau, relSurvolee, selectedRelation]);
+  }, [edges, couchesRel, survolJumeau, relSurvolee, selectedRelation]);
 
   // Jumeau survolé ou épinglé → panneau flottant à gauche
   const jumeauSurvole = useMemo(() => {
-    const id = epingle || survolJumeau;
+    const id = survolJumeau;
     return id && mesh ? mesh.jumeaux.find((x) => x.id === id && !x.anonyme) || null : null;
-  }, [epingle, survolJumeau, mesh]);
-  const statsJumeau = useMemo(() => {
-    if (!jumeauSurvole || !mesh) return null;
-    const liees = mesh.relations.filter((r) => r.source === jumeauSurvole.id || r.cible === jumeauSurvole.id);
+  }, [survolJumeau, mesh]);
+  // KPI du jumeau sélectionné (relations observées, écarts) — affichés dans le panneau de détail
+  const statsSelection = useMemo(() => {
+    if (!selected || !mesh || selected.anonyme) return null;
+    const liees = mesh.relations.filter((r) => r.source === selected.id || r.cible === selected.id);
     return {
       flux: liees.filter((r) => r.etat === "observee").length,
       ecarts: liees.filter((r) => r.etat === "supposee" || r.etat === "contestee").length,
     };
-  }, [jumeauSurvole, mesh]);
+  }, [selected, mesh]);
 
   const resultatsRecherche = useMemo(() => {
     const q = recherche.trim().toLowerCase();
@@ -605,7 +630,7 @@ export default function Atlas() {
     const h = (e) => {
       const cible = e.target?.tagName;
       if (cible === "INPUT" || cible === "TEXTAREA") return;
-      if (e.key === "Escape") setEpingle(null);
+      if (e.key === "Escape") setSurvolJumeau(null);
       if (e.key === "+" || e.key === "=") rfRef.current?.zoomIn({ duration: 220 });
       if (e.key === "-") rfRef.current?.zoomOut({ duration: 220 });
       if (e.key === "0") rfRef.current?.fitView({ duration: 300, padding: 0.15 });
@@ -842,12 +867,15 @@ export default function Atlas() {
     const j = mesh?.jumeaux.find((x) => x.id === id);
     if (!j) return;
     const pos = posOverrides[id] || j.position;
-    setEpingle(id);
     setHalo(id); // membrane + robot brièvement mis en évidence
     setTimeout(() => setHalo((h) => (h === id ? null : h)), 2000);
     rfRef.current?.setCenter(pos.x + 30, pos.y + 40, { zoom: 1.4, duration: 600 });
-    // Sur tablette/mobile, le panneau flottant d'épingle n'existe pas : ouvrir la bottom sheet
-    if (estTablette) { setSelected(j); setOnglet("detail"); }
+    // La recherche/liste ouvre directement le détail à droite (survol = simple identification)
+    setSelected(j);
+    setSelectedRelation(null);
+    setDomaineSel(null);
+    setVueListe(null);
+    setOnglet("detail");
     setRecherche("");
   };
 
@@ -888,7 +916,9 @@ export default function Atlas() {
 
   return (
     <div className="flex h-full flex-col">
-    <div ref={carteRef} onPointerMove={surSurvolCarte} onPointerLeave={() => { setRegionSurvolee(null); setRegionTooltip(null); }} className="relative min-h-0 flex-1 overflow-hidden" data-testid="system-map" style={{ background: "radial-gradient(ellipse at 50% 38%, #FDFDFB 0%, #F5F4F0 65%, #EDECE6 100%)" }}>
+    {/* Layout façon Google Maps : la carte et le panneau détail sont des colonnes — le chrome ne bouge jamais */}
+    <div className="relative flex min-h-0 flex-1">
+    <div ref={carteRef} onPointerMove={surSurvolCarte} onPointerLeave={() => { setRegionSurvolee(null); setRegionTooltip(null); }} className="relative min-w-0 flex-1 overflow-hidden" data-testid="system-map" style={{ background: "radial-gradient(ellipse at 50% 38%, #FDFDFB 0%, #F5F4F0 65%, #EDECE6 100%)" }}>
       <ReactFlow
         key={focus || situationParam || "mesh"}
         nodes={nodes}
@@ -920,7 +950,11 @@ export default function Atlas() {
         onNodeDragStart={debutDrag}
         onNodeDragStop={finDrag}
         onNodeMouseEnter={(e, node) => {
-          if (node.type === "twin" && node.data?.jumeau && !node.data.jumeau.anonyme) setSurvolJumeau(node.data.jumeau.id);
+          if (node.type === "twin" && node.data?.jumeau && !node.data.jumeau.anonyme) {
+            setSurvolJumeau(node.data.jumeau.id);
+            const rect = carteRef.current?.getBoundingClientRect();
+            if (rect) setTooltipPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+          }
         }}
         onNodeMouseLeave={() => setSurvolJumeau(null)}
         onNodesChange={onNodesChange}
@@ -968,7 +1002,6 @@ export default function Atlas() {
             centrerJumeau(node.data.jumeau); // double-clic : déplacement + zoom explicite centré sur le jumeau
             return;
           }
-          setEpingle((p) => (p === node.data.jumeau.id ? null : node.data.jumeau.id));
           setSelected(node.data.jumeau);
           setSelectedRelation(null);
           setDomaineSel(null);
@@ -1051,7 +1084,7 @@ export default function Atlas() {
               return;
             }
           }
-          setSelected(null); setSelectedRelation(null); setDomaineSel(null); setSelection([]); setRelFocus(false); setComparaison(null); setAttenteComparaison(false); commanderCarte(null); setEpingle(null); setVueListe(null);
+          setSelected(null); setSelectedRelation(null); setDomaineSel(null); setSelection([]); setRelFocus(false); setComparaison(null); setAttenteComparaison(false); commanderCarte(null); setVueListe(null);
           majUrl({ sel: null, domaine: null, jumeau: null });
         }}
         nodesDraggable={modeEdition}
@@ -1158,9 +1191,9 @@ export default function Atlas() {
         </defs>
       </svg>
 
-      {/* Recherche — îlot flottant haut-centre (desktop) ; bouton puis champ (mobile).
-          Les couches vivent désormais uniquement dans le panneau « Calques » (un seul point d'entrée). */}
-      <div className={`pointer-events-none absolute z-20 ${estTablette ? "right-3 top-16" : "left-1/2 top-3 -translate-x-1/2"}`}>
+      {/* Pile haute — recherche, fil d'Ariane, bannières contextuelles : empilement vertical,
+          chaque élément occupe sa propre ligne, jamais de superposition */}
+      <div className={`pointer-events-none absolute z-20 flex flex-col gap-2 ${estTablette ? "right-3 top-16 items-end" : "left-1/2 top-3 -translate-x-1/2 items-center"}`}>
         <div className="pointer-events-auto relative">
           {estMobile && !rechercheMobileOuverte ? (
             // Mobile : la recherche s'ouvre à la demande (bouton), puis ramène vers le résultat
@@ -1207,65 +1240,54 @@ export default function Atlas() {
             </div>
           )}
         </div>
-      </div>
 
-      {/* Panneau flottant du jumeau — survol (aperçu) ou épinglé au clic ; desktop uniquement
-          (sur tablette/mobile, la bottom sheet porte le détail — jamais de double affichage).
-          Règle d'unicité : masqué dès qu'un panneau de détail est ouvert à droite. */}
-      {!estTablette && jumeauSurvole && statsJumeau && zoomNiveau > 1 && !panneauOuvert && (
-        <div
-          className={`absolute left-4 top-20 z-20 w-64 rounded-2xl border border-[#E5E5E3] bg-white p-4 shadow-lg ${epingle ? "" : "pointer-events-none"}`}
-          data-testid="panneau-jumeau-flottant"
-        >
-          <div className="flex items-center gap-3">
-            <span className={`flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white ${epingle ? "ring-2 ring-[#0E7490]" : "ring-1 ring-black/10"}`}>
-              <img src="/assets/robot-jumeau.jpg" alt="" draggable={false} className="h-11 w-11 scale-[1.65] object-cover" />
-            </span>
-            <div className="min-w-0">
-              <div className="font-code text-[10px] font-semibold tracking-wide text-[#71716D]">{idNumerique(jumeauSurvole.id)}</div>
-              <div className="truncate font-display text-base font-bold text-[#111110]" data-testid="panneau-jumeau-nom">{jumeauSurvole.nom}</div>
-              <div className="font-code text-[9px] uppercase tracking-[0.15em] text-[#71716D]">Jumeau applicatif</div>
+        <FilAriane
+          domaineActif={domaineActif} selection={selection}
+          revenirSelection={revenirSelection} ajusterVue={ajusterVue}
+        />
+
+        {/* Bannière situation (focus profond depuis Aujourd'hui / Investigations) */}
+        {situation && (
+          <div className="glass pointer-events-auto flex max-w-md items-center gap-3 rounded-xl px-4 py-2.5" data-testid="map-situation-banner">
+            <div>
+              <div className="font-code text-[9px] uppercase tracking-[0.25em] text-[#6D28D9]">Focus — situation</div>
+              <div className="text-xs font-semibold text-[#111110]">{situation.titre}</div>
+              <div className="mt-0.5 font-code text-[9px] text-[#71716D]">
+                {situation.jumeaux.length} jumeaux · contexte réduit au pertinent
+              </div>
             </div>
-          </div>
-          <dl className="mt-3 space-y-1.5 border-t border-[#F0F0EE] pt-3 text-xs">
-            <div className="flex items-center justify-between">
-              <dt className="text-[#71716D]">Statut</dt>
-              <dd className="font-code font-semibold text-[#111110]" data-testid="panneau-jumeau-statut">{jumeauSurvole.statut}</dd>
-            </div>
-            <div className="flex items-center justify-between">
-              <dt className="text-[#71716D]">Confiance</dt>
-              <dd className="font-code font-semibold text-[#0E7490]" data-testid="panneau-jumeau-confiance">{jumeauSurvole.confiance?.valeur ?? jumeauSurvole.couverture ?? "—"} %</dd>
-            </div>
-            <div className="flex items-center justify-between">
-              <dt className="text-[#71716D]">Relations observées</dt>
-              <dd className="font-code font-semibold text-[#111110]" data-testid="panneau-jumeau-flux">{statsJumeau.flux}</dd>
-            </div>
-            <div className="flex items-center justify-between">
-              <dt className="text-[#71716D]">Écarts au BCM</dt>
-              <dd className={`font-code font-semibold ${statsJumeau.ecarts > 0 ? "text-[#D97706]" : "text-[#111110]"}`} data-testid="panneau-jumeau-ecarts">{statsJumeau.ecarts}</dd>
-            </div>
-          </dl>
-          <div className="mt-3 space-y-1.5">
-            <button
-              onClick={() => { setSelection([jumeauSurvole.id]); ouvrirFlore(); }}
-              data-testid="panneau-jumeau-interroger"
-              className="w-full rounded-lg bg-[#0E7490] px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#155E75]"
-            >
-              Interroger
-            </button>
-            <button
-              onClick={() => { setSelected(jumeauSurvole); setSelectedRelation(null); setDomaineSel(null); setOnglet("detail"); }}
-              data-testid="panneau-jumeau-ouvrir"
-              className="w-full rounded-lg border border-[#0E7490]/40 px-3 py-2 text-xs font-semibold text-[#0E7490] transition-colors hover:bg-[#0E7490]/10"
-            >
-              Ouvrir le jumeau
-            </button>
-          </div>
-          {epingle && (
-            <button onClick={() => setEpingle(null)} data-testid="panneau-jumeau-fermer" title="Fermer (Échap)" className="absolute right-2.5 top-2.5 text-[#71716D] transition-colors hover:text-[#111110]">
+            <button onClick={() => majUrl({ situation: null })} data-testid="map-clear-situation" title="Retirer le focus situation" className="shrink-0 text-[#71716D] transition-colors hover:text-[#111110]">
               <X size={13} />
             </button>
-          )}
+          </div>
+        )}
+
+        {/* Indicateur de périmètre de travail actif (filtre volontaire, distinct de la sécurité) */}
+        {perimetreTravail && (
+          <div className="glass pointer-events-auto flex items-center gap-2 rounded-xl px-4 py-2" data-testid="perimetre-travail-chip">
+            <span className="h-1.5 w-1.5 rounded-full bg-[#0E7490]" />
+            <span className="font-code text-[10px] text-[#52524F]">
+              Périmètre de travail : <span style={{ color: couleurDomaine(perimetreTravail) }}>{perimetreTravail}</span> — filtre volontaire, pas sécurité
+            </span>
+            <button onClick={() => setPerimetreTravail(null)} data-testid="perimetre-travail-clear" className="text-[#71716D] transition-colors hover:text-[#111110]">
+              <X size={12} />
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Infobulle d'identification au survol — une ligne, aucune action, aucun bloc de stats
+          (le détail vit dans le panneau de droite au clic ; règle d'unicité : masquée si un panneau est ouvert) */}
+      {!estTablette && jumeauSurvole && zoomNiveau > 1 && !panneauOuvert && tooltipPos && (
+        <div
+          className="pointer-events-none absolute z-30 flex items-center gap-1.5 rounded-lg border border-[#E5E5E3] bg-white/95 px-2.5 py-1.5 shadow-md"
+          style={{ left: tooltipPos.x + 14, top: tooltipPos.y + 14 }}
+          data-testid="infobulle-jumeau"
+        >
+          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: couleurDomaine(jumeauSurvole.domaine) }} />
+          <span className="font-code text-[10px] font-semibold text-[#71716D]">{idNumerique(jumeauSurvole.id)}</span>
+          <span className="text-[11px] font-semibold text-[#111110]" data-testid="infobulle-nom">{jumeauSurvole.nom}</span>
+          <span className="font-code text-[9px] text-[#0E7490]" data-testid="infobulle-confiance">{jumeauSurvole.confiance?.valeur ?? jumeauSurvole.couverture ?? "—"} %</span>
         </div>
       )}
 
@@ -1278,22 +1300,66 @@ export default function Atlas() {
         couchesRel={couchesRel} setCouchesRel={setCouchesRel}
         couchesCarte={couchesCarte} setCouchesCarte={setCouchesCarte}
         rechargerVues={rechargerVues}
+        deplie={calquesOuverts} setDeplie={setCalquesOuverts} conteneurRef={carteRef}
       />
 
-      <AtlasToolbar outil={outil} setOutil={setOutil} rfRef={rfRef} onExpliquer={() => setExpliquerOuvert((o) => !o)} expliquerOuvert={expliquerOuvert} modeEdition={modeEdition} setModeEdition={setModeEdition} vueListe={vueListe} onOuvrirListe={setVueListe} />
+      <AtlasToolbar outil={outil} setOutil={setOutil} rfRef={rfRef} onExpliquer={() => setExpliquerOuvert((o) => !o)} expliquerOuvert={expliquerOuvert} modeEdition={modeEdition} setModeEdition={setModeEdition} vueListe={vueListe} onOuvrirListe={setVueListe} conteneurRef={carteRef} />
 
-      {/* Indicateur du mode réorganisation */}
-      {modeEdition && (
-        <div className="glass absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-lg px-3 py-1.5" data-testid="mode-edition-chip" style={{ transform: "translateX(-50%) translateY(-28px)" }}>
-          <span className="h-1.5 w-1.5 rounded-full bg-[#B45309]" />
-          <span className="font-code text-[10px] text-[#52524F]">
-            Mode réorganisation — glissez un robot ; la reclassification est toujours proposée, jamais automatique
-          </span>
-          <button onClick={() => setModeEdition(false)} data-testid="mode-edition-quitter" className="text-[#71716D] transition-colors hover:text-[#111110]">
-            <X size={12} />
-          </button>
+      {/* Pile basse centrée — chip Flore, mode réorganisation, bandeaux temporels, niveau de zoom :
+          empilés verticalement, chaque indicateur garde sa propre ligne */}
+      <div className="pointer-events-none absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-2">
+        {focusCarte && (
+          <div className="glass pointer-events-auto flex items-center gap-2 rounded-lg px-3 py-1.5" data-testid="focus-flore-chip">
+            <Sparkle size={12} className="text-[#3730A3]" />
+            <span className="font-code text-[10px] text-[#52524F]">Vue commandée par Flore</span>
+            <button onClick={() => commanderCarte(null)} data-testid="focus-flore-clear" className="text-[#71716D] transition-colors hover:text-[#111110]">
+              <X size={12} />
+            </button>
+          </div>
+        )}
+
+        {modeEdition && (
+          <div className="glass pointer-events-auto flex items-center gap-2 rounded-lg px-3 py-1.5" data-testid="mode-edition-chip">
+            <span className="h-1.5 w-1.5 rounded-full bg-[#B45309]" />
+            <span className="font-code text-[10px] text-[#52524F]">
+              Mode réorganisation — glissez un robot ; la reclassification est toujours proposée, jamais automatique
+            </span>
+            <button onClick={() => setModeEdition(false)} data-testid="mode-edition-quitter" className="text-[#71716D] transition-colors hover:text-[#111110]">
+              <X size={12} />
+            </button>
+          </div>
+        )}
+
+        {(modeTemps === "historique" || modeTemps === "replay") && dateRef && (
+          <div className="glass pointer-events-auto flex items-center gap-3 rounded-xl px-4 py-2" data-testid="bandeau-temps">
+            <span className="font-code text-[10px] text-[#52524F]">
+              {modeTemps === "replay" ? "Relecture du Mesh" : "Photographie du Mesh"} au <strong className="text-[#111110]">{fmtDate(dateRef)}</strong>
+            </span>
+            <button onClick={() => { setModeTemps("direct"); setReplaying(false); setDateRef(null); majUrl({ date: null }); }} data-testid="retour-direct-btn" className="rounded-md border border-[#3730A3]/40 px-2 py-0.5 font-code text-[10px] font-semibold text-[#3730A3] transition-colors hover:bg-[#3730A3]/10">
+              Revenir au direct
+            </button>
+          </div>
+        )}
+        {modeTemps === "avantapres" && dateRef && (
+          <div className="glass pointer-events-auto flex items-center gap-3 rounded-xl px-4 py-2" data-testid="bandeau-avant-apres">
+            <span className="h-2 w-2 rounded-sm border-2 border-dashed border-[#0E7490]" />
+            <span className="font-code text-[10px] text-[#52524F]">
+              Avant/Après depuis le <strong className="text-[#111110]">{fmtDate(dateRef)}</strong> — {nbNouvelles} nouvelle{nbNouvelles > 1 ? "s" : ""} relation{nbNouvelles > 1 ? "s" : ""}
+            </span>
+            <button onClick={() => { setModeTemps("direct"); setDateRef(null); }} data-testid="retour-direct-btn-aa" className="rounded-md border border-[#3730A3]/40 px-2 py-0.5 font-code text-[10px] font-semibold text-[#3730A3] transition-colors hover:bg-[#3730A3]/10">
+              Revenir au direct
+            </button>
+          </div>
+        )}
+
+        {/* Niveau de zoom sémantique — échelle globale, identique partout dans le Mesh */}
+        <div className="glass rounded-lg px-3 py-1.5 font-code text-[10px] text-[#52524F]" data-testid="zoom-niveau">
+          {`Niveau ${zoomNiveau} · ${NIVEAUX_ZOOM[zoomNiveau]}`}
+          {zoomNiveau === 1 && " · corridors agrégés"}
+          {zoomNiveau === 3 && " · détail des relations"}
+          {zoomNiveau === 4 && " · sources et strates arbitrées par priorité"}
         </div>
-      )}
+      </div>
 
       {/* Position fantôme du robot en cours de déplacement */}
       {fantome && (
@@ -1308,28 +1374,7 @@ export default function Atlas() {
         </div>
       )}
 
-      {/* Bandeau temporel — photographie ou avant/après */}
-      {(modeTemps === "historique" || modeTemps === "replay") && dateRef && (
-        <div className="glass absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-3 rounded-xl px-4 py-2" data-testid="bandeau-temps">
-          <span className="font-code text-[10px] text-[#52524F]">
-            {modeTemps === "replay" ? "Relecture du Mesh" : "Photographie du Mesh"} au <strong className="text-[#111110]">{fmtDate(dateRef)}</strong>
-          </span>
-          <button onClick={() => { setModeTemps("direct"); setReplaying(false); setDateRef(null); majUrl({ date: null }); }} data-testid="retour-direct-btn" className="rounded-md border border-[#3730A3]/40 px-2 py-0.5 font-code text-[10px] font-semibold text-[#3730A3] transition-colors hover:bg-[#3730A3]/10">
-            Revenir au direct
-          </button>
-        </div>
-      )}
-      {modeTemps === "avantapres" && dateRef && (
-        <div className="glass absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-3 rounded-xl px-4 py-2" data-testid="bandeau-avant-apres">
-          <span className="h-2 w-2 rounded-sm border-2 border-dashed border-[#0E7490]" />
-          <span className="font-code text-[10px] text-[#52524F]">
-            Avant/Après depuis le <strong className="text-[#111110]">{fmtDate(dateRef)}</strong> — {nbNouvelles} nouvelle{nbNouvelles > 1 ? "s" : ""} relation{nbNouvelles > 1 ? "s" : ""}
-          </span>
-          <button onClick={() => { setModeTemps("direct"); setDateRef(null); }} data-testid="retour-direct-btn-aa" className="rounded-md border border-[#3730A3]/40 px-2 py-0.5 font-code text-[10px] font-semibold text-[#3730A3] transition-colors hover:bg-[#3730A3]/10">
-            Revenir au direct
-          </button>
-        </div>
-      )}
+
 
       {expliquerOuvert && (
         <ExpliquerCarte
@@ -1341,51 +1386,11 @@ export default function Atlas() {
         />
       )}
 
-      {/* Bandeau situation (focus profond depuis Aujourd'hui / Investigations) */}
-      {situation && (
-        <div className="glass absolute left-1/2 top-4 z-10 flex max-w-md -translate-x-1/2 items-center gap-3 rounded-xl px-4 py-2.5" data-testid="map-situation-banner">
-          <div>
-            <div className="font-code text-[9px] uppercase tracking-[0.25em] text-[#6D28D9]">Focus — situation</div>
-            <div className="text-xs font-semibold text-[#111110]">{situation.titre}</div>
-            <div className="mt-0.5 font-code text-[9px] text-[#71716D]">
-              {situation.jumeaux.length} jumeaux · contexte réduit au pertinent
-            </div>
-          </div>
-          <button onClick={() => majUrl({ situation: null })} data-testid="map-clear-situation" title="Retirer le focus situation" className="shrink-0 text-[#71716D] transition-colors hover:text-[#111110]">
-            <X size={13} />
-          </button>
-        </div>
-      )}
 
-      <FilAriane
-        domaineActif={domaineActif} selection={selection}
-        revenirSelection={revenirSelection} ajusterVue={ajusterVue}
-      />
 
-      {/* Indicateur de périmètre de travail actif (filtre volontaire, distinct de la sécurité) */}
-      {perimetreTravail && (
-        <div className="glass absolute left-1/2 top-4 z-10 flex -translate-x-1/2 items-center gap-2 rounded-xl px-4 py-2" data-testid="perimetre-travail-chip">
-          <span className="h-1.5 w-1.5 rounded-full bg-[#0E7490]" />
-          <span className="font-code text-[10px] text-[#52524F]">
-            Périmètre de travail : <span style={{ color: couleurDomaine(perimetreTravail) }}>{perimetreTravail}</span> — filtre volontaire, pas sécurité
-          </span>
-          <button onClick={() => setPerimetreTravail(null)} data-testid="perimetre-travail-clear" className="text-[#71716D] transition-colors hover:text-[#111110]">
-            <X size={12} />
-          </button>
-        </div>
-      )}
 
-      {/* Niveau de zoom sémantique — échelle globale, identique partout dans le Mesh */}
-      {(
-        <div className="glass absolute bottom-4 left-1/2 z-10 -translate-x-1/2 rounded-lg px-3 py-1.5 font-code text-[10px] text-[#52524F]" data-testid="zoom-niveau">
-          {`Niveau ${zoomNiveau} · ${NIVEAUX_ZOOM[zoomNiveau]}`}
-          {zoomNiveau === 1 && " · corridors agrégés"}
-          {zoomNiveau === 3 && " · détail des relations"}
-          {zoomNiveau === 4 && " · sources et strates arbitrées par priorité"}
-        </div>
-      )}
 
-      <AtlasLegende />
+
 
       {/* Infobulle de relation — survol d'une arête, près du pointeur */}
       {relSurvolee?.startsWith("agg-") && !selectedRelation && relTooltipPos && (() => {
@@ -1449,16 +1454,7 @@ export default function Atlas() {
         </div>
       )}
 
-      {/* Chip « vue commandée par Flore » */}
-      {focusCarte && (
-        <div className="glass absolute bottom-4 left-4 z-10 flex items-center gap-2 rounded-lg px-3 py-1.5" data-testid="focus-flore-chip">
-          <Sparkle size={12} className="text-[#3730A3]" />
-          <span className="font-code text-[10px] text-[#52524F]">Vue commandée par Flore</span>
-          <button onClick={() => commanderCarte(null)} data-testid="focus-flore-clear" className="text-[#71716D] transition-colors hover:text-[#111110]">
-            <X size={12} />
-          </button>
-        </div>
-      )}
+
 
       {/* Mobile : la mini-carte devient un bouton « Vue d'ensemble » (fitView explicite) */}
       {estMobile && (
@@ -1471,6 +1467,8 @@ export default function Atlas() {
         </button>
       )}
 
+    </div>
+
       <AtlasPanneau
         onglet={onglet} setOnglet={setOnglet}
         comparaison={comparaison} selectedRelation={selectedRelation}
@@ -1478,9 +1476,11 @@ export default function Atlas() {
         statsDomaine={statsDomaine} actionsDomaine={actionsDomaine}
         confirmerRelation={confirmerRelation}
         eventsVisibles={eventsVisibles} jumeauPar={jumeauPar}
-        presentation={estTablette ? "feuillet" : "flottant"}
+        presentation={estTablette ? "feuillet" : "colonne"}
         mesh={mesh} situations={situations} vueListe={vueListe} setVueListe={setVueListe}
         favorisIds={favorisIds} onBasculerFavori={onBasculerFavori}
+        statsTwin={statsSelection}
+        onInterroger={() => { if (selected) { setSelection([selected.id]); ouvrirFlore(); } }}
         onChoisirJumeau={centrerSurJumeau}
         onChoisirSituation={(id) => majUrl({ situation: id })}
         onRelancerRecherche={(t) => { setRecherche(t); if (estMobile) setRechercheMobileOuverte(true); }}

@@ -1,0 +1,27 @@
+{
+  "summary": "Frontend regression pass on Atlas @ 1920x800 desktop and 1024x768/1400x800/1200x800 after Google-Maps-style chrome refactor. Chrome immobility fully verified: toolbar (x=72,y=295) DOES NOT MOVE when Calques expands, when side panel opens, or when ExpliquerCarte opens. Calques opens to x=130 w=340 (drawer at left:74px) without moving/overlapping the toolbar. Side panel (data-testid=map-side-panel) mounts as right-side column x=1584 w=336 h=752; minimap and controls automatically reflow inside the reduced map zone (minimap right=1569, controls right=1570, sp.x=1584 - no horizontal overlap, ~15px gap). ITERATION 51 TABLET ISSUE RESOLVED: at 1024x768 with Calques expanded, mode_switcher x=130 does NOT overlap toolbar (right=118). Rail cas <1500px CONFIRMED: at innerWidth=1400 with active selection, panneau-rail + panneau-ouvrir-btn appear and panel folds without clearing selection. Drag/persistence/dblclick reset all working. Bibliothèque menu shows 4 items at x=120 (right of toolbar). Breadcrumb stacks correctly at y=102 (search bottom=85, no overlap). Camera preserved across open/close (identical viewport transform). ExpliquerCarte panel positions in the reduced map zone (x=1188 right=1568, bottom=640) — no vertical overlap with minimap (top=673). ONE FAILURE: T9 navigation restoration — after selecting a twin then navigating /travaux → /atlas, the side panel/selection is NOT restored (panel=false, breadcrumb=null after return). This is a genuine regression against the spec.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Atlas navigation state restore", "issue": "T9: After selecting a twin (side panel open) and navigating /travaux then back to /atlas, the selection and side panel column are NOT restored. Expected per spec: 'la sélection et le panneau colonne doivent être restaurés'. Actual: map-side-panel absent, breadcrumb null after return.", "selector": "[data-testid=map-side-panel]", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Fix Atlas.jsx: persist current selection (jumeauSelectionne / breadcrumb chain) across route changes so that navigating away and back to /atlas restores the side panel column. Consider storing in sessionStorage or a shared context/store keyed on the selected twin id."
+  ],
+  "critical_code_review_comments": [
+    "Atlas.jsx remains large; navigation-state restoration for selection is likely missing (state lives in local useState which unmounts on route change).",
+    "ExpliquerCarte panel horizontally overlaps minimap column (panel right=1568 vs minimap x=1401) but is vertically clear (panel bottom=640 vs minimap top=673). Visually safe today, but a taller viewport could cause overlap — consider constraining panel height explicitly relative to minimap top."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped)", "frontend": "~92% (8/9 tests pass; T9 nav-restore fails)"},
+  "test_credentials": "N/A - no auth required",
+  "seed_data_creation": "None",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Chrome immobility (T1), close/reopen (T2), rail at <1500px with active selection (T2c), camera preservation (T3), drag persistence + dblclick reset (T4), stacks (T5), ExpliquerCarte (T6), Bibliothèque (T7), tablet Calques drawer at x=130 (T8 — resolved) ALL PASS. Only T9 fails: selection is lost on route change. To reproduce: 1) go to /atlas, 2) type 'Paiements' in [data-testid=atlas-recherche], 3) click first [data-testid^=recherche-jumeau-] result → panel opens with breadcrumb 'Domaine Paiement', 4) navigate to /travaux, 5) navigate back to /atlas → panel gone, breadcrumb null. Note: clicking a top-level region node (data-id=reg-*) does not open the panel; only leaf twin nodes do (this is by design).",
+  "rca of the issue": "Atlas page selection state (selected twin id + breadcrumb path) is stored in local component state; on route change the Atlas component unmounts, dropping the state. No persistence layer (sessionStorage / URL param / global store) rehydrates it on return. Fix by lifting selection to a persistent store or encoding it in the URL (e.g., /atlas?jumeau=<id>) and restoring on mount via useEffect."
+}
