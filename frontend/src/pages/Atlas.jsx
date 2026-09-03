@@ -1471,6 +1471,7 @@ export default function Atlas() {
         confirmerRelation={confirmerRelation}
         eventsVisibles={eventsVisibles} jumeauPar={jumeauPar}
         presentation={estTablette ? "feuillet" : "colonne"}
+        masquee={floreOuverte}
         mesh={mesh} situations={situations} vueListe={vueListe} setVueListe={setVueListe}
         favorisIds={favorisIds} onBasculerFavori={onBasculerFavori}
         statsTwin={statsSelection}

@@ -1,5 +1,12 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v51, Flore et panneau détail se remplacent)
+Demande utilisateur : « le panneau de détail et Flore doivent se remplacer, pas être mis côte à côte ».
+- **Colonne droite unique** : quand Flore s'ouvre, la colonne détail de l'Atlas est masquée (`AtlasPanneau` prop `masquee={floreOuverte}`, retour null — l'état interne et la sélection sont conservés) ; à la fermeture de Flore, la colonne détail revient telle quelle. « ✦ Interroger » depuis le détail bascule donc visuellement du détail vers Flore.
+- La carte se redimensionne à chaque bascule (336 px ↔ 440 px), caméra conservée par le ResizeObserver.
+- Tests : auto-vérifié Playwright — cycle complet détail → Flore (remplacement) → fermeture Flore (détail restauré avec la même sélection « Paiements ») → « Interroger » (bascule directe) : tout PASS.
+
+
 ## Implémenté (06/2026 — v50, recherche à gauche + loupe, Flore en colonne, re-bornage des éléments glissables)
 Demandes utilisateur : « mets le champ de recherche à gauche », « si le panneau de profondeur sémantique apparaît le champ se rétracte à une loupe », « le panneau Flore dans l'Atlas doit avoir le même effet que le panneau détail » ; puis bug rapporté : « je ne vois plus le panneau de tools, le calque se comporte bizarrement ».
 - **Recherche en haut à gauche** (façon Google Maps) ; la chip Calques glisse juste en dessous (`top:64px`), le tiroir déplié reste à `left:74px`. La pile haute centrée ne contient plus que le fil d'Ariane et les bannières contextuelles.

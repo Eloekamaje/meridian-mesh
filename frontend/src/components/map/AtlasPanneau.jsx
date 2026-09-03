@@ -92,6 +92,7 @@ export default function AtlasPanneau({
   statsDomaine, actionsDomaine, confirmerRelation,
   eventsVisibles, jumeauPar,
   presentation = "colonne", // "colonne" (desktop, panneau latéral dans le layout) | "feuillet" (tablette/mobile, bottom sheet)
+  masquee = false, // Flore ouverte : Flore occupe la colonne droite — les deux panneaux se remplacent, jamais côte à côte
   mesh, situations, vueListe, setVueListe,
   favorisIds = [], onBasculerFavori, onChoisirJumeau, onChoisirSituation, onRelancerRecherche,
   onFermer, statsTwin, onInterroger,
@@ -188,6 +189,10 @@ export default function AtlasPanneau({
 
   // Le panneau ne s'ouvre QUE sur sélection ou liste personnelle (règle PO : jamais d'état vide qui obstrue la carte)
   const peutOuvrir = !!(comparaison || selectedRelation || selected || domaineSel || vueListe);
+
+  // Masqué pendant que Flore occupe la colonne droite (l'état interne est conservé :
+  // à la fermeture de Flore, le panneau revient tel quel avec la même sélection)
+  if (masquee) return null;
 
   if (!ouvert) {
     if (!peutOuvrir) return null;
