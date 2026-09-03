@@ -1,225 +1,105 @@
 {
-  "project_name": "Méridian",
-  "theme": "light",
-  "language": "fr",
+  "theme": {
+    "mode": "light",
+    "background": "#F6F6F4",
+    "foreground": "#111110",
+    "primary": "#0F4C81",
+    "secondary": "#E5E5E3",
+    "accent_warning": "#F97316",
+    "accent_error": "#DC2626",
+    "accent_success": "#8B5CF6",
+    "glass_surface": "rgba(246, 246, 244, 0.75)"
+  },
   "typography": {
-    "fonts": {
-      "heading": "Chivo, sans-serif",
-      "body": "IBM Plex Sans, sans-serif",
-      "mono": "IBM Plex Mono, monospace"
-    },
-    "scale": {
-      "h1": "text-4xl sm:text-5xl tracking-tighter font-black text-ink-900 leading-none",
-      "h2": "text-2xl sm:text-3xl tracking-tight font-bold text-ink-900 leading-tight",
-      "h3": "text-xl sm:text-2xl tracking-tight font-semibold text-ink-900",
-      "h4": "text-lg font-medium text-ink-800",
-      "body": "text-base font-normal text-ink-700 leading-relaxed",
-      "body-sm": "text-sm font-normal text-ink-600 leading-relaxed",
-      "overline": "text-xs font-bold uppercase tracking-[0.2em] text-ink-500",
-      "data-label": "text-xs font-medium font-mono uppercase tracking-wider text-ink-500",
-      "data-value": "text-sm font-semibold font-mono text-ink-900"
-    },
-    "rules": [
-      "No Inter or Roboto allowed.",
-      "Headlines > 32px must use tracking-tight or tracking-tighter.",
-      "Use IBM Plex Mono for all data points, dates, timestamps, and state badges.",
-      "Never center-align long text or dense data; use optical left-alignment.",
-      "Jump between heading and subheading must not exceed 2 Tailwind steps."
-    ]
+    "headings": "Cabinet Grotesk",
+    "body": "IBM Plex Sans",
+    "code": "IBM Plex Mono",
+    "rules": "Space Grotesk is forbidden for dashboards per E1 rules. Use Cabinet Grotesk for display. All headings must use tight tracking. Body text needs high legibility. Only use IBM Plex Mono for App IDs and raw data."
   },
-  "colors": {
-    "foundation": {
-      "background": "#F7F7F6",
-      "surface": "#FFFFFF",
-      "surface-raised": "#FAFAFA",
-      "border": "#E5E5E3",
-      "border-strong": "#D4D4D0"
+  "layouts": {
+    "paradigm": "Google Maps Style Immersive Dashboard",
+    "structure": "Edge-to-edge canvas (100vw, 100vh) without fixed layout sidebars. UI elements MUST float over the map using absolute/fixed positioning in the corners.",
+    "spacing_scale": "p-2, p-4, p-8, p-12 - Generous spacing inside floating panels."
+  },
+  "ux_ui_po_review": {
+    "executive_summary": "L'écran Atlas actuel souffre d'une densité de 'chrome' (UI) excessive qui contredit le paradigme 'Google Maps' validé, et de lacunes techniques dans l'algorithme de routage/rendu causant des chevauchements. L'objectif est de redonner la primauté au territoire (la carte) et d'appliquer une hygiène stricte sur les calques et panneaux.",
+    "1_critical_audit_overlaps": {
+      "domain_membranes": "Problème: Les coques concaves (concaveman) se chevauchent ou dessinent de grands rectangles. Solution: Appliquer un padding (buffer spatial) avant le calcul de la coque. Si les nœuds de deux domaines se croisent, utiliser un diagramme de Voronoi pour forcer une frontière spatiale stricte au lieu de laisser les coques se superposer.",
+      "edge_label_collisions": "Problème: Les arêtes (libavoid) passent sur les App IDs ou très près. Solution: La boîte de collision (bounding box) fournie à libavoid pour chaque nœud DOIT inclure la hauteur de l'avatar + la hauteur du texte (App ID) + un padding de 8px. Ne jamais considérer l'avatar seul comme l'obstacle complet.",
+      "label_density": "Problème: Trop d'App IDs visibles au dézoom. Solution: Implémenter une détection de collision par QuadTree (ou algorithme de force D3). Si deux labels se chevauchent à un niveau de zoom X, le moins prioritaire passe en opacity: 0 et pointer-events: none."
     },
-    "ink": {
-      "900": "#111110",
-      "800": "#272725",
-      "700": "#3F3F3C",
-      "600": "#52524F",
-      "500": "#71716D"
+    "2_feature_audit_redundancies": {
+      "ui_chrome_overload": "Inapproprié: La topbar globale + la sidebar applicative de gauche + la barre d'outils de la carte réduisent considérablement l'espace de la carte. Solution: Supprimer les barres fixes. Fusionner la navigation globale dans un bouton 'Menu/Hub' flottant en haut à gauche.",
+      "layer_controls": "Redondance: Présence de 6 puces 'couches' ET d'un panneau 'Calques'. Solution: Unifier dans un seul bouton flottant 'Calques' (façon Google Maps) qui s'ouvre au survol/clic pour révéler les 6 options.",
+      "right_panel_empty_state": "Inapproprié: Le panneau droit ouvert par défaut avec Favoris/Récents obstrue la vue. Solution: Le panneau de droite NE DOIT s'ouvrir QUE lorsqu'une entité est sélectionnée (bouton DÉTAIL). Les Récents/Favoris doivent vivre dans le Hub de navigation (Menu global) ou via la barre de recherche."
     },
-    "primary": {
-      "default": "#3730A3",
-      "hover": "#4338CA",
-      "subtle": "#EEECFA",
-      "text": "#312E81"
-    },
-    "semantic_states": {
-      "stable": {
-        "color": "#1B4332",
-        "bg": "#E8F5E9",
-        "shape": "circle",
-        "label": "Stable"
+    "3_prioritized_recommendations": {
+      "P0": {
+        "title": "Sanctuariser la Règle du Zéro Chevauchement",
+        "actions": [
+          "Mettre à jour les dimensions des obstacles dans libavoid pour inclure le texte App ID.",
+          "Masquer dynamiquement les labels qui entrent en collision lors du dézoom.",
+          "Ajuster le paramètre alpha de concaveman et ajouter une marge pour séparer visuellement les membranes."
+        ]
       },
-      "en_construction": {
-        "color": "#1E3A8A",
-        "bg": "#EFF6FF",
-        "shape": "square",
-        "label": "En construction"
+      "P1": {
+        "title": "Le Régime 'Google Maps' (Nettoyage du Chrome)",
+        "actions": [
+          "Passer la topbar et la sidebar en mode 'îlots flottants' (glassmorphism absolu).",
+          "Regrouper les contrôles dans les coins : Haut-Gauche (Recherche + Menu), Haut-Droit (Profil), Bas-Gauche (Légende repliable), Bas-Droit (Zoom, Mini-carte).",
+          "Placer la barre conversationnelle en bas au centre, flottante et repliable, sans toucher les bords."
+        ]
       },
-      "en_observation": {
-        "color": "#5B21B6",
-        "bg": "#F5F3FF",
-        "shape": "diamond",
-        "label": "En observation"
-      },
-      "attention": {
-        "color": "#B45309",
-        "bg": "#FFFBEB",
-        "shape": "triangle",
-        "label": "Attention"
-      },
-      "information_ancienne": {
-        "color": "#475569",
-        "bg": "#F8FAFC",
-        "shape": "dotted-circle",
-        "label": "Information ancienne"
-      },
-      "acces_restreint": {
-        "color": "#7F1D1D",
-        "bg": "#FEF2F2",
-        "shape": "hexagon",
-        "label": "Accès restreint"
-      },
-      "erreur": {
-        "color": "#991B1B",
-        "bg": "#FEF2F2",
-        "shape": "cross",
-        "label": "Erreur"
+      "P2": {
+        "title": "Élégance Contextuelle (Micro-interactions)",
+        "actions": [
+          "Sélection d'un composant : Calmer la carte en passant tous les nœuds non connectés à 20-30% d'opacité. Les membranes gardent leur couleur mais perdent leur bordure.",
+          "Pan (déplacement) fluide vers la gauche lors de l'ouverture du panneau droit pour centrer le jumeau sélectionné dans l'espace restant, sans faire de fitView brutal."
+        ]
       }
-    },
-    "rules": [
-      "Never use pure black (#000000) or pure white without structure.",
-      "Semantic states MUST ALWAYS combine color + shape + label. Never rely on color alone (WCAG 2.2 AA).",
-      "Use primary color sparingly for key CTAs and Mesh activity indicators.",
-      "Avoid teal or cyan in this light theme (reserved for future dark theme)."
-    ]
-  },
-  "visual_enhancers": {
-    "surfaces": {
-      "glass": "bg-white/80 backdrop-blur-xl border border-white/40 shadow-sm",
-      "card": "bg-white border border-border rounded-none shadow-[0_2px_8px_rgba(0,0,0,0.04)]",
-      "panel": "bg-surface-raised border border-border shadow-[0_8px_32px_rgba(0,0,0,0.08)]",
-      "flore_dock": "bg-white/95 backdrop-blur-2xl border-l border-border shadow-[-8px_0_32px_rgba(0,0,0,0.05)]"
-    },
-    "borders": {
-      "sharp": "rounded-none",
-      "subtle": "rounded-sm",
-      "control": "rounded-md"
-    },
-    "rules": [
-      "No generic soft shadows everywhere. Use crisp 1px borders.",
-      "The Atlas workspace uses full bleed background with floating glass panels over it.",
-      "Completely transparent backgrounds are FORBIDDEN on elements containing text over the Atlas."
-    ]
+    }
   },
   "components": {
-    "global_header": {
-      "layout": "flex items-center justify-between h-14 px-4 bg-white border-b border-border z-50",
-      "elements": [
-        "[Équipe/espace ▾]: Left-aligned, heavy Chivo font, subtle hover.",
-        "Navigation: Centered, transparent background, text-ink-600 hover:text-ink-900. Links: Actualités, Atlas, Travaux, Jumeaux, Administration.",
-        "[● Mesh vivant]: Pulsing semantic green indicator with tiny IBM Plex Mono timestamp.",
-        "[✦ Parler à Flore]: Right-aligned pill button, primary subtle background.",
-        "[Profil]: Simple avatar or initial block."
-      ]
+    "floating_panels": {
+      "surface": "Crystal Glassmorphism",
+      "classes": "absolute z-50 backdrop-blur-xl bg-[#F6F6F4]/75 border border-[#E5E5E3] shadow-[0_8px_32px_rgba(17,17,16,0.08)] rounded-xl",
+      "behavior": "Collapsible, dismissible on map click."
     },
-    "actualites_feed": {
-      "layout": "Bento-style or timeline layout. Max width container, left aligned.",
-      "elements": [
-        "Navigation date ‹/›: Mono font header, large typography for Current Date.",
-        "Scopes: Tabs for Personnel / Mon espace / Mesh global.",
-        "Narrative Cards: Not generic social feeds. Dense, structured memory cards.",
-        "Actions: Clear 'Comprendre' and 'Voir dans l'Atlas' buttons."
-      ]
+    "map_nodes": {
+      "avatar": "SVG Robot Illustration",
+      "label": "IBM Plex Mono text-xs text-[#111110] text-center mt-2",
+      "selection_halo": "ring-2 ring-offset-2 ring-[#0F4C81]"
     },
-    "travaux_cockpit": {
-      "description": "Replaces standard admin tables with a narrative, situation-focused workspace.",
-      "layout": "2-column dense layout or full-screen modal.",
-      "tabs": "Aperçu / Travail / Atlas / Décisions / Activité",
-      "style": "Strict, technical, high-contrast borders. Grid-lines visible (border-collapse style).",
-      "ai_integration": "Reprise intelligente par Flore displayed as a distinctive inset panel with a subtle primary tint."
-    },
-    "atlas_2d": {
-      "technology": "React Flow (@xyflow/react)",
-      "background": "Light dotted grid or subtle topographic lines on #F7F7F6.",
-      "nodes": "Sharp, angular nodes representing 'Territoires' and 'Jumeaux'. Colored by domain (pastels with dark ink text).",
-      "toolbar": "Floating glassmorphism panel at the bottom center. Controls: Lasso, Direct, Pause, Replay, Avant-Après, Historique.",
-      "accessibility": "Must include an 'Expliquer cette carte' button (WCAG screen reader summary)."
-    },
-    "flore_panel": {
-      "layout": "Docked right sidebar, 400px width.",
-      "visual": "flore_dock style from visual_enhancers.",
-      "content": "Multi-turn conversation, active context visible at top, 'TrustBadges' for sources (small mono pill tags)."
+    "edges": {
+      "bcm": "stroke-[#475569] stroke-2 solid",
+      "reality": "stroke-[#0F4C81] stroke-2 solid",
+      "gaps": "stroke-[#F97316] stroke-2 dashed animate-pulse",
+      "validation": "stroke-[#8B5CF6] stroke-2 solid",
+      "obsolete": "stroke-[#94A3B8] stroke-1 solid"
     }
   },
-  "grids_and_layouts": {
-    "spacing_scale": {
-      "dense": "p-2 gap-2",
-      "standard": "p-4 gap-4",
-      "relaxed": "p-8 gap-8"
-    },
-    "rules": [
-      "Use generative spacing: 2-3x more spacing between distinct semantic sections.",
-      "Grid children must be direct children. Use align-items: start to prevent generic stretching unless intended.",
-      "Use optical alignment for icons + text (4px right padding vs 6px on all sides for left-icon buttons)."
-    ]
+  "visual_enhancers": {
+    "glassmorphism": "Used strictly for floating islands over the map. Do NOT use transparent backgrounds without blur.",
+    "grid_borders": "Not applicable to canvas, but applicable to detail panel data tables.",
+    "hover_states": "Hovering a node smoothly highlights its 1st-degree connected edges."
   },
-  "motion": {
-    "philosophy": "Calm, controlled, precise. No bouncing. No chaotic staggering.",
-    "transitions": {
-      "default": "transition-all duration-200 ease-in-out",
-      "panel": "transition-transform duration-300 cubic-bezier(0.16, 1, 0.3, 1)"
-    },
-    "atlas": "Smooth pan/zoom. State changes (Replay/Avant-Après) should crossfade elegantly.",
-    "rules": [
-      "Never use 'transition: all' globally in CSS.",
-      "Respect prefers-reduced-motion."
-    ]
-  },
+  "instructions_to_main_agent": [
+    "Build the dashboard using a full viewport React Flow map. Do NOT wrap the map in layout columns.",
+    "Implement UI controls as absolute positioned overlays inside the React Flow provider.",
+    "Use Shadcn UI for the right Detail Panel and dropdown menus, customized with the Crystal Glassmorphism classes.",
+    "Refactor libavoid routing to consider the bounding box of (Avatar + Text) for nodes.",
+    "Implement view-dependent label visibility. Use a collision detection function on the zoom event to toggle label opacity.",
+    "Ensure the floating conversational bar is position: fixed, bottom: 24px, left: 50%, transform: translateX(-50%)."
+  ],
   "accessibility": {
-    "wcag": "2.2 AA Compliance",
-    "contrast": "Text against background must meet 4.5:1. Large text 3:1.",
-    "focus": "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-default focus-visible:ring-offset-2",
-    "semantic_state": "All status indicators MUST have a visual shape and a text label, e.g., <CircleIcon/> + <span className='sr-only'>Stable</span>."
+    "contrast": "Text over glassmorphism panels must pass WCAG AA. Use #111110 for text.",
+    "motion": "Use smooth panning (transition-transform duration-300 ease-out). Respect prefers-reduced-motion for edge pulsing.",
+    "testing_ids": "All floating panels and interactive map nodes must have a 'data-testid' attribute (e.g., 'data-testid=\"map-node-app-id\"')."
   },
-  "css_tokens": {
-    "root": {
-      "--mdn-bg": "#F7F7F6",
-      "--mdn-surface": "#FFFFFF",
-      "--mdn-border": "#E5E5E3",
-      "--mdn-ink-main": "#111110",
-      "--mdn-ink-muted": "#52524F",
-      "--mdn-primary": "#3730A3",
-      "--mdn-state-stable-c": "#1B4332",
-      "--mdn-state-stable-bg": "#E8F5E9",
-      "--mdn-state-construct-c": "#1E3A8A",
-      "--mdn-state-construct-bg": "#EFF6FF",
-      "--mdn-state-obs-c": "#5B21B6",
-      "--mdn-state-obs-bg": "#F5F3FF",
-      "--mdn-state-attn-c": "#B45309",
-      "--mdn-state-attn-bg": "#FFFBEB",
-      "--mdn-state-old-c": "#475569",
-      "--mdn-state-old-bg": "#F8FAFC",
-      "--mdn-state-restr-c": "#7F1D1D",
-      "--mdn-state-restr-bg": "#FEF2F2",
-      "--mdn-state-err-c": "#991B1B",
-      "--mdn-state-err-bg": "#FEF2F2"
-    }
-  },
-  "universal_guidelines_for_main_agent": [
-    "You tend to converge toward generic outputs. Break the mold: use the defined sharp borders, tight tracking for headings, and mono fonts for data.",
-    "No generic centered layouts. Optical left-alignment is strictly preferred.",
-    "Create depth through layered design elements with z-index hierarchy, particularly for the Atlas and Flore panel.",
-    "Use glass-morphism effects carefully; only use the specified 'glass' token.",
-    "DO NOT add `.App { text-align: center; }`.",
-    "All interactive and key informational elements MUST include a `data-testid` attribute (e.g., data-testid='atlas-lasso-button').",
-    "For the Atlas map, maintain cartographic soul: subtle background grids, clear legends, floating controls.",
-    "Ensure all text is completely legible over the Atlas using proper background blurring or solid backgrounds.",
-    "The app must be entirely in French, reflecting an intelligent, calm, and highly professional enterprise decision platform."
-  ]
+  "universal_guidelines_for_main_agent": {
+    "spacing": "Use p-6 or p-8 inside the right detail panel.",
+    "colors": "Strictly use the defined palette. No generic gradients.",
+    "animations": "Use Framer Motion for sliding in the right panel and floating conversational bar.",
+    "toasts": "Use 'sonner' for alerts (e.g., node update confirmation), positioned at top-center so it doesn't overlap corner controls."
+  }
 }

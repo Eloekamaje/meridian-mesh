@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { X, SidebarSimple, Star, MagnifyingGlass } from "@phosphor-icons/react";
+import { X, SidebarSimple, Star } from "@phosphor-icons/react";
 import { COUCHES, idNumerique } from "@/lib/atlasGraph";
 import { couleurDomaine, NATURES_EVENEMENT, VERBES } from "@/lib/domaines";
-import { favoris, recents, recherches } from "@/lib/memoire";
+import { recents } from "@/lib/memoire";
 import { RelationDetail, DomaineDetail, ComparaisonDomaines, TwinDetail } from "./details";
 
 const STATUTS_CLOS = ["ignorée", "classée", "décidée"];
@@ -50,59 +50,6 @@ function LigneSituation({ s, onChoisir }) {
   );
 }
 
-// État vide façon Google Maps : recherches récentes, jumeaux consultés, favoris, situations à reprendre
-function AccueilContextuel({ mesh, situations, favorisIds, onBasculerFavori, onChoisirJumeau, onChoisirSituation, onRelancerRecherche }) {
-  const js = mesh?.jumeaux || [];
-  const parId = (id) => js.find((j) => j.id === id);
-  const favs = favorisIds.map(parId).filter(Boolean);
-  const recs = recents().map(parId).filter(Boolean).filter((j) => !favorisIds.includes(j.id)).slice(0, 5);
-  const rechs = recherches().slice(0, 5);
-  const sits = (situations || []).filter((s) => !STATUTS_CLOS.includes(s.statut)).slice(0, 4);
-
-  if (!favs.length && !recs.length && !rechs.length && !sits.length) {
-    return (
-      <p className="text-xs text-[#71716D]">
-        Sélectionnez un jumeau, une relation ou un domaine. Double-clic : explorer (déplacement animé, zoom inchangé) ; la carte est continue — les domaines voisins se découvrent en la faisant glisser.
-      </p>
-    );
-  }
-
-  return (
-    <div className="space-y-4" data-testid="panneau-accueil">
-      {favs.length > 0 && (
-        <section>
-          <h4 className="px-2 font-code text-[9px] uppercase tracking-[0.2em] text-[#71716D]">Favoris</h4>
-          <div className="mt-1">{favs.map((j) => <LigneJumeau key={j.id} j={j} favori onBasculerFavori={onBasculerFavori} onChoisir={onChoisirJumeau} />)}</div>
-        </section>
-      )}
-      {recs.length > 0 && (
-        <section>
-          <h4 className="px-2 font-code text-[9px] uppercase tracking-[0.2em] text-[#71716D]">Consultés récemment</h4>
-          <div className="mt-1">{recs.map((j) => <LigneJumeau key={j.id} j={j} favori={false} onBasculerFavori={onBasculerFavori} onChoisir={onChoisirJumeau} />)}</div>
-        </section>
-      )}
-      {rechs.length > 0 && (
-        <section>
-          <h4 className="px-2 font-code text-[9px] uppercase tracking-[0.2em] text-[#71716D]">Recherches récentes</h4>
-          <div className="mt-1 flex flex-wrap gap-1.5 px-2">
-            {rechs.map((t) => (
-              <button key={t} onClick={() => onRelancerRecherche(t)} data-testid={`recherche-recente-${t.slice(0, 12)}`} className="flex items-center gap-1 rounded-full border border-[#E5E5E3] px-2 py-1 font-code text-[10px] text-[#52524F] transition-colors hover:border-[#D4D4D0] hover:text-[#111110]">
-                <MagnifyingGlass size={10} /> {t}
-              </button>
-            ))}
-          </div>
-        </section>
-      )}
-      {sits.length > 0 && (
-        <section>
-          <h4 className="px-2 font-code text-[9px] uppercase tracking-[0.2em] text-[#71716D]">Situations à reprendre</h4>
-          <div className="mt-1">{sits.map((s) => <LigneSituation key={s.id} s={s} onChoisir={onChoisirSituation} />)}</div>
-        </section>
-      )}
-    </div>
-  );
-}
-
 // Vue liste plein panneau (barre verticale personnelle)
 function ListePersonnelle({ vueListe, mesh, situations, favorisIds, onBasculerFavori, onChoisirJumeau, onChoisirSituation }) {
   const js = mesh?.jumeaux || [];
@@ -147,6 +94,7 @@ export default function AtlasPanneau({
   presentation = "flottant", // "flottant" (desktop, panneau latéral) | "feuillet" (tablette/mobile, bottom sheet)
   mesh, situations, vueListe, setVueListe,
   favorisIds = [], onBasculerFavori, onChoisirJumeau, onChoisirSituation, onRelancerRecherche,
+  onFermer,
 }) {
   const feuillet = presentation === "feuillet";
   // Refermé par défaut sur les petits écrans pour laisser la carte respirer
@@ -182,7 +130,10 @@ export default function AtlasPanneau({
           {label}
         </button>
       ))}
-      <button onClick={() => setOuvert(false)} data-testid="panneau-fermer-btn" title="Replier le panneau" className="px-2.5 text-[#71716D] transition-colors hover:text-[#111110]">
+      <button
+        onClick={() => { setOuvert(false); onFermer?.(); }}
+        data-testid="panneau-fermer-btn" title="Replier le panneau" className="px-2.5 text-[#71716D] transition-colors hover:text-[#111110]"
+      >
         <X size={13} />
       </button>
     </div>
@@ -206,12 +157,9 @@ export default function AtlasPanneau({
         ) : domaineSel ? (
           <DomaineDetail label={domaineSel} stats={statsDomaine(domaineSel)} actions={actionsDomaine} />
         ) : (
-          <AccueilContextuel
-            mesh={mesh} situations={situations}
-            favorisIds={favorisIds} onBasculerFavori={onBasculerFavori}
-            onChoisirJumeau={onChoisirJumeau} onChoisirSituation={onChoisirSituation}
-            onRelancerRecherche={onRelancerRecherche}
-          />
+          <p className="text-xs text-[#71716D]">
+            Sélectionnez un jumeau, une relation ou un domaine. Double-clic : explorer (déplacement animé, zoom inchangé) ; la carte est continue — les domaines voisins se découvrent en la faisant glisser.
+          </p>
         )
       ) : (
         <ul className="space-y-3" data-testid="map-chrono-list">
@@ -238,7 +186,11 @@ export default function AtlasPanneau({
     </div>
   );
 
+  // Le panneau ne s'ouvre QUE sur sélection ou liste personnelle (règle PO : jamais d'état vide qui obstrue la carte)
+  const peutOuvrir = !!(comparaison || selectedRelation || selected || domaineSel || vueListe);
+
   if (!ouvert) {
+    if (!peutOuvrir) return null;
     return feuillet ? (
       <button
         onClick={() => { setOnglet("detail"); setOuvert(true); }}
@@ -253,7 +205,7 @@ export default function AtlasPanneau({
         onClick={() => { setOnglet("detail"); setOuvert(true); }}
         data-testid="panneau-ouvrir-btn"
         title="Ouvrir le panneau Détail / Chronologie"
-        className="glass absolute right-4 top-4 z-10 flex items-center gap-1.5 rounded-xl px-3 py-2 font-code text-[10px] uppercase tracking-[0.15em] text-[#52524F] transition-colors hover:text-[#111110]"
+        className="glass absolute right-4 top-16 z-10 flex items-center gap-1.5 rounded-xl px-3 py-2 font-code text-[10px] uppercase tracking-[0.15em] text-[#52524F] transition-colors hover:text-[#111110]"
       >
         <SidebarSimple size={14} /> Détail
       </button>
@@ -289,7 +241,7 @@ export default function AtlasPanneau({
   }
 
   return (
-    <aside className="glass absolute right-4 top-4 z-10 flex max-h-[calc(100%-6rem)] w-72 flex-col overflow-hidden rounded-xl xl:w-80" data-testid="map-side-panel">
+    <aside className="glass absolute right-4 top-16 z-10 flex max-h-[calc(100%-9rem)] w-72 flex-col overflow-hidden rounded-xl xl:w-80" data-testid="map-side-panel">
       {entete}
       {contenu}
     </aside>

@@ -16,7 +16,10 @@ export function choixCotes(cs, ct) {
 
 export function pointPort(c, cote, marge = 26) {
   const [vx, vy] = VECTEURS[cote];
-  return { x: c.x + vx * marge, y: c.y + vy * marge };
+  // Le bas demande une marge plus grande : le port doit se situer SOUS l'App ID,
+  // pas au niveau de l'avatar (sinon l'arête traverse l'étiquette)
+  const m = cote === "b" ? (c.margeBas ?? marge) : marge;
+  return { x: c.x + vx * m, y: c.y + vy * m };
 }
 
 const avancer = (p, cote, d) => ({ x: p.x + VECTEURS[cote][0] * d, y: p.y + VECTEURS[cote][1] * d });

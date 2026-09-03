@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ReactFlow, Background, BackgroundVariant, Controls, ControlButton, MiniMap, SelectionMode, ViewportPortal } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { X, Sparkle, CornersOut, MagnifyingGlass, Stack } from "@phosphor-icons/react";
+import { X, Sparkle, CornersOut, MagnifyingGlass } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useMesh } from "@/lib/mesh";
@@ -12,6 +12,7 @@ import TwinNode from "@/components/map/TwinNode";
 import RegionNode from "@/components/map/RegionNode";
 import AreteOrthogonale from "@/components/map/AreteOrthogonale";
 import AtlasControle from "@/components/map/AtlasControle";
+import AtlasHub from "@/components/map/AtlasHub";
 import AtlasToolbar from "@/components/map/AtlasToolbar";
 import AtlasLegende from "@/components/map/AtlasLegende";
 import AtlasPanneau from "@/components/map/AtlasPanneau";
@@ -73,7 +74,6 @@ export default function Atlas() {
   // Couches cartographiques étendues (façon catégories Google Maps) : ne déplacent jamais les jumeaux,
   // elles modifient uniquement la visibilité et l'importance des éléments
   const [couchesCarte, setCouchesCarte] = useState({ situations: false, capacites: false, transformations: false });
-  const [couchesMenuOuvert, setCouchesMenuOuvert] = useState(false);
   // Navigation personnelle : liste ouverte dans le panneau contextuel (favoris/récents/investigations/situations)
   const [vueListe, setVueListe] = useState(null);
   const [favorisIds, setFavorisIds] = useState(() => favoris());
@@ -93,13 +93,6 @@ export default function Atlas() {
   const estTactile = useMedia("(pointer: coarse)");
   const [composerOuvert, setComposerOuvert] = useState(false);
   const [rechercheMobileOuverte, setRechercheMobileOuverte] = useState(false);
-  // Mode immersif plein écran (tablette/mobile) : masque totalement sidebar et topbar
-  const [immersif, setImmersif] = useState(false);
-  useEffect(() => {
-    document.body.classList.toggle("atlas-immersif", immersif && estTablette);
-    return () => document.body.classList.remove("atlas-immersif");
-  }, [immersif, estTablette]);
-  useEffect(() => { if (!estTablette) setImmersif(false); }, [estTablette]);
 
   const centreMonde = useRef(null); // point monde au centre du viewport (conservation caméra)
   const [fantome, setFantome] = useState(null); // position de départ du robot pendant le drag
@@ -457,6 +450,22 @@ export default function Atlas() {
       .filter(Boolean);
     return placerLabels(candidats);
   }, [nodes, zoomNiveau, regionSurvolee, domaineSel, couchesCarte.capacites]);
+
+  // P2 — Élégance contextuelle : à l'ouverture du panneau contextuel, la carte glisse
+  // doucement vers la gauche pour dégager l'espace (pan pur, zoom strictement constant)
+  const panneauOuvert = !!(comparaison || selectedRelation || selected || domaineSel || vueListe);
+  const prevPanneauOuvert = useRef(false);
+  useEffect(() => {
+    if (estTablette) { prevPanneauOuvert.current = panneauOuvert; return; }
+    const vp = rfRef.current?.getViewport?.();
+    if (!vp) { prevPanneauOuvert.current = panneauOuvert; return; }
+    if (panneauOuvert && !prevPanneauOuvert.current) {
+      rfRef.current.setViewport({ x: vp.x - 170, y: vp.y, zoom: vp.zoom }, { duration: 400 });
+    } else if (!panneauOuvert && prevPanneauOuvert.current) {
+      rfRef.current.setViewport({ x: vp.x + 170, y: vp.y, zoom: vp.zoom }, { duration: 400 });
+    }
+    prevPanneauOuvert.current = panneauOuvert;
+  }, [panneauOuvert, estTablette]);
 
   // Routage final : nouveau snapshot géométrique → Web Worker libavoid
   // (jamais pendant le drag, jamais pendant le pan/zoom — la signature géométrique est stable)
@@ -1076,80 +1085,9 @@ export default function Atlas() {
         </defs>
       </svg>
 
-      {/* Couches — remplacent les catégories Google Maps : elles modifient l'importance des éléments,
-          jamais leur position. Sur petit écran, un bouton « Couches » ouvre les options secondaires. */}
-      <div className={`pointer-events-none absolute left-14 z-20 flex items-start justify-between gap-3 transition-all sm:left-32 ${estTablette ? "right-3 top-16" : `top-3 ${selected || selectedRelation || domaineSel || vueListe ? "right-[400px]" : "right-24"}`}`}>
-        {estTablette ? (
-          <div className="pointer-events-auto relative">
-            <button
-              onClick={() => setCouchesMenuOuvert((o) => !o)}
-              data-testid="couches-btn"
-              className="glass flex items-center gap-1.5 rounded-xl px-3 py-2 font-code text-[10px] text-[#52524F] transition-colors hover:text-[#111110]"
-            >
-              <Stack size={13} /> Couches
-            </button>
-            {couchesMenuOuvert && (
-              <div className="glass absolute left-0 top-11 z-30 w-60 rounded-xl p-1.5" data-testid="couches-menu">
-                {[
-                  ["bcm", "BCM déclaré", "rgba(17,17,16,0.45)", "solid", couchesRel, setCouchesRel, "couche-rel"],
-                  ["realite", "Réalité découverte", "#0E7490", "solid", couchesRel, setCouchesRel, "couche-rel"],
-                  ["ecarts", "Écarts", "#D97706", "dashed", couchesRel, setCouchesRel, "couche-rel"],
-                  ["situations", "Situations", "#6D28D9", "dot", couchesCarte, setCouchesCarte, "couche-carte"],
-                  ["capacites", "Capacités", "#0369A1", "dot", couchesCarte, setCouchesCarte, "couche-carte"],
-                  ["transformations", "Transformations", "#B45309", "dot", couchesCarte, setCouchesCarte, "couche-carte"],
-                ].map(([id, label, coul, st, etat, setEtat, prefix]) => (
-                  <button
-                    key={id}
-                    onClick={() => setEtat((c) => ({ ...c, [id]: !c[id] }))}
-                    data-testid={`${prefix}-${id}`}
-                    className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 font-code text-[10px] transition-colors hover:bg-[#F0F0EE] ${etat[id] ? "text-[#111110]" : "text-[#71716D] opacity-60"}`}
-                  >
-                    {st === "dot"
-                      ? <span className="h-2 w-2 rounded-full" style={{ backgroundColor: coul }} />
-                      : <span className="inline-block w-5 border-t-2" style={{ borderColor: coul, borderTopStyle: st }} />}
-                    {label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="glass pointer-events-auto flex items-center gap-1 rounded-xl p-1" data-testid="couches-relations">
-            {[
-              ["bcm", "BCM déclaré", "rgba(17,17,16,0.45)", "solid"],
-              ["realite", "Réalité découverte", "#0E7490", "solid"],
-              ["ecarts", "Écarts", "#D97706", "dashed"],
-            ].map(([id, label, coul, st]) => (
-              <button
-                key={id}
-                onClick={() => setCouchesRel((c) => ({ ...c, [id]: !c[id] }))}
-                data-testid={`couche-rel-${id}`}
-                title={label}
-                className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-code text-[10px] transition-colors ${couchesRel[id] ? "bg-white text-[#111110] shadow-sm" : "text-[#71716D] opacity-50"}`}
-              >
-                <span className="inline-block w-5 border-t-2" style={{ borderColor: coul, borderTopStyle: st }} />
-                {label}
-              </button>
-            ))}
-            <span className="mx-0.5 h-4 w-px bg-[#E5E5E3]" />
-            {[
-              ["situations", "Situations", "#6D28D9"],
-              ["capacites", "Capacités", "#0369A1"],
-              ["transformations", "Transformations", "#B45309"],
-            ].map(([id, label, coul]) => (
-              <button
-                key={id}
-                onClick={() => setCouchesCarte((c) => ({ ...c, [id]: !c[id] }))}
-                data-testid={`couche-carte-${id}`}
-                title={label}
-                className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-code text-[10px] transition-colors ${couchesCarte[id] ? "bg-white text-[#111110] shadow-sm" : "text-[#71716D] opacity-50"}`}
-              >
-                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: coul }} />
-                {label}
-              </button>
-            ))}
-          </div>
-        )}
+      {/* Recherche — îlot flottant haut-centre (desktop) ; bouton puis champ (mobile).
+          Les couches vivent désormais uniquement dans le panneau « Calques » (un seul point d'entrée). */}
+      <div className={`pointer-events-none absolute z-20 ${estTablette ? "right-3 top-16" : "left-1/2 top-3 -translate-x-1/2"}`}>
         <div className="pointer-events-auto relative">
           {estMobile && !rechercheMobileOuverte ? (
             // Mobile : la recherche s'ouvre à la demande (bouton), puis ramène vers le résultat
@@ -1173,7 +1111,7 @@ export default function Atlas() {
                 }}
                 placeholder="Rechercher un jumeau, domaine, flux…"
                 data-testid="atlas-recherche"
-                className={`${estMobile ? "w-[44vw]" : "w-60"} bg-transparent text-xs text-[#111110] placeholder:text-[#71716D] focus:outline-none`}
+                className={`${estMobile ? "w-[44vw]" : "w-72"} bg-transparent text-xs text-[#111110] placeholder:text-[#71716D] focus:outline-none`}
               />
               {estMobile && (
                 <button onClick={() => { setRechercheMobileOuverte(false); setRecherche(""); }} data-testid="btn-recherche-fermer" className="text-[#71716D]"><X size={13} /></button>
@@ -1181,7 +1119,7 @@ export default function Atlas() {
             </div>
           )}
           {resultatsRecherche.length > 0 && (
-            <div className="glass absolute right-0 top-11 z-30 w-72 rounded-xl p-1.5" data-testid="atlas-recherche-resultats">
+            <div className={`glass absolute top-11 z-30 w-72 rounded-xl p-1.5 ${estTablette ? "right-0" : "left-1/2 -translate-x-1/2"}`} data-testid="atlas-recherche-resultats">
               {resultatsRecherche.map((r) => (
                 <button
                   key={`${r.type}-${r.id}`}
@@ -1200,9 +1138,9 @@ export default function Atlas() {
 
       {/* Panneau flottant du jumeau — survol (aperçu) ou épinglé au clic ; desktop uniquement
           (sur tablette/mobile, la bottom sheet porte le détail — jamais de double affichage) */}
-      {!estTablette && jumeauSurvole && statsJumeau && (
+      {!estTablette && jumeauSurvole && statsJumeau && zoomNiveau > 1 && (
         <div
-          className={`absolute left-4 top-20 z-20 w-64 rounded-2xl border border-[#E5E5E3] bg-white p-4 shadow-lg ${epingle ? "" : "pointer-events-none"}`}
+          className={`absolute left-4 top-28 z-20 w-64 rounded-2xl border border-[#E5E5E3] bg-white p-4 shadow-lg ${epingle ? "" : "pointer-events-none"}`}
           data-testid="panneau-jumeau-flottant"
         >
           <div className="flex items-center gap-3">
@@ -1257,12 +1195,15 @@ export default function Atlas() {
         </div>
       )}
 
+      <AtlasHub />
       <AtlasControle
         mesh={mesh} focus={focus}
         modeTemps={modeTemps} setModeTemps={(m) => { setModeTemps(m); if (m === "direct" || m === "pause") { setReplaying(false); setDateRef(null); } }}
         dateRef={dateRef} setDateRef={setDateRef}
         replaying={replaying} onRejouer={() => setReplaying(true)}
         couches={couches} setCouches={setCouches}
+        couchesRel={couchesRel} setCouchesRel={setCouchesRel}
+        couchesCarte={couchesCarte} setCouchesCarte={setCouchesCarte}
         rechargerVues={rechargerVues}
       />
 
@@ -1457,18 +1398,6 @@ export default function Atlas() {
         </button>
       )}
 
-      {/* Tablette/mobile : mode immersif plein écran (masque sidebar et topbar) */}
-      {estTablette && (
-        <button
-          onClick={() => setImmersif((i) => !i)}
-          data-testid="btn-immersif"
-          title={immersif ? "Quitter le plein écran" : "Atlas en plein écran"}
-          className="glass absolute bottom-[8.5rem] right-3 z-10 rounded-full px-3 py-2.5 font-code text-[10px] uppercase tracking-[0.12em] text-[#52524F] transition-colors hover:text-[#111110]"
-        >
-          {immersif ? "Quitter" : "Plein écran"}
-        </button>
-      )}
-
       <AtlasPanneau
         onglet={onglet} setOnglet={setOnglet}
         comparaison={comparaison} selectedRelation={selectedRelation}
@@ -1482,6 +1411,7 @@ export default function Atlas() {
         onChoisirJumeau={centrerSurJumeau}
         onChoisirSituation={(id) => majUrl({ situation: id })}
         onRelancerRecherche={(t) => { setRecherche(t); if (estMobile) setRechercheMobileOuverte(true); }}
+        onFermer={() => { setSelected(null); setSelectedRelation(null); setDomaineSel(null); setComparaison(null); setVueListe(null); majUrl({ sel: null, domaine: null }); }}
       />
 
       {/* Composer Flore — flottant et repliable (jamais un pied de page) :

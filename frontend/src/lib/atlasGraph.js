@@ -180,11 +180,12 @@ function clusteriser(twins, posDe, zoomNiveau) {
   return { clusters: {}, groupes: [] };
 }
 
-// Centre de l'avatar (ou de la pastille) selon la variante de nœud
+// Centre de l'avatar (ou de la pastille) selon la variante de nœud.
+// margeBas : le port du bas se place SOUS l'étiquette App ID (jamais à travers).
 function ancreJumeau(j, pos) {
   if (j?.porte) return { x: pos.x + 30, y: pos.y + 8, marge: 12 };
-  if (j?.anonyme) return { x: pos.x + 30, y: pos.y + 10, marge: 12 };
-  return { x: pos.x + 32, y: pos.y + 26, marge: 28 };
+  if (j?.anonyme) return { x: pos.x + 30, y: pos.y + 10, marge: 12, margeBas: 46 };
+  return { x: pos.x + 32, y: pos.y + 26, marge: 28, margeBas: 50 };
 }
 
 // Obstacles = rectangles des robots (avatar + App ID + dégagement), extrémités exclues — routeur maison

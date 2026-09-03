@@ -1,5 +1,16 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v43, revue product owner UX/UI de l'Atlas)
+Suite à la revue d'expert (`/app/design_guidelines.json`), identité Méridian conservée (teal #0E7490, Space Grotesk).
+- **P0 — Routage resserré** : `shapeBufferDistance` libavoid 16→6 px. Le buffer trop large fermait les corridors entre rangées de jumeaux (séparation 105 px) et forçait des détours rectangulaires géants qui « superposaient » visuellement les domaines. Fix provisoire aussi : `margeBas` (50 px) pour que le routeur maison attache les ports SOUS l'App ID.
+- **P0 — Membranes** : diagnostic hors-ligne confirmé (aucune bbox de domaine ne se chevauche avec marge 50) ; l'artefact rectangle vu à l'écran était le détour d'arêtes, résolu par le buffer.
+- **P1 — Chrome en îlots flottants** : sidebar/topbar globales retirées sur `/atlas` (Layout détecte la route). Nouveau `AtlasHub` (menu Méridian flottant haut-gauche : nav, Nouveau travail, Parcours guidé, Admin). Topbar en îlot glass haut-droite (périmètre, à-traiter, notifications, persona — compacte).
+- **P1 — Calques unifié** : la rangée de 6 puces est supprimée ; tout vit dans le panneau « Calques » (relations BCM/Réalité/Écarts + cartographiques Situations/Capacités/Transformations + Temps + Dynamiques). Recherche en îlot haut-centre.
+- **P1 — Panneau droit sur sélection uniquement** : plus de bouton Détail à vide ni d'état vide ; la fermeture (X) purge la sélection (`onFermer`) et ramène la carte. Listes personnelles via la barre d'outils gauche.
+- **P2 — Pan fluide** : à l'ouverture du panneau, la carte glisse de 170 px (zoom strictement constant) et revient à la fermeture (vérifié : transform identique au pixel près).
+- Mode immersif retiré (devenu redondant avec le plein écran par défaut).
+- Tests : **iteration_45 → 92 %** (12/13) + fix HIGH du pan retour auto-vérifié via Playwright local. Routage : 0 arête à emprise > 400×300.
+
 ## Implémenté (06/2026 — v42, grammaire Google Maps appliquée à l'Atlas)
 Spec utilisateur « Google Maps → Méridian » : 6 chantiers livrés dans l'ordre validé.
 - **a. Niveau 4 « Composants & preuves »** (zoom > 1.9) : carte de détail sous/au-dessus du robot — 6 icônes de sources (code, BDD, observabilité, incidents, documentation, événements ; vert prête, ambre en alerte, gris absente) + 5 jauges de strates (I/C/R/T/M avec %). Placement **directionnel** arbitré (bas d'abord, haut ensuite) : 13 cartes strictement propres sur 38 jumeaux.

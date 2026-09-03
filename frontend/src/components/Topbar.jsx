@@ -8,7 +8,8 @@ import { useMesh } from "@/lib/mesh";
 const TYPES_NOTIF = { mention: "#3730A3", assignation: "#B45309", a_revoir: "#B91C1C" };
 
 // En-tête contextuel : espace actif · état du Mesh · sollicitations · identité
-export default function Topbar() {
+// Sur l'Atlas (flottante), devient un îlot glass en haut à droite — la carte domine
+export default function Topbar({ flottante = false }) {
   const { personas, persona, espaces, vues, cible, info, changerPersona, changerCible } = usePerimetre();
   const { mesh } = useMesh();
   const navigate = useNavigate();
@@ -52,7 +53,14 @@ export default function Topbar() {
   };
 
   return (
-    <header className="flex h-12 shrink-0 items-center gap-3 border-b border-[#E5E5E3] bg-white px-4" data-testid="topbar">
+    <header
+      className={
+        flottante
+          ? "glass fixed right-3 top-3 z-40 flex h-11 items-center gap-2 rounded-xl px-2.5"
+          : "flex h-12 shrink-0 items-center gap-3 border-b border-[#E5E5E3] bg-white px-4"
+      }
+      data-testid="topbar"
+    >
       {/* Espace actif */}
       <div className="flex min-w-0 items-center gap-2">
         <select
@@ -60,7 +68,7 @@ export default function Topbar() {
           onChange={(e) => changerCible(e.target.value)}
           data-testid="selecteur-perimetre"
           title="Équipe / espace actif"
-          className="h-8 max-w-44 truncate rounded-md border border-[#E5E5E3] bg-white px-2 text-xs font-semibold text-[#111110] focus:border-[#3730A3]/60 focus:outline-none"
+          className={`h-8 truncate rounded-md border border-[#E5E5E3] bg-white px-2 text-xs font-semibold text-[#111110] focus:border-[#3730A3]/60 focus:outline-none ${flottante ? "max-w-32" : "max-w-44"}`}
         >
           <optgroup label="Espaces">
             {espaces.map((e) => (
@@ -75,7 +83,7 @@ export default function Topbar() {
             </optgroup>
           )}
         </select>
-        {info && (
+        {info && !flottante && (
           <span
             className="hidden items-center gap-1.5 rounded border px-2 py-1 font-code text-[9px] uppercase tracking-wider xl:inline-flex"
             style={
@@ -95,10 +103,12 @@ export default function Topbar() {
 
       {/* État du Mesh + sollicitations + identité */}
       <div className="flex shrink-0 items-center gap-2.5">
-        <span className="hidden items-center gap-1.5 font-code text-[10px] uppercase tracking-[0.15em] text-[#52524F] lg:flex" data-testid="mesh-status">
-          <span className="pulse-soft h-1.5 w-1.5 rounded-full bg-[#047857]" />
-          Mesh vivant · {actifs} jumeaux
-        </span>
+        {!flottante && (
+          <span className="hidden items-center gap-1.5 font-code text-[10px] uppercase tracking-[0.15em] text-[#52524F] lg:flex" data-testid="mesh-status">
+            <span className="pulse-soft h-1.5 w-1.5 rounded-full bg-[#047857]" />
+            Mesh vivant · {actifs} jumeaux
+          </span>
+        )}
 
         <button
           onClick={() => navigate("/actualites?vue=a_traiter")}
@@ -158,14 +168,14 @@ export default function Topbar() {
         </div>
 
         {/* Identité */}
-        <div className="flex items-center gap-1.5 border-l border-[#E5E5E3] pl-2.5">
+        <div className={`items-center gap-1.5 border-l border-[#E5E5E3] pl-2.5 ${flottante ? "hidden sm:flex" : "flex"}`}>
           <Users size={14} className="text-[#71716D]" />
           <select
             value={persona}
             onChange={(e) => changerPersona(e.target.value)}
             data-testid="selecteur-persona"
             title="Profil actif"
-            className="h-8 max-w-40 rounded-md border border-[#E5E5E3] bg-white px-2 text-xs text-[#3F3F3C] focus:outline-none"
+            className={`h-8 rounded-md border border-[#E5E5E3] bg-white px-2 text-xs text-[#3F3F3C] focus:outline-none ${flottante ? "max-w-28" : "max-w-40"}`}
           >
             {personas.map((p) => (
               <option key={p.id} value={p.id} label={`${p.nom} — ${p.role}`} />

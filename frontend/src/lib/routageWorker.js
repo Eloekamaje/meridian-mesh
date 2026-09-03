@@ -40,7 +40,9 @@ self.onmessage = async (e) => {
     // croisement (140) >> voie partagée (80) > proximité obstacle (marge 16) > coude (24) > longueur
     router.setRoutingParameter(Avoid.RoutingParameter.crossingPenalty, 140);
     router.setRoutingParameter(Avoid.RoutingParameter.fixedSharedPathPenalty, 80);
-    router.setRoutingParameter(Avoid.RoutingParameter.shapeBufferDistance, 16);
+    // Buffer réduit (6 px) : un buffer trop large ferme les corridors entre rangées de
+    // jumeaux (séparation 105 px) et force des détours rectangulaires autour des grappes
+    router.setRoutingParameter(Avoid.RoutingParameter.shapeBufferDistance, 6);
     router.setRoutingParameter(Avoid.RoutingParameter.anglePenalty, 24);
     router.setRoutingParameter(Avoid.RoutingParameter.segmentPenalty, 10);
     router.setRoutingParameter(Avoid.RoutingParameter.idealNudgingDistance, 6);

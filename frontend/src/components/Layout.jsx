@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import { House, Newspaper, Compass, Briefcase, CirclesThree, GearSix, Plus, SidebarSimple, Play, Users } from "@phosphor-icons/react";
 import api from "@/lib/api";
 import { usePerimetre } from "@/lib/perimetre";
@@ -28,11 +28,14 @@ export default function Layout() {
   }, [version]);
 
   const adminAutorise = espaces.some((e) => e.global);
+  // Atlas = cartographie plein écran : la sidebar globale se retire, la topbar devient un îlot flottant
+  const location = useLocation();
+  const surAtlas = location.pathname === "/atlas";
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-[#F7F7F6] text-foreground" data-testid="layout">
-      {/* Barre latérale — mémoire et grands espaces */}
-      <aside className={`flex shrink-0 flex-col border-r border-[#E5E5E3] bg-white transition-all duration-200 ${repliee ? "w-14" : "w-60"}`} data-testid="sidebar">
+      {/* Barre latérale — mémoire et grands espaces (retirée sur l'Atlas : le hub flottant prend le relais) */}
+      <aside className={surAtlas ? "hidden" : `flex shrink-0 flex-col border-r border-[#E5E5E3] bg-white transition-all duration-200 ${repliee ? "w-14" : "w-60"}`} data-testid="sidebar">
         <div className="flex h-12 items-center gap-2.5 border-b border-[#E5E5E3] px-3.5">
           <span className="pulse-soft h-2 w-2 shrink-0 rounded-full bg-[#3730A3]" />
           {!repliee && <span className="font-display text-sm font-black tracking-[0.18em] text-[#111110]">MÉRIDIAN</span>}
@@ -107,7 +110,7 @@ export default function Layout() {
 
       {/* Colonne principale */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar />
+        <Topbar flottante={surAtlas} />
         <main className="relative flex-1 overflow-hidden">
           <Outlet />
         </main>

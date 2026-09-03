@@ -1,0 +1,50 @@
+{
+  "summary": "Tests frontend de la refonte UX chrome flottant + calques unifiés + panneau sur sélection. 12/13 scénarios OK. 1 bug HIGH : la fermeture du panneau via panneau-fermer-btn ne fait PAS revenir la carte (le pan +170px inverse ne se déclenche jamais). Le pan -170 à l'ouverture fonctionne parfaitement (delta X mesuré = -170.00). Chrome flottant, hub, calques, situations layer, niveau 4 (13 cartes / 0 overlap), routage (0 détour > 400×300), mobile — tous conformes.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "AtlasPanneau + Atlas.jsx (couplage state)",
+        "issue": "Fermer le panneau via panneau-fermer-btn ne rétablit pas la position de la carte : le pan inverse (+170px) ne se déclenche jamais. Mesuré : tf avant clic twin = translate(255.669px,...), après clic = translate(85.669px,...) [delta -170 ✓], après fermeture = translate(85.669px,...) [delta +0 ✗ ; attendu +170]. Le panneau DOM disparaît bien (map-side-panel: False) mais l'état parent `selected` reste truthy → `panneauOuvert` reste true → l'effet inverse ne s'exécute pas.",
+        "selector": "[data-testid=\"panneau-fermer-btn\"]",
+        "priority": "HIGH"
+      },
+      {
+        "component": "AtlasControle — Calques cartographiques (Capacités)",
+        "issue": "L'épinglage des titres de domaines + agrégats au niveau 2 fonctionne visuellement (« 7 jumeaux · 5 flux · 1 écart » visible dans le screenshot) mais AUCUN data-testid dédié n'est exposé sur les éléments épinglés. Testabilité automatique impossible pour cette feature. Ajouter `data-testid=\"domaine-titre-<label>\"` et `data-testid=\"domaine-agregat-<label>\"` sur les nœuds region correspondants.",
+        "selector": "aucun (manque data-testid)",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Fermeture panneau desktop → retour carte",
+        "issue": "Le pan de la carte n'est pas synchronisé avec la fermeture DOM du panneau. Voir bug HIGH ci-dessus.",
+        "affected_selectors": ["[data-testid=\"panneau-fermer-btn\"]", ".react-flow__viewport"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_45.json"],
+  "action_items": [
+    "FIX HIGH : dans AtlasPanneau.jsx l.132, le clic sur panneau-fermer-btn appelle uniquement `setOuvert(false)` (état local). Il doit AUSSI signaler au parent Atlas.jsx de purger la sélection (selected/selectedRelation/domaineSel/vueListe) OU faire dépendre `panneauOuvert` de l'état local `ouvert` d'AtlasPanneau. Suggestion : passer une prop `onFermer` depuis Atlas.jsx qui exécute `setSelected(null); setSelectedRelation(null); setDomaineSel(null); setVueListe(null); setComparaison(null);` puis mettre `onClick={() => { setOuvert(false); onFermer?.(); }}` sur le X.",
+    "MINEUR : ajouter data-testid=\"domaine-titre-<label>\" et data-testid=\"domaine-agregat-<label>\" pour permettre le test automatisé du calque « Capacités »."
+  ],
+  "critical_code_review_comments": [
+    "AtlasPanneau ↔ Atlas.jsx : double source of truth pour l'état ouvert/fermé du panneau (state local `ouvert` + state dérivé `panneauOuvert` calculé depuis la sélection). C'est la source directe du bug de pan-back. Consolider en une seule source.",
+    "Atlas.jsx l.456-468 : l'effet du pan +/- 170px se déclenche sur transition de `panneauOuvert` uniquement. Comme la fermeture via le X ne modifie pas cette valeur, l'effet ne se rejoue pas. Solution : brancher la même logique sur `ouvertEffectif` (ex. `panneauOuvert && ouvertLocal`).",
+    "TwinDetail : le bouton favori est rendu avec data-testid=\"twin-favori-btn\" (confirmé). OK.",
+    "onPaneClick (Atlas.jsx l.937-983) : clic sur zone vide → purge complète de la sélection. ✓ Fonctionnellement correct."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "N/A — frontend only",
+    "frontend": "92% — 12/13 scénarios validés. Seul écart : le pan inverse à la fermeture du panneau ne se déclenche pas (bug HIGH). Toutes les autres fonctionnalités du refactor UX sont opérationnelles : chrome flottant, hub, sidebar retirée sur /atlas, topbar top-right (x=1448, w=460), /travaux conserve son layout (sidebar 240 + topbar 1680), calques unifiés (couche-rel-bcm/realite/ecarts + couche-carte-situations/capacites/transformations), pas de chip row, controle-details replié par défaut, no-selection → no-panel/no-button, twin click → panel + TwinDetail + twin-favori-btn + pan -170, nav-favoris → panneau-liste-favoris, nav-situations → panneau-liste-situations, situations layer → 9 twin-situations-*, niveau 4 → 13 cartes / 0 overlap, routage → 0 arête bbox > 400×300, mobile 390×844 → hub + topbar + btn-recherche présents."
+  },
+  "test_credentials": "Persona architecte par défaut (aucune auth).",
+  "seed_data_creation": "Aucune.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Pour reproduire le bug HIGH : (1) /atlas avec localStorage.clear() ; (2) attendre 2.5s ; (3) noter tf initial via `document.querySelector('.react-flow__viewport').style.transform` (typiquement translate(255.669px, 59.79px) scale(1.035)) ; (4) cliquer sur un [data-testid^=\"twin-node-\"] → tf devient translate(85.669px, ...) [-170 ✓] et [data-testid=\"map-side-panel\"] apparaît ; (5) cliquer [data-testid=\"panneau-fermer-btn\"] → map-side-panel disparaît mais tf RESTE à 85.669px (au lieu de revenir à 255.669). Utiliser mouse.wheel(0,-500)×10 sur .react-flow__pane pour atteindre le niveau 4 (scale 2.6). Bordure de test panneau-jumeau-flottant top-left (x-4 top-28) : peut chevaucher AtlasControle quand un twin est sélectionné.",
+  "rca of the issue": "AtlasPanneau.jsx maintient un état local `ouvert` géré par le clic sur `panneau-fermer-btn` (l.132) qui appelle uniquement `setOuvert(false)`, sans propager au parent. Atlas.jsx (l.456) calcule `panneauOuvert = !!(comparaison || selectedRelation || selected || domaineSel || vueListe)` — dérivé de la sélection uniquement. L'effet du pan (l.462-467) se déclenche sur transition de `panneauOuvert`. Comme la sélection persiste après le clic X, `panneauOuvert` reste `true` et l'effet inverse n'est jamais exécuté. Résultat : le panneau DOM disparaît mais la carte reste décalée de -170px, contrairement à la spec (« fermer le panneau → la carte revient »). Correctif proposé : passer un callback `onFermer` depuis Atlas.jsx à AtlasPanneau qui purge les états de sélection lorsqu'on clique le X ; OU réintroduire une source de vérité unique en remontant `ouvert` dans le parent."
+}

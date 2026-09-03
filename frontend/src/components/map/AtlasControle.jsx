@@ -18,6 +18,7 @@ export default function AtlasControle({
   mesh, focus,
   modeTemps, setModeTemps, dateRef, setDateRef, replaying, onRejouer,
   couches, setCouches, rechargerVues,
+  couchesRel, setCouchesRel, couchesCarte, setCouchesCarte,
 }) {
   const [nomVue, setNomVue] = useState("");
   // Fermé par défaut : les réglages se déplient uniquement à la demande
@@ -55,7 +56,7 @@ export default function AtlasControle({
   };
 
   return (
-    <div className="glass absolute left-4 top-4 z-10 rounded-xl p-2" data-testid="map-mode-switcher">
+    <div className="glass absolute left-4 top-16 z-10 rounded-xl p-2" data-testid="map-mode-switcher">
       <div className="flex items-center gap-1">
         <button
           onClick={() => setDeplie(!deplie)}
@@ -143,6 +144,47 @@ export default function AtlasControle({
                 </span>
               </div>
             )}
+          </div>
+
+          {/* Couches de la carte — remplacent les catégories Google Maps :
+              modifient visibilité et importance, jamais la position des jumeaux */}
+          <div className="mt-2.5 border-t border-[#E5E5E3] pt-2.5">
+            <div className="px-1 font-code text-[9px] uppercase tracking-[0.2em] text-[#71716D]">Couches de relations</div>
+            <div className="mt-1.5 space-y-0.5">
+              {[
+                ["bcm", "BCM déclaré", "rgba(17,17,16,0.45)", "solid"],
+                ["realite", "Réalité découverte", "#0E7490", "solid"],
+                ["ecarts", "Écarts", "#D97706", "dashed"],
+              ].map(([id, label, coul, st]) => (
+                <button
+                  key={id}
+                  onClick={() => setCouchesRel((c) => ({ ...c, [id]: !c[id] }))}
+                  data-testid={`couche-rel-${id}`}
+                  className={`flex w-full items-center gap-2 rounded px-1 py-1 text-left transition-colors hover:bg-[#F0F0EE] ${couchesRel[id] ? "" : "opacity-45"}`}
+                >
+                  <span className="inline-block w-5 border-t-2" style={{ borderColor: coul, borderTopStyle: st }} />
+                  <span className="text-[11px] text-[#52524F]">{label}</span>
+                </button>
+              ))}
+            </div>
+            <div className="mt-2 px-1 font-code text-[9px] uppercase tracking-[0.2em] text-[#71716D]">Couches cartographiques</div>
+            <div className="mt-1.5 space-y-0.5">
+              {[
+                ["situations", "Situations", "#6D28D9"],
+                ["capacites", "Capacités", "#0369A1"],
+                ["transformations", "Transformations", "#B45309"],
+              ].map(([id, label, coul]) => (
+                <button
+                  key={id}
+                  onClick={() => setCouchesCarte((c) => ({ ...c, [id]: !c[id] }))}
+                  data-testid={`couche-carte-${id}`}
+                  className={`flex w-full items-center gap-2 rounded px-1 py-1 text-left transition-colors hover:bg-[#F0F0EE] ${couchesCarte[id] ? "" : "opacity-45"}`}
+                >
+                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: coul }} />
+                  <span className="text-[11px] text-[#52524F]">{label}</span>
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="mt-2.5 border-t border-[#E5E5E3] pt-2.5">
