@@ -1,7 +1,7 @@
 import { MarkerType } from "@xyflow/react";
 import concaveman from "concaveman";
 import { couleurDomaine } from "@/lib/domaines";
-import { choixCotes, routeStable, detecterCroisements, decalagesParalleles } from "./routeur";
+import { choixCotes, routeStable, detecterCroisements, decalagesParalleles, ancreLabel } from "./routeur";
 
 export const COUCHES = [
   ["operationnelle", "Opérationnelle", "#3730A3"],
@@ -9,7 +9,27 @@ export const COUCHES = [
   ["mesh", "Mesh", "#6D28D9"],
 ];
 
-export const NIVEAUX_ZOOM = { 1: "Capacités", 2: "Domaines", 3: "Applications & flux" };
+export const NIVEAUX_ZOOM = { 1: "Capacités", 2: "Domaines", 3: "Applications & flux", 4: "Composants & preuves" };
+
+// Moteur de priorité des labels (façon Google Maps) : en cas de chevauchement,
+// le label le moins prioritaire disparaît. candidats = [{id, x, y, w, h, priorite}]
+// (coordonnées monde, x/y = CENTRE). obstacles = rectangles déjà occupés
+// (ex. robots + App ID) qu'aucun label ne peut recouvrir — sauf celui de même id
+// (un jumeau ne se masque jamais lui-même). Retourne les ids visibles.
+export function placerLabels(candidats, obstacles = []) {
+  const places = obstacles.map((o) => ({ id: o.id, x0: o.x - o.w / 2, y0: o.y - o.h / 2, x1: o.x + o.w / 2, y1: o.y + o.h / 2 }));
+  const visibles = new Set();
+  const trie = [...candidats].sort((a, b) => b.priorite - a.priorite);
+  for (const c of trie) {
+    const r = { x0: c.x - c.w / 2, y0: c.y - c.h / 2, x1: c.x + c.w / 2, y1: c.y + c.h / 2 };
+    const collision = places.some((p) => p.id !== c.id && r.x0 < p.x1 && r.x1 > p.x0 && r.y0 < p.y1 && r.y1 > p.y0);
+    if (!collision) {
+      places.push({ id: c.id, ...r });
+      visibles.add(c.id);
+    }
+  }
+  return visibles;
+}
 
 // Identifiant numérique court affiché au-dessus du robot (le nom reste hors de la carte)
 export const idNumerique = (id) => {
@@ -164,14 +184,19 @@ function clusteriser(twins, posDe, zoomNiveau) {
 function ancreJumeau(j, pos) {
   if (j?.porte) return { x: pos.x + 30, y: pos.y + 8, marge: 12 };
   if (j?.anonyme) return { x: pos.x + 30, y: pos.y + 10, marge: 12 };
-  return { x: pos.x + 30, y: pos.y + 40, marge: 26 };
+  return { x: pos.x + 32, y: pos.y + 26, marge: 28 };
 }
 
 // Obstacles = rectangles des robots (avatar + App ID + dégagement), extrémités exclues — routeur maison
 function obstaclesDe(ns, exclure) {
   return ns
     .filter((n) => n.type === "twin" && !n.data?.jumeau?.porte && !n.data?.jumeau?.anonyme && !exclure.has(n.id))
-    .map((n) => ({ x0: n.position.x - 16, y0: n.position.y - 8, x1: n.position.x + 76, y1: n.position.y + 84 }));
+    .map((n) => {
+      if (!n.data?.detailVisible) return { x0: n.position.x - 16, y0: n.position.y - 8, x1: n.position.x + 76, y1: n.position.y + 84 };
+      return n.data.detailPosition === "haut"
+        ? { x0: n.position.x + 32 - 80, y0: n.position.y - 111, x1: n.position.x + 32 + 80, y1: n.position.y + 80 }
+        : { x0: n.position.x + 32 - 80, y0: n.position.y - 8, x1: n.position.x + 32 + 80, y1: n.position.y + 182 };
+    });
 }
 
 // Anti-collision déterministe : écarte les jumeaux qui se chevauchent (principe du zéro chevauchement)
@@ -229,9 +254,22 @@ function geometrieNoeud(n) {
   }
 
   const grand = (n.data?.niveau || 2) >= 3;
+
+  // Niveau 4 : la carte « composants & preuves » fait partie de la forme connectable,
+  // en dessous OU au-dessus du robot selon l'arbitrage (detailPosition)
+  if (n.data?.detailVisible) {
+    const haut = n.data.detailPosition === "haut";
+    return {
+      forme: haut
+        ? { id: n.id, x0: pos.x + 32 - 76, y0: pos.y - 107, x1: pos.x + 32 + 76, y1: pos.y + 78 }
+        : { id: n.id, x0: pos.x + 32 - 76, y0: pos.y, x1: pos.x + 32 + 76, y1: pos.y + 178 },
+      obstacles: [],
+    };
+  }
+
   const w = grand ? 56 : 48;
   const x0 = pos.x + (64 - w) / 2;
-  const y0 = pos.y + 16;
+  const y0 = pos.y;
   const lw = 4 * 7 + 10; // largeur de l'App ID (4 chiffres)
 
   // La forme connectable englobe l'avatar ET l'App ID en bas (+ 4px de marge).
@@ -493,6 +531,7 @@ export function construireGraphe({
   posOverrides, compteurs, halo, selection,
   zoomNiveau, relFocus, focusCarte, domDe, statsRegions, temps, zoomFort,
   routesFin, provisoire, tactile,
+  couchesCarte = {}, situationsJumeaux,
 }) {
   if (!mesh) return { nodes: [], edges: [], snapshot: null };
   const implique = situation?.jumeaux || [];
@@ -546,6 +585,36 @@ export function construireGraphe({
   // Zéro chevauchement : calcul des positions finales avant toute construction
   const posSeparees = separerNoeuds(twins, posOverrides);
 
+  // Niveau 4 — Composants & preuves : arbitrage façon Google Maps. La carte tente
+  // d'abord SOUS le robot, puis AU-DESSUS si l'espace est occupé. Les blocs
+  // robot + App ID de tous les jumeaux sont des obstacles pré-placés ; priorité :
+  // sélection > halo > couverture. Collision = position suivante, sinon masquée.
+  let cartesVisibles = null;
+  if (zoomNiveau >= 4) {
+    const prioriteCarte = (j) => (selection.includes(j.id) ? 400 : 0) + (halo === j.id ? 250 : 0) + (j.couverture || 0);
+    const places = twins
+      .filter((j) => !dims.has(j.id))
+      .map((j) => {
+        const p = posSeparees[j.id] || j.position;
+        return { id: j.id, x0: p.x - 1, y0: p.y, x1: p.x + 65, y1: p.y + 68 };
+      });
+    const candidats = twins
+      .filter((j) => !j.anonyme && !dims.has(j.id))
+      .sort((a, b) => prioriteCarte(b) - prioriteCarte(a));
+    cartesVisibles = new Map(); // id → "bas" | "haut"
+    for (const j of candidats) {
+      const p = posSeparees[j.id] || j.position;
+      for (const [position, y0, y1] of [["bas", p.y + 73, p.y + 176], ["haut", p.y - 105, p.y - 3]]) {
+        const r = { id: j.id, x0: p.x + 32 - 76, y0, x1: p.x + 32 + 76, y1 };
+        if (!places.some((q) => q.id !== j.id && r.x0 < q.x1 && r.x1 > q.x0 && r.y0 < q.y1 && r.y1 > q.y0)) {
+          places.push(r);
+          cartesVisibles.set(j.id, position);
+          break;
+        }
+      }
+    }
+  }
+
   let ns = (mesh.regions || []).map((r) => {
     const centres = twins.filter((j) => domDe[j.id] === r.label).map((j) => {
       const p = posSeparees[j.id] || j.position;
@@ -556,7 +625,7 @@ export function construireGraphe({
       id: r.id, type: "region", position: { x: coque.x, y: coque.y },
       initialWidth: coque.w,
       initialHeight: coque.h,
-      data: { ...r, w: coque.w, h: coque.h, path: coque.path, points: coque.points, labelX: coque.labelX, investigations: statsRegions[r.label]?.investigations ?? 0, decouvertes: statsRegions[r.label]?.decouvertes ?? 0, flux: statsRel[r.label]?.flux ?? 0, ecarts: statsRel[r.label]?.ecarts ?? 0, halo: !!halo && domDe[halo] === r.label },
+      data: { ...r, w: coque.w, h: coque.h, path: coque.path, points: coque.points, labelX: coque.labelX, investigations: statsRegions[r.label]?.investigations ?? 0, decouvertes: statsRegions[r.label]?.decouvertes ?? 0, flux: statsRel[r.label]?.flux ?? 0, ecarts: statsRel[r.label]?.ecarts ?? 0, halo: !!halo && domDe[halo] === r.label, capacitesVisibles: !!couchesCarte.capacites },
       draggable: false, selectable: false, zIndex: -10,
     };
   });
@@ -575,7 +644,13 @@ export function construireGraphe({
         initialWidth: 64,
         initialHeight: 78,
         hidden: entreprise && !j.anonyme ? true : entreprise,
-        data: { jumeau: j, dim: dims.has(j.id), halo: halo === j.id, evenements: compteurs[j.id] || 0, etape: null, niveau: zoomNiveau },
+        data: {
+          jumeau: j, dim: dims.has(j.id), halo: halo === j.id, evenements: compteurs[j.id] || 0, etape: null, niveau: zoomNiveau,
+          detailVisible: zoomNiveau >= 4 && !j.anonyme && !!cartesVisibles?.has(j.id),
+          detailPosition: cartesVisibles?.get(j.id) || "bas",
+          dansSituation: !!couchesCarte.situations && !!situationsJumeaux?.has(j.id),
+          enTransformation: !!couchesCarte.transformations && (j.statut === "en construction" || j.statut === "observation"),
+        },
         selected: selection.includes(j.id),
       };
     })
@@ -642,6 +717,23 @@ export function construireGraphe({
     es = fabriqueOrtho(relsMappees, ns, posMain, zoomNiveau, zoomFort, routesFin, provisoire, tactile);
     snapMain = es.snapshot;
     es = es.edges;
+    // Moteur de labels des relations (niveau 3+) : collision → le moins prioritaire disparaît
+    if (zoomNiveau >= 3 && !provisoire) {
+      const candidats = es
+        .filter((e) => e.data?.label && !e.hidden)
+        .map((e) => {
+          const a = ancreLabel(e.data.points);
+          if (!a) return null;
+          return {
+            id: e.id, x: a.x, y: a.y,
+            w: e.data.label.length * 6.8 + 20, h: 18,
+            priorite: (e.data.agregat ? 100 : 0) + (PRIORITES[e.data.etat] ?? 40),
+          };
+        })
+        .filter(Boolean);
+      const vis = placerLabels(candidats);
+      es = es.map((e) => (e.data?.label && !e.hidden && !vis.has(e.id) ? { ...e, data: { ...e.data, labelMasque: true } } : e));
+    }
     if (vueActive?.type === "relations_non_confirmees") {
       es = es.map((e) =>
         e.data?.etat === "confirmee" ? { ...e, animated: false, style: { ...e.style, opacity: 0.1 } } : e

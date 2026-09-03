@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ReactFlow, Background, BackgroundVariant, Controls, ControlButton, MiniMap, SelectionMode, ViewportPortal } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { X, Sparkle, CornersOut, MagnifyingGlass } from "@phosphor-icons/react";
+import { X, Sparkle, CornersOut, MagnifyingGlass, Stack } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useMesh } from "@/lib/mesh";
@@ -20,7 +20,8 @@ import ExpliquerCarte from "@/components/map/ExpliquerCarte";
 import ComposerFlore from "@/components/ComposerFlore";
 import useNavigationAtlas, { dansPolygone } from "@/components/map/useNavigationAtlas";
 import useZoomSemantique from "@/components/map/useZoomSemantique";
-import { NIVEAUX_ZOOM, construireGraphe, statsDuDomaine, idNumerique } from "@/lib/atlasGraph";
+import { NIVEAUX_ZOOM, construireGraphe, statsDuDomaine, idNumerique, placerLabels } from "@/lib/atlasGraph";
+import { favoris, basculerFavori, noterRecent, noterRecherche } from "@/lib/memoire";
 import { useRoutageFinal } from "@/lib/routage";
 
 // Détection du dispositif : le responsive n'agit que sur le chrome, jamais sur le monde
@@ -69,6 +70,14 @@ export default function Atlas() {
   const [relTooltipPos, setRelTooltipPos] = useState(null);
   const [couchesRel, setCouchesRel] = useState({ bcm: true, realite: true, ecarts: true });
   const [recherche, setRecherche] = useState("");
+  // Couches cartographiques étendues (façon catégories Google Maps) : ne déplacent jamais les jumeaux,
+  // elles modifient uniquement la visibilité et l'importance des éléments
+  const [couchesCarte, setCouchesCarte] = useState({ situations: false, capacites: false, transformations: false });
+  const [couchesMenuOuvert, setCouchesMenuOuvert] = useState(false);
+  // Navigation personnelle : liste ouverte dans le panneau contextuel (favoris/récents/investigations/situations)
+  const [vueListe, setVueListe] = useState(null);
+  const [favorisIds, setFavorisIds] = useState(() => favoris());
+  const onBasculerFavori = useCallback((id) => setFavorisIds(basculerFavori(id)), []);
   const carteRef = useRef(null);
   const [amorce, setAmorce] = useState(0);
   const [mesures, setMesures] = useState({}); // dimensions mesurées par React Flow, réinjectées dans le graphe
@@ -205,6 +214,16 @@ export default function Atlas() {
     return stats;
   }, [situations, domDe]);
 
+  // Couche « Situations » : jumeaux impliqués dans une situation non close
+  const situationsJumeaux = useMemo(() => {
+    const s = new Set();
+    situations.forEach((sit) => {
+      if (["ignorée", "classée", "décidée"].includes(sit.statut)) return;
+      (sit.jumeaux || []).forEach((id) => s.add(id));
+    });
+    return s;
+  }, [situations]);
+
   const { domaineActif, majContexte, explorerDomaine, centrerJumeau, ajusterVue, revenirSelection } = useNavigationAtlas({
     mesh, jumeauPar, posOverrides, selection, majUrl,
     setDomaineSel, setOnglet, setSelected, rfRef,
@@ -323,6 +342,9 @@ export default function Atlas() {
 
   const situation = situations.find((s) => s.id === situationParam);
 
+  // Mémoire personnelle : consulter le détail d'un jumeau alimente « Récents »
+  useEffect(() => { if (selected?.id && !selected.anonyme) noterRecent(selected.id); }, [selected?.id]);
+
   // Focus profond : la caméra cadre les jumeaux concernés (situation ou jumeau filtré)
   useEffect(() => {
     const cle = situation?.id || focus || null;
@@ -361,6 +383,7 @@ export default function Atlas() {
       zoomNiveau, relFocus, focusCarte, domDe, statsRegions, temps,
       zoomFort: zoomActuel >= 1.5,
       routesFin, provisoire, tactile: estTactile,
+      couchesCarte, situationsJumeaux,
     });
     // Conserve les dimensions mesurées par React Flow : le graphe est reconstruit à chaque
     // tick de drag — sans cela les nœuds perdent leur mesure et les arêtes disparaissent.
@@ -409,7 +432,31 @@ export default function Atlas() {
     });
     ciblesCoques.current = nouvellesCibles;
     return g;
-  }, [mesh, focus, situation, halo, compteurs, selection, relFocus, zoomNiveau, vueActive, posOverrides, domaineSel, perimetreTravail, domDe, statsRegions, focusCarte, temps, amorce, mesures, regionSurvolee, tickCoques, relSurvolee, selectedRelation, zoomActuel, routesFin, provisoire, estTactile]);
+  }, [mesh, focus, situation, halo, compteurs, selection, relFocus, zoomNiveau, vueActive, posOverrides, domaineSel, perimetreTravail, domDe, statsRegions, focusCarte, temps, amorce, mesures, regionSurvolee, tickCoques, relSurvolee, selectedRelation, zoomActuel, routesFin, provisoire, estTactile, couchesCarte, situationsJumeaux]);
+
+  // Moteur de labels des titres de domaines : sélection > survol > halo > investigations actives ;
+  // collision → le titre le moins prioritaire disparaît (jamais de chevauchement de texte)
+  const titresVisibles = useMemo(() => {
+    const candidats = nodes
+      .filter((n) => n.type === "region")
+      .map((n) => {
+        const d = n.data;
+        const candidat = zoomNiveau === 1 || regionSurvolee?.id === d.id || domaineSel === d.label || couchesCarte.capacites;
+        if (!candidat) return null;
+        const sx = d.w / (d.wCible || d.w);
+        const sy = d.h / (d.hCible || d.h);
+        return {
+          id: d.id,
+          x: n.position.x + (d.labelX ?? d.w / 2) * sx,
+          y: n.position.y + (d.labelY ?? 30) * sy,
+          w: d.label.length * 9 + 26,
+          h: d.macro || couchesCarte.capacites ? 48 : 30,
+          priorite: (domaineSel === d.label ? 400 : 0) + (regionSurvolee?.id === d.id ? 300 : 0) + (d.halo ? 200 : 0) + 100 + (d.investigations || 0) * 10,
+        };
+      })
+      .filter(Boolean);
+    return placerLabels(candidats);
+  }, [nodes, zoomNiveau, regionSurvolee, domaineSel, couchesCarte.capacites]);
 
   // Routage final : nouveau snapshot géométrique → Web Worker libavoid
   // (jamais pendant le drag, jamais pendant le pan/zoom — la signature géométrique est stable)
@@ -832,6 +879,7 @@ export default function Atlas() {
             majUrl({ domaine: label, sel: null });
             setSelected(null);
             setSelectedRelation(null);
+            setVueListe(null);
             setOnglet("detail");
             return;
           }
@@ -851,6 +899,7 @@ export default function Atlas() {
           setSelected(node.data.jumeau);
           setSelectedRelation(null);
           setDomaineSel(null);
+          setVueListe(null);
           setOnglet("detail");
           majUrl({ sel: node.data.jumeau.id, domaine: null });
         }}
@@ -867,6 +916,7 @@ export default function Atlas() {
           if (!rel) return;
           setSelectedRelation(rel);
           setSelected(null);
+          setVueListe(null);
           setOnglet("detail");
         }}
         onEdgeMouseEnter={(e, edge) => {
@@ -919,7 +969,7 @@ export default function Atlas() {
               return;
             }
           }
-          setSelected(null); setSelectedRelation(null); setDomaineSel(null); setSelection([]); setRelFocus(false); setComparaison(null); setAttenteComparaison(false); commanderCarte(null); setEpingle(null);
+          setSelected(null); setSelectedRelation(null); setDomaineSel(null); setSelection([]); setRelFocus(false); setComparaison(null); setAttenteComparaison(false); commanderCarte(null); setEpingle(null); setVueListe(null);
           majUrl({ sel: null, domaine: null, jumeau: null });
         }}
         nodesDraggable={modeEdition}
@@ -955,7 +1005,7 @@ export default function Atlas() {
             const sy = d.h / (d.hCible || d.h);
             const lx = n.position.x + (d.labelX ?? d.w / 2) * sx;
             const ly = n.position.y + (d.labelY ?? 30) * sy;
-            const visible = zoomNiveau === 1 || regionSurvolee?.id === d.id || domaineSel === d.label;
+            const visible = (zoomNiveau === 1 || regionSurvolee?.id === d.id || domaineSel === d.label || couchesCarte.capacites) && titresVisibles.has(d.id);
             return (
               <div
                 key={n.id}
@@ -993,7 +1043,7 @@ export default function Atlas() {
                     </span>
                   )}
                 </div>
-                {d.macro && m && (
+                {(d.macro || (couchesCarte.capacites && visible)) && m && (
                   <div className="mt-1 flex items-center justify-center gap-2 font-code text-[10px] text-[#52524F]" data-testid={`region-macro-${d.id}`}>
                     <span>{m.jumeaux} jumeau{m.jumeaux > 1 ? "x" : ""}</span>
                     <span className="text-[#71716D]">·</span>
@@ -1026,26 +1076,80 @@ export default function Atlas() {
         </defs>
       </svg>
 
-      {/* Sélecteur de couches de relations + recherche */}
-      <div className={`pointer-events-none absolute left-14 top-3 z-10 flex items-start justify-between gap-3 transition-all sm:left-32 ${estTablette ? "right-3" : selected || selectedRelation || domaineSel ? "right-[400px]" : "right-24"}`}>
-        <div className="glass pointer-events-auto flex items-center gap-1 rounded-xl p-1" data-testid="couches-relations">
-          {[
-            ["bcm", "BCM déclaré", "rgba(17,17,16,0.45)", "solid"],
-            ["realite", "Réalité découverte", "#0E7490", "solid"],
-            ["ecarts", "Écarts", "#D97706", "dashed"],
-          ].map(([id, label, coul, st]) => (
+      {/* Couches — remplacent les catégories Google Maps : elles modifient l'importance des éléments,
+          jamais leur position. Sur petit écran, un bouton « Couches » ouvre les options secondaires. */}
+      <div className={`pointer-events-none absolute left-14 z-20 flex items-start justify-between gap-3 transition-all sm:left-32 ${estTablette ? "right-3 top-16" : `top-3 ${selected || selectedRelation || domaineSel || vueListe ? "right-[400px]" : "right-24"}`}`}>
+        {estTablette ? (
+          <div className="pointer-events-auto relative">
             <button
-              key={id}
-              onClick={() => setCouchesRel((c) => ({ ...c, [id]: !c[id] }))}
-              data-testid={`couche-rel-${id}`}
-              title={label}
-              className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-code text-[10px] transition-colors ${couchesRel[id] ? "bg-white text-[#111110] shadow-sm" : "text-[#71716D] opacity-50"}`}
+              onClick={() => setCouchesMenuOuvert((o) => !o)}
+              data-testid="couches-btn"
+              className="glass flex items-center gap-1.5 rounded-xl px-3 py-2 font-code text-[10px] text-[#52524F] transition-colors hover:text-[#111110]"
             >
-              <span className="inline-block w-5 border-t-2" style={{ borderColor: coul, borderTopStyle: st }} />
-              {label}
+              <Stack size={13} /> Couches
             </button>
-          ))}
-        </div>
+            {couchesMenuOuvert && (
+              <div className="glass absolute left-0 top-11 z-30 w-60 rounded-xl p-1.5" data-testid="couches-menu">
+                {[
+                  ["bcm", "BCM déclaré", "rgba(17,17,16,0.45)", "solid", couchesRel, setCouchesRel, "couche-rel"],
+                  ["realite", "Réalité découverte", "#0E7490", "solid", couchesRel, setCouchesRel, "couche-rel"],
+                  ["ecarts", "Écarts", "#D97706", "dashed", couchesRel, setCouchesRel, "couche-rel"],
+                  ["situations", "Situations", "#6D28D9", "dot", couchesCarte, setCouchesCarte, "couche-carte"],
+                  ["capacites", "Capacités", "#0369A1", "dot", couchesCarte, setCouchesCarte, "couche-carte"],
+                  ["transformations", "Transformations", "#B45309", "dot", couchesCarte, setCouchesCarte, "couche-carte"],
+                ].map(([id, label, coul, st, etat, setEtat, prefix]) => (
+                  <button
+                    key={id}
+                    onClick={() => setEtat((c) => ({ ...c, [id]: !c[id] }))}
+                    data-testid={`${prefix}-${id}`}
+                    className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 font-code text-[10px] transition-colors hover:bg-[#F0F0EE] ${etat[id] ? "text-[#111110]" : "text-[#71716D] opacity-60"}`}
+                  >
+                    {st === "dot"
+                      ? <span className="h-2 w-2 rounded-full" style={{ backgroundColor: coul }} />
+                      : <span className="inline-block w-5 border-t-2" style={{ borderColor: coul, borderTopStyle: st }} />}
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="glass pointer-events-auto flex items-center gap-1 rounded-xl p-1" data-testid="couches-relations">
+            {[
+              ["bcm", "BCM déclaré", "rgba(17,17,16,0.45)", "solid"],
+              ["realite", "Réalité découverte", "#0E7490", "solid"],
+              ["ecarts", "Écarts", "#D97706", "dashed"],
+            ].map(([id, label, coul, st]) => (
+              <button
+                key={id}
+                onClick={() => setCouchesRel((c) => ({ ...c, [id]: !c[id] }))}
+                data-testid={`couche-rel-${id}`}
+                title={label}
+                className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-code text-[10px] transition-colors ${couchesRel[id] ? "bg-white text-[#111110] shadow-sm" : "text-[#71716D] opacity-50"}`}
+              >
+                <span className="inline-block w-5 border-t-2" style={{ borderColor: coul, borderTopStyle: st }} />
+                {label}
+              </button>
+            ))}
+            <span className="mx-0.5 h-4 w-px bg-[#E5E5E3]" />
+            {[
+              ["situations", "Situations", "#6D28D9"],
+              ["capacites", "Capacités", "#0369A1"],
+              ["transformations", "Transformations", "#B45309"],
+            ].map(([id, label, coul]) => (
+              <button
+                key={id}
+                onClick={() => setCouchesCarte((c) => ({ ...c, [id]: !c[id] }))}
+                data-testid={`couche-carte-${id}`}
+                title={label}
+                className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-code text-[10px] transition-colors ${couchesCarte[id] ? "bg-white text-[#111110] shadow-sm" : "text-[#71716D] opacity-50"}`}
+              >
+                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: coul }} />
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="pointer-events-auto relative">
           {estMobile && !rechercheMobileOuverte ? (
             // Mobile : la recherche s'ouvre à la demande (bouton), puis ramène vers le résultat
@@ -1061,6 +1165,7 @@ export default function Atlas() {
                 onKeyDown={(e) => {
                   // Enter : sélectionne le premier résultat et ramène la carte vers lui
                   if (e.key !== "Enter" || resultatsRecherche.length === 0) return;
+                  noterRecherche(recherche);
                   const r = resultatsRecherche[0];
                   if (r.type === "jumeau") centrerSurJumeau(r.id);
                   else { setDomaineSel(r.id); setRecherche(""); }
@@ -1080,7 +1185,7 @@ export default function Atlas() {
               {resultatsRecherche.map((r) => (
                 <button
                   key={`${r.type}-${r.id}`}
-                  onClick={() => (r.type === "jumeau" ? centrerSurJumeau(r.id) : (setDomaineSel(r.id), setRecherche("")))}
+                  onClick={() => { noterRecherche(recherche); if (r.type === "jumeau") centrerSurJumeau(r.id); else { setDomaineSel(r.id); setRecherche(""); } }}
                   data-testid={`recherche-${r.type}-${r.id}`}
                   className="w-full rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-[#F0F0EE]"
                 >
@@ -1161,7 +1266,7 @@ export default function Atlas() {
         rechargerVues={rechargerVues}
       />
 
-      <AtlasToolbar outil={outil} setOutil={setOutil} rfRef={rfRef} onExpliquer={() => setExpliquerOuvert((o) => !o)} expliquerOuvert={expliquerOuvert} modeEdition={modeEdition} setModeEdition={setModeEdition} />
+      <AtlasToolbar outil={outil} setOutil={setOutil} rfRef={rfRef} onExpliquer={() => setExpliquerOuvert((o) => !o)} expliquerOuvert={expliquerOuvert} modeEdition={modeEdition} setModeEdition={setModeEdition} vueListe={vueListe} onOuvrirListe={setVueListe} />
 
       {/* Indicateur du mode réorganisation */}
       {modeEdition && (
@@ -1262,6 +1367,7 @@ export default function Atlas() {
           {`Niveau ${zoomNiveau} · ${NIVEAUX_ZOOM[zoomNiveau]}`}
           {zoomNiveau === 1 && " · corridors agrégés"}
           {zoomNiveau === 3 && " · détail des relations"}
+          {zoomNiveau === 4 && " · sources et strates arbitrées par priorité"}
         </div>
       )}
 
@@ -1371,27 +1477,52 @@ export default function Atlas() {
         confirmerRelation={confirmerRelation}
         eventsVisibles={eventsVisibles} jumeauPar={jumeauPar}
         presentation={estTablette ? "feuillet" : "flottant"}
+        mesh={mesh} situations={situations} vueListe={vueListe} setVueListe={setVueListe}
+        favorisIds={favorisIds} onBasculerFavori={onBasculerFavori}
+        onChoisirJumeau={centrerSurJumeau}
+        onChoisirSituation={(id) => majUrl({ situation: id })}
+        onRelancerRecherche={(t) => { setRecherche(t); if (estMobile) setRechercheMobileOuverte(true); }}
       />
 
-      {/* Composer cartographique — flottant ; bouton dédié sur mobile */}
-      {estMobile && !composerOuvert ? (
-        <button
-          onClick={() => setComposerOuvert(true)}
-          data-testid="btn-flore"
-          title="Interroger cette carte"
-          className="glass absolute bottom-4 left-1/2 z-20 -translate-x-1/2 rounded-full p-3.5 text-[#0E7490] shadow-lg"
-        >
-          <Sparkle size={18} />
-        </button>
-      ) : (
-        <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-center" data-testid="atlas-composer-zone">
-          <div className="pointer-events-auto w-[min(560px,92%)] opacity-95 transition-opacity hover:opacity-100">
-            {estMobile && (
-              <button onClick={() => setComposerOuvert(false)} data-testid="btn-flore-fermer" className="mb-1 ml-auto flex text-[#71716D]"><X size={14} /></button>
-            )}
-            <ComposerFlore compact flottant placeholder="Interrogez cette carte…" testidPrefix="atlas-composer" />
+      {/* Composer Flore — flottant et repliable (jamais un pied de page) :
+          mobile = FAB centré puis barre pleine largeur ; desktop = FAB au-dessus de la mini-carte puis carte flottante */}
+      {estMobile ? (
+        !composerOuvert ? (
+          <button
+            onClick={() => setComposerOuvert(true)}
+            data-testid="btn-flore"
+            title="Interroger cette carte"
+            className="glass absolute bottom-4 left-1/2 z-20 -translate-x-1/2 rounded-full p-3.5 text-[#0E7490] shadow-lg"
+          >
+            <Sparkle size={18} />
+          </button>
+        ) : (
+          <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-center" data-testid="atlas-composer-zone">
+            <div className="pointer-events-auto w-[min(560px,92%)] opacity-95 transition-opacity hover:opacity-100">
+              <button onClick={() => setComposerOuvert(false)} data-testid="btn-flore-fermer" title="Replier" className="mb-1 ml-auto flex text-[#71716D]"><X size={14} /></button>
+              <ComposerFlore compact placeholder="Interrogez cette carte…" testidPrefix="atlas-composer" />
+            </div>
           </div>
-        </div>
+        )
+      ) : (
+        !composerOuvert ? (
+          <button
+            onClick={() => setComposerOuvert(true)}
+            data-testid="btn-flore"
+            title="Interroger cette carte"
+            className="glass absolute bottom-40 right-4 z-20 rounded-full p-3.5 text-[#0E7490] shadow-lg transition-shadow hover:shadow-xl"
+          >
+            <Sparkle size={18} />
+          </button>
+        ) : (
+          <div className="glass absolute bottom-40 right-4 z-20 w-[min(360px,92vw)] rounded-2xl p-2 shadow-xl" data-testid="atlas-composer-zone">
+            <div className="mb-1 flex items-center justify-between px-1">
+              <span className="font-code text-[9px] uppercase tracking-[0.2em] text-[#71716D]">Flore</span>
+              <button onClick={() => setComposerOuvert(false)} data-testid="btn-flore-fermer" title="Replier" className="text-[#71716D] transition-colors hover:text-[#111110]"><X size={13} /></button>
+            </div>
+            <ComposerFlore compact placeholder="Interrogez cette carte…" testidPrefix="atlas-composer" />
+          </div>
+        )
       )}
     </div>
     </div>

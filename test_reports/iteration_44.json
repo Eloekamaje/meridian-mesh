@@ -1,0 +1,34 @@
+{
+  "summary": "Retest final niveau 4 après alignement des hauteurs réservées de carte sur le DOM réel (bas y0=p.y+73/y1=p.y+176, haut y0=p.y-105/y1=p.y-3, mb-0.5 uniformisé). Résultat : critère STRICT ATTEINT (0 chevauchement carte↔carte, 0 chevauchement carte↔twin-nom_autre, 0 chevauchement carte↔zone-avatar_autre). Critère indicatif ≥14/≥15 cartes NON ATTEINT à 13 cartes (borne basse ratée de 1). Placement directionnel opérationnel (9 cartes AU-DESSUS + 4 EN DESSOUS). Cas fautifs iter_43 corrigés : plus de chevauchement sanctions↔base-connaissances (card↔card) ni paiements↔catalogue (card↔nom/avatar). Régression : L2 par défaut affiche 38 twin-noms, retour zoom arrière propre (nœuds correctement retirés au passage à L1 corridors agrégés), 0 erreur console sur toute la séquence.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Atlas niveau 4",
+        "issues": ["Comptage cartes visibles = 13, sous la borne basse cible (≥14/≥15). L'élargissement des rectangles réservés (h=102 vs 86 précédemment) a réduit la densité de 15 → 13. Les 3 chevauchements résiduels d'iter_43 sont éliminés (objectif principal atteint), mais la marge de tolérance a probablement été un peu forte. Piste : réduire de 1 à 2 px les bornes (ex. bas +74..+174, haut -103..-4) ou élargir MIN_DIST=115 au niveau 4 pour rendre visibles 2-3 cartes supplémentaires sans réintroduire d'overlap."]
+      }
+    ]
+  },
+  "test_report_links": ["/app/test_reports/iteration_44.json"],
+  "action_items": [
+    "Décision produit : accepter 13 cartes avec 0 chevauchement (critère STRICT respecté) OU tenter un ajustement fin (h=100 au lieu de 102, ou MIN_DIST=115@L4) pour viser ≥14 cartes. À notre avis, 13 cartes strictement propres est déjà un excellent équilibre visuel."
+  ],
+  "critical_code_review_comments": [
+    "atlasGraph.js l.607 : hauteurs [+73..+176]=103 et [-105..-3]=102 sont OK et cohérentes avec la carte DOM réelle (mesurée ~100px). L'incohérence avec geometrieNoeud (l.264 h=185 pour haut et h=178 pour bas) reste : ces rectangles servent d'obstacles pour le routeur d'arêtes, pas pour placerLabels, mais leur asymétrie mérite un commentaire ou une constante partagée.",
+    "TwinNode.jsx l.118 : mb-0.5/mt-0.5 sont bien uniformes maintenant. L'asymétrie in-flow (`bas`) vs absolute (`haut`) subsiste — non bloquante mais reste fragile pour maintenance future.",
+    "Absence de constante partagée HAUTEUR_CARTE_COMPOSANTS entre atlasGraph.js et TwinNode.jsx : correctif iter_43→44 fonctionne mais la source-of-truth reste double."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "N/A — frontend only",
+    "frontend": "95% — critère STRICT (0 chevauchement) intégralement ATTEINT sur les 3 axes (card↔card, card↔nom_autre, card↔avatar_autre). Placement directionnel opérationnel (9 haut + 4 bas). Régression L2 et retour zoom OK. Console propre. Seul écart : count=13 vs cible ≥14 (borne basse ratée de 1)."
+  },
+  "test_credentials": "Persona architecte par défaut, pas d'auth.",
+  "seed_data_creation": "Aucune.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "L4 zoom : mouse.wheel sur .react-flow__pane (10 crans -500 depuis centre) → scale 2.6. Métriques observées iter_44 : 13 cartes, 0 overlap card↔card, 0 overlap card↔twin-nom autre, 0 overlap card↔avatar (top 60px des twin-node autres). Directionnel : 9 haut + 4 bas. L2 par défaut = 38 twin-noms. Retour zoom (10 crans +500) mène à L1 corridors agrégés (0 twin-nom, 0 carte) — comportement attendu. Si main agent veut pousser à ≥14, deux leviers : (a) réduire de 1-2px les bornes verticales des cartes ; (b) augmenter MIN_DIST au niveau 4 (105→115).",
+  "rca of the issue": "Les 3 chevauchements résiduels d'iter_43 (sanctions↔base-connaissances, paiements↔catalogue×2) sont éliminés grâce à l'alignement des hauteurs réservées dans placerLabels/atlasGraph.js l.607 sur la hauteur DOM réelle de la carte (~100px) : nouvelles bornes bas=[+73,+176] (h=103) et haut=[-105,-3] (h=102), au lieu de bas=[+75,+161] et haut=[-92,-6] (h=86). L'uniformisation mb-0.5 dans TwinNode.jsx supprime l'asymétrie d'offset. Contrepartie : la densité passe de 15 (avec 3 overlaps) à 13 (0 overlap). Ce trade-off est correct : le critère STRICT prime sur le comptage indicatif."
+}

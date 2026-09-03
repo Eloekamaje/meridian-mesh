@@ -1,4 +1,4 @@
-import { Hand, Lasso, Crosshair, Article, PencilSimple } from "@phosphor-icons/react";
+import { Hand, Lasso, Crosshair, Article, PencilSimple, Star, ClockCounterClockwise, SealQuestion, WarningDiamond } from "@phosphor-icons/react";
 
 const OUTILS = [
   { id: "deplacement", icon: Hand, label: "Déplacement" },
@@ -6,7 +6,15 @@ const OUTILS = [
   { id: "recentrage", icon: Crosshair, label: "Recentrage" },
 ];
 
-export default function AtlasToolbar({ outil, setOutil, rfRef, onExpliquer, expliquerOuvert, modeEdition, setModeEdition }) {
+// Navigation personnelle (façon barre latérale Google Maps) : ouvre la liste dans le panneau contextuel
+const LISTES = [
+  { id: "favoris", icon: Star, label: "Favoris" },
+  { id: "recents", icon: ClockCounterClockwise, label: "Consultés récemment" },
+  { id: "investigations", icon: SealQuestion, label: "Investigations en cours" },
+  { id: "situations", icon: WarningDiamond, label: "Situations actives" },
+];
+
+export default function AtlasToolbar({ outil, setOutil, rfRef, onExpliquer, expliquerOuvert, modeEdition, setModeEdition, vueListe, onOuvrirListe }) {
   return (
     <div className="glass absolute left-4 top-1/2 z-10 flex -translate-y-1/2 flex-col gap-1 rounded-xl p-1.5" data-testid="map-toolbar">
       {OUTILS.map(({ id, icon: Icon, label }) => (
@@ -45,12 +53,29 @@ export default function AtlasToolbar({ outil, setOutil, rfRef, onExpliquer, expl
         aria-label="Expliquer cette carte"
         data-testid="expliquer-carte-btn"
         onClick={onExpliquer}
-        className={`mt-1 flex h-8 w-8 items-center justify-center rounded-md border-t border-[#E5E5E3] pt-1 transition-colors ${
+        className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors ${
           expliquerOuvert ? "bg-[#3730A3]/12 text-[#3730A3]" : "text-[#71716D] hover:bg-[#F0F0EE] hover:text-[#111110]"
         }`}
       >
         <Article size={16} />
       </button>
+
+      {/* Navigation personnelle : favoris, récents, investigations, situations */}
+      <div className="mt-1 flex flex-col gap-1 border-t border-[#E5E5E3] pt-1" data-testid="nav-personnelle">
+        {LISTES.map(({ id, icon: Icon, label }) => (
+          <button
+            key={id}
+            title={label}
+            data-testid={`nav-${id}`}
+            onClick={() => onOuvrirListe?.(vueListe === id ? null : id)}
+            className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors ${
+              vueListe === id ? "bg-[#3730A3]/12 text-[#3730A3]" : "text-[#71716D] hover:bg-[#F0F0EE] hover:text-[#111110]"
+            }`}
+          >
+            <Icon size={16} weight={vueListe === id ? "fill" : "regular"} />
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

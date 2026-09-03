@@ -1,0 +1,36 @@
+{
+  "summary": "Retest ciblé iter_40 des 3 bugs iter_39. RÉSULTATS : BUG 2 PASS, BUG 3 PASS, BUG 1 FAIL (RÉGRESSION MAJEURE — 0 cartes rendues au niveau 4 au lieu des 22 précédentes). Régression rapide L2 OK : 38 twin-nom, 6 régions, 3 couches étendues (situations/capacites/transformations) présentes et fonctionnelles (Situations activée → 9 twin-situation-*), 0 erreur console. TESTS EXÉCUTÉS : (1) BUG 2 desktop — clic sur panneau-ouvrir-btn (bouton flottant « Détail ») ouvre immédiatement l'onglet Détail avec panneau-accueil rendu (favoris/récents/recherches/situations, dont 'Situations à reprendre' avec 4 items). Le setOnglet('detail') dans onClick est bien effectif. (2) BUG 3 mobile 390×844 — couches-btn : `elementFromPoint` au centre du bouton retourne bien `couches-btn` (plus d'interception par AtlasControle), z-index effectif = auto mais wrapper parent a z-20 comme prévu, top-16 laisse le bouton en dehors de la zone AtlasControle. Un vrai `page.click()` sans force ouvre couches-menu (3 items : situations/capacites/transformations). (3) BUG 1 desktop — après 6 double-clics au centre-haut du canvas, l'indicateur affiche bien 'Niveau 4 · Composants & preuves · sources et strates arbitrées par priorité' MAIS aucun `[data-testid^=twin-composants-]` n'est rendu (0 vs 22 en iter_39). Aucun chevauchement mesurable mais parce que le rendu est vide. RCA identifié : dans `placerLabels` (atlasGraph.js l.19), les rectangles sont calculés en convention CENTRE (`x0 = o.x - o.w/2`). Mais le callsite niveau 4 (l.585-604) passe des coordonnées TOP-LEFT (obstacles: `x: p.x + 32, y: p.y + 52, w: 72, h: 86` ; candidats: `x: p.x + 32, y: p.y + 140, w: 152, h: 92`). Résultat : pour un même jumeau, son propre obstacle robot (converti en centre : y ∈ [p.y+9, p.y+95]) chevauche marginalement son propre candidat carte (y ∈ [p.y+94, p.y+186]) sur l'axe Y ET recouvre massivement sur l'axe X. Chaque candidat est donc filtré par sa propre présence robot → 0 carte visible. Le fix injecte bien tous les rectangles robot+AppID comme obstacles pré-placés, mais avec le mauvais système de coordonnées.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "atlasGraph.js placerLabels() — appel niveau 4",
+        "issue": "RÉGRESSION MAJEURE : la correction du chevauchement L4 fait disparaître TOUTES les cartes twin-composants (0 rendues vs 22 en iter_39). Cause : incohérence de convention de coordonnées entre placerLabels (CENTRE, l.19 `x0 = o.x - o.w/2`) et le callsite l.585-604 (TOP-LEFT `x: p.x + 32, w: 72`). Chaque candidat carte entre en collision avec son propre obstacle robot (même id), donc placerLabels filtre tout. Fix suggéré (2 options équivalentes) : (a) exclure explicitement l'obstacle de MÊME id lors du test de collision (passer un lookup par id, ou filtrer obstacles par candidat), OU (b) uniformiser la convention : soit convertir les obstacles/candidats en centre au callsite (`x: p.x + 32 + w/2, y: p.y + 52 + h/2`), soit changer placerLabels pour interpréter (x,y) comme top-left. L'option (a) est plus sûre car elle préserve l'intention métier : un twin ne se masque jamais lui-même.",
+        "selector": "[data-testid^='twin-composants-']",
+        "priority": "CRITICAL"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_40.json"],
+  "action_items": [
+    "URGENT — Corriger placerLabels appelé au L4 : soit exclure obstacle de même id (recommandé : ajouter un champ `id` aux obstacles et sauter la collision quand candidat.id === obstacle.id), soit uniformiser convention CENTRE/TOP-LEFT. En l'état, 0 carte est rendue au niveau 4 (régression totale du chantier composants & preuves).",
+    "Aucune action supplémentaire pour BUG 2 (setOnglet('detail') OK) ni BUG 3 (z-20 + top-16 OK)."
+  ],
+  "critical_code_review_comments": [
+    "atlasGraph.js l.19-24 : placerLabels utilise convention CENTRE (`x0 = o.x - o.w/2`), mais l.587-590 et l.594-600 passent des rectangles en TOP-LEFT (`p.x + 32` = coin haut-gauche du robot). Bug de convention. Recommandation : ajouter `id` dans les obstacles et candidats, puis dans la boucle : `const collision = places.some((p) => p.id !== c.id && r.x0 < p.x1 && ...);` — cela résout à la fois le self-collision ET aligne l'intention (un twin ne peut pas se masquer lui-même).",
+    "Note : la couche L2 (l.722 `placerLabels(candidats)`) fonctionne car il n'y a pas d'obstacles pré-placés donc pas de bug visible avec la convention CENTRE."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "N/A — frontend only",
+    "frontend": "66% — 2/3 bugs corrigés (BUG 2 & BUG 3 PASS). BUG 1 : régression majeure, cartes complètement absentes."
+  },
+  "test_credentials": "Persona architecte par défaut (Mesh global), pas d'auth.",
+  "seed_data_creation": "Aucune.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "iter_40 : BUG 2 & BUG 3 sont maintenant conformes. BUG 1 a introduit une régression : la correction du chevauchement niveau 4 fait disparaître toutes les cartes (0/22). RCA très précis dans le rapport : incohérence de convention CENTRE (placerLabels) vs TOP-LEFT (callsite) + absence de filtre self-collision. Après fix, retester : (a) au moins ~22 twin-composants visibles au niveau 4 (dépend de l'algo de priorité), (b) 0 chevauchement carte↔carte, (c) 0 chevauchement carte↔twin-nom d'un AUTRE twin. Zoom L4 fonctionnel via 6 dbl-clics au centre-haut du canvas SVG. Ne pas retester BUG 2/3 sauf régression.",
+  "rca of the issue": "placerLabels (atlasGraph.js l.18-30) interprète les rectangles obstacles et candidats en convention CENTRE : `x0 = o.x - o.w/2, x1 = o.x + o.w/2`. Le callsite niveau 4 (l.585-604) passe des coordonnées en convention TOP-LEFT (`x: p.x + 32, y: p.y + 52, w: 72, h: 86` pour l'obstacle robot ; `x: p.x + 32, y: p.y + 140, w: 152, h: 92` pour la carte). De plus, chaque twin est présent à la fois comme obstacle ET comme candidat sans exclusion self-id, donc chaque carte entre systématiquement en collision avec le rectangle robot du même twin, et est filtrée. Résultat : 0 carte au niveau 4. Solution recommandée : (1) ajouter un champ `id` aux obstacles, (2) dans placerLabels, ignorer la collision quand `p.id === c.id`, (3) idéalement uniformiser la convention de coordonnées (documenter et rester TOP-LEFT partout) — c'est plus robuste. Reproduction : viewport 1920×1080, aller sur /atlas, 6 dbl-clics à (cx=milieu twins, cy=minY-40), niveau devient L4 mais `document.querySelectorAll('[data-testid^=twin-composants-]').length === 0`."
+}

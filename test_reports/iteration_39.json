@@ -1,0 +1,50 @@
+{
+  "summary": "Frontend v39 (Atlas — chantiers a→f) : 5 chantiers sur 6 conformes, 1 partiellement conforme. TESTS EXÉCUTÉS : (1) Chargement de base 1920×1080, 38 twin-nodes, 6 régions, zoom initial « Niveau 2 · Domaines », 0 erreur console. Tous [twin-nom-*] = 4 chiffres (0 non-conforme). (2) COUCHES ÉTENDUES desktop : couche-carte-situations, -capacites, -transformations présentes (data-testid ok) + les 3 couches BCM/Réalité/Écarts. Activation Situations → 9 twin-situation-* (point violet) visibles ; Transformations → 8 twin-transformation-* (badge ambre pointillé) ; Capacités → 6 region-header + 6 region-macro (agrégats N jumeaux · N flux · N écarts) visibles au niveau 2 sans survol. (3) COMPOSER FLORE desktop : btn-flore (FAB rond en bas à droite au-dessus mini-carte) présent, ouvre atlas-composer-zone flottant ; btn-flore-fermer replie. Aucune barre ancrée en bas au centre — conforme. (4) PANNEAU ÉTAT VIDE : panneau-ouvrir-btn ouvre map-side-panel ; UNE FOIS l'onglet Détail actif (map-tab-detail), panneau-accueil est bien rendu avec section 'Situations à reprendre' (11 situations actives disponibles). ⚠️ UX MINEURE : le bouton flottant qui affiche 'Détail' n'active pas automatiquement l'onglet detail (onglet par défaut = chrono), l'utilisateur doit re-cliquer sur l'onglet Détail pour voir le panneau-accueil. (5) FAVORIS : sélection twin → twin-favori-btn → localStorage 'meridian:favoris' = [\"paiements\"] ; apparaît dans panneau-liste-favoris (1 item). Persistance après rechargement CONFIRMÉE (favori toujours présent). (6) BARRE VERTICALE PERSONNELLE : nav-personnelle + 4 boutons (nav-favoris, nav-recents, nav-investigations, nav-situations) présents. Chaque clic ouvre panneau-liste-{id}. nav-situations liste bien les 11 situations actives. (7) NIVEAU 4 zoom via double-clic zone vide (6 dbl-clics) → « Niveau 4 · Composants & preuves · sources et strates arbitrées par priorité ». 22 twin-composants cartes visibles (moteur de priorité en masque 16/38), chacune avec 6 icônes de sources + 5 rangées de strates. (8) MOBILE 390×844 : couches-btn présent, ouvre couches-menu avec 6 items (bcm/realite/ecarts/situations/capacites/transformations). Bottom sheet (feuillet-poignee) fonctionne. (9) 0 chevauchement avatar/robot ; App IDs numériques préservés ; 0 erreur console pendant toute la session.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "TwinNode niveau 4 (twin-composants cards)",
+        "issue": "Le moteur de priorité laisse échapper des chevauchements : 11 cartes twin-composants-* recouvrent visuellement des twin-nom-* (App ID) d'autres robots proches ET 2 cartes twin-composants-* se recouvrent entre elles. Exemples : twin-composants-comptes ↔ twin-composants-preferences ; twin-composants-retours ↔ twin-composants-entrepots ; twin-composants-paiements ↔ twin-nom-tokens ; twin-composants-comptes ↔ twin-nom-fidelite ; twin-composants-fraude ↔ twin-nom-alertes-risque ; twin-composants-notifications ↔ twin-nom-escalades ; twin-composants-api-gateway ↔ twin-nom-catalogue ; twin-composants-preferences ↔ twin-nom-communications ; twin-composants-catalogue ↔ twin-nom-prelevements ; twin-composants-litiges ↔ twin-nom-remboursements. La spec exige : 'les cartes ne se chevauchent JAMAIS entre elles ni avec les App ID (moteur de priorité : en cas de collision la carte moins prioritaire est masquée)'. Le moteur placerLabels() est appelé mais les candidats ne semblent pas inclure toutes les collisions cross-node (App ID d'un twin voisin vs. carte d'un autre twin).",
+        "selector": "[data-testid^='twin-composants-'] vs [data-testid^='twin-nom-']",
+        "priority": "HIGH"
+      },
+      {
+        "component": "AtlasPanneau — panneau-ouvrir-btn",
+        "issue": "Le bouton flottant est libellé « Détail » mais son onClick ne bascule pas onglet à 'detail'. L'onglet par défaut est 'chrono' (Chronologie), donc au premier clic sur 'Détail' l'utilisateur voit… la chronologie. Il doit re-cliquer sur map-tab-detail pour obtenir le panneau-accueil (favoris/récents/recherches/situations). Fix suggéré : dans le onClick de panneau-ouvrir-btn ajouter setOnglet('detail').",
+        "selector": "[data-testid=panneau-ouvrir-btn]",
+        "priority": "MEDIUM"
+      },
+      {
+        "component": "Atlas mobile — couches-btn (390×844)",
+        "issue": "Le clic réel (tap Playwright avec force=True) sur couches-btn est intercepté par AtlasControle (mode-switcher `left-4 top-4`) qui recouvre la zone du bouton en mobile. L'action fonctionne UNIQUEMENT via .click() JS. En usage réel tactile, l'utilisateur risque d'ouvrir le mode-switcher au lieu du menu Couches. Fix suggéré : décaler couches-btn ou ajouter pointer-events guards / z-order supérieur en breakpoint mobile.",
+        "selector": "[data-testid=couches-btn]",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_39.json"],
+  "action_items": [
+    "Corriger le moteur de priorité niveau 4 : injecter dans placerLabels les rectangles des labels twin-nom (App ID) de TOUS les twins comme obstacles pour les candidats twin-composants (et les autres cards entre elles). Actuellement 11 collisions carte↔App-ID voisin + 2 collisions carte↔carte ne sont pas résolues.",
+    "Faire que panneau-ouvrir-btn (label « Détail ») active automatiquement l'onglet detail : ajouter setOnglet('detail') dans son onClick pour révéler immédiatement le panneau-accueil (favoris/récents/recherches/situations).",
+    "Résoudre le conflit z-order mobile entre AtlasControle et couches-btn : sur breakpoint mobile, augmenter le z-index du couches-btn ou re-positionner AtlasControle pour éviter l'interception du tap."
+  ],
+  "critical_code_review_comments": [
+    "atlasGraph.js placerLabels() : algorithme AABB correct mais l'appel niveau 4 (l. 595 cartesVisibles) ne semble pas inclure comme obstacles les App IDs (twin-nom) fixes des autres twins — d'où les 11 collisions carte↔App-ID. Il faut soit pré-remplir places[] avec les rects des App IDs prioritaires, soit générer des candidats aussi pour les App IDs.",
+    "Atlas.jsx l.1084 : couches-btn (mobile) sans z-index explicit, tandis que AtlasControle est glass avec z-10 aussi. Ajouter z-20 ou déplacer le layout mobile pour éviter chevauchement zone-clic.",
+    "AtlasPanneau.jsx l.243-260 : le bouton panneau-ouvrir-btn intitulé « Détail » ne synchronise pas onglet. Bug UX simple à corriger : `onClick={() => { setOuvert(true); setOnglet('detail'); }}`."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "N/A — frontend only",
+    "frontend": "83% — 5/6 chantiers pleinement conformes (couches étendues, composer Flore FAB, favoris persistants, barre verticale personnelle, mobile couches-menu). 1 chantier partiel : niveau 4 (cartes rendues mais moteur de priorité laisse 11+2 chevauchements). 2 défauts UX secondaires (bouton Détail n'active pas l'onglet ; couches-btn mobile intercepté)."
+  },
+  "test_credentials": "Persona architecte par défaut (Mesh global), pas d'auth.",
+  "seed_data_creation": "Aucune — favoris testés via localStorage puis nettoyés en début de test.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "iter_39 : la majorité des 6 chantiers sont conformes. Bugs à retester après fix : (1) niveau 4 zéro-chevauchement carte-carte ET carte-App-ID des twins voisins (spécifiquement instrumenter placerLabels avec obstacles App IDs), (2) panneau-ouvrir-btn doit basculer sur onglet detail, (3) mobile couches-btn ne doit pas être intercepté par AtlasControle. Test flow validé qui fonctionne pour zoom L4 : double-cliquer 6× sur une zone vide en haut du système (cx = milieu carte, cy = box.y+80). Favoris : localStorage 'meridian:favoris' = tableau d'IDs. Autres clés : 'meridian:recents', 'meridian:recherches'.",
+  "rca of the issue": "Niveau 4 chevauchements : placerLabels() (atlasGraph.js l.17) trie par priorité et pose les rects de manière greedy. L'appel autour de la l.595 (cartesVisibles) semble ne considérer que les cartes twin-composants entre elles, sans injecter comme obstacles pré-placés les rectangles des App IDs (twin-nom) des twins qui n'ont pas de carte (16/38). Résultat : une carte peut être placée là où un App ID d'un autre robot proche va se retrouver dessous. Solution : pré-remplir `places[]` avec les AABB des App IDs de tous les 38 twins AVANT d'itérer les candidats cartes."
+}

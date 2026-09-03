@@ -1,0 +1,36 @@
+{
+  "summary": "Retest niveau 4 « Composants & preuves » après refonte géométrique iter_42 (obstacle robot+AppID centré p.x+32/p.y+37 66×80 ; carte candidate centrée p.x+32/p.y+118 152×86 ; ancre p.y+26 ; colonne 64px avec carte 150px en débordement -mx-43px). RÉSULTAT : CRITÈRE STRICT ATTEINT — 0 chevauchement (card↔card=0, card↔twin-nom_autre=0, card↔avatar_autre=0), mais critère indicatif NON ATTEINT — seulement 6/38 cartes rendues (facturation, conformite, remboursements, escalades, recommandations, entrepots), attendu ~15-22, iter_41 en avait 5. Amélioration marginale (+1). Chaque carte contient bien 6 icônes sources + 5 jauges strates. Les 9 paires fautives d'iter_39 (comptes↔preferences, retours↔entrepots, paiements↔tokens, comptes↔fidelite, fraude↔alertes-risque, notifications↔escalades, api-gateway↔catalogue, catalogue↔prelevements, litiges↔remboursements) sont TOUTES sans chevauchement. Régression niveau 2 : 38 twin-nom présents, 45 arêtes rendues attachées correctement aux robots (ancre p.y+26 opérationnelle, pas d'anomalie visuelle sur les connexions), 0 erreur console. Zoom via mouse.wheel fonctionne (scale 2.6 → niveau 4).",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "atlasGraph.js — construireGraphe niveau 4 (l.585-608) — arbitrage trop restrictif",
+        "issue": "6/38 cartes rendues (vs 5/38 iter_41). Le fix géométrique est CORRECT (0 chevauchement mesuré, y compris sur les 9 paires historiquement fautives), mais l'obstacle robot h=80 centré à y+37 (soit y-range [-3..+77]) combiné à la carte candidate h=86 centrée à y+118 (soit y-range [+75..+161]) génère une zone d'exclusion verticale ΔY ∈ (-2, +164) — c.à.d qu'un voisin B situé quasi n'importe où en dessous de A (jusqu'à 164px) et dans une bande horizontale ΔX ∈ (-109, +109) masque la carte de A. Avec MIN_DIST=105 entre centres, la majorité des paires proches tombent dans cette plage. Pistes : (a) rétrécir la zone d'exclusion en ajustant les dimensions/positions (l'AppID DOM réel finit à ~y+66, pas y+77 ; réduire h obstacle à 68 (centre y+34)) ; (b) réduire la largeur carte candidate w=152 → 136 (la carte a p-2 + w-[150px] = ~150px, mais horizontalement les voisins sont espacés de MIN_DIST=105 donc ΔX max 109 est déjà limite) ; (c) espacer davantage les jumeaux au niveau 4 (MIN_DIST augmenté à 140-180 quand zoomNiveau>=4) ; (d) placer certaines cartes AU-DESSUS du robot (au lieu de systématiquement en dessous) via choix directionnel arbitré par la priorité.",
+        "selector": "[data-testid^='twin-composants-']",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_42.json"],
+  "action_items": [
+    "Le critère STRICT (0 chevauchement) est atteint — la refonte géométrique iter_42 est correcte et à conserver.",
+    "Pour atteindre l'objectif indicatif 15-22 cartes visibles : soit espacer les jumeaux au niveau 4 (MIN_DIST plus grand quand zoomNiveau>=4), soit permettre à la carte de se rendre au-dessus du robot (retournement directionnel), soit resserrer les dimensions de l'obstacle (h=68 au lieu de 80 pour coller au DOM réel qui finit à y≈66)."
+  ],
+  "critical_code_review_comments": [
+    "atlasGraph.js l.591-593 : obstacle robot h=80 est légèrement surdimensionné vs DOM réel (avatar h≈48 + gap + AppID h≈14, soit total ≈62-66px depuis p.y). h=68 avec centre y+34 collerait mieux au DOM et libèrerait ~6-12px de tolérance verticale par voisin.",
+    "atlasGraph.js l.596-604 : la priorité candidate mélange sélection (400) + halo (250) + couverture (0-100). Sans sélection/halo, seule la couverture arbitre → les jumeaux à couverture proche perdent de manière quasi-arbitraire. Envisager un tie-break par domaine ou par position (haut/bas)."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "N/A — frontend only",
+    "frontend": "70% — critère STRICT (0 chevauchement) OK ; critère indicatif (>>5, idéalement 15-22) NON atteint : 6/38. L2 propre, console propre."
+  },
+  "test_credentials": "Persona architecte par défaut, pas d'auth.",
+  "seed_data_creation": "Aucune.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Zoom L4 : mouse.wheel sur .react-flow__pane (10 crans à -500 depuis centre) atteint scale 2.6 = niveau 4. Métrique : `document.querySelectorAll('[data-testid^=twin-composants-]').length` doit approcher 15-22 (actuel 6). Vérifier 4 métriques : (a) count cartes ; (b) 0 overlap card↔card ; (c) 0 overlap card↔twin-nom autre ; (d) 0 overlap card↔twin-node autre (partie avatar top 74px). Les 6 cartes rendues actuellement : facturation, conformite, remboursements, escalades, recommandations, entrepots. Mesh global = 30 jumeaux visibles + 8 anonymes = 38 twin-node DOM (0 anonyme dans mesh global affiché).",
+  "rca of the issue": "Le fix géométrique iter_42 est CORRECT : les rectangles passés à placerLabels correspondent maintenant au DOM (avatar+AppID centré ~p.x+32,p.y+37 66×80 ; carte centre p.x+32/p.y+118 152×86) et le critère de 0 chevauchement est atteint sur toutes les paires y compris les 9 historiquement fautives. Cependant, la géométrie CORRECTE révèle une contrainte intrinsèque : la carte candidate mesure 152px de large × 86px de haut et se place systématiquement 45-160px sous l'avatar. Un voisin situé dans la fenêtre ΔX ∈ (-109,+109) × ΔY ∈ (-2,+164) masque la carte. Avec MIN_DIST=105 entre centres d'avatars, la majorité des paires voisines de bas-en-haut tombent dans cette fenêtre → placerLabels masque 32/38 cartes. Solutions : élargir MIN_DIST au niveau 4, autoriser le rendu de la carte au-dessus du robot (choix directionnel), ou resserrer les dimensions d'obstacle (h=68 au lieu de 80)."
+}

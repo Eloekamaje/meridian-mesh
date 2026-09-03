@@ -41,6 +41,7 @@ frontend/src/
 │   ├── routageWorker.js           # Web Worker : routage libavoid WASM
 │   ├── routeur.js                 # Routeur orthogonal maison (provisoire/secours)
 │   ├── domaines.js                # Couleurs de domaines, états de relations
+│   ├── memoire.js                 # Mémoire personnelle locale (favoris, récents, recherches)
 │   └── temps.js                   # Parsing dates, projection temporelle
 └── components/map/
     ├── TwinNode.jsx               # Nœud jumeau (robot + App ID)
@@ -94,7 +95,7 @@ Le graphe est reconstruit à chaque tick de drag. Sans précaution, les nœuds r
 
 ---
 
-## 5. Zoom sémantique — 3 niveaux
+## 5. Zoom sémantique — 4 niveaux
 
 `useZoomSemantique.js` dérive le niveau du facteur de zoom, de façon **globale et uniforme** :
 
@@ -102,7 +103,8 @@ Le graphe est reconstruit à chaque tick de drag. Sans précaution, les nœuds r
 |---|---|---|
 | **1 — Capacités** | zoom < 0.6 | Robots masqués. Macro-territoires avec agrégats (« N jumeaux · N flux · N écarts »), corridors inter-domaines agrégés. Titres de domaines toujours visibles. |
 | **2 — Domaines** | 0.6 ≤ zoom ≤ 1.15 | Robots (avatar 48 px) + App ID, membranes, routes orthogonales. Titres de domaines révélés au survol de la membrane. |
-| **3 — Applications & flux** | zoom > 1.15 | Robots agrandis (56 px), ports d'entrée/sortie visibles, labels de flux sur les arêtes (au zoom fort ≥ 1.5). |
+| **3 — Applications & flux** | 1.15 < zoom ≤ 1.9 | Robots agrandis (56 px), ports d'entrée/sortie visibles, labels de flux arbitrés par le moteur de labels. |
+| **4 — Composants & preuves** | zoom > 1.9 | Carte de détail par jumeau : 6 icônes de sources (code, BDD, observabilité, incidents, documentation, événements) + 5 jauges de strates (identité, comportement, relations, trajectoire, mémoire). Placement directionnel arbitré (sous puis au-dessus du robot). |
 
 Le niveau est affiché en bas de carte (`zoom-niveau`). Les seuils ne dépendent jamais de l'écran.
 
@@ -173,8 +175,17 @@ Au-delà de **5 relations entre le même couple** de jumeaux : une voie unique �
 
 - Chaque domaine est une **coque concave polygonale** (`concaveman`, concavité 2.2) calculée sur les centres des avatars gonflés (marge ~50 px), angles adoucis quadratiquement.
 - **Élastique** : recalculée à chaque déplacement/ajout/suppression de nœud. Un ressort rAF (poursuite exponentielle α≈9/s, ~300 ms) anime la membrane affichée vers sa cible — matière souple, sans vibration.
-- **Titre du domaine** : rendu via `ViewportPortal` (au-dessus des arêtes), révélé **au survol de la frontière** (détection par distance point-segment, seuil 18 px / zoom) ou si le domaine est sélectionné. Toujours visible au niveau 1.
+- **Titre du domaine** : rendu via `ViewportPortal` (au-dessus des arêtes), révélé **au survol de la frontière** (détection par distance point-segment, seuil 18 px / zoom), si le domaine est sélectionné, si la couche « Capacités » est active, ou au niveau 1. Arbitré par le **moteur de labels** (§7.5).
 - Le titre est un **obstacle de routage** : aucune arête ne le traverse.
+
+### 7.5 Moteur de priorité des labels (`placerLabels`)
+
+Façon Google Maps : tous les labels ne sont jamais affichés en même temps. `placerLabels(candidats, obstacles)` pose les rectangles par **priorité décroissante** ; en cas de collision avec un label déjà placé ou un obstacle (bloc robot + App ID), le label le moins prioritaire **disparaît**. Un élément ne se masque jamais lui-même (exclusion par id).
+
+Appliqué à :
+- **Cartes niveau 4** : placement directionnel (sous le robot, puis au-dessus) ; priorité sélection > halo > couverture.
+- **Labels de relations** (niveau 3+) : agrégats « N flux » > contestées > observées > supposées > confirmées.
+- **Titres de domaines** : domaine sélectionné > survolé > halo > investigations actives.
 
 ---
 
@@ -216,6 +227,21 @@ Projection des relations selon leur date de découverte (`decouverte_quand`) :
 ---
 
 ## 11. Interactions principales
+
+### Couches (catégories façon Google Maps)
+
+Six puces en haut de carte — **jamais de déplacement des jumeaux**, uniquement visibilité/importance :
+- **Relations** : BCM déclaré, Réalité découverte, Écarts (masquent les arêtes correspondantes).
+- **Carte** : Situations (point violet sur les jumeaux impliqués), Capacités (titres + agrégats des domaines épinglés), Transformations (badge ambre pointillé sur les jumeaux en construction/observation).
+- Sur petit écran : un bouton « Couches » ouvre les options secondaires.
+
+### Navigation personnelle (barre verticale)
+
+Sous les outils de la barre gauche : **Favoris**, **Consultés récemment**, **Investigations**, **Situations** — chacun ouvre la liste correspondante dans le panneau contextuel. Mémoire **locale** (`localStorage meridian:*`) : étoile favori dans le détail jumeau, récents alimentés par la consultation, recherches mémorisées.
+
+### Panneau contextuel
+
+Le panneau ne décrit que l'élément actif (jumeau, relation, domaine, comparaison, liste). **À vide**, il montre : favoris, jumeaux consultés récemment, recherches récentes, situations à reprendre. Fermable pour retrouver toute la surface. La barre conversationnelle Flore est un **FAB flottant repliable** (bas-droite desktop, bas-centré mobile) — jamais un pied de page.
 
 - **Survol robot** : panneau flottant d'aperçu (desktop) ; arêtes connectées accentuées, autres estompées.
 - **Clic robot** : épingle l'aperçu + ouvre le détail dans le panneau / la bottom sheet.

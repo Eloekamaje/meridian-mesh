@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { Star } from "@phosphor-icons/react";
 import { couleurDomaine, ETATS_RELATION } from "@/lib/domaines";
 
 export function RelationDetail({ rel, jumeauPar, onConfirmer }) {
@@ -191,12 +192,22 @@ export function ComparaisonDomaines({ a, b, statsDomaine }) {
   );
 }
 
-export function TwinDetail({ selected }) {
+export function TwinDetail({ selected, favori, onBasculerFavori }) {
   return (
     <div data-testid="map-twin-detail">
       <div className="flex items-center gap-2">
         <span className="h-2 w-2 rounded-full" style={{ backgroundColor: couleurDomaine(selected.domaine) }} />
         <h3 className="font-display text-base font-bold text-[#111110]">{selected.nom}</h3>
+        {onBasculerFavori && (
+          <button
+            onClick={() => onBasculerFavori(selected.id)}
+            title={favori ? "Retirer des favoris" : "Ajouter aux favoris"}
+            data-testid="twin-favori-btn"
+            className={`ml-auto transition-colors ${favori ? "text-[#B45309]" : "text-[#D4D4D0] hover:text-[#B45309]"}`}
+          >
+            <Star size={15} weight={favori ? "fill" : "regular"} />
+          </button>
+        )}
       </div>
       <p className="mt-2 text-xs leading-relaxed text-[#52524F]">{selected.mission}</p>
       <dl className="mt-4 space-y-2 text-xs">

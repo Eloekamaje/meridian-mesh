@@ -1,5 +1,16 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v42, grammaire Google Maps appliquée à l'Atlas)
+Spec utilisateur « Google Maps → Méridian » : 6 chantiers livrés dans l'ordre validé.
+- **a. Niveau 4 « Composants & preuves »** (zoom > 1.9) : carte de détail sous/au-dessus du robot — 6 icônes de sources (code, BDD, observabilité, incidents, documentation, événements ; vert prête, ambre en alerte, gris absente) + 5 jauges de strates (I/C/R/T/M avec %). Placement **directionnel** arbitré (bas d'abord, haut ensuite) : 13 cartes strictement propres sur 38 jumeaux.
+- **b. Couches étendues** : puces Situations (point violet sur les jumeaux impliqués), Capacités (titres de domaines + agrégats épinglés au niveau 2), Transformations (badge ambre pointillé sur « en construction »/« observation »). Mobile : bouton « Couches » ouvrant le menu des 6 couches. Une couche ne déplace jamais les jumeaux.
+- **c. Composer Flore flottant** : FAB rond en bas à droite (au-dessus de la mini-carte) → carte flottante repliable. Mobile : FAB centré puis barre. Plus de pied de page ancré.
+- **d. Panneau contextuel à état vide** : Favoris, Consultés récemment, Recherches récentes, Situations à reprendre (localStorage `meridian:*`). Étoile favori dans le détail jumeau.
+- **e. Moteur de priorité des labels** (`placerLabels`) : placement glouton par priorité avec obstacles pré-placés (robots + App ID, exclusion self-id). Appliqué aux cartes niveau 4, aux labels d'arêtes (niveau 3+) et aux titres de domaines. Collision → le moins prioritaire disparaît.
+- **f. Barre verticale personnelle** : Favoris, Récents, Investigations, Situations dans la barre d'outils gauche ; ouvre la liste correspondante dans le panneau.
+- Géométrie refondue : colonne de nœud fixe 64px (avatar centré p.x+32 quelle que soit la carte), ancre de routage corrigée (p.y+26), formes connectables cohérentes haut/bas.
+- Tests : iterations 39→44. **iter_44 → 95 %** : critère strict zéro-chevauchement atteint (cartes, App ID, avatars), 2 défauts UX corrigés (onglet Détail, interception tactile Couches mobile). 13 cartes N4 = équilibre validé (la règle zéro-chevauchement prime sur la densité).
+
 ## Implémenté (06/2026 — v41, documentation technique de l'Atlas)
 - **`/app/docs/ATLAS.md`** : README détaillé de l'implémentation de l'Atlas — invariants (monde continu, zéro chevauchement, zoom sémantique global), pipeline `construireGraphe`, routage libavoid en Web Worker + routeur maison de secours, membranes concaves élastiques, 3 niveaux de zoom sémantique, navigation façon Google Maps, modes temporels, responsive (chrome uniquement), accessibilité, sources de données.
 

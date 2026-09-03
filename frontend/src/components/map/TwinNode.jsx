@@ -1,9 +1,26 @@
 import { Handle, Position } from "@xyflow/react";
-import { LockSimple } from "@phosphor-icons/react";
+import { LockSimple, Code, Database, Pulse, WarningOctagon, FileText, Lightning } from "@phosphor-icons/react";
 import { couleurDomaine, couleurConfiance, ETATS_RELATION } from "@/lib/domaines";
 import { idNumerique } from "@/lib/atlasGraph";
 
 const ROBOT = "/assets/robot-jumeau.jpg";
+
+// Niveau 4 — Composants & preuves : sources connectées (icônes) et strates de connaissance (jauges)
+const SOURCES_ICONES = {
+  code: { Icon: Code, nom: "Code" },
+  bdd: { Icon: Database, nom: "Base de données" },
+  observabilite: { Icon: Pulse, nom: "Observabilité" },
+  incidents: { Icon: WarningOctagon, nom: "Incidents" },
+  documentation: { Icon: FileText, nom: "Documentation" },
+  evenements: { Icon: Lightning, nom: "Événements" },
+};
+const STRATES_CLES = [
+  ["identite", "I"],
+  ["comportement", "C"],
+  ["relations", "R"],
+  ["trajectoire", "T"],
+  ["memoire", "M"],
+];
 
 // Avatar robot du jumeau : tête blanche arrondie, écran facial sombre, yeux turquoise, antenne
 function AvatarJumeau({ selected, actif, grand, ports, relLiee }) {
@@ -93,7 +110,45 @@ export default function TwinNode({ data, selected }) {
     );
   }
 
-  // Jumeau = identifiant numérique + robot (le nom complet apparaît au niveau 3 — applications & flux)
+  // Jumeau = identifiant numérique + robot. Niveau 4 : carte « composants & preuves »
+  // arbitrée par le moteur de labels — au-dessus ou en dessous du robot selon l'espace libre.
+  const carteDetail = data.detailVisible && j.strates && (
+    <div
+      className={`w-[150px] rounded-lg border border-[#E5E5E3] bg-white/95 p-2 shadow-sm ${
+        data.detailPosition === "haut" ? "absolute bottom-full left-1/2 mb-0.5 -translate-x-1/2" : "-mx-[43px] mt-0.5"
+      }`}
+      data-testid={`twin-composants-${j.id}`}
+    >
+      <div className="flex items-center justify-center gap-1.5" data-testid={`twin-sources-${j.id}`}>
+        {Object.entries(SOURCES_ICONES).map(([cle, { Icon, nom }]) => {
+          const det = j.sources_detail?.find((s) => s.cle === cle);
+          const active = !!j.sources?.[cle] || !!det;
+          const alerte = !!det && det.statut !== "prete";
+          return (
+            <Icon
+              key={cle}
+              size={11}
+              weight={active ? "fill" : "regular"}
+              title={alerte ? `${nom} — ${det.statut.replaceAll("_", " ")}` : nom}
+              className={alerte ? "text-[#B45309]" : active ? "text-[#047857]" : "text-[#D4D4D0]"}
+            />
+          );
+        })}
+      </div>
+      <div className="mt-1.5 space-y-[3px]" data-testid={`twin-strates-${j.id}`}>
+        {STRATES_CLES.map(([cle, initiale]) => (
+          <div key={cle} className="flex items-center gap-1" title={`${cle} : ${j.strates[cle]} %`}>
+            <span className="w-2.5 shrink-0 font-code text-[7px] uppercase text-[#71716D]">{initiale}</span>
+            <div className="h-1 flex-1 overflow-hidden rounded-full bg-[#EDECE6]">
+              <div className="h-full rounded-full" style={{ width: `${j.strates[cle]}%`, backgroundColor: couleurConfiance(j.strates[cle]) }} />
+            </div>
+            <span className="w-5 shrink-0 text-right font-code text-[7px] text-[#52524F]">{j.strates[cle]}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
   return (
     <div
       className={`group relative transition-opacity duration-500 ${data.dim ? "opacity-20" : data.adouci ? "opacity-60" : "opacity-100"}`}
@@ -105,16 +160,34 @@ export default function TwinNode({ data, selected }) {
       {data.focusCentral && (
         <span className="pointer-events-none absolute -inset-1.5 rounded-2xl border-2" style={{ borderColor: couleur }} data-testid="twin-focus-ring" />
       )}
-      <div className="flex flex-col items-center gap-1">
+      <div className="flex w-16 flex-col items-center gap-1">
         <Handle type="target" id="t-b" position={Position.Bottom} className="!h-2 !w-2 !min-w-0 !border-0 !bg-transparent" style={{ bottom: -2, left: "46%" }} />
         <Handle type="source" id="s-b" position={Position.Bottom} className="!h-2 !w-2 !min-w-0 !border-0 !bg-transparent" style={{ bottom: -2, left: "46%" }} />
-        <AvatarJumeau actif={j.statut === "actif"} selected={selected} grand={niveau3} ports={niveau3} relLiee={data.relLiee} />
+        <span className="relative inline-flex">
+          <AvatarJumeau actif={j.statut === "actif"} selected={selected} grand={niveau3} ports={niveau3} relLiee={data.relLiee} />
+          {data.detailPosition === "haut" && carteDetail}
+          {data.dansSituation && (
+            <span
+              className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-[#6D28D9] ring-1 ring-white"
+              title="Impliqué dans une situation active"
+              data-testid={`twin-situation-${j.id}`}
+            />
+          )}
+          {data.enTransformation && (
+            <span
+              className="absolute -left-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-dashed border-[#B45309] bg-white"
+              title="En transformation"
+              data-testid={`twin-transformation-${j.id}`}
+            />
+          )}
+        </span>
         <span
           className="whitespace-nowrap font-code text-[10px] font-semibold tracking-wide text-[#3F3F3C] transition-colors group-hover:text-[#0E7490]"
           data-testid={`twin-nom-${j.id}`}
         >
           {idNumerique(j.id)}
         </span>
+        {data.detailPosition !== "haut" && carteDetail}
       </div>
     </div>
   );

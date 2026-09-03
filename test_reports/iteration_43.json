@@ -1,0 +1,40 @@
+{
+  "summary": "Retest niveau 4 « Composants & preuves » après ajout du placement directionnel iter_43 (essai bas puis haut, priorité sélection > halo > couverture). RÉSULTAT : critère indicatif ATTEINT (15/38 cartes, borne basse de 15-25, +9 vs iter_42), placement directionnel opérationnel (10 cartes AU-DESSUS + 5 EN DESSOUS), régression L2 propre (38 twin-nom, retour à 0 cartes après zoom arrière, 0 erreur console). MAIS critère STRICT NON ATTEINT : 3 chevauchements résiduels détectés — 1 card↔card (sanctions↔base-connaissances), 1 card↔twin-nom_autre (paiements↔catalogue) et 1 card↔avatar_autre (paiements↔catalogue). La cause commune : mismatch entre la hauteur nominale de la carte utilisée dans placerLabels (h=86 en atlasGraph.js l.607) et la hauteur réelle rendue par TwinNode.jsx (~100px = 6 icônes + 5 jauges + p-2 + border). Régression : parfaite. Structure carte confirmée (twin-sources-* + twin-strates-* présents, 6 icônes sources + 5 jauges I/C/R/T/M).",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "atlasGraph.js l.607 vs TwinNode.jsx l.115-119 — hauteur carte sous-estimée",
+        "issue": "placerLabels utilise h=86 (y0=p.y+75/y1=p.y+161 en bas ; y0=p.y-92/y1=p.y-6 en haut) mais la carte DOM réelle mesure ~100px de haut (mesuré : hauteur écran 259 à scale 2.6 → 99.6 unités monde). En position 'bas' avec `-mx-[43px] mt-0.5` la carte occupe p.y+~75..p.y+~175 (+14px non réservés) ; en position 'haut' avec `absolute bottom-full mb-1` elle occupe p.y-~104..p.y-~4 (+12px non réservés vers le haut). Ces débordements provoquent 3 chevauchements résiduels : (a) card↔card sanctions/base-connaissances (Y overlap ~72px écran = ~28px monde, cohérent avec le débord de ~14px×2) ; (b) card↔twin-nom paiements/catalogue et (c) card↔avatar paiements/catalogue (paiements est placé 'haut' et déborde de ~12px dans la zone du robot catalogue situé au-dessus).",
+        "selector": "[data-testid^='twin-composants-']",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_43.json"],
+  "action_items": [
+    "Aligner la hauteur nominale de la carte dans placerLabels sur la hauteur DOM réelle (~100px, pas 86). Modifier atlasGraph.js l.607 : `['bas', p.y + 73, p.y + 175]` et `['haut', p.y - 105, p.y - 3]` (hauteur 102, avec 1px de marge). Idéalement, mesurer une fois le DOM ou dériver de la formule contenu : 6 icônes h=11 + gap 1.5 + 5 lignes×10 + margin-top 1.5 + p-2×2 + border ≈ 11+6+50+6+16+2 = 91px + 8px de tolérance = ~100.",
+    "Ajuster corrélativement geometrieNoeud (l.264-265) pour cohérence : `haut` y0=p.y-101 (au lieu de -92) ; `bas` y1=p.y+177 (au lieu de +164).",
+    "Alternative complémentaire pour maximiser la couverture (viser 20-25) : élargir MIN_DIST au niveau 4 (ex. 130 quand zoomNiveau>=4) sans casser la lisibilité L2.",
+    "Vérifier l'anti-corrélation possible : la carte 'bas' est placée par TwinNode avec `mt-0.5` (~2px), la carte 'haut' avec `mb-1` (~4px). Uniformiser à mb-0.5/mt-0.5 pour prédictibilité."
+  ],
+  "critical_code_review_comments": [
+    "atlasGraph.js l.593-616 : la stratégie 'essai bas puis haut' fonctionne et fait passer de 6 à 15 cartes rendues. Bonne implémentation compacte (Map id→position, boucle sur [bas, haut]).",
+    "atlasGraph.js l.607 : hauteur de carte hard-codée à 86 sans commentaire justificatif ni source-of-truth partagée avec TwinNode. Extraire une constante `HAUTEUR_CARTE_COMPOSANTS` partagée entre atlasGraph.js et TwinNode.jsx (ou dériver dynamiquement).",
+    "atlasGraph.js l.259-267 : geometrieNoeud (niveau 4) utilise des dimensions différentes de placerLabels (l.264 : haut y0=p.y-92/y1=p.y+78 h=170 ; l.265 : bas y0=p.y/y1=p.y+164 h=164). Ces valeurs concernent l'obstacle pour le routeur d'arêtes, pas la validation d'anti-collision, mais l'incohérence des tailles est risquée pour la maintenance.",
+    "TwinNode.jsx l.118 : la position 'bas' utilise `-mx-[43px] mt-0.5` (in-flow) tandis que 'haut' utilise `absolute bottom-full`. L'asymétrie (in-flow vs absolute) crée des offsets légèrement différents. Considérer une position `absolute top-full` pour 'bas' afin d'uniformiser."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "N/A — frontend only",
+    "frontend": "85% — critère indicatif (>>5, idéalement 15-25) ATTEINT (15 cartes), placement directionnel OPÉRATIONNEL (10 haut + 5 bas), régression L2 OK, console propre. Critère STRICT (0 chevauchement) NON atteint : 3 chevauchements résiduels dus à une sous-estimation de 14px de la hauteur de carte dans placerLabels."
+  },
+  "test_credentials": "Persona architecte par défaut, pas d'auth.",
+  "seed_data_creation": "Aucune.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "L4 zoom : mouse.wheel sur .react-flow__pane (10 crans -500 depuis centre) → scale 2.6. Métriques à vérifier : (a) count twin-composants-* ; (b) 0 overlap card↔card ; (c) 0 overlap card↔twin-nom autre ; (d) 0 overlap card↔zone avatar autre (top de twin-node jusqu'au top de twin-nom). Exclure les nœuds region (reg-*) qui n'ont pas de twin-nom — ce sont des polygones de domaine, pas des robots. Iter_43 : 15 cartes rendues (paiements, sanctions, base-connaissances, comptes, fraude, support, commandes, api-gateway, scoring, segments, seo-pages + 4 autres), 3 chevauchements résiduels tous imputables au mismatch h=86 vs h~100 dans placerLabels/atlasGraph.js l.607. Après fix des dimensions, retester : count doit rester ≥15 et overlaps=0.",
+  "rca of the issue": "Le placement directionnel iter_43 est CORRECT dans sa logique (arbitrage bas→haut, priorité sélection/halo/couverture) et fait passer le nombre de cartes de 6 à 15. Toutefois, les rectangles bornants utilisés par placerLabels (atlasGraph.js l.607) supposent une hauteur de carte de 86px alors que le DOM réel rendu par TwinNode.jsx (l.115-149) fait ~100px de haut (6 icônes 11px + gap + 5 jauges ~10px + p-2 + border). Ce sous-dimensionnement de 14px provoque un débord non-réservé : en position 'bas' la carte descend jusqu'à p.y+175 au lieu de p.y+161 (14px de débord bas) ; en position 'haut' elle monte jusqu'à p.y-104 au lieu de p.y-92 (12px de débord haut). Résultat : 3 chevauchements résiduels — (1) sanctions ('bas', empiète 14px vers bas) chevauche base-connaissances ('bas', empiète 14px vers bas depuis un robot situé ~80px plus haut) ; (2)/(3) paiements ('haut') empiète 12px vers le haut et heurte la zone twin-nom + avatar de catalogue situé juste au-dessus. Correctif : réajuster placerLabels sur h=102 (['bas', p.y+73, p.y+175] et ['haut', p.y-105, p.y-3]). Le count ne devrait pas chuter significativement car la géométrie corrigée reste dans les mêmes bandes MIN_DIST=105 ; on peut au besoin élargir MIN_DIST à 130 au niveau 4 pour viser 20-25 cartes."
+}

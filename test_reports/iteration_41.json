@@ -1,0 +1,36 @@
+{
+  "summary": "Retest BUG 1 (cartes twin-composants niveau 4) après fix self-id iter_41. RÉSULTAT : PARTIEL — la régression 0 carte de iter_40 est corrigée (5 cartes rendues au lieu de 0) MAIS le nombre reste très en dessous de l'attendu (5/38, requis ≥12, cible ~22). Le fix self-id (`p.id !== c.id` dans placerLabels + champ `id` sur obstacles/candidats) fonctionne correctement pour empêcher un twin de se masquer lui-même. Cependant, le bug de convention de coordonnées CENTRE (placerLabels) vs TOP-LEFT (callsite l.585-604) persiste : chaque carte candidate est encore filtrée par les rectangles robots des JUMEAUX VOISINS car les rectangles sont mal placés. Aucun chevauchement mesuré (card↔card=0, card↔twin-nom autre=0, card↔twin-node autre=0), 0 erreur console. Régression L2 OK : 38 twin-nom présents. Chaque carte contient bien 6 icônes sources + 5 jauges de strates. RCA détaillé : au callsite l.586-604, obstacleRobot = {x: p.x+32, y: p.y+52, w:72, h:86} — mais placerLabels ligne 20 traite (x,y) comme CENTRE → rect devient [p.x-4..p.x+68] × [p.y+9..p.y+95]. Candidat = {x:p.x+32, y:p.y+140, w:152, h:92} → rect [p.x-44..p.x+108] × [p.y+94..p.y+186]. Pour un twin A dont le twin B se trouve VERTICALEMENT PROCHE au-dessus (ΔY ∈ [-177, +1]), le robot B masque la carte A. Avec MIN_DIST=105 entre centres et un layout dense de 38 twins, la majorité des cartes tombent dans cette plage → 33/38 sont masquées.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "atlasGraph.js — construireGraphe niveau 4 (l.585-605) vs placerLabels (l.19-32)",
+        "issue": "Convention de coordonnées incohérente : le callsite passe des rectangles en TOP-LEFT (x=p.x+32, y=p.y+52) mais placerLabels interprète (x,y) comme CENTRE (rect = [x-w/2, x+w/2] × [y-h/2, y+h/2]). Résultat : seulement 5/38 cartes visibles (attendu ≥12). Les rectangles robots sont calculés à des positions décalées de ~w/2, h/2 par rapport à la réalité DOM, ce qui provoque des faux positifs de collision avec les cartes des jumeaux voisins situés au-dessus. Fix requis : uniformiser la convention. Option minimale — au callsite, convertir en CENTRE : obstacleRobot = {x: p.x+30, y: p.y+40, w:64, h:64} (centre = avatar) ou {x: p.x+32, y: p.y+52, w:0, h:0} n'a aucun sens. Meilleur fix : (a) documenter placerLabels comme CENTRE et adapter le callsite pour donner de VRAIS centres et vraies dimensions du bloc robot+AppID (avatar 56x56 centré à p.x+30,p.y+40 + AppID centré à p.x+32, p.y+96 ≈ hauteur totale 88, largeur 64). Le rectangle obstacle correct est donc : centre (p.x+30, p.y+52), w=64, h=88. Le candidat carte correct : centre (p.x+32, p.y+104) [top de carte à p.y+58 selon TwinNode], w=150, h=~92. (b) OU changer placerLabels pour convention TOP-LEFT.",
+        "selector": "[data-testid^='twin-composants-']",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_41.json"],
+  "action_items": [
+    "Aligner la convention de coordonnées entre placerLabels et le callsite niveau 4 pour rendre plus de cartes (≥12, cible ~22). Le fix self-id est OK et à conserver.",
+    "Suggestion : convertir obstacles et candidats au callsite en vrais centres/dimensions correspondant au DOM réel. Obstacle robot (avatar+AppID) : centre (p.x+30, p.y+52), w≈64, h≈88. Candidat carte : centre (p.x+32, p.y+104), w=150, h=92 (la carte est à `mt-0.5` sous l'AppID à ~p.y+58 dans TwinNode.jsx l.152)."
+  ],
+  "critical_code_review_comments": [
+    "atlasGraph.js — le champ `id` est bien maintenant présent sur obstacles ET candidats, et placerLabels applique `p.id !== c.id` ligne 25. Bon.",
+    "PLACE HOLDERS BUG résiduel : la géométrie utilisée au callsite (l.586-604) est encore en TOP-LEFT alors que placerLabels attend un CENTRE. C'est le même bug de convention que iter_40, non résolu."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "N/A — frontend only",
+    "frontend": "40% — régression iter_40 (0 carte) corrigée mais critère quantitatif non atteint (5/38 au lieu de ≥12). L2 & console propres."
+  },
+  "test_credentials": "Persona architecte par défaut, pas d'auth.",
+  "seed_data_creation": "Aucune.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Après nouveau fix, retester au niveau 4 : (a) count `[data-testid^=twin-composants-]` doit être ≥12 (idéalement ~20-22 selon densité), (b) 0 chevauchement card↔card, (c) 0 chevauchement card↔twin-node d'un AUTRE twin, (d) chaque carte a 6 sources + 5 strates. Méthode L4 : viewport 1920×1080, /atlas, 6 dbl-clics à (canvas.cx, canvas.y+120). Persona architecte par défaut, Mesh global 30 jumeaux (mesh.jumeaux.length = 38 twin-nom rendus incluant portes).",
+  "rca of the issue": "Le fix iter_41 a bien introduit le champ `id` sur obstacles et candidats et le test `p.id !== c.id` ligne 25 de placerLabels — ce qui règle le self-collision. Cependant la convention de coordonnées n'est pas alignée : placerLabels convertit (x,y,w,h) en rect [x-w/2..x+w/2] × [y-h/2..y+h/2] (CENTRE), mais le callsite l.586-604 passe des valeurs qui correspondent en fait à un coin haut-gauche du bloc robot (`p.x + 32, p.y + 52` = décalage top-left) puis `w:72, h:86`. La conversion CENTRE produit donc des rectangles décalés vers le haut-gauche par rapport au DOM réel. Chaque candidat carte est ainsi filtré par le robot d'un twin voisin dont la position verticale tombe dans [-177..+1] au-dessus (large plage due à h=92+86=178). Résultat mesuré : 5 cartes visibles sur 38 twins. Reproduction : viewport 1920×1080, /atlas, 6 dbl-clics au centre-haut du canvas, `document.querySelectorAll('[data-testid^=twin-composants-]').length === 5`. Fix conseillé : convertir au callsite en vrais centres/dimensions correspondant à la géométrie DOM effective, ex. obstacleRobot centre = (p.x+30, p.y+52), w=64, h=88 ; candidat carte centre = (p.x+32, p.y+104), w=150, h=92."
+}

@@ -20,8 +20,9 @@ export default memo(function AreteOrthogonale({ id, data, selected, style: style
   const labelPos = useMemo(() => ancreLabel(points), [points]);
   const marqueurs = useMemo(() => (etat === "observee" ? pointsMarqueurs(points) : []), [points, etat]);
 
-  // Libellés : survol/sélection, voie agrégée « N flux », ou zoom Application prononcé (jamais par défaut en vue Domaines)
-  const afficheLabel = label && (actif || data.zoomFort || agregat);
+  // Libellés : survol/sélection toujours visibles ; sinon arbitrés par le moteur de labels
+  // (labelMasque = un label plus prioritaire occupe déjà cette zone)
+  const afficheLabel = label && (actif || (!data.labelMasque && (data.zoomFort || agregat)));
   // Animation directionnelle discrète : uniquement survol, sélection ou nouveauté
   const anime = etat === "observee" && (actif || nouvelle) && !estompee && !agregat;
 
