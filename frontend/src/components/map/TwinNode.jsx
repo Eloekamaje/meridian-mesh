@@ -93,37 +93,6 @@ export default function TwinNode({ data, selected }) {
     );
   }
 
-  // Grappe de jumeaux (niveau 2, domaines denses) : avatar + compteur, membres au survol
-  if (data.grappe) {
-    const g = data.grappe;
-    return (
-      <div className="group relative" data-testid={`grappe-${g.id}`}>
-        <div className="pointer-events-none absolute -top-3 left-1/2 z-50 w-52 -translate-x-1/2 -translate-y-full rounded-lg border border-[#E5E5E3] bg-white p-3 opacity-0 backdrop-blur-xl transition-opacity duration-200 group-hover:opacity-100">
-          <div className="font-display text-xs font-bold" style={{ color: couleur }}>{g.domaine} — {g.membres.length} jumeaux regroupés</div>
-          <div className="mt-1.5 space-y-0.5 font-code text-[10px] text-[#52524F]">
-            {g.membres.map((j) => <div key={j.id}>{idNumerique(j.id)} · {j.nom}</div>)}
-          </div>
-          <div className="mt-2 font-code text-[9px] text-[#0E7490]">Clic : zoom avant pour déployer</div>
-        </div>
-        <div className={`relative transition-opacity duration-500 ${data.dim ? "opacity-20" : ""}`}>
-          <Handle type="target" id="t-b" position={Position.Bottom} className="!h-2 !w-2 !min-w-0 !border-0 !bg-transparent" style={{ bottom: -2, left: "46%" }} />
-          <Handle type="source" id="s-b" position={Position.Bottom} className="!h-2 !w-2 !min-w-0 !border-0 !bg-transparent" style={{ bottom: -2, left: "46%" }} />
-          {data.halo && (
-            <span className="pointer-events-none absolute -inset-2 rounded-2xl" style={{ backgroundColor: `${couleur}10`, border: `1px solid ${couleur}2A` }} />
-          )}
-          <AvatarJumeau actif ports={false} />
-          <span
-            className="absolute -bottom-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full border border-white px-1 font-code text-[9px] font-bold text-white shadow"
-            style={{ backgroundColor: couleur }}
-            data-testid={`grappe-compteur-${g.id}`}
-          >
-            ×{g.membres.length}
-          </span>
-        </div>
-      </div>
-    );
-  }
-
   // Jumeau = identifiant numérique + robot (le nom complet apparaît au niveau 3 — applications & flux)
   return (
     <div

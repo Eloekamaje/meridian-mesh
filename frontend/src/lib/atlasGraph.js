@@ -151,43 +151,13 @@ const PRIORITES = { contestee: 80, validation: 60, observee: 60, supposee: 50, c
 // Nos côtés de handles (r/l/t/b) ↔ ports libavoid (e/w/n/s)
 const COTE_VERS_PORT = { r: "e", l: "w", t: "n", b: "s" };
 
-// Regroupement visuel — niveau 2 uniquement (jamais selon la taille d'écran) :
-// les domaines denses regroupent leurs jumeaux proches en grappes « ×N » qui se
-// dissolvent au zoom avant (niveau 3). Agrège aussi les relations vers une grappe.
-const SEUIL_DENSITE = 5; // domaine dense à partir de 5 jumeaux
-const RAYON_GRAPPE = 130; // distance monde de regroupement
-const VISIBLES_PAR_DOMAINE = 2; // les 2 jumeaux les plus couverts restent individuels
+// Regroupement visuel désactivé (choix utilisateur) : tous les jumeaux restent individuels
+const SEUIL_DENSITE = 5; // conservé pour référence historique, non utilisé
+const RAYON_GRAPPE = 130;
+const VISIBLES_PAR_DOMAINE = 2;
 
 function clusteriser(twins, posDe, zoomNiveau) {
-  if (zoomNiveau !== 2) return { clusters: {}, groupes: [] };
-  const parDomaine = {};
-  twins.filter((j) => !j.anonyme).forEach((j) => { (parDomaine[j.domaine] = parDomaine[j.domaine] || []).push(j); });
-  const clusters = {}; // twinId -> grappeId
-  const groupes = [];
-  Object.entries(parDomaine).forEach(([dom, js]) => {
-    if (js.length < SEUIL_DENSITE) return;
-    const tries = [...js].sort((a, b) => (b.couverture || 0) - (a.couverture || 0));
-    const restants = tries.slice(VISIBLES_PAR_DOMAINE);
-    const grappes = [];
-    restants.forEach((j) => {
-      const p = posDe[j.id];
-      if (!p) return;
-      const g = grappes.find((gr) => Math.hypot(gr.cx - (p.x + 30), gr.cy - (p.y + 40)) < RAYON_GRAPPE);
-      if (g) {
-        g.membres.push(j);
-        g.cx = g.membres.reduce((a, m) => a + posDe[m.id].x + 30, 0) / g.membres.length;
-        g.cy = g.membres.reduce((a, m) => a + posDe[m.id].y + 40, 0) / g.membres.length;
-      } else {
-        grappes.push({ id: `grappe-${dom}-${grappes.length}`, domaine: dom, membres: [j], cx: p.x + 30, cy: p.y + 40 });
-      }
-    });
-    grappes.forEach((g) => {
-      if (g.membres.length === 1) return; // un seul jumeau : pas de grappe
-      g.membres.forEach((j) => { clusters[j.id] = g.id; });
-      groupes.push(g);
-    });
-  });
-  return { clusters, groupes };
+  return { clusters: {}, groupes: [] };
 }
 
 // Centre de l'avatar (ou de la pastille) selon la variante de nœud
@@ -248,24 +218,7 @@ function geometrieNoeud(n) {
   const pos = n.position;
   const j = n.data?.jumeau || {};
 
-  if (n.data?.grappe) {
-    // Grappe = avatar 48px. La forme connectable est l'avatar entier.
-    return {
-      forme: { id: n.id, x0: pos.x + 8, y0: pos.y, x1: pos.x + 56, y1: pos.y + 48 },
-      obstacles: [],
-    };
-  }
-
-  if (j.porte) {
-    const nom = n.data?.apercuPorte?.domaine || j.nom || "";
-    const lw = nom.length * 6.5 + 34;
-    return {
-      forme: { id: n.id, x0: pos.x + 22, y0: pos.y, x1: pos.x + 38, y1: pos.y + 16 },
-      obstacles: [{ x0: pos.x + 30 - lw / 2, y0: pos.y + 18, x1: pos.x + 30 + lw / 2, y1: pos.y + 36 }],
-    };
-  }
-
-  if (j.anonyme) {
+  if (j.porte || j.anonyme) {
     // Anonyme = pastille 16px + App ID + "résumé" en bas (+ 4px de marge).
     // La forme englobe tout le bloc pour que les arêtes s'attachent tout en bas.
     const lw = Math.max(16, 4 * 7 + 10);
@@ -608,13 +561,12 @@ export function construireGraphe({
     };
   });
 
-  // Regroupement visuel (niveau 2, domaines denses) — avant toute construction d'arêtes
-  const { clusters, groupes } = entreprise
-    ? { clusters: {}, groupes: [] }
-    : clusteriser(twins, Object.fromEntries(twins.map((j) => [j.id, posSeparees[j.id] || j.position])), zoomNiveau);
+  // Regroupement visuel désactivé (choix utilisateur)
+  const clusters = {};
+  const groupes = [];
 
   ns = ns.concat(
-    twins.filter((j) => !clusters[j.id]).map((j) => {
+    twins.map((j) => {
       const position = posSeparees[j.id] || j.position;
       return {
         id: j.id,
@@ -628,26 +580,11 @@ export function construireGraphe({
       };
     })
   );
-  // Nœuds « grappe » (jumeaux regroupés au niveau 2 dans les domaines denses)
-  groupes.forEach((g) => {
-    ns.push({
-      id: g.id,
-      type: "twin",
-      position: { x: g.cx - 30, y: g.cy - 40 },
-      initialWidth: 64,
-      initialHeight: 78,
-      hidden: entreprise,
-      data: { grappe: g, niveau: zoomNiveau, halo: !!halo && g.membres.some((j) => j.id === halo) },
-      draggable: false,
-      selectable: false,
-      zIndex: 3,
-    });
-  });
+  // Nœuds « grappe » supprimés (choix utilisateur)
 
   let es = [];
   let snapMain = null;
   const posMain = Object.fromEntries(twins.map((j) => [j.id, posSeparees[j.id] || j.position]));
-  groupes.forEach((g) => { posMain[g.id] = { x: g.cx - 30, y: g.cy - 40 }; });
   if (entreprise) {
     // Zoom Entreprise : corridors agrégés inter-domaines
     const regParDom = {};
