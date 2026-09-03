@@ -1,5 +1,8 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v39, réétalement de Distribution)
+- **Chevauchements dans Distribution** : les 7 positions de seed étaient trop resserrées (domaine plat 460×190) — réétalées en deux rangées espacées (centres ≥ 90 px). Les seuls chevauchements résiduels sont des collisions d'étiquettes de noms au niveau 3 (comportement cartographique normal), les avatars sont nettement séparés.
+
 ## Implémenté (06/2026 — v38, correctifs interactions + mode immersif)
 - **Bug pan bloqué** : les étiquettes de domaines invisibles (opacité 0, règle « label au survol ») interceptaient encore le pointeur (`pointer-events: auto`) → le drag démarré dessus ne déplaçait pas la carte. Corrigé : `pointer-events: none` quand le label est masqué. Vérifié : pan fonctionnel depuis ces zones à toutes les tailles (1920/1280/768/390).
 - **Mode immersif plein écran** (tablette/mobile ≤1024px) : bouton `btn-immersif` (« Plein écran » / « Quitter ») qui masque totalement sidebar et topbar applicatives (classe `atlas-immersif` sur body + CSS), caméra conservée (zoom et centre monde inchangés via ResizeObserver), pan toujours fluide. Auto-désactivé en repassant desktop.
