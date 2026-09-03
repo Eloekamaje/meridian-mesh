@@ -4,6 +4,7 @@
 - **Principe du « zéro chevauchement »** : ajout d'un algorithme de séparation déterministe (`separerNoeuds` dans `atlasGraph.js`). Avant la construction du graphe, les nœuds trop proches (distance < 105 px) sont écartés itérativement (jusqu'à 20 passes) selon une spirale de Fibonacci (en cas de superposition parfaite). Garantit qu'aucun avatar ni étiquette ne se chevauchent, même avec des coordonnées de seed denses.
 - **App ID en bas** (demande utilisateur) : le nom complet du jumeau est retiré de la carte. L'identifiant numérique à 4 chiffres (`idNumerique`) est déplacé sous l'avatar du robot. Le badge compteur d'événements (« +X ») au-dessus du robot est supprimé.
 - **Géométrie de routage** : `geometrieNoeud` mis à jour pour déclarer l'App ID comme un obstacle en bas (au lieu du haut), assurant que le routeur orthogonal (libavoid) contourne correctement les nouvelles étiquettes.
+- **Correction ancrage des arêtes** : la forme connectable déclarée au routeur (`geometrieNoeud`) englobe désormais l'avatar ET l'étiquette App ID en bas (+ 4px de marge). Les points de connexion (Handles) React Flow sont déplacés tout en bas du nœud. Résultat : les arêtes arrivant par le bas s'attachent sous l'étiquette, éliminant tout chevauchement visuel de l'extrémité avec le texte.
 - Tests : **iteration_38 → 100 %** (zéro overlap confirmé sur 21 twins + 16 grappes au niveau 2, et 38 twins déployés au niveau 3 ; routage orthogonal propre ; console propre).
 
 ## Implémenté (06/2026 — v39, réétalement de Distribution)

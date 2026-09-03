@@ -247,7 +247,16 @@ function separerNoeuds(twins, posOverrides = {}) {
 function geometrieNoeud(n) {
   const pos = n.position;
   const j = n.data?.jumeau || {};
-  if (j.porte || j.anonyme || n.data?.grappe) {
+
+  if (n.data?.grappe) {
+    // Grappe = avatar 48px. La forme connectable est l'avatar entier.
+    return {
+      forme: { id: n.id, x0: pos.x + 8, y0: pos.y, x1: pos.x + 56, y1: pos.y + 48 },
+      obstacles: [],
+    };
+  }
+
+  if (j.porte) {
     const nom = n.data?.apercuPorte?.domaine || j.nom || "";
     const lw = nom.length * 6.5 + 34;
     return {
@@ -255,14 +264,30 @@ function geometrieNoeud(n) {
       obstacles: [{ x0: pos.x + 30 - lw / 2, y0: pos.y + 18, x1: pos.x + 30 + lw / 2, y1: pos.y + 36 }],
     };
   }
+
+  if (j.anonyme) {
+    // Anonyme = pastille 16px + App ID + "résumé" en bas (+ 4px de marge).
+    // La forme englobe tout le bloc pour que les arêtes s'attachent tout en bas.
+    const lw = Math.max(16, 4 * 7 + 10);
+    return {
+      forme: { id: n.id, x0: pos.x + 30 - lw / 2, y0: pos.y, x1: pos.x + 30 + lw / 2, y1: pos.y + 56 },
+      obstacles: [],
+    };
+  }
+
   const grand = (n.data?.niveau || 2) >= 3;
   const w = grand ? 56 : 48;
   const x0 = pos.x + (64 - w) / 2;
   const y0 = pos.y + 16;
-  // L'App ID est désormais affiché en bas (4 chiffres)
-  const lw = 4 * 7 + 10;
-  const obstacles = [{ x0: pos.x + 32 - lw / 2, y0: y0 + w + 2, x1: pos.x + 32 + lw / 2, y1: y0 + w + 18 }];
-  return { forme: { id: n.id, x0, y0, x1: x0 + w, y1: y0 + w }, obstacles };
+  const lw = 4 * 7 + 10; // largeur de l'App ID (4 chiffres)
+
+  // La forme connectable englobe l'avatar ET l'App ID en bas (+ 4px de marge).
+  // Ainsi, les arêtes venant du bas s'attachent sous l'étiquette (zéro chevauchement visuel).
+  const minX = Math.min(x0, pos.x + 32 - lw / 2);
+  const maxX = Math.max(x0 + w, pos.x + 32 + lw / 2);
+  const forme = { id: n.id, x0: minX, y0, x1: maxX, y1: y0 + w + 22 };
+
+  return { forme, obstacles: [] };
 }
 
 // Titre de domaine = obstacle (les relations ne traversent jamais les étiquettes)

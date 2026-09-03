@@ -17,8 +17,6 @@ function AvatarJumeau({ selected, actif, grand, ports, relLiee }) {
       <Handle type="source" id="s-r" position={Position.Right} className={cls} style={{ right: -2, top: "46%" }} />
       <Handle type="target" id="t-t" position={Position.Top} className={cls} style={{ top: -2, left: "46%" }} />
       <Handle type="source" id="s-t" position={Position.Top} className={cls} style={{ top: -2, left: "46%" }} />
-      <Handle type="target" id="t-b" position={Position.Bottom} className={cls} style={{ bottom: -2, left: "46%" }} />
-      <Handle type="source" id="s-b" position={Position.Bottom} className={cls} style={{ bottom: -2, left: "46%" }} />
       {ports && (
         <>
           <span className="absolute -left-1 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-[#71716D]" data-testid="port-entree" />
@@ -54,8 +52,6 @@ function PointJumeau({ couleur, dashed }) {
       <Handle type="source" id="s-r" position={Position.Right} className={cls} style={{ right: -2, top: 7 }} />
       <Handle type="target" id="t-t" position={Position.Top} className={cls} style={{ top: -2, left: 7 }} />
       <Handle type="source" id="s-t" position={Position.Top} className={cls} style={{ top: -2, left: 7 }} />
-      <Handle type="target" id="t-b" position={Position.Bottom} className={cls} style={{ bottom: -2, left: 7 }} />
-      <Handle type="source" id="s-b" position={Position.Bottom} className={cls} style={{ bottom: -2, left: 7 }} />
       <span
         className={`relative inline-flex h-4 w-4 items-center justify-center rounded-full border-2 bg-white ${dashed ? "border-dashed" : ""}`}
         style={{ borderColor: couleur, boxShadow: "0 1px 3px rgba(17,17,16,0.15)" }}
@@ -84,6 +80,8 @@ export default function TwinNode({ data, selected }) {
           <div className="mt-2 font-code text-[9px] text-[#71716D]">Résumé uniquement</div>
         </div>
         <div className={`flex flex-col items-center gap-1 transition-opacity duration-500 ${data.dim ? "opacity-15" : "opacity-45"}`}>
+          <Handle type="target" id="t-b" position={Position.Bottom} className="!h-2 !w-2 !min-w-0 !border-0 !bg-transparent" style={{ bottom: -2, left: "46%" }} />
+          <Handle type="source" id="s-b" position={Position.Bottom} className="!h-2 !w-2 !min-w-0 !border-0 !bg-transparent" style={{ bottom: -2, left: "46%" }} />
           <PointJumeau couleur={couleur} dashed />
           <span className="rounded bg-white/70 px-1.5 font-code text-[9px] tracking-wide text-[#52524F]">{idNumerique(j.id)}</span>
           <span className="flex items-center gap-1 rounded-full bg-[#EDECE6] px-1.5 py-px font-code text-[8px] text-[#71716D]">
@@ -108,6 +106,8 @@ export default function TwinNode({ data, selected }) {
           <div className="mt-2 font-code text-[9px] text-[#0E7490]">Clic : zoom avant pour déployer</div>
         </div>
         <div className={`relative transition-opacity duration-500 ${data.dim ? "opacity-20" : ""}`}>
+          <Handle type="target" id="t-b" position={Position.Bottom} className="!h-2 !w-2 !min-w-0 !border-0 !bg-transparent" style={{ bottom: -2, left: "46%" }} />
+          <Handle type="source" id="s-b" position={Position.Bottom} className="!h-2 !w-2 !min-w-0 !border-0 !bg-transparent" style={{ bottom: -2, left: "46%" }} />
           {data.halo && (
             <span className="pointer-events-none absolute -inset-2 rounded-2xl" style={{ backgroundColor: `${couleur}10`, border: `1px solid ${couleur}2A` }} />
           )}
@@ -137,6 +137,8 @@ export default function TwinNode({ data, selected }) {
         <span className="pointer-events-none absolute -inset-1.5 rounded-2xl border-2" style={{ borderColor: couleur }} data-testid="twin-focus-ring" />
       )}
       <div className="flex flex-col items-center gap-1">
+        <Handle type="target" id="t-b" position={Position.Bottom} className="!h-2 !w-2 !min-w-0 !border-0 !bg-transparent" style={{ bottom: -2, left: "46%" }} />
+        <Handle type="source" id="s-b" position={Position.Bottom} className="!h-2 !w-2 !min-w-0 !border-0 !bg-transparent" style={{ bottom: -2, left: "46%" }} />
         <AvatarJumeau actif={j.statut === "actif"} selected={selected} grand={niveau3} ports={niveau3} relLiee={data.relLiee} />
         <span
           className="whitespace-nowrap font-code text-[10px] font-semibold tracking-wide text-[#3F3F3C] transition-colors group-hover:text-[#0E7490]"
