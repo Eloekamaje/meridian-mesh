@@ -208,7 +208,7 @@ export default function FlorePanel() {
   const caseId = caseMatch && caseMatch[1] !== "nouveau" ? caseMatch[1] : null;
   const {
     selection, setSelection, domaineSel, retirerJumeau, setDomaineSel, ajouterJumeau,
-    commanderCarte, focusVisuel, lot, floreOuverte, ouvrirFlore, fermerFlore, atlasCtx,
+    commanderCarte, focusVisuel, lot, floreOuverte, ouvrirFlore, fermerFlore, atlasCtx, questionFlore, setQuestionFlore,
   } = useContexte();
   const { jumeauPar, mesh } = useMesh();
   const [question, setQuestion] = useState("");
@@ -311,6 +311,19 @@ export default function FlorePanel() {
       setChargement(false);
     }
   };
+
+  // Questions pré-remplies depuis les pages métier (« Analyser ce travail », …) :
+  // envoyées dès que le panneau est ouvert. Garde par ref (StrictMode rejoue les effets)
+  // et réarmement à la fermeture du panneau.
+  const questionEnCours = useRef(null);
+  useEffect(() => {
+    if (!floreOuverte) { questionEnCours.current = null; return; }
+    if (!questionFlore || questionEnCours.current === questionFlore) return;
+    questionEnCours.current = questionFlore;
+    setQuestionFlore(null);
+    demander(questionFlore);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [questionFlore, floreOuverte]);
 
   const creerCase = async () => {
     if (!echanges.length || creationCase) return;

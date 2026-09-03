@@ -14,6 +14,13 @@ export function ContexteProvider({ children }) {
   // État de navigation de l'Atlas (viewport, sélection, couches) — mémorisé à la sortie
   // de la page pour être restauré exactement au retour (jamais de fitView au retour)
   const [atlasEtat, setAtlasEtat] = useState(null);
+  // Question pré-remplie pour Flore depuis une page métier (« Analyser ce travail »…) —
+  // stockée dans le store (pas d'événement volant) pour éviter toute course à l'ouverture
+  const [questionFlore, setQuestionFlore] = useState(null);
+  const demanderAFlore = (q) => {
+    setQuestionFlore(q);
+    setFloreOuverte(true);
+  };
 
   const ajouterJumeau = useCallback((id) => setSelection((s) => (s.includes(id) ? s : [...s, id])), []);
   const retirerJumeau = useCallback((id) => setSelection((s) => s.filter((x) => x !== id)), []);
@@ -24,7 +31,7 @@ export function ContexteProvider({ children }) {
 
   return (
     <ContexteCtx.Provider
-      value={{ selection, setSelection, domaineSel, setDomaineSel, focusCarte, commanderCarte, ajouterJumeau, retirerJumeau, focusVisuel, setFocusVisuel, lot, setLot, floreOuverte, ouvrirFlore, fermerFlore, basculerFlore, atlasCtx, setAtlasCtx, atlasEtat, setAtlasEtat }}
+      value={{ selection, setSelection, domaineSel, setDomaineSel, focusCarte, commanderCarte, ajouterJumeau, retirerJumeau, focusVisuel, setFocusVisuel, lot, setLot, floreOuverte, ouvrirFlore, fermerFlore, basculerFlore, atlasCtx, setAtlasCtx, atlasEtat, setAtlasEtat, questionFlore, setQuestionFlore, demanderAFlore }}
     >
       {children}
     </ContexteCtx.Provider>

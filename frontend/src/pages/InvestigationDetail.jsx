@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { ArrowLeft, CheckCircle, XCircle, Flask, Lightning, SealCheck, Prohibit, Compass } from "@phosphor-icons/react";
+import { ArrowLeft, CheckCircle, XCircle, Flask, Lightning, SealCheck, Prohibit, Compass, Sparkle } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useMesh } from "@/lib/mesh";
 import { usePerimetre } from "@/lib/perimetre";
+import { useContexte } from "@/lib/contexte";
 import TrustBadges from "@/components/TrustBadges";
 import { couleurDomaine, couleurConfiance, NATURES_EVENEMENT, NATURES, VERBES } from "@/lib/domaines";
 
@@ -13,6 +14,7 @@ export default function InvestigationDetail() {
   const navigate = useNavigate();
   const { jumeauPar } = useMesh();
   const { version } = usePerimetre();
+  const { demanderAFlore } = useContexte();
   const [sit, setSit] = useState(null);
   const [erreur, setErreur] = useState(false);
 
@@ -90,11 +92,21 @@ export default function InvestigationDetail() {
         <button onClick={() => navigate("/investigations")} className="flex items-center gap-1.5 text-xs text-[#71716D] transition-colors hover:text-[#111110]" data-testid="back-to-investigations">
           <ArrowLeft size={14} /> Investigations
         </button>
-        {(sit.jumeaux || []).length > 0 && (
-          <button onClick={() => navigate(`/atlas?situation=${sit.id}`)} data-testid="voir-atlas-btn" className="flex items-center gap-1.5 rounded-md border border-[#0E7490]/30 bg-[#0E7490]/[0.06] px-3 py-1.5 text-xs text-[#0E7490] transition-colors hover:bg-[#0E7490]/15">
-            <Compass size={13} /> Voir dans l'Atlas
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            onClick={() => demanderAFlore(`Analyse cette investigation : « ${sit.question || sit.titre} ». Quelles hypothèses privilégier et quelles preuves manquent pour trancher ?`)}
+            data-testid="investigation-analyser-flore"
+            title="Demander à Flore d'analyser cette investigation"
+            className="flex items-center gap-1.5 rounded-md border border-[#3730A3]/40 bg-[#3730A3]/[0.06] px-3 py-1.5 text-xs font-semibold text-[#3730A3] transition-colors hover:bg-[#3730A3]/12"
+          >
+            <Sparkle size={13} weight="fill" /> Analyser avec Flore
           </button>
-        )}
+          {(sit.jumeaux || []).length > 0 && (
+            <button onClick={() => navigate(`/atlas?situation=${sit.id}`)} data-testid="voir-atlas-btn" className="flex items-center gap-1.5 rounded-md border border-[#0E7490]/30 bg-[#0E7490]/[0.06] px-3 py-1.5 text-xs text-[#0E7490] transition-colors hover:bg-[#0E7490]/15">
+              <Compass size={13} /> Voir dans l'Atlas
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Zone 1 — La question */}

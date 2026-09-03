@@ -1,5 +1,10 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v46, « Analyser avec Flore » depuis les pages métier)
+- **Boutons contextuels Flore** : « ✦ Analyser avec Flore » dans l'en-tête du détail Travail (`travail-analyser-flore`) et de l'Investigation (`investigation-analyser-flore`, à côté de « Voir dans l'Atlas »).
+- **Mécanisme** : `demanderAFlore(question)` dans le store partagé (contexte.jsx) — ouvre le panneau Flore et envoie la question pré-remplie (le `case_id` est déjà injecté depuis l'URL par FlorePanel). Garde anti-doublon par ref (StrictMode rejoue les effets ; le setTimeout initial était annulé au démontage simulé).
+- Tests : auto-vérifié Playwright — question envoyée exactement 1× sur les deux pages, réponse mockée contextualisée (contributions, preuves, jauges), 0 erreur console.
+
 ## Implémenté (06/2026 — v45, pivot : vraies pages + état Atlas mémorisé)
 Réorientation utilisateur (annule le modèle surfaces superposées de v44) : l'Atlas est la **page d'accueil**, les autres fonctions sont de **vraies pages** dans un shell permanent.
 - **Shell permanent** : en-tête (topbar avec « ✦ Parler à Flore ») + rail latéral réduit par défaut (w-14, icônes, dépliable) sur TOUTES les pages ; seule la zone centrale change ; transition de page discrète (fade 180 ms, `page-transition`).
