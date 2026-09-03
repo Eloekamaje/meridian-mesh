@@ -549,7 +549,7 @@ export function construireGraphe({
       ns.push({
         id: `porte-${label}-vers-${dom}`,
         type: "twin",
-        position: { x: c.x + (dx / L) * (rMax + 30) - 30, y: c.y + (dy / L) * (rMax + 30) - 8 },
+        position: { x: c.x + (dx / L) * (rMax + 14) - 30, y: c.y + (dy / L) * (rMax + 14) - 8 },
         initialWidth: 64,
         initialHeight: 78,
         hidden: entreprise,

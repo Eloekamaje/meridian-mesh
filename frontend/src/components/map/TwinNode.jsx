@@ -1,5 +1,5 @@
 import { Handle, Position } from "@xyflow/react";
-import { LockSimple } from "@phosphor-icons/react";
+import { ArrowUpRight, LockSimple } from "@phosphor-icons/react";
 import { couleurDomaine, couleurConfiance, ETATS_RELATION } from "@/lib/domaines";
 import { idNumerique } from "@/lib/atlasGraph";
 
@@ -92,11 +92,12 @@ export default function TwinNode({ data, selected }) {
         )}
         <div className={`flex flex-col items-center gap-0.5 transition-opacity duration-500 ${data.dim ? "opacity-15" : "opacity-100"}`}>
           <PointJumeau couleur={c} dashed />
-          {/* Porte externe : connecteur compact en périphérie — nom du domaine cible + compteur */}
-          <div className="flex items-center gap-1.5 whitespace-nowrap rounded-full border border-[#E5E5E3] bg-white/85 px-2 py-0.5">
+          {/* Porte externe : connecteur directionnel compact, visuellement distinct des domaines */}
+          <div className="flex items-center gap-1 whitespace-nowrap rounded-full border border-dashed bg-white/60 px-2 py-0.5 opacity-85 transition-opacity hover:opacity-100" style={{ borderColor: `${c}88` }}>
             {ap?.restreint && <LockSimple size={10} className="shrink-0 text-[#71716D]" />}
-            <span className="font-code text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: c }}>{ap?.domaine || j.nom}</span>
-            <span className="font-code text-[9px] text-[#71716D]">· {ap?.relations ?? 0}</span>
+            <ArrowUpRight size={10} style={{ color: c }} className="shrink-0" />
+            <span className="font-code text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ color: c }}>{ap?.domaine || j.nom}</span>
+            <span className="font-code text-[8px] text-[#71716D]">· {ap?.relations ?? 0}</span>
           </div>
         </div>
       </div>

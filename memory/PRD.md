@@ -1,5 +1,10 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v33, peuplement du Mesh + portes clarifiées)
+- **12 jumeaux ajoutés** (seed_data.py) — 2 par domaine (24 au total, 4/domaine) : Prélèvements, Remboursements (Paiement) ; Préférences, Fidélité (Client) ; Scoring Crédit, Filtrage Sanctions (Risque) ; Stocks, Transporteurs (Opérations) ; Base de connaissances, Escalades (Support) ; Catalogue, Recommandations (Distribution). 14 relations supplémentaires (r15–r28 : confirmées, observées, supposée). Strates, sources détaillées et fraîcheurs complétées pour chacun. Compteurs de maturité des régions mis à jour.
+- **Portes re-stylées en connecteurs directionnels** (la redondance de noms de domaines venait d'elles) : bordure en pointillés, flèche ↗, fond translucide, taille réduite — clairement distinctes des étiquettes de domaines ; rapprochées de la frontière des membranes (rMax + 14 au lieu de + 30).
+- Tests : reseed OK (200), API vérifiée (24 jumeaux / 28 relations / strates complètes), Atlas et registre Jumeaux rendus correctement (28 arêtes, 12 portes, membranes étendues). Note : la réinitialisation de la démo a remis les positions des jumeaux aux coordonnées du seed.
+
 ## Implémenté (06/2026 — v32, « carte continue façon Google Maps » — refonte majeure de la navigation, spec utilisateur)
 - **Une seule carte mondiale, coordonnées stables** : suppression TOTALE des vues reconstruites (vue domaine interne avec portes en cercle, focus jumeau radial). Plus de téléportation ni de changement brutal de niveau.
 - **Propulsion (v31) supprimée** : le glisser est un pan pur à zoom STRICTEMENT constant (vérifié : scale() identique avant/après, seules les translations changent). Zoom uniquement explicite : molette, boutons, +/−/0, double-clic fond (centré pointeur), « Ajuster à la vue ».
