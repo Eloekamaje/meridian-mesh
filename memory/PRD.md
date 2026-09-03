@@ -1,5 +1,8 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v41, documentation technique de l'Atlas)
+- **`/app/docs/ATLAS.md`** : README détaillé de l'implémentation de l'Atlas — invariants (monde continu, zéro chevauchement, zoom sémantique global), pipeline `construireGraphe`, routage libavoid en Web Worker + routeur maison de secours, membranes concaves élastiques, 3 niveaux de zoom sémantique, navigation façon Google Maps, modes temporels, responsive (chrome uniquement), accessibilité, sources de données.
+
 ## Implémenté (06/2026 — v40, zéro chevauchement + App ID en bas)
 - **Principe du « zéro chevauchement »** : ajout d'un algorithme de séparation déterministe (`separerNoeuds` dans `atlasGraph.js`). Avant la construction du graphe, les nœuds trop proches (distance < 105 px) sont écartés itérativement (jusqu'à 20 passes) selon une spirale de Fibonacci (en cas de superposition parfaite). Garantit qu'aucun avatar ni étiquette ne se chevauchent, même avec des coordonnées de seed denses.
 - **App ID en bas** (demande utilisateur) : le nom complet du jumeau est retiré de la carte. L'identifiant numérique à 4 chiffres (`idNumerique`) est déplacé sous l'avatar du robot. Le badge compteur d'événements (« +X ») au-dessus du robot est supprimé.
