@@ -99,6 +99,7 @@ export default function Atlas() {
   const estTablette = useMedia("(max-width: 1024px)");
   const estTactile = useMedia("(pointer: coarse)");
   const [rechercheMobileOuverte, setRechercheMobileOuverte] = useState(false);
+  const [loupeForcee, setLoupeForcee] = useState(false); // recherche re-dépliée à la demande pendant qu'un panneau est ouvert
   const [calquesOuverts, setCalquesOuverts] = useState(false); // Calques déplié → la barre d'outils se range à droite du panneau
 
   const centreMonde = useRef(null); // point monde au centre du viewport (conservation caméra)
@@ -533,23 +534,12 @@ export default function Atlas() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodes, restaurerEtat]);
 
-  // Pan contextuel : la carte glisse doucement pour dégager l'espace occupé à droite
-  // (panneau contextuel 170 px + panneau Flore 220 px) — pan pur, zoom strictement constant,
-  // coordonnées du Mesh inchangées : on change la fenêtre sur le territoire, pas le territoire.
+  // Panneaux = colonnes de layout (détail à droite, Flore globale) : la carte se redimensionne
+  // et le ResizeObserver conserve la caméra — le chrome (mini-carte, zoom, barre) ne bouge jamais.
   const panneauOuvert = !!(comparaison || selectedRelation || selected || domaineSel || vueListe);
-  // Panneau détail = colonne de layout : la carte se redimensionne et le ResizeObserver conserve
-  // la caméra — le chrome (mini-carte, zoom, barre d'outils) ne bouge jamais. Seul Flore (overlay) décale le monde.
-  const decalageCible = floreOuverte ? 220 : 0;
-  const decalageApplique = useRef(0);
-  useEffect(() => {
-    if (estTablette) return;
-    const delta = decalageCible - decalageApplique.current;
-    if (delta === 0) return;
-    const vp = rfRef.current?.getViewport?.();
-    if (!vp) return;
-    decalageApplique.current = decalageCible;
-    rfRef.current.setViewport({ x: vp.x - delta, y: vp.y, zoom: vp.zoom }, { duration: 400 });
-  }, [decalageCible, estTablette]);
+  // Recherche rétractée en loupe quand un panneau (détail ou Flore) est ouvert — chrome minimal en mode focus
+  const rechercheOuverte = estMobile ? rechercheMobileOuverte : !(panneauOuvert || floreOuverte) || loupeForcee;
+  useEffect(() => { if (!panneauOuvert && !floreOuverte) setLoupeForcee(false); }, [panneauOuvert, floreOuverte]);
 
   // Routage final : nouveau snapshot géométrique → Web Worker libavoid
   // (jamais pendant le drag, jamais pendant le pan/zoom — la signature géométrique est stable)
@@ -1191,13 +1181,12 @@ export default function Atlas() {
         </defs>
       </svg>
 
-      {/* Pile haute — recherche, fil d'Ariane, bannières contextuelles : empilement vertical,
-          chaque élément occupe sa propre ligne, jamais de superposition */}
-      <div className={`pointer-events-none absolute z-20 flex flex-col gap-2 ${estTablette ? "right-3 top-16 items-end" : "left-1/2 top-3 -translate-x-1/2 items-center"}`}>
+      {/* Recherche — îlot haut-gauche (façon Google Maps). Rétractée en loupe quand un panneau
+          (détail ou Flore) est ouvert : un clic sur la loupe la re-déplie à la demande. */}
+      <div className="pointer-events-none absolute left-4 top-4 z-20">
         <div className="pointer-events-auto relative">
-          {estMobile && !rechercheMobileOuverte ? (
-            // Mobile : la recherche s'ouvre à la demande (bouton), puis ramène vers le résultat
-            <button onClick={() => setRechercheMobileOuverte(true)} data-testid="btn-recherche" title="Rechercher" className="glass rounded-xl p-2.5 text-[#52524F] transition-colors hover:text-[#111110]">
+          {!rechercheOuverte ? (
+            <button onClick={() => (estMobile ? setRechercheMobileOuverte(true) : setLoupeForcee(true))} data-testid="btn-recherche" title="Rechercher" className="glass rounded-xl p-2.5 text-[#52524F] transition-colors hover:text-[#111110]">
               <MagnifyingGlass size={14} />
             </button>
           ) : (
@@ -1214,18 +1203,19 @@ export default function Atlas() {
                   if (r.type === "jumeau") centrerSurJumeau(r.id);
                   else { setDomaineSel(r.id); setRecherche(""); }
                   if (estMobile) setRechercheMobileOuverte(false);
+                  setLoupeForcee(false);
                 }}
                 placeholder="Rechercher un jumeau, domaine, flux…"
                 data-testid="atlas-recherche"
-                className={`${estMobile ? "w-[44vw]" : "w-72"} bg-transparent text-xs text-[#111110] placeholder:text-[#71716D] focus:outline-none`}
+                className={`${estMobile ? "w-[44vw]" : "w-64"} bg-transparent text-xs text-[#111110] placeholder:text-[#71716D] focus:outline-none`}
               />
-              {estMobile && (
-                <button onClick={() => { setRechercheMobileOuverte(false); setRecherche(""); }} data-testid="btn-recherche-fermer" className="text-[#71716D]"><X size={13} /></button>
+              {(estMobile || loupeForcee || panneauOuvert || floreOuverte) && (
+                <button onClick={() => { setRechercheMobileOuverte(false); setLoupeForcee(false); setRecherche(""); }} data-testid="btn-recherche-fermer" title="Refermer la recherche" className="text-[#71716D] transition-colors hover:text-[#111110]"><X size={13} /></button>
               )}
             </div>
           )}
-          {resultatsRecherche.length > 0 && (
-            <div className={`glass absolute top-11 z-30 w-72 rounded-xl p-1.5 ${estTablette ? "right-0" : "left-1/2 -translate-x-1/2"}`} data-testid="atlas-recherche-resultats">
+          {rechercheOuverte && resultatsRecherche.length > 0 && (
+            <div className="glass absolute left-0 top-11 z-30 w-72 rounded-xl p-1.5" data-testid="atlas-recherche-resultats">
               {resultatsRecherche.map((r) => (
                 <button
                   key={`${r.type}-${r.id}`}
@@ -1240,7 +1230,11 @@ export default function Atlas() {
             </div>
           )}
         </div>
+      </div>
 
+      {/* Pile haute centrée — fil d'Ariane et bannières contextuelles : empilement vertical,
+          chaque élément occupe sa propre ligne, jamais de superposition */}
+      <div className="pointer-events-none absolute left-1/2 top-3 z-20 flex -translate-x-1/2 flex-col items-center gap-2">
         <FilAriane
           domaineActif={domaineActif} selection={selection}
           revenirSelection={revenirSelection} ajusterVue={ajusterVue}
@@ -1483,7 +1477,7 @@ export default function Atlas() {
         onInterroger={() => { if (selected) { setSelection([selected.id]); ouvrirFlore(); } }}
         onChoisirJumeau={centrerSurJumeau}
         onChoisirSituation={(id) => majUrl({ situation: id })}
-        onRelancerRecherche={(t) => { setRecherche(t); if (estMobile) setRechercheMobileOuverte(true); }}
+        onRelancerRecherche={(t) => { setRecherche(t); setLoupeForcee(true); if (estMobile) setRechercheMobileOuverte(true); }}
         onFermer={() => { setSelected(null); setSelectedRelation(null); setDomaineSel(null); setComparaison(null); setVueListe(null); majUrl({ sel: null, domaine: null }); }}
       />
     </div>

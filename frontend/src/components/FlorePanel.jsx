@@ -394,7 +394,7 @@ export default function FlorePanel() {
       initial={{ x: 60, opacity: 0 }}
       animate={{ x: 0, opacity: 1 }}
       transition={{ type: "spring", stiffness: 320, damping: 30 }}
-      className="fixed bottom-0 right-0 top-14 z-40 flex w-[440px] max-w-[94vw] flex-col border-l border-[#E5E5E3] bg-white/95 backdrop-blur-xl"
+      className="flex h-full w-[440px] shrink-0 flex-col border-l border-[#E5E5E3] bg-white/95 backdrop-blur-xl max-sm:fixed max-sm:inset-y-0 max-sm:right-0 max-sm:z-40 max-sm:w-[94vw] max-sm:max-w-[94vw]"
       data-testid="flore-panel"
     >
       {/* En-tête */}

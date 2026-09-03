@@ -1,0 +1,32 @@
+{
+  "summary": "Frontend-only tests for iteration 53 (recherche à gauche + loupe, Flore en colonne de layout). Tous les 9 scénarios NEW/REGRESSION demandés passent. Aucun bug fonctionnel détecté sur la refonte.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_results": {
+    "1_recherche_gauche": "PASS — atlas-recherche @ x=106 y=73 w=256; map-mode-switcher @ x=72 y=112. Aucun chevauchement vertical.",
+    "2_loupe_retraction": "PASS — Recherche 'Paiements' → clic résultat (recherche-jumeau-paiements) : atlas-recherche disparaît, btn-recherche (loupe) apparaît @ (72,64) 36x36. Clic loupe → atlas-recherche réapparaît + btn-recherche-fermer présent. Clic X → retour à la loupe. Fermeture panneau détail (panneau-fermer-btn) → recherche complète réapparaît, loupe disparaît.",
+    "3_flore_colonne": "PASS — flore-panel @ x=1480 y=0 w=440 h=800 (pleine hauteur, colonne). minimap @ x=1297 y=673 w=168 (right=1465 <= 1480 flore.x). zoom controls visibles. Loupe présente pendant Flore ouverte. Combo détail+Flore : flore reste @ x=1480 w=440, minimap redimensionnée à x=961 (carte se rétrécit), rien de caché.",
+    "4_pan_supprime": "PASS implicite — carte ne saute pas à l'ouverture Flore, robots visibles, viewport identique.",
+    "5_flore_autres_pages": "PASS — /jumeaux : scrollWidth=1920=clientWidth (pas de débordement). /actualites : idem.",
+    "6_flore_bloquee_travaux": "PASS — clic btn-parler-flore sur /travaux → flore-panel non visible (comportement v47 conservé).",
+    "7_chrome_immobile": "PASS — toolbar @ (72,295) 46x258 IDENTIQUE avant/après ouverture Calques. Recherche @ (106,73) inchangée.",
+    "8_restauration_navigation": "PASS via nav SPA (a[href]) — pan carte → breadcrumb 'Mesh global › Domaine Support' apparaît, viewport translate(77.0492px,-177.503px). Nav /jumeaux puis /atlas → viewport et breadcrumb RESTAURÉS à l'identique après ~3s. NB : le test échoue si l'on utilise page.goto (full reload), ce qui est attendu — la persistance est en state SPA, pas en localStorage.",
+    "9_mobile": "PASS — Viewport 390x844 : btn-recherche @ (72,64) 36x36 (bouton loupe, pas d'input). Flore ouverte @ x=23 w=367 h=844 (overlay fixed plein écran, pas colonne)."
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "AtlasPanneau.jsx n'expose pas de data-testid racine (ex: 'atlas-panneau' ou 'panneau-detail') sur la colonne détail. Actuellement seuls panneau-fermer-btn, panneau-rail, panneau-ouvrir-btn existent. Ajouter un testid racine faciliterait les futures assertions de layout (position/bounding-box) sans dépendre du bouton fermer.",
+    "Idem : la loupe fonctionne mais la commande de fermeture inversée (btn-recherche-fermer) n'apparaît qu'après redéploiement manuel — cohérent avec la spec."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped)", "frontend": "100% (9/9 scénarios)"},
+  "seed_data_creation": "Aucun. localStorage.removeItem('atlas.chrome.decals') utilisé avant chaque batch pour tester les positions par défaut.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 53 validée. Points clés vérifiés : (a) atlas-recherche testid est sur l'INPUT lui-même, pas un wrapper — utiliser page.fill('[data-testid=\"atlas-recherche\"]', ...) directement. (b) Résultats de recherche : conteneur data-testid='atlas-recherche-resultats', items nommés 'recherche-jumeau-<slug>' (ex: recherche-jumeau-paiements). (c) AtlasPanneau n'a pas de testid racine. (d) Test navigation restauration ne fonctionne QUE via clic SPA (a[href]), pas page.goto."
+}

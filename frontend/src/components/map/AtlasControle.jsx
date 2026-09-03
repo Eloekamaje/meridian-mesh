@@ -60,7 +60,7 @@ export default function AtlasControle({
   return (
     <div
       ref={ref}
-      className={`glass absolute top-4 z-10 rounded-xl p-2 ${deplie ? "w-[340px] max-w-[86vw]" : ""}`}
+      className={`glass absolute top-16 z-10 rounded-xl p-2 ${deplie ? "w-[340px] max-w-[86vw]" : ""}`}
       style={{ left: deplie ? 74 : 16, transform: `translate(${decal.x}px, ${decal.y}px)`, transition: "left .3s ease" }}
       data-testid="map-mode-switcher"
     >

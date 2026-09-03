@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 const CLE = "atlas.chrome.decals";
 
@@ -71,6 +71,35 @@ export default function useGlissable(cle, conteneurRef) {
     },
     [appliquer, conteneurRef]
   );
+
+  // Re-bornage automatique : si le conteneur ou l'élément change de taille (colonnes de
+  // layout, redimensionnement, dépliage du tiroir), l'offset persisté est re-clampé —
+  // un élément déplacé ne peut jamais sortir du champ ni passer sous une colonne.
+  useEffect(() => {
+    const c = conteneurRef?.current;
+    const el = ref.current;
+    if (!c || !el || typeof ResizeObserver === "undefined") return undefined;
+    let t;
+    const reborner = () => {
+      // Délai > transition d'ancrage (300 ms) : le bornage mesure la position finale
+      clearTimeout(t);
+      t = setTimeout(() => {
+        const d = decalRef.current;
+        if (!d.x && !d.y) return;
+        const cr = c.getBoundingClientRect();
+        const r = el.getBoundingClientRect();
+        const ancX = r.left - d.x - cr.left;
+        const ancY = r.top - d.y - cr.top;
+        const nx = Math.min(Math.max(d.x, -ancX + 6), cr.width - ancX - r.width - 6);
+        const ny = Math.min(Math.max(d.y, -ancY + 6), cr.height - ancY - r.height - 6);
+        if (Math.round(nx) !== d.x || Math.round(ny) !== d.y) appliquer({ x: Math.round(nx), y: Math.round(ny) });
+      }, 350);
+    };
+    const ro = new ResizeObserver(reborner);
+    ro.observe(c);
+    ro.observe(el);
+    return () => { ro.disconnect(); clearTimeout(t); };
+  }, [conteneurRef, appliquer]);
 
   return { ref, decal, surPoigneeDown, reinitialiser };
 }
