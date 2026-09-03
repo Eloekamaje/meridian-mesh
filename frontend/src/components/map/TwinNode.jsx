@@ -92,8 +92,8 @@ export default function TwinNode({ data, selected }) {
         )}
         <div className={`flex flex-col items-center gap-0.5 transition-opacity duration-500 ${data.dim ? "opacity-15" : "opacity-100"}`}>
           <PointJumeau couleur={c} dashed />
-          {/* Porte externe : connecteur directionnel compact, visuellement distinct des domaines */}
-          <div className="flex items-center gap-1 whitespace-nowrap rounded-full border border-dashed bg-white/60 px-2 py-0.5 opacity-85 transition-opacity hover:opacity-100" style={{ borderColor: `${c}88` }}>
+          {/* Porte externe : pastille directionnelle seule au repos — le label « DOMAINE · N » se révèle au survol */}
+          <div className="flex items-center gap-1 whitespace-nowrap rounded-full border border-dashed bg-white/60 px-2 py-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100" style={{ borderColor: `${c}88` }}>
             {ap?.restreint && <LockSimple size={10} className="shrink-0 text-[#71716D]" />}
             <ArrowUpRight size={10} style={{ color: c }} className="shrink-0" />
             <span className="font-code text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ color: c }}>{ap?.domaine || j.nom}</span>
