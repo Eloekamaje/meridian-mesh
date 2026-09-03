@@ -204,8 +204,46 @@ function obstaclesDe(ns, exclure) {
     .map((n) => ({ x0: n.position.x - 16, y0: n.position.y - 8, x1: n.position.x + 76, y1: n.position.y + 84 }));
 }
 
+// Anti-collision déterministe : écarte les jumeaux qui se chevauchent (principe du zéro chevauchement)
+function separerNoeuds(twins, posOverrides = {}) {
+  const pos = {};
+  const pts = twins.map((j) => {
+    const p = posOverrides[j.id] || j.position;
+    pos[j.id] = { ...p };
+    return { id: j.id, x: p.x + 30, y: p.y + 40 };
+  });
+
+  const MIN_DIST = 105; // avatar (max 56px) + étiquettes + marge de sécurité
+  for (let iter = 0; iter < 20; iter++) {
+    let moved = false;
+    for (let i = 0; i < pts.length; i++) {
+      for (let k = i + 1; k < pts.length; k++) {
+        const dx = pts[k].x - pts[i].x;
+        const dy = pts[k].y - pts[i].y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < MIN_DIST) {
+          // Angle déterministe (spirale de Fibonacci) si les nœuds sont parfaitement superposés
+          const angle = dist === 0 ? (i * 137.5 * Math.PI) / 180 : Math.atan2(dy, dx);
+          const push = (MIN_DIST - dist) / 2 + 2;
+          pts[i].x -= Math.cos(angle) * push;
+          pts[i].y -= Math.sin(angle) * push;
+          pts[k].x += Math.cos(angle) * push;
+          pts[k].y += Math.sin(angle) * push;
+          moved = true;
+        }
+      }
+    }
+    if (!moved) break;
+  }
+
+  pts.forEach((p) => {
+    pos[p.id] = { x: p.x - 30, y: p.y - 40 };
+  });
+  return pos;
+}
+
 // Géométrie d'un nœud jumeau pour le routeur final : forme connectable (avatar/pastille, ports N/E/S/W)
-// + obstacles non connectables (App ID, badge +N, nom, pastille de passerelle)
+// + obstacles non connectables (App ID, pastille de passerelle)
 function geometrieNoeud(n) {
   const pos = n.position;
   const j = n.data?.jumeau || {};
@@ -221,11 +259,9 @@ function geometrieNoeud(n) {
   const w = grand ? 56 : 48;
   const x0 = pos.x + (64 - w) / 2;
   const y0 = pos.y + 16;
-  const obstacles = [{ x0: pos.x + 8, y0: pos.y - 2, x1: pos.x + 58, y1: pos.y + 14 }]; // App ID + badge +N
-  if (grand && j.nom) {
-    const lw = j.nom.length * 7 + 10;
-    obstacles.push({ x0: pos.x + 32 - lw / 2, y0: y0 + w + 2, x1: pos.x + 32 + lw / 2, y1: y0 + w + 18 }); // nom
-  }
+  // L'App ID est désormais affiché en bas (4 chiffres)
+  const lw = 4 * 7 + 10;
+  const obstacles = [{ x0: pos.x + 32 - lw / 2, y0: y0 + w + 2, x1: pos.x + 32 + lw / 2, y1: y0 + w + 18 }];
   return { forme: { id: n.id, x0, y0, x1: x0 + w, y1: y0 + w }, obstacles };
 }
 
@@ -529,9 +565,12 @@ export function construireGraphe({
   const twins = mesh.jumeaux;
   const entreprise = zoomNiveau === 1;
 
+  // Zéro chevauchement : calcul des positions finales avant toute construction
+  const posSeparees = separerNoeuds(twins, posOverrides);
+
   let ns = (mesh.regions || []).map((r) => {
     const centres = twins.filter((j) => domDe[j.id] === r.label).map((j) => {
-      const p = posOverrides[j.id] || j.position;
+      const p = posSeparees[j.id] || j.position;
       return { x: p.x + 30, y: p.y + 40 };
     });
     const coque = coqueOrganique(centres) || { x: r.x, y: r.y, w: r.w, h: r.h, path: null, labelX: r.w / 2 };
@@ -547,11 +586,11 @@ export function construireGraphe({
   // Regroupement visuel (niveau 2, domaines denses) — avant toute construction d'arêtes
   const { clusters, groupes } = entreprise
     ? { clusters: {}, groupes: [] }
-    : clusteriser(twins, Object.fromEntries(twins.map((j) => [j.id, posOverrides[j.id] || j.position])), zoomNiveau);
+    : clusteriser(twins, Object.fromEntries(twins.map((j) => [j.id, posSeparees[j.id] || j.position])), zoomNiveau);
 
   ns = ns.concat(
     twins.filter((j) => !clusters[j.id]).map((j) => {
-      const position = posOverrides[j.id] || j.position;
+      const position = posSeparees[j.id] || j.position;
       return {
         id: j.id,
         type: "twin",
@@ -582,7 +621,7 @@ export function construireGraphe({
 
   let es = [];
   let snapMain = null;
-  const posMain = Object.fromEntries(twins.map((j) => [j.id, posOverrides[j.id] || j.position]));
+  const posMain = Object.fromEntries(twins.map((j) => [j.id, posSeparees[j.id] || j.position]));
   groupes.forEach((g) => { posMain[g.id] = { x: g.cx - 30, y: g.cy - 40 }; });
   if (entreprise) {
     // Zoom Entreprise : corridors agrégés inter-domaines

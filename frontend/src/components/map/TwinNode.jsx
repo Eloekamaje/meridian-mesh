@@ -136,22 +136,14 @@ export default function TwinNode({ data, selected }) {
       {data.focusCentral && (
         <span className="pointer-events-none absolute -inset-1.5 rounded-2xl border-2" style={{ borderColor: couleur }} data-testid="twin-focus-ring" />
       )}
-      <div className="flex flex-col items-center gap-0.5">
-        <span className="flex items-center gap-1 font-code text-[10px] font-semibold tracking-wide text-[#3F3F3C] transition-colors group-hover:text-[#0E7490]">
-          {idNumerique(j.id)}
-          {data.evenements > 0 && (
-            <span
-              title={`${data.evenements} événement${data.evenements > 1 ? "s" : ""} récent${data.evenements > 1 ? "s" : ""} observé${data.evenements > 1 ? "s" : ""} par le Mesh`}
-              className="rounded-full bg-[#E5E5E3] px-1 py-px font-code text-[8px] text-[#3F3F3C]"
-            >
-              +{data.evenements}
-            </span>
-          )}
-        </span>
+      <div className="flex flex-col items-center gap-1">
         <AvatarJumeau actif={j.statut === "actif"} selected={selected} grand={niveau3} ports={niveau3} relLiee={data.relLiee} />
-        {niveau3 && (
-          <span className="whitespace-nowrap text-[11px] font-semibold text-[#111110]" data-testid={`twin-nom-${j.id}`}>{j.nom}</span>
-        )}
+        <span
+          className="whitespace-nowrap font-code text-[10px] font-semibold tracking-wide text-[#3F3F3C] transition-colors group-hover:text-[#0E7490]"
+          data-testid={`twin-nom-${j.id}`}
+        >
+          {idNumerique(j.id)}
+        </span>
       </div>
     </div>
   );
