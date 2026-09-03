@@ -104,7 +104,7 @@ export default function Jumeaux() {
   const CHIPS = [["tous", "Tous"], ["actif", "Actifs"], ["en construction", "Construction"], ["observation", "Observation"], ["attention", "Attention"]];
 
   return (
-    <div className="h-full overflow-y-auto p-8 pb-44" data-testid="jumeaux-page">
+    <div className="h-full overflow-y-auto px-10 py-8 pb-44 sm:px-12" data-testid="jumeaux-page">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="font-code text-[10px] uppercase tracking-[0.3em] text-[#3730A3]">Parc de jumeaux</p>

@@ -380,8 +380,15 @@ export default function FlorePanel() {
     api.get("/cases").then((r) => setChoixTravail(r.data.filter((c) => c.statut !== "clos"))).catch(() => setChoixTravail([]));
   };
 
+  // Sur une page Travail, la conversation avec Flore EST le dossier (onglet Conversation) :
+  // le panneau global serait un doublon — il se ferme et ne s'ouvre pas sur ces pages.
+  useEffect(() => {
+    if (contexte === "case" && floreOuverte) fermerFlore();
+  }, [contexte, floreOuverte, fermerFlore]);
+
   if (lot) return <LotBar lot={lot} />;
-  if (!floreOuverte) return null;
+
+  if (!floreOuverte || contexte === "case") return null;
   return (
     <motion.aside
       initial={{ x: 60, opacity: 0 }}

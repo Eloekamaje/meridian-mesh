@@ -263,7 +263,7 @@ export default function Actualites() {
 
   return (
     <div className="h-full overflow-y-auto px-6 py-8 pb-20 sm:px-8" data-testid="actualites-page">
-      <div className="mx-auto max-w-3xl">
+      <div className="mx-auto max-w-4xl">
         {/* Barre de lecture unique : vues · portées · temps */}
         <header className="rise relative z-30" ref={refCalendrier}>
           <div className="flex flex-wrap items-center justify-between gap-2">

@@ -163,8 +163,8 @@ export default function Travaux() {
   );
 
   return (
-    <div className="h-full overflow-y-auto px-6 py-8 pb-20 sm:px-8" data-testid="travaux-page">
-      <div className="mx-auto max-w-4xl">
+    <div className="h-full overflow-y-auto px-10 py-8 pb-20 sm:px-12" data-testid="travaux-page">
+      <div>
         <header className="rise">
           <div className="font-code text-[10px] uppercase tracking-[0.3em] text-[#3730A3]">Travaux</div>
           <div className="mt-1 flex flex-wrap items-center justify-between gap-3">

@@ -1,5 +1,10 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v47, marges pages + Flore retirée des pages Travail)
+- **Marges harmonisées** : Travaux et Jumeaux en pleine largeur avec marges identiques généreuses (`px-10 sm:px-12`) — Travaux n'est plus centrée `max-w-4xl` ; Actualités reste centrée mais contenu élargi (`max-w-3xl → max-w-4xl`).
+- **Flore sur pages Travail** : le panneau global ne s'ouvre plus sur `/travaux/:id` (la conversation du dossier existe déjà dans l'onglet Conversation) — double sécurité (auto-fermeture à l'arrivée + rendu null) ; bouton « Analyser avec Flore » retiré de l'en-tête Travail, conservé sur Investigation.
+- Tests : **iteration_48 → 100 %** (5/5 scénarios, 0 erreur console).
+
 ## Implémenté (06/2026 — v46, « Analyser avec Flore » depuis les pages métier)
 - **Boutons contextuels Flore** : « ✦ Analyser avec Flore » dans l'en-tête du détail Travail (`travail-analyser-flore`) et de l'Investigation (`investigation-analyser-flore`, à côté de « Voir dans l'Atlas »).
 - **Mécanisme** : `demanderAFlore(question)` dans le store partagé (contexte.jsx) — ouvre le panneau Flore et envoie la question pré-remplie (le `case_id` est déjà injecté depuis l'URL par FlorePanel). Garde anti-doublon par ref (StrictMode rejoue les effets ; le setTimeout initial était annulé au démontage simulé).

@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { ArrowLeft, Users, ShareNetwork, DotsThree, SealCheck, Sparkle } from "@phosphor-icons/react";
+import { ArrowLeft, Users, ShareNetwork, DotsThree, SealCheck } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { usePerimetre } from "@/lib/perimetre";
-import { useContexte } from "@/lib/contexte";
 import { TYPES_CASE } from "./Travaux";
 import { numeroCase, SENSIBILITES, rel } from "@/components/case/utils";
 import OngletApercu from "@/components/case/OngletApercu";
@@ -23,7 +22,6 @@ export default function TravailDetail() {
   const vue = vueParam === "apercu" ? "apercu" : "travail";
   const navigate = useNavigate();
   const { version } = usePerimetre();
-  const { demanderAFlore } = useContexte();
   const [cas, setCas] = useState(null);
   const [situations, setSituations] = useState([]);
   const [personas, setPersonas] = useState([]);
@@ -101,14 +99,6 @@ export default function TravailDetail() {
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <button
-              onClick={() => demanderAFlore(`Analyse ce travail : « ${cas.titre} » (${numeroCase(cas)}). Quels sont les points d'attention, les risques et la prochaine étape recommandée ?`)}
-              data-testid="travail-analyser-flore"
-              title="Demander à Flore d'analyser ce travail — le contexte du dossier est transmis automatiquement"
-              className="flex h-8 items-center gap-1.5 rounded-md border border-[#3730A3]/40 bg-[#3730A3]/[0.06] px-2.5 text-xs font-semibold text-[#3730A3] transition-colors hover:bg-[#3730A3]/12"
-            >
-              <Sparkle size={13} weight="fill" /> <span className="hidden sm:inline">Analyser avec Flore</span>
-            </button>
             <button onClick={partager} data-testid="travail-partager-btn" title="Copier le lien du travail" className="flex h-8 w-8 items-center justify-center rounded-md border border-[#E5E5E3] text-[#52524F] transition-colors hover:text-[#111110]">
               <ShareNetwork size={14} />
             </button>
