@@ -66,7 +66,6 @@ export default function Atlas() {
   const [modeEdition, setModeEdition] = useState(false); // déplacement des robots uniquement en mode explicite
   const [provisoire, setProvisoire] = useState(false); // drag en cours : routage maison simple, recalcul final au relâchement
   const { routesFin, pousser } = useRoutageFinal(); // routes finales calculées par libavoid (Web Worker)
-  const [chemin, setChemin] = useState(null); // porte cliquée : {de, vers} — mise en évidence sans déplacer la caméra
   const [fantome, setFantome] = useState(null); // position de départ du robot pendant le drag
   const coquesRef = useRef({}); // rect actuellement affiché de chaque membrane
   const ciblesCoques = useRef({}); // rect cible calculé
@@ -400,18 +399,6 @@ export default function Atlas() {
       if (etat === "supposee" || etat === "contestee") return couchesRel.ecarts;
       return true;
     });
-    // Clic sur une porte « DOMAINE · N » : chemin vers ce domaine mis en évidence, caméra immobile
-    if (chemin) {
-      const paire = [chemin.de, chemin.vers];
-      es = es.map((e) => {
-        const a = domDe[e.source];
-        const b = domDe[e.target];
-        const dedans = a !== b && paire.includes(a) && paire.includes(b);
-        return dedans
-          ? { ...e, zIndex: 25, style: { ...e.style, opacity: 1, strokeWidth: (e.style?.strokeWidth || 1.5) + 1 } }
-          : { ...e, label: undefined, data: { ...e.data, estompee: true }, style: { ...e.style, opacity: 0.12 } };
-      });
-    }
     const actif = epingle || survolJumeau;
     if (actif) {
       es = es.map((e) =>
@@ -440,7 +427,7 @@ export default function Atlas() {
       es = [...es.filter((e) => e.id !== relActive), ...es.filter((e) => e.id === relActive)];
     }
     return es;
-  }, [edges, couchesRel, epingle, survolJumeau, relSurvolee, selectedRelation, chemin, domDe]);
+  }, [edges, couchesRel, epingle, survolJumeau, relSurvolee, selectedRelation]);
 
   // Jumeau survolé ou épinglé → panneau flottant à gauche
   const jumeauSurvole = useMemo(() => {
@@ -792,22 +779,6 @@ export default function Atlas() {
             setOnglet("detail");
             return;
           }
-          if (node.data?.porte) {
-            // Clic sur une porte : sélection + mise en évidence du chemin, caméra immobile
-            const dc = dernierClicRegion.current;
-            dernierClicRegion.current = { kind: "porte", id: node.id, t: Date.now() };
-            if (dc.kind === "porte" && dc.id === node.id && Date.now() - dc.t < 450) {
-              setChemin(null);
-              explorerDomaine(node.data.porte); // double-clic : explorer
-              return;
-            }
-            setChemin((c) => (c?.de === node.data.porteDe && c?.vers === node.data.porte ? null : { de: node.data.porteDe, vers: node.data.porte }));
-            setDomaineSel(node.data.porte);
-            setSelected(null);
-            setSelectedRelation(null);
-            setOnglet("detail");
-            return;
-          }
           if (node.type !== "twin") return;
           const dcT = dernierClicRegion.current;
           dernierClicRegion.current = { kind: "twin", id: node.data.jumeau.id, t: Date.now() };
@@ -819,7 +790,6 @@ export default function Atlas() {
           setSelected(node.data.jumeau);
           setSelectedRelation(null);
           setDomaineSel(null);
-          setChemin(null);
           setOnglet("detail");
           majUrl({ sel: node.data.jumeau.id, domaine: null });
         }}
@@ -829,7 +799,6 @@ export default function Atlas() {
             explorerDomaine(node.data.label);
             return;
           }
-          if (node.data?.porte) { setChemin(null); explorerDomaine(node.data.porte); return; }
           if (node.type === "twin" && node.data?.jumeau && !node.data.jumeau.anonyme) centrerJumeau(node.data.jumeau);
         }}
         onEdgeClick={(_, edge) => {
@@ -875,7 +844,7 @@ export default function Atlas() {
               }
             }
           }
-          setSelected(null); setSelectedRelation(null); setDomaineSel(null); setSelection([]); setRelFocus(false); setComparaison(null); setAttenteComparaison(false); commanderCarte(null); setEpingle(null); setChemin(null);
+          setSelected(null); setSelectedRelation(null); setDomaineSel(null); setSelection([]); setRelFocus(false); setComparaison(null); setAttenteComparaison(false); commanderCarte(null); setEpingle(null);
           majUrl({ sel: null, domaine: null, jumeau: null });
         }}
         nodesDraggable={modeEdition}
@@ -897,7 +866,8 @@ export default function Atlas() {
           maskColor="rgba(247,247,246,0.6)"
           data-testid="minimap"
         />
-        {/* Étiquettes de domaines — ViewportPortal, à l'intérieur des membranes sans chevaucher les flux */}
+        {/* Étiquettes de domaines — révélées au survol de la membrane (niveaux 2-3) ;
+            toujours visibles au niveau 1 (vue macro, elles sont le contenu) */}
         <ViewportPortal>
           {nodes.filter((n) => n.type === "region").map((n) => {
             const d = n.data;
@@ -907,12 +877,13 @@ export default function Atlas() {
             const sy = d.h / (d.hCible || d.h);
             const lx = n.position.x + (d.labelX ?? d.w / 2) * sx;
             const ly = n.position.y + (d.labelY ?? 30) * sy;
+            const visible = zoomNiveau === 1 || regionSurvolee?.id === d.id || domaineSel === d.label;
             return (
               <div
                 key={n.id}
                 className="nopan"
                 style={{ position: "absolute", left: lx, top: ly, transform: "translate(-50%, -50%)", pointerEvents: "auto", cursor: "pointer" }}
-                title="Clic : sélectionner le domaine · Double-clic : entrer dans le domaine"
+                title="Clic : sélectionner le domaine · Double-clic : explorer le domaine"
                 data-testid={`region-header-${d.id}`}
                 onClick={() => {
                   setSelected(null);
@@ -928,12 +899,18 @@ export default function Atlas() {
                     {d.halo && (
                       <span className="halo-anim h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: d.couleur }} data-testid={`region-activite-${d.id}`} />
                     )}
-                    <span className="whitespace-nowrap rounded bg-white/60 px-1.5 py-0.5 font-code text-[11px] font-semibold uppercase tracking-[0.25em] backdrop-blur-[2px]" style={{ color: d.couleur }}>
+                    <span
+                      className="whitespace-nowrap rounded bg-white/60 px-1.5 py-0.5 font-code text-[11px] font-semibold uppercase tracking-[0.25em] backdrop-blur-[2px] transition-opacity duration-200"
+                      style={{ color: d.couleur, opacity: visible ? 1 : 0 }}
+                    >
                       {d.label}
                     </span>
                   </div>
                   {mc && !d.macro && (
-                    <span className="rounded-full border bg-white/80 px-1.5 py-0.5 font-code text-[8px] uppercase tracking-wider" style={{ color: mc, borderColor: `${mc}44` }}>
+                    <span
+                      className="rounded-full border bg-white/80 px-1.5 py-0.5 font-code text-[8px] uppercase tracking-wider transition-opacity duration-200"
+                      style={{ color: mc, borderColor: `${mc}44`, opacity: visible ? 1 : 0 }}
+                    >
                       {m.niveau}
                     </span>
                   )}

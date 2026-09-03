@@ -518,60 +518,6 @@ export function construireGraphe({
     })
   );
 
-  // Portes compactes en périphérie des membranes (carte mondiale continue) :
-  // un connecteur « DOMAINE · N » par voisin, placé sur la frontière orienté vers lui.
-  // Clic = mettre en évidence le chemin (caméra immobile) ; double-clic = explorer.
-  const centresRegions = {};
-  ns.filter((n) => n.type === "region").forEach((n) => {
-    centresRegions[n.data.label] = { x: n.position.x + (n.data.w || 0) / 2, y: n.position.y + (n.data.h || 0) / 2, points: n.data.points || [], ox: n.position.x, oy: n.position.y };
-  });
-  const voisinsParRegion = {};
-  mesh.relations.forEach((r) => {
-    const a = domDe[r.source];
-    const b = domDe[r.cible];
-    if (!a || !b || a === b) return;
-    voisinsParRegion[a] = voisinsParRegion[a] || {};
-    voisinsParRegion[b] = voisinsParRegion[b] || {};
-    voisinsParRegion[a][b] = (voisinsParRegion[a][b] || 0) + 1;
-    voisinsParRegion[b][a] = (voisinsParRegion[b][a] || 0) + 1;
-  });
-  Object.entries(voisinsParRegion).forEach(([label, exts]) => {
-    const c = centresRegions[label];
-    if (!c) return;
-    let rMax = 0;
-    c.points.forEach((p) => { rMax = Math.max(rMax, Math.hypot(p.x + c.ox - c.x, p.y + c.oy - c.y)); });
-    Object.entries(exts).forEach(([dom, n]) => {
-      const v = centresRegions[dom];
-      if (!v) return;
-      const dx = v.x - c.x;
-      const dy = v.y - c.y;
-      const L = Math.hypot(dx, dy) || 1;
-      ns.push({
-        id: `porte-${label}-vers-${dom}`,
-        type: "twin",
-        position: { x: c.x + (dx / L) * (rMax + 14) - 30, y: c.y + (dy / L) * (rMax + 14) - 8 },
-        initialWidth: 64,
-        initialHeight: 78,
-        hidden: entreprise,
-        data: {
-          jumeau: { id: `porte-${label}-vers-${dom}`, nom: dom, domaine: dom, porte: true, statut: "porte" },
-          porte: dom,
-          porteDe: label,
-          apercuPorte: {
-            domaine: dom,
-            domaineFocus: label,
-            jumeaux: mesh.jumeaux.filter((t) => !t.anonyme && t.domaine === dom).length,
-            restreint: mesh.jumeaux.filter((t) => !t.anonyme && t.domaine === dom).length === 0,
-            relations: n,
-            decouvertes: statsRegions[dom]?.decouvertes ?? 0,
-          },
-        },
-        draggable: false,
-        selectable: false,
-      });
-    });
-  });
-
   let es = [];
   let snapMain = null;
   const posMain = Object.fromEntries(twins.map((j) => [j.id, posOverrides[j.id] || j.position]));

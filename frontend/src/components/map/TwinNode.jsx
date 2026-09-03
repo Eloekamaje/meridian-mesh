@@ -1,5 +1,5 @@
 import { Handle, Position } from "@xyflow/react";
-import { ArrowUpRight, LockSimple } from "@phosphor-icons/react";
+import { LockSimple } from "@phosphor-icons/react";
 import { couleurDomaine, couleurConfiance, ETATS_RELATION } from "@/lib/domaines";
 import { idNumerique } from "@/lib/atlasGraph";
 
@@ -68,91 +68,32 @@ function PointJumeau({ couleur, dashed }) {
 
 export default function TwinNode({ data, selected }) {
   const j = data.jumeau;
-
-  if (j.porte) {
-    const ap = data.apercuPorte;
-    const c = couleurDomaine(j.domaine);
-    return (
-      <div className="group relative" data-testid={j.id}>
-        {ap && (
-          <div
-            className="pointer-events-none absolute -top-3 left-1/2 z-50 w-[230px] -translate-x-1/2 -translate-y-full rounded-lg border border-[#E5E5E3] bg-white p-3 opacity-0 backdrop-blur-xl transition-opacity duration-200 group-hover:opacity-100"
-            data-testid={`apercu-${j.id}`}
-          >
-            <div className="font-display text-xs font-bold" style={{ color: c }}>{ap.domaine}</div>
-            <div className="mt-1.5 space-y-0.5 font-code text-[10px] text-[#52524F]">
-              <div>{ap.jumeaux} jumeaux accessibles</div>
-              <div>{ap.relations} relation(s) avec {ap.domaineFocus}</div>
-              {ap.decouvertes > 0 && <div>{ap.decouvertes} découverte(s) récente(s)</div>}
-            </div>
-            <div className="mt-2 font-code text-[9px] text-[#0E7490]">
-              {ap.restreint ? "Accès limité — résumé seulement" : "Clic : chemin · Double-clic : explorer →"}
-            </div>
-          </div>
-        )}
-        <div className={`flex flex-col items-center gap-0.5 transition-opacity duration-500 ${data.dim ? "opacity-15" : "opacity-100"}`}>
-          <PointJumeau couleur={c} dashed />
-          {/* Porte externe : pastille directionnelle seule au repos — le label « DOMAINE · N » se révèle au survol */}
-          <div className="flex items-center gap-1 whitespace-nowrap rounded-full border border-dashed bg-white/60 px-2 py-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100" style={{ borderColor: `${c}88` }}>
-            {ap?.restreint && <LockSimple size={10} className="shrink-0 text-[#71716D]" />}
-            <ArrowUpRight size={10} style={{ color: c }} className="shrink-0" />
-            <span className="font-code text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ color: c }}>{ap?.domaine || j.nom}</span>
-            <span className="font-code text-[8px] text-[#71716D]">· {ap?.relations ?? 0}</span>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (data.voisinRel) {
-    const rel = data.voisinRel;
-    const etat = ETATS_RELATION[rel.etat] || ETATS_RELATION.confirmee;
-    return (
-      <div className="group relative" data-testid={`voisin-${j.id}`}>
-        <div
-          className="pointer-events-none absolute -top-3 left-1/2 z-50 w-[230px] -translate-x-1/2 -translate-y-full rounded-lg border border-[#E5E5E3] bg-white p-3 opacity-0 backdrop-blur-xl transition-opacity duration-200 group-hover:opacity-100"
-          data-testid={`voisin-hover-${j.id}`}
-        >
-          <div className="flex items-center justify-between gap-2">
-            <span className="font-display text-xs font-bold text-[#111110]">{j.nom}</span>
-            <span className="shrink-0 font-code text-[9px]" style={{ color: etat.couleur }}>{etat.label}</span>
-          </div>
-          <div className="mt-1.5 space-y-0.5 font-code text-[10px] text-[#52524F]">
-            <div>Relation : {rel.source} → {rel.cible}</div>
-            {rel.label && <div>Échangé : {rel.label}</div>}
-            {rel.confiance != null && <div>Confiance : <span style={{ color: couleurConfiance(rel.confiance) }}>{rel.confiance} %</span></div>}
-            {rel.claims?.length > 0 && <div>{rel.claims.length} claim(s) documentée(s)</div>}
-          </div>
-          <div className="mt-2 font-code text-[9px] text-[#0E7490]">Cliquer pour transférer le focus →</div>
-        </div>
-        <div className="flex flex-col items-center gap-0.5">
-          <span className="font-code text-[10px] font-semibold text-[#3F3F3C]">{idNumerique(j.id)}</span>
-          <AvatarJumeau actif={j.statut === "actif"} />
-          <div className="whitespace-nowrap font-code text-[8px] uppercase tracking-[0.15em]" style={{ color: etat.couleur }}>{etat.label}</div>
-        </div>
-      </div>
-    );
-  }
-
-  if (j.anonyme) {
-    return (
-      <div
-        className={`flex flex-col items-center gap-0.5 transition-opacity duration-500 ${data.dim ? "opacity-20" : "opacity-75"}`}
-        data-testid={`twin-node-${j.id}`}
-      >
-        <PointJumeau couleur="#A3A39E" dashed />
-        <div className="text-center">
-          <div className="flex items-center justify-center gap-1.5 whitespace-nowrap font-code text-[10px] text-[#71716D]">
-            <LockSimple size={11} className="shrink-0" /> {j.nom}
-          </div>
-          <div className="font-code text-[8px] uppercase tracking-[0.18em] text-[#71716D]">périmètre restreint</div>
-        </div>
-      </div>
-    );
-  }
-
   const couleur = couleurDomaine(j.domaine);
   const niveau3 = (data.niveau || 2) >= 3;
+
+  // Jumeau hors périmètre : pastille pointillée + résumé au survol uniquement
+  if (j.anonyme) {
+    return (
+      <div className="group relative" data-testid={`twin-node-${j.id}`}>
+        <div className="absolute -top-3 left-1/2 z-50 w-56 -translate-x-1/2 -translate-y-full rounded-lg border border-[#E5E5E3] bg-white p-3 opacity-0 backdrop-blur-xl transition-opacity duration-200 group-hover:opacity-100" data-testid={`anonyme-apercu-${j.id}`}>
+          <div className="font-display text-xs font-bold" style={{ color: couleur }}>{j.domaine} — hors périmètre</div>
+          <div className="mt-1.5 space-y-0.5 font-code text-[10px] text-[#52524F]">
+            <div>Domaine voisin non inclus dans votre périmètre.</div>
+            <div>Position approximative — la précision n'est pas garantie.</div>
+          </div>
+          <div className="mt-2 font-code text-[9px] text-[#71716D]">Résumé uniquement</div>
+        </div>
+        <div className={`flex flex-col items-center gap-1 transition-opacity duration-500 ${data.dim ? "opacity-15" : "opacity-45"}`}>
+          <PointJumeau couleur={couleur} dashed />
+          <span className="rounded bg-white/70 px-1.5 font-code text-[9px] tracking-wide text-[#52524F]">{idNumerique(j.id)}</span>
+          <span className="flex items-center gap-1 rounded-full bg-[#EDECE6] px-1.5 py-px font-code text-[8px] text-[#71716D]">
+            <LockSimple size={8} />
+            résumé
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   // Jumeau = identifiant numérique + robot (le nom complet apparaît au niveau 3 — applications & flux)
   return (
