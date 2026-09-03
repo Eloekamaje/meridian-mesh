@@ -97,7 +97,6 @@ export default function useGlissable(cle, conteneurRef) {
     };
     const ro = new ResizeObserver(reborner);
     ro.observe(c);
-    ro.observe(el);
     return () => { ro.disconnect(); clearTimeout(t); };
   }, [conteneurRef, appliquer]);
 

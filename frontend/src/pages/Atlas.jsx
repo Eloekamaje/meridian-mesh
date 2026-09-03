@@ -62,7 +62,7 @@ export default function Atlas() {
   const [expliquerOuvert, setExpliquerOuvert] = useState(false);
   const direct = modeTemps === "direct";
   const [outil, setOutil] = useState("deplacement");
-  const { selection, setSelection, domaineSel, setDomaineSel, focusCarte, commanderCarte, setFocusVisuel, ouvrirFlore, floreOuverte, setAtlasCtx, atlasEtat, setAtlasEtat } = useContexte();
+  const { selection, setSelection, domaineSel, setDomaineSel, focusCarte, commanderCarte, setFocusVisuel, ouvrirFlore, fermerFlore, floreOuverte, setAtlasCtx, atlasEtat, setAtlasEtat } = useContexte();
 
   // Conservation de l'état de l'Atlas entre les pages : au retour, on restaure exactement
   // viewport, zoom, sélection et couches — jamais de fitView au retour (les liens partagés
@@ -540,6 +540,15 @@ export default function Atlas() {
   // Recherche rétractée en loupe quand un panneau (détail ou Flore) est ouvert — chrome minimal en mode focus
   const rechercheOuverte = estMobile ? rechercheMobileOuverte : !(panneauOuvert || floreOuverte) || loupeForcee;
   useEffect(() => { if (!panneauOuvert && !floreOuverte) setLoupeForcee(false); }, [panneauOuvert, floreOuverte]);
+
+  // Remplacement mutuel de la colonne droite : une NOUVELLE sélection pendant que Flore est
+  // ouverte ferme Flore — le détail reprend la place (le dernier panneau demandé gagne).
+  // « Interroger » ne change pas la sélection → ne ferme jamais Flore.
+  const selCle = selected?.id || selectedRelation?.id || domaineSel || vueListe || null;
+  useEffect(() => {
+    if (floreOuverte && selCle) fermerFlore();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selCle]);
 
   // Routage final : nouveau snapshot géométrique → Web Worker libavoid
   // (jamais pendant le drag, jamais pendant le pan/zoom — la signature géométrique est stable)

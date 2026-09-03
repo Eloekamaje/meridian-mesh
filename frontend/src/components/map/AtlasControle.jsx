@@ -25,6 +25,26 @@ export default function AtlasControle({
   const [nomVue, setNomVue] = useState("");
   // Panneau glissable : poignée en en-tête, position mémorisée (double-clic = ancrage par défaut)
   const { ref, decal, surPoigneeDown, reinitialiser } = useGlissable("calques", conteneurRef);
+  // Sens d'ouverture adaptatif : le tiroir s'ouvre depuis la position de la chip ; s'il
+  // dépasserait du conteneur, il grandit vers la gauche / le haut (non persisté, recalculé à chaque ouverture)
+  const [flip, setFlip] = useState({ dx: 0, dy: 0 });
+  useEffect(() => {
+    if (!deplie) { setFlip({ dx: 0, dy: 0 }); return; }
+    const el = ref.current;
+    const c = conteneurRef?.current;
+    if (!el || !c) return;
+    const r = el.getBoundingClientRect();
+    const cr = c.getBoundingClientRect();
+    const cx = r.left - flip.dx - cr.left;
+    const cy = r.top - flip.dy - cr.top;
+    const dx = Math.min(0, cr.width - 8 - (cx + r.width));
+    const dy = Math.min(0, cr.height - 8 - (cy + r.height));
+    if (dx !== flip.dx || dy !== flip.dy) setFlip({ dx, dy });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deplie]);
+  // Chip jamais déplacée : le tiroir se range à droite de la barre d'outils (ancre sûre) ;
+  // chip déplacée : le tiroir s'ouvre exactement depuis la chip.
+  const ancreDefaut = !decal.x && !decal.y;
 
   useEffect(() => {
     if (modeTemps !== "direct" && modeTemps !== "pause") setDeplie(true);
@@ -61,7 +81,7 @@ export default function AtlasControle({
     <div
       ref={ref}
       className={`glass absolute top-16 z-10 rounded-xl p-2 ${deplie ? "w-[340px] max-w-[86vw]" : ""}`}
-      style={{ left: deplie ? 74 : 16, transform: `translate(${decal.x}px, ${decal.y}px)`, transition: "left .3s ease" }}
+      style={{ left: deplie && ancreDefaut ? 74 : 16, transform: `translate(${decal.x + flip.dx}px, ${decal.y + flip.dy}px)`, transition: "left .3s ease" }}
       data-testid="map-mode-switcher"
     >
       <div className="flex items-center gap-1">

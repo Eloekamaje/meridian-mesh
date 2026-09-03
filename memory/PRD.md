@@ -1,5 +1,12 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v51b, remplacement MUTUEL Flore ↔ détail + ouverture adaptative des Calques)
+Retours utilisateur : « Flore vient cacher le détail au lieu de céder la place » et « le calque s'ouvre dans un seul sens alors que l'ouverture devrait dépendre de la position ».
+- **Remplacement mutuel, le dernier demandé gagne** : ouvrir Flore masque la colonne détail (v51) ; et désormais une NOUVELLE sélection (jumeau, relation, domaine, liste) pendant que Flore est ouverte ferme Flore — le détail reprend la colonne (effet sur la clé de sélection `selCle`, `fermerFlore` du store). « ✦ Interroger » ne change pas la sélection → ne referme jamais Flore.
+- **Calques — ouverture directionnelle** : le tiroir s'ouvre depuis la position réelle de la chip (plus de saut fixe) ; s'il dépasserait du conteneur, il grandit vers la gauche / le haut (correction `flip` mesurée au dépliage, non persistée, recalculée à chaque ouverture). Chip jamais déplacée : ancre sûre inchangée (à droite de la barre d'outils, sous la recherche). `useGlissable` n'observe plus l'élément lui-même (le flip gère le dépliage, le re-bornage gère le conteneur).
+- Tests : auto-vérifié Playwright — cycle complet : sélection jumeau → détail ; Interroger → Flore avec contexte « Facturation » ; fermeture Flore → détail restauré ; nouvelle sélection pendant Flore ouverte → Flore cède la place. Tout PASS.
+
+
 ## Implémenté (06/2026 — v51, Flore et panneau détail se remplacent)
 Demande utilisateur : « le panneau de détail et Flore doivent se remplacer, pas être mis côte à côte ».
 - **Colonne droite unique** : quand Flore s'ouvre, la colonne détail de l'Atlas est masquée (`AtlasPanneau` prop `masquee={floreOuverte}`, retour null — l'état interne et la sélection sont conservés) ; à la fermeture de Flore, la colonne détail revient telle quelle. « ✦ Interroger » depuis le détail bascule donc visuellement du détail vers Flore.
