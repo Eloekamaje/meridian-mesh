@@ -84,6 +84,14 @@ export default function Atlas() {
   const estTactile = useMedia("(pointer: coarse)");
   const [composerOuvert, setComposerOuvert] = useState(false);
   const [rechercheMobileOuverte, setRechercheMobileOuverte] = useState(false);
+  // Mode immersif plein écran (tablette/mobile) : masque totalement sidebar et topbar
+  const [immersif, setImmersif] = useState(false);
+  useEffect(() => {
+    document.body.classList.toggle("atlas-immersif", immersif && estTablette);
+    return () => document.body.classList.remove("atlas-immersif");
+  }, [immersif, estTablette]);
+  useEffect(() => { if (!estTablette) setImmersif(false); }, [estTablette]);
+
   const centreMonde = useRef(null); // point monde au centre du viewport (conservation caméra)
   const [fantome, setFantome] = useState(null); // position de départ du robot pendant le drag
   const coquesRef = useRef({}); // rect actuellement affiché de chaque membrane
@@ -952,7 +960,7 @@ export default function Atlas() {
               <div
                 key={n.id}
                 className="nopan"
-                style={{ position: "absolute", left: lx, top: ly, transform: "translate(-50%, -50%)", pointerEvents: "auto", cursor: "pointer" }}
+                style={{ position: "absolute", left: lx, top: ly, transform: "translate(-50%, -50%)", pointerEvents: visible ? "auto" : "none", cursor: "pointer" }}
                 title="Clic : sélectionner le domaine · Double-clic : explorer le domaine"
                 data-testid={`region-header-${d.id}`}
                 onClick={() => {
@@ -1340,6 +1348,18 @@ export default function Atlas() {
           className="glass absolute bottom-24 right-3 z-10 rounded-full px-3 py-2.5 font-code text-[10px] uppercase tracking-[0.12em] text-[#52524F] transition-colors hover:text-[#111110]"
         >
           Vue d'ensemble
+        </button>
+      )}
+
+      {/* Tablette/mobile : mode immersif plein écran (masque sidebar et topbar) */}
+      {estTablette && (
+        <button
+          onClick={() => setImmersif((i) => !i)}
+          data-testid="btn-immersif"
+          title={immersif ? "Quitter le plein écran" : "Atlas en plein écran"}
+          className="glass absolute bottom-[8.5rem] right-3 z-10 rounded-full px-3 py-2.5 font-code text-[10px] uppercase tracking-[0.12em] text-[#52524F] transition-colors hover:text-[#111110]"
+        >
+          {immersif ? "Quitter" : "Plein écran"}
         </button>
       )}
 

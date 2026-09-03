@@ -1,5 +1,9 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v38, correctifs interactions + mode immersif)
+- **Bug pan bloqué** : les étiquettes de domaines invisibles (opacité 0, règle « label au survol ») interceptaient encore le pointeur (`pointer-events: auto`) → le drag démarré dessus ne déplaçait pas la carte. Corrigé : `pointer-events: none` quand le label est masqué. Vérifié : pan fonctionnel depuis ces zones à toutes les tailles (1920/1280/768/390).
+- **Mode immersif plein écran** (tablette/mobile ≤1024px) : bouton `btn-immersif` (« Plein écran » / « Quitter ») qui masque totalement sidebar et topbar applicatives (classe `atlas-immersif` sur body + CSS), caméra conservée (zoom et centre monde inchangés via ResizeObserver), pan toujours fluide. Auto-désactivé en repassant desktop.
+
 ## Implémenté (06/2026 — v37, clustering niveau 2 + responsive complet — spec utilisateur 20 règles)
 - **Clustering (niveau 2 uniquement, jamais lié à l'écran)** : domaines ≥ 5 jumeaux → les 2 plus couverts restent visibles, les autres sont regroupés spatialement (rayon 130 px monde) en grappes « ×N » (`grappe-grappe-<Domaine>-<i>`, badge `grappe-compteur-*`, tooltip membres au survol). Clic sur une grappe = zoom avant explicite (setCenter 1.35) → dissolution au niveau 3 ; elles se reforment au retour niveau 2. Les relations des membres pointent vers la grappe et sont agrégées par paire (« N flux »).
 - **Caméra conservée au redimensionnement/orientation** : ResizeObserver — même zoom, même point monde au centre, seule la translation est recalculée ; jamais de fitView automatique (delta centre < 1e-3 px vérifié).
