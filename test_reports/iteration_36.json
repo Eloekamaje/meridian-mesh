@@ -1,0 +1,44 @@
+{
+  "summary": "Atlas iter_36 (refonte v32 « carte continue »). Tests frontend uniquement. VALIDÉ à ~92 % : (1) PORTES MONDIALES : 12 portes [data-testid^='porte-'] présentes (porte-Distribution-vers-Paiement, porte-Paiement-vers-Risque, porte-Risque-vers-Paiement, etc.) ; toutes accessibles au click. (2) NETTOYAGE testids obsolètes : propulsion-chip / dom-quitter-btn / breadcrumb-domaine-inactif / nav-precedent / nav-suivant ont tous disparu ✓. (3) PAN ZOOM CONSTANT : glisser 150px NE → scale reste 1.15128 avant/après ; seules les translations changent (97.4→268.3 en X, 9.4→123.0 en Y) ; aucune propulsion-chip pendant ni après le pan ✓. (4) DBL-CLIC PORTE = EXPLORE : dblclick porte-Distribution-vers-Paiement → scale identique (1.15128 → 1.15128), translations différentes (déplacement animé) ✓. (5) dom-explorer-btn et dom-ajuster-btn présents dans domaine-detail ; clic Ajuster change bien le viewport ✓. (6) FIL D'ARIANE PASSIF : breadcrumb-mesh + breadcrumb-domaine ('Domaine Distribution') s'affichent après stabilisation du centre du viewport dans une membrane ✓. (7) NON-RÉGRESSION LIBAVOID : 14 arêtes arete-r1..r14 rendues, 0 warning 'Worker libavoid en échec', 0 erreur console, 0 pageerror ✓. (8) URL PROFONDE /atlas?domaine=Risque : le panneau domaine-detail s'ouvre bien ✓ mais le breadcrumb-domaine passif ne s'active pas après l'animation (aucun mousemove ultérieur pour déclencher la stabilisation ≥400 ms — voir bug mineur ci-dessous).",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Atlas.jsx onNodeClick sur une porte (L791-805)",
+        "issue": "Micro-dérive du viewport lors du CLIC (simple) sur une porte : transform passe de translate(268.309px, 123.057px) à translate(268.495px, 123.179px), soit ~0.2 px en X et ~0.12 px en Y. La spec demande une caméra STRICTEMENT immobile. Cause probable : React Flow tente un scroll into view / focus interne lors de la sélection d'un nœud (même avec selectable:false, le onNodeClick provoque un onSelectionChange). Impact utilisateur : imperceptible mais viole littéralement la contrainte 'strictement immobile'. Reproduction : ouvrir /atlas, lire document.querySelector('.react-flow__viewport').style.transform, cliquer une porte, relire → différence sub-pixel.",
+        "selector": "[data-testid^='porte-']",
+        "priority": "LOW"
+      },
+      {
+        "component": "useNavigationAtlas.js majContexte (L29-40)",
+        "issue": "Le fil d'Ariane passif ne se met pas à jour à l'arrivée d'une animation programmée (URL profonde ?domaine=X, explorerDomaine, centrerJumeau). Test : /atlas?domaine=Risque, attente 4 s → breadcrumb-domaine n'existe pas (domaineActif reste null). Cause : la stabilisation exige un événement onMove APRÈS 400 ms de stabilité du label ; or, une fois l'animation setCenter terminée, plus aucun onMove n'est émis pour évaluer la condition (now - depuis >= 400). Un simple micro-mousemove suffit à réactiver le contexte, mais dans un flow d'URL profonde l'utilisateur n'a rien bougé. Correction suggérée : soit setDomaineActif directement dans explorerDomaine (après l'animation), soit ajouter un setTimeout(500) dans majContexte pour re-évaluer sans nouvel event, soit poser domaineActif=label depuis les actions explicites (explorerDomaine reçoit déjà label).",
+        "selector": "[data-testid='breadcrumb-domaine']",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_36.json"],
+  "action_items": [
+    "useNavigationAtlas.js explorerDomaine : après l'animation setCenter, forcer setDomaineActif(label) pour synchroniser le fil d'Ariane passif lorsqu'aucun mousemove ne suit (cas /atlas?domaine=X, chip Aurora, bouton dom-explorer-btn). Idem pour centrerJumeau (setDomaineActif au domaine du jumeau).",
+    "Atlas.jsx onNodeClick porte : envisager e.stopPropagation() ou preventDefault pour bloquer la micro-dérive de sélection interne de React Flow (0.2 px). Alternative : rendre les portes non-sélectionnables (selectable:false est déjà présent mais React Flow effectue quand même un focus)."
+  ],
+  "critical_code_review_comments": [
+    "Atlas.jsx dépasse 1280 lignes ; l'extraction des handlers onNodeClick/onPaneClick/onSurvolCarte en hooks séparés faciliterait la maintenance.",
+    "useNavigationAtlas.majContexte dépend de domaineActif dans son useCallback (L40) : à chaque changement de domaineActif, la fonction est recréée, ce qui invalide l'effet passif qui la référence en Atlas.jsx L581 (surMove). C'est mineur ici (surMove n'est pas mémoïsé) mais peut créer des ré-abonnements inutiles.",
+    "Le tick d'inertie custom (Atlas.jsx L604-617) manipule directement le viewport ; en interaction avec React Flow interne (setViewport) il peut interférer avec une animation setCenter programmée. Non observé en test, à surveiller.",
+    "libavoid worker : aucun log d'échec observé — bien. Mais aucune télémétrie de succès non plus (juste absence d'erreur)."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "N/A — frontend only",
+    "frontend": "92% — 8/10 flux OK ; 1 bug MEDIUM (breadcrumb passif ne suit pas les URL profondes), 1 bug LOW (micro-dérive 0.2 px au clic porte)."
+  },
+  "test_credentials": "Persona architecte par défaut, aucune auth.",
+  "seed_data_creation": "Aucune.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "iter_36 : la refonte v32 est majoritairement fonctionnelle. Portes mondiales (12), pan zoom-constant, explorer/ajuster séparés, breadcrumb passif, 14 arêtes libavoid — tout OK. Deux bugs : (a) breadcrumb-domaine reste null après URL profonde /atlas?domaine=X ou après un click explorerDomaine si aucun mousemove ne suit — corriger dans useNavigationAtlas.js explorerDomaine/centrerJumeau en appelant setDomaineActif directement. (b) micro-dérive sub-pixel (~0.2 px) au clic sur une porte — préventable via stopPropagation/handler custom. Le double-clic porte, le pan pur, les URL profondes (panneau ouvert) et le zoom constant sont tous corrects.",
+  "rca of the issue": "(a) majContexte n'agit qu'en réponse à des événements onMove. Une animation setCenter émet des onMove pendant l'animation, mais dès que l'animation se termine, plus aucun onMove n'arrive. La condition `now - stabilisation.current.depuis >= 400 ms` peut ne jamais s'évaluer si le dernier onMove reçu est intervenu avant l'écoulement des 400 ms. Fix : commander explicitement setDomaineActif dans les actions de navigation (explorerDomaine, centrerJumeau, restauration URL). (b) React Flow applique une correction de scroll/focus interne quand un onNodeClick est déclenché, même pour un nœud selectable:false ; cela produit un delta sub-pixel dans le transform du viewport."
+}

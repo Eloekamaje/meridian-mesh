@@ -1,53 +1,24 @@
-export default function FilAriane({
-  domaineInterne, jumeauFocus, jumeauPar, historique, indexHist,
-  allerHist, sortirDomaine, sortirJumeau, perimetreTravail, selection, revenirSelection,
-}) {
-  if (!domaineInterne && !jumeauFocus) return null;
+// Fil d'Ariane PASSIF : reflète le domaine sous le centre du viewport (stabilisé 400 ms).
+// Il ne déplace jamais la caméra ; les actions sont explicites (ajuster à la vue, sélection).
+export default function FilAriane({ domaineActif, selection, revenirSelection, ajusterVue }) {
+  if (!domaineActif && selection.length === 0) return null;
   return (
     <div className="glass absolute left-1/2 top-4 z-10 flex -translate-x-1/2 items-center gap-2 rounded-xl px-4 py-2" data-testid="breadcrumb">
       <button
-        onClick={() => allerHist(indexHist - 1)}
-        disabled={indexHist <= 0}
-        data-testid="nav-precedent"
-        title="Précédent"
-        className="text-xs text-[#52524F] transition-colors hover:text-[#111110] disabled:opacity-25"
+        onClick={ajusterVue}
+        className="text-xs text-[#52524F] transition-colors hover:text-[#111110]"
+        data-testid="breadcrumb-mesh"
+        title="Ajuster à la vue — tout le Mesh"
       >
-        ←
-      </button>
-      <button
-        onClick={() => allerHist(indexHist + 1)}
-        disabled={indexHist >= historique.length - 1}
-        data-testid="nav-suivant"
-        title="Suivant"
-        className="text-xs text-[#52524F] transition-colors hover:text-[#111110] disabled:opacity-25"
-      >
-        →
-      </button>
-      <button onClick={sortirDomaine} className="text-xs text-[#52524F] transition-colors hover:text-[#111110]" data-testid="breadcrumb-mesh">
         Mesh global
       </button>
-      {domaineInterne && (
+      {domaineActif && (
         <>
           <span className="text-[#71716D]">›</span>
-          {jumeauFocus ? (
-            <button onClick={sortirJumeau} className="text-xs text-[#52524F] transition-colors hover:text-[#111110]" data-testid="breadcrumb-domaine">
-              Domaine {domaineInterne}
-            </button>
-          ) : (
-            <span className="text-xs font-semibold text-[#111110]" data-testid="breadcrumb-domaine-inactif">Domaine {domaineInterne}</span>
-          )}
+          <span className="text-xs font-semibold text-[#111110]" data-testid="breadcrumb-domaine">
+            Domaine {domaineActif}
+          </span>
         </>
-      )}
-      {jumeauFocus && (
-        <>
-          <span className="text-[#71716D]">›</span>
-          <span className="text-xs font-semibold text-[#111110]" data-testid="breadcrumb-jumeau">{jumeauPar(jumeauFocus)?.nom}</span>
-        </>
-      )}
-      {perimetreTravail === domaineInterne && (
-        <span className="rounded-full border border-[#0E7490]/40 bg-[#0E7490]/10 px-2 py-0.5 font-code text-[9px] text-[#0E7490]">
-          périmètre de travail (filtre, pas sécurité)
-        </span>
       )}
       {selection.length > 0 && (
         <button

@@ -66,9 +66,7 @@ export default function Atlas() {
   const [modeEdition, setModeEdition] = useState(false); // déplacement des robots uniquement en mode explicite
   const [provisoire, setProvisoire] = useState(false); // drag en cours : routage maison simple, recalcul final au relâchement
   const { routesFin, pousser } = useRoutageFinal(); // routes finales calculées par libavoid (Web Worker)
-  const [propulsion, setPropulsion] = useState(null); // navigation directionnelle { label, progress, x, y }
-  const geste = useRef(null); // geste de propulsion en cours
-  const propulsionAuRelachement = useRef(false); // inhibe l'inertie si le geste était une propulsion
+  const [chemin, setChemin] = useState(null); // porte cliquée : {de, vers} — mise en évidence sans déplacer la caméra
   const [fantome, setFantome] = useState(null); // position de départ du robot pendant le drag
   const coquesRef = useRef({}); // rect actuellement affiché de chaque membrane
   const ciblesCoques = useRef({}); // rect cible calculé
@@ -181,23 +179,14 @@ export default function Atlas() {
     return stats;
   }, [situations, domDe]);
 
-  const {
-    domaineInterne, setDomaineInterne, jumeauFocus, setJumeauFocus,
-    historique, indexHist,
-    entrerDomaine, sortirDomaine, entrerJumeau, sortirJumeau, allerHist, revenirSelection,
-    verrouNav, zoomEntree,
-  } = useNavigationAtlas({
+  const { domaineActif, majContexte, explorerDomaine, centrerJumeau, ajusterVue, revenirSelection } = useNavigationAtlas({
     mesh, jumeauPar, posOverrides, selection, majUrl,
-    setDomaineSel, setOnglet, setSelected, setRelFocus, setFocusVisuel, rfRef,
+    setDomaineSel, setOnglet, setSelected, rfRef,
   });
 
-  const { zoomNiveau, onMove, onNodeMouseEnter, onNodeMouseLeave } = useZoomSemantique({
-    jumeauFocus, domaineInterne,
-    sortirJumeau, sortirDomaine, entrerJumeau, entrerDomaine,
-    jumeauPar, verrouNav, zoomEntree,
-  });
+  const { zoomNiveau, onMove } = useZoomSemantique();
 
-  // Restauration du contexte depuis l'URL au chargement (?domaine=X&interne=1&sel=y)
+  // Restauration du contexte depuis l'URL au chargement (?domaine=X&sel=y) — déplacements animés explicites
   useEffect(() => {
     if (!mesh || restaure.current) return;
     restaure.current = true;
@@ -206,7 +195,7 @@ export default function Atlas() {
     if (d && (mesh.regions || []).some((r) => r.label === d)) {
       setDomaineSel(d);
       setOnglet("detail");
-      if (searchParams.get("interne") === "1") setDomaineInterne(d);
+      setTimeout(() => explorerDomaine(d), 350);
     }
     if (s) {
       const j = mesh.jumeaux.find((x) => x.id === s && !x.anonyme);
@@ -215,7 +204,7 @@ export default function Atlas() {
     const jf = searchParams.get("jumeau");
     if (jf) {
       const j = mesh.jumeaux.find((x) => x.id === jf && !x.anonyme);
-      if (j) { setDomaineInterne(j.domaine); setJumeauFocus(j.id); setSelected(j); setOnglet("detail"); }
+      if (j) setTimeout(() => centrerJumeau(j), 400);
     }
   }, [mesh]);
 
@@ -226,7 +215,7 @@ export default function Atlas() {
       setSelection(focusCarte.ids.filter((id) => mesh?.jumeaux.some((j) => j.id === id)));
       setRelFocus(true);
     } else if (focusCarte.type === "domaine" && focusCarte.domaine) {
-      entrerDomaine(focusCarte.domaine);
+      explorerDomaine(focusCarte.domaine);
     }
   }, [focusCarte]);
 
@@ -311,7 +300,7 @@ export default function Atlas() {
   // Focus profond : la caméra cadre les jumeaux concernés (situation ou jumeau filtré)
   useEffect(() => {
     const cle = situation?.id || focus || null;
-    if (!mesh || !cle || domaineInterne || jumeauFocus || centreFocusFait.current === cle) return;
+    if (!mesh || !cle || centreFocusFait.current === cle) return;
     const cibles = situation
       ? (situation.jumeaux || []).map((id) => mesh.jumeaux.find((j) => j.id === id)).filter(Boolean)
       : [mesh.jumeaux.find((j) => j.id === focus)].filter(Boolean);
@@ -327,7 +316,7 @@ export default function Atlas() {
       );
     }, 350);
     return () => clearTimeout(t);
-  }, [mesh, situation, focus, domaineInterne, jumeauFocus]);
+  }, [mesh, situation, focus]);
 
   // Le contexte Aurora suit toujours le focus profond : les jumeaux concernés deviennent la sélection
   useEffect(() => {
@@ -342,10 +331,10 @@ export default function Atlas() {
   const { nodes, edges, snapshot } = useMemo(() => {
     const g = construireGraphe({
       mesh, situation, focus, vueActive, perimetreTravail,
-      jumeauFocus, domaineInterne, posOverrides, compteurs, halo, selection,
+      posOverrides, compteurs, halo, selection,
       zoomNiveau, relFocus, focusCarte, domDe, statsRegions, temps,
       zoomFort: zoomActuel >= 1.5,
-      routesFin, provisoire, propulsion,
+      routesFin, provisoire,
     });
     // Conserve les dimensions mesurées par React Flow : le graphe est reconstruit à chaque
     // tick de drag — sans cela les nœuds perdent leur mesure et les arêtes disparaissent.
@@ -394,7 +383,7 @@ export default function Atlas() {
     });
     ciblesCoques.current = nouvellesCibles;
     return g;
-  }, [mesh, focus, situation, halo, compteurs, selection, relFocus, zoomNiveau, vueActive, posOverrides, domaineSel, domaineInterne, jumeauFocus, perimetreTravail, domDe, statsRegions, focusCarte, temps, amorce, mesures, regionSurvolee, tickCoques, relSurvolee, selectedRelation, zoomActuel, routesFin, provisoire, propulsion]);
+  }, [mesh, focus, situation, halo, compteurs, selection, relFocus, zoomNiveau, vueActive, posOverrides, domaineSel, perimetreTravail, domDe, statsRegions, focusCarte, temps, amorce, mesures, regionSurvolee, tickCoques, relSurvolee, selectedRelation, zoomActuel, routesFin, provisoire]);
 
   // Routage final : nouveau snapshot géométrique → Web Worker libavoid
   // (jamais pendant le drag, jamais pendant le pan/zoom — la signature géométrique est stable)
@@ -411,16 +400,16 @@ export default function Atlas() {
       if (etat === "supposee" || etat === "contestee") return couchesRel.ecarts;
       return true;
     });
-    // Propulsion : les relations avec le territoire ciblé sont renforcées progressivement
-    if (propulsion?.label) {
-      const cible = propulsion.label;
+    // Clic sur une porte « DOMAINE · N » : chemin vers ce domaine mis en évidence, caméra immobile
+    if (chemin) {
+      const paire = [chemin.de, chemin.vers];
       es = es.map((e) => {
-        const touche =
-          domDe[e.source] === cible || domDe[e.target] === cible ||
-          e.source === `porte-${cible}` || e.target === `porte-${cible}`;
-        return touche
-          ? { ...e, style: { ...e.style, opacity: 0.55 + 0.45 * propulsion.progress, strokeWidth: (e.style?.strokeWidth || 1.5) + 0.8 * propulsion.progress } }
-          : e;
+        const a = domDe[e.source];
+        const b = domDe[e.target];
+        const dedans = a !== b && paire.includes(a) && paire.includes(b);
+        return dedans
+          ? { ...e, zIndex: 25, style: { ...e.style, opacity: 1, strokeWidth: (e.style?.strokeWidth || 1.5) + 1 } }
+          : { ...e, label: undefined, data: { ...e.data, estompee: true }, style: { ...e.style, opacity: 0.12 } };
       });
     }
     const actif = epingle || survolJumeau;
@@ -451,7 +440,7 @@ export default function Atlas() {
       es = [...es.filter((e) => e.id !== relActive), ...es.filter((e) => e.id === relActive)];
     }
     return es;
-  }, [edges, couchesRel, epingle, survolJumeau, relSurvolee, selectedRelation, propulsion, domDe]);
+  }, [edges, couchesRel, epingle, survolJumeau, relSurvolee, selectedRelation, chemin, domDe]);
 
   // Jumeau survolé ou épinglé → panneau flottant à gauche
   const jumeauSurvole = useMemo(() => {
@@ -540,85 +529,11 @@ export default function Atlas() {
     }
   }, [nodes, poursuite]);
 
-  // --- Navigation par propulsion (exploration directionnelle) ---
-  // Glissement prolongé sur le fond : la caméra avance et zoome progressivement vers le
-  // territoire dans la direction du geste. Zone morte 30 px, attraction par cône (±41°).
-  const ZONE_MORTE = 30;
-  const DIST_MAX = 220;
-
-  const surPointerDown = (e) => {
-    // Uniquement un clic franc sur le FOND (jamais sur un robot/région), hors mode réorganisation
-    if (outil !== "deplacement" || modeEdition || e.button !== 0 || !rfRef.current) return;
-    if (!e.target.classList?.contains("react-flow__pane")) return;
-    geste.current = { origin: { x: e.clientX, y: e.clientY }, vp: rfRef.current.getViewport(), actif: false, cible: null, progress: 0 };
-  };
-
-  const terminerGeste = useCallback(() => {
-    const g = geste.current;
-    geste.current = null;
-    if (!g) return;
-    if (g.actif) {
-      propulsionAuRelachement.current = true; // pas d'inertie après une propulsion
-      // Progression suffisante : l'Atlas achève l'arrivée sur le territoire (fil d'Ariane mis à jour)
-      if (g.cible && g.progress >= 0.85) entrerDomaine(g.cible.label);
-    }
-    setPropulsion(null);
-  }, [entrerDomaine]);
-
-  useEffect(() => {
-    const h = () => terminerGeste();
-    window.addEventListener("pointerup", h);
-    return () => window.removeEventListener("pointerup", h);
-  }, [terminerGeste]);
-
   // Survol des membranes par proximité de la frontière (les zones d'interaction des arêtes les recouvrent)
   const surSurvolCarte = (e) => {
-    if (!rfRef.current || !mesh || jumeauFocus) return;
+    if (!rfRef.current || !mesh) return;
     const rect = carteRef.current?.getBoundingClientRect();
     if (!rect) return;
-    // --- Propulsion : geste engagé sur le fond → caméra interpolée vers le territoire ciblé ---
-    const g = geste.current;
-    if (g) {
-      const dx = e.clientX - g.origin.x;
-      const dy = e.clientY - g.origin.y;
-      const dist = Math.hypot(dx, dy);
-      const progress = Math.min(1, Math.max(0, (dist - ZONE_MORTE) / (DIST_MAX - ZONE_MORTE)));
-      let cible = null;
-      if (progress > 0) {
-        const candidats = domaineInterne
-          ? nodes.filter((n) => n.data?.porte).map((n) => ({ label: n.data.porte, cx: n.position.x + 30, cy: n.position.y + 8 }))
-          : nodes.filter((n) => n.type === "region").map((n) => ({ label: n.data.label, cx: n.position.x + (n.data.w || 0) / 2, cy: n.position.y + (n.data.h || 0) / 2 }));
-        let meilleurScore = 0;
-        for (const c of candidats) {
-          const sx = rect.left + c.cx * g.vp.zoom + g.vp.x;
-          const sy = rect.top + c.cy * g.vp.zoom + g.vp.y;
-          const vx = sx - g.origin.x;
-          const vy = sy - g.origin.y;
-          const vd = Math.hypot(vx, vy);
-          if (vd < 60) continue;
-          const cos = (vx * dx + vy * dy) / (vd * dist);
-          if (cos < 0.75) continue; // cône de ±41° autour de la direction du geste
-          const score = (cos * cos) / (1 + vd / 3000); // l'alignement prime sur la proximité
-          if (score > meilleurScore) { meilleurScore = score; cible = c; }
-        }
-      }
-      if (cible) {
-        g.actif = true;
-        g.cible = cible;
-        g.progress = progress;
-        const eased = progress * progress * (3 - 2 * progress); // smoothstep
-        const zCible = domaineInterne ? 1.0 : 1.2;
-        const vpCible = { x: rect.width / 2 - cible.cx * zCible, y: rect.height / 2 - cible.cy * zCible, zoom: zCible };
-        rfRef.current.setViewport({
-          x: g.vp.x + (vpCible.x - g.vp.x) * eased,
-          y: g.vp.y + (vpCible.y - g.vp.y) * eased,
-          zoom: g.vp.zoom + (vpCible.zoom - g.vp.zoom) * eased,
-        });
-        setPropulsion({ label: cible.label, progress, x: e.clientX - rect.left, y: e.clientY - rect.top });
-        return;
-      }
-      if (g.actif) { g.actif = false; g.cible = null; g.progress = 0; setPropulsion(null); }
-    }
     if (relSurvolee) setRelTooltipPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
     const p = rfRef.current.screenToFlowPosition({ x: e.clientX, y: e.clientY });
     const zoom = rfRef.current.getZoom() || 1;
@@ -659,14 +574,23 @@ export default function Atlas() {
       const arr = Math.round(vp.zoom * 20) / 20;
       return Math.abs(arr - z) >= 0.05 ? arr : z;
     });
+    // Contexte passif : domaine sous le centre du viewport (stabilisé 400 ms, caméra jamais déplacée)
+    if (rfRef.current && carteRef.current) {
+      const rect = carteRef.current.getBoundingClientRect();
+      const centre = rfRef.current.screenToFlowPosition({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+      majContexte(centre, nodes.filter((n) => n.type === "region" && n.data.points).map((n) => ({ label: n.data.label, points: n.data.points, ox: n.position.x, oy: n.position.y })));
+    }
     if (inertie.current) return;
     const t = Date.now();
+    // Zoom en cours : le x/y bouge à cause de l'ancrage au pointeur — ne pas alimenter
+    // l'inertie avec ces échantillons, sinon un zoom-out rapide déclenche une translation
+    const dernier = mouvements.current[mouvements.current.length - 1];
+    if (dernier && Math.abs(dernier.zoom - vp.zoom) > 0.0001) mouvements.current = [];
     mouvements.current.push({ t, x: vp.x, y: vp.y, zoom: vp.zoom });
     mouvements.current = mouvements.current.filter((m) => t - m.t < 180);
   };
 
   const surMoveEnd = () => {
-    if (propulsionAuRelachement.current) { propulsionAuRelachement.current = false; mouvements.current = []; return; }
     const ms = mouvements.current;
     mouvements.current = [];
     if (!rfRef.current || ms.length < 2) return;
@@ -788,9 +712,9 @@ export default function Atlas() {
 
   const actionsDomaine = domaineSel
     ? {
-        dedans: domaineInterne === domaineSel,
-        onExplorer: () => entrerDomaine(domaineSel),
-        onQuitter: sortirDomaine,
+        onExplorer: () => explorerDomaine(domaineSel), // déplacement animé, zoom constant
+        onAjuster: () => explorerDomaine(domaineSel, { ajuster: true }), // fitBounds explicite
+        onExplorerVers: (dom) => explorerDomaine(dom),
         onComparer: () => { setAttenteComparaison(true); toast.info("Cliquez un second domaine pour comparer"); },
         onEnregistrer: async () => {
           const stats = statsDomaine(domaineSel);
@@ -810,7 +734,7 @@ export default function Atlas() {
 
   return (
     <div className="flex h-full flex-col">
-    <div ref={carteRef} onPointerMove={surSurvolCarte} onPointerDown={surPointerDown} onPointerUp={terminerGeste} onPointerLeave={() => { setRegionSurvolee(null); setRegionTooltip(null); }} className="relative min-h-0 flex-1 overflow-hidden" data-testid="system-map" style={{ background: "radial-gradient(ellipse at 50% 38%, #FDFDFB 0%, #F5F4F0 65%, #EDECE6 100%)" }}>
+    <div ref={carteRef} onPointerMove={surSurvolCarte} onPointerLeave={() => { setRegionSurvolee(null); setRegionTooltip(null); }} className="relative min-h-0 flex-1 overflow-hidden" data-testid="system-map" style={{ background: "radial-gradient(ellipse at 50% 38%, #FDFDFB 0%, #F5F4F0 65%, #EDECE6 100%)" }}>
       <ReactFlow
         key={focus || situationParam || "mesh"}
         nodes={nodes}
@@ -833,10 +757,9 @@ export default function Atlas() {
         onNodeDragStart={debutDrag}
         onNodeDragStop={finDrag}
         onNodeMouseEnter={(e, node) => {
-          onNodeMouseEnter(e, node);
-          if (node.type === "twin" && !node.data?.porte && !node.data?.voisinRel && !node.data?.jumeau?.anonyme) setSurvolJumeau(node.data.jumeau.id);
+          if (node.type === "twin" && !node.data?.porte && !node.data?.jumeau?.anonyme) setSurvolJumeau(node.data.jumeau.id);
         }}
-        onNodeMouseLeave={(e, node) => { onNodeMouseLeave(e, node); setSurvolJumeau(null); }}
+        onNodeMouseLeave={() => setSurvolJumeau(null)}
         onNodesChange={onNodesChange}
         panOnDrag={outil === "deplacement"}
         selectionOnDrag={outil === "lasso"}
@@ -853,8 +776,8 @@ export default function Atlas() {
             const label = node.data.label;
             const dc = dernierClicRegion.current;
             dernierClicRegion.current = { kind: "region", label, t: Date.now() };
-            if (dc.kind === "region" && dc.label === label && Date.now() - dc.t < 450 && !domaineInterne && !jumeauFocus) {
-              entrerDomaine(label);
+            if (dc.kind === "region" && dc.label === label && Date.now() - dc.t < 450) {
+              explorerDomaine(label); // double-clic : déplacement animé à zoom constant
               return;
             }
             if (attenteComparaison && domaineSel && label !== domaineSel) {
@@ -863,42 +786,51 @@ export default function Atlas() {
             } else {
               setDomaineSel(label);
             }
-            majUrl({ domaine: label, sel: null, ...(domaineInterne ? {} : { interne: null }) });
+            majUrl({ domaine: label, sel: null });
             setSelected(null);
             setSelectedRelation(null);
             setOnglet("detail");
             return;
           }
           if (node.data?.porte) {
-            entrerDomaine(node.data.porte);
-            return;
-          }
-          if (node.data?.voisinRel) {
-            if (!node.data.jumeau.anonyme) entrerJumeau(node.data.jumeau);
+            // Clic sur une porte : sélection + mise en évidence du chemin, caméra immobile
+            const dc = dernierClicRegion.current;
+            dernierClicRegion.current = { kind: "porte", id: node.id, t: Date.now() };
+            if (dc.kind === "porte" && dc.id === node.id && Date.now() - dc.t < 450) {
+              setChemin(null);
+              explorerDomaine(node.data.porte); // double-clic : explorer
+              return;
+            }
+            setChemin((c) => (c?.de === node.data.porteDe && c?.vers === node.data.porte ? null : { de: node.data.porteDe, vers: node.data.porte }));
+            setDomaineSel(node.data.porte);
+            setSelected(null);
+            setSelectedRelation(null);
+            setOnglet("detail");
             return;
           }
           if (node.type !== "twin") return;
           const dcT = dernierClicRegion.current;
           dernierClicRegion.current = { kind: "twin", id: node.data.jumeau.id, t: Date.now() };
-          if (dcT.kind === "twin" && dcT.id === node.data.jumeau.id && Date.now() - dcT.t < 450 && !jumeauFocus && !node.data.jumeau.anonyme) {
-            entrerJumeau(node.data.jumeau);
+          if (dcT.kind === "twin" && dcT.id === node.data.jumeau.id && Date.now() - dcT.t < 450 && !node.data.jumeau.anonyme) {
+            centrerJumeau(node.data.jumeau); // double-clic : déplacement + zoom explicite centré sur le jumeau
             return;
           }
           setEpingle((p) => (p === node.data.jumeau.id ? null : node.data.jumeau.id));
           setSelected(node.data.jumeau);
           setSelectedRelation(null);
           setDomaineSel(null);
+          setChemin(null);
           setOnglet("detail");
-          majUrl({ sel: node.data.jumeau.id, ...(domaineInterne ? {} : { domaine: null, interne: null }) });
+          majUrl({ sel: node.data.jumeau.id, domaine: null });
         }}
         onNodeDoubleClick={(_, node) => {
           if (outil === "lasso") return;
           if (node.type === "region") {
-            if (!domaineInterne && !jumeauFocus) entrerDomaine(node.data.label);
+            explorerDomaine(node.data.label);
             return;
           }
-          if (node.data?.porte) { entrerDomaine(node.data.porte); return; }
-          if (node.type === "twin" && node.data?.jumeau && !node.data.jumeau.anonyme && !jumeauFocus) entrerJumeau(node.data.jumeau);
+          if (node.data?.porte) { setChemin(null); explorerDomaine(node.data.porte); return; }
+          if (node.type === "twin" && node.data?.jumeau && !node.data.jumeau.anonyme) centrerJumeau(node.data.jumeau);
         }}
         onEdgeClick={(_, edge) => {
           const rel = mesh?.relations.find((r) => r.id === edge.id);
@@ -928,23 +860,23 @@ export default function Atlas() {
           dernierClicRegion.current = { kind: null, t: 0 };
           if (Date.now() - dc.t < 450 && rfRef.current && mesh) {
             const p = rfRef.current.screenToFlowPosition({ x: e.clientX, y: e.clientY });
-            if (dc.kind === "twin" && !jumeauFocus) {
+            if (dc.kind === "twin") {
               const j = mesh.jumeaux.find((x) => x.id === dc.id && !x.anonyme);
               if (j) {
                 const pos = posOverrides[j.id] || j.position;
-                if (Math.abs(p.x - (pos.x + 30)) < 90 && Math.abs(p.y - (pos.y + 40)) < 85) { entrerJumeau(j); return; }
+                if (Math.abs(p.x - (pos.x + 30)) < 90 && Math.abs(p.y - (pos.y + 40)) < 85) { centrerJumeau(j); return; }
               }
             }
-            if (dc.kind === "region" && !domaineInterne && !jumeauFocus) {
+            if (dc.kind === "region") {
               const reg = (mesh.regions || []).find((r) => r.label === dc.label);
               if (reg && p.x >= reg.x && p.x <= reg.x + reg.w && p.y >= reg.y && p.y <= reg.y + reg.h) {
-                entrerDomaine(dc.label);
+                explorerDomaine(dc.label);
                 return;
               }
             }
           }
-          setSelected(null); setSelectedRelation(null); setDomaineSel(null); setSelection([]); setRelFocus(false); setComparaison(null); setAttenteComparaison(false); commanderCarte(null); setEpingle(null);
-          majUrl(domaineInterne ? { sel: null } : { sel: null, domaine: null, interne: null, jumeau: null });
+          setSelected(null); setSelectedRelation(null); setDomaineSel(null); setSelection([]); setRelFocus(false); setComparaison(null); setAttenteComparaison(false); commanderCarte(null); setEpingle(null); setChemin(null);
+          majUrl({ sel: null, domaine: null, jumeau: null });
         }}
         nodesDraggable={modeEdition}
         nodesConnectable={false}
@@ -987,9 +919,9 @@ export default function Atlas() {
                   setSelectedRelation(null);
                   setDomaineSel(d.label);
                   setOnglet("detail");
-                  majUrl({ domaine: d.label, sel: null, ...(domaineInterne ? {} : { interne: null }) });
+                  majUrl({ domaine: d.label, sel: null });
                 }}
-                onDoubleClick={() => { if (!domaineInterne && !jumeauFocus) entrerDomaine(d.label); }}
+                onDoubleClick={() => explorerDomaine(d.label)}
               >
                 <div className="flex flex-col items-center gap-0.5">
                   <div className="flex items-center justify-center gap-2">
@@ -1210,8 +1142,7 @@ export default function Atlas() {
         <ExpliquerCarte
           mesh={mesh}
           fermer={() => setExpliquerOuvert(false)}
-          domaineInterne={domaineInterne}
-          jumeauFocus={jumeauFocus}
+          domaineActif={domaineActif}
           jumeauPar={jumeauPar}
           selection={selection}
         />
@@ -1234,14 +1165,12 @@ export default function Atlas() {
       )}
 
       <FilAriane
-        domaineInterne={domaineInterne} jumeauFocus={jumeauFocus} jumeauPar={jumeauPar}
-        historique={historique} indexHist={indexHist} allerHist={allerHist}
-        sortirDomaine={sortirDomaine} sortirJumeau={sortirJumeau}
-        perimetreTravail={perimetreTravail} selection={selection} revenirSelection={revenirSelection}
+        domaineActif={domaineActif} selection={selection}
+        revenirSelection={revenirSelection} ajusterVue={ajusterVue}
       />
 
       {/* Indicateur de périmètre de travail actif (filtre volontaire, distinct de la sécurité) */}
-      {perimetreTravail && perimetreTravail !== domaineInterne && (
+      {perimetreTravail && (
         <div className="glass absolute left-1/2 top-4 z-10 flex -translate-x-1/2 items-center gap-2 rounded-xl px-4 py-2" data-testid="perimetre-travail-chip">
           <span className="h-1.5 w-1.5 rounded-full bg-[#0E7490]" />
           <span className="font-code text-[10px] text-[#52524F]">
@@ -1253,16 +1182,12 @@ export default function Atlas() {
         </div>
       )}
 
-      {/* Niveau de zoom sémantique */}
+      {/* Niveau de zoom sémantique — échelle globale, identique partout dans le Mesh */}
       {(
         <div className="glass absolute bottom-4 left-1/2 z-10 -translate-x-1/2 rounded-lg px-3 py-1.5 font-code text-[10px] text-[#52524F]" data-testid="zoom-niveau">
-          {jumeauFocus
-            ? `Focus jumeau — ${jumeauPar(jumeauFocus)?.nom} · zoom arrière pour remonter`
-            : domaineInterne
-              ? `Domaine ${domaineInterne} — zoom arrière pour remonter`
-              : `Niveau ${zoomNiveau} · ${NIVEAUX_ZOOM[zoomNiveau]}`}
-          {!jumeauFocus && !domaineInterne && zoomNiveau === 1 && " · corridors agrégés"}
-          {!jumeauFocus && !domaineInterne && zoomNiveau === 3 && " · détail des relations"}
+          {`Niveau ${zoomNiveau} · ${NIVEAUX_ZOOM[zoomNiveau]}`}
+          {zoomNiveau === 1 && " · corridors agrégés"}
+          {zoomNiveau === 3 && " · détail des relations"}
         </div>
       )}
 
@@ -1327,23 +1252,6 @@ export default function Atlas() {
             <div>{regionTooltip.data.ecarts ?? 0} écart{(regionTooltip.data.ecarts ?? 0) > 1 ? "s" : ""} structurel{(regionTooltip.data.ecarts ?? 0) > 1 ? "s" : ""}</div>
           </div>
           <div className="mt-2 font-code text-[9px] text-[#0E7490]">Double-clic : explorer le domaine →</div>
-        </div>
-      )}
-
-      {/* Chip de propulsion — territoire ciblé près du pointeur */}
-      {propulsion && (
-        <div
-          className="pointer-events-none absolute z-30 flex -translate-y-full items-center gap-2 rounded-lg border bg-white/95 px-2.5 py-1.5 shadow-md"
-          style={{ left: Math.min(propulsion.x + 16, (carteRef.current?.clientWidth || 1200) - 220), top: Math.max(propulsion.y - 10, 30), borderColor: `${couleurDomaine(propulsion.label)}55` }}
-          data-testid="propulsion-chip"
-        >
-          <span className="font-code text-[10px] font-semibold uppercase tracking-[0.15em]" style={{ color: couleurDomaine(propulsion.label) }} data-testid="propulsion-cible">
-            {propulsion.label}
-          </span>
-          <span className="font-code text-[9px] text-[#71716D]" data-testid="propulsion-progress">{Math.round(propulsion.progress * 100)} %</span>
-          <span className="font-code text-[9px] text-[#0E7490]">
-            {propulsion.progress >= 0.85 ? "Relâcher pour entrer →" : "Continuer pour entrer"}
-          </span>
         </div>
       )}
 

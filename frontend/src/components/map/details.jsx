@@ -88,15 +88,12 @@ export function DomaineDetail({ label, stats, actions }) {
       {m && <div className="mt-1 font-code text-[10px] text-[#71716D]">{m.niveau} · {m.zones_inconnues} zone(s) inconnue(s)</div>}
       {actions && (
         <div className="mt-3 space-y-1.5" data-testid="domaine-actions">
-          {actions.dedans ? (
-            <button onClick={actions.onQuitter} data-testid="dom-quitter-btn" className="w-full rounded-md border border-[#E5E5E3] px-3 py-2 text-xs text-[#3F3F3C] transition-colors hover:text-[#111110]">
-              Quitter le domaine
-            </button>
-          ) : (
-            <button onClick={actions.onExplorer} data-testid="dom-explorer-btn" className="w-full rounded-md bg-[#0E7490] px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#0891B2]">
-              Explorer ce domaine
-            </button>
-          )}
+          <button onClick={actions.onExplorer} data-testid="dom-explorer-btn" title="Déplacement animé à zoom constant" className="w-full rounded-md bg-[#0E7490] px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#0891B2]">
+            Explorer ce domaine
+          </button>
+          <button onClick={actions.onAjuster} data-testid="dom-ajuster-btn" title="Cadrer toute la membrane (fitBounds explicite)" className="w-full rounded-md border border-[#0E7490]/40 px-3 py-2 text-xs font-semibold text-[#0E7490] transition-colors hover:bg-[#0E7490]/10">
+            Ajuster au domaine
+          </button>
           <div className="flex flex-wrap gap-1.5">
             <button onClick={actions.onComparer} data-testid="dom-comparer-btn" className="flex-1 rounded-md border border-[#E5E5E3] px-2 py-1.5 text-[11px] text-[#3F3F3C] transition-colors hover:text-[#111110]">
               Comparer…
@@ -138,9 +135,16 @@ export function DomaineDetail({ label, stats, actions }) {
           <div className="font-code text-[9px] uppercase tracking-[0.2em] text-[#71716D]">Dépendances vers l'extérieur</div>
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {Object.entries(stats.ext).map(([dom, n]) => (
-              <span key={dom} className="rounded-full border px-2 py-0.5 font-code text-[10px]" style={{ color: couleurDomaine(dom), borderColor: `${couleurDomaine(dom)}44`, backgroundColor: `${couleurDomaine(dom)}0D` }}>
+              <button
+                key={dom}
+                onClick={() => actions?.onExplorerVers?.(dom)}
+                data-testid={`vers-${dom}`}
+                title={`Explorer ${dom} (déplacement animé, zoom inchangé)`}
+                className="rounded-full border px-2 py-0.5 font-code text-[10px] transition-transform hover:scale-105"
+                style={{ color: couleurDomaine(dom), borderColor: `${couleurDomaine(dom)}44`, backgroundColor: `${couleurDomaine(dom)}0D` }}
+              >
                 Vers {dom} · {n}
-              </span>
+              </button>
             ))}
           </div>
         </div>

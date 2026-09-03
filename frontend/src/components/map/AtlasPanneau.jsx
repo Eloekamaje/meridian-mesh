@@ -71,7 +71,7 @@ export default function AtlasPanneau({
             <DomaineDetail label={domaineSel} stats={statsDomaine(domaineSel)} actions={actionsDomaine} />
           ) : (
             <p className="text-xs text-[#71716D]">
-              Sélectionnez un jumeau, une relation ou un domaine. Double-clic sur un domaine pour y entrer ; le zoom révèle progressivement le contenu.
+              Sélectionnez un jumeau, une relation ou un domaine. Double-clic : explorer (déplacement animé, zoom inchangé) ; la carte est continue — les domaines voisins se découvrent en la faisant glisser.
             </p>
           )
         ) : (

@@ -434,9 +434,9 @@ export function statsDuDomaine(mesh, situations, domDe, label) {
 
 export function construireGraphe({
   mesh, situation, focus, vueActive, perimetreTravail,
-  jumeauFocus, domaineInterne, posOverrides, compteurs, halo, selection,
+  posOverrides, compteurs, halo, selection,
   zoomNiveau, relFocus, focusCarte, domDe, statsRegions, temps, zoomFort,
-  routesFin, provisoire, propulsion,
+  routesFin, provisoire,
 }) {
   if (!mesh) return { nodes: [], edges: [], snapshot: null };
   const implique = situation?.jumeaux || [];
@@ -474,135 +474,6 @@ export function construireGraphe({
     mesh.jumeaux.forEach((j) => { if (!j.anonyme && j.domaine !== perimetreTravail) dims.add(j.id); });
   }
 
-  // Focus jumeau : le jumeau au centre, ses voisins en portes périphériques
-  if (jumeauFocus) {
-    const jf = mesh.jumeaux.find((j) => j.id === jumeauFocus);
-    if (!jf) return { nodes: [], edges: [] };
-    const posF = posOverrides[jf.id] || jf.position;
-    const cFx = posF.x + 95;
-    const cFy = posF.y + 32;
-    const relsV = (mesh.relations || []).filter((r) => r.source === jf.id || r.cible === jf.id);
-    const voisins = [...new Set(relsV.map((r) => (r.source === jf.id ? r.cible : r.source)))]
-      .map((id) => mesh.jumeaux.find((j) => j.id === id))
-      .filter(Boolean);
-    const rayF = Math.max(300, 150 + voisins.length * 26);
-    const nsF = [{
-      id: jf.id, type: "twin", position: posF, initialWidth: 64, initialHeight: 78,
-      data: { jumeau: jf, focusCentral: true, evenements: compteurs[jf.id] || 0, halo: halo === jf.id },
-      draggable: false, selectable: false, zIndex: 5,
-    }];
-    voisins.forEach((v, i) => {
-      const ang = -Math.PI / 2 + (i * 2 * Math.PI) / voisins.length;
-      const rel = relsV.find((r) => r.source === v.id || r.cible === v.id);
-      nsF.push({
-        id: `voisin-${v.id}`, type: "twin",
-        position: { x: cFx + Math.cos(ang) * rayF - 95, y: cFy + Math.sin(ang) * rayF - 35 },
-        initialWidth: 64, initialHeight: 78,
-        data: { jumeau: v, voisinRel: rel },
-        draggable: false, selectable: false, zIndex: 4,
-      });
-    });
-    const posFocus = Object.fromEntries(nsF.map((n) => [n.id, n.position]));
-    const relsF = relsV.map((r) => ({
-      ...r,
-      source: r.source === jf.id ? jf.id : `voisin-${r.source}`,
-      cible: r.cible === jf.id ? jf.id : `voisin-${r.cible}`,
-    }));
-    const esF = fabriqueOrtho(relsF, nsF, posFocus, 3, true, routesFin, provisoire);
-    return {
-      nodes: nsF,
-      edges: appliquerTemps(esF.edges.map((e) => ({ ...e, data: { ...e.data, focus: true } })), temps),
-      snapshot: esF.snapshot,
-    };
-  }
-
-  // Vue interne d'un domaine : jumeaux du domaine + portes externes
-  if (domaineInterne) {
-    const internes = mesh.jumeaux.filter((j) => !j.anonyme && j.domaine === domaineInterne);
-    const reg = (mesh.regions || []).find((r) => r.label === domaineInterne);
-    const cx = reg ? reg.x + reg.w / 2 : 600;
-    const cy = reg ? reg.y + reg.h / 2 : 350;
-    const ray = reg ? Math.max(reg.w, reg.h) / 2 + 130 : 260;
-    const extCount = {};
-    mesh.relations.forEach((r) => {
-      const a = domDe[r.source] === domaineInterne;
-      const b = domDe[r.cible] === domaineInterne;
-      if (a === b) return;
-      const ext = a ? domDe[r.cible] : domDe[r.source];
-      if (!ext) return;
-      if (!extCount[ext]) extCount[ext] = { n: 0 };
-      extCount[ext].n += 1;
-    });
-    const porteIds = {};
-    const portes = Object.keys(extCount);
-    let nsInt = [];
-    if (reg) {
-      const centres = internes.map((j) => {
-        const p = posOverrides[j.id] || j.position;
-        return { x: p.x + 30, y: p.y + 40 };
-      });
-      const coque = coqueOrganique(centres) || { x: reg.x, y: reg.y, w: reg.w, h: reg.h, path: null, labelX: reg.w / 2 };
-      nsInt = [{ id: reg.id, type: "region", position: { x: coque.x, y: coque.y }, initialWidth: coque.w, initialHeight: coque.h, data: { ...reg, w: coque.w, h: coque.h, path: coque.path, points: coque.points, labelX: coque.labelX, investigations: statsRegions[reg.label]?.investigations ?? 0, decouvertes: statsRegions[reg.label]?.decouvertes ?? 0, flux: statsRel[reg.label]?.flux ?? 0, ecarts: statsRel[reg.label]?.ecarts ?? 0, halo: false }, draggable: false, selectable: false, zIndex: -10 }];
-    }
-    portes.forEach((dom, i) => {
-      const regExt = (mesh.regions || []).find((r) => r.label === dom);
-      const ang = regExt
-        ? Math.atan2(regExt.y + regExt.h / 2 - cy, regExt.x + regExt.w / 2 - cx)
-        : (i / portes.length) * 2 * Math.PI;
-      const pid = `porte-${dom}`;
-      porteIds[dom] = pid;
-      nsInt.push({
-        id: pid,
-        type: "twin",
-        position: { x: cx + Math.cos(ang) * ray - 90, y: cy + Math.sin(ang) * ray },
-        initialWidth: 64,
-        initialHeight: 78,
-        data: {
-          jumeau: { id: pid, nom: `Vers ${dom} · ${extCount[dom].n} relation${extCount[dom].n > 1 ? "s" : ""}`, domaine: dom, porte: true, statut: "porte" },
-          porte: dom,
-          apercuPorte: {
-            domaine: dom,
-            domaineFocus: domaineInterne,
-            jumeaux: mesh.jumeaux.filter((t) => !t.anonyme && t.domaine === dom).length,
-            restreint: mesh.jumeaux.filter((t) => !t.anonyme && t.domaine === dom).length === 0,
-            relations: extCount[dom].n,
-            decouvertes: statsRegions[dom]?.decouvertes ?? 0,
-          },
-          propulsion: propulsion?.label === dom ? propulsion.progress : undefined,
-        },
-        draggable: false,
-        selectable: false,
-      });
-    });
-    nsInt = nsInt.concat(
-      internes.map((j) => ({
-        id: j.id,
-        type: "twin",
-        position: posOverrides[j.id] || j.position,
-        initialWidth: 64,
-        initialHeight: 78,
-        data: { jumeau: j, dim: false, halo: halo === j.id, evenements: compteurs[j.id] || 0, etape: null },
-        selected: selection.includes(j.id),
-      }))
-    );
-    const posInt = Object.fromEntries(nsInt.filter((n) => n.type === "twin").map((n) => [n.id, n.position]));
-    const relsInt = [];
-    mesh.relations.forEach((r) => {
-      const a = domDe[r.source] === domaineInterne;
-      const b = domDe[r.cible] === domaineInterne;
-      if (a && b) {
-        relsInt.push(r);
-      } else if (a !== b) {
-        const ext = a ? domDe[r.cible] : domDe[r.source];
-        const pid = porteIds[ext];
-        if (!pid) return;
-        relsInt.push({ ...r, id: `${r.id}-porte`, source: a ? r.source : r.cible, cible: pid });
-      }
-    });
-    const esInt = fabriqueOrtho(relsInt, nsInt, posInt, 2, false, routesFin, provisoire);
-    return { nodes: nsInt, edges: appliquerTemps(esInt.edges, temps), snapshot: esInt.snapshot };
-  }
-
   // Focus contextuel : sélection → voisins éclairés, reste translucide
   if (selection.length > 0 && !focus) {
     const voisins = new Set(selection);
@@ -626,7 +497,7 @@ export function construireGraphe({
       id: r.id, type: "region", position: { x: coque.x, y: coque.y },
       initialWidth: coque.w,
       initialHeight: coque.h,
-      data: { ...r, w: coque.w, h: coque.h, path: coque.path, points: coque.points, labelX: coque.labelX, investigations: statsRegions[r.label]?.investigations ?? 0, decouvertes: statsRegions[r.label]?.decouvertes ?? 0, flux: statsRel[r.label]?.flux ?? 0, ecarts: statsRel[r.label]?.ecarts ?? 0, halo: !!halo && domDe[halo] === r.label, propulsion: propulsion?.label === r.label ? propulsion.progress : undefined },
+      data: { ...r, w: coque.w, h: coque.h, path: coque.path, points: coque.points, labelX: coque.labelX, investigations: statsRegions[r.label]?.investigations ?? 0, decouvertes: statsRegions[r.label]?.decouvertes ?? 0, flux: statsRel[r.label]?.flux ?? 0, ecarts: statsRel[r.label]?.ecarts ?? 0, halo: !!halo && domDe[halo] === r.label },
       draggable: false, selectable: false, zIndex: -10,
     };
   });
@@ -641,11 +512,65 @@ export function construireGraphe({
         initialWidth: 64,
         initialHeight: 78,
         hidden: entreprise && !j.anonyme ? true : entreprise,
-        data: { jumeau: j, dim: dims.has(j.id), halo: halo === j.id, evenements: compteurs[j.id] || 0, etape: null, niveau: zoomNiveau, propulsion: propulsion && domDe[j.id] === propulsion.label ? propulsion.progress : undefined },
+        data: { jumeau: j, dim: dims.has(j.id), halo: halo === j.id, evenements: compteurs[j.id] || 0, etape: null, niveau: zoomNiveau },
         selected: selection.includes(j.id),
       };
     })
   );
+
+  // Portes compactes en périphérie des membranes (carte mondiale continue) :
+  // un connecteur « DOMAINE · N » par voisin, placé sur la frontière orienté vers lui.
+  // Clic = mettre en évidence le chemin (caméra immobile) ; double-clic = explorer.
+  const centresRegions = {};
+  ns.filter((n) => n.type === "region").forEach((n) => {
+    centresRegions[n.data.label] = { x: n.position.x + (n.data.w || 0) / 2, y: n.position.y + (n.data.h || 0) / 2, points: n.data.points || [], ox: n.position.x, oy: n.position.y };
+  });
+  const voisinsParRegion = {};
+  mesh.relations.forEach((r) => {
+    const a = domDe[r.source];
+    const b = domDe[r.cible];
+    if (!a || !b || a === b) return;
+    voisinsParRegion[a] = voisinsParRegion[a] || {};
+    voisinsParRegion[b] = voisinsParRegion[b] || {};
+    voisinsParRegion[a][b] = (voisinsParRegion[a][b] || 0) + 1;
+    voisinsParRegion[b][a] = (voisinsParRegion[b][a] || 0) + 1;
+  });
+  Object.entries(voisinsParRegion).forEach(([label, exts]) => {
+    const c = centresRegions[label];
+    if (!c) return;
+    let rMax = 0;
+    c.points.forEach((p) => { rMax = Math.max(rMax, Math.hypot(p.x + c.ox - c.x, p.y + c.oy - c.y)); });
+    Object.entries(exts).forEach(([dom, n]) => {
+      const v = centresRegions[dom];
+      if (!v) return;
+      const dx = v.x - c.x;
+      const dy = v.y - c.y;
+      const L = Math.hypot(dx, dy) || 1;
+      ns.push({
+        id: `porte-${label}-vers-${dom}`,
+        type: "twin",
+        position: { x: c.x + (dx / L) * (rMax + 30) - 30, y: c.y + (dy / L) * (rMax + 30) - 8 },
+        initialWidth: 64,
+        initialHeight: 78,
+        hidden: entreprise,
+        data: {
+          jumeau: { id: `porte-${label}-vers-${dom}`, nom: dom, domaine: dom, porte: true, statut: "porte" },
+          porte: dom,
+          porteDe: label,
+          apercuPorte: {
+            domaine: dom,
+            domaineFocus: label,
+            jumeaux: mesh.jumeaux.filter((t) => !t.anonyme && t.domaine === dom).length,
+            restreint: mesh.jumeaux.filter((t) => !t.anonyme && t.domaine === dom).length === 0,
+            relations: n,
+            decouvertes: statsRegions[dom]?.decouvertes ?? 0,
+          },
+        },
+        draggable: false,
+        selectable: false,
+      });
+    });
+  });
 
   let es = [];
   let snapMain = null;

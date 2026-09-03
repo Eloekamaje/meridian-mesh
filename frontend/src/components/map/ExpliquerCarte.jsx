@@ -2,7 +2,7 @@ import { X } from "@phosphor-icons/react";
 import { ETATS_RELATION, MATURITES, couleurDomaine } from "@/lib/domaines";
 
 // « Expliquer cette carte » — version textuelle et structurée de l'Atlas (WCAG 2.2 AA)
-export default function ExpliquerCarte({ mesh, fermer, domaineInterne, jumeauFocus, jumeauPar, selection }) {
+export default function ExpliquerCarte({ mesh, fermer, domaineActif, jumeauPar, selection }) {
   if (!mesh) return null;
   const jumeaux = mesh.jumeaux || [];
   const visibles = jumeaux.filter((j) => !j.anonyme);
@@ -29,13 +29,11 @@ export default function ExpliquerCarte({ mesh, fermer, domaineInterne, jumeauFoc
           {restreints > 0 ? ` (${restreints} restreint${restreints > 1 ? "s" : ""} par votre périmètre)` : ""} et {(mesh.relations || []).length} relations connues.
         </p>
 
-        {(domaineInterne || jumeauFocus) && (
+        {domaineActif && (
           <section>
             <h3 className="font-code text-[10px] uppercase tracking-[0.18em] text-[#71716D]">Position actuelle</h3>
             <p className="mt-1" data-testid="expliquer-position">
-              {jumeauFocus
-                ? `Vous êtes dans le focus du jumeau ${jumeauPar(jumeauFocus)?.nom || jumeauFocus}, domaine ${domaineInterne}. Ses voisins directs sont disposés autour de lui.`
-                : `Vous êtes à l'intérieur du domaine ${domaineInterne}. Les autres domaines apparaissent comme des portes en périphérie.`}
+              Le centre de votre vue se trouve dans le domaine {domaineActif}. La carte est continue : faites-la glisser pour découvrir les domaines voisins à la même échelle.
             </p>
           </section>
         )}
@@ -83,7 +81,7 @@ export default function ExpliquerCarte({ mesh, fermer, domaineInterne, jumeauFoc
         )}
 
         <p className="border-t border-[#F0F0EE] pt-3 font-code text-[10px] text-[#71716D]">
-          Navigation : clic = sélection · double-clic = entrer dans un domaine ou un jumeau · molette = zoom sémantique · lasso = sélection multiple.
+          Navigation : clic = sélection · clic sur une porte = chemin vers le domaine · double-clic = explorer (déplacement animé, zoom inchangé) · molette = zoom explicite · lasso = sélection multiple.
         </p>
       </div>
     </aside>

@@ -73,11 +73,11 @@ export default function TwinNode({ data, selected }) {
     const ap = data.apercuPorte;
     const c = couleurDomaine(j.domaine);
     return (
-      <div className="group relative" data-testid={`porte-${j.domaine}`}>
+      <div className="group relative" data-testid={j.id}>
         {ap && (
           <div
             className="pointer-events-none absolute -top-3 left-1/2 z-50 w-[230px] -translate-x-1/2 -translate-y-full rounded-lg border border-[#E5E5E3] bg-white p-3 opacity-0 backdrop-blur-xl transition-opacity duration-200 group-hover:opacity-100"
-            data-testid={`porte-apercu-${j.domaine}`}
+            data-testid={`apercu-${j.id}`}
           >
             <div className="font-display text-xs font-bold" style={{ color: c }}>{ap.domaine}</div>
             <div className="mt-1.5 space-y-0.5 font-code text-[10px] text-[#52524F]">
@@ -86,18 +86,14 @@ export default function TwinNode({ data, selected }) {
               {ap.decouvertes > 0 && <div>{ap.decouvertes} découverte(s) récente(s)</div>}
             </div>
             <div className="mt-2 font-code text-[9px] text-[#0E7490]">
-              {ap.restreint ? "Accès limité — résumé seulement" : "Cliquer pour explorer →"}
+              {ap.restreint ? "Accès limité — résumé seulement" : "Clic : chemin · Double-clic : explorer →"}
             </div>
           </div>
         )}
         <div className={`flex flex-col items-center gap-0.5 transition-opacity duration-500 ${data.dim ? "opacity-15" : "opacity-100"}`}>
           <PointJumeau couleur={c} dashed />
           {/* Porte externe : connecteur compact en périphérie — nom du domaine cible + compteur */}
-          <div
-            className="flex items-center gap-1.5 whitespace-nowrap rounded-full border bg-white/85 px-2 py-0.5 transition-all duration-150"
-            style={data.propulsion ? { borderColor: c, boxShadow: `0 0 ${Math.round(10 * data.propulsion)}px ${c}44`, transform: `scale(${1 + 0.1 * data.propulsion})` } : { borderColor: "#E5E5E3" }}
-            data-testid={`porte-chip-${j.domaine}`}
-          >
+          <div className="flex items-center gap-1.5 whitespace-nowrap rounded-full border border-[#E5E5E3] bg-white/85 px-2 py-0.5">
             {ap?.restreint && <LockSimple size={10} className="shrink-0 text-[#71716D]" />}
             <span className="font-code text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: c }}>{ap?.domaine || j.nom}</span>
             <span className="font-code text-[9px] text-[#71716D]">· {ap?.relations ?? 0}</span>
@@ -161,7 +157,6 @@ export default function TwinNode({ data, selected }) {
   return (
     <div
       className={`group relative transition-opacity duration-500 ${data.dim ? "opacity-20" : data.adouci ? "opacity-60" : "opacity-100"}`}
-      style={data.propulsion ? { transform: `scale(${1 + 0.08 * data.propulsion})`, transition: "transform 150ms" } : undefined}
       data-testid={`twin-node-${j.id}`}
     >
       {data.halo && (
@@ -182,7 +177,7 @@ export default function TwinNode({ data, selected }) {
             </span>
           )}
         </span>
-        <AvatarJumeau actif={j.statut === "actif"} selected={selected} grand={niveau3} ports={niveau3} relLiee={data.relLiee || (data.propulsion || 0) > 0.4} />
+        <AvatarJumeau actif={j.statut === "actif"} selected={selected} grand={niveau3} ports={niveau3} relLiee={data.relLiee} />
         {niveau3 && (
           <span className="whitespace-nowrap text-[11px] font-semibold text-[#111110]" data-testid={`twin-nom-${j.id}`}>{j.nom}</span>
         )}

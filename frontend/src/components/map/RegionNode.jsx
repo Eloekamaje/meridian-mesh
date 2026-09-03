@@ -4,9 +4,6 @@ import { Handle, Position } from "@xyflow/react";
 // Le survol est géré par proximité au niveau de la carte (les zones d'interaction des arêtes recouvrent les frontières)
 export default function RegionNode({ data }) {
   const survol = !!data.survol;
-  // Propulsion : la membrane du territoire ciblé se révèle au fil de la progression du geste
-  const prop = data.propulsion || 0;
-  const a = (v) => Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, "0");
 
   return (
     <div
@@ -29,9 +26,9 @@ export default function RegionNode({ data }) {
         {data.path ? (
           <path
             d={data.path}
-            fill={prop ? `${data.couleur}${a(0.11 + prop * 0.14)}` : survol ? `${data.couleur}26` : `${data.couleur}1C`}
-            stroke={prop ? `${data.couleur}${a(0.25 + prop * 0.5)}` : survol ? `${data.couleur}59` : `${data.couleur}30`}
-            strokeWidth={prop ? 1.8 + prop * 1.8 : survol ? 2.2 : 1.8}
+            fill={survol ? `${data.couleur}26` : `${data.couleur}1C`}
+            stroke={survol ? `${data.couleur}59` : `${data.couleur}30`}
+            strokeWidth={survol ? 2.2 : 1.8}
             strokeLinejoin="round"
             style={{ transition: "fill 200ms, stroke 200ms" }}
             data-testid={`region-membrane-${data.id}`}
