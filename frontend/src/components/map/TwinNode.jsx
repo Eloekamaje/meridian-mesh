@@ -79,6 +79,39 @@ function PointJumeau({ couleur, dashed }) {
   );
 }
 
+// Niveau 2 « constellation » : le jumeau est une étoile brillante (halo teinté par le
+// domaine, cœur quasi blanc, scintillement si actif). Le robot réapparaît au niveau 3.
+// Même empreinte que l'avatar (h-12) : géométrie et routage strictement inchangés.
+function EtoileJumeau({ couleur, selected, actif, relLiee }) {
+  const cls = "!h-2 !w-2 !min-w-0 !border-0 !bg-transparent";
+  const lumineux = selected || relLiee;
+  return (
+    <span className="relative flex h-12 w-12 shrink-0 items-center justify-center">
+      <Handle type="target" id="t-l" position={Position.Left} className={cls} style={{ left: -2, top: "46%" }} />
+      <Handle type="source" id="s-l" position={Position.Left} className={cls} style={{ left: -2, top: "46%" }} />
+      <Handle type="target" id="t-r" position={Position.Right} className={cls} style={{ right: -2, top: "46%" }} />
+      <Handle type="source" id="s-r" position={Position.Right} className={cls} style={{ right: -2, top: "46%" }} />
+      <Handle type="target" id="t-t" position={Position.Top} className={cls} style={{ top: -2, left: "46%" }} />
+      <Handle type="source" id="s-t" position={Position.Top} className={cls} style={{ top: -2, left: "46%" }} />
+      <span
+        className="absolute rounded-full transition-opacity duration-200"
+        style={{ width: 38, height: 38, background: `radial-gradient(circle, ${couleur}4D 0%, ${couleur}00 70%)`, opacity: lumineux ? 1 : 0.65 }}
+      />
+      {actif && <span className="absolute inline-flex h-3.5 w-3.5 animate-ping rounded-full opacity-40" style={{ backgroundColor: couleur }} />}
+      <span
+        className="relative rounded-full transition-all duration-200 group-hover:scale-125"
+        style={{
+          width: lumineux ? 10 : 7,
+          height: lumineux ? 10 : 7,
+          backgroundColor: "#F2F6F8",
+          boxShadow: `0 0 6px 2px ${couleur}, 0 0 ${lumineux ? 26 : 16}px ${lumineux ? 9 : 5}px ${couleur}66`,
+        }}
+      />
+    </span>
+  );
+}
+
+
 export default function TwinNode({ data, selected }) {
   const j = data.jumeau;
   const couleur = couleurDomaine(j?.domaine || data.grappe?.domaine);
@@ -172,7 +205,11 @@ export default function TwinNode({ data, selected }) {
         <Handle type="target" id="t-b" position={Position.Bottom} className="!h-2 !w-2 !min-w-0 !border-0 !bg-transparent" style={{ bottom: -2, left: "46%" }} />
         <Handle type="source" id="s-b" position={Position.Bottom} className="!h-2 !w-2 !min-w-0 !border-0 !bg-transparent" style={{ bottom: -2, left: "46%" }} />
         <span className="relative inline-flex">
-          <AvatarJumeau actif={j.statut === "actif"} selected={selected} grand={niveau3} ports={niveau3} relLiee={data.relLiee} />
+          {niveau3 ? (
+            <AvatarJumeau actif={j.statut === "actif"} selected={selected} grand ports relLiee={data.relLiee} />
+          ) : (
+            <EtoileJumeau couleur={couleur} selected={selected} actif={j.statut === "actif"} relLiee={data.relLiee} />
+          )}
           {data.detailPosition === "haut" && carteDetail}
           {data.dansSituation && (
             <span
@@ -190,7 +227,7 @@ export default function TwinNode({ data, selected }) {
           )}
         </span>
         <span
-          className="whitespace-nowrap font-code text-[10px] font-semibold tracking-wide text-[#D8E2EA] transition-colors group-hover:text-[#25D0C8]"
+          className={`whitespace-nowrap font-code text-[10px] font-semibold tracking-wide text-[#D8E2EA] transition-all duration-200 group-hover:text-[#25D0C8] ${niveau3 ? "" : "pointer-events-none opacity-0 group-hover:opacity-100"}`}
           data-testid={`twin-nom-${j.id}`}
         >
           {idNumerique(j.id)}

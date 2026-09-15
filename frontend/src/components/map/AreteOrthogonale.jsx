@@ -16,9 +16,22 @@ export default memo(function AreteOrthogonale({ id, data, selected, style: style
   const base = STYLES[etat] || STYLES.confirmee;
   const actif = survolee || selected;
 
-  const d = useMemo(() => construireD(points, sauts), [points, sauts]);
+  // Niveaux 1-2 « constellation » : arcs courbes lumineux entre les territoires/étoiles.
+  // Niveau 3+ : routage orthogonal précis (lecture schéma de travail).
+  const courbe = (niveau || 3) <= 2;
+  const d = useMemo(() => {
+    if (!courbe || !points || points.length < 2) return construireD(points, sauts);
+    const a = points[0];
+    const b = points[points.length - 1];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const L = Math.hypot(dx, dy) || 1;
+    const sens = [...id].reduce((s, c) => s + c.charCodeAt(0), 0) % 2 === 0 ? 1 : -1;
+    const k = Math.min(0.13 * L, 54) * sens;
+    return `M ${a.x} ${a.y} Q ${(a.x + b.x) / 2 - (dy / L) * k} ${(a.y + b.y) / 2 + (dx / L) * k} ${b.x} ${b.y}`;
+  }, [points, sauts, courbe, id]);
   const labelPos = useMemo(() => ancreLabel(points), [points]);
-  const marqueurs = useMemo(() => (etat === "observee" ? pointsMarqueurs(points) : []), [points, etat]);
+  const marqueurs = useMemo(() => (etat === "observee" && !courbe ? pointsMarqueurs(points) : []), [points, etat, courbe]);
 
   // Libellés : survol/sélection toujours visibles ; sinon arbitrés par le moteur de labels
   // (labelMasque = un label plus prioritaire occupe déjà cette zone)
