@@ -181,7 +181,7 @@ export default function Topbar() {
         {info && (
           <span
             title={info.espace.global ? "Vue complète du périmètre autorisé" : `Filtré côté serveur · ${info.nb_autorises} jumeaux`}
-            className="hidden items-center gap-1.5 whitespace-nowrap rounded border px-2 py-1 font-code text-[9px] uppercase tracking-wider 2xl:inline-flex"
+            className="hidden items-center gap-1.5 whitespace-nowrap rounded border px-2 py-1 font-code text-[9px] uppercase tracking-wider lg:inline-flex"
             style={
               info.espace.global
                 ? { color: "#34D399", borderColor: "#34D39944", backgroundColor: "#34D3990D" }
@@ -205,16 +205,16 @@ export default function Topbar() {
           title="Nouveau travail"
           className="flex h-8 items-center gap-1.5 rounded-lg bg-[#9B87F5] px-2.5 text-xs font-semibold text-[#071019] transition-colors hover:bg-[#B4A5F7]"
         >
-          <Plus size={13} weight="bold" /> <span className="hidden xl:inline">Nouveau travail</span>
+          <Plus size={13} weight="bold" /> <span className="hidden 2xl:inline">Nouveau travail</span>
         </button>
         {(
-          <span className="hidden items-center gap-1.5 font-code text-[10px] uppercase tracking-[0.15em] text-[#94A3B8] lg:flex" data-testid="mesh-status">
+          <span className="hidden items-center gap-1.5 font-code text-[10px] uppercase tracking-[0.15em] text-[#94A3B8] 2xl:flex" data-testid="mesh-status">
             <span className="pulse-soft h-1.5 w-1.5 rounded-full bg-[#34D399]" />
             Mesh vivant · {actifs} jumeaux
           </span>
         )}
         {fraicheurMesh && (
-          <span className="hidden font-code text-[10px] text-[#7C93A8] xl:inline" data-testid="mesh-fraicheur" title="Dernière observation reçue par Méridian">
+          <span className="hidden font-code text-[10px] text-[#7C93A8] 2xl:inline" data-testid="mesh-fraicheur" title="Dernière observation reçue par Méridian">
             À jour · {fraicheurMesh}
           </span>
         )}

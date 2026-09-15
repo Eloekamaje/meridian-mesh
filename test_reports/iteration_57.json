@@ -1,0 +1,28 @@
+{
+  "summary": "Frontend-only regression testing of the new header-only navigation shell (sidebar removed). Tested at 1920px and 1366px viewports. All navigation testids, hamburger menu, active pill, Atlas full-width, notifications, Flore panel, Nouveau travail button, à-traiter link, and Atlas chrome verified working with zero console errors. Two regressions found at 1366px: the 'Complet' perimeter badge is hidden (2xl breakpoint only) and the topbar overflows horizontally (scrollWidth > clientWidth).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Topbar perimetre-badge", "issue": "Badge compact 'Complet' est masqué à 1366px car classé `hidden 2xl:inline-flex` (>=1536px seulement). Spec explicite : le badge doit être visible à 1366px. Il faut abaisser le breakpoint à `lg:inline-flex` ou `xl:inline-flex` avec titre au survol conservé.", "selector": "[data-testid='perimetre-badge']", "priority": "MEDIUM"},
+      {"component": "Topbar", "issue": "L'en-tête déborde horizontalement à 1366px (scrollWidth > clientWidth = true). Éléments accumulés : marque + 4 nav + hamburger + selecteur périmètre + Nouveau travail + Mesh vivant + fraîcheur + à traiter + Parler à Flore + notif + persona. Spec : 'l'en-tête reste sur une ligne, pas de débordement'. Il faut masquer davantage à ce breakpoint (ex. Mesh vivant en xl+, fraîcheur en 2xl+, libellé 'Parler à Flore' en md+).", "selector": "[data-testid='topbar']", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Rendre le badge 'Complet' visible à 1366px (changer `2xl:inline-flex` → `lg:inline-flex` ou `xl:inline-flex`).",
+    "Corriger le débordement horizontal du Topbar à 1366px en compactant les éléments secondaires (ex. masquer 'Mesh vivant · N jumeaux' sous 2xl, ou 'À jour · ...' sous 2xl, réduire paddings, ou libellés Nouveau travail/Parler à Flore sous des breakpoints plus élevés)."
+  ],
+  "critical_code_review_comments": [
+    "Layout.jsx : simple et propre, aside supprimé conformément à la demande.",
+    "Topbar.jsx (313 lignes) : lisible ; NAV constants extraits, refs séparés pour panneau notif et menu hamburger, listener mousedown gère les deux fermetures correctement.",
+    "Toutefois le badge périmètre utilise `2xl:inline-flex` alors que le reste du header vise à être compact dès 1366 — incohérence avec la spec."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "~90% (2 régressions responsive)"},
+  "seed_data_creation": "aucune",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Sidebar supprimée avec succès. Tous les testids demandés (nav-atlas/actualites/travaux/jumeaux, nav-menu-btn, nav-menu, marque, sidebar-nouveau-travail, sidebar-espace-*, sidebar-recent-*, sidebar-recents, demo-start-btn, nav-administration) sont présents et fonctionnels. Atlas plein écran (main left=0 width=1920). Zéro erreur console. Régressions à 1366px : badge 'Complet' masqué (breakpoint 2xl trop élevé) + topbar overflow horizontal. Après fix, retester à 1366 pour vérifier badge visible + pas d'overflow (scrollWidth === clientWidth)."
+}
