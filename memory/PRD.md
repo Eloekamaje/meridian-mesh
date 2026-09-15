@@ -1,5 +1,11 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v59, en-tête épurée + responsive repensé en 3 paliers)
+Demande utilisateur : épurer l'en-tête et repenser le responsive (« comment ça doit être »), choix délégués à l'expert selon l'importance usager ; mobile = navigation dans le hamburger.
+- **Épure desktop** : statut Mesh fusionné en une puce (« ● Mesh vivant · N jumeaux · il y a X », testid `mesh-status`, fraîcheur en span interne `mesh-fraicheur`) ; badge périmètre → **icône bouclier/cadenas** devant le sélecteur (texte complet en `title`) ; « Nouveau travail » = icône + (libellé ≥ 2xl) ; « à traiter » = chiffre seul sous 640px ; persona masqué sous 768px.
+- **Trois paliers francs** : ≥1280 tout visible · 768–1280 nav en icônes seules + statut Mesh masqué · <768 nav primaire **dans le hamburger** (section `menu-nav-*` + section Profil `menu-persona-*`, masquées dès md), en-tête mobile = marque · ≡ · périmètre compact · à-traiter · Flore · notifs.
+- Tests : **it59 → 100 %** (1920/1024/390 via contextes Playwright dédiés, aucun débordement, navigation hamburger mobile + changement de persona fonctionnels, zéro erreur console).
+
 ## Implémenté (06/2026 — v58, navigation entièrement dans l'en-tête — barre latérale supprimée)
 Choix utilisateur : suppression totale de la barre latérale ; secondaire (Espaces, Récents, Parcours guidé, Administration) dans un **menu hamburger** (trois traits) à droite de la nav ; liens = icône + libellé avec **pilule violette** sur l'actif.
 - **`Layout.jsx` réécrit** : aside supprimé, structure `Topbar + Outlet` — la carte/pages gagnent toute la largeur.
