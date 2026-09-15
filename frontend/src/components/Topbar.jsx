@@ -1,25 +1,40 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { ShieldCheck, LockSimple, Bell, Flag, Users, Sparkle } from "@phosphor-icons/react";
+import { NavLink, useNavigate } from "react-router-dom";
+import { ShieldCheck, LockSimple, Bell, Flag, Users, Sparkle, Compass, Newspaper, Briefcase, CirclesThree, GearSix, Plus, List, Play } from "@phosphor-icons/react";
 import api from "@/lib/api";
 import { usePerimetre } from "@/lib/perimetre";
 import { useMesh } from "@/lib/mesh";
 import { useContexte } from "@/lib/contexte";
+import { useDemo } from "@/lib/demo";
 import { parseQuand } from "@/lib/temps";
 
 const TYPES_NOTIF = { mention: "#9B87F5", assignation: "#F2B84B", a_revoir: "#F87171" };
 
+const NAV = [
+  { to: "/atlas", label: "Atlas", icon: Compass, testid: "nav-atlas" },
+  { to: "/actualites", label: "Actualités", icon: Newspaper, testid: "nav-actualites" },
+  { to: "/travaux", label: "Travaux", icon: Briefcase, testid: "nav-travaux" },
+  { to: "/jumeaux", label: "Jumeaux", icon: CirclesThree, testid: "nav-jumeaux" },
+];
+
 // En-tête contextuel permanent : espace actif · état du Mesh · sollicitations · Flore · identité
 export default function Topbar() {
-  const { personas, persona, espaces, vues, cible, info, changerPersona, changerCible } = usePerimetre();
+  const { personas, persona, espaces, vues, cible, info, changerPersona, changerCible, version } = usePerimetre();
   const { mesh } = useMesh();
   const { floreOuverte, basculerFlore } = useContexte();
+  const { demarrer, courant } = useDemo();
   const navigate = useNavigate();
   const [notifs, setNotifs] = useState([]);
   const [nonLues, setNonLues] = useState(0);
   const [aTraiter, setATraiter] = useState(0);
   const [panneau, setPanneau] = useState(false);
+  const [menuOuvert, setMenuOuvert] = useState(false);
+  const [recents, setRecents] = useState([]);
   const refPanneau = useRef(null);
+  const refMenu = useRef(null);
+
+  const adminAutorise = espaces.some((e) => e.global);
+  const espacesSecondaires = espaces.filter((e) => !e.global);
 
   const actifs = mesh?.jumeaux.filter((j) => j.statut === "actif").length ?? 0;
 
@@ -52,10 +67,15 @@ export default function Topbar() {
   useEffect(() => {
     const fermer = (e) => {
       if (refPanneau.current && !refPanneau.current.contains(e.target)) setPanneau(false);
+      if (refMenu.current && !refMenu.current.contains(e.target)) setMenuOuvert(false);
     };
     document.addEventListener("mousedown", fermer);
     return () => document.removeEventListener("mousedown", fermer);
   }, []);
+
+  useEffect(() => {
+    api.get("/cases").then((r) => setRecents([...r.data].sort((a, b) => (b.maj_le || "").localeCompare(a.maj_le || "")).slice(0, 3))).catch(() => {});
+  }, [version]);
 
   const ouvrirNotif = async (n) => {
     setPanneau(false);
@@ -66,6 +86,76 @@ export default function Topbar() {
 
   return (
     <header className="flex h-12 shrink-0 items-center gap-3 border-b border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-4" data-testid="topbar">
+      {/* Marque + navigation primaire */}
+      <div className="flex shrink-0 items-center gap-1.5">
+        <div className="mr-1.5 flex items-center gap-2" data-testid="marque">
+          <span className="pulse-soft h-2 w-2 shrink-0 rounded-full bg-[#9B87F5]" />
+          <span className="hidden font-display text-sm font-black tracking-[0.18em] text-[#F2F6F8] md:inline">MÉRIDIAN</span>
+        </div>
+        <nav className="flex items-center gap-1" data-testid="sidebar-nav">
+          {NAV.map(({ to, label, icon: Icon, testid }) => (
+            <NavLink
+              key={to}
+              to={to}
+              data-testid={testid}
+              title={label}
+              className={({ isActive }) =>
+                `flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs transition-colors ${
+                  isActive ? "bg-[rgba(155,135,245,0.14)] font-semibold text-[#C4B5FD]" : "text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"
+                }`
+              }
+            >
+              <Icon size={15} /> <span className="hidden lg:inline">{label}</span>
+            </NavLink>
+          ))}
+        </nav>
+        {/* Menu secondaire — hamburger */}
+        <div className="relative" ref={refMenu}>
+          <button
+            onClick={() => setMenuOuvert(!menuOuvert)}
+            data-testid="nav-menu-btn"
+            title="Espaces, récents, parcours guidé, administration"
+            className={`flex h-8 w-8 items-center justify-center rounded-md border transition-colors ${menuOuvert ? "border-[#9B87F5]/50 bg-[rgba(155,135,245,0.10)] text-[#C4B5FD]" : "border-[rgba(148,163,184,0.16)] text-[#94A3B8] hover:text-[#F2F6F8]"}`}
+          >
+            <List size={15} weight="bold" />
+          </button>
+          {menuOuvert && (
+            <div className="glass absolute left-0 top-10 z-50 w-72 rounded-xl p-2" data-testid="nav-menu">
+              {espacesSecondaires.length > 0 && (
+                <div className="pb-1">
+                  <div className="px-2.5 pb-1 pt-1 font-code text-[9px] uppercase tracking-[0.25em] text-[#7C93A8]">Espaces</div>
+                  {espacesSecondaires.map((e) => (
+                    <button key={e.id} onClick={() => { changerCible(e.id); setMenuOuvert(false); }} data-testid={`sidebar-espace-${e.id}`} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs text-[#94A3B8] transition-colors hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]">
+                      <Users size={13} className="shrink-0 text-[#7C93A8]" /> <span className="truncate">{e.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {recents.length > 0 && (
+                <div className="pb-1" data-testid="sidebar-recents">
+                  <div className="px-2.5 pb-1 pt-1 font-code text-[9px] uppercase tracking-[0.25em] text-[#7C93A8]">Récents</div>
+                  {recents.map((c) => (
+                    <button key={c.id} onClick={() => { navigate(`/travaux/${c.id}`); setMenuOuvert(false); }} data-testid={`sidebar-recent-${c.id}`} title={c.titre} className="block w-full truncate rounded-lg px-2.5 py-1.5 text-left text-xs text-[#94A3B8] transition-colors hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]">
+                      {c.titre}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="border-t border-[rgba(148,163,184,0.12)] pt-1">
+                <button onClick={() => { demarrer(); setMenuOuvert(false); }} data-testid="demo-start-btn" className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs text-[#94A3B8] transition-colors hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]">
+                  <Play size={14} weight={courant >= 0 ? "fill" : "regular"} /> Parcours guidé
+                </button>
+                {adminAutorise && (
+                  <NavLink to="/administration" data-testid="nav-administration" onClick={() => setMenuOuvert(false)} className={({ isActive }) => `flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs transition-colors ${isActive ? "bg-[rgba(155,135,245,0.14)] font-semibold text-[#C4B5FD]" : "text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"}`}>
+                    <GearSix size={14} /> Administration
+                  </NavLink>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Espace actif */}
       <div className="flex min-w-0 items-center gap-2">
         <select
@@ -90,7 +180,8 @@ export default function Topbar() {
         </select>
         {info && (
           <span
-            className="hidden items-center gap-1.5 rounded border px-2 py-1 font-code text-[9px] uppercase tracking-wider xl:inline-flex"
+            title={info.espace.global ? "Vue complète du périmètre autorisé" : `Filtré côté serveur · ${info.nb_autorises} jumeaux`}
+            className="hidden items-center gap-1.5 whitespace-nowrap rounded border px-2 py-1 font-code text-[9px] uppercase tracking-wider 2xl:inline-flex"
             style={
               info.espace.global
                 ? { color: "#34D399", borderColor: "#34D39944", backgroundColor: "#34D3990D" }
@@ -99,7 +190,7 @@ export default function Topbar() {
             data-testid="perimetre-badge"
           >
             {info.espace.global ? <ShieldCheck size={12} /> : <LockSimple size={12} />}
-            {info.espace.global ? "Vue complète du périmètre autorisé" : `Filtré côté serveur · ${info.nb_autorises} jumeaux`}
+            {info.espace.global ? "Complet" : `Filtré · ${info.nb_autorises}`}
           </span>
         )}
       </div>
@@ -108,6 +199,14 @@ export default function Topbar() {
 
       {/* État du Mesh + sollicitations + identité */}
       <div className="flex shrink-0 items-center gap-2.5">
+        <button
+          onClick={() => navigate("/travaux/nouveau")}
+          data-testid="sidebar-nouveau-travail"
+          title="Nouveau travail"
+          className="flex h-8 items-center gap-1.5 rounded-lg bg-[#9B87F5] px-2.5 text-xs font-semibold text-[#071019] transition-colors hover:bg-[#B4A5F7]"
+        >
+          <Plus size={13} weight="bold" /> <span className="hidden xl:inline">Nouveau travail</span>
+        </button>
         {(
           <span className="hidden items-center gap-1.5 font-code text-[10px] uppercase tracking-[0.15em] text-[#94A3B8] lg:flex" data-testid="mesh-status">
             <span className="pulse-soft h-1.5 w-1.5 rounded-full bg-[#34D399]" />

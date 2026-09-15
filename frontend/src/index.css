@@ -147,12 +147,6 @@
   .react-flow__controls button svg { width: 18px; height: 18px; }
 }
 
-/* Mode immersif de l'Atlas : sidebar et topbar masqués, carte en plein écran */
-@media (max-width: 1024px) {
-  body.atlas-immersif [data-testid="sidebar"],
-  body.atlas-immersif [data-testid="topbar"] { display: none; }
-}
-
 /* Transition de page discrète — navigation applicative (150-220 ms, léger déplacement) */
 @keyframes page-fade {
   from { opacity: 0; transform: translateX(6px); }
