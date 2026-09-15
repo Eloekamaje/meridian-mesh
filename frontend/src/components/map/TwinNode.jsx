@@ -36,20 +36,20 @@ function AvatarJumeau({ selected, actif, grand, ports, relLiee }) {
       <Handle type="source" id="s-t" position={Position.Top} className={cls} style={{ top: -2, left: "46%" }} />
       {ports && (
         <>
-          <span className="absolute -left-1 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-[#71716D]" data-testid="port-entree" />
-          <span className="absolute -right-1 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-[#0E7490]" data-testid="port-sortie" />
+          <span className="absolute -left-1 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-[#7C93A8]" data-testid="port-entree" />
+          <span className="absolute -right-1 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-[#25D0C8]" data-testid="port-sortie" />
         </>
       )}
       {actif && (
-        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#0E7490] opacity-25" />
+        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#25D0C8] opacity-25" />
       )}
       <span
-        className={`relative flex ${taille} items-center justify-center overflow-hidden rounded-full bg-white transition-shadow duration-200 ${
+        className={`relative flex ${taille} items-center justify-center overflow-hidden rounded-full bg-[#0F1D28] transition-shadow duration-200 ${
           selected
-            ? "shadow-[0_0_18px_rgba(14,116,144,0.5)] ring-2 ring-[#0E7490]"
+            ? "shadow-[0_0_18px_rgba(14,116,144,0.5)] ring-2 ring-[#25D0C8]"
             : relLiee
-              ? "shadow-[0_0_14px_rgba(14,116,144,0.4)] ring-2 ring-[#0E7490]/70"
-              : "shadow-sm ring-1 ring-black/10 group-hover:shadow-[0_0_14px_rgba(14,116,144,0.45)] group-hover:ring-2 group-hover:ring-[#0E7490]/70"
+              ? "shadow-[0_0_14px_rgba(14,116,144,0.4)] ring-2 ring-[#25D0C8]/70"
+              : "shadow-sm ring-1 ring-black/10 group-hover:shadow-[0_0_14px_rgba(14,116,144,0.45)] group-hover:ring-2 group-hover:ring-[#25D0C8]/70"
         }`}
       >
         <img src={ROBOT} alt="" draggable={false} className={`${grand ? "h-[3.25rem] w-[3.25rem]" : "h-11 w-11"} scale-[1.65] object-cover`} />
@@ -70,8 +70,8 @@ function PointJumeau({ couleur, dashed }) {
       <Handle type="target" id="t-t" position={Position.Top} className={cls} style={{ top: -2, left: 7 }} />
       <Handle type="source" id="s-t" position={Position.Top} className={cls} style={{ top: -2, left: 7 }} />
       <span
-        className={`relative inline-flex h-4 w-4 items-center justify-center rounded-full border-2 bg-white ${dashed ? "border-dashed" : ""}`}
-        style={{ borderColor: couleur, boxShadow: "0 1px 3px rgba(17,17,16,0.15)" }}
+        className={`relative inline-flex h-4 w-4 items-center justify-center rounded-full border-2 bg-[#0F1D28] ${dashed ? "border-dashed" : ""}`}
+        style={{ borderColor: couleur, boxShadow: "0 1px 3px rgba(148,163,184,0.18)" }}
       >
         <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: couleur }} />
       </span>
@@ -88,20 +88,20 @@ export default function TwinNode({ data, selected }) {
   if (j?.anonyme) {
     return (
       <div className="group relative" data-testid={`twin-node-${j.id}`}>
-        <div className="absolute -top-3 left-1/2 z-50 w-56 -translate-x-1/2 -translate-y-full rounded-lg border border-[#E5E5E3] bg-white p-3 opacity-0 backdrop-blur-xl transition-opacity duration-200 group-hover:opacity-100" data-testid={`anonyme-apercu-${j.id}`}>
+        <div className="absolute -top-3 left-1/2 z-50 w-56 -translate-x-1/2 -translate-y-full rounded-lg border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-3 opacity-0 backdrop-blur-xl transition-opacity duration-200 group-hover:opacity-100" data-testid={`anonyme-apercu-${j.id}`}>
           <div className="font-display text-xs font-bold" style={{ color: couleur }}>{j.domaine} — hors périmètre</div>
-          <div className="mt-1.5 space-y-0.5 font-code text-[10px] text-[#52524F]">
+          <div className="mt-1.5 space-y-0.5 font-code text-[10px] text-[#94A3B8]">
             <div>Domaine voisin non inclus dans votre périmètre.</div>
             <div>Position approximative — la précision n'est pas garantie.</div>
           </div>
-          <div className="mt-2 font-code text-[9px] text-[#71716D]">Résumé uniquement</div>
+          <div className="mt-2 font-code text-[9px] text-[#7C93A8]">Résumé uniquement</div>
         </div>
         <div className={`flex flex-col items-center gap-1 transition-opacity duration-500 ${data.dim ? "opacity-15" : "opacity-45"}`}>
           <Handle type="target" id="t-b" position={Position.Bottom} className="!h-2 !w-2 !min-w-0 !border-0 !bg-transparent" style={{ bottom: -2, left: "46%" }} />
           <Handle type="source" id="s-b" position={Position.Bottom} className="!h-2 !w-2 !min-w-0 !border-0 !bg-transparent" style={{ bottom: -2, left: "46%" }} />
           <PointJumeau couleur={couleur} dashed />
-          <span className="rounded bg-white/70 px-1.5 font-code text-[9px] tracking-wide text-[#52524F]">{idNumerique(j.id)}</span>
-          <span className="flex items-center gap-1 rounded-full bg-[#EDECE6] px-1.5 py-px font-code text-[8px] text-[#71716D]">
+          <span className="rounded bg-[#0F1D28]/70 px-1.5 font-code text-[9px] tracking-wide text-[#94A3B8]">{idNumerique(j.id)}</span>
+          <span className="flex items-center gap-1 rounded-full bg-[rgba(148,163,184,0.14)] px-1.5 py-px font-code text-[8px] text-[#7C93A8]">
             <LockSimple size={8} />
             résumé
           </span>
@@ -114,7 +114,7 @@ export default function TwinNode({ data, selected }) {
   // arbitrée par le moteur de labels — au-dessus ou en dessous du robot selon l'espace libre.
   const carteDetail = data.detailVisible && j.strates && (
     <div
-      className={`w-[150px] rounded-lg border border-[#E5E5E3] bg-white/95 p-2 shadow-sm ${
+      className={`w-[150px] rounded-lg border border-[rgba(148,163,184,0.16)] bg-[#0F1D28]/95 p-2 shadow-sm ${
         data.detailPosition === "haut" ? "absolute bottom-full left-1/2 mb-0.5 -translate-x-1/2" : "-mx-[43px] mt-0.5"
       }`}
       data-testid={`twin-composants-${j.id}`}
@@ -130,7 +130,7 @@ export default function TwinNode({ data, selected }) {
               size={11}
               weight={active ? "fill" : "regular"}
               title={alerte ? `${nom} — ${det.statut.replaceAll("_", " ")}` : nom}
-              className={alerte ? "text-[#B45309]" : active ? "text-[#047857]" : "text-[#D4D4D0]"}
+              className={alerte ? "text-[#F2B84B]" : active ? "text-[#34D399]" : "text-[#41576D]"}
             />
           );
         })}
@@ -138,11 +138,11 @@ export default function TwinNode({ data, selected }) {
       <div className="mt-1.5 space-y-[3px]" data-testid={`twin-strates-${j.id}`}>
         {STRATES_CLES.map(([cle, initiale]) => (
           <div key={cle} className="flex items-center gap-1" title={`${cle} : ${j.strates[cle]} %`}>
-            <span className="w-2.5 shrink-0 font-code text-[7px] uppercase text-[#71716D]">{initiale}</span>
-            <div className="h-1 flex-1 overflow-hidden rounded-full bg-[#EDECE6]">
+            <span className="w-2.5 shrink-0 font-code text-[7px] uppercase text-[#7C93A8]">{initiale}</span>
+            <div className="h-1 flex-1 overflow-hidden rounded-full bg-[rgba(148,163,184,0.14)]">
               <div className="h-full rounded-full" style={{ width: `${j.strates[cle]}%`, backgroundColor: couleurConfiance(j.strates[cle]) }} />
             </div>
-            <span className="w-5 shrink-0 text-right font-code text-[7px] text-[#52524F]">{j.strates[cle]}</span>
+            <span className="w-5 shrink-0 text-right font-code text-[7px] text-[#94A3B8]">{j.strates[cle]}</span>
           </div>
         ))}
       </div>
@@ -153,6 +153,14 @@ export default function TwinNode({ data, selected }) {
     <div
       className={`group relative transition-opacity duration-500 ${data.dim ? "opacity-20" : data.adouci ? "opacity-60" : "opacity-100"}`}
       data-testid={`twin-node-${j.id}`}
+      onClick={(e) => {
+        // Maj+clic : multisélection additive gérée ici — la sélection est contrôlée (notre état
+        // est la source de vérité), React Flow ne sélectionne pas les nœuds nativement.
+        if (e.shiftKey || e.metaKey || e.ctrlKey) {
+          e.stopPropagation();
+          data.onMajClic?.(j.id);
+        }
+      }}
     >
       {data.halo && (
         <span className="pointer-events-none absolute -inset-2 rounded-2xl" style={{ backgroundColor: `${couleur}10`, border: `1px solid ${couleur}2A` }} />
@@ -168,21 +176,21 @@ export default function TwinNode({ data, selected }) {
           {data.detailPosition === "haut" && carteDetail}
           {data.dansSituation && (
             <span
-              className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-[#6D28D9] ring-1 ring-white"
+              className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-[#9B87F5] ring-1 ring-[#071019]"
               title="Impliqué dans une situation active"
               data-testid={`twin-situation-${j.id}`}
             />
           )}
           {data.enTransformation && (
             <span
-              className="absolute -left-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-dashed border-[#B45309] bg-white"
+              className="absolute -left-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-dashed border-[#F2B84B] bg-[#0F1D28]"
               title="En transformation"
               data-testid={`twin-transformation-${j.id}`}
             />
           )}
         </span>
         <span
-          className="whitespace-nowrap font-code text-[10px] font-semibold tracking-wide text-[#3F3F3C] transition-colors group-hover:text-[#0E7490]"
+          className="whitespace-nowrap font-code text-[10px] font-semibold tracking-wide text-[#D8E2EA] transition-colors group-hover:text-[#25D0C8]"
           data-testid={`twin-nom-${j.id}`}
         >
           {idNumerique(j.id)}

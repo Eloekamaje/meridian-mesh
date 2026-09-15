@@ -4,9 +4,9 @@ import { couleurDomaine } from "@/lib/domaines";
 import { choixCotes, routeStable, detecterCroisements, decalagesParalleles, ancreLabel } from "./routeur";
 
 export const COUCHES = [
-  ["operationnelle", "Opérationnelle", "#3730A3"],
-  ["connaissance", "Connaissance", "#0E7490"],
-  ["mesh", "Mesh", "#6D28D9"],
+  ["operationnelle", "Opérationnelle", "#9B87F5"],
+  ["connaissance", "Connaissance", "#25D0C8"],
+  ["mesh", "Mesh", "#9B87F5"],
 ];
 
 export const NIVEAUX_ZOOM = { 1: "Capacités", 2: "Domaines", 3: "Applications & flux", 4: "Composants & preuves" };
@@ -148,19 +148,19 @@ export const styleParEtat = (r) => {
   switch (r.etat) {
     // Réalité découverte : ligne turquoise continue + marqueur directionnel (dans makeEdge)
     case "observee":
-      return { stroke: "#0E7490", strokeWidth: 2 };
+      return { stroke: "#25D0C8", strokeWidth: 2 };
     // Écarts (contradictoire ou à qualifier) : pointillés orange
     case "supposee":
-      return { stroke: "#D97706", strokeWidth: 1.7, strokeDasharray: "6 6", opacity: 0.9 };
+      return { stroke: "#F2B84B", strokeWidth: 1.7, strokeDasharray: "6 6", opacity: 0.9 };
     case "contestee":
-      return { stroke: "#D97706", strokeWidth: 2, strokeDasharray: "6 6" };
+      return { stroke: "#F2B84B", strokeWidth: 2, strokeDasharray: "6 6" };
     case "validation":
-      return { stroke: "#6D28D9", strokeWidth: 1.8, strokeDasharray: "7 5" };
+      return { stroke: "#9B87F5", strokeWidth: 1.8, strokeDasharray: "7 5" };
     case "obsolete":
-      return { stroke: "rgba(17,17,16,0.4)", strokeWidth: 1, strokeDasharray: "2 6", opacity: 0.25 };
+      return { stroke: "rgba(148,163,184,0.65)", strokeWidth: 1, strokeDasharray: "2 6", opacity: 0.25 };
     // BCM déclaré : ligne gris ardoise continue
     default:
-      return { stroke: r.active ? "#3730A3" : "rgba(17,17,16,0.45)", strokeWidth: 1.3, opacity: r.active ? 0.9 : 0.6 };
+      return { stroke: r.active ? "#9B87F5" : "rgba(148,163,184,0.7)", strokeWidth: 1.3, opacity: r.active ? 0.9 : 0.6 };
   }
 };
 
@@ -433,7 +433,7 @@ export const makeEdge = (r, niveau, positions) => {
     animated: !!r.active || r.etat === "validation",
     // Marqueur directionnel turquoise sur les relations observées par le Mesh
     ...(r.etat === "observee" && !r.restreinte
-      ? { markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: "#0E7490" } }
+      ? { markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: "#25D0C8" } }
       : {}),
     data: { etat: r.etat, restreinte: !!r.restreinte },
     style: r.restreinte ? { ...styleParEtat(r), opacity: 0.35, strokeDasharray: "3 5" } : styleParEtat(r),
@@ -445,8 +445,8 @@ export const makeEdge = (r, niveau, positions) => {
           : niveau >= 3 && r.label
             ? r.label
             : undefined,
-    labelStyle: { fill: r.etat === "validation" ? "#6D28D9" : r.etat === "contestee" ? "#B91C1C" : "rgba(17,17,16,0.6)", fontSize: 10, fontFamily: "IBM Plex Mono" },
-    labelBgStyle: { fill: "rgba(255,255,255,0.92)" },
+    labelStyle: { fill: r.etat === "validation" ? "#9B87F5" : r.etat === "contestee" ? "#F87171" : "rgba(148,163,184,0.85)", fontSize: 10, fontFamily: "IBM Plex Mono" },
+    labelBgStyle: { fill: "rgba(15,29,40,0.92)" },
   };
 };
 
@@ -476,7 +476,7 @@ export function repartirOffsets(edges) {
   });
 }
 
-const NOUVELLE_STYLE = { stroke: "#0E7490", strokeWidth: 2.6, strokeDasharray: "2 4", opacity: 1 };
+const NOUVELLE_STYLE = { stroke: "#25D0C8", strokeWidth: 2.6, strokeDasharray: "2 4", opacity: 1 };
 
 // Projection temporelle des relations : historique/replay masquent le futur,
 // avant-après met en évidence ce qui est apparu depuis la date de référence.
@@ -495,8 +495,8 @@ export function appliquerTemps(edges, temps) {
           data: { ...e.data, nouvelle: true },
           style: { ...NOUVELLE_STYLE },
           label: `${e.label ? `${e.label} · ` : ""}nouvelle`,
-          labelStyle: { fill: "#0E7490", fontSize: 10, fontFamily: "IBM Plex Mono" },
-          labelBgStyle: { fill: "rgba(255,255,255,0.92)" },
+          labelStyle: { fill: "#25D0C8", fontSize: 10, fontFamily: "IBM Plex Mono" },
+          labelBgStyle: { fill: "rgba(15,29,40,0.92)" },
         };
       }
       return { ...e, animated: false, style: { ...e.style, opacity: 0.15 } };
@@ -532,7 +532,7 @@ export function construireGraphe({
   posOverrides, compteurs, halo, selection,
   zoomNiveau, relFocus, focusCarte, domDe, statsRegions, temps, zoomFort,
   routesFin, provisoire, tactile,
-  couchesCarte = {}, situationsJumeaux,
+  couchesCarte = {}, situationsJumeaux, onMajClic,
 }) {
   if (!mesh) return { nodes: [], edges: [], snapshot: null };
   const implique = situation?.jumeaux || [];
@@ -651,6 +651,7 @@ export function construireGraphe({
           detailPosition: cartesVisibles?.get(j.id) || "bas",
           dansSituation: !!couchesCarte.situations && !!situationsJumeaux?.has(j.id),
           enTransformation: !!couchesCarte.transformations && (j.statut === "en construction" || j.statut === "observation"),
+          onMajClic,
         },
         selected: selection.includes(j.id),
       };
@@ -691,10 +692,10 @@ export function construireGraphe({
         pathOptions: { borderRadius: 10 },
         interactionWidth: 8,
         animated: c.actif,
-        style: { stroke: "rgba(17,17,16,0.3)", strokeWidth: 2.5, opacity: 0.8 },
+        style: { stroke: "rgba(148,163,184,0.4)", strokeWidth: 2.5, opacity: 0.8 },
         label: `${c.a} ↔ ${c.b} · ${c.n} relation${c.n > 1 ? "s" : ""}${c.actif ? " · activité élevée" : ""}`,
-        labelStyle: { fill: "rgba(17,17,16,0.7)", fontSize: 10, fontFamily: "IBM Plex Mono" },
-        labelBgStyle: { fill: "rgba(255,255,255,0.92)" },
+        labelStyle: { fill: "rgba(216,226,234,0.78)", fontSize: 10, fontFamily: "IBM Plex Mono" },
+        labelBgStyle: { fill: "rgba(15,29,40,0.92)" },
       };
     });
   } else {

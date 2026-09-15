@@ -19,12 +19,12 @@ export default function TrustBadges({ indicateurs }) {
       <span className="inline-flex items-center gap-1.5 rounded border px-2 py-1 font-code text-[11px]" style={chip(couleurConfiance(couverture))} data-testid="trust-couverture">
         <GridFour size={13} /> Couverture {couverture} %
       </span>
-      <span className="inline-flex items-center gap-1.5 rounded border px-2 py-1 font-code text-[11px]" style={chip("#64748B")} data-testid="trust-fraicheur">
+      <span className="inline-flex items-center gap-1.5 rounded border px-2 py-1 font-code text-[11px]" style={chip("#7C93A8")} data-testid="trust-fraicheur">
         <Clock size={13} /> Fraîcheur {fraicheur}
       </span>
       <span
         className="inline-flex items-center gap-1.5 rounded border px-2 py-1 font-code text-[11px]"
-        style={chip(contradictions > 0 ? "#B45309" : "#047857")}
+        style={chip(contradictions > 0 ? "#F2B84B" : "#34D399")}
         data-testid="trust-contradictions"
       >
         <Warning size={13} /> {contradictions} contradiction{contradictions > 1 ? "s" : ""}

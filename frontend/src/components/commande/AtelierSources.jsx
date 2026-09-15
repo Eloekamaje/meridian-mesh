@@ -53,10 +53,10 @@ export default function AtelierSources({ sources, catalogue, sourceActiveId, onS
   const basculerLot = (id) => setSelLot(selLot.includes(id) ? selLot.filter((x) => x !== id) : [...selLot, id]);
 
   const INDICS = [
-    { cle: null, label: "sources ajoutées", n: compteurs.total, couleur: "#E5E7EB", testid: "indic-total" },
-    { cle: "prete", label: "prêtes", n: compteurs.pretes, couleur: "#047857", testid: "indic-pretes" },
-    { cle: "a_configurer", label: "à configurer", n: compteurs.aConfigurer, couleur: "#B45309", testid: "indic-a-configurer" },
-    { cle: "erreur", label: "en erreur", n: compteurs.erreurs, couleur: "#B91C1C", testid: "indic-erreurs" },
+    { cle: null, label: "sources ajoutées", n: compteurs.total, couleur: "rgba(148,163,184,0.16)", testid: "indic-total" },
+    { cle: "prete", label: "prêtes", n: compteurs.pretes, couleur: "#34D399", testid: "indic-pretes" },
+    { cle: "a_configurer", label: "à configurer", n: compteurs.aConfigurer, couleur: "#F2B84B", testid: "indic-a-configurer" },
+    { cle: "erreur", label: "en erreur", n: compteurs.erreurs, couleur: "#F87171", testid: "indic-erreurs" },
   ];
 
   return (
@@ -68,17 +68,17 @@ export default function AtelierSources({ sources, catalogue, sourceActiveId, onS
             key={i.label}
             onClick={() => setFiltreStatut(filtreStatut === i.cle ? null : i.cle)}
             data-testid={i.testid}
-            className={`flex items-baseline gap-1.5 rounded-lg border px-3 py-1.5 transition-colors ${filtreStatut === i.cle || (i.cle === null && !filtreStatut) ? "border-[#D4D4D0] bg-[#F0F0EE]" : "border-[#E5E5E3] hover:border-[#D4D4D0]"}`}
+            className={`flex items-baseline gap-1.5 rounded-lg border px-3 py-1.5 transition-colors ${filtreStatut === i.cle || (i.cle === null && !filtreStatut) ? "border-[#41576D] bg-[rgba(148,163,184,0.10)]" : "border-[rgba(148,163,184,0.16)] hover:border-[#41576D]"}`}
           >
             <span className="font-display text-lg font-bold" style={{ color: i.couleur }}>{i.n}</span>
-            <span className="font-code text-[10px] text-[#52524F]">{i.label}</span>
+            <span className="font-code text-[10px] text-[#94A3B8]">{i.label}</span>
           </button>
         ))}
         <div className="ml-auto flex items-center gap-2">
-          <button onClick={onOuvrirImport} data-testid="import-btn" className="flex items-center gap-1.5 rounded-md border border-[#E5E5E3] px-2.5 py-1.5 text-[11px] text-[#3F3F3C] transition-colors hover:text-[#111110]">
+          <button onClick={onOuvrirImport} data-testid="import-btn" className="flex items-center gap-1.5 rounded-md border border-[rgba(148,163,184,0.16)] px-2.5 py-1.5 text-[11px] text-[#D8E2EA] transition-colors hover:text-[#F2F6F8]">
             <UploadSimple size={13} /> Importer
           </button>
-          <button onClick={onOuvrirTiroir} data-testid="ajouter-source-btn" className="flex items-center gap-1.5 rounded-md bg-[#3730A3] px-3 py-1.5 text-[11px] font-semibold text-white transition-colors hover:bg-[#4338CA]">
+          <button onClick={onOuvrirTiroir} data-testid="ajouter-source-btn" className="flex items-center gap-1.5 rounded-md bg-[#9B87F5] px-3 py-1.5 text-[11px] font-semibold text-[#071019] transition-colors hover:bg-[#B4A5F7]">
             <Plus size={13} /> Ajouter une source
           </button>
         </div>
@@ -87,31 +87,31 @@ export default function AtelierSources({ sources, catalogue, sourceActiveId, onS
       {/* Barre de recherche et filtres */}
       <div className="mt-3 flex flex-wrap items-center gap-2" data-testid="file-outils">
         <div className="relative">
-          <MagnifyingGlass size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#71716D]" />
+          <MagnifyingGlass size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#7C93A8]" />
           <input value={recherche} onChange={(e) => setRecherche(e.target.value)} placeholder="Rechercher une instance…" data-testid="file-recherche"
-            className="w-56 rounded-md border border-[#E5E5E3] bg-white py-1.5 pl-8 pr-3 text-xs text-[#111110] placeholder:text-[#71716D] focus:border-[#0E7490]/50 focus:outline-none" />
+            className="w-56 rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] py-1.5 pl-8 pr-3 text-xs text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#25D0C8]/50 focus:outline-none" />
         </div>
-        <select value={filtreConnecteur} onChange={(e) => setFiltreConnecteur(e.target.value)} data-testid="filtre-connecteur" className="rounded-md border border-[#E5E5E3] bg-white px-2 py-1.5 text-xs text-[#3F3F3C] focus:outline-none">
+        <select value={filtreConnecteur} onChange={(e) => setFiltreConnecteur(e.target.value)} data-testid="filtre-connecteur" className="rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2 py-1.5 text-xs text-[#D8E2EA] focus:outline-none">
           <option value="">Tous connecteurs</option>
           {[...new Set(sources.map((s) => s.connecteur))].map((c) => <option key={c} value={c}>{nomConnecteur(c)}</option>)}
         </select>
-        <select value={filtreEnv} onChange={(e) => setFiltreEnv(e.target.value)} data-testid="filtre-environnement" className="rounded-md border border-[#E5E5E3] bg-white px-2 py-1.5 text-xs text-[#3F3F3C] focus:outline-none">
+        <select value={filtreEnv} onChange={(e) => setFiltreEnv(e.target.value)} data-testid="filtre-environnement" className="rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2 py-1.5 text-xs text-[#D8E2EA] focus:outline-none">
           <option value="">Tous environnements</option>
           {ENVIRONNEMENTS.map((e) => <option key={e} value={e}>{e}</option>)}
         </select>
-        <select value={groupement} onChange={(e) => setGroupement(e.target.value)} data-testid="groupement" className="rounded-md border border-[#E5E5E3] bg-white px-2 py-1.5 text-xs text-[#3F3F3C] focus:outline-none">
+        <select value={groupement} onChange={(e) => setGroupement(e.target.value)} data-testid="groupement" className="rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2 py-1.5 text-xs text-[#D8E2EA] focus:outline-none">
           {REGROUPEMENTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
       </div>
 
       {/* File des sources */}
-      <div className="mt-3 min-h-0 flex-1 overflow-y-auto rounded-xl border border-[#E5E5E3]" data-testid="file-sources">
+      <div className="mt-3 min-h-0 flex-1 overflow-y-auto rounded-xl border border-[rgba(148,163,184,0.16)]" data-testid="file-sources">
         {groupes.map(([groupe, lignes]) => (
           <div key={groupe || "toutes"}>
             {groupe && (
-              <button onClick={() => setPliés({ ...pliés, [groupe]: !pliés[groupe] })} data-testid={`groupe-${groupe}`} className="sticky top-0 flex w-full items-center gap-2 border-b border-[#E5E5E3] bg-[#F0F0EE] px-4 py-2 text-left">
-                {pliés[groupe] ? <CaretRight size={12} className="text-[#71716D]" /> : <CaretDown size={12} className="text-[#71716D]" />}
-                <span className="font-code text-[10px] uppercase tracking-[0.15em] text-[#52524F]">Groupe {groupe} · {lignes.length} instance{lignes.length > 1 ? "s" : ""}</span>
+              <button onClick={() => setPliés({ ...pliés, [groupe]: !pliés[groupe] })} data-testid={`groupe-${groupe}`} className="sticky top-0 flex w-full items-center gap-2 border-b border-[rgba(148,163,184,0.16)] bg-[rgba(148,163,184,0.10)] px-4 py-2 text-left">
+                {pliés[groupe] ? <CaretRight size={12} className="text-[#7C93A8]" /> : <CaretDown size={12} className="text-[#7C93A8]" />}
+                <span className="font-code text-[10px] uppercase tracking-[0.15em] text-[#94A3B8]">Groupe {groupe} · {lignes.length} instance{lignes.length > 1 ? "s" : ""}</span>
               </button>
             )}
             {!pliés[groupe] && lignes.map((s) => {
@@ -123,22 +123,22 @@ export default function AtelierSources({ sources, catalogue, sourceActiveId, onS
                   onClick={() => onSelect(s.id)}
                   data-testid={`source-ligne-${s.id}`}
                   style={{ borderLeft: `2px solid ${st.couleur}` }}
-                  className={`rise flex cursor-pointer items-center gap-3 border-b border-[#E5E5E3] px-4 py-2.5 transition-[background-color,transform] duration-150 hover:translate-x-0.5 ${active ? "bg-[#0E7490]/[0.06]" : "hover:bg-[#F7F7F6]"}`}
+                  className={`rise flex cursor-pointer items-center gap-3 border-b border-[rgba(148,163,184,0.16)] px-4 py-2.5 transition-[background-color,transform] duration-150 hover:translate-x-0.5 ${active ? "bg-[#25D0C8]/[0.06]" : "hover:bg-[rgba(148,163,184,0.07)]"}`}
                 >
-                  <input type="checkbox" checked={selLot.includes(s.id)} onClick={(e) => e.stopPropagation()} onChange={() => basculerLot(s.id)} data-testid={`lot-check-${s.id}`} className="h-3.5 w-3.5 shrink-0 accent-[#0E7490]" />
+                  <input type="checkbox" checked={selLot.includes(s.id)} onClick={(e) => e.stopPropagation()} onChange={() => basculerLot(s.id)} data-testid={`lot-check-${s.id}`} className="h-3.5 w-3.5 shrink-0 accent-[#25D0C8]" />
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-[13px] font-medium text-[#111110]">{s.nom}</div>
-                    <div className="truncate font-code text-[9px] text-[#71716D]">{nomConnecteur(s.connecteur)} · {s.environnement}{s.perimetre ? ` · ${s.perimetre}` : ""}{s.proprietaire ? ` · ${s.proprietaire}` : ""}</div>
+                    <div className="truncate text-[13px] font-medium text-[#F2F6F8]">{s.nom}</div>
+                    <div className="truncate font-code text-[9px] text-[#7C93A8]">{nomConnecteur(s.connecteur)} · {s.environnement}{s.perimetre ? ` · ${s.perimetre}` : ""}{s.proprietaire ? ` · ${s.proprietaire}` : ""}</div>
                   </div>
                   {s.statut === "test_en_cours" && (
-                    <div className="h-1 w-16 overflow-hidden rounded-full bg-[#E5E5E3]">
-                      <div className="h-full w-1/2 animate-pulse rounded-full bg-[#3730A3]" />
+                    <div className="h-1 w-16 overflow-hidden rounded-full bg-[rgba(148,163,184,0.16)]">
+                      <div className="h-full w-1/2 animate-pulse rounded-full bg-[#9B87F5]" />
                     </div>
                   )}
                   <span className="shrink-0 rounded border px-1.5 py-0.5 font-code text-[9px]" style={{ color: st.couleur, borderColor: `${st.couleur}44`, backgroundColor: `${st.couleur}12` }} data-testid={`source-statut-${s.id}`}>
                     {st.label}
                   </span>
-                  <span className="w-20 shrink-0 text-right font-code text-[9px] text-[#71716D]">
+                  <span className="w-20 shrink-0 text-right font-code text-[9px] text-[#7C93A8]">
                     {s.dernier_test ? `${s.dernier_test.date}` : "jamais testé"}
                   </span>
                 </div>
@@ -147,7 +147,7 @@ export default function AtelierSources({ sources, catalogue, sourceActiveId, onS
           </div>
         ))}
         {filtrees.length === 0 && (
-          <div className="px-4 py-10 text-center text-sm text-[#71716D]" data-testid="file-vide">Aucune source ne correspond — ajoutez une source ou élargissez les filtres.</div>
+          <div className="px-4 py-10 text-center text-sm text-[#7C93A8]" data-testid="file-vide">Aucune source ne correspond — ajoutez une source ou élargissez les filtres.</div>
         )}
       </div>
     </div>

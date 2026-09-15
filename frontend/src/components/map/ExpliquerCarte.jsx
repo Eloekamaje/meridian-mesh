@@ -17,13 +17,13 @@ export default function ExpliquerCarte({ mesh, fermer, domaineActif, jumeauPar, 
       className="glass absolute bottom-40 right-4 top-16 z-20 flex w-[380px] max-w-[92vw] flex-col overflow-hidden rounded-xl"
       data-testid="expliquer-carte-panel"
     >
-      <div className="flex items-center justify-between border-b border-[#E5E5E3] px-4 py-3">
-        <h2 className="font-display text-sm font-bold text-[#111110]">Expliquer cette carte</h2>
-        <button onClick={fermer} data-testid="expliquer-carte-fermer" title="Fermer la description" className="rounded-md p-1 text-[#71716D] transition-colors hover:bg-[#F0F0EE] hover:text-[#111110]">
+      <div className="flex items-center justify-between border-b border-[rgba(148,163,184,0.16)] px-4 py-3">
+        <h2 className="font-display text-sm font-bold text-[#F2F6F8]">Expliquer cette carte</h2>
+        <button onClick={fermer} data-testid="expliquer-carte-fermer" title="Fermer la description" className="rounded-md p-1 text-[#7C93A8] transition-colors hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]">
           <X size={14} />
         </button>
       </div>
-      <div className="flex-1 space-y-4 overflow-y-auto p-4 text-xs leading-relaxed text-[#3F3F3C]">
+      <div className="flex-1 space-y-4 overflow-y-auto p-4 text-xs leading-relaxed text-[#D8E2EA]">
         <p data-testid="expliquer-resume">
           Cette carte représente le Mesh : {(mesh.regions || []).length} domaines, {visibles.length} jumeaux visibles
           {restreints > 0 ? ` (${restreints} restreint${restreints > 1 ? "s" : ""} par votre périmètre)` : ""} et {(mesh.relations || []).length} relations connues.
@@ -31,7 +31,7 @@ export default function ExpliquerCarte({ mesh, fermer, domaineActif, jumeauPar, 
 
         {domaineActif && (
           <section>
-            <h3 className="font-code text-[10px] uppercase tracking-[0.18em] text-[#71716D]">Position actuelle</h3>
+            <h3 className="font-code text-[10px] uppercase tracking-[0.18em] text-[#7C93A8]">Position actuelle</h3>
             <p className="mt-1" data-testid="expliquer-position">
               Le centre de votre vue se trouve dans le domaine {domaineActif}. La carte est continue : faites-la glisser pour découvrir les domaines voisins à la même échelle.
             </p>
@@ -39,7 +39,7 @@ export default function ExpliquerCarte({ mesh, fermer, domaineActif, jumeauPar, 
         )}
 
         <section>
-          <h3 className="font-code text-[10px] uppercase tracking-[0.18em] text-[#71716D]">Domaines</h3>
+          <h3 className="font-code text-[10px] uppercase tracking-[0.18em] text-[#7C93A8]">Domaines</h3>
           <ul className="mt-1.5 space-y-1.5">
             {(mesh.regions || []).map((r) => {
               const n = visibles.filter((j) => j.domaine === r.label).length;
@@ -48,7 +48,7 @@ export default function ExpliquerCarte({ mesh, fermer, domaineActif, jumeauPar, 
                 <li key={r.id} className="flex items-baseline gap-2" data-testid={`expliquer-domaine-${r.label}`}>
                   <span className="h-1.5 w-1.5 shrink-0 translate-y-[-1px] rounded-full" style={{ backgroundColor: couleurDomaine(r.label) }} />
                   <span>
-                    <strong className="text-[#111110]">{r.label}</strong> — {n} jumeau{n > 1 ? "x" : ""} accessible{n > 1 ? "s" : ""}
+                    <strong className="text-[#F2F6F8]">{r.label}</strong> — {n} jumeau{n > 1 ? "x" : ""} accessible{n > 1 ? "s" : ""}
                     {mat ? `, maturité « ${mat} »` : ""}.
                   </span>
                 </li>
@@ -58,12 +58,12 @@ export default function ExpliquerCarte({ mesh, fermer, domaineActif, jumeauPar, 
         </section>
 
         <section>
-          <h3 className="font-code text-[10px] uppercase tracking-[0.18em] text-[#71716D]">Relations par état de connaissance</h3>
+          <h3 className="font-code text-[10px] uppercase tracking-[0.18em] text-[#7C93A8]">Relations par état de connaissance</h3>
           <ul className="mt-1.5 space-y-1">
             {Object.entries(ETATS_RELATION).map(([k, v]) =>
               parEtat[k] ? (
                 <li key={k} data-testid={`expliquer-etat-${k}`}>
-                  <strong className="text-[#111110]">{parEtat[k]}</strong> {v.label.toLowerCase()}{parEtat[k] > 1 && !v.label.endsWith("e") ? "s" : ""}
+                  <strong className="text-[#F2F6F8]">{parEtat[k]}</strong> {v.label.toLowerCase()}{parEtat[k] > 1 && !v.label.endsWith("e") ? "s" : ""}
                 </li>
               ) : null
             )}
@@ -72,7 +72,7 @@ export default function ExpliquerCarte({ mesh, fermer, domaineActif, jumeauPar, 
 
         {selection.length > 0 && (
           <section>
-            <h3 className="font-code text-[10px] uppercase tracking-[0.18em] text-[#71716D]">Sélection courante</h3>
+            <h3 className="font-code text-[10px] uppercase tracking-[0.18em] text-[#7C93A8]">Sélection courante</h3>
             <p className="mt-1" data-testid="expliquer-selection">
               {selection.length} jumeau{selection.length > 1 ? "x" : ""} sélectionné{selection.length > 1 ? "s" : ""} : {selection.map((id) => jumeauPar(id)?.nom || id).join(", ")}.
               Cette sélection constitue le contexte de Flore.
@@ -80,7 +80,7 @@ export default function ExpliquerCarte({ mesh, fermer, domaineActif, jumeauPar, 
           </section>
         )}
 
-        <p className="border-t border-[#F0F0EE] pt-3 font-code text-[10px] text-[#71716D]">
+        <p className="border-t border-[rgba(148,163,184,0.10)] pt-3 font-code text-[10px] text-[#7C93A8]">
           Navigation : clic = sélection · clic sur une porte = chemin vers le domaine · double-clic = explorer (déplacement animé, zoom inchangé) · molette = zoom explicite · lasso = sélection multiple.
         </p>
       </div>

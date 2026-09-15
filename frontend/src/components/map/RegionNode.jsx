@@ -4,6 +4,7 @@ import { Handle, Position } from "@xyflow/react";
 // Le survol est géré par proximité au niveau de la carte (les zones d'interaction des arêtes recouvrent les frontières)
 export default function RegionNode({ data }) {
   const survol = !!data.survol;
+  const pointille = data.confirme === false; // territoire découvert, pas encore validé par l'organisation
 
   return (
     <div
@@ -29,12 +30,13 @@ export default function RegionNode({ data }) {
             fill={survol ? `${data.couleur}26` : `${data.couleur}1C`}
             stroke={survol ? `${data.couleur}59` : `${data.couleur}30`}
             strokeWidth={survol ? 2.2 : 1.8}
+            strokeDasharray={pointille ? "8 6" : undefined}
             strokeLinejoin="round"
             style={{ transition: "fill 200ms, stroke 200ms" }}
             data-testid={`region-membrane-${data.id}`}
           />
         ) : (
-          <rect width={data.w} height={data.h} rx={56} fill={`${data.couleur}13`} stroke={`${data.couleur}38`} strokeWidth={1.5} />
+          <rect width={data.w} height={data.h} rx={56} fill={`${data.couleur}13`} stroke={`${data.couleur}38`} strokeWidth={1.5} strokeDasharray={pointille ? "8 6" : undefined} />
         )}
       </svg>
     </div>

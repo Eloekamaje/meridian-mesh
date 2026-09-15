@@ -1,0 +1,43 @@
+{
+  "summary": "Frontend-only tests iteration 54 — refonte panneau jumeau (colonne gauche) + multi-sélection + preuves relationnelles Flore + SituationCard + territoire pointillé + fraîcheur. 9/10 scénarios PASS, 1 régression suspecte : la multi-sélection via Maj+clic n'ouvre PAS la barre multi-selection-bar (le lasso fonctionne).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Atlas onNodeClick / ReactFlow multiSelectionKeyCode",
+        "issue": "Maj+clic (Shift+click) sur un 2e jumeau après un 1er clic simple n'affiche PAS multi-selection-bar. Testé de 3 manières (mouse.click + Shift down/up, locator.click(modifiers=['Shift']) sur [data-testid=twin-node-*], et sur .react-flow__node-twin) — dans chaque cas seule la sélection RF native change de node, la 2e mise en avant visuelle n'apparaît pas et la barre reste absente. Le lasso, lui, fonctionne parfaitement (6 jumeaux sélectionnés → barre affichée). Hypothèse : ReactFlow avec multiSelectionKeyCode=['Meta','Control','Shift'] intercepte le shift+click et court-circuite l'appel onNodeClick avec e.shiftKey (ou remet à zéro d'autres nodes), donc le handler additif `setSelection((prev) => { const base = selected && !prev.includes(selected.id) ? [selected.id, ...prev] : prev; ... })` ne s'exécute pas. À reproduire manuellement pour trancher entre bug réel et limitation Playwright.",
+        "selector": "[data-testid='multi-selection-bar']",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_results": {
+    "1_panneau_jumeau_gauche": "PASS — panneau-jumeau bbox {x:56,y:48,w:400,h:752}. Sections OK : twin-comprehension, twin-capacites, twin-sources, twin-voisins (12 voisins cliquables ex: voisin-api-gateway), twin-changements, twin-kpis. Actions présentes : twin-interroger-btn, twin-relations-btn, twin-investigation-btn, twin-ouvrir-fiche (NB: pas twin-action-* comme mentionné dans la spec). map-side-panel non visible. Clic voisin → panneau reste ouvert avec le nouveau jumeau. panneau-jumeau-fermer ferme la colonne.",
+    "2_panneau_droit_et_flore_coexist": "PASS — clic membrane 'Paiement' → map-side-panel bbox {x:1584,y:48,w:336,h:752} avec domaine-detail. Ouverture jumeau puis 'Parler au jumeau' (twin-interroger-btn) → panneau-jumeau ET flore-panel visibles simultanément. Sélection ensuite d'un domaine → flore-panel fermé, domaine-detail affiché à droite.",
+    "3_lasso_multiselection": "PASS — outil-lasso puis drag (700,600 → 1050,350) = 6 jumeaux sélectionnés. multi-selection-bar visible avec 'Interroger / Relations / Créer un groupe / Point commun'. Clic 'Relations' → toast 'Trajets de la sélection mis en avant'. Clic 'Créer un groupe' → toast 'Groupe enregistré — retrouvez-le dans le sélecteur de périmètre'. multi-fermer → barre disparaît.",
+    "4_shift_click_multiselection": "FAIL (voir ui_bugs) — la barre n'apparaît pas après shift+click sur un 2e twin.",
+    "5_flore_preuves_carte": "PASS — après lasso + multi-interroger, 4 cartes flore-preuve-rel-* dans la réponse Flore. Survol : document.querySelectorAll('.trait-pulse').length === 1. Clic : map-relation-detail affiché à droite, flore-panel fermé, focus-flore-chip visible.",
+    "6_situation_card": "PASS — domaine Paiement onglet Détail : 4 situation-card-*, 2 situation-qualifier-*. Clic qualifier → toast 'Situation qualifiée', apparition de situation-investiguer-*, panneau reste ouvert.",
+    "7_territoire_a_confirmer": "PASS — recherche 'confirmer' → recherche-domaine-À confirmer. Clic → region-membrane-reg-a-confirmer avec stroke-dasharray='8 6' (pointillé).",
+    "8_fraicheur": "PASS — mesh-fraicheur = 'À jour · il y a 1 min', présent à côté de mesh-status.",
+    "9_chrome_regression": "PASS — atlas-recherche (106,73,256,16), map-mode-switcher (72,112,134.5,46). Loupe (btn-recherche) absente quand aucun panneau ouvert. Comportement identique à iteration 53.",
+    "10_tablette_1024x768": "PASS — panneau-jumeau NON visible sur tablette. map-side-panel affiché en bottom-sheet (x:56, y:307, w:968, h:461). map-twin-detail présent à l'intérieur du panneau droit (sansJumeau=false)."
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Vérifier manuellement Maj+clic sur 2 jumeaux : soit la spec est déjà OK et c'est un artefact Playwright (auquel cas fermer sans action), soit il faut soit retirer 'Shift' de multiSelectionKeyCode (garder Meta/Control), soit appeler explicitement le handler additif via un listener onSelectionChange qui synchronise RF selection → Atlas selection."
+  ],
+  "critical_code_review_comments": [
+    "Atlas.jsx: multiSelectionKeyCode inclut 'Shift', mais onNodeClick tente aussi de gérer shiftKey pour la multisélection additive. Ce chevauchement peut expliquer que RF capte le shift+click et 'écrase' la logique attendue. Séparer les rôles (Shift = lasso RF, Meta/Ctrl = clic additif, ou l'inverse) rendrait le comportement déterministe.",
+    "PanneauJumeau.jsx: OK (testid racine 'panneau-jumeau' présent). details.jsx : les actions sont testid twin-{interroger,relations,investigation,ouvrir-fiche}-btn — la spec du review mentionne 'twin-action-*' qui n'existe pas. Envisager d'aligner les noms sur la spec pour éviter la confusion des futurs agents."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped)", "frontend": "90% (9/10 scénarios)"},
+  "seed_data_creation": "Aucun (localStorage.removeItem('atlas.chrome.decals') avant tests).",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Points d'attention (a) Testids d'actions du panneau-jumeau NE SONT PAS 'twin-action-*' mais 'twin-interroger-btn' / 'twin-relations-btn' / 'twin-investigation-btn' / 'twin-ouvrir-fiche'. (b) Quand un panneau est ouvert, atlas-recherche est masqué et remplacé par btn-recherche (loupe) — cliquer la loupe pour ré-afficher l'input. (c) Le lasso fonctionne et sélectionne ~6 twins avec un drag (700,600)→(1050,350). (d) La barre multi apparaît seulement si selection.length > 1. (e) Le shift+click via Playwright ne réussit pas à peupler la multi-selection ; à retester manuellement ou via injection d'event pointerdown ciblée sur .react-flow__node.",
+  "rca_of_the_issue": "Maj+clic : ReactFlow config multiSelectionKeyCode=['Meta','Control','Shift'] intercepte probablement la Shift+click pour sa sélection native, empêchant notre handler onNodeClick de peupler l'array `selection` via setSelection. Solution suggérée : soit retirer 'Shift' de multiSelectionKeyCode (le lasso peut rester en outil), soit s'abonner à onSelectionChange pour synchroniser RF.node.selected → Atlas selection."
+}

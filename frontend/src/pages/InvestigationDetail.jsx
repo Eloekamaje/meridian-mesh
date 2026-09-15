@@ -27,12 +27,12 @@ export default function InvestigationDetail() {
   if (erreur) {
     return (
       <div className="flex h-full flex-col items-start justify-center gap-4 px-8">
-        <p className="text-[#52524F]">Situation introuvable.</p>
-        <Link to="/investigations" className="text-sm text-[#3730A3] hover:underline">← Retour aux investigations</Link>
+        <p className="text-[#94A3B8]">Situation introuvable.</p>
+        <Link to="/investigations" className="text-sm text-[#9B87F5] hover:underline">← Retour aux investigations</Link>
       </div>
     );
   }
-  if (!sit) return <div className="p-8 text-sm text-[#71716D]">Chargement de la situation…</div>;
+  if (!sit) return <div className="p-8 text-sm text-[#7C93A8]">Chargement de la situation…</div>;
 
   const decider = async (decision) => {
     try {
@@ -89,7 +89,7 @@ export default function InvestigationDetail() {
   return (
     <div className="h-full overflow-y-auto px-8 py-8 pb-44" data-testid="investigation-detail">
       <div className="flex items-center justify-between gap-3">
-        <button onClick={() => navigate("/investigations")} className="flex items-center gap-1.5 text-xs text-[#71716D] transition-colors hover:text-[#111110]" data-testid="back-to-investigations">
+        <button onClick={() => navigate("/investigations")} className="flex items-center gap-1.5 text-xs text-[#7C93A8] transition-colors hover:text-[#F2F6F8]" data-testid="back-to-investigations">
           <ArrowLeft size={14} /> Investigations
         </button>
         <div className="flex shrink-0 items-center gap-2">
@@ -97,12 +97,12 @@ export default function InvestigationDetail() {
             onClick={() => demanderAFlore(`Analyse cette investigation : « ${sit.question || sit.titre} ». Quelles hypothèses privilégier et quelles preuves manquent pour trancher ?`)}
             data-testid="investigation-analyser-flore"
             title="Demander à Flore d'analyser cette investigation"
-            className="flex items-center gap-1.5 rounded-md border border-[#3730A3]/40 bg-[#3730A3]/[0.06] px-3 py-1.5 text-xs font-semibold text-[#3730A3] transition-colors hover:bg-[#3730A3]/12"
+            className="flex items-center gap-1.5 rounded-md border border-[#9B87F5]/40 bg-[#9B87F5]/[0.06] px-3 py-1.5 text-xs font-semibold text-[#9B87F5] transition-colors hover:bg-[#9B87F5]/12"
           >
             <Sparkle size={13} weight="fill" /> Analyser avec Flore
           </button>
           {(sit.jumeaux || []).length > 0 && (
-            <button onClick={() => navigate(`/atlas?situation=${sit.id}`)} data-testid="voir-atlas-btn" className="flex items-center gap-1.5 rounded-md border border-[#0E7490]/30 bg-[#0E7490]/[0.06] px-3 py-1.5 text-xs text-[#0E7490] transition-colors hover:bg-[#0E7490]/15">
+            <button onClick={() => navigate(`/atlas?situation=${sit.id}`)} data-testid="voir-atlas-btn" className="flex items-center gap-1.5 rounded-md border border-[#25D0C8]/30 bg-[#25D0C8]/[0.06] px-3 py-1.5 text-xs text-[#25D0C8] transition-colors hover:bg-[#25D0C8]/15">
               <Compass size={13} /> Voir dans l'Atlas
             </button>
           )}
@@ -111,7 +111,7 @@ export default function InvestigationDetail() {
 
       {/* Zone 1 — La question */}
       <section className="rise mt-5" data-testid="zone-question">
-        <div className="font-code text-[10px] uppercase tracking-[0.3em] text-[#6D28D9]">La question</div>
+        <div className="font-code text-[10px] uppercase tracking-[0.3em] text-[#9B87F5]">La question</div>
         {(nature || verbe) && (
           <div className="mt-2 flex items-center gap-2">
             {nature && (
@@ -130,10 +130,10 @@ export default function InvestigationDetail() {
             )}
           </div>
         )}
-        <h1 className="mt-2 max-w-3xl font-display text-3xl font-black leading-tight text-[#111110]">
+        <h1 className="mt-2 max-w-3xl font-display text-3xl font-black leading-tight text-[#F2F6F8]">
           {sit.question || sit.titre}
         </h1>
-        <p className="mt-3 max-w-2xl text-sm leading-relaxed text-[#52524F]">{sit.resume}</p>
+        <p className="mt-3 max-w-2xl text-sm leading-relaxed text-[#94A3B8]">{sit.resume}</p>
         <div className="mt-4 flex flex-wrap items-center gap-1.5">
           {(sit.jumeaux || []).map((jid) => {
             const j = jumeauPar(jid);
@@ -145,8 +145,8 @@ export default function InvestigationDetail() {
             );
           })}
           {sit.aurora_recommandation && (
-            <span className="ml-2 flex items-center gap-1.5 text-xs italic text-[#71716D]">
-              <Lightning size={13} className="text-[#3730A3]" /> {sit.aurora_recommandation}
+            <span className="ml-2 flex items-center gap-1.5 text-xs italic text-[#7C93A8]">
+              <Lightning size={13} className="text-[#9B87F5]" /> {sit.aurora_recommandation}
             </span>
           )}
         </div>
@@ -155,35 +155,35 @@ export default function InvestigationDetail() {
       {/* Fiche découverte : Découvrir → Comprendre → Décider */}
       {(sit.decouverte_quoi || (sit.decouverte_pourquoi || []).length > 0) && (
         <section className="rise mt-8 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4" data-testid="fiche-decouverte" style={{ animationDelay: "60ms" }}>
-          <div className="rounded-xl border border-[#0E7490]/20 bg-[#0E7490]/[0.04] p-4">
-            <div className="font-code text-[10px] uppercase tracking-[0.2em] text-[#0E7490]">Ce qui a été découvert</div>
-            <p className="mt-2 text-sm leading-relaxed text-[#3F3F3C]" data-testid="fiche-quoi">{sit.decouverte_quoi}</p>
+          <div className="rounded-xl border border-[#25D0C8]/20 bg-[#25D0C8]/[0.04] p-4">
+            <div className="font-code text-[10px] uppercase tracking-[0.2em] text-[#25D0C8]">Ce qui a été découvert</div>
+            <p className="mt-2 text-sm leading-relaxed text-[#D8E2EA]" data-testid="fiche-quoi">{sit.decouverte_quoi}</p>
           </div>
-          <div className="rounded-xl border border-[#6D28D9]/20 bg-[#6D28D9]/[0.04] p-4">
-            <div className="font-code text-[10px] uppercase tracking-[0.2em] text-[#6D28D9]">Pourquoi Méridian le pense</div>
+          <div className="rounded-xl border border-[#9B87F5]/20 bg-[#9B87F5]/[0.04] p-4">
+            <div className="font-code text-[10px] uppercase tracking-[0.2em] text-[#9B87F5]">Pourquoi Méridian le pense</div>
             <ul className="mt-2 space-y-1.5" data-testid="fiche-pourquoi">
               {(sit.decouverte_pourquoi || []).map((p, i) => (
-                <li key={i} className="text-xs leading-snug text-[#52524F]">→ {p}</li>
+                <li key={i} className="text-xs leading-snug text-[#94A3B8]">→ {p}</li>
               ))}
             </ul>
           </div>
-          <div className="rounded-xl border border-[#6D28D9]/20 bg-[#6D28D9]/[0.04] p-4">
-            <div className="font-code text-[10px] uppercase tracking-[0.2em] text-[#6D28D9]">Ce qui reste à comprendre</div>
+          <div className="rounded-xl border border-[#9B87F5]/20 bg-[#9B87F5]/[0.04] p-4">
+            <div className="font-code text-[10px] uppercase tracking-[0.2em] text-[#9B87F5]">Ce qui reste à comprendre</div>
             <ul className="mt-2 space-y-1.5" data-testid="fiche-reste">
               {(sit.reste_a_comprendre || []).map((p, i) => (
-                <li key={i} className="text-xs leading-snug italic text-[#52524F]">? {p}</li>
+                <li key={i} className="text-xs leading-snug italic text-[#94A3B8]">? {p}</li>
               ))}
             </ul>
           </div>
-          <div className="rounded-xl border border-[#B45309]/20 bg-[#B45309]/[0.04] p-4">
-            <div className="font-code text-[10px] uppercase tracking-[0.2em] text-[#B45309]">Décision attendue</div>
+          <div className="rounded-xl border border-[#F2B84B]/20 bg-[#F2B84B]/[0.04] p-4">
+            <div className="font-code text-[10px] uppercase tracking-[0.2em] text-[#F2B84B]">Décision attendue</div>
             <div className="mt-2 flex flex-col gap-1.5" data-testid="fiche-decisions">
               {(sit.decisions_attendues || []).map((d, i) => (
                 <button
                   key={i}
                   onClick={() => agirDecision(d)}
                   data-testid={`fiche-decision-${i}`}
-                  className="rounded-md border border-[#E5E5E3] bg-[#F7F7F6] px-2.5 py-1.5 text-left text-xs text-[#3F3F3C] transition-colors duration-200 hover:border-[#B45309]/50 hover:text-[#111110]"
+                  className="rounded-md border border-[rgba(148,163,184,0.16)] bg-[rgba(148,163,184,0.07)] px-2.5 py-1.5 text-left text-xs text-[#D8E2EA] transition-colors duration-200 hover:border-[#F2B84B]/50 hover:text-[#F2F6F8]"
                 >
                   {d}
                 </button>
@@ -195,110 +195,110 @@ export default function InvestigationDetail() {
 
       {/* Périmètre de l'investigation : collaboratif et temporaire */}
       {sit.perimetre_investigation && (
-        <section className="rise mt-8 rounded-xl border border-[#E5E5E3] bg-white p-4" data-testid="perimetre-investigation" style={{ animationDelay: "100ms" }}>
-          <div className="font-code text-[10px] uppercase tracking-[0.2em] text-[#71716D]">Périmètre de l'investigation — collaboratif et temporaire</div>
+        <section className="rise mt-8 rounded-xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-4" data-testid="perimetre-investigation" style={{ animationDelay: "100ms" }}>
+          <div className="font-code text-[10px] uppercase tracking-[0.2em] text-[#7C93A8]">Périmètre de l'investigation — collaboratif et temporaire</div>
           <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 text-xs md:grid-cols-3">
-            <div><span className="text-[#71716D]">Propriétaire</span><p className="mt-0.5 text-[#3F3F3C]">{sit.perimetre_investigation.proprietaire}</p></div>
-            <div><span className="text-[#71716D]">Participants</span><p className="mt-0.5 text-[#3F3F3C]">{sit.perimetre_investigation.participants.join(" · ")}</p></div>
-            <div><span className="text-[#71716D]">Jumeaux autorisés</span><p className="mt-0.5 text-[#3F3F3C]">{sit.perimetre_investigation.jumeaux_autorises.join(" · ")}</p></div>
-            <div><span className="text-[#71716D]">Confidentialité</span><p className="mt-0.5 font-code text-[#B45309]">{sit.perimetre_investigation.confidentialite}</p></div>
-            <div><span className="text-[#71716D]">Expiration des droits</span><p className="mt-0.5 font-code text-[#3F3F3C]">{sit.perimetre_investigation.expire}</p></div>
-            <div><span className="text-[#71716D]">Export</span><p className="mt-0.5 font-code text-[#3F3F3C]">{sit.perimetre_investigation.export}</p></div>
+            <div><span className="text-[#7C93A8]">Propriétaire</span><p className="mt-0.5 text-[#D8E2EA]">{sit.perimetre_investigation.proprietaire}</p></div>
+            <div><span className="text-[#7C93A8]">Participants</span><p className="mt-0.5 text-[#D8E2EA]">{sit.perimetre_investigation.participants.join(" · ")}</p></div>
+            <div><span className="text-[#7C93A8]">Jumeaux autorisés</span><p className="mt-0.5 text-[#D8E2EA]">{sit.perimetre_investigation.jumeaux_autorises.join(" · ")}</p></div>
+            <div><span className="text-[#7C93A8]">Confidentialité</span><p className="mt-0.5 font-code text-[#F2B84B]">{sit.perimetre_investigation.confidentialite}</p></div>
+            <div><span className="text-[#7C93A8]">Expiration des droits</span><p className="mt-0.5 font-code text-[#D8E2EA]">{sit.perimetre_investigation.expire}</p></div>
+            <div><span className="text-[#7C93A8]">Export</span><p className="mt-0.5 font-code text-[#D8E2EA]">{sit.perimetre_investigation.export}</p></div>
           </div>
         </section>
       )}
 
       <div className="mt-10 grid grid-cols-12 gap-8">
         {/* Zone 2 — La chronologie */}        <section className="rise col-span-12 lg:col-span-4" data-testid="zone-chronologie" style={{ animationDelay: "80ms" }}>
-          <h2 className="font-code text-[10px] uppercase tracking-[0.3em] text-[#71716D]">Chronologie</h2>
+          <h2 className="font-code text-[10px] uppercase tracking-[0.3em] text-[#7C93A8]">Chronologie</h2>
           <ol className="mt-5 space-y-0">
             {(sit.chronologie || []).map((e, i) => {
               const j = jumeauPar(e.jumeau);
-              const c = NATURES_EVENEMENT[e.nature] || "#71716D";
+              const c = NATURES_EVENEMENT[e.nature] || "#7C93A8";
               const derniere = i === sit.chronologie.length - 1;
               return (
                 <li key={i} className="relative flex gap-3 pb-6" data-testid={`chrono-event-${i}`}>
-                  {!derniere && <span className="absolute left-[5px] top-4 h-full w-px bg-[#E5E5E3]" />}
+                  {!derniere && <span className="absolute left-[5px] top-4 h-full w-px bg-[rgba(148,163,184,0.16)]" />}
                   <span className="relative mt-1 h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: c, boxShadow: `0 0 10px ${c}66` }} />
                   <div>
                     <div className="flex items-baseline gap-2">
-                      <span className="font-code text-[11px] font-medium text-[#111110]">{e.heure}</span>
+                      <span className="font-code text-[11px] font-medium text-[#F2F6F8]">{e.heure}</span>
                       {j && <span className="font-code text-[10px]" style={{ color: couleurDomaine(j.domaine) }}>{j.nom}</span>}
                     </div>
-                    <p className="mt-0.5 text-sm leading-snug text-[#52524F]">{e.texte}</p>
+                    <p className="mt-0.5 text-sm leading-snug text-[#94A3B8]">{e.texte}</p>
                   </div>
                 </li>
               );
             })}
             {(sit.chronologie || []).length === 0 && (
-              <li className="text-sm text-[#71716D]">Chronologie en cours de constitution par les jumeaux.</li>
+              <li className="text-sm text-[#7C93A8]">Chronologie en cours de constitution par les jumeaux.</li>
             )}
           </ol>
         </section>
 
         {/* Zone 3 — Les hypothèses */}
         <section className="rise col-span-12 lg:col-span-8" data-testid="zone-hypotheses" style={{ animationDelay: "140ms" }}>
-          <h2 className="font-code text-[10px] uppercase tracking-[0.3em] text-[#71716D]">Hypothèses</h2>
+          <h2 className="font-code text-[10px] uppercase tracking-[0.3em] text-[#7C93A8]">Hypothèses</h2>
           <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-2">
             {(sit.hypotheses || []).map((h) => (
-              <div key={h.id} className="rounded-xl border border-[#E5E5E3] bg-white p-5" data-testid={`hypothesis-${h.id}`}>
+              <div key={h.id} className="rounded-xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-5" data-testid={`hypothesis-${h.id}`}>
                 <div className="flex items-start justify-between gap-3">
-                  <h3 className="text-sm font-semibold leading-snug text-[#111110]">{h.texte}</h3>
+                  <h3 className="text-sm font-semibold leading-snug text-[#F2F6F8]">{h.texte}</h3>
                   <span className="shrink-0 font-code text-sm font-medium" style={{ color: couleurConfiance(h.confiance) }}>
                     {h.confiance} %
                   </span>
                 </div>
-                <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-[#E5E5E3]">
+                <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-[rgba(148,163,184,0.16)]">
                   <div className="h-full rounded-full transition-[width] duration-700" style={{ width: `${h.confiance}%`, backgroundColor: couleurConfiance(h.confiance) }} />
                 </div>
                 <div className="mt-4 space-y-1.5">
                   {h.pour.map((p, i) => (
-                    <div key={i} className="flex items-start gap-2 text-xs text-[#52524F]">
-                      <CheckCircle size={14} weight="fill" className="mt-0.5 shrink-0 text-[#047857]" /> {p}
+                    <div key={i} className="flex items-start gap-2 text-xs text-[#94A3B8]">
+                      <CheckCircle size={14} weight="fill" className="mt-0.5 shrink-0 text-[#34D399]" /> {p}
                     </div>
                   ))}
                   {h.contre.map((c, i) => (
-                    <div key={i} className="flex items-start gap-2 text-xs text-[#52524F]">
-                      <XCircle size={14} weight="fill" className="mt-0.5 shrink-0 text-[#B91C1C]" /> {c}
+                    <div key={i} className="flex items-start gap-2 text-xs text-[#94A3B8]">
+                      <XCircle size={14} weight="fill" className="mt-0.5 shrink-0 text-[#F87171]" /> {c}
                     </div>
                   ))}
                 </div>
-                <div className="mt-4 border-t border-[#E5E5E3] pt-3">
-                  <span className="font-code text-[10px] uppercase tracking-wider text-[#71716D]">Vérifications restantes</span>
+                <div className="mt-4 border-t border-[rgba(148,163,184,0.16)] pt-3">
+                  <span className="font-code text-[10px] uppercase tracking-wider text-[#7C93A8]">Vérifications restantes</span>
                   {h.verifications.map((v, i) => (
-                    <p key={i} className="mt-1 text-xs italic text-[#71716D]">→ {v}</p>
+                    <p key={i} className="mt-1 text-xs italic text-[#7C93A8]">→ {v}</p>
                   ))}
                 </div>
               </div>
             ))}
             {(sit.hypotheses || []).length === 0 && (
-              <p className="text-sm text-[#71716D]">Flore n'a pas encore formulé d'hypothèse pour cette situation.</p>
+              <p className="text-sm text-[#7C93A8]">Flore n'a pas encore formulé d'hypothèse pour cette situation.</p>
             )}
           </div>
         </section>
       </div>
 
       {/* Zone 4 — La conclusion */}
-      <section className="rise mt-10 rounded-xl border border-[#E5E5E3] bg-white p-6" data-testid="zone-conclusion" style={{ animationDelay: "200ms" }}>
+      <section className="rise mt-10 rounded-xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-6" data-testid="zone-conclusion" style={{ animationDelay: "200ms" }}>
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="flex items-center gap-2 font-code text-[10px] uppercase tracking-[0.3em] text-[#71716D]">
-            <Lightning size={14} className="text-[#3730A3]" /> Conclusion — synthèse Flore
+          <h2 className="flex items-center gap-2 font-code text-[10px] uppercase tracking-[0.3em] text-[#7C93A8]">
+            <Lightning size={14} className="text-[#9B87F5]" /> Conclusion — synthèse Flore
           </h2>
           <TrustBadges indicateurs={sit.indicateurs} />
         </div>
 
-        <p className="mt-4 max-w-3xl text-sm leading-relaxed text-[#3F3F3C]" data-testid="conclusion-synthese">{sit.synthese}</p>
+        <p className="mt-4 max-w-3xl text-sm leading-relaxed text-[#D8E2EA]" data-testid="conclusion-synthese">{sit.synthese}</p>
 
         {(sit.contributions || []).length > 0 && (
           <div className="mt-5">
-            <div className="font-code text-[10px] uppercase tracking-[0.2em] text-[#71716D]">Contributions</div>
+            <div className="font-code text-[10px] uppercase tracking-[0.2em] text-[#7C93A8]">Contributions</div>
             <ul className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
               {sit.contributions.map((c, i) => (
                 <li key={i} className="flex items-baseline gap-2 text-sm">
                   <span className="shrink-0 rounded border px-1.5 py-0.5 font-code text-[10px]" style={{ color: couleurDomaine(c.domaine), borderColor: `${couleurDomaine(c.domaine)}44`, backgroundColor: `${couleurDomaine(c.domaine)}12` }}>
                     {c.jumeau}
                   </span>
-                  <span className="text-[#52524F]">{c.texte}</span>
+                  <span className="text-[#94A3B8]">{c.texte}</span>
                 </li>
               ))}
             </ul>
@@ -307,32 +307,32 @@ export default function InvestigationDetail() {
 
         {(sit.preuves || []).length > 0 && (
           <div className="mt-5" data-testid="conclusion-preuves">
-            <div className="font-code text-[10px] uppercase tracking-[0.2em] text-[#71716D]">Preuves</div>
+            <div className="font-code text-[10px] uppercase tracking-[0.2em] text-[#7C93A8]">Preuves</div>
             <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
               {sit.preuves.map((p, i) => (
-                <div key={i} className="rounded-md border border-[#E5E5E3] bg-white px-3 py-2 text-xs text-[#52524F]" data-testid={`preuve-${i}`}>
-                  <span className="font-code text-[11px] text-[#111110]">{p.source}</span> — {p.detail}
+                <div key={i} className="rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-3 py-2 text-xs text-[#94A3B8]" data-testid={`preuve-${i}`}>
+                  <span className="font-code text-[11px] text-[#F2F6F8]">{p.source}</span> — {p.detail}
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        <div className="mt-6 border-t border-[#E5E5E3] pt-5">
+        <div className="mt-6 border-t border-[rgba(148,163,184,0.16)] pt-5">
           {sit.decision ? (
-            <div className="flex items-center gap-2 text-sm text-[#047857]" data-testid="decision-prise">
+            <div className="flex items-center gap-2 text-sm text-[#34D399]" data-testid="decision-prise">
               <SealCheck size={18} weight="fill" /> Décision humaine : {sit.decision}
             </div>
           ) : (
             <>
-              <div className="font-code text-[10px] uppercase tracking-[0.2em] text-[#71716D]">La décision vous appartient</div>
+              <div className="font-code text-[10px] uppercase tracking-[0.2em] text-[#7C93A8]">La décision vous appartient</div>
               <div className="mt-3 flex flex-wrap gap-2">
                 {(sit.actions_proposees || []).map((a, i) => (
                   <button
                     key={i}
                     onClick={() => decider(a)}
                     data-testid={`decision-action-${i}`}
-                    className="rounded-md bg-[#3730A3] px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#4338CA]"
+                    className="rounded-md bg-[#9B87F5] px-3 py-2 text-xs font-semibold text-[#071019] transition-colors hover:bg-[#B4A5F7]"
                   >
                     {a}
                   </button>
@@ -340,14 +340,14 @@ export default function InvestigationDetail() {
                 <button
                   onClick={() => navigate("/change-lab")}
                   data-testid="decision-changelab-btn"
-                  className="flex items-center gap-1.5 rounded-md border border-[#E5E5E3] px-3 py-2 text-xs text-[#3F3F3C] transition-colors hover:border-[#3730A3]/50 hover:text-[#111110]"
+                  className="flex items-center gap-1.5 rounded-md border border-[rgba(148,163,184,0.16)] px-3 py-2 text-xs text-[#D8E2EA] transition-colors hover:border-[#9B87F5]/50 hover:text-[#F2F6F8]"
                 >
                   <Flask size={14} /> Ouvrir dans Change Lab
                 </button>
                 <button
                   onClick={() => decider("Synthèse rejetée")}
                   data-testid="decision-rejeter-btn"
-                  className="flex items-center gap-1.5 rounded-md border border-[#E5E5E3] px-3 py-2 text-xs text-[#52524F] transition-colors hover:border-[#B91C1C]/50 hover:text-[#B91C1C]"
+                  className="flex items-center gap-1.5 rounded-md border border-[rgba(148,163,184,0.16)] px-3 py-2 text-xs text-[#94A3B8] transition-colors hover:border-[#F87171]/50 hover:text-[#F87171]"
                 >
                   <Prohibit size={14} /> Rejeter la synthèse
                 </button>

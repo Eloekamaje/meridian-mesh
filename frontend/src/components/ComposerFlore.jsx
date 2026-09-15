@@ -90,9 +90,9 @@ export default function ComposerFlore({ placeholder = "Demandez à Flore…", co
         data-testid={`${testidPrefix}-deplie`}
         className="glass flex w-full items-center gap-2 rounded-full px-4 py-2.5 text-left shadow-lg transition-shadow hover:shadow-xl"
       >
-        <Sparkle size={13} weight="fill" className="shrink-0 text-[#3730A3]" />
-        <span className="flex-1 text-sm text-[#71716D]">{placeholder}</span>
-        <PaperPlaneTilt size={13} className="shrink-0 text-[#71716D]" />
+        <Sparkle size={13} weight="fill" className="shrink-0 text-[#9B87F5]" />
+        <span className="flex-1 text-sm text-[#7C93A8]">{placeholder}</span>
+        <PaperPlaneTilt size={13} className="shrink-0 text-[#7C93A8]" />
       </button>
     );
   }
@@ -113,7 +113,7 @@ export default function ComposerFlore({ placeholder = "Demandez à Flore…", co
             );
           })}
           {chips.map((c) => (
-            <span key={c.label} className="flex items-center gap-1 rounded-full border border-[#E5E5E3] bg-[#F7F7F6] px-2 py-0.5 font-code text-[10px] text-[#52524F]">
+            <span key={c.label} className="flex items-center gap-1 rounded-full border border-[rgba(148,163,184,0.16)] bg-[rgba(148,163,184,0.07)] px-2 py-0.5 font-code text-[10px] text-[#94A3B8]">
               {c.label}
               <button onClick={() => setChips(chips.filter((x) => x.label !== c.label))} className="opacity-60 hover:opacity-100" aria-label={`Retirer ${c.label}`}><X size={10} /></button>
             </span>
@@ -121,7 +121,7 @@ export default function ComposerFlore({ placeholder = "Demandez à Flore…", co
         </div>
       )}
 
-      <div className="rounded-2xl border border-[#E5E5E3] bg-white shadow-sm transition-colors focus-within:border-[#3730A3]/50" ref={refMenus}>
+      <div className="rounded-2xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] shadow-sm transition-colors focus-within:border-[#9B87F5]/50" ref={refMenus}>
         <textarea
           value={texte}
           onChange={(e) => setTexte(e.target.value)}
@@ -129,12 +129,12 @@ export default function ComposerFlore({ placeholder = "Demandez à Flore…", co
           placeholder={placeholder}
           rows={compact ? 1 : 2}
           data-testid={`${testidPrefix}-input`}
-          className="w-full resize-none rounded-t-2xl bg-transparent px-4 pt-3 text-sm text-[#111110] placeholder:text-[#71716D] focus:outline-none"
+          className="w-full resize-none rounded-t-2xl bg-transparent px-4 pt-3 text-sm text-[#F2F6F8] placeholder:text-[#7C93A8] focus:outline-none"
         />
         <div className="relative flex items-center gap-1.5 px-3 pb-2.5">
           {/* + Contexte */}
           <div className="relative">
-            <button onClick={() => { setMenuContexte((m) => !m); setMenuCapacites(false); }} data-testid={`${testidPrefix}-contexte-btn`} className="flex items-center gap-1 rounded-full border border-[#E5E5E3] px-2.5 py-1 text-[11px] text-[#52524F] transition-colors hover:border-[#D4D4D0] hover:text-[#111110]">
+            <button onClick={() => { setMenuContexte((m) => !m); setMenuCapacites(false); }} data-testid={`${testidPrefix}-contexte-btn`} className="flex items-center gap-1 rounded-full border border-[rgba(148,163,184,0.16)] px-2.5 py-1 text-[11px] text-[#94A3B8] transition-colors hover:border-[#41576D] hover:text-[#F2F6F8]">
               <Plus size={12} /> Contexte
             </button>
             {menuContexte && (
@@ -145,7 +145,7 @@ export default function ComposerFlore({ placeholder = "Demandez à Flore…", co
                   ["Période : 30 derniers jours", true, () => ajouterChip("30 derniers jours")],
                   ["Actualité du Brief", true, () => ajouterChip("Actualité du Brief")],
                 ].filter(([, ok]) => ok).map(([label, , fn]) => (
-                  <button key={label} onClick={fn} data-testid={`${testidPrefix}-ctx-${label.slice(0, 16)}`} className="w-full rounded px-2.5 py-1.5 text-left text-[11px] text-[#52524F] hover:bg-[#F0F0EE] hover:text-[#111110]">
+                  <button key={label} onClick={fn} data-testid={`${testidPrefix}-ctx-${label.slice(0, 16)}`} className="w-full rounded px-2.5 py-1.5 text-left text-[11px] text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]">
                     {label}
                   </button>
                 ))}
@@ -154,31 +154,31 @@ export default function ComposerFlore({ placeholder = "Demandez à Flore…", co
           </div>
           {/* Capacités */}
           <div className="relative">
-            <button onClick={() => { setMenuCapacites((m) => !m); setMenuContexte(false); }} data-testid={`${testidPrefix}-capacites-btn`} className="flex items-center gap-1 rounded-full border border-[#E5E5E3] px-2.5 py-1 text-[11px] text-[#52524F] transition-colors hover:border-[#D4D4D0] hover:text-[#111110]">
+            <button onClick={() => { setMenuCapacites((m) => !m); setMenuContexte(false); }} data-testid={`${testidPrefix}-capacites-btn`} className="flex items-center gap-1 rounded-full border border-[rgba(148,163,184,0.16)] px-2.5 py-1 text-[11px] text-[#94A3B8] transition-colors hover:border-[#41576D] hover:text-[#F2F6F8]">
               <SquaresFour size={12} /> Capacités
             </button>
             {menuCapacites && (
               <div className="glass absolute bottom-9 left-0 z-40 w-60 rounded-xl p-1.5" data-testid={`${testidPrefix}-capacites-menu`}>
                 {CAPACITES.map(({ id, label, icon: Icon }) => (
-                  <button key={id} onClick={() => capacite(id)} data-testid={`${testidPrefix}-cap-${id}`} className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] text-[#52524F] hover:bg-[#F0F0EE] hover:text-[#111110]">
-                    <Icon size={13} className="text-[#3730A3]" /> {label}
+                  <button key={id} onClick={() => capacite(id)} data-testid={`${testidPrefix}-cap-${id}`} className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]">
+                    <Icon size={13} className="text-[#9B87F5]" /> {label}
                   </button>
                 ))}
               </div>
             )}
           </div>
-          <button onClick={() => ajouterChip("Écarts au BCM")} data-testid={`${testidPrefix}-ecarts-btn`} title="Contexte : écarts détectés" className="flex items-center gap-1 rounded-full border border-[#E5E5E3] px-2.5 py-1 text-[11px] text-[#52524F] transition-colors hover:border-[#D4D4D0] hover:text-[#111110]">
+          <button onClick={() => ajouterChip("Écarts au BCM")} data-testid={`${testidPrefix}-ecarts-btn`} title="Contexte : écarts détectés" className="flex items-center gap-1 rounded-full border border-[rgba(148,163,184,0.16)] px-2.5 py-1 text-[11px] text-[#94A3B8] transition-colors hover:border-[#41576D] hover:text-[#F2F6F8]">
             <Warning size={12} /> Écarts
           </button>
-          <button onClick={() => toast.info("La dictée vocale arrive prochainement.")} data-testid={`${testidPrefix}-micro`} title="Dicter (bientôt)" className="flex h-7 w-7 items-center justify-center rounded-full border border-[#E5E5E3] text-[#71716D] transition-colors hover:text-[#111110]">
+          <button onClick={() => toast.info("La dictée vocale arrive prochainement.")} data-testid={`${testidPrefix}-micro`} title="Dicter (bientôt)" className="flex h-7 w-7 items-center justify-center rounded-full border border-[rgba(148,163,184,0.16)] text-[#7C93A8] transition-colors hover:text-[#F2F6F8]">
             <Microphone size={13} />
           </button>
           {flottant && (
-            <button onClick={() => setReplie(true)} data-testid={`${testidPrefix}-replie`} title="Replier la barre" className="flex h-7 w-7 items-center justify-center rounded-full border border-[#E5E5E3] text-[#71716D] transition-colors hover:text-[#111110]">
+            <button onClick={() => setReplie(true)} data-testid={`${testidPrefix}-replie`} title="Replier la barre" className="flex h-7 w-7 items-center justify-center rounded-full border border-[rgba(148,163,184,0.16)] text-[#7C93A8] transition-colors hover:text-[#F2F6F8]">
               <CaretDown size={13} />
             </button>
           )}
-          <button onClick={envoyer} disabled={!texte.trim()} data-testid={`${testidPrefix}-envoyer`} title="Envoyer" className="ml-auto flex h-8 w-8 items-center justify-center rounded-full bg-[#3730A3] text-white transition-colors hover:bg-[#4338CA] disabled:opacity-30">
+          <button onClick={envoyer} disabled={!texte.trim()} data-testid={`${testidPrefix}-envoyer`} title="Envoyer" className="ml-auto flex h-8 w-8 items-center justify-center rounded-full bg-[#9B87F5] text-[#071019] transition-colors hover:bg-[#B4A5F7] disabled:opacity-30">
             <PaperPlaneTilt size={14} weight="fill" />
           </button>
         </div>

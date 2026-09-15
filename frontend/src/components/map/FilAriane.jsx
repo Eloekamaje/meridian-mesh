@@ -6,7 +6,7 @@ export default function FilAriane({ domaineActif, selection, revenirSelection, a
     <div className="glass pointer-events-auto flex items-center gap-2 rounded-xl px-4 py-2" data-testid="breadcrumb">
       <button
         onClick={ajusterVue}
-        className="text-xs text-[#52524F] transition-colors hover:text-[#111110]"
+        className="text-xs text-[#94A3B8] transition-colors hover:text-[#F2F6F8]"
         data-testid="breadcrumb-mesh"
         title="Ajuster à la vue — tout le Mesh"
       >
@@ -14,8 +14,8 @@ export default function FilAriane({ domaineActif, selection, revenirSelection, a
       </button>
       {domaineActif && (
         <>
-          <span className="text-[#71716D]">›</span>
-          <span className="text-xs font-semibold text-[#111110]" data-testid="breadcrumb-domaine">
+          <span className="text-[#7C93A8]">›</span>
+          <span className="text-xs font-semibold text-[#F2F6F8]" data-testid="breadcrumb-domaine">
             Domaine {domaineActif}
           </span>
         </>
@@ -24,7 +24,7 @@ export default function FilAriane({ domaineActif, selection, revenirSelection, a
         <button
           onClick={revenirSelection}
           data-testid="nav-selection"
-          className="rounded-md border border-[#E5E5E3] px-2 py-0.5 font-code text-[9px] text-[#52524F] transition-colors hover:border-[#3730A3]/50 hover:text-[#111110]"
+          className="rounded-md border border-[rgba(148,163,184,0.16)] px-2 py-0.5 font-code text-[9px] text-[#94A3B8] transition-colors hover:border-[#9B87F5]/50 hover:text-[#F2F6F8]"
         >
           Revenir à ma sélection ({selection.length})
         </button>

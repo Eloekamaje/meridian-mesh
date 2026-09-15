@@ -54,26 +54,26 @@ export default function OngletTravail({ cas, setCas }) {
               <div key={i}>
                 {i === idxCoupure && idxCoupure > 0 && (
                   <div ref={coupureRef} className="my-2 flex items-center gap-3" data-testid="reprise-coupure">
-                    <span className="h-px flex-1 bg-[#3730A3]/25" />
-                    <span className="font-code text-[9px] uppercase tracking-[0.2em] text-[#3730A3]">Nouveau depuis votre dernière visite</span>
-                    <span className="h-px flex-1 bg-[#3730A3]/25" />
+                    <span className="h-px flex-1 bg-[#9B87F5]/25" />
+                    <span className="font-code text-[9px] uppercase tracking-[0.2em] text-[#9B87F5]">Nouveau depuis votre dernière visite</span>
+                    <span className="h-px flex-1 bg-[#9B87F5]/25" />
                   </div>
                 )}
                 {m.role === "utilisateur" ? (
-                  <p className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-[#EEECFA] px-4 py-2.5 text-sm text-[#1d1d1b]" data-testid={`case-msg-${i}`}>
+                  <p className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-[rgba(155,135,245,0.12)] px-4 py-2.5 text-sm text-[#F2F6F8]" data-testid={`case-msg-${i}`}>
                     {m.texte}
                   </p>
                 ) : (
                   <div className="rise" data-testid={`case-msg-${i}`}>
-                    <div className="flex items-center gap-1.5 font-code text-[9px] uppercase tracking-[0.2em] text-[#312E81]">
+                    <div className="flex items-center gap-1.5 font-code text-[9px] uppercase tracking-[0.2em] text-[#C4B5FD]">
                       <Sparkle size={10} weight="fill" /> Flore
-                      {m.quand && <span className="text-[#71716D] normal-case tracking-normal">· {rel(m.quand)}</span>}
+                      {m.quand && <span className="text-[#7C93A8] normal-case tracking-normal">· {rel(m.quand)}</span>}
                     </div>
-                    <p className="mt-1 whitespace-pre-line text-sm leading-relaxed text-[#1d1d1b]">{m.texte}</p>
+                    <p className="mt-1 whitespace-pre-line text-sm leading-relaxed text-[#F2F6F8]">{m.texte}</p>
                     {(m.contributions || []).length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         {m.contributions.map((c, k) => (
-                          <span key={k} className="rounded-full border border-[#E5E5E3] bg-white px-2 py-0.5 font-code text-[9px] text-[#52524F]">
+                          <span key={k} className="rounded-full border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2 py-0.5 font-code text-[9px] text-[#94A3B8]">
                             {c.jumeau} — {c.texte}
                           </span>
                         ))}
@@ -83,7 +83,7 @@ export default function OngletTravail({ cas, setCas }) {
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         {m.propositions.map((p, k) => (
                           <button key={k} onClick={() => setNouveauMsg(p.question || p.label)} data-testid={`case-prop-${i}-${k}`}
-                            className="rounded-full border border-[#E5E5E3] bg-white px-3 py-1.5 text-[11px] text-[#52524F] transition-colors hover:border-[#3730A3]/40 hover:text-[#3730A3]">
+                            className="rounded-full border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-3 py-1.5 text-[11px] text-[#94A3B8] transition-colors hover:border-[#9B87F5]/40 hover:text-[#9B87F5]">
                             {p.label}
                           </button>
                         ))}
@@ -94,7 +94,7 @@ export default function OngletTravail({ cas, setCas }) {
               </div>
             ))}
             {messages.length === 0 && (
-              <p className="py-6 text-center text-sm text-[#71716D]">La conversation est la mémoire du travail — commencez ci-dessous.</p>
+              <p className="py-6 text-center text-sm text-[#7C93A8]">La conversation est la mémoire du travail — commencez ci-dessous.</p>
             )}
             {envoiMsg && <FloreActivite genre="travail" testid="case-msg-attente" />}
             <div ref={finFilRef} />
@@ -103,9 +103,9 @@ export default function OngletTravail({ cas, setCas }) {
       </div>
 
       {/* Composer ancré — même geste que la création */}
-      <div className="shrink-0 border-t border-[#E5E5E3] bg-[#F7F7F6] px-6 py-3" data-testid="case-composer-zone">
+      <div className="shrink-0 border-t border-[rgba(148,163,184,0.16)] bg-[rgba(148,163,184,0.07)] px-6 py-3" data-testid="case-composer-zone">
         <form onSubmit={envoyer} className="mx-auto max-w-2xl">
-          <div className="flex items-end gap-2 rounded-2xl border border-[#E5E5E3] bg-white px-3 py-2 shadow-sm transition-colors focus-within:border-[#3730A3]/50">
+          <div className="flex items-end gap-2 rounded-2xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-3 py-2 shadow-sm transition-colors focus-within:border-[#9B87F5]/50">
             <textarea
               value={nouveauMsg}
               onChange={(e) => setNouveauMsg(e.target.value)}
@@ -113,10 +113,10 @@ export default function OngletTravail({ cas, setCas }) {
               placeholder="Continuez avec Flore — chaque échange enrichit la mémoire du travail…"
               rows={1}
               data-testid="case-msg-input"
-              className="max-h-32 flex-1 resize-none bg-transparent px-1 py-1.5 text-sm text-[#111110] placeholder:text-[#71716D] focus:outline-none"
+              className="max-h-32 flex-1 resize-none bg-transparent px-1 py-1.5 text-sm text-[#F2F6F8] placeholder:text-[#7C93A8] focus:outline-none"
             />
             <button type="submit" disabled={envoiMsg || !nouveauMsg.trim()} data-testid="case-msg-send-btn" title="Envoyer"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#3730A3] text-white transition-colors hover:bg-[#4338CA] disabled:opacity-30">
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#9B87F5] text-[#071019] transition-colors hover:bg-[#B4A5F7] disabled:opacity-30">
               <PaperPlaneTilt size={14} weight="fill" />
             </button>
           </div>

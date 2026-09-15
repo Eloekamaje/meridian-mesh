@@ -56,6 +56,7 @@ REGIONS = [
     {"id": "reg-risque", "label": "Risque", "x": 960, "y": 150, "w": 340, "h": 320, "couleur": "#F87171", "maturite": {"niveau": "instable", "jumeaux": 5, "relations_emergentes": 3, "zones_inconnues": 1}},
     {"id": "reg-support", "label": "Support", "x": 940, "y": 500, "w": 380, "h": 290, "couleur": "#FB923C", "maturite": {"niveau": "insuffisamment couvert", "jumeaux": 5, "relations_emergentes": 2, "zones_inconnues": 2}},
     {"id": "reg-operations", "label": "Opérations", "x": 60, "y": 560, "w": 340, "h": 260, "couleur": "#38BDF8", "maturite": {"niveau": "partiellement découvert", "jumeaux": 6, "relations_emergentes": 1, "zones_inconnues": 1}},
+    {"id": "reg-a-confirmer", "label": "À confirmer", "x": 1440, "y": 60, "w": 320, "h": 240, "couleur": "#A8A29E", "confirme": False, "maturite": {"niveau": "découvert — non validé", "jumeaux": 3, "relations_emergentes": 2, "zones_inconnues": 3}},
 ]
 
 RELATIONS = [

@@ -37,17 +37,17 @@ export default function FloreActivite({ genre = "defaut", testid = "flore-activi
         return (
           <div key={i} className="rise flex items-center gap-2 font-code text-[11px]" style={{ animationDuration: "180ms" }}>
             {active && !finale ? (
-              <Sparkle size={12} weight="fill" className="animate-pulse text-[#3730A3]" />
+              <Sparkle size={12} weight="fill" className="animate-pulse text-[#9B87F5]" />
             ) : (
-              <Check size={12} weight="bold" className={finale ? "text-[#047857]" : "text-[#71716D]/60"} />
+              <Check size={12} weight="bold" className={finale ? "text-[#34D399]" : "text-[#7C93A8]/60"} />
             )}
-            <span className={active ? (finale ? "font-semibold text-[#047857]" : "text-[#3F3F3C]") : "text-[#71716D]/70"}>
+            <span className={active ? (finale ? "font-semibold text-[#34D399]" : "text-[#D8E2EA]") : "text-[#7C93A8]/70"}>
               Flore {e}
             </span>
             {active && !finale && (
               <span className="flex gap-0.5">
                 {[0, 1, 2].map((d) => (
-                  <span key={d} className="h-1 w-1 animate-bounce rounded-full bg-[#3730A3]/50" style={{ animationDelay: `${d * 150}ms` }} />
+                  <span key={d} className="h-1 w-1 animate-bounce rounded-full bg-[#9B87F5]/50" style={{ animationDelay: `${d * 150}ms` }} />
                 ))}
               </span>
             )}

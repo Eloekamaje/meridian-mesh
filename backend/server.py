@@ -96,7 +96,7 @@ def niveau_au_moins(niveau, seuil):
 def projete_jumeau(j: dict, niveau: str):
     base = {"id": j["id"], "nom": j["nom"], "domaine": j.get("domaine"), "statut": j.get("statut"), "position": j.get("position")}
     if niveau_au_moins(niveau, "resume"):
-        base.update({"mission": j.get("mission"), "sante": j.get("sante"), "couverture": j.get("couverture"), "fraicheur": j.get("fraicheur"), "strates": j.get("strates"), "fraicheur_etat": j.get("fraicheur_etat")})
+        base.update({"mission": j.get("mission"), "sante": j.get("sante"), "couverture": j.get("couverture"), "fraicheur": j.get("fraicheur"), "strates": j.get("strates"), "fraicheur_etat": j.get("fraicheur_etat"), "capacites": j.get("capacites"), "candidat": j.get("candidat")})
     if niveau_au_moins(niveau, "preuves"):
         base["sources"] = j.get("sources")
         base["sources_detail"] = j.get("sources_detail")
@@ -469,7 +469,7 @@ class ActionSituation(BaseModel):
 
 @api_router.post("/situations/{sid}/action")
 async def agir_situation(sid: str, payload: ActionSituation):
-    mapping = {"ignorer": "ignorée", "surveiller": "surveillée", "investiguer": "en investigation", "examiner": None, "coincidence": "classée", "observer": "en observation"}
+    mapping = {"ignorer": "ignorée", "surveiller": "surveillée", "investiguer": "en investigation", "examiner": None, "coincidence": "classée", "observer": "en observation", "qualifier": "qualifiée"}
     if payload.action not in mapping:
         raise HTTPException(400, "Action inconnue")
     nouveau = mapping[payload.action]
@@ -615,6 +615,20 @@ async def liens_selection(sel, aut):
     return internes, externes
 
 
+def preuves_relations(rels, id_vers_nom):
+    # Preuves cliquables reliées à la carte : relation_id permet de centrer et illuminer le trajet
+    return [
+        {
+            "source": r.get("source_decouverte") or "Mesh",
+            "detail": f"{id_vers_nom.get(r['source'], r['source'])} → {id_vers_nom.get(r['cible'], r['cible'])} — {ETAT_REL_LABELS.get(r['etat'], 'confirmée')}",
+            "relation_id": r["id"],
+            "confiance": r.get("confiance"),
+            "quand": r.get("decouverte_quand"),
+        }
+        for r in rels[:4]
+    ]
+
+
 async def reponse_selection(intent, sel, aut, tous, id_vers_nom):
     par_id = {j["id"]: j for j in tous}
     noms = [par_id[j]["nom"] for j in sel if j in par_id]
@@ -669,7 +683,7 @@ async def reponse_selection(intent, sel, aut, tous, id_vers_nom):
                 {"jumeau": par_id[r["source"]]["nom"], "domaine": par_id[r["source"]].get("domaine", ""), "texte": f"Relation vers {id_vers_nom.get(r['cible'], r['cible'])} ({ETAT_REL_LABELS.get(r['etat'], 'confirmée')})"}
                 for r in internes[:3] if r["source"] in par_id
             ],
-            "preuves": [{"source": "Mesh", "detail": f"{len(internes)} relation(s) éclairée(s) sur la carte"}],
+            "preuves": preuves_relations(internes, id_vers_nom),
             "indicateurs": indicateurs,
             "commande_carte": {"type": "relations", "ids": [r["id"] for r in internes]},
         }
@@ -690,7 +704,7 @@ async def reponse_selection(intent, sel, aut, tous, id_vers_nom):
                 if non_conf else
                 f"Aucune relation douteuse autour de {', '.join(noms)} — la zone est entièrement confirmée."
             ),
-            "contributions": [], "preuves": [{"source": "Mesh", "detail": f"{len(non_conf)} relation(s) à l'état observé, supposé, validé A2A ou contesté"}],
+            "contributions": [], "preuves": preuves_relations(non_conf, id_vers_nom) or [{"source": "Mesh", "detail": "Aucune relation douteuse autour de la sélection"}],
             "indicateurs": indicateurs,
         }
         if non_conf:
@@ -711,7 +725,7 @@ async def reponse_selection(intent, sel, aut, tous, id_vers_nom):
             txt += f" Point de vigilance : {nom_rel(risque[0])} ({ETAT_REL_LABELS.get(risque[0]['etat'], '')}) — non confirmée, dans la zone d'impact."
         out = {
             "comportement": "recommander", "reponse": txt,
-            "contributions": [], "preuves": [{"source": "Mesh", "detail": f"{len(externes)} relation(s) entrante(s) ou sortante(s)"}],
+            "contributions": [], "preuves": preuves_relations(externes, id_vers_nom),
             "indicateurs": indicateurs,
             "action": {"route": "/decisions", "label": "Approfondir dans Change Lab"},
         }
@@ -731,7 +745,7 @@ async def reponse_selection(intent, sel, aut, tous, id_vers_nom):
         out = {
             "comportement": "recommander",
             "reponse": ("Points critiques autour de la sélection — " + " ; ".join(elements) + ".") if elements else f"Aucun point critique détecté autour de {', '.join(noms)} — santé nominale, relations confirmées.",
-            "contributions": [], "preuves": [{"source": "Mesh", "detail": "Santé des jumeaux et états des relations croisés"}],
+            "contributions": [], "preuves": preuves_relations(contest, id_vers_nom) or [{"source": "Mesh", "detail": "Santé des jumeaux et états des relations croisés"}],
             "indicateurs": indicateurs,
         }
         if contest:

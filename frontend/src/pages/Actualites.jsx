@@ -18,16 +18,16 @@ const VUES_ACTUS = [
 ];
 
 export const GENRES = {
-  relation: ["Découverte", "#0E7490"],
-  contradiction: ["Contradiction", "#B91C1C"],
-  connaissance: ["Connaissance", "#0369A1"],
-  changement: ["Transformation", "#B45309"],
-  incident: ["Incident", "#B91C1C"],
-  comportement: ["Comportement", "#6D28D9"],
-  phenomene: ["Phénomène possible", "#6D28D9"],
-  travail: ["Travail", "#3730A3"],
-  decision: ["Décision", "#6D28D9"],
-  gouvernance: ["Gouvernance", "#71716D"],
+  relation: ["Découverte", "#25D0C8"],
+  contradiction: ["Contradiction", "#F87171"],
+  connaissance: ["Connaissance", "#58A6FF"],
+  changement: ["Transformation", "#F2B84B"],
+  incident: ["Incident", "#F87171"],
+  comportement: ["Comportement", "#9B87F5"],
+  phenomene: ["Phénomène possible", "#9B87F5"],
+  travail: ["Travail", "#9B87F5"],
+  decision: ["Décision", "#9B87F5"],
+  gouvernance: ["Gouvernance", "#7C93A8"],
 };
 
 const PORTEES = [
@@ -48,7 +48,7 @@ const heure = (iso) => new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digi
 
 function CarteHistoire({ h, vedette, dateCible, estAujourdhui, navigate, mesh }) {
   const [menu, setMenu] = useState(false);
-  const g = GENRES[h.genre] || [h.genre, "#71716D"];
+  const g = GENRES[h.genre] || [h.genre, "#7C93A8"];
   // Les histoires de relation/transformation s'ouvrent en Avant/Après à la date du phénomène
   const jourPhenomene = fmtDateInput(finDeJournee(h.quand));
   const sep = h.liens?.atlas?.includes("?") ? "&" : "?";
@@ -63,20 +63,20 @@ function CarteHistoire({ h, vedette, dateCible, estAujourdhui, navigate, mesh })
   const actionPrincipale = () => {
     if (h.genre === "travail" || h.genre === "decision") {
       return (
-        <button onClick={() => navigate(h.liens.travail)} data-testid={`histoire-reprendre-${h.id}`} className="flex items-center gap-1.5 rounded-md bg-[#3730A3] px-3 py-1.5 text-[11px] font-semibold text-white transition-colors hover:bg-[#4338CA]">
+        <button onClick={() => navigate(h.liens.travail)} data-testid={`histoire-reprendre-${h.id}`} className="flex items-center gap-1.5 rounded-md bg-[#9B87F5] px-3 py-1.5 text-[11px] font-semibold text-[#071019] transition-colors hover:bg-[#B4A5F7]">
           Reprendre <ArrowRight size={11} />
         </button>
       );
     }
     if (h.incertain) {
       return (
-        <button onClick={() => navigate(`/actualites/comprendre/${h.id}`)} data-testid={`histoire-suivre-${h.id}`} className="flex items-center gap-1.5 rounded-md bg-[#6D28D9] px-3 py-1.5 text-[11px] font-semibold text-white transition-colors hover:bg-[#7C3AED]">
+        <button onClick={() => navigate(`/actualites/comprendre/${h.id}`)} data-testid={`histoire-suivre-${h.id}`} className="flex items-center gap-1.5 rounded-md bg-[#9B87F5] px-3 py-1.5 text-[11px] font-semibold text-[#071019] transition-colors hover:bg-[#9B87F5]">
           Suivre la vérification
         </button>
       );
     }
     return (
-      <button onClick={() => navigate(`/actualites/comprendre/${h.id}`)} data-testid={`histoire-comprendre-${h.id}`} className="flex items-center gap-1.5 rounded-md bg-[#3730A3] px-3 py-1.5 text-[11px] font-semibold text-white transition-colors hover:bg-[#4338CA]">
+      <button onClick={() => navigate(`/actualites/comprendre/${h.id}`)} data-testid={`histoire-comprendre-${h.id}`} className="flex items-center gap-1.5 rounded-md bg-[#9B87F5] px-3 py-1.5 text-[11px] font-semibold text-[#071019] transition-colors hover:bg-[#B4A5F7]">
         <Sparkle size={11} weight="fill" /> Comprendre
       </button>
     );
@@ -84,17 +84,17 @@ function CarteHistoire({ h, vedette, dateCible, estAujourdhui, navigate, mesh })
 
   return (
     <article
-      className={`rise rounded-xl border bg-white p-5 transition-colors ${vedette ? "border-[#3730A3]/25 shadow-sm" : "border-[#E5E5E3] hover:border-[#D4D4D0]"}`}
+      className={`rise rounded-xl border bg-[#0F1D28] p-5 transition-colors ${vedette ? "border-[#9B87F5]/25 shadow-sm" : "border-[rgba(148,163,184,0.16)] hover:border-[#41576D]"}`}
       data-testid={`histoire-${h.id}`}
     >
       <div className="flex items-center gap-2 font-code text-[9px] uppercase tracking-[0.2em]">
         <span className={`h-1.5 ${h.incertain ? "w-2.5 rounded-sm border border-dashed" : "w-1.5 rounded-full"}`} style={{ backgroundColor: h.incertain ? "transparent" : g[1], borderColor: g[1] }} />
         <span style={{ color: g[1] }}>{vedette ? `${g[0]} principale` : g[0]}</span>
-        <span className="text-[#71716D]">· {heure(h.quand)}</span>
-        {h.restreinte && <span className="rounded border border-[#B45309]/40 px-1 py-0.5 text-[#B45309]">périmètre partiel</span>}
+        <span className="text-[#7C93A8]">· {heure(h.quand)}</span>
+        {h.restreinte && <span className="rounded border border-[#F2B84B]/40 px-1 py-0.5 text-[#F2B84B]">périmètre partiel</span>}
       </div>
-      <h3 className={`mt-2 font-semibold leading-snug text-[#111110] ${vedette ? "font-display text-lg" : "text-sm"}`}>{h.titre}</h3>
-      {h.recit && <p className={`mt-1.5 leading-relaxed text-[#52524F] ${vedette ? "text-sm" : "text-xs"}`}>{h.recit}</p>}
+      <h3 className={`mt-2 font-semibold leading-snug text-[#F2F6F8] ${vedette ? "font-display text-lg" : "text-sm"}`}>{h.titre}</h3>
+      {h.recit && <p className={`mt-1.5 leading-relaxed text-[#94A3B8] ${vedette ? "text-sm" : "text-xs"}`}>{h.recit}</p>}
 
       <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1">
         {(h.jumeaux || []).slice(0, 5).map((jid) => {
@@ -106,29 +106,29 @@ function CarteHistoire({ h, vedette, dateCible, estAujourdhui, navigate, mesh })
             </span>
           );
         })}
-        {h.confiance && <span className="ml-auto font-code text-[9px] text-[#71716D]">Confiance : {h.confiance}</span>}
+        {h.confiance && <span className="ml-auto font-code text-[9px] text-[#7C93A8]">Confiance : {h.confiance}</span>}
       </div>
 
-      <div className="mt-3 flex items-center gap-2 border-t border-[#F0F0EE] pt-3">
+      <div className="mt-3 flex items-center gap-2 border-t border-[rgba(148,163,184,0.10)] pt-3">
         {actionPrincipale()}
         <div className="relative">
-          <button onClick={() => setMenu((m) => !m)} data-testid={`histoire-menu-${h.id}`} title="Autres actions" className="flex h-7 w-7 items-center justify-center rounded-md border border-[#E5E5E3] text-[#71716D] transition-colors hover:text-[#111110]">
+          <button onClick={() => setMenu((m) => !m)} data-testid={`histoire-menu-${h.id}`} title="Autres actions" className="flex h-7 w-7 items-center justify-center rounded-md border border-[rgba(148,163,184,0.16)] text-[#7C93A8] transition-colors hover:text-[#F2F6F8]">
             <DotsThree size={15} weight="bold" />
           </button>
           {menu && (
             <div className="glass absolute left-0 top-8 z-30 w-52 rounded-xl p-1.5" data-testid={`histoire-menu-panel-${h.id}`}>
               {lienAtlas && (
-                <button onClick={() => navigate(lienAtlas)} data-testid={`histoire-atlas-${h.id}`} className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] text-[#52524F] hover:bg-[#F0F0EE] hover:text-[#111110]">
+                <button onClick={() => navigate(lienAtlas)} data-testid={`histoire-atlas-${h.id}`} className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]">
                   <Compass size={12} /> Voir dans l'Atlas
                 </button>
               )}
               {h.liens?.travail && (
-                <button onClick={() => navigate(h.liens.travail)} data-testid={`histoire-travail-${h.id}`} className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] text-[#52524F] hover:bg-[#F0F0EE] hover:text-[#111110]">
+                <button onClick={() => navigate(h.liens.travail)} data-testid={`histoire-travail-${h.id}`} className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]">
                   <ArrowSquareOut size={12} /> Ouvrir le travail
                 </button>
               )}
               {h.liens?.investigation && (
-                <button onClick={() => navigate(h.liens.investigation)} data-testid={`histoire-investigation-${h.id}`} className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] text-[#52524F] hover:bg-[#F0F0EE] hover:text-[#111110]">
+                <button onClick={() => navigate(h.liens.investigation)} data-testid={`histoire-investigation-${h.id}`} className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]">
                   <ArrowRight size={12} /> Approfondir
                 </button>
               )}
@@ -267,7 +267,7 @@ export default function Actualites() {
         {/* Barre de lecture unique : vues · portées · temps */}
         <header className="rise relative z-30" ref={refCalendrier}>
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex gap-0.5 rounded-lg border border-[#E5E5E3] bg-white p-0.5" data-testid="vues-actualites">
+            <div className="flex gap-0.5 rounded-lg border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-0.5" data-testid="vues-actualites">
               {VUES_ACTUS.map(([id, label]) => {
                 const n = id === "brief" ? null : compteurs?.[id === "a_traiter" ? "a_traiter" : id];
                 return (
@@ -276,12 +276,12 @@ export default function Actualites() {
                     onClick={() => setVue(id)}
                     data-testid={`vue-${id}`}
                     className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                      vue === id ? "bg-[#3730A3] font-semibold text-white" : "text-[#52524F] hover:bg-[#F0F0EE] hover:text-[#111110]"
+                      vue === id ? "bg-[#9B87F5] font-semibold text-[#071019]" : "text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"
                     }`}
                   >
                     {label}
                     {n > 0 && (
-                      <span className={`rounded-full px-1.5 font-code text-[9px] ${vue === id ? "bg-white/25 text-white" : id === "a_traiter" ? "bg-[#B45309] text-white" : "bg-[#F0F0EE] text-[#52524F]"}`} data-testid={`vue-${id}-badge`}>
+                      <span className={`rounded-full px-1.5 font-code text-[9px] ${vue === id ? "bg-[#071019]/30 text-[#F2F6F8]" : id === "a_traiter" ? "bg-[#F2B84B] text-[#071019]" : "bg-[rgba(148,163,184,0.10)] text-[#94A3B8]"}`} data-testid={`vue-${id}-badge`}>
                         {n}
                       </span>
                     )}
@@ -291,22 +291,22 @@ export default function Actualites() {
             </div>
 
             <div className="flex items-center gap-2">
-              <div className="flex gap-0.5 rounded-lg border border-[#E5E5E3] bg-white p-0.5" data-testid="portees" title="Portée — vue limitée à vos autorisations">
+              <div className="flex gap-0.5 rounded-lg border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-0.5" data-testid="portees" title="Portée — vue limitée à vos autorisations">
                 {PORTEES.map(([id, label]) => (
                   <button key={id} onClick={() => setPortee(id)} data-testid={`portee-${id}`}
-                    className={`rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors ${portee === id ? "bg-[#111110] text-white" : "text-[#52524F] hover:bg-[#F0F0EE] hover:text-[#111110]"}`}>
+                    className={`rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors ${portee === id ? "bg-[#F2F6F8] text-[#071019]" : "text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"}`}>
                     {label === "Mon espace" ? "Espace" : label === "Mesh global" ? "Global" : label}
                   </button>
                 ))}
               </div>
-              <div className="relative flex items-center gap-0.5 rounded-lg border border-[#E5E5E3] bg-white p-0.5" data-testid="nav-temps">
-                <button onClick={() => setDecalage((d) => d + 1)} data-testid="date-prec-btn" title="Période précédente" className="flex h-7 w-7 items-center justify-center rounded-md text-[#52524F] transition-colors hover:bg-[#F0F0EE] hover:text-[#111110]">
+              <div className="relative flex items-center gap-0.5 rounded-lg border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-0.5" data-testid="nav-temps">
+                <button onClick={() => setDecalage((d) => d + 1)} data-testid="date-prec-btn" title="Période précédente" className="flex h-7 w-7 items-center justify-center rounded-md text-[#94A3B8] transition-colors hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]">
                   <CaretLeft size={13} />
                 </button>
-                <button onClick={() => setCalendrier((c) => !c)} data-testid="actualites-titre" title="Choisir la période" className="rounded-md px-2 py-1 text-xs font-semibold text-[#111110] transition-colors hover:bg-[#F0F0EE]">
+                <button onClick={() => setCalendrier((c) => !c)} data-testid="actualites-titre" title="Choisir la période" className="rounded-md px-2 py-1 text-xs font-semibold text-[#F2F6F8] transition-colors hover:bg-[rgba(148,163,184,0.10)]">
                   {titreCourt}
                 </button>
-                <button onClick={() => setDecalage((d) => Math.max(0, d - 1))} disabled={decalage === 0} data-testid="date-suiv-btn" title="Période suivante" className="flex h-7 w-7 items-center justify-center rounded-md text-[#52524F] transition-colors hover:bg-[#F0F0EE] hover:text-[#111110] disabled:opacity-30">
+                <button onClick={() => setDecalage((d) => Math.max(0, d - 1))} disabled={decalage === 0} data-testid="date-suiv-btn" title="Période suivante" className="flex h-7 w-7 items-center justify-center rounded-md text-[#94A3B8] transition-colors hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8] disabled:opacity-30">
                   <CaretRight size={13} />
                 </button>
                 {calendrier && (
@@ -314,16 +314,16 @@ export default function Actualites() {
                     <div className="space-y-0.5">
                       {PRESETS.map(([v, l]) => (
                         <button key={v} onClick={() => { appliquerPreset(v); setCalendrier(false); }} data-testid={`preset-${v}`}
-                          className={`w-full rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${presetActif === v ? "bg-[#EEECFA] font-semibold text-[#312E81]" : "text-[#52524F] hover:bg-[#F0F0EE] hover:text-[#111110]"}`}>
+                          className={`w-full rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${presetActif === v ? "bg-[rgba(155,135,245,0.12)] font-semibold text-[#C4B5FD]" : "text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"}`}>
                           {l}
                         </button>
                       ))}
                     </div>
-                    <select value={presetActif} onChange={(e) => { if (e.target.value) { appliquerPreset(e.target.value); setCalendrier(false); } }} data-testid="date-preset-select" className="mt-2 h-8 w-full rounded-md border border-[#E5E5E3] bg-white px-2 text-xs text-[#3F3F3C] focus:outline-none">
+                    <select value={presetActif} onChange={(e) => { if (e.target.value) { appliquerPreset(e.target.value); setCalendrier(false); } }} data-testid="date-preset-select" className="mt-2 h-8 w-full rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2 text-xs text-[#D8E2EA] focus:outline-none">
                       <option value="" label="Période…" />
                       {PRESETS.map(([v, l]) => <option key={v} value={v} label={l} />)}
                     </select>
-                    <label className="mt-2 flex items-center gap-1.5 text-[11px] text-[#71716D]">
+                    <label className="mt-2 flex items-center gap-1.5 text-[11px] text-[#7C93A8]">
                       <CalendarBlank size={13} />
                       <input type="date" value={fmtDateInput(dateCible)} max={fmtDateInput(new Date())}
                         onChange={(e) => {
@@ -333,7 +333,7 @@ export default function Actualites() {
                           setJours(1);
                           setCalendrier(false);
                         }}
-                        data-testid="date-input" className="h-8 w-full rounded-md border border-[#E5E5E3] bg-white px-2 text-xs text-[#3F3F3C] focus:outline-none" />
+                        data-testid="date-input" className="h-8 w-full rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2 text-xs text-[#D8E2EA] focus:outline-none" />
                     </label>
                   </div>
                 )}
@@ -341,22 +341,22 @@ export default function Actualites() {
             </div>
           </div>
           <div className="mt-1.5 flex items-center gap-2">
-            <span className="font-code text-[10px] text-[#71716D]" data-testid="portee-note">
+            <span className="font-code text-[10px] text-[#7C93A8]" data-testid="portee-note">
               Vue limitée à vos autorisations{data?.espace_label ? ` · ${data.espace_label}` : ""}
             </span>
-            {data?.note_portee && <span className="font-code text-[10px] text-[#B45309]" data-testid="portee-avertissement">{data.note_portee}</span>}
+            {data?.note_portee && <span className="font-code text-[10px] text-[#F2B84B]" data-testid="portee-avertissement">{data.note_portee}</span>}
           </div>
         </header>
 
         {vue !== "brief" && (
           <div className="mt-6 space-y-4" data-testid={`panneau-${vue}`}>
-            {initiatives === null && <p className="py-10 text-center font-code text-[11px] text-[#71716D]">Le Mesh prépare ses propositions…</p>}
+            {initiatives === null && <p className="py-10 text-center font-code text-[11px] text-[#7C93A8]">Le Mesh prépare ses propositions…</p>}
             {(initiatives || []).map((init) => (
               <CarteInitiative key={init.id} init={init} mesh={mesh} onChange={initiativeRepondue} />
             ))}
             {initiatives && initiatives.length === 0 && (
-              <div className="rounded-xl border border-dashed border-[#D4D4D0] bg-white p-8 text-center" data-testid={`${vue}-vide`}>
-                <p className="text-sm text-[#52524F]">
+              <div className="rounded-xl border border-dashed border-[#41576D] bg-[#0F1D28] p-8 text-center" data-testid={`${vue}-vide`}>
+                <p className="text-sm text-[#94A3B8]">
                   {vue === "a_traiter" ? "Rien n'attend votre décision — le Mesh vous sollicite seulement quand c'est nécessaire."
                     : vue === "radar" ? "Aucune situation candidate — le Mesh ne détecte rien d'inhabituel dans votre périmètre."
                     : "Aucun phénomène suivi pour le moment."}
@@ -365,20 +365,20 @@ export default function Actualites() {
             )}
             {vue === "suivis" && delegations.length > 0 && (
               <div className="space-y-3" data-testid="delegations-liste">
-                <h2 className="font-code text-[10px] uppercase tracking-[0.25em] text-[#52524F]">Délégations actives</h2>
+                <h2 className="font-code text-[10px] uppercase tracking-[0.25em] text-[#94A3B8]">Délégations actives</h2>
                 {delegations.map((d) => (
-                  <div key={d.id} className="rounded-xl border border-[#E5E5E3] bg-white p-4" data-testid={`delegation-${d.id}`}>
+                  <div key={d.id} className="rounded-xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-4" data-testid={`delegation-${d.id}`}>
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm font-semibold text-[#111110]">{d.tache}</span>
-                      <span className="rounded-full border border-[#047857]/30 bg-[#E8F5E9] px-2 py-0.5 font-code text-[9px] text-[#1B4332]">{d.statut === "active" ? "active" : d.statut}</span>
+                      <span className="text-sm font-semibold text-[#F2F6F8]">{d.tache}</span>
+                      <span className="rounded-full border border-[#34D399]/30 bg-[rgba(52,211,153,0.12)] px-2 py-0.5 font-code text-[9px] text-[#34D399]">{d.statut === "active" ? "active" : d.statut}</span>
                     </div>
-                    <div className="mt-2 grid gap-1.5 font-code text-[10px] text-[#52524F] sm:grid-cols-2">
+                    <div className="mt-2 grid gap-1.5 font-code text-[10px] text-[#94A3B8] sm:grid-cols-2">
                       <span>Périmètre : {(d.jumeaux || []).map((jid) => mesh?.jumeaux.find((x) => x.id === jid)?.nom || jid).join(", ")}</span>
                       <span>Durée : {d.duree} · jusqu'au {new Date(d.jusqu_a).toLocaleString("fr-FR", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })}</span>
                       <span>Sources : {d.sources}</span>
                       <span>Produira : {d.livrable}</span>
                     </div>
-                    <p className="mt-2 border-l-2 border-[#B45309]/40 pl-2.5 text-[11px] italic text-[#B45309]">{d.validation_requise}</p>
+                    <p className="mt-2 border-l-2 border-[#F2B84B]/40 pl-2.5 text-[11px] italic text-[#F2B84B]">{d.validation_requise}</p>
                   </div>
                 ))}
               </div>
@@ -390,18 +390,18 @@ export default function Actualites() {
 
         {/* Consultation historique : le direct est suspendu visuellement */}
         {!estAujourdhui && (
-          <div className="mt-5 flex items-center justify-between rounded-xl border border-[#B45309]/30 bg-[#FFFBEB] px-4 py-2.5" data-testid="banniere-historique">
-            <span className="text-xs text-[#B45309]">
+          <div className="mt-5 flex items-center justify-between rounded-xl border border-[#F2B84B]/30 bg-[rgba(242,184,75,0.10)] px-4 py-2.5" data-testid="banniere-historique">
+            <span className="text-xs text-[#F2B84B]">
               Vous consultez {jours > 1 ? "une période passée" : `le ${dateCible.toLocaleDateString("fr-FR", { day: "numeric", month: "long" })}`} — le direct est suspendu.
             </span>
-            <button onClick={() => appliquerPreset("aujourdhui")} data-testid="retour-aujourdhui-btn" className="rounded-md border border-[#B45309]/40 px-2.5 py-1 text-[11px] font-semibold text-[#B45309] transition-colors hover:bg-[#B45309]/10">
+            <button onClick={() => appliquerPreset("aujourdhui")} data-testid="retour-aujourdhui-btn" className="rounded-md border border-[#F2B84B]/40 px-2.5 py-1 text-[11px] font-semibold text-[#F2B84B] transition-colors hover:bg-[#F2B84B]/10">
               Revenir à aujourd'hui
             </button>
           </div>
         )}
         {estAujourdhui && nouvelles > 0 && (
-          <button onClick={() => { charger(); setNouvelles(0); }} data-testid="nouvelles-actus-btn" className="rise mt-5 flex w-full items-center justify-center gap-2 rounded-xl border border-[#047857]/30 bg-[#E8F5E9] px-4 py-2.5 text-xs font-semibold text-[#1B4332] transition-colors hover:bg-[#D8EEDC]">
-            <span className="pulse-soft h-1.5 w-1.5 rounded-full bg-[#047857]" />
+          <button onClick={() => { charger(); setNouvelles(0); }} data-testid="nouvelles-actus-btn" className="rise mt-5 flex w-full items-center justify-center gap-2 rounded-xl border border-[#34D399]/30 bg-[rgba(52,211,153,0.12)] px-4 py-2.5 text-xs font-semibold text-[#34D399] transition-colors hover:bg-[rgba(52,211,153,0.22)]">
+            <span className="pulse-soft h-1.5 w-1.5 rounded-full bg-[#34D399]" />
             Mesh vivant — {nouvelles} nouvelle{nouvelles > 1 ? "s" : ""} actualité{nouvelles > 1 ? "s" : ""}
           </button>
         )}
@@ -409,18 +409,18 @@ export default function Actualites() {
         {/* Le briefing de Flore — rédigé, adapté au rôle */}
         {data?.briefing && (
           <section className="rise mt-7" data-testid="briefing-flore">
-            <h2 className="font-display text-xl font-bold text-[#111110]">{data.briefing.salutation}</h2>
+            <h2 className="font-display text-xl font-bold text-[#F2F6F8]">{data.briefing.salutation}</h2>
             <div className="mt-1 flex items-center gap-2">
-              <span className="font-code text-[10px] uppercase tracking-[0.2em] text-[#3730A3]">{data.briefing.titre}</span>
-              <span className="rounded-full border border-[#E5E5E3] px-2 py-0.5 font-code text-[9px] text-[#71716D]">{data.briefing.lecture}</span>
+              <span className="font-code text-[10px] uppercase tracking-[0.2em] text-[#9B87F5]">{data.briefing.titre}</span>
+              <span className="rounded-full border border-[rgba(148,163,184,0.16)] px-2 py-0.5 font-code text-[9px] text-[#7C93A8]">{data.briefing.lecture}</span>
             </div>
-            <p className="mt-2.5 text-sm font-medium leading-relaxed text-[#1d1d1b]">{data.briefing.accroche || data.briefing.texte}</p>
-            {data.briefing.detail && <p className="mt-1 text-xs italic text-[#71716D]">{data.briefing.detail}</p>}
+            <p className="mt-2.5 text-sm font-medium leading-relaxed text-[#F2F6F8]">{data.briefing.accroche || data.briefing.texte}</p>
+            {data.briefing.detail && <p className="mt-1 text-xs italic text-[#7C93A8]">{data.briefing.detail}</p>}
             {data.briefing.points.length > 0 && (
               <ul className="mt-2 space-y-1">
                 {data.briefing.points.map((p, i) => (
-                  <li key={i} className="flex gap-2 text-xs text-[#52524F]" data-testid={`briefing-point-${i}`}>
-                    <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-[#3730A3]" />{p}
+                  <li key={i} className="flex gap-2 text-xs text-[#94A3B8]" data-testid={`briefing-point-${i}`}>
+                    <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-[#9B87F5]" />{p}
                   </li>
                 ))}
               </ul>
@@ -429,11 +429,11 @@ export default function Actualites() {
               <button
                 onClick={() => { window.dispatchEvent(new CustomEvent("meridian:flore-ask", { detail: `Résume-moi ${jours > 1 ? "cette période" : "cette journée"} dans le Mesh.` })); ouvrirFlore(); }}
                 data-testid="briefing-explorer-btn"
-                className="flex items-center gap-1.5 rounded-full bg-[#3730A3] px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#4338CA]"
+                className="flex items-center gap-1.5 rounded-full bg-[#9B87F5] px-4 py-2 text-xs font-semibold text-[#071019] transition-colors hover:bg-[#B4A5F7]"
               >
                 <Sparkle size={12} weight="fill" /> Explorer {jours > 1 ? "la période" : "la journée"} avec Flore
               </button>
-              <button onClick={() => navigate(lienAtlasJournee)} data-testid="voir-journee-atlas-btn" className="flex items-center gap-1.5 rounded-full border border-[#0E7490]/30 bg-[#0E7490]/[0.06] px-4 py-2 text-xs font-semibold text-[#0E7490] transition-colors hover:bg-[#0E7490]/15">
+              <button onClick={() => navigate(lienAtlasJournee)} data-testid="voir-journee-atlas-btn" className="flex items-center gap-1.5 rounded-full border border-[#25D0C8]/30 bg-[#25D0C8]/[0.06] px-4 py-2 text-xs font-semibold text-[#25D0C8] transition-colors hover:bg-[#25D0C8]/15">
                 <Compass size={12} /> Voir {jours > 1 ? "la période" : "la journée"} dans l'Atlas
               </button>
             </div>
@@ -442,23 +442,23 @@ export default function Actualites() {
 
         {/* Synthèse de période : pas sept feeds collés */}
         {data?.synthese && (
-          <section className="rise mt-7 rounded-xl border border-[#E5E5E3] bg-white p-5" data-testid="synthese-periode">
-            <div className="font-code text-[10px] uppercase tracking-[0.2em] text-[#71716D]">Synthèse de la période</div>
+          <section className="rise mt-7 rounded-xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-5" data-testid="synthese-periode">
+            <div className="font-code text-[10px] uppercase tracking-[0.2em] text-[#7C93A8]">Synthèse de la période</div>
             <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
               {[["relations", "nouvelles relations"], ["transformations", "transformations"], ["decisions", "décisions prises"], ["surveillance", "points à surveiller"]].map(([k, l]) => (
                 <div key={k}>
-                  <div className="font-display text-2xl font-black text-[#111110]" data-testid={`synthese-${k}`}>{data.synthese[k]}</div>
-                  <div className="font-code text-[9px] uppercase tracking-wider text-[#71716D]">{l}</div>
+                  <div className="font-display text-2xl font-black text-[#F2F6F8]" data-testid={`synthese-${k}`}>{data.synthese[k]}</div>
+                  <div className="font-code text-[9px] uppercase tracking-wider text-[#7C93A8]">{l}</div>
                 </div>
               ))}
             </div>
             {data.synthese.tendance && (
-              <p className="mt-3 border-l-2 border-[#3730A3]/30 pl-3 text-xs italic text-[#3F3F3C]" data-testid="synthese-tendance">
-                <span className="font-code text-[9px] not-italic uppercase tracking-wider text-[#3730A3]">Tendance principale — </span>{data.synthese.tendance}
+              <p className="mt-3 border-l-2 border-[#9B87F5]/30 pl-3 text-xs italic text-[#D8E2EA]" data-testid="synthese-tendance">
+                <span className="font-code text-[9px] not-italic uppercase tracking-wider text-[#9B87F5]">Tendance principale — </span>{data.synthese.tendance}
               </p>
             )}
             <div className="mt-4 flex gap-2">
-              <button onClick={() => navigate(`/atlas?avant-apres=${data.synthese.debut}`)} data-testid="comparer-atlas-btn" className="flex items-center gap-1.5 rounded-md bg-[#3730A3] px-3 py-1.5 text-[11px] font-semibold text-white transition-colors hover:bg-[#4338CA]">
+              <button onClick={() => navigate(`/atlas?avant-apres=${data.synthese.debut}`)} data-testid="comparer-atlas-btn" className="flex items-center gap-1.5 rounded-md bg-[#9B87F5] px-3 py-1.5 text-[11px] font-semibold text-[#071019] transition-colors hover:bg-[#B4A5F7]">
                 <ArrowsLeftRight size={12} /> Comparer le {fmtDate(data.synthese.debut)} et le {fmtDate(data.synthese.fin)}
               </button>
             </div>
@@ -469,7 +469,7 @@ export default function Actualites() {
         <div className="mt-8 space-y-8" data-testid="feed-actualites">
           {sections.map((s) => (
             <section key={s.id} data-testid={`section-${s.id}`}>
-              <h2 className="font-code text-[10px] uppercase tracking-[0.25em] text-[#52524F]">{s.titre}</h2>
+              <h2 className="font-code text-[10px] uppercase tracking-[0.25em] text-[#94A3B8]">{s.titre}</h2>
               <div className="mt-3 space-y-4">
                 {s.histoires.map((h) => (
                   <CarteHistoire key={h.id} h={h} vedette={h.id === vedetteId} dateCible={dateCible} estAujourdhui={estAujourdhui} navigate={navigate} mesh={mesh} />
@@ -479,17 +479,17 @@ export default function Actualites() {
           ))}
 
           {data && histoires.length === 0 && (
-            <div className="rounded-xl border border-dashed border-[#D4D4D0] bg-white p-10 text-center" data-testid="feed-vide">
-              <p className="font-display text-base font-bold text-[#111110]">Rien d'important ne nécessite votre attention.</p>
-              <p className="mt-2 text-xs leading-relaxed text-[#52524F]">
+            <div className="rounded-xl border border-dashed border-[#41576D] bg-[#0F1D28] p-10 text-center" data-testid="feed-vide">
+              <p className="font-display text-base font-bold text-[#F2F6F8]">Rien d'important ne nécessite votre attention.</p>
+              <p className="mt-2 text-xs leading-relaxed text-[#94A3B8]">
                 Le Mesh reste actif : {data.mesh?.jumeaux_actifs ?? "—"} jumeaux actualisés dans votre périmètre, aucune transformation significative sur la période.
               </p>
-              <button onClick={() => navigate("/atlas")} data-testid="explorer-mesh-btn" className="mt-4 inline-flex items-center gap-1.5 rounded-md bg-[#3730A3] px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#4338CA]">
+              <button onClick={() => navigate("/atlas")} data-testid="explorer-mesh-btn" className="mt-4 inline-flex items-center gap-1.5 rounded-md bg-[#9B87F5] px-4 py-2 text-xs font-semibold text-[#071019] transition-colors hover:bg-[#B4A5F7]">
                 <Compass size={12} /> Explorer le Mesh
               </button>
             </div>
           )}
-          {!data && <p className="py-10 text-center font-code text-[11px] text-[#71716D]" data-testid="feed-chargement">Flore prépare votre briefing…</p>}
+          {!data && <p className="py-10 text-center font-code text-[11px] text-[#7C93A8]" data-testid="feed-chargement">Flore prépare votre briefing…</p>}
         </div>
 
         {/* Composer compact — contextualisé au fil d'actualités */}

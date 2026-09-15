@@ -3,12 +3,12 @@ import { construireD, ancreLabel, pointsMarqueurs } from "@/lib/routeur";
 
 // Arête orthogonale — rendue par le moteur de routage dédié (data.points), pas par React Flow
 const STYLES = {
-  observee: { stroke: "#0E7490", strokeWidth: 2, marqueur: "marqueur-teal" },
-  supposee: { stroke: "#D97706", strokeWidth: 1.7, strokeDasharray: "6 6", marqueur: "marqueur-orange" },
-  contestee: { stroke: "#D97706", strokeWidth: 2, strokeDasharray: "6 6", marqueur: "marqueur-orange" },
-  validation: { stroke: "#6D28D9", strokeWidth: 1.8, strokeDasharray: "7 5", marqueur: "marqueur-violet" },
-  obsolete: { stroke: "rgba(17,17,16,0.4)", strokeWidth: 1, strokeDasharray: "2 6", opacity: 0.25, marqueur: "marqueur-ardoise" },
-  confirmee: { stroke: "rgba(17,17,16,0.45)", strokeWidth: 1.4, opacity: 0.75, marqueur: "marqueur-ardoise" },
+  observee: { stroke: "#25D0C8", strokeWidth: 2, marqueur: "marqueur-teal" },
+  supposee: { stroke: "#F2B84B", strokeWidth: 1.7, strokeDasharray: "6 6", marqueur: "marqueur-orange" },
+  contestee: { stroke: "#F2B84B", strokeWidth: 2, strokeDasharray: "6 6", marqueur: "marqueur-orange" },
+  validation: { stroke: "#9B87F5", strokeWidth: 1.8, strokeDasharray: "7 5", marqueur: "marqueur-violet" },
+  obsolete: { stroke: "rgba(148,163,184,0.65)", strokeWidth: 1, strokeDasharray: "2 6", opacity: 0.25, marqueur: "marqueur-ardoise" },
+  confirmee: { stroke: "rgba(148,163,184,0.7)", strokeWidth: 1.4, opacity: 0.75, marqueur: "marqueur-ardoise" },
 };
 
 export default memo(function AreteOrthogonale({ id, data, selected, style: styleProp }) {
@@ -47,6 +47,7 @@ export default memo(function AreteOrthogonale({ id, data, selected, style: style
         strokeWidth={style.strokeWidth}
         strokeDasharray={style.strokeDasharray}
         strokeLinecap="round"
+        className={data.pulse ? "trait-pulse" : undefined}
         opacity={style.opacity ?? 1}
         markerEnd={base.marqueur ? `url(#${base.marqueur})` : undefined}
         markerStart={data.bidi && base.marqueur ? `url(#${base.marqueur})` : undefined}
@@ -54,7 +55,7 @@ export default memo(function AreteOrthogonale({ id, data, selected, style: style
       />
       {/* Point d'arrivée coloré selon le domaine cible — la couleur de l'arête porte le statut, le point porte le domaine */}
       {data.couleurCible && points?.length > 1 && !estompee && (
-        <circle cx={points[points.length - 1].x} cy={points[points.length - 1].y} r={3.2} fill={data.couleurCible} stroke="#fff" strokeWidth={1} style={{ pointerEvents: "none" }} />
+        <circle cx={points[points.length - 1].x} cy={points[points.length - 1].y} r={3.2} fill={data.couleurCible} stroke="#071019" strokeWidth={1} style={{ pointerEvents: "none" }} />
       )}
       {/* Marqueurs directionnels espacés (relation observée) */}
       {!estompee && marqueurs.map((m, i) => (
@@ -62,23 +63,23 @@ export default memo(function AreteOrthogonale({ id, data, selected, style: style
       ))}
       {/* Animation directionnelle : point lumineux discret, uniquement survol/sélection/nouveauté */}
       {anime && (
-        <circle r={2.6} fill="#0E7490">
+        <circle r={2.6} fill="#25D0C8">
           <animateMotion dur="3.2s" repeatCount="indefinite" path={d} />
         </circle>
       )}
       {/* Capsule de libellé sur le segment horizontal le plus long */}
       {afficheLabel && labelPos && (
         <g transform={`translate(${labelPos.x} ${labelPos.y})`} style={{ pointerEvents: "none" }}>
-          <rect x={-(label.length * 3.4 + 10)} y={-9} width={label.length * 6.8 + 20} height={18} rx={9} fill="rgba(255,255,255,0.95)" stroke="#E5E5E3" />
-          <text textAnchor="middle" dominantBaseline="central" fontSize={10} fontFamily="IBM Plex Mono" fill="#3F3F3C">
+          <rect x={-(label.length * 3.4 + 10)} y={-9} width={label.length * 6.8 + 20} height={18} rx={9} fill="rgba(15,29,40,0.95)" stroke="rgba(148,163,184,0.16)" />
+          <text textAnchor="middle" dominantBaseline="central" fontSize={10} fontFamily="IBM Plex Mono" fill="#D8E2EA">
             {label}
           </text>
         </g>
       )}
       {nouvelle && !afficheLabel && labelPos && (
         <g transform={`translate(${labelPos.x} ${labelPos.y})`} style={{ pointerEvents: "none" }}>
-          <rect x={-30} y={-9} width={60} height={18} rx={9} fill="rgba(255,255,255,0.95)" stroke="#0E7490" strokeDasharray="3 3" />
-          <text textAnchor="middle" dominantBaseline="central" fontSize={10} fontFamily="IBM Plex Mono" fill="#0E7490">nouvelle</text>
+          <rect x={-30} y={-9} width={60} height={18} rx={9} fill="rgba(15,29,40,0.95)" stroke="#25D0C8" strokeDasharray="3 3" />
+          <text textAnchor="middle" dominantBaseline="central" fontSize={10} fontFamily="IBM Plex Mono" fill="#25D0C8">nouvelle</text>
         </g>
       )}
     </g>

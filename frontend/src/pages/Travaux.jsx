@@ -10,20 +10,20 @@ import { couleurDomaine } from "@/lib/domaines";
 import { numeroCase } from "@/components/case/utils";
 
 export const TYPES_CASE = {
-  demande: ["Demande", "#3730A3"],
-  changement: ["Changement", "#B45309"],
-  incident: ["Incident", "#B91C1C"],
-  decouverte: ["Découverte", "#0E7490"],
-  decision: ["Décision", "#6D28D9"],
-  conformite: ["Conformité", "#047857"],
-  modernisation: ["Modernisation", "#C2410C"],
+  demande: ["Demande", "#9B87F5"],
+  changement: ["Changement", "#F2B84B"],
+  incident: ["Incident", "#F87171"],
+  decouverte: ["Découverte", "#25D0C8"],
+  decision: ["Décision", "#9B87F5"],
+  conformite: ["Conformité", "#34D399"],
+  modernisation: ["Modernisation", "#FB923C"],
 };
 
 export const STATUTS_CASE = {
-  ouvert: ["Ouvert", "#3730A3"],
-  en_cours: ["En cours", "#B45309"],
-  en_attente: ["En attente", "#64748B"],
-  clos: ["Clos", "#047857"],
+  ouvert: ["Ouvert", "#9B87F5"],
+  en_cours: ["En cours", "#F2B84B"],
+  en_attente: ["En attente", "#7C93A8"],
+  clos: ["Clos", "#34D399"],
 };
 
 const rel = (iso) => {
@@ -37,60 +37,60 @@ const rel = (iso) => {
 // Un travail tient sur une ligne dense : titre, intention, signal, fraîcheur — actions au survol
 function CarteTravail({ c, navigate, setSelection, attention }) {
   const [menu, setMenu] = useState(false);
-  const s = STATUTS_CASE[c.statut] || [c.statut, "#71716D"];
+  const s = STATUTS_CASE[c.statut] || [c.statut, "#7C93A8"];
 
   return (
     <div
       onClick={() => navigate(`/travaux/${c.id}`)}
-      className={`group relative flex cursor-pointer items-center gap-3 rounded-lg border-b border-[#E5E5E3] px-2 py-2.5 transition-colors last:border-b-0 hover:bg-white ${attention ? "border-l-2 border-l-[#B45309]/60" : ""}`}
+      className={`group relative flex cursor-pointer items-center gap-3 rounded-lg border-b border-[rgba(148,163,184,0.16)] px-2 py-2.5 transition-colors last:border-b-0 hover:bg-[#0F1D28] ${attention ? "border-l-2 border-l-[#F2B84B]/60" : ""}`}
       data-testid={`travail-row-${c.id}`}
     >
       <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: s[1] }} title={s[0]} />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
-          <span className="truncate text-sm font-medium text-[#111110]">{c.titre}</span>
+          <span className="truncate text-sm font-medium text-[#F2F6F8]">{c.titre}</span>
           {c.a_revoir && (
-            <span className="shrink-0 rounded border border-[#B91C1C]/40 bg-[#B91C1C]/[0.06] px-1.5 py-px font-code text-[9px] uppercase tracking-wider text-[#B91C1C]" data-testid={`travail-arevoir-${c.id}`}>À revoir</span>
+            <span className="shrink-0 rounded border border-[#F87171]/40 bg-[#F87171]/[0.06] px-1.5 py-px font-code text-[9px] uppercase tracking-wider text-[#F87171]" data-testid={`travail-arevoir-${c.id}`}>À revoir</span>
           )}
           {(c.nb_options_a_trancher || 0) > 0 && (
-            <span className="flex shrink-0 items-center gap-1 rounded border border-[#6D28D9]/30 bg-[#6D28D9]/[0.06] px-1.5 py-px font-code text-[9px] text-[#6D28D9]">
+            <span className="flex shrink-0 items-center gap-1 rounded border border-[#9B87F5]/30 bg-[#9B87F5]/[0.06] px-1.5 py-px font-code text-[9px] text-[#9B87F5]">
               <Flag size={9} /> {c.nb_options_a_trancher} décision{c.nb_options_a_trancher > 1 ? "s" : ""}
             </span>
           )}
         </div>
         <div className="flex items-baseline gap-2">
           {(c.nb_nouveautes || 0) > 0 ? (
-            <p className="truncate text-[11px] text-[#047857]" data-testid={`travail-nouveau-${c.id}`}>
-              <span className="mr-1 inline-block h-1 w-1 rounded-full bg-[#047857]" />
+            <p className="truncate text-[11px] text-[#34D399]" data-testid={`travail-nouveau-${c.id}`}>
+              <span className="mr-1 inline-block h-1 w-1 rounded-full bg-[#34D399]" />
               Nouveau depuis votre dernière visite : {c.nouveaute_texte}
             </p>
           ) : (
-            <p className="truncate text-[11px] text-[#71716D]">{c.objectif || c.resume || "La mémoire s'écrit au fil des échanges."}</p>
+            <p className="truncate text-[11px] text-[#7C93A8]">{c.objectif || c.resume || "La mémoire s'écrit au fil des échanges."}</p>
           )}
         </div>
       </div>
-      <span className="shrink-0 font-code text-[9px] text-[#71716D]" title={`${TYPES_CASE[c.type]?.[0] || c.type} · ${s[0]} · ${c.jumeaux?.length || 0} jumeaux`}>{rel(c.maj_le)}</span>
+      <span className="shrink-0 font-code text-[9px] text-[#7C93A8]" title={`${TYPES_CASE[c.type]?.[0] || c.type} · ${s[0]} · ${c.jumeaux?.length || 0} jumeaux`}>{rel(c.maj_le)}</span>
       <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
         <button
           onClick={(e) => { e.stopPropagation(); navigate(`/travaux/${c.id}`); }}
           data-testid={`travail-continuer-${c.id}`}
-          className="flex items-center gap-1 rounded-md bg-[#3730A3] px-2.5 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-[#4338CA]"
+          className="flex items-center gap-1 rounded-md bg-[#9B87F5] px-2.5 py-1 text-[11px] font-semibold text-[#071019] transition-colors hover:bg-[#B4A5F7]"
         >
           Continuer <ArrowRight size={10} />
         </button>
-        <button onClick={(e) => { e.stopPropagation(); setMenu((m) => !m); }} data-testid={`travail-menu-${c.id}`} title="Autres actions" className="flex h-6 w-6 items-center justify-center rounded-md border border-[#E5E5E3] bg-white text-[#71716D] transition-colors hover:text-[#111110]">
+        <button onClick={(e) => { e.stopPropagation(); setMenu((m) => !m); }} data-testid={`travail-menu-${c.id}`} title="Autres actions" className="flex h-6 w-6 items-center justify-center rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] text-[#7C93A8] transition-colors hover:text-[#F2F6F8]">
           <DotsThree size={14} weight="bold" />
         </button>
       </div>
       {menu && (
         <div className="glass absolute right-2 top-9 z-30 w-52 rounded-xl p-1.5" data-testid={`travail-menu-panel-${c.id}`} onClick={(e) => e.stopPropagation()}>
-          <button onClick={() => navigate(`/travaux/${c.id}?vue=activite`)} data-testid={`travail-apercu-${c.id}`} className="w-full rounded px-2.5 py-1.5 text-left text-[11px] text-[#52524F] hover:bg-[#F0F0EE] hover:text-[#111110]">
+          <button onClick={() => navigate(`/travaux/${c.id}?vue=activite`)} data-testid={`travail-apercu-${c.id}`} className="w-full rounded px-2.5 py-1.5 text-left text-[11px] text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]">
             Reprendre là où vous étiez
           </button>
-          <button onClick={() => { setSelection(c.jumeaux || []); navigate("/atlas"); }} data-testid={`travail-atlas-${c.id}`} className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] text-[#52524F] hover:bg-[#F0F0EE] hover:text-[#111110]">
+          <button onClick={() => { setSelection(c.jumeaux || []); navigate("/atlas"); }} data-testid={`travail-atlas-${c.id}`} className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]">
             <Compass size={12} /> Voir dans l'Atlas
           </button>
-          <p className="border-t border-[#F0F0EE] px-2.5 pt-1.5 font-code text-[9px] text-[#71716D]">
+          <p className="border-t border-[rgba(148,163,184,0.10)] px-2.5 pt-1.5 font-code text-[9px] text-[#7C93A8]">
             {numeroCase(c)} · {TYPES_CASE[c.type]?.[0] || c.type} · {c.jumeaux?.length || 0} jumeau{(c.jumeaux?.length || 0) > 1 ? "x" : ""}
           </p>
         </div>
@@ -140,11 +140,11 @@ export default function Travaux() {
   }, [filtres]);
 
   const BadgeType = ({ type }) => {
-    const t = TYPES_CASE[type] || [type, "#71716D"];
+    const t = TYPES_CASE[type] || [type, "#7C93A8"];
     return <span className="rounded border px-1.5 py-0.5 font-code text-[9px] uppercase tracking-wider" style={{ color: t[1], borderColor: `${t[1]}44`, backgroundColor: `${t[1]}0D` }}>{t[0]}</span>;
   };
   const BadgeStatut = ({ statut }) => {
-    const s = STATUTS_CASE[statut] || [statut, "#71716D"];
+    const s = STATUTS_CASE[statut] || [statut, "#7C93A8"];
     return <span className="flex items-center gap-1.5 text-xs" style={{ color: s[1] }}><span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: s[1] }} />{s[0]}</span>;
   };
   const ChipsJumeaux = ({ ids }) => (
@@ -158,7 +158,7 @@ export default function Travaux() {
           </span>
         );
       })}
-      {(ids || []).length > 3 && <span className="font-code text-[9px] text-[#71716D]">+{ids.length - 3}</span>}
+      {(ids || []).length > 3 && <span className="font-code text-[9px] text-[#7C93A8]">+{ids.length - 3}</span>}
     </div>
   );
 
@@ -166,17 +166,17 @@ export default function Travaux() {
     <div className="h-full overflow-y-auto px-10 py-8 pb-20 sm:px-12" data-testid="travaux-page">
       <div>
         <header className="rise">
-          <div className="font-code text-[10px] uppercase tracking-[0.3em] text-[#3730A3]">Travaux</div>
+          <div className="font-code text-[10px] uppercase tracking-[0.3em] text-[#9B87F5]">Travaux</div>
           <div className="mt-1 flex flex-wrap items-center justify-between gap-3">
-            <h1 className="font-display text-xl font-black tracking-tight text-[#111110]" data-testid="travaux-titre">La mémoire de ce que l'entreprise cherche à comprendre</h1>
+            <h1 className="font-display text-xl font-black tracking-tight text-[#F2F6F8]" data-testid="travaux-titre">La mémoire de ce que l'entreprise cherche à comprendre</h1>
             <div className="flex items-center gap-2">
               <div className="relative">
-                <MagnifyingGlass size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#71716D]" />
+                <MagnifyingGlass size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#7C93A8]" />
                 <input value={recherche} onChange={(e) => setRecherche(e.target.value)} placeholder="Rechercher un travail…" data-testid="recherche-travail"
-                  className="h-8 w-48 rounded-md border border-[#E5E5E3] bg-white pl-7 pr-3 text-xs text-[#111110] placeholder:text-[#71716D] focus:border-[#3730A3]/60 focus:outline-none" />
+                  className="h-8 w-48 rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] pl-7 pr-3 text-xs text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#9B87F5]/60 focus:outline-none" />
               </div>
               <div className="relative">
-                <button onClick={() => setVuesMenu((v) => !v)} data-testid="travaux-vues" className="flex h-8 items-center gap-1.5 rounded-md border border-[#E5E5E3] bg-white px-2.5 text-xs text-[#52524F] transition-colors hover:text-[#111110]">
+                <button onClick={() => setVuesMenu((v) => !v)} data-testid="travaux-vues" className="flex h-8 items-center gap-1.5 rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2.5 text-xs text-[#94A3B8] transition-colors hover:text-[#F2F6F8]">
                   {vue === "liste" ? <Rows size={13} /> : vue === "kanban" ? <KanbanIcon size={13} /> : <ClockCounterClockwise size={13} />}
                   <span className="hidden lg:inline">{vue === "liste" ? "Récits" : vue === "kanban" ? "Kanban" : "Chronologie"}</span>
                   <CaretDown size={10} />
@@ -185,7 +185,7 @@ export default function Travaux() {
                   <div className="glass absolute right-0 top-9 z-30 w-44 rounded-xl p-1.5" data-testid="vues-menu">
                     {[["liste", Rows, "Récits"], ["kanban", KanbanIcon, "Kanban"], ["chrono", ClockCounterClockwise, "Chronologie"]].map(([v, Icon, label]) => (
                       <button key={v} onClick={() => { setVue(v); setVuesMenu(false); }} data-testid={`vue-${v}`}
-                        className={`flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] ${vue === v ? "bg-[#EEECFA] font-semibold text-[#312E81]" : "text-[#52524F] hover:bg-[#F0F0EE] hover:text-[#111110]"}`}>
+                        className={`flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] ${vue === v ? "bg-[rgba(155,135,245,0.12)] font-semibold text-[#C4B5FD]" : "text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"}`}>
                         <Icon size={13} /> {label}
                       </button>
                     ))}
@@ -193,27 +193,27 @@ export default function Travaux() {
                 )}
               </div>
               <button onClick={() => setMesSeulement(!mesSeulement)} data-testid="filtre-mes-travaux"
-                className={`h-8 rounded-full border px-3 text-xs transition-colors ${mesSeulement ? "border-[#3730A3] bg-[#3730A3] text-white" : "border-[#E5E5E3] bg-white text-[#52524F] hover:text-[#111110]"}`}>
+                className={`h-8 rounded-full border px-3 text-xs transition-colors ${mesSeulement ? "border-[#9B87F5] bg-[#9B87F5] text-[#071019]" : "border-[rgba(148,163,184,0.16)] bg-[#0F1D28] text-[#94A3B8] hover:text-[#F2F6F8]"}`}>
                 Mes travaux
               </button>
-              <select value={filtreType} onChange={(e) => setFiltreType(e.target.value)} data-testid="filtre-type-travail" className="h-8 rounded-md border border-[#E5E5E3] bg-white px-2 text-xs text-[#3F3F3C] focus:outline-none">
+              <select value={filtreType} onChange={(e) => setFiltreType(e.target.value)} data-testid="filtre-type-travail" className="h-8 rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2 text-xs text-[#D8E2EA] focus:outline-none">
                 <option value="tous" label="Tous les types" />
                 {Object.entries(TYPES_CASE).map(([k, [l]]) => <option key={k} value={k} label={l} />)}
               </select>
-              <select value={filtreStatut} onChange={(e) => setFiltreStatut(e.target.value)} data-testid="filtre-statut-travail" className="h-8 rounded-md border border-[#E5E5E3] bg-white px-2 text-xs text-[#3F3F3C] focus:outline-none">
+              <select value={filtreStatut} onChange={(e) => setFiltreStatut(e.target.value)} data-testid="filtre-statut-travail" className="h-8 rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2 text-xs text-[#D8E2EA] focus:outline-none">
                 <option value="tous" label="Tous les statuts" />
                 {Object.entries(STATUTS_CASE).map(([k, [l]]) => <option key={k} value={k} label={l} />)}
               </select>
-              <button onClick={() => navigate("/travaux/nouveau")} data-testid="nouveau-travail-btn" title="Nouveau travail — né de la conversation" className="flex h-8 w-8 items-center justify-center rounded-md bg-[#3730A3] text-white transition-colors hover:bg-[#4338CA]">
+              <button onClick={() => navigate("/travaux/nouveau")} data-testid="nouveau-travail-btn" title="Nouveau travail — né de la conversation" className="flex h-8 w-8 items-center justify-center rounded-md bg-[#9B87F5] text-[#071019] transition-colors hover:bg-[#B4A5F7]">
                 <Plus size={14} weight="bold" />
               </button>
             </div>
           </div>
-          <p className="mt-1 font-code text-[10px] text-[#71716D]">{filtres.length} travail{filtres.length > 1 ? "aux" : ""} · la conversation est le contenu, la liste est l'index</p>
+          <p className="mt-1 font-code text-[10px] text-[#7C93A8]">{filtres.length} travail{filtres.length > 1 ? "aux" : ""} · la conversation est le contenu, la liste est l'index</p>
         </header>
 
         {filtres.length === 0 && (
-          <p className="mt-12 text-center text-sm text-[#71716D]" data-testid="travaux-vide">Aucun travail dans ce périmètre — conservez-en un depuis une conversation avec Flore.</p>
+          <p className="mt-12 text-center text-sm text-[#7C93A8]" data-testid="travaux-vide">Aucun travail dans ce périmètre — conservez-en un depuis une conversation avec Flore.</p>
         )}
 
         {/* Vue récits — mémoire narrative regroupée par signification */}
@@ -221,7 +221,7 @@ export default function Travaux() {
           <div className="mt-4 space-y-6" data-testid="travaux-liste">
             {sections.map(([id, titre, liste]) => (
               <section key={id} data-testid={`travaux-section-${id}`}>
-                <h2 className="font-code text-[10px] uppercase tracking-[0.25em] text-[#52524F]">{titre}</h2>
+                <h2 className="font-code text-[10px] uppercase tracking-[0.25em] text-[#94A3B8]">{titre}</h2>
                 <div className="mt-1.5">
                   {liste.map((c) => (
                     <CarteTravail key={c.id} c={c} navigate={navigate} setSelection={setSelection} attention={id === "attention"} />
@@ -238,30 +238,30 @@ export default function Travaux() {
             {Object.entries(STATUTS_CASE).map(([statut, [label, couleur]]) => {
               const colonne = filtres.filter((c) => c.statut === statut);
               return (
-                <div key={statut} className="rounded-xl border border-[#E5E5E3] bg-[#F7F7F6] p-3" data-testid={`kanban-col-${statut}`}>
+                <div key={statut} className="rounded-xl border border-[rgba(148,163,184,0.16)] bg-[rgba(148,163,184,0.07)] p-3" data-testid={`kanban-col-${statut}`}>
                   <div className="flex items-center gap-2 px-1 pb-2">
                     <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: couleur }} />
-                    <span className="font-code text-[10px] uppercase tracking-[0.2em] text-[#52524F]">{label}</span>
-                    <span className="ml-auto font-code text-[10px] text-[#71716D]">{colonne.length}</span>
+                    <span className="font-code text-[10px] uppercase tracking-[0.2em] text-[#94A3B8]">{label}</span>
+                    <span className="ml-auto font-code text-[10px] text-[#7C93A8]">{colonne.length}</span>
                   </div>
                   <div className="space-y-2">
                     {colonne.map((c) => (
-                      <div key={c.id} onClick={() => navigate(`/travaux/${c.id}`)} data-testid={`travail-card-${c.id}`} className="cursor-pointer rounded-lg border border-[#E5E5E3] bg-white p-3 transition-colors hover:border-[#D4D4D0]">
+                      <div key={c.id} onClick={() => navigate(`/travaux/${c.id}`)} data-testid={`travail-card-${c.id}`} className="cursor-pointer rounded-lg border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-3 transition-colors hover:border-[#41576D]">
                         <div className="flex items-start justify-between gap-2">
-                          <div className="text-xs font-semibold leading-snug text-[#111110]">{c.titre}</div>
+                          <div className="text-xs font-semibold leading-snug text-[#F2F6F8]">{c.titre}</div>
                           <div className="flex shrink-0 flex-col items-end gap-1">
                             <BadgeType type={c.type} />
-                            {c.a_revoir && <span className="rounded border border-[#B91C1C]/40 bg-[#B91C1C]/[0.06] px-1.5 py-0.5 font-code text-[9px] uppercase text-[#B91C1C]">À revoir</span>}
+                            {c.a_revoir && <span className="rounded border border-[#F87171]/40 bg-[#F87171]/[0.06] px-1.5 py-0.5 font-code text-[9px] uppercase text-[#F87171]">À revoir</span>}
                           </div>
                         </div>
                         <div className="mt-2"><ChipsJumeaux ids={c.jumeaux} /></div>
-                        <div className="mt-2 flex items-center justify-between font-code text-[9px] text-[#71716D]">
+                        <div className="mt-2 flex items-center justify-between font-code text-[9px] text-[#7C93A8]">
                           <span>{c.nb_decisions} décision{c.nb_decisions > 1 ? "s" : ""} · {c.nb_messages} msg</span>
                           <span>{rel(c.maj_le)}</span>
                         </div>
                       </div>
                     ))}
-                    {colonne.length === 0 && <p className="px-1 py-3 text-center font-code text-[10px] text-[#71716D]">—</p>}
+                    {colonne.length === 0 && <p className="px-1 py-3 text-center font-code text-[10px] text-[#7C93A8]">—</p>}
                   </div>
                 </div>
               );
@@ -273,20 +273,20 @@ export default function Travaux() {
         {vue === "chrono" && filtres.length > 0 && (
           <div className="mt-6" data-testid="travaux-chrono">
             {filtres.map((c) => {
-              const t = TYPES_CASE[c.type] || [c.type, "#71716D"];
+              const t = TYPES_CASE[c.type] || [c.type, "#7C93A8"];
               return (
                 <div key={c.id} className="relative flex gap-4 pb-6 pl-6" data-testid={`chrono-item-${c.id}`}>
-                  <span className="absolute left-0 top-1.5 h-2.5 w-2.5 rounded-full border-2 border-[#F7F7F6]" style={{ backgroundColor: t[1] }} />
-                  <span className="absolute bottom-0 left-[5px] top-4 w-px bg-[#E5E5E3]" />
-                  <div className="w-24 shrink-0 pt-0.5 font-code text-[10px] text-[#52524F]">{new Date(c.maj_le).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" })}</div>
-                  <div onClick={() => navigate(`/travaux/${c.id}`)} className="flex-1 cursor-pointer rounded-lg border border-[#E5E5E3] bg-white p-3.5 transition-colors hover:border-[#D4D4D0]">
+                  <span className="absolute left-0 top-1.5 h-2.5 w-2.5 rounded-full border-2 border-[rgba(148,163,184,0.07)]" style={{ backgroundColor: t[1] }} />
+                  <span className="absolute bottom-0 left-[5px] top-4 w-px bg-[rgba(148,163,184,0.16)]" />
+                  <div className="w-24 shrink-0 pt-0.5 font-code text-[10px] text-[#94A3B8]">{new Date(c.maj_le).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" })}</div>
+                  <div onClick={() => navigate(`/travaux/${c.id}`)} className="flex-1 cursor-pointer rounded-lg border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-3.5 transition-colors hover:border-[#41576D]">
                     <div className="flex items-center gap-2">
                       <BadgeType type={c.type} />
                       <BadgeStatut statut={c.statut} />
-                      <span className="ml-auto font-code text-[9px] text-[#71716D]">{rel(c.maj_le)}</span>
+                      <span className="ml-auto font-code text-[9px] text-[#7C93A8]">{rel(c.maj_le)}</span>
                     </div>
-                    <div className="mt-1.5 text-sm font-semibold text-[#111110]">{c.titre}</div>
-                    {c.objectif && <div className="mt-0.5 text-[11px] text-[#52524F]">{c.objectif}</div>}
+                    <div className="mt-1.5 text-sm font-semibold text-[#F2F6F8]">{c.titre}</div>
+                    {c.objectif && <div className="mt-0.5 text-[11px] text-[#94A3B8]">{c.objectif}</div>}
                   </div>
                 </div>
               );
