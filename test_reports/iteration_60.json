@@ -1,0 +1,31 @@
+{
+  "summary": "Frontend-only test of it60 futuriste style bundle (5 volets + fix Layout critique). All 6 acceptance criteria passed. TELEMETRIE readout at bas-gauche (9px, rgba(124,147,168,0.8), JetBrains Mono, pointer-events:none) shows '—' offmap, 'HORS SECTEUR · X.... · Y.... · Z ...' between membranes, and sector name uppercase (e.g. 'CLIENT') over a domain membrane. FLORE opens without collapsing the map: with panel open [data-testid=system-map] measured 1480x1032 (height preserved, width reduced ~440px — the Google Maps paradigm works). FlorePanel carries classes hud-gauche + hud-violet, hud-reflexion pulse observed during POST /api/aurora/demander, curseur-teletype detected in DOM during typing of last response. Déploiement: 48 .node-deploiement nodes at mount, all 48 react-flow nodes visible after animation; return from /travaux redeploys correctly. HUD: notif-panel carries 'hud' class. Glow-hover: 6/6 travail-row-*, 41/41 jumeau-row-*, 7/7 initiative-* (2 on Radar + 5 on À traiter). Régression: 0 console errors on /atlas /travaux /actualites /jumeaux; 1366px no overflow (scrollWidth==clientWidth==1366); zoom-niveau shows 'Niveau 2 · Domaine'.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Layout.jsx correctly implements flex-row root with FlorePanel as lateral column — the previous flex-col regression that collapsed map height is fixed and verified (1032px height retained with Flore open at 1920x1080).",
+    "CarteInitiative renders only when vue!='brief' on Actualites; glow-hover class correctly applied on all rendered cards.",
+    "TELEMETRIE updates via DOM manipulation (no React re-render), as designed — verified through inner_text reads at multiple coordinates."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100%"},
+  "test_credentials": "none (no auth)",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "It60 style futuriste (télémétrie, HUD biseauté, déploiement cascade, glow-hover, télétype Flore) validated 100%. Verified map dimensions with Flore open: 1480x1032 at 1920x1080 viewport — no height collapse. curseur-teletype only present during typing of last Flore response; observed via MutationObserver polling (visible ~200ms after Enter). initiative-* cards render on Actualites only when vue != 'brief' (click vue-a_traiter or vue-radar first). node-deploiement is applied to all 48 nodes at mount and re-applied on remount when navigating back to /atlas — as intended.",
+  "measurements": {
+    "telemetrie": {"initial": "—", "offmap": "—", "hors_secteur": "HORS SECTEUR · X 0899 · Y 0237 · Z 0.99", "in_client_region": "CLIENT · X 0202 · Y 0278 · Z 0.99", "font_size": "9px", "color": "rgba(124, 147, 168, 0.8)", "pointer_events": "none", "font_family": "JetBrains Mono, monospace"},
+    "map_with_flore_open": {"x": 0, "y": 48, "width": 1480, "height": 1032},
+    "flore_panel_classes": "hud-gauche hud-violet ...",
+    "hud_reflexion_during_load": true,
+    "curseur_teletype_seen": true,
+    "node_deploiement_count": 48,
+    "final_react_flow_nodes": 48,
+    "glow_hover_counts": {"travail-row": 6, "jumeau-row": 41, "initiative_a_traiter": 5, "initiative_radar": 2},
+    "viewport_1366": {"scrollWidth": 1366, "clientWidth": 1366, "overflow": false, "topbar_width": 1366},
+    "console_errors": 0
+  }
+}

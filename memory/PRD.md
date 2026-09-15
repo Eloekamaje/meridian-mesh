@@ -1,5 +1,14 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v62, volet « console stellaire » — 5 améliorations futuristes validées par l'utilisateur)
+- **Télémétrie de navigation** : readout JetBrains Mono bas-gauche de la carte (`data-testid="telemetrie"`) — « SECTEUR · X 0000 · Y 0000 · Z 0.99 » suit le curseur (« HORS SECTEUR » entre membranes, « — » hors carte) ; mise à jour DOM impérative dans `surSurvolCarte` (zéro re-render au pointermove ; réutilise `dansPolygone` de `useNavigationAtlas`).
+- **Panneaux HUD** : coins biseautés (`.hud` / `.hud-gauche` clip-path) sur flore-panel, notif-panel, nav-menu ; lueur violette drop-shadow sur Flore ; **bordure qui pulse pendant sa réflexion** (`.hud-reflexion`).
+- **Déploiement en cascade** : membranes (délai échelonné par hash de domaine) → étoiles des jumeaux (+250 ms) → arêtes en fondu retardé → ciel en fondu lent ; rejoué à chaque retour sur l'Atlas (effet « radar qui s'initialise ») ; respect `prefers-reduced-motion`.
+- **Bordures réactives** `.glow-hover` (lueur cyan au survol) : lignes Travaux, Jumeaux, cartes initiatives.
+- **Flore télétype** : la dernière réponse s'écrit progressivement (curseur ▍ clignotant), anciennes d'un bloc, off si reduced-motion.
+- **FIX CRITIQUE inclus (Layout.jsx)** : ma réécriture v58 avait mis la racine en flex-colonne → le panneau Flore (colonne latérale) volait toute la hauteur et la carte s'effondrait à 0 px à son ouverture. Racine restaurée en flex-ligne (FlorePanel = colonne qui redimensionne la carte). Détecté via warning React Flow #004 + carte vide après réponse Flore.
+- Tests : **it60 → 100 %** (télémétrie mesurée, carte 1480×1032 avec Flore ouvert, cascade de déploiement, glow-hover 6/6 + 41/41 + 7/7, zéro erreur console, 1366 sans débordement).
+
 ## Implémenté (06/2026 — v61, typographie futuriste — retour « police pâle » des collègues)
 Spec via design_agent (`/app/design_guidelines.json`) : remplacement global des familles derrière les classes existantes (aucun composant touché).
 - **Rajdhani** (titres / `font-display`, 500-700) : géométrique et technique, présence forte — titres de pages, MÉRIDIAN, noms de domaines sur la carte.
