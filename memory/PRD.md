@@ -1,5 +1,12 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v58, navigation entièrement dans l'en-tête — barre latérale supprimée)
+Choix utilisateur : suppression totale de la barre latérale ; secondaire (Espaces, Récents, Parcours guidé, Administration) dans un **menu hamburger** (trois traits) à droite de la nav ; liens = icône + libellé avec **pilule violette** sur l'actif.
+- **`Layout.jsx` réécrit** : aside supprimé, structure `Topbar + Outlet` — la carte/pages gagnent toute la largeur.
+- **`Topbar.jsx`** : marque ✦ MÉRIDIAN + nav (Atlas/Actualités/Travaux/Jumeaux, testids `nav-*` conservés) + hamburger `nav-menu-btn`/`nav-menu` (Espaces non globaux, 3 Récents, Parcours guidé, Administration si autorisé) + bouton violet « + Nouveau travail » ; badge périmètre raccourci (« Complet » / « Filtré · N », texte complet en `title`).
+- Responsive : libellés nav sous `lg`, Mesh vivant + fraîcheur + libellé Nouveau travail sous `2xl`, badge dès `lg`. Règle CSS morte `body.atlas-immersif` supprimée.
+- Tests : **it57 → 2 régressions 1366px (badge masqué, overflow) → corrigées → it58 retest 100 %** (1366 et 1920, zéro débordement, zéro erreur console). État de l'Atlas toujours préservé à la navigation.
+
 ## Implémenté (06/2026 — v57, ciel étoilé adouci)
 Retour utilisateur : « les points du ciel sont trop voyants ». Atténuation du `CielEtoile` (fond fixe) : opacités réduites sur les 3 couches (fines 0.14–0.34 / moyennes 0.28–0.52 / brillantes 0.5–0.72, avant 0.25–1.0), halos plus petits et plus faibles (×2.4, α×0.07), scintillement plus rare (35 % → 15 %). Hiérarchie visuelle restaurée : les étoiles des jumeaux (contenu) dominent, le ciel devient atmosphère. Vérifié par capture.
 
