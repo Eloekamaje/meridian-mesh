@@ -18,8 +18,8 @@ export default function RegionNode({ data }) {
 
   return (
     <div
-      style={{ width: data.w, height: data.h, pointerEvents: "none" }}
-      className="relative"
+      style={{ width: data.w, height: data.h, pointerEvents: "none", animationDelay: `${([...String(data.id)].reduce((a, c) => a + c.charCodeAt(0), 0) % 6) * 90}ms` }}
+      className="node-deploiement relative"
       data-testid={`region-${data.id}`}
     >
       <Handle type="target" id="t-l" position={Position.Left} className="!h-0 !w-0 !border-0 !bg-transparent" style={{ top: "50%" }} />

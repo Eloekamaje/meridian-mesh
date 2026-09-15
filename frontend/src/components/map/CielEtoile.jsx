@@ -39,7 +39,7 @@ export default function CielEtoile() {
     <svg
       data-testid="ciel-etoile"
       aria-hidden="true"
-      className="pointer-events-none absolute inset-0 h-full w-full"
+      className="ciel-deploiement pointer-events-none absolute inset-0 h-full w-full"
       style={{ zIndex: 0 }}
     >
       {etoiles.map((e, i) => (

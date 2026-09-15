@@ -181,7 +181,7 @@ export default function Jumeaux() {
               key={j.id}
               onClick={() => navigate(`/jumeaux/${j.id}/revue`)}
               data-testid={`jumeau-row-${j.id}`}
-              className={`rise flex cursor-pointer items-center gap-3 border-b border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-4 py-3 transition-colors last:border-b-0 hover:bg-[rgba(148,163,184,0.07)] ${attention ? "border-l-2 border-l-[#F2B84B]/60" : "border-l-2 border-l-transparent"}`}
+              className={`glow-hover rise flex cursor-pointer items-center gap-3 border-b border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-4 py-3 transition-colors last:border-b-0 hover:bg-[rgba(148,163,184,0.07)] ${attention ? "border-l-2 border-l-[#F2B84B]/60" : "border-l-2 border-l-transparent"}`}
             >
               <input
                 type="checkbox"

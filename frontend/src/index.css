@@ -111,6 +111,34 @@
   50% { opacity: calc(var(--op-base, 0.6) * 0.35); }
 }
 .etoile-scintille { animation: scintillement 4s ease-in-out infinite; }
+
+/* ————— Console stellaire : HUD, lueurs, déploiement, télétype ————— */
+.hud { clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px); }
+.hud-gauche { clip-path: polygon(16px 0, 100% 0, 100% 100%, 0 100%, 0 16px); }
+.hud-violet { filter: drop-shadow(0 0 16px rgba(155, 135, 245, 0.16)); }
+@keyframes pulse-bordure {
+  0%, 100% { border-color: rgba(155, 135, 245, 0.25); }
+  50% { border-color: rgba(155, 135, 245, 0.75); }
+}
+.hud-reflexion { animation: pulse-bordure 1.6s ease-in-out infinite; }
+.glow-hover { transition: box-shadow 0.2s ease, border-color 0.2s ease, background-color 0.2s ease; }
+.glow-hover:hover { box-shadow: 0 0 0 1px rgba(37, 208, 200, 0.3), 0 0 20px rgba(37, 208, 200, 0.12); border-color: rgba(37, 208, 200, 0.4); }
+@keyframes deploiement {
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes apparition-douce {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.node-deploiement { animation: deploiement 0.55s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.react-flow__edges { animation: apparition-douce 0.5s ease-out 0.3s both; }
+.ciel-deploiement { animation: apparition-douce 1.4s ease-out both; }
+@keyframes curseur-clignote { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+.curseur-teletype { animation: curseur-clignote 0.9s step-end infinite; color: #9B87F5; }
+@media (prefers-reduced-motion: reduce) {
+  .node-deploiement, .react-flow__edges, .ciel-deploiement { animation: none; }
+}
 @media (prefers-reduced-motion: reduce) {
   .etoile-scintille { animation: none; }
 }

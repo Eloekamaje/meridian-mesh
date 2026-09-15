@@ -120,7 +120,7 @@ export default function Topbar() {
             <List size={15} weight="bold" />
           </button>
           {menuOuvert && (
-            <div className="glass absolute left-0 top-10 z-50 w-72 rounded-xl p-2" data-testid="nav-menu">
+            <div className="glass hud absolute left-0 top-10 z-50 w-72 rounded-xl p-2" data-testid="nav-menu">
               {/* Mobile : la navigation primaire vit dans ce menu */}
               <div className="pb-1 md:hidden">
                 {NAV.map(({ to, label, icon: Icon, testid }) => (
@@ -278,7 +278,7 @@ export default function Topbar() {
             )}
           </button>
           {panneau && (
-            <div className="glass absolute right-0 top-10 z-50 w-96 max-w-[90vw] rounded-xl p-2" data-testid="notif-panel">
+            <div className="glass hud absolute right-0 top-10 z-50 w-96 max-w-[90vw] rounded-xl p-2" data-testid="notif-panel">
               <div className="flex items-center justify-between px-2 py-1.5">
                 <span className="font-code text-[10px] uppercase tracking-[0.2em] text-[#7C93A8]">Notifications</span>
                 {nonLues > 0 && (

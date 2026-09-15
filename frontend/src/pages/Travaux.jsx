@@ -42,7 +42,7 @@ function CarteTravail({ c, navigate, setSelection, attention }) {
   return (
     <div
       onClick={() => navigate(`/travaux/${c.id}`)}
-      className={`group relative flex cursor-pointer items-center gap-3 rounded-lg border-b border-[rgba(148,163,184,0.16)] px-2 py-2.5 transition-colors last:border-b-0 hover:bg-[#0F1D28] ${attention ? "border-l-2 border-l-[#F2B84B]/60" : ""}`}
+      className={`glow-hover group relative flex cursor-pointer items-center gap-3 rounded-lg border-b border-[rgba(148,163,184,0.16)] px-2 py-2.5 transition-colors last:border-b-0 hover:bg-[#0F1D28] ${attention ? "border-l-2 border-l-[#F2B84B]/60" : ""}`}
       data-testid={`travail-row-${c.id}`}
     >
       <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: s[1] }} title={s[0]} />

@@ -120,7 +120,7 @@ export default function CarteInitiative({ init, mesh, onChange }) {
   };
 
   return (
-    <article className={`rounded-xl border bg-[#0F1D28] p-5 ${traitee ? "border-[rgba(148,163,184,0.16)] opacity-75" : "border-[rgba(148,163,184,0.16)] hover:border-[#41576D]"} transition-colors`} data-testid={`initiative-${init.id}`}>
+    <article className={`glow-hover rounded-xl border bg-[#0F1D28] p-5 ${traitee ? "border-[rgba(148,163,184,0.16)] opacity-75" : "border-[rgba(148,163,184,0.16)] hover:border-[#41576D]"} transition-colors`} data-testid={`initiative-${init.id}`}>
       <div className="flex items-center gap-2 font-code text-[9px] uppercase tracking-[0.2em]">
         <span className="rounded border px-1.5 py-0.5" style={{ color: g[1], borderColor: `${g[1]}44`, backgroundColor: `${g[1]}0D` }} data-testid={`init-genre-${init.id}`}>{g[0]}</span>
         <span className="text-[#7C93A8]">{rel(init.quand)}</span>

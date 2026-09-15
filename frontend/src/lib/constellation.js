@@ -16,7 +16,7 @@ function hacher(texte) {
   return h >>> 0;
 }
 
-function dansPolygone(x, y, poly) {
+export function dansPolygone(x, y, poly) {
   let dedans = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
     const a = poly[i];

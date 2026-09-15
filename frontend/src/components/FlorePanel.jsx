@@ -82,7 +82,32 @@ function LotBar({ lot }) {
   );
 }
 
-function CarteReponse({ data, index, propsEtat, setPropsEtat, justifOuverte, setJustifOuverte, ajouterJumeau, navigate }) {
+// Réponse de Flore en télétype : les caractères s'écrivent progressivement avec curseur
+// lumineux (désactivé si prefers-reduced-motion). Les réponses anciennes s'affichent d'un bloc.
+function TexteTeletype({ texte, actif, testid }) {
+  const reduit = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  const [n, setN] = useState(() => (actif && !reduit ? 0 : (texte || "").length));
+  useEffect(() => {
+    if (!actif || reduit) { setN((texte || "").length); return undefined; }
+    setN(0);
+    const t = setInterval(() => {
+      setN((v) => {
+        if (v >= texte.length) { clearInterval(t); return v; }
+        return Math.min(texte.length, v + 3);
+      });
+    }, 18);
+    return () => clearInterval(t);
+  }, [texte, actif, reduit]);
+  const fini = n >= (texte || "").length;
+  return (
+    <p className="mt-2 text-sm leading-relaxed text-[#D8E2EA]" data-testid={testid}>
+      {(texte || "").slice(0, n)}
+      {!fini && <span className="curseur-teletype">▍</span>}
+    </p>
+  );
+}
+
+function CarteReponse({ data, index, propsEtat, setPropsEtat, justifOuverte, setJustifOuverte, ajouterJumeau, navigate, derniere }) {
   const { commanderCarte, setPreuveSurvolee } = useContexte();
   return (
     <div className="rounded-xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-4" data-testid={`flore-reponse-${index}`}>
@@ -103,7 +128,7 @@ function CarteReponse({ data, index, propsEtat, setPropsEtat, justifOuverte, set
         )}
       </div>
 
-      <p className="mt-2 text-sm leading-relaxed text-[#D8E2EA]" data-testid={`flore-texte-${index}`}>{data.reponse}</p>
+      <TexteTeletype texte={data.reponse} actif={derniere} testid={`flore-texte-${index}`} />
 
       {data.propositions?.some((_, pi) => !propsEtat[`${index}-${pi}`]) && (
         <div className="mt-3" data-testid={`flore-propositions-${index}`}>
@@ -415,7 +440,7 @@ export default function FlorePanel() {
       initial={{ x: 60, opacity: 0 }}
       animate={{ x: 0, opacity: 1 }}
       transition={{ type: "spring", stiffness: 320, damping: 30 }}
-      className="flex h-full w-[440px] shrink-0 flex-col border-l border-[rgba(148,163,184,0.16)] bg-[#0F1D28]/95 backdrop-blur-xl max-sm:fixed max-sm:inset-y-0 max-sm:right-0 max-sm:z-40 max-sm:w-[94vw] max-sm:max-w-[94vw]"
+      className={`hud-gauche hud-violet flex h-full w-[440px] shrink-0 flex-col border-l border-[rgba(148,163,184,0.16)] bg-[#0F1D28]/95 backdrop-blur-xl max-sm:fixed max-sm:inset-y-0 max-sm:right-0 max-sm:z-40 max-sm:w-[94vw] max-sm:max-w-[94vw] ${chargement ? "hud-reflexion" : ""}`}
       data-testid="flore-panel"
     >
       {/* En-tête */}
@@ -595,7 +620,7 @@ export default function FlorePanel() {
               <p className="text-sm text-[#F2F6F8]">{e.question}</p>
             </div>
             <CarteReponse
-              data={e.data} index={i}
+              data={e.data} index={i} derniere={i === echanges.length - 1}
               propsEtat={propsEtat} setPropsEtat={setPropsEtat}
               justifOuverte={justifOuverte} setJustifOuverte={setJustifOuverte}
               ajouterJumeau={ajouterJumeau} navigate={navigate}
