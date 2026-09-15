@@ -9,7 +9,7 @@ export const COUCHES = [
   ["mesh", "Mesh", "#9B87F5"],
 ];
 
-export const NIVEAUX_ZOOM = { 1: "Capacités", 2: "Domaines", 3: "Applications & flux", 4: "Composants & preuves" };
+export const NIVEAUX_ZOOM = { 1: "Global", 2: "Domaine", 3: "Jumeau" };
 
 // Moteur de priorité des labels (façon Google Maps) : en cas de chevauchement,
 // le label le moins prioritaire disparaît. candidats = [{id, x, y, w, h, priorite}]
@@ -647,7 +647,7 @@ export function construireGraphe({
         hidden: entreprise && !j.anonyme ? true : entreprise,
         data: {
           jumeau: j, dim: dims.has(j.id), halo: halo === j.id, evenements: compteurs[j.id] || 0, etape: null, niveau: zoomNiveau,
-          detailVisible: zoomNiveau >= 4 && !j.anonyme && !!cartesVisibles?.has(j.id),
+          detailVisible: zoomNiveau === 3 && zoomFort && !j.anonyme && !!cartesVisibles?.has(j.id),
           detailPosition: cartesVisibles?.get(j.id) || "bas",
           dansSituation: !!couchesCarte.situations && !!situationsJumeaux?.has(j.id),
           enTransformation: !!couchesCarte.transformations && (j.statut === "en construction" || j.statut === "observation"),

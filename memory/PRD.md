@@ -1,5 +1,11 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v55, zoom sémantique à 3 niveaux : Global / Domaine / Jumeau)
+Retour utilisateur : « le zoom ne fonctionne plus comme il faut » — la cause n'était pas fonctionnelle (molette, boutons, niveaux OK en test) mais un **modèle mental** : la carte avait 4 niveaux (Capacités / Domaines / Applications & flux / Composants & preuves) alors que l'utilisateur en attend 3. Refonte :
+- **`useZoomSemantique`** : 3 niveaux — 1 Global (z<0.6) / 2 Domaine (constellation + étoiles) / 3 Jumeau (z>1.15 : mini-robots + relations orthogonales). Plus de niveau 4 nommé : les cartes preuves/strates deviennent une révélation progressive à l'intérieur du niveau Jumeau (`detailVisible` : `zoomNiveau === 3 && zoomFort`, soit z≥1.5).
+- **`NIVEAUX_ZOOM`** = { 1: "Global", 2: "Domaine", 3: "Jumeau" } ; puce zoom : « Niveau 3 · Jumeau · détail des relations » puis « · relations, sources & strates » à zoom profond.
+- Vérifié par captures : N2 étoiles → zoom+ robots (41) avec arêtes orthogonales et étiquettes de relations → zoom- N1 corridors. Molette, boutons +/− et scrollY page OK (aucune fuite de défilement).
+
 ## Implémenté (06/2026 — v54, refonte « constellation » de l'Atlas — image de référence utilisateur)
 L'utilisateur a fourni une maquette (territoires = constellations de points lumineux reliés par des filaments sur ciel de nuit, arcs courbes inter-domaines) et choisi : jumeaux en étoiles au zoom arrière **avec retour du robot au zoom avant**, membranes à ma discrétion (→ voile très atténué conservé), relations courbes **selon le zoom**, noms de domaines : règle inchangée.
 - **Zoom sémantique des jumeaux** (`TwinNode.jsx`, composant `EtoileJumeau`) : niveau 2 = étoile brillante (cœur quasi blanc, halo teinté domaine, ping si actif, glow renforcé si sélectionnée/liée) ; **App ID révélé au survol** (`opacity-0 → group-hover:opacity-100`, espace conservé) ; niveau 3+ = médaillon robot + App ID permanent (inchangé). Même empreinte 64×78 que l'avatar → routage, anti-chevauchement, drag et sélection strictement inchangés. Badges situation/transformation conservés sur l'étoile.
