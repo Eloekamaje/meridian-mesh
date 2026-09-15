@@ -1,5 +1,11 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v56, fondu croisé étoile↔robot + retour à 4 niveaux de zoom)
+Retours utilisateur après v55 : la bascule étoile→robot était trop brutale (« ça va très vite ») et le 4ᵉ niveau (infos du robot au zoom profond) doit exister (« finalement on va à 4 »).
+- **Fondu croisé continu** : `fonduJumeau = clamp((zoomActuel − 0.95) / 0.4)` (bande z 0.95→1.35 centrée sur le seuil 1.15) injecté dans les données des nœuds ; `TwinNode` superpose étoile et robot pendant la bande — le robot naît en fondu + scale 0.72→1, l'étoile s'estompe en gonflant ×1.35 ; l'App ID se révèle progressivement au même rythme. Hors bande, un seul rendu (perf). Ports RF jamais dupliqués (étoile `sansPorts` dès que le robot est présent).
+- **4 niveaux restaurés** (`useZoomSemantique`) : 1 Global / 2 Domaine / 3 Jumeau / 4 Composants & preuves (z>1.9) ; `detailVisible` de nouveau sur `zoomNiveau >= 4` ; puce zoom avec les 4 libellés.
+- Vérifié par captures : milieu de bande = robot fantôme + étoile superposée (fondu visible), N3 robots nets, N4 cartes strates I/C/R/T/M + icônes sources affichées.
+
 ## Implémenté (06/2026 — v55, zoom sémantique à 3 niveaux : Global / Domaine / Jumeau)
 Retour utilisateur : « le zoom ne fonctionne plus comme il faut » — la cause n'était pas fonctionnelle (molette, boutons, niveaux OK en test) mais un **modèle mental** : la carte avait 4 niveaux (Capacités / Domaines / Applications & flux / Composants & preuves) alors que l'utilisateur en attend 3. Refonte :
 - **`useZoomSemantique`** : 3 niveaux — 1 Global (z<0.6) / 2 Domaine (constellation + étoiles) / 3 Jumeau (z>1.15 : mini-robots + relations orthogonales). Plus de niveau 4 nommé : les cartes preuves/strates deviennent une révélation progressive à l'intérieur du niveau Jumeau (`detailVisible` : `zoomNiveau === 3 && zoomFort`, soit z≥1.5).

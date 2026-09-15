@@ -82,17 +82,21 @@ function PointJumeau({ couleur, dashed }) {
 // Niveau 2 « constellation » : le jumeau est une étoile brillante (halo teinté par le
 // domaine, cœur quasi blanc, scintillement si actif). Le robot réapparaît au niveau 3.
 // Même empreinte que l'avatar (h-12) : géométrie et routage strictement inchangés.
-function EtoileJumeau({ couleur, selected, actif, relLiee }) {
+function EtoileJumeau({ couleur, selected, actif, relLiee, sansPorts = false }) {
   const cls = "!h-2 !w-2 !min-w-0 !border-0 !bg-transparent";
   const lumineux = selected || relLiee;
   return (
     <span className="relative flex h-12 w-12 shrink-0 items-center justify-center">
-      <Handle type="target" id="t-l" position={Position.Left} className={cls} style={{ left: -2, top: "46%" }} />
-      <Handle type="source" id="s-l" position={Position.Left} className={cls} style={{ left: -2, top: "46%" }} />
-      <Handle type="target" id="t-r" position={Position.Right} className={cls} style={{ right: -2, top: "46%" }} />
-      <Handle type="source" id="s-r" position={Position.Right} className={cls} style={{ right: -2, top: "46%" }} />
-      <Handle type="target" id="t-t" position={Position.Top} className={cls} style={{ top: -2, left: "46%" }} />
-      <Handle type="source" id="s-t" position={Position.Top} className={cls} style={{ top: -2, left: "46%" }} />
+      {!sansPorts && (
+        <>
+          <Handle type="target" id="t-l" position={Position.Left} className={cls} style={{ left: -2, top: "46%" }} />
+          <Handle type="source" id="s-l" position={Position.Left} className={cls} style={{ left: -2, top: "46%" }} />
+          <Handle type="target" id="t-r" position={Position.Right} className={cls} style={{ right: -2, top: "46%" }} />
+          <Handle type="source" id="s-r" position={Position.Right} className={cls} style={{ right: -2, top: "46%" }} />
+          <Handle type="target" id="t-t" position={Position.Top} className={cls} style={{ top: -2, left: "46%" }} />
+          <Handle type="source" id="s-t" position={Position.Top} className={cls} style={{ top: -2, left: "46%" }} />
+        </>
+      )}
       <span
         className="absolute rounded-full transition-opacity duration-200"
         style={{ width: 38, height: 38, background: `radial-gradient(circle, ${couleur}4D 0%, ${couleur}00 70%)`, opacity: lumineux ? 1 : 0.65 }}
@@ -116,6 +120,8 @@ export default function TwinNode({ data, selected }) {
   const j = data.jumeau;
   const couleur = couleurDomaine(j?.domaine || data.grappe?.domaine);
   const niveau3 = (data.niveau || 2) >= 3;
+  // Fondu croisé continu : 0 = étoile pure, 1 = robot pur (bande z 0.95 → 1.35, centrée sur le seuil)
+  const fondu = data.fondu ?? (niveau3 ? 1 : 0);
 
   // Jumeau hors périmètre : pastille pointillée + résumé au survol uniquement
   if (j?.anonyme) {
@@ -205,10 +211,18 @@ export default function TwinNode({ data, selected }) {
         <Handle type="target" id="t-b" position={Position.Bottom} className="!h-2 !w-2 !min-w-0 !border-0 !bg-transparent" style={{ bottom: -2, left: "46%" }} />
         <Handle type="source" id="s-b" position={Position.Bottom} className="!h-2 !w-2 !min-w-0 !border-0 !bg-transparent" style={{ bottom: -2, left: "46%" }} />
         <span className="relative inline-flex">
-          {niveau3 ? (
-            <AvatarJumeau actif={j.statut === "actif"} selected={selected} grand ports relLiee={data.relLiee} />
-          ) : (
-            <EtoileJumeau couleur={couleur} selected={selected} actif={j.statut === "actif"} relLiee={data.relLiee} />
+          {fondu > 0 && (
+            <span className="inline-flex" style={fondu < 1 ? { opacity: fondu, transform: `scale(${0.72 + fondu * 0.28})` } : undefined}>
+              <AvatarJumeau actif={j.statut === "actif"} selected={selected} grand ports relLiee={data.relLiee} />
+            </span>
+          )}
+          {fondu < 1 && (
+            <span
+              className={fondu > 0 ? "absolute inset-0 flex items-center justify-center" : "inline-flex"}
+              style={fondu > 0 ? { opacity: 1 - fondu, transform: `scale(${1 + fondu * 0.35})` } : undefined}
+            >
+              <EtoileJumeau couleur={couleur} selected={selected} actif={j.statut === "actif"} relLiee={data.relLiee} sansPorts={fondu > 0} />
+            </span>
           )}
           {data.detailPosition === "haut" && carteDetail}
           {data.dansSituation && (
@@ -227,7 +241,8 @@ export default function TwinNode({ data, selected }) {
           )}
         </span>
         <span
-          className={`whitespace-nowrap font-code text-[10px] font-semibold tracking-wide text-[#D8E2EA] transition-all duration-200 group-hover:text-[#25D0C8] ${niveau3 ? "" : "pointer-events-none opacity-0 group-hover:opacity-100"}`}
+          className={`whitespace-nowrap font-code text-[10px] font-semibold tracking-wide text-[#D8E2EA] transition-all duration-200 group-hover:text-[#25D0C8] ${fondu >= 1 ? "" : fondu > 0 ? "pointer-events-none" : "pointer-events-none opacity-0 group-hover:opacity-100"}`}
+          style={fondu > 0 && fondu < 1 ? { opacity: fondu } : undefined}
           data-testid={`twin-nom-${j.id}`}
         >
           {idNumerique(j.id)}

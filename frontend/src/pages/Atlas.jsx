@@ -419,6 +419,8 @@ export default function Atlas() {
       posOverrides, compteurs, halo, selection,
       zoomNiveau, relFocus, focusCarte, domDe, statsRegions, temps,
       zoomFort: zoomActuel >= 1.5,
+      // Fondu croisé étoile ↔ robot : bande progressive centrée sur le seuil de niveau (1.15)
+      fonduJumeau: Math.max(0, Math.min(1, (zoomActuel - 0.95) / 0.4)),
       routesFin, provisoire, tactile: estTactile,
       couchesCarte, situationsJumeaux,
       onMajClic: (id) => {
@@ -1504,7 +1506,8 @@ export default function Atlas() {
         <div className="glass rounded-lg px-3 py-1.5 font-code text-[10px] text-[#94A3B8]" data-testid="zoom-niveau">
           {`Niveau ${zoomNiveau} · ${NIVEAUX_ZOOM[zoomNiveau]}`}
           {zoomNiveau === 1 && " · corridors agrégés"}
-          {zoomNiveau === 3 && (zoomActuel >= 1.5 ? " · relations, sources & strates" : " · détail des relations")}
+          {zoomNiveau === 3 && " · détail des relations"}
+          {zoomNiveau === 4 && " · sources et strates arbitrées par priorité"}
         </div>
       </div>
 
