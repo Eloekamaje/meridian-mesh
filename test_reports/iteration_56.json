@@ -1,0 +1,31 @@
+{
+  "summary": "Frontend-only validation of the Atlas 'constellation' visual refonte (it56). All 6 requested acceptance criteria pass with 0 console JS errors. Niveau 2 renders twins as glowing stars (no robot images), each domain territory contains a decorative constellation (data-testid='constellation-<regionId>', 7 present) with filaments; inter-domain arcs are curved (SVG paths use quadratic 'Q' curves, e.g. 'M 626.6 61 Q 668.2 50.18 709.8 61'); hovering a twin-node reveals its twin-nom (opacity 0 -> 1). Semantic zoom works: level 2 stars -> level 4 shows 41 robot medallions with permanent App IDs -> zoom out restores level 1 corridors then level 2 stars, no visual artefacts. Regressions verified: arc click opens map-relation-detail, lasso (700,600)->(1050,350) shows multi-selection-bar with 7 twins, 'Parler à Flore' opens flore-panel, search 'Paiements' centers the map and opens panneau-jumeau. Ciel étoilé is fixed at pan (bounding rect left=56 before/after pan). Reorg mode: dragging twin 'paiements' in outil-edition mode moves it and the position persists across reload (delta < 1px). /travaux, /actualites, /jumeaux load with 0 console errors.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "verified_flows": [
+    "Niveau 2 default: 41 twin-nodes rendered as stars (0 robot imgs); 7 constellation-<regionId> present",
+    "twin-nom-* opacity 0 -> 1 on hover of twin-node-paiements",
+    "React Flow edges at niveau 2 use quadratic Bézier ('Q') curves (arcs courbes)",
+    "Wheel-zoom-in -> Niveau 4 · Composants & preuves (41 robot imgs reappear)",
+    "Wheel-zoom-out -> Niveau 1 · Capacités · corridors agrégés, then Niveau 2 restored",
+    "Ciel étoilé (data-testid='ciel-etoile') fixed on pan",
+    "Arc click (arete-r1) -> map-relation-detail opens",
+    "Lasso drag -> multi-selection-bar with 7 jumeaux",
+    "btn-parler-flore -> flore-panel opens",
+    "atlas-recherche 'Paiements' + Enter centers and opens panneau-jumeau",
+    "Outil-edition drag of twin-paiements moves it and persists after reload"
+  ],
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "EtoileJumeau (TwinNode.jsx L85-112) keeps the exact 12x12 footprint of the robot avatar — routing/anti-overlap invariant is preserved as documented.",
+    "RegionNode useMemo keys on (data.points, vbW, vbH, data.id, data.couleur) — deterministic constellation rendering confirmed (same layout across reloads).",
+    "twin-nom is pointer-events-none opacity-0 at niveau 2 and revealed via group-hover — correct semantic-zoom UX."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped)", "frontend": "100%"},
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Constellation refonte (it56) is fully validated. Testids added/preserved: constellation-<regionId>, ciel-etoile, twin-node-*, twin-nom-* (hover-only at niveau 2), region-membrane-*, arete-*, map-relation-detail, multi-selection-bar, flore-panel, zoom-niveau. Arcs at niveau 2 use quadratic curves ('Q' in path d). At niveau 3+ robot imgs re-appear and edges become orthogonal (unchanged). Reorg persistence works via localStorage/API — validated across reload."
+}
