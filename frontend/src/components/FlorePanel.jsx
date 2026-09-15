@@ -11,7 +11,10 @@ import { useContexte } from "@/lib/contexte";
 import { useMesh } from "@/lib/mesh";
 
 function contexteDepuis(pathname) {
-  if (pathname.startsWith("/travaux") || pathname.startsWith("/cases")) return "case";
+  // « case » = page DÉTAIL d'un travail uniquement (Flore y est l'onglet Conversation du dossier) ;
+  // la liste /travaux reste un contexte normal où Flore s'ouvre en superposition.
+  if (/^\/(travaux|cases)\/[^/]+/.test(pathname)) return "case";
+  if (pathname.startsWith("/travaux") || pathname.startsWith("/cases")) return "travaux";
   if (pathname.startsWith("/investigations")) return "investigation";
   if (pathname.startsWith("/atlas") || pathname.startsWith("/carte")) return "atlas";
   if (pathname.startsWith("/jumeaux") || pathname.startsWith("/registry") || pathname.startsWith("/administration")) return "jumeaux";

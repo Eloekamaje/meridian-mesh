@@ -1,5 +1,13 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v63, Flore en superposition refermable + fix contexte /travaux)
+Demande utilisateur : le panneau Flore devient une **superposition flottante** (la carte/page ne se redimensionne plus), refermable manuellement ET au clic en dehors.
+- **Overlay** : `fixed bottom-0 right-0 top-12 z-40 w-[440px]` (94 vw sur mobile), ombre portée profonde, coins HUD conservés.
+- **Fermeture au clic extérieur** : listener `mousedown` en **phase de capture** (cause racine : React Flow stoppe la propagation des clics carte — le bubbling ne les voit jamais) ; ignore les clics dans le panneau et sur `btn-parler-flore` (qui bascule). Clic jumeau → Flore se ferme et le détail s'ouvre (exclusion mutuelle existante conservée).
+- **Chrome Atlas découplé** : la recherche ne se replie plus en loupe à l'ouverture de Flore (plus de pression d'espace).
+- **Bug pré-existant corrigé** : `contexteDepuis` assimilait tout `/travaux*` à une page « case » → Flore refusait de s'ouvrir sur la **liste** /travaux. Mapping restreint aux pages détail (`/^\/(travaux|cases)\/[^/]+/`) ; nouveau contexte « travaux » (suggestions → repli « global » côté serveur).
+- Tests : **it61 → 85 %** (overlay + fermetures + mobile 94 vw + recherche dépliée validés ; 1 bug /travaux) → regex corrigée et **auto-vérifiée** (liste ouvre, détail ferme et bloque l'overlay au profit de l'onglet Conversation).
+
 ## Implémenté (06/2026 — v62, volet « console stellaire » — 5 améliorations futuristes validées par l'utilisateur)
 - **Télémétrie de navigation** : readout JetBrains Mono bas-gauche de la carte (`data-testid="telemetrie"`) — « SECTEUR · X 0000 · Y 0000 · Z 0.99 » suit le curseur (« HORS SECTEUR » entre membranes, « — » hors carte) ; mise à jour DOM impérative dans `surSurvolCarte` (zéro re-render au pointermove ; réutilise `dansPolygone` de `useNavigationAtlas`).
 - **Panneaux HUD** : coins biseautés (`.hud` / `.hud-gauche` clip-path) sur flore-panel, notif-panel, nav-menu ; lueur violette drop-shadow sur Flore ; **bordure qui pulse pendant sa réflexion** (`.hud-reflexion`).

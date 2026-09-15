@@ -1,0 +1,30 @@
+{
+  "summary": "Frontend-only test of it61 — Flore transformée en OVERLAY flottant. Résultat : critères principaux OK sauf /travaux (page liste) où Flore refuse d'ouvrir à cause du mapping contexte='case'. SUPERPOSITION Atlas : [data-testid=system-map] garde 1920x1032 avec Flore ouverte (vs 1480 avant it61) — carte non redimensionnée. Panneau flottant 440px à droite (x=1480, y=48, w=440, h=1032), classes hud-gauche + hud-violet + fixed bottom-0 right-0 top-12 z-40. FERMETURES /atlas : clic fond de carte (600,620)=ferme, clic dans panneau=reste ouvert, Escape=ferme, toggle btn-parler-flore=ferme, clic twin-node-paiements=Flore fermée + panneau détail (map-side-panel) ouvert. Le listener mousedown en phase CAPTURE fonctionne (React Flow stoppe bubbling mais capture le voit). RECHERCHE Atlas reste dépliée (atlas-recherche visible avec Flore ouverte). /actualites et /jumeaux : Flore overlay OK, page ne bouge pas, question via flore-input → flore-texte-0 présent, clic dehors ferme. MOBILE 390x844 : panneau=366.6px (94vw), clic dehors ferme. Hauteur system-map à 1920x1080 : 1032px avec Flore ouverte ET fermée (Layout flex-row racine préservé, >700). Zéro erreur console sur /atlas /actualites /jumeaux /travaux.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "FlorePanel + contexteDepuis", "issue": "Sur /travaux (page liste), Flore refuse d'ouvrir : contexteDepuis retourne 'case' pour tout path commençant par /travaux, et FlorePanel renvoie null quand contexte==='case' + useEffect ligne 447 ferme floreOuverte. La review request demande explicitement que Flore ouvre en overlay sur /travaux. Ne concerne que la liste — les pages /travaux/{id} doivent conserver le blocage (Flore = onglet Conversation du dossier).", "selector": "[data-testid=\"btn-parler-flore\"] sur /travaux", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Corriger contexteDepuis (FlorePanel.jsx ligne 14) pour distinguer /travaux (liste — Flore autorisée) de /travaux/{id} (case — Flore doublon). Ex: `if (/^\\/(?:travaux|cases)\\/[^/]+/.test(pathname)) return 'case';` puis mapper /travaux liste sur 'actualites' ou nouveau contexte 'travaux'. Vérifier aussi le useEffect ligne 447 qui ferme floreOuverte : ne doit se déclencher que sur pages case détail."
+  ],
+  "critical_code_review_comments": [
+    "FlorePanel.jsx ligne 460 : les classes du panneau utilisent max-sm:w-[94vw] — validé à 390px (366.6px ≈ 94vw). Bon.",
+    "FlorePanel.jsx ligne 373 : listener mousedown en phase CAPTURE (troisième arg=true) — critique pour contourner React Flow qui stoppe bubbling ; vérifié fonctionnel (clic vide sur carte ferme Flore).",
+    "Atlas.jsx ligne 586-588 : panneauOuvert n'inclut plus floreOuverte, la barre atlas-recherche reste dépliée quand Flore est ouverte — validé.",
+    "Layout.jsx : racine flex-row conservée, FlorePanel en fixed (donc hors flux) → carte 1920x1032 pleine largeur avec Flore ouverte. Bon.",
+    "BUG /travaux : contexteDepuis fait un startsWith trop large. À restreindre à /travaux/{id}."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "85%"},
+  "test_credentials": "none",
+  "seed_data_creation": "none",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Après fix contexteDepuis pour /travaux liste, retester : (1) btn-parler-flore sur /travaux ouvre flore-panel, (2) flore-input fonctionne, (3) navigation /travaux → /travaux/{id} ferme bien Flore (comportement case détail préservé). Tous les autres critères d'it61 sont validés (Atlas overlay, fermetures, mobile 94vw, hauteur carte préservée, 0 erreur console).",
+  "rca of the issue": "Root cause: FlorePanel.jsx contexteDepuis() ligne 14 fait `pathname.startsWith('/travaux')` qui capture à la fois /travaux (liste) et /travaux/{id} (détail). Le retour 'case' est ensuite utilisé par : (a) useEffect ligne 447-449 qui appelle fermerFlore() dès que contexte==='case' et floreOuverte, (b) early return ligne 453 `if (!floreOuverte || contexte === 'case') return null;`. Reproduction : aller sur /travaux, cliquer btn-parler-flore → aucun panneau. Mitigation : rendre le test regex `/^\\/(?:travaux|cases)\\/[^/]+/` pour ne matcher que les pages détail avec un id."
+}
