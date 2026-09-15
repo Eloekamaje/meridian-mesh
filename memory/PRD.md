@@ -1,5 +1,8 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v57, ciel étoilé adouci)
+Retour utilisateur : « les points du ciel sont trop voyants ». Atténuation du `CielEtoile` (fond fixe) : opacités réduites sur les 3 couches (fines 0.14–0.34 / moyennes 0.28–0.52 / brillantes 0.5–0.72, avant 0.25–1.0), halos plus petits et plus faibles (×2.4, α×0.07), scintillement plus rare (35 % → 15 %). Hiérarchie visuelle restaurée : les étoiles des jumeaux (contenu) dominent, le ciel devient atmosphère. Vérifié par capture.
+
 ## Implémenté (06/2026 — v56, fondu croisé étoile↔robot + retour à 4 niveaux de zoom)
 Retours utilisateur après v55 : la bascule étoile→robot était trop brutale (« ça va très vite ») et le 4ᵉ niveau (infos du robot au zoom profond) doit exister (« finalement on va à 4 »).
 - **Fondu croisé continu** : `fonduJumeau = clamp((zoomActuel − 0.95) / 0.4)` (bande z 0.95→1.35 centrée sur le seuil 1.15) injecté dans les données des nœuds ; `TwinNode` superpose étoile et robot pendant la bande — le robot naît en fondu + scale 0.72→1, l'étoile s'estompe en gonflant ×1.35 ; l'App ID se révèle progressivement au même rythme. Hors bande, un seul rendu (perf). Ports RF jamais dupliqués (étoile `sansPorts` dès que le robot est présent).

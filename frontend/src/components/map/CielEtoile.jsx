@@ -21,10 +21,10 @@ export default function CielEtoile() {
       const y = rand() * 100;
       const tirage = rand();
       const couche = tirage < 0.68 ? 0 : tirage < 0.94 ? 1 : 2;
-      const r = couche === 0 ? 0.5 + rand() * 0.4 : couche === 1 ? 0.9 + rand() * 0.45 : 1.4 + rand() * 0.5;
-      const opacite = couche === 0 ? 0.25 + rand() * 0.35 : couche === 1 ? 0.5 + rand() * 0.3 : 0.85 + rand() * 0.15;
+      const r = couche === 0 ? 0.5 + rand() * 0.4 : couche === 1 ? 0.9 + rand() * 0.45 : 1.3 + rand() * 0.4;
+      const opacite = couche === 0 ? 0.14 + rand() * 0.2 : couche === 1 ? 0.28 + rand() * 0.24 : 0.5 + rand() * 0.22;
       const couleur = COULEURS[Math.floor(rand() * COULEURS.length)];
-      const scintille = rand() < 0.35;
+      const scintille = rand() < 0.15;
       liste.push({
         x, y, r, opacite, couleur, scintille,
         duree: 3 + rand() * 4,
@@ -45,7 +45,7 @@ export default function CielEtoile() {
       {etoiles.map((e, i) => (
         <g key={i}>
           {e.halo && (
-            <circle cx={`${e.x}%`} cy={`${e.y}%`} r={e.r * 3} fill={e.couleur} opacity={e.opacite * 0.12} />
+            <circle cx={`${e.x}%`} cy={`${e.y}%`} r={e.r * 2.4} fill={e.couleur} opacity={e.opacite * 0.07} />
           )}
           <circle
             cx={`${e.x}%`}
