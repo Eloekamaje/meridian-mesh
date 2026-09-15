@@ -1,0 +1,36 @@
+{
+  "summary": "Frontend-only regression test of dark 'nuit profond' theme across all requested pages. Zero light-background artifacts, zero console JS errors, all accent buttons (violet #9B87F5 / amber #F2B84B / cyan #25D0C8 / green #34D399) confirmed to have dark text #071019, React Flow native minimap/controls/attribution properly dark-themed via specificity overrides + colorMode='dark'. Twin panel + Flore panel interactions verified. Theme migration is fully validated.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "verified_pages": [
+    "/atlas (React Flow minimap bg=#0B1620, controls buttons bg=#0F1D28 icons #94A3B8, attribution transparent rgba(148,163,184,0.4))",
+    "/travaux, /travaux/nouveau, /travaux/case-migration-oracle",
+    "/actualites (portée pill Personnel active bg=#F2F6F8 text=#071019 as intended; all 8 'Comprendre' violet buttons text=#071019 ✓)",
+    "/actualites/comprendre/sit-sit-latence-paiements (correct id has 'sit-sit-' prefix; note: request URL '/comprendre/sit-latence-paiements' returns 'Actualité introuvable' — cosmetic doc mismatch, not a theme bug)",
+    "/jumeaux (Commander violet #071019 ✓; 5 'Revoir l'admission' amber buttons #071019 ✓)",
+    "/jumeaux/paiements/revue, /investigations, /administration"
+  ],
+  "verified_flows": [
+    "twin-node click → panneau-jumeau opens",
+    "btn-parler-flore → flore-panel opens",
+    "All accent-colored primary buttons (nouveau-travail-btn, commander-jumeau-btn, travail-continuer-*, histoire-comprendre-*, revoir-admission-*, vue-brief, briefing-explorer-btn) have dark text on solid accent bg"
+  ],
+  "test_report_links": [],
+  "action_items": [
+    "OPTIONAL (doc-only): Update review_request URL '/actualites/comprendre/sit-latence-paiements' → '/actualites/comprendre/sit-sit-latence-paiements' (the actual testid histoire-comprendre-sit-sit-latence-paiements). The 'Actualité introuvable' page itself renders correctly in dark theme with red-on-dark error text."
+  ],
+  "critical_code_review_comments": [
+    "React Flow theming via CSS specificity + colorMode='dark' is the right approach given @xyflow/react ships its own stylesheet — solid fix.",
+    "Auditor script confirmed 0 elements with light bg (>=230 RGB) larger than 20x20px across all 9 pages, showing the mass text-white → text-[#071019] migration is complete."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped)", "frontend": "100%"},
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Dark theme migration is complete and validated. Testids preserved: twin-interroger-btn / twin-relations-btn / twin-investigation-btn / twin-ouvrir-fiche (NOT twin-action-*). When a panel is open, atlas-recherche is replaced by btn-recherche. Lasso works via drag 700,600 → 1050,350. Shift+click multi-select remains a known Playwright artifact, not a real bug. Valid comprendre story ids are prefixed 'sit-sit-*' or 'rel-*' — pull from data-testid='histoire-comprendre-*' on /actualites."
+}

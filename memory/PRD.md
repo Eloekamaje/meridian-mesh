@@ -1,5 +1,13 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v52, finalisation du thème sombre « bleu nuit profond »)
+Migration sombre achevée et validée (agent de test : **iteration_55 → 100 %**, 0 artefact clair sur 9 pages, 0 erreur console).
+- **Audit des couleurs résiduelles** : palette réduite à 30 hex cohérents (fonds #071019/#0F1D28/#14283A/#0B1620, textes #F2F6F8/#D8E2EA/#94A3B8/#7C93A8, accents cyan #25D0C8, violet #9B87F5, ambre #F2B84B, vert #34D399, rouge #F87171). Ancien teal #0E7490 et classes Tailwind claires : aucun résidu.
+- **Contraste des boutons d'accent** : les 51 occurrences `text-white` sur fonds d'accent (violet/ambre/cyan/vert/rouge — ratio blanc mesuré 1.8–2.9:1, sous WCAG AA) passent en `text-[#071019]` (5.8–9.5:1) dans 22 fichiers.
+- **Bug blanc-sur-blanc corrigé** : pilule de portée active d'Actualités (`bg-[#F2F6F8] text-white` hérité du codemod → texte nuit ; badge d'onglet actif re-stylé). Badges verts Actualités : texte `#1B4332` (illisible sur fond nuit) → `#34D399`.
+- **Éléments natifs React Flow restés blancs** (cause racine : `@xyflow/react/dist/style.css` importé dans Atlas.jsx APRÈS `index.css`, écrasant nos règles à spécificité égale ; et sélecteurs maison morts `.xyflow__*`) : mini-carte (fond #0B1620), contrôles zoom (boutons #0F1D28, icônes #94A3B8), attribution (transparente) — corrigés par spécificité `.react-flow__panel.*` + `colorMode="dark"` sur `<ReactFlow>`.
+- Détails : point d'arrivée des arêtes (anneau #fff → #071019, détachement sur canvas nuit), poignée du feuillet mobile (#D8D8D4 → #5B7089).
+
 ## Implémenté (06/2026 — v51b, remplacement MUTUEL Flore ↔ détail + ouverture adaptative des Calques)
 Retours utilisateur : « Flore vient cacher le détail au lieu de céder la place » et « le calque s'ouvre dans un seul sens alors que l'ouverture devrait dépendre de la position ».
 - **Remplacement mutuel, le dernier demandé gagne** : ouvrir Flore masque la colonne détail (v51) ; et désormais une NOUVELLE sélection (jumeau, relation, domaine, liste) pendant que Flore est ouverte ferme Flore — le détail reprend la colonne (effet sur la clé de sélection `selCle`, `fermerFlore` du store). « ✦ Interroger » ne change pas la sélection → ne referme jamais Flore.
