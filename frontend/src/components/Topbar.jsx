@@ -92,7 +92,7 @@ export default function Topbar() {
           <span className="pulse-soft h-2 w-2 shrink-0 rounded-full bg-[#9B87F5]" />
           <span className="hidden font-display text-sm font-black tracking-[0.18em] text-[#F2F6F8] md:inline">MÉRIDIAN</span>
         </div>
-        <nav className="flex items-center gap-1" data-testid="sidebar-nav">
+        <nav className="hidden items-center gap-1 md:flex" data-testid="sidebar-nav">
           {NAV.map(({ to, label, icon: Icon, testid }) => (
             <NavLink
               key={to}
@@ -105,7 +105,7 @@ export default function Topbar() {
                 }`
               }
             >
-              <Icon size={15} /> <span className="hidden lg:inline">{label}</span>
+              <Icon size={15} /> <span className="hidden xl:inline">{label}</span>
             </NavLink>
           ))}
         </nav>
@@ -121,6 +121,24 @@ export default function Topbar() {
           </button>
           {menuOuvert && (
             <div className="glass absolute left-0 top-10 z-50 w-72 rounded-xl p-2" data-testid="nav-menu">
+              {/* Mobile : la navigation primaire vit dans ce menu */}
+              <div className="pb-1 md:hidden">
+                {NAV.map(({ to, label, icon: Icon, testid }) => (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    data-testid={`menu-${testid}`}
+                    onClick={() => setMenuOuvert(false)}
+                    className={({ isActive }) =>
+                      `flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs transition-colors ${
+                        isActive ? "bg-[rgba(155,135,245,0.14)] font-semibold text-[#C4B5FD]" : "text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"
+                      }`
+                    }
+                  >
+                    <Icon size={15} /> {label}
+                  </NavLink>
+                ))}
+              </div>
               {espacesSecondaires.length > 0 && (
                 <div className="pb-1">
                   <div className="px-2.5 pb-1 pt-1 font-code text-[9px] uppercase tracking-[0.25em] text-[#7C93A8]">Espaces</div>
@@ -142,6 +160,14 @@ export default function Topbar() {
                 </div>
               )}
               <div className="border-t border-[rgba(148,163,184,0.12)] pt-1">
+                <div className="pb-1 md:hidden">
+                  <div className="px-2.5 pb-1 pt-1 font-code text-[9px] uppercase tracking-[0.25em] text-[#7C93A8]">Profil</div>
+                  {personas.map((p) => (
+                    <button key={p.id} onClick={() => { changerPersona(p.id); setMenuOuvert(false); }} data-testid={`menu-persona-${p.id}`} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors ${persona === p.id ? "bg-[rgba(155,135,245,0.14)] font-semibold text-[#C4B5FD]" : "text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"}`}>
+                      <Users size={13} className="shrink-0 text-[#7C93A8]" /> <span className="truncate">{p.nom} — {p.role}</span>
+                    </button>
+                  ))}
+                </div>
                 <button onClick={() => { demarrer(); setMenuOuvert(false); }} data-testid="demo-start-btn" className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs text-[#94A3B8] transition-colors hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]">
                   <Play size={14} weight={courant >= 0 ? "fill" : "regular"} /> Parcours guidé
                 </button>
@@ -156,14 +182,23 @@ export default function Topbar() {
         </div>
       </div>
 
-      {/* Espace actif */}
-      <div className="flex min-w-0 items-center gap-2">
+      {/* Espace actif — l'autorisation devient une simple icône (détail au survol) */}
+      <div className="flex min-w-0 items-center gap-1.5">
+        {info && (
+          <span
+            title={info.espace.global ? "Vue complète du périmètre autorisé" : `Filtré côté serveur · ${info.nb_autorises} jumeaux`}
+            data-testid="perimetre-badge"
+            className="hidden shrink-0 sm:inline-flex"
+          >
+            {info.espace.global ? <ShieldCheck size={14} className="text-[#34D399]" /> : <LockSimple size={14} className="text-[#F2B84B]" />}
+          </span>
+        )}
         <select
           value={cible}
           onChange={(e) => changerCible(e.target.value)}
           data-testid="selecteur-perimetre"
           title="Équipe / espace actif"
-          className="h-8 max-w-44 truncate rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2 text-xs font-semibold text-[#F2F6F8] focus:border-[#9B87F5]/60 focus:outline-none"
+          className="h-8 max-w-28 truncate rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2 text-xs font-semibold text-[#F2F6F8] focus:border-[#9B87F5]/60 focus:outline-none sm:max-w-44"
         >
           <optgroup label="Espaces">
             {espaces.map((e) => (
@@ -178,21 +213,6 @@ export default function Topbar() {
             </optgroup>
           )}
         </select>
-        {info && (
-          <span
-            title={info.espace.global ? "Vue complète du périmètre autorisé" : `Filtré côté serveur · ${info.nb_autorises} jumeaux`}
-            className="hidden items-center gap-1.5 whitespace-nowrap rounded border px-2 py-1 font-code text-[9px] uppercase tracking-wider lg:inline-flex"
-            style={
-              info.espace.global
-                ? { color: "#34D399", borderColor: "#34D39944", backgroundColor: "#34D3990D" }
-                : { color: "#F2B84B", borderColor: "#F2B84B44", backgroundColor: "#F2B84B0D" }
-            }
-            data-testid="perimetre-badge"
-          >
-            {info.espace.global ? <ShieldCheck size={12} /> : <LockSimple size={12} />}
-            {info.espace.global ? "Complet" : `Filtré · ${info.nb_autorises}`}
-          </span>
-        )}
       </div>
 
       <div className="flex-1" />
@@ -207,17 +227,14 @@ export default function Topbar() {
         >
           <Plus size={13} weight="bold" /> <span className="hidden 2xl:inline">Nouveau travail</span>
         </button>
-        {(
-          <span className="hidden items-center gap-1.5 font-code text-[10px] uppercase tracking-[0.15em] text-[#94A3B8] 2xl:flex" data-testid="mesh-status">
-            <span className="pulse-soft h-1.5 w-1.5 rounded-full bg-[#34D399]" />
-            Mesh vivant · {actifs} jumeaux
-          </span>
-        )}
-        {fraicheurMesh && (
-          <span className="hidden font-code text-[10px] text-[#7C93A8] 2xl:inline" data-testid="mesh-fraicheur" title="Dernière observation reçue par Méridian">
-            À jour · {fraicheurMesh}
-          </span>
-        )}
+        <span
+          className="hidden items-center gap-1.5 whitespace-nowrap font-code text-[10px] uppercase tracking-[0.15em] text-[#94A3B8] xl:flex"
+          data-testid="mesh-status"
+          title={fraicheurMesh ? `Mesh vivant · à jour ${fraicheurMesh}` : "Mesh vivant"}
+        >
+          <span className="pulse-soft h-1.5 w-1.5 rounded-full bg-[#34D399]" />
+          Mesh vivant · {actifs} jumeaux{fraicheurMesh && <span className="normal-case tracking-normal text-[#7C93A8]" data-testid="mesh-fraicheur"> · {fraicheurMesh}</span>}
+        </span>
 
         <button
           onClick={() => navigate("/actualites?vue=a_traiter")}
@@ -227,7 +244,7 @@ export default function Topbar() {
             aTraiter > 0 ? "border-[#F2B84B]/40 bg-[rgba(242,184,75,0.10)] text-[#F2B84B] hover:bg-[#F2B84B]/10" : "border-[rgba(148,163,184,0.16)] text-[#7C93A8]"
           }`}
         >
-          <Flag size={12} /> {aTraiter} à traiter
+          <Flag size={12} /> {aTraiter}<span className="hidden sm:inline">&nbsp;à traiter</span>
         </button>
 
         {/* Flore — présence conversationnelle globale de Méridian (⌘K) */}
@@ -292,7 +309,7 @@ export default function Topbar() {
         </div>
 
         {/* Identité */}
-        <div className="flex items-center gap-1.5 border-l border-[rgba(148,163,184,0.16)] pl-2.5">
+        <div className="hidden items-center gap-1.5 border-l border-[rgba(148,163,184,0.16)] pl-2.5 md:flex">
           <Users size={14} className="text-[#7C93A8]" />
           <select
             value={persona}
