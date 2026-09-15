@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { ReactFlow, Background, BackgroundVariant, Controls, ControlButton, MiniMap, SelectionMode, ViewportPortal } from "@xyflow/react";
+import { ReactFlow, Controls, ControlButton, MiniMap, SelectionMode, ViewportPortal } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { X, Sparkle, CornersOut, MagnifyingGlass } from "@phosphor-icons/react";
 import { toast } from "sonner";
@@ -9,6 +9,7 @@ import { useMesh } from "@/lib/mesh";
 import { usePerimetre } from "@/lib/perimetre";
 import { useContexte } from "@/lib/contexte";
 import TwinNode from "@/components/map/TwinNode";
+import CielEtoile from "@/components/map/CielEtoile";
 import RegionNode from "@/components/map/RegionNode";
 import AreteOrthogonale from "@/components/map/AreteOrthogonale";
 import AtlasControle from "@/components/map/AtlasControle";
@@ -1048,6 +1049,7 @@ export default function Atlas() {
         />
       )}
     <div ref={carteRef} onPointerMove={surSurvolCarte} onPointerLeave={() => { setRegionSurvolee(null); setRegionTooltip(null); }} className="relative min-w-0 flex-1 overflow-hidden" data-testid="system-map" style={{ background: "radial-gradient(ellipse at 50% 38%, #0D1B28 0%, #071019 60%, #04090F 100%)" }}>
+      <CielEtoile />
       <ReactFlow
         key={focus || situationParam || "mesh"}
         colorMode="dark"
@@ -1220,9 +1222,8 @@ export default function Atlas() {
         }}
         nodesDraggable={modeEdition}
         nodesConnectable={false}
-        colorMode="light"
       >
-        <Background variant={BackgroundVariant.Dots} gap={26} size={1.3} color="rgba(148,163,184,0.22)" />
+        {/* Trame technique remplacée par le ciel étoilé fixe (spécification « nuit profonde ») */}
         <Controls showInteractive={false} showFitView={false} position="bottom-right" style={{ marginBottom: estTablette ? 8 : 148, marginRight: 14 }}>
           <ControlButton onClick={pleinEcran} title="Plein écran" data-testid="plein-ecran-btn">
             <CornersOut size={14} />

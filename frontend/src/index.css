@@ -103,11 +103,23 @@
 
 ::selection { background: rgba(37, 208, 200, 0.25); }
 
+/* Ciel étoilé de l'Atlas — scintillement subtil */
+@keyframes scintillement {
+  0%, 100% { opacity: var(--op-base, 0.6); }
+  50% { opacity: calc(var(--op-base, 0.6) * 0.35); }
+}
+.etoile-scintille { animation: scintillement 4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .etoile-scintille { animation: none; }
+}
+
 .react-flow__panel.react-flow__controls { box-shadow: 0 2px 10px rgba(0,0,0,0.4); border: 1px solid rgba(148,163,184,0.16); border-radius: 8px; overflow: hidden; }
 .react-flow__controls .react-flow__controls-button { background: #0F1D28; border-bottom: 1px solid rgba(148,163,184,0.12); fill: #94A3B8; color: #94A3B8; }
 .react-flow__controls .react-flow__controls-button:hover { background: #14283A; }
 .react-flow__controls .react-flow__controls-button svg { fill: #94A3B8; }
 .react-flow__panel.react-flow__attribution { background: transparent; color: rgba(148,163,184,0.4); }
+/* Le fond nuit (dégradé + ciel étoilé) vit sur le conteneur : React Flow reste transparent */
+.react-flow.react-flow { background-color: transparent; }
 .react-flow__node.selectable:focus { outline: none; }
 .react-flow__selection { background: rgba(37, 208, 200, 0.06); border: 1px dashed rgba(37, 208, 200, 0.45); }
 .react-flow__panel.react-flow__minimap { background: #0B1620; border-radius: 8px; }

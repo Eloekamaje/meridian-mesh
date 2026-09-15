@@ -1,5 +1,12 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v53, ciel étoilé fixe dans l'Atlas — image de référence utilisateur)
+L'utilisateur a redonné sa maquette (ciel de nuit étoilé, graphe de connaissance) et choisi : **ciel fixe** (la carte glisse devant), **étoiles seules** (grille technique supprimée).
+- **`CielEtoile.jsx`** (nouveau) : 170 étoiles générées par PRNG ensemencé (mulberry32, rendu stable), positions en % du conteneur, 3 couches (68 % fines 0.5–0.9 px / 26 % moyennes / 6 % brillantes avec halo diffus), couleurs blanc/bleu pâle/cyan + rares chaudes (#F8E0B0) ; 35 % scintillent (keyframes `scintillement`, durées/délais pseudo-aléatoires, respect `prefers-reduced-motion`). `data-testid="ciel-etoile"`.
+- **Trame React Flow `Background Dots` supprimée** (imports `Background`/`BackgroundVariant` retirés) ; le svg est enfant direct du conteneur carte (`absolute inset-0`, z-0, pointer-events none) → fixe au pan/zoom par construction.
+- **Correctifs associés** : doublon `colorMode="light"` supprimé d'Atlas.jsx (il écrasait le `colorMode="dark"` — le mode sombre de xyflow peignait alors son propre fond gris opaque qui masquait dégradé et étoiles) ; `.react-flow.react-flow { background-color: transparent }` dans index.css pour laisser voir le fond nuit du conteneur.
+- Vérifié par captures : étoiles visibles (182 cercles), dégradé bleu nuit restauré, `.react-flow dark`, mini-carte et contrôles sombres, zéro élément clair.
+
 ## Implémenté (06/2026 — v52, finalisation du thème sombre « bleu nuit profond »)
 Migration sombre achevée et validée (agent de test : **iteration_55 → 100 %**, 0 artefact clair sur 9 pages, 0 erreur console).
 - **Audit des couleurs résiduelles** : palette réduite à 30 hex cohérents (fonds #071019/#0F1D28/#14283A/#0B1620, textes #F2F6F8/#D8E2EA/#94A3B8/#7C93A8, accents cyan #25D0C8, violet #9B87F5, ambre #F2B84B, vert #34D399, rouge #F87171). Ancien teal #0E7490 et classes Tailwind claires : aucun résidu.
