@@ -1061,8 +1061,9 @@ export default function Atlas() {
         edgeTypes={edgeTypes}
         fitView={!restaurerEtat}
         fitViewOptions={{ padding: 0.15 }}
-        minZoom={0.3}
+        minZoom={0.45}
         maxZoom={2.6}
+        translateExtent={[[-900, -600], [3000, 1900]]}
         zoomOnDoubleClick={false}
         onInit={(inst) => {
           rfRef.current = inst;

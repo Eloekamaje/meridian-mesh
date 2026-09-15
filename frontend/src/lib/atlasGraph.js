@@ -626,7 +626,7 @@ export function construireGraphe({
       id: r.id, type: "region", position: { x: coque.x, y: coque.y },
       initialWidth: coque.w,
       initialHeight: coque.h,
-      data: { ...r, w: coque.w, h: coque.h, path: coque.path, points: coque.points, labelX: coque.labelX, investigations: statsRegions[r.label]?.investigations ?? 0, decouvertes: statsRegions[r.label]?.decouvertes ?? 0, flux: statsRel[r.label]?.flux ?? 0, ecarts: statsRel[r.label]?.ecarts ?? 0, halo: !!halo && domDe[halo] === r.label, capacitesVisibles: !!couchesCarte.capacites },
+      data: { ...r, w: coque.w, h: coque.h, path: coque.path, points: coque.points, labelX: coque.labelX, niveau: zoomNiveau, investigations: statsRegions[r.label]?.investigations ?? 0, decouvertes: statsRegions[r.label]?.decouvertes ?? 0, flux: statsRel[r.label]?.flux ?? 0, ecarts: statsRel[r.label]?.ecarts ?? 0, halo: !!halo && domDe[halo] === r.label, capacitesVisibles: !!couchesCarte.capacites },
       draggable: false, selectable: false, zIndex: -10,
     };
   });

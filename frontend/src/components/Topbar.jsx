@@ -160,7 +160,7 @@ export default function Topbar() {
                 </div>
               )}
               <div className="border-t border-[rgba(148,163,184,0.12)] pt-1">
-                <div className="pb-1 md:hidden">
+                <div className="pb-1 lg:hidden">
                   <div className="px-2.5 pb-1 pt-1 font-code text-[9px] uppercase tracking-[0.25em] text-[#7C93A8]">Profil</div>
                   {personas.map((p) => (
                     <button key={p.id} onClick={() => { changerPersona(p.id); setMenuOuvert(false); }} data-testid={`menu-persona-${p.id}`} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors ${persona === p.id ? "bg-[rgba(155,135,245,0.14)] font-semibold text-[#C4B5FD]" : "text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"}`}>
@@ -198,7 +198,7 @@ export default function Topbar() {
           onChange={(e) => changerCible(e.target.value)}
           data-testid="selecteur-perimetre"
           title="Équipe / espace actif"
-          className="h-8 max-w-28 truncate rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2 text-xs font-semibold text-[#F2F6F8] focus:border-[#9B87F5]/60 focus:outline-none sm:max-w-44"
+          className="h-8 w-24 min-w-0 truncate rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2 text-xs font-semibold text-[#F2F6F8] focus:border-[#9B87F5]/60 focus:outline-none sm:w-40"
         >
           <optgroup label="Espaces">
             {espaces.map((e) => (
@@ -309,14 +309,14 @@ export default function Topbar() {
         </div>
 
         {/* Identité */}
-        <div className="hidden items-center gap-1.5 border-l border-[rgba(148,163,184,0.16)] pl-2.5 md:flex">
+        <div className="hidden items-center gap-1.5 border-l border-[rgba(148,163,184,0.16)] pl-2.5 lg:flex">
           <Users size={14} className="text-[#7C93A8]" />
           <select
             value={persona}
             onChange={(e) => changerPersona(e.target.value)}
             data-testid="selecteur-persona"
             title="Profil actif"
-            className="h-8 max-w-40 rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2 text-xs text-[#D8E2EA] focus:outline-none"
+            className="h-8 w-24 min-w-0 rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2 text-xs text-[#D8E2EA] focus:outline-none lg:w-40"
           >
             {personas.map((p) => (
               <option key={p.id} value={p.id} label={`${p.nom} — ${p.role}`} />

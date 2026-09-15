@@ -1,5 +1,14 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v60, audit expert map-UI : chevauchements tablette + comportement du zoom)
+**Bug tablette (reproduit à 768/834/1024px)** : le sélecteur de périmètre chevauchait les boutons de droite (jusqu'à 105 px) — cause racine : conteneur central `min-w-0` collapsant à 0 px + selects sans largeur fixe (max-width seul ne contraint pas le rétrécissement d'un select natif). Fix : largeurs explicites (`w-24 sm:w-40` périmètre, `w-24 lg:w-40` persona), persona repliée dans le hamburger sous 1024px (section Profil `lg:hidden`). Audit mesuré ensuite sur 6 largeurs (390→1180) : **zéro débordement, zéro chevauchement**.
+**Audit du zoom (conventions Google Maps/Figma)** — sain : zoom-vers-curseur, préservation d'état, puce de niveau, touche « 0 », fondu étoile↔robot. Corrigé :
+- **Hystérésis ±0.06** sur les bornes de niveaux (`useZoomSemantique`) : fini le va-et-vient de niveau sur micro-molette à un seuil (arêtes courbes↔orthogonales qui clignotaient).
+- **minZoom 0.3 → 0.45** : le mesh ne rétrécit plus en îlot perdu dans le vide.
+- **`translateExtent`** généreux : un pan violent ne peut plus faire disparaître la carte hors écran.
+- **Constellation effacée au niveau Jumeau** (opacité 0, transition 400 ms) : le décor cède la place au contenu de travail au lieu de grossir en taches.
+Vérifié par scripts Playwright dédiés (séquence N1→N4, stabilité au seuil, clamp 0.45, pan extrême, opacité constellation 0 au N3+).
+
 ## Implémenté (06/2026 — v59, en-tête épurée + responsive repensé en 3 paliers)
 Demande utilisateur : épurer l'en-tête et repenser le responsive (« comment ça doit être »), choix délégués à l'expert selon l'importance usager ; mobile = navigation dans le hamburger.
 - **Épure desktop** : statut Mesh fusionné en une puce (« ● Mesh vivant · N jumeaux · il y a X », testid `mesh-status`, fraîcheur en span interne `mesh-fraicheur`) ; badge périmètre → **icône bouclier/cadenas** devant le sélecteur (texte complet en `title`) ; « Nouveau travail » = icône + (libellé ≥ 2xl) ; « à traiter » = chiffre seul sous 640px ; persona masqué sous 768px.

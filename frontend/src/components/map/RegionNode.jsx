@@ -48,7 +48,9 @@ export default function RegionNode({ data }) {
         ) : (
           <rect width={data.w} height={data.h} rx={56} fill={`${data.couleur}0A`} stroke={`${data.couleur}30`} strokeWidth={1.5} strokeDasharray={pointille ? "8 6" : undefined} />
         )}
-        <g data-testid={`constellation-${data.id}`}>
+        {/* Constellation : texture du niveau Domaine — elle s'efface au niveau Jumeau
+            (convention map UI : le décor cède la place au contenu de travail) */}
+        <g data-testid={`constellation-${data.id}`} opacity={(data.niveau || 2) >= 3 ? 0 : 1} style={{ transition: "opacity 400ms" }}>
           {constel.liens.map((l, i) => (
             <line key={`l${i}`} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke={data.couleur} strokeWidth={0.7} opacity={l.o} strokeLinecap="round" />
           ))}
