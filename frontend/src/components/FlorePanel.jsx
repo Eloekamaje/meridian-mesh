@@ -273,6 +273,7 @@ export default function FlorePanel() {
   const prevAtlasSig = useRef(null);
   const inputRef = useRef(null);
   const conversationRef = useRef(null);
+  const panelRef = useRef(null);
 
   // Conversation persistante, contexte évolutif : si la sélection Atlas change en cours
   // de conversation, le fil n'est JAMAIS réinitialisé — un marqueur signale la transition
@@ -358,6 +359,21 @@ export default function FlorePanel() {
     }
   };
 
+  // Superposition : clic en dehors du panneau → fermeture (le bouton « Parler à Flore »
+  // gère lui-même son basculement ; Échap ferme aussi — handler clavier ci-dessus)
+  useEffect(() => {
+    if (!floreOuverte) return undefined;
+    const clicDehors = (e) => {
+      if (panelRef.current?.contains(e.target)) return;
+      if (e.target.closest?.('[data-testid="btn-parler-flore"]')) return;
+      fermerFlore();
+    };
+    // Phase de capture : React Flow stoppe la propagation des clics sur la carte,
+    // seul un listener en capture les voit passer.
+    document.addEventListener("mousedown", clicDehors, true);
+    return () => document.removeEventListener("mousedown", clicDehors, true);
+  }, [floreOuverte, fermerFlore]);
+
   // Questions pré-remplies depuis les pages métier (« Analyser ce travail », …) :
   // envoyées dès que le panneau est ouvert. Garde par ref (StrictMode rejoue les effets)
   // et réarmement à la fermeture du panneau.
@@ -437,10 +453,11 @@ export default function FlorePanel() {
   if (!floreOuverte || contexte === "case") return null;
   return (
     <motion.aside
+      ref={panelRef}
       initial={{ x: 60, opacity: 0 }}
       animate={{ x: 0, opacity: 1 }}
       transition={{ type: "spring", stiffness: 320, damping: 30 }}
-      className={`hud-gauche hud-violet flex h-full w-[440px] shrink-0 flex-col border-l border-[rgba(148,163,184,0.16)] bg-[#0F1D28]/95 backdrop-blur-xl max-sm:fixed max-sm:inset-y-0 max-sm:right-0 max-sm:z-40 max-sm:w-[94vw] max-sm:max-w-[94vw] ${chargement ? "hud-reflexion" : ""}`}
+      className={`hud-gauche hud-violet fixed bottom-0 right-0 top-12 z-40 flex w-[440px] flex-col border-l border-[rgba(148,163,184,0.16)] bg-[#0F1D28]/95 shadow-[-24px_0_48px_rgba(4,9,15,0.55)] backdrop-blur-xl max-sm:w-[94vw] max-sm:max-w-[94vw] ${chargement ? "hud-reflexion" : ""}`}
       data-testid="flore-panel"
     >
       {/* En-tête */}

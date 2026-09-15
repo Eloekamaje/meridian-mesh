@@ -585,8 +585,8 @@ export default function Atlas() {
   // et le ResizeObserver conserve la caméra — le chrome (mini-carte, zoom, barre) ne bouge jamais.
   const panneauOuvert = !!(comparaison || selectedRelation || selected || domaineSel || vueListe);
   // Recherche rétractée en loupe quand un panneau (détail ou Flore) est ouvert — chrome minimal en mode focus
-  const rechercheOuverte = estMobile ? rechercheMobileOuverte : !(panneauOuvert || floreOuverte) || loupeForcee;
-  useEffect(() => { if (!panneauOuvert && !floreOuverte) setLoupeForcee(false); }, [panneauOuvert, floreOuverte]);
+  const rechercheOuverte = estMobile ? rechercheMobileOuverte : !panneauOuvert || loupeForcee;
+  useEffect(() => { if (!panneauOuvert) setLoupeForcee(false); }, [panneauOuvert]);
 
   // Remplacement mutuel de la colonne droite : une NOUVELLE sélection de domaine/relation/liste
   // pendant que Flore est ouverte ferme Flore (le dernier panneau demandé gagne).
@@ -1370,7 +1370,7 @@ export default function Atlas() {
                 data-testid="atlas-recherche"
                 className={`${estMobile ? "w-[44vw]" : "w-64"} bg-transparent text-xs text-[#F2F6F8] placeholder:text-[#7C93A8] focus:outline-none`}
               />
-              {(estMobile || loupeForcee || panneauOuvert || floreOuverte) && (
+              {(estMobile || loupeForcee || panneauOuvert) && (
                 <button onClick={() => { setRechercheMobileOuverte(false); setLoupeForcee(false); setRecherche(""); }} data-testid="btn-recherche-fermer" title="Refermer la recherche" className="text-[#7C93A8] transition-colors hover:text-[#F2F6F8]"><X size={13} /></button>
               )}
             </div>
