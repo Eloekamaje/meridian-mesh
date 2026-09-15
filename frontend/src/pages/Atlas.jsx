@@ -1278,8 +1278,8 @@ export default function Atlas() {
                       <span className="halo-anim h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: d.couleur }} data-testid={`region-activite-${d.id}`} />
                     )}
                     <span
-                      className="whitespace-nowrap rounded bg-[#0F1D28]/60 px-1.5 py-0.5 font-code text-[11px] font-semibold uppercase tracking-[0.25em] backdrop-blur-[2px] transition-opacity duration-200"
-                      style={{ color: d.couleur, opacity: visible ? 1 : 0 }}
+                      className="whitespace-nowrap rounded bg-[#0F1D28]/60 px-1.5 py-0.5 font-display text-[13px] font-semibold uppercase tracking-[0.2em] backdrop-blur-[2px] transition-opacity duration-200"
+                      style={{ color: d.couleur, opacity: visible ? 1 : 0, textShadow: `0 0 14px ${d.couleur}80` }}
                     >
                       {d.label}
                     </span>

@@ -1,105 +1,98 @@
 {
+  "project_context": "Méridian - Plateforme de compréhension du SI (Atlas interactif, graphe de connaissances)",
   "theme": {
-    "mode": "light",
-    "background": "#F6F6F4",
-    "foreground": "#111110",
-    "primary": "#0F4C81",
-    "secondary": "#E5E5E3",
-    "accent_warning": "#F97316",
-    "accent_error": "#DC2626",
-    "accent_success": "#8B5CF6",
-    "glass_surface": "rgba(246, 246, 244, 0.75)"
+    "background_gradient": ["#071019", "#04090F"],
+    "panels": "#0F1D28",
+    "text_primary": "#F2F6F8",
+    "text_secondary": "#94A3B8",
+    "text_tertiary": "#7C93A8",
+    "accents": {
+      "cyan": "#25D0C8",
+      "violet": "#9B87F5",
+      "amber": "#F2B84B",
+      "green": "#34D399",
+      "red": "#F87171"
+    }
   },
   "typography": {
-    "headings": "Cabinet Grotesk",
-    "body": "IBM Plex Sans",
-    "code": "IBM Plex Mono",
-    "rules": "Space Grotesk is forbidden for dashboards per E1 rules. Use Cabinet Grotesk for display. All headings must use tight tracking. Body text needs high legibility. Only use IBM Plex Mono for App IDs and raw data."
-  },
-  "layouts": {
-    "paradigm": "Google Maps Style Immersive Dashboard",
-    "structure": "Edge-to-edge canvas (100vw, 100vh) without fixed layout sidebars. UI elements MUST float over the map using absolute/fixed positioning in the corners.",
-    "spacing_scale": "p-2, p-4, p-8, p-12 - Generous spacing inside floating panels."
-  },
-  "ux_ui_po_review": {
-    "executive_summary": "L'écran Atlas actuel souffre d'une densité de 'chrome' (UI) excessive qui contredit le paradigme 'Google Maps' validé, et de lacunes techniques dans l'algorithme de routage/rendu causant des chevauchements. L'objectif est de redonner la primauté au territoire (la carte) et d'appliquer une hygiène stricte sur les calques et panneaux.",
-    "1_critical_audit_overlaps": {
-      "domain_membranes": "Problème: Les coques concaves (concaveman) se chevauchent ou dessinent de grands rectangles. Solution: Appliquer un padding (buffer spatial) avant le calcul de la coque. Si les nœuds de deux domaines se croisent, utiliser un diagramme de Voronoi pour forcer une frontière spatiale stricte au lieu de laisser les coques se superposer.",
-      "edge_label_collisions": "Problème: Les arêtes (libavoid) passent sur les App IDs ou très près. Solution: La boîte de collision (bounding box) fournie à libavoid pour chaque nœud DOIT inclure la hauteur de l'avatar + la hauteur du texte (App ID) + un padding de 8px. Ne jamais considérer l'avatar seul comme l'obstacle complet.",
-      "label_density": "Problème: Trop d'App IDs visibles au dézoom. Solution: Implémenter une détection de collision par QuadTree (ou algorithme de force D3). Si deux labels se chevauchent à un niveau de zoom X, le moins prioritaire passe en opacity: 0 et pointer-events: none."
-    },
-    "2_feature_audit_redundancies": {
-      "ui_chrome_overload": "Inapproprié: La topbar globale + la sidebar applicative de gauche + la barre d'outils de la carte réduisent considérablement l'espace de la carte. Solution: Supprimer les barres fixes. Fusionner la navigation globale dans un bouton 'Menu/Hub' flottant en haut à gauche.",
-      "layer_controls": "Redondance: Présence de 6 puces 'couches' ET d'un panneau 'Calques'. Solution: Unifier dans un seul bouton flottant 'Calques' (façon Google Maps) qui s'ouvre au survol/clic pour révéler les 6 options.",
-      "right_panel_empty_state": "Inapproprié: Le panneau droit ouvert par défaut avec Favoris/Récents obstrue la vue. Solution: Le panneau de droite NE DOIT s'ouvrir QUE lorsqu'une entité est sélectionnée (bouton DÉTAIL). Les Récents/Favoris doivent vivre dans le Hub de navigation (Menu global) ou via la barre de recherche."
-    },
-    "3_prioritized_recommendations": {
-      "P0": {
-        "title": "Sanctuariser la Règle du Zéro Chevauchement",
-        "actions": [
-          "Mettre à jour les dimensions des obstacles dans libavoid pour inclure le texte App ID.",
-          "Masquer dynamiquement les labels qui entrent en collision lors du dézoom.",
-          "Ajuster le paramètre alpha de concaveman et ajouter une marge pour séparer visuellement les membranes."
-        ]
+    "import_url": "@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Manrope:wght@400;500;600;700&family=Rajdhani:wght@500;600;700&display=swap');",
+    "families": {
+      "display": {
+        "name": "Rajdhani",
+        "fallback": "sans-serif",
+        "weights": [500, 600, 700],
+        "role": "Titres futuristes, géométriques et techniques avec une forte présence. Utilisé pour les titres de page, les noms de domaines/constellations sur la carte et les grandes métriques.",
+        "tailwind_class": "font-display"
       },
-      "P1": {
-        "title": "Le Régime 'Google Maps' (Nettoyage du Chrome)",
-        "actions": [
-          "Passer la topbar et la sidebar en mode 'îlots flottants' (glassmorphism absolu).",
-          "Regrouper les contrôles dans les coins : Haut-Gauche (Recherche + Menu), Haut-Droit (Profil), Bas-Gauche (Légende repliable), Bas-Droit (Zoom, Mini-carte).",
-          "Placer la barre conversationnelle en bas au centre, flottante et repliable, sans toucher les bords."
-        ]
+      "sans": {
+        "name": "Manrope",
+        "fallback": "sans-serif",
+        "weights": [400, 500, 600, 700],
+        "role": "Police de corps ultra-lisible et moderne. Utilisée pour le contenu dense, les descriptions dans les panneaux latéraux et les conversations.",
+        "tailwind_class": "font-sans (default body)"
       },
-      "P2": {
-        "title": "Élégance Contextuelle (Micro-interactions)",
-        "actions": [
-          "Sélection d'un composant : Calmer la carte en passant tous les nœuds non connectés à 20-30% d'opacité. Les membranes gardent leur couleur mais perdent leur bordure.",
-          "Pan (déplacement) fluide vers la gauche lors de l'ouverture du panneau droit pour centrer le jumeau sélectionné dans l'espace restant, sans faire de fitView brutal."
-        ]
+      "code": {
+        "name": "JetBrains Mono",
+        "fallback": "monospace",
+        "weights": [400, 500, 700],
+        "role": "Micro-labels techniques, App IDs, badges de statut, métadonnées brutes.",
+        "tailwind_class": "font-code"
+      }
+    },
+    "contrast_and_presence_strategy": [
+      "Weight Bump (Correction de la 'pâleur') : Sur un fond très sombre (nuit), les pixels lumineux ont tendance à s'affiner optiquement. Utiliser `font-medium` (500) comme base pour le texte lisible au lieu de `font-normal` (400).",
+      "Tracking Sémantique : Appliquer un tracking serré (`tracking-tight`) sur les grands titres en Rajdhani pour condenser la présence technique. Appliquer un tracking très large (`tracking-[0.15em]` ou `tracking-widest`) sur les micro-labels.",
+      "Luminosity Boost : Pour les éléments de la carte spatiale (Atlas), ajouter une légère lueur (text-shadow ou drop-shadow Tailwind) sur les polices display pour renforcer l'effet hologramme sans toucher à l'opacité.",
+      "Casse des micro-labels : Les labels techniques doivent impérativement être en majuscules (`uppercase`)."
+    ]
+  },
+  "usage_examples": [
+    {
+      "element": "Titre de page (Administration, Travaux)",
+      "classes": "font-display text-4xl font-bold tracking-tight text-[#F2F6F8]"
+    },
+    {
+      "element": "Nom de domaine / Jumeau (Sur la carte Atlas)",
+      "classes": "font-display text-2xl font-semibold tracking-wide text-white drop-shadow-[0_0_8px_rgba(37,208,200,0.4)]"
+    },
+    {
+      "element": "App ID / Badge Statut (Numérique)",
+      "classes": "font-code text-xs font-bold uppercase tracking-[0.15em] text-[#25D0C8] bg-[#25D0C8]/10 px-2 py-1 rounded border border-[#25D0C8]/20"
+    },
+    {
+      "element": "Corps de texte / Descriptions (Panneaux)",
+      "classes": "font-sans text-base font-medium leading-relaxed text-[#F2F6F8]"
+    },
+    {
+      "element": "Texte Secondaire / Tableaux denses",
+      "classes": "font-sans text-sm font-medium text-[#94A3B8]"
+    },
+    {
+      "element": "Bouton d'action principal",
+      "classes": "font-display text-lg font-bold uppercase tracking-wider text-[#04090F] bg-[#25D0C8] hover:bg-[#25D0C8]/90 transition-colors"
+    }
+  ],
+  "tailwind_configuration_instructions": {
+    "theme_extend": {
+      "fontFamily": {
+        "sans": ["Manrope", "sans-serif"],
+        "display": ["Rajdhani", "sans-serif"],
+        "code": ["JetBrains Mono", "monospace"]
       }
     }
   },
-  "components": {
-    "floating_panels": {
-      "surface": "Crystal Glassmorphism",
-      "classes": "absolute z-50 backdrop-blur-xl bg-[#F6F6F4]/75 border border-[#E5E5E3] shadow-[0_8px_32px_rgba(17,17,16,0.08)] rounded-xl",
-      "behavior": "Collapsible, dismissible on map click."
-    },
-    "map_nodes": {
-      "avatar": "SVG Robot Illustration",
-      "label": "IBM Plex Mono text-xs text-[#111110] text-center mt-2",
-      "selection_halo": "ring-2 ring-offset-2 ring-[#0F4C81]"
-    },
-    "edges": {
-      "bcm": "stroke-[#475569] stroke-2 solid",
-      "reality": "stroke-[#0F4C81] stroke-2 solid",
-      "gaps": "stroke-[#F97316] stroke-2 dashed animate-pulse",
-      "validation": "stroke-[#8B5CF6] stroke-2 solid",
-      "obsolete": "stroke-[#94A3B8] stroke-1 solid"
-    }
-  },
-  "visual_enhancers": {
-    "glassmorphism": "Used strictly for floating islands over the map. Do NOT use transparent backgrounds without blur.",
-    "grid_borders": "Not applicable to canvas, but applicable to detail panel data tables.",
-    "hover_states": "Hovering a node smoothly highlights its 1st-degree connected edges."
-  },
-  "instructions_to_main_agent": [
-    "Build the dashboard using a full viewport React Flow map. Do NOT wrap the map in layout columns.",
-    "Implement UI controls as absolute positioned overlays inside the React Flow provider.",
-    "Use Shadcn UI for the right Detail Panel and dropdown menus, customized with the Crystal Glassmorphism classes.",
-    "Refactor libavoid routing to consider the bounding box of (Avatar + Text) for nodes.",
-    "Implement view-dependent label visibility. Use a collision detection function on the zoom event to toggle label opacity.",
-    "Ensure the floating conversational bar is position: fixed, bottom: 24px, left: 50%, transform: translateX(-50%)."
+  "UNIVERSAL GUIDELINES FOR MAIN AGENT": [
+    "Do not apply universal transitions like `transition: all`. Target specific properties like `transition: transform 0.2s ease, opacity 0.2s ease`.",
+    "Do not center align the app container. No `.App { text-align: center; }`.",
+    "Ensure all interactive and key informational elements MUST include a `data-testid` attribute (e.g., `data-testid=\"app-id-badge\"`).",
+    "CRITICAL: DO NOT use complete transparent backgrounds in headers, overlays, or floating panels that have content under them. Use backdrop-blur with a semi-transparent dark color like `bg-[#0F1D28]/80`.",
+    "The project uses .js files, not .tsx.",
+    "Avoid generic or 'AI slop' aesthetics. Focus on the spatial, deep-night feeling with crisp, highly intentional typography."
   ],
-  "accessibility": {
-    "contrast": "Text over glassmorphism panels must pass WCAG AA. Use #111110 for text.",
-    "motion": "Use smooth panning (transition-transform duration-300 ease-out). Respect prefers-reduced-motion for edge pulsing.",
-    "testing_ids": "All floating panels and interactive map nodes must have a 'data-testid' attribute (e.g., 'data-testid=\"map-node-app-id\"')."
-  },
-  "universal_guidelines_for_main_agent": {
-    "spacing": "Use p-6 or p-8 inside the right detail panel.",
-    "colors": "Strictly use the defined palette. No generic gradients.",
-    "animations": "Use Framer Motion for sliding in the right panel and floating conversational bar.",
-    "toasts": "Use 'sonner' for alerts (e.g., node update confirmation), positioned at top-center so it doesn't overlap corner controls."
-  }
+  "instructions_to_main_agent": [
+    "Load the Google Fonts URL provided in `typography.import_url` into the main CSS file (index.css/App.css) or HTML header.",
+    "Update `tailwind.config.js` to override the `fontFamily` settings for `sans`, `display`, and `code` to match the exact names provided.",
+    "Since existing components use `font-display` and `font-code`, replacing them in Tailwind config will globally update the UI without modifying hundreds of components.",
+    "To fix the 'pale' complaint: proactively find base body wrappers and change `font-normal` to `font-medium` to give the Manrope font enough weight on the dark #04090F background."
+  ]
 }

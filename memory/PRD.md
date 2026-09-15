@@ -1,5 +1,14 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v61, typographie futuriste — retour « police pâle » des collègues)
+Spec via design_agent (`/app/design_guidelines.json`) : remplacement global des familles derrière les classes existantes (aucun composant touché).
+- **Rajdhani** (titres / `font-display`, 500-700) : géométrique et technique, présence forte — titres de pages, MÉRIDIAN, noms de domaines sur la carte.
+- **Manrope** (corps, 400-700) : lisible et moderne ; **graisse de base du body passée à 500** (sur fond nuit, le texte clair s'amincit optiquement — correctif anti-« pâleur »).
+- **JetBrains Mono** (`font-code`, 400-700) : App IDs, badges de statut, métadonnées — plus de caractère.
+- Noms de domaines sur l'Atlas : `font-display` + lueur hologramme (`text-shadow` teinté couleur du domaine).
+- Ancien import (Chivo/IBM Plex) remplacé, import Inter orphelin retiré de `public/index.html` (redémarrage frontend requis pour public/).
+- Vérifié par captures : familles actives (computed), titres Rajdhani visibles, corps plus affirmé.
+
 ## Implémenté (06/2026 — v60, audit expert map-UI : chevauchements tablette + comportement du zoom)
 **Bug tablette (reproduit à 768/834/1024px)** : le sélecteur de périmètre chevauchait les boutons de droite (jusqu'à 105 px) — cause racine : conteneur central `min-w-0` collapsant à 0 px + selects sans largeur fixe (max-width seul ne contraint pas le rétrécissement d'un select natif). Fix : largeurs explicites (`w-24 sm:w-40` périmètre, `w-24 lg:w-40` persona), persona repliée dans le hamburger sous 1024px (section Profil `lg:hidden`). Audit mesuré ensuite sur 6 largeurs (390→1180) : **zéro débordement, zéro chevauchement**.
 **Audit du zoom (conventions Google Maps/Figma)** — sain : zoom-vers-curseur, préservation d'état, puce de niveau, touche « 0 », fondu étoile↔robot. Corrigé :
