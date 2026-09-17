@@ -1,5 +1,12 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v67, transition progressive Global ↔ Domaine)
+Retour utilisateur : le zoom Global → Domaine basculait sec, « les arcs ne se révèlent pas progressivement ».
+- **Bande de transition continue z 0.5 → 0.7** (`fonduGD` passé au graphe) : corridors macro **fondent** (`sortie` multiplie leurs opacités) pendant que les arêtes de domaine (`entree` dans AreteOrthogonale) et les étoiles des jumeaux (opacité TwinNode) **se révèlent** ; agrégats macro des territoires fondent aussi (`opaciteMacro`).
+- **Restructure du constructeur** : corridors et contenu domaine ne sont plus en if/else exclusif mais en **deux blocs cumulables** (corridors si N1 ou bande ; domaine si N≥2 ou bande — `niveauEff = 2` en bande pour les corridors agrégés N2) ; moteur de labels et post-filtres (focus, relFocus, vues) scopés sur les arêtes de domaine uniquement (jamais de corridor sans `data.points`).
+- Au passage corrigé : retour de `fabriqueOrtho` ({edges, snapshot}) correctement déstructuré après concaténation.
+- Tests : **it62 → 100 %** — balayage mesuré (z=0.45 corridors 0.16 / 0 jumeau → z=0.63 corridors 0.04 + étoiles 0.70 → z=0.78 Domaine complet), symétrie inverse, survol territoire, N1-N4, Flore, zéro erreur console.
+
 ## Implémenté (06/2026 — v66, corridors Global : atténuation au repos + illumination au survol)
 Choix utilisateur : arcs quasi invisibles au repos, illumination ciblée au survol d'un territoire (lève l'ambiguïté « A→C lu comme B→C quand B est au milieu »), trait monochrome cyan/ardoise (dégradé inter-domaines abandonné).
 - **`AreteCorridor`** monochrome `#25D0C8`, 3 états : repos (cœur 0.16 / halo 0.05), illuminé (1.0 / 0.3, trait 2.4) quand SON territoire est survolé, presque éteint (0.05) quand c'est un autre ; transitions 250 ms ; flux pointillé animé si activité conservé.

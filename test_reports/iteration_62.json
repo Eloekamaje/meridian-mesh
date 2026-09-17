@@ -1,0 +1,27 @@
+{
+  "summary": "Frontend-only test d'it62 — refonte de la BANDE DE TRANSITION z 0.5→0.7 Global↔Domaine. RÉSULTAT : cœur du chantier VALIDÉ. Balayage progressif capturé au molette : z=0.450 (N1 pur, 7 corridors op 0.16, 0 twins), z=0.503 (7 corridors op 0.16, twins pas encore montés), z=0.562 (BANDE : 7 corridors op 0.142 + 41 twins op 0 en apparition), z=0.628 (BANDE : corridors op 0.044 fondants + twins op 0.699 révélés), z=0.701 (fin de bande, corridors op 0.04 quasi-invisibles + twins op 0.998, label passe à 'Niveau 2 · Domaine'), z=0.783 (Domaine complet : 0 corridors, twins op 1). Coexistence corridors + arêtes de domaine confirmée dans la bande sans erreur console. Symétrie inverse validée (dézoom retourne à N1 corridors op 0.16). Aucun basculement sec. RÉGRESSIONS N1/N2/N3/N4 OK : N1 hover territoire éclaire son corridor (visuel confirmé sur screenshot — 1 arc lumineux, autres éteints), agrégats macro visibles (X jumeaux · Y flux · Z écarts), Niveau 4 atteint (Composants & preuves). Flore overlay : btn-parler-flore ouvre flore-panel, clic dehors ferme. ZÉRO erreur console sur balayage complet N1→N4→N1 + interactions.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "atlasGraph.js lignes 669-720 (bloc corridors) et 721-811 (bloc domaine) : deux blocs cumulables gouvernés par `entreprise || bande` et `!entreprise || bande` — structure propre, coexistence en bande fonctionne.",
+    "atlasGraph.js ligne 588 `niveauEff = bande ? 2 : zoomNiveau` : garantit que corridorsN2 se construisent en bande même si zoomNiveau=1 — hystérésis correcte.",
+    "atlasGraph.js ligne 777 `aretesDomaine = ortho.edges.map(...entree: bande ? fonduGD : 1)` : multiplicateur d'entrée injecté uniquement sur les arêtes de domaine (jamais sur les corridors) — le moteur de labels et les post-filtres focus/relFocus (lignes 779-808) ne reçoivent que aretesDomaine (aucun corridor), donc pas de risque d'accès à data.points sur un corridor.",
+    "atlasGraph.js ligne 651 `hidden: entreprise ? !bande : false` : twins cachés en N1 pur, présents en bande (avec fondu d'entrée) — validé (twins=0 à z=0.45, twins=41 à z=0.56).",
+    "atlasGraph.js ligne 817 `opaciteMacro: bande ? 1 - fonduGD : 1` : agrégats macro fondent progressivement — cohérent avec l'apparition des étoiles.",
+    "AreteCorridor.jsx multiplicateur `sortie` et TwinNode.jsx `entree` bien pris en compte (opacités mesurées correspondent aux formules attendues sur l'intervalle 0.5-0.7)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100%"},
+  "test_credentials": "none",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "It62 (bande de transition Global↔Domaine) 100% validé. La refonte du constructeur de graphe en deux blocs cumulables (corridors + domaine) fonctionne parfaitement : progression continue sur [0.5, 0.7], coexistence dans la bande, symétrie inverse, zéro erreur console. Régressions N1-N4 OK. Flore overlay et interactions confirmées.",
+  "rca of the issue": "N/A — aucune régression détectée"
+}
