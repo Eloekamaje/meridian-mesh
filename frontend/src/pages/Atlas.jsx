@@ -424,6 +424,8 @@ export default function Atlas() {
       zoomFort: zoomActuel >= 1.5,
       // Fondu croisé étoile ↔ robot : bande progressive centrée sur le seuil de niveau (1.15)
       fonduJumeau: Math.max(0, Math.min(1, (zoomActuel - 0.95) / 0.4)),
+      // Fondu croisé Global ↔ Domaine : corridors/agrégats fondent, arêtes et étoiles se révèlent (z 0.5 → 0.7)
+      fonduGD: Math.max(0, Math.min(1, (zoomActuel - 0.5) / 0.2)),
       routesFin, provisoire, tactile: estTactile,
       couchesCarte, situationsJumeaux,
       onMajClic: (id) => {
@@ -1332,8 +1334,8 @@ export default function Atlas() {
                     </span>
                   )}
                 </div>
-                {(d.macro || (couchesCarte.capacites && visible)) && m && (
-                  <div className="mt-1 flex items-center justify-center gap-2 font-code text-[10px] text-[#94A3B8]" data-testid={`region-macro-${d.id}`}>
+                {(d.macro || (couchesCarte.capacites && visible)) && m && (d.opaciteMacro ?? 1) > 0.02 && (
+                  <div className="mt-1 flex items-center justify-center gap-2 font-code text-[10px] text-[#94A3B8]" style={{ opacity: d.opaciteMacro ?? 1, transition: "opacity 200ms" }} data-testid={`region-macro-${d.id}`}>
                     <span>{m.jumeaux} jumeau{m.jumeaux > 1 ? "x" : ""}</span>
                     <span className="text-[#7C93A8]">·</span>
                     <span>{d.flux ?? 0} flux</span>

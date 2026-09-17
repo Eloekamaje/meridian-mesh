@@ -191,7 +191,7 @@ export default function TwinNode({ data, selected }) {
   return (
     <div
       className={`node-deploiement group relative transition-opacity duration-500 ${data.dim ? "opacity-20" : data.adouci ? "opacity-60" : "opacity-100"}`}
-      style={{ animationDelay: `${250 + (idNumerique(j.id) % 8) * 55}ms` }}
+      style={{ animationDelay: `${250 + (idNumerique(j.id) % 8) * 55}ms`, ...(data.entree < 1 ? { opacity: data.entree } : {}) }}
       data-testid={`twin-node-${j.id}`}
       onClick={(e) => {
         // Maj+clic : multisélection additive gérée ici — la sélection est contrôlée (notre état

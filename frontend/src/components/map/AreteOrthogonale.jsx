@@ -48,6 +48,9 @@ export default memo(function AreteOrthogonale({ id, data, selected, style: style
     ...(actif ? { strokeWidth: (base.strokeWidth || 1.5) + 1, opacity: 1 } : {}),
     ...(estompee ? { opacity: 0.18 } : {}),
   };
+  // Fondu d'entrée en bande Global ↔ Domaine : l'arête se révèle progressivement
+  const entree = data.entree ?? 1;
+  if (entree < 1) style.opacity = (style.opacity ?? 1) * entree;
 
   return (
     <g data-testid={`arete-${id}`}>

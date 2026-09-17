@@ -16,8 +16,9 @@ export default memo(function AreteCorridor({ id, data, selected }) {
 
   const lumineux = selected || data?.survolee || data?.miseEnAvant;
   const eteint = data?.estompee && !lumineux;
-  const coreOp = lumineux ? 1 : eteint ? 0.05 : 0.16;
-  const haloOp = lumineux ? 0.3 : eteint ? 0 : 0.05;
+  const sortie = data?.sortie ?? 1;
+  const coreOp = (lumineux ? 1 : eteint ? 0.05 : 0.16) * sortie;
+  const haloOp = (lumineux ? 0.3 : eteint ? 0 : 0.05) * sortie;
   const largeur = lumineux ? 2.4 : 1.5;
 
   return (

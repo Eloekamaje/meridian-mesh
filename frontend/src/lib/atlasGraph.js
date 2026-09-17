@@ -530,7 +530,7 @@ export function statsDuDomaine(mesh, situations, domDe, label) {
 export function construireGraphe({
   mesh, situation, focus, vueActive, perimetreTravail,
   posOverrides, compteurs, halo, selection,
-  zoomNiveau, relFocus, focusCarte, domDe, statsRegions, temps, zoomFort, fonduJumeau = 0,
+  zoomNiveau, relFocus, focusCarte, domDe, statsRegions, temps, zoomFort, fonduJumeau = 0, fonduGD = 0,
   routesFin, provisoire, tactile,
   couchesCarte = {}, situationsJumeaux, onMajClic,
 }) {
@@ -582,6 +582,10 @@ export function construireGraphe({
 
   const twins = mesh.jumeaux;
   const entreprise = zoomNiveau === 1;
+  // Bande de transition Global ↔ Domaine (z 0.5 → 0.7) : les deux mondes coexistent,
+  // les corridors fondent pendant que les arêtes de domaine et les étoiles se révèlent.
+  const bande = fonduGD > 0 && fonduGD < 1;
+  const niveauEff = bande ? 2 : zoomNiveau;
 
   // Zéro chevauchement : calcul des positions finales avant toute construction
   const posSeparees = separerNoeuds(twins, posOverrides);
@@ -644,9 +648,9 @@ export function construireGraphe({
         position,
         initialWidth: 64,
         initialHeight: 78,
-        hidden: entreprise && !j.anonyme ? true : entreprise,
+        hidden: entreprise ? !bande : false,
         data: {
-          jumeau: j, dim: dims.has(j.id), halo: halo === j.id, evenements: compteurs[j.id] || 0, etape: null, niveau: zoomNiveau, fondu: fonduJumeau,
+          jumeau: j, dim: dims.has(j.id), halo: halo === j.id, evenements: compteurs[j.id] || 0, etape: null, niveau: zoomNiveau, fondu: fonduJumeau, entree: bande ? fonduGD : 1,
           detailVisible: zoomNiveau >= 4 && !j.anonyme && !!cartesVisibles?.has(j.id),
           detailPosition: cartesVisibles?.get(j.id) || "bas",
           dansSituation: !!couchesCarte.situations && !!situationsJumeaux?.has(j.id),
@@ -662,8 +666,8 @@ export function construireGraphe({
   let es = [];
   let snapMain = null;
   const posMain = Object.fromEntries(twins.map((j) => [j.id, posSeparees[j.id] || j.position]));
-  if (entreprise) {
-    // Zoom Entreprise : corridors agrégés inter-domaines
+  if (entreprise || bande) {
+    // Zoom Global : corridors agrégés inter-domaines (fondants en sortie de bande)
     const regParDom = {};
     (mesh.regions || []).forEach((r) => { regParDom[r.label] = r.id; });
     // Ancres = « capitales » des territoires (position de l'étiquette du domaine),
@@ -706,13 +710,15 @@ export function construireGraphe({
           corridorLabel: `${c.a} ↔ ${c.b} · ${c.n} relation${c.n > 1 ? "s" : ""}${c.actif ? " · activité élevée" : ""}`,
           capitales: ps && pt ? { sx: ps.x, sy: ps.y, tx: pt.x, ty: pt.y } : null,
           sens: c.a < c.b ? 1 : -1,
+          sortie: bande ? 1 - fonduGD : 1,
         },
         label: `${c.a} ↔ ${c.b} · ${c.n} relation${c.n > 1 ? "s" : ""}${c.actif ? " · activité élevée" : ""}`,
         labelStyle: { fill: "rgba(216,226,234,0.78)", fontSize: 10, fontFamily: "JetBrains Mono" },
         labelBgStyle: { fill: "rgba(15,29,40,0.92)" },
       };
     });
-  } else {
+  }
+  if (!entreprise || bande) {
     // Extrémités regroupées : une relation touchant un membre pointe vers sa grappe ;
     // les relations entre mêmes extrémités sont agrégées (compte) — densité maîtrisée
     const relsMappees = mesh.relations
@@ -734,7 +740,7 @@ export function construireGraphe({
     // « N flux » (façon routes principales Google Maps) ; les petites rues (relations
     // individuelles inter-domaines) apparaissent au niveau 3. Relations internes inchangées.
     let relsPourRoutage = relsMappees;
-    if (zoomNiveau === 2) {
+    if (niveauEff === 2) {
       const intra = [];
       const inter = new Map();
       relsMappees.forEach((r) => {
@@ -766,12 +772,12 @@ export function construireGraphe({
       });
       relsPourRoutage = [...intra, ...corridorsN2];
     }
-    es = fabriqueOrtho(relsPourRoutage, ns, posMain, zoomNiveau, zoomFort, routesFin, provisoire, tactile);
-    snapMain = es.snapshot;
-    es = es.edges;
+    const ortho = fabriqueOrtho(relsPourRoutage, ns, posMain, niveauEff, zoomFort, routesFin, provisoire, tactile);
+    snapMain = ortho.snapshot;
+    let aretesDomaine = ortho.edges.map((e) => ({ ...e, data: { ...e.data, entree: bande ? fonduGD : 1 } }));
     // Moteur de labels des relations (niveau 3+) : collision → le moins prioritaire disparaît
     if (zoomNiveau >= 3 && !provisoire) {
-      const candidats = es
+      const candidats = aretesDomaine
         .filter((e) => e.data?.label && !e.hidden)
         .map((e) => {
           const a = ancreLabel(e.data.points);
@@ -784,29 +790,31 @@ export function construireGraphe({
         })
         .filter(Boolean);
       const vis = placerLabels(candidats);
-      es = es.map((e) => (e.data?.label && !e.hidden && !vis.has(e.id) ? { ...e, data: { ...e.data, labelMasque: true } } : e));
+      aretesDomaine = aretesDomaine.map((e) => (e.data?.label && !e.hidden && !vis.has(e.id) ? { ...e, data: { ...e.data, labelMasque: true } } : e));
     }
     if (vueActive?.type === "relations_non_confirmees") {
-      es = es.map((e) =>
+      aretesDomaine = aretesDomaine.map((e) =>
         e.data?.etat === "confirmee" ? { ...e, animated: false, style: { ...e.style, opacity: 0.1 } } : e
       );
     }
     if (relFocus && selection.length > 1) {
-      es = es.filter((e) => selection.includes(e.source) && selection.includes(e.target));
+      aretesDomaine = aretesDomaine.filter((e) => selection.includes(e.source) && selection.includes(e.target));
     }
     if (focusCarte?.type === "relations" && focusCarte.ids?.length) {
-      es = es.map((e) =>
+      aretesDomaine = aretesDomaine.map((e) =>
         focusCarte.ids.includes(e.id)
           ? { ...e, animated: true, style: { ...e.style, opacity: 1, strokeWidth: 2.6 } }
           : { ...e, animated: false, style: { ...e.style, opacity: 0.08 } }
       );
     }
+    es = es.concat(aretesDomaine);
   }
-  if (entreprise) {
-    // Niveau 1 — Capacités et macro-territoires : agrégats par territoire, robots masqués
+  if (entreprise || bande) {
+    // Vue Global (et bande de transition) : agrégats macro sur les territoires —
+    // en bande, les étoiles existent déjà (fondu d'entrée) et les agrégats fondent
     const macro = ns
-      .filter((n) => n.type !== "twin")
-      .map((n) => ({ ...n, data: { ...n.data, macro: true } }));
+      .filter((n) => n.type !== "twin" || bande)
+      .map((n) => ({ ...n, data: { ...n.data, macro: true, opaciteMacro: bande ? 1 - fonduGD : 1 } }));
     return { nodes: macro, edges: repartirOffsets(appliquerTemps(es, temps)), snapshot: null };
   }
   return { nodes: ns, edges: appliquerTemps(es, temps), snapshot: snapMain };
