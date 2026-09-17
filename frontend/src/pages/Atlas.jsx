@@ -837,14 +837,22 @@ export default function Atlas() {
       setRegionSurvolee(null);
       setRegionTooltip(null);
     }
-    // Télémétrie de navigation : mise à jour impérative (zéro re-render à chaque pointermove)
+    // Télémétrie : ne « parle » que lorsqu'un élément est pointé (jumeau ou territoire) —
+    // silencieuse sinon (« — », atténuée), pour ne pas bruyer le vide.
     if (telemetrieRef.current) {
-      let secteur = null;
-      for (const n of nodes) {
-        if (n.type !== "region" || !n.data.points) continue;
-        if (dansPolygone(p, n.data.points, n.position.x, n.position.y)) { secteur = n.data.label; break; }
+      let texte = null;
+      if (jumeauSurvole) {
+        texte = `JUMEAU ${idNumerique(jumeauSurvole.id)} · ${(jumeauSurvole.domaine || "").toUpperCase()} · Z ${zoom.toFixed(2)}`;
+      } else {
+        let secteur = null;
+        for (const n of nodes) {
+          if (n.type !== "region" || !n.data.points) continue;
+          if (dansPolygone(p, n.data.points, n.position.x, n.position.y)) { secteur = n.data.label; break; }
+        }
+        if (secteur) texte = `${secteur.toUpperCase()} · X ${String(Math.max(0, Math.round(p.x))).padStart(4, "0")} · Y ${String(Math.max(0, Math.round(p.y))).padStart(4, "0")} · Z ${zoom.toFixed(2)}`;
       }
-      telemetrieRef.current.textContent = `${(secteur || "hors secteur").toUpperCase()} · X ${String(Math.max(0, Math.round(p.x))).padStart(4, "0")} · Y ${String(Math.max(0, Math.round(p.y))).padStart(4, "0")} · Z ${zoom.toFixed(2)}`;
+      telemetrieRef.current.textContent = texte || "—";
+      telemetrieRef.current.style.opacity = texte ? "1" : "0.35";
     }
   };
 
@@ -1060,13 +1068,14 @@ export default function Atlas() {
           onFermer={() => { setSelected(null); majUrl({ sel: null }); }}
         />
       )}
-    <div ref={carteRef} onPointerMove={surSurvolCarte} onPointerLeave={() => { setRegionSurvolee(null); setRegionTooltip(null); if (telemetrieRef.current) telemetrieRef.current.textContent = "—"; }} className="relative min-w-0 flex-1 overflow-hidden" data-testid="system-map" style={{ background: "radial-gradient(ellipse at 50% 38%, #0D1B28 0%, #071019 60%, #04090F 100%)" }}>
+    <div ref={carteRef} onPointerMove={surSurvolCarte} onPointerLeave={() => { setRegionSurvolee(null); setRegionTooltip(null); if (telemetrieRef.current) { telemetrieRef.current.textContent = "—"; telemetrieRef.current.style.opacity = "0.35"; } }} className="relative min-w-0 flex-1 overflow-hidden" data-testid="system-map" style={{ background: "radial-gradient(ellipse at 50% 38%, #0D1B28 0%, #071019 60%, #04090F 100%)" }}>
       <CielEtoile />
       <output
         ref={telemetrieRef}
         data-testid="telemetrie"
         aria-hidden="true"
-        className="pointer-events-none absolute bottom-3 left-3 z-10 select-none font-code text-[9px] uppercase tracking-[0.18em] text-[#7C93A8]/80"
+        className="pointer-events-none absolute bottom-3 left-3 z-10 select-none font-code text-[9px] uppercase tracking-[0.18em] text-[#7C93A8]/80 transition-opacity duration-200"
+        style={{ opacity: 0.35 }}
       >—</output>
       <ReactFlow
         key={focus || situationParam || "mesh"}

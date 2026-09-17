@@ -1,5 +1,8 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v64, télémétrie silencieuse hors élément)
+Retour utilisateur : la bulle d'information du curseur continuait même sans élément pointé. Reproduction : l'infobulle de domaine s'effaçait correctement ; c'était la **télémétrie** qui affichait « HORS SECTEUR · X · Y · Z » en permanence dans le vide. Correctif : la télémétrie ne parle que sur un élément — **jumeau pointé** → « JUMEAU 3384 · PAIEMENT · Z 0.72 » ; **territoire** → « PAIEMENT · X 0792 · Y 0409 · Z 0.72 » ; sinon « — » atténué (opacité 0.35, transition douce), y compris hors carte. Vérifié par script (4 états mesurés).
+
 ## Implémenté (06/2026 — v63, Flore en superposition refermable + fix contexte /travaux)
 Demande utilisateur : le panneau Flore devient une **superposition flottante** (la carte/page ne se redimensionne plus), refermable manuellement ET au clic en dehors.
 - **Overlay** : `fixed bottom-0 right-0 top-12 z-40 w-[440px]` (94 vw sur mobile), ombre portée profonde, coins HUD conservés.
