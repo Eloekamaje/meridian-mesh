@@ -1,9 +1,9 @@
 import { memo } from "react";
 
-// Corridor macro (niveau Global) : arc lumineux « ligne aérienne » entre les capitales
-// des territoires — dégradé couleur source → cible, halo doux, flux animé si activité.
-// Les ancres (capitales = positions des étiquettes de domaines) sont pré-calculées
-// dans atlasGraph ; les poignées de boîte React Flow ne sont pas utilisées.
+// Corridor macro (niveau Global) : arc monochrome cyan/ardoise entre les capitales des
+// territoires. Trois états pilotés par le survol (Atlas) : repos quasi invisible,
+// illuminé quand SON territoire est survolé, presque éteint quand c'est un autre.
+// L'illumination ciblée lève l'ambiguïté des arcs qui traversent un domaine tiers.
 export default memo(function AreteCorridor({ id, data, selected }) {
   const cap = data?.capitales;
   if (!cap) return null;
@@ -13,26 +13,26 @@ export default memo(function AreteCorridor({ id, data, selected }) {
   const L = Math.hypot(dx, dy) || 1;
   const k = Math.min(0.16 * L, 90) * (data?.sens || 1);
   const d = `M ${sx} ${sy} Q ${(sx + tx) / 2 - (dy / L) * k} ${(sy + ty) / 2 + (dx / L) * k} ${tx} ${ty}`;
-  const gid = `grad-${id}`;
+
+  const lumineux = selected || data?.survolee || data?.miseEnAvant;
+  const eteint = data?.estompee && !lumineux;
+  const coreOp = lumineux ? 1 : eteint ? 0.05 : 0.16;
+  const haloOp = lumineux ? 0.3 : eteint ? 0 : 0.05;
+  const largeur = lumineux ? 2.4 : 1.5;
+
   return (
-    <g data-testid={`arete-${id}`}>
-      <defs>
-        <linearGradient id={gid} gradientUnits="userSpaceOnUse" x1={sx} y1={sy} x2={tx} y2={ty}>
-          <stop offset="0%" stopColor={data.couleurA} />
-          <stop offset="100%" stopColor={data.couleurB} />
-        </linearGradient>
-      </defs>
-      <path d={d} fill="none" stroke={`url(#${gid})`} strokeWidth={selected ? 10 : 7} strokeLinecap="round" opacity={selected ? 0.24 : 0.16} />
+    <g data-testid={`arete-${id}`} style={{ transition: "opacity 250ms" }}>
+      <path d={d} fill="none" stroke="#25D0C8" strokeWidth={lumineux ? 9 : 6} strokeLinecap="round" opacity={haloOp} style={{ transition: "opacity 250ms, stroke-width 250ms" }} />
       <path
         d={d}
         fill="none"
-        stroke={`url(#${gid})`}
-        strokeWidth={selected ? 2.6 : 2}
+        stroke="#25D0C8"
+        strokeWidth={largeur}
         strokeLinecap="round"
-        opacity={selected ? 1 : 0.9}
+        opacity={coreOp}
         strokeDasharray={data?.actif ? "7 10" : undefined}
         className={data?.actif ? "corridor-actif" : undefined}
-        style={{ transition: "stroke-width 200ms, opacity 200ms" }}
+        style={{ transition: "opacity 250ms, stroke-width 250ms" }}
       />
       <path d={d} fill="none" stroke="transparent" strokeWidth={16} style={{ pointerEvents: "stroke" }} />
     </g>

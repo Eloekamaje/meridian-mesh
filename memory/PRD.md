@@ -1,5 +1,11 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v66, corridors Global : atténuation au repos + illumination au survol)
+Choix utilisateur : arcs quasi invisibles au repos, illumination ciblée au survol d'un territoire (lève l'ambiguïté « A→C lu comme B→C quand B est au milieu »), trait monochrome cyan/ardoise (dégradé inter-domaines abandonné).
+- **`AreteCorridor`** monochrome `#25D0C8`, 3 états : repos (cœur 0.16 / halo 0.05), illuminé (1.0 / 0.3, trait 2.4) quand SON territoire est survolé, presque éteint (0.05) quand c'est un autre ; transitions 250 ms ; flux pointillé animé si activité conservé.
+- **Détection de territoire sous le curseur** : `secteurCurseur` (point-dans-polygone, partagé avec la télémétrie) pilote l'emphase dans le pipeline `edgesVisibles` (données `domains` sur chaque corridor) ; survol direct d'un arc et sélection illuminent aussi (drapeaux existants `survolee`/`selected`).
+- Mesuré par script : survol Paiement → 6 corridors à opacité 1, Client↔Distribution à 0.05 ; repos → toutes traces discrètes. Zéro erreur JS.
+
 ## Implémenté (06/2026 — v65, corridors macro redessinés en arcs « lignes aériennes »)
 Retour utilisateur : au zoom arrière max, les liens inter-domaines étaient mal dessinés. Reproduction : béziers React Flow ancrés au milieu des boîtes englobantes (creux des membranes concaves → ancres mal plantées), tracé pointillé terne (fourmis RF), police de label obsolète (IBM Plex Mono).
 - **`AreteCorridor.jsx`** (nouveau, `type: "corridor"`) : arc quadratique entre les **capitales** des territoires (positions des étiquettes de domaines, plus les boîtes), courbure perpendiculaire déterministe, **dégradé couleur domaine source → cible** (linearGradient userSpaceOnUse), halo large + cœur lumineux, flux animé en pointillés si activité élevée (`.corridor-actif`, respect reduced-motion), zone de clic dédiée 16 px, renforcé à la sélection.

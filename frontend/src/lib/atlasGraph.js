@@ -697,11 +697,13 @@ export function construireGraphe({
         targetHandle: droite ? "t-l" : "t-r",
         type: "corridor",
         interactionWidth: 16,
-        data: {
+          data: {
           n: c.n,
           actif: c.actif,
           couleurA: couleurDomaine(c.a),
           couleurB: couleurDomaine(c.b),
+          domains: [c.a, c.b],
+          corridorLabel: `${c.a} ↔ ${c.b} · ${c.n} relation${c.n > 1 ? "s" : ""}${c.actif ? " · activité élevée" : ""}`,
           capitales: ps && pt ? { sx: ps.x, sy: ps.y, tx: pt.x, ty: pt.y } : null,
           sens: c.a < c.b ? 1 : -1,
         },
