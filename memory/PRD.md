@@ -1,5 +1,11 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v65, corridors macro redessinés en arcs « lignes aériennes »)
+Retour utilisateur : au zoom arrière max, les liens inter-domaines étaient mal dessinés. Reproduction : béziers React Flow ancrés au milieu des boîtes englobantes (creux des membranes concaves → ancres mal plantées), tracé pointillé terne (fourmis RF), police de label obsolète (IBM Plex Mono).
+- **`AreteCorridor.jsx`** (nouveau, `type: "corridor"`) : arc quadratique entre les **capitales** des territoires (positions des étiquettes de domaines, plus les boîtes), courbure perpendiculaire déterministe, **dégradé couleur domaine source → cible** (linearGradient userSpaceOnUse), halo large + cœur lumineux, flux animé en pointillés si activité élevée (`.corridor-actif`, respect reduced-motion), zone de clic dédiée 16 px, renforcé à la sélection.
+- atlasGraph : corridors agrégés N1 branchés sur le nouveau type (ancres capitales via `labelX/labelY`), label en JetBrains Mono.
+- Vérifié par captures : N1 lisible (arcs colorés entre capitales), aller-retour zoom N1↔N4 intact, zéro erreur JS.
+
 ## Implémenté (06/2026 — v64, télémétrie silencieuse hors élément)
 Retour utilisateur : la bulle d'information du curseur continuait même sans élément pointé. Reproduction : l'infobulle de domaine s'effaçait correctement ; c'était la **télémétrie** qui affichait « HORS SECTEUR · X · Y · Z » en permanence dans le vide. Correctif : la télémétrie ne parle que sur un élément — **jumeau pointé** → « JUMEAU 3384 · PAIEMENT · Z 0.72 » ; **territoire** → « PAIEMENT · X 0792 · Y 0409 · Z 0.72 » ; sinon « — » atténué (opacité 0.35, transition douce), y compris hors carte. Vérifié par script (4 états mesurés).
 

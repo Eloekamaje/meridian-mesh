@@ -93,6 +93,13 @@
 }
 .trait-pulse { animation: trait-pulse 0.9s ease-in-out infinite; }
 
+/* Corridors macro : flux lumineux le long de l'arc quand l'activité est élevée */
+@keyframes flux-corridor { to { stroke-dashoffset: -170; } }
+.corridor-actif { animation: flux-corridor 3.2s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .corridor-actif { animation: none; }
+}
+
 @media (prefers-reduced-motion: reduce) {
     .rise, .ticker-item { animation: none; }
     .pulse-soft, .halo-anim, .trait-pulse { animation: none; }

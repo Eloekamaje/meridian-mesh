@@ -666,7 +666,14 @@ export function construireGraphe({
     // Zoom Entreprise : corridors agrégés inter-domaines
     const regParDom = {};
     (mesh.regions || []).forEach((r) => { regParDom[r.label] = r.id; });
-    const posRegions = Object.fromEntries(ns.filter((n) => n.type === "region").map((n) => [n.id, { x: n.position.x + n.initialWidth / 2, y: n.position.y + n.initialHeight / 2 }]));
+    // Ancres = « capitales » des territoires (position de l'étiquette du domaine),
+    // pas le milieu des boîtes englobantes (creux concaves → arcs mal plantés)
+    const posRegions = Object.fromEntries(
+      ns.filter((n) => n.type === "region").map((n) => [
+        n.id,
+        { x: n.position.x + (n.data.labelX ?? n.initialWidth / 2), y: n.position.y + (n.data.labelY ?? n.initialHeight / 2) },
+      ])
+    );
     const corridors = {};
     mesh.relations.forEach((r) => {
       const a = domDe[r.source];
@@ -688,12 +695,18 @@ export function construireGraphe({
         target: regParDom[c.b],
         sourceHandle: droite ? "s-r" : "s-l",
         targetHandle: droite ? "t-l" : "t-r",
-        type: "default",
-        interactionWidth: 8,
-        animated: c.actif,
-        style: { stroke: "rgba(37,208,200,0.35)", strokeWidth: 1.8, opacity: 0.85 },
+        type: "corridor",
+        interactionWidth: 16,
+        data: {
+          n: c.n,
+          actif: c.actif,
+          couleurA: couleurDomaine(c.a),
+          couleurB: couleurDomaine(c.b),
+          capitales: ps && pt ? { sx: ps.x, sy: ps.y, tx: pt.x, ty: pt.y } : null,
+          sens: c.a < c.b ? 1 : -1,
+        },
         label: `${c.a} ↔ ${c.b} · ${c.n} relation${c.n > 1 ? "s" : ""}${c.actif ? " · activité élevée" : ""}`,
-        labelStyle: { fill: "rgba(216,226,234,0.78)", fontSize: 10, fontFamily: "IBM Plex Mono" },
+        labelStyle: { fill: "rgba(216,226,234,0.78)", fontSize: 10, fontFamily: "JetBrains Mono" },
         labelBgStyle: { fill: "rgba(15,29,40,0.92)" },
       };
     });

@@ -12,6 +12,7 @@ import TwinNode from "@/components/map/TwinNode";
 import CielEtoile from "@/components/map/CielEtoile";
 import RegionNode from "@/components/map/RegionNode";
 import AreteOrthogonale from "@/components/map/AreteOrthogonale";
+import AreteCorridor from "@/components/map/AreteCorridor";
 import AtlasControle from "@/components/map/AtlasControle";
 import AtlasToolbar from "@/components/map/AtlasToolbar";
 import AtlasLegende from "@/components/map/AtlasLegende";
@@ -40,7 +41,7 @@ import { couleurDomaine, ETATS_RELATION, MATURITES } from "@/lib/domaines";
 import { parseQuand, finDeJournee, fmtDate } from "@/lib/temps";
 
 const nodeTypes = { twin: TwinNode, region: RegionNode };
-const edgeTypes = { ortho: AreteOrthogonale };
+const edgeTypes = { ortho: AreteOrthogonale, corridor: AreteCorridor };
 
 export default function Atlas() {
   const [searchParams, setSearchParams] = useSearchParams();
