@@ -1,4 +1,5 @@
-// Constellation décorative d'un territoire : micro-étoiles + filaments.
+// Constellation décorative d'un territoire : micro-étoiles d'ambiance SANS filaments —
+// un trait sur la carte est toujours une relation réelle du Mesh (règle utilisateur).
 // Déterministe (graine = id du domaine) — rendu stable entre les recalculs de coque.
 function mulberry32(graine) {
   let a = graine;
@@ -27,7 +28,7 @@ export function dansPolygone(x, y, poly) {
 }
 
 export function genererConstellation(poly, w, h, idTexte, couleur) {
-  if (!poly || poly.length < 3 || w < 40 || h < 40) return { points: [], liens: [] };
+  if (!poly || poly.length < 3 || w < 40 || h < 40) return { points: [] };
   const rand = mulberry32(hacher(String(idTexte)));
   const aire = Math.abs(poly.reduce((s, p, i) => {
     const q = poly[(i + 1) % poly.length];
@@ -52,21 +53,5 @@ export function genererConstellation(poly, w, h, idTexte, couleur) {
       delai: -rand() * 7,
     });
   }
-  const liens = [];
-  const vus = new Set();
-  points.forEach((p, i) => {
-    const proches = points
-      .map((q, j) => ({ j, d: Math.hypot(p.x - q.x, p.y - q.y) }))
-      .filter((e) => e.j !== i)
-      .sort((a, b) => a.d - b.d);
-    const prendre = proches.slice(0, 1);
-    if (proches[1] && proches[1].d < 95 && rand() < 0.45) prendre.push(proches[1]);
-    prendre.forEach(({ j, d }) => {
-      const cle = i < j ? `${i}-${j}` : `${j}-${i}`;
-      if (!proches.length || d > 130 || vus.has(cle)) return;
-      vus.add(cle);
-      liens.push({ x1: p.x, y1: p.y, x2: points[j].x, y2: points[j].y, o: 0.1 + rand() * 0.12 });
-    });
-  });
-  return { points, liens };
+  return { points };
 }

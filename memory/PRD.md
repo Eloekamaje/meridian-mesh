@@ -1,5 +1,11 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v72, zéro arc factice : chaque trait = une relation réelle)
+Retour utilisateur : « attention aux arcs factices, ça doit être des liens réels — j'ai l'impression que pour l'embellissement il y a des choses ajoutées ». Audit complet :
+- **Coupable** : les filaments de constellation décoratifs (`genererConstellation` reliant des micro-points aléatoires au plus-proche-voisin) — supprimés du rendu (`RegionNode.jsx`) et du générateur (`constellation.js`). Les micro-étoiles d'ambiance restent (un point n'implique pas de lien).
+- **Audit des autres traits** : corridors = agrégats de relations réelles (compte `n` exact) ; arêtes ortho/courbes = relations réelles ; marqueurs/animations = sur relations réelles ; CielEtoile = fond sans liens. Rien d'autre de factice.
+- **Vérification chiffrée** : N2 = 33 arêtes = 33 relations intra-domaine réelles de `/api/mesh` ; N3 = 48 relations individuelles = 48 relations réelles totales ; N1 = 7 corridors = 7 couples de domaines réellement liés (15 relations inter). Correspondance exacte, zéro ligne décorative.
+
 ## Implémenté (06/2026 — v71, filiation parent → enfants : transitions de zoom cohérentes)
 Retour utilisateur : « les phases de transition ne sont pas cohérentes — va vraiment avec l'aspect lien parent/enfants ». Choix utilisateur : **dissolution échelonnée** pour l'éclatement. Refonte :
 - **Un SEUL arc parent par couple de domaines** (`corridor-<A>-<B>`, bloc unifié dans `atlasGraph.js`) : persistant du Global au Domaine — il **se transforme** (`detail: 0→1` : cyan discret macro → voie « N flux » colorée par l'état dominant, label révélé en fondu) au lieu du double tracé corridor N1 + corridor2 N2 superposés en cross-fade. Ancrage frontière + esquive des territoires tiers (hybride fluide) valables à tous les niveaux.
