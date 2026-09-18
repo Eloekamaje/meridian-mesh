@@ -15,6 +15,7 @@ import Topbar from "@/components/Topbar";
 import FlorePanel from "@/components/FlorePanel";
 import DemoTour from "@/components/DemoTour";
 import Atlas from "@/pages/Atlas";
+import Accueil from "@/pages/Accueil";
 import TravailDetail from "@/pages/TravailDetail";
 import { PolarisSessionProvider, usePolaris } from "./PolarisSessionProvider";
 import { SCENARIOS } from "./scenarios/gestionnaire";
@@ -92,6 +93,8 @@ function Orchestrateur({ profileId }) {
     if (etat.surface === "travail") {
       const rid = Object.keys(etat.resultats)[0];
       if (rid) navigate(`/demo/polaris/${profileId}/travail/${rid}`, { replace: true });
+    } else if (etat.surface === "nouveau") {
+      navigate(`/demo/polaris/${profileId}/nouveau`, { replace: true });
     } else {
       navigate(`/demo/polaris/${profileId}`, { replace: true });
     }
@@ -102,7 +105,7 @@ function Orchestrateur({ profileId }) {
 }
 
 function Coquille({ scenario, fixtures }) {
-  const { etat, pause, reprendre, suivant, lectureAuto, revoirDecouverte, onAccueil, preuveId, fermerPreuve, ouvrirPreuve } = usePolaris();
+  const { etat, pause, reprendre, suivant, lectureAuto, revoirDecouverte, onAccueil, preuveId, fermerPreuve, ouvrirPreuve, demarrerOuverture } = usePolaris();
   const [proposeInactivite, setProposeInactivite] = useState(false);
   const inactivite = useRef(null);
 
@@ -145,13 +148,16 @@ function Coquille({ scenario, fixtures }) {
 
   const pilotage = useMemo(
     () => ({
-      ouvert: etat.messages.length > 0 && etat.surface !== "travail",
+      ouvert: etat.messages.length > 0 && etat.surface === "atlas",
       echanges: construireEchanges(etat.messages, fixtures),
       activite: etat.activite,
       enPause: etat.status === "paused",
+      saisie: etat.saisie,
+      ouvertureEnAttente: etat.status === "awaiting_opening",
+      demarrerOuverture,
       ouvrirPreuve,
     }),
-    [etat.messages, etat.surface, etat.activite, etat.status, fixtures, ouvrirPreuve]
+    [etat.messages, etat.surface, etat.activite, etat.status, etat.saisie, fixtures, demarrerOuverture, ouvrirPreuve]
   );
 
   return (
@@ -180,6 +186,7 @@ function Coquille({ scenario, fixtures }) {
             ) : (
               <Routes>
                 <Route index element={<Atlas />} />
+                <Route path="nouveau" element={<Accueil mode="creation" />} />
                 <Route path="travail/:cid" element={<TravailDetail />} />
               </Routes>
             )}
@@ -193,8 +200,9 @@ function Coquille({ scenario, fixtures }) {
               </div>
             )}
 
-            {/* Barre flottante du lecteur — discrète, superposée à l'application réelle */}
-            <div className="pointer-events-none absolute inset-x-0 bottom-4 z-40 flex justify-center px-4">
+            {/* Barre flottante du lecteur — discrète, superposée à l'application réelle
+                (décalée à droite sur la page Nouveau travail pour dégager le composer) */}
+            <div className={`pointer-events-none absolute inset-x-0 bottom-4 z-40 flex px-4 ${etat.surface === "nouveau" ? "justify-end" : "justify-center"}`}>
               <div className="pointer-events-auto flex max-w-full flex-wrap items-center gap-3 rounded-2xl border border-[rgba(148,163,184,0.18)] bg-[#0A1520]/95 px-4 py-2 shadow-2xl backdrop-blur-xl" data-testid="polaris-barre">
                 <div className="flex items-center gap-2 pr-1">
                   <Sparkle size={14} weight="fill" className="text-[#9B87F5]" />

@@ -6,13 +6,18 @@ const BTN =
 
 export default function PolarisControls({ etat, onPause, onReprendre, onSuivant, onRevoir, onAccueil, onLectureAuto }) {
   const { status, playMode, stepIndex } = etat;
-  const enCours = status === "playing";
+  const enCours = status === "playing" || status === "opening_typing";
   const enPause = status === "paused";
   const auCheckpoint = status === "awaiting_continue";
   const fini = status === "completed";
 
   return (
     <div className="flex flex-wrap items-center gap-2" data-testid="polaris-controles">
+      {status === "awaiting_opening" && (
+        <span className="font-code text-[10px] uppercase tracking-[0.2em] text-[#9B87F5]" data-testid="polaris-indice-demarrage">
+          Cliquez sur « Nouveau travail » pour démarrer
+        </span>
+      )}
       {enCours && (
         <button onClick={() => onPause()} className={BTN} data-testid="polaris-pause-btn" title="Suspendre la lecture (délai conservé)">
           <Pause size={14} weight="fill" /> Pause

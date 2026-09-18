@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Sparkle, Compass, Newspaper, ArrowRight, Eye, FolderOpen } from "@phosphor-icons/react";
+import { Sparkle, Compass, Newspaper, ArrowRight, Eye, FolderOpen, CheckCircle, CircleNotch, Circle } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { usePerimetre } from "@/lib/perimetre";
 import { useContexte } from "@/lib/contexte";
+import { usePilotage } from "@/lib/pilotage";
 import ComposerFlore from "@/components/ComposerFlore";
 import FloreActivite, { delaiMin } from "@/components/FloreActivite";
 
@@ -82,6 +83,7 @@ export default function Accueil({ mode = "accueil" }) {
   const navigate = useNavigate();
   const { persona, personas, version, info } = usePerimetre();
   const { selection } = useContexte();
+  const pilote = usePilotage();
   const [recents, setRecents] = useState([]);
   const [echanges, setEchanges] = useState([]);
   const [envoi, setEnvoi] = useState(false);
@@ -163,7 +165,14 @@ export default function Accueil({ mode = "accueil" }) {
     }
   };
 
-  const enConversation = echanges.length > 0;
+  // Kiosque Polaris : le fil et l'activité viennent du moteur de lecture
+  const fil = pilote
+    ? pilote.echanges.flatMap((e) => [
+        ...(e.question ? [{ cle: `${e.id}-q`, role: "moi", texte: e.question }] : []),
+        ...(e.data ? [{ cle: `${e.id}-r`, role: "flore", data: e.data }] : []),
+      ])
+    : echanges;
+  const enConversation = fil.length > 0;
 
   return (
     <div className="flex h-full flex-col overflow-hidden" data-testid="accueil-page">
@@ -221,19 +230,45 @@ export default function Accueil({ mode = "accueil" }) {
             </div>
           ) : (
             <div className="space-y-6 py-8" data-testid="accueil-fil">
-              {echanges.map((e, i) =>
+              {fil.map((e, i) =>
                 e.role === "moi" ? (
-                  <p key={i} className="rise ml-auto max-w-[85%] rounded-2xl rounded-br-md bg-[rgba(155,135,245,0.12)] px-4 py-2.5 text-sm text-[#F2F6F8]" data-testid={`accueil-msg-${i}`}>
+                  <p key={e.cle || i} className="rise ml-auto max-w-[85%] rounded-2xl rounded-br-md bg-[rgba(155,135,245,0.12)] px-4 py-2.5 text-sm text-[#F2F6F8]" data-testid={`accueil-msg-${i}`}>
                     {e.texte}
                   </p>
                 ) : (
-                  <BulleFlore key={i} data={e.data} index={i} onSuite={demander} />
+                  <BulleFlore key={e.cle || i} data={e.data} index={i} onSuite={demander} />
                 )
               )}
-              {envoi && <FloreActivite testid="accueil-attente" />}
+              {!pilote && envoi && <FloreActivite testid="accueil-attente" />}
+              {pilote?.activite && (
+                <div className="rise" data-testid="accueil-activite-demo">
+                  <div className="flex items-center gap-1.5 font-code text-[9px] uppercase tracking-[0.2em] text-[#C4B5FD]">
+                    <Sparkle size={11} weight="fill" /> {pilote.activite.label}
+                  </div>
+                  <ul className="mt-2 space-y-1.5">
+                    {pilote.activite.ops.map((op, oi) => (
+                      <li
+                        key={oi}
+                        className="flex items-center gap-2 text-sm"
+                        style={{ color: op.status === "done" ? "#7C93A8" : op.status === "running" ? "#F2F6F8" : "#4B6072" }}
+                        data-testid={`accueil-activite-demo-op-${oi}`}
+                      >
+                        {op.status === "done" ? (
+                          <CheckCircle size={14} weight="fill" className="shrink-0 text-[#25D0C8]" />
+                        ) : op.status === "running" ? (
+                          <CircleNotch size={14} className="shrink-0 animate-spin text-[#9B87F5]" />
+                        ) : (
+                          <Circle size={14} className="shrink-0" />
+                        )}
+                        {op.label}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               {/* Une conversation qui s'approfondit peut devenir un Travail */}
-              {echanges.length >= 2 && !propMasquee && !envoi && !creation && (
+              {!pilote && echanges.length >= 2 && !propMasquee && !envoi && !creation && (
                 <div className="rounded-xl border border-[#F2B84B]/30 bg-[rgba(242,184,75,0.10)] px-4 py-3" data-testid="accueil-conservation">
                   <p className="text-xs leading-snug text-[#D8E2EA]">
                     Cette exploration {selection.length > 0 ? `implique ${selection.length} jumeau${selection.length > 1 ? "x" : ""} et ` : ""}pourrait mériter une mémoire persistante.

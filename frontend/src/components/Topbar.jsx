@@ -6,6 +6,7 @@ import { usePerimetre } from "@/lib/perimetre";
 import { useMesh } from "@/lib/mesh";
 import { useContexte } from "@/lib/contexte";
 import { useDemo } from "@/lib/demo";
+import { usePilotage } from "@/lib/pilotage";
 import { parseQuand } from "@/lib/temps";
 
 const TYPES_NOTIF = { mention: "#9B87F5", assignation: "#F2B84B", a_revoir: "#F87171" };
@@ -23,6 +24,7 @@ export default function Topbar() {
   const { mesh } = useMesh();
   const { floreOuverte, basculerFlore } = useContexte();
   const { demarrer, courant } = useDemo();
+  const pilote = usePilotage();
   const navigate = useNavigate();
   const [notifs, setNotifs] = useState([]);
   const [nonLues, setNonLues] = useState(0);
@@ -219,14 +221,31 @@ export default function Topbar() {
 
       {/* État du Mesh + sollicitations + identité */}
       <div className="flex shrink-0 items-center gap-2.5">
-        <button
-          onClick={() => navigate("/travaux/nouveau")}
-          data-testid="sidebar-nouveau-travail"
-          title="Nouveau travail"
-          className="flex h-8 items-center gap-1.5 rounded-lg bg-[#9B87F5] px-2.5 text-xs font-semibold text-[#071019] transition-colors hover:bg-[#B4A5F7]"
-        >
-          <Plus size={13} weight="bold" /> <span className="hidden 2xl:inline">Nouveau travail</span>
-        </button>
+        <span className="relative">
+          <button
+            onClick={() => {
+              // Kiosque Polaris : le bouton est le point de départ imposé du parcours
+              if (pilote) {
+                if (pilote.ouvertureEnAttente) pilote.demarrerOuverture();
+                return;
+              }
+              navigate("/travaux/nouveau");
+            }}
+            data-testid="sidebar-nouveau-travail"
+            title="Nouveau travail"
+            className={`flex h-8 items-center gap-1.5 rounded-lg bg-[#9B87F5] px-2.5 text-xs font-semibold text-[#071019] transition-colors hover:bg-[#B4A5F7] ${
+              pilote?.ouvertureEnAttente ? "animate-pulse ring-2 ring-[#C4B5FD] ring-offset-2 ring-offset-[#071019]" : ""
+            }`}
+          >
+            <Plus size={13} weight="bold" /> <span className="hidden 2xl:inline">Nouveau travail</span>
+          </button>
+          {pilote?.ouvertureEnAttente && (
+            <div className="absolute right-0 top-11 z-50 w-64 rounded-xl border border-[#9B87F5]/40 bg-[#0F1D28] p-3 shadow-2xl" data-testid="polaris-indice-nouveau-travail">
+              <div className="font-code text-[9px] uppercase tracking-[0.2em] text-[#9B87F5]">Commencez ici</div>
+              <p className="mt-1 text-xs leading-snug text-[#D8E2EA]">Cliquez sur « Nouveau travail » pour lancer la démonstration.</p>
+            </div>
+          )}
+        </span>
         <span
           className="hidden items-center gap-1.5 whitespace-nowrap font-code text-[10px] uppercase tracking-[0.15em] text-[#94A3B8] xl:flex"
           data-testid="mesh-status"

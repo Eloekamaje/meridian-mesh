@@ -29,15 +29,18 @@ const dureeOp = (i) => RYTHME.opMin + ((i * 173) % (RYTHME.opMax - RYTHME.opMin)
 
 export function PolarisSessionProvider({ scenario, fixtures, onAccueil, children }) {
   const [erreursValidation] = useState(() => validerScenario(scenario, fixtures));
+  const ouvertureInteractive = scenario.openingMode === "user_request";
   const [etat, setEtat] = useState(() => ({
-    status: erreursValidation.length ? "error" : "initializing",
+    status: erreursValidation.length ? "error" : ouvertureInteractive ? "awaiting_opening" : "initializing",
     erreur: erreursValidation.length ? `Scénario invalide :\n${erreursValidation.join("\n")}` : null,
     playMode: "auto",
     stepIndex: 0,
     beatIndex: 0,
     messages: [],
     activite: null, // { label, ops: [{label, status}] }
-    surface: "flore",
+    surface: ouvertureInteractive ? "atlas" : "flore",
+    saisie: null, // { texte, enFrappe } — frappe simulée dans le composer réel (ouverture user_request)
+    statutAvantPause: null,
     sceneId: null,
     resultats: {},
     attente: null, // { commandId } pendant apply_scene
@@ -51,6 +54,7 @@ export function PolarisSessionProvider({ scenario, fixtures, onAccueil, children
   const generation = useRef(0);
   const beatEnCours = useRef(null); // clé du beat démarré : pause/reprise ne le redémarre jamais
   const occupes = useRef(false);
+  const ouvertureFaite = useRef(false); // frappe d'ouverture achevée : le 1er message devient un battement d'envoi
 
   const effacerTimer = () => {
     if (horloge.current.timer) clearTimeout(horloge.current.timer);
@@ -127,7 +131,11 @@ export function PolarisSessionProvider({ scenario, fixtures, onAccueil, children
     switch (beat.type) {
       case "message": {
         ajouterMessage(step, etat.beatIndex, beat);
-        planifier(dureeMessage(beat.text), () => {
+        // La demande d'ouverture a déjà été lue pendant sa frappe dans le composer :
+        // simple battement d'« envoi » au lieu du temps de lecture complet
+        const duree =
+          ouvertureFaite.current && etat.stepIndex === 0 && etat.beatIndex === 0 ? 1400 : dureeMessage(beat.text);
+        planifier(duree, () => {
           setEtat((e) => ({ ...e, frappeActive: false }));
           avancer();
         });
@@ -223,6 +231,46 @@ export function PolarisSessionProvider({ scenario, fixtures, onAccueil, children
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Ouverture interactive (user_request) : le parcours ne démarre que par le clic du
+  // visiteur sur « Nouveau travail » — la demande se tape alors dans le composer réel
+  const texteOuverture = useMemo(() => {
+    for (const s of scenario.steps || []) {
+      for (const b of s.beats || []) {
+        if (b.type === "message" && b.speaker === "persona") return b.text;
+      }
+    }
+    return "";
+  }, [scenario]);
+
+  const demarrerOuverture = useCallback(() => {
+    setEtat((e) =>
+      e.status === "awaiting_opening"
+        ? { ...e, status: "opening_typing", surface: "nouveau", saisie: { texte: "", enFrappe: true } }
+        : e
+    );
+  }, []);
+
+  const frappeOuverture = useRef(false);
+  useEffect(() => {
+    if (etat.status !== "opening_typing" || frappeOuverture.current || !texteOuverture) return undefined;
+    frappeOuverture.current = true;
+    const tape = (i) => {
+      if (i > texteOuverture.length) {
+        planifier(700, () => {
+          frappeOuverture.current = false;
+          ouvertureFaite.current = true;
+          setEtat((e) => ({ ...e, status: "playing", saisie: null }));
+        });
+        return;
+      }
+      setEtat((e) => (e.saisie ? { ...e, saisie: { texte: texteOuverture.slice(0, i), enFrappe: true } } : e));
+      planifier(RYTHME.frappeMsParLot, () => tape(i + 3));
+    };
+    tape(3);
+    return () => effacerTimer();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [etat.status, texteOuverture]);
+
   useEffect(
     () => () => {
       effacerTimer();
@@ -248,7 +296,11 @@ export function PolarisSessionProvider({ scenario, fixtures, onAccueil, children
       horloge.current.timer = null;
       horloge.current.restant = Math.max(0, horloge.current.finA - Date.now()); // délai conservé
     }
-    setEtat((e) => (e.status === "playing" ? { ...e, status: "paused", motif, frappeActive: false } : e));
+    setEtat((e) =>
+      e.status === "playing" || e.status === "opening_typing"
+        ? { ...e, status: "paused", statutAvantPause: e.status, motif, frappeActive: false }
+        : e
+    );
   }, []);
 
   const reprendre = useCallback(() => {
@@ -258,7 +310,9 @@ export function PolarisSessionProvider({ scenario, fixtures, onAccueil, children
         beatEnCours.current = null; // Réessayer : rejoue le beat fautif
         return { ...e, status: "playing", erreur: null };
       }
-      return e.status === "paused" ? { ...e, status: "playing", motif: null } : e;
+      return e.status === "paused"
+        ? { ...e, status: e.statutAvantPause === "opening_typing" ? "opening_typing" : "playing", statutAvantPause: null, motif: null }
+        : e;
     });
     if (action != null && restant != null) planifier(restant, action);
   }, [planifier]);
@@ -272,7 +326,7 @@ export function PolarisSessionProvider({ scenario, fixtures, onAccueil, children
     beatEnCours.current = null;
     if (ackTimer.current) clearTimeout(ackTimer.current);
     setEtat((e) => {
-      if (e.status !== "playing" && e.status !== "paused") { occupes.current = false; return e; }
+      if (e.status !== "playing" && e.status !== "paused" && e.status !== "opening_typing") { occupes.current = false; return e; }
       const step = scenario.steps[e.stepIndex];
       let messages = e.messages;
       let resultats = e.resultats;
@@ -307,6 +361,7 @@ export function PolarisSessionProvider({ scenario, fixtures, onAccueil, children
         sceneVersion,
         activite: null,
         attente: null,
+        saisie: null,
         frappeActive: false,
         playMode: "manual",
         stepIndex: derniere ? e.stepIndex : e.stepIndex + 1,
@@ -317,7 +372,7 @@ export function PolarisSessionProvider({ scenario, fixtures, onAccueil, children
   }, [scenario, fixtures]);
 
   const suivant = useCallback(() => {
-    if (etat.status === "playing" || etat.status === "paused") {
+    if (etat.status === "playing" || etat.status === "paused" || etat.status === "opening_typing") {
       completerSequence();
     } else if (etat.status === "awaiting_continue") {
       beatEnCours.current = null;
@@ -382,8 +437,8 @@ export function PolarisSessionProvider({ scenario, fixtures, onAccueil, children
   const fermerPreuve = useCallback(() => setPreuveId(null), []);
 
   const valeur = useMemo(
-    () => ({ etat, scenario, fixtures, pause, reprendre, suivant, lectureAuto, revoirDecouverte, acquitterScene, onAccueil, preuveId, ouvrirPreuve, fermerPreuve }),
-    [etat, scenario, fixtures, pause, reprendre, suivant, lectureAuto, revoirDecouverte, acquitterScene, onAccueil, preuveId, ouvrirPreuve, fermerPreuve]
+    () => ({ etat, scenario, fixtures, pause, reprendre, suivant, lectureAuto, revoirDecouverte, acquitterScene, onAccueil, preuveId, ouvrirPreuve, fermerPreuve, demarrerOuverture }),
+    [etat, scenario, fixtures, pause, reprendre, suivant, lectureAuto, revoirDecouverte, acquitterScene, onAccueil, preuveId, ouvrirPreuve, fermerPreuve, demarrerOuverture]
   );
 
   return <Ctx.Provider value={valeur}>{children}</Ctx.Provider>;

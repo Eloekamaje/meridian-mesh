@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { useMesh } from "@/lib/mesh";
 import { useContexte } from "@/lib/contexte";
+import { usePilotage } from "@/lib/pilotage";
 import { couleurDomaine } from "@/lib/domaines";
 
 const CAPACITES = [
@@ -21,7 +22,10 @@ export default function ComposerFlore({ placeholder = "Demandez à Flore…", co
   const navigate = useNavigate();
   const { mesh } = useMesh();
   const { selection, retirerJumeau, ouvrirFlore } = useContexte();
+  const pilote = usePilotage();
   const [texte, setTexte] = useState("");
+  // Kiosque Polaris : la frappe simulée du visiteur s'affiche dans le champ réel
+  const valeur = pilote?.saisie ? pilote.saisie.texte : texte;
   const [menuContexte, setMenuContexte] = useState(false);
   const [menuCapacites, setMenuCapacites] = useState(false);
   const [chips, setChips] = useState([]); // contexte attaché hors sélection Atlas
@@ -121,15 +125,16 @@ export default function ComposerFlore({ placeholder = "Demandez à Flore…", co
         </div>
       )}
 
-      <div className="rounded-2xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] shadow-sm transition-colors focus-within:border-[#9B87F5]/50" ref={refMenus}>
+      <div className={`rounded-2xl border bg-[#0F1D28] shadow-sm transition-colors focus-within:border-[#9B87F5]/50 ${pilote?.saisie?.enFrappe ? "border-[#9B87F5]/60" : "border-[rgba(148,163,184,0.16)]"}`} ref={refMenus}>
         <textarea
-          value={texte}
+          value={valeur}
           onChange={(e) => setTexte(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); envoyer(); } }}
           placeholder={placeholder}
           rows={compact ? 1 : 2}
+          readOnly={!!pilote}
           data-testid={`${testidPrefix}-input`}
-          className="w-full resize-none rounded-t-2xl bg-transparent px-4 pt-3 text-sm text-[#F2F6F8] placeholder:text-[#7C93A8] focus:outline-none"
+          className={`w-full resize-none rounded-t-2xl bg-transparent px-4 pt-3 text-sm text-[#F2F6F8] placeholder:text-[#7C93A8] focus:outline-none ${pilote ? "cursor-default" : ""}`}
         />
         <div className="relative flex items-center gap-1.5 px-3 pb-2.5">
           {/* + Contexte */}
@@ -178,7 +183,7 @@ export default function ComposerFlore({ placeholder = "Demandez à Flore…", co
               <CaretDown size={13} />
             </button>
           )}
-          <button onClick={envoyer} disabled={!texte.trim()} data-testid={`${testidPrefix}-envoyer`} title="Envoyer" className="ml-auto flex h-8 w-8 items-center justify-center rounded-full bg-[#9B87F5] text-[#071019] transition-colors hover:bg-[#B4A5F7] disabled:opacity-30">
+          <button onClick={envoyer} disabled={!!pilote || !valeur.trim()} data-testid={`${testidPrefix}-envoyer`} title="Envoyer" className="ml-auto flex h-8 w-8 items-center justify-center rounded-full bg-[#9B87F5] text-[#071019] transition-colors hover:bg-[#B4A5F7] disabled:opacity-30">
             <PaperPlaneTilt size={14} weight="fill" />
           </button>
         </div>
