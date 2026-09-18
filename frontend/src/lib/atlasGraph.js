@@ -1,7 +1,7 @@
 import { MarkerType } from "@xyflow/react";
 import concaveman from "concaveman";
 import { couleurDomaine } from "@/lib/domaines";
-import { choixCotes, routeStable, detecterCroisements, decalagesParalleles, ancreLabel } from "./routeur";
+import { choixCotes, routeStable, routeCorridor, gonflePolygone, detecterCroisements, decalagesParalleles, ancreLabel } from "./routeur";
 
 export const COUCHES = [
   ["operationnelle", "Opérationnelle", "#9B87F5"],
@@ -144,19 +144,50 @@ export function coqueOrganique(centres, marge = 50) {
   };
 }
 
-// Ancre sur la FRONTIÈRE d'un territoire : le point de la coque concave le plus
-// proche de la capitale de l'autre domaine, légèrement retiré vers l'intérieur.
+// Ancre sur la FRONTIÈRE d'un territoire : point de SORTIE du rayon
+// capitale → capitale à travers la coque concave. Un sommet choisi par simple
+// proximité peut être au fond d'une baie concave → l'arc s'enfoncerait dans le
+// territoire ; le point de sortie du rayon est toujours sur le bord qui FAIT FACE
+// à l'autre domaine.
 function ancreFrontiere(reg, cx, cy) {
+  const ox = reg.lx;
+  const oy = reg.ly;
+  const dx = cx - ox;
+  const dy = cy - oy;
+  const L = Math.hypot(dx, dy) || 1;
+  const ux = dx / L;
+  const uy = dy / L;
+  let tMax = -1;
+  const pts = reg.pts || [];
+  for (let i = 0; i < pts.length; i++) {
+    const ax = pts[i].x + reg.ox;
+    const ay = pts[i].y + reg.oy;
+    const bx = pts[(i + 1) % pts.length].x + reg.ox;
+    const by = pts[(i + 1) % pts.length].y + reg.oy;
+    const ex = bx - ax;
+    const ey = by - ay;
+    const den = ux * ey - uy * ex;
+    if (Math.abs(den) < 1e-9) continue;
+    const t = ((ax - ox) * ey - (ay - oy) * ex) / den;
+    const s = ((ax - ox) * uy - (ay - oy) * ux) / den;
+    if (t > 0 && s >= 0 && s <= 1 && t > tMax) tMax = t;
+  }
+  if (tMax > 0) {
+    // infime retrait vers la capitale : l'arc touche la frontière sans la dépasser
+    return { x: ox + ux * tMax * 0.995, y: oy + uy * tMax * 0.995 };
+  }
+  // Secours (capitale hors de la coque, rayon ne la croise pas) : sommet le plus proche
   let b = null;
   let dMin = Infinity;
-  reg.pts.forEach((p) => {
+  pts.forEach((p) => {
     const wx = reg.ox + p.x;
     const wy = reg.oy + p.y;
     const d = Math.hypot(wx - cx, wy - cy);
     if (d < dMin) { dMin = d; b = { x: wx, y: wy }; }
   });
-  return b ? { x: b.x + (reg.lx - b.x) * 0.04, y: b.y + (reg.ly - b.y) * 0.04 } : null;
+  return b ? { x: b.x + (ox - b.x) * 0.02, y: b.y + (oy - b.y) * 0.02 } : null;
 }
+
 
 export const styleParEtat = (r) => {
   switch (r.etat) {
@@ -706,11 +737,22 @@ export function construireGraphe({
         ox: n.position.x, oy: n.position.y, pts: n.data.points || [],
         lx: n.position.x + (n.data.labelX ?? n.initialWidth / 2),
         ly: n.position.y + (n.data.labelY ?? 30),
-        bbox: {
-          x0: n.position.x - 48, y0: n.position.y - 48,
-          x1: n.position.x + n.initialWidth + 48, y1: n.position.y + n.initialHeight + 48,
-        },
       };
+    });
+    // Obstacles du routage : boîtes englobantes des coques (+16 px) pour les canaux
+    // orthogonaux + coques réelles gonflées (+10 px) pour la pénalité de traversée —
+    // les canaux propres restent possibles entre domaines proches, mais un trajet qui
+    // traverse une membrane ne gagne JAMAIS.
+    const nomsDomaines = Object.keys(regs).filter((lb) => regs[lb].pts.length >= 3);
+    const obstaclesRects = nomsDomaines.map((lb) => {
+      const r = regs[lb];
+      const xs = r.pts.map((p) => p.x + r.ox);
+      const ys = r.pts.map((p) => p.y + r.oy);
+      return { nom: lb, x0: Math.min(...xs) - 16, y0: Math.min(...ys) - 16, x1: Math.max(...xs) + 16, y1: Math.max(...ys) + 16 };
+    });
+    const obstaclesPolys = nomsDomaines.map((lb) => {
+      const r = regs[lb];
+      return gonflePolygone(r.pts.map((p) => ({ x: p.x + r.ox, y: p.y + r.oy })), 10);
     });
     // Regroupement des relations inter-domaines par couple de territoires
     const paires = {};
@@ -733,15 +775,11 @@ export function construireGraphe({
       const pa = ra?.pts?.length && rb ? ancreFrontiere(ra, rb.lx, rb.ly) : null;
       const pb = rb?.pts?.length && ra ? ancreFrontiere(rb, ra.lx, ra.ly) : null;
       if (!pa || !pb) return null;
-      const obstacles = Object.keys(regs)
-        .filter((lb) => lb !== c.a && lb !== c.b)
-        .map((lb) => regs[lb].bbox);
-      const cs = { x: pa.x, y: pa.y, marge: 40 };
-      const ct = { x: pb.x, y: pb.y, marge: 40 };
-      const [coteS, coteT] = choixCotes(cs, ct);
-      const route = routeStable(`corridor-${c.a}-${c.b}`, cs, ct, coteS, coteT, obstacles, 0);
-      // Le tracé touche exactement la frontière (le dégagement reste colinéaire)
-      const points = [pa, ...route.slice(1, -1), pb];
+      // Routage orthogonal direct entre ancres frontières : canaux autour des coques
+      // TIERCES (boîtes +16) + pénalité de traversée des coques réelles (toutes,
+      // grâce de 24 px aux bouts pour le rasage de frontière source/cible)
+      const obstaclesTiers = obstaclesRects.filter((o) => o.nom !== c.a && o.nom !== c.b);
+      const points = routeCorridor(pa, pb, obstaclesTiers, obstaclesPolys);
       // Rang de chaque membre le long du corridor (éclatement échelonné)
       const dx = pb.x - pa.x;
       const dy = pb.y - pa.y;

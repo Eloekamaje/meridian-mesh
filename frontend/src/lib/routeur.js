@@ -1,8 +1,98 @@
 // Moteur de routage orthogonal (Manhattan) dédié — jamais de ligne directe centre à centre.
 // Dégagement aux ports, canaux anti-obstacles, cache de stabilité, ponts aux croisements.
+import { dansPolygone } from "./constellation";
 
 const DEGAGEMENT = 18; // section droite après le départ du robot (12–20 px)
 export const RAYON_COIN = 6; // angles à 90° légèrement arrondis (4–8 px)
+
+// --- Obstacles polygonaux (coques de territoires) pour les corridors macro ---
+export function segmentsCroisent(a, b, c, d) {
+  const s = (p, q, r) => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+  return s(a, b, c) * s(a, b, d) < 0 && s(c, d, a) * s(c, d, b) < 0;
+}
+
+// Inflation radiale d'un polygone depuis son centroïde (zone de respiration)
+export function gonflePolygone(poly, marge) {
+  const cx = poly.reduce((s, p) => s + p.x, 0) / poly.length;
+  const cy = poly.reduce((s, p) => s + p.y, 0) / poly.length;
+  return poly.map((p) => {
+    const d = Math.hypot(p.x - cx, p.y - cy) || 1;
+    return { x: cx + ((p.x - cx) / d) * (d + marge), y: cy + ((p.y - cy) / d) * (d + marge) };
+  });
+}
+
+export function segCouplePolygone(a, b, poly, graceA = 0, graceB = 0) {
+  const L = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+  const ux = (b.x - a.x) / L;
+  const uy = (b.y - a.y) / L;
+  const a2 = { x: a.x + ux * graceA, y: a.y + uy * graceA };
+  const b2 = { x: b.x - ux * graceB, y: b.y - uy * graceB };
+  if (Math.hypot(b2.x - a2.x, b2.y - a2.y) < 2) return false;
+  for (let i = 0; i < poly.length; i++) {
+    if (segmentsCroisent(a2, b2, poly[i], poly[(i + 1) % poly.length])) return true;
+  }
+  return dansPolygone((a2.x + b2.x) / 2, (a2.y + b2.y) / 2, poly);
+}
+
+// Nombre de segments du trajet qui traversent une coque (grâce aux extrémités :
+// l'ancre d'un corridor rase la frontière de sa propre coque sans la pénétrer)
+function coupesPolys(pts, polys, grace) {
+  let n = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    for (const p of polys) {
+      if (segCouplePolygone(pts[i], pts[i + 1], p, i === 0 ? grace : 0, i === pts.length - 2 ? grace : 0)) n += 1;
+    }
+  }
+  return n;
+}
+
+// Routeur dédié aux corridors macro : trajet orthogonal DIRECTEMENT entre les deux
+// ancres frontières (pas de dégagement de port — la grâce polygonale couvre le rasage
+// de frontière). Évite : canaux autour des boîtes des coques tierces + pénalité de
+// traversée des coques réelles + grands détours extérieurs toujours disponibles.
+export function routeCorridor(pa, pb, obstacles, polys) {
+  const mx = (pa.x + pb.x) / 2;
+  const my = (pa.y + pb.y) / 2;
+  const candidats = [
+    [pa, { x: pb.x, y: pa.y }, pb], // L horizontal-vertical
+    [pa, { x: pa.x, y: pb.y }, pb], // L vertical-horizontal
+    [pa, { x: mx, y: pa.y }, { x: mx, y: pb.y }, pb], // Z par canal vertical médian
+    [pa, { x: pa.x, y: my }, { x: pb.x, y: my }, pb], // Z par canal horizontal médian
+  ];
+  for (const o of obstacles) {
+    candidats.push([pa, { x: o.x0 - 16, y: pa.y }, { x: o.x0 - 16, y: pb.y }, pb]);
+    candidats.push([pa, { x: o.x1 + 16, y: pa.y }, { x: o.x1 + 16, y: pb.y }, pb]);
+    candidats.push([pa, { x: pa.x, y: o.y0 - 16 }, { x: pb.x, y: o.y0 - 16 }, pb]);
+    candidats.push([pa, { x: pa.x, y: o.y1 + 16 }, { x: pb.x, y: o.y1 + 16 }, pb]);
+  }
+  if (obstacles.length) {
+    const xMin = Math.min(...obstacles.map((o) => o.x0)) - 30;
+    const xMax = Math.max(...obstacles.map((o) => o.x1)) + 30;
+    const yMin = Math.min(...obstacles.map((o) => o.y0)) - 30;
+    const yMax = Math.max(...obstacles.map((o) => o.y1)) + 30;
+    candidats.push([pa, { x: pa.x, y: yMin }, { x: pb.x, y: yMin }, pb]);
+    candidats.push([pa, { x: pa.x, y: yMax }, { x: pb.x, y: yMax }, pb]);
+    candidats.push([pa, { x: xMin, y: pa.y }, { x: xMin, y: pb.y }, pb]);
+    candidats.push([pa, { x: xMax, y: pa.y }, { x: xMax, y: pb.y }, pb]);
+  }
+  let meilleur = null;
+  let meilleurScore = Infinity;
+  for (const c of candidats) {
+    const pts = epurer(c);
+    if (pts.length < 2) continue;
+    // Priorité absolue : ne traverser aucune coque ; puis canaux libres ; coudes ; longueur
+    const sc =
+      coupesPolys(pts, polys, 24) * 100000 +
+      heurteObstacles(pts, obstacles) * 1000 +
+      (pts.length - 2) * 8 +
+      longueur(pts) / 60;
+    if (sc < meilleurScore) {
+      meilleurScore = sc;
+      meilleur = pts;
+    }
+  }
+  return meilleur;
+}
 
 const VECTEURS = { r: [1, 0], l: [-1, 0], t: [0, -1], b: [0, 1] };
 
@@ -63,8 +153,10 @@ function epurer(pts) {
   return out;
 }
 
-// Route orthogonale : dégagement aux ports, puis trajet le plus simple qui évite les obstacles
-export function routeOrthogonale(cs, ct, coteS, coteT, obstacles, decalage = 0) {
+// Route orthogonale : dégagement aux ports, puis trajet le plus simple qui évite les obstacles.
+// polys/grace (optionnels, corridors macro) : pénalité forte sur la traversée des coques
+// polygonales réelles + candidats « grand détour » autour de TOUS les obstacles.
+export function routeOrthogonale(cs, ct, coteS, coteT, obstacles, decalage = 0, polys = [], grace = 0) {
   const s0 = pointPort(cs, coteS, cs.marge ?? 26);
   const t0 = pointPort(ct, coteT, ct.marge ?? 26);
   const s1 = avancer(s0, coteS, DEGAGEMENT);
@@ -84,13 +176,28 @@ export function routeOrthogonale(cs, ct, coteS, coteT, obstacles, decalage = 0) 
     candidats.push([s0, s1, { x: s1.x, y: o.y0 - 16 }, { x: t1.x, y: o.y0 - 16 }, t1, t0]);
     candidats.push([s0, s1, { x: s1.x, y: o.y1 + 16 }, { x: t1.x, y: o.y1 + 16 }, t1, t0]);
   }
+  // Grands détours : contourner TOUTES les coques par l'extérieur (toujours disponible)
+  if (obstacles.length) {
+    const xMin = Math.min(...obstacles.map((o) => o.x0)) - 28;
+    const xMax = Math.max(...obstacles.map((o) => o.x1)) + 28;
+    const yMin = Math.min(...obstacles.map((o) => o.y0)) - 28;
+    const yMax = Math.max(...obstacles.map((o) => o.y1)) + 28;
+    candidats.push([s0, s1, { x: s1.x, y: yMin }, { x: t1.x, y: yMin }, t1, t0]);
+    candidats.push([s0, s1, { x: s1.x, y: yMax }, { x: t1.x, y: yMax }, t1, t0]);
+    candidats.push([s0, s1, { x: xMin, y: s1.y }, { x: xMin, y: t1.y }, t1, t0]);
+    candidats.push([s0, s1, { x: xMax, y: s1.y }, { x: xMax, y: t1.y }, t1, t0]);
+  }
   let meilleur = null;
   let meilleurScore = Infinity;
   for (const c of candidats) {
     const pts = epurer(c);
     if (pts.length < 2) continue;
-    // Priorité : éviter les robots, puis limiter les coudes, puis la longueur
-    const sc = heurteObstacles(pts, obstacles) * 10000 + (pts.length - 2) * 8 + longueur(pts) / 50;
+    // Priorité : éviter les robots/coques, puis limiter les coudes, puis la longueur
+    const sc =
+      heurteObstacles(pts, obstacles) * 10000 +
+      (polys.length ? coupesPolys(pts, polys, grace) * 10000 : 0) +
+      (pts.length - 2) * 8 +
+      longueur(pts) / 50;
     if (sc < meilleurScore) {
       meilleurScore = sc;
       meilleur = pts;
@@ -101,11 +208,11 @@ export function routeOrthogonale(cs, ct, coteS, coteT, obstacles, decalage = 0) 
 
 // Stabilité des tracés : recalcul seulement si les extrémités ou l'environnement changent
 const cache = new Map();
-export function routeStable(id, cs, ct, coteS, coteT, obstacles, decalage = 0) {
-  const cle = `${Math.round(cs.x)}:${Math.round(cs.y)}:${Math.round(ct.x)}:${Math.round(ct.y)}:${coteS}${coteT}:${Math.round(decalage)}:${obstacles.length}`;
+export function routeStable(id, cs, ct, coteS, coteT, obstacles, decalage = 0, polys = [], grace = 0) {
+  const cle = `${Math.round(cs.x)}:${Math.round(cs.y)}:${Math.round(ct.x)}:${Math.round(ct.y)}:${coteS}${coteT}:${Math.round(decalage)}:${obstacles.length}:${polys.length}:${grace}`;
   const entree = cache.get(id);
   if (entree && entree.cle === cle) return entree.points;
-  const points = routeOrthogonale(cs, ct, coteS, coteT, obstacles, decalage);
+  const points = routeOrthogonale(cs, ct, coteS, coteT, obstacles, decalage, polys, grace);
   cache.set(id, { cle, points });
   return points;
 }
@@ -203,6 +310,21 @@ export function construireD(points, sauts = [], rayon = RAYON_COIN) {
     }
   }
   return cmds.join(" ");
+}
+
+// Lissage d'une polyligne quelconque (segments non nécessairement orthogonaux) :
+// quadratiques par points milieux — les détours polygonaux deviennent des courbes douces
+export function cheminLisse(points) {
+  if (!points || points.length < 2) return "";
+  if (points.length === 2) return `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`;
+  let d = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 1; i < points.length - 1; i++) {
+    const mx = (points[i].x + points[i + 1].x) / 2;
+    const my = (points[i].y + points[i + 1].y) / 2;
+    d += ` Q ${points[i].x} ${points[i].y} ${mx} ${my}`;
+  }
+  const last = points[points.length - 1];
+  return `${d} L ${last.x} ${last.y}`;
 }
 
 // Ancre du libellé : milieu du segment horizontal le plus long (jamais sur un angle)

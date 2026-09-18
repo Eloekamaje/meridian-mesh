@@ -1,5 +1,12 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v73, corridors : zéro traversée mesurée + jonctions lisibles)
+Retours utilisateur : (1) arcs factices → v72 ; (2) « sur l'arc en pointillé jaune, un autre arc ressort de cet arc, ça n'a aucun sens » ; (3) vérification géométrique révélant des corridors traversant encore des membranes.
+- **Jonction corridor/relation déconfusée** : bornes de terminaison perpendiculaires aux deux bouts du corridor (marque « port du territoire ») + pointillés d'état LONGS (14 10) pour les corridors vs courts (6 6) pour les relations individuelles — un corridor jaune ne se lit plus comme la prolongation d'une relation jaune (`AreteCorridor.jsx`).
+- **Ancres par rayon capitale → capitale** (`ancreFrontiere` réécrite) : point de SORTIE du rayon à travers la coque concave (le sommet le plus proche pouvait être au fond d'une baie → l'arc s'enfonçait dans le territoire).
+- **Routeur dédié `routeCorridor`** (`routeur.js`) : trajet orthogonal directement entre ancres (le routeur à ports générique faisait dépasser les ports de 58 px → ports inversés dans les interstices < 80 px, détours absurdes) ; candidats L/Z + canaux autour des coques tierces (boîtes +16) + grands détours extérieurs toujours disponibles ; **pénalité ×100000 sur la traversée des coques polygonales RÉELLES** (gonflées +10, grâce 24 px aux extrémités) — un trajet qui traverse une membrane ne gagne jamais, même quand les boîtes englobantes se recouvrent.
+- **Mesure géométrique automatisée** (isPointInFill via matrices écran) : **7/7 corridors propres** au Global (0 traversée, source/cible/tiers) ; N2 corridors « N flux » bord-à-bord avec bornes ; bande d'éclatement et N3 inchangés (0 corridor à z≥1.4).
+
 ## Implémenté (06/2026 — v72, zéro arc factice : chaque trait = une relation réelle)
 Retour utilisateur : « attention aux arcs factices, ça doit être des liens réels — j'ai l'impression que pour l'embellissement il y a des choses ajoutées ». Audit complet :
 - **Coupable** : les filaments de constellation décoratifs (`genererConstellation` reliant des micro-points aléatoires au plus-proche-voisin) — supprimés du rendu (`RegionNode.jsx`) et du générateur (`constellation.js`). Les micro-étoiles d'ambiance restent (un point n'implique pas de lien).

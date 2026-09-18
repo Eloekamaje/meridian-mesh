@@ -15,6 +15,7 @@ export default memo(function AreteCorridor({ id, data, selected }) {
   const etat = data?.etat;
   let d = null;
   if (points && points.length >= 2) {
+    // Orthogonal à grand rayon : les coudes 90° deviennent des courbes organiques
     d = construireD(points, [], 64);
   } else if (cap) {
     // Secours : simple arc entre les capitales si le routage est indisponible
@@ -38,10 +39,25 @@ export default memo(function AreteCorridor({ id, data, selected }) {
   const haloOp = (lumineux ? 0.3 : eteint ? 0 : 0.05) * sortie;
   const largeur = lumineux ? 2.4 : 1.5 + 1.3 * detail;
   const anime = data?.actif && lumineux;
-  const pointillesEtat = detail > 0.5 && !anime ? st?.strokeDasharray : undefined;
+  // Pointillés d'état du corridor : trame LONGUE (voie principale), distincte du
+  // pointillé court « 6 6 » des relations individuelles — sinon, à l'attache sur la
+  // frontière, un corridor jaune et une relation jaune se lisent comme un seul arc.
+  const pointillesEtat = detail > 0.5 && !anime && st?.strokeDasharray ? "14 10" : undefined;
   // Label « N flux » : se révèle avec le mode détail
   const labelPos = points?.length >= 2 && detail > 0.02 ? ancreLabel(points) : null;
   const label = data?.labelFlux;
+  // Bornes de terminaison : courte barre perpendiculaire aux deux bouts du corridor —
+  // marque « port du territoire » : l'arc S'ARRÊTE à la frontière, il ne se branche
+  // pas sur une étoile et aucune relation ne « part » de son milieu.
+  const borne = (a, b) => {
+    const L = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    const px = (-(b.y - a.y) / L) * 7;
+    const py = ((b.x - a.x) / L) * 7;
+    return `M ${a.x - px} ${a.y - py} L ${a.x + px} ${a.y + py}`;
+  };
+  const bornes = points?.length >= 2
+    ? `${borne(points[0], points[1])} ${borne(points[points.length - 1], points[points.length - 2])}`
+    : null;
 
   return (
     <g data-testid={`arete-${id}`} style={{ transition: "opacity 250ms" }}>
@@ -58,6 +74,9 @@ export default memo(function AreteCorridor({ id, data, selected }) {
         style={{ transition: "opacity 250ms, stroke-width 250ms, stroke 250ms" }}
       />
       <path d={d} fill="none" stroke="transparent" strokeWidth={16} style={{ pointerEvents: "stroke" }} />
+      {bornes && (
+        <path d={bornes} fill="none" stroke={couleur} strokeWidth={2.6} strokeLinecap="round" opacity={Math.min(1, coreOp + 0.35)} style={{ transition: "opacity 250ms, stroke 250ms" }} />
+      )}
       {labelPos && label && (
         <g transform={`translate(${labelPos.x} ${labelPos.y})`} opacity={detail * sortie} style={{ pointerEvents: "none", transition: "opacity 250ms" }}>
           <rect x={-(label.length * 3.4 + 10)} y={-9} width={label.length * 6.8 + 20} height={18} rx={9} fill="rgba(15,29,40,0.95)" stroke="rgba(148,163,184,0.16)" />
