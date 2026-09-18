@@ -18,49 +18,64 @@ import TravailDetail from "@/pages/TravailDetail";
 import Jumeaux from "@/pages/Jumeaux";
 import RevueJumeau from "@/pages/RevueJumeau";
 import Administration from "@/pages/Administration";
+import PolarisWelcome from "@/demo/polaris/PolarisWelcome";
+import PolarisPlayer from "@/demo/polaris/PolarisPlayer";
 
 const RedirectTravail = () => {
   const { cid } = useParams();
   return <Navigate to={`/travaux/${cid}`} replace />;
 };
 
+// Branche produit : providers réseau (Mesh, Contexte, Perimetre…) — absents du kiosque
+function ProduitApp() {
+  return (
+    <PerimetreProvider>
+      <DemoProvider>
+        <ContexteProvider>
+        <MeshProvider>
+        <Routes>
+          <Route element={<Layout />}>
+            {/* L'Atlas est l'accueil ; les autres fonctions sont de vraies pages (zone centrale) */}
+            <Route path="/" element={<Navigate to="/atlas" replace />} />
+            <Route path="/actualites" element={<Actualites />} />
+            <Route path="/actualites/comprendre/:hid" element={<Comprendre />} />
+            <Route path="/atlas" element={<Atlas />} />
+            <Route path="/investigations" element={<Investigations />} />
+            <Route path="/investigations/:id" element={<InvestigationDetail />} />
+            <Route path="/travaux" element={<Travaux />} />
+            <Route path="/travaux/nouveau" element={<Accueil mode="creation" />} />
+            <Route path="/travaux/:cid" element={<TravailDetail />} />
+            <Route path="/jumeaux" element={<Jumeaux />} />
+            <Route path="/jumeaux/:jid/revue" element={<RevueJumeau />} />
+            <Route path="/commande/:cid" element={<Commande />} />
+            <Route path="/administration" element={<Administration />} />
+            <Route path="/aujourdhui" element={<Navigate to="/actualites" replace />} />
+            <Route path="/carte" element={<Navigate to="/atlas" replace />} />
+            <Route path="/cases" element={<Navigate to="/travaux" replace />} />
+            <Route path="/cases/:cid" element={<RedirectTravail />} />
+            <Route path="/decisions" element={<Navigate to="/travaux" replace />} />
+            <Route path="/change-lab" element={<Navigate to="/travaux/case-olympiade" replace />} />
+            <Route path="/registry" element={<Navigate to="/jumeaux" replace />} />
+          </Route>
+        </Routes>
+        </MeshProvider>
+        </ContexteProvider>
+      </DemoProvider>
+    </PerimetreProvider>
+  );
+}
+
 function App() {
   return (
     <BrowserRouter>
-      <PerimetreProvider>
-        <DemoProvider>
-          <ContexteProvider>
-          <MeshProvider>
-          <Routes>
-            <Route element={<Layout />}>
-              {/* L'Atlas est l'accueil ; les autres fonctions sont de vraies pages (zone centrale) */}
-              <Route path="/" element={<Navigate to="/atlas" replace />} />
-              <Route path="/actualites" element={<Actualites />} />
-              <Route path="/actualites/comprendre/:hid" element={<Comprendre />} />
-              <Route path="/atlas" element={<Atlas />} />
-              <Route path="/investigations" element={<Investigations />} />
-              <Route path="/investigations/:id" element={<InvestigationDetail />} />
-              <Route path="/travaux" element={<Travaux />} />
-              <Route path="/travaux/nouveau" element={<Accueil mode="creation" />} />
-              <Route path="/travaux/:cid" element={<TravailDetail />} />
-              <Route path="/jumeaux" element={<Jumeaux />} />
-              <Route path="/jumeaux/:jid/revue" element={<RevueJumeau />} />
-              <Route path="/commande/:cid" element={<Commande />} />
-              <Route path="/administration" element={<Administration />} />
-              <Route path="/aujourdhui" element={<Navigate to="/actualites" replace />} />
-              <Route path="/carte" element={<Navigate to="/atlas" replace />} />
-              <Route path="/cases" element={<Navigate to="/travaux" replace />} />
-              <Route path="/cases/:cid" element={<RedirectTravail />} />
-              <Route path="/decisions" element={<Navigate to="/travaux" replace />} />
-              <Route path="/change-lab" element={<Navigate to="/travaux/case-olympiade" replace />} />
-              <Route path="/registry" element={<Navigate to="/jumeaux" replace />} />
-            </Route>
-          </Routes>
-          <Toaster theme="light" position="top-right" />
-          </MeshProvider>
-          </ContexteProvider>
-        </DemoProvider>
-      </PerimetreProvider>
+      <Routes>
+        {/* Kiosque Polaris : branche déclarée AVANT les providers produit — les
+            providers qui chargent des données réseau ne se montent jamais ici (§4.2) */}
+        <Route path="/demo" element={<PolarisWelcome />} />
+        <Route path="/demo/polaris/:profileId" element={<PolarisPlayer />} />
+        <Route path="/*" element={<ProduitApp />} />
+      </Routes>
+      <Toaster theme="light" position="top-right" />
     </BrowserRouter>
   );
 }

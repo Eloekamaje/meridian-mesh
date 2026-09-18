@@ -1,5 +1,15 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v76, Kiosque Polaris Lot 1+2 : moteur + parcours Gestionnaire complet)
+Spécification `MERIDIAN_POLARIS_SPECIFICATION_IMPLEMENTATION.md` — mode kiosque de démonstration scénarisée. Choix utilisateur : Lot 1+2 d'abord (moteur + un parcours de bout en bout), entrée `/demo`.
+- **Lot 1 — Isolation réseau** : branche `/demo` + `/demo/polaris/:profileId` déclarée dans `App.js` AVANT les providers produit (Perimetre/Demo/Contexte/Mesh jamais montés → zéro appel `/api`, zéro LLM). Fixtures locales préfixées `demo-polaris-` (`demo/polaris/data/fixturesGestionnaire.js`), validation de scénario avant lecture (`scenarioSchema.js`).
+- **Lot 2 — Moteur** (`PolarisSessionProvider.jsx`) : horloge unique suspendable (pause avec délai restant conservé), télétype gelé en pause, anti-course par `generation`, ids de messages déterministes (zéro doublon), acquittement de scène réel (cadrage React Flow + commandId, chien de garde 5 s → état d'erreur récupérable « Réessayer »), « Suivant » termine la séquence au checkpoint sans en sauter deux (garde busy), « Revoir la découverte » restaure le fil au checkpoint et rejoue, inactivité 90 s → proposition (+30 s → accueil), onglet masqué → pause.
+- **Parcours Gestionnaire** (annexe A.1) : Flore seule centrée → activité lisible → Atlas situationnel (cartes Initiative / Capacité / Étape / appli atténuées, liens existante/à étudier, légende) → preuves consultables (panneau avec mention « pièce de démonstration », suspend la lecture) → Travail structuré (Commun/Spécifique/À valider/Actions, onglets Conversation/Aperçu) → clôture avec actions.
+- **Bugs corrigés en cours de route** : fitView programmatique déclenchait `onMoveStart` (event null) → auto-pause à chaque scène ; dernier op d'activité jamais marqué terminé ; `annulerHorloge` effaçait l'action à reprendre (reprise morte) ; effacement d'activité après révélation de scène.
+- **Tests** : parcours complet vérifié par script (welcome → 3 séquences → clôture, pause fige le fil, reprise conserve le délai, preuve suspend, revoir sans doublons, zéro erreur console).
+- **Reste** : Lot 3 (Ligne d'affaires traite + Architecte MD2), Lot 4 (Support TI + Développeur), Lot 5 (responsive <1200 px complet, tests limites).
+
+
 ## Implémenté (06/2026 — v75, confinement : les arcs internes restent dans leur domaine)
 Retour utilisateur : « assure-toi que les arcs internes au domaine restent à l'intérieur du domaine ». Enquête géométrique longue (bac à sable Node + sondes isPointInFill live) :
 - **Bug caché majeur** : `data.labelY` jamais transmis aux nœuds région → la « capitale » (origine du rayon d'ancrage) tombait sur le repli `oy+30` (haut de coque) → ancres et routes de corridors dégénérées. Fix : capitale = **centroïde de la coque** (toujours à l'intérieur), calculé dans le bloc corridors (labels inchangés visuellement).
