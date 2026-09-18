@@ -16,24 +16,12 @@ export default memo(function AreteOrthogonale({ id, data, selected, style: style
   const base = STYLES[etat] || STYLES.confirmee;
   const actif = survolee || selected;
 
-  // Niveaux 1-2 « constellation » : arcs courbes lumineux entre les territoires/étoiles.
-  // Niveau 3+ : routage orthogonal précis (lecture schéma de travail).
-  // data.routee (corridors N2 « N flux ») : trajet orthogonal anti-obstacles rendu
-  // à grand rayon (« hybride fluide ») — jamais la courbe simple qui traverse les domaines.
-  const courbe = (niveau || 3) <= 2 && !data.routee;
-  const d = useMemo(() => {
-    if (!courbe || !points || points.length < 2) return construireD(points, sauts, data.routee ? 64 : undefined);
-    const a = points[0];
-    const b = points[points.length - 1];
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const L = Math.hypot(dx, dy) || 1;
-    const sens = [...id].reduce((s, c) => s + c.charCodeAt(0), 0) % 2 === 0 ? 1 : -1;
-    const k = Math.min(0.13 * L, 54) * sens;
-    return `M ${a.x} ${a.y} Q ${(a.x + b.x) / 2 - (dy / L) * k} ${(a.y + b.y) / 2 + (dx / L) * k} ${b.x} ${b.y}`;
-  }, [points, sauts, courbe, id]);
+  // Ossature orthogonale à TOUS les niveaux de zoom : la même architecture de
+  // relations (lignes droites à coudes arrondis) au Domaine comme au Jumeau —
+  // dézoomer ne change plus la topologie visuelle, seulement l'échelle.
+  const d = useMemo(() => construireD(points, sauts, data.routee ? 64 : undefined), [points, sauts, data.routee]);
   const labelPos = useMemo(() => ancreLabel(points), [points]);
-  const marqueurs = useMemo(() => (etat === "observee" && !courbe && !data.routee ? pointsMarqueurs(points) : []), [points, etat, courbe, data.routee]);
+  const marqueurs = useMemo(() => (etat === "observee" && !data.routee ? pointsMarqueurs(points) : []), [points, etat, data.routee]);
 
   // Libellés : survol/sélection toujours visibles ; sinon arbitrés par le moteur de labels
   // (labelMasque = un label plus prioritaire occupe déjà cette zone)

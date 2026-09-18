@@ -1,5 +1,10 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v74, ossature orthogonale identique à tous les zooms)
+Retour utilisateur : « au niveau interne du domaine en zoom out, pourquoi on n'a pas la même ossature de relations en lignes droites qu'au zoom in avec les robots ? ».
+- **Mode courbe supprimé** d'`AreteOrthogonale.jsx` (héritage de la maquette v54) : les relations intra-domaine au niveau Domaine utilisent désormais le **même routage orthogonal à coudes arrondis** qu'au niveau Jumeau — dézoomer ne change plus la topologie visuelle, seulement l'échelle (étoiles ↔ robots). La bande de transition révèle donc directement l'ossature finale.
+- Vérifié par capture : niveau Domaine avec relations orthogonales entre étoiles (méme squelette que le niveau Jumeau), corridors « N flux » avec bornes de port aux frontières, zéro erreur console.
+
 ## Implémenté (06/2026 — v73, corridors : zéro traversée mesurée + jonctions lisibles)
 Retours utilisateur : (1) arcs factices → v72 ; (2) « sur l'arc en pointillé jaune, un autre arc ressort de cet arc, ça n'a aucun sens » ; (3) vérification géométrique révélant des corridors traversant encore des membranes.
 - **Jonction corridor/relation déconfusée** : bornes de terminaison perpendiculaires aux deux bouts du corridor (marque « port du territoire ») + pointillés d'état LONGS (14 10) pour les corridors vs courts (6 6) pour les relations individuelles — un corridor jaune ne se lit plus comme la prolongation d'une relation jaune (`AreteCorridor.jsx`).
