@@ -114,7 +114,7 @@ function construireCase(fixtures, scenario, resultId) {
     conversation,
     historique: [{ quand, texte: "Travail préparé par Flore — démonstration Polaris" }],
     questions: (t.aValider || []).map((texte) => ({ texte, resolue: false })),
-    hypotheses: (t.hypotheses || []).map((texte) => ({ texte })),
+    hypotheses: (t.hypotheses || []).map((texte, i) => ({ id: `demo-polaris-hyp-${i}`, texte, statut: "a_valider" })),
     options: [],
     decisions: [],
     livrables: [],

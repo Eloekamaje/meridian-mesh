@@ -1,0 +1,31 @@
+{
+  "summary": "Tested new Polaris demo architecture that mounts the REAL Méridian app (Topbar/Atlas/FlorePanel/Travail) driven by local mockApi fixtures. End-to-end flow works: /demo landing shows Gestionnaire card (4 others 'BIENTÔT'); clicking navigates to /demo/polaris/gestionnaire and mounts the real app with 'Gestionnaire' persona in Topbar, real Atlas with 3 domain membranes (Client/Distribution/Opérations), real FlorePanel with 'DÉMO GUIDÉE' badge and floating controls bar. Auto-playback populates the real Flore thread (flore-question-0 / flore-reponse-0 appear with 'EXPLICATION' badges). Suivant / Pause / Reprendre / Revoir / Accueil controls all function. Preuve chip renders and opens preuve-panneau on click. Seq 2 reveals capacity 'État fiable du dossier' and Topbar counter drops from 10 → 8. Seq 3 navigates to /demo/polaris/gestionnaire/travail/demo-polaris-work-g rendering real TravailDetail (CASE-101, 'Base commune de la réunion Polaris', Conversation + Aperçu tabs). Aperçu tab shows objectif / trois pistes / hypothèse. Cloture card (polaris-cloture) + 'Revoir la découverte' + 'Choisir un autre rôle' appear. Revoir restores checkpoint (URL back to /gestionnaire, cloture removed). Accueil returns to /demo. /demo/polaris/architecte correctly shows polaris-indisponible screen. REGRESSION OK: navigating to /atlas after demo loads the REAL backend (MESH VIVANT · 30 JUMEAUX, multiple regions incl. Paiements suggestion, orange/pink/green/blue membranes), and 'Parler à Flore' reveals the composer (data-testid=flore-input). No console errors captured on the real atlas. During the demo, only 1 React 'unique key prop' warning in OngletApercu was logged.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "PolarisSessionProvider / apply_scene", "issue": "Scene apply_scene selects only 2 initiatives instead of 3. UI shows breadcrumb 'Revenir à ma sélection (2)', header chip 'Contexte — 2 jumeaux' and bottom bar '2 jumeaux sélectionnés'. Spec requires exactly 3 (les trois pistes/initiatives Polaris).", "selector": "text='Revenir à ma sélection (2)' / '2 jumeaux sélectionnés'", "priority": "HIGH"},
+      {"component": "PolarisSessionProvider / ouvrirPreuve", "issue": "Clicking a Preuve chip (flore-preuve-demo-*) opens the preuve-panneau but does NOT pause the auto-playback. After opening the panel, the Pause button is still shown (polaris-reprendre-btn is absent). Spec: le clic ouvre le panneau ET met la lecture en pause.", "selector": "[data-testid='flore-preuve-demo-demo-polaris-ev-g-initiatives']", "priority": "HIGH"},
+      {"component": "FlorePanel activity block", "issue": "The 'Rapprochement des initiatives' activity block with 3 ops is not exposed via the expected data-testid 'flore-activite-demo' (query returned null after seq1 finished). Either the testid is missing/renamed or the activity is not rendered before scene apply.", "selector": "[data-testid='flore-activite-demo']", "priority": "MEDIUM"},
+      {"component": "OngletApercu (TravailDetail Aperçu tab)", "issue": "React console warning: 'Each child in a list should have a unique key prop.' — a mapped list in OngletApercu is missing key props.", "selector": "OngletApercu render", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Fix apply_scene to select 3 initiatives instead of 2 (breadcrumb, chip and bottom bar counter should read 3).",
+    "Make ouvrirPreuve() call the pause action so preuve-panneau opening pauses playback (as per spec).",
+    "Verify the activity block 'Rapprochement des initiatives' is rendered in FlorePanel and carries data-testid='flore-activite-demo'.",
+    "Add key props to the mapped list in OngletApercu to remove the React key warning."
+  ],
+  "critical_code_review_comments": [
+    "The scene fixture (fixturesGestionnaire.js sceneInitiale) or the commanderCarte({type:'scene'}) branch in Atlas.jsx likely only propagates 2 ids — cross-check the initiatives array vs the 3-piste narrative.",
+    "In PolarisSessionProvider, ouvrirPreuve should also call the pause() side-effect on the horloge to satisfy the coupling required by the spec."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (not requested)", "frontend": "~85% (core flow OK, 2 spec deviations + 1 missing testid + 1 React warning)"},
+  "seed_data_creation": "None (all demo data comes from local mockApi fixtures).",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Full happy-path already validated end-to-end. Focus retest on: (1) scene apply_scene counter (expect 3 in 'Revenir à ma sélection (X)' and '(X) jumeaux sélectionnés'); (2) after clicking flore-preuve-demo-*, verify polaris-reprendre-btn appears (playback paused) and closing preuve-panneau + clicking Reprendre resumes; (3) presence of data-testid='flore-activite-demo' in the DOM after seq1's ops phase. Regression to /atlas confirmed working with real backend (30 twins, real domains, composer flore-input OK)."
+}
