@@ -1,5 +1,12 @@
 # Méridian — Journal des implémentations
 
+## Implémenté (06/2026 — v79, Verrou kiosque : la navigation ne quitte plus la démo)
+Correction signalée par l'utilisateur (« le rendu du clic sur Atlas n'est pas le même après le choix du gestionnaire ») : les liens de la Topbar pointaient vers les routes produit — cliquer « Atlas » en démo affichait l'Atlas réel (30 jumeaux) au lieu du monde de démonstration.
+- **Topbar démo-aware** (`usePilotage`) : le lien « Atlas » pointe vers `pilote.baseUrl` (`/demo/polaris/:profileId`) ; Actualités/Travaux/Jumeaux neutralisés (grisés, `cursor-not-allowed`, clic sans effet) ; menu hamburger et bouton « à traiter » désactivés ; état actif violet conservé sur le lien Atlas.
+- **Verrou de route dans l'Orchestrateur** : l'effet de surface devient un garde sur `location.pathname` — toute navigation manuelle (ex. clic Atlas pendant la phase « Nouveau travail ») est immédiatement redirigée vers la route de la surface scriptée (`replace`). La démo est un monde clos ; seule la sortie volontaire (Accueil) ramène à `/demo`.
+- **Tests** : vérifié par captures/script — clic Atlas en démo conserve 10 JUMEAUX et l'URL démo, liens neutralisés sans effet, redirection verrou pendant `/nouveau`. Hors démo, comportement produit inchangé (garde `pilote` null).
+
+
 ## Implémenté (06/2026 — v78, Ouverture interactive Polaris : clic imposé, frappe simulée, Atlas « immense »)
 Refonte du début du parcours Gestionnaire selon le flux décrit par l'utilisateur (ouverture `user_request`) :
 - **Attente du clic visiteur** (choix : pur kiosque interactif, pas de démarrage auto) : la démo s'ouvre sur l'Atlas réel, halo pulsant + bulle « Commencez ici » sur le vrai bouton « + Nouveau travail » de la Topbar (intercepté en démo via `usePilotage` : `demarrerOuverture()` si attente, no-op sinon), indice dans la barre de contrôles. Nouveaux statuts moteur `awaiting_opening` / `opening_typing` (pause/reprise robustes via `statutAvantPause`).

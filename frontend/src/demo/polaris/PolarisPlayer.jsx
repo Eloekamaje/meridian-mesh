@@ -3,7 +3,7 @@
 // localement par les fixtures via un adaptateur réseau simulé (§4.1).
 // Aucune interface parallèle : choisir un rôle ouvre Méridian avec son contexte.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Route, Routes, useNavigate, useParams } from "react-router-dom";
+import { Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import { Sparkle, WarningCircle } from "@phosphor-icons/react";
 import api from "@/lib/api";
 import { PerimetreProvider } from "@/lib/perimetre";
@@ -102,17 +102,20 @@ function Orchestrateur({ profileId }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [etat.sceneVersion, etat.surface]);
 
+  // Verrou kiosque : la route courante suit toujours la surface scriptée — un clic
+  // sur un lien de navigation ne fait jamais quitter la démonstration
+  const location = useLocation();
   useEffect(() => {
+    let attendu = `/demo/polaris/${profileId}`;
+    if (etat.surface === "nouveau") attendu = `/demo/polaris/${profileId}/nouveau`;
     if (etat.surface === "travail") {
       const rid = Object.keys(etat.resultats)[0];
-      if (rid) navigate(`/demo/polaris/${profileId}/travail/${rid}`, { replace: true });
-    } else if (etat.surface === "nouveau") {
-      navigate(`/demo/polaris/${profileId}/nouveau`, { replace: true });
-    } else {
-      navigate(`/demo/polaris/${profileId}`, { replace: true });
+      if (!rid) return;
+      attendu = `/demo/polaris/${profileId}/travail/${rid}`;
     }
+    if (location.pathname !== attendu) navigate(attendu, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [etat.surface]);
+  }, [etat.surface, location.pathname]);
 
   return null;
 }
@@ -169,8 +172,9 @@ function Coquille({ scenario, fixtures }) {
       ouvertureEnAttente: etat.status === "awaiting_opening",
       demarrerOuverture,
       ouvrirPreuve,
+      baseUrl: `/demo/polaris/${scenario.profileId}`,
     }),
-    [etat.messages, etat.surface, etat.activite, etat.status, etat.saisie, fixtures, demarrerOuverture, ouvrirPreuve]
+    [etat.messages, etat.surface, etat.activite, etat.status, etat.saisie, fixtures, scenario, demarrerOuverture, ouvrirPreuve]
   );
 
   return (

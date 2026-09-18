@@ -95,29 +95,39 @@ export default function Topbar() {
           <span className="hidden font-display text-sm font-black tracking-[0.18em] text-[#F2F6F8] md:inline">MÉRIDIAN</span>
         </div>
         <nav className="hidden items-center gap-1 md:flex" data-testid="sidebar-nav">
-          {NAV.map(({ to, label, icon: Icon, testid }) => (
-            <NavLink
-              key={to}
-              to={to}
-              data-testid={testid}
-              title={label}
-              className={({ isActive }) =>
-                `flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs transition-colors ${
-                  isActive ? "bg-[rgba(155,135,245,0.14)] font-semibold text-[#C4B5FD]" : "text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"
-                }`
-              }
-            >
-              <Icon size={15} /> <span className="hidden xl:inline">{label}</span>
-            </NavLink>
-          ))}
+          {NAV.map(({ to, label, icon: Icon, testid }) => {
+            // Kiosque Polaris : « Atlas » reste dans la démo, les autres sorties sont neutralisées
+            const cibleNav = pilote ? (to === "/atlas" ? pilote.baseUrl : null) : to;
+            const desactive = pilote && !cibleNav;
+            return (
+              <NavLink
+                key={to}
+                to={cibleNav || to}
+                data-testid={testid}
+                title={desactive ? "Indisponible pendant la démonstration" : label}
+                onClick={(e) => desactive && e.preventDefault()}
+                className={({ isActive }) =>
+                  `flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs transition-colors ${
+                    desactive
+                      ? "cursor-not-allowed text-[#4B6072]"
+                      : isActive
+                        ? "bg-[rgba(155,135,245,0.14)] font-semibold text-[#C4B5FD]"
+                        : "text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"
+                  }`
+                }
+              >
+                <Icon size={15} /> <span className="hidden xl:inline">{label}</span>
+              </NavLink>
+            );
+          })}
         </nav>
         {/* Menu secondaire — hamburger */}
         <div className="relative" ref={refMenu}>
           <button
-            onClick={() => setMenuOuvert(!menuOuvert)}
+            onClick={() => { if (pilote) return; setMenuOuvert(!menuOuvert); }}
             data-testid="nav-menu-btn"
-            title="Espaces, récents, parcours guidé, administration"
-            className={`flex h-8 w-8 items-center justify-center rounded-md border transition-colors ${menuOuvert ? "border-[#9B87F5]/50 bg-[rgba(155,135,245,0.10)] text-[#C4B5FD]" : "border-[rgba(148,163,184,0.16)] text-[#94A3B8] hover:text-[#F2F6F8]"}`}
+            title={pilote ? "Indisponible pendant la démonstration" : "Espaces, récents, parcours guidé, administration"}
+            className={`flex h-8 w-8 items-center justify-center rounded-md border transition-colors ${pilote ? "cursor-not-allowed border-[rgba(148,163,184,0.16)] text-[#4B6072]" : menuOuvert ? "border-[#9B87F5]/50 bg-[rgba(155,135,245,0.10)] text-[#C4B5FD]" : "border-[rgba(148,163,184,0.16)] text-[#94A3B8] hover:text-[#F2F6F8]"}`}
           >
             <List size={15} weight="bold" />
           </button>
@@ -125,21 +135,32 @@ export default function Topbar() {
             <div className="glass hud absolute left-0 top-10 z-50 w-72 rounded-xl p-2" data-testid="nav-menu">
               {/* Mobile : la navigation primaire vit dans ce menu */}
               <div className="pb-1 md:hidden">
-                {NAV.map(({ to, label, icon: Icon, testid }) => (
-                  <NavLink
-                    key={to}
-                    to={to}
-                    data-testid={`menu-${testid}`}
-                    onClick={() => setMenuOuvert(false)}
-                    className={({ isActive }) =>
-                      `flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs transition-colors ${
-                        isActive ? "bg-[rgba(155,135,245,0.14)] font-semibold text-[#C4B5FD]" : "text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"
-                      }`
-                    }
-                  >
-                    <Icon size={15} /> {label}
-                  </NavLink>
-                ))}
+                {NAV.map(({ to, label, icon: Icon, testid }) => {
+                  const cibleNav = pilote ? (to === "/atlas" ? pilote.baseUrl : null) : to;
+                  const desactive = pilote && !cibleNav;
+                  return (
+                    <NavLink
+                      key={to}
+                      to={cibleNav || to}
+                      data-testid={`menu-${testid}`}
+                      onClick={(e) => {
+                        if (desactive) { e.preventDefault(); return; }
+                        setMenuOuvert(false);
+                      }}
+                      className={({ isActive }) =>
+                        `flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs transition-colors ${
+                          desactive
+                            ? "cursor-not-allowed text-[#4B6072]"
+                            : isActive
+                              ? "bg-[rgba(155,135,245,0.14)] font-semibold text-[#C4B5FD]"
+                              : "text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"
+                        }`
+                      }
+                    >
+                      <Icon size={15} /> {label}
+                    </NavLink>
+                  );
+                })}
               </div>
               {espacesSecondaires.length > 0 && (
                 <div className="pb-1">
@@ -256,7 +277,7 @@ export default function Topbar() {
         </span>
 
         <button
-          onClick={() => navigate("/actualites?vue=a_traiter")}
+          onClick={() => { if (pilote) return; navigate("/actualites?vue=a_traiter"); }}
           data-testid="a-traiter-pill"
           title="Sollicitations du Mesh en attente"
           className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
