@@ -36,11 +36,38 @@ export function segCouplePolygone(a, b, poly, graceA = 0, graceB = 0) {
 
 // Nombre de segments du trajet qui traversent une coque (grâce aux extrémités :
 // l'ancre d'un corridor rase la frontière de sa propre coque sans la pénétrer)
-function coupesPolys(pts, polys, grace) {
+export function coupesPolys(pts, polys, grace) {
   let n = 0;
   for (let i = 0; i < pts.length - 1; i++) {
     for (const p of polys) {
       if (segCouplePolygone(pts[i], pts[i + 1], p, i === 0 ? grace : 0, i === pts.length - 2 ? grace : 0)) n += 1;
+    }
+  }
+  return n;
+}
+
+// Variante CONFINEMENT (relations internes) : pénalise les segments qui SORTENT de
+// la coque — l'inverse de segCouplePolygone (un segment interne a ses deux bouts ET
+// son milieu dedans ; une sortie par une baie concave croise la frontière ou a son
+// milieu dehors).
+export function segSortPolygone(a, b, poly, graceA = 0, graceB = 0) {
+  const L = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+  const ux = (b.x - a.x) / L;
+  const uy = (b.y - a.y) / L;
+  const a2 = { x: a.x + ux * graceA, y: a.y + uy * graceA };
+  const b2 = { x: b.x - ux * graceB, y: b.y - uy * graceB };
+  if (Math.hypot(b2.x - a2.x, b2.y - a2.y) < 2) return false;
+  for (let i = 0; i < poly.length; i++) {
+    if (segmentsCroisent(a2, b2, poly[i], poly[(i + 1) % poly.length])) return true;
+  }
+  return !dansPolygone((a2.x + b2.x) / 2, (a2.y + b2.y) / 2, poly);
+}
+
+export function sortiesPolys(pts, polys, grace) {
+  let n = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    for (const p of polys) {
+      if (segSortPolygone(pts[i], pts[i + 1], p, i === 0 ? grace : 0, i === pts.length - 2 ? grace : 0)) n += 1;
     }
   }
   return n;
@@ -156,7 +183,7 @@ function epurer(pts) {
 // Route orthogonale : dégagement aux ports, puis trajet le plus simple qui évite les obstacles.
 // polys/grace (optionnels, corridors macro) : pénalité forte sur la traversée des coques
 // polygonales réelles + candidats « grand détour » autour de TOUS les obstacles.
-export function routeOrthogonale(cs, ct, coteS, coteT, obstacles, decalage = 0, polys = [], grace = 0) {
+export function routeOrthogonale(cs, ct, coteS, coteT, obstacles, decalage = 0, polys = [], grace = 0, confiner = false) {
   const s0 = pointPort(cs, coteS, cs.marge ?? 26);
   const t0 = pointPort(ct, coteT, ct.marge ?? 26);
   const s1 = avancer(s0, coteS, DEGAGEMENT);
@@ -192,10 +219,11 @@ export function routeOrthogonale(cs, ct, coteS, coteT, obstacles, decalage = 0, 
   for (const c of candidats) {
     const pts = epurer(c);
     if (pts.length < 2) continue;
-    // Priorité : éviter les robots/coques, puis limiter les coudes, puis la longueur
+    // Priorité : éviter les robots/coques, puis limiter les coudes, puis la longueur.
+    // confiner=false → rester HORS des coques (corridors) ; true → rester DEDANS (interne)
     const sc =
       heurteObstacles(pts, obstacles) * 10000 +
-      (polys.length ? coupesPolys(pts, polys, grace) * 10000 : 0) +
+      (polys.length ? (confiner ? sortiesPolys(pts, polys, grace) : coupesPolys(pts, polys, grace)) * 10000 : 0) +
       (pts.length - 2) * 8 +
       longueur(pts) / 50;
     if (sc < meilleurScore) {
@@ -208,11 +236,11 @@ export function routeOrthogonale(cs, ct, coteS, coteT, obstacles, decalage = 0, 
 
 // Stabilité des tracés : recalcul seulement si les extrémités ou l'environnement changent
 const cache = new Map();
-export function routeStable(id, cs, ct, coteS, coteT, obstacles, decalage = 0, polys = [], grace = 0) {
-  const cle = `${Math.round(cs.x)}:${Math.round(cs.y)}:${Math.round(ct.x)}:${Math.round(ct.y)}:${coteS}${coteT}:${Math.round(decalage)}:${obstacles.length}:${polys.length}:${grace}`;
+export function routeStable(id, cs, ct, coteS, coteT, obstacles, decalage = 0, polys = [], grace = 0, confiner = false) {
+  const cle = `${Math.round(cs.x)}:${Math.round(cs.y)}:${Math.round(ct.x)}:${Math.round(ct.y)}:${coteS}${coteT}:${Math.round(decalage)}:${obstacles.length}:${polys.length}:${grace}:${confiner ? 1 : 0}`;
   const entree = cache.get(id);
   if (entree && entree.cle === cle) return entree.points;
-  const points = routeOrthogonale(cs, ct, coteS, coteT, obstacles, decalage, polys, grace);
+  const points = routeOrthogonale(cs, ct, coteS, coteT, obstacles, decalage, polys, grace, confiner);
   cache.set(id, { cle, points });
   return points;
 }

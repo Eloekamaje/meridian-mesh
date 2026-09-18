@@ -1,7 +1,7 @@
 import { MarkerType } from "@xyflow/react";
 import concaveman from "concaveman";
 import { couleurDomaine } from "@/lib/domaines";
-import { choixCotes, routeStable, routeCorridor, gonflePolygone, detecterCroisements, decalagesParalleles, ancreLabel } from "./routeur";
+import { choixCotes, routeStable, routeCorridor, gonflePolygone, sortiesPolys, detecterCroisements, decalagesParalleles, ancreLabel } from "./routeur";
 
 export const COUCHES = [
   ["operationnelle", "Opérationnelle", "#9B87F5"],
@@ -100,10 +100,12 @@ export function coqueOrganique(centres, marge = 50) {
   });
   let poly;
   try {
+    // Concavité 3.6 (vs 2.2) : baies douces — une membrane trop concave crée des
+    // criques qu'une relation interne orthogonale ne peut pas longer sans sortir.
     // concaveman aussi à 2 membres : sommets polygonaux perceptibles au lieu d'une capsule lisse
     poly = centres.length === 1
       ? hullConvexe(gonfle.map(([x, y]) => ({ x, y })))
-      : concaveman(gonfle, 2.2, 52).map(([x, y]) => ({ x, y }));
+      : concaveman(gonfle, 3.6, 52).map(([x, y]) => ({ x, y }));
   } catch {
     poly = hullConvexe(gonfle.map(([x, y]) => ({ x, y })));
   }
@@ -340,8 +342,10 @@ function obstacleTitreRegion(n) {
 
 // Fabrique d'arêtes orthogonales : ports directionnels, routes finales (Worker libavoid) ou
 // provisoires (routeur maison pendant le drag / en secours), ponts, agrégation « N flux » (> 5).
+// polysParDomaine : coques des territoires — une relation INTERNE ne doit jamais quitter
+// la membrane de son domaine (pénalité de sortie + repli sur le routeur maison confiné).
 // Retourne aussi le snapshot géométrique à pousser vers le Worker.
-function fabriqueOrtho(relations, ns, posDe, niveau, zoomFort = false, routesFin = null, provisoire = false, tactile = false) {
+function fabriqueOrtho(relations, ns, posDe, niveau, zoomFort = false, routesFin = null, provisoire = false, tactile = false, polysParDomaine = {}, domDe = {}) {
   const jumeauxParId = {};
   ns.forEach((n) => {
     if (n.data?.jumeau) jumeauxParId[n.id] = n.data.jumeau;
@@ -384,7 +388,13 @@ function fabriqueOrtho(relations, ns, posDe, niveau, zoomFort = false, routesFin
     const valide = fin && fin.points?.length >= 2 && fin.sp === choix[r.id][0] && fin.tp === choix[r.id][1];
     // Provisoire (drag) : trajet simple sans obstacles ; final : points du Worker ; secours : routeur maison
     const obstacles = provisoire ? [] : obstaclesDe(ns, new Set([r.source, r.cible]));
-    const points = valide ? fin.points : routeStable(r.id, cs, ct, choix[r.id][0], choix[r.id][1], obstacles, decalages[r.id] || 0);
+    // Confinement : relation interne → la coque de son domaine est infranchissable
+    const dom = domDe[r.source];
+    const polysIntra = dom && dom === domDe[r.cible] && polysParDomaine[dom] ? [polysParDomaine[dom]] : [];
+    const locale = routeStable(r.id, cs, ct, choix[r.id][0], choix[r.id][1], obstacles, decalages[r.id] || 0, polysIntra, 40, true);
+    // La route finale du Worker ignore les coques : si elle sort de la membrane,
+    // on retombe sur la route maison confinée
+    const points = valide && (!polysIntra.length || sortiesPolys(fin.points, polysIntra, 40) === 0) ? fin.points : locale;
     routes.push({ id: r.id, points, priorite: PRIORITES[r.etat] ?? 40 });
     const bidi = relations.some((o) => o.source === r.cible && o.cible === r.source && o.id !== r.id);
     const label =
@@ -733,11 +743,12 @@ export function construireGraphe({
     // Obstacles = membranes des territoires TIERS (boîte englobante + 48px de respiration)
     const regs = {};
     ns.filter((n) => n.type === "region").forEach((n) => {
-      regs[n.data.label] = {
-        ox: n.position.x, oy: n.position.y, pts: n.data.points || [],
-        lx: n.position.x + (n.data.labelX ?? n.initialWidth / 2),
-        ly: n.position.y + (n.data.labelY ?? 30),
-      };
+      const pts = n.data.points || [];
+      // Capitale = centroïde de la coque (toujours à l'intérieur) — PAS la position
+      // du titre (data.labelY absent → repli haut de coque → rayons d'ancrage faussés)
+      const cx = pts.length ? n.position.x + pts.reduce((s, p) => s + p.x, 0) / pts.length : n.position.x + (n.data.labelX ?? n.initialWidth / 2);
+      const cy = pts.length ? n.position.y + pts.reduce((s, p) => s + p.y, 0) / pts.length : n.position.y + 30;
+      regs[n.data.label] = { ox: n.position.x, oy: n.position.y, pts, lx: cx, ly: cy };
     });
     // Obstacles du routage : boîtes englobantes des coques (+16 px) pour les canaux
     // orthogonaux + coques réelles gonflées (+10 px) pour la pénalité de traversée —
@@ -764,8 +775,7 @@ export function construireGraphe({
       const key = `${x}::${y}`;
       (paires[key] = paires[key] || { a: x, b: y, membres: [] }).membres.push(r);
     });
-    corridorsParent = Object.values(paires).map((c) => {
-      const idA = regParDom[c.a];
+    corridorsParent = Object.values(paires).map((c) => {      const idA = regParDom[c.a];
       const idB = regParDom[c.b];
       const ra = regs[c.a];
       const rb = regs[c.b];
@@ -830,6 +840,14 @@ export function construireGraphe({
     }).filter(Boolean);
   }
   if (!entreprise || bande) {
+    // Confinement : coques des territoires RETRÉCIES de 14 px (la membrane rendue est
+    // arrondie jusqu'à ~14 px en retrait du polygone brut — sans cette marge, un arc
+    // « légalement » dedans rase visuellement la frontière, voire la dépasse). Grâce
+    // de 40 px aux extrémités : les ports bas (centre + 74 px) démarrent hors coque.
+    const polyParDomaine = {};
+    ns.filter((n) => n.type === "region" && n.data.points?.length >= 3).forEach((n) => {
+      polyParDomaine[n.data.label] = gonflePolygone(n.data.points.map((p) => ({ x: p.x + n.position.x, y: p.y + n.position.y })), -14);
+    });
     // Extrémités regroupées : une relation touchant un membre pointe vers sa grappe ;
     // les relations entre mêmes extrémités sont agrégées (compte) — densité maîtrisée
     const relsMappees = mesh.relations
@@ -858,7 +876,7 @@ export function construireGraphe({
         return !da || !db || da === db;
       });
     }
-    const ortho = fabriqueOrtho(relsPourRoutage, ns, posMain, niveauEff, zoomFort, routesFin, provisoire, tactile);
+    const ortho = fabriqueOrtho(relsPourRoutage, ns, posMain, niveauEff, zoomFort, routesFin, provisoire, tactile, polyParDomaine, domDe);
     snapMain = ortho.snapshot;
     let aretesDomaine = ortho.edges
       .map((e) => ({ ...e, data: { ...e.data, entree: bande ? fonduGD : 1 } }));
