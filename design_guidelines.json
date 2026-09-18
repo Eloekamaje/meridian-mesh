@@ -1,98 +1,98 @@
 {
-  "project_context": "Méridian - Plateforme de compréhension du SI (Atlas interactif, graphe de connaissances)",
-  "theme": {
-    "background_gradient": ["#071019", "#04090F"],
-    "panels": "#0F1D28",
-    "text_primary": "#F2F6F8",
-    "text_secondary": "#94A3B8",
-    "text_tertiary": "#7C93A8",
-    "accents": {
-      "cyan": "#25D0C8",
-      "violet": "#9B87F5",
-      "amber": "#F2B84B",
-      "green": "#34D399",
-      "red": "#F87171"
+  "project_name": "Méridian",
+  "routing_recommendation": {
+    "decision": "L'Hybride Fluide (Option C modifiée / 'Hyper-lane')",
+    "rationale": "To satisfy both the 'futuristic star map' (smooth curves) and the 'internal twin routing' (orthogonal avoidance), you must decouple the *pathfinding* from the *rendering*. Use an orthogonal grid-based routing algorithm (like A* or Lee) to navigate around membrane bounding boxes (ensuring zero overlap and matching the internal logic). Then, apply a massive corner radius (e.g., 64px to 128px) to the orthogonal path before rendering. This mathematically transforms rigid 90-degree zig-zags into sweeping, organic, spline-like space-lanes that never clip through territories.",
+    "visual_parameters": {
+      "anchoring": "Perpendicular to the closest edge of the concave membrane boundary. Use intersection math on the SVG/Canvas path to stop the line exactly on the stroke of the membrane.",
+      "obstacle_padding": "Minimum 48px clearance (buffer zone) around any domain membrane to create 'breathing room' and visual tension.",
+      "corner_radius": "64px to 128px (relative to map scale) for macro corridors to create the 'stellar curve' illusion.",
+      "corridor_idle": "stroke: #25D0C8, opacity: 0.16, stroke-width: 1.5px.",
+      "corridor_hover": "stroke: #25D0C8, opacity: 0.8, stroke-width: 2px, filter: drop-shadow(0 0 12px rgba(37,208,200,0.8)); transition: all 0.3s ease.",
+      "corridor_active": "stroke: #25D0C8, opacity: 1.0, stroke-width: 2px, stroke-dasharray: 4 8, animated stroke-dashoffset for data flow."
     }
   },
   "typography": {
-    "import_url": "@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Manrope:wght@400;500;600;700&family=Rajdhani:wght@500;600;700&display=swap');",
-    "families": {
-      "display": {
-        "name": "Rajdhani",
-        "fallback": "sans-serif",
-        "weights": [500, 600, 700],
-        "role": "Titres futuristes, géométriques et techniques avec une forte présence. Utilisé pour les titres de page, les noms de domaines/constellations sur la carte et les grandes métriques.",
-        "tailwind_class": "font-display"
-      },
-      "sans": {
-        "name": "Manrope",
-        "fallback": "sans-serif",
-        "weights": [400, 500, 600, 700],
-        "role": "Police de corps ultra-lisible et moderne. Utilisée pour le contenu dense, les descriptions dans les panneaux latéraux et les conversations.",
-        "tailwind_class": "font-sans (default body)"
-      },
-      "code": {
-        "name": "JetBrains Mono",
-        "fallback": "monospace",
-        "weights": [400, 500, 700],
-        "role": "Micro-labels techniques, App IDs, badges de statut, métadonnées brutes.",
-        "tailwind_class": "font-code"
-      }
+    "fonts": {
+      "headings": "Rajdhani (for HUD macro numbers, domain titles, and spatial coordinates)",
+      "body": "Manrope (for descriptions, tooltips, and readable UI panels)",
+      "mono": "JetBrains Mono (for node IDs, metrics, active data streams, and technical specs)"
     },
-    "contrast_and_presence_strategy": [
-      "Weight Bump (Correction de la 'pâleur') : Sur un fond très sombre (nuit), les pixels lumineux ont tendance à s'affiner optiquement. Utiliser `font-medium` (500) comme base pour le texte lisible au lieu de `font-normal` (400).",
-      "Tracking Sémantique : Appliquer un tracking serré (`tracking-tight`) sur les grands titres en Rajdhani pour condenser la présence technique. Appliquer un tracking très large (`tracking-[0.15em]` ou `tracking-widest`) sur les micro-labels.",
-      "Luminosity Boost : Pour les éléments de la carte spatiale (Atlas), ajouter une légère lueur (text-shadow ou drop-shadow Tailwind) sur les polices display pour renforcer l'effet hologramme sans toucher à l'opacité.",
-      "Casse des micro-labels : Les labels techniques doivent impérativement être en majuscules (`uppercase`)."
-    ]
+    "rules": {
+      "tracking": "Use tracking-tight for Rajdhani headings. Use tracking-[0.2em] uppercase for overlines/labels.",
+      "hierarchy": "H1 max text-5xl, H2 text-3xl. Do not oversize text; maintain the precision of a high-tech instrument."
+    }
   },
-  "usage_examples": [
-    {
-      "element": "Titre de page (Administration, Travaux)",
-      "classes": "font-display text-4xl font-bold tracking-tight text-[#F2F6F8]"
+  "colors": {
+    "theme": "dark",
+    "archetype": "Electric & Neon (Context: Futuristic HUD & Spatial Canvas)",
+    "palette": {
+      "canvas_bg": "#071019",
+      "panel_bg": "#0F1D28",
+      "cyan_primary": "#25D0C8",
+      "text_main": "#E2E8F0",
+      "text_muted": "#94A3B8",
+      "danger": "#EF4444",
+      "warning": "#F59E0B"
     },
-    {
-      "element": "Nom de domaine / Jumeau (Sur la carte Atlas)",
-      "classes": "font-display text-2xl font-semibold tracking-wide text-white drop-shadow-[0_0_8px_rgba(37,208,200,0.4)]"
-    },
-    {
-      "element": "App ID / Badge Statut (Numérique)",
-      "classes": "font-code text-xs font-bold uppercase tracking-[0.15em] text-[#25D0C8] bg-[#25D0C8]/10 px-2 py-1 rounded border border-[#25D0C8]/20"
-    },
-    {
-      "element": "Corps de texte / Descriptions (Panneaux)",
-      "classes": "font-sans text-base font-medium leading-relaxed text-[#F2F6F8]"
-    },
-    {
-      "element": "Texte Secondaire / Tableaux denses",
-      "classes": "font-sans text-sm font-medium text-[#94A3B8]"
-    },
-    {
-      "element": "Bouton d'action principal",
-      "classes": "font-display text-lg font-bold uppercase tracking-wider text-[#04090F] bg-[#25D0C8] hover:bg-[#25D0C8]/90 transition-colors"
+    "rules": {
+      "contrast": "Ensure all cyan text on the dark canvas passes APCA/WCAG AA contrast. Never use pure black or pure white.",
+      "interactive": "Hover states must increase luminosity and add subtle box-shadow glows. No generic Vercel-style flat gray hovers."
     }
-  ],
-  "tailwind_configuration_instructions": {
-    "theme_extend": {
-      "fontFamily": {
-        "sans": ["Manrope", "sans-serif"],
-        "display": ["Rajdhani", "sans-serif"],
-        "code": ["JetBrains Mono", "monospace"]
-      }
-    }
+  },
+  "visual_enhancers": {
+    "surfaces": "Glassmorphism (The 'Crystal' Variant) for UI panels floating over the canvas. bg-[#0F1D28]/70 with backdrop-blur-xl and border-t border-[#25D0C8]/20.",
+    "textures": "Subtle deep-space grid (opacity 0.03, #25D0C8) mapped to the canvas background to give spatial reference.",
+    "hud_elements": "Use sharp 1px borders with 2px inner glows for selected nodes. Include crosshairs or corner-brackets (L-shapes) for domain bounding boxes."
+  },
+  "grids": {
+    "layout": "Spatial Canvas (Full viewport absolute/relative mapping).",
+    "ui_overlay": "Bento-style floating panels around the perimeter of the screen, leaving the center 70% entirely for the Atlas canvas."
+  },
+  "layouts": {
+    "structure": "100vw x 100vh overarching container overflow-hidden. Absolute positioned UI layer (z-50) + Interactive Canvas layer (z-10).",
+    "panels": "Generous internal padding (p-6) for floating detail panels. Use optical alignment."
+  },
+  "motion": {
+    "zoom": "Smooth semantic zoom interpolation. Fade out macro elements (domains) and fade in micro elements (twins/robots) over a 20% scale threshold to prevent visual popping.",
+    "corridors": "Animate dash-arrays on active corridors. Use framer-motion for smooth path drawing (draw-in effect) on initial load.",
+    "hover": "Scale active nodes/stars by 1.1x with a spring physics transition (stiffness: 300, damping: 20)."
+  },
+  "accessibility": {
+    "testing": "All interactive elements (zoom controls, domain nodes, twin nodes, panels) MUST include a data-testid attribute (e.g., data-testid='domain-node-auth').",
+    "contrast": "Minimum 4.5:1 ratio for text. Corridors must be distinguishable from the background.",
+    "motion": "Respect prefers-reduced-motion: disable path dash animations and use instant zoom if true."
+  },
+  "media": {
+    "icons": "Use Phosphor Icons (for precise, geometric tech look) or Lucide-react.",
+    "images": "N/A - System relies on generative/rendered spatial canvas nodes rather than static images."
+  },
+  "3d_libraries": {
+    "recommendation": "If rendering via DOM/SVG becomes a bottleneck with >500 nodes, transition to React Flow (2D) or Visx. If genuine 3D space is desired, use React Force Graph (2D/3D modes) or React Three Fiber with Drei for high-performance WebGL rendering."
+  },
+  "component_path": {
+    "ui_components": "src/components/ui/",
+    "canvas_engine": "src/components/atlas/"
+  },
+  "instructions_to_main_agent": {
+    "routing_implementation": "Implement orthogonal pathfinding for corridors. After calculating the orthogonal points, map over them and use an SVG arc/bezier generator or a library like 'd3-path' or standard canvas arcTo() to round the 90-degree corners with a 64px+ radius. Do NOT draw direct straight lines between domains.",
+    "ui_layer": "Build the overlay UI using Shadcn components customized with the dark futuristic theme (remove standard radii, apply HUD styles, borders, and backdrop blurs).",
+    "canvas_layer": "Ensure the Atlas canvas is built to handle pan/zoom (via d3-zoom or react-zoom-pan-pinch) and properly distinct from the fixed UI layer."
   },
   "UNIVERSAL GUIDELINES FOR MAIN AGENT": [
-    "Do not apply universal transitions like `transition: all`. Target specific properties like `transition: transform 0.2s ease, opacity 0.2s ease`.",
-    "Do not center align the app container. No `.App { text-align: center; }`.",
-    "Ensure all interactive and key informational elements MUST include a `data-testid` attribute (e.g., `data-testid=\"app-id-badge\"`).",
-    "CRITICAL: DO NOT use complete transparent backgrounds in headers, overlays, or floating panels that have content under them. Use backdrop-blur with a semi-transparent dark color like `bg-[#0F1D28]/80`.",
-    "The project uses .js files, not .tsx.",
-    "Avoid generic or 'AI slop' aesthetics. Focus on the spatial, deep-night feeling with crisp, highly intentional typography."
-  ],
-  "instructions_to_main_agent": [
-    "Load the Google Fonts URL provided in `typography.import_url` into the main CSS file (index.css/App.css) or HTML header.",
-    "Update `tailwind.config.js` to override the `fontFamily` settings for `sans`, `display`, and `code` to match the exact names provided.",
-    "Since existing components use `font-display` and `font-code`, replacing them in Tailwind config will globally update the UI without modifying hundreds of components.",
-    "To fix the 'pale' complaint: proactively find base body wrappers and change `font-normal` to `font-medium` to give the Manrope font enough weight on the dark #04090F background."
+    "You tend to converge toward generic, 'on distribution' outputs. Avoid this: make creative, distinctive frontends that surprise and delight.",
+    "Dark colors look good when used independently without gradients. DO NOT use dark colors as gradients.",
+    "Don't make generic centered layouts, simplistic gradients, and uniform styling.",
+    "Create depth through layered design elements with z-index hierarchy.",
+    "Use glass-morphism effects with backdrop filters (12-24px blur).",
+    "You MUST NOT apply universal transition (e.g., transition: all). This breaks transforms. Always add transitions for specific properties.",
+    "You MUST NOT center align the app container (.App { text-align: center; } is forbidden).",
+    "Always use modern button styles (e.g., sharp corners for this HUD theme) with interaction animations & color relevant to the app style.",
+    "NEVER: use AI assistant Emoji characters like 🤖🧠💭💡🔮🎯 etc for icons.",
+    "Every interaction needs micro-animations - hover states, transitions, parallax effects. Static = dead.",
+    "Use 2-3x more spacing than feels comfortable in the UI panels. Cramped designs look cheap.",
+    "CRITICAL: DO NOT use complete `transparent` background in header, overlays, or any surface that has content under it.",
+    "All interactive and key informational elements MUST include a `data-testid` attribute to facilitate robust automated testing.",
+    "Use `sonner` for toasts, located in /app/src/components/ui/sonner."
   ]
 }

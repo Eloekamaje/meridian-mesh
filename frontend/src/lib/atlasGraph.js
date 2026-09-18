@@ -144,6 +144,20 @@ export function coqueOrganique(centres, marge = 50) {
   };
 }
 
+// Ancre sur la FRONTIÈRE d'un territoire : le point de la coque concave le plus
+// proche de la capitale de l'autre domaine, légèrement retiré vers l'intérieur.
+function ancreFrontiere(reg, cx, cy) {
+  let b = null;
+  let dMin = Infinity;
+  reg.pts.forEach((p) => {
+    const wx = reg.ox + p.x;
+    const wy = reg.oy + p.y;
+    const d = Math.hypot(wx - cx, wy - cy);
+    if (d < dMin) { dMin = d; b = { x: wx, y: wy }; }
+  });
+  return b ? { x: b.x + (reg.lx - b.x) * 0.04, y: b.y + (reg.ly - b.y) * 0.04 } : null;
+}
+
 export const styleParEtat = (r) => {
   switch (r.etat) {
     // Réalité découverte : ligne turquoise continue + marqueur directionnel (dans makeEdge)
@@ -689,9 +703,44 @@ export function construireGraphe({
       corridors[key].n += 1;
       if (r.active) corridors[key].actif = true;
     });
+    // Obstacles = membranes des territoires TIERS (boîte englobante + 48px de
+    // respiration). Les corridors esquivent les domaines comme les arêtes
+    // esquivent les robots au niveau Jumeau : pathfinding orthogonal,
+    // rendu à très grand rayon (hybride fluide, cf. AreteCorridor).
+    const regs = {};
+    ns.filter((n) => n.type === "region").forEach((n) => {
+      regs[n.id] = {
+        ox: n.position.x, oy: n.position.y, pts: n.data.points || [],
+        lx: n.position.x + (n.data.labelX ?? n.initialWidth / 2),
+        ly: n.position.y + (n.data.labelY ?? 30),
+        bbox: {
+          x0: n.position.x - 48, y0: n.position.y - 48,
+          x1: n.position.x + n.initialWidth + 48, y1: n.position.y + n.initialHeight + 48,
+        },
+      };
+    });
     es = Object.values(corridors).map((c) => {
-      const ps = posRegions[regParDom[c.a]];
-      const pt = posRegions[regParDom[c.b]];
+      const idA = regParDom[c.a];
+      const idB = regParDom[c.b];
+      const ra = regs[idA];
+      const rb = regs[idB];
+      const ps = posRegions[idA];
+      const pt = posRegions[idB];
+      // Ancres sur la FRONTIÈRE des membranes (jamais au centre)
+      const pa = ra?.pts?.length && rb ? ancreFrontiere(ra, rb.lx, rb.ly) : null;
+      const pb = rb?.pts?.length && ra ? ancreFrontiere(rb, ra.lx, ra.ly) : null;
+      let points = null;
+      if (pa && pb) {
+        const obstacles = Object.keys(regs)
+          .filter((id) => id !== idA && id !== idB)
+          .map((id) => regs[id].bbox);
+        const cs = { x: pa.x, y: pa.y, marge: 40 };
+        const ct = { x: pb.x, y: pb.y, marge: 40 };
+        const [coteS, coteT] = choixCotes(cs, ct);
+        const route = routeStable(`corridor-${c.a}-${c.b}`, cs, ct, coteS, coteT, obstacles, 0);
+        // Le tracé touche exactement la frontière (le dégagement reste colinéaire)
+        points = [pa, ...route.slice(1, -1), pb];
+      }
       const droite = ps && pt ? pt.x - ps.x >= 0 : true;
       return {
         id: `corridor-${c.a}-${c.b}`,
@@ -709,6 +758,7 @@ export function construireGraphe({
           domains: [c.a, c.b],
           corridorLabel: `${c.a} ↔ ${c.b} · ${c.n} relation${c.n > 1 ? "s" : ""}${c.actif ? " · activité élevée" : ""}`,
           capitales: ps && pt ? { sx: ps.x, sy: ps.y, tx: pt.x, ty: pt.y } : null,
+          points,
           sens: c.a < c.b ? 1 : -1,
           sortie: bande ? 1 - fonduGD : 1,
         },
@@ -757,7 +807,7 @@ export function construireGraphe({
       });
       // Ancres sur la FRONTIÈRE des territoires (coque concave) : le point de la coque
       // le plus proche de la capitale de l'autre domaine — comme les arcs qui touchent
-      // les ports des robots au niveau Jumeau.
+      // les ports des robots au niveau Jumeau. (ancreFrontiere : helper partagé)
       const regs = {};
       ns.filter((n) => n.type === "region").forEach((n) => {
         regs[n.data.label] = {
@@ -766,18 +816,6 @@ export function construireGraphe({
           ly: n.position.y + (n.data.labelY ?? 30),
         };
       });
-      const ancreFrontiere = (reg, cx, cy) => {
-        let b = null;
-        let dMin = Infinity;
-        reg.pts.forEach((p) => {
-          const wx = reg.ox + p.x;
-          const wy = reg.oy + p.y;
-          const d = Math.hypot(wx - cx, wy - cy);
-          if (d < dMin) { dMin = d; b = { x: wx, y: wy }; }
-        });
-        // léger retrait vers la capitale : l'arc épouse la frontière sans la dépasser
-        return b ? { x: b.x + (reg.lx - b.x) * 0.04, y: b.y + (reg.ly - b.y) * 0.04 } : null;
-      };
       corridorsBord = [...inter.values()].map((membres) => {
         // paire de jumeaux la plus proche (référence React Flow obligatoire) + état dominant
         let best = membres[0];
