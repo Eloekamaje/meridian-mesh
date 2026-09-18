@@ -740,6 +740,7 @@ export function construireGraphe({
     // « N flux » (façon routes principales Google Maps) ; les petites rues (relations
     // individuelles inter-domaines) apparaissent au niveau 3. Relations internes inchangées.
     let relsPourRoutage = relsMappees;
+    let corridorsBord = [];
     if (niveauEff === 2) {
       const intra = [];
       const inter = new Map();
@@ -754,8 +755,31 @@ export function construireGraphe({
         if (!inter.has(cle)) inter.set(cle, []);
         inter.get(cle).push(r);
       });
-      const corridorsN2 = [...inter.values()].map((membres) => {
-        // extrémités = paire de jumeaux la plus proche entre les deux domaines
+      // Ancres sur la FRONTIÈRE des territoires (coque concave) : le point de la coque
+      // le plus proche de la capitale de l'autre domaine — comme les arcs qui touchent
+      // les ports des robots au niveau Jumeau.
+      const regs = {};
+      ns.filter((n) => n.type === "region").forEach((n) => {
+        regs[n.data.label] = {
+          ox: n.position.x, oy: n.position.y, pts: n.data.points || [],
+          lx: n.position.x + (n.data.labelX ?? n.initialWidth / 2),
+          ly: n.position.y + (n.data.labelY ?? 30),
+        };
+      });
+      const ancreFrontiere = (reg, cx, cy) => {
+        let b = null;
+        let dMin = Infinity;
+        reg.pts.forEach((p) => {
+          const wx = reg.ox + p.x;
+          const wy = reg.oy + p.y;
+          const d = Math.hypot(wx - cx, wy - cy);
+          if (d < dMin) { dMin = d; b = { x: wx, y: wy }; }
+        });
+        // léger retrait vers la capitale : l'arc épouse la frontière sans la dépasser
+        return b ? { x: b.x + (reg.lx - b.x) * 0.04, y: b.y + (reg.ly - b.y) * 0.04 } : null;
+      };
+      corridorsBord = [...inter.values()].map((membres) => {
+        // paire de jumeaux la plus proche (référence React Flow obligatoire) + état dominant
         let best = membres[0];
         let dMin = Infinity;
         membres.forEach((r) => {
@@ -767,14 +791,39 @@ export function construireGraphe({
             best = r;
           }
         });
+        const da = domDe[best.source];
+        const db = domDe[best.cible];
+        const ra = regs[da];
+        const rb = regs[db];
+        const pa = ra?.pts?.length && rb ? ancreFrontiere(ra, rb.lx, rb.ly) : null;
+        const pb = rb?.pts?.length && ra ? ancreFrontiere(rb, ra.lx, ra.ly) : null;
+        if (!pa || !pb) return null;
         const etatFort = membres.reduce((a, r) => ((PRIORITES[r.etat] ?? 40) > (PRIORITES[a] ?? 40) ? r.etat : a), membres[0].etat);
-        return { ...best, id: `corridor2-${best.source}-${best.cible}`, etat: etatFort, grappeCompte: membres.length };
-      });
-      relsPourRoutage = [...intra, ...corridorsN2];
+        return {
+          id: `corridor2-${best.source}-${best.cible}`,
+          source: best.source,
+          target: best.cible,
+          type: "ortho",
+          interactionWidth: 12,
+          data: {
+            etat: etatFort,
+            points: [pa, pb],
+            sauts: [],
+            label: `${membres.length} flux`,
+            agregat: membres.map((m) => m.id),
+            grappeCompte: membres.length,
+            niveau: niveauEff,
+            couleurCible: couleurDomaine(db),
+          },
+        };
+      }).filter(Boolean);
+      relsPourRoutage = intra;
     }
     const ortho = fabriqueOrtho(relsPourRoutage, ns, posMain, niveauEff, zoomFort, routesFin, provisoire, tactile);
     snapMain = ortho.snapshot;
-    let aretesDomaine = ortho.edges.map((e) => ({ ...e, data: { ...e.data, entree: bande ? fonduGD : 1 } }));
+    let aretesDomaine = ortho.edges
+      .map((e) => ({ ...e, data: { ...e.data, entree: bande ? fonduGD : 1 } }))
+      .concat(corridorsBord.map((e) => ({ ...e, data: { ...e.data, entree: bande ? fonduGD : 1 } })));
     // Moteur de labels des relations (niveau 3+) : collision → le moins prioritaire disparaît
     if (zoomNiveau >= 3 && !provisoire) {
       const candidats = aretesDomaine

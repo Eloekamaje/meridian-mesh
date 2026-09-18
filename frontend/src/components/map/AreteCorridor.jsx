@@ -31,8 +31,8 @@ export default memo(function AreteCorridor({ id, data, selected }) {
         strokeWidth={largeur}
         strokeLinecap="round"
         opacity={coreOp}
-        strokeDasharray={data?.actif ? "7 10" : undefined}
-        className={data?.actif ? "corridor-actif" : undefined}
+        strokeDasharray={data?.actif && lumineux ? "7 10" : undefined}
+        className={data?.actif && lumineux ? "corridor-actif" : undefined}
         style={{ transition: "opacity 250ms, stroke-width 250ms" }}
       />
       <path d={d} fill="none" stroke="transparent" strokeWidth={16} style={{ pointerEvents: "stroke" }} />

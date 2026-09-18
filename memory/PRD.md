@@ -1,5 +1,10 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v68, corridors N2 frontière-à-frontière + pointillés Global réservés au survol)
+- **Corridors Domaine (N2) ancrés sur les frontières** : retour utilisateur « même comportement qu'au niveau Jumeau — extrémités sur les bords du domaine, arc résumé-parent de tous les flux partagés ». Les corridors agrégés ne plongent plus vers une paire de jumeaux routée par libavoid : chaque extrémité est le **point de la coque concave le plus proche de la capitale de l'autre territoire** (retrait 4 % vers la capitale pour épouser la frontière), tracé en arc courbe (2 points → mode courbe d'AreteOrthogonale), label « N flux », `data.agregat` = ids membres. Le routage orthogonal N2 ne concerne plus que les relations intra-domaine.
+- **Pointillés au Global réservés au survol** : retour « je vois toujours ceux en pointillé au zoom out max » — le flux animé (dasharray + `.corridor-actif`) des corridors actifs ne s'affiche plus qu'**illuminé** (survol territoire/arc, sélection) ; repos = trait plein discret. La membrane pointillée « À confirmer » reste : territoire candidat non validé (sémantique voulue).
+- Vérifié par captures/mesures : 7 corridors bord-à-bord avec labels, 0 arc en pointillés au repos au Global, zéro erreur JS.
+
 ## Implémenté (06/2026 — v67, transition progressive Global ↔ Domaine)
 Retour utilisateur : le zoom Global → Domaine basculait sec, « les arcs ne se révèlent pas progressivement ».
 - **Bande de transition continue z 0.5 → 0.7** (`fonduGD` passé au graphe) : corridors macro **fondent** (`sortie` multiplie leurs opacités) pendant que les arêtes de domaine (`entree` dans AreteOrthogonale) et les étoiles des jumeaux (opacité TwinNode) **se révèlent** ; agrégats macro des territoires fondent aussi (`opaciteMacro`).
