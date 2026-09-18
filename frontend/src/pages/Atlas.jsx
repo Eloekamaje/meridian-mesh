@@ -1104,7 +1104,11 @@ export default function Atlas() {
         fitViewOptions={{ padding: 0.15 }}
         minZoom={0.45}
         maxZoom={2.6}
-        translateExtent={[[-900, -600], [3000, 1900]]}
+        // Étendue élargie : au zoom min (0.45) sur écran large, l'ancienne étendue
+        // (3900 px monde → 1755 px écran) était plus étroite que le viewport → le pan
+        // horizontal se verrouillait complètement. Marge généreuse mais bornée :
+        // un pan violent ne peut toujours pas faire disparaître la carte.
+        translateExtent={[[-1600, -1100], [3800, 2600]]}
         zoomOnDoubleClick={false}
         onInit={(inst) => {
           rfRef.current = inst;

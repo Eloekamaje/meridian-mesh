@@ -1,5 +1,8 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v70, fix pan bloqué au zoom out max)
+Retour utilisateur : « je n'arrive plus à déplacer la map en glissant ». Reproduction par script : le pan fonctionnait à tous les niveaux SAUF au zoom min (0.45) — cause racine : `translateExtent` [[-900,-600],[3000,1900]] (v60) = 3900 px monde × 0.45 = 1755 px écran < viewport 1920 → **pan horizontal totalement verrouillé**, vertical quasi nul (~325 px). Fix (`Atlas.jsx`) : étendue élargie à [[-1600,-1100],[3800,2600]] (5400×3700 monde) — le glisser redevient libre dans toutes les directions au zoom out max, tout en restant borné (un pan violent ne perd pas la carte). Vérifié : 5 directions de drag PAN OK à z 0.45.
+
 ## Implémenté (06/2026 — v69, corridors Global « hybride fluide » : esquive des domaines)
 Retour utilisateur : au zoom out max, les lignes entre domaines ne doivent traverser AUCUN territoire (ni source/cible, ni tiers) — esquive comme le routage des jumeaux au zoom Domaine. Choix délégué à l'expert designer → **Hybride Fluide** (design_guidelines.json) : pathfinding orthogonal anti-obstacles + rendu à très grand rayon.
 - **`atlasGraph.js` (bloc Global)** : les corridors ne partent plus des capitales mais d'**ancres frontières** (helper `ancreFrontiere` remonté au niveau module, partagé avec le N2) ; chaque membrane de domaine devient un **obstacle** (bbox + 48 px de respiration, source/cible exclues) ; routage via `routeStable`/`choixCotes` (routeur maison, canaux anti-obstacles) ; le premier/dernier point sont replacés exactement sur la frontière (dégagement colinéaire conservé).
