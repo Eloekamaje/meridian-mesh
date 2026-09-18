@@ -58,24 +58,11 @@ function construireEchanges(messages, fixtures) {
 // et bascule de surface (le travail est une vraie page Travail).
 function Orchestrateur({ profileId }) {
   const { etat, fixtures, acquitterScene } = usePolaris();
-  const { recharger, mesh } = useMesh();
+  const { recharger } = useMesh();
   const { commanderCarte } = useContexte();
   const navigate = useNavigate();
   const scene = etat.sceneId ? fixtures.scenes[etat.sceneId] : null;
   const commandId = etat.attente?.commandId || null;
-
-  // Cadrage d'ouverture « immense » : membranes denses qui débordent de l'écran,
-  // en attente du clic du visiteur (une seule fois par session)
-  const cadreOuverture = useRef(false);
-  useEffect(() => {
-    if (etat.status !== "awaiting_opening" || cadreOuverture.current || !mesh?.jumeaux?.length) return undefined;
-    cadreOuverture.current = true;
-    const t = setTimeout(() => {
-      commanderCarte({ type: "scene", ids: mesh.jumeaux.map((j) => j.id), accents: [], dense: true });
-    }, 350);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [etat.status, mesh]);
 
   useEffect(() => {
     if (!scene || etat.surface !== "atlas") return undefined;

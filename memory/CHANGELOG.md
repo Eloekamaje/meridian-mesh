@@ -1,5 +1,9 @@
 # Méridian — Journal des implémentations
 
+## Implémenté (06/2026 — v80, Écran d'attente : les 10 jumeaux tous visibles)
+Précision utilisateur (« l'Atlas des 10 jumeaux doit être là pendant l'attente du clic ») : le cadrage « dense/immense » de v78 (recommandation design) zoomait trop — plusieurs jumeaux étaient coupés hors de l'écran. Retrait du cadrage dense d'ouverture (effet Orchestrateur + branche `dense` d'Atlas.jsx supprimés) : l'Atlas retrouve sa vue d'ensemble native — les 10 jumeaux et les 8 relations intégralement visibles pendant l'attente du clic. Le contenu complet du monde connu (v78) est conservé ; la révélation de la capacité au climax est inchangée. Vérifié par capture.
+
+
 ## Implémenté (06/2026 — v79, Verrou kiosque : la navigation ne quitte plus la démo)
 Correction signalée par l'utilisateur (« le rendu du clic sur Atlas n'est pas le même après le choix du gestionnaire ») : les liens de la Topbar pointaient vers les routes produit — cliquer « Atlas » en démo affichait l'Atlas réel (30 jumeaux) au lieu du monde de démonstration.
 - **Topbar démo-aware** (`usePilotage`) : le lien « Atlas » pointe vers `pilote.baseUrl` (`/demo/polaris/:profileId`) ; Actualités/Travaux/Jumeaux neutralisés (grisés, `cursor-not-allowed`, clic sans effet) ; menu hamburger et bouton « à traiter » désactivés ; état actif violet conservé sur le lien Atlas.

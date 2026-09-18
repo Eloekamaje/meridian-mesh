@@ -293,17 +293,8 @@ export default function Atlas() {
       if (pts.length) {
         const xs = pts.map((p) => p.x);
         const ys = pts.map((p) => p.y);
-        let [x0, y0, x1, y1] = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
-        if (focusCarte.dense) {
-          // Cadrage « immense » : les membranes débordent légèrement de l'écran
-          const dx = (x1 - x0) * 0.12;
-          const dy = (y1 - y0) * 0.12;
-          x0 += dx; y0 += dy; x1 -= dx; y1 -= dy;
-        }
-        const mX = focusCarte.dense ? 40 : 260;
-        const mY = focusCarte.dense ? 30 : 220;
         rfRef.current?.fitBounds(
-          { x: x0 - mX, y: y0 - mY, width: x1 - x0 + mX * 2, height: y1 - y0 + mY * 2 },
+          { x: Math.min(...xs) - 260, y: Math.min(...ys) - 220, width: Math.max(...xs) - Math.min(...xs) + 520, height: Math.max(...ys) - Math.min(...ys) + 440 },
           { duration: 600 }
         );
       }
