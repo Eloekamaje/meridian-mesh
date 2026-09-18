@@ -27,13 +27,16 @@ function versJumeau(base, fixtures) {
   };
 }
 
-// Mesh au format du backend réel, filtré par la scène courante (nœuds masqués et
-// liens non listés absents — la « révélation » est une vraie mise à jour du Mesh).
+// Mesh au format du backend réel. Le monde connu est COMPLET à l'ouverture (toutes
+// les relations existantes) ; seule la capacité à découvrir et ses relations sont
+// retenues jusqu'au climax — la « révélation » est une vraie mise à jour du Mesh.
+// Une scène peut masquer des nœuds pour focaliser, mais ne retire jamais le connu.
 function construireMesh(fixtures) {
   const sceneId = sceneActive || fixtures.sceneInitiale || null;
   const scene = sceneId ? fixtures.scenes?.[sceneId] : null;
   const marques = scene ? new Map(scene.noeuds.map((n) => [n.id, n])) : null;
-  const liens = scene ? new Set(scene.liens.map((l) => l.id)) : null;
+  const revelation = fixtures.revelation || { noeuds: [], liens: [] };
+  const revele = scene?.revele === true;
 
   const tous = [
     ...(fixtures.entites || []).map((e) =>
@@ -43,9 +46,9 @@ function construireMesh(fixtures) {
       versJumeau({ id: a.id, nom: a.nom, domaine: a.domaine, mission: a.description || "" }, fixtures)
     ),
   ];
-  const jumeaux = tous.filter((j) => !marques?.get(j.id)?.masque);
+  const jumeaux = tous.filter((j) => (revelation.noeuds.includes(j.id) ? revele : !marques?.get(j.id)?.masque));
   const relations = (fixtures.relations || [])
-    .filter((r) => !liens || liens.has(r.id))
+    .filter((r) => (revelation.liens.includes(r.id) ? revele : true))
     .map((r) => ({
       id: r.id,
       source: r.sourceId,

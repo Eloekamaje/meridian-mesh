@@ -1,98 +1,88 @@
 {
-  "project_name": "Méridian",
-  "routing_recommendation": {
-    "decision": "L'Hybride Fluide (Option C modifiée / 'Hyper-lane')",
-    "rationale": "To satisfy both the 'futuristic star map' (smooth curves) and the 'internal twin routing' (orthogonal avoidance), you must decouple the *pathfinding* from the *rendering*. Use an orthogonal grid-based routing algorithm (like A* or Lee) to navigate around membrane bounding boxes (ensuring zero overlap and matching the internal logic). Then, apply a massive corner radius (e.g., 64px to 128px) to the orthogonal path before rendering. This mathematically transforms rigid 90-degree zig-zags into sweeping, organic, spline-like space-lanes that never clip through territories.",
-    "visual_parameters": {
-      "anchoring": "Perpendicular to the closest edge of the concave membrane boundary. Use intersection math on the SVG/Canvas path to stop the line exactly on the stroke of the membrane.",
-      "obstacle_padding": "Minimum 48px clearance (buffer zone) around any domain membrane to create 'breathing room' and visual tension.",
-      "corner_radius": "64px to 128px (relative to map scale) for macro corridors to create the 'stellar curve' illusion.",
-      "corridor_idle": "stroke: #25D0C8, opacity: 0.16, stroke-width: 1.5px.",
-      "corridor_hover": "stroke: #25D0C8, opacity: 0.8, stroke-width: 2px, filter: drop-shadow(0 0 12px rgba(37,208,200,0.8)); transition: all 0.3s ease.",
-      "corridor_active": "stroke: #25D0C8, opacity: 1.0, stroke-width: 2px, stroke-dasharray: 4 8, animated stroke-dashoffset for data flow."
+  "project_context": {
+    "dilemma_resolution": "CHOIX DÉCISIF : L'Option B (Révélation) est la seule voie narrativement viable. Le design est une narration. Une IA qui se contente d'éclairer ce qui était déjà visible (Option A) n'est qu'un moteur de recherche. Une IA qui synthétise et FAIT ÉMERGER un point commun caché prouve l'intelligence du système. Le climax doit être une naissance et une découverte, pas une simple mise en évidence.",
+    "addressing_user_feedback": "Pour répondre à l'attente d'un Atlas 'complet et riche' à l'ouverture, l'astuce n'est pas de tout montrer, mais de CADRER pour suggérer l'immensité. Les 10 jumeaux et 8 relations initiaux doivent occuper l'espace de manière dense. Les membranes de domaines (Client, Distribution, Opérations) doivent déborder des limites de l'écran. L'utilisateur a ainsi l'illusion organique de voir 'tout l'Atlas', rendant l'apparition ultérieure de la 11ème capacité d'autant plus magique et inattendue."
+  },
+  "narrative_choreography": {
+    "ouverture": {
+      "visual_state": "Atlas complet sans la capacité finale (10 nœuds, 8 relations). Zoom sémantique niveau 2 (vue d'ensemble détaillée). Les membranes de domaines remplissent et débordent de l'écran. Ambiance 'nuit profonde'.",
+      "action": "Halo organique, pulsant et subtil (glow blur-xl, rythme lent) autour du bouton '+ Nouveau travail'. Attente infinie du clic visiteur."
+    },
+    "transition_creation": {
+      "visual_state": "L'Atlas disparaît au profit d'une interface de création épurée, ultra-focalisée (Glassmorphism de haute qualité sur fond sombre).",
+      "action": "Saisie de la demande dans le composer. Indicateurs de 'réflexion' de Flore (animations micro-typographiques, état de chargement élégant sans emojis)."
+    },
+    "acte_1_silos": {
+      "visual_state": "Retour à l'Atlas en plein écran. Les 3 initiatives en silos s'illuminent (opacité 100%, léger effet de 'scale'). Le reste de l'Atlas s'assombrit (opacité 20%, désaturation partielle) créant un fort contraste."
+    },
+    "acte_2_climax_revelation": {
+      "visual_state": "C'est l'Émergence. Les 3 silos pulsent. Des flux d'énergie (arêtes orthogonales turquoise) se dessinent et voyagent depuis les silos vers un espace vide dans la membrane 'Opérations'.",
+      "action": "Le nouveau nœud 'Capacité partagée' (le jumeau) se matérialise dans un éclat (flare subtil/zoom in). C'est la révélation visuelle du point commun, le climax narratif."
+    },
+    "acte_3_resolution": {
+      "visual_state": "Recadrage dynamique (Fit View) sur la nouvelle constellation formée. Les couleurs des 3 domaines impliqués se reflètent subtilement dans le halo du nouveau nœud révélé."
+    }
+  },
+  "theme": {
+    "mode": "dark",
+    "background": "Nuit profonde (#060913 à #0A0F1C), avec un très subtil grain/bruit pour éviter l'aspect plat et synthétique du 'vide numérique'."
+  },
+  "colors": {
+    "primary": "#38BDF8",
+    "background": "#060913",
+    "surface": "rgba(255, 255, 255, 0.03)",
+    "domains": {
+      "client": "#34D399",
+      "distribution": "#F0ABFC",
+      "operations": "#38BDF8"
+    },
+    "edges": {
+      "default": "rgba(255,255,255,0.15)",
+      "highlight": "#2DD4BF"
     }
   },
   "typography": {
-    "fonts": {
-      "headings": "Rajdhani (for HUD macro numbers, domain titles, and spatial coordinates)",
-      "body": "Manrope (for descriptions, tooltips, and readable UI panels)",
-      "mono": "JetBrains Mono (for node IDs, metrics, active data streams, and technical specs)"
-    },
-    "rules": {
-      "tracking": "Use tracking-tight for Rajdhani headings. Use tracking-[0.2em] uppercase for overlines/labels.",
-      "hierarchy": "H1 max text-5xl, H2 text-3xl. Do not oversize text; maintain the precision of a high-tech instrument."
-    }
+    "strategy": "Tech Editorial. INTERDITS: Inter (pour les titres), Space Grotesk, Roboto.",
+    "headings": "Cabinet Grotesk ou Outfit (Poids radical: Light pour l'élégance, Bold pour l'impact de l'IA).",
+    "body": "IBM Plex Sans (Clarté absolue pour l'UI et les métadonnées).",
+    "nodes": "JetBrains Mono ou IBM Plex Mono (Donne un aspect technique, authentique et systémique aux étiquettes sur la carte Atlas)."
   },
-  "colors": {
-    "theme": "dark",
-    "archetype": "Electric & Neon (Context: Futuristic HUD & Spatial Canvas)",
-    "palette": {
-      "canvas_bg": "#071019",
-      "panel_bg": "#0F1D28",
-      "cyan_primary": "#25D0C8",
-      "text_main": "#E2E8F0",
-      "text_muted": "#94A3B8",
-      "danger": "#EF4444",
-      "warning": "#F59E0B"
-    },
-    "rules": {
-      "contrast": "Ensure all cyan text on the dark canvas passes APCA/WCAG AA contrast. Never use pure black or pure white.",
-      "interactive": "Hover states must increase luminosity and add subtle box-shadow glows. No generic Vercel-style flat gray hovers."
-    }
-  },
-  "visual_enhancers": {
-    "surfaces": "Glassmorphism (The 'Crystal' Variant) for UI panels floating over the canvas. bg-[#0F1D28]/70 with backdrop-blur-xl and border-t border-[#25D0C8]/20.",
-    "textures": "Subtle deep-space grid (opacity 0.03, #25D0C8) mapped to the canvas background to give spatial reference.",
-    "hud_elements": "Use sharp 1px borders with 2px inner glows for selected nodes. Include crosshairs or corner-brackets (L-shapes) for domain bounding boxes."
-  },
-  "grids": {
-    "layout": "Spatial Canvas (Full viewport absolute/relative mapping).",
-    "ui_overlay": "Bento-style floating panels around the perimeter of the screen, leaving the center 70% entirely for the Atlas canvas."
+  "atlas_composition": {
+    "nodes": "Style Jumeaux (Étoiles/Robots). Pas de simples rectangles. Utiliser des formes avec un 'inner glow' (box-shadow inset 1px) et un halo externe flou adoptant la couleur de la membrane parente.",
+    "membranes": "Concaves, organiques. Utiliser des SVG fluides. Fond: couleur du domaine avec opacité très faible (2-5%) et une bordure de 1px avec opacité 20-30%.",
+    "edges": "Arêtes orthogonales (type 'step' ou 'smoothstep' dans React Flow). Animées (stroke-dasharray) uniquement lors du climax pour guider l'œil."
   },
   "layouts": {
-    "structure": "100vw x 100vh overarching container overflow-hidden. Absolute positioned UI layer (z-50) + Interactive Canvas layer (z-10).",
-    "panels": "Generous internal padding (p-6) for floating detail panels. Use optical alignment."
+    "ui_overlay": "Bento minimaliste et asymétrique. Les panneaux de contrôle (si présents) ne doivent pas bloquer la carte centrale. Utiliser des marges généreuses (p-8, p-12).",
+    "creation_page": "Mode 'Focus' absolu. Centré optiquement, pas géométriquement (décaler légèrement le conteneur vers le haut pour compenser l'illusion visuelle)."
   },
-  "motion": {
-    "zoom": "Smooth semantic zoom interpolation. Fade out macro elements (domains) and fade in micro elements (twins/robots) over a 20% scale threshold to prevent visual popping.",
-    "corridors": "Animate dash-arrays on active corridors. Use framer-motion for smooth path drawing (draw-in effect) on initial load.",
-    "hover": "Scale active nodes/stars by 1.1x with a spring physics transition (stiffness: 300, damping: 20)."
+  "visual_enhancers": {
+    "glassmorphism": "Les panneaux UI (ex: le composer) superposés utilisent un verre 'Crystal' de luxe: bg-black/60, backdrop-blur-xl, border-white/10, shadow-2xl. Jamais de fond 100% transparent.",
+    "textures": "Bruit SVG fractal (noise) très fin en superposition sur le fond de l'application."
   },
   "accessibility": {
-    "testing": "All interactive elements (zoom controls, domain nodes, twin nodes, panels) MUST include a data-testid attribute (e.g., data-testid='domain-node-auth').",
-    "contrast": "Minimum 4.5:1 ratio for text. Corridors must be distinguishable from the background.",
-    "motion": "Respect prefers-reduced-motion: disable path dash animations and use instant zoom if true."
+    "contrast": "Garantir un ratio de contraste APCA suffisant. Le texte sur les membranes doit rester lisible. Utiliser des ombres portées (text-shadow) si nécessaire.",
+    "motion": "Respecter 'prefers-reduced-motion' en désactivant le pulse du halo et les flux d'énergie de React Flow pour ces utilisateurs."
   },
-  "media": {
-    "icons": "Use Phosphor Icons (for precise, geometric tech look) or Lucide-react.",
-    "images": "N/A - System relies on generative/rendered spatial canvas nodes rather than static images."
+  "components": {
+    "composer": "Champ de saisie Shadcn lourdement customisé. Bordure 'Tracing Beam' subtile lors du focus pour évoquer l'IA Flore qui 'écoute'.",
+    "button": "Bouton '+ Nouveau travail' sans bordures acérées. Style pill-shaped, fond interactif avec micro-animation (scale) au survol."
   },
-  "3d_libraries": {
-    "recommendation": "If rendering via DOM/SVG becomes a bottleneck with >500 nodes, transition to React Flow (2D) or Visx. If genuine 3D space is desired, use React Force Graph (2D/3D modes) or React Three Fiber with Drei for high-performance WebGL rendering."
-  },
-  "component_path": {
-    "ui_components": "src/components/ui/",
-    "canvas_engine": "src/components/atlas/"
-  },
-  "instructions_to_main_agent": {
-    "routing_implementation": "Implement orthogonal pathfinding for corridors. After calculating the orthogonal points, map over them and use an SVG arc/bezier generator or a library like 'd3-path' or standard canvas arcTo() to round the 90-degree corners with a 64px+ radius. Do NOT draw direct straight lines between domains.",
-    "ui_layer": "Build the overlay UI using Shadcn components customized with the dark futuristic theme (remove standard radii, apply HUD styles, borders, and backdrop blurs).",
-    "canvas_layer": "Ensure the Atlas canvas is built to handle pan/zoom (via d3-zoom or react-zoom-pan-pinch) and properly distinct from the fixed UI layer."
-  },
-  "UNIVERSAL GUIDELINES FOR MAIN AGENT": [
-    "You tend to converge toward generic, 'on distribution' outputs. Avoid this: make creative, distinctive frontends that surprise and delight.",
-    "Dark colors look good when used independently without gradients. DO NOT use dark colors as gradients.",
-    "Don't make generic centered layouts, simplistic gradients, and uniform styling.",
-    "Create depth through layered design elements with z-index hierarchy.",
-    "Use glass-morphism effects with backdrop filters (12-24px blur).",
-    "You MUST NOT apply universal transition (e.g., transition: all). This breaks transforms. Always add transitions for specific properties.",
-    "You MUST NOT center align the app container (.App { text-align: center; } is forbidden).",
-    "Always use modern button styles (e.g., sharp corners for this HUD theme) with interaction animations & color relevant to the app style.",
-    "NEVER: use AI assistant Emoji characters like 🤖🧠💭💡🔮🎯 etc for icons.",
-    "Every interaction needs micro-animations - hover states, transitions, parallax effects. Static = dead.",
-    "Use 2-3x more spacing than feels comfortable in the UI panels. Cramped designs look cheap.",
-    "CRITICAL: DO NOT use complete `transparent` background in header, overlays, or any surface that has content under it.",
-    "All interactive and key informational elements MUST include a `data-testid` attribute to facilitate robust automated testing.",
-    "Use `sonner` for toasts, located in /app/src/components/ui/sonner."
+  "instructions_to_main_agent": [
+    "Implémenter la logique narrative avec un gestionnaire d'état (state machine) ou des useEffect séquencés pour contrôler les scènes de React Flow.",
+    "Pour le climax (Acte 2), ajouter le nœud manquant au tableau des nœuds (nodes array) de React Flow de manière dynamique, en appliquant une classe CSS d'animation 'fade-in-scale' ou via Framer Motion.",
+    "Assurer que 'fitView' de React Flow est appelé avec un padding généreux (ex: padding: 0.2) et une transition fluide (duration: 1200ms) lors des changements d'actes.",
+    "Ajouter 'data-testid' sur tous les éléments d'interaction (ex: data-testid='new-work-btn').",
+    "Surcharger les styles par défaut de Shadcn pour correspondre à l'esthétique 'nuit profonde' et éviter le look Vercel basique."
+  ],
+  "UNIVERSAL_GUIDELINES_FOR_MAIN_AGENT": [
+    "Ne créez pas de mises en page centrées génériques, de dégradés simplistes ou de styles uniformes.",
+    "Créez de la profondeur grâce à des éléments de conception en couches avec une hiérarchie z-index claire.",
+    "Utilisez des effets de verre avec des filtres de toile de fond forts (flou de 12-24 px).",
+    "NE PAS appliquer de transition universelle (ex: transition: all). Ciblez spécifiquement les propriétés (opacity, transform) pour éviter de casser les animations.",
+    "NE JAMAIS centrer l'alignement du conteneur d'application via 'text-align: center' sur le body ou App.",
+    "NE JAMAIS utiliser d'émojis (🤖🧠💭) pour l'IA. Utilisez les bibliothèques d'icônes professionnelles (Lucide-react).",
+    "Tous les éléments d'interface interactifs DOIVENT inclure un attribut data-testid.",
+    "CRITIQUE : Les arrière-plans des dropdowns, tooltips, modales et navs ne doivent JAMAIS être 100% transparents s'ils se superposent à du contenu. Utilisez bg-black/80 ou similaire avec backdrop-blur."
   ]
 }

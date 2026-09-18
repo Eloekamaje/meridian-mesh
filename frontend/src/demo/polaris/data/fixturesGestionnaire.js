@@ -128,6 +128,7 @@ export const SCENES = {
   },
   "demo-polaris-scene-g-capacites": {
     id: "demo-polaris-scene-g-capacites",
+    revele: true, // climax : la capacité commune et ses relations se matérialisent
     titre: "Polaris — capacités existantes",
     question: "Le besoin commun et ce qui existe déjà",
     viewKind: "dependencies",
@@ -175,4 +176,10 @@ export const FIXTURES_GESTIONNAIRE = {
   resultats: { "demo-polaris-work-g": TRAVAIL_G },
   positions: POSITIONS_MESH,
   sceneInitiale: "demo-polaris-scene-g-initiatives",
+  // Monde connu à l'ouverture : tout, sauf la capacité à découvrir et ses relations,
+  // qui se matérialisent au climax (scène portant `revele: true`)
+  revelation: {
+    noeuds: ["demo-polaris-cap-etat-dossier"],
+    liens: ["demo-polaris-rel-suivi-cap", "demo-polaris-rel-poste-cap", "demo-polaris-rel-reprises-cap", "demo-polaris-rel-cap-dossiers"],
+  },
 };

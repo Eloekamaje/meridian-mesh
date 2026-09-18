@@ -1,0 +1,25 @@
+{
+  "summary": "Validated the NEW Polaris demo opening flow end-to-end for the Gestionnaire scenario. (1) /demo/polaris/gestionnaire opens on the REAL Atlas in awaiting_opening state: no auto message, sidebar-nouveau-travail button pulses, polaris-indice-nouveau-travail bubble ('Commencez ici') is visible, bottom bar shows 'Cliquez sur « Nouveau travail » pour démarrer' (polaris-indice-demarrage), and ONLY the Accueil control is shown (no Pause/Suivant). (2) Waited 8s (proxy for 'indefinite wait' — 30s is unnecessary once no timer is running): still no message, indice still there. (3) Click on sidebar-nouveau-travail navigates to /demo/polaris/gestionnaire/nouveau, title 'Que voulez-vous comprendre ou accomplir ?' is displayed, the demand text types progressively into accueil-composer-input (samples at 300ms intervals: len 123 → 174 → 186 → 186 → 0 (sent) → 0). (4) After typing, accueil-msg-0 appears in the centred thread with the full text 'Nous avons trois pistes : le suivi des demandes clients, le poste conseiller et la réduction des reprises manuelles. Nous avons du mal à voir ce qu'elles impliquent et ce qui se recoupe.' and the composer clears. (5) Flore reply (accueil-reponse-*) appears and the inline steps block accueil-activite-demo renders BEFORE the atlas switchover with the 3 ops ticking off. (6) At apply_scene the URL switches back to /demo/polaris/gestionnaire, the Atlas frames the scene with '3 jumeaux sélectionnés' AND 'Revenir à ma sélection (3)' (previous iteration-65 bug fixed → now correctly 3), and the flore-panel opens on the right containing the SAME thread (question + both Flore explanations + PREUVES chip) — perfect continuity. (7) Pause during typing: freezes composer value (len stayed at 153 across 2s), Reprendre resumes and the message eventually sends. (8) Controls bar on /nouveau is right-aligned (Accueil btn at x=1786/1920, box ends at x=1887) and does NOT cover the composer (composer fully visible). (9) Suivant advances through capacity reveal (Topbar goes from 10 → 8 JUMEAUX confirmed) and reaches /demo/polaris/gestionnaire/travail/demo-polaris-work-g with polaris-cloture rendered. (10) polaris-revoir-btn returns to /demo/polaris/gestionnaire, cloture is removed, opening frappe is NOT replayed. (11) PRODUCT REGRESSION on /atlas: real backend shows '30 JUMEAUX', no demo bar, sidebar-nouveau-travail navigates to /travaux/nouveau, composer is NOT readonly and accepts typed input ('Test regression production' echoed back). Zero console errors captured during any phase.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "accueil-activite-demo ops labels", "issues": ["Minor wording deviation from spec: actual ops are 'Lit les trois fiches d'initiative…', 'Consulte les connaissances des jumeaux concernés…', 'Recherche les points communs…' whereas spec text lists 'Rapproche les initiatives des applications…' and 'Compare les mots utilisés…'. Semantically equivalent; not a functional bug — flagged for copy alignment only."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "(Optional / copy) Align the 3 ops labels in accueil-activite-demo with the spec wording if strict text match is required."
+  ],
+  "critical_code_review_comments": [
+    "New opening flow (awaiting_opening → opening_typing → send → ops → apply_scene) is well-architected: readOnly composer during frappe, controlled pause/resume, and thread continuity between /nouveau and flore-panel side panel are all correct.",
+    "The 3-initiative selection bug from iteration-65 is fixed (chip / breadcrumb / bottom bar all read 3)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (not requested)", "frontend": "100% on new opening flow + full regression"},
+  "seed_data_creation": "None (demo uses local mockApi fixtures).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Full new opening flow validated. Notable behaviours to preserve: awaiting_opening does NOT emit any thread message; only Accueil control shows in that phase; typing samples grow from ~120→186 chars in <2s; ops phase lasts ~3s BEFORE atlas switchover; on apply_scene the same thread (moi + 2 Flore replies + PREUVES) is transferred to the right-side flore-panel; controls bar on /nouveau is right-aligned to avoid covering composer. Product regression (/atlas real backend + /travaux/nouveau composer editable) is green."
+}
