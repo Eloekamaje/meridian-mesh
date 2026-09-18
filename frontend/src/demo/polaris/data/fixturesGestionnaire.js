@@ -151,20 +151,21 @@ export const SCENES = {
   },
 };
 
-// Positions du Mesh de démonstration : les jumeaux sont regroupés par domaine pour
-// que l'Atlas réel dessine ses territoires naturellement (membranes + corridors).
+// Positions des jumeaux du récit : lobes adjacents aux territoires produit de leurs
+// domaines (Client, Distribution, Opérations) — les membranes réelles s'étendent
+// organiquement pour les accueillir, comme une découverte du Mesh.
 export const POSITIONS_MESH = {
-  "demo-polaris-ini-suivi": { x: 120, y: 220 },
-  "demo-polaris-etape-demande": { x: 250, y: 320 },
-  "demo-polaris-app-portail": { x: 90, y: 420 },
-  "demo-polaris-ini-poste": { x: 580, y: 60 },
-  "demo-polaris-etape-conseil": { x: 700, y: 150 },
-  "demo-polaris-app-conseiller": { x: 820, y: 50 },
-  "demo-polaris-ini-reprises": { x: 120, y: 640 },
-  "demo-polaris-etape-traitement": { x: 250, y: 750 },
-  "demo-polaris-app-dossiers": { x: 340, y: 630 },
-  "demo-polaris-app-statuts": { x: 430, y: 770 },
-  "demo-polaris-cap-etat-dossier": { x: 190, y: 850 },
+  "demo-polaris-ini-suivi": { x: -30, y: 250 },
+  "demo-polaris-etape-demande": { x: -50, y: 370 },
+  "demo-polaris-app-portail": { x: -10, y: 460 },
+  "demo-polaris-ini-poste": { x: 540, y: -90 },
+  "demo-polaris-etape-conseil": { x: 670, y: -120 },
+  "demo-polaris-app-conseiller": { x: 790, y: -80 },
+  "demo-polaris-ini-reprises": { x: 110, y: 880 },
+  "demo-polaris-etape-traitement": { x: 230, y: 960 },
+  "demo-polaris-app-dossiers": { x: 340, y: 890 },
+  "demo-polaris-app-statuts": { x: 150, y: 1060 },
+  "demo-polaris-cap-etat-dossier": { x: 290, y: 1100 },
 };
 
 export const FIXTURES_GESTIONNAIRE = {

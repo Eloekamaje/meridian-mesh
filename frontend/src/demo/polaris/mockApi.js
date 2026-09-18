@@ -1,7 +1,7 @@
 // Adaptateur local Polaris (§4.1) : tant que le kiosque est monté, l'instance axios
 // partagée est servie par les fixtures du scénario — l'application réelle (Atlas,
 // Flore, Travail) fonctionne à l'identique, sans aucun appel réseau.
-import { couleurDomaine } from "@/lib/domaines";
+import { MONDE_JUMEAUX, MONDE_RELATIONS, MONDE_REGIONS } from "./data/mondeComplet";
 
 let sceneActive = null;
 export const definirSceneActive = (id) => {
@@ -9,8 +9,6 @@ export const definirSceneActive = (id) => {
 };
 
 const ETAT_REL = { observe: "observee", a_etudier: "supposee" };
-const slug = (s) =>
-  s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-");
 
 function versJumeau(base, fixtures) {
   return {
@@ -27,10 +25,11 @@ function versJumeau(base, fixtures) {
   };
 }
 
-// Mesh au format du backend réel. Le monde connu est COMPLET à l'ouverture (toutes
-// les relations existantes) ; seule la capacité à découvrir et ses relations sont
-// retenues jusqu'au climax — la « révélation » est une vraie mise à jour du Mesh.
-// Une scène peut masquer des nœuds pour focaliser, mais ne retire jamais le connu.
+// Mesh au format du backend réel : le MONDE PRODUIT COMPLET (instantané, 7 domaines)
+// sert de toile de fond — le récit se joue dans le même Atlas que /atlas. Le monde
+// connu est entier à l'ouverture ; seule la capacité à découvrir et ses relations
+// sont retenues jusqu'au climax — la « révélation » est une vraie mise à jour du Mesh.
+// Une scène peut masquer des nœuds du récit pour focaliser, mais ne retire jamais le connu.
 function construireMesh(fixtures) {
   const sceneId = sceneActive || fixtures.sceneInitiale || null;
   const scene = sceneId ? fixtures.scenes?.[sceneId] : null;
@@ -38,7 +37,7 @@ function construireMesh(fixtures) {
   const revelation = fixtures.revelation || { noeuds: [], liens: [] };
   const revele = scene?.revele === true;
 
-  const tous = [
+  const recit = [
     ...(fixtures.entites || []).map((e) =>
       versJumeau({ id: e.id, nom: e.label, domaine: e.domaine || "Opérations", mission: e.detail || "" }, fixtures)
     ),
@@ -46,48 +45,35 @@ function construireMesh(fixtures) {
       versJumeau({ id: a.id, nom: a.nom, domaine: a.domaine, mission: a.description || "" }, fixtures)
     ),
   ];
-  const jumeaux = tous.filter((j) => (revelation.noeuds.includes(j.id) ? revele : !marques?.get(j.id)?.masque));
-  const relations = (fixtures.relations || [])
-    .filter((r) => (revelation.liens.includes(r.id) ? revele : true))
-    .map((r) => ({
-      id: r.id,
-      source: r.sourceId,
-      cible: r.targetId,
-      type: r.knowledgeStatus === "observe" ? "structurante" : "decouverte",
-      active: true,
-      etat: ETAT_REL[r.knowledgeStatus] || "observee",
-      label: r.label,
-      decouverte_quand: "aujourd'hui",
-      source_decouverte: "Relevé de démonstration Polaris",
-      confirmee_par: [],
-      claims: [],
-      observations_contraires: [],
-      evolution: [],
-    }));
-
-  const parDom = {};
-  jumeaux.forEach((j) => {
-    (parDom[j.domaine] = parDom[j.domaine] || []).push(j);
-  });
-  const regions = Object.entries(parDom).map(([dom, js]) => {
-    const xs = js.map((j) => j.position.x);
-    const ys = js.map((j) => j.position.y);
-    return {
-      id: `reg-${slug(dom)}`,
-      label: dom,
-      x: Math.min(...xs) - 80,
-      y: Math.min(...ys) - 100,
-      w: Math.max(...xs) - Math.min(...xs) + 220,
-      h: Math.max(...ys) - Math.min(...ys) + 280,
-      couleur: couleurDomaine(dom),
-      maturite: { niveau: "partiellement découvert", jumeaux: js.length, relations_emergentes: 0, zones_inconnues: 0 },
-    };
-  });
+  const jumeaux = [
+    ...MONDE_JUMEAUX.map((j) => ({ ...j })),
+    ...recit.filter((j) => (revelation.noeuds.includes(j.id) ? revele : !marques?.get(j.id)?.masque)),
+  ];
+  const relations = [
+    ...MONDE_RELATIONS.map((r) => ({ ...r })),
+    ...(fixtures.relations || [])
+      .filter((r) => (revelation.liens.includes(r.id) ? revele : true))
+      .map((r) => ({
+        id: r.id,
+        source: r.sourceId,
+        cible: r.targetId,
+        type: r.knowledgeStatus === "observe" ? "structurante" : "decouverte",
+        active: true,
+        etat: ETAT_REL[r.knowledgeStatus] || "observee",
+        label: r.label,
+        decouverte_quand: "aujourd'hui",
+        source_decouverte: "Relevé de démonstration Polaris",
+        confirmee_par: [],
+        claims: [],
+        observations_contraires: [],
+        evolution: [],
+      })),
+  ];
 
   return {
     jumeaux,
     relations,
-    regions,
+    regions: MONDE_REGIONS.map((r) => ({ ...r })),
     perimetre: { espace: "Mesh global", global: true, politique: "masquage", nb_autorises: jumeaux.length, nb_restreints: 0 },
   };
 }

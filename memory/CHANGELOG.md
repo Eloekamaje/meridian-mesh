@@ -1,5 +1,13 @@
 # Méridian — Journal des implémentations
 
+## Implémenté (06/2026 — v81, La démo se joue DANS le vrai Atlas produit (7 domaines))
+Écart signalé par l'utilisateur (« je vois 7 domaines dans /atlas, pourquoi ce n'est pas la même chose ? ») : la démo tournait sur un monde réduit (3 domaines, 10 jumeaux).
+- **Instantané du monde produit** : `demo/polaris/data/mondeComplet.js` (GET /api/mesh : 41 jumeaux, 48 relations, 7 régions — Paiement, Client, Risque, Support, Opérations, Distribution, À confirmer) sert de toile de fond à la démonstration, toujours sans réseau.
+- **Récit greffé dans le monde réel** : les 10 jumeaux du scénario occupent des lobes adjacents aux territoires produit de leurs domaines (Client, Distribution, Opérations — existants dans le produit) ; les membranes réelles s'étendent organiquement pour les accueillir. `construireMesh` = monde produit + récit (révélation capacité et masquage de focalisation inchangés) ; régions = celles du produit.
+- **Rendu** : ouverture visuellement identique à /atlas (40 jumeaux actifs, 7 membranes, corridors) ; scène 1 cadre les 3 silos dans le grand monde (3 sélectionnés) ; climax : la capacité se matérialise dans le lobe Opérations (38 jumeaux, 2 accents). Vérifié par captures.
+- **Note** : pour régénérer l'instantané après évolution du seed produit : rejouer GET /api/mesh et réécrire `mondeComplet.js`.
+
+
 ## Implémenté (06/2026 — v80, Écran d'attente : les 10 jumeaux tous visibles)
 Précision utilisateur (« l'Atlas des 10 jumeaux doit être là pendant l'attente du clic ») : le cadrage « dense/immense » de v78 (recommandation design) zoomait trop — plusieurs jumeaux étaient coupés hors de l'écran. Retrait du cadrage dense d'ouverture (effet Orchestrateur + branche `dense` d'Atlas.jsx supprimés) : l'Atlas retrouve sa vue d'ensemble native — les 10 jumeaux et les 8 relations intégralement visibles pendant l'attente du clic. Le contenu complet du monde connu (v78) est conservé ; la révélation de la capacité au climax est inchangée. Vérifié par capture.
 
