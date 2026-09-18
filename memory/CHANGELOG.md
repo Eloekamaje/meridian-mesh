@@ -1,5 +1,13 @@
 # Méridian — Journal des implémentations
 
+## Implémenté (06/2026 — v82, Flore = colonne latérale « Google Maps » (reflow), plus de superposition)
+Comportement réclamé par l'utilisateur (« le panneau de Flore s'affiche à droite et l'Atlas va à gauche avec tous ses composants — zoom, minimap — c'est pas du superposage ») : le panneau était en `fixed` (superposition depuis 365257a) et recouvrait la minimap et les contrôles ; en démo, le pilotage par `pilote.ouvert` court-circuitait en plus `floreOuverte`, donc même les adaptations existantes ne se déclenchaient pas.
+- **FlorePanel en flux** : l'aside devient une colonne latérale en flux (`relative mt-12 h-[calc(100vh-3rem)] shrink-0`) — le contenu principal (Topbar + page) se redimensionne automatiquement de 440 px ; superposition conservée uniquement sur mobile (`max-sm:fixed`). Conforme au paradigme documenté dans Layout.jsx (« colonne latérale qui redimensionne le contenu »).
+- **Recadrage de la carte** : nouvel effet Atlas — à l'ouverture/fermeture de Flore, `fitView` (400 ms) recadre la carte dans sa zone ; minimap et contrôles zoom restent visibles au nouveau bord droit du canevas (vérifié : x=1465/1466 vs panneau x=1480).
+- **Démo synchronisée** : `floreOuverte` est synchronisé avec `pilotage.ouvert` (Coquille) — reflow, recadrage et masquage d'AtlasPanneau s'appliquent aussi en démonstration ; l'effet produit « sélection ferme Flore » est neutralisé en démo (`!pilote`).
+- **Portée** : comportement appliqué au niveau Layout → identique sur toutes les pages (Atlas, Accueil, Travail, démo Polaris). Vérifié par captures produit + démo (scène 1 : 3 jumeaux sélectionnés, carte recadrée, aucun chevauchement).
+
+
 ## Implémenté (06/2026 — v81, La démo se joue DANS le vrai Atlas produit (7 domaines))
 Écart signalé par l'utilisateur (« je vois 7 domaines dans /atlas, pourquoi ce n'est pas la même chose ? ») : la démo tournait sur un monde réduit (3 domaines, 10 jumeaux).
 - **Instantané du monde produit** : `demo/polaris/data/mondeComplet.js` (GET /api/mesh : 41 jumeaux, 48 relations, 7 régions — Paiement, Client, Risque, Support, Opérations, Distribution, À confirmer) sert de toile de fond à la démonstration, toujours sans réseau.

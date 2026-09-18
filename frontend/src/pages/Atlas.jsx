@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { useMesh } from "@/lib/mesh";
 import { usePerimetre } from "@/lib/perimetre";
+import { usePilotage } from "@/lib/pilotage";
 import { useContexte } from "@/lib/contexte";
 import TwinNode from "@/components/map/TwinNode";
 import CielEtoile from "@/components/map/CielEtoile";
@@ -67,6 +68,7 @@ export default function Atlas() {
   const direct = modeTemps === "direct";
   const [outil, setOutil] = useState("deplacement");
   const { selection, setSelection, domaineSel, setDomaineSel, focusCarte, commanderCarte, setFocusVisuel, ouvrirFlore, fermerFlore, floreOuverte, setAtlasCtx, atlasEtat, setAtlasEtat, demanderAFlore, preuveSurvolee } = useContexte();
+  const pilote = usePilotage();
 
   // Conservation de l'état de l'Atlas entre les pages : au retour, on restaure exactement
   // viewport, zoom, sélection et couches — jamais de fitView au retour (les liens partagés
@@ -616,9 +618,17 @@ export default function Atlas() {
   // Le détail jumeau vit dans sa colonne GAUCHE — il n'interrompt plus Flore.
   const selCle = selectedRelation?.id || domaineSel || vueListe || (comparaison ? "comparaison" : null);
   useEffect(() => {
-    if (floreOuverte && selCle) fermerFlore();
+    if (floreOuverte && selCle && !pilote) fermerFlore();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selCle]);
+
+  // Paradigme « Google Maps » : l'ouverture/fermeture de Flore redimensionne le canevas —
+  // la carte se recadre pour rester entièrement visible avec tous ses composants
+  useEffect(() => {
+    const t = setTimeout(() => rfRef.current?.fitView({ duration: 400, padding: 0.15, maxZoom: 1.35 }), 60);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [floreOuverte]);
 
   // Routage final : nouveau snapshot géométrique → Web Worker libavoid
   // (jamais pendant le drag, jamais pendant le pan/zoom — la signature géométrique est stable)

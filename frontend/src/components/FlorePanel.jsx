@@ -479,7 +479,7 @@ export default function FlorePanel() {
       initial={{ x: 60, opacity: 0 }}
       animate={{ x: 0, opacity: 1 }}
       transition={{ type: "spring", stiffness: 320, damping: 30 }}
-      className={`hud-gauche hud-violet fixed bottom-0 right-0 top-12 z-40 flex w-[440px] flex-col border-l border-[rgba(148,163,184,0.16)] bg-[#0F1D28]/95 shadow-[-24px_0_48px_rgba(4,9,15,0.55)] backdrop-blur-xl max-sm:w-[94vw] max-sm:max-w-[94vw] ${chargement ? "hud-reflexion" : ""}`}
+      className={`hud-gauche hud-violet relative z-40 mt-12 flex h-[calc(100vh-3rem)] w-[440px] shrink-0 flex-col border-l border-[rgba(148,163,184,0.16)] bg-[#0F1D28]/95 shadow-[-24px_0_48px_rgba(4,9,15,0.55)] backdrop-blur-xl max-sm:fixed max-sm:bottom-0 max-sm:right-0 max-sm:top-12 max-sm:mt-0 max-sm:h-auto max-sm:w-[94vw] max-sm:max-w-[94vw] ${chargement ? "hud-reflexion" : ""}`}
       data-testid="flore-panel"
     >
       {/* En-tête */}

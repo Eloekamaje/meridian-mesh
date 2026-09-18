@@ -109,6 +109,7 @@ function Orchestrateur({ profileId }) {
 
 function Coquille({ scenario, fixtures }) {
   const { etat, pause, reprendre, suivant, lectureAuto, revoirDecouverte, onAccueil, preuveId, fermerPreuve, ouvrirPreuve, demarrerOuverture } = usePolaris();
+  const { floreOuverte, ouvrirFlore, fermerFlore } = useContexte();
   const [proposeInactivite, setProposeInactivite] = useState(false);
   const inactivite = useRef(null);
 
@@ -163,6 +164,13 @@ function Coquille({ scenario, fixtures }) {
     }),
     [etat.messages, etat.surface, etat.activite, etat.status, etat.saisie, fixtures, scenario, demarrerOuverture, ouvrirPreuve]
   );
+
+  // Le pilotage démo ouvre/ferme le vrai état Flore : le reflow « Google Maps »
+  // (colonne latérale qui redimensionne l'Atlas) s'applique aussi en démonstration
+  useEffect(() => {
+    if (pilotage.ouvert && !floreOuverte) ouvrirFlore();
+    if (!pilotage.ouvert && floreOuverte) fermerFlore();
+  }, [pilotage.ouvert, floreOuverte, ouvrirFlore, fermerFlore]);
 
   return (
     <PilotageProvider value={pilotage}>
