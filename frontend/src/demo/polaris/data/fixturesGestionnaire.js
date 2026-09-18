@@ -150,6 +150,22 @@ export const SCENES = {
   },
 };
 
+// Positions du Mesh de démonstration : les jumeaux sont regroupés par domaine pour
+// que l'Atlas réel dessine ses territoires naturellement (membranes + corridors).
+export const POSITIONS_MESH = {
+  "demo-polaris-ini-suivi": { x: 120, y: 220 },
+  "demo-polaris-etape-demande": { x: 250, y: 320 },
+  "demo-polaris-app-portail": { x: 90, y: 420 },
+  "demo-polaris-ini-poste": { x: 580, y: 60 },
+  "demo-polaris-etape-conseil": { x: 700, y: 150 },
+  "demo-polaris-app-conseiller": { x: 820, y: 50 },
+  "demo-polaris-ini-reprises": { x: 120, y: 640 },
+  "demo-polaris-etape-traitement": { x: 250, y: 750 },
+  "demo-polaris-app-dossiers": { x: 340, y: 630 },
+  "demo-polaris-app-statuts": { x: 430, y: 770 },
+  "demo-polaris-cap-etat-dossier": { x: 190, y: 850 },
+};
+
 export const FIXTURES_GESTIONNAIRE = {
   applications: APPLICATIONS,
   entites: ENTITES,
@@ -157,4 +173,6 @@ export const FIXTURES_GESTIONNAIRE = {
   preuves: PREUVES,
   scenes: SCENES,
   resultats: { "demo-polaris-work-g": TRAVAIL_G },
+  positions: POSITIONS_MESH,
+  sceneInitiale: "demo-polaris-scene-g-initiatives",
 };

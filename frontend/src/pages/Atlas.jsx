@@ -282,6 +282,22 @@ export default function Atlas() {
           { duration: 600 }
         );
       }
+    } else if (focusCarte.type === "scene" && focusCarte.ids?.length) {
+      // Scène pilotée (démonstration) : cadrer les jumeaux visibles, accentuer les points d'attention
+      const ids = focusCarte.ids.filter((id) => mesh?.jumeaux.some((j) => j.id === id));
+      if (!ids.length) return;
+      const accents = (focusCarte.accents || []).filter((id) => ids.includes(id));
+      setSelection(accents.length ? accents : ids);
+      setRelFocus(true);
+      const pts = ids.map((id) => posOverrides[id] || mesh.jumeaux.find((j) => j.id === id)?.position).filter(Boolean);
+      if (pts.length) {
+        const xs = pts.map((p) => p.x);
+        const ys = pts.map((p) => p.y);
+        rfRef.current?.fitBounds(
+          { x: Math.min(...xs) - 260, y: Math.min(...ys) - 220, width: Math.max(...xs) - Math.min(...xs) + 520, height: Math.max(...ys) - Math.min(...ys) + 440 },
+          { duration: 600 }
+        );
+      }
     } else if (focusCarte.type === "relation" && focusCarte.relationId) {
       // Preuve choisie dans Flore : cadrer la relation, sélectionner les deux jumeaux, ouvrir son détail
       const rel = (mesh?.relations || []).find((r) => r.id === focusCarte.relationId);

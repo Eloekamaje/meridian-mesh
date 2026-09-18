@@ -370,9 +370,20 @@ export function PolarisSessionProvider({ scenario, fixtures, onAccueil, children
     });
   }, [scenario]);
 
+  // Consultation d'une preuve : suspend la lecture sans la casser (§7.6)
+  const [preuveId, setPreuveId] = useState(null);
+  const ouvrirPreuve = useCallback(
+    (pid) => {
+      setPreuveId(pid);
+      pause("consultation d'une preuve");
+    },
+    [pause]
+  );
+  const fermerPreuve = useCallback(() => setPreuveId(null), []);
+
   const valeur = useMemo(
-    () => ({ etat, scenario, fixtures, pause, reprendre, suivant, lectureAuto, revoirDecouverte, acquitterScene, onAccueil }),
-    [etat, scenario, fixtures, pause, reprendre, suivant, lectureAuto, revoirDecouverte, acquitterScene, onAccueil]
+    () => ({ etat, scenario, fixtures, pause, reprendre, suivant, lectureAuto, revoirDecouverte, acquitterScene, onAccueil, preuveId, ouvrirPreuve, fermerPreuve }),
+    [etat, scenario, fixtures, pause, reprendre, suivant, lectureAuto, revoirDecouverte, acquitterScene, onAccueil, preuveId, ouvrirPreuve, fermerPreuve]
   );
 
   return <Ctx.Provider value={valeur}>{children}</Ctx.Provider>;

@@ -1,39 +1,118 @@
-// Lecteur kiosque Polaris (/demo/polaris/:profileId) : compose les surfaces
-// (Flore seule → Atlas + Flore latérale → Travail), les contrôles du lecteur,
-// la suspension sur inactivité/onglet masqué et l'état d'erreur récupérable.
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+// Lecteur kiosque Polaris (/demo/polaris/:profileId) : le scénario pilote la VRAIE
+// application Méridian — Topbar, Atlas, Flore et Travail authentiques — alimentée
+// localement par les fixtures via un adaptateur réseau simulé (§4.1).
+// Aucune interface parallèle : choisir un rôle ouvre Méridian avec son contexte.
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Route, Routes, useNavigate, useParams } from "react-router-dom";
 import { Sparkle, WarningCircle } from "@phosphor-icons/react";
+import api from "@/lib/api";
+import { PerimetreProvider } from "@/lib/perimetre";
+import { ContexteProvider, useContexte } from "@/lib/contexte";
+import { MeshProvider, useMesh } from "@/lib/mesh";
+import { DemoProvider } from "@/lib/demo";
+import { PilotageProvider } from "@/lib/pilotage";
+import Topbar from "@/components/Topbar";
+import FlorePanel from "@/components/FlorePanel";
+import DemoTour from "@/components/DemoTour";
+import Atlas from "@/pages/Atlas";
+import TravailDetail from "@/pages/TravailDetail";
 import { PolarisSessionProvider, usePolaris } from "./PolarisSessionProvider";
 import { SCENARIOS } from "./scenarios/gestionnaire";
 import { FIXTURES_GESTIONNAIRE } from "./data/fixturesGestionnaire";
+import { installerMockPolaris, definirSceneActive } from "./mockApi";
 import PolarisControls from "./PolarisControls";
-import FloreKiosque from "./FloreKiosque";
-import AtlasKiosque from "./AtlasKiosque";
-import TravailKiosque from "./TravailKiosque";
 import PreuvePanneau from "./PreuvePanneau";
 
 const FIXTURES_PAR_PROFIL = { gestionnaire: FIXTURES_GESTIONNAIRE };
 
-function Coquille() {
-  const { etat, scenario, fixtures, pause, reprendre, suivant, lectureAuto, revoirDecouverte, acquitterScene, onAccueil } = usePolaris();
-  const [preuveOuverte, setPreuveOuverte] = useState(null);
-  const inactivite = useRef(null);
-  const [proposeInactivite, setProposeInactivite] = useState(false);
+// Messages du moteur → échanges du vrai panneau Flore (question persona, réponses Flore)
+function construireEchanges(messages, fixtures) {
+  const out = [];
+  messages.forEach((m) => {
+    if (m.speaker === "persona") {
+      out.push({ id: m.id, question: m.text, data: null });
+      return;
+    }
+    const data = {
+      reponse: m.text,
+      comportement: "expliquer",
+      contributions: [],
+      indicateurs: null,
+      preuves: (m.evidenceIds || [])
+        .map((pid) => {
+          const p = fixtures.preuves[pid];
+          return p ? { preuveId: pid, source: p.title, detail: p.supports } : null;
+        })
+        .filter(Boolean),
+    };
+    const dernier = out[out.length - 1];
+    if (dernier && !dernier.data) out[out.length - 1] = { ...dernier, data };
+    else out.push({ id: m.id, question: null, data });
+  });
+  return out;
+}
 
-  // Ouvrir une preuve suspend la lecture (§7.6)
-  const ouvrirPreuve = useCallback(
-    (pid) => {
-      setPreuveOuverte(pid);
-      pause("consultation d'une preuve");
-    },
-    [pause]
-  );
+// Orchestre les effets du scénario sur l'application réelle : scènes de l'Atlas
+// (Mesh simulé filtré, cadrage + accentuation via les commandes carte existantes)
+// et bascule de surface (le travail est une vraie page Travail).
+function Orchestrateur({ profileId }) {
+  const { etat, fixtures, acquitterScene } = usePolaris();
+  const { recharger } = useMesh();
+  const { commanderCarte } = useContexte();
+  const navigate = useNavigate();
+  const scene = etat.sceneId ? fixtures.scenes[etat.sceneId] : null;
+  const commandId = etat.attente?.commandId || null;
+
+  useEffect(() => {
+    if (!scene || etat.surface !== "atlas") return undefined;
+    let annule = false;
+    let t = null;
+    definirSceneActive(scene.id);
+    recharger()
+      .then(() => {
+        if (annule) return;
+        const ids = scene.noeuds.filter((n) => !n.masque).map((n) => n.id);
+        const accents = scene.noeuds.filter((n) => n.accent).map((n) => n.id);
+        commanderCarte({ type: "scene", ids, accents });
+        t = setTimeout(() => {
+          if (!annule && commandId) acquitterScene(commandId);
+        }, 900);
+      })
+      .catch(() => {
+        if (!annule && commandId) acquitterScene(commandId);
+      });
+    return () => {
+      annule = true;
+      if (t) clearTimeout(t);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [etat.sceneVersion, etat.surface]);
+
+  useEffect(() => {
+    if (etat.surface === "travail") {
+      const rid = Object.keys(etat.resultats)[0];
+      if (rid) navigate(`/demo/polaris/${profileId}/travail/${rid}`, { replace: true });
+    } else {
+      navigate(`/demo/polaris/${profileId}`, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [etat.surface]);
+
+  return null;
+}
+
+function Coquille({ scenario, fixtures }) {
+  const { etat, pause, reprendre, suivant, lectureAuto, revoirDecouverte, onAccueil, preuveId, fermerPreuve, ouvrirPreuve } = usePolaris();
+  const [proposeInactivite, setProposeInactivite] = useState(false);
+  const inactivite = useRef(null);
 
   // Inactivité : 90 s sans interaction dans un état arrêté → proposition ; +30 s → accueil
   useEffect(() => {
     const arret = ["paused", "awaiting_continue", "completed"].includes(etat.status);
-    if (!arret) { setProposeInactivite(false); return undefined; }
+    if (!arret) {
+      setProposeInactivite(false);
+      return undefined;
+    }
     let t2 = null;
     const t1 = setTimeout(() => {
       setProposeInactivite(true);
@@ -64,136 +143,152 @@ function Coquille() {
     return () => document.removeEventListener("visibilitychange", onVis);
   }, [etat.status, pause]);
 
-  const travail = Object.values(etat.resultats)[0] || null;
-  const floreSeule = etat.surface === "flore";
-  const lateral = etat.surface !== "flore";
+  const pilotage = useMemo(
+    () => ({
+      ouvert: etat.messages.length > 0 && etat.surface !== "travail",
+      echanges: construireEchanges(etat.messages, fixtures),
+      activite: etat.activite,
+      enPause: etat.status === "paused",
+      ouvrirPreuve,
+    }),
+    [etat.messages, etat.surface, etat.activite, etat.status, fixtures, ouvrirPreuve]
+  );
 
   return (
-    <div className="flex h-screen flex-col bg-[#071019] text-[#D8E2EA]" data-testid="polaris-player">
-      <header className="flex items-center justify-between border-b border-[rgba(148,163,184,0.12)] px-5 py-3">
-        <div className="flex items-center gap-3">
-          <Sparkle size={16} weight="fill" className="text-[#9B87F5]" />
-          <div>
-            <div className="font-display text-sm font-bold text-[#F2F6F8]" data-testid="polaris-scenario-titre">{scenario.title}</div>
-            <div className="font-code text-[9px] uppercase tracking-[0.25em] text-[#7C93A8]">
-              Démonstration Polaris · {scenario.roleLabel}
-            </div>
-          </div>
-        </div>
-        <button onClick={onAccueil} className="font-code text-[10px] text-[#7C93A8] transition-colors hover:text-[#F2F6F8]" data-testid="polaris-retour-accueil">
-          ← Accueil de la démonstration
-        </button>
-      </header>
-
-      <div className="flex min-h-0 flex-1">
-        {etat.status === "error" ? (
-          <div className="flex flex-1 items-center justify-center p-8">
-            <div className="w-full max-w-[480px] rounded-xl border border-[#F87171]/30 bg-[#0F1D28] p-6" data-testid="polaris-erreur">
-              <div className="flex items-center gap-2 font-display text-lg font-bold text-[#F87171]">
-                <WarningCircle size={20} /> Un élément de la démonstration n'a pas pu s'afficher
-              </div>
-              <pre className="mt-3 whitespace-pre-wrap rounded-lg bg-[#071019] p-3 font-code text-[11px] text-[#7C93A8]">{etat.erreur}</pre>
-              <div className="mt-4 flex gap-2">
-                <button onClick={reprendre} className="min-h-[44px] rounded-lg border border-[#25D0C8]/50 px-4 py-2 font-code text-[11px] text-[#25D0C8]" data-testid="polaris-reessayer-btn">
-                  Réessayer
-                </button>
-                <button onClick={onAccueil} className="min-h-[44px] rounded-lg border border-[rgba(148,163,184,0.2)] px-4 py-2 font-code text-[11px] text-[#7C93A8]" data-testid="polaris-erreur-accueil-btn">
-                  Revenir à l'accueil
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <>
-            {/* Surface principale */}
-            <main className="relative min-w-0 flex-1" data-testid="polaris-surface">
-              {floreSeule && (
-                <div className="mx-auto flex h-full max-w-[760px] flex-col px-6 py-6">
-                  <p className="mb-4 font-code text-[10px] uppercase tracking-[0.25em] text-[#7C93A8]">{scenario.roleContext}</p>
-                  <FloreKiosque
-                    messages={etat.messages}
-                    activite={etat.activite}
-                    frappeActive={etat.frappeActive}
-                    enPause={etat.status === "paused"}
-                    roleLabel={scenario.roleLabel}
-                    onPreuve={ouvrirPreuve}
-                  />
-                </div>
-              )}
-              {etat.surface === "atlas" && (
-                <AtlasKiosque
-                  sceneId={etat.sceneId}
-                  version={etat.sceneVersion}
-                  fixtures={fixtures}
-                  commandeAttente={etat.attente?.commandId || null}
-                  onScenePrete={acquitterScene}
-                  onInteraction={() => pause("exploration libre")}
-                />
-              )}
-              {etat.surface === "travail" && travail && (
-                <div className="h-full px-6 py-5">
-                  <TravailKiosque travail={travail} messages={etat.messages} preuves={fixtures.preuves} onPreuve={ouvrirPreuve} />
-                </div>
-              )}
-              {etat.status === "completed" && (
-                <div className="absolute inset-x-0 bottom-16 flex justify-center px-6">
-                  <div className="max-w-[620px] rounded-xl border border-[rgba(37,208,200,0.3)] bg-[#0F1D28]/95 p-5 shadow-2xl" data-testid="polaris-cloture">
-                    <div className="font-code text-[9px] uppercase tracking-[0.25em] text-[#25D0C8]">Parcours terminé</div>
-                    <p className="mt-2 text-sm leading-relaxed text-[#D8E2EA]">{scenario.closingText}</p>
+    <PilotageProvider value={pilotage}>
+      <div className="flex h-screen w-full overflow-hidden bg-[rgba(148,163,184,0.07)] text-foreground" data-testid="polaris-player">
+        <div className="flex min-w-0 flex-1 flex-col">
+          <Topbar />
+          <main className="relative flex-1 overflow-hidden">
+            {etat.status === "error" ? (
+              <div className="flex h-full items-center justify-center p-8">
+                <div className="w-full max-w-[480px] rounded-xl border border-[#F87171]/30 bg-[#0F1D28] p-6" data-testid="polaris-erreur">
+                  <div className="flex items-center gap-2 font-display text-lg font-bold text-[#F87171]">
+                    <WarningCircle size={20} /> Un élément de la démonstration n'a pas pu s'afficher
+                  </div>
+                  <pre className="mt-3 whitespace-pre-wrap rounded-lg bg-[#071019] p-3 font-code text-[11px] text-[#7C93A8]">{etat.erreur}</pre>
+                  <div className="mt-4 flex gap-2">
+                    <button onClick={reprendre} className="min-h-[44px] rounded-lg border border-[#25D0C8]/50 px-4 py-2 font-code text-[11px] text-[#25D0C8]" data-testid="polaris-reessayer-btn">
+                      Réessayer
+                    </button>
+                    <button onClick={onAccueil} className="min-h-[44px] rounded-lg border border-[rgba(148,163,184,0.2)] px-4 py-2 font-code text-[11px] text-[#7C93A8]" data-testid="polaris-erreur-accueil-btn">
+                      Revenir à l'accueil
+                    </button>
                   </div>
                 </div>
-              )}
-            </main>
-
-            {/* Flore latérale : le même fil continue à droite de la surface */}
-            {lateral && (
-              <aside className="hidden w-[400px] shrink-0 border-l border-[rgba(148,163,184,0.12)] bg-[#0A1520] px-4 py-4 xl:block" data-testid="flore-laterale-kiosque">
-                <FloreKiosque
-                  messages={etat.messages}
-                  activite={etat.activite}
-                  frappeActive={etat.frappeActive}
-                  enPause={etat.status === "paused"}
-                  roleLabel={scenario.roleLabel}
-                  onPreuve={ouvrirPreuve}
-                  compact
-                />
-              </aside>
+              </div>
+            ) : (
+              <Routes>
+                <Route index element={<Atlas />} />
+                <Route path="travail/:cid" element={<TravailDetail />} />
+              </Routes>
             )}
-          </>
-        )}
+
+            {etat.status === "completed" && (
+              <div className="absolute inset-x-0 bottom-24 z-40 flex justify-center px-6">
+                <div className="max-w-[620px] rounded-xl border border-[rgba(37,208,200,0.3)] bg-[#0F1D28]/95 p-5 shadow-2xl" data-testid="polaris-cloture">
+                  <div className="font-code text-[9px] uppercase tracking-[0.25em] text-[#25D0C8]">Parcours terminé</div>
+                  <p className="mt-2 text-sm leading-relaxed text-[#D8E2EA]">{scenario.closingText}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Barre flottante du lecteur — discrète, superposée à l'application réelle */}
+            <div className="pointer-events-none absolute inset-x-0 bottom-4 z-40 flex justify-center px-4">
+              <div className="pointer-events-auto flex max-w-full flex-wrap items-center gap-3 rounded-2xl border border-[rgba(148,163,184,0.18)] bg-[#0A1520]/95 px-4 py-2 shadow-2xl backdrop-blur-xl" data-testid="polaris-barre">
+                <div className="flex items-center gap-2 pr-1">
+                  <Sparkle size={14} weight="fill" className="text-[#9B87F5]" />
+                  <div className="leading-tight">
+                    <div className="font-code text-[9px] uppercase tracking-[0.2em] text-[#7C93A8]">Démonstration Polaris</div>
+                    <div className="text-[11px] font-semibold text-[#F2F6F8]" data-testid="polaris-scenario-titre">{scenario.roleLabel}</div>
+                  </div>
+                </div>
+                <PolarisControls
+                  etat={etat}
+                  onPause={() => pause()}
+                  onReprendre={reprendre}
+                  onSuivant={suivant}
+                  onRevoir={revoirDecouverte}
+                  onAccueil={onAccueil}
+                  onLectureAuto={lectureAuto}
+                />
+              </div>
+            </div>
+
+            {proposeInactivite && (
+              <div className="absolute inset-x-0 bottom-24 z-40 flex justify-center">
+                <div className="flex items-center gap-3 rounded-xl border border-[rgba(148,163,184,0.25)] bg-[#0F1D28] px-5 py-3 shadow-2xl" data-testid="polaris-inactivite">
+                  <span className="text-sm text-[#D8E2EA]">Toujours là ?</span>
+                  <button
+                    onClick={() => {
+                      inactivite.current?.();
+                      reprendre();
+                    }}
+                    className="rounded-lg border border-[#25D0C8]/50 px-3 py-1.5 font-code text-[11px] text-[#25D0C8]"
+                    data-testid="polaris-inactivite-continuer"
+                  >
+                    Continuer
+                  </button>
+                  <button onClick={onAccueil} className="font-code text-[11px] text-[#7C93A8]" data-testid="polaris-inactivite-accueil">
+                    Accueil
+                  </button>
+                </div>
+              </div>
+            )}
+          </main>
+        </div>
+        <FlorePanel />
       </div>
+      <DemoTour />
+      <PreuvePanneau preuve={preuveId ? fixtures.preuves[preuveId] : null} onFermer={fermerPreuve} />
+    </PilotageProvider>
+  );
+}
 
-      <footer className="flex items-center justify-between gap-4 border-t border-[rgba(148,163,184,0.12)] px-5 py-3">
-        <PolarisControls
-          etat={etat}
-          onPause={() => pause()}
-          onReprendre={reprendre}
-          onSuivant={suivant}
-          onRevoir={revoirDecouverte}
-          onAccueil={onAccueil}
-          onLectureAuto={lectureAuto}
-        />
-        <div className="hidden font-code text-[9px] uppercase tracking-[0.2em] text-[#7C93A8] md:block">
-          {etat.status === "playing" ? "Lecture en cours…" : etat.status === "completed" ? "Terminé" : ""}
-        </div>
-      </footer>
+// Session démonstration : installe l'adaptateur local AVANT le premier rendu des
+// providers (aucune requête réseau ne part), aligne l'identité sur le rôle choisi,
+// puis restaure tout à la sortie.
+function SessionPolaris({ scenario, fixtures, onAccueil }) {
+  const [installation] = useState(() => {
+    const precedent = {
+      persona: localStorage.getItem("meridian.persona"),
+      cible: localStorage.getItem("meridian.perimetre"),
+      espace: localStorage.getItem("meridian.perimetre.espace"),
+    };
+    localStorage.setItem("meridian.persona", scenario.profileId);
+    localStorage.setItem("meridian.perimetre", "mesh-global");
+    localStorage.setItem("meridian.perimetre.espace", "mesh-global");
+    const desinstalle = installerMockPolaris(api, { fixtures, scenario });
+    return { precedent, desinstalle };
+  });
 
-      {proposeInactivite && (
-        <div className="fixed inset-x-0 bottom-24 z-40 flex justify-center">
-          <div className="flex items-center gap-3 rounded-xl border border-[rgba(148,163,184,0.25)] bg-[#0F1D28] px-5 py-3 shadow-2xl" data-testid="polaris-inactivite">
-            <span className="text-sm text-[#D8E2EA]">Toujours là ?</span>
-            <button onClick={() => { inactivite.current?.(); reprendre(); }} className="rounded-lg border border-[#25D0C8]/50 px-3 py-1.5 font-code text-[11px] text-[#25D0C8]" data-testid="polaris-inactivite-continuer">
-              Continuer
-            </button>
-            <button onClick={onAccueil} className="font-code text-[11px] text-[#7C93A8]" data-testid="polaris-inactivite-accueil">
-              Accueil
-            </button>
-          </div>
-        </div>
-      )}
+  useEffect(() => {
+    const { precedent, desinstalle } = installation;
+    return () => {
+      desinstalle();
+      const restaurer = (cle, valeur) => {
+        if (valeur == null) localStorage.removeItem(cle);
+        else localStorage.setItem(cle, valeur);
+      };
+      restaurer("meridian.persona", precedent.persona);
+      restaurer("meridian.perimetre", precedent.cible);
+      restaurer("meridian.perimetre.espace", precedent.espace);
+    };
+  }, [installation]);
 
-      <PreuvePanneau preuve={preuveOuverte ? fixtures.preuves[preuveOuverte] : null} onFermer={() => setPreuveOuverte(null)} />
-    </div>
+  return (
+    <PolarisSessionProvider scenario={scenario} fixtures={fixtures} onAccueil={onAccueil}>
+      <PerimetreProvider>
+        <DemoProvider>
+          <ContexteProvider>
+            <MeshProvider>
+              <Orchestrateur profileId={scenario.profileId} />
+              <Coquille scenario={scenario} fixtures={fixtures} />
+            </MeshProvider>
+          </ContexteProvider>
+        </DemoProvider>
+      </PerimetreProvider>
+    </PolarisSessionProvider>
   );
 }
 
@@ -202,7 +297,7 @@ export default function PolarisPlayer() {
   const navigate = useNavigate();
   const scenario = SCENARIOS[profileId];
   const fixtures = FIXTURES_PAR_PROFIL[profileId];
-  const accueil = useCallback(() => navigate("/demo"), [navigate]);
+  const accueil = () => navigate("/demo");
 
   if (!scenario || !fixtures) {
     return (
@@ -222,9 +317,5 @@ export default function PolarisPlayer() {
     );
   }
 
-  return (
-    <PolarisSessionProvider key={profileId} scenario={scenario} fixtures={fixtures} onAccueil={accueil}>
-      <Coquille />
-    </PolarisSessionProvider>
-  );
+  return <SessionPolaris key={profileId} scenario={scenario} fixtures={fixtures} onAccueil={accueil} />;
 }

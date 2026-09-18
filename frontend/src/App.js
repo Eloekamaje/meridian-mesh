@@ -69,10 +69,10 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Kiosque Polaris : branche déclarée AVANT les providers produit — les
-            providers qui chargent des données réseau ne se montent jamais ici (§4.2) */}
+        {/* Kiosque Polaris : la VRAIE application (providers, Atlas, Flore, Travail)
+            pilotée par le scénario — le réseau y est simulé localement (§4.1) */}
         <Route path="/demo" element={<PolarisWelcome />} />
-        <Route path="/demo/polaris/:profileId" element={<PolarisPlayer />} />
+        <Route path="/demo/polaris/:profileId/*" element={<PolarisPlayer />} />
         <Route path="/*" element={<ProduitApp />} />
       </Routes>
       <Toaster theme="light" position="top-right" />

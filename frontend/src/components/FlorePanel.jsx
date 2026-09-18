@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Sparkle, PaperPlaneRight, FileText, X, Plus, Eye, Lightning, FolderOpen } from "@phosphor-icons/react";
+import { Sparkle, PaperPlaneRight, FileText, X, Plus, Eye, Lightning, FolderOpen, CheckCircle, CircleNotch, Circle } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import TrustBadges from "./TrustBadges";
@@ -9,6 +9,7 @@ import FloreActivite, { delaiMin } from "./FloreActivite";
 import { couleurDomaine } from "@/lib/domaines";
 import { useContexte } from "@/lib/contexte";
 import { useMesh } from "@/lib/mesh";
+import { usePilotage } from "@/lib/pilotage";
 
 function contexteDepuis(pathname) {
   // « case » = page DÉTAIL d'un travail uniquement (Flore y est l'onglet Conversation du dossier) ;
@@ -112,6 +113,7 @@ function TexteTeletype({ texte, actif, testid }) {
 
 function CarteReponse({ data, index, propsEtat, setPropsEtat, justifOuverte, setJustifOuverte, ajouterJumeau, navigate, derniere }) {
   const { commanderCarte, setPreuveSurvolee } = useContexte();
+  const pilote = usePilotage();
   return (
     <div className="rounded-xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-4" data-testid={`flore-reponse-${index}`}>
       <div className="flex items-center gap-2 font-code text-[9px] uppercase tracking-[0.25em] text-[#7C93A8]">
@@ -205,7 +207,19 @@ function CarteReponse({ data, index, propsEtat, setPropsEtat, justifOuverte, set
           <ul className="mt-2 space-y-1">
             {data.preuves.map((p, pi) => (
               <li key={pi}>
-                {p.relation_id ? (
+                {p.preuveId && pilote ? (
+                  // Preuve de démonstration : ouvre le panneau de lecture (suspend la lecture)
+                  <button
+                    onClick={() => pilote.ouvrirPreuve(p.preuveId)}
+                    data-testid={`flore-preuve-demo-${p.preuveId}`}
+                    className="flex w-full items-baseline gap-2 rounded-lg border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2.5 py-2 text-left text-sm text-[#94A3B8] transition-colors hover:border-[#9B87F5]/50 hover:bg-[#9B87F5]/5"
+                  >
+                    <FileText size={13} className="shrink-0 translate-y-0.5 text-[#7C93A8]" />
+                    <span>
+                      <span className="font-code text-[11px] text-[#F2F6F8]">{p.source}</span> — {p.detail}
+                    </span>
+                  </button>
+                ) : p.relation_id ? (
                   // Preuve relationnelle : survol = le trajet pulse sur la carte ; clic = centrer + sélectionner
                   <button
                     onMouseEnter={() => setPreuveSurvolee(p.relation_id)}
@@ -260,6 +274,7 @@ export default function FlorePanel() {
     commanderCarte, focusVisuel, lot, floreOuverte, ouvrirFlore, fermerFlore, atlasCtx, questionFlore, setQuestionFlore,
   } = useContexte();
   const { jumeauPar, mesh } = useMesh();
+  const pilote = usePilotage();
   const [question, setQuestion] = useState("");
   const [echanges, setEchanges] = useState([]);
   const [chargement, setChargement] = useState(false);
@@ -300,6 +315,10 @@ export default function FlorePanel() {
     api.get(`/cases/${caseId}`).then((r) => setCaseCtx(r.data)).catch(() => setCaseCtx(null));
   }, [caseId]);
 
+  // Pilotage externe (démonstration Polaris) : le fil et l'activité viennent du moteur
+  const fil = pilote ? pilote.echanges : echanges;
+  const idxDerniereReponse = fil.reduce((acc, e, i) => (e.data ? i : acc), -1);
+
   const selJumeaux = selection.map(jumeauPar).filter(Boolean);
   const nbDomaine = domaineSel && mesh ? mesh.jumeaux.filter((j) => !j.anonyme && j.domaine === domaineSel).length : 0;
   const suggestionsActives = selection.length > 0 ? (contexte === "jumeaux" ? SUGGESTIONS_REGISTRE : SUGGESTIONS_SELECTION) : domaineSel ? SUGGESTIONS_DOMAINE : suggestions;
@@ -326,7 +345,7 @@ export default function FlorePanel() {
         ouvrirFlore();
         setTimeout(() => inputRef.current?.focus(), 150);
       }
-      if (e.key === "Escape") fermerFlore();
+      if (e.key === "Escape" && !pilote) fermerFlore();
     };
     const ask = (e) => {
       if (e.detail) setQuestion(e.detail);
@@ -339,11 +358,11 @@ export default function FlorePanel() {
       window.removeEventListener("keydown", handler);
       window.removeEventListener("meridian:flore-ask", ask);
     };
-  }, [ouvrirFlore, fermerFlore]);
+  }, [ouvrirFlore, fermerFlore, pilote]);
 
   useEffect(() => {
     conversationRef.current?.scrollTo({ top: conversationRef.current.scrollHeight, behavior: "smooth" });
-  }, [echanges, chargement]);
+  }, [fil, chargement, pilote?.activite]);
 
   const demander = async (q) => {
     const finale = (q ?? question).trim();
@@ -365,7 +384,7 @@ export default function FlorePanel() {
   // Superposition : clic en dehors du panneau → fermeture (le bouton « Parler à Flore »
   // gère lui-même son basculement ; Échap ferme aussi — handler clavier ci-dessus)
   useEffect(() => {
-    if (!floreOuverte) return undefined;
+    if (pilote || !floreOuverte) return undefined;
     const clicDehors = (e) => {
       if (panelRef.current?.contains(e.target)) return;
       if (e.target.closest?.('[data-testid="btn-parler-flore"]')) return;
@@ -375,7 +394,7 @@ export default function FlorePanel() {
     // seul un listener en capture les voit passer.
     document.addEventListener("mousedown", clicDehors, true);
     return () => document.removeEventListener("mousedown", clicDehors, true);
-  }, [floreOuverte, fermerFlore]);
+  }, [floreOuverte, fermerFlore, pilote]);
 
   // Questions pré-remplies depuis les pages métier (« Analyser ce travail », …) :
   // envoyées dès que le panneau est ouvert. Garde par ref (StrictMode rejoue les effets)
@@ -453,7 +472,7 @@ export default function FlorePanel() {
 
   if (lot) return <LotBar lot={lot} />;
 
-  if (!floreOuverte || contexte === "case") return null;
+  if (pilote ? !pilote.ouvert : !floreOuverte || contexte === "case") return null;
   return (
     <motion.aside
       ref={panelRef}
@@ -473,7 +492,12 @@ export default function FlorePanel() {
             {!caseCtx && <span className="font-code text-[9px] uppercase tracking-[0.2em] text-[#7C93A8]">orchestre les jumeaux du Mesh</span>}
           </div>
           <div className="flex items-center gap-1.5">
-            {echanges.length > 0 && (
+            {pilote && (
+              <span className="rounded border border-[#25D0C8]/40 bg-[#25D0C8]/[0.07] px-1.5 py-0.5 font-code text-[9px] uppercase tracking-[0.2em] text-[#25D0C8]" data-testid="flore-badge-demo">
+                Démo guidée
+              </span>
+            )}
+            {!pilote && echanges.length > 0 && (
               <button
                 onClick={creerCase}
                 disabled={creationCase}
@@ -484,9 +508,11 @@ export default function FlorePanel() {
                 <FolderOpen size={12} /> {creationCase ? "Création…" : "Conserver comme travail"}
               </button>
             )}
-            <button onClick={fermerFlore} data-testid="flore-fermer-btn" title="Fermer Flore (Échap)" className="rounded-md p-1.5 text-[#7C93A8] transition-colors hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]">
-              <X size={15} />
-            </button>
+            {!pilote && (
+              <button onClick={fermerFlore} data-testid="flore-fermer-btn" title="Fermer Flore (Échap)" className="rounded-md p-1.5 text-[#7C93A8] transition-colors hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]">
+                <X size={15} />
+              </button>
+            )}
           </div>
         </div>
 
@@ -578,7 +604,7 @@ export default function FlorePanel() {
       </div>
 
       {/* Une exploration qui s'approfondit peut devenir un Travail — Flore propose sans imposer */}
-      {echanges.length >= 2 && !caseId && !propTravailMasquee && (
+      {!pilote && echanges.length >= 2 && !caseId && !propTravailMasquee && (
         <div className="mx-4 mb-2 rounded-lg border border-[#F2B84B]/30 bg-[rgba(242,184,75,0.10)] px-3 py-2.5" data-testid="flore-proposition-travail">
           <p className="text-[11px] leading-snug text-[#D8E2EA]">
             Cette exploration implique {selection.length > 0 ? `${selection.length} jumeau${selection.length > 1 ? "x" : ""}` : "plusieurs jumeaux"} et pourrait mériter une mémoire persistante.
@@ -620,14 +646,14 @@ export default function FlorePanel() {
 
       {/* Conversation */}
       <div ref={conversationRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4" data-testid="flore-echanges">
-        {echanges.length === 0 && !chargement && (
+        {fil.length === 0 && !chargement && !pilote?.activite && (
           <div className="mt-8 text-center">
             <Sparkle size={22} weight="fill" className="mx-auto text-[#9B87F5]/60" />
             <p className="mt-3 text-sm text-[#94A3B8]">Posez une question — Flore mobilise les jumeaux concernés et montre leurs preuves.</p>
             <p className="mt-1 font-code text-[10px] text-[#7C93A8]">Une conversation importante peut devenir un travail.</p>
           </div>
         )}
-        {echanges.map((e, i) =>
+        {fil.map((e, i) =>
           e.marqueur ? (
             <div key={i} className="flex items-center gap-2 px-1 py-0.5" data-testid={`flore-marqueur-${i}`}>
               <span className="h-px flex-1 bg-[rgba(148,163,184,0.16)]" />
@@ -635,16 +661,20 @@ export default function FlorePanel() {
               <span className="h-px flex-1 bg-[rgba(148,163,184,0.16)]" />
             </div>
           ) : (
-          <div key={i} className="space-y-2">
-            <div className="ml-8 rounded-xl rounded-br-sm bg-[#9B87F5]/15 px-3.5 py-2.5" data-testid={`flore-question-${i}`}>
-              <p className="text-sm text-[#F2F6F8]">{e.question}</p>
-            </div>
-            <CarteReponse
-              data={e.data} index={i} derniere={i === echanges.length - 1}
-              propsEtat={propsEtat} setPropsEtat={setPropsEtat}
-              justifOuverte={justifOuverte} setJustifOuverte={setJustifOuverte}
-              ajouterJumeau={ajouterJumeau} navigate={navigate}
-            />
+          <div key={e.id || i} className="space-y-2">
+            {e.question && (
+              <div className="ml-8 rounded-xl rounded-br-sm bg-[#9B87F5]/15 px-3.5 py-2.5" data-testid={`flore-question-${i}`}>
+                <p className="text-sm text-[#F2F6F8]">{e.question}</p>
+              </div>
+            )}
+            {e.data && (
+              <CarteReponse
+                data={e.data} index={i} derniere={i === idxDerniereReponse}
+                propsEtat={propsEtat} setPropsEtat={setPropsEtat}
+                justifOuverte={justifOuverte} setJustifOuverte={setJustifOuverte}
+                ajouterJumeau={ajouterJumeau} navigate={navigate}
+              />
+            )}
           </div>
           )
         )}
@@ -653,9 +683,36 @@ export default function FlorePanel() {
             <FloreActivite testid="flore-chargement-activite" />
           </div>
         )}
+        {pilote?.activite && (
+          <div className="rounded-xl border border-[#9B87F5]/25 bg-[#9B87F5]/[0.05] px-3.5 py-3" data-testid="flore-activite-demo">
+            <div className="flex items-center gap-2 font-code text-[9px] uppercase tracking-[0.25em] text-[#9B87F5]">
+              <Sparkle size={12} weight="fill" /> {pilote.activite.label}
+            </div>
+            <ul className="mt-2 space-y-1.5">
+              {pilote.activite.ops.map((op, oi) => (
+                <li
+                  key={oi}
+                  className="flex items-center gap-2 text-xs"
+                  style={{ color: op.status === "done" ? "#7C93A8" : op.status === "running" ? "#F2F6F8" : "#4B6072" }}
+                  data-testid={`flore-activite-demo-op-${oi}`}
+                >
+                  {op.status === "done" ? (
+                    <CheckCircle size={13} weight="fill" className="shrink-0 text-[#25D0C8]" />
+                  ) : op.status === "running" ? (
+                    <CircleNotch size={13} className="shrink-0 animate-spin text-[#9B87F5]" />
+                  ) : (
+                    <Circle size={13} className="shrink-0" />
+                  )}
+                  {op.label}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
 
-      {/* Suggestions + composer */}
+      {/* Suggestions + composer (masqués en démonstration pilotée) */}
+      {!pilote && (
       <div className="shrink-0 border-t border-[rgba(148,163,184,0.16)] px-4 py-3">
         {selection.length > 0 && (
           <div className="mb-2.5 flex flex-wrap items-center gap-1.5" data-testid="flore-deleguer">
@@ -726,6 +783,7 @@ export default function FlorePanel() {
           </button>
         </form>
       </div>
+      )}
     </motion.aside>
   );
 }
