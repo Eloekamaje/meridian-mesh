@@ -1,5 +1,12 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v71, filiation parent → enfants : transitions de zoom cohérentes)
+Retour utilisateur : « les phases de transition ne sont pas cohérentes — va vraiment avec l'aspect lien parent/enfants ». Choix utilisateur : **dissolution échelonnée** pour l'éclatement. Refonte :
+- **Un SEUL arc parent par couple de domaines** (`corridor-<A>-<B>`, bloc unifié dans `atlasGraph.js`) : persistant du Global au Domaine — il **se transforme** (`detail: 0→1` : cyan discret macro → voie « N flux » colorée par l'état dominant, label révélé en fondu) au lieu du double tracé corridor N1 + corridor2 N2 superposés en cross-fade. Ancrage frontière + esquive des territoires tiers (hybride fluide) valables à tous les niveaux.
+- **Éclatement parent → enfants (N2→N3, bande z 1.15→1.35, `fonduPE`)** : le corridor parent **se dissout** (`sortie: 1→0`) pendant que ses relations membres **naissent échelonnées** dans l'ordre le long de son tracé (`rangMembre` par projection sur l'axe du corridor, `entree` progressif). Transition inverse symétrique.
+- **Fix bonus v70b** : `onPointerLeave` de la carte réinitialise désormais aussi `relSurvolee`/`relTooltipPos`/`survolJumeau` — les pointillés animés (« effet vivant ») ne restent plus collés quand le curseur quitte la carte depuis une arête ; corridors exemptés du filtre couchesRel (agrégats multi-états toujours visibles).
+- Tests : **it63 → 100 %** (8/8 critères : ancres frontières, persistance N1→N2 sans double arc, dissolution N3, symétrie inverse, pan toutes directions au zoom out max, survol territoire + reset complet, zéro erreur console).
+
 ## Implémenté (06/2026 — v70, fix pan bloqué au zoom out max)
 Retour utilisateur : « je n'arrive plus à déplacer la map en glissant ». Reproduction par script : le pan fonctionnait à tous les niveaux SAUF au zoom min (0.45) — cause racine : `translateExtent` [[-900,-600],[3000,1900]] (v60) = 3900 px monde × 0.45 = 1755 px écran < viewport 1920 → **pan horizontal totalement verrouillé**, vertical quasi nul (~325 px). Fix (`Atlas.jsx`) : étendue élargie à [[-1600,-1100],[3800,2600]] (5400×3700 monde) — le glisser redevient libre dans toutes les directions au zoom out max, tout en restant borné (un pan violent ne perd pas la carte). Vérifié : 5 directions de drag PAN OK à z 0.45.
 

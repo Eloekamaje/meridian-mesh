@@ -1,0 +1,21 @@
+{
+  "summary": "Frontend-only test it63 — UNIFICATION du système de corridors (un seul edge id corridor-<A>-<B> persistant N1→N2 avec detail: 0→1, puis dissolution échelonnée en N3 avec sortie: 1→0 sur z 1.15-1.35). TOUS les 8 critères de la review validés. Balayage: [N1 z=0.488] 7 corridors (Distribution-Paiement, Client-Distribution, Client-Paiement, Paiement-Risque, Paiement-Support, Opérations-Paiement, Paiement-À confirmer) + 0 twins. Membranes visibles au screenshot avec corridors partant du BORD (pas centre) — Paiement-Risque et Paiement-À confirmer contournent visiblement les territoires tiers. [N2 z=1.062] mêmes 7 corridors avec labels 'N flux' (1,2,3,3,3,2,1) — AUCUN double arc. [BANDE N3 z=1.289] coexistence 7 corridors + 82 twins. [N3 z=1.565] 0 corridor, dissolution complète. Retour inverse N3→N1 symétrique (7 corridors, 0 twins). PAN à z=0.488 : horizontal tx 535→810 (+275px) ET vertical ty 318→536 (+218px) — translateExtent [-1600,-1100]→[3800,2600] confirmé, plus aucun blocage. HOVER corridor → classe .corridor-actif=1 puis souris déplacée vers topbar (50,15) → .corridor-actif=0 : bug 'animation collée' CORRIGÉ (onPointerLeave élargi ligne 1092 réinitialise relSurvolee/survolJumeau). ZÉRO erreur console sur l'ensemble du balayage + interactions.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "atlasGraph.js lignes 688-812 (bloc unifié corridorsParent) : structure élégante — un seul map produit des edges avec data.detail (fondu N1→N2), data.sortie (dissolution N3), rangMembre/taillePaire pour l'éclatement échelonné des membres. Aucune duplication.",
+    "atlasGraph.js ligne 830-838 : l'éclatement échelonné combine data.entree existant (min avec formule (fonduPE-debut)*(n+0.5)*1.6) — cohérent avec l'observation à z=1.29 où corridors et arêtes coexistent.",
+    "Atlas.jsx ligne 1092 onPointerLeave élargi : setRegionSurvolee/setRelSurvolee/setSurvolJumeau tous réinitialisés — testé OK (.corridor-actif=0 après sortie).",
+    "Atlas.jsx ligne 1116 translateExtent [[-1600,-1100],[3800,2600]] : plage suffisante pour pan à z=0.488 dans les deux axes — testé OK."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100%"},
+  "test_credentials": "none",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Refonte unified corridors validée à 100% : id unique corridor-<A>-<B> persiste N1→N2 (detail morph), se dissout N3 (sortie fondu échelonné avec ses arêtes enfants nées de data.entree progressif). Pan translateExtent [-1600,-1100]→[3800,2600] OK à zoom out max. onPointerLeave élargi corrige le sticky animation bug. 7 couples: Distribution-Paiement, Client-Distribution, Client-Paiement, Paiement-Risque, Paiement-Support, Opérations-Paiement, Paiement-À confirmer. Testids: g[data-testid^=arete-corridor], region-membrane-reg-<id>. Zoom via page.mouse.wheel (deltaY neg = in). Puce niveau : div commençant par 'Niveau'.",
+  "rca of the issue": "N/A — aucune régression"
+}
