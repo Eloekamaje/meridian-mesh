@@ -1,5 +1,12 @@
 # Méridian — PRD
 
+## Implémenté (06/2026 — v75, confinement : les arcs internes restent dans leur domaine)
+Retour utilisateur : « assure-toi que les arcs internes au domaine restent à l'intérieur du domaine ». Enquête géométrique longue (bac à sable Node + sondes isPointInFill live) :
+- **Bug caché majeur** : `data.labelY` jamais transmis aux nœuds région → la « capitale » (origine du rayon d'ancrage) tombait sur le repli `oy+30` (haut de coque) → ancres et routes de corridors dégénérées. Fix : capitale = **centroïde de la coque** (toujours à l'intérieur), calculé dans le bloc corridors (labels inchangés visuellement).
+- **Confinement des relations internes** (`routeur.js` + `atlasGraph.js`) : `segSortPolygone`/`sortiesPolys` (variante « sortie de coque » — la pénalité coupesPolys était INVERSÉE pour l'interne : elle pénalisait les segments DEDANS) ; coque déflatée −14 px comme frontière infranchissable (grâce 40 px aux bouts pour les ports bas) ; route Worker (libavoid) qui sort → repli route maison confinée.
+- **Coques moins concaves** (concaveman 2.2 → 3.6) : baies douces — une crique plus étroite que les canaux orthogonaux était infranchissable sans sortir. Forme toujours organique.
+- **Mesures** : N2 + N3 = 33 relations internes, **AUCUNE SORTIE** de membrane ; corridors Global **7/7 propres**. Régression complète **it64 → 100 %** (transitions, survols, pan, navigation, Flore, recherche, zéro erreur console).
+
 ## Implémenté (06/2026 — v74, ossature orthogonale identique à tous les zooms)
 Retour utilisateur : « au niveau interne du domaine en zoom out, pourquoi on n'a pas la même ossature de relations en lignes droites qu'au zoom in avec les robots ? ».
 - **Mode courbe supprimé** d'`AreteOrthogonale.jsx` (héritage de la maquette v54) : les relations intra-domaine au niveau Domaine utilisent désormais le **même routage orthogonal à coudes arrondis** qu'au niveau Jumeau — dézoomer ne change plus la topologie visuelle, seulement l'échelle (étoiles ↔ robots). La bande de transition révèle donc directement l'ossature finale.
