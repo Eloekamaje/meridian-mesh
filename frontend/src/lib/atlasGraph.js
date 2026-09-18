@@ -544,7 +544,7 @@ export function statsDuDomaine(mesh, situations, domDe, label) {
 export function construireGraphe({
   mesh, situation, focus, vueActive, perimetreTravail,
   posOverrides, compteurs, halo, selection,
-  zoomNiveau, relFocus, focusCarte, domDe, statsRegions, temps, zoomFort, fonduJumeau = 0, fonduGD = 0,
+  zoomNiveau, relFocus, focusCarte, domDe, statsRegions, temps, zoomFort, fonduJumeau = 0, fonduGD = 0, fonduPE = 0,
   routesFin, provisoire, tactile,
   couchesCarte = {}, situationsJumeaux, onMajClic,
 }) {
@@ -680,36 +680,29 @@ export function construireGraphe({
   let es = [];
   let snapMain = null;
   const posMain = Object.fromEntries(twins.map((j) => [j.id, posSeparees[j.id] || j.position]));
-  if (entreprise || bande) {
-    // Zoom Global : corridors agrégés inter-domaines (fondants en sortie de bande)
+
+  // --- Corridor parent : UN SEUL arc par couple de domaines, persistant du Global
+  // au Domaine (il SE TRANSFORME : macro discret → voie « N flux » détaillée), puis
+  // il SE DISSOUT au niveau Jumeau en laissant naître ses relations membres —
+  // la filiation parent → enfants est visible dans les deux transitions.
+  const enEclatement = zoomNiveau >= 3 && fonduPE < 1;
+  let corridorsParent = [];
+  const rangMembre = {}; // relation inter-domaines → rang le long de son corridor parent
+  const taillePaire = {};
+  if (entreprise || bande || zoomNiveau === 2 || enEclatement) {
     const regParDom = {};
     (mesh.regions || []).forEach((r) => { regParDom[r.label] = r.id; });
-    // Ancres = « capitales » des territoires (position de l'étiquette du domaine),
-    // pas le milieu des boîtes englobantes (creux concaves → arcs mal plantés)
+    // Ancres = « capitales » des territoires (position de l'étiquette du domaine)
     const posRegions = Object.fromEntries(
       ns.filter((n) => n.type === "region").map((n) => [
         n.id,
         { x: n.position.x + (n.data.labelX ?? n.initialWidth / 2), y: n.position.y + (n.data.labelY ?? n.initialHeight / 2) },
       ])
     );
-    const corridors = {};
-    mesh.relations.forEach((r) => {
-      const a = domDe[r.source];
-      const b = domDe[r.cible];
-      if (!a || !b || a === b || !regParDom[a] || !regParDom[b]) return;
-      const [x, y] = [a, b].sort();
-      const key = `${x}::${y}`;
-      if (!corridors[key]) corridors[key] = { a: x, b: y, n: 0, actif: false };
-      corridors[key].n += 1;
-      if (r.active) corridors[key].actif = true;
-    });
-    // Obstacles = membranes des territoires TIERS (boîte englobante + 48px de
-    // respiration). Les corridors esquivent les domaines comme les arêtes
-    // esquivent les robots au niveau Jumeau : pathfinding orthogonal,
-    // rendu à très grand rayon (hybride fluide, cf. AreteCorridor).
+    // Obstacles = membranes des territoires TIERS (boîte englobante + 48px de respiration)
     const regs = {};
     ns.filter((n) => n.type === "region").forEach((n) => {
-      regs[n.id] = {
+      regs[n.data.label] = {
         ox: n.position.x, oy: n.position.y, pts: n.data.points || [],
         lx: n.position.x + (n.data.labelX ?? n.initialWidth / 2),
         ly: n.position.y + (n.data.labelY ?? 30),
@@ -719,54 +712,84 @@ export function construireGraphe({
         },
       };
     });
-    es = Object.values(corridors).map((c) => {
+    // Regroupement des relations inter-domaines par couple de territoires
+    const paires = {};
+    mesh.relations.forEach((r) => {
+      const a = domDe[r.source];
+      const b = domDe[r.cible];
+      if (!a || !b || a === b || !regParDom[a] || !regParDom[b]) return;
+      const [x, y] = [a, b].sort();
+      const key = `${x}::${y}`;
+      (paires[key] = paires[key] || { a: x, b: y, membres: [] }).membres.push(r);
+    });
+    corridorsParent = Object.values(paires).map((c) => {
       const idA = regParDom[c.a];
       const idB = regParDom[c.b];
-      const ra = regs[idA];
-      const rb = regs[idB];
+      const ra = regs[c.a];
+      const rb = regs[c.b];
       const ps = posRegions[idA];
       const pt = posRegions[idB];
       // Ancres sur la FRONTIÈRE des membranes (jamais au centre)
       const pa = ra?.pts?.length && rb ? ancreFrontiere(ra, rb.lx, rb.ly) : null;
       const pb = rb?.pts?.length && ra ? ancreFrontiere(rb, ra.lx, ra.ly) : null;
-      let points = null;
-      if (pa && pb) {
-        const obstacles = Object.keys(regs)
-          .filter((id) => id !== idA && id !== idB)
-          .map((id) => regs[id].bbox);
-        const cs = { x: pa.x, y: pa.y, marge: 40 };
-        const ct = { x: pb.x, y: pb.y, marge: 40 };
-        const [coteS, coteT] = choixCotes(cs, ct);
-        const route = routeStable(`corridor-${c.a}-${c.b}`, cs, ct, coteS, coteT, obstacles, 0);
-        // Le tracé touche exactement la frontière (le dégagement reste colinéaire)
-        points = [pa, ...route.slice(1, -1), pb];
-      }
+      if (!pa || !pb) return null;
+      const obstacles = Object.keys(regs)
+        .filter((lb) => lb !== c.a && lb !== c.b)
+        .map((lb) => regs[lb].bbox);
+      const cs = { x: pa.x, y: pa.y, marge: 40 };
+      const ct = { x: pb.x, y: pb.y, marge: 40 };
+      const [coteS, coteT] = choixCotes(cs, ct);
+      const route = routeStable(`corridor-${c.a}-${c.b}`, cs, ct, coteS, coteT, obstacles, 0);
+      // Le tracé touche exactement la frontière (le dégagement reste colinéaire)
+      const points = [pa, ...route.slice(1, -1), pb];
+      // Rang de chaque membre le long du corridor (éclatement échelonné)
+      const dx = pb.x - pa.x;
+      const dy = pb.y - pa.y;
+      const L2 = dx * dx + dy * dy || 1;
+      [...c.membres]
+        .sort((m1, m2) => {
+          const p1 = posMain[m1.source];
+          const p2 = posMain[m2.source];
+          const t1 = p1 ? ((p1.x - pa.x) * dx + (p1.y - pa.y) * dy) / L2 : 0;
+          const t2 = p2 ? ((p2.x - pa.x) * dx + (p2.y - pa.y) * dy) / L2 : 0;
+          return t1 - t2;
+        })
+        .forEach((m, i) => {
+          rangMembre[m.id] = i;
+          taillePaire[m.id] = c.membres.length;
+        });
+      const n = c.membres.length;
+      const actif = c.membres.some((r) => r.active);
+      const etatFort = c.membres.reduce((acc, r) => ((PRIORITES[r.etat] ?? 40) > (PRIORITES[acc] ?? 40) ? r.etat : acc), c.membres[0].etat);
       const droite = ps && pt ? pt.x - ps.x >= 0 : true;
       return {
         id: `corridor-${c.a}-${c.b}`,
-        source: regParDom[c.a],
-        target: regParDom[c.b],
+        source: idA,
+        target: idB,
         sourceHandle: droite ? "s-r" : "s-l",
         targetHandle: droite ? "t-l" : "t-r",
         type: "corridor",
         interactionWidth: 16,
-          data: {
-          n: c.n,
-          actif: c.actif,
+        data: {
+          n,
+          actif,
+          etat: etatFort,
+          membres: c.membres.map((m) => m.id),
           couleurA: couleurDomaine(c.a),
           couleurB: couleurDomaine(c.b),
           domains: [c.a, c.b],
-          corridorLabel: `${c.a} ↔ ${c.b} · ${c.n} relation${c.n > 1 ? "s" : ""}${c.actif ? " · activité élevée" : ""}`,
+          corridorLabel: `${c.a} ↔ ${c.b} · ${n} relation${n > 1 ? "s" : ""}${actif ? " · activité élevée" : ""}`,
+          labelFlux: `${n} flux`,
           capitales: ps && pt ? { sx: ps.x, sy: ps.y, tx: pt.x, ty: pt.y } : null,
           points,
           sens: c.a < c.b ? 1 : -1,
-          sortie: bande ? 1 - fonduGD : 1,
+          // Filiation : macro → détail dans la bande Global ↔ Domaine ;
+          // dissolution pendant l'éclatement au niveau Jumeau
+          detail: entreprise ? (bande ? fonduGD : 0) : 1,
+          sortie: enEclatement ? 1 - fonduPE : 1,
         },
-        label: `${c.a} ↔ ${c.b} · ${c.n} relation${c.n > 1 ? "s" : ""}${c.actif ? " · activité élevée" : ""}`,
-        labelStyle: { fill: "rgba(216,226,234,0.78)", fontSize: 10, fontFamily: "JetBrains Mono" },
-        labelBgStyle: { fill: "rgba(15,29,40,0.92)" },
       };
-    });
+    }).filter(Boolean);
   }
   if (!entreprise || bande) {
     // Extrémités regroupées : une relation touchant un membre pointe vers sa grappe ;
@@ -786,82 +809,34 @@ export function construireGraphe({
         }
         return acc;
       }, []);
-    // Niveau 2 — Domaines : les relations inter-domaines se regroupent en corridors
-    // « N flux » (façon routes principales Google Maps) ; les petites rues (relations
-    // individuelles inter-domaines) apparaissent au niveau 3. Relations internes inchangées.
+    // Niveau 2 — Domaines : les relations inter-domaines sont portées par les
+    // corridors parents (bloc unifié ci-dessus) ; seules les relations internes
+    // passent par le routage orthogonal. Au niveau 3, toutes reviennent.
     let relsPourRoutage = relsMappees;
-    let corridorsBord = [];
     if (niveauEff === 2) {
-      const intra = [];
-      const inter = new Map();
-      relsMappees.forEach((r) => {
+      relsPourRoutage = relsMappees.filter((r) => {
         const da = domDe[r.source];
         const db = domDe[r.cible];
-        if (!da || !db || da === db) {
-          intra.push(r);
-          return;
-        }
-        const cle = [da, db].sort().join("~");
-        if (!inter.has(cle)) inter.set(cle, []);
-        inter.get(cle).push(r);
+        return !da || !db || da === db;
       });
-      // Ancres sur la FRONTIÈRE des territoires (coque concave) : le point de la coque
-      // le plus proche de la capitale de l'autre domaine — comme les arcs qui touchent
-      // les ports des robots au niveau Jumeau. (ancreFrontiere : helper partagé)
-      const regs = {};
-      ns.filter((n) => n.type === "region").forEach((n) => {
-        regs[n.data.label] = {
-          ox: n.position.x, oy: n.position.y, pts: n.data.points || [],
-          lx: n.position.x + (n.data.labelX ?? n.initialWidth / 2),
-          ly: n.position.y + (n.data.labelY ?? 30),
-        };
-      });
-      corridorsBord = [...inter.values()].map((membres) => {
-        // paire de jumeaux la plus proche (référence React Flow obligatoire) + état dominant
-        let best = membres[0];
-        let dMin = Infinity;
-        membres.forEach((r) => {
-          const pa = posMain[r.source];
-          const pb = posMain[r.cible];
-          const d = Math.hypot(pa.x - pb.x, pa.y - pb.y);
-          if (d < dMin) {
-            dMin = d;
-            best = r;
-          }
-        });
-        const da = domDe[best.source];
-        const db = domDe[best.cible];
-        const ra = regs[da];
-        const rb = regs[db];
-        const pa = ra?.pts?.length && rb ? ancreFrontiere(ra, rb.lx, rb.ly) : null;
-        const pb = rb?.pts?.length && ra ? ancreFrontiere(rb, ra.lx, ra.ly) : null;
-        if (!pa || !pb) return null;
-        const etatFort = membres.reduce((a, r) => ((PRIORITES[r.etat] ?? 40) > (PRIORITES[a] ?? 40) ? r.etat : a), membres[0].etat);
-        return {
-          id: `corridor2-${best.source}-${best.cible}`,
-          source: best.source,
-          target: best.cible,
-          type: "ortho",
-          interactionWidth: 12,
-          data: {
-            etat: etatFort,
-            points: [pa, pb],
-            sauts: [],
-            label: `${membres.length} flux`,
-            agregat: membres.map((m) => m.id),
-            grappeCompte: membres.length,
-            niveau: niveauEff,
-            couleurCible: couleurDomaine(db),
-          },
-        };
-      }).filter(Boolean);
-      relsPourRoutage = intra;
     }
     const ortho = fabriqueOrtho(relsPourRoutage, ns, posMain, niveauEff, zoomFort, routesFin, provisoire, tactile);
     snapMain = ortho.snapshot;
     let aretesDomaine = ortho.edges
-      .map((e) => ({ ...e, data: { ...e.data, entree: bande ? fonduGD : 1 } }))
-      .concat(corridorsBord.map((e) => ({ ...e, data: { ...e.data, entree: bande ? fonduGD : 1 } })));
+      .map((e) => ({ ...e, data: { ...e.data, entree: bande ? fonduGD : 1 } }));
+    // Éclatement parent → enfants : pendant la dissolution du corridor (bande
+    // z 1.15 → 1.35), chaque relation membre naît à son tour, dans l'ordre le
+    // long du tracé parent — la filiation est visible, rien ne « pop » d'un coup.
+    if (zoomNiveau >= 3 && fonduPE < 1) {
+      aretesDomaine = aretesDomaine.map((e) => {
+        const rang = rangMembre[e.id];
+        if (rang === undefined) return e;
+        const n = taillePaire[e.id] || 1;
+        const debut = rang / (n + 0.5);
+        const entree = Math.max(0, Math.min(1, (fonduPE - debut) * (n + 0.5) * 1.6));
+        return { ...e, data: { ...e.data, entree: Math.min(e.data.entree ?? 1, entree) } };
+      });
+    }
     // Moteur de labels des relations (niveau 3+) : collision → le moins prioritaire disparaît
     if (zoomNiveau >= 3 && !provisoire) {
       const candidats = aretesDomaine
@@ -902,7 +877,7 @@ export function construireGraphe({
     const macro = ns
       .filter((n) => n.type !== "twin" || bande)
       .map((n) => ({ ...n, data: { ...n.data, macro: true, opaciteMacro: bande ? 1 - fonduGD : 1 } }));
-    return { nodes: macro, edges: repartirOffsets(appliquerTemps(es, temps)), snapshot: null };
+    return { nodes: macro, edges: repartirOffsets(appliquerTemps(es.concat(corridorsParent), temps)), snapshot: null };
   }
-  return { nodes: ns, edges: appliquerTemps(es, temps), snapshot: snapMain };
+  return { nodes: ns, edges: appliquerTemps(es.concat(corridorsParent), temps), snapshot: snapMain };
 }

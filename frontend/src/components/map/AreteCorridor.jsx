@@ -1,15 +1,18 @@
 import { memo } from "react";
-import { construireD } from "@/lib/routeur";
+import { construireD, ancreLabel } from "@/lib/routeur";
+import { styleParEtat } from "@/lib/atlasGraph";
 
-// Corridor macro (niveau Global) : « voie hyper-espace » entre les FRONTIÈRES des
-// territoires. Pathfinding orthogonal anti-obstacles (les membranes des domaines
-// tiers sont infranchissables), rendu à très grand rayon (64px) : le zig-zag 90°
-// devient une courbe organique qui ne traverse jamais un domaine.
-// Trois états pilotés par le survol (Atlas) : repos quasi invisible,
-// illuminé quand SON territoire est survolé, presque éteint quand c'est un autre.
+// Corridor parent : UN arc par couple de territoires, persistant du Global au Domaine.
+// - Macro (detail→0) : voie cyan discrète entre les frontières, illuminée au survol.
+// - Détail (detail→1) : voie « N flux » colorée par l'état dominant de ses relations.
+// - Dissolution (sortie→0) : au niveau Jumeau, il fond pendant que ses membres naissent.
+// Pathfinding orthogonal anti-obstacles (membranes tierces infranchissables),
+// rendu à très grand rayon (64px) : « hybride fluide ».
 export default memo(function AreteCorridor({ id, data, selected }) {
   const cap = data?.capitales;
   const points = data?.points;
+  const detail = data?.detail ?? 0;
+  const etat = data?.etat;
   let d = null;
   if (points && points.length >= 2) {
     d = construireD(points, [], 64);
@@ -27,25 +30,42 @@ export default memo(function AreteCorridor({ id, data, selected }) {
   const lumineux = selected || data?.survolee || data?.miseEnAvant;
   const eteint = data?.estompee && !lumineux;
   const sortie = data?.sortie ?? 1;
-  const coreOp = (lumineux ? 1 : eteint ? 0.05 : 0.16) * sortie;
+  // Couleur : cyan en macro, couleur d'état dominant en mode détail (transition douce)
+  const st = etat ? styleParEtat({ etat, active: data?.actif }) : null;
+  const couleur = detail > 0.5 && st ? st.stroke : "#25D0C8";
+  const reposOp = 0.16 + 0.44 * detail;
+  const coreOp = (lumineux ? 1 : eteint ? 0.05 : reposOp) * sortie;
   const haloOp = (lumineux ? 0.3 : eteint ? 0 : 0.05) * sortie;
-  const largeur = lumineux ? 2.4 : 1.5;
+  const largeur = lumineux ? 2.4 : 1.5 + 1.3 * detail;
+  const anime = data?.actif && lumineux;
+  const pointillesEtat = detail > 0.5 && !anime ? st?.strokeDasharray : undefined;
+  // Label « N flux » : se révèle avec le mode détail
+  const labelPos = points?.length >= 2 && detail > 0.02 ? ancreLabel(points) : null;
+  const label = data?.labelFlux;
 
   return (
     <g data-testid={`arete-${id}`} style={{ transition: "opacity 250ms" }}>
-      <path d={d} fill="none" stroke="#25D0C8" strokeWidth={lumineux ? 9 : 6} strokeLinecap="round" opacity={haloOp} style={{ transition: "opacity 250ms, stroke-width 250ms" }} />
+      <path d={d} fill="none" stroke={couleur} strokeWidth={lumineux ? 9 : 6} strokeLinecap="round" opacity={haloOp} style={{ transition: "opacity 250ms, stroke-width 250ms, stroke 250ms" }} />
       <path
         d={d}
         fill="none"
-        stroke="#25D0C8"
+        stroke={couleur}
         strokeWidth={largeur}
         strokeLinecap="round"
         opacity={coreOp}
-        strokeDasharray={data?.actif && lumineux ? "7 10" : undefined}
-        className={data?.actif && lumineux ? "corridor-actif" : undefined}
-        style={{ transition: "opacity 250ms, stroke-width 250ms" }}
+        strokeDasharray={anime ? "7 10" : pointillesEtat}
+        className={anime ? "corridor-actif" : undefined}
+        style={{ transition: "opacity 250ms, stroke-width 250ms, stroke 250ms" }}
       />
       <path d={d} fill="none" stroke="transparent" strokeWidth={16} style={{ pointerEvents: "stroke" }} />
+      {labelPos && label && (
+        <g transform={`translate(${labelPos.x} ${labelPos.y})`} opacity={detail * sortie} style={{ pointerEvents: "none", transition: "opacity 250ms" }}>
+          <rect x={-(label.length * 3.4 + 10)} y={-9} width={label.length * 6.8 + 20} height={18} rx={9} fill="rgba(15,29,40,0.95)" stroke="rgba(148,163,184,0.16)" />
+          <text textAnchor="middle" dominantBaseline="central" fontSize={10} fontFamily="JetBrains Mono" fill="#D8E2EA">
+            {label}
+          </text>
+        </g>
+      )}
     </g>
   );
 });

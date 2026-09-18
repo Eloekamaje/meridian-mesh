@@ -426,6 +426,9 @@ export default function Atlas() {
       fonduJumeau: Math.max(0, Math.min(1, (zoomActuel - 0.95) / 0.4)),
       // Fondu croisé Global ↔ Domaine : corridors/agrégats fondent, arêtes et étoiles se révèlent (z 0.5 → 0.7)
       fonduGD: Math.max(0, Math.min(1, (zoomActuel - 0.5) / 0.2)),
+      // Éclatement parent → enfants : le corridor « N flux » se dissout pendant que
+      // ses relations membres naissent échelonnées le long de son tracé (z 1.15 → 1.35)
+      fonduPE: Math.max(0, Math.min(1, (zoomActuel - 1.15) / 0.2)),
       routesFin, provisoire, tactile: estTactile,
       couchesCarte, situationsJumeaux,
       onMajClic: (id) => {
@@ -610,6 +613,8 @@ export default function Atlas() {
   // Couches de relations (BCM déclaré / Réalité découverte / Écarts) + accentuation au survol/épinglage
   const edgesVisibles = useMemo(() => {
     let es = edges.filter((e) => {
+      // Corridors parents : agrégats multi-états, toujours visibles (ils portent tous les flux)
+      if (e.type === "corridor") return true;
       const etat = e.data?.etat;
       if (etat === "confirmee" || etat === "obsolete") return couchesRel.bcm;
       if (etat === "observee" || etat === "validation") return couchesRel.realite;
@@ -1084,7 +1089,7 @@ export default function Atlas() {
           onFermer={() => { setSelected(null); majUrl({ sel: null }); }}
         />
       )}
-    <div ref={carteRef} onPointerMove={surSurvolCarte} onPointerLeave={() => { setRegionSurvolee(null); setRegionTooltip(null); setSecteurCurseur(null); if (telemetrieRef.current) { telemetrieRef.current.textContent = "—"; telemetrieRef.current.style.opacity = "0.35"; } }} className="relative min-w-0 flex-1 overflow-hidden" data-testid="system-map" style={{ background: "radial-gradient(ellipse at 50% 38%, #0D1B28 0%, #071019 60%, #04090F 100%)" }}>
+    <div ref={carteRef} onPointerMove={surSurvolCarte} onPointerLeave={() => { setRegionSurvolee(null); setRegionTooltip(null); setSecteurCurseur(null); setRelSurvolee(null); setRelTooltipPos(null); setSurvolJumeau(null); if (telemetrieRef.current) { telemetrieRef.current.textContent = "—"; telemetrieRef.current.style.opacity = "0.35"; } }} className="relative min-w-0 flex-1 overflow-hidden" data-testid="system-map" style={{ background: "radial-gradient(ellipse at 50% 38%, #0D1B28 0%, #071019 60%, #04090F 100%)" }}>
       <CielEtoile />
       <output
         ref={telemetrieRef}
