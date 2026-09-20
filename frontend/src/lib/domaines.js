@@ -1,35 +1,35 @@
 export const DOMAINES = {
-  Paiement: "#9B87F5",
-  Client: "#34D399",
+  Paiement: "#818CF8",
+  Client: "#10B981",
   Risque: "#F87171",
   Support: "#FB923C",
-  "Opérations": "#58A6FF",
-  Distribution: "#F472B6",
-  "Non classé": "#7C93A8",
+  "Opérations": "#38BDF8",
+  Distribution: "#EC4899",
+  "Non classé": "#94A3B8",
 };
 
-export const couleurDomaine = (d) => DOMAINES[d] || "#7C93A8";
+export const couleurDomaine = (d) => DOMAINES[d] || "#94A3B8";
 
 export const VERBES = {
-  decouvert: { label: "Découvert", verbe: "Découvrir", couleur: "#25D0C8", accroche: "Nouvelles connaissances candidates" },
-  a_comprendre: { label: "À comprendre", verbe: "Comprendre", couleur: "#9B87F5", accroche: "Confiance insuffisante, validation requise" },
-  a_decider: { label: "À décider", verbe: "Décider", couleur: "#F2B84B", accroche: "Conclusions et actions en attente d'approbation" },
+  decouvert: { label: "Découvert", verbe: "Découvrir", couleur: "#20D5C3", accroche: "Nouvelles connaissances candidates" },
+  a_comprendre: { label: "À comprendre", verbe: "Comprendre", couleur: "#A78BFA", accroche: "Confiance insuffisante, validation requise" },
+  a_decider: { label: "À décider", verbe: "Décider", couleur: "#F59E0B", accroche: "Conclusions et actions en attente d'approbation" },
 };
 
 export const NATURES = {
-  relation: { label: "Relation", couleur: "#25D0C8" },
-  comportement: { label: "Comportement", couleur: "#9B87F5" },
-  connaissance: { label: "Connaissance", couleur: "#58A6FF" },
+  relation: { label: "Relation", couleur: "#20D5C3" },
+  comportement: { label: "Comportement", couleur: "#A78BFA" },
+  connaissance: { label: "Connaissance", couleur: "#38BDF8" },
   contradiction: { label: "Contradiction", couleur: "#F87171" },
   incident: { label: "Incident", couleur: "#F87171" },
-  changement: { label: "Changement", couleur: "#F2B84B" },
+  changement: { label: "Changement", couleur: "#F59E0B" },
 };
 
 export const ETATS_RELATION = {
-  observee: { label: "Observée", couleur: "#25D0C8" },
-  supposee: { label: "Supposée", couleur: "#F2B84B" },
-  validation: { label: "Validation A2A", couleur: "#9B87F5" },
-  confirmee: { label: "Confirmée", couleur: "rgba(216,226,234,0.78)" },
+  observee: { label: "Observée", couleur: "#20D5C3" },
+  supposee: { label: "Supposée", couleur: "#F59E0B" },
+  validation: { label: "Validation A2A", couleur: "#A78BFA" },
+  confirmee: { label: "Confirmée", couleur: "rgba(226,232,240,0.85)" },
   contestee: { label: "Contestée", couleur: "#F87171" },
   obsolete: { label: "Obsolète", couleur: "rgba(148,163,184,0.35)" },
 };

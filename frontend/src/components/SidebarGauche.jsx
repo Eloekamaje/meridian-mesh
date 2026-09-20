@@ -1,0 +1,306 @@
+import { useEffect, useRef, useState } from "react";
+import { NavLink, useNavigate, useLocation } from "react-router-dom";
+import { 
+  Compass, 
+  Newspaper, 
+  Briefcase, 
+  CirclesThree, 
+  GearSix, 
+  Plus, 
+  MagnifyingGlass, 
+  SidebarSimple, 
+  Sparkle, 
+  Bell, 
+  Users, 
+  Check, 
+  CaretDown 
+} from "@phosphor-icons/react";
+import api from "@/lib/api";
+import { usePerimetre } from "@/lib/perimetre";
+import { useContexte } from "@/lib/contexte";
+
+const NAV_ITEMS = [
+  { to: "/atlas", label: "Atlas", icon: Compass, testid: "nav-atlas" },
+  { to: "/actualites", label: "Actualités", icon: Newspaper, testid: "nav-actualites" },
+  { to: "/travaux", label: "Travaux", icon: Briefcase, testid: "nav-travaux" },
+  { to: "/jumeaux", label: "Jumeaux", icon: CirclesThree, testid: "nav-jumeaux" },
+  { to: "/administration", label: "Administration", icon: GearSix, testid: "nav-administration" },
+];
+
+export default function SidebarGauche() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { personas, persona, changerPersona, espaces, cible, changerCible } = usePerimetre();
+  const { basculerFlore } = useContexte();
+
+  // État replié : mémorisé dans le localStorage pour confort utilisateur
+  const [replie, setReplie] = useState(() => {
+    return localStorage.getItem("meridian_sidebar_replie") === "true";
+  });
+
+  const [menuProfil, setMenuProfil] = useState(false);
+  const [recents, setRecents] = useState([]);
+  const refProfil = useRef(null);
+
+  const basculerRepli = () => {
+    setReplie((prev) => {
+      const suivant = !prev;
+      localStorage.setItem("meridian_sidebar_replie", suivant ? "true" : "false");
+      return suivant;
+    });
+  };
+
+  useEffect(() => {
+    api.get("/cases")
+      .then((r) => {
+        const sorted = [...r.data].sort((a, b) => (b.maj_le || "").localeCompare(a.maj_le || ""));
+        setRecents(sorted.slice(0, 8));
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const fermer = (e) => {
+      if (refProfil.current && !refProfil.current.contains(e.target)) {
+        setMenuProfil(false);
+      }
+    };
+    document.addEventListener("mousedown", fermer);
+    return () => document.removeEventListener("mousedown", fermer);
+  }, []);
+
+  const personaActuel = personas.find((p) => p.id === persona) || { nom: "Majella Elobo", role: "Directeur SI" };
+
+  return (
+    <aside 
+      className={`relative flex h-full shrink-0 flex-col border-r border-white/[0.08] bg-[#091420] text-[#DCE6EE] transition-all duration-200 ease-in-out select-none ${
+        replie ? "w-14 items-center px-2 py-3" : "w-64 px-3 py-3"
+      }`}
+      data-testid="sidebar-gauche"
+    >
+      {/* ===================================================================== */}
+      {/* EN-TÊTE DE LA BARRE LATÉRALE                                          */}
+      {/* ===================================================================== */}
+      {!replie ? (
+        <div className="mb-3 flex items-center justify-between px-1">
+          {/* Logo / Titre Méridian */}
+          <div className="flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-[#38BDF8] shadow-[0_0_8px_#38BDF8]" />
+            <span className="font-display text-sm font-black tracking-wider text-white">MÉRIDIAN</span>
+          </div>
+
+          <div className="flex items-center gap-1">
+            {/* Recherche globale */}
+            <button 
+              onClick={() => navigate("/atlas")} 
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-[#7C93A8] transition-colors hover:bg-white/[0.06] hover:text-white"
+              title="Rechercher dans le SI"
+            >
+              <MagnifyingGlass size={15} />
+            </button>
+
+            {/* Bouton pour replier la barre latérale vers les icônes seules */}
+            <button 
+              onClick={basculerRepli}
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-[#7C93A8] transition-colors hover:bg-white/[0.06] hover:text-white"
+              title="Masquer le panneau latéral (afficher uniquement les icônes)"
+              data-testid="btn-toggle-sidebar"
+            >
+              <SidebarSimple size={16} />
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="mb-3 flex flex-col items-center gap-3">
+          {/* Bouton pour redéplier la barre latérale */}
+          <button 
+            onClick={basculerRepli}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-[#7C93A8] transition-colors hover:bg-white/[0.08] hover:text-white"
+            title="Déplier la barre latérale"
+            data-testid="btn-toggle-sidebar"
+          >
+            <SidebarSimple size={18} />
+          </button>
+        </div>
+      )}
+
+      {/* ===================================================================== */}
+      {/* BOUTON D'ACTION : NOUVEAU TRAVAIL (Style ChatGPT)                     */}
+      {/* ===================================================================== */}
+      {!replie ? (
+        <button
+          onClick={() => navigate("/travaux/demo-polaris-work-g")}
+          className="mb-4 flex w-full items-center gap-2.5 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs font-medium text-white transition-all hover:border-white/20 hover:bg-white/[0.08] shadow-sm"
+          data-testid="btn-nouveau-travail-sidebar"
+        >
+          <Plus size={15} className="text-[#38BDF8]" />
+          <span>Nouveau travail</span>
+        </button>
+      ) : (
+        <button
+          onClick={() => navigate("/travaux/demo-polaris-work-g")}
+          className="mb-4 flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.04] text-[#38BDF8] transition-all hover:bg-white/[0.08] hover:scale-105"
+          title="Nouveau travail"
+          data-testid="btn-nouveau-travail-sidebar"
+        >
+          <Plus size={16} weight="bold" />
+        </button>
+      )}
+
+      {/* ===================================================================== */}
+      {/* LIENS DE NAVIGATION PRIMAIRES                                         */}
+      {/* ===================================================================== */}
+      <nav className={`space-y-1 ${replie ? "w-full flex flex-col items-center" : ""}`} data-testid="sidebar-nav-items">
+        {NAV_ITEMS.map(({ to, label, icon: Icon, testid }) => (
+          <NavLink
+            key={to}
+            to={to}
+            data-testid={testid}
+            title={replie ? label : undefined}
+            className={({ isActive }) =>
+              `flex items-center gap-3 rounded-xl transition-colors ${
+                replie 
+                  ? `h-9 w-9 justify-center ${isActive ? "bg-sky-500/20 text-sky-300 font-semibold" : "text-[#7C93A8] hover:bg-white/[0.06] hover:text-white"}`
+                  : `px-3 py-2 text-xs font-medium ${isActive ? "bg-sky-500/15 text-sky-200 font-semibold" : "text-[#8E9FA5] hover:bg-white/[0.05] hover:text-white"}`
+              }`
+            }
+          >
+            <Icon size={17} className="shrink-0" />
+            {!replie && <span>{label}</span>}
+          </NavLink>
+        ))}
+      </nav>
+
+      {/* Séparateur */}
+      <div className="my-3 border-t border-white/[0.06] w-full" />
+
+      {/* ===================================================================== */}
+      {/* SECTION RÉCENTES (Visible uniquement en mode déplié)                 */}
+      {/* ===================================================================== */}
+      {!replie ? (
+        <div className="flex-1 min-h-0 overflow-y-auto space-y-1 pr-1" data-testid="sidebar-recents-zone">
+          <div className="px-2 py-1 text-[11px] font-semibold text-[#64748B]">
+            Récentes
+          </div>
+
+          {/* Travail actif phare : Démo Polaris (CASE-101) */}
+          <NavLink
+            to="/travaux/demo-polaris-work-g"
+            className={({ isActive }) =>
+              `block truncate rounded-xl px-2.5 py-1.5 text-xs transition-colors ${
+                isActive || location.pathname.includes("demo-polaris-work-g")
+                  ? "bg-white/[0.08] font-semibold text-white shadow-sm"
+                  : "text-[#8E9FA5] hover:bg-white/[0.04] hover:text-white"
+              }`
+            }
+            title="Dossier d'arbitrage : Mutualisation du suivi des dossiers (CASE-101)"
+          >
+            Dossier d'arbitrage (CASE-101)
+          </NavLink>
+
+          {/* Autres travaux récents */}
+          {recents
+            .filter((c) => c.id !== "demo-polaris-work-g")
+            .slice(0, 7)
+            .map((c) => (
+              <NavLink
+                key={c.id}
+                to={`/travaux/${c.id}`}
+                className={({ isActive }) =>
+                  `block truncate rounded-xl px-2.5 py-1.5 text-xs transition-colors ${
+                    isActive
+                      ? "bg-white/[0.08] font-semibold text-white"
+                      : "text-[#8E9FA5] hover:bg-white/[0.04] hover:text-white"
+                  }`
+                }
+                title={c.titre}
+              >
+                {c.titre}
+              </NavLink>
+            ))}
+
+          {/* Éléments de démo additionnels fidèles à la capture d'écran */}
+          <div className="pt-2 text-[#8E9FA5] space-y-1">
+            <div className="truncate rounded-xl px-2.5 py-1.5 text-xs opacity-60 hover:opacity-100 hover:bg-white/[0.04] cursor-pointer">
+              Scénarios Meridian olympiades
+            </div>
+            <div className="truncate rounded-xl px-2.5 py-1.5 text-xs opacity-60 hover:opacity-100 hover:bg-white/[0.04] cursor-pointer">
+              Convergence suivi des dossiers
+            </div>
+            <div className="truncate rounded-xl px-2.5 py-1.5 text-xs opacity-60 hover:opacity-100 hover:bg-white/[0.04] cursor-pointer">
+              Audit couverture 80% existant
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="flex-1" />
+      )}
+
+      {/* ===================================================================== */}
+      {/* PIED DE BARRE LATÉRALE : PROFIL UTILISATEUR & STATUT MESH              */}
+      {/* ===================================================================== */}
+      <div className="mt-auto shrink-0 pt-2 w-full" ref={refProfil}>
+        {!replie ? (
+          <div className="relative">
+            <button
+              onClick={() => setMenuProfil(!menuProfil)}
+              className="flex w-full items-center justify-between rounded-xl px-2 py-2 transition-colors hover:bg-white/[0.06]"
+              data-testid="sidebar-profil-btn"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-[#38BDF8] to-[#9B87F5] font-display text-xs font-bold text-[#071019] shadow-sm">
+                  ME
+                </div>
+                <div className="min-w-0 text-left">
+                  <div className="truncate text-xs font-semibold text-white">
+                    Majella Elobo
+                  </div>
+                  <div className="truncate text-[10px] text-[#7C93A8]">
+                    {personaActuel.role || "Directeur SI"} · Mesh 38
+                  </div>
+                </div>
+              </div>
+              <CaretDown size={13} className="text-[#64748B]" />
+            </button>
+
+            {/* Menu profil / Persona switcher */}
+            {menuProfil && (
+              <div className="absolute bottom-12 left-0 z-50 w-56 rounded-2xl border border-white/10 bg-[#0C1724] p-2 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150">
+                <div className="px-2 py-1 text-[10px] font-code uppercase tracking-wider text-[#7C93A8]">
+                  Changer de rôle / persona
+                </div>
+                {personas.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => {
+                      changerPersona(p.id);
+                      setMenuProfil(false);
+                    }}
+                    className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors ${
+                      persona === p.id 
+                        ? "bg-sky-500/20 text-sky-200 font-semibold" 
+                        : "text-[#CBD5E1] hover:bg-white/[0.06] hover:text-white"
+                    }`}
+                  >
+                    <span>{p.nom}</span>
+                    {persona === p.id && <Check size={12} className="text-sky-400" />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-col items-center">
+            <button
+              onClick={() => setReplie(false)}
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-tr from-[#38BDF8] to-[#9B87F5] font-display text-xs font-bold text-[#071019] shadow-sm hover:scale-105 transition-transform"
+              title="Majella Elobo (Directeur SI)"
+            >
+              ME
+            </button>
+          </div>
+        )}
+      </div>
+    </aside>
+  );
+}

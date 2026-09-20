@@ -1,14 +1,307 @@
 import { useEffect, useRef, useState } from "react";
-import { Sparkle, PaperPlaneTilt } from "@phosphor-icons/react";
+import { 
+  Sparkle, 
+  User, 
+  FileText, 
+  Globe, 
+  Database, 
+  Broadcast, 
+  CheckCircle, 
+  ArrowUp, 
+  Plus, 
+  CaretDown, 
+  CaretRight, 
+  Microphone, 
+  ArrowDown, 
+  Coins, 
+  Clock, 
+  ShieldCheck,
+  Buildings,
+  Copy,
+  ArrowsClockwise,
+  DotsThree
+} from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import FloreActivite, { delaiMin } from "@/components/FloreActivite";
+import { usePilotage } from "@/lib/pilotage";
 import { rel } from "./utils";
+import CanvasDocument from "./CanvasDocument";
 
-// Onglet Conversation — on replonge simplement dans le fil, là où la session s'était arrêtée
-export default function OngletTravail({ cas, setCas }) {
+// Dictionnaire des Jumeaux participants du SI pour CASE-101
+export const DICT_JUMEAUX_PARTICIPANTS = {
+  "demo-polaris-app-portail": {
+    app_id: "app-portail",
+    nom: "Portail client",
+    domaine: "Client",
+    domaineCouleur: "#25D0C8",
+    type: "Parcours Web Client",
+    statut: "actif",
+    participation: "Fournit les données de parcours client et l'estimation de volumétrie pour l'auto-suivi des demandes.",
+  },
+  "demo-polaris-app-conseiller": {
+    app_id: "app-conseiller",
+    nom: "Poste conseiller",
+    domaine: "Distribution",
+    domaineCouleur: "#FB7185",
+    type: "Interface succursales",
+    statut: "actif",
+    participation: "Fournit le diagnostic de charge de traitement des conseillers en succursale.",
+  },
+  "demo-polaris-app-dossiers": {
+    app_id: "app-dossiers",
+    nom: "Gestion des dossiers",
+    domaine: "Opérations",
+    domaineCouleur: "#38BDF8",
+    type: "Socle métier central",
+    statut: "80% existant en production",
+    participation: "Détient la machine à états officielle et le cycle de vie complet de chaque dossier.",
+  },
+  "demo-polaris-app-statuts": {
+    app_id: "app-statuts",
+    nom: "Diffusion des statuts",
+    domaine: "Opérations",
+    domaineCouleur: "#38BDF8",
+    type: "Exposition temps réel",
+    statut: "actif en production",
+    participation: "Expose les flux d'événements Kafka pour diffuser les changements d'état en direct.",
+  },
+};
+
+// Pipeline Architectural Horizontal (Fidèle au diagramme horizontal de la capture)
+export function PipelineArchitecture() {
+  return (
+    <div className="my-5 overflow-x-auto py-2" data-testid="pipeline-architecture-convergence">
+      <div className="flex items-center gap-2 min-w-max">
+        {/* Nœud 1 : Portail client */}
+        <div className="rounded-xl border border-sky-400/30 bg-sky-500/10 px-3.5 py-2 text-center shadow-sm">
+          <div className="text-[9px] font-code font-semibold uppercase tracking-wider text-sky-300">Canal Client</div>
+          <div className="text-xs font-bold text-white mt-0.5">Portail client Web</div>
+          <div className="text-[10px] text-sky-200/70 font-code">app-portail</div>
+        </div>
+
+        <span className="text-sky-400/70 font-code text-xs px-1">──▶</span>
+
+        {/* Nœud 2 : Diffusion des statuts (Kafka) */}
+        <div className="rounded-xl border border-sky-400/40 bg-sky-500/15 px-3.5 py-2 text-center shadow-sm ring-1 ring-sky-400/20">
+          <div className="text-[9px] font-code font-semibold uppercase tracking-wider text-sky-300">Hub Événements Temps Réel</div>
+          <div className="text-xs font-bold text-white mt-0.5">Diffusion des statuts</div>
+          <div className="text-[10px] text-sky-200/70 font-code">app-statuts (Kafka)</div>
+        </div>
+
+        <span className="text-emerald-400/70 font-code text-xs px-1">◀──</span>
+
+        {/* Nœud 3 : Socle Existant (80%) */}
+        <div className="rounded-xl border border-emerald-400/50 bg-emerald-500/20 px-4 py-2 text-center shadow-md ring-1 ring-emerald-400/30">
+          <div className="text-[9px] font-code font-semibold uppercase tracking-wider text-emerald-300">Socle Existant (80%)</div>
+          <div className="text-xs font-bold text-emerald-100 mt-0.5">Gestion des dossiers</div>
+          <div className="text-[10px] text-emerald-300/80 font-code">app-dossiers (Production)</div>
+        </div>
+
+        <span className="text-rose-400/70 font-code text-xs px-1">◀──</span>
+
+        {/* Nœud 4 : Poste conseiller */}
+        <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 px-3.5 py-2 text-center shadow-sm">
+          <div className="text-[9px] font-code font-semibold uppercase tracking-wider text-rose-300">Canal Succursale</div>
+          <div className="text-xs font-bold text-white mt-0.5">Poste conseiller</div>
+          <div className="text-[10px] text-rose-200/70 font-code">app-conseiller</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Rendu formaté, fluide et aéré du texte (Style ChatGPT / Claude)
+function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif }) {
+  const texte = message.texte || "";
+  const lignes = texte.split("\n");
+
+  // Détecte si le message présente l'architecture ou la convergence pour intégrer le pipeline
+  const montrePipeline = 
+    texte.includes("app-dossiers") || 
+    texte.includes("Diffusion des statuts") || 
+    texte.includes("80 %") ||
+    texte.includes("triple redondance") ||
+    message.comportement === "arbitrer";
+
+  return (
+    <div className="space-y-3.5 text-[15px] leading-relaxed text-[#DCE6EE]">
+      {lignes.map((ligne, idx) => {
+        const trimmed = ligne.trim();
+        if (!trimmed) return <div key={idx} className="h-1.5" />;
+
+        // Sous-titre Markdown ###
+        if (trimmed.startsWith("### ")) {
+          return (
+            <h3 key={idx} className="font-display text-base font-bold text-white pt-2">
+              {trimmed.replace("### ", "")}
+            </h3>
+          );
+        }
+
+        // Sous-titre Markdown ##
+        if (trimmed.startsWith("## ")) {
+          return (
+            <h2 key={idx} className="font-display text-lg font-bold text-white pt-3">
+              {trimmed.replace("## ", "")}
+            </h2>
+          );
+        }
+
+        // Puce de liste
+        if (trimmed.startsWith("* ") || trimmed.startsWith("- ") || trimmed.startsWith("• ")) {
+          const contenu = trimmed.replace(/^[\*\-•]\s*/, "");
+          return (
+            <div key={idx} className="flex items-start gap-2 pl-2 text-sm text-[#CBD5E1]">
+              <span className="text-[#38BDF8] mt-1 text-xs">•</span>
+              <span dangerouslySetInnerHTML={{ __html: formaterGrasCode(contenu) }} />
+            </div>
+          );
+        }
+
+        // Citation / callout >
+        if (trimmed.startsWith("> ")) {
+          return (
+            <div key={idx} className="border-l-2 border-[#38BDF8]/60 pl-3 py-1 my-2 text-sm italic text-sky-200/90 bg-sky-500/[0.04] rounded-r-md">
+              <span dangerouslySetInnerHTML={{ __html: formaterGrasCode(trimmed.replace("> ", "")) }} />
+            </div>
+          );
+        }
+
+        // Paragraphe classique
+        return (
+          <p key={idx} dangerouslySetInnerHTML={{ __html: formaterGrasCode(ligne) }} />
+        );
+      })}
+
+      {/* Pipeline architectural horizontal */}
+      {montrePipeline && <PipelineArchitecture />}
+
+      {/* KPIs épurés et légers (Style stat strip moderne) */}
+      {message.kpis && (
+        <div className="my-4 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+          <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.06] p-3">
+            <div className="flex items-center justify-between text-emerald-400">
+              <span className="font-code text-[10px] uppercase tracking-wider">Gain net</span>
+              <Coins size={14} />
+            </div>
+            <div className="mt-0.5 font-display text-xl font-bold text-emerald-300">
+              {message.kpis.gain}
+            </div>
+            <p className="mt-0.5 font-code text-[11px] text-emerald-200/80">
+              {message.kpis.gainSousTitre}
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-sky-500/20 bg-sky-500/[0.06] p-3">
+            <div className="flex items-center justify-between text-sky-400">
+              <span className="font-code text-[10px] uppercase tracking-wider">Délai cible</span>
+              <Clock size={14} />
+            </div>
+            <div className="mt-0.5 font-display text-xl font-bold text-sky-300">
+              {message.kpis.delai}
+            </div>
+            <p className="mt-0.5 font-code text-[11px] text-sky-200/80">
+              {message.kpis.delaiSousTitre}
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-[#9B87F5]/20 bg-[#9B87F5]/[0.06] p-3">
+            <div className="flex items-center justify-between text-[#C4B5FD]">
+              <span className="font-code text-[10px] uppercase tracking-wider">Socle existant</span>
+              <Database size={14} />
+            </div>
+            <div className="mt-0.5 font-display text-xl font-bold text-[#E9D5FF]">
+              {message.kpis.socle}
+            </div>
+            <p className="mt-0.5 font-code text-[11px] text-[#C4B5FD]/80">
+              {message.kpis.socleSousTitre}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Tableau comparatif épuré */}
+      {message.tableauComparatif && (
+        <div className="my-4 overflow-hidden rounded-xl border border-white/[0.08] bg-[#0A131C]">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="border-b border-white/[0.08] font-code text-[10px] uppercase tracking-wider text-[#7C93A8]">
+                <th className="py-2.5 pl-4 pr-2">Critère</th>
+                <th className="px-2 py-2.5 text-rose-300">Trajectoire Silos</th>
+                <th className="py-2.5 pl-2 pr-4 text-emerald-300">Socle Mutualisé (CASE-101)</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/[0.05]">
+              {message.tableauComparatif.map((row, rk) => (
+                <tr key={rk}>
+                  <td className="py-2 pl-4 pr-2 font-medium text-[#CBD5E1]">{row.critere}</td>
+                  <td className="px-2 py-2 text-rose-300">{row.silos}</td>
+                  <td className="py-2 pl-2 pr-4 font-code font-semibold text-emerald-300">{row.socle}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Bouton léger pour ouvrir le Document dans Canvas si disponible */}
+      {(message.documentCanvas || texte.includes("CASE_101_ARBITRAGE_CONVERGENCE.md")) && (
+        <div className="pt-2">
+          <button
+            onClick={onOuvrirCanvas}
+            className="inline-flex items-center gap-2 rounded-xl border border-sky-400/30 bg-sky-500/10 px-3.5 py-1.5 font-code text-xs text-sky-200 transition-all hover:bg-sky-500/20 hover:border-sky-400/50"
+            data-testid="btn-ouvrir-canvas-inline"
+          >
+            <FileText size={14} className="text-sky-400" />
+            <span>CASE_101_ARBITRAGE_CONVERGENCE.md</span>
+            <span className="text-sky-400 font-semibold">{canvasActif ? "(Canvas ouvert ↗)" : "(Ouvrir dans le Canvas ↗)"}</span>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Fonction utilitaire pour formater gras et code inline
+function formaterGrasCode(txt) {
+  if (!txt) return "";
+  let res = txt
+    .replace(/\*\*(.*?)\*\*/g, "<strong class='font-semibold text-white'>$1</strong>")
+    .replace(/`([^`]+)`/g, "<code class='font-code text-xs text-sky-300 bg-sky-500/10 px-1 py-0.5 rounded'>$1</code>");
+  return res;
+}
+
+export default function OngletTravail({ 
+  cas, 
+  setCas, 
+  voletSourcesOuvert: voletSourcesOuvertProp,
+  setVoletSourcesOuvert: setVoletSourcesOuvertProp,
+  canvasOuvert: canvasOuvertProp, 
+  setCanvasOuvert: setCanvasOuvertProp,
+  onBasculerCanvas,
+  onOuvrirPreuve 
+}) {
+  const pilote = usePilotage();
   const [nouveauMsg, setNouveauMsg] = useState("");
   const [envoiMsg, setEnvoiMsg] = useState(false);
+  const [jumeauInspecte, setJumeauInspecte] = useState(null);
+  const [preuveInspectee, setPreuveInspectee] = useState(null);
+  const [cotOuvert, setCotOuvert] = useState(false);
+  const [estEnBas, setEstEnBas] = useState(true);
+
+  // Gestion synchronisée ou locale des volets
+  const [voletSourcesLocal, setVoletSourcesLocal] = useState(true);
+  const [canvasLocal, setCanvasLocal] = useState(false);
+
+  const voletSourcesOuvert = voletSourcesOuvertProp !== undefined ? voletSourcesOuvertProp : voletSourcesLocal;
+  const setVoletSourcesOuvert = setVoletSourcesOuvertProp || setVoletSourcesLocal;
+
+  const canvasActif = canvasOuvertProp !== undefined ? canvasOuvertProp : canvasLocal;
+  const setCanvasActif = setCanvasOuvertProp || setCanvasLocal;
+  const toggleCanvas = onBasculerCanvas || (() => setCanvasActif((v) => !v));
+
+  const defilementRef = useRef(null);
   const finFilRef = useRef(null);
   const coupureRef = useRef(null);
   const monte = useRef(false);
@@ -17,17 +310,42 @@ export default function OngletTravail({ cas, setCas }) {
   const coupure = cas.derniere_visite;
   const idxCoupure = coupure ? messages.findIndex((m) => m.quand && m.quand > coupure) : -1;
 
+  // Résolution des jumeaux participants
+  const jumeauxParticipants = (cas.jumeaux_participants && cas.jumeaux_participants.length > 0)
+    ? cas.jumeaux_participants
+    : (cas.jumeaux || []).map((id) => {
+        const ref = DICT_JUMEAUX_PARTICIPANTS[id];
+        if (ref) return { id, ...ref };
+        return {
+          id,
+          app_id: id.replace("demo-polaris-", ""),
+          nom: id.replace("demo-polaris-", "").replace("app-", ""),
+          domaine: "SI",
+          domaineCouleur: "#38BDF8",
+          statut: "actif",
+          participation: "Jumeau numérique participant à la mission.",
+        };
+      });
+
   useEffect(() => {
     if (monte.current) {
       finFilRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
       return;
     }
     monte.current = true;
-    // À l'arrivée : se replacer là où la session s'était arrêtée
     if (idxCoupure > 0) coupureRef.current?.scrollIntoView({ block: "center" });
     else finFilRef.current?.scrollIntoView({ block: "end" });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages.length, envoiMsg]);
+  }, [messages.length, envoiMsg]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const verifierPositionScroll = () => {
+    if (!defilementRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = defilementRef.current;
+    setEstEnBas(scrollHeight - scrollTop - clientHeight < 80);
+  };
+
+  const allerEnBas = () => {
+    finFilRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
 
   const envoyer = async (e) => {
     e?.preventDefault();
@@ -37,7 +355,13 @@ export default function OngletTravail({ cas, setCas }) {
     setNouveauMsg("");
     try {
       const { data } = await delaiMin(api.post(`/cases/${cas.id}/messages`, { texte: q }));
-      setCas((c) => ({ ...c, conversation: [...(c.conversation || []), data.utilisateur, data.flore] }));
+      setCas((c) => ({
+        ...c,
+        conversation: [...(c.conversation || []), data.utilisateur, data.flore],
+      }));
+      if (data.flore?.documentCanvas && !canvasActif) {
+        setCanvasActif(true);
+      }
     } catch {
       toast.error("Message impossible");
     } finally {
@@ -46,82 +370,411 @@ export default function OngletTravail({ cas, setCas }) {
   };
 
   return (
-    <div className="flex h-full flex-col" data-testid="onglet-travail">
-      <div className="flex-1 overflow-y-auto px-6">
-        <div className="mx-auto max-w-2xl space-y-5 py-5">
-          <div className="space-y-5" data-testid="case-conversation">
+    <div className="relative flex h-full w-full overflow-hidden bg-[#071019] text-[#DCE6EE]" data-testid="onglet-travail">
+      
+      {/* ========================================================================= */}
+      {/* ZONE CENTRALE : CONVERSATION FLUIDE, AÉRÉE, SANS CARDS LOURDES            */}
+      {/* ========================================================================= */}
+      <div className={`relative flex h-full flex-col overflow-hidden transition-all duration-300 ${canvasActif ? "flex-[55]" : "w-full"}`}>
+        
+        {/* ========================================================================= */}
+        {/* VOLET FLOTTANT : RÉSULTATS & SOURCES JUMEAUX (Style ChatGPT Canvas)        */}
+        {/* Toggable à volonté via l'icône à deux traits horizontaux                 */}
+        {/* ========================================================================= */}
+        {voletSourcesOuvert && (
+          <div 
+            className="absolute right-6 top-3 z-40 w-80 rounded-2xl border border-white/10 bg-[#0C1724]/95 p-4 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-200"
+            data-testid="volet-flottant-sources-resultats"
+          >
+            {/* Section RÉSULTATS */}
+            <div className="flex items-center justify-between text-xs font-semibold text-white mb-2.5">
+              <div className="flex items-center gap-1.5">
+                <FileText size={14} className="text-sky-400" />
+                <span>Résultats</span>
+              </div>
+              <button 
+                onClick={() => setCanvasActif(true)}
+                className="text-[#7C93A8] hover:text-white transition-colors"
+                title="Ouvrir le document dans le Canvas"
+                data-testid="btn-plus-resultats"
+              >
+                <Plus size={14} />
+              </button>
+            </div>
+
+            {/* Item Document CASE-101 */}
+            <div 
+              onClick={() => setCanvasActif(!canvasActif)}
+              className={`group cursor-pointer rounded-xl border p-2.5 transition-all ${
+                canvasActif
+                  ? "border-sky-400/60 bg-sky-500/20"
+                  : "border-white/[0.08] bg-white/[0.03] hover:border-sky-400/40 hover:bg-white/[0.06]"
+              }`}
+              data-testid="item-resultat-document"
+            >
+              <div className="flex items-start gap-2.5">
+                <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-sky-500/20 text-sky-300">
+                  <FileText size={16} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-code text-xs font-semibold text-sky-200">
+                    CASE_101_ARBITRAGE_CONVERGENCE.md
+                  </div>
+                  <div className="text-[11px] text-[#7C93A8]">
+                    Recommandation officielle · 4 sections
+                  </div>
+                </div>
+                <span className="shrink-0 text-[11px] font-code text-sky-400">
+                  {canvasActif ? "Ouvert ↗" : "+ Ouvrir"}
+                </span>
+              </div>
+            </div>
+
+            {/* Séparateur fin */}
+            <div className="my-3.5 border-t border-white/[0.08]" />
+
+            {/* Section SOURCES */}
+            <div className="flex items-center justify-between text-xs font-semibold text-white mb-2.5">
+              <div className="flex items-center gap-1.5">
+                <Globe size={14} className="text-[#9B87F5]" />
+                <span>Sources & Jumeaux</span>
+                <span className="rounded-full bg-white/[0.08] px-1.5 py-0.2 font-code text-[10px] text-[#7C93A8]">6</span>
+              </div>
+              <button 
+                onClick={() => setVoletSourcesOuvert(false)}
+                className="text-[#7C93A8] hover:text-white transition-colors"
+                title="Masquer le volet"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
+              {/* 4 Jumeaux Participants */}
+              {jumeauxParticipants.map((j) => (
+                <div 
+                  key={j.app_id || j.id}
+                  onClick={() => setJumeauInspecte(jumeauInspecte?.app_id === j.app_id ? null : j)}
+                  className={`flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs transition-colors cursor-pointer border ${
+                    jumeauInspecte?.app_id === j.app_id
+                      ? "border-sky-400 bg-sky-500/20 text-white"
+                      : "border-transparent bg-white/[0.03] text-[#CBD5E1] hover:bg-white/[0.07] hover:text-white"
+                  }`}
+                  data-testid={`source-jumeau-${j.app_id}`}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: j.domaineCouleur || "#38BDF8" }} />
+                    <span className="truncate">{j.nom}</span>
+                  </div>
+                  <span className="font-code text-[10px] text-[#7C93A8] shrink-0">
+                    {j.app_id}
+                    {j.statut?.includes("80%") && <span className="ml-1 text-emerald-400 font-bold">(80%)</span>}
+                  </span>
+                </div>
+              ))}
+
+              {/* 2 Preuves documentaires */}
+              <div 
+                onClick={() => setPreuveInspectee(preuveInspectee === "ev-g-initiatives" ? null : "ev-g-initiatives")}
+                className={`flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs transition-colors cursor-pointer border ${
+                  preuveInspectee === "ev-g-initiatives"
+                    ? "border-emerald-400 bg-emerald-500/20 text-white"
+                    : "border-transparent bg-white/[0.03] text-[#CBD5E1] hover:bg-white/[0.07] hover:text-white"
+                }`}
+                data-testid="source-preuve-initiatives"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <FileText size={13} className="text-[#9B87F5] shrink-0" />
+                  <span className="truncate">Fiches initiatives (6,6 M€)</span>
+                </div>
+                <span className="font-code text-[10px] text-[#7C93A8] shrink-0">ev-g-initiatives</span>
+              </div>
+
+              <div 
+                onClick={() => setPreuveInspectee(preuveInspectee === "ev-g-couverture" ? null : "ev-g-couverture")}
+                className={`flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs transition-colors cursor-pointer border ${
+                  preuveInspectee === "ev-g-couverture"
+                    ? "border-emerald-400 bg-emerald-500/20 text-white"
+                    : "border-transparent bg-white/[0.03] text-[#CBD5E1] hover:bg-white/[0.07] hover:text-white"
+                }`}
+                data-testid="source-preuve-couverture"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <FileText size={13} className="text-emerald-400 shrink-0" />
+                  <span className="truncate">Matrice audit SI (80%)</span>
+                </div>
+                <span className="font-code text-[10px] text-[#7C93A8] shrink-0">ev-g-couverture</span>
+              </div>
+            </div>
+
+            {/* Tiroir d'inspection si un élément est cliqué */}
+            {jumeauInspecte && (
+              <div className="mt-3 rounded-xl border border-sky-400/30 bg-[#07131F] p-2.5 text-xs animate-in fade-in">
+                <div className="flex items-center justify-between font-semibold text-white">
+                  <span>{jumeauInspecte.nom} <span className="font-code text-[10px] text-sky-300">[{jumeauInspecte.app_id}]</span></span>
+                  <button onClick={() => setJumeauInspecte(null)} className="text-[#64748B] hover:text-white">✕</button>
+                </div>
+                <p className="mt-1 text-[11px] leading-relaxed text-slate-300">
+                  {jumeauInspecte.participation}
+                </p>
+              </div>
+            )}
+
+            {preuveInspectee && (
+              <div className="mt-3 rounded-xl border border-emerald-400/30 bg-[#06181B] p-2.5 text-xs animate-in fade-in">
+                <div className="flex items-center justify-between font-semibold text-emerald-200">
+                  <span>{preuveInspectee === "ev-g-initiatives" ? "Demandes 6,6 M€" : "Audit technique SI (80%)"}</span>
+                  <button onClick={() => setPreuveInspectee(null)} className="text-[#64748B] hover:text-white">✕</button>
+                </div>
+                <p className="mt-1 text-[11px] leading-relaxed text-slate-300">
+                  {preuveInspectee === "ev-g-initiatives"
+                    ? "3 initiatives en silos (2,0 M€ + 2,0 M€ + 2,6 M€) demandant la même information d'état."
+                    : "80% de la logique et machine à états déjà dans app-dossiers. Économie nette de 5,1 M€ en mutualisant."}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+        
+        {/* Fil de discussion principal */}
+        <div 
+          ref={defilementRef}
+          onScroll={verifierPositionScroll}
+          className="flex-1 overflow-y-auto px-6 sm:px-12"
+        >
+          <div className="mx-auto max-w-3xl space-y-7 py-8" data-testid="case-conversation">
             {messages.map((m, i) => (
-              <div key={i}>
+              <div key={i} className="space-y-3">
+                {/* Reprise de visite */}
                 {i === idxCoupure && idxCoupure > 0 && (
-                  <div ref={coupureRef} className="my-2 flex items-center gap-3" data-testid="reprise-coupure">
+                  <div ref={coupureRef} className="my-4 flex items-center gap-3" data-testid="reprise-coupure">
                     <span className="h-px flex-1 bg-[#9B87F5]/25" />
-                    <span className="font-code text-[9px] uppercase tracking-[0.2em] text-[#9B87F5]">Nouveau depuis votre dernière visite</span>
+                    <span className="font-code text-[9px] uppercase tracking-[0.2em] text-[#9B87F5]">
+                      Nouveau depuis votre dernière visite
+                    </span>
                     <span className="h-px flex-1 bg-[#9B87F5]/25" />
                   </div>
                 )}
+
+                {/* Message Utilisateur (sobre, simple bulle élégante à droite) */}
                 {m.role === "utilisateur" ? (
-                  <p className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-[rgba(155,135,245,0.12)] px-4 py-2.5 text-sm text-[#F2F6F8]" data-testid={`case-msg-${i}`}>
-                    {m.texte}
-                  </p>
-                ) : (
-                  <div className="rise" data-testid={`case-msg-${i}`}>
-                    <div className="flex items-center gap-1.5 font-code text-[9px] uppercase tracking-[0.2em] text-[#C4B5FD]">
-                      <Sparkle size={10} weight="fill" /> Flore
-                      {m.quand && <span className="text-[#7C93A8] normal-case tracking-normal">· {rel(m.quand)}</span>}
+                  <div className="flex flex-col items-end gap-1.5 animate-in fade-in duration-200" data-testid={`case-msg-${i}`}>
+                    {/* Micro-actions discrètes au-dessus de la bulle (Style ChatGPT) */}
+                    <div className="flex items-center gap-1.5 text-[#64748B] opacity-60 hover:opacity-100 transition-opacity pr-1 text-xs">
+                      <button 
+                        onClick={() => { navigator.clipboard?.writeText(m.texte); toast.success("Message copié"); }} 
+                        title="Copier le message" 
+                        className="flex h-6 w-6 items-center justify-center rounded-md hover:bg-white/[0.06] hover:text-white transition-colors"
+                      >
+                        <Copy size={12} />
+                      </button>
+                      <button 
+                        onClick={() => toast.success("Lien prêt")} 
+                        title="Partager" 
+                        className="flex h-6 w-6 items-center justify-center rounded-md hover:bg-white/[0.06] hover:text-white transition-colors"
+                      >
+                        <ArrowUp size={12} />
+                      </button>
+                      <button 
+                        title="Options" 
+                        className="flex h-6 w-6 items-center justify-center rounded-md hover:bg-white/[0.06] hover:text-white transition-colors"
+                      >
+                        <DotsThree size={13} />
+                      </button>
                     </div>
-                    <p className="mt-1 whitespace-pre-line text-sm leading-relaxed text-[#F2F6F8]">{m.texte}</p>
-                    {(m.contributions || []).length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {m.contributions.map((c, k) => (
-                          <span key={k} className="rounded-full border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2 py-0.5 font-code text-[9px] text-[#94A3B8]">
-                            {c.jumeau} — {c.texte}
-                          </span>
-                        ))}
+
+                    <div className="max-w-[85%] rounded-2xl rounded-tr-xs bg-[#162534] px-5 py-3.5 text-[14.5px] text-[#F2F6F8] leading-relaxed shadow-sm">
+                      {m.texte}
+                    </div>
+                  </div>
+                ) : (
+                  /* Réponse Flore IA : Zéro card lourde, texte au fil de l'eau, lecture pure */
+                  <div className="space-y-2 animate-in fade-in duration-200" data-testid={`case-msg-${i}`}>
+                    
+                    {/* Réflexion / CoT discrète (Style ChatGPT "A travaillé pendant...") */}
+                    <div 
+                      onClick={() => setCotOuvert((v) => !v)}
+                      className="inline-flex items-center gap-1.5 text-xs text-[#7C93A8] hover:text-[#CBD5E1] cursor-pointer select-none transition-colors"
+                      data-testid="barre-cot-flore"
+                    >
+                      <span>A analysé le SI et 4 jumeaux en 1.8s</span>
+                      <CaretDown size={12} className={`transition-transform duration-200 ${cotOuvert ? "rotate-180" : ""}`} />
+                    </div>
+
+                    {cotOuvert && (
+                      <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 text-xs text-[#94A3B8] space-y-1.5 animate-in fade-in">
+                        <div className="flex items-center gap-2 text-[#38BDF8] font-code text-[11px]">
+                          <CheckCircle size={13} />
+                          <span>Interrogation de la topologie du Mesh (38 jumeaux actifs)</span>
+                        </div>
+                        <div>• 4 jumeaux mobilisés : <code className="text-sky-300">app-portail</code>, <code className="text-rose-300">app-conseiller</code>, <code className="text-emerald-300">app-dossiers</code>, <code className="text-sky-300">app-statuts</code></div>
+                        <div>• Preuves auditées : <code className="text-purple-300">ev-g-initiatives</code> (6,6 M€) et <code className="text-emerald-300">ev-g-couverture</code> (80% existant)</div>
+                        <div>• Détection d'incohérence : triple tentative de développement de la même capacité de suivi des dossiers.</div>
                       </div>
                     )}
-                    {(m.propositions || []).length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {m.propositions.map((p, k) => (
-                          <button key={k} onClick={() => setNouveauMsg(p.question || p.label)} data-testid={`case-prop-${i}-${k}`}
-                            className="rounded-full border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-3 py-1.5 text-[11px] text-[#94A3B8] transition-colors hover:border-[#9B87F5]/40 hover:text-[#9B87F5]">
-                            {p.label}
-                          </button>
-                        ))}
-                      </div>
-                    )}
+
+                    {/* Corps formaté du message de Flore */}
+                    <CorpsMessageFlore 
+                      message={m} 
+                      onOuvrirCanvas={() => setCanvasActif(true)} 
+                      canvasActif={canvasActif} 
+                    />
+
+                    {/* Rangée de micro-actions sous la réponse de Flore (Style ChatGPT) */}
+                    <div className="flex items-center gap-1.5 pt-2 text-[#64748B] text-xs">
+                      <button 
+                        onClick={() => { navigator.clipboard?.writeText(m.texte); toast.success("Réponse copiée"); }} 
+                        title="Copier la réponse" 
+                        className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-white/[0.06] hover:text-white transition-colors"
+                      >
+                        <Copy size={13} />
+                      </button>
+                      <button 
+                        onClick={() => toast.success("Merci pour votre retour")} 
+                        title="Bonne réponse" 
+                        className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-white/[0.06] hover:text-white transition-colors"
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M7 10v12" />
+                          <path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h3" />
+                        </svg>
+                      </button>
+                      <button 
+                        onClick={() => toast.info("Feedback pris en compte")} 
+                        title="Mauvaise réponse" 
+                        className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-white/[0.06] hover:text-white transition-colors"
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M17 14V2" />
+                          <path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-3" />
+                        </svg>
+                      </button>
+                      <button 
+                        onClick={() => {
+                          const derniereQuestion = [...messages].reverse().find(x => x.role === "utilisateur");
+                          if (derniereQuestion) {
+                            setNouveauMsg(derniereQuestion.texte);
+                          }
+                        }} 
+                        title="Régénérer la réponse" 
+                        className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-white/[0.06] hover:text-white transition-colors"
+                      >
+                        <ArrowsClockwise size={13} />
+                      </button>
+                      <button 
+                        title="Options" 
+                        className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-white/[0.06] hover:text-white transition-colors"
+                      >
+                        <DotsThree size={13} />
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
             ))}
+
             {messages.length === 0 && (
-              <p className="py-6 text-center text-sm text-[#7C93A8]">La conversation est la mémoire du travail — commencez ci-dessous.</p>
+              <div className="py-16 text-center text-sm text-[#7C93A8] space-y-2">
+                <p className="font-display text-base text-[#CBD5E1]">
+                  Espace de travail ouvert pour <strong>{cas.titre}</strong>
+                </p>
+                <p className="font-code text-xs">
+                  Posez votre première question ci-dessous pour initier l'analyse avec Flore et les jumeaux du Mesh.
+                </p>
+              </div>
             )}
+
             {envoiMsg && <FloreActivite genre="travail" testid="case-msg-attente" />}
             <div ref={finFilRef} />
           </div>
         </div>
-      </div>
 
-      {/* Composer ancré — même geste que la création */}
-      <div className="shrink-0 border-t border-[rgba(148,163,184,0.16)] bg-[rgba(148,163,184,0.07)] px-6 py-3" data-testid="case-composer-zone">
-        <form onSubmit={envoyer} className="mx-auto max-w-2xl">
-          <div className="flex items-end gap-2 rounded-2xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-3 py-2 shadow-sm transition-colors focus-within:border-[#9B87F5]/50">
-            <textarea
-              value={nouveauMsg}
-              onChange={(e) => setNouveauMsg(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); envoyer(); } }}
-              placeholder="Continuez avec Flore — chaque échange enrichit la mémoire du travail…"
-              rows={1}
-              data-testid="case-msg-input"
-              className="max-h-32 flex-1 resize-none bg-transparent px-1 py-1.5 text-sm text-[#F2F6F8] placeholder:text-[#7C93A8] focus:outline-none"
-            />
-            <button type="submit" disabled={envoiMsg || !nouveauMsg.trim()} data-testid="case-msg-send-btn" title="Envoyer"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#9B87F5] text-[#071019] transition-colors hover:bg-[#B4A5F7] disabled:opacity-30">
-              <PaperPlaneTilt size={14} weight="fill" />
+        {/* Bouton pour descendre si l'utilisateur a scrollé vers le haut */}
+        {!estEnBas && (
+          <div className="flex justify-center -mb-4 z-20">
+            <button
+              onClick={allerEnBas}
+              className="flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-[#0C1724]/90 text-slate-300 shadow-lg backdrop-blur-md hover:text-white transition-all"
+              title="Descendre au dernier message"
+            >
+              <ArrowDown size={14} />
             </button>
           </div>
-        </form>
+        )}
+
+        {/* ========================================================================= */}
+        {/* COMPOSITEUR DE PROMPT FLOTTANT (Style ChatGPT / Claude)                    */}
+        {/* ========================================================================= */}
+        <div className="shrink-0 p-4 pb-5" data-testid="case-composer-zone">
+          <form onSubmit={envoyer} className="mx-auto max-w-3xl">
+            <div className="flex items-center gap-2 rounded-2xl border border-white/[0.12] bg-[#0A131C]/90 px-3.5 py-2.5 shadow-2xl backdrop-blur-xl transition-colors focus-within:border-sky-400/60">
+              
+              {/* Bouton + pour outils / pièces jointes */}
+              <button
+                type="button"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-[#7C93A8] hover:bg-white/[0.06] hover:text-white transition-colors"
+                title="Ajouter une ressource ou un jumeau"
+              >
+                <Plus size={16} />
+              </button>
+
+              {/* Champ de saisie aéré */}
+              <textarea
+                value={nouveauMsg}
+                onChange={(e) => setNouveauMsg(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    envoyer(e);
+                  }
+                }}
+                placeholder="Posez une question à Flore et aux jumeaux du SI…"
+                rows={1}
+                data-testid="case-msg-input"
+                className="max-h-32 flex-1 resize-none bg-transparent px-1 py-1 text-sm text-[#F2F6F8] placeholder:text-[#526578] focus:outline-none"
+              />
+
+              {/* Badge discret du modèle SI */}
+              <div className="hidden sm:flex items-center gap-1 rounded-lg bg-white/[0.04] px-2 py-1 font-code text-[11px] text-[#7C93A8]">
+                <span>Flore Mesh 2.0</span>
+              </div>
+
+              {/* Bouton micro vocal */}
+              <button
+                type="button"
+                className="hidden sm:flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-[#7C93A8] hover:bg-white/[0.06] hover:text-white transition-colors"
+                title="Commande vocale"
+              >
+                <Microphone size={16} />
+              </button>
+
+              {/* Bouton d'envoi vibrant */}
+              <button
+                type="submit"
+                disabled={envoiMsg || !nouveauMsg.trim()}
+                data-testid="case-msg-send-btn"
+                title="Envoyer le message"
+                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl transition-all ${
+                  nouveauMsg.trim() && !envoiMsg
+                    ? "bg-[#38BDF8] text-[#071019] shadow-md shadow-[#38BDF8]/20 hover:scale-105"
+                    : "bg-white/[0.05] text-[#475569] opacity-30 cursor-not-allowed"
+                }`}
+              >
+                <ArrowUp size={16} weight="bold" />
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
+
+      {/* ========================================================================= */}
+      {/* VOLET DROIT : CANVAS DU DOCUMENT GÉNÉRÉ (Style ChatGPT Canvas)           */}
+      {/* ========================================================================= */}
+      {canvasActif && (
+        <div className="flex-[45] h-full overflow-hidden transition-all duration-300 border-l border-white/[0.1]">
+          <CanvasDocument onFermer={toggleCanvas} />
+        </div>
+      )}
     </div>
   );
 }

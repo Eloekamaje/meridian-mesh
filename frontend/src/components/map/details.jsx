@@ -209,7 +209,13 @@ export function TwinDetail({ selected, favori, onBasculerFavori, statsTwin, onIn
           <span className="h-2 w-2 rounded-full" style={{ backgroundColor: couleurDomaine(selected.domaine) }} />
           <div>
             <h3 className="font-display text-base font-bold text-[#F2F6F8]">{selected.nom}</h3>
-            <p className="font-code text-[10px] text-[#7C93A8]">{idNumerique(selected.id)} · {selected.domaine}{selected.environnement ? ` · ${selected.environnement}` : ""}</p>
+            {/* `natureLabel` distingue les objets métier (initiative, capacité, étape de
+                processus) d'une application. Absent des jumeaux du produit : affichage inchangé. */}
+            <p className="font-code text-[10px] text-[#7C93A8]">
+              {idNumerique(selected.id)} · {selected.domaine}
+              {selected.natureLabel ? ` · ${selected.natureLabel}` : ""}
+              {selected.environnement ? ` · ${selected.environnement}` : ""}
+            </p>
           </div>
         </div>
         {onBasculerFavori && (

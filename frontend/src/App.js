@@ -18,15 +18,12 @@ import TravailDetail from "@/pages/TravailDetail";
 import Jumeaux from "@/pages/Jumeaux";
 import RevueJumeau from "@/pages/RevueJumeau";
 import Administration from "@/pages/Administration";
-import PolarisWelcome from "@/demo/polaris/PolarisWelcome";
-import PolarisPlayer from "@/demo/polaris/PolarisPlayer";
-
 const RedirectTravail = () => {
   const { cid } = useParams();
   return <Navigate to={`/travaux/${cid}`} replace />;
 };
 
-// Branche produit : providers réseau (Mesh, Contexte, Perimetre…) — absents du kiosque
+// Application Méridian
 function ProduitApp() {
   return (
     <PerimetreProvider>
@@ -56,6 +53,7 @@ function ProduitApp() {
             <Route path="/decisions" element={<Navigate to="/travaux" replace />} />
             <Route path="/change-lab" element={<Navigate to="/travaux/case-olympiade" replace />} />
             <Route path="/registry" element={<Navigate to="/jumeaux" replace />} />
+            <Route path="/demo/*" element={<Navigate to="/travaux/demo-polaris-work-g" replace />} />
           </Route>
         </Routes>
         </MeshProvider>
@@ -68,13 +66,7 @@ function ProduitApp() {
 function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        {/* Kiosque Polaris : la VRAIE application (providers, Atlas, Flore, Travail)
-            pilotée par le scénario — le réseau y est simulé localement (§4.1) */}
-        <Route path="/demo" element={<PolarisWelcome />} />
-        <Route path="/demo/polaris/:profileId/*" element={<PolarisPlayer />} />
-        <Route path="/*" element={<ProduitApp />} />
-      </Routes>
+      <ProduitApp />
       <Toaster theme="light" position="top-right" />
     </BrowserRouter>
   );

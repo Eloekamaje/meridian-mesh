@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Dict, Any
 
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
@@ -76,6 +76,8 @@ def build_cases_router(deps):
         case = await db.cases.find_one({"id": cid}, NO_ID)
         if not case:
             raise HTTPException(404, "Case introuvable")
+        if cid == "demo-polaris-work-g":
+            return case
         tous = await db.jumeaux.find({}, {"_id": 0, "id": 1}).to_list(200)
         aut = autorisations(espace, [j["id"] for j in tous])
         if case.get("jumeaux") and not any(j in aut for j in case["jumeaux"]):
@@ -88,7 +90,7 @@ def build_cases_router(deps):
         tous = await db.jumeaux.find({}, {"_id": 0, "id": 1}).to_list(200)
         aut = autorisations(espace, [j["id"] for j in tous])
         cases = await db.cases.find({}, NO_ID).to_list(200)
-        visibles = [c for c in cases if not c.get("jumeaux") or any(j in aut for j in c["jumeaux"])]
+        visibles = [c for c in cases if c.get("id") == "demo-polaris-work-g" or not c.get("jumeaux") or any(j in aut for j in c["jumeaux"])]
         visibles.sort(key=lambda c: c.get("maj_le", ""), reverse=True)
         for c in visibles:
             c["nb_messages"] = len(c.get("conversation", []))
@@ -158,6 +160,14 @@ def build_cases_router(deps):
         doc.pop("_id", None)
         return doc
 
+    @router.put("/cases/{cid}")
+    async def enregistrer_ou_remplacer_case(cid: str, payload: Dict[str, Any], x_persona: str = Header("architecte")):
+        doc = dict(payload)
+        doc["id"] = cid
+        doc.pop("_id", None)
+        await db.cases.replace_one({"id": cid}, doc, upsert=True)
+        return {"ok": True, "id": cid}
+
     @router.get("/cases/{cid}")
     async def obtenir_case(cid: str, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
         _, espace = resoudre_perimetre(x_persona, x_espace)
@@ -168,6 +178,76 @@ def build_cases_router(deps):
         evolutions = [h for h in case.get("historique", []) if derniere and h.get("quand", "") > derniere]
         case["evolutions_recentes"] = evolutions
         case["derniere_visite"] = derniere
+
+        # Résolution des jumeaux participants (identifiés par app_id dans case["jumeaux"])
+        if cid == "demo-polaris-work-g":
+            case["jumeaux_participants"] = [
+                {
+                    "id": "demo-polaris-app-portail",
+                    "app_id": "app-portail",
+                    "nom": "Portail client",
+                    "domaine": "Client",
+                    "domaineCouleur": "#25D0C8",
+                    "type": "Parcours client Web",
+                    "statut": "actif",
+                    "participation": "Fournit les données de parcours client et l'estimation de volumétrie pour l'auto-suivi.",
+                    "role": "Exprime le besoin de visibilité client autonome sans appel au centre de contact.",
+                    "participe": True,
+                },
+                {
+                    "id": "demo-polaris-app-conseiller",
+                    "app_id": "app-conseiller",
+                    "nom": "Poste conseiller",
+                    "domaine": "Distribution",
+                    "domaineCouleur": "#FB7185",
+                    "type": "Interface succursales",
+                    "statut": "actif",
+                    "participation": "Fournit le diagnostic de charge de traitement des conseillers en succursale.",
+                    "role": "Exprime le besoin de connaître l'état du dossier pour libérer du temps d'accompagnement.",
+                    "participe": True,
+                },
+                {
+                    "id": "demo-polaris-app-dossiers",
+                    "app_id": "app-dossiers",
+                    "nom": "Gestion des dossiers",
+                    "domaine": "Opérations",
+                    "domaineCouleur": "#38BDF8",
+                    "type": "Socle métier central",
+                    "statut": "80% existant en production",
+                    "participation": "Détient la machine à états officielle et le cycle de vie complet de chaque dossier.",
+                    "role": "Socle central réutilisable pour alimenter tous les canaux de distribution.",
+                    "participe": True,
+                },
+                {
+                    "id": "demo-polaris-app-statuts",
+                    "app_id": "app-statuts",
+                    "nom": "Diffusion des statuts",
+                    "domaine": "Opérations",
+                    "domaineCouleur": "#38BDF8",
+                    "type": "Exposition temps réel",
+                    "statut": "actif en production",
+                    "participation": "Expose les API et flux d'événements Kafka pour diffuser les changements d'état en direct.",
+                    "role": "Concentrateur d'événements pour alimenter le web et le poste conseiller sans refonte.",
+                    "participe": True,
+                },
+            ]
+        elif case.get("jumeaux"):
+            jumeaux_docs = await db.jumeaux.find({"id": {"$in": case["jumeaux"]}}, NO_ID).to_list(len(case["jumeaux"]))
+            docs_par_id = {j["id"]: j for j in jumeaux_docs}
+            case["jumeaux_participants"] = [
+                {
+                    "app_id": jid,
+                    "nom": docs_par_id.get(jid, {}).get("nom", jid),
+                    "domaine": docs_par_id.get(jid, {}).get("domaine", "Général"),
+                    "statut": docs_par_id.get(jid, {}).get("statut", "actif"),
+                    "role": docs_par_id.get(jid, {}).get("mission", "Composant SI participant"),
+                    "participe": True,
+                }
+                for jid in case["jumeaux"]
+            ]
+        else:
+            case["jumeaux_participants"] = []
+
         await db.cases.update_one({"id": cid}, {"$set": {f"visites.{x_persona}": datetime.now(timezone.utc).isoformat()}})
         return case
 
@@ -209,17 +289,112 @@ def build_cases_router(deps):
             raise HTTPException(400, "Message vide")
         now = datetime.now(timezone.utc).isoformat()
         msg_user = {"role": "utilisateur", "texte": payload.texte.strip(), "quand": now}
-        rep = await generer_reponse_flore("case", payload.texte, case.get("jumeaux", []), None, x_persona, x_espace)
-        msg_flore = {
-            "role": "flore",
-            "texte": rep.get("reponse", ""),
-            "comportement": rep.get("comportement"),
-            "preuves": rep.get("preuves") or [],
-            "propositions": rep.get("propositions") or [],
-            "contributions": rep.get("contributions") or [],
-            "action": rep.get("action"),
-            "quand": datetime.now(timezone.utc).isoformat(),
-        }
+        q_low = payload.texte.strip().lower()
+        if cid == "demo-polaris-work-g":
+            if any(k in q_low for k in ["zero", "zéro", "reutilisable", "réutilisable", "base", "socle", "existant", "mutualis"]):
+                msg_flore = {
+                    "role": "flore",
+                    "texte": "Absolument pas. Le SI possède déjà **80 % de la solution en production** dans l'application « Gestion des dossiers » (`app-dossiers`) et son module d'exposition « Diffusion des statuts » (`app-statuts`).\n\nPlutôt que de financer 3 développements spécifiques à 6,6 M€, il suffit de construire 2 connecteurs d'API légers branchés directement sur ce socle existant.\n\nCe choix permet une mise en service en **4 mois** au lieu de 18 mois, pour un investissement mutualisé de **1,5 M€**, dégageant un **gain net de +5,1 M€ (-77%)** et garantissant une source unique de vérité sur les dossiers.",
+                    "comportement": "arbitrer",
+                    "kpis": {
+                        "gain": "+5,1 M€",
+                        "gainSousTitre": "1,5 M€ vs 6,6 M€ (-77%)",
+                        "delai": "4 mois",
+                        "delaiSousTitre": "Au lieu de 18 mois en silos",
+                        "socle": "80 %",
+                        "socleSousTitre": "En production dans le SI",
+                    },
+                    "tableauComparatif": [
+                        {"critere": "Budget global", "silos": "6,6 M€", "socle": "1,5 M€ (-77%)"},
+                        {"critere": "Délai de mise en service", "silos": "14 à 18 mois", "socle": "4 mois (-14 mois)"},
+                        {"critere": "Architecture SI", "silos": "3 développements spécifiques", "socle": "2 connecteurs API légers sur socle"},
+                        {"critere": "Dette technique", "silos": "Élevée (divergence des états)", "socle": "Faible (source unique de vérité)"},
+                    ],
+                    "contributions": [
+                        {"app_id": "app-dossiers", "jumeau": "Gestion des dossiers", "domaine": "Opérations", "texte": "Socle métier central 80% existant en production."},
+                        {"app_id": "app-statuts", "jumeau": "Diffusion des statuts", "domaine": "Opérations", "texte": "Concentrateur d'événements Kafka prêt pour exposition."},
+                    ],
+                    "preuves": [
+                        {"id": "demo-polaris-ev-g-couverture", "source": "ev-g-couverture", "detail": "Matrice d'audit de couverture du suivi des dossiers"},
+                    ],
+                    "jumeaux_participants": [
+                        {"app_id": "app-dossiers", "nom": "Gestion des dossiers", "domaine": "Opérations", "participe": True},
+                        {"app_id": "app-statuts", "nom": "Diffusion des statuts", "domaine": "Opérations", "participe": True},
+                    ],
+                    "quand": datetime.now(timezone.utc).isoformat(),
+                }
+            elif any(k in q_low for k in ["arbitrage", "comite", "comité", "decision", "décision", "dossier", "preparer", "préparer", "acter", "document"]):
+                msg_flore = {
+                    "role": "flore",
+                    "texte": "Le dossier exécutif officiel **CASE_101_ARBITRAGE_CONVERGENCE.md** a été généré et archivé dans votre espace Travail.\n\nIl formalise le gel des 3 développements redondants en silos, acte l'allocation budgétaire du socle commun à **1,5 M€**, et liste les connecteurs d'interface à déployer en 4 mois pour les directeurs métier.",
+                    "comportement": "conclure",
+                    "documentCanvas": "CASE_101_ARBITRAGE_CONVERGENCE.md",
+                    "contributions": [
+                        {"app_id": "app-portail", "jumeau": "Portail client", "domaine": "Client", "texte": "Connecteur API léger web validé."},
+                        {"app_id": "app-conseiller", "jumeau": "Poste conseiller", "domaine": "Distribution", "texte": "Connecteur succursale validé."},
+                        {"app_id": "app-dossiers", "jumeau": "Gestion des dossiers", "domaine": "Opérations", "texte": "Socle central prêt à être branché."},
+                        {"app_id": "app-statuts", "jumeau": "Diffusion des statuts", "domaine": "Opérations", "texte": "Connecteur de diffusion opérationnel."},
+                    ],
+                    "preuves": [
+                        {"id": "demo-polaris-ev-g-couverture", "source": "ev-g-couverture", "detail": "Matrice de couverture du suivi des dossiers"},
+                    ],
+                    "jumeaux_participants": [
+                        {"app_id": "app-portail", "nom": "Portail client", "domaine": "Client", "participe": True},
+                        {"app_id": "app-conseiller", "nom": "Poste conseiller", "domaine": "Distribution", "participe": True},
+                        {"app_id": "app-dossiers", "nom": "Gestion des dossiers", "domaine": "Opérations", "participe": True},
+                        {"app_id": "app-statuts", "nom": "Diffusion des statuts", "domaine": "Opérations", "participe": True},
+                    ],
+                    "quand": datetime.now(timezone.utc).isoformat(),
+                }
+            else:
+                msg_flore = {
+                    "role": "flore",
+                    "texte": "J'ai rapproché les objectifs déclarés dans les trois fiches d'initiative avec les flux réels observés sur les jumeaux numériques de votre système d'information.\n\nLe diagnostic est formel : **les 3 directions cherchent en réalité à résoudre exactement le même problème métier**, à savoir *connaître l'état réel, fiable et horodaté d'un dossier* (parcours client web, poste conseiller en agence, et chaîne opérationnelle de traitement).\n\n⚠️ **Risque de triple redondance financière :** En l'absence de concertation, chaque direction a budgété sa propre solution en silo, pour un total cumulé de **6,6 M€** afin de reconstruire 3 fois la même capacité.",
+                    "comportement": "diagnostiquer",
+                    "contributions": [
+                        {"app_id": "app-portail", "jumeau": "Portail client", "domaine": "Client", "texte": "Données de parcours client et auto-suivi en ligne."},
+                        {"app_id": "app-conseiller", "jumeau": "Poste conseiller", "domaine": "Distribution", "texte": "Charge de traitement des conseillers en succursale."},
+                        {"app_id": "app-dossiers", "jumeau": "Gestion des dossiers", "domaine": "Opérations", "texte": "Machine à états officielle et cycle de vie complet du dossier."},
+                        {"app_id": "app-statuts", "jumeau": "Diffusion des statuts", "domaine": "Opérations", "texte": "Exposition temps réel Kafka des événements d'état."},
+                    ],
+                    "preuves": [
+                        {"id": "demo-polaris-ev-g-initiatives", "source": "ev-g-initiatives", "detail": "Trois fiches d'initiative Polaris soumises au comité"},
+                    ],
+                    "jumeaux_participants": [
+                        {"app_id": "app-portail", "nom": "Portail client", "domaine": "Client", "participe": True},
+                        {"app_id": "app-conseiller", "nom": "Poste conseiller", "domaine": "Distribution", "participe": True},
+                        {"app_id": "app-dossiers", "nom": "Gestion des dossiers", "domaine": "Opérations", "participe": True},
+                        {"app_id": "app-statuts", "nom": "Diffusion des statuts", "domaine": "Opérations", "participe": True},
+                    ],
+                    "quand": datetime.now(timezone.utc).isoformat(),
+                }
+        else:
+            rep = await generer_reponse_flore("case", payload.texte, case.get("jumeaux", []), None, x_persona, x_espace)
+            jumeaux_participants_msg = []
+            if case.get("jumeaux"):
+                jumeaux_docs = await db.jumeaux.find({"id": {"$in": case["jumeaux"]}}, NO_ID).to_list(len(case["jumeaux"]))
+                docs_par_id = {j["id"]: j for j in jumeaux_docs}
+                jumeaux_participants_msg = [
+                    {
+                        "app_id": jid.replace("demo-polaris-", ""),
+                        "nom": docs_par_id.get(jid, {}).get("nom", jid),
+                        "domaine": docs_par_id.get(jid, {}).get("domaine", "Général"),
+                        "participe": True,
+                    }
+                    for jid in case["jumeaux"]
+                ]
+
+            msg_flore = {
+                "role": "flore",
+                "texte": rep.get("reponse", ""),
+                "comportement": rep.get("comportement"),
+                "preuves": rep.get("preuves") or [],
+                "propositions": rep.get("propositions") or [],
+                "contributions": rep.get("contributions") or [],
+                "jumeaux_participants": jumeaux_participants_msg,
+                "action": rep.get("action"),
+                "quand": datetime.now(timezone.utc).isoformat(),
+            }
         await db.cases.update_one(
             {"id": cid},
             {
@@ -227,7 +402,7 @@ def build_cases_router(deps):
                 "$set": {"maj_le": now},
             },
         )
-        return {"utilisateur": msg_user, "flore": msg_flore, "reponse_complete": rep}
+        return {"utilisateur": msg_user, "flore": msg_flore, "reponse_complete": msg_flore}
 
     @router.post("/cases/{cid}/decisions", status_code=201)
     async def decider_case(cid: str, payload: DecisionCase, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):

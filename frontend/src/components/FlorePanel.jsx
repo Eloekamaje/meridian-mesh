@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Sparkle, PaperPlaneRight, FileText, X, Plus, Eye, Lightning, FolderOpen, CheckCircle, CircleNotch, Circle } from "@phosphor-icons/react";
+import { Sparkle, PaperPlaneRight, FileText, X, Plus, Eye, Lightning, FolderOpen, ArrowUp, ArrowRight, Compass } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import TrustBadges from "./TrustBadges";
@@ -10,6 +10,7 @@ import { couleurDomaine } from "@/lib/domaines";
 import { useContexte } from "@/lib/contexte";
 import { useMesh } from "@/lib/mesh";
 import { usePilotage } from "@/lib/pilotage";
+import ActivitePilotee from "./ActivitePilotee";
 
 function contexteDepuis(pathname) {
   // « case » = page DÉTAIL d'un travail uniquement (Flore y est l'onglet Conversation du dossier) ;
@@ -88,12 +89,18 @@ function LotBar({ lot }) {
 
 // Réponse de Flore en télétype : les caractères s'écrivent progressivement avec curseur
 // lumineux (désactivé si prefers-reduced-motion). Les réponses anciennes s'affichent d'un bloc.
-function TexteTeletype({ texte, actif, testid }) {
+function TexteTeletype({ texte, actif, gele = false, testid }) {
   const reduit = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
   const [n, setN] = useState(() => (actif && !reduit ? 0 : (texte || "").length));
+  // Le texte se révèle à l'arrivée du message ; une reprise après pause continue
+  // exactement où la frappe s'était arrêtée (pas de remise à zéro).
   useEffect(() => {
     if (!actif || reduit) { setN((texte || "").length); return undefined; }
     setN(0);
+    return undefined;
+  }, [texte, actif, reduit]);
+  useEffect(() => {
+    if (!actif || reduit || gele) return undefined;
     const t = setInterval(() => {
       setN((v) => {
         if (v >= texte.length) { clearInterval(t); return v; }
@@ -101,7 +108,7 @@ function TexteTeletype({ texte, actif, testid }) {
       });
     }, 18);
     return () => clearInterval(t);
-  }, [texte, actif, reduit]);
+  }, [texte, actif, reduit, gele]);
   const fini = n >= (texte || "").length;
   return (
     <p className="mt-2 text-sm leading-relaxed text-[#D8E2EA]" data-testid={testid}>
@@ -114,6 +121,156 @@ function TexteTeletype({ texte, actif, testid }) {
 function CarteReponse({ data, index, propsEtat, setPropsEtat, justifOuverte, setJustifOuverte, ajouterJumeau, navigate, derniere }) {
   const { commanderCarte, setPreuveSurvolee } = useContexte();
   const pilote = usePilotage();
+  if (pilote) {
+    const aArbitrage = data.reponse && data.reponse.includes("1,5 M€") && data.reponse.includes("6,6 M€");
+    const aDossierFinal = data.reponse && data.reponse.includes("CASE-101 est finalisé");
+    const aInitiatives = data.reponse && (data.reponse.includes("fiches d'initiatives") || data.reponse.includes("3 fiches"));
+
+    return (
+      <div className="space-y-2 rounded-2xl rounded-bl-sm border border-white/10 bg-[#08121D]/90 p-4 shadow-xl backdrop-blur-md" data-testid={`flore-reponse-${index}`}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5 font-code text-[10px] font-bold uppercase tracking-wider text-[#A78BFA]">
+            <Sparkle size={13} weight="fill" /> Flore
+          </div>
+          {aArbitrage && (
+            <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 font-code text-[9px] font-bold text-emerald-300 border border-emerald-500/30">
+              Arbitrage recommandé
+            </span>
+          )}
+          {aInitiatives && (
+            <span className="rounded-full bg-violet-500/20 px-2 py-0.5 font-code text-[9px] font-bold text-violet-300 border border-violet-500/30">
+              Demandes projets
+            </span>
+          )}
+        </div>
+        <TexteTeletype texte={data.reponse} actif={derniere} gele={!!pilote?.enPause} testid={`flore-texte-${index}`} />
+
+        {/* Fiches d'initiatives métier : l'item de droit affiché directement au gestionnaire */}
+        {aInitiatives && (
+          <div className="mt-3.5 space-y-2.5 rounded-xl border border-violet-500/30 bg-[#090F1C]/95 p-3.5 shadow-xl backdrop-blur-md">
+            <div className="flex items-center justify-between border-b border-white/10 pb-2">
+              <span className="flex items-center gap-1.5 font-code text-[10px] font-bold uppercase tracking-wider text-violet-300">
+                <Compass size={13} weight="fill" className="text-violet-400" />
+                3 demandes projets soumises au comité
+              </span>
+              <span className="rounded bg-violet-500/20 px-1.5 py-0.5 font-code text-[9px] font-extrabold text-violet-200 border border-violet-400/30">
+                6,0 M€ en silos
+              </span>
+            </div>
+
+            <div className="space-y-2">
+              <div className="rounded-lg border border-emerald-500/25 bg-black/40 p-2.5 transition-all hover:border-emerald-500/50">
+                <div className="flex items-center justify-between">
+                  <span className="font-display text-xs font-bold text-white">Suivi des demandes clients</span>
+                  <span className="font-code text-[10px] font-bold text-emerald-400 bg-emerald-500/15 px-1.5 py-0.5 rounded">2,0 M€</span>
+                </div>
+                <div className="mt-1 flex items-center gap-2 text-[10px] text-slate-400">
+                  <span className="font-code text-emerald-300 font-semibold">Direction Client</span>
+                  <span>·</span>
+                  <span>Informer le client sans relance</span>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-pink-500/25 bg-black/40 p-2.5 transition-all hover:border-pink-500/50">
+                <div className="flex items-center justify-between">
+                  <span className="font-display text-xs font-bold text-white">Poste conseiller repensé</span>
+                  <span className="font-code text-[10px] font-bold text-pink-400 bg-pink-500/15 px-1.5 py-0.5 rounded">2,0 M€</span>
+                </div>
+                <div className="mt-1 flex items-center gap-2 text-[10px] text-slate-400">
+                  <span className="font-code text-pink-300 font-semibold">Direction Distribution</span>
+                  <span>·</span>
+                  <span>Réduire les tâches d'appoint</span>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-sky-500/25 bg-black/40 p-2.5 transition-all hover:border-sky-500/50">
+                <div className="flex items-center justify-between">
+                  <span className="font-display text-xs font-bold text-white">Réduction des reprises manuelles</span>
+                  <span className="font-code text-[10px] font-bold text-sky-400 bg-sky-500/15 px-1.5 py-0.5 rounded">2,0 M€</span>
+                </div>
+                <div className="mt-1 flex items-center gap-2 text-[10px] text-slate-400">
+                  <span className="font-code text-sky-300 font-semibold">Direction Opérations</span>
+                  <span>·</span>
+                  <span>Zéro ressaisie ni correction</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-white/5 bg-white/[0.04] px-2.5 py-2 text-[10px] text-slate-300 flex items-center gap-2">
+              <Sparkle size={12} weight="fill" className="text-violet-400 shrink-0" />
+              <span>
+                <strong>Jumeaux en arrière-plan :</strong> audit technique des flux SI en cours.
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Widget d'arbitrage exécutif : KPI immédiatement lisibles pour décideur */}
+        {aArbitrage && (
+          <div className="mt-3.5 rounded-xl kpi-card p-3.5 border border-emerald-500/35 bg-gradient-to-br from-[#0B1E1E]/95 to-[#07131B]/95 shadow-xl">
+            <div className="flex items-center justify-between border-b border-white/10 pb-2">
+              <span className="font-code text-[10px] font-bold uppercase tracking-wider text-emerald-300 flex items-center gap-1.5">
+                <Sparkle size={12} weight="fill" /> Synthèse d'arbitrage exécutif
+              </span>
+              <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 font-code text-[9px] text-emerald-400 font-bold border border-emerald-500/30">-77% de coûts</span>
+            </div>
+            <div className="mt-2.5 grid grid-cols-3 gap-2 text-center">
+              <div className="rounded-lg bg-black/40 p-2 border border-white/5">
+                <div className="font-code text-[9px] uppercase tracking-wider text-slate-400">Économie nette</div>
+                <div className="font-display text-lg font-extrabold text-emerald-400 mt-0.5">+5,1 M€</div>
+                <div className="font-code text-[8px] text-slate-500">1,5 M€ vs 6,6 M€</div>
+              </div>
+              <div className="rounded-lg bg-black/40 p-2 border border-white/5">
+                <div className="font-code text-[9px] uppercase tracking-wider text-slate-400">Délai cible</div>
+                <div className="font-display text-lg font-extrabold text-cyan-400 mt-0.5">4 mois</div>
+                <div className="font-code text-[8px] text-slate-500">au lieu de 18</div>
+              </div>
+              <div className="rounded-lg bg-black/40 p-2 border border-white/5">
+                <div className="font-code text-[9px] uppercase tracking-wider text-slate-400">Socle réutilisé</div>
+                <div className="font-display text-lg font-extrabold text-amber-400 mt-0.5">80%</div>
+                <div className="font-code text-[8px] text-slate-500">en production</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Bouton d'accès direct au dossier exécutif CASE-101 */}
+        {aDossierFinal && (
+          <div className="mt-3.5 rounded-xl border border-emerald-500/40 bg-gradient-to-r from-emerald-950/40 to-teal-950/40 p-3 shadow-lg">
+            <div className="flex items-center justify-between text-xs font-semibold text-emerald-300 mb-2">
+              <span className="flex items-center gap-1.5"><Sparkle size={13} weight="fill" /> Dossier d'arbitrage prêt</span>
+              <span className="font-code text-[10px] text-slate-400">3 validations incluses</span>
+            </div>
+            <button
+              onClick={() => navigate("/travaux/demo-polaris-work-g?vue=apercu")}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-400 py-2.5 text-xs font-bold text-[#051113] shadow-md shadow-emerald-500/25 transition-all hover:brightness-110 active:scale-[0.98]"
+              data-testid="flore-examiner-case101-btn"
+            >
+              <span>Examiner le dossier d'arbitrage CASE-101</span>
+              <ArrowRight size={14} weight="bold" />
+            </button>
+          </div>
+        )}
+
+        {data.preuves?.length > 0 && (
+          <div className="mt-2.5 flex flex-wrap items-center gap-1.5 pt-1">
+            {data.preuves.map((p, pi) => (
+              <button
+                key={pi}
+                onClick={() => pilote?.ouvrirPreuve?.(p.preuveId)}
+                className="inline-flex items-center gap-1 rounded-full border border-[rgba(32,213,195,0.3)] bg-[#20D5C3]/[0.08] px-2.5 py-0.5 font-code text-[10px] text-[#20D5C3] transition-all hover:bg-[#20D5C3]/20"
+                title={p.detail || p.source}
+              >
+                <FileText size={10} weight="bold" />
+                <span>{p.source}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-4" data-testid={`flore-reponse-${index}`}>
       <div className="flex items-center gap-2 font-code text-[9px] uppercase tracking-[0.25em] text-[#7C93A8]">
@@ -133,7 +290,7 @@ function CarteReponse({ data, index, propsEtat, setPropsEtat, justifOuverte, set
         )}
       </div>
 
-      <TexteTeletype texte={data.reponse} actif={derniere} testid={`flore-texte-${index}`} />
+      <TexteTeletype texte={data.reponse} actif={derniere} gele={!!pilote?.enPause} testid={`flore-texte-${index}`} />
 
       {data.propositions?.some((_, pi) => !propsEtat[`${index}-${pi}`]) && (
         <div className="mt-3" data-testid={`flore-propositions-${index}`}>
@@ -362,7 +519,7 @@ export default function FlorePanel() {
 
   useEffect(() => {
     conversationRef.current?.scrollTo({ top: conversationRef.current.scrollHeight, behavior: "smooth" });
-  }, [fil, chargement, pilote?.activite]);
+  }, [fil, chargement, pilote?.activite, pilote?.reflexionFlore]);
 
   const demander = async (q) => {
     const finale = (q ?? question).trim();
@@ -479,7 +636,7 @@ export default function FlorePanel() {
       initial={{ x: 60, opacity: 0 }}
       animate={{ x: 0, opacity: 1 }}
       transition={{ type: "spring", stiffness: 320, damping: 30 }}
-      className={`hud-gauche hud-violet relative z-40 mt-12 flex h-[calc(100vh-3rem)] w-[440px] shrink-0 flex-col border-l border-[rgba(148,163,184,0.16)] bg-[#0F1D28]/95 shadow-[-24px_0_48px_rgba(4,9,15,0.55)] backdrop-blur-xl max-sm:fixed max-sm:bottom-0 max-sm:right-0 max-sm:top-12 max-sm:mt-0 max-sm:h-auto max-sm:w-[94vw] max-sm:max-w-[94vw] ${chargement ? "hud-reflexion" : ""}`}
+      className={`relative z-40 flex h-full w-[440px] shrink-0 flex-col border-l border-white/10 bg-[#08111D]/95 shadow-[-24px_0_48px_rgba(0,0,0,0.6)] backdrop-blur-2xl max-sm:fixed max-sm:bottom-0 max-sm:right-0 max-sm:top-12 max-sm:h-auto max-sm:w-[94vw] max-sm:max-w-[94vw] ${chargement ? "hud-reflexion" : ""}`}
       data-testid="flore-panel"
     >
       {/* En-tête */}
@@ -530,17 +687,17 @@ export default function FlorePanel() {
         {(selection.length > 0 || domaineSel) && (
           <div className="mt-2 flex flex-wrap items-center gap-1.5" data-testid="flore-contexte">
             <span className="font-code text-[9px] uppercase tracking-[0.2em] text-[#7C93A8]">
-              Contexte{selection.length > 0 ? ` — ${selection.length} jumeau${selection.length > 1 ? "x" : ""}` : ""}
+              Périmètre{selection.length > 0 ? ` (${selection.length})` : ""}
             </span>
             {domaineSel && (
               <span className="flex items-center gap-1.5 rounded-full border px-2 py-0.5 font-code text-[10px]" style={{ color: couleurDomaine(domaineSel), borderColor: `${couleurDomaine(domaineSel)}55`, backgroundColor: `${couleurDomaine(domaineSel)}12` }} data-testid="flore-domaine-chip">
-                Domaine {domaineSel} · {nbDomaine} jumeaux
+                {domaineSel}
                 <button onClick={() => setDomaineSel(null)} className="opacity-60 transition-opacity hover:opacity-100" data-testid="flore-domaine-chip-retirer">
                   <X size={10} />
                 </button>
               </span>
             )}
-            {selJumeaux.map((j) => (
+            {selJumeaux.slice(0, 2).map((j) => (
               <span key={j.id} className="flex items-center gap-1.5 rounded-full border px-2 py-0.5 font-code text-[10px]" style={{ color: couleurDomaine(j.domaine), borderColor: `${couleurDomaine(j.domaine)}55`, backgroundColor: `${couleurDomaine(j.domaine)}12` }} data-testid={`flore-chip-${j.id}`}>
                 {j.nom}
                 <button onClick={() => retirerJumeau(j.id)} className="opacity-60 transition-opacity hover:opacity-100" data-testid={`flore-chip-retirer-${j.id}`}>
@@ -548,6 +705,11 @@ export default function FlorePanel() {
                 </button>
               </span>
             ))}
+            {selJumeaux.length > 2 && (
+              <span className="rounded-full bg-white/5 border border-white/10 px-2 py-0.5 font-code text-[9px] text-slate-400" title={selJumeaux.slice(2).map((x) => x.nom).join(", ")}>
+                +{selJumeaux.length - 2} autres
+              </span>
+            )}
           </div>
         )}
 
@@ -661,10 +823,18 @@ export default function FlorePanel() {
               <span className="h-px flex-1 bg-[rgba(148,163,184,0.16)]" />
             </div>
           ) : (
+          e.activite ? (
+            <ActivitePilotee key={e.id || i} activite={e.activite} testid={`flore-activite-trace-${i}`} />
+          ) : (
           <div key={e.id || i} className="space-y-2">
             {e.question && (
-              <div className="ml-8 rounded-xl rounded-br-sm bg-[#9B87F5]/15 px-3.5 py-2.5" data-testid={`flore-question-${i}`}>
-                <p className="text-sm text-[#F2F6F8]">{e.question}</p>
+              <div className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-sm border border-[#9B87F5]/30 bg-[#9B87F5]/10 px-4 py-2.5 shadow-sm" data-testid={`flore-question-${i}`}>
+                {pilote && (
+                  <div className="mb-0.5 font-code text-[9px] uppercase tracking-wider text-[#C4B5FD]">
+                    {pilote.scenario?.roleLabel || "Gestionnaire"}
+                  </div>
+                )}
+                <p className="text-sm leading-relaxed text-[#F2F6F8]">{e.question}</p>
               </div>
             )}
             {e.data && (
@@ -677,42 +847,83 @@ export default function FlorePanel() {
             )}
           </div>
           )
+          )
         )}
         {chargement && (
           <div className="px-1" data-testid="flore-chargement">
             <FloreActivite testid="flore-chargement-activite" />
           </div>
         )}
-        {pilote?.activite && (
-          <div className="rounded-xl border border-[#9B87F5]/25 bg-[#9B87F5]/[0.05] px-3.5 py-3" data-testid="flore-activite-demo">
-            <div className="flex items-center gap-2 font-code text-[9px] uppercase tracking-[0.25em] text-[#9B87F5]">
-              <Sparkle size={12} weight="fill" /> {pilote.activite.label}
+        {pilote?.activite && <ActivitePilotee activite={pilote.activite} testid="flore-activite-demo" />}
+        {pilote?.reflexionFlore && (
+          <div className="flex items-start gap-2.5 rounded-xl border border-[rgba(148,163,184,0.12)] bg-[#0F1D28]/90 p-3 shadow-sm" data-testid="flore-panel-reflexion">
+            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-[#7C3AED] to-[#4F46E5] text-white shadow-sm ring-1 ring-white/10 animate-pulse">
+              <Sparkle size={12} weight="fill" />
             </div>
-            <ul className="mt-2 space-y-1.5">
-              {pilote.activite.ops.map((op, oi) => (
-                <li
-                  key={oi}
-                  className="flex items-center gap-2 text-xs"
-                  style={{ color: op.status === "done" ? "#7C93A8" : op.status === "running" ? "#F2F6F8" : "#4B6072" }}
-                  data-testid={`flore-activite-demo-op-${oi}`}
-                >
-                  {op.status === "done" ? (
-                    <CheckCircle size={13} weight="fill" className="shrink-0 text-[#25D0C8]" />
-                  ) : op.status === "running" ? (
-                    <CircleNotch size={13} className="shrink-0 animate-spin text-[#9B87F5]" />
-                  ) : (
-                    <Circle size={13} className="shrink-0" />
-                  )}
-                  {op.label}
-                </li>
-              ))}
-            </ul>
+            <div className="flex-1 space-y-1">
+              <div className="flex items-center gap-1.5">
+                <span className="font-code text-[10px] font-semibold text-[#C4B5FD]">Flore</span>
+                <span className="font-code text-[8px] uppercase tracking-wider text-[#64748B]">IA</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-[#9B87F5] animate-bounce [animation-delay:-0.3s]" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-[#9B87F5] animate-bounce [animation-delay:-0.15s]" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-[#9B87F5] animate-bounce" />
+                </div>
+                <span className="text-xs text-[#94A3B8] italic">{pilote.reflexionFlore.texte}</span>
+              </div>
+            </div>
           </div>
         )}
       </div>
 
-      {/* Suggestions + composer (masqués en démonstration pilotée) */}
-      {!pilote && (
+      {/* Suggestions + composer (adapté en démonstration pilotée pour visualiser la frappe) */}
+      {pilote ? (
+        <div className="shrink-0 border-t border-[rgba(148,163,184,0.16)] bg-[#0A1520]/95 px-4 py-3 backdrop-blur-md">
+          <div
+            className={`relative rounded-xl border bg-[#0F1D28] p-2.5 transition-all ${
+              pilote.saisieUtilisateur
+                ? "border-[#9B87F5]/50 ring-2 ring-[#9B87F5]/20 shadow-lg shadow-[#9B87F5]/10"
+                : "border-[rgba(148,163,184,0.16)]"
+            }`}
+            data-testid="flore-composer-panel"
+          >
+            <div className="flex items-end gap-2">
+              <div className="min-h-[36px] flex-1 px-2.5 py-1 text-xs">
+                {pilote.saisieUtilisateur ? (
+                  <p className="leading-relaxed text-[#F8FAFC]">
+                    {pilote.saisieUtilisateur.texteAffiche}
+                    {pilote.saisieUtilisateur.statut === "typing" && (
+                      <span className="curseur-teletype ml-0.5 text-[#9B87F5] animate-pulse">▍</span>
+                    )}
+                  </p>
+                ) : (
+                  <p className="select-none text-[#64748B] italic">
+                    Posez une question à Flore sur le SI…
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                disabled={!pilote.saisieUtilisateur}
+                aria-label="Envoyer"
+                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-all ${
+                  pilote.saisieUtilisateur?.statut === "sent"
+                    ? "bg-emerald-500 text-white scale-95"
+                    : pilote.saisieUtilisateur?.statut === "ready"
+                    ? "bg-[#9B87F5] text-[#071019] scale-105 shadow-md shadow-[#9B87F5]/40 animate-pulse"
+                    : pilote.saisieUtilisateur?.statut === "typing"
+                    ? "bg-[#9B87F5]/80 text-[#071019]"
+                    : "bg-[#1E293B] text-[#475569] opacity-40 cursor-default"
+                }`}
+              >
+                <ArrowUp size={14} weight="bold" />
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : (
       <div className="shrink-0 border-t border-[rgba(148,163,184,0.16)] px-4 py-3">
         {selection.length > 0 && (
           <div className="mb-2.5 flex flex-wrap items-center gap-1.5" data-testid="flore-deleguer">

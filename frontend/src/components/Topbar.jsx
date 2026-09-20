@@ -207,35 +207,44 @@ export default function Topbar() {
 
       {/* Espace actif — l'autorisation devient une simple icône (détail au survol) */}
       <div className="flex min-w-0 items-center gap-1.5">
-        {info && (
-          <span
-            title={info.espace.global ? "Vue complète du périmètre autorisé" : `Filtré côté serveur · ${info.nb_autorises} jumeaux`}
-            data-testid="perimetre-badge"
-            className="hidden shrink-0 sm:inline-flex"
-          >
-            {info.espace.global ? <ShieldCheck size={14} className="text-[#34D399]" /> : <LockSimple size={14} className="text-[#F2B84B]" />}
+        {pilote ? (
+          <span className="flex h-8 items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 font-display text-xs font-semibold text-slate-200" data-testid="selecteur-perimetre">
+            <ShieldCheck size={14} className="text-emerald-400" />
+            <span>Mesh global</span>
           </span>
+        ) : (
+          <>
+            {info && (
+              <span
+                title={info.espace.global ? "Vue complète du périmètre autorisé" : `Filtré côté serveur · ${info.nb_autorises} jumeaux`}
+                data-testid="perimetre-badge"
+                className="hidden shrink-0 sm:inline-flex"
+              >
+                {info.espace.global ? <ShieldCheck size={14} className="text-[#34D399]" /> : <LockSimple size={14} className="text-[#F2B84B]" />}
+              </span>
+            )}
+            <select
+              value={cible}
+              onChange={(e) => changerCible(e.target.value)}
+              data-testid="selecteur-perimetre"
+              title="Équipe / espace actif"
+              className="h-8 w-36 min-w-0 truncate rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2.5 text-xs font-semibold text-[#F2F6F8] focus:border-[#9B87F5]/60 focus:outline-none sm:w-48"
+            >
+              <optgroup label="Espaces">
+                {espaces.map((e) => (
+                  <option key={e.id} value={e.id} label={e.global ? `${e.label} · autorisé` : e.label} />
+                ))}
+              </optgroup>
+              {vues.length > 0 && (
+                <optgroup label="Vues enregistrées">
+                  {vues.map((v) => (
+                    <option key={v.id} value={`vue:${v.id}`} label={`Vue — ${v.nom}`} />
+                  ))}
+                </optgroup>
+              )}
+            </select>
+          </>
         )}
-        <select
-          value={cible}
-          onChange={(e) => changerCible(e.target.value)}
-          data-testid="selecteur-perimetre"
-          title="Équipe / espace actif"
-          className="h-8 w-24 min-w-0 truncate rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2 text-xs font-semibold text-[#F2F6F8] focus:border-[#9B87F5]/60 focus:outline-none sm:w-40"
-        >
-          <optgroup label="Espaces">
-            {espaces.map((e) => (
-              <option key={e.id} value={e.id} label={e.global ? `${e.label} · autorisé` : e.label} />
-            ))}
-          </optgroup>
-          {vues.length > 0 && (
-            <optgroup label="Vues enregistrées">
-              {vues.map((v) => (
-                <option key={v.id} value={`vue:${v.id}`} label={`Vue — ${v.nom}`} />
-              ))}
-            </optgroup>
-          )}
-        </select>
       </div>
 
       <div className="flex-1" />
@@ -245,47 +254,37 @@ export default function Topbar() {
         <span className="relative">
           <button
             onClick={() => {
-              // Kiosque Polaris : le bouton est le point de départ imposé du parcours
-              if (pilote) {
-                if (pilote.ouvertureEnAttente) pilote.demarrerOuverture();
-                return;
-              }
-              navigate("/travaux/nouveau");
+              window.dispatchEvent(new CustomEvent("meridian:nouveau-travail"));
+              navigate("/travaux/demo-polaris-work-g");
             }}
             data-testid="sidebar-nouveau-travail"
-            title="Nouveau travail"
-            className={`flex h-8 items-center gap-1.5 rounded-lg bg-[#9B87F5] px-2.5 text-xs font-semibold text-[#071019] transition-colors hover:bg-[#B4A5F7] ${
-              pilote?.ouvertureEnAttente ? "animate-pulse ring-2 ring-[#C4B5FD] ring-offset-2 ring-offset-[#071019]" : ""
-            }`}
+            title="Démarrer le travail d'arbitrage avec Flore"
+            className="flex h-8 items-center gap-1.5 rounded-lg bg-[#9B87F5] px-3 text-xs font-semibold text-[#071019] shadow-md shadow-[#9B87F5]/20 ring-1 ring-[#9B87F5]/50 transition-all hover:bg-[#B4A5F7] hover:scale-[1.02]"
           >
-            <Plus size={13} weight="bold" /> <span className="hidden 2xl:inline">Nouveau travail</span>
+            <Plus size={13} weight="bold" /> <span className="hidden sm:inline">Nouveau travail</span>
           </button>
-          {pilote?.ouvertureEnAttente && (
-            <div className="absolute right-0 top-11 z-50 w-64 rounded-xl border border-[#9B87F5]/40 bg-[#0F1D28] p-3 shadow-2xl" data-testid="polaris-indice-nouveau-travail">
-              <div className="font-code text-[9px] uppercase tracking-[0.2em] text-[#9B87F5]">Commencez ici</div>
-              <p className="mt-1 text-xs leading-snug text-[#D8E2EA]">Cliquez sur « Nouveau travail » pour lancer la démonstration.</p>
-            </div>
-          )}
         </span>
         <span
           className="hidden items-center gap-1.5 whitespace-nowrap font-code text-[10px] uppercase tracking-[0.15em] text-[#94A3B8] xl:flex"
           data-testid="mesh-status"
           title={fraicheurMesh ? `Mesh vivant · à jour ${fraicheurMesh}` : "Mesh vivant"}
         >
-          <span className="pulse-soft h-1.5 w-1.5 rounded-full bg-[#34D399]" />
+          <span className="pulse-soft h-1.5 w-1.5 rounded-full bg-[#10B981]" />
           Mesh vivant · {actifs} jumeaux{fraicheurMesh && <span className="normal-case tracking-normal text-[#7C93A8]" data-testid="mesh-fraicheur"> · {fraicheurMesh}</span>}
         </span>
 
-        <button
-          onClick={() => { if (pilote) return; navigate("/actualites?vue=a_traiter"); }}
-          data-testid="a-traiter-pill"
-          title="Sollicitations du Mesh en attente"
-          className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
-            aTraiter > 0 ? "border-[#F2B84B]/40 bg-[rgba(242,184,75,0.10)] text-[#F2B84B] hover:bg-[#F2B84B]/10" : "border-[rgba(148,163,184,0.16)] text-[#7C93A8]"
-          }`}
-        >
-          <Flag size={12} /> {aTraiter}<span className="hidden sm:inline">&nbsp;à traiter</span>
-        </button>
+        {!pilote && (
+          <button
+            onClick={() => navigate("/actualites?vue=a_traiter")}
+            data-testid="a-traiter-pill"
+            title="Sollicitations du Mesh en attente"
+            className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
+              aTraiter > 0 ? "border-[#F59E0B]/40 bg-[rgba(245,158,11,0.10)] text-[#F59E0B] hover:bg-[#F59E0B]/10" : "border-[rgba(148,163,184,0.16)] text-[#7C93A8]"
+            }`}
+          >
+            <Flag size={12} /> {aTraiter}<span className="hidden sm:inline">&nbsp;à traiter</span>
+          </button>
+        )}
 
         {/* Flore — présence conversationnelle globale de Méridian (⌘K) */}
         <button

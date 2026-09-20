@@ -1,7 +1,14 @@
 // Fil d'Ariane PASSIF : reflète le domaine sous le centre du viewport (stabilisé 400 ms).
 // Il ne déplace jamais la caméra ; les actions sont explicites (ajuster à la vue, sélection).
-export default function FilAriane({ domaineActif, selection, revenirSelection, ajusterVue }) {
-  if (!domaineActif && selection.length === 0) return null;
+export default function FilAriane({
+  domaineActif,
+  selection,
+  revenirSelection,
+  ajusterVue,
+  dansSituation,
+  situationTitre,
+}) {
+  if (!domaineActif && selection.length === 0 && !dansSituation) return null;
   return (
     <div className="glass pointer-events-auto flex items-center gap-2 rounded-xl px-4 py-2" data-testid="breadcrumb">
       <button
@@ -12,7 +19,7 @@ export default function FilAriane({ domaineActif, selection, revenirSelection, a
       >
         Mesh global
       </button>
-      {domaineActif && (
+      {domaineActif && !dansSituation && (
         <>
           <span className="text-[#7C93A8]">›</span>
           <span className="text-xs font-semibold text-[#F2F6F8]" data-testid="breadcrumb-domaine">
@@ -20,7 +27,15 @@ export default function FilAriane({ domaineActif, selection, revenirSelection, a
           </span>
         </>
       )}
-      {selection.length > 0 && (
+      {dansSituation && (
+        <>
+          <span className="text-[#7C93A8]">›</span>
+          <span className="text-xs font-semibold text-[#25D0C8]" data-testid="breadcrumb-situation">
+            {situationTitre || "Analyse de situation"}
+          </span>
+        </>
+      )}
+      {selection.length > 0 && !dansSituation && (
         <button
           onClick={revenirSelection}
           data-testid="nav-selection"

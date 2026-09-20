@@ -2,12 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { ReactFlow, Controls, ControlButton, MiniMap, SelectionMode, ViewportPortal } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { X, Sparkle, CornersOut, MagnifyingGlass } from "@phosphor-icons/react";
+import { X, Sparkle, CornersOut, MagnifyingGlass, Globe } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useMesh } from "@/lib/mesh";
 import { usePerimetre } from "@/lib/perimetre";
 import { usePilotage } from "@/lib/pilotage";
+import SurfacePreparation from "@/components/SurfacePreparation";
 import { useContexte } from "@/lib/contexte";
 import TwinNode from "@/components/map/TwinNode";
 import CielEtoile from "@/components/map/CielEtoile";
@@ -91,6 +92,21 @@ export default function Atlas() {
   const [vueListe, setVueListe] = useState(null);
   const [favorisIds, setFavorisIds] = useState(() => favoris());
   const onBasculerFavori = useCallback((id) => setFavorisIds(basculerFavori(id)), []);
+
+  // Moteur Universel de Focus Situationnel (Illumination -> Plongeon cinématique -> Sanctuaire)
+  const [theatreSituationnel, setTheatreSituationnel] = useState({
+    actif: false,
+    phase: "idle", // "idle" | "illumination" | "plongeon" | "sanctuaire" | "sortie"
+    cibles: [],
+    accents: [],
+    titre: null,
+  });
+  const theatreTimerRef = useRef([]);
+  const clearTheatreTimers = () => {
+    theatreTimerRef.current.forEach(clearTimeout);
+    theatreTimerRef.current = [];
+  };
+
   const carteRef = useRef(null);
   const telemetrieRef = useRef(null); // readout curseur — mis à jour impérativement (pas de re-render)
   const [amorce, setAmorce] = useState(0);
@@ -262,66 +278,147 @@ export default function Atlas() {
     }
   }, [mesh]);
 
-  // Commandes carte envoyées par Aurora (éclairer des relations, isoler un parcours, aller à un domaine)
+  // Cadrage d'une scène pilotée (démonstration uniquement). Les jumeaux d'un récit sont
+  // répartis sur plusieurs lobes : un fitBounds brut tombe sous le seuil « Global » (0,6)
+  // où l'Atlas masque les jumeaux individuels — le résultat annoncé resterait invisible.
+  // On borne donc le zoom au niveau « constellation », quitte à rogner légèrement.
+  const dernierCadrage = useRef(null); // pts du dernier cadrage de scène
+  const cadrerScene = useCallback((pts, options = {}) => {
+    if (!pts || !pts.length) return;
+    dernierCadrage.current = pts;
+    const duration = options.duration ?? 350;
+    const xs = pts.map((p) => p.x);
+    const ys = pts.map((p) => p.y);
+    const MARGE_X = 140;
+    const MARGE_Y = 100;
+    const x0 = Math.min(...xs) - MARGE_X;
+    const y0 = Math.min(...ys) - MARGE_Y;
+    const b = {
+      x: x0,
+      y: y0,
+      width: Math.max(...xs) + 140 + MARGE_X - x0,
+      height: Math.max(...ys) + 120 + MARGE_Y - y0,
+    };
+    const r = carteRef.current?.getBoundingClientRect();
+    if (!r || !r.width || !r.height) {
+      rfRef.current?.fitBounds(b, { duration });
+      return;
+    }
+    const GAUCHE = 64;
+    const DROITE = 430;
+    const BAS = 110;
+    const largeurUtile = Math.max(320, r.width - GAUCHE - DROITE);
+    const utileY = Math.max(240, r.height - BAS);
+    const centreX = GAUCHE + largeurUtile / 2;
+    const centreY = utileY / 2;
+    // Zoom calibré pour niveau 3 (robots nets, badges visibles et cadrage impeccable)
+    const zoom = Math.min(Math.max(Math.min(largeurUtile / b.width, utileY / b.height), 0.95), 1.25);
+    rfRef.current?.setViewport(
+      { x: centreX - (b.x + b.width / 2) * zoom, y: centreY - (b.y + b.height / 2) * zoom, zoom },
+      { duration }
+    );
+  }, []);
+
+  // Orchestrateur universel de Focus Situationnel
+  const activerTheatreSituationnel = useCallback(({ cibles = [], accents = [], titre = null, sansAnimation = false }) => {
+    if (!cibles.length || !mesh?.jumeaux) return;
+    clearTheatreTimers();
+
+    const idsValides = cibles.filter((id) => mesh.jumeaux.some((j) => j.id === id));
+    if (!idsValides.length) return;
+    const accentsValides = (accents.length ? accents : idsValides).filter((id) => mesh.jumeaux.some((j) => j.id === id));
+
+    setSelection(accentsValides);
+    setRelFocus(true);
+
+    const pts = idsValides
+      .filter((id) => !mesh.jumeaux.find((j) => j.id === id)?.cadastre)
+      .map((id) => posOverrides[id] || mesh.jumeaux.find((j) => j.id === id)?.position)
+      .filter(Boolean);
+    if (pts.length) cadrerScene(pts, { duration: sansAnimation ? 0 : 350 });
+
+    setTheatreSituationnel({
+      actif: true,
+      phase: "sanctuaire",
+      cibles: idsValides,
+      accents: accentsValides,
+      titre: titre || "Scène d'analyse",
+    });
+  }, [mesh, posOverrides, cadrerScene]);
+
+  const quitterTheatreSituationnel = useCallback(() => {
+    clearTheatreTimers();
+    setTheatreSituationnel((prev) => ({ ...prev, phase: "sortie" }));
+    if (situationParam) {
+      majUrl({ situation: null });
+    }
+    if (focusCarte) {
+      commanderCarte(null);
+    }
+    rfRef.current?.fitView({ duration: 900, padding: 0.15 });
+    const t = setTimeout(() => {
+      setTheatreSituationnel({ actif: false, phase: "idle", cibles: [], accents: [], titre: null });
+      setSelection([]);
+      setRelFocus(false);
+    }, 900);
+    theatreTimerRef.current.push(t);
+  }, [situationParam, focusCarte, majUrl, commanderCarte]);
+
+  // Commandes carte envoyées par Flore / Chat / Démonstration Polaris
   useEffect(() => {
-    if (!focusCarte) return;
-    if (focusCarte.type === "parcours" && focusCarte.ids?.length) {
-      setSelection(focusCarte.ids.filter((id) => mesh?.jumeaux.some((j) => j.id === id)));
+    if (!focusCarte) {
+      if (theatreSituationnel.actif && !situationParam) {
+        quitterTheatreSituationnel();
+      }
+      return;
+    }
+    if (focusCarte.type === "scene" && focusCarte.ids?.length) {
+      activerTheatreSituationnel({
+        cibles: focusCarte.ids,
+        accents: focusCarte.accents || focusCarte.ids,
+        titre: focusCarte.titre || "Scène d'analyse",
+      });
+    } else if (focusCarte.type === "dessin" && focusCarte.ids?.length) {
+      setSelection(focusCarte.ids);
       setRelFocus(true);
     } else if (focusCarte.type === "relations" && focusCarte.ids?.length) {
-      // Relations citées par Flore : sélectionner leurs jumeaux, accentuer et cadrer la zone
       const rels = (mesh?.relations || []).filter((r) => focusCarte.ids.includes(r.id));
       const ids = [...new Set(rels.flatMap((r) => [r.source, r.cible]))].filter((id) => mesh?.jumeaux.some((j) => j.id === id));
-      if (!ids.length) return;
-      setSelection(ids);
-      setRelFocus(true);
-      const pts = ids.map((id) => posOverrides[id] || mesh.jumeaux.find((j) => j.id === id)?.position).filter(Boolean);
-      if (pts.length) {
-        const xs = pts.map((p) => p.x);
-        const ys = pts.map((p) => p.y);
-        rfRef.current?.fitBounds(
-          { x: Math.min(...xs) - 260, y: Math.min(...ys) - 220, width: Math.max(...xs) - Math.min(...xs) + 520, height: Math.max(...ys) - Math.min(...ys) + 440 },
-          { duration: 600 }
-        );
+      if (ids.length) {
+        activerTheatreSituationnel({
+          cibles: ids,
+          accents: ids,
+          titre: "Relations analysées",
+        });
       }
-    } else if (focusCarte.type === "scene" && focusCarte.ids?.length) {
-      // Scène pilotée (démonstration) : cadrer les jumeaux visibles, accentuer les points d'attention
+    } else if (focusCarte.type === "parcours" && focusCarte.ids?.length) {
       const ids = focusCarte.ids.filter((id) => mesh?.jumeaux.some((j) => j.id === id));
-      if (!ids.length) return;
-      const accents = focusCarte.accents ? focusCarte.accents.filter((id) => ids.includes(id)) : ids;
-      setSelection(accents);
-      setRelFocus(accents.length > 0);
-      const pts = ids.map((id) => posOverrides[id] || mesh.jumeaux.find((j) => j.id === id)?.position).filter(Boolean);
-      if (pts.length) {
-        const xs = pts.map((p) => p.x);
-        const ys = pts.map((p) => p.y);
-        rfRef.current?.fitBounds(
-          { x: Math.min(...xs) - 260, y: Math.min(...ys) - 220, width: Math.max(...xs) - Math.min(...xs) + 520, height: Math.max(...ys) - Math.min(...ys) + 440 },
-          { duration: 600 }
-        );
+      if (ids.length) {
+        activerTheatreSituationnel({
+          cibles: ids,
+          accents: ids,
+          titre: "Parcours analysé",
+        });
       }
     } else if (focusCarte.type === "relation" && focusCarte.relationId) {
-      // Preuve choisie dans Flore : cadrer la relation, sélectionner les deux jumeaux, ouvrir son détail
       const rel = (mesh?.relations || []).find((r) => r.id === focusCarte.relationId);
       if (!rel) return;
-      setSelection([rel.source, rel.cible].filter((id) => mesh?.jumeaux.some((j) => j.id === id)));
-      setRelFocus(true);
       setSelectedRelation(rel);
       setOnglet("detail");
-      const pts = [rel.source, rel.cible].map((id) => posOverrides[id] || mesh.jumeaux.find((j) => j.id === id)?.position).filter(Boolean);
-      if (pts.length === 2) {
-        const xs = pts.map((p) => p.x);
-        const ys = pts.map((p) => p.y);
-        rfRef.current?.fitBounds(
-          { x: Math.min(...xs) - 320, y: Math.min(...ys) - 260, width: Math.max(...xs) - Math.min(...xs) + 640, height: Math.max(...ys) - Math.min(...ys) + 520 },
-          { duration: 600 }
-        );
-      }
+      activerTheatreSituationnel({
+        cibles: [rel.source, rel.cible],
+        accents: [rel.source, rel.cible],
+        titre: `Relation ${rel.source} ↔ ${rel.cible}`,
+      });
     } else if (focusCarte.type === "domaine" && focusCarte.domaine) {
       explorerDomaine(focusCarte.domaine);
     }
   }, [focusCarte]);
 
+  // Signal de disponibilité du rendu (démonstration) : la scène demandée est déclarée
+  // disponible quand les jumeaux de la commande ACTIVE sont réellement rendus — React
+  // Flow a mesuré leurs nœuds. Aucun acquittement par délai fixe, aucun signal périmé :
+  // la clé porte l'identifiant de commande et l'étape de révélation.
   const statsDomaine = useCallback(
     (label) => statsDuDomaine(mesh, situations, domDe, label),
     [mesh, situations, domDe]
@@ -403,36 +500,28 @@ export default function Atlas() {
   // Mémoire personnelle : consulter le détail d'un jumeau alimente « Récents »
   useEffect(() => { if (selected?.id && !selected.anonyme) noterRecent(selected.id); }, [selected?.id]);
 
-  // Focus profond : la caméra cadre les jumeaux concernés (situation ou jumeau filtré)
-  useEffect(() => {
-    const cle = situation?.id || focus || null;
-    if (!mesh || !cle || centreFocusFait.current === cle) return;
-    const cibles = situation
-      ? (situation.jumeaux || []).map((id) => mesh.jumeaux.find((j) => j.id === id)).filter(Boolean)
-      : [mesh.jumeaux.find((j) => j.id === focus)].filter(Boolean);
-    if (!cibles.length) return;
-    centreFocusFait.current = cle;
-    const t = setTimeout(() => {
-      const pts = cibles.map((j) => posOverrides[j.id] || j.position);
-      const xs = pts.map((p) => p.x);
-      const ys = pts.map((p) => p.y);
-      rfRef.current?.fitBounds(
-        { x: Math.min(...xs) - 230, y: Math.min(...ys) - 190, width: Math.max(...xs) - Math.min(...xs) + 460, height: Math.max(...ys) - Math.min(...ys) + 380 },
-        { duration: 800 }
-      );
-    }, 350);
-    return () => clearTimeout(t);
-  }, [mesh, situation, focus]);
-
-  // Le contexte Aurora suit toujours le focus profond : les jumeaux concernés deviennent la sélection
+  // Focus situationnel universel déclenché par une situation URL (ex: ?situation=...)
   useEffect(() => {
     if (!mesh || !situation || selectionFocusFaite.current === situation.id) return;
     const ids = (situation.jumeaux || []).filter((id) => mesh.jumeaux.some((j) => j.id === id && !j.anonyme));
     if (ids.length) {
       selectionFocusFaite.current = situation.id;
-      setSelection(ids);
+      activerTheatreSituationnel({
+        cibles: ids,
+        accents: ids,
+        titre: situation.titre || `Situation #${situation.id}`,
+      });
     }
-  }, [mesh, situation]);
+  }, [mesh, situation, activerTheatreSituationnel]);
+
+  // Focus simple sur un jumeau unique (?focus=...)
+  useEffect(() => {
+    if (!mesh || !focus || centreFocusFait.current === focus) return;
+    const j = mesh.jumeaux.find((x) => x.id === focus && !x.anonyme);
+    if (!j) return;
+    centreFocusFait.current = focus;
+    centrerJumeau(j);
+  }, [mesh, focus, centrerJumeau]);
 
   const { nodes, edges, snapshot } = useMemo(() => {
     const g = construireGraphe({
@@ -449,6 +538,7 @@ export default function Atlas() {
       fonduPE: Math.max(0, Math.min(1, (zoomActuel - 1.15) / 0.2)),
       routesFin, provisoire, tactile: estTactile,
       couchesCarte, situationsJumeaux,
+      theatreSituationnel,
       onMajClic: (id) => {
         // Maj+clic : multisélection additive — le jumeau ouvert (selected) est inclus
         setSelection((prev) => {
@@ -505,7 +595,27 @@ export default function Atlas() {
     });
     ciblesCoques.current = nouvellesCibles;
     return g;
-  }, [mesh, focus, situation, halo, compteurs, selection, relFocus, zoomNiveau, vueActive, posOverrides, domaineSel, perimetreTravail, domDe, statsRegions, focusCarte, temps, amorce, mesures, regionSurvolee, tickCoques, relSurvolee, selectedRelation, zoomActuel, routesFin, provisoire, estTactile, couchesCarte, situationsJumeaux]);
+  }, [mesh, focus, situation, halo, compteurs, selection, relFocus, zoomNiveau, vueActive, posOverrides, domaineSel, perimetreTravail, domDe, statsRegions, focusCarte, temps, amorce, mesures, regionSurvolee, tickCoques, relSurvolee, selectedRelation, zoomActuel, routesFin, provisoire, estTactile, couchesCarte, situationsJumeaux, theatreSituationnel]);
+
+  const [renduSignale, setRenduSignale] = useState(null);
+  useEffect(() => {
+    const cmd = focusCarte;
+    if (!pilote?.signalerRenduPret || !cmd || cmd.type !== "scene" || !cmd.commandId) return undefined;
+    const cle = `${cmd.commandId}:${cmd.etape ?? 0}`;
+    if (renduSignale === cle) return undefined;
+    const attendus = (cmd.accents?.length ? cmd.accents : cmd.ids || []).filter((id) => mesh?.jumeaux.some((j) => j.id === id));
+    if (!attendus.length) return undefined;
+    // Les jumeaux de la commande sont-ils effectivement dans le graphe peint ?
+    const peints = new Set(nodes.filter((n) => n.type === "twin" && !n.hidden).map((n) => n.id));
+    if (!attendus.every((id) => peints.has(id))) return undefined;
+    // …et l'accentuation demandée est-elle appliquée ?
+    if (!attendus.every((id) => selection.includes(id))) return undefined;
+    const raf = requestAnimationFrame(() => {
+      setRenduSignale(cle);
+      pilote.signalerRenduPret(cmd.commandId, cmd.etape ?? 0);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [focusCarte, nodes, selection, mesh, pilote, renduSignale]);
 
   // Moteur de labels des titres de domaines : sélection > survol > halo > investigations actives ;
   // collision → le titre le moins prioritaire disparaît (jamais de chevauchement de texte)
@@ -514,7 +624,12 @@ export default function Atlas() {
       .filter((n) => n.type === "region")
       .map((n) => {
         const d = n.data;
-        const candidat = zoomNiveau === 1 || regionSurvolee?.id === d.id || domaineSel === d.label || couchesCarte.capacites;
+        const candidat =
+          zoomNiveau === 1 ||
+          regionSurvolee?.id === d.id ||
+          domaineSel === d.label ||
+          couchesCarte.capacites ||
+          (theatreSituationnel?.actif && !d.cadastre);
         if (!candidat) return null;
         const sx = d.w / (d.wCible || d.w);
         const sy = d.h / (d.hCible || d.h);
@@ -529,7 +644,7 @@ export default function Atlas() {
       })
       .filter(Boolean);
     return placerLabels(candidats);
-  }, [nodes, zoomNiveau, regionSurvolee, domaineSel, couchesCarte.capacites]);
+  }, [nodes, zoomNiveau, regionSurvolee, domaineSel, couchesCarte.capacites, theatreSituationnel?.actif]);
 
   // Instantané contextuel transmis à Flore : surface, sélection, couches actives, niveau de zoom
   useEffect(() => {
@@ -623,9 +738,17 @@ export default function Atlas() {
   }, [selCle]);
 
   // Paradigme « Google Maps » : l'ouverture/fermeture de Flore redimensionne le canevas —
-  // la carte se recadre pour rester entièrement visible avec tous ses composants
+  // la carte se recadre pour rester entièrement visible avec tous ses composants.
+  // En démonstration, si une scène est déjà cadrée, on la RECADRE sur le nouveau canevas
+  // au lieu de la remplacer par une vue d'ensemble : le résultat annoncé reste à l'écran.
   useEffect(() => {
-    const t = setTimeout(() => rfRef.current?.fitView({ duration: 400, padding: 0.15, maxZoom: 1.35 }), 60);
+    const t = setTimeout(() => {
+      if (pilote && dernierCadrage.current?.length) {
+        cadrerScene(dernierCadrage.current);
+        return;
+      }
+      rfRef.current?.fitView({ duration: 400, padding: 0.15, maxZoom: 1.35 });
+    }, 60);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [floreOuverte]);
@@ -1117,6 +1240,9 @@ export default function Atlas() {
       )}
     <div ref={carteRef} onPointerMove={surSurvolCarte} onPointerLeave={() => { setRegionSurvolee(null); setRegionTooltip(null); setSecteurCurseur(null); setRelSurvolee(null); setRelTooltipPos(null); setSurvolJumeau(null); if (telemetrieRef.current) { telemetrieRef.current.textContent = "—"; telemetrieRef.current.style.opacity = "0.35"; } }} className="relative min-w-0 flex-1 overflow-hidden" data-testid="system-map" style={{ background: "radial-gradient(ellipse at 50% 38%, #0D1B28 0%, #071019 60%, #04090F 100%)" }}>
       <CielEtoile />
+      {/* Démonstration : la surface annonce ce qu'elle prépare. À la première ouverture,
+          surface sobre et pleine ; en mise à jour, la vue précédente reste visible dessous. */}
+      {pilote?.preparation && <SurfacePreparation preparation={pilote.preparation} vierge={pilote.premiereScene} testid="atlas-preparation" />}
       <output
         ref={telemetrieRef}
         data-testid="telemetrie"
@@ -1331,7 +1457,13 @@ export default function Atlas() {
             const sy = d.h / (d.hCible || d.h);
             const lx = n.position.x + (d.labelX ?? d.w / 2) * sx;
             const ly = n.position.y + (d.labelY ?? 30) * sy;
-            const visible = (zoomNiveau === 1 || regionSurvolee?.id === d.id || domaineSel === d.label || couchesCarte.capacites) && titresVisibles.has(d.id);
+            const visible =
+              (zoomNiveau === 1 ||
+                regionSurvolee?.id === d.id ||
+                domaineSel === d.label ||
+                couchesCarte.capacites ||
+                (theatreSituationnel?.actif && !d.cadastre)) &&
+              titresVisibles.has(d.id);
             return (
               <div
                 key={n.id}
@@ -1457,21 +1589,39 @@ export default function Atlas() {
           chaque élément occupe sa propre ligne, jamais de superposition */}
       <div className="pointer-events-none absolute left-1/2 top-3 z-20 flex -translate-x-1/2 flex-col items-center gap-2">
         <FilAriane
-          domaineActif={domaineActif} selection={selection}
-          revenirSelection={revenirSelection} ajusterVue={ajusterVue}
+          domaineActif={domaineActif}
+          selection={selection}
+          revenirSelection={revenirSelection}
+          ajusterVue={() => {
+            if (theatreSituationnel.actif) {
+              quitterTheatreSituationnel();
+            } else {
+              ajusterVue();
+            }
+          }}
+          dansSituation={theatreSituationnel.actif}
+          situationTitre={theatreSituationnel.titre}
         />
 
         {/* Bannière situation (focus profond depuis Aujourd'hui / Investigations) */}
         {situation && (
-          <div className="glass pointer-events-auto flex max-w-md items-center gap-3 rounded-xl px-4 py-2.5" data-testid="map-situation-banner">
-            <div>
+          <div className="glass pointer-events-auto flex max-w-md items-center gap-3 rounded-xl px-4 py-2.5 shadow-lg shadow-[#9B87F5]/10" data-testid="map-situation-banner">
+            <div className="flex-1 min-w-0">
               <div className="font-code text-[9px] uppercase tracking-[0.25em] text-[#9B87F5]">Focus — situation</div>
-              <div className="text-xs font-semibold text-[#F2F6F8]">{situation.titre}</div>
+              <div className="text-xs font-semibold text-[#F2F6F8] truncate">{situation.titre}</div>
               <div className="mt-0.5 font-code text-[9px] text-[#7C93A8]">
                 {situation.jumeaux.length} jumeaux · contexte réduit au pertinent
               </div>
             </div>
-            <button onClick={() => majUrl({ situation: null })} data-testid="map-clear-situation" title="Retirer le focus situation" className="shrink-0 text-[#7C93A8] transition-colors hover:text-[#F2F6F8]">
+            <button
+              onClick={quitterTheatreSituationnel}
+              data-testid="theatre-situation-retour-global"
+              className="flex items-center gap-1 rounded-md border border-[#9B87F5]/40 bg-[#9B87F5]/10 px-2 py-1 font-code text-[10px] font-semibold text-[#9B87F5] transition-colors hover:bg-[#9B87F5]/20 hover:text-white"
+            >
+              <Globe size={12} />
+              <span>Vue globale</span>
+            </button>
+            <button onClick={() => { majUrl({ situation: null }); quitterTheatreSituationnel(); }} data-testid="map-clear-situation" title="Retirer le focus situation" className="shrink-0 text-[#7C93A8] transition-colors hover:text-[#F2F6F8]">
               <X size={13} />
             </button>
           </div>
@@ -1518,13 +1668,15 @@ export default function Atlas() {
         deplie={calquesOuverts} setDeplie={setCalquesOuverts} conteneurRef={carteRef}
       />
 
-      <AtlasToolbar outil={outil} setOutil={setOutil} rfRef={rfRef} onExpliquer={() => setExpliquerOuvert((o) => !o)} expliquerOuvert={expliquerOuvert} modeEdition={modeEdition} setModeEdition={setModeEdition} vueListe={vueListe} onOuvrirListe={setVueListe} conteneurRef={carteRef} />
+      {!theatreSituationnel.actif && (
+        <AtlasToolbar outil={outil} setOutil={setOutil} rfRef={rfRef} onExpliquer={() => setExpliquerOuvert((o) => !o)} expliquerOuvert={expliquerOuvert} modeEdition={modeEdition} setModeEdition={setModeEdition} vueListe={vueListe} onOuvrirListe={setVueListe} conteneurRef={carteRef} />
+      )}
 
       {/* Pile basse centrée — chip Flore, mode réorganisation, bandeaux temporels, niveau de zoom :
           empilés verticalement, chaque indicateur garde sa propre ligne */}
       <div className="pointer-events-none absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-2">
-        {/* Barre de multisélection : actions groupées sur les jumeaux choisis */}
-        {selection.length > 1 && (
+        {/* Barre de multisélection : actions groupées sur les jumeaux choisis (masquée en scène d'analyse pour focus zen) */}
+        {selection.length > 1 && !theatreSituationnel.actif && (
           <div className="glass pointer-events-auto flex flex-wrap items-center justify-center gap-1.5 rounded-xl px-3 py-2" data-testid="multi-selection-bar">
             <span className="font-code text-[10px] font-semibold text-[#F2F6F8]" data-testid="multi-selection-compte">{selection.length} jumeaux sélectionnés</span>
             <button onClick={() => demanderAFlore(`Analyse ces ${selection.length} jumeaux : relations, points communs et écarts.`)} data-testid="multi-interroger" className="rounded-md border border-[#9B87F5]/40 px-2 py-0.5 font-code text-[10px] font-semibold text-[#9B87F5] transition-colors hover:bg-[#9B87F5]/10">Interroger</button>
@@ -1535,7 +1687,8 @@ export default function Atlas() {
           </div>
         )}
 
-        {focusCarte && (
+
+        {focusCarte && !theatreSituationnel.actif && (
           <div className="glass pointer-events-auto flex items-center gap-2 rounded-lg px-3 py-1.5" data-testid="focus-flore-chip">
             <Sparkle size={12} className="text-[#9B87F5]" />
             <span className="font-code text-[10px] text-[#94A3B8]">Vue commandée par Flore</span>

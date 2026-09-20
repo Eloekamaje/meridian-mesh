@@ -1,58 +1,70 @@
 import { Handle, Position } from "@xyflow/react";
-import { LockSimple, Code, Database, Pulse, WarningOctagon, FileText, Lightning } from "@phosphor-icons/react";
+import {
+  LockSimple,
+  Code,
+  Database,
+  Pulse,
+  WarningOctagon,
+  FileText,
+  Lightning,
+  Sparkle,
+  CheckCircle,
+  Gear,
+  Compass,
+  Cube,
+  Stack,
+  Browsers,
+  Cpu,
+  GitCommit,
+} from "@phosphor-icons/react";
 import { couleurDomaine, couleurConfiance, ETATS_RELATION } from "@/lib/domaines";
 import { idNumerique } from "@/lib/atlasGraph";
 
-const ROBOT = "/assets/robot-jumeau.jpg";
-
-// Niveau 4 — Composants & preuves : sources connectées (icônes) et strates de connaissance (jauges)
-const SOURCES_ICONES = {
-  code: { Icon: Code, nom: "Code" },
-  bdd: { Icon: Database, nom: "Base de données" },
-  observabilite: { Icon: Pulse, nom: "Observabilité" },
-  incidents: { Icon: WarningOctagon, nom: "Incidents" },
-  documentation: { Icon: FileText, nom: "Documentation" },
-  evenements: { Icon: Lightning, nom: "Événements" },
-};
-const STRATES_CLES = [
-  ["identite", "I"],
-  ["comportement", "C"],
-  ["relations", "R"],
-  ["trajectoire", "T"],
-  ["memoire", "M"],
-];
-
-// Avatar robot du jumeau : tête blanche arrondie, écran facial sombre, yeux turquoise, antenne
-function AvatarJumeau({ selected, actif, grand, ports, relLiee }) {
+// Monolithe Architectural de Précision : Palet de verre sombre biseauté avec glyphe vectoriel haute définition
+function MonolitheJumeau({ jumeau, couleur, selected, actif, grand, ports, relLiee }) {
   const cls = "!h-2 !w-2 !min-w-0 !border-0 !bg-transparent";
-  const taille = grand ? "h-14 w-14" : "h-12 w-12";
+  const taille = grand ? "h-13 w-13" : "h-12 w-12";
+
+  // Sélection du glyphe architectural
+  const renderGlyphe = () => {
+    return <Cpu size={grand ? 24 : 20} weight="duotone" style={{ color: couleur }} className="drop-shadow-[0_0_8px_rgba(255,255,255,0.25)]" />;
+  };
+
   return (
-    <span className={`relative flex ${taille} shrink-0 items-center justify-center transition-transform duration-200 group-hover:scale-[1.06]`}>
-      <Handle type="target" id="t-l" position={Position.Left} className={cls} style={{ left: -2, top: "46%" }} />
-      <Handle type="source" id="s-l" position={Position.Left} className={cls} style={{ left: -2, top: "46%" }} />
-      <Handle type="target" id="t-r" position={Position.Right} className={cls} style={{ right: -2, top: "46%" }} />
-      <Handle type="source" id="s-r" position={Position.Right} className={cls} style={{ right: -2, top: "46%" }} />
-      <Handle type="target" id="t-t" position={Position.Top} className={cls} style={{ top: -2, left: "46%" }} />
-      <Handle type="source" id="s-t" position={Position.Top} className={cls} style={{ top: -2, left: "46%" }} />
+    <span className={`relative flex ${taille} shrink-0 items-center justify-center transition-all duration-300 group-hover:scale-[1.08]`}>
+      <Handle type="target" id="t-l" position={Position.Left} className={cls} style={{ left: -2, top: "50%" }} />
+      <Handle type="source" id="s-l" position={Position.Left} className={cls} style={{ left: -2, top: "50%" }} />
+      <Handle type="target" id="t-r" position={Position.Right} className={cls} style={{ right: -2, top: "50%" }} />
+      <Handle type="source" id="s-r" position={Position.Right} className={cls} style={{ right: -2, top: "50%" }} />
+      <Handle type="target" id="t-t" position={Position.Top} className={cls} style={{ top: -2, left: "50%" }} />
+      <Handle type="source" id="s-t" position={Position.Top} className={cls} style={{ top: -2, left: "50%" }} />
       {ports && (
         <>
           <span className="absolute -left-1 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-[#7C93A8]" data-testid="port-entree" />
-          <span className="absolute -right-1 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-[#25D0C8]" data-testid="port-sortie" />
+          <span className="absolute -right-1 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-[#20D5C3]" data-testid="port-sortie" />
         </>
       )}
       {actif && (
-        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#25D0C8] opacity-25" />
+        <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-[#20D5C3] ring-2 ring-[#070B12]" />
       )}
       <span
-        className={`relative flex ${taille} items-center justify-center overflow-hidden rounded-full bg-[#0F1D28] transition-shadow duration-200 ${
+        className={`relative flex ${taille} items-center justify-center rounded-2xl monolith-glass transition-all duration-300 ${
           selected
-            ? "shadow-[0_0_18px_rgba(14,116,144,0.5)] ring-2 ring-[#25D0C8]"
+            ? "shadow-[0_0_24px_rgba(32,213,195,0.45)] ring-2 ring-[#20D5C3]"
             : relLiee
-              ? "shadow-[0_0_14px_rgba(14,116,144,0.4)] ring-2 ring-[#25D0C8]/70"
-              : "shadow-sm ring-1 ring-black/10 group-hover:shadow-[0_0_14px_rgba(14,116,144,0.45)] group-hover:ring-2 group-hover:ring-[#25D0C8]/70"
+              ? "shadow-[0_0_18px_rgba(32,213,195,0.3)] ring-1.5 ring-[#20D5C3]/80"
+              : "ring-1 ring-white/10 group-hover:shadow-[0_0_20px_rgba(32,213,195,0.35)] group-hover:ring-1.5 group-hover:ring-[#20D5C3]/60"
         }`}
       >
-        <img src={ROBOT} alt="" draggable={false} className={`${grand ? "h-[3.25rem] w-[3.25rem]" : "h-11 w-11"} scale-[1.65] object-cover`} />
+        {/* Glow diffus d'arrière-plan teinté du domaine */}
+        <span
+          className="absolute inset-1 rounded-xl opacity-25 transition-opacity duration-300 group-hover:opacity-45"
+          style={{ background: `radial-gradient(circle, ${couleur} 0%, transparent 75%)` }}
+        />
+        {/* Glyphe vectoriel net */}
+        <span className="relative z-10 flex items-center justify-center">
+          {renderGlyphe()}
+        </span>
       </span>
     </span>
   );
@@ -99,16 +111,16 @@ function EtoileJumeau({ couleur, selected, actif, relLiee, sansPorts = false }) 
       )}
       <span
         className="absolute rounded-full transition-opacity duration-200"
-        style={{ width: 38, height: 38, background: `radial-gradient(circle, ${couleur}4D 0%, ${couleur}00 70%)`, opacity: lumineux ? 1 : 0.65 }}
+        style={{ width: 28, height: 28, background: `radial-gradient(circle, ${couleur}33 0%, ${couleur}00 70%)`, opacity: lumineux ? 1 : 0.5 }}
       />
-      {actif && <span className="absolute inline-flex h-3.5 w-3.5 animate-ping rounded-full opacity-40" style={{ backgroundColor: couleur }} />}
+      {actif && <span className="absolute h-2 w-2 rounded-full opacity-90" style={{ backgroundColor: couleur }} />}
       <span
         className="relative rounded-full transition-all duration-200 group-hover:scale-125"
         style={{
-          width: lumineux ? 10 : 7,
-          height: lumineux ? 10 : 7,
+          width: lumineux ? 9 : 7,
+          height: lumineux ? 9 : 7,
           backgroundColor: "#F2F6F8",
-          boxShadow: `0 0 6px 2px ${couleur}, 0 0 ${lumineux ? 26 : 16}px ${lumineux ? 9 : 5}px ${couleur}66`,
+          boxShadow: `0 0 4px 1px ${couleur}`,
         }}
       />
     </span>
@@ -119,9 +131,29 @@ function EtoileJumeau({ couleur, selected, actif, relLiee, sansPorts = false }) 
 export default function TwinNode({ data, selected }) {
   const j = data.jumeau;
   const couleur = couleurDomaine(j?.domaine || data.grappe?.domaine);
+  const estCadastre = !!data.cadastre || !!j?.cadastre;
   const niveau3 = (data.niveau || 2) >= 3;
   // Fondu croisé continu : 0 = étoile pure, 1 = robot pur (bande z 0.95 → 1.35, centrée sur le seuil)
-  const fondu = data.fondu ?? (niveau3 ? 1 : 0);
+  const fondu = estCadastre ? 0 : (data.fondu ?? (niveau3 ? 1 : 0));
+
+  // Nœud de cadastre d'arrière-plan : silhouette blueprint très atténuée (18%)
+  if (estCadastre) {
+    return (
+      <div
+        className="pointer-events-none select-none transition-opacity duration-500"
+        style={{ opacity: 0.18 }}
+        data-testid={`twin-cadastre-${j.id}`}
+        title={`${j.nom} (${j.domaine})`}
+      >
+        <div className="flex flex-col items-center gap-0.5">
+          <Handle type="target" id="t-b" position={Position.Bottom} className="!h-0 !w-0 !border-0 !bg-transparent" />
+          <Handle type="source" id="s-b" position={Position.Bottom} className="!h-0 !w-0 !border-0 !bg-transparent" />
+          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: couleur }} />
+          <span className="font-code text-[8px] tracking-tight text-slate-500 whitespace-nowrap">{j.nom}</span>
+        </div>
+      </div>
+    );
+  }
 
   // Jumeau hors périmètre : pastille pointillée + résumé au survol uniquement
   if (j?.anonyme) {
@@ -190,8 +222,12 @@ export default function TwinNode({ data, selected }) {
 
   return (
     <div
-      className={`node-deploiement group relative transition-opacity duration-500 ${data.dim ? "opacity-20" : data.adouci ? "opacity-60" : "opacity-100"}`}
-      style={{ animationDelay: `${250 + (idNumerique(j.id) % 8) * 55}ms`, ...(data.entree < 1 ? { opacity: data.entree } : {}) }}
+      className={`node-deploiement group relative transition-opacity duration-500 ${data.fonduPlongeon ? "opacity-10" : data.dim ? "opacity-20" : data.adouci ? "opacity-60" : "opacity-100"}`}
+      style={{
+        animationDelay: `${250 + (idNumerique(j.id) % 8) * 55}ms`,
+        ...(data.entree < 1 ? { opacity: data.entree } : {}),
+        ...(data.style || {}),
+      }}
       data-testid={`twin-node-${j.id}`}
       onClick={(e) => {
         // Maj+clic : multisélection additive gérée ici — la sélection est contrôlée (notre état
@@ -203,7 +239,11 @@ export default function TwinNode({ data, selected }) {
       }}
     >
       {data.halo && (
-        <span className="pointer-events-none absolute -inset-2 rounded-2xl" style={{ backgroundColor: `${couleur}10`, border: `1px solid ${couleur}2A` }} />
+        <span
+          className="pointer-events-none absolute -inset-1.5 rounded-2xl border-2 shadow-sm transition-all duration-200"
+          style={{ borderColor: couleur, backgroundColor: `${couleur}12` }}
+          data-testid="twin-halo-sober"
+        />
       )}
       {data.focusCentral && (
         <span className="pointer-events-none absolute -inset-1.5 rounded-2xl border-2" style={{ borderColor: couleur }} data-testid="twin-focus-ring" />
@@ -214,7 +254,7 @@ export default function TwinNode({ data, selected }) {
         <span className="relative inline-flex">
           {fondu > 0 && (
             <span className="inline-flex" style={fondu < 1 ? { opacity: fondu, transform: `scale(${0.72 + fondu * 0.28})` } : undefined}>
-              <AvatarJumeau actif={j.statut === "actif"} selected={selected} grand ports relLiee={data.relLiee} />
+              <MonolitheJumeau jumeau={j} couleur={couleur} actif={j.statut === "actif"} selected={selected} grand ports relLiee={data.relLiee} />
             </span>
           )}
           {fondu < 1 && (
@@ -228,14 +268,14 @@ export default function TwinNode({ data, selected }) {
           {data.detailPosition === "haut" && carteDetail}
           {data.dansSituation && (
             <span
-              className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-[#9B87F5] ring-1 ring-[#071019]"
+              className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-[#A78BFA] ring-2 ring-[#070B12]"
               title="Impliqué dans une situation active"
               data-testid={`twin-situation-${j.id}`}
             />
           )}
           {data.enTransformation && (
             <span
-              className="absolute -left-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-dashed border-[#F2B84B] bg-[#0F1D28]"
+              className="absolute -left-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-dashed border-[#F59E0B] bg-[#070B12]"
               title="En transformation"
               data-testid={`twin-transformation-${j.id}`}
             />

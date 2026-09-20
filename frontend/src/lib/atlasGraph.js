@@ -191,7 +191,14 @@ function ancreFrontiere(reg, cx, cy) {
 }
 
 
+// `attenue` : état visuel propre à une scène pilotée — la relation reste lisible mais
+// passe au second plan. Absent des relations du produit : comportement inchangé.
 export const styleParEtat = (r) => {
+  const base = styleDeBase(r);
+  return r.attenue ? { ...base, opacity: (base.opacity ?? 1) * 0.35, strokeWidth: Math.max(1, (base.strokeWidth ?? 1) * 0.8) } : base;
+};
+
+const styleDeBase = (r) => {
   switch (r.etat) {
     // Réalité découverte : ligne turquoise continue + marqueur directionnel (dans makeEdge)
     case "observee":
@@ -588,6 +595,7 @@ export function construireGraphe({
   zoomNiveau, relFocus, focusCarte, domDe, statsRegions, temps, zoomFort, fonduJumeau = 0, fonduGD = 0, fonduPE = 0,
   routesFin, provisoire, tactile,
   couchesCarte = {}, situationsJumeaux, onMajClic,
+  theatreSituationnel,
 }) {
   if (!mesh) return { nodes: [], edges: [], snapshot: null };
   const implique = situation?.jumeaux || [];
@@ -635,22 +643,42 @@ export function construireGraphe({
     mesh.jumeaux.forEach((j) => { if (!voisins.has(j.id)) dims.add(j.id); });
   }
 
-  const twins = mesh.jumeaux;
-  const entreprise = zoomNiveau === 1;
+  // Moteur Universel de Focus Situationnel (Chat, Incident, Travail, Scénario Polaris)
+  const ciblesTheatre = new Set(theatreSituationnel?.actif ? theatreSituationnel.cibles : []);
+  const phaseTheatre = theatreSituationnel?.actif ? theatreSituationnel.phase : "idle";
+
+  const aSceneFocus = focusCarte && focusCarte.type === "scene";
+  const aSituationOuTravail = !!situation?.id && implique.length > 0;
+  // En phase « sanctuaire » (ou fallback si focus direct non piloté par le contrôleur) :
+  // Les éléments non concernés sont 100% purgés de la scène pour un théâtre de décision limpide.
+  const modeSituationnel =
+    phaseTheatre === "sanctuaire" ||
+    (!theatreSituationnel?.actif && (aSceneFocus || aSituationOuTravail));
+
+  let twins = mesh.jumeaux || [];
+  if (modeSituationnel) {
+    if (theatreSituationnel?.actif && ciblesTheatre.size > 0) {
+      twins = twins.filter((j) => ciblesTheatre.has(j.id) || j.cadastre);
+    } else if (aSituationOuTravail) {
+      twins = twins.filter((j) => implique.includes(j.id) || j.cadastre);
+    } else if (focusCarte?.type === "scene" && focusCarte?.ids?.length) {
+      twins = twins.filter((j) => focusCarte.ids.includes(j.id) || j.cadastre);
+    }
+  }
+
+  const entreprise = modeSituationnel ? false : zoomNiveau === 1;
   // Bande de transition Global ↔ Domaine (z 0.5 → 0.7) : les deux mondes coexistent,
   // les corridors fondent pendant que les arêtes de domaine et les étoiles se révèlent.
-  const bande = fonduGD > 0 && fonduGD < 1;
-  const niveauEff = bande ? 2 : zoomNiveau;
+  const bande = modeSituationnel ? false : fonduGD > 0 && fonduGD < 1;
+  const niveauEff = modeSituationnel ? 3 : bande ? 2 : zoomNiveau;
+  const fonduJumeauEff = modeSituationnel ? 1 : fonduJumeau;
 
   // Zéro chevauchement : calcul des positions finales avant toute construction
   const posSeparees = separerNoeuds(twins, posOverrides);
 
-  // Niveau 4 — Composants & preuves : arbitrage façon Google Maps. La carte tente
-  // d'abord SOUS le robot, puis AU-DESSUS si l'espace est occupé. Les blocs
-  // robot + App ID de tous les jumeaux sont des obstacles pré-placés ; priorité :
-  // sélection > halo > couverture. Collision = position suivante, sinon masquée.
+  // Niveau 4 — Composants & preuves : arbitrage façon Google Maps.
   let cartesVisibles = null;
-  if (zoomNiveau >= 4) {
+  if (zoomNiveau >= 4 && !modeSituationnel) {
     const prioriteCarte = (j) => (selection.includes(j.id) ? 400 : 0) + (halo === j.id ? 250 : 0) + (j.couverture || 0);
     const places = twins
       .filter((j) => !dims.has(j.id))
@@ -675,44 +703,108 @@ export function construireGraphe({
     }
   }
 
-  let ns = (mesh.regions || []).map((r) => {
-    const centres = twins.filter((j) => domDe[j.id] === r.label).map((j) => {
+  // Filtrage des régions : en mode situationnel sanctuarisé, les régions du corridor actif
+  // sont pleinement mises en avant, tandis que le cadastre d'entreprise apparaît en filigrane discret.
+  const ciblesPrincipales =
+    theatreSituationnel?.actif && ciblesTheatre.size > 0
+      ? ciblesTheatre
+      : aSituationOuTravail
+        ? new Set(implique)
+        : aSceneFocus
+          ? new Set(focusCarte.ids)
+          : null;
+
+  const domainesCorridor = new Set(
+    (ciblesPrincipales
+      ? (mesh.jumeaux || []).filter((j) => ciblesPrincipales.has(j.id) && !j.cadastre)
+      : twins.filter((j) => !j.cadastre)
+    ).map((j) => j.domaine || domDe[j.id]).filter(Boolean)
+  );
+
+  const regionsSource = modeSituationnel
+    ? (mesh.regions || []).filter((r) => domainesCorridor.has(r.label) || r.cadastre)
+    : (mesh.regions || []);
+
+  let ns = regionsSource.map((r) => {
+    const centres = twins.filter((j) => (j.domaine || domDe[j.id]) === r.label).map((j) => {
       const p = posSeparees[j.id] || j.position;
       return { x: p.x + 30, y: p.y + 40 };
     });
     const coque = coqueOrganique(centres) || { x: r.x, y: r.y, w: r.w, h: r.h, path: null, labelX: r.w / 2 };
+    const estCadastreRegion = !!r.cadastre || (modeSituationnel && !domainesCorridor.has(r.label));
+    const estDomaineCible = phaseTheatre !== "plongeon" || domainesCorridor.has(r.label);
+
     return {
       id: r.id, type: "region", position: { x: coque.x, y: coque.y },
       initialWidth: coque.w,
       initialHeight: coque.h,
-      data: { ...r, w: coque.w, h: coque.h, path: coque.path, points: coque.points, labelX: coque.labelX, niveau: zoomNiveau, investigations: statsRegions[r.label]?.investigations ?? 0, decouvertes: statsRegions[r.label]?.decouvertes ?? 0, flux: statsRel[r.label]?.flux ?? 0, ecarts: statsRel[r.label]?.ecarts ?? 0, halo: !!halo && domDe[halo] === r.label, capacitesVisibles: !!couchesCarte.capacites },
+      data: {
+        ...r,
+        w: coque.w, h: coque.h, path: coque.path, points: coque.points, labelX: coque.labelX,
+        niveau: niveauEff,
+        cadastre: estCadastreRegion,
+        investigations: statsRegions[r.label]?.investigations ?? 0,
+        decouvertes: statsRegions[r.label]?.decouvertes ?? 0,
+        flux: statsRel[r.label]?.flux ?? 0,
+        ecarts: statsRel[r.label]?.ecarts ?? 0,
+        halo: !!halo && domDe[halo] === r.label,
+        capacitesVisibles: !estCadastreRegion && !!couchesCarte.capacites,
+        attenue: estCadastreRegion || !estDomaineCible,
+        fonduPlongeon: !estDomaineCible,
+        style: estCadastreRegion
+          ? { opacity: 0.22, transition: "opacity 600ms ease" }
+          : !estDomaineCible
+            ? { opacity: 0.1, transition: "opacity 900ms ease" }
+            : undefined,
+      },
       draggable: false, selectable: false, zIndex: -10,
     };
   });
 
   // Regroupement visuel désactivé (choix utilisateur)
   const clusters = {};
-  const groupes = [];
 
   ns = ns.concat(
     twins.map((j) => {
       const position = posSeparees[j.id] || j.position;
+      const estCible = ciblesTheatre.has(j.id);
+      const estPlongeon = phaseTheatre === "plongeon";
+      const estIllum = phaseTheatre === "illumination";
+      const fonduPlongeon = estPlongeon && !estCible;
+      const haloActif = (estIllum || estPlongeon) ? estCible : (halo === j.id);
+      const estCadastre = !!j.cadastre;
+      const estDim = estCadastre ? true : modeSituationnel ? false : fonduPlongeon ? true : dims.has(j.id);
+
       return {
         id: j.id,
         type: "twin",
         position,
         initialWidth: 64,
         initialHeight: 78,
-        hidden: entreprise ? !bande : false,
+        hidden: false,
         data: {
-          jumeau: j, dim: dims.has(j.id), halo: halo === j.id, evenements: compteurs[j.id] || 0, etape: null, niveau: zoomNiveau, fondu: fonduJumeau, entree: bande ? fonduGD : 1,
-          detailVisible: zoomNiveau >= 4 && !j.anonyme && !!cartesVisibles?.has(j.id),
+          jumeau: j,
+          cadastre: estCadastre,
+          dim: estDim,
+          halo: !estCadastre && haloActif,
+          fonduPlongeon,
+          style: estCadastre
+            ? { opacity: 0.18, transition: "opacity 600ms ease" }
+            : fonduPlongeon
+              ? { opacity: 0.12, transition: "opacity 900ms ease" }
+              : undefined,
+          evenements: compteurs[j.id] || 0,
+          etape: null,
+          niveau: estCadastre ? 1 : modeSituationnel ? 3 : zoomNiveau,
+          fondu: estCadastre ? 0 : fonduJumeauEff,
+          entree: bande ? fonduGD : 1,
+          detailVisible: !estCadastre && zoomNiveau >= 4 && !j.anonyme && !!cartesVisibles?.has(j.id),
           detailPosition: cartesVisibles?.get(j.id) || "bas",
-          dansSituation: !!couchesCarte.situations && !!situationsJumeaux?.has(j.id),
-          enTransformation: !!couchesCarte.transformations && (j.statut === "en construction" || j.statut === "observation"),
+          dansSituation: !estCadastre && !!couchesCarte.situations && !!situationsJumeaux?.has(j.id),
+          enTransformation: !estCadastre && !!couchesCarte.transformations && (j.statut === "en construction" || j.statut === "observation"),
           onMajClic,
         },
-        selected: selection.includes(j.id),
+        selected: !estCadastre && ((estIllum || estPlongeon) ? estCible : selection.includes(j.id)),
       };
     })
   );
@@ -722,15 +814,12 @@ export function construireGraphe({
   let snapMain = null;
   const posMain = Object.fromEntries(twins.map((j) => [j.id, posSeparees[j.id] || j.position]));
 
-  // --- Corridor parent : UN SEUL arc par couple de domaines, persistant du Global
-  // au Domaine (il SE TRANSFORME : macro discret → voie « N flux » détaillée), puis
-  // il SE DISSOUT au niveau Jumeau en laissant naître ses relations membres —
-  // la filiation parent → enfants est visible dans les deux transitions.
+  // --- Corridor parent : désactivé en mode situationnel (les relations orthogonales réelles priment)
   const enEclatement = zoomNiveau >= 3 && fonduPE < 1;
   let corridorsParent = [];
   const rangMembre = {}; // relation inter-domaines → rang le long de son corridor parent
   const taillePaire = {};
-  if (entreprise || bande || zoomNiveau === 2 || enEclatement) {
+  if (!modeSituationnel && (entreprise || bande || zoomNiveau === 2 || enEclatement)) {
     const regParDom = {};
     (mesh.regions || []).forEach((r) => { regParDom[r.label] = r.id; });
     // Ancres = « capitales » des territoires (position de l'étiquette du domaine)
@@ -839,7 +928,7 @@ export function construireGraphe({
       };
     }).filter(Boolean);
   }
-  if (!entreprise || bande) {
+  if (modeSituationnel || !entreprise || bande) {
     // Confinement : coques des territoires RETRÉCIES de 14 px (la membrane rendue est
     // arrondie jusqu'à ~14 px en retrait du polygone brut — sans cette marge, un arc
     // « légalement » dedans rase visuellement la frontière, voire la dépasse). Grâce
@@ -850,8 +939,11 @@ export function construireGraphe({
     });
     // Extrémités regroupées : une relation touchant un membre pointe vers sa grappe ;
     // les relations entre mêmes extrémités sont agrégées (compte) — densité maîtrisée
+    const twinsIds = new Set(twins.map((j) => j.id));
+    const cadastreTwinIds = new Set(twins.filter((j) => j.cadastre).map((j) => j.id));
     const relsMappees = mesh.relations
-      .filter((r) => (situation && implique.length ? implique.includes(r.source) && implique.includes(r.cible) : true))
+      .filter((r) => twinsIds.has(r.source) && twinsIds.has(r.cible))
+      .filter((r) => (situation && implique.length ? (implique.includes(r.source) && implique.includes(r.cible)) || r.cadastre : true))
       .filter((r) => !focus || r.source === focus || r.cible === focus)
       .map((r) => ({ ...r, source: clusters[r.source] || r.source, cible: clusters[r.cible] || r.cible }))
       .filter((r) => r.source !== r.cible)
@@ -867,9 +959,9 @@ export function construireGraphe({
       }, []);
     // Niveau 2 — Domaines : les relations inter-domaines sont portées par les
     // corridors parents (bloc unifié ci-dessus) ; seules les relations internes
-    // passent par le routage orthogonal. Au niveau 3, toutes reviennent.
+    // passent par le routage orthogonal. Au niveau 3 ou en mode situationnel, toutes reviennent.
     let relsPourRoutage = relsMappees;
-    if (niveauEff === 2) {
+    if (!modeSituationnel && niveauEff === 2) {
       relsPourRoutage = relsMappees.filter((r) => {
         const da = domDe[r.source];
         const db = domDe[r.cible];
@@ -879,7 +971,18 @@ export function construireGraphe({
     const ortho = fabriqueOrtho(relsPourRoutage, ns, posMain, niveauEff, zoomFort, routesFin, provisoire, tactile, polyParDomaine, domDe);
     snapMain = ortho.snapshot;
     let aretesDomaine = ortho.edges
-      .map((e) => ({ ...e, data: { ...e.data, entree: bande ? fonduGD : 1 } }));
+      .map((e) => {
+        const toucheCadastre = cadastreTwinIds.has(e.source) || cadastreTwinIds.has(e.target) || e.data?.cadastre;
+        return {
+          ...e,
+          data: {
+            ...e.data,
+            cadastre: toucheCadastre,
+            estompee: toucheCadastre || e.data?.estompee,
+            entree: bande ? fonduGD : 1,
+          },
+        };
+      });
     // Éclatement parent → enfants : pendant la dissolution du corridor (bande
     // z 1.15 → 1.35), chaque relation membre naît à son tour, dans l'ordre le
     // long du tracé parent — la filiation est visible, rien ne « pop » d'un coup.
@@ -915,7 +1018,7 @@ export function construireGraphe({
         e.data?.etat === "confirmee" ? { ...e, animated: false, style: { ...e.style, opacity: 0.1 } } : e
       );
     }
-    if (relFocus && selection.length > 1) {
+    if (!modeSituationnel && relFocus && selection.length > 1) {
       aretesDomaine = aretesDomaine.filter((e) => selection.includes(e.source) && selection.includes(e.target));
     }
     if (focusCarte?.type === "relations" && focusCarte.ids?.length) {
@@ -925,9 +1028,28 @@ export function construireGraphe({
           : { ...e, animated: false, style: { ...e.style, opacity: 0.08 } }
       );
     }
+    if (phaseTheatre === "plongeon" && ciblesTheatre.size > 0) {
+      aretesDomaine = aretesDomaine.map((e) => {
+        const estCible = ciblesTheatre.has(e.source) && ciblesTheatre.has(e.target);
+        return estCible
+          ? { ...e, animated: true, style: { ...e.style, opacity: 1, strokeWidth: 2.6 } }
+          : { ...e, animated: false, data: { ...e.data, fonduPlongeon: true }, style: { ...e.style, opacity: 0.04, transition: "opacity 900ms ease" } };
+      });
+    }
     es = es.concat(aretesDomaine);
   }
-  if (entreprise || bande) {
+  if (phaseTheatre === "plongeon" && corridorsParent.length > 0) {
+    corridorsParent = corridorsParent.map((c) => ({
+      ...c,
+      style: { ...c.style, opacity: 0.04, transition: "opacity 900ms ease" },
+    }));
+  }
+  if (!modeSituationnel && (entreprise || bande)) {
+    // Lors d'une illumination ou d'un plongeon situationnel, les robots cibles doivent être
+    // immédiatement visibles avec leurs halos sur le planisphère du SI sans attendre le zoom 2
+    if (theatreSituationnel?.actif && (phaseTheatre === "illumination" || phaseTheatre === "plongeon")) {
+      return { nodes: ns, edges: appliquerTemps(es.concat(corridorsParent), temps), snapshot: snapMain };
+    }
     // Vue Global (et bande de transition) : agrégats macro sur les territoires —
     // en bande, les étoiles existent déjà (fondu d'entrée) et les agrégats fondent
     const macro = ns

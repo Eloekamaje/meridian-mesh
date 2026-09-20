@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Sparkle, Compass, Newspaper, ArrowRight, Eye, FolderOpen, CheckCircle, CircleNotch, Circle } from "@phosphor-icons/react";
+import { Sparkle, Compass, Newspaper, ArrowRight, Eye, FolderOpen } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { usePerimetre } from "@/lib/perimetre";
@@ -8,6 +8,7 @@ import { useContexte } from "@/lib/contexte";
 import { usePilotage } from "@/lib/pilotage";
 import ComposerFlore from "@/components/ComposerFlore";
 import FloreActivite, { delaiMin } from "@/components/FloreActivite";
+import ActivitePilotee from "@/components/ActivitePilotee";
 
 const SUGGESTIONS = {
   architecte: [
@@ -167,10 +168,14 @@ export default function Accueil({ mode = "accueil" }) {
 
   // Kiosque Polaris : le fil et l'activité viennent du moteur de lecture
   const fil = pilote
-    ? pilote.echanges.flatMap((e) => [
-        ...(e.question ? [{ cle: `${e.id}-q`, role: "moi", texte: e.question }] : []),
-        ...(e.data ? [{ cle: `${e.id}-r`, role: "flore", data: e.data }] : []),
-      ])
+    ? pilote.echanges.flatMap((e) =>
+        e.activite
+          ? [{ cle: `${e.id}-a`, role: "activite", activite: e.activite }]
+          : [
+              ...(e.question ? [{ cle: `${e.id}-q`, role: "moi", texte: e.question }] : []),
+              ...(e.data ? [{ cle: `${e.id}-r`, role: "flore", data: e.data }] : []),
+            ]
+      )
     : echanges;
   const enConversation = fil.length > 0;
 
@@ -231,7 +236,9 @@ export default function Accueil({ mode = "accueil" }) {
           ) : (
             <div className="space-y-6 py-8" data-testid="accueil-fil">
               {fil.map((e, i) =>
-                e.role === "moi" ? (
+                e.role === "activite" ? (
+                  <ActivitePilotee key={e.cle || i} activite={e.activite} testid={`accueil-activite-trace-${i}`} compact />
+                ) : e.role === "moi" ? (
                   <p key={e.cle || i} className="rise ml-auto max-w-[85%] rounded-2xl rounded-br-md bg-[rgba(155,135,245,0.12)] px-4 py-2.5 text-sm text-[#F2F6F8]" data-testid={`accueil-msg-${i}`}>
                     {e.texte}
                   </p>
@@ -241,30 +248,7 @@ export default function Accueil({ mode = "accueil" }) {
               )}
               {!pilote && envoi && <FloreActivite testid="accueil-attente" />}
               {pilote?.activite && (
-                <div className="rise" data-testid="accueil-activite-demo">
-                  <div className="flex items-center gap-1.5 font-code text-[9px] uppercase tracking-[0.2em] text-[#C4B5FD]">
-                    <Sparkle size={11} weight="fill" /> {pilote.activite.label}
-                  </div>
-                  <ul className="mt-2 space-y-1.5">
-                    {pilote.activite.ops.map((op, oi) => (
-                      <li
-                        key={oi}
-                        className="flex items-center gap-2 text-sm"
-                        style={{ color: op.status === "done" ? "#7C93A8" : op.status === "running" ? "#F2F6F8" : "#4B6072" }}
-                        data-testid={`accueil-activite-demo-op-${oi}`}
-                      >
-                        {op.status === "done" ? (
-                          <CheckCircle size={14} weight="fill" className="shrink-0 text-[#25D0C8]" />
-                        ) : op.status === "running" ? (
-                          <CircleNotch size={14} className="shrink-0 animate-spin text-[#9B87F5]" />
-                        ) : (
-                          <Circle size={14} className="shrink-0" />
-                        )}
-                        {op.label}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+                <ActivitePilotee activite={pilote.activite} testid="accueil-activite-demo" compact />
               )}
 
               {/* Une conversation qui s'approfondit peut devenir un Travail */}

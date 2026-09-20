@@ -818,6 +818,41 @@ CASES = [
         "cree_le": "2026-06-15T09:00:00+00:00",
         "maj_le": "2026-06-18T16:45:00+00:00",
     },
+    {
+        "id": "demo-polaris-work-g",
+        "num": 101,
+        "sensibilite": "interne",
+        "titre": "Dossier d'arbitrage : Mutualisation du suivi des dossiers (CASE-101)",
+        "type": "demande",
+        "statut": "en_cours",
+        "objectif": "Arbitrer entre 3 projets concurrents à 6,6 M€ et une mutualisation sur socle existant à 1,5 M€ pour le comité.",
+        "resume": "Les 3 projets (Portail Client, Poste Conseiller, Traitement Opérations) convergent vers un besoin unique : connaître l'état fiable du dossier. Plutôt que de développer 3 solutions redondantes, le SI possède déjà 80% du socle requis dans « Gestion des dossiers » et « Diffusion des statuts ». Mutualiser ce socle génère une économie nette de 5,1 M€ et réduit les délais de 18 à 4 mois.",
+        "prochaine_etape": "Faire valider l'arbitrage en séance",
+        "hypotheses": [
+            {"id": "demo-polaris-hyp-0", "texte": "80% du socle existe en production ; 2 connecteurs API suffisent pour alimenter le web et le poste conseiller.", "statut": "validee"}
+        ],
+        "questions": [
+            {"texte": "Couverture réelle de la Gestion des dossiers face aux besoins des trois initiatives", "resolue": True},
+            {"texte": "Capacité de la Diffusion des statuts à exposer les événements en temps réel", "resolue": True},
+            {"texte": "Gain financier et réduction des délais par la mutualisation", "resolue": True},
+        ],
+        "jumeaux": ["demo-polaris-app-portail", "demo-polaris-app-conseiller", "demo-polaris-app-dossiers", "demo-polaris-app-statuts"],
+        "situations": [],
+        "participants": ["gestionnaire", "flore"],
+        "responsable": "gestionnaire",
+        "espace": "mesh-global",
+        "conversation": [],
+        "options": [],
+        "decisions": [],
+        "livrables": [],
+        "a_revoir": False,
+        "visites": {},
+        "historique": [
+            {"quand": "2026-09-18T19:00:00+00:00", "texte": "Travail préparé par Flore — démonstration Polaris"}
+        ],
+        "cree_le": "2026-09-18T19:00:00+00:00",
+        "maj_le": "2026-09-18T19:00:00+00:00",
+    },
 ]
 
 DEMO_ACTES = [
@@ -1022,11 +1057,14 @@ _FRAICHEUR_ETATS = {
 }
 
 for _t in TWINS:
-    _i, _c, _r, _tr, _m = _STRATES[_t["id"]]
+    if _t["id"] in _STRATES:
+        _i, _c, _r, _tr, _m = _STRATES[_t["id"]]
+    else:
+        _i, _c, _r, _tr, _m = 50, 50, 50, 50, 50
     _t["strates"] = {"identite": _i, "comportement": _c, "relations": _r, "trajectoire": _tr, "memoire": _m}
-    _t["sources_detail"] = [{"cle": k, "nom": _SOURCES_NOMS[k], "statut": "prete"} for k, v in _t["sources"].items() if v]
+    _t["sources_detail"] = [{"cle": k, "nom": _SOURCES_NOMS.get(k, k), "statut": "prete"} for k, v in _t.get("sources", {}).items() if v]
     _t["sources_detail"] += [{"cle": k, "nom": n, "statut": s} for k, n, s in _SOURCES_EXTRA.get(_t["id"], [])]
-    _t["fraicheur_etat"] = _FRAICHEUR_ETATS[_t["id"]]
+    _t["fraicheur_etat"] = _FRAICHEUR_ETATS.get(_t["id"], "a_jour")
 
 # ---------- Grammaire d'interaction : initiatives du Mesh, délégations, gouvernance ----------
 
@@ -1207,6 +1245,78 @@ INITIATIVES = [
         "options": [],
         "autonomie": "informer",
         "interruption": "ambiant",
+        "statut": "en_attente",
+    },
+    {
+        "id": "demo-polaris-ini-suivi",
+        "niveau": 2, "genre": "initiative_strategique",
+        "titre": "Suivi des demandes clients",
+        "declencheur": "Plan stratégique Polaris",
+        "raison": "Informer le client tout au long de sa demande, sans appel ni relance.",
+        "quand": "2026-09-18T10:00:00+00:00",
+        "periode": "Cycle de planification 2026",
+        "perimetre": "Domaine Client",
+        "jumeaux": ["demo-polaris-app-portail", "demo-polaris-cap-etat-dossier"],
+        "preuves": ["Trois fiches d'initiative Polaris"],
+        "confiance": "Élevée",
+        "impact": "Parcours client transparent",
+        "urgence": "moyenne",
+        "destinataire": "gestionnaire",
+        "pourquoi_vous": "Responsable de portefeuille d'initiatives.",
+        "attendu": "Évaluer le raccordement au socle commun.",
+        "travail_id": "demo-polaris-work-g",
+        "travail_titre": "Base commune de la réunion Polaris",
+        "options": ["Partager le socle", "Construire en silo"],
+        "autonomie": "proposer",
+        "interruption": "sollicitation",
+        "statut": "en_attente",
+    },
+    {
+        "id": "demo-polaris-ini-poste",
+        "niveau": 2, "genre": "initiative_strategique",
+        "titre": "Poste conseiller repensé",
+        "declencheur": "Plan stratégique Polaris",
+        "raison": "Dégager du temps de conseil en réduisant les tâches d'appoint.",
+        "quand": "2026-09-18T10:00:00+00:00",
+        "periode": "Cycle de planification 2026",
+        "perimetre": "Domaine Distribution",
+        "jumeaux": ["demo-polaris-app-conseiller", "demo-polaris-cap-etat-dossier"],
+        "preuves": ["Trois fiches d'initiative Polaris"],
+        "confiance": "Élevée",
+        "impact": "Gain de productivité en agence",
+        "urgence": "moyenne",
+        "destinataire": "gestionnaire",
+        "pourquoi_vous": "Responsable de portefeuille d'initiatives.",
+        "attendu": "Évaluer le raccordement au socle commun.",
+        "travail_id": "demo-polaris-work-g",
+        "travail_titre": "Base commune de la réunion Polaris",
+        "options": ["Partager le socle", "Construire en silo"],
+        "autonomie": "proposer",
+        "interruption": "sollicitation",
+        "statut": "en_attente",
+    },
+    {
+        "id": "demo-polaris-ini-reprises",
+        "niveau": 2, "genre": "initiative_strategique",
+        "titre": "Réduction des reprises manuelles",
+        "declencheur": "Plan stratégique Polaris",
+        "raison": "Supprimer les corrections et ressaisies dans le traitement des dossiers.",
+        "quand": "2026-09-18T10:00:00+00:00",
+        "periode": "Cycle de planification 2026",
+        "perimetre": "Domaine Opérations",
+        "jumeaux": ["demo-polaris-app-dossiers", "demo-polaris-cap-etat-dossier"],
+        "preuves": ["Trois fiches d'initiative Polaris"],
+        "confiance": "Élevée",
+        "impact": "Diminution du taux d'erreur opérationnel",
+        "urgence": "moyenne",
+        "destinataire": "gestionnaire",
+        "pourquoi_vous": "Responsable de portefeuille d'initiatives.",
+        "attendu": "Évaluer le raccordement au socle commun.",
+        "travail_id": "demo-polaris-work-g",
+        "travail_titre": "Base commune de la réunion Polaris",
+        "options": ["Partager le socle", "Construire en silo"],
+        "autonomie": "proposer",
+        "interruption": "sollicitation",
         "statut": "en_attente",
     },
 ]

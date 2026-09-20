@@ -8,6 +8,8 @@ import { TYPES_CASE } from "./Travaux";
 import { numeroCase, SENSIBILITES, rel } from "@/components/case/utils";
 import OngletApercu from "@/components/case/OngletApercu";
 import OngletTravail from "@/components/case/OngletTravail";
+import SurfacePreparation from "@/components/SurfacePreparation";
+import { usePilotage } from "@/lib/pilotage";
 
 // Deux onglets seulement : Conversation (le fil) et Aperçu (le rapport structuré)
 const VUES = [
@@ -22,11 +24,14 @@ export default function TravailDetail() {
   const vue = vueParam === "apercu" ? "apercu" : "travail";
   const navigate = useNavigate();
   const { version } = usePerimetre();
+  const pilote = usePilotage();
   const [cas, setCas] = useState(null);
   const [situations, setSituations] = useState([]);
   const [personas, setPersonas] = useState([]);
   const [erreur, setErreur] = useState(null);
   const [menu, setMenu] = useState(false);
+  const [voletSourcesOuvert, setVoletSourcesOuvert] = useState(true);
+  const [canvasOuvert, setCanvasOuvert] = useState(false);
 
   useEffect(() => {
     setCas(null);
@@ -69,78 +74,106 @@ export default function TravailDetail() {
   }
   if (!cas) return <div className="p-8 font-code text-[11px] text-[#7C93A8]" data-testid="travail-chargement">Chargement du travail…</div>;
 
+  // Démonstration : un seul fil de conversation, partagé avec Flore. Il ne contient que
+  // les messages déjà prononcés — aucun message futur du scénario n'est préchargé ici.
+  const casVu = pilote?.conversation ? { ...cas, conversation: pilote.conversation } : cas;
+
   const t = TYPES_CASE[cas.type] || [cas.type, "#7C93A8"];
   const sens = SENSIBILITES[cas.sensibilite] || [cas.sensibilite || "interne", "#9B87F5"];
   const derniereEvolution = (cas.historique || []).slice(-1)[0];
 
   return (
     <div className="flex h-full flex-col" data-testid="travail-detail">
-      {/* En-tête permanent */}
-      <div className="shrink-0 border-b border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-8 py-3" data-testid="travail-entete">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-4">
-            <button onClick={() => navigate("/travaux")} data-testid="travail-retour-btn" className="flex shrink-0 items-center gap-1.5 rounded-md border border-[rgba(148,163,184,0.16)] px-2.5 py-1.5 text-xs text-[#94A3B8] transition-colors hover:text-[#F2F6F8]">
-              <ArrowLeft size={13} /> Travaux
-            </button>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="rounded border border-[rgba(148,163,184,0.16)] bg-[rgba(148,163,184,0.07)] px-1.5 py-0.5 font-code text-[10px] text-[#7C93A8]" data-testid="travail-numero">{numeroCase(cas)}</span>
-                <span className="rounded border px-1.5 py-0.5 font-code text-[9px] uppercase tracking-wider" style={{ color: t[1], borderColor: `${t[1]}44`, backgroundColor: `${t[1]}0D` }} data-testid="travail-type">{t[0]}</span>
-                <span className="rounded border px-1.5 py-0.5 font-code text-[9px] uppercase tracking-wider" style={{ color: sens[1], borderColor: `${sens[1]}44`, backgroundColor: `${sens[1]}0D` }} data-testid="travail-sensibilite">{sens[0]}</span>
-                {cas.a_revoir && (
-                  <span className="rounded border border-[#F87171]/40 bg-[#F87171]/[0.06] px-1.5 py-0.5 font-code text-[9px] uppercase tracking-wider text-[#F87171]" data-testid="travail-arevoir-entete">À revoir</span>
-                )}
-              </div>
-              <h1 className="mt-0.5 truncate font-display text-lg font-bold tracking-tight text-[#F2F6F8]" data-testid="travail-titre">{cas.titre}</h1>
-              <p className="flex items-center gap-1.5 truncate font-code text-[10px] text-[#7C93A8]">
-                <Users size={11} className="shrink-0" /> {(cas.participants || []).map(nomPersona).join(" · ") || "—"}
-                {derniereEvolution && <span className="shrink-0 text-[#7C93A8]">· {derniereEvolution.texte} ({rel(derniereEvolution.quand)})</span>}
-              </p>
-            </div>
+      {/* En-tête supérieur épuré (Style ChatGPT Work) */}
+      <div className="shrink-0 border-b border-white/[0.08] bg-[#071019] px-6 py-2.5" data-testid="travail-entete">
+        <div className="flex items-center justify-between gap-4">
+          {/* Titre & sélecteur de vue discret */}
+          <div className="flex min-w-0 items-center gap-3">
+            <h1 className="truncate font-display text-sm font-semibold tracking-tight text-[#F2F6F8]" data-testid="travail-titre">
+              {cas.titre} <span className="font-normal text-[#64748B]">· Travail</span>
+            </h1>
+
+            {/* Sélecteur discret Conversation / Aperçu */}
+            <nav className="flex items-center rounded-lg border border-white/[0.06] bg-white/[0.02] p-0.5" data-testid="travail-vues">
+              {VUES.map(([id, label]) => (
+                <button
+                  key={id}
+                  onClick={() => setSearchParams({ vue: id }, { replace: true })}
+                  data-testid={`travail-vue-${id}`}
+                  className={`rounded-md px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                    vue === id ? "bg-white/[0.1] text-white font-semibold" : "text-[#7C93A8] hover:text-white"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </nav>
+
+            {cas.a_revoir && (
+              <span className="rounded border border-[#F87171]/40 bg-[#F87171]/[0.06] px-1.5 py-0.5 font-code text-[9px] uppercase tracking-wider text-[#F87171]" data-testid="travail-arevoir-entete">
+                À revoir
+              </span>
+            )}
           </div>
+
+          {/* Boutons d'action à droite : Partager, Menu ..., et Toggle Deux Traits (=) */}
           <div className="flex shrink-0 items-center gap-2">
-            <button onClick={partager} data-testid="travail-partager-btn" title="Copier le lien du travail" className="flex h-8 w-8 items-center justify-center rounded-md border border-[rgba(148,163,184,0.16)] text-[#94A3B8] transition-colors hover:text-[#F2F6F8]">
+            <button 
+              onClick={partager} 
+              data-testid="travail-partager-btn" 
+              title="Partager le travail" 
+              className="flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.03] px-2.5 py-1 text-xs text-[#CBD5E1] transition-colors hover:border-white/20 hover:text-white"
+            >
               <ShareNetwork size={14} />
+              <span className="hidden sm:inline">Partager</span>
             </button>
+
             <div className="relative">
-              <button onClick={() => setMenu(!menu)} data-testid="travail-menu-btn" className="flex h-8 w-8 items-center justify-center rounded-md border border-[rgba(148,163,184,0.16)] text-[#94A3B8] transition-colors hover:text-[#F2F6F8]">
+              <button 
+                onClick={() => setMenu(!menu)} 
+                data-testid="travail-menu-btn" 
+                className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.03] text-[#7C93A8] transition-colors hover:border-white/20 hover:text-white"
+              >
                 <DotsThree size={16} weight="bold" />
               </button>
               {menu && (
-                <div className="glass absolute right-0 top-9 z-50 w-56 rounded-xl p-1.5" data-testid="travail-menu">
+                <div className="glass absolute right-0 top-8 z-50 w-56 rounded-xl border border-white/10 bg-[#0C1724] p-1.5 shadow-2xl backdrop-blur-xl" data-testid="travail-menu">
                   {cas.a_revoir && (
-                    <button onClick={() => { setMenu(false); maj({ a_revoir: false }); }} data-testid="travail-marquer-revu-btn" className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] text-[#F87171] hover:bg-[rgba(148,163,184,0.10)]">
+                    <button onClick={() => { setMenu(false); maj({ a_revoir: false }); }} data-testid="travail-marquer-revu-btn" className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] text-[#F87171] hover:bg-white/[0.06]">
                       <SealCheck size={12} /> Marquer comme revu
                     </button>
                   )}
                   <button
                     onClick={() => { setMenu(false); maj({ statut: cas.statut === "clos" ? "en_cours" : "clos" }); }}
                     data-testid="travail-clore-btn"
-                    className="w-full rounded px-2.5 py-1.5 text-left text-[11px] text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"
+                    className="w-full rounded px-2.5 py-1.5 text-left text-[11px] text-[#94A3B8] hover:bg-white/[0.06] hover:text-white"
                   >
                     {cas.statut === "clos" ? "Rouvrir le travail" : "Clore le travail"}
                   </button>
                 </div>
               )}
             </div>
+
+            {/* Icône à deux traits horizontaux pour afficher/masquer le volet Résultats & Sources */}
+            {vue === "travail" && (
+              <button
+                onClick={() => setVoletSourcesOuvert(!voletSourcesOuvert)}
+                data-testid="btn-toggle-volet-sources"
+                title={voletSourcesOuvert ? "Masquer Résultats & Sources" : "Afficher Résultats & Sources"}
+                className={`flex h-7 w-7 items-center justify-center rounded-lg border transition-all ${
+                  voletSourcesOuvert
+                    ? "border-sky-400/60 bg-sky-500/20 text-sky-200"
+                    : "border-white/[0.08] bg-white/[0.03] text-[#7C93A8] hover:border-white/20 hover:text-white"
+                }`}
+              >
+                <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                  <line x1="3" y1="6.5" x2="17" y2="6.5" />
+                  <line x1="3" y1="13.5" x2="17" y2="13.5" />
+                </svg>
+              </button>
+            )}
           </div>
         </div>
-
-        {/* Navigation interne — 2 vues */}
-        <nav className="mt-3 flex gap-1" data-testid="travail-vues">
-          {VUES.map(([id, label]) => (
-            <button
-              key={id}
-              onClick={() => setSearchParams({ vue: id }, { replace: true })}
-              data-testid={`travail-vue-${id}`}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                vue === id ? "bg-[rgba(148,163,184,0.10)] text-[#F2F6F8]" : "text-[#7C93A8] hover:bg-[rgba(148,163,184,0.07)] hover:text-[#F2F6F8]"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </nav>
       </div>
 
       {cas.a_revoir && (
@@ -159,12 +192,21 @@ export default function TravailDetail() {
       )}
 
       {/* Contenu de la vue — la Conversation occupe toute la hauteur, composer ancré */}
-      <div className={vue === "travail" ? "flex min-h-0 flex-1 flex-col overflow-hidden" : "flex-1 overflow-y-auto px-8 py-5"}>
+      <div className={`relative ${vue === "travail" ? "flex min-h-0 flex-1 flex-col overflow-hidden" : "flex-1 overflow-y-auto px-8 py-5"}`}>
+        {/* Démonstration : la surface annonce la synthèse qu'elle prépare */}
+        {pilote?.preparation && <SurfacePreparation preparation={pilote.preparation} vierge testid="travail-preparation" />}
         {vue === "travail" ? (
-          <OngletTravail cas={cas} setCas={setCas} />
+          <OngletTravail 
+            cas={casVu} 
+            setCas={setCas} 
+            voletSourcesOuvert={voletSourcesOuvert}
+            setVoletSourcesOuvert={setVoletSourcesOuvert}
+            canvasOuvert={canvasOuvert}
+            setCanvasOuvert={setCanvasOuvert}
+          />
         ) : (
         <div className="mx-auto max-w-6xl">
-          {vue === "apercu" && <OngletApercu cas={cas} maj={maj} setCas={setCas} situations={situations} />}
+          {vue === "apercu" && <OngletApercu cas={casVu} maj={maj} setCas={setCas} situations={situations} />}
         </div>
         )}
       </div>

@@ -7,6 +7,13 @@ const LS_PERSONA = "meridian.persona";
 const LS_CIBLE = "meridian.perimetre";
 const LS_ESPACE = "meridian.perimetre.espace";
 
+// Un 200 au corps inattendu (backend absent, proxy ou page d'erreur HTML renvoyée par
+// le serveur statique) n'est PAS une erreur réseau : les .catch ci-dessous ne le voient
+// pas et la chaîne finirait dans l'état. Sans ce filtre, `espaces.some(...)` dans le
+// Topbar — monté sur toutes les pages — fait tomber l'application entière.
+const liste = (d) => (Array.isArray(d) ? d : []);
+const objet = (d) => (d && typeof d === "object" && !Array.isArray(d) ? d : null);
+
 export function PerimetreProvider({ children }) {
   const [persona, setPersona] = useState(() => localStorage.getItem(LS_PERSONA) || "architecte");
   const [cible, setCible] = useState(() => localStorage.getItem(LS_CIBLE) || "mesh-global");
@@ -20,7 +27,7 @@ export function PerimetreProvider({ children }) {
   const vueActive = cible.startsWith("vue:") ? vues.find((v) => `vue:${v.id}` === cible) || null : null;
 
   useEffect(() => {
-    api.get("/personas").then((r) => setPersonas(r.data)).catch(() => {});
+    api.get("/personas").then((r) => setPersonas(liste(r.data))).catch(() => {});
   }, []);
 
   const rafraichir = useCallback(async () => {
@@ -30,9 +37,9 @@ export function PerimetreProvider({ children }) {
         api.get("/vues"),
         api.get("/perimetre"),
       ]);
-      setEspaces(es.data);
-      setVues(vs.data);
-      setInfo(inf.data);
+      setEspaces(liste(es.data));
+      setVues(liste(vs.data));
+      setInfo(objet(inf.data));
     } catch {}
   }, [version]);
 
@@ -44,7 +51,8 @@ export function PerimetreProvider({ children }) {
     let defaut = "mesh-global";
     try {
       const { data } = await api.get("/espaces", { headers: { "X-Persona": p } });
-      defaut = data.find((e) => !e.global)?.id || data[0]?.id || "mesh-global";
+      const es = liste(data);
+      defaut = es.find((e) => !e.global)?.id || es[0]?.id || "mesh-global";
     } catch {}
     localStorage.setItem(LS_CIBLE, defaut);
     localStorage.setItem(LS_ESPACE, defaut);
@@ -64,7 +72,7 @@ export function PerimetreProvider({ children }) {
   const rechargerVues = useCallback(async () => {
     try {
       const { data } = await api.get("/vues");
-      setVues(data);
+      setVues(liste(data));
     } catch {}
   }, []);
 
