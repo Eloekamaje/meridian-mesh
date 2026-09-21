@@ -57,6 +57,7 @@ export default function SidebarGauche({ mode = "bureau", onOuvrir, onFermer }) {
 
   const [menuProfil, setMenuProfil] = useState(false);
   const [recents, setRecents] = useState([]);
+  const [aExaminer, setAExaminer] = useState(0); // travaux dont une décision est remise en question
   const refProfil = useRef(null);
 
   const basculerRepli = () => {
@@ -74,7 +75,11 @@ export default function SidebarGauche({ mode = "bureau", onOuvrir, onFermer }) {
     api.get("/cases")
       .then((r) => {
         const sorted = [...r.data].sort((a, b) => (b.maj_le || "").localeCompare(a.maj_le || ""));
+        // Ce qui bouge passe en premier (décision remise en question, puis fait nouveau), puis le plus récent
+        const poids = (c) => (c.mouvement ? c.mouvement.niveau : 9);
+        sorted.sort((a, b) => poids(a) - poids(b));
         setRecents(sorted.slice(0, 8));
+        setAExaminer(sorted.filter((c) => c.mouvement?.niveau === 1).length);
       })
       .catch(() => {});
     // En démonstration, la liste se recharge quand le travail naît, s'enrichit ou se fige
@@ -211,8 +216,12 @@ export default function SidebarGauche({ mode = "bureau", onOuvrir, onFermer }) {
               }`
             }
           >
-            <Icon size={17} className="shrink-0" />
+            <span className="relative flex shrink-0">
+              <Icon size={17} />
+              {to === "/travaux" && aExaminer > 0 && replie && <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-[#F87171]" />}
+            </span>
             {!replie && <span>{label}</span>}
+            {!replie && to === "/travaux" && aExaminer > 0 && <span className="ml-auto rounded-full bg-[#F87171]/15 px-1.5 font-code text-[11px] text-[#F87171]" data-testid="nav-travaux-compteur" title="Décisions à examiner">{aExaminer}</span>}
           </NavLink>
         ))}
         {/* Entrée de la démonstration : même menu partout ; pendant la démo elle est active et inerte */}
@@ -268,6 +277,7 @@ export default function SidebarGauche({ mode = "bureau", onOuvrir, onFermer }) {
               title={c.titre}
             >
               <span className="truncate">{c.titre}</span>
+              {c.mouvement && <span className={`ml-auto h-2 w-2 shrink-0 rounded-full ${c.mouvement.niveau === 1 ? "bg-[#F87171]" : "bg-[#60A5FA]"}`} title={c.mouvement.texte} data-testid={`recent-mouvement-${c.id}`} />}
               {c.demo_phase === "en_construction" && (
                 <span className="shrink-0 rounded-full bg-[#60A5FA]/20 px-1.5 py-px font-code text-[8px] uppercase tracking-wider text-[#BFDBFE]">en cours</span>
               )}

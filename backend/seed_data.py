@@ -629,6 +629,38 @@ NOTIFS = [
     {"id": "notif-3", "persona": "paiements", "type": "assignation", "texte": "Vous êtes responsable du travail « Dégradation des paiements — relation émergente »", "lien": "/travaux/case-olympiade", "lu": False, "quand": "2026-06-25T14:31:00+00:00"},
 ]
 
+# Veille après décision : la décision « sortie des files legacy au T3 » et ce que les jumeaux ont observé depuis.
+# (Les observations sont amorcées ici ; dans le produit elles viennent des jumeaux.)
+VEILLE_DETTE_FILES = {
+    "statut": "en_veille",
+    "decision_le": "2026-06-18T16:45:00+00:00",
+    "passation": {
+        "hypotheses": [
+            "Retirer la FileAttente partagée en premier réduit le couplage entre Paiements, Logistique et Notifications.",
+            "Logistique peut migrer son consommateur principal sans dégradation de service.",
+        ],
+        "attendus": [
+            {"id": "att-files", "indicateur": "Files de messages partagées entre les trois domaines", "sens": "baisse", "depart": 3, "cible": 2, "unite": "files"},
+            {"id": "att-incidents", "indicateur": "Incidents liés aux files partagées (par mois)", "sens": "baisse", "depart": 6, "cible": 2, "unite": "incidents"},
+        ],
+        "risques": [
+            {"id": "risque-latence", "texte": "Latence de consommation de Logistique après migration", "jumeau": "logistique", "sens": "hausse", "seuil": 20, "unite": "% (p95)"},
+        ],
+        "inconnues": [
+            {"id": "inc-notifications", "texte": "Comportement de Notifications sans la FileAttente partagée."},
+        ],
+        "revue_le": "2026-09-19T00:00:00+00:00",
+    },
+    "observations": [
+        {"id": "o1", "quand": "2026-09-10T08:30:00+00:00", "cible": "att-files", "jumeau": "paiements", "valeur": 2, "unite": "files", "source": "Datadog · inventaire des files"},
+        {"id": "o2", "quand": "2026-09-16T10:05:00+00:00", "cible": "inc-notifications", "jumeau": "notifications", "conclusion": "Notifications rejoue ses envois sans doublon : la file dédiée absorbe la charge.", "source": "Splunk · 5 jours d'observation"},
+        {"id": "o3", "quand": "2026-09-17T14:40:00+00:00", "cible": "risque-latence", "jumeau": "logistique", "valeur": 38, "unite": "% (p95)", "source": "Datadog · latence de consommation"},
+        {"id": "o4", "quand": "2026-09-18T09:00:00+00:00", "cible": "att-incidents", "jumeau": "paiements", "valeur": 4, "unite": "incidents", "source": "ServiceNow · incidents du mois"},
+    ],
+    "emis": [],
+}
+
+
 CASES = [
     {
         "id": "case-paiement-differe",
@@ -786,14 +818,15 @@ CASES = [
     {
         "id": "case-dette-files",
         "num": 45,
+        "veille": VEILLE_DETTE_FILES,
         "sensibilite": "interne",
         "resume": "Trois files communes identifiées ; la FileAttente partagée sera retirée en premier au T3.",
         "prochaine_etape": "",
         "hypotheses": [],
-        "visites": {},
+        "visites": {"architecte": "2026-09-12T08:00:00+00:00"},
         "titre": "Réduire la dépendance aux files legacy",
         "type": "modernisation",
-        "statut": "clos",
+        "statut": "en_cours",
         "objectif": "Planifier la sortie des files de messages legacy partagées entre Paiements, Logistique et Notifications.",
         "questions": [{"texte": "Quelles files sont communes aux trois domaines ?", "resolue": True}],
         "jumeaux": ["paiements", "logistique", "notifications"],

@@ -53,6 +53,10 @@ export default function TravailDetail() {
     if (pilote.canvasOuvert) setVoletSourcesOuvert(false); // le document est dans le canvas : le volet ne le recouvre pas
   }, [pilote?.canvasOuvert]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Un travail en veille montre d'abord sa note de passation et ses actions : la fenêtre « Sources & Jumeaux » ne les recouvre pas
+  const enVeille = !!cas?.veille;
+  useEffect(() => { if (enVeille) setVoletSourcesOuvert(false); }, [enVeille]);
+
   const nbSources = (cas?.jumeaux_participants || []).length;
   const casNe = !brouillon && !!cas?.id; // le travail existe : en-tête complet, volet
   useEffect(() => {

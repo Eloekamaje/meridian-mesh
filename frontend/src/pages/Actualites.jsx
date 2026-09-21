@@ -28,6 +28,7 @@ export const GENRES = {
   travail: ["Travail", "#60A5FA"],
   decision: ["Décision", "#60A5FA"],
   gouvernance: ["Gouvernance", "#7C93A8"],
+  veille: ["Décision en veille", "#F2B84B"],
 };
 
 const PORTEES = [
@@ -61,7 +62,7 @@ function CarteHistoire({ h, vedette, dateCible, estAujourdhui, navigate, mesh })
     : null;
 
   const actionPrincipale = () => {
-    if (h.genre === "travail" || h.genre === "decision") {
+    if (h.genre === "travail" || h.genre === "decision" || h.genre === "veille") {
       return (
         <button onClick={() => navigate(h.liens.travail)} data-testid={`histoire-reprendre-${h.id}`} className="flex items-center gap-1.5 rounded-md bg-[#60A5FA] px-3 py-1.5 text-[11px] font-semibold text-[#071019] transition-colors hover:bg-[#93C5FD]">
           Reprendre <ArrowRight size={11} />
@@ -95,6 +96,11 @@ function CarteHistoire({ h, vedette, dateCible, estAujourdhui, navigate, mesh })
       </div>
       <h3 className={`mt-2 font-semibold leading-snug text-[#F2F6F8] ${vedette ? "font-display text-lg" : "text-sm"}`}>{h.titre}</h3>
       {h.recit && <p className={`mt-1.5 leading-relaxed text-[#94A3B8] ${vedette ? "text-sm" : "text-xs"}`}>{h.recit}</p>}
+      {h.pourquoi_maintenant && (
+        <p className="mt-2 text-xs text-[#DCE6EE]" data-testid={`histoire-pourquoi-${h.id}`}>
+          <span className="mr-1.5 font-code text-[10px] uppercase tracking-[0.16em] text-[#F2B84B]">Pourquoi maintenant</span>{h.pourquoi_maintenant}
+        </p>
+      )}
 
       <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1">
         {(h.jumeaux || []).slice(0, 5).map((jid) => {

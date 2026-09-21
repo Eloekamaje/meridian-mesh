@@ -52,6 +52,12 @@ function CarteTravail({ c, navigate, setSelection, attention }) {
           {c.a_revoir && (
             <span className="shrink-0 rounded border border-[#F87171]/40 bg-[#F87171]/[0.06] px-1.5 py-px font-code text-[9px] uppercase tracking-wider text-[#F87171]" data-testid={`travail-arevoir-${c.id}`}>À revoir</span>
           )}
+          {c.en_veille && (
+            <span className="shrink-0 rounded border border-[#60A5FA]/30 bg-[#60A5FA]/[0.06] px-1.5 py-px font-code text-[9px] uppercase tracking-wider text-[#BFDBFE]" data-testid={`travail-veille-${c.id}`}>En veille</span>
+          )}
+          {c.mouvement?.niveau === 1 && (
+            <span className="shrink-0 rounded border border-[#F87171]/40 bg-[#F87171]/[0.06] px-1.5 py-px font-code text-[9px] uppercase tracking-wider text-[#F87171]" data-testid={`travail-mouvement-${c.id}`}>{c.mouvement.nb} à examiner</span>
+          )}
           {(c.nb_options_a_trancher || 0) > 0 && (
             <span className="flex shrink-0 items-center gap-1 rounded border border-[#60A5FA]/30 bg-[#60A5FA]/[0.06] px-1.5 py-px font-code text-[9px] text-[#60A5FA]">
               <Flag size={9} /> {c.nb_options_a_trancher} décision{c.nb_options_a_trancher > 1 ? "s" : ""}
@@ -130,8 +136,8 @@ export default function Travaux() {
 
   // Regroupement par signification : attention / progrès / le reste
   const sections = useMemo(() => {
-    const attention = filtres.filter((c) => c.a_revoir || (c.nb_options_a_trancher || 0) > 0);
-    const progres = filtres.filter((c) => !attention.includes(c) && (c.nb_nouveautes || 0) > 0);
+    const attention = filtres.filter((c) => c.a_revoir || (c.nb_options_a_trancher || 0) > 0 || c.mouvement?.niveau === 1);
+    const progres = filtres.filter((c) => !attention.includes(c) && ((c.nb_nouveautes || 0) > 0 || !!c.mouvement));
     const autres = filtres.filter((c) => !attention.includes(c) && !progres.includes(c));
     return [
       ["attention", "Ce qui attend votre attention", attention],

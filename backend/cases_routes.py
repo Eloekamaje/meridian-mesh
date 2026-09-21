@@ -1,7 +1,10 @@
+from datetime import timedelta
 from typing import Optional, Dict, Any
 
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
+
+import veille as moteur_veille
 
 
 class CaseCreate(BaseModel):
@@ -46,9 +49,33 @@ class MessageCase(BaseModel):
     texte: str
 
 
+class Passation(BaseModel):
+    """Note de passage d'une décision : ce qu'on attend, ce qu'on surveille, quand on revoit."""
+    hypotheses: list = []
+    attendus: list = []
+    risques: list = []
+    inconnues: list = []
+    revue_le: Optional[str] = None
+
+
+class ObservationVeille(BaseModel):
+    cible: str  # id d'un attendu, d'un risque ou d'une inconnue de la note de passage
+    jumeau: str
+    valeur: Optional[float] = None
+    unite: str = ""
+    conclusion: str = ""
+    source: str = ""
+    quand: Optional[str] = None
+
+
+class ActionVeille(BaseModel):
+    action: str  # rouvrir | maintenir | clore
+
+
 class DecisionCase(BaseModel):
     texte: str
     type: str = "arbitrage"
+    passation: Optional[Passation] = None
 
 
 class OptionCase(BaseModel):
@@ -84,6 +111,35 @@ def build_cases_router(deps):
             raise HTTPException(403, "Ce case est hors de votre périmètre")
         return case
 
+    async def jumeaux_autorises(espace):
+        tous = await db.jumeaux.find({}, {"_id": 0, "id": 1}).to_list(200)
+        return autorisations(espace, [j["id"] for j in tous])
+
+    async def materialiser_veille(case):
+        """Écrit dans le fil les événements de veille dus à ce jour (une seule fois chacun : identifiants stables)."""
+        v = case.get("veille")
+        if not v or v.get("statut") != "en_veille":
+            return case
+        deja = set(v.get("emis", []))
+        nouveaux = [e for e in moteur_veille.evaluer(v, datetime.now(timezone.utc)) if e["id"] not in deja]
+        if not nouveaux:
+            return case
+        msgs = [{"role": "evenement", **e} for e in nouveaux]
+        histo = [{"quand": e["quand"], "texte": e["titre"]} for e in nouveaux]
+        await db.cases.update_one(
+            {"id": case["id"]},
+            {"$push": {"conversation": {"$each": msgs}, "historique": {"$each": histo}}, "$addToSet": {"veille.emis": {"$each": [e["id"] for e in nouveaux]}},
+             "$set": {"maj_le": max(e["quand"] for e in nouveaux)}},
+        )
+        return await db.cases.find_one({"id": case["id"]}, NO_ID)
+
+    def visible_pour(case, aut):
+        """Un fait observé par un jumeau hors périmètre n'apparaît pas (refus par défaut) ; le fil est remis en ordre chronologique."""
+        conv = [m for m in case.get("conversation", []) if m.get("role") != "evenement" or not m.get("jumeau") or m["jumeau"] in aut]
+        if case.get("veille"):
+            conv.sort(key=lambda m: m.get("quand", ""))
+        return conv
+
     @router.get("/cases")
     async def lister_cases(x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
         _, espace = resoudre_perimetre(x_persona, x_espace)
@@ -91,8 +147,16 @@ def build_cases_router(deps):
         aut = autorisations(espace, [j["id"] for j in tous])
         cases = await db.cases.find({}, NO_ID).to_list(200)
         visibles = [c for c in cases if c.get("id") == "demo-polaris-work-g" or not c.get("jumeaux") or any(j in aut for j in c["jumeaux"])]
+        visibles = [await materialiser_veille(c) for c in visibles]
         visibles.sort(key=lambda c: c.get("maj_le", ""), reverse=True)
         for c in visibles:
+            c["conversation"] = visible_pour(c, aut)
+            if c.get("veille"):
+                evs = [m for m in c["conversation"] if m.get("role") == "evenement"]
+                c["mouvement"] = moteur_veille.mouvement(evs, (c.get("visites") or {}).get(x_persona))
+                c["en_veille"] = c["veille"].get("statut") == "en_veille"
+                c["revue_le"] = (c["veille"].get("passation") or {}).get("revue_le")
+                c.pop("veille", None)
             c["nb_messages"] = len(c.get("conversation", []))
             c["nb_decisions"] = len(c.get("decisions", []))
             c["nb_options"] = len(c.get("options", []))
@@ -172,9 +236,17 @@ def build_cases_router(deps):
     async def obtenir_case(cid: str, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
         _, espace = resoudre_perimetre(x_persona, x_espace)
         case = await charger_case(cid, espace)
+        case = await materialiser_veille(case)
+        case["conversation"] = visible_pour(case, await jumeaux_autorises(espace))
         # Évolution depuis la dernière visite de ce persona, puis la visite est enregistrée
         visites = case.get("visites", {})
+        precedentes = case.get("visites_precedentes", {})
         derniere = visites.get(x_persona)
+        # Plusieurs lectures rapprochées (page + panneau Flore…) sont UNE même visite : on garde le repère de la visite
+        # précédente tant que la dernière date de moins d'une minute, sinon le « nouveau depuis » disparaît à la 2e lecture.
+        recente = bool(derniere) and (datetime.now(timezone.utc) - datetime.fromisoformat(derniere.replace("Z", "+00:00"))).total_seconds() < 60
+        if recente and precedentes.get(x_persona):
+            derniere = precedentes[x_persona]
         evolutions = [h for h in case.get("historique", []) if derniere and h.get("quand", "") > derniere]
         case["evolutions_recentes"] = evolutions
         case["derniere_visite"] = derniere
@@ -248,7 +320,11 @@ def build_cases_router(deps):
         else:
             case["jumeaux_participants"] = []
 
-        await db.cases.update_one({"id": cid}, {"$set": {f"visites.{x_persona}": datetime.now(timezone.utc).isoformat()}})
+        if not recente:
+            miseajour = {f"visites.{x_persona}": datetime.now(timezone.utc).isoformat()}
+            if visites.get(x_persona):
+                miseajour[f"visites_precedentes.{x_persona}"] = visites[x_persona]
+            await db.cases.update_one({"id": cid}, {"$set": miseajour})
         return case
 
     @router.patch("/cases/{cid}")
@@ -412,12 +488,69 @@ def build_cases_router(deps):
             raise HTTPException(400, "Décision vide")
         now = datetime.now(timezone.utc).isoformat()
         dec = {"texte": payload.texte.strip(), "type": payload.type, "quand": now, "par": x_persona}
+        maj = {"maj_le": now}
+        if payload.passation:
+            # La décision s'accompagne de sa note de passation : le travail entre en veille (attendu contre observé)
+            maj["veille"] = {"statut": "en_veille", "decision_le": now, "passation": payload.passation.model_dump(), "observations": [], "emis": []}
         await db.cases.update_one(
             {"id": cid},
-            {"$push": {"decisions": dec, "historique": {"quand": now, "texte": f"Décision enregistrée — {payload.type}"}}, "$set": {"maj_le": now}},
+            {"$push": {"decisions": dec, "historique": {"quand": now, "texte": f"Décision enregistrée — {payload.type}"}}, "$set": maj},
         )
         await journaler(x_persona, espace["id"], "décision sur un case", cid, payload.texte.strip()[:120])
         return dec
+
+    @router.post("/cases/{cid}/veille/observations", status_code=201)
+    async def observer_case(cid: str, payload: ObservationVeille, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+        """Un jumeau rapporte une observation liée à la note de passation (attendu, risque ou inconnue)."""
+        _, espace = resoudre_perimetre(x_persona, x_espace)
+        case = await charger_case(cid, espace)
+        v = case.get("veille")
+        if not v or v.get("statut") != "en_veille":
+            raise HTTPException(409, "Ce travail n'est pas en veille")
+        if payload.jumeau not in await jumeaux_autorises(espace):
+            raise HTTPException(403, "Ce jumeau est hors de votre périmètre")
+        p = v.get("passation") or {}
+        cibles = {x["id"] for k in ("attendus", "risques", "inconnues") for x in p.get(k, [])}
+        if payload.cible not in cibles:
+            raise HTTPException(400, "Cible inconnue dans la note de passation")
+        obs = {"id": f"{int(datetime.now(timezone.utc).timestamp() * 1000)}", **payload.model_dump(exclude={"quand"}), "quand": payload.quand or datetime.now(timezone.utc).isoformat()}
+        await db.cases.update_one({"id": cid}, {"$push": {"veille.observations": obs}})
+        return obs
+
+    @router.post("/cases/{cid}/veille/decision")
+    async def agir_sur_decision(cid: str, payload: ActionVeille, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+        """Réponse humaine à une revue : rouvrir la décision, la maintenir (nouvelle date de revue), ou clore la veille."""
+        _, espace = resoudre_perimetre(x_persona, x_espace)
+        case = await charger_case(cid, espace)
+        v = case.get("veille")
+        if not v or v.get("statut") != "en_veille":
+            raise HTTPException(409, "Ce travail n'est pas en veille")
+        if payload.action not in ("rouvrir", "maintenir", "clore"):
+            raise HTTPException(400, "Action inconnue")
+        maintenant = datetime.now(timezone.utc)
+        now = maintenant.isoformat()
+        evs = moteur_veille.evaluer(v, maintenant)
+        faits = [e for e in evs if e["niveau"] == 1 and e["type"] != "revue_due"]
+        if payload.action == "rouvrir":
+            liste = "\n".join(f"— {e['texte']}" for e in faits) or "— aucun écart majeur, mais la date de revue est atteinte."
+            flore = {"role": "flore", "comportement": "expliquer", "quand": now,
+                     "texte": f"Décision rouverte. Ce qui a changé depuis qu'elle a été prise :\n{liste}\n\nQuelle option voulez-vous réexaminer, ou souhaitez-vous que je compare des variantes ?"}
+            maj = {"veille.statut": "rouverte", "statut": "en_cours", "veille.revue_faite_le": now, "maj_le": now}
+            texte = "Décision rouverte après observation des effets"
+            push = {"conversation": flore, "historique": {"quand": now, "texte": texte}}
+        elif payload.action == "maintenir":
+            prochaine = (maintenant.replace(microsecond=0) + timedelta(days=30)).isoformat()
+            maj = {"veille.revue_faite_le": now, "veille.passation.revue_le": prochaine, "maj_le": now}
+            push = {"historique": {"quand": now, "texte": "Revue effectuée — décision maintenue, prochaine revue dans 30 jours"}}
+        else:
+            maj = {"veille.statut": "terminee", "statut": "clos", "veille.revue_faite_le": now, "maj_le": now}
+            push = {"historique": {"quand": now, "texte": "Veille terminée — décision close"}}
+        if payload.action == "maintenir":
+            # la nouvelle date de revue rend la revue à nouveau « à faire » plus tard : on efface le repère de revue faite pour la prochaine
+            maj.pop("veille.revue_faite_le")
+        await db.cases.update_one({"id": cid}, {"$set": maj, "$push": push})
+        await journaler(x_persona, espace["id"], f"veille : décision {payload.action}", cid, "")
+        return await obtenir_case(cid, x_persona, x_espace)
 
     @router.post("/cases/{cid}/options", status_code=201)
     async def ajouter_option_case(cid: str, payload: OptionCase, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):

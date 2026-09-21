@@ -29,7 +29,7 @@ TITRES_SECTION = {
 SECTION_PAR_GENRE = {
     "relation": "decouvertes", "connaissance": "decouvertes", "contradiction": "surveillance",
     "changement": "transformations", "comportement": "transformations", "phenomene": "surveillance",
-    "travail": "travaux", "decision": "travaux", "gouvernance": "espace",
+    "travail": "travaux", "decision": "travaux", "veille": "travaux", "gouvernance": "espace",
 }
 
 # Le briefing varie selon le rôle : la priorité et la formulation changent, jamais la vérité.
@@ -240,6 +240,7 @@ def build_actualites_router(deps):
             lien = f"/travaux/{c['id']}"
             jumeaux_visibles = [j for j in c.get("jumeaux", []) if j in aut]
             entrees = []
+            niveau = 3
             tc = parse_quand(c.get("cree_le", ""), now)
             if dedans(tc):
                 entrees.append((tc, f"Travail conservé — {c.get('objectif') or 'mémoire ouverte'}"))
@@ -247,21 +248,38 @@ def build_actualites_router(deps):
                 ts = parse_quand(h.get("quand", ""), now)
                 if dedans(ts) and not (tc and ts == tc):
                     entrees.append((ts, h.get("texte", "")))
-            if not entrees:
+            # Veille : ce que les jumeaux ont observé depuis la décision. Le mouvement NON LU reste visible dans la vue du jour,
+            # quelle que soit sa date : on ne le fait pas disparaître parce qu'un jour a passé.
+            visite = (c.get("visites") or {}).get(x_persona)
+            evs = [
+                m for m in c.get("conversation", [])
+                if m.get("role") == "evenement" and (not m.get("jumeau") or m["jumeau"] in aut)
+                and (dedans(parse_quand(m.get("quand", ""), now)) or (est_aujourdhui and (not visite or m.get("quand", "") > visite)))
+            ]
+            if not entrees and not evs:
                 continue
+            if not entrees:
+                entrees = [(parse_quand(evs[-1]["quand"], now), evs[-1]["titre"])]
             entrees.sort(key=lambda e: e[0])
             recit = entrees[0][1] if len(entrees) == 1 else f"{entrees[0][1]} — puis {entrees[-1][1].lower()}"
             a_decision = any("Décision" in t for _, t in entrees)
+            pourquoi = None
+            if evs:
+                niveau = min(e["niveau"] for e in evs)
+                pire = sorted(evs, key=lambda e: (e["niveau"], e["quand"]))[0]
+                pourquoi = pire["titre"]
+                recit = f"{len(evs)} fait{'s' if len(evs) > 1 else ''} observé{'s' if len(evs) > 1 else ''} depuis la décision. {pire['texte']}"
             histoires.append({
                 "id": f"case-{c['id']}",
-                "genre": "decision" if a_decision else "travail",
-                "section": "travaux",
+                "genre": "veille" if evs else ("decision" if a_decision else "travail"),
+                "pourquoi_maintenant": pourquoi,
+                "section": "essentiel" if evs and niveau == 1 else "travaux",
                 "titre": c["titre"],
                 "recit": recit,
                 "quand": entrees[-1][0].isoformat(),
                 "jumeaux": jumeaux_visibles,
                 "confiance": confiance_label(70),
-                "score": 52 + boost + (12 if a_decision else 0) + min(len(entrees), 3) * 3,
+                "score": 52 + boost + (12 if a_decision else 0) + min(len(entrees), 3) * 3 + ((40 if niveau == 1 else 20) if evs else 0),
                 "liens": {"travail": lien},
             })
 

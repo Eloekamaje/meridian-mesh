@@ -22,7 +22,7 @@ from seed_data import (
     TWINS, RELATIONS, REGIONS, SITUATIONS, CHANGE_LAB, ACTIVITE,
     AURORA_SCRIPTS, AURORA_FALLBACK, AURORA_SUGGESTIONS, DEMO_ACTES, SOURCES_LABELS,
     PERSONAS, ESPACES, VUES, CONNECTEURS, CONTRIBUTIONS, PROFILS, COMMANDE_DEMO, CASES, NOTIFS,
-    INITIATIVES, DELEGATIONS,
+    INITIATIVES, DELEGATIONS, VEILLE_DETTE_FILES,
 )
 
 ROOT_DIR = Path(__file__).parent
@@ -61,6 +61,11 @@ async def seed_database():
         await db.meta.replace_one({"id": "seed"}, {"id": "seed", "version": SEED_VERSION}, upsert=True)
         logger.info("Seed version %s — réinitialisation des données de démo", SEED_VERSION)
     await peupler_demo()
+    # Migration douce : la veille de démonstration est ajoutée à une base déjà peuplée, sans rien réinitialiser
+    await db.cases.update_one(
+        {"id": "case-dette-files", "veille": {"$exists": False}},
+        {"$set": {"veille": VEILLE_DETTE_FILES, "statut": "en_cours", "visites.architecte": "2026-09-12T08:00:00+00:00"}},
+    )
 
 
 def slugify(nom: str) -> str:

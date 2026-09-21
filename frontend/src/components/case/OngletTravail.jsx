@@ -33,6 +33,7 @@ import { usePilotage } from "@/lib/pilotage";
 import { useEcran } from "@/lib/ecran";
 import { rel } from "./utils";
 import CanvasDocument from "./CanvasDocument";
+import { BandeauVeille, EvenementVeille } from "./VeilleTravail";
 
 // Dictionnaire des Jumeaux participants du SI pour CASE-101
 export const DICT_JUMEAUX_PARTICIPANTS = {
@@ -643,6 +644,7 @@ export default function OngletTravail({
         )}
         
         {/* Fil de discussion principal */}
+        {cas.veille && <div className="shrink-0 px-6 pt-3 sm:px-12"><BandeauVeille cas={cas} setCas={setCas} /></div>}
         <div 
           ref={defilementRef}
           onScroll={verifierPositionScroll}
@@ -663,7 +665,9 @@ export default function OngletTravail({
                 )}
 
                 {/* Message Utilisateur (sobre, simple bulle élégante à droite) */}
-                {m.role === "utilisateur" ? (
+                {m.role === "evenement" ? (
+                  <EvenementVeille m={m} index={i} nouveau={!!coupure && m.quand > coupure} />
+                ) : m.role === "utilisateur" ? (
                   <div className="flex flex-col items-end gap-1.5 animate-in fade-in duration-200" data-testid={`case-msg-${i}`}>
                     {/* Micro-actions discrètes au-dessus de la bulle (Style ChatGPT) */}
                     <div className="flex items-center gap-1.5 text-[#64748B] opacity-60 hover:opacity-100 transition-opacity pr-1 text-xs">
