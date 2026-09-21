@@ -1,4 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -6,12 +5,13 @@
 
 @layer base {
     :root {
-        /* Piles de polices : la police de la marque d'abord, puis la police système (rendu correct même si le webfont tarde ou échoue),
-           puis les polices d'emoji — sans elles, un emoji dépend du hasard de la plateforme */
+        /* Polices : celles de l'appareil qui ouvre Méridian (San Francisco sur Mac/iOS, Segoe UI sur Windows, Roboto sur Android,
+           la police système sur Linux). Aucun webfont : rien à télécharger, rien qui puisse manquer hors ligne, et l'interface
+           reste familière à chaque utilisateur. Les polices d'emoji sont listées pour que les emojis s'affichent partout. */
         --font-emoji: "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
-        --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif, var(--font-emoji);
-        --font-display: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif, var(--font-emoji);
-        --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+        --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, var(--font-emoji);
+        --font-display: var(--font-sans);
+        --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "DejaVu Sans Mono", monospace;
 
         --background: 222 47% 5%;
         --foreground: 210 32% 98%;
@@ -44,10 +44,10 @@
     body {
         @apply bg-background text-foreground;
         font-family: var(--font-sans);
-        font-weight: 450;
+        font-weight: 400;
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
-        letter-spacing: -0.01em;
+        letter-spacing: 0;
     }
     :focus-visible {
         outline: 2px solid #60A5FA;
@@ -58,7 +58,7 @@
 @layer utilities {
     .font-display {
         font-family: var(--font-display);
-        letter-spacing: -0.02em;
+        letter-spacing: -0.015em;
     }
     .font-code {
         font-family: var(--font-mono);
