@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
-import { Star, Sparkle, ArrowSquareOut } from "@phosphor-icons/react";
+import { useState } from "react";
+import { Star, Sparkle, ArrowSquareOut, CaretDown } from "@phosphor-icons/react";
 import { couleurDomaine, ETATS_RELATION } from "@/lib/domaines";
 import { idNumerique } from "@/lib/atlasGraph";
 import { useContexte } from "@/lib/contexte";
@@ -260,7 +261,7 @@ export function TwinDetail({ selected, favori, onBasculerFavori, statsTwin, onIn
       )}
 
       {det.length > 0 && (
-        <Section titre="Sources de connaissance">
+        <Section titre="Sources de connaissance" cle="sources" compte={det.length}>
           <ul className="space-y-1" data-testid="twin-sources">
             {det.map((s) => (
               <li key={s.nom} className="flex items-center justify-between text-[11px] text-[#94A3B8]">
@@ -276,7 +277,7 @@ export function TwinDetail({ selected, favori, onBasculerFavori, statsTwin, onIn
       )}
 
       {voisins.length > 0 && (
-        <Section titre="Voisins">
+        <Section titre="Voisins" cle="voisins" compte={voisins.length}>
           <ul className="space-y-0.5" data-testid="twin-voisins">
             {voisins.map((v) => (
               <li key={`${v.id}-${v.direction}`}>
@@ -296,7 +297,7 @@ export function TwinDetail({ selected, favori, onBasculerFavori, statsTwin, onIn
       )}
 
       {relationsRecentes.length > 0 && (
-        <Section titre="Changements récents">
+        <Section titre="Changements récents" cle="changements" compte={relationsRecentes.length}>
           <ul className="space-y-1 text-[11px] leading-snug text-[#94A3B8]" data-testid="twin-changements">
             {relationsRecentes.map((r) => (
               <li key={r.id}>· {r.texte}</li>
@@ -364,14 +365,50 @@ export function TwinDetail({ selected, favori, onBasculerFavori, statsTwin, onIn
 }
 
 // En-tête de section réutilisable
-export function Section({ titre, children, action }) {
+// Rubriques repliées, mémorisées d'un jumeau à l'autre (et d'une visite à l'autre)
+const CLE_RUBRIQUES = "meridian.atlas.rubriques-repliees";
+const lireRepliees = () => {
+  try { return new Set(JSON.parse(localStorage.getItem(CLE_RUBRIQUES) || "[]")); } catch { return new Set(); }
+};
+
+// `cle` rend la rubrique repliable : l'en-tête devient un bouton (chevron), `compte` affiche le nombre d'éléments.
+export function Section({ titre, children, action, cle, compte }) {
+  const [repliees, setRepliees] = useState(lireRepliees);
+  if (!cle) {
+    return (
+      <div>
+        <div className="mb-1 flex items-center justify-between">
+          <span className="font-code text-[9px] uppercase tracking-[0.2em] text-[#7C93A8]">{titre}</span>
+          {action}
+        </div>
+        {children}
+      </div>
+    );
+  }
+  const repliee = repliees.has(cle);
+  const basculer = () => {
+    const n = new Set(lireRepliees());
+    if (n.has(cle)) n.delete(cle); else n.add(cle);
+    try { localStorage.setItem(CLE_RUBRIQUES, JSON.stringify([...n])); } catch { /* stockage indisponible : l'état reste local */ }
+    setRepliees(n);
+  };
   return (
-    <div>
-      <div className="mb-1 flex items-center justify-between">
-        <span className="font-code text-[9px] uppercase tracking-[0.2em] text-[#7C93A8]">{titre}</span>
+    <div data-testid={`rubrique-${cle}`}>
+      <div className={`flex items-center justify-between ${repliee ? "" : "mb-1"}`}>
+        <button
+          type="button"
+          onClick={basculer}
+          aria-expanded={!repliee}
+          data-testid={`rubrique-${cle}-bascule`}
+          className="flex min-h-[24px] flex-1 items-center gap-1.5 text-left text-[#7C93A8] transition-colors hover:text-[#F2F6F8]"
+        >
+          <CaretDown size={10} className={`shrink-0 transition-transform duration-200 ${repliee ? "-rotate-90" : ""}`} />
+          <span className="font-code text-[9px] uppercase tracking-[0.2em]">{titre}</span>
+          {compte != null && <span className="rounded-full bg-white/[0.06] px-1.5 font-code text-[9px] text-[#7C93A8]">{compte}</span>}
+        </button>
         {action}
       </div>
-      {children}
+      {!repliee && children}
     </div>
   );
 }
