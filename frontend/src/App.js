@@ -12,6 +12,7 @@ import Comprendre from "@/pages/Comprendre";
 import Atlas from "@/pages/Atlas";
 import LaboAtlas from "@/pages/LaboAtlas";
 import LaboEchelle from "@/pages/LaboEchelle";
+import LaboSemantique from "@/pages/LaboSemantique";
 import Commande from "@/pages/Commande";
 import Investigations from "@/pages/Investigations";
 import InvestigationDetail from "@/pages/InvestigationDetail";
@@ -46,6 +47,7 @@ function ProduitApp() {
             {/* Laboratoire du graphe : page d'essai, isolée de l'Atlas (idées inspirées de graphify) */}
             <Route path="/labo/atlas" element={<LaboAtlas />} />
             <Route path="/labo/echelle" element={<LaboEchelle />} />
+            <Route path="/labo/semantique" element={<LaboSemantique />} />
             <Route path="/investigations" element={<Investigations />} />
             <Route path="/investigations/:id" element={<InvestigationDetail />} />
             <Route path="/travaux" element={<Travaux />} />

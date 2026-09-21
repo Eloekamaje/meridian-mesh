@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Flask, MagnifyingGlass, Play } from "@phosphor-icons/react";
 import { ETATS_RELATION } from "@/lib/domaines";
+import { chargerSprites } from "@/lib/spritesRobot";
 import {
   COULEURS_DOMAINES, NOMS_DOMAINES, ZOOM_NOEUDS, construireIndex, genererGrand, grappesVisibles,
   liensGrappes, liensNoeuds, niveauPour, noeudsVisibles, plusProche,
@@ -19,42 +20,6 @@ const COULEURS_ETAT = ["confirmee", "observee", "supposee", "validation", "conte
 const HAUTEUR_ROBOT_UNITE = 65; // hauteur d'un robot (px) à zoom 1
 const compact = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)} M` : n >= 1e3 ? `${(n / 1e3).toFixed(n >= 1e4 ? 0 : 1)} k` : String(n)).replace(".", ",");
 const numero = (i) => String(1000 + ((i * 7919) % 9000));
-
-// --- Sprite du robot-jumeau (même dessin que RobotJumeauSvg), un par couleur de domaine ------------
-const svgRobot = (c) => `<svg xmlns="http://www.w3.org/2000/svg" width="124" height="190" viewBox="-62 -88 124 190">
-<defs><linearGradient id="k" x1="0" y1="0" x2="0.35" y2="1"><stop offset="0" stop-color="#f2f8ff"/><stop offset=".55" stop-color="#cfe3f7"/><stop offset="1" stop-color="#8fb0cf"/></linearGradient>
-<linearGradient id="v" x1="0" y1="0" x2="0.2" y2="1"><stop offset="0" stop-color="#123651"/><stop offset="1" stop-color="#05141f"/></linearGradient>
-<radialGradient id="o"><stop offset="0" stop-color="#fff"/><stop offset=".45" stop-color="${c}"/><stop offset="1" stop-color="${c}"/></radialGradient></defs>
-<ellipse cx="0" cy="8" rx="56" ry="74" fill="${c}" opacity=".3"/><ellipse cx="0" cy="8" rx="56" ry="74" fill="none" stroke="${c}" stroke-width="2.4" opacity=".75"/>
-<path d="M -30 34 C -30 18, -16 10, 0 10 C 16 10, 30 18, 30 34 L 30 52 C 30 66, 16 74, 0 74 C -16 74, -30 66, -30 52 Z" fill="url(#k)"/>
-<ellipse cx="0" cy="46" rx="13" ry="13" fill="rgba(20,70,110,.5)"/><ellipse cx="0" cy="46" rx="6.5" ry="6.5" fill="url(#o)"/>
-<ellipse cx="-38" cy="40" rx="9" ry="14" fill="url(#k)" transform="rotate(-12 -38 40)"/><ellipse cx="38" cy="40" rx="9" ry="14" fill="url(#k)" transform="rotate(12 38 40)"/>
-<rect x="-48" y="-52" width="96" height="76" rx="34" fill="url(#k)"/><rect x="-38" y="-42" width="76" height="52" rx="25" fill="url(#v)"/>
-<ellipse cx="-15" cy="-16" rx="9.5" ry="9.5" fill="url(#o)"/><ellipse cx="15" cy="-16" rx="9.5" ry="9.5" fill="url(#o)"/>
-<ellipse cx="-17.5" cy="-19" rx="3" ry="3" fill="#fff" opacity=".95"/><ellipse cx="12.5" cy="-19" rx="3" ry="3" fill="#fff" opacity=".95"/>
-<line x1="0" y1="-52" x2="0" y2="-70" stroke="#cfe3f7" stroke-width="3.5" stroke-linecap="round"/><circle cx="0" cy="-74" r="6" fill="url(#o)"/>
-<ellipse cx="-50" cy="-16" rx="8" ry="13" fill="url(#k)"/><ellipse cx="50" cy="-16" rx="8" ry="13" fill="url(#k)"/>
-<ellipse cx="0" cy="92" rx="36" ry="6.5" fill="${c}" opacity=".75"/></svg>`;
-
-function chargerSprites() {
-  return Promise.all(
-    COULEURS_DOMAINES.map(
-      (c) =>
-        new Promise((resolve) => {
-          const img = new Image();
-          img.onload = () => {
-            const cv = document.createElement("canvas");
-            cv.width = 124;
-            cv.height = 190;
-            cv.getContext("2d").drawImage(img, 0, 0);
-            resolve(cv);
-          };
-          img.onerror = () => resolve(null);
-          img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgRobot(c))}`;
-        })
-    )
-  );
-}
 
 export default function LaboEchelle() {
   const cadre = useRef(null);
@@ -481,6 +446,7 @@ export default function LaboEchelle() {
             </div>
           ))}
         </div>
+        <Link to="/labo/semantique" className="block text-center font-code text-[10px] text-[#C4B5FD] hover:text-white" data-testid="echelle-vers-semantique">Agrégation sémantique (domaine → groupe → communauté) →</Link>
         <Link to="/labo/atlas" className="block text-center font-code text-[10px] text-[#7C93A8] hover:text-white">← Laboratoire du graphe</Link>
       </div>
 
