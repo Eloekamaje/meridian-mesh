@@ -104,11 +104,11 @@ export default function Jumeaux() {
   const CHIPS = [["tous", "Tous"], ["actif", "Actifs"], ["en construction", "Construction"], ["observation", "Observation"], ["attention", "Attention"]];
 
   return (
-    <div className="h-full overflow-y-auto px-10 py-8 pb-44 sm:px-12" data-testid="jumeaux-page">
+    <div className="h-full overflow-y-auto px-4 py-5 pb-44 sm:px-8 sm:py-8 lg:px-12" data-testid="jumeaux-page">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="font-code text-[10px] uppercase tracking-[0.3em] text-[#60A5FA]">Parc de jumeaux</p>
-          <h1 className="mt-1 font-display text-3xl font-black tracking-tight text-[#F2F6F8]">Registre des jumeaux</h1>
+          <h1 className="mt-1 font-display text-2xl font-black tracking-tight text-[#F2F6F8] sm:text-3xl">Registre des jumeaux</h1>
           <p className="mt-1 max-w-xl text-sm text-[#94A3B8]">
             Consultez les jumeaux de votre périmètre, leur niveau de connaissance, leurs sources et leur état d'admission.
           </p>
@@ -137,30 +137,30 @@ export default function Jumeaux() {
 
       {/* Outils de gestion à grande échelle */}
       <div className="mt-5 flex flex-wrap items-center gap-2" data-testid="registre-outils">
-        <div className="relative">
+        <div className="relative w-full sm:w-auto">
           <MagnifyingGlass size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#7C93A8]" />
-          <input value={recherche} onChange={(e) => setRecherche(e.target.value)} placeholder="Rechercher un jumeau…" data-testid="registre-recherche" className="w-56 rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] py-1.5 pl-8 pr-3 text-xs text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#60A5FA]/50 focus:outline-none" />
+          <input value={recherche} onChange={(e) => setRecherche(e.target.value)} placeholder="Rechercher un jumeau…" data-testid="registre-recherche" className="w-full sm:w-56 rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] py-1.5 pl-8 pr-3 text-xs text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#60A5FA]/50 focus:outline-none" />
         </div>
-        <div className="flex overflow-hidden rounded-md border border-[rgba(148,163,184,0.16)]">
+        <div className="flex max-w-full overflow-x-auto rounded-md border border-[rgba(148,163,184,0.16)]">
           {CHIPS.map(([v, l]) => (
             <button key={v} onClick={() => setFiltreStatut(v)} data-testid={`chip-${v}`} className={`px-2.5 py-1.5 text-[11px] transition-colors ${filtreStatut === v ? "bg-[#60A5FA]/15 text-[#60A5FA]" : "text-[#94A3B8] hover:text-[#F2F6F8]"}`}>
               {l}
             </button>
           ))}
         </div>
-        <select value={filtreDomaine} onChange={(e) => setFiltreDomaine(e.target.value)} data-testid="filtre-domaine" className="rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2 py-1.5 text-xs text-[#D8E2EA] focus:outline-none">
+        <select value={filtreDomaine} onChange={(e) => setFiltreDomaine(e.target.value)} data-testid="filtre-domaine" className="min-w-[8rem] flex-1 rounded-md sm:flex-none border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2 py-1.5 text-xs text-[#D8E2EA] focus:outline-none">
           <option value="">Domaine ▾</option>
           {domaines.map((d) => <option key={d} value={d}>{d}</option>)}
         </select>
-        <select value={filtreProprio} onChange={(e) => setFiltreProprio(e.target.value)} data-testid="filtre-proprietaire" className="rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2 py-1.5 text-xs text-[#D8E2EA] focus:outline-none">
+        <select value={filtreProprio} onChange={(e) => setFiltreProprio(e.target.value)} data-testid="filtre-proprietaire" className="min-w-[8rem] flex-1 rounded-md sm:flex-none border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2 py-1.5 text-xs text-[#D8E2EA] focus:outline-none">
           <option value="">Propriétaire ▾</option>
           {proprios.map((p) => <option key={p} value={p}>{p}</option>)}
         </select>
-        <select value={filtreAutonomie} onChange={(e) => setFiltreAutonomie(e.target.value)} data-testid="filtre-autonomie" className="rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2 py-1.5 text-xs text-[#D8E2EA] focus:outline-none">
+        <select value={filtreAutonomie} onChange={(e) => setFiltreAutonomie(e.target.value)} data-testid="filtre-autonomie" className="min-w-[8rem] flex-1 rounded-md sm:flex-none border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2 py-1.5 text-xs text-[#D8E2EA] focus:outline-none">
           <option value="">Autonomie ▾</option>
           {Object.entries(AUTONOMIE).map(([v, [l]]) => <option key={v} value={v}>{l}</option>)}
         </select>
-        <select value={vue} onChange={(e) => appliquerVue(e.target.value)} data-testid="registre-vues" className="rounded-md border border-[#60A5FA]/30 bg-[#60A5FA]/[0.06] px-2 py-1.5 text-xs text-[#60A5FA] focus:outline-none">
+        <select value={vue} onChange={(e) => appliquerVue(e.target.value)} data-testid="registre-vues" className="min-w-[8rem] flex-1 rounded-md sm:flex-none border border-[#60A5FA]/30 bg-[#60A5FA]/[0.06] px-2 py-1.5 text-xs text-[#60A5FA] focus:outline-none">
           {VUES_ENREGISTREES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
       </div>
@@ -181,7 +181,7 @@ export default function Jumeaux() {
               key={j.id}
               onClick={() => navigate(`/jumeaux/${j.id}/revue`)}
               data-testid={`jumeau-row-${j.id}`}
-              className={`glow-hover rise flex cursor-pointer items-center gap-3 border-b border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-4 py-3 transition-colors last:border-b-0 hover:bg-[rgba(148,163,184,0.07)] ${attention ? "border-l-2 border-l-[#F2B84B]/60" : "border-l-2 border-l-transparent"}`}
+              className={`glow-hover rise flex cursor-pointer items-center gap-2 border-b border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-4 py-3 transition-colors last:border-b-0 hover:bg-[rgba(148,163,184,0.07)] ${attention ? "border-l-2 border-l-[#F2B84B]/60" : "border-l-2 border-l-transparent"}`}
             >
               <input
                 type="checkbox"
@@ -198,20 +198,21 @@ export default function Jumeaux() {
                   {attention && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#F2B84B]" title="Nécessite une attention" />}
                 </div>
                 <div className="truncate font-code text-[9px] text-[#7C93A8]">{j.proprietaire || "—"}</div>
+                <div className="truncate font-code text-[9px] text-[#94A3B8] lg:hidden">{j.domaine} · {j.couverture} % · {nbOk}/{det.length} prêtes</div>
               </div>
               {/* Domaine en colonne */}
               <span
-                className="w-28 shrink-0 truncate rounded border px-1.5 py-0.5 text-center font-code text-[9px]"
+                className="hidden w-28 shrink-0 truncate rounded border px-1.5 py-0.5 text-center font-code text-[9px] sm:block"
                 style={{ color: couleurDomaine(j.domaine), borderColor: `${couleurDomaine(j.domaine)}44`, backgroundColor: `${couleurDomaine(j.domaine)}0D` }}
                 data-testid={`domaine-${j.id}`}
               >
                 {j.domaine}
               </span>
-                  <span className="w-24 shrink-0 rounded border px-1.5 py-0.5 text-center font-code text-[9px]" style={{ color: st[1], borderColor: `${st[1]}44`, backgroundColor: `${st[1]}12` }} data-testid={`statut-${j.id}`}>
+                  <span className="hidden w-24 shrink-0 rounded border px-1.5 py-0.5 text-center font-code text-[9px] md:block" style={{ color: st[1], borderColor: `${st[1]}44`, backgroundColor: `${st[1]}12` }} data-testid={`statut-${j.id}`}>
                     {st[0]}
                   </span>
                   {/* Connaissance : score + qualification + strates au survol */}
-                  <div className="group relative w-40 shrink-0" data-testid={`connaissance-${j.id}`}>
+                  <div className="group relative hidden w-40 shrink-0 lg:block" data-testid={`connaissance-${j.id}`}>
                     <div className="font-code text-[11px] text-[#F2F6F8]">{j.couverture} % · {qualifConnaissance(j.couverture)}</div>
                     <div className="truncate font-code text-[9px] text-[#7C93A8]">{resumeStrates(j)}</div>
                     <div className="pointer-events-none absolute -top-2 left-0 z-50 w-52 -translate-y-full rounded-lg border border-[rgba(148,163,184,0.16)] bg-[#0F1D28]/95 p-3 opacity-0 backdrop-blur-xl transition-opacity duration-150 group-hover:opacity-100" data-testid={`connaissance-tip-${j.id}`}>
@@ -225,17 +226,17 @@ export default function Jumeaux() {
                     </div>
                   </div>
                   {/* Fraîcheur qualifiée */}
-                  <div className="w-44 shrink-0" data-testid={`fraicheur-${j.id}`}>
+                  <div className="hidden w-44 shrink-0 xl:block" data-testid={`fraicheur-${j.id}`}>
                     <div className="font-code text-[11px]" style={{ color: fr[1] }}>{fr[0]}</div>
                     <div className="truncate font-code text-[9px] text-[#7C93A8]" title={`Dernière connaissance : ${j.fraicheur}`}>Dernière connaissance : {j.fraicheur}</div>
                   </div>
                   {/* Autonomie contextualisée */}
-                  <div className="w-36 shrink-0" title={`${aut[0]} — ${aut[1]}`} data-testid={`autonomie-${j.id}`}>
+                  <div className="hidden w-36 shrink-0 xl:block" title={`${aut[0]} — ${aut[1]}`} data-testid={`autonomie-${j.id}`}>
                     <div className="font-code text-[11px]" style={{ color: aut[2] }}>{aut[0]}</div>
                     <div className="truncate font-code text-[9px] text-[#7C93A8]">{aut[1]}</div>
                   </div>
                   {/* Sources : N/M prêtes + détail au survol */}
-                  <div className="group relative w-24 shrink-0" data-testid={`sources-${j.id}`}>
+                  <div className="group relative hidden w-24 shrink-0 lg:block" data-testid={`sources-${j.id}`}>
                     <div className={`font-code text-[11px] ${ko.length ? "text-[#F87171]" : "text-[#34D399]"}`}>{nbOk}/{det.length} prêtes</div>
                     {ko.length > 0 && <div className="truncate font-code text-[9px] text-[#F87171]/80">{ko.length} {ko[0] && STATUTS_SOURCES[ko[0].statut]?.[0]}</div>}
                     <div className="pointer-events-none absolute -top-2 right-0 z-50 w-52 -translate-y-full rounded-lg border border-[rgba(148,163,184,0.16)] bg-[#0F1D28]/95 p-3 opacity-0 backdrop-blur-xl transition-opacity duration-150 group-hover:opacity-100" data-testid={`sources-tip-${j.id}`}>
@@ -251,11 +252,11 @@ export default function Jumeaux() {
                     </div>
                   </div>
                   {/* Action contextuelle + menu secondaire */}
-                  <div className="flex w-48 shrink-0 items-center justify-end gap-1.5">
+                  <div className="flex shrink-0 items-center justify-end gap-1.5 md:w-48">
                     <button
                       onClick={(e) => { e.stopPropagation(); navigate(`/jumeaux/${j.id}/revue`); }}
                       data-testid={j.statut === "observation" ? `revoir-admission-${j.id}` : `examiner-${j.id}`}
-                      className={`rounded px-2.5 py-1 text-[11px] transition-colors ${j.statut === "observation" ? "bg-[#F2B84B] font-semibold text-[#071019] hover:bg-[#F8CF7A]" : "border border-[rgba(148,163,184,0.16)] text-[#94A3B8] hover:border-[#41576D] hover:text-[#F2F6F8]"}`}
+                      className={`hidden rounded px-2.5 py-1 text-[11px] transition-colors sm:block ${j.statut === "observation" ? "bg-[#F2B84B] font-semibold text-[#071019] hover:bg-[#F8CF7A]" : "border border-[rgba(148,163,184,0.16)] text-[#94A3B8] hover:border-[#41576D] hover:text-[#F2F6F8]"}`}
                     >
                       {ACTION_LIGNE[j.statut] || "Ouvrir"}
                     </button>

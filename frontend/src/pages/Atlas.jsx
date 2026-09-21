@@ -1430,7 +1430,7 @@ export default function Atlas() {
         edgeTypes={graphe ? edgeTypesGraphe : edgeTypes}
         fitView={!restaurerEtat}
         fitViewOptions={{ padding: 0.15 }}
-        minZoom={0.45}
+        minZoom={estTablette ? 0.25 : 0.45}
         maxZoom={2.6}
         // Étendue élargie : au zoom min (0.45) sur écran large, l'ancienne étendue
         // (3900 px monde → 1755 px écran) était plus étroite que le viewport → le pan
@@ -1863,7 +1863,7 @@ export default function Atlas() {
         mesh.jumeaux.filter((j) => !j.anonyme && !j.cadastre).forEach((j) => n.set(j.domaine, (n.get(j.domaine) || 0) + 1));
         const domaines = [...n.entries()].sort((a, b) => b[1] - a[1]);
         return (
-          <div className="glass absolute bottom-10 left-3 z-10 w-[200px] rounded-xl p-2.5" data-testid="atlas-legende">
+          <div className="glass absolute bottom-3 left-3 z-10 w-[200px] rounded-xl p-2.5 sm:bottom-10" data-testid="atlas-legende">
             <div className={`flex items-center justify-between font-code text-[9px] uppercase tracking-wider text-[#64748B] ${legendeOuverte ? "mb-1" : ""}`}>
               <button type="button" onClick={() => setLegendeOuverte((o) => !o)} aria-expanded={legendeOuverte} data-testid="atlas-legende-bascule" className="flex min-h-[22px] items-center gap-1.5 hover:text-[#F2F6F8]">
                 <CaretDown size={10} className={`transition-transform duration-200 ${legendeOuverte ? "" : "-rotate-90"}`} />
@@ -1983,7 +1983,7 @@ export default function Atlas() {
         )}
 
         {/* Niveau de zoom sémantique — échelle globale, identique partout dans le Mesh */}
-        <div className={`glass rounded-lg px-3 py-1.5 font-code text-[10px] text-[#94A3B8] ${echelle ? "hidden" : ""}`} data-testid="zoom-niveau">
+        <div className={`glass rounded-lg px-3 py-1.5 font-code text-[10px] text-[#94A3B8] ${echelle ? "hidden" : "hidden sm:block"}`} data-testid="zoom-niveau">
           {`Niveau ${zoomNiveau} · ${NIVEAUX_ZOOM[zoomNiveau]}`}
           {zoomNiveau === 1 && " · corridors agrégés"}
           {zoomNiveau === 3 && " · détail des relations"}
@@ -2091,7 +2091,7 @@ export default function Atlas() {
         <button
           onClick={() => rfRef.current?.fitView({ duration: 600, padding: 0.15 })}
           data-testid="btn-vue-ensemble"
-          className="glass absolute bottom-24 right-3 z-10 rounded-full px-3 py-2.5 font-code text-[10px] uppercase tracking-[0.12em] text-[#94A3B8] transition-colors hover:text-[#F2F6F8]"
+          className="glass absolute bottom-24 right-16 z-10 whitespace-nowrap rounded-full px-3 py-2.5 font-code text-[10px] uppercase tracking-[0.12em] text-[#94A3B8] transition-colors hover:text-[#F2F6F8]"
         >
           Vue d'ensemble
         </button>

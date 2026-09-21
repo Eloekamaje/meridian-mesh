@@ -262,7 +262,7 @@ export default function Actualites() {
   const lienAtlasJournee = `/atlas?date=${fmtDateInput(finDeJournee(dateCible))}`;
 
   return (
-    <div className="h-full overflow-y-auto px-6 py-8 pb-20 sm:px-8" data-testid="actualites-page">
+    <div className="h-full overflow-y-auto px-4 py-5 pb-20 sm:px-8 sm:py-8" data-testid="actualites-page">
       <div className="mx-auto max-w-4xl">
         {/* Barre de lecture unique : vues · portées · temps */}
         <header className="rise relative z-30" ref={refCalendrier}>
@@ -290,7 +290,7 @@ export default function Actualites() {
               })}
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <div className="flex gap-0.5 rounded-lg border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-0.5" data-testid="portees" title="Portée — vue limitée à vos autorisations">
                 {PORTEES.map(([id, label]) => (
                   <button key={id} onClick={() => setPortee(id)} data-testid={`portee-${id}`}

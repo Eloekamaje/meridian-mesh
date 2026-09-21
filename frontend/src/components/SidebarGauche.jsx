@@ -9,6 +9,7 @@ import {
   Plus, 
   MagnifyingGlass, 
   SidebarSimple, 
+  X,
   Sparkle, 
   Bell, 
   Users, 
@@ -32,7 +33,7 @@ const NAV_ITEMS = [
   { to: "/administration", label: "Administration", icon: GearSix, testid: "nav-administration" },
 ];
 
-export default function SidebarGauche() {
+export default function SidebarGauche({ mode = "bureau", onOuvrir, onFermer }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { personas, persona, changerPersona, espaces, cible, changerCible } = usePerimetre();
@@ -48,13 +49,17 @@ export default function SidebarGauche() {
   // Replié d'office quand un panneau de détail s'ouvre ; l'utilisateur peut la redéplier tant que ce panneau reste ouvert
   const [depliageForce, setDepliageForce] = useState(false);
   useEffect(() => { if (!repliAuto) setDepliageForce(false); }, [repliAuto]);
-  const replie = !pilote && (repliAuto ? !depliageForce : replieMemo);
+  // bureau : replié à la demande (ou par un panneau de détail) ; rail (tablette) : toujours en icônes ; tiroir : toujours complet
+  const replie = mode === "rail" ? true : mode === "tiroir" ? false : !pilote && (repliAuto ? !depliageForce : replieMemo);
+  const tiroir = mode === "tiroir";
 
   const [menuProfil, setMenuProfil] = useState(false);
   const [recents, setRecents] = useState([]);
   const refProfil = useRef(null);
 
   const basculerRepli = () => {
+    if (mode === "rail") { onOuvrir?.(); return; }
+    if (mode === "tiroir") { onFermer?.(); return; }
     if (repliAuto) { setDepliageForce((d) => !d); return; }
     setReplieMemo((prev) => {
       const suivant = !prev;
@@ -76,6 +81,7 @@ export default function SidebarGauche() {
   // « Nouveau travail » : en démonstration le clic lance la séquence scénarisée
   // (le moteur ouvre la page) ; hors démonstration il ouvre la vraie page de création.
   const ouvrirNouveauTravail = () => {
+    if (tiroir) onFermer?.();
     if (pilote) {
       if (pilote.ouvertureEnAttente) pilote.demarrerOuverture();
       return;
@@ -105,7 +111,7 @@ export default function SidebarGauche() {
   return (
     <aside 
       className={`relative flex h-full shrink-0 flex-col border-r border-white/[0.08] bg-[#091420] text-[#DCE6EE] transition-all duration-200 ease-in-out select-none ${
-        replie ? "w-14 items-center px-2 py-3" : "w-64 px-3 py-3"
+        replie ? "w-14 items-center px-2 py-3" : tiroir ? "w-full px-3 py-3" : "w-64 px-3 py-3"
       }`}
       data-testid="sidebar-gauche"
     >
@@ -120,7 +126,7 @@ export default function SidebarGauche() {
           <div className="flex items-center gap-1">
             {/* Recherche globale */}
             <button 
-              onClick={() => navigate("/atlas")} 
+              onClick={() => { navigate("/atlas"); if (tiroir) onFermer?.(); }} 
               className="flex h-7 w-7 items-center justify-center rounded-lg text-[#7C93A8] transition-colors hover:bg-white/[0.06] hover:text-white"
               title="Rechercher dans le SI"
             >
@@ -134,7 +140,7 @@ export default function SidebarGauche() {
               title="Masquer le panneau latéral (afficher uniquement les icônes)"
               data-testid="btn-toggle-sidebar"
             >
-              <SidebarSimple size={16} />
+              {tiroir ? <X size={16} /> : <SidebarSimple size={16} />}
             </button>
           </div>
         </div>
@@ -191,7 +197,7 @@ export default function SidebarGauche() {
           <NavLink
             key={to}
             to={to}
-            onClick={(e) => { if (!lienActif(to)) e.preventDefault(); }}
+            onClick={(e) => { if (!lienActif(to)) e.preventDefault(); else if (tiroir) onFermer?.(); }}
             data-testid={testid}
             aria-disabled={!lienActif(to) || undefined}
             title={!lienActif(to) ? "Indisponible pendant la démonstration" : replie ? label : undefined}
@@ -210,7 +216,7 @@ export default function SidebarGauche() {
         {/* Entrée de la démonstration : même menu partout ; pendant la démo elle est active et inerte */}
         <NavLink
           to="/demo"
-          onClick={(e) => { if (pilote) e.preventDefault(); }}
+          onClick={(e) => { if (pilote) e.preventDefault(); else if (tiroir) onFermer?.(); }}
           data-testid="nav-demo"
           title={replie ? "Démonstration" : undefined}
           className={({ isActive }) => {
@@ -248,7 +254,7 @@ export default function SidebarGauche() {
             <NavLink
               key={c.id}
               to={`/travaux/${c.id}`}
-              onClick={(e) => { if (pilote && !pilote.travailOuvrable) e.preventDefault(); }}
+              onClick={(e) => { if (pilote && !pilote.travailOuvrable) e.preventDefault(); else if (tiroir) onFermer?.(); }}
               data-testid={`sidebar-recent-${c.id}`}
               className={({ isActive }) =>
                 `flex items-center gap-2 truncate rounded-xl px-2.5 py-1.5 text-xs transition-colors ${

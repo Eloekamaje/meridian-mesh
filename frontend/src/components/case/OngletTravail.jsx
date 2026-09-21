@@ -30,6 +30,7 @@ import { CREATION_TRAVAIL_ACTIVE, FLORE_REPONSE_EN_CONSTRUCTION, PROPOSITION_DEM
 import FloreActivite, { delaiMin, activiteTerminee } from "@/components/FloreActivite";
 import LigneActiviteFlore from "@/components/LigneActiviteFlore";
 import { usePilotage } from "@/lib/pilotage";
+import { useEcran } from "@/lib/ecran";
 import { rel } from "./utils";
 import CanvasDocument from "./CanvasDocument";
 
@@ -254,8 +255,8 @@ function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif }) {
 
       {/* Tableau comparatif épuré */}
       {fini && message.tableauComparatif && (
-        <div className="my-4 overflow-hidden rounded-xl border border-white/[0.08] bg-[#0A131C]">
-          <table className="w-full text-left text-xs">
+        <div className="my-4 overflow-x-auto rounded-xl border border-white/[0.08] bg-[#0A131C]">
+          <table className="w-full min-w-[28rem] text-left text-xs">
             <thead>
               <tr className="border-b border-white/[0.08] font-code text-[10px] uppercase tracking-wider text-[#7C93A8]">
                 <th className="py-2.5 pl-4 pr-2">Critère</th>
@@ -315,6 +316,7 @@ export default function OngletTravail({
 }) {
   const pilote = usePilotage();
   const navigate = useNavigate();
+  const ecran = useEcran();
   const { info } = usePerimetre();
   const { selection } = useContexte();
   // Travail pas encore né (« Nouveau travail ») : même conversation, sans identifiant
@@ -449,7 +451,7 @@ export default function OngletTravail({
       {/* ========================================================================= */}
       {/* ZONE CENTRALE : CONVERSATION FLUIDE, AÉRÉE, SANS CARDS LOURDES            */}
       {/* ========================================================================= */}
-      <div className={`relative flex h-full flex-col overflow-hidden transition-all duration-300 ${canvasActif ? "flex-[55]" : "w-full"}`}>
+      <div className={`relative flex h-full w-full flex-col overflow-hidden transition-all duration-300 ${canvasActif ? "lg:w-auto lg:flex-[55]" : ""}`}>
         
         {/* ========================================================================= */}
         {/* VOLET FLOTTANT : RÉSULTATS & SOURCES JUMEAUX (Style ChatGPT Canvas)        */}
@@ -457,7 +459,7 @@ export default function OngletTravail({
         {/* ========================================================================= */}
         {voletSourcesOuvert && (
           <div 
-            className="absolute right-6 top-3 z-40 w-80 rounded-2xl border border-white/10 bg-[#0C1724]/95 p-4 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-200"
+            className="absolute inset-x-3 top-3 z-40 max-h-[75%] overflow-y-auto rounded-2xl border border-white/10 bg-[#0C1724]/95 p-4 sm:inset-x-auto sm:right-6 sm:w-80 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-200"
             data-testid="volet-flottant-sources-resultats"
           >
             {/* Section RÉSULTATS : en démonstration, le dossier n'apparaît qu'une fois généré par Flore */}
@@ -835,7 +837,7 @@ export default function OngletTravail({
                     envoyer(e);
                   }
                 }}
-                placeholder={pilote ? "Conversation de démonstration" : "Posez une question à Flore et aux jumeaux du SI…"}
+                placeholder={pilote ? "Conversation de démonstration" : ecran === "mobile" ? "Posez une question…" : "Posez une question à Flore et aux jumeaux du SI…"}
                 rows={1}
                 data-testid="case-msg-input"
                 className="max-h-32 flex-1 resize-none bg-transparent px-1 py-1 text-sm text-[#F2F6F8] placeholder:text-[#526578] focus:outline-none"
@@ -878,7 +880,7 @@ export default function OngletTravail({
       {/* VOLET DROIT : CANVAS DU DOCUMENT GÉNÉRÉ (Style ChatGPT Canvas)           */}
       {/* ========================================================================= */}
       {canvasActif && (
-        <div className="flex-[45] h-full overflow-hidden transition-all duration-300 border-l border-white/[0.1]">
+        <div className="absolute inset-0 z-30 h-full overflow-hidden bg-[#071019] transition-all duration-300 lg:static lg:flex-[45] lg:border-l lg:border-white/[0.1]">
           <CanvasDocument onFermer={toggleCanvas} />
         </div>
       )}

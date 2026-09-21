@@ -34,7 +34,8 @@ export default function TravailDetail() {
   const [erreur, setErreur] = useState(null);
   const [menu, setMenu] = useState(false);
   // Démonstration : le volet « Sources & Jumeaux » s'ouvre quand Flore a consulté des jumeaux (pas avant : il serait vide)
-  const [voletSourcesOuvert, setVoletSourcesOuvert] = useState(!pilote);
+  // (hors démonstration : ouvert par défaut seulement sur grand écran — ailleurs il recouvrirait la conversation)
+  const [voletSourcesOuvert, setVoletSourcesOuvert] = useState(!pilote && (typeof window === "undefined" || window.innerWidth >= 1024));
   const [canvasOuvert, setCanvasOuvert] = useState(false);
 
   // Démonstration : le travail évolue avec le scénario (titre, résumé, rubriques de l'Aperçu).

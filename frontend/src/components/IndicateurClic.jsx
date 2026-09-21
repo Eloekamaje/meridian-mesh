@@ -18,7 +18,7 @@ export default function IndicateurClic({ texte = "Commencez ici", testid = "indi
       >
         <HandPointing size={34} weight="fill" />
       </motion.span>
-      <span className="whitespace-nowrap rounded-lg border border-[#60A5FA]/40 bg-[#0F1D28] px-2.5 py-1.5 shadow-lg">
+      <span className="hidden whitespace-nowrap rounded-lg border sm:block border-[#60A5FA]/40 bg-[#0F1D28] px-2.5 py-1.5 shadow-lg">
         <span className="block font-code text-[9px] uppercase tracking-[0.2em] text-[#60A5FA]">{texte}</span>
         <span className="block text-[11px] leading-snug text-[#D8E2EA]">Cliquez sur « Nouveau travail »</span>
       </span>

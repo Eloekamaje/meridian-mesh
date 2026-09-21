@@ -48,7 +48,7 @@ function CarteTravail({ c, navigate, setSelection, attention }) {
       <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: s[1] }} title={s[0]} />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
-          <span className="truncate text-sm font-medium text-[#F2F6F8]">{c.titre}</span>
+          <span className="line-clamp-2 text-sm font-medium text-[#F2F6F8] sm:truncate">{c.titre}</span>
           {c.a_revoir && (
             <span className="shrink-0 rounded border border-[#F87171]/40 bg-[#F87171]/[0.06] px-1.5 py-px font-code text-[9px] uppercase tracking-wider text-[#F87171]" data-testid={`travail-arevoir-${c.id}`}>À revoir</span>
           )}
@@ -67,14 +67,15 @@ function CarteTravail({ c, navigate, setSelection, attention }) {
           ) : (
             <p className="truncate text-[11px] text-[#7C93A8]">{c.objectif || c.resume || "La mémoire s'écrit au fil des échanges."}</p>
           )}
+          <span className="shrink-0 font-code text-[9px] text-[#7C93A8] sm:hidden">{rel(c.maj_le)}</span>
         </div>
       </div>
-      <span className="shrink-0 font-code text-[9px] text-[#7C93A8]" title={`${TYPES_CASE[c.type]?.[0] || c.type} · ${s[0]} · ${c.jumeaux?.length || 0} jumeaux`}>{rel(c.maj_le)}</span>
-      <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+      <span className="hidden shrink-0 font-code text-[9px] text-[#7C93A8] sm:inline" title={`${TYPES_CASE[c.type]?.[0] || c.type} · ${s[0]} · ${c.jumeaux?.length || 0} jumeaux`}>{rel(c.maj_le)}</span>
+      <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 [@media(pointer:coarse)]:opacity-100">
         <button
           onClick={(e) => { e.stopPropagation(); navigate(`/travaux/${c.id}`); }}
           data-testid={`travail-continuer-${c.id}`}
-          className="flex items-center gap-1 rounded-md bg-[#60A5FA] px-2.5 py-1 text-[11px] font-semibold text-[#071019] transition-colors hover:bg-[#93C5FD]"
+          className="hidden items-center gap-1 rounded-md bg-[#60A5FA] px-2.5 py-1 text-[11px] font-semibold sm:flex text-[#071019] transition-colors hover:bg-[#93C5FD]"
         >
           Continuer <ArrowRight size={10} />
         </button>
@@ -163,17 +164,17 @@ export default function Travaux() {
   );
 
   return (
-    <div className="h-full overflow-y-auto px-10 py-8 pb-20 sm:px-12" data-testid="travaux-page">
+    <div className="h-full overflow-y-auto px-4 py-5 pb-20 sm:px-8 sm:py-8 lg:px-12" data-testid="travaux-page">
       <div>
         <header className="rise">
           <div className="font-code text-[10px] uppercase tracking-[0.3em] text-[#60A5FA]">Travaux</div>
           <div className="mt-1 flex flex-wrap items-center justify-between gap-3">
             <h1 className="font-display text-xl font-black tracking-tight text-[#F2F6F8]" data-testid="travaux-titre">La mémoire de ce que l'entreprise cherche à comprendre</h1>
-            <div className="flex items-center gap-2">
-              <div className="relative">
+            <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+              <div className="relative min-w-[10rem] flex-1 sm:flex-none">
                 <MagnifyingGlass size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#7C93A8]" />
                 <input value={recherche} onChange={(e) => setRecherche(e.target.value)} placeholder="Rechercher un travail…" data-testid="recherche-travail"
-                  className="h-8 w-48 rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] pl-7 pr-3 text-xs text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#60A5FA]/60 focus:outline-none" />
+                  className="h-9 w-full rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] pl-7 pr-3 text-xs sm:h-8 sm:w-48 text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#60A5FA]/60 focus:outline-none" />
               </div>
               <div className="relative">
                 <button onClick={() => setVuesMenu((v) => !v)} data-testid="travaux-vues" className="flex h-8 items-center gap-1.5 rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2.5 text-xs text-[#94A3B8] transition-colors hover:text-[#F2F6F8]">
