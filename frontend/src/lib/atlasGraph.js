@@ -507,7 +507,7 @@ export const makeEdge = (r, niveau, positions) => {
           : niveau >= 3 && r.label
             ? r.label
             : undefined,
-    labelStyle: { fill: r.etat === "validation" ? "#60A5FA" : r.etat === "contestee" ? "#F87171" : "rgba(148,163,184,0.85)", fontSize: 10, fontFamily: "IBM Plex Mono" },
+    labelStyle: { fill: r.etat === "validation" ? "#60A5FA" : r.etat === "contestee" ? "#F87171" : "rgba(148,163,184,0.85)", fontSize: 10, fontFamily: "var(--font-mono)" },
     labelBgStyle: { fill: "rgba(15,29,40,0.92)" },
   };
 };
@@ -557,7 +557,7 @@ export function appliquerTemps(edges, temps) {
           data: { ...e.data, nouvelle: true },
           style: { ...NOUVELLE_STYLE },
           label: `${e.label ? `${e.label} · ` : ""}nouvelle`,
-          labelStyle: { fill: "#60A5FA", fontSize: 10, fontFamily: "IBM Plex Mono" },
+          labelStyle: { fill: "#60A5FA", fontSize: 10, fontFamily: "var(--font-mono)" },
           labelBgStyle: { fill: "rgba(15,29,40,0.92)" },
         };
       }

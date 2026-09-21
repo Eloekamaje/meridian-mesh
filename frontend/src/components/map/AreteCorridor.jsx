@@ -80,7 +80,7 @@ export default memo(function AreteCorridor({ id, data, selected }) {
       {labelPos && label && (
         <g transform={`translate(${labelPos.x} ${labelPos.y})`} opacity={detail * sortie} style={{ pointerEvents: "none", transition: "opacity 250ms" }}>
           <rect x={-(label.length * 3.4 + 10)} y={-9} width={label.length * 6.8 + 20} height={18} rx={9} fill="rgba(15,29,40,0.95)" stroke="rgba(148,163,184,0.16)" />
-          <text textAnchor="middle" dominantBaseline="central" fontSize={10} fontFamily="JetBrains Mono" fill="#D8E2EA">
+          <text textAnchor="middle" dominantBaseline="central" fontSize={10} style={{ fontFamily: "var(--font-mono)" }} fill="#D8E2EA">
             {label}
           </text>
         </g>

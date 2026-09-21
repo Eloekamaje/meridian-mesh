@@ -98,7 +98,7 @@ export default memo(function AreteOrthogonale({ id, data, selected, style: style
             textAnchor="middle"
             dominantBaseline="central"
             fontSize={10}
-            fontFamily="IBM Plex Mono"
+            style={{ fontFamily: "var(--font-mono)" }}
             fontWeight="400"
             fill="#D8E2EA"
           >
@@ -109,7 +109,7 @@ export default memo(function AreteOrthogonale({ id, data, selected, style: style
       {nouvelle && !afficheLabel && labelPos && (
         <g transform={`translate(${labelPos.x} ${labelPos.y})`} style={{ pointerEvents: "none" }}>
           <rect x={-30} y={-9} width={60} height={18} rx={9} fill="rgba(15,29,40,0.95)" stroke="#60A5FA" strokeDasharray="3 3" />
-          <text textAnchor="middle" dominantBaseline="central" fontSize={10} fontFamily="IBM Plex Mono" fill="#60A5FA">nouvelle</text>
+          <text textAnchor="middle" dominantBaseline="central" fontSize={10} style={{ fontFamily: "var(--font-mono)" }} fill="#60A5FA">nouvelle</text>
         </g>
       )}
     </g>
