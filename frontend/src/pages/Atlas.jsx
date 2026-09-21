@@ -838,12 +838,14 @@ export default function Atlas() {
         data: { ...e.data, miseEnAvant: concerne, estompee: !!secteurCurseur && !concerne },
       };
     });
-    const actif = survolJumeau;
+    // Rendu graphe : le jumeau ouvert (recherche, clic) prime sur le survol ; ses liens restent en avant, les autres s'effacent presque
+    const epingle = graphe && selected && !selected.anonyme ? selected.id : null;
+    const actif = epingle || survolJumeau;
     if (actif) {
       es = es.map((e) =>
         e.source === actif || e.target === actif || e.source === `voisin-${actif}` || e.target === `voisin-${actif}`
           ? { ...e, zIndex: 20, style: { ...e.style, strokeWidth: (e.style?.strokeWidth || 1.5) + 1, opacity: 1 } }
-          : { ...e, label: undefined, data: { ...e.data, estompee: true }, style: { ...e.style, opacity: 0.12 } }
+          : { ...e, label: undefined, data: { ...e.data, estompee: true }, style: { ...e.style, opacity: epingle ? 0.06 : 0.12 } }
       );
     }
     // Survol d'une voie agrégée « N flux » : déploiement temporaire des routes membres
@@ -875,19 +877,21 @@ export default function Atlas() {
       es = [...es.filter((e) => e.id !== preuveSurvolee), ...es.filter((e) => e.id === preuveSurvolee)];
     }
     return es;
-  }, [edges, aretesDuGraphe, couchesRel, survolJumeau, relSurvolee, selectedRelation, preuveSurvolee, secteurCurseur]);
+  }, [edges, aretesDuGraphe, graphe, selected, couchesRel, survolJumeau, relSurvolee, selectedRelation, preuveSurvolee, secteurCurseur]);
 
   // Rendu graphe : au survol d'un jumeau (sans sélection), ses voisins restent éclairés, le reste s'estompe
   const nodesRendus = useMemo(() => {
-    if (!graphe || !survolJumeau || selection.length || !mesh) return nodes;
-    const voisins = new Set([survolJumeau]);
-    mesh.relations.forEach((r) => { if (r.source === survolJumeau) voisins.add(r.cible); if (r.cible === survolJumeau) voisins.add(r.source); });
+    // Comme le laboratoire : la sélection épinglée (ouverte par recherche ou clic) prime sur le survol
+    const focus = selected && !selected.anonyme ? selected.id : survolJumeau;
+    if (!graphe || !focus || selection.length || !mesh) return nodes;
+    const voisins = new Set([focus]);
+    mesh.relations.forEach((r) => { if (r.source === focus) voisins.add(r.cible); if (r.cible === focus) voisins.add(r.source); });
     return nodes.map((n) => {
       if (n.type !== "twin" || n.data?.cadastre) return n;
-      if (n.id === survolJumeau) return { ...n, data: { ...n.data, nomVisible: true } };
-      return voisins.has(n.id) ? n : { ...n, data: { ...n.data, dim: true } };
+      if (n.id === focus) return { ...n, selected: n.id === selected?.id, data: { ...n.data, nomVisible: true } };
+      return voisins.has(n.id) ? { ...n, data: { ...n.data, nomVisible: true } } : { ...n, data: { ...n.data, dim: true } };
     });
-  }, [graphe, nodes, survolJumeau, selection, mesh]);
+  }, [graphe, nodes, survolJumeau, selected, selection, mesh]);
 
   // Jumeau survolé ou épinglé → panneau flottant à gauche
   const jumeauSurvole = useMemo(() => {
