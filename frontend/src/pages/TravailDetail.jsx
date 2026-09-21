@@ -35,8 +35,8 @@ export default function TravailDetail() {
   const [erreur, setErreur] = useState(null);
   const [menu, setMenu] = useState(false);
   // Démonstration : le volet « Sources & Jumeaux » s'ouvre quand Flore a consulté des jumeaux (pas avant : il serait vide)
-  // (hors démonstration : ouvert par défaut seulement sur grand écran — ailleurs il recouvrirait la conversation)
-  const [voletSourcesOuvert, setVoletSourcesOuvert] = useState(!pilote && (typeof window === "undefined" || window.innerWidth >= 1024));
+  // Fermé par défaut : il flotte par-dessus la conversation et recouvrirait le début des phrases de Flore ; l'icône de l'en-tête l'ouvre
+  const [voletSourcesOuvert, setVoletSourcesOuvert] = useState(false);
   const [canvasOuvert, setCanvasOuvert] = useState(false);
 
   // Démonstration : le travail évolue avec le scénario (titre, résumé, rubriques de l'Aperçu).
@@ -121,7 +121,10 @@ export default function TravailDetail() {
           {/* Titre */}
           <div className="flex min-w-0 items-center gap-3">
             {!pilote && (
-              <BoutonRetour label="Travaux" onClick={() => navigate("/travaux")} testid="travail-retour-travaux" />
+              // On arrive d'une actualité : le retour vers elle est mis en évidence (le travail reste un travail comme les autres)
+              location.state?.retour
+                ? <BoutonRetour accent label={location.state.retour.label} onClick={() => navigate(location.state.retour.to)} testid="travail-retour-origine" />
+                : <BoutonRetour label="Travaux" onClick={() => navigate("/travaux")} testid="travail-retour-travaux" />
             )}
             <h1 className="truncate font-display text-sm font-semibold tracking-tight text-[#F2F6F8]" data-testid="travail-titre">
               {cas.titre}

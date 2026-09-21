@@ -1095,6 +1095,8 @@ api_router.include_router(build_actualites_router({
     "ESPACES": ESPACES,
     "NO_ID": NO_ID,
     "timezone": timezone,
+    "slugify": slugify,
+    "journaler": journaler,
 }))
 
 

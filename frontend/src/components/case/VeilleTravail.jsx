@@ -107,3 +107,22 @@ export function RepriseVeille({ messages, depuis }) {
     </div>
   );
 }
+
+// « Ce que je dis repose sur N preuves » : dépliable, sous le message de Flore.
+export function PreuvesMessage({ preuves }) {
+  const [ouvert, setOuvert] = useState(false);
+  return (
+    <div data-testid="preuves-message">
+      <button type="button" onClick={() => setOuvert((o) => !o)} aria-expanded={ouvert} className="flex items-center gap-1.5 font-code text-[11px] text-[#60A5FA] hover:underline">
+        <Eye size={12} /> Ce que je dis repose sur {preuves.length} preuve{preuves.length > 1 ? "s" : ""} · {ouvert ? "masquer" : "afficher"}
+      </button>
+      {ouvert && (
+        <ul className="mt-1.5 space-y-1 border-l-2 border-[#60A5FA]/25 pl-2.5">
+          {preuves.map((p, k) => (
+            <li key={k} className="text-[12px] leading-snug text-[#94A3B8]"><span className="font-semibold text-[#BFDBFE]">{p.source}</span> — {p.detail}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}

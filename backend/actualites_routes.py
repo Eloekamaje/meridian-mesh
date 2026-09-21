@@ -3,6 +3,13 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Header, HTTPException
+from pydantic import BaseModel
+
+import ouverture_travail
+
+
+class OuvertureTravail(BaseModel):
+    intention: str = "comprendre"  # comprendre | suivre | investiguer
 
 ETATS_REL = {
     "observee": "observée", "supposee": "supposée", "validation": "en validation A2A",
@@ -114,6 +121,8 @@ def build_actualites_router(deps):
     ESPACES = deps["ESPACES"]
     NO_ID = deps["NO_ID"]
     timezone = deps["timezone"]
+    slugify = deps["slugify"]
+    journaler = deps["journaler"]
 
     router = APIRouter()
 
@@ -509,6 +518,52 @@ def build_actualites_router(deps):
             raise HTTPException(404, "Actualité introuvable")
 
         return {"histoire": histoire, "rapport": rapport}
+
+    @router.post("/actualites/histoire/{hid}/travail")
+    async def ouvrir_travail(hid: str, payload: OuvertureTravail, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+        """Une actualité qu'on ouvre devient un TRAVAIL (le même objet que tous les autres), dont Flore ouvre la conversation selon
+        l'intention : présenter la situation, garder un phénomène sous vérification, ou poser la question d'une investigation.
+        Idempotent : la même actualité, pour la même personne, rouvre le travail existant (et y ajoute l'intention nouvelle)."""
+        if payload.intention not in ouverture_travail.INTENTIONS:
+            raise HTTPException(400, "Intention inconnue")
+        detail = await histoire_detail(hid, x_persona, x_espace)  # applique le périmètre : hors droits → 404
+        histoire, rapport = detail["histoire"], detail["rapport"]
+        if hid.startswith("case-"):
+            return {"id": hid[5:], "cree": False}  # c'est déjà un travail : on le reprend
+        _, espace = resoudre_perimetre(x_persona, x_espace)
+        situation = await db.situations.find_one({"id": hid[4:]}, NO_ID) if hid.startswith("sit-") else None
+        maintenant = datetime.now(timezone.utc).isoformat()
+        existant = await db.cases.find_one({"origine.histoire_id": hid, "responsable": x_persona}, NO_ID)
+        if existant:
+            deja = existant["origine"].get("intentions", [])
+            if payload.intention not in deja:
+                msg = ouverture_travail.message_flore(payload.intention, histoire, rapport, situation, maintenant)
+                await db.cases.update_one(
+                    {"id": existant["id"]},
+                    {"$push": {"conversation": msg, "historique": {"quand": maintenant, "texte": {"investiguer": "Investigation ouverte", "suivre": "Mise sous vérification", "comprendre": "Situation présentée"}[payload.intention]}},
+                     "$addToSet": {"origine.intentions": payload.intention}, "$set": {"maj_le": maintenant}},
+                )
+            return {"id": existant["id"], "cree": False}
+        base = slugify(histoire["titre"])[:60] or "travail"
+        cid, n = base, 2
+        while await db.cases.find_one({"id": cid}):
+            cid, n = f"{base}-{n}", n + 1
+        dernier = await db.cases.find({}, {"_id": 0, "num": 1}).sort("num", -1).to_list(1)
+        num = (dernier[0]["num"] if dernier and dernier[0].get("num") else 40) + 1
+        doc = {
+            "id": cid, "num": num, "titre": histoire["titre"], "type": ouverture_travail.type_travail(histoire.get("genre", "")), "statut": "ouvert",
+            "sensibilite": "interne", "objectif": histoire.get("recit") or histoire["titre"], "resume": "", "prochaine_etape": "",
+            "questions": [], "hypotheses": [], "jumeaux": histoire.get("jumeaux", []), "situations": [hid[4:]] if situation else [],
+            "participants": [x_persona], "responsable": x_persona, "espace": espace["id"],
+            "conversation": [ouverture_travail.message_flore(payload.intention, histoire, rapport, situation, maintenant)],
+            "options": [], "decisions": [], "livrables": [], "a_revoir": False, "visites": {},
+            "origine": {"histoire_id": hid, "genre": histoire.get("genre"), "intentions": [payload.intention], "quand": maintenant},
+            "historique": [{"quand": maintenant, "texte": f"Travail ouvert depuis l'actualité « {histoire['titre']} »"}],
+            "cree_le": maintenant, "maj_le": maintenant,
+        }
+        await db.cases.insert_one(doc)
+        await journaler(x_persona, espace["id"], "ouverture d'un travail depuis une actualité", cid, histoire["titre"])
+        return {"id": cid, "cree": True}
 
     def persona_espaces(persona_id):
         from seed_data import PERSONAS

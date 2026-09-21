@@ -2,7 +2,7 @@ import { ArrowLeft } from "@phosphor-icons/react";
 
 // Un seul bouton retour pour toute l'application : même style, même place (à gauche du titre), libellé « Parent » sur écran
 // large, icône seule (avec libellé accessible) sur petit écran pour laisser la place au titre.
-export function BoutonRetour({ label, onClick, testid }) {
+export function BoutonRetour({ label, onClick, testid, accent = false }) {
   return (
     <button
       type="button"
@@ -10,7 +10,7 @@ export function BoutonRetour({ label, onClick, testid }) {
       data-testid={testid}
       aria-label={`Retour : ${label}`}
       title={`Retour : ${label}`}
-      className="flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2.5 text-xs text-[#94A3B8] transition-colors hover:text-[#F2F6F8] sm:h-8"
+      className={`flex h-9 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-xs transition-colors sm:h-8 ${accent ? "border-[#60A5FA]/60 bg-[#60A5FA]/10 font-semibold text-[#BFDBFE] hover:bg-[#60A5FA]/20" : "border-[rgba(148,163,184,0.16)] bg-[#0F1D28] text-[#94A3B8] hover:text-[#F2F6F8]"}`}
     >
       <ArrowLeft size={13} />
       <span className="hidden sm:inline">{label}</span>

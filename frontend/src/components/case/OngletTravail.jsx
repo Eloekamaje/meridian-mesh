@@ -33,7 +33,7 @@ import { usePilotage } from "@/lib/pilotage";
 import { useEcran } from "@/lib/ecran";
 import { rel } from "./utils";
 import CanvasDocument from "./CanvasDocument";
-import { BandeauVeille, EvenementVeille, RepriseVeille } from "./VeilleTravail";
+import { BandeauVeille, EvenementVeille, RepriseVeille, PreuvesMessage } from "./VeilleTravail";
 
 // Dictionnaire des Jumeaux participants du SI pour CASE-101
 export const DICT_JUMEAUX_PARTICIPANTS = {
@@ -351,7 +351,8 @@ export default function OngletTravail({
 
   const messages = cas.conversation || [];
   const coupure = cas.derniere_visite;
-  const idxCoupure = coupure ? messages.findIndex((m) => m.quand && m.quand > coupure) : -1;
+  // Le « nouveau » est ce que les AUTRES ont écrit : vos propres messages ne comptent jamais
+  const idxCoupure = coupure ? messages.findIndex((m) => m.quand && m.quand > coupure && m.role !== "utilisateur") : -1;
 
   // Résolution des jumeaux participants
   const jumeauxParticipants = (cas.jumeaux_participants && cas.jumeaux_participants.length > 0)
@@ -397,9 +398,9 @@ export default function OngletTravail({
     finFilRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  const envoyer = async (e) => {
-    e?.preventDefault();
-    const q = nouveauMsg.trim();
+  const envoyer = async (e, texteDirect) => {
+    e?.preventDefault?.();
+    const q = (texteDirect ?? nouveauMsg).trim();
     if (!q || envoiMsg || pilote) return;
     setEnvoiMsg(true);
     setNouveauMsg("");
@@ -729,6 +730,18 @@ export default function OngletTravail({
                       canvasActif={canvasActif} 
                     />
 
+                    {/* Sur quoi repose ce que Flore vient de dire (preuves du rapport) */}
+                    {m.preuves?.length > 0 && <PreuvesMessage preuves={m.preuves} />}
+                    {/* Pistes que Flore propose de creuser : un clic les envoie comme votre question (sur le dernier message seulement) */}
+                    {m.suggestions?.length > 0 && i === messages.length - 1 && !envoiMsg && (
+                      <div className="flex flex-wrap gap-2" data-testid="suggestions-flore">
+                        {m.suggestions.map((s) => (
+                          <button key={s.label} onClick={() => envoyer(null, s.question)} data-testid="suggestion-flore" className="rounded-full border border-[rgba(148,163,184,0.2)] px-3.5 py-1.5 text-xs text-[#D8E2EA] transition-colors hover:border-[#60A5FA]/40 hover:text-white">
+                            {s.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     {/* Réponses rapides à une question de Flore (revue d'une décision) ; une fois répondu, on garde la trace du choix */}
                     {m.reponses && !m.reponse && cas.veille?.statut === "en_veille" && (
                       <div className="flex flex-wrap gap-2" data-testid="reponses-flore">

@@ -9,6 +9,8 @@ import { couleurDomaine } from "@/lib/domaines";
 import { fmtDateLongue, fmtDateInput, finDeJournee, fmtDate } from "@/lib/temps";
 import CarteInitiative from "@/components/CarteInitiative";
 import ComposerFlore from "@/components/ComposerFlore";
+import { delaiMin } from "@/components/FloreActivite";
+import { toast } from "sonner";
 
 const VUES_ACTUS = [
   ["brief", "Brief"],
@@ -49,6 +51,7 @@ const heure = (iso) => new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digi
 
 function CarteHistoire({ h, vedette, dateCible, estAujourdhui, navigate, mesh }) {
   const [menu, setMenu] = useState(false);
+  const [ouverture, setOuverture] = useState(false);
   const g = GENRES[h.genre] || [h.genre, "#7C93A8"];
   // Les histoires de relation/transformation s'ouvrent en Avant/Après à la date du phénomène
   const jourPhenomene = fmtDateInput(finDeJournee(h.quand));
@@ -61,6 +64,20 @@ function CarteHistoire({ h, vedette, dateCible, estAujourdhui, navigate, mesh })
         : `${h.liens.atlas}${sep}date=${fmtDateInput(finDeJournee(dateCible))}`
     : null;
 
+  // Une actualité qu'on ouvre devient un TRAVAIL : Flore y présente la situation, la garde sous vérification ou pose la question d'une
+  // investigation selon l'intention. On y arrive avec le retour vers Actualités mis en évidence.
+  const ouvrirTravail = async (intention) => {
+    if (ouverture) return;
+    setOuverture(true);
+    try {
+      const { data } = await delaiMin(api.post(`/actualites/histoire/${h.id}/travail`, { intention }), 1300);
+      navigate(`/travaux/${data.id}`, { state: { retour: { label: "Actualités", to: "/actualites" } } });
+    } catch {
+      toast.error("Impossible d'ouvrir cette actualité");
+      setOuverture(false);
+    }
+  };
+
   const actionPrincipale = () => {
     if (h.genre === "travail" || h.genre === "decision" || h.genre === "veille") {
       return (
@@ -71,14 +88,14 @@ function CarteHistoire({ h, vedette, dateCible, estAujourdhui, navigate, mesh })
     }
     if (h.incertain) {
       return (
-        <button onClick={() => navigate(`/actualites/comprendre/${h.id}`)} data-testid={`histoire-suivre-${h.id}`} className="flex items-center gap-1.5 rounded-md bg-[#60A5FA] px-3 py-1.5 text-[11px] font-semibold text-[#071019] transition-colors hover:bg-[#60A5FA]">
-          Suivre la vérification
+        <button onClick={() => ouvrirTravail("suivre")} disabled={ouverture} data-testid={`histoire-suivre-${h.id}`} className="flex items-center gap-1.5 rounded-md bg-[#60A5FA] px-3 py-1.5 text-[11px] font-semibold text-[#071019] transition-colors hover:bg-[#60A5FA]">
+          {ouverture ? "Flore prépare sa lecture…" : "Suivre la vérification"}
         </button>
       );
     }
     return (
-      <button onClick={() => navigate(`/actualites/comprendre/${h.id}`)} data-testid={`histoire-comprendre-${h.id}`} className="flex items-center gap-1.5 rounded-md bg-[#60A5FA] px-3 py-1.5 text-[11px] font-semibold text-[#071019] transition-colors hover:bg-[#93C5FD]">
-        <Sparkle size={11} weight="fill" /> Comprendre
+      <button onClick={() => ouvrirTravail("comprendre")} disabled={ouverture} data-testid={`histoire-comprendre-${h.id}`} className="flex items-center gap-1.5 rounded-md bg-[#60A5FA] px-3 py-1.5 text-[11px] font-semibold text-[#071019] transition-colors hover:bg-[#93C5FD]">
+        <Sparkle size={11} weight="fill" /> {ouverture ? "Flore prépare sa lecture…" : "Comprendre"}
       </button>
     );
   };
@@ -134,7 +151,7 @@ function CarteHistoire({ h, vedette, dateCible, estAujourdhui, navigate, mesh })
                 </button>
               )}
               {h.liens?.investigation && (
-                <button onClick={() => navigate(h.liens.investigation)} data-testid={`histoire-investigation-${h.id}`} className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]">
+                <button onClick={() => { setMenu(false); ouvrirTravail("investiguer"); }} data-testid={`histoire-investigation-${h.id}`} className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]">
                   <ArrowRight size={12} /> Approfondir
                 </button>
               )}

@@ -248,8 +248,8 @@ def build_cases_router(deps):
         # Plusieurs lectures rapprochées (page + panneau Flore…) sont UNE même visite : on garde le repère de la visite
         # précédente tant que la dernière date de moins d'une minute, sinon le « nouveau depuis » disparaît à la 2e lecture.
         recente = bool(derniere) and (datetime.now(timezone.utc) - datetime.fromisoformat(derniere.replace("Z", "+00:00"))).total_seconds() < 60
-        if recente and precedentes.get(x_persona):
-            derniere = precedentes[x_persona]
+        if recente:
+            derniere = precedentes.get(x_persona)  # aucune visite avant celle-ci (travail tout juste ouvert) : rien n'est « nouveau »
         evolutions = [h for h in case.get("historique", []) if derniere and h.get("quand", "") > derniere]
         case["evolutions_recentes"] = evolutions
         case["derniere_visite"] = derniere
