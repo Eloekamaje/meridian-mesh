@@ -7,6 +7,7 @@ import { usePerimetre } from "@/lib/perimetre";
 import { TYPES_CASE } from "./Travaux";
 import { numeroCase, SENSIBILITES, rel } from "@/components/case/utils";
 import OngletTravail from "@/components/case/OngletTravail";
+import DecisionPassation from "@/components/case/DecisionPassation";
 import SurfacePreparation from "@/components/SurfacePreparation";
 import { BoutonRetour } from "@/components/EntetePage";
 import { usePilotage } from "@/lib/pilotage";
@@ -54,6 +55,7 @@ export default function TravailDetail() {
   }, [pilote?.canvasOuvert]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Un travail en veille montre d'abord sa note de passation et ses actions : la fenêtre « Sources & Jumeaux » ne les recouvre pas
+  const [passationOuverte, setPassationOuverte] = useState(false);
   const enVeille = !!cas?.veille;
   useEffect(() => { if (enVeille) setVoletSourcesOuvert(false); }, [enVeille]);
 
@@ -164,6 +166,11 @@ export default function TravailDetail() {
                       <SealCheck size={12} /> Marquer comme revu
                     </button>
                   )}
+                  {!enVeille && cas.statut !== "clos" && (
+                    <button onClick={() => { setMenu(false); setPassationOuverte(true); }} data-testid="travail-consigner-decision-btn" className="w-full rounded px-2.5 py-1.5 text-left text-[11px] text-[#94A3B8] hover:bg-white/[0.06] hover:text-white">
+                      Consigner une décision
+                    </button>
+                  )}
                   <button
                     onClick={() => { setMenu(false); maj({ statut: cas.statut === "clos" ? "en_cours" : "clos" }); }}
                     data-testid="travail-clore-btn"
@@ -223,8 +230,10 @@ export default function TravailDetail() {
           setVoletSourcesOuvert={setVoletSourcesOuvert}
           canvasOuvert={canvasOuvert}
           setCanvasOuvert={setCanvasOuvert}
+          onConsignerDecision={casNe ? () => setPassationOuverte(true) : undefined}
         />
       </div>
+      {passationOuverte && <DecisionPassation cas={cas} onFermer={() => setPassationOuverte(false)} onEnregistree={(data) => { setCas(data); setPassationOuverte(false); }} />}
     </div>
   );
 }

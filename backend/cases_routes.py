@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 
 from fastapi import APIRouter, Header, HTTPException
@@ -56,6 +56,42 @@ class Passation(BaseModel):
     risques: list = []
     inconnues: list = []
     revue_le: Optional[str] = None
+
+
+def _nombre(v, champ):
+    try:
+        return float(v) if not isinstance(v, (int, float)) else v
+    except (TypeError, ValueError):
+        raise HTTPException(400, f"« {champ} » doit être un nombre")
+
+
+def normaliser_passation(p: "Passation") -> dict:
+    """Nettoie la note de passation saisie : identifiants stables, nombres valides, sens cohérents, date de revue lisible.
+    Une note sans rien à observer n'a pas de sens : la décision reste enregistrée, mais sans veille."""
+    hyp = [h.strip() for h in p.hypotheses if isinstance(h, str) and h.strip()]
+    attendus, risques, inconnues = [], [], []
+    for i, a in enumerate(p.attendus, 1):
+        if not str(a.get("indicateur", "")).strip():
+            continue
+        depart, cible = _nombre(a.get("depart"), "départ"), _nombre(a.get("cible"), "cible")
+        attendus.append({"id": a.get("id") or f"att-{i}", "indicateur": a["indicateur"].strip(), "sens": "baisse" if cible < depart else "hausse",
+                         "depart": depart, "cible": cible, "unite": str(a.get("unite", "")).strip()})
+    for i, r in enumerate(p.risques, 1):
+        if not str(r.get("texte", "")).strip():
+            continue
+        risques.append({"id": r.get("id") or f"risque-{i}", "texte": r["texte"].strip(), "jumeau": r.get("jumeau") or None,
+                        "sens": "baisse" if r.get("sens") == "baisse" else "hausse", "seuil": _nombre(r.get("seuil"), "seuil"), "unite": str(r.get("unite", "")).strip()})
+    for i, x in enumerate(p.inconnues, 1):
+        if str(x.get("texte", "")).strip():
+            inconnues.append({"id": x.get("id") or f"inc-{i}", "texte": x["texte"].strip()})
+    revue = None
+    if p.revue_le:
+        try:
+            d = datetime.fromisoformat(p.revue_le.replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(400, "Date de revue illisible")
+        revue = (d if d.tzinfo else d.replace(tzinfo=timezone.utc)).isoformat()
+    return {"hypotheses": hyp, "attendus": attendus, "risques": risques, "inconnues": inconnues, "revue_le": revue}
 
 
 class ObservationVeille(BaseModel):
@@ -496,16 +532,36 @@ def build_cases_router(deps):
         now = datetime.now(timezone.utc).isoformat()
         dec = {"texte": payload.texte.strip(), "type": payload.type, "quand": now, "par": x_persona}
         maj = {"maj_le": now}
-        if payload.passation:
+        passation = normaliser_passation(payload.passation) if payload.passation else None
+        if passation and not (passation["attendus"] or passation["risques"] or passation["inconnues"]):
+            passation = None  # rien à observer : la décision est gardée, mais il n'y a pas de veille
+        if passation:
             # La décision s'accompagne de sa note de passation : le travail entre en veille (attendu contre observé)
-            maj["veille"] = {"statut": "en_veille", "decision_le": now, "passation": payload.passation.model_dump(), "observations": [], "emis": []}
+            maj["veille"] = {"statut": "en_veille", "decision_le": now, "passation": passation, "observations": [], "emis": []}
+            maj["statut"] = "en_cours"
         push = {"decisions": dec, "historique": {"quand": now, "texte": f"Décision enregistrée — {payload.type}"}}
-        if payload.passation:
+        if passation:
             # Flore enregistre la décision DANS la conversation et dit ce qu'elle va surveiller
             push["conversation"] = moteur_veille.message_flore_decision(dec["texte"], maj["veille"]["passation"], now)
         await db.cases.update_one({"id": cid}, {"$push": push, "$set": maj})
         await journaler(x_persona, espace["id"], "décision sur un case", cid, payload.texte.strip()[:120])
         return dec
+
+    @router.get("/cases/{cid}/passation/brouillon")
+    async def brouillon_passation(cid: str, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+        """Ce que Flore propose de consigner avec une décision : la décision elle-même, ce sur quoi elle repose, ce qui reste inconnu, une date
+        de revue à 30 jours. Les cibles chiffrées et les seuils restent à la personne : Flore n'invente pas de mesure."""
+        _, espace = resoudre_perimetre(x_persona, x_espace)
+        case = await charger_case(cid, espace)
+        sit = await db.situations.find_one({"id": (case.get("situations") or [None])[0]}, NO_ID) if case.get("situations") else None
+        decision = (case.get("decisions") or [{}])[-1].get("texte") or (sit or {}).get("decision") or ""
+        pq = (sit or {}).get("decouverte_pourquoi") or []
+        hyp = [pq] if isinstance(pq, str) else list(pq)
+        inconnues = [{"texte": t} for t in ((sit or {}).get("reste_a_comprendre") or [])]
+        opp = (sit or {}).get("opportunite") or {}
+        revue = (datetime.now(timezone.utc) + timedelta(days=30)).replace(hour=0, minute=0, second=0, microsecond=0)
+        return {"decision": decision, "hypotheses": hyp, "gain": opp.get("gain"), "attendus": [], "risques": [], "inconnues": inconnues, "revue_le": revue.isoformat(),
+                "jumeaux": [j for j in (case.get("jumeaux") or [])]}
 
     @router.post("/cases/{cid}/decision-attendue")
     async def decision_attendue(cid: str, payload: DecisionAttendue, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
@@ -541,15 +597,27 @@ def build_cases_router(deps):
         elif "observations" in x:
             await db.situations.update_one({"id": sid}, {"$set": {"statut": "en observation"}})
             reponse = "J'ai demandé des observations supplémentaires aux jumeaux concernés. Je vous préviens dès qu'elles arrivent."
+        elif "poursuivre" in x:
+            await db.situations.update_one({"id": sid}, {"$set": {"statut": "poursuivie", "decision": payload.texte, "decidee_le": now}})
+            decision_enregistree = True
+            reponse = "Opportunité retenue. Pour savoir si elle tient ses promesses, je propose de consigner ce que vous en attendez : gain visé, risques à surveiller, date de revue. Ensuite, je l'observerai pour vous."
+        elif "reporter" in x:
+            await db.situations.update_one({"id": sid}, {"$set": {"statut": "reportée", "decidee_le": now}})
+            reponse = "Reportée. Je la garde en mémoire et je vous la représenterai si la situation change (fenêtre qui se referme, ou nouveau signal)."
+        elif "écarter" in x:
+            await db.situations.update_one({"id": sid}, {"$set": {"statut": "écartée", "decidee_le": now}})
+            reponse = "Écartée. Je garde la trace de ce choix pour ne pas la reproposer sans élément nouveau."
         elif "admettre" in x:
             lien = "/jumeaux"
             reponse = "L'admission d'un jumeau se décide depuis sa revue : je vous y envoie."
         else:
             await db.situations.update_one({"id": sid}, {"$set": {"statut": "décidée", "decision": payload.texte, "decidee_le": now}})
             decision_enregistree = True
-            reponse = "Décision enregistrée. Méridian apprend de ce choix, et je la garde dans la mémoire de ce travail."
+            reponse = "Décision enregistrée. Méridian apprend de ce choix, et je la garde dans la mémoire de ce travail. Voulez-vous consigner ce que vous en attendez, pour que je la surveille ?"
         moi = {"role": "utilisateur", "texte": payload.texte, "quand": now}
         flore = {"role": "flore", "comportement": "expliquer", "texte": reponse, "quand": now}
+        if decision_enregistree:
+            flore["propose_passation"] = True  # l'interface propose alors de consigner la note de passation
         push = {"conversation": {"$each": [moi, flore]}, "historique": {"quand": now, "texte": f"Décision attendue traitée — {payload.texte[:80]}"}}
         if decision_enregistree:
             push["decisions"] = {"texte": payload.texte, "type": "arbitrage", "quand": now, "par": x_persona}

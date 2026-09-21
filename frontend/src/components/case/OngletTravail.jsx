@@ -313,7 +313,8 @@ export default function OngletTravail({
   canvasOuvert: canvasOuvertProp, 
   setCanvasOuvert: setCanvasOuvertProp,
   onBasculerCanvas,
-  onOuvrirPreuve 
+  onOuvrirPreuve,
+  onConsignerDecision,
 }) {
   const pilote = usePilotage();
   const navigate = useNavigate();
@@ -760,6 +761,14 @@ export default function OngletTravail({
                     )}
                     {m.decisions?.length > 0 && m.reponse && (
                       <div className="font-code text-[11px] text-[#7C93A8]" data-testid="decision-attendue-prise">Décision prise : {m.reponse}</div>
+                    )}
+                    {/* Flore propose de consigner la décision qu'elle vient d'enregistrer : ce qu'on en attend, ce qu'on surveille, quand on la revoit */}
+                    {m.propose_passation && !cas.veille && onConsignerDecision && i === messages.length - 1 && !envoiMsg && (
+                      <div className="flex flex-wrap gap-2" data-testid="propose-passation">
+                        <button onClick={onConsignerDecision} data-testid="passation-ouvrir" className="rounded-full border border-[#60A5FA]/50 bg-[#60A5FA]/[0.08] px-3.5 py-1.5 text-xs font-medium text-[#BFDBFE] transition-colors hover:bg-[#60A5FA]/[0.18]">
+                          Consigner ce que j'en attends
+                        </button>
+                      </div>
                     )}
                     {/* Sur quoi repose ce que Flore vient de dire (preuves du rapport) */}
                     {m.preuves?.length > 0 && <PreuvesMessage preuves={m.preuves} />}

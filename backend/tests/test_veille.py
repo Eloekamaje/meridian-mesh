@@ -144,6 +144,14 @@ def test_un_evenement_d_un_jumeau_hors_perimetre_n_apparait_pas(api):
     assert "logistique" not in jum and "notifications" not in jum
 
 
+
+@pytest.fixture(scope="module", autouse=True)
+def _nettoyage_travaux_de_test():
+    yield
+    from nettoyage import supprimer_cases
+    supprimer_cases({"titre": "Essai veille (test)"})
+
+
 # ---- cycle complet sur un travail temporaire -----------------------------------------------------
 def _travail_en_veille(api, revue="2026-09-19T00:00:00+00:00"):
     c = api.post(f"{BASE}/cases", headers=H, json={"titre": "Essai veille (test)", "jumeaux": ["paiements"]}).json()

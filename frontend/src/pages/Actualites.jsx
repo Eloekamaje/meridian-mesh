@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { CaretLeft, CaretRight, Sparkle, Compass, ArrowRight, CalendarBlank, DotsThree, ArrowSquareOut, ArrowsLeftRight } from "@phosphor-icons/react";
+import { CaretLeft, CaretRight, Sparkle, Compass, ArrowRight, CalendarBlank, DotsThree, ArrowSquareOut, ArrowsLeftRight, EyeSlash } from "@phosphor-icons/react";
 import api from "@/lib/api";
 import { usePerimetre } from "@/lib/perimetre";
 import { useMesh } from "@/lib/mesh";
@@ -31,7 +31,15 @@ export const GENRES = {
   decision: ["Décision", "#60A5FA"],
   gouvernance: ["Gouvernance", "#7C93A8"],
   veille: ["Décision en veille", "#F2B84B"],
+  opportunite: ["Opportunité", "#34D399"],
 };
+
+const RAISONS_ECART = [
+  ["connu", "Déjà connu"],
+  ["pas_pour_moi", "Ne me concerne pas"],
+  ["trop_tot", "Trop tôt"],
+  ["traite", "Traité ailleurs"],
+];
 
 const PORTEES = [
   ["personnel", "Personnel"],
@@ -47,10 +55,17 @@ const PRESETS = [
   ["30j", "30 derniers jours"],
 ];
 
-const heure = (iso) => new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+// L'heure quand le fait date d'aujourd'hui, sinon le jour : une heure sans jour trompe (un fait d'hier soir n'est pas « à 20:00 » aujourd'hui)
+const heure = (iso) => {
+  const d = new Date(iso);
+  return d.toDateString() === new Date().toDateString()
+    ? d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
+    : d.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+};
 
-function CarteHistoire({ h, vedette, dateCible, estAujourdhui, navigate, mesh }) {
+function CarteHistoire({ h, vedette, dateCible, estAujourdhui, navigate, mesh, onEcarter }) {
   const [menu, setMenu] = useState(false);
+  const [ecart, setEcart] = useState(false);
   const [ouverture, setOuverture] = useState(false);
   const g = GENRES[h.genre] || [h.genre, "#7C93A8"];
   // Les histoires de relation/transformation s'ouvrent en Avant/Après à la date du phénomène
@@ -78,11 +93,22 @@ function CarteHistoire({ h, vedette, dateCible, estAujourdhui, navigate, mesh })
     }
   };
 
+  const ecarter = async (raison) => {
+    setMenu(false);
+    setEcart(false);
+    try {
+      await api.post(`/actualites/histoire/${h.id}/ecarter`, { raison });
+      onEcarter?.(h, raison);
+    } catch {
+      toast.error("Impossible d'écarter cette actualité");
+    }
+  };
+
   const actionPrincipale = () => {
     if (h.genre === "travail" || h.genre === "decision" || h.genre === "veille") {
       return (
         <button onClick={() => navigate(h.liens.travail)} data-testid={`histoire-reprendre-${h.id}`} className="flex items-center gap-1.5 rounded-md bg-[#60A5FA] px-3 py-1.5 text-[11px] font-semibold text-[#071019] transition-colors hover:bg-[#93C5FD]">
-          Reprendre <ArrowRight size={11} />
+          {h.action_label || "Reprendre"} <ArrowRight size={11} />
         </button>
       );
     }
@@ -95,20 +121,21 @@ function CarteHistoire({ h, vedette, dateCible, estAujourdhui, navigate, mesh })
     }
     return (
       <button onClick={() => ouvrirTravail("comprendre")} disabled={ouverture} data-testid={`histoire-comprendre-${h.id}`} className="flex items-center gap-1.5 rounded-md bg-[#60A5FA] px-3 py-1.5 text-[11px] font-semibold text-[#071019] transition-colors hover:bg-[#93C5FD]">
-        <Sparkle size={11} weight="fill" /> {ouverture ? "Flore prépare sa lecture…" : "Comprendre"}
+        <Sparkle size={11} weight="fill" /> {ouverture ? "Flore prépare sa lecture…" : h.action_label || "Comprendre"}
       </button>
     );
   };
 
   return (
     <article
-      className={`rise rounded-xl border bg-[#0F1D28] p-5 transition-colors ${vedette ? "border-[#60A5FA]/25 shadow-sm" : "border-[rgba(148,163,184,0.16)] hover:border-[#41576D]"}`}
+      className={`rise rounded-xl border bg-[#0F1D28] p-5 transition-colors ${vedette ? "border-[#60A5FA]/25 shadow-sm" : h.attention === "critique" ? "border-[#F2B84B]/30" : "border-[rgba(148,163,184,0.16)] hover:border-[#41576D]"}`}
       data-testid={`histoire-${h.id}`}
     >
       <div className="flex items-center gap-2 font-code text-[9px] uppercase tracking-[0.2em]">
         <span className={`h-1.5 ${h.incertain ? "w-2.5 rounded-sm border border-dashed" : "w-1.5 rounded-full"}`} style={{ backgroundColor: h.incertain ? "transparent" : g[1], borderColor: g[1] }} />
         <span style={{ color: g[1] }}>{vedette ? `${g[0]} principale` : g[0]}</span>
         <span className="text-[#7C93A8]">· {heure(h.quand)}</span>
+        {h.attention === "critique" && <span className="rounded border border-[#F2B84B]/40 px-1 py-0.5 text-[#F2B84B]" data-testid={`histoire-critique-${h.id}`}>à traiter d'abord</span>}
         {h.restreinte && <span className="rounded border border-[#F2B84B]/40 px-1 py-0.5 text-[#F2B84B]">périmètre partiel</span>}
       </div>
       <h3 className={`mt-2 font-semibold leading-snug text-[#F2F6F8] ${vedette ? "font-display text-lg" : "text-sm"}`}>{h.titre}</h3>
@@ -135,7 +162,7 @@ function CarteHistoire({ h, vedette, dateCible, estAujourdhui, navigate, mesh })
       <div className="mt-3 flex items-center gap-2 border-t border-[rgba(148,163,184,0.10)] pt-3">
         {actionPrincipale()}
         <div className="relative">
-          <button onClick={() => setMenu((m) => !m)} data-testid={`histoire-menu-${h.id}`} title="Autres actions" className="flex h-7 w-7 items-center justify-center rounded-md border border-[rgba(148,163,184,0.16)] text-[#7C93A8] transition-colors hover:text-[#F2F6F8]">
+          <button onClick={() => { setMenu((m) => !m); setEcart(false); }} data-testid={`histoire-menu-${h.id}`} title="Autres actions" className="flex h-7 w-7 items-center justify-center rounded-md border border-[rgba(148,163,184,0.16)] text-[#7C93A8] transition-colors hover:text-[#F2F6F8]">
             <DotsThree size={15} weight="bold" />
           </button>
           {menu && (
@@ -155,11 +182,42 @@ function CarteHistoire({ h, vedette, dateCible, estAujourdhui, navigate, mesh })
                   <ArrowRight size={12} /> Approfondir
                 </button>
               )}
+              {!ecart ? (
+                <button onClick={() => setEcart(true)} data-testid={`histoire-ecarter-${h.id}`} className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]">
+                  <EyeSlash size={12} /> Écarter…
+                </button>
+              ) : (
+                <div className="mt-1 border-t border-[rgba(148,163,184,0.12)] pt-1" data-testid={`histoire-raisons-${h.id}`}>
+                  <div className="px-2.5 py-1 font-code text-[10px] uppercase tracking-[0.14em] text-[#7C93A8]">Pourquoi l'écarter ?</div>
+                  {RAISONS_ECART.map(([id, label]) => (
+                    <button key={id} onClick={() => ecarter(id)} data-testid={`ecarter-${id}-${h.id}`} className="flex w-full items-center rounded px-2.5 py-1.5 text-left text-[11px] text-[#D8E2EA] hover:bg-[rgba(148,163,184,0.10)]">
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
       </div>
     </article>
+  );
+}
+
+// Une section du « reste » : au plus six cartes d'abord, le journal peut compter des dizaines de lignes
+function SectionReste({ s, ...carte }) {
+  const [tout, setTout] = useState(false);
+  const visibles = tout ? s.histoires : s.histoires.slice(0, 6);
+  return (
+    <section data-testid={`reste-${s.id}`}>
+      <h2 className="font-code text-[10px] uppercase tracking-[0.25em] text-[#94A3B8]">{s.titre}</h2>
+      <div className="mt-3 space-y-4">
+        {visibles.map((h) => <CarteHistoire key={h.id} h={h} {...carte} />)}
+      </div>
+      {s.histoires.length > 6 && !tout && (
+        <button onClick={() => setTout(true)} className="mt-3 text-xs font-medium text-[#60A5FA] hover:text-[#93C5FD]">Afficher {s.histoires.length - 6} de plus</button>
+      )}
+    </section>
   );
 }
 
@@ -182,6 +240,8 @@ export default function Actualites() {
   const [compteurs, setCompteurs] = useState(null);
   const [delegations, setDelegations] = useState([]);
   const [calendrier, setCalendrier] = useState(false);
+  const [resteOuvert, setResteOuvert] = useState(false);
+  const [ecarteesOuvert, setEcarteesOuvert] = useState(false);
   const refCalendrier = useRef(null);
 
   useEffect(() => {
@@ -252,6 +312,19 @@ export default function Actualites() {
     return () => clearInterval(t);
   }, [estAujourdhui, dateCible, portee]);
 
+  const retablir = async (id) => {
+    try {
+      await api.delete(`/actualites/histoire/${id}/ecarter`);
+      charger();
+    } catch {
+      toast.error("Impossible de rétablir cette actualité");
+    }
+  };
+  const apresEcart = (h, raison) => {
+    charger();
+    toast(`« ${h.titre.length > 48 ? `${h.titre.slice(0, 48)}…` : h.titre} » écartée`, { description: RAISONS_ECART.find(([id]) => id === raison)?.[1], action: { label: "Annuler", onClick: () => retablir(h.id) } });
+  };
+
   const appliquerPreset = (v) => {
     if (v === "aujourdhui") { setDecalage(0); setJours(1); }
     else if (v === "hier") { setDecalage(1); setJours(1); }
@@ -303,7 +376,7 @@ export default function Actualites() {
                       vue === id ? "bg-[#60A5FA] font-semibold text-[#071019]" : "text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"
                     }`}
                   >
-                    {label}
+                    {id === "brief" ? (estAujourdhui ? "Aujourd'hui" : "Période") : label}
                     {n > 0 && (
                       <span className={`rounded-full px-1.5 font-code text-[9px] ${vue === id ? "bg-[#071019]/30 text-[#F2F6F8]" : id === "a_traiter" ? "bg-[#F2B84B] text-[#071019]" : "bg-[rgba(148,163,184,0.10)] text-[#94A3B8]"}`} data-testid={`vue-${id}-badge`}>
                         {n}
@@ -497,11 +570,48 @@ export default function Actualites() {
               {!(s.id === "essentiel" && data?.briefing) && <h2 className="font-code text-[10px] uppercase tracking-[0.25em] text-[#94A3B8]">{s.titre}</h2>}
               <div className={`${s.id === "essentiel" && data?.briefing ? "mt-0" : "mt-3"} space-y-4`}>
                 {s.histoires.map((h) => (
-                  <CarteHistoire key={h.id} h={h} vedette={h.id === vedetteId} dateCible={dateCible} estAujourdhui={estAujourdhui} navigate={navigate} mesh={mesh} />
+                  <CarteHistoire key={h.id} h={h} vedette={h.id === vedetteId} dateCible={dateCible} estAujourdhui={estAujourdhui} navigate={navigate} mesh={mesh} onEcarter={apresEcart} />
                 ))}
               </div>
             </section>
           ))}
+
+          {/* Budget d'attention : le reste existe, mais n'est pas sur le chemin de la personne */}
+          {data?.budget && data.budget.reste > 0 && (
+            <section data-testid="actualites-reste">
+              <button onClick={() => setResteOuvert((o) => !o)} aria-expanded={resteOuvert} data-testid="reste-toggle"
+                className="flex w-full items-center justify-between gap-3 rounded-xl border border-dashed border-[rgba(148,163,184,0.25)] px-4 py-3 text-left text-xs text-[#94A3B8] transition-colors hover:border-[#41576D] hover:text-[#F2F6F8]">
+                <span>
+                  <span className="font-semibold text-[#D8E2EA]">Le reste — {data.budget.reste} autre{data.budget.reste > 1 ? "s" : ""}</span>
+                  <span className="ml-2 text-[#7C93A8]">rien d'urgent : découvertes, surveillance, journal de l'espace</span>
+                </span>
+                <CaretRight size={13} className={`shrink-0 transition-transform ${resteOuvert ? "rotate-90" : ""}`} />
+              </button>
+              {resteOuvert && (
+                <div className="mt-6 space-y-8" data-testid="reste-contenu">
+                  {(data.reste || []).map((s) => <SectionReste key={s.id} s={s} dateCible={dateCible} estAujourdhui={estAujourdhui} navigate={navigate} mesh={mesh} onEcarter={apresEcart} />)}
+                </div>
+              )}
+            </section>
+          )}
+
+          {data?.ecartees?.length > 0 && (
+            <section data-testid="actualites-ecartees">
+              <button onClick={() => setEcarteesOuvert((o) => !o)} aria-expanded={ecarteesOuvert} data-testid="ecartees-toggle" className="flex items-center gap-1.5 font-code text-[11px] text-[#7C93A8] hover:text-[#D8E2EA]">
+                <EyeSlash size={12} /> {data.ecartees.length} actualité{data.ecartees.length > 1 ? "s" : ""} écartée{data.ecartees.length > 1 ? "s" : ""}
+              </button>
+              {ecarteesOuvert && (
+                <ul className="mt-2 space-y-1.5">
+                  {data.ecartees.map((e) => (
+                    <li key={e.id} className="flex items-center justify-between gap-3 rounded-lg border border-[rgba(148,163,184,0.12)] px-3 py-2 text-xs text-[#94A3B8]">
+                      <span className="min-w-0 truncate">{e.titre} <span className="text-[#7C93A8]">· {e.raison}</span></span>
+                      <button onClick={() => retablir(e.id)} data-testid={`retablir-${e.id}`} className="shrink-0 font-medium text-[#60A5FA] hover:text-[#93C5FD]">Rétablir</button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          )}
 
           {data && histoires.length === 0 && (
             <div className="rounded-xl border border-dashed border-[#41576D] bg-[#0F1D28] p-10 text-center" data-testid="feed-vide">

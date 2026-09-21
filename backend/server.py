@@ -66,6 +66,10 @@ async def seed_database():
         {"id": "case-dette-files", "veille": {"$exists": False}},
         {"$set": {"veille": VEILLE_DETTE_FILES, "statut": "en_cours", "visites.architecte": "2026-09-12T08:00:00+00:00"}},
     )
+    # Migration douce : les opportunités (genre à part entière) remplacent l'ancienne « recommandation d'optimisation »
+    for sit in SITUATIONS:
+        if sit.get("nature") == "opportunite" and not await db.situations.find_one({"id": sit["id"], "nature": "opportunite"}, {"_id": 1}):
+            await db.situations.replace_one({"id": sit["id"]}, dict(sit), upsert=True)
 
 
 def slugify(nom: str) -> str:

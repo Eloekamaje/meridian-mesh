@@ -11,6 +11,17 @@ import ouverture_travail
 class OuvertureTravail(BaseModel):
     intention: str = "comprendre"  # comprendre | suivre | investiguer
 
+
+RAISONS_ECART = {"connu": "Déjà connu", "pas_pour_moi": "Ne me concerne pas", "trop_tot": "Trop tôt", "traite": "Traité ailleurs"}
+
+
+class EcartActualite(BaseModel):
+    raison: str = "connu"
+
+# Budget d'attention de la vue « Aujourd'hui » : trois choses critiques au plus, cinq pertinentes au plus ; le reste est replié.
+BUDGET_CRITIQUES = 3
+BUDGET_PERTINENTES = 5
+
 ETATS_REL = {
     "observee": "observée", "supposee": "supposée", "validation": "en validation A2A",
     "confirmee": "confirmée", "contestee": "contestée", "obsolete": "obsolète",
@@ -18,14 +29,15 @@ ETATS_REL = {
 
 GENRES_SITUATION = {
     "relation": "relation", "contradiction": "contradiction", "connaissance": "connaissance",
-    "changement": "changement", "incident": "incident", "comportement": "comportement",
+    "changement": "changement", "incident": "incident", "comportement": "comportement", "opportunite": "opportunite",
 }
 
-SECTIONS_ORDRE = ["essentiel", "travaux", "decouvertes", "transformations", "surveillance", "espace", "global"]
+SECTIONS_ORDRE = ["essentiel", "travaux", "opportunites", "decouvertes", "transformations", "surveillance", "espace", "global"]
 
 TITRES_SECTION = {
     "essentiel": "L'essentiel",
     "travaux": "Vos travaux",
+    "opportunites": "Opportunités",
     "decouvertes": "Découvertes",
     "transformations": "Transformations",
     "surveillance": "À surveiller",
@@ -35,7 +47,7 @@ TITRES_SECTION = {
 
 SECTION_PAR_GENRE = {
     "relation": "decouvertes", "connaissance": "decouvertes", "contradiction": "surveillance",
-    "changement": "transformations", "comportement": "transformations", "phenomene": "surveillance",
+    "changement": "transformations", "comportement": "transformations", "opportunite": "opportunites", "phenomene": "surveillance",
     "travail": "travaux", "decision": "travaux", "veille": "travaux", "gouvernance": "espace",
 }
 
@@ -44,17 +56,17 @@ PROFILS = {
     "architecte": {
         "label": "Lecture architecte",
         "phrase": "Dépendances, transformations et risques structurels d'abord.",
-        "boost": {"relation": 18, "changement": 14, "connaissance": 8, "incident": 6, "travail": 4},
+        "boost": {"relation": 18, "changement": 14, "connaissance": 8, "incident": 6, "opportunite": 10, "travail": 4},
     },
     "exploitant": {
         "label": "Lecture exploitation",
         "phrase": "Comportements et dégradations transversales d'abord.",
-        "boost": {"incident": 18, "comportement": 14, "contradiction": 8, "travail": 6},
+        "boost": {"incident": 18, "comportement": 14, "contradiction": 8, "opportunite": 6, "travail": 6},
     },
     "decideur": {
         "label": "Lecture décideur",
         "phrase": "Décisions attendues, risques et impacts d'abord.",
-        "boost": {"decision": 18, "travail": 12, "contradiction": 8, "incident": 6},
+        "boost": {"decision": 18, "travail": 12, "opportunite": 14, "contradiction": 8, "incident": 6},
     },
 }
 
@@ -179,6 +191,9 @@ def build_actualites_router(deps):
             genre = GENRES_SITUATION.get(nature, "connaissance")
             prioritaire = s.get("priorite") in ("critique", "haute")
             section = "essentiel" if (nature == "incident" and prioritaire) else SECTION_PAR_GENRE.get(genre, "decouvertes")
+            attendues = s.get("decisions_attendues") or []
+            pourquoi = (s.get("opportunite") or {}).get("si_rien") or (
+                "Une décision est attendue de vous : " + " ou ".join(a[0].lower() + a[1:] for a in attendues[:2]) + "." if attendues and s.get("statut") == "active" else None)
             histoires.append({
                 "id": f"sit-{s['id']}",
                 "genre": genre,
@@ -191,6 +206,8 @@ def build_actualites_router(deps):
                 "confiance": confiance_label(s.get("score") or 50),
                 "score": (s.get("score") or 50) + BOOST_PRIORITE.get(s.get("priorite"), 0),
                 "verbe": s.get("verbe"),
+                "pourquoi_maintenant": pourquoi,
+                "action_label": "Évaluer l'opportunité" if genre == "opportunite" else "Décider" if attendues and s.get("statut") == "active" else None,
                 "liens": {"investigation": f"/investigations/{s['id']}", "atlas": f"/atlas?situation={s['id']}"},
             })
 
@@ -283,6 +300,7 @@ def build_actualites_router(deps):
                 "genre": "veille" if evs else ("decision" if a_decision else "travail"),
                 "pourquoi_maintenant": pourquoi,
                 "section": "essentiel" if evs and niveau == 1 else "travaux",
+                "action_label": ("Revoir la décision" if niveau == 1 else "Prendre connaissance") if evs else None,
                 "titre": c["titre"],
                 "recit": recit,
                 "quand": entrees[-1][0].isoformat(),
@@ -319,18 +337,48 @@ def build_actualites_router(deps):
                 h["score"] -= 20
         histoires.sort(key=lambda h: (h["score"], h["quand"]), reverse=True)
 
-        sections = [{"id": sid, "titre": TITRES_SECTION[sid], "histoires": [h for h in histoires if h["section"] == sid]}
-                    for sid in SECTIONS_ORDRE]
-        sections = [s for s in sections if s["histoires"]]
+        # Ce que la personne a écarté (avec sa raison) ne revient pas dans la vue — mais reste consultable et rétablissable.
+        ecartees_docs = await db.actualites_ecartees.find({"persona": x_persona}, NO_ID).to_list(500)
+        raisons = {e["histoire_id"]: e for e in ecartees_docs}
+        ecartees = [{"id": h["id"], "titre": h["titre"], "raison": RAISONS_ECART.get(raisons[h["id"]]["raison"], raisons[h["id"]]["raison"])} for h in histoires if h["id"] in raisons]
+        histoires = [h for h in histoires if h["id"] not in raisons]
+
+        # Budget d'attention (vue du jour) : la vue ne montre que ce qui mérite l'attention aujourd'hui, le reste est replié.
+        budget = None
+        if est_aujourdhui:
+            nb_crit = nb_pert = 0
+            # Une opportunité n'est jamais urgente : sans place réservée elle ne serait jamais vue. La meilleure a donc toujours sa place.
+            meilleure = next((h for h in histoires if h["genre"] == "opportunite"), None)
+            if meilleure:
+                meilleure["attention"], nb_pert = "pertinent", 1
+            for h in histoires:
+                if h is meilleure:
+                    continue
+                if h["genre"] == "gouvernance":
+                    continue
+                if h["section"] == "essentiel" and nb_crit < BUDGET_CRITIQUES:
+                    h["attention"], nb_crit = "critique", nb_crit + 1
+                elif nb_pert < BUDGET_PERTINENTES:
+                    h["attention"], nb_pert = "pertinent", nb_pert + 1
+            budget = {"critiques": nb_crit, "pertinentes": nb_pert, "reste": sum(1 for h in histoires if "attention" not in h)}
+
+        def par_sections(liste):
+            secs = [{"id": sid, "titre": TITRES_SECTION[sid], "histoires": [h for h in liste if h["section"] == sid]} for sid in SECTIONS_ORDRE]
+            return [x for x in secs if x["histoires"]]
+
+        retenues = [h for h in histoires if h.get("attention")] if budget else histoires
+        sections = par_sections(retenues)
+        ids_retenus = {h["id"] for h in retenues}
+        reste = par_sections([h for h in histoires if h["id"] not in ids_retenus]) if budget else []
 
         # --- Briefing de Flore (rédaction déterministe, adaptée au rôle) ---
         prenom = persona.get("nom", "").split(" ")[-1] if persona.get("nom") else ""
         salutation = f"Bonjour {persona.get('nom', '')}".strip()
-        top = histoires[:3]
-        if histoires:
-            top1 = histoires[0]
+        top = retenues[:3]
+        if retenues:
+            top1 = retenues[0]
             accroche = (
-                f"{len(histoires)} évolution{'s' if len(histoires) > 1 else ''} mérite{'nt' if len(histoires) > 1 else ''} votre attention. "
+                f"{len(retenues)} évolution{'s' if len(retenues) > 1 else ''} mérite{'nt' if len(retenues) > 1 else ''} votre attention. "
                 f"La plus importante : {top1['titre']}"
                 + (" — encore supposée, non confirmée." if top1.get("incertain") else ".")
             )
@@ -382,6 +430,9 @@ def build_actualites_router(deps):
             "espace_label": espace["label"],
             "briefing": briefing,
             "sections": sections,
+            "reste": reste,
+            "budget": budget,
+            "ecartees": ecartees,
             "histoires": histoires,
             "synthese": synthese,
             "mesh": {
@@ -428,6 +479,9 @@ def build_actualites_router(deps):
             rc = s.get("reste_a_comprendre")
             if rc:
                 morceaux.append("Reste à comprendre :\n" + "\n".join(f"— {p}" for p in rc) if isinstance(rc, list) else f"Reste à comprendre : {rc}")
+            opp = s.get("opportunite")
+            if opp:
+                morceaux.append(f"Ce qu'on peut y gagner : {opp['gain']}\n\nCe que cela demande : {opp['effort']}\n\nSi rien n'est fait : {opp['si_rien']}")
             att = s.get("decisions_attendues") or []
             if att:
                 morceaux.append("Décisions attendues :\n" + "\n".join(f"— {a}" for a in att))
@@ -440,6 +494,10 @@ def build_actualites_router(deps):
                     {"label": "Que reste-t-il à comprendre ?", "question": f"Que reste-t-il à comprendre sur : {s['titre']} ?"},
                     {"label": "Quels jumeaux sont concernés ?", "question": f"Quels jumeaux sont concernés par : {s['titre']} ?"},
                     {"label": "Que puis-je faire maintenant ?", "question": f"Que puis-je faire maintenant pour : {s['titre']} ?"},
+                ] if not opp else [
+                    {"label": "Quels risques si je la poursuis ?", "question": f"Quels risques y a-t-il à poursuivre : {s['titre']} ?"},
+                    {"label": "Quels jumeaux sont concernés ?", "question": f"Quels jumeaux sont concernés par : {s['titre']} ?"},
+                    {"label": "Comment la mettre en œuvre ?", "question": f"Comment mettre en œuvre : {s['titre']} ?"},
                 ],
             }
 
@@ -518,6 +576,22 @@ def build_actualites_router(deps):
             raise HTTPException(404, "Actualité introuvable")
 
         return {"histoire": histoire, "rapport": rapport}
+
+    @router.post("/actualites/histoire/{hid}/ecarter")
+    async def ecarter(hid: str, payload: EcartActualite, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+        """Écarter une actualité pour soi : elle sort de la vue, et la raison est gardée (Méridian apprend ce qui compte pour la personne)."""
+        if payload.raison not in RAISONS_ECART:
+            raise HTTPException(400, "Raison inconnue")
+        await histoire_detail(hid, x_persona, x_espace)  # périmètre : hors droits → 404
+        now = datetime.now(timezone.utc).isoformat()
+        await db.actualites_ecartees.update_one(
+            {"persona": x_persona, "histoire_id": hid}, {"$set": {"raison": payload.raison, "quand": now}}, upsert=True)
+        return {"id": hid, "raison": RAISONS_ECART[payload.raison]}
+
+    @router.delete("/actualites/histoire/{hid}/ecarter")
+    async def retablir(hid: str, x_persona: str = Header("architecte")):
+        await db.actualites_ecartees.delete_one({"persona": x_persona, "histoire_id": hid})
+        return {"id": hid}
 
     @router.post("/actualites/histoire/{hid}/travail")
     async def ouvrir_travail(hid: str, payload: OuvertureTravail, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):

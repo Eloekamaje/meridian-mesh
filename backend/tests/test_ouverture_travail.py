@@ -23,8 +23,12 @@ def api():
     return requests.Session()
 
 
-def _supprimer(api, cid):
-    pass  # pas d'endpoint de suppression : le nettoyage se fait en base (voir conftest / scripts)
+@pytest.fixture(scope="module", autouse=True)
+def _nettoyage_travaux_de_test():
+    """Pas d'endpoint de suppression : les travaux ouverts par ces tests sont retirés de la base à la fin du module."""
+    yield
+    from nettoyage import supprimer_cases
+    supprimer_cases({"$or": [{"origine.histoire_id": {"$exists": True}}, {"origine.initiative_id": {"$exists": True}}]})
 
 
 RAPPORT = {"texte": "Une dérive de latence.\n\nReste à comprendre :\n— la cause.", "preuves": [{"source": "Datadog", "detail": "4 traces"}],

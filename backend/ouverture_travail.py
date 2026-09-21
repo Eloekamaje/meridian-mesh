@@ -16,7 +16,7 @@ INTENTIONS = ("comprendre", "suivre", "investiguer")
 # Genre d'actualité → type de travail (les types connus de la liste des travaux)
 TYPE_PAR_GENRE = {
     "incident": "incident", "changement": "changement", "relation": "decouverte", "phenomene": "decouverte",
-    "connaissance": "decouverte", "comportement": "decouverte", "contradiction": "conformite",
+    "connaissance": "decouverte", "comportement": "decouverte", "contradiction": "conformite", "opportunite": "opportunite",
 }
 
 
@@ -38,7 +38,7 @@ def message_flore(intention: str, histoire: dict, rapport: dict, situation: Opti
         )
         suggestions = _suggestions(rapport)
     elif intention == "investiguer":
-        question = (situation or {}).get("question") or f"{titre} ?"
+        question = (situation or {}).get("question") or ("Cette opportunité vaut-elle d'être saisie ?" if histoire.get("genre") == "opportunite" else f"{titre} ?")
         texte = (
             f"Je propose d'ouvrir une investigation. La question : « {question} »\n\n"
             f"{texte_rapport}\n\n"
@@ -49,6 +49,9 @@ def message_flore(intention: str, histoire: dict, rapport: dict, situation: Opti
             {"label": "Délimiter le périmètre", "question": f"Quel périmètre faut-il investiguer pour : {titre} ?"},
             {"label": "Quelles preuves manquent ?", "question": f"Quelles preuves manquent pour trancher : {titre} ?"},
         ]
+    elif histoire.get("genre") == "opportunite":
+        texte = f"J'ai repéré une opportunité : « {titre} ».\n\n{texte_rapport}"
+        suggestions = _suggestions(rapport)
     else:
         texte = f"Voici ma lecture de la situation « {titre} ».\n\n{texte_rapport}"
         suggestions = _suggestions(rapport)
