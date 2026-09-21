@@ -644,7 +644,7 @@ export default function OngletTravail({
         <div 
           ref={defilementRef}
           onScroll={verifierPositionScroll}
-          className={`flex-1 overflow-y-auto px-6 transition-[padding] duration-300 ease-out sm:px-12 ${voletSourcesOuvert && !canvasActif ? "xl:pr-[22rem]" : ""}`}
+          className="flex-1 overflow-y-auto px-6 sm:px-12"
         >
           <div className="mx-auto max-w-3xl space-y-7 py-8" data-testid="case-conversation">
             {messages.map((m, i) => (
