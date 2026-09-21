@@ -10,6 +10,8 @@ import Accueil from "@/pages/Accueil";
 import Actualites from "@/pages/Actualites";
 import Comprendre from "@/pages/Comprendre";
 import Atlas from "@/pages/Atlas";
+import LaboAtlas from "@/pages/LaboAtlas";
+import LaboEchelle from "@/pages/LaboEchelle";
 import Commande from "@/pages/Commande";
 import Investigations from "@/pages/Investigations";
 import InvestigationDetail from "@/pages/InvestigationDetail";
@@ -41,6 +43,9 @@ function ProduitApp() {
             <Route path="/actualites" element={<Actualites />} />
             <Route path="/actualites/comprendre/:hid" element={<Comprendre />} />
             <Route path="/atlas" element={<Atlas />} />
+            {/* Laboratoire du graphe : page d'essai, isolée de l'Atlas (idées inspirées de graphify) */}
+            <Route path="/labo/atlas" element={<LaboAtlas />} />
+            <Route path="/labo/echelle" element={<LaboEchelle />} />
             <Route path="/investigations" element={<Investigations />} />
             <Route path="/investigations/:id" element={<InvestigationDetail />} />
             <Route path="/travaux" element={<Travaux />} />
