@@ -1083,7 +1083,27 @@ export default function Atlas() {
   }, [nodes, poursuite]);
 
   // Survol des membranes par proximité de la frontière (les zones d'interaction des arêtes les recouvrent)
+  // Le survol (arc, robot) ne doit jamais survivre au curseur : les événements « sortie » du navigateur manquent quand la carte
+  // bouge sous un curseur immobile (zoom, recadrage, inertie) ou quand un élément est recréé. On vérifie donc, à chaque mouvement
+  // de souris ET de caméra, que le curseur est encore sur l'élément survolé.
+  const dernierPointeur = useRef(null);
+  const verifierSurvol = () => {
+    const pt = dernierPointeur.current;
+    if (!pt) return;
+    const sous = document.elementFromPoint(pt.x, pt.y);
+    if (relSurvolee) {
+      const g = sous?.closest?.(".react-flow__edge");
+      if (!g || g.getAttribute("data-id") !== relSurvolee) { setRelSurvolee(null); setRelTooltipPos(null); }
+    }
+    if (survolJumeau) {
+      const n = sous?.closest?.(".react-flow__node");
+      if (!n || n.getAttribute("data-id") !== survolJumeau) { setSurvolJumeau(null); setTooltipPos(null); }
+    }
+  };
+
   const surSurvolCarte = (e) => {
+    dernierPointeur.current = { x: e.clientX, y: e.clientY };
+    verifierSurvol();
     if (!rfRef.current || !mesh) return;
     const rect = carteRef.current?.getBoundingClientRect();
     if (!rect) return;
@@ -1169,6 +1189,7 @@ export default function Atlas() {
   // Inertie de déplacement : échantillonnage du viewport, décélération progressive au relâchement
   const surMove = (e, vp) => {
     onMove(e, vp);
+    verifierSurvol();
     setZoomActuel((z) => {
       const arr = Math.round(vp.zoom * 20) / 20;
       return Math.abs(arr - z) >= 0.05 ? arr : z;
@@ -1192,6 +1213,7 @@ export default function Atlas() {
   };
 
   const surMoveEnd = () => {
+    verifierSurvol();
     const ms = mouvements.current;
     mouvements.current = [];
     if (!rfRef.current || ms.length < 2) return;
