@@ -121,21 +121,24 @@ def build_cases_router(deps):
         if not v or v.get("statut") != "en_veille":
             return case
         deja = set(v.get("emis", []))
-        nouveaux = [e for e in moteur_veille.evaluer(v, datetime.now(timezone.utc)) if e["id"] not in deja]
+        tous = moteur_veille.evaluer(v, datetime.now(timezone.utc))
+        nouveaux = [e for e in tous if e["id"] not in deja]
         if not nouveaux:
             return case
-        msgs = [{"role": "evenement", **e} for e in nouveaux]
-        histo = [{"quand": e["quand"], "texte": e["titre"]} for e in nouveaux]
-        await db.cases.update_one(
-            {"id": case["id"]},
-            {"$push": {"conversation": {"$each": msgs}, "historique": {"$each": histo}}, "$addToSet": {"veille.emis": {"$each": [e["id"] for e in nouveaux]}},
-             "$set": {"maj_le": max(e["quand"] for e in nouveaux)}},
-        )
+        # Plusieurs lectures simultanées (page, panneau Flore, menu) arrivent ensemble : chaque événement est « réclamé » de façon
+        # atomique — la mise à jour ne s'applique que si son identifiant n'est pas déjà émis, donc un seul lecteur l'écrit.
+        for e in nouveaux:
+            msg = moteur_veille.message_flore_revue(e, tous) if e["type"] == "revue_due" else {"role": "evenement", **e}
+            await db.cases.update_one(
+                {"id": case["id"], "veille.emis": {"$ne": e["id"]}},
+                {"$push": {"conversation": msg, "historique": {"quand": e["quand"], "texte": e["titre"]}}, "$addToSet": {"veille.emis": e["id"]},
+                 "$max": {"maj_le": e["quand"]}},
+            )
         return await db.cases.find_one({"id": case["id"]}, NO_ID)
 
     def visible_pour(case, aut):
         """Un fait observé par un jumeau hors périmètre n'apparaît pas (refus par défaut) ; le fil est remis en ordre chronologique."""
-        conv = [m for m in case.get("conversation", []) if m.get("role") != "evenement" or not m.get("jumeau") or m["jumeau"] in aut]
+        conv = [m for m in case.get("conversation", []) if not moteur_veille.est_veille(m) or not m.get("jumeau") or m["jumeau"] in aut]
         if case.get("veille"):
             conv.sort(key=lambda m: m.get("quand", ""))
         return conv
@@ -152,7 +155,7 @@ def build_cases_router(deps):
         for c in visibles:
             c["conversation"] = visible_pour(c, aut)
             if c.get("veille"):
-                evs = [m for m in c["conversation"] if m.get("role") == "evenement"]
+                evs = [m for m in c["conversation"] if moteur_veille.est_veille(m)]
                 c["mouvement"] = moteur_veille.mouvement(evs, (c.get("visites") or {}).get(x_persona))
                 c["en_veille"] = c["veille"].get("statut") == "en_veille"
                 c["revue_le"] = (c["veille"].get("passation") or {}).get("revue_le")
@@ -531,24 +534,30 @@ def build_cases_router(deps):
         now = maintenant.isoformat()
         evs = moteur_veille.evaluer(v, maintenant)
         faits = [e for e in evs if e["niveau"] == 1 and e["type"] != "revue_due"]
+        libelle = next(r["label"] for r in moteur_veille.REPONSES_REVUE if r["action"] == payload.action)
+        # Le choix de la personne est SON message ; Flore répond dans le fil
+        moi = {"role": "utilisateur", "texte": libelle, "quand": now}
         if payload.action == "rouvrir":
             liste = "\n".join(f"— {e['texte']}" for e in faits) or "— aucun écart majeur, mais la date de revue est atteinte."
-            flore = {"role": "flore", "comportement": "expliquer", "quand": now,
-                     "texte": f"Décision rouverte. Ce qui a changé depuis qu'elle a été prise :\n{liste}\n\nQuelle option voulez-vous réexaminer, ou souhaitez-vous que je compare des variantes ?"}
+            texte_flore = f"Décision rouverte. Ce qui a changé depuis qu'elle a été prise :\n{liste}\n\nQuelle option voulez-vous réexaminer, ou souhaitez-vous que je compare des variantes ?"
             maj = {"veille.statut": "rouverte", "statut": "en_cours", "veille.revue_faite_le": now, "maj_le": now}
-            texte = "Décision rouverte après observation des effets"
-            push = {"conversation": flore, "historique": {"quand": now, "texte": texte}}
+            histo = "Décision rouverte après observation des effets"
         elif payload.action == "maintenir":
             prochaine = (maintenant.replace(microsecond=0) + timedelta(days=30)).isoformat()
-            maj = {"veille.revue_faite_le": now, "veille.passation.revue_le": prochaine, "maj_le": now}
-            push = {"historique": {"quand": now, "texte": "Revue effectuée — décision maintenue, prochaine revue dans 30 jours"}}
+            texte_flore = "Décision maintenue. Je continue d'observer et je vous reparle de la revue dans 30 jours, ou avant si un risque surveillé se matérialise."
+            maj = {"veille.passation.revue_le": prochaine, "maj_le": now}  # la revue passée est traitée ; la suivante n'est pas encore due
+            histo = "Revue effectuée — décision maintenue, prochaine revue dans 30 jours"
         else:
+            texte_flore = "Veille terminée. Je garde la décision et ses résultats dans la mémoire du Mesh ; je n'observe plus ces indicateurs."
             maj = {"veille.statut": "terminee", "statut": "clos", "veille.revue_faite_le": now, "maj_le": now}
-            push = {"historique": {"quand": now, "texte": "Veille terminée — décision close"}}
-        if payload.action == "maintenir":
-            # la nouvelle date de revue rend la revue à nouveau « à faire » plus tard : on efface le repère de revue faite pour la prochaine
-            maj.pop("veille.revue_faite_le")
-        await db.cases.update_one({"id": cid}, {"$set": maj, "$push": push})
+            histo = "Veille terminée — décision close"
+        flore = {"role": "flore", "comportement": "expliquer", "texte": texte_flore, "quand": now}
+        # la question de revue reçoit sa réponse (les réponses rapides disparaissent)
+        await db.cases.update_one(
+            {"id": cid}, {"$set": {**maj, "conversation.$[q].reponse": payload.action}, "$push": {"historique": {"quand": now, "texte": histo}}},
+            array_filters=[{"q.type": "revue_due", "q.reponse": {"$exists": False}}],
+        )
+        await db.cases.update_one({"id": cid}, {"$push": {"conversation": {"$each": [moi, flore]}}})
         await journaler(x_persona, espace["id"], f"veille : décision {payload.action}", cid, "")
         return await obtenir_case(cid, x_persona, x_espace)
 

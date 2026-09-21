@@ -134,3 +134,43 @@ def mouvement(evenements: list[dict], depuis: Optional[str]) -> Optional[dict]:
     if not nouveaux:
         return None
     return {"niveau": min(e["niveau"] for e in nouveaux), "nb": len(nouveaux), "texte": nouveaux[-1].get("titre") or nouveaux[-1].get("texte", "")}
+
+
+REPONSES_REVUE = [
+    {"action": "rouvrir", "label": "Rouvrir la décision"},
+    {"action": "maintenir", "label": "Maintenir la décision"},
+    {"action": "clore", "label": "Clore la veille"},
+]
+
+
+def est_veille(m: dict) -> bool:
+    """Un message du fil issu de la veille : un fait observé, ou la revue posée par Flore."""
+    return m.get("role") == "evenement" or m.get("type") == "revue_due"
+
+
+def _pluriel(n: int, un: str, plusieurs: str) -> str:
+    return f"{n} {un if n == 1 else plusieurs}"
+
+
+def message_flore_revue(evenement: dict, faits: list[dict]) -> dict:
+    """La revue est une QUESTION posée à l'humain : elle vient de Flore, à la première personne, avec une recommandation et
+    les réponses possibles — pas d'une carte ni d'un bandeau."""
+    n = lambda t: sum(1 for f in faits if f["type"] == t)
+    morceaux = [m for m in (
+        _pluriel(n("conforme"), "objectif atteint", "objectifs atteints") if n("conforme") else "",
+        _pluriel(n("ecart"), "écart avec l'attendu", "écarts avec l'attendu") if n("ecart") else "",
+        _pluriel(n("effet_secondaire"), "risque surveillé matérialisé", "risques surveillés matérialisés") if n("effet_secondaire") else "",
+        _pluriel(n("inconnue_levee"), "inconnue levée", "inconnues levées") if n("inconnue_levee") else "",
+    ) if m]
+    bilan = "Depuis la décision : " + ", ".join(morceaux) + "." if morceaux else "Depuis la décision, rien de notable n'a été observé."
+    graves = [f for f in faits if f["niveau"] == 1 and f["type"] != "revue_due"]
+    if graves:
+        details = " ; ".join(f["indicateur"] for f in graves)
+        reco = f"Je vous suggère de rouvrir la décision, à cause de : {details}."
+    else:
+        reco = "Aucun écart majeur : je vous suggère de la maintenir."
+    return {
+        "role": "flore", "comportement": "recommander", "id": evenement["id"], "type": "revue_due", "niveau": 1, "quand": evenement["quand"], "titre": evenement["titre"],
+        "texte": f"La date de revue de cette décision est atteinte. {bilan}\n\n{reco}\n\nQue souhaitez-vous faire ?",
+        "reponses": REPONSES_REVUE,
+    }

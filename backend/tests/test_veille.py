@@ -110,7 +110,11 @@ H = {"X-Persona": "architecte"}
 def test_le_travail_en_veille_recoit_des_evenements_dans_son_fil(api):
     c = api.get(f"{BASE}/cases/case-dette-files", headers=H).json()
     evs = [m for m in c["conversation"] if m["role"] == "evenement"]
-    assert {e["type"] for e in evs} >= {"conforme", "inconnue_levee", "effet_secondaire", "revue_due"}
+    assert {e["type"] for e in evs} >= {"conforme", "inconnue_levee", "effet_secondaire"}
+    # la revue est une QUESTION de Flore, pas une carte d'événement : message de Flore, à la première personne, avec ses réponses rapides
+    revue = [m for m in c["conversation"] if m.get("type") == "revue_due"]
+    assert len(revue) == 1 and revue[0]["role"] == "flore" and {r["action"] for r in revue[0]["reponses"]} == {"rouvrir", "maintenir", "clore"}
+    assert "Que souhaitez-vous faire" in revue[0]["texte"] and "rouvrir" in revue[0]["texte"]  # une recommandation motivée
     assert [m["quand"] for m in c["conversation"]] == sorted(m["quand"] for m in c["conversation"])  # fil chronologique
     assert c["veille"]["passation"]["revue_le"]
 
@@ -179,9 +183,26 @@ def test_reponse_a_la_revue(api, action, statut_travail, statut_veille):
     assert c["veille"]["statut"] == statut_veille
     if statut_travail:
         assert c["statut"] == statut_travail
+    # le choix est le message de la personne, Flore répond, et la question de revue est marquée répondue
+    assert c["conversation"][-2]["role"] == "utilisateur" and c["conversation"][-1]["role"] == "flore"
+    assert [m for m in c["conversation"] if m.get("type") == "revue_due"][0]["reponse"] == action
     if action == "rouvrir":
-        assert c["conversation"][-1]["role"] == "flore" and "rouverte" in c["conversation"][-1]["texte"]
+        assert "rouverte" in c["conversation"][-1]["texte"]
     if action == "maintenir":
         assert c["veille"]["passation"]["revue_le"] > "2026-09-21"  # nouvelle date de revue
     # une fois traitée, la veille n'écrit plus rien de nouveau pour la revue passée
     assert api.post(f"{BASE}/cases/{cid}/veille/decision", headers=H, json={"action": "inconnue"}).status_code in (400, 409)
+
+
+def test_lectures_simultanees_n_ecrivent_qu_une_fois_chaque_evenement(api):
+    """Page, panneau Flore et menu lisent le même travail en même temps : aucun événement ni question de revue en double."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    cid = _travail_en_veille(api)
+    api.post(f"{BASE}/cases/{cid}/veille/observations", headers=H, json={"cible": "a1", "jumeau": "paiements", "valeur": 2400, "unite": "ms", "source": "Datadog", "quand": "2026-09-18T10:00:00+00:00"})
+    with ThreadPoolExecutor(8) as ex:
+        list(ex.map(lambda _: requests.get(f"{BASE}/cases/{cid}", headers=H, timeout=20), range(12)))
+    c = api.get(f"{BASE}/cases/{cid}", headers=H).json()
+    ids = [m["id"] for m in c["conversation"] if m.get("id") and (m["role"] == "evenement" or m.get("type") == "revue_due")]
+    assert len(ids) == len(set(ids)) == 2  # l'écart + la question de revue
+    assert len(c["historique"]) == len({(h["quand"], h["texte"]) for h in c["historique"]})

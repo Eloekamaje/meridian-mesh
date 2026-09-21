@@ -446,6 +446,19 @@ export default function OngletTravail({
     }
   };
 
+  // Réponse à la question de revue : votre choix devient votre message, Flore répond (tout est dans le fil)
+  const repondreRevue = async (action) => {
+    setEnvoiMsg(true);
+    try {
+      const { data } = await api.post(`/cases/${cas.id}/veille/decision`, { action });
+      setCas(data);
+    } catch {
+      toast.error("Action impossible");
+    } finally {
+      setEnvoiMsg(false);
+    }
+  };
+
   return (
     <div className="relative flex h-full w-full overflow-hidden bg-[#071019] text-[#DCE6EE]" data-testid="onglet-travail">
       
@@ -644,7 +657,7 @@ export default function OngletTravail({
         )}
         
         {/* Fil de discussion principal */}
-        {cas.veille && <div className="shrink-0 px-6 pt-3 sm:px-12"><BandeauVeille cas={cas} setCas={setCas} /></div>}
+        {cas.veille && <div className="shrink-0 px-6 pt-3 sm:px-12"><BandeauVeille cas={cas} /></div>}
         <div 
           ref={defilementRef}
           onScroll={verifierPositionScroll}
@@ -708,6 +721,22 @@ export default function OngletTravail({
                       canvasActif={canvasActif} 
                     />
 
+                    {/* Réponses rapides à une question de Flore (revue d'une décision) ; une fois répondu, on garde la trace du choix */}
+                    {m.reponses && !m.reponse && cas.veille?.statut === "en_veille" && (
+                      <div className="flex flex-wrap gap-2" data-testid="reponses-flore">
+                        {m.reponses.map((r) => (
+                          <button
+                            key={r.action}
+                            disabled={envoiMsg}
+                            onClick={() => repondreRevue(r.action)}
+                            data-testid={`veille-${r.action}`}
+                            className={`rounded-full border px-3.5 py-1.5 text-xs transition-colors disabled:opacity-50 ${r.action === "rouvrir" ? "border-[#60A5FA] bg-[#60A5FA]/10 font-semibold text-[#BFDBFE] hover:bg-[#60A5FA]/20" : "border-[rgba(148,163,184,0.2)] text-[#D8E2EA] hover:border-[#60A5FA]/40 hover:text-white"}`}
+                          >
+                            {r.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     {/* Suite proposée par Flore (ex. « Découvrir la démonstration ») */}
                     {m.proposition && (
                       <button

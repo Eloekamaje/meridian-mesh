@@ -253,7 +253,7 @@ def build_actualites_router(deps):
             visite = (c.get("visites") or {}).get(x_persona)
             evs = [
                 m for m in c.get("conversation", [])
-                if m.get("role") == "evenement" and (not m.get("jumeau") or m["jumeau"] in aut)
+                if (m.get("role") == "evenement" or m.get("type") == "revue_due") and (not m.get("jumeau") or m["jumeau"] in aut)
                 and (dedans(parse_quand(m.get("quand", ""), now)) or (est_aujourdhui and (not visite or m.get("quand", "") > visite)))
             ]
             if not entrees and not evs:

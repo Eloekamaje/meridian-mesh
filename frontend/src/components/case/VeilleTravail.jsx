@@ -1,7 +1,5 @@
 import { useState } from "react";
 import { CaretDown, Eye, Warning, CheckCircle, Question, CalendarCheck, TrendUp } from "@phosphor-icons/react";
-import { toast } from "sonner";
-import api from "@/lib/api";
 
 // Un fait observé par un jumeau, confronté par Méridian à la note de passation de la décision.
 // Distinct d'une réponse de Flore : Méridian constate et sourcé, Flore interprète quand on l'interroge.
@@ -50,28 +48,15 @@ export function EvenementVeille({ m, index, nouveau }) {
   );
 }
 
-// Note de passation de la décision + réponse humaine à la revue. Affichée en tête du fil tant que le travail est en veille.
-export function BandeauVeille({ cas, setCas }) {
+// État de la veille et note de passation de la décision, en tête du fil. La QUESTION de revue, elle, est un message de Flore
+// dans le fil (réponses rapides sous son message) — pas un bouton de ce bandeau.
+export function BandeauVeille({ cas }) {
   const [ouvert, setOuvert] = useState(false);
-  const [envoi, setEnvoi] = useState(false);
   const v = cas.veille;
   if (!v) return null;
   const p = v.passation || {};
   const revueDue = p.revue_le && new Date(p.revue_le) <= new Date() && v.statut === "en_veille";
   const decision = (cas.decisions || []).slice(-1)[0];
-
-  const agir = async (action) => {
-    setEnvoi(true);
-    try {
-      const { data } = await api.post(`/cases/${cas.id}/veille/decision`, { action });
-      setCas(data);
-      toast.success(action === "rouvrir" ? "Décision rouverte" : action === "maintenir" ? "Décision maintenue — prochaine revue dans 30 jours" : "Veille terminée");
-    } catch {
-      toast.error("Action impossible");
-    } finally {
-      setEnvoi(false);
-    }
-  };
 
   const statut = v.statut === "en_veille" ? "En veille" : v.statut === "rouverte" ? "Décision rouverte" : "Veille terminée";
   return (
@@ -89,14 +74,6 @@ export function BandeauVeille({ cas, setCas }) {
           {(p.attendus || []).length > 0 && <div><div className="mb-1 font-semibold text-[#E6EEF5]">Résultats attendus</div><ul className="space-y-0.5">{p.attendus.map((a) => <li key={a.id}>{a.indicateur} : de <b>{a.depart}</b> à <b>{a.cible}</b> {a.unite}</li>)}</ul></div>}
           {(p.risques || []).length > 0 && <div><div className="mb-1 font-semibold text-[#E6EEF5]">Risques à surveiller</div><ul className="space-y-0.5">{p.risques.map((r) => <li key={r.id}>{r.texte} (seuil {r.seuil} {r.unite})</li>)}</ul></div>}
           {(p.inconnues || []).length > 0 && <div><div className="mb-1 font-semibold text-[#E6EEF5]">Inconnues à lever</div><ul className="space-y-0.5">{p.inconnues.map((i) => <li key={i.id}>{i.texte}</li>)}</ul></div>}
-        </div>
-      )}
-      {revueDue && (
-        <div className="flex flex-wrap items-center gap-2 border-t border-[rgba(148,163,184,0.10)] px-4 py-2.5" data-testid="veille-revue-actions">
-          <span className="mr-auto text-xs text-[#F2B84B]">La revue est due : que faites-vous de cette décision ?</span>
-          <button disabled={envoi} onClick={() => agir("rouvrir")} data-testid="veille-rouvrir" className="rounded-md bg-[#60A5FA] px-3 py-1.5 text-xs font-semibold text-[#071019] transition-colors hover:bg-[#93C5FD] disabled:opacity-50">Rouvrir la décision</button>
-          <button disabled={envoi} onClick={() => agir("maintenir")} data-testid="veille-maintenir" className="rounded-md border border-[rgba(148,163,184,0.16)] px-3 py-1.5 text-xs text-[#D8E2EA] transition-colors hover:text-white disabled:opacity-50">Maintenir</button>
-          <button disabled={envoi} onClick={() => agir("clore")} data-testid="veille-clore" className="rounded-md border border-[rgba(148,163,184,0.16)] px-3 py-1.5 text-xs text-[#94A3B8] transition-colors hover:text-white disabled:opacity-50">Clore</button>
         </div>
       )}
     </section>
