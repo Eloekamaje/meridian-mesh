@@ -126,8 +126,8 @@ export default function TravailDetail() {
         <div className="flex items-center justify-between gap-4">
           {/* Titre & sélecteur de vue discret */}
           <div className="flex min-w-0 items-center gap-3">
-            {brouillon && (
-              <button onClick={() => navigate("/travaux")} data-testid="creation-retour-travaux" className="flex items-center gap-1 rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2 py-1 text-[11px] text-[#94A3B8] transition-colors hover:text-[#F2F6F8]">
+            {!pilote && (
+              <button onClick={() => navigate("/travaux")} data-testid="travail-retour-travaux" className="flex items-center gap-1 rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2 py-1 text-[11px] text-[#94A3B8] transition-colors hover:text-[#F2F6F8]">
                 <ArrowLeft size={11} /> Travaux
               </button>
             )}
