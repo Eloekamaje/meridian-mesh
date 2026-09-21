@@ -15,8 +15,6 @@ import LaboSemantique from "@/pages/LaboSemantique";
 import LaboServeur from "@/pages/LaboServeur";
 
 import Commande from "@/pages/Commande";
-import Investigations from "@/pages/Investigations";
-import InvestigationDetail from "@/pages/InvestigationDetail";
 import Travaux from "@/pages/Travaux";
 import TravailDetail from "@/pages/TravailDetail";
 import Jumeaux from "@/pages/Jumeaux";
@@ -53,8 +51,9 @@ function ProduitApp() {
             {LABO && <Route path="/labo/echelle" element={<LaboEchelle />} />}
             {LABO && <Route path="/labo/semantique" element={<LaboSemantique />} />}
             {LABO && <Route path="/labo/serveur" element={<LaboServeur />} />}
-            <Route path="/investigations" element={<Investigations />} />
-            <Route path="/investigations/:id" element={<InvestigationDetail />} />
+            {/* Les investigations sont des travaux : anciennes adresses conservées, elles ouvrent le travail de la situation */}
+            <Route path="/investigations" element={<Navigate to="/travaux" replace />} />
+            <Route path="/investigations/:id" element={<Comprendre depuisSituation intention="investiguer" />} />
             <Route path="/travaux" element={<Travaux />} />
             {/* Démonstration : choix du profil dans la zone de contenu — puis l'application réelle, pilotée */}
             <Route path="/demo" element={<PolarisChoixProfil />} />

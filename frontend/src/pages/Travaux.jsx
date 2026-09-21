@@ -17,6 +17,7 @@ export const TYPES_CASE = {
   decision: ["Décision", "#60A5FA"],
   conformite: ["Conformité", "#34D399"],
   modernisation: ["Modernisation", "#FB923C"],
+  investigation: ["Investigation", "#60A5FA"],
 };
 
 export const STATUTS_CASE = {

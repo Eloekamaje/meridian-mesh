@@ -3,20 +3,21 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import api from "@/lib/api";
 import FloreActivite, { delaiMin } from "@/components/FloreActivite";
 
-// Ancienne adresse « Comprendre » : une actualité qu'on ouvre est désormais un TRAVAIL (même page, même conversation que tous les autres).
+// Anciennes adresses « Comprendre » et « Investigation » : une actualité ou une situation qu'on ouvre est désormais un TRAVAIL (même page, même conversation que tous les autres).
 // Cette route reste pour les liens existants : elle ouvre (ou rouvre) le travail de cette actualité et y redirige, retour vers Actualités en évidence.
-export default function Comprendre() {
-  const { hid } = useParams();
+export default function Comprendre({ depuisSituation = false, intention = "comprendre" }) {
+  const params = useParams();
+  const hid = depuisSituation ? `sit-${params.id}` : params.hid;
   const navigate = useNavigate();
   const [erreur, setErreur] = useState(null);
 
   useEffect(() => {
     let actif = true;
-    delaiMin(api.post(`/actualites/histoire/${hid}/travail`, { intention: "comprendre" }), 1300)
-      .then((r) => { if (actif) navigate(`/travaux/${r.data.id}`, { replace: true, state: { retour: { label: "Actualités", to: "/actualites" } } }); })
+    delaiMin(api.post(`/actualites/histoire/${hid}/travail`, { intention }), 1300)
+      .then((r) => { if (actif) navigate(`/travaux/${r.data.id}`, { replace: true, state: depuisSituation ? undefined : { retour: { label: "Actualités", to: "/actualites" } } }); })
       .catch((e) => { if (actif) setErreur(e.response?.data?.detail || "Actualité introuvable"); });
     return () => { actif = false; };
-  }, [hid, navigate]);
+  }, [hid, intention, depuisSituation, navigate]);
 
   if (erreur) {
     return (

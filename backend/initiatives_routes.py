@@ -4,6 +4,8 @@ from typing import Optional
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
+import ouverture_travail
+
 GENRES_A_TRAITER = {"a_confirmer", "investigation_recommandee", "decision_a_examiner", "action_proposee"}
 GENRES_RADAR = {"a_surveiller", "information"}
 
@@ -12,6 +14,10 @@ class ReponseInitiative(BaseModel):
     choix: str
     motif: Optional[str] = None
     travail_id: Optional[str] = None
+
+
+class OuvertureInitiative(BaseModel):
+    intention: str = "comprendre"  # comprendre | suivre | investiguer
 
 
 class DelegationCreate(BaseModel):
@@ -51,6 +57,42 @@ def build_initiatives_router(deps):
         if init["genre"] in GENRES_A_TRAITER:
             return "a_traiter"
         return "radar"
+
+    async def travail_de_initiative(init, intention, persona, espace):
+        """Le travail d'une proposition du Mesh pour cette personne : créé avec la parole de Flore, ou rouvert (sans doublon)."""
+        now = datetime.now(timezone.utc).isoformat()
+        msg = ouverture_travail.message_flore_initiative(init, intention, now)
+        existant = await db.cases.find_one({"origine.initiative_id": init["id"], "responsable": persona["id"]}, NO_ID)
+        if existant:
+            if intention not in existant["origine"].get("intentions", []):
+                await db.cases.update_one({"id": existant["id"]}, {"$push": {"conversation": msg, "historique": {"quand": now, "texte": f"Proposition du Mesh reprise — {intention}"}},
+                                                                   "$addToSet": {"origine.intentions": intention}, "$set": {"maj_le": now}})
+            return existant["id"], False
+        cid = f"case-{slugify(init['titre'])[:40]}-{int(datetime.now(timezone.utc).timestamp()) % 100000}"
+        dernier = await db.cases.find({}, {"_id": 0, "num": 1}).sort("num", -1).to_list(1)
+        num = (dernier[0]["num"] if dernier and dernier[0].get("num") else 40) + 1
+        await db.cases.insert_one({
+            "id": cid, "num": num, "titre": init["titre"], "type": "investigation" if intention == "investiguer" else "decouverte", "statut": "ouvert",
+            "sensibilite": "interne", "objectif": init.get("raison", ""), "resume": "", "prochaine_etape": "", "questions": [], "hypotheses": [],
+            "jumeaux": init.get("jumeaux", []), "situations": [], "participants": [persona["id"]], "responsable": persona["id"], "espace": espace["id"],
+            "conversation": [msg], "options": [], "decisions": [], "livrables": [], "a_revoir": False, "visites": {},
+            "origine": {"initiative_id": init["id"], "genre": init.get("genre"), "intentions": [intention], "quand": now},
+            "historique": [{"quand": now, "texte": f"Travail ouvert depuis la proposition du Mesh « {init['titre']} »"}],
+            "cree_le": now, "maj_le": now,
+        })
+        return cid, True
+
+    @router.post("/initiatives/{iid}/travail")
+    async def ouvrir_travail_initiative(iid: str, payload: OuvertureInitiative, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+        """« Comprendre » une proposition du Mesh : elle devient un travail, dont Flore ouvre la conversation. La proposition, elle, reste en attente."""
+        if payload.intention not in ouverture_travail.INTENTIONS:
+            raise HTTPException(400, "Intention inconnue")
+        persona, espace, aut = await contexte(x_persona, x_espace)
+        init = await db.initiatives.find_one({"id": iid}, NO_ID)
+        if not init or not visible(init, persona, espace, aut):
+            raise HTTPException(404, "Initiative introuvable ou hors périmètre")
+        cid, cree = await travail_de_initiative(init, payload.intention, persona, espace)
+        return {"id": cid, "cree": cree}
 
     @router.get("/initiatives")
     async def lister_initiatives(vue: str = "toutes", x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
@@ -98,22 +140,12 @@ def build_initiatives_router(deps):
 
         if low == "suivre" or "surveiller" in low:
             statut = "suivi"
+            travail_cree, _ = await travail_de_initiative(init, "suivre", persona, espace)  # surveiller = un travail en veille
         elif low == "ignorer" or "rejeter" in low:
             statut = "refusee"
         elif low.startswith("créer") or low.startswith("creer"):
             statut = "acceptee"
-            cid = f"case-{slugify(init['titre'])[:40]}-{int(datetime.now(timezone.utc).timestamp()) % 100000}"
-            doc = {
-                "id": cid, "titre": init["titre"], "type": "investigation", "statut": "ouvert",
-                "responsable": persona["id"], "participants": [persona["id"]],
-                "espace": espace["id"], "jumeaux": init.get("jumeaux", []), "situations": [],
-                "objectif": init.get("raison", ""), "resume": "", "questions": [], "hypotheses": [],
-                "options": [], "decisions": [], "conversation": [], "sources": [], "prochaine_etape": "",
-                "a_revoir": False, "cree_le": now, "maj_le": now, "visites": {},
-                "historique": [{"quand": now, "texte": f"Travail créé depuis l'initiative « {init['titre']} »"}],
-            }
-            await db.cases.insert_one(doc)
-            travail_cree = cid
+            travail_cree, _ = await travail_de_initiative(init, "investiguer", persona, espace)
         elif "ajouter" in low:
             statut = "acceptee"
             tid = payload.travail_id or init.get("travail_id")
@@ -124,7 +156,9 @@ def build_initiatives_router(deps):
                 raise HTTPException(404, "Travail introuvable")
             histo = case.get("historique", []) + [{"quand": now, "texte": f"Initiative du Mesh ajoutée : {init['titre']}"}]
             jumeaux = sorted(set(case.get("jumeaux", [])) | set(init.get("jumeaux", [])))
-            await db.cases.update_one({"id": tid}, {"$set": {"historique": histo, "jumeaux": jumeaux, "maj_le": now}})
+            ajout = ouverture_travail.message_flore_initiative(init, "comprendre", now)
+            ajout["texte"] = f"J'ai ajouté à ce travail une proposition du Mesh.\n\n" + ajout["texte"]
+            await db.cases.update_one({"id": tid}, {"$set": {"historique": histo, "jumeaux": jumeaux, "maj_le": now}, "$push": {"conversation": ajout}})
             travail_cree = tid
         elif "comparer" in low:
             statut = "acceptee"

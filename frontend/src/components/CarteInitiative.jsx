@@ -42,12 +42,24 @@ export default function CarteInitiative({ init, mesh, onChange }) {
       const { data } = await api.post(`/initiatives/${init.id}/repondre`, { choix, motif: extra.motif || undefined, travail_id: extra.travail_id });
       toast.success("Réponse enregistrée — elle enrichit la mémoire collective");
       onChange?.(data.initiative);
-      const low = choix.toLowerCase();
-      if ((low.startsWith("créer") || low.startsWith("creer") || low.startsWith("ajouter")) && data.travail_id) navigate(`/travaux/${data.travail_id}`);
-      if (low.startsWith("comparer") && data.travail_id) navigate(`/travaux/${data.travail_id}?vue=decisions`);
+      // Toute proposition qui débouche sur un travail y emmène (créer, ajouter, comparer, suivre), retour vers Actualités en évidence
+      if (data.travail_id) navigate(`/travaux/${data.travail_id}`, { state: { retour: { label: "Actualités", to: "/actualites" } } });
     } catch (e) {
       toast.error(e.response?.data?.detail || "Réponse impossible");
     } finally {
+      setEnvoi(false);
+    }
+  };
+
+  // « Comprendre » : la proposition devient un travail (elle reste en attente de réponse) ; Flore y présente ce que Méridian a découvert
+  const comprendre = async () => {
+    if (envoi) return;
+    setEnvoi(true);
+    try {
+      const { data } = await api.post(`/initiatives/${init.id}/travail`, { intention: "comprendre" });
+      navigate(`/travaux/${data.id}`, { state: { retour: { label: "Actualités", to: "/actualites" } } });
+    } catch {
+      toast.error("Impossible d'ouvrir cette proposition");
       setEnvoi(false);
     }
   };
@@ -100,7 +112,7 @@ export default function CarteInitiative({ init, mesh, onChange }) {
     if (init.genre === "a_surveiller" || init.genre === "information") {
       return (
         <>
-          <button onClick={() => window.dispatchEvent(new CustomEvent("meridian:flore-ask", { detail: `Explique-moi : ${init.titre} — ${init.raison}` }))} data-testid={`init-comprendre-${init.id}`} className="rounded-md bg-[#60A5FA] px-3 py-1.5 text-[11px] font-semibold text-[#071019] transition-colors hover:bg-[#93C5FD]">
+          <button onClick={comprendre} disabled={envoi} data-testid={`init-comprendre-${init.id}`} className="rounded-md bg-[#60A5FA] px-3 py-1.5 text-[11px] font-semibold text-[#071019] transition-colors hover:bg-[#93C5FD]">
             Comprendre
           </button>
           <button onClick={() => repondre("Suivre")} disabled={envoi} data-testid={`init-suivre-${init.id}`} className="rounded-md border border-[#58A6FF]/40 px-3 py-1.5 text-[11px] font-semibold text-[#58A6FF] transition-colors hover:bg-[#58A6FF]/10 disabled:opacity-50">

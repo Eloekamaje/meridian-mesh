@@ -68,6 +68,10 @@ class ObservationVeille(BaseModel):
     quand: Optional[str] = None
 
 
+class DecisionAttendue(BaseModel):
+    texte: str
+
+
 class ActionVeille(BaseModel):
     action: str  # rouvrir | maintenir | clore
 
@@ -502,6 +506,64 @@ def build_cases_router(deps):
         await db.cases.update_one({"id": cid}, {"$push": push, "$set": maj})
         await journaler(x_persona, espace["id"], "décision sur un case", cid, payload.texte.strip()[:120])
         return dec
+
+    @router.post("/cases/{cid}/decision-attendue")
+    async def decision_attendue(cid: str, payload: DecisionAttendue, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+        """Réponse à l'une des « décisions attendues » d'une situation, depuis le fil du travail : mêmes effets que l'ancienne page Investigation
+        (statut de la situation, confirmation de la relation, décision enregistrée), écrits dans la conversation."""
+        _, espace = resoudre_perimetre(x_persona, x_espace)
+        case = await charger_case(cid, espace)
+        sid = (case.get("situations") or [None])[0]
+        sit = await db.situations.find_one({"id": sid}, NO_ID) if sid else None
+        if not sit or payload.texte not in (sit.get("decisions_attendues") or []):
+            raise HTTPException(400, "Cette décision n'est pas attendue pour ce travail")
+        maintenant = datetime.now(timezone.utc)
+        now = maintenant.isoformat()
+        x = payload.texte.lower()
+        decision_enregistree = False
+        lien = None
+        if "confirmer la relation" in x and sit.get("relation_id"):
+            aut = autorisations(espace, [j["id"] for j in await db.jumeaux.find({}, {"_id": 0, "id": 1}).to_list(200)])
+            rel = await db.relations.find_one({"id": sit["relation_id"]}, NO_ID)
+            if not rel or not any(aut.get(j) == "complet" for j in (rel["source"], rel["cible"])):
+                raise HTTPException(403, "Permission « Valider » requise sur l'un des jumeaux de la relation")
+            await db.relations.update_one({"id": rel["id"]}, {"$set": {"etat": "confirmee"}, "$addToSet": {"confirmee_par": "Validation humaine"}})
+            reponse = "Relation confirmée. Je l'ajoute à la mémoire du Mesh : elle n'est plus un phénomène possible."
+        elif "coïncidence" in x:
+            await db.situations.update_one({"id": sid}, {"$set": {"statut": "classée"}})
+            reponse = "Classée comme coïncidence. Je garde la trace de ce choix pour ne pas la reproposer sans élément nouveau."
+        elif "investigation" in x:
+            await db.situations.update_one({"id": sid}, {"$set": {"statut": "en investigation"}})
+            reponse = "Investigation ouverte : ce travail en devient le dossier. Je peux formuler les hypothèses concurrentes et lister les preuves qui manquent."
+        elif "surveiller" in x:
+            await db.situations.update_one({"id": sid}, {"$set": {"statut": "surveillée"}})
+            reponse = "Je la mets sous surveillance : je reviendrai vers vous si ma compréhension change."
+        elif "observations" in x:
+            await db.situations.update_one({"id": sid}, {"$set": {"statut": "en observation"}})
+            reponse = "J'ai demandé des observations supplémentaires aux jumeaux concernés. Je vous préviens dès qu'elles arrivent."
+        elif "admettre" in x:
+            lien = "/jumeaux"
+            reponse = "L'admission d'un jumeau se décide depuis sa revue : je vous y envoie."
+        else:
+            await db.situations.update_one({"id": sid}, {"$set": {"statut": "décidée", "decision": payload.texte, "decidee_le": now}})
+            decision_enregistree = True
+            reponse = "Décision enregistrée. Méridian apprend de ce choix, et je la garde dans la mémoire de ce travail."
+        moi = {"role": "utilisateur", "texte": payload.texte, "quand": now}
+        flore = {"role": "flore", "comportement": "expliquer", "texte": reponse, "quand": now}
+        push = {"conversation": {"$each": [moi, flore]}, "historique": {"quand": now, "texte": f"Décision attendue traitée — {payload.texte[:80]}"}}
+        if decision_enregistree:
+            push["decisions"] = {"texte": payload.texte, "type": "arbitrage", "quand": now, "par": x_persona}
+        # le message qui portait les décisions attendues reçoit sa réponse (les réponses rapides disparaissent), puis la conversation s'allonge
+        await db.cases.update_one(
+            {"id": cid}, {"$set": {"conversation.$[q].reponse": payload.texte}},
+            array_filters=[{"q.decisions": {"$exists": True}, "q.reponse": {"$exists": False}}],
+        )
+        await db.cases.update_one({"id": cid}, {"$set": {"maj_le": now}, "$push": push})
+        await journaler(x_persona, espace["id"], "décision attendue", cid, payload.texte[:120])
+        rep = await obtenir_case(cid, x_persona, x_espace)
+        if lien:
+            rep["lien"] = lien
+        return rep
 
     @router.post("/cases/{cid}/veille/observations", status_code=201)
     async def observer_case(cid: str, payload: ObservationVeille, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):

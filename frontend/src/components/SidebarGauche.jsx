@@ -15,8 +15,7 @@ import {
   Users, 
   Check, 
   CaretDown,
-  PlayCircle,
-  Detective
+  PlayCircle
 } from "@phosphor-icons/react";
 import api from "@/lib/api";
 import { usePerimetre } from "@/lib/perimetre";
@@ -29,7 +28,6 @@ import logoSymbole from "@/assets/logo/meridian-symbole.png";
 const NAV_ITEMS = [
   { to: "/atlas", label: "Atlas", icon: Compass, testid: "nav-atlas" },
   { to: "/actualites", label: "Actualités", icon: Newspaper, testid: "nav-actualites" },
-  { to: "/investigations", label: "Investigations", icon: Detective, testid: "nav-investigations" },
   { to: "/travaux", label: "Travaux", icon: Briefcase, testid: "nav-travaux" },
   { to: "/jumeaux", label: "Jumeaux", icon: CirclesThree, testid: "nav-jumeaux" },
   { to: "/administration", label: "Administration", icon: GearSix, testid: "nav-administration" },

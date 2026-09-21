@@ -453,6 +453,20 @@ export default function OngletTravail({
     }
   };
 
+  // Une décision attendue par la situation : le choix est appliqué côté serveur (statut de la situation, relation confirmée…) et écrit dans le fil
+  const trancher = async (texte) => {
+    setEnvoiMsg(true);
+    try {
+      const { data } = await api.post(`/cases/${cas.id}/decision-attendue`, { texte });
+      setCas(data);
+      if (data.lien) navigate(data.lien);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Décision impossible");
+    } finally {
+      setEnvoiMsg(false);
+    }
+  };
+
   // Réponse à la question de revue : votre choix devient votre message, Flore répond (tout est dans le fil)
   const repondreRevue = async (action) => {
     setEnvoiMsg(true);
@@ -730,6 +744,23 @@ export default function OngletTravail({
                       canvasActif={canvasActif} 
                     />
 
+                    {/* Décision attendue (situation) : réponses rapides ; votre choix devient votre message et Flore répond */}
+                    {m.decisions?.length > 0 && !m.reponse && (
+                      <div data-testid="decisions-attendues">
+                        <div className="mb-1.5 font-code text-[11px] uppercase tracking-[0.16em] text-[#F2B84B]">Décision attendue</div>
+                        <div className="flex flex-wrap gap-2">
+                          {m.decisions.map((d, k) => (
+                            <button key={d} disabled={envoiMsg} onClick={() => trancher(d)} data-testid={`decision-attendue-${k}`}
+                              className="rounded-full border border-[#F2B84B]/40 bg-[#F2B84B]/[0.06] px-3.5 py-1.5 text-left text-xs text-[#F2F6F8] transition-colors hover:border-[#F2B84B]/70 hover:bg-[#F2B84B]/[0.14] disabled:opacity-50">
+                              {d}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {m.decisions?.length > 0 && m.reponse && (
+                      <div className="font-code text-[11px] text-[#7C93A8]" data-testid="decision-attendue-prise">Décision prise : {m.reponse}</div>
+                    )}
                     {/* Sur quoi repose ce que Flore vient de dire (preuves du rapport) */}
                     {m.preuves?.length > 0 && <PreuvesMessage preuves={m.preuves} />}
                     {/* Pistes que Flore propose de creuser : un clic les envoie comme votre question (sur le dernier message seulement) */}
