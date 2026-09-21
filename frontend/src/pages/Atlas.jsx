@@ -11,6 +11,10 @@ import { usePilotage } from "@/lib/pilotage";
 import SurfacePreparation from "@/components/SurfacePreparation";
 import { useContexte } from "@/lib/contexte";
 import TwinNode from "@/components/map/TwinNode";
+import NoeudGraphe from "@/components/map/NoeudGraphe";
+import AreteGraphe from "@/components/map/AreteGraphe";
+import AtlasEchelle from "@/components/map/AtlasEchelle";
+import { analyserMesh, aretesGraphe, habillerNoeud } from "@/lib/atlasRendu";
 import CielEtoile from "@/components/map/CielEtoile";
 import RegionNode from "@/components/map/RegionNode";
 import AreteOrthogonale from "@/components/map/AreteOrthogonale";
@@ -44,6 +48,11 @@ import { parseQuand, finDeJournee, fmtDate } from "@/lib/temps";
 
 const nodeTypes = { twin: TwinNode, region: RegionNode };
 const edgeTypes = { ortho: AreteOrthogonale, corridor: AreteCorridor };
+// Rendu « graphe » (par défaut) : robots et liens courbes ; ?rendu=classique rétablit membranes/étoiles/corridors
+// Au-delà, l'Atlas ne charge plus le graphe : il demande au serveur la vue (grappes, points ou jumeaux) de ce qui est à l'écran
+const SEUIL_ECHELLE = 300;
+const nodeTypesGraphe = { twin: NoeudGraphe, region: RegionNode };
+const edgeTypesGraphe = { ...edgeTypes, graphe: AreteGraphe };
 
 export default function Atlas() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -70,6 +79,10 @@ export default function Atlas() {
   const [outil, setOutil] = useState("deplacement");
   const { selection, setSelection, domaineSel, setDomaineSel, focusCarte, commanderCarte, setFocusVisuel, ouvrirFlore, fermerFlore, floreOuverte, setAtlasCtx, atlasEtat, setAtlasEtat, demanderAFlore, preuveSurvolee } = useContexte();
   const pilote = usePilotage();
+  const graphe = searchParams.get("rendu") !== "classique";
+  const echelleSynth = Number(searchParams.get("echelle")) || null; // essai d'échelle : N jumeaux fictifs servis par le backend
+  const echelle = !!echelleSynth || (mesh?.perimetre?.nb_autorises || 0) >= SEUIL_ECHELLE;
+  const analyse = useMemo(() => (graphe && mesh ? analyserMesh(mesh) : null), [graphe, mesh]);
 
   // Conservation de l'état de l'Atlas entre les pages : au retour, on restaure exactement
   // viewport, zoom, sélection et couches — jamais de fitView au retour (les liens partagés
@@ -550,15 +563,17 @@ export default function Atlas() {
     const g = construireGraphe({
       mesh, situation, focus, vueActive, perimetreTravail,
       posOverrides, compteurs, halo, selection,
-      zoomNiveau, relFocus, focusCarte, domDe, statsRegions, temps,
+      // Rendu graphe : les robots sont toujours visibles (jamais d'étoile) et les liens sont directs
+      zoomNiveau: graphe ? Math.min(3, Math.max(2, zoomNiveau)) : zoomNiveau,
+      relFocus, focusCarte, domDe, statsRegions, temps,
       zoomFort: zoomActuel >= 1.5,
       // Fondu croisé étoile ↔ robot : bande progressive centrée sur le seuil de niveau (1.15)
-      fonduJumeau: Math.max(0, Math.min(1, (zoomActuel - 0.95) / 0.4)),
+      fonduJumeau: graphe ? 1 : Math.max(0, Math.min(1, (zoomActuel - 0.95) / 0.4)),
       // Fondu croisé Global ↔ Domaine : corridors/agrégats fondent, arêtes et étoiles se révèlent (z 0.5 → 0.7)
-      fonduGD: Math.max(0, Math.min(1, (zoomActuel - 0.5) / 0.2)),
+      fonduGD: graphe ? 1 : Math.max(0, Math.min(1, (zoomActuel - 0.5) / 0.2)),
       // Éclatement parent → enfants : le corridor « N flux » se dissout pendant que
       // ses relations membres naissent échelonnées le long de son tracé (z 1.15 → 1.35)
-      fonduPE: Math.max(0, Math.min(1, (zoomActuel - 1.15) / 0.2)),
+      fonduPE: graphe ? 1 : Math.max(0, Math.min(1, (zoomActuel - 1.15) / 0.2)),
       routesFin, provisoire, tactile: estTactile,
       couchesCarte, situationsJumeaux,
       theatreSituationnel,
@@ -611,6 +626,7 @@ export default function Atlas() {
           n = { ...n, data: { ...n.data, relLiee: true } };
         }
       }
+      if (graphe && analyse && n.type === "twin") n = habillerNoeud(n, analyse);
       const prev = parId.get(n.id);
       const dim = mesures[n.id];
       const base = prev?.measured ? { ...n, measured: prev.measured, dragging: prev.dragging || undefined } : n;
@@ -618,7 +634,7 @@ export default function Atlas() {
     });
     ciblesCoques.current = nouvellesCibles;
     return g;
-  }, [mesh, focus, situation, halo, compteurs, selection, relFocus, zoomNiveau, vueActive, posOverrides, domaineSel, perimetreTravail, domDe, statsRegions, focusCarte, temps, amorce, mesures, regionSurvolee, tickCoques, relSurvolee, selectedRelation, zoomActuel, routesFin, provisoire, estTactile, couchesCarte, situationsJumeaux, theatreSituationnel]);
+  }, [mesh, focus, situation, halo, compteurs, selection, relFocus, zoomNiveau, vueActive, posOverrides, domaineSel, perimetreTravail, domDe, statsRegions, focusCarte, temps, amorce, mesures, regionSurvolee, tickCoques, relSurvolee, selectedRelation, zoomActuel, routesFin, provisoire, estTactile, couchesCarte, situationsJumeaux, theatreSituationnel, graphe, analyse]);
 
   const [renduSignale, setRenduSignale] = useState(null);
   useEffect(() => {
@@ -783,8 +799,9 @@ export default function Atlas() {
   }, [snapshot, provisoire, pousser]);
 
   // Couches de relations (BCM déclaré / Réalité découverte / Écarts) + accentuation au survol/épinglage
+  const aretesDuGraphe = useMemo(() => (graphe && analyse ? aretesGraphe(mesh, nodes, analyse) : null), [graphe, analyse, mesh, nodes]);
   const edgesVisibles = useMemo(() => {
-    let es = edges.filter((e) => {
+    let es = (aretesDuGraphe || edges).filter((e) => {
       // Corridors parents : agrégats multi-états, toujours visibles (ils portent tous les flux)
       if (e.type === "corridor") return true;
       const etat = e.data?.etat;
@@ -841,7 +858,19 @@ export default function Atlas() {
       es = [...es.filter((e) => e.id !== preuveSurvolee), ...es.filter((e) => e.id === preuveSurvolee)];
     }
     return es;
-  }, [edges, couchesRel, survolJumeau, relSurvolee, selectedRelation, preuveSurvolee, secteurCurseur]);
+  }, [edges, aretesDuGraphe, couchesRel, survolJumeau, relSurvolee, selectedRelation, preuveSurvolee, secteurCurseur]);
+
+  // Rendu graphe : au survol d'un jumeau (sans sélection), ses voisins restent éclairés, le reste s'estompe
+  const nodesRendus = useMemo(() => {
+    if (!graphe || !survolJumeau || selection.length || !mesh) return nodes;
+    const voisins = new Set([survolJumeau]);
+    mesh.relations.forEach((r) => { if (r.source === survolJumeau) voisins.add(r.cible); if (r.cible === survolJumeau) voisins.add(r.source); });
+    return nodes.map((n) => {
+      if (n.type !== "twin" || n.data?.cadastre) return n;
+      if (n.id === survolJumeau) return { ...n, data: { ...n.data, nomVisible: true } };
+      return voisins.has(n.id) ? n : { ...n, data: { ...n.data, dim: true } };
+    });
+  }, [graphe, nodes, survolJumeau, selection, mesh]);
 
   // Jumeau survolé ou épinglé → panneau flottant à gauche
   const jumeauSurvole = useMemo(() => {
@@ -1206,6 +1235,14 @@ export default function Atlas() {
     setRecherche("");
   };
 
+  // Clic sur un jumeau de la vue à l'échelle : même ouverture que sur la scène (panneau, URL)
+  const choisirDepuisEchelle = (t) => {
+    const j = t.id && mesh?.jumeaux.find((x) => x.id === t.id && !x.anonyme);
+    if (!j) { toast.info("Jumeau du jeu d'essai — pas de fiche"); return; }
+    setSelected(j); setSelectedRelation(null); setDomaineSel(null); setVueListe(null); setOnglet("detail");
+    majUrl({ sel: j.id, domaine: null });
+  };
+
   const eventsVisibles = events.filter((e) => couches[e.dynamique || "operationnelle"]);
 
   const confirmerRelation = async (r) => {
@@ -1273,13 +1310,16 @@ export default function Atlas() {
         className="pointer-events-none absolute bottom-3 left-3 z-10 select-none font-code text-[9px] uppercase tracking-[0.18em] text-[#7C93A8]/80 transition-opacity duration-200"
         style={{ opacity: 0.35 }}
       >—</output>
+      {echelle ? (
+        <AtlasEchelle synthetique={echelleSynth} selectionId={selected?.id || null} onChoisir={choisirDepuisEchelle} />
+      ) : (
       <ReactFlow
         key={focus || situationParam || "mesh"}
         colorMode="dark"
-        nodes={nodes}
+        nodes={nodesRendus}
         edges={edgesVisibles}
-        nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes}
+        nodeTypes={graphe ? nodeTypesGraphe : nodeTypes}
+        edgeTypes={graphe ? edgeTypesGraphe : edgeTypes}
         fitView={!restaurerEtat}
         fitViewOptions={{ padding: 0.15 }}
         minZoom={0.45}
@@ -1538,6 +1578,7 @@ export default function Atlas() {
           })}
         </ViewportPortal>
       </ReactFlow>
+      )}
 
       {/* Marqueurs de flèches partagés par les arêtes orthogonales */}
       <svg width="0" height="0" style={{ position: "absolute" }}>
@@ -1756,7 +1797,7 @@ export default function Atlas() {
         )}
 
         {/* Niveau de zoom sémantique — échelle globale, identique partout dans le Mesh */}
-        <div className="glass rounded-lg px-3 py-1.5 font-code text-[10px] text-[#94A3B8]" data-testid="zoom-niveau">
+        <div className={`glass rounded-lg px-3 py-1.5 font-code text-[10px] text-[#94A3B8] ${echelle ? "hidden" : ""}`} data-testid="zoom-niveau">
           {`Niveau ${zoomNiveau} · ${NIVEAUX_ZOOM[zoomNiveau]}`}
           {zoomNiveau === 1 && " · corridors agrégés"}
           {zoomNiveau === 3 && " · détail des relations"}

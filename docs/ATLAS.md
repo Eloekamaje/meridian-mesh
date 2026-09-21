@@ -293,5 +293,16 @@ Le **chrome ne bouge jamais** : barre d'outils (gauche, centrée), contrôles zo
 | `POST /api/relations/{id}/confirmer` | Validation d'une relation découverte |
 | `GET /api/activite` | Activité simulée (halos, mode direct) |
 | `GET /api/situations` | Stats de domaines (investigations, découvertes) |
+| `GET /api/mesh/vue` | Vue bornée du Mesh (fenêtre monde + zoom) pour le passage à l'échelle — voir §15 |
 
 États de relation : `confirmee` (BCM déclaré, ardoise plein), `observee` (réalité découverte, turquoise + flèche), `supposee` / `contestee` (écarts, orange pointillés), `validation` (A2A, violet), `obsolete` (gris pâle).
+
+---
+
+## 15. Rendu « graphe » et passage à l'échelle
+
+**Rendu par défaut** (`?rendu=classique` rétablit l'ancien) : mêmes coordonnées, mêmes membranes, mêmes panneaux ; les jumeaux sont les robots du film teintés par domaine (taille selon le degré, nom affiché pour les plus connectés, écart de communauté en pointillé), les liens sont des courbes directes stylées selon l'état de la relation. Au survol d'un jumeau, ses voisins restent éclairés et le reste s'estompe. Il n'y a plus de vue « étoile » ni de corridors « N flux » : les robots sont visibles à tous les zooms. Code : `NoeudGraphe`, `AreteGraphe`, `lib/atlasRendu.js`.
+
+**Échelle.** Au-delà de 300 jumeaux (ou avec `?echelle=N`, jeu synthétique de N jumeaux), l'Atlas ne charge plus le graphe : `AtlasEchelle` (canvas) demande à `GET /api/mesh/vue` la fenêtre visible et le zoom. Le serveur (`backend/pyramide.py`) répond avec un nombre **borné** d'éléments, quel que soit n : grappes de domaines, de groupes ou de communautés (avec leurs signaux : écarts en violet, situations en orange), puis points, puis jumeaux individuels et leurs liens. Les droits s'appliquent **avant** l'agrégation : une grappe ne compte jamais un jumeau que le persona ne peut pas voir. Mesuré : 1 M de jumeaux, construction ≈ 0,6 s, chaque vue 1 à 15 ms côté serveur.
+
+Limites connues : `/api/mesh` reste plafonné à 200 jumeaux ; la recherche, le panneau du jumeau et la sélection multiple de l'Atlas s'appuient encore sur ce Mesh chargé (en vue à l'échelle, seuls les jumeaux qu'il contient s'ouvrent) ; les dépendances restreintes anonymisées ne figurent pas dans les vues agrégées.
