@@ -841,6 +841,14 @@ export default function Atlas() {
     // Rendu graphe : le jumeau ouvert (recherche, clic) prime sur le survol ; ses liens restent en avant, les autres s'effacent presque
     const epingle = graphe && selected && !selected.anonyme ? selected.id : null;
     const actif = epingle || survolJumeau;
+    if (graphe && domaineSel && !actif) {
+      es = es.map((e) => {
+        const n = (domDe[e.source] === domaineSel) + (domDe[e.target] === domaineSel);
+        return n === 2 ? { ...e, zIndex: 20, style: { ...e.style, strokeWidth: (e.style?.strokeWidth || 1.5) + 1, opacity: 1 } }
+          : n === 1 ? { ...e, style: { ...e.style, opacity: 0.4 } }
+            : { ...e, data: { ...e.data, estompee: true }, style: { ...e.style, opacity: 0.06 } };
+      });
+    }
     if (actif) {
       es = es.map((e) =>
         e.source === actif || e.target === actif || e.source === `voisin-${actif}` || e.target === `voisin-${actif}`
@@ -877,12 +885,16 @@ export default function Atlas() {
       es = [...es.filter((e) => e.id !== preuveSurvolee), ...es.filter((e) => e.id === preuveSurvolee)];
     }
     return es;
-  }, [edges, aretesDuGraphe, graphe, selected, couchesRel, survolJumeau, relSurvolee, selectedRelation, preuveSurvolee, secteurCurseur]);
+  }, [edges, aretesDuGraphe, graphe, selected, domaineSel, domDe, couchesRel, survolJumeau, relSurvolee, selectedRelation, preuveSurvolee, secteurCurseur]);
 
   // Rendu graphe : au survol d'un jumeau (sans sélection), ses voisins restent éclairés, le reste s'estompe
   const nodesRendus = useMemo(() => {
     // Comme le laboratoire : la sélection épinglée (ouverte par recherche ou clic) prime sur le survol
     const focus = selected && !selected.anonyme ? selected.id : survolJumeau;
+    // Un domaine ouvert (recherche, légende) éclaire ses robots ; le survol d'un robot reste prioritaire
+    if (graphe && domaineSel && !selected && !survolJumeau && !selection.length) {
+      return nodes.map((n) => (n.type !== "twin" || n.data?.cadastre || n.data?.jumeau?.domaine === domaineSel ? n : { ...n, data: { ...n.data, dim: true } }));
+    }
     if (!graphe || !focus || selection.length || !mesh) return nodes;
     const voisins = new Set([focus]);
     mesh.relations.forEach((r) => { if (r.source === focus) voisins.add(r.cible); if (r.cible === focus) voisins.add(r.source); });
@@ -891,7 +903,7 @@ export default function Atlas() {
       if (n.id === focus) return { ...n, selected: n.id === selected?.id, data: { ...n.data, nomVisible: true } };
       return voisins.has(n.id) ? { ...n, data: { ...n.data, nomVisible: true } } : { ...n, data: { ...n.data, dim: true } };
     });
-  }, [graphe, nodes, survolJumeau, selected, selection, mesh]);
+  }, [graphe, nodes, survolJumeau, selected, selection, mesh, domaineSel]);
 
   // Jumeau survolé ou épinglé → panneau flottant à gauche
   const jumeauSurvole = useMemo(() => {
@@ -912,8 +924,8 @@ export default function Atlas() {
     const q = recherche.trim().toLowerCase();
     if (!q || !mesh) return [];
     const js = mesh.jumeaux
-      .filter((j) => !j.anonyme && (j.nom.toLowerCase().includes(q) || idNumerique(j.id).includes(q)))
-      .slice(0, 5)
+      .filter((j) => !j.anonyme && (j.nom.toLowerCase().includes(q) || j.id.toLowerCase().includes(q) || idNumerique(j.id).includes(q)))
+      .slice(0, 8)
       .map((j) => ({ type: "jumeau", id: j.id, label: j.nom, sub: `${idNumerique(j.id)} · ${j.domaine}` }));
     const ds = (mesh.regions || [])
       .filter((r) => r.label.toLowerCase().includes(q))
@@ -1275,6 +1287,33 @@ export default function Atlas() {
     }
   };
 
+  // Déplacement de caméra différé : le panneau s'ouvre et le menu se replie, la carte change de largeur. La cible est
+  // calculée APRÈS cette mise en page (elle dépend de la taille de la carte) et le recadrage ne doit pas l'interrompre.
+  const volerVers = (cible, duration) => {
+    setTimeout(() => {
+      const t = cible();
+      animCamera.current = { ...animCamera.current, fin: Date.now() + duration, cible: t };
+      rfRef.current?.setCenter(t.x, t.y, { zoom: t.zoom, duration });
+    }, DELAI_MISE_EN_PAGE);
+  };
+
+  // Rendu graphe : un domaine se cherche comme un jumeau — la caméra cadre ses robots, les autres s'estompent
+  const ouvrirDomaine = (label) => {
+    setSelected(null); setSelectedRelation(null); setVueListe(null);
+    setDomaineSel(label); setOnglet("detail"); setRecherche("");
+    majUrl({ domaine: label, sel: null, jumeau: null });
+    const membres = (mesh?.jumeaux || []).filter((j) => j.domaine === label && !j.anonyme && !j.cadastre);
+    if (!membres.length) return;
+    volerVers(() => {
+      const pts = membres.map((j) => centreRendu(rfRef.current, j, posOverrides, DECALAGE_GRAPHE));
+      const xs = pts.map((q) => q.x), ys = pts.map((q) => q.y);
+      const r = carteRef.current?.getBoundingClientRect();
+      const bw = Math.max(...xs) - Math.min(...xs) + 240, bh = Math.max(...ys) - Math.min(...ys) + 240;
+      const zoom = r ? Math.min(1.2, Math.max(0.5, Math.min(r.width / bw, r.height / bh))) : 1;
+      return { x: (Math.min(...xs) + Math.max(...xs)) / 2, y: (Math.min(...ys) + Math.max(...ys)) / 2, zoom };
+    }, 600);
+  };
+
   const centrerSurJumeau = (id) => {
     const j = mesh?.jumeaux.find((x) => x.id === id);
     if (!j) return;
@@ -1284,12 +1323,7 @@ export default function Atlas() {
     // Le panneau s'ouvre et le menu se replie : la carte change de largeur. On attend que ce soit posé, sinon le
     // recadrage de la carte interrompt l'animation et le jumeau finit hors champ.
     const c = centreRendu(rfRef.current, j, posOverrides, graphe ? DECALAGE_GRAPHE : DECALAGE_CLASSIQUE);
-    const zoom = graphe ? 1.2 : 1.4;
-    const duration = graphe ? 500 : 600;
-    setTimeout(() => {
-      animCamera.current = { ...animCamera.current, fin: Date.now() + duration, cible: { x: c.x, y: c.y, zoom } };
-      rfRef.current?.setCenter(c.x, c.y, { zoom, duration });
-    }, DELAI_MISE_EN_PAGE);
+    volerVers(() => ({ x: c.x, y: c.y, zoom: graphe ? 1.2 : 1.4 }), graphe ? 500 : 600);
     majUrl({ sel: j.id, domaine: null });
     // La recherche/liste ouvre directement le détail à droite (survol = simple identification)
     setSelected(j);
@@ -1669,6 +1703,7 @@ export default function Atlas() {
                   noterRecherche(recherche);
                   const r = resultatsRecherche[0];
                   if (r.type === "jumeau") centrerSurJumeau(r.id);
+                  else if (graphe) ouvrirDomaine(r.id);
                   else { setDomaineSel(r.id); setRecherche(""); }
                   if (estMobile) setRechercheMobileOuverte(false);
                   setLoupeForcee(false);
@@ -1687,7 +1722,7 @@ export default function Atlas() {
               {resultatsRecherche.map((r) => (
                 <button
                   key={`${r.type}-${r.id}`}
-                  onClick={() => { noterRecherche(recherche); if (r.type === "jumeau") centrerSurJumeau(r.id); else { setDomaineSel(r.id); setRecherche(""); } }}
+                  onClick={() => { noterRecherche(recherche); if (r.type === "jumeau") centrerSurJumeau(r.id); else if (graphe) ouvrirDomaine(r.id); else { setDomaineSel(r.id); setRecherche(""); } }}
                   data-testid={`recherche-${r.type}-${r.id}`}
                   className="w-full rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-[rgba(148,163,184,0.10)]"
                 >
@@ -1812,7 +1847,7 @@ export default function Atlas() {
             {domaines.map(([d, nb]) => (
               <div key={d} className={`flex items-center gap-1.5 rounded px-1 py-0.5 text-xs hover:bg-white/[0.05] ${domainesMasques.has(d) ? "opacity-40" : ""}`} data-testid={`atlas-legende-${d}`}>
                 <input type="checkbox" checked={!domainesMasques.has(d)} onChange={() => setDomainesMasques((m) => { const s = new Set(m); if (s.has(d)) s.delete(d); else s.add(d); return s; })} className="accent-[#9B87F5]" aria-label={`Afficher ${d}`} />
-                <button onClick={() => explorerDomaine(d, { ajuster: true })} title={`Ouvrir le domaine ${d}`} className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
+                <button onClick={() => ouvrirDomaine(d)} title={`Ouvrir le domaine ${d}`} className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
                   <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: couleurDomaine(d) }} />
                   <span className="flex-1 truncate text-[#DCE6EE]">{d}</span>
                   <span className="font-code text-[10px] text-[#7C93A8]">{nb}</span>
