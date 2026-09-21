@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Star, Sparkle, ArrowSquareOut, CaretDown } from "@phosphor-icons/react";
 import { couleurDomaine, ETATS_RELATION } from "@/lib/domaines";
 import { idNumerique } from "@/lib/atlasGraph";
@@ -204,7 +204,7 @@ export function TwinDetail({ selected, favori, onBasculerFavori, statsTwin, onIn
   const comprehension = selected.couverture ?? 0;
   const statutComp = comprehension >= 90 ? "Solide" : comprehension >= 60 ? "À renforcer" : "Insuffisante";
   return (
-    <div className="space-y-4" data-testid="map-twin-detail">
+    <div key={selected.id} className="space-y-4" data-testid="map-twin-detail">
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2">
           <span className="h-2 w-2 rounded-full" style={{ backgroundColor: couleurDomaine(selected.domaine) }} />
@@ -365,15 +365,22 @@ export function TwinDetail({ selected, favori, onBasculerFavori, statsTwin, onIn
 }
 
 // En-tête de section réutilisable
-// Les rubriques sont pliées par défaut ; celles que l'on ouvre restent ouvertes d'un jumeau à l'autre (et d'une visite à l'autre)
-const CLE_RUBRIQUES = "meridian.atlas.rubriques-ouvertes";
-const lireOuvertes = () => {
-  try { return new Set(JSON.parse(localStorage.getItem(CLE_RUBRIQUES) || "[]")); } catch { return new Set(); }
-};
-
+// Rubriques pliées par défaut. Une rubrique dépliée se replie dès qu'on clique ailleurs (ou sur Échap) : on la déplie pour
+// lire, puis elle s'efface d'elle-même. Un clic à l'intérieur (choisir un voisin, par exemple) ne la replie pas.
 // `cle` rend la rubrique repliable : l'en-tête devient un bouton (chevron), `compte` affiche le nombre d'éléments.
 export function Section({ titre, children, action, cle, compte }) {
-  const [ouvertes, setOuvertes] = useState(lireOuvertes);
+  const [ouverte, setOuverte] = useState(false);
+  const racine = useRef(null);
+  useEffect(() => {
+    if (!ouverte) return undefined;
+    const dehors = (e) => { if (racine.current && !racine.current.contains(e.target)) setOuverte(false); };
+    const echap = (e) => { if (e.key === "Escape") setOuverte(false); };
+    // Au relâchement (« click »), pas à l'appui : replier à l'appui fait remonter les éléments du dessous avant que le clic
+    // ne les atteigne, et l'en-tête visé se dérobe sous la souris.
+    document.addEventListener("click", dehors, true);
+    document.addEventListener("keydown", echap);
+    return () => { document.removeEventListener("click", dehors, true); document.removeEventListener("keydown", echap); };
+  }, [ouverte]);
   if (!cle) {
     return (
       <div>
@@ -385,30 +392,23 @@ export function Section({ titre, children, action, cle, compte }) {
       </div>
     );
   }
-  const repliee = !ouvertes.has(cle);
-  const basculer = () => {
-    const n = new Set(lireOuvertes());
-    if (n.has(cle)) n.delete(cle); else n.add(cle);
-    try { localStorage.setItem(CLE_RUBRIQUES, JSON.stringify([...n])); } catch { /* stockage indisponible : l'état reste local */ }
-    setOuvertes(n);
-  };
   return (
-    <div data-testid={`rubrique-${cle}`}>
-      <div className={`flex items-center justify-between ${repliee ? "" : "mb-1"}`}>
+    <div ref={racine} data-testid={`rubrique-${cle}`}>
+      <div className={`flex items-center justify-between ${ouverte ? "mb-1" : ""}`}>
         <button
           type="button"
-          onClick={basculer}
-          aria-expanded={!repliee}
+          onClick={() => setOuverte((o) => !o)}
+          aria-expanded={ouverte}
           data-testid={`rubrique-${cle}-bascule`}
           className="flex min-h-[24px] flex-1 items-center gap-1.5 text-left text-[#7C93A8] transition-colors hover:text-[#F2F6F8]"
         >
-          <CaretDown size={10} className={`shrink-0 transition-transform duration-200 ${repliee ? "-rotate-90" : ""}`} />
+          <CaretDown size={10} className={`shrink-0 transition-transform duration-200 ${ouverte ? "" : "-rotate-90"}`} />
           <span className="font-code text-[9px] uppercase tracking-[0.2em]">{titre}</span>
           {compte != null && <span className="rounded-full bg-white/[0.06] px-1.5 font-code text-[9px] text-[#7C93A8]">{compte}</span>}
         </button>
         {action}
       </div>
-      {!repliee && children}
+      {ouverte && children}
     </div>
   );
 }
