@@ -34,7 +34,7 @@ export default function SidebarGauche() {
   const navigate = useNavigate();
   const location = useLocation();
   const { personas, persona, changerPersona, espaces, cible, changerCible } = usePerimetre();
-  const { basculerFlore } = useContexte();
+  const { basculerFlore, repliAuto } = useContexte();
   // Non nul uniquement dans la démonstration Polaris : la coquille est alors verrouillée
   const pilote = usePilotage();
 
@@ -43,13 +43,17 @@ export default function SidebarGauche() {
   const [replieMemo, setReplieMemo] = useState(() => {
     return localStorage.getItem("meridian_sidebar_replie") === "true";
   });
-  const replie = !pilote && replieMemo;
+  // Replié d'office quand un panneau de détail s'ouvre ; l'utilisateur peut la redéplier tant que ce panneau reste ouvert
+  const [depliageForce, setDepliageForce] = useState(false);
+  useEffect(() => { if (!repliAuto) setDepliageForce(false); }, [repliAuto]);
+  const replie = !pilote && (repliAuto ? !depliageForce : replieMemo);
 
   const [menuProfil, setMenuProfil] = useState(false);
   const [recents, setRecents] = useState([]);
   const refProfil = useRef(null);
 
   const basculerRepli = () => {
+    if (repliAuto) { setDepliageForce((d) => !d); return; }
     setReplieMemo((prev) => {
       const suivant = !prev;
       localStorage.setItem("meridian_sidebar_replie", suivant ? "true" : "false");
@@ -65,7 +69,7 @@ export default function SidebarGauche() {
       })
       .catch(() => {});
     // En démonstration, la liste se recharge quand le travail naît, s'enrichit ou se fige
-  }, [pilote?.versionTravaux]);
+  }, [pilote?.versionTravaux, location.pathname]);
 
   // « Nouveau travail » : en démonstration le clic lance la séquence scénarisée
   // (le moteur ouvre la page) ; hors démonstration il ouvre la vraie page de création.

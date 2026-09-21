@@ -12,7 +12,7 @@ export const SEUIL_NOM = 0.35; // un jumeau porte son nom quand son degré attei
 const RAYON_ROBOT = 0.7; // rayon d'accroche des liens = 0,7 × taille
 const SEUIL_LEGER = 150; // au-delà, robots sans filtres ni animations
 
-const STYLE_ETAT = {
+export const STYLE_ETAT = {
   confirmee: { largeur: 2, pointille: false, opacite: 0.7 },
   observee: { largeur: 2, pointille: false, opacite: 0.75 },
   supposee: { largeur: 1.3, pointille: true, opacite: 0.55 },

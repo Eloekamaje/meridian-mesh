@@ -20,7 +20,15 @@ export function dansPolygone(p, pts, ox, oy) {
   return dedans;
 }
 
-export default function useNavigationAtlas({ mesh, jumeauPar, posOverrides, selection, majUrl, setDomaineSel, setOnglet, setSelected, rfRef }) {
+// Position du CENTRE d'un jumeau telle que dessinée (les positions du Mesh sont théoriques : la scène sépare les nœuds
+// pour qu'aucun ne se chevauche). Repli sur la position du Mesh tant que le nœud n'est pas rendu.
+export function centreRendu(rf, j, posOverrides, decalage) {
+  const abs = rf?.getInternalNode?.(j.id)?.internals?.positionAbsolute;
+  const p = abs || posOverrides[j.id] || j.position;
+  return { x: p.x + decalage.x, y: p.y + decalage.y };
+}
+
+export default function useNavigationAtlas({ mesh, jumeauPar, posOverrides, selection, majUrl, setDomaineSel, setOnglet, setSelected, rfRef, decalage = { x: 30, y: 40 } }) {
   const [domaineActif, setDomaineActif] = useState(null);
   const stabilisation = useRef({ label: undefined, depuis: 0 });
 
@@ -50,7 +58,7 @@ export default function useNavigationAtlas({ mesh, jumeauPar, posOverrides, sele
     stabilisation.current = { label, depuis: Date.now() };
     setDomaineActif(label);
     if (!membres.length || !rfRef.current) return;
-    const pts = membres.map((j) => posOverrides[j.id] || j.position);
+    const pts = membres.map((j) => centreRendu(rfRef.current, j, posOverrides, { x: 0, y: 0 }));
     if (ajuster) {
       const xs = pts.map((p) => p.x);
       const ys = pts.map((p) => p.y);
@@ -60,15 +68,15 @@ export default function useNavigationAtlas({ mesh, jumeauPar, posOverrides, sele
       );
     } else {
       const z = rfRef.current.getZoom();
-      const cx = pts.reduce((a, p) => a + p.x, 0) / pts.length + 30;
-      const cy = pts.reduce((a, p) => a + p.y, 0) / pts.length + 40;
+      const cx = pts.reduce((a, p) => a + p.x, 0) / pts.length + decalage.x;
+      const cy = pts.reduce((a, p) => a + p.y, 0) / pts.length + decalage.y;
       rfRef.current.setCenter(cx, cy, { zoom: z, duration: 800 });
     }
-  }, [mesh, posOverrides, majUrl, setDomaineSel, setOnglet, rfRef]);
+  }, [mesh, posOverrides, majUrl, setDomaineSel, setOnglet, rfRef, decalage]);
 
   // Double-clic jumeau : déplacement animé + zoom explicite centré sur lui
   const centrerJumeau = useCallback((j) => {
-    const pos = posOverrides[j.id] || j.position;
+    const pos = centreRendu(rfRef.current, j, posOverrides, decalage);
     setSelected(j);
     setDomaineSel(null);
     setOnglet("detail");
@@ -76,8 +84,8 @@ export default function useNavigationAtlas({ mesh, jumeauPar, posOverrides, sele
     stabilisation.current = { label: j.domaine, depuis: Date.now() };
     setDomaineActif(j.domaine);
     const z = rfRef.current?.getZoom() ?? 1;
-    rfRef.current?.setCenter(pos.x + 30, pos.y + 40, { zoom: Math.min(Math.max(z * 1.6, 1.5), 2.4), duration: 700 });
-  }, [posOverrides, majUrl, setSelected, setDomaineSel, setOnglet, rfRef]);
+    setTimeout(() => rfRef.current?.setCenter(pos.x, pos.y, { zoom: Math.min(Math.max(z * 1.6, 1.5), 2.4), duration: 700 }), 300); // après la mise en page du panneau
+  }, [posOverrides, majUrl, setSelected, setDomaineSel, setOnglet, rfRef, decalage]);
 
   // « Mesh global » : ajuster à la vue (action explicite)
   const ajusterVue = useCallback(() => {

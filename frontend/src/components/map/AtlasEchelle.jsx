@@ -262,7 +262,7 @@ export default function AtlasEchelle({ synthetique = null, selectionId = null, o
   useEffect(() => { dessiner(); }, [selectionId, dessiner]);
 
   return (
-    <div ref={cadre} className={`relative h-full w-full ${className}`} data-testid="atlas-echelle">
+    <div ref={cadre} className={`relative h-full w-full ${className}`} data-testid="atlas-echelle" style={{ backgroundImage: "radial-gradient(rgba(148,163,184,0.13) 1px, transparent 1px)", backgroundSize: "26px 26px" }}>
       <canvas ref={canvas} className="absolute inset-0 h-full w-full cursor-grab touch-none" />
       {stats && (
         <div className="pointer-events-none absolute bottom-3 left-3 z-10 rounded-md bg-[#071019]/80 px-2.5 py-1 font-code text-[10px] leading-5 text-[#7C93A8]" data-testid="atlas-echelle-hud">

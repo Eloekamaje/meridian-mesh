@@ -10,6 +10,8 @@ export function ContexteProvider({ children }) {
   const [preuveSurvolee, setPreuveSurvolee] = useState(null); // relation illuminée sur la carte pendant le survol d'une preuve dans Flore
   const [lot, setLot] = useState(null);
   const [floreOuverte, setFloreOuverte] = useState(false);
+  // Un panneau de détail ouvert (Atlas) demande à la barre latérale de se replier en icônes ; elle se rouvre à sa fermeture
+  const [repliAuto, setRepliAuto] = useState(false);
   // Instantané contextuel de l'Atlas transmis à Flore (surface, sélection, couches, zoom)
   const [atlasCtx, setAtlasCtx] = useState(null);
   // État de navigation de l'Atlas (viewport, sélection, couches) — mémorisé à la sortie
@@ -32,7 +34,7 @@ export function ContexteProvider({ children }) {
 
   return (
     <ContexteCtx.Provider
-      value={{ selection, setSelection, domaineSel, setDomaineSel, focusCarte, commanderCarte, ajouterJumeau, retirerJumeau, focusVisuel, setFocusVisuel, preuveSurvolee, setPreuveSurvolee, lot, setLot, floreOuverte, ouvrirFlore, fermerFlore, basculerFlore, atlasCtx, setAtlasCtx, atlasEtat, setAtlasEtat, questionFlore, setQuestionFlore, demanderAFlore }}
+      value={{ selection, setSelection, domaineSel, setDomaineSel, focusCarte, commanderCarte, ajouterJumeau, retirerJumeau, focusVisuel, setFocusVisuel, preuveSurvolee, setPreuveSurvolee, lot, setLot, floreOuverte, repliAuto, setRepliAuto, ouvrirFlore, fermerFlore, basculerFlore, atlasCtx, setAtlasCtx, atlasEtat, setAtlasEtat, questionFlore, setQuestionFlore, demanderAFlore }}
     >
       {children}
     </ContexteCtx.Provider>

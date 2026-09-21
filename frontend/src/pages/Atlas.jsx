@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { ReactFlow, Controls, ControlButton, MiniMap, SelectionMode, ViewportPortal } from "@xyflow/react";
+import { ReactFlow, Background, Controls, ControlButton, MiniMap, SelectionMode, ViewportPortal } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { X, Sparkle, CornersOut, MagnifyingGlass, Globe } from "@phosphor-icons/react";
 import { toast } from "sonner";
@@ -14,7 +14,7 @@ import TwinNode from "@/components/map/TwinNode";
 import NoeudGraphe from "@/components/map/NoeudGraphe";
 import AreteGraphe from "@/components/map/AreteGraphe";
 import AtlasEchelle from "@/components/map/AtlasEchelle";
-import { analyserMesh, aretesGraphe, habillerNoeud } from "@/lib/atlasRendu";
+import { analyserMesh, aretesGraphe, habillerNoeud, tailleDe, STYLE_ETAT } from "@/lib/atlasRendu";
 import CielEtoile from "@/components/map/CielEtoile";
 import RegionNode from "@/components/map/RegionNode";
 import AreteOrthogonale from "@/components/map/AreteOrthogonale";
@@ -26,7 +26,8 @@ import AtlasPanneau from "@/components/map/AtlasPanneau";
 import PanneauJumeau from "@/components/map/PanneauJumeau";
 import FilAriane from "@/components/map/FilAriane";
 import ExpliquerCarte from "@/components/map/ExpliquerCarte";
-import useNavigationAtlas, { dansPolygone } from "@/components/map/useNavigationAtlas";
+import useNavigationAtlas, { centreRendu, dansPolygone } from "@/components/map/useNavigationAtlas";
+import { CENTRE_ROBOT } from "@/components/map/NoeudGraphe";
 import useZoomSemantique from "@/components/map/useZoomSemantique";
 import { NIVEAUX_ZOOM, construireGraphe, statsDuDomaine, idNumerique, placerLabels } from "@/lib/atlasGraph";
 import { favoris, basculerFavori, noterRecent, noterRecherche } from "@/lib/memoire";
@@ -51,6 +52,9 @@ const edgeTypes = { ortho: AreteOrthogonale, corridor: AreteCorridor };
 // Rendu « graphe » (par défaut) : robots et liens courbes ; ?rendu=classique rétablit membranes/étoiles/corridors
 // Au-delà, l'Atlas ne charge plus le graphe : il demande au serveur la vue (grappes, points ou jumeaux) de ce qui est à l'écran
 const SEUIL_ECHELLE = 300;
+const DELAI_MISE_EN_PAGE = 300; // transition du menu (200 ms) + montage du panneau
+const DECALAGE_GRAPHE = CENTRE_ROBOT; // centre du robot dans son nœud
+const DECALAGE_CLASSIQUE = { x: 30, y: 40 };
 const nodeTypesGraphe = { twin: NoeudGraphe, region: RegionNode };
 const edgeTypesGraphe = { ...edgeTypes, graphe: AreteGraphe };
 
@@ -58,7 +62,7 @@ export default function Atlas() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const { mesh, jumeauPar, recharger } = useMesh();
-  const { version, vueActive, rechargerVues } = usePerimetre();
+  const { version, vueActive, rechargerVues, info } = usePerimetre();
   const [situations, setSituations] = useState([]);
   const focus = searchParams.get("focus");
   const situationParam = searchParams.get("situation");
@@ -77,11 +81,12 @@ export default function Atlas() {
   const [expliquerOuvert, setExpliquerOuvert] = useState(false);
   const direct = modeTemps === "direct";
   const [outil, setOutil] = useState("deplacement");
-  const { selection, setSelection, domaineSel, setDomaineSel, focusCarte, commanderCarte, setFocusVisuel, ouvrirFlore, fermerFlore, floreOuverte, setAtlasCtx, atlasEtat, setAtlasEtat, demanderAFlore, preuveSurvolee } = useContexte();
+  const { selection, setSelection, domaineSel, setDomaineSel, focusCarte, commanderCarte, setFocusVisuel, ouvrirFlore, fermerFlore, floreOuverte, setAtlasCtx, atlasEtat, setAtlasEtat, demanderAFlore, preuveSurvolee, setRepliAuto } = useContexte();
   const pilote = usePilotage();
   const graphe = searchParams.get("rendu") !== "classique";
   const echelleSynth = Number(searchParams.get("echelle")) || null; // essai d'échelle : N jumeaux fictifs servis par le backend
   const echelle = !!echelleSynth || (mesh?.perimetre?.nb_autorises || 0) >= SEUIL_ECHELLE;
+  const [domainesMasques, setDomainesMasques] = useState(() => new Set()); // légende-filtre : domaines décochés
   const analyse = useMemo(() => (graphe && mesh ? analyserMesh(mesh) : null), [graphe, mesh]);
 
   // Conservation de l'état de l'Atlas entre les pages : au retour, on restaure exactement
@@ -139,6 +144,7 @@ export default function Atlas() {
   const [loupeForcee, setLoupeForcee] = useState(false); // recherche re-dépliée à la demande pendant qu'un panneau est ouvert
   const [calquesOuverts, setCalquesOuverts] = useState(false); // Calques déplié → la barre d'outils se range à droite du panneau
 
+  const animCamera = useRef({ fin: 0, cible: null, minuteur: null }); // déplacement de caméra en cours (voir le ResizeObserver)
   const centreMonde = useRef(null); // point monde au centre du viewport (conservation caméra)
   const [fantome, setFantome] = useState(null); // position de départ du robot pendant le drag
   const coquesRef = useRef({}); // rect actuellement affiché de chaque membrane
@@ -265,6 +271,7 @@ export default function Atlas() {
   const { domaineActif, majContexte, explorerDomaine, centrerJumeau, ajusterVue, revenirSelection } = useNavigationAtlas({
     mesh, jumeauPar, posOverrides, selection, majUrl,
     setDomaineSel, setOnglet, setSelected, rfRef,
+    decalage: graphe ? DECALAGE_GRAPHE : DECALAGE_CLASSIQUE,
   });
 
   const { zoomNiveau, onMove } = useZoomSemantique();
@@ -588,6 +595,8 @@ export default function Atlas() {
     });
     // Conserve les dimensions mesurées par React Flow : le graphe est reconstruit à chaque
     // tick de drag — sans cela les nœuds perdent leur mesure et les arêtes disparaissent.
+    // Rendu graphe : pas de territoires — les domaines se lisent par leur couleur et la légende
+    if (graphe) g.nodes = g.nodes.filter((n) => n.type !== "region");
     const internes = rfRef.current?.getNodes?.() || [];
     const parId = new Map(internes.map((n) => [n.id, n]));
     const nouvellesCibles = {};
@@ -626,7 +635,10 @@ export default function Atlas() {
           n = { ...n, data: { ...n.data, relLiee: true } };
         }
       }
-      if (graphe && analyse && n.type === "twin") n = habillerNoeud(n, analyse);
+      if (graphe && analyse && n.type === "twin") {
+        n = habillerNoeud(n, analyse);
+        if (domainesMasques.has(n.data.jumeau?.domaine)) n = { ...n, hidden: true };
+      }
       const prev = parId.get(n.id);
       const dim = mesures[n.id];
       const base = prev?.measured ? { ...n, measured: prev.measured, dragging: prev.dragging || undefined } : n;
@@ -634,7 +646,7 @@ export default function Atlas() {
     });
     ciblesCoques.current = nouvellesCibles;
     return g;
-  }, [mesh, focus, situation, halo, compteurs, selection, relFocus, zoomNiveau, vueActive, posOverrides, domaineSel, perimetreTravail, domDe, statsRegions, focusCarte, temps, amorce, mesures, regionSurvolee, tickCoques, relSurvolee, selectedRelation, zoomActuel, routesFin, provisoire, estTactile, couchesCarte, situationsJumeaux, theatreSituationnel, graphe, analyse]);
+  }, [mesh, focus, situation, halo, compteurs, selection, relFocus, zoomNiveau, vueActive, posOverrides, domaineSel, perimetreTravail, domDe, statsRegions, focusCarte, temps, amorce, mesures, regionSurvolee, tickCoques, relSurvolee, selectedRelation, zoomActuel, routesFin, provisoire, estTactile, couchesCarte, situationsJumeaux, theatreSituationnel, graphe, analyse, domainesMasques]);
 
   const [renduSignale, setRenduSignale] = useState(null);
   useEffect(() => {
@@ -764,8 +776,13 @@ export default function Atlas() {
   // et le ResizeObserver conserve la caméra — le chrome (mini-carte, zoom, barre) ne bouge jamais.
   const panneauOuvert = !!(comparaison || selectedRelation || selected || domaineSel || vueListe);
   // Recherche rétractée en loupe quand un panneau (détail ou Flore) est ouvert — chrome minimal en mode focus
-  const rechercheOuverte = estMobile ? rechercheMobileOuverte : !panneauOuvert || loupeForcee;
+  const rechercheOuverte = estMobile ? rechercheMobileOuverte : graphe || !panneauOuvert || loupeForcee;
   useEffect(() => { if (!panneauOuvert) setLoupeForcee(false); }, [panneauOuvert]);
+  // Le panneau de détail prend la place : la barre latérale se replie en icônes tant qu'il est ouvert
+  useEffect(() => {
+    setRepliAuto(panneauOuvert);
+    return () => setRepliAuto(false);
+  }, [panneauOuvert, setRepliAuto]);
 
   // Remplacement mutuel de la colonne droite : une NOUVELLE sélection de domaine/relation/liste
   // pendant que Flore est ouverte ferme Flore (le dernier panneau demandé gagne).
@@ -929,6 +946,33 @@ export default function Atlas() {
       });
   }, [selected, mesh]);
 
+  // « Parler au jumeau » : chaque conversation est un travail. On le crée avec le(s) jumeau(x) en contexte, Flore
+  // ouvre l'échange, et l'on arrive dans la page du travail. (En démonstration, le réseau est simulé : Flore s'ouvre.)
+  const parlerAuJumeau = async (ids) => {
+    const js = ids.map((id) => mesh?.jumeaux.find((x) => x.id === id && !x.anonyme)).filter(Boolean);
+    if (!js.length) return;
+    if (pilote) { setSelection(ids); ouvrirFlore(); return; }
+    const seul = js.length === 1 ? js[0] : null;
+    const nb = seul ? mesh.relations.filter((r) => r.source === seul.id || r.cible === seul.id).length : 0;
+    const accueil = seul
+      ? `Vous voulez parler de « ${seul.nom} » (${seul.domaine}). ${seul.mission ? `${seul.mission}. ` : ""}Je le connais avec ${seul.couverture ?? "—"} % de couverture et ${nb} relation${nb > 1 ? "s" : ""}. Que voulez-vous savoir ?`
+      : `Vous voulez parler de ${js.length} jumeaux : ${js.map((x) => x.nom).join(", ")}. Relations, points communs, écarts… par où commençons-nous ?`;
+    try {
+      const now = new Date().toISOString();
+      const { data } = await api.post("/cases", {
+        titre: seul ? `Échange avec ${seul.nom}` : `Échange sur ${js.length} jumeaux`,
+        type: "demande",
+        objectif: seul ? `Comprendre ${seul.nom} (${seul.domaine})` : `Comprendre ${js.map((x) => x.nom).join(", ")}`,
+        jumeaux: js.map((x) => x.id),
+        espace: info?.espace?.id,
+      });
+      await api.patch(`/cases/${data.id}`, { conversation: [{ role: "flore", comportement: "expliquer", texte: accueil, quand: now }] });
+      navigate(`/travaux/${data.id}`);
+    } catch {
+      toast.error("Impossible d'ouvrir le travail");
+    }
+  };
+
   const ouvrirInvestigationJumeau = async () => {
     if (!selected) return;
     try {
@@ -1091,6 +1135,14 @@ export default function Atlas() {
       if (w === derniere.w && h === derniere.h) return;
       derniere = { w, h };
       if (!rf || !c) return;
+      // Un déplacement de caméra est en cours (recherche, double-clic) : le recadrer ici l'interromptrait.
+      // On le laisse finir, puis on le rejoue vers sa cible sur la carte à sa taille définitive.
+      const anim = animCamera.current;
+      if (Date.now() < anim.fin) {
+        clearTimeout(anim.minuteur);
+        anim.minuteur = setTimeout(() => rf.setCenter(anim.cible.x, anim.cible.y, { zoom: anim.cible.zoom, duration: 200 }), anim.fin - Date.now() + 30);
+        return;
+      }
       const vp = rf.getViewport();
       rf.setViewport({ x: w / 2 - c.x * vp.zoom, y: h / 2 - c.y * vp.zoom, zoom: vp.zoom });
     });
@@ -1222,10 +1274,19 @@ export default function Atlas() {
   const centrerSurJumeau = (id) => {
     const j = mesh?.jumeaux.find((x) => x.id === id);
     if (!j) return;
-    const pos = posOverrides[id] || j.position;
-    setHalo(id); // membrane + robot brièvement mis en évidence
+    setHalo(id); // robot brièvement mis en évidence
     setTimeout(() => setHalo((h) => (h === id ? null : h)), 2000);
-    rfRef.current?.setCenter(pos.x + 30, pos.y + 40, { zoom: 1.4, duration: 600 });
+    // Comme le laboratoire : on vole jusqu'au jumeau tel qu'il est DESSINÉ, à un zoom lisible
+    // Le panneau s'ouvre et le menu se replie : la carte change de largeur. On attend que ce soit posé, sinon le
+    // recadrage de la carte interrompt l'animation et le jumeau finit hors champ.
+    const c = centreRendu(rfRef.current, j, posOverrides, graphe ? DECALAGE_GRAPHE : DECALAGE_CLASSIQUE);
+    const zoom = graphe ? 1.2 : 1.4;
+    const duration = graphe ? 500 : 600;
+    setTimeout(() => {
+      animCamera.current = { ...animCamera.current, fin: Date.now() + duration, cible: { x: c.x, y: c.y, zoom } };
+      rfRef.current?.setCenter(c.x, c.y, { zoom, duration });
+    }, DELAI_MISE_EN_PAGE);
+    majUrl({ sel: j.id, domaine: null });
     // La recherche/liste ouvre directement le détail à droite (survol = simple identification)
     setSelected(j);
     setSelectedRelation(null);
@@ -1283,23 +1344,8 @@ export default function Atlas() {
     {/* Layout façon Google Maps : colonnes de part et d'autre de la carte — le chrome ne bouge jamais.
         Jumeau à gauche (intelligence locale) ; domaine/relation/listes à droite ; Flore remplace la droite. */}
     <div className="relative flex min-h-0 flex-1">
-      {selected && !estTablette && (
-        <PanneauJumeau
-          jumeau={selected}
-          voisins={voisinsSelection}
-          relationsRecentes={relationsRecentes}
-          favori={favorisIds.includes(selected.id)}
-          onBasculerFavori={onBasculerFavori}
-          statsTwin={statsSelection}
-          onInterroger={() => { setSelection([selected.id]); ouvrirFlore(); }}
-          onExplorerRelations={() => { setSelection([selected.id]); setRelFocus(true); toast.info("Trajets du jumeau mis en avant"); }}
-          onOuvrirInvestigation={ouvrirInvestigationJumeau}
-          onChoisirVoisin={centrerSurJumeau}
-          onFermer={() => { setSelected(null); majUrl({ sel: null }); }}
-        />
-      )}
-    <div ref={carteRef} onPointerMove={surSurvolCarte} onPointerLeave={() => { setRegionSurvolee(null); setRegionTooltip(null); setSecteurCurseur(null); setRelSurvolee(null); setRelTooltipPos(null); setSurvolJumeau(null); if (telemetrieRef.current) { telemetrieRef.current.textContent = "—"; telemetrieRef.current.style.opacity = "0.35"; } }} className="relative min-w-0 flex-1 overflow-hidden" data-testid="system-map" style={{ background: "radial-gradient(ellipse at 50% 38%, #0D1B28 0%, #071019 60%, #04090F 100%)" }}>
-      <CielEtoile />
+    <div ref={carteRef} onPointerMove={surSurvolCarte} onPointerLeave={() => { setRegionSurvolee(null); setRegionTooltip(null); setSecteurCurseur(null); setRelSurvolee(null); setRelTooltipPos(null); setSurvolJumeau(null); if (telemetrieRef.current) { telemetrieRef.current.textContent = "—"; telemetrieRef.current.style.opacity = "0.35"; } }} className="relative min-w-0 flex-1 overflow-hidden" data-testid="system-map" style={{ background: graphe ? "#071019" : "radial-gradient(ellipse at 50% 38%, #0D1B28 0%, #071019 60%, #04090F 100%)" }}>
+      {!graphe && <CielEtoile />}
       {/* Démonstration : la surface annonce ce qu'elle prépare. À la première ouverture,
           surface sobre et pleine ; en mise à jour, la vue précédente reste visible dessous. */}
       {pilote?.preparation?.surface === "atlas" && <SurfacePreparation preparation={pilote.preparation} vierge={pilote.premiereScene} testid="atlas-preparation" />}
@@ -1491,7 +1537,8 @@ export default function Atlas() {
         nodesDraggable={modeEdition}
         nodesConnectable={false}
       >
-        {/* Trame technique remplacée par le ciel étoilé fixe (spécification « nuit profonde ») */}
+        {/* Rendu graphe : fond uni + trame de points, comme le laboratoire ; rendu classique : ciel étoilé fixe */}
+        {graphe && <Background gap={26} size={1} color="rgba(148,163,184,0.13)" />}
         <Controls showInteractive={false} showFitView={false} position="bottom-right" style={{ marginBottom: estTablette ? 8 : 148, marginRight: 14 }}>
           <ControlButton onClick={pleinEcran} title="Plein écran" data-testid="plein-ecran-btn">
             <CornersOut size={14} />
@@ -1707,7 +1754,80 @@ export default function Atlas() {
 
       {/* Infobulle d'identification au survol — une ligne, aucune action, aucun bloc de stats
           (le détail vit dans le panneau de droite au clic ; règle d'unicité : masquée si un panneau est ouvert) */}
-      {!estTablette && jumeauSurvole && zoomNiveau > 1 && !panneauOuvert && tooltipPos && (
+      {/* Rendu graphe : fiche d'aperçu du laboratoire — nom, domaine, degré, couverture, fraîcheur, mission — posée à côté du robot */}
+      {graphe && !echelle && !estTablette && jumeauSurvole && (() => {
+        const rf = rfRef.current;
+        const el = carteRef.current;
+        if (!rf || !el || !analyse) return null;
+        const c = centreRendu(rf, jumeauSurvole, posOverrides, DECALAGE_GRAPHE);
+        const boite = el.getBoundingClientRect();
+        const p = rf.flowToScreenPosition(c);
+        const r = tailleDe(analyse, jumeauSurvole.id) * 0.7 * rf.getZoom();
+        const L = 236;
+        let left = p.x - boite.left + r + 14;
+        if (left + L > boite.width - 8) left = p.x - boite.left - r - 14 - L;
+        const top = Math.max(8, Math.min(p.y - boite.top - 44, boite.height - 190));
+        const j = jumeauSurvole;
+        return (
+          <div className="pointer-events-none absolute z-30 w-[236px] space-y-1.5 rounded-xl border border-white/10 bg-[#0C1724]/95 p-3 shadow-2xl backdrop-blur-xl" style={{ left, top }} data-testid="infobulle-jumeau">
+            <div className="flex items-center gap-2">
+              <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: couleurDomaine(j.domaine) }} />
+              <span className="min-w-0 flex-1 truncate text-sm font-semibold text-white" data-testid="infobulle-nom">{j.nom}</span>
+              <span className="font-code text-[10px] text-[#64748B]">{idNumerique(j.id)}</span>
+            </div>
+            <div className="font-code text-[10px] uppercase tracking-wider text-[#7C93A8]">
+              {j.domaine}
+              {analyse.ecarts.has(j.id) && <span className="ml-2 text-[#F59E0B]">⚠ écart</span>}
+            </div>
+            <div className="grid grid-cols-2 gap-1.5 pt-0.5 text-center">
+              {[["Degré", `${analyse.deg.get(j.id) || 0}`], ["Couverture", j.couverture != null ? `${j.couverture} %` : "—"]].map(([k, v]) => (
+                <div key={k} className="rounded-lg bg-white/[0.04] px-1 py-1">
+                  <div className="font-code text-[11px] font-semibold text-[#F2F6F8]" data-testid={k === "Couverture" ? "infobulle-confiance" : undefined}>{v}</div>
+                  <div className="font-code text-[8px] uppercase tracking-wider text-[#64748B]">{k}</div>
+                </div>
+              ))}
+            </div>
+            {j.fraicheur && <div className="font-code text-[10px] text-[#7C93A8]">Fraîcheur : <span className="text-[#CBD5E1]">{j.fraicheur}</span></div>}
+            {j.mission && <p className="line-clamp-2 text-[11px] leading-snug text-[#94A3B8]">{j.mission}</p>}
+            <div className="font-code text-[9px] text-[#526578]">Cliquer pour ouvrir la fiche</div>
+          </div>
+        );
+      })()}
+
+      {/* Rendu graphe : légende-filtre des domaines (plus de territoires — la couleur porte le domaine) et des états de lien */}
+      {graphe && !echelle && mesh && (() => {
+        const n = new Map();
+        mesh.jumeaux.filter((j) => !j.anonyme && !j.cadastre).forEach((j) => n.set(j.domaine, (n.get(j.domaine) || 0) + 1));
+        const domaines = [...n.entries()].sort((a, b) => b[1] - a[1]);
+        return (
+          <div className="glass absolute bottom-10 left-3 z-10 w-[200px] rounded-xl p-2.5" data-testid="atlas-legende">
+            <div className="mb-1 flex items-center justify-between font-code text-[9px] uppercase tracking-wider text-[#64748B]">
+              <span>Domaines</span>
+              {domainesMasques.size > 0 && <button onClick={() => setDomainesMasques(new Set())} className="normal-case text-[#25D0C8] hover:underline" data-testid="atlas-legende-tout">tout afficher</button>}
+            </div>
+            {domaines.map(([d, nb]) => (
+              <div key={d} className={`flex items-center gap-1.5 rounded px-1 py-0.5 text-xs hover:bg-white/[0.05] ${domainesMasques.has(d) ? "opacity-40" : ""}`} data-testid={`atlas-legende-${d}`}>
+                <input type="checkbox" checked={!domainesMasques.has(d)} onChange={() => setDomainesMasques((m) => { const s = new Set(m); if (s.has(d)) s.delete(d); else s.add(d); return s; })} className="accent-[#9B87F5]" aria-label={`Afficher ${d}`} />
+                <button onClick={() => explorerDomaine(d, { ajuster: true })} title={`Ouvrir le domaine ${d}`} className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: couleurDomaine(d) }} />
+                  <span className="flex-1 truncate text-[#DCE6EE]">{d}</span>
+                  <span className="font-code text-[10px] text-[#7C93A8]">{nb}</span>
+                </button>
+              </div>
+            ))}
+            <div className="mt-1.5 space-y-0.5 border-t border-white/[0.07] pt-1.5">
+              {Object.entries(ETATS_RELATION).map(([k, v]) => (
+                <div key={k} className="flex items-center gap-2 text-[10px] text-[#94A3B8]">
+                  <span className="inline-block w-5 border-t-2" style={{ borderColor: v.couleur, borderStyle: STYLE_ETAT[k]?.pointille ? "dashed" : "solid" }} />
+                  {v.label}
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
+      {!graphe && !estTablette && jumeauSurvole && zoomNiveau > 1 && !panneauOuvert && tooltipPos && (
         <div
           className="pointer-events-none absolute z-30 flex items-center gap-1.5 rounded-lg border border-[rgba(148,163,184,0.16)] bg-[#0F1D28]/95 px-2.5 py-1.5 shadow-md"
           style={{ left: tooltipPos.x + 14, top: tooltipPos.y + 14 }}
@@ -1743,7 +1863,7 @@ export default function Atlas() {
         {selection.length > 1 && !theatreSituationnel.actif && (
           <div className="glass pointer-events-auto flex flex-wrap items-center justify-center gap-1.5 rounded-xl px-3 py-2" data-testid="multi-selection-bar">
             <span className="font-code text-[10px] font-semibold text-[#F2F6F8]" data-testid="multi-selection-compte">{selection.length} jumeaux sélectionnés</span>
-            <button onClick={() => demanderAFlore(`Analyse ces ${selection.length} jumeaux : relations, points communs et écarts.`)} data-testid="multi-interroger" className="rounded-md border border-[#9B87F5]/40 px-2 py-0.5 font-code text-[10px] font-semibold text-[#9B87F5] transition-colors hover:bg-[#9B87F5]/10">Interroger</button>
+            <button onClick={() => parlerAuJumeau(selection)} data-testid="multi-interroger" className="rounded-md border border-[#9B87F5]/40 px-2 py-0.5 font-code text-[10px] font-semibold text-[#9B87F5] transition-colors hover:bg-[#9B87F5]/10">Interroger</button>
             <button onClick={() => { setRelFocus(true); toast.info("Trajets de la sélection mis en avant"); }} data-testid="multi-relations" className="rounded-md border border-[rgba(148,163,184,0.16)] px-2 py-0.5 font-code text-[10px] text-[#94A3B8] transition-colors hover:text-[#F2F6F8]">Relations</button>
             <button onClick={creerGroupeSelection} data-testid="multi-groupe" className="rounded-md border border-[rgba(148,163,184,0.16)] px-2 py-0.5 font-code text-[10px] text-[#94A3B8] transition-colors hover:text-[#F2F6F8]">Créer un groupe</button>
             <button onClick={() => demanderAFlore("Qu'ont en commun ces jumeaux ? Capacités, sources, propriétaires, relations…")} data-testid="multi-commun" className="rounded-md border border-[rgba(148,163,184,0.16)] px-2 py-0.5 font-code text-[10px] text-[#94A3B8] transition-colors hover:text-[#F2F6F8]">Point commun</button>
@@ -1913,6 +2033,21 @@ export default function Atlas() {
 
     </div>
 
+      {selected && !estTablette && (
+        <PanneauJumeau
+          jumeau={selected}
+          voisins={voisinsSelection}
+          relationsRecentes={relationsRecentes}
+          favori={favorisIds.includes(selected.id)}
+          onBasculerFavori={onBasculerFavori}
+          statsTwin={statsSelection}
+          onInterroger={() => parlerAuJumeau([selected.id])}
+          onExplorerRelations={() => { setSelection([selected.id]); setRelFocus(true); toast.info("Trajets du jumeau mis en avant"); }}
+          onOuvrirInvestigation={ouvrirInvestigationJumeau}
+          onChoisirVoisin={centrerSurJumeau}
+          onFermer={() => { setSelected(null); majUrl({ sel: null }); }}
+        />
+      )}
       <AtlasPanneau
         onglet={onglet} setOnglet={setOnglet}
         comparaison={comparaison} selectedRelation={selectedRelation}
@@ -1927,7 +2062,7 @@ export default function Atlas() {
         mesh={mesh} situations={situations} vueListe={vueListe} setVueListe={setVueListe}
         favorisIds={favorisIds} onBasculerFavori={onBasculerFavori}
         statsTwin={statsSelection}
-        onInterroger={() => { if (selected) { setSelection([selected.id]); ouvrirFlore(); } }}
+        onInterroger={() => { if (selected) parlerAuJumeau([selected.id]); }}
         onChoisirJumeau={centrerSurJumeau}
         onChoisirSituation={(id) => majUrl({ situation: id })}
         onRelancerRecherche={(t) => { setRecherche(t); setLoupeForcee(true); if (estMobile) setRechercheMobileOuverte(true); }}

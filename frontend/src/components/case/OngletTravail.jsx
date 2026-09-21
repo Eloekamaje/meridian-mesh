@@ -310,6 +310,9 @@ export default function OngletTravail({
   onOuvrirPreuve 
 }) {
   const pilote = usePilotage();
+  // Le dossier CASE_101 et ses deux preuves sont le contenu du scénario de démonstration : ils n'appartiennent qu'au
+  // travail de démonstration (né pendant la démo, ou le travail de démonstration du jeu de données), jamais aux travaux réels
+  const contenuScenario = pilote ? !!pilote.documentGenere : cas?.id === "demo-polaris-work-g";
   const [nouveauMsg, setNouveauMsg] = useState("");
   const [envoiMsg, setEnvoiMsg] = useState(false);
   // Rubriques du volet (Résultats, Sources & Jumeaux) : chacune se plie et se déplie
@@ -416,7 +419,7 @@ export default function OngletTravail({
             data-testid="volet-flottant-sources-resultats"
           >
             {/* Section RÉSULTATS : en démonstration, le dossier n'apparaît qu'une fois généré par Flore */}
-            {(!pilote || pilote.documentGenere) && (
+            {contenuScenario && (
               <>
             {/* Section RÉSULTATS — en-tête cliquable : plie / déplie la rubrique */}
             <div className={`flex items-center justify-between text-xs font-semibold text-white ${pliees.resultats ? "" : "mb-2.5"}`}>
@@ -490,7 +493,7 @@ export default function OngletTravail({
                 <CaretDown size={11} className={`shrink-0 text-[#7C93A8] transition-transform duration-200 ${pliees.sources ? "-rotate-90" : ""}`} />
                 <Globe size={14} className="text-[#9B87F5]" />
                 <span>Sources & Jumeaux</span>
-                <span className="rounded-full bg-white/[0.08] px-1.5 py-0.2 font-code text-[10px] text-[#7C93A8]">{jumeauxParticipants.length + 2}</span>
+                <span className="rounded-full bg-white/[0.08] px-1.5 py-0.2 font-code text-[10px] text-[#7C93A8]">{jumeauxParticipants.length + (contenuScenario ? 2 : 0)}</span>
               </button>
               <button 
                 onClick={() => setVoletSourcesOuvert(false)}
@@ -527,7 +530,8 @@ export default function OngletTravail({
                 </div>
               ))}
 
-              {/* 2 Preuves documentaires */}
+              {contenuScenario && (
+              <>
               <div 
                 onClick={() => setPreuveInspectee(preuveInspectee === "ev-g-initiatives" ? null : "ev-g-initiatives")}
                 className={`flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs transition-colors cursor-pointer border ${
@@ -559,6 +563,8 @@ export default function OngletTravail({
                 </div>
                 <span className="font-code text-[10px] text-[#7C93A8] shrink-0">ev-g-couverture</span>
               </div>
+              </>
+              )}
             </div>
 
             {/* Tiroir d'inspection si un élément est cliqué */}

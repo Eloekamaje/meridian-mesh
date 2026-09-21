@@ -327,7 +327,7 @@ export function TwinDetail({ selected, favori, onBasculerFavori, statsTwin, onIn
           <button
             onClick={onInterroger}
             data-testid="twin-interroger-btn"
-            title="Ouvrir Flore avec ce jumeau en contexte"
+            title="Ouvrir un nouveau travail avec ce jumeau en contexte"
             className="flex items-center justify-center gap-1.5 rounded-lg bg-[#25D0C8] px-3 py-2 text-xs font-semibold text-[#071019] transition-colors hover:bg-[#1BAE9F]"
           >
             <Sparkle size={13} weight="fill" /> Parler au jumeau
