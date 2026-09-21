@@ -21,6 +21,8 @@ import { usePerimetre } from "@/lib/perimetre";
 import { useContexte } from "@/lib/contexte";
 import { usePilotage } from "@/lib/pilotage";
 import IndicateurClic from "@/components/IndicateurClic";
+import logoComplet from "@/assets/logo/meridian-logo-clair.png";
+import logoSymbole from "@/assets/logo/meridian-symbole.png";
 
 const NAV_ITEMS = [
   { to: "/atlas", label: "Atlas", icon: Compass, testid: "nav-atlas" },
@@ -112,11 +114,8 @@ export default function SidebarGauche() {
       {/* ===================================================================== */}
       {!replie ? (
         <div className="mb-3 flex items-center justify-between px-1">
-          {/* Logo / Titre Méridian */}
-          <div className="flex items-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-[#38BDF8] shadow-[0_0_8px_#38BDF8]" />
-            <span className="font-display text-sm font-black tracking-wider text-white">MÉRIDIAN</span>
-          </div>
+          {/* Logo Méridian (version pour fond sombre) */}
+          <img src={logoComplet} alt="Méridian" className="h-6 w-auto select-none" draggable={false} data-testid="sidebar-logo" />
 
           <div className="flex items-center gap-1">
             {/* Recherche globale */}
@@ -141,14 +140,16 @@ export default function SidebarGauche() {
         </div>
       ) : (
         <div className="mb-3 flex flex-col items-center gap-3">
-          {/* Bouton pour redéplier la barre latérale */}
-          <button 
+          {/* Symbole Méridian ; au survol (ou au focus clavier), l'icône de dépliage prend sa place */}
+          <button
             onClick={basculerRepli}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-[#7C93A8] transition-colors hover:bg-white/[0.08] hover:text-white"
+            className="group relative flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-white/[0.08] focus-visible:bg-white/[0.08]"
             title="Déplier la barre latérale"
+            aria-label="Déplier la barre latérale"
             data-testid="btn-toggle-sidebar"
           >
-            <SidebarSimple size={18} />
+            <img src={logoSymbole} alt="Méridian" className="h-6 w-auto select-none transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0" draggable={false} data-testid="sidebar-symbole" />
+            <SidebarSimple size={18} className="absolute text-white opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100" />
           </button>
         </div>
       )}

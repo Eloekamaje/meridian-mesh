@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { ReactFlow, Background, Controls, ControlButton, MiniMap, SelectionMode, ViewportPortal } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { X, Sparkle, CornersOut, MagnifyingGlass, Globe } from "@phosphor-icons/react";
+import { X, Sparkle, CornersOut, MagnifyingGlass, Globe, CaretDown } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useMesh } from "@/lib/mesh";
@@ -87,6 +87,8 @@ export default function Atlas() {
   const echelleSynth = Number(searchParams.get("echelle")) || null; // essai d'échelle : N jumeaux fictifs servis par le backend
   const echelle = !!echelleSynth || (mesh?.perimetre?.nb_autorises || 0) >= SEUIL_ECHELLE;
   const [domainesMasques, setDomainesMasques] = useState(() => new Set()); // légende-filtre : domaines décochés
+  // Légende repliable ; repliée d'office sur les écrans peu hauts, où elle chevauche la barre d'outils
+  const [legendeOuverte, setLegendeOuverte] = useState(() => typeof window === "undefined" || window.innerHeight >= 900);
   const analyse = useMemo(() => (graphe && mesh ? analyserMesh(mesh) : null), [graphe, mesh]);
 
   // Conservation de l'état de l'Atlas entre les pages : au retour, on restaure exactement
@@ -1862,11 +1864,14 @@ export default function Atlas() {
         const domaines = [...n.entries()].sort((a, b) => b[1] - a[1]);
         return (
           <div className="glass absolute bottom-10 left-3 z-10 w-[200px] rounded-xl p-2.5" data-testid="atlas-legende">
-            <div className="mb-1 flex items-center justify-between font-code text-[9px] uppercase tracking-wider text-[#64748B]">
-              <span>Domaines</span>
-              {domainesMasques.size > 0 && <button onClick={() => setDomainesMasques(new Set())} className="normal-case text-[#60A5FA] hover:underline" data-testid="atlas-legende-tout">tout afficher</button>}
+            <div className={`flex items-center justify-between font-code text-[9px] uppercase tracking-wider text-[#64748B] ${legendeOuverte ? "mb-1" : ""}`}>
+              <button type="button" onClick={() => setLegendeOuverte((o) => !o)} aria-expanded={legendeOuverte} data-testid="atlas-legende-bascule" className="flex min-h-[22px] items-center gap-1.5 hover:text-[#F2F6F8]">
+                <CaretDown size={10} className={`transition-transform duration-200 ${legendeOuverte ? "" : "-rotate-90"}`} />
+                Domaines
+              </button>
+              {legendeOuverte && domainesMasques.size > 0 && <button onClick={() => setDomainesMasques(new Set())} className="normal-case text-[#60A5FA] hover:underline" data-testid="atlas-legende-tout">tout afficher</button>}
             </div>
-            {domaines.map(([d, nb]) => (
+            {legendeOuverte && domaines.map(([d, nb]) => (
               <div key={d} className={`flex items-center gap-1.5 rounded px-1 py-0.5 text-xs hover:bg-white/[0.05] ${domainesMasques.has(d) ? "opacity-40" : ""}`} data-testid={`atlas-legende-${d}`}>
                 <input type="checkbox" checked={!domainesMasques.has(d)} onChange={() => setDomainesMasques((m) => { const s = new Set(m); if (s.has(d)) s.delete(d); else s.add(d); return s; })} className="accent-[#60A5FA]" aria-label={`Afficher ${d}`} />
                 <button onClick={() => ouvrirDomaine(d)} title={`Ouvrir le domaine ${d}`} className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
@@ -1876,14 +1881,14 @@ export default function Atlas() {
                 </button>
               </div>
             ))}
-            <div className="mt-1.5 space-y-0.5 border-t border-white/[0.07] pt-1.5">
+            {legendeOuverte && <div className="mt-1.5 space-y-0.5 border-t border-white/[0.07] pt-1.5">
               {Object.entries(ETATS_RELATION).map(([k, v]) => (
                 <div key={k} className="flex items-center gap-2 text-[10px] text-[#94A3B8]">
                   <span className="inline-block w-5 border-t-2" style={{ borderColor: v.couleur, borderStyle: STYLE_ETAT[k]?.pointille ? "dashed" : "solid" }} />
                   {v.label}
                 </div>
               ))}
-            </div>
+            </div>}
           </div>
         );
       })()}
