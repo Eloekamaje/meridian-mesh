@@ -262,7 +262,7 @@ export default function AtlasEchelle({ synthetique = null, selectionId = null, o
   useEffect(() => { dessiner(); }, [selectionId, dessiner]);
 
   return (
-    <div ref={cadre} className={`relative h-full w-full ${className}`} data-testid="atlas-echelle" style={{ backgroundColor: "var(--hub-void)", backgroundImage: "radial-gradient(ellipse 55% 45% at 90% 4%, rgba(0,51,160,0.26), transparent 70%), radial-gradient(rgba(96,165,250,0.17) 1px, transparent 1px)", backgroundSize: "auto, 26px 26px" }}>
+    <div ref={cadre} className={`relative h-full w-full ${className}`} data-testid="atlas-echelle" style={{ backgroundColor: "#071019", backgroundImage: "radial-gradient(rgba(148,163,184,0.13) 1px, transparent 1px)", backgroundSize: "26px 26px" }}>
       <canvas ref={canvas} className="absolute inset-0 h-full w-full cursor-grab touch-none" />
       {stats && (
         <div className="pointer-events-none absolute bottom-3 left-3 z-10 rounded-md bg-[#071019]/80 px-2.5 py-1 font-code text-[10px] leading-5 text-[#7C93A8]" data-testid="atlas-echelle-hud">
@@ -271,7 +271,7 @@ export default function AtlasEchelle({ synthetique = null, selectionId = null, o
         </div>
       )}
       {apercu && (
-        <div className="glass hub-coins pointer-events-none absolute z-20 w-[230px] space-y-1 rounded-xl p-3" style={{ left: apercu.left, top: apercu.top }} data-testid="atlas-echelle-apercu">
+        <div className="glass pointer-events-none absolute z-20 w-[230px] space-y-1 rounded-xl p-3" style={{ left: apercu.left, top: apercu.top }} data-testid="atlas-echelle-apercu">
           {apercu.type === "grappe" ? (
             <>
               <div className="text-xs font-semibold text-[#F2F6F8]">{apercu.nom}</div>

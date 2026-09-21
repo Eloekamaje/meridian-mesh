@@ -608,9 +608,9 @@ function Labo() {
           onEdgeMouseLeave={() => setAreteSurvolee(null)}
           // Sans gestionnaire de clic, React Flow marque les liens « inactifs » (pointer-events: none) : le survol ne partirait jamais
           onEdgeClick={() => {}}
-          className="!bg-[#020617]"
+          className="!bg-[#071019]"
         >
-          <Background gap={26} size={1} color="rgba(96,165,250,0.17)" />
+          <Background gap={26} size={1} color="rgba(148,163,184,0.13)" />
           <ViewportPortal>
             <svg style={{ position: "absolute", left: 0, top: 0, overflow: "visible", pointerEvents: "none" }} width="1" height="1" data-testid="labo-zones">
               {coquesGroupes.map((z) => zoneSvg(z, 0.07))}
