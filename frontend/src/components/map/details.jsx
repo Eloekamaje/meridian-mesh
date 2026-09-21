@@ -365,15 +365,15 @@ export function TwinDetail({ selected, favori, onBasculerFavori, statsTwin, onIn
 }
 
 // En-tête de section réutilisable
-// Rubriques repliées, mémorisées d'un jumeau à l'autre (et d'une visite à l'autre)
-const CLE_RUBRIQUES = "meridian.atlas.rubriques-repliees";
-const lireRepliees = () => {
+// Les rubriques sont pliées par défaut ; celles que l'on ouvre restent ouvertes d'un jumeau à l'autre (et d'une visite à l'autre)
+const CLE_RUBRIQUES = "meridian.atlas.rubriques-ouvertes";
+const lireOuvertes = () => {
   try { return new Set(JSON.parse(localStorage.getItem(CLE_RUBRIQUES) || "[]")); } catch { return new Set(); }
 };
 
 // `cle` rend la rubrique repliable : l'en-tête devient un bouton (chevron), `compte` affiche le nombre d'éléments.
 export function Section({ titre, children, action, cle, compte }) {
-  const [repliees, setRepliees] = useState(lireRepliees);
+  const [ouvertes, setOuvertes] = useState(lireOuvertes);
   if (!cle) {
     return (
       <div>
@@ -385,12 +385,12 @@ export function Section({ titre, children, action, cle, compte }) {
       </div>
     );
   }
-  const repliee = repliees.has(cle);
+  const repliee = !ouvertes.has(cle);
   const basculer = () => {
-    const n = new Set(lireRepliees());
+    const n = new Set(lireOuvertes());
     if (n.has(cle)) n.delete(cle); else n.add(cle);
     try { localStorage.setItem(CLE_RUBRIQUES, JSON.stringify([...n])); } catch { /* stockage indisponible : l'état reste local */ }
-    setRepliees(n);
+    setOuvertes(n);
   };
   return (
     <div data-testid={`rubrique-${cle}`}>
