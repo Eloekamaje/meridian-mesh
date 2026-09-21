@@ -1,22 +1,15 @@
 import { useEffect, useState } from "react";
-import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Users, ShareNetwork, DotsThree, SealCheck } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { usePerimetre } from "@/lib/perimetre";
 import { TYPES_CASE } from "./Travaux";
 import { numeroCase, SENSIBILITES, rel } from "@/components/case/utils";
-import OngletApercu from "@/components/case/OngletApercu";
 import OngletTravail from "@/components/case/OngletTravail";
 import SurfacePreparation from "@/components/SurfacePreparation";
 import { usePilotage } from "@/lib/pilotage";
 import { CREATION_TRAVAIL_ACTIVE, FLORE_PRESENTATION, PROPOSITION_DEMO } from "@/lib/messagesFlore";
-
-// Deux onglets seulement : Conversation (le fil) et Aperçu (le rapport structuré)
-const VUES = [
-  ["travail", "Conversation"],
-  ["apercu", "Aperçu"],
-];
 
 // « Nouveau travail » est cette même page : un travail qui n'est pas encore né (pas d'identifiant), avec un fil vide et la même
 // saisie. Au premier envoi le travail naît et la conversation continue au même endroit — un seul chat pour tous les travaux.
@@ -32,15 +25,11 @@ export default function TravailDetail() {
   const { cid } = useParams();
   const brouillon = cid === "nouveau";
   const location = useLocation();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const vueParam = searchParams.get("vue");
-  const vue = vueParam === "apercu" ? "apercu" : "travail";
   const navigate = useNavigate();
   const { version } = usePerimetre();
   const pilote = usePilotage();
   // Démonstration : le travail est déjà né quand la page s'ouvre — aucun écran de chargement
   const [cas, setCas] = useState(() => (brouillon ? nouveauBrouillon(pilote) : pilote?.lireTravail ? pilote.lireTravail(cid) : null));
-  const [situations, setSituations] = useState([]);
   const [personas, setPersonas] = useState([]);
   const [erreur, setErreur] = useState(null);
   const [menu, setMenu] = useState(false);
@@ -63,7 +52,7 @@ export default function TravailDetail() {
   }, [pilote?.canvasOuvert]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const nbSources = (cas?.jumeaux_participants || []).length;
-  const casNe = !brouillon && !!cas?.id; // le travail existe : en-tête complet, volet, aperçu
+  const casNe = !brouillon && !!cas?.id; // le travail existe : en-tête complet, volet
   useEffect(() => {
     if (pilote && nbSources > 0 && !pilote.canvasOuvert) setVoletSourcesOuvert(true);
   }, [nbSources]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -74,7 +63,6 @@ export default function TravailDetail() {
     // Quand le travail naît de la conversation, la page reste la même (state.continuite) : on ne la vide pas
     if (!pilote && !location.state?.continuite) setCas(null);
     api.get(`/cases/${cid}`).then((r) => setCas(r.data)).catch((e) => setErreur(e.response?.data?.detail || "Travail introuvable"));
-    api.get("/situations").then((r) => setSituations(r.data)).catch(() => {});
     api.get("/personas").then((r) => setPersonas(r.data)).catch(() => {});
   }, [cid, version]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -124,7 +112,7 @@ export default function TravailDetail() {
       {/* En-tête supérieur épuré (Style ChatGPT Work) */}
       <div className="shrink-0 border-b border-white/[0.08] bg-[#071019] px-6 py-2.5" data-testid="travail-entete">
         <div className="flex items-center justify-between gap-4">
-          {/* Titre & sélecteur de vue discret */}
+          {/* Titre */}
           <div className="flex min-w-0 items-center gap-3">
             {!pilote && (
               <button onClick={() => navigate("/travaux")} data-testid="travail-retour-travaux" className="flex items-center gap-1 rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2 py-1 text-[11px] text-[#94A3B8] transition-colors hover:text-[#F2F6F8]">
@@ -132,24 +120,8 @@ export default function TravailDetail() {
               </button>
             )}
             <h1 className="truncate font-display text-sm font-semibold tracking-tight text-[#F2F6F8]" data-testid="travail-titre">
-              {cas.titre} <span className="font-normal text-[#64748B]">· {casNe ? "Travail" : "brouillon"}</span>
+              {cas.titre}
             </h1>
-
-            {/* Sélecteur discret Conversation / Aperçu */}
-            {casNe && <nav className="flex items-center rounded-lg border border-white/[0.06] bg-white/[0.02] p-0.5" data-testid="travail-vues">
-              {VUES.map(([id, label]) => (
-                <button
-                  key={id}
-                  onClick={() => setSearchParams({ vue: id }, { replace: true })}
-                  data-testid={`travail-vue-${id}`}
-                  className={`rounded-md px-2 py-0.5 text-[11px] font-medium transition-colors ${
-                    vue === id ? "bg-white/[0.1] text-white font-semibold" : "text-[#7C93A8] hover:text-white"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </nav>}
 
             {cas.a_revoir && (
               <span className="rounded border border-[#F87171]/40 bg-[#F87171]/[0.06] px-1.5 py-0.5 font-code text-[9px] uppercase tracking-wider text-[#F87171]" data-testid="travail-arevoir-entete">
@@ -197,7 +169,7 @@ export default function TravailDetail() {
             </div>
 
             {/* Icône à deux traits horizontaux pour afficher/masquer le volet Résultats & Sources */}
-            {vue === "travail" && (
+            {(
               <button
                 onClick={() => setVoletSourcesOuvert(!voletSourcesOuvert)}
                 data-testid="btn-toggle-volet-sources"
@@ -233,24 +205,18 @@ export default function TravailDetail() {
         </div>
       )}
 
-      {/* Contenu de la vue — la Conversation occupe toute la hauteur, composer ancré */}
-      <div className={`relative ${vue === "travail" ? "flex min-h-0 flex-1 flex-col overflow-hidden" : "flex-1 overflow-y-auto px-8 py-5"}`}>
+      {/* Conversation : elle occupe toute la hauteur, saisie ancrée */}
+      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
         {/* Démonstration : la surface annonce la synthèse qu'elle prépare */}
         {pilote?.preparation?.surface === "travail" && <SurfacePreparation preparation={pilote.preparation} testid="travail-preparation" />}
-        {vue === "travail" ? (
-          <OngletTravail 
-            cas={casVu} 
-            setCas={setCas} 
-            voletSourcesOuvert={voletSourcesOuvert && casNe}
-            setVoletSourcesOuvert={setVoletSourcesOuvert}
-            canvasOuvert={canvasOuvert}
-            setCanvasOuvert={setCanvasOuvert}
-          />
-        ) : (
-        <div className="mx-auto max-w-6xl">
-          {vue === "apercu" && <OngletApercu cas={casVu} maj={maj} setCas={setCas} situations={situations} />}
-        </div>
-        )}
+        <OngletTravail
+          cas={casVu}
+          setCas={setCas}
+          voletSourcesOuvert={voletSourcesOuvert && casNe}
+          setVoletSourcesOuvert={setVoletSourcesOuvert}
+          canvasOuvert={canvasOuvert}
+          setCanvasOuvert={setCanvasOuvert}
+        />
       </div>
     </div>
   );

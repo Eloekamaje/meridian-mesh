@@ -242,7 +242,7 @@ function CarteReponse({ data, index, propsEtat, setPropsEtat, justifOuverte, set
               <span className="font-code text-[10px] text-slate-400">3 validations incluses</span>
             </div>
             <button
-              onClick={() => navigate("/travaux/demo-polaris-work-g?vue=apercu")}
+              onClick={() => navigate("/travaux/demo-polaris-work-g")}
               className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-emerald-500 to-blue-400 py-2.5 text-xs font-bold text-[#051113] shadow-md shadow-emerald-500/25 transition-all hover:brightness-110 active:scale-[0.98]"
               data-testid="flore-examiner-case101-btn"
             >
