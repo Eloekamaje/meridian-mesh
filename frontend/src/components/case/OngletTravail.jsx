@@ -21,8 +21,12 @@ import {
   ArrowsClockwise,
   DotsThree
 } from "@phosphor-icons/react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import api from "@/lib/api";
+import { usePerimetre } from "@/lib/perimetre";
+import { useContexte } from "@/lib/contexte";
+import { CREATION_TRAVAIL_ACTIVE, FLORE_REPONSE_EN_CONSTRUCTION, PROPOSITION_DEMO } from "@/lib/messagesFlore";
 import FloreActivite, { delaiMin, activiteTerminee } from "@/components/FloreActivite";
 import LigneActiviteFlore from "@/components/LigneActiviteFlore";
 import { usePilotage } from "@/lib/pilotage";
@@ -310,6 +314,11 @@ export default function OngletTravail({
   onOuvrirPreuve 
 }) {
   const pilote = usePilotage();
+  const navigate = useNavigate();
+  const { info } = usePerimetre();
+  const { selection } = useContexte();
+  // Travail pas encore né (« Nouveau travail ») : même conversation, sans identifiant
+  const brouillon = cas?.id == null;
   // Le dossier CASE_101 et ses deux preuves sont le contenu du scénario de démonstration : ils n'appartiennent qu'au
   // travail de démonstration (né pendant la démo, ou le travail de démonstration du jeu de données), jamais aux travaux réels
   const contenuScenario = pilote ? !!pilote.documentGenere : cas?.id === "demo-polaris-work-g";
@@ -385,17 +394,50 @@ export default function OngletTravail({
     if (!q || envoiMsg || pilote) return;
     setEnvoiMsg(true);
     setNouveauMsg("");
-    try {
-      const { data } = await delaiMin(api.post(`/cases/${cas.id}/messages`, { texte: q }));
+    const maintenant = new Date().toISOString();
+    // Le message de l'utilisateur apparaît tout de suite ; la réponse de Flore le rejoint quand elle arrive
+    const avant = cas.conversation || [];
+    const monMessage = { role: "utilisateur", texte: q, quand: maintenant };
+    setCas((c) => ({ ...c, conversation: [...avant, monMessage] }));
+    // « Nouveau travail » hors démonstration : la création réelle n'existe pas encore — Flore l'annonce, aucun appel réseau
+    if (brouillon && !CREATION_TRAVAIL_ACTIVE) {
+      await delaiMin(Promise.resolve());
       setCas((c) => ({
         ...c,
-        conversation: [...(c.conversation || []), data.utilisateur, { ...data.flore, _activite: activiteTerminee("travail") }],
+        conversation: [...avant, monMessage, { role: "flore", comportement: "expliquer", texte: FLORE_REPONSE_EN_CONSTRUCTION, proposition: PROPOSITION_DEMO, quand: maintenant }],
+      }));
+      setEnvoiMsg(false);
+      return;
+    }
+    try {
+      // La première question fait naître le travail ; la conversation continue ensuite dans la même page
+      let idTravail = cas.id;
+      let travailNe = null;
+      if (brouillon) {
+        const { data: c } = await api.post("/cases", {
+          titre: q.length > 90 ? `${q.slice(0, 87)}…` : q, type: "demande", objectif: q, jumeaux: selection, espace: info?.espace?.id,
+        });
+        idTravail = c.id;
+        travailNe = c;
+      }
+      const { data } = await delaiMin(api.post(`/cases/${idTravail}/messages`, { texte: q }));
+      if (travailNe) {
+        setCas({ ...travailNe, conversation: [data.utilisateur, { ...data.flore, _activite: activiteTerminee("travail") }] });
+        navigate(`/travaux/${idTravail}`, { replace: true, state: { continuite: true } });
+        if (data.flore?.documentCanvas) setCanvasActif(true);
+        return;
+      }
+      setCas((c) => ({
+        ...c,
+        conversation: [...avant, data.utilisateur, { ...data.flore, _activite: activiteTerminee("travail") }],
       }));
       if (data.flore?.documentCanvas && !canvasActif) {
         setCanvasActif(true);
       }
     } catch {
-      toast.error("Message impossible");
+      setCas((c) => ({ ...c, conversation: avant }));
+      setNouveauMsg(q); // le texte n'est pas perdu
+      toast.error(brouillon ? "Création du travail impossible" : "Message impossible");
     } finally {
       setEnvoiMsg(false);
     }
@@ -660,6 +702,17 @@ export default function OngletTravail({
                       canvasActif={canvasActif} 
                     />
 
+                    {/* Suite proposée par Flore (ex. « Découvrir la démonstration ») */}
+                    {m.proposition && (
+                      <button
+                        onClick={() => m.proposition.action === "demo" && navigate("/demo")}
+                        data-testid="proposition-flore"
+                        className="rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-3 py-1.5 text-xs text-[#DCE6EE] transition-colors hover:border-[#60A5FA]/40 hover:text-[#60A5FA]"
+                      >
+                        {m.proposition.label}
+                      </button>
+                    )}
+
                     {/* Rangée de micro-actions sous la réponse de Flore (Style ChatGPT) */}
                     <div className="flex items-center gap-1.5 pt-2 text-[#64748B] text-xs">
                       <button 
@@ -720,7 +773,13 @@ export default function OngletTravail({
               </div>
             ))}
 
-            {messages.length === 0 && (
+            {messages.length === 0 && brouillon && (
+              <div className="flex min-h-[50vh] flex-col items-center justify-center space-y-3 py-10 text-center" data-testid="brouillon-vide">
+                <h2 className="font-display text-3xl font-black tracking-tight text-[#F2F6F8]">Que voulez-vous comprendre<br />ou accomplir ?</h2>
+                <p className="text-sm text-[#94A3B8]">Décrivez-le simplement — le travail naît de votre première question, la conversation devient sa mémoire.</p>
+              </div>
+            )}
+            {messages.length === 0 && !brouillon && (
               <div className="py-16 text-center text-sm text-[#7C93A8] space-y-2">
                 <p className="font-display text-base text-[#CBD5E1]">
                   Espace de travail ouvert pour <strong>{cas.titre}</strong>

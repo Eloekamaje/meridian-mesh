@@ -6,7 +6,6 @@ import { MeshProvider } from "@/lib/mesh";
 import { PerimetreProvider } from "@/lib/perimetre";
 import { ContexteProvider } from "@/lib/contexte";
 import Layout from "@/components/Layout";
-import Accueil from "@/pages/Accueil";
 import Actualites from "@/pages/Actualites";
 import Comprendre from "@/pages/Comprendre";
 import Atlas from "@/pages/Atlas";
@@ -53,7 +52,6 @@ function ProduitApp() {
             <Route path="/investigations" element={<Investigations />} />
             <Route path="/investigations/:id" element={<InvestigationDetail />} />
             <Route path="/travaux" element={<Travaux />} />
-            <Route path="/travaux/nouveau" element={<Accueil mode="creation" />} />
             {/* Démonstration : choix du profil dans la zone de contenu — puis l'application réelle, pilotée */}
             <Route path="/demo" element={<PolarisChoixProfil />} />
             <Route path="/travaux/:cid" element={<TravailDetail />} />

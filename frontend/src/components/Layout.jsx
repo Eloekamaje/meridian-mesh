@@ -22,7 +22,8 @@ export default function Layout() {
       {/* Zone centrale de travail (pleine hauteur) */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <main className="relative min-h-0 flex-1 overflow-hidden">
-          <div key={location.pathname} className="page-transition h-full">
+          {/* Quand un travail naît de la conversation (state.continuite), la page ne se remonte pas : le fil continue en place */}
+          <div key={location.state?.continuite ? "/travaux/nouveau" : location.pathname} className="page-transition h-full">
             <Outlet />
           </div>
           {pilote && <SurcouchesKiosque />}

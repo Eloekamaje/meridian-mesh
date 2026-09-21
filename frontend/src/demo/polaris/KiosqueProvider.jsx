@@ -605,7 +605,8 @@ function VerrouRoute({ etat }) {
     let attendu = "/atlas";
     if (etat.surface === "nouveau" || etat.status === "opening_typing") attendu = "/travaux/nouveau";
     if (etat.surface === "travail") attendu = travail;
-    if (location.pathname !== attendu) navigate(attendu, { replace: true });
+    // Du « Nouveau travail » au travail né : même page, le fil continue en place (state.continuite)
+    if (location.pathname !== attendu) navigate(attendu, { replace: true, state: location.pathname === "/travaux/nouveau" && attendu === travail ? { continuite: true } : undefined });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [etat.surface, etat.status, etat.resultats, location.pathname]);
   return null;

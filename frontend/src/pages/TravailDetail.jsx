@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Users, ShareNetwork, DotsThree, SealCheck } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
@@ -10,6 +10,7 @@ import OngletApercu from "@/components/case/OngletApercu";
 import OngletTravail from "@/components/case/OngletTravail";
 import SurfacePreparation from "@/components/SurfacePreparation";
 import { usePilotage } from "@/lib/pilotage";
+import { CREATION_TRAVAIL_ACTIVE, FLORE_PRESENTATION, PROPOSITION_DEMO } from "@/lib/messagesFlore";
 
 // Deux onglets seulement : Conversation (le fil) et Aperçu (le rapport structuré)
 const VUES = [
@@ -17,8 +18,20 @@ const VUES = [
   ["apercu", "Aperçu"],
 ];
 
+// « Nouveau travail » est cette même page : un travail qui n'est pas encore né (pas d'identifiant), avec un fil vide et la même
+// saisie. Au premier envoi le travail naît et la conversation continue au même endroit — un seul chat pour tous les travaux.
+// Hors démonstration, la création réelle n'existe pas encore : Flore se présente, puis annonce qu'elle arrive.
+function nouveauBrouillon(pilote) {
+  const presentation = !pilote && !CREATION_TRAVAIL_ACTIVE
+    ? [{ role: "flore", comportement: "expliquer", texte: FLORE_PRESENTATION, proposition: PROPOSITION_DEMO }]
+    : [];
+  return { id: null, brouillon: true, titre: "Nouveau travail", type: "demande", jumeaux: [], conversation: presentation };
+}
+
 export default function TravailDetail() {
   const { cid } = useParams();
+  const brouillon = cid === "nouveau";
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const vueParam = searchParams.get("vue");
   const vue = vueParam === "apercu" ? "apercu" : "travail";
@@ -26,7 +39,7 @@ export default function TravailDetail() {
   const { version } = usePerimetre();
   const pilote = usePilotage();
   // Démonstration : le travail est déjà né quand la page s'ouvre — aucun écran de chargement
-  const [cas, setCas] = useState(() => (pilote?.lireTravail ? pilote.lireTravail(cid) : null));
+  const [cas, setCas] = useState(() => (brouillon ? nouveauBrouillon(pilote) : pilote?.lireTravail ? pilote.lireTravail(cid) : null));
   const [situations, setSituations] = useState([]);
   const [personas, setPersonas] = useState([]);
   const [erreur, setErreur] = useState(null);
@@ -38,7 +51,7 @@ export default function TravailDetail() {
   // Démonstration : le travail évolue avec le scénario (titre, résumé, rubriques de l'Aperçu).
   // Rechargement silencieux : la page et le fil ne se remontent pas.
   useEffect(() => {
-    if (!pilote) return;
+    if (!pilote || brouillon) return;
     api.get(`/cases/${cid}`).then((r) => setCas(r.data)).catch(() => {});
   }, [pilote?.versionTravaux]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -50,13 +63,16 @@ export default function TravailDetail() {
   }, [pilote?.canvasOuvert]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const nbSources = (cas?.jumeaux_participants || []).length;
+  const casNe = !brouillon && !!cas?.id; // le travail existe : en-tête complet, volet, aperçu
   useEffect(() => {
     if (pilote && nbSources > 0 && !pilote.canvasOuvert) setVoletSourcesOuvert(true);
   }, [nbSources]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!pilote) setCas(null);
     setErreur(null);
+    if (brouillon) return; // rien à charger : le travail n'est pas encore né
+    // Quand le travail naît de la conversation, la page reste la même (state.continuite) : on ne la vide pas
+    if (!pilote && !location.state?.continuite) setCas(null);
     api.get(`/cases/${cid}`).then((r) => setCas(r.data)).catch((e) => setErreur(e.response?.data?.detail || "Travail introuvable"));
     api.get("/situations").then((r) => setSituations(r.data)).catch(() => {});
     api.get("/personas").then((r) => setPersonas(r.data)).catch(() => {});
@@ -110,12 +126,17 @@ export default function TravailDetail() {
         <div className="flex items-center justify-between gap-4">
           {/* Titre & sélecteur de vue discret */}
           <div className="flex min-w-0 items-center gap-3">
+            {brouillon && (
+              <button onClick={() => navigate("/travaux")} data-testid="creation-retour-travaux" className="flex items-center gap-1 rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2 py-1 text-[11px] text-[#94A3B8] transition-colors hover:text-[#F2F6F8]">
+                <ArrowLeft size={11} /> Travaux
+              </button>
+            )}
             <h1 className="truncate font-display text-sm font-semibold tracking-tight text-[#F2F6F8]" data-testid="travail-titre">
-              {cas.titre} <span className="font-normal text-[#64748B]">· Travail</span>
+              {cas.titre} <span className="font-normal text-[#64748B]">· {casNe ? "Travail" : "brouillon"}</span>
             </h1>
 
             {/* Sélecteur discret Conversation / Aperçu */}
-            <nav className="flex items-center rounded-lg border border-white/[0.06] bg-white/[0.02] p-0.5" data-testid="travail-vues">
+            {casNe && <nav className="flex items-center rounded-lg border border-white/[0.06] bg-white/[0.02] p-0.5" data-testid="travail-vues">
               {VUES.map(([id, label]) => (
                 <button
                   key={id}
@@ -128,7 +149,7 @@ export default function TravailDetail() {
                   {label}
                 </button>
               ))}
-            </nav>
+            </nav>}
 
             {cas.a_revoir && (
               <span className="rounded border border-[#F87171]/40 bg-[#F87171]/[0.06] px-1.5 py-0.5 font-code text-[9px] uppercase tracking-wider text-[#F87171]" data-testid="travail-arevoir-entete">
@@ -138,7 +159,7 @@ export default function TravailDetail() {
           </div>
 
           {/* Boutons d'action à droite : Partager, Menu ..., et Toggle Deux Traits (=) */}
-          <div className="flex shrink-0 items-center gap-2">
+          {casNe && <div className="flex shrink-0 items-center gap-2">
             <button 
               onClick={partager} 
               data-testid="travail-partager-btn" 
@@ -193,7 +214,7 @@ export default function TravailDetail() {
                 </svg>
               </button>
             )}
-          </div>
+          </div>}
         </div>
       </div>
 
@@ -220,7 +241,7 @@ export default function TravailDetail() {
           <OngletTravail 
             cas={casVu} 
             setCas={setCas} 
-            voletSourcesOuvert={voletSourcesOuvert}
+            voletSourcesOuvert={voletSourcesOuvert && casNe}
             setVoletSourcesOuvert={setVoletSourcesOuvert}
             canvasOuvert={canvasOuvert}
             setCanvasOuvert={setCanvasOuvert}
