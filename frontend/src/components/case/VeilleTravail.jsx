@@ -79,3 +79,31 @@ export function BandeauVeille({ cas }) {
     </section>
   );
 }
+
+// À l'ouverture d'un travail en veille, Flore accueille la personne avant les faits : ce qui s'est passé depuis sa dernière visite,
+// et le point qui demande son attention. Calculé pour cette personne (sa dernière visite), rien n'est stocké.
+const pl = (n, un, plusieurs) => `${n} ${n === 1 ? un : plusieurs}`;
+export function RepriseVeille({ messages, depuis }) {
+  const faits = messages.filter((m) => m.role === "evenement");
+  if (!faits.length) return null;
+  const n = (t) => faits.filter((f) => f.type === t).length;
+  const morceaux = [
+    n("conforme") && pl(n("conforme"), "objectif atteint", "objectifs atteints"),
+    n("ecart") && pl(n("ecart"), "écart avec l'attendu", "écarts avec l'attendu"),
+    n("effet_secondaire") && pl(n("effet_secondaire"), "risque surveillé matérialisé", "risques surveillés matérialisés"),
+    n("inconnue_levee") && pl(n("inconnue_levee"), "inconnue levée", "inconnues levées"),
+    (n("progression") + n("risque_maitrise")) && pl(n("progression") + n("risque_maitrise"), "mesure intermédiaire", "mesures intermédiaires"),
+  ].filter(Boolean);
+  const critique = faits.find((f) => f.niveau === 1);
+  const revue = messages.some((m) => m.type === "revue_due");
+  const quand = depuis ? ` (${date(depuis)})` : "";
+  return (
+    <div className="space-y-2 text-[15px] leading-relaxed text-[#DCE6EE]" data-testid="reprise-veille">
+      <p>
+        Bon retour. Depuis votre dernière visite{quand}, {pl(faits.length, "fait nouveau", "faits nouveaux")} sur cette décision : {morceaux.join(", ")}.
+        {critique ? ` Ce qui demande votre attention : ${critique.indicateur}.` : ""}
+        {revue ? " La date de revue est atteinte." : ""} Voici le détail.
+      </p>
+    </div>
+  );
+}

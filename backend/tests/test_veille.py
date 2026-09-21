@@ -206,3 +206,18 @@ def test_lectures_simultanees_n_ecrivent_qu_une_fois_chaque_evenement(api):
     ids = [m["id"] for m in c["conversation"] if m.get("id") and (m["role"] == "evenement" or m.get("type") == "revue_due")]
     assert len(ids) == len(set(ids)) == 2  # l'écart + la question de revue
     assert len(c["historique"]) == len({(h["quand"], h["texte"]) for h in c["historique"]})
+
+
+def test_la_decision_entre_dans_la_conversation_avec_ce_qui_sera_observe(api):
+    cid = _travail_en_veille(api, revue="2027-01-01T00:00:00+00:00")
+    c = api.get(f"{BASE}/cases/{cid}", headers=H).json()
+    m = [x for x in c["conversation"] if x.get("type") == "decision"]
+    assert len(m) == 1 and m[0]["role"] == "flore"
+    assert "Basculer en asynchrone" in m[0]["texte"] and "Latence p95" in m[0]["texte"] and "1 janvier" in m[0]["texte"]
+    assert "Doublons de paiement" in m[0]["texte"] and "Effet sur Support" in m[0]["texte"]  # risque et inconnue nommés
+
+
+def test_le_travail_de_demonstration_raconte_la_decision_avant_les_faits(api):
+    fil = api.get(f"{BASE}/cases/case-dette-files", headers=H).json()["conversation"]
+    genres = [m.get("type") or m["role"] for m in fil]
+    assert genres.index("decision") < min(i for i, g in enumerate(genres) if g in ("conforme", "inconnue_levee", "effet_secondaire"))

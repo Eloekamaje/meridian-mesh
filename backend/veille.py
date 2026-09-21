@@ -174,3 +174,28 @@ def message_flore_revue(evenement: dict, faits: list[dict]) -> dict:
         "texte": f"La date de revue de cette décision est atteinte. {bilan}\n\n{reco}\n\nQue souhaitez-vous faire ?",
         "reponses": REPONSES_REVUE,
     }
+
+
+def _jour(iso: str) -> str:
+    mois = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"]
+    d = _instant(iso)
+    return f"{d.day} {mois[d.month - 1]}" if d else ""
+
+
+def message_flore_decision(texte: str, passation: dict, quand: str) -> dict:
+    """La décision entre dans la CONVERSATION : Flore l'enregistre, dit ce qu'elle va surveiller et quand elle reviendra."""
+    lignes = [f"J'ai enregistré votre décision : « {texte} »."]
+    if passation.get("hypotheses"):
+        lignes.append("Elle repose sur : " + " ; ".join(h.rstrip(".") for h in passation["hypotheses"]) + ".")
+    veille = []
+    for a in passation.get("attendus", []):
+        veille.append(f"— {a['indicateur']} : de {_nombre(a['depart'])} à {_nombre(a['cible'])} {a.get('unite', '')}".rstrip())
+    for r in passation.get("risques", []):
+        veille.append(f"— risque : {r['texte']} (seuil {_nombre(r['seuil'])} {r.get('unite', '')})".rstrip())
+    for i in passation.get("inconnues", []):
+        veille.append(f"— à lever : {i['texte']}")
+    if veille:
+        lignes.append("Je la mets en veille. Voici ce que j'observerai :\n" + "\n".join(veille))
+    if passation.get("revue_le"):
+        lignes.append(f"Je reviendrai vers vous à la revue, le {_jour(passation['revue_le'])}, ou avant si un risque surveillé se matérialise.")
+    return {"role": "flore", "comportement": "recommander", "type": "decision", "quand": quand, "texte": "\n\n".join(lignes)}

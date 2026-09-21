@@ -33,7 +33,7 @@ import { usePilotage } from "@/lib/pilotage";
 import { useEcran } from "@/lib/ecran";
 import { rel } from "./utils";
 import CanvasDocument from "./CanvasDocument";
-import { BandeauVeille, EvenementVeille } from "./VeilleTravail";
+import { BandeauVeille, EvenementVeille, RepriseVeille } from "./VeilleTravail";
 
 // Dictionnaire des Jumeaux participants du SI pour CASE-101
 export const DICT_JUMEAUX_PARTICIPANTS = {
@@ -348,7 +348,6 @@ export default function OngletTravail({
   const defilementRef = useRef(null);
   const finFilRef = useRef(null);
   const coupureRef = useRef(null);
-  const monte = useRef(false);
 
   const messages = cas.conversation || [];
   const coupure = cas.derniere_visite;
@@ -371,14 +370,21 @@ export default function OngletTravail({
         };
       });
 
+  // Positionnement du fil : à l'ouverture, sur le repère « nouveau depuis votre dernière visite » (sinon en bas) ; ensuite, en bas à chaque
+  // nouveau message. On compare à l'état précédent plutôt que de compter les appels : React (mode développement) exécute chaque effet deux
+  // fois, et le second appel ne doit pas passer pour un nouveau message.
+  const etatPrecedent = useRef(null);
   useEffect(() => {
-    if (monte.current) {
-      finFilRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    const etat = `${messages.length}|${envoiMsg}|${pilote?.activite?.ops?.length}`;
+    if (etatPrecedent.current === null) {
+      etatPrecedent.current = etat;
+      if (idxCoupure > 0) coupureRef.current?.scrollIntoView({ block: "center" });
+      else finFilRef.current?.scrollIntoView({ block: "end" });
       return;
     }
-    monte.current = true;
-    if (idxCoupure > 0) coupureRef.current?.scrollIntoView({ block: "center" });
-    else finFilRef.current?.scrollIntoView({ block: "end" });
+    if (etatPrecedent.current === etat) return;
+    etatPrecedent.current = etat;
+    finFilRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages.length, envoiMsg, pilote?.activite?.ops?.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const verifierPositionScroll = () => {
@@ -676,6 +682,8 @@ export default function OngletTravail({
                     <span className="h-px flex-1 bg-[#60A5FA]/25" />
                   </div>
                 )}
+                {/* Travail en veille : Flore accueille avant les faits (ce qui a changé depuis la dernière visite) */}
+                {i === idxCoupure && idxCoupure > 0 && cas.veille && <RepriseVeille messages={messages.slice(i)} depuis={coupure} />}
 
                 {/* Message Utilisateur (sobre, simple bulle élégante à droite) */}
                 {m.role === "evenement" ? (

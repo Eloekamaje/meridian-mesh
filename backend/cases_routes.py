@@ -495,10 +495,11 @@ def build_cases_router(deps):
         if payload.passation:
             # La décision s'accompagne de sa note de passation : le travail entre en veille (attendu contre observé)
             maj["veille"] = {"statut": "en_veille", "decision_le": now, "passation": payload.passation.model_dump(), "observations": [], "emis": []}
-        await db.cases.update_one(
-            {"id": cid},
-            {"$push": {"decisions": dec, "historique": {"quand": now, "texte": f"Décision enregistrée — {payload.type}"}}, "$set": maj},
-        )
+        push = {"decisions": dec, "historique": {"quand": now, "texte": f"Décision enregistrée — {payload.type}"}}
+        if payload.passation:
+            # Flore enregistre la décision DANS la conversation et dit ce qu'elle va surveiller
+            push["conversation"] = moteur_veille.message_flore_decision(dec["texte"], maj["veille"]["passation"], now)
+        await db.cases.update_one({"id": cid}, {"$push": push, "$set": maj})
         await journaler(x_persona, espace["id"], "décision sur un case", cid, payload.texte.strip()[:120])
         return dec
 
