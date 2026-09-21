@@ -13,6 +13,7 @@ import Atlas from "@/pages/Atlas";
 import LaboAtlas from "@/pages/LaboAtlas";
 import LaboEchelle from "@/pages/LaboEchelle";
 import LaboSemantique from "@/pages/LaboSemantique";
+import LaboServeur from "@/pages/LaboServeur";
 import Commande from "@/pages/Commande";
 import Investigations from "@/pages/Investigations";
 import InvestigationDetail from "@/pages/InvestigationDetail";
@@ -48,6 +49,7 @@ function ProduitApp() {
             <Route path="/labo/atlas" element={<LaboAtlas />} />
             <Route path="/labo/echelle" element={<LaboEchelle />} />
             <Route path="/labo/semantique" element={<LaboSemantique />} />
+            <Route path="/labo/serveur" element={<LaboServeur />} />
             <Route path="/investigations" element={<Investigations />} />
             <Route path="/investigations/:id" element={<InvestigationDetail />} />
             <Route path="/travaux" element={<Travaux />} />

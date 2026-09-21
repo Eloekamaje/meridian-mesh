@@ -17,6 +17,7 @@ from uuid import uuid4
 from cases_routes import build_cases_router
 from actualites_routes import build_actualites_router
 from initiatives_routes import build_initiatives_router
+from mesh_vue_routes import build_mesh_vue_router
 from seed_data import (
     TWINS, RELATIONS, REGIONS, SITUATIONS, CHANGE_LAB, ACTIVITE,
     AURORA_SCRIPTS, AURORA_FALLBACK, AURORA_SUGGESTIONS, DEMO_ACTES, SOURCES_LABELS,
@@ -1100,6 +1101,16 @@ api_router.include_router(build_initiatives_router({
     "autorisations": autorisations,
     "journaler": journaler,
     "slugify": slugify,
+    "NO_ID": NO_ID,
+}))
+
+
+# ---------- Vue bornée du Mesh (passage à l'échelle) ----------
+
+api_router.include_router(build_mesh_vue_router({
+    "db": db,
+    "resoudre_perimetre": resoudre_perimetre,
+    "autorisations": autorisations,
     "NO_ID": NO_ID,
 }))
 
