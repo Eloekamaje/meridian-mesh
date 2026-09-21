@@ -1378,7 +1378,7 @@ export default function Atlas() {
     : null;
 
   return (
-    <div className="flex h-full flex-col" data-skin={graphe ? "hub" : undefined}>
+    <div className="flex h-full flex-col">
     {/* Layout façon Google Maps : colonnes de part et d'autre de la carte — le chrome ne bouge jamais.
         Jumeau à gauche (intelligence locale) ; domaine/relation/listes à droite ; Flore remplace la droite. */}
     <div className="relative flex min-h-0 flex-1">
