@@ -1,6 +1,7 @@
+import { BoutonRetour } from "@/components/EntetePage";
 import { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { ArrowLeft, CheckCircle, XCircle, Flask, Lightning, SealCheck, Prohibit, Compass, Sparkle } from "@phosphor-icons/react";
+import { CheckCircle, XCircle, Flask, Lightning, SealCheck, Prohibit, Compass, Sparkle } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useMesh } from "@/lib/mesh";
@@ -87,12 +88,17 @@ export default function InvestigationDetail() {
   const verbe = VERBES[sit.verbe] || null;
 
   return (
-    <div className="h-full overflow-y-auto px-8 py-8 pb-44" data-testid="investigation-detail">
+    <div className="h-full overflow-y-auto px-4 py-5 pb-44 sm:px-8 sm:py-8" data-testid="investigation-detail">
       <div className="flex items-center justify-between gap-3">
-        <button onClick={() => navigate("/investigations")} className="flex items-center gap-1.5 text-xs text-[#7C93A8] transition-colors hover:text-[#F2F6F8]" data-testid="back-to-investigations">
-          <ArrowLeft size={14} /> Investigations
-        </button>
-        <div className="flex shrink-0 items-center gap-2">
+        <BoutonRetour label="Investigations" onClick={() => navigate("/investigations")} testid="back-to-investigations" />
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          <button
+            onClick={() => navigate(`/actualites/comprendre/sit-${id}`)}
+            data-testid="investigation-rapport-flore"
+            className="hidden h-8 items-center gap-1.5 rounded-md border border-[rgba(148,163,184,0.16)] px-3 text-xs text-[#94A3B8] transition-colors hover:text-[#F2F6F8] sm:flex"
+          >
+            Rapport de Flore
+          </button>
           <button
             onClick={() => demanderAFlore(`Analyse cette investigation : « ${sit.question || sit.titre} ». Quelles hypothèses privilégier et quelles preuves manquent pour trancher ?`)}
             data-testid="investigation-analyser-flore"
@@ -175,15 +181,15 @@ export default function InvestigationDetail() {
               ))}
             </ul>
           </div>
-          <div className="rounded-xl border border-[#F2B84B]/20 bg-[#F2B84B]/[0.04] p-4">
-            <div className="font-code text-[10px] uppercase tracking-[0.2em] text-[#F2B84B]">Décision attendue</div>
+          <div className="order-first rounded-xl border border-[#F2B84B]/45 bg-[#F2B84B]/[0.08] p-4 shadow-[0_0_0_1px_rgba(242,184,75,0.08)] md:order-none">
+            <div className="font-code text-[11px] font-semibold uppercase tracking-[0.2em] text-[#F2B84B]">Décision attendue</div>
             <div className="mt-2 flex flex-col gap-1.5" data-testid="fiche-decisions">
               {(sit.decisions_attendues || []).map((d, i) => (
                 <button
                   key={i}
                   onClick={() => agirDecision(d)}
                   data-testid={`fiche-decision-${i}`}
-                  className="rounded-md border border-[rgba(148,163,184,0.16)] bg-[rgba(148,163,184,0.07)] px-2.5 py-1.5 text-left text-xs text-[#D8E2EA] transition-colors duration-200 hover:border-[#F2B84B]/50 hover:text-[#F2F6F8]"
+                  className="rounded-md border border-[#F2B84B]/30 bg-[#F2B84B]/[0.06] px-3 py-2.5 text-left text-[13px] font-medium text-[#F2F6F8] transition-colors duration-200 hover:border-[#F2B84B]/70 hover:bg-[#F2B84B]/[0.14]"
                 >
                   {d}
                 </button>

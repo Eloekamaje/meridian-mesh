@@ -181,7 +181,7 @@ export default function Commande() {
     <div className="flex h-full min-h-0 flex-col" data-testid="commande-page">
       <EnteteCommande commande={commande} sauvegarde={sauvegarde} peutContinuer={!!peutContinuer} onQuitter={() => { toast.success("Brouillon enregistré — reprenez quand vous voulez"); navigate("/jumeaux"); }} onEtape={(n) => maj({ etape: n })} />
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-8 py-6 pb-36">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-36 sm:px-8 sm:py-6">
         {etape === 1 && (
           <div className="mx-auto max-w-xl space-y-4" data-testid="etape-identite">
             <h2 className="font-display text-lg font-bold text-[#F2F6F8]">Identité du jumeau</h2>
@@ -206,9 +206,10 @@ export default function Commande() {
         )}
 
         {etape === 2 && (
-          <div className="grid h-full min-h-0 grid-cols-12 gap-5" data-testid="etape-atelier">
-            {/* Grille fixe 8/4 : la file ne se re-fluide jamais quand l'inspecteur s'ouvre */}
-            <div className="col-span-8 min-h-0">
+          <div className="grid h-full min-h-0 grid-cols-1 gap-5 lg:grid-cols-12" data-testid="etape-atelier">
+            {/* Grand écran : grille fixe 8/4, la file ne se re-fluide jamais quand l'inspecteur s'ouvre.
+                Petit écran : la file prend toute la largeur et l'inspecteur / le catalogue s'ouvrent en feuille par-dessus. */}
+            <div className="min-h-0 lg:col-span-8">
               <AtelierSources
                 sources={commande.sources}
                 catalogue={catalogue}
@@ -221,7 +222,8 @@ export default function Commande() {
                 onOuvrirImport={() => { setImportMode("fichier"); setImportOuvert(true); }}
               />
             </div>
-            <div className="col-span-4 min-h-0">
+            {(tiroirOuvert || sourceActive) && <div className="fixed inset-0 z-30 bg-black/50 lg:hidden" onClick={() => { setTiroirOuvert(false); setSourceActiveId(null); }} aria-hidden="true" data-testid="feuille-fond" />}
+            <div className={`${tiroirOuvert || sourceActive ? "fixed inset-x-0 bottom-0 z-40 max-h-[85dvh] overflow-y-auto rounded-t-2xl border-t border-[rgba(148,163,184,0.2)] bg-[#0B1522] p-3 shadow-2xl" : "hidden"} min-h-0 lg:static lg:col-span-4 lg:block lg:max-h-none lg:overflow-visible lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none`} data-testid="feuille-panneau">
               {tiroirOuvert ? (
                 <CatalogueTiroir
                   catalogue={catalogue}

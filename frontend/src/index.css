@@ -213,3 +213,19 @@
 .page-transition {
   animation: page-fade 180ms ease-out;
 }
+
+/* ---------------------------------------------------------------------------------------------------------------
+   Lisibilité et toucher
+   - Aucun texte sous 11 px : les micro-étiquettes (8–10 px) sont relevées à 11 px.
+   - Au toucher (écran tactile ou fenêtre étroite), boutons et sélecteurs font au moins 40 px, cases à cocher 24 px
+     (WCAG 2.2 demande 24 px minimum ; 40 px est la taille confortable au pouce). La carte (React Flow) garde ses contrôles.
+   --------------------------------------------------------------------------------------------------------------- */
+.text-\[8px\], .text-\[9px\], .text-\[10px\] { font-size: 11px; }
+@media (pointer: coarse), (max-width: 767px) {
+    :where(main, aside, header, [data-testid="tiroir"]) :is(button, select) { min-height: 40px; }
+    :where(main, aside, header, [data-testid="tiroir"]) button:is([class*="w-5"], [class*="w-6"], [class*="w-7"], [class*="w-8"]) { min-width: 40px; }
+    :where(main, aside, header, [data-testid="tiroir"]) button:has(> svg:only-child) { min-width: 40px; }
+    :where(main, aside, header, [data-testid="tiroir"]) input:not([type="checkbox"], [type="radio"], [type="range"]) { min-height: 40px; }
+    .react-flow :is(button, select) { min-height: 0; min-width: 0; }
+    input[type="checkbox"], input[type="radio"] { width: 24px; height: 24px; }
+}

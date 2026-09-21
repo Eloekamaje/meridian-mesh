@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Users, ShareNetwork, DotsThree, SealCheck } from "@phosphor-icons/react";
+import { ShareNetwork, DotsThree, SealCheck } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { usePerimetre } from "@/lib/perimetre";
@@ -8,6 +8,7 @@ import { TYPES_CASE } from "./Travaux";
 import { numeroCase, SENSIBILITES, rel } from "@/components/case/utils";
 import OngletTravail from "@/components/case/OngletTravail";
 import SurfacePreparation from "@/components/SurfacePreparation";
+import { BoutonRetour } from "@/components/EntetePage";
 import { usePilotage } from "@/lib/pilotage";
 import { CREATION_TRAVAIL_ACTIVE, FLORE_PRESENTATION, PROPOSITION_DEMO } from "@/lib/messagesFlore";
 
@@ -116,9 +117,7 @@ export default function TravailDetail() {
           {/* Titre */}
           <div className="flex min-w-0 items-center gap-3">
             {!pilote && (
-              <button onClick={() => navigate("/travaux")} data-testid="travail-retour-travaux" className="flex items-center gap-1 rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2 py-1 text-[11px] text-[#94A3B8] transition-colors hover:text-[#F2F6F8]">
-                <ArrowLeft size={11} /> Travaux
-              </button>
+              <BoutonRetour label="Travaux" onClick={() => navigate("/travaux")} testid="travail-retour-travaux" />
             )}
             <h1 className="truncate font-display text-sm font-semibold tracking-tight text-[#F2F6F8]" data-testid="travail-titre">
               {cas.titre}

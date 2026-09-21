@@ -142,7 +142,7 @@ function useDeroule(message, pilote) {
 }
 
 // Rendu formaté, fluide et aéré du texte (Style ChatGPT / Claude)
-function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif }) {
+export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif }) {
   const pilote = usePilotage();
   const texte = message.texte || "";
   const { visible, fini } = useDeroule(message, pilote);
@@ -181,8 +181,8 @@ function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif }) {
         }
 
         // Puce de liste
-        if (trimmed.startsWith("* ") || trimmed.startsWith("- ") || trimmed.startsWith("• ")) {
-          const contenu = trimmed.replace(/^[\*\-•]\s*/, "");
+        if (trimmed.startsWith("* ") || trimmed.startsWith("- ") || trimmed.startsWith("• ") || trimmed.startsWith("— ")) {
+          const contenu = trimmed.replace(/^[\*\-•—]\s*/, "");
           return (
             <div key={idx} className="flex items-start gap-2 pl-2 text-sm text-[#CBD5E1]">
               <span className="text-[#38BDF8] mt-1 text-xs">•</span>

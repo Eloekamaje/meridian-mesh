@@ -22,7 +22,7 @@ export default function Jumeaux() {
   const [jumeaux, setJumeaux] = useState([]);
   const [brouillons, setBrouillons] = useState([]);
   const { version } = usePerimetre();
-  const { selection, ajouterJumeau, retirerJumeau } = useContexte();
+  const { selection, setSelection, ajouterJumeau, retirerJumeau, demanderAFlore } = useContexte();
   const navigate = useNavigate();
   const [recherche, setRecherche] = useState("");
   const [filtreStatut, setFiltreStatut] = useState("tous");
@@ -165,6 +165,18 @@ export default function Jumeaux() {
         </select>
       </div>
 
+      {/* Sélection : une barre d'action apparaît dès qu'un jumeau est coché — sinon on coche sans voir à quoi ça sert */}
+      {selection.length > 0 && (
+        <div className="sticky top-0 z-20 mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-[#60A5FA]/30 bg-[#0B1A2B]/95 px-3 py-2 backdrop-blur" data-testid="registre-selection-barre">
+          <span className="text-xs font-semibold text-[#BFDBFE]" data-testid="registre-selection-compte">{selection.length} jumeau{selection.length > 1 ? "x" : ""} dans le contexte de Flore</span>
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <button onClick={() => demanderAFlore(selection.length > 1 ? `Analyse ces ${selection.length} jumeaux : relations, points communs et écarts.` : "Parle-moi de ce jumeau.")} data-testid="registre-selection-flore" className="flex h-9 items-center gap-1.5 rounded-md bg-[#60A5FA] px-3 text-xs font-semibold text-[#071019] transition-colors hover:bg-[#93C5FD] sm:h-8"><Sparkle size={12} weight="fill" /> Demander à Flore</button>
+            <button onClick={() => navigate("/atlas")} data-testid="registre-selection-atlas" className="flex h-9 items-center rounded-md border border-[rgba(148,163,184,0.16)] px-3 text-xs text-[#D8E2EA] transition-colors hover:text-white sm:h-8">Voir dans l'Atlas</button>
+            <button onClick={() => setSelection([])} data-testid="registre-selection-vider" className="flex h-9 items-center rounded-md px-2 text-xs text-[#94A3B8] transition-colors hover:text-white sm:h-8">Tout désélectionner</button>
+          </div>
+        </div>
+      )}
+
       {/* Registre — liste plate, domaine en colonne */}
       <div className="mt-4 overflow-hidden rounded-xl border border-[rgba(148,163,184,0.16)]" data-testid="registre-table">
         {lignes.map((j) => {
@@ -256,7 +268,7 @@ export default function Jumeaux() {
                     <button
                       onClick={(e) => { e.stopPropagation(); navigate(`/jumeaux/${j.id}/revue`); }}
                       data-testid={j.statut === "observation" ? `revoir-admission-${j.id}` : `examiner-${j.id}`}
-                      className={`hidden rounded px-2.5 py-1 text-[11px] transition-colors sm:block ${j.statut === "observation" ? "bg-[#F2B84B] font-semibold text-[#071019] hover:bg-[#F8CF7A]" : "border border-[rgba(148,163,184,0.16)] text-[#94A3B8] hover:border-[#41576D] hover:text-[#F2F6F8]"}`}
+                      className={`hidden rounded px-2.5 py-1 text-[11px] transition-colors sm:block ${j.statut === "observation" ? "border border-[#F2B84B]/50 font-semibold text-[#F2B84B] hover:bg-[#F2B84B]/10" : "border border-[rgba(148,163,184,0.16)] text-[#94A3B8] hover:border-[#41576D] hover:text-[#F2F6F8]"}`}
                     >
                       {ACTION_LIGNE[j.statut] || "Ouvrir"}
                     </button>

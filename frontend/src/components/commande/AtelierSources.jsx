@@ -53,7 +53,7 @@ export default function AtelierSources({ sources, catalogue, sourceActiveId, onS
   const basculerLot = (id) => setSelLot(selLot.includes(id) ? selLot.filter((x) => x !== id) : [...selLot, id]);
 
   const INDICS = [
-    { cle: null, label: "sources ajoutées", n: compteurs.total, couleur: "rgba(148,163,184,0.16)", testid: "indic-total" },
+    { cle: null, label: "sources ajoutées", n: compteurs.total, couleur: "#D8E2EA", testid: "indic-total" },
     { cle: "prete", label: "prêtes", n: compteurs.pretes, couleur: "#34D399", testid: "indic-pretes" },
     { cle: "a_configurer", label: "à configurer", n: compteurs.aConfigurer, couleur: "#F2B84B", testid: "indic-a-configurer" },
     { cle: "erreur", label: "en erreur", n: compteurs.erreurs, couleur: "#F87171", testid: "indic-erreurs" },
@@ -86,10 +86,10 @@ export default function AtelierSources({ sources, catalogue, sourceActiveId, onS
 
       {/* Barre de recherche et filtres */}
       <div className="mt-3 flex flex-wrap items-center gap-2" data-testid="file-outils">
-        <div className="relative">
+        <div className="relative w-full sm:w-auto">
           <MagnifyingGlass size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#7C93A8]" />
           <input value={recherche} onChange={(e) => setRecherche(e.target.value)} placeholder="Rechercher une instance…" data-testid="file-recherche"
-            className="w-56 rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] py-1.5 pl-8 pr-3 text-xs text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#60A5FA]/50 focus:outline-none" />
+            className="w-full rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] py-1.5 pl-8 pr-3 sm:w-56 text-xs text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#60A5FA]/50 focus:outline-none" />
         </div>
         <select value={filtreConnecteur} onChange={(e) => setFiltreConnecteur(e.target.value)} data-testid="filtre-connecteur" className="rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2 py-1.5 text-xs text-[#D8E2EA] focus:outline-none">
           <option value="">Tous connecteurs</option>
@@ -123,10 +123,10 @@ export default function AtelierSources({ sources, catalogue, sourceActiveId, onS
                   onClick={() => onSelect(s.id)}
                   data-testid={`source-ligne-${s.id}`}
                   style={{ borderLeft: `2px solid ${st.couleur}` }}
-                  className={`rise flex cursor-pointer items-center gap-3 border-b border-[rgba(148,163,184,0.16)] px-4 py-2.5 transition-[background-color,transform] duration-150 hover:translate-x-0.5 ${active ? "bg-[#60A5FA]/[0.06]" : "hover:bg-[rgba(148,163,184,0.07)]"}`}
+                  className={`rise flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 border-b border-[rgba(148,163,184,0.16)] px-4 py-2.5 transition-[background-color,transform] duration-150 hover:translate-x-0.5 ${active ? "bg-[#60A5FA]/[0.06]" : "hover:bg-[rgba(148,163,184,0.07)]"}`}
                 >
                   <input type="checkbox" checked={selLot.includes(s.id)} onClick={(e) => e.stopPropagation()} onChange={() => basculerLot(s.id)} data-testid={`lot-check-${s.id}`} className="h-3.5 w-3.5 shrink-0 accent-[#60A5FA]" />
-                  <div className="min-w-0 flex-1">
+                  <div className="min-w-[8rem] flex-1 basis-[8rem]">
                     <div className="truncate text-[13px] font-medium text-[#F2F6F8]">{s.nom}</div>
                     <div className="truncate font-code text-[9px] text-[#7C93A8]">{nomConnecteur(s.connecteur)} · {s.environnement}{s.perimetre ? ` · ${s.perimetre}` : ""}{s.proprietaire ? ` · ${s.proprietaire}` : ""}</div>
                   </div>
@@ -138,7 +138,7 @@ export default function AtelierSources({ sources, catalogue, sourceActiveId, onS
                   <span className="shrink-0 rounded border px-1.5 py-0.5 font-code text-[9px]" style={{ color: st.couleur, borderColor: `${st.couleur}44`, backgroundColor: `${st.couleur}12` }} data-testid={`source-statut-${s.id}`}>
                     {st.label}
                   </span>
-                  <span className="w-20 shrink-0 text-right font-code text-[9px] text-[#7C93A8]">
+                  <span className="ml-auto w-20 shrink-0 text-right font-code text-[9px] text-[#7C93A8]">
                     {s.dernier_test ? `${s.dernier_test.date}` : "jamais testé"}
                   </span>
                 </div>

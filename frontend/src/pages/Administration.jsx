@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
-import { Database, CheckCircle, Clock, Users, Scroll, ArrowCounterClockwise } from "@phosphor-icons/react";
+import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import { Database, CheckCircle, Clock, Users, Scroll, ArrowCounterClockwise, Check, Minus, MagnifyingGlass } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { usePerimetre } from "@/lib/perimetre";
-import { couleurDomaine } from "@/lib/domaines";
+import { couleurConfiance } from "@/lib/domaines";
 
 const SOURCES = [
   ["code", "Code"],
@@ -17,6 +18,7 @@ export default function Administration() {
   const [jumeaux, setJumeaux] = useState([]);
   const [journal, setJournal] = useState([]);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [recherche, setRecherche] = useState("");
   const [resetEnCours, setResetEnCours] = useState(false);
   const { version } = usePerimetre();
   useEffect(() => {
@@ -42,6 +44,12 @@ export default function Administration() {
     }
   };
 
+  // La recherche filtre les deux listes par jumeau (nom, propriétaire, domaine)
+  const visibles = useMemo(() => {
+    const q = recherche.trim().toLowerCase();
+    return q ? jumeaux.filter((j) => [j.nom, j.proprietaire, j.domaine].some((v) => (v || "").toLowerCase().includes(q))) : jumeaux;
+  }, [jumeaux, recherche]);
+
   const couvertureMoy = jumeaux.length ? Math.round(jumeaux.reduce((a, j) => a + (j.couverture || 0), 0) / jumeaux.length) : 0;
   const parStatut = jumeaux.reduce((acc, j) => ({ ...acc, [j.statut]: (acc[j.statut] || 0) + 1 }), {});
   const proprios = jumeaux.reduce((acc, j) => {
@@ -50,11 +58,16 @@ export default function Administration() {
   }, {});
 
   return (
-    <div className="h-full overflow-y-auto px-8 py-8 pb-44" data-testid="administration-page">
+    <div className="h-full overflow-y-auto px-4 py-5 pb-44 sm:px-8 sm:py-8" data-testid="administration-page">
       <header className="rise">
         <div className="font-code text-[10px] uppercase tracking-[0.3em] text-[#60A5FA]">Administration</div>
-        <h1 className="mt-1 font-display text-3xl font-black tracking-tight text-[#F2F6F8]">Administration</h1>
+        <h1 className="mt-1 font-display text-2xl font-black tracking-tight text-[#F2F6F8] sm:text-3xl">Administration</h1>
         <p className="mt-2 text-base text-[#94A3B8]">Sources, propriétaires, couverture et fraîcheur de la connaissance du Mesh.</p>
+        <div className="relative mt-4 max-w-sm">
+          <MagnifyingGlass size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#7C93A8]" />
+          <input value={recherche} onChange={(e) => setRecherche(e.target.value)} placeholder="Filtrer par jumeau, propriétaire ou domaine…" data-testid="admin-recherche" aria-label="Filtrer les jumeaux"
+            className="h-9 w-full rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] pl-7 pr-3 text-xs text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#60A5FA]/60 focus:outline-none" />
+        </div>
       </header>
 
       <div className="mt-8 grid grid-cols-12 gap-6">
@@ -66,16 +79,23 @@ export default function Administration() {
             <span className="font-display text-4xl font-black text-[#F2F6F8]" data-testid="couverture-moyenne">{couvertureMoy} %</span>
             <span className="font-code text-[10px] text-[#7C93A8]">moyenne du Mesh</span>
           </div>
-          <ul className="mt-4 space-y-2.5">
-            {[...jumeaux].sort((a, b) => a.couverture - b.couverture).map((j) => (
-              <li key={j.id} className="flex items-center gap-3">
-                <span className="w-28 truncate text-xs text-[#94A3B8]">{j.nom}</span>
-                <div className="h-1 flex-1 overflow-hidden rounded-full bg-[rgba(148,163,184,0.16)]">
-                  <div className="h-full rounded-full" style={{ width: `${j.couverture}%`, backgroundColor: couleurDomaine(j.domaine) }} />
-                </div>
-                <span className="w-10 text-right font-code text-[10px] text-[#94A3B8]">{j.couverture} %</span>
+          <p className="mt-2 font-code text-[11px] text-[#7C93A8]">
+            Couleur = niveau de couverture :
+            <span className="ml-2 text-[#F87171]">● &lt; 40 %</span> <span className="ml-2 text-[#F2B84B]">● 40–69 %</span> <span className="ml-2 text-[#34D399]">● ≥ 70 %</span>
+          </p>
+          <ul className="mt-3 space-y-1">
+            {[...visibles].sort((a, b) => a.couverture - b.couverture).map((j) => (
+              <li key={j.id}>
+                <Link to={`/jumeaux/${j.id}/revue`} data-testid={`admin-couv-${j.id}`} title={`Ouvrir la revue de ${j.nom}`} className="flex items-center gap-3 rounded-md px-1 py-1.5 transition-colors hover:bg-white/[0.04]">
+                  <span className="w-28 shrink-0 truncate text-xs text-[#94A3B8] sm:w-32">{j.nom}</span>
+                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[rgba(148,163,184,0.16)]">
+                    <div className="h-full rounded-full" style={{ width: `${j.couverture}%`, backgroundColor: couleurConfiance(j.couverture) }} />
+                  </div>
+                  <span className="w-11 shrink-0 text-right font-code text-[11px] text-[#D8E2EA]">{j.couverture} %</span>
+                </Link>
               </li>
             ))}
+            {visibles.length === 0 && <li className="py-3 text-center text-xs text-[#7C93A8]">Aucun jumeau ne correspond.</li>}
           </ul>
         </section>
 
@@ -83,8 +103,12 @@ export default function Administration() {
           <h2 className="flex items-center gap-2 font-code text-[10px] uppercase tracking-[0.25em] text-[#7C93A8]">
             <Database size={14} className="text-[#60A5FA]" /> Sources connectées
           </h2>
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full text-xs">
+          <p className="mt-2 flex items-center gap-3 font-code text-[11px] text-[#7C93A8]">
+            <span className="flex items-center gap-1"><Check size={11} weight="bold" className="text-[#34D399]" /> source connectée</span>
+            <span className="flex items-center gap-1"><Minus size={11} /> absente</span>
+          </p>
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full min-w-[30rem] text-xs">
               <thead>
                 <tr className="font-code text-[9px] uppercase tracking-wider text-[#7C93A8]">
                   <th className="pb-2 text-left font-medium">Jumeau</th>
@@ -92,12 +116,14 @@ export default function Administration() {
                 </tr>
               </thead>
               <tbody>
-                {jumeaux.map((j) => (
+                {visibles.map((j) => (
                   <tr key={j.id} className="border-t border-[rgba(148,163,184,0.16)]" data-testid={`admin-source-${j.id}`}>
-                    <td className="py-2 pr-3 text-[#D8E2EA]">{j.nom}</td>
-                    {SOURCES.map(([k]) => (
+                    <td className="py-2 pr-3 text-[#D8E2EA]"><Link to={`/jumeaux/${j.id}/revue`} className="hover:text-[#60A5FA] hover:underline">{j.nom}</Link></td>
+                    {SOURCES.map(([k, label]) => (
                       <td key={k} className="py-2 text-center">
-                        <span className={`inline-block h-2 w-2 rounded-full ${j.sources?.[k] ? "bg-[#34D399]" : "bg-[rgba(148,163,184,0.16)]"}`} />
+                        {j.sources?.[k]
+                          ? <Check size={13} weight="bold" className="inline text-[#34D399]" aria-label={`${label} connectée`} />
+                          : <Minus size={13} className="inline text-[#41576D]" aria-label={`${label} absente`} />}
                       </td>
                     ))}
                   </tr>
@@ -133,7 +159,7 @@ export default function Administration() {
             ))}
           </div>
           <ul className="mt-4 space-y-2">
-            {[...jumeaux].sort((a, b) => (a.statut === "actif" ? 1 : 0) - (b.statut === "actif" ? 1 : 0)).map((j) => (
+            {[...visibles].sort((a, b) => (a.statut === "actif" ? 1 : 0) - (b.statut === "actif" ? 1 : 0)).map((j) => (
               <li key={j.id} className="flex items-center justify-between text-xs">
                 <span className="text-[#94A3B8]">{j.nom}</span>
                 <span className="font-code text-[10px] text-[#7C93A8]">{j.fraicheur}</span>
@@ -167,8 +193,8 @@ export default function Administration() {
           <h2 className="flex items-center gap-2 font-code text-[10px] uppercase tracking-[0.25em] text-[#7C93A8]">
             <Scroll size={14} className="text-[#60A5FA]" /> Journal d'accès et de décisions
           </h2>
-          <div className="mt-4 overflow-hidden rounded-lg border border-[rgba(148,163,184,0.16)]">
-            <table className="w-full text-xs">
+          <div className="mt-4 overflow-x-auto rounded-lg border border-[rgba(148,163,184,0.16)]">
+            <table className="w-full min-w-[40rem] text-xs">
               <thead>
                 <tr className="bg-[rgba(148,163,184,0.07)] font-code text-[9px] uppercase tracking-wider text-[#7C93A8]">
                   <th className="px-3 py-2 text-left font-medium">Quand</th>

@@ -266,6 +266,7 @@ export default function Actualites() {
       <div className="mx-auto max-w-4xl">
         {/* Barre de lecture unique : vues · portées · temps */}
         <header className="rise relative z-30" ref={refCalendrier}>
+          <h1 className="sr-only">Actualités</h1>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex gap-0.5 rounded-lg border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-0.5" data-testid="vues-actualites">
               {VUES_ACTUS.map(([id, label]) => {
@@ -304,7 +305,8 @@ export default function Actualites() {
                   <CaretLeft size={13} />
                 </button>
                 <button onClick={() => setCalendrier((c) => !c)} data-testid="actualites-titre" title="Choisir la période" className="rounded-md px-2 py-1 text-xs font-semibold text-[#F2F6F8] transition-colors hover:bg-[rgba(148,163,184,0.10)]">
-                  {titreCourt}
+                  <span className="sm:hidden">{String(titreCourt).split(" · ")[0]}</span>
+                  <span className="hidden sm:inline">{titreCourt}</span>
                 </button>
                 <button onClick={() => setDecalage((d) => Math.max(0, d - 1))} disabled={decalage === 0} data-testid="date-suiv-btn" title="Période suivante" className="flex h-7 w-7 items-center justify-center rounded-md text-[#94A3B8] transition-colors hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8] disabled:opacity-30">
                   <CaretRight size={13} />
@@ -469,8 +471,8 @@ export default function Actualites() {
         <div className="mt-8 space-y-8" data-testid="feed-actualites">
           {sections.map((s) => (
             <section key={s.id} data-testid={`section-${s.id}`}>
-              <h2 className="font-code text-[10px] uppercase tracking-[0.25em] text-[#94A3B8]">{s.titre}</h2>
-              <div className="mt-3 space-y-4">
+              {!(s.id === "essentiel" && data?.briefing) && <h2 className="font-code text-[10px] uppercase tracking-[0.25em] text-[#94A3B8]">{s.titre}</h2>}
+              <div className={`${s.id === "essentiel" && data?.briefing ? "mt-0" : "mt-3"} space-y-4`}>
                 {s.histoires.map((h) => (
                   <CarteHistoire key={h.id} h={h} vedette={h.id === vedetteId} dateCible={dateCible} estAujourdhui={estAujourdhui} navigate={navigate} mesh={mesh} />
                 ))}

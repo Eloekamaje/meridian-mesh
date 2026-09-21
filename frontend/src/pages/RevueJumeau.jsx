@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, SealCheck, Compass } from "@phosphor-icons/react";
+import { SealCheck, Compass } from "@phosphor-icons/react";
+import EntetePage from "@/components/EntetePage";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useMesh } from "@/lib/mesh";
@@ -61,33 +62,27 @@ export default function RevueJumeau() {
 
   return (
     <div className="flex h-full flex-col" data-testid="revue-page">
-      <div className="border-b border-[rgba(148,163,184,0.16)] px-8 py-3.5" data-testid="revue-entete">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-4">
-            <button onClick={() => navigate("/jumeaux")} data-testid="revue-retour-btn" className="flex items-center gap-1.5 rounded-md border border-[rgba(148,163,184,0.16)] px-2.5 py-1.5 text-xs text-[#94A3B8] transition-colors hover:text-[#F2F6F8]">
-              <ArrowLeft size={13} /> Jumeaux
-            </button>
-            <div>
-              <h1 className="font-display text-xl font-bold tracking-tight text-[#F2F6F8]" data-testid="revue-titre">
-                {estAdmission ? "Revue d'admission" : "Revue"} — {jumeau?.nom || "…"}
-              </h1>
-              <p className="font-code text-[10px] text-[#7C93A8]">{jid} · Domaine {jumeau?.domaine || "…"}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
+      <EntetePage
+        testid="revue-entete"
+        titreTestid="revue-titre"
+        retour={{ label: "Jumeaux", onClick: () => navigate("/jumeaux"), testid: "revue-retour-btn" }}
+        titre={`${estAdmission ? "Revue d'admission" : "Revue"} — ${jumeau?.nom || "…"}`}
+        sousTitre={`${jid} · Domaine ${jumeau?.domaine || "…"}`}
+        droite={
+          <>
             {st && (
-              <span className="rounded border px-2 py-1 font-code text-[10px]" style={{ color: st[1], borderColor: `${st[1]}44`, backgroundColor: `${st[1]}12` }} data-testid="revue-statut">
+              <span className="rounded border px-2 py-1 font-code text-[11px]" style={{ color: st[1], borderColor: `${st[1]}44`, backgroundColor: `${st[1]}12` }} data-testid="revue-statut">
                 {st[0]}
               </span>
             )}
-            <button onClick={() => navigate(`/atlas?focus=${jid}`)} data-testid="revue-atlas-btn" className="flex items-center gap-1.5 rounded-md border border-[rgba(148,163,184,0.16)] px-2.5 py-1.5 text-xs text-[#94A3B8] transition-colors hover:border-[#60A5FA]/50 hover:text-[#F2F6F8]">
+            <button onClick={() => navigate(`/atlas?focus=${jid}`)} data-testid="revue-atlas-btn" className="flex h-9 items-center gap-1.5 rounded-md border border-[rgba(148,163,184,0.16)] px-2.5 text-xs text-[#94A3B8] transition-colors hover:text-[#F2F6F8] sm:h-8">
               <Compass size={13} /> Centrer dans l'Atlas
             </button>
-          </div>
-        </div>
-      </div>
+          </>
+        }
+      />
 
-      <div className="flex-1 overflow-y-auto px-8 py-6">
+      <div className="flex-1 overflow-y-auto px-4 py-5 sm:px-8 sm:py-6">
         <div className="mx-auto max-w-4xl">
           {erreur && (
             <div className="rounded-xl border border-[#F87171]/25 bg-[#F87171]/[0.05] px-5 py-6" data-testid="revue-erreur">
@@ -122,9 +117,11 @@ export default function RevueJumeau() {
                 </section>
               )}
               {jumeau.statut !== "actif" && jumeau.niveau === "complet" && (
-                <button onClick={admettre} disabled={admission} data-testid="confirmer-admission-btn" className="mt-6 flex w-full items-center justify-center gap-2 rounded-md bg-[#F2B84B] px-4 py-3 text-sm font-semibold text-[#071019] transition-colors hover:bg-[#F8CF7A] disabled:opacity-50">
+                <div className="sticky bottom-0 -mx-4 mt-6 border-t border-[rgba(148,163,184,0.16)] bg-[#071019]/95 px-4 py-3 backdrop-blur sm:-mx-8 sm:px-8" data-testid="revue-barre-admission">
+                  <button onClick={admettre} disabled={admission} data-testid="confirmer-admission-btn" className="flex w-full items-center justify-center gap-2 rounded-md bg-[#F2B84B] px-4 py-3 text-sm font-semibold text-[#071019] transition-colors hover:bg-[#F8CF7A] disabled:opacity-50">
                   <SealCheck size={16} /> {admission ? "Admission en cours…" : "Confirmer l'admission dans le Mesh"}
                 </button>
+                </div>
               )}
             </>
           )}

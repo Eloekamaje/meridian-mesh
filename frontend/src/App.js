@@ -13,6 +13,7 @@ import LaboAtlas from "@/pages/LaboAtlas";
 import LaboEchelle from "@/pages/LaboEchelle";
 import LaboSemantique from "@/pages/LaboSemantique";
 import LaboServeur from "@/pages/LaboServeur";
+
 import Commande from "@/pages/Commande";
 import Investigations from "@/pages/Investigations";
 import InvestigationDetail from "@/pages/InvestigationDetail";
@@ -22,6 +23,9 @@ import Jumeaux from "@/pages/Jumeaux";
 import RevueJumeau from "@/pages/RevueJumeau";
 import Administration from "@/pages/Administration";
 import PolarisChoixProfil from "@/demo/polaris/PolarisChoixProfil";
+
+// Pages de laboratoire (graphe, échelle) : hors du produit livré — disponibles en développement, ou avec REACT_APP_LABO=1
+const LABO = process.env.NODE_ENV !== "production" || process.env.REACT_APP_LABO === "1";
 import { KiosqueProvider } from "@/demo/polaris/KiosqueProvider";
 
 const RedirectTravail = () => {
@@ -44,11 +48,11 @@ function ProduitApp() {
             <Route path="/actualites" element={<Actualites />} />
             <Route path="/actualites/comprendre/:hid" element={<Comprendre />} />
             <Route path="/atlas" element={<Atlas />} />
-            {/* Laboratoire du graphe : page d'essai, isolée de l'Atlas (idées inspirées de graphify) */}
-            <Route path="/labo/atlas" element={<LaboAtlas />} />
-            <Route path="/labo/echelle" element={<LaboEchelle />} />
-            <Route path="/labo/semantique" element={<LaboSemantique />} />
-            <Route path="/labo/serveur" element={<LaboServeur />} />
+            {/* Laboratoire du graphe : pages d'essai, hors du produit livré — disponibles en développement, ou avec REACT_APP_LABO=1 */}
+            {LABO && <Route path="/labo/atlas" element={<LaboAtlas />} />}
+            {LABO && <Route path="/labo/echelle" element={<LaboEchelle />} />}
+            {LABO && <Route path="/labo/semantique" element={<LaboSemantique />} />}
+            {LABO && <Route path="/labo/serveur" element={<LaboServeur />} />}
             <Route path="/investigations" element={<Investigations />} />
             <Route path="/investigations/:id" element={<InvestigationDetail />} />
             <Route path="/travaux" element={<Travaux />} />

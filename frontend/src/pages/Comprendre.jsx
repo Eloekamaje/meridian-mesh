@@ -1,16 +1,19 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Sparkle, PaperPlaneTilt, Eye, ArrowSquareOut } from "@phosphor-icons/react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { Sparkle, PaperPlaneTilt, Eye, ArrowSquareOut } from "@phosphor-icons/react";
 import api from "@/lib/api";
 import FloreActivite, { delaiMin } from "@/components/FloreActivite";
 import { usePerimetre } from "@/lib/perimetre";
 import { useMesh } from "@/lib/mesh";
 import { couleurDomaine } from "@/lib/domaines";
 import { GENRES } from "./Actualites";
+import EntetePage from "@/components/EntetePage";
+import { CorpsMessageFlore } from "@/components/case/OngletTravail";
 
 // Comprendre une actualité = une conversation dédiée avec Flore, ouverte sur son rapport de la situation
 export default function Comprendre() {
   const { hid } = useParams();
+  const navigate = useNavigate();
   const { version } = usePerimetre();
   const { mesh } = useMesh();
   const [data, setData] = useState(null);
@@ -80,38 +83,46 @@ export default function Comprendre() {
   return (
     <div className="flex h-full flex-col" data-testid="comprendre-page">
       {/* En-tête : retour + identité de l'actualité */}
-      <div className="shrink-0 border-b border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-8 py-3" data-testid="comprendre-entete">
-        <div className="flex items-center gap-4">
-          <Link to="/actualites" data-testid="comprendre-retour-btn" className="flex shrink-0 items-center gap-1.5 rounded-md border border-[rgba(148,163,184,0.16)] px-2.5 py-1.5 text-xs text-[#94A3B8] transition-colors hover:text-[#F2F6F8]">
-            <ArrowLeft size={13} /> Actualités
-          </Link>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="rounded border px-1.5 py-0.5 font-code text-[9px] uppercase tracking-wider" style={{ color: g[1], borderColor: `${g[1]}44`, backgroundColor: `${g[1]}0D` }} data-testid="comprendre-genre">{g[0]}</span>
-              {h.quand && <span className="font-code text-[9px] text-[#7C93A8]">{new Date(h.quand).toLocaleString("fr-FR", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })}</span>}
-              {h.confiance && <span className="font-code text-[9px] text-[#7C93A8]">· Confiance : {h.confiance}</span>}
-              {h.incertain && <span className="rounded border border-dashed px-1.5 py-0.5 font-code text-[9px] uppercase tracking-wider" style={{ color: g[1], borderColor: g[1] }}>non confirmée</span>}
-            </div>
-            <h1 className="mt-0.5 truncate font-display text-lg font-bold tracking-tight text-[#F2F6F8]" data-testid="comprendre-titre">{h.titre}</h1>
-            <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
-              {(h.jumeaux || []).slice(0, 6).map((jid) => {
-                const j = mesh?.jumeaux.find((x) => x.id === jid);
-                const c = couleurDomaine(j?.domaine);
-                return (
-                  <span key={jid} className="rounded-full border px-1.5 py-0.5 font-code text-[9px]" style={{ color: c, borderColor: `${c}44`, backgroundColor: `${c}0D` }}>
-                    {j?.nom || jid}
-                  </span>
-                );
-              })}
-              {h.liens?.travail && (
-                <Link to={h.liens.travail} data-testid="comprendre-lien-travail" className="flex items-center gap-1 font-code text-[10px] text-[#60A5FA] hover:underline">
-                  <ArrowSquareOut size={11} /> Ouvrir le travail
-                </Link>
-              )}
-            </div>
-          </div>
+      <EntetePage
+        testid="comprendre-entete"
+        titreTestid="comprendre-titre"
+        retour={{ label: "Actualités", onClick: () => navigate("/actualites"), testid: "comprendre-retour-btn" }}
+        surtitre={
+          <>
+            <span className="rounded border px-1.5 py-0.5 font-code text-[10px] uppercase tracking-wider" style={{ color: g[1], borderColor: `${g[1]}44`, backgroundColor: `${g[1]}0D` }} data-testid="comprendre-genre">{g[0]}</span>
+            {h.quand && <span className="font-code text-[11px] text-[#7C93A8]">{new Date(h.quand).toLocaleString("fr-FR", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })}</span>}
+            {h.confiance && <span className="font-code text-[11px] text-[#7C93A8]">· Confiance : {h.confiance}</span>}
+            {h.incertain && <span className="rounded border border-dashed px-1.5 py-0.5 font-code text-[10px] uppercase tracking-wider" style={{ color: g[1], borderColor: g[1] }}>non confirmée</span>}
+          </>
+        }
+        titre={h.titre}
+        droite={
+          <>
+            {h.liens?.investigation && (
+              <Link to={h.liens.investigation} data-testid="comprendre-lien-investigation" className="flex h-9 items-center gap-1 rounded-md border border-[#60A5FA]/40 bg-[#60A5FA]/[0.06] px-2.5 text-xs font-semibold text-[#60A5FA] transition-colors hover:bg-[#60A5FA]/12 sm:h-8">
+                <ArrowSquareOut size={12} /> Dossier d'investigation
+              </Link>
+            )}
+            {h.liens?.travail && (
+              <Link to={h.liens.travail} data-testid="comprendre-lien-travail" className="flex h-9 items-center gap-1 rounded-md border border-[rgba(148,163,184,0.16)] px-2.5 text-xs text-[#94A3B8] transition-colors hover:text-[#F2F6F8] sm:h-8">
+                <ArrowSquareOut size={12} /> Ouvrir le travail
+              </Link>
+            )}
+          </>
+        }
+      >
+        <div className="mt-2 flex items-center gap-1.5 overflow-x-auto sm:flex-wrap sm:overflow-visible">
+          {(h.jumeaux || []).slice(0, 6).map((jid) => {
+            const j = mesh?.jumeaux.find((x) => x.id === jid);
+            const c = couleurDomaine(j?.domaine);
+            return (
+              <span key={jid} className="rounded-full border px-1.5 py-0.5 font-code text-[10px]" style={{ color: c, borderColor: `${c}44`, backgroundColor: `${c}0D` }}>
+                {j?.nom || jid}
+              </span>
+            );
+          })}
         </div>
-      </div>
+      </EntetePage>
 
       {/* Fil de conversation — le rapport de Flore ouvre le fil */}
       <div className="flex-1 overflow-y-auto px-6">
@@ -127,7 +138,7 @@ export default function Comprendre() {
                   <div className="flex items-center gap-1.5 font-code text-[9px] uppercase tracking-[0.2em] text-[#BFDBFE]">
                     <Sparkle size={10} weight="fill" /> Flore{m.rapport ? " — rapport sur la situation" : ""}
                   </div>
-                  <p className="mt-1 whitespace-pre-line text-sm leading-relaxed text-[#F2F6F8]">{m.texte}</p>
+                  <div className="mt-1"><CorpsMessageFlore message={{ texte: m.texte }} /></div>
                   {(m.preuves || []).length > 0 && (
                     <div className="mt-2">
                       <button onClick={() => setPreuvesOuvertes((p) => !p)} data-testid="comprendre-preuves-toggle" className="flex items-center gap-1 font-code text-[10px] text-[#60A5FA] hover:underline">
