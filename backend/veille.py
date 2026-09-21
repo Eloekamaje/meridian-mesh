@@ -26,6 +26,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Optional
 
+import maturation
+
 
 def _instant(s: Optional[str]) -> Optional[datetime]:
     if not s:
@@ -59,6 +61,8 @@ def evaluer(veille: dict, maintenant: datetime) -> list[dict]:
     """Événements de veille dus à ce jour, du plus ancien au plus récent (les observations futures sont ignorées)."""
     if not veille or veille.get("statut") not in ("en_veille", None):
         return []
+    if veille.get("mode") == "maturation":  # avant la décision : une situation qui mûrit
+        return maturation.evaluer(veille.get("maturation"), maintenant)
     passation = veille.get("passation") or {}
     attendus = {a["id"]: a for a in passation.get("attendus", [])}
     risques = {r["id"]: r for r in passation.get("risques", [])}
@@ -145,7 +149,7 @@ REPONSES_REVUE = [
 
 def est_veille(m: dict) -> bool:
     """Un message du fil issu de la veille : un fait observé, ou la revue posée par Flore."""
-    return m.get("role") == "evenement" or m.get("type") == "revue_due"
+    return m.get("role") == "evenement" or m.get("type") == "revue_due" or m.get("type") in maturation.TYPES_QUESTION
 
 
 def _pluriel(n: int, un: str, plusieurs: str) -> str:

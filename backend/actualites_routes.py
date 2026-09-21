@@ -5,7 +5,10 @@ from typing import Optional
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
+import maturation
+import portee as portees
 import ouverture_travail
+import veille as moteur_veille
 
 
 class OuvertureTravail(BaseModel):
@@ -17,6 +20,7 @@ RAISONS_ECART = {"connu": "Déjà connu", "pas_pour_moi": "Ne me concerne pas", 
 
 class EcartActualite(BaseModel):
     raison: str = "connu"
+    portee: str = "moi"  # moi | equipe : pour soi seul, ou pour l'équipe (l'espace courant)
 
 # Budget d'attention de la vue « Aujourd'hui » : trois choses critiques au plus, cinq pertinentes au plus ; le reste est replié.
 BUDGET_CRITIQUES = 3
@@ -48,7 +52,7 @@ TITRES_SECTION = {
 SECTION_PAR_GENRE = {
     "relation": "decouvertes", "connaissance": "decouvertes", "contradiction": "surveillance",
     "changement": "transformations", "comportement": "transformations", "opportunite": "opportunites", "phenomene": "surveillance",
-    "travail": "travaux", "decision": "travaux", "veille": "travaux", "gouvernance": "espace",
+    "travail": "travaux", "decision": "travaux", "veille": "travaux", "verification": "travaux", "gouvernance": "espace",
 }
 
 # Le briefing varie selon le rôle : la priorité et la formulation changent, jamais la vérité.
@@ -261,6 +265,8 @@ def build_actualites_router(deps):
         async for c in db.cases.find({}, NO_ID):
             if c.get("jumeaux") and not any(j in aut for j in c["jumeaux"]):
                 continue
+            if not portees.acces(c, x_persona, espace["id"]):
+                continue  # un travail personnel ou d'équipe n'est pas une actualité pour les autres
             personnel = x_persona in (c.get("participants") or []) or c.get("responsable") == x_persona
             boost = 30 if (portee == "personnel" and personnel) else 0
             lien = f"/travaux/{c['id']}"
@@ -279,7 +285,7 @@ def build_actualites_router(deps):
             visite = (c.get("visites") or {}).get(x_persona)
             evs = [
                 m for m in c.get("conversation", [])
-                if (m.get("role") == "evenement" or m.get("type") == "revue_due") and (not m.get("jumeau") or m["jumeau"] in aut)
+                if moteur_veille.est_veille(m) and (not m.get("jumeau") or m["jumeau"] in aut)
                 and (dedans(parse_quand(m.get("quand", ""), now)) or (est_aujourdhui and (not visite or m.get("quand", "") > visite)))
             ]
             if not entrees and not evs:
@@ -289,18 +295,20 @@ def build_actualites_router(deps):
             entrees.sort(key=lambda e: e[0])
             recit = entrees[0][1] if len(entrees) == 1 else f"{entrees[0][1]} — puis {entrees[-1][1].lower()}"
             a_decision = any("Décision" in t for _, t in entrees)
+            verification = (c.get("veille") or {}).get("mode") == "maturation"
             pourquoi = None
             if evs:
                 niveau = min(e["niveau"] for e in evs)
                 pire = sorted(evs, key=lambda e: (e["niveau"], e["quand"]))[0]
                 pourquoi = pire["titre"]
-                recit = f"{len(evs)} fait{'s' if len(evs) > 1 else ''} observé{'s' if len(evs) > 1 else ''} depuis la décision. {pire['texte']}"
+                depuis = "depuis que je la suis" if verification else "depuis la décision"
+                recit = f"{len(evs)} fait{'s' if len(evs) > 1 else ''} observé{'s' if len(evs) > 1 else ''} {depuis}. {pire['texte']}"
             histoires.append({
                 "id": f"case-{c['id']}",
-                "genre": "veille" if evs else ("decision" if a_decision else "travail"),
+                "genre": ("verification" if verification else "veille") if evs else ("decision" if a_decision else "travail"),
                 "pourquoi_maintenant": pourquoi,
                 "section": "essentiel" if evs and niveau == 1 else "travaux",
-                "action_label": ("Revoir la décision" if niveau == 1 else "Prendre connaissance") if evs else None,
+                "action_label": (("Trancher" if verification else "Revoir la décision") if niveau == 1 else "Prendre connaissance") if evs else None,
                 "titre": c["titre"],
                 "recit": recit,
                 "quand": entrees[-1][0].isoformat(),
@@ -338,9 +346,14 @@ def build_actualites_router(deps):
         histoires.sort(key=lambda h: (h["score"], h["quand"]), reverse=True)
 
         # Ce que la personne a écarté (avec sa raison) ne revient pas dans la vue — mais reste consultable et rétablissable.
-        ecartees_docs = await db.actualites_ecartees.find({"persona": x_persona}, NO_ID).to_list(500)
-        raisons = {e["histoire_id"]: e for e in ecartees_docs}
-        ecartees = [{"id": h["id"], "titre": h["titre"], "raison": RAISONS_ECART.get(raisons[h["id"]]["raison"], raisons[h["id"]]["raison"])} for h in histoires if h["id"] in raisons]
+        # Écartée pour soi, ou pour l'équipe (l'espace courant) par un collègue ; l'écart personnel prime sur celui de l'équipe.
+        ecartees_docs = await db.actualites_ecartees.find({"$or": [{"persona": x_persona}, {"portee": "equipe", "espace": espace["id"]}]}, NO_ID).sort("quand", 1).to_list(500)
+        raisons = {}
+        for e in ecartees_docs:
+            if e["histoire_id"] not in raisons or e["persona"] == x_persona:
+                raisons[e["histoire_id"]] = e
+        ecartees = [{"id": h["id"], "titre": h["titre"], "raison": RAISONS_ECART.get(raisons[h["id"]]["raison"], raisons[h["id"]]["raison"]),
+                     "portee": raisons[h["id"]].get("portee", "moi"), "par": raisons[h["id"]]["persona"]} for h in histoires if h["id"] in raisons]
         histoires = [h for h in histoires if h["id"] not in raisons]
 
         # Budget d'attention (vue du jour) : la vue ne montre que ce qui mérite l'attention aujourd'hui, le reste est replié.
@@ -536,7 +549,7 @@ def build_actualites_router(deps):
 
         elif hid.startswith("case-"):
             c = await db.cases.find_one({"id": hid[5:]}, NO_ID)
-            if not c or (c.get("jumeaux") and not any(j in aut for j in c["jumeaux"])):
+            if not c or (c.get("jumeaux") and not any(j in aut for j in c["jumeaux"])) or not portees.acces(c, x_persona, espace["id"]):
                 raise HTTPException(404, "Actualité introuvable")
             histoire = {
                 "id": hid, "genre": "travail", "titre": c["titre"],
@@ -582,15 +595,20 @@ def build_actualites_router(deps):
         """Écarter une actualité pour soi : elle sort de la vue, et la raison est gardée (Méridian apprend ce qui compte pour la personne)."""
         if payload.raison not in RAISONS_ECART:
             raise HTTPException(400, "Raison inconnue")
+        if payload.portee not in ("moi", "equipe"):
+            raise HTTPException(400, "Portée inconnue")
         await histoire_detail(hid, x_persona, x_espace)  # périmètre : hors droits → 404
+        _, espace = resoudre_perimetre(x_persona, x_espace)
         now = datetime.now(timezone.utc).isoformat()
         await db.actualites_ecartees.update_one(
-            {"persona": x_persona, "histoire_id": hid}, {"$set": {"raison": payload.raison, "quand": now}}, upsert=True)
-        return {"id": hid, "raison": RAISONS_ECART[payload.raison]}
+            {"persona": x_persona, "histoire_id": hid}, {"$set": {"raison": payload.raison, "quand": now, "portee": payload.portee, "espace": espace["id"]}}, upsert=True)
+        return {"id": hid, "raison": RAISONS_ECART[payload.raison], "portee": payload.portee}
 
     @router.delete("/actualites/histoire/{hid}/ecarter")
-    async def retablir(hid: str, x_persona: str = Header("architecte")):
-        await db.actualites_ecartees.delete_one({"persona": x_persona, "histoire_id": hid})
+    async def retablir(hid: str, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+        """Rétablir : son propre écart, ou celui que l'équipe a décidé (n'importe quel collègue de l'espace peut le lever)."""
+        _, espace = resoudre_perimetre(x_persona, x_espace)
+        await db.actualites_ecartees.delete_many({"histoire_id": hid, "$or": [{"persona": x_persona}, {"portee": "equipe", "espace": espace["id"]}]})
         return {"id": hid}
 
     @router.post("/actualites/histoire/{hid}/travail")
@@ -607,15 +625,28 @@ def build_actualites_router(deps):
         _, espace = resoudre_perimetre(x_persona, x_espace)
         situation = await db.situations.find_one({"id": hid[4:]}, NO_ID) if hid.startswith("sit-") else None
         maintenant = datetime.now(timezone.utc).isoformat()
+        # « Suivre » : la vérification est une veille AVANT la décision (le phénomène mûrit) ; Flore dit ce qu'elle guette
+        veille_suivi, message_suivi = None, None
+        if payload.intention == "suivre":
+            relation = await db.relations.find_one({"id": hid[4:].split("-ev-")[0]}, NO_ID) if hid.startswith("rel-") else None
+            depart = float((relation or {}).get("confiance") or ((situation or {}).get("indicateurs") or {}).get("confiance") or 50)
+            veille_suivi = maturation.nouvelle_veille(histoire["titre"], depart, relation["id"] if relation else None)
+            m = veille_suivi["maturation"]
+            message_suivi = maturation.message_flore_suivi(histoire["titre"], depart, m["seuil"], m["plancher"], maintenant)
         existant = await db.cases.find_one({"origine.histoire_id": hid, "responsable": x_persona}, NO_ID)
         if existant:
             deja = existant["origine"].get("intentions", [])
             if payload.intention not in deja:
                 msg = ouverture_travail.message_flore(payload.intention, histoire, rapport, situation, maintenant)
+                maj = {"maj_le": maintenant}
+                messages = [msg]
+                if veille_suivi and not existant.get("veille"):
+                    maj["veille"] = veille_suivi
+                    messages.append(message_suivi)
                 await db.cases.update_one(
                     {"id": existant["id"]},
-                    {"$push": {"conversation": msg, "historique": {"quand": maintenant, "texte": {"investiguer": "Investigation ouverte", "suivre": "Mise sous vérification", "comprendre": "Situation présentée"}[payload.intention]}},
-                     "$addToSet": {"origine.intentions": payload.intention}, "$set": {"maj_le": maintenant}},
+                    {"$push": {"conversation": {"$each": messages}, "historique": {"quand": maintenant, "texte": {"investiguer": "Investigation ouverte", "suivre": "Mise sous vérification", "comprendre": "Situation présentée"}[payload.intention]}},
+                     "$addToSet": {"origine.intentions": payload.intention}, "$set": maj},
                 )
             return {"id": existant["id"], "cree": False}
         base = slugify(histoire["titre"])[:60] or "travail"
@@ -626,11 +657,12 @@ def build_actualites_router(deps):
         num = (dernier[0]["num"] if dernier and dernier[0].get("num") else 40) + 1
         doc = {
             "id": cid, "num": num, "titre": histoire["titre"], "type": ouverture_travail.type_travail(histoire.get("genre", "")), "statut": "ouvert",
-            "sensibilite": "interne", "objectif": histoire.get("recit") or histoire["titre"], "resume": "", "prochaine_etape": "",
+            "sensibilite": "interne", "portee": "personnel", "objectif": histoire.get("recit") or histoire["titre"], "resume": "", "prochaine_etape": "",
             "questions": [], "hypotheses": [], "jumeaux": histoire.get("jumeaux", []), "situations": [hid[4:]] if situation else [],
             "participants": [x_persona], "responsable": x_persona, "espace": espace["id"],
-            "conversation": [ouverture_travail.message_flore(payload.intention, histoire, rapport, situation, maintenant)],
+            "conversation": [ouverture_travail.message_flore(payload.intention, histoire, rapport, situation, maintenant)] + ([message_suivi] if message_suivi else []),
             "options": [], "decisions": [], "livrables": [], "a_revoir": False, "visites": {},
+            **({"veille": veille_suivi} if veille_suivi else {}),
             "origine": {"histoire_id": hid, "genre": histoire.get("genre"), "intentions": [payload.intention], "quand": maintenant},
             "historique": [{"quand": maintenant, "texte": f"Travail ouvert depuis l'actualité « {histoire['titre']} »"}],
             "cree_le": maintenant, "maj_le": maintenant,

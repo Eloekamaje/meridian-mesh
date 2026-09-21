@@ -791,7 +791,7 @@ export default function OngletTravail({
                             disabled={envoiMsg}
                             onClick={() => repondreRevue(r.action)}
                             data-testid={`veille-${r.action}`}
-                            className={`rounded-full border px-3.5 py-1.5 text-xs transition-colors disabled:opacity-50 ${r.action === "rouvrir" ? "border-[#60A5FA] bg-[#60A5FA]/10 font-semibold text-[#BFDBFE] hover:bg-[#60A5FA]/20" : "border-[rgba(148,163,184,0.2)] text-[#D8E2EA] hover:border-[#60A5FA]/40 hover:text-white"}`}
+                            className={`rounded-full border px-3.5 py-1.5 text-xs transition-colors disabled:opacity-50 ${r.action === "rouvrir" || (m.type === "seuil_atteint" && r.action === "confirmer") || (m.type === "affaiblie" && r.action === "ecarter") ? "border-[#60A5FA] bg-[#60A5FA]/10 font-semibold text-[#BFDBFE] hover:bg-[#60A5FA]/20" : "border-[rgba(148,163,184,0.2)] text-[#D8E2EA] hover:border-[#60A5FA]/40 hover:text-white"}`}
                           >
                             {r.label}
                           </button>

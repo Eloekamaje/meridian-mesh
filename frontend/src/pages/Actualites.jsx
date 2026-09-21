@@ -31,6 +31,7 @@ export const GENRES = {
   decision: ["Décision", "#60A5FA"],
   gouvernance: ["Gouvernance", "#7C93A8"],
   veille: ["Décision en veille", "#F2B84B"],
+  verification: ["Vérification en cours", "#60A5FA"],
   opportunite: ["Opportunité", "#34D399"],
 };
 
@@ -93,11 +94,12 @@ function CarteHistoire({ h, vedette, dateCible, estAujourdhui, navigate, mesh, o
     }
   };
 
+  const [pourEquipe, setPourEquipe] = useState(false);
   const ecarter = async (raison) => {
     setMenu(false);
     setEcart(false);
     try {
-      await api.post(`/actualites/histoire/${h.id}/ecarter`, { raison });
+      await api.post(`/actualites/histoire/${h.id}/ecarter`, { raison, portee: pourEquipe ? "equipe" : "moi" });
       onEcarter?.(h, raison);
     } catch {
       toast.error("Impossible d'écarter cette actualité");
@@ -105,7 +107,7 @@ function CarteHistoire({ h, vedette, dateCible, estAujourdhui, navigate, mesh, o
   };
 
   const actionPrincipale = () => {
-    if (h.genre === "travail" || h.genre === "decision" || h.genre === "veille") {
+    if (h.genre === "travail" || h.genre === "decision" || h.genre === "veille" || h.genre === "verification") {
       return (
         <button onClick={() => navigate(h.liens.travail)} data-testid={`histoire-reprendre-${h.id}`} className="flex items-center gap-1.5 rounded-md bg-[#60A5FA] px-3 py-1.5 text-[11px] font-semibold text-[#071019] transition-colors hover:bg-[#93C5FD]">
           {h.action_label || "Reprendre"} <ArrowRight size={11} />
@@ -188,6 +190,12 @@ function CarteHistoire({ h, vedette, dateCible, estAujourdhui, navigate, mesh, o
                 </button>
               ) : (
                 <div className="mt-1 border-t border-[rgba(148,163,184,0.12)] pt-1" data-testid={`histoire-raisons-${h.id}`}>
+                  <div className="flex gap-1 px-1.5 pb-1.5" role="group" aria-label="Pour qui">
+                    {[[false, "Pour moi"], [true, "Pour l'équipe"]].map(([v, l]) => (
+                      <button key={l} onClick={() => setPourEquipe(v)} aria-pressed={pourEquipe === v} data-testid={`ecarter-portee-${v ? "equipe" : "moi"}-${h.id}`}
+                        className={`flex-1 rounded-md px-2 py-1 text-[11px] ${pourEquipe === v ? "bg-[#60A5FA] font-semibold text-[#071019]" : "border border-[rgba(148,163,184,0.2)] text-[#94A3B8]"}`}>{l}</button>
+                    ))}
+                  </div>
                   <div className="px-2.5 py-1 font-code text-[10px] uppercase tracking-[0.14em] text-[#7C93A8]">Pourquoi l'écarter ?</div>
                   {RAISONS_ECART.map(([id, label]) => (
                     <button key={id} onClick={() => ecarter(id)} data-testid={`ecarter-${id}-${h.id}`} className="flex w-full items-center rounded px-2.5 py-1.5 text-left text-[11px] text-[#D8E2EA] hover:bg-[rgba(148,163,184,0.10)]">
@@ -468,7 +476,7 @@ export default function Actualites() {
                   <div key={d.id} className="rounded-xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-4" data-testid={`delegation-${d.id}`}>
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-sm font-semibold text-[#F2F6F8]">{d.tache}</span>
-                      <span className="rounded-full border border-[#34D399]/30 bg-[rgba(52,211,153,0.12)] px-2 py-0.5 font-code text-[9px] text-[#34D399]">{d.statut === "active" ? "active" : d.statut}</span>
+                      <span className={`rounded-full border px-2 py-0.5 font-code text-[9px] ${d.statut === "active" ? "border-[#34D399]/30 bg-[rgba(52,211,153,0.12)] text-[#34D399]" : "border-[rgba(148,163,184,0.25)] text-[#94A3B8]"}`}>{d.statut === "active" ? "active" : d.statut === "terminee" ? "terminée" : d.statut}</span>
                     </div>
                     <div className="mt-2 grid gap-1.5 font-code text-[10px] text-[#94A3B8] sm:grid-cols-2">
                       <span>Périmètre : {(d.jumeaux || []).map((jid) => mesh?.jumeaux.find((x) => x.id === jid)?.nom || jid).join(", ")}</span>
@@ -477,6 +485,12 @@ export default function Actualites() {
                       <span>Produira : {d.livrable}</span>
                     </div>
                     <p className="mt-2 border-l-2 border-[#F2B84B]/40 pl-2.5 text-[11px] italic text-[#F2B84B]">{d.validation_requise}</p>
+                    {d.travail_id && (
+                      <button onClick={() => navigate(`/travaux/${d.travail_id}`, { state: { retour: { label: "Actualités", to: "/actualites?vue=suivis" } } })} data-testid={`delegation-travail-${d.id}`}
+                        className="mt-3 flex items-center gap-1.5 rounded-md border border-[rgba(148,163,184,0.2)] px-3 py-1.5 text-[11px] font-medium text-[#D8E2EA] transition-colors hover:border-[#60A5FA]/50 hover:text-white">
+                        <ArrowSquareOut size={12} /> Ouvrir le travail
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -604,7 +618,7 @@ export default function Actualites() {
                 <ul className="mt-2 space-y-1.5">
                   {data.ecartees.map((e) => (
                     <li key={e.id} className="flex items-center justify-between gap-3 rounded-lg border border-[rgba(148,163,184,0.12)] px-3 py-2 text-xs text-[#94A3B8]">
-                      <span className="min-w-0 truncate">{e.titre} <span className="text-[#7C93A8]">· {e.raison}</span></span>
+                      <span className="min-w-0 truncate">{e.titre} <span className="text-[#7C93A8]">· {e.raison}{e.portee === "equipe" ? " · pour l'équipe" : ""}</span></span>
                       <button onClick={() => retablir(e.id)} data-testid={`retablir-${e.id}`} className="shrink-0 font-medium text-[#60A5FA] hover:text-[#93C5FD]">Rétablir</button>
                     </li>
                   ))}

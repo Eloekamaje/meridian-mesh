@@ -66,7 +66,7 @@ export default function ComposerFlore({ placeholder = "Demandez à Flore…", co
       if (!selection.length) return toast.info("Sélectionnez d'abord des jumeaux dans l'Atlas.");
       try {
         const { data } = await api.post("/delegations", { type: "surveillance", jumeaux: selection, duree_h: 24 });
-        toast.success(`Surveillance confiée au Mesh — « ${data.tache} », visible dans Actualités → Suivis`);
+        toast.success(`Surveillance confiée au Mesh — « ${data.tache} »`, { action: { label: "Ouvrir le travail", onClick: () => navigate(`/travaux/${data.travail_id}`) } });
       } catch (e) {
         toast.error(e.response?.data?.detail || "Délégation impossible");
       }

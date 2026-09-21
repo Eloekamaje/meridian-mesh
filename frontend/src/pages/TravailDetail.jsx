@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { ShareNetwork, DotsThree, SealCheck } from "@phosphor-icons/react";
+import { DotsThree, SealCheck } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { usePerimetre } from "@/lib/perimetre";
@@ -8,6 +8,7 @@ import { TYPES_CASE } from "./Travaux";
 import { numeroCase, SENSIBILITES, rel } from "@/components/case/utils";
 import OngletTravail from "@/components/case/OngletTravail";
 import DecisionPassation from "@/components/case/DecisionPassation";
+import PartagerTravail from "@/components/case/PartagerTravail";
 import SurfacePreparation from "@/components/SurfacePreparation";
 import { BoutonRetour } from "@/components/EntetePage";
 import { usePilotage } from "@/lib/pilotage";
@@ -88,15 +89,6 @@ export default function TravailDetail() {
     return p ? `${p.nom} — ${p.role}` : id;
   };
 
-  const partager = async () => {
-    try {
-      await navigator.clipboard.writeText(window.location.href);
-      toast.success("Lien du travail copié");
-    } catch {
-      toast.error("Copie impossible — " + window.location.href);
-    }
-  };
-
   if (erreur) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4" data-testid="travail-erreur">
@@ -141,15 +133,7 @@ export default function TravailDetail() {
 
           {/* Boutons d'action à droite : Partager, Menu ..., et Toggle Deux Traits (=) */}
           {casNe && <div className="flex shrink-0 items-center gap-2">
-            <button 
-              onClick={partager} 
-              data-testid="travail-partager-btn" 
-              title="Partager le travail" 
-              className="flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.03] px-2.5 py-1 text-xs text-[#CBD5E1] transition-colors hover:border-white/20 hover:text-white"
-            >
-              <ShareNetwork size={14} />
-              <span className="hidden sm:inline">Partager</span>
-            </button>
+            <PartagerTravail cas={cas} onChange={setCas} />
 
             <div className="relative">
               <button 

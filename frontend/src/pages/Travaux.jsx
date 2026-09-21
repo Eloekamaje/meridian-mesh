@@ -55,7 +55,7 @@ function CarteTravail({ c, navigate, setSelection, attention }) {
             <span className="shrink-0 rounded border border-[#F87171]/40 bg-[#F87171]/[0.06] px-1.5 py-px font-code text-[9px] uppercase tracking-wider text-[#F87171]" data-testid={`travail-arevoir-${c.id}`}>À revoir</span>
           )}
           {c.en_veille && (
-            <span className="shrink-0 rounded border border-[#60A5FA]/30 bg-[#60A5FA]/[0.06] px-1.5 py-px font-code text-[9px] uppercase tracking-wider text-[#BFDBFE]" data-testid={`travail-veille-${c.id}`}>En veille</span>
+            <span className="shrink-0 rounded border border-[#60A5FA]/30 bg-[#60A5FA]/[0.06] px-1.5 py-px font-code text-[9px] uppercase tracking-wider text-[#BFDBFE]" data-testid={`travail-veille-${c.id}`}>{c.veille_mode === "maturation" ? "En vérification" : "En veille"}</span>
           )}
           {c.mouvement?.niveau === 1 && (
             <span className="shrink-0 rounded border border-[#F87171]/40 bg-[#F87171]/[0.06] px-1.5 py-px font-code text-[9px] uppercase tracking-wider text-[#F87171]" data-testid={`travail-mouvement-${c.id}`}>{c.mouvement.nb} à examiner</span>

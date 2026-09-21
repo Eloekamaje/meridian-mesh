@@ -19,6 +19,7 @@ from actualites_routes import build_actualites_router
 from initiatives_routes import build_initiatives_router
 from mesh_vue_routes import build_mesh_vue_router
 from seed_data import (
+    cas_verification_fraude,
     TWINS, RELATIONS, REGIONS, SITUATIONS, CHANGE_LAB, ACTIVITE,
     AURORA_SCRIPTS, AURORA_FALLBACK, AURORA_SUGGESTIONS, DEMO_ACTES, SOURCES_LABELS,
     PERSONAS, ESPACES, VUES, CONNECTEURS, CONTRIBUTIONS, PROFILS, COMMANDE_DEMO, CASES, NOTIFS,
@@ -66,6 +67,9 @@ async def seed_database():
         {"id": "case-dette-files", "veille": {"$exists": False}},
         {"$set": {"veille": VEILLE_DETTE_FILES, "statut": "en_cours", "visites.architecte": "2026-09-12T08:00:00+00:00"}},
     )
+    # Migration douce : la vérification de démonstration (veille avant décision) est ajoutée à une base déjà peuplée
+    if not await db.cases.find_one({"id": "case-verification-fraude-conformite"}, {"_id": 1}):
+        await db.cases.insert_one(cas_verification_fraude())
     # Migration douce : les opportunités (genre à part entière) remplacent l'ancienne « recommandation d'optimisation »
     for sit in SITUATIONS:
         if sit.get("nature") == "opportunite" and not await db.situations.find_one({"id": sit["id"], "nature": "opportunite"}, {"_id": 1}):

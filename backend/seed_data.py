@@ -690,6 +690,46 @@ VEILLE_DETTE_FILES = {
 }
 
 
+# Veille AVANT la décision : Flore vérifie une relation supposée (Fraude → Conformité) et guette le seuil de confirmation.
+# Les observations sont celles que les jumeaux ont rapportées ; le moteur de raisonnement réel devra les fournir.
+VERIFICATION_FRAUDE_CONFORMITE = {
+    "mode": "maturation",
+    "statut": "en_veille",
+    "maturation": {
+        "sujet": "Relation possible : Fraude → Conformité",
+        "confiance_depart": 64, "seuil": 75, "plancher": 40, "relation_id": "r12",
+        "observations": [
+            {"id": "v1", "quand": "2026-09-19T10:10:00+00:00", "jumeau": "conformite", "effet": 5, "source": "Splunk · dossiers Conformité",
+             "texte": "Sur 12 dossiers ouverts cette semaine, 9 portent une alerte Fraude préalable."},
+            {"id": "v2", "quand": "2026-09-20T15:20:00+00:00", "jumeau": "conformite", "effet": -3, "source": "ServiceNow · dossiers Conformité",
+             "texte": "Un dossier a été ouvert sans alerte Fraude préalable, par saisie manuelle."},
+            {"id": "v3", "quand": "2026-09-21T07:45:00+00:00", "jumeau": "fraude", "effet": 9, "source": "Traces Datadog",
+             "texte": "Chaque alerte de niveau 3 de Fraude déclenche un appel vers l'API de dossiers de Conformité (14 sur 14)."},
+        ],
+    },
+    "observations": [],
+    "emis": [],
+}
+
+
+def cas_verification_fraude():
+    return {
+        "id": "case-verification-fraude-conformite", "num": 50, "titre": "Vérifier la relation possible Fraude → Conformité", "type": "decouverte", "statut": "en_cours",
+        "sensibilite": "interne", "objectif": "Savoir si les alertes Fraude alimentent bien les dossiers Conformité, avant de confirmer la relation.",
+        "resume": "", "prochaine_etape": "", "questions": [], "hypotheses": [], "jumeaux": ["fraude", "conformite"], "situations": [],
+        "participants": ["architecte"], "responsable": "architecte", "espace": "mesh-global",
+        "conversation": [
+            {"role": "flore", "comportement": "expliquer", "quand": "2026-09-18T09:00:00+00:00",
+             "texte": "Je vérifie : Relation possible : Fraude → Conformité.\n\nMa confiance est de 64 %. J'observe si les preuves s'accumulent ou s'effritent avec les jumeaux concernés :\n— au-dessus de 75 %, je vous propose de la confirmer ;\n— sous 40 %, je vous propose de l'écarter.\n\nEntre les deux, je ne vous dérange pas : les indices s'ajoutent au fil de ce travail."},
+        ],
+        "options": [], "decisions": [], "livrables": [], "a_revoir": False, "visites": {"architecte": "2026-09-18T09:05:00+00:00"},
+        "veille": VERIFICATION_FRAUDE_CONFORMITE,
+        "origine": {"genre": "relation", "intentions": ["suivre"], "quand": "2026-09-18T09:00:00+00:00"},
+        "historique": [{"quand": "2026-09-18T09:00:00+00:00", "texte": "Mise sous vérification"}],
+        "cree_le": "2026-09-18T09:00:00+00:00", "maj_le": "2026-09-18T09:00:00+00:00",
+    }
+
+
 CASES = [
     {
         "id": "case-paiement-differe",
@@ -918,6 +958,7 @@ CASES = [
         "maj_le": "2026-09-18T19:00:00+00:00",
     },
 ]
+CASES.append(cas_verification_fraude())
 
 DEMO_ACTES = [
     {"acte": 1, "titre": "Découvrir", "route": "/atlas", "texte": "Méridian observe Comptes, Paiements, Fraude et Support en continu. Une relation non déclarée entre Paiements et Support apparaît progressivement dans l'Atlas — en validation A2A, confiance 82 %."},

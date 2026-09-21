@@ -23,12 +23,21 @@ def api():
     return requests.Session()
 
 
+MES_HISTOIRES = ["sit-sit-latence-paiements", "sit-sit-changement-settlement"]
+MES_INITIATIVES = ["init-info-contrat-comptes", "init-contrat-paiements"]
+
+
 @pytest.fixture(scope="module", autouse=True)
 def _nettoyage_travaux_de_test():
-    """Pas d'endpoint de suppression : les travaux ouverts par ces tests sont retirés de la base à la fin du module."""
+    """Pas d'endpoint de suppression : les travaux ouverts par ces tests sont retirés de la base (avant et après le module) ;
+    les propositions auxquelles ils répondent sont remises en attente. Seuls SES identifiants sont touchés : d'autres modules tournent en parallèle."""
+    from nettoyage import remettre_initiatives, supprimer_cases
+    filtre = {"$or": [{"origine.histoire_id": {"$in": MES_HISTOIRES}}, {"origine.initiative_id": {"$in": MES_INITIATIVES}}]}
+    supprimer_cases(filtre)
+    remettre_initiatives(MES_INITIATIVES)
     yield
-    from nettoyage import supprimer_cases
-    supprimer_cases({"$or": [{"origine.histoire_id": {"$exists": True}}, {"origine.initiative_id": {"$exists": True}}]})
+    supprimer_cases(filtre)
+    remettre_initiatives(MES_INITIATIVES)
 
 
 RAPPORT = {"texte": "Une dérive de latence.\n\nReste à comprendre :\n— la cause.", "preuves": [{"source": "Datadog", "detail": "4 traces"}],

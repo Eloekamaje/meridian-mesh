@@ -103,7 +103,7 @@ def test_ecarter_puis_retablir(api):
         assert api.post(f"{BASE}/actualites/histoire/{OPP}/ecarter", headers=H, json={"raison": "trop_tot"}).json()["raison"] == "Trop tôt"
         d = _aujourdhui(api)
         assert OPP not in [h["id"] for h in d["histoires"]]
-        assert {"id": OPP, "titre": "Opportunité : mutualiser l'envoi d'alertes entre Commandes et Facturation", "raison": "Trop tôt"} in d["ecartees"]
+        assert {"id": OPP, "titre": "Opportunité : mutualiser l'envoi d'alertes entre Commandes et Facturation", "raison": "Trop tôt", "portee": "moi", "par": "architecte"} in d["ecartees"]
         # l'écart est personnel
         autre = api.get(f"{BASE}/actualites", headers={"X-Persona": "support"}).json()
         assert OPP not in [e["id"] for e in autre["ecartees"]]

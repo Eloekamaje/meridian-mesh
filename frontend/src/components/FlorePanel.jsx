@@ -937,7 +937,7 @@ export default function FlorePanel() {
                 onClick={async () => {
                   try {
                     const { data } = await api.post("/delegations", { type, jumeaux: selection, duree_h: 24 });
-                    toast.success(`Délégation enregistrée — « ${data.tache} » visible dans Suivis`);
+                    toast.success(`Mandat confié — « ${data.tache} »`, { action: { label: "Ouvrir le travail", onClick: () => navigate(`/travaux/${data.travail_id}`) } });
                   } catch (e) {
                     toast.error(e.response?.data?.detail || "Délégation impossible");
                   }

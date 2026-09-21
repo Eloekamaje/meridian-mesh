@@ -187,6 +187,10 @@ export default function CarteInitiative({ init, mesh, onChange }) {
             <CheckCircle size={13} weight="fill" />
             {init.statut === "suivi" ? "Sous surveillance — visible dans Suivis" : `Réponse : ${init.reponse?.choix}`}
             {init.reponse?.motif && <span className="text-[#7C93A8]">— motif conservé : {init.reponse.motif}</span>}
+            {init.reponse?.travail_id && (
+              <button onClick={() => navigate(`/travaux/${init.reponse.travail_id}`, { state: { retour: { label: "Actualités", to: `/actualites?vue=${init.statut === "suivi" ? "suivis" : "a_traiter"}` } } })} data-testid={`init-ouvrir-travail-${init.id}`}
+                className="ml-1 font-medium text-[#60A5FA] hover:text-[#93C5FD]">Ouvrir le travail</button>
+            )}
           </p>
         ) : (
           <div className="flex flex-wrap gap-1.5">{actions()}</div>

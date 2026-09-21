@@ -4,6 +4,9 @@ from typing import Optional, Dict, Any
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
+import maturation
+import portee as portees
+from seed_data import ESPACES
 import veille as moteur_veille
 
 
@@ -11,6 +14,7 @@ class CaseCreate(BaseModel):
     titre: str
     type: str = "demande"
     objectif: str = ""
+    portee: str = "personnel"  # personnel | equipe | entreprise
     jumeaux: list = []
     situations: list = []
     participants: list = []
@@ -95,13 +99,19 @@ def normaliser_passation(p: "Passation") -> dict:
 
 
 class ObservationVeille(BaseModel):
-    cible: str  # id d'un attendu, d'un risque ou d'une inconnue de la note de passage
+    cible: str = ""  # id d'un attendu, d'un risque ou d'une inconnue de la note de passage (veille après décision)
+    effet: Optional[float] = None  # points de confiance en plus ou en moins (veille avant décision : phénomène qui mûrit)
+    texte: str = ""
     jumeau: str
     valeur: Optional[float] = None
     unite: str = ""
     conclusion: str = ""
     source: str = ""
     quand: Optional[str] = None
+
+
+class PorteeCase(BaseModel):
+    portee: str  # personnel | equipe | entreprise
 
 
 class DecisionAttendue(BaseModel):
@@ -139,7 +149,7 @@ def build_cases_router(deps):
 
     router = APIRouter()
 
-    async def charger_case(cid: str, espace: dict):
+    async def charger_case(cid: str, espace: dict, persona_id: str = ""):
         case = await db.cases.find_one({"id": cid}, NO_ID)
         if not case:
             raise HTTPException(404, "Case introuvable")
@@ -149,6 +159,8 @@ def build_cases_router(deps):
         aut = autorisations(espace, [j["id"] for j in tous])
         if case.get("jumeaux") and not any(j in aut for j in case["jumeaux"]):
             raise HTTPException(403, "Ce case est hors de votre périmètre")
+        if not portees.acces(case, persona_id, espace["id"]):
+            raise HTTPException(403, "Ce travail n'est pas partagé avec vous")
         return case
 
     async def jumeaux_autorises(espace):
@@ -168,7 +180,12 @@ def build_cases_router(deps):
         # Plusieurs lectures simultanées (page, panneau Flore, menu) arrivent ensemble : chaque événement est « réclamé » de façon
         # atomique — la mise à jour ne s'applique que si son identifiant n'est pas déjà émis, donc un seul lecteur l'écrit.
         for e in nouveaux:
-            msg = moteur_veille.message_flore_revue(e, tous) if e["type"] == "revue_due" else {"role": "evenement", **e}
+            if e["type"] == "revue_due":
+                msg = moteur_veille.message_flore_revue(e, tous)
+            elif e["type"] in maturation.TYPES_QUESTION:
+                msg = maturation.message_flore_maturation(e, v["maturation"], tous)
+            else:
+                msg = {"role": "evenement", **e}
             await db.cases.update_one(
                 {"id": case["id"], "veille.emis": {"$ne": e["id"]}},
                 {"$push": {"conversation": msg, "historique": {"quand": e["quand"], "texte": e["titre"]}}, "$addToSet": {"veille.emis": e["id"]},
@@ -189,7 +206,8 @@ def build_cases_router(deps):
         tous = await db.jumeaux.find({}, {"_id": 0, "id": 1}).to_list(200)
         aut = autorisations(espace, [j["id"] for j in tous])
         cases = await db.cases.find({}, NO_ID).to_list(200)
-        visibles = [c for c in cases if c.get("id") == "demo-polaris-work-g" or not c.get("jumeaux") or any(j in aut for j in c["jumeaux"])]
+        visibles = [c for c in cases if c.get("id") == "demo-polaris-work-g" or (
+            (not c.get("jumeaux") or any(j in aut for j in c["jumeaux"])) and portees.acces(c, x_persona, espace["id"]))]
         visibles = [await materialiser_veille(c) for c in visibles]
         visibles.sort(key=lambda c: c.get("maj_le", ""), reverse=True)
         for c in visibles:
@@ -198,8 +216,10 @@ def build_cases_router(deps):
                 evs = [m for m in c["conversation"] if moteur_veille.est_veille(m)]
                 c["mouvement"] = moteur_veille.mouvement(evs, (c.get("visites") or {}).get(x_persona))
                 c["en_veille"] = c["veille"].get("statut") == "en_veille"
+                c["veille_mode"] = c["veille"].get("mode") or "decision"
                 c["revue_le"] = (c["veille"].get("passation") or {}).get("revue_le")
                 c.pop("veille", None)
+            c["portee"] = portees.portee_de(c)
             c["nb_messages"] = len(c.get("conversation", []))
             c["nb_decisions"] = len(c.get("decisions", []))
             c["nb_options"] = len(c.get("options", []))
@@ -230,6 +250,8 @@ def build_cases_router(deps):
             cid = f"{base}-{n}"
             n += 1
         now = datetime.now(timezone.utc).isoformat()
+        if payload.portee not in portees.PORTEES:
+            raise HTTPException(400, "Portée inconnue")
         responsable = payload.responsable or x_persona
         dernier = await db.cases.find({}, {"_id": 0, "num": 1}).sort("num", -1).to_list(1)
         num = (dernier[0]["num"] if dernier and dernier[0].get("num") else 40) + 1
@@ -249,6 +271,7 @@ def build_cases_router(deps):
             "situations": payload.situations,
             "participants": list({*payload.participants, x_persona, responsable}),
             "responsable": responsable,
+            "portee": payload.portee,
             "espace": payload.espace or espace["id"],
             "conversation": payload.conversation,
             "options": [],
@@ -278,7 +301,7 @@ def build_cases_router(deps):
     @router.get("/cases/{cid}")
     async def obtenir_case(cid: str, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
         _, espace = resoudre_perimetre(x_persona, x_espace)
-        case = await charger_case(cid, espace)
+        case = await charger_case(cid, espace, x_persona)
         case = await materialiser_veille(case)
         case["conversation"] = visible_pour(case, await jumeaux_autorises(espace))
         # Évolution depuis la dernière visite de ce persona, puis la visite est enregistrée
@@ -293,6 +316,12 @@ def build_cases_router(deps):
         evolutions = [h for h in case.get("historique", []) if derniere and h.get("quand", "") > derniere]
         case["evolutions_recentes"] = evolutions
         case["derniere_visite"] = derniere
+        case["portee"] = portees.portee_de(case)
+        case["espace_label"] = next((e["label"] for e in ESPACES if e["id"] == case.get("espace")), None)
+        case["peut_partager"] = x_persona == case.get("responsable")
+        if (case.get("veille") or {}).get("mode") == "maturation":
+            m = case["veille"]["maturation"]
+            case["veille"]["confiance"] = round(maturation.confiance_a(m, datetime.now(timezone.utc)))
 
         # Résolution des jumeaux participants (identifiés par app_id dans case["jumeaux"])
         if cid == "demo-polaris-work-g":
@@ -373,7 +402,7 @@ def build_cases_router(deps):
     @router.patch("/cases/{cid}")
     async def maj_case(cid: str, payload: CasePatch, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
         _, espace = resoudre_perimetre(x_persona, x_espace)
-        case = await charger_case(cid, espace)
+        case = await charger_case(cid, espace, x_persona)
         champs = {k: v for k, v in payload.model_dump().items() if v is not None}
         if not champs:
             return case
@@ -403,7 +432,7 @@ def build_cases_router(deps):
     @router.post("/cases/{cid}/messages", status_code=201)
     async def message_case(cid: str, payload: MessageCase, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
         _, espace = resoudre_perimetre(x_persona, x_espace)
-        case = await charger_case(cid, espace)
+        case = await charger_case(cid, espace, x_persona)
         if not payload.texte.strip():
             raise HTTPException(400, "Message vide")
         now = datetime.now(timezone.utc).isoformat()
@@ -526,7 +555,7 @@ def build_cases_router(deps):
     @router.post("/cases/{cid}/decisions", status_code=201)
     async def decider_case(cid: str, payload: DecisionCase, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
         _, espace = resoudre_perimetre(x_persona, x_espace)
-        await charger_case(cid, espace)
+        await charger_case(cid, espace, x_persona)
         if not payload.texte.strip():
             raise HTTPException(400, "Décision vide")
         now = datetime.now(timezone.utc).isoformat()
@@ -552,7 +581,7 @@ def build_cases_router(deps):
         """Ce que Flore propose de consigner avec une décision : la décision elle-même, ce sur quoi elle repose, ce qui reste inconnu, une date
         de revue à 30 jours. Les cibles chiffrées et les seuils restent à la personne : Flore n'invente pas de mesure."""
         _, espace = resoudre_perimetre(x_persona, x_espace)
-        case = await charger_case(cid, espace)
+        case = await charger_case(cid, espace, x_persona)
         sit = await db.situations.find_one({"id": (case.get("situations") or [None])[0]}, NO_ID) if case.get("situations") else None
         decision = (case.get("decisions") or [{}])[-1].get("texte") or (sit or {}).get("decision") or ""
         pq = (sit or {}).get("decouverte_pourquoi") or []
@@ -563,12 +592,30 @@ def build_cases_router(deps):
         return {"decision": decision, "hypotheses": hyp, "gain": opp.get("gain"), "attendus": [], "risques": [], "inconnues": inconnues, "revue_le": revue.isoformat(),
                 "jumeaux": [j for j in (case.get("jumeaux") or [])]}
 
+    @router.post("/cases/{cid}/portee")
+    async def changer_portee(cid: str, payload: PorteeCase, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+        """Céder un travail à son équipe ou à l'entreprise (ou le reprendre pour soi). Seul le responsable le décide."""
+        _, espace = resoudre_perimetre(x_persona, x_espace)
+        case = await charger_case(cid, espace, x_persona)
+        if payload.portee not in portees.PORTEES:
+            raise HTTPException(400, "Portée inconnue")
+        if case.get("responsable") != x_persona:
+            raise HTTPException(403, "Seul le responsable du travail décide de qui le voit")
+        if portees.portee_de(case) == payload.portee:
+            return await obtenir_case(cid, x_persona, x_espace)
+        now = datetime.now(timezone.utc).isoformat()
+        libelle = {"personnel": "réservé au responsable", "equipe": f"partagé avec l'équipe ({next((e['label'] for e in ESPACES if e['id'] == case.get('espace')), 'espace')})",
+                   "entreprise": "partagé avec toute l'entreprise (dans les limites des droits de chacun)"}[payload.portee]
+        await db.cases.update_one({"id": cid}, {"$set": {"portee": payload.portee, "maj_le": now}, "$push": {"historique": {"quand": now, "texte": f"Travail {libelle}"}}})
+        await journaler(x_persona, espace["id"], "portée d'un travail", cid, payload.portee)
+        return await obtenir_case(cid, x_persona, x_espace)
+
     @router.post("/cases/{cid}/decision-attendue")
     async def decision_attendue(cid: str, payload: DecisionAttendue, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
         """Réponse à l'une des « décisions attendues » d'une situation, depuis le fil du travail : mêmes effets que l'ancienne page Investigation
         (statut de la situation, confirmation de la relation, décision enregistrée), écrits dans la conversation."""
         _, espace = resoudre_perimetre(x_persona, x_espace)
-        case = await charger_case(cid, espace)
+        case = await charger_case(cid, espace, x_persona)
         sid = (case.get("situations") or [None])[0]
         sit = await db.situations.find_one({"id": sid}, NO_ID) if sid else None
         if not sit or payload.texte not in (sit.get("decisions_attendues") or []):
@@ -637,12 +684,22 @@ def build_cases_router(deps):
     async def observer_case(cid: str, payload: ObservationVeille, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
         """Un jumeau rapporte une observation liée à la note de passation (attendu, risque ou inconnue)."""
         _, espace = resoudre_perimetre(x_persona, x_espace)
-        case = await charger_case(cid, espace)
+        case = await charger_case(cid, espace, x_persona)
         v = case.get("veille")
         if not v or v.get("statut") != "en_veille":
             raise HTTPException(409, "Ce travail n'est pas en veille")
         if payload.jumeau not in await jumeaux_autorises(espace):
             raise HTTPException(403, "Ce jumeau est hors de votre périmètre")
+        if v.get("mode") == "maturation":
+            if payload.effet is None or not -40 <= payload.effet <= 40:
+                raise HTTPException(400, "Une observation de vérification porte un effet sur la confiance, entre -40 et 40 points")
+            if not payload.texte.strip():
+                raise HTTPException(400, "Dire ce qui a été observé")
+            n = len(v["maturation"].get("observations", [])) + 1
+            obs = {"id": f"m{n}-{int(datetime.now(timezone.utc).timestamp() * 1000)}", "quand": payload.quand or datetime.now(timezone.utc).isoformat(), "jumeau": payload.jumeau,
+                   "source": payload.source, "effet": payload.effet, "texte": payload.texte.strip()}
+            await db.cases.update_one({"id": cid}, {"$push": {"veille.maturation.observations": obs}})
+            return obs
         p = v.get("passation") or {}
         cibles = {x["id"] for k in ("attendus", "risques", "inconnues") for x in p.get(k, [])}
         if payload.cible not in cibles:
@@ -651,14 +708,60 @@ def build_cases_router(deps):
         await db.cases.update_one({"id": cid}, {"$push": {"veille.observations": obs}})
         return obs
 
+    async def agir_sur_maturation(cid, case, v, action, espace, x_persona, x_espace):
+        """Réponse humaine à la question de Flore quand ce qu'elle vérifiait s'étaye ou s'effrite : confirmer, continuer d'observer, écarter."""
+        libelle = next((r["label"] for r in maturation.REPONSES_MATURATION if r["action"] == action), None)
+        if libelle is None:
+            raise HTTPException(400, "Action inconnue")
+        mat = v.get("maturation") or {}
+        now = datetime.now(timezone.utc).isoformat()
+        sujet = mat.get("sujet", "ce phénomène")
+        maj = {"maj_le": now}
+        push_extra = {}
+        if action == "confirmer":
+            if mat.get("relation_id"):
+                aut = await jumeaux_autorises(espace)
+                rel = await db.relations.find_one({"id": mat["relation_id"]}, NO_ID)
+                if not rel or not any(aut.get(j) == "complet" for j in (rel["source"], rel["cible"])):
+                    raise HTTPException(403, "Permission « Valider » requise sur l'un des jumeaux de la relation")
+                await db.relations.update_one({"id": rel["id"]}, {"$set": {"etat": "confirmee"}, "$addToSet": {"confirmee_par": "Validation humaine"}})
+                texte_flore = "Relation confirmée. Je l'ajoute à la mémoire du Mesh : ce n'est plus un phénomène possible. Je n'ai plus rien à vérifier ici."
+            else:
+                texte_flore = "Confirmé. Je le garde dans la mémoire du Mesh comme une vérité, avec les indices qui l'ont établi. Je n'ai plus rien à vérifier ici."
+            maj.update({"veille.statut": "terminee", "statut": "clos"})
+            push_extra["decisions"] = {"texte": f"Confirmer : {sujet}", "type": "arbitrage", "quand": now, "par": x_persona}
+            histo = "Vérification terminée — confirmé"
+        elif action == "ecarter":
+            texte_flore = "Écarté. Je garde la trace des indices contraires pour ne pas le reproposer sans élément nouveau. Je n'ai plus rien à vérifier ici."
+            maj.update({"veille.statut": "terminee", "statut": "clos"})
+            for sid in case.get("situations") or []:
+                await db.situations.update_one({"id": sid}, {"$set": {"statut": "classée"}})
+            push_extra["decisions"] = {"texte": f"Écarter : {sujet}", "type": "arbitrage", "quand": now, "par": x_persona}
+            histo = "Vérification terminée — écarté"
+        else:
+            texte_flore = "Je continue d'observer. Je ne reviendrai vers vous que si un indice contraire l'affaiblit sérieusement ; les autres indices s'ajoutent au fil de ce travail."
+            histo = "Vérification poursuivie"
+        moi = {"role": "utilisateur", "texte": libelle, "quand": now}
+        flore = {"role": "flore", "comportement": "expliquer", "texte": texte_flore, "quand": now}
+        # la question reçoit sa réponse (les réponses rapides disparaissent) ; MongoDB refuse de modifier et d'allonger la conversation dans un même ordre
+        await db.cases.update_one(
+            {"id": cid}, {"$set": {**maj, "conversation.$[q].reponse": action}, "$push": {"historique": {"quand": now, "texte": histo}}},
+            array_filters=[{"q.reponses": {"$exists": True}, "q.reponse": {"$exists": False}}],
+        )
+        await db.cases.update_one({"id": cid}, {"$push": {"conversation": {"$each": [moi, flore]}, **({"decisions": push_extra["decisions"]} if push_extra else {})}})
+        await journaler(x_persona, espace["id"], f"vérification : {action}", cid, sujet[:120])
+        return await obtenir_case(cid, x_persona, x_espace)
+
     @router.post("/cases/{cid}/veille/decision")
     async def agir_sur_decision(cid: str, payload: ActionVeille, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
         """Réponse humaine à une revue : rouvrir la décision, la maintenir (nouvelle date de revue), ou clore la veille."""
         _, espace = resoudre_perimetre(x_persona, x_espace)
-        case = await charger_case(cid, espace)
+        case = await charger_case(cid, espace, x_persona)
         v = case.get("veille")
         if not v or v.get("statut") != "en_veille":
             raise HTTPException(409, "Ce travail n'est pas en veille")
+        if v.get("mode") == "maturation":
+            return await agir_sur_maturation(cid, case, v, payload.action, espace, x_persona, x_espace)
         if payload.action not in ("rouvrir", "maintenir", "clore"):
             raise HTTPException(400, "Action inconnue")
         maintenant = datetime.now(timezone.utc)
@@ -686,7 +789,7 @@ def build_cases_router(deps):
         # la question de revue reçoit sa réponse (les réponses rapides disparaissent)
         await db.cases.update_one(
             {"id": cid}, {"$set": {**maj, "conversation.$[q].reponse": payload.action}, "$push": {"historique": {"quand": now, "texte": histo}}},
-            array_filters=[{"q.type": "revue_due", "q.reponse": {"$exists": False}}],
+            array_filters=[{"q.reponses": {"$exists": True}, "q.reponse": {"$exists": False}}],
         )
         await db.cases.update_one({"id": cid}, {"$push": {"conversation": {"$each": [moi, flore]}}})
         await journaler(x_persona, espace["id"], f"veille : décision {payload.action}", cid, "")
@@ -695,7 +798,7 @@ def build_cases_router(deps):
     @router.post("/cases/{cid}/options", status_code=201)
     async def ajouter_option_case(cid: str, payload: OptionCase, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
         _, espace = resoudre_perimetre(x_persona, x_espace)
-        case = await charger_case(cid, espace)
+        case = await charger_case(cid, espace, x_persona)
         if not payload.titre.strip():
             raise HTTPException(400, "Option sans titre")
         now = datetime.now(timezone.utc).isoformat()
@@ -716,7 +819,7 @@ def build_cases_router(deps):
     @router.post("/cases/{cid}/livrables", status_code=201)
     async def produire_synthese_case(cid: str, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
         _, espace = resoudre_perimetre(x_persona, x_espace)
-        case = await charger_case(cid, espace)
+        case = await charger_case(cid, espace, x_persona)
         now = datetime.now(timezone.utc).isoformat()
         questions = case.get("questions", [])
         resolues = [q for q in questions if q.get("resolue")]
@@ -747,7 +850,7 @@ def build_cases_router(deps):
     @router.post("/cases/{cid}/resume", status_code=201)
     async def actualiser_resume_case(cid: str, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
         _, espace = resoudre_perimetre(x_persona, x_espace)
-        case = await charger_case(cid, espace)
+        case = await charger_case(cid, espace, x_persona)
         questions = case.get("questions", [])
         resolues = [q for q in questions if q.get("resolue")]
         options = case.get("options", [])
@@ -776,7 +879,7 @@ def build_cases_router(deps):
     @router.post("/cases/{cid}/hypotheses", status_code=201)
     async def ajouter_hypothese_case(cid: str, payload: HypotheseCase, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
         _, espace = resoudre_perimetre(x_persona, x_espace)
-        case = await charger_case(cid, espace)
+        case = await charger_case(cid, espace, x_persona)
         if not payload.texte.strip():
             raise HTTPException(400, "Hypothèse vide")
         now = datetime.now(timezone.utc).isoformat()
@@ -790,7 +893,7 @@ def build_cases_router(deps):
     @router.post("/cases/{cid}/investigations", status_code=201)
     async def ouvrir_investigation_case(cid: str, payload: InvestigationCase, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
         _, espace = resoudre_perimetre(x_persona, x_espace)
-        case = await charger_case(cid, espace)
+        case = await charger_case(cid, espace, x_persona)
         if not payload.texte.strip():
             raise HTTPException(400, "Investigation sans objet")
         now = datetime.now(timezone.utc).isoformat()
