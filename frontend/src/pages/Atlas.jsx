@@ -1378,12 +1378,14 @@ export default function Atlas() {
     : null;
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col" data-skin={graphe ? "hub" : undefined}>
     {/* Layout façon Google Maps : colonnes de part et d'autre de la carte — le chrome ne bouge jamais.
         Jumeau à gauche (intelligence locale) ; domaine/relation/listes à droite ; Flore remplace la droite. */}
     <div className="relative flex min-h-0 flex-1">
-    <div ref={carteRef} onPointerMove={surSurvolCarte} onPointerLeave={() => { setRegionSurvolee(null); setRegionTooltip(null); setSecteurCurseur(null); setRelSurvolee(null); setRelTooltipPos(null); setSurvolJumeau(null); if (telemetrieRef.current) { telemetrieRef.current.textContent = "—"; telemetrieRef.current.style.opacity = "0.35"; } }} className="relative min-w-0 flex-1 overflow-hidden" data-testid="system-map" style={{ background: graphe ? "#071019" : "radial-gradient(ellipse at 50% 38%, #0D1B28 0%, #071019 60%, #04090F 100%)" }}>
+    <div ref={carteRef} onPointerMove={surSurvolCarte} onPointerLeave={() => { setRegionSurvolee(null); setRegionTooltip(null); setSecteurCurseur(null); setRelSurvolee(null); setRelTooltipPos(null); setSurvolJumeau(null); if (telemetrieRef.current) { telemetrieRef.current.textContent = "—"; telemetrieRef.current.style.opacity = "0.35"; } }} className="relative min-w-0 flex-1 overflow-hidden" data-testid="system-map" style={{ background: graphe ? "var(--hub-void)" : "radial-gradient(ellipse at 50% 38%, #0D1B28 0%, #071019 60%, #04090F 100%)" }}>
       {!graphe && <CielEtoile />}
+      {/* Rendu graphe : halos bleu (haut droit) et rouge (bas) du hero de hubstechs.com, très discrets */}
+      {graphe && <div aria-hidden="true" className="pointer-events-none absolute inset-0" style={{ background: "radial-gradient(ellipse 55% 45% at 90% 4%, rgba(0,51,160,0.26), transparent 70%), radial-gradient(ellipse 45% 35% at 55% 108%, rgba(227,0,15,0.07), transparent 70%)" }} />}
       {/* Démonstration : la surface annonce ce qu'elle prépare. À la première ouverture,
           surface sobre et pleine ; en mise à jour, la vue précédente reste visible dessous. */}
       {pilote?.preparation?.surface === "atlas" && <SurfacePreparation preparation={pilote.preparation} vierge={pilote.premiereScene} testid="atlas-preparation" />}
@@ -1576,7 +1578,7 @@ export default function Atlas() {
         nodesConnectable={false}
       >
         {/* Rendu graphe : fond uni + trame de points, comme le laboratoire ; rendu classique : ciel étoilé fixe */}
-        {graphe && <Background gap={26} size={1} color="rgba(148,163,184,0.13)" />}
+        {graphe && <Background gap={26} size={1} color="rgba(96,165,250,0.17)" bgColor="transparent" />}
         <Controls showInteractive={false} showFitView={false} position="bottom-right" style={{ marginBottom: estTablette ? 8 : 148, marginRight: 14 }}>
           <ControlButton onClick={pleinEcran} title="Plein écran" data-testid="plein-ecran-btn">
             <CornersOut size={14} />
@@ -1808,10 +1810,10 @@ export default function Atlas() {
         const top = Math.max(8, Math.min(p.y - boite.top - 44, boite.height - 190));
         const j = jumeauSurvole;
         return (
-          <div className="pointer-events-none absolute z-30 w-[236px] space-y-1.5 rounded-xl border border-white/10 bg-[#0C1724]/95 p-3 shadow-2xl backdrop-blur-xl" style={{ left, top }} data-testid="infobulle-jumeau">
+          <div className="glass hub-coins pointer-events-none absolute z-30 w-[236px] space-y-1.5 rounded-xl p-3" style={{ left, top }} data-testid="infobulle-jumeau">
             <div className="flex items-center gap-2">
               <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: couleurDomaine(j.domaine) }} />
-              <span className="min-w-0 flex-1 truncate text-sm font-semibold text-white" data-testid="infobulle-nom">{j.nom}</span>
+              <span className="font-display min-w-0 flex-1 truncate text-base text-white" data-testid="infobulle-nom">{j.nom}</span>
               <span className="font-code text-[10px] text-[#64748B]">{idNumerique(j.id)}</span>
             </div>
             <div className="font-code text-[10px] uppercase tracking-wider text-[#7C93A8]">
@@ -1839,7 +1841,7 @@ export default function Atlas() {
         mesh.jumeaux.filter((j) => !j.anonyme && !j.cadastre).forEach((j) => n.set(j.domaine, (n.get(j.domaine) || 0) + 1));
         const domaines = [...n.entries()].sort((a, b) => b[1] - a[1]);
         return (
-          <div className="glass absolute bottom-10 left-3 z-10 w-[200px] rounded-xl p-2.5" data-testid="atlas-legende">
+          <div className="glass hub-coins absolute bottom-10 left-3 z-10 w-[200px] rounded-xl p-2.5" data-testid="atlas-legende">
             <div className="mb-1 flex items-center justify-between font-code text-[9px] uppercase tracking-wider text-[#64748B]">
               <span>Domaines</span>
               {domainesMasques.size > 0 && <button onClick={() => setDomainesMasques(new Set())} className="normal-case text-[#25D0C8] hover:underline" data-testid="atlas-legende-tout">tout afficher</button>}
