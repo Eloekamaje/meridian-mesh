@@ -72,9 +72,9 @@ export default function CatalogueTiroir({ catalogue, sources, onAjoute, onImport
       {!choisi ? (
         <>
           <div className="flex flex-wrap gap-1.5 border-b border-[rgba(148,163,184,0.16)] px-4 py-2.5" data-testid="catalogue-categories">
-            <button onClick={() => setCategorie("")} className={`rounded-full border px-2.5 py-1 text-[10px] transition-colors ${!categorie ? "border-[#25D0C8]/60 text-[#25D0C8]" : "border-[rgba(148,163,184,0.16)] text-[#94A3B8] hover:text-[#F2F6F8]"}`}>Toutes</button>
+            <button onClick={() => setCategorie("")} className={`rounded-full border px-2.5 py-1 text-[10px] transition-colors ${!categorie ? "border-[#60A5FA]/60 text-[#60A5FA]" : "border-[rgba(148,163,184,0.16)] text-[#94A3B8] hover:text-[#F2F6F8]"}`}>Toutes</button>
             {categories.map((c) => (
-              <button key={c} onClick={() => setCategorie(categorie === c ? "" : c)} data-testid={`catalogue-cat-${c}`} className={`rounded-full border px-2.5 py-1 text-[10px] transition-colors ${categorie === c ? "border-[#25D0C8]/60 text-[#25D0C8]" : "border-[rgba(148,163,184,0.16)] text-[#94A3B8] hover:text-[#F2F6F8]"}`}>
+              <button key={c} onClick={() => setCategorie(categorie === c ? "" : c)} data-testid={`catalogue-cat-${c}`} className={`rounded-full border px-2.5 py-1 text-[10px] transition-colors ${categorie === c ? "border-[#60A5FA]/60 text-[#60A5FA]" : "border-[rgba(148,163,184,0.16)] text-[#94A3B8] hover:text-[#F2F6F8]"}`}>
                 {c}
               </button>
             ))}
@@ -88,10 +88,10 @@ export default function CatalogueTiroir({ catalogue, sources, onAjoute, onImport
                   onClick={() => setChoisi(c)}
                   onMouseEnter={() => setActif(i)}
                   data-testid={`connecteur-${c.id}`}
-                  className={`w-full rounded-lg p-3 text-left transition-colors ${i === actif ? "bg-[#25D0C8]/[0.08]" : "hover:bg-[rgba(148,163,184,0.07)]"}`}
+                  className={`w-full rounded-lg p-3 text-left transition-colors ${i === actif ? "bg-[#60A5FA]/[0.08]" : "hover:bg-[rgba(148,163,184,0.07)]"}`}
                 >
                   <div className="flex items-center gap-2.5">
-                    <Database size={15} className="shrink-0 text-[#25D0C8]" />
+                    <Database size={15} className="shrink-0 text-[#60A5FA]" />
                     <span className="font-display text-sm font-bold text-[#F2F6F8]">{c.nom}</span>
                     <span className="ml-auto font-code text-[9px] text-[#7C93A8]">{c.categorie}</span>
                   </div>
@@ -119,7 +119,7 @@ export default function CatalogueTiroir({ catalogue, sources, onAjoute, onImport
                     onAjoute(choisi, mode, {});
                   }}
                   data-testid={`mode-${mode}`}
-                  className="w-full rounded-lg border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-3.5 py-3 text-left transition-colors hover:border-[#25D0C8]/40"
+                  className="w-full rounded-lg border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-3.5 py-3 text-left transition-colors hover:border-[#60A5FA]/40"
                 >
                   <div className="text-xs font-semibold text-[#F2F6F8]">{titre}</div>
                   <div className="mt-0.5 text-[10px] text-[#7C93A8]">{desc}</div>
@@ -130,7 +130,7 @@ export default function CatalogueTiroir({ catalogue, sources, onAjoute, onImport
                       <option value="">Choisir un profil…</option>
                       {catalogue.profils.filter((p) => p.applicable.includes(choisi.id)).map((p) => <option key={p.id} value={p.id}>{p.nom}</option>)}
                     </select>
-                    <button disabled={!profil} onClick={() => onAjoute(choisi, "profil", { profilId: profil })} data-testid="mode-profil-ok" className="rounded-md bg-[#9B87F5] px-2.5 py-1.5 text-[11px] font-semibold text-[#071019] disabled:opacity-30">Appliquer</button>
+                    <button disabled={!profil} onClick={() => onAjoute(choisi, "profil", { profilId: profil })} data-testid="mode-profil-ok" className="rounded-md bg-[#60A5FA] px-2.5 py-1.5 text-[11px] font-semibold text-[#071019] disabled:opacity-30">Appliquer</button>
                   </div>
                 )}
                 {mode === "dupliquer" && (
@@ -139,7 +139,7 @@ export default function CatalogueTiroir({ catalogue, sources, onAjoute, onImport
                       <option value="">Instance à dupliquer…</option>
                       {instancesDe(choisi.id).map((s) => <option key={s.id} value={s.id}>{s.nom}</option>)}
                     </select>
-                    <button disabled={!dupliquerDe} onClick={() => onAjoute(choisi, "dupliquer", { sourceId: dupliquerDe })} data-testid="mode-dupliquer-ok" className="rounded-md bg-[#9B87F5] px-2.5 py-1.5 text-[11px] font-semibold text-[#071019] disabled:opacity-30">Dupliquer</button>
+                    <button disabled={!dupliquerDe} onClick={() => onAjoute(choisi, "dupliquer", { sourceId: dupliquerDe })} data-testid="mode-dupliquer-ok" className="rounded-md bg-[#60A5FA] px-2.5 py-1.5 text-[11px] font-semibold text-[#071019] disabled:opacity-30">Dupliquer</button>
                   </div>
                 )}
               </div>

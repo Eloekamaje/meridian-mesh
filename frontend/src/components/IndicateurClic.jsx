@@ -11,15 +11,15 @@ export default function IndicateurClic({ texte = "Commencez ici", testid = "indi
       {/* La main index pointe vers la gauche, sur le bouton, et tapote */}
       <motion.span
         aria-hidden="true"
-        className="text-[#C4B5FD] drop-shadow-[0_2px_8px_rgba(155,135,245,0.6)]"
+        className="text-[#BFDBFE] drop-shadow-[0_2px_8px_rgba(96,165,250,0.6)]"
         style={{ rotate: -90 }}
         animate={reduit ? undefined : { x: [0, -9, 0] }}
         transition={reduit ? undefined : { duration: 1.1, repeat: Infinity, ease: "easeInOut" }}
       >
         <HandPointing size={34} weight="fill" />
       </motion.span>
-      <span className="whitespace-nowrap rounded-lg border border-[#9B87F5]/40 bg-[#0F1D28] px-2.5 py-1.5 shadow-lg">
-        <span className="block font-code text-[9px] uppercase tracking-[0.2em] text-[#9B87F5]">{texte}</span>
+      <span className="whitespace-nowrap rounded-lg border border-[#60A5FA]/40 bg-[#0F1D28] px-2.5 py-1.5 shadow-lg">
+        <span className="block font-code text-[9px] uppercase tracking-[0.2em] text-[#60A5FA]">{texte}</span>
         <span className="block text-[11px] leading-snug text-[#D8E2EA]">Cliquez sur « Nouveau travail »</span>
       </span>
     </div>

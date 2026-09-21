@@ -19,7 +19,7 @@ const ZOOM_ROBOTS = 0.45;
 const ZOOM_POINTS = 0.1;
 const HAUTEUR_ROBOT_UNITE = 65;
 const ORANGE = "#F59E0B";
-const VIOLET = "#A78BFA";
+const VIOLET = "#60A5FA";
 const compact = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)} M` : n >= 1e3 ? `${(n / 1e3).toFixed(n >= 1e4 ? 0 : 1)} k` : String(n)).replace(".", ",");
 const numero = (i) => String(1000 + ((i * 7919) % 9000));
 
@@ -159,7 +159,7 @@ export default function LaboSemantique() {
         else { ctx.beginPath(); ctx.arc(px, py, h * 0.25, 0, 6.2832); ctx.fillStyle = COULEURS_DOMAINES[g.dom[i]]; ctx.fill(); }
         if (avecSignaux && g.ecartN[i]) { ctx.beginPath(); ctx.ellipse(px, py + h * 0.02, w * 0.52, h * 0.5, 0, 0, 6.2832); ctx.setLineDash([5, 4]); ctx.strokeStyle = ORANGE; ctx.lineWidth = 2; ctx.stroke(); ctx.setLineDash([]); }
         if (avecSignaux && g.alerteN[i]) { ctx.beginPath(); ctx.arc(px + w * 0.36, py - h * 0.4, Math.max(3, h * 0.07), 0, 6.2832); ctx.fillStyle = VIOLET; ctx.fill(); }
-        if (i === survolRef.current || i === selRef.current) { ctx.beginPath(); ctx.arc(px, py, h * 0.52, 0, 6.2832); ctx.strokeStyle = i === selRef.current ? "#C4B5FD" : "rgba(255,255,255,0.7)"; ctx.lineWidth = 2; ctx.stroke(); }
+        if (i === survolRef.current || i === selRef.current) { ctx.beginPath(); ctx.arc(px, py, h * 0.52, 0, 6.2832); ctx.strokeStyle = i === selRef.current ? "#BFDBFE" : "rgba(255,255,255,0.7)"; ctx.lineWidth = 2; ctx.stroke(); }
       });
       if (z >= 0.9) {
         ctx.font = "10px ui-monospace, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "top"; ctx.fillStyle = "rgba(220,230,238,0.9)";
@@ -453,7 +453,7 @@ export default function LaboSemantique() {
 
       <div className="absolute left-4 top-4 z-10 w-[340px] space-y-2.5 rounded-xl border border-white/10 bg-[#0C1724] p-3.5 shadow-2xl" data-testid="semantique-hud">
         <div className="flex items-center gap-2">
-          <Flask size={16} className="text-[#9B87F5]" />
+          <Flask size={16} className="text-[#60A5FA]" />
           <div className="leading-tight">
             <div className="text-xs font-bold text-white">Laboratoire — agrégation sémantique</div>
             <div className="text-[10px] text-[#7C93A8]">Domaine → groupe → communauté → jumeau</div>
@@ -461,7 +461,7 @@ export default function LaboSemantique() {
         </div>
         <div className="inline-flex flex-wrap rounded-lg border border-white/10 bg-white/[0.03] p-0.5" role="group">
           {TAILLES.map(([v, l]) => (
-            <button key={v} type="button" onClick={() => charger(v)} aria-pressed={n === v} data-testid={`semantique-n-${v}`} className={`min-h-[30px] rounded-md px-2.5 text-[11px] font-medium transition-colors ${n === v ? "bg-[#9B87F5]/25 text-white" : "text-[#7C93A8] hover:text-white"}`}>{l}</button>
+            <button key={v} type="button" onClick={() => charger(v)} aria-pressed={n === v} data-testid={`semantique-n-${v}`} className={`min-h-[30px] rounded-md px-2.5 text-[11px] font-medium transition-colors ${n === v ? "bg-[#60A5FA]/25 text-white" : "text-[#7C93A8] hover:text-white"}`}>{l}</button>
           ))}
         </div>
         {etat && <p className="text-[11px] text-[#F2B84B]" data-testid="semantique-etat">{etat}</p>}
@@ -472,14 +472,14 @@ export default function LaboSemantique() {
             <div>Génération {mesures.gen} ms · index {mesures.index} ms · ≈ {mesures.mo} Mo</div>
             <div className="text-[#DCE6EE]">Vue : {modeTexte}</div>
             <div className="text-[#DCE6EE]">À l'écran : {stats.mode === "robots" ? `${stats.noeuds} jumeaux` : stats.mode === "points" ? `${stats.bulles} communautés · ${stats.points} points` : `${stats.bulles} grappes`} · {stats.liens} liens</div>
-            <div className="text-[#25D0C8]">Dessin d'une image : {stats.ms ? stats.ms.toFixed(2) : "—"} ms</div>
+            <div className="text-[#60A5FA]">Dessin d'une image : {stats.ms ? stats.ms.toFixed(2) : "—"} ms</div>
           </div>
         )}
         <div className="space-y-1 border-t border-white/[0.07] pt-2">
           {[["Anneaux de signaux sur les grappes", signaux, setSignaux, "semantique-signaux"], ["Ouverture en fondu (grappe → enfants)", fondu, setFondu, "semantique-fondu"]].map(([l, v, set, id]) => (
             <button key={id} type="button" role="switch" aria-checked={v} onClick={() => set(!v)} data-testid={id} className="flex min-h-[28px] w-full items-center justify-between gap-3 text-left text-[11px] text-[#CBD5E1] hover:text-white">
               <span>{l}</span>
-              <span className={`relative h-4 w-7 shrink-0 rounded-full transition-colors ${v ? "bg-[#9B87F5]" : "bg-white/15"}`}><span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all ${v ? "left-3.5" : "left-0.5"}`} /></span>
+              <span className={`relative h-4 w-7 shrink-0 rounded-full transition-colors ${v ? "bg-[#60A5FA]" : "bg-white/15"}`}><span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all ${v ? "left-3.5" : "left-0.5"}`} /></span>
             </button>
           ))}
         </div>
@@ -489,7 +489,7 @@ export default function LaboSemantique() {
         </form>
         <div className="flex gap-1.5">
           <button type="button" onClick={() => toutVoir()} data-testid="semantique-tout-voir" className="min-h-[30px] flex-1 rounded-lg border border-white/10 text-[11px] text-[#CBD5E1] hover:text-white">Tout voir</button>
-          <button type="button" onClick={parcours} data-testid="semantique-parcours" className="flex min-h-[30px] flex-1 items-center justify-center gap-1.5 rounded-lg border border-[#9B87F5]/40 bg-[#9B87F5]/15 text-[11px] font-semibold text-[#C4B5FD] hover:text-white"><Play size={11} weight="fill" /> Parcours de test</button>
+          <button type="button" onClick={parcours} data-testid="semantique-parcours" className="flex min-h-[30px] flex-1 items-center justify-center gap-1.5 rounded-lg border border-[#60A5FA]/40 bg-[#60A5FA]/15 text-[11px] font-semibold text-[#BFDBFE] hover:text-white"><Play size={11} weight="fill" /> Parcours de test</button>
         </div>
         {test && (
           <div className="rounded-lg bg-white/[0.03] p-2 font-code text-[10px] leading-relaxed text-[#94A3B8]" data-testid="semantique-test">
@@ -499,7 +499,7 @@ export default function LaboSemantique() {
         )}
         <div className="space-y-1 border-t border-white/[0.07] pt-2 text-[10px] text-[#94A3B8]" data-testid="semantique-legende">
           <div className="flex items-center gap-2"><span className="inline-block h-2.5 w-5 rounded-full border-2 border-t-[#F59E0B] border-r-transparent border-b-transparent border-l-transparent" /> Arc orange : excès de jumeaux en écart (déclaré ≠ calculé)</div>
-          <div className="flex items-center gap-2"><span className="inline-block h-2.5 w-5 rounded-full border-2 border-b-[#A78BFA] border-r-transparent border-t-transparent border-l-transparent" /> Arc violet : situations actives dans la grappe</div>
+          <div className="flex items-center gap-2"><span className="inline-block h-2.5 w-5 rounded-full border-2 border-b-[#60A5FA] border-r-transparent border-t-transparent border-l-transparent" /> Arc violet : situations actives dans la grappe</div>
           <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 pt-1">
             {NOMS_DOMAINES.map((d, i) => (<div key={d} className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: COULEURS_DOMAINES[i] }} />{d}</div>))}
           </div>
@@ -522,7 +522,7 @@ export default function LaboSemantique() {
               <div className="text-sm font-semibold text-white">{NOMS_DOMAINES[idx.current.g.dom[survol.i]]} {rangDansDomaine(idx.current.g, survol.i)}</div>
               <div className="font-code text-[10px] text-[#7C93A8]">Degré {idx.current.g.deg[survol.i]} · couverture {idx.current.g.cov[survol.i]} %</div>
               {idx.current.g.ecartN[survol.i] === 1 && <div className="font-code text-[10px] text-[#F59E0B]">⚠ écart déclaré ↔ calculé</div>}
-              {idx.current.g.alerteN[survol.i] === 1 && <div className="font-code text-[10px] text-[#A78BFA]">● situation active</div>}
+              {idx.current.g.alerteN[survol.i] === 1 && <div className="font-code text-[10px] text-[#60A5FA]">● situation active</div>}
             </>
           ) : B ? (
             <>
@@ -530,7 +530,7 @@ export default function LaboSemantique() {
               <div className="text-sm font-semibold text-white">{nomBulle(idx.current.g, survol.niv, survol.id)}</div>
               <div className="font-code text-[11px] text-[#CBD5E1]">{B.taille[survol.id].toLocaleString("fr")} jumeaux</div>
               <div className="font-code text-[10px] text-[#F59E0B]">{B.ecarts[survol.id].toLocaleString("fr")} en écart ({(100 * B.ecarts[survol.id] / B.taille[survol.id]).toFixed(1)} %)</div>
-              <div className="font-code text-[10px] text-[#A78BFA]">{B.alertes[survol.id].toLocaleString("fr")} en situation active</div>
+              <div className="font-code text-[10px] text-[#60A5FA]">{B.alertes[survol.id].toLocaleString("fr")} en situation active</div>
               <div className="font-code text-[9px] text-[#526578]">Cliquer pour ouvrir cette grappe</div>
             </>
           ) : null}
@@ -547,7 +547,7 @@ export default function LaboSemantique() {
           <div className="font-code text-[10px] text-[#94A3B8]">{fiche.com}</div>
           <div className="font-code text-[10px] text-[#94A3B8]">Degré {fiche.deg} · couverture {fiche.cov} %</div>
           {fiche.ecart === 1 && <div className="font-code text-[10px] text-[#F59E0B]">⚠ écart déclaré ↔ calculé</div>}
-          {fiche.alerte === 1 && <div className="font-code text-[10px] text-[#A78BFA]">● situation active</div>}
+          {fiche.alerte === 1 && <div className="font-code text-[10px] text-[#60A5FA]">● situation active</div>}
           <div className="pt-1 text-[10px] text-[#64748B]">Voisins</div>
           <div className="space-y-0.5">
             {fiche.voisins.map((j) => (

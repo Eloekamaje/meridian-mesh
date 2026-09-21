@@ -10,7 +10,7 @@ const RISQUES = { faible: ["faible", "#34D399"], moyen: ["moyen", "#F2B84B"], el
 // Les extraits du fil s'affichent sans les marqueurs de mise en forme (**gras**, `code`)
 const sansMarkdown = (t) => String(t || "").replace(/\*\*/g, "").replace(/`/g, "");
 
-const STATUTS_OPTION = { a_evaluer: ["À évaluer", "#F2B84B"], recommandee: ["Recommandée par Flore", "#25D0C8"], retenue: ["Retenue", "#34D399"], ecartee: ["Écartée", "#7C93A8"] };
+const STATUTS_OPTION = { a_evaluer: ["À évaluer", "#F2B84B"], recommandee: ["Recommandée par Flore", "#60A5FA"], retenue: ["Retenue", "#34D399"], ecartee: ["Écartée", "#7C93A8"] };
 
 const STATUTS_HYP = {
   a_valider: ["À valider", "#F2B84B"],
@@ -19,13 +19,13 @@ const STATUTS_HYP = {
 };
 const CYCLE = ["a_valider", "confirmee", "rejetee"];
 
-const COULEURS_CAT = { discussions: "#9B87F5", flore: "#25D0C8", decouvertes: "#9B87F5", decisions: "#F2B84B", mesh: "#7C93A8" };
+const COULEURS_CAT = { discussions: "#60A5FA", flore: "#60A5FA", decouvertes: "#60A5FA", decisions: "#F2B84B", mesh: "#7C93A8" };
 
 function Section({ numero, titre, children, testid }) {
   return (
     <section className="border-t border-[rgba(148,163,184,0.16)] pt-5 first:border-t-0 first:pt-0" data-testid={testid}>
       <h2 className="font-code text-[10px] uppercase tracking-[0.25em] text-[#7C93A8]">
-        <span className="mr-2 text-[#9B87F5]">{numero}</span>{titre}
+        <span className="mr-2 text-[#60A5FA]">{numero}</span>{titre}
       </h2>
       <div className="mt-2.5">{children}</div>
     </section>
@@ -185,7 +185,7 @@ export default function OngletApercu({ cas, maj, setCas, situations }) {
       <div className="space-y-7">
         {/* En-tête du rapport */}
         <header>
-          <div className="font-code text-[10px] uppercase tracking-[0.3em] text-[#9B87F5]">Rapport du travail</div>
+          <div className="font-code text-[10px] uppercase tracking-[0.3em] text-[#60A5FA]">Rapport du travail</div>
           <p className="mt-1 font-code text-[10px] text-[#7C93A8]">
             Dernière activité {rel(cas.maj_le)} · {(cas.participants || []).length} participant{(cas.participants || []).length > 1 ? "s" : ""} · {(cas.conversation || []).length} échanges
           </p>
@@ -198,7 +198,7 @@ export default function OngletApercu({ cas, maj, setCas, situations }) {
               <div className="flex gap-2"><dt className="w-32 shrink-0 font-code text-[10px] uppercase tracking-wider text-[#7C93A8]">Vous étiez ici</dt><dd data-testid="reprise-arret">{dernierMessage ? `« ${(dernierMessage.texte || "").slice(0, 140)}${(dernierMessage.texte || "").length > 140 ? "…" : ""} »` : "—"}</dd></div>
               <div className="flex gap-2"><dt className="w-32 shrink-0 font-code text-[10px] uppercase tracking-wider text-[#7C93A8]">Depuis</dt><dd data-testid="reprise-changements">{evolutions.length > 0 ? `${evolutions.length} évolution${evolutions.length > 1 ? "s" : ""} : ${evolutions[0].texte}` : "Rien de nouveau depuis votre dernière visite."}</dd></div>
               <div className="flex gap-2"><dt className="w-32 shrink-0 font-code text-[10px] uppercase tracking-wider text-[#7C93A8]">Reste incertain</dt><dd data-testid="reprise-incertain">{ouvertes.length > 0 || hypAValider.length > 0 ? `${ouvertes.length} question${ouvertes.length > 1 ? "s" : ""} · ${hypAValider.length} hypothèse${hypAValider.length > 1 ? "s" : ""} à valider` : "Aucune incertitude ouverte."}</dd></div>
-              <div className="flex gap-2"><dt className="w-32 shrink-0 font-code text-[10px] uppercase tracking-wider text-[#7C93A8]">Prochaine étape</dt><dd className="font-semibold text-[#C4B5FD]" data-testid="reprise-action">{cas.prochaine_etape || (aTrancher.length > 0 ? `Trancher « ${aTrancher[0].titre} »` : "Continuer la discussion avec Flore.")}</dd></div>
+              <div className="flex gap-2"><dt className="w-32 shrink-0 font-code text-[10px] uppercase tracking-wider text-[#7C93A8]">Prochaine étape</dt><dd className="font-semibold text-[#BFDBFE]" data-testid="reprise-action">{cas.prochaine_etape || (aTrancher.length > 0 ? `Trancher « ${aTrancher[0].titre} »` : "Continuer la discussion avec Flore.")}</dd></div>
             </dl>
           </Section>
         )}
@@ -225,7 +225,7 @@ export default function OngletApercu({ cas, maj, setCas, situations }) {
             data-testid="case-resume"
             className="w-full resize-none rounded-md border border-transparent bg-transparent text-sm leading-relaxed text-[#F2F6F8] focus:border-[rgba(148,163,184,0.16)] focus:bg-[rgba(148,163,184,0.07)] focus:px-2 focus:outline-none"
           />
-          <button onClick={actualiserResume} disabled={actualisation} data-testid="actualiser-resume-btn" className="mt-1 flex items-center gap-1.5 rounded-md border border-[#25D0C8]/30 bg-[#25D0C8]/[0.06] px-2.5 py-1.5 text-[11px] font-semibold text-[#25D0C8] transition-colors hover:bg-[#25D0C8]/15 disabled:opacity-50">
+          <button onClick={actualiserResume} disabled={actualisation} data-testid="actualiser-resume-btn" className="mt-1 flex items-center gap-1.5 rounded-md border border-[#60A5FA]/30 bg-[#60A5FA]/[0.06] px-2.5 py-1.5 text-[11px] font-semibold text-[#60A5FA] transition-colors hover:bg-[#60A5FA]/15 disabled:opacity-50">
             <Sparkle size={12} /> {actualisation ? "Flore synthétise…" : "Actualiser par Flore"}
           </button>
         </Section>
@@ -257,7 +257,7 @@ export default function OngletApercu({ cas, maj, setCas, situations }) {
                   <div key={o.id} className={`rounded-lg border p-3 ${o.statut === "ecartee" ? "border-[rgba(148,163,184,0.16)] opacity-50" : "border-[rgba(148,163,184,0.16)] bg-[#0F1D28]"}`} data-testid={`option-${o.id}`}>
                     <div className="flex items-center justify-between gap-2">
                       <span className="flex items-center gap-2 text-xs font-semibold text-[#F2F6F8]">
-                        {o.statut === "a_evaluer" && <Flag size={12} className="shrink-0 text-[#9B87F5]" data-testid={`apercu-option-${o.id}`} />}
+                        {o.statut === "a_evaluer" && <Flag size={12} className="shrink-0 text-[#60A5FA]" data-testid={`apercu-option-${o.id}`} />}
                         {o.titre}
                       </span>
                       <div className="flex shrink-0 items-center gap-1.5">
@@ -287,7 +287,7 @@ export default function OngletApercu({ cas, maj, setCas, situations }) {
               {options.length === 0 && !formOption && <p className="text-sm text-[#7C93A8]">Aucune option pour l'instant.</p>}
             </div>
             {formOption && (
-              <div className="mt-2.5 space-y-2 rounded-lg border border-[#9B87F5]/25 bg-[#9B87F5]/[0.03] p-3" data-testid="option-form">
+              <div className="mt-2.5 space-y-2 rounded-lg border border-[#60A5FA]/25 bg-[#60A5FA]/[0.03] p-3" data-testid="option-form">
                 <input value={formOption.titre || ""} onChange={(e) => setFormOption({ ...formOption, titre: e.target.value })} placeholder="Titre de l'option…" data-testid="option-titre-input" className="w-full rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2.5 py-1.5 text-xs text-[#F2F6F8] placeholder:text-[#7C93A8] focus:outline-none" />
                 <input value={formOption.description || ""} onChange={(e) => setFormOption({ ...formOption, description: e.target.value })} placeholder="Description…" data-testid="option-description-input" className="w-full rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2.5 py-1.5 text-xs text-[#F2F6F8] placeholder:text-[#7C93A8] focus:outline-none" />
                 <input value={formOption.impacts || ""} onChange={(e) => setFormOption({ ...formOption, impacts: e.target.value })} placeholder="Impacts (séparés par des virgules)…" data-testid="option-impacts-input" className="w-full rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2.5 py-1.5 text-xs text-[#F2F6F8] placeholder:text-[#7C93A8] focus:outline-none" />
@@ -295,7 +295,7 @@ export default function OngletApercu({ cas, maj, setCas, situations }) {
                   <select value={formOption.risque} onChange={(e) => setFormOption({ ...formOption, risque: e.target.value })} data-testid="option-risque-select" className="rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2 py-1.5 text-xs text-[#D8E2EA] focus:outline-none">
                     {Object.entries(RISQUES).map(([k, [l]]) => <option key={k} value={k} label={`Risque ${l}`} />)}
                   </select>
-                  <button onClick={ajouterOption} data-testid="option-add-submit" className="rounded-md bg-[#9B87F5] px-3 py-1.5 text-[11px] font-semibold text-[#071019] hover:bg-[#B4A5F7]">Ajouter</button>
+                  <button onClick={ajouterOption} data-testid="option-add-submit" className="rounded-md bg-[#60A5FA] px-3 py-1.5 text-[11px] font-semibold text-[#071019] hover:bg-[#93C5FD]">Ajouter</button>
                 </div>
               </div>
             )}
@@ -386,7 +386,7 @@ export default function OngletApercu({ cas, maj, setCas, situations }) {
               const s = (situations || []).find((x) => x.id === sid);
               return (
                 <li key={sid}>
-                  <Link to={`/investigations/${sid}`} data-testid={`case-situation-${sid}`} className="text-sm text-[#9B87F5] hover:underline">
+                  <Link to={`/investigations/${sid}`} data-testid={`case-situation-${sid}`} className="text-sm text-[#60A5FA] hover:underline">
                     → {s?.titre || sid}
                   </Link>
                 </li>
@@ -399,7 +399,7 @@ export default function OngletApercu({ cas, maj, setCas, situations }) {
           ) : (
             <form onSubmit={(e) => { e.preventDefault(); ouvrirInvestigation(); }} className="mt-2.5 flex gap-2" data-testid="investigation-form">
               <input value={nouvelleInv} onChange={(e) => setNouvelleInv(e.target.value)} placeholder="Objet de l'investigation…" data-testid="investigation-add-input" className="h-8 flex-1 rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2 text-xs text-[#F2F6F8] placeholder:text-[#7C93A8] focus:outline-none" />
-              <button type="submit" data-testid="investigation-add-submit" className="flex h-8 items-center gap-1 rounded-md border border-[#9B87F5]/40 px-2.5 text-[11px] text-[#9B87F5] hover:bg-[#9B87F5]/10"><Flask size={12} /> Ouvrir</button>
+              <button type="submit" data-testid="investigation-add-submit" className="flex h-8 items-center gap-1 rounded-md border border-[#60A5FA]/40 px-2.5 text-[11px] text-[#60A5FA] hover:bg-[#60A5FA]/10"><Flask size={12} /> Ouvrir</button>
             </form>
           )}
         </Section>
@@ -407,7 +407,7 @@ export default function OngletApercu({ cas, maj, setCas, situations }) {
         <Section numero="08" titre="Analyses & livrables" testid="case-livrables">
           <div className="space-y-3">
             {(cas.livrables || []).map((l) => (
-              <article key={l.id} className="border-l-2 border-[#9B87F5]/30 pl-4" data-testid={`livrable-${l.id}`}>
+              <article key={l.id} className="border-l-2 border-[#60A5FA]/30 pl-4" data-testid={`livrable-${l.id}`}>
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-semibold text-[#F2F6F8]">{l.titre}</span>
                   <span className="font-code text-[9px] text-[#7C93A8]">{new Date(l.cree_le).toLocaleString("fr-FR")}</span>
@@ -417,7 +417,7 @@ export default function OngletApercu({ cas, maj, setCas, situations }) {
             ))}
             {(cas.livrables || []).length === 0 && <p className="text-sm text-[#7C93A8]">Aucune analyse consignée.</p>}
           </div>
-          <button onClick={produireSynthese} disabled={producSynthese} data-testid="produire-synthese-btn" className="mt-2.5 flex items-center gap-1.5 rounded-md border border-[#9B87F5]/40 bg-[#9B87F5]/[0.07] px-2.5 py-1.5 text-[11px] font-semibold text-[#9B87F5] transition-colors hover:bg-[#9B87F5]/15 disabled:opacity-50">
+          <button onClick={produireSynthese} disabled={producSynthese} data-testid="produire-synthese-btn" className="mt-2.5 flex items-center gap-1.5 rounded-md border border-[#60A5FA]/40 bg-[#60A5FA]/[0.07] px-2.5 py-1.5 text-[11px] font-semibold text-[#60A5FA] transition-colors hover:bg-[#60A5FA]/15 disabled:opacity-50">
             <FileText size={12} /> {producSynthese ? "Production…" : "Produire une synthèse"}
           </button>
         </Section>
@@ -430,7 +430,7 @@ export default function OngletApercu({ cas, maj, setCas, situations }) {
                 onClick={() => setFiltre(id)}
                 data-testid={`filtre-activite-${id}`}
                 className={`rounded-full border px-3 py-1 font-code text-[10px] transition-colors ${
-                  filtre === id ? "border-[#9B87F5]/60 bg-[#9B87F5]/10 text-[#C4B5FD]" : "border-[rgba(148,163,184,0.16)] text-[#7C93A8] hover:text-[#F2F6F8]"
+                  filtre === id ? "border-[#60A5FA]/60 bg-[#60A5FA]/10 text-[#BFDBFE]" : "border-[rgba(148,163,184,0.16)] text-[#7C93A8] hover:text-[#F2F6F8]"
                 }`}
               >
                 {label}
@@ -453,7 +453,7 @@ export default function OngletApercu({ cas, maj, setCas, situations }) {
               const m = e.message;
               if (m.role === "utilisateur") {
                 return (
-                  <div key={e.cle} className="ml-10 rounded-xl rounded-br-sm bg-[#9B87F5]/15 px-3.5 py-2.5" data-testid={`activite-${e.cle}`}>
+                  <div key={e.cle} className="ml-10 rounded-xl rounded-br-sm bg-[#60A5FA]/15 px-3.5 py-2.5" data-testid={`activite-${e.cle}`}>
                     <p className="text-sm text-[#F2F6F8]">{sansMarkdown(m.texte)}</p>
                     <p className="mt-1 text-right font-code text-[9px] text-[#7C93A8]">{m.quand ? new Date(m.quand).toLocaleString("fr-FR") : ""}</p>
                   </div>
@@ -462,13 +462,13 @@ export default function OngletApercu({ cas, maj, setCas, situations }) {
               if (ignores[e.cle]) return null;
               return (
                 <div key={e.cle} className="mr-4 rounded-xl rounded-bl-sm border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-3.5 py-3" data-testid={`activite-${e.cle}`}>
-                  <div className="mb-1 flex items-center gap-1.5 font-code text-[9px] uppercase tracking-[0.2em] text-[#25D0C8]/70">
+                  <div className="mb-1 flex items-center gap-1.5 font-code text-[9px] uppercase tracking-[0.2em] text-[#60A5FA]/70">
                     <Sparkle size={10} weight="fill" /> Flore
                     {m.comportement && <span className="text-[#7C93A8]">· {m.comportement}</span>}
                   </div>
                   <p className="text-sm leading-relaxed text-[#D8E2EA]">{sansMarkdown(m.texte)}</p>
                   {preuvesOuvertes === e.cle && (m.preuves || []).length > 0 && (
-                    <ul className="mt-2 space-y-1 border-l-2 border-[#25D0C8]/30 pl-2.5" data-testid={`preuves-${e.cle}`}>
+                    <ul className="mt-2 space-y-1 border-l-2 border-[#60A5FA]/30 pl-2.5" data-testid={`preuves-${e.cle}`}>
                       {m.preuves.map((p, pi) => (
                         <li key={pi} className="flex items-baseline gap-2 text-xs text-[#94A3B8]">
                           <FileText size={11} className="shrink-0 translate-y-0.5 text-[#7C93A8]" />
@@ -482,7 +482,7 @@ export default function OngletApercu({ cas, maj, setCas, situations }) {
                     <button onClick={() => promouvoirQuestion(m)} data-testid={`promouvoir-question-${e.cle}`} className="flex items-center gap-1 rounded-md border border-[#F2B84B]/35 px-2 py-1 text-[10px] text-[#F2B84B] transition-colors hover:bg-[#F2B84B]/10">
                       <Question size={11} /> Ajouter comme question
                     </button>
-                    <button onClick={() => promouvoirInvestigation(m)} data-testid={`promouvoir-investigation-${e.cle}`} className="flex items-center gap-1 rounded-md border border-[#9B87F5]/35 px-2 py-1 text-[10px] text-[#9B87F5] transition-colors hover:bg-[#9B87F5]/10">
+                    <button onClick={() => promouvoirInvestigation(m)} data-testid={`promouvoir-investigation-${e.cle}`} className="flex items-center gap-1 rounded-md border border-[#60A5FA]/35 px-2 py-1 text-[10px] text-[#60A5FA] transition-colors hover:bg-[#60A5FA]/10">
                       <Flask size={11} /> Ouvrir une investigation
                     </button>
                     {(m.preuves || []).length > 0 && (

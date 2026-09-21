@@ -104,7 +104,7 @@ export default function Comprendre() {
                 );
               })}
               {h.liens?.travail && (
-                <Link to={h.liens.travail} data-testid="comprendre-lien-travail" className="flex items-center gap-1 font-code text-[10px] text-[#9B87F5] hover:underline">
+                <Link to={h.liens.travail} data-testid="comprendre-lien-travail" className="flex items-center gap-1 font-code text-[10px] text-[#60A5FA] hover:underline">
                   <ArrowSquareOut size={11} /> Ouvrir le travail
                 </Link>
               )}
@@ -119,25 +119,25 @@ export default function Comprendre() {
           <div className="space-y-5" data-testid="comprendre-conversation">
             {fil.map((m, i) =>
               m.role === "utilisateur" ? (
-                <p key={i} className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-[rgba(155,135,245,0.12)] px-4 py-2.5 text-sm text-[#F2F6F8]" data-testid={`comprendre-msg-${i}`}>
+                <p key={i} className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-[rgba(96,165,250,0.12)] px-4 py-2.5 text-sm text-[#F2F6F8]" data-testid={`comprendre-msg-${i}`}>
                   {m.texte}
                 </p>
               ) : (
                 <div key={i} className="rise" data-testid={`comprendre-msg-${i}`}>
-                  <div className="flex items-center gap-1.5 font-code text-[9px] uppercase tracking-[0.2em] text-[#C4B5FD]">
+                  <div className="flex items-center gap-1.5 font-code text-[9px] uppercase tracking-[0.2em] text-[#BFDBFE]">
                     <Sparkle size={10} weight="fill" /> Flore{m.rapport ? " — rapport sur la situation" : ""}
                   </div>
                   <p className="mt-1 whitespace-pre-line text-sm leading-relaxed text-[#F2F6F8]">{m.texte}</p>
                   {(m.preuves || []).length > 0 && (
                     <div className="mt-2">
-                      <button onClick={() => setPreuvesOuvertes((p) => !p)} data-testid="comprendre-preuves-toggle" className="flex items-center gap-1 font-code text-[10px] text-[#9B87F5] hover:underline">
+                      <button onClick={() => setPreuvesOuvertes((p) => !p)} data-testid="comprendre-preuves-toggle" className="flex items-center gap-1 font-code text-[10px] text-[#60A5FA] hover:underline">
                         <Eye size={11} /> Ce rapport repose sur {m.preuves.length} preuve{m.preuves.length > 1 ? "s" : ""} · {preuvesOuvertes ? "masquer" : "afficher"}
                       </button>
                       {preuvesOuvertes && (
-                        <ul className="mt-1.5 space-y-1 border-l-2 border-[#9B87F5]/25 pl-2.5" data-testid="comprendre-preuves">
+                        <ul className="mt-1.5 space-y-1 border-l-2 border-[#60A5FA]/25 pl-2.5" data-testid="comprendre-preuves">
                           {m.preuves.map((p, k) => (
                             <li key={k} className="font-code text-[10px] leading-snug text-[#94A3B8]">
-                              <span className="font-semibold text-[#C4B5FD]">{p.source}</span> — {p.detail}
+                              <span className="font-semibold text-[#BFDBFE]">{p.source}</span> — {p.detail}
                             </li>
                           ))}
                         </ul>
@@ -149,12 +149,12 @@ export default function Comprendre() {
                       {m.propositions.map((p, k) =>
                         p.lien ? (
                           <Link key={k} to={p.lien} data-testid={`comprendre-prop-${i}-${k}`}
-                            className="rounded-full border border-[#9B87F5]/40 bg-[#9B87F5]/[0.06] px-3 py-1.5 text-[11px] font-semibold text-[#9B87F5] transition-colors hover:bg-[#9B87F5]/15">
+                            className="rounded-full border border-[#60A5FA]/40 bg-[#60A5FA]/[0.06] px-3 py-1.5 text-[11px] font-semibold text-[#60A5FA] transition-colors hover:bg-[#60A5FA]/15">
                             {p.label}
                           </Link>
                         ) : (
                           <button key={k} onClick={() => setQ(p.question || p.label)} data-testid={`comprendre-prop-${i}-${k}`}
-                            className="rounded-full border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-3 py-1.5 text-[11px] text-[#94A3B8] transition-colors hover:border-[#9B87F5]/40 hover:text-[#9B87F5]">
+                            className="rounded-full border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-3 py-1.5 text-[11px] text-[#94A3B8] transition-colors hover:border-[#60A5FA]/40 hover:text-[#60A5FA]">
                             {p.label}
                           </button>
                         )
@@ -173,7 +173,7 @@ export default function Comprendre() {
       {/* Composer ancré — la conversation continue */}
       <div className="shrink-0 border-t border-[rgba(148,163,184,0.16)] bg-[rgba(148,163,184,0.07)] px-6 py-3" data-testid="comprendre-composer-zone">
         <form onSubmit={envoyer} className="mx-auto max-w-2xl">
-          <div className="flex items-end gap-2 rounded-2xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-3 py-2 shadow-sm transition-colors focus-within:border-[#9B87F5]/50">
+          <div className="flex items-end gap-2 rounded-2xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-3 py-2 shadow-sm transition-colors focus-within:border-[#60A5FA]/50">
             <textarea
               value={q}
               onChange={(e) => setQ(e.target.value)}
@@ -184,7 +184,7 @@ export default function Comprendre() {
               className="max-h-32 flex-1 resize-none bg-transparent px-1 py-1.5 text-sm text-[#F2F6F8] placeholder:text-[#7C93A8] focus:outline-none"
             />
             <button type="submit" disabled={envoi || !q.trim()} data-testid="comprendre-msg-send-btn" title="Envoyer"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#9B87F5] text-[#071019] transition-colors hover:bg-[#B4A5F7] disabled:opacity-30">
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#60A5FA] text-[#071019] transition-colors hover:bg-[#93C5FD] disabled:opacity-30">
               <PaperPlaneTilt size={14} weight="fill" />
             </button>
           </div>

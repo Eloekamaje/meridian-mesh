@@ -52,7 +52,7 @@ export default function Administration() {
   return (
     <div className="h-full overflow-y-auto px-8 py-8 pb-44" data-testid="administration-page">
       <header className="rise">
-        <div className="font-code text-[10px] uppercase tracking-[0.3em] text-[#9B87F5]">Administration</div>
+        <div className="font-code text-[10px] uppercase tracking-[0.3em] text-[#60A5FA]">Administration</div>
         <h1 className="mt-1 font-display text-3xl font-black tracking-tight text-[#F2F6F8]">Administration</h1>
         <p className="mt-2 text-base text-[#94A3B8]">Sources, propriétaires, couverture et fraîcheur de la connaissance du Mesh.</p>
       </header>
@@ -60,7 +60,7 @@ export default function Administration() {
       <div className="mt-8 grid grid-cols-12 gap-6">
         <section className="rise col-span-12 rounded-xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-5 lg:col-span-5" style={{ animationDelay: "60ms" }} data-testid="admin-couverture">
           <h2 className="flex items-center gap-2 font-code text-[10px] uppercase tracking-[0.25em] text-[#7C93A8]">
-            <CheckCircle size={14} className="text-[#25D0C8]" /> Couverture de connaissance
+            <CheckCircle size={14} className="text-[#60A5FA]" /> Couverture de connaissance
           </h2>
           <div className="mt-3 flex items-baseline gap-2">
             <span className="font-display text-4xl font-black text-[#F2F6F8]" data-testid="couverture-moyenne">{couvertureMoy} %</span>
@@ -81,7 +81,7 @@ export default function Administration() {
 
         <section className="rise col-span-12 rounded-xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-5 lg:col-span-7" style={{ animationDelay: "120ms" }} data-testid="admin-sources">
           <h2 className="flex items-center gap-2 font-code text-[10px] uppercase tracking-[0.25em] text-[#7C93A8]">
-            <Database size={14} className="text-[#9B87F5]" /> Sources connectées
+            <Database size={14} className="text-[#60A5FA]" /> Sources connectées
           </h2>
           <div className="mt-4 overflow-x-auto">
             <table className="w-full text-xs">
@@ -109,7 +109,7 @@ export default function Administration() {
 
         <section className="rise col-span-12 rounded-xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-5 lg:col-span-6" style={{ animationDelay: "180ms" }} data-testid="admin-proprietaires">
           <h2 className="flex items-center gap-2 font-code text-[10px] uppercase tracking-[0.25em] text-[#7C93A8]">
-            <Users size={14} className="text-[#9B87F5]" /> Propriétaires
+            <Users size={14} className="text-[#60A5FA]" /> Propriétaires
           </h2>
           <ul className="mt-4 space-y-3">
             {Object.entries(proprios).map(([p, js]) => (
@@ -165,7 +165,7 @@ export default function Administration() {
 
         <section className="rise col-span-12 rounded-xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-5" style={{ animationDelay: "300ms" }} data-testid="admin-journal">
           <h2 className="flex items-center gap-2 font-code text-[10px] uppercase tracking-[0.25em] text-[#7C93A8]">
-            <Scroll size={14} className="text-[#25D0C8]" /> Journal d'accès et de décisions
+            <Scroll size={14} className="text-[#60A5FA]" /> Journal d'accès et de décisions
           </h2>
           <div className="mt-4 overflow-hidden rounded-lg border border-[rgba(148,163,184,0.16)]">
             <table className="w-full text-xs">

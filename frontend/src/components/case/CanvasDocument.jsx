@@ -102,7 +102,7 @@ export default function CanvasDocument({
           <span className="font-semibold text-[#F2F6F8]">
             {titre}
           </span>
-          <span className="ml-1 rounded bg-[#25D0C8]/20 px-1.5 py-0.5 text-[9px] font-semibold text-[#25D0C8]">
+          <span className="ml-1 rounded bg-[#60A5FA]/20 px-1.5 py-0.5 text-[9px] font-semibold text-[#60A5FA]">
             Document généré
           </span>
         </div>
@@ -147,7 +147,7 @@ export default function CanvasDocument({
           {/* Entête type Document Markdown officiel */}
           <div className="border-b border-white/[0.1] pb-5">
             <div className="flex items-center gap-2">
-              <span className="rounded bg-[#9B87F5]/20 px-2 py-0.5 font-code text-[10px] font-semibold uppercase tracking-wider text-[#C4B5FD]">
+              <span className="rounded bg-[#60A5FA]/20 px-2 py-0.5 font-code text-[10px] font-semibold uppercase tracking-wider text-[#BFDBFE]">
                 Dossier de Décision Exécutif
               </span>
               <span className="font-code text-[10px] text-[#64748B]">Réf : CASE-101</span>
@@ -203,7 +203,7 @@ export default function CanvasDocument({
             <p className="text-sm text-[#CBD5E1]">
               L'audit automatisé des flux et des modèles de données opéré par Flore et les jumeaux numériques révèle que <strong>les trois initiatives visent à résoudre exactement le même besoin fonctionnel</strong> :
             </p>
-            <blockquote className="border-l-2 border-[#25D0C8] pl-4 py-1 text-sm italic text-[#E2E8F0] bg-[#07111B]/50 rounded-r-lg">
+            <blockquote className="border-l-2 border-[#60A5FA] pl-4 py-1 text-sm italic text-[#E2E8F0] bg-[#07111B]/50 rounded-r-lg">
               « Disposer d'une information fiable, consolidée et horodatée sur l'état réel d'un dossier. »
             </blockquote>
           </section>

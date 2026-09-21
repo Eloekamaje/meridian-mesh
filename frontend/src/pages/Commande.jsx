@@ -193,7 +193,7 @@ export default function Commande() {
             ].map(([cle, label, ph]) => (
               <div key={cle}>
                 <label className="font-code text-[10px] uppercase tracking-[0.2em] text-[#7C93A8]">{label}</label>
-                <input value={commande.jumeau[cle] || ""} onChange={(e) => majJumeau({ [cle]: e.target.value })} placeholder={ph} data-testid={`identite-${cle}`} className="mt-1.5 w-full rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-3 py-2.5 text-sm text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#25D0C8]/60 focus:outline-none" />
+                <input value={commande.jumeau[cle] || ""} onChange={(e) => majJumeau({ [cle]: e.target.value })} placeholder={ph} data-testid={`identite-${cle}`} className="mt-1.5 w-full rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-3 py-2.5 text-sm text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#60A5FA]/60 focus:outline-none" />
               </div>
             ))}
             <div>
@@ -242,7 +242,7 @@ export default function Commande() {
 
         <div className="mt-6 flex justify-end">
           {etape < 4 && (
-            <button onClick={() => maj({ etape: etape + 1 })} disabled={!peutContinuer} data-testid="etape-suivante-btn" className="flex items-center gap-1.5 rounded-md bg-[#9B87F5] px-4 py-2 text-xs font-semibold text-[#071019] transition-colors hover:bg-[#B4A5F7] disabled:opacity-30">
+            <button onClick={() => maj({ etape: etape + 1 })} disabled={!peutContinuer} data-testid="etape-suivante-btn" className="flex items-center gap-1.5 rounded-md bg-[#60A5FA] px-4 py-2 text-xs font-semibold text-[#071019] transition-colors hover:bg-[#93C5FD] disabled:opacity-30">
               Continuer <ArrowRight size={14} />
             </button>
           )}

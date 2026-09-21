@@ -1,7 +1,7 @@
 export const STATUTS = {
   actif: ["Actif", "#34D399"],
   "en construction": ["Construction", "#F2B84B"],
-  observation: ["Observation", "#9B87F5"],
+  observation: ["Observation", "#60A5FA"],
 };
 
 export const STRATE_LABELS = { identite: "Identité", comportement: "Comportement normal", relations: "Relations", trajectoire: "Trajectoire", memoire: "Mémoire interprétée" };
@@ -9,16 +9,16 @@ export const STRATE_LABELS = { identite: "Identité", comportement: "Comportemen
 export const FRAICHEUR_ETATS = {
   a_jour: ["À jour", "#34D399"],
   partiel: ["Partiellement à jour", "#F2B84B"],
-  sync: ["Synchronisation en cours", "#9B87F5"],
+  sync: ["Synchronisation en cours", "#60A5FA"],
   retard: ["Source en retard", "#F87171"],
   obsolete: ["Connaissance obsolète", "#F87171"],
 };
 
 export const AUTONOMIE = {
   aucune: ["Désactivé", "observation seulement", "#7C93A8"],
-  restreint: ["Conseiller", "recommandations uniquement", "#25D0C8"],
+  restreint: ["Conseiller", "recommandations uniquement", "#60A5FA"],
   supervisé: ["Supervisé", "prépare des actions avec approbation", "#F2B84B"],
-  contrôlé: ["Contrôlé", "actions réversibles autorisées", "#9B87F5"],
+  contrôlé: ["Contrôlé", "actions réversibles autorisées", "#60A5FA"],
 };
 
 export const STATUTS_SOURCES = {

@@ -3,10 +3,10 @@ import { construireD, ancreLabel, pointsMarqueurs } from "@/lib/routeur";
 
 // Arête orthogonale — rendue par le moteur de routage dédié (data.points), pas par React Flow
 const STYLES = {
-  observee: { stroke: "#25D0C8", strokeWidth: 2, marqueur: "marqueur-teal" },
+  observee: { stroke: "#60A5FA", strokeWidth: 2, marqueur: "marqueur-teal" },
   supposee: { stroke: "#F2B84B", strokeWidth: 1.7, strokeDasharray: "6 6", marqueur: "marqueur-orange" },
   contestee: { stroke: "#F2B84B", strokeWidth: 2, strokeDasharray: "6 6", marqueur: "marqueur-orange" },
-  validation: { stroke: "#9B87F5", strokeWidth: 1.8, strokeDasharray: "7 5", marqueur: "marqueur-violet" },
+  validation: { stroke: "#60A5FA", strokeWidth: 1.8, strokeDasharray: "7 5", marqueur: "marqueur-violet" },
   obsolete: { stroke: "rgba(148,163,184,0.65)", strokeWidth: 1, strokeDasharray: "2 6", opacity: 0.25, marqueur: "marqueur-ardoise" },
   confirmee: { stroke: "rgba(148,163,184,0.7)", strokeWidth: 1.4, opacity: 0.75, marqueur: "marqueur-ardoise" },
 };
@@ -77,7 +77,7 @@ export default memo(function AreteOrthogonale({ id, data, selected, style: style
       ))}
       {/* Animation directionnelle : particule lumineuse continue */}
       {anime && (
-        <circle r={2.6} fill="#25D0C8">
+        <circle r={2.6} fill="#60A5FA">
           <animateMotion dur="3.2s" repeatCount="indefinite" path={d} />
         </circle>
       )}
@@ -108,8 +108,8 @@ export default memo(function AreteOrthogonale({ id, data, selected, style: style
       )}
       {nouvelle && !afficheLabel && labelPos && (
         <g transform={`translate(${labelPos.x} ${labelPos.y})`} style={{ pointerEvents: "none" }}>
-          <rect x={-30} y={-9} width={60} height={18} rx={9} fill="rgba(15,29,40,0.95)" stroke="#25D0C8" strokeDasharray="3 3" />
-          <text textAnchor="middle" dominantBaseline="central" fontSize={10} fontFamily="IBM Plex Mono" fill="#25D0C8">nouvelle</text>
+          <rect x={-30} y={-9} width={60} height={18} rx={9} fill="rgba(15,29,40,0.95)" stroke="#60A5FA" strokeDasharray="3 3" />
+          <text textAnchor="middle" dominantBaseline="central" fontSize={10} fontFamily="IBM Plex Mono" fill="#60A5FA">nouvelle</text>
         </g>
       )}
     </g>

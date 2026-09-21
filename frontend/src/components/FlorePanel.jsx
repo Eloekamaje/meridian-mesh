@@ -24,8 +24,8 @@ function contexteDepuis(pathname) {
 }
 
 const COMPORTEMENTS = {
-  explorer: { label: "Exploration", couleur: "#25D0C8" },
-  expliquer: { label: "Explication", couleur: "#9B87F5" },
+  explorer: { label: "Exploration", couleur: "#60A5FA" },
+  expliquer: { label: "Explication", couleur: "#60A5FA" },
   recommander: { label: "Recommandation", couleur: "#F2B84B" },
 };
 
@@ -58,7 +58,7 @@ function LotBar({ lot }) {
     <div className="pointer-events-none fixed bottom-5 left-1/2 z-40 w-[min(780px,94vw)] -translate-x-1/2">
       <motion.div layout transition={{ type: "spring", stiffness: 380, damping: 32 }} className="glass pointer-events-auto rounded-xl p-2.5">
         <div className="flex flex-wrap items-center gap-2 px-1" data-testid="lot-bar">
-          <Sparkle size={15} weight="fill" className="shrink-0 text-[#9B87F5]" />
+          <Sparkle size={15} weight="fill" className="shrink-0 text-[#60A5FA]" />
           <span className="font-code text-[11px] font-medium text-[#F2F6F8]" data-testid="lot-count">
             {lot.ids.length} source{lot.ids.length > 1 ? "s" : ""} sélectionnée{lot.ids.length > 1 ? "s" : ""}
           </span>
@@ -74,7 +74,7 @@ function LotBar({ lot }) {
             <option value="">Modifier la fréquence…</option>
             {["horaire", "quotidienne", "hebdomadaire"].map((f) => <option key={f} value={f}>{f}</option>)}
           </select>
-          <button onClick={() => lot.onAction("tester")} data-testid="lot-tester-btn" className="flex items-center gap-1.5 rounded-md border border-[#9B87F5]/40 px-2.5 py-1.5 text-[11px] text-[#9B87F5] transition-colors hover:bg-[#9B87F5]/10">
+          <button onClick={() => lot.onAction("tester")} data-testid="lot-tester-btn" className="flex items-center gap-1.5 rounded-md border border-[#60A5FA]/40 px-2.5 py-1.5 text-[11px] text-[#60A5FA] transition-colors hover:bg-[#60A5FA]/10">
             <Lightning size={12} /> Tester les connexions
           </button>
           <button onClick={() => lot.onAction("supprimer")} data-testid="lot-supprimer-btn" className="rounded-md border border-[#F87171]/40 px-2.5 py-1.5 text-[11px] text-[#F87171] transition-colors hover:bg-[#F87171]/10">
@@ -129,7 +129,7 @@ function CarteReponse({ data, index, propsEtat, setPropsEtat, justifOuverte, set
     return (
       <div className="space-y-2 rounded-2xl rounded-bl-sm border border-white/10 bg-[#08121D]/90 p-4 shadow-xl backdrop-blur-md" data-testid={`flore-reponse-${index}`}>
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5 font-code text-[10px] font-bold uppercase tracking-wider text-[#A78BFA]">
+          <div className="flex items-center gap-1.5 font-code text-[10px] font-bold uppercase tracking-wider text-[#60A5FA]">
             <Sparkle size={13} weight="fill" /> Flore
           </div>
           {aArbitrage && (
@@ -138,7 +138,7 @@ function CarteReponse({ data, index, propsEtat, setPropsEtat, justifOuverte, set
             </span>
           )}
           {aInitiatives && (
-            <span className="rounded-full bg-violet-500/20 px-2 py-0.5 font-code text-[9px] font-bold text-violet-300 border border-violet-500/30">
+            <span className="rounded-full bg-blue-500/20 px-2 py-0.5 font-code text-[9px] font-bold text-blue-300 border border-blue-500/30">
               Demandes projets
             </span>
           )}
@@ -147,13 +147,13 @@ function CarteReponse({ data, index, propsEtat, setPropsEtat, justifOuverte, set
 
         {/* Fiches d'initiatives métier : l'item de droit affiché directement au gestionnaire */}
         {aInitiatives && (
-          <div className="mt-3.5 space-y-2.5 rounded-xl border border-violet-500/30 bg-[#090F1C]/95 p-3.5 shadow-xl backdrop-blur-md">
+          <div className="mt-3.5 space-y-2.5 rounded-xl border border-blue-500/30 bg-[#090F1C]/95 p-3.5 shadow-xl backdrop-blur-md">
             <div className="flex items-center justify-between border-b border-white/10 pb-2">
-              <span className="flex items-center gap-1.5 font-code text-[10px] font-bold uppercase tracking-wider text-violet-300">
-                <Compass size={13} weight="fill" className="text-violet-400" />
+              <span className="flex items-center gap-1.5 font-code text-[10px] font-bold uppercase tracking-wider text-blue-300">
+                <Compass size={13} weight="fill" className="text-blue-400" />
                 3 demandes projets soumises au comité
               </span>
-              <span className="rounded bg-violet-500/20 px-1.5 py-0.5 font-code text-[9px] font-extrabold text-violet-200 border border-violet-400/30">
+              <span className="rounded bg-blue-500/20 px-1.5 py-0.5 font-code text-[9px] font-extrabold text-blue-200 border border-blue-400/30">
                 6,0 M€ en silos
               </span>
             </div>
@@ -197,7 +197,7 @@ function CarteReponse({ data, index, propsEtat, setPropsEtat, justifOuverte, set
             </div>
 
             <div className="rounded-lg border border-white/5 bg-white/[0.04] px-2.5 py-2 text-[10px] text-slate-300 flex items-center gap-2">
-              <Sparkle size={12} weight="fill" className="text-violet-400 shrink-0" />
+              <Sparkle size={12} weight="fill" className="text-blue-400 shrink-0" />
               <span>
                 <strong>Jumeaux en arrière-plan :</strong> audit technique des flux SI en cours.
               </span>
@@ -222,7 +222,7 @@ function CarteReponse({ data, index, propsEtat, setPropsEtat, justifOuverte, set
               </div>
               <div className="rounded-lg bg-black/40 p-2 border border-white/5">
                 <div className="font-code text-[9px] uppercase tracking-wider text-slate-400">Délai cible</div>
-                <div className="font-display text-lg font-extrabold text-cyan-400 mt-0.5">4 mois</div>
+                <div className="font-display text-lg font-extrabold text-blue-400 mt-0.5">4 mois</div>
                 <div className="font-code text-[8px] text-slate-500">au lieu de 18</div>
               </div>
               <div className="rounded-lg bg-black/40 p-2 border border-white/5">
@@ -236,14 +236,14 @@ function CarteReponse({ data, index, propsEtat, setPropsEtat, justifOuverte, set
 
         {/* Bouton d'accès direct au dossier exécutif CASE-101 */}
         {aDossierFinal && (
-          <div className="mt-3.5 rounded-xl border border-emerald-500/40 bg-gradient-to-r from-emerald-950/40 to-teal-950/40 p-3 shadow-lg">
+          <div className="mt-3.5 rounded-xl border border-emerald-500/40 bg-gradient-to-r from-emerald-950/40 to-blue-950/40 p-3 shadow-lg">
             <div className="flex items-center justify-between text-xs font-semibold text-emerald-300 mb-2">
               <span className="flex items-center gap-1.5"><Sparkle size={13} weight="fill" /> Dossier d'arbitrage prêt</span>
               <span className="font-code text-[10px] text-slate-400">3 validations incluses</span>
             </div>
             <button
               onClick={() => navigate("/travaux/demo-polaris-work-g?vue=apercu")}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-400 py-2.5 text-xs font-bold text-[#051113] shadow-md shadow-emerald-500/25 transition-all hover:brightness-110 active:scale-[0.98]"
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-emerald-500 to-blue-400 py-2.5 text-xs font-bold text-[#051113] shadow-md shadow-emerald-500/25 transition-all hover:brightness-110 active:scale-[0.98]"
               data-testid="flore-examiner-case101-btn"
             >
               <span>Examiner le dossier d'arbitrage CASE-101</span>
@@ -258,7 +258,7 @@ function CarteReponse({ data, index, propsEtat, setPropsEtat, justifOuverte, set
               <button
                 key={pi}
                 onClick={() => pilote?.ouvrirPreuve?.(p.preuveId)}
-                className="inline-flex items-center gap-1 rounded-full border border-[rgba(32,213,195,0.3)] bg-[#20D5C3]/[0.08] px-2.5 py-0.5 font-code text-[10px] text-[#20D5C3] transition-all hover:bg-[#20D5C3]/20"
+                className="inline-flex items-center gap-1 rounded-full border border-[rgba(96,165,250,0.3)] bg-[#60A5FA]/[0.08] px-2.5 py-0.5 font-code text-[10px] text-[#60A5FA] transition-all hover:bg-[#60A5FA]/20"
                 title={p.detail || p.source}
               >
                 <FileText size={10} weight="bold" />
@@ -274,7 +274,7 @@ function CarteReponse({ data, index, propsEtat, setPropsEtat, justifOuverte, set
   return (
     <div className="rounded-xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-4" data-testid={`flore-reponse-${index}`}>
       <div className="flex items-center gap-2 font-code text-[9px] uppercase tracking-[0.25em] text-[#7C93A8]">
-        <Sparkle size={12} className="text-[#9B87F5]" /> Flore
+        <Sparkle size={12} className="text-[#60A5FA]" /> Flore
         {data.comportement && COMPORTEMENTS[data.comportement] && (
           <span
             className="rounded border px-1.5 py-0.5"
@@ -297,12 +297,12 @@ function CarteReponse({ data, index, propsEtat, setPropsEtat, justifOuverte, set
           <div className="font-code text-[9px] uppercase tracking-[0.2em] text-[#7C93A8]">Proposition pour la carte</div>
           {data.propositions.map((p, pi) =>
             propsEtat[`${index}-${pi}`] ? null : (
-              <div key={pi} className="mt-2 rounded-lg border border-[#25D0C8]/20 bg-[#25D0C8]/[0.04] px-3 py-2.5" data-testid={`flore-proposition-${index}-${pi}`}>
+              <div key={pi} className="mt-2 rounded-lg border border-[#60A5FA]/20 bg-[#60A5FA]/[0.04] px-3 py-2.5" data-testid={`flore-proposition-${index}-${pi}`}>
                 <p className="text-xs text-[#D8E2EA]">
                   J'ai identifié <span className="font-semibold" style={{ color: couleurDomaine(p.domaine) }}>{p.nom}</span> comme voisin pertinent.
                 </p>
                 {justifOuverte === `${index}-${pi}` && (
-                  <p className="mt-1.5 border-l-2 border-[#25D0C8]/40 pl-2 text-[11px] leading-relaxed text-[#94A3B8]" data-testid={`flore-prop-justif-${index}-${pi}`}>
+                  <p className="mt-1.5 border-l-2 border-[#60A5FA]/40 pl-2 text-[11px] leading-relaxed text-[#94A3B8]" data-testid={`flore-prop-justif-${index}-${pi}`}>
                     {p.justification}
                   </p>
                 )}
@@ -314,7 +314,7 @@ function CarteReponse({ data, index, propsEtat, setPropsEtat, justifOuverte, set
                       toast.success(`${p.nom} ajouté au contexte`);
                     }}
                     data-testid={`flore-prop-ajouter-${index}-${pi}`}
-                    className="flex items-center gap-1 rounded-md bg-[#25D0C8] px-2 py-1 text-[10px] font-semibold text-[#071019] transition-colors hover:bg-[#0891B2]"
+                    className="flex items-center gap-1 rounded-md bg-[#60A5FA] px-2 py-1 text-[10px] font-semibold text-[#071019] transition-colors hover:bg-[#0891B2]"
                   >
                     <Plus size={11} /> Ajouter au contexte
                   </button>
@@ -369,7 +369,7 @@ function CarteReponse({ data, index, propsEtat, setPropsEtat, justifOuverte, set
                   <button
                     onClick={() => pilote.ouvrirPreuve(p.preuveId)}
                     data-testid={`flore-preuve-demo-${p.preuveId}`}
-                    className="flex w-full items-baseline gap-2 rounded-lg border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2.5 py-2 text-left text-sm text-[#94A3B8] transition-colors hover:border-[#9B87F5]/50 hover:bg-[#9B87F5]/5"
+                    className="flex w-full items-baseline gap-2 rounded-lg border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2.5 py-2 text-left text-sm text-[#94A3B8] transition-colors hover:border-[#60A5FA]/50 hover:bg-[#60A5FA]/5"
                   >
                     <FileText size={13} className="shrink-0 translate-y-0.5 text-[#7C93A8]" />
                     <span>
@@ -383,12 +383,12 @@ function CarteReponse({ data, index, propsEtat, setPropsEtat, justifOuverte, set
                     onMouseLeave={() => setPreuveSurvolee(null)}
                     onClick={() => commanderCarte({ type: "relation", relationId: p.relation_id })}
                     data-testid={`flore-preuve-rel-${p.relation_id}`}
-                    className="flex w-full items-baseline gap-2 rounded-lg border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2.5 py-2 text-left text-sm text-[#94A3B8] transition-colors hover:border-[#25D0C8]/50 hover:bg-[#25D0C8]/5"
+                    className="flex w-full items-baseline gap-2 rounded-lg border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2.5 py-2 text-left text-sm text-[#94A3B8] transition-colors hover:border-[#60A5FA]/50 hover:bg-[#60A5FA]/5"
                   >
                     <FileText size={13} className="shrink-0 translate-y-0.5 text-[#7C93A8]" />
                     <span>
                       <span className="font-code text-[11px] text-[#F2F6F8]">{p.source}</span> — {p.detail}
-                      {p.confiance != null && <span className="font-code text-[10px] text-[#25D0C8]"> · {p.confiance} %</span>}
+                      {p.confiance != null && <span className="font-code text-[10px] text-[#60A5FA]"> · {p.confiance} %</span>}
                       {p.quand && <span className="font-code text-[10px] text-[#7C93A8]"> · {p.quand}</span>}
                     </span>
                   </button>
@@ -409,7 +409,7 @@ function CarteReponse({ data, index, propsEtat, setPropsEtat, justifOuverte, set
         {data.action && (
           <button
             onClick={() => navigate(data.action.route)}
-            className="rounded-md bg-[#9B87F5] px-3 py-1.5 text-xs font-semibold text-[#071019] transition-colors hover:bg-[#B4A5F7]"
+            className="rounded-md bg-[#60A5FA] px-3 py-1.5 text-xs font-semibold text-[#071019] transition-colors hover:bg-[#93C5FD]"
             data-testid={`flore-action-btn-${index}`}
           >
             {data.action.label}
@@ -643,14 +643,14 @@ export default function FlorePanel() {
       <div className="shrink-0 border-b border-[rgba(148,163,184,0.16)] px-4 py-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Sparkle size={16} weight="fill" className="text-[#9B87F5]" />
+            <Sparkle size={16} weight="fill" className="text-[#60A5FA]" />
             <span className="font-display text-sm font-bold text-[#F2F6F8]">Flore</span>
             {caseCtx && <span className="font-code text-[10px] text-[#7C93A8]" data-testid="flore-case-num">— CASE-{String(caseCtx.num ?? 0).padStart(3, "0")}</span>}
             {!caseCtx && <span className="font-code text-[9px] uppercase tracking-[0.2em] text-[#7C93A8]">orchestre les jumeaux du Mesh</span>}
           </div>
           <div className="flex items-center gap-1.5">
             {pilote && (
-              <span className="rounded border border-[#25D0C8]/40 bg-[#25D0C8]/[0.07] px-1.5 py-0.5 font-code text-[9px] uppercase tracking-[0.2em] text-[#25D0C8]" data-testid="flore-badge-demo">
+              <span className="rounded border border-[#60A5FA]/40 bg-[#60A5FA]/[0.07] px-1.5 py-0.5 font-code text-[9px] uppercase tracking-[0.2em] text-[#60A5FA]" data-testid="flore-badge-demo">
                 Démo guidée
               </span>
             )}
@@ -674,8 +674,8 @@ export default function FlorePanel() {
         </div>
 
         {caseCtx && (
-          <div className="mt-2 rounded-lg border border-[#9B87F5]/25 bg-[#9B87F5]/[0.05] px-3 py-2" data-testid="flore-contexte-case">
-            <div className="font-code text-[9px] uppercase tracking-[0.2em] text-[#9B87F5]/70">Contexte actif</div>
+          <div className="mt-2 rounded-lg border border-[#60A5FA]/25 bg-[#60A5FA]/[0.05] px-3 py-2" data-testid="flore-contexte-case">
+            <div className="font-code text-[9px] uppercase tracking-[0.2em] text-[#60A5FA]/70">Contexte actif</div>
             <div className="mt-1 space-y-0.5 font-code text-[10px] text-[#94A3B8]">
               <div>• Travail : {caseCtx.titre}</div>
               <div>• {(caseCtx.jumeaux || []).length} jumeau{(caseCtx.jumeaux || []).length > 1 ? "x" : ""} mobilisé{(caseCtx.jumeaux || []).length > 1 ? "s" : ""}</div>
@@ -715,8 +715,8 @@ export default function FlorePanel() {
 
         {/* Instantané Atlas — Flore sait où se trouve l'utilisateur et ce qu'il regarde */}
         {atlasCtx && contexte === "atlas" && (
-          <div className="mt-2 rounded-lg border border-[#25D0C8]/25 bg-[#25D0C8]/[0.04] px-3 py-2" data-testid="flore-contexte-atlas">
-            <div className="font-code text-[9px] uppercase tracking-[0.2em] text-[#25D0C8]">
+          <div className="mt-2 rounded-lg border border-[#60A5FA]/25 bg-[#60A5FA]/[0.04] px-3 py-2" data-testid="flore-contexte-atlas">
+            <div className="font-code text-[9px] uppercase tracking-[0.2em] text-[#60A5FA]">
               Atlas · {atlasCtx.zoomLabel || "Domaines"}
             </div>
             <div className="mt-0.5 font-code text-[10px] leading-relaxed text-[#94A3B8]" data-testid="flore-contexte-atlas-detail">
@@ -734,12 +734,12 @@ export default function FlorePanel() {
         )}
 
         {promptFocus && (
-          <div className="mt-2 rounded-lg border border-[#9B87F5]/25 bg-[#9B87F5]/[0.05] px-3 py-2" data-testid="flore-prompt-focus">
+          <div className="mt-2 rounded-lg border border-[#60A5FA]/25 bg-[#60A5FA]/[0.05] px-3 py-2" data-testid="flore-prompt-focus">
             <p className="text-[11px] leading-snug text-[#D8E2EA]">
               Vous êtes entré dans le domaine <span className="font-semibold text-[#F2F6F8]">{promptFocus.domaine}</span>. Voulez-vous conserver {promptFocus.noms.join(", ")} dans le contexte ?
             </p>
             <div className="mt-2 flex flex-wrap gap-1.5">
-              <button onClick={() => setPromptFocus(null)} data-testid="flore-prompt-conserver" className="rounded-md bg-[#9B87F5] px-2 py-1 text-[10px] font-semibold text-[#071019] transition-colors hover:bg-[#9B87F5]">
+              <button onClick={() => setPromptFocus(null)} data-testid="flore-prompt-conserver" className="rounded-md bg-[#60A5FA] px-2 py-1 text-[10px] font-semibold text-[#071019] transition-colors hover:bg-[#60A5FA]">
                 Conserver
               </button>
               <button
@@ -756,7 +756,7 @@ export default function FlorePanel() {
                   setPromptFocus(null);
                 }}
                 data-testid="flore-prompt-voisins"
-                className="rounded-md border border-[rgba(148,163,184,0.16)] px-2 py-1 text-[10px] text-[#94A3B8] transition-colors hover:border-[#25D0C8]/50 hover:text-[#25D0C8]"
+                className="rounded-md border border-[rgba(148,163,184,0.16)] px-2 py-1 text-[10px] text-[#94A3B8] transition-colors hover:border-[#60A5FA]/50 hover:text-[#60A5FA]"
               >
                 Ajouter les jumeaux de {promptFocus.domaine}
               </button>
@@ -810,7 +810,7 @@ export default function FlorePanel() {
       <div ref={conversationRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4" data-testid="flore-echanges">
         {fil.length === 0 && !chargement && !pilote?.activite && (
           <div className="mt-8 text-center">
-            <Sparkle size={22} weight="fill" className="mx-auto text-[#9B87F5]/60" />
+            <Sparkle size={22} weight="fill" className="mx-auto text-[#60A5FA]/60" />
             <p className="mt-3 text-sm text-[#94A3B8]">Posez une question — Flore mobilise les jumeaux concernés et montre leurs preuves.</p>
             <p className="mt-1 font-code text-[10px] text-[#7C93A8]">Une conversation importante peut devenir un travail.</p>
           </div>
@@ -819,7 +819,7 @@ export default function FlorePanel() {
           e.marqueur ? (
             <div key={i} className="flex items-center gap-2 px-1 py-0.5" data-testid={`flore-marqueur-${i}`}>
               <span className="h-px flex-1 bg-[rgba(148,163,184,0.16)]" />
-              <span className="font-code text-[9px] uppercase tracking-[0.15em] text-[#25D0C8]">{e.texte}</span>
+              <span className="font-code text-[9px] uppercase tracking-[0.15em] text-[#60A5FA]">{e.texte}</span>
               <span className="h-px flex-1 bg-[rgba(148,163,184,0.16)]" />
             </div>
           ) : (
@@ -828,9 +828,9 @@ export default function FlorePanel() {
           ) : (
           <div key={e.id || i} className="space-y-2">
             {e.question && (
-              <div className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-sm border border-[#9B87F5]/30 bg-[#9B87F5]/10 px-4 py-2.5 shadow-sm" data-testid={`flore-question-${i}`}>
+              <div className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-sm border border-[#60A5FA]/30 bg-[#60A5FA]/10 px-4 py-2.5 shadow-sm" data-testid={`flore-question-${i}`}>
                 {pilote && (
-                  <div className="mb-0.5 font-code text-[9px] uppercase tracking-wider text-[#C4B5FD]">
+                  <div className="mb-0.5 font-code text-[9px] uppercase tracking-wider text-[#BFDBFE]">
                     {pilote.scenario?.roleLabel || "Gestionnaire"}
                   </div>
                 )}
@@ -857,19 +857,19 @@ export default function FlorePanel() {
         {pilote?.activite && <LigneActiviteFlore activite={pilote.activite} testid="flore-activite-demo" />}
         {pilote?.reflexionFlore && (
           <div className="flex items-start gap-2.5 rounded-xl border border-[rgba(148,163,184,0.12)] bg-[#0F1D28]/90 p-3 shadow-sm" data-testid="flore-panel-reflexion">
-            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-[#7C3AED] to-[#4F46E5] text-white shadow-sm ring-1 ring-white/10 animate-pulse">
+            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-[#2563EB] to-[#4F46E5] text-white shadow-sm ring-1 ring-white/10 animate-pulse">
               <Sparkle size={12} weight="fill" />
             </div>
             <div className="flex-1 space-y-1">
               <div className="flex items-center gap-1.5">
-                <span className="font-code text-[10px] font-semibold text-[#C4B5FD]">Flore</span>
+                <span className="font-code text-[10px] font-semibold text-[#BFDBFE]">Flore</span>
                 <span className="font-code text-[8px] uppercase tracking-wider text-[#64748B]">IA</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-1">
-                  <span className="h-1.5 w-1.5 rounded-full bg-[#9B87F5] animate-bounce [animation-delay:-0.3s]" />
-                  <span className="h-1.5 w-1.5 rounded-full bg-[#9B87F5] animate-bounce [animation-delay:-0.15s]" />
-                  <span className="h-1.5 w-1.5 rounded-full bg-[#9B87F5] animate-bounce" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-[#60A5FA] animate-bounce [animation-delay:-0.3s]" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-[#60A5FA] animate-bounce [animation-delay:-0.15s]" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-[#60A5FA] animate-bounce" />
                 </div>
                 <span className="text-xs text-[#94A3B8] italic">{pilote.reflexionFlore.texte}</span>
               </div>
@@ -884,7 +884,7 @@ export default function FlorePanel() {
           <div
             className={`relative rounded-xl border bg-[#0F1D28] p-2.5 transition-all ${
               pilote.saisieUtilisateur
-                ? "border-[#9B87F5]/50 ring-2 ring-[#9B87F5]/20 shadow-lg shadow-[#9B87F5]/10"
+                ? "border-[#60A5FA]/50 ring-2 ring-[#60A5FA]/20 shadow-lg shadow-[#60A5FA]/10"
                 : "border-[rgba(148,163,184,0.16)]"
             }`}
             data-testid="flore-composer-panel"
@@ -895,7 +895,7 @@ export default function FlorePanel() {
                   <p className="leading-relaxed text-[#F8FAFC]">
                     {pilote.saisieUtilisateur.texteAffiche}
                     {pilote.saisieUtilisateur.statut === "typing" && (
-                      <span className="curseur-teletype ml-0.5 text-[#9B87F5] animate-pulse">▍</span>
+                      <span className="curseur-teletype ml-0.5 text-[#60A5FA] animate-pulse">▍</span>
                     )}
                   </p>
                 ) : (
@@ -912,9 +912,9 @@ export default function FlorePanel() {
                   pilote.saisieUtilisateur?.statut === "sent"
                     ? "bg-emerald-500 text-white scale-95"
                     : pilote.saisieUtilisateur?.statut === "ready"
-                    ? "bg-[#9B87F5] text-[#071019] scale-105 shadow-md shadow-[#9B87F5]/40 animate-pulse"
+                    ? "bg-[#60A5FA] text-[#071019] scale-105 shadow-md shadow-[#60A5FA]/40 animate-pulse"
                     : pilote.saisieUtilisateur?.statut === "typing"
-                    ? "bg-[#9B87F5]/80 text-[#071019]"
+                    ? "bg-[#60A5FA]/80 text-[#071019]"
                     : "bg-[#1E293B] text-[#475569] opacity-40 cursor-default"
                 }`}
               >
@@ -945,7 +945,7 @@ export default function FlorePanel() {
                 }}
                 data-testid={`flore-deleguer-${type}`}
                 title="Tâche bornée : périmètre, durée, livrable et limites connus — visible dans Actualités → Suivis"
-                className="rounded-full border border-[#25D0C8]/30 bg-[#25D0C8]/[0.06] px-2.5 py-1 text-[11px] text-[#25D0C8] transition-colors hover:bg-[#25D0C8]/15"
+                className="rounded-full border border-[#60A5FA]/30 bg-[#60A5FA]/[0.06] px-2.5 py-1 text-[11px] text-[#60A5FA] transition-colors hover:bg-[#60A5FA]/15"
               >
                 {label}
               </button>
@@ -959,7 +959,7 @@ export default function FlorePanel() {
                 key={i}
                 onClick={() => demander(s)}
                 data-testid={`flore-suggestion-${i}`}
-                className="rounded-full border border-[rgba(148,163,184,0.16)] bg-[rgba(148,163,184,0.07)] px-2.5 py-1 text-[11px] text-[#94A3B8] transition-colors duration-200 hover:border-[#9B87F5]/50 hover:text-[#F2F6F8]"
+                className="rounded-full border border-[rgba(148,163,184,0.16)] bg-[rgba(148,163,184,0.07)] px-2.5 py-1 text-[11px] text-[#94A3B8] transition-colors duration-200 hover:border-[#60A5FA]/50 hover:text-[#F2F6F8]"
               >
                 {s}
               </button>
@@ -982,13 +982,13 @@ export default function FlorePanel() {
             }
             disabled={chargement}
             data-testid="flore-input"
-            className="h-10 flex-1 rounded-lg border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-3 text-sm text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#9B87F5]/60 focus:outline-none"
+            className="h-10 flex-1 rounded-lg border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-3 text-sm text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#60A5FA]/60 focus:outline-none"
           />
           <button
             type="submit"
             disabled={chargement || !question.trim()}
             data-testid="flore-send-btn"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#9B87F5] text-[#071019] transition-colors hover:bg-[#B4A5F7] disabled:opacity-30"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#60A5FA] text-[#071019] transition-colors hover:bg-[#93C5FD] disabled:opacity-30"
           >
             <PaperPlaneRight size={16} weight="fill" />
           </button>

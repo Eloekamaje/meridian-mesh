@@ -9,7 +9,7 @@ import { useDemo } from "@/lib/demo";
 import { usePilotage } from "@/lib/pilotage";
 import { parseQuand } from "@/lib/temps";
 
-const TYPES_NOTIF = { mention: "#9B87F5", assignation: "#F2B84B", a_revoir: "#F87171" };
+const TYPES_NOTIF = { mention: "#60A5FA", assignation: "#F2B84B", a_revoir: "#F87171" };
 
 const NAV = [
   { to: "/atlas", label: "Atlas", icon: Compass, testid: "nav-atlas" },
@@ -91,7 +91,7 @@ export default function Topbar() {
       {/* Marque + navigation primaire */}
       <div className="flex shrink-0 items-center gap-1.5">
         <div className="mr-1.5 flex items-center gap-2" data-testid="marque">
-          <span className="pulse-soft h-2 w-2 shrink-0 rounded-full bg-[#9B87F5]" />
+          <span className="pulse-soft h-2 w-2 shrink-0 rounded-full bg-[#60A5FA]" />
           <span className="hidden font-display text-sm font-black tracking-[0.18em] text-[#F2F6F8] md:inline">MÉRIDIAN</span>
         </div>
         <nav className="hidden items-center gap-1 md:flex" data-testid="sidebar-nav">
@@ -111,7 +111,7 @@ export default function Topbar() {
                     desactive
                       ? "cursor-not-allowed text-[#4B6072]"
                       : isActive
-                        ? "bg-[rgba(155,135,245,0.14)] font-semibold text-[#C4B5FD]"
+                        ? "bg-[rgba(96,165,250,0.14)] font-semibold text-[#BFDBFE]"
                         : "text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"
                   }`
                 }
@@ -127,7 +127,7 @@ export default function Topbar() {
             onClick={() => { if (pilote) return; setMenuOuvert(!menuOuvert); }}
             data-testid="nav-menu-btn"
             title={pilote ? "Indisponible pendant la démonstration" : "Espaces, récents, parcours guidé, administration"}
-            className={`flex h-8 w-8 items-center justify-center rounded-md border transition-colors ${pilote ? "cursor-not-allowed border-[rgba(148,163,184,0.16)] text-[#4B6072]" : menuOuvert ? "border-[#9B87F5]/50 bg-[rgba(155,135,245,0.10)] text-[#C4B5FD]" : "border-[rgba(148,163,184,0.16)] text-[#94A3B8] hover:text-[#F2F6F8]"}`}
+            className={`flex h-8 w-8 items-center justify-center rounded-md border transition-colors ${pilote ? "cursor-not-allowed border-[rgba(148,163,184,0.16)] text-[#4B6072]" : menuOuvert ? "border-[#60A5FA]/50 bg-[rgba(96,165,250,0.10)] text-[#BFDBFE]" : "border-[rgba(148,163,184,0.16)] text-[#94A3B8] hover:text-[#F2F6F8]"}`}
           >
             <List size={15} weight="bold" />
           </button>
@@ -152,7 +152,7 @@ export default function Topbar() {
                           desactive
                             ? "cursor-not-allowed text-[#4B6072]"
                             : isActive
-                              ? "bg-[rgba(155,135,245,0.14)] font-semibold text-[#C4B5FD]"
+                              ? "bg-[rgba(96,165,250,0.14)] font-semibold text-[#BFDBFE]"
                               : "text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"
                         }`
                       }
@@ -186,7 +186,7 @@ export default function Topbar() {
                 <div className="pb-1 lg:hidden">
                   <div className="px-2.5 pb-1 pt-1 font-code text-[9px] uppercase tracking-[0.25em] text-[#7C93A8]">Profil</div>
                   {personas.map((p) => (
-                    <button key={p.id} onClick={() => { changerPersona(p.id); setMenuOuvert(false); }} data-testid={`menu-persona-${p.id}`} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors ${persona === p.id ? "bg-[rgba(155,135,245,0.14)] font-semibold text-[#C4B5FD]" : "text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"}`}>
+                    <button key={p.id} onClick={() => { changerPersona(p.id); setMenuOuvert(false); }} data-testid={`menu-persona-${p.id}`} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors ${persona === p.id ? "bg-[rgba(96,165,250,0.14)] font-semibold text-[#BFDBFE]" : "text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"}`}>
                       <Users size={13} className="shrink-0 text-[#7C93A8]" /> <span className="truncate">{p.nom} — {p.role}</span>
                     </button>
                   ))}
@@ -195,7 +195,7 @@ export default function Topbar() {
                   <Play size={14} weight={courant >= 0 ? "fill" : "regular"} /> Parcours guidé
                 </button>
                 {adminAutorise && (
-                  <NavLink to="/administration" data-testid="nav-administration" onClick={() => setMenuOuvert(false)} className={({ isActive }) => `flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs transition-colors ${isActive ? "bg-[rgba(155,135,245,0.14)] font-semibold text-[#C4B5FD]" : "text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"}`}>
+                  <NavLink to="/administration" data-testid="nav-administration" onClick={() => setMenuOuvert(false)} className={({ isActive }) => `flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs transition-colors ${isActive ? "bg-[rgba(96,165,250,0.14)] font-semibold text-[#BFDBFE]" : "text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"}`}>
                     <GearSix size={14} /> Administration
                   </NavLink>
                 )}
@@ -228,7 +228,7 @@ export default function Topbar() {
               onChange={(e) => changerCible(e.target.value)}
               data-testid="selecteur-perimetre"
               title="Équipe / espace actif"
-              className="h-8 w-36 min-w-0 truncate rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2.5 text-xs font-semibold text-[#F2F6F8] focus:border-[#9B87F5]/60 focus:outline-none sm:w-48"
+              className="h-8 w-36 min-w-0 truncate rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2.5 text-xs font-semibold text-[#F2F6F8] focus:border-[#60A5FA]/60 focus:outline-none sm:w-48"
             >
               <optgroup label="Espaces">
                 {espaces.map((e) => (
@@ -259,7 +259,7 @@ export default function Topbar() {
             }}
             data-testid="sidebar-nouveau-travail"
             title="Démarrer le travail d'arbitrage avec Flore"
-            className="flex h-8 items-center gap-1.5 rounded-lg bg-[#9B87F5] px-3 text-xs font-semibold text-[#071019] shadow-md shadow-[#9B87F5]/20 ring-1 ring-[#9B87F5]/50 transition-all hover:bg-[#B4A5F7] hover:scale-[1.02]"
+            className="flex h-8 items-center gap-1.5 rounded-lg bg-[#60A5FA] px-3 text-xs font-semibold text-[#071019] shadow-md shadow-[#60A5FA]/20 ring-1 ring-[#60A5FA]/50 transition-all hover:bg-[#93C5FD] hover:scale-[1.02]"
           >
             <Plus size={13} weight="bold" /> <span className="hidden sm:inline">Nouveau travail</span>
           </button>
@@ -293,8 +293,8 @@ export default function Topbar() {
           title="Parler à Flore (⌘K) — disponible partout, comprend le contexte de ce que vous regardez"
           className={`flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-colors ${
             floreOuverte
-              ? "border-[#9B87F5] bg-[#9B87F5] text-[#071019]"
-              : "border-[#9B87F5]/40 bg-[#9B87F5]/[0.06] text-[#9B87F5] hover:bg-[#9B87F5]/12"
+              ? "border-[#60A5FA] bg-[#60A5FA] text-[#071019]"
+              : "border-[#60A5FA]/40 bg-[#60A5FA]/[0.06] text-[#60A5FA] hover:bg-[#60A5FA]/12"
           }`}
         >
           <Sparkle size={13} weight="fill" />

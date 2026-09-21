@@ -31,10 +31,10 @@ export default function LigneActiviteFlore({ activite, testid = "flore-activite"
         onClick={() => setOuvert((o) => !o)}
         aria-expanded={ouvert}
         data-testid={`${testid}-ligne`}
-        className="inline-flex min-h-[28px] max-w-full items-center gap-2 rounded-md text-left text-xs text-[#7C93A8] transition-colors hover:text-[#CBD5E1] focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#9B87F5]/60"
+        className="inline-flex min-h-[28px] max-w-full items-center gap-2 rounded-md text-left text-xs text-[#7C93A8] transition-colors hover:text-[#CBD5E1] focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#60A5FA]/60"
       >
         {enCours ? (
-          <CircleNotch size={13} className="shrink-0 animate-spin text-[#9B87F5] motion-reduce:animate-none" aria-hidden="true" />
+          <CircleNotch size={13} className="shrink-0 animate-spin text-[#60A5FA] motion-reduce:animate-none" aria-hidden="true" />
         ) : (
           <CheckCircle size={13} className="shrink-0 text-[#7C93A8]/70" aria-hidden="true" />
         )}
@@ -67,9 +67,9 @@ export default function LigneActiviteFlore({ activite, testid = "flore-activite"
           {ops.map((o, i) => (
             <div key={`${i}-${o.label}`} className="flex items-start gap-2">
               {o.status === "running" ? (
-                <CircleNotch size={12} className="mt-0.5 shrink-0 animate-spin text-[#9B87F5] motion-reduce:animate-none" aria-hidden="true" />
+                <CircleNotch size={12} className="mt-0.5 shrink-0 animate-spin text-[#60A5FA] motion-reduce:animate-none" aria-hidden="true" />
               ) : (
-                <CheckCircle size={12} className="mt-0.5 shrink-0 text-[#25D0C8]/70" aria-hidden="true" />
+                <CheckCircle size={12} className="mt-0.5 shrink-0 text-[#60A5FA]/70" aria-hidden="true" />
               )}
               <span className={o.status === "running" ? "text-[#D8E2EA]" : "text-[#7C93A8]"}>{o.label}</span>
             </div>

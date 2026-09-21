@@ -10,17 +10,17 @@ import { couleurDomaine } from "@/lib/domaines";
 import { numeroCase } from "@/components/case/utils";
 
 export const TYPES_CASE = {
-  demande: ["Demande", "#9B87F5"],
+  demande: ["Demande", "#60A5FA"],
   changement: ["Changement", "#F2B84B"],
   incident: ["Incident", "#F87171"],
-  decouverte: ["Découverte", "#25D0C8"],
-  decision: ["Décision", "#9B87F5"],
+  decouverte: ["Découverte", "#60A5FA"],
+  decision: ["Décision", "#60A5FA"],
   conformite: ["Conformité", "#34D399"],
   modernisation: ["Modernisation", "#FB923C"],
 };
 
 export const STATUTS_CASE = {
-  ouvert: ["Ouvert", "#9B87F5"],
+  ouvert: ["Ouvert", "#60A5FA"],
   en_cours: ["En cours", "#F2B84B"],
   en_attente: ["En attente", "#7C93A8"],
   clos: ["Clos", "#34D399"],
@@ -53,7 +53,7 @@ function CarteTravail({ c, navigate, setSelection, attention }) {
             <span className="shrink-0 rounded border border-[#F87171]/40 bg-[#F87171]/[0.06] px-1.5 py-px font-code text-[9px] uppercase tracking-wider text-[#F87171]" data-testid={`travail-arevoir-${c.id}`}>À revoir</span>
           )}
           {(c.nb_options_a_trancher || 0) > 0 && (
-            <span className="flex shrink-0 items-center gap-1 rounded border border-[#9B87F5]/30 bg-[#9B87F5]/[0.06] px-1.5 py-px font-code text-[9px] text-[#9B87F5]">
+            <span className="flex shrink-0 items-center gap-1 rounded border border-[#60A5FA]/30 bg-[#60A5FA]/[0.06] px-1.5 py-px font-code text-[9px] text-[#60A5FA]">
               <Flag size={9} /> {c.nb_options_a_trancher} décision{c.nb_options_a_trancher > 1 ? "s" : ""}
             </span>
           )}
@@ -74,7 +74,7 @@ function CarteTravail({ c, navigate, setSelection, attention }) {
         <button
           onClick={(e) => { e.stopPropagation(); navigate(`/travaux/${c.id}`); }}
           data-testid={`travail-continuer-${c.id}`}
-          className="flex items-center gap-1 rounded-md bg-[#9B87F5] px-2.5 py-1 text-[11px] font-semibold text-[#071019] transition-colors hover:bg-[#B4A5F7]"
+          className="flex items-center gap-1 rounded-md bg-[#60A5FA] px-2.5 py-1 text-[11px] font-semibold text-[#071019] transition-colors hover:bg-[#93C5FD]"
         >
           Continuer <ArrowRight size={10} />
         </button>
@@ -166,14 +166,14 @@ export default function Travaux() {
     <div className="h-full overflow-y-auto px-10 py-8 pb-20 sm:px-12" data-testid="travaux-page">
       <div>
         <header className="rise">
-          <div className="font-code text-[10px] uppercase tracking-[0.3em] text-[#9B87F5]">Travaux</div>
+          <div className="font-code text-[10px] uppercase tracking-[0.3em] text-[#60A5FA]">Travaux</div>
           <div className="mt-1 flex flex-wrap items-center justify-between gap-3">
             <h1 className="font-display text-xl font-black tracking-tight text-[#F2F6F8]" data-testid="travaux-titre">La mémoire de ce que l'entreprise cherche à comprendre</h1>
             <div className="flex items-center gap-2">
               <div className="relative">
                 <MagnifyingGlass size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#7C93A8]" />
                 <input value={recherche} onChange={(e) => setRecherche(e.target.value)} placeholder="Rechercher un travail…" data-testid="recherche-travail"
-                  className="h-8 w-48 rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] pl-7 pr-3 text-xs text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#9B87F5]/60 focus:outline-none" />
+                  className="h-8 w-48 rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] pl-7 pr-3 text-xs text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#60A5FA]/60 focus:outline-none" />
               </div>
               <div className="relative">
                 <button onClick={() => setVuesMenu((v) => !v)} data-testid="travaux-vues" className="flex h-8 items-center gap-1.5 rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2.5 text-xs text-[#94A3B8] transition-colors hover:text-[#F2F6F8]">
@@ -185,7 +185,7 @@ export default function Travaux() {
                   <div className="glass absolute right-0 top-9 z-30 w-44 rounded-xl p-1.5" data-testid="vues-menu">
                     {[["liste", Rows, "Récits"], ["kanban", KanbanIcon, "Kanban"], ["chrono", ClockCounterClockwise, "Chronologie"]].map(([v, Icon, label]) => (
                       <button key={v} onClick={() => { setVue(v); setVuesMenu(false); }} data-testid={`vue-${v}`}
-                        className={`flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] ${vue === v ? "bg-[rgba(155,135,245,0.12)] font-semibold text-[#C4B5FD]" : "text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"}`}>
+                        className={`flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] ${vue === v ? "bg-[rgba(96,165,250,0.12)] font-semibold text-[#BFDBFE]" : "text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"}`}>
                         <Icon size={13} /> {label}
                       </button>
                     ))}
@@ -193,7 +193,7 @@ export default function Travaux() {
                 )}
               </div>
               <button onClick={() => setMesSeulement(!mesSeulement)} data-testid="filtre-mes-travaux"
-                className={`h-8 rounded-full border px-3 text-xs transition-colors ${mesSeulement ? "border-[#9B87F5] bg-[#9B87F5] text-[#071019]" : "border-[rgba(148,163,184,0.16)] bg-[#0F1D28] text-[#94A3B8] hover:text-[#F2F6F8]"}`}>
+                className={`h-8 rounded-full border px-3 text-xs transition-colors ${mesSeulement ? "border-[#60A5FA] bg-[#60A5FA] text-[#071019]" : "border-[rgba(148,163,184,0.16)] bg-[#0F1D28] text-[#94A3B8] hover:text-[#F2F6F8]"}`}>
                 Mes travaux
               </button>
               <select value={filtreType} onChange={(e) => setFiltreType(e.target.value)} data-testid="filtre-type-travail" className="h-8 rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2 text-xs text-[#D8E2EA] focus:outline-none">
@@ -204,7 +204,7 @@ export default function Travaux() {
                 <option value="tous" label="Tous les statuts" />
                 {Object.entries(STATUTS_CASE).map(([k, [l]]) => <option key={k} value={k} label={l} />)}
               </select>
-              <button onClick={() => navigate("/travaux/nouveau")} data-testid="nouveau-travail-btn" title="Nouveau travail — né de la conversation" className="flex h-8 w-8 items-center justify-center rounded-md bg-[#9B87F5] text-[#071019] transition-colors hover:bg-[#B4A5F7]">
+              <button onClick={() => navigate("/travaux/nouveau")} data-testid="nouveau-travail-btn" title="Nouveau travail — né de la conversation" className="flex h-8 w-8 items-center justify-center rounded-md bg-[#60A5FA] text-[#071019] transition-colors hover:bg-[#93C5FD]">
                 <Plus size={14} weight="bold" />
               </button>
             </div>

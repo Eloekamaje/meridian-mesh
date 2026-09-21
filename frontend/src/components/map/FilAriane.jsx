@@ -30,7 +30,7 @@ export default function FilAriane({
       {dansSituation && (
         <>
           <span className="text-[#7C93A8]">›</span>
-          <span className="text-xs font-semibold text-[#25D0C8]" data-testid="breadcrumb-situation">
+          <span className="text-xs font-semibold text-[#60A5FA]" data-testid="breadcrumb-situation">
             {situationTitre || "Analyse de situation"}
           </span>
         </>
@@ -39,7 +39,7 @@ export default function FilAriane({
         <button
           onClick={revenirSelection}
           data-testid="nav-selection"
-          className="rounded-md border border-[rgba(148,163,184,0.16)] px-2 py-0.5 font-code text-[9px] text-[#94A3B8] transition-colors hover:border-[#9B87F5]/50 hover:text-[#F2F6F8]"
+          className="rounded-md border border-[rgba(148,163,184,0.16)] px-2 py-0.5 font-code text-[9px] text-[#94A3B8] transition-colors hover:border-[#60A5FA]/50 hover:text-[#F2F6F8]"
         >
           Revenir à ma sélection ({selection.length})
         </button>

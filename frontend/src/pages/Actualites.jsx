@@ -18,15 +18,15 @@ const VUES_ACTUS = [
 ];
 
 export const GENRES = {
-  relation: ["Découverte", "#25D0C8"],
+  relation: ["Découverte", "#60A5FA"],
   contradiction: ["Contradiction", "#F87171"],
   connaissance: ["Connaissance", "#58A6FF"],
   changement: ["Transformation", "#F2B84B"],
   incident: ["Incident", "#F87171"],
-  comportement: ["Comportement", "#9B87F5"],
-  phenomene: ["Phénomène possible", "#9B87F5"],
-  travail: ["Travail", "#9B87F5"],
-  decision: ["Décision", "#9B87F5"],
+  comportement: ["Comportement", "#60A5FA"],
+  phenomene: ["Phénomène possible", "#60A5FA"],
+  travail: ["Travail", "#60A5FA"],
+  decision: ["Décision", "#60A5FA"],
   gouvernance: ["Gouvernance", "#7C93A8"],
 };
 
@@ -63,20 +63,20 @@ function CarteHistoire({ h, vedette, dateCible, estAujourdhui, navigate, mesh })
   const actionPrincipale = () => {
     if (h.genre === "travail" || h.genre === "decision") {
       return (
-        <button onClick={() => navigate(h.liens.travail)} data-testid={`histoire-reprendre-${h.id}`} className="flex items-center gap-1.5 rounded-md bg-[#9B87F5] px-3 py-1.5 text-[11px] font-semibold text-[#071019] transition-colors hover:bg-[#B4A5F7]">
+        <button onClick={() => navigate(h.liens.travail)} data-testid={`histoire-reprendre-${h.id}`} className="flex items-center gap-1.5 rounded-md bg-[#60A5FA] px-3 py-1.5 text-[11px] font-semibold text-[#071019] transition-colors hover:bg-[#93C5FD]">
           Reprendre <ArrowRight size={11} />
         </button>
       );
     }
     if (h.incertain) {
       return (
-        <button onClick={() => navigate(`/actualites/comprendre/${h.id}`)} data-testid={`histoire-suivre-${h.id}`} className="flex items-center gap-1.5 rounded-md bg-[#9B87F5] px-3 py-1.5 text-[11px] font-semibold text-[#071019] transition-colors hover:bg-[#9B87F5]">
+        <button onClick={() => navigate(`/actualites/comprendre/${h.id}`)} data-testid={`histoire-suivre-${h.id}`} className="flex items-center gap-1.5 rounded-md bg-[#60A5FA] px-3 py-1.5 text-[11px] font-semibold text-[#071019] transition-colors hover:bg-[#60A5FA]">
           Suivre la vérification
         </button>
       );
     }
     return (
-      <button onClick={() => navigate(`/actualites/comprendre/${h.id}`)} data-testid={`histoire-comprendre-${h.id}`} className="flex items-center gap-1.5 rounded-md bg-[#9B87F5] px-3 py-1.5 text-[11px] font-semibold text-[#071019] transition-colors hover:bg-[#B4A5F7]">
+      <button onClick={() => navigate(`/actualites/comprendre/${h.id}`)} data-testid={`histoire-comprendre-${h.id}`} className="flex items-center gap-1.5 rounded-md bg-[#60A5FA] px-3 py-1.5 text-[11px] font-semibold text-[#071019] transition-colors hover:bg-[#93C5FD]">
         <Sparkle size={11} weight="fill" /> Comprendre
       </button>
     );
@@ -84,7 +84,7 @@ function CarteHistoire({ h, vedette, dateCible, estAujourdhui, navigate, mesh })
 
   return (
     <article
-      className={`rise rounded-xl border bg-[#0F1D28] p-5 transition-colors ${vedette ? "border-[#9B87F5]/25 shadow-sm" : "border-[rgba(148,163,184,0.16)] hover:border-[#41576D]"}`}
+      className={`rise rounded-xl border bg-[#0F1D28] p-5 transition-colors ${vedette ? "border-[#60A5FA]/25 shadow-sm" : "border-[rgba(148,163,184,0.16)] hover:border-[#41576D]"}`}
       data-testid={`histoire-${h.id}`}
     >
       <div className="flex items-center gap-2 font-code text-[9px] uppercase tracking-[0.2em]">
@@ -276,7 +276,7 @@ export default function Actualites() {
                     onClick={() => setVue(id)}
                     data-testid={`vue-${id}`}
                     className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                      vue === id ? "bg-[#9B87F5] font-semibold text-[#071019]" : "text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"
+                      vue === id ? "bg-[#60A5FA] font-semibold text-[#071019]" : "text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"
                     }`}
                   >
                     {label}
@@ -314,7 +314,7 @@ export default function Actualites() {
                     <div className="space-y-0.5">
                       {PRESETS.map(([v, l]) => (
                         <button key={v} onClick={() => { appliquerPreset(v); setCalendrier(false); }} data-testid={`preset-${v}`}
-                          className={`w-full rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${presetActif === v ? "bg-[rgba(155,135,245,0.12)] font-semibold text-[#C4B5FD]" : "text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"}`}>
+                          className={`w-full rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${presetActif === v ? "bg-[rgba(96,165,250,0.12)] font-semibold text-[#BFDBFE]" : "text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"}`}>
                           {l}
                         </button>
                       ))}
@@ -411,7 +411,7 @@ export default function Actualites() {
           <section className="rise mt-7" data-testid="briefing-flore">
             <h2 className="font-display text-xl font-bold text-[#F2F6F8]">{data.briefing.salutation}</h2>
             <div className="mt-1 flex items-center gap-2">
-              <span className="font-code text-[10px] uppercase tracking-[0.2em] text-[#9B87F5]">{data.briefing.titre}</span>
+              <span className="font-code text-[10px] uppercase tracking-[0.2em] text-[#60A5FA]">{data.briefing.titre}</span>
               <span className="rounded-full border border-[rgba(148,163,184,0.16)] px-2 py-0.5 font-code text-[9px] text-[#7C93A8]">{data.briefing.lecture}</span>
             </div>
             <p className="mt-2.5 text-sm font-medium leading-relaxed text-[#F2F6F8]">{data.briefing.accroche || data.briefing.texte}</p>
@@ -420,7 +420,7 @@ export default function Actualites() {
               <ul className="mt-2 space-y-1">
                 {data.briefing.points.map((p, i) => (
                   <li key={i} className="flex gap-2 text-xs text-[#94A3B8]" data-testid={`briefing-point-${i}`}>
-                    <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-[#9B87F5]" />{p}
+                    <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-[#60A5FA]" />{p}
                   </li>
                 ))}
               </ul>
@@ -429,11 +429,11 @@ export default function Actualites() {
               <button
                 onClick={() => { window.dispatchEvent(new CustomEvent("meridian:flore-ask", { detail: `Résume-moi ${jours > 1 ? "cette période" : "cette journée"} dans le Mesh.` })); ouvrirFlore(); }}
                 data-testid="briefing-explorer-btn"
-                className="flex items-center gap-1.5 rounded-full bg-[#9B87F5] px-4 py-2 text-xs font-semibold text-[#071019] transition-colors hover:bg-[#B4A5F7]"
+                className="flex items-center gap-1.5 rounded-full bg-[#60A5FA] px-4 py-2 text-xs font-semibold text-[#071019] transition-colors hover:bg-[#93C5FD]"
               >
                 <Sparkle size={12} weight="fill" /> Explorer {jours > 1 ? "la période" : "la journée"} avec Flore
               </button>
-              <button onClick={() => navigate(lienAtlasJournee)} data-testid="voir-journee-atlas-btn" className="flex items-center gap-1.5 rounded-full border border-[#25D0C8]/30 bg-[#25D0C8]/[0.06] px-4 py-2 text-xs font-semibold text-[#25D0C8] transition-colors hover:bg-[#25D0C8]/15">
+              <button onClick={() => navigate(lienAtlasJournee)} data-testid="voir-journee-atlas-btn" className="flex items-center gap-1.5 rounded-full border border-[#60A5FA]/30 bg-[#60A5FA]/[0.06] px-4 py-2 text-xs font-semibold text-[#60A5FA] transition-colors hover:bg-[#60A5FA]/15">
                 <Compass size={12} /> Voir {jours > 1 ? "la période" : "la journée"} dans l'Atlas
               </button>
             </div>
@@ -453,12 +453,12 @@ export default function Actualites() {
               ))}
             </div>
             {data.synthese.tendance && (
-              <p className="mt-3 border-l-2 border-[#9B87F5]/30 pl-3 text-xs italic text-[#D8E2EA]" data-testid="synthese-tendance">
-                <span className="font-code text-[9px] not-italic uppercase tracking-wider text-[#9B87F5]">Tendance principale — </span>{data.synthese.tendance}
+              <p className="mt-3 border-l-2 border-[#60A5FA]/30 pl-3 text-xs italic text-[#D8E2EA]" data-testid="synthese-tendance">
+                <span className="font-code text-[9px] not-italic uppercase tracking-wider text-[#60A5FA]">Tendance principale — </span>{data.synthese.tendance}
               </p>
             )}
             <div className="mt-4 flex gap-2">
-              <button onClick={() => navigate(`/atlas?avant-apres=${data.synthese.debut}`)} data-testid="comparer-atlas-btn" className="flex items-center gap-1.5 rounded-md bg-[#9B87F5] px-3 py-1.5 text-[11px] font-semibold text-[#071019] transition-colors hover:bg-[#B4A5F7]">
+              <button onClick={() => navigate(`/atlas?avant-apres=${data.synthese.debut}`)} data-testid="comparer-atlas-btn" className="flex items-center gap-1.5 rounded-md bg-[#60A5FA] px-3 py-1.5 text-[11px] font-semibold text-[#071019] transition-colors hover:bg-[#93C5FD]">
                 <ArrowsLeftRight size={12} /> Comparer le {fmtDate(data.synthese.debut)} et le {fmtDate(data.synthese.fin)}
               </button>
             </div>
@@ -484,7 +484,7 @@ export default function Actualites() {
               <p className="mt-2 text-xs leading-relaxed text-[#94A3B8]">
                 Le Mesh reste actif : {data.mesh?.jumeaux_actifs ?? "—"} jumeaux actualisés dans votre périmètre, aucune transformation significative sur la période.
               </p>
-              <button onClick={() => navigate("/atlas")} data-testid="explorer-mesh-btn" className="mt-4 inline-flex items-center gap-1.5 rounded-md bg-[#9B87F5] px-4 py-2 text-xs font-semibold text-[#071019] transition-colors hover:bg-[#B4A5F7]">
+              <button onClick={() => navigate("/atlas")} data-testid="explorer-mesh-btn" className="mt-4 inline-flex items-center gap-1.5 rounded-md bg-[#60A5FA] px-4 py-2 text-xs font-semibold text-[#071019] transition-colors hover:bg-[#93C5FD]">
                 <Compass size={12} /> Explorer le Mesh
               </button>
             </div>

@@ -107,7 +107,7 @@ export default function Jumeaux() {
     <div className="h-full overflow-y-auto px-10 py-8 pb-44 sm:px-12" data-testid="jumeaux-page">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="font-code text-[10px] uppercase tracking-[0.3em] text-[#9B87F5]">Parc de jumeaux</p>
+          <p className="font-code text-[10px] uppercase tracking-[0.3em] text-[#60A5FA]">Parc de jumeaux</p>
           <h1 className="mt-1 font-display text-3xl font-black tracking-tight text-[#F2F6F8]">Registre des jumeaux</h1>
           <p className="mt-1 max-w-xl text-sm text-[#94A3B8]">
             Consultez les jumeaux de votre périmètre, leur niveau de connaissance, leurs sources et leur état d'admission.
@@ -116,7 +116,7 @@ export default function Jumeaux() {
             {compteurs.actifs} actifs · {compteurs.construction} en construction · {compteurs.observation} en observation · <span className={compteurs.attention ? "text-[#F2B84B]" : ""}>{compteurs.attention} à traiter</span>
           </p>
         </div>
-        <button onClick={commander} data-testid="commander-jumeau-btn" className="flex items-center gap-2 rounded-md bg-[#9B87F5] px-4 py-2.5 text-sm font-semibold text-[#071019] transition-colors hover:bg-[#B4A5F7]">
+        <button onClick={commander} data-testid="commander-jumeau-btn" className="flex items-center gap-2 rounded-md bg-[#60A5FA] px-4 py-2.5 text-sm font-semibold text-[#071019] transition-colors hover:bg-[#93C5FD]">
           <Plus size={16} weight="bold" /> Commander un jumeau
         </button>
       </header>
@@ -139,11 +139,11 @@ export default function Jumeaux() {
       <div className="mt-5 flex flex-wrap items-center gap-2" data-testid="registre-outils">
         <div className="relative">
           <MagnifyingGlass size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#7C93A8]" />
-          <input value={recherche} onChange={(e) => setRecherche(e.target.value)} placeholder="Rechercher un jumeau…" data-testid="registre-recherche" className="w-56 rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] py-1.5 pl-8 pr-3 text-xs text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#25D0C8]/50 focus:outline-none" />
+          <input value={recherche} onChange={(e) => setRecherche(e.target.value)} placeholder="Rechercher un jumeau…" data-testid="registre-recherche" className="w-56 rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] py-1.5 pl-8 pr-3 text-xs text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#60A5FA]/50 focus:outline-none" />
         </div>
         <div className="flex overflow-hidden rounded-md border border-[rgba(148,163,184,0.16)]">
           {CHIPS.map(([v, l]) => (
-            <button key={v} onClick={() => setFiltreStatut(v)} data-testid={`chip-${v}`} className={`px-2.5 py-1.5 text-[11px] transition-colors ${filtreStatut === v ? "bg-[#25D0C8]/15 text-[#25D0C8]" : "text-[#94A3B8] hover:text-[#F2F6F8]"}`}>
+            <button key={v} onClick={() => setFiltreStatut(v)} data-testid={`chip-${v}`} className={`px-2.5 py-1.5 text-[11px] transition-colors ${filtreStatut === v ? "bg-[#60A5FA]/15 text-[#60A5FA]" : "text-[#94A3B8] hover:text-[#F2F6F8]"}`}>
               {l}
             </button>
           ))}
@@ -160,7 +160,7 @@ export default function Jumeaux() {
           <option value="">Autonomie ▾</option>
           {Object.entries(AUTONOMIE).map(([v, [l]]) => <option key={v} value={v}>{l}</option>)}
         </select>
-        <select value={vue} onChange={(e) => appliquerVue(e.target.value)} data-testid="registre-vues" className="rounded-md border border-[#9B87F5]/30 bg-[#9B87F5]/[0.06] px-2 py-1.5 text-xs text-[#9B87F5] focus:outline-none">
+        <select value={vue} onChange={(e) => appliquerVue(e.target.value)} data-testid="registre-vues" className="rounded-md border border-[#60A5FA]/30 bg-[#60A5FA]/[0.06] px-2 py-1.5 text-xs text-[#60A5FA] focus:outline-none">
           {VUES_ENREGISTREES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
       </div>
@@ -190,7 +190,7 @@ export default function Jumeaux() {
                 onChange={() => (coche ? retirerJumeau(j.id) : ajouterJumeau(j.id))}
                 data-testid={`registre-check-${j.id}`}
                 title="Ajouter au contexte de Flore"
-                className="h-3.5 w-3.5 shrink-0 accent-[#25D0C8]"
+                className="h-3.5 w-3.5 shrink-0 accent-[#60A5FA]"
               />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
@@ -291,14 +291,14 @@ export default function Jumeaux() {
 
       {/* Suggestion de Flore — locale, discrète, ignorable */}
       {suggestionFlore && (
-        <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-[#9B87F5]/20 bg-[rgba(155,135,245,0.12)] px-4 py-3" data-testid="registre-suggestion-flore">
+        <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-[#60A5FA]/20 bg-[rgba(96,165,250,0.12)] px-4 py-3" data-testid="registre-suggestion-flore">
           <p className="text-xs leading-snug text-[#D8E2EA]">
-            <Sparkle size={12} weight="fill" className="mr-1.5 inline text-[#9B87F5]" />
-            <span className="font-semibold text-[#C4B5FD]">Suggestion de Flore — </span>
+            <Sparkle size={12} weight="fill" className="mr-1.5 inline text-[#60A5FA]" />
+            <span className="font-semibold text-[#BFDBFE]">Suggestion de Flore — </span>
             {suggestionFlore.texte}
           </p>
           <div className="flex shrink-0 gap-1.5">
-            <button onClick={() => window.dispatchEvent(new CustomEvent("meridian:flore-ask", { detail: suggestionFlore.question }))} data-testid="suggestion-comprendre-btn" className="rounded-md bg-[#9B87F5] px-2.5 py-1.5 text-[11px] font-semibold text-[#071019] transition-colors hover:bg-[#B4A5F7]">
+            <button onClick={() => window.dispatchEvent(new CustomEvent("meridian:flore-ask", { detail: suggestionFlore.question }))} data-testid="suggestion-comprendre-btn" className="rounded-md bg-[#60A5FA] px-2.5 py-1.5 text-[11px] font-semibold text-[#071019] transition-colors hover:bg-[#93C5FD]">
               Comprendre
             </button>
             <button onClick={() => navigate(`/jumeaux/${suggestionFlore.jumeau}/revue`)} data-testid="suggestion-examiner-btn" className="rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2.5 py-1.5 text-[11px] text-[#94A3B8] transition-colors hover:text-[#F2F6F8]">

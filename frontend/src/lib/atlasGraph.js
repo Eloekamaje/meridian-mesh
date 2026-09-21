@@ -4,9 +4,9 @@ import { couleurDomaine } from "@/lib/domaines";
 import { choixCotes, routeStable, routeCorridor, gonflePolygone, sortiesPolys, detecterCroisements, decalagesParalleles, ancreLabel } from "./routeur";
 
 export const COUCHES = [
-  ["operationnelle", "Opérationnelle", "#9B87F5"],
-  ["connaissance", "Connaissance", "#25D0C8"],
-  ["mesh", "Mesh", "#9B87F5"],
+  ["operationnelle", "Opérationnelle", "#60A5FA"],
+  ["connaissance", "Connaissance", "#60A5FA"],
+  ["mesh", "Mesh", "#60A5FA"],
 ];
 
 export const NIVEAUX_ZOOM = { 1: "Global", 2: "Domaine", 3: "Jumeau", 4: "Composants & preuves" };
@@ -202,19 +202,19 @@ const styleDeBase = (r) => {
   switch (r.etat) {
     // Réalité découverte : ligne turquoise continue + marqueur directionnel (dans makeEdge)
     case "observee":
-      return { stroke: "#25D0C8", strokeWidth: 2 };
+      return { stroke: "#60A5FA", strokeWidth: 2 };
     // Écarts (contradictoire ou à qualifier) : pointillés orange
     case "supposee":
       return { stroke: "#F2B84B", strokeWidth: 1.7, strokeDasharray: "6 6", opacity: 0.9 };
     case "contestee":
       return { stroke: "#F2B84B", strokeWidth: 2, strokeDasharray: "6 6" };
     case "validation":
-      return { stroke: "#9B87F5", strokeWidth: 1.8, strokeDasharray: "7 5" };
+      return { stroke: "#60A5FA", strokeWidth: 1.8, strokeDasharray: "7 5" };
     case "obsolete":
       return { stroke: "rgba(148,163,184,0.65)", strokeWidth: 1, strokeDasharray: "2 6", opacity: 0.25 };
     // BCM déclaré : ligne gris ardoise continue
     default:
-      return { stroke: r.active ? "#9B87F5" : "rgba(148,163,184,0.7)", strokeWidth: 1.3, opacity: r.active ? 0.9 : 0.6 };
+      return { stroke: r.active ? "#60A5FA" : "rgba(148,163,184,0.7)", strokeWidth: 1.3, opacity: r.active ? 0.9 : 0.6 };
   }
 };
 
@@ -495,7 +495,7 @@ export const makeEdge = (r, niveau, positions) => {
     animated: !!r.active || r.etat === "validation",
     // Marqueur directionnel turquoise sur les relations observées par le Mesh
     ...(r.etat === "observee" && !r.restreinte
-      ? { markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: "#25D0C8" } }
+      ? { markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: "#60A5FA" } }
       : {}),
     data: { etat: r.etat, restreinte: !!r.restreinte },
     style: r.restreinte ? { ...styleParEtat(r), opacity: 0.35, strokeDasharray: "3 5" } : styleParEtat(r),
@@ -507,7 +507,7 @@ export const makeEdge = (r, niveau, positions) => {
           : niveau >= 3 && r.label
             ? r.label
             : undefined,
-    labelStyle: { fill: r.etat === "validation" ? "#9B87F5" : r.etat === "contestee" ? "#F87171" : "rgba(148,163,184,0.85)", fontSize: 10, fontFamily: "IBM Plex Mono" },
+    labelStyle: { fill: r.etat === "validation" ? "#60A5FA" : r.etat === "contestee" ? "#F87171" : "rgba(148,163,184,0.85)", fontSize: 10, fontFamily: "IBM Plex Mono" },
     labelBgStyle: { fill: "rgba(15,29,40,0.92)" },
   };
 };
@@ -538,7 +538,7 @@ export function repartirOffsets(edges) {
   });
 }
 
-const NOUVELLE_STYLE = { stroke: "#25D0C8", strokeWidth: 2.6, strokeDasharray: "2 4", opacity: 1 };
+const NOUVELLE_STYLE = { stroke: "#60A5FA", strokeWidth: 2.6, strokeDasharray: "2 4", opacity: 1 };
 
 // Projection temporelle des relations : historique/replay masquent le futur,
 // avant-après met en évidence ce qui est apparu depuis la date de référence.
@@ -557,7 +557,7 @@ export function appliquerTemps(edges, temps) {
           data: { ...e.data, nouvelle: true },
           style: { ...NOUVELLE_STYLE },
           label: `${e.label ? `${e.label} · ` : ""}nouvelle`,
-          labelStyle: { fill: "#25D0C8", fontSize: 10, fontFamily: "IBM Plex Mono" },
+          labelStyle: { fill: "#60A5FA", fontSize: 10, fontFamily: "IBM Plex Mono" },
           labelBgStyle: { fill: "rgba(15,29,40,0.92)" },
         };
       }

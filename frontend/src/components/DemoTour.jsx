@@ -20,7 +20,7 @@ export default function DemoTour() {
     <div className="glass rise fixed bottom-6 left-[276px] z-50 w-[340px] rounded-xl p-5" data-testid="demo-panel">
       <div
         className="font-code text-[10px] uppercase tracking-[0.25em]"
-        style={{ color: ["#25D0C8", "#9B87F5", "#F2B84B"][(a.acte - 1) % 3] }}
+        style={{ color: ["#60A5FA", "#60A5FA", "#F2B84B"][(a.acte - 1) % 3] }}
       >
         Parcours Olympiade — Acte {a.acte} / {actes.length}
       </div>
@@ -30,7 +30,7 @@ export default function DemoTour() {
         <Button size="sm" variant="ghost" onClick={precedent} disabled={courant === 0} data-testid="demo-prev-btn" className="text-[#94A3B8] hover:text-[#F2F6F8]">
           <ArrowLeft size={16} />
         </Button>
-        <Button size="sm" onClick={suivant} data-testid="demo-next-btn" className="flex-1 bg-[#9B87F5] text-[#071019] hover:bg-[#B4A5F7]">
+        <Button size="sm" onClick={suivant} data-testid="demo-next-btn" className="flex-1 bg-[#60A5FA] text-[#071019] hover:bg-[#93C5FD]">
           {dernier ? "Terminer le parcours" : "Acte suivant"}
           <ArrowRight size={16} />
         </Button>

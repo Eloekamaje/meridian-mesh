@@ -37,7 +37,7 @@ const STYLE_ETAT = {
   contestee: { largeur: 1.6, pointille: true, opacite: 0.7 },
   obsolete: { largeur: 1, pointille: true, opacite: 0.3 },
 };
-const COULEURS_ZONES = ["#A78BFA", "#F59E0B", "#38BDF8", "#F472B6", "#34D399", "#FB923C"];
+const COULEURS_ZONES = ["#60A5FA", "#F59E0B", "#38BDF8", "#F472B6", "#34D399", "#FB923C"];
 
 const HANDLE_CENTRE = { position: "absolute", left: "50%", top: "50%", transform: "translate(-50%,-50%)", width: 1, height: 1, minWidth: 0, minHeight: 0, border: 0, background: "transparent", opacity: 0, pointerEvents: "none" };
 
@@ -125,7 +125,7 @@ function Segment({ options, valeur, onChange, testid }) {
           aria-pressed={valeur === v}
           data-testid={`${testid}-${v}`}
           className={`min-h-[30px] rounded-md px-2.5 text-[11px] font-medium transition-colors ${
-            valeur === v ? "bg-[#9B87F5]/25 text-white" : "text-[#7C93A8] hover:text-white"
+            valeur === v ? "bg-[#60A5FA]/25 text-white" : "text-[#7C93A8] hover:text-white"
           }`}
         >
           {label}
@@ -147,7 +147,7 @@ function Bascule({ actif, onChange, label, testid, aide }) {
       className="flex min-h-[30px] w-full items-center justify-between gap-3 rounded-lg px-1 text-left text-[11px] text-[#CBD5E1] hover:text-white"
     >
       <span>{label}</span>
-      <span className={`relative h-4 w-7 shrink-0 rounded-full transition-colors ${actif ? "bg-[#9B87F5]" : "bg-white/15"}`}>
+      <span className={`relative h-4 w-7 shrink-0 rounded-full transition-colors ${actif ? "bg-[#60A5FA]" : "bg-white/15"}`}>
         <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all ${actif ? "left-3.5" : "left-0.5"}`} />
       </span>
     </button>
@@ -157,7 +157,7 @@ function Bascule({ actif, onChange, label, testid, aide }) {
 const Rubrique = ({ numero, titre, idee, children }) => (
   <div className="space-y-1.5 border-t border-white/[0.07] pt-2.5 first:border-0 first:pt-0">
     <div className="flex items-baseline gap-1.5">
-      <span className="font-code text-[9px] text-[#9B87F5]">{numero}</span>
+      <span className="font-code text-[9px] text-[#60A5FA]">{numero}</span>
       <span className="text-[11px] font-semibold text-white">{titre}</span>
       {idee && <span className="ml-auto font-code text-[8px] uppercase tracking-wider text-[#64748B]">{idee}</span>}
     </div>
@@ -495,7 +495,7 @@ function Labo() {
       {panneau && (
       <div className="w-[330px] shrink-0 space-y-2.5 overflow-y-auto border-r border-white/[0.08] bg-[#091420] p-3.5" data-testid="labo-reglages">
           <div className="flex items-center gap-2">
-            <Flask size={16} className="text-[#9B87F5]" />
+            <Flask size={16} className="text-[#60A5FA]" />
             <div className="min-w-0 flex-1 leading-tight">
               <div className="text-xs font-bold text-white">Laboratoire du graphe</div>
               <div className="text-[10px] text-[#7C93A8]">Inspiré de graphify · données réelles du Mesh</div>
@@ -508,7 +508,7 @@ function Labo() {
             <button onClick={() => appliquer(REGLAGES_ACTUELS)} data-testid="labo-preset-actuel" className="flex min-h-[30px] flex-1 items-center justify-center gap-1.5 rounded-lg border border-white/10 text-[11px] text-[#CBD5E1] hover:text-white">
               <ArrowCounterClockwise size={12} /> Atlas actuel
             </button>
-            <button onClick={() => appliquer(REGLAGES_PROPOSES)} data-testid="labo-preset-propose" className="flex min-h-[30px] flex-1 items-center justify-center gap-1.5 rounded-lg border border-[#9B87F5]/40 bg-[#9B87F5]/15 text-[11px] font-semibold text-[#C4B5FD] hover:text-white">
+            <button onClick={() => appliquer(REGLAGES_PROPOSES)} data-testid="labo-preset-propose" className="flex min-h-[30px] flex-1 items-center justify-center gap-1.5 rounded-lg border border-[#60A5FA]/40 bg-[#60A5FA]/15 text-[11px] font-semibold text-[#BFDBFE] hover:text-white">
               <Sparkle size={12} weight="fill" /> Proposition
             </button>
           </div>
@@ -518,7 +518,7 @@ function Labo() {
             {etiquettes === "noms" && (
               <label className="flex items-center gap-2 text-[10px] text-[#7C93A8]">
                 Seuil : degré ≥ {Math.round(seuil * 100)} % du max
-                <input type="range" min="0" max="1" step="0.05" value={seuil} onChange={(e) => regler("seuil")(Number(e.target.value))} data-testid="labo-seuil" className="flex-1 accent-[#9B87F5]" />
+                <input type="range" min="0" max="1" step="0.05" value={seuil} onChange={(e) => regler("seuil")(Number(e.target.value))} data-testid="labo-seuil" className="flex-1 accent-[#60A5FA]" />
               </label>
             )}
           </Rubrique>
@@ -535,7 +535,7 @@ function Labo() {
               <div className="max-h-32 space-y-0.5 overflow-y-auto rounded-lg border border-white/[0.06] p-1.5" data-testid="labo-liste-situations">
                 {situations.map((sit, i) => (
                   <label key={sit.id} className="flex cursor-pointer items-start gap-1.5 rounded px-1 py-0.5 text-[10px] leading-snug text-[#94A3B8] hover:bg-white/[0.05]">
-                    <input type="checkbox" checked={zonesChoisies.has(sit.id)} onChange={() => basculerZone(sit.id)} className="mt-0.5 accent-[#9B87F5]" />
+                    <input type="checkbox" checked={zonesChoisies.has(sit.id)} onChange={() => basculerZone(sit.id)} className="mt-0.5 accent-[#60A5FA]" />
                     <span className="mt-1 h-2 w-2 shrink-0 rounded-full" style={{ background: COULEURS_ZONES[i % COULEURS_ZONES.length] }} />
                     <span className="flex-1">{sit.titre}</span>
                     <span className="font-code text-[9px] text-[#64748B]">{(sit.jumeaux || []).length}</span>
@@ -571,7 +571,7 @@ function Labo() {
               <div>Fluidité : {fluidite ? `${fluidite.ips} images/s · p95 ${fluidite.p95} ms · pire ${fluidite.pire} ms` : "—"}</div>
             </div>
           </Rubrique>
-          <Link to="/labo/echelle" className="block text-center font-code text-[10px] text-[#C4B5FD] hover:text-white" data-testid="labo-vers-echelle">
+          <Link to="/labo/echelle" className="block text-center font-code text-[10px] text-[#BFDBFE] hover:text-white" data-testid="labo-vers-echelle">
             Passage à l'échelle : 1 000 → 1 000 000 de jumeaux →
           </Link>
           <Link to="/atlas" className="block text-center font-code text-[10px] text-[#7C93A8] hover:text-white" data-testid="labo-vers-atlas">
@@ -582,7 +582,7 @@ function Labo() {
       <div ref={carteRef} className="relative min-w-0 flex-1">
         {!panneau && (
           <button type="button" onClick={() => setPanneau(true)} data-testid="labo-deplier" className="absolute left-3 top-3 z-10 flex min-h-[34px] items-center gap-1.5 rounded-lg border border-white/10 bg-[#0C1724]/92 px-3 text-[11px] text-[#CBD5E1] hover:text-white">
-            <Flask size={13} className="text-[#9B87F5]" /> Réglages
+            <Flask size={13} className="text-[#60A5FA]" /> Réglages
           </button>
         )}
         <ReactFlow
@@ -712,12 +712,12 @@ function Labo() {
         <div className="min-h-0 flex-1 overflow-y-auto p-3.5" data-testid="labo-legende">
           <h3 className="mb-2 font-code text-[10px] uppercase tracking-wider text-[#64748B]">{couleur === "domaine" ? "Domaines déclarés" : "Communautés calculées"}</h3>
           <label className="mb-2 flex cursor-pointer items-center gap-2 text-xs text-[#94A3B8]">
-            <input ref={refTout} type="checkbox" checked={masques.size === 0} onChange={(e) => toutBasculer(e.target.checked)} data-testid="labo-tout" className="accent-[#9B87F5]" />
+            <input ref={refTout} type="checkbox" checked={masques.size === 0} onChange={(e) => toutBasculer(e.target.checked)} data-testid="labo-tout" className="accent-[#60A5FA]" />
             Tout sélectionner
           </label>
           {legende.map((e) => (
             <label key={e.cle} className={`flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-xs hover:bg-white/[0.05] ${masques.has(e.cle) ? "opacity-40" : ""}`} data-testid={`labo-groupe-${e.cle}`}>
-              <input type="checkbox" checked={!masques.has(e.cle)} onChange={() => basculerGroupe(e.cle)} className="accent-[#9B87F5]" />
+              <input type="checkbox" checked={!masques.has(e.cle)} onChange={() => basculerGroupe(e.cle)} className="accent-[#60A5FA]" />
               <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: e.couleur }} />
               <span className="flex-1 truncate text-[#DCE6EE]">{e.label}</span>
               {e.purete != null && <span className="font-code text-[9px] text-[#64748B]" title="Part du domaine dominant">{Math.round(e.purete * 100)} %</span>}

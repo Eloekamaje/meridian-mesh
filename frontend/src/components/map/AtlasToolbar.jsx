@@ -58,7 +58,7 @@ export default function AtlasToolbar({ outil, setOutil, rfRef, onExpliquer, expl
             }}
             className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors ${
               outil === id && id !== "recentrage"
-                ? "bg-[#25D0C8]/15 text-[#25D0C8]"
+                ? "bg-[#60A5FA]/15 text-[#60A5FA]"
                 : "text-[#7C93A8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"
             }`}
           >
@@ -81,7 +81,7 @@ export default function AtlasToolbar({ outil, setOutil, rfRef, onExpliquer, expl
           data-testid="expliquer-carte-btn"
           onClick={onExpliquer}
           className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors ${
-            expliquerOuvert ? "bg-[#9B87F5]/12 text-[#9B87F5]" : "text-[#7C93A8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"
+            expliquerOuvert ? "bg-[#60A5FA]/12 text-[#60A5FA]" : "text-[#7C93A8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"
           }`}
         >
           <Article size={16} />
@@ -93,7 +93,7 @@ export default function AtlasToolbar({ outil, setOutil, rfRef, onExpliquer, expl
           data-testid="outil-bibliotheque"
           onClick={() => setBiblioOuverte((o) => !o)}
           className={`mt-1 flex h-8 w-8 items-center justify-center rounded-md border-t border-[rgba(148,163,184,0.16)] pt-1 transition-colors ${
-            biblioOuverte || vueListe ? "bg-[#9B87F5]/12 text-[#9B87F5]" : "text-[#7C93A8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"
+            biblioOuverte || vueListe ? "bg-[#60A5FA]/12 text-[#60A5FA]" : "text-[#7C93A8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"
           }`}
         >
           <Bookmarks size={16} weight={biblioOuverte || vueListe ? "fill" : "regular"} />
@@ -108,7 +108,7 @@ export default function AtlasToolbar({ outil, setOutil, rfRef, onExpliquer, expl
               data-testid={`nav-${id}`}
               onClick={() => { onOuvrirListe?.(vueListe === id ? null : id); setBiblioOuverte(false); }}
               className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[12px] transition-colors hover:bg-[rgba(148,163,184,0.10)] ${
-                vueListe === id ? "font-semibold text-[#9B87F5]" : "text-[#94A3B8] hover:text-[#F2F6F8]"
+                vueListe === id ? "font-semibold text-[#60A5FA]" : "text-[#94A3B8] hover:text-[#F2F6F8]"
               }`}
             >
               <Icon size={14} weight={vueListe === id ? "fill" : "regular"} /> {label}

@@ -78,7 +78,7 @@ export default function AtelierSources({ sources, catalogue, sourceActiveId, onS
           <button onClick={onOuvrirImport} data-testid="import-btn" className="flex items-center gap-1.5 rounded-md border border-[rgba(148,163,184,0.16)] px-2.5 py-1.5 text-[11px] text-[#D8E2EA] transition-colors hover:text-[#F2F6F8]">
             <UploadSimple size={13} /> Importer
           </button>
-          <button onClick={onOuvrirTiroir} data-testid="ajouter-source-btn" className="flex items-center gap-1.5 rounded-md bg-[#9B87F5] px-3 py-1.5 text-[11px] font-semibold text-[#071019] transition-colors hover:bg-[#B4A5F7]">
+          <button onClick={onOuvrirTiroir} data-testid="ajouter-source-btn" className="flex items-center gap-1.5 rounded-md bg-[#60A5FA] px-3 py-1.5 text-[11px] font-semibold text-[#071019] transition-colors hover:bg-[#93C5FD]">
             <Plus size={13} /> Ajouter une source
           </button>
         </div>
@@ -89,7 +89,7 @@ export default function AtelierSources({ sources, catalogue, sourceActiveId, onS
         <div className="relative">
           <MagnifyingGlass size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#7C93A8]" />
           <input value={recherche} onChange={(e) => setRecherche(e.target.value)} placeholder="Rechercher une instance…" data-testid="file-recherche"
-            className="w-56 rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] py-1.5 pl-8 pr-3 text-xs text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#25D0C8]/50 focus:outline-none" />
+            className="w-56 rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] py-1.5 pl-8 pr-3 text-xs text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#60A5FA]/50 focus:outline-none" />
         </div>
         <select value={filtreConnecteur} onChange={(e) => setFiltreConnecteur(e.target.value)} data-testid="filtre-connecteur" className="rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2 py-1.5 text-xs text-[#D8E2EA] focus:outline-none">
           <option value="">Tous connecteurs</option>
@@ -123,16 +123,16 @@ export default function AtelierSources({ sources, catalogue, sourceActiveId, onS
                   onClick={() => onSelect(s.id)}
                   data-testid={`source-ligne-${s.id}`}
                   style={{ borderLeft: `2px solid ${st.couleur}` }}
-                  className={`rise flex cursor-pointer items-center gap-3 border-b border-[rgba(148,163,184,0.16)] px-4 py-2.5 transition-[background-color,transform] duration-150 hover:translate-x-0.5 ${active ? "bg-[#25D0C8]/[0.06]" : "hover:bg-[rgba(148,163,184,0.07)]"}`}
+                  className={`rise flex cursor-pointer items-center gap-3 border-b border-[rgba(148,163,184,0.16)] px-4 py-2.5 transition-[background-color,transform] duration-150 hover:translate-x-0.5 ${active ? "bg-[#60A5FA]/[0.06]" : "hover:bg-[rgba(148,163,184,0.07)]"}`}
                 >
-                  <input type="checkbox" checked={selLot.includes(s.id)} onClick={(e) => e.stopPropagation()} onChange={() => basculerLot(s.id)} data-testid={`lot-check-${s.id}`} className="h-3.5 w-3.5 shrink-0 accent-[#25D0C8]" />
+                  <input type="checkbox" checked={selLot.includes(s.id)} onClick={(e) => e.stopPropagation()} onChange={() => basculerLot(s.id)} data-testid={`lot-check-${s.id}`} className="h-3.5 w-3.5 shrink-0 accent-[#60A5FA]" />
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[13px] font-medium text-[#F2F6F8]">{s.nom}</div>
                     <div className="truncate font-code text-[9px] text-[#7C93A8]">{nomConnecteur(s.connecteur)} · {s.environnement}{s.perimetre ? ` · ${s.perimetre}` : ""}{s.proprietaire ? ` · ${s.proprietaire}` : ""}</div>
                   </div>
                   {s.statut === "test_en_cours" && (
                     <div className="h-1 w-16 overflow-hidden rounded-full bg-[rgba(148,163,184,0.16)]">
-                      <div className="h-full w-1/2 animate-pulse rounded-full bg-[#9B87F5]" />
+                      <div className="h-full w-1/2 animate-pulse rounded-full bg-[#60A5FA]" />
                     </div>
                   )}
                   <span className="shrink-0 rounded border px-1.5 py-0.5 font-code text-[9px]" style={{ color: st.couleur, borderColor: `${st.couleur}44`, backgroundColor: `${st.couleur}12` }} data-testid={`source-statut-${s.id}`}>

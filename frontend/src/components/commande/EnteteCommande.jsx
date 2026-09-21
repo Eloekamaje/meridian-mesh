@@ -40,7 +40,7 @@ export default function EnteteCommande({ commande, sauvegarde, onQuitter, onEtap
                 onClick={() => accessible && onEtape(n)}
                 disabled={!accessible}
                 data-testid={`etape-nav-${n}`}
-                className={`rounded px-1.5 py-0.5 transition-colors ${n === commande.etape ? "bg-[#25D0C8]/10 font-semibold text-[#25D0C8]" : accessible ? "text-[#7C93A8] hover:text-[#F2F6F8]" : "cursor-default text-[#7C93A8]"}`}
+                className={`rounded px-1.5 py-0.5 transition-colors ${n === commande.etape ? "bg-[#60A5FA]/10 font-semibold text-[#60A5FA]" : accessible ? "text-[#7C93A8] hover:text-[#F2F6F8]" : "cursor-default text-[#7C93A8]"}`}
               >
                 {n}. {label}
               </button>
@@ -48,7 +48,7 @@ export default function EnteteCommande({ commande, sauvegarde, onQuitter, onEtap
           );
         })}
         <span className="ml-3 hidden h-px flex-1 bg-[rgba(148,163,184,0.10)] sm:block">
-          <span className="block h-px bg-[#25D0C8] transition-[width] duration-500" style={{ width: `${(commande.etape / ETAPES_COMMANDE.length) * 100}%` }} />
+          <span className="block h-px bg-[#60A5FA] transition-[width] duration-500" style={{ width: `${(commande.etape / ETAPES_COMMANDE.length) * 100}%` }} />
         </span>
       </nav>
     </div>

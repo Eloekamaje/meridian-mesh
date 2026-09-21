@@ -58,7 +58,7 @@ export default function RevueContenu({ examen, jumeau }) {
         <div className="font-code text-[10px] uppercase tracking-[0.2em] text-[#7C93A8]">Relations proposées · handshake A2A</div>
         <div className="mt-1.5 flex flex-wrap gap-1.5" data-testid="revue-relations">
           {(examen.relations_supposees || []).map((r, i) => (
-            <span key={i} className="rounded-full border border-[#9B87F5]/40 bg-[#9B87F5]/10 px-2 py-0.5 font-code text-[10px] text-[#9B87F5]">
+            <span key={i} className="rounded-full border border-[#60A5FA]/40 bg-[#60A5FA]/10 px-2 py-0.5 font-code text-[10px] text-[#60A5FA]">
               {r.jumeau} · {r.confiance} %
             </span>
           ))}

@@ -25,7 +25,7 @@ export default function Investigations() {
   return (
     <div className="h-full overflow-y-auto px-8 py-8 pb-40" data-testid="investigations-page">
       <header className="rise">
-        <div className="font-code text-[10px] uppercase tracking-[0.3em] text-[#9B87F5]">Comprendre</div>
+        <div className="font-code text-[10px] uppercase tracking-[0.3em] text-[#60A5FA]">Comprendre</div>
         <h1 className="mt-1 font-display text-3xl font-black tracking-tight text-[#F2F6F8]">Investigations</h1>
         <p className="mt-2 text-base text-[#94A3B8]">
           Relations, comportements, connaissances, contradictions — pas seulement des incidents.
@@ -35,7 +35,7 @@ export default function Investigations() {
       <div className="rise mt-6 flex flex-wrap gap-1.5" style={{ animationDelay: "60ms" }} data-testid="nature-filters">
         {FILTRES.map((f) => {
           const actif = filtre === f;
-          const c = f === "tous" ? "#9B87F5" : NATURES[f]?.couleur || "#7C93A8";
+          const c = f === "tous" ? "#60A5FA" : NATURES[f]?.couleur || "#7C93A8";
           return (
             <button
               key={f}
@@ -64,7 +64,7 @@ export default function Investigations() {
               key={sit.id}
               to={`/investigations/${sit.id}`}
               data-testid={`investigation-card-${sit.id}`}
-              className="rise group rounded-xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-6 transition-colors duration-200 hover:border-[#9B87F5]/40 hover:bg-[rgba(148,163,184,0.10)]"
+              className="rise group rounded-xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-6 transition-colors duration-200 hover:border-[#60A5FA]/40 hover:bg-[rgba(148,163,184,0.10)]"
               style={{ animationDelay: `${idx * 60}ms` }}
             >
               <div className="flex items-center justify-between gap-2">
@@ -82,10 +82,10 @@ export default function Investigations() {
                     </span>
                   )}
                 </div>
-                <ArrowRight size={16} className="text-[#7C93A8] transition-transform duration-200 group-hover:translate-x-1 group-hover:text-[#9B87F5]" />
+                <ArrowRight size={16} className="text-[#7C93A8] transition-transform duration-200 group-hover:translate-x-1 group-hover:text-[#60A5FA]" />
               </div>
               <div className="mt-4 flex items-start gap-2.5">
-                <Question size={18} className="mt-0.5 shrink-0 text-[#9B87F5]" />
+                <Question size={18} className="mt-0.5 shrink-0 text-[#60A5FA]" />
                 <h2 className="font-display text-lg font-bold leading-snug text-[#F2F6F8]">
                   {sit.question || sit.titre}
                 </h2>

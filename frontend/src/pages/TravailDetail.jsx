@@ -100,7 +100,7 @@ export default function TravailDetail() {
   const casVu = pilote?.conversation ? { ...cas, conversation: pilote.conversation } : cas;
 
   const t = TYPES_CASE[cas.type] || [cas.type, "#7C93A8"];
-  const sens = SENSIBILITES[cas.sensibilite] || [cas.sensibilite || "interne", "#9B87F5"];
+  const sens = SENSIBILITES[cas.sensibilite] || [cas.sensibilite || "interne", "#60A5FA"];
   const derniereEvolution = (cas.historique || []).slice(-1)[0];
 
   return (

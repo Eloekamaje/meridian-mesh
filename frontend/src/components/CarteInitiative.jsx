@@ -8,8 +8,8 @@ import { rel } from "@/components/case/utils";
 
 export const GENRES_INIT = {
   a_confirmer: ["Confirmation demandée", "#F2B84B"],
-  investigation_recommandee: ["Investigation recommandée", "#9B87F5"],
-  decision_a_examiner: ["Décision à examiner", "#9B87F5"],
+  investigation_recommandee: ["Investigation recommandée", "#60A5FA"],
+  decision_a_examiner: ["Décision à examiner", "#60A5FA"],
   action_proposee: ["Action proposée", "#F2B84B"],
   a_surveiller: ["À surveiller", "#58A6FF"],
   information: ["Information", "#7C93A8"],
@@ -57,7 +57,7 @@ export default function CarteInitiative({ init, mesh, onChange }) {
       return (
         <>
           {init.travail_id && (
-            <button onClick={() => repondre("Ajouter à ce travail", { travail_id: init.travail_id })} disabled={envoi} data-testid={`init-ajouter-${init.id}`} className="flex items-center gap-1.5 rounded-md bg-[#9B87F5] px-3 py-1.5 text-[11px] font-semibold text-[#071019] transition-colors hover:bg-[#B4A5F7] disabled:opacity-50">
+            <button onClick={() => repondre("Ajouter à ce travail", { travail_id: init.travail_id })} disabled={envoi} data-testid={`init-ajouter-${init.id}`} className="flex items-center gap-1.5 rounded-md bg-[#60A5FA] px-3 py-1.5 text-[11px] font-semibold text-[#071019] transition-colors hover:bg-[#93C5FD] disabled:opacity-50">
               <FolderOpen size={12} /> Ajouter à ce travail
             </button>
           )}
@@ -73,7 +73,7 @@ export default function CarteInitiative({ init, mesh, onChange }) {
     if (init.genre === "decision_a_examiner") {
       return (
         <>
-          <button onClick={() => repondre("Comparer les options")} disabled={envoi} data-testid={`init-comparer-${init.id}`} className="rounded-md bg-[#9B87F5] px-3 py-1.5 text-[11px] font-semibold text-[#071019] transition-colors hover:bg-[#B4A5F7] disabled:opacity-50">
+          <button onClick={() => repondre("Comparer les options")} disabled={envoi} data-testid={`init-comparer-${init.id}`} className="rounded-md bg-[#60A5FA] px-3 py-1.5 text-[11px] font-semibold text-[#071019] transition-colors hover:bg-[#93C5FD] disabled:opacity-50">
             Comparer les options
           </button>
           <button onClick={() => repondre("Demander une validation")} disabled={envoi} data-testid={`init-valider-${init.id}`} className="rounded-md border border-[rgba(148,163,184,0.16)] px-3 py-1.5 text-[11px] text-[#94A3B8] transition-colors hover:text-[#F2F6F8] disabled:opacity-50">
@@ -100,7 +100,7 @@ export default function CarteInitiative({ init, mesh, onChange }) {
     if (init.genre === "a_surveiller" || init.genre === "information") {
       return (
         <>
-          <button onClick={() => window.dispatchEvent(new CustomEvent("meridian:flore-ask", { detail: `Explique-moi : ${init.titre} — ${init.raison}` }))} data-testid={`init-comprendre-${init.id}`} className="rounded-md bg-[#9B87F5] px-3 py-1.5 text-[11px] font-semibold text-[#071019] transition-colors hover:bg-[#B4A5F7]">
+          <button onClick={() => window.dispatchEvent(new CustomEvent("meridian:flore-ask", { detail: `Explique-moi : ${init.titre} — ${init.raison}` }))} data-testid={`init-comprendre-${init.id}`} className="rounded-md bg-[#60A5FA] px-3 py-1.5 text-[11px] font-semibold text-[#071019] transition-colors hover:bg-[#93C5FD]">
             Comprendre
           </button>
           <button onClick={() => repondre("Suivre")} disabled={envoi} data-testid={`init-suivre-${init.id}`} className="rounded-md border border-[#58A6FF]/40 px-3 py-1.5 text-[11px] font-semibold text-[#58A6FF] transition-colors hover:bg-[#58A6FF]/10 disabled:opacity-50">
@@ -135,11 +135,11 @@ export default function CarteInitiative({ init, mesh, onChange }) {
           {init.raison}
           {(init.preuves || []).length > 0 && (
             <>
-              <button onClick={() => setPreuves((p) => !p)} data-testid={`init-preuves-${init.id}`} className="mt-1.5 flex items-center gap-1 font-code text-[10px] text-[#9B87F5] hover:underline">
+              <button onClick={() => setPreuves((p) => !p)} data-testid={`init-preuves-${init.id}`} className="mt-1.5 flex items-center gap-1 font-code text-[10px] text-[#60A5FA] hover:underline">
                 <Eye size={11} /> {init.preuves.length} preuve{init.preuves.length > 1 ? "s" : ""} · {preuves ? "masquer" : "afficher"}
               </button>
               {preuves && (
-                <ul className="mt-1.5 space-y-1 border-l-2 border-[#9B87F5]/25 pl-2.5">
+                <ul className="mt-1.5 space-y-1 border-l-2 border-[#60A5FA]/25 pl-2.5">
                   {init.preuves.map((p, k) => <li key={k} className="font-code text-[10px] leading-snug text-[#94A3B8]">{p}</li>)}
                 </ul>
               )}

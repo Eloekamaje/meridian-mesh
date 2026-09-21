@@ -45,7 +45,7 @@ function BulleFlore({ data, index, onSuite }) {
   const [preuves, setPreuves] = useState(false);
   return (
     <div className="rise" data-testid={`accueil-reponse-${index}`}>
-      <div className="flex items-center gap-1.5 font-code text-[9px] uppercase tracking-[0.2em] text-[#C4B5FD]">
+      <div className="flex items-center gap-1.5 font-code text-[9px] uppercase tracking-[0.2em] text-[#BFDBFE]">
         <Sparkle size={11} weight="fill" /> Flore
       </div>
       <p className="mt-1.5 whitespace-pre-line text-sm leading-relaxed text-[#F2F6F8]"><TexteRiche texte={data.reponse || data.texte} /></p>
@@ -54,7 +54,7 @@ function BulleFlore({ data, index, onSuite }) {
         <div className="mt-2.5 space-y-1.5">
           {data.contributions.map((c, k) => (
             <div key={k} className="flex gap-2 rounded-lg bg-[rgba(148,163,184,0.07)] px-3 py-2 text-xs" data-testid={`accueil-contribution-${index}-${k}`}>
-              <span className="shrink-0 font-code text-[10px] font-semibold text-[#9B87F5]">{c.jumeau}</span>
+              <span className="shrink-0 font-code text-[10px] font-semibold text-[#60A5FA]">{c.jumeau}</span>
               <span className="text-[#94A3B8]">{c.texte}</span>
             </div>
           ))}
@@ -63,14 +63,14 @@ function BulleFlore({ data, index, onSuite }) {
 
       {(data.preuves || []).length > 0 && (
         <div className="mt-2.5">
-          <button onClick={() => setPreuves((p) => !p)} data-testid={`accueil-preuves-${index}`} className="flex items-center gap-1 font-code text-[10px] text-[#9B87F5] hover:underline">
+          <button onClick={() => setPreuves((p) => !p)} data-testid={`accueil-preuves-${index}`} className="flex items-center gap-1 font-code text-[10px] text-[#60A5FA] hover:underline">
             <Eye size={11} /> Cette conclusion repose sur {data.preuves.length} preuve{data.preuves.length > 1 ? "s" : ""} · {preuves ? "masquer" : "afficher"}
           </button>
           {preuves && (
-            <ul className="mt-1.5 space-y-1 border-l-2 border-[#9B87F5]/25 pl-2.5">
+            <ul className="mt-1.5 space-y-1 border-l-2 border-[#60A5FA]/25 pl-2.5">
               {data.preuves.map((p, k) => (
                 <li key={k} className="font-code text-[10px] leading-snug text-[#94A3B8]">
-                  <span className="font-semibold text-[#C4B5FD]">{p.source}</span> — {p.detail}
+                  <span className="font-semibold text-[#BFDBFE]">{p.source}</span> — {p.detail}
                 </li>
               ))}
             </ul>
@@ -88,7 +88,7 @@ function BulleFlore({ data, index, onSuite }) {
         <div className="mt-3 flex flex-wrap gap-1.5">
           {data.propositions.map((p, k) => (
             <button key={k} onClick={() => (p.action === "demo" ? navigate("/demo") : onSuite(p.question || p.label))} data-testid={p.action === "demo" ? "creation-decouvrir-demo" : `accueil-prop-${index}-${k}`}
-              className="rounded-full border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-3 py-1.5 text-[11px] text-[#94A3B8] transition-colors hover:border-[#9B87F5]/40 hover:text-[#9B87F5]">
+              className="rounded-full border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-3 py-1.5 text-[11px] text-[#94A3B8] transition-colors hover:border-[#60A5FA]/40 hover:text-[#60A5FA]">
               {p.label}
             </button>
           ))}
@@ -237,26 +237,26 @@ export default function Accueil({ mode = "accueil" }) {
                   <div className="rise mt-5 flex flex-wrap justify-center gap-2" style={{ animationDelay: "120ms" }} data-testid="accueil-suggestions">
                     {suggestions.map((s) => (
                       <button key={s} onClick={() => demander(s)} data-testid={`accueil-suggestion-${s.slice(0, 18)}`}
-                        className="rounded-full border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-3.5 py-1.5 text-xs text-[#94A3B8] transition-colors hover:border-[#9B87F5]/40 hover:text-[#9B87F5]">
+                        className="rounded-full border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-3.5 py-1.5 text-xs text-[#94A3B8] transition-colors hover:border-[#60A5FA]/40 hover:text-[#60A5FA]">
                         {s}
                       </button>
                     ))}
                   </div>
                   <div className="rise mt-10 grid w-full gap-2 sm:grid-cols-3" style={{ animationDelay: "180ms" }}>
-                    <button onClick={() => navigate("/actualites")} data-testid="accueil-actus" className="rounded-xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-4 text-left transition-colors hover:border-[#9B87F5]/40">
-                      <Newspaper size={16} className="text-[#9B87F5]" />
+                    <button onClick={() => navigate("/actualites")} data-testid="accueil-actus" className="rounded-xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-4 text-left transition-colors hover:border-[#60A5FA]/40">
+                      <Newspaper size={16} className="text-[#60A5FA]" />
                       <div className="mt-2 text-xs font-semibold text-[#F2F6F8]">Changements d'aujourd'hui</div>
                       <div className="mt-0.5 font-code text-[9px] text-[#7C93A8]">Le briefing du Mesh</div>
                     </button>
                     {recents[0] && (
-                      <button onClick={() => navigate(`/travaux/${recents[0].id}`)} data-testid="accueil-reprendre" className="rounded-xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-4 text-left transition-colors hover:border-[#9B87F5]/40">
+                      <button onClick={() => navigate(`/travaux/${recents[0].id}`)} data-testid="accueil-reprendre" className="rounded-xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-4 text-left transition-colors hover:border-[#60A5FA]/40">
                         <Sparkle size={16} className="text-[#F2B84B]" />
                         <div className="mt-2 truncate text-xs font-semibold text-[#F2F6F8]">Reprendre « {recents[0].titre} »</div>
                         <div className="mt-0.5 font-code text-[9px] text-[#7C93A8]">Continuité du travail</div>
                       </button>
                     )}
-                    <button onClick={() => navigate("/atlas")} data-testid="accueil-explorer" className="rounded-xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-4 text-left transition-colors hover:border-[#9B87F5]/40">
-                      <Compass size={16} className="text-[#25D0C8]" />
+                    <button onClick={() => navigate("/atlas")} data-testid="accueil-explorer" className="rounded-xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-4 text-left transition-colors hover:border-[#60A5FA]/40">
+                      <Compass size={16} className="text-[#60A5FA]" />
                       <div className="mt-2 text-xs font-semibold text-[#F2F6F8]">Explorer mon espace</div>
                       <div className="mt-0.5 font-code text-[9px] text-[#7C93A8]">L'Atlas du Mesh</div>
                     </button>
@@ -270,7 +270,7 @@ export default function Accueil({ mode = "accueil" }) {
                 e.role === "activite" ? (
                   <LigneActiviteFlore key={e.cle || i} activite={e.activite} testid={`accueil-activite-trace-${i}`} />
                 ) : e.role === "moi" ? (
-                  <p key={e.cle || i} className="rise ml-auto max-w-[85%] rounded-2xl rounded-br-md bg-[rgba(155,135,245,0.12)] px-4 py-2.5 text-sm text-[#F2F6F8]" data-testid={`accueil-msg-${i}`}>
+                  <p key={e.cle || i} className="rise ml-auto max-w-[85%] rounded-2xl rounded-br-md bg-[rgba(96,165,250,0.12)] px-4 py-2.5 text-sm text-[#F2F6F8]" data-testid={`accueil-msg-${i}`}>
                     {e.texte}
                   </p>
                 ) : (

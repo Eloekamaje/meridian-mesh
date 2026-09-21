@@ -15,7 +15,7 @@ export default function Layout() {
   const pilote = usePilotage();
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-[#071019] text-[#DCE6EE]" data-testid="layout" data-accent="bleu">
+    <div className="flex h-screen w-full overflow-hidden bg-[#071019] text-[#DCE6EE]" data-testid="layout">
       {/* Barre latérale gauche (dépliable ou repliable en icônes de menus seules) */}
       <SidebarGauche />
 

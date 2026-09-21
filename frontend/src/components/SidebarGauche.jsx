@@ -162,7 +162,7 @@ export default function SidebarGauche() {
           <button
             onClick={ouvrirNouveauTravail}
             className={`flex min-h-[44px] w-full items-center gap-2.5 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs font-medium text-white transition-all hover:border-white/20 hover:bg-white/[0.08] shadow-sm ${
-              pilote?.ouvertureEnAttente ? "animate-pulse ring-2 ring-[#C4B5FD] ring-offset-2 ring-offset-[#091420]" : ""
+              pilote?.ouvertureEnAttente ? "animate-pulse ring-2 ring-[#BFDBFE] ring-offset-2 ring-offset-[#091420]" : ""
             }`}
             data-testid="btn-nouveau-travail-sidebar"
           >
@@ -216,8 +216,8 @@ export default function SidebarGauche() {
             const actif = isActive || !!pilote;
             return `flex items-center gap-3 rounded-xl transition-colors ${
               replie
-                ? `h-9 w-9 justify-center hover:bg-white/[0.06] ${actif ? "bg-[#9B87F5]/20 text-[#C4B5FD]" : "text-[#9B87F5]"}`
-                : `px-3 py-2 text-xs font-medium ${actif ? "bg-[#9B87F5]/15 font-semibold text-white" : "text-[#B4A5F7] hover:bg-[#9B87F5]/10 hover:text-white"}`
+                ? `h-9 w-9 justify-center hover:bg-white/[0.06] ${actif ? "bg-[#60A5FA]/20 text-[#BFDBFE]" : "text-[#60A5FA]"}`
+                : `px-3 py-2 text-xs font-medium ${actif ? "bg-[#60A5FA]/15 font-semibold text-white" : "text-[#93C5FD] hover:bg-[#60A5FA]/10 hover:text-white"}`
             }`;
           }}
         >
@@ -260,7 +260,7 @@ export default function SidebarGauche() {
             >
               <span className="truncate">{c.titre}</span>
               {c.demo_phase === "en_construction" && (
-                <span className="shrink-0 rounded-full bg-[#9B87F5]/20 px-1.5 py-px font-code text-[8px] uppercase tracking-wider text-[#C4B5FD]">en cours</span>
+                <span className="shrink-0 rounded-full bg-[#60A5FA]/20 px-1.5 py-px font-code text-[8px] uppercase tracking-wider text-[#BFDBFE]">en cours</span>
               )}
             </NavLink>
           ))}
@@ -281,7 +281,7 @@ export default function SidebarGauche() {
               data-testid="sidebar-profil-btn"
             >
               <div className="flex items-center gap-2.5 min-w-0">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-[#38BDF8] to-[#9B87F5] font-display text-xs font-bold text-[#071019] shadow-sm">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-[#38BDF8] to-[#60A5FA] font-display text-xs font-bold text-[#071019] shadow-sm">
                   {identite.initiales}
                 </div>
                 <div className="min-w-0 text-left">
@@ -326,7 +326,7 @@ export default function SidebarGauche() {
           <div className="flex flex-col items-center">
             <button
               onClick={() => setReplieMemo(false)}
-              className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-tr from-[#38BDF8] to-[#9B87F5] font-display text-xs font-bold text-[#071019] shadow-sm hover:scale-105 transition-transform"
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-tr from-[#38BDF8] to-[#60A5FA] font-display text-xs font-bold text-[#071019] shadow-sm hover:scale-105 transition-transform"
               title={`${identite.nom} (${personaActuel.role || "Directeur SI"})`}
             >
               {identite.initiales}

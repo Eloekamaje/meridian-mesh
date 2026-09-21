@@ -11,14 +11,14 @@ export const DOMAINES = {
 export const couleurDomaine = (d) => DOMAINES[d] || "#94A3B8";
 
 export const VERBES = {
-  decouvert: { label: "Découvert", verbe: "Découvrir", couleur: "#20D5C3", accroche: "Nouvelles connaissances candidates" },
-  a_comprendre: { label: "À comprendre", verbe: "Comprendre", couleur: "#A78BFA", accroche: "Confiance insuffisante, validation requise" },
+  decouvert: { label: "Découvert", verbe: "Découvrir", couleur: "#60A5FA", accroche: "Nouvelles connaissances candidates" },
+  a_comprendre: { label: "À comprendre", verbe: "Comprendre", couleur: "#93C5FD", accroche: "Confiance insuffisante, validation requise" },
   a_decider: { label: "À décider", verbe: "Décider", couleur: "#F59E0B", accroche: "Conclusions et actions en attente d'approbation" },
 };
 
 export const NATURES = {
-  relation: { label: "Relation", couleur: "#20D5C3" },
-  comportement: { label: "Comportement", couleur: "#A78BFA" },
+  relation: { label: "Relation", couleur: "#60A5FA" },
+  comportement: { label: "Comportement", couleur: "#93C5FD" },
   connaissance: { label: "Connaissance", couleur: "#38BDF8" },
   contradiction: { label: "Contradiction", couleur: "#F87171" },
   incident: { label: "Incident", couleur: "#F87171" },
@@ -26,9 +26,9 @@ export const NATURES = {
 };
 
 export const ETATS_RELATION = {
-  observee: { label: "Observée", couleur: "#20D5C3" },
+  observee: { label: "Observée", couleur: "#60A5FA" },
   supposee: { label: "Supposée", couleur: "#F59E0B" },
-  validation: { label: "Validation A2A", couleur: "#A78BFA" },
+  validation: { label: "Validation A2A", couleur: "#93C5FD" },
   confirmee: { label: "Confirmée", couleur: "rgba(226,232,240,0.85)" },
   contestee: { label: "Contestée", couleur: "#F87171" },
   obsolete: { label: "Obsolète", couleur: "rgba(148,163,184,0.35)" },
@@ -36,24 +36,24 @@ export const ETATS_RELATION = {
 
 export const MATURITES = {
   "bien connu": "#34D399",
-  "partiellement découvert": "#25D0C8",
+  "partiellement découvert": "#60A5FA",
   "instable": "#F2B84B",
-  "en transformation": "#9B87F5",
+  "en transformation": "#60A5FA",
   "insuffisamment couvert": "#F87171",
 };
 
 export const PRIORITES = {
   critique: { label: "Critique", couleur: "#F87171" },
   haute: { label: "Haute", couleur: "#F2B84B" },
-  moyenne: { label: "Moyenne", couleur: "#9B87F5" },
+  moyenne: { label: "Moyenne", couleur: "#60A5FA" },
   basse: { label: "Basse", couleur: "#7C93A8" },
 };
 
 export const NATURES_EVENEMENT = {
-  signal: "#9B87F5",
+  signal: "#60A5FA",
   preuve: "#34D399",
   alerte: "#F87171",
-  decouverte: "#25D0C8",
+  decouverte: "#60A5FA",
   trace: "#7C93A8",
 };
 

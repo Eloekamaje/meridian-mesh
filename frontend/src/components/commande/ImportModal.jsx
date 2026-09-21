@@ -38,7 +38,7 @@ export default function ImportModal({ commandeId, modeInitial = "cmdb", onImport
 
         <div className="mt-4 grid grid-cols-2 gap-2">
           {MODES.map(([m, titre, desc]) => (
-            <button key={m} onClick={() => { setMode(m); setApercu(null); }} data-testid={`import-mode-${m}`} className={`rounded-lg border p-3 text-left transition-colors ${mode === m ? "border-[#25D0C8]/50 bg-[#25D0C8]/[0.05]" : "border-[rgba(148,163,184,0.16)] hover:border-[#41576D]"}`}>
+            <button key={m} onClick={() => { setMode(m); setApercu(null); }} data-testid={`import-mode-${m}`} className={`rounded-lg border p-3 text-left transition-colors ${mode === m ? "border-[#60A5FA]/50 bg-[#60A5FA]/[0.05]" : "border-[rgba(148,163,184,0.16)] hover:border-[#41576D]"}`}>
               <div className="text-xs font-semibold text-[#F2F6F8]">{titre}</div>
               <div className="mt-0.5 text-[10px] text-[#7C93A8]">{desc}</div>
             </button>
@@ -46,7 +46,7 @@ export default function ImportModal({ commandeId, modeInitial = "cmdb", onImport
         </div>
 
         {!apercu ? (
-          <button onClick={analyser} disabled={chargement} data-testid="import-analyser-btn" className="mt-4 flex items-center gap-1.5 rounded-md bg-[#9B87F5] px-4 py-2 text-xs font-semibold text-[#071019] transition-colors hover:bg-[#B4A5F7] disabled:opacity-40">
+          <button onClick={analyser} disabled={chargement} data-testid="import-analyser-btn" className="mt-4 flex items-center gap-1.5 rounded-md bg-[#60A5FA] px-4 py-2 text-xs font-semibold text-[#071019] transition-colors hover:bg-[#93C5FD] disabled:opacity-40">
             <UploadSimple size={13} /> {chargement ? "Analyse…" : "Analyser"}
           </button>
         ) : (
@@ -54,7 +54,7 @@ export default function ImportModal({ commandeId, modeInitial = "cmdb", onImport
             <div className="mt-4 grid grid-cols-4 gap-2 text-center">
               {[
                 [apercu.detectees, "détectées", "rgba(148,163,184,0.16)"],
-                [apercu.nouvelles.length, "nouvelles", "#25D0C8"],
+                [apercu.nouvelles.length, "nouvelles", "#60A5FA"],
                 [apercu.presentes.length, "déjà présentes", "#7C93A8"],
                 [apercu.a_mapper.length, "à mapper", "#F2B84B"],
               ].map(([n, l, c]) => (

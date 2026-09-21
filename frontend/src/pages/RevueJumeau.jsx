@@ -80,7 +80,7 @@ export default function RevueJumeau() {
                 {st[0]}
               </span>
             )}
-            <button onClick={() => navigate(`/atlas?focus=${jid}`)} data-testid="revue-atlas-btn" className="flex items-center gap-1.5 rounded-md border border-[rgba(148,163,184,0.16)] px-2.5 py-1.5 text-xs text-[#94A3B8] transition-colors hover:border-[#25D0C8]/50 hover:text-[#F2F6F8]">
+            <button onClick={() => navigate(`/atlas?focus=${jid}`)} data-testid="revue-atlas-btn" className="flex items-center gap-1.5 rounded-md border border-[rgba(148,163,184,0.16)] px-2.5 py-1.5 text-xs text-[#94A3B8] transition-colors hover:border-[#60A5FA]/50 hover:text-[#F2F6F8]">
               <Compass size={13} /> Centrer dans l'Atlas
             </button>
           </div>

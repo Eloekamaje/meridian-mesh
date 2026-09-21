@@ -99,7 +99,7 @@ export default function AtlasControle({
           onClick={() => setDeplie(!deplie)}
           data-testid="controle-toggle"
           title={deplie ? "Replier les réglages" : "Calques et réglages"}
-          className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors ${deplie ? "bg-[#25D0C8]/15 text-[#25D0C8]" : "text-[#7C93A8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"}`}
+          className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors ${deplie ? "bg-[#60A5FA]/15 text-[#60A5FA]" : "text-[#7C93A8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"}`}
         >
           {deplie ? <X size={14} /> : <Stack size={14} />}
         </button>
@@ -109,7 +109,7 @@ export default function AtlasControle({
       </div>
 
       {focus && (
-        <Link to="/atlas" className="mt-2 block px-1 font-code text-[10px] text-[#9B87F5] hover:underline" data-testid="map-clear-focus">
+        <Link to="/atlas" className="mt-2 block px-1 font-code text-[10px] text-[#60A5FA] hover:underline" data-testid="map-clear-focus">
           ← Retirer le filtre « {focus} »
         </Link>
       )}
@@ -136,7 +136,7 @@ export default function AtlasControle({
                     modeTemps === id
                       ? id === "direct" ? "bg-[#34D399]/15 text-[#34D399]"
                         : id === "pause" ? "bg-[#F2B84B]/15 text-[#F2B84B]"
-                        : "bg-[#9B87F5]/12 text-[#9B87F5]"
+                        : "bg-[#60A5FA]/12 text-[#60A5FA]"
                       : "text-[#7C93A8] hover:text-[#F2F6F8]"
                   }`}
                 >
@@ -172,7 +172,7 @@ export default function AtlasControle({
                 <button
                   onClick={onRejouer}
                   data-testid="rejouer-btn"
-                  className="flex items-center gap-1 rounded border border-[#9B87F5]/40 px-2 py-1 font-code text-[10px] text-[#9B87F5] transition-colors hover:bg-[#9B87F5]/10"
+                  className="flex items-center gap-1 rounded border border-[#60A5FA]/40 px-2 py-1 font-code text-[10px] text-[#60A5FA] transition-colors hover:bg-[#60A5FA]/10"
                 >
                   <Play size={11} /> Rejouer
                 </button>
@@ -190,7 +190,7 @@ export default function AtlasControle({
             <div className="mt-1.5 space-y-0.5">
               {[
                 ["bcm", "BCM déclaré", "rgba(148,163,184,0.7)", "solid"],
-                ["realite", "Réalité découverte", "#25D0C8", "solid"],
+                ["realite", "Réalité découverte", "#60A5FA", "solid"],
                 ["ecarts", "Écarts", "#F2B84B", "dashed"],
               ].map(([id, label, coul, st]) => (
                 <button
@@ -207,7 +207,7 @@ export default function AtlasControle({
             <div className="mt-2 px-1 font-code text-[9px] uppercase tracking-[0.2em] text-[#7C93A8]">Couches cartographiques</div>
             <div className="mt-1.5 space-y-0.5">
               {[
-                ["situations", "Situations", "#9B87F5"],
+                ["situations", "Situations", "#60A5FA"],
                 ["capacites", "Capacités", "#58A6FF"],
                 ["transformations", "Transformations", "#F2B84B"],
               ].map(([id, label, coul]) => (

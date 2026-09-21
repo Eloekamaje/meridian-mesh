@@ -12,19 +12,19 @@
         --card-foreground: 210 32% 98%;
         --popover: 222 40% 8.5%;
         --popover-foreground: 210 32% 98%;
-        --primary: 174 78% 48%;
+        --primary: 217 91% 68%;
         --primary-foreground: 222 47% 5%;
         --secondary: 220 26% 14%;
         --secondary-foreground: 210 24% 84%;
         --muted: 220 26% 14%;
         --muted-foreground: 215 16% 62%;
-        --accent: 258 85% 72%;
+        --accent: 213 94% 78%;
         --accent-foreground: 222 47% 5%;
         --destructive: 0 72% 62%;
         --destructive-foreground: 0 0% 98%;
         --border: 218 24% 17%;
         --input: 218 24% 17%;
-        --ring: 174 78% 48%;
+        --ring: 217 91% 68%;
         --radius: 0.5rem;
     }
 }
@@ -42,7 +42,7 @@
         letter-spacing: -0.01em;
     }
     :focus-visible {
-        outline: 2px solid #20D5C3;
+        outline: 2px solid #60A5FA;
         outline-offset: 2px;
     }
 }
@@ -123,7 +123,7 @@
 ::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.22); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.35); }
 
-::selection { background: rgba(37, 208, 200, 0.25); }
+::selection { background: rgba(96,165,250, 0.25); }
 
 /* Ciel étoilé de l'Atlas — scintillement subtil */
 @keyframes scintillement {
@@ -135,14 +135,14 @@
 /* ————— Console stellaire : HUD, lueurs, déploiement, télétype ————— */
 .hud { clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px); }
 .hud-gauche { clip-path: polygon(16px 0, 100% 0, 100% 100%, 0 100%, 0 16px); }
-.hud-violet { filter: drop-shadow(0 0 16px rgba(155, 135, 245, 0.16)); }
+.hud-violet { filter: drop-shadow(0 0 16px rgba(96,165,250, 0.16)); }
 @keyframes pulse-bordure {
-  0%, 100% { border-color: rgba(155, 135, 245, 0.25); }
-  50% { border-color: rgba(155, 135, 245, 0.75); }
+  0%, 100% { border-color: rgba(96,165,250, 0.25); }
+  50% { border-color: rgba(96,165,250, 0.75); }
 }
 .hud-reflexion { animation: pulse-bordure 1.6s ease-in-out infinite; }
 .glow-hover { transition: box-shadow 0.2s ease, border-color 0.2s ease, background-color 0.2s ease; }
-.glow-hover:hover { box-shadow: 0 0 0 1px rgba(37, 208, 200, 0.3), 0 0 20px rgba(37, 208, 200, 0.12); border-color: rgba(37, 208, 200, 0.4); }
+.glow-hover:hover { box-shadow: 0 0 0 1px rgba(96,165,250, 0.3), 0 0 20px rgba(96,165,250, 0.12); border-color: rgba(96,165,250, 0.4); }
 @keyframes deploiement {
   from { opacity: 0; transform: scale(0.94); }
   to { opacity: 1; transform: scale(1); }
@@ -155,7 +155,7 @@
 .react-flow__edges { animation: apparition-douce 0.5s ease-out 0.3s both; }
 .ciel-deploiement { animation: apparition-douce 1.4s ease-out both; }
 @keyframes curseur-clignote { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
-.curseur-teletype { animation: curseur-clignote 0.9s step-end infinite; color: #9B87F5; }
+.curseur-teletype { animation: curseur-clignote 0.9s step-end infinite; color: #60A5FA; }
 @media (prefers-reduced-motion: reduce) {
   .node-deploiement, .react-flow__edges, .ciel-deploiement { animation: none; }
 }
@@ -171,7 +171,7 @@
 /* Le fond nuit (dégradé + ciel étoilé) vit sur le conteneur : React Flow reste transparent */
 .react-flow.react-flow { background-color: transparent; }
 .react-flow__node.selectable:focus { outline: none; }
-.react-flow__selection { background: rgba(37, 208, 200, 0.06); border: 1px dashed rgba(37, 208, 200, 0.45); }
+.react-flow__selection { background: rgba(96,165,250, 0.06); border: 1px dashed rgba(96,165,250, 0.45); }
 .react-flow__panel.react-flow__minimap { background: #0B1620; border-radius: 8px; }
 
 @layer base {
@@ -205,56 +205,3 @@
 .page-transition {
   animation: page-fade 180ms ease-out;
 }
-
-/* Accent : le violet des classes utilitaires devient le bleu du site (#60a5fa). Les couleurs pilotées par des données
-   (états, verbes de situation, domaines) ne changent pas. Posé par data-accent sur Layout ; retirer l'attribut rétablit le violet. */
-[data-accent="bleu"] .accent-\[\#9B87F5\] { accent-color: rgb(96 165 250); }
-[data-accent="bleu"] .bg-\[\#9B87F5\] { background-color: rgb(96 165 250); }
-[data-accent="bleu"] .bg-\[\#9B87F5\]\/10 { background-color: rgb(96 165 250 / 0.1); }
-[data-accent="bleu"] .bg-\[\#9B87F5\]\/12 { background-color: rgb(96 165 250 / 0.12); }
-[data-accent="bleu"] .bg-\[\#9B87F5\]\/15 { background-color: rgb(96 165 250 / 0.15); }
-[data-accent="bleu"] .bg-\[\#9B87F5\]\/20 { background-color: rgb(96 165 250 / 0.2); }
-[data-accent="bleu"] .bg-\[\#9B87F5\]\/25 { background-color: rgb(96 165 250 / 0.25); }
-[data-accent="bleu"] .bg-\[\#9B87F5\]\/80 { background-color: rgb(96 165 250 / 0.8); }
-[data-accent="bleu"] .bg-\[\#9B87F5\]\/\[0\.03\] { background-color: rgb(96 165 250 / 0.03); }
-[data-accent="bleu"] .bg-\[\#9B87F5\]\/\[0\.04\] { background-color: rgb(96 165 250 / 0.04); }
-[data-accent="bleu"] .bg-\[\#9B87F5\]\/\[0\.05\] { background-color: rgb(96 165 250 / 0.05); }
-[data-accent="bleu"] .bg-\[\#9B87F5\]\/\[0\.06\] { background-color: rgb(96 165 250 / 0.06); }
-[data-accent="bleu"] .bg-\[\#9B87F5\]\/\[0\.07\] { background-color: rgb(96 165 250 / 0.07); }
-[data-accent="bleu"] .bg-\[\#A78BFA\] { background-color: rgb(96 165 250); }
-[data-accent="bleu"] .border-\[\#9B87F5\] { border-color: rgb(96 165 250); }
-[data-accent="bleu"] .border-\[\#9B87F5\]\/20 { border-color: rgb(96 165 250 / 0.2); }
-[data-accent="bleu"] .border-\[\#9B87F5\]\/25 { border-color: rgb(96 165 250 / 0.25); }
-[data-accent="bleu"] .border-\[\#9B87F5\]\/30 { border-color: rgb(96 165 250 / 0.3); }
-[data-accent="bleu"] .border-\[\#9B87F5\]\/35 { border-color: rgb(96 165 250 / 0.35); }
-[data-accent="bleu"] .border-\[\#9B87F5\]\/40 { border-color: rgb(96 165 250 / 0.4); }
-[data-accent="bleu"] .border-\[\#9B87F5\]\/50 { border-color: rgb(96 165 250 / 0.5); }
-[data-accent="bleu"] .border-\[\#9B87F5\]\/60 { border-color: rgb(96 165 250 / 0.6); }
-[data-accent="bleu"] .focus\:border-\[\#9B87F5\]\/60:focus { border-color: rgb(96 165 250 / 0.6); }
-[data-accent="bleu"] .group:hover .group-hover\:text-\[\#9B87F5\] { color: rgb(96 165 250); }
-[data-accent="bleu"] .hover\:bg-\[\#9B87F5\]:hover { background-color: rgb(96 165 250); }
-[data-accent="bleu"] .hover\:bg-\[\#9B87F5\]\/10:hover { background-color: rgb(96 165 250 / 0.1); }
-[data-accent="bleu"] .hover\:bg-\[\#9B87F5\]\/12:hover { background-color: rgb(96 165 250 / 0.12); }
-[data-accent="bleu"] .hover\:bg-\[\#9B87F5\]\/15:hover { background-color: rgb(96 165 250 / 0.15); }
-[data-accent="bleu"] .hover\:bg-\[\#9B87F5\]\/20:hover { background-color: rgb(96 165 250 / 0.2); }
-[data-accent="bleu"] .hover\:bg-\[\#9B87F5\]\/5:hover { background-color: rgb(96 165 250 / 0.05); }
-[data-accent="bleu"] .hover\:bg-\[\#B4A5F7\]:hover { background-color: rgb(147 197 253); }
-[data-accent="bleu"] .hover\:border-\[\#9B87F5\]\/40:hover { border-color: rgb(96 165 250 / 0.4); }
-[data-accent="bleu"] .hover\:border-\[\#9B87F5\]\/50:hover { border-color: rgb(96 165 250 / 0.5); }
-[data-accent="bleu"] .hover\:text-\[\#9B87F5\]:hover { color: rgb(96 165 250); }
-[data-accent="bleu"] .hover\:text-\[\#C4B5FD\]:hover { color: rgb(191 219 254); }
-[data-accent="bleu"] .outline-\[\#9B87F5\]\/60 { outline-color: rgb(96 165 250 / 0.6); }
-[data-accent="bleu"] .ring-\[\#9B87F5\]\/20 { --tw-ring-color: rgb(96 165 250 / 0.2); }
-[data-accent="bleu"] .ring-\[\#9B87F5\]\/50 { --tw-ring-color: rgb(96 165 250 / 0.5); }
-[data-accent="bleu"] .ring-\[\#C4B5FD\] { --tw-ring-color: rgb(191 219 254); }
-[data-accent="bleu"] .shadow-\[\#9B87F5\]\/10 { --tw-shadow-color: rgb(96 165 250 / 0.1); }
-[data-accent="bleu"] .shadow-\[\#9B87F5\]\/20 { --tw-shadow-color: rgb(96 165 250 / 0.2); }
-[data-accent="bleu"] .shadow-\[\#9B87F5\]\/40 { --tw-shadow-color: rgb(96 165 250 / 0.4); }
-[data-accent="bleu"] .text-\[\#9B87F5\] { color: rgb(96 165 250); }
-[data-accent="bleu"] .text-\[\#9B87F5\]\/60 { color: rgb(96 165 250 / 0.6); }
-[data-accent="bleu"] .text-\[\#9B87F5\]\/70 { color: rgb(96 165 250 / 0.7); }
-[data-accent="bleu"] .text-\[\#A78BFA\] { color: rgb(96 165 250); }
-[data-accent="bleu"] .text-\[\#B4A5F7\] { color: rgb(147 197 253); }
-[data-accent="bleu"] .text-\[\#C4B5FD\] { color: rgb(191 219 254); }
-[data-accent="bleu"] .text-\[\#C4B5FD\]\/80 { color: rgb(191 219 254 / 0.8); }
-[data-accent="bleu"] .to-\[\#9B87F5\] { --tw-gradient-to: rgb(96 165 250); }

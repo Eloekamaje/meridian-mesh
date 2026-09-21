@@ -18,7 +18,7 @@ export default function InspecteurSource({ source, connecteur, onChange, onTeste
         {c.label}{c.requis && <span className="text-[#F87171]"> *</span>}
       </label>
       {c.type === "select" ? (
-        <select value={source.config?.[c.cle] ?? c.defaut ?? ""} onChange={(e) => onChange(source.id, { config: { ...source.config, [c.cle]: e.target.value } })} data-testid={`insp-${c.cle}`} className="mt-1 w-full rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-3 py-2 text-xs text-[#F2F6F8] focus:border-[#25D0C8]/60 focus:outline-none">
+        <select value={source.config?.[c.cle] ?? c.defaut ?? ""} onChange={(e) => onChange(source.id, { config: { ...source.config, [c.cle]: e.target.value } })} data-testid={`insp-${c.cle}`} className="mt-1 w-full rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-3 py-2 text-xs text-[#F2F6F8] focus:border-[#60A5FA]/60 focus:outline-none">
           {c.options.map((o) => <option key={o} value={o}>{o}</option>)}
         </select>
       ) : (
@@ -28,7 +28,7 @@ export default function InspecteurSource({ source, connecteur, onChange, onTeste
           onChange={(e) => onChange(source.id, { config: { ...source.config, [c.cle]: c.type === "nombre" ? Number(e.target.value) : e.target.value } })}
           placeholder={c.type === "liste" ? "valeur1, valeur2…" : c.type === "secret" ? "coffre/…" : ""}
           data-testid={`insp-${c.cle}`}
-          className="mt-1 w-full rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-3 py-2 text-xs text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#25D0C8]/60 focus:outline-none"
+          className="mt-1 w-full rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-3 py-2 text-xs text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#60A5FA]/60 focus:outline-none"
         />
       )}
     </div>
@@ -71,7 +71,7 @@ export default function InspecteurSource({ source, connecteur, onChange, onTeste
       <div className="mt-4 grid grid-cols-2 gap-3">
         <div>
           <label className="font-code text-[10px] uppercase tracking-[0.15em] text-[#7C93A8]">Nom de l'instance</label>
-          <input value={source.nom} onChange={(e) => onChange(source.id, { nom: e.target.value })} data-testid="insp-nom" className="mt-1 w-full rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-3 py-2 text-xs text-[#F2F6F8] focus:border-[#25D0C8]/60 focus:outline-none" />
+          <input value={source.nom} onChange={(e) => onChange(source.id, { nom: e.target.value })} data-testid="insp-nom" className="mt-1 w-full rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-3 py-2 text-xs text-[#F2F6F8] focus:border-[#60A5FA]/60 focus:outline-none" />
         </div>
         <div>
           <label className="font-code text-[10px] uppercase tracking-[0.15em] text-[#7C93A8]">Environnement</label>
@@ -81,11 +81,11 @@ export default function InspecteurSource({ source, connecteur, onChange, onTeste
         </div>
         <div>
           <label className="font-code text-[10px] uppercase tracking-[0.15em] text-[#7C93A8]">Périmètre</label>
-          <input value={source.perimetre} onChange={(e) => onChange(source.id, { perimetre: e.target.value })} placeholder="schémas, projets, index…" data-testid="insp-perimetre" className="mt-1 w-full rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-3 py-2 text-xs text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#25D0C8]/60 focus:outline-none" />
+          <input value={source.perimetre} onChange={(e) => onChange(source.id, { perimetre: e.target.value })} placeholder="schémas, projets, index…" data-testid="insp-perimetre" className="mt-1 w-full rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-3 py-2 text-xs text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#60A5FA]/60 focus:outline-none" />
         </div>
         <div>
           <label className="font-code text-[10px] uppercase tracking-[0.15em] text-[#7C93A8]">Propriétaire</label>
-          <input value={source.proprietaire} onChange={(e) => onChange(source.id, { proprietaire: e.target.value })} placeholder="Équipe responsable" data-testid="insp-proprietaire" className="mt-1 w-full rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-3 py-2 text-xs text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#25D0C8]/60 focus:outline-none" />
+          <input value={source.proprietaire} onChange={(e) => onChange(source.id, { proprietaire: e.target.value })} placeholder="Équipe responsable" data-testid="insp-proprietaire" className="mt-1 w-full rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-3 py-2 text-xs text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#60A5FA]/60 focus:outline-none" />
         </div>
       </div>
 
@@ -95,7 +95,7 @@ export default function InspecteurSource({ source, connecteur, onChange, onTeste
       </div>
 
       <div className="mt-5 flex items-center gap-2 border-t border-[rgba(148,163,184,0.16)] pt-4">
-        <button onClick={() => onTester([source.id])} disabled={source.statut === "test_en_cours"} data-testid="insp-tester-btn" className="flex items-center gap-1.5 rounded-md bg-[#9B87F5] px-3 py-2 text-xs font-semibold text-[#071019] transition-colors hover:bg-[#B4A5F7] disabled:opacity-40">
+        <button onClick={() => onTester([source.id])} disabled={source.statut === "test_en_cours"} data-testid="insp-tester-btn" className="flex items-center gap-1.5 rounded-md bg-[#60A5FA] px-3 py-2 text-xs font-semibold text-[#071019] transition-colors hover:bg-[#93C5FD] disabled:opacity-40">
           <Lightning size={13} /> {source.statut === "test_en_cours" ? "Test en cours…" : "Tester la connexion"}
         </button>
         <span className="font-code text-[9px] text-[#7C93A8]">enregistrement automatique</span>

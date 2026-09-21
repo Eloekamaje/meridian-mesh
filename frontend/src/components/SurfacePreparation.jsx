@@ -15,10 +15,10 @@ export default function SurfacePreparation({ preparation, vierge = false, testid
       role="status"
       aria-live="polite"
     >
-      <div className="max-w-[440px] rounded-xl border border-[#9B87F5]/25 bg-[#0F1D28]/95 px-5 py-4 text-center shadow-2xl">
+      <div className="max-w-[440px] rounded-xl border border-[#60A5FA]/25 bg-[#0F1D28]/95 px-5 py-4 text-center shadow-2xl">
         <div className="flex items-center justify-center gap-2">
-          <CircleNotch size={14} className="animate-spin text-[#9B87F5]" />
-          <span className="font-code text-[10px] uppercase tracking-[0.25em] text-[#9B87F5]">Préparation</span>
+          <CircleNotch size={14} className="animate-spin text-[#60A5FA]" />
+          <span className="font-code text-[10px] uppercase tracking-[0.25em] text-[#60A5FA]">Préparation</span>
         </div>
         <p className="mt-2 text-sm font-semibold text-[#F2F6F8]" data-testid={`${testid}-titre`}>
           {preparation.titre}

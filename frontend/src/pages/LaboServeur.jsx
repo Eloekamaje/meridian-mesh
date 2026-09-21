@@ -15,12 +15,12 @@ export default function LaboServeur() {
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="labo-serveur">
       <div className="flex items-center gap-3 border-b border-white/10 px-5 py-3">
-        <Flask size={18} className="text-violet-300" />
+        <Flask size={18} className="text-blue-300" />
         <h1 className="text-sm font-semibold text-slate-100">Laboratoire · le Mesh servi par vue</h1>
         <div className="ml-auto flex items-center gap-1">
           {SOURCES.map(([v, label]) => (
             <button key={String(v)} onClick={() => setN(v)} data-testid={`source-${v}`}
-              className={`rounded-md px-2.5 py-1 text-xs ${n === v ? "bg-violet-500/25 text-violet-100" : "text-slate-400 hover:bg-white/5"}`}>{label}</button>
+              className={`rounded-md px-2.5 py-1 text-xs ${n === v ? "bg-blue-500/25 text-blue-100" : "text-slate-400 hover:bg-white/5"}`}>{label}</button>
           ))}
           <Link to="/atlas" className="ml-2 text-xs text-slate-400 hover:text-slate-200">Atlas</Link>
         </div>

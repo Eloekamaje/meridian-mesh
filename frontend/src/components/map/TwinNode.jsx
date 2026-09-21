@@ -41,19 +41,19 @@ function MonolitheJumeau({ jumeau, couleur, selected, actif, grand, ports, relLi
       {ports && (
         <>
           <span className="absolute -left-1 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-[#7C93A8]" data-testid="port-entree" />
-          <span className="absolute -right-1 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-[#20D5C3]" data-testid="port-sortie" />
+          <span className="absolute -right-1 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-[#60A5FA]" data-testid="port-sortie" />
         </>
       )}
       {actif && (
-        <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-[#20D5C3] ring-2 ring-[#070B12]" />
+        <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-[#60A5FA] ring-2 ring-[#070B12]" />
       )}
       <span
         className={`relative flex ${taille} items-center justify-center rounded-2xl monolith-glass transition-all duration-300 ${
           selected
-            ? "shadow-[0_0_24px_rgba(32,213,195,0.45)] ring-2 ring-[#20D5C3]"
+            ? "shadow-[0_0_24px_rgba(96,165,250,0.45)] ring-2 ring-[#60A5FA]"
             : relLiee
-              ? "shadow-[0_0_18px_rgba(32,213,195,0.3)] ring-1.5 ring-[#20D5C3]/80"
-              : "ring-1 ring-white/10 group-hover:shadow-[0_0_20px_rgba(32,213,195,0.35)] group-hover:ring-1.5 group-hover:ring-[#20D5C3]/60"
+              ? "shadow-[0_0_18px_rgba(96,165,250,0.3)] ring-1.5 ring-[#60A5FA]/80"
+              : "ring-1 ring-white/10 group-hover:shadow-[0_0_20px_rgba(96,165,250,0.35)] group-hover:ring-1.5 group-hover:ring-[#60A5FA]/60"
         }`}
       >
         {/* Glow diffus d'arrière-plan teinté du domaine */}
@@ -268,7 +268,7 @@ export default function TwinNode({ data, selected }) {
           {data.detailPosition === "haut" && carteDetail}
           {data.dansSituation && (
             <span
-              className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-[#A78BFA] ring-2 ring-[#070B12]"
+              className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-[#60A5FA] ring-2 ring-[#070B12]"
               title="Impliqué dans une situation active"
               data-testid={`twin-situation-${j.id}`}
             />
@@ -282,7 +282,7 @@ export default function TwinNode({ data, selected }) {
           )}
         </span>
         <span
-          className={`whitespace-nowrap font-code text-[10px] font-semibold tracking-wide text-[#D8E2EA] transition-all duration-200 group-hover:text-[#25D0C8] ${fondu >= 1 ? "" : fondu > 0 ? "pointer-events-none" : "pointer-events-none opacity-0 group-hover:opacity-100"}`}
+          className={`whitespace-nowrap font-code text-[10px] font-semibold tracking-wide text-[#D8E2EA] transition-all duration-200 group-hover:text-[#60A5FA] ${fondu >= 1 ? "" : fondu > 0 ? "pointer-events-none" : "pointer-events-none opacity-0 group-hover:opacity-100"}`}
           style={fondu > 0 && fondu < 1 ? { opacity: fondu } : undefined}
           data-testid={`twin-nom-${j.id}`}
         >

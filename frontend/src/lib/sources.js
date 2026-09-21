@@ -1,8 +1,8 @@
 export const STATUTS_SOURCE = {
   ajoutee: { label: "Ajoutée", couleur: "#7C93A8" },
   a_configurer: { label: "À configurer", couleur: "#F2B84B" },
-  prete_a_tester: { label: "Prête à tester", couleur: "#9B87F5" },
-  test_en_cours: { label: "Test en cours…", couleur: "#9B87F5" },
+  prete_a_tester: { label: "Prête à tester", couleur: "#60A5FA" },
+  test_en_cours: { label: "Test en cours…", couleur: "#60A5FA" },
   prete: { label: "Prête", couleur: "#34D399" },
   erreur_connexion: { label: "Erreur de connexion", couleur: "#F87171" },
   autorisation_insuffisante: { label: "Autorisation insuffisante", couleur: "#F87171" },

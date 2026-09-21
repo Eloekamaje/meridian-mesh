@@ -17,7 +17,7 @@ export default function PolarisChoixProfil() {
   return (
     <div className="h-full overflow-y-auto px-6 py-12 text-[#D8E2EA]" data-testid="polaris-welcome">
       <div className="mx-auto max-w-[1000px]">
-        <div className="mb-2 flex items-center gap-2 font-code text-[10px] uppercase tracking-[0.3em] text-[#9B87F5]">
+        <div className="mb-2 flex items-center gap-2 font-code text-[10px] uppercase tracking-[0.3em] text-[#60A5FA]">
           <Sparkle size={13} weight="fill" /> Démonstration Polaris
         </div>
         <h1 className="font-display text-4xl font-bold tracking-tight text-[#F2F6F8]" data-testid="polaris-titre">
@@ -39,12 +39,12 @@ export default function PolarisChoixProfil() {
                 title={p.disponible ? p.phrase : "Disponible prochainement"}
                 className={`group min-h-[44px] rounded-xl border p-5 text-left transition-all ${
                   p.disponible
-                    ? "border-[rgba(148,163,184,0.2)] bg-[#0F1D28] hover:-translate-y-0.5 hover:border-[#25D0C8]/50 hover:shadow-[0_8px_32px_rgba(37,208,200,0.08)]"
+                    ? "border-[rgba(148,163,184,0.2)] bg-[#0F1D28] hover:-translate-y-0.5 hover:border-[#60A5FA]/50 hover:shadow-[0_8px_32px_rgba(96,165,250,0.08)]"
                     : "cursor-not-allowed border-[rgba(148,163,184,0.08)] bg-[#0F1D28]/40 opacity-50"
                 }`}
               >
                 <div className="flex items-center justify-between">
-                  <Icone size={22} className={p.disponible ? "text-[#25D0C8]" : "text-[#7C93A8]"} />
+                  <Icone size={22} className={p.disponible ? "text-[#60A5FA]" : "text-[#7C93A8]"} />
                   {!p.disponible && (
                     <span className="rounded-full border border-[rgba(148,163,184,0.2)] px-2 py-0.5 font-code text-[9px] uppercase tracking-widest text-[#7C93A8]">
                       Bientôt

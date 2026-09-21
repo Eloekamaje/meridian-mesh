@@ -2,7 +2,7 @@
 import { Pause, Play, SkipForward, ArrowCounterClockwise, House, FastForward } from "@phosphor-icons/react";
 
 const BTN =
-  "flex min-h-[44px] items-center gap-2 rounded-lg border border-[rgba(148,163,184,0.2)] bg-[#0F1D28] px-3.5 py-2 font-code text-[11px] text-[#D8E2EA] transition-colors hover:border-[#25D0C8]/50 hover:text-[#25D0C8] disabled:cursor-not-allowed disabled:opacity-40";
+  "flex min-h-[44px] items-center gap-2 rounded-lg border border-[rgba(148,163,184,0.2)] bg-[#0F1D28] px-3.5 py-2 font-code text-[11px] text-[#D8E2EA] transition-colors hover:border-[#60A5FA]/50 hover:text-[#60A5FA] disabled:cursor-not-allowed disabled:opacity-40";
 
 export default function PolarisControls({ etat, onPause, onReprendre, onSuivant, onRevoir, onAccueil, onLectureAuto }) {
   const { status, playMode, stepIndex } = etat;
@@ -14,7 +14,7 @@ export default function PolarisControls({ etat, onPause, onReprendre, onSuivant,
   return (
     <div className="flex flex-wrap items-center gap-2" data-testid="polaris-controles">
       {status === "awaiting_opening" && (
-        <span className="font-code text-[10px] uppercase tracking-[0.2em] text-[#9B87F5]" data-testid="polaris-indice-demarrage">
+        <span className="font-code text-[10px] uppercase tracking-[0.2em] text-[#60A5FA]" data-testid="polaris-indice-demarrage">
           Cliquez sur « Nouveau travail » pour démarrer
         </span>
       )}
@@ -24,7 +24,7 @@ export default function PolarisControls({ etat, onPause, onReprendre, onSuivant,
         </button>
       )}
       {enPause && (
-        <button onClick={onReprendre} className={`${BTN} !border-[#25D0C8]/60 !text-[#25D0C8]`} data-testid="polaris-reprendre-btn">
+        <button onClick={onReprendre} className={`${BTN} !border-[#60A5FA]/60 !text-[#60A5FA]`} data-testid="polaris-reprendre-btn">
           <Play size={14} weight="fill" /> Reprendre
         </button>
       )}

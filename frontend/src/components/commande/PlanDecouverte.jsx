@@ -17,7 +17,7 @@ export default function PlanDecouverte({ sources, catalogue }) {
       <div className="mt-6 space-y-4">
         {Object.entries(objectifs).map(([objectif, lignes]) => (
           <div key={objectif} className="rise rounded-xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-4" data-testid={`objectif-${objectif}`}>
-            <div className="font-code text-[10px] uppercase tracking-[0.2em] text-[#25D0C8]">{objectif}</div>
+            <div className="font-code text-[10px] uppercase tracking-[0.2em] text-[#60A5FA]">{objectif}</div>
             <ul className="mt-2.5 space-y-2">
               {lignes.map(({ source, contribution }) => {
                 const st = STATUTS_SOURCE[source.statut] || STATUTS_SOURCE.ajoutee;

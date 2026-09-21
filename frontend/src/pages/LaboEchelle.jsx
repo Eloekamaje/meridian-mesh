@@ -126,7 +126,7 @@ export default function LaboEchelle() {
         if (i === surv || i === selRef.current) {
           ctx.beginPath();
           ctx.arc(px, py, h * 0.5, 0, 6.2832);
-          ctx.strokeStyle = i === selRef.current ? "#C4B5FD" : "rgba(255,255,255,0.7)";
+          ctx.strokeStyle = i === selRef.current ? "#BFDBFE" : "rgba(255,255,255,0.7)";
           ctx.lineWidth = 2;
           ctx.stroke();
         }
@@ -403,7 +403,7 @@ export default function LaboEchelle() {
       {/* Panneau de contrôle */}
       <div className="absolute left-4 top-4 z-10 w-[330px] space-y-2.5 rounded-xl border border-white/10 bg-[#0C1724] p-3.5 shadow-2xl" data-testid="echelle-hud">
         <div className="flex items-center gap-2">
-          <Flask size={16} className="text-[#9B87F5]" />
+          <Flask size={16} className="text-[#60A5FA]" />
           <div className="leading-tight">
             <div className="text-xs font-bold text-white">Laboratoire — passage à l'échelle</div>
             <div className="text-[10px] text-[#7C93A8]">Canvas + index spatial + grappes par niveau de zoom</div>
@@ -411,7 +411,7 @@ export default function LaboEchelle() {
         </div>
         <div className="inline-flex flex-wrap rounded-lg border border-white/10 bg-white/[0.03] p-0.5" role="group">
           {TAILLES.map(([v, l]) => (
-            <button key={v} type="button" onClick={() => charger(v)} aria-pressed={n === v} data-testid={`echelle-n-${v}`} className={`min-h-[30px] rounded-md px-2.5 text-[11px] font-medium transition-colors ${n === v ? "bg-[#9B87F5]/25 text-white" : "text-[#7C93A8] hover:text-white"}`}>{l}</button>
+            <button key={v} type="button" onClick={() => charger(v)} aria-pressed={n === v} data-testid={`echelle-n-${v}`} className={`min-h-[30px] rounded-md px-2.5 text-[11px] font-medium transition-colors ${n === v ? "bg-[#60A5FA]/25 text-white" : "text-[#7C93A8] hover:text-white"}`}>{l}</button>
           ))}
         </div>
         {etat && <p className="text-[11px] text-[#F2B84B]" data-testid="echelle-etat">{etat}</p>}
@@ -421,7 +421,7 @@ export default function LaboEchelle() {
             <div>Génération {mesures.gen} ms · index {mesures.index} ms · ≈ {mesures.mo} Mo</div>
             <div className="text-[#DCE6EE]">À l'écran : {stats.niv > 0 ? `${stats.grappes} grappes` : `${stats.noeuds} jumeaux`} · {stats.liens} liens</div>
             <div>Vue : {niveauTexte} · zoom {stats.zoom ? stats.zoom.toFixed(3) : "—"}</div>
-            <div className="text-[#25D0C8]">Dessin d'une image : {stats.ms ? stats.ms.toFixed(2) : "—"} ms</div>
+            <div className="text-[#60A5FA]">Dessin d'une image : {stats.ms ? stats.ms.toFixed(2) : "—"} ms</div>
           </div>
         )}
         <form onSubmit={chercher} className="flex items-center gap-2 rounded-lg border border-white/10 bg-[#071019] px-2.5">
@@ -430,7 +430,7 @@ export default function LaboEchelle() {
         </form>
         <div className="flex gap-1.5">
           <button type="button" onClick={() => toutVoir()} data-testid="echelle-tout-voir" className="min-h-[30px] flex-1 rounded-lg border border-white/10 text-[11px] text-[#CBD5E1] hover:text-white">Tout voir</button>
-          <button type="button" onClick={parcours} data-testid="echelle-parcours" className="flex min-h-[30px] flex-1 items-center justify-center gap-1.5 rounded-lg border border-[#9B87F5]/40 bg-[#9B87F5]/15 text-[11px] font-semibold text-[#C4B5FD] hover:text-white"><Play size={11} weight="fill" /> Parcours de test</button>
+          <button type="button" onClick={parcours} data-testid="echelle-parcours" className="flex min-h-[30px] flex-1 items-center justify-center gap-1.5 rounded-lg border border-[#60A5FA]/40 bg-[#60A5FA]/15 text-[11px] font-semibold text-[#BFDBFE] hover:text-white"><Play size={11} weight="fill" /> Parcours de test</button>
         </div>
         {test && (
           <div className="rounded-lg bg-white/[0.03] p-2 font-code text-[10px] leading-relaxed text-[#94A3B8]" data-testid="echelle-test">
@@ -446,7 +446,7 @@ export default function LaboEchelle() {
             </div>
           ))}
         </div>
-        <Link to="/labo/semantique" className="block text-center font-code text-[10px] text-[#C4B5FD] hover:text-white" data-testid="echelle-vers-semantique">Agrégation sémantique (domaine → groupe → communauté) →</Link>
+        <Link to="/labo/semantique" className="block text-center font-code text-[10px] text-[#BFDBFE] hover:text-white" data-testid="echelle-vers-semantique">Agrégation sémantique (domaine → groupe → communauté) →</Link>
         <Link to="/labo/atlas" className="block text-center font-code text-[10px] text-[#7C93A8] hover:text-white">← Laboratoire du graphe</Link>
       </div>
 

@@ -28,7 +28,7 @@ export default function InvestigationDetail() {
     return (
       <div className="flex h-full flex-col items-start justify-center gap-4 px-8">
         <p className="text-[#94A3B8]">Situation introuvable.</p>
-        <Link to="/investigations" className="text-sm text-[#9B87F5] hover:underline">← Retour aux investigations</Link>
+        <Link to="/investigations" className="text-sm text-[#60A5FA] hover:underline">← Retour aux investigations</Link>
       </div>
     );
   }
@@ -97,12 +97,12 @@ export default function InvestigationDetail() {
             onClick={() => demanderAFlore(`Analyse cette investigation : « ${sit.question || sit.titre} ». Quelles hypothèses privilégier et quelles preuves manquent pour trancher ?`)}
             data-testid="investigation-analyser-flore"
             title="Demander à Flore d'analyser cette investigation"
-            className="flex items-center gap-1.5 rounded-md border border-[#9B87F5]/40 bg-[#9B87F5]/[0.06] px-3 py-1.5 text-xs font-semibold text-[#9B87F5] transition-colors hover:bg-[#9B87F5]/12"
+            className="flex items-center gap-1.5 rounded-md border border-[#60A5FA]/40 bg-[#60A5FA]/[0.06] px-3 py-1.5 text-xs font-semibold text-[#60A5FA] transition-colors hover:bg-[#60A5FA]/12"
           >
             <Sparkle size={13} weight="fill" /> Analyser avec Flore
           </button>
           {(sit.jumeaux || []).length > 0 && (
-            <button onClick={() => navigate(`/atlas?situation=${sit.id}`)} data-testid="voir-atlas-btn" className="flex items-center gap-1.5 rounded-md border border-[#25D0C8]/30 bg-[#25D0C8]/[0.06] px-3 py-1.5 text-xs text-[#25D0C8] transition-colors hover:bg-[#25D0C8]/15">
+            <button onClick={() => navigate(`/atlas?situation=${sit.id}`)} data-testid="voir-atlas-btn" className="flex items-center gap-1.5 rounded-md border border-[#60A5FA]/30 bg-[#60A5FA]/[0.06] px-3 py-1.5 text-xs text-[#60A5FA] transition-colors hover:bg-[#60A5FA]/15">
               <Compass size={13} /> Voir dans l'Atlas
             </button>
           )}
@@ -111,7 +111,7 @@ export default function InvestigationDetail() {
 
       {/* Zone 1 — La question */}
       <section className="rise mt-5" data-testid="zone-question">
-        <div className="font-code text-[10px] uppercase tracking-[0.3em] text-[#9B87F5]">La question</div>
+        <div className="font-code text-[10px] uppercase tracking-[0.3em] text-[#60A5FA]">La question</div>
         {(nature || verbe) && (
           <div className="mt-2 flex items-center gap-2">
             {nature && (
@@ -146,7 +146,7 @@ export default function InvestigationDetail() {
           })}
           {sit.aurora_recommandation && (
             <span className="ml-2 flex items-center gap-1.5 text-xs italic text-[#7C93A8]">
-              <Lightning size={13} className="text-[#9B87F5]" /> {sit.aurora_recommandation}
+              <Lightning size={13} className="text-[#60A5FA]" /> {sit.aurora_recommandation}
             </span>
           )}
         </div>
@@ -155,20 +155,20 @@ export default function InvestigationDetail() {
       {/* Fiche découverte : Découvrir → Comprendre → Décider */}
       {(sit.decouverte_quoi || (sit.decouverte_pourquoi || []).length > 0) && (
         <section className="rise mt-8 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4" data-testid="fiche-decouverte" style={{ animationDelay: "60ms" }}>
-          <div className="rounded-xl border border-[#25D0C8]/20 bg-[#25D0C8]/[0.04] p-4">
-            <div className="font-code text-[10px] uppercase tracking-[0.2em] text-[#25D0C8]">Ce qui a été découvert</div>
+          <div className="rounded-xl border border-[#60A5FA]/20 bg-[#60A5FA]/[0.04] p-4">
+            <div className="font-code text-[10px] uppercase tracking-[0.2em] text-[#60A5FA]">Ce qui a été découvert</div>
             <p className="mt-2 text-sm leading-relaxed text-[#D8E2EA]" data-testid="fiche-quoi">{sit.decouverte_quoi}</p>
           </div>
-          <div className="rounded-xl border border-[#9B87F5]/20 bg-[#9B87F5]/[0.04] p-4">
-            <div className="font-code text-[10px] uppercase tracking-[0.2em] text-[#9B87F5]">Pourquoi Méridian le pense</div>
+          <div className="rounded-xl border border-[#60A5FA]/20 bg-[#60A5FA]/[0.04] p-4">
+            <div className="font-code text-[10px] uppercase tracking-[0.2em] text-[#60A5FA]">Pourquoi Méridian le pense</div>
             <ul className="mt-2 space-y-1.5" data-testid="fiche-pourquoi">
               {(sit.decouverte_pourquoi || []).map((p, i) => (
                 <li key={i} className="text-xs leading-snug text-[#94A3B8]">→ {p}</li>
               ))}
             </ul>
           </div>
-          <div className="rounded-xl border border-[#9B87F5]/20 bg-[#9B87F5]/[0.04] p-4">
-            <div className="font-code text-[10px] uppercase tracking-[0.2em] text-[#9B87F5]">Ce qui reste à comprendre</div>
+          <div className="rounded-xl border border-[#60A5FA]/20 bg-[#60A5FA]/[0.04] p-4">
+            <div className="font-code text-[10px] uppercase tracking-[0.2em] text-[#60A5FA]">Ce qui reste à comprendre</div>
             <ul className="mt-2 space-y-1.5" data-testid="fiche-reste">
               {(sit.reste_a_comprendre || []).map((p, i) => (
                 <li key={i} className="text-xs leading-snug italic text-[#94A3B8]">? {p}</li>
@@ -282,7 +282,7 @@ export default function InvestigationDetail() {
       <section className="rise mt-10 rounded-xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-6" data-testid="zone-conclusion" style={{ animationDelay: "200ms" }}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="flex items-center gap-2 font-code text-[10px] uppercase tracking-[0.3em] text-[#7C93A8]">
-            <Lightning size={14} className="text-[#9B87F5]" /> Conclusion — synthèse Flore
+            <Lightning size={14} className="text-[#60A5FA]" /> Conclusion — synthèse Flore
           </h2>
           <TrustBadges indicateurs={sit.indicateurs} />
         </div>
@@ -332,7 +332,7 @@ export default function InvestigationDetail() {
                     key={i}
                     onClick={() => decider(a)}
                     data-testid={`decision-action-${i}`}
-                    className="rounded-md bg-[#9B87F5] px-3 py-2 text-xs font-semibold text-[#071019] transition-colors hover:bg-[#B4A5F7]"
+                    className="rounded-md bg-[#60A5FA] px-3 py-2 text-xs font-semibold text-[#071019] transition-colors hover:bg-[#93C5FD]"
                   >
                     {a}
                   </button>
@@ -340,7 +340,7 @@ export default function InvestigationDetail() {
                 <button
                   onClick={() => navigate("/change-lab")}
                   data-testid="decision-changelab-btn"
-                  className="flex items-center gap-1.5 rounded-md border border-[rgba(148,163,184,0.16)] px-3 py-2 text-xs text-[#D8E2EA] transition-colors hover:border-[#9B87F5]/50 hover:text-[#F2F6F8]"
+                  className="flex items-center gap-1.5 rounded-md border border-[rgba(148,163,184,0.16)] px-3 py-2 text-xs text-[#D8E2EA] transition-colors hover:border-[#60A5FA]/50 hover:text-[#F2F6F8]"
                 >
                   <Flask size={14} /> Ouvrir dans Change Lab
                 </button>

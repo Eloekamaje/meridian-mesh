@@ -20,7 +20,7 @@ export default function PreuvePanneau({ preuve, onFermer }) {
           </button>
         </div>
         <div className="font-code text-[10px] text-[#7C93A8]">{preuve.periodLabel}</div>
-        <blockquote className="mt-4 rounded-lg border-l-2 border-[#25D0C8] bg-[#071019] p-4 text-sm leading-relaxed text-[#D8E2EA]" data-testid="preuve-extrait">
+        <blockquote className="mt-4 rounded-lg border-l-2 border-[#60A5FA] bg-[#071019] p-4 text-sm leading-relaxed text-[#D8E2EA]" data-testid="preuve-extrait">
           {preuve.excerpt}
         </blockquote>
         <div className="mt-4 space-y-2 text-sm">

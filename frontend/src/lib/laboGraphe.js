@@ -278,7 +278,7 @@ export function dispositionForce(depart, aretes, { iterations = 320, distMin = 1
 // Déterministe (graine fixe). La densité reste constante : plus il y a de jumeaux, plus la carte
 // s'étend (≥ 105 px entre jumeaux), comme dans l'Atlas.
 export const DOMAINES_ETENDUS = {
-  "Conformité": "#A3E635", "Données": "#22D3EE", "Marketing": "#F472B6", "Finance": "#FBBF24", "Juridique": "#C084FC", "Logistique": "#2DD4BF",
+  "Conformité": "#A3E635", "Données": "#22D3EE", "Marketing": "#F472B6", "Finance": "#FBBF24", "Juridique": "#C084FC", "Logistique": "#60A5FA",
 };
 const NOMS_DOMAINES = ["Client", "Paiement", "Distribution", "Opérations", "Risque", "Support", ...Object.keys(DOMAINES_ETENDUS)];
 const ETATS = [["confirmee", 0.56], ["observee", 0.31], ["supposee", 0.07], ["validation", 0.02], ["contestee", 0.02], ["obsolete", 0.02]];

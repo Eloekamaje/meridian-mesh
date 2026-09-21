@@ -33,7 +33,7 @@ export default memo(function AreteCorridor({ id, data, selected }) {
   const sortie = data?.sortie ?? 1;
   // Couleur : cyan en macro, couleur d'état dominant en mode détail (transition douce)
   const st = etat ? styleParEtat({ etat, active: data?.actif }) : null;
-  const couleur = detail > 0.5 && st ? st.stroke : "#25D0C8";
+  const couleur = detail > 0.5 && st ? st.stroke : "#60A5FA";
   const reposOp = 0.16 + 0.44 * detail;
   const coreOp = (lumineux ? 1 : eteint ? 0.05 : reposOp) * sortie;
   const haloOp = (lumineux ? 0.3 : eteint ? 0 : 0.05) * sortie;

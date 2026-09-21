@@ -1672,13 +1672,13 @@ export default function Atlas() {
             <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="rgba(148,163,184,0.75)" />
           </marker>
           <marker id="marqueur-teal" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="#25D0C8" />
+            <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="#60A5FA" />
           </marker>
           <marker id="marqueur-orange" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="#F2B84B" />
           </marker>
           <marker id="marqueur-violet" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="#9B87F5" />
+            <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="#60A5FA" />
           </marker>
         </defs>
       </svg>
@@ -1755,9 +1755,9 @@ export default function Atlas() {
 
         {/* Bannière situation (focus profond depuis Aujourd'hui / Investigations) */}
         {situation && (
-          <div className="glass pointer-events-auto flex max-w-md items-center gap-3 rounded-xl px-4 py-2.5 shadow-lg shadow-[#9B87F5]/10" data-testid="map-situation-banner">
+          <div className="glass pointer-events-auto flex max-w-md items-center gap-3 rounded-xl px-4 py-2.5 shadow-lg shadow-[#60A5FA]/10" data-testid="map-situation-banner">
             <div className="flex-1 min-w-0">
-              <div className="font-code text-[9px] uppercase tracking-[0.25em] text-[#9B87F5]">Focus — situation</div>
+              <div className="font-code text-[9px] uppercase tracking-[0.25em] text-[#60A5FA]">Focus — situation</div>
               <div className="text-xs font-semibold text-[#F2F6F8] truncate">{situation.titre}</div>
               <div className="mt-0.5 font-code text-[9px] text-[#7C93A8]">
                 {situation.jumeaux.length} jumeaux · contexte réduit au pertinent
@@ -1766,7 +1766,7 @@ export default function Atlas() {
             <button
               onClick={quitterTheatreSituationnel}
               data-testid="theatre-situation-retour-global"
-              className="flex items-center gap-1 rounded-md border border-[#9B87F5]/40 bg-[#9B87F5]/10 px-2 py-1 font-code text-[10px] font-semibold text-[#9B87F5] transition-colors hover:bg-[#9B87F5]/20 hover:text-white"
+              className="flex items-center gap-1 rounded-md border border-[#60A5FA]/40 bg-[#60A5FA]/10 px-2 py-1 font-code text-[10px] font-semibold text-[#60A5FA] transition-colors hover:bg-[#60A5FA]/20 hover:text-white"
             >
               <Globe size={12} />
               <span>Vue globale</span>
@@ -1780,7 +1780,7 @@ export default function Atlas() {
         {/* Indicateur de périmètre de travail actif (filtre volontaire, distinct de la sécurité) */}
         {perimetreTravail && (
           <div className="glass pointer-events-auto flex items-center gap-2 rounded-xl px-4 py-2" data-testid="perimetre-travail-chip">
-            <span className="h-1.5 w-1.5 rounded-full bg-[#25D0C8]" />
+            <span className="h-1.5 w-1.5 rounded-full bg-[#60A5FA]" />
             <span className="font-code text-[10px] text-[#94A3B8]">
               Périmètre de travail : <span style={{ color: couleurDomaine(perimetreTravail) }}>{perimetreTravail}</span> — filtre volontaire, pas sécurité
             </span>
@@ -1842,11 +1842,11 @@ export default function Atlas() {
           <div className="glass absolute bottom-10 left-3 z-10 w-[200px] rounded-xl p-2.5" data-testid="atlas-legende">
             <div className="mb-1 flex items-center justify-between font-code text-[9px] uppercase tracking-wider text-[#64748B]">
               <span>Domaines</span>
-              {domainesMasques.size > 0 && <button onClick={() => setDomainesMasques(new Set())} className="normal-case text-[#25D0C8] hover:underline" data-testid="atlas-legende-tout">tout afficher</button>}
+              {domainesMasques.size > 0 && <button onClick={() => setDomainesMasques(new Set())} className="normal-case text-[#60A5FA] hover:underline" data-testid="atlas-legende-tout">tout afficher</button>}
             </div>
             {domaines.map(([d, nb]) => (
               <div key={d} className={`flex items-center gap-1.5 rounded px-1 py-0.5 text-xs hover:bg-white/[0.05] ${domainesMasques.has(d) ? "opacity-40" : ""}`} data-testid={`atlas-legende-${d}`}>
-                <input type="checkbox" checked={!domainesMasques.has(d)} onChange={() => setDomainesMasques((m) => { const s = new Set(m); if (s.has(d)) s.delete(d); else s.add(d); return s; })} className="accent-[#9B87F5]" aria-label={`Afficher ${d}`} />
+                <input type="checkbox" checked={!domainesMasques.has(d)} onChange={() => setDomainesMasques((m) => { const s = new Set(m); if (s.has(d)) s.delete(d); else s.add(d); return s; })} className="accent-[#60A5FA]" aria-label={`Afficher ${d}`} />
                 <button onClick={() => ouvrirDomaine(d)} title={`Ouvrir le domaine ${d}`} className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
                   <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: couleurDomaine(d) }} />
                   <span className="flex-1 truncate text-[#DCE6EE]">{d}</span>
@@ -1875,7 +1875,7 @@ export default function Atlas() {
           <span className="h-2 w-2 rounded-full" style={{ backgroundColor: couleurDomaine(jumeauSurvole.domaine) }} />
           <span className="font-code text-[10px] font-semibold text-[#7C93A8]">{idNumerique(jumeauSurvole.id)}</span>
           <span className="text-[11px] font-semibold text-[#F2F6F8]" data-testid="infobulle-nom">{jumeauSurvole.nom}</span>
-          <span className="font-code text-[9px] text-[#25D0C8]" data-testid="infobulle-confiance">{jumeauSurvole.confiance?.valeur ?? jumeauSurvole.couverture ?? "—"} %</span>
+          <span className="font-code text-[9px] text-[#60A5FA]" data-testid="infobulle-confiance">{jumeauSurvole.confiance?.valeur ?? jumeauSurvole.couverture ?? "—"} %</span>
         </div>
       )}
 
@@ -1902,7 +1902,7 @@ export default function Atlas() {
         {selection.length > 1 && !theatreSituationnel.actif && (
           <div className="glass pointer-events-auto flex flex-wrap items-center justify-center gap-1.5 rounded-xl px-3 py-2" data-testid="multi-selection-bar">
             <span className="font-code text-[10px] font-semibold text-[#F2F6F8]" data-testid="multi-selection-compte">{selection.length} jumeaux sélectionnés</span>
-            <button onClick={() => parlerAuJumeau(selection)} data-testid="multi-interroger" className="rounded-md border border-[#9B87F5]/40 px-2 py-0.5 font-code text-[10px] font-semibold text-[#9B87F5] transition-colors hover:bg-[#9B87F5]/10">Interroger</button>
+            <button onClick={() => parlerAuJumeau(selection)} data-testid="multi-interroger" className="rounded-md border border-[#60A5FA]/40 px-2 py-0.5 font-code text-[10px] font-semibold text-[#60A5FA] transition-colors hover:bg-[#60A5FA]/10">Interroger</button>
             <button onClick={() => { setRelFocus(true); toast.info("Trajets de la sélection mis en avant"); }} data-testid="multi-relations" className="rounded-md border border-[rgba(148,163,184,0.16)] px-2 py-0.5 font-code text-[10px] text-[#94A3B8] transition-colors hover:text-[#F2F6F8]">Relations</button>
             <button onClick={creerGroupeSelection} data-testid="multi-groupe" className="rounded-md border border-[rgba(148,163,184,0.16)] px-2 py-0.5 font-code text-[10px] text-[#94A3B8] transition-colors hover:text-[#F2F6F8]">Créer un groupe</button>
             <button onClick={() => demanderAFlore("Qu'ont en commun ces jumeaux ? Capacités, sources, propriétaires, relations…")} data-testid="multi-commun" className="rounded-md border border-[rgba(148,163,184,0.16)] px-2 py-0.5 font-code text-[10px] text-[#94A3B8] transition-colors hover:text-[#F2F6F8]">Point commun</button>
@@ -1913,7 +1913,7 @@ export default function Atlas() {
 
         {focusCarte && !theatreSituationnel.actif && (
           <div className="glass pointer-events-auto flex items-center gap-2 rounded-lg px-3 py-1.5" data-testid="focus-flore-chip">
-            <Sparkle size={12} className="text-[#9B87F5]" />
+            <Sparkle size={12} className="text-[#60A5FA]" />
             <span className="font-code text-[10px] text-[#94A3B8]">Vue commandée par Flore</span>
             <button onClick={() => commanderCarte(null)} data-testid="focus-flore-clear" className="text-[#7C93A8] transition-colors hover:text-[#F2F6F8]">
               <X size={12} />
@@ -1938,18 +1938,18 @@ export default function Atlas() {
             <span className="font-code text-[10px] text-[#94A3B8]">
               {modeTemps === "replay" ? "Relecture du Mesh" : "Photographie du Mesh"} au <strong className="text-[#F2F6F8]">{fmtDate(dateRef)}</strong>
             </span>
-            <button onClick={() => { setModeTemps("direct"); setReplaying(false); setDateRef(null); majUrl({ date: null }); }} data-testid="retour-direct-btn" className="rounded-md border border-[#9B87F5]/40 px-2 py-0.5 font-code text-[10px] font-semibold text-[#9B87F5] transition-colors hover:bg-[#9B87F5]/10">
+            <button onClick={() => { setModeTemps("direct"); setReplaying(false); setDateRef(null); majUrl({ date: null }); }} data-testid="retour-direct-btn" className="rounded-md border border-[#60A5FA]/40 px-2 py-0.5 font-code text-[10px] font-semibold text-[#60A5FA] transition-colors hover:bg-[#60A5FA]/10">
               Revenir au direct
             </button>
           </div>
         )}
         {modeTemps === "avantapres" && dateRef && (
           <div className="glass pointer-events-auto flex items-center gap-3 rounded-xl px-4 py-2" data-testid="bandeau-avant-apres">
-            <span className="h-2 w-2 rounded-sm border-2 border-dashed border-[#25D0C8]" />
+            <span className="h-2 w-2 rounded-sm border-2 border-dashed border-[#60A5FA]" />
             <span className="font-code text-[10px] text-[#94A3B8]">
               Avant/Après depuis le <strong className="text-[#F2F6F8]">{fmtDate(dateRef)}</strong> — {nbNouvelles} nouvelle{nbNouvelles > 1 ? "s" : ""} relation{nbNouvelles > 1 ? "s" : ""}
             </span>
-            <button onClick={() => { setModeTemps("direct"); setDateRef(null); }} data-testid="retour-direct-btn-aa" className="rounded-md border border-[#9B87F5]/40 px-2 py-0.5 font-code text-[10px] font-semibold text-[#9B87F5] transition-colors hover:bg-[#9B87F5]/10">
+            <button onClick={() => { setModeTemps("direct"); setDateRef(null); }} data-testid="retour-direct-btn-aa" className="rounded-md border border-[#60A5FA]/40 px-2 py-0.5 font-code text-[10px] font-semibold text-[#60A5FA] transition-colors hover:bg-[#60A5FA]/10">
               Revenir au direct
             </button>
           </div>
@@ -2011,7 +2011,7 @@ export default function Atlas() {
             <div className="mt-1.5 font-code text-[10px] text-[#94A3B8]">
               {agg.data.agregat.length} flux partagent ce corridor
             </div>
-            <div className="mt-2 font-code text-[9px] text-[#25D0C8]">Routes déployées au survol</div>
+            <div className="mt-2 font-code text-[9px] text-[#60A5FA]">Routes déployées au survol</div>
           </div>
         );
       })()}
@@ -2035,7 +2035,7 @@ export default function Atlas() {
               {r.confiance != null && <div>Confiance : {r.confiance} %</div>}
               {(r.claims?.length ?? 0) > 0 && <div>{r.claims.length} preuve{r.claims.length > 1 ? "s" : ""}</div>}
             </div>
-            <div className="mt-2 font-code text-[9px] text-[#25D0C8]">Clic : qualifier la relation →</div>
+            <div className="mt-2 font-code text-[9px] text-[#60A5FA]">Clic : qualifier la relation →</div>
           </div>
         );
       })()}
@@ -2053,7 +2053,7 @@ export default function Atlas() {
             <div>{regionTooltip.data.flux ?? 0} flux observés</div>
             <div>{regionTooltip.data.ecarts ?? 0} écart{(regionTooltip.data.ecarts ?? 0) > 1 ? "s" : ""} structurel{(regionTooltip.data.ecarts ?? 0) > 1 ? "s" : ""}</div>
           </div>
-          <div className="mt-2 font-code text-[9px] text-[#25D0C8]">Double-clic : explorer le domaine →</div>
+          <div className="mt-2 font-code text-[9px] text-[#60A5FA]">Double-clic : explorer le domaine →</div>
         </div>
       )}
 

@@ -5,7 +5,7 @@ import { idNumerique } from "@/lib/atlasGraph";
 import { useContexte } from "@/lib/contexte";
 
 // Teinte du score de compréhension : consolidé → teal, à renforcer → ambre, insuffisant → rouge doux
-const couleurComprehension = (c) => (c >= 90 ? "#25D0C8" : c >= 60 ? "#F2B84B" : "#F87171");
+const couleurComprehension = (c) => (c >= 90 ? "#60A5FA" : c >= 60 ? "#F2B84B" : "#F87171");
 
 export function RelationDetail({ rel, jumeauPar, onConfirmer }) {
   const etat = ETATS_RELATION[rel.etat] || ETATS_RELATION.confirmee;
@@ -94,10 +94,10 @@ export function DomaineDetail({ label, stats, actions, onActionSituation }) {
       {m && <div className="mt-1 font-code text-[10px] text-[#7C93A8]">{m.niveau} · {m.zones_inconnues} zone(s) inconnue(s)</div>}
       {actions && (
         <div className="mt-3 space-y-1.5" data-testid="domaine-actions">
-          <button onClick={actions.onExplorer} data-testid="dom-explorer-btn" title="Déplacement animé à zoom constant" className="w-full rounded-md bg-[#25D0C8] px-3 py-2 text-xs font-semibold text-[#071019] transition-colors hover:bg-[#0891B2]">
+          <button onClick={actions.onExplorer} data-testid="dom-explorer-btn" title="Déplacement animé à zoom constant" className="w-full rounded-md bg-[#60A5FA] px-3 py-2 text-xs font-semibold text-[#071019] transition-colors hover:bg-[#0891B2]">
             Explorer ce domaine
           </button>
-          <button onClick={actions.onAjuster} data-testid="dom-ajuster-btn" title="Cadrer toute la membrane (fitBounds explicite)" className="w-full rounded-md border border-[#25D0C8]/40 px-3 py-2 text-xs font-semibold text-[#25D0C8] transition-colors hover:bg-[#25D0C8]/10">
+          <button onClick={actions.onAjuster} data-testid="dom-ajuster-btn" title="Cadrer toute la membrane (fitBounds explicite)" className="w-full rounded-md border border-[#60A5FA]/40 px-3 py-2 text-xs font-semibold text-[#60A5FA] transition-colors hover:bg-[#60A5FA]/10">
             Ajuster au domaine
           </button>
           <div className="flex flex-wrap gap-1.5">
@@ -111,7 +111,7 @@ export function DomaineDetail({ label, stats, actions, onActionSituation }) {
           <button
             onClick={actions.onPerimetre}
             data-testid="dom-perimetre-btn"
-            className={`w-full rounded-md border px-3 py-2 text-xs font-semibold transition-colors ${actions.perimetre ? "border-[#25D0C8]/60 bg-[#25D0C8]/10 text-[#25D0C8]" : "border-[rgba(148,163,184,0.16)] text-[#D8E2EA] hover:border-[#25D0C8]/50 hover:text-[#F2F6F8]"}`}
+            className={`w-full rounded-md border px-3 py-2 text-xs font-semibold transition-colors ${actions.perimetre ? "border-[#60A5FA]/60 bg-[#60A5FA]/10 text-[#60A5FA]" : "border-[rgba(148,163,184,0.16)] text-[#D8E2EA] hover:border-[#60A5FA]/50 hover:text-[#F2F6F8]"}`}
           >
             {actions.perimetre ? "Retirer le périmètre de travail" : "Utiliser comme périmètre de travail"}
           </button>
@@ -265,7 +265,7 @@ export function TwinDetail({ selected, favori, onBasculerFavori, statsTwin, onIn
             {det.map((s) => (
               <li key={s.nom} className="flex items-center justify-between text-[11px] text-[#94A3B8]">
                 <span className="flex items-center gap-1.5">
-                  <span className={`h-1.5 w-1.5 rounded-full ${s.statut === "prete" ? "bg-[#25D0C8]" : "bg-[rgba(148,163,184,0.16)]"}`} />
+                  <span className={`h-1.5 w-1.5 rounded-full ${s.statut === "prete" ? "bg-[#60A5FA]" : "bg-[rgba(148,163,184,0.16)]"}`} />
                   {s.nom}
                 </span>
                 <span className="font-code text-[9px] text-[#7C93A8]">{s.statut === "prete" ? "prête" : s.statut}</span>
@@ -308,7 +308,7 @@ export function TwinDetail({ selected, favori, onBasculerFavori, statsTwin, onIn
       {statsTwin && (
         <div className="grid grid-cols-3 gap-2" data-testid="twin-kpis">
           <div className="rounded-lg border border-[rgba(148,163,184,0.10)] bg-[#0F1D28] px-2 py-2 text-center">
-            <div className="font-code text-sm font-bold text-[#25D0C8]" data-testid="twin-kpi-confiance">{selected.confiance?.valeur ?? selected.couverture ?? "—"} %</div>
+            <div className="font-code text-sm font-bold text-[#60A5FA]" data-testid="twin-kpi-confiance">{selected.confiance?.valeur ?? selected.couverture ?? "—"} %</div>
             <div className="font-code text-[8px] uppercase tracking-wider text-[#7C93A8]">Confiance</div>
           </div>
           <div className="rounded-lg border border-[rgba(148,163,184,0.10)] bg-[#0F1D28] px-2 py-2 text-center">
@@ -328,7 +328,7 @@ export function TwinDetail({ selected, favori, onBasculerFavori, statsTwin, onIn
             onClick={onInterroger}
             data-testid="twin-interroger-btn"
             title="Ouvrir un nouveau travail avec ce jumeau en contexte"
-            className="flex items-center justify-center gap-1.5 rounded-lg bg-[#25D0C8] px-3 py-2 text-xs font-semibold text-[#071019] transition-colors hover:bg-[#1BAE9F]"
+            className="flex items-center justify-center gap-1.5 rounded-lg bg-[#60A5FA] px-3 py-2 text-xs font-semibold text-[#071019] transition-colors hover:bg-[#3B82F6]"
           >
             <Sparkle size={13} weight="fill" /> Parler au jumeau
           </button>
@@ -354,7 +354,7 @@ export function TwinDetail({ selected, favori, onBasculerFavori, statsTwin, onIn
         <Link
           to={`/jumeaux/${selected.id}/revue`}
           data-testid="twin-ouvrir-fiche"
-          className="flex items-center justify-center gap-1.5 rounded-lg border border-[#25D0C8]/40 px-3 py-2 text-xs font-semibold text-[#25D0C8] transition-colors hover:bg-[#25D0C8]/10"
+          className="flex items-center justify-center gap-1.5 rounded-lg border border-[#60A5FA]/40 px-3 py-2 text-xs font-semibold text-[#60A5FA] transition-colors hover:bg-[#60A5FA]/10"
         >
           Voir les preuves <ArrowSquareOut size={11} />
         </Link>
@@ -388,7 +388,7 @@ export function SituationCard({ s, onAction }) {
   return (
     <div className="rounded-lg border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-3" data-testid={`situation-card-${s.id}`}>
       <div className="flex items-start gap-2">
-        <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: s.nature === "incident" ? "#F2B84B" : "#9B87F5" }} />
+        <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: s.nature === "incident" ? "#F2B84B" : "#60A5FA" }} />
         <div className="min-w-0">
           <div className="text-xs font-semibold text-[#F2F6F8]">{s.titre}</div>
           <div className="mt-0.5 font-code text-[9px] text-[#7C93A8]">
@@ -399,7 +399,7 @@ export function SituationCard({ s, onAction }) {
       <div className="mt-2 flex items-center gap-1" data-testid={`situation-cycle-${s.id}`}>
         {ETAPES_SITUATION.map((e, i) => (
           <span key={e} className="flex items-center gap-1">
-            <span className={`rounded px-1.5 py-0.5 font-code text-[8px] uppercase tracking-wider ${i <= etape ? "bg-[#25D0C8]/10 font-semibold text-[#25D0C8]" : "text-[#5B7089]"}`}>{e}</span>
+            <span className={`rounded px-1.5 py-0.5 font-code text-[8px] uppercase tracking-wider ${i <= etape ? "bg-[#60A5FA]/10 font-semibold text-[#60A5FA]" : "text-[#5B7089]"}`}>{e}</span>
             {i < ETAPES_SITUATION.length - 1 && <span className="text-[9px] text-[#41576D]">→</span>}
           </span>
         ))}
@@ -407,16 +407,16 @@ export function SituationCard({ s, onAction }) {
       {s.resume && <p className="mt-2 line-clamp-2 text-[11px] leading-snug text-[#94A3B8]">{s.resume}</p>}
       <div className="mt-2 flex flex-wrap gap-1.5">
         {etape < 2 && (
-          <button onClick={() => onAction?.(s, "qualifier")} data-testid={`situation-qualifier-${s.id}`} className="rounded-md bg-[#9B87F5] px-2 py-1 font-code text-[10px] font-semibold text-[#071019] transition-colors hover:bg-[#B4A5F7]">
+          <button onClick={() => onAction?.(s, "qualifier")} data-testid={`situation-qualifier-${s.id}`} className="rounded-md bg-[#60A5FA] px-2 py-1 font-code text-[10px] font-semibold text-[#071019] transition-colors hover:bg-[#93C5FD]">
             Qualifier
           </button>
         )}
         {etape === 2 && (
-          <button onClick={() => onAction?.(s, "investiguer")} data-testid={`situation-investiguer-${s.id}`} className="rounded-md bg-[#9B87F5] px-2 py-1 font-code text-[10px] font-semibold text-[#071019] transition-colors hover:bg-[#B4A5F7]">
+          <button onClick={() => onAction?.(s, "investiguer")} data-testid={`situation-investiguer-${s.id}`} className="rounded-md bg-[#60A5FA] px-2 py-1 font-code text-[10px] font-semibold text-[#071019] transition-colors hover:bg-[#93C5FD]">
             Ouvrir une investigation
           </button>
         )}
-        <button onClick={() => demanderAFlore(`Analyse la situation « ${s.titre} » et propose une qualification.`)} data-testid={`situation-flore-${s.id}`} className="rounded-md border border-[#9B87F5]/40 px-2 py-1 font-code text-[10px] font-semibold text-[#9B87F5] transition-colors hover:bg-[#9B87F5]/10">
+        <button onClick={() => demanderAFlore(`Analyse la situation « ${s.titre} » et propose une qualification.`)} data-testid={`situation-flore-${s.id}`} className="rounded-md border border-[#60A5FA]/40 px-2 py-1 font-code text-[10px] font-semibold text-[#60A5FA] transition-colors hover:bg-[#60A5FA]/10">
           Demander à Flore
         </button>
         {etape < 2 && (

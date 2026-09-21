@@ -94,7 +94,7 @@ export default function ComposerFlore({ placeholder = "Demandez à Flore…", co
         data-testid={`${testidPrefix}-deplie`}
         className="glass flex w-full items-center gap-2 rounded-full px-4 py-2.5 text-left shadow-lg transition-shadow hover:shadow-xl"
       >
-        <Sparkle size={13} weight="fill" className="shrink-0 text-[#9B87F5]" />
+        <Sparkle size={13} weight="fill" className="shrink-0 text-[#60A5FA]" />
         <span className="flex-1 text-sm text-[#7C93A8]">{placeholder}</span>
         <PaperPlaneTilt size={13} className="shrink-0 text-[#7C93A8]" />
       </button>
@@ -125,7 +125,7 @@ export default function ComposerFlore({ placeholder = "Demandez à Flore…", co
         </div>
       )}
 
-      <div className={`rounded-2xl border bg-[#0F1D28] shadow-sm transition-colors focus-within:border-[#9B87F5]/50 ${pilote?.saisie?.enFrappe ? "border-[#9B87F5]/60" : "border-[rgba(148,163,184,0.16)]"}`} ref={refMenus}>
+      <div className={`rounded-2xl border bg-[#0F1D28] shadow-sm transition-colors focus-within:border-[#60A5FA]/50 ${pilote?.saisie?.enFrappe ? "border-[#60A5FA]/60" : "border-[rgba(148,163,184,0.16)]"}`} ref={refMenus}>
         <textarea
           value={valeur}
           onChange={(e) => setTexte(e.target.value)}
@@ -166,7 +166,7 @@ export default function ComposerFlore({ placeholder = "Demandez à Flore…", co
               <div className="glass absolute bottom-9 left-0 z-40 w-60 rounded-xl p-1.5" data-testid={`${testidPrefix}-capacites-menu`}>
                 {CAPACITES.map(({ id, label, icon: Icon }) => (
                   <button key={id} onClick={() => capacite(id)} data-testid={`${testidPrefix}-cap-${id}`} className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]">
-                    <Icon size={13} className="text-[#9B87F5]" /> {label}
+                    <Icon size={13} className="text-[#60A5FA]" /> {label}
                   </button>
                 ))}
               </div>
@@ -183,7 +183,7 @@ export default function ComposerFlore({ placeholder = "Demandez à Flore…", co
               <CaretDown size={13} />
             </button>
           )}
-          <button onClick={envoyer} disabled={!!pilote || !valeur.trim()} data-testid={`${testidPrefix}-envoyer`} title="Envoyer" className="ml-auto flex h-8 w-8 items-center justify-center rounded-full bg-[#9B87F5] text-[#071019] transition-colors hover:bg-[#B4A5F7] disabled:opacity-30">
+          <button onClick={envoyer} disabled={!!pilote || !valeur.trim()} data-testid={`${testidPrefix}-envoyer`} title="Envoyer" className="ml-auto flex h-8 w-8 items-center justify-center rounded-full bg-[#60A5FA] text-[#071019] transition-colors hover:bg-[#93C5FD] disabled:opacity-30">
             <PaperPlaneTilt size={14} weight="fill" />
           </button>
         </div>

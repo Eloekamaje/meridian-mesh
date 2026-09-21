@@ -35,7 +35,7 @@ export const DICT_JUMEAUX_PARTICIPANTS = {
     app_id: "app-portail",
     nom: "Portail client",
     domaine: "Client",
-    domaineCouleur: "#25D0C8",
+    domaineCouleur: "#60A5FA",
     type: "Parcours Web Client",
     statut: "actif",
     participation: "Fournit les données de parcours client et l'estimation de volumétrie pour l'auto-suivi des demandes.",
@@ -233,15 +233,15 @@ function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif }) {
             </p>
           </div>
 
-          <div className="rounded-xl border border-[#9B87F5]/20 bg-[#9B87F5]/[0.06] p-3">
-            <div className="flex items-center justify-between text-[#C4B5FD]">
+          <div className="rounded-xl border border-[#60A5FA]/20 bg-[#60A5FA]/[0.06] p-3">
+            <div className="flex items-center justify-between text-[#BFDBFE]">
               <span className="font-code text-[10px] uppercase tracking-wider">Socle existant</span>
               <Database size={14} />
             </div>
-            <div className="mt-0.5 font-display text-xl font-bold text-[#E9D5FF]">
+            <div className="mt-0.5 font-display text-xl font-bold text-[#DBEAFE]">
               {message.kpis.socle}
             </div>
-            <p className="mt-0.5 font-code text-[11px] text-[#C4B5FD]/80">
+            <p className="mt-0.5 font-code text-[11px] text-[#BFDBFE]/80">
               {message.kpis.socleSousTitre}
             </p>
           </div>
@@ -488,10 +488,10 @@ export default function OngletTravail({
                 onClick={() => basculerRubrique("sources")}
                 aria-expanded={!pliees.sources}
                 data-testid="rubrique-sources-bascule"
-                className="flex min-h-[28px] flex-1 items-center gap-1.5 text-left transition-colors hover:text-[#C4B5FD]"
+                className="flex min-h-[28px] flex-1 items-center gap-1.5 text-left transition-colors hover:text-[#BFDBFE]"
               >
                 <CaretDown size={11} className={`shrink-0 text-[#7C93A8] transition-transform duration-200 ${pliees.sources ? "-rotate-90" : ""}`} />
-                <Globe size={14} className="text-[#9B87F5]" />
+                <Globe size={14} className="text-[#60A5FA]" />
                 <span>Sources & Jumeaux</span>
                 <span className="rounded-full bg-white/[0.08] px-1.5 py-0.2 font-code text-[10px] text-[#7C93A8]">{jumeauxParticipants.length + (contenuScenario ? 2 : 0)}</span>
               </button>
@@ -542,7 +542,7 @@ export default function OngletTravail({
                 data-testid="source-preuve-initiatives"
               >
                 <div className="flex items-center gap-2 min-w-0">
-                  <FileText size={13} className="text-[#9B87F5] shrink-0" />
+                  <FileText size={13} className="text-[#60A5FA] shrink-0" />
                   <span className="truncate">Fiches initiatives (6,6 M€)</span>
                 </div>
                 <span className="font-code text-[10px] text-[#7C93A8] shrink-0">ev-g-initiatives</span>
@@ -610,11 +610,11 @@ export default function OngletTravail({
                 {/* Reprise de visite */}
                 {i === idxCoupure && idxCoupure > 0 && (
                   <div ref={coupureRef} className="my-4 flex items-center gap-3" data-testid="reprise-coupure">
-                    <span className="h-px flex-1 bg-[#9B87F5]/25" />
-                    <span className="font-code text-[9px] uppercase tracking-[0.2em] text-[#9B87F5]">
+                    <span className="h-px flex-1 bg-[#60A5FA]/25" />
+                    <span className="font-code text-[9px] uppercase tracking-[0.2em] text-[#60A5FA]">
                       Nouveau depuis votre dernière visite
                     </span>
-                    <span className="h-px flex-1 bg-[#9B87F5]/25" />
+                    <span className="h-px flex-1 bg-[#60A5FA]/25" />
                   </div>
                 )}
 

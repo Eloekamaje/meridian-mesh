@@ -15,7 +15,7 @@ import { idNumerique } from "@/lib/atlasGraph";
 const DELAI_MS = 90;
 const MARGE = 0.15;
 const ORANGE = "#F59E0B";
-const VIOLET = "#A78BFA";
+const VIOLET = "#60A5FA";
 const compact = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)} M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)} k` : String(n)).replace(".", ",");
 const NIVEAUX = { 0: "Jumeaux", 1: "Communautés", 2: "Groupes", 3: "Domaines" };
 const hex2 = (k) => Math.round(Math.max(0, Math.min(1, k)) * 255).toString(16).padStart(2, "0");
@@ -113,7 +113,7 @@ export default function AtlasEchelle({ synthetique = null, selectionId = null, o
         if (!a || !b) continue;
         const incident = focus != null && (e.source === focus || e.cible === focus);
         ctx.globalAlpha = focus == null ? 1 : incident ? 1 : 0.08;
-        ctx.strokeStyle = e.etat === 2 ? "rgba(167,139,250,.65)" : e.etat === 1 ? "rgba(32,213,195,.5)" : "rgba(148,163,184,.34)";
+        ctx.strokeStyle = e.etat === 2 ? "rgba(96,165,250,.65)" : e.etat === 1 ? "rgba(96,165,250,.5)" : "rgba(148,163,184,.34)";
         ctx.lineWidth = incident ? 2 : 1;
         ctx.beginPath(); ctx.moveTo(px(a.x), py(a.y)); ctx.lineTo(px(b.x), py(b.y)); ctx.stroke();
       }
@@ -133,7 +133,7 @@ export default function AtlasEchelle({ synthetique = null, selectionId = null, o
           ctx.fillStyle = "rgba(216,226,234,.95)"; ctx.font = "600 10px 'JetBrains Mono', monospace"; ctx.textAlign = "center";
           ctx.fillText(idNumerique(j.id), x, y + haut / 2 + 11);
         }
-        if (j.id && j.id === propsRef.current.selectionId) { ctx.beginPath(); ctx.arc(x, y, haut * 0.6, 0, 6.2832); ctx.strokeStyle = "#20D5C3"; ctx.lineWidth = 2; ctx.stroke(); }
+        if (j.id && j.id === propsRef.current.selectionId) { ctx.beginPath(); ctx.arc(x, y, haut * 0.6, 0, 6.2832); ctx.strokeStyle = "#60A5FA"; ctx.lineWidth = 2; ctx.stroke(); }
         ctx.globalAlpha = 1;
       }
     }
@@ -278,7 +278,7 @@ export default function AtlasEchelle({ synthetique = null, selectionId = null, o
               <div className="font-code text-[10px] text-[#94A3B8]">{NIVEAUX[apercu.niv]} · {compact(apercu.n)} jumeaux</div>
               {apercu.ecarts > 0 && <div className="font-code text-[10px]" style={{ color: VIOLET }}>{compact(apercu.ecarts)} en écart (déclaré ≠ observé)</div>}
               {apercu.alertes > 0 && <div className="font-code text-[10px]" style={{ color: ORANGE }}>{compact(apercu.alertes)} en situation active</div>}
-              <div className="pt-0.5 font-code text-[9px] text-[#25D0C8]">Clic : s'approcher →</div>
+              <div className="pt-0.5 font-code text-[9px] text-[#60A5FA]">Clic : s'approcher →</div>
             </>
           ) : (
             <>
@@ -286,7 +286,7 @@ export default function AtlasEchelle({ synthetique = null, selectionId = null, o
               <div className="font-code text-[10px] text-[#94A3B8]">{rep.current?.domaines?.[apercu.dom]} · {apercu.degre} relation{apercu.degre > 1 ? "s" : ""}</div>
               {apercu.ecart > 0 && <div className="font-code text-[10px]" style={{ color: VIOLET }}>Écart : couplé surtout à un autre domaine</div>}
               {apercu.alerte > 0 && <div className="font-code text-[10px]" style={{ color: ORANGE }}>Situation active</div>}
-              {apercu.id && <div className="pt-0.5 font-code text-[9px] text-[#25D0C8]">Clic : ouvrir le jumeau →</div>}
+              {apercu.id && <div className="pt-0.5 font-code text-[9px] text-[#60A5FA]">Clic : ouvrir le jumeau →</div>}
             </>
           )}
         </div>

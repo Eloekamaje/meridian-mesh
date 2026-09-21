@@ -45,13 +45,13 @@ function NoeudGraphe(props) {
         <RobotJumeauSvg hauteur={hauteur} couleur={couleur} ecart={!!data.ecart} content={actif} delai={(idNumerique(j.id) % 7) * 0.9} leger={!!data.leger} />
       </div>
       {data.dansSituation && (
-        <span className="absolute h-2.5 w-2.5 rounded-full bg-[#A78BFA] ring-2 ring-[#070B12]" style={{ left: 46, top: 6 }} title="Impliqué dans une situation active" data-testid={`twin-situation-${j.id}`} />
+        <span className="absolute h-2.5 w-2.5 rounded-full bg-[#60A5FA] ring-2 ring-[#070B12]" style={{ left: 46, top: 6 }} title="Impliqué dans une situation active" data-testid={`twin-situation-${j.id}`} />
       )}
       {data.enTransformation && (
         <span className="absolute h-2.5 w-2.5 rounded-full border-2 border-dashed border-[#F59E0B] bg-[#070B12]" style={{ left: 6, top: 6 }} title="En transformation" data-testid={`twin-transformation-${j.id}`} />
       )}
       <span
-        className="pointer-events-none absolute left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-[#071019]/75 px-1.5 font-code text-[10px] font-semibold text-[#D8E2EA] group-hover:text-[#25D0C8]"
+        className="pointer-events-none absolute left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-[#071019]/75 px-1.5 font-code text-[10px] font-semibold text-[#D8E2EA] group-hover:text-[#60A5FA]"
         style={{ top: CENTRE_ROBOT.y + hauteur / 2 - 3 }}
         data-testid={`twin-nom-${j.id}`}
       >
