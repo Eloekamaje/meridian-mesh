@@ -56,7 +56,7 @@ Construire trois solutions spécifiques conduirait à une dette technique majeur
 | Critère d'évaluation | Trajectoire Silos (Rejetée) | Socle Mutualisé CASE-101 (Recommandé) | Écart / Bénéfice |
 | :--- | :--- | :--- | :--- |
 | **Budget global** | **6,6 M€** (3 projets distincts) | **1,5 M€** (socle commun + 2 connecteurs) | **-5,1 M€ (-77%)** |
-| **Délai de mise en service** | 14 à 18 mois | **4 mois** | **-14 mois** |
+| **Délai de mise en service** | 12 à 18 mois | **4 mois** | **-8 à -14 mois** |
 | **Effort de développement** | 3 architectures complètes | 2 connecteurs API légers sur socle existant | Risque divisé par 4 |
 | **Cohérence des données** | Divergence garantie entre canaux | Source unique de vérité partagée | Alignement 100% |
 | **Gouvernance** | Conflits de synchronisation | Contrat d'interface unifié | Responsabilité claire |
@@ -191,7 +191,7 @@ export default function CanvasDocument({
               </div>
             </div>
             <div className="rounded-xl border border-amber-500/30 bg-amber-950/20 p-3 text-xs text-amber-200">
-              ⚠️ <strong>Total cumulé des demandes en silos : 6,6 M€</strong> pour un délai moyen de 18 mois.
+              ⚠️ <strong>Total cumulé des demandes en silos : 6,6 M€</strong> pour un délai pouvant atteindre 18 mois.
             </div>
           </section>
 
@@ -260,7 +260,7 @@ export default function CanvasDocument({
                   </tr>
                   <tr>
                     <td className="py-2.5 pl-4 pr-2 font-medium text-[#CBD5E1]">Délai de mise en service</td>
-                    <td className="px-2 py-2.5 font-code text-[#F87171]">14 à 18 mois</td>
+                    <td className="px-2 py-2.5 font-code text-[#F87171]">12 à 18 mois</td>
                     <td className="py-2.5 pl-2 pr-4 font-code font-semibold text-emerald-300">4 mois (-14 mois)</td>
                   </tr>
                   <tr>

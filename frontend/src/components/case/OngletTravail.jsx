@@ -23,7 +23,8 @@ import {
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
-import FloreActivite, { delaiMin } from "@/components/FloreActivite";
+import FloreActivite, { delaiMin, activiteTerminee } from "@/components/FloreActivite";
+import LigneActiviteFlore from "@/components/LigneActiviteFlore";
 import { usePilotage } from "@/lib/pilotage";
 import { rel } from "./utils";
 import CanvasDocument from "./CanvasDocument";
@@ -111,10 +112,36 @@ export function PipelineArchitecture() {
   );
 }
 
+// Réponses déjà déroulées : un message ne se rejoue jamais (remontage de la page, retour au travail)
+const REPONSES_JOUEES = new Set();
+
+// Déroulé progressif de la réponse de Flore (démonstration : message publié en direct). Même cadence
+// que le moteur (3 caractères / 18 ms) ; gelé pendant la pause ; cartes et document après le texte.
+function useDeroule(message, pilote) {
+  const total = (message.texte || "").length;
+  const cle = message.quand;
+  const reduit = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  const animer = !!pilote && !!message.anime && !REPONSES_JOUEES.has(cle) && !reduit;
+  const [n, setN] = useState(animer ? 0 : total);
+  const enPause = !!pilote?.enPause;
+  useEffect(() => {
+    if (n >= total) {
+      REPONSES_JOUEES.add(cle);
+      return undefined;
+    }
+    if (!animer || enPause) return undefined;
+    const t = setTimeout(() => setN((x) => Math.min(total, x + 3)), 18);
+    return () => clearTimeout(t);
+  }, [n, total, animer, enPause, cle]);
+  return { visible: (message.texte || "").slice(0, n), fini: n >= total };
+}
+
 // Rendu formaté, fluide et aéré du texte (Style ChatGPT / Claude)
 function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif }) {
+  const pilote = usePilotage();
   const texte = message.texte || "";
-  const lignes = texte.split("\n");
+  const { visible, fini } = useDeroule(message, pilote);
+  const lignes = visible.split("\n");
 
   // Détecte si le message présente l'architecture ou la convergence pour intégrer le pipeline
   const montrePipeline = 
@@ -175,10 +202,10 @@ function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif }) {
       })}
 
       {/* Pipeline architectural horizontal */}
-      {montrePipeline && <PipelineArchitecture />}
+      {fini && montrePipeline && <PipelineArchitecture />}
 
       {/* KPIs épurés et légers (Style stat strip moderne) */}
-      {message.kpis && (
+      {fini && message.kpis && (
         <div className="my-4 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
           <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.06] p-3">
             <div className="flex items-center justify-between text-emerald-400">
@@ -222,7 +249,7 @@ function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif }) {
       )}
 
       {/* Tableau comparatif épuré */}
-      {message.tableauComparatif && (
+      {fini && message.tableauComparatif && (
         <div className="my-4 overflow-hidden rounded-xl border border-white/[0.08] bg-[#0A131C]">
           <table className="w-full text-left text-xs">
             <thead>
@@ -246,7 +273,7 @@ function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif }) {
       )}
 
       {/* Bouton léger pour ouvrir le Document dans Canvas si disponible */}
-      {(message.documentCanvas || texte.includes("CASE_101_ARBITRAGE_CONVERGENCE.md")) && (
+      {fini && (message.documentCanvas || texte.includes("CASE_101_ARBITRAGE_CONVERGENCE.md")) && (
         <div className="pt-2">
           <button
             onClick={onOuvrirCanvas}
@@ -285,13 +312,15 @@ export default function OngletTravail({
   const pilote = usePilotage();
   const [nouveauMsg, setNouveauMsg] = useState("");
   const [envoiMsg, setEnvoiMsg] = useState(false);
+  // Rubriques du volet (Résultats, Sources & Jumeaux) : chacune se plie et se déplie
+  const [pliees, setPliees] = useState({});
+  const basculerRubrique = (cle) => setPliees((p) => ({ ...p, [cle]: !p[cle] }));
   const [jumeauInspecte, setJumeauInspecte] = useState(null);
   const [preuveInspectee, setPreuveInspectee] = useState(null);
-  const [cotOuvert, setCotOuvert] = useState(false);
   const [estEnBas, setEstEnBas] = useState(true);
 
   // Gestion synchronisée ou locale des volets
-  const [voletSourcesLocal, setVoletSourcesLocal] = useState(true);
+  const [voletSourcesLocal, setVoletSourcesLocal] = useState(!pilote);
   const [canvasLocal, setCanvasLocal] = useState(false);
 
   const voletSourcesOuvert = voletSourcesOuvertProp !== undefined ? voletSourcesOuvertProp : voletSourcesLocal;
@@ -335,7 +364,7 @@ export default function OngletTravail({
     monte.current = true;
     if (idxCoupure > 0) coupureRef.current?.scrollIntoView({ block: "center" });
     else finFilRef.current?.scrollIntoView({ block: "end" });
-  }, [messages.length, envoiMsg]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [messages.length, envoiMsg, pilote?.activite?.ops?.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const verifierPositionScroll = () => {
     if (!defilementRef.current) return;
@@ -350,14 +379,14 @@ export default function OngletTravail({
   const envoyer = async (e) => {
     e?.preventDefault();
     const q = nouveauMsg.trim();
-    if (!q || envoiMsg) return;
+    if (!q || envoiMsg || pilote) return;
     setEnvoiMsg(true);
     setNouveauMsg("");
     try {
       const { data } = await delaiMin(api.post(`/cases/${cas.id}/messages`, { texte: q }));
       setCas((c) => ({
         ...c,
-        conversation: [...(c.conversation || []), data.utilisateur, data.flore],
+        conversation: [...(c.conversation || []), data.utilisateur, { ...data.flore, _activite: activiteTerminee("travail") }],
       }));
       if (data.flore?.documentCanvas && !canvasActif) {
         setCanvasActif(true);
@@ -386,13 +415,23 @@ export default function OngletTravail({
             className="absolute right-6 top-3 z-40 w-80 rounded-2xl border border-white/10 bg-[#0C1724]/95 p-4 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-200"
             data-testid="volet-flottant-sources-resultats"
           >
-            {/* Section RÉSULTATS */}
-            <div className="flex items-center justify-between text-xs font-semibold text-white mb-2.5">
-              <div className="flex items-center gap-1.5">
+            {/* Section RÉSULTATS : en démonstration, le dossier n'apparaît qu'une fois généré par Flore */}
+            {(!pilote || pilote.documentGenere) && (
+              <>
+            {/* Section RÉSULTATS — en-tête cliquable : plie / déplie la rubrique */}
+            <div className={`flex items-center justify-between text-xs font-semibold text-white ${pliees.resultats ? "" : "mb-2.5"}`}>
+              <button
+                type="button"
+                onClick={() => basculerRubrique("resultats")}
+                aria-expanded={!pliees.resultats}
+                data-testid="rubrique-resultats-bascule"
+                className="flex min-h-[28px] flex-1 items-center gap-1.5 text-left transition-colors hover:text-sky-200"
+              >
+                <CaretDown size={11} className={`shrink-0 text-[#7C93A8] transition-transform duration-200 ${pliees.resultats ? "-rotate-90" : ""}`} />
                 <FileText size={14} className="text-sky-400" />
                 <span>Résultats</span>
-              </div>
-              <button 
+              </button>
+              <button
                 onClick={() => setCanvasActif(true)}
                 className="text-[#7C93A8] hover:text-white transition-colors"
                 title="Ouvrir le document dans le Canvas"
@@ -402,6 +441,8 @@ export default function OngletTravail({
               </button>
             </div>
 
+            {!pliees.resultats && (
+              <>
             {/* Item Document CASE-101 */}
             <div 
               onClick={() => setCanvasActif(!canvasActif)}
@@ -421,7 +462,7 @@ export default function OngletTravail({
                     CASE_101_ARBITRAGE_CONVERGENCE.md
                   </div>
                   <div className="text-[11px] text-[#7C93A8]">
-                    Recommandation officielle · 4 sections
+                    Recommandation officielle · 5 sections
                   </div>
                 </div>
                 <span className="shrink-0 text-[11px] font-code text-sky-400">
@@ -429,17 +470,28 @@ export default function OngletTravail({
                 </span>
               </div>
             </div>
+              </>
+            )}
 
             {/* Séparateur fin */}
             <div className="my-3.5 border-t border-white/[0.08]" />
+              </>
+            )}
 
-            {/* Section SOURCES */}
-            <div className="flex items-center justify-between text-xs font-semibold text-white mb-2.5">
-              <div className="flex items-center gap-1.5">
+            {/* Section SOURCES — en-tête cliquable : plie / déplie la rubrique */}
+            <div className={`flex items-center justify-between text-xs font-semibold text-white ${pliees.sources ? "" : "mb-2.5"}`}>
+              <button
+                type="button"
+                onClick={() => basculerRubrique("sources")}
+                aria-expanded={!pliees.sources}
+                data-testid="rubrique-sources-bascule"
+                className="flex min-h-[28px] flex-1 items-center gap-1.5 text-left transition-colors hover:text-[#C4B5FD]"
+              >
+                <CaretDown size={11} className={`shrink-0 text-[#7C93A8] transition-transform duration-200 ${pliees.sources ? "-rotate-90" : ""}`} />
                 <Globe size={14} className="text-[#9B87F5]" />
                 <span>Sources & Jumeaux</span>
-                <span className="rounded-full bg-white/[0.08] px-1.5 py-0.2 font-code text-[10px] text-[#7C93A8]">6</span>
-              </div>
+                <span className="rounded-full bg-white/[0.08] px-1.5 py-0.2 font-code text-[10px] text-[#7C93A8]">{jumeauxParticipants.length + 2}</span>
+              </button>
               <button 
                 onClick={() => setVoletSourcesOuvert(false)}
                 className="text-[#7C93A8] hover:text-white transition-colors"
@@ -449,6 +501,8 @@ export default function OngletTravail({
               </button>
             </div>
 
+            {!pliees.sources && (
+              <>
             <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
               {/* 4 Jumeaux Participants */}
               {jumeauxParticipants.map((j) => (
@@ -533,6 +587,8 @@ export default function OngletTravail({
                 </p>
               </div>
             )}
+              </>
+            )}
           </div>
         )}
         
@@ -540,7 +596,7 @@ export default function OngletTravail({
         <div 
           ref={defilementRef}
           onScroll={verifierPositionScroll}
-          className="flex-1 overflow-y-auto px-6 sm:px-12"
+          className={`flex-1 overflow-y-auto px-6 transition-[padding] duration-300 ease-out sm:px-12 ${voletSourcesOuvert && !canvasActif ? "xl:pr-[22rem]" : ""}`}
         >
           <div className="mx-auto max-w-3xl space-y-7 py-8" data-testid="case-conversation">
             {messages.map((m, i) => (
@@ -591,28 +647,6 @@ export default function OngletTravail({
                   /* Réponse Flore IA : Zéro card lourde, texte au fil de l'eau, lecture pure */
                   <div className="space-y-2 animate-in fade-in duration-200" data-testid={`case-msg-${i}`}>
                     
-                    {/* Réflexion / CoT discrète (Style ChatGPT "A travaillé pendant...") */}
-                    <div 
-                      onClick={() => setCotOuvert((v) => !v)}
-                      className="inline-flex items-center gap-1.5 text-xs text-[#7C93A8] hover:text-[#CBD5E1] cursor-pointer select-none transition-colors"
-                      data-testid="barre-cot-flore"
-                    >
-                      <span>A analysé le SI et 4 jumeaux en 1.8s</span>
-                      <CaretDown size={12} className={`transition-transform duration-200 ${cotOuvert ? "rotate-180" : ""}`} />
-                    </div>
-
-                    {cotOuvert && (
-                      <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 text-xs text-[#94A3B8] space-y-1.5 animate-in fade-in">
-                        <div className="flex items-center gap-2 text-[#38BDF8] font-code text-[11px]">
-                          <CheckCircle size={13} />
-                          <span>Interrogation de la topologie du Mesh (38 jumeaux actifs)</span>
-                        </div>
-                        <div>• 4 jumeaux mobilisés : <code className="text-sky-300">app-portail</code>, <code className="text-rose-300">app-conseiller</code>, <code className="text-emerald-300">app-dossiers</code>, <code className="text-sky-300">app-statuts</code></div>
-                        <div>• Preuves auditées : <code className="text-purple-300">ev-g-initiatives</code> (6,6 M€) et <code className="text-emerald-300">ev-g-couverture</code> (80% existant)</div>
-                        <div>• Détection d'incohérence : triple tentative de développement de la même capacité de suivi des dossiers.</div>
-                      </div>
-                    )}
-
                     {/* Corps formaté du message de Flore */}
                     <CorpsMessageFlore 
                       message={m} 
@@ -670,6 +704,13 @@ export default function OngletTravail({
                     </div>
                   </div>
                 )}
+                {/* Ligne d'activité de Flore : sous le dernier message du traitement, repliée une fois terminée */}
+                {(pilote?.activites || [])
+                  .filter((a) => a.apres === i + 1)
+                  .map((a) => (
+                    <LigneActiviteFlore key={a.id} activite={a} testid={`travail-activite-${a.id}`} />
+                  ))}
+                {m._activite && <LigneActiviteFlore activite={m._activite} testid={`travail-activite-msg-${i}`} />}
               </div>
             ))}
 
@@ -720,7 +761,8 @@ export default function OngletTravail({
 
               {/* Champ de saisie aéré */}
               <textarea
-                value={nouveauMsg}
+                value={pilote ? pilote.saisie?.texte || "" : nouveauMsg}
+                readOnly={!!pilote}
                 onChange={(e) => setNouveauMsg(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
@@ -728,7 +770,7 @@ export default function OngletTravail({
                     envoyer(e);
                   }
                 }}
-                placeholder="Posez une question à Flore et aux jumeaux du SI…"
+                placeholder={pilote ? "Conversation de démonstration" : "Posez une question à Flore et aux jumeaux du SI…"}
                 rows={1}
                 data-testid="case-msg-input"
                 className="max-h-32 flex-1 resize-none bg-transparent px-1 py-1 text-sm text-[#F2F6F8] placeholder:text-[#526578] focus:outline-none"
@@ -751,11 +793,11 @@ export default function OngletTravail({
               {/* Bouton d'envoi vibrant */}
               <button
                 type="submit"
-                disabled={envoiMsg || !nouveauMsg.trim()}
+                disabled={!!pilote || envoiMsg || !nouveauMsg.trim()}
                 data-testid="case-msg-send-btn"
                 title="Envoyer le message"
                 className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl transition-all ${
-                  nouveauMsg.trim() && !envoiMsg
+                  (pilote ? pilote.saisie?.texte : nouveauMsg.trim()) && !envoiMsg
                     ? "bg-[#38BDF8] text-[#071019] shadow-md shadow-[#38BDF8]/20 hover:scale-105"
                     : "bg-white/[0.05] text-[#475569] opacity-30 cursor-not-allowed"
                 }`}

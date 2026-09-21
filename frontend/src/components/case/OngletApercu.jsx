@@ -7,6 +7,9 @@ import { rel, catHistorique, FILTRES_ACTIVITE } from "./utils";
 
 const TYPES_DECISION = { arbitrage: "Arbitrage", validation: "Validation", rejet: "Rejet", report: "Report" };
 const RISQUES = { faible: ["faible", "#34D399"], moyen: ["moyen", "#F2B84B"], eleve: ["élevé", "#F87171"] };
+// Les extraits du fil s'affichent sans les marqueurs de mise en forme (**gras**, `code`)
+const sansMarkdown = (t) => String(t || "").replace(/\*\*/g, "").replace(/`/g, "");
+
 const STATUTS_OPTION = { a_evaluer: ["À évaluer", "#F2B84B"], recommandee: ["Recommandée par Flore", "#25D0C8"], retenue: ["Retenue", "#34D399"], ecartee: ["Écartée", "#7C93A8"] };
 
 const STATUTS_HYP = {
@@ -451,7 +454,7 @@ export default function OngletApercu({ cas, maj, setCas, situations }) {
               if (m.role === "utilisateur") {
                 return (
                   <div key={e.cle} className="ml-10 rounded-xl rounded-br-sm bg-[#9B87F5]/15 px-3.5 py-2.5" data-testid={`activite-${e.cle}`}>
-                    <p className="text-sm text-[#F2F6F8]">{m.texte}</p>
+                    <p className="text-sm text-[#F2F6F8]">{sansMarkdown(m.texte)}</p>
                     <p className="mt-1 text-right font-code text-[9px] text-[#7C93A8]">{m.quand ? new Date(m.quand).toLocaleString("fr-FR") : ""}</p>
                   </div>
                 );
@@ -463,7 +466,7 @@ export default function OngletApercu({ cas, maj, setCas, situations }) {
                     <Sparkle size={10} weight="fill" /> Flore
                     {m.comportement && <span className="text-[#7C93A8]">· {m.comportement}</span>}
                   </div>
-                  <p className="text-sm leading-relaxed text-[#D8E2EA]">{m.texte}</p>
+                  <p className="text-sm leading-relaxed text-[#D8E2EA]">{sansMarkdown(m.texte)}</p>
                   {preuvesOuvertes === e.cle && (m.preuves || []).length > 0 && (
                     <ul className="mt-2 space-y-1 border-l-2 border-[#25D0C8]/30 pl-2.5" data-testid={`preuves-${e.cle}`}>
                       {m.preuves.map((p, pi) => (

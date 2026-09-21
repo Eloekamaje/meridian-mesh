@@ -283,36 +283,51 @@ export default function Atlas() {
   // où l'Atlas masque les jumeaux individuels — le résultat annoncé resterait invisible.
   // On borne donc le zoom au niveau « constellation », quitte à rogner légèrement.
   const dernierCadrage = useRef(null); // pts du dernier cadrage de scène
-  const cadrerScene = useCallback((pts, options = {}) => {
-    if (!pts || !pts.length) return;
+  const dernierCadrageIds = useRef(null); // ids des jumeaux du dernier cadrage de scène
+  const cadrerScene = useCallback((ptsMesh, options = {}) => {
+    if (!ptsMesh || !ptsMesh.length) return;
+    // Les positions du Mesh sont théoriques : les jumeaux sont dessinés dans les lobes de leur
+    // domaine. On cadre donc sur les positions RÉELLEMENT rendues quand elles existent.
+    if (options.ids) dernierCadrageIds.current = options.ids;
+    const rf = rfRef.current;
+    const rendus = (dernierCadrageIds.current || [])
+      .map((id) => rf?.getInternalNode?.(id))
+      .filter((n) => n && !n.hidden && n.internals?.positionAbsolute)
+      .map((n) => n.internals.positionAbsolute);
+    const pts = rendus.length ? rendus : ptsMesh;
     dernierCadrage.current = pts;
     const duration = options.duration ?? 350;
     const xs = pts.map((p) => p.x);
     const ys = pts.map((p) => p.y);
     const MARGE_X = 140;
-    const MARGE_Y = 100;
+    // Marge haute généreuse (étiquette et membrane du domaine au-dessus du jumeau) ; le bas est
+    // déjà couvert par la hauteur du jumeau — les scènes étalées sur trois domaines sont hautes
+    const MARGE_Y_HAUT = 90;
     const x0 = Math.min(...xs) - MARGE_X;
-    const y0 = Math.min(...ys) - MARGE_Y;
+    const y0 = Math.min(...ys) - MARGE_Y_HAUT;
     const b = {
       x: x0,
       y: y0,
       width: Math.max(...xs) + 140 + MARGE_X - x0,
-      height: Math.max(...ys) + 120 + MARGE_Y - y0,
+      height: Math.max(...ys) + 100 - y0,
     };
     const r = carteRef.current?.getBoundingClientRect();
     if (!r || !r.width || !r.height) {
       rfRef.current?.fitBounds(b, { duration });
       return;
     }
+    // Flore est une colonne en flux : `r` est déjà la largeur du canevas SANS elle.
+    // On ne réserve donc que la barre d'outils à gauche et la minimap / le zoom à droite.
     const GAUCHE = 64;
-    const DROITE = 430;
-    const BAS = 110;
+    const DROITE = 80;
+    const BAS = 40;
     const largeurUtile = Math.max(320, r.width - GAUCHE - DROITE);
     const utileY = Math.max(240, r.height - BAS);
     const centreX = GAUCHE + largeurUtile / 2;
     const centreY = utileY / 2;
-    // Zoom calibré pour niveau 3 (robots nets, badges visibles et cadrage impeccable)
-    const zoom = Math.min(Math.max(Math.min(largeurUtile / b.width, utileY / b.height), 0.95), 1.25);
+    // Toute la scène doit rester à l'écran ; plancher à 0,7 : sous 0,6 (0,66 avec l'hystérésis du
+    // zoom sémantique) l'Atlas repasse en vue « Global » et masque les jumeaux individuels
+    const zoom = Math.min(Math.max(Math.min(largeurUtile / b.width, utileY / b.height), 0.7), 1.25);
     rfRef.current?.setViewport(
       { x: centreX - (b.x + b.width / 2) * zoom, y: centreY - (b.y + b.height / 2) * zoom, zoom },
       { duration }
@@ -331,11 +346,19 @@ export default function Atlas() {
     setSelection(accentsValides);
     setRelFocus(true);
 
-    const pts = idsValides
+    // On cadre sur les éléments ACCENTUÉS (ce que la scène veut montrer) : le contexte atténué
+    // autour n'est pas forcé dans le cadre — il rendrait la scène trop haute pour rester lisible
+    const idsCadrage = accentsValides.length ? accentsValides : idsValides;
+    const pts = idsCadrage
       .filter((id) => !mesh.jumeaux.find((j) => j.id === id)?.cadastre)
       .map((id) => posOverrides[id] || mesh.jumeaux.find((j) => j.id === id)?.position)
       .filter(Boolean);
-    if (pts.length) cadrerScene(pts, { duration: sansAnimation ? 0 : 350 });
+    if (pts.length) {
+      cadrerScene(pts, { duration: sansAnimation ? 0 : 350, ids: idsCadrage });
+      // Démonstration : la mise en page des lobes se stabilise après le premier rendu de la
+      // scène — un second cadrage, sur les positions alors mesurées, garantit le résultat visible
+      if (pilote) setTimeout(() => cadrerScene(pts, { duration: 300 }), 550);
+    }
 
     setTheatreSituationnel({
       actif: true,
@@ -344,7 +367,7 @@ export default function Atlas() {
       accents: accentsValides,
       titre: titre || "Scène d'analyse",
     });
-  }, [mesh, posOverrides, cadrerScene]);
+  }, [mesh, posOverrides, cadrerScene, pilote]);
 
   const quitterTheatreSituationnel = useCallback(() => {
     clearTheatreTimers();
@@ -1242,7 +1265,7 @@ export default function Atlas() {
       <CielEtoile />
       {/* Démonstration : la surface annonce ce qu'elle prépare. À la première ouverture,
           surface sobre et pleine ; en mise à jour, la vue précédente reste visible dessous. */}
-      {pilote?.preparation && <SurfacePreparation preparation={pilote.preparation} vierge={pilote.premiereScene} testid="atlas-preparation" />}
+      {pilote?.preparation?.surface === "atlas" && <SurfacePreparation preparation={pilote.preparation} vierge={pilote.premiereScene} testid="atlas-preparation" />}
       <output
         ref={telemetrieRef}
         data-testid="telemetrie"

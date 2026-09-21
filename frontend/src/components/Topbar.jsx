@@ -97,7 +97,7 @@ export default function Topbar() {
         <nav className="hidden items-center gap-1 md:flex" data-testid="sidebar-nav">
           {NAV.map(({ to, label, icon: Icon, testid }) => {
             // Kiosque Polaris : « Atlas » reste dans la démo, les autres sorties sont neutralisées
-            const cibleNav = pilote ? (to === "/atlas" ? pilote.baseUrl : null) : to;
+            const cibleNav = pilote ? (to === "/atlas" ? "/atlas" : null) : to;
             const desactive = pilote && !cibleNav;
             return (
               <NavLink
@@ -136,7 +136,7 @@ export default function Topbar() {
               {/* Mobile : la navigation primaire vit dans ce menu */}
               <div className="pb-1 md:hidden">
                 {NAV.map(({ to, label, icon: Icon, testid }) => {
-                  const cibleNav = pilote ? (to === "/atlas" ? pilote.baseUrl : null) : to;
+                  const cibleNav = pilote ? (to === "/atlas" ? "/atlas" : null) : to;
                   const desactive = pilote && !cibleNav;
                   return (
                     <NavLink
@@ -255,7 +255,7 @@ export default function Topbar() {
           <button
             onClick={() => {
               window.dispatchEvent(new CustomEvent("meridian:nouveau-travail"));
-              navigate("/travaux/demo-polaris-work-g");
+              navigate("/travaux/nouveau");
             }}
             data-testid="sidebar-nouveau-travail"
             title="Démarrer le travail d'arbitrage avec Flore"

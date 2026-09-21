@@ -10,7 +10,7 @@ import { couleurDomaine } from "@/lib/domaines";
 import { useContexte } from "@/lib/contexte";
 import { useMesh } from "@/lib/mesh";
 import { usePilotage } from "@/lib/pilotage";
-import ActivitePilotee from "./ActivitePilotee";
+import LigneActiviteFlore from "./LigneActiviteFlore";
 
 function contexteDepuis(pathname) {
   // « case » = page DÉTAIL d'un travail uniquement (Flore y est l'onglet Conversation du dossier) ;
@@ -824,7 +824,7 @@ export default function FlorePanel() {
             </div>
           ) : (
           e.activite ? (
-            <ActivitePilotee key={e.id || i} activite={e.activite} testid={`flore-activite-trace-${i}`} />
+            <LigneActiviteFlore key={e.id || i} activite={e.activite} testid={`flore-activite-trace-${i}`} />
           ) : (
           <div key={e.id || i} className="space-y-2">
             {e.question && (
@@ -854,7 +854,7 @@ export default function FlorePanel() {
             <FloreActivite testid="flore-chargement-activite" />
           </div>
         )}
-        {pilote?.activite && <ActivitePilotee activite={pilote.activite} testid="flore-activite-demo" />}
+        {pilote?.activite && <LigneActiviteFlore activite={pilote.activite} testid="flore-activite-demo" />}
         {pilote?.reflexionFlore && (
           <div className="flex items-start gap-2.5 rounded-xl border border-[rgba(148,163,184,0.12)] bg-[#0F1D28]/90 p-3 shadow-sm" data-testid="flore-panel-reflexion">
             <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-[#7C3AED] to-[#4F46E5] text-white shadow-sm ring-1 ring-white/10 animate-pulse">

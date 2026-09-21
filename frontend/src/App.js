@@ -18,12 +18,16 @@ import TravailDetail from "@/pages/TravailDetail";
 import Jumeaux from "@/pages/Jumeaux";
 import RevueJumeau from "@/pages/RevueJumeau";
 import Administration from "@/pages/Administration";
+import PolarisChoixProfil from "@/demo/polaris/PolarisChoixProfil";
+import { KiosqueProvider } from "@/demo/polaris/KiosqueProvider";
+
 const RedirectTravail = () => {
   const { cid } = useParams();
   return <Navigate to={`/travaux/${cid}`} replace />;
 };
 
-// Application Méridian
+// L'application Méridian. Ses providers se remontent quand la démonstration démarre ou s'arrête
+// (KiosqueProvider) : ils chargent alors leurs données via le réseau local ou le vrai backend.
 function ProduitApp() {
   return (
     <PerimetreProvider>
@@ -41,6 +45,8 @@ function ProduitApp() {
             <Route path="/investigations/:id" element={<InvestigationDetail />} />
             <Route path="/travaux" element={<Travaux />} />
             <Route path="/travaux/nouveau" element={<Accueil mode="creation" />} />
+            {/* Démonstration : choix du profil dans la zone de contenu — puis l'application réelle, pilotée */}
+            <Route path="/demo" element={<PolarisChoixProfil />} />
             <Route path="/travaux/:cid" element={<TravailDetail />} />
             <Route path="/jumeaux" element={<Jumeaux />} />
             <Route path="/jumeaux/:jid/revue" element={<RevueJumeau />} />
@@ -53,7 +59,6 @@ function ProduitApp() {
             <Route path="/decisions" element={<Navigate to="/travaux" replace />} />
             <Route path="/change-lab" element={<Navigate to="/travaux/case-olympiade" replace />} />
             <Route path="/registry" element={<Navigate to="/jumeaux" replace />} />
-            <Route path="/demo/*" element={<Navigate to="/travaux/demo-polaris-work-g" replace />} />
           </Route>
         </Routes>
         </MeshProvider>
@@ -66,7 +71,9 @@ function ProduitApp() {
 function App() {
   return (
     <BrowserRouter>
-      <ProduitApp />
+      <KiosqueProvider>
+        <ProduitApp />
+      </KiosqueProvider>
       <Toaster theme="light" position="top-right" />
     </BrowserRouter>
   );

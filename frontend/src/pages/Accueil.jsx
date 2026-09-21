@@ -8,7 +8,13 @@ import { useContexte } from "@/lib/contexte";
 import { usePilotage } from "@/lib/pilotage";
 import ComposerFlore from "@/components/ComposerFlore";
 import FloreActivite, { delaiMin } from "@/components/FloreActivite";
-import ActivitePilotee from "@/components/ActivitePilotee";
+import LigneActiviteFlore from "@/components/LigneActiviteFlore";
+import {
+  CREATION_TRAVAIL_ACTIVE,
+  FLORE_PRESENTATION,
+  FLORE_REPONSE_EN_CONSTRUCTION,
+  PROPOSITION_DEMO,
+} from "@/lib/messagesFlore";
 
 const SUGGESTIONS = {
   architecte: [
@@ -23,14 +29,26 @@ const SUGGESTIONS = {
   ],
 };
 
+// Gras « **texte** » et code « `texte` » des réponses de Flore — comme dans la page Travail
+function TexteRiche({ texte }) {
+  return String(texte || "")
+    .split(/(\*\*[^*]+\*\*|`[^`]+`)/g)
+    .map((part, i) =>
+      part.startsWith("**") ? <strong key={i} className="font-semibold text-white">{part.slice(2, -2)}</strong>
+      : part.startsWith("`") ? <code key={i} className="rounded bg-white/[0.06] px-1 font-code text-[12px] text-sky-300">{part.slice(1, -1)}</code>
+      : part
+    );
+}
+
 function BulleFlore({ data, index, onSuite }) {
+  const navigate = useNavigate();
   const [preuves, setPreuves] = useState(false);
   return (
     <div className="rise" data-testid={`accueil-reponse-${index}`}>
       <div className="flex items-center gap-1.5 font-code text-[9px] uppercase tracking-[0.2em] text-[#C4B5FD]">
         <Sparkle size={11} weight="fill" /> Flore
       </div>
-      <p className="mt-1.5 whitespace-pre-line text-sm leading-relaxed text-[#F2F6F8]">{data.reponse || data.texte}</p>
+      <p className="mt-1.5 whitespace-pre-line text-sm leading-relaxed text-[#F2F6F8]"><TexteRiche texte={data.reponse || data.texte} /></p>
 
       {(data.contributions || []).length > 0 && (
         <div className="mt-2.5 space-y-1.5">
@@ -69,7 +87,7 @@ function BulleFlore({ data, index, onSuite }) {
       {(data.propositions || []).length > 0 && (
         <div className="mt-3 flex flex-wrap gap-1.5">
           {data.propositions.map((p, k) => (
-            <button key={k} onClick={() => onSuite(p.question || p.label)} data-testid={`accueil-prop-${index}-${k}`}
+            <button key={k} onClick={() => (p.action === "demo" ? navigate("/demo") : onSuite(p.question || p.label))} data-testid={p.action === "demo" ? "creation-decouvrir-demo" : `accueil-prop-${index}-${k}`}
               className="rounded-full border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-3 py-1.5 text-[11px] text-[#94A3B8] transition-colors hover:border-[#9B87F5]/40 hover:text-[#9B87F5]">
               {p.label}
             </button>
@@ -86,7 +104,12 @@ export default function Accueil({ mode = "accueil" }) {
   const { selection } = useContexte();
   const pilote = usePilotage();
   const [recents, setRecents] = useState([]);
-  const [echanges, setEchanges] = useState([]);
+  // « Nouveau travail » hors démonstration : la création réelle n'existe pas encore — Flore se
+  // présente puis l'annonce, sans appel réseau (textes dans lib/messagesFlore.js)
+  const enConstruction = mode === "creation" && !pilote && !CREATION_TRAVAIL_ACTIVE;
+  const [echanges, setEchanges] = useState(() =>
+    enConstruction ? [{ role: "flore", data: { reponse: FLORE_PRESENTATION, comportement: "expliquer", propositions: [PROPOSITION_DEMO] } }] : []
+  );
   const [envoi, setEnvoi] = useState(false);
   const [propMasquee, setPropMasquee] = useState(false);
   const [conservation, setConservation] = useState(false);
@@ -125,6 +148,14 @@ export default function Accueil({ mode = "accueil" }) {
 
   const demander = async (q) => {
     if (envoi || !q.trim()) return;
+    if (enConstruction) {
+      setEchanges((e) => [
+        ...e,
+        { role: "moi", texte: q },
+        { role: "flore", data: { reponse: FLORE_REPONSE_EN_CONSTRUCTION, comportement: "expliquer", propositions: [PROPOSITION_DEMO] } },
+      ]);
+      return;
+    }
     setEnvoi(true);
     setEchanges((e) => [...e, { role: "moi", texte: q }]);
     try {
@@ -183,7 +214,7 @@ export default function Accueil({ mode = "accueil" }) {
     <div className="flex h-full flex-col overflow-hidden" data-testid="accueil-page">
       {/* Zone de contenu : accueil ou fil de conversation — le chat VIT ici, pas en latéral */}
       <div className="flex-1 overflow-y-auto px-6">
-        {creation && !enConversation && (
+        {creation && !enConversation && !pilote && (
           <div className="mx-auto w-full max-w-2xl pt-4">
             <button onClick={() => navigate("/travaux")} data-testid="creation-retour-travaux" className="flex items-center gap-1.5 rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2.5 py-1.5 text-xs text-[#94A3B8] transition-colors hover:text-[#F2F6F8]">
               ← Travaux
@@ -237,7 +268,7 @@ export default function Accueil({ mode = "accueil" }) {
             <div className="space-y-6 py-8" data-testid="accueil-fil">
               {fil.map((e, i) =>
                 e.role === "activite" ? (
-                  <ActivitePilotee key={e.cle || i} activite={e.activite} testid={`accueil-activite-trace-${i}`} compact />
+                  <LigneActiviteFlore key={e.cle || i} activite={e.activite} testid={`accueil-activite-trace-${i}`} />
                 ) : e.role === "moi" ? (
                   <p key={e.cle || i} className="rise ml-auto max-w-[85%] rounded-2xl rounded-br-md bg-[rgba(155,135,245,0.12)] px-4 py-2.5 text-sm text-[#F2F6F8]" data-testid={`accueil-msg-${i}`}>
                     {e.texte}
@@ -247,9 +278,10 @@ export default function Accueil({ mode = "accueil" }) {
                 )
               )}
               {!pilote && envoi && <FloreActivite testid="accueil-attente" />}
-              {pilote?.activite && (
-                <ActivitePilotee activite={pilote.activite} testid="accueil-activite-demo" compact />
-              )}
+              {/* Démonstration : la ligne d'activité de Flore (une par traitement), sous le dernier message */}
+              {(pilote?.activites || []).map((a) => (
+                <LigneActiviteFlore key={a.id} activite={a} testid={`accueil-activite-${a.id}`} />
+              ))}
 
               {/* Une conversation qui s'approfondit peut devenir un Travail */}
               {!pilote && echanges.length >= 2 && !propMasquee && !envoi && !creation && (

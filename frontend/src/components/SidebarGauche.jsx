@@ -13,11 +13,14 @@ import {
   Bell, 
   Users, 
   Check, 
-  CaretDown 
+  CaretDown,
+  PlayCircle
 } from "@phosphor-icons/react";
 import api from "@/lib/api";
 import { usePerimetre } from "@/lib/perimetre";
 import { useContexte } from "@/lib/contexte";
+import { usePilotage } from "@/lib/pilotage";
+import IndicateurClic from "@/components/IndicateurClic";
 
 const NAV_ITEMS = [
   { to: "/atlas", label: "Atlas", icon: Compass, testid: "nav-atlas" },
@@ -32,18 +35,22 @@ export default function SidebarGauche() {
   const location = useLocation();
   const { personas, persona, changerPersona, espaces, cible, changerCible } = usePerimetre();
   const { basculerFlore } = useContexte();
+  // Non nul uniquement dans la démonstration Polaris : la coquille est alors verrouillée
+  const pilote = usePilotage();
 
-  // État replié : mémorisé dans le localStorage pour confort utilisateur
-  const [replie, setReplie] = useState(() => {
+  // État replié : mémorisé dans le localStorage pour confort utilisateur.
+  // En démonstration la barre reste dépliée : le bouton « Nouveau travail » doit être visible.
+  const [replieMemo, setReplieMemo] = useState(() => {
     return localStorage.getItem("meridian_sidebar_replie") === "true";
   });
+  const replie = !pilote && replieMemo;
 
   const [menuProfil, setMenuProfil] = useState(false);
   const [recents, setRecents] = useState([]);
   const refProfil = useRef(null);
 
   const basculerRepli = () => {
-    setReplie((prev) => {
+    setReplieMemo((prev) => {
       const suivant = !prev;
       localStorage.setItem("meridian_sidebar_replie", suivant ? "true" : "false");
       return suivant;
@@ -57,7 +64,21 @@ export default function SidebarGauche() {
         setRecents(sorted.slice(0, 8));
       })
       .catch(() => {});
-  }, []);
+    // En démonstration, la liste se recharge quand le travail naît, s'enrichit ou se fige
+  }, [pilote?.versionTravaux]);
+
+  // « Nouveau travail » : en démonstration le clic lance la séquence scénarisée
+  // (le moteur ouvre la page) ; hors démonstration il ouvre la vraie page de création.
+  const ouvrirNouveauTravail = () => {
+    if (pilote) {
+      if (pilote.ouvertureEnAttente) pilote.demarrerOuverture();
+      return;
+    }
+    navigate("/travaux/nouveau");
+  };
+
+  // Navigation verrouillée en démonstration : « Atlas » reste dans la démo, le reste est neutralisé
+  const lienActif = (to) => !pilote || to === "/atlas";
 
   useEffect(() => {
     const fermer = (e) => {
@@ -70,6 +91,10 @@ export default function SidebarGauche() {
   }, []);
 
   const personaActuel = personas.find((p) => p.id === persona) || { nom: "Majella Elobo", role: "Directeur SI" };
+  // Démonstration : l'identité est celle du rôle joué, pas celle de la personne connectée
+  const identite = pilote
+    ? { nom: personaActuel.nom, sous: personaActuel.role, initiales: (personaActuel.nom || "?").slice(0, 2).toUpperCase() }
+    : { nom: "Majella Elobo", sous: `${personaActuel.role || "Directeur SI"} · Mesh 38`, initiales: "ME" };
 
   return (
     <aside 
@@ -127,18 +152,24 @@ export default function SidebarGauche() {
       {/* ===================================================================== */}
       {/* BOUTON D'ACTION : NOUVEAU TRAVAIL (Style ChatGPT)                     */}
       {/* ===================================================================== */}
+      {/* Démonstration : le clic est le geste que le visiteur doit faire — halo, main et bulle l'y invitent */}
       {!replie ? (
-        <button
-          onClick={() => navigate("/travaux/demo-polaris-work-g")}
-          className="mb-4 flex w-full items-center gap-2.5 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs font-medium text-white transition-all hover:border-white/20 hover:bg-white/[0.08] shadow-sm"
-          data-testid="btn-nouveau-travail-sidebar"
-        >
-          <Plus size={15} className="text-[#38BDF8]" />
-          <span>Nouveau travail</span>
-        </button>
+        <div className="relative mb-4">
+          <button
+            onClick={ouvrirNouveauTravail}
+            className={`flex min-h-[44px] w-full items-center gap-2.5 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs font-medium text-white transition-all hover:border-white/20 hover:bg-white/[0.08] shadow-sm ${
+              pilote?.ouvertureEnAttente ? "animate-pulse ring-2 ring-[#C4B5FD] ring-offset-2 ring-offset-[#091420]" : ""
+            }`}
+            data-testid="btn-nouveau-travail-sidebar"
+          >
+            <Plus size={15} className="text-[#38BDF8]" />
+            <span>Nouveau travail</span>
+          </button>
+          {pilote?.ouvertureEnAttente && <IndicateurClic />}
+        </div>
       ) : (
         <button
-          onClick={() => navigate("/travaux/demo-polaris-work-g")}
+          onClick={ouvrirNouveauTravail}
           className="mb-4 flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.04] text-[#38BDF8] transition-all hover:bg-white/[0.08] hover:scale-105"
           title="Nouveau travail"
           data-testid="btn-nouveau-travail-sidebar"
@@ -155,8 +186,10 @@ export default function SidebarGauche() {
           <NavLink
             key={to}
             to={to}
+            onClick={(e) => { if (!lienActif(to)) e.preventDefault(); }}
             data-testid={testid}
-            title={replie ? label : undefined}
+            aria-disabled={!lienActif(to) || undefined}
+            title={!lienActif(to) ? "Indisponible pendant la démonstration" : replie ? label : undefined}
             className={({ isActive }) =>
               `flex items-center gap-3 rounded-xl transition-colors ${
                 replie 
@@ -169,6 +202,24 @@ export default function SidebarGauche() {
             {!replie && <span>{label}</span>}
           </NavLink>
         ))}
+        {/* Entrée de la démonstration : même menu partout ; pendant la démo elle est active et inerte */}
+        <NavLink
+          to="/demo"
+          onClick={(e) => { if (pilote) e.preventDefault(); }}
+          data-testid="nav-demo"
+          title={replie ? "Démonstration" : undefined}
+          className={({ isActive }) => {
+            const actif = isActive || !!pilote;
+            return `flex items-center gap-3 rounded-xl transition-colors ${
+              replie
+                ? `h-9 w-9 justify-center hover:bg-white/[0.06] ${actif ? "bg-[#9B87F5]/20 text-[#C4B5FD]" : "text-[#9B87F5]"}`
+                : `px-3 py-2 text-xs font-medium ${actif ? "bg-[#9B87F5]/15 font-semibold text-white" : "text-[#B4A5F7] hover:bg-[#9B87F5]/10 hover:text-white"}`
+            }`;
+          }}
+        >
+          <PlayCircle size={17} className="shrink-0" />
+          {!replie && <span>Démonstration</span>}
+        </NavLink>
       </nav>
 
       {/* Séparateur */}
@@ -183,54 +234,32 @@ export default function SidebarGauche() {
             Récentes
           </div>
 
-          {/* Travail actif phare : Démo Polaris (CASE-101) */}
-          <NavLink
-            to="/travaux/demo-polaris-work-g"
-            className={({ isActive }) =>
-              `block truncate rounded-xl px-2.5 py-1.5 text-xs transition-colors ${
-                isActive || location.pathname.includes("demo-polaris-work-g")
-                  ? "bg-white/[0.08] font-semibold text-white shadow-sm"
-                  : "text-[#8E9FA5] hover:bg-white/[0.04] hover:text-white"
-              }`
-            }
-            title="Dossier d'arbitrage : Mutualisation du suivi des dossiers (CASE-101)"
-          >
-            Dossier d'arbitrage (CASE-101)
-          </NavLink>
-
-          {/* Autres travaux récents */}
-          {recents
-            .filter((c) => c.id !== "demo-polaris-work-g")
-            .slice(0, 7)
-            .map((c) => (
-              <NavLink
-                key={c.id}
-                to={`/travaux/${c.id}`}
-                className={({ isActive }) =>
-                  `block truncate rounded-xl px-2.5 py-1.5 text-xs transition-colors ${
-                    isActive
-                      ? "bg-white/[0.08] font-semibold text-white"
-                      : "text-[#8E9FA5] hover:bg-white/[0.04] hover:text-white"
-                  }`
-                }
-                title={c.titre}
-              >
-                {c.titre}
-              </NavLink>
-            ))}
-
-          {/* Éléments de démo additionnels fidèles à la capture d'écran */}
-          <div className="pt-2 text-[#8E9FA5] space-y-1">
-            <div className="truncate rounded-xl px-2.5 py-1.5 text-xs opacity-60 hover:opacity-100 hover:bg-white/[0.04] cursor-pointer">
-              Scénarios Meridian olympiades
+          {recents.length === 0 && (
+            <div className="px-2.5 py-1.5 text-[11px] text-[#64748B]" data-testid="sidebar-recents-vide">
+              Aucun travail pour l'instant.
             </div>
-            <div className="truncate rounded-xl px-2.5 py-1.5 text-xs opacity-60 hover:opacity-100 hover:bg-white/[0.04] cursor-pointer">
-              Convergence suivi des dossiers
-            </div>
-            <div className="truncate rounded-xl px-2.5 py-1.5 text-xs opacity-60 hover:opacity-100 hover:bg-white/[0.04] cursor-pointer">
-              Audit couverture 80% existant
-            </div>
-          </div>
+          )}
+          {recents.slice(0, 8).map((c) => (
+            <NavLink
+              key={c.id}
+              to={`/travaux/${c.id}`}
+              onClick={(e) => { if (pilote && !pilote.travailOuvrable) e.preventDefault(); }}
+              data-testid={`sidebar-recent-${c.id}`}
+              className={({ isActive }) =>
+                `flex items-center gap-2 truncate rounded-xl px-2.5 py-1.5 text-xs transition-colors ${
+                  isActive
+                    ? "bg-white/[0.08] font-semibold text-white"
+                    : "text-[#8E9FA5] hover:bg-white/[0.04] hover:text-white"
+                }`
+              }
+              title={c.titre}
+            >
+              <span className="truncate">{c.titre}</span>
+              {c.demo_phase === "en_construction" && (
+                <span className="shrink-0 rounded-full bg-[#9B87F5]/20 px-1.5 py-px font-code text-[8px] uppercase tracking-wider text-[#C4B5FD]">en cours</span>
+              )}
+            </NavLink>
+          ))}
         </div>
       ) : (
         <div className="flex-1" />
@@ -243,20 +272,20 @@ export default function SidebarGauche() {
         {!replie ? (
           <div className="relative">
             <button
-              onClick={() => setMenuProfil(!menuProfil)}
+              onClick={() => { if (!pilote) setMenuProfil(!menuProfil); }}
               className="flex w-full items-center justify-between rounded-xl px-2 py-2 transition-colors hover:bg-white/[0.06]"
               data-testid="sidebar-profil-btn"
             >
               <div className="flex items-center gap-2.5 min-w-0">
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-[#38BDF8] to-[#9B87F5] font-display text-xs font-bold text-[#071019] shadow-sm">
-                  ME
+                  {identite.initiales}
                 </div>
                 <div className="min-w-0 text-left">
                   <div className="truncate text-xs font-semibold text-white">
-                    Majella Elobo
+                    {identite.nom}
                   </div>
                   <div className="truncate text-[10px] text-[#7C93A8]">
-                    {personaActuel.role || "Directeur SI"} · Mesh 38
+                    {identite.sous}
                   </div>
                 </div>
               </div>
@@ -292,11 +321,11 @@ export default function SidebarGauche() {
         ) : (
           <div className="flex flex-col items-center">
             <button
-              onClick={() => setReplie(false)}
+              onClick={() => setReplieMemo(false)}
               className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-tr from-[#38BDF8] to-[#9B87F5] font-display text-xs font-bold text-[#071019] shadow-sm hover:scale-105 transition-transform"
-              title="Majella Elobo (Directeur SI)"
+              title={`${identite.nom} (${personaActuel.role || "Directeur SI"})`}
             >
-              ME
+              {identite.initiales}
             </button>
           </div>
         )}

@@ -25,21 +25,42 @@ export default function TravailDetail() {
   const navigate = useNavigate();
   const { version } = usePerimetre();
   const pilote = usePilotage();
-  const [cas, setCas] = useState(null);
+  // Démonstration : le travail est déjà né quand la page s'ouvre — aucun écran de chargement
+  const [cas, setCas] = useState(() => (pilote?.lireTravail ? pilote.lireTravail(cid) : null));
   const [situations, setSituations] = useState([]);
   const [personas, setPersonas] = useState([]);
   const [erreur, setErreur] = useState(null);
   const [menu, setMenu] = useState(false);
-  const [voletSourcesOuvert, setVoletSourcesOuvert] = useState(true);
+  // Démonstration : le volet « Sources & Jumeaux » s'ouvre quand Flore a consulté des jumeaux (pas avant : il serait vide)
+  const [voletSourcesOuvert, setVoletSourcesOuvert] = useState(!pilote);
   const [canvasOuvert, setCanvasOuvert] = useState(false);
 
+  // Démonstration : le travail évolue avec le scénario (titre, résumé, rubriques de l'Aperçu).
+  // Rechargement silencieux : la page et le fil ne se remontent pas.
   useEffect(() => {
-    setCas(null);
+    if (!pilote) return;
+    api.get(`/cases/${cid}`).then((r) => setCas(r.data)).catch(() => {});
+  }, [pilote?.versionTravaux]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Démonstration : le canvas s'ouvre quand Flore publie son document (et se ferme si on rejoue)
+  useEffect(() => {
+    if (!pilote) return;
+    setCanvasOuvert(!!pilote.canvasOuvert);
+    if (pilote.canvasOuvert) setVoletSourcesOuvert(false); // le document est dans le canvas : le volet ne le recouvre pas
+  }, [pilote?.canvasOuvert]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const nbSources = (cas?.jumeaux_participants || []).length;
+  useEffect(() => {
+    if (pilote && nbSources > 0 && !pilote.canvasOuvert) setVoletSourcesOuvert(true);
+  }, [nbSources]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!pilote) setCas(null);
     setErreur(null);
     api.get(`/cases/${cid}`).then((r) => setCas(r.data)).catch((e) => setErreur(e.response?.data?.detail || "Travail introuvable"));
     api.get("/situations").then((r) => setSituations(r.data)).catch(() => {});
     api.get("/personas").then((r) => setPersonas(r.data)).catch(() => {});
-  }, [cid, version]);
+  }, [cid, version]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const maj = async (champs) => {
     try {
@@ -194,7 +215,7 @@ export default function TravailDetail() {
       {/* Contenu de la vue — la Conversation occupe toute la hauteur, composer ancré */}
       <div className={`relative ${vue === "travail" ? "flex min-h-0 flex-1 flex-col overflow-hidden" : "flex-1 overflow-y-auto px-8 py-5"}`}>
         {/* Démonstration : la surface annonce la synthèse qu'elle prépare */}
-        {pilote?.preparation && <SurfacePreparation preparation={pilote.preparation} vierge testid="travail-preparation" />}
+        {pilote?.preparation?.surface === "travail" && <SurfacePreparation preparation={pilote.preparation} testid="travail-preparation" />}
         {vue === "travail" ? (
           <OngletTravail 
             cas={casVu} 
