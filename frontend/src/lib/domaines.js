@@ -1,9 +1,9 @@
 export const DOMAINES = {
   Paiement: "#818CF8",
-  Client: "#10B981",
+  Client: "#4ADE80",
   Risque: "#F87171",
   Support: "#FB923C",
-  "Opérations": "#38BDF8",
+  "Opérations": "#A3E635",
   Distribution: "#EC4899",
   "Non classé": "#94A3B8",
 };
@@ -19,7 +19,7 @@ export const VERBES = {
 export const NATURES = {
   relation: { label: "Relation", couleur: "#60A5FA" },
   comportement: { label: "Comportement", couleur: "#93C5FD" },
-  connaissance: { label: "Connaissance", couleur: "#38BDF8" },
+  connaissance: { label: "Connaissance", couleur: "#BFDBFE" },
   contradiction: { label: "Contradiction", couleur: "#F87171" },
   incident: { label: "Incident", couleur: "#F87171" },
   changement: { label: "Changement", couleur: "#F59E0B" },

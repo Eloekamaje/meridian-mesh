@@ -226,12 +226,12 @@ export default function CanvasDocument({
                   Détient la machine à états officielle et le cycle de vie complet.
                 </p>
               </div>
-              <div className="rounded-xl border border-sky-500/30 bg-sky-950/20 p-3.5">
-                <div className="flex items-center gap-1.5 font-code text-sky-400 font-semibold">
+              <div className="rounded-xl border border-blue-500/30 bg-blue-950/20 p-3.5">
+                <div className="flex items-center gap-1.5 font-code text-blue-400 font-semibold">
                   <Sparkle size={14} />
                   <span>Diffusion des statuts (app-statuts)</span>
                 </div>
-                <p className="mt-1 text-[11px] text-sky-200/80">
+                <p className="mt-1 text-[11px] text-blue-200/80">
                   Possède l'infrastructure d'exposition temps réel via connecteurs API / Kafka.
                 </p>
               </div>

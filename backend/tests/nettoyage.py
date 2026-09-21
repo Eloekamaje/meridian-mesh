@@ -28,3 +28,7 @@ def remettre_initiatives(ids: list) -> None:
 
 def supprimer_ecarts(filtre: dict) -> int:
     return _db().actualites_ecartees.delete_many(filtre).deleted_count
+
+
+def supprimer_notifications(filtre: dict) -> int:
+    return _db().notifications.delete_many(filtre).deleted_count

@@ -29,7 +29,7 @@ const melanger = (hex, cible, t) => {
 };
 
 // `leger` : ni filtres SVG (flou) ni animations — indispensable quand on affiche des centaines de robots.
-function RobotJumeauSvg({ hauteur = 64, couleur = "#38BDF8", ecart = false, content = false, delai = 0, leger = false }) {
+function RobotJumeauSvg({ hauteur = 64, couleur = "#60A5FA", ecart = false, content = false, delai = 0, leger = false }) {
   const id = useId().replace(/:/g, "");
   const largeur = Math.round(hauteur * RATIO);
   return (

@@ -119,7 +119,7 @@ function construireCase(fixtures, scenario, resultId, phase, messages, fige, pre
       app_id: String(a.id).replace("demo-polaris-", ""),
       nom: a.nom,
       domaine: a.domaine || "SI",
-      domaineCouleur: "#38BDF8",
+      domaineCouleur: "#60A5FA",
       statut: "actif",
       participation: a.description || "Participe à la mission.",
     })),

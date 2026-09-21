@@ -9,6 +9,7 @@ import { numeroCase, SENSIBILITES, rel } from "@/components/case/utils";
 import OngletTravail from "@/components/case/OngletTravail";
 import DecisionPassation from "@/components/case/DecisionPassation";
 import PartagerTravail from "@/components/case/PartagerTravail";
+import ConfierTravail from "@/components/case/ConfierTravail";
 import SurfacePreparation from "@/components/SurfacePreparation";
 import { BoutonRetour } from "@/components/EntetePage";
 import { usePilotage } from "@/lib/pilotage";
@@ -29,7 +30,7 @@ export default function TravailDetail() {
   const brouillon = cid === "nouveau";
   const location = useLocation();
   const navigate = useNavigate();
-  const { version } = usePerimetre();
+  const { version, persona } = usePerimetre();
   const pilote = usePilotage();
   // Démonstration : le travail est déjà né quand la page s'ouvre — aucun écran de chargement
   const [cas, setCas] = useState(() => (brouillon ? nouveauBrouillon(pilote) : pilote?.lireTravail ? pilote.lireTravail(cid) : null));
@@ -57,6 +58,7 @@ export default function TravailDetail() {
 
   // Un travail en veille montre d'abord sa note de passation et ses actions : la fenêtre « Sources & Jumeaux » ne les recouvre pas
   const [passationOuverte, setPassationOuverte] = useState(false);
+  const [confierOuvert, setConfierOuvert] = useState(false);
   const enVeille = !!cas?.veille;
   useEffect(() => { if (enVeille) setVoletSourcesOuvert(false); }, [enVeille]);
 
@@ -150,6 +152,11 @@ export default function TravailDetail() {
                       <SealCheck size={12} /> Marquer comme revu
                     </button>
                   )}
+                  {cas.peut_partager && (
+                    <button onClick={() => { setMenu(false); setConfierOuvert(true); }} data-testid="travail-confier-btn" className="w-full rounded px-2.5 py-1.5 text-left text-[11px] text-[#94A3B8] hover:bg-white/[0.06] hover:text-white">
+                      Confier à…
+                    </button>
+                  )}
                   {!enVeille && cas.statut !== "clos" && (
                     <button onClick={() => { setMenu(false); setPassationOuverte(true); }} data-testid="travail-consigner-decision-btn" className="w-full rounded px-2.5 py-1.5 text-left text-[11px] text-[#94A3B8] hover:bg-white/[0.06] hover:text-white">
                       Consigner une décision
@@ -174,7 +181,7 @@ export default function TravailDetail() {
                 title={voletSourcesOuvert ? "Masquer Résultats & Sources" : "Afficher Résultats & Sources"}
                 className={`flex h-7 w-7 items-center justify-center rounded-lg border transition-all ${
                   voletSourcesOuvert
-                    ? "border-sky-400/60 bg-sky-500/20 text-sky-200"
+                    ? "border-blue-400/60 bg-blue-500/20 text-blue-200"
                     : "border-white/[0.08] bg-white/[0.03] text-[#7C93A8] hover:border-white/20 hover:text-white"
                 }`}
               >
@@ -217,6 +224,7 @@ export default function TravailDetail() {
           onConsignerDecision={casNe ? () => setPassationOuverte(true) : undefined}
         />
       </div>
+      {confierOuvert && <ConfierTravail cas={cas} personas={personas} moi={persona} onFermer={() => setConfierOuvert(false)} onConfie={(data) => { setCas(data); setConfierOuvert(false); }} />}
       {passationOuverte && <DecisionPassation cas={cas} onFermer={() => setPassationOuverte(false)} onEnregistree={(data) => { setCas(data); setPassationOuverte(false); }} />}
     </div>
   );

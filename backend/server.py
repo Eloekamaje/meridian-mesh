@@ -188,7 +188,7 @@ async def health():
 
 @api_router.get("/personas")
 async def lister_personas():
-    return [{"id": p["id"], "nom": p["nom"], "role": p["role"]} for p in PERSONAS]
+    return [{"id": p["id"], "nom": p["nom"], "role": p["role"], "equipe": p.get("equipe")} for p in PERSONAS]
 
 
 @api_router.get("/espaces")

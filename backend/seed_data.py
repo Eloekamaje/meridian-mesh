@@ -52,10 +52,10 @@ TWINS = [
 REGIONS = [
     {"id": "reg-distribution", "label": "Distribution", "x": 440, "y": 0, "w": 460, "h": 190, "couleur": "#F0ABFC", "maturite": {"niveau": "partiellement découvert", "jumeaux": 7, "relations_emergentes": 2, "zones_inconnues": 1}},
     {"id": "reg-paiement", "label": "Paiement", "x": 440, "y": 230, "w": 420, "h": 320, "couleur": "#3B82F6", "maturite": {"niveau": "en transformation", "jumeaux": 7, "relations_emergentes": 2, "zones_inconnues": 1}},
-    {"id": "reg-client", "label": "Client", "x": 60, "y": 170, "w": 340, "h": 340, "couleur": "#34D399", "maturite": {"niveau": "bien connu", "jumeaux": 8, "relations_emergentes": 2, "zones_inconnues": 0}},
+    {"id": "reg-client", "label": "Client", "x": 60, "y": 170, "w": 340, "h": 340, "couleur": "#4ADE80", "maturite": {"niveau": "bien connu", "jumeaux": 8, "relations_emergentes": 2, "zones_inconnues": 0}},
     {"id": "reg-risque", "label": "Risque", "x": 960, "y": 150, "w": 340, "h": 320, "couleur": "#F87171", "maturite": {"niveau": "instable", "jumeaux": 5, "relations_emergentes": 3, "zones_inconnues": 1}},
     {"id": "reg-support", "label": "Support", "x": 940, "y": 500, "w": 380, "h": 290, "couleur": "#FB923C", "maturite": {"niveau": "insuffisamment couvert", "jumeaux": 5, "relations_emergentes": 2, "zones_inconnues": 2}},
-    {"id": "reg-operations", "label": "Opérations", "x": 60, "y": 560, "w": 340, "h": 260, "couleur": "#38BDF8", "maturite": {"niveau": "partiellement découvert", "jumeaux": 6, "relations_emergentes": 1, "zones_inconnues": 1}},
+    {"id": "reg-operations", "label": "Opérations", "x": 60, "y": 560, "w": 340, "h": 260, "couleur": "#A3E635", "maturite": {"niveau": "partiellement découvert", "jumeaux": 6, "relations_emergentes": 1, "zones_inconnues": 1}},
     {"id": "reg-a-confirmer", "label": "À confirmer", "x": 1440, "y": 60, "w": 320, "h": 240, "couleur": "#A8A29E", "confirme": False, "maturite": {"niveau": "découvert — non validé", "jumeaux": 3, "relations_emergentes": 2, "zones_inconnues": 3}},
 ]
 
@@ -968,10 +968,18 @@ DEMO_ACTES = [
 
 # ---------- Périmètres : personas, espaces, vues ----------
 
+# Une équipe regroupe des personnes qui travaillent ensemble ; c'est elle que désigne la portée « équipe » d'un travail.
+EQUIPES = [
+    {"id": "equipe-architecture", "label": "Architecture d'entreprise"},
+    {"id": "equipe-paiements", "label": "Équipe Paiements"},
+    {"id": "equipe-support", "label": "Équipe Support"},
+]
+
 PERSONAS = [
-    {"id": "architecte", "nom": "A. Rousseau", "role": "Architecture d'entreprise", "espaces": ["mesh-global", "espace-architecture", "espace-paiements", "espace-support", "espace-risque"], "par_defaut": "mesh-global"},
-    {"id": "paiements", "nom": "L. Marchand", "role": "Équipe Paiements", "espaces": ["espace-paiements"], "par_defaut": "espace-paiements"},
-    {"id": "support", "nom": "J. Morel", "role": "Équipe Support", "espaces": ["espace-support"], "par_defaut": "espace-support"},
+    {"id": "architecte", "nom": "A. Rousseau", "role": "Architecture d'entreprise", "equipe": "equipe-architecture", "espaces": ["mesh-global", "espace-architecture", "espace-paiements", "espace-support", "espace-risque"], "par_defaut": "mesh-global"},
+    {"id": "paiements", "nom": "L. Marchand", "role": "Équipe Paiements", "equipe": "equipe-paiements", "espaces": ["espace-paiements"], "par_defaut": "espace-paiements"},
+    {"id": "paiements-dev", "nom": "M. Diallo", "role": "Équipe Paiements", "equipe": "equipe-paiements", "espaces": ["espace-paiements"], "par_defaut": "espace-paiements"},
+    {"id": "support", "nom": "J. Morel", "role": "Équipe Support", "equipe": "equipe-support", "espaces": ["espace-support"], "par_defaut": "espace-support"},
 ]
 
 ESPACES = [

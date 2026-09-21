@@ -59,7 +59,7 @@ export const DICT_JUMEAUX_PARTICIPANTS = {
     app_id: "app-dossiers",
     nom: "Gestion des dossiers",
     domaine: "Opérations",
-    domaineCouleur: "#38BDF8",
+    domaineCouleur: "#A3E635",
     type: "Socle métier central",
     statut: "80% existant en production",
     participation: "Détient la machine à états officielle et le cycle de vie complet de chaque dossier.",
@@ -68,7 +68,7 @@ export const DICT_JUMEAUX_PARTICIPANTS = {
     app_id: "app-statuts",
     nom: "Diffusion des statuts",
     domaine: "Opérations",
-    domaineCouleur: "#38BDF8",
+    domaineCouleur: "#A3E635",
     type: "Exposition temps réel",
     statut: "actif en production",
     participation: "Expose les flux d'événements Kafka pour diffuser les changements d'état en direct.",
@@ -81,19 +81,19 @@ export function PipelineArchitecture() {
     <div className="my-5 overflow-x-auto py-2" data-testid="pipeline-architecture-convergence">
       <div className="flex items-center gap-2 min-w-max">
         {/* Nœud 1 : Portail client */}
-        <div className="rounded-xl border border-sky-400/30 bg-sky-500/10 px-3.5 py-2 text-center shadow-sm">
-          <div className="text-[9px] font-code font-semibold uppercase tracking-wider text-sky-300">Canal Client</div>
+        <div className="rounded-xl border border-blue-400/30 bg-blue-500/10 px-3.5 py-2 text-center shadow-sm">
+          <div className="text-[9px] font-code font-semibold uppercase tracking-wider text-blue-300">Canal Client</div>
           <div className="text-xs font-bold text-white mt-0.5">Portail client Web</div>
-          <div className="text-[10px] text-sky-200/70 font-code">app-portail</div>
+          <div className="text-[10px] text-blue-200/70 font-code">app-portail</div>
         </div>
 
-        <span className="text-sky-400/70 font-code text-xs px-1">──▶</span>
+        <span className="text-blue-400/70 font-code text-xs px-1">──▶</span>
 
         {/* Nœud 2 : Diffusion des statuts (Kafka) */}
-        <div className="rounded-xl border border-sky-400/40 bg-sky-500/15 px-3.5 py-2 text-center shadow-sm ring-1 ring-sky-400/20">
-          <div className="text-[9px] font-code font-semibold uppercase tracking-wider text-sky-300">Hub Événements Temps Réel</div>
+        <div className="rounded-xl border border-blue-400/40 bg-blue-500/15 px-3.5 py-2 text-center shadow-sm ring-1 ring-blue-400/20">
+          <div className="text-[9px] font-code font-semibold uppercase tracking-wider text-blue-300">Hub Événements Temps Réel</div>
           <div className="text-xs font-bold text-white mt-0.5">Diffusion des statuts</div>
-          <div className="text-[10px] text-sky-200/70 font-code">app-statuts (Kafka)</div>
+          <div className="text-[10px] text-blue-200/70 font-code">app-statuts (Kafka)</div>
         </div>
 
         <span className="text-emerald-400/70 font-code text-xs px-1">◀──</span>
@@ -186,7 +186,7 @@ export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif }) {
           const contenu = trimmed.replace(/^[\*\-•—]\s*/, "");
           return (
             <div key={idx} className="flex items-start gap-2 pl-2 text-sm text-[#CBD5E1]">
-              <span className="text-[#38BDF8] mt-1 text-xs">•</span>
+              <span className="text-[#60A5FA] mt-1 text-xs">•</span>
               <span dangerouslySetInnerHTML={{ __html: formaterGrasCode(contenu) }} />
             </div>
           );
@@ -195,7 +195,7 @@ export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif }) {
         // Citation / callout >
         if (trimmed.startsWith("> ")) {
           return (
-            <div key={idx} className="border-l-2 border-[#38BDF8]/60 pl-3 py-1 my-2 text-sm italic text-sky-200/90 bg-sky-500/[0.04] rounded-r-md">
+            <div key={idx} className="border-l-2 border-[#60A5FA]/60 pl-3 py-1 my-2 text-sm italic text-blue-200/90 bg-blue-500/[0.04] rounded-r-md">
               <span dangerouslySetInnerHTML={{ __html: formaterGrasCode(trimmed.replace("> ", "")) }} />
             </div>
           );
@@ -226,15 +226,15 @@ export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif }) {
             </p>
           </div>
 
-          <div className="rounded-xl border border-sky-500/20 bg-sky-500/[0.06] p-3">
-            <div className="flex items-center justify-between text-sky-400">
+          <div className="rounded-xl border border-blue-500/20 bg-blue-500/[0.06] p-3">
+            <div className="flex items-center justify-between text-blue-400">
               <span className="font-code text-[10px] uppercase tracking-wider">Délai cible</span>
               <Clock size={14} />
             </div>
-            <div className="mt-0.5 font-display text-xl font-bold text-sky-300">
+            <div className="mt-0.5 font-display text-xl font-bold text-blue-300">
               {message.kpis.delai}
             </div>
-            <p className="mt-0.5 font-code text-[11px] text-sky-200/80">
+            <p className="mt-0.5 font-code text-[11px] text-blue-200/80">
               {message.kpis.delaiSousTitre}
             </p>
           </div>
@@ -283,12 +283,12 @@ export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif }) {
         <div className="pt-2">
           <button
             onClick={onOuvrirCanvas}
-            className="inline-flex items-center gap-2 rounded-xl border border-sky-400/30 bg-sky-500/10 px-3.5 py-1.5 font-code text-xs text-sky-200 transition-all hover:bg-sky-500/20 hover:border-sky-400/50"
+            className="inline-flex items-center gap-2 rounded-xl border border-blue-400/30 bg-blue-500/10 px-3.5 py-1.5 font-code text-xs text-blue-200 transition-all hover:bg-blue-500/20 hover:border-blue-400/50"
             data-testid="btn-ouvrir-canvas-inline"
           >
-            <FileText size={14} className="text-sky-400" />
+            <FileText size={14} className="text-blue-400" />
             <span>CASE_101_ARBITRAGE_CONVERGENCE.md</span>
-            <span className="text-sky-400 font-semibold">{canvasActif ? "(Canvas ouvert ↗)" : "(Ouvrir dans le Canvas ↗)"}</span>
+            <span className="text-blue-400 font-semibold">{canvasActif ? "(Canvas ouvert ↗)" : "(Ouvrir dans le Canvas ↗)"}</span>
           </button>
         </div>
       )}
@@ -301,7 +301,7 @@ function formaterGrasCode(txt) {
   if (!txt) return "";
   let res = txt
     .replace(/\*\*(.*?)\*\*/g, "<strong class='font-semibold text-white'>$1</strong>")
-    .replace(/`([^`]+)`/g, "<code class='font-code text-xs text-sky-300 bg-sky-500/10 px-1 py-0.5 rounded'>$1</code>");
+    .replace(/`([^`]+)`/g, "<code class='font-code text-xs text-blue-300 bg-blue-500/10 px-1 py-0.5 rounded'>$1</code>");
   return res;
 }
 
@@ -366,7 +366,7 @@ export default function OngletTravail({
           app_id: id.replace("demo-polaris-", ""),
           nom: id.replace("demo-polaris-", "").replace("app-", ""),
           domaine: "SI",
-          domaineCouleur: "#38BDF8",
+          domaineCouleur: "#60A5FA",
           statut: "actif",
           participation: "Jumeau numérique participant à la mission.",
         };
@@ -508,10 +508,10 @@ export default function OngletTravail({
                 onClick={() => basculerRubrique("resultats")}
                 aria-expanded={!pliees.resultats}
                 data-testid="rubrique-resultats-bascule"
-                className="flex min-h-[28px] flex-1 items-center gap-1.5 text-left transition-colors hover:text-sky-200"
+                className="flex min-h-[28px] flex-1 items-center gap-1.5 text-left transition-colors hover:text-blue-200"
               >
                 <CaretDown size={11} className={`shrink-0 text-[#7C93A8] transition-transform duration-200 ${pliees.resultats ? "-rotate-90" : ""}`} />
-                <FileText size={14} className="text-sky-400" />
+                <FileText size={14} className="text-blue-400" />
                 <span>Résultats</span>
               </button>
               <button
@@ -531,24 +531,24 @@ export default function OngletTravail({
               onClick={() => setCanvasActif(!canvasActif)}
               className={`group cursor-pointer rounded-xl border p-2.5 transition-all ${
                 canvasActif
-                  ? "border-sky-400/60 bg-sky-500/20"
-                  : "border-white/[0.08] bg-white/[0.03] hover:border-sky-400/40 hover:bg-white/[0.06]"
+                  ? "border-blue-400/60 bg-blue-500/20"
+                  : "border-white/[0.08] bg-white/[0.03] hover:border-blue-400/40 hover:bg-white/[0.06]"
               }`}
               data-testid="item-resultat-document"
             >
               <div className="flex items-start gap-2.5">
-                <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-sky-500/20 text-sky-300">
+                <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-500/20 text-blue-300">
                   <FileText size={16} />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="truncate font-code text-xs font-semibold text-sky-200">
+                  <div className="truncate font-code text-xs font-semibold text-blue-200">
                     CASE_101_ARBITRAGE_CONVERGENCE.md
                   </div>
                   <div className="text-[11px] text-[#7C93A8]">
                     Recommandation officielle · 5 sections
                   </div>
                 </div>
-                <span className="shrink-0 text-[11px] font-code text-sky-400">
+                <span className="shrink-0 text-[11px] font-code text-blue-400">
                   {canvasActif ? "Ouvert ↗" : "+ Ouvrir"}
                 </span>
               </div>
@@ -594,13 +594,13 @@ export default function OngletTravail({
                   onClick={() => setJumeauInspecte(jumeauInspecte?.app_id === j.app_id ? null : j)}
                   className={`flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs transition-colors cursor-pointer border ${
                     jumeauInspecte?.app_id === j.app_id
-                      ? "border-sky-400 bg-sky-500/20 text-white"
+                      ? "border-blue-400 bg-blue-500/20 text-white"
                       : "border-transparent bg-white/[0.03] text-[#CBD5E1] hover:bg-white/[0.07] hover:text-white"
                   }`}
                   data-testid={`source-jumeau-${j.app_id}`}
                 >
                   <div className="flex items-center gap-2 min-w-0">
-                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: j.domaineCouleur || "#38BDF8" }} />
+                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: j.domaineCouleur || "#60A5FA" }} />
                     <span className="truncate">{j.nom}</span>
                   </div>
                   <span className="font-code text-[10px] text-[#7C93A8] shrink-0">
@@ -649,9 +649,9 @@ export default function OngletTravail({
 
             {/* Tiroir d'inspection si un élément est cliqué */}
             {jumeauInspecte && (
-              <div className="mt-3 rounded-xl border border-sky-400/30 bg-[#07131F] p-2.5 text-xs animate-in fade-in">
+              <div className="mt-3 rounded-xl border border-blue-400/30 bg-[#07131F] p-2.5 text-xs animate-in fade-in">
                 <div className="flex items-center justify-between font-semibold text-white">
-                  <span>{jumeauInspecte.nom} <span className="font-code text-[10px] text-sky-300">[{jumeauInspecte.app_id}]</span></span>
+                  <span>{jumeauInspecte.nom} <span className="font-code text-[10px] text-blue-300">[{jumeauInspecte.app_id}]</span></span>
                   <button onClick={() => setJumeauInspecte(null)} className="text-[#64748B] hover:text-white">✕</button>
                 </div>
                 <p className="mt-1 text-[11px] leading-relaxed text-slate-300">
@@ -909,7 +909,7 @@ export default function OngletTravail({
         {/* ========================================================================= */}
         <div className="shrink-0 p-4 pb-5" data-testid="case-composer-zone">
           <form onSubmit={envoyer} className="mx-auto max-w-3xl">
-            <div className="flex items-center gap-2 rounded-2xl border border-white/[0.12] bg-[#0A131C]/90 px-3.5 py-2.5 shadow-2xl backdrop-blur-xl transition-colors focus-within:border-sky-400/60">
+            <div className="flex items-center gap-2 rounded-2xl border border-white/[0.12] bg-[#0A131C]/90 px-3.5 py-2.5 shadow-2xl backdrop-blur-xl transition-colors focus-within:border-blue-400/60">
               
               {/* Bouton + pour outils / pièces jointes */}
               <button
@@ -959,7 +959,7 @@ export default function OngletTravail({
                 title="Envoyer le message"
                 className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl transition-all ${
                   (pilote ? pilote.saisie?.texte : nouveauMsg.trim()) && !envoiMsg
-                    ? "bg-[#38BDF8] text-[#071019] shadow-md shadow-[#38BDF8]/20 hover:scale-105"
+                    ? "bg-[#60A5FA] text-[#071019] shadow-md shadow-[#60A5FA]/20 hover:scale-105"
                     : "bg-white/[0.05] text-[#475569] opacity-30 cursor-not-allowed"
                 }`}
               >

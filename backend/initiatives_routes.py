@@ -90,7 +90,7 @@ def build_initiatives_router(deps):
         num = (dernier[0]["num"] if dernier and dernier[0].get("num") else 40) + 1
         await db.cases.insert_one({
             "id": cid, "num": num, "titre": init["titre"], "type": "investigation" if intention == "investiguer" else "decouverte", "statut": "ouvert",
-            "sensibilite": "interne", "portee": "personnel", "objectif": init.get("raison", ""), "resume": "", "prochaine_etape": "", "questions": [], "hypotheses": [],
+            "sensibilite": "interne", "portee": "personnel", "equipe": portees.equipe_de(persona["id"]), "objectif": init.get("raison", ""), "resume": "", "prochaine_etape": "", "questions": [], "hypotheses": [],
             "jumeaux": init.get("jumeaux", []), "situations": [], "participants": [persona["id"]], "responsable": persona["id"], "espace": espace["id"],
             "conversation": messages + (suite or []), "options": [], "decisions": [], "livrables": [], "a_revoir": False, "visites": {},
             **({"veille": veille} if veille else {}),
@@ -125,6 +125,11 @@ def build_initiatives_router(deps):
                 continue
             if vue == "toutes" and v == "traitees":
                 continue
+            if v == "suivis" and not (i.get("reponse") or {}).get("travail_id") and (i.get("reponse") or {}).get("par") == persona["id"]:
+                # suivie avant que « suivre » n'ouvre une vérification : elle est rattachée à son travail à la première lecture
+                tid, _ = await travail_de_initiative(i, "suivre", persona, espace)
+                await db.initiatives.update_one({"id": i["id"]}, {"$set": {"reponse.travail_id": tid}})
+                i["reponse"]["travail_id"] = tid
             i["vue"] = v
             out.append(i)
         out.sort(key=lambda i: ({"haute": 0, "critique": 0, "moyenne": 1, "basse": 2}.get(i.get("urgence"), 3), i["quand"]), reverse=False)
@@ -220,7 +225,7 @@ def build_initiatives_router(deps):
             conversation.append(ouverture_travail.message_flore_delegation_terminee(d, jusqu.isoformat()))
         await db.cases.insert_one({
             "id": cid, "num": num, "titre": d["tache"], "type": "demande", "statut": "en_cours" if len(conversation) == 1 else "clos",
-            "sensibilite": "interne", "portee": "personnel", "objectif": d.get("livrable", ""), "resume": "", "prochaine_etape": "", "questions": [], "hypotheses": [],
+            "sensibilite": "interne", "portee": "personnel", "equipe": portees.equipe_de(d["demandeur"]), "objectif": d.get("livrable", ""), "resume": "", "prochaine_etape": "", "questions": [], "hypotheses": [],
             "jumeaux": d.get("jumeaux", []), "situations": [], "participants": [d["demandeur"]], "responsable": d["demandeur"], "espace": espace["id"],
             "conversation": conversation, "options": [], "decisions": [], "livrables": [], "a_revoir": False, "visites": {},
             "origine": {"delegation_id": d["id"], "genre": "delegation", "quand": now},

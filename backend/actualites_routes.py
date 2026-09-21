@@ -347,7 +347,8 @@ def build_actualites_router(deps):
 
         # Ce que la personne a écarté (avec sa raison) ne revient pas dans la vue — mais reste consultable et rétablissable.
         # Écartée pour soi, ou pour l'équipe (l'espace courant) par un collègue ; l'écart personnel prime sur celui de l'équipe.
-        ecartees_docs = await db.actualites_ecartees.find({"$or": [{"persona": x_persona}, {"portee": "equipe", "espace": espace["id"]}]}, NO_ID).sort("quand", 1).to_list(500)
+        mon_equipe = portees.equipe_de(x_persona)
+        ecartees_docs = await db.actualites_ecartees.find({"$or": [{"persona": x_persona}] + ([{"portee": "equipe", "equipe": mon_equipe}] if mon_equipe else [])}, NO_ID).sort("quand", 1).to_list(500)
         raisons = {}
         for e in ecartees_docs:
             if e["histoire_id"] not in raisons or e["persona"] == x_persona:
@@ -601,14 +602,14 @@ def build_actualites_router(deps):
         _, espace = resoudre_perimetre(x_persona, x_espace)
         now = datetime.now(timezone.utc).isoformat()
         await db.actualites_ecartees.update_one(
-            {"persona": x_persona, "histoire_id": hid}, {"$set": {"raison": payload.raison, "quand": now, "portee": payload.portee, "espace": espace["id"]}}, upsert=True)
+            {"persona": x_persona, "histoire_id": hid}, {"$set": {"raison": payload.raison, "quand": now, "portee": payload.portee, "equipe": portees.equipe_de(x_persona)}}, upsert=True)
         return {"id": hid, "raison": RAISONS_ECART[payload.raison], "portee": payload.portee}
 
     @router.delete("/actualites/histoire/{hid}/ecarter")
     async def retablir(hid: str, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
-        """Rétablir : son propre écart, ou celui que l'équipe a décidé (n'importe quel collègue de l'espace peut le lever)."""
-        _, espace = resoudre_perimetre(x_persona, x_espace)
-        await db.actualites_ecartees.delete_many({"histoire_id": hid, "$or": [{"persona": x_persona}, {"portee": "equipe", "espace": espace["id"]}]})
+        """Rétablir : son propre écart, ou celui que l'équipe a décidé (n'importe quel membre de l'équipe peut le lever)."""
+        mon_equipe = portees.equipe_de(x_persona)
+        await db.actualites_ecartees.delete_many({"histoire_id": hid, "$or": [{"persona": x_persona}] + ([{"portee": "equipe", "equipe": mon_equipe}] if mon_equipe else [])})
         return {"id": hid}
 
     @router.post("/actualites/histoire/{hid}/travail")
@@ -657,7 +658,7 @@ def build_actualites_router(deps):
         num = (dernier[0]["num"] if dernier and dernier[0].get("num") else 40) + 1
         doc = {
             "id": cid, "num": num, "titre": histoire["titre"], "type": ouverture_travail.type_travail(histoire.get("genre", "")), "statut": "ouvert",
-            "sensibilite": "interne", "portee": "personnel", "objectif": histoire.get("recit") or histoire["titre"], "resume": "", "prochaine_etape": "",
+            "sensibilite": "interne", "portee": "personnel", "equipe": portees.equipe_de(x_persona), "objectif": histoire.get("recit") or histoire["titre"], "resume": "", "prochaine_etape": "",
             "questions": [], "hypotheses": [], "jumeaux": histoire.get("jumeaux", []), "situations": [hid[4:]] if situation else [],
             "participants": [x_persona], "responsable": x_persona, "espace": espace["id"],
             "conversation": [ouverture_travail.message_flore(payload.intention, histoire, rapport, situation, maintenant)] + ([message_suivi] if message_suivi else []),

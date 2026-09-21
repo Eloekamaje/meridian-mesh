@@ -91,7 +91,7 @@ export default function AtlasPanneau({
   comparaison, selectedRelation, selected, domaineSel,
   statsDomaine, actionsDomaine, confirmerRelation,
   eventsVisibles, jumeauPar,
-  presentation = "colonne", // "colonne" (desktop, panneau latéral dans le layout) | "feuillet" (tablette/mobile, bottom sheet)
+  presentation = "colonne", // "colonne" (bureau, dans le layout) | "superposee" (tablette, à droite par-dessus la carte) | "feuillet" (téléphone, bottom sheet)
   masquee = false, // Flore ouverte : Flore occupe la colonne droite — les deux panneaux se remplacent, jamais côte à côte
   sansJumeau = false, // desktop : le détail jumeau vit dans sa colonne gauche (PanneauJumeau), ce panneau garde domaines/relations/listes
   onActionSituation,
@@ -100,6 +100,7 @@ export default function AtlasPanneau({
   onFermer, statsTwin, onInterroger,
 }) {
   const feuillet = presentation === "feuillet";
+  const superposee = presentation === "superposee";
   // Refermé par défaut sur les petits écrans pour laisser la carte respirer
   const [ouvert, setOuvert] = useState(false);
   const [replie, setReplie] = useState(false); // état réduit de la bottom sheet (poignée + titre)
@@ -202,7 +203,7 @@ export default function AtlasPanneau({
 
   if (!ouvert) {
     if (!peutOuvrir) return null;
-    return feuillet ? (
+    return feuillet || superposee ? (
       <button
         onClick={() => { setOnglet("detail"); setOuvert(true); }}
         data-testid="panneau-ouvrir-btn"
@@ -250,6 +251,16 @@ export default function AtlasPanneau({
             {contenu}
           </>
         )}
+      </aside>
+    );
+  }
+
+  // Tablette : le même panneau que sur bureau, posé à droite par-dessus la carte (jamais de redimensionnement)
+  if (superposee) {
+    return (
+      <aside className="absolute inset-y-0 right-0 z-20 flex w-[min(336px,92vw)] flex-col overflow-hidden border-l border-[rgba(148,163,184,0.16)] bg-[#0F1D28]/95 shadow-2xl backdrop-blur-xl" data-testid="map-side-panel" data-presentation="superposee">
+        {entete}
+        {contenu}
       </aside>
     );
   }

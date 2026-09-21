@@ -6,7 +6,6 @@ from pydantic import BaseModel
 
 import maturation
 import portee as portees
-from seed_data import ESPACES
 import veille as moteur_veille
 
 
@@ -108,6 +107,26 @@ class ObservationVeille(BaseModel):
     conclusion: str = ""
     source: str = ""
     quand: Optional[str] = None
+
+
+class ConfierCase(BaseModel):
+    persona: str
+    mode: str = "associer"  # associer (participant) | transferer (nouveau responsable)
+    note: str = ""
+
+
+class ObservationJumeau(BaseModel):
+    """Ce qu'un jumeau (ou le moteur de raisonnement) rapporte : Méridian l'aiguille vers les travaux en veille que cela concerne."""
+    jumeau: str
+    source: str = ""
+    quand: Optional[str] = None
+    relation_id: Optional[str] = None  # phénomène qui mûrit : la relation observée…
+    effet: Optional[float] = None  # … et ce que cela change à la confiance (points)
+    texte: str = ""
+    indicateur: Optional[str] = None  # décision en veille : l'indicateur, le risque ou l'inconnue observé (par son libellé)…
+    valeur: Optional[float] = None
+    unite: str = ""
+    conclusion: str = ""
 
 
 class PorteeCase(BaseModel):
@@ -272,6 +291,7 @@ def build_cases_router(deps):
             "participants": list({*payload.participants, x_persona, responsable}),
             "responsable": responsable,
             "portee": payload.portee,
+            "equipe": portees.equipe_de(responsable),
             "espace": payload.espace or espace["id"],
             "conversation": payload.conversation,
             "options": [],
@@ -317,7 +337,7 @@ def build_cases_router(deps):
         case["evolutions_recentes"] = evolutions
         case["derniere_visite"] = derniere
         case["portee"] = portees.portee_de(case)
-        case["espace_label"] = next((e["label"] for e in ESPACES if e["id"] == case.get("espace")), None)
+        case["equipe_label"] = portees.libelle_equipe(case.get("equipe") or portees.equipe_de(case.get("responsable")))
         case["peut_partager"] = x_persona == case.get("responsable")
         if (case.get("veille") or {}).get("mode") == "maturation":
             m = case["veille"]["maturation"]
@@ -331,7 +351,7 @@ def build_cases_router(deps):
                     "app_id": "app-portail",
                     "nom": "Portail client",
                     "domaine": "Client",
-                    "domaineCouleur": "#25D0C8",
+                    "domaineCouleur": "#4ADE80",
                     "type": "Parcours client Web",
                     "statut": "actif",
                     "participation": "Fournit les données de parcours client et l'estimation de volumétrie pour l'auto-suivi.",
@@ -355,7 +375,7 @@ def build_cases_router(deps):
                     "app_id": "app-dossiers",
                     "nom": "Gestion des dossiers",
                     "domaine": "Opérations",
-                    "domaineCouleur": "#38BDF8",
+                    "domaineCouleur": "#A3E635",
                     "type": "Socle métier central",
                     "statut": "80% existant en production",
                     "participation": "Détient la machine à états officielle et le cycle de vie complet de chaque dossier.",
@@ -367,7 +387,7 @@ def build_cases_router(deps):
                     "app_id": "app-statuts",
                     "nom": "Diffusion des statuts",
                     "domaine": "Opérations",
-                    "domaineCouleur": "#38BDF8",
+                    "domaineCouleur": "#A3E635",
                     "type": "Exposition temps réel",
                     "statut": "actif en production",
                     "participation": "Expose les API et flux d'événements Kafka pour diffuser les changements d'état en direct.",
@@ -592,6 +612,83 @@ def build_cases_router(deps):
         return {"decision": decision, "hypotheses": hyp, "gain": opp.get("gain"), "attendus": [], "risques": [], "inconnues": inconnues, "revue_le": revue.isoformat(),
                 "jumeaux": [j for j in (case.get("jumeaux") or [])]}
 
+    @router.post("/observations")
+    async def rapporter_observation(payload: ObservationJumeau, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+        """Point d'entrée des observations des jumeaux : le moteur de raisonnement rapporte UNE mesure, Méridian la confronte à toutes les veilles
+        ouvertes qu'elle concerne (notes de passation des décisions, vérifications de phénomènes). Réservé aux rôles du Mesh global."""
+        _, espace = resoudre_perimetre(x_persona, x_espace)
+        if not espace.get("global"):
+            raise HTTPException(403, "Seuls les rôles du Mesh global rapportent des observations")
+        if not await db.jumeaux.find_one({"id": payload.jumeau}, {"_id": 1}):
+            raise HTTPException(404, "Jumeau inconnu")
+        maintenant = datetime.now(timezone.utc)
+        quand = payload.quand or maintenant.isoformat()
+        acheminees = []
+        async for c in db.cases.find({"veille.statut": "en_veille"}, NO_ID):
+            v = c["veille"]
+            if c.get("jumeaux") and payload.jumeau not in c["jumeaux"]:
+                continue
+            if v.get("mode") == "maturation":
+                m = v["maturation"]
+                if payload.relation_id and payload.relation_id == m.get("relation_id") and payload.effet is not None and -40 <= payload.effet <= 40 and payload.texte.strip():
+                    obs = {"id": f"m{len(m.get('observations', [])) + 1}-{int(maintenant.timestamp() * 1000)}", "quand": quand, "jumeau": payload.jumeau, "source": payload.source,
+                           "effet": payload.effet, "texte": payload.texte.strip()}
+                    await db.cases.update_one({"id": c["id"]}, {"$push": {"veille.maturation.observations": obs}})
+                    acheminees.append({"travail_id": c["id"], "cible": "confiance", "observation": obs["id"]})
+                continue
+            if not payload.indicateur:
+                continue
+            p = v.get("passation") or {}
+            libelle = payload.indicateur.strip().lower()
+            cible = next((x["id"] for k, cle in (("attendus", "indicateur"), ("risques", "texte"), ("inconnues", "texte")) for x in p.get(k, []) if str(x.get(cle, "")).strip().lower() == libelle), None)
+            if cible and (payload.valeur is not None or payload.conclusion.strip()):
+                obs = {"id": f"{int(maintenant.timestamp() * 1000)}", "cible": cible, "jumeau": payload.jumeau, "valeur": payload.valeur, "unite": payload.unite, "conclusion": payload.conclusion,
+                       "source": payload.source, "quand": quand}
+                await db.cases.update_one({"id": c["id"]}, {"$push": {"veille.observations": obs}})
+                acheminees.append({"travail_id": c["id"], "cible": cible, "observation": obs["id"]})
+        await journaler(x_persona, espace["id"], "observation d'un jumeau", payload.jumeau, f"{len(acheminees)} veille(s) concernée(s)")
+        return {"acheminees": acheminees}
+
+    @router.post("/cases/{cid}/confier")
+    async def confier_case(cid: str, payload: ConfierCase, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+        """Confier un travail à une personne nommée : l'associer (elle y participe) ou lui en transférer la responsabilité. Elle est prévenue ;
+        elle doit avoir les droits sur les jumeaux du travail — on ne confie pas ce qu'on ne peut pas montrer."""
+        from seed_data import PERSONAS
+        _, espace = resoudre_perimetre(x_persona, x_espace)
+        case = await charger_case(cid, espace, x_persona)
+        if case.get("responsable") != x_persona:
+            raise HTTPException(403, "Seul le responsable du travail le confie")
+        if payload.mode not in ("associer", "transferer"):
+            raise HTTPException(400, "Mode inconnu")
+        cible = next((p for p in PERSONAS if p["id"] == payload.persona), None)
+        if not cible:
+            raise HTTPException(404, "Personne inconnue")
+        if cible["id"] == x_persona:
+            raise HTTPException(400, "Ce travail est déjà à vous")
+        _, espace_cible = resoudre_perimetre(cible["id"], None)
+        tous = await db.jumeaux.find({}, {"_id": 0, "id": 1}).to_list(200)
+        aut = autorisations(espace_cible, [j["id"] for j in tous])
+        if case.get("jumeaux") and not any(j in aut for j in case["jumeaux"]):
+            raise HTTPException(403, f"{cible['nom']} n'a pas les droits sur les jumeaux de ce travail")
+        now = datetime.now(timezone.utc).isoformat()
+        note = payload.note.strip()
+        if payload.mode == "transferer":
+            texte = f"J'ai transféré la responsabilité de ce travail à {cible['nom']}. Vous restez participant."
+            maj = {"$set": {"responsable": cible["id"], "equipe": cible.get("equipe"), "maj_le": now}, "$addToSet": {"participants": {"$each": [cible["id"], x_persona]}}}
+            histo = f"Responsabilité transférée à {cible['nom']}"
+        else:
+            texte = f"J'ai associé {cible['nom']} à ce travail."
+            maj = {"$set": {"maj_le": now}, "$addToSet": {"participants": cible["id"]}}
+            histo = f"{cible['nom']} associé(e) au travail"
+        if note:
+            texte += f" Note : « {note} »"
+        maj["$push"] = {"conversation": {"role": "flore", "comportement": "expliquer", "type": "confie", "texte": texte, "quand": now}, "historique": {"quand": now, "texte": histo}}
+        await db.cases.update_one({"id": cid}, maj)
+        moi = next((p["nom"] for p in PERSONAS if p["id"] == x_persona), x_persona)
+        await notifier([cible["id"]], "assignation", f"{moi} vous {'a confié la responsabilité du' if payload.mode == 'transferer' else 'associe au'} travail « {case['titre']} »", f"/travaux/{cid}")
+        await journaler(x_persona, espace["id"], "travail confié", cid, f"{payload.mode} → {cible['id']}")
+        return await obtenir_case(cid, x_persona, x_espace)
+
     @router.post("/cases/{cid}/portee")
     async def changer_portee(cid: str, payload: PorteeCase, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
         """Céder un travail à son équipe ou à l'entreprise (ou le reprendre pour soi). Seul le responsable le décide."""
@@ -604,9 +701,12 @@ def build_cases_router(deps):
         if portees.portee_de(case) == payload.portee:
             return await obtenir_case(cid, x_persona, x_espace)
         now = datetime.now(timezone.utc).isoformat()
-        libelle = {"personnel": "réservé au responsable", "equipe": f"partagé avec l'équipe ({next((e['label'] for e in ESPACES if e['id'] == case.get('espace')), 'espace')})",
+        equipe = portees.equipe_de(x_persona)
+        if payload.portee == "equipe" and not equipe:
+            raise HTTPException(400, "Vous n'appartenez à aucune équipe")
+        libelle = {"personnel": "réservé au responsable", "equipe": f"partagé avec l'équipe ({portees.libelle_equipe(equipe)})",
                    "entreprise": "partagé avec toute l'entreprise (dans les limites des droits de chacun)"}[payload.portee]
-        await db.cases.update_one({"id": cid}, {"$set": {"portee": payload.portee, "maj_le": now}, "$push": {"historique": {"quand": now, "texte": f"Travail {libelle}"}}})
+        await db.cases.update_one({"id": cid}, {"$set": {"portee": payload.portee, "equipe": equipe, "maj_le": now}, "$push": {"historique": {"quand": now, "texte": f"Travail {libelle}"}}})
         await journaler(x_persona, espace["id"], "portée d'un travail", cid, payload.portee)
         return await obtenir_case(cid, x_persona, x_espace)
 

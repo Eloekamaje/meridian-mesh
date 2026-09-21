@@ -182,13 +182,13 @@ function CarteReponse({ data, index, propsEtat, setPropsEtat, justifOuverte, set
                 </div>
               </div>
 
-              <div className="rounded-lg border border-sky-500/25 bg-black/40 p-2.5 transition-all hover:border-sky-500/50">
+              <div className="rounded-lg border border-blue-500/25 bg-black/40 p-2.5 transition-all hover:border-blue-500/50">
                 <div className="flex items-center justify-between">
                   <span className="font-display text-xs font-bold text-white">Réduction des reprises manuelles</span>
-                  <span className="font-code text-[10px] font-bold text-sky-400 bg-sky-500/15 px-1.5 py-0.5 rounded">2,0 M€</span>
+                  <span className="font-code text-[10px] font-bold text-blue-400 bg-blue-500/15 px-1.5 py-0.5 rounded">2,0 M€</span>
                 </div>
                 <div className="mt-1 flex items-center gap-2 text-[10px] text-slate-400">
-                  <span className="font-code text-sky-300 font-semibold">Direction Opérations</span>
+                  <span className="font-code text-blue-300 font-semibold">Direction Opérations</span>
                   <span>·</span>
                   <span>Zéro ressaisie ni correction</span>
                 </div>
@@ -313,7 +313,7 @@ function CarteReponse({ data, index, propsEtat, setPropsEtat, justifOuverte, set
                       toast.success(`${p.nom} ajouté au contexte`);
                     }}
                     data-testid={`flore-prop-ajouter-${index}-${pi}`}
-                    className="flex items-center gap-1 rounded-md bg-[#60A5FA] px-2 py-1 text-[10px] font-semibold text-[#071019] transition-colors hover:bg-[#0891B2]"
+                    className="flex items-center gap-1 rounded-md bg-[#60A5FA] px-2 py-1 text-[10px] font-semibold text-[#071019] transition-colors hover:bg-[#3B82F6]"
                   >
                     <Plus size={11} /> Ajouter au contexte
                   </button>

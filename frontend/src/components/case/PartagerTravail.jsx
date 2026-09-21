@@ -50,7 +50,7 @@ export default function PartagerTravail({ cas, onChange }) {
     try {
       const { data } = await api.post(`/cases/${cas.id}/portee`, { portee });
       onChange(data);
-      toast.success(portee === "personnel" ? "Travail réservé à vous" : portee === "equipe" ? `Travail partagé avec l'équipe${cas.espace_label ? ` (${cas.espace_label})` : ""}` : "Travail partagé avec toute l'entreprise");
+      toast.success(portee === "personnel" ? "Travail réservé à vous" : portee === "equipe" ? `Travail partagé avec l'équipe${cas.equipe_label ? ` (${cas.equipe_label})` : ""}` : "Travail partagé avec toute l'entreprise");
     } catch (e) {
       toast.error(e.response?.data?.detail || "Partage impossible");
     } finally {
@@ -74,7 +74,7 @@ export default function PartagerTravail({ cas, onChange }) {
                 className={`flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors disabled:cursor-not-allowed ${actif ? "bg-[#60A5FA]/10" : "hover:bg-white/[0.05] disabled:hover:bg-transparent"}`}>
                 <Icone size={16} className={`mt-0.5 shrink-0 ${actif ? "text-[#60A5FA]" : "text-[#7C93A8]"}`} />
                 <span className="min-w-0 flex-1">
-                  <span className={`block text-[13px] font-medium ${actif ? "text-[#BFDBFE]" : "text-[#E6EEF5]"}`}>{titre}{id === "equipe" && cas.espace_label ? ` · ${cas.espace_label}` : ""}</span>
+                  <span className={`block text-[13px] font-medium ${actif ? "text-[#BFDBFE]" : "text-[#E6EEF5]"}`}>{titre}{id === "equipe" && cas.equipe_label ? ` · ${cas.equipe_label}` : ""}</span>
                   <span className="block text-xs leading-snug text-[#7C93A8]">{aide}</span>
                 </span>
                 {actif && <Check size={14} weight="bold" className="mt-0.5 shrink-0 text-[#60A5FA]" />}

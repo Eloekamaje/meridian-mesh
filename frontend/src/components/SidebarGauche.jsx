@@ -178,7 +178,7 @@ export default function SidebarGauche({ mode = "bureau", onOuvrir, onFermer }) {
             }`}
             data-testid="btn-nouveau-travail-sidebar"
           >
-            <Plus size={15} className="text-[#38BDF8]" />
+            <Plus size={15} className="text-[#60A5FA]" />
             <span>Nouveau travail</span>
           </button>
           {pilote?.ouvertureEnAttente && <IndicateurClic />}
@@ -186,7 +186,7 @@ export default function SidebarGauche({ mode = "bureau", onOuvrir, onFermer }) {
       ) : (
         <button
           onClick={ouvrirNouveauTravail}
-          className="mb-4 flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.04] text-[#38BDF8] transition-all hover:bg-white/[0.08] hover:scale-105"
+          className="mb-4 flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.04] text-[#60A5FA] transition-all hover:bg-white/[0.08] hover:scale-105"
           title="Nouveau travail"
           data-testid="btn-nouveau-travail-sidebar"
         >
@@ -209,8 +209,8 @@ export default function SidebarGauche({ mode = "bureau", onOuvrir, onFermer }) {
             className={({ isActive }) =>
               `flex items-center gap-3 rounded-xl transition-colors ${
                 replie 
-                  ? `h-9 w-9 justify-center ${isActive ? "bg-sky-500/20 text-sky-300 font-semibold" : "text-[#7C93A8] hover:bg-white/[0.06] hover:text-white"}`
-                  : `px-3 py-2 text-xs font-medium ${isActive ? "bg-sky-500/15 text-sky-200 font-semibold" : "text-[#8E9FA5] hover:bg-white/[0.05] hover:text-white"}`
+                  ? `h-9 w-9 justify-center ${isActive ? "bg-blue-500/20 text-blue-300 font-semibold" : "text-[#7C93A8] hover:bg-white/[0.06] hover:text-white"}`
+                  : `px-3 py-2 text-xs font-medium ${isActive ? "bg-blue-500/15 text-blue-200 font-semibold" : "text-[#8E9FA5] hover:bg-white/[0.05] hover:text-white"}`
               }`
             }
           >
@@ -298,7 +298,7 @@ export default function SidebarGauche({ mode = "bureau", onOuvrir, onFermer }) {
               data-testid="sidebar-profil-btn"
             >
               <div className="flex items-center gap-2.5 min-w-0">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-[#38BDF8] to-[#60A5FA] font-display text-xs font-bold text-[#071019] shadow-sm">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-[#60A5FA] to-[#60A5FA] font-display text-xs font-bold text-[#071019] shadow-sm">
                   {identite.initiales}
                 </div>
                 <div className="min-w-0 text-left">
@@ -328,12 +328,12 @@ export default function SidebarGauche({ mode = "bureau", onOuvrir, onFermer }) {
                     }}
                     className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors ${
                       persona === p.id 
-                        ? "bg-sky-500/20 text-sky-200 font-semibold" 
+                        ? "bg-blue-500/20 text-blue-200 font-semibold" 
                         : "text-[#CBD5E1] hover:bg-white/[0.06] hover:text-white"
                     }`}
                   >
                     <span>{p.nom}</span>
-                    {persona === p.id && <Check size={12} className="text-sky-400" />}
+                    {persona === p.id && <Check size={12} className="text-blue-400" />}
                   </button>
                 ))}
               </div>
@@ -343,7 +343,7 @@ export default function SidebarGauche({ mode = "bureau", onOuvrir, onFermer }) {
           <div className="flex flex-col items-center">
             <button
               onClick={() => setReplieMemo(false)}
-              className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-tr from-[#38BDF8] to-[#60A5FA] font-display text-xs font-bold text-[#071019] shadow-sm hover:scale-105 transition-transform"
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-tr from-[#60A5FA] to-[#60A5FA] font-display text-xs font-bold text-[#071019] shadow-sm hover:scale-105 transition-transform"
               title={`${identite.nom} (${personaActuel.role || "Directeur SI"})`}
             >
               {identite.initiales}

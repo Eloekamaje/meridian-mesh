@@ -4560,7 +4560,7 @@ export const MONDE_REGIONS = [
     "y": 560,
     "w": 340,
     "h": 260,
-    "couleur": "#38BDF8",
+    "couleur": "#A3E635",
     "maturite": {
       "niveau": "partiellement découvert",
       "jumeaux": 6,

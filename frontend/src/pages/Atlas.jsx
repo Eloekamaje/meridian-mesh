@@ -2099,8 +2099,9 @@ export default function Atlas() {
 
     </div>
 
-      {selected && !estTablette && (
+      {selected && (
         <PanneauJumeau
+          presentation={estMobile ? "feuillet" : estTablette ? "superposee" : "colonne"}
           jumeau={selected}
           voisins={voisinsSelection}
           relationsRecentes={relationsRecentes}
@@ -2121,9 +2122,9 @@ export default function Atlas() {
         statsDomaine={statsDomaine} actionsDomaine={actionsDomaine}
         confirmerRelation={confirmerRelation}
         eventsVisibles={eventsVisibles} jumeauPar={jumeauPar}
-        presentation={estTablette ? "feuillet" : "colonne"}
+        presentation={estMobile ? "feuillet" : estTablette ? "superposee" : "colonne"}
         masquee={floreOuverte}
-        sansJumeau={!estTablette}
+        sansJumeau
         onActionSituation={actionSituation}
         mesh={mesh} situations={situations} vueListe={vueListe} setVueListe={setVueListe}
         favorisIds={favorisIds} onBasculerFavori={onBasculerFavori}

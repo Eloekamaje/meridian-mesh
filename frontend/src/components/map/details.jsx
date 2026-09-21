@@ -95,7 +95,7 @@ export function DomaineDetail({ label, stats, actions, onActionSituation }) {
       {m && <div className="mt-1 font-code text-[10px] text-[#7C93A8]">{m.niveau} · {m.zones_inconnues} zone(s) inconnue(s)</div>}
       {actions && (
         <div className="mt-3 space-y-1.5" data-testid="domaine-actions">
-          <button onClick={actions.onExplorer} data-testid="dom-explorer-btn" title="Déplacement animé à zoom constant" className="w-full rounded-md bg-[#60A5FA] px-3 py-2 text-xs font-semibold text-[#071019] transition-colors hover:bg-[#0891B2]">
+          <button onClick={actions.onExplorer} data-testid="dom-explorer-btn" title="Déplacement animé à zoom constant" className="w-full rounded-md bg-[#60A5FA] px-3 py-2 text-xs font-semibold text-[#071019] transition-colors hover:bg-[#3B82F6]">
             Explorer ce domaine
           </button>
           <button onClick={actions.onAjuster} data-testid="dom-ajuster-btn" title="Cadrer toute la membrane (fitBounds explicite)" className="w-full rounded-md border border-[#60A5FA]/40 px-3 py-2 text-xs font-semibold text-[#60A5FA] transition-colors hover:bg-[#60A5FA]/10">
