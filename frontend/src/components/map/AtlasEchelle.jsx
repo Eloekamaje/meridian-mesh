@@ -242,7 +242,14 @@ export default function AtlasEchelle({ synthetique = null, domaines = null, sele
       if (!etaitPris || deplace) return;
       const b = c.getBoundingClientRect();
       const t = cible(e.clientX - b.left, e.clientY - b.top);
-      if (t) propsRef.current.onChoisir?.(t);
+      if (t) {
+        propsRef.current.onChoisir?.(t);
+        // Le clic vole aussi jusqu'au jumeau (jamais un saut) : un zoom minimal garantit qu'il reste
+        // lisible même choisi de loin ; on ne dézoome jamais si on est déjà plus près que ça.
+        const echelle = rep.current?.source === "reel" ? 34 : 11;
+        const zoomLisible = 42 / (echelle * 1.9);
+        voler(t.x, t.y, Math.min(64, Math.max(vue.current.zoom, zoomLisible)));
+      }
     };
     // Double-clic : zoom continu sur le point visé (même geste de vol que la recherche — jamais un « saut »).
     const dbl = (e) => {
