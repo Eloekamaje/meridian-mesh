@@ -578,9 +578,14 @@ function MoteurSession({ scenario, fixtures, onAccueil, children }) {
       ouvert: false, // Flore latérale : la conversation vit dans la page Nouveau travail puis dans le Travail
       echanges: versEchanges(etat.messages, fixtures),
       conversation: etat.messages.map((m) => versMessageCase(m, fixtures)),
-      // Ligne en cours (compatibilité) et toutes les lignes, ancrées dans le fil par `apres`
+      // Ligne en cours (compatibilité) et toutes les lignes, ancrées dans le fil par `apres` — figé
+      // à sa capture (au démarrage, puis une fois pour de bon à la clôture) : le laisser suivre le
+      // dernier message en continu la ferait « descendre » à chaque réplique intercalée, une
+      // incohérence visuelle (la ligne doit rester où le travail a commencé, jusqu'à rejoindre sa
+      // place définitive — juste avant la réponse qu'elle referme — en un seul mouvement, pas en
+      // continu).
       activite: [...etat.activites].reverse().find((a) => a.status === "running") || null,
-      activites: etat.activites.map((a) => ({ ...a, apres: a.status === "done" ? a.apres : etat.messages.length })),
+      activites: etat.activites,
       preparation: etat.preparation,
       enPause: etat.status === "paused",
       saisie: etat.saisie,
