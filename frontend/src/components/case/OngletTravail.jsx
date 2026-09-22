@@ -354,6 +354,17 @@ export default function OngletTravail({
   const defilementRef = useRef(null);
   const finFilRef = useRef(null);
   const coupureRef = useRef(null);
+  const taRef = useRef(null);
+  // Champ de saisie qui grandit avec son contenu (comme ChatGPT/Claude) — sinon les lignes au-delà
+  // de la première restent invisibles (la hauteur ne bouge jamais toute seule). Rejoue aussi
+  // pendant la frappe simulée de la démo (le texte change sans passer par onChange).
+  const texteSaisie = pilote ? pilote.saisie?.texte || "" : nouveauMsg;
+  useEffect(() => {
+    const el = taRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [texteSaisie]);
 
   const messages = cas.conversation || [];
   const coupure = cas.derniere_visite;
@@ -935,9 +946,10 @@ export default function OngletTravail({
                 <Plus size={16} />
               </button>
 
-              {/* Champ de saisie aéré */}
+              {/* Champ de saisie aéré — grandit avec son contenu (voir l'effet sur taRef) */}
               <textarea
-                value={pilote ? pilote.saisie?.texte || "" : nouveauMsg}
+                ref={taRef}
+                value={texteSaisie}
                 readOnly={!!pilote}
                 onChange={(e) => setNouveauMsg(e.target.value)}
                 onKeyDown={(e) => {
@@ -949,7 +961,7 @@ export default function OngletTravail({
                 placeholder={pilote ? "Conversation de démonstration" : ecran === "mobile" ? "Posez une question…" : "Posez une question à Flore et aux jumeaux du SI…"}
                 rows={1}
                 data-testid="case-msg-input"
-                className="max-h-32 flex-1 resize-none bg-transparent px-1 py-1 text-sm text-[#F2F6F8] placeholder:text-[#526578] focus:outline-none"
+                className="max-h-32 flex-1 resize-none overflow-y-auto bg-transparent px-1 py-1 text-sm text-[#F2F6F8] placeholder:text-[#526578] focus:outline-none"
               />
 
               {/* Badge discret du modèle SI */}
