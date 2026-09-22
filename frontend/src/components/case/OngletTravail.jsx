@@ -298,9 +298,10 @@ export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif, childr
         </div>
       )}
 
-      {/* Décisions, suggestions, actions… : n'apparaissent qu'une fois la réponse complète —
-          sinon on peut « régénérer » ou noter une réponse qui n'est pas encore terminée */}
-      {fini && children}
+      {/* Décisions, suggestions, actions… : n'apparaissent qu'une fois la réponse complète — ni
+          pendant son déroulé (`fini`), ni sur une simple annonce (« Je vais… ») suivie d'un
+          traitement encore à venir (`termine`, absent hors démo : toujours vrai dans ce cas) */}
+      {fini && message.termine !== false && children}
     </div>
   );
 }

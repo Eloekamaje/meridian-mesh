@@ -125,6 +125,10 @@ function MoteurSession({ scenario, fixtures, onAccueil, children }) {
               stepId: step.id,
               evidenceIds: beat.evidenceIds || [],
               contenu: beat.contenu || null,
+              // Une simple annonce (« Je vais… », « Je vérifie… ») n'est pas encore LA réponse : le
+              // traitement continue après elle (activité, autre message). Seul le message qui clôt
+              // vraiment l'activité (`terminer`) mérite copier/pouce/régénérer.
+              termine: beat.speaker !== "flore" || !!beat.terminer,
               quand: new Date().toISOString(),
               anime: true,
             },
@@ -428,7 +432,7 @@ function MoteurSession({ scenario, fixtures, onAccueil, children }) {
         if (beat.type === "message") {
           const id = `msg-${scenario.id}-${step.id}-${i}`;
           if (!messages.some((m) => m.id === id)) {
-            messages = [...messages, { id, speaker: beat.speaker, speakerLabel: beat.speaker === "flore" ? "Flore" : scenario.roleLabel, text: beat.text, stepId: step.id, evidenceIds: beat.evidenceIds || [], contenu: beat.contenu || null, quand: new Date().toISOString(), anime: false }];
+            messages = [...messages, { id, speaker: beat.speaker, speakerLabel: beat.speaker === "flore" ? "Flore" : scenario.roleLabel, text: beat.text, stepId: step.id, evidenceIds: beat.evidenceIds || [], contenu: beat.contenu || null, termine: beat.speaker !== "flore" || !!beat.terminer, quand: new Date().toISOString(), anime: false }];
             if (beat.contenu?.documentCanvas) {
               documentGenere = true;
               canvasOuvert = true;

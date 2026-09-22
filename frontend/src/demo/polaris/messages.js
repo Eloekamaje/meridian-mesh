@@ -17,7 +17,7 @@ export function versMessageCase(m, fixtures) {
     texte: m.text,
     quand: m.quand,
     anime: !!m.anime, // publié en direct : la réponse se déroule progressivement
-    ...(m.speaker === "flore" ? { comportement: "expliquer", ...(m.contenu || {}), preuves: preuvesDe(m, fixtures), trace: m.trace || null } : {}),
+    ...(m.speaker === "flore" ? { comportement: "expliquer", ...(m.contenu || {}), preuves: preuvesDe(m, fixtures), trace: m.trace || null, termine: m.termine !== false } : {}),
   };
 }
 
