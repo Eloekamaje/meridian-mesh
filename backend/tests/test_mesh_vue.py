@@ -39,13 +39,17 @@ def test_reponse_bornee_quel_que_soit_n(p100k, zoom):
     assert r["n_total"] == p100k.n
 
 
-def test_la_taille_de_la_reponse_ne_grandit_pas_avec_n():
-    petit, grand = pyramide.synthetique(20_000), pyramide.synthetique(400_000)
-    for z in (0.03, 0.2, 0.9):
-        a, b = petit.vue(*fenetre(z, 9000, 9000), z), grand.vue(*fenetre(z, 9000, 9000), z)
-        n = lambda r: len(r["grappes"]) + len(r["jumeaux"]) + len(r["liens"]) + len(r.get("points", {}).get("i", []))
-        assert n(b) <= pyramide.MAX_GRAPPES + pyramide.MAX_JUMEAUX + pyramide.MAX_LIENS_JUMEAUX + pyramide.MAX_POINTS
-        assert n(a) <= n(b) + 2 * pyramide.MAX_GRAPPES
+def test_la_taille_de_la_reponse_reste_bornee_par_une_constante_quel_que_soit_n():
+    """La réponse ne grandit jamais avec n : elle reste sous un plafond FIXE, que le Mesh ait 20 000 ou 400 000
+    jumeaux. Un petit Mesh peut légitimement montrer PLUS de détail réel (ses points tiennent dans le budget) —
+    ce n'est pas un défaut : mieux vaut de vrais points qu'une bulle, dès que c'est possible."""
+    plafond = pyramide.MAX_GRAPPES + pyramide.MAX_JUMEAUX + pyramide.MAX_LIENS_JUMEAUX + pyramide.MAX_POINTS
+    for taille in (20_000, 400_000):
+        p = pyramide.synthetique(taille)
+        for z in (0.03, 0.2, 0.9):
+            r = p.vue(*fenetre(z, 9000, 9000), z)
+            n = len(r["grappes"]) + len(r["jumeaux"]) + len(r["liens"]) + len(r.get("points", {}).get("i", []))
+            assert n <= plafond
 
 
 def test_niveau_monotone_avec_le_zoom(p100k):

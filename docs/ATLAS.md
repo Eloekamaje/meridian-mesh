@@ -359,3 +359,7 @@ Détail d'un jumeau à la demande : `GET /api/mesh/vue/jumeau` (mission, propri�
 
 Limites : les identifiants synthétiques (`synth-…`) ne correspondent à aucun jumeau réel — « Parler au jumeau » depuis le laboratoire crée un vrai travail (sans jumeaux rattachés) ; un peu de chevauchement de territoire subsiste à plus de 500 domaines (quelques paires sur des centaines de milliers).
 
+**Les grappes montrent un essaim, pas une bulle.** Une grappe (communauté, groupe ou domaine agrégé) ne se dessine plus comme un disque plein bordé : c'est un ESSAIM de points, semé en spirale (angle d'or), dont le nombre croît avec la racine du compte réel — la densité qu'on voit correspond à ce qu'elle représente, elle ne le tait pas derrière une forme abstraite. Le semis est stable (graine = identifiant de la grappe) : il ne grouille pas d'une image à l'autre. Un halo très doux (dégradé radial, sans contour dur) situe l'étendue ; un contour n'apparaît qu'au survol.
+
+**Les vrais jumeaux, dès que c'est raisonnable — pas seulement au-delà d'un seuil de zoom.** Le mode « points » (positions RÉELLES, un jumeau = un point, avant les robots) se déclenche désormais dès que leur nombre dans la fenêtre le permet, À N'IMPORTE QUEL ZOOM — l'ancien plancher (`ZOOM_POINTS`) est retiré. Le budget est passé de 9 000 à 60 000 points (un canvas 2D dessine 60 000 rectangles en quelques millisecondes) : sur le Mesh synthétique, cela repousse nettement la frontière à partir de laquelle on voit vraiment les jumeaux, plutôt que leur agrégat.
+

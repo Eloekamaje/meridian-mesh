@@ -19,6 +19,34 @@ const VIOLET = "#60A5FA";
 const compact = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)} M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)} k` : String(n)).replace(".", ",");
 const NIVEAUX = { 0: "Jumeaux", 1: "Communautés", 2: "Groupes", 3: "Domaines" };
 const hex2 = (k) => Math.round(Math.max(0, Math.min(1, k)) * 255).toString(16).padStart(2, "0");
+const ANGLE_OR = 2.399963; // angle d'or (rad) : même semis que les spirales de Vogel du reste du code
+
+// PRNG minimal (mulberry32) — seulement pour semer un essaim de façon stable (même grappe = mêmes points d'une
+// image à l'autre), jamais pour des données : Math.random() donnerait un nuage qui grouille à chaque frame.
+function grainee(g) {
+  let s = g >>> 0;
+  return () => { s = (s + 0x6D2B79F5) | 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+
+// Un ESSAIM de points au lieu d'une bulle : la densité donne à voir le compte réel, pas une forme qui le tait.
+// Capé (≤ 90 points) : au-delà, la lisibilité n'y gagne plus rien et le coût grandirait avec des millions de grappes.
+function semerEssaim(ctx, cx, cy, rr, n, id, couleur, actif) {
+  const alea = grainee(id * 2654435761 + n);
+  const compte = Math.max(3, Math.min(90, Math.round(Math.sqrt(n) * 2.1)));
+  const rayonPoint = Math.max(0.6, Math.min(2.4, rr / 16));
+  ctx.fillStyle = `${couleur}${actif ? "e6" : "b0"}`;
+  for (let k = 0; k < compte; k += 1) {
+    const frac = (k + 0.5) / compte;
+    const a = k * ANGLE_OR + alea() * 0.6;
+    const d = rr * Math.sqrt(frac) * (0.88 + alea() * 0.1);
+    ctx.beginPath(); ctx.arc(cx + Math.cos(a) * d, cy + Math.sin(a) * d, rayonPoint, 0, 6.2832); ctx.fill();
+  }
+  // halo très doux, seulement pour situer l'étendue de la grappe — jamais un contour dur
+  const grad = ctx.createRadialGradient(cx, cy, rr * 0.55, cx, cy, rr);
+  grad.addColorStop(0, `${couleur}00`); grad.addColorStop(1, `${couleur}${actif ? "22" : "14"}`);
+  ctx.beginPath(); ctx.arc(cx, cy, rr, 0, 6.2832); ctx.fillStyle = grad; ctx.fill();
+  if (actif) { ctx.beginPath(); ctx.arc(cx, cy, rr, 0, 6.2832); ctx.strokeStyle = `${couleur}aa`; ctx.lineWidth = 1.4; ctx.stroke(); }
+}
 
 export function cadrageInitial(n, l, h) {
   if (!n) return { cx: 700, cy: 400, zoom: Math.min(l / 1500, h / 900) };
@@ -84,9 +112,11 @@ export default function AtlasEchelle({ synthetique = null, domaines = null, sele
       for (const g of [...parIndice].sort((a, b) => b.n - a.n)) {
         const rr = Math.max(3, g.r * zoom);
         const chaud = survol?.type === "grappe" && survol.id === g.id && survol.niv === g.niv;
-        ctx.beginPath(); ctx.arc(px(g.x), py(g.y), rr, 0, 6.2832);
-        ctx.fillStyle = `${col(g.dom)}${r.niveau === 1 ? "38" : r.niveau === 2 ? "2e" : "26"}`; ctx.fill();
-        ctx.strokeStyle = `${col(g.dom)}${chaud ? "ff" : r.niveau === 3 ? "cc" : "99"}`; ctx.lineWidth = chaud ? 2.2 : 1.2; ctx.stroke();
+        // Pas une bulle qui PRÉTEND résumer un compte : un ESSAIM de points, sa densité donne à voir le nombre
+        // réel de jumeaux qu'elle représente — même langage que le mode « points » et que les robots, à toute
+        // échelle. Nombre de points ∝ racine du compte (la densité perçue reste juste quand on zoome), semé de
+        // façon organique (angle d'or) et stable d'une image à l'autre (graine = identifiant de la grappe).
+        semerEssaim(ctx, px(g.x), py(g.y), rr, g.n, g.id, col(g.dom), chaud);
         if (g.ecarts) { ctx.beginPath(); ctx.arc(px(g.x), py(g.y), rr + 3, 0, 6.2832); ctx.strokeStyle = VIOLET; ctx.lineWidth = 1.6; ctx.stroke(); }
         if (g.alertes) { ctx.beginPath(); ctx.arc(px(g.x), py(g.y), rr + 6, 0, 6.2832); ctx.strokeStyle = ORANGE; ctx.lineWidth = 1.6; ctx.stroke(); }
         const boite = [px(g.x) - 62, py(g.y) - 14, px(g.x) + 62, py(g.y) + 18];

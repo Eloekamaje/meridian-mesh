@@ -21,10 +21,13 @@ from dataclasses import dataclass
 import numpy as np
 
 RAYON_LISIBLE = 11.0  # rayon écran (px) minimal d'une grappe « typique » pour l'afficher
-ZOOM_POINTS = 0.1  # à partir d'ici : jumeaux en points (si leur nombre reste raisonnable)
 ZOOM_JUMEAUX = 0.45  # à partir d'ici : jumeaux individuels
 CELLULE = 256.0  # taille (monde) des cellules de la grille fine
-MAX_POINTS = 9000
+# Les VRAIS jumeaux (positions réelles, un point chacun) sont montrés dès que leur nombre dans la fenêtre le
+# permet — À N'IMPORTE QUEL ZOOM, pas seulement au-delà d'un seuil arbitraire : mieux vaut des points minuscules
+# mais réels qu'une bulle qui prétend résumer un compte sans le montrer. 60 000 rectangles se dessinent en
+# quelques millisecondes (canvas 2D) ; ce n'est qu'au-delà que l'agrégation en grappes devient nécessaire.
+MAX_POINTS = 60_000
 MAX_JUMEAUX = 700
 MAX_LIENS_JUMEAUX = 4000
 MAX_GRAPPES = 700
@@ -315,11 +318,8 @@ class Pyramide:
             idx = self.jumeaux_dans(x0, y0, x1, y1, MAX_JUMEAUX)
             rep.update(self._jumeaux(idx, x0, y0, x1, y1))
         else:
-            points = None
-            if zoom >= ZOOM_POINTS:
-                idx = self.jumeaux_dans(x0, y0, x1, y1, MAX_POINTS + 1)
-                if idx.size <= MAX_POINTS:
-                    points = idx
+            idx = self.jumeaux_dans(x0, y0, x1, y1, MAX_POINTS + 1)
+            points = idx if idx.size <= MAX_POINTS else None
             if points is not None:
                 ids = self.grappes_dans(1, x0, y0, x1, y1)
                 rep.update({"mode": "points", "niveau": 1, "grappes": self._grappes(1, ids), "liens": [], "jumeaux": [],
