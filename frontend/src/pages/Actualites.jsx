@@ -5,6 +5,7 @@ import api from "@/lib/api";
 import { usePerimetre } from "@/lib/perimetre";
 import { useMesh } from "@/lib/mesh";
 import { useContexte } from "@/lib/contexte";
+import { useIdentite } from "@/lib/identite";
 import { couleurDomaine } from "@/lib/domaines";
 import { fmtDateLongue, fmtDateInput, finDeJournee, fmtDate } from "@/lib/temps";
 import CarteInitiative from "@/components/CarteInitiative";
@@ -33,6 +34,7 @@ export const GENRES = {
   veille: ["Décision en veille", "#F2B84B"],
   verification: ["Vérification en cours", "#60A5FA"],
   opportunite: ["Opportunité", "#34D399"],
+  trajectoire: ["Trajectoire", "#60A5FA"],
 };
 
 const RAISONS_ECART = [
@@ -234,6 +236,7 @@ export default function Actualites() {
   const { version, persona } = usePerimetre();
   const { mesh } = useMesh();
   const { ouvrirFlore } = useContexte();
+  const identite = useIdentite();
   const [decalage, setDecalage] = useState(0);
   const [jours, setJours] = useState(1);
   const [portee, setPortee] = useState("personnel");
@@ -268,9 +271,12 @@ export default function Actualites() {
   const estAujourdhui = decalage === 0 && jours === 1;
 
   const charger = useCallback(() => {
-    const p = new URLSearchParams({ date: fmtDateInput(dateCible), jours: String(jours), portee });
+    // « Aujourd'hui » est celui du serveur (UTC) : on n'envoie une date que pour un jour passé, sinon le soir (fuseau en retard sur UTC) la vue
+    // du jour deviendrait « hier » et perdrait son budget d'attention
+    const p = new URLSearchParams({ jours: String(jours), portee });
+    if (decalage > 0) p.set("date", fmtDateInput(dateCible));
     return api.get(`/actualites?${p}`).then((r) => setData(r.data)).catch(() => {});
-  }, [dateCible, jours, portee]);
+  }, [dateCible, decalage, jours, portee]);
 
   useEffect(() => {
     setNouvelles(0);
@@ -307,7 +313,7 @@ export default function Actualites() {
   useEffect(() => {
     if (!estAujourdhui) return undefined;
     const t = setInterval(() => {
-      const p = new URLSearchParams({ date: fmtDateInput(dateCible), jours: "1", portee });
+      const p = new URLSearchParams({ jours: "1", portee });
       api.get(`/actualites?${p}`).then((r) => {
         setData((cur) => {
           if (!cur) return cur;
@@ -521,7 +527,7 @@ export default function Actualites() {
         {/* Le briefing de Flore — rédigé, adapté au rôle */}
         {data?.briefing && (
           <section className="rise mt-7" data-testid="briefing-flore">
-            <h2 className="font-display text-xl font-bold text-[#F2F6F8]">{data.briefing.salutation}</h2>
+            <h2 className="font-display text-xl font-bold text-[#F2F6F8]">Bonjour {identite.nom}</h2>
             <div className="mt-1 flex items-center gap-2">
               <span className="font-code text-[10px] uppercase tracking-[0.2em] text-[#60A5FA]">{data.briefing.titre}</span>
               <span className="rounded-full border border-[rgba(148,163,184,0.16)] px-2 py-0.5 font-code text-[9px] text-[#7C93A8]">{data.briefing.lecture}</span>

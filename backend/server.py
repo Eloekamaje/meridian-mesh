@@ -70,9 +70,13 @@ async def seed_database():
     # Migration douce : la vérification de démonstration (veille avant décision) est ajoutée à une base déjà peuplée
     if not await db.cases.find_one({"id": "case-verification-fraude-conformite"}, {"_id": 1}):
         await db.cases.insert_one(cas_verification_fraude())
-    # Migration douce : les opportunités (genre à part entière) remplacent l'ancienne « recommandation d'optimisation »
+    # Migration douce : Jira devient une source des jumeaux (chantiers, trajectoire) sur une base déjà peuplée
+    if not await db.jumeaux.find_one({"projets": {"$exists": True}}, {"_id": 1}):
+        for t in TWINS:
+            await db.jumeaux.update_one({"id": t["id"]}, {"$set": {"projets": t["projets"], "sources": t["sources"], "sources_detail": t["sources_detail"]}})
+    # Migration douce : les opportunités (genre à part entière) remplacent l'ancienne « recommandation d'optimisation » ; les situations de trajectoire (Jira)
     for sit in SITUATIONS:
-        if sit.get("nature") == "opportunite" and not await db.situations.find_one({"id": sit["id"], "nature": "opportunite"}, {"_id": 1}):
+        if sit.get("nature") in ("opportunite", "trajectoire") and not await db.situations.find_one({"id": sit["id"], "nature": sit["nature"]}, {"_id": 1}):
             await db.situations.replace_one({"id": sit["id"]}, dict(sit), upsert=True)
 
 
@@ -107,13 +111,25 @@ def niveau_au_moins(niveau, seuil):
     return NIVEAUX.index(niveau) >= NIVEAUX.index(seuil)
 
 
-def projete_jumeau(j: dict, niveau: str):
+def _resume_projets(projets: list) -> dict:
+    """Ce que le Mesh retient des chantiers d'un jumeau : combien sont vivants, combien sont bloqués, le prochain jalon."""
+    vivants = [p for p in projets if p.get("statut") != "termine"]
+    echeances = sorted(p["echeance"] for p in vivants if p.get("echeance"))
+    return {"n": len(vivants), "bloques": sum(1 for p in vivants if p.get("statut") == "bloque" or p.get("tickets", {}).get("bloques")), "prochaine": echeances[0] if echeances else None}
+
+
+def projete_jumeau(j: dict, niveau: str, aut: Optional[dict] = None):
     base = {"id": j["id"], "nom": j["nom"], "domaine": j.get("domaine"), "statut": j.get("statut"), "position": j.get("position")}
     if niveau_au_moins(niveau, "resume"):
-        base.update({"mission": j.get("mission"), "sante": j.get("sante"), "couverture": j.get("couverture"), "fraicheur": j.get("fraicheur"), "strates": j.get("strates"), "fraicheur_etat": j.get("fraicheur_etat"), "capacites": j.get("capacites"), "candidat": j.get("candidat")})
+        base.update({"mission": j.get("mission"), "sante": j.get("sante"), "couverture": j.get("couverture"), "fraicheur": j.get("fraicheur"), "strates": j.get("strates"), "fraicheur_etat": j.get("fraicheur_etat"), "capacites": j.get("capacites"), "candidat": j.get("candidat"),
+                     "projets_resume": _resume_projets(j.get("projets", []))})
     if niveau_au_moins(niveau, "preuves"):
         base["sources"] = j.get("sources")
         base["sources_detail"] = j.get("sources_detail")
+        # Chantiers (Jira) : les jumeaux touchés que la personne n'a pas le droit de voir n'apparaissent pas
+        # (un chantier porté par un jumeau que la personne ne voit pas reste connu, mais son porteur ne l'est pas)
+        base["projets"] = [{**p, "impacte": [i for i in p.get("impacte", []) if aut is None or i in aut], "porteur": p["porteur"] if aut is None or p["porteur"] in aut else None}
+                           for p in j.get("projets", [])]
     if niveau == "complet":
         base.update({"proprietaire": j.get("proprietaire"), "autonomie": j.get("autonomie"), "environnement": j.get("environnement"), "gouvernance": j.get("gouvernance")})
     return base
@@ -256,7 +272,7 @@ async def get_mesh(x_persona: str = Header("architecte"), x_espace: Optional[str
     tous = await db.jumeaux.find({}, NO_ID).to_list(200)
     par_id = {j["id"]: j for j in tous}
     aut = autorisations(espace, list(par_id))
-    visibles = [projete_jumeau(j, aut[j["id"]]) for j in tous if j["id"] in aut]
+    visibles = [projete_jumeau(j, aut[j["id"]], aut) for j in tous if j["id"] in aut]
     ids = set(aut)
     politique = espace.get("politique_dependances", "masquage")
     relations = await db.relations.find({}, NO_ID).to_list(200)
@@ -306,7 +322,7 @@ async def lister_jumeaux(x_persona: str = Header("architecte"), x_espace: Option
     out = []
     for j in tous:
         if j["id"] in aut and niveau_au_moins(aut[j["id"]], "resume"):
-            p = projete_jumeau(j, aut[j["id"]])
+            p = projete_jumeau(j, aut[j["id"]], aut)
             p["niveau"] = aut[j["id"]]
             out.append(p)
     return out
@@ -603,7 +619,45 @@ class AuroraDemande(BaseModel):
 ETAT_REL_LABELS = {"observee": "observée", "supposee": "supposée", "validation": "validation A2A", "contestee": "contestée", "obsolete": "obsolète", "confirmee": "confirmée"}
 
 
+MOTS_PROJETS = ["projet", "chantier", "jira", "trajectoire", "epic", "roadmap", "feuille de route", "echeance", "ticket", "livraison", "planifi"]
+
+
+def reponse_projets(twins: list, aut: dict, id_vers_nom: dict):
+    """Ce que les jumeaux savent des chantiers (Jira) : ce qui est bloqué d'abord, puis les prochaines échéances. Les jumeaux hors droits n'apparaissent pas."""
+    vus, epics = set(), []
+    for t in twins:
+        for p in t.get("projets", []):
+            if p["ref"] not in vus and p.get("statut") != "termine":
+                vus.add(p["ref"])
+                epics.append(p)
+    if not epics:
+        return {"comportement": "expliquer", "reponse": "Aucun chantier Jira n'est connu pour ces jumeaux : leur source de gestion de projet n'est pas branchée, ou rien n'est en cours.",
+                "contributions": [], "preuves": [], "indicateurs": {"confiance": 70, "couverture": 50, "fraicheur": "à l'instant", "contradictions": 0}}
+    bloques = [p for p in epics if p["statut"] == "bloque" or p["tickets"]["bloques"]]
+    epics.sort(key=lambda p: p.get("echeance") or "9999")
+    bloques.sort(key=lambda p: (p["statut"] != "bloque", p.get("echeance") or "9999"))
+
+    def ligne(p):
+        touche = [id_vers_nom.get(i, i) for i in p.get("impacte", []) if i in aut]
+        porteur = id_vers_nom.get(p["porteur"], p["porteur"]) if p["porteur"] in aut else "un jumeau hors de votre périmètre"
+        return f"{p['ref']} « {p['titre']} » (porté par {porteur}, échéance {p['echeance']}{', touche ' + ', '.join(touche) if touche else ''})"
+    txt = f"{len(epics)} chantier(s) Jira vivant(s) concernent ces jumeaux"
+    txt += f", dont {len(bloques)} avec des tickets bloqués : " + " ; ".join(ligne(p) for p in bloques[:3]) + "." if bloques else "."
+    prochains = [p for p in epics if p not in bloques][:2]
+    if prochains:
+        txt += " Prochaines échéances : " + " ; ".join(ligne(p) for p in prochains) + "."
+    txt += " Méridian ne garde pas le détail des tickets : il reste dans Jira."
+    return {
+        "comportement": "expliquer", "reponse": txt, "contributions": [],
+        "preuves": [{"source": "Jira", "detail": f"{p['ref']} : {p['statut'].replace('_', ' ')}, {p['tickets']['ouverts']} ticket(s) ouvert(s), {p['tickets']['bloques']} bloqué(s)"} for p in epics[:5]],
+        "indicateurs": {"confiance": 80, "couverture": 70, "fraicheur": "à l'instant", "contradictions": 0},
+        "action": {"route": "/atlas", "label": "Voir dans l'Atlas"},
+    }
+
+
 def intention_selection(q: str):
+    if any(k in q for k in MOTS_PROJETS):
+        return "projets"
     if any(k in q for k in ["inconnue", "inconnu", "non documente", "cache"]):
         return "inconnues"
     if any(k in q for k in ["connaissance", "faible", "admis", "admission", "blocage", "sources"]):
@@ -653,6 +707,9 @@ async def reponse_selection(intent, sel, aut, tous, id_vers_nom):
         return id_vers_nom.get(r["source"], r["source"]) + " → " + id_vers_nom.get(r["cible"], r["cible"])
 
     indicateurs = {"confiance": 72, "couverture": 64, "fraicheur": "à l'instant", "contradictions": len([r for r in internes if r["etat"] == "contestee"])}
+
+    if intent == "projets":
+        return reponse_projets([par_id[j] for j in sel if j in par_id], aut, id_vers_nom)
 
     if intent == "registre":
         twins = [par_id[j] for j in sel if j in par_id]
@@ -1045,6 +1102,8 @@ async def generer_reponse_flore(contexte, question, selection, domaine, x_person
         intent = intention_selection(q)
         if intent:
             return await reponse_selection(intent, sel, aut, tous, id_vers_nom)
+    if not sel and any(k in q for k in MOTS_PROJETS) and any(niveau_au_moins(n, "preuves") for n in aut.values()):
+        return reponse_projets([j for j in tous if j["id"] in aut and niveau_au_moins(aut[j["id"]], "preuves")], aut, id_vers_nom)
     for script in AURORA_SCRIPTS:
         if script["contexte"] in (contexte, "global") and any(normalise_txt(k) in q for k in script["mots_cles"]):
             out = dict(script)

@@ -33,7 +33,7 @@ ETATS_REL = {
 
 GENRES_SITUATION = {
     "relation": "relation", "contradiction": "contradiction", "connaissance": "connaissance",
-    "changement": "changement", "incident": "incident", "comportement": "comportement", "opportunite": "opportunite",
+    "changement": "changement", "incident": "incident", "comportement": "comportement", "opportunite": "opportunite", "trajectoire": "trajectoire",
 }
 
 SECTIONS_ORDRE = ["essentiel", "travaux", "opportunites", "decouvertes", "transformations", "surveillance", "espace", "global"]
@@ -51,7 +51,7 @@ TITRES_SECTION = {
 
 SECTION_PAR_GENRE = {
     "relation": "decouvertes", "connaissance": "decouvertes", "contradiction": "surveillance",
-    "changement": "transformations", "comportement": "transformations", "opportunite": "opportunites", "phenomene": "surveillance",
+    "changement": "transformations", "trajectoire": "transformations", "comportement": "transformations", "opportunite": "opportunites", "phenomene": "surveillance",
     "travail": "travaux", "decision": "travaux", "veille": "travaux", "verification": "travaux", "gouvernance": "espace",
 }
 
@@ -60,7 +60,7 @@ PROFILS = {
     "architecte": {
         "label": "Lecture architecte",
         "phrase": "Dépendances, transformations et risques structurels d'abord.",
-        "boost": {"relation": 18, "changement": 14, "connaissance": 8, "incident": 6, "opportunite": 10, "travail": 4},
+        "boost": {"relation": 18, "trajectoire": 16, "changement": 14, "connaissance": 8, "incident": 6, "opportunite": 10, "travail": 4},
     },
     "exploitant": {
         "label": "Lecture exploitation",

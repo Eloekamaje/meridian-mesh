@@ -200,6 +200,10 @@ def message_flore_decision(texte: str, passation: dict, quand: str) -> dict:
         veille.append(f"— à lever : {i['texte']}")
     if veille:
         lignes.append("Je la mets en veille. Voici ce que j'observerai :\n" + "\n".join(veille))
+    ref = passation.get("reference")
+    if ref:
+        titre = f" (« {ref['titre']} »)" if ref.get("titre") else ""
+        lignes.append(f"Elle est rattachée au chantier {ref.get('systeme', 'Jira')} {ref['ref']}{titre}. Le détail du suivi reste chez vous ; j'observe ses effets.")
     if passation.get("revue_le"):
         lignes.append(f"Je reviendrai vers vous à la revue, le {_jour(passation['revue_le'])}, ou avant si un risque surveillé se matérialise.")
     return {"role": "flore", "comportement": "recommander", "type": "decision", "quand": quand, "texte": "\n\n".join(lignes)}

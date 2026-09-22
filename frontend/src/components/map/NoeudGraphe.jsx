@@ -47,6 +47,12 @@ function NoeudGraphe(props) {
       {data.dansSituation && (
         <span className="absolute h-2.5 w-2.5 rounded-full bg-[#60A5FA] ring-2 ring-[#070B12]" style={{ left: 46, top: 6 }} title="Impliqué dans une situation active" data-testid={`twin-situation-${j.id}`} />
       )}
+      {data.enProjet && (
+        <span className={`absolute flex h-4 min-w-4 items-center justify-center rounded px-1 font-code text-[9px] font-bold text-[#071019] ring-2 ring-[#070B12] ${data.enProjet.bloques > 0 ? "bg-[#F87171]" : "bg-[#93C5FD]"}`} style={{ left: 45, top: 42 }}
+          title={`${data.enProjet.n} chantier${data.enProjet.n > 1 ? "s" : ""} Jira${data.enProjet.bloques > 0 ? `, ${data.enProjet.bloques} bloqué${data.enProjet.bloques > 1 ? "s" : ""}` : ""}`} data-testid={`twin-projets-${j.id}`}>
+          {data.enProjet.n}
+        </span>
+      )}
       {data.enTransformation && (
         <span className="absolute h-2.5 w-2.5 rounded-full border-2 border-dashed border-[#F59E0B] bg-[#070B12]" style={{ left: 6, top: 6 }} title="En transformation" data-testid={`twin-transformation-${j.id}`} />
       )}

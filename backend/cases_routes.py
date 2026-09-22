@@ -6,6 +6,8 @@ from pydantic import BaseModel
 
 import maturation
 import portee as portees
+import re
+from seed_data import EPICS, EPIC_PAR_REF
 import veille as moteur_veille
 
 
@@ -59,6 +61,7 @@ class Passation(BaseModel):
     risques: list = []
     inconnues: list = []
     revue_le: Optional[str] = None
+    reference: Optional[dict] = None  # chantier externe qui porte l'action : {"systeme": "Jira", "ref": "PAY-140"} (Méridian n'en garde que la référence)
 
 
 def _nombre(v, champ):
@@ -94,7 +97,14 @@ def normaliser_passation(p: "Passation") -> dict:
         except ValueError:
             raise HTTPException(400, "Date de revue illisible")
         revue = (d if d.tzinfo else d.replace(tzinfo=timezone.utc)).isoformat()
-    return {"hypotheses": hyp, "attendus": attendus, "risques": risques, "inconnues": inconnues, "revue_le": revue}
+    reference = None
+    if p.reference and str(p.reference.get("ref", "")).strip():
+        ref = str(p.reference["ref"]).strip().upper()
+        if not re.fullmatch(r"[A-Z][A-Z0-9]+-\d+", ref):
+            raise HTTPException(400, "Référence de chantier illisible (attendu : PAY-140)")
+        connu = EPIC_PAR_REF.get(ref)
+        reference = {"systeme": str(p.reference.get("systeme") or "Jira"), "ref": ref, **({"titre": connu["titre"]} if connu else {})}
+    return {"hypotheses": hyp, "attendus": attendus, "risques": risques, "inconnues": inconnues, "revue_le": revue, "reference": reference}
 
 
 class ObservationVeille(BaseModel):
@@ -609,7 +619,8 @@ def build_cases_router(deps):
         inconnues = [{"texte": t} for t in ((sit or {}).get("reste_a_comprendre") or [])]
         opp = (sit or {}).get("opportunite") or {}
         revue = (datetime.now(timezone.utc) + timedelta(days=30)).replace(hour=0, minute=0, second=0, microsecond=0)
-        return {"decision": decision, "hypotheses": hyp, "gain": opp.get("gain"), "attendus": [], "risques": [], "inconnues": inconnues, "revue_le": revue.isoformat(),
+        lie = next((e for e in EPICS if e.get("travail") == cid), None)  # un chantier Jira déjà rattaché à ce travail
+        return {"reference": {"systeme": "Jira", "ref": lie["ref"], "titre": lie["titre"]} if lie else None, "decision": decision, "hypotheses": hyp, "gain": opp.get("gain"), "attendus": [], "risques": [], "inconnues": inconnues, "revue_le": revue.isoformat(),
                 "jumeaux": [j for j in (case.get("jumeaux") or [])]}
 
     @router.post("/observations")

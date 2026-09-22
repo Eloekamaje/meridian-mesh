@@ -801,6 +801,7 @@ export function construireGraphe({
           detailVisible: !estCadastre && zoomNiveau >= 4 && !j.anonyme && !!cartesVisibles?.has(j.id),
           detailPosition: cartesVisibles?.get(j.id) || "bas",
           dansSituation: !estCadastre && !!couchesCarte.situations && !!situationsJumeaux?.has(j.id),
+          enProjet: !estCadastre && !!couchesCarte.projets && j.projets_resume?.n > 0 ? j.projets_resume : null,
           enTransformation: !estCadastre && !!couchesCarte.transformations && (j.statut === "en construction" || j.statut === "observation"),
           onMajClic,
         },

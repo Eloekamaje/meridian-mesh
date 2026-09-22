@@ -21,6 +21,7 @@ import api from "@/lib/api";
 import { usePerimetre } from "@/lib/perimetre";
 import { useContexte } from "@/lib/contexte";
 import { usePilotage } from "@/lib/pilotage";
+import { useIdentite } from "@/lib/identite";
 import IndicateurClic from "@/components/IndicateurClic";
 import logoComplet from "@/assets/logo/meridian-logo-clair.png";
 import logoSymbole from "@/assets/logo/meridian-symbole.png";
@@ -107,11 +108,8 @@ export default function SidebarGauche({ mode = "bureau", onOuvrir, onFermer }) {
     return () => document.removeEventListener("mousedown", fermer);
   }, []);
 
-  const personaActuel = personas.find((p) => p.id === persona) || { nom: "Majella Elobo", role: "Directeur SI" };
-  // Démonstration : l'identité est celle du rôle joué, pas celle de la personne connectée
-  const identite = pilote
-    ? { nom: personaActuel.nom, sous: personaActuel.role, initiales: (personaActuel.nom || "?").slice(0, 2).toUpperCase() }
-    : { nom: "Majella Elobo", sous: `${personaActuel.role || "Directeur SI"} · Mesh 38`, initiales: "ME" };
+  const identite = useIdentite();
+  const personaActuel = identite.profil;
 
   return (
     <aside 

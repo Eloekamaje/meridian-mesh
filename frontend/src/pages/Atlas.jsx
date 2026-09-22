@@ -107,7 +107,7 @@ export default function Atlas() {
   const [recherche, setRecherche] = useState("");
   // Couches cartographiques étendues (façon catégories Google Maps) : ne déplacent jamais les jumeaux,
   // elles modifient uniquement la visibilité et l'importance des éléments
-  const [couchesCarte, setCouchesCarte] = useState({ situations: false, capacites: false, transformations: false });
+  const [couchesCarte, setCouchesCarte] = useState({ situations: false, capacites: false, transformations: false, projets: false });
   // Navigation personnelle : liste ouverte dans le panneau contextuel (favoris/récents/investigations/situations)
   const [vueListe, setVueListe] = useState(null);
   const [favorisIds, setFavorisIds] = useState(() => favoris());
@@ -707,7 +707,7 @@ export default function Atlas() {
       relation: selectedRelation ? `${idNumerique(selectedRelation.source)} → ${idNumerique(selectedRelation.cible)}` : null,
       couches: [
         couchesRel.bcm && "BCM", couchesRel.realite && "Réalité observée", couchesRel.ecarts && "Écarts",
-        couchesCarte.situations && "Situations", couchesCarte.capacites && "Capacités", couchesCarte.transformations && "Transformations",
+        couchesCarte.situations && "Situations", couchesCarte.capacites && "Capacités", couchesCarte.transformations && "Transformations", couchesCarte.projets && "Projets",
       ].filter(Boolean),
       zoomLabel: NIVEAUX_ZOOM[zoomNiveau],
     });
@@ -933,7 +933,13 @@ export default function Atlas() {
       .filter((r) => r.label.toLowerCase().includes(q))
       .slice(0, 3)
       .map((r) => ({ type: "domaine", id: r.label, label: r.label, sub: "domaine" }));
-    return [...js, ...ds];
+    // Chantiers Jira : « PAY-122 », ou un mot du titre. Un chantier éclaire le jumeau qui le porte et ceux qu'il touche.
+    const vus = new Set();
+    const cs = mesh.jumeaux.flatMap((j) => (j.projets || []).filter((p) => p.role === "porte").map((p) => ({ ...p, porteurId: j.id, porteurNom: j.nom })))
+      .filter((p) => !vus.has(p.ref) && vus.add(p.ref) && (p.ref.toLowerCase().includes(q) || p.titre.toLowerCase().includes(q)))
+      .slice(0, 3)
+      .map((p) => ({ type: "chantier", id: p.ref, label: `${p.ref} · ${p.titre}`, sub: `chantier Jira · porté par ${p.porteurNom}${p.impacte?.length ? ` · touche ${p.impacte.length}` : ""}`, porteur: p.porteurId, touches: p.impacte || [] }));
+    return [...js, ...cs, ...ds];
   }, [recherche, mesh]);
 
   // Voisins directs du jumeau sélectionné (intelligence locale — colonne gauche)
@@ -1358,6 +1364,13 @@ export default function Atlas() {
     setRecherche("");
   };
 
+  // Un chantier Jira : on vole jusqu'au jumeau qui le porte, et ceux qu'il touche s'éclairent avec lui
+  const ouvrirChantier = (c) => {
+    centrerSurJumeau(c.porteur);
+    setSelection([c.porteur, ...c.touches]);
+    toast.info(`${c.id} : porté par ${mesh.jumeaux.find((j) => j.id === c.porteur)?.nom || c.porteur}${c.touches.length ? `, touche ${c.touches.length} jumeau${c.touches.length > 1 ? "x" : ""}` : ""}`);
+  };
+
   // Clic sur un jumeau de la vue à l'échelle : même ouverture que sur la scène (panneau, URL)
   const choisirDepuisEchelle = (t) => {
     const j = t.id && mesh?.jumeaux.find((x) => x.id === t.id && !x.anonyme);
@@ -1726,7 +1739,8 @@ export default function Atlas() {
                   if (e.key !== "Enter" || resultatsRecherche.length === 0) return;
                   noterRecherche(recherche);
                   const r = resultatsRecherche[0];
-                  if (r.type === "jumeau") centrerSurJumeau(r.id);
+                  if (r.type === "chantier") ouvrirChantier(r);
+                  else if (r.type === "jumeau") centrerSurJumeau(r.id);
                   else if (graphe) ouvrirDomaine(r.id);
                   else { setDomaineSel(r.id); setRecherche(""); }
                   if (estMobile) setRechercheMobileOuverte(false);
@@ -1746,7 +1760,7 @@ export default function Atlas() {
               {resultatsRecherche.map((r) => (
                 <button
                   key={`${r.type}-${r.id}`}
-                  onClick={() => { noterRecherche(recherche); if (r.type === "jumeau") centrerSurJumeau(r.id); else if (graphe) ouvrirDomaine(r.id); else { setDomaineSel(r.id); setRecherche(""); } }}
+                  onClick={() => { noterRecherche(recherche); if (r.type === "chantier") ouvrirChantier(r); else if (r.type === "jumeau") centrerSurJumeau(r.id); else if (graphe) ouvrirDomaine(r.id); else { setDomaineSel(r.id); setRecherche(""); } }}
                   data-testid={`recherche-${r.type}-${r.id}`}
                   className="w-full rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-[rgba(148,163,184,0.10)]"
                 >
@@ -1842,6 +1856,11 @@ export default function Atlas() {
               {j.domaine}
               {analyse.ecarts.has(j.id) && <span className="ml-2 text-[#F59E0B]">⚠ écart</span>}
             </div>
+            {j.projets_resume?.n > 0 && (
+              <div className="font-code text-[10px] text-[#93C5FD]" data-testid="infobulle-projets">
+                {j.projets_resume.n} chantier{j.projets_resume.n > 1 ? "s" : ""} Jira{j.projets_resume.bloques > 0 && <span className="text-[#F87171]"> · {j.projets_resume.bloques} bloqué{j.projets_resume.bloques > 1 ? "s" : ""}</span>}
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-1.5 pt-0.5 text-center">
               {[["Degré", `${analyse.deg.get(j.id) || 0}`], ["Couverture", j.couverture != null ? `${j.couverture} %` : "—"]].map(([k, v]) => (
                 <div key={k} className="rounded-lg bg-white/[0.04] px-1 py-1">

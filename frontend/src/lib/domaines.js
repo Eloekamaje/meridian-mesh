@@ -23,6 +23,8 @@ export const NATURES = {
   contradiction: { label: "Contradiction", couleur: "#F87171" },
   incident: { label: "Incident", couleur: "#F87171" },
   changement: { label: "Changement", couleur: "#F59E0B" },
+  trajectoire: { label: "Trajectoire", couleur: "#60A5FA" },
+  opportunite: { label: "Opportunité", couleur: "#4ADE80" },
 };
 
 export const ETATS_RELATION = {

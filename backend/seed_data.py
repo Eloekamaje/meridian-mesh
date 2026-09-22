@@ -1,4 +1,5 @@
 SOURCES_LABELS = {
+    "projet": "Gestion de projet",
     "code": "Code",
     "bdd": "Base de données",
     "observabilite": "Observabilité",
@@ -345,6 +346,25 @@ SITUATIONS = [
         "preuves": [{"source": "Bus d'événements", "detail": "62 % des alertes clients passent déjà par Notifications"}, {"source": "Code", "detail": "14 gabarits identiques entre Commandes et Facturation"}],
         "synthese": "Mutualisation réaliste, gain durable, effort modéré.",
         "actions_proposees": ["Cadrer la mutualisation"],
+        "decision": None,
+    },
+    {
+        "id": "sit-trajectoire-files",
+        "verbe": "a_decider", "nature": "trajectoire", "type": "trajectoire",
+        "titre": "Trajectoire : PAY-140 suppose la fin d'OPS-15, qui est bloqué",
+        "resume": "Le chantier « Basculer les contrôles Fraude en asynchrone » (PAY-140, échéance 20 novembre) suppose que les files legacy soient migrées. Or leur migration (OPS-15) est bloquée : trois tickets attendent depuis deux semaines et l'échéance du 30 septembre est déjà atteinte.",
+        "priorite": "haute", "statut": "active", "score": 66, "detectee": "aujourd'hui · 07 h 55",
+        "jumeaux": ["paiements", "logistique", "fraude"],
+        "aurora_recommandation": "Je recommande de réexaminer la décision sur les files legacy avant que PAY-140 ne démarre.",
+        "indicateurs": {"confiance": 78, "couverture": 74, "fraicheur": "il y a 1 h", "contradictions": 1},
+        "decouverte_quoi": "Deux chantiers Jira sont liés par une dépendance que ni l'un ni l'autre ne déclare, et l'amont est bloqué.",
+        "decouverte_pourquoi": ["Le code de PAY-140 lit les files que OPS-15 doit remplacer", "OPS-15 a dépassé son échéance et porte 3 tickets bloqués", "La décision « Réduire la dépendance aux files legacy » repose sur cette migration"],
+        "reste_a_comprendre": ["Ce qui bloque OPS-15 : dépendance externe ou capacité de l'équipe Ops ?"],
+        "decisions_attendues": ["Ouvrir une investigation", "Surveiller sans action immédiate"],
+        "chronologie": [], "hypotheses": [], "contributions": [],
+        "preuves": [{"source": "Jira", "detail": "OPS-15 : échéance du 30 septembre dépassée, 3 tickets bloqués"}, {"source": "Jira", "detail": "PAY-140 : lien « dépend de » absent, alors que le code lit les files legacy"}, {"source": "GitHub", "detail": "pay-controles : 4 consommateurs de la FileAttente partagée"}],
+        "synthese": "La trajectoire déclarée dans Jira ne tient pas si OPS-15 reste bloqué.",
+        "actions_proposees": ["Ouvrir une investigation"],
         "decision": None,
     },
     {
@@ -1128,7 +1148,44 @@ COMMANDE_DEMO = {
 
 # ---------- Registre : connaissance par strates, sources détaillées, fraîcheur qualifiée ----------
 
-_SOURCES_NOMS = {"code": "GitHub", "bdd": "PostgreSQL", "observabilite": "Datadog", "incidents": "ServiceNow", "documentation": "Confluence"}
+_SOURCES_NOMS = {"code": "GitHub", "bdd": "PostgreSQL", "observabilite": "Datadog", "incidents": "ServiceNow", "documentation": "Confluence", "projet": "Jira"}
+
+# ---------- Gestion de projet : ce que les jumeaux savent par Jira ----------
+# Méridian n'est pas un outil de gestion de projet (Continuous Improvement & Learning Model, § 8) : il ne garde que ce qui relie une décision à l'action,
+# et ce qui éclaire le Mesh — quels chantiers portent ou touchent quel jumeau, où ils en sont, ce qui les bloque. Le détail reste dans Jira.
+# statut : en_cours | planifie | bloque | termine | reporte. `porteur` : le jumeau qui porte le chantier ; `impacte` : ceux qu'il touche.
+EPICS = [
+    {"ref": "PAY-122", "projet": "PAY", "titre": "Migration du contrat Comptes vers la version 3", "statut": "en_cours", "echeance": "2026-10-30", "tickets": {"ouverts": 14, "bloques": 2, "termines": 31},
+     "porteur": "paiements", "impacte": ["comptes", "facturation"], "maj": "il y a 2 h"},
+    {"ref": "PAY-140", "projet": "PAY", "titre": "Basculer les contrôles Fraude en asynchrone", "statut": "planifie", "echeance": "2026-11-20", "tickets": {"ouverts": 9, "bloques": 0, "termines": 0},
+     "porteur": "paiements", "impacte": ["fraude", "support"], "maj": "il y a 1 j"},
+    {"ref": "PAY-131", "projet": "PAY", "titre": "Décaler la clôture de facturation de 40 minutes", "statut": "en_cours", "echeance": "2026-10-09", "tickets": {"ouverts": 4, "bloques": 0, "termines": 6},
+     "porteur": "facturation", "impacte": ["comptes"], "maj": "il y a 5 h"},
+    {"ref": "BIL-58", "projet": "BIL", "titre": "Refonte des gabarits de facture", "statut": "en_cours", "echeance": "2026-12-04", "tickets": {"ouverts": 22, "bloques": 1, "termines": 18},
+     "porteur": "facturation", "impacte": ["notifications", "commandes"], "maj": "il y a 3 h"},
+    {"ref": "CLI-77", "projet": "CLI", "titre": "Nouvelle version de l'API Comptes", "statut": "en_cours", "echeance": "2026-10-30", "tickets": {"ouverts": 11, "bloques": 0, "termines": 24},
+     "porteur": "comptes", "impacte": ["paiements", "identite"], "maj": "il y a 1 j"},
+    {"ref": "RSK-31", "projet": "RSK", "titre": "Réécriture de la règle R-118", "statut": "en_cours", "echeance": "2026-10-02", "tickets": {"ouverts": 6, "bloques": 1, "termines": 5},
+     "porteur": "fraude", "impacte": ["paiements"], "maj": "il y a 40 min"},
+    {"ref": "RSK-44", "projet": "RSK", "titre": "Score de risque temps réel v2", "statut": "planifie", "echeance": "2027-01-15", "tickets": {"ouverts": 12, "bloques": 0, "termines": 0},
+     "porteur": "fraude", "impacte": ["scoring", "paiements"], "maj": "il y a 3 j"},
+    {"ref": "RSK-52", "projet": "RSK", "titre": "Cadre de conformité PSD3", "statut": "bloque", "echeance": "2026-11-30", "tickets": {"ouverts": 17, "bloques": 5, "termines": 8},
+     "porteur": "conformite", "impacte": ["fraude", "paiements"], "maj": "il y a 6 h"},
+    {"ref": "CARE-19", "projet": "CARE", "titre": "Macros de remboursement automatisées", "statut": "en_cours", "echeance": "2026-10-16", "tickets": {"ouverts": 8, "bloques": 0, "termines": 12},
+     "porteur": "support", "impacte": ["remboursements"], "maj": "il y a 4 h"},
+    {"ref": "CARE-27", "projet": "CARE", "titre": "Canal SMS pour les alertes clients", "statut": "planifie", "echeance": "2026-12-11", "tickets": {"ouverts": 7, "bloques": 0, "termines": 0},
+     "porteur": "notifications", "impacte": ["support"], "maj": "il y a 2 j"},
+    {"ref": "OPS-12", "projet": "OPS", "titre": "Suivi temps réel des commandes", "statut": "en_cours", "echeance": "2026-11-06", "tickets": {"ouverts": 10, "bloques": 1, "termines": 15},
+     "porteur": "commandes", "impacte": ["logistique", "notifications"], "maj": "il y a 8 h"},
+    {"ref": "OPS-15", "projet": "OPS", "titre": "Migrer les files legacy vers Kafka", "statut": "bloque", "echeance": "2026-09-30", "tickets": {"ouverts": 13, "bloques": 3, "termines": 9},
+     "porteur": "logistique", "impacte": ["paiements", "notifications", "commandes"], "maj": "il y a 1 j", "travail": "case-dette-files"},
+    {"ref": "DIG-88", "projet": "DIG", "titre": "Parcours d'achat v3", "statut": "en_cours", "echeance": "2026-11-13", "tickets": {"ouverts": 19, "bloques": 0, "termines": 27},
+     "porteur": "portail-web", "impacte": ["api-gateway", "paiements"], "maj": "il y a 6 h"},
+    {"ref": "PLT-9", "projet": "PLT", "titre": "Montée de version de la passerelle d'API", "statut": "termine", "echeance": "2026-09-12", "tickets": {"ouverts": 0, "bloques": 0, "termines": 38},
+     "porteur": "api-gateway", "impacte": ["portail-web"], "maj": "il y a 9 j"},
+]
+
+EPIC_PAR_REF = {e["ref"]: e for e in EPICS}
 
 _STRATES = {
     "paiements": (100, 94, 82, 90, 88), "facturation": (96, 78, 70, 85, 76), "comptes": (100, 90, 80, 88, 84),
@@ -1175,6 +1232,10 @@ for _t in TWINS:
     else:
         _i, _c, _r, _tr, _m = 50, 50, 50, 50, 50
     _t["strates"] = {"identite": _i, "comportement": _c, "relations": _r, "trajectoire": _tr, "memoire": _m}
+    # Jira : les chantiers que ce jumeau porte ou subit (sa « trajectoire » vient de là). Un jumeau sans chantier connu n'a pas la source Jira.
+    _t["projets"] = [{**{k: v for k, v in _e.items() if k != "porteur"}, "role": "porte" if _e["porteur"] == _t["id"] else "impacte", "porteur": _e["porteur"]}
+                     for _e in EPICS if _t["id"] == _e["porteur"] or _t["id"] in _e["impacte"]]
+    _t["sources"] = {**_t.get("sources", {}), "projet": bool(_t["projets"])}
     _t["sources_detail"] = [{"cle": k, "nom": _SOURCES_NOMS.get(k, k), "statut": "prete"} for k, v in _t.get("sources", {}).items() if v]
     _t["sources_detail"] += [{"cle": k, "nom": n, "statut": s} for k, n, s in _SOURCES_EXTRA.get(_t["id"], [])]
     _t["fraicheur_etat"] = _FRAICHEUR_ETATS.get(_t["id"], "a_jour")

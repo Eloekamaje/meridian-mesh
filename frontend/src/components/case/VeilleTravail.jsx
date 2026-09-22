@@ -78,6 +78,7 @@ export function BandeauVeille({ cas }) {
       {ouvert && (
         <div className="space-y-3 border-t border-[rgba(148,163,184,0.10)] px-4 py-3 text-xs text-[#CBD5E1]" data-testid="note-passation">
           <div className="font-code text-[11px] uppercase tracking-[0.18em] text-[#7C93A8]">Note de passation</div>
+          {p.reference && <div data-testid="passation-reference"><div className="mb-1 font-semibold text-[#E6EEF5]">Chantier lié</div><span className="font-code text-[#93C5FD]">{p.reference.systeme} {p.reference.ref}</span>{p.reference.titre ? ` — ${p.reference.titre}` : ""}</div>}
           {(p.hypotheses || []).length > 0 && <div><div className="mb-1 font-semibold text-[#E6EEF5]">Hypothèses de la décision</div><ul className="list-disc space-y-0.5 pl-4">{p.hypotheses.map((h) => <li key={h}>{h}</li>)}</ul></div>}
           {(p.attendus || []).length > 0 && <div><div className="mb-1 font-semibold text-[#E6EEF5]">Résultats attendus</div><ul className="space-y-0.5">{p.attendus.map((a) => <li key={a.id}>{a.indicateur} : de <b>{a.depart}</b> à <b>{a.cible}</b> {a.unite}</li>)}</ul></div>}
           {(p.risques || []).length > 0 && <div><div className="mb-1 font-semibold text-[#E6EEF5]">Risques à surveiller</div><ul className="space-y-0.5">{p.risques.map((r) => <li key={r.id}>{r.texte} (seuil {r.seuil} {r.unite})</li>)}</ul></div>}

@@ -16,7 +16,7 @@ INTENTIONS = ("comprendre", "suivre", "investiguer")
 # Genre d'actualité → type de travail (les types connus de la liste des travaux)
 TYPE_PAR_GENRE = {
     "incident": "incident", "changement": "changement", "relation": "decouverte", "phenomene": "decouverte",
-    "connaissance": "decouverte", "comportement": "decouverte", "contradiction": "conformite", "opportunite": "opportunite",
+    "connaissance": "decouverte", "comportement": "decouverte", "contradiction": "conformite", "opportunite": "opportunite", "trajectoire": "changement",
 }
 
 

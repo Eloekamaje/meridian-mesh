@@ -8,6 +8,17 @@ import { useContexte } from "@/lib/contexte";
 // Teinte du score de compréhension : consolidé → teal, à renforcer → ambre, insuffisant → rouge doux
 const couleurComprehension = (c) => (c >= 90 ? "#60A5FA" : c >= 60 ? "#F2B84B" : "#F87171");
 
+// Chantiers Jira d'un jumeau : les bloqués d'abord, puis ce qui avance, puis ce qui est planifié
+export const STATUTS_PROJET = {
+  bloque: { label: "Bloqué", couleur: "#F87171" },
+  en_cours: { label: "En cours", couleur: "#60A5FA" },
+  planifie: { label: "Planifié", couleur: "#94A3B8" },
+  reporte: { label: "Reporté", couleur: "#F2B84B" },
+  termine: { label: "Livré", couleur: "#34D399" },
+};
+const ORDRE_STATUT_PROJET = { bloque: 0, en_cours: 1, planifie: 2, reporte: 3, termine: 4 };
+const echeanceCourte = (iso) => (iso ? new Date(`${iso}T12:00:00`).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) : "—");
+
 export function RelationDetail({ rel, jumeauPar, onConfirmer }) {
   const etat = ETATS_RELATION[rel.etat] || ETATS_RELATION.confirmee;
   const s = jumeauPar(rel.source);
@@ -293,6 +304,44 @@ export function TwinDetail({ selected, favori, onBasculerFavori, statsTwin, onIn
               </li>
             ))}
           </ul>
+        </Section>
+      )}
+
+      {selected.projets?.length > 0 && (
+        <Section titre="Gestion de projet · Jira" cle="projets" compte={selected.projets.length}>
+          <ul className="space-y-2.5" data-testid="twin-projets">
+            {[...selected.projets].sort((a, b) => (ORDRE_STATUT_PROJET[a.statut] ?? 9) - (ORDRE_STATUT_PROJET[b.statut] ?? 9)).map((p) => {
+              const st = STATUTS_PROJET[p.statut] || STATUTS_PROJET.planifie;
+              return (
+                <li key={p.ref} className="rounded-lg border border-[rgba(148,163,184,0.12)] bg-[#0F1D28] p-2.5" data-testid={`projet-${p.ref}`}>
+                  <div className="flex items-center gap-2 font-code text-[10px]">
+                    <span className="text-[#93C5FD]">{p.ref}</span>
+                    <span className="rounded px-1.5 py-0.5" style={{ color: st.couleur, backgroundColor: `${st.couleur}1A` }}>{st.label}</span>
+                    <span className="ml-auto text-[#7C93A8]">{p.role === "porte" ? "porté ici" : "touche ce jumeau"}</span>
+                  </div>
+                  <p className="mt-1 text-xs font-medium leading-snug text-[#E6EEF5]">{p.titre}</p>
+                  <p className="mt-1 font-code text-[10px] text-[#7C93A8]">
+                    {p.statut === "termine" ? "livré" : `échéance ${echeanceCourte(p.echeance)}`} · {p.tickets.ouverts} ouvert{p.tickets.ouverts > 1 ? "s" : ""}
+                    {p.tickets.bloques > 0 && <span className="text-[#F87171]"> · {p.tickets.bloques} bloqué{p.tickets.bloques > 1 ? "s" : ""}</span>}
+                  </p>
+                  {(p.impacte?.length > 0 || (p.role === "impacte" && p.porteur)) && (
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                      <span className="font-code text-[9px] uppercase tracking-wider text-[#7C93A8]">{p.role === "porte" ? "touche" : "porté par"}</span>
+                      {(p.role === "porte" ? p.impacte : [p.porteur]).filter(Boolean).map((id) => (
+                        <button key={id} onClick={() => onChoisirVoisin?.(id)} data-testid={`projet-jumeau-${p.ref}-${id}`} className="rounded-full border border-[rgba(148,163,184,0.2)] px-1.5 py-0.5 font-code text-[10px] text-[#D8E2EA] transition-colors hover:border-[#60A5FA]/50 hover:text-white">{id}</button>
+                      ))}
+                    </div>
+                  )}
+                  {p.travail && (
+                    <Link to={`/travaux/${p.travail}`} data-testid={`projet-travail-${p.ref}`} className="mt-1.5 flex items-center gap-1 text-[11px] font-medium text-[#60A5FA] hover:text-[#93C5FD]">
+                      <ArrowSquareOut size={11} /> Décision liée dans Méridian
+                    </Link>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          <p className="mt-2 text-[10px] leading-snug text-[#7C93A8]">Le détail reste dans Jira : Méridian ne garde que ce qui éclaire le Mesh et relie une décision à son action.</p>
         </Section>
       )}
 

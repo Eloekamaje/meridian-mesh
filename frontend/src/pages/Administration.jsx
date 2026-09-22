@@ -10,6 +10,7 @@ const SOURCES = [
   ["code", "Code"],
   ["bdd", "Base de données"],
   ["observabilite", "Observabilité"],
+  ["projet", "Gestion de projet"],
   ["incidents", "Incidents"],
   ["documentation", "Documentation"],
 ];

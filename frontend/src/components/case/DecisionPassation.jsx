@@ -51,6 +51,7 @@ export default function DecisionPassation({ cas, onFermer, onEnregistree }) {
   const [inconnues, setInconnues] = useState([]);
   const [revue, setRevue] = useState("");
   const [gain, setGain] = useState("");
+  const [reference, setReference] = useState("");
 
   // Flore prépare un brouillon à partir de ce qu'elle sait du travail
   useEffect(() => {
@@ -60,6 +61,7 @@ export default function DecisionPassation({ cas, onFermer, onEnregistree }) {
       setDecision(data.decision || "");
       setHypotheses(data.hypotheses || []);
       setGain(data.gain || "");
+      setReference(data.reference?.ref || "");
       setAttendus([{ indicateur: "", depart: "", cible: "", unite: "" }]);
       setInconnues((data.inconnues || []).map((i) => i.texte));
       setRevue((data.revue_le || "").slice(0, 10));
@@ -97,6 +99,7 @@ export default function DecisionPassation({ cas, onFermer, onEnregistree }) {
           risques: risquesOk.map((r) => ({ texte: r.texte, jumeau: r.jumeau || null, sens: r.sens || "hausse", seuil: nombre(r.seuil), unite: r.unite })),
           inconnues: inconnuesOk.map((texte) => ({ texte })),
           revue_le: revue ? `${revue}T00:00:00+00:00` : null,
+          reference: reference.trim() ? { systeme: "Jira", ref: reference.trim() } : null,
         },
       });
       const { data } = await api.get(`/cases/${cas.id}`);
@@ -185,6 +188,12 @@ export default function DecisionPassation({ cas, onFermer, onEnregistree }) {
               </div>
             ))}
           </Rubrique>
+
+          <section className="space-y-1.5">
+            <label htmlFor="passation-reference" className={etiquette}>Chantier Jira lié (facultatif)</label>
+            <input id="passation-reference" value={reference} onChange={(e) => setReference(e.target.value)} placeholder="PAY-140" className={`${champ} max-w-[12rem] font-code`} data-testid="passation-reference-saisie" />
+            <p className="text-xs text-[#7C93A8]">Méridian ne suit pas les tickets : il garde la référence pour relier la décision à son action et observer ses effets.</p>
+          </section>
 
           <section className="space-y-1.5">
             <label htmlFor="passation-revue" className={etiquette}>Revue le</label>

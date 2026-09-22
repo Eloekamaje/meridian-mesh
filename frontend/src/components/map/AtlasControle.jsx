@@ -210,6 +210,7 @@ export default function AtlasControle({
                 ["situations", "Situations", "#60A5FA"],
                 ["capacites", "Capacités", "#58A6FF"],
                 ["transformations", "Transformations", "#F2B84B"],
+                ["projets", "Projets (Jira)", "#93C5FD"],
               ].map(([id, label, coul]) => (
                 <button
                   key={id}
