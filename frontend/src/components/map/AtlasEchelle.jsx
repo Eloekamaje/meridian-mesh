@@ -68,16 +68,42 @@ export default function AtlasEchelle({ synthetique = null, domaines = null, sele
     const col = couleurs(r);
     const survol = survolRef.current;
 
+    // Loin, des milliers de liens individuels dessinés un par un ne sont qu'une pelote illisible — un trait
+    // épais et courbé, pondéré par leur VRAI nombre, dit la même chose (« ces deux zones sont reliées, fort ou
+    // faiblement ») sans le fouillis. `fondu` s'éteint en douceur À MESURE que les vrais liens (dessinés juste
+    // après, en dessous) deviennent lisibles seuls — jamais un saut d'un rendu à l'autre.
+    const fonduAgreges = r.fondu_agreges ?? 0;
+    if (r.liens_agreges?.length && fonduAgreges > 0.01) {
+      ctx.lineCap = "round";
+      const maxPoids = Math.max(1, ...r.liens_agreges.map((a) => a.poids));
+      for (const a of r.liens_agreges) {
+        const x1 = px(a.ax), y1 = py(a.ay), x2 = px(a.bx), y2 = py(a.by);
+        const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+        const nx = -(y2 - y1), ny = x2 - x1; // normale, pour bomber légèrement la courbe (jamais des traits raides qui se croisent)
+        const norme = Math.hypot(nx, ny) || 1;
+        const arc = Math.min(28, Math.hypot(x2 - x1, y2 - y1) * 0.06);
+        const cxm = mx + (nx / norme) * arc, cym = my + (ny / norme) * arc;
+        const part = a.poids / maxPoids;
+        ctx.globalAlpha = fonduAgreges * (0.18 + part * 0.42);
+        ctx.strokeStyle = "rgba(148,163,184,.9)";
+        ctx.lineWidth = 0.6 + Math.sqrt(part) * 3.2;
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.quadraticCurveTo(cxm, cym, x2, y2); ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+
     const pos = new Map(r.jumeaux.map((j) => [j.i, j]));
     const focus = survol?.type === "jumeau" ? survol.i : null;
     const voisins = new Set();
     if (focus != null) { voisins.add(focus); for (const e of r.liens || []) { if (e.source === focus) voisins.add(e.cible); if (e.cible === focus) voisins.add(e.source); } }
-    ctx.lineWidth = 1;
-    for (const e of r.liens || []) {
+    // Les vrais liens s'estompent tant que l'agrégat domine (`1 - fonduAgreges`) : jamais superposés à pleine
+    // force, jamais non plus complètement invisibles — la transition se voit, elle ne se devine pas.
+    const alphaReels = focus != null ? 1 : 1 - fonduAgreges;
+    if (alphaReels > 0.01) for (const e of r.liens || []) {
       const a = pos.get(e.source), b = pos.get(e.cible);
       if (!a || !b) continue;
       const incident = focus != null && (e.source === focus || e.cible === focus);
-      ctx.globalAlpha = focus == null ? 1 : incident ? 1 : 0.08;
+      ctx.globalAlpha = focus == null ? alphaReels : incident ? 1 : 0.08;
       ctx.strokeStyle = e.etat === 2 ? "rgba(96,165,250,.65)" : e.etat === 1 ? "rgba(96,165,250,.5)" : "rgba(148,163,184,.34)";
       ctx.lineWidth = incident ? 2 : 1;
       ctx.beginPath(); ctx.moveTo(px(a.x), py(a.y)); ctx.lineTo(px(b.x), py(b.y)); ctx.stroke();

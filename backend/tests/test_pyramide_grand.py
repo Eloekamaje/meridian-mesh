@@ -87,9 +87,12 @@ def test_aucun_domaine_ne_domine_l_amas_a_des_centaines():
         assert part_max < 0.05, f"graine {graine} : un domaine concentre {part_max:.1%} du Mesh"
 
 
-def test_les_territoires_des_domaines_ne_se_chevauchent_quasiment_jamais():
-    """Le rayon territorial d'un domaine (celui qu'occupent ses communautés) ne doit pas déborder sur son
-    voisin — sans quoi deux domaines se fondent visuellement en un seul amas, même à des centaines."""
+def test_les_territoires_des_domaines_restent_distincts():
+    """Le rayon territorial d'un domaine (celui qu'occupent ses communautés) ne doit pas massivement déborder
+    sur son voisin — sans quoi deux domaines se fondraient visuellement en un seul amas, même à des centaines.
+    Un peu de chevauchement reste ATTENDU : des communautés sont scindées entre deux domaines déclarés (écarts
+    de groupe, pas seulement individuels — voir `synthetique`), donc leur territoire calculé peut légèrement
+    déborder sur celui du domaine qui a reçu la part minoritaire."""
     p = pyramide.synthetique(200_000, 1, 300)
     v = p.niv[3]
     d = np.sqrt((v.x[:, None] - v.x[None, :]) ** 2 + (v.y[:, None] - v.y[None, :]) ** 2)
@@ -98,7 +101,7 @@ def test_les_territoires_des_domaines_ne_se_chevauchent_quasiment_jamais():
     chevauche = d < besoin * 0.85
     np.fill_diagonal(chevauche, False)
     part = int(chevauche.sum()) / 2 / (len(v.r) * (len(v.r) - 1) / 2)
-    assert part < 0.01
+    assert part < 0.08
 
 
 def test_aucun_domaine_a_zero_jumeau_meme_a_des_centaines():
@@ -165,3 +168,82 @@ def test_localiser_les_memes_coordonnees_que_le_rendu(api):
     loc = api.get(f"{BASE}/mesh/vue/localiser", params={"q": "3", "synthetique": 30_000, "domaines": 25}, headers=H).json()
     r = _vue(api, synthetique=30_000, domaines=25, zoom=1.5, x0=loc["x"] - 200, y0=loc["y"] - 200, x1=loc["x"] + 200, y1=loc["y"] + 200)
     assert any(j["i"] == 3 for j in r.json()["jumeaux"])
+
+
+# ---- domaine déclaré (BCM) vs communauté structurelle (calculée) : un vrai désaccord de GROUPE --------------
+def test_des_communautes_entieres_sont_partagees_entre_deux_domaines_declares():
+    """La position d'un jumeau vient de sa communauté (structurelle) ; son domaine déclaré n'en est pas
+    forcément le reflet — comme dans le vrai Mesh (« écart » = déclaré ≠ calculé). Une fraction NOTABLE des
+    communautés doit être scindée entre deux domaines de façon substantielle (pas seulement un jumeau isolé)."""
+    p = pyramide.synthetique(200_000, 1, 150)
+    par_com = {}
+    for c, d in zip(p.com.tolist(), p.dom.tolist()):
+        par_com.setdefault(c, {}).setdefault(d, 0)
+        par_com[c][d] += 1
+    scindees = []
+    for effectifs in par_com.values():
+        total = sum(effectifs.values())
+        if total < 10:
+            continue
+        minoritaire = sorted(effectifs.values())[-2] if len(effectifs) > 1 else 0
+        if minoritaire / total >= 0.2:  # au moins un cinquième de la communauté déclare un AUTRE domaine
+            scindees.append(minoritaire / total)
+    assert len(scindees) / len(par_com) > 0.05  # substantiel, pas anecdotique
+    assert p.ecart.mean() > 0.03  # l'écart (déclaré ≠ dominant calculé) s'en trouve mécaniquement plus fréquent
+
+
+def test_chaque_domaine_garde_au_moins_une_communaute_qui_lui_appartient_pleinement():
+    """Même avec des communautés scindées, un domaine reste toujours identifiable quelque part — jamais réduit
+    à zéro membre par le seul jeu du partage."""
+    for graine in (1, 2, 3, 4, 5):
+        p = pyramide.synthetique(150_000, graine, 400)
+        assert int((p.niv[3].taille == 0).sum()) == 0
+
+
+# ---- liens agrégés : loin, un trait pondéré plutôt qu'une pelote de milliers de traits ------------------------
+def fenetre(zoom, cx, cy, l=1400.0, h=900.0):
+    return cx - l / zoom / 2, cy - h / zoom / 2, cx + l / zoom / 2, cy + h / zoom / 2
+
+
+def _centre_dense(p):
+    v = p.niv[1]
+    i = int(np.argmax(v.taille))
+    return float(v.x[i]), float(v.y[i])
+
+
+def test_loin_les_liens_se_resument_pres_ils_redeviennent_reels():
+    p = pyramide.synthetique(1_000_000, 1, 150)
+    cx, cy = _centre_dense(p)
+    loin = p.vue(*fenetre(0.02, cx, cy), 0.02)
+    assert loin.get("liens_agreges") and loin["fondu_agreges"] == 1.0
+    assert len(loin["liens_agreges"]) <= pyramide.MAX_LIENS_AGREGES
+    assert all(a["poids"] >= 1 for a in loin["liens_agreges"])
+    proche = p.vue(*fenetre(1.2, cx, cy), 1.2)
+    assert "liens_agreges" not in proche  # assez lisible seul : plus besoin de résumer
+
+
+def test_le_poids_d_un_lien_agrege_est_un_vrai_decompte_pas_invente():
+    """Le total des poids agrégés ne peut pas dépasser le nombre de liens réellement échantillonnés — sinon
+    ce serait une invention, pas un résumé."""
+    p = pyramide.synthetique(300_000, 1, 100)
+    cx, cy = _centre_dense(p)
+    r = p.vue(*fenetre(0.015, cx, cy), 0.015)
+    assert sum(a["poids"] for a in r["liens_agreges"]) <= pyramide.ECHANTILLON_LIENS_AGREGES
+
+
+def test_le_fondu_s_annule_en_douceur_avant_de_disparaitre():
+    """Jamais un saut : le fondu descend continûment vers 0 avant que l'agrégat ne cesse d'être renvoyé."""
+    p = pyramide.synthetique(1_000_000, 1, 150)
+    cx, cy = _centre_dense(p)
+    fondus = []
+    for z in (0.5, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.94):
+        r = p.vue(*fenetre(z, cx, cy), z)
+        fondus.append(r.get("fondu_agreges", 0.0))
+    assert fondus == sorted(fondus, reverse=True)  # strictement décroissant avec le zoom
+    assert fondus[0] == 1.0 and fondus[-1] <= 0.05  # presque éteint juste avant le seuil suivant
+
+
+def test_liens_agreges_absent_si_rien_dans_la_fenetre():
+    p = pyramide.synthetique(50_000, 1, 20)
+    r = p.vue(1_000_000, 1_000_000, 1_000_100, 1_000_100, 0.01)  # loin de tout
+    assert r.get("liens_agreges", []) == []

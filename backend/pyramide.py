@@ -35,6 +35,18 @@ MAX_JUMEAUX = 20_000
 MAX_LIENS_JUMEAUX = 6000
 SCRUTIN_PRIORITE = 400_000  # au-delà de ce nombre de candidats scrutés par priorité, on s'arrête — borne le pire cas
 
+# Liens AGRÉGÉS entre grappes (communauté/groupe/domaine) : des milliers de liens individuels, dessinés un par
+# un, loin, ne sont qu'un fouillis illisible (une « pelote ») — ils ne disent rien de plus qu'un trait épais,
+# pondéré par leur VRAI nombre, entre les deux zones qu'ils relient. Ce n'est PAS une seconde vérité qui
+# remplacerait les jumeaux (ceux-ci restent toujours réels, voir plus haut) : seuls les LIENS se résument, aux
+# zooms où les montrer un par un n'apprendrait rien. Le niveau se resserre avec le zoom (domaine → groupe →
+# communauté) jusqu'à disparaître : dès que les vrais liens (toujours renvoyés, entre les jumeaux affichés)
+# suffisent à se lire seuls, l'agrégat s'efface — `fondu` transitionne l'un vers l'autre en douceur, jamais un
+# saut.
+MAX_LIENS_AGREGES = 260
+ECHANTILLON_LIENS_AGREGES = 30_000
+SEUILS_LIENS_AGREGES = ((0.045, 3), (0.16, 2), (0.5, 1))  # (zoom sous lequel ce niveau s'applique, niveau)
+
 
 # ---------------------------------------------------------------------------------------------
 # Communautés (Louvain) pour les jeux de taille modeste — les très gros jeux fournissent les leurs.
@@ -296,15 +308,71 @@ class Pyramide:
         """Vue bornée d'une fenêtre monde à un zoom donné : toujours de VRAIS jumeaux, jamais une grappe qui en
         tient lieu. Le nombre renvoyé ne dépend pas de n ; ce qui varie avec le zoom, c'est seulement combien on
         en montre — et un jumeau une fois montré le reste tant qu'il est dans la fenêtre (rang stable : on ne
-        « saute » jamais d'un rendu à l'autre, on se remplit)."""
+        « saute » jamais d'un rendu à l'autre, on se remplit). Les LIENS, eux, se résument tant que les montrer
+        un par un serait un fouillis illisible (`liens_agreges` : voir la constante `SEUILS_LIENS_AGREGES`) —
+        un trait épais et pondéré plutôt que des milliers de traits fins ; l'agrégat s'efface en douceur
+        (`fondu`) à mesure que les vrais liens, déjà renvoyés dans `liens`, deviennent lisibles seuls."""
         t0 = time.perf_counter()
         if self.n == 0:
             return {"mode": "vide", "jumeaux": [], "liens": [], "n_total": 0, "duree_ms": 0.0}
         idx = self.selection_prioritaire(x0, y0, x1, y1, MAX_JUMEAUX)
         rep: dict = {"n_total": self.n, "zoom": zoom}
         rep.update(self._jumeaux(idx, x0, y0, x1, y1))
+        niveau, fondu = self._niveau_liens_agreges(zoom)
+        if niveau:
+            rep["liens_agreges"] = self._liens_agreges(niveau, x0, y0, x1, y1)
+            rep["fondu_agreges"] = fondu
         rep["duree_ms"] = round((time.perf_counter() - t0) * 1000, 2)
         return rep
+
+    @staticmethod
+    def _niveau_liens_agreges(zoom: float) -> tuple[int, float]:
+        """Niveau d'agrégation des LIENS pour ce zoom (0 = aucun, les vrais liens suffisent), et un `fondu`
+        (1 → agrégat pleinement visible, 0 → transparent) qui s'annule progressivement juste avant le seuil
+        suivant : l'agrégat ne disparaît jamais d'un coup, il cède la place aux vrais liens en s'effaçant."""
+        for seuil, niveau in SEUILS_LIENS_AGREGES:
+            if zoom < seuil:
+                return niveau, 1.0
+        dernier_seuil = SEUILS_LIENS_AGREGES[-1][0]
+        largeur = dernier_seuil * 0.9
+        if zoom < dernier_seuil + largeur:
+            return SEUILS_LIENS_AGREGES[-1][1], max(0.0, 1.0 - (zoom - dernier_seuil) / largeur)
+        return 0, 0.0
+
+    def _liens_agreges(self, niveau: int, x0, y0, x1, y1) -> list:
+        """Traits agrégés entre grappes (niveau 1 = communauté, 2 = groupe, 3 = domaine) dont le territoire
+        touche la fenêtre : un trait par paire, pondéré par le nombre RÉEL de liens qui les relient — jamais
+        inventé, un vrai décompte, seulement résumé. Toujours calculé sur les liens de la fenêtre, indépendamment
+        du nombre de jumeaux réellement affichés (`selection_prioritaire` choisit les NŒUDS, ceci résume les
+        ARCS — les deux budgets sont séparés)."""
+        v = self.niv[niveau]
+        dans_fenetre = (v.taille > 0) & (v.x + v.r >= x0) & (v.x - v.r <= x1) & (v.y + v.r >= y0) & (v.y - v.r <= y1)
+        ids = np.nonzero(dans_fenetre)[0]
+        if ids.size == 0 or self.m == 0:
+            return []
+        el = self._lignes(self.edebut, self.eordre, x0, y0, x1, y1)
+        if el.size > ECHANTILLON_LIENS_AGREGES:
+            el = el[:: int(np.ceil(el.size / ECHANTILLON_LIENS_AGREGES))]
+        if el.size == 0:
+            return []
+        vers = self.com if niveau == 1 else (self.gid[self.com] if niveau == 2 else self.dom_c[self.com])
+        a, b = vers[self.ea[el]], vers[self.eb[el]]
+        pos = np.full(int(v.taille.shape[0]), -1, dtype=np.int32)
+        pos[ids] = np.arange(ids.size, dtype=np.int32)
+        pa, pb = pos[a], pos[b]
+        k = (pa >= 0) & (pb >= 0) & (pa != pb)
+        if not k.any():
+            return []
+        lo, hi = np.minimum(pa[k], pb[k]).astype(np.int64), np.maximum(pa[k], pb[k]).astype(np.int64)
+        cles, nb = np.unique(lo * 1_000_000 + hi, return_counts=True)
+        ordre = np.argsort(-nb)[:MAX_LIENS_AGREGES]
+        out = []
+        for i in ordre:
+            pl, ph = int(cles[i] // 1_000_000), int(cles[i] % 1_000_000)
+            ca, cb = int(ids[pl]), int(ids[ph])
+            out.append({"ax": round(float(v.x[ca]), 1), "ay": round(float(v.y[ca]), 1),
+                        "bx": round(float(v.x[cb]), 1), "by": round(float(v.y[cb]), 1), "poids": int(nb[i])})
+        return out
 
     def _jumeaux(self, idx: np.ndarray, x0, y0, x1, y1) -> dict:
         marque = np.zeros(self.n, dtype=bool)
@@ -428,8 +496,9 @@ def _disposer_domaines(fam: np.ndarray, rayon: np.ndarray) -> tuple[np.ndarray, 
 def synthetique(n: int, graine: int = 1, domaines: int = 8) -> Pyramide:
     """Jeu synthétique de n jumeaux (essais d'échelle, y compris des CENTAINES de domaines) : quelques domaines
     « hub » et beaucoup de petits (loi de puissance, comme une vraie entreprise), disposés en amas organique
-    (`_disposer_domaines`) plutôt qu'en grille ; communautés gaussiennes autour de leur domaine ; ~6 % d'écarts ;
-    liens surtout locaux à une communauté."""
+    (`_disposer_domaines`) plutôt qu'en grille ; communautés gaussiennes STRUCTURELLES (la position vient de la
+    communauté, jamais du domaine déclaré seul) ; ~20 % des communautés partagées entre deux domaines déclarés
+    (écarts de GROUPE, pas seulement individuels) ; liens surtout locaux à une communauté."""
     rng = np.random.default_rng(graine)
     C = max(n // 60, domaines * 2, 4)  # au moins 2 communautés par domaine : aucun domaine n'en reste sans, même à des centaines
     couleurs, fam = palette_domaines(domaines)
@@ -441,7 +510,12 @@ def synthetique(n: int, graine: int = 1, domaines: int = 8) -> Pyramide:
     # chaque domaine reçoit au moins une communauté garantie (sinon, à des centaines de domaines, une bonne
     # partie resterait à 0 jumeau par pur tirage) ; le reste se répartit selon le poids (quelques domaines hubs)
     dc = np.concatenate([np.arange(domaines), rng.choice(domaines, size=C - domaines, p=poids_dom / poids_dom.sum())])
-    rng.shuffle(dc)
+    # la communauté qui GARANTIT un domaine (les `domaines` premières valeurs ci-dessus, avant mélange) ne sera
+    # jamais scindée : un domaine reste toujours représenté par au moins une communauté qui lui appartient
+    # pleinement, même à des centaines de domaines où le hasard, sinon, en laisserait parfois sans aucun membre
+    garantie = np.concatenate([np.ones(domaines, dtype=bool), np.zeros(C - domaines, dtype=bool)])
+    permutation = rng.permutation(C)
+    dc, garantie = dc[permutation], garantie[permutation]
     comptes_dom = np.bincount(dc, minlength=domaines).astype(np.float64)
     rayon_dom = 210.0 * np.sqrt(np.maximum(comptes_dom, 1.0))
     ax, ay = _disposer_domaines(np.array(fam, dtype=np.int32), rayon_dom)
@@ -455,7 +529,17 @@ def synthetique(n: int, graine: int = 1, domaines: int = 8) -> Pyramide:
     cy = ay[dc] + rayon * np.sin(angle)
     com = rng.integers(0, C, n)
     x, y = cx[com] + rng.normal(0, 90, n), cy[com] + rng.normal(0, 90, n)
-    dom = np.where(rng.random(n) < 0.04, rng.integers(0, domaines, n), dc[com])
+    # Domaine DÉCLARÉ (BCM) vs communauté STRUCTURELLE (calculée sur les liens réels, ci-dessous) : la position
+    # d'un jumeau vient de sa communauté ; son domaine déclaré n'en est pas forcément le reflet exact. Environ
+    # un cinquième des communautés sont partagées entre DEUX domaines déclarés (une équipe technique organisée
+    # autrement que l'organigramme officiel) — un vrai désaccord de groupe, pas seulement le bruit individuel
+    # de quelques jumeaux isolés. C'est cet écart (déclaré ≠ dominant calculé) que l'Atlas signale déjà.
+    scindee = (rng.random(C) < 0.2) & ~garantie
+    dc2 = rng.integers(0, domaines, C)
+    part_secondaire = rng.uniform(0.25, 0.5, C)
+    vers_secondaire = scindee[com] & (rng.random(n) < part_secondaire[com])
+    dom = np.where(vers_secondaire, dc2[com], dc[com])
+    dom = np.where((~scindee[com]) & (rng.random(n) < 0.02), rng.integers(0, domaines, n), dom)  # bruit individuel résiduel
     m = n * 2
     ea = rng.integers(0, n, m)
     # 80 % des liens restent dans la communauté : on tire un voisin de même communauté via un tri par communauté
