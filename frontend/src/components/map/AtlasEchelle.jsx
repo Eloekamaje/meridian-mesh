@@ -29,7 +29,7 @@ export function cadrageInitial(n, l, h) {
   return { cx: cote / 2, cy: cote / 2, zoom: Math.min(l, h) / (cote * 1.1) };
 }
 
-export default function AtlasEchelle({ synthetique = null, domaines = null, selectionId = null, onChoisir, className = "" }) {
+export default function AtlasEchelle({ synthetique = null, domaines = null, selectionId = null, selectionIndex = null, onChoisir, className = "" }) {
   const cadre = useRef(null);
   const canvas = useRef(null);
   const vue = useRef({ cx: 0, cy: 0, zoom: 1 });
@@ -41,7 +41,7 @@ export default function AtlasEchelle({ synthetique = null, domaines = null, sele
   const propsRef = useRef({});
   const [stats, setStats] = useState(null);
   const [apercu, setApercu] = useState(null);
-  propsRef.current = { synthetique, domaines, selectionId, onChoisir };
+  propsRef.current = { synthetique, domaines, selectionId, selectionIndex, onChoisir };
 
   // Une couleur par domaine : celle que le serveur fournit (essai d'échelle à des centaines de domaines — voir
   // pyramide.palette_domaines) si elle est là, sinon la palette fixe historique du Mesh réel (repli).
@@ -84,16 +84,25 @@ export default function AtlasEchelle({ synthetique = null, domaines = null, sele
         const arc = Math.min(28, Math.hypot(x2 - x1, y2 - y1) * 0.06);
         const cxm = mx + (nx / norme) * arc, cym = my + (ny / norme) * arc;
         const part = a.poids / maxPoids;
-        ctx.globalAlpha = fonduAgreges * (0.18 + part * 0.42);
-        ctx.strokeStyle = "rgba(148,163,184,.9)";
-        ctx.lineWidth = 0.6 + Math.sqrt(part) * 3.2;
+        // Discrets : les COMMUNAUTÉS (les points) restent le premier plan — les arcs ne font que suggérer le
+        // trafic entre elles, jamais lui faire concurrence visuellement.
+        ctx.globalAlpha = fonduAgreges * (0.05 + part * 0.22);
+        ctx.strokeStyle = "rgba(148,163,184,.85)";
+        ctx.lineWidth = 0.5 + Math.sqrt(part) * 1.7;
         ctx.beginPath(); ctx.moveTo(x1, y1); ctx.quadraticCurveTo(cxm, cym, x2, y2); ctx.stroke();
       }
       ctx.globalAlpha = 1;
     }
 
     const pos = new Map(r.jumeaux.map((j) => [j.i, j]));
-    const focus = survol?.type === "jumeau" ? survol.i : null;
+    // Le focus vient du survol (passager) OU du jumeau SÉLECTIONNÉ (persistant — le panneau reste ouvert une
+    // fois qu'on a bougé la souris) : même comportement qu'un clic dans l'Atlas réel, ses connexions restent
+    // en évidence tant qu'il est ouvert, pas seulement pendant qu'on pointe dessus.
+    // Un jumeau synthétique n'a pas d'id réel (`selectionIndex`, son numéro, sert alors de repère) ; un
+    // jumeau du vrai Mesh se retrouve par son id (`selectionId`).
+    const { selectionId: selId, selectionIndex: selIdx } = propsRef.current;
+    const focusSelection = selIdx != null ? selIdx : selId ? r.jumeaux.find((j) => j.id === selId)?.i ?? null : null;
+    const focus = survol?.type === "jumeau" ? survol.i : focusSelection;
     const voisins = new Set();
     if (focus != null) { voisins.add(focus); for (const e of r.liens || []) { if (e.source === focus) voisins.add(e.cible); if (e.cible === focus) voisins.add(e.source); } }
     // Les vrais liens s'estompent tant que l'agrégat domine (`1 - fonduAgreges`) : jamais superposés à pleine
@@ -118,6 +127,7 @@ export default function AtlasEchelle({ synthetique = null, domaines = null, sele
       const dim = focus != null && !voisins.has(j.i);
       ctx.globalAlpha = dim ? 0.2 : 1;
       const x = px(j.x), y = py(j.y);
+      const estSelectionne = j.i === propsRef.current.selectionIndex || (!!j.id && j.id === propsRef.current.selectionId);
       if (haut < SEUIL_SPRITE) {
         // Loin : un point minuscule (fillRect, le moins cher possible — des dizaines de milliers par image).
         ctx.fillStyle = j.alerte ? ORANGE : j.ecart ? VIOLET : col(j.dom);
@@ -128,12 +138,12 @@ export default function AtlasEchelle({ synthetique = null, domaines = null, sele
         if (spr) ctx.drawImage(spr, x - haut * 0.326, y - haut / 2, haut * 0.652, haut);
         else { ctx.beginPath(); ctx.arc(x, y, haut * 0.3, 0, 6.2832); ctx.fillStyle = col(j.dom); ctx.fill(); }
         if (j.ecart || j.alerte) { ctx.beginPath(); ctx.arc(x, y, Math.max(4, haut * 0.42), 0, 6.2832); ctx.strokeStyle = j.alerte ? ORANGE : VIOLET; ctx.lineWidth = 1.5; ctx.setLineDash(j.alerte ? [] : [4, 3]); ctx.stroke(); ctx.setLineDash([]); }
-        if (j.id && (haut >= 36 || j.i === focus || j.id === propsRef.current.selectionId)) {
+        if (j.id && (haut >= 36 || j.i === focus || estSelectionne)) {
           ctx.fillStyle = "rgba(216,226,234,.95)"; ctx.font = "600 10px 'JetBrains Mono', monospace"; ctx.textAlign = "center";
           ctx.fillText(idNumerique(j.id), x, y + haut / 2 + 11);
         }
       }
-      if (j.id && j.id === propsRef.current.selectionId) { ctx.beginPath(); ctx.arc(x, y, Math.max(8, haut * 0.6), 0, 6.2832); ctx.strokeStyle = "#60A5FA"; ctx.lineWidth = 2; ctx.stroke(); }
+      if (estSelectionne) { ctx.beginPath(); ctx.arc(x, y, Math.max(8, haut * 0.6), 0, 6.2832); ctx.strokeStyle = "#60A5FA"; ctx.lineWidth = 2; ctx.stroke(); }
       ctx.globalAlpha = 1;
     }
   }, [couleurs]);
@@ -253,7 +263,7 @@ export default function AtlasEchelle({ synthetique = null, domaines = null, sele
     };
   }, [synthetique, domaines, cible, dessiner, planifier, voler]);
 
-  useEffect(() => { dessiner(); }, [selectionId, dessiner]);
+  useEffect(() => { dessiner(); }, [selectionId, selectionIndex, dessiner]);
 
   return (
     <div ref={cadre} className={`relative h-full w-full ${className}`} data-testid="atlas-echelle" style={{ backgroundColor: "#071019", backgroundImage: "radial-gradient(rgba(148,163,184,0.13) 1px, transparent 1px)", backgroundSize: "26px 26px" }}>

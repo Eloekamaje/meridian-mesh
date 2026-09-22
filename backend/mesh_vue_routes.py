@@ -121,6 +121,7 @@ def build_mesh_vue_router(deps: dict) -> APIRouter:
         detail = _detail_jumeau_synthetique(i, dom_nom, graine)
         detail.update({
             "id": f"synth-{synthetique}-{domaines}-{graine}-{i}",
+            "i": i,  # index dans le jeu synthétique — sert à retrouver ce jumeau dans une vue (il n'a pas d'id réel)
             "domaine": dom_nom,
             "degre": int(p.degre[i]),
             "ecart": bool(p.ecart[i]),

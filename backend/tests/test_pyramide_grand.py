@@ -141,10 +141,11 @@ def test_detail_d_un_jumeau_a_la_forme_d_un_jumeau_reel(api):
     r = api.get(f"{BASE}/mesh/vue/jumeau", params={"i": 12, "synthetique": 80_000, "domaines": 90}, headers=H)
     assert r.status_code == 200
     d = r.json()
-    for champ in ("id", "nom", "domaine", "mission", "proprietaire", "statut", "autonomie", "couverture", "fraicheur", "capacites", "sources_detail", "degre"):
+    for champ in ("id", "i", "nom", "domaine", "mission", "proprietaire", "statut", "autonomie", "couverture", "fraicheur", "capacites", "sources_detail", "degre"):
         assert champ in d
     assert d["domaine"] in [f"Domaine {i + 1}" for i in range(90)]
     assert 0 <= d["couverture"] <= 100
+    assert d["i"] == 12  # retrouver ce jumeau dans une vue (il n'a pas d'id réel, contrairement à un jumeau du vrai Mesh)
 
 
 def test_detail_d_un_jumeau_est_stable_et_hors_bornes_refuse(api):

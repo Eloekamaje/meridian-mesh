@@ -122,7 +122,7 @@ export default function LaboAtlasEtendu() {
   return (
     <div className="relative flex h-full min-h-0 w-full" data-testid="labo-atlas-etendu">
       <div className="relative min-h-0 min-w-0 flex-1">
-        <AtlasEchelle key={cleAtlas} synthetique={n} domaines={domaines} selectionId={selection?.id || null} onChoisir={choisir} />
+        <AtlasEchelle key={cleAtlas} synthetique={n} domaines={domaines} selectionId={selection?.id || null} selectionIndex={selection?.i ?? null} onChoisir={choisir} />
 
         {/* Bandeau du laboratoire — n, domaines, graine, recherche */}
         <div className="glass pointer-events-auto absolute left-3 top-3 z-10 w-[300px] space-y-2.5 rounded-xl p-3" data-testid="labo-atlas-etendu-hud">
