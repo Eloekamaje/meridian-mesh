@@ -23,7 +23,8 @@ const FIXTURES_PAR_PROFIL = { gestionnaire: FIXTURES_GESTIONNAIRE };
 export const RYTHME = {
   lectureMin: 2500,
   lectureParMot: 190,
-  frappeMsParLot: 18, // 3 caractères par lot (télétype)
+  frappeMsParLot: 18, // 3 caractères par lot (télétype de Flore — laisse la marge de lecture faire le reste)
+  frappeHumaineMsParLot: 55, // 2 caractères par lot (~27 car/s) : une frappe humaine qu'on a le temps de lire en direct
   opMin: 800,
   opMax: 1100,
   transitionSurface: 400,
@@ -161,20 +162,18 @@ function MoteurSession({ scenario, fixtures, onAccueil, children }) {
       case "message": {
         const premiereDemande = ouvertureFaite.current && etat.stepIndex === 0 && etat.beatIndex === 0;
         if (beat.speaker === "persona" && !premiereDemande) {
-          // Frappe simulée dans le composer réel, puis envoi (pausable : une seule horloge)
+          // Frappe simulée dans le composer réel (rythme humain, lisible en direct) ; une fois
+          // tapé, le message reste EN ATTENTE — c'est le clic du visiteur (envoyerSaisie) qui
+          // l'envoie, jamais un timer (interactif : chaque réplique du profil démo se mérite un clic).
           const tape = (i) => {
             if (i > beat.text.length) {
-              planifier(500, () => {
-                setEtat((e) => ({ ...e, saisie: null }));
-                ajouterMessage(step, etat.beatIndex, beat);
-                planifier(1200, avancer);
-              });
+              setEtat((e) => ({ ...e, saisie: { texte: beat.text, enFrappe: false } }));
               return;
             }
             setEtat((e) => ({ ...e, saisie: { texte: beat.text.slice(0, i), enFrappe: true } }));
-            planifier(RYTHME.frappeMsParLot, () => tape(i + 3));
+            planifier(RYTHME.frappeHumaineMsParLot, () => tape(i + 2));
           };
-          tape(3);
+          tape(2);
           break;
         }
         ajouterMessage(step, etat.beatIndex, beat);
@@ -328,20 +327,35 @@ function MoteurSession({ scenario, fixtures, onAccueil, children }) {
     frappeOuverture.current = true;
     const tape = (i) => {
       if (i > texteOuverture.length) {
-        planifier(700, () => {
-          frappeOuverture.current = false;
-          ouvertureFaite.current = true;
-          setEtat((e) => ({ ...e, status: "playing", saisie: null }));
-        });
+        // Tapé en entier : on attend le clic du visiteur (envoyerSaisie), jamais un envoi automatique.
+        frappeOuverture.current = false;
+        setEtat((e) => (e.saisie ? { ...e, saisie: { texte: texteOuverture, enFrappe: false } } : e));
         return;
       }
       setEtat((e) => (e.saisie ? { ...e, saisie: { texte: texteOuverture.slice(0, i), enFrappe: true } } : e));
-      planifier(RYTHME.frappeMsParLot, () => tape(i + 3));
+      planifier(RYTHME.frappeHumaineMsParLot, () => tape(i + 2));
     };
-    tape(3);
+    tape(2);
     return () => effacerTimer();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [etat.status, texteOuverture]);
+
+  // Envoi humain forcé : le visiteur clique le bouton d'envoi du composer réel une fois la
+  // frappe (simulée) terminée — aucune réplique du profil démo ne part toute seule sur un timer.
+  const envoyerSaisie = useCallback(() => {
+    if (!etat.saisie || etat.saisie.enFrappe) return;
+    if (etat.status === "opening_typing") {
+      ouvertureFaite.current = true;
+      setEtat((e) => ({ ...e, saisie: null, status: "playing" }));
+      return;
+    }
+    if (etat.status !== "playing") return;
+    const step = scenario.steps[etat.stepIndex];
+    const beat = step.beats[etat.beatIndex];
+    ajouterMessage(step, etat.beatIndex, beat);
+    setEtat((e) => ({ ...e, saisie: null }));
+    planifier(1200, avancer);
+  }, [etat.saisie, etat.status, etat.stepIndex, etat.beatIndex, scenario, ajouterMessage, planifier, avancer]);
 
   useEffect(
     () => () => {
@@ -568,6 +582,7 @@ function MoteurSession({ scenario, fixtures, onAccueil, children }) {
       saisie: etat.saisie,
       ouvertureEnAttente: etat.status === "awaiting_opening",
       demarrerOuverture,
+      envoyerSaisie,
       ouvrirPreuve,
       scenario,
       versionTravaux,
@@ -576,7 +591,7 @@ function MoteurSession({ scenario, fixtures, onAccueil, children }) {
       documentGenere: etat.documentGenere,
       canvasOuvert: etat.canvasOuvert,
     }),
-    [etat.messages, etat.activites, etat.preparation, etat.status, etat.saisie, etat.documentGenere, etat.canvasOuvert, fixtures, scenario, versionTravaux, demarrerOuverture, ouvrirPreuve]
+    [etat.messages, etat.activites, etat.preparation, etat.status, etat.saisie, etat.documentGenere, etat.canvasOuvert, fixtures, scenario, versionTravaux, demarrerOuverture, envoyerSaisie, ouvrirPreuve]
   );
 
   return (

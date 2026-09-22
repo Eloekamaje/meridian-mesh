@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Sparkle, PaperPlaneRight, FileText, X, Plus, Eye, Lightning, FolderOpen, ArrowUp, ArrowRight, Compass } from "@phosphor-icons/react";
+import { Sparkle, PaperPlaneRight, FileText, X, Plus, Eye, Lightning, FolderOpen, ArrowRight, Compass } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import TrustBadges from "./TrustBadges";
@@ -877,52 +877,9 @@ export default function FlorePanel() {
         )}
       </div>
 
-      {/* Suggestions + composer (adapté en démonstration pilotée pour visualiser la frappe) */}
-      {pilote ? (
-        <div className="shrink-0 border-t border-[rgba(148,163,184,0.16)] bg-[#0A1520]/95 px-4 py-3 backdrop-blur-md">
-          <div
-            className={`relative rounded-xl border bg-[#0F1D28] p-2.5 transition-all ${
-              pilote.saisieUtilisateur
-                ? "border-[#60A5FA]/50 ring-2 ring-[#60A5FA]/20 shadow-lg shadow-[#60A5FA]/10"
-                : "border-[rgba(148,163,184,0.16)]"
-            }`}
-            data-testid="flore-composer-panel"
-          >
-            <div className="flex items-end gap-2">
-              <div className="min-h-[36px] flex-1 px-2.5 py-1 text-xs">
-                {pilote.saisieUtilisateur ? (
-                  <p className="leading-relaxed text-[#F8FAFC]">
-                    {pilote.saisieUtilisateur.texteAffiche}
-                    {pilote.saisieUtilisateur.statut === "typing" && (
-                      <span className="curseur-teletype ml-0.5 text-[#60A5FA] animate-pulse">▍</span>
-                    )}
-                  </p>
-                ) : (
-                  <p className="select-none text-[#64748B] italic">
-                    Posez une question à Flore sur le SI…
-                  </p>
-                )}
-              </div>
-              <button
-                type="button"
-                disabled={!pilote.saisieUtilisateur}
-                aria-label="Envoyer"
-                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-all ${
-                  pilote.saisieUtilisateur?.statut === "sent"
-                    ? "bg-emerald-500 text-white scale-95"
-                    : pilote.saisieUtilisateur?.statut === "ready"
-                    ? "bg-[#60A5FA] text-[#071019] scale-105 shadow-md shadow-[#60A5FA]/40 animate-pulse"
-                    : pilote.saisieUtilisateur?.statut === "typing"
-                    ? "bg-[#60A5FA]/80 text-[#071019]"
-                    : "bg-[#1E293B] text-[#475569] opacity-40 cursor-default"
-                }`}
-              >
-                <ArrowUp size={14} weight="bold" />
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : (
+      {/* Suggestions + composer — inatteignable en démonstration pilotée (pilote.ouvert est toujours
+          false : la conversation de démo vit dans « Nouveau travail » puis « Travail », pas ici) */}
+      {!pilote && (
       <div className="shrink-0 border-t border-[rgba(148,163,184,0.16)] px-4 py-3">
         {selection.length > 0 && (
           <div className="mb-2.5 flex flex-wrap items-center gap-1.5" data-testid="flore-deleguer">

@@ -4,7 +4,7 @@ import { HandPointing } from "@phosphor-icons/react";
 // Invitation au geste dans la démonstration : une main index qui tapote à droite du bouton visé,
 // avec une bulle. À placer dans un conteneur `relative` qui entoure le bouton.
 // Purement visuel : ne capte aucun clic (le bouton dessous reste l'élément cliquable).
-export default function IndicateurClic({ texte = "Commencez ici", testid = "indicateur-clic" }) {
+export default function IndicateurClic({ texte = "Commencez ici", sousTexte = "Cliquez sur « Nouveau travail »", testid = "indicateur-clic" }) {
   const reduit = useReducedMotion();
   return (
     <div className="pointer-events-none absolute left-full top-1/2 z-50 ml-3 flex -translate-y-1/2 items-center gap-2" data-testid={testid} role="note">
@@ -20,7 +20,7 @@ export default function IndicateurClic({ texte = "Commencez ici", testid = "indi
       </motion.span>
       <span className="hidden whitespace-nowrap rounded-lg border sm:block border-[#60A5FA]/40 bg-[#0F1D28] px-2.5 py-1.5 shadow-lg">
         <span className="block font-code text-[9px] uppercase tracking-[0.2em] text-[#60A5FA]">{texte}</span>
-        <span className="block text-[11px] leading-snug text-[#D8E2EA]">Cliquez sur « Nouveau travail »</span>
+        <span className="block text-[11px] leading-snug text-[#D8E2EA]">{sousTexte}</span>
       </span>
     </div>
   );

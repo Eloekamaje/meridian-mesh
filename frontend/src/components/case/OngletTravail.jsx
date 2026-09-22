@@ -29,6 +29,7 @@ import { useContexte } from "@/lib/contexte";
 import { CREATION_TRAVAIL_ACTIVE, FLORE_REPONSE_EN_CONSTRUCTION, PROPOSITION_DEMO } from "@/lib/messagesFlore";
 import FloreActivite, { delaiMin, activiteTerminee } from "@/components/FloreActivite";
 import LigneActiviteFlore from "@/components/LigneActiviteFlore";
+import IndicateurClic from "@/components/IndicateurClic";
 import { usePilotage } from "@/lib/pilotage";
 import { useEcran } from "@/lib/ecran";
 import { rel } from "./utils";
@@ -123,6 +124,7 @@ const REPONSES_JOUEES = new Set();
 
 // Déroulé progressif de la réponse de Flore (démonstration : message publié en direct). Même cadence
 // que le moteur (3 caractères / 18 ms) ; gelé pendant la pause ; cartes et document après le texte.
+// `animer` distingue « en train de s'écrire » (curseur visible) d'une réponse déjà ancienne, révélée d'un bloc.
 function useDeroule(message, pilote) {
   const total = (message.texte || "").length;
   const cle = message.quand;
@@ -206,6 +208,9 @@ export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif }) {
           <p key={idx} dangerouslySetInnerHTML={{ __html: formaterGrasCode(ligne) }} />
         );
       })}
+
+      {/* Curseur clignotant : Flore est encore en train d'écrire (sinon, rien ne le distingue d'une lecture) */}
+      {!fini && <span className="curseur-teletype -mt-2 inline-block">▍</span>}
 
       {/* Pipeline architectural horizontal */}
       {fini && montrePipeline && <PipelineArchitecture />}
@@ -908,9 +913,19 @@ export default function OngletTravail({
         {/* COMPOSITEUR DE PROMPT FLOTTANT (Style ChatGPT / Claude)                    */}
         {/* ========================================================================= */}
         <div className="shrink-0 p-4 pb-5" data-testid="case-composer-zone">
-          <form onSubmit={envoyer} className="mx-auto max-w-3xl">
+          {(() => {
+            // Démo interactive : une fois la réplique tapée, elle reste EN ATTENTE — c'est le clic
+            // du visiteur sur « Envoyer » qui la publie, jamais un timer (à chaque réplique du profil démo).
+            const pretAEnvoyer = !!pilote?.saisie && !pilote.saisie.enFrappe;
+            const soumettre = (e) => {
+              e?.preventDefault?.();
+              if (pilote) { if (pretAEnvoyer) pilote.envoyerSaisie(); return; }
+              envoyer(e);
+            };
+            return (
+          <form onSubmit={soumettre} className="mx-auto max-w-3xl">
             <div className="flex items-center gap-2 rounded-2xl border border-white/[0.12] bg-[#0A131C]/90 px-3.5 py-2.5 shadow-2xl backdrop-blur-xl transition-colors focus-within:border-blue-400/60">
-              
+
               {/* Bouton + pour outils / pièces jointes */}
               <button
                 type="button"
@@ -928,7 +943,7 @@ export default function OngletTravail({
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
-                    envoyer(e);
+                    soumettre(e);
                   }
                 }}
                 placeholder={pilote ? "Conversation de démonstration" : ecran === "mobile" ? "Posez une question…" : "Posez une question à Flore et aux jumeaux du SI…"}
@@ -951,22 +966,27 @@ export default function OngletTravail({
                 <Microphone size={16} />
               </button>
 
-              {/* Bouton d'envoi vibrant */}
-              <button
-                type="submit"
-                disabled={!!pilote || envoiMsg || !nouveauMsg.trim()}
-                data-testid="case-msg-send-btn"
-                title="Envoyer le message"
-                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl transition-all ${
-                  (pilote ? pilote.saisie?.texte : nouveauMsg.trim()) && !envoiMsg
-                    ? "bg-[#60A5FA] text-[#071019] shadow-md shadow-[#60A5FA]/20 hover:scale-105"
-                    : "bg-white/[0.05] text-[#475569] opacity-30 cursor-not-allowed"
-                }`}
-              >
-                <ArrowUp size={16} weight="bold" />
-              </button>
+              {/* Bouton d'envoi vibrant — en démo, l'index humain pointe dessus une fois la réplique prête */}
+              <div className="relative shrink-0">
+                <button
+                  type="submit"
+                  disabled={pilote ? !pretAEnvoyer : envoiMsg || !nouveauMsg.trim()}
+                  data-testid="case-msg-send-btn"
+                  title="Envoyer le message"
+                  className={`flex h-8 w-8 items-center justify-center rounded-xl transition-all ${
+                    (pilote ? pretAEnvoyer : nouveauMsg.trim() && !envoiMsg)
+                      ? `bg-[#60A5FA] text-[#071019] shadow-md shadow-[#60A5FA]/20 hover:scale-105${pretAEnvoyer ? " animate-pulse" : ""}`
+                      : "bg-white/[0.05] text-[#475569] opacity-30 cursor-not-allowed"
+                  }`}
+                >
+                  <ArrowUp size={16} weight="bold" />
+                </button>
+                {pretAEnvoyer && <IndicateurClic texte="Prêt" sousTexte="Cliquez pour envoyer" testid="indicateur-clic-envoyer" />}
+              </div>
             </div>
           </form>
+            );
+          })()}
         </div>
       </div>
 
