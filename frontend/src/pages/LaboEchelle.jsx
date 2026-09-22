@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Flask, MagnifyingGlass, Play } from "@phosphor-icons/react";
 import { ETATS_RELATION } from "@/lib/domaines";
-import { chargerSprites } from "@/lib/spritesRobot";
+import { ecouterSprites, spriteRobot } from "@/lib/spritesRobot";
 import {
   COULEURS_DOMAINES, NOMS_DOMAINES, ZOOM_NOEUDS, construireIndex, genererGrand, grappesVisibles,
   liensGrappes, liensNoeuds, niveauPour, noeudsVisibles, plusProche,
@@ -27,7 +27,6 @@ export default function LaboEchelle() {
   const idx = useRef(null); // index courant (tableaux typés : jamais dans l'état React)
   const vue = useRef({ cx: 0, cy: 0, zoom: 1 });
   const taille = useRef({ W: 800, H: 600, dpr: 1 });
-  const sprites = useRef([]);
   const sale = useRef(true);
   const dernier = useRef({ niv: 0, grappes: [], vis: [], liens: 0 });
   const chronos = useRef([]);
@@ -120,7 +119,7 @@ export default function LaboEchelle() {
       const surv = survolRef.current;
       vis.forEach((i) => {
         const px = sx(g.x[i]), py = sy(g.y[i]);
-        const sp = sprites.current[g.dom[i]];
+        const sp = spriteRobot(COULEURS_DOMAINES[g.dom[i]]);
         if (sp) ctx.drawImage(sp, px - w / 2, py - h / 2, w, h);
         else { ctx.beginPath(); ctx.arc(px, py, h * 0.25, 0, 6.2832); ctx.fillStyle = COULEURS_DOMAINES[g.dom[i]]; ctx.fill(); }
         if (i === surv || i === selRef.current) {
@@ -190,7 +189,7 @@ export default function LaboEchelle() {
     return () => ro.disconnect();
   }, []);
 
-  useEffect(() => { chargerSprites().then((s) => { sprites.current = s; marquer(); }); }, []);
+  useEffect(() => ecouterSprites(marquer), []);
 
   // ---- Caméra -----------------------------------------------------------------------------------
   const toutVoir = useCallback((instant = false) => {

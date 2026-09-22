@@ -396,21 +396,107 @@ def depuis_mesh(jumeaux: list[dict], relations: list[dict], en_alerte=()) -> Pyr
     return Pyramide(px, py, dom, com, ea_a, eb_a, etat, ecart, alerte, noms_domaines=domaines, ids=ids)
 
 
+def _hex_hsl(h: float, s: float, l: float) -> str:
+    """HSL (0-360, 0-1, 0-1) → « #RRGGBB »."""
+    h = h % 360.0
+    c = (1.0 - abs(2.0 * l - 1.0)) * s
+    x = c * (1.0 - abs((h / 60.0) % 2.0 - 1.0))
+    m = l - c / 2.0
+    r, g, b = ((c, x, 0.0), (x, c, 0.0), (0.0, c, x), (0.0, x, c), (x, 0.0, c), (c, 0.0, x))[int(h // 60) % 6]
+    return "#{:02X}{:02X}{:02X}".format(round((r + m) * 255), round((g + m) * 255), round((b + m) * 255))
+
+
+def palette_domaines(D: int) -> tuple[list[str], list[int]]:
+    """Une couleur par domaine, groupée par FAMILLE : la famille se reconnaît d'un coup d'œil (même teinte,
+    posée sur ~√D emplacements également espacés sur le cercle), chaque domaine s'en distingue par une nuance
+    (luminosité, saturation). Déterministe — ne dépend que de D, jamais de la graine ni de n."""
+    if D <= 0:
+        return [], []
+    nfam = max(1, round(D ** 0.5))
+    fam = [i % nfam for i in range(D)]  # entrelacé : deux domaines de la même famille ne sont pas des voisins numériques
+    couleurs = []
+    for i in range(D):
+        f = fam[i]
+        rang = i // nfam  # position de ce domaine au sein de sa famille
+        teinte = 360.0 * f / nfam
+        nuance = (rang * 0.6180339887) % 1.0  # suite additive au nombre d'or : les nuances d'une famille ne s'alignent jamais
+        sat = 0.52 + 0.24 * nuance
+        lum = 0.40 + 0.26 * ((rang * 0.3819660113) % 1.0)
+        couleurs.append(_hex_hsl(teinte, sat, lum))
+    return couleurs, fam
+
+
+def _disposer_domaines(fam: np.ndarray, rayon: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Centres des domaines par une DOUBLE SPIRALE DE VOGEL (tournesol) : angle d'or, rayon en racine carrée du
+    rang — la même technique qui place déjà les jumeaux au sein d'un domaine (`frontend/src/lib/laboEchelle.js`,
+    « spirales de Vogel »), appliquée ici au niveau des DOMAINES pour ne jamais retomber sur une grille de
+    territoires. Chaque FAMILLE occupe d'abord un bras de la spirale grossière (elle reste reconnaissable, un
+    amas cohérent) ; à l'intérieur, ses domaines se placent sur une petite spirale locale autour du centre de la
+    famille. Purement déterministe (aucune graine) et bornée : l'étendue totale croît avec la RACINE du nombre
+    de domaines, jamais en pointe isolée comme peut le faire une simulation de forces mal amortie."""
+    D = fam.shape[0]
+    if D <= 1:
+        return np.zeros(D, dtype=np.float32), np.zeros(D, dtype=np.float32)
+    ANGLE_OR = 2.399963  # angle d'or (rad) : deux rangs consécutifs ne s'alignent jamais
+    nfam = int(fam.max()) + 1
+    masse_fam = np.bincount(fam, weights=rayon ** 2, minlength=nfam)  # une famille à beaucoup de gros domaines pèse plus
+    rayon_fam = np.sqrt(masse_fam / np.pi) * 1.7 + 40.0
+    pas_fam = 2.6 * float(np.median(rayon_fam))
+    kf = np.arange(nfam)
+    cx_fam = pas_fam * np.sqrt(kf + 0.5) * np.cos(kf * ANGLE_OR)
+    cy_fam = pas_fam * np.sqrt(kf + 0.5) * np.sin(kf * ANGLE_OR)
+    x, y = np.zeros(D, dtype=np.float64), np.zeros(D, dtype=np.float64)
+    ordre = np.argsort(fam, kind="stable")
+    fam_o, rayon_o = fam[ordre], rayon[ordre]
+    debut = np.searchsorted(fam_o, np.arange(nfam), side="left")
+    fin = np.searchsorted(fam_o, np.arange(nfam), side="right")
+    for f in range(nfam):
+        i0, i1 = int(debut[f]), int(fin[f])
+        if i1 <= i0:
+            continue
+        rl = rayon_o[i0:i1]
+        pas_local = 2.3 * float(np.median(rl))
+        k = np.arange(i1 - i0)
+        rr = pas_local * np.sqrt(k + 0.5)
+        aa = k * ANGLE_OR
+        x[i0:i1] = cx_fam[f] + rr * np.cos(aa)
+        y[i0:i1] = cy_fam[f] + rr * np.sin(aa)
+    out_x, out_y = np.zeros(D, dtype=np.float32), np.zeros(D, dtype=np.float32)
+    out_x[ordre], out_y[ordre] = x.astype(np.float32), y.astype(np.float32)
+    return out_x, out_y
+
+
 def synthetique(n: int, graine: int = 1, domaines: int = 8) -> Pyramide:
-    """Jeu synthétique de n jumeaux (essais d'échelle) : communautés gaussiennes, ~6 % d'écarts, liens surtout locaux."""
+    """Jeu synthétique de n jumeaux (essais d'échelle, y compris des CENTAINES de domaines) : quelques domaines
+    « hub » et beaucoup de petits (loi de puissance, comme une vraie entreprise), disposés en amas organique
+    (`_disposer_domaines`) plutôt qu'en grille ; communautés gaussiennes autour de leur domaine ; ~6 % d'écarts ;
+    liens surtout locaux à une communauté."""
     rng = np.random.default_rng(graine)
-    C = max(n // 60, 4)
-    cote = 900.0 * np.sqrt(C)
-    # chaque domaine occupe un territoire (case d'une grille) : ses communautés s'y répartissent
-    gd = int(np.ceil(np.sqrt(domaines)))
-    case = cote / gd
-    dc = rng.integers(0, domaines, C)
-    angle, rayon = rng.uniform(0, 2 * np.pi, C), 0.40 * case * np.sqrt(rng.uniform(0, 1, C))
-    cx = (dc % gd + 0.5) * case + rayon * np.cos(angle)
-    cy = (dc // gd + 0.5) * case + rayon * np.sin(angle)
+    C = max(n // 60, domaines * 2, 4)  # au moins 2 communautés par domaine : aucun domaine n'en reste sans, même à des centaines
+    couleurs, fam = palette_domaines(domaines)
+    # Loi de puissance MAIS bornée : sans plafond, une poignée de domaines (Pareto a la queue très lourde)
+    # peut avaler la moitié du Mesh — réaliste à 8 domaines, dégénéré à des centaines (plus de « galaxie »,
+    # un seul astre géant et de la poussière). Le plafond absolu laisse quelques domaines hubs nettement plus
+    # gros que la moyenne sans qu'aucun n'écrase visuellement tous les autres, quel que soit leur nombre.
+    poids_dom = np.clip(rng.pareto(1.2, domaines) + 0.5, 0.1, 6.0)
+    # chaque domaine reçoit au moins une communauté garantie (sinon, à des centaines de domaines, une bonne
+    # partie resterait à 0 jumeau par pur tirage) ; le reste se répartit selon le poids (quelques domaines hubs)
+    dc = np.concatenate([np.arange(domaines), rng.choice(domaines, size=C - domaines, p=poids_dom / poids_dom.sum())])
+    rng.shuffle(dc)
+    comptes_dom = np.bincount(dc, minlength=domaines).astype(np.float64)
+    rayon_dom = 210.0 * np.sqrt(np.maximum(comptes_dom, 1.0))
+    ax, ay = _disposer_domaines(np.array(fam, dtype=np.int32), rayon_dom)
+    # décalage en quadrant positif : l'amas est centré sur lui-même (recentrage interne à `_disposer_domaines`),
+    # mais le reste (cadrage initial du client, fenêtres historiques) suppose un monde synthétique qui commence
+    # près de l'origine et s'étend vers les positifs — même repère qu'avant l'amas organique
+    decalage = 450.0 * np.sqrt(max(n // 60, 4))
+    ax, ay = ax + decalage, ay + decalage
+    angle, rayon = rng.uniform(0, 2 * np.pi, C), rayon_dom[dc] * np.sqrt(rng.uniform(0, 1, C))
+    cx = ax[dc] + rayon * np.cos(angle)
+    cy = ay[dc] + rayon * np.sin(angle)
     com = rng.integers(0, C, n)
     x, y = cx[com] + rng.normal(0, 90, n), cy[com] + rng.normal(0, 90, n)
-    dom = np.where(rng.random(n) < 0.06, rng.integers(0, domaines, n), dc[com])
+    dom = np.where(rng.random(n) < 0.04, rng.integers(0, domaines, n), dc[com])
     m = n * 2
     ea = rng.integers(0, n, m)
     # 80 % des liens restent dans la communauté : on tire un voisin de même communauté via un tri par communauté
@@ -422,4 +508,7 @@ def synthetique(n: int, graine: int = 1, domaines: int = 8) -> Pyramide:
     k = ea != eb
     alerte = (rng.random(n) < 0.01).astype(np.uint8)
     etat = rng.choice(np.array([0, 1, 2], dtype=np.uint8), size=int(k.sum()), p=[0.8, 0.14, 0.06])
-    return Pyramide(x, y, dom, com, ea[k], eb[k], etat, None, alerte, noms_domaines=[f"Domaine {i + 1}" for i in range(domaines)])
+    p = Pyramide(x, y, dom, com, ea[k], eb[k], etat, None, alerte, noms_domaines=[f"Domaine {i + 1}" for i in range(domaines)])
+    p.couleurs_domaines = couleurs
+    p.familles_domaines = fam
+    return p

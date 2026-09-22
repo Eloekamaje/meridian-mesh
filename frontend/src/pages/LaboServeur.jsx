@@ -22,6 +22,7 @@ export default function LaboServeur() {
             <button key={String(v)} onClick={() => setN(v)} data-testid={`source-${v}`}
               className={`rounded-md px-2.5 py-1 text-xs ${n === v ? "bg-blue-500/25 text-blue-100" : "text-slate-400 hover:bg-white/5"}`}>{label}</button>
           ))}
+          <Link to="/labo/atlas-etendu" className="ml-2 text-xs text-slate-400 hover:text-slate-200" data-testid="labo-serveur-vers-etendu">Avec les comportements →</Link>
           <Link to="/atlas" className="ml-2 text-xs text-slate-400 hover:text-slate-200">Atlas</Link>
         </div>
       </div>

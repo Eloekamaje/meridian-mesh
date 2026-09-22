@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import api from "@/lib/api";
-import { chargerSprites } from "@/lib/spritesRobot";
+import { ecouterSprites, spriteRobot } from "@/lib/spritesRobot";
 import { COULEURS_DOMAINES, NOMS_DOMAINES } from "@/lib/laboEchelle";
 import { idNumerique } from "@/lib/atlasGraph";
 
@@ -26,12 +26,11 @@ export function cadrageInitial(n, l, h) {
   return { cx: cote / 2, cy: cote / 2, zoom: Math.min(l, h) / (cote * 1.1) };
 }
 
-export default function AtlasEchelle({ synthetique = null, selectionId = null, onChoisir, className = "" }) {
+export default function AtlasEchelle({ synthetique = null, domaines = null, selectionId = null, onChoisir, className = "" }) {
   const cadre = useRef(null);
   const canvas = useRef(null);
   const vue = useRef({ cx: 0, cy: 0, zoom: 1 });
   const rep = useRef(null);
-  const sprites = useRef([]);
   const minuteur = useRef(null);
   const envol = useRef(null);
   const vol = useRef(null);
@@ -39,11 +38,14 @@ export default function AtlasEchelle({ synthetique = null, selectionId = null, o
   const propsRef = useRef({});
   const [stats, setStats] = useState(null);
   const [apercu, setApercu] = useState(null);
-  propsRef.current = { synthetique, selectionId, onChoisir };
+  propsRef.current = { synthetique, domaines, selectionId, onChoisir };
 
+  // Une couleur par domaine : celle que le serveur fournit (essai d'échelle à des centaines de domaines — voir
+  // pyramide.palette_domaines) si elle est là, sinon la palette fixe historique du Mesh réel (repli).
   const couleurs = useCallback((r) => {
+    const fournies = r?.domaines_couleur;
     const noms = r?.domaines || [];
-    return (d) => COULEURS_DOMAINES[NOMS_DOMAINES.indexOf(noms[d]) >= 0 ? NOMS_DOMAINES.indexOf(noms[d]) : d % COULEURS_DOMAINES.length];
+    return (d) => fournies?.[d] || COULEURS_DOMAINES[NOMS_DOMAINES.indexOf(noms[d]) >= 0 ? NOMS_DOMAINES.indexOf(noms[d]) : d % COULEURS_DOMAINES.length];
   }, []);
 
   const dessiner = useCallback(() => {
@@ -124,7 +126,7 @@ export default function AtlasEchelle({ synthetique = null, selectionId = null, o
         const haut = Math.max(6, echelle * 1.9 * (0.65 + 0.5 * (j.degre / maxDeg)) * zoom);
         const dim = focus != null && !voisins.has(j.i);
         ctx.globalAlpha = dim ? 0.2 : 1;
-        const spr = sprites.current[NOMS_DOMAINES.indexOf(r.domaines?.[j.dom]) >= 0 ? NOMS_DOMAINES.indexOf(r.domaines[j.dom]) : j.dom % COULEURS_DOMAINES.length];
+        const spr = spriteRobot(col(j.dom));
         const x = px(j.x), y = py(j.y);
         if (spr && haut >= 10) ctx.drawImage(spr, x - haut * 0.326, y - haut / 2, haut * 0.652, haut);
         else { ctx.beginPath(); ctx.arc(x, y, Math.max(2.5, haut * 0.3), 0, 6.2832); ctx.fillStyle = col(j.dom); ctx.fill(); }
@@ -145,7 +147,7 @@ export default function AtlasEchelle({ synthetique = null, selectionId = null, o
     const { cx, cy, zoom } = vue.current;
     const l = c.clientWidth / zoom, h = c.clientHeight / zoom;
     const params = { x0: cx - (l / 2) * (1 + MARGE), y0: cy - (h / 2) * (1 + MARGE), x1: cx + (l / 2) * (1 + MARGE), y1: cy + (h / 2) * (1 + MARGE), zoom };
-    if (propsRef.current.synthetique) params.synthetique = propsRef.current.synthetique;
+    if (propsRef.current.synthetique) { params.synthetique = propsRef.current.synthetique; params.domaines = propsRef.current.domaines || 8; }
     envol.current?.abort();
     const ctl = (envol.current = new AbortController());
     const t0 = performance.now();
@@ -203,7 +205,7 @@ export default function AtlasEchelle({ synthetique = null, selectionId = null, o
     const c = canvas.current;
     vue.current = cadrageInitial(propsRef.current.synthetique, c.clientWidth, c.clientHeight);
     rep.current = null;
-    chargerSprites().then((s) => { sprites.current = s; dessiner(); });
+    const finEcoute = ecouterSprites(dessiner); // un sprite tardif (couleur inédite) redessine dès qu'il est prêt
     planifier();
 
     const onRoue = (e) => {
@@ -255,9 +257,9 @@ export default function AtlasEchelle({ synthetique = null, selectionId = null, o
     window.__atlasEchelle = { vue: () => vue.current, aller: (cx, cy, zoom) => { vue.current = { cx, cy, zoom }; planifier(); }, rep: () => rep.current };
     return () => {
       c.removeEventListener("wheel", onRoue); c.removeEventListener("pointerdown", bas); c.removeEventListener("pointermove", bouge); c.removeEventListener("pointerup", haut); c.removeEventListener("pointerleave", quitte);
-      ro.disconnect(); clearTimeout(minuteur.current); cancelAnimationFrame(vol.current); envol.current?.abort(); delete window.__atlasEchelle;
+      ro.disconnect(); clearTimeout(minuteur.current); cancelAnimationFrame(vol.current); envol.current?.abort(); finEcoute(); delete window.__atlasEchelle;
     };
-  }, [synthetique, cible, dessiner, planifier, voler]);
+  }, [synthetique, domaines, cible, dessiner, planifier, voler]);
 
   useEffect(() => { dessiner(); }, [selectionId, dessiner]);
 

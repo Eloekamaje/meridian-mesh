@@ -10,7 +10,7 @@ import requests
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import maturation  # noqa: E402
 import ouverture_travail  # noqa: E402
-from nettoyage import remettre_initiatives, supprimer_cases, supprimer_delegations, supprimer_ecarts, supprimer_notifications  # noqa: E402
+from nettoyage import _db, remettre_initiatives, supprimer_cases, supprimer_delegations, supprimer_ecarts, supprimer_notifications  # noqa: E402
 
 BASE = os.environ.get("MERIDIAN_API", "http://localhost:8001").rstrip("/") + "/api"
 H = {"X-Persona": "architecte"}
@@ -145,6 +145,9 @@ def test_la_verification_de_demonstration_est_en_place(api):
 
 
 def test_une_verification_est_une_actualite_a_trancher(api):
+    # une lecture précédente (GET /cases/…) marque le travail visité ; ce test vérifie l'actualité telle
+    # qu'une personne qui n'a pas encore ouvert ce travail la verrait — pas l'état laissé par un test voisin
+    _db().cases.update_one({"id": "case-verification-fraude-conformite"}, {"$unset": {"visites.architecte": ""}})
     h = next(h for h in api.get(f"{BASE}/actualites", headers=H).json()["histoires"] if h["id"] == "case-case-verification-fraude-conformite")
     assert h["genre"] == "verification" and h["action_label"] == "Trancher" and "depuis que je la suis" in h["recit"]
 

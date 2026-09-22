@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Flask, MagnifyingGlass, Play } from "@phosphor-icons/react";
-import { chargerSprites } from "@/lib/spritesRobot";
+import { ecouterSprites, spriteRobot } from "@/lib/spritesRobot";
 import { COULEURS_DOMAINES, NOMS_DOMAINES, liensNoeuds, noeudsVisibles, plusProche } from "@/lib/laboEchelle";
 import {
   bullesVisibles, construireIndexHier, genererHierarchie, liensBulles, niveauSemantique, nomBulle, rangDansDomaine,
@@ -29,7 +29,6 @@ export default function LaboSemantique() {
   const idx = useRef(null);
   const vue = useRef({ cx: 0, cy: 0, zoom: 1 });
   const taille = useRef({ W: 800, H: 600, dpr: 1 });
-  const sprites = useRef([]);
   const sale = useRef(true);
   const dernier = useRef({ mode: "bulles", niv: 3, bulles: [], vis: [], liens: 0, points: 0, fondu: 0 });
   const chronos = useRef([]);
@@ -154,7 +153,7 @@ export default function LaboSemantique() {
       const w = h * (124 / 190);
       vis.forEach((i) => {
         const px = sx(g.x[i]), py = sy(g.y[i]);
-        const sp = sprites.current[g.dom[i]];
+        const sp = spriteRobot(COULEURS_DOMAINES[g.dom[i]]);
         if (sp) ctx.drawImage(sp, px - w / 2, py - h / 2, w, h);
         else { ctx.beginPath(); ctx.arc(px, py, h * 0.25, 0, 6.2832); ctx.fillStyle = COULEURS_DOMAINES[g.dom[i]]; ctx.fill(); }
         if (avecSignaux && g.ecartN[i]) { ctx.beginPath(); ctx.ellipse(px, py + h * 0.02, w * 0.52, h * 0.5, 0, 0, 6.2832); ctx.setLineDash([5, 4]); ctx.strokeStyle = ORANGE; ctx.lineWidth = 2; ctx.stroke(); ctx.setLineDash([]); }
@@ -260,7 +259,7 @@ export default function LaboSemantique() {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  useEffect(() => { chargerSprites().then((s) => { sprites.current = s; marquer(); }); }, []);
+  useEffect(() => ecouterSprites(marquer), []);
 
   // ---- Caméra -----------------------------------------------------------------------------------------------------
   function effacerSurvol() {

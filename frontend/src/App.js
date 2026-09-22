@@ -1,4 +1,5 @@
 import "@/App.css";
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useParams } from "react-router-dom";
 import { Toaster } from "@/components/ui/sonner";
 import { DemoProvider } from "@/lib/demo";
@@ -13,6 +14,7 @@ import LaboAtlas from "@/pages/LaboAtlas";
 import LaboEchelle from "@/pages/LaboEchelle";
 import LaboSemantique from "@/pages/LaboSemantique";
 import LaboServeur from "@/pages/LaboServeur";
+const LaboAtlasEtendu = lazy(() => import("@/pages/LaboAtlasEtendu"));
 
 import Commande from "@/pages/Commande";
 import Travaux from "@/pages/Travaux";
@@ -51,6 +53,9 @@ function ProduitApp() {
             {LABO && <Route path="/labo/echelle" element={<LaboEchelle />} />}
             {LABO && <Route path="/labo/semantique" element={<LaboSemantique />} />}
             {LABO && <Route path="/labo/serveur" element={<LaboServeur />} />}
+            {LABO && <Route path="/labo/atlas-etendu" element={<Suspense fallback={<div className="h-full bg-[#071019]" />}><LaboAtlasEtendu /></Suspense>} />}
+            {LABO && <Route path="/labo/atlas-vivant" element={<Navigate to="/labo/atlas-etendu" replace />} />}
+            {LABO && <Route path="/labo/bcm" element={<Navigate to="/labo/atlas-etendu" replace />} />}
             {/* Les investigations sont des travaux : anciennes adresses conservées, elles ouvrent le travail de la situation */}
             <Route path="/investigations" element={<Navigate to="/travaux" replace />} />
             <Route path="/investigations/:id" element={<Comprendre depuisSituation intention="investiguer" />} />
