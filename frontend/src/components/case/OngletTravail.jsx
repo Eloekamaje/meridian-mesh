@@ -145,7 +145,7 @@ function useDeroule(message, pilote) {
 }
 
 // Rendu formaté, fluide et aéré du texte (Style ChatGPT / Claude)
-export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif }) {
+export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif, children }) {
   const pilote = usePilotage();
   const texte = message.texte || "";
   const { visible, fini } = useDeroule(message, pilote);
@@ -297,6 +297,10 @@ export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif }) {
           </button>
         </div>
       )}
+
+      {/* Décisions, suggestions, actions… : n'apparaissent qu'une fois la réponse complète —
+          sinon on peut « régénérer » ou noter une réponse qui n'est pas encore terminée */}
+      {fini && children}
     </div>
   );
 }
@@ -754,12 +758,13 @@ export default function OngletTravail({
                   /* Réponse Flore IA : Zéro card lourde, texte au fil de l'eau, lecture pure */
                   <div className="space-y-2 animate-in fade-in duration-200" data-testid={`case-msg-${i}`}>
                     
-                    {/* Corps formaté du message de Flore */}
-                    <CorpsMessageFlore 
-                      message={m} 
-                      onOuvrirCanvas={() => setCanvasActif(true)} 
-                      canvasActif={canvasActif} 
-                    />
+                    {/* Corps formaté du message de Flore — décisions/suggestions/actions en enfants :
+                        n'apparaissent qu'une fois la réponse complète (voir CorpsMessageFlore) */}
+                    <CorpsMessageFlore
+                      message={m}
+                      onOuvrirCanvas={() => setCanvasActif(true)}
+                      canvasActif={canvasActif}
+                    >
 
                     {/* Décision attendue (situation) : réponses rapides ; votre choix devient votre message et Flore répond */}
                     {m.decisions?.length > 0 && !m.reponse && (
@@ -873,6 +878,7 @@ export default function OngletTravail({
                         <DotsThree size={13} />
                       </button>
                     </div>
+                    </CorpsMessageFlore>
                   </div>
                 )}
                 {/* Ligne d'activité de Flore : sous le dernier message du traitement, repliée une fois terminée */}
@@ -963,11 +969,6 @@ export default function OngletTravail({
                 data-testid="case-msg-input"
                 className="max-h-32 flex-1 resize-none overflow-y-auto bg-transparent px-1 py-1 text-sm text-[#F2F6F8] placeholder:text-[#526578] focus:outline-none"
               />
-
-              {/* Badge discret du modèle SI */}
-              <div className="hidden sm:flex items-center gap-1 rounded-lg bg-white/[0.04] px-2 py-1 font-code text-[11px] text-[#7C93A8]">
-                <span>Flore Mesh 2.0</span>
-              </div>
 
               {/* Bouton micro vocal */}
               <button
