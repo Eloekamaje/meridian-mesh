@@ -6,47 +6,22 @@ import { idNumerique } from "@/lib/atlasGraph";
 
 // ============================================================================================
 // ATLAS À L'ÉCHELLE — le Mesh servi par vue (GET /api/mesh/vue). Le navigateur ne charge jamais le graphe
-// entier : il envoie la fenêtre visible et le zoom ; le serveur répond avec un nombre borné de grappes
-// (domaine → groupe → communauté), de points ou de jumeaux, déjà filtrés par le périmètre du persona.
-// Tant que la réponse arrive, la précédente est redessinée à la nouvelle échelle : le mouvement reste fluide.
-// Même langage visuel que l'Atlas : robots teintés par domaine, écarts en violet, situations en orange.
+// entier : il envoie la fenêtre visible et le zoom ; le serveur répond avec un nombre borné de VRAIS jumeaux
+// (jamais une forme qui en tient lieu — pyramide.py, « il n'y a qu'un seul mode de réponse »), les mieux
+// connectés d'abord quand il y en a plus que le budget. Tant que la réponse arrive, la précédente est
+// redessinée à la nouvelle échelle : le mouvement reste fluide.
+//
+// UN SEUL langage de rendu, continu avec le zoom — jamais un « saut » d'un type de forme à un autre : chaque
+// jumeau est un point qui grandit à mesure qu'on s'approche (un pixel loin, un robot reconnaissable près). La
+// densité de points EST l'information — pas une bulle qui prétend la résumer.
 // ============================================================================================
 
 const DELAI_MS = 90;
 const MARGE = 0.15;
 const ORANGE = "#F59E0B";
 const VIOLET = "#60A5FA";
+const SEUIL_SPRITE = 10; // hauteur écran (px) en dessous de laquelle un robot n'est plus lisible : simple point
 const compact = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)} M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)} k` : String(n)).replace(".", ",");
-const NIVEAUX = { 0: "Jumeaux", 1: "Communautés", 2: "Groupes", 3: "Domaines" };
-const hex2 = (k) => Math.round(Math.max(0, Math.min(1, k)) * 255).toString(16).padStart(2, "0");
-const ANGLE_OR = 2.399963; // angle d'or (rad) : même semis que les spirales de Vogel du reste du code
-
-// PRNG minimal (mulberry32) — seulement pour semer un essaim de façon stable (même grappe = mêmes points d'une
-// image à l'autre), jamais pour des données : Math.random() donnerait un nuage qui grouille à chaque frame.
-function grainee(g) {
-  let s = g >>> 0;
-  return () => { s = (s + 0x6D2B79F5) | 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
-}
-
-// Un ESSAIM de points au lieu d'une bulle : la densité donne à voir le compte réel, pas une forme qui le tait.
-// Capé (≤ 90 points) : au-delà, la lisibilité n'y gagne plus rien et le coût grandirait avec des millions de grappes.
-function semerEssaim(ctx, cx, cy, rr, n, id, couleur, actif) {
-  const alea = grainee(id * 2654435761 + n);
-  const compte = Math.max(3, Math.min(90, Math.round(Math.sqrt(n) * 2.1)));
-  const rayonPoint = Math.max(0.6, Math.min(2.4, rr / 16));
-  ctx.fillStyle = `${couleur}${actif ? "e6" : "b0"}`;
-  for (let k = 0; k < compte; k += 1) {
-    const frac = (k + 0.5) / compte;
-    const a = k * ANGLE_OR + alea() * 0.6;
-    const d = rr * Math.sqrt(frac) * (0.88 + alea() * 0.1);
-    ctx.beginPath(); ctx.arc(cx + Math.cos(a) * d, cy + Math.sin(a) * d, rayonPoint, 0, 6.2832); ctx.fill();
-  }
-  // halo très doux, seulement pour situer l'étendue de la grappe — jamais un contour dur
-  const grad = ctx.createRadialGradient(cx, cy, rr * 0.55, cx, cy, rr);
-  grad.addColorStop(0, `${couleur}00`); grad.addColorStop(1, `${couleur}${actif ? "22" : "14"}`);
-  ctx.beginPath(); ctx.arc(cx, cy, rr, 0, 6.2832); ctx.fillStyle = grad; ctx.fill();
-  if (actif) { ctx.beginPath(); ctx.arc(cx, cy, rr, 0, 6.2832); ctx.strokeStyle = `${couleur}aa`; ctx.lineWidth = 1.4; ctx.stroke(); }
-}
 
 export function cadrageInitial(n, l, h) {
   if (!n) return { cx: 700, cy: 400, zoom: Math.min(l / 1500, h / 900) };
@@ -86,88 +61,54 @@ export default function AtlasEchelle({ synthetique = null, domaines = null, sele
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, l, h);
     const r = rep.current;
-    if (!r) return;
+    if (!r?.jumeaux?.length) return;
     const { cx, cy, zoom } = vue.current;
     const px = (x) => (x - cx) * zoom + l / 2;
     const py = (y) => (y - cy) * zoom + h / 2;
     const col = couleurs(r);
     const survol = survolRef.current;
 
-    if (r.grappes?.length) {
-      const parIndice = r.grappes;
-      ctx.lineCap = "round";
-      for (const e of r.liens || []) {
-        const a = parIndice[e.a], b = parIndice[e.b];
-        if (!a || !b) continue;
-        ctx.strokeStyle = "rgba(148,163,184,.32)";
-        ctx.lineWidth = Math.min(4, 0.6 + Math.log2(e.poids + 1) * 0.35);
-        ctx.beginPath(); ctx.moveTo(px(a.x), py(a.y)); ctx.lineTo(px(b.x), py(b.y)); ctx.stroke();
-      }
-      const fondu = r.fondu || 0;
-      if (r.enfants && fondu > 0.02) for (const g of r.enfants) {
-        ctx.beginPath(); ctx.arc(px(g.x), py(g.y), Math.max(2, g.r * zoom), 0, 6.2832);
-        ctx.fillStyle = `${col(g.dom)}${hex2(fondu * 0.22)}`; ctx.fill();
-      }
-      const pris = [];
-      for (const g of [...parIndice].sort((a, b) => b.n - a.n)) {
-        const rr = Math.max(3, g.r * zoom);
-        const chaud = survol?.type === "grappe" && survol.id === g.id && survol.niv === g.niv;
-        // Pas une bulle qui PRÉTEND résumer un compte : un ESSAIM de points, sa densité donne à voir le nombre
-        // réel de jumeaux qu'elle représente — même langage que le mode « points » et que les robots, à toute
-        // échelle. Nombre de points ∝ racine du compte (la densité perçue reste juste quand on zoome), semé de
-        // façon organique (angle d'or) et stable d'une image à l'autre (graine = identifiant de la grappe).
-        semerEssaim(ctx, px(g.x), py(g.y), rr, g.n, g.id, col(g.dom), chaud);
-        if (g.ecarts) { ctx.beginPath(); ctx.arc(px(g.x), py(g.y), rr + 3, 0, 6.2832); ctx.strokeStyle = VIOLET; ctx.lineWidth = 1.6; ctx.stroke(); }
-        if (g.alertes) { ctx.beginPath(); ctx.arc(px(g.x), py(g.y), rr + 6, 0, 6.2832); ctx.strokeStyle = ORANGE; ctx.lineWidth = 1.6; ctx.stroke(); }
-        const boite = [px(g.x) - 62, py(g.y) - 14, px(g.x) + 62, py(g.y) + 18];
-        if (rr > 26 && !pris.some((q) => boite[0] < q[2] && boite[2] > q[0] && boite[1] < q[3] && boite[3] > q[1])) {
-          pris.push(boite);
-          ctx.textAlign = "center";
-          ctx.fillStyle = "rgba(226,232,240,.95)"; ctx.font = "600 12px Inter, system-ui, sans-serif"; ctx.fillText(g.nom, px(g.x), py(g.y) - 2);
-          ctx.fillStyle = "rgba(148,163,184,.95)"; ctx.font = "11px Inter, system-ui, sans-serif"; ctx.fillText(`${compact(g.n)} jumeaux`, px(g.x), py(g.y) + 13);
-        }
-      }
+    const pos = new Map(r.jumeaux.map((j) => [j.i, j]));
+    const focus = survol?.type === "jumeau" ? survol.i : null;
+    const voisins = new Set();
+    if (focus != null) { voisins.add(focus); for (const e of r.liens || []) { if (e.source === focus) voisins.add(e.cible); if (e.cible === focus) voisins.add(e.source); } }
+    ctx.lineWidth = 1;
+    for (const e of r.liens || []) {
+      const a = pos.get(e.source), b = pos.get(e.cible);
+      if (!a || !b) continue;
+      const incident = focus != null && (e.source === focus || e.cible === focus);
+      ctx.globalAlpha = focus == null ? 1 : incident ? 1 : 0.08;
+      ctx.strokeStyle = e.etat === 2 ? "rgba(96,165,250,.65)" : e.etat === 1 ? "rgba(96,165,250,.5)" : "rgba(148,163,184,.34)";
+      ctx.lineWidth = incident ? 2 : 1;
+      ctx.beginPath(); ctx.moveTo(px(a.x), py(a.y)); ctx.lineTo(px(b.x), py(b.y)); ctx.stroke();
     }
-
-    if (r.points) {
-      const { x, y, d, e, a } = r.points;
-      for (let i = 0; i < x.length; i++) { ctx.fillStyle = a[i] ? ORANGE : e[i] ? VIOLET : col(d[i]); ctx.fillRect(px(x[i]) - 1, py(y[i]) - 1, 2.2, 2.2); }
-    }
-
-    if (r.jumeaux?.length) {
-      const pos = new Map(r.jumeaux.map((j) => [j.i, j]));
-      const focus = survol?.type === "jumeau" ? survol.i : null;
-      const voisins = new Set();
-      if (focus != null) { voisins.add(focus); for (const e of r.liens || []) { if (e.source === focus) voisins.add(e.cible); if (e.cible === focus) voisins.add(e.source); } }
-      ctx.lineWidth = 1;
-      for (const e of r.liens || []) {
-        const a = pos.get(e.source), b = pos.get(e.cible);
-        if (!a || !b) continue;
-        const incident = focus != null && (e.source === focus || e.cible === focus);
-        ctx.globalAlpha = focus == null ? 1 : incident ? 1 : 0.08;
-        ctx.strokeStyle = e.etat === 2 ? "rgba(96,165,250,.65)" : e.etat === 1 ? "rgba(96,165,250,.5)" : "rgba(148,163,184,.34)";
-        ctx.lineWidth = incident ? 2 : 1;
-        ctx.beginPath(); ctx.moveTo(px(a.x), py(a.y)); ctx.lineTo(px(b.x), py(b.y)); ctx.stroke();
-      }
-      ctx.globalAlpha = 1;
-      const echelle = r.source === "reel" ? 34 : 11; // hauteur monde d'un robot moyen (l'espacement réel est plus grand)
-      const maxDeg = Math.max(1, ...r.jumeaux.map((j) => j.degre));
-      for (const j of r.jumeaux) {
-        const haut = Math.max(6, echelle * 1.9 * (0.65 + 0.5 * (j.degre / maxDeg)) * zoom);
-        const dim = focus != null && !voisins.has(j.i);
-        ctx.globalAlpha = dim ? 0.2 : 1;
+    ctx.globalAlpha = 1;
+    // Un point qui GRANDIT en continu avec le zoom, jusqu'à devenir un robot reconnaissable — jamais un type
+    // de forme différent : la même donnée (un jumeau), juste plus ou moins de détail visible dessus.
+    const echelle = r.source === "reel" ? 34 : 11; // hauteur monde d'un robot moyen (l'espacement réel est plus grand)
+    const maxDeg = Math.max(1, ...r.jumeaux.map((j) => j.degre));
+    for (const j of r.jumeaux) {
+      const haut = Math.max(1.4, echelle * 1.9 * (0.65 + 0.5 * (j.degre / maxDeg)) * zoom);
+      const dim = focus != null && !voisins.has(j.i);
+      ctx.globalAlpha = dim ? 0.2 : 1;
+      const x = px(j.x), y = py(j.y);
+      if (haut < SEUIL_SPRITE) {
+        // Loin : un point minuscule (fillRect, le moins cher possible — des dizaines de milliers par image).
+        ctx.fillStyle = j.alerte ? ORANGE : j.ecart ? VIOLET : col(j.dom);
+        const d = Math.max(1.2, haut * 0.55);
+        ctx.fillRect(x - d / 2, y - d / 2, d, d);
+      } else {
         const spr = spriteRobot(col(j.dom));
-        const x = px(j.x), y = py(j.y);
-        if (spr && haut >= 10) ctx.drawImage(spr, x - haut * 0.326, y - haut / 2, haut * 0.652, haut);
-        else { ctx.beginPath(); ctx.arc(x, y, Math.max(2.5, haut * 0.3), 0, 6.2832); ctx.fillStyle = col(j.dom); ctx.fill(); }
+        if (spr) ctx.drawImage(spr, x - haut * 0.326, y - haut / 2, haut * 0.652, haut);
+        else { ctx.beginPath(); ctx.arc(x, y, haut * 0.3, 0, 6.2832); ctx.fillStyle = col(j.dom); ctx.fill(); }
         if (j.ecart || j.alerte) { ctx.beginPath(); ctx.arc(x, y, Math.max(4, haut * 0.42), 0, 6.2832); ctx.strokeStyle = j.alerte ? ORANGE : VIOLET; ctx.lineWidth = 1.5; ctx.setLineDash(j.alerte ? [] : [4, 3]); ctx.stroke(); ctx.setLineDash([]); }
         if (j.id && (haut >= 36 || j.i === focus || j.id === propsRef.current.selectionId)) {
           ctx.fillStyle = "rgba(216,226,234,.95)"; ctx.font = "600 10px 'JetBrains Mono', monospace"; ctx.textAlign = "center";
           ctx.fillText(idNumerique(j.id), x, y + haut / 2 + 11);
         }
-        if (j.id && j.id === propsRef.current.selectionId) { ctx.beginPath(); ctx.arc(x, y, haut * 0.6, 0, 6.2832); ctx.strokeStyle = "#60A5FA"; ctx.lineWidth = 2; ctx.stroke(); }
-        ctx.globalAlpha = 1;
       }
+      if (j.id && j.id === propsRef.current.selectionId) { ctx.beginPath(); ctx.arc(x, y, Math.max(8, haut * 0.6), 0, 6.2832); ctx.strokeStyle = "#60A5FA"; ctx.lineWidth = 2; ctx.stroke(); }
+      ctx.globalAlpha = 1;
     }
   }, [couleurs]);
 
@@ -184,7 +125,7 @@ export default function AtlasEchelle({ synthetique = null, domaines = null, sele
     api.get("/mesh/vue", { params, signal: ctl.signal }).then((res) => {
       const d = res.data;
       rep.current = d;
-      setStats({ mode: d.mode, niveau: d.niveau, total: d.n_total, serveur: d.duree_ms, allerRetour: Math.round(performance.now() - t0), perimetre: d.perimetre });
+      setStats({ rendus: d.jumeaux?.length || 0, total: d.n_total, serveur: d.duree_ms, allerRetour: Math.round(performance.now() - t0), perimetre: d.perimetre });
       dessiner();
     }).catch(() => {});
   }, [dessiner]);
@@ -210,25 +151,17 @@ export default function AtlasEchelle({ synthetique = null, domaines = null, sele
     vol.current = requestAnimationFrame(pas);
   }, [planifier]);
 
-  // Objet le plus proche du curseur : jumeau (rayon d'un robot) ou grappe (dans son disque, la plus petite d'abord)
+  // Jumeau le plus proche du curseur, dans le rayon d'un robot à ce zoom (même loin : le point reste cliquable).
   const cible = useCallback((mx, my) => {
     const r = rep.current, c = canvas.current;
-    if (!r || !c) return null;
+    if (!r?.jumeaux?.length || !c) return null;
     const { cx, cy, zoom } = vue.current;
     const l = c.clientWidth, h = c.clientHeight;
     const wx = (mx - l / 2) / zoom + cx, wy = (my - h / 2) / zoom + cy;
-    if (r.jumeaux?.length) {
-      let best = null, bd = Infinity;
-      const rayon = Math.max(10, (r.source === "reel" ? 34 : 11) * 0.95 * zoom);
-      for (const j of r.jumeaux) { const d = Math.hypot((j.x - wx) * zoom, (j.y - wy) * zoom); if (d < rayon && d < bd) { bd = d; best = j; } }
-      return best && { type: "jumeau", ...best };
-    }
-    if (r.grappes?.length) {
-      let best = null;
-      for (const g of r.grappes) if (Math.hypot(g.x - wx, g.y - wy) <= g.r && (!best || g.r < best.r)) best = g;
-      return best && { type: "grappe", ...best };
-    }
-    return null;
+    let best = null, bd = Infinity;
+    const rayon = Math.max(9, (r.source === "reel" ? 34 : 11) * 0.95 * zoom);
+    for (const j of r.jumeaux) { const d = Math.hypot((j.x - wx) * zoom, (j.y - wy) * zoom); if (d < rayon && d < bd) { bd = d; best = j; } }
+    return best && { type: "jumeau", ...best };
   }, []);
 
   useEffect(() => {
@@ -263,7 +196,7 @@ export default function AtlasEchelle({ synthetique = null, domaines = null, sele
       }
       const t = cible(mx, my);
       const avant = survolRef.current;
-      const meme = avant && t && avant.type === t.type && (t.type === "jumeau" ? avant.i === t.i : avant.id === t.id && avant.niv === t.niv);
+      const meme = avant && t && avant.i === t.i;
       if (!meme) { survolRef.current = t; dessiner(); }
       c.style.cursor = t ? "pointer" : "grab";
       setApercu(t ? { ...t, left: Math.min(mx + 16, c.clientWidth - 250), top: Math.max(8, Math.min(my + 12, c.clientHeight - 130)) } : null);
@@ -273,20 +206,23 @@ export default function AtlasEchelle({ synthetique = null, domaines = null, sele
       if (!etaitPris || deplace) return;
       const b = c.getBoundingClientRect();
       const t = cible(e.clientX - b.left, e.clientY - b.top);
-      if (!t) return;
-      if (t.type === "grappe") {
-        // La grappe s'ouvre : on plonge dessus jusqu'à ce que ses enfants deviennent lisibles
-        voler(t.x, t.y, Math.min(64, Math.max(vue.current.zoom * 2.2, (Math.min(c.clientWidth, c.clientHeight) * 0.42) / t.r)));
-      } else propsRef.current.onChoisir?.(t);
+      if (t) propsRef.current.onChoisir?.(t);
+    };
+    // Double-clic : zoom continu sur le point visé (même geste de vol que la recherche — jamais un « saut »).
+    const dbl = (e) => {
+      const b = c.getBoundingClientRect(), v = vue.current;
+      const l = c.clientWidth, h = c.clientHeight;
+      const wx = (e.clientX - b.left - l / 2) / v.zoom + v.cx, wy = (e.clientY - b.top - h / 2) / v.zoom + v.cy;
+      voler(wx, wy, Math.min(64, v.zoom * 2.4));
     };
     const quitte = () => { survolRef.current = null; setApercu(null); dessiner(); };
     const ro = new ResizeObserver(() => planifier());
     ro.observe(cadre.current);
     c.addEventListener("wheel", onRoue, { passive: false });
-    c.addEventListener("pointerdown", bas); c.addEventListener("pointermove", bouge); c.addEventListener("pointerup", haut); c.addEventListener("pointerleave", quitte);
-    window.__atlasEchelle = { vue: () => vue.current, aller: (cx, cy, zoom) => { vue.current = { cx, cy, zoom }; planifier(); }, rep: () => rep.current };
+    c.addEventListener("pointerdown", bas); c.addEventListener("pointermove", bouge); c.addEventListener("pointerup", haut); c.addEventListener("pointerleave", quitte); c.addEventListener("dblclick", dbl);
+    window.__atlasEchelle = { vue: () => vue.current, aller: (cx, cy, zoom) => { vue.current = { cx, cy, zoom }; planifier(); }, voler, rep: () => rep.current };
     return () => {
-      c.removeEventListener("wheel", onRoue); c.removeEventListener("pointerdown", bas); c.removeEventListener("pointermove", bouge); c.removeEventListener("pointerup", haut); c.removeEventListener("pointerleave", quitte);
+      c.removeEventListener("wheel", onRoue); c.removeEventListener("pointerdown", bas); c.removeEventListener("pointermove", bouge); c.removeEventListener("pointerup", haut); c.removeEventListener("pointerleave", quitte); c.removeEventListener("dblclick", dbl);
       ro.disconnect(); clearTimeout(minuteur.current); cancelAnimationFrame(vol.current); envol.current?.abort(); finEcoute(); delete window.__atlasEchelle;
     };
   }, [synthetique, domaines, cible, dessiner, planifier, voler]);
@@ -298,29 +234,17 @@ export default function AtlasEchelle({ synthetique = null, domaines = null, sele
       <canvas ref={canvas} className="absolute inset-0 h-full w-full cursor-grab touch-none" />
       {stats && (
         <div className="pointer-events-none absolute bottom-3 left-3 z-10 rounded-md bg-[#071019]/80 px-2.5 py-1 font-code text-[10px] leading-5 text-[#7C93A8]" data-testid="atlas-echelle-hud">
-          {compact(stats.total)} jumeaux · vue {NIVEAUX[stats.niveau] || "Jumeaux"}{stats.mode === "points" ? " (points)" : ""}
+          {compact(stats.rendus)} / {compact(stats.total)} jumeaux affichés
           <span className="ml-2 text-[#526578]">{stats.serveur} ms serveur · {stats.allerRetour} ms</span>
         </div>
       )}
       {apercu && (
         <div className="glass pointer-events-none absolute z-20 w-[230px] space-y-1 rounded-xl p-3" style={{ left: apercu.left, top: apercu.top }} data-testid="atlas-echelle-apercu">
-          {apercu.type === "grappe" ? (
-            <>
-              <div className="text-xs font-semibold text-[#F2F6F8]">{apercu.nom}</div>
-              <div className="font-code text-[10px] text-[#94A3B8]">{NIVEAUX[apercu.niv]} · {compact(apercu.n)} jumeaux</div>
-              {apercu.ecarts > 0 && <div className="font-code text-[10px]" style={{ color: VIOLET }}>{compact(apercu.ecarts)} en écart (déclaré ≠ observé)</div>}
-              {apercu.alertes > 0 && <div className="font-code text-[10px]" style={{ color: ORANGE }}>{compact(apercu.alertes)} en situation active</div>}
-              <div className="pt-0.5 font-code text-[9px] text-[#60A5FA]">Clic : s'approcher →</div>
-            </>
-          ) : (
-            <>
-              <div className="text-xs font-semibold text-[#F2F6F8]">{apercu.id ? `${idNumerique(apercu.id)} · ${apercu.id}` : `Jumeau ${apercu.i}`}</div>
-              <div className="font-code text-[10px] text-[#94A3B8]">{rep.current?.domaines?.[apercu.dom]} · {apercu.degre} relation{apercu.degre > 1 ? "s" : ""}</div>
-              {apercu.ecart > 0 && <div className="font-code text-[10px]" style={{ color: VIOLET }}>Écart : couplé surtout à un autre domaine</div>}
-              {apercu.alerte > 0 && <div className="font-code text-[10px]" style={{ color: ORANGE }}>Situation active</div>}
-              {apercu.id && <div className="pt-0.5 font-code text-[9px] text-[#60A5FA]">Clic : ouvrir le jumeau →</div>}
-            </>
-          )}
+          <div className="text-xs font-semibold text-[#F2F6F8]">{apercu.id ? `${idNumerique(apercu.id)} · ${apercu.id}` : `Jumeau ${apercu.i}`}</div>
+          <div className="font-code text-[10px] text-[#94A3B8]">{rep.current?.domaines?.[apercu.dom]} · {apercu.degre} relation{apercu.degre > 1 ? "s" : ""}</div>
+          {apercu.ecart > 0 && <div className="font-code text-[10px]" style={{ color: VIOLET }}>Écart : couplé surtout à un autre domaine</div>}
+          {apercu.alerte > 0 && <div className="font-code text-[10px]" style={{ color: ORANGE }}>Situation active</div>}
+          {apercu.id && <div className="pt-0.5 font-code text-[9px] text-[#60A5FA]">Clic : ouvrir le jumeau →</div>}
         </div>
       )}
     </div>

@@ -1,14 +1,21 @@
 """Pyramide de regroupements du Mesh — passage à l'échelle côté serveur.
 
 Le navigateur ne doit jamais charger le graphe entier : il demande une VUE (fenêtre monde + zoom) et le
-serveur répond avec un nombre borné d'éléments, quel que soit le nombre total de jumeaux :
+serveur répond avec un nombre borné d'éléments, quel que soit le nombre total de jumeaux — mais ce sont
+TOUJOURS de VRAIS jumeaux (position réelle, degré réel), jamais une forme qui prétend en résumer un groupe.
+Il n'y a qu'UN SEUL mode de réponse : `jumeaux` + `liens`, à tout zoom. Ce qui change avec le zoom, c'est
+seulement COMBIEN on en montre (le budget) et LEQUEL on choisit quand il y en a plus que le budget :
 
-    zoom faible   → grappes de domaines / de groupes / de communautés (avec leurs signaux) ;
-    zoom moyen    → communautés et jumeaux en points ;
-    zoom élevé    → jumeaux individuels et leurs vrais liens.
+    trop de jumeaux dans la fenêtre → on garde les mieux connectés d'abord (rang de priorité GLOBAL et stable :
+    un jumeau une fois affiché ne redevient jamais invisible en zoomant — le maillage se remplit, il ne
+    « saute » jamais d'une image à l'autre) ;
+    assez peu → on les montre tous, avec leurs vrais liens.
 
-Hiérarchie : domaine → groupe → communauté → jumeau. Chaque grappe est nommée, a une étendue (rayon) et
-PORTE SES SIGNAUX (jumeaux en écart déclaré ≠ calculé, jumeaux en situation active).
+Le dessin (points minuscules loin, robots proches) est une décision du CLIENT, continue avec le zoom — le
+serveur ne change jamais de « mode » de rendu.
+
+Hiérarchie interne domaine → groupe → communauté (Louvain) : sert au RÉSUMÉ (légende des domaines, effectifs,
+écarts déclaré ≠ calculé) — plus jamais à dessiner une bulle à la place des jumeaux qu'elle contient.
 
 Tout est vectorisé (numpy) : index en grille (jumeaux et liens rangés par cellule), agrégats par
 `bincount`. Le module ne dépend ni de FastAPI ni de Mongo : il prend des tableaux et se teste seul.
@@ -20,19 +27,13 @@ from dataclasses import dataclass
 
 import numpy as np
 
-RAYON_LISIBLE = 11.0  # rayon écran (px) minimal d'une grappe « typique » pour l'afficher
-ZOOM_JUMEAUX = 0.45  # à partir d'ici : jumeaux individuels
 CELLULE = 256.0  # taille (monde) des cellules de la grille fine
-# Les VRAIS jumeaux (positions réelles, un point chacun) sont montrés dès que leur nombre dans la fenêtre le
-# permet — À N'IMPORTE QUEL ZOOM, pas seulement au-delà d'un seuil arbitraire : mieux vaut des points minuscules
-# mais réels qu'une bulle qui prétend résumer un compte sans le montrer. 60 000 rectangles se dessinent en
-# quelques millisecondes (canvas 2D) ; ce n'est qu'au-delà que l'agrégation en grappes devient nécessaire.
-MAX_POINTS = 60_000
-MAX_JUMEAUX = 700
-MAX_LIENS_JUMEAUX = 4000
-MAX_GRAPPES = 700
-MAX_LIENS_GRAPPES = 240
-ECHANTILLON_LIENS = 20000
+# Budget de jumeaux RENDUS dans une vue — toujours des positions réelles, jamais une bulle qui en tient lieu.
+# Un canvas 2D dessine des dizaines de milliers de points minuscules en quelques millisecondes ; le budget n'a
+# donc pas besoin d'être petit, seulement borné (la réponse ne grandit jamais avec n).
+MAX_JUMEAUX = 20_000
+MAX_LIENS_JUMEAUX = 6000
+SCRUTIN_PRIORITE = 400_000  # au-delà de ce nombre de candidats scrutés par priorité, on s'arrête — borne le pire cas
 
 
 # ---------------------------------------------------------------------------------------------
@@ -146,6 +147,14 @@ class Pyramide:
             self._niveaux(ecart, alerte)
         self._grilles()
         self.degre = (np.bincount(self.ea, minlength=self.n) + np.bincount(self.eb, minlength=self.n)).astype(np.int32)
+        # Rang de priorité STABLE (0 = montré en premier) : les mieux connectés d'abord, un hachage déterministe
+        # de l'indice pour départager les ex-æquo (jamais le hasard — sinon la sélection changerait d'une requête
+        # à l'autre). `ordre_priorite[k]` = le k-ième jumeau par importance : scruter ce tableau dans l'ordre,
+        # en ne gardant que ceux tombés dans la fenêtre, donne les plus importants de la fenêtre SANS avoir à
+        # trier tous ses candidats — le coût ne dépend que du budget demandé, jamais de n.
+        depart = (np.arange(self.n, dtype=np.uint32) * np.uint32(2654435761)) % np.uint32(10_000)
+        cle_priorite = -self.degre.astype(np.int64) * 10_000 - depart.astype(np.int64)
+        self.ordre_priorite = np.argsort(cle_priorite, kind="stable").astype(np.int64)
         self.duree_construction_ms = (time.perf_counter() - t0) * 1000
 
     # ---- construction --------------------------------------------------------------------------
@@ -225,7 +234,8 @@ class Pyramide:
             self.eordre = np.zeros(0, dtype=np.int64)
             return
         self.x0, self.y0 = float(self.x.min()), float(self.y.min())
-        self.gw = int((self.x.max() - self.x0) // CELLULE) + 2
+        self.x1, self.y1 = float(self.x.max()), float(self.y.max())
+        self.gw = int((self.x1 - self.x0) // CELLULE) + 2
         self.gh = int((self.y.max() - self.y0) // CELLULE) + 2
         cell = ((self.y - self.y0) // CELLULE).astype(np.int64) * self.gw + ((self.x - self.x0) // CELLULE).astype(np.int64)
         self._cell = cell
@@ -255,97 +265,46 @@ class Pyramide:
         idx = idx[k]
         return idx[:maximum] if maximum else idx
 
-    def niveau_pour(self, zoom: float) -> int:
-        """Niveau de grappes (1..3) : le plus fin dont la grappe typique reste lisible ; 3 sinon."""
-        for niv in (1, 2, 3):
-            if self.niv[niv].r_med * zoom >= RAYON_LISIBLE:
-                return niv
-        return 3
-
-    def grappes_dans(self, niv: int, x0, y0, x1, y1) -> np.ndarray:
-        v = self.niv[niv]
-        k = (v.taille > 0) & (v.x + v.r >= x0) & (v.x - v.r <= x1) & (v.y + v.r >= y0) & (v.y - v.r <= y1)
-        return np.nonzero(k)[0]
-
-    def _vers_niveau(self, niv: int) -> np.ndarray:
-        """Grappe de niveau `niv` de chaque jumeau."""
-        if niv == 1:
-            return self.com
-        if niv == 2:
-            return self.gid[self.com]
-        return self.dom_c[self.com].astype(np.int32)
-
-    def liens_grappes(self, niv: int, ids: np.ndarray, x0, y0, x1, y1):
-        """Liens agrégés entre grappes visibles, par échantillonnage spatial des liens de la zone."""
-        if ids.size == 0 or self.m == 0:
-            return []
-        el = self._lignes(self.edebut, self.eordre, x0, y0, x1, y1)
-        if el.size > ECHANTILLON_LIENS:
-            el = el[:: int(np.ceil(el.size / ECHANTILLON_LIENS))]
-        if el.size == 0:
-            return []
-        vers = self._vers_niveau(niv)
-        a, b = vers[self.ea[el]], vers[self.eb[el]]
-        pos = np.full(int(self.niv[niv].taille.shape[0]), -1, dtype=np.int32)
-        pos[ids] = np.arange(ids.size, dtype=np.int32)
-        pa, pb = pos[a], pos[b]
-        k = (pa >= 0) & (pb >= 0) & (pa != pb)
-        if not k.any():
-            return []
-        lo, hi = np.minimum(pa[k], pb[k]).astype(np.int64), np.maximum(pa[k], pb[k]).astype(np.int64)
-        cles, nb = np.unique(lo * 1_000_000 + hi, return_counts=True)
-        ordre = np.argsort(-nb)[:MAX_LIENS_GRAPPES]
-        return [{"a": int(cles[i] // 1_000_000), "b": int(cles[i] % 1_000_000), "poids": int(nb[i])} for i in ordre]
-
-    def nom_grappe(self, niv: int, i: int) -> str:
-        v = self.niv[niv]
-        d = self.noms_domaines[int(v.dom[i])]
-        if niv == 3:
-            return d
-        if niv == 2:
-            return f"{d} · groupe {int(v.rang[i])}"
-        g = int(self.gid[i])
-        return f"{d} · groupe {int(self.niv[2].rang[g])} · communauté {int(v.rang[i])}"
+    def selection_prioritaire(self, x0, y0, x1, y1, budget: int) -> np.ndarray:
+        """Jusqu'à `budget` jumeaux de la fenêtre — TOUS s'ils tiennent, sinon les mieux connectés d'abord
+        (`ordre_priorite`, stable). Coût borné par le budget, jamais par n : à grande fenêtre archi-dense, on
+        s'arrête d'ABORD à `jumeaux_dans` (elle-même bornée par la grille) pour savoir si ça tient large ;
+        si non, on scrute l'ordre de priorité global (borné par `SCRUTIN_PRIORITE`) plutôt que de trier tout
+        ce qui tombe dans la fenêtre — qui pourrait être le Mesh entier."""
+        # Fenêtre qui couvre déjà tout le monde connu : inutile de balayer la grille pour SAVOIR qu'il y a plus
+        # de jumeaux que le budget (ce serait, à elle seule, un parcours de tout n) — on le sait déjà.
+        englobe_tout = self.n > budget and x0 <= self.x0 and y0 <= self.y0 and x1 >= self.x1 and y1 >= self.y1
+        if not englobe_tout:
+            idx = self.jumeaux_dans(x0, y0, x1, y1, budget + 1)
+            if idx.size <= budget:
+                return idx
+        else:
+            idx = np.zeros(0, dtype=np.int64)
+        candidats = self.ordre_priorite[:SCRUTIN_PRIORITE]
+        xc, yc = self.x[candidats], self.y[candidats]
+        k = (xc >= x0) & (xc <= x1) & (yc >= y0) & (yc <= y1)
+        choisis = candidats[k][:budget]
+        if choisis.size >= budget:
+            return choisis
+        # la fenêtre est assez fournie (> budget par la grille) mais ses membres sont surtout de faible priorité,
+        # hors du scrutin global : on complète avec ce que la grille avait déjà trouvé, sans dépasser le budget
+        reste = idx[~np.isin(idx, choisis, assume_unique=False)]
+        return np.concatenate([choisis, reste])[:budget]
 
     # ---- réponse d'une vue --------------------------------------------------------------------------------
     def vue(self, x0: float, y0: float, x1: float, y1: float, zoom: float) -> dict:
-        """Vue bornée d'une fenêtre monde à un zoom donné. Le nombre d'éléments renvoyés ne dépend pas de n."""
+        """Vue bornée d'une fenêtre monde à un zoom donné : toujours de VRAIS jumeaux, jamais une grappe qui en
+        tient lieu. Le nombre renvoyé ne dépend pas de n ; ce qui varie avec le zoom, c'est seulement combien on
+        en montre — et un jumeau une fois montré le reste tant qu'il est dans la fenêtre (rang stable : on ne
+        « saute » jamais d'un rendu à l'autre, on se remplit)."""
         t0 = time.perf_counter()
         if self.n == 0:
-            return {"mode": "vide", "niveau": 0, "grappes": [], "jumeaux": [], "liens": [], "n_total": 0, "duree_ms": 0.0}
+            return {"mode": "vide", "jumeaux": [], "liens": [], "n_total": 0, "duree_ms": 0.0}
+        idx = self.selection_prioritaire(x0, y0, x1, y1, MAX_JUMEAUX)
         rep: dict = {"n_total": self.n, "zoom": zoom}
-        if zoom >= ZOOM_JUMEAUX:
-            idx = self.jumeaux_dans(x0, y0, x1, y1, MAX_JUMEAUX)
-            rep.update(self._jumeaux(idx, x0, y0, x1, y1))
-        else:
-            idx = self.jumeaux_dans(x0, y0, x1, y1, MAX_POINTS + 1)
-            points = idx if idx.size <= MAX_POINTS else None
-            if points is not None:
-                ids = self.grappes_dans(1, x0, y0, x1, y1)
-                rep.update({"mode": "points", "niveau": 1, "grappes": self._grappes(1, ids), "liens": [], "jumeaux": [],
-                            "points": {"i": points.tolist(), "x": np.round(self.x[points], 1).tolist(), "y": np.round(self.y[points], 1).tolist(),
-                                       "d": self.dom[points].tolist(), "e": self.ecart[points].tolist(), "a": self.alerte[points].tolist()}})
-            else:
-                niv = self.niveau_pour(zoom)
-                ids = self.grappes_dans(niv, x0, y0, x1, y1)
-                while ids.size > MAX_GRAPPES and niv < 3:  # trop dense à l'écran : on remonte d'un niveau
-                    niv += 1
-                    ids = self.grappes_dans(niv, x0, y0, x1, y1)
-                enfant = self.niv[niv - 1].r_med * zoom if niv > 1 else 0.0
-                fondu = float(np.clip((enfant - 7.0) / (RAYON_LISIBLE - 7.0), 0.0, 1.0)) if niv > 1 else 0.0
-                rep.update({"mode": "grappes", "niveau": niv, "fondu": round(fondu, 3), "grappes": self._grappes(niv, ids),
-                            "liens": self.liens_grappes(niv, ids, x0, y0, x1, y1), "jumeaux": []})
-                if fondu > 0.02 and niv > 1:
-                    enf = self.grappes_dans(niv - 1, x0, y0, x1, y1)
-                    if enf.size <= 900:
-                        rep["enfants"] = self._grappes(niv - 1, enf)
+        rep.update(self._jumeaux(idx, x0, y0, x1, y1))
         rep["duree_ms"] = round((time.perf_counter() - t0) * 1000, 2)
         return rep
-
-    def _grappes(self, niv: int, ids: np.ndarray) -> list:
-        v = self.niv[niv]
-        return [{"id": int(i), "niv": niv, "nom": self.nom_grappe(niv, int(i)), "x": round(float(v.x[i]), 1), "y": round(float(v.y[i]), 1),
-                 "r": round(float(v.r[i]), 1), "n": int(v.taille[i]), "dom": int(v.dom[i]), "ecarts": int(v.ecarts[i]), "alertes": int(v.alertes[i])} for i in ids]
 
     def _jumeaux(self, idx: np.ndarray, x0, y0, x1, y1) -> dict:
         marque = np.zeros(self.n, dtype=bool)
@@ -359,7 +318,7 @@ class Pyramide:
         jumeaux = [{"i": int(i), "x": round(float(self.x[i]), 1), "y": round(float(self.y[i]), 1), "dom": int(self.dom[i]), "com": int(self.com[i]),
                     "degre": int(self.degre[i]), "ecart": int(self.ecart[i]), "alerte": int(self.alerte[i]),
                     **({"id": self.ids[int(i)]} if self.ids is not None else {})} for i in idx]
-        return {"mode": "jumeaux", "niveau": 0, "grappes": [], "jumeaux": jumeaux, "liens": liens}
+        return {"mode": "jumeaux", "jumeaux": jumeaux, "liens": liens}
 
 
 # ---------------------------------------------------------------------------------------------

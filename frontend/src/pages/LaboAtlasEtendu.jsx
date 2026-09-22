@@ -171,7 +171,7 @@ export default function LaboAtlasEtendu() {
           {rep && (
             <div className="space-y-0.5 rounded-lg bg-white/[0.03] p-2 font-code text-[10px] leading-relaxed text-[#94A3B8]" data-testid="labo-etendu-stats">
               <div>{compact(rep.n_total)} jumeaux · {rep.domaines?.length} domaines · {rep.domaines_famille ? new Set(rep.domaines_famille).size : "—"} familles</div>
-              <div>{rep.serveur} ms serveur · vue « {{ 0: "Jumeaux", 1: "Communautés", 2: "Groupes", 3: "Domaines" }[rep.niveau] || "Jumeaux"} »</div>
+              <div>{compact(rep.jumeaux?.length || 0)} / {compact(rep.n_total)} jumeaux affichés · {rep.duree_ms} ms serveur</div>
             </div>
           )}
         </div>

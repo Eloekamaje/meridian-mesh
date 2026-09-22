@@ -32,29 +32,24 @@ def test_hierarchie_conserve_les_effectifs(p100k):
 
 @pytest.mark.parametrize("zoom", [0.02, 0.06, 0.2, 0.6, 1.5, 6])
 def test_reponse_bornee_quel_que_soit_n(p100k, zoom):
+    """À tout zoom, ce sont toujours de VRAIS jumeaux (jamais une grappe qui en tient lieu) — juste bornés."""
     r = p100k.vue(*fenetre(zoom), zoom)
-    assert len(r["grappes"]) <= pyramide.MAX_GRAPPES
     assert len(r["jumeaux"]) <= pyramide.MAX_JUMEAUX
-    assert len(r["liens"]) <= max(pyramide.MAX_LIENS_JUMEAUX, pyramide.MAX_LIENS_GRAPPES)
+    assert len(r["liens"]) <= pyramide.MAX_LIENS_JUMEAUX
     assert r["n_total"] == p100k.n
+    assert all({"i", "x", "y", "dom", "degre", "ecart", "alerte"} <= j.keys() for j in r["jumeaux"])
 
 
 def test_la_taille_de_la_reponse_reste_bornee_par_une_constante_quel_que_soit_n():
     """La réponse ne grandit jamais avec n : elle reste sous un plafond FIXE, que le Mesh ait 20 000 ou 400 000
     jumeaux. Un petit Mesh peut légitimement montrer PLUS de détail réel (ses points tiennent dans le budget) —
     ce n'est pas un défaut : mieux vaut de vrais points qu'une bulle, dès que c'est possible."""
-    plafond = pyramide.MAX_GRAPPES + pyramide.MAX_JUMEAUX + pyramide.MAX_LIENS_JUMEAUX + pyramide.MAX_POINTS
+    plafond = pyramide.MAX_JUMEAUX + pyramide.MAX_LIENS_JUMEAUX
     for taille in (20_000, 400_000):
         p = pyramide.synthetique(taille)
         for z in (0.03, 0.2, 0.9):
             r = p.vue(*fenetre(z, 9000, 9000), z)
-            n = len(r["grappes"]) + len(r["jumeaux"]) + len(r["liens"]) + len(r.get("points", {}).get("i", []))
-            assert n <= plafond
-
-
-def test_niveau_monotone_avec_le_zoom(p100k):
-    niv = [p100k.niveau_pour(z) for z in (0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.4)]
-    assert niv == sorted(niv, reverse=True)
+            assert len(r["jumeaux"]) + len(r["liens"]) <= plafond
 
 
 def test_zoom_proche_donne_des_jumeaux_avec_leurs_liens(p100k):
@@ -65,11 +60,25 @@ def test_zoom_proche_donne_des_jumeaux_avec_leurs_liens(p100k):
         assert all(l["source"] in ids and l["cible"] in ids for l in r["liens"])
 
 
-def test_les_grappes_portent_leurs_signaux(p100k):
+def test_dezoome_montre_les_jumeaux_les_mieux_connectes_dabord(p100k):
+    """Fenêtre bien plus dense que le budget : la sélection privilégie le DEGRÉ — jamais un tirage arbitraire —
+    et porte quand même les signaux réels (écarts) puisque ce sont de vrais jumeaux, pas une forme qui les tait."""
     r = p100k.vue(*fenetre(0.02, 20000, 20000, 1400), 0.02)
-    assert r["mode"] == "grappes"
-    assert any(g["ecarts"] > 0 for g in r["grappes"])
-    assert all(g["nom"] for g in r["grappes"])
+    assert r["mode"] == "jumeaux" and len(r["jumeaux"]) == pyramide.MAX_JUMEAUX  # fenêtre bien plus dense que le budget
+    degres = [j["degre"] for j in r["jumeaux"]]
+    assert min(degres) >= np.median(p100k.degre)  # la sélection ne pioche pas au hasard : elle privilégie les mieux connectés
+    assert any(j["ecart"] for j in r["jumeaux"])
+
+
+def test_zoomer_ne_fait_jamais_disparaitre_un_jumeau_deja_montre(p100k):
+    """Le maillage se REMPLIT en zoomant, il ne « saute » jamais d'un rendu à l'autre : tout jumeau montré dans une
+    fenêtre large reste montré dans une fenêtre plus étroite qui le contient encore (même budget)."""
+    large = p100k.vue(*fenetre(0.02, 20000, 20000, 1400), 0.02)
+    x0, y0, x1, y1 = fenetre(0.05, 20000, 20000, 1400)  # sous-fenêtre, plus proche, toujours centrée pareil
+    etroite = p100k.vue(x0, y0, x1, y1, 0.05)
+    dedans = {j["i"]: j for j in large["jumeaux"] if x0 <= j["x"] <= x1 and y0 <= j["y"] <= y1}
+    montres = {j["i"] for j in etroite["jumeaux"]}
+    assert dedans and set(dedans) <= montres
 
 
 def test_deterministe():
@@ -132,7 +141,7 @@ def test_endpoint_synthetique_borne(api):
     assert r.status_code == 200
     d = r.json()
     assert d["source"] == "synthetique" and d["n_total"] == 300_000
-    assert len(d["grappes"]) <= pyramide.MAX_GRAPPES
+    assert len(d["jumeaux"]) <= pyramide.MAX_JUMEAUX
 
 
 def test_endpoint_refuse_une_fenetre_vide_et_un_zoom_nul(api):
