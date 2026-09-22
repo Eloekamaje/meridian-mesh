@@ -28,7 +28,7 @@ export function centreRendu(rf, j, posOverrides, decalage) {
   return { x: p.x + decalage.x, y: p.y + decalage.y };
 }
 
-export default function useNavigationAtlas({ mesh, jumeauPar, posOverrides, selection, majUrl, setDomaineSel, setOnglet, setSelected, rfRef, decalage = { x: 30, y: 40 } }) {
+export default function useNavigationAtlas({ mesh, jumeauPar, posOverrides, selection, majUrl, setDomaineSel, setSelected, rfRef, decalage = { x: 30, y: 40 } }) {
   const [domaineActif, setDomaineActif] = useState(null);
   const stabilisation = useRef({ label: undefined, depuis: 0 });
 
@@ -52,7 +52,6 @@ export default function useNavigationAtlas({ mesh, jumeauPar, posOverrides, sele
   const explorerDomaine = useCallback((label, { ajuster = false } = {}) => {
     const membres = (mesh?.jumeaux || []).filter((j) => j.domaine === label && !j.anonyme);
     setDomaineSel(label);
-    setOnglet("detail");
     majUrl({ domaine: label, sel: null, jumeau: null });
     // Navigation programmée : synchroniser le contexte passif sans attendre un nouvel onMove
     stabilisation.current = { label, depuis: Date.now() };
@@ -72,20 +71,19 @@ export default function useNavigationAtlas({ mesh, jumeauPar, posOverrides, sele
       const cy = pts.reduce((a, p) => a + p.y, 0) / pts.length + decalage.y;
       rfRef.current.setCenter(cx, cy, { zoom: z, duration: 800 });
     }
-  }, [mesh, posOverrides, majUrl, setDomaineSel, setOnglet, rfRef, decalage]);
+  }, [mesh, posOverrides, majUrl, setDomaineSel, rfRef, decalage]);
 
   // Double-clic jumeau : déplacement animé + zoom explicite centré sur lui
   const centrerJumeau = useCallback((j) => {
     const pos = centreRendu(rfRef.current, j, posOverrides, decalage);
     setSelected(j);
     setDomaineSel(null);
-    setOnglet("detail");
     majUrl({ sel: j.id, jumeau: null });
     stabilisation.current = { label: j.domaine, depuis: Date.now() };
     setDomaineActif(j.domaine);
     const z = rfRef.current?.getZoom() ?? 1;
     setTimeout(() => rfRef.current?.setCenter(pos.x, pos.y, { zoom: Math.min(Math.max(z * 1.6, 1.5), 2.4), duration: 700 }), 300); // après la mise en page du panneau
-  }, [posOverrides, majUrl, setSelected, setDomaineSel, setOnglet, rfRef, decalage]);
+  }, [posOverrides, majUrl, setSelected, setDomaineSel, rfRef, decalage]);
 
   // « Mesh global » : ajuster à la vue (action explicite)
   const ajusterVue = useCallback(() => {

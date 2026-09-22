@@ -73,7 +73,6 @@ export default function Atlas() {
   const [events, setEvents] = useState([]);
   const [halo, setHalo] = useState(null);
   const [compteurs, setCompteurs] = useState({});
-  const [onglet, setOnglet] = useState("chrono");
   const [couches, setCouches] = useState({ operationnelle: true, connaissance: true, mesh: true });
   const [modeTemps, setModeTemps] = useState("direct"); // direct | pause | replay | historique | avantapres
   const [dateRef, setDateRef] = useState(null); // ms — curseur temporel
@@ -272,7 +271,7 @@ export default function Atlas() {
 
   const { domaineActif, majContexte, explorerDomaine, centrerJumeau, ajusterVue, revenirSelection } = useNavigationAtlas({
     mesh, jumeauPar, posOverrides, selection, majUrl,
-    setDomaineSel, setOnglet, setSelected, rfRef,
+    setDomaineSel, setSelected, rfRef,
     decalage: graphe ? DECALAGE_GRAPHE : DECALAGE_CLASSIQUE,
   });
 
@@ -286,12 +285,11 @@ export default function Atlas() {
     const s = searchParams.get("sel");
     if (d && (mesh.regions || []).some((r) => r.label === d)) {
       setDomaineSel(d);
-      setOnglet("detail");
       setTimeout(() => explorerDomaine(d), 350);
     }
     if (s) {
       const j = mesh.jumeaux.find((x) => x.id === s && !x.anonyme);
-      if (j) { setSelected(j); setOnglet("detail"); }
+      if (j) { setSelected(j); }
     }
     const jf = searchParams.get("jumeau");
     if (jf) {
@@ -449,7 +447,6 @@ export default function Atlas() {
       const rel = (mesh?.relations || []).find((r) => r.id === focusCarte.relationId);
       if (!rel) return;
       setSelectedRelation(rel);
-      setOnglet("detail");
       activerTheatreSituationnel({
         cibles: [rel.source, rel.cible],
         accents: [rel.source, rel.cible],
@@ -744,11 +741,11 @@ export default function Atlas() {
     if (atlasEtat.domaine) setDomaineSel(atlasEtat.domaine);
     if (atlasEtat.twinId) {
       const j = (mesh.jumeaux || []).find((x) => x.id === atlasEtat.twinId);
-      if (j) { setSelected(j); setOnglet("detail"); }
+      if (j) { setSelected(j); }
     }
     if (atlasEtat.relationId) {
       const r = (mesh.relations || []).find((x) => x.id === atlasEtat.relationId);
-      if (r) { setSelectedRelation(r); setOnglet("detail"); }
+      if (r) { setSelectedRelation(r); }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mesh]);
@@ -1330,7 +1327,7 @@ export default function Atlas() {
   // Rendu graphe : un domaine se cherche comme un jumeau — la caméra cadre ses robots, les autres s'estompent
   const ouvrirDomaine = (label) => {
     setSelected(null); setSelectedRelation(null); setVueListe(null);
-    setDomaineSel(label); setOnglet("detail"); setRecherche("");
+    setDomaineSel(label); setRecherche("");
     majUrl({ domaine: label, sel: null, jumeau: null });
     const membres = (mesh?.jumeaux || []).filter((j) => j.domaine === label && !j.anonyme && !j.cadastre);
     if (!membres.length) return;
@@ -1360,7 +1357,6 @@ export default function Atlas() {
     setSelectedRelation(null);
     setDomaineSel(null);
     setVueListe(null);
-    setOnglet("detail");
     setRecherche("");
   };
 
@@ -1375,8 +1371,7 @@ export default function Atlas() {
   const choisirDepuisEchelle = (t) => {
     const j = t.id && mesh?.jumeaux.find((x) => x.id === t.id && !x.anonyme);
     if (!j) { toast.info("Jumeau du jeu d'essai — pas de fiche"); return; }
-    setSelected(j); setSelectedRelation(null); setDomaineSel(null); setVueListe(null); setOnglet("detail");
-    majUrl({ sel: j.id, domaine: null });
+    setSelected(j); setSelectedRelation(null); setDomaineSel(null); setVueListe(null);    majUrl({ sel: j.id, domaine: null });
   };
 
   const eventsVisibles = events.filter((e) => couches[e.dynamique || "operationnelle"]);
@@ -1509,7 +1504,6 @@ export default function Atlas() {
             setSelected(null);
             setSelectedRelation(null);
             setVueListe(null);
-            setOnglet("detail");
             return;
           }
           if (node.data?.grappe) {
@@ -1528,7 +1522,6 @@ export default function Atlas() {
           setSelectedRelation(null);
           setDomaineSel(null);
           setVueListe(null);
-          setOnglet("detail");
           // Moteur d'interaction : un seul point chaud à la fois — le clic remplace le survol
           setSurvolJumeau(null);
           setRelSurvolee(null);
@@ -1554,7 +1547,6 @@ export default function Atlas() {
           setRelSurvolee(null);
           setRelTooltipPos(null);
           setRegionTooltip(null);
-          setOnglet("detail");
         }}
         onEdgeMouseEnter={(e, edge) => {
           setRelSurvolee(edge.id);
@@ -1601,7 +1593,6 @@ export default function Atlas() {
               setSelected(null);
               setSelectedRelation(null);
               setDomaineSel(membrane.data.label);
-              setOnglet("detail");
               majUrl({ domaine: membrane.data.label, sel: null });
               return;
             }
@@ -1660,7 +1651,6 @@ export default function Atlas() {
                   setSelected(null);
                   setSelectedRelation(null);
                   setDomaineSel(d.label);
-                  setOnglet("detail");
                   majUrl({ domaine: d.label, sel: null });
                 }}
                 onDoubleClick={() => explorerDomaine(d.label)}
@@ -2118,7 +2108,7 @@ export default function Atlas() {
 
     </div>
 
-      {selected && (
+      {selected && !floreOuverte && (
         <PanneauJumeau
           presentation={estMobile ? "feuillet" : estTablette ? "superposee" : "colonne"}
           jumeau={selected}
@@ -2135,23 +2125,18 @@ export default function Atlas() {
         />
       )}
       <AtlasPanneau
-        onglet={onglet} setOnglet={setOnglet}
         comparaison={comparaison} selectedRelation={selectedRelation}
-        selected={selected} domaineSel={domaineSel}
+        domaineSel={domaineSel}
         statsDomaine={statsDomaine} actionsDomaine={actionsDomaine}
         confirmerRelation={confirmerRelation}
         eventsVisibles={eventsVisibles} jumeauPar={jumeauPar}
         presentation={estMobile ? "feuillet" : estTablette ? "superposee" : "colonne"}
         masquee={floreOuverte}
-        sansJumeau
         onActionSituation={actionSituation}
-        mesh={mesh} situations={situations} vueListe={vueListe} setVueListe={setVueListe}
+        mesh={mesh} situations={situations} vueListe={vueListe}
         favorisIds={favorisIds} onBasculerFavori={onBasculerFavori}
-        statsTwin={statsSelection}
-        onInterroger={() => { if (selected) parlerAuJumeau([selected.id]); }}
         onChoisirJumeau={centrerSurJumeau}
         onChoisirSituation={(id) => majUrl({ situation: id })}
-        onRelancerRecherche={(t) => { setRecherche(t); setLoupeForcee(true); if (estMobile) setRechercheMobileOuverte(true); }}
         onFermer={() => { setSelected(null); setSelectedRelation(null); setDomaineSel(null); setComparaison(null); setVueListe(null); majUrl({ sel: null, domaine: null }); }}
       />
     </div>

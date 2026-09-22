@@ -349,3 +349,5 @@ Limites restantes : les observations viennent d'un appel d'API (la démonstratio
 
 **Salutation et heure du jour.** « Bonjour » porte le nom du profil connecté (celui de la barre latérale, `useIdentite`), pas celui du rôle joué. La vue du jour ne transmet plus de date au serveur : « aujourd'hui » est celui du serveur (UTC) ; avant, le soir dans un fuseau en retard sur UTC, la vue devenait « hier » et perdait son budget d'attention.
 
+**Un seul panneau de détail dans l'Atlas.** Le panneau à onglets « Détail / Chronologie » est supprimé. `PanneauLateral` est la coque unique (en-tête, fermeture, colonne / superposé / feuille) ; le jumeau (`PanneauJumeau`) et le domaine, la relation, la comparaison et les listes personnelles (`AtlasPanneau`, désormais un simple contenu) s'y posent chacun avec leurs propres informations. La chronologie n'est plus un onglet : c'est une rubrique « Chronologie » du détail d'un domaine (les événements de ses jumeaux). Quand Flore occupe la colonne droite, le panneau (jumeau compris) s'efface : les deux se remplacent.
+

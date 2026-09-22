@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
-import { X, SidebarSimple, Star } from "@phosphor-icons/react";
-import { COUCHES, idNumerique } from "@/lib/atlasGraph";
+import { Star } from "@phosphor-icons/react";
+import { idNumerique } from "@/lib/atlasGraph";
 import { couleurDomaine, NATURES_EVENEMENT, VERBES } from "@/lib/domaines";
 import { recents } from "@/lib/memoire";
-import { RelationDetail, DomaineDetail, ComparaisonDomaines, TwinDetail } from "./details";
+import { RelationDetail, DomaineDetail, ComparaisonDomaines, Section } from "./details";
+import PanneauLateral from "./PanneauLateral";
 
 const STATUTS_CLOS = ["ignorée", "classée", "décidée"];
 const TITRES_LISTES = {
@@ -86,191 +86,61 @@ function ListePersonnelle({ vueListe, mesh, situations, favorisIds, onBasculerFa
   );
 }
 
+// Le détail d'un DOMAINE, d'une relation, d'une comparaison ou d'une liste : le même panneau que celui d'un jumeau (PanneauLateral),
+// avec ses propres informations. L'ancien panneau à onglets « Détail / Chronologie » n'existe plus : la chronologie d'un domaine
+// est une rubrique de son détail.
 export default function AtlasPanneau({
-  onglet, setOnglet,
-  comparaison, selectedRelation, selected, domaineSel,
+  comparaison, selectedRelation, domaineSel,
   statsDomaine, actionsDomaine, confirmerRelation,
-  eventsVisibles, jumeauPar,
-  presentation = "colonne", // "colonne" (bureau, dans le layout) | "superposee" (tablette, à droite par-dessus la carte) | "feuillet" (téléphone, bottom sheet)
-  masquee = false, // Flore ouverte : Flore occupe la colonne droite — les deux panneaux se remplacent, jamais côte à côte
-  sansJumeau = false, // desktop : le détail jumeau vit dans sa colonne gauche (PanneauJumeau), ce panneau garde domaines/relations/listes
+  eventsVisibles = [], jumeauPar,
+  presentation = "colonne", // "colonne" | "superposee" | "feuillet"
+  masquee = false, // Flore occupe la colonne droite : les deux se remplacent, jamais côte à côte
   onActionSituation,
-  mesh, situations, vueListe, setVueListe,
-  favorisIds = [], onBasculerFavori, onChoisirJumeau, onChoisirSituation, onRelancerRecherche,
-  onFermer, statsTwin, onInterroger,
+  mesh, situations, vueListe,
+  favorisIds = [], onBasculerFavori, onChoisirJumeau, onChoisirSituation,
+  onFermer,
 }) {
-  const feuillet = presentation === "feuillet";
-  const superposee = presentation === "superposee";
-  // Refermé par défaut sur les petits écrans pour laisser la carte respirer
-  const [ouvert, setOuvert] = useState(false);
-  const [replie, setReplie] = useState(false); // état réduit de la bottom sheet (poignée + titre)
+  const ouvert = !!(comparaison || selectedRelation || domaineSel || vueListe);
+  if (masquee || !ouvert) return null;
 
-  // Repli automatique quand la fenêtre devient petite (redimensionnement)
-  useEffect(() => {
-    const mq = window.matchMedia("(min-width: 1500px)");
-    const maj = (e) => { if (!e.matches) setOuvert(false); };
-    mq.addEventListener("change", maj);
-    return () => mq.removeEventListener("change", maj);
-  }, []);
+  const kicker = vueListe ? TITRES_LISTES[vueListe] : selectedRelation ? "Relation" : comparaison ? "Comparaison" : `Domaine`;
+  const couleur = domaineSel && !selectedRelation && !comparaison && !vueListe ? couleurDomaine(domaineSel) : null;
 
-  // Sur desktop (sansJumeau), le détail jumeau vit dans sa colonne gauche — ce panneau garde le reste.
-  const selectionActive = sansJumeau ? null : selected;
+  // Chronologie du domaine : les événements des jumeaux de ce domaine
+  const idsDomaine = new Set((mesh?.jumeaux || []).filter((j) => j.domaine === domaineSel).map((j) => j.id));
+  const evenements = eventsVisibles.filter((e) => idsDomaine.has(e.jumeau));
 
-  // Toute nouvelle sélection ou liste rouvre le panneau (sans jamais déplacer la carte).
-  // Sur desktop (sansJumeau), le détail jumeau vit dans sa colonne gauche — il n'ouvre pas ce panneau.
-  useEffect(() => {
-    if (comparaison || selectedRelation || selectionActive || domaineSel || vueListe) { setOuvert(true); setReplie(false); }
-  }, [comparaison, selectedRelation, selectionActive, domaineSel, vueListe]);
-
-  const titre = selectionActive?.nom || domaineSel || (selectedRelation ? "Relation" : comparaison ? "Comparaison" : vueListe ? TITRES_LISTES[vueListe] : "Atlas");
-
-  const entete = (
-    <div className="flex border-b border-[rgba(148,163,184,0.16)]">
-      {[["detail", "Détail"], ["chrono", "Chronologie"]].map(([id, label]) => (
-        <button
-          key={id}
-          onClick={() => { setVueListe?.(null); setOnglet(id); }}
-          data-testid={`map-tab-${id}`}
-          className={`flex-1 px-3 py-2.5 font-code text-[10px] uppercase tracking-[0.2em] transition-colors ${
-            !vueListe && onglet === id ? "bg-[rgba(148,163,184,0.10)] text-[#F2F6F8]" : "text-[#7C93A8] hover:text-[#D8E2EA]"
-          }`}
-        >
-          {label}
-        </button>
-      ))}
-      <button
-        onClick={() => { setOuvert(false); onFermer?.(); }}
-        data-testid="panneau-fermer-btn" title="Replier le panneau" className="px-2.5 text-[#7C93A8] transition-colors hover:text-[#F2F6F8]"
-      >
-        <X size={13} />
-      </button>
-    </div>
-  );
-
-  const contenu = (
-    <div className="flex-1 overflow-y-auto p-4">
-      {vueListe ? (
-        <ListePersonnelle
-          vueListe={vueListe} mesh={mesh} situations={situations}
-          favorisIds={favorisIds} onBasculerFavori={onBasculerFavori}
-          onChoisirJumeau={onChoisirJumeau} onChoisirSituation={onChoisirSituation}
-        />
-      ) : onglet === "detail" ? (
-        comparaison ? (
-          <ComparaisonDomaines a={comparaison.a} b={comparaison.b} statsDomaine={statsDomaine} />
-        ) : selectedRelation ? (
-          <RelationDetail rel={selectedRelation} jumeauPar={jumeauPar} onConfirmer={confirmerRelation} />
-        ) : selectionActive ? (
-          <TwinDetail selected={selectionActive} favori={favorisIds.includes(selectionActive.id)} onBasculerFavori={onBasculerFavori} statsTwin={statsTwin} onInterroger={onInterroger} />
-        ) : domaineSel ? (
-          <DomaineDetail label={domaineSel} stats={statsDomaine(domaineSel)} actions={actionsDomaine} onActionSituation={onActionSituation} />
-        ) : (
-          <p className="text-xs text-[#7C93A8]">
-            Sélectionnez un jumeau, une relation ou un domaine. Double-clic : explorer (déplacement animé, zoom inchangé) ; la carte est continue — les domaines voisins se découvrent en la faisant glisser.
-          </p>
-        )
-      ) : (
-        <ul className="space-y-3" data-testid="map-chrono-list">
-          {eventsVisibles.map((e) => {
-            const j = jumeauPar(e.jumeau);
-            const c = NATURES_EVENEMENT[e.nature] || "#7C93A8";
-            const dyn = COUCHES.find(([id]) => id === (e.dynamique || "operationnelle"));
-            return (
-              <li key={e.uid} className="ticker-item flex items-start gap-2">
-                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: c }} />
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-code text-[10px]" style={{ color: couleurDomaine(j?.domaine) }}>{j?.nom || e.jumeau}</span>
-                    {dyn && <span className="font-code text-[8px] uppercase tracking-wider text-[#7C93A8]">{dyn[1]}</span>}
-                  </div>
-                  <p className="text-xs leading-snug text-[#94A3B8]">{e.texte}</p>
-                </div>
-              </li>
-            );
-          })}
-          {eventsVisibles.length === 0 && <li className="text-xs text-[#7C93A8]">Aucun événement sur les dynamiques visibles.</li>}
-        </ul>
-      )}
-    </div>
-  );
-
-  // Le panneau ne s'ouvre QUE sur sélection ou liste personnelle (règle PO : jamais d'état vide qui obstrue la carte)
-  const peutOuvrir = !!(comparaison || selectedRelation || selectionActive || domaineSel || vueListe);
-
-  // Masqué pendant que Flore occupe la colonne droite (l'état interne est conservé :
-  // à la fermeture de Flore, le panneau revient tel quel avec la même sélection)
-  if (masquee) return null;
-
-  if (!ouvert) {
-    if (!peutOuvrir) return null;
-    return feuillet || superposee ? (
-      <button
-        onClick={() => { setOnglet("detail"); setOuvert(true); }}
-        data-testid="panneau-ouvrir-btn"
-        title="Ouvrir le panneau Détail / Chronologie"
-        className="glass absolute bottom-20 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full px-4 py-2.5 font-code text-[10px] uppercase tracking-[0.15em] text-[#94A3B8] transition-colors hover:text-[#F2F6F8]"
-      >
-        <SidebarSimple size={14} /> Détail
-      </button>
-    ) : (
-      // Rail de réouverture : colonne fixe de 40 px à droite — rien ne flotte sur la carte
-      <div className="flex w-10 shrink-0 flex-col items-center border-l border-[rgba(148,163,184,0.16)] bg-[#0F1D28]/70 py-3 backdrop-blur-xl" data-testid="panneau-rail">
-        <button
-          onClick={() => { setOnglet("detail"); setOuvert(true); }}
-          data-testid="panneau-ouvrir-btn"
-          title="Ouvrir le panneau Détail / Chronologie"
-          className="flex h-8 w-8 items-center justify-center rounded-md text-[#7C93A8] transition-colors hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"
-        >
-          <SidebarSimple size={14} />
-        </button>
-      </div>
-    );
-  }
-
-  // Bottom sheet : superposée à la carte (jamais de redimensionnement), 3 états
-  // (fermée → réduite avec titre → complète), fermeture par la poignée ou le fond.
-  if (feuillet) {
-    return (
-      <aside
-        className="glass absolute inset-x-0 bottom-0 z-20 flex max-h-[60vh] flex-col overflow-hidden rounded-t-2xl border-t border-[rgba(148,163,184,0.16)] shadow-2xl"
-        data-testid="map-side-panel"
-        data-state={replie ? "reduit" : "complet"}
-      >
-        <button
-          onClick={() => setReplie((r) => !r)}
-          data-testid="feuillet-poignee"
-          title={replie ? "Déplier le détail" : "Replier (état réduit)"}
-          className="flex h-11 w-full shrink-0 flex-col items-center justify-center gap-0.5"
-        >
-          <span className="h-1 w-10 rounded-full bg-[#5B7089]" />
-          <span className="font-code text-[9px] uppercase tracking-[0.15em] text-[#7C93A8]" data-testid="feuillet-titre">{titre}</span>
-        </button>
-        {!replie && (
-          <>
-            {entete}
-            {contenu}
-          </>
-        )}
-      </aside>
-    );
-  }
-
-  // Tablette : le même panneau que sur bureau, posé à droite par-dessus la carte (jamais de redimensionnement)
-  if (superposee) {
-    return (
-      <aside className="absolute inset-y-0 right-0 z-20 flex w-[min(336px,92vw)] flex-col overflow-hidden border-l border-[rgba(148,163,184,0.16)] bg-[#0F1D28]/95 shadow-2xl backdrop-blur-xl" data-testid="map-side-panel" data-presentation="superposee">
-        {entete}
-        {contenu}
-      </aside>
-    );
-  }
-
-  // Colonne latérale (façon Google Maps) : le panneau prend sa place dans le layout —
-  // la carte se redimensionne, la mini-carte et les contrôles restent ancrés à leurs coins.
   return (
-    <aside className="flex h-full w-80 shrink-0 flex-col overflow-hidden border-l border-[rgba(148,163,184,0.16)] bg-[#0F1D28]/85 backdrop-blur-xl xl:w-[336px]" data-testid="map-side-panel">
-      {entete}
-      {contenu}
-    </aside>
+    <PanneauLateral kicker={kicker} couleur={couleur} onFermer={onFermer} presentation={presentation} testid="panneau-domaine">
+      {vueListe ? (
+        <ListePersonnelle vueListe={vueListe} mesh={mesh} situations={situations} favorisIds={favorisIds} onBasculerFavori={onBasculerFavori} onChoisirJumeau={onChoisirJumeau} onChoisirSituation={onChoisirSituation} />
+      ) : comparaison ? (
+        <ComparaisonDomaines a={comparaison.a} b={comparaison.b} statsDomaine={statsDomaine} />
+      ) : selectedRelation ? (
+        <RelationDetail rel={selectedRelation} jumeauPar={jumeauPar} onConfirmer={confirmerRelation} />
+      ) : (
+        <div className="space-y-4">
+          <DomaineDetail label={domaineSel} stats={statsDomaine(domaineSel)} actions={actionsDomaine} onActionSituation={onActionSituation} />
+          <Section titre="Chronologie" cle="chronologie" compte={evenements.length}>
+            <ul className="space-y-3" data-testid="domaine-chronologie">
+              {evenements.map((e) => {
+                const j = jumeauPar(e.jumeau);
+                const c = NATURES_EVENEMENT[e.nature] || "#7C93A8";
+                return (
+                  <li key={e.uid} className="flex items-start gap-2">
+                    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: c }} />
+                    <div>
+                      <span className="font-code text-[10px]" style={{ color: couleurDomaine(j?.domaine) }}>{j?.nom || e.jumeau}</span>
+                      <p className="text-xs leading-snug text-[#94A3B8]">{e.texte}</p>
+                    </div>
+                  </li>
+                );
+              })}
+              {evenements.length === 0 && <li className="text-xs text-[#7C93A8]">Aucun événement récent dans ce domaine.</li>}
+            </ul>
+          </Section>
+        </div>
+      )}
+    </PanneauLateral>
   );
 }
