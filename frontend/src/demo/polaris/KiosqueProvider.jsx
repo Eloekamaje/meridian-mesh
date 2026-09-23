@@ -14,11 +14,12 @@ import api from "@/lib/api";
 import { PilotageProvider } from "@/lib/pilotage";
 import { validerScenario } from "./scenarioSchema";
 import { installerMockPolaris, lireTravailDemo as lireTravail, synchroniserTravauxDemo } from "./mockApi";
-import { SCENARIOS } from "./scenarios/gestionnaire";
-import { FIXTURES_GESTIONNAIRE } from "./data/fixturesGestionnaire";
+import { SCENARIOS } from "./scenarios";
+import { FIXTURES_VP } from "./data/fixturesVP";
+import { FIXTURES_DIRECTEUR } from "./data/fixturesDirecteur";
 import { versEchanges, versMessageCase } from "./messages";
 
-const FIXTURES_PAR_PROFIL = { gestionnaire: FIXTURES_GESTIONNAIRE };
+const FIXTURES_PAR_PROFIL = { vp: FIXTURES_VP, directeur: FIXTURES_DIRECTEUR };
 
 export const RYTHME = {
   lectureMin: 2500,

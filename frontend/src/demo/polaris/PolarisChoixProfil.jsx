@@ -1,11 +1,12 @@
 // Choix du profil de la démonstration Polaris — page de la VRAIE application (route /demo),
 // rendue dans la zone de contenu : la sidebar reste là. Choisir un profil ramène sur l'Atlas réel.
-import { Sparkle, UserFocus, ChartLineUp, Compass, Lifebuoy, Code, ArrowRight } from "@phosphor-icons/react";
-import { PROFILS } from "./scenarios/gestionnaire";
+import { Sparkle, UserFocus, ChartLineUp, Compass, Lifebuoy, Code, ArrowRight, ChartPieSlice, Archive } from "@phosphor-icons/react";
+import { PROFILS } from "./scenarios";
 import { useKiosque } from "./KiosqueProvider";
 
 const ICONES = {
-  gestionnaire: UserFocus,
+  vp: ChartPieSlice,
+  directeur: Archive,
   "ligne-affaires": ChartLineUp,
   architecte: Compass,
   "support-ti": Lifebuoy,

@@ -169,7 +169,7 @@ export function reinitialiserTravauxDemo() {
 }
 
 function creerAdaptateur({ fixtures, scenario }) {
-  const personas = [{ id: scenario.profileId, nom: scenario.roleLabel, role: "Directeur · Polaris" }];
+  const personas = [{ id: scenario.profileId, nom: scenario.roleLabel, role: scenario.personaRole || "Polaris" }];
 
   return (config) => {
     const url = (config.url || "").split("?")[0];

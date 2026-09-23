@@ -286,6 +286,38 @@ export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif, childr
         </div>
       )}
 
+      {/* Tableau générique — colonnes/lignes libres, pour tout ce que le comparatif silos/socle et les
+          contributions (une ligne de texte par jumeau) ne peuvent pas rendre correctement */}
+      {fini && message.tableau && (
+        <div className="my-4 overflow-x-auto rounded-xl border border-white/[0.08] bg-[#0A131C]">
+          <table className="w-full min-w-[32rem] text-left text-xs">
+            <thead>
+              <tr className="border-b border-white/[0.08] font-code text-[10px] uppercase tracking-wider text-[#7C93A8]">
+                {message.tableau.colonnes.map((col, ci) => (
+                  <th key={ci} className={`py-2.5 px-3 ${ci === 0 ? "pl-4" : ""} ${ci === message.tableau.colonnes.length - 1 ? "pr-4" : ""}`}>
+                    {col}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/[0.05]">
+              {message.tableau.lignes.map((ligne, li) => (
+                <tr key={li}>
+                  {ligne.map((cellule, ci) => (
+                    <td
+                      key={ci}
+                      className={`py-2 px-3 ${ci === 0 ? "pl-4 font-medium text-[#CBD5E1]" : "text-[#94A3B8]"} ${ci === message.tableau.colonnes.length - 1 ? "pr-4" : ""}`}
+                    >
+                      {cellule}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {/* Bouton léger pour ouvrir le Document dans Canvas si disponible */}
       {fini && (message.documentCanvas || texte.includes("CASE_101_ARBITRAGE_CONVERGENCE.md")) && (
         <div className="pt-2">
