@@ -327,7 +327,7 @@ export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif, childr
             data-testid="btn-ouvrir-canvas-inline"
           >
             <FileText size={14} className="text-blue-400" />
-            <span>CASE_101_ARBITRAGE_CONVERGENCE.md</span>
+            <span>{message.documentCanvas || "CASE_101_ARBITRAGE_CONVERGENCE.md"}</span>
             <span className="text-blue-400 font-semibold">{canvasActif ? "(Canvas ouvert ↗)" : "(Ouvrir dans le Canvas ↗)"}</span>
           </button>
         </div>
@@ -371,6 +371,8 @@ export default function OngletTravail({
   // Le dossier CASE_101 et ses deux preuves sont le contenu du scénario de démonstration : ils n'appartiennent qu'au
   // travail de démonstration (né pendant la démo, ou le travail de démonstration du jeu de données), jamais aux travaux réels
   const contenuScenario = pilote ? !!pilote.documentGenere : cas?.id === "demo-polaris-work-g";
+  // Nom du document réellement généré par CE scénario — jamais un nom figé d'un ancien récit
+  const documentGenereNom = [...(cas.conversation || [])].reverse().find((m) => m.documentCanvas)?.documentCanvas || "CASE_101_ARBITRAGE_CONVERGENCE.md";
   const [nouveauMsg, setNouveauMsg] = useState("");
   const [envoiMsg, setEnvoiMsg] = useState(false);
   // Rubriques du volet (Résultats, Sources & Jumeaux) : chacune se plie et se déplie
@@ -628,10 +630,10 @@ export default function OngletTravail({
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-code text-xs font-semibold text-blue-200">
-                    CASE_101_ARBITRAGE_CONVERGENCE.md
+                    {documentGenereNom}
                   </div>
                   <div className="text-[11px] text-[#7C93A8]">
-                    Recommandation officielle · 5 sections
+                    Recommandation officielle
                   </div>
                 </div>
                 <span className="shrink-0 text-[11px] font-code text-blue-400">
