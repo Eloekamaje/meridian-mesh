@@ -19,8 +19,10 @@ import { CREATION_TRAVAIL_ACTIVE, FLORE_PRESENTATION, PROPOSITION_DEMO } from "@
 // saisie. Au premier envoi le travail naît et la conversation continue au même endroit — un seul chat pour tous les travaux.
 // Hors démonstration, la création réelle n'existe pas encore : Flore se présente, puis annonce qu'elle arrive.
 function nouveauBrouillon(pilote) {
+  // `anime: true` + un horodatage propre à ce montage : la présentation s'écrit au fil de l'eau à
+  // chaque nouvelle arrivée sur « Nouveau travail », comme n'importe quelle autre réponse de Flore.
   const presentation = !pilote && !CREATION_TRAVAIL_ACTIVE
-    ? [{ role: "flore", comportement: "expliquer", texte: FLORE_PRESENTATION, proposition: PROPOSITION_DEMO }]
+    ? [{ role: "flore", comportement: "expliquer", texte: FLORE_PRESENTATION, proposition: PROPOSITION_DEMO, quand: new Date().toISOString(), anime: true }]
     : [];
   return { id: null, brouillon: true, titre: "Nouveau travail", type: "demande", jumeaux: [], conversation: presentation };
 }
