@@ -141,7 +141,7 @@ function useDeroule(message, pilote) {
       return undefined;
     }
     if (!animer || enPause) return undefined;
-    const t = setTimeout(() => setN((x) => Math.min(total, x + 3)), 18);
+    const t = setTimeout(() => setN((x) => Math.min(total, x + 3)), 36); // ~83 car/s (voir FlorePanel.jsx)
     return () => clearTimeout(t);
   }, [n, total, animer, enPause, cle]);
   return { visible: (message.texte || "").slice(0, n), fini: n >= total };

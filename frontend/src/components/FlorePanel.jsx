@@ -105,7 +105,7 @@ function TexteTeletype({ texte, actif, gele = false, testid }) {
         if (v >= texte.length) { clearInterval(t); return v; }
         return Math.min(texte.length, v + 3);
       });
-    }, 18);
+    }, 36); // ~83 car/s : plus lent que la vitesse d'affichage brute, encore net et lisible
     return () => clearInterval(t);
   }, [texte, actif, reduit, gele]);
   const fini = n >= (texte || "").length;

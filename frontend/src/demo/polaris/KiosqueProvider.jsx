@@ -23,7 +23,7 @@ const FIXTURES_PAR_PROFIL = { gestionnaire: FIXTURES_GESTIONNAIRE };
 export const RYTHME = {
   lectureMin: 2500,
   lectureParMot: 190,
-  frappeMsParLot: 18, // 3 caractères par lot (télétype de Flore — laisse la marge de lecture faire le reste)
+  frappeMsParLot: 36, // 3 caractères par lot (~83 car/s, télétype de Flore — laisse la marge de lecture faire le reste)
   frappeHumaineMsParLot: 55, // 2 caractères par lot (~27 car/s) : une frappe humaine qu'on a le temps de lire en direct
   opMin: 800,
   opMax: 1100,
