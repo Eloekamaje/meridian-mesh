@@ -58,12 +58,6 @@ export const SCENARIO_GESTIONNAIRE = {
           sources: ["Portail client", "Poste conseiller", "Gestion des dossiers"],
           duree: 1500,
         },
-        // Découverte importante : un message de Flore, la ligne se poursuit en dessous
-        {
-          type: "message",
-          speaker: "flore",
-          text: "Les trois pistes reposent sur le même besoin : connaître l'état réel du dossier. Je mesure ce que cela représente en budget.",
-        },
         {
           type: "activity_step",
           activityId: "act-seq-1",
@@ -113,11 +107,6 @@ export const SCENARIO_GESTIONNAIRE = {
           label: "Vérification des interfaces et de leurs usages…",
           sources: ["Diffusion des statuts"],
           duree: 1500,
-        },
-        {
-          type: "message",
-          speaker: "flore",
-          text: "Une grande partie du besoin est déjà couverte en production. Je vérifie ce qu'il reste à raccorder.",
         },
         {
           type: "activity_step",
