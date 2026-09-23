@@ -13,6 +13,7 @@ import ConfierTravail from "@/components/case/ConfierTravail";
 import SurfacePreparation from "@/components/SurfacePreparation";
 import { BoutonRetour } from "@/components/EntetePage";
 import { usePilotage } from "@/lib/pilotage";
+import { useEcran } from "@/lib/ecran";
 import { CREATION_TRAVAIL_ACTIVE, FLORE_PRESENTATION, PROPOSITION_DEMO } from "@/lib/messagesFlore";
 
 // « Nouveau travail » est cette même page : un travail qui n'est pas encore né (pas d'identifiant), avec un fil vide et la même
@@ -34,6 +35,7 @@ export default function TravailDetail() {
   const navigate = useNavigate();
   const { version, persona } = usePerimetre();
   const pilote = usePilotage();
+  const ecran = useEcran();
   // Démonstration : le travail est déjà né quand la page s'ouvre — aucun écran de chargement
   const [cas, setCas] = useState(() => (brouillon ? nouveauBrouillon(pilote) : pilote?.lireTravail ? pilote.lireTravail(cid) : null));
   const [personas, setPersonas] = useState([]);
@@ -69,8 +71,10 @@ export default function TravailDetail() {
   useEffect(() => {
     // `canvasOuvert` (l'état réellement affiché), pas `pilote.canvasOuvert` : le Canvas ne s'ouvre plus
     // tout seul depuis le moteur de démo, il peut donc être ouvert manuellement sans que ce champ le
-    // reflète — le volet ne doit pas revenir par-dessus pour autant.
-    if (pilote && nbSources > 0 && !canvasOuvert) setVoletSourcesOuvert(true);
+    // reflète — le volet ne doit pas revenir par-dessus pour autant. Jamais sur mobile non plus : le
+    // volet y prend toute la largeur (inset-x-3) et recouvrirait entièrement le message qui vient
+    // d'arriver — sur ce format, le visiteur l'ouvre lui-même s'il le souhaite.
+    if (pilote && nbSources > 0 && !canvasOuvert && ecran !== "mobile") setVoletSourcesOuvert(true);
   }, [nbSources]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {

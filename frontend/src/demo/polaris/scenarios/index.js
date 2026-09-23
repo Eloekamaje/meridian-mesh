@@ -2,6 +2,8 @@
 // fixtures (voir KiosqueProvider.jsx). PROFILS liste tous les personnages, disponibles ou à venir.
 import { SCENARIO_VP } from "./vp";
 import { SCENARIO_DIRECTEUR } from "./directeur";
+import { SCENARIO_ANALYSTE } from "./analyste";
+import { SCENARIO_SUPPORTTI } from "./supportti";
 
 export const PROFILS = [
   {
@@ -14,6 +16,12 @@ export const PROFILS = [
     id: "directeur",
     titre: "Directeur Polaris",
     phrase: "Piloter le décommissionnement du parc applicatif.",
+    disponible: true,
+  },
+  {
+    id: "analyste",
+    titre: "Analyste d'affaires",
+    phrase: "Comprendre une application avant de la remplacer.",
     disponible: true,
   },
   {
@@ -30,9 +38,9 @@ export const PROFILS = [
   },
   {
     id: "support-ti",
-    titre: "Support TI",
-    phrase: "Relier les alertes et orienter le diagnostic.",
-    disponible: false,
+    titre: "Analyste support TI",
+    phrase: "Anticiper une dégradation avant les premiers impacts utilisateurs.",
+    disponible: true,
   },
   {
     id: "developpeur",
@@ -45,4 +53,6 @@ export const PROFILS = [
 export const SCENARIOS = {
   vp: SCENARIO_VP,
   directeur: SCENARIO_DIRECTEUR,
+  analyste: SCENARIO_ANALYSTE,
+  "support-ti": SCENARIO_SUPPORTTI,
 };

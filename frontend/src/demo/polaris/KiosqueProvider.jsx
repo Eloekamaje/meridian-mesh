@@ -17,15 +17,18 @@ import { installerMockPolaris, lireTravailDemo as lireTravail, synchroniserTrava
 import { SCENARIOS } from "./scenarios";
 import { FIXTURES_VP } from "./data/fixturesVP";
 import { FIXTURES_DIRECTEUR } from "./data/fixturesDirecteur";
+import { FIXTURES_ANALYSTE } from "./data/fixturesAnalyste";
+import { FIXTURES_SUPPORTTI } from "./data/fixturesSupportTI";
 import { versEchanges, versMessageCase } from "./messages";
 
-const FIXTURES_PAR_PROFIL = { vp: FIXTURES_VP, directeur: FIXTURES_DIRECTEUR };
+const FIXTURES_PAR_PROFIL = { vp: FIXTURES_VP, directeur: FIXTURES_DIRECTEUR, analyste: FIXTURES_ANALYSTE, "support-ti": FIXTURES_SUPPORTTI };
 
 export const RYTHME = {
   lectureMin: 2500,
   lectureParMot: 190,
   frappeMsParLot: 36, // 3 caractères par lot (~83 car/s, télétype de Flore — laisse la marge de lecture faire le reste)
-  frappeHumaineMsParLot: 55, // 2 caractères par lot (~27 car/s) : une frappe humaine qu'on a le temps de lire en direct
+  frappeHumaineMsParLot: 35, // 2 caractères par lot (~57 car/s) : une frappe humaine qu'on a le temps de lire en direct, sans traîner
+  pauseAnnonce: 400, // Après une simple annonce de Flore (« Je vais... »), avant l'activité qui suit : un battement, pas une pause de lecture complète — rien à lire encore
   opMin: 800,
   opMax: 1100,
   transitionSurface: 400,
@@ -63,8 +66,17 @@ const avancerAncrageActivites = (activites, messagesLength) =>
 function MoteurSession({ scenario, fixtures, onAccueil, children }) {
   const [erreursValidation] = useState(() => validerScenario(scenario, fixtures));
   const ouvertureInteractive = scenario.openingMode === "user_request";
+  // Ouverture par notification : le visiteur navigue ailleurs (Actualités) jusqu'à ce qu'un signal
+  // apparaisse et qu'il clique « Voir » — avant ça, rien ne joue tout seul (voir declencherNotification)
+  const ouvertureParNotification = scenario.openingMode === "notification";
   const [etat, setEtat] = useState(() => ({
-    status: erreursValidation.length ? "error" : ouvertureInteractive ? "awaiting_opening" : "initializing",
+    status: erreursValidation.length
+      ? "error"
+      : ouvertureInteractive
+        ? "awaiting_opening"
+        : ouvertureParNotification
+          ? "awaiting_notification"
+          : "initializing",
     erreur: erreursValidation.length ? `Scénario invalide :\n${erreursValidation.join("\n")}` : null,
     playMode: "auto",
     stepIndex: 0,
@@ -72,7 +84,7 @@ function MoteurSession({ scenario, fixtures, onAccueil, children }) {
     messages: [],
     activites: [], // lignes d'activité de Flore : { id, stepId, status, ops:[{label, sources, status}], apres }
     preparation: null, // { surface, titre } : la surface annoncée se prépare, l'ancien contenu reste stable
-    surface: ouvertureInteractive ? "atlas" : "flore",
+    surface: ouvertureInteractive ? "atlas" : ouvertureParNotification ? "actualites" : "flore",
     saisie: null, // { texte, enFrappe } — frappe simulée dans le composer réel (ouverture user_request)
     statutAvantPause: null,
     sceneId: null,
@@ -196,7 +208,15 @@ function MoteurSession({ scenario, fixtures, onAccueil, children }) {
         // La demande d'ouverture a déjà été lue pendant sa frappe dans le composer :
         // simple battement d'« envoi » au lieu du temps de lecture complet
         // Envoi de la demande : un battement, puis on est dans la conversation
-        const duree = premiereDemande ? 700 : dureeMessage(beat.text);
+        // Une simple annonce de Flore (« Je vais... »), qui ne clôt rien : ce qui suit (une activité,
+        // le plus souvent) n'a rien à faire lire davantage — un battement suffit, pas la pause de
+        // lecture complète (qui, elle, reste entière pour la réponse qui clôt vraiment l'échange).
+        const annonceSeule = beat.speaker === "flore" && !beat.terminer && !beat.contenu?.documentCanvas;
+        const duree = premiereDemande
+          ? 700
+          : annonceSeule
+            ? Math.ceil(beat.text.length / 3) * RYTHME.frappeMsParLot + RYTHME.pauseAnnonce
+            : dureeMessage(beat.text);
         const suite = () => {
           setEtat((e) => ({ ...e, frappeActive: false }));
           avancer();
@@ -335,6 +355,12 @@ function MoteurSession({ scenario, fixtures, onAccueil, children }) {
         ? { ...e, status: "opening_typing", surface: "nouveau", saisie: { texte: "", enFrappe: true } }
         : e
     );
+  }, []);
+
+  // Clic sur « Voir » dans la notification soudaine (ouverture par notification) : démarre le
+  // scénario directement — le premier beat est un message de Flore, pas une saisie à taper
+  const declencherNotification = useCallback(() => {
+    setEtat((e) => (e.status === "awaiting_notification" ? { ...e, status: "playing" } : e));
   }, []);
 
   const frappeOuverture = useRef(false);
@@ -579,8 +605,8 @@ function MoteurSession({ scenario, fixtures, onAccueil, children }) {
   const fermerPreuve = useCallback(() => setPreuveId(null), []);
 
   const valeur = useMemo(
-    () => ({ etat, versionTravaux, scenario, fixtures, pause, reprendre, suivant, lectureAuto, revoirDecouverte, acquitterScene, onAccueil, preuveId, ouvrirPreuve, fermerPreuve, demarrerOuverture }),
-    [etat, versionTravaux, scenario, fixtures, pause, reprendre, suivant, lectureAuto, revoirDecouverte, acquitterScene, onAccueil, preuveId, ouvrirPreuve, fermerPreuve, demarrerOuverture]
+    () => ({ etat, versionTravaux, scenario, fixtures, pause, reprendre, suivant, lectureAuto, revoirDecouverte, acquitterScene, onAccueil, preuveId, ouvrirPreuve, fermerPreuve, demarrerOuverture, declencherNotification }),
+    [etat, versionTravaux, scenario, fixtures, pause, reprendre, suivant, lectureAuto, revoirDecouverte, acquitterScene, onAccueil, preuveId, ouvrirPreuve, fermerPreuve, demarrerOuverture, declencherNotification]
   );
 
   // Contexte de pilotage lu par les VRAIES pages (Atlas, Nouveau travail, Travail, sidebar)
@@ -639,6 +665,10 @@ function VerrouRoute({ etat }) {
     let attendu = "/atlas";
     if (etat.surface === "nouveau" || etat.status === "opening_typing") attendu = "/travaux/nouveau";
     if (etat.surface === "travail") attendu = travail;
+    // Ouverture par notification : le visiteur reste sur Actualités tant que le signal n'a pas
+    // encore été cliqué (voir declencherNotification) — la surface passe à « travail » ensuite,
+    // exactement comme n'importe quel autre beat show_surface
+    if (etat.surface === "actualites") attendu = "/actualites";
     // Du « Nouveau travail » au travail né : même page, le fil continue en place (state.continuite)
     if (location.pathname !== attendu) navigate(attendu, { replace: true, state: location.pathname === "/travaux/nouveau" && attendu === travail ? { continuite: true } : undefined });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -698,9 +728,12 @@ export function KiosqueProvider({ children }) {
 
   const demarrer = useCallback(
     (id) => {
-      if (!SCENARIOS[id]) return;
+      const scenario = SCENARIOS[id];
+      if (!scenario) return;
       setProfileId(id);
-      navigate("/atlas"); // l'Atlas réel, accueil du produit — avec la main sur « Nouveau travail »
+      // Ouverture par notification : le visiteur atterrit sur Actualités, en pleine lecture — le
+      // signal de Flore apparaîtra de lui-même, sans qu'il ait rien demandé (voir SurcouchesKiosque)
+      navigate(scenario.openingMode === "notification" ? "/actualites" : "/atlas");
     },
     [navigate]
   );

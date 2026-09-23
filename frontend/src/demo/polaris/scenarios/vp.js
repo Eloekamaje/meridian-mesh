@@ -155,6 +155,10 @@ export const SCENARIO_VP = {
               { titre: "À privilégier", items: A_PRIVILEGIER },
               { titre: "À réexaminer (12 au total)", items: A_REEXAMINER_APERCU },
             ],
+            atlasScene: {
+              titre: "Capacité partagée entre les trois initiatives",
+              cibles: ["demo-vp-ini-suivi-demandes", "demo-vp-ini-poste-conseiller", "demo-vp-ini-controles-dossier", "demo-vp-cap-etat-dossier"],
+            },
           },
           terminer: "act-seq-1",
         },

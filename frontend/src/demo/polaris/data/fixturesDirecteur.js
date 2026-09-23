@@ -1,37 +1,48 @@
 // MÉRIDIAN — Kiosque Polaris : fixtures locales du parcours Directeur Polaris (données fictives,
 // jamais réseau). Tous les identifiants sont préfixés demo-directeur- (contrat §5.5).
-// Ni scènes ni révélation Atlas mises en scène : le scénario ne joue aucun beat apply_scene —
-// construireMesh() dans mockApi.js a des replis sûrs pour ces champs absents.
+// Ni scènes ni révélation Atlas mises en scène à l'ancienne (scenes: {}) : la mise en évidence de
+// Money Manager passe par le mécanisme réel de l'Atlas (commanderCarte / focusCarte de type
+// « scene »), déclenché depuis un bouton dans le message — jamais un changement de surface forcé.
 
 // 13 candidats au décommissionnement en 2028 : les 10 premiers (score composite le plus favorable —
-// coût, dépendances, risque, dette technique) sont montrés au directeur ; les 3 derniers concentrent
-// trop de dépendances critiques pour être traités dans ce cycle (jamais mentionnés dans le tableau
-// des 10, mais présents dans le Mesh comme le reste du parc applicatif réel).
+// économies, dette technologique, faisabilité du retrait) sont montrés au directeur ; les 3 derniers
+// concentrent trop de dépendances critiques entre eux pour être traités dans ce cycle (jamais
+// mentionnés dans le tableau des 10, mais présents dans le Mesh comme le reste du parc applicatif).
 export const APPLICATIONS = [
-  { id: "demo-directeur-app-vision", nom: "Application Vision", domaine: "Ventes", description: "Ancien outil de reporting commercial" },
-  { id: "demo-directeur-app-money-manager", nom: "Application Money Manager", domaine: "Finance", description: "Gestion budgétaire historique" },
-  { id: "demo-directeur-app-archive-client", nom: "Application Archive Client", domaine: "Client", description: "Archivage des dossiers clients clos" },
-  { id: "demo-directeur-app-payroll-light", nom: "Application Legacy Payroll Light", domaine: "RH", description: "Ancien module de paie allégé" },
-  { id: "demo-directeur-app-crm-lite", nom: "Application Old CRM Lite", domaine: "Ventes", description: "Ancien CRM simplifié" },
-  { id: "demo-directeur-app-rapports-v1", nom: "Application Rapports Régionaux V1", domaine: "Finance", description: "Première version des rapports régionaux" },
-  { id: "demo-directeur-app-fournisseurs-legacy", nom: "Application Suivi Fournisseurs Legacy", domaine: "Achats", description: "Ancien suivi des fournisseurs" },
-  { id: "demo-directeur-app-rh-historique", nom: "Application Portail RH Historique", domaine: "RH", description: "Ancien portail des ressources humaines" },
-  { id: "demo-directeur-app-facturation-v1", nom: "Application Facturation Régionale V1", domaine: "Finance", description: "Première version de la facturation régionale" },
-  { id: "demo-directeur-app-registre-contrats", nom: "Application Registre Contrats Papier", domaine: "Opérations", description: "Numérisation historique des contrats papier" },
-  { id: "demo-directeur-app-batch-scheduler", nom: "Application Batch Scheduler V1", domaine: "TI", description: "Ordonnanceur de traitements par lots" },
-  { id: "demo-directeur-app-middleware-v2", nom: "Application Middleware Interne V2", domaine: "TI", description: "Bus d'intégration interne historique" },
-  { id: "demo-directeur-app-data-warehouse", nom: "Application Data Warehouse Legacy", domaine: "TI", description: "Entrepôt de données historique" },
+  { id: "demo-directeur-app-vision", nom: "Vision", domaine: "Ventes", description: "Ancien outil de reporting commercial" },
+  { id: "demo-directeur-app-reportplus", nom: "ReportPlus", domaine: "Finance", description: "Génération de rapports financiers historiques" },
+  { id: "demo-directeur-app-docbridge", nom: "DocBridge", domaine: "Opérations", description: "Passerelle d'échange de documents entre systèmes" },
+  { id: "demo-directeur-app-suivi-agence", nom: "Suivi Agence", domaine: "Distribution", description: "Suivi d'activité des agences" },
+  { id: "demo-directeur-app-planifpro", nom: "PlanifPro", domaine: "Opérations", description: "Planification des interventions et des plannings d'équipe" },
+  { id: "demo-directeur-app-money-manager", nom: "Money Manager", domaine: "Finance", description: "Gestion budgétaire historique" },
+  { id: "demo-directeur-app-batchlink", nom: "BatchLink", domaine: "TI", description: "Orchestration de traitements par lots" },
+  { id: "demo-directeur-app-referentiel-contact", nom: "Référentiel Contact", domaine: "Client", description: "Référentiel historique des contacts clients" },
+  { id: "demo-directeur-app-dossier-express", nom: "Dossier Express", domaine: "Client", description: "Traitement accéléré de dossiers clients" },
+  { id: "demo-directeur-app-archive-services", nom: "Archive Services", domaine: "Opérations", description: "Service de consultation des archives" },
+  { id: "demo-directeur-app-middleware-v2", nom: "Middleware Interne V2", domaine: "TI", description: "Bus d'intégration interne historique" },
+  { id: "demo-directeur-app-data-warehouse", nom: "Data Warehouse Legacy", domaine: "TI", description: "Entrepôt de données historique" },
+  { id: "demo-directeur-app-ordonnanceur", nom: "Ordonnanceur Central", domaine: "TI", description: "Ordonnancement des traitements batch globaux" },
 ];
 
-export const ENTITES = [];
+// Les deux flux critiques de Money Manager : des capacités, pas des applications — exactement comme
+// la capacité partagée du parcours VP. Ce sont eux que l'Atlas met en évidence au tour 3.
+export const ENTITES = [
+  { id: "demo-directeur-flux-facturation", label: "Flux de facturation client", domaine: "Finance", detail: "Flux critique fourni par Money Manager, utilisé par Dossier Express" },
+  { id: "demo-directeur-flux-rapprochement", label: "Flux de rapprochement comptable", domaine: "Finance", detail: "Flux critique fourni par Money Manager, utilisé par Référentiel Contact" },
+];
 
 export const RELATIONS = [
-  { id: "demo-directeur-rel-money-manager-dwh", sourceId: "demo-directeur-app-money-manager", targetId: "demo-directeur-app-data-warehouse", label: "dépend de", knowledgeStatus: "observe" },
-  { id: "demo-directeur-rel-rapports-dwh", sourceId: "demo-directeur-app-rapports-v1", targetId: "demo-directeur-app-data-warehouse", label: "dépend de", knowledgeStatus: "observe" },
-  { id: "demo-directeur-rel-facturation-middleware", sourceId: "demo-directeur-app-facturation-v1", targetId: "demo-directeur-app-middleware-v2", label: "dépend de", knowledgeStatus: "observe" },
-  { id: "demo-directeur-rel-rh-middleware", sourceId: "demo-directeur-app-rh-historique", targetId: "demo-directeur-app-middleware-v2", label: "dépend de", knowledgeStatus: "a_etudier" },
-  { id: "demo-directeur-rel-batch-middleware", sourceId: "demo-directeur-app-batch-scheduler", targetId: "demo-directeur-app-middleware-v2", label: "dépend de", knowledgeStatus: "observe" },
+  // Les deux flux critiques dépendent de Money Manager, et deux applications dépendent d'eux —
+  // c'est exactement le chemin que l'Atlas met en évidence (« Money Manager, ses deux flux
+  // critiques et les applications qui les utilisent »)
+  { id: "demo-directeur-rel-facturation-mm", sourceId: "demo-directeur-flux-facturation", targetId: "demo-directeur-app-money-manager", label: "dépend de", knowledgeStatus: "observe" },
+  { id: "demo-directeur-rel-dossier-facturation", sourceId: "demo-directeur-app-dossier-express", targetId: "demo-directeur-flux-facturation", label: "dépend de", knowledgeStatus: "observe" },
+  { id: "demo-directeur-rel-rapprochement-mm", sourceId: "demo-directeur-flux-rapprochement", targetId: "demo-directeur-app-money-manager", label: "dépend de", knowledgeStatus: "observe" },
+  { id: "demo-directeur-rel-contact-rapprochement", sourceId: "demo-directeur-app-referentiel-contact", targetId: "demo-directeur-flux-rapprochement", label: "dépend de", knowledgeStatus: "observe" },
+  // Les 3 applications tenues à l'écart de ce cycle : trop interdépendantes entre elles
   { id: "demo-directeur-rel-dwh-middleware", sourceId: "demo-directeur-app-data-warehouse", targetId: "demo-directeur-app-middleware-v2", label: "interconnecté avec", knowledgeStatus: "observe" },
+  { id: "demo-directeur-rel-ordonnanceur-middleware", sourceId: "demo-directeur-app-ordonnanceur", targetId: "demo-directeur-app-middleware-v2", label: "dépend de", knowledgeStatus: "observe" },
+  { id: "demo-directeur-rel-ordonnanceur-dwh", sourceId: "demo-directeur-app-ordonnanceur", targetId: "demo-directeur-app-data-warehouse", label: "dépend de", knowledgeStatus: "a_etudier" },
 ];
 
 export const PREUVES = {
@@ -40,8 +51,8 @@ export const PREUVES = {
     title: "Inventaire applicatif Polaris 2028",
     sourceType: "Relevé préparé pour la démonstration",
     periodLabel: "État au 1er janvier 2028",
-    excerpt: "Recensement du parc applicatif Polaris avec, pour chaque application, le coût annuel de possession, le nombre de dépendances critiques, le nombre d'utilisateurs actifs et la dette technologique estimée.",
-    supports: "13 applications sont candidates au retrait en 2028 selon le coût de possession, les dépendances, le risque opérationnel et la dette technologique.",
+    excerpt: "Recensement du parc applicatif Polaris avec, pour chaque application, le coût annuel de possession, le nombre d'utilisateurs actifs, les dépendances critiques identifiées et la dette technologique estimée.",
+    supports: "13 applications sont candidates au retrait en 2028 selon leur coût, leurs dépendances, leur risque opérationnel et leur dette technologique.",
     limits: "Relevé préparé pour la démonstration ; les coûts et dépendances exacts restent à confirmer avec les équipes propriétaires.",
     fictional: true,
   },
@@ -50,9 +61,19 @@ export const PREUVES = {
     title: "Méthodologie de scoring de décommissionnement",
     sourceType: "Relevé de démonstration",
     periodLabel: "Cycle de planification 2028",
-    excerpt: "Score composite combinant coût de possession, nombre de dépendances critiques, risque opérationnel et dette technologique, utilisé pour classer les 13 candidats au retrait.",
-    supports: "10 des 13 candidats obtiennent un score favorable au retrait ou à la migration ; 3 concentrent trop de dépendances critiques pour ce cycle.",
+    excerpt: "Score composite combinant économies possibles, dette technologique et faisabilité du retrait, utilisé pour classer les 13 candidats et prioriser les 10 premiers.",
+    supports: "10 des 13 candidats obtiennent un score favorable au retrait pour ce cycle ; 3 concentrent trop de dépendances critiques entre eux.",
     limits: "Méthodologie préparée pour la démonstration ; les pondérations restent à valider avec l'équipe architecture.",
+    fictional: true,
+  },
+  "demo-directeur-ev-flux-money-manager": {
+    id: "demo-directeur-ev-flux-money-manager",
+    title: "Cartographie des flux critiques de Money Manager",
+    sourceType: "Relevé de démonstration",
+    periodLabel: "Cycle de planification 2028",
+    excerpt: "Deux flux critiques fournis par Money Manager restent utilisés : le flux de facturation client (Dossier Express) et le flux de rapprochement comptable (Référentiel Contact).",
+    supports: "Le retrait de Money Manager nécessite de migrer ces deux flux avant d'être envisagé.",
+    limits: "Cartographie préparée pour la démonstration ; les propriétaires exacts des flux restent à confirmer.",
     fictional: true,
   },
 };
@@ -60,31 +81,31 @@ export const PREUVES = {
 export const TRAVAIL_DIRECTEUR = {
   id: "demo-directeur-work",
   titreNaissance: "Candidats au retrait applicatif en 2028",
-  titre: "Plan de décommissionnement 2028 : 10 applications prioritaires",
+  titre: "Polaris — Plan de décommissionnement 2028",
   role: "Directeur Polaris",
-  objectifNaissance: "Identifier les applications du parc Polaris candidates au retrait en 2028.",
-  objectif: "Prioriser les applications à décommissionner en 2028 selon leur coût, leurs dépendances, leur risque opérationnel et leur dette technologique.",
-  resumeDiagnostic: "13 applications sont candidates au retrait en 2028, évaluées sur le coût de possession, les dépendances, le risque opérationnel et la dette technologique.",
-  synthese: "10 des 13 candidats peuvent être décommissionnés ou migrés sans dépendance critique bloquante ; les 3 restants (Middleware Interne V2, Data Warehouse Legacy, Batch Scheduler V1) concentrent trop de dépendances critiques pour ce cycle.",
+  objectifNaissance: "Identifier les applications du parc Polaris candidates à un retrait en 2028.",
+  objectif: "Prioriser et planifier le décommissionnement des applications Polaris pour 2028, selon les économies possibles, les dépendances critiques et la faisabilité du retrait.",
+  resumeDiagnostic: "13 applications sont candidates à un retrait en 2028. 10 d'entre elles sont priorisées selon les économies possibles, la dette technologique et la faisabilité du retrait ; les 3 autres concentrent trop de dépendances critiques entre elles pour ce cycle.",
+  synthese: "La première vague retient Vision, ReportPlus et DocBridge, avec un objectif de retrait au T2 2028 (710 k$ de coûts annuels). Money Manager présente un potentiel d'économie plus élevé, mais deux flux critiques en dépendent encore (utilisés par Dossier Express et Référentiel Contact) : sa migration est préparée en parallèle.",
   aValider: [
-    "Confirmer le calendrier de décommissionnement T1 à T3 2028 avec les équipes propriétaires",
-    "Valider les migrations préalables requises pour 3 des 10 applications",
-    "Réévaluer séparément les 3 applications à forte dépendance critique",
+    "Confirmer avec les utilisateurs de Vision que la plateforme cible couvre bien leurs deux fonctions de reporting",
+    "Valider la migration des deux flux critiques de Money Manager avant d'envisager son retrait",
+    "Confirmer les responsables et les dates de chaque retrait avec les équipes propriétaires",
   ],
   prochainesActions: [
-    "Lancer le décommissionnement T1 2028 pour les applications sans dépendance critique",
-    "Engager les migrations préalables requises avant fermeture",
-    "Réévaluer les 3 applications à forte dépendance au cycle suivant",
+    "Lancer le retrait de Vision, ReportPlus et DocBridge au T2 2028",
+    "Engager la migration des deux flux critiques de Money Manager",
+    "Confirmer la trajectoire prévisionnelle des 7 autres applications (T3-T4 2028)",
   ],
   hypotheses: [
-    "Le score composite (coût, dépendances, risque, dette technologique) reflète fidèlement la priorité de retrait. À confirmer avec l'équipe architecture.",
+    "Le score composite (économies possibles, dette technologique, faisabilité du retrait) reflète fidèlement l'ordre de priorité proposé. À confirmer avec l'équipe architecture.",
   ],
   options: [
     {
       id: "demo-directeur-opt-phase",
-      titre: "Décommissionnement en 3 phases (T1 à T3 2028)",
-      description: "Retirer les applications sans dépendance dès T1, puis celles nécessitant une migration préalable sur T2-T3.",
-      impacts: ["Risque opérationnel limité à chaque phase", "Charge de migration étalée dans le temps"],
+      titre: "Décommissionnement en 3 vagues (T2 à T4 2028)",
+      description: "Retirer d'abord les 3 applications sans dépendance (T2), puis celles nécessitant une migration de flux ou de traitements (T3), enfin celles à synchronisation ou parcours critiques (T4).",
+      impacts: ["Risque opérationnel limité à chaque vague", "Charge de migration étalée dans le temps"],
       risque: "faible",
       statut: "recommandee",
     },
@@ -97,23 +118,25 @@ export const TRAVAIL_DIRECTEUR = {
       statut: "a_evaluer",
     },
   ],
-  preuves: ["demo-directeur-ev-inventaire", "demo-directeur-ev-scoring"],
+  preuves: ["demo-directeur-ev-inventaire", "demo-directeur-ev-scoring", "demo-directeur-ev-flux-money-manager"],
 };
 
 export const POSITIONS_MESH = {
   "demo-directeur-app-vision": { x: -60, y: 120 },
-  "demo-directeur-app-money-manager": { x: 180, y: -40 },
-  "demo-directeur-app-archive-client": { x: -220, y: 280 },
-  "demo-directeur-app-payroll-light": { x: 420, y: -140 },
-  "demo-directeur-app-crm-lite": { x: 60, y: 340 },
-  "demo-directeur-app-rapports-v1": { x: 360, y: 60 },
-  "demo-directeur-app-fournisseurs-legacy": { x: -380, y: 60 },
-  "demo-directeur-app-rh-historique": { x: 600, y: -220 },
-  "demo-directeur-app-facturation-v1": { x: 260, y: 220 },
-  "demo-directeur-app-registre-contrats": { x: -140, y: 480 },
-  "demo-directeur-app-batch-scheduler": { x: 520, y: 380 },
-  "demo-directeur-app-middleware-v2": { x: 340, y: 500 },
-  "demo-directeur-app-data-warehouse": { x: 100, y: -220 },
+  "demo-directeur-app-reportplus": { x: -260, y: 40 },
+  "demo-directeur-app-docbridge": { x: -320, y: 220 },
+  "demo-directeur-app-suivi-agence": { x: -140, y: 320 },
+  "demo-directeur-app-planifpro": { x: 80, y: 340 },
+  "demo-directeur-app-money-manager": { x: 220, y: -40 },
+  "demo-directeur-app-batchlink": { x: 460, y: 260 },
+  "demo-directeur-app-referentiel-contact": { x: 420, y: -120 },
+  "demo-directeur-app-dossier-express": { x: 40, y: -180 },
+  "demo-directeur-app-archive-services": { x: -420, y: -60 },
+  "demo-directeur-flux-facturation": { x: 140, y: -220 },
+  "demo-directeur-flux-rapprochement": { x: 340, y: -220 },
+  "demo-directeur-app-middleware-v2": { x: 340, y: 480 },
+  "demo-directeur-app-data-warehouse": { x: 560, y: 400 },
+  "demo-directeur-app-ordonnanceur": { x: 560, y: 560 },
 };
 
 export const FIXTURES_DIRECTEUR = {

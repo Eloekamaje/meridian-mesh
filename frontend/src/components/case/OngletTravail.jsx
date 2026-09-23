@@ -20,7 +20,9 @@ import {
   Copy,
   ArrowsClockwise,
   DotsThree,
-  DownloadSimple
+  DownloadSimple,
+  MapTrifold,
+  X
 } from "@phosphor-icons/react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -36,6 +38,7 @@ import { usePilotage } from "@/lib/pilotage";
 import { useEcran } from "@/lib/ecran";
 import { rel } from "./utils";
 import CanvasDocument from "./CanvasDocument";
+import Atlas from "@/pages/Atlas";
 import { BandeauVeille, EvenementVeille, RepriseVeille, PreuvesMessage } from "./VeilleTravail";
 
 // Dictionnaire des Jumeaux participants du SI pour CASE-101
@@ -150,7 +153,7 @@ function useDeroule(message, pilote) {
 }
 
 // Rendu formaté, fluide et aéré du texte (Style ChatGPT / Claude)
-export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif, children }) {
+export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif, onVoirAtlas, atlasActif, children }) {
   const pilote = usePilotage();
   const texte = message.texte || "";
   const { visible, fini } = useDeroule(message, pilote);
@@ -195,6 +198,17 @@ export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif, childr
             <div key={idx} className="flex items-start gap-2 pl-2 text-sm text-[#CBD5E1]">
               <span className="text-[#60A5FA] mt-1 text-xs">•</span>
               <span dangerouslySetInnerHTML={{ __html: formaterGrasCode(contenu) }} />
+            </div>
+          );
+        }
+
+        // Liste numérotée (1. 2. 3. ...)
+        const numerotee = trimmed.match(/^(\d+)\.\s+(.*)$/);
+        if (numerotee) {
+          return (
+            <div key={idx} className="flex items-start gap-2 pl-2 text-sm text-[#CBD5E1]">
+              <span className="mt-px shrink-0 font-code text-xs font-semibold text-[#60A5FA]">{numerotee[1]}.</span>
+              <span dangerouslySetInnerHTML={{ __html: formaterGrasCode(numerotee[2]) }} />
             </div>
           );
         }
@@ -261,6 +275,29 @@ export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif, childr
               {message.kpis.socleSousTitre}
             </p>
           </div>
+        </div>
+      )}
+
+      {/* Tendances génériques — plusieurs indicateurs avec direction (hausse/baisse), pour une
+          dégradation progressive détectée sur plusieurs signaux à la fois (aucun seul ne suffit) */}
+      {fini && message.tendances && (
+        <div className="my-4 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+          {message.tendances.map((t, ti) => (
+            <div key={ti} className={`rounded-xl border p-3 ${t.alerte ? "border-amber-500/25 bg-amber-500/[0.06]" : "border-white/[0.08] bg-white/[0.03]"}`}>
+              <div className={`flex items-center justify-between ${t.alerte ? "text-amber-400" : "text-[#94A3B8]"}`}>
+                <span className="font-code text-[10px] uppercase tracking-wider">{t.libelle}</span>
+                {t.direction === "hausse" ? <ArrowUp size={14} weight="bold" /> : <ArrowDown size={14} weight="bold" />}
+              </div>
+              <div className={`mt-0.5 font-display text-base font-bold ${t.alerte ? "text-amber-300" : "text-[#F2F6F8]"}`}>
+                {t.valeur}
+              </div>
+              {t.detail && (
+                <p className={`mt-0.5 font-code text-[11px] ${t.alerte ? "text-amber-200/80" : "text-[#94A3B8]"}`}>
+                  {t.detail}
+                </p>
+              )}
+            </div>
+          ))}
         </div>
       )}
 
@@ -338,14 +375,34 @@ export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif, childr
                     <td
                       key={ci}
                       className={`py-2 px-3 ${ci === 0 ? "pl-4 font-medium text-[#CBD5E1]" : "text-[#94A3B8]"} ${ci === message.tableau.colonnes.length - 1 ? "pr-4" : ""}`}
-                    >
-                      {cellule}
-                    </td>
+                      dangerouslySetInnerHTML={{ __html: formaterGrasCode(cellule) }}
+                    />
                   ))}
                 </tr>
               ))}
             </tbody>
           </table>
+          {message.tableauNote && (
+            <p className="border-t border-white/[0.08] px-4 py-2 text-[10px] italic leading-snug text-[#64748B]">
+              {message.tableauNote}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Bouton léger pour révéler une scène dans l'Atlas réel (mise en évidence de nœuds/liens) —
+          jamais un changement de surface forcé : une simple invitation, comme le Canvas */}
+      {fini && message.atlasScene && (
+        <div className="pt-2">
+          <button
+            onClick={onVoirAtlas}
+            className="inline-flex items-center gap-2 rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-3.5 py-1.5 font-code text-xs text-emerald-200 transition-all hover:bg-emerald-500/20 hover:border-emerald-400/50"
+            data-testid="btn-voir-atlas-inline"
+          >
+            <MapTrifold size={14} className="text-emerald-400" />
+            <span>{message.atlasScene.titre}</span>
+            <span className="text-emerald-400 font-semibold">{atlasActif ? "(Atlas ouvert ↗)" : "(Voir dans l'Atlas ↗)"}</span>
+          </button>
         </div>
       )}
 
@@ -413,7 +470,7 @@ export default function OngletTravail({
   const navigate = useNavigate();
   const ecran = useEcran();
   const { info } = usePerimetre();
-  const { selection } = useContexte();
+  const { selection, commanderCarte } = useContexte();
   // Travail pas encore né (« Nouveau travail ») : même conversation, sans identifiant
   const brouillon = cas?.id == null;
   // Le dossier CASE_101 et ses deux preuves sont le contenu du scénario de démonstration : ils n'appartiennent qu'au
@@ -458,14 +515,23 @@ export default function OngletTravail({
   const setCanvasActif = setCanvasOuvertProp || setCanvasLocal;
   const toggleCanvas = onBasculerCanvas || (() => setCanvasActif((v) => !v));
 
-  // Le Canvas et le volet ne s'affichent pas en même temps par défaut : à l'ouverture du Canvas,
-  // le volet se referme tout seul — mais reste accessible ensuite d'un clic sur son bouton révélateur,
+  // L'Atlas réel, révélé en panneau à droite exactement comme le Canvas révèle un document (jamais
+  // une bascule de page forcée) — voir CorpsMessageFlore::message.atlasScene et onVoirAtlas plus bas.
+  const [atlasActif, setAtlasActif] = useState(false);
+
+  // Le Canvas, l'Atlas et le volet ne s'affichent pas en même temps par défaut : ouvrir l'un referme
+  // les autres tout seuls — mais chacun reste accessible ensuite d'un clic sur son bouton révélateur,
   // ce n'est qu'un repli par défaut, jamais un verrouillage.
   const canvasEtaitActifRef = useRef(canvasActif);
   useEffect(() => {
-    if (canvasActif && !canvasEtaitActifRef.current) setVoletSourcesOuvert(false);
+    if (canvasActif && !canvasEtaitActifRef.current) { setVoletSourcesOuvert(false); setAtlasActif(false); }
     canvasEtaitActifRef.current = canvasActif;
   }, [canvasActif]); // eslint-disable-line react-hooks/exhaustive-deps
+  const atlasEtaitActifRef = useRef(atlasActif);
+  useEffect(() => {
+    if (atlasActif && !atlasEtaitActifRef.current) { setVoletSourcesOuvert(false); setCanvasActif(false); }
+    atlasEtaitActifRef.current = atlasActif;
+  }, [atlasActif]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Largeur du Canvas, ajustable à la souris (poignée) — le chat garde toujours une largeur lisible :
   // on borne le Canvas à la largeur du conteneur moins cette réserve, jamais au-delà.
@@ -932,6 +998,12 @@ export default function OngletTravail({
                       message={m}
                       onOuvrirCanvas={() => setCanvasActif(true)}
                       canvasActif={canvasActif}
+                      atlasActif={atlasActif}
+                      onVoirAtlas={() => {
+                        if (!m.atlasScene) return;
+                        commanderCarte({ type: "scene", ids: m.atlasScene.cibles, accents: m.atlasScene.accents || m.atlasScene.cibles, titre: m.atlasScene.titre });
+                        setAtlasActif(true);
+                      }}
                     >
 
                     {/* Décision attendue (situation) : réponses rapides ; votre choix devient votre message et Flore répond */}
@@ -1176,12 +1248,13 @@ export default function OngletTravail({
       </div>
 
       {/* ========================================================================= */}
-      {/* VOLET DROIT : CANVAS DU DOCUMENT GÉNÉRÉ (Style ChatGPT Canvas)            */}
+      {/* VOLET DROIT : CANVAS DU DOCUMENT, OU ATLAS RÉEL EN SCÈNE (Style Canvas)   */}
       {/* Colonne indépendante, pleine hauteur dès y=0 (pas sous l'entête, qui ne   */}
       {/* couvre que la conversation) — redimensionnable, sans jamais écraser le    */}
-      {/* chat sous sa largeur lisible minimale (voir LARGEUR_CHAT_MIN).            */}
+      {/* chat sous sa largeur lisible minimale (voir LARGEUR_CHAT_MIN). Le Canvas  */}
+      {/* et l'Atlas partagent la même colonne : jamais les deux à la fois.        */}
       {/* ========================================================================= */}
-      {canvasActif && (
+      {(canvasActif || atlasActif) && (
         <div
           className="absolute inset-0 z-30 flex h-full shrink-0 overflow-hidden bg-[#071019] transition-[left,right] duration-300 lg:static lg:max-w-[calc(100%-var(--chat-min))] lg:flex-none lg:basis-[var(--largeur-canvas)] lg:transition-none lg:border-l lg:border-white/[0.1]"
           style={{ "--largeur-canvas": `${largeurCanvas}px`, "--chat-min": `${LARGEUR_CHAT_MIN}px` }}
@@ -1189,11 +1262,36 @@ export default function OngletTravail({
           <div
             onMouseDown={demarrerRedimensionCanvas}
             className="hidden w-1.5 shrink-0 cursor-col-resize bg-transparent transition-colors hover:bg-[#60A5FA]/30 lg:block"
-            title="Redimensionner le Canvas"
+            title={atlasActif ? "Redimensionner l'Atlas" : "Redimensionner le Canvas"}
             data-testid="poignee-redimension-canvas"
           />
-          <div className="min-w-0 flex-1">
-            <CanvasDocument titre={documentGenereNom} contenu={documentGenereTexte || undefined} onFermer={toggleCanvas} />
+          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+            {atlasActif ? (
+              <>
+                <div className="flex shrink-0 items-center justify-between border-b border-white/[0.08] bg-[#0D1A27] px-4 py-3">
+                  <div className="flex min-w-0 items-center gap-2 font-code text-xs">
+                    <MapTrifold size={14} className="shrink-0 text-emerald-400" />
+                    <span className="truncate font-semibold text-[#F2F6F8]">Atlas</span>
+                    <span className="ml-1 shrink-0 rounded bg-emerald-500/20 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-300">
+                      Scène en évidence
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => { setAtlasActif(false); commanderCarte(null); }}
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.12] bg-[#07111B] text-[#94A3B8] transition-colors hover:border-white/30 hover:text-white"
+                    title="Fermer l'Atlas"
+                    data-testid="btn-fermer-atlas-panel"
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
+                <div className="relative min-h-0 flex-1">
+                  <Atlas />
+                </div>
+              </>
+            ) : (
+              <CanvasDocument titre={documentGenereNom} contenu={documentGenereTexte || undefined} onFermer={toggleCanvas} />
+            )}
           </div>
         </div>
       )}

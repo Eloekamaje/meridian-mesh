@@ -2,10 +2,12 @@
 // bande de contrôles en pied de la colonne centrale, carte de clôture, invitation « Toujours là ? »
 // et panneau de preuve. Hors démonstration, rien n'est monté.
 import { useEffect, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { Sparkle, WarningCircle, X } from "@phosphor-icons/react";
 import { usePolaris } from "./KiosqueProvider";
 import PolarisControls from "./PolarisControls";
 import PreuvePanneau from "./PreuvePanneau";
+import IndicateurClic from "@/components/IndicateurClic";
 
 export function BarreKiosque() {
   const { etat, scenario, pause, reprendre, suivant, lectureAuto, revoirDecouverte, onAccueil } = usePolaris();
@@ -34,15 +36,54 @@ export function BarreKiosque() {
 }
 
 export function SurcouchesKiosque() {
-  const { etat, scenario, fixtures, pause, reprendre, onAccueil, preuveId, fermerPreuve } = usePolaris();
+  const { etat, scenario, fixtures, pause, reprendre, onAccueil, preuveId, fermerPreuve, declencherNotification } = usePolaris();
   const [proposeInactivite, setProposeInactivite] = useState(false);
   const [clotureMasquee, setClotureMasquee] = useState(false);
   const inactivite = useRef(null);
+  const location = useLocation();
 
   // La clôture réapparaît si le visiteur rejoue la découverte puis termine à nouveau
   useEffect(() => {
     if (etat.status !== "completed") setClotureMasquee(false);
   }, [etat.status]);
+
+  // Ouverture par notification : le visiteur a l'air de lire Actualités (défilement lent, progressif)
+  // pendant quelques secondes, avant que le signal de Flore n'apparaisse soudainement — jamais avant.
+  // Le signal interrompt la lecture EN COURS : il n'attend pas la fin du défilement (voir plus bas,
+  // où le défilement dure volontairement plus longtemps que ce délai).
+  const [notificationVisible, setNotificationVisible] = useState(false);
+  useEffect(() => {
+    if (etat.status !== "awaiting_notification") { setNotificationVisible(false); return undefined; }
+    const t = setTimeout(() => setNotificationVisible(true), 5000);
+    return () => clearTimeout(t);
+  }, [etat.status]);
+
+  useEffect(() => {
+    if (etat.status !== "awaiting_notification" || location.pathname !== "/actualites") return undefined;
+    let raf = null;
+    let annule = false;
+    // Laisse le fil se charger et s'afficher avant de commencer à défiler, comme une vraie lecture.
+    // Dure volontairement plus longtemps que le délai d'apparition de la notification ci-dessus : le
+    // signal interrompt une lecture en cours, il ne récompense jamais d'avoir fini de défiler.
+    const demarrage = setTimeout(() => {
+      const el = document.querySelector('[data-testid="actualites-page"]');
+      if (!el || annule) return;
+      const debut = performance.now();
+      const duree = 16000;
+      const anime = (t) => {
+        if (annule) return;
+        const p = Math.min(1, (t - debut) / duree);
+        el.scrollTop = (el.scrollHeight - el.clientHeight) * p;
+        if (p < 1) raf = requestAnimationFrame(anime);
+      };
+      raf = requestAnimationFrame(anime);
+    }, 700);
+    return () => {
+      annule = true;
+      clearTimeout(demarrage);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [etat.status, location.pathname]);
 
   // Inactivité : 90 s sans interaction dans un état arrêté → proposition ; +30 s → retour au choix du profil
   useEffect(() => {
@@ -97,6 +138,36 @@ export function SurcouchesKiosque() {
               <button onClick={onAccueil} className="min-h-[44px] rounded-lg border border-[rgba(148,163,184,0.2)] px-4 py-2 font-code text-[11px] text-[#7C93A8]" data-testid="polaris-erreur-accueil-btn">
                 Revenir au choix du profil
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Notification soudaine (ouverture par notification) : apparaît en haut à droite, où que le
+          visiteur navigue (ici, en train de lire Actualités) — un clic sur « Voir » ouvre le nouveau
+          travail, où Flore commence alors à écrire. Rien ne joue tant que ce clic n'a pas eu lieu. */}
+      {etat.status === "awaiting_notification" && notificationVisible && (
+        <div className="pointer-events-none absolute right-4 top-4 z-50 sm:right-6 sm:top-6">
+          <div
+            className="pointer-events-auto flex max-w-[320px] items-start gap-3 rounded-xl border border-[#60A5FA]/40 bg-[#0F1D28] p-4 shadow-2xl animate-in slide-in-from-top-4 fade-in duration-500"
+            data-testid="polaris-notification"
+          >
+            <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#60A5FA]/15 text-[#60A5FA]">
+              <Sparkle size={16} weight="fill" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="font-code text-[9px] uppercase tracking-[0.2em] text-[#60A5FA]">{scenario.notification?.titre || "Flore"}</div>
+              <p className="mt-1 text-[13px] leading-snug text-[#D8E2EA]">{scenario.notification?.texte}</p>
+              <span className="relative mt-2.5 inline-block">
+                <button
+                  onClick={declencherNotification}
+                  data-testid="polaris-notification-voir"
+                  className="rounded-lg border border-[#60A5FA]/50 bg-[#60A5FA]/10 px-3 py-1.5 font-code text-[11px] font-semibold text-[#60A5FA] transition-colors hover:bg-[#60A5FA]/20"
+                >
+                  Voir
+                </button>
+                <IndicateurClic texte="Nouveau signal" sousTexte="Cliquez sur « Voir »" testid="polaris-notification-indicateur" />
+              </span>
             </div>
           </div>
         </div>

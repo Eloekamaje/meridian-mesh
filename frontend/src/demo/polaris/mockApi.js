@@ -9,6 +9,38 @@ export const definirSceneActive = (id) => {
   sceneActive = id;
 };
 
+// Contenu générique d'Actualités pour l'ouverture par notification (Analyste support TI) : le
+// visiteur atterrit ici, en pleine lecture, avant que le signal de Flore n'apparaisse — un fil
+// plausible à faire défiler, sans lien avec la chaîne d'ouverture de compte (pur décor).
+const heureIl = (h) => new Date(Date.now() - h * 3600 * 1000).toISOString();
+const histoire = (id, genre, titre, recit, heures) => ({ id, genre, titre, recit, quand: heureIl(heures), jumeaux: [] });
+const ACTUALITES_DEMO = {
+  sections: [
+    {
+      id: "essentiel",
+      titre: "L'essentiel",
+      histoires: [
+        histoire("demo-actu-1", "changement", "Le portail de gestion des sinistres migre vers le nouveau socle documentaire", "La bascule progressive concerne d'abord les dossiers ouverts après le 1er du mois.", 1),
+        histoire("demo-actu-2", "decision", "Le comité a validé le calendrier de décommissionnement du parc applicatif legacy Finance", "Trois applications seront retirées d'ici la fin du trimestre.", 2),
+        histoire("demo-actu-3", "opportunite", "Trois initiatives Ventes pourraient être mutualisées avec le Portail Client", "Un besoin commun de suivi des demandes a été identifié entre les équipes.", 3),
+      ],
+    },
+    {
+      id: "reste",
+      titre: "Le reste du Mesh",
+      histoires: [
+        histoire("demo-actu-4", "connaissance", "Nouvelle relation observée entre le Registre Client et le Service Identité", "Un rapprochement de données confirme un usage partagé non documenté.", 4),
+        histoire("demo-actu-5", "gouvernance", "Mise à jour de la politique de rétention des documents numérisés", null, 5),
+        histoire("demo-actu-6", "trajectoire", "Le taux d'automatisation des rapprochements comptables progresse de 4 points ce mois-ci", null, 6),
+        histoire("demo-actu-7", "veille", "Une divergence mineure entre deux référentiels clients reste en observation", "Aucune action requise pour le moment ; suivi hebdomadaire en cours.", 7),
+        histoire("demo-actu-8", "comportement", "Le pic d'usage matinal du Portail Ouverture de compte reste stable cette semaine", null, 8),
+        histoire("demo-actu-9", "connaissance", "Le Système Documentaire Central a absorbé 12 % de volume supplémentaire ce mois-ci", null, 9),
+        histoire("demo-actu-10", "gouvernance", "Rappel : la revue trimestrielle des accès applicatifs débute la semaine prochaine", null, 10),
+      ],
+    },
+  ],
+};
+
 const ETAT_REL = { observe: "observee", a_etudier: "supposee" };
 
 function versJumeau(base, fixtures) {
@@ -196,6 +228,7 @@ function creerAdaptateur({ fixtures, scenario }) {
     if (m === "get" && url === "/situations") return ok([]);
     if (m === "get" && url === "/activite") return ok([]);
     if (m === "get" && url === "/notifications") return ok([]);
+    if (m === "get" && url === "/actualites") return ok(ACTUALITES_DEMO);
     if (m === "get" && url === "/initiatives/compteurs") return ok({ a_traiter: 0 });
     if (m === "get" && url === "/aurora/suggestions") return ok([]);
     if (m === "get" && url === "/demo/actes") return ok([]);

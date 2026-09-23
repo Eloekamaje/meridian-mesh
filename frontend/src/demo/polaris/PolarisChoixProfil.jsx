@@ -1,12 +1,13 @@
 // Choix du profil de la démonstration Polaris — page de la VRAIE application (route /demo),
 // rendue dans la zone de contenu : la sidebar reste là. Choisir un profil ramène sur l'Atlas réel.
-import { Sparkle, UserFocus, ChartLineUp, Compass, Lifebuoy, Code, ArrowRight, ChartPieSlice, Archive } from "@phosphor-icons/react";
+import { Sparkle, UserFocus, ChartLineUp, Compass, Lifebuoy, Code, ArrowRight, ChartPieSlice, Archive, MagnifyingGlass } from "@phosphor-icons/react";
 import { PROFILS } from "./scenarios";
 import { useKiosque } from "./KiosqueProvider";
 
 const ICONES = {
   vp: ChartPieSlice,
   directeur: Archive,
+  analyste: MagnifyingGlass,
   "ligne-affaires": ChartLineUp,
   architecte: Compass,
   "support-ti": Lifebuoy,
@@ -40,14 +41,24 @@ export default function PolarisChoixProfil() {
                 onClick={() => demarrer(p.id)}
                 data-testid={`polaris-profil-${p.id}`}
                 title={p.phrase}
-                className="group flex min-h-[44px] items-center gap-4 rounded-xl border border-[#60A5FA]/40 bg-[#0F1D28] p-5 text-left shadow-[0_8px_32px_rgba(96,165,250,0.08)] transition-all hover:-translate-y-0.5 hover:border-[#60A5FA]/70 sm:p-6"
+                className="group flex min-h-[44px] flex-col gap-4 rounded-xl border border-[#60A5FA]/40 bg-[#0F1D28] p-5 text-left shadow-[0_8px_32px_rgba(96,165,250,0.08)] transition-all hover:-translate-y-0.5 hover:border-[#60A5FA]/70 sm:p-6 xl:flex-row xl:items-center"
               >
-                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#60A5FA]/12 text-[#60A5FA]"><Icone size={26} /></span>
-                <span className="min-w-0 flex-1">
-                  <span className="block font-display text-xl font-semibold text-[#F2F6F8]">{p.titre}</span>
-                  <span className="mt-1 block text-[13px] leading-snug text-[#94A3B8]">{p.phrase}</span>
+                {/* Icône + texte restent toujours côte à côte — seul le bouton, en dessous ou aligné
+                    à droite selon la largeur, change de position (jamais de place pour les deux en
+                    ligne sur une carte étroite : le texte finirait à un mot par ligne). Le seuil est
+                    xl (1280px), pas lg (1024px) : à 1024px la barre latérale bureau passe de 56px à
+                    256px (voir SidebarGauche.jsx), ce qui réduirait justement la largeur gagnée — un
+                    iPad 13" en portrait (1024px) est exactement ce cas-là. */}
+                <span className="flex min-w-0 items-center gap-4">
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#60A5FA]/12 text-[#60A5FA]"><Icone size={26} /></span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-display text-xl font-semibold text-[#F2F6F8]">{p.titre}</span>
+                    <span className="mt-1 block text-[13px] leading-snug text-[#94A3B8]">{p.phrase}</span>
+                  </span>
                 </span>
-                <span className="hidden shrink-0 items-center gap-1.5 rounded-md bg-[#60A5FA] px-3.5 py-2 text-xs font-semibold text-[#071019] transition-colors group-hover:bg-[#93C5FD] sm:flex">Lancer le parcours <ArrowRight size={13} weight="bold" /></span>
+                <span className="flex shrink-0 items-center justify-center gap-1.5 self-start rounded-md bg-[#60A5FA] px-3.5 py-2 text-xs font-semibold text-[#071019] transition-colors group-hover:bg-[#93C5FD] xl:ml-auto xl:self-auto">
+                  Lancer le parcours <ArrowRight size={13} weight="bold" />
+                </span>
               </button>
             );
           })}
