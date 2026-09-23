@@ -722,15 +722,6 @@ export default function OngletTravail({
                 {/* Travail en veille : Flore accueille avant les faits (ce qui a changé depuis la dernière visite) */}
                 {i === idxCoupure && idxCoupure > 0 && cas.veille && <RepriseVeille messages={messages.slice(i)} depuis={coupure} />}
 
-                {/* Ligne d'activité de Flore : AVANT la réponse qu'elle prépare (comme ChatGPT/Claude/Perplexity
-                    affichent leur trace de recherche/réflexion en préambule, jamais après coup) */}
-                {(pilote?.activites || [])
-                  .filter((a) => a.apres === i + 1)
-                  .map((a) => (
-                    <LigneActiviteFlore key={a.id} activite={a} testid={`travail-activite-${a.id}`} />
-                  ))}
-                {m._activite && <LigneActiviteFlore activite={m._activite} testid={`travail-activite-msg-${i}`} />}
-
                 {/* Message Utilisateur (sobre, simple bulle élégante à droite) */}
                 {m.role === "evenement" ? (
                   <EvenementVeille m={m} index={i} nouveau={!!coupure && m.quand > coupure} />
@@ -891,6 +882,16 @@ export default function OngletTravail({
                     </CorpsMessageFlore>
                   </div>
                 )}
+                {/* Ligne d'activité de Flore : ancrée juste après la dernière réplique de narration
+                    AVANT sa clôture (jamais recalculée en continu, jamais sur celle qui la referme —
+                    voir avancerAncrageActivites) : elle se retrouve donc déjà juste avant la réponse
+                    qu'elle prépare, sans jamais avoir à « sauter » par-dessus elle après coup. */}
+                {(pilote?.activites || [])
+                  .filter((a) => a.apres === i + 1)
+                  .map((a) => (
+                    <LigneActiviteFlore key={a.id} activite={a} testid={`travail-activite-${a.id}`} />
+                  ))}
+                {m._activite && <LigneActiviteFlore activite={m._activite} testid={`travail-activite-msg-${i}`} />}
               </div>
             ))}
 

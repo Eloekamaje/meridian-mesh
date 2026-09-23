@@ -50,8 +50,14 @@ const appliquerEtape = (activites, beat) =>
     if (a.ops[a.ops.length - 1]?.label === beat.label) return a; // idempotent (reprise, « Suivant »)
     return { ...a, ops: [...a.ops.map((o) => ({ ...o, status: "done" })), { label: beat.label, sources: beat.sources || [], status: "running" }] };
   });
-const terminerActivite = (activites, beat, apres) =>
-  activites.map((a) => (a.id === beat.activityId ? { ...a, status: "done", apres, ops: a.ops.map((o) => ({ ...o, status: "done" })) } : a));
+const terminerActivite = (activites, beat) =>
+  activites.map((a) => (a.id === beat.activityId ? { ...a, status: "done", ops: a.ops.map((o) => ({ ...o, status: "done" })) } : a));
+// Une activité en cours avance d'un cran à chaque réplique de narration (jamais sur celle qui la
+// clôt) : elle reste ainsi toujours ancrée juste après la dernière chose dite AVANT sa conclusion —
+// exactement là où elle doit rester une fois « terminée », sans jamais avoir à sauter par-dessus
+// une réponse déjà affichée pour s'y replacer après coup.
+const avancerAncrageActivites = (activites, messagesLength) =>
+  activites.map((a) => (a.status === "running" ? { ...a, apres: messagesLength } : a));
 
 function MoteurSession({ scenario, fixtures, onAccueil, children }) {
   const [erreursValidation] = useState(() => validerScenario(scenario, fixtures));
@@ -113,27 +119,32 @@ function MoteurSession({ scenario, fixtures, onAccueil, children }) {
       setEtat((e) => {
         const id = `msg-${scenario.id}-${step.id}-${idx}`;
         if (e.messages.some((m) => m.id === id)) return e;
+        const messages = [
+          ...e.messages,
+          {
+            id,
+            speaker: beat.speaker,
+            speakerLabel: beat.speaker === "flore" ? "Flore" : scenario.roleLabel,
+            text: beat.text,
+            stepId: step.id,
+            evidenceIds: beat.evidenceIds || [],
+            contenu: beat.contenu || null,
+            // Une simple annonce (« Je vais… », « Je vérifie… ») n'est pas encore LA réponse : le
+            // traitement continue après elle (activité, autre message). Seul le message qui clôt
+            // vraiment l'activité (`terminer`) mérite copier/pouce/régénérer.
+            termine: beat.speaker !== "flore" || !!beat.terminer,
+            quand: new Date().toISOString(),
+            anime: true,
+          },
+        ];
         return {
           ...e,
-          messages: [
-            ...e.messages,
-            {
-              id,
-              speaker: beat.speaker,
-              speakerLabel: beat.speaker === "flore" ? "Flore" : scenario.roleLabel,
-              text: beat.text,
-              stepId: step.id,
-              evidenceIds: beat.evidenceIds || [],
-              contenu: beat.contenu || null,
-              // Une simple annonce (« Je vais… », « Je vérifie… ») n'est pas encore LA réponse : le
-              // traitement continue après elle (activité, autre message). Seul le message qui clôt
-              // vraiment l'activité (`terminer`) mérite copier/pouce/régénérer.
-              termine: beat.speaker !== "flore" || !!beat.terminer,
-              quand: new Date().toISOString(),
-              anime: true,
-            },
-          ],
+          messages,
           frappeActive: beat.speaker === "flore",
+          // Sauf sur le message qui clôt une activité : celui-là ne doit JAMAIS repousser son
+          // ancrage plus loin — sinon la ligne se retrouverait à sauter par-dessus la réponse
+          // qu'elle est censée précéder, pile au moment de sa clôture.
+          activites: beat.terminer ? e.activites : avancerAncrageActivites(e.activites, messages.length),
         };
       });
     },
@@ -197,7 +208,7 @@ function MoteurSession({ scenario, fixtures, onAccueil, children }) {
           planifier(frappe, () => {
             setEtat((e) => ({
               ...e,
-              activites: beat.terminer ? terminerActivite(e.activites, { activityId: beat.terminer }, e.messages.length) : e.activites,
+              activites: beat.terminer ? terminerActivite(e.activites, { activityId: beat.terminer }) : e.activites,
               documentGenere: e.documentGenere || doc,
               canvasOuvert: e.canvasOuvert || doc,
             }));
@@ -224,7 +235,7 @@ function MoteurSession({ scenario, fixtures, onAccueil, children }) {
         break;
       }
       case "activity_end": {
-        setEtat((e) => ({ ...e, activites: terminerActivite(e.activites, beat, e.messages.length) }));
+        setEtat((e) => ({ ...e, activites: terminerActivite(e.activites, beat) }));
         planifier(300, avancer);
         break;
       }
@@ -437,14 +448,14 @@ function MoteurSession({ scenario, fixtures, onAccueil, children }) {
               documentGenere = true;
               canvasOuvert = true;
             }
-            if (beat.terminer) activites = terminerActivite(activites, { activityId: beat.terminer }, messages.length);
+            activites = beat.terminer ? terminerActivite(activites, { activityId: beat.terminer }) : avancerAncrageActivites(activites, messages.length);
           }
         } else if (beat.type === "activity_start" && !activites.some((a) => a.id === beat.id)) {
           activites = [...activites, { id: beat.id, stepId: step.id, status: "running", ops: [], apres: messages.length }];
         } else if (beat.type === "activity_step") {
           activites = appliquerEtape(activites, beat);
         } else if (beat.type === "activity_end") {
-          activites = terminerActivite(activites, beat, messages.length);
+          activites = terminerActivite(activites, beat);
         } else if (beat.type === "prepare") {
           preparation = { surface: beat.surface, titre: beat.titre };
         } else if (beat.type === "prepare_end") {
@@ -578,12 +589,11 @@ function MoteurSession({ scenario, fixtures, onAccueil, children }) {
       ouvert: false, // Flore latérale : la conversation vit dans la page Nouveau travail puis dans le Travail
       echanges: versEchanges(etat.messages, fixtures),
       conversation: etat.messages.map((m) => versMessageCase(m, fixtures)),
-      // Ligne en cours (compatibilité) et toutes les lignes, ancrées dans le fil par `apres` — figé
-      // à sa capture (au démarrage, puis une fois pour de bon à la clôture) : le laisser suivre le
-      // dernier message en continu la ferait « descendre » à chaque réplique intercalée, une
-      // incohérence visuelle (la ligne doit rester où le travail a commencé, jusqu'à rejoindre sa
-      // place définitive — juste avant la réponse qu'elle referme — en un seul mouvement, pas en
-      // continu).
+      // Ligne en cours (compatibilité) et toutes les lignes, ancrées dans le fil par `apres` —
+      // avancée uniquement par `ajouterMessage`/`avancerAncrageActivites` (jamais recalculée ici,
+      // à chaque rendu, sur « le dernier message actuel » : ça la ferait suivre n'importe quel
+      // message, y compris celui qui la clôt, et donc parfois sauter par-dessus la réponse qu'elle
+      // devrait précéder).
       activite: [...etat.activites].reverse().find((a) => a.status === "running") || null,
       activites: etat.activites,
       preparation: etat.preparation,
