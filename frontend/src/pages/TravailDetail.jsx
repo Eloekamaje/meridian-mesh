@@ -71,9 +71,15 @@ export default function TravailDetail() {
   useEffect(() => {
     setErreur(null);
     if (brouillon) return; // rien à charger : le travail n'est pas encore né
-    // Quand le travail naît de la conversation, la page reste la même (state.continuite) : on ne la vide pas
-    if (!pilote && !location.state?.continuite) setCas(null);
-    api.get(`/cases/${cid}`).then((r) => setCas(r.data)).catch((e) => setErreur(e.response?.data?.detail || "Travail introuvable"));
+    // Quand le travail naît de la conversation, la page reste la même (state.continuite) : on ne la
+    // vide pas, et on ne la recharge pas non plus — l'état local, que `envoyer()` vient de mettre à
+    // jour avec la réponse de Flore encore en train de s'écrire, est déjà exact ; la recharger
+    // écraserait cette réponse par sa version figée et couperait net son déroulé.
+    const continuite = !pilote && location.state?.continuite;
+    if (!pilote && !continuite) setCas(null);
+    if (!continuite) {
+      api.get(`/cases/${cid}`).then((r) => setCas(r.data)).catch((e) => setErreur(e.response?.data?.detail || "Travail introuvable"));
+    }
     api.get("/personas").then((r) => setPersonas(r.data)).catch(() => {});
   }, [cid, version]); // eslint-disable-line react-hooks/exhaustive-deps
 

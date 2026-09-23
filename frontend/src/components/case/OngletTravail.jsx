@@ -122,14 +122,17 @@ export function PipelineArchitecture() {
 // Réponses déjà déroulées : un message ne se rejoue jamais (remontage de la page, retour au travail)
 const REPONSES_JOUEES = new Set();
 
-// Déroulé progressif de la réponse de Flore (démonstration : message publié en direct). Même cadence
-// que le moteur (3 caractères / 18 ms) ; gelé pendant la pause ; cartes et document après le texte.
-// `animer` distingue « en train de s'écrire » (curseur visible) d'une réponse déjà ancienne, révélée d'un bloc.
+// Déroulé progressif de la réponse de Flore — même en usage réel, pas seulement en démonstration :
+// une réponse fraîchement publiée s'écrit toujours au fil de l'eau (`message.anime`, posé par
+// l'appelant sur le message qu'il vient de recevoir, jamais sur l'historique déjà chargé). Même
+// cadence que le moteur de démo (3 caractères / 18 ms) ; gelé pendant la pause ; cartes et document
+// après le texte. `animer` distingue « en train de s'écrire » (curseur visible) d'une réponse déjà
+// ancienne, révélée d'un bloc.
 function useDeroule(message, pilote) {
   const total = (message.texte || "").length;
   const cle = message.quand;
   const reduit = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-  const animer = !!pilote && !!message.anime && !REPONSES_JOUEES.has(cle) && !reduit;
+  const animer = !!message.anime && !REPONSES_JOUEES.has(cle) && !reduit;
   const [n, setN] = useState(animer ? 0 : total);
   const enPause = !!pilote?.enPause;
   useEffect(() => {
@@ -436,7 +439,7 @@ export default function OngletTravail({
       await delaiMin(Promise.resolve());
       setCas((c) => ({
         ...c,
-        conversation: [...avant, monMessage, { role: "flore", comportement: "expliquer", texte: FLORE_REPONSE_EN_CONSTRUCTION, proposition: PROPOSITION_DEMO, quand: maintenant }],
+        conversation: [...avant, monMessage, { role: "flore", comportement: "expliquer", texte: FLORE_REPONSE_EN_CONSTRUCTION, proposition: PROPOSITION_DEMO, quand: maintenant, anime: true }],
       }));
       setEnvoiMsg(false);
       return;
@@ -454,14 +457,16 @@ export default function OngletTravail({
       }
       const { data } = await delaiMin(api.post(`/cases/${idTravail}/messages`, { texte: q }));
       if (travailNe) {
-        setCas({ ...travailNe, conversation: [data.utilisateur, { ...data.flore, _activite: activiteTerminee("travail") }] });
+        setCas({ ...travailNe, conversation: [data.utilisateur, { ...data.flore, anime: true, _activite: activiteTerminee("travail") }] });
         navigate(`/travaux/${idTravail}`, { replace: true, state: { continuite: true } });
         if (data.flore?.documentCanvas) setCanvasActif(true);
         return;
       }
       setCas((c) => ({
         ...c,
-        conversation: [...avant, data.utilisateur, { ...data.flore, _activite: activiteTerminee("travail") }],
+        // `anime: true` seulement ici, sur la réponse qu'on vient de recevoir en direct — jamais sur
+        // l'historique chargé au montage, qui doit rester affiché d'un bloc (voir useDeroule)
+        conversation: [...avant, data.utilisateur, { ...data.flore, anime: true, _activite: activiteTerminee("travail") }],
       }));
       if (data.flore?.documentCanvas && !canvasActif) {
         setCanvasActif(true);
@@ -475,12 +480,18 @@ export default function OngletTravail({
     }
   };
 
+  // Marque comme fraîchement publiés les messages ajoutés par le serveur au-delà de ce qui existait
+  // déjà (seuls ceux-là doivent s'écrire au fil de l'eau — l'historique reste affiché d'un bloc).
+  const avecAnimationSurLesNouveaux = (conversation, avant) =>
+    (conversation || []).map((m, i) => (i >= avant ? { ...m, anime: true } : m));
+
   // Une décision attendue par la situation : le choix est appliqué côté serveur (statut de la situation, relation confirmée…) et écrit dans le fil
   const trancher = async (texte) => {
     setEnvoiMsg(true);
+    const avant = (cas.conversation || []).length;
     try {
       const { data } = await api.post(`/cases/${cas.id}/decision-attendue`, { texte });
-      setCas(data);
+      setCas({ ...data, conversation: avecAnimationSurLesNouveaux(data.conversation, avant) });
       if (data.lien) navigate(data.lien);
     } catch (e) {
       toast.error(e.response?.data?.detail || "Décision impossible");
@@ -492,9 +503,10 @@ export default function OngletTravail({
   // Réponse à la question de revue : votre choix devient votre message, Flore répond (tout est dans le fil)
   const repondreRevue = async (action) => {
     setEnvoiMsg(true);
+    const avant = (cas.conversation || []).length;
     try {
       const { data } = await api.post(`/cases/${cas.id}/veille/decision`, { action });
-      setCas(data);
+      setCas({ ...data, conversation: avecAnimationSurLesNouveaux(data.conversation, avant) });
     } catch {
       toast.error("Action impossible");
     } finally {
