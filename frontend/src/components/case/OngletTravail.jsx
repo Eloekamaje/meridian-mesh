@@ -347,6 +347,12 @@ export default function OngletTravail({
   const [jumeauInspecte, setJumeauInspecte] = useState(null);
   const [preuveInspectee, setPreuveInspectee] = useState(null);
   const [estEnBas, setEstEnBas] = useState(true);
+  // Seule source de vérité pour « doit-on suivre le bas du fil ? » — mise à jour uniquement par le
+  // scroll réel de l'utilisateur (jamais par un effet de défilement automatique lui-même, ce qui
+  // créerait une boucle) : consultée aussi bien à l'arrivée d'un nouveau message qu'en continu
+  // pendant qu'une réponse grandit.
+  const estEnBasRef = useRef(true);
+  useEffect(() => { estEnBasRef.current = estEnBas; }, [estEnBas]);
 
   // Gestion synchronisée ou locale des volets
   const [voletSourcesLocal, setVoletSourcesLocal] = useState(!pilote);
@@ -397,8 +403,9 @@ export default function OngletTravail({
       });
 
   // Positionnement du fil : à l'ouverture, sur le repère « nouveau depuis votre dernière visite » (sinon en bas) ; ensuite, en bas à chaque
-  // nouveau message. On compare à l'état précédent plutôt que de compter les appels : React (mode développement) exécute chaque effet deux
-  // fois, et le second appel ne doit pas passer pour un nouveau message.
+  // nouveau message — mais seulement si l'utilisateur y était déjà : remonté lire l'historique, un nouveau message ne doit jamais l'en arracher
+  // (le bouton « descendre » reste là pour y aller volontairement). On compare à l'état précédent plutôt que de compter les appels : React (mode
+  // développement) exécute chaque effet deux fois, et le second appel ne doit pas passer pour un nouveau message.
   const etatPrecedent = useRef(null);
   useEffect(() => {
     const etat = `${messages.length}|${envoiMsg}|${pilote?.activite?.ops?.length}`;
@@ -410,7 +417,7 @@ export default function OngletTravail({
     }
     if (etatPrecedent.current === etat) return;
     etatPrecedent.current = etat;
-    finFilRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    if (estEnBasRef.current) finFilRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages.length, envoiMsg, pilote?.activite?.ops?.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const verifierPositionScroll = () => {
@@ -418,6 +425,20 @@ export default function OngletTravail({
     const { scrollTop, scrollHeight, clientHeight } = defilementRef.current;
     setEstEnBas(scrollHeight - scrollTop - clientHeight < 80);
   };
+
+  // Suit le bas du fil PENDANT qu'une réponse grandit — au fil du texte qui se déroule, puis quand
+  // les blocs qui n'apparaissent qu'une fois la réponse complète (KPI, pipeline, tableau, preuves,
+  // actions) s'ajoutent d'un coup. Ne s'applique que si l'utilisateur était déjà en bas.
+  useEffect(() => {
+    const conteneur = defilementRef.current;
+    const contenu = conteneur?.firstElementChild;
+    if (!conteneur || !contenu) return undefined;
+    const ro = new ResizeObserver(() => {
+      if (estEnBasRef.current) conteneur.scrollTop = conteneur.scrollHeight;
+    });
+    ro.observe(contenu);
+    return () => ro.disconnect();
+  }, []);
 
   const allerEnBas = () => {
     finFilRef.current?.scrollIntoView({ behavior: "smooth" });
