@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { 
   Sparkle, 
   User, 
@@ -19,13 +19,15 @@ import {
   Buildings,
   Copy,
   ArrowsClockwise,
-  DotsThree
+  DotsThree,
+  DownloadSimple
 } from "@phosphor-icons/react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { usePerimetre } from "@/lib/perimetre";
 import { useContexte } from "@/lib/contexte";
+import { couleurDomaine } from "@/lib/domaines";
 import { CREATION_TRAVAIL_ACTIVE, FLORE_REPONSE_EN_CONSTRUCTION, PROPOSITION_DEMO } from "@/lib/messagesFlore";
 import FloreActivite, { delaiMin, activiteTerminee } from "@/components/FloreActivite";
 import LigneActiviteFlore from "@/components/LigneActiviteFlore";
@@ -286,8 +288,37 @@ export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif, childr
         </div>
       )}
 
+      {/* Sélections groupées — plusieurs listes distinctes avec leur propre titre (ex. « À privilégier »
+          / « À réexaminer », ou les groupes d'une répartition) : contrairement à une seule liste plate,
+          chaque groupe reste visuellement séparé, avec ses puces propres. */}
+      {fini && message.selections && (
+        <div className="my-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {message.selections.map((groupe, gi) => (
+            <div key={gi} className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-3">
+              <div className="flex items-center justify-between font-code text-[10px] uppercase tracking-wider text-[#7C93A8]">
+                <span>{groupe.titre}</span>
+                {groupe.items?.length > 0 && <span className="rounded-full bg-white/[0.06] px-1.5 py-0.5 text-[9px]">{groupe.items.length}</span>}
+              </div>
+              <ul className="mt-2 space-y-1.5">
+                {(groupe.items || []).map((item, ii) => (
+                  <li key={ii} className="flex items-baseline gap-2 text-xs">
+                    <span
+                      className="shrink-0 rounded border px-1.5 py-0.5 font-code text-[10px]"
+                      style={{ color: couleurDomaine(item.domaine), borderColor: `${couleurDomaine(item.domaine)}44`, backgroundColor: `${couleurDomaine(item.domaine)}12` }}
+                    >
+                      {item.nom}
+                    </span>
+                    {item.texte && <span className="text-[#94A3B8]">{item.texte}</span>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Tableau générique — colonnes/lignes libres, pour tout ce que le comparatif silos/socle et les
-          contributions (une ligne de texte par jumeau) ne peuvent pas rendre correctement */}
+          sélections groupées ne peuvent pas rendre correctement */}
       {fini && message.tableau && (
         <div className="my-4 overflow-x-auto rounded-xl border border-white/[0.08] bg-[#0A131C]">
           <table className="w-full min-w-[32rem] text-left text-xs">
@@ -318,9 +349,9 @@ export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif, childr
         </div>
       )}
 
-      {/* Bouton léger pour ouvrir le Document dans Canvas si disponible */}
+      {/* Boutons légers pour ouvrir ou télécharger le Document si disponible */}
       {fini && (message.documentCanvas || texte.includes("CASE_101_ARBITRAGE_CONVERGENCE.md")) && (
-        <div className="pt-2">
+        <div className="flex flex-wrap items-center gap-2 pt-2">
           <button
             onClick={onOuvrirCanvas}
             className="inline-flex items-center gap-2 rounded-xl border border-blue-400/30 bg-blue-500/10 px-3.5 py-1.5 font-code text-xs text-blue-200 transition-all hover:bg-blue-500/20 hover:border-blue-400/50"
@@ -328,8 +359,24 @@ export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif, childr
           >
             <FileText size={14} className="text-blue-400" />
             <span>{message.documentCanvas || "CASE_101_ARBITRAGE_CONVERGENCE.md"}</span>
-            <span className="text-blue-400 font-semibold">{canvasActif ? "(Canvas ouvert ↗)" : "(Ouvrir dans le Canvas ↗)"}</span>
+            <span className="text-blue-400 font-semibold">{canvasActif ? "(Canvas ouvert ↗)" : "(Ouvrir ↗)"}</span>
           </button>
+          {message.documentTexte && (
+            <button
+              onClick={() => {
+                const nom = /\.[a-z0-9]+$/i.test(message.documentCanvas) ? message.documentCanvas : `${message.documentCanvas}.md`;
+                const url = URL.createObjectURL(new Blob([message.documentTexte], { type: "text/markdown;charset=utf-8" }));
+                const lien = document.createElement("a");
+                lien.href = url; lien.download = nom; lien.click();
+                URL.revokeObjectURL(url);
+              }}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-white/[0.12] bg-white/[0.03] px-3 py-1.5 font-code text-xs text-[#94A3B8] transition-colors hover:border-white/30 hover:text-white"
+              data-testid="btn-telecharger-inline"
+            >
+              <DownloadSimple size={13} />
+              <span>Télécharger</span>
+            </button>
+          )}
         </div>
       )}
 
@@ -360,6 +407,7 @@ export default function OngletTravail({
   onBasculerCanvas,
   onOuvrirPreuve,
   onConsignerDecision,
+  entete,
 }) {
   const pilote = usePilotage();
   const navigate = useNavigate();
@@ -371,13 +419,24 @@ export default function OngletTravail({
   // Le dossier CASE_101 et ses deux preuves sont le contenu du scénario de démonstration : ils n'appartiennent qu'au
   // travail de démonstration (né pendant la démo, ou le travail de démonstration du jeu de données), jamais aux travaux réels
   const contenuScenario = pilote ? !!pilote.documentGenere : cas?.id === "demo-polaris-work-g";
-  // Nom du document réellement généré par CE scénario — jamais un nom figé d'un ancien récit
-  const documentGenereNom = [...(cas.conversation || [])].reverse().find((m) => m.documentCanvas)?.documentCanvas || "CASE_101_ARBITRAGE_CONVERGENCE.md";
+  // Le document réellement généré par CE scénario — jamais un contenu figé d'un ancien récit
+  const messageDocument = [...(cas.conversation || [])].reverse().find((m) => m.documentCanvas);
+  const documentGenereNom = messageDocument?.documentCanvas || "document.md";
+  const documentGenereTexte = messageDocument?.documentTexte || null;
   const [nouveauMsg, setNouveauMsg] = useState("");
   const [envoiMsg, setEnvoiMsg] = useState(false);
-  // Rubriques du volet (Résultats, Sources & Jumeaux) : chacune se plie et se déplie
-  const [pliees, setPliees] = useState({});
+  // Rubriques du volet (Résultats, Sources & Jumeaux) : chacune se plie et se déplie.
+  // Dès qu'un document existe, le volet apparaît avec ses deux rubriques pliées par défaut —
+  // il annonce simplement qu'il y a quelque chose à consulter, sans s'imposer déjà ouvert.
+  const [pliees, setPliees] = useState(() => (contenuScenario ? { resultats: true, sources: true } : {}));
   const basculerRubrique = (cle) => setPliees((p) => ({ ...p, [cle]: !p[cle] }));
+  const documentApparuRef = useRef(contenuScenario);
+  useEffect(() => {
+    if (contenuScenario && !documentApparuRef.current) {
+      documentApparuRef.current = true;
+      setPliees((p) => ({ ...p, resultats: true, sources: true }));
+    }
+  }, [contenuScenario]);
   const [jumeauInspecte, setJumeauInspecte] = useState(null);
   const [preuveInspectee, setPreuveInspectee] = useState(null);
   const [estEnBas, setEstEnBas] = useState(true);
@@ -398,6 +457,42 @@ export default function OngletTravail({
   const canvasActif = canvasOuvertProp !== undefined ? canvasOuvertProp : canvasLocal;
   const setCanvasActif = setCanvasOuvertProp || setCanvasLocal;
   const toggleCanvas = onBasculerCanvas || (() => setCanvasActif((v) => !v));
+
+  // Le Canvas et le volet ne s'affichent pas en même temps par défaut : à l'ouverture du Canvas,
+  // le volet se referme tout seul — mais reste accessible ensuite d'un clic sur son bouton révélateur,
+  // ce n'est qu'un repli par défaut, jamais un verrouillage.
+  const canvasEtaitActifRef = useRef(canvasActif);
+  useEffect(() => {
+    if (canvasActif && !canvasEtaitActifRef.current) setVoletSourcesOuvert(false);
+    canvasEtaitActifRef.current = canvasActif;
+  }, [canvasActif]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Largeur du Canvas, ajustable à la souris (poignée) — le chat garde toujours une largeur lisible :
+  // on borne le Canvas à la largeur du conteneur moins cette réserve, jamais au-delà.
+  const LARGEUR_CANVAS_MIN = 360;
+  const LARGEUR_CHAT_MIN = 420;
+  const [largeurCanvas, setLargeurCanvas] = useState(560);
+  const conteneurRef = useRef(null);
+  const redimensionnementRef = useRef(null);
+  const demarrerRedimensionCanvas = useCallback((e) => {
+    e.preventDefault();
+    redimensionnementRef.current = { x: e.clientX, largeurDepart: largeurCanvas };
+    const onMove = (ev) => {
+      const ref = redimensionnementRef.current;
+      if (!ref || !conteneurRef.current) return;
+      const largeurConteneur = conteneurRef.current.offsetWidth;
+      const delta = ref.x - ev.clientX; // on tire vers la gauche : le Canvas s'agrandit
+      const largeurMax = Math.max(LARGEUR_CANVAS_MIN, largeurConteneur - LARGEUR_CHAT_MIN);
+      setLargeurCanvas(Math.min(largeurMax, Math.max(LARGEUR_CANVAS_MIN, ref.largeurDepart + delta)));
+    };
+    const onUp = () => {
+      redimensionnementRef.current = null;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [largeurCanvas]);
 
   const defilementRef = useRef(null);
   const finFilRef = useRef(null);
@@ -514,7 +609,6 @@ export default function OngletTravail({
       if (travailNe) {
         setCas({ ...travailNe, conversation: [data.utilisateur, { ...data.flore, anime: true, _activite: activiteTerminee("travail") }] });
         navigate(`/travaux/${idTravail}`, { replace: true, state: { continuite: true } });
-        if (data.flore?.documentCanvas) setCanvasActif(true);
         return;
       }
       setCas((c) => ({
@@ -523,9 +617,6 @@ export default function OngletTravail({
         // l'historique chargé au montage, qui doit rester affiché d'un bloc (voir useDeroule)
         conversation: [...avant, data.utilisateur, { ...data.flore, anime: true, _activite: activiteTerminee("travail") }],
       }));
-      if (data.flore?.documentCanvas && !canvasActif) {
-        setCanvasActif(true);
-      }
     } catch {
       setCas((c) => ({ ...c, conversation: avant }));
       setNouveauMsg(q); // le texte n'est pas perdu
@@ -570,16 +661,25 @@ export default function OngletTravail({
   };
 
   return (
-    <div className="relative flex h-full w-full overflow-hidden bg-[#071019] text-[#DCE6EE]" data-testid="onglet-travail">
+    <div ref={conteneurRef} className="relative flex h-full w-full overflow-hidden bg-[#071019] text-[#DCE6EE]" data-testid="onglet-travail">
       
       {/* ========================================================================= */}
-      {/* ZONE CENTRALE : CONVERSATION FLUIDE, AÉRÉE, SANS CARDS LOURDES            */}
+      {/* ZONE CENTRALE : ENTÊTE + CONVERSATION FLUIDE, AÉRÉE, SANS CARDS LOURDES   */}
+      {/* Colonne complète (entête comprise) : elle rétrécit avec le Canvas, qui    */}
+      {/* prend alors toute la hauteur à partir d'où l'entête était (Style Canvas). */}
       {/* ========================================================================= */}
-      <div className={`relative flex h-full w-full flex-col overflow-hidden transition-all duration-300 ${canvasActif ? "lg:w-auto lg:flex-[55]" : ""}`}>
-        
+      <div className={`relative flex h-full min-w-0 flex-col overflow-hidden transition-all duration-300 ${canvasActif ? "lg:flex-1" : "w-full"}`}>
+        {entete}
+
+        {/* Sous-conteneur repositionné : débute juste sous l'entête (pas au sommet de la colonne),
+            pour que le volet flottant ci-dessous s'ancre sous son bouton révélateur, pas derrière l'entête */}
+        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+
         {/* ========================================================================= */}
         {/* VOLET FLOTTANT : RÉSULTATS & SOURCES JUMEAUX (Style ChatGPT Canvas)        */}
-        {/* Toggable à volonté via l'icône à deux traits horizontaux                 */}
+        {/* Toggable à volonté via l'icône à deux traits horizontaux. Se referme tout  */}
+        {/* seul à l'ouverture du Canvas (voir l'effet plus haut), mais reste          */}
+        {/* rouvrable ensuite d'un clic, même Canvas ouvert.                          */}
         {/* ========================================================================= */}
         {voletSourcesOuvert && (
           <div 
@@ -1072,14 +1172,29 @@ export default function OngletTravail({
             );
           })()}
         </div>
+        </div>
       </div>
 
       {/* ========================================================================= */}
-      {/* VOLET DROIT : CANVAS DU DOCUMENT GÉNÉRÉ (Style ChatGPT Canvas)           */}
+      {/* VOLET DROIT : CANVAS DU DOCUMENT GÉNÉRÉ (Style ChatGPT Canvas)            */}
+      {/* Colonne indépendante, pleine hauteur dès y=0 (pas sous l'entête, qui ne   */}
+      {/* couvre que la conversation) — redimensionnable, sans jamais écraser le    */}
+      {/* chat sous sa largeur lisible minimale (voir LARGEUR_CHAT_MIN).            */}
       {/* ========================================================================= */}
       {canvasActif && (
-        <div className="absolute inset-0 z-30 h-full overflow-hidden bg-[#071019] transition-all duration-300 lg:static lg:flex-[45] lg:border-l lg:border-white/[0.1]">
-          <CanvasDocument onFermer={toggleCanvas} />
+        <div
+          className="absolute inset-0 z-30 flex h-full shrink-0 overflow-hidden bg-[#071019] transition-[left,right] duration-300 lg:static lg:max-w-[calc(100%-var(--chat-min))] lg:flex-none lg:basis-[var(--largeur-canvas)] lg:transition-none lg:border-l lg:border-white/[0.1]"
+          style={{ "--largeur-canvas": `${largeurCanvas}px`, "--chat-min": `${LARGEUR_CHAT_MIN}px` }}
+        >
+          <div
+            onMouseDown={demarrerRedimensionCanvas}
+            className="hidden w-1.5 shrink-0 cursor-col-resize bg-transparent transition-colors hover:bg-[#60A5FA]/30 lg:block"
+            title="Redimensionner le Canvas"
+            data-testid="poignee-redimension-canvas"
+          />
+          <div className="min-w-0 flex-1">
+            <CanvasDocument titre={documentGenereNom} contenu={documentGenereTexte || undefined} onFermer={toggleCanvas} />
+          </div>
         </div>
       )}
     </div>

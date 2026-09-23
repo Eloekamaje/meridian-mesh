@@ -6,42 +6,95 @@
 // question simple (clarification, chiffre déjà connu) reçoit une réponse directe, sans nouvelle
 // activité : `terminer: true` marque alors la réponse comme complète sans fermer d'activité réelle.
 
-const PRIORITE_3 = [
-  { app_id: "suivi-demandes", jumeau: "Suivi des demandes clients", domaine: "Client", texte: "À privilégier — dépend de l'état fiable du dossier." },
-  { app_id: "poste-conseiller", jumeau: "Simplification du poste conseiller", domaine: "Distribution", texte: "À privilégier — dépend de l'état fiable du dossier." },
-  { app_id: "controles-dossier", jumeau: "Automatisation des contrôles de dossier", domaine: "Opérations", texte: "À privilégier — dépend de l'état fiable du dossier." },
+const A_PRIVILEGIER = [
+  { nom: "Suivi des demandes clients", domaine: "Client" },
+  { nom: "Simplification du poste conseiller", domaine: "Distribution" },
+  { nom: "Automatisation des contrôles de dossier", domaine: "Opérations" },
 ];
 
-const APERCU_12 = [
-  { app_id: "portail-fournisseurs", jumeau: "Portail fournisseurs 2.0", domaine: "Achats", texte: "À réexaminer — chevauchement fonctionnel." },
-  { app_id: "rapports-regionaux", jumeau: "Automatisation des rapports régionaux", domaine: "Finance", texte: "À réexaminer — faible contribution aux objectifs." },
-  { app_id: "controle-qualite", jumeau: "Optimisation du contrôle qualité interne", domaine: "Opérations", texte: "À réexaminer — coût élevé pour le bénéfice attendu." },
+const A_REEXAMINER_APERCU = [
+  { nom: "Portail fournisseurs 2.0", domaine: "Achats" },
+  { nom: "Automatisation des rapports régionaux", domaine: "Finance" },
+  { nom: "Optimisation du contrôle qualité interne", domaine: "Opérations" },
+  { nom: "+ 9 autres initiatives", domaine: "Opérations" },
 ];
 
-const GROUPE_7 = [
-  { app_id: "portail-fournisseurs", jumeau: "Portail fournisseurs 2.0", domaine: "Achats", texte: "Aucun impact client ni dépendance bloquante." },
-  { app_id: "rapports-regionaux", jumeau: "Automatisation des rapports régionaux", domaine: "Finance", texte: "Aucun impact client ni dépendance bloquante." },
-  { app_id: "intranet-rh", jumeau: "Refonte de l'intranet RH", domaine: "RH", texte: "Aucun impact client ni dépendance bloquante." },
-  { app_id: "suivi-budgets", jumeau: "Suivi interne des budgets de projet", domaine: "Finance", texte: "Aucun impact client ni dépendance bloquante." },
-  { app_id: "gestion-acces", jumeau: "Outil de gestion des accès internes", domaine: "TI", texte: "Aucun impact client ni dépendance bloquante." },
-  { app_id: "tableau-manager", jumeau: "Modernisation du tableau de bord managérial", domaine: "Opérations", texte: "Aucun impact client ni dépendance bloquante." },
-  { app_id: "gestion-documentaire", jumeau: "Plateforme de gestion documentaire interne", domaine: "Opérations", texte: "Aucun impact client ni dépendance bloquante." },
+const GROUPE_SANS_IMPACT = [
+  { nom: "Portail fournisseurs 2.0", domaine: "Achats" },
+  { nom: "Automatisation des rapports régionaux", domaine: "Finance" },
+  { nom: "Refonte de l'intranet RH", domaine: "RH" },
+  { nom: "Suivi interne des budgets de projet", domaine: "Finance" },
+  { nom: "Outil de gestion des accès internes", domaine: "TI" },
+  { nom: "Modernisation du tableau de bord managérial", domaine: "Opérations" },
+  { nom: "Plateforme de gestion documentaire interne", domaine: "Opérations" },
 ];
 
-const GROUPE_3 = [
-  { app_id: "controle-qualite", jumeau: "Optimisation du contrôle qualité interne", domaine: "Opérations", texte: "Adaptation de processus internes nécessaire." },
-  { app_id: "fournisseurs-strategiques", jumeau: "Système de gestion des fournisseurs stratégiques", domaine: "Achats", texte: "Adaptation de processus internes nécessaire." },
-  { app_id: "approbation-budgetaire", jumeau: "Refonte du processus d'approbation budgétaire", domaine: "Finance", texte: "Adaptation de processus internes nécessaire." },
+const GROUPE_PROCESSUS_INTERNE = [
+  { nom: "Optimisation du contrôle qualité interne", domaine: "Opérations" },
+  { nom: "Système de gestion des fournisseurs stratégiques", domaine: "Achats" },
+  { nom: "Refonte du processus d'approbation budgétaire", domaine: "Finance" },
 ];
 
-const GROUPE_2 = [
-  { app_id: "facturation-legacy", jumeau: "Ancien système de facturation régionale", domaine: "Finance", texte: "Fournit une capacité attendue par d'autres projets — maintenir jusqu'au remplacement." },
-  { app_id: "registre-contrats", jumeau: "Registre des contrats papier numérisé", domaine: "Opérations", texte: "Fournit une capacité attendue par d'autres projets — maintenir jusqu'au remplacement." },
+const GROUPE_CAPACITE_ATTENDUE = [
+  { nom: "Ancien système de facturation régionale", domaine: "Finance" },
+  { nom: "Registre des contrats papier numérisé", domaine: "Opérations" },
 ];
+
+const DOCUMENT_ARBITRAGE = `# Polaris — Proposition d'arbitrage du portefeuille
+**Préparé par Flore · VP Transformation Polaris**
+
+---
+
+## 1. Contexte
+
+Le portefeuille Polaris compte près de 400 initiatives. Cette note propose un arbitrage : les initiatives à privilégier, celles à réexaminer, et les décisions qui peuvent être prises dès maintenant.
+
+---
+
+## 2. Initiatives à privilégier
+
+Trois initiatives ressortent directement des objectifs de Polaris et partagent un même besoin sous-jacent — un état fiable et à jour du dossier :
+
+- **Suivi des demandes clients**
+- **Simplification du poste conseiller**
+- **Automatisation des contrôles de dossier**
+
+**Décision proposée (peut être prise maintenant) :** financer ensemble ce que ces trois initiatives ont en commun, sans changer leurs objectifs propres. Cela évite que trois équipes reconstruisent séparément la même capacité.
+
+---
+
+## 3. Initiatives à réexaminer
+
+12 initiatives contribuent peu aux objectifs actuels, présentent des coûts élevés par rapport aux bénéfices attendus, ou recoupent des travaux déjà financés. Leur arrêt éviterait jusqu'à **18 M$ de dépenses prévues d'ici fin 2028** — un montant brut, avant déduction des engagements contractuels, des frais d'arrêt et des remplacements éventuels.
+
+| Groupe | Nombre | Situation | Recommandation |
+| --- | --- | --- | --- |
+| A | 7 | Aucun impact client ni dépendance bloquante | Soumettre l'arrêt au comité dès que les impacts sont confirmés |
+| B | 3 | Adaptation de processus internes nécessaire | Préparer la transition avec les équipes concernées |
+| C | 2 | Fournissent une capacité attendue par d'autres projets | Maintenir jusqu'à la disponibilité du remplacement |
+
+---
+
+## 4. Ce qui reste à valider
+
+- Confirmer les impacts et les engagements des 7 initiatives du groupe A avec leurs responsables
+- Préparer la transition des 3 initiatives du groupe B
+- Suivre la disponibilité des remplacements avant d'arrêter les 2 initiatives du groupe C
+- Chiffrer l'économie nette après déduction des engagements contractuels et des frais d'arrêt
+
+---
+
+## 5. Prochaines actions
+
+1. Soumettre l'arrêt du groupe A au comité, une fois les impacts confirmés
+2. Engager la transition du groupe B avec ses équipes
+3. Conditionner l'arrêt du groupe C à la disponibilité de son remplacement
+4. Protéger le financement de la capacité commune aux 3 initiatives prioritaires
+`;
 
 export const SCENARIO_VP = {
   id: "demo-vp-scenario",
-  version: 2,
+  version: 3,
   profileId: "vp",
   personaRole: "VP · Transformation Polaris",
   title: "Décider quelles initiatives Polaris financer",
@@ -96,7 +149,13 @@ export const SCENARIO_VP = {
           speaker: "flore",
           text: "Trois initiatives ressortent en priorité : **le suivi des demandes clients, la simplification du poste conseiller et l'automatisation des contrôles de dossier**. Elles contribuent directement à réduire les délais et les tâches manuelles.\n\nElles partagent toutefois un besoin : disposer d'un état fiable et à jour du dossier. Une partie de leur investissement pourrait donc être mise en commun.\n\nJ'ai également repéré **12 initiatives à réexaminer en priorité**. Certaines contribuent peu aux objectifs actuels, d'autres présentent des coûts élevés par rapport aux bénéfices attendus, ou recoupent des travaux déjà financés.",
           evidenceIds: ["demo-vp-ev-portefeuille"],
-          contenu: { comportement: "diagnostiquer", contributions: [...PRIORITE_3, ...APERCU_12] },
+          contenu: {
+            comportement: "diagnostiquer",
+            selections: [
+              { titre: "À privilégier", items: A_PRIVILEGIER },
+              { titre: "À réexaminer (12 au total)", items: A_REEXAMINER_APERCU },
+            ],
+          },
           terminer: "act-seq-1",
         },
         { type: "observe", duree: 2500 },
@@ -179,7 +238,14 @@ export const SCENARIO_VP = {
           speaker: "flore",
           text: "Les 12 initiatives se répartissent en trois groupes :\n\n- **7 initiatives** : je n'ai identifié aucun impact direct sur les services clients ni dépendance bloquante dans les sources consultées. Ce sont les premières candidates à une revue d'arrêt.\n- **3 initiatives** : leur arrêt nécessiterait une adaptation des processus internes. Il faut préparer cette transition avec les équipes concernées.\n- **2 initiatives** : elles fournissent une capacité attendue par d'autres projets. Je recommande de les maintenir jusqu'à ce qu'un remplacement soit prêt.",
           evidenceIds: ["demo-vp-ev-impact-client"],
-          contenu: { comportement: "recommander", contributions: [...GROUPE_7, ...GROUPE_3, ...GROUPE_2] },
+          contenu: {
+            comportement: "recommander",
+            selections: [
+              { titre: "7 — Aucun impact ni dépendance", items: GROUPE_SANS_IMPACT },
+              { titre: "3 — Adaptation de processus", items: GROUPE_PROCESSUS_INTERNE },
+              { titre: "2 — Capacité attendue ailleurs", items: GROUPE_CAPACITE_ATTENDUE },
+            ],
+          },
           terminer: "act-seq-4",
         },
         { type: "observe", duree: 3000 },
@@ -259,9 +325,7 @@ export const SCENARIO_VP = {
           sources: [],
           duree: 300,
         },
-        { type: "prepare", surface: "travail", titre: "Préparation de la note…", duree: 2200 },
         { type: "upsert_result", resultId: "demo-vp-work", phase: "final" },
-        { type: "prepare_end" },
         {
           type: "message",
           speaker: "flore",
@@ -271,7 +335,7 @@ export const SCENARIO_VP = {
           contenu: {
             comportement: "conclure",
             documentCanvas: "Polaris — Proposition d'arbitrage du portefeuille",
-            contributions: [...PRIORITE_3, ...GROUPE_7.slice(0, 2)],
+            documentTexte: DOCUMENT_ARBITRAGE,
           },
         },
         { type: "observe", duree: 5000 },

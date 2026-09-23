@@ -67,7 +67,10 @@ export default function TravailDetail() {
   const nbSources = (cas?.jumeaux_participants || []).length;
   const casNe = !brouillon && !!cas?.id; // le travail existe : en-tête complet, volet
   useEffect(() => {
-    if (pilote && nbSources > 0 && !pilote.canvasOuvert) setVoletSourcesOuvert(true);
+    // `canvasOuvert` (l'état réellement affiché), pas `pilote.canvasOuvert` : le Canvas ne s'ouvre plus
+    // tout seul depuis le moteur de démo, il peut donc être ouvert manuellement sans que ce champ le
+    // reflète — le volet ne doit pas revenir par-dessus pour autant.
+    if (pilote && nbSources > 0 && !canvasOuvert) setVoletSourcesOuvert(true);
   }, [nbSources]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -117,9 +120,11 @@ export default function TravailDetail() {
   const sens = SENSIBILITES[cas.sensibilite] || [cas.sensibilite || "interne", "#60A5FA"];
   const derniereEvolution = (cas.historique || []).slice(-1)[0];
 
-  return (
-    <div className="flex h-full flex-col" data-testid="travail-detail">
-      {/* En-tête supérieur épuré (Style ChatGPT Work) */}
+  // L'entête, le bandeau « à revoir » et le voile de préparation vivent dans la même colonne que
+  // le chat (passés en prop) : quand le Canvas s'ouvre, cette colonne rétrécit et eux avec elle,
+  // pendant que le Canvas prend toute la hauteur à partir d'où l'entête était (Style ChatGPT Canvas).
+  const entete = (
+    <>
       <div className="shrink-0 border-b border-white/[0.08] bg-[#071019] px-6 py-2.5" data-testid="travail-entete">
         <div className="flex items-center justify-between gap-4">
           {/* Titre */}
@@ -218,20 +223,23 @@ export default function TravailDetail() {
         </div>
       )}
 
-      {/* Conversation : elle occupe toute la hauteur, saisie ancrée */}
-      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-        {/* Démonstration : la surface annonce la synthèse qu'elle prépare */}
-        {pilote?.preparation?.surface === "travail" && <SurfacePreparation preparation={pilote.preparation} testid="travail-preparation" />}
-        <OngletTravail
-          cas={casVu}
-          setCas={setCas}
-          voletSourcesOuvert={voletSourcesOuvert && casNe}
-          setVoletSourcesOuvert={setVoletSourcesOuvert}
-          canvasOuvert={canvasOuvert}
-          setCanvasOuvert={setCanvasOuvert}
-          onConsignerDecision={casNe ? () => setPassationOuverte(true) : undefined}
-        />
-      </div>
+      {/* Démonstration : la surface annonce la synthèse qu'elle prépare */}
+      {pilote?.preparation?.surface === "travail" && <SurfacePreparation preparation={pilote.preparation} testid="travail-preparation" />}
+    </>
+  );
+
+  return (
+    <div className="flex h-full" data-testid="travail-detail">
+      <OngletTravail
+        cas={casVu}
+        setCas={setCas}
+        voletSourcesOuvert={voletSourcesOuvert && casNe}
+        setVoletSourcesOuvert={setVoletSourcesOuvert}
+        canvasOuvert={canvasOuvert}
+        setCanvasOuvert={setCanvasOuvert}
+        onConsignerDecision={casNe ? () => setPassationOuverte(true) : undefined}
+        entete={entete}
+      />
       {confierOuvert && <ConfierTravail cas={cas} personas={personas} moi={persona} onFermer={() => setConfierOuvert(false)} onConfie={(data) => { setCas(data); setConfierOuvert(false); }} />}
       {passationOuverte && <DecisionPassation cas={cas} onFermer={() => setPassationOuverte(false)} onEnregistree={(data) => { setCas(data); setPassationOuverte(false); }} />}
     </div>

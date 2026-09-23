@@ -163,9 +163,7 @@ export const SCENARIO_DIRECTEUR = {
           sources: [],
           duree: 300,
         },
-        { type: "prepare", surface: "travail", titre: "Préparation du calendrier…", duree: 2200 },
         { type: "upsert_result", resultId: "demo-directeur-work", phase: "final" },
-        { type: "prepare_end" },
         {
           type: "message",
           speaker: "flore",

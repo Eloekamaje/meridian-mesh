@@ -203,15 +203,15 @@ function MoteurSession({ scenario, fixtures, onAccueil, children }) {
         };
         const doc = !!beat.contenu?.documentCanvas;
         if (beat.speaker === "flore" && (beat.terminer || doc)) {
-          // La réponse se déroule (durée de frappe), PUIS le traitement s'arrête et le document s'ouvre ;
-          // le temps de lecture ne commence qu'ensuite
+          // La réponse se déroule (durée de frappe), PUIS le traitement s'arrête ;
+          // le temps de lecture ne commence qu'ensuite. Le document apparaît dans le message
+          // (bouton « Ouvrir ») sans forcer l'ouverture du Canvas — le visiteur l'ouvre lui-même.
           const frappe = Math.ceil(beat.text.length / 3) * RYTHME.frappeMsParLot;
           planifier(frappe, () => {
             setEtat((e) => ({
               ...e,
               activites: beat.terminer ? terminerActivite(e.activites, { activityId: beat.terminer }) : e.activites,
               documentGenere: e.documentGenere || doc,
-              canvasOuvert: e.canvasOuvert || doc,
             }));
             planifier(Math.max(0, duree - frappe), suite);
           });
@@ -447,7 +447,6 @@ function MoteurSession({ scenario, fixtures, onAccueil, children }) {
             messages = [...messages, { id, speaker: beat.speaker, speakerLabel: beat.speaker === "flore" ? "Flore" : scenario.roleLabel, text: beat.text, stepId: step.id, evidenceIds: beat.evidenceIds || [], contenu: beat.contenu || null, termine: beat.speaker !== "flore" || !!beat.terminer, quand: new Date().toISOString(), anime: false }];
             if (beat.contenu?.documentCanvas) {
               documentGenere = true;
-              canvasOuvert = true;
             }
             activites = beat.terminer ? terminerActivite(activites, { activityId: beat.terminer }) : avancerAncrageActivites(activites, messages.length);
           }
