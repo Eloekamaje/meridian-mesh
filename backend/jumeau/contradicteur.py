@@ -12,6 +12,7 @@ import re
 
 from strands import Agent
 
+from jumeau import connaissance
 from jumeau.connaissance import RE_CITATION
 from jumeau.source_git import lire_au_sha
 
@@ -30,23 +31,23 @@ Réponds uniquement par un objet JSON : {"ok": true} si tout va bien, sinon
 """
 
 
-def citations_invalides(texte, source):
-    """Citations qui ne pointent sur aucune ligne existante du code au commit ingéré."""
-    lire = lire_au_sha(source.get("copie") or source["emplacement"], source["curseur"])
+def citations_invalides(texte, sources):
+    """Citations qui ne pointent sur aucune ligne existante du code au commit de leur dépôt (ou dont le dépôt ne
+    peut être déterminé)."""
     invalides, vues = [], set()
     for m in RE_CITATION.finditer(texte):
-        chemin, debut = m.group(1), int(m.group(2))
-        fin = int(m.group(3) or debut)
-        cle = f"{chemin}#L{debut}-L{fin}" if fin != debut else f"{chemin}#L{debut}"
+        depot, chemin, debut, fin = connaissance.decouper(m)
+        cle = connaissance.cle_citation(depot, chemin, debut, fin)
         if cle in vues:
             continue
         vues.add(cle)
         try:
-            lignes = lire(chemin)
-        except ValueError:
+            source = connaissance.resoudre_source(sources, depot, chemin)
+            lignes = lire_au_sha(source.get("copie") or source["emplacement"], source["curseur"])(chemin)
+        except (LookupError, ValueError):
             lignes = None
         if lignes is None or debut < 1 or fin < debut or fin > len(lignes):
-            invalides.append(f"{chemin}#L{debut}-L{fin}")
+            invalides.append(cle)
     return invalides
 
 
@@ -70,9 +71,9 @@ async def _juger(question, reponse, profil, modele, charte):
     return analyser_verdict(str(resultat))
 
 
-async def relire(question, reponse, source, profil, modele, charte=""):
+async def relire(question, reponse, sources, profil, modele, charte=""):
     # Contrôle déterministe d'abord : une citation fausse suffit à demander une révision, sans appel au LLM.
-    invalides = await asyncio.to_thread(citations_invalides, reponse, source)
+    invalides = await asyncio.to_thread(citations_invalides, reponse, sources)
     if invalides:
         return {"ok": False, "problemes": [f"Citations introuvables dans le code : {', '.join(invalides)}. "
                                            "Relis ces lignes avec lire_code ou retire l'affirmation."]}
@@ -90,8 +91,7 @@ def consigne_revision(problemes):
 def retirer_citations_invalides(texte, invalides):
     """Retire du texte les citations qui ne pointent sur rien (avec leurs accents graves et l'espace qui précède)."""
     def remplacer(m):
-        debut, fin = m.group(2), m.group(3) or m.group(2)
-        return "" if f"{m.group(1)}#L{debut}-L{fin}" in invalides else m.group(0)
+        return "" if connaissance.cle_citation(*connaissance.decouper(m)) in invalides else m.group(0)
     motif = re.compile(r"\s*`?(?:" + RE_CITATION.pattern + r")`?")
     propre = motif.sub(remplacer, texte)
     return re.sub(r"[ \t]+([.,;:])", r"\1", propre)

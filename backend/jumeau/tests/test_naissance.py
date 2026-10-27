@@ -161,3 +161,84 @@ def test_delai_depasse_donne_un_echec_propre(monkeypatch, depot_distant):
         raise subprocess.TimeoutExpired("git", 30)
     monkeypatch.setattr(naissance.subprocess, "run", trop_long)
     assert naissance.tester_git({"url": f"file://{depot_distant}", "branches": "main"})["statut"] == "erreur_connexion"
+
+
+def test_plusieurs_depots_chacun_sur_sa_branche():
+    config = {"organisation": "banque", "depots": "tbt-api@main, tbt-front@develop, tbt-infra", "branches": "release"}
+    assert naissance.depots_de(config) == [("tbt-api", "main"), ("tbt-front", "develop"), ("tbt-infra", "release")]
+    assert naissance.depots_de({"organisation": "o", "depots": "seul"}) == [("seul", "main")]
+    with pytest.raises(ValueError):
+        naissance.depots_de({"organisation": "o", "depots": "x@-oups"})
+
+
+def depot_nu(tmp_path, nom, branche, fichiers):
+    """Dépôt distant (nu) avec une branche donnée ; renvoie (chemin du dépôt nu, chemin de travail)."""
+    travail, nu = tmp_path / f"{nom}-travail", tmp_path / f"{nom}.git"
+    subprocess.run(["git", "init", "-q", "-b", branche, str(travail)], check=True)
+    for f, contenu in fichiers.items():
+        (travail / f).write_text(contenu)
+    subprocess.run(["git", "-C", str(travail), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(travail), "-c", "user.name=A", "-c", "user.email=a@a", "commit", "-qm", "init"],
+                   check=True)
+    subprocess.run(["git", "clone", "-q", "--bare", str(travail), str(nu)], check=True)
+    subprocess.run(["git", "-C", str(travail), "remote", "add", "origin", str(nu)], check=True)
+    return nu, travail
+
+
+@besoin_pg
+@pytest.mark.skipif(not os.environ.get("MONGO_URL") or not os.environ.get("CBM_BIN"), reason="Mongo et cbm requis")
+def test_naissance_puis_veille_avec_deux_depots_sur_deux_branches(conn, tmp_path, monkeypatch):
+    from motor.motor_asyncio import AsyncIOMotorClient
+    from jumeau import cbm, gardien, ingerer
+    monkeypatch.setattr(ingerer, "COPIES", tmp_path / "copies")
+    monkeypatch.setattr(naissance, "DEPOTS", tmp_path / "depots")
+    api_nu, _ = depot_nu(tmp_path, "tbt-api", "main", {"requirements.txt": "fastapi==0.1\n"})
+    front_nu, front_travail = depot_nu(tmp_path, "tbt-front", "develop",
+                                       {"package.json": '{"dependencies": {"axios": "^1"}}\n'})
+    commande = {"id": "cmd-2", "jumeau": {"nom": "TBT", "proprietaire": "Équipe TBT"},
+                "sources": [{"id": "a", "connecteur": "github", "statut": "prete",
+                             "config": {"url": f"file://{api_nu}", "branches": "main"}},
+                            {"id": "f", "connecteur": "github", "statut": "prete",
+                             "config": {"url": f"file://{front_nu}", "branches": "develop"}}]}
+
+    async def rediger_factice(ctx, dsn, sigs, commits):
+        return f"Fiche ({len(ctx['sources'])} dépôts)", None
+
+    async def scenario():
+        client = AsyncIOMotorClient(os.environ["MONGO_URL"])
+        nom_db = f"test_multi_{uuid.uuid4().hex[:8]}"
+        db = client[nom_db]
+        try:
+            await db.commandes.insert_one(dict(commande))
+            await naissance.naitre(conn, db, commande, "tbt", rediger=rediger_factice)
+            etat = (await db.commandes.find_one({"id": "cmd-2"}))["naissance"]
+            # Un nouveau commit sur le seul front (branche develop), poussé sur le dépôt distant.
+            (front_travail / "package.json").write_text('{"dependencies": {"axios": "^1", "react": "^18"}}\n')
+            subprocess.run(["git", "-C", str(front_travail), "-c", "user.name=A", "-c", "user.email=a@a", "commit",
+                            "-qam", "Ajoute React"], check=True)
+            subprocess.run(["git", "-C", str(front_travail), "push", "-q", "origin", "develop"], check=True)
+            veille = await gardien.veiller(conn, db, "tbt", rediger=rediger_factice)
+            return etat, veille
+        finally:
+            await client.drop_database(nom_db)
+            client.close()
+
+    try:
+        etat, veille = asyncio.run(scenario())
+    finally:
+        for s in depot.sources_du_jumeau(conn, "tbt"):
+            cbm.texte("delete_project", "--project", s["index_code"])
+    assert etat["etat"] == "ne" and sorted(etat["depots"]) == ["tbt-api", "tbt-front"]
+    assert [(s["nom"], s["branche"]) for s in depot.sources_du_jumeau(conn, "tbt")] == \
+        [("tbt-api", "main"), ("tbt-front", "develop")]
+    assert veille["depots"] == ["tbt-front"] and veille["signaux"] == 1  # react : nouvelle dépendance
+    assert {c["objet"] for c in depot.lister_claims(conn, "tbt")} >= {"fastapi", "axios", "react"}  # rien de fermé
+    assert gardien.fiche_courante(conn, "tbt")["contenu"] == "Fiche (2 dépôts)"
+
+
+def test_deux_depots_homonymes_refuses():
+    commande = {"sources": [
+        {"connecteur": "github", "statut": "prete", "config": {"organisation": "a", "depots": "api"}},
+        {"connecteur": "github", "statut": "prete", "config": {"organisation": "b", "depots": "api@develop"}}]}
+    with pytest.raises(ValueError, match="même nom"):
+        naissance.sources_de_code(commande)

@@ -109,13 +109,13 @@ def test_bout_en_bout_un_commit_devient_une_situation_dans_aujourd_hui(conn, tmp
         db = client[nom_db]
         try:
             await db.situations.insert_one({"id": "sit-gardien-tbt-essai-ancien", "statut": "active"})
-            bilan = await gardien.veiller(conn, db, "tbt-essai", depot_app, rediger=rediger_en_panne)
+            bilan = await gardien.veiller(conn, db, "tbt-essai", [depot_app], rediger=rediger_en_panne)
             assert gardien.fiche_courante(conn, "tbt-essai") is None  # l'IA est tombée…
-            reprise = await gardien.veiller(conn, db, "tbt-essai", depot_app, rediger=rediger_factice)
+            reprise = await gardien.veiller(conn, db, "tbt-essai", [depot_app], rediger=rediger_factice)
             sits = await db.situations.find({"statut": "active"}, {"_id": 0}).to_list(10)
             archivee = await db.situations.find_one({"id": "sit-gardien-tbt-essai-ancien"})
             registre = await db.jumeaux.find_one({"id": "tbt-essai"}, {"_id": 0})
-            encore = await gardien.veiller(conn, db, "tbt-essai", depot_app, rediger=rediger_factice)
+            encore = await gardien.veiller(conn, db, "tbt-essai", [depot_app], rediger=rediger_factice)
             assert archivee["statut"] == "archivee" and reprise["changement"] and reprise["signaux"] == 0
             return bilan, sits, registre, encore
         finally:

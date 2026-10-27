@@ -13,30 +13,37 @@ from jumeau import agent, connaissance, contradicteur, depot, gardien
 from jumeau.connaissance import RE_CITATION
 from jumeau.travail import EcritureTravail, etat_texte
 
-# Forme longue git://depot@sha:chemin#La-Lb ou forme courte chemin#La[-Lb] : toutes deux relues au commit du jumeau.
 MAX_PREUVES = 8
 FILS = agent.FilsActifs()
 
 
-def preuves_depuis(texte, source):
-    """Citations de la réponse → preuves affichables sous le message, au commit ingéré, sans doublon."""
+def preuves_depuis(texte, sources, exclure=()):
+    """Citations de la réponse → preuves affichables sous le message, au commit de leur dépôt, sans doublon.
+
+    Une citation dont le dépôt ne peut être déterminé, ou qui figure dans `exclure`, n'est pas retenue.
+    """
     preuves, vues = [], set()
-    sha = source["curseur"][:12]
     for m in RE_CITATION.finditer(texte):
-        chemin, debut = m.group(1), int(m.group(2))
-        fin = int(m.group(3) or debut)
-        locator = f"git://{source['nom']}@{sha}:{chemin}#L{debut}-L{fin}"
+        depot_cite, chemin, debut, fin = connaissance.decouper(m)
+        if connaissance.cle_citation(depot_cite, chemin, debut, fin) in exclure:
+            continue
+        try:
+            source = connaissance.resoudre_source(sources, depot_cite, chemin)
+        except (LookupError, ValueError):
+            continue
+        locator = f"git://{source['nom']}@{source['curseur'][:12]}:{chemin}#L{debut}-L{fin}"
         if locator in vues:
             continue
         vues.add(locator)
-        preuves.append({"source": f"{chemin}:{debut}" + (f"-{fin}" if fin != debut else ""), "detail": locator})
+        etiquette = f"{chemin}:{debut}" + (f"-{fin}" if fin != debut else "")
+        preuves.append({"source": f"{source['nom']} · {etiquette}" if len(sources) > 1 else etiquette, "detail": locator})
         if len(preuves) == MAX_PREUVES:
             break
     return preuves
 
 
 # Un groupe de citations (« a.py#L1, b.py#L2 et c.py#L3 »), éventuellement entre accents graves ou parenthèses.
-_CIT = r"`?" + RE_CITATION.pattern + r"`?"
+_CIT = r"`?" + connaissance.MOTIF_CITATION + r"`?"
 _GROUPE = _CIT + r"(?:\s*(?:,|et|·)\s*" + _CIT + r")*"
 RE_GROUPE_ENTRE_PARENTHESES = re.compile(r"\s*\(\s*(?:voir\s+)?" + _GROUPE + r"\s*\)")
 RE_GROUPE = re.compile(r"[ \t]*(?:[—·][ \t]*)?" + _GROUPE)
@@ -49,27 +56,26 @@ def retirer_citations(texte):
     return re.sub(r",([.;:])", r"\1", propre)
 
 
-def fiche_affichable(fiche, source):
+def fiche_affichable(fiche, sources):
     """Fiche vivante pour l'interface : texte lisible, preuves à part (comme les réponses de Flore)."""
-    return {"sha": fiche["sha"][:12], "contenu": retirer_citations(fiche["contenu"]),
-            "preuves": preuves_depuis(fiche["contenu"], source)}
+    return {"sha": fiche["sha"], "contenu": retirer_citations(fiche["contenu"]),
+            "preuves": preuves_depuis(fiche["contenu"], sources)}
 
 
-def vers_reponse_flore(jumeau, source, texte, invalides=()):
+def vers_reponse_flore(jumeau, sources, texte, invalides=()):
     """Format d'une réponse de Flore ; les citations introuvables dans le code n'entrent pas dans le volet."""
-    preuves = [p for p in preuves_depuis(texte, source) if not any(p["detail"].endswith(f":{i}") for i in invalides)]
     return {
         "comportement": "expliquer",
         "reponse": retirer_citations(texte),
         "contributions": [{"jumeau": jumeau["nom"], "texte": "Connaissances et code de l'application consultés."}],
-        "preuves": preuves,
+        "preuves": preuves_depuis(texte, sources, invalides),
     }
 
 
-async def relire_sans_risque(question, texte, source, profil, modele, charte=""):
+async def relire_sans_risque(question, texte, sources, profil, modele, charte=""):
     """Une panne du relecteur (délai, quota) ne doit jamais faire perdre une réponse déjà produite."""
     try:
-        return await contradicteur.relire(question, texte, source, profil, modele, charte)
+        return await contradicteur.relire(question, texte, sources, profil, modele, charte)
     except Exception:
         agent.journal.warning("relecture impossible, réponse envoyée sans relecture", exc_info=True)
         return {"ok": True, "problemes": []}
@@ -86,12 +92,12 @@ def _contexte(jumeau_id, acteur, profil):
         return None, None
     with psycopg.connect(dsn) as conn:
         jumeau = depot.jumeau_par_id(conn, jumeau_id)
-        source = depot.source_du_jumeau(conn, jumeau_id)
-        if not jumeau or not source or not source["index_code"]:
+        sources = [s for s in depot.sources_du_jumeau(conn, jumeau_id) if s["index_code"]]
+        if not jumeau or not sources:
             return None, None
         claims = connaissance.connaissances(conn, jumeau_id, limite=500)
         fiche = gardien.fiche_courante(conn, jumeau_id)
-    return {"jumeau": jumeau, "source": source, "claims": claims, "acteur": acteur, "profil": profil,
+    return {"jumeau": jumeau, "sources": sources, "claims": claims, "acteur": acteur, "profil": profil,
             "fiche": fiche["contenu"] if fiche else None}, dsn
 
 
@@ -124,7 +130,7 @@ async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=No
         # Relecture avant envoi ; une seule révision au plus.
         # ponytail: la consigne de révision reste dans le fil (brouillon, critique, correction) : historique cohérent,
         # mais plus long ; fil séparé si elle gêne la mémoire.
-        verdict = await relire_sans_risque(question, texte, ctx["source"], ctx.get("profil"), modele,
+        verdict = await relire_sans_risque(question, texte, ctx["sources"], ctx.get("profil"), modele,
                                            agent.CHARTE.read_text(encoding="utf-8"))
         if not verdict["ok"]:
             agent.journal.info("révision %s : %s", jumeau_id, verdict["problemes"])
@@ -132,8 +138,8 @@ async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=No
                 texte = str(await a.invoke_async(contradicteur.consigne_revision(verdict["problemes"]))).strip()
             except Exception:
                 agent.journal.warning("révision impossible, première réponse conservée", exc_info=True)
-        invalides = await asyncio.to_thread(contradicteur.citations_invalides, texte, ctx["source"])
-        return vers_reponse_flore(ctx["jumeau"], ctx["source"], texte, invalides)
+        invalides = await asyncio.to_thread(contradicteur.citations_invalides, texte, ctx["sources"])
+        return vers_reponse_flore(ctx["jumeau"], ctx["sources"], texte, invalides)
     except RuntimeError as e:  # modèle non configuré
         return _indisponible(nom, str(e))
     except Exception:

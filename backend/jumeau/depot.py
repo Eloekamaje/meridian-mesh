@@ -39,12 +39,15 @@ def enregistrer(conn, jumeau, source, claims, activite):
             (jumeau["id"], t, jumeau["nom"], jumeau["equipe"], jumeau.get("domaine"), jumeau.get("mission"),
              jumeau.get("domaine"), jumeau.get("mission")))
         source_id = conn.execute(
-            "INSERT INTO source (tenant_id, jumeau_id, type, nom, emplacement, curseur, copie, index_code) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (jumeau_id, nom) "
-            "DO UPDATE SET emplacement = EXCLUDED.emplacement, curseur = EXCLUDED.curseur, "
-            "copie = EXCLUDED.copie, index_code = EXCLUDED.index_code RETURNING id",
+            "INSERT INTO source (tenant_id, jumeau_id, type, nom, emplacement, curseur, copie, index_code, branche, "
+            "url, secret_ref) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (jumeau_id, nom) "
+            "DO UPDATE SET emplacement = EXCLUDED.emplacement, curseur = EXCLUDED.curseur, copie = EXCLUDED.copie, "
+            "index_code = EXCLUDED.index_code, branche = coalesce(EXCLUDED.branche, source.branche), "
+            "url = coalesce(EXCLUDED.url, source.url), secret_ref = coalesce(EXCLUDED.secret_ref, source.secret_ref) "
+            "RETURNING id",
             (t, jumeau["id"], source["type"], source["nom"], source["emplacement"], source["curseur"],
-             source.get("copie"), source.get("index_code"))).fetchone()[0]
+             source.get("copie"), source.get("index_code"), source.get("branche"), source.get("url"),
+             source.get("secret_ref"))).fetchone()[0]
         vus = []
         for c in claims:
             cid = conn.execute(
@@ -57,13 +60,18 @@ def enregistrer(conn, jumeau, source, claims, activite):
                 "valide_jusqua = NULL RETURNING id",
                 (t, jumeau["id"], c["sujet"], c["predicat"], c["objet"], c["type"], c["confiance"])).fetchone()[0]
             vus.append(cid)
+            conn.execute("INSERT INTO claim_source (claim_id, source_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                         (cid, source_id))
             for p in c["preuves"]:
                 _lier_preuve(conn, t, source_id, cid, p, activite)
-        # Seuls les Claims issus de l'ingestion sont clos : une proposition de conversation attend sa revue.
+        # Cette source n'observe plus ce qu'elle n'a pas revu ; un Claim d'ingestion n'est clos que si plus aucune
+        # source du jumeau ne l'observe (plusieurs dépôts par jumeau). Les propositions de conversation attendent
+        # leur revue et ne sont jamais closes ici.
+        conn.execute("DELETE FROM claim_source WHERE source_id = %s AND NOT (claim_id = ANY(%s))", (source_id, vus))
         conn.execute(
             "UPDATE claim SET valide_jusqua = now() WHERE jumeau_id = %s AND origine = 'INGESTION' "
-            "AND valide_jusqua IS NULL AND NOT (id = ANY(%s))",
-            (jumeau["id"], vus))
+            "AND valide_jusqua IS NULL AND NOT EXISTS (SELECT 1 FROM claim_source cs WHERE cs.claim_id = claim.id)",
+            (jumeau["id"],))
 
 
 def _lier_preuve(conn, tenant, source_id, claim_id, p, activite):
@@ -95,12 +103,18 @@ def enregistrer_proposition(conn, jumeau, source_id, c, preuve, activite):
     return cid
 
 
-def source_du_jumeau(conn, jumeau_id):
-    """ponytail: une seule source de code par jumeau en phase 0 ; la plus récente gagne."""
+def sources_du_jumeau(conn, jumeau_id):
+    """Les dépôts du jumeau, chacun sur sa branche, au dernier commit ingéré."""
     with conn.cursor(row_factory=dict_row) as cur:
         return cur.execute(
-            "SELECT id, nom, emplacement, curseur, copie, index_code FROM source "
-            "WHERE jumeau_id = %s AND type = 'GIT' ORDER BY id DESC LIMIT 1", (jumeau_id,)).fetchone()
+            "SELECT id, nom, emplacement, curseur, copie, index_code, branche, url, secret_ref FROM source "
+            "WHERE jumeau_id = %s AND type = 'GIT' ORDER BY nom", (jumeau_id,)).fetchall()
+
+
+def source_du_jumeau(conn, jumeau_id, nom=None):
+    """Un dépôt du jumeau : celui nommé, sinon le premier."""
+    sources = sources_du_jumeau(conn, jumeau_id)
+    return next((s for s in sources if nom is None or s["nom"] == nom), None)
 
 
 def jumeau_par_id(conn, jumeau_id):

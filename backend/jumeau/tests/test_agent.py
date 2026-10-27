@@ -5,8 +5,8 @@ from jumeau import agent
 
 CONTEXTE = {
     "jumeau": {"id": "tbt", "tenant_id": "banque", "nom": "TBT", "equipe": "equipe-tbt"},
-    "source": {"id": 1, "nom": "tbt-repo", "emplacement": "/d", "curseur": "a" * 40,
-               "copie": "/copies/tbt", "index_code": "proj-tbt"},
+    "sources": [{"id": 1, "nom": "tbt-repo", "emplacement": "/d", "curseur": "a" * 40, "branche": "main",
+                 "copie": "/copies/tbt", "index_code": "proj-tbt"}],
     "claims": [{"predicat": "EXPOSE", "objet": "GET /health", "statut": "ACCEPTED"}],
     "acteur": "alice",
     "profil": {"nom": "J. Morel", "role": "Équipe Support"},

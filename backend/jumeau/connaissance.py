@@ -23,8 +23,42 @@ TYPES_CLAIM = {
     "CHANGE", "FUNCTIONALITY", "RISK", "BEHAVIOR", "CUSTOMER_IMPACT", "EMPLOYEE_IMPACT",
 }
 MAX_LIGNES = 200
-# Le chemin doit commencer un mot (ni URL « https://… », ni « v1.2 ») et contenir un dossier ou une extension de fichier.
-RE_CITATION = re.compile(r"(?:git://[^\s@`]+@[0-9a-f]+:|(?<![\w/:.-]))([A-Za-z_][\w.-]*(?:/[\w.-]+)*\.[A-Za-z]\w*)#L(\d+)(?:-L(\d+))?")
+# Citation : forme longue git://depot@sha:chemin#La-Lb, ou courte [depot:]chemin#La[-Lb] (le dépôt est facultatif
+# quand le jumeau n'en a qu'un, ou quand un seul dépôt contient le fichier). Le chemin commence un mot (ni URL, ni
+# « v1.2 ») et porte une extension de fichier.
+RE_CITATION = re.compile(
+    r"(?:git://(?P<depot_long>[^\s@`]+)@[0-9a-f]+:|(?<![\w/:.-])(?:(?P<depot>[A-Za-z0-9_.-]+):(?!//))?)"
+    r"(?P<chemin>[A-Za-z_][\w.-]*(?:/[\w.-]+)*\.[A-Za-z]\w*)#L(?P<debut>\d+)(?:-L(?P<fin>\d+))?")
+# Même motif sans groupes nommés, pour le composer (plusieurs citations dans une même expression).
+MOTIF_CITATION = re.sub(r"\(\?P<\w+>", "(?:", RE_CITATION.pattern)
+
+
+def decouper(m):
+    """(dépôt ou "", chemin, début, fin) d'une citation trouvée par RE_CITATION."""
+    debut = int(m.group("debut"))
+    return (m.group("depot_long") or m.group("depot") or "", m.group("chemin"), debut, int(m.group("fin") or debut))
+
+
+def cle_citation(depot, chemin, debut, fin):
+    """Identifiant d'une citation, tel que l'écrit Flore (avec son dépôt s'il est précisé)."""
+    return f"{depot + ':' if depot else ''}{chemin}#L{debut}-L{fin}"
+
+
+def resoudre_source(sources, depot, chemin):
+    """Le dépôt d'une citation : celui nommé, sinon le seul dépôt du jumeau, sinon le seul qui contient le fichier."""
+    if depot:
+        source = next((s for s in sources if s["nom"] == depot), None)
+        if not source:
+            raise LookupError(f"dépôt inconnu : {depot} (connus : {', '.join(s['nom'] for s in sources)})")
+        return source
+    if len(sources) == 1:
+        return sources[0]
+    candidates = [s for s in sources if lire_au_sha(s.get("copie") or s["emplacement"], s["curseur"])(chemin) is not None]
+    if len(candidates) != 1:
+        raise LookupError(f"{chemin} : préciser le dépôt ({', '.join(s['nom'] for s in sources)})")
+    return candidates[0]
+
+
 MAX_VALIDEES_PROMPT = 50
 CONFIANCE_PROPOSITION = 0.5  # une interprétation du LLM vaut moins qu'une extraction structurelle
 

@@ -22,15 +22,15 @@ ACTIVITE = {"extracteur": "cbm-adaptateur", "version": "phase0-1"}
 COPIES = Path(os.environ.get("JUMEAU_COPIES", Path.home() / ".local/share/meridian/copies"))
 
 
-def copie_au_sha(chemin_depot, sha, jumeau_id):
+def copie_au_sha(chemin_depot, sha, jumeau_id, nom=None):
     """Copie de travail du jumeau, détachée au SHA ingéré ; elle reste pour la conversation (index de code).
 
     Recréée si elle n'appartient pas (ou plus) à ce dépôt. Les liens symboliques versionnés sont retirés :
     l'index ne doit lire que des fichiers du dépôt, jamais une cible hors dépôt.
     """
-    copie = COPIES / jumeau_id
+    copie = COPIES / jumeau_id / (nom or Path(chemin_depot).name)  # une copie par dépôt du jumeau
     git = ["git", "-C", str(chemin_depot)]
-    COPIES.mkdir(parents=True, exist_ok=True)
+    copie.parent.mkdir(parents=True, exist_ok=True)
     maj = subprocess.run(["git", "-C", str(copie), "checkout", "--detach", "--force", "-q", sha],
                          capture_output=True, text=True) if (copie / ".git").exists() else None
     if maj is None or maj.returncode != 0 or _depot_de(copie) != _depot_de(chemin_depot):
@@ -51,11 +51,12 @@ def _depot_de(chemin):
     return r.stdout.strip() if r.returncode == 0 else None
 
 
-def ingerer(conn, jumeau, chemin_depot):
+def ingerer(conn, jumeau, chemin_depot, origine=None):
+    """Ingère un dépôt du jumeau. `origine` : branche, url, secret_ref (pour que le gardien sache le relire)."""
     sha = sha_courant(chemin_depot)
     if not sha:
         raise ValueError(f"{chemin_depot} n'est pas un dépôt Git")
-    copie = copie_au_sha(chemin_depot, sha, jumeau["id"])
+    copie = copie_au_sha(chemin_depot, sha, jumeau["id"], Path(chemin_depot).name)
     projet = cbm.indexer(copie)
     resultats = cbm.interroger(projet)
     lire = lire_au_sha(chemin_depot, sha)
@@ -66,7 +67,7 @@ def ingerer(conn, jumeau, chemin_depot):
     claims = adapter(resultats, lire, Path(chemin_depot).name, sha[:12], jumeau["nom"])
     bruts = sum(len(v) for v in resultats.values())
     source = {"nom": Path(chemin_depot).name, "type": "GIT", "emplacement": str(chemin_depot), "curseur": sha,
-              "copie": str(copie), "index_code": projet}
+              "copie": str(copie), "index_code": projet, **(origine or {})}
     depot.appliquer_schema(conn)
     depot.enregistrer(conn, jumeau, source, claims, {**ACTIVITE, "sha": sha})
     return {"sha": sha, "observations": bruts, "claims": len(claims)}

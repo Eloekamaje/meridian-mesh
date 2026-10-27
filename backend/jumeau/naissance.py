@@ -172,14 +172,45 @@ async def _etat(db, cid, **champs):
     await db.commandes.update_one({"id": cid}, {"$set": {f"naissance.{k}": v for k, v in champs.items()}})
 
 
-async def naitre(conn, db, commande, jumeau_id, rediger=None):
-    """Clone, ingestion, registre, fiche vivante ; progression enregistrée dans la commande (`naissance`).
+def depots_de(config):
+    """Dépôts d'une source GitHub, chacun sur sa branche : « api@main, front@develop, infra » (branche par défaut
+    pour ceux qui n'en précisent pas). Une URL explicite désigne un seul dépôt."""
+    defaut = branche(config)
+    if config.get("url"):
+        return [(Path(urlparse(config["url"]).path).stem, defaut)]
+    paires = []
+    for entree in (e.strip() for e in (config.get("depots") or "").split(",") if e.strip()):
+        nom, _, br = entree.partition("@")
+        nom, br = nom.strip(), br.strip() or defaut
+        if not NOM_VALIDE.fullmatch(nom) or not BRANCHE_VALIDE.fullmatch(br) or br.startswith("-"):
+            raise ValueError(f"dépôt ou branche invalide : {entree!r}")
+        paires.append((nom, br))
+    return paires
 
-    ponytail: une seule source de code (la première source GitHub prête) par jumeau en phase 0.
-    """
-    source = next((s for s in commande["sources"] if s["connecteur"] == "github" and s["statut"] == "prete"), None)
+
+def sources_de_code(commande):
+    """Chaque dépôt de chaque source GitHub prête, avec sa propre configuration (dépôt, branche)."""
+    configs = [{**s["config"], "depots": nom, "branches": br}
+               for s in commande["sources"] if s["connecteur"] == "github" and s["statut"] == "prete"
+               for nom, br in depots_de(s["config"])]
+    # Le nom du dépôt identifie sa source, son clone et sa copie dans le jumeau : deux homonymes se mélangeraient.
+    noms = [depots_de(c)[0][0] for c in configs]
+    doublons = sorted({n for n in noms if noms.count(n) > 1})
+    if doublons:
+        raise ValueError(f"deux dépôts portent le même nom : {', '.join(doublons)}")
+    return configs
+
+
+async def naitre(conn, db, commande, jumeau_id, rediger=None):
+    """Clone et ingère chaque dépôt (chacun sur sa branche), puis registre et fiche vivante ; progression
+    enregistrée dans la commande (`naissance`)."""
     cid = commande["id"]
-    if not source:
+    try:
+        configs = sources_de_code(commande)
+    except ValueError as e:
+        await _etat(db, cid, etat="echec", message=str(e)[:200], etapes=[])
+        return
+    if not configs:
         await _etat(db, cid, etat="sans_code", etapes=[])
         return
     j = commande["jumeau"]
@@ -193,14 +224,19 @@ async def naitre(conn, db, commande, jumeau_id, rediger=None):
 
     await _etat(db, cid, etat="en_cours", etapes=[], debut=datetime.now(timezone.utc).isoformat())
     try:
-        chemin = await asyncio.to_thread(cloner, source["config"], DEPOTS / jumeau_id)
+        chemins = []
+        for config in configs:
+            nom = depots_de(config)[0][0]
+            chemin = await asyncio.to_thread(cloner, config, DEPOTS / jumeau_id / nom)
+            origine = {"branche": branche(config), "url": url_depot(config), "secret_ref": config.get("secret") or None}
+            await asyncio.to_thread(ingerer, conn, jumeau, chemin, origine)
+            chemins.append(chemin)
         await franchir("clone")
-        await asyncio.to_thread(ingerer, conn, jumeau, chemin)
         await registre.projeter(db, conn)
         await franchir("ingestion")
-        await gardien.veiller(conn, db, jumeau_id, chemin, **({"rediger": rediger} if rediger else {}))
+        await gardien.veiller(conn, db, jumeau_id, **({"rediger": rediger} if rediger else {}))
         await franchir("fiche")
-        await _etat(db, cid, etat="ne", fin=datetime.now(timezone.utc).isoformat())
+        await _etat(db, cid, etat="ne", depots=[c.name for c in chemins], fin=datetime.now(timezone.utc).isoformat())
     except Exception as e:
         journal.exception("naissance de %s", jumeau_id)
         await _etat(db, cid, etat="echec", message=str(e)[:200] if isinstance(e, (RuntimeError, ValueError))

@@ -3,8 +3,8 @@
 À chaque nouveau commit : réingestion, comparaison des connaissances d'avant et d'après, signaux déterministes,
 fiche vivante rédigée par Flore, situation publiée dans « Aujourd'hui ».
 
-    python -m jumeau.gardien --jumeau tbt --depot /chemin/vers/depot              # une passe
-    python -m jumeau.gardien --jumeau tbt --depot /chemin/vers/depot --surveiller 300
+    python -m jumeau.gardien --jumeau tbt                      # une passe sur tous les dépôts du jumeau
+    python -m jumeau.gardien --jumeau tbt --surveiller 300     # surveillance continue
 
 ponytail: la surveillance interroge le dépôt à intervalle fixe ; un webhook Git (EventBridge) la remplacera.
 """
@@ -12,6 +12,7 @@ import argparse
 import asyncio
 import logging
 import os
+import hashlib
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -74,7 +75,7 @@ def _titre(nom, sigs):
     return f"{nom} a changé : " + ", ".join(morceaux) if morceaux else f"{nom} a changé"
 
 
-def situation(jumeau, sha, sigs, commits, recit):
+def situation(jumeau, version, sigs, commits, recit):
     """Situation de genre « changement » pour le fil « Aujourd'hui » (même forme que les situations de démo)."""
     nom = jumeau["nom"]
     gravites = {s["gravite"] for s in sigs}
@@ -83,7 +84,7 @@ def situation(jumeau, sha, sigs, commits, recit):
     reste = ([f"Qui utilisait encore le service retiré « {o} » ?" for o in retires[:3]]
              + ["Le changement est-il déjà en production ? L'exploitation peut le confirmer."])
     return {
-        "id": f"sit-gardien-{jumeau['id']}-{sha[:12]}",
+        "id": f"sit-gardien-{jumeau['id']}-{version[:12]}",
         "verbe": "a_comprendre",
         "nature": "changement",
         "type": "changement",
@@ -126,14 +127,14 @@ async def _rediger(ctx, dsn, sigs, commits):
     et celles qui restent fausses sont retirées. ponytail: pas de relecture par LLM (coût) ; à ajouter si la
     qualité des fiches dérive.
     """
-    a = agent.construire(ctx, dsn, session=f"gardien-{ctx['jumeau']['id']}-{ctx['source']['curseur'][:12]}")
+    a = agent.construire(ctx, dsn, session=f"gardien-{ctx['jumeau']['id']}-{_id_version(empreinte(ctx['sources']))}")
     fiche = str(await a.invoke_async(CONSIGNE_FICHE)).strip()
-    invalides = contradicteur.citations_invalides(fiche, ctx["source"])
+    invalides = contradicteur.citations_invalides(fiche, ctx["sources"])
     if invalides:
         fiche = str(await a.invoke_async(contradicteur.consigne_revision(
             [f"Citations introuvables : {', '.join(invalides)}. Corrige-les avec lire_code ou retire l'affirmation."]
         ))).strip()
-        fiche = contradicteur.retirer_citations_invalides(fiche, contradicteur.citations_invalides(fiche, ctx["source"]))
+        fiche = contradicteur.retirer_citations_invalides(fiche, contradicteur.citations_invalides(fiche, ctx["sources"]))
     recit = None
     if sigs:
         recit = str(await a.invoke_async(CONSIGNE_RECIT.format(
@@ -154,54 +155,91 @@ async def publier(db, sit):
     await db.situations.replace_one({"id": sit["id"]}, sit, upsert=True)
 
 
-async def veiller(conn, db, jumeau_id, chemin_depot, rediger=_rediger):
-    """Une passe du gardien. La partie déterministe (ingestion, signaux, situation) est publiée avant toute
+def empreinte(sources):
+    """Version du jumeau : chaque dépôt avec son commit. La fiche vivante et la situation y sont rattachées."""
+    return ",".join(f"{s['nom']}@{s['curseur'][:12]}" for s in sorted(sources, key=lambda s: s["nom"]))
+
+
+def _id_version(empreinte_):
+    return hashlib.sha256(empreinte_.encode()).hexdigest()[:12]
+
+
+def _rafraichir(source):
+    """Un dépôt cloné par la naissance se relit depuis sa forge (même branche, même jeton de référence)."""
+    if not source or not source.get("url"):
+        return
+    from jumeau import naissance  # import tardif : naissance utilise le gardien
+    naissance.cloner({"url": source["url"], "branches": source.get("branche") or "main",
+                      "secret": source.get("secret_ref")}, Path(source["emplacement"]))
+
+
+async def veiller(conn, db, jumeau_id, chemins=None, rediger=_rediger):
+    """Une passe du gardien sur tous les dépôts du jumeau (ou ceux de `chemins`).
+
+    La partie déterministe (ingestion des dépôts qui ont avancé, signaux, situation) est publiée avant toute
     rédaction par le modèle : une panne du modèle ne fait jamais perdre un changement, et la passe suivante
     refait seulement la fiche qui manque.
     """
     jumeau = depot.jumeau_par_id(conn, jumeau_id)
     if not jumeau:
         raise ValueError(f"jumeau inconnu : {jumeau_id} (l'ingérer une première fois)")
-    source_avant = depot.source_du_jumeau(conn, jumeau_id)
-    sha_avant = source_avant["curseur"] if source_avant else None
-    sigs, commits, bilan, sit = [], [], {}, None
-    if sha_courant(chemin_depot) == sha_avant:
-        if fiche_du_sha(conn, jumeau_id, sha_avant):
-            return {"changement": False}
-        source = source_avant  # passe précédente interrompue après l'ingestion : seule la fiche manque
-    else:
-        avant = connaissances_courantes(conn, jumeau_id)
-        bilan = ingerer(conn, jumeau, Path(chemin_depot).resolve())
-        sigs = signaux(avant, connaissances_courantes(conn, jumeau_id))
-        source = depot.source_du_jumeau(conn, jumeau_id)
-        commits = temps.commits_entre(source, sha_avant, source["curseur"])
-        if sigs and sha_avant:  # première ingestion : pas de « changement » à annoncer
-            sit = situation(jumeau, source["curseur"], sigs, commits, None)
+    connues = depot.sources_du_jumeau(conn, jumeau_id)
+    chemins = [Path(c).resolve() for c in (chemins or [s["emplacement"] for s in connues])]
+    avant = connaissances_courantes(conn, jumeau_id)
+    commits, ingeres, premiere = [], [], not connues
+    for chemin in chemins:
+        source_avant = next((s for s in connues if Path(s["emplacement"]).resolve() == chemin), None)
+        try:
+            await asyncio.to_thread(_rafraichir, source_avant)
+        except (RuntimeError, ValueError, OSError):  # un dépôt injoignable ne bloque pas la veille des autres
+            journal.warning("gardien %s : dépôt %s injoignable, ignoré à cette passe", jumeau_id, chemin.name,
+                            exc_info=True)
+            continue
+        sha_avant = source_avant["curseur"] if source_avant else None
+        if sha_courant(chemin) == sha_avant:
+            continue
+        origine = {k: source_avant[k] for k in ("branche", "url", "secret_ref")} if source_avant else None
+        await asyncio.to_thread(ingerer, conn, jumeau, chemin, origine)
+        source = depot.source_du_jumeau(conn, jumeau_id, chemin.name)
+        nouveaux = temps.commits_entre(source, sha_avant, source["curseur"])
+        commits += [{**c, "depot": source["nom"]} for c in nouveaux]
+        ingeres.append(source["nom"])
+    sources = depot.sources_du_jumeau(conn, jumeau_id)
+    version = empreinte(sources)
+    if not ingeres and fiche_du_sha(conn, jumeau_id, version):
+        return {"changement": False}
+    sigs, sit = (signaux(avant, connaissances_courantes(conn, jumeau_id)) if ingeres else []), None
+    if len(sources) > 1:
+        commits = [{**c, "message": f"[{c['depot']}] {c['message']}"} for c in commits]
+    if ingeres:
+        if sigs and not premiere:  # première ingestion : pas de « changement » à annoncer
+            sit = situation(jumeau, _id_version(version), sigs, commits, None)
             await publier(db, sit)
         await registre.projeter(db, conn)
-    ctx = {"jumeau": jumeau, "source": source, "claims": connaissance.connaissances(conn, jumeau_id, limite=500),
+    bilan = {"changement": True, "version": version, "depots": ingeres, "signaux": len(sigs), "commits": len(commits)}
+    ctx = {"jumeau": jumeau, "sources": [s for s in sources if s["index_code"]],
+           "claims": connaissance.connaissances(conn, jumeau_id, limite=500),
            "acteur": "gardien", "profil": {"nom": "Gardien du jumeau", "role": "veille automatique"}}
     try:
         fiche, recit = await rediger(ctx, os.environ.get("JUMEAU_PG_DSN", ""), sigs, commits)
     except Exception:
         journal.warning("gardien %s : rédaction impossible, reprise à la passe suivante", jumeau_id, exc_info=True)
-        return {"changement": True, "sha": source["curseur"], "signaux": len(sigs), "commits": len(commits),
-                "fiche": False, **bilan}
-    enregistrer_fiche(conn, jumeau_id, source["curseur"], fiche)
+        return {**bilan, "fiche": False}
+    enregistrer_fiche(conn, jumeau_id, version, fiche)
     if sit and recit:
         await db.situations.update_one({"id": sit["id"]}, {"$set": {"resume": recit}})
-    journal.info("gardien %s : %s signal(aux), %s commit(s)", jumeau_id, len(sigs), len(commits))
-    return {"changement": True, "sha": source["curseur"], "signaux": len(sigs), "commits": len(commits), **bilan}
+    journal.info("gardien %s : %s dépôt(s) ingéré(s), %s signal(aux)", jumeau_id, len(ingeres), len(sigs))
+    return bilan
 
 
-async def surveiller(connecter, db, jumeau_id, chemin_depot, intervalle, passes=None):
+async def surveiller(connecter, db, jumeau_id, chemins, intervalle, passes=None):
     """Passes répétées ; une erreur passagère (modèle, base, git) est journalisée, la surveillance continue."""
     n = 0
     while passes is None or n < passes:
         n += 1
         try:
             with connecter() as conn:
-                print(await veiller(conn, db, jumeau_id, chemin_depot), flush=True)
+                print(await veiller(conn, db, jumeau_id, chemins), flush=True)
         except Exception:
             journal.exception("gardien %s : passe en échec, nouvel essai dans %s s", jumeau_id, intervalle)
         if passes is None or n < passes:
@@ -211,7 +249,8 @@ async def surveiller(connecter, db, jumeau_id, chemin_depot, intervalle, passes=
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--jumeau", required=True)
-    p.add_argument("--depot", required=True, type=Path)
+    p.add_argument("--depot", action="append", type=Path,
+                   help="dépôt à surveiller (répétable) ; par défaut, tous les dépôts connus du jumeau")
     p.add_argument("--surveiller", type=int, metavar="SECONDES", help="surveille le dépôt à cet intervalle")
     a = p.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")

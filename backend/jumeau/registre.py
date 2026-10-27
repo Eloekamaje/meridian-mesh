@@ -25,7 +25,8 @@ def document(j):
         "statut": "actif",
         "autonomie": "supervisé",
         "couverture": couverture(1),
-        "fraicheur": f"code au commit {j['curseur'][:12]} · {j['claims']} claims",
+        "fraicheur": (f"{j['depots']} dépôts de code · {j['claims']} claims" if j.get("depots", 1) > 1
+                      else f"code au commit {j['curseur'][:12]} · {j['claims']} claims"),
         "sante": "inconnue",  # aucune source d'observabilité connectée
         "sources": {s: s == "code" for s in SOURCES_POSSIBLES},
         "reel": True,
@@ -36,7 +37,8 @@ def jumeaux_reels(conn):
     with conn.cursor(row_factory=dict_row) as cur:
         return cur.execute(
             """SELECT j.id, j.nom, j.equipe, j.domaine, j.mission, s.curseur,
-                      (SELECT count(*) FROM claim c WHERE c.jumeau_id = j.id AND c.valide_jusqua IS NULL) AS claims
+                      (SELECT count(*) FROM claim c WHERE c.jumeau_id = j.id AND c.valide_jusqua IS NULL) AS claims,
+                      (SELECT count(*) FROM source WHERE jumeau_id = j.id AND type = 'GIT') AS depots
                FROM jumeau j
                JOIN LATERAL (SELECT curseur FROM source WHERE jumeau_id = j.id AND type = 'GIT'
                              ORDER BY id DESC LIMIT 1) s ON true

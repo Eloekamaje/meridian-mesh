@@ -6,7 +6,7 @@ from jumeau.source_git import sha_courant
 
 
 def source_de(depot_git):
-    return {"nom": "tbt-repo", "emplacement": str(depot_git), "curseur": sha_courant(depot_git)}
+    return [{"nom": "tbt-repo", "emplacement": str(depot_git), "curseur": sha_courant(depot_git)}]
 
 
 def test_citations_invalides_detectees(depot_git):
@@ -49,4 +49,5 @@ def test_citation_invalide_epargne_l_appel_au_relecteur(depot_git, monkeypatch):
 
 def test_citations_invalides_retirees_du_texte():
     texte = "A `a.py#L1` et B `absent.py#L3-L4`, puis C git://d@abc1234:absent.py#L3-L4."
-    assert contradicteur.retirer_citations_invalides(texte, ["absent.py#L3-L4"]) == "A `a.py#L1` et B, puis C."
+    assert contradicteur.retirer_citations_invalides(texte, ["absent.py#L3-L4", "d:absent.py#L3-L4"]) == \
+        "A `a.py#L1` et B, puis C."

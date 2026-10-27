@@ -92,6 +92,28 @@ CREATE TABLE IF NOT EXISTS fiche_vivante (
     PRIMARY KEY (jumeau_id, sha)
 );
 
+-- Plusieurs dépôts par jumeau, chacun sur sa branche ; URL et référence du jeton (jamais le jeton) pour le gardien.
+ALTER TABLE source ADD COLUMN IF NOT EXISTS branche text;
+ALTER TABLE source ADD COLUMN IF NOT EXISTS url text;
+ALTER TABLE source ADD COLUMN IF NOT EXISTS secret_ref text;
+
+-- Quelles sources observent encore chaque Claim : il n'est clos que quand plus aucune ne le voit.
+CREATE TABLE IF NOT EXISTS claim_source (
+    claim_id  bigint NOT NULL REFERENCES claim(id),
+    source_id bigint NOT NULL REFERENCES source(id),
+    PRIMARY KEY (claim_id, source_id)
+);
+CREATE INDEX IF NOT EXISTS claim_source_source ON claim_source (source_id);
+
+-- Reprise des Claims créés avant claim_source : rattachés aux sources de leurs preuves, une seule fois (seuls ceux
+-- qui n'ont encore aucun rattachement ; un rattachement retiré par une ingestion n'est jamais recréé ici).
+INSERT INTO claim_source (claim_id, source_id)
+SELECT DISTINCT cp.claim_id, p.source_id
+FROM claim_preuve cp JOIN preuve p ON p.id = cp.preuve_id JOIN claim c ON c.id = cp.claim_id
+WHERE c.valide_jusqua IS NULL AND c.origine = 'INGESTION'
+  AND NOT EXISTS (SELECT 1 FROM claim_source cs WHERE cs.claim_id = c.id)
+ON CONFLICT DO NOTHING;
+
 -- Invariant 2 : aucun Claim ACCEPTED sans revue humaine (la revue s'écrit avant le changement de statut).
 CREATE OR REPLACE FUNCTION claim_accepte_exige_revue() RETURNS trigger AS $$
 BEGIN

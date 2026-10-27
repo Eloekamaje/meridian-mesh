@@ -98,3 +98,11 @@ def test_copie_recreee_si_le_depot_change(depot_git, tmp_path, monkeypatch):
     sha = sha_courant(autre)
     copie = ingerer.copie_au_sha(autre, sha, "tbt")
     assert sha_courant(copie) == sha
+
+
+def test_une_copie_par_depot_du_meme_jumeau(depot_git, tmp_path, monkeypatch):
+    from jumeau import ingerer
+    monkeypatch.setattr(ingerer, "COPIES", tmp_path / "copies")
+    a = ingerer.copie_au_sha(depot_git, sha_courant(depot_git), "tbt", "api")
+    b = ingerer.copie_au_sha(depot_git, sha_courant(depot_git), "tbt", "front")
+    assert a != b and a.parent == b.parent == tmp_path / "copies" / "tbt"

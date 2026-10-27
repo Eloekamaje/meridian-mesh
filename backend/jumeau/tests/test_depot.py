@@ -117,3 +117,47 @@ def test_preuve_par_id_donne_l_emplacement_du_depot(conn):
     pid = depot.lister_claims(conn, "tbt")[0]["preuves"][0]["id"]
     p = depot.preuve_par_id(conn, pid)
     assert (p["emplacement"], p["sha"], p["chemin"]) == ("/depots/tbt", "sha1", "requirements.txt")
+
+
+# --- plusieurs dépôts par jumeau, chacun sur sa branche -------------------------------------------
+
+API = {"nom": "api", "type": "GIT", "emplacement": "/d/api", "curseur": "sha1", "branche": "main"}
+FRONT = {"nom": "front", "type": "GIT", "emplacement": "/d/front", "curseur": "sha9", "branche": "develop"}
+
+
+def claim_de(objet, depot, sha):
+    c = claim(objet, sha)
+    c["preuves"][0]["locator"] = f"git://{depot}@{sha}:requirements.txt#L3-L3"
+    return c
+
+
+def test_ingerer_un_depot_ne_ferme_pas_les_connaissances_d_un_autre(conn):
+    depot.enregistrer(conn, JUMEAU, API, [claim_de("motor", "api", "sha1")], ACTIVITE)
+    depot.enregistrer(conn, JUMEAU, FRONT, [claim_de("axios", "front", "sha9")], ACTIVITE)
+    assert objets_valides(conn) == {"motor", "axios"}
+    depot.enregistrer(conn, JUMEAU, {**API, "curseur": "sha2"}, [claim_de("fastapi", "api", "sha2")], ACTIVITE)
+    assert objets_valides(conn) == {"fastapi", "axios"}
+
+
+def test_une_connaissance_partagee_reste_tant_qu_un_depot_l_observe(conn):
+    depot.enregistrer(conn, JUMEAU, API, [claim_de("pydantic", "api", "sha1")], ACTIVITE)
+    depot.enregistrer(conn, JUMEAU, FRONT, [claim_de("pydantic", "front", "sha9")], ACTIVITE)
+    depot.enregistrer(conn, JUMEAU, {**API, "curseur": "sha2"}, [claim_de("x", "api", "sha2")], ACTIVITE)
+    assert "pydantic" in objets_valides(conn)  # le front l'observe encore
+    depot.enregistrer(conn, JUMEAU, {**FRONT, "curseur": "sha8"}, [claim_de("y", "front", "sha8")], ACTIVITE)
+    assert "pydantic" not in objets_valides(conn)
+
+
+def test_sources_du_jumeau_avec_leur_branche(conn):
+    depot.enregistrer(conn, JUMEAU, API, [claim_de("motor", "api", "sha1")], ACTIVITE)
+    depot.enregistrer(conn, JUMEAU, FRONT, [claim_de("axios", "front", "sha9")], ACTIVITE)
+    assert [(s["nom"], s["branche"], s["curseur"]) for s in depot.sources_du_jumeau(conn, "tbt")] == \
+        [("api", "main", "sha1"), ("front", "develop", "sha9")]
+
+
+def test_reprise_des_claims_anterieurs_a_claim_source(conn):
+    depot.enregistrer(conn, JUMEAU, API, [claim_de("motor", "api", "sha1")], ACTIVITE)
+    conn.execute("DELETE FROM claim_source")  # état d'avant la table
+    depot.appliquer_schema(conn)
+    depot.enregistrer(conn, JUMEAU, FRONT, [claim_de("axios", "front", "sha9")], ACTIVITE)
+    assert objets_valides(conn) == {"motor", "axios"}  # le front n'a pas fermé ce que l'API observait

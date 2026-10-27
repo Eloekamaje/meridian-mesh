@@ -85,7 +85,8 @@ CONTEXTE = """## Contexte de cette conversation
 - Date du jour : {aujourdhui}
 - Interlocuteur : {interlocuteur}
 - Application : {nom}, de l'équipe {equipe}
-- Connaissances du jumeau (extraites du code au commit {sha} ; ✓ = confirmé par l'équipe) :
+- Code : {depots}{consigne_depots}
+- Connaissances du jumeau (extraites du code ; ✓ = confirmé par l'équipe) :
 {autoportrait}"""
 
 
@@ -109,7 +110,7 @@ def modele():
 
 def nettoyer(sortie, projet, copie):
     """Sortie d'outil lisible et bornée : sans préfixe de projet cbm ni chemin local de la copie."""
-    texte = sortie.replace(f"{projet}.", "").replace(f"{copie}/", "")
+    texte = sortie.replace(f"{projet}.", "").replace(f"{copie}/", "") if projet else sortie
     return texte if len(texte) <= MAX_SORTIE else texte[:MAX_SORTIE] + "\n… (sortie tronquée)"
 
 
@@ -117,9 +118,14 @@ def prompt_systeme(ctx):
     """Identité + charte (fichier versionné) + contexte de la conversation (interlocuteur, application, connaissances)."""
     profil = ctx.get("profil") or {}
     interlocuteur = f"{profil.get('nom', ctx['acteur'])} — rôle : {profil.get('role', 'non précisé')}"
+    sources = ctx["sources"]
+    depots = ", ".join(f"dépôt {s['nom']} (branche {s.get('branche') or 'inconnue'}, commit {s['curseur'][:12]})"
+                       for s in sources)
+    consigne = ("\n- Plusieurs dépôts : cite chaque preuve avec son dépôt, `dépôt:chemin#Ldébut-Lfin`, et précise le "
+                "dépôt (paramètre depot) quand tu lis du code." if len(sources) > 1 else "")
     contexte = CONTEXTE.format(aujourdhui=date.today().isoformat(), interlocuteur=interlocuteur,
-                               nom=ctx["jumeau"]["nom"], equipe=ctx["jumeau"]["equipe"],
-                               sha=ctx["source"]["curseur"][:12],
+                               nom=ctx["jumeau"]["nom"], equipe=ctx["jumeau"]["equipe"], depots=depots,
+                               consigne_depots=consigne,
                                autoportrait=connaissance.autoportrait(ctx["jumeau"], ctx["claims"]))
     catalogue = "\n".join(f"- {m['nom']} : {m['description']}" for m in methodes.catalogue())
     prompt = (f"Tu es Flore, la voix de Méridian.\n\n{CHARTE.read_text(encoding='utf-8')}\n\n"
@@ -132,17 +138,33 @@ def prompt_systeme(ctx):
 
 
 def outils(ctx, dsn, nom_modele, budget):
-    jumeau, source = ctx["jumeau"], ctx["source"]
-    projet, copie = source["index_code"], source["copie"]
+    jumeau, sources = ctx["jumeau"], ctx["sources"]
 
-    def cbm_outil(nom, **arguments):
+    def choisir(depot):
+        if not depot:
+            return sources
+        choisies = [s for s in sources if s["nom"] == depot]
+        if not choisies:
+            raise ValueError(f"dépôt inconnu : {depot} (connus : {', '.join(s['nom'] for s in sources)})")
+        return choisies
+
+    def cbm_outil(nom, depot="", **arguments):
+        """Une action de code sur un dépôt, ou sur tous (résultats regroupés par dépôt)."""
         if not budget.outil():
             return EPUISE
         try:
-            return nettoyer(cbm.appeler(nom, project=projet, **arguments), projet, copie)
-        except (RuntimeError, ValueError, subprocess.TimeoutExpired):
-            journal.exception("outil %s", nom)
-            return "Outil indisponible pour cette demande."
+            choisies = choisir(depot)
+        except ValueError as e:
+            return str(e)
+        parties = []
+        for s in choisies:
+            try:
+                sortie = nettoyer(cbm.appeler(nom, project=s["index_code"], **arguments), s["index_code"], s["copie"])
+            except (RuntimeError, ValueError, subprocess.TimeoutExpired):
+                journal.exception("outil %s (%s)", nom, s["nom"])
+                sortie = "Outil indisponible pour ce dépôt."
+            parties.append(sortie if len(sources) == 1 else f"### dépôt {s['nom']}\n{sortie}")
+        return nettoyer("\n\n".join(parties), "", "")
 
     @tool
     def mes_connaissances(famille: str = "", recherche: str = "") -> list:
@@ -162,65 +184,73 @@ def outils(ctx, dsn, nom_modele, budget):
             return ["Connaissances indisponibles."]
 
     @tool
-    def architecture() -> str:
-        """Vue d'ensemble du code de l'application : langages, paquets, points d'entrée, routes."""
-        return cbm_outil("get_architecture")
+    def architecture(depot: str = "") -> str:
+        """Vue d'ensemble du code de l'application : langages, paquets, points d'entrée, routes.
+
+        Args:
+            depot: nom d'un dépôt de l'application ; vide = tous.
+        """
+        return cbm_outil("get_architecture", depot)
 
     @tool
-    def chercher_texte(texte: str) -> str:
+    def chercher_texte(texte: str, depot: str = "") -> str:
         """Recherche un texte exact dans les fichiers de l'application (identifiant, chaîne, mot) ; renvoie fonctions, fichiers et lignes.
 
         Args:
             texte: le texte à chercher, par exemple un nom de variable, un message, une route.
+            depot: nom d'un dépôt de l'application ; vide = tous.
         """
         try:
-            return cbm_outil("search_code", pattern=valeur_sure(texte), limit=10)
+            return cbm_outil("search_code", depot, pattern=valeur_sure(texte), limit=10)
         except ValueError as e:
             return str(e)
 
     @tool
-    def chercher_symbole(nom: str) -> str:
+    def chercher_symbole(nom: str, depot: str = "") -> str:
         """Trouve les fonctions, classes ou routes dont le nom contient `nom` ; renvoie fichier et lignes.
 
         Args:
             nom: fragment de nom de symbole (lettres, chiffres, _).
+            depot: nom d'un dépôt de l'application ; vide = tous.
         """
         fragment = "".join(c for c in nom if c.isalnum() or c == "_")[:MAX_ARGUMENT]
-        return cbm_outil("search_graph", name_pattern=f".*{fragment}.*", limit=15) if fragment else "Nom vide."
+        return cbm_outil("search_graph", depot, name_pattern=f".*{fragment}.*", limit=15) if fragment else "Nom vide."
 
     @tool
-    def tracer_appels(fonction: str, sens: str = "both") -> str:
+    def tracer_appels(fonction: str, sens: str = "both", depot: str = "") -> str:
         """Qui appelle une fonction et ce qu'elle appelle.
 
         Args:
             fonction: nom de la fonction.
             sens: inbound (appelants), outbound (appelés) ou both.
+            depot: nom d'un dépôt de l'application ; vide = tous.
         """
         sens = sens if sens in ("inbound", "outbound", "both") else "both"
         try:
-            return cbm_outil("trace_path", function_name=valeur_sure(fonction), direction=sens, depth=2)
+            return cbm_outil("trace_path", depot, function_name=valeur_sure(fonction), direction=sens, depth=2)
         except ValueError as e:
             return str(e)
 
     @tool
-    def lire_code(chemin: str, debut: int, fin: int) -> dict:
+    def lire_code(chemin: str, debut: int, fin: int, depot: str = "") -> dict:
         """Lit des lignes du code de l'application au commit ingéré ; renvoie le locator git:// à citer comme preuve.
 
         Args:
-            chemin: chemin relatif du fichier, par exemple backend/server.py.
+            chemin: chemin relatif du fichier dans son dépôt, par exemple backend/server.py.
             debut: première ligne (1 = début du fichier).
             fin: dernière ligne (au plus 200 lignes lues).
+            depot: nom du dépôt ; vide si l'application n'en a qu'un ou si un seul dépôt contient ce fichier.
         """
         if not budget.outil():
             return {"erreur": EPUISE}
         try:
-            return connaissance.lire_code(source, chemin, debut, fin)
+            return connaissance.lire_code(connaissance.resoudre_source(sources, depot, chemin), chemin, debut, fin)
         except (LookupError, ValueError) as e:
             return {"erreur": str(e)}
 
     @tool
     def proposer_connaissance(predicat: str, objet: str, type_claim: str, chemin: str, debut: int, fin: int,
-                              justification: str) -> str:
+                              justification: str, depot: str = "") -> str:
         """Propose au jumeau une nouvelle connaissance sur l'application, prouvée par des lignes de code.
 
         Elle reste PROPOSED jusqu'à la revue humaine. N'utilise que des lignes lues avec lire_code.
@@ -233,32 +263,35 @@ def outils(ctx, dsn, nom_modele, budget):
             debut: première ligne de la preuve.
             fin: dernière ligne de la preuve.
             justification: pourquoi ces lignes prouvent la connaissance.
+            depot: dépôt de la preuve ; vide si l'application n'en a qu'un.
         """
         if not budget.outil() or not budget.proposition():
             return "Plafond de propositions de cette réponse atteint."
         try:
             with psycopg.connect(dsn, autocommit=True) as conn:
+                source = connaissance.resoudre_source(sources, depot, chemin)
                 cid = connaissance.proposer(conn, jumeau, source, predicat, objet, type_claim, chemin, debut, fin,
                                             justification, ctx["acteur"], nom_modele)
             return f"Proposition enregistrée (claim {cid}), en attente de revue par l'équipe."
-        except ValueError as e:
+        except (ValueError, LookupError) as e:
             return f"Proposition refusée : {e}"
         except psycopg.Error:
             journal.exception("proposer_connaissance")
             return "Proposition impossible pour le moment."
 
     @tool
-    def historique_du_code(depuis: str = "", chemin: str = "") -> list:
-        """Historique des changements du code jusqu'au commit ingéré : date, auteur, message (le pourquoi).
+    def historique_du_code(depuis: str = "", chemin: str = "", depot: str = "") -> list:
+        """Historique des changements du code jusqu'au commit ingéré : date, auteur, message (le pourquoi), dépôt.
 
         Args:
             depuis: date AAAA-MM-JJ ; vide = les plus récents.
             chemin: fichier ou dossier pour ne voir que ses changements ; vide = tout.
+            depot: nom d'un dépôt de l'application ; vide = tous.
         """
         if not budget.outil():
             return [EPUISE]
         try:
-            return temps.historique(source, depuis, chemin)
+            return historique_fusionne(choisir(depot), depuis, chemin)
         except ValueError as e:
             return [f"Historique indisponible : {e}"]
 
@@ -274,7 +307,7 @@ def outils(ctx, dsn, nom_modele, budget):
         try:
             with psycopg.connect(dsn) as conn:
                 evolution = temps.evolution(conn, jumeau["id"], depuis)
-            return {"commits": temps.historique(source, depuis), **evolution}
+            return {"commits": historique_fusionne(sources, depuis), **evolution}
         except (ValueError, psycopg.Error) as e:
             journal.warning("ce_qui_a_change : %s", e)
             return {"erreur": "date attendue au format AAAA-MM-JJ" if isinstance(e, ValueError) else "indisponible"}
@@ -290,6 +323,12 @@ def outils(ctx, dsn, nom_modele, budget):
 
     return [mes_connaissances, architecture, chercher_texte, chercher_symbole, tracer_appels, lire_code,
             proposer_connaissance, consulter_methode, historique_du_code, ce_qui_a_change]
+
+
+def historique_fusionne(sources, depuis="", chemin=""):
+    """Historique de plusieurs dépôts, du plus récent au plus ancien, chaque commit avec son dépôt."""
+    commits = [{**c, "depot": s["nom"]} for s in sources for c in temps.historique(s, depuis, chemin)]
+    return sorted(commits, key=lambda c: c["date"], reverse=True)[:temps.MAX_COMMITS]
 
 
 def outils_travail(ecriture, budget):

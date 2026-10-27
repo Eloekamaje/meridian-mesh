@@ -140,3 +140,32 @@ def test_autoportrait_porte_la_mission_et_le_domaine_declares():
     j = {**JUMEAU, "domaine": "Support", "mission": "Comprendre et décider sur le SI"}
     texte = connaissance.autoportrait(j, [])
     assert "Comprendre et décider sur le SI" in texte and "Support" in texte
+
+
+# --- plusieurs dépôts : à quel dépôt appartient une citation ? -------------------------------------
+
+def test_citation_avec_depot_explicite_ou_deduit(depot_git, tmp_path):
+    import shutil
+    import subprocess as sp
+    autre = tmp_path / "front"
+    shutil.copytree(depot_git, autre)
+    (autre / "front.js").write_text("export const x = 1\n")
+    sp.run(["git", "-C", str(autre), "add", "."], check=True)
+    sp.run(["git", "-C", str(autre), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "f"], check=True)
+    api = {"nom": "api", "emplacement": str(depot_git), "curseur": sha_courant(depot_git)}
+    front = {"nom": "front", "emplacement": str(autre), "curseur": sha_courant(autre)}
+    sources = [api, front]
+    assert connaissance.resoudre_source(sources, "front", "requirements.txt") is front
+    assert connaissance.resoudre_source(sources, "", "front.js") is front  # seul dépôt qui contient le fichier
+    assert connaissance.resoudre_source([api], "", "absent.py") is api      # un seul dépôt : pas de recherche
+    import pytest as _p
+    with _p.raises(LookupError):
+        connaissance.resoudre_source(sources, "inconnu", "x.py")
+    with _p.raises(LookupError):
+        connaissance.resoudre_source(sources, "", "absent.py")
+
+
+def test_decoupage_des_citations_longues_courtes_et_prefixees():
+    textes = ["git://api@abc1234:app/main.py#L3-L5", "`front:src/App.jsx#L10`", "app/main.py#L7"]
+    assert [connaissance.decouper(next(connaissance.RE_CITATION.finditer(t))) for t in textes] == [
+        ("api", "app/main.py", 3, 5), ("front", "src/App.jsx", 10, 10), ("", "app/main.py", 7, 7)]

@@ -62,7 +62,7 @@ def reviser(claim_id: int, revue: Revue, conn=Depends(connexion),
 @router.get("/jumeaux/{jumeau_id}/fiche")
 def lire_fiche(jumeau_id: str, conn=Depends(connexion)):
     """Fiche vivante rédigée par le gardien : ce que le jumeau dit de l'application."""
-    fiche, source = gardien.fiche_courante(conn, jumeau_id), depot.source_du_jumeau(conn, jumeau_id)
-    if not fiche or not source:
+    fiche, sources = gardien.fiche_courante(conn, jumeau_id), depot.sources_du_jumeau(conn, jumeau_id)
+    if not fiche or not sources:
         raise HTTPException(404, "Pas encore de fiche vivante pour ce jumeau")
-    return flore.fiche_affichable(fiche, source)
+    return flore.fiche_affichable(fiche, sources)
