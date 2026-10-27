@@ -85,12 +85,38 @@ def test_modele_deepseek_exige_une_cle(monkeypatch):
         agent.modele()
 
 
-def test_argument_commencant_par_un_tiret_refuse():
-    with pytest.raises(ValueError):
-        agent.valeur_sure("--project autre")
-    assert agent.valeur_sure("  autorisations ") == "autorisations"
-    with pytest.raises(ValueError):
-        agent.valeur_sure("x" * 300)
+def test_valeur_bornee_et_non_vide():
+    # Par MCP, les arguments sont des champs JSON : un texte commençant par « - » n'est plus une option.
+    assert agent.valeur_sure("  --project autre ") == "--project autre"
+    for mauvaise in ("x" * 300, "   "):
+        with pytest.raises(ValueError):
+            agent.valeur_sure(mauvaise)
+
+
+def test_les_outils_de_code_passent_par_mcp_avec_le_projet_du_jumeau(monkeypatch):
+    appels = []
+    monkeypatch.setattr(agent.cbm, "appeler", lambda outil, **args: appels.append((outil, args)) or "ok")
+    outils = {t.tool_name: t for t in agent.outils(CONTEXTE, "dsn", "m", agent.Budget())}
+    outils["chercher_texte"](texte="autorisations")
+    outils["tracer_appels"](fonction="autorisations", sens="inbound")
+    assert appels == [("search_code", {"project": "proj-tbt", "pattern": "autorisations", "limit": 10}),
+                      ("trace_path", {"project": "proj-tbt", "function_name": "autorisations",
+                                      "direction": "inbound", "depth": 2})]
+
+
+def test_fils_sur_s3_quand_un_compartiment_est_configure(monkeypatch, tmp_path):
+    cree = {}
+
+    class S3Factice:
+        def __init__(self, **kwargs):
+            cree.update(kwargs)
+    monkeypatch.setattr(agent, "S3SessionManager", S3Factice)
+    monkeypatch.setenv("JUMEAU_SESSIONS_S3", "meridian-fils/flore")
+    agent.gestionnaire_session("fil-1")
+    assert (cree["session_id"], cree["bucket"], cree["prefix"]) == ("fil-1", "meridian-fils", "flore")
+    monkeypatch.delenv("JUMEAU_SESSIONS_S3")
+    monkeypatch.setattr(agent, "SESSIONS", tmp_path)
+    assert type(agent.gestionnaire_session("fil-1")).__name__ == "FileSessionManager"
 
 
 def test_budget_d_outils_par_reponse():
@@ -106,9 +132,9 @@ def test_l_exploration_n_epuise_jamais_le_budget_d_ecriture_du_travail():
 
 
 def test_erreur_d_outil_generique(monkeypatch):
-    def echec(*_):
+    def echec(*_, **__):
         raise RuntimeError("/home/secret/chemin stderr")
-    monkeypatch.setattr(agent.cbm, "texte", echec)
+    monkeypatch.setattr(agent.cbm, "appeler", echec)
     outils = {t.tool_name: t for t in agent.outils(CONTEXTE, "dsn", "m", agent.Budget())}
     sortie = outils["architecture"]()
     assert "secret" not in sortie and "indisponible" in sortie

@@ -1,5 +1,7 @@
 """Pilotage local de codebase-memory-mcp (binaire compilé depuis les sources, sans LLM ni réseau)."""
 import json
+import threading
+import uuid
 import os
 import subprocess
 
@@ -19,6 +21,38 @@ def _cli(*args):
     if r.returncode != 0:
         raise RuntimeError(f"codebase-memory-mcp {args[0]} : {r.stderr.strip() or r.stdout.strip()}")
     return json.loads(r.stdout)
+
+
+_client = None
+_verrou = threading.Lock()
+
+
+def _mcp():
+    """Un serveur MCP codebase-memory-mcp par processus, démarré à la première demande."""
+    global _client
+    with _verrou:
+        if _client is None:
+            from mcp import StdioServerParameters, stdio_client
+            from strands.tools.mcp import MCPClient
+            binaire = os.environ.get("CBM_BIN", "codebase-memory-mcp")
+            c = MCPClient(lambda: stdio_client(StdioServerParameters(command=binaire, args=[])))
+            c.start()
+            _client = c
+    return _client
+
+
+def appeler(outil, **arguments):
+    """Appelle une action de codebase-memory-mcp par le protocole MCP ; texte de la réponse."""
+    global _client
+    try:
+        r = _mcp().call_tool_sync(f"meridian-{uuid.uuid4().hex[:8]}", outil, arguments)
+    except Exception:
+        _client = None  # serveur tombé : redémarré au prochain appel
+        raise RuntimeError(f"codebase-memory-mcp indisponible ({outil})")
+    texte = "".join(b.get("text", "") for b in r["content"])
+    if r["status"] != "success" or texte.lstrip().lower().startswith("error"):
+        raise RuntimeError(texte[:300])
+    return texte
 
 
 def texte(outil, *args):

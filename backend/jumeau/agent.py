@@ -16,6 +16,7 @@ from pathlib import Path
 import psycopg
 from strands import Agent, tool
 from strands.session.file_session_manager import FileSessionManager
+from strands.session.s3_session_manager import S3SessionManager
 
 from jumeau import cbm, connaissance, methodes, temps
 
@@ -73,7 +74,7 @@ class FilsActifs:
 def valeur_sure(valeur):
     """Argument passé au CLI cbm : jamais une option (« -… »), longueur bornée."""
     valeur = valeur.strip()
-    if not valeur or valeur.startswith("-") or len(valeur) > MAX_ARGUMENT:
+    if not valeur or len(valeur) > MAX_ARGUMENT:
         raise ValueError(f"argument refusé : {valeur[:40]!r}")
     return valeur
 
@@ -134,11 +135,11 @@ def outils(ctx, dsn, nom_modele, budget):
     jumeau, source = ctx["jumeau"], ctx["source"]
     projet, copie = source["index_code"], source["copie"]
 
-    def cbm_outil(nom, *args):
+    def cbm_outil(nom, **arguments):
         if not budget.outil():
             return EPUISE
         try:
-            return nettoyer(cbm.texte(nom, "--project", projet, *args), projet, copie)
+            return nettoyer(cbm.appeler(nom, project=projet, **arguments), projet, copie)
         except (RuntimeError, ValueError, subprocess.TimeoutExpired):
             journal.exception("outil %s", nom)
             return "Outil indisponible pour cette demande."
@@ -173,7 +174,7 @@ def outils(ctx, dsn, nom_modele, budget):
             texte: le texte à chercher, par exemple un nom de variable, un message, une route.
         """
         try:
-            return cbm_outil("search_code", "--pattern", valeur_sure(texte), "--limit", "10")
+            return cbm_outil("search_code", pattern=valeur_sure(texte), limit=10)
         except ValueError as e:
             return str(e)
 
@@ -185,7 +186,7 @@ def outils(ctx, dsn, nom_modele, budget):
             nom: fragment de nom de symbole (lettres, chiffres, _).
         """
         fragment = "".join(c for c in nom if c.isalnum() or c == "_")[:MAX_ARGUMENT]
-        return cbm_outil("search_graph", "--name-pattern", f".*{fragment}.*", "--limit", "15") if fragment else "Nom vide."
+        return cbm_outil("search_graph", name_pattern=f".*{fragment}.*", limit=15) if fragment else "Nom vide."
 
     @tool
     def tracer_appels(fonction: str, sens: str = "both") -> str:
@@ -197,7 +198,7 @@ def outils(ctx, dsn, nom_modele, budget):
         """
         sens = sens if sens in ("inbound", "outbound", "both") else "both"
         try:
-            return cbm_outil("trace_path", "--function-name", valeur_sure(fonction), "--direction", sens, "--depth", "2")
+            return cbm_outil("trace_path", function_name=valeur_sure(fonction), direction=sens, depth=2)
         except ValueError as e:
             return str(e)
 
@@ -368,6 +369,17 @@ def outils_travail(ecriture, budget):
     return [planifier, lever_etape, proposer_hypothese, proposer_option, deposer_livrable, actualiser_resume]
 
 
+def gestionnaire_session(session):
+    """Fil de Flore : S3 si JUMEAU_SESSIONS_S3 (« compartiment/prefixe ») est défini, sinon fichiers locaux."""
+    cible = os.environ.get("JUMEAU_SESSIONS_S3")
+    if cible:
+        bucket, _, prefix = cible.partition("/")
+        return S3SessionManager(session_id=session, bucket=bucket, prefix=prefix,
+                                region_name=os.environ.get("AWS_REGION", "ca-central-1"))
+    SESSIONS.mkdir(parents=True, exist_ok=True)
+    return FileSessionManager(session_id=session, storage_dir=str(SESSIONS))
+
+
 def construire(ctx, dsn, session, modele=None, ecriture=None):
     """Agent du jumeau ; le fil `session` (personnel ou celui d'un Travail) est restauré depuis le disque."""
     m = modele or globals()["modele"]()
@@ -376,5 +388,5 @@ def construire(ctx, dsn, session, modele=None, ecriture=None):
     budget = Budget()
     tools = outils(ctx, dsn, nom_modele, budget) + (outils_travail(ecriture, budget) if ecriture else [])
     return Agent(model=m, system_prompt=prompt_systeme(ctx), tools=tools,
-                 session_manager=FileSessionManager(session_id=session, storage_dir=str(SESSIONS)),
+                 session_manager=gestionnaire_session(session),
                  callback_handler=None)
