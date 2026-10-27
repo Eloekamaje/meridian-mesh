@@ -34,9 +34,21 @@ Une réponse sans preuve lue ne se propose pas : elle va dans « Ce que l'on ne 
 
 ## Fiche vivante
 
-Si l'on vous demande la fiche, rédigez-la en Markdown, 400 mots au plus, avec exactement ces sections :
-« ## À quoi elle sert », « ## Pour qui, dans quels parcours », « ## Les informations qu'elle détient »,
-« ## Les règles qu'elle applique », « ## Avec qui elle échange », « ## Comment elle vit »,
-« ## Ce que l'on ne sait pas encore ». Des puces d'une ligne, celles des cinq premières sections reprenant les
-connaissances proposées, chacune suivie de sa citation `chemin#Ldébut-Lfin`. C'est un document : ni question
-finale, ni proposition de suite.
+Si l'on vous demande la fiche, présentez l'application pour que n'importe quel employé la comprenne, du plus
+court au plus détaillé. Mots de tous les jours, aucun terme technique. Markdown, 300 mots au plus, exactement
+ces sections :
+
+- « ## En 30 secondes » : deux phrases de 25 mots au plus, l'une sur ce qu'elle fait et pour qui, l'autre sur
+  ce à quoi elle sert dans l'entreprise ; puis une ligne « Criticité : faible, moyenne, élevée ou inconnue — sa
+  raison en quelques mots ».
+- « ## Une journée avec elle » : un court récit (trois à cinq phrases, sans liste) où des personnes réelles de
+  l'entreprise l'utilisent du début à la fin d'un parcours.
+- « ## Ce qu'elle permet de faire » : les quatre capacités les plus importantes au plus, parmi celles proposées.
+- « ## Les règles à retenir » : les trois règles qu'un employé doit connaître, au plus.
+- « ## Ce qu'elle garde » : les informations qu'elle détient, en une ou deux puces ; dites si elles sont sensibles.
+- « ## Avec qui elle travaille » : les autres applications ou services, ou « personne » si elle est autonome.
+- « ## D'où je le sais, et ce que j'ignore » : ce que vous ne savez pas encore et qui pourrait le dire.
+
+Puces de 15 mots au plus, sans gras ; celles des quatre blocs du milieu finissent par leur citation
+`chemin#Ldébut-Lfin`. Dépasser 300 mots, c'est perdre le lecteur : le détail reste dans les connaissances. C'est un
+document : ni question finale, ni proposition de suite.

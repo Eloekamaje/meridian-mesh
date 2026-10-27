@@ -13,36 +13,107 @@ export function Section({ titre, items }) {
   );
 }
 
-// Jumeau né du code : les sept questions de « comprendre une application », chaque ligne prouvée et révisable.
+// Jumeau né du code : l'application présentée à tout employé, par niveaux (méthode comprendre-application),
+// puis, pour aller plus loin, les sept questions et leurs connaissances prouvées.
 const MARQUE = { ACCEPTED: ["✓ validé", "#34D399"], CONTESTED: ["contesté", "#F2B84B"] };
+const ETIQUETTE = "font-code text-[10px] uppercase tracking-[0.2em] text-[#7C93A8]";
 
-function Comprendre({ examen }) {
-  const blocs = examen.comprendre;
-  const bloc = (b, i) => (
-    <div key={b.cle} data-testid={`comprendre-${b.cle}`}>
-      <div className="font-code text-[10px] uppercase tracking-[0.2em] text-[#7C93A8]">{i + 1} · {b.titre}</div>
-      <ul className="mt-1.5 space-y-1">
-        {b.items.length === 0 && <li className="text-xs text-[#7C93A8]">Rien d'établi pour l'instant</li>}
-        {b.items.map((it, j) => (
-          <li key={j} className="text-xs text-[#CBD5E1]">
-            → {it.texte}
-            {MARQUE[it.statut] && <span className="ml-1.5 font-code text-[9px]" style={{ color: MARQUE[it.statut][1] }}>{MARQUE[it.statut][0]}</span>}
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
+function Liste({ items, vide = "Rien d'établi pour l'instant" }) {
   return (
-    <div className="space-y-5 text-sm" data-testid="revue-comprendre">
-      <p className="text-[#94A3B8]">{examen.identite?.mission}</p>
-      <div className="grid gap-5 md:grid-cols-2">{blocs.slice(0, 6).map(bloc)}</div>
-      {blocs.slice(6).map((b) => bloc(b, 6))}
+    <ul className="mt-1.5 space-y-1">
+      {items.length === 0 && <li className="text-xs text-[#7C93A8]">{vide}</li>}
+      {items.map((it, j) => {
+        const texte = typeof it === "string" ? it : it.texte;
+        const marque = MARQUE[it?.statut];
+        return (
+          <li key={j} className="text-[13px] text-[#CBD5E1]">
+            → {texte}
+            {marque && <span className="ml-1.5 font-code text-[9px]" style={{ color: marque[1] }}>{marque[0]}</span>}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function Presentation({ examen }) {
+  const p = examen.presentation;
+  return (
+    <div className="space-y-6" data-testid="revue-presentation">
+      <section aria-label="En 30 secondes">
+        <div className={ETIQUETTE}>En 30 secondes</div>
+        {(p.phrases.length ? p.phrases : [examen.identite?.mission || "Présentation en préparation par le gardien du jumeau."])
+          .map((t, i) => <p key={i} className={i === 0 ? "mt-1.5 text-base font-semibold text-[#F2F6F8]" : "mt-1 text-sm text-[#CBD5E1]"}>{t}</p>)}
+        <p className="mt-2 font-code text-[11px] text-[#94A3B8]">
+          Statut : {p.reperes.statut} · Responsable : {p.reperes.responsable} · Criticité : {p.reperes.criticite}
+        </p>
+      </section>
+      {p.journee && (
+        <section aria-label="Une journée avec elle">
+          <div className={ETIQUETTE}>Une journée avec elle</div>
+          <p className="mt-1.5 text-sm leading-relaxed text-[#CBD5E1]">{p.journee}</p>
+        </section>
+      )}
+      <div className="grid gap-5 md:grid-cols-2">
+        {p.blocs.map((b) => (
+          <section key={b.cle} aria-label={b.titre} data-testid={`presentation-${b.cle}`}>
+            <div className={ETIQUETTE}>{b.titre}</div>
+            <Liste items={b.items} />
+          </section>
+        ))}
+      </div>
+      <section aria-label="D'où je le sais, et ce que j'ignore">
+        <div className={ETIQUETTE}>D'où je le sais, et ce que j'ignore</div>
+        <ul className="mt-2 flex flex-wrap gap-1.5">
+          {p.sources.map((s) => (
+            <li key={s.nom} className={`rounded-full border px-2 py-0.5 text-[11px] ${s.ok ? "border-[#34D399]/50 text-[#34D399]" : "border-[rgba(148,163,184,0.3)] text-[#7C93A8]"}`}>
+              {s.nom} : {s.etat}
+            </li>
+          ))}
+        </ul>
+        <Liste items={p.ignore} vide="Rien de signalé" />
+      </section>
     </div>
   );
 }
 
+function Comprendre({ blocs }) {
+  return (
+    <div className="mt-3 grid gap-5 md:grid-cols-2" data-testid="revue-comprendre">
+      {blocs.map((b, i) => (
+        <div key={b.cle} data-testid={`comprendre-${b.cle}`}>
+          <div className={ETIQUETTE}>{i + 1} · {b.titre}</div>
+          <Liste items={b.items} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const PLUS_LOIN = "group rounded-lg border border-[rgba(148,163,184,0.16)] px-4 py-3";
+const RESUME_PLUS_LOIN = "cursor-pointer text-xs font-semibold text-[#60A5FA] hover:underline";
+
+export function PlusLoin({ titre, children, testid }) {
+  return (
+    <details className={PLUS_LOIN} data-testid={testid}>
+      <summary className={RESUME_PLUS_LOIN}>{titre}</summary>
+      {children}
+    </details>
+  );
+}
+
 export default function RevueContenu({ examen, jumeau }) {
-  if (examen.comprendre) return <Comprendre examen={examen} />;
+  if (examen.presentation) {
+    const total = examen.comprendre.reduce((n, b) => n + b.items.length, 0);
+    return (
+      <div className="space-y-4">
+        <Presentation examen={examen} />
+        <PlusLoin titre={`Pour aller plus loin : ce que le jumeau a établi (${total} connaissances)`} testid="plus-loin-comprendre">
+          <Comprendre blocs={examen.comprendre} />
+        </PlusLoin>
+      </div>
+    );
+  }
   return (
     <div className="space-y-4 text-sm" data-testid="revue-contenu">
       <p className="text-[#94A3B8]">{examen.identite?.mission}</p>

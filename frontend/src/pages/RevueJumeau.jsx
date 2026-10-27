@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { useMesh } from "@/lib/mesh";
 import { usePerimetre } from "@/lib/perimetre";
-import RevueContenu from "@/components/jumeaux/RevueContenu";
+import RevueContenu, { PlusLoin } from "@/components/jumeaux/RevueContenu";
 import ConnaissancesCode from "@/components/jumeaux/ConnaissancesCode";
 import { STATUTS } from "@/lib/jumeaux";
 
@@ -101,10 +101,11 @@ export default function RevueJumeau() {
               <RevueContenu examen={examen} jumeau={jumeau} />
               {/* Né du code : ce que dit le jumeau et chaque connaissance avec sa preuve, à valider ou contester */}
               {jumeau.reel && (
-                <section className="mt-6" data-testid="revue-preuves">
-                  <h2 className="mb-3 font-code text-[10px] uppercase tracking-[0.25em] text-[#94A3B8]">Preuves dans le code</h2>
-                  <ConnaissancesCode jid={jid} />
-                </section>
+                <div className="mt-4" data-testid="revue-preuves">
+                  <PlusLoin titre="Pour vérifier : chaque connaissance et sa preuve, à valider ou contester">
+                    <div className="mt-3"><ConnaissancesCode jid={jid} /></div>
+                  </PlusLoin>
+                </div>
               )}
               {(jumeau.gouvernance || []).length > 0 && (
                 <section className="mt-6 rounded-xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-5" data-testid="revue-gouvernance">

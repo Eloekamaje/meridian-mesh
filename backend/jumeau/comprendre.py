@@ -2,11 +2,14 @@
 
 Le savoir-faire est dans la méthode, que l'agent applique avec ses outils : c'est lui qui enquête et propose
 chaque connaissance prouvée. Ce module n'en garde que ce qu'il faut au harness : les questions et leurs
-prédicats (pour la revue), la lecture des sections de la fiche, et la tenue des comptes après une passe.
+prédicats (pour la revue), la lecture des sections de la fiche, et la péremption des réponses dont la
+preuve ne tient plus.
 """
+import hashlib
 import re
 
 from jumeau import connaissance
+from jumeau.source_git import lire_au_sha
 
 # (clé, titre de section dans la fiche, prédicat de la connaissance, type de Claim)
 QUESTIONS = [
@@ -19,36 +22,73 @@ QUESTIONS = [
     ("inconnu", "Ce que l'on ne sait pas encore", None, None),
 ]
 PREDICATS = {q[2] for q in QUESTIONS if q[2]}
+# Sections de la fiche vivante, du plus court au plus détaillé (méthode comprendre-application, « Fiche vivante »).
+PRESENTATION = [
+    ("trente", "En 30 secondes"),
+    ("journee", "Une journée avec elle"),
+    ("faire", "Ce qu'elle permet de faire"),
+    ("regles", "Les règles à retenir"),
+    ("garde", "Ce qu'elle garde"),
+    ("avec", "Avec qui elle travaille"),
+    ("ignore", "D'où je le sais, et ce que j'ignore"),
+]
 RE_PUCE = re.compile(r"^\s*[-*]\s+(.*)")
 
 
-def _cle_du_titre(titre):
-    titre = titre.strip().strip("#").strip().lower().replace("’", "'")
-    return next((cle for cle, t, *_ in QUESTIONS if titre.startswith(t.lower())), None)
+def _propre(texte):
+    """Texte lisible : sans citations ni gras Markdown."""
+    texte = re.sub(r"\s*`[^`]*#L\d+[^`]*`", "", texte)
+    texte = re.sub(r"\s+(et|,)\s*$", "", texte.replace("**", "")).strip(" ;,")
+    return " ".join(texte.split())
 
 
-def sections(fiche):
-    """{clé : [(texte sans citations ni gras, [citations découpées])]} pour chacune des sept questions."""
-    resultat, courante = {q[0]: [] for q in QUESTIONS}, None
+def lire_fiche(fiche, titres=PRESENTATION):
+    """{clé : {"puces": [texte], "texte": [paragraphe]}} pour chaque section de `titres` trouvée dans la fiche."""
+    resultat, courante = {cle: {"puces": [], "texte": []} for cle, _ in titres}, None
     for ligne in (fiche or "").splitlines():
         if ligne.lstrip().startswith("#"):
-            courante = _cle_du_titre(ligne)
+            nom = ligne.strip().strip("#").strip().lower().replace("’", "'")
+            courante = next((cle for cle, t in titres if nom.startswith(t.lower().replace("’", "'"))), None)
+            continue
+        if not courante or not ligne.strip():
             continue
         puce = RE_PUCE.match(ligne)
-        if courante and puce:
-            citations = [connaissance.decouper(m) for m in connaissance.RE_CITATION.finditer(puce.group(1))]
-            texte = re.sub(r"\s*`[^`]*#L\d+[^`]*`", "", puce.group(1))
-            texte = re.sub(r"\s+(et|,)\s*$", "", texte.replace("**", "")).strip(" ;,.")
-            resultat[courante].append((" ".join(texte.split()), citations))
+        if puce:
+            resultat[courante]["puces"].append(_propre(puce.group(1)))
+        else:
+            resultat[courante]["texte"].append(_propre(ligne))
     return resultat
 
 
-def clore_non_reprises(conn, jumeau_id, proposees):
-    """Après une passe complète du gardien : les réponses qu'il n'a pas reprises sont closes, sauf si l'équipe les a
-    déjà validées ou contestées. Une passe sans aucune proposition ne clôt rien (panne plutôt que changement)."""
-    if not proposees:
-        return 0
-    return conn.execute(
-        "UPDATE claim SET valide_jusqua = now() WHERE jumeau_id = %s AND predicat = ANY(%s) AND origine = 'CONVERSATION' "
-        "AND statut = 'PROPOSED' AND valide_jusqua IS NULL AND NOT (id = ANY(%s))",
-        (jumeau_id, sorted(PREDICATS), list(proposees))).rowcount
+def clore_sans_preuve(conn, jumeau_id):
+    """Une connaissance proposée vaut tant que sa preuve tient : les lignes citées existent encore, telles quelles,
+    au dernier commit (même déplacées dans le fichier). Sinon elle est close ; celles que l'équipe a revues restent.
+    Un agent qui oublie une réponse d'une passe à l'autre ne détruit donc rien de prouvé."""
+    lignes = conn.execute(
+        """SELECT c.id, p.chemin, p.ligne_debut, p.ligne_fin, p.hash, s.emplacement, s.copie, s.curseur
+           FROM claim c
+           JOIN LATERAL (SELECT p.* FROM claim_preuve cp JOIN preuve p ON p.id = cp.preuve_id
+                         WHERE cp.claim_id = c.id ORDER BY p.id DESC LIMIT 1) p ON true
+           JOIN source s ON s.id = p.source_id
+           WHERE c.jumeau_id = %s AND c.predicat = ANY(%s) AND c.origine = 'CONVERSATION'
+             AND c.statut = 'PROPOSED' AND c.valide_jusqua IS NULL""", (jumeau_id, sorted(PREDICATS))).fetchall()
+    lecteurs, perimees = {}, []
+    for cid, chemin, debut, fin, empreinte, emplacement, copie, curseur in lignes:
+        lire = lecteurs.setdefault((copie or emplacement, curseur), lire_au_sha(copie or emplacement, curseur))
+        try:
+            contenu = lire(chemin)
+        except ValueError:
+            contenu = None
+        citation = "\n".join(contenu[debut - 1:fin]) if contenu else None
+        tient = contenu is not None and (hashlib.sha256((citation or "").encode()).hexdigest() == empreinte
+                                         or _citation_deplacee(contenu, fin - debut + 1, empreinte))
+        if not tient:
+            perimees.append(cid)
+    if perimees:
+        conn.execute("UPDATE claim SET valide_jusqua = now() WHERE id = ANY(%s)", (perimees,))
+    return len(perimees)
+
+
+def _citation_deplacee(contenu, longueur, empreinte):
+    return any(hashlib.sha256("\n".join(contenu[i:i + longueur]).encode()).hexdigest() == empreinte
+               for i in range(len(contenu) - longueur + 1))

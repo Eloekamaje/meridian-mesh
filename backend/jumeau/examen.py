@@ -1,31 +1,48 @@
-"""Revue d'un jumeau né du code : les sept questions de « comprendre une application » (POST /jumeaux/{jid}/examiner).
+"""Revue d'un jumeau né du code (POST /jumeaux/{jid}/examiner) : l'application présentée à tout employé.
 
-Les cinq premières viennent des connaissances prouvées (révisables par l'équipe), les deux dernières de la fiche
-vivante du gardien. Les interfaces, dépendances et variables extraites du code n'y figurent pas : ce sont des
-preuves, consultables sous la revue.
+Trois niveaux, comme le jumeau la présente dans sa fiche vivante (méthode comprendre-application) : en 30
+secondes, une journée avec elle, quatre blocs courts ; puis, pour aller plus loin, les sept questions et leurs
+connaissances prouvées. Les faits que le harness connaît mieux que le modèle (statut, responsable, sources lues ou
+non branchées, confirmations de l'équipe) sont calculés ici, pas rédigés.
 """
+import re
+
 from jumeau import comprendre, depot, gardien
 
-SOURCES_NON_CONNECTEES = "Exploitation, incidents, base de données : sources non connectées"
+STATUTS = {"observation": "en observation", "actif": "admis dans le Mesh", "en construction": "en construction"}
+DOCUMENTS = re.compile(r"\.(md|rst|txt|adoc)$|(^|/)(docs?|memory)/", re.IGNORECASE)
+NON_BRANCHEES = ["Exploitation", "Incidents", "Base de données"]
+
+
+def _sources(claims):
+    chemins = {p["chemin"] for c in claims for p in c.get("preuves") or []}
+    confirmees = sum(c["statut"] == "ACCEPTED" for c in claims if c["predicat"] in comprendre.PREDICATS)
+    return ([{"nom": "Code", "etat": "lu", "ok": True}]
+            + ([{"nom": "Documentation", "etat": "lue", "ok": True}] if any(DOCUMENTS.search(c) for c in chemins) else [])
+            + [{"nom": "Équipe", "etat": f"{confirmees} confirmée(s)" if confirmees else "rien de confirmé",
+                "ok": bool(confirmees)}]
+            + [{"nom": n, "etat": "non branchée", "ok": False} for n in NON_BRANCHEES])
 
 
 def depuis_connaissances(jumeau, claims, fiche):
-    lignes = comprendre.sections(fiche)
-    blocs = []
-    for cle, titre, predicat, _ in comprendre.QUESTIONS:
-        if predicat:
-            items = [{"texte": c["objet"], "statut": c["statut"]} for c in claims if c["predicat"] == predicat]
-        else:
-            items = [{"texte": texte} for texte, _ in lignes[cle]]
-        if cle == "vie":
-            items.append({"texte": f"Responsable : {jumeau.get('proprietaire') or 'non renseigné'}"})
-        if cle == "inconnu":
-            resumes = [c for c in claims if c["predicat"] in comprendre.PREDICATS]
-            valides = sum(c["statut"] == "ACCEPTED" for c in resumes)
-            items += [{"texte": f"{valides} connaissance(s) sur {len(resumes)} validée(s) par l'équipe"},
-                      {"texte": SOURCES_NON_CONNECTEES}]
-        blocs.append({"cle": cle, "titre": titre, "items": items})
-    return {"identite": {k: jumeau.get(k) for k in ("nom", "mission", "domaine")}, "comprendre": blocs}
+    f = comprendre.lire_fiche(fiche)
+    trente = f["trente"]["texte"] + f["trente"]["puces"]
+    criticite = next((t.split(":", 1)[1].strip() for t in trente if t.lower().startswith("criticité")), "inconnue")
+    presentation = {
+        "phrases": [t for t in trente if not t.lower().startswith("criticité")],
+        "reperes": {"statut": STATUTS.get(jumeau.get("statut"), jumeau.get("statut") or "inconnu"),
+                    "responsable": jumeau.get("proprietaire") or "à confirmer", "criticite": criticite},
+        "journee": " ".join(f["journee"]["texte"] + f["journee"]["puces"]),
+        "blocs": [{"cle": cle, "titre": titre, "items": f[cle]["puces"] or f[cle]["texte"]}
+                  for cle, titre in comprendre.PRESENTATION if cle in ("faire", "regles", "garde", "avec")],
+        "sources": _sources(claims),
+        "ignore": f["ignore"]["puces"] + f["ignore"]["texte"],
+    }
+    questions = [{"cle": cle, "titre": titre,
+                  "items": [{"texte": c["objet"], "statut": c["statut"]} for c in claims if c["predicat"] == predicat]}
+                 for cle, titre, predicat, _ in comprendre.QUESTIONS if predicat]
+    return {"identite": {k: jumeau.get(k) for k in ("nom", "mission", "domaine")},
+            "presentation": presentation, "comprendre": questions}
 
 
 def examiner(conn, jumeau_id, doc):

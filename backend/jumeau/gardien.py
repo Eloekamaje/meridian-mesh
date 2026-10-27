@@ -128,8 +128,8 @@ async def _rediger(ctx, dsn, sigs, commits):
     et celles qui restent fausses sont retirées. ponytail: pas de relecture par LLM (coût) ; à ajouter si la
     qualité des fiches dérive.
     """
-    a = agent.construire(ctx, dsn, session=f"gardien-{ctx['jumeau']['id']}-{_id_version(empreinte(ctx['sources']))}",
-                         budget=agent.Budget(**BUDGET_PASSE))
+    # Fil vierge à chaque passe : une passe précédente ne doit pas dicter la fiche (méthode à jour, code relu).
+    a = agent.construire(ctx, dsn, session=None, budget=agent.Budget(**BUDGET_PASSE))
     fiche = str(await a.invoke_async(CONSIGNE_FICHE)).strip()
     invalides = contradicteur.citations_invalides(fiche, ctx["sources"])
     if invalides:
@@ -214,12 +214,13 @@ async def veiller(conn, db, jumeau_id, chemins=None, rediger=_rediger):
     if len(sources) > 1:
         commits = [{**c, "message": f"[{c['depot']}] {c['message']}"} for c in commits]
     if ingeres:
+        comprendre.clore_sans_preuve(conn, jumeau_id)  # le code a changé : ce qui n'est plus prouvé est clos
         if sigs and not premiere:  # première ingestion : pas de « changement » à annoncer
             sit = situation(jumeau, _id_version(version), sigs, commits, None)
             await publier(db, sit)
         await registre.projeter(db, conn)
     bilan = {"changement": True, "version": version, "depots": ingeres, "signaux": len(sigs), "commits": len(commits)}
-    ctx = {"jumeau": jumeau, "sources": [s for s in sources if s["index_code"]], "proposees": [],
+    ctx = {"jumeau": jumeau, "sources": [s for s in sources if s["index_code"]],
            "claims": connaissance.connaissances(conn, jumeau_id, limite=500),
            "acteur": "gardien", "profil": {"nom": "Gardien du jumeau", "role": "veille automatique"}}
     try:
@@ -228,7 +229,6 @@ async def veiller(conn, db, jumeau_id, chemins=None, rediger=_rediger):
         journal.warning("gardien %s : rédaction impossible, reprise à la passe suivante", jumeau_id, exc_info=True)
         return {**bilan, "fiche": False}
     enregistrer_fiche(conn, jumeau_id, version, fiche)
-    comprendre.clore_non_reprises(conn, jumeau_id, ctx["proposees"])
     if sit and recit:
         await db.situations.update_one({"id": sit["id"]}, {"$set": {"resume": recit}})
     journal.info("gardien %s : %s dépôt(s) ingéré(s), %s signal(aux)", jumeau_id, len(ingeres), len(sigs))

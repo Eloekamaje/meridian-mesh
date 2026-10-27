@@ -3,56 +3,59 @@ from jumeau import comprendre, connaissance, depot, methodes
 from jumeau.source_git import sha_courant
 from jumeau.tests.conftest import ACTIVITE, JUMEAU, besoin_pg, claim
 
-FICHE = """# Fiche vivante — TBT
+FICHE_NIVEAUX = """# Fiche vivante — TBT
 
-## À quoi elle sert
+## En 30 secondes
+Une maquette de suivi de **dossiers** `app.py#L1`.
+
+## Ce qu'elle permet de faire
 - **Gérer les dossiers** des personnes accompagnées `app.py#L1-L2`
 - Présenter la solution aux évaluateurs `app.py#L3` et `app.py#L4`
-- Une capacité sans preuve
-
-## Pour qui, dans quels parcours
-- Agents de terrain : saisie hors ligne `app.py#L5`
-
-## Les règles qu'elle applique
-- Accès d'urgence avec double approbation `inconnu.py#L1`
-
-## Comment elle vit
-- Refonte le 25 octobre `app.py#L6`
-
-## Ce que l'on ne sait pas encore
-- Qui s'en sert réellement
 """
 
 
-def test_sections_de_la_fiche_lues_par_question():
-    s = comprendre.sections(FICHE)
-    assert [t for t, _ in s["sert"]] == ["Gérer les dossiers des personnes accompagnées",
-                                         "Présenter la solution aux évaluateurs", "Une capacité sans preuve"]
-    assert s["sert"][1][1] == [("", "app.py", 3, 3), ("", "app.py", 4, 4)]
-    assert s["inconnu"] == [("Qui s'en sert réellement", [])]
-    assert s["informations"] == [] and s["echanges"] == []
+def test_fiche_lue_par_niveaux():
+    f = comprendre.lire_fiche(FICHE_NIVEAUX)
+    assert f["trente"]["texte"] == ["Une maquette de suivi de dossiers."]
+    assert f["faire"]["puces"] == ["Gérer les dossiers des personnes accompagnées",
+                                   "Présenter la solution aux évaluateurs"]
+    assert f["garde"] == {"puces": [], "texte": []}
 
 
 def test_la_methode_et_la_revue_parlent_des_memes_questions():
     texte = " ".join(methodes.lire("comprendre-application").split())
     assert "comprendre-application" in {m["nom"] for m in methodes.catalogue()}
     for _, titre, predicat, type_claim in comprendre.QUESTIONS:
-        assert f"## {titre}" in texte  # la fiche rédigée selon la méthode est lisible par la revue
+        assert f"**{titre}**" in texte
         if predicat:
             assert f"Prédicat {predicat}, type {type_claim}" in texte
+    for _, titre in comprendre.PRESENTATION:
+        assert f"## {titre}" in texte  # la fiche rédigée selon la méthode est lisible par la revue
 
 
 @besoin_pg
-def test_apres_une_passe_les_reponses_non_reprises_sont_closes(conn, depot_git):
+def test_une_reponse_vaut_tant_que_sa_preuve_tient(conn, depot_git):
+    import subprocess
     source = {"nom": "tbt-repo", "type": "GIT", "emplacement": str(depot_git), "curseur": sha_courant(depot_git)}
     depot.enregistrer(conn, JUMEAU, source, [claim("fastapi", source["curseur"], 1)], ACTIVITE)
     src = depot.source_du_jumeau(conn, "tbt")
-    def proposer(objet):
-        return connaissance.proposer(conn, JUMEAU, src, "REALISE_CAPACITE", objet, "CAPABILITY", "app.py", 1, 2,
-                                     "preuve", "gardien", "m")
-    ancienne, validee, reprise = proposer("Suivre les colis"), proposer("Gérer les dossiers"), proposer("Payer")
+    def proposer(objet, debut):
+        return connaissance.proposer(conn, JUMEAU, src, "REALISE_CAPACITE", objet, "CAPABILITY", "app.py", debut,
+                                     debut + 1, "preuve", "gardien", "m")
+    proposer("Gérer les dossiers", 10)
+    proposer("Suivre les colis", 20)
+    validee = proposer("Payer", 30)
     depot.reviser(conn, validee, "alice", "ACCEPTED", None)
-    assert comprendre.clore_non_reprises(conn, "tbt", []) == 0  # passe sans proposition : rien n'est clos
-    assert comprendre.clore_non_reprises(conn, "tbt", [reprise]) == 1
+    assert comprendre.clore_sans_preuve(conn, "tbt") == 0  # rien n'a changé : tout tient
+    # Nouveau commit : deux lignes ajoutées en tête (les preuves se déplacent), les lignes 20-21 et 30-31 réécrites.
+    lignes = [f"ligne {n}" for n in range(1, 401)]
+    lignes[19:21] = ["autre chose", "autre chose"]
+    lignes[29:31] = ["réécrit", "réécrit"]
+    (depot_git / "app.py").write_text("\n".join(["entête", "entête", *lignes]) + "\n")
+    subprocess.run(["git", "-C", str(depot_git), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qam", "m"],
+                   check=True)
+    depot.enregistrer(conn, JUMEAU, {**source, "curseur": sha_courant(depot_git)},
+                      [claim("fastapi", sha_courant(depot_git), 1)], ACTIVITE)
+    assert comprendre.clore_sans_preuve(conn, "tbt") == 1
     restants = {c["objet"] for c in depot.lister_claims(conn, "tbt") if c["predicat"] in comprendre.PREDICATS}
-    assert restants == {"Gérer les dossiers", "Payer"}
+    assert restants == {"Gérer les dossiers", "Payer"}  # déplacée mais intacte ; validée par l'équipe
