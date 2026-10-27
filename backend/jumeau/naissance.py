@@ -80,16 +80,10 @@ def _vault(chemin, donnees=None):
         return json.load(r)["data"]
 
 
-def proteger_secrets(config, cles, chemin):
-    """Un jeton saisi en clair dans l'interface est déposé dans Vault ; la configuration n'en garde que la
-    référence (jamais le jeton en base, ni dans les réponses de l'API)."""
-    sortie = dict(config)
-    for cle in cles:
-        valeur = (sortie.get(cle) or "").strip()
-        if valeur and not valeur.startswith(("env:", "vault:")):
-            _vault(f"{PREFIXE_VAULT}commandes/{chemin}", {"jeton": valeur})
-            sortie[cle] = f"vault:{PREFIXE_VAULT}commandes/{chemin}#jeton"
-    return sortie
+def deposer_jeton(chemin, jeton):
+    """Dépose un jeton dans Vault sous le préfixe de Méridian ; renvoie sa référence (seule conservée en base)."""
+    _vault(f"{PREFIXE_VAULT}{chemin}", {"jeton": jeton})
+    return f"vault:{PREFIXE_VAULT}{chemin}#jeton"
 
 
 def resoudre_secret(reference):

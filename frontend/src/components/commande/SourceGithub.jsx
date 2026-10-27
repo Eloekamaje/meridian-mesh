@@ -1,12 +1,11 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
-import { CaretUpDown, CheckCircle, GitBranch, Plus, X } from "@phosphor-icons/react";
+import { CaretUpDown, GitBranch, Plus, X } from "@phosphor-icons/react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import api from "@/lib/api";
 
-// Source GitHub de la commande : le jeton d'abord (déposé dans Vault, jamais gardé ici), puis des couples
-// dépôt/branche choisis par autocomplétion parmi ce que le jeton peut lire, une ligne à la fois.
+// Source GitHub de la commande : une connexion de l'espace d'abord, puis des couples dépôt/branche choisis par
+// autocomplétion parmi ce que cette connexion peut lire, une ligne à la fois.
 const BORDURE = "border-[rgba(148,163,184,0.16)]";
 const ETIQUETTE = "font-code text-[10px] uppercase tracking-[0.15em] text-[#7C93A8]";
 const CHAMP = `rounded-md border ${BORDURE} bg-[#0F1D28] px-3 py-2 text-xs text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#60A5FA]/60 focus:outline-none`;
@@ -63,72 +62,91 @@ function Choix({ valeur, placeholder, chemin, rendu, valeurDe, onChoisir, desact
   );
 }
 
-function Jeton({ cid, source, onReference }) {
+// Connexions GitHub de l'espace : déclarées une fois (jeton vérifié, déposé dans Vault), choisies ensuite.
+function Connexion({ choisie, onChoisir }) {
+  const [connexions, setConnexions] = useState(null);
+  const [ajout, setAjout] = useState(false);
   const [saisie, setSaisie] = useState("");
-  const [compte, setCompte] = useState(null);
   const [etat, setEtat] = useState({ encours: false, erreur: null });
-  const reference = source.config?.secret;
 
-  // Un jeton déjà déposé : on rappelle le compte qu'il ouvre (le jeton lui-même ne revient jamais).
   useEffect(() => {
-    if (!reference) return undefined;
     let vivant = true;
-    api.get(`/commandes/${cid}/sources/${source.id}/github/compte`)
-      .then(({ data }) => vivant && setCompte(data.login))
-      .catch((e) => vivant && setEtat({ encours: false, erreur: e.response?.data?.detail || null }));
+    api.get("/connexions/github")
+      .then(({ data }) => { if (vivant) { setConnexions(data); setAjout(data.length === 0); } })
+      .catch(() => vivant && setConnexions([]));
     return () => { vivant = false; };
-  }, [cid, source.id, reference]);
+  }, []);
 
-  const verifier = async () => {
+  const declarer = async () => {
     setEtat({ encours: true, erreur: null });
     try {
-      const { data } = await api.post(`/commandes/${cid}/sources/${source.id}/github/jeton`, { jeton: saisie });
+      const { data } = await api.post("/connexions/github", { jeton: saisie });
+      setConnexions((liste) => [...(liste || []).filter((c) => c.id !== data.id), data]);
       setSaisie("");
-      setCompte(data.login);
+      setAjout(false);
       setEtat({ encours: false, erreur: null });
-      onReference(data.reference);
+      onChoisir(data.id);
     } catch (e) {
       setEtat({ encours: false, erreur: e.response?.data?.detail || "Vérification impossible" });
     }
   };
 
+  if (!connexions) return <p className="text-[11px] text-[#7C93A8]">Chargement des connexions…</p>;
   return (
-    <div>
-      <label htmlFor="github-jeton" className={ETIQUETTE}>1 · Jeton d'accès</label>
-      <div className="mt-1 flex gap-2">
-        <input id="github-jeton" type="password" autoComplete="off" value={saisie} onChange={(e) => setSaisie(e.target.value)}
-          placeholder={compte ? "Remplacer le jeton…" : "Collez le jeton GitHub"} data-testid="insp-github-jeton" className={`${CHAMP} flex-1`} />
-        <button type="button" onClick={verifier} disabled={!saisie.trim() || etat.encours} data-testid="insp-github-verifier"
-          className="rounded-md bg-[#60A5FA] px-3 text-xs font-semibold text-[#071019] hover:bg-[#93C5FD] disabled:opacity-40">
-          {etat.encours ? "Vérification…" : "Vérifier"}
+    <fieldset>
+      <legend className={ETIQUETTE}>1 · Compte GitHub</legend>
+      {connexions.length > 0 && (
+        <div role="radiogroup" aria-label="Connexion GitHub" className="mt-2 space-y-1.5">
+          {connexions.map((c) => (
+            <label key={c.id} className={`flex cursor-pointer items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs ${c.id === choisie ? "border-[#60A5FA]/60 bg-[rgba(96,165,250,0.08)]" : BORDURE}`}>
+              <input type="radio" name="connexion-github" checked={c.id === choisie} onChange={() => onChoisir(c.id)} className="accent-[#60A5FA]" data-testid={`insp-github-connexion-${c.id}`} />
+              {c.avatar && <img src={c.avatar} alt="" className="h-5 w-5 rounded-full" />}
+              <span className="text-[#F2F6F8]">{c.nom}</span>
+              <span className="font-code text-[10px] text-[#7C93A8]">@{c.login}</span>
+            </label>
+          ))}
+        </div>
+      )}
+      {ajout ? (
+        <div className="mt-2">
+          <label htmlFor="github-jeton" className="text-[11px] text-[#94A3B8]">Jeton d'accès GitHub (lecture des dépôts)</label>
+          <div className="mt-1 flex gap-2">
+            <input id="github-jeton" type="password" autoComplete="off" value={saisie} onChange={(e) => setSaisie(e.target.value)}
+              placeholder="Collez le jeton" data-testid="insp-github-jeton" className={`${CHAMP} flex-1`} />
+            <button type="button" onClick={declarer} disabled={!saisie.trim() || etat.encours} data-testid="insp-github-verifier"
+              className="rounded-md bg-[#60A5FA] px-3 text-xs font-semibold text-[#071019] hover:bg-[#93C5FD] disabled:opacity-40">
+              {etat.encours ? "Vérification…" : "Vérifier"}
+            </button>
+          </div>
+          <p className="mt-1 text-[10px] text-[#7C93A8]">Le jeton est vérifié auprès de GitHub puis conservé dans Vault ; il ne revient jamais à l'écran.</p>
+        </div>
+      ) : (
+        <button type="button" onClick={() => setAjout(true)} data-testid="insp-github-nouvelle-connexion"
+          className="mt-2 flex items-center gap-1.5 text-xs text-[#60A5FA] hover:underline">
+          <Plus size={12} aria-hidden /> Nouvelle connexion
         </button>
-      </div>
-      <div aria-live="polite" className="mt-1 min-h-[16px] text-[11px]">
-        {etat.erreur
-          ? <span className="text-[#F87171]">{etat.erreur}</span>
-          : compte && <span className="flex items-center gap-1 text-[#34D399]"><CheckCircle size={12} aria-hidden /> Jeton valide : compte {compte} · conservé dans Vault</span>}
-      </div>
-    </div>
+      )}
+      <div aria-live="polite" className="mt-1 min-h-[16px] text-[11px] text-[#F87171]">{etat.erreur}</div>
+    </fieldset>
   );
 }
 
 export default function SourceGithub({ source, onChange }) {
-  const { cid } = useParams();
   const config = source.config || {};
   const lignes = config.selection?.length ? config.selection : [{ depot: "", branche: "" }];
-  const base = `/commandes/${cid}/sources/${source.id}/github`;
-  const pret = Boolean(config.secret);
+  const base = `/connexions/github/${config.connexion}`;
+  const pret = Boolean(config.connexion);
   const majLignes = (nouvelles) => onChange(source.id, { config: { ...config, selection: nouvelles } });
   const majLigne = (i, patch) => majLignes(lignes.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   const dejaChoisis = new Set(lignes.map((l) => l.depot).filter(Boolean));
 
   return (
     <div className="space-y-4">
-      <Jeton cid={cid} source={source} onReference={(reference) => onChange(source.id, { config: { ...config, secret: reference } })} />
+      <Connexion choisie={config.connexion} onChoisir={(id) => onChange(source.id, { config: { ...config, connexion: id, selection: id === config.connexion ? config.selection : [] } })} />
 
       <fieldset disabled={!pret}>
         <legend className={ETIQUETTE}>2 · Dépôts et branches</legend>
-        {!pret && <p className="mt-1 text-[11px] text-[#7C93A8]">Vérifiez d'abord le jeton : les dépôts proposés sont ceux qu'il peut lire.</p>}
+        {!pret && <p className="mt-1 text-[11px] text-[#7C93A8]">Choisissez d'abord une connexion : les dépôts proposés sont ceux qu'elle peut lire.</p>}
         <ul className="mt-2 space-y-2" data-testid="insp-github-lignes">
           {lignes.map((l, i) => (
             <li key={i} className="flex items-center gap-2">
@@ -136,9 +154,12 @@ export default function SourceGithub({ source, onChange }) {
                 <Choix label={`Dépôt ${i + 1}`} testid={`insp-github-depot-${i}`} valeur={l.depot} placeholder="Choisir un dépôt" desactive={!pret}
                   chemin={`${base}/depots`} valeurDe={(d) => d.nom}
                   rendu={(d) => (
-                    <span className="flex w-full items-center gap-2">
-                      <span className={`truncate ${dejaChoisis.has(d.nom) ? "text-[#7C93A8]" : ""}`}>{d.nom}</span>
-                      <span className="ml-auto shrink-0 font-code text-[9px] text-[#7C93A8]">{d.prive ? "privé" : "public"}</span>
+                    <span className="flex w-full min-w-0 flex-col">
+                      <span className="flex items-center gap-2">
+                        <span className={`truncate ${dejaChoisis.has(d.nom) ? "text-[#7C93A8]" : ""}`}>{d.nom}</span>
+                        <span className="ml-auto shrink-0 font-code text-[9px] text-[#7C93A8]">{[d.langage, d.prive ? "privé" : "public"].filter(Boolean).join(" · ")}</span>
+                      </span>
+                      {d.description && <span className="truncate text-[10px] text-[#7C93A8]">{d.description}</span>}
                     </span>
                   )}
                   onChoisir={(d) => majLigne(i, { depot: d.nom, branche: d.defaut })} />

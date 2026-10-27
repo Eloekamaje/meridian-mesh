@@ -17,6 +17,8 @@ def forge(monkeypatch):
         envoyees.append(requete)
         chemin = requete.full_url.split("api.github.com", 1)[1].split("?")[0]
         corps = reponses[chemin]
+        if isinstance(corps, tuple):  # (code HTTP, en-têtes)
+            raise urllib.error.HTTPError(requete.full_url, corps[0], "refus", corps[1], None)
         if isinstance(corps, int):
             raise urllib.error.HTTPError(requete.full_url, corps, "refus", {}, None)
         return io.BytesIO(json.dumps(corps).encode())
@@ -27,15 +29,18 @@ def forge(monkeypatch):
 
 
 def depot(nom, defaut="main"):
-    return {"full_name": nom, "private": True, "default_branch": defaut, "pushed_at": "2026-10-01T00:00:00Z"}
+    return {"full_name": nom, "private": True, "default_branch": defaut, "pushed_at": "2026-10-01T00:00:00Z",
+            "description": "Paie des employés", "language": "Python"}
 
 
 def test_depots_filtres_avec_leur_branche_par_defaut(forge):
     reponses, envoyees = forge
     reponses["/user/repos"] = [depot("banque/paie-api"), depot("banque/paie-front", "develop"), depot("banque/crm")]
     assert github.depots("vault:meridian/x#jeton", "PAIE") == [
-        {"nom": "banque/paie-api", "prive": True, "defaut": "main", "maj": "2026-10-01T00:00:00Z"},
-        {"nom": "banque/paie-front", "prive": True, "defaut": "develop", "maj": "2026-10-01T00:00:00Z"}]
+        {"nom": "banque/paie-api", "prive": True, "defaut": "main", "maj": "2026-10-01T00:00:00Z",
+         "description": "Paie des employés", "langage": "Python"},
+        {"nom": "banque/paie-front", "prive": True, "defaut": "develop", "maj": "2026-10-01T00:00:00Z",
+         "description": "Paie des employés", "langage": "Python"}]
     assert envoyees[0].get_header("Authorization") == "Bearer ghp_x"
 
 
@@ -89,3 +94,18 @@ def test_nouveau_jeton_oublie_les_reponses_de_l_ancien(forge):
     github.oublier("vault:r")
     reponses["/user/repos"] = [depot("banque/b")]
     assert [d["nom"] for d in github.depots("vault:r")] == ["banque/b"]
+
+
+def test_quota_github_epuise_annonce_l_attente(forge, monkeypatch):
+    reponses, _ = forge
+    monkeypatch.setattr(github.time, "time", lambda: 1000)
+    reponses["/user"] = (403, {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "1600"})
+    with pytest.raises(github.TropDeDemandes, match="10 min"):
+        github.compte_du_jeton("ghp_x")
+
+
+def test_compte_avec_son_avatar(forge):
+    reponses, _ = forge
+    reponses["/user"] = {"login": "mtl-ci", "name": "Intégration continue", "avatar_url": "https://avatars/x.png"}
+    assert github.compte_du_jeton("ghp_x") == {"login": "mtl-ci", "nom": "Intégration continue",
+                                                "avatar": "https://avatars/x.png"}

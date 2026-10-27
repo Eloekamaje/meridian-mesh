@@ -1069,7 +1069,7 @@ CONNECTEURS = [
      ]},
     {"id": "github", "nom": "GitHub", "categorie": "Code source", "capacites": "Capacités, APIs, événements et règles",
      "champs": [
-        {"cle": "secret", "label": "Jeton d'accès (déposé dans Vault)", "type": "secret", "requis": False},
+        {"cle": "connexion", "label": "Connexion GitHub", "type": "connexion_github", "requis": True},
         {"cle": "selection", "label": "Dépôts et branches", "type": "depots_github", "requis": True},
      ]},
     {"id": "confluence", "nom": "Confluence", "categorie": "Documentation", "capacites": "Contexte métier et décisions",

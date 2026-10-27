@@ -1019,9 +1019,8 @@ async def maj_commande(cid: str, payload: CommandePatch):
     if not patch:
         return {"ok": True}
     if patch.get("sources"):
-        doc = await db.commandes.find_one({"id": cid}, {"_id": 0, "sources": 1}) or {}
-        avant = {s.get("id"): s.get("config") or {} for s in doc.get("sources", [])}
-        patch["sources"] = [_proteger_source(cid, s, avant) for s in patch["sources"]]
+        connexions = {c["id"]: c["reference"] async for c in db.connexions_github.find({}, {"_id": 0, "id": 1, "reference": 1})}
+        patch["sources"] = [_proteger_source(s, connexions) for s in patch["sources"]]
     patch["maj_le"] = datetime.now(timezone.utc).isoformat()
     res = await db.commandes.update_one({"id": cid}, {"$set": patch})
     if res.matched_count == 0:
@@ -1029,22 +1028,12 @@ async def maj_commande(cid: str, payload: CommandePatch):
     return {"ok": True, "maj_le": patch["maj_le"]}
 
 
-SID_VALIDE = re.compile(r"[\w-]{1,64}")
-
-
-def _reference_jeton(cid: str, sid: str) -> str:
-    return f"vault:{jumeau_naissance.PREFIXE_VAULT}commandes/{cid}/{sid}#jeton"
-
-
-def _proteger_source(cid, source, avant):
-    """Une source GitHub ne garde que la référence de son propre jeton (posée par POST …/github/jeton) : le client
-    ne peut ni désigner le secret d'une autre commande, ni une variable du serveur, ni écrire dans Vault ici."""
+def _proteger_source(source, connexions):
+    """Une source GitHub désigne une connexion déclarée ; le serveur en déduit la référence de son jeton. Le client
+    ne fournit jamais de référence : ni secret d'une autre connexion, ni variable du serveur."""
     if source.get("connecteur") != "github" or not isinstance(source.get("config"), dict):
         return source
-    secret = source["config"].get("secret") or ""
-    if secret and secret != _reference_jeton(cid, source.get("id", "")):
-        secret = (avant.get(source.get("id")) or {}).get("secret") or ""
-    return {**source, "config": {**source["config"], "secret": secret}}
+    return {**source, "config": {**source["config"], "secret": connexions.get(source["config"].get("connexion"), "")}}
 
 
 def _champ_rempli(valeur):
@@ -1065,18 +1054,15 @@ def _simuler_test(source):
     return {"statut": "prete", "erreur": None, "dernier_test": {"date": maintenant, "resultat": "ok"}}
 
 
-async def _github(cid: str, sid: str, appel, *args):
-    """Appel à l'API GitHub avec le jeton de la source (lu dans Vault, jamais renvoyé)."""
-    doc = await db.commandes.find_one({"id": cid}, NO_ID)
-    source = next((s for s in (doc or {}).get("sources", []) if s.get("id") == sid), None)
-    if not source or source.get("connecteur") != "github":
-        raise HTTPException(404, "Source GitHub introuvable")
-    return await _appel_github(cid, appel, (source.get("config") or {}).get("secret"), *args)
+# Connexions GitHub de l'espace : déclarées une fois (jeton vérifié puis déposé dans Vault), choisies ensuite par
+# chaque commande. ponytail: jeton personnel ; GitHub App (« Se connecter avec GitHub ») sur AWS (Architecture §10.5),
+# et rattachement des connexions à un espace quand l'identité OIDC arrivera.
+CONNEXION_VALIDE = re.compile(r"gh-[a-z0-9-]{1,39}")
 
 
-async def _appel_github(cid: str, appel, reference, *args):
+async def _appel_github(appel, *args):
     try:
-        return await asyncio.to_thread(appel, reference, *args)
+        return await asyncio.to_thread(appel, *args)
     except jumeau_github.TropDeDemandes as e:
         raise HTTPException(429, str(e))
     except jumeau_github.JetonRefuse:
@@ -1084,53 +1070,56 @@ async def _appel_github(cid: str, appel, reference, *args):
     except jumeau_github.Invalide as e:
         raise HTTPException(400, str(e))
     except (RuntimeError, ValueError) as e:  # message générique : une erreur bas niveau peut citer le jeton
-        logger.warning("commande %s : appel GitHub impossible (%s)", cid, type(e).__name__)
-        raise HTTPException(400, "Jeton introuvable ou illisible : vérifiez-le à nouveau")
+        logger.warning("appel GitHub impossible (%s)", type(e).__name__)
+        raise HTTPException(400, "Jeton introuvable ou illisible : déclarez à nouveau la connexion")
     except OSError:
-        logger.warning("commande %s : GitHub injoignable", cid, exc_info=True)
+        logger.warning("GitHub injoignable", exc_info=True)
         raise HTTPException(502, "GitHub ne répond pas")
+
+
+async def _reference_connexion(cxid: str) -> str:
+    doc = await db.connexions_github.find_one({"id": cxid}, {"_id": 0, "reference": 1})
+    if not doc:
+        raise HTTPException(404, "Connexion GitHub introuvable")
+    return doc["reference"]
 
 
 class JetonGithub(BaseModel):
     jeton: str = Field(min_length=1, max_length=500)
 
 
-@api_router.post("/commandes/{cid}/sources/{sid}/github/jeton")
-async def github_jeton(cid: str, sid: str, payload: JetonGithub):
-    """Le jeton va dans Vault, GitHub le vérifie, et la commande n'en garde que la référence."""
-    if not SID_VALIDE.fullmatch(sid):
-        raise HTTPException(400, "Identifiant de source invalide")
-    doc = await db.commandes.find_one({"id": cid, "sources": {"$elemMatch": {"id": sid, "connecteur": "github"}}},
-                                      {"_id": 0, "id": 1})
-    if not doc:
-        raise HTTPException(404, "Source GitHub introuvable")
+@api_router.get("/connexions/github")
+async def lister_connexions_github():
+    return await db.connexions_github.find({}, {"_id": 0, "reference": 0}).sort("login", 1).to_list(100)
+
+
+@api_router.post("/connexions/github", status_code=201)
+async def declarer_connexion_github(payload: JetonGithub):
+    """Le jeton est vérifié auprès de GitHub avant d'être conservé : un jeton refusé n'écrase rien."""
     jeton = payload.jeton.strip()
-    # Vérifié avant d'être conservé : un jeton refusé n'écrase jamais celui qui fonctionne
-    compte = await _appel_github(cid, jumeau_github.compte_du_jeton, jeton)
+    compte = await _appel_github(jumeau_github.compte_du_jeton, jeton)
+    cxid = f"gh-{compte['login'].lower()}"
+    if not CONNEXION_VALIDE.fullmatch(cxid):
+        raise HTTPException(400, "Compte GitHub inattendu")
     try:
-        reference = (await asyncio.to_thread(jumeau_naissance.proteger_secrets, {"secret": jeton},
-                                             ["secret"], f"{cid}/{sid}"))["secret"]
+        reference = await asyncio.to_thread(jumeau_naissance.deposer_jeton, f"connexions/github/{cxid}", jeton)
     except (RuntimeError, OSError) as e:
-        logger.warning("commande %s : jeton non déposé dans Vault (%s)", cid, type(e).__name__)
+        logger.warning("connexion %s : jeton non déposé dans Vault (%s)", cxid, type(e).__name__)
         raise HTTPException(503, "Coffre de secrets indisponible : jeton non enregistré")
     jumeau_github.oublier(reference)
-    await db.commandes.update_one({"id": cid, "sources.id": sid}, {"$set": {"sources.$.config.secret": reference}})
-    return {"reference": reference, **compte}
+    doc = {"id": cxid, **compte, "maj_le": datetime.now(timezone.utc).isoformat()}
+    await db.connexions_github.update_one({"id": cxid}, {"$set": {**doc, "reference": reference}}, upsert=True)
+    return doc
 
 
-@api_router.get("/commandes/{cid}/sources/{sid}/github/compte")
-async def github_compte(cid: str, sid: str):
-    return await _github(cid, sid, jumeau_github.compte)
+@api_router.get("/connexions/github/{cxid}/depots")
+async def depots_github(cxid: str, q: str = Query("", max_length=100)):
+    return await _appel_github(jumeau_github.depots, await _reference_connexion(cxid), q)
 
 
-@api_router.get("/commandes/{cid}/sources/{sid}/github/depots")
-async def github_depots(cid: str, sid: str, q: str = Query("", max_length=100)):
-    return await _github(cid, sid, jumeau_github.depots, q)
-
-
-@api_router.get("/commandes/{cid}/sources/{sid}/github/branches")
-async def github_branches(cid: str, sid: str, depot: str = Query(..., max_length=200), q: str = Query("", max_length=100)):
-    return await _github(cid, sid, jumeau_github.branches, depot, q)
+@api_router.get("/connexions/github/{cxid}/branches")
+async def branches_github(cxid: str, depot: str = Query(..., max_length=200), q: str = Query("", max_length=100)):
+    return await _appel_github(jumeau_github.branches, await _reference_connexion(cxid), depot, q)
 
 
 @api_router.post("/commandes/{cid}/tester")

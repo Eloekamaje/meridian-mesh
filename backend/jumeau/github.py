@@ -104,6 +104,9 @@ def _get_avec(jeton, chemin, **params):
         with _ouvrir(requete, timeout=DELAI) as r:
             return json.load(r)
     except urllib.error.HTTPError as e:
+        if e.code in (403, 429) and e.headers and e.headers.get("X-RateLimit-Remaining") == "0":
+            attente = max(int(e.headers.get("X-RateLimit-Reset", "0")) - int(time.time()), 60)
+            raise TropDeDemandes(f"quota GitHub épuisé pour ce compte : réessayez dans {-(-attente // 60)} min") from e
         if e.code in (401, 403):
             raise JetonRefuse("GitHub refuse ce jeton") from e
         raise
@@ -116,7 +119,8 @@ def compte(reference):
 
 def compte_du_jeton(jeton):
     """Vérifie un jeton auprès de GitHub avant de le conserver (un jeton refusé n'écrase rien)."""
-    return {"login": _get_avec(jeton, "/user")["login"]}
+    u = _get_avec(jeton, "/user")
+    return {"login": u["login"], "nom": u.get("name") or u["login"], "avatar": u.get("avatar_url")}
 
 
 def _tous_les_depots(reference):
@@ -124,8 +128,8 @@ def _tous_les_depots(reference):
     for page in range(1, MAX_PAGES + 1):
         lot = _get(reference, "/user/repos", per_page=100, page=page, sort="updated",
                    affiliation="owner,collaborator,organization_member")
-        tous += [{"nom": d["full_name"], "prive": d["private"], "defaut": d["default_branch"], "maj": d["pushed_at"]}
-                 for d in lot]
+        tous += [{"nom": d["full_name"], "prive": d["private"], "defaut": d["default_branch"], "maj": d["pushed_at"],
+                  "description": (d.get("description") or "")[:140], "langage": d.get("language")} for d in lot]
         if len(lot) < 100:
             break
     return tous

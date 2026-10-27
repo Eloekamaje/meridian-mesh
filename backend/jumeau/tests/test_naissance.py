@@ -245,14 +245,12 @@ def test_deux_depots_homonymes_refuses():
 
 
 @pytest.mark.skipif(not os.environ.get("VAULT_TOKEN"), reason="Vault local requis")
-def test_jeton_colle_depose_dans_vault_et_remplace_par_sa_reference():
-    config = {"organisation": "o", "depots": "d", "secret": "ghp_jeton_de_test"}
-    proteges = naissance.proteger_secrets(config, ["secret"], "cmd-test/src-1")
-    assert proteges["secret"] == "vault:meridian/commandes/cmd-test/src-1#jeton"
-    assert naissance.resoudre_secret(proteges["secret"]) == "ghp_jeton_de_test"
-    # Une référence déjà posée n'est pas réécrite ; une valeur vide reste vide.
-    assert naissance.proteger_secrets(proteges, ["secret"], "cmd-test/src-1") == proteges
-    assert naissance.proteger_secrets({"secret": ""}, ["secret"], "x/y") == {"secret": ""}
+def test_jeton_depose_dans_vault_et_designe_par_sa_reference():
+    reference = naissance.deposer_jeton("connexions/github/gh-test", "ghp_jeton_de_test")
+    assert reference == "vault:meridian/connexions/github/gh-test#jeton"
+    assert naissance.resoudre_secret(reference) == "ghp_jeton_de_test"
+    with pytest.raises(RuntimeError):
+        naissance.deposer_jeton("../ailleurs", "x")
 
 
 def test_couples_depot_branche_choisis_dans_l_interface():
