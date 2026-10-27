@@ -85,3 +85,16 @@ def test_echec_du_relecteur_ne_supprime_pas_la_reponse(monkeypatch):
     monkeypatch.setattr(flore.contradicteur, "relire", relecteur_en_panne)
     verdict = asyncio.run(flore.relire_sans_risque("q", "r", SOURCE, None, None))
     assert verdict == {"ok": True, "problemes": []}
+
+
+def test_fiche_affichable_sans_citations_avec_ses_preuves():
+    contenu = "# Fiche\n\n**Ce qu'elle fait**\n- Gère les comptes `backend/app/models.py#L87-L93`.\n"
+    r = flore.fiche_affichable({"sha": SHA + "0" * 28, "contenu": contenu}, SOURCE)
+    assert "#L" not in r["contenu"] and "Gère les comptes." in r["contenu"]
+    assert r["preuves"] == [{"source": "backend/app/models.py:87-93",
+                             "detail": f"git://meridian-mesh@{SHA}:backend/app/models.py#L87-L93"}]
+
+
+def test_citations_separees_par_un_point_median_retirees_sans_reste():
+    texte = "Le fil des auteurs suivis. `a.py#L1` · `b.py#L2` · `c.py#L3`\nSuite."
+    assert flore.retirer_citations(texte) == "Le fil des auteurs suivis.\nSuite."

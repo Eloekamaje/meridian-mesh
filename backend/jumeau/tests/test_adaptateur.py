@@ -130,3 +130,27 @@ def test_doublons_fusionnes_en_un_claim_a_plusieurs_preuves():
 def test_confiance_initiale_par_regle(type_claim, attendu):
     claims = adapter(resultats(), lire, "meridian", SHA, "TBT")
     assert {c["confiance"] for c in claims if c["type"] == type_claim} == {attendu}
+
+
+def test_decorateur_sur_plusieurs_lignes():
+    fichiers = {"api.py": ["@router.put(", '    "/{slug}",', '    name="articles:update",', ")",
+                           "async def modifier(slug):", "    pass"]}
+    route = [{"chemin": "api.py", "debut": "5", "fin": "6", "methode": "PUT", "route": "/{}"}]
+    [c] = adapter({"routes": route}, fichiers.get, "d", SHA, "App")
+    assert c["preuves"][0]["ligne_debut"] == 1 and c["preuves"][0]["ligne_fin"] == 6
+
+
+def test_route_recomposee_avec_le_prefixe_du_routeur():
+    fichiers = {"articles.py": ['@router.get("", name="liste")', "def lister():", "    pass", "",
+                                '@router.delete("/{slug}")', "def supprimer(slug):", "    pass"],
+                "comments.py": ['@router.delete("/{slug}")', "def supprimer(slug):", "    pass"]}
+    routes = [
+        {"chemin": "articles.py", "debut": "2", "fin": "3", "methode": "GET", "route": ""},
+        {"chemin": "articles.py", "debut": "2", "fin": "3", "methode": "ANY", "route": "/articles"},
+        {"chemin": "articles.py", "debut": "6", "fin": "7", "methode": "DELETE", "route": "/{slug}"},
+        {"chemin": "articles.py", "debut": "6", "fin": "7", "methode": "ANY", "route": "/articles"},
+        {"chemin": "comments.py", "debut": "2", "fin": "3", "methode": "DELETE", "route": "/{slug}"},
+        {"chemin": "comments.py", "debut": "2", "fin": "3", "methode": "ANY", "route": "/articles/{slug}/comments"},
+    ]
+    objets = sorted(c["objet"] for c in adapter({"routes": routes}, fichiers.get, "d", SHA, "App"))
+    assert objets == ["DELETE /articles/{slug}", "DELETE /articles/{slug}/comments/{slug}", "GET /articles"]

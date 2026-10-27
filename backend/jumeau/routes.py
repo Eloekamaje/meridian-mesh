@@ -9,7 +9,7 @@ import psycopg
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 
-from jumeau import depot
+from jumeau import depot, flore, gardien
 from jumeau.source_git import extrait
 
 router = APIRouter(prefix="/v2", tags=["jumeau"])
@@ -57,3 +57,12 @@ def reviser(claim_id: int, revue: Revue, conn=Depends(connexion),
     except LookupError:
         raise HTTPException(404, "Claim introuvable")
     return {"ok": True}
+
+
+@router.get("/jumeaux/{jumeau_id}/fiche")
+def lire_fiche(jumeau_id: str, conn=Depends(connexion)):
+    """Fiche vivante rédigée par le gardien : ce que le jumeau dit de l'application."""
+    fiche, source = gardien.fiche_courante(conn, jumeau_id), depot.source_du_jumeau(conn, jumeau_id)
+    if not fiche or not source:
+        raise HTTPException(404, "Pas encore de fiche vivante pour ce jumeau")
+    return flore.fiche_affichable(fiche, source)

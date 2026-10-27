@@ -1072,7 +1072,7 @@ CONNECTEURS = [
         {"cle": "organisation", "label": "Organisation", "type": "texte", "requis": True},
         {"cle": "depots", "label": "Dépôts", "type": "liste", "requis": True},
         {"cle": "branches", "label": "Branches", "type": "liste", "defaut": "main"},
-        {"cle": "secret", "label": "Jeton (référence)", "type": "secret", "requis": True},
+        {"cle": "secret", "label": "Jeton (référence Vault ; vide pour un dépôt public)", "type": "secret", "requis": False},
      ]},
     {"id": "confluence", "nom": "Confluence", "categorie": "Documentation", "capacites": "Contexte métier et décisions",
      "champs": [

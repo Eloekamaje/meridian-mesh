@@ -40,7 +40,8 @@ SCORES = {"haute": 82, "normale": 64, "basse": 48}
 CONSIGNE_FICHE = """Rédige la fiche vivante de l'application, que tu reliras au début de chaque conversation.
 En Markdown, 350 mots au plus, sections : « Ce qu'elle fait pour l'entreprise », « Ses grands services »,
 « Ce sur quoi elle s'appuie », « Ses évolutions récentes » (regarde son histoire), « Ce qui reste inconnu ».
-Langage métier, chaque affirmation suivie de sa citation `chemin#Ldébut-Lfin`. Réponds uniquement par la fiche."""
+Langage métier, chaque affirmation suivie de sa citation `chemin#Ldébut-Lfin`. C'est un document, pas une
+conversation : ni question finale, ni proposition de suite. Réponds uniquement par la fiche."""
 
 CONSIGNE_RECIT = """L'application vient de changer. Signaux observés automatiquement :
 {signaux}

@@ -37,9 +37,9 @@ def preuves_depuis(texte, source):
 
 # Un groupe de citations (« a.py#L1, b.py#L2 et c.py#L3 »), éventuellement entre accents graves ou parenthèses.
 _CIT = r"`?" + RE_CITATION.pattern + r"`?"
-_GROUPE = _CIT + r"(?:\s*(?:,|et)\s*" + _CIT + r")*"
+_GROUPE = _CIT + r"(?:\s*(?:,|et|·)\s*" + _CIT + r")*"
 RE_GROUPE_ENTRE_PARENTHESES = re.compile(r"\s*\(\s*(?:voir\s+)?" + _GROUPE + r"\s*\)")
-RE_GROUPE = re.compile(r"\s*(?:—\s*)?" + _GROUPE)
+RE_GROUPE = re.compile(r"[ \t]*(?:[—·][ \t]*)?" + _GROUPE)
 
 
 def retirer_citations(texte):
@@ -47,6 +47,12 @@ def retirer_citations(texte):
     propre = RE_GROUPE.sub("", RE_GROUPE_ENTRE_PARENTHESES.sub("", texte))
     propre = re.sub(r"[ \t]+([.,;:])", r"\1", propre)
     return re.sub(r",([.;:])", r"\1", propre)
+
+
+def fiche_affichable(fiche, source):
+    """Fiche vivante pour l'interface : texte lisible, preuves à part (comme les réponses de Flore)."""
+    return {"sha": fiche["sha"][:12], "contenu": retirer_citations(fiche["contenu"]),
+            "preuves": preuves_depuis(fiche["contenu"], source)}
 
 
 def vers_reponse_flore(jumeau, source, texte, invalides=()):

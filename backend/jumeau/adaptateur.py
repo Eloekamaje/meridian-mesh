@@ -35,13 +35,41 @@ def _motif_route(route):
     return re.compile(rf"""["']{corps}["']""")  # chaîne complète : /items ne se prouve pas par /items/{id}
 
 
+MAX_DECORATEURS = 15  # lignes au-dessus du def où chercher le début des décorateurs
+
+
+def _debut_decorateurs(lignes, ligne_def):
+    """Première ligne du bloc de décorateurs juste au-dessus du def (un décorateur peut tenir sur plusieurs lignes)."""
+    haut = ligne_def - 1
+    while (haut >= 1 and ligne_def - haut <= MAX_DECORATEURS and lignes[haut - 1].strip()
+           and not lignes[haut - 1].lstrip().startswith(("def ", "async def ", "class "))):
+        haut -= 1
+    return next((n for n in range(haut + 1, ligne_def) if lignes[n - 1].lstrip().startswith("@")), ligne_def - 1)
+
+
 def _route(r, lignes):
-    if r["debut"] is None or r["fin"] is None:
+    if r["debut"] is None or r["fin"] is None or r.get("methode") == "ANY":
         return None
-    debut, fin = int(r["debut"]) - 1, int(r["fin"])  # inclut le décorateur au-dessus du def
-    if debut < 1 or fin > len(lignes) or not _motif_route(r["route"]).search("\n".join(lignes[debut - 1:fin])):
+    ligne_def, fin = int(r["debut"]), int(r["fin"])
+    if ligne_def < 2 or fin > len(lignes):
         return None
-    return ("EXPOSE", f"{r['methode']} {r['route']}", "API_USAGE", debut, fin)
+    debut = _debut_decorateurs(lignes, ligne_def)
+    if not _motif_route(r["route"]).search("\n".join(lignes[debut - 1:fin])):
+        return None
+    return ("EXPOSE", f"{r['methode']} {_chemin_complet(r.get('prefixe'), r['route'])}", "API_USAGE", debut, fin)
+
+
+def _chemin_complet(prefixe, route):
+    """Le décorateur porte le chemin local ; le préfixe du routeur (entrée ANY de cbm) donne le chemin exposé."""
+    if not prefixe or route.startswith(prefixe):
+        return route or "/"
+    return prefixe.rstrip("/") + route if route else prefixe
+
+
+def _avec_prefixes(routes):
+    """cbm signale le préfixe de routeur d'un gestionnaire par une entrée « ANY » sur le même fichier et la même ligne."""
+    prefixes = {(r["chemin"], r["debut"]): r["route"] for r in routes if r.get("methode") == "ANY"}
+    return [{**r, "prefixe": prefixes.get((r["chemin"], r["debut"]))} for r in routes]
 
 
 def _jeton(predicat, cle, transformer=lambda v: v, filtre=lambda l: True):
@@ -66,7 +94,8 @@ EXTRACTEURS = {
 def adapter(resultats, lire, depot, sha, sujet):
     claims = {}
     for famille, extraire in EXTRACTEURS.items():
-        for r in resultats.get(famille, []):
+        lignes_resultat = resultats.get(famille, [])
+        for r in (_avec_prefixes(lignes_resultat) if famille == "routes" else lignes_resultat):
             lignes = lire(r["chemin"])
             trouve = extraire(r, lignes) if lignes else None
             if not trouve:
