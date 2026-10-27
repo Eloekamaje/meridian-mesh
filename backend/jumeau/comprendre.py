@@ -60,30 +60,49 @@ def lire_fiche(fiche, titres=PRESENTATION):
     return resultat
 
 
-def clore_sans_preuve(conn, jumeau_id):
-    """Une connaissance proposée vaut tant que sa preuve tient : les lignes citées existent encore, telles quelles,
-    au dernier commit (même déplacées dans le fichier). Sinon elle est close ; celles que l'équipe a revues restent.
-    Un agent qui oublie une réponse d'une passe à l'autre ne détruit donc rien de prouvé."""
-    lignes = conn.execute(
-        """SELECT c.id, p.chemin, p.ligne_debut, p.ligne_fin, p.hash, s.emplacement, s.copie, s.curseur
+def _preuves_des_reponses(conn, jumeau_id, ouvertes):
+    """(id, chemin, début, fin, empreinte, emplacement, copie, curseur) des réponses proposées, ouvertes ou closes."""
+    return conn.execute(
+        f"""SELECT c.id, p.chemin, p.ligne_debut, p.ligne_fin, p.hash, s.emplacement, s.copie, s.curseur
            FROM claim c
            JOIN LATERAL (SELECT p.* FROM claim_preuve cp JOIN preuve p ON p.id = cp.preuve_id
                          WHERE cp.claim_id = c.id ORDER BY p.id DESC LIMIT 1) p ON true
            JOIN source s ON s.id = p.source_id
            WHERE c.jumeau_id = %s AND c.predicat = ANY(%s) AND c.origine = 'CONVERSATION'
-             AND c.statut = 'PROPOSED' AND c.valide_jusqua IS NULL""", (jumeau_id, sorted(PREDICATS))).fetchall()
-    lecteurs, perimees = {}, []
+             AND c.statut = 'PROPOSED' AND c.valide_jusqua IS {"NULL" if ouvertes else "NOT NULL"}""",
+        (jumeau_id, sorted(PREDICATS))).fetchall()
+
+
+def _tiennent(lignes):
+    """Ids dont la preuve tient au dernier commit (lignes identiques, même déplacées dans le fichier)."""
+    lecteurs, tiennent = {}, set()
     for cid, chemin, debut, fin, empreinte, emplacement, copie, curseur in lignes:
         lire = lecteurs.setdefault((copie or emplacement, curseur), lire_au_sha(copie or emplacement, curseur))
         try:
             contenu = lire(chemin)
         except ValueError:
             contenu = None
-        citation = "\n".join(contenu[debut - 1:fin]) if contenu else None
-        tient = contenu is not None and (hashlib.sha256((citation or "").encode()).hexdigest() == empreinte
-                                         or _citation_deplacee(contenu, fin - debut + 1, empreinte))
-        if not tient:
-            perimees.append(cid)
+        if contenu is not None and _citation_deplacee(contenu, fin - debut + 1, empreinte):
+            tiennent.add(cid)
+    return tiennent
+
+
+def rouvrir_prouvees(conn, jumeau_id):
+    """Rouvre les réponses proposées closes dont la preuve tient encore (réparation d'une clôture abusive)."""
+    closes = _preuves_des_reponses(conn, jumeau_id, ouvertes=False)
+    a_rouvrir = sorted(_tiennent(closes))
+    if a_rouvrir:
+        conn.execute("UPDATE claim SET valide_jusqua = NULL WHERE id = ANY(%s)", (a_rouvrir,))
+    return len(a_rouvrir)
+
+
+def clore_sans_preuve(conn, jumeau_id):
+    """Une connaissance proposée vaut tant que sa preuve tient : les lignes citées existent encore, telles quelles,
+    au dernier commit (même déplacées dans le fichier). Sinon elle est close ; celles que l'équipe a revues restent.
+    Un agent qui oublie une réponse d'une passe à l'autre ne détruit donc rien de prouvé."""
+    lignes = _preuves_des_reponses(conn, jumeau_id, ouvertes=True)
+    tiennent = _tiennent(lignes)
+    perimees = [cid for cid, *_ in lignes if cid not in tiennent]
     if perimees:
         conn.execute("UPDATE claim SET valide_jusqua = now() WHERE id = ANY(%s)", (perimees,))
     return len(perimees)

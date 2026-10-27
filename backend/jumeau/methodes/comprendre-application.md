@@ -10,7 +10,8 @@ est la preuve, jamais le propos : pas de nom de route, de bibliothèque ni de va
 ## Enquêter
 
 1. Commencez par mes_connaissances : reprenez mot pour mot les formulations déjà établies (surtout celles
-   marquées ✓, validées par l'équipe) au lieu d'en créer de nouvelles qui diraient la même chose.
+   validées par l'équipe) au lieu d'en créer de nouvelles qui diraient la même chose. Si deux connaissances
+   disent déjà la même chose, fusionnez-les avec fusionner_connaissances en gardant la mieux formulée.
 2. Vue d'ensemble avec architecture, puis cherchez ce qui porte le métier : écrans et parcours, modèles de
    données, contrôles et refus, appels vers d'autres systèmes, documents produit (README, cahier des charges).
 3. Lisez avec lire_code les lignes qui prouvent chaque réponse ; historique_du_code pour la façon dont elle vit.
@@ -31,6 +32,13 @@ un objet d'une ligne (12 mots au plus) et les lignes lues qui le prouvent :
 7. **Ce que l'on ne sait pas encore** : ce que ni le code ni l'équipe ne disent, et qui pourrait le dire.
 
 Une réponse sans preuve lue ne se propose pas : elle va dans « Ce que l'on ne sait pas encore ».
+
+## Consolider
+
+Quand on vous donne la liste des connaissances d'une question, fusionnez avec fusionner_connaissances toutes
+celles qui disent la même chose, même avec d'autres mots ou un détail en plus : une seule réponse par idée.
+Gardez la connaissance validée par l'équipe s'il y en a une, sinon la plus courte qui dit tout en mots métier.
+Ne fusionnez pas deux idées différentes qui se ressemblent (« recueillir » et « retirer » un consentement).
 
 ## Fiche vivante
 

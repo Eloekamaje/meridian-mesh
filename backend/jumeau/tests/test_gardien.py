@@ -148,3 +148,33 @@ def test_une_passe_ratee_n_arrete_pas_la_surveillance(monkeypatch):
     monkeypatch.setattr(gardien, "veiller", veiller_capricieux)
     asyncio.run(gardien.surveiller(contextlib.nullcontext, None, "tbt", "/d", intervalle=0, passes=2))
     assert len(passes) == 2
+
+
+def test_mots_lus_sans_les_citations():
+    from jumeau import gardien
+    assert gardien.mots("Une maquette `memory/PRD.md#L4-L4` de suivi `app.py#L3`.") == 4
+
+
+def test_consolidation_donne_a_l_agent_la_liste_par_question(monkeypatch):
+    import asyncio
+    from jumeau import gardien
+    lignes = [{"id": 1, "predicat": "REALISE_CAPACITE", "objet": "Saisir hors ligne", "statut": "ACCEPTED"},
+              {"id": 2, "predicat": "REALISE_CAPACITE", "objet": "Saisir un dossier hors ligne", "statut": "PROPOSED"},
+              {"id": 3, "predicat": "DETIENT", "objet": "Les dossiers", "statut": "PROPOSED"},
+              {"id": 4, "predicat": "DEPEND_DE", "objet": "fastapi", "statut": "PROPOSED"}]
+    recu = []
+
+    class Agent:
+        async def invoke_async(self, texte):
+            recu.append(texte)
+
+    class Connexion:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    monkeypatch.setattr(gardien.psycopg, "connect", lambda dsn: Connexion())
+    monkeypatch.setattr(gardien.connaissance, "connaissances", lambda conn, jid, limite: lignes)
+    monkeypatch.setattr(gardien.agent, "construire", lambda *a, **k: Agent())
+    asyncio.run(gardien.consolider({"jumeau": {"id": "x"}}, "dsn"))
+    assert "- 1 (validée) : Saisir hors ligne" in recu[0] and "- 2 (proposed) : Saisir un dossier hors ligne" in recu[0]
+    assert "Les dossiers" not in recu[0] and "fastapi" not in recu[0]  # une seule réponse : rien à fusionner

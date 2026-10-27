@@ -41,6 +41,41 @@ SCORES = {"haute": 82, "normale": 64, "basse": 48}
 CONSIGNE_FICHE = """Rédige la fiche vivante de l'application en appliquant la méthode comprendre-application
 (consulter_methode) : enquête, propose les connaissances prouvées, puis réponds uniquement par la fiche."""
 
+MOTS_FICHE = 300                 # méthode comprendre-application, « Fiche vivante »
+MAX_MOTS_FICHE = MOTS_FICHE + 30  # tolérance avant de demander une révision
+
+
+def mots(fiche):
+    """Mots lus par un employé : sans les citations, qui partent dans le volet des preuves."""
+    return sum(1 for m in re.sub(r"`[^`]*#L\d+[^`]*`", "", fiche or "").split() if re.search(r"\w", m))
+
+
+CONSIGNE_CONSOLIDER = """Applique la section « Consolider » de la méthode comprendre-application aux connaissances
+ci-dessous (identifiant, statut, formulation), question par question. Quand tu as fini, réponds « fait ».
+
+{liste}"""
+# Une consolidation peut fusionner beaucoup de doublons (après une réparation, une méthode qui a changé).
+BUDGET_CONSOLIDATION = {"outils": 80, "propositions": 80}
+
+
+async def consolider(ctx, dsn):
+    """L'agent fusionne les connaissances qui disent la même chose ; le harness lui donne la liste par question."""
+    with psycopg.connect(dsn) as conn:
+        claims = [c for c in connaissance.connaissances(conn, ctx["jumeau"]["id"], limite=1000)
+                  if c["predicat"] in comprendre.PREDICATS]
+    blocs = []
+    for _, titre, predicat, _ in comprendre.QUESTIONS:
+        liste = [c for c in claims if c["predicat"] == predicat]
+        if len(liste) > 1:
+            blocs.append(f"## {titre}\n" + "\n".join(
+                f"- {c['id']} ({'validée' if c['statut'] == 'ACCEPTED' else c['statut'].lower()}) : {c['objet']}"
+                for c in liste))
+    if not blocs:
+        return
+    a = agent.construire(ctx, dsn, session=None, budget=agent.Budget(**BUDGET_CONSOLIDATION))
+    await a.invoke_async(CONSIGNE_CONSOLIDER.format(liste="\n\n".join(blocs)))
+
+
 # Une passe du gardien enquête sur toute l'application : plus d'outils et de propositions qu'une réponse de Flore.
 BUDGET_PASSE = {"outils": 60, "propositions": 30}
 
@@ -137,6 +172,13 @@ async def _rediger(ctx, dsn, sigs, commits):
             [f"Citations introuvables : {', '.join(invalides)}. Corrige-les avec lire_code ou retire l'affirmation."]
         ))).strip()
         fiche = contradicteur.retirer_citations_invalides(fiche, contradicteur.citations_invalides(fiche, ctx["sources"]))
+    if mots(fiche) > MAX_MOTS_FICHE:  # une fiche trop longue perd le lecteur : une révision, comme pour les citations
+        courte = str(await a.invoke_async(
+            f"Ta fiche fait {mots(fiche)} mots ; la méthode en demande {MOTS_FICHE} au plus. Raccourcis-la sans changer "
+            "ses sections ni ses citations ; réponds uniquement par la fiche.")).strip()
+        if mots(courte) < mots(fiche) and not contradicteur.citations_invalides(courte, ctx["sources"]):
+            fiche = courte
+    await consolider(ctx, dsn)  # après l'enquête : une seule réponse par idée
     recit = None
     if sigs:
         recit = str(await a.invoke_async(CONSIGNE_RECIT.format(

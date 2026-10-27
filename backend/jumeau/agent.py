@@ -18,7 +18,7 @@ from strands import Agent, tool
 from strands.session.file_session_manager import FileSessionManager
 from strands.session.s3_session_manager import S3SessionManager
 
-from jumeau import cbm, connaissance, methodes, temps
+from jumeau import cbm, connaissance, depot, methodes, temps
 
 SESSIONS = Path(os.environ.get("JUMEAU_SESSIONS", Path.home() / ".local/share/meridian/sessions"))
 MAX_SORTIE = 6000  # caractères renvoyés au modèle par outil
@@ -280,6 +280,31 @@ def outils(ctx, dsn, nom_modele, budget):
             return "Proposition impossible pour le moment."
 
     @tool
+    def fusionner_connaissances(garder: int, retirer: int, raison: str) -> str:
+        """Fusionne deux connaissances qui disent la même chose : `retirer` disparaît, ses preuves passent à `garder`.
+
+        Seulement deux réponses à la même question (même prédicat) ; une connaissance validée par l'équipe se garde,
+        elle ne se retire jamais.
+
+        Args:
+            garder: identifiant de la connaissance à garder (la mieux formulée, ou celle validée par l'équipe).
+            retirer: identifiant de la connaissance redondante.
+            raison: pourquoi elles disent la même chose.
+        """
+        if not budget.outil() or not budget.proposition():
+            return "Plafond de cette réponse atteint."
+        try:
+            with psycopg.connect(dsn, autocommit=True) as conn:
+                depot.fusionner(conn, jumeau["id"], int(garder), int(retirer))
+            journal.info("fusion %s ← %s : %s", garder, retirer, raison[:200])
+            return f"Connaissance {retirer} fusionnée dans {garder}."
+        except ValueError as e:
+            return f"Fusion refusée : {e}"
+        except psycopg.Error:
+            journal.exception("fusionner_connaissances")
+            return "Fusion impossible pour le moment."
+
+    @tool
     def historique_du_code(depuis: str = "", chemin: str = "", depot: str = "") -> list:
         """Historique des changements du code jusqu'au commit ingéré : date, auteur, message (le pourquoi), dépôt.
 
@@ -322,7 +347,7 @@ def outils(ctx, dsn, nom_modele, budget):
         return methodes.lire(nom) or f"Méthode inconnue. Disponibles : {', '.join(m['nom'] for m in methodes.catalogue())}"
 
     return [mes_connaissances, architecture, chercher_texte, chercher_symbole, tracer_appels, lire_code,
-            proposer_connaissance, consulter_methode, historique_du_code, ce_qui_a_change]
+            proposer_connaissance, fusionner_connaissances, consulter_methode, historique_du_code, ce_qui_a_change]
 
 
 def historique_fusionne(sources, depuis="", chemin=""):

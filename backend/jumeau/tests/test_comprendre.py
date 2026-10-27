@@ -59,3 +59,36 @@ def test_une_reponse_vaut_tant_que_sa_preuve_tient(conn, depot_git):
     assert comprendre.clore_sans_preuve(conn, "tbt") == 1
     restants = {c["objet"] for c in depot.lister_claims(conn, "tbt") if c["predicat"] in comprendre.PREDICATS}
     assert restants == {"Gérer les dossiers", "Payer"}  # déplacée mais intacte ; validée par l'équipe
+
+
+@besoin_pg
+def test_fusion_de_deux_connaissances_qui_disent_la_meme_chose(conn, depot_git):
+    import pytest
+    source = {"nom": "tbt-repo", "type": "GIT", "emplacement": str(depot_git), "curseur": sha_courant(depot_git)}
+    depot.enregistrer(conn, JUMEAU, source, [claim("fastapi", source["curseur"], 1)], ACTIVITE)
+    src = depot.source_du_jumeau(conn, "tbt")
+    def proposer(objet, debut, predicat="REALISE_CAPACITE"):
+        return connaissance.proposer(conn, JUMEAU, src, predicat, objet, "CAPABILITY", "app.py", debut, debut,
+                                     "preuve", "gardien", "m")
+    garder, retirer = proposer("Gérer les dossiers", 10), proposer("Gérer les dossiers des personnes", 11)
+    autre = proposer("Double approbation", 12, "APPLIQUE_REGLE")
+    depot.fusionner(conn, "tbt", garder, retirer)
+    restants = {c["objet"]: c for c in depot.lister_claims(conn, "tbt") if c["predicat"] in comprendre.PREDICATS}
+    assert set(restants) == {"Gérer les dossiers", "Double approbation"}
+    assert len(restants["Gérer les dossiers"]["preuves"]) == 2  # la preuve de la connaissance retirée est gardée
+    with pytest.raises(ValueError):
+        depot.fusionner(conn, "tbt", garder, autre)  # pas la même question
+    depot.reviser(conn, garder, "alice", "ACCEPTED", None)
+    with pytest.raises(ValueError):
+        depot.fusionner(conn, "tbt", autre, garder)  # une connaissance validée par l'équipe ne se retire pas
+
+
+@besoin_pg
+def test_reouverture_de_ce_qui_reste_prouve(conn, depot_git):
+    source = {"nom": "tbt-repo", "type": "GIT", "emplacement": str(depot_git), "curseur": sha_courant(depot_git)}
+    depot.enregistrer(conn, JUMEAU, source, [claim("fastapi", source["curseur"], 1)], ACTIVITE)
+    src = depot.source_du_jumeau(conn, "tbt")
+    cid = connaissance.proposer(conn, JUMEAU, src, "DETIENT", "Les dossiers", "DATA_FLOW", "app.py", 3, 4, "p", "g", "m")
+    conn.execute("UPDATE claim SET valide_jusqua = now() WHERE id = %s", (cid,))
+    assert comprendre.rouvrir_prouvees(conn, "tbt") == 1
+    assert "Les dossiers" in {c["objet"] for c in depot.lister_claims(conn, "tbt")}

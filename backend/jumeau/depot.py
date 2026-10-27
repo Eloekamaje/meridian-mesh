@@ -93,14 +93,32 @@ def enregistrer_proposition(conn, jumeau, source_id, c, preuve, activite):
         cid = conn.execute(
             "INSERT INTO claim (tenant_id, jumeau_id, sujet, predicat, objet, type, confiance, maturite, origine) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s, 'M1', 'CONVERSATION') "
-            "ON CONFLICT (jumeau_id, predicat, objet) DO UPDATE SET objet = EXCLUDED.objet "
-            "WHERE claim.origine = 'CONVERSATION' RETURNING id",
+            "ON CONFLICT (jumeau_id, predicat, objet) DO UPDATE SET objet = EXCLUDED.objet, valide_jusqua = NULL "
+            "WHERE claim.origine = 'CONVERSATION' RETURNING id",  # reproposée avec une preuve : de nouveau valable
             (t, jumeau["id"], c["sujet"], c["predicat"], c["objet"], c["type"], c["confiance"])).fetchone()
         if not cid:
             raise ValueError("cette connaissance est déjà établie par l'extraction du code")
         cid = cid[0]
         _lier_preuve(conn, t, source_id, cid, preuve, activite)
     return cid
+
+
+def fusionner(conn, jumeau_id, garder, retirer):
+    """Deux connaissances qui disent la même chose : `retirer` est close et ses preuves passent à `garder`.
+    Seule une proposition non revue peut être retirée, et seulement au profit d'une connaissance de même prédicat."""
+    with conn.transaction():
+        lignes = {r[0]: r[1:] for r in conn.execute(
+            "SELECT id, predicat, statut, origine FROM claim WHERE jumeau_id = %s AND id = ANY(%s) "
+            "AND valide_jusqua IS NULL FOR UPDATE", (jumeau_id, [garder, retirer])).fetchall()}
+        if garder == retirer or len(lignes) != 2:
+            raise ValueError("deux connaissances valides et distinctes de ce jumeau sont attendues")
+        if lignes[garder][0] != lignes[retirer][0]:
+            raise ValueError("on ne fusionne que deux réponses à la même question (même prédicat)")
+        if lignes[retirer][1:] != ("PROPOSED", "CONVERSATION"):
+            raise ValueError("seule une proposition non revue par l'équipe peut être retirée")
+        conn.execute("INSERT INTO claim_preuve (claim_id, preuve_id) SELECT %s, preuve_id FROM claim_preuve "
+                     "WHERE claim_id = %s ON CONFLICT DO NOTHING", (garder, retirer))
+        conn.execute("UPDATE claim SET valide_jusqua = now() WHERE id = %s", (retirer,))
 
 
 def sources_du_jumeau(conn, jumeau_id):
