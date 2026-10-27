@@ -1077,6 +1077,8 @@ async def _github(cid: str, sid: str, appel, *args):
 async def _appel_github(cid: str, appel, reference, *args):
     try:
         return await asyncio.to_thread(appel, reference, *args)
+    except jumeau_github.TropDeDemandes as e:
+        raise HTTPException(429, str(e))
     except jumeau_github.JetonRefuse:
         raise HTTPException(401, "GitHub refuse ce jeton : vérifiez-le ou ses droits de lecture")
     except jumeau_github.Invalide as e:
@@ -1111,6 +1113,7 @@ async def github_jeton(cid: str, sid: str, payload: JetonGithub):
     except (RuntimeError, OSError) as e:
         logger.warning("commande %s : jeton non déposé dans Vault (%s)", cid, type(e).__name__)
         raise HTTPException(503, "Coffre de secrets indisponible : jeton non enregistré")
+    jumeau_github.oublier(reference)
     await db.commandes.update_one({"id": cid, "sources.id": sid}, {"$set": {"sources.$.config.secret": reference}})
     return {"reference": reference, **compte}
 

@@ -56,3 +56,36 @@ def test_jeton_refuse_ou_absent(forge):
         github.compte(None)
     with pytest.raises(github.Invalide):  # un retour à la ligne finirait cité dans une erreur d'en-tête HTTP
         github.compte_du_jeton("ghp_x\nInjecte: 1")
+
+
+@pytest.fixture(autouse=True)
+def memoire_vide():
+    github._cache.clear()
+    github._appels.clear()
+
+
+def test_la_frappe_ne_rappelle_pas_github(forge):
+    reponses, envoyees = forge
+    reponses["/user/repos"] = [depot("banque/paie-api"), depot("banque/crm")]
+    for saisie in ("p", "pa", "pai", "paie"):
+        assert [d["nom"] for d in github.depots("vault:r", saisie)] == ["banque/paie-api"]
+    assert len(envoyees) == 1  # une seule lecture de la liste, filtrée ensuite sur le serveur
+
+
+def test_debit_limite_par_jeton(forge, monkeypatch):
+    reponses, _ = forge
+    reponses["/repos/banque/paie/branches"] = [{"name": "main"}]
+    monkeypatch.setattr(github, "CACHE_SECONDES", 0)  # chaque appel va jusqu'à GitHub
+    for _ in range(github.MAX_APPELS_MINUTE):
+        github.branches("vault:r", "banque/paie")
+    with pytest.raises(github.TropDeDemandes):
+        github.branches("vault:r", "banque/paie")
+
+
+def test_nouveau_jeton_oublie_les_reponses_de_l_ancien(forge):
+    reponses, envoyees = forge
+    reponses["/user/repos"] = [depot("banque/a")]
+    github.depots("vault:r")
+    github.oublier("vault:r")
+    reponses["/user/repos"] = [depot("banque/b")]
+    assert [d["nom"] for d in github.depots("vault:r")] == ["banque/b"]
