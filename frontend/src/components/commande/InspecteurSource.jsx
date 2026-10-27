@@ -23,10 +23,11 @@ export default function InspecteurSource({ source, connecteur, onChange, onTeste
         </select>
       ) : (
         <input
-          type={c.type === "nombre" ? "number" : "text"}
+          type={c.type === "nombre" ? "number" : c.type === "secret" ? "password" : "text"}
+          autoComplete={c.type === "secret" ? "off" : undefined}
           value={source.config?.[c.cle] ?? ""}
           onChange={(e) => onChange(source.id, { config: { ...source.config, [c.cle]: c.type === "nombre" ? Number(e.target.value) : e.target.value } })}
-          placeholder={c.type === "liste" ? "valeur1, valeur2…" : c.type === "secret" ? "vault:meridian/…#jeton" : ""}
+          placeholder={c.type === "liste" ? "valeur1, valeur2…" : c.type === "secret" ? "Collez le jeton : il est déposé dans Vault, jamais conservé ici" : ""}
           data-testid={`insp-${c.cle}`}
           className="mt-1 w-full rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-3 py-2 text-xs text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#60A5FA]/60 focus:outline-none"
         />

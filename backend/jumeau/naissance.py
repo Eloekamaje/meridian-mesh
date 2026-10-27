@@ -64,6 +64,34 @@ def branche(config):
     return nom
 
 
+def _vault(chemin, donnees=None):
+    """Lecture (ou écriture si `donnees`) d'un secret KV v2 sous le préfixe de Méridian."""
+    if not chemin.startswith(PREFIXE_VAULT) or ".." in chemin.split("/") or not re.fullmatch(r"[\w./-]+", chemin):
+        raise RuntimeError(f"chemin Vault non autorisé (préfixe {PREFIXE_VAULT} requis)")
+    adresse = os.environ.get("VAULT_ADDR", "")
+    if not adresse.startswith(("https://", "http://127.0.0.1")) or not os.environ.get("VAULT_TOKEN"):
+        raise RuntimeError("Vault non configuré (VAULT_ADDR en https, VAULT_TOKEN)")
+    montage = os.environ.get("VAULT_KV_MONTAGE", "secret")
+    corps = json.dumps({"data": donnees}).encode() if donnees is not None else None
+    requete = urllib.request.Request(f"{adresse}/v1/{montage}/data/{quote(chemin)}", data=corps,
+                                     headers={"X-Vault-Token": os.environ["VAULT_TOKEN"],
+                                              "Content-Type": "application/json"})
+    with urllib.request.urlopen(requete, timeout=10) as r:
+        return json.load(r)["data"]
+
+
+def proteger_secrets(config, cles, chemin):
+    """Un jeton saisi en clair dans l'interface est déposé dans Vault ; la configuration n'en garde que la
+    référence (jamais le jeton en base, ni dans les réponses de l'API)."""
+    sortie = dict(config)
+    for cle in cles:
+        valeur = (sortie.get(cle) or "").strip()
+        if valeur and not valeur.startswith(("env:", "vault:")):
+            _vault(f"{PREFIXE_VAULT}commandes/{chemin}", {"jeton": valeur})
+            sortie[cle] = f"vault:{PREFIXE_VAULT}commandes/{chemin}#jeton"
+    return sortie
+
+
 def resoudre_secret(reference):
     """Jeton d'accès depuis sa référence : `env:NOM` (poste de développement) ou `vault:chemin#clé` (Vault KV v2).
 
@@ -78,16 +106,7 @@ def resoudre_secret(reference):
             raise RuntimeError(f"variable non autorisée ou absente (préfixe {PREFIXE_ENV} requis)")
         return os.environ[nom]
     chemin, _, cle = (reference[6:] if reference.startswith("vault:") else reference).partition("#")
-    if not chemin.startswith(PREFIXE_VAULT) or ".." in chemin.split("/") or not re.fullmatch(r"[\w./-]+", chemin):
-        raise RuntimeError(f"chemin Vault non autorisé (préfixe {PREFIXE_VAULT} requis)")
-    adresse = os.environ.get("VAULT_ADDR", "")
-    if not adresse.startswith(("https://", "http://127.0.0.1")) or not os.environ.get("VAULT_TOKEN"):
-        raise RuntimeError("Vault non configuré (VAULT_ADDR en https, VAULT_TOKEN)")
-    montage = os.environ.get("VAULT_KV_MONTAGE", "secret")
-    requete = urllib.request.Request(f"{adresse}/v1/{montage}/data/{quote(chemin)}",
-                                     headers={"X-Vault-Token": os.environ["VAULT_TOKEN"]})
-    with urllib.request.urlopen(requete, timeout=10) as r:
-        return json.load(r)["data"]["data"][cle or "jeton"]
+    return _vault(chemin)["data"][cle or "jeton"]
 
 
 def env_git(jeton):

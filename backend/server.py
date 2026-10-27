@@ -1017,11 +1017,26 @@ async def maj_commande(cid: str, payload: CommandePatch):
     patch = {k: v for k, v in payload.model_dump().items() if v is not None}
     if not patch:
         return {"ok": True}
+    if patch.get("sources"):
+        # Un jeton collé dans l'interface part dans Vault ; la commande n'en garde que la référence
+        try:
+            patch["sources"] = [await asyncio.to_thread(_proteger_source, cid, s) for s in patch["sources"]]
+        except (RuntimeError, OSError) as e:
+            logger.warning("commande %s : secret non déposé dans Vault (%s)", cid, e)
+            raise HTTPException(503, "Coffre de secrets indisponible : jeton non enregistré")
     patch["maj_le"] = datetime.now(timezone.utc).isoformat()
     res = await db.commandes.update_one({"id": cid}, {"$set": patch})
     if res.matched_count == 0:
         raise HTTPException(404, "Commande introuvable")
     return {"ok": True, "maj_le": patch["maj_le"]}
+
+
+def _proteger_source(cid, source):
+    conn = next((c for c in CONNECTEURS if c["id"] == source.get("connecteur")), None)
+    cles = [ch["cle"] for ch in (conn["champs"] if conn else []) if ch.get("type") == "secret"]
+    if not cles or not isinstance(source.get("config"), dict):
+        return source
+    return {**source, "config": jumeau_naissance.proteger_secrets(source["config"], cles, f"{cid}/{source.get('id', 'source')}")}
 
 
 def _simuler_test(source):

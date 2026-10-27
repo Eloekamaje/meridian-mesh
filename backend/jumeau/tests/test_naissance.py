@@ -242,3 +242,14 @@ def test_deux_depots_homonymes_refuses():
         {"connecteur": "github", "statut": "prete", "config": {"organisation": "b", "depots": "api@develop"}}]}
     with pytest.raises(ValueError, match="même nom"):
         naissance.sources_de_code(commande)
+
+
+@pytest.mark.skipif(not os.environ.get("VAULT_TOKEN"), reason="Vault local requis")
+def test_jeton_colle_depose_dans_vault_et_remplace_par_sa_reference():
+    config = {"organisation": "o", "depots": "d", "secret": "ghp_jeton_de_test"}
+    proteges = naissance.proteger_secrets(config, ["secret"], "cmd-test/src-1")
+    assert proteges["secret"] == "vault:meridian/commandes/cmd-test/src-1#jeton"
+    assert naissance.resoudre_secret(proteges["secret"]) == "ghp_jeton_de_test"
+    # Une référence déjà posée n'est pas réécrite ; une valeur vide reste vide.
+    assert naissance.proteger_secrets(proteges, ["secret"], "cmd-test/src-1") == proteges
+    assert naissance.proteger_secrets({"secret": ""}, ["secret"], "x/y") == {"secret": ""}
