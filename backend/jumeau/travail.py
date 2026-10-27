@@ -3,6 +3,7 @@
 Mêmes formes que les routes de cases_routes.py (questions, hypothèses, options, livrables, résumé) : ce que Flore
 écrit apparaît dans l'interface existante du Travail. Chaque écriture laisse une trace dans l'historique.
 """
+import uuid
 from datetime import datetime, timezone
 
 RISQUES = ("faible", "moyen", "eleve")
@@ -17,6 +18,12 @@ def _texte(valeur, limite):
 
 
 class EcritureTravail:
+    """Écritures de Flore dans un Travail : identifiants uniques, doublons ignorés, quantités bornées.
+
+    Les ajouts passent par $push (atomique) : Flore peut écrire pendant qu'un membre ajoute lui aussi au Travail.
+    """
+    MAX_ETAPES = 12  # par appel de planifier
+
     def __init__(self, db, cid):
         self.db, self.cid = db, cid
 
@@ -30,14 +37,17 @@ class EcritureTravail:
         await self.db.cases.update_one({"id": self.cid}, modification)
 
     async def planifier(self, etapes, prochaine_etape):
-        """Ajoute les étapes (questions à lever) absentes ; garde celles qui existent, résolues ou non."""
-        questions = list((await self.etat()).get("questions", []))
-        connues = {q["texte"] for q in questions}
-        questions += [{"texte": t, "resolue": False} for t in (_texte(e, MAX_TEXTE) for e in etapes) if t not in connues]
-        modification = {"$set": {"questions": questions}}
+        """Ajoute les étapes (questions à lever) absentes, sans toucher aux existantes, résolues ou non."""
+        connues = {q["texte"] for q in (await self.etat()).get("questions", [])}
+        nouvelles = []
+        for texte in (_texte(e, MAX_TEXTE) for e in etapes[:self.MAX_ETAPES]):
+            if texte not in connues:
+                connues.add(texte)
+                nouvelles.append({"texte": texte, "resolue": False})
+        modification = {"$push": {"questions": {"$each": nouvelles}}} if nouvelles else {}
         if prochaine_etape and prochaine_etape.strip():
-            modification["$set"]["prochaine_etape"] = prochaine_etape.strip()[:MAX_TEXTE]
-        await self._ecrire(modification, f"Plan mis à jour par Flore — {len(questions)} étape(s)")
+            modification["$set"] = {"prochaine_etape": prochaine_etape.strip()[:MAX_TEXTE]}
+        await self._ecrire(modification, f"Plan mis à jour par Flore — {len(nouvelles)} étape(s) ajoutée(s)")
 
     async def resoudre(self, etape):
         r = await self.db.cases.update_one({"id": self.cid, "questions.texte": etape},
@@ -46,29 +56,44 @@ class EcritureTravail:
             await self._ecrire({}, f"Étape levée par Flore — {etape[:80]}")
         return bool(r.matched_count)
 
+    async def _ajouter(self, liste, cle, element, trace):
+        """Ajoute `element` à `liste` sauf si un élément de même `cle` existe : renvoie celui qui fait foi."""
+        existant = next((e for e in (await self.etat()).get(liste, []) if e.get(cle) == element[cle]), None)
+        if existant:
+            return existant
+        await self._ecrire({"$push": {liste: element}}, trace)
+        return element
+
     async def hypothese(self, texte):
-        n = len((await self.etat()).get("hypotheses", [])) + 1
-        hyp = {"id": f"hyp-{n}", "texte": _texte(texte, MAX_TEXTE), "statut": "a_valider",
+        hyp = {"id": _identifiant("hyp"), "texte": _texte(texte, MAX_TEXTE), "statut": "a_valider",
                "quand": datetime.now(timezone.utc).isoformat()}
-        await self._ecrire({"$push": {"hypotheses": hyp}}, f"Hypothèse proposée par Flore — {hyp['texte'][:80]}")
-        return hyp
+        return await self._ajouter("hypotheses", "texte", hyp, f"Hypothèse proposée par Flore — {hyp['texte'][:80]}")
 
     async def option(self, titre, description, risque):
-        n = len((await self.etat()).get("options", [])) + 1
-        opt = {"id": f"opt-{n}", "titre": _texte(titre, MAX_TITRE), "description": (description or "")[:MAX_CONTENU],
+        opt = {"id": _identifiant("opt"), "titre": _texte(titre, MAX_TITRE), "description": (description or "")[:MAX_CONTENU],
                "impacts": [], "risque": risque if risque in RISQUES else "moyen", "statut": "a_evaluer"}
-        await self._ecrire({"$push": {"options": opt}}, f"Option proposée par Flore — {opt['titre']}")
-        return opt
+        return await self._ajouter("options", "titre", opt, f"Option proposée par Flore — {opt['titre']}")
 
     async def livrable(self, titre, contenu):
-        n = len((await self.etat()).get("livrables", [])) + 1
-        liv = {"id": f"liv-{n}", "titre": _texte(titre, MAX_TITRE), "contenu": _texte(contenu, MAX_CONTENU * 4),
-               "cree_le": datetime.now(timezone.utc).isoformat()}
-        await self._ecrire({"$push": {"livrables": liv}}, f"Livrable produit par Flore — {liv['titre']}")
+        """Un livrable de même titre est mis à jour (nouvelle version), jamais dupliqué."""
+        titre, contenu = _texte(titre, MAX_TITRE), _texte(contenu, MAX_CONTENU * 4)
+        now = datetime.now(timezone.utc).isoformat()
+        r = await self.db.cases.update_one({"id": self.cid, "livrables.titre": titre},
+                                           {"$set": {"livrables.$.contenu": contenu, "livrables.$.cree_le": now}})
+        if r.matched_count:
+            await self._ecrire({}, f"Livrable mis à jour par Flore — {titre}")
+            return {"titre": titre, "contenu": contenu, "cree_le": now}
+        liv = {"id": _identifiant("liv"), "titre": titre, "contenu": contenu, "cree_le": now}
+        await self._ecrire({"$push": {"livrables": liv}}, f"Livrable produit par Flore — {titre}")
         return liv
 
     async def resume(self, texte):
         await self._ecrire({"$set": {"resume": _texte(texte, MAX_CONTENU)}}, "Résumé actualisé par Flore")
+
+
+def _identifiant(prefixe):
+    # Pas de « len + 1 » : deux écritures concurrentes ou une suppression produiraient des doublons.
+    return f"{prefixe}-{uuid.uuid4().hex[:8]}"
 
 
 def etat_texte(case):

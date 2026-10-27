@@ -57,7 +57,7 @@ def test_hypothese_option_livrable_et_resume_au_format_des_travaux():
         l = await e.livrable("Fiche d'impact", "Trois appelants…")
         await e.resume("Deux appelants identifiés.")
         c = await db.cases.find_one({"id": "t1"})
-        assert c["hypotheses"] == [h] and h["statut"] == "a_valider" and h["id"] == "hyp-1"
+        assert c["hypotheses"] == [h] and h["statut"] == "a_valider" and h["id"].startswith("hyp-")
         assert c["options"] == [o] and o["statut"] == "a_evaluer" and o["risque"] == "faible"
         assert c["livrables"] == [l] and l["titre"] == "Fiche d'impact"
         assert c["resume"] == "Deux appelants identifiés."
@@ -82,3 +82,35 @@ def test_etat_texte_resume_le_travail_pour_le_contexte_de_flore():
     for attendu in ("Mesurer l'impact", "[x] Qui appelle TBT ?", "[ ] Quelles données ?", "Seul le portail",
                     "Retrait progressif", "Fiche d'impact", "Tracer"):
         assert attendu in texte
+
+
+def test_identifiants_uniques_et_doublons_ignores():
+    async def test(e, db):
+        await db.cases.update_one({"id": "t1"}, {"$push": {"hypotheses": {"id": "hyp-1", "texte": "ajoutée à la main"}}})
+        h1 = await e.hypothese("Seul le portail appelle TBT")
+        h2 = await e.hypothese("Seul le portail appelle TBT")
+        o1 = await e.option("Retrait progressif", "", "faible")
+        o2 = await e.option("Retrait progressif", "autre texte", "faible")
+        c = await db.cases.find_one({"id": "t1"})
+        ids = [h["id"] for h in c["hypotheses"]]
+        assert len(ids) == len(set(ids)) == 2 and h1 == h2 and o1 == o2 and len(c["options"]) == 1
+    avec_travail(test)
+
+
+def test_un_livrable_de_meme_titre_est_mis_a_jour_pas_duplique():
+    async def test(e, db):
+        await e.livrable("Fiche d'impact", "v1")
+        await e.livrable("Fiche d'impact", "v2")
+        c = await db.cases.find_one({"id": "t1"})
+        assert [l["contenu"] for l in c["livrables"]] == ["v2"]
+    avec_travail(test)
+
+
+def test_planifier_n_ecrase_pas_une_question_ajoutee_entre_temps_et_borne_les_etapes():
+    async def test(e, db):
+        await db.cases.update_one({"id": "t1"}, {"$push": {"questions": {"texte": "Ajoutée par l'équipe", "resolue": False}}})
+        await e.planifier([f"Étape {n}" for n in range(30)], "")
+        c = await db.cases.find_one({"id": "t1"})
+        textes = [q["texte"] for q in c["questions"]]
+        assert "Ajoutée par l'équipe" in textes and len(textes) == 2 + EcritureTravail.MAX_ETAPES
+    avec_travail(test)

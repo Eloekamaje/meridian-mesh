@@ -9,7 +9,7 @@ import re
 
 import psycopg
 
-from jumeau import agent, connaissance, contradicteur, depot
+from jumeau import agent, connaissance, contradicteur, depot, gardien
 from jumeau.connaissance import RE_CITATION
 from jumeau.travail import EcritureTravail, etat_texte
 
@@ -84,7 +84,9 @@ def _contexte(jumeau_id, acteur, profil):
         if not jumeau or not source or not source["index_code"]:
             return None, None
         claims = connaissance.connaissances(conn, jumeau_id, limite=500)
-    return {"jumeau": jumeau, "source": source, "claims": claims, "acteur": acteur, "profil": profil}, dsn
+        fiche = gardien.fiche_courante(conn, jumeau_id)
+    return {"jumeau": jumeau, "source": source, "claims": claims, "acteur": acteur, "profil": profil,
+            "fiche": fiche["contenu"] if fiche else None}, dsn
 
 
 def _indisponible(nom, raison):

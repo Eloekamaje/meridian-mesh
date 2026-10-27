@@ -45,3 +45,8 @@ def test_citation_invalide_epargne_l_appel_au_relecteur(depot_git, monkeypatch):
     monkeypatch.setattr(contradicteur, "_juger", juge)
     asyncio.run(contradicteur.relire("q", "Voir `absent.py#L1`.", source_de(depot_git), {}, modele=None))
     assert appels == []
+
+
+def test_citations_invalides_retirees_du_texte():
+    texte = "A `a.py#L1` et B `absent.py#L3-L4`, puis C git://d@abc1234:absent.py#L3-L4."
+    assert contradicteur.retirer_citations_invalides(texte, ["absent.py#L3-L4"]) == "A `a.py#L1` et B, puis C."

@@ -66,3 +66,13 @@ def test_evolution_des_connaissances_depuis_une_date(conn):
     e = temps.evolution(conn, "tbt", "2026-10-01")
     assert [c["objet"] for c in e["apparus"]] == ["motor"]
     assert [c["objet"] for c in e["disparus"]] == ["fastapi"]
+
+
+def test_historique_reecrit_on_repart_du_debut(histoire, depot_git):
+    source, sha_regle, sha_api, _ = histoire
+    subprocess.run(["git", "-C", str(depot_git), "checkout", "-q", "-b", "autre", sha_regle], check=True)
+    sha_branche = commit(depot_git, "autre.py", "y = 2\n", "Branche réécrite", "2026-10-05T10:00:00")
+    source_reecrite = {**source, "curseur": sha_branche}
+    messages = [c["message"] for c in temps.commits_entre(source_reecrite, sha_api, sha_branche)]
+    assert messages[0] == "Branche réécrite" and "Expose les virements" not in messages
+    assert temps.commits_entre(source, "0" * 40, sha_api)  # version disparue : pas d'erreur

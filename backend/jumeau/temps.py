@@ -59,6 +59,9 @@ def commits_entre(source, de, a):
     for sha in filter(None, (de, a)):
         if not SHA_VALIDE.fullmatch(sha):
             raise ValueError(f"version invalide : {sha!r}")
+    if de and subprocess.run(["git", "-C", source["emplacement"], "merge-base", "--is-ancestor", de, a],
+                             capture_output=True, timeout=30).returncode != 0:
+        de = None  # historique réécrit ou version disparue : on repart du début, plutôt qu'une plage sans rapport
     plage = f"{de}..{a}" if de else a
     return _commits(_git(source, "log", f"--max-count={MAX_COMMITS}", "--date=short", "--name-only",
                          f"--format=%H{SEPARATEUR}%ad{SEPARATEUR}%an{SEPARATEUR}%s", plage, "--"))

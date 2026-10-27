@@ -83,6 +83,15 @@ ALTER TABLE source ADD COLUMN IF NOT EXISTS index_code text;
 ALTER TABLE claim ADD COLUMN IF NOT EXISTS origine text NOT NULL DEFAULT 'INGESTION'
     CHECK (origine IN ('INGESTION', 'CONVERSATION'));
 
+-- Fiche vivante : rédigée par le gardien à chaque commit, relue par Flore au début de chaque conversation.
+CREATE TABLE IF NOT EXISTS fiche_vivante (
+    jumeau_id text NOT NULL REFERENCES jumeau(id),
+    sha       text NOT NULL,
+    contenu   text NOT NULL,
+    cree_le   timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (jumeau_id, sha)
+);
+
 -- Invariant 2 : aucun Claim ACCEPTED sans revue humaine (la revue s'écrit avant le changement de statut).
 CREATE OR REPLACE FUNCTION claim_accepte_exige_revue() RETURNS trigger AS $$
 BEGIN

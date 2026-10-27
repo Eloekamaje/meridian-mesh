@@ -85,3 +85,13 @@ def consigne_revision(problemes):
             f"{liste}\n"
             "Corrige-la (vérifie avec tes outils si besoin) et renvoie uniquement la réponse corrigée, destinée à "
             "l'interlocuteur, sans mentionner cette relecture.")
+
+
+def retirer_citations_invalides(texte, invalides):
+    """Retire du texte les citations qui ne pointent sur rien (avec leurs accents graves et l'espace qui précède)."""
+    def remplacer(m):
+        debut, fin = m.group(2), m.group(3) or m.group(2)
+        return "" if f"{m.group(1)}#L{debut}-L{fin}" in invalides else m.group(0)
+    motif = re.compile(r"\s*`?(?:" + RE_CITATION.pattern + r")`?")
+    propre = motif.sub(remplacer, texte)
+    return re.sub(r"[ \t]+([.,;:])", r"\1", propre)
