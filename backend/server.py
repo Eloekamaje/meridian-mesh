@@ -1089,7 +1089,9 @@ async def lancer_commande(cid: str, x_persona: str = Header("architecte"), x_esp
     if not pretes:
         raise HTTPException(422, "Au moins une source prête est requise pour lancer")
     jid = slugify(j["nom"])
-    if await db.jumeaux.find_one({"id": jid}):
+    if not jid:
+        raise HTTPException(422, "Le nom du jumeau doit contenir des lettres ou des chiffres")
+    if jid in NAISSANCES_EN_COURS or await db.jumeaux.find_one({"id": jid}):
         raise HTTPException(409, "Un jumeau porte déjà ce nom")
     nouveau = {
         "id": jid, "nom": j["nom"], "domaine": j.get("domaine", "Non classé"), "mission": j["mission"],
@@ -1107,19 +1109,29 @@ async def lancer_commande(cid: str, x_persona: str = Header("architecte"), x_esp
     # Une source de code prête : la vraie naissance démarre (clone, ingestion, registre, fiche vivante).
     naissance = any(s["connecteur"] == "github" for s in pretes) and bool(os.environ.get("JUMEAU_PG_DSN"))
     if naissance:
+        NAISSANCES_EN_COURS.add(jid)
         TACHES_NAISSANCE.add(t := asyncio.create_task(_naitre(doc, jid)))
         t.add_done_callback(TACHES_NAISSANCE.discard)
+        t.add_done_callback(lambda _: NAISSANCES_EN_COURS.discard(jid))
     return {"ok": True, "jumeau_id": jid, "sources_lancees": len(pretes), "sources_reportees": len(doc["sources"]) - len(pretes),
             "naissance": "en_cours" if naissance else None}
 
 
 TACHES_NAISSANCE = set()  # références fortes : une tâche asyncio sans référence peut être collectée en cours de route
+NAISSANCES_EN_COURS = set()  # un seul lancement par jumeau, même si deux demandes arrivent en même temps
+NAISSANCES_SIMULTANEES = asyncio.Semaphore(2)
+DUREE_MAX_NAISSANCE = 30 * 60  # secondes
 
 
 async def _naitre(commande, jid):
-    """ponytail: tâche dans le processus de l'API ; machine Step Functions « Naissance » sur AWS."""
-    with psycopg.connect(os.environ["JUMEAU_PG_DSN"], autocommit=True) as conn:
-        await jumeau_naissance.naitre(conn, db, commande, jid)
+    """ponytail: tâche dans le processus de l'API, bornée en nombre et en durée ; Step Functions sur AWS."""
+    async with NAISSANCES_SIMULTANEES:
+        with psycopg.connect(os.environ["JUMEAU_PG_DSN"], autocommit=True) as conn:
+            try:
+                await asyncio.wait_for(jumeau_naissance.naitre(conn, db, commande, jid), DUREE_MAX_NAISSANCE)
+            except asyncio.TimeoutError:
+                await db.commandes.update_one({"id": commande["id"]},
+                                              {"$set": {"naissance.etat": "echec", "naissance.message": "durée dépassée"}})
 
 
 @api_router.get("/commandes/{cid}/naissance")

@@ -51,9 +51,9 @@ def test_ni_hote_arbitraire_ni_chemin_local_hors_developpement(monkeypatch):
 
 
 def test_resolution_du_secret(monkeypatch):
-    monkeypatch.setenv("JETON_TEST", "abc")
+    monkeypatch.setenv("MERIDIAN_JETON_TEST", "abc")
     monkeypatch.delenv("VAULT_ADDR", raising=False)
-    assert naissance.resoudre_secret("env:JETON_TEST") == "abc"
+    assert naissance.resoudre_secret("env:MERIDIAN_JETON_TEST") == "abc"
     assert naissance.resoudre_secret("") is None
     with pytest.raises(RuntimeError):
         naissance.resoudre_secret("vault:meridian/github/banque#jeton")  # Vault non configuré
@@ -119,3 +119,45 @@ def test_naissance_complete_depuis_une_commande(conn, depot_distant, tmp_path, m
         ["clone", "ingestion", "fiche"]
     assert registre["reel"] is True and registre["statut"] == "observation"  # l'admission reste humaine
     assert {c["objet"] for c in depot.lister_claims(conn, "remboursements")} >= {"GET /remboursements", "fastapi"}
+
+
+@pytest.mark.parametrize("url", ["https://github.com@evil.example/x.git", "https://evil.example/github.com/x.git",
+                                 "https://github.com:8443/x.git", "http://github.com/x.git",
+                                 "https://user:pw@github.com/x.git", "https://github.com.evil/x.git"])
+def test_url_analysee_et_non_comparee_par_prefixe(monkeypatch, url):
+    monkeypatch.delenv("JUMEAU_DEPOTS_LOCAUX")
+    with pytest.raises(ValueError):
+        naissance.url_depot({"url": url})
+
+
+def test_organisation_en_points_refusee():
+    for nom in (".", ".."):
+        with pytest.raises(ValueError):
+            naissance.url_depot({"organisation": nom, "depots": "x"})
+
+
+def test_git_recoit_un_environnement_minimal_sans_redirection_ni_hooks(monkeypatch):
+    monkeypatch.setenv("VAULT_TOKEN", "jeton-vault")
+    monkeypatch.setenv("GIT_SSH_COMMAND", "evil")
+    env = naissance.env_git("s3cr3t")
+    assert "VAULT_TOKEN" not in env and "GIT_SSH_COMMAND" not in env and "PATH" in env
+    config = {env[f"GIT_CONFIG_KEY_{i}"]: env[f"GIT_CONFIG_VALUE_{i}"] for i in range(int(env["GIT_CONFIG_COUNT"]))}
+    assert config["http.followRedirects"] == "false" and config["core.hooksPath"] == "/dev/null"
+    assert config["protocol.allow"] == "never" and config["protocol.https.allow"] == "always"
+
+
+def test_references_de_secret_bornees(monkeypatch):
+    monkeypatch.setenv("VAULT_TOKEN", "x")
+    monkeypatch.setenv("VAULT_ADDR", "https://vault.intra")
+    for ref in ("env:VAULT_TOKEN", "env:JUMEAU_PG_DSN", "vault:autre/secret#jeton", "vault:meridian/../autre#jeton"):
+        with pytest.raises(RuntimeError):
+            naissance.resoudre_secret(ref)
+    monkeypatch.setenv("MERIDIAN_JETON_GITHUB", "abc")
+    assert naissance.resoudre_secret("env:MERIDIAN_JETON_GITHUB") == "abc"
+
+
+def test_delai_depasse_donne_un_echec_propre(monkeypatch, depot_distant):
+    def trop_long(*_, **__):
+        raise subprocess.TimeoutExpired("git", 30)
+    monkeypatch.setattr(naissance.subprocess, "run", trop_long)
+    assert naissance.tester_git({"url": f"file://{depot_distant}", "branches": "main"})["statut"] == "erreur_connexion"

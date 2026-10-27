@@ -12,7 +12,7 @@ from pathlib import Path
 
 import psycopg
 
-from jumeau import cbm, depot, registre
+from jumeau import cbm, depot, manifestes, registre
 from jumeau.adaptateur import adapter
 from jumeau.source_git import lire_au_sha, sha_courant
 
@@ -58,7 +58,12 @@ def ingerer(conn, jumeau, chemin_depot):
     copie = copie_au_sha(chemin_depot, sha, jumeau["id"])
     projet = cbm.indexer(copie)
     resultats = cbm.interroger(projet)
-    claims = adapter(resultats, lire_au_sha(chemin_depot, sha), Path(chemin_depot).name, sha[:12], jumeau["nom"])
+    lire = lire_au_sha(chemin_depot, sha)
+    # Dépendances de pyproject.toml / package.json, que codebase-memory-mcp ne relie pas (dédoublonnées).
+    vus = {(r["chemin"], r["paquet"]) for r in resultats["paquets"]}
+    resultats["paquets"] += [r for r in manifestes.dependances(lire, manifestes.lister(chemin_depot, sha))
+                             if (r["chemin"], r["paquet"]) not in vus]
+    claims = adapter(resultats, lire, Path(chemin_depot).name, sha[:12], jumeau["nom"])
     bruts = sum(len(v) for v in resultats.values())
     source = {"nom": Path(chemin_depot).name, "type": "GIT", "emplacement": str(chemin_depot), "curseur": sha,
               "copie": str(copie), "index_code": projet}

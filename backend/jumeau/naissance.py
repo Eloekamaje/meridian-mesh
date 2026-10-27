@@ -12,6 +12,7 @@ import os
 import re
 import subprocess
 import urllib.request
+from urllib.parse import quote, urlparse
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -20,20 +21,26 @@ from jumeau.ingerer import ingerer
 
 journal = logging.getLogger("meridian.naissance")
 DEPOTS = Path(os.environ.get("JUMEAU_DEPOTS", Path.home() / ".local/share/meridian/depots"))
-NOM_VALIDE = re.compile(r"[A-Za-z0-9._-]+")
+NOM_VALIDE = re.compile(r"(?!\.+$)[A-Za-z0-9._-]+")  # pas de nom fait uniquement de points (« . », « .. »)
+HOTE_VALIDE = re.compile(r"[a-z0-9.-]+")
+PREFIXE_VAULT = os.environ.get("JUMEAU_VAULT_PREFIXE", "meridian/")
+PREFIXE_ENV = "MERIDIAN_"
 BRANCHE_VALIDE = re.compile(r"[A-Za-z0-9._/-]+")
 DELAI_GIT = 30
 
 
 def url_depot(config):
     """URL du dépôt : explicite (`url`), sinon forge GitHub (JUMEAU_GIT_HOTE, github.com par défaut)."""
-    hote = os.environ.get("JUMEAU_GIT_HOTE", "github.com")
+    hote = _hote_autorise()
     if config.get("url"):
         # Le serveur ne clone que depuis la forge autorisée : pas d'hôte arbitraire (SSRF) ni de chemin local,
-        # sauf en développement explicite (JUMEAU_DEPOTS_LOCAUX=1).
+        # sauf en développement explicite (JUMEAU_DEPOTS_LOCAUX=1). L'URL est analysée, pas comparée par préfixe.
         url = config["url"]
-        if url.startswith(f"https://{hote}/") or (url.startswith("file://")
-                                                  and os.environ.get("JUMEAU_DEPOTS_LOCAUX") == "1"):
+        u = urlparse(url)
+        if u.scheme == "file" and os.environ.get("JUMEAU_DEPOTS_LOCAUX") == "1":
+            return url
+        if (u.scheme == "https" and u.hostname == hote and u.port is None and not u.username and not u.password
+                and ".." not in u.path.split("/")):
             return url
         raise ValueError(f"dépôt hors de la forge autorisée ({hote})")
     organisation = (config.get("organisation") or "").strip()
@@ -41,6 +48,13 @@ def url_depot(config):
     if not NOM_VALIDE.fullmatch(organisation) or not NOM_VALIDE.fullmatch(depot):
         raise ValueError("organisation ou dépôt invalide")
     return f"https://{hote}/{organisation}/{depot}.git"
+
+
+def _hote_autorise():
+    hote = os.environ.get("JUMEAU_GIT_HOTE", "github.com").lower()
+    if not HOTE_VALIDE.fullmatch(hote):
+        raise ValueError("JUMEAU_GIT_HOTE invalide : un nom d'hôte attendu")
+    return hote
 
 
 def branche(config):
@@ -57,29 +71,42 @@ def resoudre_secret(reference):
     """
     if not reference:
         return None
+    # Une commande ne peut nommer que des secrets prévus pour Méridian : jamais un autre secret du serveur.
     if reference.startswith("env:"):
-        valeur = os.environ.get(reference[4:])
-        if not valeur:
-            raise RuntimeError(f"variable {reference[4:]} absente")
-        return valeur
+        nom = reference[4:]
+        if not nom.startswith(PREFIXE_ENV) or not os.environ.get(nom):
+            raise RuntimeError(f"variable non autorisée ou absente (préfixe {PREFIXE_ENV} requis)")
+        return os.environ[nom]
     chemin, _, cle = (reference[6:] if reference.startswith("vault:") else reference).partition("#")
-    adresse = os.environ.get("VAULT_ADDR")
-    if not adresse or not os.environ.get("VAULT_TOKEN"):
-        raise RuntimeError("Vault non configuré (VAULT_ADDR, VAULT_TOKEN)")
+    if not chemin.startswith(PREFIXE_VAULT) or ".." in chemin.split("/") or not re.fullmatch(r"[\w./-]+", chemin):
+        raise RuntimeError(f"chemin Vault non autorisé (préfixe {PREFIXE_VAULT} requis)")
+    adresse = os.environ.get("VAULT_ADDR", "")
+    if not adresse.startswith(("https://", "http://127.0.0.1")) or not os.environ.get("VAULT_TOKEN"):
+        raise RuntimeError("Vault non configuré (VAULT_ADDR en https, VAULT_TOKEN)")
     montage = os.environ.get("VAULT_KV_MONTAGE", "secret")
-    requete = urllib.request.Request(f"{adresse}/v1/{montage}/data/{chemin}",
+    requete = urllib.request.Request(f"{adresse}/v1/{montage}/data/{quote(chemin)}",
                                      headers={"X-Vault-Token": os.environ["VAULT_TOKEN"]})
     with urllib.request.urlopen(requete, timeout=10) as r:
         return json.load(r)["data"]["data"][cle or "jeton"]
 
 
 def env_git(jeton):
-    """Le jeton passe par la configuration Git en variables d'environnement : ni dans l'URL, ni dans les arguments."""
-    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+    """Environnement minimal de Git : aucun secret du serveur hérité, configuration durcie, jeton en en-tête.
+
+    Le jeton passe par la configuration Git en variables d'environnement : ni dans l'URL, ni dans les arguments.
+    Pas de redirection HTTP (l'en-tête suivrait vers un autre hôte), pas de hooks, protocoles limités.
+    """
+    config = {"http.followRedirects": "false", "core.hooksPath": "/dev/null", "protocol.allow": "never",
+              "protocol.https.allow": "always"}
+    if os.environ.get("JUMEAU_DEPOTS_LOCAUX") == "1":
+        config["protocol.file.allow"] = "always"
     if jeton:
         entete = base64.b64encode(f"x-access-token:{jeton}".encode()).decode()
-        env.update({"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "http.extraHeader",
-                    "GIT_CONFIG_VALUE_0": f"Authorization: Basic {entete}"})
+        config["http.extraHeader"] = f"Authorization: Basic {entete}"
+    env = {k: os.environ[k] for k in ("PATH", "HOME", "LANG") if k in os.environ}
+    env.update({"GIT_TERMINAL_PROMPT": "0", "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_COUNT": str(len(config))})
+    for i, (cle, valeur) in enumerate(config.items()):
+        env[f"GIT_CONFIG_KEY_{i}"], env[f"GIT_CONFIG_VALUE_{i}"] = cle, valeur
     return env
 
 
@@ -103,8 +130,12 @@ def tester_git(config):
         return _resultat("configuration_incomplete", "Configuration incomplète", str(e), "Corriger la configuration")
     except RuntimeError as e:
         return _resultat("autorisation_insuffisante", "Jeton introuvable", str(e), "Vérifier la référence du jeton")
-    r = subprocess.run(commande_git(["ls-remote", "--heads", url, nom_branche]), capture_output=True, text=True,
-                       env=env_git(jeton), timeout=DELAI_GIT)
+    try:
+        r = subprocess.run(commande_git(["ls-remote", "--heads", url, nom_branche]), capture_output=True, text=True,
+                           env=env_git(jeton), timeout=DELAI_GIT)
+    except subprocess.TimeoutExpired:
+        return _resultat("erreur_connexion", "Dépôt injoignable", "Le dépôt n'a pas répondu à temps.",
+                         "Vérifier le réseau")
     if r.returncode != 0:
         if re.search(r"Authentication|403|401|could not read Username|Permission denied", r.stderr):
             return _resultat("autorisation_insuffisante", "Accès refusé",
@@ -131,6 +162,9 @@ def cloner(config, cible):
         r = subprocess.run(commande_git(args), capture_output=True, text=True, env=env, timeout=600)
         if r.returncode != 0:
             raise RuntimeError("clone impossible : dépôt injoignable ou accès refusé")
+    # Défense en profondeur : aucun lien symbolique versionné ne doit mener hors du dépôt.
+    for lien in [c for c in Path(cible).rglob("*") if c.is_symlink() and ".git" not in c.relative_to(cible).parts]:
+        lien.unlink()
     return Path(cible)
 
 
