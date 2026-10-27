@@ -1,10 +1,9 @@
 // Textes de Flore hors démonstration — modifiables sans toucher aux composants.
 
-// La création d'un travail par une conversation avec Flore n'est pas encore développée dans
-// le produit. Tant que ce drapeau est faux, « Nouveau travail » ouvre une conversation qui
-// l'annonce (aucun appel réseau, aucun travail créé). Le code de création réel reste en place
-// dans components/case/OngletTravail.jsx (envoi d'un brouillon) : il redevient actif en passant ce drapeau à true.
-export const CREATION_TRAVAIL_ACTIVE = false;
+// Création d'un travail par une conversation avec Flore (components/case/OngletTravail.jsx, envoi d'un brouillon) :
+// la première question crée le travail avec les jumeaux du contexte, puis Flore répond. Un jumeau réel du contexte est
+// mobilisé (ses Claims et son code). À false, « Nouveau travail » annonce seulement que la conversation arrive.
+export const CREATION_TRAVAIL_ACTIVE = true;
 
 export const FLORE_PRESENTATION =
   "Bonjour, je suis Flore. Je vous aide à comprendre votre environnement : je rapproche ce que Méridian sait de vos applications, de leurs relations et de leurs preuves, puis je vous aide à préparer le travail qui en découle.\n\n" +
