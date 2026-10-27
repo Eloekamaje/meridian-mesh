@@ -1,7 +1,7 @@
 # MÉRIDIAN — Architecture AWS du jumeau agentique
 ## EventBridge, Step Functions, AgentCore Runtime : de la commande d'un jumeau à sa veille continue
 
-**Statut :** Proposition d'architecture de départ, à valider (sécurité, conformité, plateforme)  
+**Statut :** Proposition d'architecture de départ, à valider (sécurité, conformité, plateforme) ; variante sans AgentCore en §10  
 **Version :** 1.0  
 **Date :** 2026-10-27  
 **Produit :** MÉRIDIAN  
@@ -250,7 +250,7 @@ d'autres agents (experts) doivent lire le code.
 
 ---
 
-# 9. Trajectoire de démarrage
+# 9. Trajectoire de démarrage (avec AgentCore ; voir §10.5 sans AgentCore)
 
 | Étape | Contenu | Résultat |
 |---|---|---|
@@ -262,7 +262,74 @@ d'autres agents (experts) doivent lire le code.
 
 ---
 
-# 10. Points à vérifier
+# 10. Variante de départ sans AgentCore
+
+Si AgentCore n'est pas encore accessible, l'architecture reste la même pour tout ce qui n'est pas agent
+(EventBridge, Step Functions, Fargate, S3, Aurora, DocumentDB). Seul l'hébergement des agents et de leurs outils
+change. Les agents étant écrits avec Strands, qui tourne dans n'importe quel conteneur, **le code ne change pas** ;
+la bascule vers AgentCore se fera en enveloppant le même code (`BedrockAgentCoreApp`).
+
+## 10.1 Vue d'ensemble
+
+```text
+ GitHub Actions (rôle OIDC) ──put-events──► EventBridge ◄── Scheduler (passe nocturne)
+                                               │
+                                               ▼
+ Step Functions « Veille »   1 Ingestion (Fargate) → 2 Signaux (Lambda) → 3 Publier (Lambda)
+                             → 4 Fiche : tâche Fargate « gardien » (Strands + Bedrock)   [Catch : rien n'est perdu]
+ Step Functions « Naissance » (commande → test réel → ingestion → admission humaine → fiche → publier)
+
+ Utilisateurs ─► CloudFront ─► ALB ─► ECS Fargate « api-flore »
+                                        FastAPI + Flore (Strands), outils dans le processus,
+                                        codebase-memory-mcp embarqué, artefacts en cache sur EFS
+                                        Cognito (IdP de la banque) · Verified Permissions (Cedar)
+                                        fils de Flore : S3SessionManager
+
+ Données : Aurora PostgreSQL · S3 (Object Lock, KMS) · DocumentDB · Secrets Manager (GitHub App)
+ Modèle  : Bedrock via point de terminaison VPC          Observabilité : ADOT → CloudWatch, X-Ray
+ Réseau  : VPC privé, points de terminaison VPC (Bedrock, S3, Secrets Manager, ECR, Logs, Events, States),
+           sortie limitée à la forge Git
+```
+
+## 10.2 Correspondance
+
+| Cible AgentCore | Variante de départ | Ce qu'on perd en attendant |
+|---|---|---|
+| Runtime (Flore, gardien) | service ECS Fargate « api-flore » ; tâche Fargate « gardien » lancée par Step Functions | l'isolation d'une microVM par session : les fils partagent un conteneur |
+| Gateway (outils MCP) | outils dans le processus de Flore ; codebase-memory-mcp embarqué dans l'image, artefacts S3 mis en cache sur EFS | réutilisation des outils par d'autres agents, journal centralisé des appels d'outils |
+| Policy (Cedar) | règles dans le code (aucun outil de validation ni de décision, budgets, arguments filtrés) et **Amazon Verified Permissions** pour les droits de l'application | contrôle hors du code de l'agent |
+| Identity | **Cognito** fédéré à l'IdP de la banque ; périmètre appliqué par l'API avant l'appel de l'agent ; identifiants GitHub App dans **Secrets Manager** | coffre de jetons OAuth géré |
+| Memory | `S3SessionManager` de Strands (ou table Aurora) | stratégies de mémoire longue (préférences, résumés) |
+| Observability | télémétrie OpenTelemetry de Strands → ADOT → CloudWatch, X-Ray | tableaux de bord agents prêts à l'emploi |
+| Evaluations | jeu de questions de référence par profil, rejoué en CI (Contradicteur comme juge) | évaluation en ligne gérée |
+
+## 10.3 Sans aucune infrastructure AWS (rôle Bedrock seulement)
+
+Pour les démonstrations ou un pilote très restreint : une VM de la banque en `docker compose` (Postgres, Mongo,
+API avec Flore, gardien en service), workflows durables avec **DBOS** (déjà utilisé dans `laboratoire-autonome`)
+à la place de Step Functions, et seul l'appel au modèle sortant vers Bedrock.
+
+## 10.4 Ajustements de code qui rendent la bascule gratuite
+
+1. Fils de Flore sur `S3SessionManager` (ou Aurora) plutôt que des fichiers locaux.
+2. Outils de code par le `MCPClient` de Strands vers codebase-memory-mcp, plutôt que par sa ligne de commande :
+   le jour venu, seule l'adresse change (Gateway).
+3. Identité réelle (OIDC) à la place de l'en-tête `X-Persona`.
+
+## 10.5 Trajectoire réajustée
+
+| Étape | Contenu | AgentCore requis ? |
+|---|---|---|
+| 1 | Veille déterministe : ingestion Fargate, Step Functions, EventBridge, Aurora, S3 | non |
+| 2 | Gardien en tâche Fargate, Bedrock | non |
+| 3 | API et Flore sur ECS Fargate, Cognito, Verified Permissions, fils sur S3, codebase-memory-mcp embarqué | non |
+| 4 | Commande branchée sur « Naissance », GitHub App, admission humaine | non |
+| 5 | **Bascule AgentCore** : Runtime, Gateway, Policy, Identity, Memory, sans réécriture | oui |
+| 6 | Mesh : liens inter-services, `compare_graphs`, liens entre dépôts | non |
+
+---
+
+# 11. Points à vérifier
 
 1. Disponibilité en `ca-central-1` de chaque service AgentCore utilisé (Runtime, Gateway, Identity, Memory, Policy)
    et de la session storage de Runtime (en préversion en 2026).
