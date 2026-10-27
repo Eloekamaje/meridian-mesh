@@ -34,7 +34,6 @@ export default function RevueJumeau() {
           return;
         }
         if (actif) setJumeau(j);
-        if (j.reel) return;  // né du code : ses connaissances prouvées remplacent l'examen
         const { data } = await api.post(`/jumeaux/${jid}/examiner`);
         if (actif) setExamen(data);
       } catch (e) {
@@ -94,12 +93,19 @@ export default function RevueJumeau() {
               </button>
             </div>
           )}
-          {!erreur && !examen && !jumeau?.reel && (
+          {!erreur && !examen && (
             <p className="font-code text-[11px] text-[#7C93A8]" data-testid="revue-chargement">Examen du jumeau en cours…</p>
           )}
-          {jumeau && (examen || jumeau.reel) && (
+          {examen && jumeau && (
             <>
-              {jumeau.reel ? <ConnaissancesCode jid={jid} /> : <RevueContenu examen={examen} jumeau={jumeau} />}
+              <RevueContenu examen={examen} jumeau={jumeau} />
+              {/* Né du code : ce que dit le jumeau et chaque connaissance avec sa preuve, à valider ou contester */}
+              {jumeau.reel && (
+                <section className="mt-6" data-testid="revue-preuves">
+                  <h2 className="mb-3 font-code text-[10px] uppercase tracking-[0.25em] text-[#94A3B8]">Preuves dans le code</h2>
+                  <ConnaissancesCode jid={jid} />
+                </section>
+              )}
               {(jumeau.gouvernance || []).length > 0 && (
                 <section className="mt-6 rounded-xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-5" data-testid="revue-gouvernance">
                   <h2 className="font-code text-[10px] uppercase tracking-[0.25em] text-[#94A3B8]">Gouvernance de l'autonomie</h2>

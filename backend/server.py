@@ -22,6 +22,7 @@ from jumeau.routes import router as jumeau_router
 from jumeau import flore as jumeau_flore
 from jumeau import registre as jumeau_registre
 from jumeau import naissance as jumeau_naissance
+from jumeau import examen as jumeau_examen
 import asyncio
 import psycopg
 from seed_data import (
@@ -459,6 +460,12 @@ async def examiner_jumeau(jid: str, x_persona: str = Header("architecte"), x_esp
     j = await db.jumeaux.find_one({"id": jid}, NO_ID)
     if not j:
         raise HTTPException(404, "Jumeau introuvable")
+    if j.get("reel") and os.environ.get("JUMEAU_PG_DSN"):
+        # Né du code : même examen, tiré de ses connaissances prouvées et de sa fiche vivante
+        def examen_reel():
+            with psycopg.connect(os.environ["JUMEAU_PG_DSN"], connect_timeout=5) as conn:
+                return jumeau_examen.examiner(conn, jid, j)
+        return await asyncio.to_thread(examen_reel)
     sources = j.get("sources", {})
     manquantes = [label for key, label in SOURCES_LABELS.items() if not sources.get(key)]
     pairs = await db.jumeaux.find({"id": {"$ne": jid}, "domaine": j.get("domaine")}, NO_ID).to_list(5)
