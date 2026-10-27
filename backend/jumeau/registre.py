@@ -47,5 +47,9 @@ async def projeter(db, conn):
     """Upsert des jumeaux réels dans le registre (motor) ; les jumeaux de démo ne sont pas touchés."""
     reels = jumeaux_reels(conn)
     for j in reels:
-        await db.jumeaux.update_one({"id": j["id"]}, {"$set": document(j)}, upsert=True)
+        doc = document(j)
+        statut = doc.pop("statut")
+        # Le statut n'est posé qu'à la création : un jumeau né d'une commande reste « en observation »
+        # jusqu'à son admission par un humain.
+        await db.jumeaux.update_one({"id": j["id"]}, {"$set": doc, "$setOnInsert": {"statut": statut}}, upsert=True)
     return len(reels)

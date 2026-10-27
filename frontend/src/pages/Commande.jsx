@@ -147,7 +147,9 @@ export default function Commande() {
     setLancement(true);
     try {
       const { data } = await api.post(`/commandes/${cid}/lancer`);
-      toast.success(`Découverte lancée — ${data.sources_lancees} source(s), ${data.sources_reportees} reportée(s)`);
+      toast.success(data.naissance === "en_cours"
+        ? "Naissance du jumeau en cours : lecture du code, connaissances prouvées, fiche vivante. Il apparaîtra au registre, en observation."
+        : `Découverte lancée — ${data.sources_lancees} source(s), ${data.sources_reportees} reportée(s)`);
       recharger();
       navigate("/jumeaux");
     } catch (e) {

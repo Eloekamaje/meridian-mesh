@@ -21,6 +21,8 @@ from mesh_vue_routes import build_mesh_vue_router
 from jumeau.routes import router as jumeau_router
 from jumeau import flore as jumeau_flore
 from jumeau import registre as jumeau_registre
+from jumeau import naissance as jumeau_naissance
+import asyncio
 import psycopg
 from seed_data import (
     cas_verification_fraude,
@@ -1039,7 +1041,9 @@ async def tester_sources(cid: str, payload: TestLot, x_persona: str = Header("ar
     modifie = False
     for s in doc["sources"]:
         if s["id"] in payload.ids:
-            resultats[s["id"]] = _simuler_test(s)
+            # GitHub : test réel (git ls-remote avec le jeton résolu depuis Vault) ; autres connecteurs : simulés
+            resultats[s["id"]] = (await asyncio.to_thread(jumeau_naissance.tester_git, s.get("config", {}))
+                                  if s["connecteur"] == "github" else _simuler_test(s))
             s.update(resultats[s["id"]])
             modifie = True
     if modifie:
@@ -1100,7 +1104,30 @@ async def lancer_commande(cid: str, x_persona: str = Header("architecte"), x_esp
         espace["jumeaux"][jid] = "complet"
     await db.commandes.update_one({"id": cid}, {"$set": {"etat": "lancee", "jumeau_id": jid, "lancee_le": datetime.now(timezone.utc).isoformat()}})
     await journaler(x_persona, espace["id"], "lancement d'une commande", jid, f"{j['nom']} — {len(pretes)} source(s) prête(s)")
-    return {"ok": True, "jumeau_id": jid, "sources_lancees": len(pretes), "sources_reportees": len(doc["sources"]) - len(pretes)}
+    # Une source de code prête : la vraie naissance démarre (clone, ingestion, registre, fiche vivante).
+    naissance = any(s["connecteur"] == "github" for s in pretes) and bool(os.environ.get("JUMEAU_PG_DSN"))
+    if naissance:
+        TACHES_NAISSANCE.add(t := asyncio.create_task(_naitre(doc, jid)))
+        t.add_done_callback(TACHES_NAISSANCE.discard)
+    return {"ok": True, "jumeau_id": jid, "sources_lancees": len(pretes), "sources_reportees": len(doc["sources"]) - len(pretes),
+            "naissance": "en_cours" if naissance else None}
+
+
+TACHES_NAISSANCE = set()  # références fortes : une tâche asyncio sans référence peut être collectée en cours de route
+
+
+async def _naitre(commande, jid):
+    """ponytail: tâche dans le processus de l'API ; machine Step Functions « Naissance » sur AWS."""
+    with psycopg.connect(os.environ["JUMEAU_PG_DSN"], autocommit=True) as conn:
+        await jumeau_naissance.naitre(conn, db, commande, jid)
+
+
+@api_router.get("/commandes/{cid}/naissance")
+async def suivre_naissance(cid: str):
+    doc = await db.commandes.find_one({"id": cid}, {"_id": 0, "naissance": 1, "jumeau_id": 1})
+    if not doc:
+        raise HTTPException(404, "Commande introuvable")
+    return {"jumeau_id": doc.get("jumeau_id"), **(doc.get("naissance") or {"etat": "non_lancee"})}
 
 
 async def generer_reponse_flore(contexte, question, selection, domaine, x_persona, x_espace, travail=None):
