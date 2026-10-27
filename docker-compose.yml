@@ -14,5 +14,25 @@ services:
       retries: 5
       start_period: 5s
 
+  # Couche cognitive du jumeau (Architecture Jumeau §4.6) ; Aurora PostgreSQL en phase 1.
+  postgres:
+    image: postgres:16
+    container_name: meridian-postgres
+    restart: always
+    environment:
+      POSTGRES_DB: meridian
+      POSTGRES_USER: meridian
+      POSTGRES_PASSWORD: ${JUMEAU_PG_PASSWORD:?définir JUMEAU_PG_PASSWORD}
+    ports:
+      - "127.0.0.1:5434:5432"
+    volumes:
+      - meridian_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "meridian"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
 volumes:
   meridian_mongo_data:
+  meridian_pg_data:

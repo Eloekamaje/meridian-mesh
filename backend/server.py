@@ -18,6 +18,7 @@ from cases_routes import build_cases_router
 from actualites_routes import build_actualites_router
 from initiatives_routes import build_initiatives_router
 from mesh_vue_routes import build_mesh_vue_router
+from jumeau.routes import router as jumeau_router
 from seed_data import (
     cas_verification_fraude,
     TWINS, RELATIONS, REGIONS, SITUATIONS, CHANGE_LAB, ACTIVITE,
@@ -1187,6 +1188,8 @@ api_router.include_router(build_mesh_vue_router({
     "autorisations": autorisations,
     "NO_ID": NO_ID,
 }))
+
+api_router.include_router(jumeau_router)
 
 
 # ---------- Notifications ----------
