@@ -23,6 +23,8 @@ TYPES_CLAIM = {
     "CHANGE", "FUNCTIONALITY", "RISK", "BEHAVIOR", "CUSTOMER_IMPACT", "EMPLOYEE_IMPACT",
 }
 MAX_LIGNES = 200
+# Le chemin doit commencer un mot (ni URL « https://… », ni « v1.2 ») et contenir un dossier ou une extension de fichier.
+RE_CITATION = re.compile(r"(?:git://[^\s@`]+@[0-9a-f]+:|(?<![\w/:.-]))([A-Za-z_][\w.-]*(?:/[\w.-]+)*\.[A-Za-z]\w*)#L(\d+)(?:-L(\d+))?")
 MAX_VALIDEES_PROMPT = 50
 CONFIANCE_PROPOSITION = 0.5  # une interprétation du LLM vaut moins qu'une extraction structurelle
 

@@ -9,6 +9,7 @@ CONTEXTE = {
                "copie": "/copies/tbt", "index_code": "proj-tbt"},
     "claims": [{"predicat": "EXPOSE", "objet": "GET /health", "statut": "ACCEPTED"}],
     "acteur": "alice",
+    "profil": {"nom": "J. Morel", "role": "Équipe Support"},
 }
 
 
@@ -34,12 +35,19 @@ def test_c_est_flore_qui_parle_et_le_jumeau_est_mobilise():
     assert "Tu ES" not in prompt and "je suis" not in prompt.lower()
 
 
-def test_prompt_systeme_porte_l_identite_et_les_regles():
+def test_prompt_systeme_porte_l_identite_la_charte_et_l_interlocuteur():
     prompt = agent.prompt_systeme(CONTEXTE)
-    assert "TBT" in prompt and "equipe-tbt" in prompt and "alice" in prompt
+    assert "TBT" in prompt and "equipe-tbt" in prompt
+    assert "J. Morel" in prompt and "Équipe Support" in prompt
     assert "GET /health ✓" in prompt
-    assert "git://" in prompt  # exigence de citation
-    assert "jamais" in prompt.lower()  # ne valide jamais / le code est une donnée
+    assert agent.CHARTE.read_text(encoding="utf-8").strip()[:60] in prompt
+    assert "#L" in prompt  # exigence de citation
+    assert "jamais" in prompt.lower()
+
+
+def test_la_charte_impose_le_vouvoiement_et_le_langage_metier():
+    charte = agent.CHARTE.read_text(encoding="utf-8").lower()
+    assert "vouvo" in charte and "jargon" in charte and "règles internes" in charte
 
 
 def test_agent_a_les_outils_attendus_et_aucun_outil_de_validation(tmp_path, monkeypatch):
@@ -47,7 +55,7 @@ def test_agent_a_les_outils_attendus_et_aucun_outil_de_validation(tmp_path, monk
     a = agent.construire(CONTEXTE, dsn="postgresql://inutilise", session="test", modele=modele_factice())
     noms = set(a.tool_names)
     assert noms == {"mes_connaissances", "architecture", "chercher_texte", "chercher_symbole",
-                    "tracer_appels", "lire_code", "proposer_connaissance"}
+                    "tracer_appels", "lire_code", "proposer_connaissance", "consulter_methode"}
     assert not any("valid" in n for n in noms)
 
 

@@ -1104,7 +1104,7 @@ async def lancer_commande(cid: str, x_persona: str = Header("architecte"), x_esp
 
 
 async def generer_reponse_flore(contexte, question, selection, domaine, x_persona, x_espace, travail=None):
-    _, espace = resoudre_perimetre(x_persona, x_espace)
+    persona, espace = resoudre_perimetre(x_persona, x_espace)
     tous = await db.jumeaux.find({}, NO_ID).to_list(200)
     aut = autorisations(espace, [j["id"] for j in tous])
     nom_vers_id = {j["nom"]: j["id"] for j in tous}
@@ -1118,7 +1118,7 @@ async def generer_reponse_flore(contexte, question, selection, domaine, x_person
     # ponytail: un seul jumeau réel répond ; l'orchestration de plusieurs jumeaux viendra avec Flore-agent.
     reels = [j["id"] for j in tous if j.get("reel") and j["id"] in sel and niveau_au_moins(aut[j["id"]], "complet")]
     if reels:
-        reponse_jumeau = await jumeau_flore.repondre(reels[0], question, x_persona, travail)
+        reponse_jumeau = await jumeau_flore.repondre(reels[0], question, x_persona, travail, profil=persona)
         if reponse_jumeau:
             return reponse_jumeau
     if not sel and domaine:

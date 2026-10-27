@@ -9,11 +9,10 @@ import re
 
 import psycopg
 
-from jumeau import agent, connaissance, depot
+from jumeau import agent, connaissance, contradicteur, depot
+from jumeau.connaissance import RE_CITATION
 
 # Forme longue git://depot@sha:chemin#La-Lb ou forme courte chemin#La[-Lb] : toutes deux relues au commit du jumeau.
-# Le chemin doit commencer un mot (ni URL « https://… », ni « v1.2 ») et contenir un dossier ou une extension de fichier.
-RE_CITATION = re.compile(r"(?:git://[^\s@`]+@[0-9a-f]+:|(?<![\w/:.-]))([A-Za-z_][\w.-]*(?:/[\w.-]+)*\.[A-Za-z]\w*)#L(\d+)(?:-L(\d+))?")
 MAX_PREUVES = 8
 FILS = agent.FilsActifs()
 
@@ -35,16 +34,38 @@ def preuves_depuis(texte, source):
     return preuves
 
 
-def vers_reponse_flore(jumeau, source, texte):
-    sha = source["curseur"][:12]
-    preuves = preuves_depuis(texte, source)
+# Un groupe de citations (« a.py#L1, b.py#L2 et c.py#L3 »), éventuellement entre accents graves ou parenthèses.
+_CIT = r"`?" + RE_CITATION.pattern + r"`?"
+_GROUPE = _CIT + r"(?:\s*(?:,|et)\s*" + _CIT + r")*"
+RE_GROUPE_ENTRE_PARENTHESES = re.compile(r"\s*\(\s*(?:voir\s+)?" + _GROUPE + r"\s*\)")
+RE_GROUPE = re.compile(r"\s*(?:—\s*)?" + _GROUPE)
+
+
+def retirer_citations(texte):
+    """Les preuves vont dans le volet sous le message (charte de Flore) : le texte reste lisible, sans restes."""
+    propre = RE_GROUPE.sub("", RE_GROUPE_ENTRE_PARENTHESES.sub("", texte))
+    propre = re.sub(r"[ \t]+([.,;:])", r"\1", propre)
+    return re.sub(r",([.;:])", r"\1", propre)
+
+
+def vers_reponse_flore(jumeau, source, texte, invalides=()):
+    """Format d'une réponse de Flore ; les citations introuvables dans le code n'entrent pas dans le volet."""
+    preuves = [p for p in preuves_depuis(texte, source) if not any(p["detail"].endswith(f":{i}") for i in invalides)]
     return {
         "comportement": "expliquer",
-        "reponse": texte,
-        "contributions": [{"jumeau": jumeau["nom"],
-                           "texte": f"Connaissances et code de l'application au commit {sha} ({len(preuves)} preuves)."}],
+        "reponse": retirer_citations(texte),
+        "contributions": [{"jumeau": jumeau["nom"], "texte": "Connaissances et code de l'application consultés."}],
         "preuves": preuves,
     }
+
+
+async def relire_sans_risque(question, texte, source, profil, modele, charte=""):
+    """Une panne du relecteur (délai, quota) ne doit jamais faire perdre une réponse déjà produite."""
+    try:
+        return await contradicteur.relire(question, texte, source, profil, modele, charte)
+    except Exception:
+        agent.journal.warning("relecture impossible, réponse envoyée sans relecture", exc_info=True)
+        return {"ok": True, "problemes": []}
 
 
 def cle_fil(acteur, travail):
@@ -52,7 +73,7 @@ def cle_fil(acteur, travail):
     return f"travail:{travail}" if travail else f"membre:{acteur}"
 
 
-def _contexte(jumeau_id, acteur):
+def _contexte(jumeau_id, acteur, profil):
     dsn = os.environ.get("JUMEAU_PG_DSN")
     if not dsn:
         return None, None
@@ -62,7 +83,7 @@ def _contexte(jumeau_id, acteur):
         if not jumeau or not source or not source["index_code"]:
             return None, None
         claims = connaissance.connaissances(conn, jumeau_id, limite=500)
-    return {"jumeau": jumeau, "source": source, "claims": claims, "acteur": acteur}, dsn
+    return {"jumeau": jumeau, "source": source, "claims": claims, "acteur": acteur, "profil": profil}, dsn
 
 
 def _indisponible(nom, raison):
@@ -70,9 +91,9 @@ def _indisponible(nom, raison):
             "contributions": [], "preuves": []}
 
 
-async def repondre(jumeau_id, question, acteur, travail=None):
+async def repondre(jumeau_id, question, acteur, travail=None, profil=None):
     """Réponse du jumeau réel à une question, ou None si `jumeau_id` n'est pas un jumeau réel ingéré."""
-    ctx, dsn = await asyncio.to_thread(_contexte, jumeau_id, acteur)
+    ctx, dsn = await asyncio.to_thread(_contexte, jumeau_id, acteur, profil)
     if not ctx:
         return None
     nom = ctx["jumeau"]["nom"]
@@ -80,9 +101,22 @@ async def repondre(jumeau_id, question, acteur, travail=None):
     if not FILS.prendre(jumeau_id, cle):
         return _indisponible(nom, "une réponse est déjà en cours sur ce fil.")
     try:
-        a = agent.construire(ctx, dsn, session=connaissance.id_session(jumeau_id, cle))
-        resultat = await a.invoke_async(question)
-        return vers_reponse_flore(ctx["jumeau"], ctx["source"], str(resultat).strip())
+        modele = agent.modele()
+        a = agent.construire(ctx, dsn, session=connaissance.id_session(jumeau_id, cle), modele=modele)
+        texte = str(await a.invoke_async(question)).strip()
+        # Relecture avant envoi ; une seule révision au plus.
+        # ponytail: la consigne de révision reste dans le fil (brouillon, critique, correction) : historique cohérent,
+        # mais plus long ; fil séparé si elle gêne la mémoire.
+        verdict = await relire_sans_risque(question, texte, ctx["source"], ctx.get("profil"), modele,
+                                           agent.CHARTE.read_text(encoding="utf-8"))
+        if not verdict["ok"]:
+            agent.journal.info("révision %s : %s", jumeau_id, verdict["problemes"])
+            try:
+                texte = str(await a.invoke_async(contradicteur.consigne_revision(verdict["problemes"]))).strip()
+            except Exception:
+                agent.journal.warning("révision impossible, première réponse conservée", exc_info=True)
+        invalides = await asyncio.to_thread(contradicteur.citations_invalides, texte, ctx["source"])
+        return vers_reponse_flore(ctx["jumeau"], ctx["source"], texte, invalides)
     except RuntimeError as e:  # modèle non configuré
         return _indisponible(nom, str(e))
     except Exception:
