@@ -59,7 +59,8 @@ def retirer_citations(texte):
 def fiche_affichable(fiche, sources):
     """Fiche vivante pour l'interface : texte lisible, preuves à part (comme les réponses de Flore)."""
     return {"sha": fiche["sha"], "contenu": retirer_citations(fiche["contenu"]),
-            "preuves": preuves_depuis(fiche["contenu"], sources)}
+            "preuves": preuves_depuis(fiche["contenu"], sources),
+            "depots": [{"nom": s["nom"], "branche": s.get("branche"), "commit": s["curseur"][:12]} for s in sources]}
 
 
 def vers_reponse_flore(jumeau, sources, texte, invalides=()):

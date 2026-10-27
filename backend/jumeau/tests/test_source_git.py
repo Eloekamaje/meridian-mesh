@@ -106,3 +106,10 @@ def test_une_copie_par_depot_du_meme_jumeau(depot_git, tmp_path, monkeypatch):
     a = ingerer.copie_au_sha(depot_git, sha_courant(depot_git), "tbt", "api")
     b = ingerer.copie_au_sha(depot_git, sha_courant(depot_git), "tbt", "front")
     assert a != b and a.parent == b.parent == tmp_path / "copies" / "tbt"
+
+
+def test_branche_courante_du_depot(depot_git):
+    from jumeau import ingerer
+    import subprocess as sp
+    attendu = sp.run(["git", "-C", str(depot_git), "branch", "--show-current"], capture_output=True, text=True).stdout.strip()
+    assert ingerer.branche_courante(depot_git) == attendu

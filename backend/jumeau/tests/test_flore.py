@@ -108,3 +108,9 @@ def test_preuves_de_plusieurs_depots_etiquetees_par_depot():
         {"source": "meridian-mesh · app/main.py:3", "detail": f"git://meridian-mesh@{SHA}:app/main.py#L3-L3"},
         {"source": "front · src/App.jsx:10-12", "detail": "git://front@ffffffffffff:src/App.jsx#L10-L12"}]
     assert "meridian-mesh:" not in flore.retirer_citations(texte) and "#L" not in flore.retirer_citations(texte)
+
+
+def test_fiche_affichable_liste_les_depots_avec_branche_et_commit():
+    front = {"nom": "front", "curseur": "f" * 40, "branche": "develop"}
+    fiche = flore.fiche_affichable({"sha": "x", "contenu": "Rien."}, [SOURCE, front])
+    assert fiche["depots"][1] == {"nom": "front", "branche": "develop", "commit": "ffffffffffff"}

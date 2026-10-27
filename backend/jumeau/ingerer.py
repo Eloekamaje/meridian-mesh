@@ -22,6 +22,13 @@ ACTIVITE = {"extracteur": "cbm-adaptateur", "version": "phase0-1"}
 COPIES = Path(os.environ.get("JUMEAU_COPIES", Path.home() / ".local/share/meridian/copies"))
 
 
+def branche_courante(chemin_depot):
+    """Branche extraite du dépôt (None si tête détachée)."""
+    r = subprocess.run(["git", "-C", str(chemin_depot), "symbolic-ref", "--short", "-q", "HEAD"],
+                       capture_output=True, text=True, timeout=10)
+    return r.stdout.strip() or None
+
+
 def copie_au_sha(chemin_depot, sha, jumeau_id, nom=None):
     """Copie de travail du jumeau, détachée au SHA ingéré ; elle reste pour la conversation (index de code).
 
@@ -67,7 +74,7 @@ def ingerer(conn, jumeau, chemin_depot, origine=None):
     claims = adapter(resultats, lire, Path(chemin_depot).name, sha[:12], jumeau["nom"])
     bruts = sum(len(v) for v in resultats.values())
     source = {"nom": Path(chemin_depot).name, "type": "GIT", "emplacement": str(chemin_depot), "curseur": sha,
-              "copie": str(copie), "index_code": projet, **(origine or {})}
+              "copie": str(copie), "index_code": projet, "branche": branche_courante(chemin_depot), **(origine or {})}
     depot.appliquer_schema(conn)
     depot.enregistrer(conn, jumeau, source, claims, {**ACTIVITE, "sha": sha})
     return {"sha": sha, "observations": bruts, "claims": len(claims)}

@@ -132,7 +132,14 @@ function FicheVivante({ jid }) {
   const lignes = fiche.contenu.split("\n").filter((l) => !/^#\s/.test(l));  // le titre de la page suffit
   return (
     <section className={`mt-5 rounded-lg border ${BORDURE} bg-[#0F1D28] p-4`} aria-label="Fiche vivante" data-testid="fiche-vivante">
-      <p className="mb-2 font-code text-[10px] uppercase tracking-[0.2em] text-[#60A5FA]">Ce que le jumeau dit de l'application · commit {fiche.sha}</p>
+      <p className="font-code text-[10px] uppercase tracking-[0.2em] text-[#60A5FA]">Ce que le jumeau dit de l'application</p>
+      <ul className="mb-2 mt-1 flex flex-wrap gap-1.5" aria-label="Code lu par le jumeau" data-testid="fiche-depots">
+        {(fiche.depots || []).map((d) => (
+          <li key={d.nom} className={`rounded border ${BORDURE} px-1.5 py-0.5 font-code text-[10px] text-[#94A3B8]`}>
+            {d.nom}{d.branche ? ` · ${d.branche}` : ""} · {d.commit}
+          </li>
+        ))}
+      </ul>
       <div className="space-y-1 text-[13px] leading-relaxed text-[#CBD5E1]">
         {lignes.map((l, i) => {
           if (!l.trim()) return <div key={i} className="h-1" />;
