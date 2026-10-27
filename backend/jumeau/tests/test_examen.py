@@ -13,7 +13,7 @@ FICHE = """## Ce qu'elle fait
 Texte.
 
 ## Ce qui reste inconnu
-- Volumétrie et criticité `README.md#L3`
+- **Volumétrie** et criticité `README.md#L3`
 - Usage réel des favoris
 
 ## Autre

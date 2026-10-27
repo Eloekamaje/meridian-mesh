@@ -24,7 +24,7 @@ def _inconnus(fiche):
         if ligne.startswith("#"):
             dedans = bool(RE_INCONNU.match(ligne))
         elif dedans and re.match(r"\s*[-*]\s", ligne):
-            puces.append(RE_CITATION.sub("", re.sub(r"^\s*[-*]\s+", "", ligne)).strip())
+            puces.append(RE_CITATION.sub("", re.sub(r"^\s*[-*]\s+", "", ligne)).replace("**", "").strip())
     return puces
 
 
