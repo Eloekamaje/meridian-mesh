@@ -272,6 +272,7 @@ def outils(ctx, dsn, nom_modele, budget):
                 source = connaissance.resoudre_source(sources, depot, chemin)
                 cid = connaissance.proposer(conn, jumeau, source, predicat, objet, type_claim, chemin, debut, fin,
                                             justification, ctx["acteur"], nom_modele)
+            ctx.setdefault("proposees", []).append(cid)
             return f"Proposition enregistrée (claim {cid}), en attente de revue par l'équipe."
         except (ValueError, LookupError) as e:
             return f"Proposition refusée : {e}"
@@ -419,12 +420,12 @@ def gestionnaire_session(session):
     return FileSessionManager(session_id=session, storage_dir=str(SESSIONS))
 
 
-def construire(ctx, dsn, session, modele=None, ecriture=None):
+def construire(ctx, dsn, session, modele=None, ecriture=None, budget=None):
     """Agent du jumeau ; le fil `session` (personnel ou celui d'un Travail) est restauré depuis le disque."""
     m = modele or globals()["modele"]()
     nom_modele = m.get_config().get("model_id", "inconnu")
     SESSIONS.mkdir(parents=True, exist_ok=True)
-    budget = Budget()
+    budget = budget or Budget()
     tools = outils(ctx, dsn, nom_modele, budget) + (outils_travail(ecriture, budget) if ecriture else [])
     return Agent(model=m, system_prompt=prompt_systeme(ctx), tools=tools,
                  session_manager=gestionnaire_session(session),

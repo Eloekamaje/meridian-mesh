@@ -1,8 +1,8 @@
-"""Comprendre une application : sept questions auxquelles le jumeau répond, preuves à l'appui.
+"""Comprendre une application : les sept questions de la méthode comprendre-application (methodes/).
 
-La fiche vivante est rédigée selon ces questions. Les lignes des cinq premières deviennent des connaissances
-(capacités d'affaires, acteurs et parcours, informations détenues, règles, échanges), chacune prouvée par sa
-citation et révisable par l'équipe. Le code reste la preuve, pas le résumé.
+Le savoir-faire est dans la méthode, que l'agent applique avec ses outils : c'est lui qui enquête et propose
+chaque connaissance prouvée. Ce module n'en garde que ce qu'il faut au harness : les questions et leurs
+prédicats (pour la revue), la lecture des sections de la fiche, et la tenue des comptes après une passe.
 """
 import re
 
@@ -43,25 +43,12 @@ def sections(fiche):
     return resultat
 
 
-def consigner(conn, jumeau, sources, fiche, modele):
-    """Les lignes prouvées de la fiche deviennent des connaissances proposées ; celles que la fiche ne reprend plus
-    sont closes, sauf si l'équipe les a déjà validées ou contestées. Renvoie le nombre de connaissances tenues."""
-    tenues = []
-    for cle, lignes in sections(fiche).items():
-        predicat, type_claim = next((q[2], q[3]) for q in QUESTIONS if q[0] == cle)
-        if not predicat:
-            continue
-        for texte, citations in lignes:
-            for depot_cite, chemin, debut, fin in citations:  # la première citation vérifiable sert de preuve
-                try:
-                    source = connaissance.resoudre_source(sources, depot_cite, chemin)
-                    tenues.append(connaissance.proposer(conn, jumeau, source, predicat, texte, type_claim, chemin,
-                                                        debut, fin, "Fiche vivante du gardien", "gardien", modele))
-                    break
-                except (LookupError, ValueError):
-                    continue
-    conn.execute(
+def clore_non_reprises(conn, jumeau_id, proposees):
+    """Après une passe complète du gardien : les réponses qu'il n'a pas reprises sont closes, sauf si l'équipe les a
+    déjà validées ou contestées. Une passe sans aucune proposition ne clôt rien (panne plutôt que changement)."""
+    if not proposees:
+        return 0
+    return conn.execute(
         "UPDATE claim SET valide_jusqua = now() WHERE jumeau_id = %s AND predicat = ANY(%s) AND origine = 'CONVERSATION' "
         "AND statut = 'PROPOSED' AND valide_jusqua IS NULL AND NOT (id = ANY(%s))",
-        (jumeau["id"], sorted(PREDICATS), tenues))
-    return len(tenues)
+        (jumeau_id, sorted(PREDICATS), list(proposees))).rowcount

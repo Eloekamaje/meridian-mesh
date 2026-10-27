@@ -1,5 +1,5 @@
 """Le résumé d'un jumeau : les sept questions de « comprendre une application », prouvées et révisables."""
-from jumeau import comprendre, depot
+from jumeau import comprendre, connaissance, depot, methodes
 from jumeau.source_git import sha_courant
 from jumeau.tests.conftest import ACTIVITE, JUMEAU, besoin_pg, claim
 
@@ -33,20 +33,26 @@ def test_sections_de_la_fiche_lues_par_question():
     assert s["informations"] == [] and s["echanges"] == []
 
 
+def test_la_methode_et_la_revue_parlent_des_memes_questions():
+    texte = " ".join(methodes.lire("comprendre-application").split())
+    assert "comprendre-application" in {m["nom"] for m in methodes.catalogue()}
+    for _, titre, predicat, type_claim in comprendre.QUESTIONS:
+        assert f"## {titre}" in texte  # la fiche rédigée selon la méthode est lisible par la revue
+        if predicat:
+            assert f"Prédicat {predicat}, type {type_claim}" in texte
+
+
 @besoin_pg
-def test_les_lignes_prouvees_deviennent_des_connaissances_revisables(conn, depot_git):
+def test_apres_une_passe_les_reponses_non_reprises_sont_closes(conn, depot_git):
     source = {"nom": "tbt-repo", "type": "GIT", "emplacement": str(depot_git), "curseur": sha_courant(depot_git)}
     depot.enregistrer(conn, JUMEAU, source, [claim("fastapi", source["curseur"], 1)], ACTIVITE)
-    sources = depot.sources_du_jumeau(conn, "tbt")
-    comprendre.consigner(conn, JUMEAU, sources, FICHE, "modele-test")
-    objets = {(c["predicat"], c["objet"]) for c in depot.lister_claims(conn, "tbt")}
-    assert ("REALISE_CAPACITE", "Gérer les dossiers des personnes accompagnées") in objets
-    assert ("SERT_ACTEUR", "Agents de terrain : saisie hors ligne") in objets
-    assert not any(o == "Une capacité sans preuve" for _, o in objets)            # pas de preuve, pas de connaissance
-    assert not any(p == "APPLIQUE_REGLE" for p, _ in objets)                      # citation fausse
-    # Une capacité validée par l'équipe reste, même si la fiche suivante ne la reprend plus ; les autres sont closes.
-    cid = next(c["id"] for c in depot.lister_claims(conn, "tbt") if c["objet"].startswith("Présenter"))
-    depot.reviser(conn, cid, "alice", "ACCEPTED", None)
-    comprendre.consigner(conn, JUMEAU, sources, "## À quoi elle sert\n- Suivre les orientations `app.py#L7`\n", "m")
+    src = depot.source_du_jumeau(conn, "tbt")
+    def proposer(objet):
+        return connaissance.proposer(conn, JUMEAU, src, "REALISE_CAPACITE", objet, "CAPABILITY", "app.py", 1, 2,
+                                     "preuve", "gardien", "m")
+    ancienne, validee, reprise = proposer("Suivre les colis"), proposer("Gérer les dossiers"), proposer("Payer")
+    depot.reviser(conn, validee, "alice", "ACCEPTED", None)
+    assert comprendre.clore_non_reprises(conn, "tbt", []) == 0  # passe sans proposition : rien n'est clos
+    assert comprendre.clore_non_reprises(conn, "tbt", [reprise]) == 1
     restants = {c["objet"] for c in depot.lister_claims(conn, "tbt") if c["predicat"] in comprendre.PREDICATS}
-    assert restants == {"Présenter la solution aux évaluateurs", "Suivre les orientations"}
+    assert restants == {"Gérer les dossiers", "Payer"}

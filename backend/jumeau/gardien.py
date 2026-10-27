@@ -38,18 +38,11 @@ REGLES = [
 ]
 SCORES = {"haute": 82, "normale": 64, "basse": 48}
 
-CONSIGNE_FICHE = """Rédige la fiche vivante de l'application, que tu reliras au début de chaque conversation : ce
-qu'il faut savoir pour la comprendre dans l'entreprise. En Markdown, 400 mots au plus, exactement ces sections,
-chacune en puces d'une ligne (12 mots au plus, le détail reste dans les preuves) :
-« ## À quoi elle sert » (ses capacités d'affaires : un verbe et un objet métier, par exemple « Gérer les dossiers
-des clients ») ; « ## Pour qui, dans quels parcours » (qui l'utilise et à quelle étape) ; « ## Les informations
-qu'elle détient » (objets métier, et si elle en est la référence) ; « ## Les règles qu'elle applique » ;
-« ## Avec qui elle échange » (autres applications, services tiers) ; « ## Comment elle vit » (maturité, changements
-récents et leur raison : regarde son histoire) ; « ## Ce que l'on ne sait pas encore ».
-Langage métier, jamais de nom technique (route, bibliothèque, variable) : le code est la preuve, pas le propos.
-Chaque puce des cinq premières sections finit par sa citation `chemin#Ldébut-Lfin` ; reprends mot pour mot les
-formulations déjà validées par l'équipe. C'est un document, pas une conversation : ni question finale, ni
-proposition de suite. Réponds uniquement par la fiche."""
+CONSIGNE_FICHE = """Rédige la fiche vivante de l'application en appliquant la méthode comprendre-application
+(consulter_methode) : enquête, propose les connaissances prouvées, puis réponds uniquement par la fiche."""
+
+# Une passe du gardien enquête sur toute l'application : plus d'outils et de propositions qu'une réponse de Flore.
+BUDGET_PASSE = {"outils": 60, "propositions": 30}
 
 
 CONSIGNE_RECIT = """L'application vient de changer. Signaux observés automatiquement :
@@ -135,7 +128,8 @@ async def _rediger(ctx, dsn, sigs, commits):
     et celles qui restent fausses sont retirées. ponytail: pas de relecture par LLM (coût) ; à ajouter si la
     qualité des fiches dérive.
     """
-    a = agent.construire(ctx, dsn, session=f"gardien-{ctx['jumeau']['id']}-{_id_version(empreinte(ctx['sources']))}")
+    a = agent.construire(ctx, dsn, session=f"gardien-{ctx['jumeau']['id']}-{_id_version(empreinte(ctx['sources']))}",
+                         budget=agent.Budget(**BUDGET_PASSE))
     fiche = str(await a.invoke_async(CONSIGNE_FICHE)).strip()
     invalides = contradicteur.citations_invalides(fiche, ctx["sources"])
     if invalides:
@@ -225,7 +219,7 @@ async def veiller(conn, db, jumeau_id, chemins=None, rediger=_rediger):
             await publier(db, sit)
         await registre.projeter(db, conn)
     bilan = {"changement": True, "version": version, "depots": ingeres, "signaux": len(sigs), "commits": len(commits)}
-    ctx = {"jumeau": jumeau, "sources": [s for s in sources if s["index_code"]],
+    ctx = {"jumeau": jumeau, "sources": [s for s in sources if s["index_code"]], "proposees": [],
            "claims": connaissance.connaissances(conn, jumeau_id, limite=500),
            "acteur": "gardien", "profil": {"nom": "Gardien du jumeau", "role": "veille automatique"}}
     try:
@@ -234,7 +228,7 @@ async def veiller(conn, db, jumeau_id, chemins=None, rediger=_rediger):
         journal.warning("gardien %s : rédaction impossible, reprise à la passe suivante", jumeau_id, exc_info=True)
         return {**bilan, "fiche": False}
     enregistrer_fiche(conn, jumeau_id, version, fiche)
-    comprendre.consigner(conn, jumeau, ctx["sources"], fiche, os.environ.get("JUMEAU_MODELE", "deepseek"))
+    comprendre.clore_non_reprises(conn, jumeau_id, ctx["proposees"])
     if sit and recit:
         await db.situations.update_one({"id": sit["id"]}, {"$set": {"resume": recit}})
     journal.info("gardien %s : %s dépôt(s) ingéré(s), %s signal(aux)", jumeau_id, len(ingeres), len(sigs))
