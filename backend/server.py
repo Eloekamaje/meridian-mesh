@@ -1118,7 +1118,7 @@ async def generer_reponse_flore(contexte, question, selection, domaine, x_person
     # ponytail: un seul jumeau réel répond ; l'orchestration de plusieurs jumeaux viendra avec Flore-agent.
     reels = [j["id"] for j in tous if j.get("reel") and j["id"] in sel and niveau_au_moins(aut[j["id"]], "complet")]
     if reels:
-        reponse_jumeau = await jumeau_flore.repondre(reels[0], question, x_persona, travail, profil=persona)
+        reponse_jumeau = await jumeau_flore.repondre(reels[0], question, x_persona, travail, profil=persona, db=db)
         if reponse_jumeau:
             return reponse_jumeau
     if not sel and domaine:

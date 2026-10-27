@@ -639,6 +639,11 @@ export default function OngletTravail({
     finFilRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
+  // Flore travaille dans le Travail pendant sa réponse (plan, hypothèses, options, livrables, résumé) : on relit
+  // son état, en gardant la conversation locale (animation de la réponse qu'on vient de recevoir).
+  const rafraichirEtat = (id) =>
+    api.get(`/cases/${id}`).then(({ data: frais }) => setCas((c) => ({ ...frais, conversation: c.conversation }))).catch(() => {});
+
   const envoyer = async (e, texteDirect) => {
     e?.preventDefault?.();
     const q = (texteDirect ?? nouveauMsg).trim();
@@ -675,6 +680,7 @@ export default function OngletTravail({
       if (travailNe) {
         setCas({ ...travailNe, conversation: [data.utilisateur, { ...data.flore, anime: true, _activite: activiteTerminee("travail") }] });
         navigate(`/travaux/${idTravail}`, { replace: true, state: { continuite: true } });
+        rafraichirEtat(idTravail);
         return;
       }
       setCas((c) => ({
@@ -683,6 +689,7 @@ export default function OngletTravail({
         // l'historique chargé au montage, qui doit rester affiché d'un bloc (voir useDeroule)
         conversation: [...avant, data.utilisateur, { ...data.flore, anime: true, _activite: activiteTerminee("travail") }],
       }));
+      rafraichirEtat(idTravail);
     } catch {
       setCas((c) => ({ ...c, conversation: avant }));
       setNouveauMsg(q); // le texte n'est pas perdu

@@ -55,8 +55,27 @@ def test_agent_a_les_outils_attendus_et_aucun_outil_de_validation(tmp_path, monk
     a = agent.construire(CONTEXTE, dsn="postgresql://inutilise", session="test", modele=modele_factice())
     noms = set(a.tool_names)
     assert noms == {"mes_connaissances", "architecture", "chercher_texte", "chercher_symbole",
-                    "tracer_appels", "lire_code", "proposer_connaissance", "consulter_methode"}
-    assert not any("valid" in n for n in noms)
+                    "tracer_appels", "lire_code", "proposer_connaissance", "consulter_methode",
+                    "historique_du_code", "ce_qui_a_change"}
+    assert not any("valid" in n or "decid" in n for n in noms)
+
+
+OUTILS_TRAVAIL = {"planifier", "lever_etape", "proposer_hypothese", "proposer_option", "deposer_livrable",
+                  "actualiser_resume"}
+
+
+def test_dans_un_travail_flore_recoit_les_outils_du_travail_et_son_etat(tmp_path, monkeypatch):
+    monkeypatch.setattr(agent, "SESSIONS", tmp_path)
+    ctx = {**CONTEXTE, "travail": "Travail : Retirer TBT\nPlan :\n  [ ] Qui appelle TBT ?"}
+    a = agent.construire(ctx, dsn="postgresql://inutilise", session="t", modele=modele_factice(), ecriture=object())
+    assert OUTILS_TRAVAIL <= set(a.tool_names)
+    assert "Qui appelle TBT ?" in a.system_prompt and "État du Travail" in a.system_prompt
+
+
+def test_hors_travail_pas_d_outils_d_ecriture(tmp_path, monkeypatch):
+    monkeypatch.setattr(agent, "SESSIONS", tmp_path)
+    a = agent.construire(CONTEXTE, dsn="postgresql://inutilise", session="t", modele=modele_factice())
+    assert not OUTILS_TRAVAIL & set(a.tool_names)
 
 
 def test_modele_deepseek_exige_une_cle(monkeypatch):
@@ -78,6 +97,12 @@ def test_budget_d_outils_par_reponse():
     budget = agent.Budget(outils=2, propositions=1)
     assert budget.outil() and budget.outil() and not budget.outil()
     assert budget.proposition() and not budget.proposition()
+
+
+def test_l_exploration_n_epuise_jamais_le_budget_d_ecriture_du_travail():
+    budget = agent.Budget(outils=1, ecritures=2)
+    assert budget.outil() and not budget.outil()
+    assert budget.ecriture() and budget.ecriture() and not budget.ecriture()
 
 
 def test_erreur_d_outil_generique(monkeypatch):

@@ -11,6 +11,7 @@ import psycopg
 
 from jumeau import agent, connaissance, contradicteur, depot
 from jumeau.connaissance import RE_CITATION
+from jumeau.travail import EcritureTravail, etat_texte
 
 # Forme longue git://depot@sha:chemin#La-Lb ou forme courte chemin#La[-Lb] : toutes deux relues au commit du jumeau.
 MAX_PREUVES = 8
@@ -91,8 +92,12 @@ def _indisponible(nom, raison):
             "contributions": [], "preuves": []}
 
 
-async def repondre(jumeau_id, question, acteur, travail=None, profil=None):
-    """Réponse du jumeau réel à une question, ou None si `jumeau_id` n'est pas un jumeau réel ingéré."""
+async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=None):
+    """Réponse de Flore mobilisant un jumeau réel, ou None si `jumeau_id` n'est pas un jumeau réel ingéré.
+
+    Dans un Travail (`travail` et `db`), Flore reçoit son état et les outils pour y écrire (plan, hypothèses,
+    options, livrables, résumé) : elle travaille dans le Travail, elle ne fait pas que répondre.
+    """
     ctx, dsn = await asyncio.to_thread(_contexte, jumeau_id, acteur, profil)
     if not ctx:
         return None
@@ -102,7 +107,11 @@ async def repondre(jumeau_id, question, acteur, travail=None, profil=None):
         return _indisponible(nom, "une réponse est déjà en cours sur ce fil.")
     try:
         modele = agent.modele()
-        a = agent.construire(ctx, dsn, session=connaissance.id_session(jumeau_id, cle), modele=modele)
+        ecriture = EcritureTravail(db, travail) if travail and db is not None else None
+        if ecriture:
+            ctx["travail"] = etat_texte(await ecriture.etat())
+        a = agent.construire(ctx, dsn, session=connaissance.id_session(jumeau_id, cle), modele=modele,
+                             ecriture=ecriture)
         texte = str(await a.invoke_async(question)).strip()
         # Relecture avant envoi ; une seule révision au plus.
         # ponytail: la consigne de révision reste dans le fil (brouillon, critique, correction) : historique cohérent,

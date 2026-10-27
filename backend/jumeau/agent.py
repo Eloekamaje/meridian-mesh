@@ -7,6 +7,7 @@ Le modèle est configurable (JUMEAU_MODELE=deepseek|bedrock) : le code de l'agen
 Aucun outil ne valide : le jumeau propose, l'équipe valide (Architecture Jumeau §4.3, §4.4).
 """
 import logging
+from datetime import date
 import os
 import subprocess
 import threading
@@ -16,7 +17,7 @@ import psycopg
 from strands import Agent, tool
 from strands.session.file_session_manager import FileSessionManager
 
-from jumeau import cbm, connaissance, methodes
+from jumeau import cbm, connaissance, methodes, temps
 
 SESSIONS = Path(os.environ.get("JUMEAU_SESSIONS", Path.home() / ".local/share/meridian/sessions"))
 MAX_SORTIE = 6000  # caractères renvoyés au modèle par outil
@@ -26,10 +27,14 @@ journal = logging.getLogger("meridian.jumeau")
 
 
 class Budget:
-    """Plafonds par réponse : bornent le coût et l'effet d'une injection qui relancerait les outils en boucle."""
+    """Plafonds par réponse : bornent le coût et l'effet d'une injection qui relancerait les outils en boucle.
 
-    def __init__(self, outils=15, propositions=3):
-        self.outils, self.propositions = outils, propositions
+    L'écriture dans le Travail a son propre budget : une longue exploration ne doit jamais empêcher Flore
+    de consigner son plan et ce qu'elle a trouvé.
+    """
+
+    def __init__(self, outils=25, propositions=3, ecritures=12):
+        self.outils, self.propositions, self.ecritures = outils, propositions, ecritures
 
     def outil(self):
         self.outils -= 1
@@ -38,6 +43,10 @@ class Budget:
     def proposition(self):
         self.propositions -= 1
         return self.propositions >= 0
+
+    def ecriture(self):
+        self.ecritures -= 1
+        return self.ecritures >= 0
 
 
 class FilsActifs:
@@ -72,6 +81,7 @@ CHARTE = Path(__file__).with_name("charte_flore.md")  # comment Flore s'exprime 
 
 CONTEXTE = """## Contexte de cette conversation
 
+- Date du jour : {aujourdhui}
 - Interlocuteur : {interlocuteur}
 - Application : {nom}, de l'équipe {equipe}
 - Connaissances du jumeau (extraites du code au commit {sha} ; ✓ = confirmé par l'équipe) :
@@ -106,12 +116,18 @@ def prompt_systeme(ctx):
     """Identité + charte (fichier versionné) + contexte de la conversation (interlocuteur, application, connaissances)."""
     profil = ctx.get("profil") or {}
     interlocuteur = f"{profil.get('nom', ctx['acteur'])} — rôle : {profil.get('role', 'non précisé')}"
-    contexte = CONTEXTE.format(interlocuteur=interlocuteur, nom=ctx["jumeau"]["nom"], equipe=ctx["jumeau"]["equipe"],
+    contexte = CONTEXTE.format(aujourdhui=date.today().isoformat(), interlocuteur=interlocuteur,
+                               nom=ctx["jumeau"]["nom"], equipe=ctx["jumeau"]["equipe"],
                                sha=ctx["source"]["curseur"][:12],
                                autoportrait=connaissance.autoportrait(ctx["jumeau"], ctx["claims"]))
     catalogue = "\n".join(f"- {m['nom']} : {m['description']}" for m in methodes.catalogue())
-    return (f"Tu es Flore, la voix de Méridian.\n\n{CHARTE.read_text(encoding='utf-8')}\n\n"
-            f"## Catalogue des méthodes\n\n{catalogue}\n\n{contexte}")
+    prompt = (f"Tu es Flore, la voix de Méridian.\n\n{CHARTE.read_text(encoding='utf-8')}\n\n"
+              f"## Catalogue des méthodes\n\n{catalogue}\n\n{contexte}")
+    if ctx.get("fiche"):
+        prompt += f"\n\n## Fiche vivante de l'application (rédigée par le gardien du jumeau)\n\n{ctx['fiche']}"
+    if ctx.get("travail"):
+        prompt += f"\n\n## État du Travail (ton état de tâche : tiens-le à jour avec tes outils)\n\n{ctx['travail']}"
+    return prompt
 
 
 def outils(ctx, dsn, nom_modele, budget):
@@ -231,6 +247,38 @@ def outils(ctx, dsn, nom_modele, budget):
             return "Proposition impossible pour le moment."
 
     @tool
+    def historique_du_code(depuis: str = "", chemin: str = "") -> list:
+        """Historique des changements du code jusqu'au commit ingéré : date, auteur, message (le pourquoi).
+
+        Args:
+            depuis: date AAAA-MM-JJ ; vide = les plus récents.
+            chemin: fichier ou dossier pour ne voir que ses changements ; vide = tout.
+        """
+        if not budget.outil():
+            return [EPUISE]
+        try:
+            return temps.historique(source, depuis, chemin)
+        except ValueError as e:
+            return [f"Historique indisponible : {e}"]
+
+    @tool
+    def ce_qui_a_change(depuis: str) -> dict:
+        """Ce qui a changé dans l'application depuis une date : commits et connaissances apparues ou disparues.
+
+        Args:
+            depuis: date AAAA-MM-JJ.
+        """
+        if not budget.outil():
+            return {"erreur": EPUISE}
+        try:
+            with psycopg.connect(dsn) as conn:
+                evolution = temps.evolution(conn, jumeau["id"], depuis)
+            return {"commits": temps.historique(source, depuis), **evolution}
+        except (ValueError, psycopg.Error) as e:
+            journal.warning("ce_qui_a_change : %s", e)
+            return {"erreur": "date attendue au format AAAA-MM-JJ" if isinstance(e, ValueError) else "indisponible"}
+
+    @tool
     def consulter_methode(nom: str) -> str:
         """Charge les consignes d'une méthode du catalogue, à suivre pour répondre.
 
@@ -240,14 +288,93 @@ def outils(ctx, dsn, nom_modele, budget):
         return methodes.lire(nom) or f"Méthode inconnue. Disponibles : {', '.join(m['nom'] for m in methodes.catalogue())}"
 
     return [mes_connaissances, architecture, chercher_texte, chercher_symbole, tracer_appels, lire_code,
-            proposer_connaissance, consulter_methode]
+            proposer_connaissance, consulter_methode, historique_du_code, ce_qui_a_change]
 
 
-def construire(ctx, dsn, session, modele=None):
+def outils_travail(ecriture, budget):
+    """Outils d'écriture dans le Travail : Flore y tient son plan et y dépose ce qu'elle produit.
+
+    Aucun outil ne décide : les décisions restent aux humains (Vision §16, « humain dans la décision »).
+    """
+    async def ecrire(action, *args):
+        if not budget.ecriture():
+            return "Plafond d'écritures dans le Travail atteint pour cette réponse."
+        try:
+            await action(*args)
+            return "Enregistré dans le Travail."
+        except ValueError as e:
+            return f"Refusé : {e}"
+
+    @tool
+    async def planifier(etapes: list[str], prochaine_etape: str = "") -> str:
+        """Pose ou complète le plan du Travail : les questions à lever, dans l'ordre, et la prochaine étape.
+
+        Args:
+            etapes: questions à lever pour répondre à la demande (les étapes déjà présentes sont conservées).
+            prochaine_etape: ce que tu fais ensuite, en une phrase.
+        """
+        return await ecrire(ecriture.planifier, etapes, prochaine_etape)
+
+    @tool
+    async def lever_etape(etape: str) -> str:
+        """Marque une étape du plan comme levée, quand tu as la réponse prouvée.
+
+        Args:
+            etape: texte exact de l'étape, tel qu'il figure dans le plan.
+        """
+        if not budget.ecriture():
+            return "Plafond d'écritures dans le Travail atteint pour cette réponse."
+        return "Étape levée." if await ecriture.resoudre(etape) else "Étape introuvable : recopie son texte exact."
+
+    @tool
+    async def proposer_hypothese(texte: str) -> str:
+        """Ajoute au Travail une hypothèse à valider par l'équipe.
+
+        Args:
+            texte: l'hypothèse, en une phrase.
+        """
+        return await ecrire(ecriture.hypothese, texte)
+
+    @tool
+    async def proposer_option(titre: str, description: str, risque: str = "moyen") -> str:
+        """Ajoute au Travail une option à évaluer par l'équipe.
+
+        Args:
+            titre: nom court de l'option.
+            description: ce qu'elle implique, ses effets.
+            risque: faible, moyen ou eleve.
+        """
+        return await ecrire(ecriture.option, titre, description, risque)
+
+    @tool
+    async def deposer_livrable(titre: str, contenu: str) -> str:
+        """Dépose dans le Travail un document produit (fiche d'impact, note d'arbitrage, synthèse…), en Markdown.
+
+        Args:
+            titre: titre du document.
+            contenu: le document, avec ses citations `chemin#Ldébut-Lfin`.
+        """
+        return await ecrire(ecriture.livrable, titre, contenu)
+
+    @tool
+    async def actualiser_resume(texte: str) -> str:
+        """Remplace le résumé du Travail : où en est la compréhension, en deux ou trois phrases.
+
+        Args:
+            texte: le nouveau résumé.
+        """
+        return await ecrire(ecriture.resume, texte)
+
+    return [planifier, lever_etape, proposer_hypothese, proposer_option, deposer_livrable, actualiser_resume]
+
+
+def construire(ctx, dsn, session, modele=None, ecriture=None):
     """Agent du jumeau ; le fil `session` (personnel ou celui d'un Travail) est restauré depuis le disque."""
     m = modele or globals()["modele"]()
     nom_modele = m.get_config().get("model_id", "inconnu")
     SESSIONS.mkdir(parents=True, exist_ok=True)
-    return Agent(model=m, system_prompt=prompt_systeme(ctx), tools=outils(ctx, dsn, nom_modele, Budget()),
+    budget = Budget()
+    tools = outils(ctx, dsn, nom_modele, budget) + (outils_travail(ecriture, budget) if ecriture else [])
+    return Agent(model=m, system_prompt=prompt_systeme(ctx), tools=tools,
                  session_manager=FileSessionManager(session_id=session, storage_dir=str(SESSIONS)),
                  callback_handler=None)
