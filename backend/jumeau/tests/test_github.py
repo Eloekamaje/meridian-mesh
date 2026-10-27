@@ -52,5 +52,7 @@ def test_jeton_refuse_ou_absent(forge):
     reponses["/user"] = 401
     with pytest.raises(github.JetonRefuse):
         github.compte("vault:r")
-    with pytest.raises(RuntimeError):
+    with pytest.raises(github.Invalide):
         github.compte(None)
+    with pytest.raises(github.Invalide):  # un retour à la ligne finirait cité dans une erreur d'en-tête HTTP
+        github.compte_du_jeton("ghp_x\nInjecte: 1")

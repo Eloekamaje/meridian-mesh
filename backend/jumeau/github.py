@@ -10,9 +10,15 @@ from urllib.parse import quote, urlencode
 
 from jumeau.naissance import NOM_VALIDE, _hote_autorise, resoudre_secret
 
-MAX_PAGES = 3  # ponytail: 300 dépôts les plus récemment mis à jour ; recherche GitHub si un compte en voit plus
+# ponytail: 300 dépôts les plus récemment mis à jour, sans cache ni limitation de débit (quota GitHub de 5000
+# requêtes/h par jeton) ; recherche GitHub et cache court par jeton si l'atelier est partagé.
+MAX_PAGES = 3
 MAX_RESULTATS = 20
 DELAI = 10
+
+
+class Invalide(ValueError):
+    """Demande mal formée ; son message peut être montré à l'utilisateur."""
 
 
 class JetonRefuse(Exception):
@@ -33,9 +39,14 @@ def _base():
 
 
 def _get(reference, chemin, **params):
-    jeton = resoudre_secret(reference)
+    return _get_avec(resoudre_secret(reference), chemin, **params)
+
+
+def _get_avec(jeton, chemin, **params):
     if not jeton:
-        raise RuntimeError("aucun jeton : l'autocomplétion des dépôts demande un jeton d'accès")
+        raise Invalide("aucun jeton : l'autocomplétion des dépôts demande un jeton d'accès")
+    if not jeton.isascii() or not jeton.isprintable() or " " in jeton:
+        raise Invalide("jeton mal formé")
     url = f"{_base()}{chemin}" + (f"?{urlencode(params)}" if params else "")
     requete = urllib.request.Request(url, headers={"Authorization": f"Bearer {jeton}",
                                                    "Accept": "application/vnd.github+json"})
@@ -50,7 +61,12 @@ def _get(reference, chemin, **params):
 
 def compte(reference):
     """Le compte que ce jeton ouvre."""
-    return {"login": _get(reference, "/user")["login"]}
+    return compte_du_jeton(resoudre_secret(reference))
+
+
+def compte_du_jeton(jeton):
+    """Vérifie un jeton auprès de GitHub avant de le conserver (un jeton refusé n'écrase rien)."""
+    return {"login": _get_avec(jeton, "/user")["login"]}
 
 
 def depots(reference, recherche=""):
@@ -70,7 +86,7 @@ def branches(reference, depot, recherche=""):
     """Branches d'un dépôt `propriétaire/nom`, filtrées par `recherche`."""
     proprietaire, _, nom = depot.partition("/")
     if not NOM_VALIDE.fullmatch(proprietaire or "") or not NOM_VALIDE.fullmatch(nom or ""):
-        raise ValueError("dépôt attendu sous la forme propriétaire/nom")
+        raise Invalide("dépôt attendu sous la forme propriétaire/nom")
     lot = _get(reference, f"/repos/{quote(proprietaire)}/{quote(nom)}/branches", per_page=100)
     motif = recherche.strip().lower()
     return [b["name"] for b in lot if motif in b["name"].lower()][:MAX_RESULTATS]

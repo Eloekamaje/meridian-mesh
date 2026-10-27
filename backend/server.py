@@ -1019,12 +1019,9 @@ async def maj_commande(cid: str, payload: CommandePatch):
     if not patch:
         return {"ok": True}
     if patch.get("sources"):
-        # Un jeton collé dans l'interface part dans Vault ; la commande n'en garde que la référence
-        try:
-            patch["sources"] = [await asyncio.to_thread(_proteger_source, cid, s) for s in patch["sources"]]
-        except (RuntimeError, OSError) as e:
-            logger.warning("commande %s : secret non déposé dans Vault (%s)", cid, e)
-            raise HTTPException(503, "Coffre de secrets indisponible : jeton non enregistré")
+        doc = await db.commandes.find_one({"id": cid}, {"_id": 0, "sources": 1}) or {}
+        avant = {s.get("id"): s.get("config") or {} for s in doc.get("sources", [])}
+        patch["sources"] = [_proteger_source(cid, s, avant) for s in patch["sources"]]
     patch["maj_le"] = datetime.now(timezone.utc).isoformat()
     res = await db.commandes.update_one({"id": cid}, {"$set": patch})
     if res.matched_count == 0:
@@ -1032,12 +1029,22 @@ async def maj_commande(cid: str, payload: CommandePatch):
     return {"ok": True, "maj_le": patch["maj_le"]}
 
 
-def _proteger_source(cid, source):
-    conn = next((c for c in CONNECTEURS if c["id"] == source.get("connecteur")), None)
-    cles = [ch["cle"] for ch in (conn["champs"] if conn else []) if ch.get("type") == "secret"]
-    if not cles or not isinstance(source.get("config"), dict):
+SID_VALIDE = re.compile(r"[\w-]{1,64}")
+
+
+def _reference_jeton(cid: str, sid: str) -> str:
+    return f"vault:{jumeau_naissance.PREFIXE_VAULT}commandes/{cid}/{sid}#jeton"
+
+
+def _proteger_source(cid, source, avant):
+    """Une source GitHub ne garde que la référence de son propre jeton (posée par POST …/github/jeton) : le client
+    ne peut ni désigner le secret d'une autre commande, ni une variable du serveur, ni écrire dans Vault ici."""
+    if source.get("connecteur") != "github" or not isinstance(source.get("config"), dict):
         return source
-    return {**source, "config": jumeau_naissance.proteger_secrets(source["config"], cles, f"{cid}/{source.get('id', 'source')}")}
+    secret = source["config"].get("secret") or ""
+    if secret and secret != _reference_jeton(cid, source.get("id", "")):
+        secret = (avant.get(source.get("id")) or {}).get("secret") or ""
+    return {**source, "config": {**source["config"], "secret": secret}}
 
 
 def _champ_rempli(valeur):
@@ -1072,8 +1079,11 @@ async def _appel_github(cid: str, appel, reference, *args):
         return await asyncio.to_thread(appel, reference, *args)
     except jumeau_github.JetonRefuse:
         raise HTTPException(401, "GitHub refuse ce jeton : vérifiez-le ou ses droits de lecture")
-    except (RuntimeError, ValueError) as e:
+    except jumeau_github.Invalide as e:
         raise HTTPException(400, str(e))
+    except (RuntimeError, ValueError) as e:  # message générique : une erreur bas niveau peut citer le jeton
+        logger.warning("commande %s : appel GitHub impossible (%s)", cid, type(e).__name__)
+        raise HTTPException(400, "Jeton introuvable ou illisible : vérifiez-le à nouveau")
     except OSError:
         logger.warning("commande %s : GitHub injoignable", cid, exc_info=True)
         raise HTTPException(502, "GitHub ne répond pas")
@@ -1086,16 +1096,21 @@ class JetonGithub(BaseModel):
 @api_router.post("/commandes/{cid}/sources/{sid}/github/jeton")
 async def github_jeton(cid: str, sid: str, payload: JetonGithub):
     """Le jeton va dans Vault, GitHub le vérifie, et la commande n'en garde que la référence."""
-    doc = await db.commandes.find_one({"id": cid, "sources.id": sid}, {"_id": 0, "id": 1})
+    if not SID_VALIDE.fullmatch(sid):
+        raise HTTPException(400, "Identifiant de source invalide")
+    doc = await db.commandes.find_one({"id": cid, "sources": {"$elemMatch": {"id": sid, "connecteur": "github"}}},
+                                      {"_id": 0, "id": 1})
     if not doc:
-        raise HTTPException(404, "Source introuvable")
+        raise HTTPException(404, "Source GitHub introuvable")
+    jeton = payload.jeton.strip()
+    # Vérifié avant d'être conservé : un jeton refusé n'écrase jamais celui qui fonctionne
+    compte = await _appel_github(cid, jumeau_github.compte_du_jeton, jeton)
     try:
-        reference = (await asyncio.to_thread(jumeau_naissance.proteger_secrets, {"secret": payload.jeton.strip()},
+        reference = (await asyncio.to_thread(jumeau_naissance.proteger_secrets, {"secret": jeton},
                                              ["secret"], f"{cid}/{sid}"))["secret"]
     except (RuntimeError, OSError) as e:
-        logger.warning("commande %s : jeton non déposé dans Vault (%s)", cid, e)
+        logger.warning("commande %s : jeton non déposé dans Vault (%s)", cid, type(e).__name__)
         raise HTTPException(503, "Coffre de secrets indisponible : jeton non enregistré")
-    compte = await _appel_github(cid, jumeau_github.compte, reference)  # refusé : la commande reste inchangée
     await db.commandes.update_one({"id": cid, "sources.id": sid}, {"$set": {"sources.$.config.secret": reference}})
     return {"reference": reference, **compte}
 
