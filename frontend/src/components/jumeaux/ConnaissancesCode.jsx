@@ -6,6 +6,11 @@ import api from "@/lib/api";
 // Connaissances d'un jumeau né du code, dans sa fiche (/jumeaux/:jid/revue) : chaque Claim s'ouvre sur sa preuve,
 // lue au commit ingéré de son dépôt.
 const FAMILLES = {
+  REALISE_CAPACITE: "À quoi elle sert",
+  SERT_ACTEUR: "Pour qui, dans quels parcours",
+  DETIENT: "Les informations qu'elle détient",
+  APPLIQUE_REGLE: "Les règles qu'elle applique",
+  ECHANGE_AVEC: "Avec qui elle échange",
   EXPOSE: "APIs exposées",
   DEPEND_DE: "Dépendances logicielles",
   LIT_VARIABLE: "Configuration lue",
@@ -94,55 +99,19 @@ function Preuve({ preuve, claim, onRevue }) {
   );
 }
 
-// Texte en ligne sans HTML injecté (contenu rédigé par un modèle) : **gras** et `code` en éléments React.
-function EnLigne({ texte }) {
-  return texte.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((t, i) => {
-    if (t.startsWith("**") && t.endsWith("**") && t.length > 4) return <strong key={i} className="font-semibold text-[#F2F6F8]">{t.slice(2, -2)}</strong>;
-    if (t.startsWith("`") && t.endsWith("`") && t.length > 2) return <code key={i} className="rounded bg-[#60A5FA]/10 px-1 font-code text-[11px] text-[#BFDBFE]">{t.slice(1, -1)}</code>;
-    return t;
-  });
-}
-
 // Ce que le jumeau dit de l'application : fiche vivante rédigée par le gardien à chaque commit.
-function FicheVivante({ jid }) {
-  const { donnees: fiche, erreur } = useDonnees(`/v2/jumeaux/${encodeURIComponent(jid)}/fiche`);
-  const [preuvesOuvertes, setPreuvesOuvertes] = useState(false);
-  if (erreur) return <p className="mt-4 text-xs text-[#7C93A8]">Fiche vivante en préparation par le gardien du jumeau.</p>;
-  if (!fiche) return null;
-  const lignes = fiche.contenu.split("\n").filter((l) => !/^#\s/.test(l));  // le titre de la page suffit
+// Le code lu par le jumeau (dépôts, branche, commit) ; le résumé lui-même est rendu par la revue.
+function CodeLu({ jid }) {
+  const { donnees: fiche } = useDonnees(`/v2/jumeaux/${encodeURIComponent(jid)}/fiche`);
+  if (!fiche?.depots?.length) return null;
   return (
-    <section className={`rounded-lg border ${BORDURE} bg-[#0F1D28] p-4`} aria-label="Fiche vivante" data-testid="fiche-vivante">
-      <p className="font-code text-[10px] uppercase tracking-[0.2em] text-[#60A5FA]">Ce que le jumeau dit de l'application</p>
-      <ul className="mb-2 mt-1 flex flex-wrap gap-1.5" aria-label="Code lu par le jumeau" data-testid="fiche-depots">
-        {(fiche.depots || []).map((d) => (
-          <li key={d.nom} className={`rounded border ${BORDURE} px-1.5 py-0.5 font-code text-[10px] text-[#94A3B8]`}>
-            {d.nom}{d.branche ? ` · ${d.branche}` : ""} · {d.commit}
-          </li>
-        ))}
-      </ul>
-      <div className="space-y-1 text-[13px] leading-relaxed text-[#CBD5E1]">
-        {lignes.map((l, i) => {
-          if (!l.trim()) return <div key={i} className="h-1" />;
-          const titre = l.match(/^\s*(?:#{2,6}\s+|\*\*)(.+?)(?:\*\*)?\s*$/);
-          if (titre && (l.trim().startsWith("#") || /^\*\*[^*]+\*\*$/.test(l.trim())))
-            return <h3 key={i} className="pt-2 text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">{titre[1]}</h3>;
-          if (/^\s*[-*]\s/.test(l)) return <p key={i} className="pl-3 before:mr-2 before:content-['•']"><EnLigne texte={l.replace(/^\s*[-*]\s/, "")} /></p>;
-          return <p key={i}><EnLigne texte={l} /></p>;
-        })}
-      </div>
-      {fiche.preuves.length > 0 && (
-        <div className="mt-3">
-          <button type="button" onClick={() => setPreuvesOuvertes((o) => !o)} aria-expanded={preuvesOuvertes} className={`font-code text-[11px] text-[#60A5FA] hover:underline ${FOCUS}`}>
-            Repose sur {fiche.preuves.length} preuve{fiche.preuves.length > 1 ? "s" : ""} · {preuvesOuvertes ? "masquer" : "afficher"}
-          </button>
-          {preuvesOuvertes && (
-            <ul className="mt-1.5 space-y-1 border-l-2 border-[#60A5FA]/25 pl-2.5">
-              {fiche.preuves.map((p) => <li key={p.detail} className="break-all font-code text-[10px] text-[#7C93A8]">{p.detail}</li>)}
-            </ul>
-          )}
-        </div>
-      )}
-    </section>
+    <ul className="flex flex-wrap gap-1.5" aria-label="Code lu par le jumeau" data-testid="fiche-depots">
+      {fiche.depots.map((d) => (
+        <li key={d.nom} className={`rounded border ${BORDURE} px-1.5 py-0.5 font-code text-[10px] text-[#94A3B8]`}>
+          {d.nom}{d.branche ? ` · ${d.branche}` : ""} · {d.commit}
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -168,7 +137,7 @@ function Connaissances({ jid }) {
   return (
     <div className="grid gap-6 lg:grid-cols-2" data-testid="fiche-jumeau">
       <div>
-        <FicheVivante jid={jid} />
+        <CodeLu jid={jid} />
         <p className="mt-4 text-xs text-[#94A3B8]">{claimsAffiches.length} connaissances prouvées par le code</p>
         {familles.map(([titre, liste]) => (
           <section key={titre} className="mt-5" aria-label={titre}>

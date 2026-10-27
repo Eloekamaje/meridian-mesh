@@ -1,55 +1,31 @@
-"""Examen d'un jumeau né du code, dans la forme de l'examen de l'atelier (POST /jumeaux/{jid}/examiner).
+"""Revue d'un jumeau né du code : les sept questions de « comprendre une application » (POST /jumeaux/{jid}/examiner).
 
-La fiche des jumeaux (Revue) garde sa structure ; pour un jumeau né du code, chaque rubrique vient de ses
-connaissances prouvées et de sa fiche vivante au lieu d'être simulée. Ce que le code ne révèle pas est dit.
+Les cinq premières viennent des connaissances prouvées (révisables par l'équipe), les deux dernières de la fiche
+vivante du gardien. Les interfaces, dépendances et variables extraites du code n'y figurent pas : ce sont des
+preuves, consultables sous la revue.
 """
-import re
+from jumeau import comprendre, depot, gardien
 
-from jumeau import depot, gardien
-
-MAX_ITEMS = 12
-RE_INCONNU = re.compile(r"^#{2,6}\s*ce qui reste inconnu", re.IGNORECASE)
-RE_CITATION = re.compile(r"\s*`[^`]*#L\d+[^`]*`")
-
-
-def _liste(objets):
-    objets = list(objets)
-    return ", ".join(objets[:MAX_ITEMS]) + (f" (+{len(objets) - MAX_ITEMS})" if len(objets) > MAX_ITEMS else "")
-
-
-def _inconnus(fiche):
-    """Puces de la rubrique « Ce qui reste inconnu » de la fiche vivante, sans les citations."""
-    puces, dedans = [], False
-    for ligne in (fiche or "").splitlines():
-        if ligne.startswith("#"):
-            dedans = bool(RE_INCONNU.match(ligne))
-        elif dedans and re.match(r"\s*[-*]\s", ligne):
-            puces.append(RE_CITATION.sub("", re.sub(r"^\s*[-*]\s+", "", ligne)).replace("**", "").strip())
-    return puces
+SOURCES_NON_CONNECTEES = "Exploitation, incidents, base de données : sources non connectées"
 
 
 def depuis_connaissances(jumeau, claims, fiche):
-    ouverts = [c for c in claims if c["statut"] != "CONTESTED"]
-    par = lambda p: [c["objet"] for c in ouverts if c["predicat"] == p]  # noqa: E731
-    capacites = [f"Expose {c['objet']}" + (" (confirmé par l'équipe)" if c["statut"] == "ACCEPTED" else "")
-                 for c in ouverts if c["predicat"] == "EXPOSE"][:MAX_ITEMS]
-    comportements = ["Lu dans le code : aucune source d'observabilité connectée, rien n'est observé en exécution"]
-    for predicat, libelle in (("DEPEND_DE", "S'appuie sur"), ("LIT_VARIABLE", "Lit la configuration"),
-                              ("EXECUTE_IMAGE", "Exécute les images")):
-        if par(predicat):
-            comportements.append(f"{libelle} : {_liste(par(predicat))}")
-    contradictions = [f"{c['objet']} — contesté" + (f" : {c['revues'][0]['motif']}" if c["revues"] and
-                                                    c["revues"][0].get("motif") else "")
-                      for c in claims if c["statut"] == "CONTESTED"]
-    return {
-        "identite": {k: jumeau.get(k) for k in ("nom", "mission", "domaine")},
-        "capacites": capacites or ["Aucune interface exposée trouvée dans le code"],
-        "comportements": comportements,
-        # ponytail: le code seul ne révèle pas les relations entre applications ; à tirer des appels HTTP (cbm).
-        "relations_supposees": [],
-        "contradictions": contradictions,
-        "connaissances_manquantes": _inconnus(fiche) + ["Observabilité, incidents, base de données : non connectés"],
-    }
+    lignes = comprendre.sections(fiche)
+    blocs = []
+    for cle, titre, predicat, _ in comprendre.QUESTIONS:
+        if predicat:
+            items = [{"texte": c["objet"], "statut": c["statut"]} for c in claims if c["predicat"] == predicat]
+        else:
+            items = [{"texte": texte} for texte, _ in lignes[cle]]
+        if cle == "vie":
+            items.append({"texte": f"Responsable : {jumeau.get('proprietaire') or 'non renseigné'}"})
+        if cle == "inconnu":
+            resumes = [c for c in claims if c["predicat"] in comprendre.PREDICATS]
+            valides = sum(c["statut"] == "ACCEPTED" for c in resumes)
+            items += [{"texte": f"{valides} connaissance(s) sur {len(resumes)} validée(s) par l'équipe"},
+                      {"texte": SOURCES_NON_CONNECTEES}]
+        blocs.append({"cle": cle, "titre": titre, "items": items})
+    return {"identite": {k: jumeau.get(k) for k in ("nom", "mission", "domaine")}, "comprendre": blocs}
 
 
 def examiner(conn, jumeau_id, doc):

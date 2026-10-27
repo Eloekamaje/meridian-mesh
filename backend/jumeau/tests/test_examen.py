@@ -1,38 +1,33 @@
-"""Examen d'un jumeau né du code : même forme que l'examen de l'atelier, tiré des connaissances prouvées."""
+"""Revue d'un jumeau né du code : les sept questions, tirées des connaissances prouvées et de la fiche vivante."""
 from jumeau import examen
 
 CLAIMS = [
-    {"predicat": "EXPOSE", "objet": "GET /articles", "statut": "ACCEPTED", "revues": []},
-    {"predicat": "EXPOSE", "objet": "POST /login", "statut": "PROPOSED", "revues": []},
-    {"predicat": "DEPEND_DE", "objet": "fastapi", "statut": "PROPOSED", "revues": []},
-    {"predicat": "LIT_VARIABLE", "objet": "DB_URL", "statut": "PROPOSED", "revues": []},
-    {"predicat": "DEPEND_DE", "objet": "motor", "statut": "CONTESTED",
-     "revues": [{"decision": "CONTESTED", "motif": "plus utilisé"}]},
+    {"predicat": "REALISE_CAPACITE", "objet": "Gérer les dossiers", "statut": "ACCEPTED"},
+    {"predicat": "REALISE_CAPACITE", "objet": "Présenter la solution", "statut": "PROPOSED"},
+    {"predicat": "APPLIQUE_REGLE", "objet": "Double approbation", "statut": "CONTESTED"},
+    {"predicat": "DEPEND_DE", "objet": "fastapi", "statut": "PROPOSED"},
 ]
-FICHE = """## Ce qu'elle fait
-Texte.
+FICHE = """## Comment elle vit
+- **Refonte** le 25 octobre `app.py#L6`
 
-## Ce qui reste inconnu
-- **Volumétrie** et criticité `README.md#L3`
-- Usage réel des favoris
-
-## Autre
-- ignoré
+## Ce que l'on ne sait pas encore
+- Qui s'en sert réellement
 """
 
 
-def test_examen_tire_des_connaissances_prouvees():
-    e = examen.depuis_connaissances({"nom": "Conduit", "mission": "Publier", "domaine": "Client"}, CLAIMS, FICHE)
-    assert e["identite"] == {"nom": "Conduit", "mission": "Publier", "domaine": "Client"}
-    assert e["capacites"] == ["Expose GET /articles (confirmé par l'équipe)", "Expose POST /login"]
-    assert e["comportements"][0].startswith("Lu dans le code")
-    assert any("fastapi" in c and "motor" not in c for c in e["comportements"])
-    assert any("DB_URL" in c for c in e["comportements"])
-    assert e["contradictions"] == ["motor — contesté : plus utilisé"]
-    assert e["connaissances_manquantes"][:2] == ["Volumétrie et criticité", "Usage réel des favoris"]
-    assert e["relations_supposees"] == []
+def test_sept_questions_sans_detail_technique():
+    e = examen.depuis_connaissances({"nom": "X", "mission": "m", "domaine": "d", "proprietaire": "Équipe Y"}, CLAIMS, FICHE)
+    blocs = {b["cle"]: b for b in e["comprendre"]}
+    assert list(blocs) == ["sert", "pour_qui", "informations", "regles", "echanges", "vie", "inconnu"]
+    assert blocs["sert"]["items"] == [{"texte": "Gérer les dossiers", "statut": "ACCEPTED"},
+                                      {"texte": "Présenter la solution", "statut": "PROPOSED"}]
+    assert blocs["regles"]["items"][0]["statut"] == "CONTESTED"
+    assert [i["texte"] for i in blocs["vie"]["items"]] == ["Refonte le 25 octobre", "Responsable : Équipe Y"]
+    assert blocs["inconnu"]["items"][:2] == [{"texte": "Qui s'en sert réellement"},
+                                             {"texte": "1 connaissance(s) sur 3 validée(s) par l'équipe"}]
+    assert "fastapi" not in str(e)
 
 
-def test_examen_sans_fiche_ni_contestation():
-    e = examen.depuis_connaissances({"nom": "X"}, CLAIMS[:1], None)
-    assert e["contradictions"] == [] and e["connaissances_manquantes"]
+def test_sans_fiche():
+    e = examen.depuis_connaissances({"nom": "X"}, [], None)
+    assert all(b["items"] == [] for b in e["comprendre"] if b["cle"] not in ("vie", "inconnu"))

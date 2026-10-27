@@ -13,7 +13,36 @@ export function Section({ titre, items }) {
   );
 }
 
+// Jumeau né du code : les sept questions de « comprendre une application », chaque ligne prouvée et révisable.
+const MARQUE = { ACCEPTED: ["✓ validé", "#34D399"], CONTESTED: ["contesté", "#F2B84B"] };
+
+function Comprendre({ examen }) {
+  const blocs = examen.comprendre;
+  const bloc = (b, i) => (
+    <div key={b.cle} data-testid={`comprendre-${b.cle}`}>
+      <div className="font-code text-[10px] uppercase tracking-[0.2em] text-[#7C93A8]">{i + 1} · {b.titre}</div>
+      <ul className="mt-1.5 space-y-1">
+        {b.items.length === 0 && <li className="text-xs text-[#7C93A8]">Rien d'établi pour l'instant</li>}
+        {b.items.map((it, j) => (
+          <li key={j} className="text-xs text-[#CBD5E1]">
+            → {it.texte}
+            {MARQUE[it.statut] && <span className="ml-1.5 font-code text-[9px]" style={{ color: MARQUE[it.statut][1] }}>{MARQUE[it.statut][0]}</span>}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+  return (
+    <div className="space-y-5 text-sm" data-testid="revue-comprendre">
+      <p className="text-[#94A3B8]">{examen.identite?.mission}</p>
+      <div className="grid gap-5 md:grid-cols-2">{blocs.slice(0, 6).map(bloc)}</div>
+      {blocs.slice(6).map((b) => bloc(b, 6))}
+    </div>
+  );
+}
+
 export default function RevueContenu({ examen, jumeau }) {
+  if (examen.comprendre) return <Comprendre examen={examen} />;
   return (
     <div className="space-y-4 text-sm" data-testid="revue-contenu">
       <p className="text-[#94A3B8]">{examen.identite?.mission}</p>
