@@ -27,6 +27,13 @@ def test_nettoyer_borne_la_taille():
     assert len(agent.nettoyer("x" * 50_000, "p", "/c")) <= agent.MAX_SORTIE + 40
 
 
+def test_c_est_flore_qui_parle_et_le_jumeau_est_mobilise():
+    prompt = agent.prompt_systeme(CONTEXTE)
+    assert prompt.startswith("Tu es Flore")
+    assert "troisième personne" in prompt
+    assert "Tu ES" not in prompt and "je suis" not in prompt.lower()
+
+
 def test_prompt_systeme_porte_l_identite_et_les_regles():
     prompt = agent.prompt_systeme(CONTEXTE)
     assert "TBT" in prompt and "equipe-tbt" in prompt and "alice" in prompt

@@ -1,4 +1,4 @@
-"""Pont entre Flore et un jumeau réel : Flore lui délègue la question (Agent-as-Tool, Architecture Jumeau §4.3).
+"""Pont entre Flore et un jumeau réel : Flore mobilise le jumeau pour répondre (Architecture Jumeau §4.3).
 
 La réponse du jumeau reprend le format des réponses de Flore (reponse, contributions, preuves) : elle s'affiche
 dans les conversations existantes (panneau Flore, fil d'un Travail) sans écran dédié.
@@ -37,11 +37,13 @@ def preuves_depuis(texte, source):
 
 def vers_reponse_flore(jumeau, source, texte):
     sha = source["curseur"][:12]
+    preuves = preuves_depuis(texte, source)
     return {
         "comportement": "expliquer",
         "reponse": texte,
-        "contributions": [{"jumeau": jumeau["nom"], "texte": f"Réponse fondée sur mon code au commit {sha}."}],
-        "preuves": preuves_depuis(texte, source),
+        "contributions": [{"jumeau": jumeau["nom"],
+                           "texte": f"Connaissances et code de l'application au commit {sha} ({len(preuves)} preuves)."}],
+        "preuves": preuves,
     }
 
 
@@ -64,7 +66,7 @@ def _contexte(jumeau_id, acteur):
 
 
 def _indisponible(nom, raison):
-    return {"comportement": "signaler", "reponse": f"Le jumeau **{nom}** ne peut pas répondre pour le moment : {raison}",
+    return {"comportement": "signaler", "reponse": f"Je ne peux pas mobiliser le jumeau **{nom}** pour le moment : {raison}",
             "contributions": [], "preuves": []}
 
 

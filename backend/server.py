@@ -1114,7 +1114,7 @@ async def generer_reponse_flore(contexte, question, selection, domaine, x_person
         if j["id"] not in aut and len(j["nom"]) > 4 and normalise_txt(j["nom"]) in q:
             return HORS_PERIMETRE
     sel = [j for j in (selection or []) if j in aut and niveau_au_moins(aut[j], "resume")]
-    # Un jumeau réel sélectionné répond lui-même, à partir de son code (Flore lui délègue la question).
+    # Un jumeau réel sélectionné : Flore le mobilise (ses Claims et son code) et répond avec ses preuves.
     # ponytail: un seul jumeau réel répond ; l'orchestration de plusieurs jumeaux viendra avec Flore-agent.
     reels = [j["id"] for j in tous if j.get("reel") and j["id"] in sel and niveau_au_moins(aut[j["id"]], "complet")]
     if reels:

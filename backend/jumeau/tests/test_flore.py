@@ -25,7 +25,7 @@ def test_preuves_bornees():
 def test_reponse_au_format_flore():
     r = flore.vers_reponse_flore(JUMEAU, SOURCE, TEXTE)
     assert r["reponse"] == TEXTE and r["comportement"] == "expliquer"
-    assert r["contributions"] == [{"jumeau": "Méridian", "texte": f"Réponse fondée sur mon code au commit {SHA}."}]
+    assert r["contributions"] == [{"jumeau": "Méridian", "texte": f"Connaissances et code de l'application au commit {SHA} (2 preuves)."}]
     assert len(r["preuves"]) == 2
 
 
