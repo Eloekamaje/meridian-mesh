@@ -80,7 +80,7 @@ Trois propriétés le distinguent d'une documentation :
 ┌──────────────────────────── UI (React + TypeScript, CloudFront/S3) ─────────────────────┐
 │  Atlas · Fiche Jumeau · File de revue · Espace Équipe · Espace Personnel · Flore (AG-UI) │
 └───────────────┬──────────────────────────────────────────────────────────────┬──────────┘
-                │ OIDC (IdP banque → Cognito)                                  │ stream
+                │ OIDC (IdP de la banque, via l'ALB)                           │ stream
 ┌───────────────▼──────────── API / BFF (FastAPI, ECS Fargate) ────────────────▼──────────┐
 │  Espaces · Claims · Revue · Admission    ──►  Amazon Verified Permissions (Cedar)        │
 └───────┬───────────────────────────────┬──────────────────────────────────────────────────┘
@@ -127,9 +127,9 @@ Principe directeur : **déterministe partout où c'est possible, agentique seule
 ## 4.2 API / BFF
 
 - **FastAPI** (existant), déployé sur ECS Fargate.
-- Authentification OIDC : IdP de la banque fédéré dans Cognito.
+- Authentification OIDC : directement auprès de l'IdP de la banque (ALB), sans Cognito ; rôles et équipes tirés des groupes de l'IdP (Architecture AWS §10.5).
 - Chaque requête est autorisée par **Amazon Verified Permissions** (Cedar) avant tout accès aux données.
-- `[CORR]` Les en-têtes `X-Persona` / `X-Espace` de la démo sont remplacés par l'identité du jeton.
+- `[CORR]` Plus de persona : les en-têtes `X-Persona` / `X-Espace` de la démo sont remplacés par l'identité du jeton.
 
 ## 4.3 Agents (Strands sur AgentCore Runtime)
 
@@ -335,7 +335,7 @@ Les stratégies de mémoire longue d'AgentCore (préférences, faits sémantique
 
 # 9. Sécurité
 
-- **Connecteurs en lecture seule**, jetons dans AgentCore Identity / Secrets Manager.
+- **Connecteurs en lecture seule**, secrets dans **HashiCorp Vault** (authentification des charges par rôle IAM, jetons GitHub courts, identifiants Aurora dynamiques).
 - **Autorisation avant récupération** : Cedar filtre preuves et Claims avant qu'ils n'atteignent le modèle.
 - **Filtre de secrets** avant chaque appel modèle.
 - **Pas de copie du code dans le jumeau** : pointeurs + hash ; extrait affiché à la demande si l'utilisateur a les droits sur la source.

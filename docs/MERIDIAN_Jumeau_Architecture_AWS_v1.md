@@ -89,7 +89,7 @@ Conclusion : l'outil est bon et rapide, mais nous l'utilisons comme un `grep` am
 # 3. Vue d'ensemble
 
 ```text
- GitHub (Enterprise)                                   Utilisateurs (IdP banque → Cognito)
+ GitHub (Enterprise)                                   Utilisateurs (IdP de la banque, OIDC)
    │ push (GitHub Actions, rôle OIDC : put-events)            │
    ▼                                                          ▼
  EventBridge (bus « meridian »)                     CloudFront → API FastAPI (ECS Fargate)
@@ -169,8 +169,7 @@ Fiche vivante (gardien) → Publier (registre, jumeau.ne)
 
 **Test réel de la source GitHub** : obtenir un jeton d'installation d'une **GitHub App** (lecture seule, périmètre
 limité aux dépôts déclarés, durée courte) et vérifier l'accès à la branche (`git ls-remote`). Le champ
-« Jeton (référence) » de la commande devient une référence Secrets Manager ou un fournisseur d'identifiants
-AgentCore Identity, jamais le jeton lui-même.
+« Jeton (référence) » de la commande devient un chemin **Vault**, jamais le jeton lui-même (voir §10.5).
 
 ---
 
@@ -180,7 +179,7 @@ AgentCore Identity, jamais le jeton lui-même.
 
 Dans la **tâche d'ingestion Fargate**, et nulle part ailleurs :
 
-1. Jeton GitHub App (Secrets Manager), clone partiel au SHA (`--filter=blob:none` : tout l'historique, sans les
+1. Jeton d'installation GitHub App obtenu auprès de Vault, clone partiel au SHA (`--filter=blob:none` : tout l'historique, sans les
    contenus inutiles).
 2. Filtrage : liens symboliques retirés, filtre de secrets appliqué avant toute sortie.
 3. `codebase-memory-mcp index_repository` avec `persistence: true` : l'index produit l'artefact `graph.db.zst`.
@@ -228,7 +227,8 @@ d'autres agents (experts) doivent lire le code.
 
 - **Policy (Cedar)** : Flore peut proposer des Claims et écrire dans un Travail, jamais valider ni décider ; le
   gardien ne peut pas écrire dans un Travail ; chaque appel d'outil est journalisé.
-- **Identity** : Flore agit au nom du membre ; la Gateway ne renvoie que les jumeaux et preuves de son périmètre.
+- **Identity** : Flore agit au nom du membre, identifié par le jeton de l'IdP de la banque ; la Gateway ne renvoie
+  que les jumeaux et preuves de son périmètre.
 - **Modèle** : Bedrock. DeepSeek, utilisé en phase 0 sur le code de Méridian, ne doit jamais recevoir de code
   bancaire.
 
@@ -250,7 +250,7 @@ d'autres agents (experts) doivent lire le code.
 
 ---
 
-# 9. Trajectoire de démarrage (avec AgentCore ; voir §10.5 sans AgentCore)
+# 9. Trajectoire de démarrage (avec AgentCore ; voir §10.6 sans AgentCore)
 
 | Étape | Contenu | Résultat |
 |---|---|---|
@@ -282,13 +282,13 @@ la bascule vers AgentCore se fera en enveloppant le même code (`BedrockAgentCor
  Utilisateurs ─► CloudFront ─► ALB ─► ECS Fargate « api-flore »
                                         FastAPI + Flore (Strands), outils dans le processus,
                                         codebase-memory-mcp embarqué, artefacts en cache sur EFS
-                                        Cognito (IdP de la banque) · Verified Permissions (Cedar)
+                                        ALB : authentification OIDC auprès de l'IdP de la banque · Verified Permissions
                                         fils de Flore : S3SessionManager
 
- Données : Aurora PostgreSQL · S3 (Object Lock, KMS) · DocumentDB · Secrets Manager (GitHub App)
+ Données : Aurora PostgreSQL · S3 (Object Lock, KMS) · DocumentDB · Vault (GitHub App, identifiants Aurora dynamiques)
  Modèle  : Bedrock via point de terminaison VPC          Observabilité : ADOT → CloudWatch, X-Ray
- Réseau  : VPC privé, points de terminaison VPC (Bedrock, S3, Secrets Manager, ECR, Logs, Events, States),
-           sortie limitée à la forge Git
+ Réseau  : VPC privé, points de terminaison VPC (Bedrock, S3, ECR, Logs, Events, States),
+           accès privé à Vault, sortie limitée à la forge Git
 ```
 
 ## 10.2 Correspondance
@@ -298,7 +298,7 @@ la bascule vers AgentCore se fera en enveloppant le même code (`BedrockAgentCor
 | Runtime (Flore, gardien) | service ECS Fargate « api-flore » ; tâche Fargate « gardien » lancée par Step Functions | l'isolation d'une microVM par session : les fils partagent un conteneur |
 | Gateway (outils MCP) | outils dans le processus de Flore ; codebase-memory-mcp embarqué dans l'image, artefacts S3 mis en cache sur EFS | réutilisation des outils par d'autres agents, journal centralisé des appels d'outils |
 | Policy (Cedar) | règles dans le code (aucun outil de validation ni de décision, budgets, arguments filtrés) et **Amazon Verified Permissions** pour les droits de l'application | contrôle hors du code de l'agent |
-| Identity | **Cognito** fédéré à l'IdP de la banque ; périmètre appliqué par l'API avant l'appel de l'agent ; identifiants GitHub App dans **Secrets Manager** | coffre de jetons OAuth géré |
+| Identity | **authentification OIDC de l'ALB** directement auprès de l'IdP de la banque ; périmètre appliqué par l'API avant l'appel de l'agent ; secrets dans **Vault** (§10.5) | coffre de jetons OAuth géré par AWS |
 | Memory | `S3SessionManager` de Strands (ou table Aurora) | stratégies de mémoire longue (préférences, résumés) |
 | Observability | télémétrie OpenTelemetry de Strands → ADOT → CloudWatch, X-Ray | tableaux de bord agents prêts à l'emploi |
 | Evaluations | jeu de questions de référence par profil, rejoué en CI (Contradicteur comme juge) | évaluation en ligne gérée |
@@ -314,15 +314,44 @@ API avec Flore, gardien en service), workflows durables avec **DBOS** (déjà ut
 1. Fils de Flore sur `S3SessionManager` (ou Aurora) plutôt que des fichiers locaux.
 2. Outils de code par le `MCPClient` de Strands vers codebase-memory-mcp, plutôt que par sa ligne de commande :
    le jour venu, seule l'adresse change (Gateway).
-3. Identité réelle (OIDC) à la place de l'en-tête `X-Persona`.
+3. Identité réelle (jeton OIDC de l'IdP de la banque) : **plus de persona** ni d'en-tête `X-Persona` (§10.5).
 
-## 10.5 Trajectoire réajustée
+## 10.5 Identité et secrets : sans Cognito, sans Secrets Manager, sans persona
+
+**Identité : l'IdP de la banque, directement.**
+
+- L'**ALB** authentifie l'utilisateur auprès de l'IdP de la banque (action `authenticate-oidc`, sans Cognito) et
+  transmet à l'API un jeton signé (`x-amzn-oidc-data`) portant les revendications de l'IdP.
+- L'API vérifie la signature de ce jeton et en tire l'identité : identifiant, nom, groupes.
+- **Plus de persona.** Le rôle, l'équipe et le périmètre viennent des **groupes de l'IdP**, par exemple
+  `meridian-equipe-tbt-proprietaire`, `meridian-equipe-tbt-membre`, `meridian-architecture`. Le profil que lit Flore
+  (nom, rôle, équipes) est construit à partir de ces groupes, et non plus d'un en-tête choisi par le client.
+- Les droits (qui voit quel jumeau, qui valide, qui décide) sont évalués par **Verified Permissions** (Cedar) à
+  partir de ces groupes, avant tout appel à un agent.
+- Les profils de démonstration (personas, espaces écrits en dur) disparaissent du parcours réel ; ils ne
+  restent que dans le mode démonstration.
+
+**Secrets : HashiCorp Vault.**
+
+- **Aucun secret statique dans les conteneurs.** Chaque charge (API, tâche d'ingestion, gardien) s'authentifie
+  auprès de Vault avec son **rôle IAM** (méthode d'authentification AWS de Vault) et reçoit un jeton Vault court.
+- **GitHub** : la clé privée de la GitHub App est dans Vault ; la tâche d'ingestion en tire un **jeton
+  d'installation** à courte durée, limité aux dépôts déclarés et en lecture seule. Le champ « Jeton (référence) » de
+  la commande devient un chemin Vault (par exemple `meridian/github/<organisation>`).
+- **Aurora** : identifiants **dynamiques** délivrés par le moteur de bases de données de Vault, avec un rôle par
+  usage : l'API lit et écrit sans droit DDL, l'ingestion écrit Claims et preuves, seule la migration de schéma a des
+  droits DDL. Cela ferme le constat de revue sur le super-utilisateur Postgres.
+- **Modèle** : Bedrock s'appelle avec le rôle IAM de la charge ; il n'y a plus de clé d'API de modèle à conserver.
+- Le chiffrement des données reste assuré par KMS (S3, Aurora) ; Vault gère les secrets d'accès, pas les clés de
+  chiffrement de stockage.
+
+## 10.6 Trajectoire réajustée
 
 | Étape | Contenu | AgentCore requis ? |
 |---|---|---|
 | 1 | Veille déterministe : ingestion Fargate, Step Functions, EventBridge, Aurora, S3 | non |
 | 2 | Gardien en tâche Fargate, Bedrock | non |
-| 3 | API et Flore sur ECS Fargate, Cognito, Verified Permissions, fils sur S3, codebase-memory-mcp embarqué | non |
+| 3 | API et Flore sur ECS Fargate, OIDC sur l'ALB, Vault, Verified Permissions, fils sur S3, codebase-memory-mcp embarqué | non |
 | 4 | Commande branchée sur « Naissance », GitHub App, admission humaine | non |
 | 5 | **Bascule AgentCore** : Runtime, Gateway, Policy, Identity, Memory, sans réécriture | oui |
 | 6 | Mesh : liens inter-services, `compare_graphs`, liens entre dépôts | non |
