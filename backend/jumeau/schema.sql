@@ -76,6 +76,8 @@ CREATE TABLE IF NOT EXISTS revue (
 );
 
 -- Phase 0 bis : copie de travail au SHA et index de code persistants (conversation) ; origine des Claims.
+ALTER TABLE jumeau ADD COLUMN IF NOT EXISTS domaine text NOT NULL DEFAULT 'À confirmer';
+ALTER TABLE jumeau ADD COLUMN IF NOT EXISTS mission text;
 ALTER TABLE source ADD COLUMN IF NOT EXISTS copie text;
 ALTER TABLE source ADD COLUMN IF NOT EXISTS index_code text;
 ALTER TABLE claim ADD COLUMN IF NOT EXISTS origine text NOT NULL DEFAULT 'INGESTION'

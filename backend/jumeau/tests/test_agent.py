@@ -37,7 +37,7 @@ def test_prompt_systeme_porte_l_identite_et_les_regles():
 
 def test_agent_a_les_outils_attendus_et_aucun_outil_de_validation(tmp_path, monkeypatch):
     monkeypatch.setattr(agent, "SESSIONS", tmp_path)
-    a = agent.construire(CONTEXTE, dsn="postgresql://inutilise", modele=modele_factice())
+    a = agent.construire(CONTEXTE, dsn="postgresql://inutilise", session="test", modele=modele_factice())
     noms = set(a.tool_names)
     assert noms == {"mes_connaissances", "architecture", "chercher_texte", "chercher_symbole",
                     "tracer_appels", "lire_code", "proposer_connaissance"}

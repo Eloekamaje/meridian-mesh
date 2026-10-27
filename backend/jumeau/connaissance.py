@@ -81,6 +81,8 @@ def proposer(conn, jumeau, source, predicat, objet, type_claim, chemin, debut, f
 def autoportrait(jumeau, claims):
     """Identité du jumeau, déduite de ses Claims (sans LLM) : injectée dans son prompt système."""
     lignes = [f"Nom : {jumeau['nom']} · équipe propriétaire : {jumeau['equipe']}"]
+    if jumeau.get("mission"):
+        lignes.append(f"Mission déclarée par l'équipe : {jumeau['mission']} (domaine : {jumeau.get('domaine', 'À confirmer')})")
     for predicat, titre in FAMILLES.items():
         liste = [c for c in claims if c["predicat"] == predicat]
         if liste:

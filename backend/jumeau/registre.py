@@ -1,0 +1,51 @@
+"""Projection des jumeaux réels (Postgres) dans le registre de l'application (collection Mongo `jumeaux`).
+
+Le jumeau réel devient sélectionnable partout où l'application travaille déjà avec des jumeaux : Atlas, registre,
+contexte de Flore, « Nouveau travail ». Rejouée au démarrage du serveur (le seed de démo vide le registre) et après
+chaque ingestion. Postgres reste la source de vérité ; le registre n'en est qu'une vue.
+"""
+from psycopg.rows import dict_row
+
+SOURCES_POSSIBLES = ("code", "bdd", "observabilite", "incidents", "documentation")
+
+
+def couverture(nb_sources):
+    # Même règle que la création d'un jumeau dans l'atelier (server.py) : chaque source connectée compte.
+    return min(20 + 12 * nb_sources, 88)
+
+
+def document(j):
+    return {
+        "id": j["id"],
+        "nom": j["nom"],
+        "domaine": j["domaine"],
+        "mission": j["mission"] or f"Application {j['nom']}, comprise à partir de son code",
+        "proprietaire": j["equipe"],
+        "environnement": "production",
+        "statut": "actif",
+        "autonomie": "supervisé",
+        "couverture": couverture(1),
+        "fraicheur": f"code au commit {j['curseur'][:12]} · {j['claims']} claims",
+        "sante": "inconnue",  # aucune source d'observabilité connectée
+        "sources": {s: s == "code" for s in SOURCES_POSSIBLES},
+        "reel": True,
+    }
+
+
+def jumeaux_reels(conn):
+    with conn.cursor(row_factory=dict_row) as cur:
+        return cur.execute(
+            """SELECT j.id, j.nom, j.equipe, j.domaine, j.mission, s.curseur,
+                      (SELECT count(*) FROM claim c WHERE c.jumeau_id = j.id AND c.valide_jusqua IS NULL) AS claims
+               FROM jumeau j
+               JOIN LATERAL (SELECT curseur FROM source WHERE jumeau_id = j.id AND type = 'GIT'
+                             ORDER BY id DESC LIMIT 1) s ON true
+               ORDER BY j.id""").fetchall()
+
+
+async def projeter(db, conn):
+    """Upsert des jumeaux réels dans le registre (motor) ; les jumeaux de démo ne sont pas touchés."""
+    reels = jumeaux_reels(conn)
+    for j in reels:
+        await db.jumeaux.update_one({"id": j["id"]}, {"$set": document(j)}, upsert=True)
+    return len(reels)

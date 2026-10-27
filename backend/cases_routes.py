@@ -547,7 +547,7 @@ def build_cases_router(deps):
                     "quand": datetime.now(timezone.utc).isoformat(),
                 }
         else:
-            rep = await generer_reponse_flore("case", payload.texte, case.get("jumeaux", []), None, x_persona, x_espace)
+            rep = await generer_reponse_flore("case", payload.texte, case.get("jumeaux", []), None, x_persona, x_espace, travail=cid)
             jumeaux_participants_msg = []
             if case.get("jumeaux"):
                 jumeaux_docs = await db.jumeaux.find({"id": {"$in": case["jumeaux"]}}, NO_ID).to_list(len(case["jumeaux"]))

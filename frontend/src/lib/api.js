@@ -6,17 +6,12 @@ const api = axios.create({
   baseURL: `${process.env.REACT_APP_BACKEND_URL || ""}/api`,
 });
 
-// Persona et espace courants : partagés avec les appels hors axios (flux SSE via fetch).
-export function entetesMeridian() {
-  const cible = localStorage.getItem("meridian.perimetre") || "mesh-global";
-  return {
-    "X-Persona": localStorage.getItem("meridian.persona") || "architecte",
-    "X-Espace": cible.startsWith("vue:") ? localStorage.getItem("meridian.perimetre.espace") || "mesh-global" : cible,
-  };
-}
-
 api.interceptors.request.use((config) => {
-  Object.assign(config.headers, entetesMeridian());
+  config.headers["X-Persona"] = localStorage.getItem("meridian.persona") || "architecte";
+  const cible = localStorage.getItem("meridian.perimetre") || "mesh-global";
+  config.headers["X-Espace"] = cible.startsWith("vue:")
+    ? localStorage.getItem("meridian.perimetre.espace") || "mesh-global"
+    : cible;
   return config;
 });
 

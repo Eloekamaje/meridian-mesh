@@ -32,9 +32,12 @@ def enregistrer(conn, jumeau, source, claims, activite):
         if existant and existant[0] != t:
             raise PermissionError(f"jumeau {jumeau['id']} appartient à un autre tenant")
         conn.execute(
-            "INSERT INTO jumeau (id, tenant_id, nom, equipe) VALUES (%s, %s, %s, %s) "
-            "ON CONFLICT (id) DO UPDATE SET nom = EXCLUDED.nom, equipe = EXCLUDED.equipe",
-            (jumeau["id"], t, jumeau["nom"], jumeau["equipe"]))
+            "INSERT INTO jumeau (id, tenant_id, nom, equipe, domaine, mission) "
+            "VALUES (%s, %s, %s, %s, coalesce(%s, 'À confirmer'), %s) ON CONFLICT (id) DO UPDATE SET "
+            "nom = EXCLUDED.nom, equipe = EXCLUDED.equipe, "
+            "domaine = coalesce(%s, jumeau.domaine), mission = coalesce(%s, jumeau.mission)",
+            (jumeau["id"], t, jumeau["nom"], jumeau["equipe"], jumeau.get("domaine"), jumeau.get("mission"),
+             jumeau.get("domaine"), jumeau.get("mission")))
         source_id = conn.execute(
             "INSERT INTO source (tenant_id, jumeau_id, type, nom, emplacement, curseur, copie, index_code) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (jumeau_id, nom) "
@@ -102,7 +105,8 @@ def source_du_jumeau(conn, jumeau_id):
 
 def jumeau_par_id(conn, jumeau_id):
     with conn.cursor(row_factory=dict_row) as cur:
-        return cur.execute("SELECT id, tenant_id, nom, equipe FROM jumeau WHERE id = %s", (jumeau_id,)).fetchone()
+        return cur.execute("SELECT id, tenant_id, nom, equipe, domaine, mission FROM jumeau WHERE id = %s",
+                           (jumeau_id,)).fetchone()
 
 
 def reviser(conn, claim_id, acteur, decision, motif):

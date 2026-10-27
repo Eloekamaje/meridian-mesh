@@ -134,3 +134,9 @@ def test_objet_propose_nettoye(conn, depot_git):
     cid = connaissance.proposer(conn, JUMEAU, depot.source_du_jumeau(conn, "tbt"), "UTILISE", "a\n\nb   c",
                                 "BEHAVIOR", "requirements.txt", 3, 3, "", "a", "t")
     assert next(c for c in depot.lister_claims(conn, "tbt") if c["id"] == cid)["objet"] == "a b c"
+
+
+def test_autoportrait_porte_la_mission_et_le_domaine_declares():
+    j = {**JUMEAU, "domaine": "Support", "mission": "Comprendre et décider sur le SI"}
+    texte = connaissance.autoportrait(j, [])
+    assert "Comprendre et décider sur le SI" in texte and "Support" in texte

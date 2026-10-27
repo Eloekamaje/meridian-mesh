@@ -19,6 +19,9 @@ from actualites_routes import build_actualites_router
 from initiatives_routes import build_initiatives_router
 from mesh_vue_routes import build_mesh_vue_router
 from jumeau.routes import router as jumeau_router
+from jumeau import flore as jumeau_flore
+from jumeau import registre as jumeau_registre
+import psycopg
 from seed_data import (
     cas_verification_fraude,
     TWINS, RELATIONS, REGIONS, SITUATIONS, CHANGE_LAB, ACTIVITE,
@@ -54,6 +57,19 @@ async def peupler_demo():
         await db.commandes.insert_one(dict(COMMANDE_DEMO))
 
 
+async def projeter_jumeaux_reels():
+    """Les jumeaux réels (couche cognitive Postgres) rejoignent le registre après chaque (ré)initialisation."""
+    dsn = os.environ.get("JUMEAU_PG_DSN")
+    if not dsn:
+        return
+    try:
+        with psycopg.connect(dsn, connect_timeout=5) as conn:
+            n = await jumeau_registre.projeter(db, conn)
+        logger.info("Jumeaux réels projetés dans le registre : %d", n)
+    except psycopg.Error:
+        logger.exception("Projection des jumeaux réels impossible ; le registre de démo reste utilisable")
+
+
 @app.on_event("startup")
 async def seed_database():
     meta = await db.meta.find_one({"id": "seed"})
@@ -63,6 +79,7 @@ async def seed_database():
         await db.meta.replace_one({"id": "seed"}, {"id": "seed", "version": SEED_VERSION}, upsert=True)
         logger.info("Seed version %s — réinitialisation des données de démo", SEED_VERSION)
     await peupler_demo()
+    await projeter_jumeaux_reels()
     # Migration douce : la veille de démonstration est ajoutée à une base déjà peuplée, sans rien réinitialiser
     await db.cases.update_one(
         {"id": "case-dette-files", "veille": {"$exists": False}},
@@ -120,7 +137,7 @@ def _resume_projets(projets: list) -> dict:
 
 
 def projete_jumeau(j: dict, niveau: str, aut: Optional[dict] = None):
-    base = {"id": j["id"], "nom": j["nom"], "domaine": j.get("domaine"), "statut": j.get("statut"), "position": j.get("position")}
+    base = {"id": j["id"], "nom": j["nom"], "domaine": j.get("domaine"), "statut": j.get("statut"), "position": j.get("position"), "reel": bool(j.get("reel"))}
     if niveau_au_moins(niveau, "resume"):
         base.update({"mission": j.get("mission"), "sante": j.get("sante"), "couverture": j.get("couverture"), "fraicheur": j.get("fraicheur"), "strates": j.get("strates"), "fraicheur_etat": j.get("fraicheur_etat"), "capacites": j.get("capacites"), "candidat": j.get("candidat"),
                      "projets_resume": _resume_projets(j.get("projets", []))})
@@ -1086,7 +1103,7 @@ async def lancer_commande(cid: str, x_persona: str = Header("architecte"), x_esp
     return {"ok": True, "jumeau_id": jid, "sources_lancees": len(pretes), "sources_reportees": len(doc["sources"]) - len(pretes)}
 
 
-async def generer_reponse_flore(contexte, question, selection, domaine, x_persona, x_espace):
+async def generer_reponse_flore(contexte, question, selection, domaine, x_persona, x_espace, travail=None):
     _, espace = resoudre_perimetre(x_persona, x_espace)
     tous = await db.jumeaux.find({}, NO_ID).to_list(200)
     aut = autorisations(espace, [j["id"] for j in tous])
@@ -1097,6 +1114,13 @@ async def generer_reponse_flore(contexte, question, selection, domaine, x_person
         if j["id"] not in aut and len(j["nom"]) > 4 and normalise_txt(j["nom"]) in q:
             return HORS_PERIMETRE
     sel = [j for j in (selection or []) if j in aut and niveau_au_moins(aut[j], "resume")]
+    # Un jumeau réel sélectionné répond lui-même, à partir de son code (Flore lui délègue la question).
+    # ponytail: un seul jumeau réel répond ; l'orchestration de plusieurs jumeaux viendra avec Flore-agent.
+    reels = [j["id"] for j in tous if j.get("reel") and j["id"] in sel and niveau_au_moins(aut[j["id"]], "complet")]
+    if reels:
+        reponse_jumeau = await jumeau_flore.repondre(reels[0], question, x_persona, travail)
+        if reponse_jumeau:
+            return reponse_jumeau
     if not sel and domaine:
         sel = [j["id"] for j in tous if j.get("domaine") == domaine and j["id"] in aut and niveau_au_moins(aut[j["id"]], "resume")]
     if sel:
@@ -1218,6 +1242,7 @@ async def reinitialiser_demo(x_persona: str = Header("architecte"), x_espace: Op
     for col in ["jumeaux", "relations", "situations", "change_lab", "dossiers", "vues", "journal", "commandes", "cases", "notifications", "initiatives", "delegations"]:
         await db[col].delete_many({})
     await peupler_demo()
+    await projeter_jumeaux_reels()
     await journaler(x_persona, x_espace, "réinitialisation de la démo", "mesh", "Données de démonstration restaurées à l'état initial")
     return {"ok": True}
 

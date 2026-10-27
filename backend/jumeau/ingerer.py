@@ -1,8 +1,10 @@
 """Ingestion d'un dépôt Git dans un jumeau : index local → Claims vérifiés → Postgres.
 
-    python -m jumeau.ingerer --jumeau tbt --nom TBT --equipe equipe-tbt --depot /chemin/vers/depot
+    python -m jumeau.ingerer --jumeau tbt --nom TBT --equipe equipe-tbt --domaine Paiement \\
+        --mission "Traite les virements" --depot /chemin/vers/depot
 """
 import argparse
+import asyncio
 import os
 import shutil
 import subprocess
@@ -10,7 +12,7 @@ from pathlib import Path
 
 import psycopg
 
-from jumeau import cbm, depot
+from jumeau import cbm, depot, registre
 from jumeau.adaptateur import adapter
 from jumeau.source_git import lire_au_sha, sha_courant
 
@@ -65,18 +67,34 @@ def ingerer(conn, jumeau, chemin_depot):
     return {"sha": sha, "observations": bruts, "claims": len(claims)}
 
 
+def projeter_au_registre(conn):
+    """Rend le jumeau visible dans l'application (Atlas, registre, Flore, Travaux) sans attendre un redémarrage."""
+    if not os.environ.get("MONGO_URL"):
+        return "registre non mis à jour (MONGO_URL absent)"
+    from motor.motor_asyncio import AsyncIOMotorClient
+    client = AsyncIOMotorClient(os.environ["MONGO_URL"])
+    try:
+        return f"{asyncio.run(registre.projeter(client[os.environ['DB_NAME']], conn))} jumeau(x) réel(s) au registre"
+    finally:
+        client.close()
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--jumeau", required=True)
     p.add_argument("--nom", required=True)
     p.add_argument("--equipe", required=True)
+    p.add_argument("--domaine", help="domaine de l'Atlas (défaut : À confirmer)")
+    p.add_argument("--mission", help="mission en une phrase")
     p.add_argument("--tenant", default="local")
     p.add_argument("--depot", required=True, type=Path)
     a = p.parse_args()
-    jumeau = {"id": a.jumeau, "tenant_id": a.tenant, "nom": a.nom, "equipe": a.equipe}
+    jumeau = {"id": a.jumeau, "tenant_id": a.tenant, "nom": a.nom, "equipe": a.equipe,
+              "domaine": a.domaine, "mission": a.mission}
     try:
         with psycopg.connect(os.environ["JUMEAU_PG_DSN"], autocommit=True) as conn:
             print(ingerer(conn, jumeau, a.depot.resolve()))
+            print(projeter_au_registre(conn))
     except (ValueError, PermissionError, RuntimeError, subprocess.TimeoutExpired) as e:
         raise SystemExit(f"ingestion interrompue : {e}")
 
