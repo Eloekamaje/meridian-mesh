@@ -7,6 +7,7 @@ import api from "@/lib/api";
 import { useMesh } from "@/lib/mesh";
 import { usePerimetre } from "@/lib/perimetre";
 import RevueContenu from "@/components/jumeaux/RevueContenu";
+import ConnaissancesCode from "@/components/jumeaux/ConnaissancesCode";
 import { STATUTS } from "@/lib/jumeaux";
 
 export default function RevueJumeau() {
@@ -33,6 +34,7 @@ export default function RevueJumeau() {
           return;
         }
         if (actif) setJumeau(j);
+        if (j.reel) return;  // né du code : ses connaissances prouvées remplacent l'examen
         const { data } = await api.post(`/jumeaux/${jid}/examiner`);
         if (actif) setExamen(data);
       } catch (e) {
@@ -83,7 +85,7 @@ export default function RevueJumeau() {
       />
 
       <div className="flex-1 overflow-y-auto px-4 py-5 sm:px-8 sm:py-6">
-        <div className="mx-auto max-w-4xl">
+        <div className={`mx-auto ${jumeau?.reel ? "max-w-6xl" : "max-w-4xl"}`}>
           {erreur && (
             <div className="rounded-xl border border-[#F87171]/25 bg-[#F87171]/[0.05] px-5 py-6" data-testid="revue-erreur">
               <p className="text-sm text-[#F87171]">{erreur}</p>
@@ -92,12 +94,12 @@ export default function RevueJumeau() {
               </button>
             </div>
           )}
-          {!erreur && !examen && (
+          {!erreur && !examen && !jumeau?.reel && (
             <p className="font-code text-[11px] text-[#7C93A8]" data-testid="revue-chargement">Examen du jumeau en cours…</p>
           )}
-          {examen && jumeau && (
+          {jumeau && (examen || jumeau.reel) && (
             <>
-              <RevueContenu examen={examen} jumeau={jumeau} />
+              {jumeau.reel ? <ConnaissancesCode jid={jid} /> : <RevueContenu examen={examen} jumeau={jumeau} />}
               {(jumeau.gouvernance || []).length > 0 && (
                 <section className="mt-6 rounded-xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-5" data-testid="revue-gouvernance">
                   <h2 className="font-code text-[10px] uppercase tracking-[0.25em] text-[#94A3B8]">Gouvernance de l'autonomie</h2>

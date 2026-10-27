@@ -21,7 +21,6 @@ import Travaux from "@/pages/Travaux";
 import TravailDetail from "@/pages/TravailDetail";
 import Jumeaux from "@/pages/Jumeaux";
 import RevueJumeau from "@/pages/RevueJumeau";
-import FicheJumeau from "@/pages/FicheJumeau";
 import Administration from "@/pages/Administration";
 import PolarisChoixProfil from "@/demo/polaris/PolarisChoixProfil";
 
@@ -36,6 +35,11 @@ const RedirectTravail = () => {
 
 // L'application Méridian. Ses providers se remontent quand la démonstration démarre ou s'arrête
 // (KiosqueProvider) : ils chargent alors leurs données via le réseau local ou le vrai backend.
+const RedirectFicheJumeau = () => {
+  const { jid } = useParams();
+  return <Navigate to={`/jumeaux/${encodeURIComponent(jid)}/revue`} replace />;
+};
+
 function ProduitApp() {
   return (
     <PerimetreProvider>
@@ -66,9 +70,9 @@ function ProduitApp() {
             <Route path="/travaux/:cid" element={<TravailDetail />} />
             <Route path="/jumeaux" element={<Jumeaux />} />
             <Route path="/jumeaux/:jid/revue" element={<RevueJumeau />} />
-            {/* Jumeau réel (phase 0) : Claims prouvés par le code, couche cognitive Postgres */}
-            <Route path="/jumeau-reel" element={<FicheJumeau />} />
-            <Route path="/jumeau-reel/:jid" element={<FicheJumeau />} />
+            {/* Anciennes adresses de la fiche d'un jumeau né du code : même fiche que les autres jumeaux */}
+            <Route path="/jumeau-reel" element={<Navigate to="/jumeaux" replace />} />
+            <Route path="/jumeau-reel/:jid" element={<RedirectFicheJumeau />} />
             <Route path="/commande/:cid" element={<Commande />} />
             <Route path="/administration" element={<Administration />} />
             <Route path="/aujourdhui" element={<Navigate to="/actualites" replace />} />

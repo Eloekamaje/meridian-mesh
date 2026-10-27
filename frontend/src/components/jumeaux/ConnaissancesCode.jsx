@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
 import { SealCheck, Warning, FileCode } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 
-// Fiche du jumeau réel (phase 0) : chaque Claim s'ouvre sur sa preuve, lue au SHA indexé.
+// Connaissances d'un jumeau né du code, dans sa fiche (/jumeaux/:jid/revue) : chaque Claim s'ouvre sur sa preuve,
+// lue au commit ingéré de son dépôt.
 const FAMILLES = {
   EXPOSE: "APIs exposées",
   DEPEND_DE: "Dépendances logicielles",
@@ -35,26 +35,6 @@ function useDonnees(chemin, version = 0) {
 }
 
 const Message = ({ children }) => <p className="p-8 text-sm text-[#94A3B8]">{children}</p>;
-
-function ListeJumeaux() {
-  const navigate = useNavigate();
-  const { donnees: jumeaux, erreur } = useDonnees("/v2/jumeaux");
-  if (erreur) return <Message>Jumeaux indisponibles : {erreur}</Message>;
-  if (!jumeaux) return <Message>Chargement…</Message>;
-  return (
-    <div className="p-8" data-testid="jumeaux-reels">
-      <h1 className="mb-4 font-display text-2xl font-black text-[#F2F6F8]">Jumeaux réels</h1>
-      {!jumeaux.length && <Message>Aucun jumeau : lancez <code>python -m jumeau.ingerer</code>.</Message>}
-      {jumeaux.map((j) => (
-        <button type="button" key={j.id} onClick={() => navigate(`/jumeau-reel/${encodeURIComponent(j.id)}`)}
-          className={`mb-2 block w-full rounded-md border ${BORDURE} bg-[#0F1D28] px-4 py-3 text-left hover:bg-[rgba(148,163,184,0.07)] ${FOCUS}`}>
-          <span className="font-semibold text-[#F2F6F8]">{j.nom}</span>
-          <span className="ml-3 font-code text-[10px] text-[#7C93A8]">{j.equipe} · {j.claims} claims</span>
-        </button>
-      ))}
-    </div>
-  );
-}
 
 function Preuve({ preuve, claim, onRevue }) {
   const { donnees: extrait, erreur } = useDonnees(`/v2/preuves/${preuve.id}/extrait`);
@@ -131,7 +111,7 @@ function FicheVivante({ jid }) {
   if (!fiche) return null;
   const lignes = fiche.contenu.split("\n").filter((l) => !/^#\s/.test(l));  // le titre de la page suffit
   return (
-    <section className={`mt-5 rounded-lg border ${BORDURE} bg-[#0F1D28] p-4`} aria-label="Fiche vivante" data-testid="fiche-vivante">
+    <section className={`rounded-lg border ${BORDURE} bg-[#0F1D28] p-4`} aria-label="Fiche vivante" data-testid="fiche-vivante">
       <p className="font-code text-[10px] uppercase tracking-[0.2em] text-[#60A5FA]">Ce que le jumeau dit de l'application</p>
       <ul className="mb-2 mt-1 flex flex-wrap gap-1.5" aria-label="Code lu par le jumeau" data-testid="fiche-depots">
         {(fiche.depots || []).map((d) => (
@@ -166,7 +146,7 @@ function FicheVivante({ jid }) {
   );
 }
 
-function Fiche({ jid }) {
+function Connaissances({ jid }) {
   const [version, setVersion] = useState(0);
   const { donnees: claims, erreur } = useDonnees(`/v2/jumeaux/${encodeURIComponent(jid)}/claims`, version);
   const [selectionId, setSelectionId] = useState(null);
@@ -186,12 +166,10 @@ function Fiche({ jid }) {
   ].filter(([, liste]) => liste.length);
 
   return (
-    <div className="flex h-full flex-col lg:flex-row" data-testid="fiche-jumeau">
-      <div className="overflow-y-auto p-6 lg:w-1/2">
-        <p className="font-code text-[10px] uppercase tracking-[0.3em] text-[#60A5FA]">Jumeau réel · phase 0</p>
-        <h1 className="mt-1 font-display text-2xl font-black text-[#F2F6F8]">{claimsAffiches[0]?.sujet || jid}</h1>
-        <p className="mt-1 text-xs text-[#94A3B8]">{claimsAffiches.length} claims prouvés · source : code</p>
+    <div className="grid gap-6 lg:grid-cols-2" data-testid="fiche-jumeau">
+      <div>
         <FicheVivante jid={jid} />
+        <p className="mt-4 text-xs text-[#94A3B8]">{claimsAffiches.length} connaissances prouvées par le code</p>
         {familles.map(([titre, liste]) => (
           <section key={titre} className="mt-5" aria-label={titre}>
             <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">{titre} ({liste.length})</h2>
@@ -208,17 +186,16 @@ function Fiche({ jid }) {
           </section>
         ))}
       </div>
-      <div className={`min-h-[50vh] border-t ${BORDURE} lg:w-1/2 lg:border-l lg:border-t-0`}>
+      <div className={`self-start rounded-lg border ${BORDURE} lg:sticky lg:top-0`}>
         {preuve
           ? <Preuve key={selection.id} preuve={preuve} claim={selection} onRevue={recharger} />
-          : <Message>Choisissez un claim pour ouvrir sa preuve. Pour converser avec ce jumeau, sélectionnez-le dans l'Atlas ou le registre, puis interrogez Flore ou ouvrez un nouveau travail.</Message>}
+          : <Message>Choisissez une connaissance pour ouvrir sa preuve dans le code.</Message>}
       </div>
     </div>
   );
 }
 
-export default function FicheJumeau() {
-  const { jid } = useParams();
+export default function ConnaissancesCode({ jid }) {
   // key={jid} : changer de jumeau repart d'un état vierge (pas d'anciens claims ni d'ancienne sélection).
-  return jid ? <Fiche key={jid} jid={jid} /> : <ListeJumeaux />;
+  return <Connaissances key={jid} jid={jid} />;
 }
