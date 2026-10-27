@@ -155,26 +155,31 @@ def test_mots_lus_sans_les_citations():
     assert gardien.mots("Une maquette `memory/PRD.md#L4-L4` de suivi `app.py#L3`.") == 4
 
 
-def test_consolidation_donne_a_l_agent_la_liste_par_question(monkeypatch):
+def test_consolidation_l_agent_juge_le_harness_valide_et_execute(monkeypatch):
     import asyncio
     from jumeau import gardien
     lignes = [{"id": 1, "predicat": "REALISE_CAPACITE", "objet": "Saisir hors ligne", "statut": "ACCEPTED"},
               {"id": 2, "predicat": "REALISE_CAPACITE", "objet": "Saisir un dossier hors ligne", "statut": "PROPOSED"},
-              {"id": 3, "predicat": "DETIENT", "objet": "Les dossiers", "statut": "PROPOSED"},
-              {"id": 4, "predicat": "DEPEND_DE", "objet": "fastapi", "statut": "PROPOSED"}]
-    recu = []
+              {"id": 3, "predicat": "REALISE_CAPACITE", "objet": "Orienter", "statut": "PROPOSED"},
+              {"id": 4, "predicat": "DETIENT", "objet": "Les dossiers", "statut": "PROPOSED"},
+              {"id": 5, "predicat": "APPLIQUE_REGLE", "objet": "Double approbation", "statut": "PROPOSED"},
+              {"id": 6, "predicat": "APPLIQUE_REGLE", "objet": "Deux approbateurs", "statut": "PROPOSED"}]
+    G, D, C = gardien.Groupe, gardien.Decision, gardien.Consolidation
+    reponses = [C(decisions=[D(question="sert", groupes=[G(garder=1, retirer=[2, 4, 1], raison="même idée")])]),
+                C(decisions=[D(question="sert", groupes=[G(garder=1, retirer=[2], raison="même idée")]),
+                             D(question="regles", groupes=[G(garder=5, retirer=[6], raison="même règle")])])]
+    consignes, fusions = [], []
 
-    class Agent:
-        async def invoke_async(self, texte):
-            recu.append(texte)
+    class Juge:
+        async def invoke_async(self, consigne, structured_output_model):
+            consignes.append(consigne)
+            return type("Resultat", (), {"structured_output": reponses.pop(0)})()
 
-    class Connexion:
-        def __enter__(self): return self
-        def __exit__(self, *a): return False
-
-    monkeypatch.setattr(gardien.psycopg, "connect", lambda dsn: Connexion())
+    monkeypatch.setattr(gardien, "_juge", lambda: Juge())
     monkeypatch.setattr(gardien.connaissance, "connaissances", lambda conn, jid, limite: lignes)
-    monkeypatch.setattr(gardien.agent, "construire", lambda *a, **k: Agent())
-    asyncio.run(gardien.consolider({"jumeau": {"id": "x"}}, "dsn"))
-    assert "- 1 (validée) : Saisir hors ligne" in recu[0] and "- 2 (proposed) : Saisir un dossier hors ligne" in recu[0]
-    assert "Les dossiers" not in recu[0] and "fastapi" not in recu[0]  # une seule réponse : rien à fusionner
+    monkeypatch.setattr(gardien.depot, "fusionner", lambda conn, jid, g, r: fusions.append((g, r)))
+    bilan = asyncio.run(gardien.consolider(None, "x"))
+    assert "- 1 (validée) : Saisir hors ligne" in consignes[0] and "[regles]" in consignes[0]
+    assert "Les dossiers" not in consignes[0]       # une seule réponse : rien à juger
+    assert "regles" in consignes[1]                  # question oubliée : décision redemandée
+    assert fusions == [(1, 2), (5, 6)] and bilan == {"fusions": 2, "refus": 0}

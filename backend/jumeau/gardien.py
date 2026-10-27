@@ -18,8 +18,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import psycopg
+from pydantic import BaseModel, Field
+from strands import Agent
 
-from jumeau import agent, comprendre, connaissance, contradicteur, depot, registre, temps
+from jumeau import agent, comprendre, connaissance, contradicteur, depot, methodes, registre, temps
 from jumeau.ingerer import ingerer
 from jumeau.source_git import sha_courant
 
@@ -50,30 +52,73 @@ def mots(fiche):
     return sum(1 for m in re.sub(r"`[^`]*#L\d+[^`]*`", "", fiche or "").split() if re.search(r"\w", m))
 
 
-CONSIGNE_CONSOLIDER = """Applique la section « Consolider » de la méthode comprendre-application aux connaissances
-ci-dessous (identifiant, statut, formulation), question par question. Quand tu as fini, réponds « fait ».
+CONSIGNE_CONSOLIDER = """Applique la section « Consolider » de la méthode ci-dessus aux connaissances suivantes
+(identifiant, statut, formulation). Rends une décision pour chaque question listée : les groupes à fusionner, ou
+aucun groupe s'il n'y a pas de doublon.
 
 {liste}"""
-# Une consolidation peut fusionner beaucoup de doublons (après une réparation, une méthode qui a changé).
-BUDGET_CONSOLIDATION = {"outils": 80, "propositions": 80}
 
 
-async def consolider(ctx, dsn):
-    """L'agent fusionne les connaissances qui disent la même chose ; le harness lui donne la liste par question."""
-    with psycopg.connect(dsn) as conn:
-        claims = [c for c in connaissance.connaissances(conn, ctx["jumeau"]["id"], limite=1000)
-                  if c["predicat"] in comprendre.PREDICATS]
-    blocs = []
-    for _, titre, predicat, _ in comprendre.QUESTIONS:
-        liste = [c for c in claims if c["predicat"] == predicat]
-        if len(liste) > 1:
-            blocs.append(f"## {titre}\n" + "\n".join(
-                f"- {c['id']} ({'validée' if c['statut'] == 'ACCEPTED' else c['statut'].lower()}) : {c['objet']}"
-                for c in liste))
-    if not blocs:
-        return
-    a = agent.construire(ctx, dsn, session=None, budget=agent.Budget(**BUDGET_CONSOLIDATION))
-    await a.invoke_async(CONSIGNE_CONSOLIDER.format(liste="\n\n".join(blocs)))
+class Groupe(BaseModel):
+    garder: int = Field(description="identifiant de la connaissance gardée")
+    retirer: list[int] = Field(description="identifiants des connaissances qui disent la même chose")
+    raison: str = Field(description="pourquoi elles disent la même chose")
+
+
+class Decision(BaseModel):
+    question: str = Field(description="clé de la question, entre crochets dans la liste")
+    groupes: list[Groupe] = Field(description="vide s'il n'y a aucun doublon")
+
+
+class Consolidation(BaseModel):
+    decisions: list[Decision]
+
+
+def _juge():
+    """Agent sans outils, guidé par la méthode : il juge une liste fournie, il n'enquête pas."""
+    return Agent(model=agent.modele(), system_prompt=methodes.lire("comprendre-application"), callback_handler=None)
+
+
+async def _decider(juge, consigne):
+    # Structure imposée par un appel d'outil (accepté par tous les fournisseurs, DeepSeek compris).
+    return (await juge.invoke_async(consigne, structured_output_model=Consolidation)).structured_output
+
+
+async def consolider(conn, jumeau_id):
+    """Une seule réponse par idée. L'agent juge (décision structurée, obligatoire pour chaque question) ; le harness
+    valide et exécute : identifiants de la liste, même question, rien de ce que l'équipe a validé n'est retiré."""
+    claims = [c for c in connaissance.connaissances(conn, jumeau_id, limite=1000) if c["predicat"] in comprendre.PREDICATS]
+    par_question = {cle: [c for c in claims if c["predicat"] == predicat]
+                    for cle, _, predicat, _ in comprendre.QUESTIONS if predicat}
+    a_juger = {cle: liste for cle, liste in par_question.items() if len(liste) > 1}
+    if not a_juger:
+        return {"fusions": 0, "refus": 0}
+    titres = {cle: titre for cle, titre, *_ in comprendre.QUESTIONS}
+    liste = "\n\n".join(f"## {titres[cle]} [{cle}]\n" + "\n".join(
+        f"- {c['id']} ({'validée' if c['statut'] == 'ACCEPTED' else 'proposée'}) : {c['objet']}" for c in lignes)
+        for cle, lignes in a_juger.items())
+    juge = _juge()
+    decision = await _decider(juge, CONSIGNE_CONSOLIDER.format(liste=liste))
+    manquantes = set(a_juger) - {d.question for d in decision.decisions}
+    if manquantes:  # une décision par question, sans exception : une omission n'est pas un « aucun doublon »
+        decision = await _decider(juge, f"Il manque une décision pour : {', '.join(sorted(manquantes))}. Rends la "
+                                        "décision complète, pour chaque question listée.")
+    bilan = {"fusions": 0, "refus": 0}
+    for d in decision.decisions:
+        ids = {c["id"] for c in a_juger.get(d.question, [])}
+        for g in d.groupes:
+            for retirer in g.retirer:
+                if g.garder not in ids or retirer not in ids or retirer == g.garder:
+                    bilan["refus"] += 1
+                    continue
+                try:
+                    depot.fusionner(conn, jumeau_id, g.garder, retirer)
+                    bilan["fusions"] += 1
+                    journal.info("fusion %s ← %s (%s) : %s", g.garder, retirer, d.question, g.raison[:200])
+                except ValueError as e:
+                    bilan["refus"] += 1
+                    journal.info("fusion refusée %s ← %s : %s", g.garder, retirer, e)
+    return bilan
 
 
 # Une passe du gardien enquête sur toute l'application : plus d'outils et de propositions qu'une réponse de Flore.
@@ -178,7 +223,6 @@ async def _rediger(ctx, dsn, sigs, commits):
             "ses sections ni ses citations ; réponds uniquement par la fiche.")).strip()
         if mots(courte) < mots(fiche) and not contradicteur.citations_invalides(courte, ctx["sources"]):
             fiche = courte
-    await consolider(ctx, dsn)  # après l'enquête : une seule réponse par idée
     recit = None
     if sigs:
         recit = str(await a.invoke_async(CONSIGNE_RECIT.format(
@@ -271,6 +315,10 @@ async def veiller(conn, db, jumeau_id, chemins=None, rediger=_rediger):
         journal.warning("gardien %s : rédaction impossible, reprise à la passe suivante", jumeau_id, exc_info=True)
         return {**bilan, "fiche": False}
     enregistrer_fiche(conn, jumeau_id, version, fiche)
+    try:
+        journal.info("gardien %s : consolidation %s", jumeau_id, await consolider(conn, jumeau_id))
+    except Exception:  # la consolidation se rattrape à la passe suivante ; la fiche est déjà enregistrée
+        journal.warning("gardien %s : consolidation impossible", jumeau_id, exc_info=True)
     if sit and recit:
         await db.situations.update_one({"id": sit["id"]}, {"$set": {"resume": recit}})
     journal.info("gardien %s : %s dépôt(s) ingéré(s), %s signal(aux)", jumeau_id, len(ingeres), len(sigs))
