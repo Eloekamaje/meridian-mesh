@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { SealCheck, Warning, FileCode } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
+import ConversationJumeau from "@/components/jumeau/ConversationJumeau";
 
 // Fiche du jumeau réel (phase 0) : chaque Claim s'ouvre sur sa preuve, lue au SHA indexé.
 const FAMILLES = {
@@ -114,10 +115,41 @@ function Preuve({ preuve, claim, onRevue }) {
   );
 }
 
+const CONTEXTE_CODE = 3;
+
+// Lignes citées par le jumeau dans la conversation, relues au commit ingéré (avec un peu de contexte).
+function CodeCite({ jid, citation }) {
+  const de = Math.max(1, citation.debut - CONTEXTE_CODE);
+  const chemin = `/v2/jumeaux/${encodeURIComponent(jid)}/code?chemin=${encodeURIComponent(citation.chemin)}&debut=${de}&fin=${citation.fin + CONTEXTE_CODE}`;
+  const { donnees, erreur } = useDonnees(chemin);
+  return (
+    <section className="flex h-full flex-col" aria-label="Code cité">
+      <div className={`border-b ${BORDURE} p-4`}>
+        <h2 className="text-sm font-semibold text-[#F2F6F8]">{citation.chemin} · lignes {citation.debut}–{citation.fin}</h2>
+        <div className="mt-1 break-all font-code text-[10px] text-[#7C93A8]">{citation.brut}</div>
+      </div>
+      <pre className="flex-1 overflow-auto bg-[#071019] p-3 font-code text-[11px] leading-5">
+        {!donnees && !erreur && "Lecture du code…"}
+        {erreur && `Code illisible : ${erreur}`}
+        {donnees?.lignes.map((l) => {
+          const citee = l.n >= citation.debut && l.n <= citation.fin;
+          return (
+            <div key={l.n} className={citee ? "bg-[#60A5FA]/15 text-[#F2F6F8]" : "text-[#7C93A8]"}>
+              <span className="mr-3 inline-block w-10 select-none text-right opacity-60">{l.n}</span>{l.texte}
+            </div>
+          );
+        })}
+      </pre>
+    </section>
+  );
+}
+
 function Fiche({ jid }) {
   const [version, setVersion] = useState(0);
   const { donnees: claims, erreur } = useDonnees(`/v2/jumeaux/${encodeURIComponent(jid)}/claims`, version);
   const [selectionId, setSelectionId] = useState(null);
+  const [onglet, setOnglet] = useState("conversation");
+  const [citation, setCitation] = useState(null);
   const recharger = useCallback(() => setVersion((v) => v + 1), []);
   const [claimsAffiches, setClaimsAffiches] = useState(null);
   // Garde la liste affichée pendant un rechargement après revue (pas de clignotement).
@@ -128,9 +160,17 @@ function Fiche({ jid }) {
 
   const selection = claimsAffiches.find((c) => c.id === selectionId);
   const preuve = selection?.preuves.at(-1);
-  const familles = Object.entries(FAMILLES)
-    .map(([p, titre]) => [titre, claimsAffiches.filter((c) => c.predicat === p)])
-    .filter(([, liste]) => liste.length);
+  const familles = [
+    ...Object.entries(FAMILLES).map(([p, titre]) => [titre, claimsAffiches.filter((c) => c.predicat === p)]),
+    ["Proposées en conversation", claimsAffiches.filter((c) => !FAMILLES[c.predicat])],
+  ].filter(([, liste]) => liste.length);
+  const ouvrirClaim = (id) => { setSelectionId(id); setOnglet("preuve"); };
+  const ouvrirCitation = (ref) => { setCitation(ref); setOnglet("code"); };
+  const onglets = [
+    ["conversation", "Converser", true],
+    ["preuve", "Preuve", Boolean(preuve)],
+    ["code", "Code cité", Boolean(citation)],
+  ];
 
   return (
     <div className="flex h-full flex-col lg:flex-row" data-testid="fiche-jumeau">
@@ -142,7 +182,7 @@ function Fiche({ jid }) {
           <section key={titre} className="mt-5" aria-label={titre}>
             <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">{titre} ({liste.length})</h2>
             {liste.map((c) => (
-              <button type="button" key={c.id} onClick={() => setSelectionId(c.id)} aria-pressed={c.id === selectionId}
+              <button type="button" key={c.id} onClick={() => ouvrirClaim(c.id)} aria-pressed={c.id === selectionId}
                 disabled={!c.preuves.length} data-testid={`claim-${c.id}`}
                 className={`mb-1 flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-[rgba(148,163,184,0.07)] ${FOCUS} ${c.id === selectionId ? "bg-[rgba(96,165,250,0.12)]" : ""}`}>
                 <FileCode size={13} aria-hidden className="shrink-0 text-[#7C93A8]" />
@@ -154,10 +194,23 @@ function Fiche({ jid }) {
           </section>
         ))}
       </div>
-      <div className={`min-h-[50vh] border-t ${BORDURE} lg:w-1/2 lg:border-l lg:border-t-0`}>
-        {preuve
-          ? <Preuve key={selection.id} preuve={preuve} claim={selection} onRevue={recharger} />
-          : <Message>Choisissez un claim pour ouvrir sa preuve.</Message>}
+      <div className={`flex min-h-[60vh] flex-col border-t ${BORDURE} lg:w-1/2 lg:border-l lg:border-t-0`}>
+        <div role="tablist" className={`flex border-b ${BORDURE}`}>
+          {onglets.map(([id, libelle, actif]) => (
+            <button key={id} type="button" role="tab" aria-selected={onglet === id} disabled={!actif} onClick={() => setOnglet(id)}
+              className={`px-4 py-2 text-xs disabled:opacity-40 ${FOCUS} ${onglet === id ? "border-b-2 border-[#60A5FA] text-[#F2F6F8]" : "text-[#94A3B8]"}`}>
+              {libelle}
+            </button>
+          ))}
+        </div>
+        <div className="min-h-0 flex-1">
+          {/* La conversation reste montée : changer d'onglet n'interrompt pas une réponse en cours. */}
+          <div className={onglet === "conversation" ? "h-full" : "hidden"}>
+            <ConversationJumeau jid={jid} onCitation={ouvrirCitation} onReponse={recharger} />
+          </div>
+          {onglet === "preuve" && preuve && <Preuve key={selection.id} preuve={preuve} claim={selection} onRevue={recharger} />}
+          {onglet === "code" && citation && <CodeCite key={`${citation.chemin}:${citation.debut}`} jid={jid} citation={citation} />}
+        </div>
       </div>
     </div>
   );

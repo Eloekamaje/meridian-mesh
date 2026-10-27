@@ -21,12 +21,17 @@ def _cli(*args):
     return json.loads(r.stdout)
 
 
+def texte(outil, *args):
+    """Sortie texte (format arborescent compact) d'un outil cbm, pour un LLM."""
+    binaire = os.environ.get("CBM_BIN", "codebase-memory-mcp")
+    r = subprocess.run([binaire, "cli", "--quiet", outil, *args], capture_output=True, text=True, timeout=60)
+    if r.returncode != 0:
+        raise RuntimeError(r.stderr.strip() or r.stdout.strip())
+    return r.stdout
+
+
 def indexer(depot):
     return _cli("index_repository", "--repo-path", str(depot))["project"]
-
-
-def oublier(projet):
-    _cli("delete_project", "--project", projet)
 
 
 def interroger(projet):

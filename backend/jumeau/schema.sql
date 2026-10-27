@@ -75,6 +75,12 @@ CREATE TABLE IF NOT EXISTS revue (
     le        timestamptz NOT NULL DEFAULT now()
 );
 
+-- Phase 0 bis : copie de travail au SHA et index de code persistants (conversation) ; origine des Claims.
+ALTER TABLE source ADD COLUMN IF NOT EXISTS copie text;
+ALTER TABLE source ADD COLUMN IF NOT EXISTS index_code text;
+ALTER TABLE claim ADD COLUMN IF NOT EXISTS origine text NOT NULL DEFAULT 'INGESTION'
+    CHECK (origine IN ('INGESTION', 'CONVERSATION'));
+
 -- Invariant 2 : aucun Claim ACCEPTED sans revue humaine (la revue s'écrit avant le changement de statut).
 CREATE OR REPLACE FUNCTION claim_accepte_exige_revue() RETURNS trigger AS $$
 BEGIN

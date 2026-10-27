@@ -36,10 +36,12 @@ def enregistrer(conn, jumeau, source, claims, activite):
             "ON CONFLICT (id) DO UPDATE SET nom = EXCLUDED.nom, equipe = EXCLUDED.equipe",
             (jumeau["id"], t, jumeau["nom"], jumeau["equipe"]))
         source_id = conn.execute(
-            "INSERT INTO source (tenant_id, jumeau_id, type, nom, emplacement, curseur) "
-            "VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (jumeau_id, nom) "
-            "DO UPDATE SET emplacement = EXCLUDED.emplacement, curseur = EXCLUDED.curseur RETURNING id",
-            (t, jumeau["id"], source["type"], source["nom"], source["emplacement"], source["curseur"])).fetchone()[0]
+            "INSERT INTO source (tenant_id, jumeau_id, type, nom, emplacement, curseur, copie, index_code) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (jumeau_id, nom) "
+            "DO UPDATE SET emplacement = EXCLUDED.emplacement, curseur = EXCLUDED.curseur, "
+            "copie = EXCLUDED.copie, index_code = EXCLUDED.index_code RETURNING id",
+            (t, jumeau["id"], source["type"], source["nom"], source["emplacement"], source["curseur"],
+             source.get("copie"), source.get("index_code"))).fetchone()[0]
         vus = []
         for c in claims:
             cid = conn.execute(
@@ -53,19 +55,54 @@ def enregistrer(conn, jumeau, source, claims, activite):
                 (t, jumeau["id"], c["sujet"], c["predicat"], c["objet"], c["type"], c["confiance"])).fetchone()[0]
             vus.append(cid)
             for p in c["preuves"]:
-                conn.execute(
-                    "INSERT INTO preuve (tenant_id, source_id, locator, chemin, sha, ligne_debut, ligne_fin, hash, activite) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (source_id, locator) DO NOTHING",
-                    (t, source_id, p["locator"], p["chemin"], p["sha"], p["ligne_debut"], p["ligne_fin"],
-                     p["hash"], Jsonb(activite)))
-                conn.execute(
-                    "INSERT INTO claim_preuve (claim_id, preuve_id) "
-                    "SELECT %s, id FROM preuve WHERE source_id = %s AND locator = %s ON CONFLICT DO NOTHING",
-                    (cid, source_id, p["locator"]))
+                _lier_preuve(conn, t, source_id, cid, p, activite)
+        # Seuls les Claims issus de l'ingestion sont clos : une proposition de conversation attend sa revue.
         conn.execute(
-            "UPDATE claim SET valide_jusqua = now() "
-            "WHERE jumeau_id = %s AND valide_jusqua IS NULL AND NOT (id = ANY(%s))",
+            "UPDATE claim SET valide_jusqua = now() WHERE jumeau_id = %s AND origine = 'INGESTION' "
+            "AND valide_jusqua IS NULL AND NOT (id = ANY(%s))",
             (jumeau["id"], vus))
+
+
+def _lier_preuve(conn, tenant, source_id, claim_id, p, activite):
+    conn.execute(
+        "INSERT INTO preuve (tenant_id, source_id, locator, chemin, sha, ligne_debut, ligne_fin, hash, activite) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (source_id, locator) DO NOTHING",
+        (tenant, source_id, p["locator"], p["chemin"], p["sha"], p["ligne_debut"], p["ligne_fin"],
+         p["hash"], Jsonb(activite)))
+    conn.execute(
+        "INSERT INTO claim_preuve (claim_id, preuve_id) "
+        "SELECT %s, id FROM preuve WHERE source_id = %s AND locator = %s ON CONFLICT DO NOTHING",
+        (claim_id, source_id, p["locator"]))
+
+
+def enregistrer_proposition(conn, jumeau, source_id, c, preuve, activite):
+    """Claim proposé en conversation (M1, confiance basse) ; s'il existe déjà, la preuve s'y ajoute sans toucher au statut."""
+    t = jumeau["tenant_id"]
+    with conn.transaction():
+        cid = conn.execute(
+            "INSERT INTO claim (tenant_id, jumeau_id, sujet, predicat, objet, type, confiance, maturite, origine) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, 'M1', 'CONVERSATION') "
+            "ON CONFLICT (jumeau_id, predicat, objet) DO UPDATE SET objet = EXCLUDED.objet "
+            "WHERE claim.origine = 'CONVERSATION' RETURNING id",
+            (t, jumeau["id"], c["sujet"], c["predicat"], c["objet"], c["type"], c["confiance"])).fetchone()
+        if not cid:
+            raise ValueError("cette connaissance est déjà établie par l'extraction du code")
+        cid = cid[0]
+        _lier_preuve(conn, t, source_id, cid, preuve, activite)
+    return cid
+
+
+def source_du_jumeau(conn, jumeau_id):
+    """ponytail: une seule source de code par jumeau en phase 0 ; la plus récente gagne."""
+    with conn.cursor(row_factory=dict_row) as cur:
+        return cur.execute(
+            "SELECT id, nom, emplacement, curseur, copie, index_code FROM source "
+            "WHERE jumeau_id = %s AND type = 'GIT' ORDER BY id DESC LIMIT 1", (jumeau_id,)).fetchone()
+
+
+def jumeau_par_id(conn, jumeau_id):
+    with conn.cursor(row_factory=dict_row) as cur:
+        return cur.execute("SELECT id, tenant_id, nom, equipe FROM jumeau WHERE id = %s", (jumeau_id,)).fetchone()
 
 
 def reviser(conn, claim_id, acteur, decision, motif):

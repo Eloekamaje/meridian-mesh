@@ -1,39 +1,11 @@
 """Persistance des Claims dans Postgres (tests d'intégration ; ignorés sans JUMEAU_PG_DSN)."""
-import os
-import uuid
-
 import pytest
 
+from jumeau import depot
+from jumeau.tests.conftest import ACTIVITE, JUMEAU, SOURCE, besoin_pg, claim
+
 psycopg = pytest.importorskip("psycopg")
-DSN = os.environ.get("JUMEAU_PG_DSN")
-pytestmark = pytest.mark.skipif(not DSN, reason="JUMEAU_PG_DSN non défini")
-
-from jumeau import depot  # noqa: E402
-
-JUMEAU = {"id": "tbt", "tenant_id": "banque", "nom": "TBT", "equipe": "equipe-tbt"}
-SOURCE = {"nom": "tbt-repo", "type": "GIT", "emplacement": "/depots/tbt", "curseur": "sha1"}
-ACTIVITE = {"extracteur": "cbm-adaptateur", "version": "test"}
-
-
-def claim(objet, sha="sha1", ligne=3):
-    return {
-        "sujet": "TBT", "predicat": "DEPEND_DE", "objet": objet, "type": "DEPENDENCY", "confiance": 0.85,
-        "preuves": [{
-            "locator": f"git://tbt@{sha}:requirements.txt#L{ligne}-L{ligne}", "chemin": "requirements.txt",
-            "sha": sha, "ligne_debut": ligne, "ligne_fin": ligne, "citation": objet, "hash": "h",
-        }],
-    }
-
-
-@pytest.fixture
-def conn():
-    schema = f"test_{uuid.uuid4().hex[:8]}"
-    with psycopg.connect(DSN, autocommit=True) as c:
-        c.execute(f"CREATE SCHEMA {schema}")
-        c.execute(f"SET search_path TO {schema}")
-        depot.appliquer_schema(c)
-        yield c
-        c.execute(f"DROP SCHEMA {schema} CASCADE")
+pytestmark = besoin_pg
 
 
 def objets_valides(conn):

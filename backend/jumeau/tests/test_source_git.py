@@ -73,3 +73,28 @@ def test_extrait_refuse_les_arguments_dangereux(depot, sha, chemin):
     preuve = {"emplacement": str(depot), "sha": sha, "chemin": chemin, "ligne_debut": 1, "ligne_fin": 1, "hash": ""}
     with pytest.raises(ValueError):
         extrait(preuve)
+
+
+def test_copie_sans_liens_symboliques(depot_git, tmp_path, monkeypatch):
+    import os
+    from jumeau import ingerer
+    os.symlink("/etc/hostname", depot_git / "lien")
+    commiter(depot_git, "rien.txt", b"x\n")
+    monkeypatch.setattr(ingerer, "COPIES", tmp_path / "copies")
+    copie = ingerer.copie_au_sha(depot_git, sha_courant(depot_git), "tbt")
+    assert (copie / "requirements.txt").exists() and not (copie / "lien").is_symlink()
+
+
+def test_copie_recreee_si_le_depot_change(depot_git, tmp_path, monkeypatch):
+    import shutil
+    import subprocess
+    from jumeau import ingerer
+    monkeypatch.setattr(ingerer, "COPIES", tmp_path / "copies")
+    ingerer.copie_au_sha(depot_git, sha_courant(depot_git), "tbt")
+    autre = tmp_path / "autre"
+    shutil.copytree(depot_git, autre)
+    subprocess.run(["git", "-C", str(autre), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q",
+                    "--allow-empty", "-m", "nouveau"], check=True)
+    sha = sha_courant(autre)
+    copie = ingerer.copie_au_sha(autre, sha, "tbt")
+    assert sha_courant(copie) == sha
