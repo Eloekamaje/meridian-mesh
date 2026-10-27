@@ -1,5 +1,6 @@
 import { Lightning, WarningCircle, X } from "@phosphor-icons/react";
-import { STATUTS_SOURCE, ENVIRONNEMENTS } from "@/lib/sources";
+import { STATUTS_SOURCE, ENVIRONNEMENTS, champRempli } from "@/lib/sources";
+import SourceGithub from "@/components/commande/SourceGithub";
 
 export default function InspecteurSource({ source, connecteur, onChange, onTester, onFermer }) {
   if (!source) {
@@ -58,7 +59,7 @@ export default function InspecteurSource({ source, connecteur, onChange, onTeste
           <p className="mt-1 text-[11px] leading-relaxed text-[#94A3B8]">{source.erreur.detail}</p>
           <button
             onClick={() => {
-              const manquant = (connecteur?.champs || []).find((c) => c.requis && !source.config?.[c.cle]);
+              const manquant = (connecteur?.champs || []).find((c) => c.requis && !champRempli(source.config?.[c.cle]));
               document.querySelector(`[data-testid="insp-${manquant ? manquant.cle : "perimetre"}"]`)?.focus();
             }}
             data-testid="inspecteur-action-btn"
@@ -92,7 +93,9 @@ export default function InspecteurSource({ source, connecteur, onChange, onTeste
 
       <div className="mt-4 border-t border-[rgba(148,163,184,0.16)] pt-4">
         <div className="mb-3 font-code text-[10px] uppercase tracking-[0.2em] text-[#7C93A8]">Connexion {connecteur?.nom}</div>
-        <div className="space-y-3">{(connecteur?.champs || []).map(champ)}</div>
+        {connecteur?.id === "github"
+          ? <SourceGithub source={source} onChange={onChange} />
+          : <div className="space-y-3">{(connecteur?.champs || []).map(champ)}</div>}
       </div>
 
       <div className="mt-5 flex items-center gap-2 border-t border-[rgba(148,163,184,0.16)] pt-4">

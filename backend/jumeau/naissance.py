@@ -141,7 +141,24 @@ def _resultat(statut, titre=None, detail=None, action=None):
 
 
 def tester_git(config):
-    """Test réel : la branche déclarée est-elle lisible avec les droits fournis ?"""
+    """Test réel : chaque dépôt est-il lisible, sur sa branche, avec les droits fournis ? Premier échec rapporté."""
+    try:
+        configs = configs_depots(config) if "selection" in config else [config]
+    except ValueError as e:
+        return _resultat("configuration_incomplete", "Configuration incomplète", str(e), "Corriger la configuration")
+    if not configs:
+        return _resultat("configuration_incomplete", "Configuration incomplète", "Aucun dépôt choisi.",
+                         "Choisir un dépôt")
+    for c in configs:
+        resultat = _tester_un_depot(c)
+        if resultat["statut"] != "prete":
+            if len(configs) > 1 and resultat["erreur"]:
+                resultat["erreur"]["detail"] = f"{c['organisation']}/{c['depots']} : {resultat['erreur']['detail']}"
+            return resultat
+    return resultat
+
+
+def _tester_un_depot(config):
     try:
         url, nom_branche = url_depot(config), branche(config)
         jeton = resoudre_secret(config.get("secret"))
@@ -207,11 +224,27 @@ def depots_de(config):
     return paires
 
 
+def configs_depots(config):
+    """Une configuration par dépôt d'une source GitHub : couples dépôt/branche choisis dans l'interface
+    (`selection`, « propriétaire/nom »), sinon l'ancienne saisie « dépôt@branche, … » sous une organisation."""
+    if "selection" not in config:
+        return [{**config, "depots": nom, "branches": br} for nom, br in depots_de(config)]
+    configs = []
+    for choix in config["selection"] or []:
+        if not (choix.get("depot") or "").strip():
+            continue  # ligne ajoutée mais pas encore remplie
+        proprietaire, _, nom = choix["depot"].strip().partition("/")
+        if not NOM_VALIDE.fullmatch(proprietaire) or not NOM_VALIDE.fullmatch(nom or ""):
+            raise ValueError(f"dépôt attendu sous la forme propriétaire/nom : {choix['depot']!r}")
+        configs.append({**{k: v for k, v in config.items() if k != "selection"}, "organisation": proprietaire,
+                        "depots": nom, "branches": (choix.get("branche") or "").strip() or "main"})
+    return configs
+
+
 def sources_de_code(commande):
     """Chaque dépôt de chaque source GitHub prête, avec sa propre configuration (dépôt, branche)."""
-    configs = [{**s["config"], "depots": nom, "branches": br}
-               for s in commande["sources"] if s["connecteur"] == "github" and s["statut"] == "prete"
-               for nom, br in depots_de(s["config"])]
+    configs = [c for s in commande["sources"] if s["connecteur"] == "github" and s["statut"] == "prete"
+               for c in configs_depots(s["config"])]
     # Le nom du dépôt identifie sa source, son clone et sa copie dans le jumeau : deux homonymes se mélangeraient.
     noms = [depots_de(c)[0][0] for c in configs]
     doublons = sorted({n for n in noms if noms.count(n) > 1})

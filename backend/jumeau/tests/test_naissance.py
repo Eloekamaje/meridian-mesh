@@ -253,3 +253,16 @@ def test_jeton_colle_depose_dans_vault_et_remplace_par_sa_reference():
     # Une référence déjà posée n'est pas réécrite ; une valeur vide reste vide.
     assert naissance.proteger_secrets(proteges, ["secret"], "cmd-test/src-1") == proteges
     assert naissance.proteger_secrets({"secret": ""}, ["secret"], "x/y") == {"secret": ""}
+
+
+def test_couples_depot_branche_choisis_dans_l_interface():
+    config = {"secret": "vault:meridian/x#jeton", "selection": [
+        {"depot": "banque/paie-api", "branche": "main"}, {"depot": "banque/paie-front", "branche": "release/2026-11"},
+        {"depot": "", "branche": ""}]}  # ligne ajoutée mais pas encore remplie : ignorée
+    configs = naissance.configs_depots(config)
+    assert [(naissance.url_depot(c), naissance.branche(c)) for c in configs] == [
+        ("https://github.com/banque/paie-api.git", "main"),
+        ("https://github.com/banque/paie-front.git", "release/2026-11")]
+    assert all(c["secret"] == "vault:meridian/x#jeton" for c in configs)
+    with pytest.raises(ValueError):
+        naissance.configs_depots({"selection": [{"depot": "sans-proprietaire", "branche": "main"}]})

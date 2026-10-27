@@ -1,0 +1,56 @@
+"""API GitHub de l'atelier (sans réseau : l'ouverture d'URL est simulée)."""
+import io
+import json
+import urllib.error
+
+import pytest
+
+from jumeau import github
+
+
+@pytest.fixture
+def forge(monkeypatch):
+    """Réponses simulées par chemin ; mémorise les requêtes envoyées."""
+    reponses, envoyees = {}, []
+
+    def ouvrir(requete, timeout):
+        envoyees.append(requete)
+        chemin = requete.full_url.split("api.github.com", 1)[1].split("?")[0]
+        corps = reponses[chemin]
+        if isinstance(corps, int):
+            raise urllib.error.HTTPError(requete.full_url, corps, "refus", {}, None)
+        return io.BytesIO(json.dumps(corps).encode())
+
+    monkeypatch.setattr(github, "_ouvrir", ouvrir)
+    monkeypatch.setattr(github, "resoudre_secret", lambda ref: "ghp_x" if ref else None)
+    return reponses, envoyees
+
+
+def depot(nom, defaut="main"):
+    return {"full_name": nom, "private": True, "default_branch": defaut, "pushed_at": "2026-10-01T00:00:00Z"}
+
+
+def test_depots_filtres_avec_leur_branche_par_defaut(forge):
+    reponses, envoyees = forge
+    reponses["/user/repos"] = [depot("banque/paie-api"), depot("banque/paie-front", "develop"), depot("banque/crm")]
+    assert github.depots("vault:meridian/x#jeton", "PAIE") == [
+        {"nom": "banque/paie-api", "prive": True, "defaut": "main", "maj": "2026-10-01T00:00:00Z"},
+        {"nom": "banque/paie-front", "prive": True, "defaut": "develop", "maj": "2026-10-01T00:00:00Z"}]
+    assert envoyees[0].get_header("Authorization") == "Bearer ghp_x"
+
+
+def test_branches_d_un_depot(forge):
+    reponses, _ = forge
+    reponses["/repos/banque/paie-front/branches"] = [{"name": "main"}, {"name": "release/2026-11"}]
+    assert github.branches("vault:r", "banque/paie-front", "rel") == ["release/2026-11"]
+    with pytest.raises(ValueError):
+        github.branches("vault:r", "../etc", "")
+
+
+def test_jeton_refuse_ou_absent(forge):
+    reponses, _ = forge
+    reponses["/user"] = 401
+    with pytest.raises(github.JetonRefuse):
+        github.compte("vault:r")
+    with pytest.raises(RuntimeError):
+        github.compte(None)

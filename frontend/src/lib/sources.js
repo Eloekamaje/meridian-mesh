@@ -19,9 +19,12 @@ export const ENVIRONNEMENTS = ["production", "préproduction", "recette", "déve
 
 export const ETAPES_COMMANDE = ["Identité", "Sources et connexions", "Plan de découverte", "Vérifier et lancer"];
 
+// Une liste (couples dépôt/branche) n'est remplie que si une de ses lignes l'est.
+export const champRempli = (v) => (Array.isArray(v) ? v.some((x) => x?.depot) : Boolean(v));
+
 export function statutCalcule(source, connecteur) {
   if (source.statut === "test_en_cours" || source.statut === "prete" || estErreurSource(source.statut)) return source.statut;
-  const manquants = (connecteur?.champs || []).filter((c) => c.requis && !source.config?.[c.cle]);
+  const manquants = (connecteur?.champs || []).filter((c) => c.requis && !champRempli(source.config?.[c.cle]));
   if (manquants.length === 0 && source.perimetre) return "prete_a_tester";
   return source.statut === "ajoutee" ? "a_configurer" : source.statut;
 }

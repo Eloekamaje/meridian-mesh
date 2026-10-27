@@ -1,8 +1,8 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Header
+from fastapi import FastAPI, APIRouter, HTTPException, Header, Query
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, Dict
 from datetime import datetime, timezone
 import os
@@ -23,6 +23,7 @@ from jumeau import flore as jumeau_flore
 from jumeau import registre as jumeau_registre
 from jumeau import naissance as jumeau_naissance
 from jumeau import examen as jumeau_examen
+from jumeau import github as jumeau_github
 import asyncio
 import psycopg
 from seed_data import (
@@ -1039,10 +1040,14 @@ def _proteger_source(cid, source):
     return {**source, "config": jumeau_naissance.proteger_secrets(source["config"], cles, f"{cid}/{source.get('id', 'source')}")}
 
 
+def _champ_rempli(valeur):
+    return any(x.get("depot") for x in valeur if isinstance(x, dict)) if isinstance(valeur, list) else bool(valeur)
+
+
 def _simuler_test(source):
     """Test de connexion simulé mais déterministe : champs requis manquants → configuration incomplète ; sinon échec réaliste pour certains, succès pour la plupart."""
     conn = next((c for c in CONNECTEURS if c["id"] == source["connecteur"]), None)
-    manquants = [ch["label"] for ch in (conn["champs"] if conn else []) if ch.get("requis") and not source.get("config", {}).get(ch["cle"])]
+    manquants = [ch["label"] for ch in (conn["champs"] if conn else []) if ch.get("requis") and not _champ_rempli(source.get("config", {}).get(ch["cle"]))]
     maintenant = datetime.now(timezone.utc).strftime("%d/%m %H:%M")
     if manquants:
         return {"statut": "configuration_incomplete", "erreur": {"titre": "Configuration incomplète", "detail": f"Champs requis manquants : {', '.join(manquants)}.", "action": "Compléter la configuration"}, "dernier_test": {"date": maintenant, "resultat": "echec"}}
@@ -1051,6 +1056,63 @@ def _simuler_test(source):
     if "legacy" in (source.get("config", {}).get("hote") or ""):
         return {"statut": "erreur_connexion", "erreur": {"titre": "Erreur de connexion", "detail": "L'hôte ne répond pas (délai dépassé sur le port configuré).", "action": "Vérifier le réseau et le port"}, "dernier_test": {"date": maintenant, "resultat": "echec"}}
     return {"statut": "prete", "erreur": None, "dernier_test": {"date": maintenant, "resultat": "ok"}}
+
+
+async def _github(cid: str, sid: str, appel, *args):
+    """Appel à l'API GitHub avec le jeton de la source (lu dans Vault, jamais renvoyé)."""
+    doc = await db.commandes.find_one({"id": cid}, NO_ID)
+    source = next((s for s in (doc or {}).get("sources", []) if s.get("id") == sid), None)
+    if not source or source.get("connecteur") != "github":
+        raise HTTPException(404, "Source GitHub introuvable")
+    return await _appel_github(cid, appel, (source.get("config") or {}).get("secret"), *args)
+
+
+async def _appel_github(cid: str, appel, reference, *args):
+    try:
+        return await asyncio.to_thread(appel, reference, *args)
+    except jumeau_github.JetonRefuse:
+        raise HTTPException(401, "GitHub refuse ce jeton : vérifiez-le ou ses droits de lecture")
+    except (RuntimeError, ValueError) as e:
+        raise HTTPException(400, str(e))
+    except OSError:
+        logger.warning("commande %s : GitHub injoignable", cid, exc_info=True)
+        raise HTTPException(502, "GitHub ne répond pas")
+
+
+class JetonGithub(BaseModel):
+    jeton: str = Field(min_length=1, max_length=500)
+
+
+@api_router.post("/commandes/{cid}/sources/{sid}/github/jeton")
+async def github_jeton(cid: str, sid: str, payload: JetonGithub):
+    """Le jeton va dans Vault, GitHub le vérifie, et la commande n'en garde que la référence."""
+    doc = await db.commandes.find_one({"id": cid, "sources.id": sid}, {"_id": 0, "id": 1})
+    if not doc:
+        raise HTTPException(404, "Source introuvable")
+    try:
+        reference = (await asyncio.to_thread(jumeau_naissance.proteger_secrets, {"secret": payload.jeton.strip()},
+                                             ["secret"], f"{cid}/{sid}"))["secret"]
+    except (RuntimeError, OSError) as e:
+        logger.warning("commande %s : jeton non déposé dans Vault (%s)", cid, e)
+        raise HTTPException(503, "Coffre de secrets indisponible : jeton non enregistré")
+    compte = await _appel_github(cid, jumeau_github.compte, reference)  # refusé : la commande reste inchangée
+    await db.commandes.update_one({"id": cid, "sources.id": sid}, {"$set": {"sources.$.config.secret": reference}})
+    return {"reference": reference, **compte}
+
+
+@api_router.get("/commandes/{cid}/sources/{sid}/github/compte")
+async def github_compte(cid: str, sid: str):
+    return await _github(cid, sid, jumeau_github.compte)
+
+
+@api_router.get("/commandes/{cid}/sources/{sid}/github/depots")
+async def github_depots(cid: str, sid: str, q: str = Query("", max_length=100)):
+    return await _github(cid, sid, jumeau_github.depots, q)
+
+
+@api_router.get("/commandes/{cid}/sources/{sid}/github/branches")
+async def github_branches(cid: str, sid: str, depot: str = Query(..., max_length=200), q: str = Query("", max_length=100)):
+    return await _github(cid, sid, jumeau_github.branches, depot, q)
 
 
 @api_router.post("/commandes/{cid}/tester")
