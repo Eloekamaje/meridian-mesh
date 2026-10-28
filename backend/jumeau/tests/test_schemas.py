@@ -78,3 +78,10 @@ def test_une_boite_gardee_garde_son_libelle_defini_sur_une_fleche_ecartee():
                  "appli -->|conserve tout| base[(Base de données)]  %% c:812")
     code = schemas.verifier(texte, C).split("```mermaid\n")[1].split("```")[0]
     assert "appli[Conduit — publication]" in code and "lecteurs" not in code
+
+
+def test_fondements_egares_hors_schema_retires():
+    # Constaté : « %% c:3596 » laissé seul dans le texte, sous un schéma rejeté.
+    sortie = schemas.verifier("Avant.\n\n%% c:3596\n\n%% c:1393\nAprès.", C)
+    assert "%%" not in sortie and sortie.startswith("Avant.") and sortie.endswith("Après.")
+    assert "%% c:812" in schemas.verifier(bloc("a --> b  %% c:812"), C)  # dans un schéma, il reste

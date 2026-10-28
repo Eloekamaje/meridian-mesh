@@ -243,7 +243,12 @@ async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=
         etat = etat_texte(await ecriture.etat()) if ecriture else None
         mob = mobilisation.Mobilisation(ctxs, dsn, modele)
         scene, relations = mobilisation.Scene(ctxs), {}  # seuls les jumeaux autorisés (déjà filtrés par le serveur)
-        outils = [mob.outil(), scene.outil()] + (agent.outils_travail(ecriture, agent.Budget()) if ecriture else [])
+        # Un schéma peut se fonder sur le code ou les connaissances de chacun des jumeaux mobilisés.
+        tous = {"sources": [s for c in ctxs.values() for s in c["sources"]],
+                "claims": [c for x in ctxs.values() for c in x["claims"]]}
+        dessin = dessin_pour(tous) if tous["sources"] else None
+        outils = ([mob.outil(), scene.outil()] + ([agent.outil_dessin(dessin, agent.Budget())] if dessin else [])
+                  + (agent.outils_travail(ecriture, agent.Budget()) if ecriture else []))
         a = mobilisation.orchestrateur(modele, mobilisation.prompt(etat), outils)
         # Durée bornée : chaque outil a son plafond, mais pas le nombre de tours de l'orchestratrice.
         texte = str(await asyncio.wait_for(a.invoke_async(mobilisation.demande(await _cartes(ctxs, dsn, db, relations), question)),
@@ -259,8 +264,8 @@ async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=
             except Exception:
                 agent.journal.warning("révision impossible, première réponse conservée", exc_info=True)
         invalides = await asyncio.to_thread(contradicteur.citations_invalides, texte, sources, branches)
-        texte = schemas.verifier(texte, {c["id"]: c for ctx in ctxs.values() for c in ctx["claims"] if c.get("id")},
-                                 relations)
+        texte = avec_schema(schemas.verifier(texte, {c["id"]: c for ctx in ctxs.values() for c in ctx["claims"]
+                                                     if c.get("id")}, relations), dessin)
         tout = "\n".join([texte, *(p for c in mob.contributions.values() for p in c.preuves)])
         fraiches = await asyncio.to_thread(contradicteur.fraicheur, tout, branches)
         # Preuves de chaque jumeau, étiquetées à son nom, prises à tour de rôle : le volet ne se remplit pas avec
@@ -279,7 +284,7 @@ async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=
             "reponse": retirer_citations(texte),
             "contributions": [{"jumeau": ctxs[j]["jumeau"]["nom"], "texte": retirer_citations(c.constat)}
                               for j, c in mob.contributions.items()],
-            "preuves": preuves[:MAX_PREUVES],
+            "preuves": preuves[:MAX_PREUVES] + (dessin.preuves if dessin else []),
             **({"commande_carte": scene.commande} if scene.commande else {}),
         }
     except asyncio.TimeoutError:

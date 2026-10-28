@@ -108,7 +108,16 @@ def verifier(texte, connaissances, relations=None):
         note = f" · {ecartees} lien(s) non dessiné(s) : leur preuve ne les appuie pas" if ecartees else ""
         return f"```mermaid\n{code}\n```\nLégende : {legende}{note}."
 
-    return RE_BLOC.sub(remplacer, texte)
+    morceaux, fin = [], 0
+    for m in RE_BLOC.finditer(texte):
+        morceaux += [_sans_commentaires(texte[fin:m.start()]), remplacer(m)]
+        fin = m.end()
+    return "".join(morceaux + [_sans_commentaires(texte[fin:])])
+
+
+def _sans_commentaires(texte):
+    """Hors d'un schéma, une ligne « %% … » (fondement égaré) n'est pas pour le lecteur."""
+    return re.sub(r"(?m)^[ \t]*%%[^\n]*\n?", "", texte)
 
 
 # --- Schémas dessinés par le harness (Harness v3 : l'agent choisit et nomme, le harness vérifie et écrit) ---------
