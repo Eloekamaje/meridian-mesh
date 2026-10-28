@@ -255,3 +255,16 @@ BEGIN
 END $$ LANGUAGE plpgsql;
 CREATE OR REPLACE TRIGGER consigne_immuable BEFORE UPDATE OR DELETE ON consigne
     FOR EACH ROW EXECUTE FUNCTION consigne_immuable();
+
+-- Évaluation : une passe du jeu de référence (Jumeau Harness v3 §6), pour suivre la tendance d'un changement de
+-- méthode, de charte ou de modèle à l'autre.
+CREATE TABLE IF NOT EXISTS evaluation (
+    id                bigserial PRIMARY KEY,
+    jumeau_id         text NOT NULL REFERENCES jumeau(id),
+    quand             timestamptz NOT NULL DEFAULT now(),
+    version_methodes  text NOT NULL,
+    modele            text NOT NULL,
+    scores            jsonb NOT NULL,
+    details           jsonb NOT NULL
+);
+CREATE INDEX IF NOT EXISTS evaluation_jumeau ON evaluation (jumeau_id, quand DESC);

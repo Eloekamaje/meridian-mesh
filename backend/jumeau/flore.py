@@ -123,11 +123,12 @@ def _indisponible(nom, raison):
             "contributions": [], "preuves": []}
 
 
-async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=None):
+async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=None, trace=None):
     """Réponse de Flore mobilisant un jumeau réel, ou None si `jumeau_id` n'est pas un jumeau réel ingéré.
 
     Dans un Travail (`travail` et `db`), Flore reçoit son état et les outils pour y écrire (plan, hypothèses,
     options, livrables, résumé) : elle travaille dans le Travail, elle ne fait pas que répondre.
+    `trace` (dict facultatif) reçoit le texte brut, avec ses citations, et les citations invalides (évaluations).
     """
     ctx, dsn = await asyncio.to_thread(_contexte, jumeau_id, acteur, profil)
     if not ctx:
@@ -157,6 +158,8 @@ async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=No
                 agent.journal.warning("révision impossible, première réponse conservée", exc_info=True)
         invalides = await asyncio.to_thread(contradicteur.citations_invalides, texte, ctx["sources"],
                                            ctx.get("lecteurs", []))
+        if trace is not None:
+            trace.update(texte=texte, invalides=list(invalides))
         fraiches = await asyncio.to_thread(contradicteur.fraicheur, texte, ctx.get("lecteurs", []))
         return vers_reponse_flore(ctx["jumeau"], ctx["sources"], texte, invalides, fraiches)
     except RuntimeError as e:  # modèle non configuré
