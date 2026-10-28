@@ -10,7 +10,7 @@ import re
 
 import psycopg
 
-from jumeau import agent, carte, connaissance, contradicteur, depot, gardien, lecteurs, mobilisation, schemas
+from jumeau import agent, carte, connaissance, contradicteur, depot, gardien, lecteurs, mesure, mobilisation, schemas
 from jumeau.connaissance import RE_CITATION
 from jumeau.lecteurs import RE_CITATION_SOURCE
 from jumeau.travail import EcritureTravail, etat_texte
@@ -155,7 +155,9 @@ async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=No
     options, livrables, résumé) : elle travaille dans le Travail, elle ne fait pas que répondre.
     `trace` (dict facultatif) reçoit le texte brut, avec ses citations, et les citations invalides (évaluations).
     """
-    ctx, dsn = await asyncio.to_thread(_contexte, jumeau_id, acteur, profil)
+    chrono = mesure.Chrono()
+    with chrono.phase("contexte"):
+        ctx, dsn = await asyncio.to_thread(_contexte, jumeau_id, acteur, profil)
     if not ctx:
         return None
     nom = ctx["jumeau"]["nom"]
@@ -170,28 +172,35 @@ async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=No
         ctx["dessin"] = dessin = dessin_pour(ctx) if ctx["sources"] else None
         a = agent.construire(ctx, dsn, session=connaissance.id_session(jumeau_id, cle), modele=modele,
                              ecriture=ecriture)
-        texte = str(await a.invoke_async(question)).strip()
+        with chrono.phase("agent"):
+            texte = str(await a.invoke_async(question)).strip()
         # Relecture avant envoi ; une seule révision au plus.
         # ponytail: la consigne de révision reste dans le fil (brouillon, critique, correction) : historique cohérent,
         # mais plus long ; fil séparé si elle gêne la mémoire.
-        verdict = await relire_sans_risque(question, texte, ctx["sources"], ctx.get("profil"), modele,
-                                           agent.CHARTE.read_text(encoding="utf-8"), ctx.get("lecteurs", []),
-                                           validees(ctx["claims"]))
+        with chrono.phase("relecture"):
+            verdict = await relire_sans_risque(question, texte, ctx["sources"], ctx.get("profil"), modele,
+                                               agent.CHARTE.read_text(encoding="utf-8"), ctx.get("lecteurs", []),
+                                               validees(ctx["claims"]))
         if not verdict["ok"]:
             agent.journal.info("révision %s : %s", jumeau_id, verdict["problemes"])
             try:
-                texte = str(await a.invoke_async(contradicteur.consigne_revision(verdict["problemes"]))).strip()
+                with chrono.phase("agent"):
+                    texte = str(await a.invoke_async(contradicteur.consigne_revision(verdict["problemes"]))).strip()
             except Exception:
                 agent.journal.warning("révision impossible, première réponse conservée", exc_info=True)
-        invalides = await asyncio.to_thread(contradicteur.citations_invalides, texte, ctx["sources"],
-                                           ctx.get("lecteurs", []))
-        if trace is not None:
-            trace.update(texte=texte, invalides=list(invalides))
-        fraiches = await asyncio.to_thread(contradicteur.fraicheur, texte, ctx.get("lecteurs", []))
-        texte = avec_schema(schemas.verifier(texte, {c["id"]: c for c in ctx["claims"] if c.get("id")}), dessin)
+        chrono.agent(a)
+        with chrono.phase("controles"):
+            invalides = await asyncio.to_thread(contradicteur.citations_invalides, texte, ctx["sources"],
+                                               ctx.get("lecteurs", []))
+            if trace is not None:
+                trace.update(texte=texte, invalides=list(invalides))
+            fraiches = await asyncio.to_thread(contradicteur.fraicheur, texte, ctx.get("lecteurs", []))
+            texte = avec_schema(schemas.verifier(texte, {c["id"]: c for c in ctx["claims"] if c.get("id")}), dessin)
         reponse = vers_reponse_flore(ctx["jumeau"], ctx["sources"], texte, invalides, fraiches)
         if dessin and dessin.preuves:  # chaque flèche du schéma renvoie à sa ligne, dans le volet des preuves
             reponse["preuves"] = (reponse["preuves"] + dessin.preuves)[:MAX_PREUVES + len(dessin.preuves)]
+        reponse["durees"] = chrono.bilan()
+        agent.journal.info("durées %s : %s", jumeau_id, reponse["durees"])
         return reponse
     except RuntimeError as e:  # modèle non configuré
         return _indisponible(nom, str(e))
@@ -226,11 +235,12 @@ async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=
 
     Seuls `jumeau_ids` (déjà filtrés par le serveur selon les droits) sont mobilisables.
     """
-    ctxs, dsn = {}, None
-    for jid in dict.fromkeys(jumeau_ids):
-        ctx, dsn_jumeau = await asyncio.to_thread(_contexte, jid, acteur, profil)
-        if ctx:
-            ctxs[jid], dsn = ctx, dsn_jumeau
+    ctxs, dsn, chrono = {}, None, mesure.Chrono()
+    with chrono.phase("contexte"):
+        for jid in dict.fromkeys(jumeau_ids):
+            ctx, dsn_jumeau = await asyncio.to_thread(_contexte, jid, acteur, profil)
+            if ctx:
+                ctxs[jid], dsn = ctx, dsn_jumeau
     if not ctxs:
         return None
     cle = cle_fil(acteur, travail)
@@ -251,23 +261,30 @@ async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=
                   + (agent.outils_travail(ecriture, agent.Budget()) if ecriture else []))
         a = mobilisation.orchestrateur(modele, mobilisation.prompt(etat), outils)
         # Durée bornée : chaque outil a son plafond, mais pas le nombre de tours de l'orchestratrice.
-        texte = str(await asyncio.wait_for(a.invoke_async(mobilisation.demande(await _cartes(ctxs, dsn, db, relations), question)),
-                                           mobilisation.DUREE_MAX)).strip()
+        with chrono.phase("cartes"):
+            cartes = await _cartes(ctxs, dsn, db, relations)
+        with chrono.phase("agent"):
+            texte = str(await asyncio.wait_for(a.invoke_async(mobilisation.demande(cartes, question)),
+                                               mobilisation.DUREE_MAX)).strip()
         sources = [s for ctx in ctxs.values() for s in ctx["sources"]]
         branches = [l for ctx in ctxs.values() for l in ctx.get("lecteurs", [])]
-        verdict = await relire_sans_risque(question, texte, sources, profil, modele,
-                                           agent.CHARTE.read_text(encoding="utf-8"), branches,
-                                           sum(validees(ctx["claims"]) for ctx in ctxs.values()))
+        with chrono.phase("relecture"):
+            verdict = await relire_sans_risque(question, texte, sources, profil, modele,
+                                               agent.CHARTE.read_text(encoding="utf-8"), branches,
+                                               sum(validees(ctx["claims"]) for ctx in ctxs.values()))
         if not verdict["ok"]:
             try:
-                texte = str(await a.invoke_async(contradicteur.consigne_revision(verdict["problemes"]))).strip()
+                with chrono.phase("agent"):
+                    texte = str(await a.invoke_async(contradicteur.consigne_revision(verdict["problemes"]))).strip()
             except Exception:
                 agent.journal.warning("révision impossible, première réponse conservée", exc_info=True)
-        invalides = await asyncio.to_thread(contradicteur.citations_invalides, texte, sources, branches)
-        texte = avec_schema(schemas.verifier(texte, {c["id"]: c for ctx in ctxs.values() for c in ctx["claims"]
-                                                     if c.get("id")}, relations), dessin)
-        tout = "\n".join([texte, *(p for c in mob.contributions.values() for p in c.preuves)])
-        fraiches = await asyncio.to_thread(contradicteur.fraicheur, tout, branches)
+        chrono.agent(a)  # « outils » comprend la consultation des jumeaux (leur propre modèle et leurs outils)
+        with chrono.phase("controles"):
+            invalides = await asyncio.to_thread(contradicteur.citations_invalides, texte, sources, branches)
+            texte = avec_schema(schemas.verifier(texte, {c["id"]: c for ctx in ctxs.values() for c in ctx["claims"]
+                                                         if c.get("id")}, relations), dessin)
+            tout = "\n".join([texte, *(p for c in mob.contributions.values() for p in c.preuves)])
+            fraiches = await asyncio.to_thread(contradicteur.fraicheur, tout, branches)
         # Preuves de chaque jumeau, étiquetées à son nom, prises à tour de rôle : le volet ne se remplit pas avec
         # le premier jumeau seulement, et l'on sait de quelle application vient chaque ligne.
         par_jumeau = [[{**p, "source": f"{ctxs[j]['jumeau']['nom']} · {p['source']}"}
@@ -279,14 +296,17 @@ async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=
             if p["detail"] not in vus:
                 vus.add(p["detail"])
                 preuves.append(p)
-        return {
+        reponse = {
             "comportement": "expliquer",
             "reponse": retirer_citations(texte),
             "contributions": [{"jumeau": ctxs[j]["jumeau"]["nom"], "texte": retirer_citations(c.constat)}
                               for j, c in mob.contributions.items()],
             "preuves": preuves[:MAX_PREUVES] + (dessin.preuves if dessin else []),
             **({"commande_carte": scene.commande} if scene.commande else {}),
+            "durees": chrono.bilan(),
         }
+        agent.journal.info("durées mobilisation %s : %s", list(ctxs), reponse["durees"])
+        return reponse
     except asyncio.TimeoutError:
         agent.journal.warning("mobilisation %s : durée dépassée", list(ctxs))
         return _indisponible(noms, "la mobilisation a dépassé sa durée maximale.")
