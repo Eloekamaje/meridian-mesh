@@ -126,6 +126,7 @@ def test_contexte_d_un_jumeau_sans_code_mobilisable(monkeypatch):
     monkeypatch.setattr(depot, "jumeau_par_id", lambda c, j: JUMEAU)
     monkeypatch.setattr(depot, "sources_du_jumeau", lambda c, j: [])
     monkeypatch.setattr(depot, "toutes_les_sources", lambda c, j: [])
+    monkeypatch.setattr(depot, "consignes_du_jumeau", lambda c, j: [])
     monkeypatch.setattr(lecteurs, "lecteurs_de", lambda s: [dd])
     monkeypatch.setattr(connaissance, "connaissances", lambda *a, **k: [])
     monkeypatch.setattr(gardien, "fiche_courante", lambda c, j: None)

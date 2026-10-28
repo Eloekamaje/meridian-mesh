@@ -1,4 +1,5 @@
 """Persistance des jumeaux, preuves et Claims (Postgres)."""
+import re
 from pathlib import Path
 
 from psycopg.rows import dict_row
@@ -189,16 +190,83 @@ def jumeau_par_id(conn, jumeau_id):
 
 
 def reviser(conn, claim_id, acteur, decision, motif):
-    """Revue humaine : la revue est écrite avant le statut (exigé par le trigger d'acceptation)."""
+    """Revue humaine : la revue est écrite avant le statut (exigé par le trigger d'acceptation). Rend l'énoncé revu."""
     with conn.transaction():
         tenant = conn.execute(
-            "SELECT tenant_id FROM claim WHERE id = %s AND valide_jusqua IS NULL FOR UPDATE", (claim_id,)).fetchone()
+            "SELECT tenant_id, sujet, predicat, objet FROM claim WHERE id = %s AND valide_jusqua IS NULL FOR UPDATE",
+            (claim_id,)).fetchone()
         if not tenant:
             raise LookupError(claim_id)
         conn.execute(
             "INSERT INTO revue (tenant_id, claim_id, acteur, decision, motif) VALUES (%s, %s, %s, %s, %s)",
             (tenant[0], claim_id, acteur, decision, motif))
         conn.execute("UPDATE claim SET statut = %s WHERE id = %s", (decision, claim_id))  # maturité : trigger
+    return {"sujet": tenant[1], "predicat": tenant[2], "objet": tenant[3]}
+
+
+PORTEES = ("domaine", "equipe", "jumeau")
+MAX_TEXTE, MAX_POURQUOI = 500, 1000
+MAX_CONSIGNES, MAX_CARACTERES = 40, 6000
+_CONTROLES = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f\u2028\u2029]")
+
+
+def nettoyer_consigne(texte):
+    """Sans caractères de contrôle (retours à la ligne compris : une consigne tient sur une ligne) ni blancs en trop."""
+    return " ".join(_CONTROLES.sub(" ", texte or "").split())
+
+
+def _cible(jumeau, portee):
+    return jumeau[{"domaine": "domaine", "equipe": "equipe", "jumeau": "id"}[portee]]
+
+
+def ajouter_consigne(conn, jumeau, portee, texte, pourquoi, auteur, origine="HUMAIN"):
+    """La cible est déduite du jumeau : on ne choisit pas une portée arbitraire. Rend l'id."""
+    if portee not in PORTEES:
+        raise ValueError(f"portée inconnue : {portee}")
+    texte, pourquoi = nettoyer_consigne(texte), nettoyer_consigne(pourquoi)
+    if not texte or not pourquoi:
+        raise ValueError("texte et pourquoi sont obligatoires")
+    if len(texte) > MAX_TEXTE or len(pourquoi) > MAX_POURQUOI:
+        raise ValueError("texte ou pourquoi trop long")
+    return conn.execute(
+        "INSERT INTO consigne (tenant_id, portee, cible, texte, pourquoi, auteur, origine) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
+        (jumeau["tenant_id"], portee, _cible(jumeau, portee), texte, pourquoi, auteur, origine)).fetchone()[0]
+
+
+def retirer_consigne(conn, consigne_id):
+    if not conn.execute("UPDATE consigne SET retiree_le = now() WHERE id = %s AND retiree_le IS NULL RETURNING id",
+                        (consigne_id,)).fetchone():
+        raise LookupError(consigne_id)
+
+
+def borner_consignes(consignes):
+    """Au plus MAX_CONSIGNES et MAX_CARACTERES ; si l'on coupe, on garde les plus particulières (en fin de liste)."""
+    gardees, total = [], 0
+    for c in reversed(consignes):
+        total += len(c["texte"]) + len(c["pourquoi"])
+        if len(gardees) >= MAX_CONSIGNES or total > MAX_CARACTERES:
+            break
+        gardees.append(c)
+    return gardees[::-1]
+
+
+def consignes_du_jumeau(conn, jumeau):
+    """Consignes actives qui s'appliquent au jumeau : domaine, puis équipe, puis jumeau, puis date."""
+    with conn.cursor(row_factory=dict_row) as cur:
+        lignes = cur.execute(
+            "SELECT id, portee, cible, texte, pourquoi, auteur, origine, cree_le FROM consigne "
+            "WHERE tenant_id = %s AND retiree_le IS NULL AND "
+            "((portee = 'domaine' AND cible = %s) OR (portee = 'equipe' AND cible = %s) OR (portee = 'jumeau' AND cible = %s)) "
+            "ORDER BY array_position(ARRAY['domaine', 'equipe', 'jumeau'], portee), cree_le, id",
+            (jumeau["tenant_id"], jumeau["domaine"], jumeau["equipe"], jumeau["id"])).fetchall()
+    return borner_consignes(lignes)
+
+
+def consigne_proposee(enonce, motif):
+    """Proposition issue d'une contestation motivée ; jamais créée seule, un humain la confirme."""
+    texte = nettoyer_consigne(f"Ne pas affirmer sans nouvelle preuve : {enonce['sujet']} {enonce['predicat']} {enonce['objet']}")
+    return {"portee": "jumeau", "texte": texte[:MAX_TEXTE], "pourquoi": nettoyer_consigne(motif)[:MAX_POURQUOI]}
 
 
 def enregistrer_contradiction(conn, jumeau, enonce, a, b, acteur, claim_id=None):

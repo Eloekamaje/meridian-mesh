@@ -195,6 +195,7 @@ def test_veille_sans_depot_la_version_est_l_empreinte_des_sources(monkeypatch):
     monkeypatch.setattr(depot, "jumeau_par_id", lambda c, j: {"id": j, "nom": "P", "tenant_id": "t", "equipe": "e"})
     monkeypatch.setattr(depot, "sources_du_jumeau", lambda c, j: [])
     monkeypatch.setattr(depot, "toutes_les_sources", lambda c, j: [])
+    monkeypatch.setattr(depot, "consignes_du_jumeau", lambda c, j: [])
     monkeypatch.setattr(gardien, "connaissances_courantes", lambda c, j: set())
     monkeypatch.setattr(gardien.connaissance, "connaissances", lambda *a, **k: [])
     monkeypatch.setattr(gardien, "fiche_du_sha", lambda c, j, sha: sha in fiches)

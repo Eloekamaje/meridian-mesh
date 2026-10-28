@@ -113,7 +113,8 @@ def _contexte(jumeau_id, acteur, profil):
             return None, None
         claims = connaissance.connaissances(conn, jumeau_id, limite=500)
         fiche = gardien.fiche_courante(conn, jumeau_id)
-    return {"jumeau": jumeau, "sources": sources, "claims": claims, "acteur": acteur, "profil": profil,
+        consignes = depot.consignes_du_jumeau(conn, jumeau)
+    return {"jumeau": jumeau, "consignes": consignes, "sources": sources, "claims": claims, "acteur": acteur, "profil": profil,
             "lecteurs": lecteurs_branches, "fiche": fiche["contenu"] if fiche else None}, dsn
 
 

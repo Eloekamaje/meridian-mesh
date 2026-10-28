@@ -340,7 +340,8 @@ async def veiller(conn, db, jumeau_id, chemins=None, rediger=_rediger):
             await publier(db, sit)
         await registre.projeter(db, conn)
     bilan = {"changement": True, "version": version, "depots": ingeres, "signaux": len(sigs), "commits": len(commits)}
-    ctx = {"jumeau": jumeau, "sources": [s for s in sources if s["index_code"]],
+    ctx = {"jumeau": jumeau, "consignes": depot.consignes_du_jumeau(conn, jumeau),
+           "sources": [s for s in sources if s["index_code"]],
            # Les sources branchées (documentation, trajectoire…) : la méthode y route les questions du « pourquoi ».
            "lecteurs": branches,
            "claims": connaissance.connaissances(conn, jumeau_id, limite=500),

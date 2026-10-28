@@ -228,3 +228,30 @@ CREATE TABLE IF NOT EXISTS ancre (
     cree_le     timestamptz NOT NULL DEFAULT now(),
     UNIQUE (claim_id, locator)
 );
+
+-- Consignes de l'équipe (v3 §5) : instructions humaines, écrites avec leur pourquoi. Jamais supprimées ni modifiées ;
+-- on les retire (retiree_le), l'historique reste.
+CREATE TABLE IF NOT EXISTS consigne (
+    id         bigserial PRIMARY KEY,
+    tenant_id  text NOT NULL,
+    portee     text NOT NULL CHECK (portee IN ('domaine', 'equipe', 'jumeau')),
+    cible      text NOT NULL,
+    texte      text NOT NULL CHECK (length(btrim(texte)) > 0 AND length(texte) <= 500),
+    pourquoi   text NOT NULL CHECK (length(btrim(pourquoi)) > 0 AND length(pourquoi) <= 1000),
+    auteur     text NOT NULL,
+    origine    text NOT NULL DEFAULT 'HUMAIN' CHECK (origine IN ('HUMAIN', 'CONTESTATION')),
+    cree_le    timestamptz NOT NULL DEFAULT now(),
+    retiree_le timestamptz
+);
+CREATE INDEX IF NOT EXISTS consigne_cible ON consigne (tenant_id, portee, cible) WHERE retiree_le IS NULL;
+CREATE OR REPLACE FUNCTION consigne_immuable() RETURNS trigger AS $$
+BEGIN
+    IF TG_OP = 'DELETE' OR OLD.retiree_le IS NOT NULL
+       OR (NEW.id, NEW.tenant_id, NEW.portee, NEW.cible, NEW.texte, NEW.pourquoi, NEW.auteur, NEW.origine, NEW.cree_le)
+          IS DISTINCT FROM (OLD.id, OLD.tenant_id, OLD.portee, OLD.cible, OLD.texte, OLD.pourquoi, OLD.auteur, OLD.origine, OLD.cree_le) THEN
+        RAISE EXCEPTION 'consigne : seul le retrait est permis';
+    END IF;
+    RETURN NEW;
+END $$ LANGUAGE plpgsql;
+CREATE OR REPLACE TRIGGER consigne_immuable BEFORE UPDATE OR DELETE ON consigne
+    FOR EACH ROW EXECUTE FUNCTION consigne_immuable();

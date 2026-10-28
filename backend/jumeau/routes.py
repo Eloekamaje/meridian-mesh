@@ -29,6 +29,12 @@ class Revue(BaseModel):
     motif: Optional[str] = Field(default=None, max_length=2000)
 
 
+class NouvelleConsigne(BaseModel):
+    portee: Literal["domaine", "equipe", "jumeau"]
+    texte: str = Field(min_length=1, max_length=depot.MAX_TEXTE)
+    pourquoi: str = Field(min_length=1, max_length=depot.MAX_POURQUOI)
+
+
 class Tranche(BaseModel):
     verdict: Literal["a", "b", "aucune"]
     motif: Optional[str] = Field(default=None, max_length=2000)
@@ -59,9 +65,42 @@ def lire_extrait(preuve_id: int, conn=Depends(connexion)):
 def reviser(claim_id: int, revue: Revue, conn=Depends(connexion),
             x_persona: str = Header(default="architecte", max_length=64)):
     try:
-        depot.reviser(conn, claim_id, x_persona, revue.decision, revue.motif)
+        enonce = depot.reviser(conn, claim_id, x_persona, revue.decision, revue.motif)
     except LookupError:
         raise HTTPException(404, "Claim introuvable")
+    if revue.decision == "CONTESTED" and depot.nettoyer_consigne(revue.motif):
+        return {"ok": True, "consigne_proposee": depot.consigne_proposee(enonce, revue.motif)}
+    return {"ok": True}
+
+
+def _jumeau_ou_404(conn, jumeau_id):
+    jumeau = depot.jumeau_par_id(conn, jumeau_id)
+    if not jumeau:
+        raise HTTPException(404, "Jumeau introuvable")
+    return jumeau
+
+
+@router.get("/jumeaux/{jumeau_id}/consignes")
+def lister_consignes(jumeau_id: str, conn=Depends(connexion)):
+    return depot.consignes_du_jumeau(conn, _jumeau_ou_404(conn, jumeau_id))
+
+
+@router.post("/jumeaux/{jumeau_id}/consignes")
+def ajouter_consigne(jumeau_id: str, consigne: NouvelleConsigne, conn=Depends(connexion),
+                     x_persona: str = Header(default="architecte", max_length=64)):
+    jumeau = _jumeau_ou_404(conn, jumeau_id)
+    try:
+        return {"id": depot.ajouter_consigne(conn, jumeau, consigne.portee, consigne.texte, consigne.pourquoi, x_persona)}
+    except ValueError:
+        raise HTTPException(422, "Texte et pourquoi sont obligatoires")
+
+
+@router.post("/consignes/{consigne_id}/retrait")
+def retirer_consigne(consigne_id: int, conn=Depends(connexion)):
+    try:
+        depot.retirer_consigne(conn, consigne_id)
+    except LookupError:
+        raise HTTPException(404, "Consigne introuvable ou déjà retirée")
     return {"ok": True}
 
 

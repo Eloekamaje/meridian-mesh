@@ -73,7 +73,8 @@ async def _decider(juge, consigne):
 
 
 def _contexte(conn, jumeau_id):
-    return {"jumeau": depot.jumeau_par_id(conn, jumeau_id),
+    jumeau = depot.jumeau_par_id(conn, jumeau_id)
+    return {"jumeau": jumeau, "consignes": depot.consignes_du_jumeau(conn, jumeau),
             "sources": [s for s in depot.sources_du_jumeau(conn, jumeau_id) if s["index_code"]],
             "claims": connaissance.connaissances(conn, jumeau_id, limite=500),
             "acteur": "gardien", "profil": {"nom": "Gardien du jumeau", "role": "veille automatique"}}

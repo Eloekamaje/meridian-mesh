@@ -137,6 +137,9 @@ def prompt_systeme(ctx):
     # Du plus stable au plus variable : le préfixe (charte, catalogue) reste identique d'un tour à l'autre (cache).
     prompt = (f"Tu es Flore, la voix de Méridian.\n\n{CHARTE.read_text(encoding='utf-8')}\n\n"
               f"## Catalogue des méthodes\n\n{catalogue}")
+    if ctx.get("consignes"):  # après le préfixe stable, avant la fiche : elles changent rarement
+        prompt += ("\n\n## Consignes de l'équipe (instructions ; la plus particulière l'emporte)\n\n"
+                   + "\n".join(f"- [{c['portee']}] {c['texte']} (pourquoi : {c['pourquoi']})" for c in ctx["consignes"]))
     if ctx.get("fiche"):
         prompt += f"\n\n## Fiche vivante de l'application (rédigée par le gardien du jumeau)\n\n{ctx['fiche']}"
     prompt += f"\n\n{contexte}"
