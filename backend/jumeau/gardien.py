@@ -248,6 +248,12 @@ def empreinte(sources):
     return ",".join(f"{s['nom']}@{s['curseur'][:12]}" for s in sorted(sources, key=lambda s: s["nom"]))
 
 
+def empreinte_lecteurs(branches):
+    """Version d'un jumeau sans dépôt : l'état de chacune de ses sources (une source qui avance change la version)."""
+    brut = ",".join(f"{l.nom}:{l.version_courante()}" for l in sorted(branches, key=lambda l: l.nom))
+    return "sources:" + hashlib.sha256(brut.encode()).hexdigest()[:16] if brut else ""
+
+
 def _id_version(empreinte_):
     return hashlib.sha256(empreinte_.encode()).hexdigest()[:12]
 
@@ -293,7 +299,9 @@ async def veiller(conn, db, jumeau_id, chemins=None, rediger=_rediger):
         commits += [{**c, "depot": source["nom"]} for c in nouveaux]
         ingeres.append(source["nom"])
     sources = depot.sources_du_jumeau(conn, jumeau_id)
-    version = empreinte(sources)
+    branches = lecteurs.lecteurs_de(depot.toutes_les_sources(conn, jumeau_id))
+    # Sans dépôt (progiciel), pas d'ingestion de code : la version est celle des sources branchées.
+    version = empreinte(sources) if sources else empreinte_lecteurs(branches)
     if not ingeres and fiche_du_sha(conn, jumeau_id, version):
         return {"changement": False}
     sigs, sit = (signaux(avant, connaissances_courantes(conn, jumeau_id)) if ingeres else []), None
@@ -308,7 +316,7 @@ async def veiller(conn, db, jumeau_id, chemins=None, rediger=_rediger):
     bilan = {"changement": True, "version": version, "depots": ingeres, "signaux": len(sigs), "commits": len(commits)}
     ctx = {"jumeau": jumeau, "sources": [s for s in sources if s["index_code"]],
            # Les sources branchées (documentation, trajectoire…) : la méthode y route les questions du « pourquoi ».
-           "lecteurs": lecteurs.lecteurs_de(depot.toutes_les_sources(conn, jumeau_id)),
+           "lecteurs": branches,
            "claims": connaissance.connaissances(conn, jumeau_id, limite=500),
            "acteur": "gardien", "profil": {"nom": "Gardien du jumeau", "role": "veille automatique"}}
     try:

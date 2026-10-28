@@ -260,6 +260,58 @@ def sources_de_code(commande):
     return configs
 
 
+SUBSTANCES_SANS_CODE = (("datadog", "Datadog (interfaces observées)"), ("confluence", "Confluence (documentation)"))
+
+
+def substance_sans_code(commande):
+    """Naissance sans code (Sources v1 §8) : (source ServiceNow qui ancre l'identité, source de substance préférée).
+    ValueError, avec ce qui manque, si l'une des deux n'est pas prête."""
+    pretes = {}
+    for s in commande["sources"]:
+        if s["statut"] == "prete":
+            pretes.setdefault(s["connecteur"], s)
+    if "servicenow" not in pretes:
+        raise ValueError("Sans le code, il faut une source ServiceNow prête : l'élément de configuration ancre l'identité du jumeau.")
+    substance = next((pretes[c] for c, _ in SUBSTANCES_SANS_CODE if c in pretes), None)
+    if not substance:
+        raise ValueError("Sans le code, il faut aussi une source de substance prête : "
+                         + " ou ".join(libelle for _, libelle in SUBSTANCES_SANS_CODE) + ".")
+    return pretes["servicenow"], substance
+
+
+async def _naitre_sans_code(conn, db, commande, jumeau_id, rediger):
+    cid = commande["id"]
+    try:
+        substance_sans_code(commande)
+    except ValueError as e:
+        await _etat(db, cid, etat="sans_substance", message=str(e), etapes=[])
+        return
+    j = commande["jumeau"]
+    jumeau = {"id": jumeau_id, "tenant_id": "local", "nom": j["nom"], "equipe": j.get("proprietaire") or "non précisée",
+              "domaine": j.get("domaine"), "mission": j.get("mission")}
+    etapes = []
+    await _etat(db, cid, etat="en_cours", etapes=[], debut=datetime.now(timezone.utc).isoformat())
+    try:
+        depot.creer_jumeau(conn, jumeau)
+        _declarer_sources(conn, jumeau, commande)
+        etapes.append({"etape": "sources", "quand": datetime.now(timezone.utc).isoformat()})
+        await registre.projeter(db, conn)
+        await gardien.veiller(conn, db, jumeau_id, **({"rediger": rediger} if rediger else {}))
+        etapes.append({"etape": "fiche", "quand": datetime.now(timezone.utc).isoformat()})
+        await _etat(db, cid, etat="ne", etapes=etapes, depots=[], fin=datetime.now(timezone.utc).isoformat())
+    except Exception as e:
+        journal.exception("naissance sans code de %s", jumeau_id)
+        await _etat(db, cid, etat="echec", message=str(e)[:200] if isinstance(e, (RuntimeError, ValueError))
+                    else "erreur pendant la naissance")
+
+
+def _declarer_sources(conn, jumeau, commande):
+    from jumeau.systemes import SYSTEMES  # import local : les lecteurs importent ce module
+    for s in commande["sources"]:
+        if s["connecteur"] in SYSTEMES and s["statut"] == "prete" and s["config"].get("secret"):
+            depot.declarer_source(conn, jumeau, SYSTEMES[s["connecteur"]].source_de(s["config"]))
+
+
 async def naitre(conn, db, commande, jumeau_id, rediger=None):
     """Clone et ingère chaque dépôt (chacun sur sa branche), puis registre et fiche vivante ; progression
     enregistrée dans la commande (`naissance`)."""
@@ -270,7 +322,7 @@ async def naitre(conn, db, commande, jumeau_id, rediger=None):
         await _etat(db, cid, etat="echec", message=str(e)[:200], etapes=[])
         return
     if not configs:
-        await _etat(db, cid, etat="sans_code", etapes=[])
+        await _naitre_sans_code(conn, db, commande, jumeau_id, rediger)
         return
     j = commande["jumeau"]
     jumeau = {"id": jumeau_id, "tenant_id": "local", "nom": j["nom"], "equipe": j.get("proprietaire") or "non précisée",
@@ -290,10 +342,7 @@ async def naitre(conn, db, commande, jumeau_id, rediger=None):
             origine = {"branche": branche(config), "url": url_depot(config), "secret_ref": config.get("secret") or None}
             await asyncio.to_thread(ingerer, conn, jumeau, chemin, origine)
             chemins.append(chemin)
-        from jumeau.systemes import SYSTEMES  # import local : les lecteurs importent ce module
-        for s in commande["sources"]:
-            if s["connecteur"] in SYSTEMES and s["statut"] == "prete" and s["config"].get("secret"):
-                depot.declarer_source(conn, jumeau, SYSTEMES[s["connecteur"]].source_de(s["config"]))
+        _declarer_sources(conn, jumeau, commande)
         await franchir("clone")
         await registre.projeter(db, conn)
         await franchir("ingestion")

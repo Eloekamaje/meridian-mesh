@@ -132,3 +132,19 @@ def test_citations_de_page_dans_le_volet_retirees_du_texte_et_les_fausses_suppri
     assert "confluence://" not in flore.retirer_citations(texte)
     nettoye = contradicteur.retirer_citations_invalides(texte, ["confluence://TBT/9@1#L4"])
     assert "confluence://TBT/9@1#L4" not in nettoye and "confluence://TBT/123@7#L1-L2" in nettoye
+
+
+def ctx_sans_code():
+    return {**CONTEXTE, "sources": [], "lecteurs": [LecteurMemoire("Datadog svc", "svc", DOCS, systeme="datadog")]}
+
+
+def test_sans_depot_le_prompt_dit_que_le_code_est_inaccessible_et_quelle_est_la_substance():
+    p = agent.prompt_systeme(ctx_sans_code())
+    assert "progiciel" in p and "interfaces observées (Datadog)" in p and "dépôt" not in p.split("- Code :")[1][:120]
+
+
+def test_sans_depot_pas_d_outil_de_code_mais_les_outils_de_source_restent():
+    noms = {t.tool_name for t in agent.outils(ctx_sans_code(), "dsn", "m", agent.Budget())}
+    assert not noms & {"architecture", "chercher_texte", "chercher_symbole", "tracer_appels", "lire_code",
+                       "historique_du_code", "ce_qui_a_change"}
+    assert {"chercher_dans", "lire_dans", "proposer_connaissance", "mes_connaissances", "consulter_methode"} <= noms

@@ -31,3 +31,23 @@ def test_jumeaux_reels_lus_depuis_la_couche_cognitive(conn):
 def test_domaine_par_defaut_a_confirmer(conn):
     depot.enregistrer(conn, JUMEAU, SOURCE, [claim("motor")], ACTIVITE)
     assert registre.jumeaux_reels(conn)[0]["domaine"] == "À confirmer"
+
+
+def test_jumeau_sans_code_projete_avec_sa_substance():
+    j = {"id": "p", "nom": "Progiciel", "equipe": "e", "domaine": "Paiement", "mission": None, "curseur": None,
+         "claims": 0, "depots": 0, "types": ["SERVICENOW", "DATADOG"]}
+    doc = registre.document(j)
+    assert doc["fraicheur"] == "sans code · substance : interfaces observées (Datadog)"
+    assert doc["sources"]["code"] is False and doc["sources_detail"] == []
+    j["types"] = ["SERVICENOW", "CONFLUENCE"]
+    assert registre.document(j)["fraicheur"] == "sans code · substance : documentation (Confluence)"
+
+
+@besoin_pg
+def test_jumeau_sans_code_present_dans_le_registre(conn):
+    depot.creer_jumeau(conn, {**JUMEAU, "id": "p"})
+    depot.declarer_source(conn, {**JUMEAU, "id": "p"}, {"type": "SERVICENOW", "nom": "sn", "emplacement": "CI-1"})
+    depot.declarer_source(conn, {**JUMEAU, "id": "p"}, {"type": "DATADOG", "nom": "dd", "emplacement": "svc"})
+    [j] = registre.jumeaux_reels(conn)
+    assert (j["id"], j["depots"], j["ci"], j["curseur"]) == ("p", 0, "CI-1", None)
+    assert registre.document(j)["fraicheur"].startswith("sans code")

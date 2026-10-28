@@ -37,7 +37,7 @@ def test_presentation_par_niveaux():
     p = e["presentation"]
     assert p["phrases"] == ["Une maquette qui montre le suivi de dossiers.", "Elle sert à convaincre des évaluateurs."]
     assert p["reperes"] == {"statut": "en observation", "responsable": "Équipe Y", "criticite": "faible — aucune donnée réelle",
-                            "cmdb": "non rattachée"}
+                            "cmdb": "non rattachée", "substance": "code"}
     assert p["journee"] == "Une agente ouvre un dossier. Un réviseur le vérifie."
     assert [(b["cle"], b["items"]) for b in p["blocs"]] == [
         ("faire", ["Ouvrir un dossier hors ligne"]), ("regles", ["Pas d'orientation sans consentement"]),
@@ -56,3 +56,13 @@ def test_pour_aller_plus_loin_les_sept_questions():
                              {"texte": "Présenter la solution", "statut": "PROPOSED"}]
     assert e["presentation"]["reperes"]["responsable"] == "à confirmer"
     assert e["presentation"]["reperes"]["criticite"] == "inconnue"
+
+
+def test_reperes_de_substance_et_code_non_lu_sans_code():
+    r = examen.depuis_connaissances({"nom": "P", "ci": "CI-1"}, [], FICHE, substance="interfaces observées (Datadog)")
+    assert r["presentation"]["reperes"]["substance"] == "interfaces observées (Datadog)"
+    assert r["presentation"]["reperes"]["cmdb"] == "CI-1"
+    assert {"nom": "Code", "etat": "inaccessible (progiciel)", "ok": False} in r["presentation"]["sources"]
+    avec = examen.depuis_connaissances({"nom": "P"}, [], FICHE)
+    assert avec["presentation"]["reperes"]["substance"] == "code"
+    assert {"nom": "Code", "etat": "lu", "ok": True} in avec["presentation"]["sources"]

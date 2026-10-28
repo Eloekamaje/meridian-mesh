@@ -124,6 +124,9 @@ def prompt_systeme(ctx):
     sources = ctx["sources"]
     depots = ", ".join(f"dépôt {s['nom']} (branche {s.get('branche') or 'inconnue'}, commit {s['curseur'][:12]})"
                        for s in sources)
+    if not sources:  # progiciel : la banque n'a pas le code, la compréhension repose sur ses autres sources
+        substance = depot.substance({l.systeme for l in ctx.get("lecteurs") or []}) or "aucune"
+        depots = f"non accessible (progiciel, la banque n'en a pas le code). Substance : {substance}"
     consigne = ("\n- Plusieurs dépôts : cite chaque preuve avec son dépôt, `dépôt:chemin#Ldébut-Lfin`, et précise le "
                 "dépôt (paramètre depot) quand tu lis du code." if len(sources) > 1 else "")
     contexte = CONTEXTE.format(aujourdhui=date.today().isoformat(), interlocuteur=interlocuteur,
@@ -138,7 +141,7 @@ def prompt_systeme(ctx):
         prompt += f"\n\n## Fiche vivante de l'application (rédigée par le gardien du jumeau)\n\n{ctx['fiche']}"
     prompt += f"\n\n{contexte}"
     if ctx.get("lecteurs"):
-        prompt += "\n\n## Sources branchées\n\nEn plus du code, tu disposes de ces sources (outils chercher_dans, lire_dans) :\n"
+        prompt += f"\n\n## Sources branchées\n\n{'En plus du code, tu' if sources else 'Tu'} disposes de ces sources (outils chercher_dans, lire_dans) :\n"
         prompt += "\n".join(f"- {l.nom} : {l.nature}, fait autorité pour {NATURES.get(l.systeme, ('', 'son domaine'))[1]}"
                             for l in ctx["lecteurs"])
     if ctx.get("travail"):
@@ -464,9 +467,10 @@ def outils(ctx, dsn, nom_modele, budget):
             return f"{lu['titre']} — à citer : {lu['locator']}\n{lignes}"
         return appeler_source(source, lire)
 
-    return [mes_connaissances, architecture, chercher_texte, chercher_symbole, tracer_appels, lire_code,
-            proposer_connaissance, fusionner_connaissances, signaler_contradiction, consulter_methode,
-            historique_du_code, ce_qui_a_change, *([ancrer_connaissance] if sources else []), *([chercher_dans, lire_dans] if lecteurs else [])]
+    code = [architecture, chercher_texte, chercher_symbole, tracer_appels, lire_code, historique_du_code,
+            ce_qui_a_change, ancrer_connaissance]  # sans dépôt (progiciel), aucun outil de code : pas d'outil cassé
+    return [mes_connaissances, proposer_connaissance, fusionner_connaissances, signaler_contradiction,
+            consulter_methode, *(code if sources else []), *([chercher_dans, lire_dans] if lecteurs else [])]
 
 
 def historique_fusionne(sources, depuis="", chemin=""):

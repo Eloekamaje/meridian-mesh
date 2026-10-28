@@ -114,3 +114,22 @@ def test_fiche_affichable_liste_les_depots_avec_branche_et_commit():
     front = {"nom": "front", "curseur": "f" * 40, "branche": "develop"}
     fiche = flore.fiche_affichable({"sha": "x", "contenu": "Rien."}, [SOURCE, front])
     assert fiche["depots"][1] == {"nom": "front", "branche": "develop", "commit": "ffffffffffff"}
+
+
+def test_contexte_d_un_jumeau_sans_code_mobilisable(monkeypatch):
+    import contextlib
+    from jumeau import connaissance, depot, gardien, lecteurs
+    from jumeau.lecteurs import LecteurMemoire
+    dd = LecteurMemoire("Datadog svc", "svc", {"r": {"titre": "t", "versions": {"1": ["a"]}}}, systeme="datadog")
+    monkeypatch.setenv("JUMEAU_PG_DSN", "dsn")
+    monkeypatch.setattr(flore.psycopg, "connect", lambda dsn: contextlib.nullcontext())
+    monkeypatch.setattr(depot, "jumeau_par_id", lambda c, j: JUMEAU)
+    monkeypatch.setattr(depot, "sources_du_jumeau", lambda c, j: [])
+    monkeypatch.setattr(depot, "toutes_les_sources", lambda c, j: [])
+    monkeypatch.setattr(lecteurs, "lecteurs_de", lambda s: [dd])
+    monkeypatch.setattr(connaissance, "connaissances", lambda *a, **k: [])
+    monkeypatch.setattr(gardien, "fiche_courante", lambda c, j: None)
+    ctx, dsn = flore._contexte("meridian", "alice", None)
+    assert ctx["sources"] == [] and ctx["lecteurs"] == [dd] and dsn == "dsn"
+    monkeypatch.setattr(lecteurs, "lecteurs_de", lambda s: [])
+    assert flore._contexte("meridian", "alice", None) == (None, None)  # ni code ni source : rien à mobiliser

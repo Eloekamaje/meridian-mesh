@@ -1284,8 +1284,8 @@ async def lancer_commande(cid: str, x_persona: str = Header("architecte"), x_esp
         espace["jumeaux"][jid] = "complet"
     await db.commandes.update_one({"id": cid}, {"$set": {"etat": "lancee", "jumeau_id": jid, "lancee_le": datetime.now(timezone.utc).isoformat()}})
     await journaler(x_persona, espace["id"], "lancement d'une commande", jid, f"{j['nom']} — {len(pretes)} source(s) prête(s)")
-    # Une source de code prête : la vraie naissance démarre (clone, ingestion, registre, fiche vivante).
-    naissance = any(s["connecteur"] == "github" for s in pretes) and bool(os.environ.get("JUMEAU_PG_DSN"))
+    # Une source de code prête (ou, sans code, l'ancre ServiceNow) : la vraie naissance démarre.
+    naissance = any(s["connecteur"] in ("github", "servicenow") for s in pretes) and bool(os.environ.get("JUMEAU_PG_DSN"))
     if naissance:
         NAISSANCES_EN_COURS.add(jid)
         TACHES_NAISSANCE.add(t := asyncio.create_task(_naitre(doc, jid)))

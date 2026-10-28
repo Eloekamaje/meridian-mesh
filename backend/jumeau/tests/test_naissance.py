@@ -264,3 +264,75 @@ def test_couples_depot_branche_choisis_dans_l_interface():
     assert all(c["secret"] == "vault:meridian/x#jeton" for c in configs)
     with pytest.raises(ValueError):
         naissance.configs_depots({"selection": [{"depot": "sans-proprietaire", "branche": "main"}]})
+
+
+# --- naissance sans code (Sources v1 §8) : un progiciel dont la banque n'a pas le code ---
+
+def _pretes(*connecteurs):
+    return {"jumeau": {"nom": "Progiciel", "proprietaire": "Équipe"}, "sources": [
+        {"id": c, "connecteur": c, "statut": "prete", "config": {"ci": "CI-1", "service": "svc", "espace": "ESP",
+                                                                 "secret": "env:MERIDIAN_X"}}
+        for c in connecteurs]}
+
+
+def test_ancre_servicenow_et_substance_datadog_preferee_a_confluence():
+    ancre, substance = naissance.substance_sans_code(_pretes("confluence", "datadog", "servicenow"))
+    assert (ancre["connecteur"], substance["connecteur"]) == ("servicenow", "datadog")
+    assert naissance.substance_sans_code(_pretes("servicenow", "confluence"))[1]["connecteur"] == "confluence"
+
+
+def test_sans_servicenow_ou_sans_substance_la_naissance_dit_ce_qui_manque():
+    with pytest.raises(ValueError, match="ServiceNow"):
+        naissance.substance_sans_code(_pretes("datadog"))
+    with pytest.raises(ValueError, match="Datadog.*Confluence"):
+        naissance.substance_sans_code(_pretes("servicenow", "jira"))
+    commande = _pretes("servicenow", "datadog")
+    commande["sources"][0]["statut"] = "configuration_incomplete"  # ServiceNow pas prête
+    with pytest.raises(ValueError):
+        naissance.substance_sans_code(commande)
+
+
+class _Collection:
+    def __init__(self):
+        self.maj = []
+
+    async def update_one(self, filtre, op):
+        self.maj.append(op["$set"])
+
+
+class _Db:
+    def __init__(self):
+        self.commandes = _Collection()
+
+
+def _etat(db):
+    return {k.removeprefix("naissance."): v for m in db.commandes.maj for k, v in m.items()}
+
+
+def test_naissance_sans_code_cree_declare_projette_et_redige(monkeypatch):
+    monkeypatch.setenv("JUMEAU_DATADOG_HOTE", "api.datadoghq.eu")
+    monkeypatch.setenv("JUMEAU_SERVICENOW_HOTE", "banque.service-now.com")
+    appels = []
+    monkeypatch.setattr(depot, "creer_jumeau", lambda conn, j: appels.append(("jumeau", j["id"])))
+    monkeypatch.setattr(depot, "declarer_source", lambda conn, j, s: appels.append(("source", s["type"])))
+
+    async def projeter(db, conn):
+        appels.append(("registre",))
+
+    async def veiller(conn, db, jid, **kw):
+        appels.append(("veiller", jid))
+    monkeypatch.setattr(naissance.registre, "projeter", projeter)
+    monkeypatch.setattr(naissance.gardien, "veiller", veiller)
+    db = _Db()
+    asyncio.run(naissance.naitre(None, db, {"id": "c1", **_pretes("servicenow", "datadog")}, "progiciel"))
+    assert _etat(db)["etat"] == "ne"
+    assert appels == [("jumeau", "progiciel"), ("source", "SERVICENOW"), ("source", "DATADOG"), ("registre",),
+                      ("veiller", "progiciel")]
+
+
+def test_naissance_sans_substance_n_ecrit_rien(monkeypatch):
+    monkeypatch.setattr(depot, "creer_jumeau", lambda *a: pytest.fail("jumeau créé sans substance"))
+    db = _Db()
+    asyncio.run(naissance.naitre(None, db, {"id": "c1", **_pretes("servicenow")}, "progiciel"))
+    etat = _etat(db)
+    assert etat["etat"] == "sans_substance" and "Datadog" in etat["message"]

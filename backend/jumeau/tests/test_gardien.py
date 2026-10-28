@@ -183,3 +183,38 @@ def test_consolidation_l_agent_juge_le_harness_valide_et_execute(monkeypatch):
     assert "Les dossiers" not in consignes[0]       # une seule réponse : rien à juger
     assert "regles" in consignes[1]                  # question oubliée : décision redemandée
     assert fusions == [(1, 2), (5, 6)] and bilan == {"fusions": 2, "refus": 0}
+
+
+def _lecteur(version):
+    from jumeau.lecteurs import LecteurMemoire
+    return LecteurMemoire("Datadog svc", "svc", {"r": {"titre": "t", "versions": {version: ["a"]}}}, systeme="datadog")
+
+
+def test_veille_sans_depot_la_version_est_l_empreinte_des_sources(monkeypatch):
+    fiches, redigees = {}, []
+    monkeypatch.setattr(depot, "jumeau_par_id", lambda c, j: {"id": j, "nom": "P", "tenant_id": "t", "equipe": "e"})
+    monkeypatch.setattr(depot, "sources_du_jumeau", lambda c, j: [])
+    monkeypatch.setattr(depot, "toutes_les_sources", lambda c, j: [])
+    monkeypatch.setattr(gardien, "connaissances_courantes", lambda c, j: set())
+    monkeypatch.setattr(gardien.connaissance, "connaissances", lambda *a, **k: [])
+    monkeypatch.setattr(gardien, "fiche_du_sha", lambda c, j, sha: sha in fiches)
+    monkeypatch.setattr(gardien, "enregistrer_fiche", lambda c, j, sha, contenu: fiches.__setitem__(sha, contenu))
+
+    async def rien(*a, **k):
+        return {}
+
+    async def rediger(ctx, dsn, sigs, commits):
+        redigees.append(ctx["lecteurs"])
+        return "Fiche", None
+    monkeypatch.setattr(gardien, "consolider", rien)
+    monkeypatch.setattr(gardien.poignee, "serrer", rien)
+    version = {"v": "1"}
+    monkeypatch.setattr(gardien.lecteurs, "lecteurs_de", lambda s: [_lecteur(version["v"])])
+
+    def passe():
+        return asyncio.run(gardien.veiller(None, None, "p", rediger=rediger))
+    premiere = passe()
+    assert premiere["changement"] and premiere["depots"] == [] and len(fiches) == 1
+    assert passe() == {"changement": False}  # rien n'a avancé : pas de nouvelle fiche
+    version["v"] = "2"
+    assert passe()["changement"] and len(fiches) == 2  # une source a avancé : nouvelle fiche

@@ -107,7 +107,7 @@ def _contexte(jumeau_id, acteur, profil):
         jumeau = depot.jumeau_par_id(conn, jumeau_id)
         sources = [s for s in depot.sources_du_jumeau(conn, jumeau_id) if s["index_code"]]
         lecteurs_branches = lecteurs.lecteurs_de(depot.toutes_les_sources(conn, jumeau_id))
-        if not jumeau or not sources:
+        if not jumeau or not (sources or lecteurs_branches):
             return None, None
         claims = connaissance.connaissances(conn, jumeau_id, limite=500)
         fiche = gardien.fiche_courante(conn, jumeau_id)

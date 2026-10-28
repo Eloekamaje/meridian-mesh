@@ -16,6 +16,31 @@ def appliquer_schema(conn):
         conn.execute(SCHEMA.read_text())
 
 
+# Substance d'un jumeau, par ordre de préférence : le code, puis ce que la banque a d'un progiciel sans son code.
+SUBSTANCES = (("GIT", "code"), ("DATADOG", "interfaces observées (Datadog)"), ("CONFLUENCE", "documentation (Confluence)"))
+
+
+def substance(types):
+    """Ce sur quoi repose la compréhension du jumeau, d'après les types de ses sources ; None s'il n'en a aucune."""
+    types = {t.upper() for t in types}
+    return next((libelle for type_, libelle in SUBSTANCES if type_ in types), None)
+
+
+def types_de_sources(conn, jumeau_id):
+    return [r[0] for r in conn.execute("SELECT DISTINCT type FROM source WHERE jumeau_id = %s", (jumeau_id,))]
+
+
+def creer_jumeau(conn, jumeau):
+    """Crée le jumeau d'un progiciel (sans code, donc sans ingestion qui le crée) ; idempotent."""
+    conn.execute(
+        "INSERT INTO jumeau (id, tenant_id, nom, equipe, domaine, mission) "
+        "VALUES (%s, %s, %s, %s, coalesce(%s, 'À confirmer'), %s) ON CONFLICT (id) DO UPDATE SET "
+        "nom = EXCLUDED.nom, equipe = EXCLUDED.equipe, domaine = coalesce(%s, jumeau.domaine), "
+        "mission = coalesce(%s, jumeau.mission) WHERE jumeau.tenant_id = EXCLUDED.tenant_id",
+        (jumeau["id"], jumeau["tenant_id"], jumeau["nom"], jumeau["equipe"], jumeau.get("domaine"),
+         jumeau.get("mission"), jumeau.get("domaine"), jumeau.get("mission")))
+
+
 def enregistrer(conn, jumeau, source, claims, activite):
     """Upsert du jumeau, de la source, des Claims et de leurs preuves ; clôture les Claims non revus.
 

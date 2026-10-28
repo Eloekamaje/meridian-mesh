@@ -6,6 +6,8 @@ chaque ingestion. Postgres reste la source de vérité ; le registre n'en est qu
 """
 from psycopg.rows import dict_row
 
+from jumeau import depot
+
 SOURCES_POSSIBLES = ("code", "bdd", "observabilite", "incidents", "documentation")
 
 
@@ -25,10 +27,11 @@ def document(j):
         "statut": "actif",
         "autonomie": "supervisé",
         "couverture": couverture(1),
-        "fraicheur": (f"{j['depots']} dépôts de code · {j['claims']} claims" if j.get("depots", 1) > 1
+        "fraicheur": (f"sans code · substance : {depot.substance(j.get('types') or []) or 'aucune'}" if j.get("depots", 1) == 0
+                      else f"{j['depots']} dépôts de code · {j['claims']} claims" if j.get("depots", 1) > 1
                       else f"code au commit {j['curseur'][:12]} · {j['claims']} claims"),
         "sante": "inconnue",  # aucune source d'observabilité connectée
-        "sources": {s: s == "code" for s in SOURCES_POSSIBLES},
+        "sources": {s: s == "code" and j.get("depots", 1) > 0 for s in SOURCES_POSSIBLES},
         "sources_detail": [{"cle": f"git-{d['nom']}", "statut": "prete",
                             "nom": f"Dépôt {d['nom']}" + (f" · {d['branche']}" if d.get("branche") else "")
                                    + f" · {d['curseur'][:12]}"} for d in j.get("liste_depots") or []],
@@ -45,10 +48,11 @@ def jumeaux_reels(conn):
                       (SELECT count(*) FROM source WHERE jumeau_id = j.id AND type = 'GIT') AS depots,
                       (SELECT emplacement FROM source WHERE jumeau_id = j.id AND type = 'SERVICENOW'
                        ORDER BY id LIMIT 1) AS ci,
+                      (SELECT array_agg(DISTINCT type) FROM source WHERE jumeau_id = j.id) AS types,
                       (SELECT json_agg(json_build_object('nom', nom, 'branche', branche, 'curseur', curseur)
                                        ORDER BY nom) FROM source WHERE jumeau_id = j.id AND type = 'GIT') AS liste_depots
                FROM jumeau j
-               JOIN LATERAL (SELECT curseur FROM source WHERE jumeau_id = j.id AND type = 'GIT'
+               LEFT JOIN LATERAL (SELECT curseur FROM source WHERE jumeau_id = j.id AND type = 'GIT'
                              ORDER BY id DESC LIMIT 1) s ON true
                ORDER BY j.id""").fetchall()
 
