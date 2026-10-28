@@ -258,7 +258,7 @@ function obstaclesDe(ns, exclure) {
 function separerNoeuds(twins, posOverrides = {}) {
   const pos = {};
   const pts = twins.map((j) => {
-    const p = posOverrides[j.id] || j.position;
+    const p = posOverrides[j.id] || j.position || { x: 0, y: 0 }; // sans position (registre ancien) : pas de plantage
     pos[j.id] = { ...p };
     return { id: j.id, x: p.x + 30, y: p.y + 40 };
   });

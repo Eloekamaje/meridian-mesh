@@ -58,6 +58,32 @@ def jumeaux_reels(conn):
                ORDER BY j.id""").fetchall()
 
 
+ECART = 110  # distance minimale entre deux jumeaux sur l'Atlas (MIN_DIST du placement, plus une marge)
+ANCRE_SANS_DOMAINE = (1260, 40)  # comme un jumeau né d'une commande (server.py)
+
+
+def position_libre(ancre, occupees):
+    """Première position à au moins ECART de toutes les autres, en spirale autour de `ancre` (déterministe)."""
+    import math
+    for n in range(400):
+        angle, rayon = n * 2.39996, ECART * math.sqrt(n)  # spirale de Fibonacci : couvre le plan sans trou
+        x, y = round(ancre[0] + rayon * math.cos(angle)), round(ancre[1] + rayon * math.sin(angle))
+        if all(math.hypot(x - ox, y - oy) >= ECART for ox, oy in occupees):
+            return {"x": x, "y": y}
+    return {"x": ancre[0], "y": ancre[1]}  # ponytail: carte saturée autour de l'ancre ; le placement de l'Atlas écartera
+
+
+async def _placer(db, jumeau_id, domaine):
+    """Un jumeau réel sans position (l'Atlas ne peut pas le dessiner) en reçoit une près de son domaine. Une position
+    posée à la main n'est jamais écrasée (mise à jour conditionnelle)."""
+    autres = [d async for d in db.jumeaux.find({"position": {"$ne": None}}, {"_id": 0, "domaine": 1, "position": 1})]
+    voisins = [d["position"] for d in autres if d.get("domaine") == domaine and d.get("position")]
+    ancre = ((sum(p["x"] for p in voisins) / len(voisins), sum(p["y"] for p in voisins) / len(voisins))
+             if voisins else ANCRE_SANS_DOMAINE)
+    position = position_libre(ancre, [(d["position"]["x"], d["position"]["y"]) for d in autres if d.get("position")])
+    await db.jumeaux.update_one({"id": jumeau_id, "position": None}, {"$set": {"position": position}})
+
+
 async def projeter(db, conn):
     """Upsert des jumeaux réels dans le registre (motor) ; les jumeaux de démo ne sont pas touchés."""
     reels = jumeaux_reels(conn)
@@ -67,4 +93,5 @@ async def projeter(db, conn):
         # Le statut n'est posé qu'à la création : un jumeau né d'une commande reste « en observation »
         # jusqu'à son admission par un humain.
         await db.jumeaux.update_one({"id": j["id"]}, {"$set": doc, "$setOnInsert": {"statut": statut}}, upsert=True)
+        await _placer(db, j["id"], doc.get("domaine"))
     return len(reels)

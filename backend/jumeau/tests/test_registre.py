@@ -51,3 +51,43 @@ def test_jumeau_sans_code_present_dans_le_registre(conn):
     [j] = registre.jumeaux_reels(conn)
     assert (j["id"], j["depots"], j["ci"], j["curseur"]) == ("p", 0, "CI-1", None)
     assert registre.document(j)["fraicheur"].startswith("sans code")
+
+
+# --- Position sur l'Atlas (constaté : les jumeaux réels avaient position null, l'Atlas plantait) -----------------
+
+def test_position_libre_respecte_l_ecart_et_est_deterministe():
+    import math
+    from jumeau.registre import ECART, position_libre
+    occupees = [(100, 100), (100 + ECART, 100), (100, 100 + ECART)]
+    p = position_libre((100, 100), occupees)
+    assert all(math.hypot(p["x"] - x, p["y"] - y) >= ECART for x, y in occupees)
+    assert position_libre((100, 100), occupees) == p
+    assert position_libre((5, 7), []) == {"x": 5, "y": 7}
+
+
+def test_placer_pres_du_domaine_sans_ecraser_une_position_posee():
+    import asyncio
+    from jumeau import registre
+
+    class Collection:
+        def __init__(self, docs):
+            self.docs, self.mises = docs, []
+
+        def find(self, filtre, projection):
+            async def gen():
+                for d in self.docs:
+                    if d.get("position") is not None:
+                        yield d
+            return gen()
+
+        async def update_one(self, filtre, maj):
+            self.mises.append((filtre, maj))
+
+    class Db:
+        jumeaux = Collection([{"domaine": "Client", "position": {"x": 1000, "y": 500}},
+                              {"domaine": "Client", "position": {"x": 1200, "y": 500}},
+                              {"domaine": "Risque", "position": {"x": 0, "y": 0}}])
+    asyncio.run(registre._placer(Db, "conduit", "Client"))
+    filtre, maj = Db.jumeaux.mises[0]
+    assert filtre == {"id": "conduit", "position": None}  # conditionnelle : jamais une position posée à la main
+    assert abs(maj["$set"]["position"]["x"] - 1100) < 400 and abs(maj["$set"]["position"]["y"] - 500) < 400
