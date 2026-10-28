@@ -7,7 +7,7 @@ import re
 
 from psycopg.rows import dict_row
 
-from jumeau import depot, temps
+from jumeau import depot, recoupement, temps
 from jumeau.adaptateur import preuve
 from jumeau.lecteurs import RE_CITATION_SOURCE
 from jumeau.source_git import lire_au_sha
@@ -80,9 +80,9 @@ def lire_code(source, chemin, debut, fin):
 
 
 def connaissances(conn, jumeau_id, predicat=None, recherche=None, limite=80):
-    """Claims valides, en forme compacte pour un LLM : objet, statut, maturité, première preuve."""
+    """Claims valides, en forme compacte pour un LLM : objet, statut, maturité, preuve, état de vérification."""
     with conn.cursor(row_factory=dict_row) as cur:
-        return cur.execute(
+        lignes = cur.execute(
             """SELECT c.id, c.predicat, c.objet, c.type, c.statut, c.maturite, c.confiance::float AS confiance,
                       (SELECT p.locator FROM claim_preuve cp JOIN preuve p ON p.id = cp.preuve_id
                        WHERE cp.claim_id = c.id ORDER BY p.id DESC LIMIT 1) AS preuve
@@ -92,6 +92,8 @@ def connaissances(conn, jumeau_id, predicat=None, recherche=None, limite=80):
                  AND (%s::text IS NULL OR c.objet ILIKE '%%' || %s || '%%')
                ORDER BY c.predicat, c.objet LIMIT %s""",
             (jumeau_id, predicat, predicat, recherche, recherche, limite)).fetchall()
+    etats = recoupement.etats(conn, jumeau_id)
+    return [{**c, "verification": etats.get(c["id"])} for c in lignes]
 
 
 def _claim_proposee(jumeau, predicat, objet, type_claim):
@@ -107,22 +109,16 @@ def _claim_proposee(jumeau, predicat, objet, type_claim):
             "confiance": CONFIANCE_PROPOSITION}
 
 
-def proposer(conn, jumeau, source, predicat, objet, type_claim, chemin, debut, fin, justification, acteur, modele):
-    """Le jumeau propose une connaissance ; la preuve doit exister au SHA. Jamais validée ici (revue humaine)."""
-    c = _claim_proposee(jumeau, predicat, objet, type_claim)
+def _preuve_depot(source, chemin, debut, fin):
+    """Preuve de code (ou de documentation du dépôt) lue au SHA ingéré ; ValueError si les lignes n'existent pas."""
     lignes = lire_au_sha(source.get("copie") or source["emplacement"], source["curseur"])(chemin)
     if lignes is None or debut < 1 or fin < debut or fin > len(lignes) or fin - debut >= MAX_LIGNES:
         raise ValueError(f"preuve introuvable : {chemin}#L{debut}-L{fin}")
-    p = preuve(source["nom"], source["curseur"][:12], chemin, lignes, debut, fin)
-    activite = {"extracteur": "jumeau-conversation", "modele": modele, "acteur": acteur,
-                "justification": justification[:1000]}
-    return depot.enregistrer_proposition(conn, jumeau, source["id"], c, p, activite)
+    return preuve(source["nom"], source["curseur"][:12], chemin, lignes, debut, fin)
 
 
-def proposer_source(conn, jumeau, lecteur, predicat, objet, type_claim, citation, justification, acteur, modele):
-    """Comme `proposer`, mais la preuve est une citation `systeme://espace/ref@version#La-Lb` d'une source branchée :
-    le lecteur la vérifie, puis elle est enregistrée avec le hash du texte cité."""
-    c = _claim_proposee(jumeau, predicat, objet, type_claim)
+def _preuve_source(lecteur, citation):
+    """Preuve d'une source branchée, vérifiée par son lecteur, avec le hash du texte cité."""
     citation = citation.strip("` ")
     m = RE_CITATION_SOURCE.fullmatch(citation)
     if not m or not lecteur.verifier(citation):
@@ -133,11 +129,55 @@ def proposer_source(conn, jumeau, lecteur, predicat, objet, type_claim, citation
         raise ValueError(f"preuve trop longue : {citation}")
     lu = lecteur.lire(m["ref"], debut, fin, version=m["version"])
     texte = "\n".join(lu["lignes"])
-    p = {"type": lecteur.nature.upper(), "locator": lu["locator"], "chemin": lu["ref"], "sha": lu["version"],
-         "ligne_debut": debut, "ligne_fin": fin, "citation": texte, "hash": hashlib.sha256(texte.encode()).hexdigest()}
+    return {"type": lecteur.nature.upper(), "locator": lu["locator"], "chemin": lu["ref"], "sha": lu["version"],
+            "ligne_debut": debut, "ligne_fin": fin, "citation": texte, "hash": hashlib.sha256(texte.encode()).hexdigest()}
+
+
+def proposer(conn, jumeau, source, predicat, objet, type_claim, chemin, debut, fin, justification, acteur, modele):
+    """Le jumeau propose une connaissance ; la preuve doit exister au SHA. Jamais validée ici (revue humaine)."""
+    c = _claim_proposee(jumeau, predicat, objet, type_claim)
+    p = _preuve_depot(source, chemin, debut, fin)
+    activite = {"extracteur": "jumeau-conversation", "modele": modele, "acteur": acteur,
+                "justification": justification[:1000]}
+    return depot.enregistrer_proposition(conn, jumeau, source["id"], c, p, activite)
+
+
+def proposer_source(conn, jumeau, lecteur, predicat, objet, type_claim, citation, justification, acteur, modele):
+    """Comme `proposer`, mais la preuve est une citation `systeme://espace/ref@version#La-Lb` d'une source branchée :
+    le lecteur la vérifie, puis elle est enregistrée avec le hash du texte cité."""
+    c = _claim_proposee(jumeau, predicat, objet, type_claim)
+    p = _preuve_source(lecteur, citation)
     activite = {"extracteur": "jumeau-conversation", "modele": modele, "acteur": acteur,
                 "justification": justification[:1000]}
     return depot.enregistrer_proposition(conn, jumeau, lecteur.source_id, c, p, activite)
+
+
+def recouper(conn, jumeau, sources, lecteurs, claim_id, citation, raison, acteur, modele):
+    """Ajoute à une connaissance existante une seconde preuve, d'un autre système que les siennes (code ou documentation
+    du dépôt `chemin#La-Lb` au SHA ingéré, ou source branchée `systeme://…`). Ni statut ni objet ne changent : le juge
+    rejoue la vérification. Vrai si la preuve est nouvelle."""
+    citation = citation.strip("` ")
+    m = RE_CITATION_SOURCE.fullmatch(citation)
+    if m:
+        lecteur = next((l for l in lecteurs if l.systeme == m["systeme"] and l.espace == m["espace"]), None)
+        if not lecteur:
+            raise LookupError(f"source inconnue : {citation}")
+        source_id, p, type_source = lecteur.source_id, _preuve_source(lecteur, citation), lecteur.systeme.upper()
+    else:
+        mc = RE_CITATION.fullmatch(citation)
+        if not mc:
+            raise ValueError(f"citation attendue (chemin#Ldébut-Lfin ou systeme://espace/ref@version#Ldébut) : {citation}")
+        depot_nom, chemin, debut, fin = decouper(mc)
+        source = resoudre_source(sources, depot_nom, chemin)
+        source_id, p, type_source = source["id"], _preuve_depot(source, chemin, debut, fin), "GIT"
+    nouveau = recoupement.systeme_de_preuve(p.get("type", "CODE"), p["chemin"], type_source)
+
+    def meme_systeme(existants):
+        if set(existants) == {nouveau}:
+            raise ValueError(f"ce n'est pas un recoupement : une autre source du même système ({nouveau})")
+
+    activite = {"extracteur": "jumeau-conversation", "modele": modele, "acteur": acteur, "justification": raison[:1000]}
+    return depot.ajouter_preuve(conn, jumeau, claim_id, source_id, p, activite, meme_systeme)
 
 
 def _ancrer_lignes(conn, jumeau, source, claim_id, chemin, debut, fin, raison, origine):

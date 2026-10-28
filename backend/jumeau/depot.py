@@ -128,6 +128,28 @@ def enregistrer_proposition(conn, jumeau, source_id, c, preuve, activite):
     return cid
 
 
+def ajouter_preuve(conn, jumeau, claim_id, source_id, p, activite, refuse_si):
+    """Ajoute une preuve de soutien à une connaissance existante et courante de ce jumeau ; vrai si elle est nouvelle.
+    `refuse_si(systemes_existants)` lève ValueError si la preuve n'apporte rien (même système)."""
+    with conn.transaction():
+        ligne = conn.execute("SELECT valide_jusqua IS NULL FROM claim WHERE id = %s AND jumeau_id = %s FOR UPDATE",
+                             (claim_id, jumeau["id"])).fetchone()
+        if not ligne:
+            raise ValueError(f"connaissance {claim_id} : inconnue de ce jumeau")
+        if not ligne[0]:
+            raise ValueError(f"connaissance {claim_id} : close")
+        if conn.execute("SELECT 1 FROM claim_preuve cp JOIN preuve x ON x.id = cp.preuve_id "
+                        "WHERE cp.claim_id = %s AND cp.role = 'SUPPORT' AND x.source_id = %s AND x.locator = %s",
+                        (claim_id, source_id, p["locator"])).fetchone():
+            return False
+        refuse_si([r[0] for r in conn.execute(
+            "SELECT DISTINCT systeme_de_preuve(x.type, x.chemin, so.type) FROM claim_preuve cp "
+            "JOIN preuve x ON x.id = cp.preuve_id JOIN source so ON so.id = x.source_id "
+            "WHERE cp.claim_id = %s AND cp.role = 'SUPPORT'", (claim_id,))])
+        _lier_preuve(conn, jumeau["tenant_id"], source_id, claim_id, p, activite)
+    return True
+
+
 def fusionner(conn, jumeau_id, garder, retirer):
     """Deux connaissances qui disent la même chose : `retirer` est close et ses preuves passent à `garder`.
     Seule une proposition non revue peut être retirée, et seulement au profit d'une connaissance de même prédicat."""

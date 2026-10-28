@@ -20,24 +20,35 @@ LIBELLES = {"REALISE_CAPACITE": "réalise la capacité", "SERT_ACTEUR": "sert", 
             "EXPOSE": "expose", "LIT_VARIABLE": "lit la variable", "EXECUTE_IMAGE": "exécute l'image"}
 
 
+DOCUMENTATION_DU_DEPOT = (".md", ".mdx", ".rst", ".adoc")  # pas .txt : requirements.txt est du code
+
+
+def systeme_de_preuve(type_preuve, chemin, type_source):
+    """Le système d'une preuve ; même règle que la fonction SQL du même nom (le trigger de maturité)."""
+    if type_preuve == "CODE" and chemin.lower().endswith(DOCUMENTATION_DU_DEPOT):
+        return "documentation"
+    return type_source.lower()
+
+
 def a_verifier(conn, jumeau_id):
     """Connaissances courantes dont les preuves ont changé depuis leur dernière vérification (ou jamais vérifiées),
     avec leurs preuves de soutien : [{id, sujet, predicat, objet, origine, empreinte, preuves: [...]}]."""
     lignes = conn.execute(
         """SELECT c.id, c.sujet, c.predicat, c.objet, c.origine,
                   p.id, p.type, p.locator, p.chemin, p.sha, p.ligne_debut, p.ligne_fin, p.source_id,
-                  lower(s.type), s.emplacement, s.copie,
+                  s.type, s.emplacement, s.copie,
                   (SELECT v.empreinte FROM verification v WHERE v.claim_id = c.id ORDER BY v.id DESC LIMIT 1)
            FROM claim c JOIN claim_preuve cp ON cp.claim_id = c.id AND cp.role = 'SUPPORT'
            JOIN preuve p ON p.id = cp.preuve_id JOIN source s ON s.id = p.source_id
            WHERE c.jumeau_id = %s AND c.valide_jusqua IS NULL ORDER BY c.id, p.id""", (jumeau_id,)).fetchall()
     claims = {}
-    for (cid, sujet, predicat, objet, origine, pid, ptype, locator, chemin, sha, debut, fin, source_id, systeme,
+    for (cid, sujet, predicat, objet, origine, pid, ptype, locator, chemin, sha, debut, fin, source_id, type_source,
          emplacement, copie, derniere) in lignes:
         c = claims.setdefault(cid, {"id": cid, "sujet": sujet, "predicat": predicat, "objet": objet,
                                     "origine": origine, "derniere": derniere, "preuves": []})
         c["preuves"].append({"id": pid, "type": ptype, "locator": locator, "chemin": chemin, "sha": sha,
-                             "debut": debut, "fin": fin, "source_id": source_id, "systeme": systeme,
+                             "debut": debut, "fin": fin, "source_id": source_id,
+                             "systeme": systeme_de_preuve(ptype, chemin, type_source),
                              "depot": copie or emplacement})
     resultat = []
     for c in claims.values():

@@ -50,6 +50,12 @@ celles qui disent la même chose, même avec d'autres mots ou un détail en plus
 Gardez la connaissance validée par l'équipe s'il y en a une, sinon la plus courte qui dit tout en mots métier.
 Ne fusionnez pas deux idées différentes qui se ressemblent (« recueillir » et « retirer » un consentement).
 
+Recouper : une connaissance « selon » une seule source (surtout règles et échanges) se vérifie par une seconde
+source indépendante, lisible dans mes_connaissances (champ verification : etat, systemes). Cherchez la
+documentation du dépôt ou une source branchée, lisez les lignes, puis ajoutez-les avec recouper_connaissance.
+Jamais par une recopie du même texte ni par une autre ligne du même système. Si la seconde source contredit,
+utilisez signaler_contradiction au lieu de recouper.
+
 ## Fiche vivante
 
 Si l'on vous demande la fiche, présentez l'application pour que n'importe quel employé la comprenne, du plus

@@ -21,6 +21,7 @@ from strands.session.s3_session_manager import S3SessionManager
 
 from jumeau import cbm, connaissance, croisement, depot, methodes, temps
 from jumeau.connaissance import ancrer as ancrer_code
+from jumeau.connaissance import recouper as recouper_code
 from jumeau.lecteurs import NATURES, RE_CITATION_SOURCE
 
 SESSIONS = Path(os.environ.get("JUMEAU_SESSIONS", Path.home() / ".local/share/meridian/sessions"))
@@ -359,6 +360,33 @@ def outils(ctx, dsn, nom_modele, budget):
             return "Ancrage impossible pour le moment."
 
     @tool
+    def recouper_connaissance(connaissance: int, citation: str, raison: str) -> str:
+        """Ajoute à une connaissance existante une seconde source, d'un autre système, qui l'appuie.
+
+        Seule une source indépendante recoupe (documentation du dépôt, source branchée) : jamais une autre ligne du
+        même système, jamais une recopie. Elle ne change ni le statut ni l'objet ; la vérification est rejouée seule.
+        Si la seconde source contredit, utilise signaler_contradiction. Lis d'abord les lignes (lire_code, lire_dans).
+
+        Args:
+            connaissance: identifiant de la connaissance courante de ce jumeau.
+            citation: chemin#Ldébut-Lfin (code ou documentation du dépôt, ou depot:chemin#…) ou le locator d'une source branchée (systeme://espace/ref@version#La-Lb).
+            raison: en une phrase, en quoi ces lignes appuient la connaissance.
+        """
+        if not budget.outil() or not budget.proposition():
+            return "Plafond de propositions de cette réponse atteint."
+        try:
+            with psycopg.connect(dsn, autocommit=True) as conn:
+                nouvelle = recouper_code(conn, jumeau, sources, lecteurs, int(connaissance), citation,
+                                                        raison, ctx["acteur"], nom_modele)
+            return (f"Connaissance {connaissance} recoupée par {citation}." if nouvelle
+                    else "Recoupement déjà enregistré.")
+        except (ValueError, LookupError) as e:
+            return f"Recoupement refusé : {e}"
+        except psycopg.Error:
+            journal.exception("recouper_connaissance")
+            return "Recoupement impossible pour le moment."
+
+    @tool
     def signaler_contradiction(enonce: str, citation_a: str, citation_b: str) -> str:
         """Signale que deux sources de systèmes différents se contredisent (par exemple le code et la documentation).
 
@@ -473,7 +501,8 @@ def outils(ctx, dsn, nom_modele, budget):
     code = [architecture, chercher_texte, chercher_symbole, tracer_appels, lire_code, historique_du_code,
             ce_qui_a_change, ancrer_connaissance]  # sans dépôt (progiciel), aucun outil de code : pas d'outil cassé
     return [mes_connaissances, proposer_connaissance, fusionner_connaissances, signaler_contradiction,
-            consulter_methode, *(code if sources else []), *([chercher_dans, lire_dans] if lecteurs else [])]
+            consulter_methode, *(code if sources else []), *([chercher_dans, lire_dans] if lecteurs else []),
+            *([recouper_connaissance] if sources or lecteurs else [])]
 
 
 def historique_fusionne(sources, depuis="", chemin=""):

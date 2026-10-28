@@ -71,7 +71,7 @@ def test_agent_a_les_outils_attendus_et_aucun_outil_de_validation(tmp_path, monk
     noms = set(a.tool_names)
     assert noms == {"mes_connaissances", "architecture", "chercher_texte", "chercher_symbole",
                     "tracer_appels", "lire_code", "proposer_connaissance", "fusionner_connaissances", "signaler_contradiction",
-                    "consulter_methode", "ancrer_connaissance",
+                    "consulter_methode", "ancrer_connaissance", "recouper_connaissance",
                     "historique_du_code", "ce_qui_a_change"}
     assert not any("valid" in n or "decid" in n for n in noms)
 

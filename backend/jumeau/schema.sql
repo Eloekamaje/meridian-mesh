@@ -152,13 +152,19 @@ ALTER TABLE verification ADD CONSTRAINT verification_etat_check
 -- (source.type : deux dépôts Git ne sont pas indépendants) **recoupés** — leurs preuves concordent, selon la dernière
 -- vérification (Architecture : « deux sources indépendantes concordantes ») —, M4 = M3 + revue ACCEPTED.
 -- Recalculée à chaque preuve, statut et vérification.
+-- Le système d'une preuve : sa source, sauf la documentation du dépôt (.md, .mdx, .rst, .adoc ; pas .txt) qui en est un
+-- à part — un README n'est pas du code. Même règle que recoupement.systeme_de_preuve.
+CREATE OR REPLACE FUNCTION systeme_de_preuve(type_preuve text, chemin text, type_source text) RETURNS text AS $$
+    SELECT CASE WHEN type_preuve = 'CODE' AND lower(chemin) ~ '\.(md|mdx|rst|adoc)$' THEN 'documentation'
+                ELSE lower(type_source) END
+$$ LANGUAGE sql IMMUTABLE;
 CREATE OR REPLACE FUNCTION recalculer_maturite(cid bigint) RETURNS void AS $$
     UPDATE claim SET maturite = CASE
         WHEN s.preuves = 0 THEN 'M1'
         WHEN s.systemes >= 2 AND s.recoupe AND claim.statut = 'ACCEPTED' THEN 'M4'
         WHEN s.systemes >= 2 AND s.recoupe THEN 'M3'
         ELSE 'M2' END
-    FROM (SELECT count(*) AS preuves, count(DISTINCT so.type) AS systemes,
+    FROM (SELECT count(*) AS preuves, count(DISTINCT systeme_de_preuve(p.type, p.chemin, so.type)) AS systemes,
                  coalesce((SELECT v.etat = 'recoupe' FROM verification v WHERE v.claim_id = cid
                            ORDER BY v.id DESC LIMIT 1), false) AS recoupe
           FROM claim_preuve cp JOIN preuve p ON p.id = cp.preuve_id JOIN source so ON so.id = p.source_id
