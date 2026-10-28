@@ -66,7 +66,7 @@ def ingerer(conn, jumeau, chemin_depot, origine=None):
     copie = copie_au_sha(chemin_depot, sha, jumeau["id"], Path(chemin_depot).name)
     projet = cbm.indexer(copie)
     try:
-        resultats = cbm.interroger(projet)
+        resultats, troncature = cbm.interroger(projet)
     except RuntimeError as e:
         # L'index vit dans le cache du binaire, indexé par chemin absolu : l'ingestion le refait, mais si sa
         # relecture échoue il faut le dire clairement (plan de remédiation L0bis.3).
@@ -80,10 +80,10 @@ def ingerer(conn, jumeau, chemin_depot, origine=None):
     claims = adapter(resultats, lire, Path(chemin_depot).name, sha[:12], jumeau["nom"])
     bruts = sum(len(v) for v in resultats.values())
     source = {"nom": Path(chemin_depot).name, "type": "GIT", "emplacement": str(chemin_depot), "curseur": sha,
-              "copie": str(copie), "index_code": projet, "branche": branche_courante(chemin_depot), **(origine or {})}
+              "copie": str(copie), "index_code": projet, "branche": branche_courante(chemin_depot), "troncature": troncature or None, **(origine or {})}
     depot.appliquer_schema(conn)
     depot.enregistrer(conn, jumeau, source, claims, {**ACTIVITE, "sha": sha})
-    return {"sha": sha, "observations": bruts, "claims": len(claims)}
+    return {"sha": sha, "observations": bruts, "claims": len(claims), "troncature": troncature}
 
 
 def projeter_au_registre(conn):

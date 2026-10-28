@@ -94,6 +94,7 @@ CREATE TABLE IF NOT EXISTS fiche_vivante (
 
 -- Plusieurs dépôts par jumeau, chacun sur sa branche ; URL et référence du jeton (jamais le jeton) pour le gardien.
 ALTER TABLE source ADD COLUMN IF NOT EXISTS branche text;
+ALTER TABLE source ADD COLUMN IF NOT EXISTS troncature jsonb;
 ALTER TABLE source ADD COLUMN IF NOT EXISTS url text;
 ALTER TABLE source ADD COLUMN IF NOT EXISTS secret_ref text;
 -- Sources branchées autres que le code (lecteurs) : le CHECK d'origine ne connaît que GIT et DOCUMENTATION.

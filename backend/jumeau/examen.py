@@ -39,10 +39,15 @@ def _a_revoir(claims):
     return lignes[:MAX_A_REVOIR] + ([f"… et {reste} autre(s), dans « Pour aller plus loin »"] if reste > 0 else [])
 
 
-def _sources(claims, contradictions=(), code=True):
+def _lignes_troncature(troncature):
+    return [f"Code : lu en partie — {t['gardes']} {famille} sur {t['trouves']}{'+' if t.get('au_moins') else ''} (plafond)"
+            for famille, t in (troncature or {}).items()]
+
+
+def _sources(claims, contradictions=(), code=True, troncature=None):
     chemins = {p["chemin"] for c in claims for p in c.get("preuves") or []}
     confirmees = sum(c["statut"] == "ACCEPTED" for c in claims if c["predicat"] in comprendre.PREDICATS)
-    return ([{"nom": "Code", "etat": "lu", "ok": True} if code else {"nom": "Code", "etat": "inaccessible (progiciel)", "ok": False}]
+    return ([({"nom": "Code", "etat": "lu en partie" if troncature else "lu", "ok": not troncature}) if code else {"nom": "Code", "etat": "inaccessible (progiciel)", "ok": False}]
             + ([{"nom": "Documentation", "etat": "lue", "ok": True}] if any(DOCUMENTS.search(c) for c in chemins) else [])
             + [{"nom": "Équipe", "etat": f"{confirmees} confirmée(s)" if confirmees else "rien de confirmé",
                 "ok": bool(confirmees)}]
@@ -50,7 +55,7 @@ def _sources(claims, contradictions=(), code=True):
             + ([{"nom": "Contradictions", "etat": f"{len(contradictions)} ouverte(s)", "ok": False}] if contradictions else []))
 
 
-def depuis_connaissances(jumeau, claims, fiche, contradictions=(), substance="code"):
+def depuis_connaissances(jumeau, claims, fiche, contradictions=(), substance="code", troncature=None):
     f = comprendre.lire_fiche(fiche)
     trente = f["trente"]["texte"] + f["trente"]["puces"]
     criticite = next((t.split(":", 1)[1].strip() for t in trente if t.lower().startswith("criticité")), "inconnue")
@@ -62,12 +67,13 @@ def depuis_connaissances(jumeau, claims, fiche, contradictions=(), substance="co
         "journee": " ".join(f["journee"]["texte"] + f["journee"]["puces"]),
         "blocs": [{"cle": cle, "titre": titre, "items": f[cle]["puces"] or f[cle]["texte"]}
                   for cle, titre in comprendre.PRESENTATION if cle in ("faire", "regles", "garde", "avec")],
-        "sources": _sources(claims, contradictions, substance == "code"),
+        "sources": _sources(claims, contradictions, substance == "code", troncature),
         "maturite": _maturite(claims),
         "verification": _verification(claims),
         "contradictions": [{k: x.get(k) for k in ("id", "enonce", "preuve_a", "systeme_a", "preuve_b", "systeme_b")}
                            for x in contradictions],
         "ignore": f["ignore"]["puces"] + f["ignore"]["texte"]
+                  + _lignes_troncature(troncature)
                   + _a_revoir(claims)
                   + [f"Contradiction à trancher : {x['enonce']} ({x['systeme_a']} contre {x['systeme_b']})" for x in contradictions],
     }
@@ -83,4 +89,5 @@ def examiner(conn, jumeau_id, doc):
     fiche = gardien.fiche_courante(conn, jumeau_id)
     return depuis_connaissances(doc, depot.lister_claims(conn, jumeau_id), fiche and fiche["contenu"],
                                 depot.contradictions_ouvertes(conn, jumeau_id),
-                                depot.substance(depot.types_de_sources(conn, jumeau_id)) or "code")
+                                depot.substance(depot.types_de_sources(conn, jumeau_id)) or "code",
+                                depot.troncature(conn, jumeau_id))

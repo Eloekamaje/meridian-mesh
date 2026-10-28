@@ -1,5 +1,6 @@
 """Pilotage local de codebase-memory-mcp (binaire compilé depuis les sources, sans LLM ni réseau)."""
 import json
+import logging
 import threading
 import uuid
 import os
@@ -13,7 +14,21 @@ REQUETES = {
                  "e.start_line AS ligne",
     "images": "MATCH (s)-[:USAGE]->(i:Image) RETURN DISTINCT s.file_path AS chemin, i.name AS image",
 }
-LIMITE = 10000
+PLAFOND_DEFAUT, PLAFOND_MIN, PLAFOND_MAX = 10000, 100, 200000
+journal = logging.getLogger(__name__)
+
+
+def plafond():
+    """Lignes gardées par famille (JUMEAU_PLAFOND), bornées ; valeur illisible : défaut."""
+    try:
+        return min(PLAFOND_MAX, max(PLAFOND_MIN, int(os.environ.get("JUMEAU_PLAFOND", PLAFOND_DEFAUT))))
+    except ValueError:
+        return PLAFOND_DEFAUT
+
+
+def _cle(ligne):
+    """Ordre stable : fichier, puis ligne, puis le reste ; deux passes au même commit gardent les mêmes lignes."""
+    return (ligne.get("chemin") or "", ligne.get("debut") or ligne.get("ligne") or 0, json.dumps(ligne, sort_keys=True, default=str))
 
 
 def _cli(*args):
@@ -88,10 +103,16 @@ def indexer(depot):
 
 
 def interroger(projet):
-    resultats = {}
+    """(résultats par famille, troncature) : au-delà du plafond on garde le début de l'ordre stable et on le dit
+    (`troncature` = {famille: {gardes, trouves}}) ; l'ingestion ne tombe pas."""
+    resultats, troncature, limite = {}, {}, plafond()
     for famille, requete in REQUETES.items():
-        r = _cli("query_graph", "--project", projet, "--query", f"{requete} LIMIT {LIMITE}", "--format", "json")
-        if r.get("has_more") or r.get("truncated"):
-            raise RuntimeError(f"{famille} : résultat tronqué, relever LIMITE")
-        resultats[famille] = [dict(zip(r["columns"], ligne)) for ligne in r["rows"]]
-    return resultats
+        r = _cli("query_graph", "--project", projet, "--query", f"{requete} LIMIT {PLAFOND_MAX}", "--format", "json")
+        lignes = sorted((dict(zip(r["columns"], ligne)) for ligne in r["rows"]), key=_cle)
+        coupe = bool(r.get("has_more") or r.get("truncated"))  # ponytail: au-delà de PLAFOND_MAX le binaire choisit les lignes
+        if coupe or len(lignes) > limite:
+            troncature[famille] = {"gardes": min(limite, len(lignes)), "trouves": len(lignes), **({"au_moins": True} if coupe else {})}
+            journal.warning("extraction tronquée : %s, %d gardées sur %d%s (plafond JUMEAU_PLAFOND=%d)", famille,
+                            troncature[famille]["gardes"], len(lignes), "+" if coupe else "", limite)
+        resultats[famille] = lignes[:limite]
+    return resultats, troncature

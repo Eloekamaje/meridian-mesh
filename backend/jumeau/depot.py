@@ -75,14 +75,16 @@ def enregistrer(conn, jumeau, source, claims, activite):
              jumeau.get("domaine"), jumeau.get("mission")))
         source_id = conn.execute(
             "INSERT INTO source (tenant_id, jumeau_id, type, nom, emplacement, curseur, copie, index_code, branche, "
-            "url, secret_ref) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (jumeau_id, nom) "
+            "url, secret_ref, troncature) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (jumeau_id, nom) "
             "DO UPDATE SET emplacement = EXCLUDED.emplacement, curseur = EXCLUDED.curseur, copie = EXCLUDED.copie, "
             "index_code = EXCLUDED.index_code, branche = coalesce(EXCLUDED.branche, source.branche), "
-            "url = coalesce(EXCLUDED.url, source.url), secret_ref = coalesce(EXCLUDED.secret_ref, source.secret_ref) "
+            "url = coalesce(EXCLUDED.url, source.url), secret_ref = coalesce(EXCLUDED.secret_ref, source.secret_ref), "
+            "troncature = EXCLUDED.troncature "
             "RETURNING id",
             (t, jumeau["id"], source["type"], source["nom"], source["emplacement"], source["curseur"],
              source.get("copie"), source.get("index_code"), source.get("branche"), source.get("url"),
-             source.get("secret_ref"))).fetchone()[0]
+             source.get("secret_ref"), Jsonb(source["troncature"]) if source.get("troncature") else None)).fetchone()[0]
+        tronque = bool(source.get("troncature"))
         vus = []
         for c in claims:
             cid = conn.execute(
@@ -102,11 +104,14 @@ def enregistrer(conn, jumeau, source, claims, activite):
         # Cette source n'observe plus ce qu'elle n'a pas revu ; un Claim d'ingestion n'est clos que si plus aucune
         # source du jumeau ne l'observe (plusieurs dépôts par jumeau). Les propositions de conversation attendent
         # leur revue et ne sont jamais closes ici.
-        conn.execute("DELETE FROM claim_source WHERE source_id = %s AND NOT (claim_id = ANY(%s))", (source_id, vus))
+        # Extraction tronquée : ce qui manque peut être au-delà du plafond, pas disparu ; seules les propositions
+        # non revues sont closes, ce que l'équipe a validé ou rejeté reste.
+        revu = "AND claim_id IN (SELECT id FROM claim WHERE statut = 'PROPOSED')" if tronque else ""
+        conn.execute(f"DELETE FROM claim_source WHERE source_id = %s AND NOT (claim_id = ANY(%s)) {revu}", (source_id, vus))
         conn.execute(
             "UPDATE claim SET valide_jusqua = now() WHERE jumeau_id = %s AND origine = 'INGESTION' "
-            "AND valide_jusqua IS NULL AND NOT EXISTS (SELECT 1 FROM claim_source cs WHERE cs.claim_id = claim.id)",
-            (jumeau["id"],))
+            "AND valide_jusqua IS NULL AND NOT EXISTS (SELECT 1 FROM claim_source cs WHERE cs.claim_id = claim.id)"
+            + (" AND statut = 'PROPOSED'" if tronque else ""), (jumeau["id"],))
 
 
 def _remplacer_preuves(conn, source_id, claim_id, chemin):
@@ -388,6 +393,14 @@ def lister_jumeaux(conn):
         return cur.execute(
             "SELECT j.id, j.nom, j.equipe, count(c.id) FILTER (WHERE c.valide_jusqua IS NULL) AS claims "
             "FROM jumeau j LEFT JOIN claim c ON c.jumeau_id = j.id GROUP BY j.id ORDER BY j.nom").fetchall()
+
+
+def troncature(conn, jumeau_id):
+    """Familles dont la dernière extraction a été tronquée par le plafond : {famille: {gardes, trouves}}."""
+    fusion = {}
+    for (t,) in conn.execute("SELECT troncature FROM source WHERE jumeau_id = %s AND troncature IS NOT NULL", (jumeau_id,)):
+        fusion.update(t)
+    return fusion
 
 
 def lister_claims(conn, jumeau_id):
