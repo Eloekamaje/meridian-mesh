@@ -11,9 +11,16 @@ from jumeau import depot
 SOURCES_POSSIBLES = ("code", "bdd", "observabilite", "incidents", "documentation")
 
 
-def couverture(nb_sources):
-    # Même règle que la création d'un jumeau dans l'atelier (server.py) : chaque source connectée compte.
-    return min(20 + 12 * nb_sources, 88)
+def couverture(etablis, hypotheses):
+    """Part de ce que le jumeau affirme **qui est établi** par une source, plutôt qu'écrit par un modèle.
+
+    Avant, la couverture valait `min(20 + 12 * nb_sources, 88)` appliqué avec un `1` en dur : **tout jumeau réel
+    affichait 32 %**, quel que soit son contenu — un chiffre qui ne mesurait rien et flattait d'autant plus que le
+    jumeau savait peu (plan de remédiation L2.7). Ici, la valeur baisse quand le modèle écrit davantage sans preuve :
+    c'est exactement ce qu'on veut voir.
+    """
+    total = (etablis or 0) + (hypotheses or 0)
+    return round(100 * (etablis or 0) / total) if total else 0
 
 
 def document(j):
@@ -26,7 +33,7 @@ def document(j):
         "environnement": "production",
         "statut": "actif",
         "autonomie": "supervisé",
-        "couverture": couverture(1),
+        "couverture": couverture(j.get("etablis"), j.get("hypotheses")),
         "fraicheur": (f"sans code · substance : {depot.substance(j.get('types') or []) or 'aucune'}" if j.get("depots", 1) == 0
                       else f"{j['depots']} dépôts de code · {j['claims']} claims" if j.get("depots", 1) > 1
                       else f"code au commit {j['curseur'][:12]} · {j['claims']} claims"),
@@ -45,6 +52,10 @@ def jumeaux_reels(conn):
         return cur.execute(
             """SELECT j.id, j.nom, j.equipe, j.domaine, j.mission, s.curseur,
                       (SELECT count(*) FROM claim c WHERE c.jumeau_id = j.id AND c.valide_jusqua IS NULL) AS claims,
+                      (SELECT count(*) FROM claim c WHERE c.jumeau_id = j.id AND c.valide_jusqua IS NULL
+                        AND predicat_prouvable(c.predicat)) AS etablis,
+                      (SELECT count(*) FROM claim c WHERE c.jumeau_id = j.id AND c.valide_jusqua IS NULL
+                        AND NOT predicat_prouvable(c.predicat)) AS hypotheses,
                       (SELECT count(*) FROM source WHERE jumeau_id = j.id AND type = 'GIT') AS depots,
                       (SELECT emplacement FROM source WHERE jumeau_id = j.id AND type = 'SERVICENOW'
                        ORDER BY id LIMIT 1) AS ci,

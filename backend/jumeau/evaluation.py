@@ -8,11 +8,13 @@ outils rend une décision structurée. Chaque passe est enregistrée (table eval
 """
 import argparse
 import asyncio
+import json
 import hashlib
 import logging
 import os
 import re
 import time
+from pathlib import Path
 
 import psycopg
 from psycopg.types.json import Jsonb
@@ -49,14 +51,31 @@ def questions_ancrage():
     return [f"{m['titre'].strip()} : {m['corps'].strip()}" for m in trouvees if m]
 
 
-def construire_jeu(nom, claims, maximum=MAX_PAR_DEFAUT):
-    """Exactitude (au plus la moitié du budget, un prédicat après l'autre) puis ancrage, en tout ≤ `maximum`."""
+REFERENCES = Path(__file__).with_name("references")  # questions/réponses écrites à la main, par jumeau
+
+
+def questions_reference(jumeau_id):
+    """Le jeu d'exactitude ne pouvait pas se déduire du jumeau : il repose sur ses connaissances **validées**, et la
+    base en compte une seule. Faute de vérité de référence, la mesure valait `null` (plan de remédiation L2.2) ;
+    ces couples question/réponse sont donc écrits à la main, dans `jumeau/references/<jumeau>.json`."""
+    fichier = REFERENCES / f"{jumeau_id}.json"
+    if not fichier.exists():
+        return []
+    return [{"etage": "exactitude", "question": d["question"], "attendu": d["attendu"]}
+            for d in json.loads(fichier.read_text(encoding="utf-8"))]
+
+
+def construire_jeu(nom, claims, maximum=MAX_PAR_DEFAUT, jumeau_id=None):
+    """Exactitude (au plus la moitié du budget, un prédicat après l'autre) puis ancrage, en tout ≤ `maximum`.
+    Les couples écrits à la main passent en premier : ce sont les seuls qui ne dépendent d'aucune validation."""
     par_predicat = [[c for c in claims if c["statut"] == "ACCEPTED" and c["predicat"] == p] for p in TITRES]
     exacts = [{"etage": "exactitude", "question": f"{nom} — {TITRES[c['predicat']].lower()} ?", "attendu": c["objet"]}
               for rang in zip(*(l + [None] * (max(map(len, par_predicat)) - len(l)) for l in par_predicat))
               for c in rang if c][: maximum // 2]
+    ecrits = questions_reference(jumeau_id)[: maximum // 2] if jumeau_id else []
     ancrage = [{"etage": "ancrage", "question": q, "attendu": None} for q in questions_ancrage()]
-    return exacts + ancrage[: maximum - len(exacts)]
+    return (ecrits + [e for e in exacts if len(ecrits) + len(exacts) <= maximum])[:maximum] + \
+        ancrage[: max(0, maximum - len(ecrits) - len(exacts))]
 
 
 def empreinte_methodes(dossier=methodes.DOSSIER, charte=agent.CHARTE):
@@ -137,7 +156,7 @@ async def evaluer(conn, jumeau_id, maximum=MAX_PAR_DEFAUT):
     if not jumeau:
         raise LookupError(f"jumeau inconnu : {jumeau_id}")
     claims = connaissance.connaissances(conn, jumeau_id, limite=1000)
-    scores, details = await passe(jumeau_id, construire_jeu(jumeau["nom"], claims, maximum))
+    scores, details = await passe(jumeau_id, construire_jeu(jumeau["nom"], claims, maximum, jumeau_id))
     enregistrer(conn, jumeau_id, empreinte_methodes(), _nom_modele(), scores, details)
     return scores
 

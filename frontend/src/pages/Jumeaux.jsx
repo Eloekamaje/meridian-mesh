@@ -16,6 +16,7 @@ const VUES_ENREGISTREES = [
   ["connaissance", "Connaissance insuffisante"],
   ["sources-erreur", "Sources en erreur"],
   ["obsoletes", "Jumeaux obsolètes"],
+  ["reels", "Nés d'une vraie source"], // le registre mêle 42 jumeaux de démonstration et 4 réels (L2.1)
 ];
 
 export default function Jumeaux() {
@@ -83,6 +84,7 @@ export default function Jumeaux() {
       if (vue === "connaissance" && (j.couverture ?? 100) >= 60) return false;
       if (vue === "sources-erreur" && !(j.sources_detail || []).some((s) => s.statut !== "prete")) return false;
       if (vue === "obsoletes" && !["retard", "obsolete"].includes(j.fraicheur_etat)) return false;
+      if (vue === "reels" && j.origine !== "reel") return false;
       if (q && ![j.nom, j.mission, j.proprietaire, j.domaine].join(" ").toLowerCase().includes(q)) return false;
       return true;
     });

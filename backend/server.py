@@ -23,6 +23,8 @@ from jumeau.routes import router as jumeau_router
 from jumeau import flore as jumeau_flore
 from jumeau import flux as jumeau_flux
 from jumeau import registre as jumeau_registre
+from jumeau import connecteurs as jumeau_connecteurs
+from jumeau import origine as jumeau_origine
 from jumeau import naissance as jumeau_naissance
 from jumeau import examen as jumeau_examen
 from jumeau.systemes import SYSTEMES
@@ -144,7 +146,11 @@ def _resume_projets(projets: list) -> dict:
 
 
 def projete_jumeau(j: dict, niveau: str, aut: Optional[dict] = None):
-    base = {"id": j["id"], "nom": j["nom"], "domaine": j.get("domaine"), "statut": j.get("statut"), "position": j.get("position"), "reel": bool(j.get("reel"))}
+    # D'où vient ce jumeau : né de l'ingestion d'une vraie source, ou posé par le jeu de démonstration. Les vues ne
+    # doivent pas les mélanger sans le dire (plan de remédiation L2.1) — 42 jumeaux s'affichent, 4 sont réels.
+    base = {"id": j["id"], "nom": j["nom"], "domaine": j.get("domaine"), "statut": j.get("statut"),
+            "position": j.get("position"), "reel": bool(j.get("reel")),
+            "origine": "reel" if j.get("reel") else "demonstration"}
     if niveau_au_moins(niveau, "resume"):
         base.update({"mission": j.get("mission"), "sante": j.get("sante"), "couverture": j.get("couverture"), "fraicheur": j.get("fraicheur"), "strates": j.get("strates"), "fraicheur_etat": j.get("fraicheur_etat"), "capacites": j.get("capacites"), "candidat": j.get("candidat"),
                      "projets_resume": _resume_projets(j.get("projets", []))})
@@ -981,7 +987,8 @@ class ImportApercu(BaseModel):
 
 @api_router.get("/connecteurs")
 async def lister_connecteurs():
-    return {"connecteurs": CONNECTEURS, "contributions": CONTRIBUTIONS, "profils": PROFILS}
+    return {"connecteurs": [{**c, "branche": connecteur_branche(c["id"]) is not None} for c in CONNECTEURS],
+            "contributions": CONTRIBUTIONS, "profils": PROFILS}
 
 
 @api_router.post("/commandes", status_code=201)
@@ -1056,22 +1063,16 @@ def _proteger_source(source, connexions):
                                  "secret": connexions.get(cxid, "") if str(cxid).startswith(prefixe) else ""}}
 
 
+connecteur_branche = jumeau_connecteurs.connecteur_branche
+
+
 def _champ_rempli(valeur):
     return any(x.get("depot") for x in valeur if isinstance(x, dict)) if isinstance(valeur, list) else bool(valeur)
 
 
 def _simuler_test(source):
-    """Test de connexion simulé mais déterministe : champs requis manquants → configuration incomplète ; sinon échec réaliste pour certains, succès pour la plupart."""
-    conn = next((c for c in CONNECTEURS if c["id"] == source["connecteur"]), None)
-    manquants = [ch["label"] for ch in (conn["champs"] if conn else []) if ch.get("requis") and not _champ_rempli(source.get("config", {}).get(ch["cle"]))]
-    maintenant = datetime.now(timezone.utc).strftime("%d/%m %H:%M")
-    if manquants:
-        return {"statut": "configuration_incomplete", "erreur": {"titre": "Configuration incomplète", "detail": f"Champs requis manquants : {', '.join(manquants)}.", "action": "Compléter la configuration"}, "dernier_test": {"date": maintenant, "resultat": "echec"}}
-    if not source.get("perimetre"):
-        return {"statut": "perimetre_vide", "erreur": {"titre": "Périmètre vide", "detail": "Aucun schéma, projet ou index n'est renseigné — la découverte ne rapporterait rien.", "action": "Définir le périmètre"}, "dernier_test": {"date": maintenant, "resultat": "echec"}}
-    if "legacy" in (source.get("config", {}).get("hote") or ""):
-        return {"statut": "erreur_connexion", "erreur": {"titre": "Erreur de connexion", "detail": "L'hôte ne répond pas (délai dépassé sur le port configuré).", "action": "Vérifier le réseau et le port"}, "dernier_test": {"date": maintenant, "resultat": "echec"}}
-    return {"statut": "prete", "erreur": None, "dernier_test": {"date": maintenant, "resultat": "ok"}}
+    """Test de connexion déterministe (jumeau/connecteurs.py) : seuls les connecteurs branchés peuvent être prêts."""
+    return jumeau_connecteurs.test_simule(source, CONNECTEURS)
 
 
 # Connexions GitHub de l'espace : déclarées une fois (jeton vérifié puis déposé dans Vault), choisies ensuite par
@@ -1236,23 +1237,13 @@ async def apercu_import(cid: str, payload: ImportApercu):
     doc = await db.commandes.find_one({"id": cid}, NO_ID)
     if not doc:
         raise HTTPException(404, "Commande introuvable")
-    existants = {(s["connecteur"], s["nom"]) for s in doc["sources"]}
-    candidats = [
-        {"connecteur": "postgresql", "nom": "PostgreSQL Settlement", "environnement": "production", "perimetre": "schéma settlement", "proprietaire": "Équipe Finance", "config": {"hote": "pg-settle.intra", "port": 5432, "base": "settlement", "schemas": "settlement", "frequence": "quotidienne"}},
-        {"connecteur": "oracle", "nom": "Oracle Clearing", "environnement": "production", "perimetre": "schéma CLEARING", "proprietaire": "Équipe Finance", "config": {"hote": "ora-clear.intra", "service": "CLEARING", "schemas": "CLEARING", "frequence": "quotidienne"}},
-        {"connecteur": "jira", "nom": "Jira Projet CORE", "environnement": "production", "perimetre": "projet CORE", "proprietaire": "Équipe Paiements", "config": {"site": "banque.atlassian.net", "projets": "CORE", "periode": "12 mois", "auth": "jeton API"}},
-        {"connecteur": "confluence", "nom": "Confluence Espace PAY", "environnement": "production", "perimetre": "espace PAY", "proprietaire": "Équipe Paiements", "config": {"site": "banque.atlassian.net/wiki", "espaces": "PAY", "periode": "24 mois"}},
-        {"connecteur": "cmdb", "nom": "CMDB Centrale", "environnement": "production", "perimetre": "classe Application", "proprietaire": "Équipe Architecture", "config": {"instance": "cmdb.intra", "classes": "Application", "filtre": "domaine=Paiement"}},
-        {"connecteur": "postgresql", "nom": "PostgreSQL Production", "environnement": "production", "perimetre": "schémas public, pay", "proprietaire": "Équipe Paiements", "config": {}},
-    ]
-    nouvelles, presentes, a_mapper = [], [], []
-    for c in candidats:
-        if (c["connecteur"], c["nom"]) in existants:
-            presentes.append(c)
-        else:
-            nouvelles.append(c)
-    a_mapper.append({"connecteur": "sap", "nom": "SAP FI", "note": "Connecteur à correspondre manuellement"})
-    return {"mode": payload.mode, "detectees": len(candidats) + 1, "nouvelles": nouvelles, "presentes": presentes, "a_mapper": a_mapper}
+    # Aucune découverte n'est implémentée : interroger un SI pour en lister les sources n'est pas branché. Rendre une
+    # liste écrite d'avance faisait croire à une détection réelle, dans le chemin de production (L2.6).
+    return {"mode": payload.mode, "decouverte": "non_branchee", "detectees": 0, "nouvelles": [],
+            "presentes": [{"connecteur": s["connecteur"], "nom": s["nom"]} for s in doc.get("sources", [])],
+            "a_mapper": [],
+            "message": "La découverte automatique des sources n'est pas encore branchée : aucun connecteur ne sait "
+                       "interroger un SI pour lister ce qu'il contient. Déclarez les sources à la main."}
 
 
 @api_router.post("/commandes/{cid}/lancer")
@@ -1321,6 +1312,11 @@ async def suivre_naissance(cid: str):
     return {"jumeau_id": doc.get("jumeau_id"), **(doc.get("naissance") or {"etat": "non_lancee"})}
 
 
+# D'où vient une réponse de Flore (plan de remédiation L0.5) : une réponse de démonstration ne se présente jamais
+# comme une réponse calculée, et les indicateurs écrits d'avance ne sont pas affichés comme des mesures.
+marquer_origine = jumeau_origine.marquer_origine
+
+
 async def generer_reponse_flore(contexte, question, selection, domaine, x_persona, x_espace, travail=None, emit=None):
     persona, espace = resoudre_perimetre(x_persona, x_espace)
     tous = await db.jumeaux.find({}, NO_ID).to_list(200)
@@ -1330,7 +1326,50 @@ async def generer_reponse_flore(contexte, question, selection, domaine, x_person
     q = normalise_txt(question)
     for j in tous:
         if j["id"] not in aut and len(j["nom"]) > 4 and normalise_txt(j["nom"]) in q:
-            return HORS_PERIMETRE
+            return marquer_origine(dict(HORS_PERIMETRE), "refus")
+    sel = [j for j in (selection or []) if j in aut and niveau_au_moins(aut[j], "resume")]
+    # Un jumeau réel sélectionné : Flore le mobilise (ses Claims et son code) et répond avec ses preuves.
+    # Un seul : chemin direct. Plusieurs : Flore les mobilise en sous-agents (flore.mobiliser).
+    reels = [j["id"] for j in tous if j.get("reel") and j["id"] in sel and niveau_au_moins(aut[j["id"]], "complet")]
+    if not sel:  # sans sélection, l'application que la question nomme : son jumeau directement, sans orchestration
+        reels = jumeau_flore.application_nommee(
+            question, [j for j in tous if j.get("reel") and j["id"] in aut and niveau_au_moins(aut[j["id"]], "complet")])
+    if reels:
+        if len(reels) == 1:
+            reponse_jumeau = await jumeau_flore.repondre(reels[0], question, x_persona, travail, profil=persona, db=db, emit=emit)
+        else:
+            reponse_jumeau = await jumeau_flore.mobiliser(reels, question, x_persona, travail, profil=persona, db=db, emit=emit)
+        if reponse_jumeau:
+            return marquer_origine(reponse_jumeau, "modele")
+    if not sel and domaine:
+        sel = [j["id"] for j in tous if j.get("domaine") == domaine and j["id"] in aut and niveau_au_moins(aut[j["id"]], "resume")]
+    if sel:
+        intent = intention_selection(q)
+        if intent:
+            return marquer_origine(await reponse_selection(intent, sel, aut, tous, id_vers_nom), "scenario")
+    if not sel and any(k in q for k in MOTS_PROJETS) and any(niveau_au_moins(n, "preuves") for n in aut.values()):
+        return marquer_origine(reponse_projets([j for j in tous if j["id"] in aut and niveau_au_moins(aut[j["id"]], "preuves")], aut, id_vers_nom), "registre")
+    for script in AURORA_SCRIPTS:
+        if script["contexte"] in (contexte, "global") and any(normalise_txt(k) in q for k in script["mots_cles"]):
+            out = dict(script)
+            out["contributions"] = [c for c in script.get("contributions", []) if nom_vers_id.get(c.get("jumeau", "")) in aut]
+            if not any(niveau_au_moins(n, "preuves") for n in aut.values()):
+                out["preuves"] = []
+            return marquer_origine(out, "scenario")
+    # Hors scripts de démonstration : Flore répond elle-même, en orchestratrice, avec les cartes des jumeaux réels que
+    # l'interlocuteur peut voir (« qui es-tu ? » sans réveiller de jumeau ; une question d'application, en mobilisant).
+    # ponytail: toutes les cartes visibles dans le prompt ; présélection par le registre au-delà d'une vingtaine.
+    visibles = [j["id"] for j in tous if j.get("reel") and j["id"] in aut and niveau_au_moins(aut[j["id"]], "complet")]
+    if not sel and visibles and os.environ.get("JUMEAU_PG_DSN"):
+        reponse_flore = await jumeau_flore.mobiliser(visibles, question, x_persona, travail, profil=persona, db=db, emit=emit)
+        if reponse_flore and reponse_flore.get("comportement") != "signaler":  # indisponible : repli sur la recherche
+            return marquer_origine(reponse_flore, "modele")
+    trouve = await recherche_plein_texte(q, aut)
+    if trouve:
+        return marquer_origine(trouve, "recherche")
+    if sel:
+        return marquer_origine(await reponse_selection(None, sel, aut, tous, id_vers_nom), "scenario")
+    return marquer_origine(dict(AURORA_FALLBACK), "repli")
     sel = [j for j in (selection or []) if j in aut and niveau_au_moins(aut[j], "resume")]
     # Un jumeau réel sélectionné : Flore le mobilise (ses Claims et son code) et répond avec ses preuves.
     # Un seul : chemin direct. Plusieurs : Flore les mobilise en sous-agents (flore.mobiliser).

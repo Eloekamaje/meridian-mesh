@@ -1,0 +1,7 @@
+[
+  {"question": "Sur quel moteur de base de données Conduit s'appuie-t-il ?", "attendu": "PostgreSQL"},
+  {"question": "Avec quel cadre logiciel Conduit expose-t-il ses services ?", "attendu": "FastAPI"},
+  {"question": "Comment un utilisateur s'authentifie-t-il sur Conduit ?", "attendu": "mot de passe"},
+  {"question": "Que peut faire un utilisateur avec le profil d'un autre utilisateur ?", "attendu": "le suivre"},
+  {"question": "Quels contenus Conduit permet-il de publier ?", "attendu": "articles"}
+]

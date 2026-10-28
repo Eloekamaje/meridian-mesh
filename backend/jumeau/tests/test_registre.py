@@ -5,11 +5,12 @@ from jumeau.tests.conftest import ACTIVITE, JUMEAU, SOURCE, besoin_pg, claim
 
 def test_document_du_registre_marque_le_jumeau_reel():
     doc = registre.document({"id": "tbt", "nom": "TBT", "equipe": "equipe-tbt", "domaine": "Paiement",
-                             "mission": "Traite les virements", "curseur": "a" * 40, "claims": 12})
+                             "mission": "Traite les virements", "curseur": "a" * 40, "claims": 12,
+                             "etablis": 9, "hypotheses": 3})
     assert doc["reel"] is True and doc["statut"] == "actif"
     assert (doc["id"], doc["nom"], doc["domaine"], doc["proprietaire"]) == ("tbt", "TBT", "Paiement", "equipe-tbt")
     assert doc["sources"]["code"] is True and doc["sources"]["documentation"] is False
-    assert doc["couverture"] == registre.couverture(1)
+    assert doc["couverture"] == 75  # part de ce qui est établi (9 sur 12), pas un forfait de 32 %
     assert "aaaaaaaaaaaa" in doc["fraicheur"]
 
 

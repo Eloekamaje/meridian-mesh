@@ -47,6 +47,14 @@ function MonolitheJumeau({ jumeau, couleur, selected, actif, grand, ports, relLi
       {actif && (
         <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-[#60A5FA] ring-2 ring-[#070B12]" />
       )}
+      {/* Un jumeau posé par le jeu de démonstration se distingue d'un jumeau né d'une vraie source (L2.1). */}
+      {jumeau?.origine === "demonstration" && (
+        <span
+          className="pointer-events-none absolute inset-0 rounded-2xl border border-dashed border-[#7C93A8]/40"
+          data-testid="jumeau-demonstration"
+          title="Jumeau de démonstration : aucune source réelle n'est branchée"
+        />
+      )}
       <span
         className={`relative flex ${taille} items-center justify-center rounded-2xl monolith-glass transition-all duration-300 ${
           selected

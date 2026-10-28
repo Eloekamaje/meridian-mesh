@@ -49,9 +49,12 @@ def main():
         p95 = totaux[min(len(totaux) - 1, int(0.95 * len(totaux)))]
         phases = {k: round(statistics.median(m.get(k, 0) for m in mesures), 1)
                   for k in ("contexte", "cartes", "modele", "outils", "relecture", "controles")}
+        # La latence ressentie : le premier mot. Elle ne se déduit pas du total (relecture et contrôles compris).
+        premiers = sorted(m.get("premier_texte") for m in mesures if m.get("premier_texte") is not None)
+        premier = f" · premier mot p50 {statistics.median(premiers):.1f} s" if premiers else ""
         schema = " · schéma dessiné" if any(m.get("schema") for m in mesures) else ""
         print(f"[{classe}] {question}{schema}\n  p50 {statistics.median(totaux):.1f} s · p95 {p95:.1f} s · objectif "
-              f"{OBJECTIFS[classe]} s (première réponse utile) · phases {phases}")
+              f"{OBJECTIFS[classe]} s (première réponse utile){premier} · phases {phases}")
 
 
 if __name__ == "__main__":
