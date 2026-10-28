@@ -4,6 +4,7 @@ La réponse du jumeau reprend le format des réponses de Flore (reponse, contrib
 dans les conversations existantes (panneau Flore, fil d'un Travail) sans écran dédié.
 """
 import asyncio
+import itertools
 import os
 import re
 
@@ -158,7 +159,7 @@ async def _cartes(ctxs, dsn, db):
             c = carte.carte(ctx["jumeau"], ctx["sources"], ctx["claims"], [], {})
         else:
             with psycopg.connect(dsn) as conn:
-                c = await carte.carte_du_jumeau(conn, db, jid)
+                c = await carte.carte_du_jumeau(conn, db, jid, visibles=set(ctxs))
         textes.append(carte.texte(c))
     return "\n\n".join(textes)
 
@@ -185,8 +186,8 @@ async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=
         etat = etat_texte(await ecriture.etat()) if ecriture else None
         mob = mobilisation.Mobilisation(ctxs, dsn, modele)
         outils = [mob.outil()] + (agent.outils_travail(ecriture, agent.Budget()) if ecriture else [])
-        a = mobilisation.orchestrateur(modele, mobilisation.prompt(await _cartes(ctxs, dsn, db), etat), outils)
-        texte = str(await a.invoke_async(question)).strip()
+        a = mobilisation.orchestrateur(modele, mobilisation.prompt(etat), outils)
+        texte = str(await a.invoke_async(mobilisation.demande(await _cartes(ctxs, dsn, db), question))).strip()
         sources = [s for ctx in ctxs.values() for s in ctx["sources"]]
         verdict = await relire_sans_risque(question, texte, sources, profil, modele,
                                            agent.CHARTE.read_text(encoding="utf-8"))
@@ -196,13 +197,17 @@ async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=
             except Exception:
                 agent.journal.warning("révision impossible, première réponse conservée", exc_info=True)
         invalides = await asyncio.to_thread(contradicteur.citations_invalides, texte, sources)
+        # Preuves de chaque jumeau, étiquetées à son nom, prises à tour de rôle : le volet ne se remplit pas avec
+        # le premier jumeau seulement, et l'on sait de quelle application vient chaque ligne.
+        par_jumeau = [[{**p, "source": f"{ctxs[j]['jumeau']['nom']} · {p['source']}"}
+                       for p in preuves_depuis("\n".join(mob.contributions[j].preuves + [texte]), ctxs[j]["sources"],
+                                               invalides)]
+                      for j in mob.contributions]
         preuves, vus = [], set()
-        sources_par_jumeau = [(mob.contributions[j].preuves, ctxs[j]["sources"]) for j in mob.contributions]
-        for citations, srcs in sources_par_jumeau + [([texte], sources)]:
-            for p in preuves_depuis("\n".join(citations), srcs, invalides):
-                if p["detail"] not in vus:
-                    vus.add(p["detail"])
-                    preuves.append(p)
+        for p in (p for rang in itertools.zip_longest(*par_jumeau) for p in rang if p):
+            if p["detail"] not in vus:
+                vus.add(p["detail"])
+                preuves.append(p)
         return {
             "comportement": "expliquer",
             "reponse": retirer_citations(texte),

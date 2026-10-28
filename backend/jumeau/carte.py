@@ -48,13 +48,16 @@ def texte(c):
     return "\n".join(lignes)
 
 
-async def carte_du_jumeau(conn, db, jumeau_id):
-    """Carte d'un jumeau réel : connaissances (Postgres), relations et noms (registre Mongo)."""
+async def carte_du_jumeau(conn, db, jumeau_id, visibles=None):
+    """Carte d'un jumeau réel : connaissances (Postgres), relations et noms (registre Mongo). Avec `visibles`, seuls
+    les voisins de cet ensemble apparaissent : une carte ne révèle pas un jumeau que le lecteur ne voit pas."""
     jumeau = depot.jumeau_par_id(conn, jumeau_id)
     if not jumeau:
         return None
     relations = await db.relations.find({"$or": [{"source": jumeau_id}, {"cible": jumeau_id}]},
                                         {"_id": 0, "source": 1, "cible": 1, "etat": 1}).to_list(200)
+    if visibles is not None:
+        relations = [r for r in relations if ({r["source"], r["cible"]} - {jumeau_id}) <= visibles]
     autres = {r["source"] for r in relations} | {r["cible"] for r in relations}
     noms = {j["id"]: j["nom"] async for j in db.jumeaux.find({"id": {"$in": sorted(autres)}}, {"_id": 0, "id": 1, "nom": 1})}
     return carte(jumeau, depot.sources_du_jumeau(conn, jumeau_id),

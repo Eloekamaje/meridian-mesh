@@ -123,7 +123,9 @@ def test_contestation_gardee_comme_observation_contraire(monkeypatch):
     db = Base()
     serrer(db)
     r = db.relations.docs["rel-gardien-tbt-cdm"]
-    assert r["etat"] == "contestee" and r["observations_contraires"] == ["Aucun appel vers TBT"]
+    # Une raison courte attribuée à B, sans sa citation : ce que B a lu dans son code reste chez B.
+    assert r["etat"] == "contestee" and len(r["observations_contraires"]) == 1
+    assert r["observations_contraires"][0].endswith(": Aucun appel vers TBT") and "#L" not in r["observations_contraires"][0]
 
 
 def test_citation_fausse_ou_absente_vaut_ne_sait_pas(monkeypatch):

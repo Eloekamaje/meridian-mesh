@@ -55,6 +55,10 @@ class Verdict(BaseModel):
     citation: str = Field(default="", description="preuve dans ton code, `chemin#Ldébut-Lfin`")
 
 
+TRANCHEES = ("confirmee", "contestee", "obsolete")  # une poignée de main ne revient jamais sur ces états
+MAX_RAISON = 200
+
+
 def _juge():
     return Agent(model=agent.modele(), system_prompt="Tu juges des listes fournies, tu n'enquêtes pas.",
                  callback_handler=None)
@@ -108,7 +112,7 @@ async def _proposer(db, a, b, formulation):
                "evolution": [{"quand": _maintenant(), "etat": "validation"}]}
         await db.relations.insert_one(doc)
         return doc
-    if existante.get("etat") in ("confirmee", "contestee"):
+    if existante.get("etat") in TRANCHEES:
         return None
     await db.relations.update_one({"id": rid}, {"$addToSet": {"claims": formulation}})
     return existante
@@ -120,10 +124,13 @@ async def _conclure(db, relation, a, b, verdict):
     if etat == "confirmee":
         maj["$set"]["confirmee_par"] = [a["nom"], b["nom"]]
     if etat == "contestee":
-        maj["$push"] = {"observations_contraires": verdict.explication}
+        # Ce que B a lu dans son code reste chez B : la relation ne garde qu'une raison courte, sans citation.
+        raison = connaissance.RE_CITATION.sub("", verdict.explication)[:MAX_RAISON].strip()
+        maj["$push"] = {"observations_contraires": f"Contestée par le gardien de {b['nom']} : {raison}"}
     if etat != relation["etat"]:
         maj.setdefault("$push", {})["evolution"] = {"quand": _maintenant(), "etat": etat}
-    await db.relations.update_one({"id": relation["id"]}, maj)
+    # Conditionnelle : une relation tranchée entre-temps (autre passe, humain) n'est jamais écrasée.
+    await db.relations.update_one({"id": relation["id"], "etat": {"$nin": list(TRANCHEES)}}, maj)
 
 
 async def serrer(conn, db, jumeau_id):
