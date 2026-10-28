@@ -51,8 +51,8 @@ def monde(monkeypatch):
 
 
 def test_systemes_inscrits_avec_leur_prefixe_et_leur_contrat():
-    assert {n: m.PREFIXE for n, m in server.SYSTEMES.items()} == {"confluence": "cf-", "jira": "jr-"}
-    assert server.PREFIXES_CONNEXION == {"github": "gh-", "confluence": "cf-", "jira": "jr-"}
+    assert {n: m.PREFIXE for n, m in server.SYSTEMES.items()} == {"confluence": "cf-", "jira": "jr-", "servicenow": "sn-"}
+    assert server.PREFIXES_CONNEXION == {"github": "gh-", "confluence": "cf-", "jira": "jr-", "servicenow": "sn-"}
     for m in server.SYSTEMES.values():
         assert all(callable(getattr(m, f)) for f in ("identifiants", "compte_du_jeton", "perimetres", "tester", "source_de"))
 

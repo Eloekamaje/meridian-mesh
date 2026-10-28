@@ -1058,11 +1058,8 @@ CONNECTEURS = [
      ]},
     {"id": "servicenow", "nom": "ServiceNow", "categorie": "ITSM", "capacites": "Incidents, changements, mémoire opérationnelle",
      "champs": [
-        {"cle": "instance", "label": "Instance", "type": "texte", "requis": True},
-        {"cle": "tables", "label": "Tables", "type": "liste", "defaut": "incident, change_request"},
-        {"cle": "groupes", "label": "Groupes d'affectation", "type": "liste"},
-        {"cle": "periode", "label": "Période historique", "type": "select", "options": ["6 mois", "12 mois", "24 mois"], "defaut": "12 mois"},
-        {"cle": "oauth", "label": "Compte OAuth", "type": "secret", "requis": True},
+        {"cle": "connexion", "label": "Connexion ServiceNow", "type": "connexion_servicenow", "requis": True},
+        {"cle": "ci", "label": "Élément de configuration", "type": "ci_servicenow", "requis": True},
      ]},
     {"id": "github", "nom": "GitHub", "categorie": "Code source", "capacites": "Capacités, APIs, événements et règles",
      "champs": [
@@ -1135,7 +1132,7 @@ COMMANDE_DEMO = {
         {"id": "src-jira", "connecteur": "jira", "nom": "Jira Projet PAY", "environnement": "production", "perimetre": "projet PAY", "proprietaire": "Équipe Paiements", "statut": "prete", "erreur": None, "dernier_test": {"date": "24/06 18:44", "resultat": "ok"}, "config": {"site": "banque.atlassian.net", "projets": "PAY", "types_billets": "Story, Bug", "periode": "12 mois", "auth": "jeton API"}},
         {"id": "src-datadog", "connecteur": "datadog", "nom": "Datadog Production", "environnement": "production", "perimetre": "services pay-*", "proprietaire": "Équipe RUN", "statut": "autorisation_insuffisante", "erreur": {"titre": "Autorisation insuffisante", "detail": "Le compte peut lire les métriques, mais pas les services pay-*.", "action": "Corriger les permissions"}, "dernier_test": {"date": "25/06 08:57", "resultat": "echec"}, "config": {"site": "datadoghq.eu", "services": "pay-*", "tags": "env:prod", "periode": "30 jours", "secret": "coffre/dd-ro"}},
         {"id": "src-splunk", "connecteur": "splunk", "nom": "Splunk Paiements", "environnement": "production", "perimetre": "index pay", "proprietaire": "Équipe RUN", "statut": "a_configurer", "erreur": None, "dernier_test": None, "config": {"hote": "", "index": "pay", "periode": "30 jours", "secret": ""}},
-        {"id": "src-snow", "connecteur": "servicenow", "nom": "ServiceNow ITSM", "environnement": "production", "perimetre": "groupe PAY-APP", "proprietaire": "Équipe Support", "statut": "prete", "erreur": None, "dernier_test": {"date": "25/06 07:31", "resultat": "ok"}, "config": {"instance": "banque.service-now.com", "tables": "incident, change_request", "groupes": "PAY-APP", "periode": "12 mois", "oauth": "coffre/snow-oauth"}},
+        {"id": "src-snow", "connecteur": "servicenow", "nom": "ServiceNow ITSM", "environnement": "production", "perimetre": "groupe PAY-APP", "proprietaire": "Équipe Support", "statut": "prete", "erreur": None, "dernier_test": {"date": "25/06 07:31", "resultat": "ok"}, "config": {"instance": "banque.service-now.com", "ci": "PAY-APP", "tables": "incident, problème, changement", "auth": "compte de service"}},
         {"id": "src-github", "connecteur": "github", "nom": "GitHub pay-remboursements", "environnement": "production", "perimetre": "dépôt principal", "proprietaire": "Équipe Paiements", "statut": "prete", "erreur": None, "dernier_test": {"date": "25/06 09:02", "resultat": "ok"}, "config": {"organisation": "banque", "depots": "pay-remboursements", "branches": "main", "secret": "coffre/gh-token"}},
     ],
 }

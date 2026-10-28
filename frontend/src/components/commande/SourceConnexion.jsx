@@ -8,6 +8,7 @@ import { BORDURE, CHAMP, ETIQUETTE, Choix } from "@/components/commande/SourceGi
 // `cfg` : { systeme, nom, perimetre: { cle, titre, label, placeholder, prefixe } }.
 function Connexion({ cfg, choisie, onChoisir }) {
   const { systeme, nom } = cfg;
+  const compte = { label: "Adresse e-mail du compte Atlassian", type: "email", secret: "Jeton d'API", invite: "Collez le jeton", ...cfg.compte };
   const [connexions, setConnexions] = useState(null);
   const [ajout, setAjout] = useState(false);
   const [saisie, setSaisie] = useState({ email: "", jeton: "" });
@@ -52,13 +53,13 @@ function Connexion({ cfg, choisie, onChoisir }) {
       )}
       {ajout ? (
         <div className="mt-2 space-y-1.5">
-          <label htmlFor={`${systeme}-email`} className="text-[11px] text-[#94A3B8]">Adresse e-mail du compte Atlassian</label>
-          <input id={`${systeme}-email`} type="email" autoComplete="off" value={saisie.email} onChange={(e) => setSaisie({ ...saisie, email: e.target.value })}
+          <label htmlFor={`${systeme}-email`} className="text-[11px] text-[#94A3B8]">{compte.label}</label>
+          <input id={`${systeme}-email`} type={compte.type} autoComplete="off" value={saisie.email} onChange={(e) => setSaisie({ ...saisie, email: e.target.value })}
             data-testid={`insp-${systeme}-email`} className={`${CHAMP} w-full`} />
-          <label htmlFor={`${systeme}-jeton`} className="text-[11px] text-[#94A3B8]">Jeton d'API ({cfg.perimetre.lecture})</label>
+          <label htmlFor={`${systeme}-jeton`} className="text-[11px] text-[#94A3B8]">{compte.secret} ({cfg.perimetre.lecture})</label>
           <div className="flex gap-2">
             <input id={`${systeme}-jeton`} type="password" autoComplete="off" value={saisie.jeton} onChange={(e) => setSaisie({ ...saisie, jeton: e.target.value })}
-              placeholder="Collez le jeton" data-testid={`insp-${systeme}-jeton`} className={`${CHAMP} flex-1`} />
+              placeholder={compte.invite} data-testid={`insp-${systeme}-jeton`} className={`${CHAMP} flex-1`} />
             <button type="button" onClick={declarer} disabled={!saisie.email.trim() || !saisie.jeton.trim() || etat.encours} data-testid={`insp-${systeme}-verifier`}
               className="rounded-md bg-[#60A5FA] px-3 text-xs font-semibold text-[#071019] hover:bg-[#93C5FD] disabled:opacity-40">
               {etat.encours ? "Vérification…" : "Vérifier"}
