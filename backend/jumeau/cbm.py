@@ -9,7 +9,8 @@ REQUETES = {
     "routes": "MATCH (f)-[:HANDLES]->(r:Route) "
               "RETURN f.file_path AS chemin, f.start_line AS debut, f.end_line AS fin, r.method AS methode, r.name AS route",
     "paquets": "MATCH (a)-[:DEPENDS_ON]->(p:Package) RETURN DISTINCT a.file_path AS chemin, p.name AS paquet",
-    "variables": "MATCH (a)-[:CONFIGURES]->(e:EnvVar) RETURN DISTINCT a.file_path AS chemin, e.name AS variable",
+    "variables": "MATCH (a)-[:CONFIGURES]->(e:EnvVar) RETURN DISTINCT a.file_path AS chemin, e.name AS variable, "
+                 "e.start_line AS ligne",
     "images": "MATCH (s)-[:USAGE]->(i:Image) RETURN DISTINCT s.file_path AS chemin, i.name AS image",
 }
 LIMITE = 10000
@@ -62,6 +63,24 @@ def texte(outil, *args):
     if r.returncode != 0:
         raise RuntimeError(r.stderr.strip() or r.stdout.strip())
     return r.stdout
+
+
+def indexe(projet, appeler=None):
+    """L'index connaît-il ce projet ? Un index absent n'est pas une panne de modèle : l'ingestion le reconstruit
+    depuis la copie au SHA (plan de remédiation L0bis.3 et L0bis.4)."""
+    if not projet:
+        return False
+    sonde = appeler or appeler_outil
+    try:
+        sonde("search_graph", project=projet, name_pattern="__meridian_sonde_absente__", limit=1, format="json")
+        return True
+    except Exception:
+        return False
+
+
+def appeler_outil(outil, **arguments):
+    """Alias explicite de `appeler` (une sonde peut être injectée dans les tests)."""
+    return appeler(outil, **arguments)
 
 
 def indexer(depot):

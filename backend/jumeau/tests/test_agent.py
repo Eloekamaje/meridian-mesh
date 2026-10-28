@@ -151,6 +151,7 @@ def test_erreur_d_outil_generique(monkeypatch):
     def echec(*_, **__):
         raise RuntimeError("/home/secret/chemin stderr")
     monkeypatch.setattr(agent.cbm, "appeler", echec)
+    monkeypatch.setattr(agent.cbm, "indexe", lambda projet, appeler=None: True)  # index présent : vraie panne d'outil
     outils = {t.tool_name: t for t in agent.outils(CONTEXTE, "dsn", "m", agent.Budget())}
     sortie = outils["architecture"]()
     assert "secret" not in sortie and "indisponible" in sortie
@@ -201,3 +202,23 @@ def test_dessiner_schema_seulement_quand_flore_peut_l_inserer(tmp_path, monkeypa
     avec = agent.construire({**CONTEXTE, "dessin": schemas.Dessin({}, lambda c: ([], "", ""))}, dsn="postgresql://x",
                             session="t", modele=modele_factice())
     assert "dessiner_schema" in avec.tool_names
+
+
+def test_un_index_absent_est_dit_comme_tel_et_non_comme_une_panne(monkeypatch):
+    """Plan de remédiation L0bis.4 : « Outil indisponible » masquait une connaissance non reconstruite."""
+    def en_panne(outil, **args):
+        raise RuntimeError("codebase-memory-mcp indisponible (search_code)")
+    monkeypatch.setattr(agent.cbm, "appeler", en_panne)
+    monkeypatch.setattr(agent.cbm, "indexe", lambda projet, appeler=None: False)
+    outils = {t.tool_name: t for t in agent.outils(CONTEXTE, "dsn", "m", agent.Budget())}
+    texte = outils["chercher_texte"](texte="autorisations")
+    assert "index de code" in texte and "reconstruites" in texte
+
+
+def test_un_index_present_garde_le_message_d_outil_indisponible(monkeypatch):
+    def en_panne(outil, **args):
+        raise RuntimeError("indisponible")
+    monkeypatch.setattr(agent.cbm, "appeler", en_panne)
+    monkeypatch.setattr(agent.cbm, "indexe", lambda projet, appeler=None: True)
+    outils = {t.tool_name: t for t in agent.outils(CONTEXTE, "dsn", "m", agent.Budget())}
+    assert outils["chercher_texte"](texte="autorisations") == "Outil indisponible pour ce dépôt."

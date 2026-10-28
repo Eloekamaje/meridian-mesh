@@ -94,7 +94,7 @@ CONTEXTE = """## Contexte de cette conversation
 {autoportrait}"""
 
 
-def modele():
+def modele(nom=None):
     fournisseur = os.environ.get("JUMEAU_MODELE", "deepseek")
     if fournisseur == "deepseek":
         # ponytail: API hébergée hors Canada — réservée au code non bancaire (Architecture Jumeau §10).
@@ -103,13 +103,23 @@ def modele():
             raise RuntimeError("Modèle non configuré : clé DeepSeek absente")
         from strands.models.openai import OpenAIModel
         return OpenAIModel(client_args={"api_key": cle, "base_url": "https://api.deepseek.com"},
-                           model_id=os.environ.get("DEEPSEEK_MODELE", "deepseek-chat"))
+                           model_id=nom or os.environ.get("DEEPSEEK_MODELE", "deepseek-chat"))
     if fournisseur == "bedrock":
         from strands.models import BedrockModel
         if not os.environ.get("BEDROCK_MODELE"):
             raise RuntimeError("Modèle non configuré : BEDROCK_MODELE absent")
-        return BedrockModel(model_id=os.environ["BEDROCK_MODELE"], region_name=os.environ.get("AWS_REGION", "ca-central-1"))
+        return BedrockModel(model_id=nom or os.environ["BEDROCK_MODELE"],
+                            region_name=os.environ.get("AWS_REGION", "ca-central-1"))
     raise RuntimeError(f"JUMEAU_MODELE inconnu : {fournisseur}")
+
+
+def modele_juge():
+    """Le modèle du juge d'appui. Il ne devrait pas être celui de l'auteur : un même modèle partage ses erreurs, et
+    « un fil vierge » ne fait alors qu'une seconde opinion du même esprit (plan de remédiation L1.7).
+
+    `JUMEAU_MODELE_JUGE` (par exemple un modèle d'une autre famille, ou Bedrock d'un autre fournisseur) ; à défaut,
+    le modèle de l'auteur — et la dépendance reste visible ici plutôt que dissimulée."""
+    return modele(os.environ.get("JUMEAU_MODELE_JUGE") or None)
 
 
 def nettoyer(sortie, projet, copie):
@@ -210,7 +220,11 @@ def outils(ctx, dsn, nom_modele, budget):
                 sortie = nettoyer(cbm.appeler(nom, project=s["index_code"], **arguments), s["index_code"], s["copie"])
             except (RuntimeError, ValueError, subprocess.TimeoutExpired):
                 journal.exception("outil %s (%s)", nom, s["nom"])
-                sortie = "Outil indisponible pour ce dépôt."
+                # Un index absent n'est pas « l'outil est indisponible » : c'est une connaissance non reconstruite,
+                # et l'interlocuteur doit pouvoir le dire (plan de remédiation L0bis.4).
+                sortie = ("L'index de code de ce dépôt n'est pas disponible : ses connaissances ne sont pas "
+                          "reconstruites. Il se refait à la prochaine ingestion (le gardien le reconstruit)."
+                          if not cbm.indexe(s.get("index_code")) else "Outil indisponible pour ce dépôt.")
             parties.append(sortie if len(sources) == 1 else f"### dépôt {s['nom']}\n{sortie}")
         return nettoyer("\n\n".join(parties), "", "")
 
@@ -330,7 +344,11 @@ def outils(ctx, dsn, nom_modele, budget):
                     source = connaissance.resoudre_source(sources, depot, chemin)
                     cid = connaissance.proposer(conn, jumeau, source, predicat, objet, type_claim, chemin, debut, fin,
                                                 justification, ctx["acteur"], nom_modele)
-            return f"Proposition enregistrée (claim {cid}), en attente de revue par l'équipe."
+            if connaissance.prouvable(predicat):
+                return f"Proposition enregistrée (claim {cid}), en attente de revue par l'équipe."
+            return (f"Proposition enregistrée (claim {cid}) comme **hypothèse** : aucune ligne ne peut établir "
+                    f"« {predicat} ». Elle reste en attente de l'équipe, et elle ne recevra pas de diplôme de "
+                    "maturité tant que rien ne la prouve.")
         except (ValueError, LookupError) as e:
             return f"Proposition refusée : {e}"
         except psycopg.Error:

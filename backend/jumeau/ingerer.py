@@ -65,7 +65,13 @@ def ingerer(conn, jumeau, chemin_depot, origine=None):
         raise ValueError(f"{chemin_depot} n'est pas un dépôt Git")
     copie = copie_au_sha(chemin_depot, sha, jumeau["id"], Path(chemin_depot).name)
     projet = cbm.indexer(copie)
-    resultats = cbm.interroger(projet)
+    try:
+        resultats = cbm.interroger(projet)
+    except RuntimeError as e:
+        # L'index vit dans le cache du binaire, indexé par chemin absolu : l'ingestion le refait, mais si sa
+        # relecture échoue il faut le dire clairement (plan de remédiation L0bis.3).
+        raise RuntimeError(f"index de code illisible pour {chemin_depot} (projet {projet}) : {e}. "
+                           "Relancer l'ingestion reconstruit l'index depuis la copie au SHA.") from e
     lire = lire_au_sha(chemin_depot, sha)
     # Dépendances de pyproject.toml / package.json, que codebase-memory-mcp ne relie pas (dédoublonnées).
     vus = {(r["chemin"], r["paquet"]) for r in resultats["paquets"]}

@@ -1,4 +1,5 @@
 """Schémas dessinés par le harness : l'agent choisit et nomme, chaque flèche est fondée, le harness écrit le Mermaid."""
+import json
 from jumeau import appels, flore, schemas
 
 LIGNES = {"app/routes.py#L64-L64": ["    slug = get_slug_for_article(article.title)"],
@@ -68,17 +69,26 @@ def test_le_schema_prend_place_apres_le_premier_paragraphe():
 # --- Enchaînement lu dans le graphe d'appels (formats réels de l'index) ------------------------------------------
 
 P = "proj"
-RECHERCHE = {"create_new_article": f"  {P}.app.routes.create_new_article Function app/routes.py 59-72 1 9",
-             "get_slug_for_article": f"  {P}.app.services.get_slug_for_article Function app/services.py 10-14 1 0",
-             "create_article": f"  {P}.app.repo.Repo.create_article Method app/repo.py 20-30 1 0"}
-TRACES = {"create_new_article": f"callees: 3  (cols: qn hop)\n  {P}.app.services.get_slug_for_article 1\n"
-                                f"  {P}.app.repo.Repo.create_article 1\n  {P}.app.db.errors.EntityDoesNotExist 1\n",
-          "get_slug_for_article": "callees: 0", "create_article": "callees: 0"}
+# Formats réels des deux outils en `format=json` (relevés sur l'index) : l'enchaînement ne découpe plus du texte.
+FONCTIONS = {"create_new_article": ("app.routes", "create_new_article", "app/routes.py", 59, 72),
+             "get_slug_for_article": ("app.services", "get_slug_for_article", "app/services.py", 10, 14),
+             "create_article": ("app.repo.Repo", "create_article", "app/repo.py", 20, 30)}
+APPELES = {"create_new_article": [("app.services", "get_slug_for_article", "lsp", 0.9),
+                                  ("app.repo.Repo", "create_article", "lsp", 0.9),
+                                  ("app.db.errors", "EntityDoesNotExist", "lsp", 0.85)],
+           "get_slug_for_article": [], "create_article": []}
 
 
 def appeler(outil, project, **a):
     nom = a.get("name_pattern") or a.get("function_name")
-    return RECHERCHE.get(nom, "") if outil == "search_graph" else TRACES.get(nom, "")
+    if outil == "search_graph":
+        trouve = FONCTIONS.get(nom)
+        groupes = [] if not trouve else [
+            {"qn_prefix": f"{P}.{trouve[0]}", "file": trouve[2], "rows": [[trouve[1], "Function", f"{trouve[3]}-{trouve[4]}", 1, 0]]}]
+        return json.dumps({"groups": groupes})
+    return json.dumps({"callees": {"groups": [
+        {"qn_prefix": f"{P}.{prefixe}", "rows": [[court, 1, strategie, confiance]]}
+        for prefixe, court, strategie, confiance in APPELES.get(nom, [])]}})
 
 
 def test_enchainement_paires_reelles_ligne_d_appel_et_bruit_ecarte(monkeypatch):

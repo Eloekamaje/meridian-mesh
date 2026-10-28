@@ -2,9 +2,14 @@
 
 L'index (codebase-memory, `trace_path`) donne les fonctions appelées mais ni l'appelant au-delà du premier niveau,
 ni la ligne de l'appel. On trace donc un niveau à la fois (vraies paires appelant → appelé), puis on retrouve dans
-le corps de l'appelant, au commit ingéré, la ligne qui nomme l'appelé : c'est la citation de la flèche. Déterministe,
-sans modèle ; ce qui ne se prouve pas n'est pas rendu.
+le corps de l'appelant, au commit ingéré, la ligne **qui appelle** l'appelé : c'est la citation de la flèche.
+Déterministe, sans modèle ; ce qui ne se prouve pas n'est pas rendu.
+
+Les deux outils sont interrogés en `format="json"` : la sortie texte était découpée par des expressions régulières,
+et le résolveur (`strategy`, `confidence`) était jeté — donc une arête certaine (lsp) et une arête devinée
+(heuristique) se présentaient de la même façon (plan de remédiation L0bis.2).
 """
+import json
 import re
 
 from jumeau.source_git import lire_au_sha
@@ -13,44 +18,84 @@ PROFONDEUR_MAX = 4
 MAX_NOEUDS = 15
 # Bruit d'une fonctionnalité métier : erreurs, journal, modèles de données, utilitaires de test.
 BRUIT = re.compile(r"(?:^|\.)(?:errors?|exceptions?|logging|log|tests?|conftest)(?:\.|$)", re.IGNORECASE)
-RE_LIGNE_FONCTION = re.compile(r"^\s*(\S+)\s+(?:Function|Method)\s+(\S+)\s+(\d+)-(\d+)\b")
-RE_GROUPE = re.compile(r"^(\S.*):\s*$")
-RE_APPELE = re.compile(r"^\s+(\S+)\s+(\d+)\s*$")
+
+
+def _json(sortie):
+    """Charge le JSON rendu par un outil (format="json") ; une sortie illisible est une panne, pas une donnée."""
+    try:
+        return json.loads(sortie)
+    except (TypeError, ValueError):
+        raise RuntimeError("codebase-memory-mcp : réponse non JSON alors que format=json était demandé")
 
 
 def _court(qn, projet):
     return qn[len(projet) + 1:] if qn.startswith(projet + ".") else qn
 
 
+def _fonctions(appeler, projet, nom):
+    """[(qn, chemin, début, fin)] des fonctions dont le nom court est `nom`."""
+    donnees = _json(appeler("search_graph", project=projet, name_pattern=nom, limit=20, format="json"))
+    trouves = []
+    for groupe in donnees.get("groups") or []:
+        prefixe = groupe.get("qn_prefix") or ""
+        for ligne in groupe.get("rows") or []:
+            qn = f"{prefixe}.{ligne[0]}" if prefixe else ligne[0]
+            debut, _, fin = str(ligne[2]).partition("-")
+            trouves.append((qn, groupe.get("file"), int(debut), int(fin or debut)))
+    return trouves
+
+
 def localiser(appeler, projet, qn):
     """(chemin, début, fin) de la fonction `qn` dans l'index, ou None."""
-    sortie = appeler("search_graph", project=projet, name_pattern=qn.rsplit(".", 1)[-1], limit=20)
-    for ligne in str(sortie).splitlines():
-        m = RE_LIGNE_FONCTION.match(ligne)
-        if m and m.group(1) == qn:
-            return m.group(2), int(m.group(3)), int(m.group(4))
+    for trouve_qn, chemin, debut, fin in _fonctions(appeler, projet, qn.rsplit(".", 1)[-1]):
+        if trouve_qn == qn:
+            return chemin, debut, fin
     return None
 
 
 def appeles(appeler, projet, qn):
-    """Fonctions appelées directement par `qn` (premier niveau du graphe), noms qualifiés."""
-    sortie = appeler("trace_path", project=projet, function_name=qn.rsplit(".", 1)[-1], direction="outbound", depth=1)
-    groupe, resultat = "", []
-    for ligne in str(sortie).splitlines():
-        if (g := RE_GROUPE.match(ligne)) and not ligne.startswith(" "):
-            groupe = g.group(1)
-            continue
-        if (a := RE_APPELE.match(ligne)) and a.group(2) == "1":
-            nom = a.group(1)  # à plat (« qn hop ») à profondeur 1, sous un groupe (« prefixe: ») au-delà
-            resultat.append(f"{groupe}.{nom}" if groupe and groupe != '""' else nom)
-    return [r for r in dict.fromkeys(resultat) if r != qn]
+    """Ce que `qn` appelle à un niveau : [{qn, strategy, confidence}], sans doublon, sans elle-même.
+    `strategy` dit comment le résolveur l'a établi (« lsp » certain, « heuristic » déduit) — on ne le jette plus."""
+    donnees = _json(appeler("trace_path", project=projet, function_name=qn.rsplit(".", 1)[-1],
+                            direction="outbound", depth=1, include_evidence=True, format="json"))
+    sortie = {}
+    for groupe in (donnees.get("callees") or {}).get("groups") or []:
+        prefixe = groupe.get("qn_prefix") or ""
+        for ligne in groupe.get("rows") or []:
+            nom, hop = ligne[0], int(ligne[1])
+            if hop != 1:
+                continue
+            cible = f"{prefixe}.{nom}" if prefixe else nom
+            if cible != qn and cible not in sortie:
+                sortie[cible] = {"qn": cible, "strategy": ligne[2] if len(ligne) > 2 else "",
+                                 "confidence": float(ligne[3]) if len(ligne) > 3 else None}
+    return list(sortie.values())
+
+
+_RE_COMMENTAIRES = re.compile(r"/\*[\s\S]*?\*/|<!--[\s\S]*?-->")
+_RE_CHAINES = re.compile(r'"""[\s\S]*?"""|\'\'\'[\s\S]*?\'\'\'|"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)*\'|`(?:[^`\\]|\\.)*`')
+
+
+def _masquer(lignes):
+    """Même nombre de lignes, chaînes et commentaires remplacés par des espaces : le nom d'une fonction cité dans un
+    texte ne devient jamais le fondement d'une flèche."""
+    def blanc(m):
+        return "".join("\n" if c == "\n" else " " for c in m.group(0))
+
+    contenu = "\n".join(lignes) if isinstance(lignes, list) else str(lignes)
+    return _RE_CHAINES.sub(blanc, _RE_COMMENTAIRES.sub(blanc, contenu)).split("\n")
 
 
 def ligne_d_appel(lignes, debut, fin, nom):
-    """Première ligne du corps (début–fin) qui nomme `nom` comme un appel ou une référence, ou None."""
-    motif = re.compile(rf"(?<![\w]){re.escape(nom)}(?![\w])")
+    """Première ligne du corps qui **appelle** `nom` (appel direct ou méthode), hors chaîne et hors commentaire.
+    Une mention sans appel (`x = nom`, un texte qui nomme la fonction) ne fonde rien : None, et la flèche n'est pas
+    rendue (plan de remédiation L0bis.1)."""
+    masque = _masquer(lignes)
+    mot = re.escape(nom)
+    appel = re.compile(rf"(?<![\w])(?:[\w\]\)]+\s*(?:\.|::)\s*)?{mot}\s*\(")
     for n in range(max(1, debut), min(fin, len(lignes)) + 1):
-        if motif.search(lignes[n - 1]) and not lignes[n - 1].lstrip().startswith(("#", "//", '"""', "'''")):
+        ligne = masque[n - 1]
+        if appel.search(ligne):
             return n
     return None
 
@@ -80,27 +125,37 @@ def enchainement(source, fonction, appeler, profondeur=3, max_noeuds=MAX_NOEUDS)
             continue
         trouves = []
         for appele in appeles(appeler, projet, qn):
-            court = _court(appele, projet)
+            court = _court(appele["qn"], projet)
             if BRUIT.search(court):
                 continue
-            n = ligne_d_appel(contenu, debut, fin, appele.rsplit(".", 1)[-1])
+            n = ligne_d_appel(contenu, debut, fin, appele["qn"].rsplit(".", 1)[-1])
             if n is not None:  # un appel non retrouvé dans le corps n'est pas prouvé : il n'est pas rendu
                 trouves.append((n, appele, court))
-        for n, appele, court in sorted(trouves):  # dans l'ordre du code : l'ordre d'une séquence
-            fleches.append({"de": _court(qn, projet), "vers": court, "appel": appele.rsplit(".", 1)[-1],
-                            "chemin": chemin, "ligne": n})
-            if appele not in vus and len(vus) < max_noeuds:
-                vus.add(appele)
-                file.append((appele, niveau + 1))
+        for n, appele, court in sorted(trouves, key=lambda t: t[0]):  # dans l'ordre du code : l'ordre d'une séquence
+            fleches.append({"de": _court(qn, projet), "vers": court, "appel": appele["qn"].rsplit(".", 1)[-1],
+                            "chemin": chemin, "ligne": n,
+                            # comment le résolveur a établi l'arête : « lsp » (certain) ou « heuristic » (déduit)
+                            "resolution": appele.get("strategy") or "", "confiance": appele.get("confidence")})
+            if appele["qn"] not in vus and len(vus) < max_noeuds:
+                vus.add(appele["qn"])
+                file.append((appele["qn"], niveau + 1))
     return fleches
 
 
 def _depart(appeler, projet, fonction):
     nom = fonction.rsplit(".", 1)[-1]
-    sortie = appeler("search_graph", project=projet, name_pattern=nom, limit=20)
-    candidats = [m.group(1) for l in str(sortie).splitlines() if (m := RE_LIGNE_FONCTION.match(l))]
-    exacts = [c for c in candidats if c.endswith("." + fonction) or c.rsplit(".", 1)[-1] == nom]
-    return exacts[0] if exacts else None
+    for qn, _chemin, _debut, _fin in _fonctions(appeler, projet, nom):
+        if qn.endswith("." + fonction) or qn.rsplit(".", 1)[-1] == nom:
+            return qn
+    return None
+
+
+def _resolution(fleche):
+    """Comment l'arête a été établie : une arête déduite ne se présente pas comme une arête certaine."""
+    strategie, confiance = fleche.get("resolution") or "", fleche.get("confiance")
+    if not strategie:
+        return ""
+    return f" · résolution : {strategie}" + (f" {confiance:.2f}".replace(".", ",") if isinstance(confiance, float) else "")
 
 
 def texte(fleches, source_nom=None):
@@ -108,5 +163,5 @@ def texte(fleches, source_nom=None):
     if not fleches:
         return "Aucun enchaînement prouvé depuis cette fonction (introuvable dans l'index, ou appels non retrouvés)."
     prefixe = f"{source_nom}:" if source_nom else ""
-    return "\n".join(f"{i}. {f['de']} → {f['vers']} (appel : {f['appel']}) · fondement : "
+    return "\n".join(f"{i}. {f['de']} → {f['vers']} (appel : {f['appel']}){_resolution(f)} · fondement : "
                      f"{prefixe}{f['chemin']}#L{f['ligne']}-L{f['ligne']}" for i, f in enumerate(fleches, 1))
