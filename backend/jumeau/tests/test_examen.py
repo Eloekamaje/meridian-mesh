@@ -52,8 +52,8 @@ def test_presentation_par_niveaux():
 def test_pour_aller_plus_loin_les_sept_questions():
     e = examen.depuis_connaissances({"nom": "X"}, CLAIMS, None)
     blocs = {b["cle"]: b["items"] for b in e["comprendre"]}
-    assert blocs["sert"] == [{"texte": "Gérer les dossiers", "statut": "ACCEPTED"},
-                             {"texte": "Présenter la solution", "statut": "PROPOSED"}]
+    assert blocs["sert"] == [{"texte": "Gérer les dossiers", "statut": "ACCEPTED", "verification": None},
+                             {"texte": "Présenter la solution", "statut": "PROPOSED", "verification": None}]
     assert e["presentation"]["reperes"]["responsable"] == "à confirmer"
     assert e["presentation"]["reperes"]["criticite"] == "inconnue"
 
@@ -66,3 +66,19 @@ def test_reperes_de_substance_et_code_non_lu_sans_code():
     avec = examen.depuis_connaissances({"nom": "P"}, [], FICHE)
     assert avec["presentation"]["reperes"]["substance"] == "code"
     assert {"nom": "Code", "etat": "lu", "ok": True} in avec["presentation"]["sources"]
+
+
+def test_verification_comptee_et_non_appuyee_hors_presentation():
+    def v(objet, etat):
+        return {**claim("APPLIQUE_REGLE", objet), "verification": {"etat": etat, "raison": "r"}}
+    claims = [v("A", "verifie"), v("B", "selon"), v("C", "non_appuye"), v("D", "en_partie"), claim("DEPEND_DE", "x")]
+    p = examen.depuis_connaissances({"nom": "X"}, claims, FICHE)["presentation"]
+    assert p["verification"] == {"verifie": 1, "selon": 1, "recoupe": 0, "conteste": 0, "en_partie": 1, "non_appuye": 1,
+                                 "a_verifier": 1}
+    assert p["ignore"] == ["Qui l'utilisera réellement", "Non appuyée par sa preuve : C", "Appuyée en partie seulement : D"]
+
+
+def test_a_revoir_borne():
+    claims = [{**claim("APPLIQUE_REGLE", f"R{i}"), "verification": {"etat": "non_appuye"}} for i in range(11)]
+    ignore = examen.depuis_connaissances({"nom": "X"}, claims, FICHE)["presentation"]["ignore"]
+    assert len(ignore) == 1 + examen.MAX_A_REVOIR + 1 and ignore[-1].startswith("… et 3 autre(s)")

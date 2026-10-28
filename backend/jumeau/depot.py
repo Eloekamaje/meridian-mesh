@@ -361,7 +361,10 @@ def lister_claims(conn, jumeau_id):
                       (SELECT coalesce(json_agg(json_build_object(
                           'chemin', a.chemin, 'ligne_debut', a.ligne_debut, 'ligne_fin', a.ligne_fin,
                           'raison', a.raison, 'origine', a.origine) ORDER BY a.id), '[]')
-                       FROM ancre a WHERE a.claim_id = c.id) AS ancres
+                       FROM ancre a WHERE a.claim_id = c.id) AS ancres,
+                      (SELECT json_build_object('etat', v.etat, 'methode', v.methode, 'systemes', v.systemes,
+                                                'raison', v.raison)
+                       FROM verification v WHERE v.claim_id = c.id ORDER BY v.id DESC LIMIT 1) AS verification
                FROM claim c WHERE c.jumeau_id = %s AND c.valide_jusqua IS NULL
                ORDER BY c.type, c.predicat, c.objet""",
             (jumeau_id,)).fetchall()

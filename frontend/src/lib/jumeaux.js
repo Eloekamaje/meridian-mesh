@@ -53,3 +53,22 @@ export function estEnAttention(j) {
     ["retard", "obsolete"].includes(j.fraicheur_etat)
   );
 }
+
+// Vérification d'une connaissance (Harness v3 §2), comme un journaliste montre ses sources : jamais « vrai ».
+export const ETATS_VERIFICATION = {
+  verifie: ["vérifié", "#34D399", "la ligne citée dit bien cela (contrôle automatique)"],
+  recoupe: ["recoupé", "#22D3EE", "deux sources indépendantes concordent"],
+  selon: ["selon une source", "#93C5FD", "une seule source l'appuie"],
+  conteste: ["contesté", "#F2B84B", "deux sources se contredisent"],
+  en_partie: ["en partie", "#FB923C", "un détail n'est pas appuyé"],
+  non_appuye: ["non appuyé", "#F87171", "sa preuve ne dit pas cela"],
+};
+const SYSTEMES = { git: "le code", documentation: "la documentation", confluence: "Confluence", jira: "Jira",
+  servicenow: "ServiceNow", datadog: "Datadog" };
+
+// Libellé d'un état : « selon le code », « selon Confluence »… ; null si pas encore vérifiée.
+export function libelleVerification(v) {
+  const e = v && ETATS_VERIFICATION[v.etat];
+  if (!e) return null;
+  return v.etat === "selon" && v.systemes?.length === 1 ? `selon ${SYSTEMES[v.systemes[0]] || v.systemes[0]}` : e[0];
+}

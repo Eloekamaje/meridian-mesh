@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { SealCheck, Warning, FileCode } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
+import { ETATS_VERIFICATION, libelleVerification } from "@/lib/jumeaux";
 
 // Connaissances d'un jumeau né du code, dans sa fiche (/jumeaux/:jid/revue) : chaque Claim s'ouvre sur sa preuve,
 // lue au commit ingéré de son dépôt.
@@ -150,6 +151,13 @@ function Connaissances({ jid }) {
                 <FileCode size={13} aria-hidden className="shrink-0 text-[#7C93A8]" />
                 <span className="flex-1 truncate font-code text-[#F2F6F8]">{c.objet}</span>
                 <span className={`rounded border px-1.5 font-code text-[9px] ${STATUT[c.statut] || STATUT.PROPOSED}`}>{c.statut} · {c.maturite}</span>
+                {libelleVerification(c.verification) && (
+                  <span className="rounded border px-1.5 font-code text-[9px]" data-testid={`verification-${c.id}`}
+                    style={{ color: ETATS_VERIFICATION[c.verification.etat][1], borderColor: `${ETATS_VERIFICATION[c.verification.etat][1]}66` }}
+                    title={c.verification.raison || ETATS_VERIFICATION[c.verification.etat][2]}>
+                    {libelleVerification(c.verification)}
+                  </span>
+                )}
                 <span className="w-8 text-right font-code text-[9px] text-[#7C93A8]">{Math.round((c.confiance ?? 0) * 100)}%</span>
               </button>
               {c.ancres?.map((a) => (

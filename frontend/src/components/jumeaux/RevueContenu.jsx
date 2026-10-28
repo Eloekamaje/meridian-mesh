@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import api from "@/lib/api";
-import { STRATE_LABELS, STATUTS_SOURCES, AUTONOMIE } from "@/lib/jumeaux";
+import { STRATE_LABELS, STATUTS_SOURCES, AUTONOMIE, ETATS_VERIFICATION, libelleVerification } from "@/lib/jumeaux";
 
 export function Section({ titre, items }) {
   return (
@@ -28,10 +28,15 @@ function Liste({ items, vide = "Rien d'établi pour l'instant" }) {
       {items.map((it, j) => {
         const texte = typeof it === "string" ? it : it.texte;
         const marque = MARQUE[it?.statut];
+        const verif = libelleVerification(it?.verification);
         return (
           <li key={j} className="text-[13px] text-[#CBD5E1]">
             → {texte}
             {marque && <span className="ml-1.5 font-code text-[9px]" style={{ color: marque[1] }}>{marque[0]}</span>}
+            {verif && (
+              <span className="ml-1.5 font-code text-[9px]" style={{ color: ETATS_VERIFICATION[it.verification.etat][1] }}
+                title={it.verification.raison || ETATS_VERIFICATION[it.verification.etat][2]}>{verif}</span>
+            )}
           </li>
         );
       })}
@@ -142,7 +147,21 @@ function Presentation({ examen, onTranchee }) {
             </li>
           ))}
         </ul>
-        {p.maturite && (
+        {p.verification ? (
+          <ul className="mt-2 flex flex-wrap gap-1.5" data-testid="revue-verification" aria-label="Vérification des connaissances">
+            {Object.entries(ETATS_VERIFICATION).map(([cle, [libelle, couleur, sens]]) => (
+              <li key={cle} title={sens} className="rounded-full border px-2 py-0.5 text-[11px]"
+                style={{ color: couleur, borderColor: `${couleur}66` }}>
+                {libelle} : {p.verification[cle] ?? 0}
+              </li>
+            ))}
+            {p.verification.a_verifier > 0 && (
+              <li className="rounded-full border border-[rgba(148,163,184,0.3)] px-2 py-0.5 text-[11px] text-[#7C93A8]">
+                à vérifier : {p.verification.a_verifier}
+              </li>
+            )}
+          </ul>
+        ) : p.maturite && (
           <p className="mt-2 font-code text-[11px] text-[#94A3B8]" data-testid="revue-maturite">
             Croisées par deux systèmes : {p.maturite.croisees} · Croisées et validées : {p.maturite.validees}
           </p>

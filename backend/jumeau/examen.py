@@ -18,6 +18,25 @@ def _maturite(claims):
     return {"croisees": sum(c.get("maturite") == "M3" for c in claims), "validees": sum(c.get("maturite") == "M4" for c in claims)}
 
 
+ETATS = ("verifie", "selon", "recoupe", "conteste", "en_partie", "non_appuye")
+A_REVOIR = {"non_appuye": "Non appuyée par sa preuve", "en_partie": "Appuyée en partie seulement"}
+MAX_A_REVOIR = 8
+
+
+def _verification(claims):
+    """Combien de connaissances dans chaque état de vérification (Harness v3 §2) ; « a_verifier » : pas encore vérifiées."""
+    etats = [(c.get("verification") or {}).get("etat") for c in claims]
+    return {**{e: etats.count(e) for e in ETATS}, "a_verifier": etats.count(None)}
+
+
+def _a_revoir(claims):
+    """Ce que sa preuve n'appuie pas (ou seulement en partie) ne se présente pas : c'est dans « ce que j'ignore »."""
+    lignes = [f"{A_REVOIR[e]} : {c['objet']}" for c in claims
+              if (e := (c.get("verification") or {}).get("etat")) in A_REVOIR]
+    reste = len(lignes) - MAX_A_REVOIR
+    return lignes[:MAX_A_REVOIR] + ([f"… et {reste} autre(s), dans « Pour aller plus loin »"] if reste > 0 else [])
+
+
 def _sources(claims, contradictions=(), code=True):
     chemins = {p["chemin"] for c in claims for p in c.get("preuves") or []}
     confirmees = sum(c["statut"] == "ACCEPTED" for c in claims if c["predicat"] in comprendre.PREDICATS)
@@ -43,13 +62,16 @@ def depuis_connaissances(jumeau, claims, fiche, contradictions=(), substance="co
                   for cle, titre in comprendre.PRESENTATION if cle in ("faire", "regles", "garde", "avec")],
         "sources": _sources(claims, contradictions, substance == "code"),
         "maturite": _maturite(claims),
+        "verification": _verification(claims),
         "contradictions": [{k: x.get(k) for k in ("id", "enonce", "preuve_a", "systeme_a", "preuve_b", "systeme_b")}
                            for x in contradictions],
         "ignore": f["ignore"]["puces"] + f["ignore"]["texte"]
+                  + _a_revoir(claims)
                   + [f"Contradiction à trancher : {x['enonce']} ({x['systeme_a']} contre {x['systeme_b']})" for x in contradictions],
     }
     questions = [{"cle": cle, "titre": titre,
-                  "items": [{"texte": c["objet"], "statut": c["statut"]} for c in claims if c["predicat"] == predicat]}
+                  "items": [{"texte": c["objet"], "statut": c["statut"], "verification": c.get("verification")}
+                            for c in claims if c["predicat"] == predicat]}
                  for cle, titre, predicat, _ in comprendre.QUESTIONS if predicat]
     return {"identite": {k: jumeau.get(k) for k in ("nom", "mission", "domaine")},
             "presentation": presentation, "comprendre": questions}
