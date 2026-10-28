@@ -1,6 +1,7 @@
 """Pilotage local de codebase-memory-mcp (binaire compilé depuis les sources, sans LLM ni réseau)."""
 import json
 import logging
+import re
 import threading
 import uuid
 import os
@@ -31,9 +32,33 @@ def _cle(ligne):
     return (ligne.get("chemin") or "", ligne.get("debut") or ligne.get("ligne") or 0, json.dumps(ligne, sort_keys=True, default=str))
 
 
+PREFIXE = "jum-"  # les index au format ancien (chemin absolu aplati) n'ont pas ce préfixe
+LONGUEUR_SHA = 12
+
+
+def nom_index(jumeau_id, depot, sha):
+    """Nom de l'index : dérivé de (jumeau, dépôt, commit), identique sur toute machine, sans chemin absolu."""
+    def sur(x):
+        return re.sub(r"[^a-z0-9]+", "-", str(x).lower()).strip("-") or "x"
+    return f"{PREFIXE}{sur(jumeau_id)}-{sur(depot)}-{sha[:LONGUEUR_SHA]}"
+
+
+def perime(source):
+    """Index d'un autre commit que celui ingéré ? Un index au format ancien (sans commit) n'est pas dit périmé :
+    il reste lisible jusqu'à sa réindexation."""
+    nom, sha = source.get("index_code") or "", source.get("curseur") or ""
+    return nom.startswith(PREFIXE) and not nom.endswith("-" + sha[:LONGUEUR_SHA])
+
+
+def _env():
+    """Environnement du binaire. JUMEAU_CBM_CACHE range les bases ailleurs que dans le cache par défaut."""
+    cache = os.environ.get("JUMEAU_CBM_CACHE")
+    return {**os.environ, "CBM_CACHE_DIR": cache} if cache else None
+
+
 def _cli(*args):
     binaire = os.environ.get("CBM_BIN", "codebase-memory-mcp")
-    r = subprocess.run([binaire, "cli", "--quiet", *args], capture_output=True, text=True, timeout=600)
+    r = subprocess.run([binaire, "cli", "--quiet", *args], capture_output=True, text=True, timeout=600, env=_env())
     if r.returncode != 0:
         raise RuntimeError(f"codebase-memory-mcp {args[0]} : {r.stderr.strip() or r.stdout.strip()}")
     return json.loads(r.stdout)
@@ -51,7 +76,7 @@ def _mcp():
             from mcp import StdioServerParameters, stdio_client
             from strands.tools.mcp import MCPClient
             binaire = os.environ.get("CBM_BIN", "codebase-memory-mcp")
-            c = MCPClient(lambda: stdio_client(StdioServerParameters(command=binaire, args=[])))
+            c = MCPClient(lambda: stdio_client(StdioServerParameters(command=binaire, args=[], env=_env())))
             c.start()
             _client = c
     return _client
@@ -74,16 +99,18 @@ def appeler(outil, **arguments):
 def texte(outil, *args):
     """Sortie texte (format arborescent compact) d'un outil cbm, pour un LLM."""
     binaire = os.environ.get("CBM_BIN", "codebase-memory-mcp")
-    r = subprocess.run([binaire, "cli", "--quiet", outil, *args], capture_output=True, text=True, timeout=60)
+    r = subprocess.run([binaire, "cli", "--quiet", outil, *args], capture_output=True, text=True, timeout=60,
+                       env=_env())
     if r.returncode != 0:
         raise RuntimeError(r.stderr.strip() or r.stdout.strip())
     return r.stdout
 
 
-def indexe(projet, appeler=None):
-    """L'index connaît-il ce projet ? Un index absent n'est pas une panne de modèle : l'ingestion le reconstruit
-    depuis la copie au SHA (plan de remédiation L0bis.3 et L0bis.4)."""
-    if not projet:
+def indexe(source, appeler=None):
+    """L'index de cette source répond-il pour CE commit ? Absent ou périmé : faux, l'ingestion (ou
+    `python -m jumeau.reindexer`) le reconstruit depuis la copie au SHA (plan de remédiation L0bis.3 et L0bis.4)."""
+    projet = source.get("index_code")
+    if not projet or perime(source):
         return False
     sonde = appeler or appeler_outil
     try:
@@ -98,8 +125,8 @@ def appeler_outil(outil, **arguments):
     return appeler(outil, **arguments)
 
 
-def indexer(depot):
-    return _cli("index_repository", "--repo-path", str(depot))["project"]
+def indexer(depot, nom):
+    return _cli("index_repository", "--repo-path", str(depot), "--name", nom)["project"]
 
 
 def interroger(projet):

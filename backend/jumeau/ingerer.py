@@ -58,17 +58,23 @@ def _depot_de(chemin):
     return r.stdout.strip() if r.returncode == 0 else None
 
 
+def indexer_au_sha(jumeau_id, chemin_depot, sha):
+    """Copie détachée au SHA puis index nommé d'après (jumeau, dépôt, SHA) : refait à l'identique sur toute machine."""
+    nom = Path(chemin_depot).name
+    copie = copie_au_sha(chemin_depot, sha, jumeau_id, nom)
+    return copie, cbm.indexer(copie, cbm.nom_index(jumeau_id, nom, sha))
+
+
 def ingerer(conn, jumeau, chemin_depot, origine=None):
     """Ingère un dépôt du jumeau. `origine` : branche, url, secret_ref (pour que le gardien sache le relire)."""
     sha = sha_courant(chemin_depot)
     if not sha:
         raise ValueError(f"{chemin_depot} n'est pas un dépôt Git")
-    copie = copie_au_sha(chemin_depot, sha, jumeau["id"], Path(chemin_depot).name)
-    projet = cbm.indexer(copie)
+    copie, projet = indexer_au_sha(jumeau["id"], chemin_depot, sha)
     try:
         resultats, troncature = cbm.interroger(projet)
     except RuntimeError as e:
-        # L'index vit dans le cache du binaire, indexé par chemin absolu : l'ingestion le refait, mais si sa
+        # L'index vit dans le cache du binaire, nommé d'après le commit : l'ingestion le refait, mais si sa
         # relecture échoue il faut le dire clairement (plan de remédiation L0bis.3).
         raise RuntimeError(f"index de code illisible pour {chemin_depot} (projet {projet}) : {e}. "
                            "Relancer l'ingestion reconstruit l'index depuis la copie au SHA.") from e

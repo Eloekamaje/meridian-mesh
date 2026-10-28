@@ -47,6 +47,6 @@ def test_la_sonde_d_index_absent_repond_faux_sans_lever():
 
     def en_panne(*a, **k):
         raise RuntimeError("projet inconnu")
-    assert cbm.indexe("proj", appeler=en_panne) is False
-    assert cbm.indexe("proj", appeler=lambda *a, **k: "{}") is True
-    assert cbm.indexe("") is False
+    assert cbm.indexe({"index_code": "proj"}, appeler=en_panne) is False
+    assert cbm.indexe({"index_code": "proj"}, appeler=lambda *a, **k: "{}") is True
+    assert cbm.indexe({"index_code": ""}) is False

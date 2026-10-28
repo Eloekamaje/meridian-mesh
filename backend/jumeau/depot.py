@@ -214,6 +214,11 @@ def sources_du_jumeau(conn, jumeau_id):
             "WHERE jumeau_id = %s AND type = 'GIT' ORDER BY nom", (jumeau_id,)).fetchall()
 
 
+def maj_index(conn, source_id, copie, index_code):
+    """Range la copie et l'index reconstruits d'une source, sans toucher à ses connaissances."""
+    conn.execute("UPDATE source SET copie = %s, index_code = %s WHERE id = %s", (str(copie), index_code, source_id))
+
+
 def ci_du_jumeau(conn, jumeau_id):
     """Ancre d'identité : l'élément de configuration de la CMDB (périmètre de sa source ServiceNow), ou None."""
     r = conn.execute("SELECT emplacement FROM source WHERE jumeau_id = %s AND type = 'SERVICENOW' ORDER BY id LIMIT 1",

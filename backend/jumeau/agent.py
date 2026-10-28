@@ -224,7 +224,7 @@ def outils(ctx, dsn, nom_modele, budget):
                 # et l'interlocuteur doit pouvoir le dire (plan de remédiation L0bis.4).
                 sortie = ("L'index de code de ce dépôt n'est pas disponible : ses connaissances ne sont pas "
                           "reconstruites. Il se refait à la prochaine ingestion (le gardien le reconstruit)."
-                          if not cbm.indexe(s.get("index_code")) else "Outil indisponible pour ce dépôt.")
+                          if not cbm.indexe(s) else "Outil indisponible pour ce dépôt.")
             parties.append(sortie if len(sources) == 1 else f"### dépôt {s['nom']}\n{sortie}")
         return nettoyer("\n\n".join(parties), "", "")
 
