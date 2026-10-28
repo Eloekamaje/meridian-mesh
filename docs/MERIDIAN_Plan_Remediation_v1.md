@@ -56,11 +56,11 @@ Deux règles gouvernent tout ce plan :
 | **1bis — La compréhension** | **fait, un point refusé** | `jumeau/tests/test_prouvables.py` (4 tests) |
 | L1bis.1 extracteur `cross_service` | **non fait, mesuré** | voir §2bis : **aucun** appel HTTP sortant vers une application nommée dans les quatre dépôts ; le mode `cross_service` de l'index rend la même liste que `calls` |
 | L1bis.2 prédicats non prouvables | fait | règle d'autorité : une phrase sur le métier prouvée **uniquement par du code** reste M1. Base réelle : **398 faits établis, 148 hypothèses** (APPLIQUE_REGLE 45, REALISE_CAPACITE 33, DETIENT 28, SERT_ACTEUR 26, ECHANGE_AVEC 15, RISQUE 1) |
-| **2 — Démonstration** | **fait, deux points partiels** | suite `jumeau` avec Postgres : **552 passés, 0 échec** |
+| **2 — Démonstration** | **fait, un point partiel** | suite `jumeau` avec Postgres : **552 passés, 0 échec** |
 | L2.1 deux univers distincts | fait | l'API porte `origine: reel \| demonstration` ; l'Atlas cercle en pointillé les jumeaux de démonstration ; la page Jumeaux a la vue « Nés d'une vraie source » |
 | L2.2 vérité de référence | fait | `jumeau/references/<jumeau>.json` ; 5 couples pour Conduit, écrits à la main. L'exactitude n'est plus `null` dès qu'un jumeau a ses références |
 | L2.3 chiffres inventés | fait | aucun indicateur d'un chemin non calculé n'est affiché (`origine.ORIGINES_SANS_MESURE`) ; la couverture de situation du gardien ne ment plus |
-| L2.4 banc publié | **partiel** | le premier mot est chronométré dans **tous** les chemins et le banc l'imprime (p50) ; **reste** : le relevé daté, qui demande de lancer le banc (appels payants) |
+| L2.4 banc publié | fait | le banc passe par le chemin de l'écran et chronomètre le premier mot ; relevé daté dans `MERIDIAN_Latence_2026-10-28.md` (1 question sur 4 tient l'objectif, aucune réponse complète sous 5 s) |
 | L2.5 connecteurs | fait | 6 branchés, 6 refusés explicitement (`non_branche`) ; le catalogue expose `branche` |
 | L2.6 découverte des sources | fait | la liste écrite d'avance est retirée : la découverte se déclare `non_branchee` |
 | L2.7 couverture calculée | fait | part de ce qui est **établi** : Conduit 49 %, Gestion des articles 83 %, Méridian 76 % — au lieu de 32 % pour tous |

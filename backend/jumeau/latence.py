@@ -25,6 +25,15 @@ OBJECTIFS = {"simple": 2.0, "analyse": 5.0}
 NOMS = {"conduit": "Conduit", "gestion-des-articles": "Gestion des articles", "meridian": "Méridian Mesh"}
 
 
+async def _sans_affichage(_evenement):
+    """Le banc consomme les événements au fil de l'eau sans les afficher.
+
+    Il faut passer par ce chemin : c'est celui de l'écran, et c'est le seul où Flore chronomètre son premier mot.
+    Sans lui, le banc ne mesurait que la fin de la réponse — donc jamais la latence ressentie (L2.4).
+    """
+    return None
+
+
 async def mesurer(jumeaux, question):
     """Comme le serveur : une application sélectionnée, sinon celle que la question nomme, sinon l'orchestration."""
     visibles = jumeaux if isinstance(jumeaux, list) else list(NOMS)
@@ -32,9 +41,9 @@ async def mesurer(jumeaux, question):
         question, [{"id": j, "nom": NOMS.get(j, j)} for j in visibles])
     acteur = f"banc-latence-{uuid.uuid4().hex[:8]}"  # fil vierge : sans mémoire d'une mesure précédente
     if cible:
-        r = await flore.repondre(cible[0], question, acteur)
+        r = await flore.repondre(cible[0], question, acteur, emit=_sans_affichage)
     else:
-        r = await flore.mobiliser(visibles, question, acteur)
+        r = await flore.mobiliser(visibles, question, acteur, emit=_sans_affichage)
     return {**((r or {}).get("durees") or {}), "schema": "```mermaid" in (r or {}).get("reponse", "")}
 
 

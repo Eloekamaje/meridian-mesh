@@ -59,7 +59,7 @@ conséquence, et il faut lire ceux-ci :
 | Recoupement | un mot du juge | **déterministe** quand une recette s'applique ; sinon l'observation « tel système ne nomme pas l'énoncé » accompagne le verdict |
 | Couverture d'un jumeau | 32 % pour tous | **49 % / 83 % / 76 %** (part de ce qui est établi) |
 | Connecteurs réellement branchés | 12 affichés, 7 simulés | **6 branchés**, 6 déclarés non branchés |
-| Latence du premier mot | citée à 2 s, jamais mesurée | **mesurée** partout (`durees.premier_texte`), aucun chiffre publié sans relevé |
+| Latence du premier mot | citée à 2 s, jamais mesurée | **mesurée** ; relevé du 2026-10-28 : 1,5 / 3,3 / 10,2 / 0,8 s, une question sur quatre sous l'objectif |
 
 Une phrase du présent document était donc trop optimiste : « 5 connaissances sont recoupées pour de vrai ». Il n'y
 en a plus aucune : le seul chemin vers M3 est désormais une source **d'un autre type**, et aucune n'est branchée.
@@ -86,7 +86,7 @@ Légende de l'écart : 🔴 bloque la vision · 🟠 limite fortement · 🟢 en
 | 7 | **Faire émerger, sans qu'on demande** | Glean et Rovo poussent des réponses et des agents dans le flux de travail (rapporté) [G1][R1] | Le gardien publie des situations sur un changement de code ; pas d'opportunité, pas d'anomalie d'exploitation réelle (Datadog non branché) | 🔴 |
 | 8 | **Mémoire et apprentissage** | Claude Code : `CLAUDE.md` et mémoire relus à chaque session, compétences chargées à la demande [A1] | Connaissances et consignes d'équipe (sans interface) ; **ni retour d'usage qui améliore les réponses, ni mémoire des décisions et de leurs effets** (Learning Model) | 🔴 |
 | 9 | **Rendu riche** | Artifacts de Claude dans un cadre isolé sur une autre origine [D1] ; Google Code Wiki régénère ses diagrammes à chaque changement [C4] | Schémas Mermaid prouvés, scènes sur l'Atlas ; ni page libre isolée, ni schéma préparé d'avance | 🟢 |
-| 10 | **Vitesse perçue** | Réponse diffusée au fil de l'eau, outils visibles en direct | Diffusion réelle, mais **aucune mesure fiable** : le premier mot est horodaté depuis le 2026-10-28, et la seule mesure persistée donne 17,4 s de moyenne (objectif NFR < 5 s) | 🟠 |
+| 10 | **Vitesse perçue** | Réponse diffusée au fil de l'eau, outils visibles en direct | Diffusion réelle et **mesurée depuis le 2026-10-28** : premier mot 1,5 · 3,3 · 10,2 · 0,8 s ; réponse complète 6 à 21 s (objectif NFR < 5 s). Voir `MERIDIAN_Latence_2026-10-28.md` | 🟠 |
 
 Quatre capacités transversales complètent la grille :
 
