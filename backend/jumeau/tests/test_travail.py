@@ -114,3 +114,33 @@ def test_planifier_n_ecrase_pas_une_question_ajoutee_entre_temps_et_borne_les_et
         textes = [q["texte"] for q in c["questions"]]
         assert "Ajoutée par l'équipe" in textes and len(textes) == 2 + EcritureTravail.MAX_ETAPES
     avec_travail(test)
+
+
+def _msgs(n):
+    return [{"role": "user", "texte": "m"}] * n
+
+
+def test_rappel_quand_le_plan_n_a_pas_bouge_depuis_plusieurs_echanges():
+    plan = [{"texte": "A", "resolue": False}]
+    base = {"titre": "T", "questions": plan, "plan_au_message": 2}
+    assert "n'a pas bougé depuis 4 échanges" in etat_texte({**base, "conversation": _msgs(10)})
+    assert "Rappel" not in etat_texte({**base, "conversation": _msgs(6)})
+    assert "Rappel" not in etat_texte({"titre": "T", "questions": plan, "conversation": _msgs(10)})
+    fini = [{"texte": "A", "resolue": True}]
+    assert "Rappel" not in etat_texte({**base, "questions": fini, "conversation": _msgs(10)})
+
+
+def test_rappel_de_planifier_quand_plusieurs_echanges_sans_plan():
+    assert "Pas encore de plan" in etat_texte({"titre": "T", "conversation": _msgs(4)})
+    assert "Pas encore de plan" not in etat_texte({"titre": "T", "conversation": _msgs(2)})
+
+
+def test_planifier_et_lever_une_etape_enregistrent_la_position_dans_la_conversation():
+    async def test(e, db):
+        await db.cases.update_one({"id": "t1"}, {"$set": {"conversation": _msgs(4)}})
+        await e.planifier(["Étape A"], "")
+        assert (await e.etat())["plan_au_message"] == 4
+        await db.cases.update_one({"id": "t1"}, {"$set": {"conversation": _msgs(8)}})
+        await e.resoudre("Étape A")
+        assert (await e.etat())["plan_au_message"] == 8
+    avec_travail(test)

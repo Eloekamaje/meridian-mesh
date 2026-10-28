@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 
 RISQUES = ("faible", "moyen", "eleve")
 MAX_TITRE, MAX_TEXTE, MAX_CONTENU = 120, 1000, 4000
+ECHANGES_AVANT_RAPPEL = 3  # un échange = question + réponse, soit 2 messages de la conversation
+ECHANGES_SANS_PLAN = 2
 
 
 def _texte(valeur, limite):
@@ -38,22 +40,25 @@ class EcritureTravail:
 
     async def planifier(self, etapes, prochaine_etape):
         """Ajoute les étapes (questions à lever) absentes, sans toucher aux existantes, résolues ou non."""
-        connues = {q["texte"] for q in (await self.etat()).get("questions", [])}
+        case = await self.etat()
+        connues = {q["texte"] for q in case.get("questions", [])}
         nouvelles = []
         for texte in (_texte(e, MAX_TEXTE) for e in etapes[:self.MAX_ETAPES]):
             if texte not in connues:
                 connues.add(texte)
                 nouvelles.append({"texte": texte, "resolue": False})
         modification = {"$push": {"questions": {"$each": nouvelles}}} if nouvelles else {}
+        modification["$set"] = {"plan_au_message": len(case.get("conversation", []))}
         if prochaine_etape and prochaine_etape.strip():
-            modification["$set"] = {"prochaine_etape": prochaine_etape.strip()[:MAX_TEXTE]}
+            modification["$set"]["prochaine_etape"] = prochaine_etape.strip()[:MAX_TEXTE]
         await self._ecrire(modification, f"Plan mis à jour par Flore — {len(nouvelles)} étape(s) ajoutée(s)")
 
     async def resoudre(self, etape):
         r = await self.db.cases.update_one({"id": self.cid, "questions.texte": etape},
                                            {"$set": {"questions.$.resolue": True}})
         if r.modified_count:
-            await self._ecrire({}, f"Étape levée par Flore — {etape[:80]}")
+            nb = len((await self.etat()).get("conversation", []))
+            await self._ecrire({"$set": {"plan_au_message": nb}}, f"Étape levée par Flore — {etape[:80]}")
         return bool(r.matched_count)
 
     async def _ajouter(self, liste, cle, element, trace):
@@ -96,6 +101,22 @@ def _identifiant(prefixe):
     return f"{prefixe}-{uuid.uuid4().hex[:8]}"
 
 
+def _rappel_plan(case, plan):
+    """Rappel du harness : plan oublié (aucune étape levée ou ajoutée depuis un moment) ou absent."""
+    nb = len(case.get("conversation") or [])
+    if not plan:
+        if nb // 2 >= ECHANGES_SANS_PLAN:
+            return ["Pas encore de plan : si la demande demande plusieurs étapes, planifiez-la (planifier)."]
+        return []
+    if all(q.get("resolue") for q in plan) or case.get("plan_au_message") is None:
+        return []
+    immobile = (nb - case["plan_au_message"]) // 2
+    if immobile >= ECHANGES_AVANT_RAPPEL:
+        return [f"Rappel : le plan n'a pas bougé depuis {immobile} échanges ; "
+                "levez les étapes faites (lever_etape) ou dites ce qui bloque."]
+    return []
+
+
 def etat_texte(case):
     """État du Travail pour le contexte de Flore : objectif, plan, hypothèses, options, livrables."""
     lignes = [f"Travail : {case.get('titre', '')}", f"Objectif : {case.get('objectif') or 'non précisé'}"]
@@ -113,4 +134,5 @@ def etat_texte(case):
                 e[champ] + (f" ({e['statut']})" if e.get("statut") else "") for e in elements))
     if case.get("resume"):
         lignes.append(f"Résumé actuel : {case['resume']}")
+    lignes += _rappel_plan(case, plan)
     return "\n".join(lignes)

@@ -4,6 +4,7 @@ description: On demande ce qui se passe si l'application change, tombe ou si une
 ---
 # Évaluer l'impact d'un changement ou d'une panne
 
+0. Dans un Travail, commencez par planifier (planifier) : une étape par point ci-dessous.
 1. Reformulez le changement envisagé en une phrase.
 2. Ce qui dépend de l'élément touché : tracer_appels (sens inbound) et mes_connaissances. Regroupez par
    usage métier plutôt que par fonction technique.
@@ -12,3 +13,4 @@ description: On demande ce qui se passe si l'application change, tombe ou si une
 5. Ce que le code ne permet pas de savoir (trafic réel, utilisateurs touchés, autres applications
    appelantes) et la source qui le dirait (exploitation, équipe, autres jumeaux).
 6. Une recommandation prudente, présentée comme une piste à valider par l'équipe.
+7. Levez chaque étape faite avec lever_etape, une ligne chacune.

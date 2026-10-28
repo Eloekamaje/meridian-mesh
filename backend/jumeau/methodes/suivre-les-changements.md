@@ -4,6 +4,7 @@ description: On demande ce qui a changé dans l'application, depuis quand, pourq
 ---
 # Suivre les changements de l'application
 
+0. Dans un Travail, commencez par planifier (planifier) : période, changements, risques, synthèse.
 1. Fixez la période : la date donnée par l'interlocuteur, sinon les trente derniers jours (calculez la date).
 2. ce_qui_a_change(depuis) : commits, connaissances apparues et disparues.
 3. Regroupez les changements par effet métier (nouveau service, service retiré, nouvelle dépendance, règle
@@ -15,3 +16,4 @@ description: On demande ce qui a changé dans l'application, depuis quand, pourq
    vous la demande.
 7. Ce que l'historique ne dit pas (déploiement réel, date de mise en production, utilisateurs touchés) et qui
    peut le dire (exploitation, équipe).
+7. Levez chaque étape faite avec lever_etape, une ligne chacune.
