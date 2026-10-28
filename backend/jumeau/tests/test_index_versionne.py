@@ -120,3 +120,34 @@ def test_binaire_reel_deux_caches_neufs_donnent_le_meme_nom(depot_git, tmp_path,
         assert (tmp_path / cache / f"{noms[-1]}.db").exists()
         assert cbm.perime({"index_code": noms[-1], "curseur": sha}) is False
     assert noms[0] == noms[1]
+
+
+# --- Un commit n'ajoute pas un index de plus : l'ancien de la même source est retiré ---------------------------
+
+def test_retirer_ancien_ne_touche_que_nos_index_et_jamais_l_actuel(monkeypatch):
+    appels = []
+    monkeypatch.setattr(cbm.subprocess, "run", lambda args, **k: appels.append(args[-1]) or
+                        subprocess.CompletedProcess(args, 0, "", ""))
+    assert cbm.retirer_ancien("jum-tbt-api-aaaaaaaaaaaa", "jum-tbt-api-bbbbbbbbbbbb") is True
+    assert not cbm.retirer_ancien("jum-tbt-api-bbbbbbbbbbbb", "jum-tbt-api-bbbbbbbbbbbb")  # l'actuel
+    assert not cbm.retirer_ancien("home-majella-Documents-projet", "jum-x")  # pas un index de jumeau
+    assert not cbm.retirer_ancien(None, "jum-x")
+    assert appels == ['{"project": "jum-tbt-api-aaaaaaaaaaaa"}']
+
+
+def test_retirer_ancien_un_echec_n_est_pas_fatal(monkeypatch):
+    monkeypatch.setattr(cbm.subprocess, "run", lambda args, **k: subprocess.CompletedProcess(args, 1, "", "verrou"))
+    assert cbm.retirer_ancien("jum-tbt-api-aaaaaaaaaaaa", "jum-tbt-api-bbbbbbbbbbbb") is False
+
+
+@besoin_pg
+def test_la_reingestion_retire_l_index_du_commit_precedent(jumeau_ingere, monkeypatch):
+    conn, depot_git, appels = jumeau_ingere
+    retires = []
+    monkeypatch.setattr(cbm, "retirer_ancien", lambda ancien, actuel: retires.append((ancien, actuel)))
+    (depot_git / "nouveau.txt").write_text("x\n")
+    subprocess.run(["git", "-C", str(depot_git), "add", "."], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(depot_git), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "suite"],
+                   check=True, capture_output=True)
+    ingerer.ingerer(conn, JUMEAU, depot_git)
+    assert retires == [(appels[0], appels[1])] and appels[0] != appels[1]

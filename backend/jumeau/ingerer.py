@@ -70,6 +70,7 @@ def ingerer(conn, jumeau, chemin_depot, origine=None):
     sha = sha_courant(chemin_depot)
     if not sha:
         raise ValueError(f"{chemin_depot} n'est pas un dépôt Git")
+    precedent = (depot.source_du_jumeau(conn, jumeau["id"], Path(chemin_depot).name) or {}).get("index_code")
     copie, projet = indexer_au_sha(jumeau["id"], chemin_depot, sha)
     try:
         resultats, troncature = cbm.interroger(projet)
@@ -89,6 +90,7 @@ def ingerer(conn, jumeau, chemin_depot, origine=None):
               "copie": str(copie), "index_code": projet, "branche": branche_courante(chemin_depot), "troncature": troncature or None, **(origine or {})}
     depot.appliquer_schema(conn)
     depot.enregistrer(conn, jumeau, source, claims, {**ACTIVITE, "sha": sha})
+    cbm.retirer_ancien(precedent, projet)  # une fois le nouvel index enregistré, et seulement alors
     return {"sha": sha, "observations": bruts, "claims": len(claims), "troncature": troncature}
 
 

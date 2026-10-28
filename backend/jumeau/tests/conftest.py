@@ -1,4 +1,5 @@
 """Fixtures partagées : une base Postgres jetable (un schéma par test) et un dépôt Git jetable."""
+import json
 import os
 import subprocess
 import uuid
@@ -47,3 +48,16 @@ def depot_git(tmp_path):
     git("add", ".")
     git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init")
     return tmp_path
+
+
+@pytest.fixture
+def index_jetables(monkeypatch):
+    """Un test qui indexe avec le vrai binaire supprime ses index à la fin : ils vivent dans le cache réel de
+    codebase-memory, celui que Flore interroge (constaté : 16 index de test accumulés)."""
+    from jumeau import cbm
+    crees, vrai = [], cbm.indexer
+    monkeypatch.setattr(cbm, "indexer", lambda depot, nom: crees.append(vrai(depot, nom)) or crees[-1])
+    yield crees
+    for projet in crees:
+        subprocess.run([os.environ.get("CBM_BIN", "codebase-memory-mcp"), "cli", "--quiet", "delete_project",
+                        json.dumps({"project": projet})], capture_output=True, text=True, timeout=120)

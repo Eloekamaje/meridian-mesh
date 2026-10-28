@@ -83,7 +83,7 @@ def test_cloner_puis_mettre_a_jour(depot_distant, tmp_path):
 
 @besoin_pg
 @pytest.mark.skipif(not os.environ.get("MONGO_URL") or not os.environ.get("CBM_BIN"), reason="Mongo et cbm requis")
-def test_naissance_complete_depuis_une_commande(conn, depot_distant, tmp_path, monkeypatch):
+def test_naissance_complete_depuis_une_commande(conn, depot_distant, tmp_path, monkeypatch, index_jetables):
     from motor.motor_asyncio import AsyncIOMotorClient
     from jumeau import cbm, ingerer
     monkeypatch.setattr(ingerer, "COPIES", tmp_path / "copies")
@@ -187,7 +187,7 @@ def depot_nu(tmp_path, nom, branche, fichiers):
 
 @besoin_pg
 @pytest.mark.skipif(not os.environ.get("MONGO_URL") or not os.environ.get("CBM_BIN"), reason="Mongo et cbm requis")
-def test_naissance_puis_veille_avec_deux_depots_sur_deux_branches(conn, tmp_path, monkeypatch):
+def test_naissance_puis_veille_avec_deux_depots_sur_deux_branches(conn, tmp_path, monkeypatch, index_jetables):
     from motor.motor_asyncio import AsyncIOMotorClient
     from jumeau import cbm, gardien, ingerer
     monkeypatch.setattr(ingerer, "COPIES", tmp_path / "copies")

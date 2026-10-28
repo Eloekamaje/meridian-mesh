@@ -72,7 +72,7 @@ def test_connaissances_courantes_en_couples(conn):
 
 @besoin_pg
 @pytest.mark.skipif(not os.environ.get("MONGO_URL") or not os.environ.get("CBM_BIN"), reason="Mongo et cbm requis")
-def test_bout_en_bout_un_commit_devient_une_situation_dans_aujourd_hui(conn, tmp_path, monkeypatch):
+def test_bout_en_bout_un_commit_devient_une_situation_dans_aujourd_hui(conn, tmp_path, monkeypatch, index_jetables):
     from motor.motor_asyncio import AsyncIOMotorClient
     from jumeau import cbm, ingerer
 

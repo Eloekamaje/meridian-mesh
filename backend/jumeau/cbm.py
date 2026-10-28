@@ -125,6 +125,23 @@ def appeler_outil(outil, **arguments):
     return appeler(outil, **arguments)
 
 
+def retirer_ancien(ancien, actuel):
+    """Après qu'un nouvel index a été enregistré : supprime l'index précédent de la même source, pour que chaque
+    commit n'en laisse pas un de plus dans le cache. Seuls nos index (préfixe jum-) sont touchés ; un échec est
+    journalisé, jamais fatal (l'ancien index ne sert plus, il prend seulement de la place)."""
+    if not ancien or ancien == actuel or not ancien.startswith(PREFIXE):
+        return False
+    try:
+        r = subprocess.run([os.environ.get("CBM_BIN", "codebase-memory-mcp"), "cli", "--quiet", "delete_project",
+                            json.dumps({"project": ancien})], capture_output=True, text=True, timeout=120, env=_env())
+    except (OSError, subprocess.TimeoutExpired):
+        journal.warning("index %s non supprimé (binaire injoignable)", ancien, exc_info=True)
+        return False
+    if r.returncode != 0:
+        journal.warning("index %s non supprimé : %s", ancien, (r.stderr or r.stdout).strip()[:200])
+    return r.returncode == 0
+
+
 def indexer(depot, nom):
     return _cli("index_repository", "--repo-path", str(depot), "--name", nom)["project"]
 

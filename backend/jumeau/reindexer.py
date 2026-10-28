@@ -23,6 +23,7 @@ def reindexer(conn, jumeau_id):
             continue  # déjà à jour pour ce commit
         copie, projet = indexer_au_sha(jumeau_id, s["emplacement"], s["curseur"])
         depot.maj_index(conn, s["id"], copie, projet)
+        cbm.retirer_ancien(s["index_code"], projet)
         refaits.append(s["nom"])
     return refaits
 
