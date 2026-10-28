@@ -35,6 +35,9 @@ import { useContexte } from "@/lib/contexte";
 import { couleurDomaine } from "@/lib/domaines";
 import { CREATION_TRAVAIL_ACTIVE, FLORE_REPONSE_EN_CONSTRUCTION, PROPOSITION_DEMO } from "@/lib/messagesFlore";
 import FloreActivite, { delaiMin, activiteTerminee } from "@/components/FloreActivite";
+import BrouillonFlore from "@/components/BrouillonFlore";
+import MarqueRelecture from "@/components/MarqueRelecture";
+import { demanderEnFlux } from "@/lib/fluxFlore";
 import LigneActiviteFlore from "@/components/LigneActiviteFlore";
 import IndicateurClic from "@/components/IndicateurClic";
 import { usePilotage } from "@/lib/pilotage";
@@ -480,6 +483,7 @@ export default function OngletTravail({
   const documentGenereTexte = messageDocument?.documentTexte || null;
   const [nouveauMsg, setNouveauMsg] = useState("");
   const [envoiMsg, setEnvoiMsg] = useState(false);
+  const [fluxMsg, setFluxMsg] = useState(null); // réponse en cours : vraies étapes, brouillon (en relecture)
   // Rubriques du volet (Résultats, Sources & Jumeaux) : chacune se plie et se déplie.
   // Dès qu'un document existe, le volet apparaît avec ses deux rubriques pliées par défaut —
   // il annonce simplement qu'il y a quelque chose à consulter, sans s'imposer déjà ouvert.
@@ -676,9 +680,27 @@ export default function OngletTravail({
         idTravail = c.id;
         travailNe = c;
       }
-      const { data } = await delaiMin(api.post(`/cases/${idTravail}/messages`, { texte: q }));
+      const etapes = [];
+      setFluxMsg({ etapes: [], brouillon: "", relecture: false });
+      let data, auFilDeLEau = true;
+      try {
+        data = await demanderEnFlux(`/cases/${idTravail}/messages/flux`, { texte: q }, {
+          onEtape: (l) => { etapes.push(l); setFluxMsg((f) => f && { ...f, etapes: [...etapes] }); },
+          onTexte: (d) => setFluxMsg((f) => f && { ...f, brouillon: f.brouillon + d }),
+          onRelecture: () => setFluxMsg((f) => f && { ...f, relecture: true }),
+        });
+      } catch (err) {
+        if (err.annoncee) throw err;
+        auFilDeLEau = false; // flux impossible (proxy, ancien serveur) : la réponse arrive d'un bloc
+        ({ data } = await api.post(`/cases/${idTravail}/messages`, { texte: q }));
+      }
+      // L'activité est la vraie (outils appelés) ; un texte déjà vu au fil de l'eau ne se réécrit pas.
+      const activite = etapes.length
+        ? { id: `fin-${Date.now()}`, status: "done", ops: etapes.map((label) => ({ label, status: "done" })) }
+        : activiteTerminee("travail");
+      const reponseFlore = { ...data.flore, anime: !auFilDeLEau, _activite: activite };
       if (travailNe) {
-        setCas({ ...travailNe, conversation: [data.utilisateur, { ...data.flore, anime: true, _activite: activiteTerminee("travail") }] });
+        setCas({ ...travailNe, conversation: [data.utilisateur, reponseFlore] });
         navigate(`/travaux/${idTravail}`, { replace: true, state: { continuite: true } });
         rafraichirEtat(idTravail);
         return;
@@ -687,7 +709,7 @@ export default function OngletTravail({
         ...c,
         // `anime: true` seulement ici, sur la réponse qu'on vient de recevoir en direct — jamais sur
         // l'historique chargé au montage, qui doit rester affiché d'un bloc (voir useDeroule)
-        conversation: [...avant, data.utilisateur, { ...data.flore, anime: true, _activite: activiteTerminee("travail") }],
+        conversation: [...avant, data.utilisateur, reponseFlore],
       }));
       rafraichirEtat(idTravail);
     } catch {
@@ -696,6 +718,7 @@ export default function OngletTravail({
       toast.error(brouillon ? "Création du travail impossible" : "Message impossible");
     } finally {
       setEnvoiMsg(false);
+      setFluxMsg(null);
     }
   };
 
@@ -1138,6 +1161,7 @@ export default function OngletTravail({
                     <LigneActiviteFlore key={a.id} activite={a} testid={`travail-activite-${a.id}`} />
                   ))}
                 {m._activite && <LigneActiviteFlore activite={m._activite} testid={`travail-activite-msg-${i}`} />}
+                {m.role === "flore" && <MarqueRelecture data={m} />}
               </div>
             ))}
 
@@ -1158,7 +1182,8 @@ export default function OngletTravail({
               </div>
             )}
 
-            {envoiMsg && <FloreActivite genre="travail" testid="case-msg-attente" />}
+            {envoiMsg && (fluxMsg ? <BrouillonFlore flux={fluxMsg} testid="case-msg-brouillon" />
+              : <FloreActivite genre="travail" testid="case-msg-attente" />)}
             <div ref={finFilRef} />
           </div>
         </div>

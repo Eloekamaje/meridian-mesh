@@ -7,7 +7,10 @@ import api from "@/lib/api";
 import TrustBadges from "./TrustBadges";
 import SchemaMermaid from "./SchemaMermaid";
 import { decouperMermaid } from "@/lib/segmentsMermaid";
-import FloreActivite, { delaiMin } from "./FloreActivite";
+import { demanderEnFlux } from "@/lib/fluxFlore";
+import BrouillonFlore from "./BrouillonFlore";
+import MarqueRelecture from "./MarqueRelecture";
+import FloreActivite from "./FloreActivite";
 import { couleurDomaine } from "@/lib/domaines";
 import { useContexte } from "@/lib/contexte";
 import { useMesh } from "@/lib/mesh";
@@ -146,7 +149,8 @@ function CarteReponse({ data, index, propsEtat, setPropsEtat, justifOuverte, set
             </span>
           )}
         </div>
-        <TexteTeletype texte={data.reponse} actif={derniere} gele={!!pilote?.enPause} testid={`flore-texte-${index}`} />
+        <TexteTeletype texte={data.reponse} actif={derniere && !data.auFilDeLEau} gele={!!pilote?.enPause} testid={`flore-texte-${index}`} />
+        <MarqueRelecture data={data} />
 
         {/* Fiches d'initiatives métier : l'item de droit affiché directement au gestionnaire */}
         {aInitiatives && (
@@ -293,7 +297,8 @@ function CarteReponse({ data, index, propsEtat, setPropsEtat, justifOuverte, set
         )}
       </div>
 
-      <TexteTeletype texte={data.reponse} actif={derniere} gele={!!pilote?.enPause} testid={`flore-texte-${index}`} />
+      <TexteTeletype texte={data.reponse} actif={derniere && !data.auFilDeLEau} gele={!!pilote?.enPause} testid={`flore-texte-${index}`} />
+        <MarqueRelecture data={data} />
 
       {data.propositions?.some((_, pi) => !propsEtat[`${index}-${pi}`]) && (
         <div className="mt-3" data-testid={`flore-propositions-${index}`}>
@@ -438,6 +443,7 @@ export default function FlorePanel() {
   const [question, setQuestion] = useState("");
   const [echanges, setEchanges] = useState([]);
   const [chargement, setChargement] = useState(false);
+  const [flux, setFlux] = useState(null); // réponse en cours : vraies étapes, brouillon (en relecture)
   const [suggestions, setSuggestions] = useState([]);
   const [propsEtat, setPropsEtat] = useState({});
   const [justifOuverte, setJustifOuverte] = useState(null);
@@ -529,15 +535,31 @@ export default function FlorePanel() {
     if (!finale || chargement) return;
     setChargement(true);
     setQuestion("");
+    const corps = { contexte, question: finale, selection, domaine: domaineSel };
+    const etapes = [];
+    setFlux({ question: finale, etapes: [], brouillon: "", relecture: false });
     try {
-      const { data } = await delaiMin(api.post("/aurora/demander", { contexte, question: finale, selection, domaine: domaineSel }));
-      setEchanges((e) => [...e, { question: finale, data }]);
+      let data;
+      try {
+        data = await demanderEnFlux("/aurora/demander/flux", corps, {
+          onEtape: (l) => { etapes.push(l); setFlux((f) => f && { ...f, etapes: [...etapes] }); },
+          onTexte: (d) => setFlux((f) => f && { ...f, brouillon: f.brouillon + d }),
+          onRelecture: () => setFlux((f) => f && { ...f, relecture: true }),
+        });
+        data = { ...data, auFilDeLEau: true };
+      } catch (err) {
+        if (err.annoncee) throw err;
+        ({ data } = await api.post("/aurora/demander", corps)); // flux impossible (proxy, ancien serveur) : d'un bloc
+      }
+      const trace = etapes.length ? { id: `trace-${Date.now()}`, status: "done", ops: etapes.map((label) => ({ label, status: "done" })) } : null;
+      setEchanges((e) => [...e, { question: finale, data, trace }]);
       setJustifOuverte(null);
       if (data.commande_carte) commanderCarte(data.commande_carte);
     } catch {
       setEchanges((e) => [...e, { question: finale, data: { reponse: "Flore est momentanément injoignable.", contributions: [], preuves: [], indicateurs: null } }]);
     } finally {
       setChargement(false);
+      setFlux(null);
     }
   };
 
@@ -840,6 +862,7 @@ export default function FlorePanel() {
                 <p className="text-sm leading-relaxed text-[#F2F6F8]">{e.question}</p>
               </div>
             )}
+            {e.trace && <LigneActiviteFlore activite={e.trace} testid={`flore-activite-trace-${i}`} />}
             {e.data && (
               <CarteReponse
                 data={e.data} index={i} derniere={i === idxDerniereReponse}
@@ -852,7 +875,15 @@ export default function FlorePanel() {
           )
           )
         )}
-        {chargement && (
+        {chargement && flux && (
+          <div className="space-y-2 px-1" data-testid="flore-chargement">
+            <div className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-sm border border-[#60A5FA]/30 bg-[#60A5FA]/10 px-4 py-2.5">
+              <p className="text-sm leading-relaxed text-[#F2F6F8]">{flux.question}</p>
+            </div>
+            <BrouillonFlore flux={flux} />
+          </div>
+        )}
+        {chargement && !flux && (
           <div className="px-1" data-testid="flore-chargement">
             <FloreActivite testid="flore-chargement-activite" />
           </div>

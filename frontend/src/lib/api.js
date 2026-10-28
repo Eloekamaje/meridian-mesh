@@ -6,12 +6,17 @@ const api = axios.create({
   baseURL: `${process.env.REACT_APP_BACKEND_URL || ""}/api`,
 });
 
-api.interceptors.request.use((config) => {
-  config.headers["X-Persona"] = localStorage.getItem("meridian.persona") || "architecte";
+// Qui demande et dans quel périmètre : partagé par axios et par les réponses au fil de l'eau (fetch).
+export function entetesPerimetre() {
   const cible = localStorage.getItem("meridian.perimetre") || "mesh-global";
-  config.headers["X-Espace"] = cible.startsWith("vue:")
-    ? localStorage.getItem("meridian.perimetre.espace") || "mesh-global"
-    : cible;
+  return {
+    "X-Persona": localStorage.getItem("meridian.persona") || "architecte",
+    "X-Espace": cible.startsWith("vue:") ? localStorage.getItem("meridian.perimetre.espace") || "mesh-global" : cible,
+  };
+}
+
+api.interceptors.request.use((config) => {
+  Object.assign(config.headers, entetesPerimetre());
   return config;
 });
 
