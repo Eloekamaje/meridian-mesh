@@ -11,6 +11,17 @@ Fonctions sans LLM, partagées par les outils de l'agent et l'API. Tout ce qui t
 PROUVABLES = frozenset({"DEPEND_DE", "EXPOSE", "LIT_VARIABLE", "EXECUTE_IMAGE"})
 
 
+# Deux prédicats métier que le code peut tout de même établir, mais seulement à deux conditions réunies : une recette de
+# forme constate une décision / une déclaration de donnée dans les lignes citées, ET le juge d'appui les dit appuyées
+# (« selon » ou « recoupe », jamais « en_partie »). Sources v1 §2 : sur ce que l'application fait, le code l'emporte.
+# Même règle que la fonction SQL `etabli_par_la_forme`.
+FORMES = frozenset({"APPLIQUE_REGLE", "DETIENT"})
+
+
+def etabli_par_la_forme(predicat, forme, etat):
+    return (predicat or "").upper() in FORMES and forme == "ok" and etat in ("selon", "recoupe")
+
+
 def prouvable(predicat):
     """Ce prédicat peut-il être établi par le code ? (sinon, c'est une hypothèse, pas une connaissance)"""
     return (predicat or "").upper() in PROUVABLES

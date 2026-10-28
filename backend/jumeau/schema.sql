@@ -145,6 +145,8 @@ CREATE TABLE IF NOT EXISTS verification (
 );
 CREATE INDEX IF NOT EXISTS verification_claim ON verification (claim_id, id DESC);
 -- « en_partie » (Harness v3 §2) : comme le Check Grounding de Google, une affirmation appuyée en partie n'est pas appuyée.
+-- Recette de forme (plan L1bis.2) : 'ok' / 'absente' pour APPLIQUE_REGLE et DETIENT, NULL sinon.
+ALTER TABLE verification ADD COLUMN IF NOT EXISTS forme text CHECK (forme IN ('ok', 'absente'));
 ALTER TABLE verification DROP CONSTRAINT IF EXISTS verification_etat_check;
 -- « en_attente » : toute connaissance naît avec un état explicite (plan de remédiation L1.6). Avant, 50 des 546
 -- connaissances n'avaient aucune ligne de vérification, alors que le document affirmait que chacune en avait un.
@@ -174,17 +176,26 @@ $$ LANGUAGE sql IMMUTABLE;
 CREATE OR REPLACE FUNCTION predicat_prouvable(predicat text) RETURNS boolean AS $$
     SELECT upper(coalesce(predicat, '')) IN ('DEPEND_DE', 'EXPOSE', 'LIT_VARIABLE', 'EXECUTE_IMAGE')
 $$ LANGUAGE sql IMMUTABLE;
+-- APPLIQUE_REGLE et DETIENT sortent de M1 si la recette de forme est « ok » ET le juge dit « selon » / « recoupe »
+-- (même règle que connaissance.etabli_par_la_forme) : la forme seule ou le juge seul ne suffisent pas.
+CREATE OR REPLACE FUNCTION etabli_par_la_forme(predicat text, forme text, etat text) RETURNS boolean AS $$
+    SELECT upper(coalesce(predicat, '')) IN ('APPLIQUE_REGLE', 'DETIENT') AND forme = 'ok'
+           AND etat IN ('selon', 'recoupe')
+$$ LANGUAGE sql IMMUTABLE;
 CREATE OR REPLACE FUNCTION recalculer_maturite(cid bigint) RETURNS void AS $$
     UPDATE claim SET maturite = CASE
         WHEN s.preuves = 0 THEN 'M1'
-        WHEN NOT predicat_prouvable(claim.predicat) AND s.preuves_code = s.preuves THEN 'M1'
+        WHEN NOT predicat_prouvable(claim.predicat) AND s.preuves_code = s.preuves
+             AND NOT coalesce(etabli_par_la_forme(claim.predicat, s.forme, s.etat_v), false) THEN 'M1'
         WHEN s.systemes >= 2 AND s.recoupe AND claim.statut = 'ACCEPTED' THEN 'M4'
         WHEN s.systemes >= 2 AND s.recoupe THEN 'M3'
         ELSE 'M2' END
     FROM (SELECT count(*) AS preuves, count(*) FILTER (WHERE p.type = 'CODE') AS preuves_code,
                  count(DISTINCT systeme_de_preuve(p.type, p.chemin, so.type)) AS systemes,
                  coalesce((SELECT v.etat = 'recoupe' FROM verification v WHERE v.claim_id = cid
-                           ORDER BY v.id DESC LIMIT 1), false) AS recoupe
+                           ORDER BY v.id DESC LIMIT 1), false) AS recoupe,
+                 (SELECT v.forme FROM verification v WHERE v.claim_id = cid ORDER BY v.id DESC LIMIT 1) AS forme,
+                 (SELECT v.etat FROM verification v WHERE v.claim_id = cid ORDER BY v.id DESC LIMIT 1) AS etat_v
           FROM claim_preuve cp JOIN preuve p ON p.id = cp.preuve_id JOIN source so ON so.id = p.source_id
           WHERE cp.claim_id = cid AND cp.role = 'SUPPORT') s
     WHERE claim.id = cid;

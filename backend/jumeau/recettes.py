@@ -6,6 +6,8 @@ Fonctions pures : ni base, ni réseau, ni modèle. Les lignes sont des données,
 """
 import re
 
+from jumeau.appels import _masquer
+
 PREDICATS = frozenset({"DEPEND_DE", "EXPOSE", "LIT_VARIABLE", "EXECUTE_IMAGE"})
 VERIFIE, NON_APPUYE = "verifie", "non_appuye"
 _VERBES = ("get", "post", "put", "delete", "patch")
@@ -121,3 +123,35 @@ def recette(predicat: str, objet: str, lignes: list[str]) -> str | None:
     if not propres or not isinstance(objet, str):
         return NON_APPUYE
     return VERIFIE if verifier(objet, propres) else NON_APPUYE
+
+
+# --- Recettes de FORME (plan L1bis.2, Sources v1 §2) ------------------------------------------------
+# Elles constatent seulement que les lignes citées ont la FORME d'une décision (APPLIQUE_REGLE) ou d'une déclaration de
+# donnée (DETIENT) — pas que la phrase est vraie : le sens reste au juge d'appui. Chaînes et commentaires sont ignorés.
+FORME_OK, FORME_ABSENTE = "ok", "absente"
+_COMMENTAIRE_LIGNE_RE = re.compile(r"#.*|//.*|--.*")
+_DECISION_RES = [re.compile(m) for m in (
+    r"\b(?:if|elif|match|case|raise|assert|abort|throw|HTTPException)\b",   # condition, refus, erreur, validation
+    r"\breturn\b.*\b4\d\d\b",                                              # return … 4xx
+    r"\s\?\s.+\s:\s",                                                      # ternaire C/JS
+    r"@(?:field_)?validator\b|\bField\(.*\b(?:gt|ge|lt|le)\s*=",         # pydantic
+)] + [re.compile(r"\bCHECK\s*\(", re.I)]                                    # contrainte SQL
+_DONNEE_RES = [re.compile(m, f) for m, f in (
+    (r"^\s*class\s+\w+\s*\([^)]*\b(?:Base|BaseModel|Model|DeclarativeBase)\b", 0),
+    (r"^\s*@(?:dataclasses\.)?dataclass\b", 0),
+    (r"\bCREATE\s+TABLE\b|\bALTER\s+TABLE\b", re.I),
+    (r"\bColumn\(|\bmodels\.\w+Field\(", 0),
+    (r"^\s*(?:export\s+)?(?:interface\s+\w+|type\s+\w+\s*=)", 0),       # schéma / interface TypeScript
+    (r"\bop\.(?:create_table|add_column)\(|\bmigrations\.CreateModel\(", 0),  # migration
+)]
+_FORMES = {"APPLIQUE_REGLE": _DECISION_RES, "DETIENT": _DONNEE_RES}
+
+
+def forme(predicat: str, lignes: list[str]) -> str | None:
+    """'ok' si les lignes ont la forme attendue du prédicat, 'absente' sinon ; None si le prédicat n'a pas de recette
+    de forme. Ne prouve jamais le sens."""
+    motifs = _FORMES.get((predicat or "").upper())
+    if motifs is None:
+        return None
+    nues = [_COMMENTAIRE_LIGNE_RE.sub("", l) for l in _masquer(list(lignes or []))]
+    return FORME_OK if any(m.search(l) for l in nues for m in motifs) else FORME_ABSENTE

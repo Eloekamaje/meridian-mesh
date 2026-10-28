@@ -149,10 +149,10 @@ def etat_du_jugement(appui, systemes, copie=None):
     return "selon"
 
 
-def _enregistrer(conn, c, etat, methode, systemes, raison=None):
-    conn.execute("INSERT INTO verification (claim_id, etat, methode, systemes, empreinte, raison) "
-                 "VALUES (%s, %s, %s, %s, %s, %s)",
-                 (c["id"], etat, methode, sorted(systemes), c["empreinte"], (raison or "")[:MAX_RAISON] or None))
+def _enregistrer(conn, c, etat, methode, systemes, raison=None, forme=None):
+    conn.execute("INSERT INTO verification (claim_id, etat, methode, systemes, empreinte, raison, forme) "
+                 "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                 (c["id"], etat, methode, sorted(systemes), c["empreinte"], (raison or "")[:MAX_RAISON] or None, forme))
 
 
 def _ouvrir_contradiction(conn, jumeau, c, raison):
@@ -201,16 +201,19 @@ async def verifier(conn, jumeau, lecteurs=(), modele=None, juger=juge.juger, lim
         return bilan
     dossiers, par_id = [], {}
     for c, systemes in a_juger:
-        extraits = [{"systeme": p["systeme"], "citation": p["locator"], "lignes": l}
-                    for p in c["preuves"] if (l := lignes_de(p, lecteurs))]
+        lus = [(p, l) for p in c["preuves"] if (l := lignes_de(p, lecteurs))]
+        extraits = [{"systeme": p["systeme"], "citation": p["locator"], "lignes": l} for p, l in lus]
         if not extraits:
             bilan["en_attente"] += 1
             continue
         dossiers.append({"id": c["id"], "enonce": enonce(c), "extraits": extraits})
+        code = [l for p, l in lus if p["type"] == "CODE"]
+        # Forme : seulement les lignes de code ; sans code lisible, rien à constater (None).
+        forme_code = recettes.forme(c["predicat"], [x for l in code for x in l]) if code else None
         par_id[c["id"]] = (c, {e["systeme"] for e in extraits}, recopie(extraits),
-                           systemes_muets(c["objet"], extraits))
+                           systemes_muets(c["objet"], extraits), forme_code)
     decisions = await juger(modele, dossiers) if dossiers else {}
-    for cid, (c, systemes, recopie_observee, muets) in par_id.items():
+    for cid, (c, systemes, recopie_observee, muets, forme_code) in par_id.items():
         appui = decisions.get(cid)
         if appui is None:  # lot en panne ou décision manquante : rejoué à la passe suivante
             bilan["en_attente"] += 1
@@ -218,7 +221,9 @@ async def verifier(conn, jumeau, lecteurs=(), modele=None, juger=juge.juger, lim
             continue
         etat = etat_du_jugement(appui, systemes, recopie_observee)
         raison = appui.raison + (f" [{', '.join(muets)} ne nomme pas l'énoncé]" if muets else "")
-        _enregistrer(conn, c, etat, "juge", systemes, raison)
+        if forme_code == recettes.FORME_ABSENTE:  # l'état dit pourquoi la connaissance reste M1
+            raison = "[forme absente : les lignes citées n'ont pas la forme attendue] " + raison
+        _enregistrer(conn, c, etat, "juge", systemes, raison, forme_code)
         if etat == "conteste":
             _ouvrir_contradiction(conn, jumeau, c, appui.raison)
         bilan[etat] += 1
@@ -230,9 +235,10 @@ async def verifier(conn, jumeau, lecteurs=(), modele=None, juger=juge.juger, lim
 
 
 def etats(conn, jumeau_id):
-    """{claim_id: {etat, methode, systemes, raison}} : la dernière vérification de chaque connaissance courante."""
-    return {cid: {"etat": e, "methode": m, "systemes": s, "raison": r} for cid, e, m, s, r in conn.execute(
-        """SELECT DISTINCT ON (v.claim_id) v.claim_id, v.etat, v.methode, v.systemes, v.raison
+    """{claim_id: {etat, methode, systemes, raison, forme}} : la dernière vérification de chaque connaissance courante."""
+    return {cid: {"etat": e, "methode": m, "systemes": s, "raison": r, "forme": f}
+            for cid, e, m, s, r, f in conn.execute(
+        """SELECT DISTINCT ON (v.claim_id) v.claim_id, v.etat, v.methode, v.systemes, v.raison, v.forme
            FROM verification v JOIN claim c ON c.id = v.claim_id
            WHERE c.jumeau_id = %s AND c.valide_jusqua IS NULL ORDER BY v.claim_id, v.id DESC""", (jumeau_id,))}
 

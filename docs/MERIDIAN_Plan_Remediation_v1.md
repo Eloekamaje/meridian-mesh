@@ -247,6 +247,7 @@ le binaire expose `mode="cross_service"` et `data_flow`, que `appels.py:37` n'ap
 |---|---|---|
 | L1bis.1 | Un extracteur de **flux inter-applications** (`cross_service`) et un extracteur d'**appels sortants** (URL littérale dans `requests`/`fetch`/`RestTemplate`) | `ECHANGE_AVEC` a une origine `INGESTION` et une preuve d'appel |
 | L1bis.2 | Les prédicats que le code ne peut pas prouver (`SERT_ACTEUR`, `APPLIQUE_REGLE`, `DETIENT`) sortent du jumeau et deviennent des **hypothèses** dans le Travail, pas des connaissances | aucun prédicat non prouvable n'est compté dans la maturité |
+| L1bis.2 bis | Exception, Sources v1 §2 (« les règles qu'elle applique : code d'abord » ; « les informations qu'elle détient : données, code ») : `APPLIQUE_REGLE` et `DETIENT` passent M2 si une recette de **forme** (décision / déclaration de donnée dans les lignes citées, chaînes et commentaires ignorés) ET le juge d'appui (« oui ») concordent ; la forme prouve la forme, le juge le sens, aucun des deux seul. `SERT_ACTEUR`, `REALISE_CAPACITE`, `ECHANGE_AVEC`, `RISQUE` restent M1 sans source documentaire | forme échouée = M1, dite dans l'état de vérification |
 | L1bis.3 | Les trous connus de l'extracteur sont traités, pas contournés : injection de dépendances (`Depends`), SQL externalisé, imports dynamiques | au moins un cas test par trou |
 | L1bis.4 | Lever le plafond dur de volumétrie : `LIMITE = 10000` fait **échouer toute l'ingestion** d'un dépôt d'entreprise (`cbm.py:75`), au lieu de dégrader | un dépôt à 20 000 routes s'ingère, tronqué et signalé |
 
