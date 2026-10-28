@@ -1,0 +1,140 @@
+[
+  {
+    "id": "conduit-slug-titre",
+    "jumeau": "conduit",
+    "enonce": "Le slug d'un article est dérivé de son titre.",
+    "extraits": [
+      {
+        "systeme": "git",
+        "citation": "app/services/articles.py#L18-L19",
+        "lignes": [
+          "def get_slug_for_article(title: str) -> str:",
+          "    return slugify(title)"
+        ]
+      }
+    ],
+    "attendu": "oui",
+    "pourquoi": "get_slug_for_article renvoie slugify(title).",
+    "propose_par": "claude",
+    "valide_par": null,
+    "valide_le": null
+  },
+  {
+    "id": "conduit-doublon-400",
+    "jumeau": "conduit",
+    "enonce": "Créer un article dont le slug existe déjà est refusé avec une erreur 400 ARTICLE_ALREADY_EXISTS.",
+    "extraits": [
+      {
+        "systeme": "git",
+        "citation": "app/api/routes/articles/articles_resource.py#L64-L69",
+        "lignes": [
+          "    slug = get_slug_for_article(article_create.title)",
+          "    if await check_article_exists(articles_repo, slug):",
+          "        raise HTTPException(",
+          "            status_code=status.HTTP_400_BAD_REQUEST,",
+          "            detail=strings.ARTICLE_ALREADY_EXISTS,",
+          "        )"
+        ]
+      }
+    ],
+    "attendu": "oui",
+    "pourquoi": "Le slug est calculé, l'existence vérifiée, puis HTTP 400 avec strings.ARTICLE_ALREADY_EXISTS.",
+    "propose_par": "claude",
+    "valide_par": null,
+    "valide_le": null
+  },
+  {
+    "id": "conduit-transaction-atomique",
+    "jumeau": "conduit",
+    "enonce": "La création d'un article et de ses mots-clés est atomique, mais la détection des doublons de slug est garantie par la base.",
+    "extraits": [
+      {
+        "systeme": "git",
+        "citation": "app/db/repositories/articles.py#L44-L56",
+        "lignes": [
+          "        async with self.connection.transaction():",
+          "            article_row = await queries.create_new_article(",
+          "                self.connection,",
+          "                slug=slug,",
+          "                title=title,",
+          "                description=description,",
+          "                body=body,",
+          "                author_username=author.username,",
+          "            )",
+          "",
+          "            if tags:",
+          "                await self._tags_repo.create_tags_that_dont_exist(tags=tags)",
+          "                await self._link_article_with_tags(slug=slug, tags=tags)"
+        ]
+      }
+    ],
+    "attendu": "partiel",
+    "pourquoi": "Le bloc transaction couvre bien article et mots-clés, mais cet extrait ne dit rien de la garantie d'unicité par la base.",
+    "propose_par": "claude",
+    "valide_par": null,
+    "valide_le": null
+  },
+  {
+    "id": "conduit-slug-unique-base",
+    "jumeau": "conduit",
+    "enonce": "Le slug d'un article est unique ; la route de création refuse en plus les doublons.",
+    "extraits": [
+      {
+        "systeme": "git",
+        "citation": "app/db/migrations/versions/fdf8821871d7_main_tables.py#L103-L103",
+        "lignes": [
+          "        sa.Column(\"slug\", sa.Text, unique=True, nullable=False, index=True),"
+        ]
+      }
+    ],
+    "attendu": "partiel",
+    "pourquoi": "La colonne est unique (contrainte base), mais l'extrait ne montre pas le refus côté route.",
+    "propose_par": "claude",
+    "valide_par": null,
+    "valide_le": null
+  },
+  {
+    "id": "conduit-slug-aleatoire",
+    "jumeau": "conduit",
+    "enonce": "Le slug d'un article est un identifiant aléatoire sans lien avec son titre.",
+    "extraits": [
+      {
+        "systeme": "git",
+        "citation": "app/services/articles.py#L18-L19",
+        "lignes": [
+          "def get_slug_for_article(title: str) -> str:",
+          "    return slugify(title)"
+        ]
+      }
+    ],
+    "attendu": "non",
+    "pourquoi": "Le code dit l'inverse : slugify(title).",
+    "propose_par": "claude",
+    "valide_par": null,
+    "valide_le": null
+  },
+  {
+    "id": "conduit-doublon-ecrase",
+    "jumeau": "conduit",
+    "enonce": "Créer un article dont le slug existe déjà remplace silencieusement l'article existant.",
+    "extraits": [
+      {
+        "systeme": "git",
+        "citation": "app/api/routes/articles/articles_resource.py#L64-L69",
+        "lignes": [
+          "    slug = get_slug_for_article(article_create.title)",
+          "    if await check_article_exists(articles_repo, slug):",
+          "        raise HTTPException(",
+          "            status_code=status.HTTP_400_BAD_REQUEST,",
+          "            detail=strings.ARTICLE_ALREADY_EXISTS,",
+          "        )"
+        ]
+      }
+    ],
+    "attendu": "non",
+    "pourquoi": "Le code lève un 400 ; il ne remplace rien.",
+    "propose_par": "claude",
+    "valide_par": null,
+    "valide_le": null
+  }
+]

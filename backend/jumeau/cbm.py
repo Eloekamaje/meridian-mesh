@@ -56,11 +56,47 @@ def _env():
     return {**os.environ, "CBM_CACHE_DIR": cache} if cache else None
 
 
+CONFLIT_CACHE = "different cache directory"
+MESSAGE_CONFLIT = "cache de l'index en conflit avec le démon déjà lancé"
+_cause = None
+
+
+def cause_panne():
+    """Cause mémorisée au démarrage (None : rien d'anormal connu)."""
+    return _cause
+
+
+def verifier_cache():
+    """Au démarrage : une action légère du CLI révèle si JUMEAU_CBM_CACHE diffère du cache du démon déjà lancé
+    (unique par compte), cas où toute indexation échoue. Journalise l'erreur et son remède, mémorise la cause.
+    Sans binaire, ou pour toute autre panne : ne fait rien. Ne lève jamais. Vrai si rien n'est en conflit."""
+    global _cause
+    binaire = os.environ.get("CBM_BIN", "codebase-memory-mcp")
+    try:
+        r = subprocess.run([binaire, "cli", "--quiet", "list_projects"], capture_output=True, text=True, timeout=30,
+                           env=_env())
+    except (OSError, subprocess.SubprocessError):
+        return True
+    detail = f"{r.stderr}\n{r.stdout}"
+    if r.returncode != 0 and CONFLIT_CACHE in detail:
+        _cause = MESSAGE_CONFLIT
+        journal.error("%s : toute indexation échouera. Remède : ne pas définir JUMEAU_CBM_CACHE en développement, "
+                      "ou arrêter le démon (`codebase-memory-mcp daemon stop`). Détail : %s", MESSAGE_CONFLIT,
+                      detail.strip()[:200])
+        return False
+    _cause = None
+    return True
+
+
+def _echec(args, detail):
+    return RuntimeError(f"codebase-memory-mcp {args[0]} : {_cause or detail}")
+
+
 def _cli(*args):
     binaire = os.environ.get("CBM_BIN", "codebase-memory-mcp")
     r = subprocess.run([binaire, "cli", "--quiet", *args], capture_output=True, text=True, timeout=600, env=_env())
     if r.returncode != 0:
-        raise RuntimeError(f"codebase-memory-mcp {args[0]} : {r.stderr.strip() or r.stdout.strip()}")
+        raise _echec(args, r.stderr.strip() or r.stdout.strip())
     return json.loads(r.stdout)
 
 
@@ -89,7 +125,7 @@ def appeler(outil, **arguments):
         r = _mcp().call_tool_sync(f"meridian-{uuid.uuid4().hex[:8]}", outil, arguments)
     except Exception:
         _client = None  # serveur tombé : redémarré au prochain appel
-        raise RuntimeError(f"codebase-memory-mcp indisponible ({outil})")
+        raise RuntimeError(_cause or f"codebase-memory-mcp indisponible ({outil})")
     texte = "".join(b.get("text", "") for b in r["content"])
     if r["status"] != "success" or texte.lstrip().lower().startswith("error"):
         raise RuntimeError(texte[:300])

@@ -20,6 +20,7 @@ from actualites_routes import build_actualites_router
 from initiatives_routes import build_initiatives_router
 from mesh_vue_routes import build_mesh_vue_router
 from jumeau.routes import router as jumeau_router
+from jumeau import cbm as jumeau_cbm
 from jumeau import flore as jumeau_flore
 from jumeau import flux as jumeau_flux
 from jumeau import registre as jumeau_registre
@@ -81,6 +82,7 @@ async def projeter_jumeaux_reels():
 
 @app.on_event("startup")
 async def seed_database():
+    jumeau_cbm.verifier_cache()
     meta = await db.meta.find_one({"id": "seed"})
     if not meta or meta.get("version") != SEED_VERSION:
         for col in ["jumeaux", "relations", "situations", "change_lab", "dossiers", "vues", "journal", "commandes", "cases", "notifications", "initiatives", "delegations"]:

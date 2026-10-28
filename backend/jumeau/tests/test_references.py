@@ -24,6 +24,8 @@ def test_un_jumeau_sans_reference_n_invente_pas_d_exactitude():
 
 def test_les_references_sont_des_questions_reelles_et_verifiables():
     for fichier in sorted((Path(evaluation.__file__).parent / "references").glob("*.json")):
+        if fichier.name == "verdicts.json":
+            continue  # autre format : cas de verdicts du juge (test_verdicts.py)
         couples = json.loads(fichier.read_text(encoding="utf-8"))
         assert couples, fichier
         for c in couples:

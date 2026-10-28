@@ -1,6 +1,7 @@
 """Évaluation du jumeau : un jeu de référence tiré du jumeau lui-même (Jumeau Harness v3 §6).
 
     python -m jumeau.evaluation --jumeau tbt [--max 10]
+    python -m jumeau.evaluation --verdicts [--tous]
 
 Deux étages : l'exactitude (les connaissances validées sont les réponses attendues) et l'ancrage (les sept
 questions de la méthode comprendre-application). Chaque réponse passe par le vrai chemin de Flore ; un juge sans
@@ -161,14 +162,80 @@ async def evaluer(conn, jumeau_id, maximum=MAX_PAR_DEFAUT):
     return scores
 
 
+VERDICTS = REFERENCES / "verdicts.json"
+ATTENDUS = ("oui", "partiel", "non")
+CHAMPS_VERDICT = ("jumeau", "enonce", "pourquoi", "propose_par")
+
+
+def charger_verdicts(chemin=VERDICTS):
+    """Les cas de référence ; un cas mal formé est refusé, nommé par son id."""
+    cas = json.loads(Path(chemin).read_text(encoding="utf-8"))
+    for i, c in enumerate(cas):
+        cid = c.get("id") if isinstance(c, dict) else None
+        if not isinstance(cid, str) or not cid:
+            raise ValueError(f"verdicts : cas n°{i} sans id")
+        faute = (next((f"champ {f} manquant" for f in CHAMPS_VERDICT if not isinstance(c.get(f), str) or not c[f]), None)
+                 or (None if c.get("attendu") in ATTENDUS else f"attendu doit être parmi {ATTENDUS}")
+                 or (None if c.get("valide_par") is None or isinstance(c["valide_par"], str) else "valide_par invalide")
+                 or (None if isinstance(c.get("extraits"), list) and c["extraits"] and all(
+                     isinstance(e, dict) and e.get("systeme") and isinstance(e.get("lignes"), list) for e in c["extraits"])
+                     else "extraits : liste non vide de {systeme, citation, lignes}"))
+        if faute:
+            raise ValueError(f"verdicts : cas {cid} : {faute}")
+    return cas
+
+
+async def mesurer_verdicts(juge, modele, tous=False, chemin=VERDICTS):
+    """Fait juger les cas VALIDÉS (avec `tous`, aussi les autres) et mesure l'accord avec l'humain : exact, et
+    « oui » contre « pas oui ». Un cas que le juge n'a pas rendu est un désaccord."""
+    cas = charger_verdicts(chemin)
+    retenus = [c for c in cas if tous or c["valide_par"]]
+    res = {"comptes": len(retenus), "non_valides": sum(1 for c in cas if not c["valide_par"]),
+           "accord_exact": None, "accord_oui": None, "details": []}
+    if not retenus:
+        return res
+    rendus = await juge(modele, [{"id": i, "enonce": c["enonce"], "extraits": c["extraits"]} for i, c in enumerate(retenus)])
+    for i, c in enumerate(retenus):
+        d = rendus.get(i)
+        res["details"].append({"id": c["id"], "attendu": c["attendu"], "juge": d.appui if d else None,
+                               "valide": bool(c["valide_par"])})
+    n = len(retenus)
+    res["accord_exact"] = _part(sum(d["juge"] == d["attendu"] for d in res["details"]), n)
+    res["accord_oui"] = _part(sum((d["juge"] == "oui") == (d["attendu"] == "oui") for d in res["details"]), n)
+    return res
+
+
+def rapport_verdicts(res):
+    if not res["comptes"]:
+        return "aucun cas validé par un humain : pas de mesure d'accord (--tous pour juger aussi les cas proposés)."
+    lignes = [f"accord exact : {res['accord_exact']}  |  « oui » contre « pas oui » : {res['accord_oui']}  "
+              f"({res['comptes']} cas)"]
+    inclus = sum(1 for d in res["details"] if not d["valide"])
+    if inclus:
+        lignes.append(f"ATTENTION : {inclus} cas non validé(s) inclus, l'accord ne vaut pas mesure.")
+    elif res["non_valides"]:
+        lignes.append(f"({res['non_valides']} cas non validé(s) ignorés)")
+    lignes += [f"  {d['id']} : attendu {d['attendu']}, juge {d['juge']}" + ("" if d["valide"] else "  [non validé]")
+               for d in res["details"]]
+    return "\n".join(lignes)
+
+
 MAX_QUESTIONS = 50  # coût borné : deux appels au modèle par question
 
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--jumeau", required=True)
+    p.add_argument("--jumeau")
+    p.add_argument("--verdicts", action="store_true", help="accord du juge d'appui avec les verdicts de référence")
+    p.add_argument("--tous", action="store_true", help="avec --verdicts : inclut les cas non validés (signalés)")
     p.add_argument("--max", type=int, default=MAX_PAR_DEFAUT, help="questions au plus (une réponse + un jugement chacune)")
     a = p.parse_args()
+    if a.verdicts:
+        from jumeau import juge
+        print(rapport_verdicts(asyncio.run(mesurer_verdicts(juge.juger, agent.modele_juge(), a.tous))))
+        return
+    if not a.jumeau:
+        p.error("--jumeau requis (ou --verdicts)")
     if not 1 <= a.max <= MAX_QUESTIONS:
         p.error(f"--max entre 1 et {MAX_QUESTIONS}")
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")

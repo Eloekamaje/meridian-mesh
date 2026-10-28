@@ -224,7 +224,8 @@ def outils(ctx, dsn, nom_modele, budget):
                 journal.exception("outil %s (%s)", nom, s["nom"])
                 # Un index absent n'est pas « l'outil est indisponible » : c'est une connaissance non reconstruite,
                 # et l'interlocuteur doit pouvoir le dire (plan de remédiation L0bis.4).
-                sortie = ("L'index de code de ce dépôt n'est pas disponible : ses connaissances ne sont pas "
+                sortie = (f"L'index de code est inutilisable : {cbm.cause_panne()}." if cbm.cause_panne() else
+                          "L'index de code de ce dépôt n'est pas disponible : ses connaissances ne sont pas "
                           "reconstruites. Il se refait à la prochaine ingestion (le gardien le reconstruit)."
                           if not cbm.indexe(s) else "Outil indisponible pour ce dépôt.")
             parties.append(sortie if len(sources) == 1 else f"### dépôt {s['nom']}\n{sortie}")
