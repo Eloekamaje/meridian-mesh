@@ -134,10 +134,13 @@ _DECISION_RES = [re.compile(m) for m in (
     r"\b(?:if|elif|match|case|raise|assert|abort|throw|HTTPException)\b",   # condition, refus, erreur, validation
     r"\breturn\b.*\b4\d\d\b",                                              # return … 4xx
     r"\s\?\s.+\s:\s",                                                      # ternaire C/JS
-    r"@(?:field_)?validator\b|\bField\(.*\b(?:gt|ge|lt|le)\s*=",         # pydantic
+    r"@(?:field_)?validator\b|\bField\(.*\b(?:gt|ge|lt|le|max_length|min_length|unique)\s*=",  # pydantic, SQLModel
+    r"\.(?:where|filter|filter_by)\(",                                      # une requête restreinte : une règle d'accès
+    r"\b(?:cascade_delete\s*=\s*True|ondelete\s*=|cascade\s*=)",           # une suppression en cascade déclarée
 )] + [re.compile(r"\bCHECK\s*\(", re.I)]                                    # contrainte SQL
 _DONNEE_RES = [re.compile(m, f) for m, f in (
-    (r"^\s*class\s+\w+\s*\([^)]*\b(?:Base|BaseModel|Model|DeclarativeBase)\b", 0),
+    (r"^\s*class\s+\w+\s*\([^)]*\b(?:Base|BaseModel|Model|DeclarativeBase|SQLModel|Document)\b", 0),
+    (r"\btable\s*=\s*True\b|\bmapped_column\(|\bMapped\[|\bRelationship\(|\brelationship\(", 0),  # SQLModel, SA 2
     (r"^\s*@(?:dataclasses\.)?dataclass\b", 0),
     (r"\bCREATE\s+TABLE\b|\bALTER\s+TABLE\b", re.I),
     (r"\bColumn\(|\bmodels\.\w+Field\(", 0),

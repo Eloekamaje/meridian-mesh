@@ -151,3 +151,11 @@ def test_la_mention_reconnait_la_meme_chose_sous_deux_ecritures():
     assert recoupement.mentionne_enonce("PostgreSQL", ["image: postgres:16"])
     assert recoupement.mentionne_enonce("Répondre aux questions", ["def repondre(question):"])
     assert not recoupement.mentionne_enonce("PostgreSQL", ["image: nginx:1"])
+
+
+def test_une_regle_de_verification_qui_change_rejoue_ses_connaissances():
+    preuves = [{"id": 7}, {"id": 9}]
+    v = recoupement.VERSION_REGLE["APPLIQUE_REGLE"]
+    assert recoupement.empreinte("APPLIQUE_REGLE", preuves) == f"{v}:7,9"  # vérifiée sous une autre règle : rejouée
+    assert recoupement.empreinte("detient", preuves) == f"{v}:7,9"
+    assert recoupement.empreinte("DEPEND_DE", preuves) == "7,9"  # règle inchangée : rien n'est rejoué

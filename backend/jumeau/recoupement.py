@@ -32,6 +32,17 @@ def systeme_de_preuve(type_preuve, chemin, type_source):
     return (type_source or "").lower()
 
 
+# Version de la règle de vérification, par prédicat : quand la règle change, ses connaissances se revérifient
+# (l'empreinte la porte), sans effacer l'historique. « forme1 » : règle de forme du plan de remédiation L1bis.2 bis.
+VERSION_REGLE = {"APPLIQUE_REGLE": "forme2", "DETIENT": "forme2"}  # forme2 : SQLModel, filtres, cascades
+
+
+def empreinte(predicat, preuves):
+    version = VERSION_REGLE.get((predicat or "").upper())
+    ids = ",".join(str(p["id"]) for p in preuves)
+    return f"{version}:{ids}" if version else ids
+
+
 def a_verifier(conn, jumeau_id):
     """Connaissances courantes dont les preuves ont changé depuis leur dernière vérification (ou jamais vérifiées),
     avec leurs preuves de soutien : [{id, sujet, predicat, objet, origine, empreinte, preuves: [...]}]."""
@@ -54,7 +65,7 @@ def a_verifier(conn, jumeau_id):
                              "depot": copie or emplacement})
     resultat = []
     for c in claims.values():
-        c["empreinte"] = ",".join(str(p["id"]) for p in c["preuves"])
+        c["empreinte"] = empreinte(c["predicat"], c["preuves"])
         if c.pop("derniere") != c["empreinte"]:
             resultat.append(c)
     return resultat

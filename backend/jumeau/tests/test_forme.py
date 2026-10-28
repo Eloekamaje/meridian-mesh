@@ -125,3 +125,14 @@ def test_la_maturite_demande_la_forme_et_le_juge(conn, tmp_path, predicat, chemi
     assert obtenue == maturite and etat["forme"] == forme
     if forme == ABSENTE:
         assert "forme" in etat["raison"]  # l'état de vérification dit pourquoi M1
+
+
+def test_formes_sqlmodel_filtres_et_cascades_reconnues():
+    # Constaté sur Gestion des articles (SQLModel) : des modèles et des règles réelles restaient « forme absente ».
+    assert recettes.forme("DETIENT", ["class User(UserBase, table=True):"]) == "ok"
+    assert recettes.forme("DETIENT", ["class Item(SQLModel):"]) == "ok"
+    assert recettes.forme("DETIENT", ["    owner: User | None = Relationship(back_populates='items')"]) == "ok"
+    assert recettes.forme("APPLIQUE_REGLE", ["statement = select(Item).where(Item.owner_id == current_user.id)"]) == "ok"
+    assert recettes.forme("APPLIQUE_REGLE", ["items: list['Item'] = Relationship(cascade_delete=True)"]) == "ok"
+    assert recettes.forme("APPLIQUE_REGLE", ["MAX_JUMEAUX = 5"]) == "absente"  # une constante n'est pas une décision
+    assert recettes.forme("DETIENT", ["# class Item(SQLModel)"]) == "absente"  # un commentaire ne déclare rien
