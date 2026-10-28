@@ -346,6 +346,10 @@ def outils(ctx, dsn, nom_modele, budget):
                                                 justification, ctx["acteur"], nom_modele)
             if connaissance.prouvable(predicat):
                 return f"Proposition enregistrée (claim {cid}), en attente de revue par l'équipe."
+            if (predicat or "").upper() in connaissance.FORMES:
+                return (f"Proposition enregistrée (claim {cid}) comme **hypothèse** pour l'instant : elle deviendra un "
+                        "fait établi si la vérification constate, dans les lignes citées, une décision (règle) ou une "
+                        "déclaration de donnée, et que le juge l'appuie.")
             return (f"Proposition enregistrée (claim {cid}) comme **hypothèse** : aucune ligne ne peut établir "
                     f"« {predicat} ». Elle reste en attente de l'équipe, et elle ne recevra pas de diplôme de "
                     "maturité tant que rien ne la prouve.")

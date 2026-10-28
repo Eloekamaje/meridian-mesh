@@ -179,8 +179,8 @@ $$ LANGUAGE sql IMMUTABLE;
 -- APPLIQUE_REGLE et DETIENT sortent de M1 si la recette de forme est « ok » ET le juge dit « selon » / « recoupe »
 -- (même règle que connaissance.etabli_par_la_forme) : la forme seule ou le juge seul ne suffisent pas.
 CREATE OR REPLACE FUNCTION etabli_par_la_forme(predicat text, forme text, etat text) RETURNS boolean AS $$
-    SELECT upper(coalesce(predicat, '')) IN ('APPLIQUE_REGLE', 'DETIENT') AND forme = 'ok'
-           AND etat IN ('selon', 'recoupe')
+    SELECT upper(coalesce(predicat, '')) IN ('APPLIQUE_REGLE', 'DETIENT') AND coalesce(forme = 'ok', false)
+           AND coalesce(etat IN ('selon', 'recoupe'), false)
 $$ LANGUAGE sql IMMUTABLE;
 CREATE OR REPLACE FUNCTION recalculer_maturite(cid bigint) RETURNS void AS $$
     UPDATE claim SET maturite = CASE

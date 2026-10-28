@@ -65,8 +65,8 @@ def jumeau_ingere(conn, depot_git, tmp_path, monkeypatch):
     monkeypatch.setattr(ingerer, "COPIES", tmp_path / "copies")
     appels = []
     monkeypatch.setattr(cbm, "indexer", lambda copie, nom: appels.append(nom) or nom)
-    monkeypatch.setattr(cbm, "interroger", lambda p: {**{k: [] for k in cbm.REQUETES},
-                                                    "paquets": [{"chemin": "requirements.txt", "paquet": "fastapi"}]})
+    monkeypatch.setattr(cbm, "interroger", lambda p: ({**{k: [] for k in cbm.REQUETES},
+                                                     "paquets": [{"chemin": "requirements.txt", "paquet": "fastapi"}]}, {}))
     depot.appliquer_schema(conn)
     ingerer.ingerer(conn, JUMEAU, depot_git)
     return conn, depot_git, appels
@@ -111,7 +111,12 @@ def test_binaire_reel_deux_caches_neufs_donnent_le_meme_nom(depot_git, tmp_path,
         monkeypatch.setenv("JUMEAU_CBM_CACHE", str(tmp_path / cache))
         copie = tmp_path / f"copie-{cache}"  # chemins absolus différents
         shutil.copytree(depot_git, copie)
-        noms.append(cbm.indexer(copie, cbm.nom_index("tbt", "depot", sha)))
+        try:
+            noms.append(cbm.indexer(copie, cbm.nom_index("tbt", "depot", sha)))
+        except RuntimeError as e:
+            if "different cache directory" in str(e):  # un autre client a déjà lancé le démon cbm sur son cache
+                pytest.skip("démon codebase-memory déjà lancé avec un autre cache (environnement)")
+            raise
         assert (tmp_path / cache / f"{noms[-1]}.db").exists()
         assert cbm.perime({"index_code": noms[-1], "curseur": sha}) is False
     assert noms[0] == noms[1]

@@ -16,8 +16,9 @@ NON_BRANCHEES = ["Exploitation", "Incidents", "Base de données"]
 
 def _maturite(claims):
     return {"croisees": sum(c.get("maturite") == "M3" for c in claims), "validees": sum(c.get("maturite") == "M4" for c in claims),
-            # Ce que le code ne peut pas établir : écrit par le modèle, il ne compte pas comme compréhension (L1bis.2).
-            "hypotheses": sum(not connaissance.prouvable(c.get("predicat")) for c in claims)}
+            # Une hypothèse est ce que rien n'établit encore : la maturité le dit (M1), règle de forme comprise
+            # (L1bis.2 bis) ; une règle ou une donnée établies par la forme et le juge n'en sont plus.
+            "hypotheses": sum(c.get("maturite") == "M1" for c in claims)}
 
 
 ETATS = ("verifie", "selon", "recoupe", "conteste", "en_partie", "non_appuye")

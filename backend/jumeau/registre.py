@@ -53,9 +53,9 @@ def jumeaux_reels(conn):
             """SELECT j.id, j.nom, j.equipe, j.domaine, j.mission, s.curseur,
                       (SELECT count(*) FROM claim c WHERE c.jumeau_id = j.id AND c.valide_jusqua IS NULL) AS claims,
                       (SELECT count(*) FROM claim c WHERE c.jumeau_id = j.id AND c.valide_jusqua IS NULL
-                        AND predicat_prouvable(c.predicat)) AS etablis,
+                        AND c.maturite <> 'M1') AS etablis,
                       (SELECT count(*) FROM claim c WHERE c.jumeau_id = j.id AND c.valide_jusqua IS NULL
-                        AND NOT predicat_prouvable(c.predicat)) AS hypotheses,
+                        AND c.maturite = 'M1') AS hypotheses,
                       (SELECT count(*) FROM source WHERE jumeau_id = j.id AND type = 'GIT') AS depots,
                       (SELECT emplacement FROM source WHERE jumeau_id = j.id AND type = 'SERVICENOW'
                        ORDER BY id LIMIT 1) AS ci,

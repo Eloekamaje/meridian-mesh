@@ -82,3 +82,10 @@ def test_a_revoir_borne():
     claims = [{**claim("APPLIQUE_REGLE", f"R{i}"), "verification": {"etat": "non_appuye"}} for i in range(11)]
     ignore = examen.depuis_connaissances({"nom": "X"}, claims, FICHE)["presentation"]["ignore"]
     assert len(ignore) == 1 + examen.MAX_A_REVOIR + 1 and ignore[-1].startswith("… et 3 autre(s)")
+
+
+def test_une_regle_etablie_par_la_forme_ne_compte_pas_comme_hypothese():
+    # Les compteurs lisent la maturité, seule vérité : une règle passée M2 (forme + juge) n'est plus une hypothèse.
+    claims = [{**claim("APPLIQUE_REGLE", "R1"), "maturite": "M2"}, {**claim("APPLIQUE_REGLE", "R2"), "maturite": "M1"},
+              {**claim("SERT_ACTEUR", "Lecteurs"), "maturite": "M1"}, {**claim("DEPEND_DE", "x"), "maturite": "M2"}]
+    assert examen.depuis_connaissances({"nom": "X"}, claims, FICHE)["presentation"]["maturite"]["hypotheses"] == 2

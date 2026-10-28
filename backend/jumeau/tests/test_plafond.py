@@ -79,7 +79,8 @@ def test_examen_dit_lu_en_partie():
 def test_troncature_persistee_et_connaissance_validee_survit(conn):
     depot.appliquer_schema(conn)
     depot.enregistrer(conn, JUMEAU, SOURCE, [claim("fastapi"), claim("motor", ligne=4)], ACTIVITE)
-    conn.execute("UPDATE claim SET statut = 'ACCEPTED' WHERE objet = 'fastapi'")
+    fastapi = conn.execute("SELECT id FROM claim WHERE objet = 'fastapi'").fetchone()[0]
+    depot.reviser(conn, fastapi, "alice", "ACCEPTED", "vu")  # une acceptation passe toujours par une revue
     t = {"routes": {"gardes": 1, "trouves": 2}}
     depot.enregistrer(conn, JUMEAU, {**SOURCE, "troncature": t}, [claim("uvicorn", ligne=5)], ACTIVITE)
     restes = {o: v for o, v in conn.execute("SELECT objet, valide_jusqua IS NULL FROM claim")}
