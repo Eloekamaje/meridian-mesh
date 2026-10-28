@@ -71,6 +71,11 @@ function Presentation({ examen }) {
             </li>
           ))}
         </ul>
+        {p.maturite && (
+          <p className="mt-2 font-code text-[11px] text-[#94A3B8]" data-testid="revue-maturite">
+            Croisées par deux systèmes : {p.maturite.croisees} · Croisées et validées : {p.maturite.validees}
+          </p>
+        )}
         <Liste items={p.ignore} vide="Rien de signalé" />
       </section>
     </div>

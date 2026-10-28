@@ -5,7 +5,6 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 SCHEMA = Path(__file__).with_name("schema.sql")
-MATURITE_APRES_ACCEPTATION = "M3"  # code + validation humaine = deux sources indépendantes (§7.2)
 
 
 VERROU_SCHEMA = 4242
@@ -157,9 +156,31 @@ def reviser(conn, claim_id, acteur, decision, motif):
         conn.execute(
             "INSERT INTO revue (tenant_id, claim_id, acteur, decision, motif) VALUES (%s, %s, %s, %s, %s)",
             (tenant[0], claim_id, acteur, decision, motif))
-        maturite = "GREATEST(maturite, %s)" if decision == "ACCEPTED" else "maturite"
-        params = (decision, MATURITE_APRES_ACCEPTATION, claim_id) if decision == "ACCEPTED" else (decision, claim_id)
-        conn.execute(f"UPDATE claim SET statut = %s, maturite = {maturite} WHERE id = %s", params)
+        conn.execute("UPDATE claim SET statut = %s WHERE id = %s", (decision, claim_id))  # maturité : trigger
+
+
+def enregistrer_contradiction(conn, jumeau, enonce, a, b, acteur, claim_id=None):
+    """a, b : (locator, système). Le harness a déjà vérifié les deux citations."""
+    return conn.execute(
+        "INSERT INTO contradiction (tenant_id, jumeau_id, claim_id, enonce, preuve_a, systeme_a, preuve_b, systeme_b, "
+        "signalee_par) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+        (jumeau["tenant_id"], jumeau["id"], claim_id, enonce, *a, *b, acteur)).fetchone()[0]
+
+
+def trancher_contradiction(conn, jumeau_id, contradiction_id, acteur, motif):
+    """Décision humaine : la contradiction n'est plus ouverte."""
+    if not conn.execute(
+            "UPDATE contradiction SET statut = 'TRANCHEE', tranchee_par = %s, tranchee_le = now(), motif = %s "
+            "WHERE id = %s AND jumeau_id = %s AND statut = 'OUVERTE' RETURNING id",
+            (acteur, motif, contradiction_id, jumeau_id)).fetchone():
+        raise LookupError(contradiction_id)
+
+
+def contradictions_ouvertes(conn, jumeau_id):
+    with conn.cursor(row_factory=dict_row) as cur:
+        return cur.execute(
+            "SELECT id, claim_id, enonce, preuve_a, preuve_b, systeme_a, systeme_b FROM contradiction "
+            "WHERE jumeau_id = %s AND statut = 'OUVERTE' ORDER BY id", (jumeau_id,)).fetchall()
 
 
 def lister_jumeaux(conn):

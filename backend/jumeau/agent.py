@@ -19,7 +19,7 @@ from strands.agent.conversation_manager import SummarizingConversationManager
 from strands.session.file_session_manager import FileSessionManager
 from strands.session.s3_session_manager import S3SessionManager
 
-from jumeau import cbm, connaissance, depot, methodes, temps
+from jumeau import cbm, connaissance, croisement, depot, methodes, temps
 from jumeau.lecteurs import NATURES, RE_CITATION_SOURCE
 
 SESSIONS = Path(os.environ.get("JUMEAU_SESSIONS", Path.home() / ".local/share/meridian/sessions"))
@@ -329,6 +329,30 @@ def outils(ctx, dsn, nom_modele, budget):
             return "Fusion impossible pour le moment."
 
     @tool
+    def signaler_contradiction(enonce: str, citation_a: str, citation_b: str) -> str:
+        """Signale que deux sources de systèmes différents se contredisent (par exemple le code et la documentation).
+
+        Les deux citations sont vérifiées ; la contradiction reste ouverte jusqu'à la décision de l'équipe.
+
+        Args:
+            enonce: ce sur quoi les deux sources divergent, en une phrase.
+            citation_a: citation lue, d'un premier système.
+            citation_b: citation lue, d'un autre système.
+        """
+        if not budget.outil() or not budget.proposition():
+            return "Plafond de propositions de cette réponse atteint."
+        try:
+            with psycopg.connect(dsn, autocommit=True) as conn:
+                cid = croisement.signaler(conn, jumeau, enonce, citation_a, citation_b, sources,
+                                          ctx.get("lecteurs", []), ctx["acteur"])
+            return f"Contradiction {cid} signalée, en attente de décision de l'équipe."
+        except ValueError as e:
+            return f"Signalement refusé : {e}"
+        except psycopg.Error:
+            journal.exception("signaler_contradiction")
+            return "Signalement impossible pour le moment."
+
+    @tool
     def historique_du_code(depuis: str = "", chemin: str = "", depot: str = "") -> list:
         """Historique des changements du code jusqu'au commit ingéré : date, auteur, message (le pourquoi), dépôt.
 
@@ -414,8 +438,8 @@ def outils(ctx, dsn, nom_modele, budget):
         return appeler_source(source, lire)
 
     return [mes_connaissances, architecture, chercher_texte, chercher_symbole, tracer_appels, lire_code,
-            proposer_connaissance, fusionner_connaissances, consulter_methode, historique_du_code, ce_qui_a_change,
-            *([chercher_dans, lire_dans] if lecteurs else [])]
+            proposer_connaissance, fusionner_connaissances, signaler_contradiction, consulter_methode,
+            historique_du_code, ce_qui_a_change, *([chercher_dans, lire_dans] if lecteurs else [])]
 
 
 def historique_fusionne(sources, depuis="", chemin=""):

@@ -126,6 +126,54 @@ END $$ LANGUAGE plpgsql;
 CREATE OR REPLACE TRIGGER claim_accepte_exige_revue BEFORE INSERT OR UPDATE OF statut ON claim
     FOR EACH ROW EXECUTE FUNCTION claim_accepte_exige_revue();
 
+-- Maturité calculée, jamais déclarée (Jumeau Sources §5) : M1 sans preuve, M2 une preuve, M3 deux systèmes différents
+-- (source.type : deux dépôts Git ne sont pas indépendants), M4 = M3 + revue ACCEPTED. Recalculée à chaque preuve et statut.
+CREATE OR REPLACE FUNCTION recalculer_maturite(cid bigint) RETURNS void AS $$
+    UPDATE claim SET maturite = CASE
+        WHEN s.preuves = 0 THEN 'M1'
+        WHEN s.systemes >= 2 AND claim.statut = 'ACCEPTED' THEN 'M4'
+        WHEN s.systemes >= 2 THEN 'M3'
+        ELSE 'M2' END
+    FROM (SELECT count(*) AS preuves, count(DISTINCT so.type) AS systemes
+          FROM claim_preuve cp JOIN preuve p ON p.id = cp.preuve_id JOIN source so ON so.id = p.source_id
+          WHERE cp.claim_id = cid AND cp.role = 'SUPPORT') s
+    WHERE claim.id = cid;
+$$ LANGUAGE sql;
+CREATE OR REPLACE FUNCTION maturite_a_recalculer() RETURNS trigger AS $$
+BEGIN
+    IF TG_TABLE_NAME = 'claim' THEN
+        PERFORM recalculer_maturite(NEW.id);
+    ELSE
+        PERFORM recalculer_maturite(NEW.claim_id);
+    END IF;
+    RETURN NULL;
+END $$ LANGUAGE plpgsql;
+CREATE OR REPLACE TRIGGER claim_maturite AFTER INSERT OR UPDATE OF statut ON claim
+    FOR EACH ROW EXECUTE FUNCTION maturite_a_recalculer();
+CREATE OR REPLACE TRIGGER claim_preuve_maturite AFTER INSERT ON claim_preuve
+    FOR EACH ROW EXECUTE FUNCTION maturite_a_recalculer();
+
+-- Deux sources de systèmes différents qui se contredisent : signalée par l'agent (citations vérifiées), tranchée par un humain.
+CREATE TABLE IF NOT EXISTS contradiction (
+    id          bigserial PRIMARY KEY,
+    tenant_id   text NOT NULL,
+    jumeau_id   text NOT NULL REFERENCES jumeau(id),
+    claim_id    bigint REFERENCES claim(id),
+    enonce      text NOT NULL,
+    preuve_a    text NOT NULL,
+    preuve_b    text NOT NULL,
+    systeme_a   text NOT NULL,
+    systeme_b   text NOT NULL CHECK (systeme_b <> systeme_a),
+    statut      text NOT NULL DEFAULT 'OUVERTE' CHECK (statut IN ('OUVERTE', 'TRANCHEE')),
+    signalee_par text NOT NULL,
+    signalee_le timestamptz NOT NULL DEFAULT now(),
+    tranchee_par text,
+    tranchee_le  timestamptz,
+    motif        text,
+    CHECK (statut = 'OUVERTE' OR tranchee_par IS NOT NULL)
+);
+CREATE INDEX IF NOT EXISTS contradiction_jumeau ON contradiction (jumeau_id, statut);
+
 -- Invariant 3 : preuves et revues sont immuables (ligne à ligne et TRUNCATE).
 -- ponytail: un propriétaire de table peut désactiver ces triggers ; rôle applicatif sans DDL en phase 1.
 CREATE OR REPLACE FUNCTION immuable() RETURNS trigger AS $$

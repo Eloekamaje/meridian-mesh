@@ -47,7 +47,7 @@ def test_acceptation_exige_une_revue_humaine(conn):
         conn.execute("UPDATE claim SET statut = 'ACCEPTED' WHERE id = %s", (cid,))
     depot.reviser(conn, cid, "alice", "ACCEPTED", "vu dans le code")
     c = depot.lister_claims(conn, "tbt")[0]
-    assert (c["statut"], c["maturite"]) == ("ACCEPTED", "M3")
+    assert (c["statut"], c["maturite"]) == ("ACCEPTED", "M2")  # un seul système : validée mais pas croisée
     assert c["revues"][0]["acteur"] == "alice"
 
 
