@@ -9,6 +9,7 @@ import portee as portees
 import re
 from seed_data import EPICS, EPIC_PAR_REF
 import veille as moteur_veille
+from jumeau.travail import EcritureTravail
 
 
 class CaseCreate(BaseModel):
@@ -573,6 +574,12 @@ def build_cases_router(deps):
                 "action": rep.get("action"),
                 "quand": datetime.now(timezone.utc).isoformat(),
             }
+            # question à options posée par Flore (demander_precision) : mêmes réponses rapides que les décisions attendues
+            precision = await EcritureTravail(db, cid).retirer_precision()
+            if precision:
+                msg_flore["decisions"], msg_flore["precision"] = precision["options"], True
+                if precision["question"] not in msg_flore["texte"]:
+                    msg_flore["texte"] = f"{msg_flore['texte']}\n\n{precision['question']}".strip()
         await db.cases.update_one(
             {"id": cid},
             {

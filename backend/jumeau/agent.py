@@ -433,7 +433,21 @@ def outils_travail(ecriture, budget):
         """
         return await ecrire(ecriture.resume, texte)
 
-    return [planifier, lever_etape, proposer_hypothese, proposer_option, deposer_livrable, actualiser_resume]
+    @tool
+    async def demander_precision(question: str, options: list[str]) -> str:
+        """Pose à l'humain une question à options, quand sa réponse change le travail et que lui seul peut trancher.
+
+        Args:
+            question: la question, en une phrase.
+            options: 2 à 4 réponses possibles, courtes, une ligne chacune.
+        """
+        retour = await ecrire(ecriture.precision, question, options)
+        if retour.startswith("Enregistré"):
+            return "Question posée dans le Travail. Arrête-toi : conclus ta réponse sans y répondre et attends le choix."
+        return retour
+
+    return [planifier, lever_etape, proposer_hypothese, proposer_option, deposer_livrable, actualiser_resume,
+            demander_precision]
 
 
 def gestionnaire_session(session):

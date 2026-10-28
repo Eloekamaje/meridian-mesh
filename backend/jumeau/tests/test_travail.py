@@ -144,3 +144,26 @@ def test_planifier_et_lever_une_etape_enregistrent_la_position_dans_la_conversat
         await e.resoudre("Étape A")
         assert (await e.etat())["plan_au_message"] == 8
     avec_travail(test)
+
+
+def test_precision_s_inscrit_dans_le_travail_puis_se_retire_une_fois():
+    async def test(e, db):
+        await e.precision("Quel périmètre ?", ["Le portail seul", " Tout le SI "])
+        c = await db.cases.find_one({"id": "t1"})
+        assert c["precision"] == {"question": "Quel périmètre ?", "options": ["Le portail seul", "Tout le SI"]}
+        assert c["historique"][-1]["texte"].startswith("Précision demandée par Flore")
+        assert await e.retirer_precision() == c["precision"]
+        assert await e.retirer_precision() is None
+    avec_travail(test)
+
+
+@pytest.mark.parametrize("question,options", [
+    ("", ["a", "b"]), ("Q ?", ["a"]), ("Q ?", list("abcde")), ("Q ?", ["a", "  "]),
+    ("Q ?", ["a", "b\nc"]), ("Q ?", ["a", "A"]), ("Q ?", ["a", "x" * 81]), ("Q ?", None),
+])
+def test_precision_refuse_les_arguments_invalides(question, options):
+    async def test(e, db):
+        with pytest.raises(ValueError):
+            await e.precision(question, options)
+        assert "precision" not in await db.cases.find_one({"id": "t1"})
+    avec_travail(test)

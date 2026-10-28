@@ -1,4 +1,5 @@
 """Construction de l'agent du jumeau (sans appel au modèle)."""
+import asyncio
 import pytest
 
 from jumeau import agent
@@ -75,7 +76,7 @@ def test_agent_a_les_outils_attendus_et_aucun_outil_de_validation(tmp_path, monk
 
 
 OUTILS_TRAVAIL = {"planifier", "lever_etape", "proposer_hypothese", "proposer_option", "deposer_livrable",
-                  "actualiser_resume"}
+                  "actualiser_resume", "demander_precision"}
 
 
 def test_dans_un_travail_flore_recoit_les_outils_du_travail_et_son_etat(tmp_path, monkeypatch):
@@ -176,3 +177,18 @@ def test_avec_session_les_longs_fils_sont_resumes_en_francais(tmp_path, monkeypa
 def test_sans_session_pas_de_resume():
     a = agent.construire(CONTEXTE, dsn="postgresql://inutilise", session=None, modele=modele_factice())
     assert type(a.conversation_manager).__name__ != "SummarizingConversationManager"
+
+
+def test_demander_precision_passe_par_le_budget_d_ecriture_et_dit_a_flore_de_s_arreter():
+    class Ecriture:
+        appels = []
+
+        async def precision(self, question, options):
+            self.appels.append((question, options))
+
+    e = Ecriture()
+    outil = {t.tool_name: t for t in agent.outils_travail(e, agent.Budget(ecritures=1))}["demander_precision"]
+    assert "attends" in asyncio.run(outil(question="Quel périmètre ?", options=["a", "b"])).lower()
+    assert e.appels == [("Quel périmètre ?", ["a", "b"])]
+    assert "Plafond" in asyncio.run(outil(question="Autre ?", options=["a", "b"]))
+    assert len(e.appels) == 1

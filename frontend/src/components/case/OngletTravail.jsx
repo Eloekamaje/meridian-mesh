@@ -1014,12 +1014,12 @@ export default function OngletTravail({
                     >
 
                     {/* Décision attendue (situation) : réponses rapides ; votre choix devient votre message et Flore répond */}
-                    {m.decisions?.length > 0 && !m.reponse && (
+                    {m.decisions?.length > 0 && !m.reponse && (!m.precision || (i === messages.length - 1 && !envoiMsg)) && (
                       <div data-testid="decisions-attendues">
-                        <div className="mb-1.5 font-code text-[11px] uppercase tracking-[0.16em] text-[#F2B84B]">Décision attendue</div>
+                        <div className="mb-1.5 font-code text-[11px] uppercase tracking-[0.16em] text-[#F2B84B]">{m.precision ? "Précision demandée" : "Décision attendue"}</div>
                         <div className="flex flex-wrap gap-2">
                           {m.decisions.map((d, k) => (
-                            <button key={d} disabled={envoiMsg} onClick={() => trancher(d)} data-testid={`decision-attendue-${k}`}
+                            <button key={d} disabled={envoiMsg} onClick={() => (m.precision ? envoyer(null, d) : trancher(d))} data-testid={`decision-attendue-${k}`}
                               className="rounded-full border border-[#F2B84B]/40 bg-[#F2B84B]/[0.06] px-3.5 py-1.5 text-left text-xs text-[#F2F6F8] transition-colors hover:border-[#F2B84B]/70 hover:bg-[#F2B84B]/[0.14] disabled:opacity-50">
                               {d}
                             </button>
@@ -1027,7 +1027,7 @@ export default function OngletTravail({
                         </div>
                       </div>
                     )}
-                    {m.decisions?.length > 0 && m.reponse && (
+                    {m.decisions?.length > 0 && m.reponse && !m.precision && (
                       <div className="font-code text-[11px] text-[#7C93A8]" data-testid="decision-attendue-prise">Décision prise : {m.reponse}</div>
                     )}
                     {/* Flore propose de consigner la décision qu'elle vient d'enregistrer : ce qu'on en attend, ce qu'on surveille, quand on la revoit */}

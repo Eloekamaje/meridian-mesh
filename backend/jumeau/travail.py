@@ -10,6 +10,7 @@ RISQUES = ("faible", "moyen", "eleve")
 MAX_TITRE, MAX_TEXTE, MAX_CONTENU = 120, 1000, 4000
 ECHANGES_AVANT_RAPPEL = 3  # un échange = question + réponse, soit 2 messages de la conversation
 ECHANGES_SANS_PLAN = 2
+MIN_OPTIONS, MAX_OPTIONS, MAX_OPTION = 2, 4, 80
 
 
 def _texte(valeur, limite):
@@ -91,6 +92,25 @@ class EcritureTravail:
         liv = {"id": _identifiant("liv"), "titre": titre, "contenu": contenu, "cree_le": now}
         await self._ecrire({"$push": {"livrables": liv}}, f"Livrable produit par Flore — {titre}")
         return liv
+
+    async def precision(self, question, options):
+        """Question à options posée à l'humain : en attente jusqu'à la fin de la réponse de Flore (retirer_precision)."""
+        if not isinstance(options, list) or not MIN_OPTIONS <= len(options) <= MAX_OPTIONS:
+            raise ValueError(f"{MIN_OPTIONS} à {MAX_OPTIONS} options attendues")
+        propres = [_texte(o, MAX_OPTION + 1) for o in options]
+        if any("\n" in o or len(o) > MAX_OPTION for o in propres):
+            raise ValueError(f"une option tient en une ligne de {MAX_OPTION} caractères au plus")
+        if len({o.lower() for o in propres}) < len(propres):
+            raise ValueError("options en double")
+        question = _texte(question, MAX_TEXTE)
+        await self._ecrire({"$set": {"precision": {"question": question, "options": propres}}},
+                           f"Précision demandée par Flore — {question[:80]}")
+
+    async def retirer_precision(self):
+        """La question en attente, retirée du Travail (une seule fois) : elle rejoint alors le message de Flore."""
+        avant = await self.db.cases.find_one_and_update({"id": self.cid}, {"$unset": {"precision": ""}},
+                                                        projection={"precision": 1, "_id": 0})
+        return (avant or {}).get("precision")
 
     async def resume(self, texte):
         await self._ecrire({"$set": {"resume": _texte(texte, MAX_CONTENU)}}, "Résumé actualisé par Flore")
