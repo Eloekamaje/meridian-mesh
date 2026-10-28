@@ -117,7 +117,14 @@ l'emporte en cas de conflit. Ce qu'on régénère automatiquement est un index (
 - **Portée** : `domaine`, `equipe` ou `jumeau`, chacune résolue à partir du jumeau (son domaine, son équipe,
   son identifiant). Elles sont chargées dans le prompt de tout agent qui travaille sur ce jumeau (réponse,
   gardien, mobilisation), du plus général au plus particulier, et la plus particulière l'emporte. Le volume est
-  borné (40 consignes, 6 000 caractères).
+  borné (40 consignes, 6 000 caractères), avec **une part par portée** (13 consignes, 2 000 caractères), à
+  l'écriture comme à la lecture. Ainsi des consignes de jumeau ne font jamais sauter celles du domaine.
+- On ne retire qu'une consigne qui s'applique au jumeau désigné, dans son tenant
+  (`POST /api/v2/jumeaux/{id}/consignes/{n}/retrait`).
+- **Limite connue, en attente de l'identité.** Quiconque écrit sur un jumeau peut aujourd'hui poser une consigne
+  de portée domaine ou équipe, qui s'applique alors à tous les jumeaux de ce domaine ou de cette équipe. Ces
+  deux portées exigeront un droit propre (Architecture §6.1). L'auteur est l'en-tête `X-Persona`, qui n'est pas
+  authentifié.
 - Une consigne est une **instruction de l'équipe**. Elle se distingue des sources, qui restent des données.
   C'est la seule entrée d'instructions humaines dans le prompt, ce qui exige d'en tracer l'auteur et la date
   et de pouvoir la retirer sans la supprimer (historique).

@@ -207,7 +207,9 @@ def reviser(conn, claim_id, acteur, decision, motif):
 PORTEES = ("domaine", "equipe", "jumeau")
 MAX_TEXTE, MAX_POURQUOI = 500, 1000
 MAX_CONSIGNES, MAX_CARACTERES = 40, 6000
-_CONTROLES = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f\u2028\u2029]")
+# Chaque portée a sa part : des consignes de jumeau ne font pas sauter celles du domaine ou de l'équipe.
+QUOTA_CONSIGNES, QUOTA_CARACTERES = MAX_CONSIGNES // len(PORTEES), MAX_CARACTERES // len(PORTEES)
+_CONTROLES = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff\U000e0000-\U000e007f]")
 
 
 def nettoyer_consigne(texte):
@@ -228,27 +230,42 @@ def ajouter_consigne(conn, jumeau, portee, texte, pourquoi, auteur, origine="HUM
         raise ValueError("texte et pourquoi sont obligatoires")
     if len(texte) > MAX_TEXTE or len(pourquoi) > MAX_POURQUOI:
         raise ValueError("texte ou pourquoi trop long")
+    nombre, caracteres = conn.execute(
+        "SELECT count(*), coalesce(sum(length(texte) + length(pourquoi)), 0) FROM consigne "
+        "WHERE tenant_id = %s AND portee = %s AND cible = %s AND retiree_le IS NULL",
+        (jumeau["tenant_id"], portee, _cible(jumeau, portee))).fetchone()
+    if nombre >= QUOTA_CONSIGNES or caracteres + len(texte) + len(pourquoi) > QUOTA_CARACTERES:
+        raise ValueError(f"trop de consignes pour cette portée ({QUOTA_CONSIGNES} ou {QUOTA_CARACTERES} caractères "
+                         "au plus) : retirez-en une d'abord")
     return conn.execute(
         "INSERT INTO consigne (tenant_id, portee, cible, texte, pourquoi, auteur, origine) "
         "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
         (jumeau["tenant_id"], portee, _cible(jumeau, portee), texte, pourquoi, auteur, origine)).fetchone()[0]
 
 
-def retirer_consigne(conn, consigne_id):
-    if not conn.execute("UPDATE consigne SET retiree_le = now() WHERE id = %s AND retiree_le IS NULL RETURNING id",
-                        (consigne_id,)).fetchone():
+def retirer_consigne(conn, jumeau, consigne_id):
+    """Seule une consigne active qui s'applique à `jumeau` (même tenant, portée et cible résolues) peut être retirée."""
+    if not conn.execute(
+            "UPDATE consigne SET retiree_le = now() WHERE id = %s AND tenant_id = %s AND retiree_le IS NULL AND "
+            "((portee = 'domaine' AND cible = %s) OR (portee = 'equipe' AND cible = %s) OR (portee = 'jumeau' AND cible = %s)) "
+            "RETURNING id", (consigne_id, jumeau["tenant_id"], jumeau["domaine"], jumeau["equipe"], jumeau["id"])).fetchone():
         raise LookupError(consigne_id)
 
 
 def borner_consignes(consignes):
-    """Au plus MAX_CONSIGNES et MAX_CARACTERES ; si l'on coupe, on garde les plus particulières (en fin de liste)."""
-    gardees, total = [], 0
-    for c in reversed(consignes):
+    """Au plus QUOTA_CONSIGNES et QUOTA_CARACTERES par portée (donc MAX_* en tout) ; si l'on coupe une portée, on garde
+    ses consignes les plus récentes. L'ordre reçu (domaine → équipe → jumeau, puis date) est conservé."""
+    gardees, par_portee = set(), {}
+    for i in range(len(consignes) - 1, -1, -1):
+        c = consignes[i]
+        nombre, total = par_portee.get(c["portee"], (0, 0))
         total += len(c["texte"]) + len(c["pourquoi"])
-        if len(gardees) >= MAX_CONSIGNES or total > MAX_CARACTERES:
-            break
-        gardees.append(c)
-    return gardees[::-1]
+        if nombre < QUOTA_CONSIGNES and total <= QUOTA_CARACTERES:
+            gardees.add(i)
+            par_portee[c["portee"]] = (nombre + 1, total)
+        else:
+            par_portee[c["portee"]] = (QUOTA_CONSIGNES, total)  # une fois coupée, la portée ne reprend pas plus ancien
+    return [c for i, c in enumerate(consignes) if i in gardees]
 
 
 def consignes_du_jumeau(conn, jumeau):

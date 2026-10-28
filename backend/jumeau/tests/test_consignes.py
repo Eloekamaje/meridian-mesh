@@ -17,14 +17,23 @@ def c(portee, texte="t", pourquoi="p"):
 def test_bornes_par_nombre_garde_les_plus_particulieres():
     liste = [c("domaine", f"d{i}") for i in range(30)] + [c("jumeau", f"j{i}") for i in range(30)]
     gardees = depot.borner_consignes(liste)
-    assert len(gardees) == depot.MAX_CONSIGNES
-    assert gardees[-1]["texte"] == "j29" and sum(g["portee"] == "jumeau" for g in gardees) == 30
+    q = depot.QUOTA_CONSIGNES
+    assert [g["texte"] for g in gardees] == [f"d{i}" for i in range(30 - q, 30)] + [f"j{i}" for i in range(30 - q, 30)]
 
 
 def test_bornes_par_caracteres_garde_les_plus_particulieres():
     liste = [c("domaine", "d" * 500, "p" * 500)] * 5 + [c("jumeau", "j" * 500, "p" * 500)] * 5
     gardees = depot.borner_consignes(liste)
-    assert len(gardees) == 6 and [g["portee"] for g in gardees].count("jumeau") == 5
+    assert [g["portee"] for g in gardees] == ["domaine"] * 2 + ["jumeau"] * 2  # 2000 caractères par portée
+
+
+def test_des_consignes_de_jumeau_ne_font_pas_sauter_le_domaine():
+    liste = [c("domaine", "garde-fou")] + [c("jumeau", "j" * 500, "p" * 1000)] * 4
+    assert depot.borner_consignes(liste)[0]["texte"] == "garde-fou"
+
+
+def test_caracteres_invisibles_retires():
+    assert depot.nettoyer_consigne("a\u200bb\u202ec\ufeffd\U000e0041e") == "a b c d e"
 
 
 def test_liste_vide_ou_courte_inchangee():
@@ -109,10 +118,10 @@ def test_get_renvoie_les_consignes_applicables(client, monkeypatch):
 
 
 def test_retrait_404_si_absente(client, monkeypatch):
-    def retirer(conn, i):
+    def retirer(conn, j, i):
         raise LookupError(i)
     monkeypatch.setattr(depot, "retirer_consigne", retirer)
-    assert client.post("/api/v2/consignes/9/retrait").status_code == 404
+    assert client.post("/api/v2/jumeaux/tbt/consignes/9/retrait").status_code == 404
 
 
 @pytest.mark.parametrize("decision, motif, propose", [("CONTESTED", "plus utilisé", True), ("CONTESTED", None, False),
@@ -137,10 +146,10 @@ def test_resolution_ordre_et_retrait(conn):
     ids = [depot.ajouter_consigne(conn, j, p, p, "pq", "alice") for p in ("jumeau", "domaine", "equipe")]
     depot.ajouter_consigne(conn, {**j, "id": "autre", "equipe": "x", "domaine": "y"}, "domaine", "étranger", "pq", "alice")
     assert [x["texte"] for x in depot.consignes_du_jumeau(conn, j)] == ["domaine", "equipe", "jumeau"]
-    depot.retirer_consigne(conn, ids[0])
+    depot.retirer_consigne(conn, j, ids[0])
     assert [x["texte"] for x in depot.consignes_du_jumeau(conn, j)] == ["domaine", "equipe"]
     with pytest.raises(LookupError):
-        depot.retirer_consigne(conn, ids[0])
+        depot.retirer_consigne(conn, j, ids[0])
 
 
 @besoin_pg
@@ -154,6 +163,22 @@ def test_consigne_immuable_sauf_retrait(conn):
             conn.execute(sql)
     with pytest.raises(psycopg.errors.CheckViolation):
         conn.execute("INSERT INTO consigne (tenant_id, portee, cible, texte, pourquoi, auteur) VALUES ('b','jumeau','tbt','t','  ','a')")
-    depot.retirer_consigne(conn, cid)
+    depot.retirer_consigne(conn, j, cid)
     with pytest.raises(psycopg.errors.RaiseException):
         conn.execute("UPDATE consigne SET retiree_le = NULL")
+
+
+@besoin_pg
+def test_retrait_refuse_hors_du_jumeau_et_quota_a_l_ecriture(conn):
+    depot.creer_jumeau(conn, JUMEAU)
+    j = depot.jumeau_par_id(conn, "tbt")
+    cid = depot.ajouter_consigne(conn, j, "jumeau", "t", "p", "alice")
+    with pytest.raises(LookupError):  # même numéro, autre jumeau ou autre tenant : rien n'est retiré
+        depot.retirer_consigne(conn, {**j, "id": "autre", "equipe": "x", "domaine": "y"}, cid)
+    with pytest.raises(LookupError):
+        depot.retirer_consigne(conn, {**j, "tenant_id": "autre-banque"}, cid)
+    for i in range(depot.QUOTA_CONSIGNES - 1):
+        depot.ajouter_consigne(conn, j, "jumeau", f"t{i}", "p", "alice")
+    with pytest.raises(ValueError):
+        depot.ajouter_consigne(conn, j, "jumeau", "de trop", "p", "alice")
+    assert depot.ajouter_consigne(conn, j, "equipe", "autre portée", "p", "alice")

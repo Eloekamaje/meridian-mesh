@@ -8,6 +8,7 @@ Un verdict négatif déclenche une seule révision par Flore (flore.repondre).
 """
 import asyncio
 import json
+import logging
 import re
 
 from strands import Agent
@@ -50,6 +51,7 @@ def fraicheur(texte, lecteurs=()):
         try:
             actuelle = lecteur.version_actuelle(m["ref"])
         except Exception:  # source injoignable : la réponse part, la preuve le dit
+            logging.getLogger("meridian.jumeau").warning("fraîcheur de %s non revérifiée", citation, exc_info=True)
             mentions[citation] = "non revérifiée"
             continue
         if actuelle is None:

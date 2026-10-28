@@ -142,11 +142,16 @@ async def evaluer(conn, jumeau_id, maximum=MAX_PAR_DEFAUT):
     return scores
 
 
+MAX_QUESTIONS = 50  # coût borné : deux appels au modèle par question
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--jumeau", required=True)
     p.add_argument("--max", type=int, default=MAX_PAR_DEFAUT, help="questions au plus (une réponse + un jugement chacune)")
     a = p.parse_args()
+    if not 1 <= a.max <= MAX_QUESTIONS:
+        p.error(f"--max entre 1 et {MAX_QUESTIONS}")
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
     with psycopg.connect(os.environ["JUMEAU_PG_DSN"], autocommit=True) as conn:

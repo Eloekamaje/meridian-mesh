@@ -91,14 +91,15 @@ def ajouter_consigne(jumeau_id: str, consigne: NouvelleConsigne, conn=Depends(co
     jumeau = _jumeau_ou_404(conn, jumeau_id)
     try:
         return {"id": depot.ajouter_consigne(conn, jumeau, consigne.portee, consigne.texte, consigne.pourquoi, x_persona)}
-    except ValueError:
-        raise HTTPException(422, "Texte et pourquoi sont obligatoires")
+    except ValueError as e:  # obligatoires, trop longs, ou quota de la portée atteint
+        raise HTTPException(422, str(e))
 
 
-@router.post("/consignes/{consigne_id}/retrait")
-def retirer_consigne(consigne_id: int, conn=Depends(connexion)):
+@router.post("/jumeaux/{jumeau_id}/consignes/{consigne_id}/retrait")
+def retirer_consigne(jumeau_id: str, consigne_id: int, conn=Depends(connexion)):
+    jumeau = _jumeau_ou_404(conn, jumeau_id)
     try:
-        depot.retirer_consigne(conn, consigne_id)
+        depot.retirer_consigne(conn, jumeau, consigne_id)
     except LookupError:
         raise HTTPException(404, "Consigne introuvable ou déjà retirée")
     return {"ok": True}
