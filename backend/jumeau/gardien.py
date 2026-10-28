@@ -21,7 +21,7 @@ import psycopg
 from pydantic import BaseModel, Field
 from strands import Agent
 
-from jumeau import agent, comprendre, connaissance, contradicteur, depot, methodes, registre, temps
+from jumeau import agent, comprendre, connaissance, contradicteur, depot, methodes, poignee, registre, temps
 from jumeau.ingerer import ingerer
 from jumeau.source_git import sha_courant
 
@@ -319,6 +319,10 @@ async def veiller(conn, db, jumeau_id, chemins=None, rediger=_rediger):
         journal.info("gardien %s : consolidation %s", jumeau_id, await consolider(conn, jumeau_id))
     except Exception:  # la consolidation se rattrape à la passe suivante ; la fiche est déjà enregistrée
         journal.warning("gardien %s : consolidation impossible", jumeau_id, exc_info=True)
+    try:
+        journal.info("gardien %s : poignée de main %s", jumeau_id, await poignee.serrer(conn, db, jumeau_id))
+    except Exception:  # les relations se reprennent à la passe suivante
+        journal.warning("gardien %s : poignée de main impossible", jumeau_id, exc_info=True)
     if sit and recit:
         await db.situations.update_one({"id": sit["id"]}, {"$set": {"resume": recit}})
     journal.info("gardien %s : %s dépôt(s) ingéré(s), %s signal(aux)", jumeau_id, len(ingeres), len(sigs))
