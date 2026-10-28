@@ -15,6 +15,14 @@ est la preuve, jamais le propos : pas de nom de route, de bibliothèque ni de va
 2. Vue d'ensemble avec architecture, puis cherchez ce qui porte le métier : écrans et parcours, modèles de
    données, contrôles et refus, appels vers d'autres systèmes, documents produit (README, cahier des charges).
 3. Lisez avec lire_code les lignes qui prouvent chaque réponse ; historique_du_code pour la façon dont elle vit.
+4. Si des sources sont branchées (rubrique « Sources branchées »), interrogez-les avec chercher_dans et lire_dans,
+   dans cet ordre selon la question : à quoi elle sert et pour qui, documentation puis trajectoire puis code ;
+   informations détenues, données puis code ; règles, code puis documentation (l'intention de la règle) ;
+   échanges, comportement puis code ; comment elle vit, trajectoire, exploitation, comportement puis historique
+   du code. Prouvez avec la citation rendue par lire_dans (paramètre citation de proposer_connaissance).
+5. Autorité selon la question : sur ce qu'elle fait, le code l'emporte sur la documentation ; sur ce qu'elle doit
+   faire, la documentation et l'équipe l'emportent ; sur son comportement réel, l'observabilité l'emporte sur le
+   code. Une source qui n'existe pas n'est jamais devinée : la question va dans « Ce que l'on ne sait pas encore ».
 
 ## Les sept questions
 

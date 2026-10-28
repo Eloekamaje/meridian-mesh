@@ -76,10 +76,10 @@ def enregistrer(conn, jumeau, source, claims, activite):
 
 def _lier_preuve(conn, tenant, source_id, claim_id, p, activite):
     conn.execute(
-        "INSERT INTO preuve (tenant_id, source_id, locator, chemin, sha, ligne_debut, ligne_fin, hash, activite) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (source_id, locator) DO NOTHING",
-        (tenant, source_id, p["locator"], p["chemin"], p["sha"], p["ligne_debut"], p["ligne_fin"],
-         p["hash"], Jsonb(activite)))
+        "INSERT INTO preuve (tenant_id, source_id, type, locator, chemin, sha, ligne_debut, ligne_fin, hash, activite) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (source_id, locator) DO NOTHING",
+        (tenant, source_id, p.get("type", "CODE"), p["locator"], p["chemin"], p["sha"], p["ligne_debut"],
+         p["ligne_fin"], p["hash"], Jsonb(activite)))
     conn.execute(
         "INSERT INTO claim_preuve (claim_id, preuve_id) "
         "SELECT %s, id FROM preuve WHERE source_id = %s AND locator = %s ON CONFLICT DO NOTHING",
@@ -127,6 +127,12 @@ def sources_du_jumeau(conn, jumeau_id):
         return cur.execute(
             "SELECT id, nom, emplacement, curseur, copie, index_code, branche, url, secret_ref FROM source "
             "WHERE jumeau_id = %s AND type = 'GIT' ORDER BY nom", (jumeau_id,)).fetchall()
+
+
+def toutes_les_sources(conn, jumeau_id):
+    """Toutes les sources du jumeau, de tout type (code et sources branchées), pour en faire des lecteurs."""
+    with conn.cursor(row_factory=dict_row) as cur:
+        return cur.execute("SELECT * FROM source WHERE jumeau_id = %s ORDER BY nom", (jumeau_id,)).fetchall()
 
 
 def source_du_jumeau(conn, jumeau_id, nom=None):

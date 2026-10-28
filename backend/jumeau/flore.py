@@ -10,7 +10,7 @@ import re
 
 import psycopg
 
-from jumeau import agent, carte, connaissance, contradicteur, depot, gardien, mobilisation
+from jumeau import agent, carte, connaissance, contradicteur, depot, gardien, lecteurs, mobilisation
 from jumeau.connaissance import RE_CITATION
 from jumeau.travail import EcritureTravail, etat_texte
 
@@ -74,10 +74,10 @@ def vers_reponse_flore(jumeau, sources, texte, invalides=()):
     }
 
 
-async def relire_sans_risque(question, texte, sources, profil, modele, charte=""):
+async def relire_sans_risque(question, texte, sources, profil, modele, charte="", lecteurs=()):
     """Une panne du relecteur (délai, quota) ne doit jamais faire perdre une réponse déjà produite."""
     try:
-        return await contradicteur.relire(question, texte, sources, profil, modele, charte)
+        return await contradicteur.relire(question, texte, sources, profil, modele, charte, lecteurs)
     except Exception:
         agent.journal.warning("relecture impossible, réponse envoyée sans relecture", exc_info=True)
         return {"ok": True, "problemes": []}
@@ -95,12 +95,13 @@ def _contexte(jumeau_id, acteur, profil):
     with psycopg.connect(dsn) as conn:
         jumeau = depot.jumeau_par_id(conn, jumeau_id)
         sources = [s for s in depot.sources_du_jumeau(conn, jumeau_id) if s["index_code"]]
+        lecteurs_branches = lecteurs.lecteurs_de(depot.toutes_les_sources(conn, jumeau_id))
         if not jumeau or not sources:
             return None, None
         claims = connaissance.connaissances(conn, jumeau_id, limite=500)
         fiche = gardien.fiche_courante(conn, jumeau_id)
     return {"jumeau": jumeau, "sources": sources, "claims": claims, "acteur": acteur, "profil": profil,
-            "fiche": fiche["contenu"] if fiche else None}, dsn
+            "lecteurs": lecteurs_branches, "fiche": fiche["contenu"] if fiche else None}, dsn
 
 
 def _indisponible(nom, raison):
@@ -133,14 +134,15 @@ async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=No
         # ponytail: la consigne de révision reste dans le fil (brouillon, critique, correction) : historique cohérent,
         # mais plus long ; fil séparé si elle gêne la mémoire.
         verdict = await relire_sans_risque(question, texte, ctx["sources"], ctx.get("profil"), modele,
-                                           agent.CHARTE.read_text(encoding="utf-8"))
+                                           agent.CHARTE.read_text(encoding="utf-8"), ctx.get("lecteurs", []))
         if not verdict["ok"]:
             agent.journal.info("révision %s : %s", jumeau_id, verdict["problemes"])
             try:
                 texte = str(await a.invoke_async(contradicteur.consigne_revision(verdict["problemes"]))).strip()
             except Exception:
                 agent.journal.warning("révision impossible, première réponse conservée", exc_info=True)
-        invalides = await asyncio.to_thread(contradicteur.citations_invalides, texte, ctx["sources"])
+        invalides = await asyncio.to_thread(contradicteur.citations_invalides, texte, ctx["sources"],
+                                           ctx.get("lecteurs", []))
         return vers_reponse_flore(ctx["jumeau"], ctx["sources"], texte, invalides)
     except RuntimeError as e:  # modèle non configuré
         return _indisponible(nom, str(e))
@@ -194,14 +196,15 @@ async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=
         texte = str(await asyncio.wait_for(a.invoke_async(mobilisation.demande(await _cartes(ctxs, dsn, db), question)),
                                            mobilisation.DUREE_MAX)).strip()
         sources = [s for ctx in ctxs.values() for s in ctx["sources"]]
+        branches = [l for ctx in ctxs.values() for l in ctx.get("lecteurs", [])]
         verdict = await relire_sans_risque(question, texte, sources, profil, modele,
-                                           agent.CHARTE.read_text(encoding="utf-8"))
+                                           agent.CHARTE.read_text(encoding="utf-8"), branches)
         if not verdict["ok"]:
             try:
                 texte = str(await a.invoke_async(contradicteur.consigne_revision(verdict["problemes"]))).strip()
             except Exception:
                 agent.journal.warning("révision impossible, première réponse conservée", exc_info=True)
-        invalides = await asyncio.to_thread(contradicteur.citations_invalides, texte, sources)
+        invalides = await asyncio.to_thread(contradicteur.citations_invalides, texte, sources, branches)
         # Preuves de chaque jumeau, étiquetées à son nom, prises à tour de rôle : le volet ne se remplit pas avec
         # le premier jumeau seulement, et l'on sait de quelle application vient chaque ligne.
         par_jumeau = [[{**p, "source": f"{ctxs[j]['jumeau']['nom']} · {p['source']}"}

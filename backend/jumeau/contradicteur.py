@@ -14,6 +14,7 @@ from strands import Agent
 
 from jumeau import connaissance
 from jumeau.connaissance import RE_CITATION
+from jumeau.lecteurs import RE_CITATION_SOURCE
 from jumeau.source_git import lire_au_sha
 
 PROMPT_RELECTEUR = """Tu relis une réponse de Flore avant qu'elle soit envoyée. Tu ne réécris rien : tu juges.
@@ -31,10 +32,16 @@ Réponds uniquement par un objet JSON : {"ok": true} si tout va bien, sinon
 """
 
 
-def citations_invalides(texte, sources):
+def citations_invalides(texte, sources, lecteurs=()):
     """Citations qui ne pointent sur aucune ligne existante du code au commit de leur dépôt (ou dont le dépôt ne
-    peut être déterminé)."""
+    peut être déterminé), ou qu'aucun lecteur branché ne confirme (source inconnue, version ou lignes fausses)."""
     invalides, vues = [], set()
+    for m in RE_CITATION_SOURCE.finditer(texte):
+        citation = m.group(0)
+        if citation not in vues:
+            vues.add(citation)
+            if not any(l.verifier(citation) for l in lecteurs):
+                invalides.append(citation)
     for m in RE_CITATION.finditer(texte):
         depot, chemin, debut, fin = connaissance.decouper(m)
         cle = connaissance.cle_citation(depot, chemin, debut, fin)
@@ -71,12 +78,12 @@ async def _juger(question, reponse, profil, modele, charte):
     return analyser_verdict(str(resultat))
 
 
-async def relire(question, reponse, sources, profil, modele, charte=""):
+async def relire(question, reponse, sources, profil, modele, charte="", lecteurs=()):
     # Contrôle déterministe d'abord : une citation fausse suffit à demander une révision, sans appel au LLM.
-    invalides = await asyncio.to_thread(citations_invalides, reponse, sources)
+    invalides = await asyncio.to_thread(citations_invalides, reponse, sources, lecteurs)
     if invalides:
-        return {"ok": False, "problemes": [f"Citations introuvables dans le code : {', '.join(invalides)}. "
-                                           "Relis ces lignes avec lire_code ou retire l'affirmation."]}
+        return {"ok": False, "problemes": [f"Citations introuvables : {', '.join(invalides)}. "
+                                           "Relis ces lignes avec lire_code ou lire_dans, ou retire l'affirmation."]}
     return await _juger(question, reponse, profil, modele, charte)
 
 

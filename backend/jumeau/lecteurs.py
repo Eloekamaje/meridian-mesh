@@ -116,4 +116,7 @@ FABRIQUES = {}  # type de source (table `source`) → fabrique(ligne_source) →
 
 def lecteurs_de(sources):
     """Lecteurs des sources branchées d'un jumeau (lignes de la table `source`), hors code (GIT)."""
-    return [FABRIQUES[s["type"]](s) for s in sources if s.get("type") in FABRIQUES]
+    lecteurs = [(s, FABRIQUES[s["type"]](s)) for s in sources if s.get("type") in FABRIQUES]
+    for s, l in lecteurs:
+        l.source_id = s.get("id")  # rattache les preuves citées à leur source (table `preuve`)
+    return [l for _, l in lecteurs]

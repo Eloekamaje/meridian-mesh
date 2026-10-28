@@ -9,6 +9,7 @@ from psycopg.rows import dict_row
 
 from jumeau import depot
 from jumeau.adaptateur import preuve
+from jumeau.lecteurs import RE_CITATION_SOURCE
 from jumeau.source_git import lire_au_sha
 
 FAMILLES = {
@@ -93,8 +94,7 @@ def connaissances(conn, jumeau_id, predicat=None, recherche=None, limite=80):
             (jumeau_id, predicat, predicat, recherche, recherche, limite)).fetchall()
 
 
-def proposer(conn, jumeau, source, predicat, objet, type_claim, chemin, debut, fin, justification, acteur, modele):
-    """Le jumeau propose une connaissance ; la preuve doit exister au SHA. Jamais validée ici (revue humaine)."""
+def _claim_proposee(jumeau, predicat, objet, type_claim):
     if type_claim not in TYPES_CLAIM:
         raise ValueError(f"type inconnu : {type_claim} (attendus : {', '.join(sorted(TYPES_CLAIM))})")
     predicat = re.sub(r"[^A-Z_]", "", predicat.upper().replace(" ", "_"))[:40]
@@ -103,15 +103,41 @@ def proposer(conn, jumeau, source, predicat, objet, type_claim, chemin, debut, f
         raise ValueError("prédicat et objet requis")
     if predicat in FAMILLES:
         raise ValueError(f"{predicat} est réservé à l'extraction structurelle du code")
+    return {"sujet": jumeau["nom"], "predicat": predicat, "objet": objet, "type": type_claim,
+            "confiance": CONFIANCE_PROPOSITION}
+
+
+def proposer(conn, jumeau, source, predicat, objet, type_claim, chemin, debut, fin, justification, acteur, modele):
+    """Le jumeau propose une connaissance ; la preuve doit exister au SHA. Jamais validée ici (revue humaine)."""
+    c = _claim_proposee(jumeau, predicat, objet, type_claim)
     lignes = lire_au_sha(source.get("copie") or source["emplacement"], source["curseur"])(chemin)
     if lignes is None or debut < 1 or fin < debut or fin > len(lignes) or fin - debut >= MAX_LIGNES:
         raise ValueError(f"preuve introuvable : {chemin}#L{debut}-L{fin}")
     p = preuve(source["nom"], source["curseur"][:12], chemin, lignes, debut, fin)
     activite = {"extracteur": "jumeau-conversation", "modele": modele, "acteur": acteur,
                 "justification": justification[:1000]}
-    c = {"sujet": jumeau["nom"], "predicat": predicat, "objet": objet, "type": type_claim,
-         "confiance": CONFIANCE_PROPOSITION}
     return depot.enregistrer_proposition(conn, jumeau, source["id"], c, p, activite)
+
+
+def proposer_source(conn, jumeau, lecteur, predicat, objet, type_claim, citation, justification, acteur, modele):
+    """Comme `proposer`, mais la preuve est une citation `systeme://espace/ref@version#La-Lb` d'une source branchée :
+    le lecteur la vérifie, puis elle est enregistrée avec le hash du texte cité."""
+    c = _claim_proposee(jumeau, predicat, objet, type_claim)
+    citation = citation.strip("` ")
+    m = RE_CITATION_SOURCE.fullmatch(citation)
+    if not m or not lecteur.verifier(citation):
+        raise ValueError(f"preuve introuvable : {citation}")
+    debut = int(m["debut"])
+    fin = int(m["fin"] or debut)
+    if fin - debut >= MAX_LIGNES:
+        raise ValueError(f"preuve trop longue : {citation}")
+    lu = lecteur.lire(m["ref"], debut, fin, version=m["version"])
+    texte = "\n".join(lu["lignes"])
+    p = {"type": lecteur.nature.upper(), "locator": lu["locator"], "chemin": lu["ref"], "sha": lu["version"],
+         "ligne_debut": debut, "ligne_fin": fin, "citation": texte, "hash": hashlib.sha256(texte.encode()).hexdigest()}
+    activite = {"extracteur": "jumeau-conversation", "modele": modele, "acteur": acteur,
+                "justification": justification[:1000]}
+    return depot.enregistrer_proposition(conn, jumeau, lecteur.source_id, c, p, activite)
 
 
 def autoportrait(jumeau, claims):

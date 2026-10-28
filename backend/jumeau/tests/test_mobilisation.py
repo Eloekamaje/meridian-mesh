@@ -106,7 +106,7 @@ def pose(monkeypatch, faux_consulter):
     async def relire(*a):
         return {"ok": True, "problemes": []}
     monkeypatch.setattr(flore.contradicteur, "relire", relire)
-    monkeypatch.setattr(flore.contradicteur, "citations_invalides", lambda t, s: [])
+    monkeypatch.setattr(flore.contradicteur, "citations_invalides", lambda t, s, l=(): [])
 
     class Orchestrateur:
         def __init__(self, outils):

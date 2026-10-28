@@ -20,6 +20,7 @@ from strands.session.file_session_manager import FileSessionManager
 from strands.session.s3_session_manager import S3SessionManager
 
 from jumeau import cbm, connaissance, depot, methodes, temps
+from jumeau.lecteurs import NATURES, RE_CITATION_SOURCE
 
 SESSIONS = Path(os.environ.get("JUMEAU_SESSIONS", Path.home() / ".local/share/meridian/sessions"))
 MAX_SORTIE = 6000  # caractères renvoyés au modèle par outil
@@ -135,13 +136,23 @@ def prompt_systeme(ctx):
     if ctx.get("fiche"):
         prompt += f"\n\n## Fiche vivante de l'application (rédigée par le gardien du jumeau)\n\n{ctx['fiche']}"
     prompt += f"\n\n{contexte}"
+    if ctx.get("lecteurs"):
+        prompt += "\n\n## Sources branchées\n\nEn plus du code, tu disposes de ces sources (outils chercher_dans, lire_dans) :\n"
+        prompt += "\n".join(f"- {l.nom} : {l.nature}, fait autorité pour {NATURES.get(l.systeme, ('', 'son domaine'))[1]}"
+                            for l in ctx["lecteurs"])
     if ctx.get("travail"):
         prompt += f"\n\n## État du Travail (ton état de tâche : tiens-le à jour avec tes outils)\n\n{ctx['travail']}"
     return prompt
 
 
 def outils(ctx, dsn, nom_modele, budget):
-    jumeau, sources = ctx["jumeau"], ctx["sources"]
+    jumeau, sources, lecteurs = ctx["jumeau"], ctx["sources"], ctx.get("lecteurs") or []
+
+    def lecteur_nomme(nom):
+        lecteur = next((l for l in lecteurs if l.nom == nom), None)
+        if not lecteur:
+            raise ValueError(f"source inconnue : {nom} (connues : {', '.join(l.nom for l in lecteurs)})")
+        return lecteur
 
     def choisir(depot):
         if not depot:
@@ -252,29 +263,39 @@ def outils(ctx, dsn, nom_modele, budget):
             return {"erreur": str(e)}
 
     @tool
-    def proposer_connaissance(predicat: str, objet: str, type_claim: str, chemin: str, debut: int, fin: int,
-                              justification: str, depot: str = "") -> str:
-        """Propose au jumeau une nouvelle connaissance sur l'application, prouvée par des lignes de code.
+    def proposer_connaissance(predicat: str, objet: str, type_claim: str, justification: str, chemin: str = "",
+                              debut: int = 0, fin: int = 0, depot: str = "", citation: str = "") -> str:
+        """Propose au jumeau une nouvelle connaissance sur l'application, prouvée par des lignes de code ou de source.
 
-        Elle reste PROPOSED jusqu'à la revue humaine. N'utilise que des lignes lues avec lire_code.
+        Elle reste PROPOSED jusqu'à la revue humaine. N'utilise que des lignes lues avec lire_code (chemin, debut,
+        fin) ou lire_dans (citation).
 
         Args:
             predicat: verbe en MAJUSCULES, par exemple APPLIQUE_REGLE, STOCKE, AUTORISE.
             objet: ce que fait l'application, en une phrase courte.
             type_claim: BUSINESS_RULE, CAPABILITY, DATA_FLOW, BEHAVIOR, FUNCTIONALITY, RISK, DEPENDENCY, API_USAGE…
-            chemin: fichier de la preuve.
-            debut: première ligne de la preuve.
-            fin: dernière ligne de la preuve.
             justification: pourquoi ces lignes prouvent la connaissance.
-            depot: dépôt de la preuve ; vide si l'application n'en a qu'un.
+            chemin: fichier de la preuve de code.
+            debut: première ligne de la preuve de code.
+            fin: dernière ligne de la preuve de code.
+            depot: dépôt de la preuve de code ; vide si l'application n'en a qu'un.
+            citation: preuve d'une source branchée, le locator rendu par lire_dans (systeme://espace/ref@version#La-Lb) ; vide pour du code.
         """
         if not budget.outil() or not budget.proposition():
             return "Plafond de propositions de cette réponse atteint."
         try:
             with psycopg.connect(dsn, autocommit=True) as conn:
-                source = connaissance.resoudre_source(sources, depot, chemin)
-                cid = connaissance.proposer(conn, jumeau, source, predicat, objet, type_claim, chemin, debut, fin,
-                                            justification, ctx["acteur"], nom_modele)
+                if citation:
+                    m = RE_CITATION_SOURCE.fullmatch(citation.strip("` "))
+                    lecteur = next((l for l in lecteurs if m and l.systeme == m["systeme"] and l.espace == m["espace"]), None)
+                    if not lecteur:
+                        raise LookupError(f"source inconnue : {citation}")
+                    cid = connaissance.proposer_source(conn, jumeau, lecteur, predicat, objet, type_claim, citation,
+                                                       justification, ctx["acteur"], nom_modele)
+                else:
+                    source = connaissance.resoudre_source(sources, depot, chemin)
+                    cid = connaissance.proposer(conn, jumeau, source, predicat, objet, type_claim, chemin, debut, fin,
+                                                justification, ctx["acteur"], nom_modele)
             return f"Proposition enregistrée (claim {cid}), en attente de revue par l'équipe."
         except (ValueError, LookupError) as e:
             return f"Proposition refusée : {e}"
@@ -349,8 +370,52 @@ def outils(ctx, dsn, nom_modele, budget):
         """
         return methodes.lire(nom) or f"Méthode inconnue. Disponibles : {', '.join(m['nom'] for m in methodes.catalogue())}"
 
+    def donnee(lecteur, contenu):
+        """Contenu de source rendu comme donnée : balisé, `<` `>` neutralisés (jamais une instruction)."""
+        contenu = contenu.replace("<", "‹").replace(">", "›")
+        return f'<donnee source="{lecteur.nom.replace(chr(34), "")}">\n{contenu}\n</donnee>'
+
+    def appeler_source(source, action):
+        if not budget.outil():
+            return EPUISE
+        try:
+            lecteur = lecteur_nomme(source)
+            return donnee(lecteur, action(lecteur))
+        except (LookupError, ValueError, OSError) as e:
+            journal.warning("source %s : %s", source, e)
+            return f"Source indisponible : {e}"
+
+    @tool
+    def chercher_dans(source: str, texte: str) -> str:
+        """Cherche un texte dans une source branchée (pas le code) ; renvoie les références et extraits trouvés.
+
+        Args:
+            source: nom de la source, tel qu'annoncé dans « Sources branchées ».
+            texte: mots à chercher.
+        """
+        return appeler_source(source, lambda l: "\n".join(
+            f"{r['ref']} · {r['titre']} · {r['extrait']}" for r in l.chercher(texte)) or "Aucun résultat.")
+
+    @tool
+    def lire_dans(source: str, ref: str, debut: int = 1, fin: int = 200) -> str:
+        """Lit des lignes d'un document d'une source branchée ; renvoie le locator à citer comme preuve.
+
+        Args:
+            source: nom de la source, tel qu'annoncé dans « Sources branchées ».
+            ref: référence du document, rendue par chercher_dans.
+            debut: première ligne (1 = début).
+            fin: dernière ligne (au plus 200 lignes lues).
+        """
+        def lire(l):
+            lu = l.lire(ref, debut, fin)
+            premiere = int(lu["locator"].rsplit("#L", 1)[1].split("-L")[0])
+            lignes = "\n".join(f"{premiere + i}: {t}" for i, t in enumerate(lu["lignes"]))
+            return f"{lu['titre']} — à citer : {lu['locator']}\n{lignes}"
+        return appeler_source(source, lire)
+
     return [mes_connaissances, architecture, chercher_texte, chercher_symbole, tracer_appels, lire_code,
-            proposer_connaissance, fusionner_connaissances, consulter_methode, historique_du_code, ce_qui_a_change]
+            proposer_connaissance, fusionner_connaissances, consulter_methode, historique_du_code, ce_qui_a_change,
+            *([chercher_dans, lire_dans] if lecteurs else [])]
 
 
 def historique_fusionne(sources, depuis="", chemin=""):
