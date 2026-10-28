@@ -99,7 +99,7 @@ def test_recherche_bornee_a_l_espace(wiki):
         {"title": "Parcours", "excerpt": "le <b>délai</b>", "content": {"id": "123"}}, {"title": "sans contenu"}]}
     assert lecteur().chercher('délai" or space = "RH') == [{"ref": "123", "titre": "Parcours", "extrait": "le délai"}]
     cql = parse_qs(urlsplit(envoyees[-1].full_url).query)["cql"][0]
-    assert cql == 'space="TBT" and text ~ "délai or space = RH"'  # le guillemet injecté est retiré
+    assert cql == 'space="TBT" and type = page and text ~ "délai or space = RH"'  # le guillemet injecté est retiré
 
 
 def test_version_courante_de_l_espace(wiki):

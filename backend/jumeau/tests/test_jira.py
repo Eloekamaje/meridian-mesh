@@ -155,9 +155,11 @@ def test_identite_prise_chez_jira(jira_cloud):
 
 
 def test_projets_filtres(jira_cloud):
-    reponses, _ = jira_cloud
+    reponses, envoyees = jira_cloud
     reponses["/rest/api/3/project/search"] = {"values": [{"key": "PAY", "name": "Paiements"}, {"key": "RH", "name": "Ressources"}]}
     assert jira.perimetres("vault:r", "paie") == [{"cle": "PAY", "nom": "Paiements"}]
+    # project/search plafonne maxResults à 100 (swagger Jira v3) : demander plus ne ramènerait pas plus
+    assert parse_qs(urlsplit(envoyees[-1].full_url).query)["maxResults"] == ["100"]
 
 
 def test_debit_limite_par_jeton(jira_cloud):

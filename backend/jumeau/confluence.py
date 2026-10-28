@@ -133,7 +133,7 @@ class LecteurConfluence(lecteurs.Lecteur):
         if not CLE_ESPACE.fullmatch(self.espace):
             raise Invalide("clé d'espace invalide")
         motif = re.sub(r'["\\]', "", texte)
-        cql = f'space="{self.espace}" and text ~ "{motif}"'
+        cql = f'space="{self.espace}" and type = page and text ~ "{motif}"'  # sinon pièces jointes, commentaires
         for r in _get(self.reference, "/wiki/rest/api/search", cql=cql, limit=MAX_RESULTATS)["results"]:
             if (r.get("content") or {}).get("id"):
                 yield {"ref": r["content"]["id"], "titre": r.get("title") or "",

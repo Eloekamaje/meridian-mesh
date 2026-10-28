@@ -16,7 +16,7 @@ from jumeau.naissance import hote_public, _resultat, resoudre_secret
 CLE_PROJET = re.compile(r"[A-Z][A-Z0-9_]{1,19}")
 REF_TICKET = re.compile(r"[A-Z][A-Z0-9_]{1,19}-\d{1,9}")
 PREFIXE, SERVICE = "jr-", "Jira"
-MAX_PROJETS = 250  # ponytail : les 250 premiers projets ; recherche côté Jira si un compte en voit davantage
+MAX_PROJETS = 100  # plafond de project/search (swagger Jira v3) ; ponytail : les 100 premiers projets ; recherche côté Jira si un compte en voit davantage
 PROFONDEUR_ADF = 20  # un document plus imbriqué n'est pas lu plus loin
 
 _ouvrir = urllib.request.build_opener(_SansRedirection).open

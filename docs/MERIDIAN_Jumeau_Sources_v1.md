@@ -92,3 +92,29 @@ recherche par CQL limitée à l'espace. Jira, Datadog, ServiceNow suivront le m�
   seconde source ne les confirme pas.
 - **Ancrage** : chaque connaissance issue d'une source se rattache, quand il existe, à un élément de l'ancre de
   substance (fichier ou symbole du code) ; le gardien lit d'abord l'ancre de substance, puis rattache le reste.
+
+# 8. Brancher la source pilote
+
+**Ce que l'utilisateur fournit** : l'hôte Atlassian (`banque.atlassian.net`), l'espace Confluence ou le projet Jira
+(sa clé), l'adresse e-mail du compte de test et un jeton d'API (id.atlassian.com, Sécurité, Jeton d'API) déposé dans
+Vault sous `meridian/…` au format `e-mail:jeton` (ou, en poste de développement, dans `MERIDIAN_…`). Le compte ne doit
+avoir que la lecture de ce périmètre.
+
+**Commande d'essai** (six étapes, OK ou ÉCHEC avec la cause, jamais le jeton ; sans l'un des trois éléments elle
+s'arrête sans appel réseau) :
+
+    python -m jumeau.essai_source --systeme confluence|jira --hote banque.atlassian.net \
+        --perimetre TBT --secret vault:meridian/confluence/pilote#jeton [--terme mot]
+
+Étapes : authentification, lecture du périmètre, recherche, lecture à une version, vérification d'une citation (et
+refus d'une ligne inexistante), version courante.
+
+**Vérifié par la documentation officielle (octobre 2026)** : tous les endpoints appelés existent et ne sont pas
+retirés. `/wiki/rest/api/search` (CQL v1) est toujours documenté, seuls les champs utilisateur sont retirés ;
+`/rest/api/3/search/jql` est le remplaçant de `/rest/api/3/search`, en cours de retrait (que nous n'appelons pas).
+Corrigé : plafond de 100 projets (et non 250) et recherche limitée aux pages.
+
+**Non vérifié tant que l'essai n'a pas tourné avec un vrai compte** : la forme réelle des réponses (les tests
+reposent sur des réponses factices conformes aux schémas OpenAPI), l'authentification Basic e-mail:jeton sur le tenant
+(SSO, liste d'adresses autorisées), la pertinence de la recherche CQL `text ~` sur un vrai contenu, la cohérence
+éventuelle de `search/jql` juste après une modification, les limites de débit réelles (429).
