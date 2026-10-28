@@ -5,6 +5,8 @@ import { Sparkle, PaperPlaneRight, FileText, X, Plus, Eye, Lightning, FolderOpen
 import { toast } from "sonner";
 import api from "@/lib/api";
 import TrustBadges from "./TrustBadges";
+import SchemaMermaid from "./SchemaMermaid";
+import { decouperMermaid } from "@/lib/segmentsMermaid";
 import FloreActivite, { delaiMin } from "./FloreActivite";
 import { couleurDomaine } from "@/lib/domaines";
 import { useContexte } from "@/lib/contexte";
@@ -110,10 +112,12 @@ function TexteTeletype({ texte, actif, gele = false, testid }) {
   }, [texte, actif, reduit, gele]);
   const fini = n >= (texte || "").length;
   return (
-    <p className="mt-2 text-sm leading-relaxed text-[#D8E2EA]" data-testid={testid}>
-      {(texte || "").slice(0, n)}
+    <div className="mt-2 text-sm leading-relaxed text-[#D8E2EA]" data-testid={testid}>
+      {decouperMermaid((texte || "").slice(0, n)).map((seg, i) => (seg.type === "mermaid"
+        ? <SchemaMermaid key={i} code={seg.code} complet={seg.complet} />
+        : <span key={i}>{seg.texte}</span>))}
       {!fini && <span className="curseur-teletype">▍</span>}
-    </p>
+    </div>
   );
 }
 

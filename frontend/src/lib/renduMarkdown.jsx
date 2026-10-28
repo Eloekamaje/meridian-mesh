@@ -10,6 +10,9 @@ export function echapperHtml(txt) {
     .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
+import SchemaMermaid from "../components/SchemaMermaid";
+import { decouperMermaid } from "./segmentsMermaid";
+
 export function formaterGrasCode(txt) {
   if (!txt) return "";
   return echapperHtml(txt)
@@ -46,7 +49,20 @@ function decouperBlocs(texte) {
   return blocs;
 }
 
+// Un document de Canvas peut contenir des schémas Mermaid (déjà vérifiés par le harness) : dessinés à leur place.
 export function RenduMarkdown({ texte, className = "" }) {
+  const segments = decouperMermaid(texte);
+  if (segments.length === 1 && segments[0].type === "texte") return <RenduBlocs texte={texte} className={className} />;
+  return (
+    <div className={className}>
+      {segments.map((s, i) => (s.type === "mermaid"
+        ? <SchemaMermaid key={i} code={s.code} complet={s.complet} />
+        : <RenduBlocs key={i} texte={s.texte} />))}
+    </div>
+  );
+}
+
+function RenduBlocs({ texte, className = "" }) {
   const blocs = decouperBlocs(texte);
   return (
     <div className={`space-y-3 text-sm leading-relaxed text-[#CBD5E1] ${className}`}>

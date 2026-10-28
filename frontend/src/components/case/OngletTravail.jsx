@@ -28,6 +28,8 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { formaterGrasCode } from "@/lib/renduMarkdown";
+import { decouperMermaid } from "@/lib/segmentsMermaid";
+import SchemaMermaid from "@/components/SchemaMermaid";
 import { usePerimetre } from "@/lib/perimetre";
 import { useContexte } from "@/lib/contexte";
 import { couleurDomaine } from "@/lib/domaines";
@@ -158,7 +160,7 @@ export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif, onVoir
   const pilote = usePilotage();
   const texte = message.texte || "";
   const { visible, fini } = useDeroule(message, pilote);
-  const lignes = visible.split("\n");
+  const segments = decouperMermaid(visible);
 
   // Détecte si le message présente l'architecture ou la convergence pour intégrer le pipeline
   const montrePipeline = 
@@ -170,7 +172,10 @@ export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif, onVoir
 
   return (
     <div className="space-y-3.5 text-[15px] leading-relaxed text-[#DCE6EE]">
-      {lignes.map((ligne, idx) => {
+      {segments.map((seg, si) => seg.type === "mermaid"
+        ? <SchemaMermaid key={`schema-${si}`} code={seg.code} complet={seg.complet} />
+        : seg.texte.split("\n").map((ligne, li) => {
+        const idx = `${si}-${li}`;
         const trimmed = ligne.trim();
         if (!trimmed) return <div key={idx} className="h-1.5" />;
 
@@ -227,7 +232,7 @@ export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif, onVoir
         return (
           <p key={idx} dangerouslySetInnerHTML={{ __html: formaterGrasCode(ligne) }} />
         );
-      })}
+      }))}
 
       {/* Curseur clignotant : Flore est encore en train d'écrire (sinon, rien ne le distingue d'une lecture) */}
       {!fini && <span className="curseur-teletype -mt-2 inline-block">▍</span>}

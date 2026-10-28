@@ -28,7 +28,7 @@ def _mention(c):
 
 def _objets(claims, predicat):
     """Formulations valables d'un prédicat, avec leur mention ; contestées par l'équipe et non appuyées exclues."""
-    return [c["objet"] + _mention(c) for c in claims
+    return [c["objet"] + _mention(c) + (f" [c:{c['id']}]" if c.get("id") else "") for c in claims
             if c["predicat"] == predicat and c["statut"] != "CONTESTED"
             and (c.get("verification") or {}).get("etat") not in NON_APPUYEES][:MAX_PAR_RUBRIQUE]
 
@@ -42,7 +42,7 @@ def carte(jumeau, sources, claims, relations, noms, ci=None):
         sortant = r.get("source") == jumeau["id"]
         autre = r["cible"] if sortant else r["source"]
         voisins.append({"jumeau": autre, "nom": noms.get(autre, autre), "sens": "vers" if sortant else "depuis",
-                        "etat": r.get("etat")})
+                        "etat": r.get("etat"), "relation": r.get("id")})
     return {
         "id": jumeau["id"], "nom": jumeau["nom"], "mission": jumeau.get("mission"), "domaine": jumeau.get("domaine"),
         "equipe": jumeau.get("equipe"), "ci": ci,
@@ -63,7 +63,8 @@ def texte(c):
         if c[cle]:
             lignes.append(f"{titre} : " + " ; ".join(c[cle]))
     if c["voisins"]:
-        lignes.append("Voisins : " + " ; ".join(f"{v['nom']} ({v['sens']}, {v['etat']})" for v in c["voisins"]))
+        lignes.append("Voisins : " + " ; ".join(f"{v['nom']} ({v['sens']}, {v['etat']})"
+                                                + (f" [r:{v['relation']}]" if v.get("relation") else "") for v in c["voisins"]))
     return "\n".join(lignes)
 
 
@@ -74,7 +75,7 @@ async def carte_du_jumeau(conn, db, jumeau_id, visibles=None):
     if not jumeau:
         return None
     relations = await db.relations.find({"$or": [{"source": jumeau_id}, {"cible": jumeau_id}]},
-                                        {"_id": 0, "source": 1, "cible": 1, "etat": 1}).to_list(200)
+                                        {"_id": 0, "id": 1, "source": 1, "cible": 1, "etat": 1}).to_list(200)
     if visibles is not None:
         relations = [r for r in relations if ({r["source"], r["cible"]} - {jumeau_id}) <= visibles]
     autres = {r["source"] for r in relations} | {r["cible"] for r in relations}

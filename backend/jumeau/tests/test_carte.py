@@ -22,8 +22,8 @@ def test_carte_d_un_jumeau():
     assert c["capacites"] == ["Gérer les dossiers ✓", "Orienter une personne"]   # contestée : hors carte
     assert c["offre"] == ["GET /dossiers"]
     assert c["echanges"] == ["Envoie les alertes au service Fraude"]
-    assert c["voisins"] == [{"jumeau": "fraude", "nom": "Fraude", "sens": "vers", "etat": "confirmee"},
-                            {"jumeau": "comptes", "nom": "Comptes", "sens": "depuis", "etat": "validation"}]
+    assert c["voisins"] == [{"jumeau": "fraude", "nom": "Fraude", "sens": "vers", "etat": "confirmee", "relation": "r1"},
+                            {"jumeau": "comptes", "nom": "Comptes", "sens": "depuis", "etat": "validation", "relation": "r2"}]
     assert c["code"] == ["tbt-api · main · aaaaaaaaaaaa"]
     assert "fastapi" not in str(c)  # l'extraction technique reste à la porte intérieure
 
@@ -32,7 +32,7 @@ def test_carte_en_texte_court_pour_un_prompt():
     texte = carte.texte(carte.carte(JUMEAU, SOURCES, CLAIMS, RELATIONS, NOMS))
     assert texte.startswith("### TBT [tbt]")
     assert "Mission : Traite les virements" in texte
-    assert "Voisins : Fraude (vers, confirmee) ; Comptes (depuis, validation)" in texte
+    assert "Voisins : Fraude (vers, confirmee) [r:r1] ; Comptes (depuis, validation) [r:r2]" in texte  # citables
     assert len(texte) < 800
 
 

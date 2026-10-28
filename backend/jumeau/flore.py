@@ -10,7 +10,7 @@ import re
 
 import psycopg
 
-from jumeau import agent, carte, connaissance, contradicteur, depot, gardien, lecteurs, mobilisation
+from jumeau import agent, carte, connaissance, contradicteur, depot, gardien, lecteurs, mobilisation, schemas
 from jumeau.connaissance import RE_CITATION
 from jumeau.lecteurs import RE_CITATION_SOURCE
 from jumeau.travail import EcritureTravail, etat_texte
@@ -66,6 +66,7 @@ RE_GROUPE = re.compile(r"[ \t]*(?:[—·][ \t]*)?" + _GROUPE)
 def retirer_citations(texte):
     """Les preuves vont dans le volet sous le message (charte de Flore) : le texte reste lisible, sans restes."""
     propre = RE_GROUPE.sub("", RE_GROUPE_ENTRE_PARENTHESES.sub("", texte))
+    propre = re.sub(r"[ \t]*\[[cr]:[\w.-]+\]", "", propre)  # marques de fondement de schéma (cartes), pas pour le lecteur
     propre = re.sub(r"[ \t]+([.,;:])", r"\1", propre)
     return re.sub(r",([.;:])", r"\1", propre)
 
@@ -166,6 +167,7 @@ async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=No
         if trace is not None:
             trace.update(texte=texte, invalides=list(invalides))
         fraiches = await asyncio.to_thread(contradicteur.fraicheur, texte, ctx.get("lecteurs", []))
+        texte = schemas.verifier(texte, {c["id"]: c for c in ctx["claims"] if c.get("id")})
         return vers_reponse_flore(ctx["jumeau"], ctx["sources"], texte, invalides, fraiches)
     except RuntimeError as e:  # modèle non configuré
         return _indisponible(nom, str(e))
@@ -176,8 +178,9 @@ async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=No
         FILS.rendre(jumeau_id, cle)
 
 
-async def _cartes(ctxs, dsn, db):
-    """Cartes des jumeaux autorisés ; sans registre (db), pas de voisins."""
+async def _cartes(ctxs, dsn, db, relations=None):
+    """Cartes des jumeaux autorisés ; sans registre (db), pas de voisins. `relations` reçoit les relations citables
+    ({id: relation}) : seules celles que montrent les cartes peuvent fonder une flèche de schéma."""
     textes = []
     for jid, ctx in ctxs.items():
         if db is None:
@@ -188,6 +191,8 @@ async def _cartes(ctxs, dsn, db):
                 c = await carte.carte_du_jumeau(conn, db, jid, visibles=set(ctxs))
             finally:
                 await asyncio.to_thread(conn.close)
+        if relations is not None:
+            relations.update({v["relation"]: v for v in c["voisins"] if v.get("relation")})
         textes.append(carte.texte(c))
     return "\n\n".join(textes)
 
@@ -213,11 +218,11 @@ async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=
         ecriture = EcritureTravail(db, travail) if travail and db is not None else None
         etat = etat_texte(await ecriture.etat()) if ecriture else None
         mob = mobilisation.Mobilisation(ctxs, dsn, modele)
-        scene = mobilisation.Scene(ctxs)  # seuls les jumeaux autorisés (déjà filtrés par le serveur)
+        scene, relations = mobilisation.Scene(ctxs), {}  # seuls les jumeaux autorisés (déjà filtrés par le serveur)
         outils = [mob.outil(), scene.outil()] + (agent.outils_travail(ecriture, agent.Budget()) if ecriture else [])
         a = mobilisation.orchestrateur(modele, mobilisation.prompt(etat), outils)
         # Durée bornée : chaque outil a son plafond, mais pas le nombre de tours de l'orchestratrice.
-        texte = str(await asyncio.wait_for(a.invoke_async(mobilisation.demande(await _cartes(ctxs, dsn, db), question)),
+        texte = str(await asyncio.wait_for(a.invoke_async(mobilisation.demande(await _cartes(ctxs, dsn, db, relations), question)),
                                            mobilisation.DUREE_MAX)).strip()
         sources = [s for ctx in ctxs.values() for s in ctx["sources"]]
         branches = [l for ctx in ctxs.values() for l in ctx.get("lecteurs", [])]
@@ -230,6 +235,8 @@ async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=
             except Exception:
                 agent.journal.warning("révision impossible, première réponse conservée", exc_info=True)
         invalides = await asyncio.to_thread(contradicteur.citations_invalides, texte, sources, branches)
+        texte = schemas.verifier(texte, {c["id"]: c for ctx in ctxs.values() for c in ctx["claims"] if c.get("id")},
+                                 relations)
         tout = "\n".join([texte, *(p for c in mob.contributions.values() for p in c.preuves)])
         fraiches = await asyncio.to_thread(contradicteur.fraicheur, tout, branches)
         # Preuves de chaque jumeau, étiquetées à son nom, prises à tour de rôle : le volet ne se remplit pas avec
