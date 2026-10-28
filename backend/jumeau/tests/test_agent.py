@@ -70,7 +70,7 @@ def test_agent_a_les_outils_attendus_et_aucun_outil_de_validation(tmp_path, monk
     a = agent.construire(CONTEXTE, dsn="postgresql://inutilise", session="test", modele=modele_factice())
     noms = set(a.tool_names)
     assert noms == {"mes_connaissances", "architecture", "chercher_texte", "chercher_symbole",
-                    "tracer_appels", "lire_code", "proposer_connaissance", "fusionner_connaissances", "signaler_contradiction",
+                    "tracer_appels", "suivre_appels", "lire_code", "proposer_connaissance", "fusionner_connaissances", "signaler_contradiction",
                     "consulter_methode", "ancrer_connaissance", "recouper_connaissance",
                     "historique_du_code", "ce_qui_a_change"}
     assert not any("valid" in n or "decid" in n for n in noms)
@@ -193,3 +193,11 @@ def test_demander_precision_passe_par_le_budget_d_ecriture_et_dit_a_flore_de_s_a
     assert e.appels == [("Quel périmètre ?", ["a", "b"])]
     assert "Plafond" in asyncio.run(outil(question="Autre ?", options=["a", "b"]))
     assert len(e.appels) == 1
+
+
+def test_dessiner_schema_seulement_quand_flore_peut_l_inserer(tmp_path, monkeypatch):
+    from jumeau import schemas
+    monkeypatch.setattr(agent, "SESSIONS", tmp_path)
+    avec = agent.construire({**CONTEXTE, "dessin": schemas.Dessin({}, lambda c: ([], "", ""))}, dsn="postgresql://x",
+                            session="t", modele=modele_factice())
+    assert "dessiner_schema" in avec.tool_names

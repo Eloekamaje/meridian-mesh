@@ -123,6 +123,26 @@ def _contexte(jumeau_id, acteur, profil):
             "lecteurs": lecteurs_branches, "fiche": fiche["contenu"] if fiche else None}, dsn
 
 
+def dessin_pour(ctx):
+    """Le schéma d'une réponse : flèches fondées sur la ligne d'appel au commit ingéré ou sur une connaissance."""
+    def lire_lignes(citation):
+        m = schemas.RE_CITATION_CODE.match(citation)
+        source = connaissance.resoudre_source(ctx["sources"], m["depot"], m["chemin"])
+        debut = int(m["debut"])
+        lu = connaissance.lire_code(source, m["chemin"], debut, int(m["fin"] or debut))
+        return [l["texte"] for l in lu["lignes"]], lu["locator"], f"{m['chemin']}:{debut}"
+    return schemas.Dessin({c["id"]: c for c in ctx["claims"] if c.get("id")}, lire_lignes)
+
+
+def avec_schema(texte, dessin):
+    """Le schéma dessiné par le harness prend place après le premier paragraphe (la réponse d'abord)."""
+    bloc = dessin.bloc() if dessin else ""
+    if not bloc:
+        return texte
+    tete, sep, reste = texte.partition("\n\n")
+    return f"{tete}\n\n{bloc}\n\n{reste}" if sep else f"{texte}\n\n{bloc}"
+
+
 def _indisponible(nom, raison):
     return {"comportement": "signaler", "reponse": f"Je ne peux pas mobiliser le jumeau **{nom}** pour le moment : {raison}",
             "contributions": [], "preuves": []}
@@ -147,6 +167,7 @@ async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=No
         ecriture = EcritureTravail(db, travail) if travail and db is not None else None
         if ecriture:
             ctx["travail"] = etat_texte(await ecriture.etat())
+        ctx["dessin"] = dessin = dessin_pour(ctx) if ctx["sources"] else None
         a = agent.construire(ctx, dsn, session=connaissance.id_session(jumeau_id, cle), modele=modele,
                              ecriture=ecriture)
         texte = str(await a.invoke_async(question)).strip()
@@ -167,8 +188,11 @@ async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=No
         if trace is not None:
             trace.update(texte=texte, invalides=list(invalides))
         fraiches = await asyncio.to_thread(contradicteur.fraicheur, texte, ctx.get("lecteurs", []))
-        texte = schemas.verifier(texte, {c["id"]: c for c in ctx["claims"] if c.get("id")})
-        return vers_reponse_flore(ctx["jumeau"], ctx["sources"], texte, invalides, fraiches)
+        texte = avec_schema(schemas.verifier(texte, {c["id"]: c for c in ctx["claims"] if c.get("id")}), dessin)
+        reponse = vers_reponse_flore(ctx["jumeau"], ctx["sources"], texte, invalides, fraiches)
+        if dessin and dessin.preuves:  # chaque flèche du schéma renvoie à sa ligne, dans le volet des preuves
+            reponse["preuves"] = (reponse["preuves"] + dessin.preuves)[:MAX_PREUVES + len(dessin.preuves)]
+        return reponse
     except RuntimeError as e:  # modèle non configuré
         return _indisponible(nom, str(e))
     except Exception:

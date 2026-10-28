@@ -19,7 +19,7 @@ from strands.agent.conversation_manager import SummarizingConversationManager
 from strands.session.file_session_manager import FileSessionManager
 from strands.session.s3_session_manager import S3SessionManager
 
-from jumeau import cbm, connaissance, croisement, depot, methodes, temps
+from jumeau import appels, cbm, connaissance, croisement, depot, methodes, temps
 from jumeau.connaissance import ancrer as ancrer_code
 from jumeau.connaissance import recouper as recouper_code
 from jumeau.lecteurs import NATURES, RE_CITATION_SOURCE
@@ -498,11 +498,54 @@ def outils(ctx, dsn, nom_modele, budget):
             return f"{lu['titre']} — à citer : {lu['locator']}\n{lignes}"
         return appeler_source(source, lire)
 
-    code = [architecture, chercher_texte, chercher_symbole, tracer_appels, lire_code, historique_du_code,
-            ce_qui_a_change, ancrer_connaissance]  # sans dépôt (progiciel), aucun outil de code : pas d'outil cassé
+    @tool
+    def suivre_appels(fonction: str, profondeur: int = 3, depot: str = "") -> str:
+        """L'enchaînement d'une fonctionnalité, lu dans le code : qui appelle qui depuis une fonction (souvent le
+        gestionnaire d'une route), chaque flèche avec la ligne de l'appel à donner comme fondement à dessiner_schema.
+
+        Args:
+            fonction: nom de la fonction de départ (par exemple create_new_article).
+            profondeur: niveaux d'appels suivis, de 1 à 4 (3 par défaut).
+            depot: nom d'un dépôt de l'application ; vide = le premier.
+        """
+        if not budget.outil():
+            return EPUISE
+        try:
+            source = choisir(depot)[0]
+            fleches = appels.enchainement(source, valeur_sure(fonction), cbm.appeler,
+                                          max(1, min(int(profondeur), appels.PROFONDEUR_MAX)))
+        except (ValueError, RuntimeError, subprocess.TimeoutExpired) as e:
+            return f"Enchaînement indisponible : {e}"
+        return nettoyer(appels.texte(fleches, source["nom"] if len(sources) > 1 else None), "", "")
+
+    dessin = ctx.get("dessin")
+
+    @tool
+    def dessiner_schema(type: str, titre: str, boites: list[dict], fleches: list[dict],
+                        groupes: list[dict] | None = None) -> str:
+        """Dessine un schéma dans ta réponse. Tu choisis et tu nommes ; chaque flèche doit être fondée, sinon elle
+        n'est pas dessinée (le compte rendu te dit lesquelles corriger).
+
+        Args:
+            type: sequence (« que se passe-t-il quand… »), flux ou architecture.
+            titre: ce que montre le schéma, en quelques mots.
+            boites: [{"id": "route", "libelle": "Publication d'un article"}], 12 au plus, libellés dans les mots du
+                métier.
+            fleches: [{"de": "route", "vers": "adresse", "libelle": "fabrique l'adresse depuis le titre",
+                "fondement": "app/services/articles.py#L64-L64", "appel": "get_slug_for_article"}] : fondement = la
+                ligne d'appel rendue par suivre_appels (avec appel = la fonction appelée), ou c:<connaissance> ou
+                r:<relation> ; 20 au plus.
+            groupes: [{"libelle": "Stockage", "ids": ["depot", "base"]}] pour regrouper des boîtes (facultatif).
+        """
+        if not budget.outil():
+            return EPUISE
+        return dessin.dessiner(type, titre, boites, fleches, groupes or ())
+
+    code = [architecture, chercher_texte, chercher_symbole, tracer_appels, suivre_appels, lire_code,
+            historique_du_code, ce_qui_a_change, ancrer_connaissance]  # sans dépôt (progiciel), aucun outil de code : pas d'outil cassé
     return [mes_connaissances, proposer_connaissance, fusionner_connaissances, signaler_contradiction,
             consulter_methode, *(code if sources else []), *([chercher_dans, lire_dans] if lecteurs else []),
-            *([recouper_connaissance] if sources or lecteurs else [])]
+            *([recouper_connaissance] if sources or lecteurs else []), *([dessiner_schema] if dessin else [])]
 
 
 def historique_fusionne(sources, depuis="", chemin=""):

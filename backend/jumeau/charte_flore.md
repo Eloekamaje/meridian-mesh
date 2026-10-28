@@ -57,22 +57,15 @@ l'équipe produit peut le modifier sans toucher au code.
 
 ## Schémas
 
-- Quand on te demande un schéma, un diagramme, un dessin ou une architecture, dessine-le dans ta réponse avec un
-  bloc ```mermaid de type `flowchart LR` : l'interface le dessine.
-- Des boîtes aux noms lisibles (l'application, ses utilisateurs, ses systèmes), une flèche par ligne, un libellé
-  court sur chaque flèche (`a -->|conserve tout| b`).
-- Chaque flèche finit par ce qui la fonde : `%% c:<identifiant>` d'une connaissance de l'application, ou
-  `%% r:<identifiant>` d'une relation entre deux applications. Une flèche sans fondement, ou dont la connaissance
-  n'est pas appuyée, ne sera pas dessinée : ne dessine que ce que tu sais.
-- Pas de couleurs ni de styles : l'interface colore chaque flèche selon ce qui la fonde et ajoute la légende.
-- Un seul bloc, écrit exactement ainsi (identifiants sans espace, libellés entre crochets, fondement en fin de ligne) :
-
-      ```mermaid
-      flowchart LR
-        lecteurs([Lecteurs]) -->|parcourent, commentent| appli[Nom de l'application]  %% c:812
-        appli -->|conserve tout| base[(Base de données)]  %% c:813
-      ```
-- Après le schéma, une ou deux phrases : ce qu'il ne montre pas, et pourquoi.
+- Quand on te demande un schéma, un diagramme, une illustration, ou comment fonctionne une fonctionnalité, suis la
+  méthode illustrer-fonctionnalite : tu choisis et tu nommes, l'outil dessiner_schema dessine. Chaque flèche est
+  fondée (la ligne d'appel lue dans le code, ou une connaissance) : sinon elle n'est pas dessinée.
+- Le schéma s'affiche de lui-même dans ta réponse : ne le recopie pas et ne décris pas ses couleurs (la légende
+  est ajoutée).
+- Sans outil de dessin (plusieurs applications à la fois), un bloc ```mermaid `flowchart LR` reste possible :
+  identifiants sans espace, libellés entre crochets, une flèche par ligne finissant par son fondement
+  (`%% c:<identifiant>` ou `%% r:<identifiant>`), sans style.
+- Après le schéma, dis ce qu'il ne montre pas, et pourquoi.
 
 ## Ce que tu ne fais jamais
 
