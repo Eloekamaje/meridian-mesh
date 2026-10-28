@@ -7,7 +7,7 @@ non branchées, confirmations de l'équipe) sont calculés ici, pas rédigés.
 """
 import re
 
-from jumeau import comprendre, depot, gardien
+from jumeau import comprendre, connaissance, depot, gardien
 
 STATUTS = {"observation": "en observation", "actif": "admis dans le Mesh", "en construction": "en construction"}
 DOCUMENTS = re.compile(r"\.(md|rst|txt|adoc)$|(^|/)(docs?|memory)/", re.IGNORECASE)
@@ -15,7 +15,9 @@ NON_BRANCHEES = ["Exploitation", "Incidents", "Base de données"]
 
 
 def _maturite(claims):
-    return {"croisees": sum(c.get("maturite") == "M3" for c in claims), "validees": sum(c.get("maturite") == "M4" for c in claims)}
+    return {"croisees": sum(c.get("maturite") == "M3" for c in claims), "validees": sum(c.get("maturite") == "M4" for c in claims),
+            # Ce que le code ne peut pas établir : écrit par le modèle, il ne compte pas comme compréhension (L1bis.2).
+            "hypotheses": sum(not connaissance.prouvable(c.get("predicat")) for c in claims)}
 
 
 ETATS = ("verifie", "selon", "recoupe", "conteste", "en_partie", "non_appuye")
@@ -26,7 +28,7 @@ MAX_A_REVOIR = 8
 def _verification(claims):
     """Combien de connaissances dans chaque état de vérification (Harness v3 §2) ; « a_verifier » : pas encore vérifiées."""
     etats = [(c.get("verification") or {}).get("etat") for c in claims]
-    return {**{e: etats.count(e) for e in ETATS}, "a_verifier": etats.count(None)}
+    return {**{e: etats.count(e) for e in ETATS}, "a_verifier": etats.count(None) + etats.count("en_attente")}
 
 
 def _a_revoir(claims):

@@ -7,6 +7,7 @@ discordants : une contradiction est ouverte pour l'équipe), en_partie (un déta
 Check Grounding de Google, une phrase appuyée en partie n'est pas appuyée), non_appuye (la preuve ne dit pas cela).
 """
 import logging
+import re
 
 from jumeau import depot, juge, recettes
 from jumeau.source_git import lire_au_sha
@@ -20,14 +21,15 @@ LIBELLES = {"REALISE_CAPACITE": "réalise la capacité", "SERT_ACTEUR": "sert", 
             "EXPOSE": "expose", "LIT_VARIABLE": "lit la variable", "EXECUTE_IMAGE": "exécute l'image"}
 
 
-DOCUMENTATION_DU_DEPOT = (".md", ".mdx", ".rst", ".adoc")  # pas .txt : requirements.txt est du code
-
-
 def systeme_de_preuve(type_preuve, chemin, type_source):
-    """Le système d'une preuve ; même règle que la fonction SQL du même nom (le trigger de maturité)."""
-    if type_preuve == "CODE" and chemin.lower().endswith(DOCUMENTATION_DU_DEPOT):
-        return "documentation"
-    return type_source.lower()
+    """Le système d'une preuve : le type de sa **source** (git, confluence, jira, servicenow, datadog).
+
+    Un fichier Markdown du dépôt n'est plus un système à part : il vit dans le même commit, il est écrit par la même
+    équipe, il décrit le code qu'il accompagne. Le compter comme un second système permettait d'atteindre M3 avec
+    « un README approuve le code » — exactement la recopie que Sources v1 §5 exclut (plan de remédiation L1.3).
+    Même règle que la fonction SQL du même nom (le trigger de maturité).
+    """
+    return (type_source or "").lower()
 
 
 def a_verifier(conn, jumeau_id):
@@ -77,16 +79,72 @@ def enonce(c):
     return f"{c['sujet']} {LIBELLES.get(c['predicat'], c['predicat'])} : {c['objet']}"
 
 
-def etat_du_jugement(appui, systemes):
+SEUIL_RECOPIE = 0.85  # au-delà, deux extraits disent la même chose au mot près : l'un recopie l'autre
+_MOTS = re.compile(r"\w{3,}")
+
+
+def mots(lignes):
+    """Ensemble des mots significatifs d'un extrait (trois lettres et plus), en minuscules."""
+    return {m.group(0).lower() for m in _MOTS.finditer(" ".join(lignes or []))}
+
+
+def recopie(extraits):
+    """Deux extraits de systèmes différents se **recopient-ils** ? Contrôle déterministe, sans modèle : la copie était
+    un booléen demandé au même modèle que l'auteur, donc une opinion de plus (plan de remédiation L1.4)."""
+    ensembles = [(e.get("systeme"), mots(e.get("lignes"))) for e in extraits]
+    for i, (systeme_a, mots_a) in enumerate(ensembles):
+        for systeme_b, mots_b in ensembles[i + 1:]:
+            if systeme_a == systeme_b or not mots_a or not mots_b:
+                continue
+            union = mots_a | mots_b
+            if len(mots_a & mots_b) / len(union) >= SEUIL_RECOPIE:
+                return True
+    return False
+
+
+def _mots_significatifs(texte):
+    """Mots de quatre lettres et plus, sans accents — de quoi reconnaître un même sujet sous deux écritures."""
+    return {m.group(0) for m in re.finditer(r"\w{4,}", _sans_accents(texte or ""))}
+
+
+def _sans_accents(texte):
+    table = str.maketrans("àâäéèêëîïôöùûüç", "aaaeeeeiioouuuc")
+    return (texte or "").lower().translate(table)
+
+
+def mentionne_enonce(objet, lignes):
+    """L'extrait parle-t-il de l'énoncé ? Un mot de l'objet (quatre lettres et plus) doit apparaître dans l'extrait,
+    ou en partager au moins les six premières lettres (« PostgreSQL » / « postgres »).
+
+    Faible, mais vérifiable : un système dont l'extrait ne nomme jamais le sujet ne peut pas le corroborer. Le juge
+    peut dire « concordantes » ; cette mention-là, personne ne peut l'inventer (plan de remédiation L1.4)."""
+    mots_objet = _mots_significatifs(objet)
+    if not mots_objet:
+        return True  # objet sans mot significatif : on ne peut rien exiger
+    mots_extrait = _mots_significatifs(" ".join(lignes or []))
+    return any(m in mots_extrait or any(e.startswith(m[:6]) or m.startswith(e[:6])
+                                        for e in mots_extrait if len(e) >= 4) for m in mots_objet)
+
+
+def systemes_muets(objet, extraits):
+    """Les systèmes dont l'extrait ne nomme jamais l'énoncé. Ce n'est **pas** un veto : une ligne de code ne répète
+    pas les mots d'une phrase métier, et deux tests de recoupement légitime l'ont montré. C'est une observation
+    portée avec le verdict, pour que la revue sache quel côté parle vraiment (plan de remédiation L1.4)."""
+    return sorted({e["systeme"] for e in extraits if not mentionne_enonce(objet, e.get("lignes"))})
+
+
+def etat_du_jugement(appui, systemes, copie=None):
     """Décision du juge → état. Deux systèmes indépendants qui l'appuient et concordent : recoupé ; une recopie ne
-    compte qu'une fois."""
+    compte qu'une fois. `copie` : verdict déterministe (`recopie`) ; il ne peut que retirer le recoupement, jamais
+    l'accorder — le juge garde la main sur l'appui, pas sur l'indépendance."""
     if appui.appui == "non":
         return "non_appuye"
     if appui.appui == "partiel":
         return "en_partie"
     if len(systemes) >= 2 and appui.concordance == "contradictoires":
         return "conteste"
-    if len(systemes) >= 2 and appui.concordance == "concordantes" and appui.appui == "oui" and not appui.copie:
+    recopie_observee = appui.copie if copie is None else (copie or appui.copie)
+    if len(systemes) >= 2 and appui.concordance == "concordantes" and appui.appui == "oui" and not recopie_observee:
         return "recoupe"
     return "selon"
 
@@ -112,17 +170,26 @@ def _ouvrir_contradiction(conn, jumeau, c, raison):
 async def verifier(conn, jumeau, lecteurs=(), modele=None, juger=juge.juger, limite=MAX_JUGEES):
     """Une passe de vérification. Les recettes s'exécutent toutes (sans modèle) ; le juge prend au plus `limite`
     connaissances, d'abord celles qui ont plusieurs systèmes (le recoupement), puis celles proposées en conversation."""
-    bilan = {"verifie": 0, "selon": 0, "recoupe": 0, "conteste": 0, "en_partie": 0, "non_appuye": 0, "en_attente": 0}
+    bilan = {"verifie": 0, "selon": 0, "recoupe": 0, "conteste": 0, "en_partie": 0, "non_appuye": 0,
+             "en_attente": 0, "pannes": 0}
     a_juger = []
     for c in a_verifier(conn, jumeau["id"]):
         systemes = {p["systeme"] for p in c["preuves"]}
-        if c["predicat"] in recettes.PREDICATS and systemes == {"git"}:
-            extraits = [lignes_de(p, lecteurs) for p in c["preuves"]]
-            if all(e is None for e in extraits):
+        if c["predicat"] in recettes.PREDICATS:
+            # La recette s'exécute **toujours** quand elle s'applique, y compris quand une seconde source est branchée :
+            # elle était auparavant réservée aux connaissances d'un seul système, c'est-à-dire écartée précisément là
+            # où la promesse de recoupement se joue (plan de remédiation L1.2). Elle juge chaque extrait de code, et
+            # le recoupement lui-même devient déterministe : deux systèmes dont l'extrait passe.
+            lisibles = [(p, e) for p in c["preuves"] if p["type"] == "CODE" and (e := lignes_de(p, lecteurs))]
+            if not lisibles:
                 bilan["en_attente"] += 1
                 continue
-            etat = ("verifie" if any(e and recettes.recette(c["predicat"], c["objet"], e) == "verifie" for e in extraits)
-                    else "non_appuye")
+            par_systeme = {}
+            for p, e in lisibles:
+                par_systeme.setdefault(p["systeme"], []).append(
+                    recettes.recette(c["predicat"], c["objet"], e) == "verifie")
+            verifies = {s for s, verdicts in par_systeme.items() if any(verdicts)}
+            etat = "non_appuye" if not verifies else ("recoupe" if len(verifies) >= 2 else "verifie")
             _enregistrer(conn, c, etat, "recette", systemes)
             bilan[etat] += 1
         else:
@@ -140,18 +207,25 @@ async def verifier(conn, jumeau, lecteurs=(), modele=None, juger=juge.juger, lim
             bilan["en_attente"] += 1
             continue
         dossiers.append({"id": c["id"], "enonce": enonce(c), "extraits": extraits})
-        par_id[c["id"]] = (c, {e["systeme"] for e in extraits})
+        par_id[c["id"]] = (c, {e["systeme"] for e in extraits}, recopie(extraits),
+                           systemes_muets(c["objet"], extraits))
     decisions = await juger(modele, dossiers) if dossiers else {}
-    for cid, (c, systemes) in par_id.items():
+    for cid, (c, systemes, recopie_observee, muets) in par_id.items():
         appui = decisions.get(cid)
         if appui is None:  # lot en panne ou décision manquante : rejoué à la passe suivante
             bilan["en_attente"] += 1
+            bilan["pannes"] += 1
             continue
-        etat = etat_du_jugement(appui, systemes)
-        _enregistrer(conn, c, etat, "juge", systemes, appui.raison)
+        etat = etat_du_jugement(appui, systemes, recopie_observee)
+        raison = appui.raison + (f" [{', '.join(muets)} ne nomme pas l'énoncé]" if muets else "")
+        _enregistrer(conn, c, etat, "juge", systemes, raison)
         if etat == "conteste":
             _ouvrir_contradiction(conn, jumeau, c, appui.raison)
         bilan[etat] += 1
+    if bilan["pannes"]:
+        # Une panne de lot ne disparaît plus dans un `warning` : elle est comptée dans le bilan de la passe (L1.7).
+        journal.warning("vérification : %s connaissance(s) sans décision du juge sur %s envoyée(s) — rejouées à la "
+                        "passe suivante", bilan["pannes"], len(dossiers))
     return bilan
 
 

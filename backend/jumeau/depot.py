@@ -17,6 +17,16 @@ def appliquer_schema(conn):
         conn.execute(SCHEMA.read_text())
 
 
+def recalculer_maturites(conn):
+    """Rejoue la maturité de toutes les connaissances. À appeler quand la **règle** change — par exemple quand un
+    fichier Markdown du dépôt cesse d'être un système indépendant (plan de remédiation L1.3) : sans cela, les
+    diplômes déjà acquis survivraient à la règle qui les a produits."""
+    ids = [r[0] for r in conn.execute("SELECT id FROM claim").fetchall()]
+    for cid in ids:
+        conn.execute("SELECT recalculer_maturite(%s)", (cid,))
+    return len(ids)
+
+
 # Substance d'un jumeau, par ordre de préférence : le code, puis ce que la banque a d'un progiciel sans son code.
 SUBSTANCES = (("GIT", "code"), ("DATADOG", "interfaces observées (Datadog)"), ("CONFLUENCE", "documentation (Confluence)"))
 
@@ -99,7 +109,20 @@ def enregistrer(conn, jumeau, source, claims, activite):
             (jumeau["id"],))
 
 
+def _remplacer_preuves(conn, source_id, claim_id, chemin):
+    """Une preuve nouvelle du même fichier de la même source **remplace** l'ancienne : elle ne s'empile pas.
+
+    Sans cela, chaque commit ajoutait une preuve de plus (859 sur une seule connaissance) : l'ensemble des preuves
+    devenait une archive de tous les états successifs du fichier, M3 pouvait s'obtenir en appariant une ligne d'un
+    commit ancien avec un document d'un autre, et la revérification ne s'arrêtait plus (plan de remédiation L1.5).
+    La preuve retirée reste dans `preuve` (immuable) ; seul son lien de soutien est défait."""
+    conn.execute(
+        "DELETE FROM claim_preuve WHERE claim_id = %s AND role = 'SUPPORT' AND preuve_id IN "
+        "(SELECT id FROM preuve WHERE source_id = %s AND chemin = %s)", (claim_id, source_id, chemin))
+
+
 def _lier_preuve(conn, tenant, source_id, claim_id, p, activite):
+    _remplacer_preuves(conn, source_id, claim_id, p["chemin"])
     conn.execute(
         "INSERT INTO preuve (tenant_id, source_id, type, locator, chemin, sha, ligne_debut, ligne_fin, hash, activite) "
         "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (source_id, locator) DO NOTHING",

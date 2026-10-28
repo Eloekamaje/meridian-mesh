@@ -28,10 +28,17 @@ def test_claim_disparu_est_cloture_puis_rouvert(conn):
     assert objets_valides(conn) == {"motor", "fastapi"}
 
 
-def test_nouveau_sha_ajoute_une_preuve_sans_effacer_l_ancienne(conn):
+def test_nouveau_sha_remplace_la_preuve_du_meme_fichier(conn):
+    """L1.5 : la preuve d'une connaissance est l'état **courant** de sa source, pas l'archive de tous ses commits.
+
+    Avant, chaque ingestion ajoutait une preuve de plus (859 sur une seule connaissance) : on pouvait obtenir M3 en
+    appariant la ligne d'un commit ancien avec un document d'un autre, et la revérification ne s'arrêtait jamais.
+    La preuve retirée reste dans `preuve` (immuable) ; seul son lien de soutien est défait."""
     depot.enregistrer(conn, JUMEAU, SOURCE, [claim("motor")], ACTIVITE)
     depot.enregistrer(conn, JUMEAU, SOURCE, [claim("motor", "sha2")], ACTIVITE)
-    assert len(depot.lister_claims(conn, "tbt")[0]["preuves"]) == 2
+    preuves = depot.lister_claims(conn, "tbt")[0]["preuves"]
+    assert len(preuves) == 1 and preuves[0]["sha"] == "sha2"
+    assert conn.execute("SELECT count(*) FROM preuve").fetchone()[0] == 2  # les deux preuves existent toujours
 
 
 def test_preuve_immuable(conn):

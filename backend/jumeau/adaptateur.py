@@ -2,20 +2,46 @@
 
 Fonctions pures : la lecture des fichiers (au SHA indexé) est injectée via `lire(chemin) -> list[str] | None`.
 Un Claim n'est retenu que si sa preuve se vérifie dans le fichier : citation localisée, lignes existantes.
+
+**La preuve n'est plus choisie par la règle qui la vérifie.** L'extracteur prend la ligne que l'index désigne
+(`start_line`) ou, à défaut, la première ligne du fichier qui déclare l'objet ; il n'appelle jamais `recettes`. La
+recette (`recettes.py`), elle, juge ensuite si cette ligne appuie l'énoncé — et peut donc échouer : c'était le défaut
+L1.1 du plan de remédiation, où l'extraction était filtrée par la recette elle-même, si bien que « vérifié » ne
+pouvait jamais être faux.
 """
 import hashlib
 import re
 
-from jumeau import recettes
-
 # Confiance initiale par règle (Architecture Jumeau §7.1, correction 4) ; la calibration l'ajustera.
 CONFIANCE_INITIALE = {"API_USAGE": 0.9, "DEPENDENCY": 0.85}
+
+# Formes de **déclaration** propres à l'extraction (le vérificateur a les siennes, plus larges) : le but ici est de
+# situer la preuve, pas de la juger. Chaînes, pas de motifs compilés : `{nom}` est substitué à l'usage.
+DECLARATIONS = {
+    "LIT_VARIABLE": (
+        r"^\s*(?:-\s*)?[\"']?{nom}[\"']?\s*[:=]",                                # compose, .env, YAML
+        r"^\s*(?:ENV|ARG)\s+{nom}\b",                                            # Dockerfile
+        r"(?:environ(?:\.get)?\s*[\[(]|getenv\s*\(|process\.env\.|process\.env\[\s*[\"'])\s*[\"']?{nom}",  # code
+    ),
+}
 
 
 def localiser(lignes, jeton):
     """Première ligne (1-based) contenant `jeton` comme mot entier, sinon None."""
     motif = re.compile(rf"(?<![\w.@/-]){re.escape(jeton)}(?![\w-])")
     return next((i for i, l in enumerate(lignes, 1) if motif.search(l)), None)
+
+
+def declarer(predicat, objet, lignes):
+    """Première ligne où `objet` est **déclaré ou lu** pour ce prédicat, sinon None (règle de l'extracteur)."""
+    motifs = DECLARATIONS.get(predicat)
+    if not motifs:
+        return localiser(lignes, objet)
+    nom = re.escape(objet)
+    for i, ligne in enumerate(lignes, 1):
+        if any(re.compile(m.format(nom=nom)).search(ligne) for m in motifs):
+            return i
+    return None
 
 
 def preuve(depot, sha, chemin, lignes, debut, fin):
@@ -74,12 +100,25 @@ def _avec_prefixes(routes):
     return [{**r, "prefixe": prefixes.get((r["chemin"], r["debut"]))} for r in routes]
 
 
-def _jeton(predicat, cle, transformer=lambda v: v, filtre=lambda l, v: True):
+def _jeton(predicat, cle, transformer=lambda v: v, filtre=lambda l, v: True, ligne_index=False):
     def extraire(r, lignes):
+        if ligne_index and r.get("ligne"):
+            n = int(r["ligne"])
+            return (predicat, r[cle], "DEPENDENCY", n, n) if 1 <= n <= len(lignes) else None
         retenues = [l if filtre(l, r[cle]) else "" for l in lignes]  # garde la numérotation
         ligne = localiser(retenues, transformer(r[cle]))
         return (predicat, r[cle], "DEPENDENCY", ligne, ligne) if ligne else None
     return extraire
+
+
+def _variable(r, lignes):
+    """La ligne que l'index désigne (`start_line` du nœud EnvVar) ; à défaut, la première déclaration reconnue.
+    Jamais la recette : la vérification doit pouvoir contredire l'extraction (plan de remédiation L1.1)."""
+    n = int(r.get("ligne") or 0)
+    if 1 <= n <= len(lignes):
+        return ("LIT_VARIABLE", r["variable"], "DEPENDENCY", n, n)
+    ligne = declarer("LIT_VARIABLE", r["variable"], lignes)
+    return ("LIT_VARIABLE", r["variable"], "DEPENDENCY", ligne, ligne) if ligne else None
 
 
 DECLARATION_IMAGE = re.compile(r"^\s*(image\s*:|FROM\s)", re.IGNORECASE)
@@ -87,10 +126,8 @@ DECLARATION_IMAGE = re.compile(r"^\s*(image\s*:|FROM\s)", re.IGNORECASE)
 EXTRACTEURS = {
     "routes": _route,
     "paquets": _jeton("DEPEND_DE", "paquet"),
-    # Une variable est prouvée par une ligne qui la lit (os.environ, getenv, process.env, compose…), jamais par un
-    # commentaire ou une docstring qui la nomme : la même recette que la vérification (Harness v3 §2).
-    "variables": _jeton("LIT_VARIABLE", "variable",
-                        filtre=lambda l, v: recettes.recette("LIT_VARIABLE", v, [l]) == "verifie"),
+    # Une variable est située par l'index (ou sa déclaration), jamais par la règle qui la vérifie.
+    "variables": _variable,
     # « docker.io/library/mongo » s'écrit « image: mongo:7.0 » (compose) ou « FROM mongo » (Dockerfile).
     "images": _jeton("EXECUTE_IMAGE", "image", lambda v: v.rsplit("/", 1)[-1], lambda l, v: DECLARATION_IMAGE.match(l)),
 }

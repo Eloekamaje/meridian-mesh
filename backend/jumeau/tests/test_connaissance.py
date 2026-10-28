@@ -75,7 +75,8 @@ def test_proposition_verifiee_reste_en_attente_de_revue(conn, depot_git):
     cid = connaissance.proposer(conn, JUMEAU, src, "UTILISE", "Uvicorn comme serveur", "BEHAVIOR",
                                 "requirements.txt", 3, 3, "uvicorn est déclaré", acteur="alice", modele="test")
     c = next(c for c in depot.lister_claims(conn, "tbt") if c["id"] == cid)
-    assert (c["statut"], c["maturite"], c["confiance"]) == ("PROPOSED", "M2", 0.5)
+    # « UTILISE » n'est pas un prédicat que le code établit : la proposition est citée, mais reste une hypothèse (M1).
+    assert (c["statut"], c["maturite"], c["confiance"]) == ("PROPOSED", "M1", 0.5)
     preuve = depot.preuve_par_id(conn, c["preuves"][0]["id"])
     assert preuve["hash"] == hashlib.sha256(b"uvicorn==1").hexdigest()
 

@@ -182,8 +182,8 @@ def situation(jumeau, version, sigs, commits, recit):
         "reste_a_comprendre": reste,
         "chronologie": [{"heure": c["date"], "texte": c["message"], "jumeau": jumeau["id"], "nature": "changement"}
                         for c in reversed(commits[:8])],
-        "indicateurs": {"confiance": 90, "couverture": registre.couverture(1), "fraicheur": "à l'instant",
-                        "contradictions": 0},
+        # Plus de couverture forfaitaire : une situation n'affirme pas un chiffre qu'aucune mesure ne produit (L2.7).
+        "indicateurs": {"confiance": 90, "fraicheur": "à l'instant", "contradictions": 0},
         "reel": True,
     }
 
@@ -360,7 +360,7 @@ async def veiller(conn, db, jumeau_id, chemins=None, rediger=_rediger):
         journal.warning("gardien %s : consolidation impossible", jumeau_id, exc_info=True)
     try:  # vérifier comme on teste (Harness v3 §2) : recettes sans modèle, juge d'appui borné
         journal.info("gardien %s : vérification %s", jumeau_id,
-                     await recoupement.verifier(conn, jumeau, branches, agent.modele()))
+                     await recoupement.verifier(conn, jumeau, branches, agent.modele_juge()))
     except Exception:  # la vérification se rejoue à la passe suivante
         journal.warning("gardien %s : vérification impossible", jumeau_id, exc_info=True)
     try:

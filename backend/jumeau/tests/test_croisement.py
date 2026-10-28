@@ -63,14 +63,14 @@ def test_revue_expose_maturite_et_contradictions_ouvertes():
         ["M2", "M3", "M4", "M4"])]
     ouverte = {"enonce": "Le seuil diffère", "systeme_a": "git", "systeme_b": "confluence"}
     p = examen.depuis_connaissances({"nom": "X"}, claims, None, [ouverte])["presentation"]
-    assert p["maturite"] == {"croisees": 1, "validees": 2}
+    assert p["maturite"] == {"croisees": 1, "validees": 2, "hypotheses": 0}
     assert {"nom": "Contradictions", "etat": "1 ouverte(s)", "ok": False} in p["sources"]
     assert "Contradiction à trancher : Le seuil diffère (git contre confluence)" in p["ignore"]
 
 
 def test_revue_sans_contradiction_n_ajoute_pas_de_pastille():
     p = examen.depuis_connaissances({"nom": "X"}, [], None)["presentation"]
-    assert all(s["nom"] != "Contradictions" for s in p["sources"]) and p["maturite"] == {"croisees": 0, "validees": 0}
+    assert all(s["nom"] != "Contradictions" for s in p["sources"]) and p["maturite"] == {"croisees": 0, "validees": 0, "hypotheses": 0}
 
 
 # --- maturité calculée (Postgres) -------------------------------------------------------------------

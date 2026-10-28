@@ -145,26 +145,43 @@ CREATE TABLE IF NOT EXISTS verification (
 CREATE INDEX IF NOT EXISTS verification_claim ON verification (claim_id, id DESC);
 -- « en_partie » (Harness v3 §2) : comme le Check Grounding de Google, une affirmation appuyée en partie n'est pas appuyée.
 ALTER TABLE verification DROP CONSTRAINT IF EXISTS verification_etat_check;
+-- « en_attente » : toute connaissance naît avec un état explicite (plan de remédiation L1.6). Avant, 50 des 546
+-- connaissances n'avaient aucune ligne de vérification, alors que le document affirmait que chacune en avait un.
 ALTER TABLE verification ADD CONSTRAINT verification_etat_check
-    CHECK (etat IN ('verifie', 'selon', 'recoupe', 'conteste', 'en_partie', 'non_appuye'));
+    CHECK (etat IN ('verifie', 'selon', 'recoupe', 'conteste', 'en_partie', 'non_appuye', 'en_attente'));
+ALTER TABLE verification DROP CONSTRAINT IF EXISTS verification_methode_check;
+ALTER TABLE verification ADD CONSTRAINT verification_methode_check
+    CHECK (methode IN ('recette', 'juge', 'aucune'));
 
 -- Maturité calculée, jamais déclarée (Jumeau Sources §5) : M1 sans preuve, M2 une preuve, M3 deux systèmes différents
 -- (source.type : deux dépôts Git ne sont pas indépendants) **recoupés** — leurs preuves concordent, selon la dernière
 -- vérification (Architecture : « deux sources indépendantes concordantes ») —, M4 = M3 + revue ACCEPTED.
 -- Recalculée à chaque preuve, statut et vérification.
--- Le système d'une preuve : sa source, sauf la documentation du dépôt (.md, .mdx, .rst, .adoc ; pas .txt) qui en est un
--- à part — un README n'est pas du code. Même règle que recoupement.systeme_de_preuve.
+-- Le système d'une preuve : le type de sa source (git, confluence, jira, servicenow, datadog). Un fichier Markdown
+-- du dépôt n'en est plus un à part : même commit, même équipe, il décrit le code qu'il accompagne — le compter comme
+-- second système permettait d'atteindre M3 avec « un README approuve le code » (plan de remédiation L1.3).
+-- Même règle que recoupement.systeme_de_preuve.
 CREATE OR REPLACE FUNCTION systeme_de_preuve(type_preuve text, chemin text, type_source text) RETURNS text AS $$
-    SELECT CASE WHEN type_preuve = 'CODE' AND lower(chemin) ~ '\.(md|mdx|rst|adoc)$' THEN 'documentation'
-                ELSE lower(type_source) END
+    SELECT lower(coalesce(type_source, ''))
+$$ LANGUAGE sql IMMUTABLE;
+-- Les prédicats que l'ingestion **du code** peut établir (même liste que connaissance.PROUVABLES) : dépendance, route
+-- exposée, variable lue, image exécutée. Pour les autres — ce que l'application fait pour le métier, les règles, les
+-- acteurs, les échanges — une ligne de code ne dit rien : elle peut citer la phrase, pas l'établir.
+-- Cette autorité est celle des sources (Sources v1 §2) : sur ce qu'elle *fait*, le code l'emporte ; sur ce qu'elle
+-- *doit faire*, la documentation l'emporte. Une hypothèse prouvée uniquement par du code reste donc M1 ; une
+-- connaissance établie par une source documentaire garde toute l'échelle, M3 compris.
+CREATE OR REPLACE FUNCTION predicat_prouvable(predicat text) RETURNS boolean AS $$
+    SELECT upper(coalesce(predicat, '')) IN ('DEPEND_DE', 'EXPOSE', 'LIT_VARIABLE', 'EXECUTE_IMAGE')
 $$ LANGUAGE sql IMMUTABLE;
 CREATE OR REPLACE FUNCTION recalculer_maturite(cid bigint) RETURNS void AS $$
     UPDATE claim SET maturite = CASE
         WHEN s.preuves = 0 THEN 'M1'
+        WHEN NOT predicat_prouvable(claim.predicat) AND s.preuves_code = s.preuves THEN 'M1'
         WHEN s.systemes >= 2 AND s.recoupe AND claim.statut = 'ACCEPTED' THEN 'M4'
         WHEN s.systemes >= 2 AND s.recoupe THEN 'M3'
         ELSE 'M2' END
-    FROM (SELECT count(*) AS preuves, count(DISTINCT systeme_de_preuve(p.type, p.chemin, so.type)) AS systemes,
+    FROM (SELECT count(*) AS preuves, count(*) FILTER (WHERE p.type = 'CODE') AS preuves_code,
+                 count(DISTINCT systeme_de_preuve(p.type, p.chemin, so.type)) AS systemes,
                  coalesce((SELECT v.etat = 'recoupe' FROM verification v WHERE v.claim_id = cid
                            ORDER BY v.id DESC LIMIT 1), false) AS recoupe
           FROM claim_preuve cp JOIN preuve p ON p.id = cp.preuve_id JOIN source so ON so.id = p.source_id
@@ -180,12 +197,23 @@ BEGIN
     END IF;
     RETURN NULL;
 END $$ LANGUAGE plpgsql;
-CREATE OR REPLACE TRIGGER claim_maturite AFTER INSERT OR UPDATE OF statut ON claim
+-- La clôture d'une connaissance doit aussi rejouer sa maturité : 16 connaissances closes portaient encore M3.
+CREATE OR REPLACE TRIGGER claim_maturite AFTER INSERT OR UPDATE OF statut, valide_jusqua ON claim
     FOR EACH ROW EXECUTE FUNCTION maturite_a_recalculer();
 CREATE OR REPLACE TRIGGER claim_preuve_maturite AFTER INSERT ON claim_preuve
     FOR EACH ROW EXECUTE FUNCTION maturite_a_recalculer();
 CREATE OR REPLACE TRIGGER verification_maturite AFTER INSERT ON verification
     FOR EACH ROW EXECUTE FUNCTION maturite_a_recalculer();
+
+-- Toute connaissance naît avec son état : « non encore vérifiée », jamais rien du tout (L1.6).
+CREATE OR REPLACE FUNCTION claim_etat_initial() RETURNS trigger AS $$
+BEGIN
+    INSERT INTO verification (claim_id, etat, methode, systemes, empreinte)
+    VALUES (NEW.id, 'en_attente', 'aucune', '{}', '');
+    RETURN NULL;
+END $$ LANGUAGE plpgsql;
+CREATE OR REPLACE TRIGGER claim_etat_initial AFTER INSERT ON claim
+    FOR EACH ROW EXECUTE FUNCTION claim_etat_initial();
 
 -- Deux sources de systèmes différents qui se contredisent : signalée par l'agent (citations vérifiées), tranchée par un humain.
 CREATE TABLE IF NOT EXISTS contradiction (

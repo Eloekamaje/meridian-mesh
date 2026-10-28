@@ -69,14 +69,17 @@ def test_une_passe_recettes_juge_recoupement_maturite(conn, depot_git):
                 for d in dossiers}
 
     bilan = asyncio.run(recoupement.verifier(conn, j, [wiki], juger=juger))
+    # `pannes` : une décision du juge qui manque est comptée, plus seulement reléguée à « en_attente » (L1.7).
     assert bilan == {"verifie": 1, "selon": 1, "recoupe": 1, "conteste": 0, "en_partie": 0, "non_appuye": 1,
-                     "en_attente": 0}
+                     "en_attente": 0, "pannes": 0}
     etats = recoupement.etats(conn, "tbt")
     assert {cid: etats[cid]["etat"] for cid in (fastapi, redis, regle, acteur)} == {
         fastapi: "verifie", redis: "non_appuye", regle: "recoupe", acteur: "selon"}
     assert etats[fastapi]["methode"] == "recette" and etats[regle]["systemes"] == ["confluence", "git"]
     maturites = dict(conn.execute("SELECT id, maturite FROM claim WHERE jumeau_id = 'tbt'").fetchall())
-    assert maturites[regle] == "M3" and maturites[acteur] == "M2"  # deux systèmes ET recoupés : seul chemin vers M3
+    # Deux systèmes ET recoupés : seul chemin vers M3. `acteur` (SERT_ACTEUR) n'est prouvé que par du code : une
+    # ligne de code ne dit pas qui sert l'application, l'hypothèse reste M1 (plan de remédiation L1bis.2).
+    assert maturites[regle] == "M3" and maturites[acteur] == "M1"
 
     # Rien n'a changé : rien n'est rejoué, le juge n'est pas rappelé.
     assert asyncio.run(recoupement.verifier(conn, j, [wiki], juger=juger))["recoupe"] == 0 and len(vus) == 1
@@ -121,5 +124,30 @@ def test_juge_en_panne_ou_borne_laisse_en_attente(conn, depot_git):
     async def panne(modele, dossiers):
         return {}
 
-    assert asyncio.run(recoupement.verifier(conn, j, juger=panne, limite=2))["en_attente"] == 3
-    assert recoupement.etats(conn, "tbt") == {}  # rien d'enregistré : rejoué à la passe suivante
+    bilan = asyncio.run(recoupement.verifier(conn, j, juger=panne, limite=2))
+    # 3 connaissances attendent (2 jugées par un lot en panne + 1 au-delà de la limite), et 2 pannes sont comptées :
+    # une décision qui manque n'est plus seulement reléguée à « en attente » (L1.7).
+    assert (bilan["en_attente"], bilan["pannes"]) == (3, 2)
+    # Rien n'est jugé, et l'état le dit : « en_attente » plutôt qu'une absence d'état (L1.6).
+    assert {e["etat"] for e in recoupement.etats(conn, "tbt").values()} == {"en_attente"}
+
+
+# --- L1.4 : ce qu'une comparaison de mots peut dire, et ce qu'elle ne peut pas ------------------------------------
+
+def test_une_observation_de_silence_mais_aucun_veto():
+    """Une ligne de code ne répète pas les mots d'une phrase métier : la mention est une **observation**, jamais un
+    veto. En faire un veto a fait tomber deux tests de recoupement légitime — c'est la raison de ce test."""
+    extraits = [{"systeme": "git", "lignes": ["    user = repo.get_by_email(email)"]},
+                {"systeme": "confluence", "lignes": ["Seuls les conseillers valident les dossiers."]}]
+    objet = "Seuls les conseillers valident"
+    assert recoupement.mentionne_enonce(objet, extraits[1]["lignes"]) is True
+    assert recoupement.mentionne_enonce(objet, extraits[0]["lignes"]) is False
+    assert recoupement.systemes_muets(objet, extraits) == ["git"]
+    # Le verdict, lui, ne dépend pas de cette observation.
+    assert recoupement.etat_du_jugement(appui(1), {"git", "confluence"}) == "recoupe"
+
+
+def test_la_mention_reconnait_la_meme_chose_sous_deux_ecritures():
+    assert recoupement.mentionne_enonce("PostgreSQL", ["image: postgres:16"])
+    assert recoupement.mentionne_enonce("Répondre aux questions", ["def repondre(question):"])
+    assert not recoupement.mentionne_enonce("PostgreSQL", ["image: nginx:1"])

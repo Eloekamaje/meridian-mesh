@@ -1,4 +1,8 @@
-"""Recouper : la documentation du dépôt est un système à part, et l'agent ajoute une seconde source à une connaissance."""
+"""Recouper : un fichier du dépôt n'est **pas** un second système ; l'agent ajoute une source d'un autre système.
+
+Le plan de remédiation (L1.3) a inversé la règle : un README vivant dans le même commit, écrit par la même équipe,
+décrit le code qu'il accompagne — le compter comme indépendant permettait d'atteindre M3 sans avoir jamais mis
+deux systèmes en présence."""
 import subprocess
 from pathlib import Path
 
@@ -16,9 +20,17 @@ CAS_SYSTEME = [("CODE", "README.md", "GIT"), ("CODE", "docs/a/Guide.MDX", "GIT")
 
 
 def test_systeme_de_preuve_python():
+    # Le système est celui de la source, jamais celui du chemin : README.md, Guide.MDX ou x.rst du dépôt sont « git ».
     assert [recoupement.systeme_de_preuve(*c) for c in CAS_SYSTEME] == [
-        "documentation", "documentation", "documentation", "documentation", "git", "git", "git",
+        "git", "git", "git", "git", "git", "git", "git",
         "confluence", "confluence", "jira"]
+
+
+def test_un_fichier_du_depot_ne_compte_pas_comme_un_second_systeme():
+    # Ce cas atteignait M3 avant L1.3 : une ligne de code + le README du même dépôt.
+    systemes = {recoupement.systeme_de_preuve("CODE", "backend/server.py", "GIT"),
+                recoupement.systeme_de_preuve("CODE", "README.md", "GIT")}
+    assert systemes == {"git"}
 
 
 @besoin_pg
@@ -88,13 +100,17 @@ def systemes(m):
 
 
 @besoin_pg
-def test_readme_et_code_font_deux_systemes_mais_m3_seulement_si_recoupe(monde):
+def test_un_readme_du_depot_ne_donne_pas_un_second_systeme_ni_m3(monde):
+    """L1.3 : ce cas donnait M3 (code + README du même commit) ; il n'en donne plus aucune."""
     conn, cid = monde["conn"], monde["cid"]
-    assert recouper(monde, "README.md#L2-L2") is True
-    assert systemes(monde) == ["documentation", "git"]
+    with pytest.raises(ValueError, match="pas un recoupement"):
+        recouper(monde, "README.md#L2-L2")
+    assert systemes(monde) == ["git"]
+    # Le seul chemin vers M3 reste une source d'un autre système (ici Confluence), et il faut qu'elle concorde.
+    assert recouper(monde, "confluence://TBT/12@3#L1-L1") is True
+    assert systemes(monde) == ["confluence", "git"]
     assert conn.execute("SELECT maturite FROM claim WHERE id = %s", (cid,)).fetchone()[0] == "M2"  # pas encore recoupé
-    c = recoupement.a_verifier(conn, "tbt")[0]
-    recoupement._enregistrer(conn, c, "recoupe", "juge", {"git", "documentation"})
+    recoupement._enregistrer(conn, recoupement.a_verifier(conn, "tbt")[0], "recoupe", "juge", {"confluence", "git"})
     assert conn.execute("SELECT maturite FROM claim WHERE id = %s", (cid,)).fetchone()[0] == "M3"
 
 
@@ -113,20 +129,19 @@ def test_source_branchee_recoupe_et_est_idempotent(monde):
 
 @besoin_pg
 def test_deux_fois_la_meme_preuve_ne_change_rien(monde):
-    assert recouper(monde, "README.md#L2") is True
-    assert recouper(monde, "README.md#L2-L2") is False
+    assert recouper(monde, "confluence://TBT/12@3#L1-L1") is True
+    assert recouper(monde, "confluence://TBT/12@3#L1-L1") is False
 
 
 @besoin_pg
-def test_refus_meme_systeme_documentation(monde):
-    recouper(monde, "README.md#L1-L1")
-    # git + documentation : un second fichier de code est accepté, la connaissance a déjà deux systèmes
-    assert recouper(monde, "requirements.txt#L1-L1") is True
-    # une connaissance prouvée par la seule documentation refuse une autre documentation
-    doc = connaissance.proposer(monde["conn"], monde["j"], monde["sources"][0], "DETIENT", "Un guide", "BEHAVIOR",
-                                "README.md", 1, 1, "j", "alice", "m")
+def test_un_second_fichier_du_meme_depot_n_est_pas_un_recoupement(monde):
+    # Un fichier de plus dans le même dépôt n'est pas une source indépendante : refusé, quel que soit le nombre de
+    # systèmes déjà présents (avant L1.5, une connaissance à deux systèmes acceptait tout).
     with pytest.raises(ValueError, match="pas un recoupement"):
-        recouper(monde, "README.md#L2-L2", claim_id=doc)
+        recouper(monde, "requirements.txt#L1-L1")
+    assert recouper(monde, "confluence://TBT/12@3#L1-L1") is True
+    with pytest.raises(ValueError, match="pas un recoupement"):
+        recouper(monde, "requirements.txt#L1-L1")  # toujours refusé, même avec deux systèmes
 
 
 @besoin_pg
@@ -145,7 +160,7 @@ def test_refus_inconnue_autre_jumeau_ou_close(monde):
 @besoin_pg
 def test_recouper_ne_change_ni_statut_ni_objet(monde):
     avant = monde["conn"].execute("SELECT statut, objet FROM claim WHERE id = %s", (monde["cid"],)).fetchone()
-    recouper(monde, "README.md#L2-L2")
+    recouper(monde, "confluence://TBT/12@3#L1-L1")
     assert monde["conn"].execute("SELECT statut, objet FROM claim WHERE id = %s", (monde["cid"],)).fetchone() == avant
 
 
@@ -159,7 +174,9 @@ def test_citation_fausse_refusee(monde, citation):
 @besoin_pg
 def test_connaissances_expose_la_verification(monde):
     conn = monde["conn"]
-    assert connaissance.connaissances(conn, "tbt")[0]["verification"] is None
+    # Toute connaissance naît avec son état (L1.6) : « en_attente », jamais rien du tout.
+    assert connaissance.connaissances(conn, "tbt")[0]["verification"] == {
+        "etat": "en_attente", "methode": "aucune", "systemes": [], "raison": None}
     recoupement._enregistrer(conn, recoupement.a_verifier(conn, "tbt")[0], "selon", "juge", {"git"}, "une source")
     v = connaissance.connaissances(conn, "tbt")[0]["verification"]
     assert v == {"etat": "selon", "methode": "juge", "systemes": ["git"], "raison": "une source"}

@@ -73,6 +73,7 @@ def _lit_variable(objet: str, lignes: list[str]) -> bool:
         rf"process\.env\.{nom}(?!\w)",                     # Node
         rf"process\.env\[\s*[\"']{nom}[\"']",
         rf"^\s*(-\s*)?[\"']?{nom}[\"']?\s*[:=]",           # compose / .env
+        rf"^\s*(?:ENV|ARG)\s+{nom}(?!\w)",                 # Dockerfile : déclaration, pas lecture
         rf"\$\{{?{nom}(?!\w)",                             # ${X}, $X
     ]
     motif = re.compile("|".join(formes))
