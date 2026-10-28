@@ -1334,6 +1334,9 @@ async def generer_reponse_flore(contexte, question, selection, domaine, x_person
     # Un jumeau réel sélectionné : Flore le mobilise (ses Claims et son code) et répond avec ses preuves.
     # Un seul : chemin direct. Plusieurs : Flore les mobilise en sous-agents (flore.mobiliser).
     reels = [j["id"] for j in tous if j.get("reel") and j["id"] in sel and niveau_au_moins(aut[j["id"]], "complet")]
+    if not sel:  # sans sélection, l'application que la question nomme : son jumeau directement, sans orchestration
+        reels = jumeau_flore.application_nommee(
+            question, [j for j in tous if j.get("reel") and j["id"] in aut and niveau_au_moins(aut[j["id"]], "complet")])
     if reels:
         if len(reels) == 1:
             reponse_jumeau = await jumeau_flore.repondre(reels[0], question, x_persona, travail, profil=persona, db=db)

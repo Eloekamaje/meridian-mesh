@@ -21,11 +21,18 @@ REFERENCES = [
 OBJECTIFS = {"simple": 2.0, "analyse": 5.0}
 
 
+NOMS = {"conduit": "Conduit", "gestion-des-articles": "Gestion des articles", "meridian": "Méridian Mesh"}
+
+
 async def mesurer(jumeaux, question):
-    if isinstance(jumeaux, str):
-        r = await flore.repondre(jumeaux, question, "banc-latence")
+    """Comme le serveur : une application sélectionnée, sinon celle que la question nomme, sinon l'orchestration."""
+    visibles = jumeaux if isinstance(jumeaux, list) else list(NOMS)
+    cible = [jumeaux] if isinstance(jumeaux, str) else flore.application_nommee(
+        question, [{"id": j, "nom": NOMS.get(j, j)} for j in visibles])
+    if cible:
+        r = await flore.repondre(cible[0], question, "banc-latence")
     else:
-        r = await flore.mobiliser(jumeaux or ["conduit", "gestion-des-articles", "meridian"], question, "banc-latence")
+        r = await flore.mobiliser(visibles, question, "banc-latence")
     return (r or {}).get("durees") or {}
 
 

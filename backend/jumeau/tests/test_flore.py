@@ -134,3 +134,23 @@ def test_contexte_d_un_jumeau_sans_code_mobilisable(monkeypatch):
     assert ctx["sources"] == [] and ctx["lecteurs"] == [dd] and dsn == "dsn"
     monkeypatch.setattr(lecteurs, "lecteurs_de", lambda s: [])
     assert flore._contexte("meridian", "alice", None) == (None, None)  # ni code ni source : rien à mobiliser
+
+
+# --- Routage : l'application nommée dans la question (constaté : 60 s par l'orchestration, faute de sélection) ----
+
+JUMEAUX = [{"id": "conduit", "nom": "Conduit"}, {"id": "gestion-des-articles", "nom": "Gestion des articles"},
+           {"id": "meridian", "nom": "Méridian Mesh"}]
+
+
+def test_application_nommee_nom_identifiant_et_faute_de_frappe():
+    assert flore.application_nommee("illustre-moi la publication d'un article dans Conduit", JUMEAUX) == ["conduit"]
+    assert flore.application_nommee("que fait l'application conduite ?", JUMEAUX) == ["conduit"]
+    assert flore.application_nommee("Que fait la Gestion des articles ?", JUMEAUX) == ["gestion-des-articles"]
+    assert flore.application_nommee("à quoi sert Meridian ?", JUMEAUX) == ["meridian"]
+
+
+def test_aucune_ou_plusieurs_applications_nommees_laissent_l_orchestration():
+    assert flore.application_nommee("qui es-tu ?", JUMEAUX) == []
+    assert flore.application_nommee("comment conduire le projet ?", JUMEAUX) == []  # « conduire » n'est pas Conduit
+    assert flore.application_nommee("Conduit échange-t-il avec Méridian ?", JUMEAUX) == []
+    assert flore.application_nommee("la publication d'un article", JUMEAUX) == []  # « article » seul n'est pas un nom

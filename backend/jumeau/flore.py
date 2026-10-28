@@ -4,9 +4,11 @@ La réponse du jumeau reprend le format des réponses de Flore (reponse, contrib
 dans les conversations existantes (panneau Flore, fil d'un Travail) sans écran dédié.
 """
 import asyncio
+import difflib
 import itertools
 import os
 import re
+import unicodedata
 
 import psycopg
 
@@ -121,6 +123,32 @@ def _contexte(jumeau_id, acteur, profil):
         consignes = depot.consignes_du_jumeau(conn, jumeau)
     return {"jumeau": jumeau, "consignes": consignes, "sources": sources, "claims": claims, "acteur": acteur, "profil": profil,
             "lecteurs": lecteurs_branches, "fiche": fiche["contenu"] if fiche else None}, dsn
+
+
+SEUIL_FAUTE = 0.85  # « conduite » ↔ « conduit » : 0,93 ; « conduire » ↔ « conduit » : 0,80 (refusé)
+
+
+def _mots(texte):
+    sans_accents = unicodedata.normalize("NFKD", texte.lower()).encode("ascii", "ignore").decode()
+    return re.findall(r"[a-z0-9]+", sans_accents)
+
+
+def application_nommee(question, jumeaux):
+    """[id] de l'application que la question nomme, s'il n'y en a qu'une, sinon [] : nom complet ou identifiant ; pour
+    un nom d'un seul mot, une faute de frappe proche (« conduite » → Conduit). Le système route lui-même vers son
+    jumeau : l'interlocuteur n'a pas à sélectionner ni à rattacher l'application."""
+    mots = _mots(question)
+    phrase = f" {' '.join(mots)} "
+    trouves = []
+    for j in jumeaux:
+        for nom in {" ".join(_mots(j.get("nom") or "")), " ".join(_mots(j["id"]))} - {""}:
+            exact = f" {nom} " in phrase
+            proche = (" " not in nom and len(nom) >= 5
+                      and any(len(m) >= 5 and difflib.SequenceMatcher(None, nom, m).ratio() >= SEUIL_FAUTE for m in mots))
+            if exact or proche:
+                trouves.append(j["id"])
+                break
+    return trouves if len(trouves) == 1 else []
 
 
 def dessin_pour(ctx):
