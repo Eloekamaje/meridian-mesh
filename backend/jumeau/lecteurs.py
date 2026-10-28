@@ -23,6 +23,24 @@ NATURES = {
 }
 
 
+MAX_LIGNE = 500
+RE_ADRESSE = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+RE_NUMERO = re.compile(r"\+?\d[\d .-]{7,}\d")
+RE_MENTION = re.compile(r"(?<![\w.])@[\w.-]+")
+RE_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")  # une date (éventuellement suivie de l'heure) n'est pas un numéro
+
+
+def masquer(ligne):
+    """Données personnelles masquées avant d'atteindre le modèle ou une preuve : adresses, numéros, mentions.
+    ponytail: motifs simples ; un vrai repérage des noms de personnes (NER) si une source en contient beaucoup."""
+    ligne = RE_ADRESSE.sub("[adresse]", ligne)
+    # Un numéro de téléphone : 9 à 15 chiffres (une date, un montant ou une durée en ont moins, ou pas ce format).
+    ligne = RE_NUMERO.sub(lambda m: "[numéro]" if 9 <= sum(c.isdigit() for c in m.group(0)) <= 15
+                          and not RE_DATE.match(m.group(0).strip()) else m.group(0), ligne)
+    ligne = RE_MENTION.sub("[personne]", ligne)
+    return ligne[:MAX_LIGNE]
+
+
 def locator(systeme, espace, ref, version, debut, fin):
     return f"{systeme}://{espace}/{ref}@{version}#L{debut}-L{fin}"
 
@@ -41,7 +59,7 @@ class Lecteur:
 
     def chercher(self, texte):
         """[{ref, titre, extrait}] bornés."""
-        return [{"ref": str(r["ref"]), "titre": r["titre"][:200], "extrait": r.get("extrait", "")[:300]}
+        return [{"ref": str(r["ref"]), "titre": masquer(r["titre"])[:200], "extrait": masquer(r.get("extrait", ""))[:300]}
                 for r in self._chercher(texte.strip()[:200])][:MAX_RESULTATS]
 
     def lire(self, ref, debut=1, fin=MAX_LIGNES, version=None):
@@ -53,8 +71,8 @@ class Lecteur:
         debut, fin = max(1, int(debut)), min(int(fin), len(doc["lignes"]), int(debut) + MAX_LIGNES - 1)
         if fin < debut:
             raise ValueError(f"lignes {debut}-{fin} hors du document ({len(doc['lignes'])} lignes)")
-        return {"ref": str(ref), "titre": doc["titre"], "version": str(doc["version"]),
-                "lignes": doc["lignes"][debut - 1:fin],
+        return {"ref": str(ref), "titre": masquer(doc["titre"]), "version": str(doc["version"]),
+                "lignes": [masquer(l) for l in doc["lignes"][debut - 1:fin]],
                 "locator": locator(self.systeme, self.espace, ref, doc["version"], debut, fin)}
 
     def verifier(self, citation):

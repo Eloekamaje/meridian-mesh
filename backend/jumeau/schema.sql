@@ -176,6 +176,20 @@ CREATE TABLE IF NOT EXISTS contradiction (
     CHECK (statut = 'OUVERTE' OR tranchee_par IS NOT NULL)
 );
 ALTER TABLE contradiction ADD COLUMN IF NOT EXISTS verdict text CHECK (verdict IN ('a', 'b', 'aucune'));
+-- Une contradiction tranchée est immuable (comme une revue) et porte toujours son verdict ; jamais supprimée.
+DO $$ BEGIN
+    ALTER TABLE contradiction ADD CONSTRAINT contradiction_verdict_si_tranchee
+        CHECK (statut = 'OUVERTE' OR verdict IS NOT NULL);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+CREATE OR REPLACE FUNCTION contradiction_immuable() RETURNS trigger AS $$
+BEGIN
+    IF TG_OP = 'DELETE' OR OLD.statut = 'TRANCHEE' THEN
+        RAISE EXCEPTION 'contradiction : décision immuable';
+    END IF;
+    RETURN NEW;
+END $$ LANGUAGE plpgsql;
+CREATE OR REPLACE TRIGGER contradiction_immuable BEFORE UPDATE OR DELETE ON contradiction
+    FOR EACH ROW EXECUTE FUNCTION contradiction_immuable();
 CREATE INDEX IF NOT EXISTS contradiction_jumeau ON contradiction (jumeau_id, statut);
 
 -- Invariant 3 : preuves et revues sont immuables (ligne à ligne et TRUNCATE).

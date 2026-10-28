@@ -20,8 +20,8 @@ DESCRIPTION = {"type": "doc", "version": 1, "content": [
         {"type": "tableCell", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Agence"}]}]}]}]},
     {"type": "mediaSingle", "content": [{"type": "media", "attrs": {"id": "x"}}]},
 ]}
-LIGNES = ["Relever le plafond", "Type : Story", "Statut : En cours", "## Contexte", "Le plafond passe à 5000", "@Ana",
-          "- Délai : 24 h", "- Annexe", "Canal | Agence", "Commentaire de Bob :", "Validé par le métier"]
+LIGNES = ["Relever le plafond", "Type : Story", "Statut : En cours", "## Contexte", "Le plafond passe à 5000", "[personne]",
+          "- Délai : 24 h", "- Annexe", "Canal | Agence", "Commentaire :", "Validé par le métier"]  # ni auteur ni mention nominative
 
 
 def ticket(cle="PAY-12", projet="PAY", updated="2026-10-01T09:00:00.000+0200"):
@@ -62,7 +62,7 @@ def lecteur():
 
 
 def test_adf_en_lignes():
-    assert jira.en_lignes(DESCRIPTION) == ["## Contexte", "Le plafond passe à 5000", "@Ana", "- Délai : 24 h", "- Annexe", "Canal | Agence"]
+    assert jira.en_lignes(DESCRIPTION) == ["## Contexte", "Le plafond passe à 5000", "[personne]", "- Délai : 24 h", "- Annexe", "Canal | Agence"]
     assert jira.en_lignes(None) == [] and jira.en_lignes("texte") == [] and jira.en_lignes({"type": "doc"}) == []
 
 

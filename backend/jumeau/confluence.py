@@ -12,7 +12,7 @@ from urllib.parse import quote
 
 from jumeau import atlassian, lecteurs
 from jumeau.github import MAX_RESULTATS, Invalide, JetonRefuse, TropDeDemandes, _memo, _SansRedirection
-from jumeau.naissance import HOTE_VALIDE, _resultat, resoudre_secret
+from jumeau.naissance import hote_public, _resultat, resoudre_secret
 
 CLE_ESPACE = re.compile(r"[A-Za-z0-9_~-]{1,255}")
 REF_PAGE = re.compile(r"\d{1,19}")
@@ -24,7 +24,7 @@ _ouvrir = urllib.request.build_opener(_SansRedirection).open
 
 def _hote():
     hote = os.environ.get("JUMEAU_CONFLUENCE_HOTE", "").lower()
-    if not hote or not HOTE_VALIDE.fullmatch(hote):
+    if not hote or not hote_public(hote):
         raise Invalide("hôte Confluence non configuré (JUMEAU_CONFLUENCE_HOTE, ex. banque.atlassian.net)")
     return hote
 

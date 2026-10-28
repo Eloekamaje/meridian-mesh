@@ -9,6 +9,7 @@ import base64
 import json
 import logging
 import os
+import ipaddress
 import re
 import subprocess
 import urllib.request
@@ -23,6 +24,18 @@ journal = logging.getLogger("meridian.naissance")
 DEPOTS = Path(os.environ.get("JUMEAU_DEPOTS", Path.home() / ".local/share/meridian/depots"))
 NOM_VALIDE = re.compile(r"(?!\.+$)[A-Za-z0-9._-]+")  # pas de nom fait uniquement de points (« . », « .. »)
 HOTE_VALIDE = re.compile(r"[a-z0-9.-]+")
+
+
+def hote_public(hote):
+    """Nom de domaine d'un service (« banque.atlassian.net ») : ni localhost, ni adresse IP littérale (pas de rebond
+    vers le réseau interne ou les métadonnées d'une instance par une configuration erronée)."""
+    if not hote or not HOTE_VALIDE.fullmatch(hote) or "." not in hote or hote.endswith(".localhost") or hote == "localhost":
+        return False
+    try:
+        ipaddress.ip_address(hote)
+        return False
+    except ValueError:
+        return True
 PREFIXE_VAULT = os.environ.get("JUMEAU_VAULT_PREFIXE", "meridian/")
 PREFIXE_ENV = "MERIDIAN_"
 BRANCHE_VALIDE = re.compile(r"[A-Za-z0-9._/-]+")
@@ -52,7 +65,7 @@ def url_depot(config):
 
 def _hote_autorise():
     hote = os.environ.get("JUMEAU_GIT_HOTE", "github.com").lower()
-    if not HOTE_VALIDE.fullmatch(hote):
+    if not hote_public(hote):
         raise ValueError("JUMEAU_GIT_HOTE invalide : un nom d'hôte attendu")
     return hote
 

@@ -42,3 +42,17 @@ def test_verifier_une_citation():
 def test_une_citation_de_code_n_est_pas_une_citation_de_source():
     assert RE_CITATION_SOURCE.search("git://depot@abc123:app.py#L1-L2") is None
     assert RE_CITATION_SOURCE.search("voir confluence://TBT/123@7#L4-L9.")["ref"] == "123"
+
+
+def test_donnees_personnelles_masquees_a_la_lecture():
+    from jumeau.lecteurs import masquer
+    assert masquer("Appeler ana.diallo@banque.fr au +1 514 555 0199, voir @bob") == \
+        "Appeler [adresse] au [numéro], voir [personne]"
+    # Ni une date (même suivie de l'heure), ni un montant, ni une durée ne sont des numéros.
+    assert masquer("Le 2026-10-28 08:00:00, plafond 5000 $, délai 24 h") == "Le 2026-10-28 08:00:00, plafond 5000 $, délai 24 h"
+
+
+def test_hote_public_seulement():
+    from jumeau.naissance import hote_public
+    assert hote_public("banque.atlassian.net")
+    assert not any(hote_public(h) for h in ("localhost", "10.0.0.5", "169.254.169.254", "intranet", "x.localhost", ""))

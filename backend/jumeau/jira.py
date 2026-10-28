@@ -11,7 +11,7 @@ import urllib.request
 
 from jumeau import atlassian, lecteurs
 from jumeau.github import MAX_RESULTATS, Invalide, JetonRefuse, TropDeDemandes, _memo, _SansRedirection
-from jumeau.naissance import HOTE_VALIDE, _resultat, resoudre_secret
+from jumeau.naissance import hote_public, _resultat, resoudre_secret
 
 CLE_PROJET = re.compile(r"[A-Z][A-Z0-9_]{1,19}")
 REF_TICKET = re.compile(r"[A-Z][A-Z0-9_]{1,19}-\d{1,9}")
@@ -25,7 +25,7 @@ identifiants = atlassian.identifiants
 
 def _hote():
     hote = os.environ.get("JUMEAU_JIRA_HOTE", "").lower()
-    if not hote or not HOTE_VALIDE.fullmatch(hote):
+    if not hote or not hote_public(hote):
         raise Invalide("hôte Jira non configuré (JUMEAU_JIRA_HOTE, ex. banque.atlassian.net)")
     return hote
 
@@ -65,8 +65,10 @@ def _texte(noeud):
         return noeud.get("text", "")
     if type_ == "hardBreak":
         return "\n"
-    if type_ in ("mention", "emoji"):
-        return attrs.get("text") or attrs.get("shortName", "")
+    if type_ == "mention":
+        return "[personne]"  # jamais le nom d'une personne mentionnée
+    if type_ == "emoji":
+        return attrs.get("shortName", "")
     if type_ == "inlineCard":
         return attrs.get("url", "")
     return "".join(_texte(e) for e in noeud.get("content", []) if isinstance(e, dict))
@@ -135,7 +137,7 @@ class LecteurJira(lecteurs.Lecteur):
         lignes = [f.get("summary") or "", f"Type : {(f.get('issuetype') or {}).get('name', '')}",
                   f"Statut : {(f.get('status') or {}).get('name', '')}", *en_lignes(f.get("description"))]
         for c in (f.get("comment") or {}).get("comments", []):
-            lignes += [f"Commentaire de {(c.get('author') or {}).get('displayName', 'inconnu')} :", *en_lignes(c.get("body"))]
+            lignes += ["Commentaire :", *en_lignes(c.get("body"))]  # sans l'auteur : on garde le fait, pas la personne
         # Jira ne sert que le ticket tel qu'il est : une citation d'une version passée échoue à la vérification.
         return {"titre": f"{t['key']} {f.get('summary') or ''}", "version": _version(t), "lignes": lignes}
 

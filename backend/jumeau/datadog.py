@@ -16,7 +16,7 @@ from urllib.parse import urlencode
 from jumeau import lecteurs
 from jumeau.atlassian import MAX_REPONSE
 from jumeau.github import DELAI, MAX_RESULTATS, Invalide, JetonRefuse, TropDeDemandes, _limiter, _memo, _SansRedirection
-from jumeau.naissance import HOTE_VALIDE, _resultat, resoudre_secret
+from jumeau.naissance import hote_public, _resultat, resoudre_secret
 
 CLE = re.compile(r"[A-Za-z0-9]{8,80}")
 NOM_SERVICE = re.compile(r"[A-Za-z0-9][\w.-]{0,99}")
@@ -39,7 +39,7 @@ def identifiants(cle_api, cle_app):
 
 def _hote():
     hote = os.environ.get("JUMEAU_DATADOG_HOTE", "").lower()
-    if not hote or not HOTE_VALIDE.fullmatch(hote):
+    if not hote or not hote_public(hote):
         raise Invalide("hôte Datadog non configuré (JUMEAU_DATADOG_HOTE, ex. api.datadoghq.eu)")
     return hote
 

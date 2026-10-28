@@ -159,3 +159,17 @@ def test_route_trancher_refuse_verdict_invalide_sans_toucher_la_base():
     app.include_router(routes.router)
     app.dependency_overrides[routes.connexion] = lambda: None
     assert TestClient(app).post("/v2/contradictions/1/revue", json={"verdict": "c"}).status_code == 422
+
+
+@besoin_pg
+def test_une_contradiction_tranchee_est_immuable_dans_la_base(conn):
+    import psycopg as pg
+    from jumeau import depot
+    from jumeau.tests.conftest import ACTIVITE, JUMEAU, SOURCE, claim
+    depot.enregistrer(conn, JUMEAU, SOURCE, [claim("x")], ACTIVITE)
+    cid = depot.enregistrer_contradiction(conn, JUMEAU, "doc ≠ code", ("a", "GIT"), ("b", "CONFLUENCE"), "agent")
+    depot.trancher_contradiction(conn, "tbt", cid, "alice", "a", "vu")
+    with pytest.raises(pg.errors.RaiseException):
+        conn.execute("UPDATE contradiction SET verdict = 'b' WHERE id = %s", (cid,))
+    with pytest.raises(pg.errors.RaiseException):
+        conn.execute("DELETE FROM contradiction WHERE id = %s", (cid,))

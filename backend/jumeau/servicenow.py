@@ -12,7 +12,7 @@ import urllib.request
 
 from jumeau import atlassian, lecteurs
 from jumeau.github import MAX_RESULTATS, Invalide, JetonRefuse, TropDeDemandes, _memo, _SansRedirection
-from jumeau.naissance import HOTE_VALIDE, _resultat, resoudre_secret
+from jumeau.naissance import hote_public, _resultat, resoudre_secret
 
 NOM_CI = re.compile(r"\w[\w .-]{0,79}")  # ni ^, ni =, ni deux-points : rien qui change une requête encodée
 UTILISATEUR = re.compile(r"[\w.@-]{1,100}")
@@ -32,7 +32,7 @@ _ouvrir = urllib.request.build_opener(_SansRedirection).open
 
 def _hote():
     hote = os.environ.get("JUMEAU_SERVICENOW_HOTE", "").lower()
-    if not hote or not HOTE_VALIDE.fullmatch(hote):
+    if not hote or not hote_public(hote):
         raise Invalide("instance ServiceNow non configurée (JUMEAU_SERVICENOW_HOTE, ex. banque.service-now.com)")
     return hote
 
