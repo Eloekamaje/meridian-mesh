@@ -30,7 +30,7 @@ pratique, aucun effet.
 
 | Claude Code | v1 (§5.1) | v3 |
 |---|---|---|
-| Demandes de permission | Revue humaine de **chaque** Claim | **Politique de revue** décidée par le propriétaire (§2) ; la revue unitaire reste pour ce qui est difficile à défaire |
+| Demandes de permission | Revue humaine de **chaque** Claim | **Vérifier comme on teste** (§2) : recettes, juge d'appui, recoupement ; l'humain ne garde que les décisions |
 | `CLAUDE.md` | La fiche vivante, régénérée à chaque commit | Deux objets : la **fiche** (générée, l'équivalent d'un index) et les **consignes du jumeau** (écrites par l'équipe, §5) |
 | Où vit l'agent | Dans Méridian | Là où l'on travaille déjà : le jumeau s'expose aussi en **MCP**, en lecture seule (§3) |
 | Mémoire « vraie quand elle a été écrite » | — | **Vérifier avant de citer**, y compris la fraîcheur des versions (§4) |
@@ -39,29 +39,47 @@ pratique, aucun effet.
 
 ---
 
-# 2. La permission : une politique, pas un clic par connaissance
+# 2. Vérifier comme on teste : recettes, juge d'appui, recoupement
 
 **Ce que la v1 avait compris.** Les demandes de permission y correspondaient à la validation humaine de chaque
 Claim (Architecture §1 : « l'équipe propriétaire valide ; aucun agent ne valide »).
 
-**Ce que fait Claude Code.** Il a des modes et des autorisations durables (listes d'autorisations). Il ne demande
-l'accord que pour ce qui est difficile à défaire ou tourné vers l'extérieur. Un accord donné dans un contexte ne
-vaut pas pour un autre.
+**Ce que fait Claude Code.** Il ne demande pas à l'utilisateur de valider un fait. Il le vérifie lui-même, et il
+préfère l'exécution à l'opinion : un `grep` plutôt qu'un souvenir, un test plutôt qu'un avis. L'auteur n'est
+jamais son propre juge : un relecteur au contexte neuf relit le travail. Un rapport reste une affirmation et non
+un fait : Claude relance les tests après la fusion. Il rend compte en « testé / non testé » et revérifie en
+continu. L'humain décide ; il ne vérifie pas.
 
-**Proposition.** L'`APPLICATION_OWNER` (Architecture §6.1) décide une **politique de revue** versionnée :
+**Constat (code et données, 2026-10-28).** La maturité M3 compte les **systèmes** des preuves. Rien ne vérifie
+que deux preuves disent **la même chose**, alors que l'Architecture Jumeau définit M3 comme « deux sources
+indépendantes **concordantes** ». Rien ne vérifie non plus qu'une ligne citée appuie bien l'énoncé : le gardien
+(`clore_sans_preuve`) vérifie seulement que la ligne existe. Les 10 343 preuves sont toutes du code, et 397 des
+525 connaissances viennent de l'ingestion.
 
-| Classe | Exemple | Traitement |
-|---|---|---|
-| Acceptée par la politique | dépendance lue dans un manifeste ; connaissance prouvée par deux systèmes (M3) | `ACCEPTED`, trace « acceptée par la politique v*n* de X » |
-| Toujours revue | règle métier (`APPLIQUE_REGLE`), données détenues (`DETIENT`), relation du Mesh | revue unitaire par un `MAINTAINER` |
-| Échantillon | tout le reste | *k* connaissances par semaine tirées au hasard ; un refus suspend l'acceptation automatique de la classe |
+**Règle.** Chaque connaissance est vérifiée comme on teste, à la manière d'un journaliste qui recoupe ses sources :
 
-**Écart assumé avec l'Architecture §1.** Aucun agent ne valide toujours, et l'humain décide toujours. Il décide
-une fois, au niveau de la politique, et elle reste révocable. La maturité M4 exige alors une validation **unitaire**,
-et M3 + politique ne suffit pas. Les connaissances critiques gardent ainsi leur sens.
+1. **Recettes déterministes**, sans modèle : la ligne citée contient-elle bien l'objet de la connaissance, au
+   commit ? Elles s'appliquent aux dépendances, aux interfaces exposées, aux variables lues et aux images. Le
+   résultat est **vérifié** ou **non appuyé**.
+2. **Juge d'appui**, uniquement là où aucune recette ne s'exécute (règles, acteurs, capacités, échanges, données
+   détenues). Un agent sans outils, sur un fil vierge et distinct de l'auteur, lit l'énoncé et les extraits cités.
+   Il rend une décision structurée : la preuve l'appuie, l'appuie en partie, ou ne l'appuie pas. Une seule source
+   qui l'appuie donne **selon le code** (ou selon Confluence…).
+3. **Recoupement** : deux systèmes **indépendants** qui appuient chacun l'énoncé, et qui se concordent, donnent
+   **recoupé**, et c'est **le seul chemin vers M3**. Une source qui recopie l'autre ne compte qu'une fois
+   (Knowledge Claims §11–15). Deux sources discordantes passent par une **contradiction**. Celle-ci est tranchée
+   par la règle d'autorité (Sources §2) quand elle s'applique ; sinon, par l'équipe.
+4. **Rejouer** : à chaque passe, le gardien rejoue les vérifications dont la preuve a changé. Une connaissance
+   qui ne tient plus redescend, et la fiche le dit.
+5. **Rendre compte** : la fiche et la revue affichent *vérifié*, *selon X*, *recoupé*, *contesté* ou
+   *non appuyé*, jamais « vrai ».
 
-**Dépendance.** La politique suppose de savoir qui est propriétaire, c'est-à-dire l'identité, que l'utilisateur
-a reportée (« sans acteur et profil, on y reviendra »). Elle n'est **pas implémentée** et attend ce sujet.
+**L'humain** ne voit plus que les vraies décisions : les contradictions qu'aucune règle d'autorité ne tranche,
+et la validation (M4) des connaissances qui comptent. « Recoupé » n'est pas « validé » : la propriété
+« Gouvernance » de l'Architecture §1 reste entière.
+
+**Remplace** la « politique de revue » d'une première version de ce paragraphe. Une politique décidée par le
+propriétaire supposait l'identité. La vérification, elle, n'en a pas besoin.
 
 ---
 
@@ -202,7 +220,7 @@ GitHub Actions).
 | 1 | §4 Fraîcheur des preuves à la lecture | implémenté | — |
 | 2 | §6 Évaluations | implémenté | — |
 | 3 | §5 Consignes du jumeau (API et prompt) | implémenté ; l'interface attend sa maquette | — |
-| 4 | §2 Politique de revue | à faire | identité |
+| 4 | §2 Vérifier comme on teste | en cours | — |
 | 5 | §7 Questions adressées | à faire | identité |
 | 6 | §3 Le jumeau en MCP | document dédié, puis à faire | identité, document dédié |
 | 7 | §8 Événements d'abord, veille longue | à faire | déploiement AWS |
