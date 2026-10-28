@@ -20,7 +20,9 @@ est la preuve, jamais le propos : pas de nom de route, de bibliothèque ni de va
    informations détenues, données puis code ; règles, code puis documentation (l'intention de la règle) ;
    échanges, comportement puis code ; comment elle vit, trajectoire, exploitation, comportement puis historique
    du code. Prouvez avec la citation rendue par lire_dans (paramètre citation de proposer_connaissance).
-5. Autorité selon la question : sur ce qu'elle fait, le code l'emporte sur la documentation ; sur ce qu'elle doit
+5. Lisez d'abord l'ancre de substance (le code, quand il existe), puis les autres sources ; rattachez chaque
+   connaissance de source à l'élément du code qu'elle concerne avec ancrer_connaissance (ce n'est pas une preuve).
+6. Autorité selon la question : sur ce qu'elle fait, le code l'emporte sur la documentation ; sur ce qu'elle doit
    faire, la documentation et l'équipe l'emportent ; sur son comportement réel, l'observabilité l'emporte sur le
    code. Une source qui n'existe pas n'est jamais devinée : la question va dans « Ce que l'on ne sait pas encore ».
 

@@ -20,6 +20,7 @@ from strands.session.file_session_manager import FileSessionManager
 from strands.session.s3_session_manager import S3SessionManager
 
 from jumeau import cbm, connaissance, croisement, depot, methodes, temps
+from jumeau.connaissance import ancrer as ancrer_code
 from jumeau.lecteurs import NATURES, RE_CITATION_SOURCE
 
 SESSIONS = Path(os.environ.get("JUMEAU_SESSIONS", Path.home() / ".local/share/meridian/sessions"))
@@ -329,6 +330,29 @@ def outils(ctx, dsn, nom_modele, budget):
             return "Fusion impossible pour le moment."
 
     @tool
+    def ancrer_connaissance(connaissance: int, citation_code: str, raison: str) -> str:
+        """Rattache une connaissance issue d'une source (documentation, ticket…) au code qu'elle concerne.
+
+        Ce n'est pas une preuve : elle ne change pas la maturité. Lis d'abord les lignes avec lire_code.
+
+        Args:
+            connaissance: identifiant de la connaissance (issue d'une source autre que le code).
+            citation_code: lignes de code concernées, chemin#Ldébut-Lfin (ou depot:chemin#Ldébut-Lfin).
+            raison: en une phrase, en quoi la connaissance concerne ces lignes.
+        """
+        if not budget.outil() or not budget.proposition():
+            return "Plafond de propositions de cette réponse atteint."
+        try:
+            with psycopg.connect(dsn, autocommit=True) as conn:
+                nouvelle = ancrer_code(conn, jumeau, sources, int(connaissance), citation_code, raison)
+            return f"Connaissance {connaissance} ancrée à {citation_code}." if nouvelle else "Ancrage déjà enregistré."
+        except (ValueError, LookupError) as e:
+            return f"Ancrage refusé : {e}"
+        except psycopg.Error:
+            journal.exception("ancrer_connaissance")
+            return "Ancrage impossible pour le moment."
+
+    @tool
     def signaler_contradiction(enonce: str, citation_a: str, citation_b: str) -> str:
         """Signale que deux sources de systèmes différents se contredisent (par exemple le code et la documentation).
 
@@ -442,7 +466,7 @@ def outils(ctx, dsn, nom_modele, budget):
 
     return [mes_connaissances, architecture, chercher_texte, chercher_symbole, tracer_appels, lire_code,
             proposer_connaissance, fusionner_connaissances, signaler_contradiction, consulter_methode,
-            historique_du_code, ce_qui_a_change, *([chercher_dans, lire_dans] if lecteurs else [])]
+            historique_du_code, ce_qui_a_change, *([ancrer_connaissance] if sources else []), *([chercher_dans, lire_dans] if lecteurs else [])]
 
 
 def historique_fusionne(sources, depuis="", chemin=""):

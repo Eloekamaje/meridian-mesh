@@ -67,6 +67,16 @@ def commits_entre(source, de, a):
                          f"--format=%H{SEPARATEUR}%ad{SEPARATEUR}%an{SEPARATEUR}%s", plage, "--"))
 
 
+def commits_citant(source, cle):
+    """Commits jusqu'au commit ingéré dont le titre cite le ticket `cle` (CLE-123), avec leurs fichiers ; bornés."""
+    if not re.fullmatch(r"[A-Z][A-Z0-9]+-\d+", cle):
+        raise ValueError(f"clé de ticket invalide : {cle!r}")
+    sortie = _git(source, "log", f"--max-count={MAX_COMMITS}", "--date=short", "--name-only", "--fixed-strings",
+                  f"--grep={cle}", f"--format=%H{SEPARATEUR}%ad{SEPARATEUR}%an{SEPARATEUR}%s", source["curseur"], "--")
+    motif = re.compile(rf"(?<![\w-]){re.escape(cle)}(?!\d)")  # CLE-1 ne doit pas attraper CLE-12
+    return [c for c in _commits(sortie) if motif.search(c["message"])]
+
+
 def evolution(conn, jumeau_id, depuis):
     """Claims apparus et disparus depuis une date (AAAA-MM-JJ), grâce à leurs dates de validité."""
     if not DATE_VALIDE.fullmatch(depuis):

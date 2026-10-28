@@ -212,6 +212,22 @@ def contradictions_ouvertes(conn, jumeau_id):
             "WHERE jumeau_id = %s AND statut = 'OUVERTE' ORDER BY id", (jumeau_id,)).fetchall()
 
 
+def ancrer(conn, jumeau, claim_id, source_id, chemin, debut, fin, locator, raison, origine):
+    """Rattache une connaissance de source (non-code) à des lignes de code ; vrai si l'ancre est nouvelle."""
+    with conn.transaction():
+        if not conn.execute(
+                "SELECT 1 FROM claim c WHERE c.id = %s AND c.jumeau_id = %s AND c.valide_jusqua IS NULL AND EXISTS ("
+                "SELECT 1 FROM claim_preuve cp JOIN preuve p ON p.id = cp.preuve_id JOIN source so ON so.id = p.source_id "
+                "WHERE cp.claim_id = c.id AND cp.role = 'SUPPORT' AND so.type <> 'GIT')",
+                (claim_id, jumeau["id"])).fetchone():
+            raise ValueError(f"connaissance {claim_id} : inconnue, close, ou prouvée par le code seul (rien à ancrer)")
+        return conn.execute(
+            "INSERT INTO ancre (tenant_id, claim_id, source_id, chemin, ligne_debut, ligne_fin, locator, raison, origine) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (claim_id, locator) DO NOTHING RETURNING id",
+            (jumeau["tenant_id"], claim_id, source_id, chemin, debut, fin, locator, raison[:500], origine)
+        ).fetchone() is not None
+
+
 def lister_jumeaux(conn):
     with conn.cursor(row_factory=dict_row) as cur:
         return cur.execute(
@@ -231,7 +247,11 @@ def lister_claims(conn, jumeau_id):
                        FROM claim_preuve cp JOIN preuve p ON p.id = cp.preuve_id WHERE cp.claim_id = c.id) AS preuves,
                       (SELECT coalesce(json_agg(json_build_object(
                           'acteur', r.acteur, 'decision', r.decision, 'motif', r.motif, 'le', r.le) ORDER BY r.le DESC), '[]')
-                       FROM revue r WHERE r.claim_id = c.id) AS revues
+                       FROM revue r WHERE r.claim_id = c.id) AS revues,
+                      (SELECT coalesce(json_agg(json_build_object(
+                          'chemin', a.chemin, 'ligne_debut', a.ligne_debut, 'ligne_fin', a.ligne_fin,
+                          'raison', a.raison, 'origine', a.origine) ORDER BY a.id), '[]')
+                       FROM ancre a WHERE a.claim_id = c.id) AS ancres
                FROM claim c WHERE c.jumeau_id = %s AND c.valide_jusqua IS NULL
                ORDER BY c.type, c.predicat, c.objet""",
             (jumeau_id,)).fetchall()

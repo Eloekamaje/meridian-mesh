@@ -7,7 +7,7 @@ import re
 
 from psycopg.rows import dict_row
 
-from jumeau import depot
+from jumeau import depot, temps
 from jumeau.adaptateur import preuve
 from jumeau.lecteurs import RE_CITATION_SOURCE
 from jumeau.source_git import lire_au_sha
@@ -138,6 +138,50 @@ def proposer_source(conn, jumeau, lecteur, predicat, objet, type_claim, citation
     activite = {"extracteur": "jumeau-conversation", "modele": modele, "acteur": acteur,
                 "justification": justification[:1000]}
     return depot.enregistrer_proposition(conn, jumeau, lecteur.source_id, c, p, activite)
+
+
+def _ancrer_lignes(conn, jumeau, source, claim_id, chemin, debut, fin, raison, origine):
+    lu = lire_code(source, chemin, debut, fin)  # LookupError / ValueError si le fichier ou les lignes n'existent pas
+    if not lu["locator"].endswith(f"#L{debut}-L{fin}"):
+        raise ValueError(f"lignes introuvables ou trop longues : {chemin}#L{debut}-L{fin}")
+    return depot.ancrer(conn, jumeau, claim_id, source["id"], chemin, debut, fin, lu["locator"], raison, origine)
+
+
+def ancrer(conn, jumeau, sources, claim_id, citation_code, raison, origine="AGENT"):
+    """Rattache une connaissance de source à des lignes de code vérifiées au SHA ingéré ; vrai si nouvelle. Pas une preuve."""
+    m = RE_CITATION.fullmatch(citation_code.strip("` "))
+    if not m:
+        raise ValueError(f"citation de code attendue (chemin#Ldébut-Lfin) : {citation_code}")
+    depot_nom, chemin, debut, fin = decouper(m)
+    source = resoudre_source(sources, depot_nom, chemin)
+    return _ancrer_lignes(conn, jumeau, source, claim_id, chemin, debut, fin, raison, origine)
+
+
+CLE_JIRA = "[A-Z][A-Z0-9]+-[0-9]+"
+MAX_ANCRES_JIRA = 5  # fichiers ancrés par connaissance
+
+
+def ancrer_jira(conn, jumeau, sources):
+    """Ancrage du harness : une connaissance prouvée par un ticket Jira est ancrée (fichier, ligne 1) aux fichiers
+    des commits dont le titre cite ce ticket. Rejouable ; renvoie le nombre d'ancres créées."""
+    lignes = conn.execute(
+        "SELECT DISTINCT cp.claim_id, p.chemin FROM claim_preuve cp JOIN preuve p ON p.id = cp.preuve_id "
+        "JOIN source so ON so.id = p.source_id JOIN claim c ON c.id = cp.claim_id "
+        "WHERE c.jumeau_id = %s AND c.valide_jusqua IS NULL AND cp.role = 'SUPPORT' AND so.type = 'JIRA' "
+        "AND p.chemin ~ %s", (jumeau["id"], f"^{CLE_JIRA}$")).fetchall()
+    creees = 0
+    for claim_id, cle in lignes:
+        restant = MAX_ANCRES_JIRA
+        for source in sources:
+            for commit in temps.commits_citant(source, cle):
+                for chemin in commit["fichiers"][:restant]:
+                    try:
+                        creees += _ancrer_lignes(conn, jumeau, source, claim_id, chemin, 1, 1,
+                                                 f"fichier modifié par le commit {commit['sha']} ({cle})", "HARNESS")
+                        restant -= 1
+                    except (LookupError, ValueError):  # fichier supprimé depuis, ou vide : on passe
+                        continue
+    return creees
 
 
 def autoportrait(jumeau, claims):

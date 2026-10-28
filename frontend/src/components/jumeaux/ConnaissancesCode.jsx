@@ -143,7 +143,8 @@ function Connaissances({ jid }) {
           <section key={titre} className="mt-5" aria-label={titre}>
             <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">{titre} ({liste.length})</h2>
             {liste.map((c) => (
-              <button type="button" key={c.id} onClick={() => setSelectionId(c.id)} aria-pressed={c.id === selectionId}
+              <div key={c.id}>
+              <button type="button" onClick={() => setSelectionId(c.id)} aria-pressed={c.id === selectionId}
                 disabled={!c.preuves.length} data-testid={`claim-${c.id}`}
                 className={`mb-1 flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-[rgba(148,163,184,0.07)] ${FOCUS} ${c.id === selectionId ? "bg-[rgba(96,165,250,0.12)]" : ""}`}>
                 <FileCode size={13} aria-hidden className="shrink-0 text-[#7C93A8]" />
@@ -151,6 +152,12 @@ function Connaissances({ jid }) {
                 <span className={`rounded border px-1.5 font-code text-[9px] ${STATUT[c.statut] || STATUT.PROPOSED}`}>{c.statut} · {c.maturite}</span>
                 <span className="w-8 text-right font-code text-[9px] text-[#7C93A8]">{Math.round((c.confiance ?? 0) * 100)}%</span>
               </button>
+              {c.ancres?.map((a) => (
+                <div key={`${a.chemin}:${a.ligne_debut}`} className="ml-7 break-all font-code text-[10px] text-[#7C93A8]" data-testid={`ancre-${c.id}`}>
+                  concerne : {a.chemin}:{a.ligne_debut === a.ligne_fin ? a.ligne_debut : `${a.ligne_debut}-${a.ligne_fin}`}
+                </div>
+              ))}
+              </div>
             ))}
           </section>
         ))}

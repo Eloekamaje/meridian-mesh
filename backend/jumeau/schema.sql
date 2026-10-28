@@ -211,3 +211,20 @@ CREATE INDEX IF NOT EXISTS revue_claim ON revue (claim_id, decision);
 CREATE INDEX IF NOT EXISTS preuve_source ON preuve (source_id);
 CREATE INDEX IF NOT EXISTS claim_preuve_preuve ON claim_preuve (preuve_id);
 CREATE INDEX IF NOT EXISTS claim_valides ON claim (jumeau_id, type, predicat, objet) WHERE valide_jusqua IS NULL;
+
+-- Ancrage : relie une connaissance issue d'une source (Jira, Confluence…) à l'endroit du code qu'elle concerne.
+-- Ce n'est pas une preuve : jamais dans claim_preuve, donc jamais comptée dans la maturité.
+CREATE TABLE IF NOT EXISTS ancre (
+    id          bigserial PRIMARY KEY,
+    tenant_id   text NOT NULL,
+    claim_id    bigint NOT NULL REFERENCES claim(id),
+    source_id   bigint NOT NULL REFERENCES source(id),
+    chemin      text NOT NULL,
+    ligne_debut int  NOT NULL CHECK (ligne_debut >= 1),
+    ligne_fin   int  NOT NULL CHECK (ligne_fin >= ligne_debut),
+    locator     text NOT NULL,
+    raison      text NOT NULL,
+    origine     text NOT NULL CHECK (origine IN ('AGENT', 'HARNESS')),
+    cree_le     timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (claim_id, locator)
+);

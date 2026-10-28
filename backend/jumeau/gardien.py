@@ -322,6 +322,11 @@ async def veiller(conn, db, jumeau_id, chemins=None, rediger=_rediger):
     except Exception:  # la consolidation se rattrape à la passe suivante ; la fiche est déjà enregistrée
         journal.warning("gardien %s : consolidation impossible", jumeau_id, exc_info=True)
     try:
+        journal.info("gardien %s : ancrage Jira, %s ancre(s)", jumeau_id, await asyncio.to_thread(
+            connaissance.ancrer_jira, conn, jumeau, [s for s in sources if s["index_code"]]))
+    except Exception:  # l'ancrage se rejoue à la passe suivante
+        journal.warning("gardien %s : ancrage Jira impossible", jumeau_id, exc_info=True)
+    try:
         journal.info("gardien %s : poignée de main %s", jumeau_id, await poignee.serrer(conn, db, jumeau_id))
     except Exception:  # les relations se reprennent à la passe suivante
         journal.warning("gardien %s : poignée de main impossible", jumeau_id, exc_info=True)
