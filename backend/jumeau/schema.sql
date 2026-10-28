@@ -129,15 +129,34 @@ END $$ LANGUAGE plpgsql;
 CREATE OR REPLACE TRIGGER claim_accepte_exige_revue BEFORE INSERT OR UPDATE OF statut ON claim
     FOR EACH ROW EXECUTE FUNCTION claim_accepte_exige_revue();
 
+-- Vérification d'une connaissance (Harness v3 §2), comme on teste : recette déterministe ou juge d'appui, distinct
+-- de l'auteur. Ajout seul ; la dernière ligne d'une connaissance fait foi. `empreinte` = ses preuves au moment de la
+-- vérification (une preuve est immuable) : une preuve nouvelle rejoue la vérification.
+CREATE TABLE IF NOT EXISTS verification (
+    id        bigserial PRIMARY KEY,
+    claim_id  bigint NOT NULL REFERENCES claim(id),
+    etat      text NOT NULL CHECK (etat IN ('verifie', 'selon', 'recoupe', 'conteste', 'non_appuye')),
+    methode   text NOT NULL CHECK (methode IN ('recette', 'juge')),
+    systemes  text[] NOT NULL,
+    empreinte text NOT NULL,
+    raison    text CHECK (length(raison) <= 300),
+    le        timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS verification_claim ON verification (claim_id, id DESC);
+
 -- Maturité calculée, jamais déclarée (Jumeau Sources §5) : M1 sans preuve, M2 une preuve, M3 deux systèmes différents
--- (source.type : deux dépôts Git ne sont pas indépendants), M4 = M3 + revue ACCEPTED. Recalculée à chaque preuve et statut.
+-- (source.type : deux dépôts Git ne sont pas indépendants) **recoupés** — leurs preuves concordent, selon la dernière
+-- vérification (Architecture : « deux sources indépendantes concordantes ») —, M4 = M3 + revue ACCEPTED.
+-- Recalculée à chaque preuve, statut et vérification.
 CREATE OR REPLACE FUNCTION recalculer_maturite(cid bigint) RETURNS void AS $$
     UPDATE claim SET maturite = CASE
         WHEN s.preuves = 0 THEN 'M1'
-        WHEN s.systemes >= 2 AND claim.statut = 'ACCEPTED' THEN 'M4'
-        WHEN s.systemes >= 2 THEN 'M3'
+        WHEN s.systemes >= 2 AND s.recoupe AND claim.statut = 'ACCEPTED' THEN 'M4'
+        WHEN s.systemes >= 2 AND s.recoupe THEN 'M3'
         ELSE 'M2' END
-    FROM (SELECT count(*) AS preuves, count(DISTINCT so.type) AS systemes
+    FROM (SELECT count(*) AS preuves, count(DISTINCT so.type) AS systemes,
+                 coalesce((SELECT v.etat = 'recoupe' FROM verification v WHERE v.claim_id = cid
+                           ORDER BY v.id DESC LIMIT 1), false) AS recoupe
           FROM claim_preuve cp JOIN preuve p ON p.id = cp.preuve_id JOIN source so ON so.id = p.source_id
           WHERE cp.claim_id = cid AND cp.role = 'SUPPORT') s
     WHERE claim.id = cid;
@@ -154,6 +173,8 @@ END $$ LANGUAGE plpgsql;
 CREATE OR REPLACE TRIGGER claim_maturite AFTER INSERT OR UPDATE OF statut ON claim
     FOR EACH ROW EXECUTE FUNCTION maturite_a_recalculer();
 CREATE OR REPLACE TRIGGER claim_preuve_maturite AFTER INSERT ON claim_preuve
+    FOR EACH ROW EXECUTE FUNCTION maturite_a_recalculer();
+CREATE OR REPLACE TRIGGER verification_maturite AFTER INSERT ON verification
     FOR EACH ROW EXECUTE FUNCTION maturite_a_recalculer();
 
 -- Deux sources de systèmes différents qui se contredisent : signalée par l'agent (citations vérifiées), tranchée par un humain.

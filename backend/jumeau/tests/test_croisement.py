@@ -90,11 +90,14 @@ def maturite(conn, cid):
 
 
 @besoin_pg
-def test_une_source_m2_deux_systemes_m3_validee_m4(conn):
+def test_une_source_m2_deux_systemes_recoupes_m3_validee_m4(conn):
     depot.enregistrer(conn, JUMEAU, SOURCE, [claim("motor")], ACTIVITE)
     cid = depot.lister_claims(conn, "tbt")[0]["id"]
     assert maturite(conn, cid) == "M2"
     ajouter_preuve(conn, JUMEAU, "wiki", "DOCUMENTATION", cid, CITATION_DOC)
+    assert maturite(conn, cid) == "M2"  # deux systèmes comptés ne suffisent pas : encore faut-il qu'ils concordent
+    conn.execute("INSERT INTO verification (claim_id, etat, methode, systemes, empreinte) "
+                 "VALUES (%s, 'recoupe', 'juge', ARRAY['documentation', 'git'], 'e')", (cid,))
     assert maturite(conn, cid) == "M3"
     depot.reviser(conn, cid, "alice", "ACCEPTED", "vu")
     assert maturite(conn, cid) == "M4"

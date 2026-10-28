@@ -54,10 +54,10 @@ def _expose(objet: str, lignes: list[str]) -> bool:
     if verbe not in verbes:
         return False
     # le chemin cité peut être plus long (préfixe de routeur absent de la ligne) si la fin, par
-    # segments entiers, correspond ; un chemin de ligne vide ("/") est trop ambigu : refusé
+    # segments entiers, correspond ; un chemin de ligne vide ("/") ne vaut que pour la racine citée
     for chemin in _LITTERAL_RE.findall(texte):
         segs = _segments(chemin)
-        if segs and cible[-len(segs):] == segs:
+        if (segs and cible[-len(segs):] == segs) or (not segs and not cible):
             return True
     return False
 

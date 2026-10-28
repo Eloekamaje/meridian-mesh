@@ -21,7 +21,7 @@ import psycopg
 from pydantic import BaseModel, Field
 from strands import Agent
 
-from jumeau import agent, comprendre, connaissance, contradicteur, depot, lecteurs, methodes, poignee, registre, temps
+from jumeau import agent, comprendre, connaissance, contradicteur, depot, lecteurs, methodes, poignee, recoupement, registre, temps
 from jumeau.ingerer import ingerer
 from jumeau.source_git import sha_courant
 
@@ -356,6 +356,11 @@ async def veiller(conn, db, jumeau_id, chemins=None, rediger=_rediger):
         journal.info("gardien %s : consolidation %s", jumeau_id, await consolider(conn, jumeau_id))
     except Exception:  # la consolidation se rattrape à la passe suivante ; la fiche est déjà enregistrée
         journal.warning("gardien %s : consolidation impossible", jumeau_id, exc_info=True)
+    try:  # vérifier comme on teste (Harness v3 §2) : recettes sans modèle, juge d'appui borné
+        journal.info("gardien %s : vérification %s", jumeau_id,
+                     await recoupement.verifier(conn, jumeau, branches, agent.modele()))
+    except Exception:  # la vérification se rejoue à la passe suivante
+        journal.warning("gardien %s : vérification impossible", jumeau_id, exc_info=True)
     try:
         journal.info("gardien %s : ancrage Jira, %s ancre(s)", jumeau_id, await asyncio.to_thread(
             connaissance.ancrer_jira, conn, jumeau, [s for s in sources if s["index_code"]]))

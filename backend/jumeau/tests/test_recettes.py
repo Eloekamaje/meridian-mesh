@@ -108,3 +108,8 @@ def test_lit_variable(lignes, attendu):
 ])
 def test_execute_image(objet, lignes, attendu):
     assert recette("EXECUTE_IMAGE", objet, lignes) == attendu
+
+
+def test_expose_la_racine_seulement_pour_la_racine():
+    assert recette("EXPOSE", "GET /", ['@api_router.get("/")']) == "verifie"
+    assert recette("EXPOSE", "GET /dossiers", ['@api_router.get("/")']) == "non_appuye"
