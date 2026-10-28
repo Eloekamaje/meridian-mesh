@@ -135,7 +135,7 @@ CREATE OR REPLACE TRIGGER claim_accepte_exige_revue BEFORE INSERT OR UPDATE OF s
 CREATE TABLE IF NOT EXISTS verification (
     id        bigserial PRIMARY KEY,
     claim_id  bigint NOT NULL REFERENCES claim(id),
-    etat      text NOT NULL CHECK (etat IN ('verifie', 'selon', 'recoupe', 'conteste', 'non_appuye')),
+    etat      text NOT NULL,
     methode   text NOT NULL CHECK (methode IN ('recette', 'juge')),
     systemes  text[] NOT NULL,
     empreinte text NOT NULL,
@@ -143,6 +143,10 @@ CREATE TABLE IF NOT EXISTS verification (
     le        timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS verification_claim ON verification (claim_id, id DESC);
+-- « en_partie » (Harness v3 §2) : comme le Check Grounding de Google, une affirmation appuyée en partie n'est pas appuyée.
+ALTER TABLE verification DROP CONSTRAINT IF EXISTS verification_etat_check;
+ALTER TABLE verification ADD CONSTRAINT verification_etat_check
+    CHECK (etat IN ('verifie', 'selon', 'recoupe', 'conteste', 'en_partie', 'non_appuye'));
 
 -- Maturité calculée, jamais déclarée (Jumeau Sources §5) : M1 sans preuve, M2 une preuve, M3 deux systèmes différents
 -- (source.type : deux dépôts Git ne sont pas indépendants) **recoupés** — leurs preuves concordent, selon la dernière

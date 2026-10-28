@@ -3,7 +3,8 @@ elle existe, sinon par le juge d'appui (un agent sans outils, distinct de l'aute
 l'appuient et concordent la disent « recoupée », seul chemin vers M3. L'humain ne garde que les vraies décisions.
 
 États : verifie (recette), selon (une source l'appuie), recoupe (deux systèmes concordants), conteste (deux systèmes
-discordants : une contradiction est ouverte pour l'équipe), non_appuye (la preuve ne dit pas cela).
+discordants : une contradiction est ouverte pour l'équipe), en_partie (un détail n'est pas appuyé : comme pour le
+Check Grounding de Google, une phrase appuyée en partie n'est pas appuyée), non_appuye (la preuve ne dit pas cela).
 """
 import logging
 
@@ -70,6 +71,8 @@ def etat_du_jugement(appui, systemes):
     compte qu'une fois."""
     if appui.appui == "non":
         return "non_appuye"
+    if appui.appui == "partiel":
+        return "en_partie"
     if len(systemes) >= 2 and appui.concordance == "contradictoires":
         return "conteste"
     if len(systemes) >= 2 and appui.concordance == "concordantes" and appui.appui == "oui" and not appui.copie:
@@ -98,7 +101,7 @@ def _ouvrir_contradiction(conn, jumeau, c, raison):
 async def verifier(conn, jumeau, lecteurs=(), modele=None, juger=juge.juger, limite=MAX_JUGEES):
     """Une passe de vérification. Les recettes s'exécutent toutes (sans modèle) ; le juge prend au plus `limite`
     connaissances, d'abord celles qui ont plusieurs systèmes (le recoupement), puis celles proposées en conversation."""
-    bilan = {"verifie": 0, "selon": 0, "recoupe": 0, "conteste": 0, "non_appuye": 0, "en_attente": 0}
+    bilan = {"verifie": 0, "selon": 0, "recoupe": 0, "conteste": 0, "en_partie": 0, "non_appuye": 0, "en_attente": 0}
     a_juger = []
     for c in a_verifier(conn, jumeau["id"]):
         systemes = {p["systeme"] for p in c["preuves"]}

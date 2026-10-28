@@ -17,7 +17,8 @@ def appui(id, appui="oui", concordance="concordantes", copie=False):
 @pytest.mark.parametrize("decision, systemes, attendu", [
     (appui(1), {"git", "confluence"}, "recoupe"),
     (appui(1, copie=True), {"git", "confluence"}, "selon"),           # une recopie ne compte qu'une fois
-    (appui(1, appui="partiel"), {"git", "confluence"}, "selon"),
+    (appui(1, appui="partiel"), {"git", "confluence"}, "en_partie"),  # Google Check Grounding : partiel = non ancré
+    (appui(1, appui="partiel", concordance="une_seule_source"), {"git"}, "en_partie"),
     (appui(1, concordance="contradictoires"), {"git", "confluence"}, "conteste"),
     (appui(1, concordance="concordantes"), {"git"}, "selon"),         # un seul système : jamais recoupé
     (appui(1, appui="non"), {"git", "confluence"}, "non_appuye"),
@@ -68,7 +69,8 @@ def test_une_passe_recettes_juge_recoupement_maturite(conn, depot_git):
                 for d in dossiers}
 
     bilan = asyncio.run(recoupement.verifier(conn, j, [wiki], juger=juger))
-    assert bilan == {"verifie": 1, "selon": 1, "recoupe": 1, "conteste": 0, "non_appuye": 1, "en_attente": 0}
+    assert bilan == {"verifie": 1, "selon": 1, "recoupe": 1, "conteste": 0, "en_partie": 0, "non_appuye": 1,
+                     "en_attente": 0}
     etats = recoupement.etats(conn, "tbt")
     assert {cid: etats[cid]["etat"] for cid in (fastapi, redis, regle, acteur)} == {
         fastapi: "verifie", redis: "non_appuye", regle: "recoupe", acteur: "selon"}
