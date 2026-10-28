@@ -1195,7 +1195,13 @@ async def declarer_connexion(systeme: str, payload: JetonAtlassian):
         hote = module.hote_autorise(payload.hote)
     except jumeau_github.Invalide as e:
         raise HTTPException(400, str(e))
-    compte = await _appel_service(module.SERVICE, module.compte_du_jeton, secret, hote)
+    try:
+        compte = await _appel_service(module.SERVICE, module.compte_du_jeton, secret, hote)
+    except HTTPException as e:
+        if e.status_code != 404:
+            raise
+        # À la déclaration, « introuvable » veut dire : aucun site de ce service à cette adresse.
+        raise HTTPException(404, f"Aucun site {module.SERVICE} à l'adresse {hote or 'configurée'} : vérifiez-la")
     login = compte["login"].lower()
     # Identifiant tiré du compte du service (accountId) : un autre jeton ne peut pas écraser cette connexion.
     cxid = f"{module.PREFIXE}{re.sub(r'[^a-z0-9]+', '-', login).strip('-')[:30]}-{hashlib.sha256(compte['compte'].encode()).hexdigest()[:8]}"

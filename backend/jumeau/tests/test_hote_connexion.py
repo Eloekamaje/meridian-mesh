@@ -229,3 +229,21 @@ def test_essai_source_connexion_inconnue_n_appelle_rien(monkeypatch):
     code = essai_source.executer(argparse.Namespace(systeme="jira", hote=None, perimetre="PAY", secret=None,
                                                     terme=None, connexion="jr-x"), lignes.append)
     assert code == 2 and "jr-x" in lignes[0] and "Aucun appel" in lignes[0]
+
+
+def test_declaration_sur_un_site_inexistant_dit_d_abord_l_adresse(monkeypatch):
+    # Constaté : « Élément introuvable dans Confluence » pour une adresse de site qui n'existe pas.
+    import asyncio
+    import server
+    from fastapi import HTTPException
+
+    async def introuvable(*a):
+        raise HTTPException(404, "Élément introuvable dans Confluence")
+    monkeypatch.setattr(server, "_appel_service", introuvable)
+    try:
+        asyncio.run(server.declarer_connexion("confluence", server.JetonAtlassian(
+            hote="banque-inexistante.atlassian.net", email="a@b.fr", jeton="x")))
+    except HTTPException as e:
+        assert e.status_code == 404 and "Aucun site Confluence à l'adresse banque-inexistante.atlassian.net" in e.detail
+    else:
+        raise AssertionError("une erreur était attendue")
