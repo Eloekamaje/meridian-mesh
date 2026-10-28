@@ -74,6 +74,30 @@ indépendantes **concordantes** ». Rien ne vérifie non plus qu'une ligne cité
 5. **Rendre compte** : la fiche et la revue affichent *vérifié*, *selon X*, *recoupé*, *contesté* ou
    *non appuyé*, jamais « vrai ».
 
+**Implémenté (2026-10-28).**
+- Recettes (`recettes.py`), juge d'appui (`juge.py`, lots de 12, 24 par passe), orchestration (`recoupement.py`,
+  table `verification`, gardien). M3 exige le recoupement.
+- État `en_partie`, distinct de « selon » : comme le Check Grounding de Google, une phrase appuyée en partie n'est
+  pas appuyée.
+- La documentation du dépôt (.md, .mdx, .rst, .adoc) est un système à part, distinct du code.
+- L'outil `recouper_connaissance` ajoute une seconde source à une connaissance existante (refusée si elle vient du
+  même système), et la méthode explique comment recouper.
+- La fiche affiche les compteurs et l'état de chaque connaissance. Ce que sa preuve n'appuie pas sort de la
+  présentation et passe dans « ce que j'ignore ».
+- L'extracteur ne prouve plus une variable par un commentaire qui la nomme.
+
+**Premiers résultats réels (meridian).**
+- Première passe : 175 connaissances vérifiées, 21 selon le code, 12 non appuyées. Huit des non appuyées venaient
+  de l'extracteur : des variables « lues » dans des commentaires.
+- Après correction de l'extracteur : 182 vérifiées, 3 non appuyées.
+- Recoupement par l'agent dans la documentation du dépôt : **5 connaissances recoupées, M3**. Le juge a refusé
+  une seconde source qui ne disait pas la même chose (« selon »), et en a jugé une autre seulement « en partie ».
+
+**Limites.**
+- Les fichiers de méthode (`methodes/*.md`) comptent comme documentation. Ce sont aussi des consignes pour
+  l'agent : ils prouvent l'intention, pas un comportement observé.
+- Aucune source externe n'est encore branchée sur un vrai compte (Confluence, Jira…).
+
 **L'humain** ne voit plus que les vraies décisions : les contradictions qu'aucune règle d'autorité ne tranche,
 et la validation (M4) des connaissances qui comptent. « Recoupé » n'est pas « validé » : la propriété
 « Gouvernance » de l'Architecture §1 reste entière.
@@ -220,7 +244,7 @@ GitHub Actions).
 | 1 | §4 Fraîcheur des preuves à la lecture | implémenté | — |
 | 2 | §6 Évaluations | implémenté | — |
 | 3 | §5 Consignes du jumeau (API et prompt) | implémenté ; l'interface attend sa maquette | — |
-| 4 | §2 Vérifier comme on teste | en cours | — |
+| 4 | §2 Vérifier comme on teste | implémenté | — |
 | 5 | §7 Questions adressées | à faire | identité |
 | 6 | §3 Le jumeau en MCP | document dédié, puis à faire | identité, document dédié |
 | 7 | §8 Événements d'abord, veille longue | à faire | déploiement AWS |
