@@ -98,7 +98,7 @@ ALTER TABLE source ADD COLUMN IF NOT EXISTS url text;
 ALTER TABLE source ADD COLUMN IF NOT EXISTS secret_ref text;
 -- Sources branchées autres que le code (lecteurs) : le CHECK d'origine ne connaît que GIT et DOCUMENTATION.
 ALTER TABLE source DROP CONSTRAINT IF EXISTS source_type_check;
-ALTER TABLE source ADD CONSTRAINT source_type_check CHECK (type IN ('GIT', 'DOCUMENTATION', 'CONFLUENCE', 'JIRA', 'SERVICENOW'));
+ALTER TABLE source ADD CONSTRAINT source_type_check CHECK (type IN ('GIT', 'DOCUMENTATION', 'CONFLUENCE', 'JIRA', 'SERVICENOW', 'DATADOG'));
 
 -- Quelles sources observent encore chaque Claim : il n'est clos que quand plus aucune ne le voit.
 CREATE TABLE IF NOT EXISTS claim_source (

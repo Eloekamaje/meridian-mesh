@@ -1041,13 +1041,10 @@ CONNECTEURS = [
         {"cle": "connexion", "label": "Connexion Jira", "type": "connexion_jira", "requis": True},
         {"cle": "projet", "label": "Projet", "type": "projet_jira", "requis": True},
      ]},
-    {"id": "datadog", "nom": "Datadog", "categorie": "Observabilité", "capacites": "Métriques, traces, comportement normal",
+    {"id": "datadog", "nom": "Datadog", "categorie": "Observabilité", "capacites": "Volumes, erreurs, latence, appels réels entre applications",
      "champs": [
-        {"cle": "site", "label": "Site", "type": "select", "options": ["datadoghq.eu", "datadoghq.com"], "defaut": "datadoghq.eu", "requis": True},
-        {"cle": "services", "label": "Services", "type": "liste", "requis": True},
-        {"cle": "tags", "label": "Tags", "type": "liste"},
-        {"cle": "periode", "label": "Période initiale", "type": "select", "options": ["7 jours", "30 jours", "90 jours"], "defaut": "30 jours"},
-        {"cle": "secret", "label": "Clé d'API (référence)", "type": "secret", "requis": True},
+        {"cle": "connexion", "label": "Connexion Datadog", "type": "connexion_datadog", "requis": True},
+        {"cle": "service", "label": "Service", "type": "service_datadog", "requis": True},
      ]},
     {"id": "splunk", "nom": "Splunk", "categorie": "Observabilité", "capacites": "Événements observés, journaux, corrélations",
      "champs": [

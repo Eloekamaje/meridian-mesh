@@ -1166,7 +1166,7 @@ async def _reference_connexion_de(systeme: str, cxid: str) -> str:
     return doc["reference"]
 
 
-class JetonAtlassian(BaseModel):
+class JetonAtlassian(BaseModel):  # aussi les deux clés de Datadog (`email` = clé d'API, `jeton` = clé d'application)
     email: str = Field(min_length=3, max_length=200)
     jeton: str = Field(min_length=1, max_length=500)
 

@@ -5,7 +5,8 @@ import { BORDURE, CHAMP, ETIQUETTE, Choix } from "@/components/commande/SourceGi
 
 // Source « connexion + périmètre » de la commande (Confluence, Jira…) : une connexion de l'espace d'abord (e-mail +
 // jeton d'API), puis le périmètre choisi par autocomplétion parmi ceux que cette connexion peut lire.
-// `cfg` : { systeme, nom, perimetre: { cle, titre, label, placeholder, prefixe } }.
+// `cfg` : { systeme, nom, perimetre: { cle, titre, label, placeholder, prefixe }, compte?: { label, type, secret, invite } }
+// (libellés des deux champs envoyés sous les noms `email` et `jeton` ; Atlassian par défaut).
 function Connexion({ cfg, choisie, onChoisir }) {
   const { systeme, nom } = cfg;
   const compte = { label: "Adresse e-mail du compte Atlassian", type: "email", secret: "Jeton d'API", invite: "Collez le jeton", ...cfg.compte };
@@ -65,7 +66,7 @@ function Connexion({ cfg, choisie, onChoisir }) {
               {etat.encours ? "Vérification…" : "Vérifier"}
             </button>
           </div>
-          <p className="text-[10px] text-[#7C93A8]">Les identifiants sont vérifiés auprès de {nom} puis conservés dans Vault ; le jeton ne revient jamais à l'écran.</p>
+          <p className="text-[10px] text-[#7C93A8]">Les identifiants sont vérifiés auprès de {nom} puis conservés dans Vault ; le secret ne revient jamais à l'écran.</p>
         </div>
       ) : (
         <button type="button" onClick={() => setAjout(true)} data-testid={`insp-${systeme}-nouvelle-connexion`}

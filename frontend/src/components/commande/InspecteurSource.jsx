@@ -4,9 +4,10 @@ import SourceGithub from "@/components/commande/SourceGithub";
 import SourceConfluence from "@/components/commande/SourceConfluence";
 import SourceJira from "@/components/commande/SourceJira";
 import SourceServiceNow from "@/components/commande/SourceServiceNow";
+import SourceDatadog from "@/components/commande/SourceDatadog";
 
 // Connecteurs « connexion + périmètre » : un composant de configuration par système.
-const SOURCES_CONNEXION = { confluence: SourceConfluence, jira: SourceJira, servicenow: SourceServiceNow };
+const SOURCES_CONNEXION = { confluence: SourceConfluence, jira: SourceJira, servicenow: SourceServiceNow, datadog: SourceDatadog };
 
 export default function InspecteurSource({ source, connecteur, onChange, onTester, onFermer }) {
   if (!source) {
