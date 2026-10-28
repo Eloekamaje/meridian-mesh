@@ -1,6 +1,7 @@
 import { Lightning, WarningCircle, X } from "@phosphor-icons/react";
 import { STATUTS_SOURCE, ENVIRONNEMENTS, champRempli } from "@/lib/sources";
 import SourceGithub from "@/components/commande/SourceGithub";
+import SourceConfluence from "@/components/commande/SourceConfluence";
 
 export default function InspecteurSource({ source, connecteur, onChange, onTester, onFermer }) {
   if (!source) {
@@ -93,9 +94,10 @@ export default function InspecteurSource({ source, connecteur, onChange, onTeste
 
       <div className="mt-4 border-t border-[rgba(148,163,184,0.16)] pt-4">
         <div className="mb-3 font-code text-[10px] uppercase tracking-[0.2em] text-[#7C93A8]">Connexion {connecteur?.nom}</div>
-        {connecteur?.id === "github"
-          ? <SourceGithub source={source} onChange={onChange} />
-          : <div className="space-y-3">{(connecteur?.champs || []).map(champ)}</div>}
+        {connecteur?.id === "github" && <SourceGithub source={source} onChange={onChange} />}
+        {connecteur?.id === "confluence" && <SourceConfluence source={source} onChange={onChange} />}
+        {!["github", "confluence"].includes(connecteur?.id) &&
+          <div className="space-y-3">{(connecteur?.champs || []).map(champ)}</div>}
       </div>
 
       <div className="mt-5 flex items-center gap-2 border-t border-[rgba(148,163,184,0.16)] pt-4">

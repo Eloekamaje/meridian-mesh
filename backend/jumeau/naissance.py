@@ -16,7 +16,7 @@ from urllib.parse import quote, urlparse
 from datetime import datetime, timezone
 from pathlib import Path
 
-from jumeau import gardien, registre
+from jumeau import depot, gardien, registre
 from jumeau.ingerer import ingerer
 
 journal = logging.getLogger("meridian.naissance")
@@ -277,6 +277,10 @@ async def naitre(conn, db, commande, jumeau_id, rediger=None):
             origine = {"branche": branche(config), "url": url_depot(config), "secret_ref": config.get("secret") or None}
             await asyncio.to_thread(ingerer, conn, jumeau, chemin, origine)
             chemins.append(chemin)
+        from jumeau import confluence  # import local : confluence.py importe ce module
+        for s in commande["sources"]:
+            if s["connecteur"] == "confluence" and s["statut"] == "prete":
+                depot.declarer_source(conn, jumeau, confluence.source_de(s["config"]))
         await franchir("clone")
         await registre.projeter(db, conn)
         await franchir("ingestion")

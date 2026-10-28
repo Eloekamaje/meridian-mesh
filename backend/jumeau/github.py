@@ -48,15 +48,15 @@ _ouvrir = urllib.request.build_opener(_SansRedirection).open
 _cache, _appels, _verrou = {}, {}, threading.Lock()
 
 
-def _limiter(jeton):
-    """Au plus MAX_APPELS_MINUTE appels à GitHub par jeton sur une minute glissante."""
+def _limiter(jeton, service="GitHub"):
+    """Au plus MAX_APPELS_MINUTE appels à GitHub (ou autre `service`) par jeton sur une minute glissante."""
     cle, maintenant = hashlib.sha256(jeton.encode()).hexdigest(), time.monotonic()
     with _verrou:
         file = _appels.setdefault(cle, deque())
         while file and file[0] < maintenant - 60:
             file.popleft()
         if len(file) >= MAX_APPELS_MINUTE:
-            raise TropDeDemandes("trop de demandes à GitHub : réessayez dans une minute")
+            raise TropDeDemandes(f"trop de demandes à {service} : réessayez dans une minute")
         file.append(maintenant)
 
 

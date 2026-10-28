@@ -161,3 +161,15 @@ def test_reprise_des_claims_anterieurs_a_claim_source(conn):
     depot.appliquer_schema(conn)
     depot.enregistrer(conn, JUMEAU, FRONT, [claim_de("axios", "front", "sha9")], ACTIVITE)
     assert objets_valides(conn) == {"motor", "axios"}  # le front n'a pas fermé ce que l'API observait
+
+
+def test_source_confluence_declaree_puis_lue_par_son_lecteur(conn):
+    from jumeau import confluence, lecteurs  # noqa: F401  (enregistre la fabrique CONFLUENCE)
+    depot.enregistrer(conn, JUMEAU, SOURCE, [claim("motor")], ACTIVITE)
+    wiki = {"type": "CONFLUENCE", "nom": "confluence-TBT", "emplacement": "TBT", "url": "https://x/wiki/spaces/TBT",
+            "secret_ref": "vault:r"}
+    depot.declarer_source(conn, JUMEAU, wiki)
+    depot.declarer_source(conn, JUMEAU, wiki)  # idempotent
+    lignes = conn.execute("SELECT type, secret_ref FROM source WHERE jumeau_id = 'tbt' ORDER BY nom").fetchall()
+    assert lignes == [("CONFLUENCE", "vault:r"), ("GIT", None)]
+    assert [s["nom"] for s in depot.sources_du_jumeau(conn, "tbt")] == ["tbt-repo"]  # le code reste le code

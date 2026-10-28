@@ -1074,9 +1074,8 @@ CONNECTEURS = [
      ]},
     {"id": "confluence", "nom": "Confluence", "categorie": "Documentation", "capacites": "Contexte métier et décisions",
      "champs": [
-        {"cle": "site", "label": "Site", "type": "texte", "requis": True},
-        {"cle": "espaces", "label": "Espaces", "type": "liste", "requis": True},
-        {"cle": "periode", "label": "Période", "type": "select", "options": ["12 mois", "24 mois", "tout"], "defaut": "24 mois"},
+        {"cle": "connexion", "label": "Connexion Confluence", "type": "connexion_confluence", "requis": True},
+        {"cle": "espace", "label": "Espace", "type": "espace_confluence", "requis": True},
      ]},
     {"id": "cmdb", "nom": "CMDB", "categorie": "CMDB", "capacites": "Relations déclarées et propriétaires",
      "champs": [

@@ -120,6 +120,16 @@ def fusionner(conn, jumeau_id, garder, retirer):
         conn.execute("UPDATE claim SET valide_jusqua = now() WHERE id = %s", (retirer,))
 
 
+def declarer_source(conn, jumeau, source):
+    """Enregistre une source branchée (hors code) du jumeau : pas d'ingestion, ses lecteurs la lisent à la demande."""
+    conn.execute(
+        "INSERT INTO source (tenant_id, jumeau_id, type, nom, emplacement, curseur, url, secret_ref) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (jumeau_id, nom) DO UPDATE SET "
+        "emplacement = EXCLUDED.emplacement, url = EXCLUDED.url, secret_ref = EXCLUDED.secret_ref",
+        (jumeau["tenant_id"], jumeau["id"], source["type"], source["nom"], source["emplacement"],
+         source.get("curseur"), source.get("url"), source.get("secret_ref")))
+
+
 def sources_du_jumeau(conn, jumeau_id):
     """Les dépôts du jumeau, chacun sur sa branche, au dernier commit ingéré."""
     with conn.cursor(row_factory=dict_row) as cur:

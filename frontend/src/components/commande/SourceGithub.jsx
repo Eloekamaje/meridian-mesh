@@ -6,9 +6,9 @@ import api from "@/lib/api";
 
 // Source GitHub de la commande : une connexion de l'espace d'abord, puis des couples dépôt/branche choisis par
 // autocomplétion parmi ce que cette connexion peut lire, une ligne à la fois.
-const BORDURE = "border-[rgba(148,163,184,0.16)]";
-const ETIQUETTE = "font-code text-[10px] uppercase tracking-[0.15em] text-[#7C93A8]";
-const CHAMP = `rounded-md border ${BORDURE} bg-[#0F1D28] px-3 py-2 text-xs text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#60A5FA]/60 focus:outline-none`;
+export const BORDURE = "border-[rgba(148,163,184,0.16)]";
+export const ETIQUETTE = "font-code text-[10px] uppercase tracking-[0.15em] text-[#7C93A8]";
+export const CHAMP = `rounded-md border ${BORDURE} bg-[#0F1D28] px-3 py-2 text-xs text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#60A5FA]/60 focus:outline-none`;
 const DELAI_RECHERCHE = 250;
 
 // Charge les propositions de `chemin` (avec ?q=) pendant la saisie ; ignore les réponses dépassées.
@@ -29,7 +29,7 @@ function usePropositions(chemin, recherche, actif) {
 }
 
 // Champ à autocomplétion (motif combobox : clavier et lecteurs d'écran gérés par cmdk et Radix).
-function Choix({ valeur, placeholder, chemin, rendu, valeurDe, onChoisir, desactive, label, testid }) {
+export function Choix({ valeur, placeholder, chemin, rendu, valeurDe, onChoisir, desactive, label, testid }) {
   const [ouvert, setOuvert] = useState(false);
   const [recherche, setRecherche] = useState("");
   const { items, chargement, erreur } = usePropositions(chemin, recherche, ouvert);
