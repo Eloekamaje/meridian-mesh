@@ -213,7 +213,8 @@ async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=
         ecriture = EcritureTravail(db, travail) if travail and db is not None else None
         etat = etat_texte(await ecriture.etat()) if ecriture else None
         mob = mobilisation.Mobilisation(ctxs, dsn, modele)
-        outils = [mob.outil()] + (agent.outils_travail(ecriture, agent.Budget()) if ecriture else [])
+        scene = mobilisation.Scene(ctxs)  # seuls les jumeaux autorisés (déjà filtrés par le serveur)
+        outils = [mob.outil(), scene.outil()] + (agent.outils_travail(ecriture, agent.Budget()) if ecriture else [])
         a = mobilisation.orchestrateur(modele, mobilisation.prompt(etat), outils)
         # Durée bornée : chaque outil a son plafond, mais pas le nombre de tours de l'orchestratrice.
         texte = str(await asyncio.wait_for(a.invoke_async(mobilisation.demande(await _cartes(ctxs, dsn, db), question)),
@@ -248,6 +249,7 @@ async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=
             "contributions": [{"jumeau": ctxs[j]["jumeau"]["nom"], "texte": retirer_citations(c.constat)}
                               for j, c in mob.contributions.items()],
             "preuves": preuves[:MAX_PREUVES],
+            **({"commande_carte": scene.commande} if scene.commande else {}),
         }
     except asyncio.TimeoutError:
         agent.journal.warning("mobilisation %s : durée dépassée", list(ctxs))

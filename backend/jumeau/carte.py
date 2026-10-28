@@ -11,10 +11,26 @@ from jumeau import connaissance, depot
 MAX_PAR_RUBRIQUE = 8
 
 
+NON_APPUYEES = ("non_appuye", "en_partie")  # ce que sa preuve n'appuie pas ne se publie pas (Harness v3 §2)
+SOURCES_LISIBLES = {"git": "le code", "documentation": "la documentation"}
+
+
+def _mention(c):
+    """✓ si l'équipe l'a validée ; sinon son état de vérification, s'il est connu (rien = pas encore vérifiée)."""
+    if c["statut"] == "ACCEPTED":
+        return " ✓"
+    v = c.get("verification") or {}
+    if v.get("etat") == "selon":
+        systeme = (v.get("systemes") or ["?"])[0]
+        return f" (d'après {SOURCES_LISIBLES.get(systeme, systeme.capitalize())})"
+    return {"verifie": " (vérifié)", "recoupe": " (recoupé)", "conteste": " (contesté)"}.get(v.get("etat"), "")
+
+
 def _objets(claims, predicat):
-    """Formulations valables d'un prédicat (✓ si validées par l'équipe ; contestées exclues)."""
-    return [c["objet"] + (" ✓" if c["statut"] == "ACCEPTED" else "")
-            for c in claims if c["predicat"] == predicat and c["statut"] != "CONTESTED"][:MAX_PAR_RUBRIQUE]
+    """Formulations valables d'un prédicat, avec leur mention ; contestées par l'équipe et non appuyées exclues."""
+    return [c["objet"] + _mention(c) for c in claims
+            if c["predicat"] == predicat and c["statut"] != "CONTESTED"
+            and (c.get("verification") or {}).get("etat") not in NON_APPUYEES][:MAX_PAR_RUBRIQUE]
 
 
 def carte(jumeau, sources, claims, relations, noms, ci=None):

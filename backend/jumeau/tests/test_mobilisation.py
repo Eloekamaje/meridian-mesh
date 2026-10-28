@@ -180,3 +180,19 @@ def test_une_orchestratrice_qui_ne_finit_pas_est_arretee(pose, monkeypatch):
     monkeypatch.setattr(mobilisation, "DUREE_MAX", 0.05)
     r = asyncio.run(flore.mobiliser(["a", "b"], "question", "alice"))
     assert "durée maximale" in r["reponse"]
+
+
+# --- Montrer sur l'Atlas (constaté : « je ne dessine pas », alors que l'Atlas dessine applications et relations) ----
+
+def test_scene_ne_montre_que_des_jumeaux_visibles():
+    scene = mobilisation.Scene(["conduit", "meridian"])
+    outil = scene.outil()
+    retour = outil(jumeaux=["conduit", "secret", "meridian", "conduit"], titre="  Le paysage  ")
+    assert scene.commande == {"type": "scene", "ids": ["conduit", "meridian"], "accents": ["conduit", "meridian"],
+                              "titre": "Le paysage"}
+    assert "secret" in retour and "Ignorés" in retour
+
+
+def test_scene_vide_ne_commande_rien():
+    scene = mobilisation.Scene(["conduit"])
+    assert "Rien n'est montré" in scene.outil()(jumeaux=["secret"], titre="x") and scene.commande is None

@@ -40,3 +40,15 @@ def test_carte_porte_l_ancre_d_identite_cmdb():
     c = carte.carte(JUMEAU, SOURCES, CLAIMS, RELATIONS, NOMS, ci="TBT-PROD")
     assert c["ci"] == "TBT-PROD" and "CMDB TBT-PROD" in carte.texte(c)
     assert "CMDB" not in carte.texte(carte.carte(JUMEAU, SOURCES, CLAIMS, RELATIONS, NOMS))
+
+
+def test_carte_porte_la_verification_et_ecarte_le_non_appuye():
+    claims = [{"predicat": "ECHANGE_AVEC", "objet": "Fraude", "statut": "PROPOSED",
+               "verification": {"etat": "selon", "systemes": ["git"]}},
+              {"predicat": "ECHANGE_AVEC", "objet": "Comptes", "statut": "PROPOSED", "verification": {"etat": "recoupe"}},
+              {"predicat": "ECHANGE_AVEC", "objet": "Aucun autre système", "statut": "PROPOSED",
+               "verification": {"etat": "non_appuye"}},
+              {"predicat": "ECHANGE_AVEC", "objet": "Paie", "statut": "PROPOSED", "verification": {"etat": "en_partie"}},
+              {"predicat": "ECHANGE_AVEC", "objet": "Courriel", "statut": "PROPOSED"}]
+    c = carte.carte(JUMEAU, SOURCES, claims, [], {})
+    assert c["echanges"] == ["Fraude (d'après le code)", "Comptes (recoupé)", "Courriel"]
