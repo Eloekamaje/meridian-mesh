@@ -86,7 +86,7 @@ CONTEXTE = """## Contexte de cette conversation
 - Interlocuteur : {interlocuteur}
 - Application : {nom}, de l'équipe {equipe}
 - Code : {depots}{consigne_depots}
-- Connaissances du jumeau (extraites du code ; ✓ = confirmé par l'équipe) :
+- Ce que le jumeau sait de lui-même (la fiche vivante ci-dessus fait référence) :
 {autoportrait}"""
 
 
@@ -128,10 +128,12 @@ def prompt_systeme(ctx):
                                consigne_depots=consigne,
                                autoportrait=connaissance.autoportrait(ctx["jumeau"], ctx["claims"]))
     catalogue = "\n".join(f"- {m['nom']} : {m['description']}" for m in methodes.catalogue())
+    # Du plus stable au plus variable : le préfixe (charte, catalogue) reste identique d'un tour à l'autre (cache).
     prompt = (f"Tu es Flore, la voix de Méridian.\n\n{CHARTE.read_text(encoding='utf-8')}\n\n"
-              f"## Catalogue des méthodes\n\n{catalogue}\n\n{contexte}")
+              f"## Catalogue des méthodes\n\n{catalogue}")
     if ctx.get("fiche"):
         prompt += f"\n\n## Fiche vivante de l'application (rédigée par le gardien du jumeau)\n\n{ctx['fiche']}"
+    prompt += f"\n\n{contexte}"
     if ctx.get("travail"):
         prompt += f"\n\n## État du Travail (ton état de tâche : tiens-le à jour avec tes outils)\n\n{ctx['travail']}"
     return prompt

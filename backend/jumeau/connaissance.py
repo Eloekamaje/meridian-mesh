@@ -12,10 +12,10 @@ from jumeau.adaptateur import preuve
 from jumeau.source_git import lire_au_sha
 
 FAMILLES = {
-    "EXPOSE": "APIs exposées",
-    "DEPEND_DE": "Dépendances logicielles",
-    "LIT_VARIABLE": "Configuration lue",
-    "EXECUTE_IMAGE": "Images exécutées",
+    "EXPOSE": "interfaces",
+    "DEPEND_DE": "dépendances",
+    "LIT_VARIABLE": "réglages lus",
+    "EXECUTE_IMAGE": "images",
 }
 # ClaimTypes du Domain_Model §13.
 TYPES_CLAIM = {
@@ -119,11 +119,11 @@ def autoportrait(jumeau, claims):
     lignes = [f"Nom : {jumeau['nom']} · équipe propriétaire : {jumeau['equipe']}"]
     if jumeau.get("mission"):
         lignes.append(f"Mission déclarée par l'équipe : {jumeau['mission']} (domaine : {jumeau.get('domaine', 'À confirmer')})")
-    for predicat, titre in FAMILLES.items():
-        liste = [c for c in claims if c["predicat"] == predicat]
-        if liste:
-            objets = ", ".join(c["objet"] + (" ✓" if c["statut"] == "ACCEPTED" else "") for c in liste)
-            lignes.append(f"{titre} ({len(liste)}) : {objets}")
+    # Extraction structurelle : seulement les comptes ; le détail se lit avec l'outil mes_connaissances.
+    comptes = [f"{n} {titre}" for predicat, titre in FAMILLES.items()
+               if (n := sum(c["predicat"] == predicat for c in claims))]
+    if comptes:
+        lignes.append("Extraction du code : " + ", ".join(comptes) + " — détail avec mes_connaissances")
     # Seules les propositions validées par l'équipe entrent dans le prompt : une proposition non revue,
     # éventuellement induite par du contenu malveillant du dépôt, ne doit pas s'injecter chez tous les membres.
     validees = [c for c in claims if c["predicat"] not in FAMILLES and c["statut"] == "ACCEPTED"][:MAX_VALIDEES_PROMPT]

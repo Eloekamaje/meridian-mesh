@@ -39,7 +39,7 @@ def test_lire_code_hors_fichier(depot_git):
 
 # --- identité ------------------------------------------------------------------------------------
 
-def test_autoportrait_resume_l_identite_par_famille():
+def test_autoportrait_resume_l_extraction_par_comptes():
     claims = [
         {"predicat": "EXPOSE", "objet": "GET /health", "statut": "ACCEPTED"},
         {"predicat": "EXPOSE", "objet": "POST /jumeaux", "statut": "PROPOSED"},
@@ -47,7 +47,8 @@ def test_autoportrait_resume_l_identite_par_famille():
     ]
     texte = connaissance.autoportrait(JUMEAU, claims)
     assert "TBT" in texte and "equipe-tbt" in texte
-    assert "APIs exposées (2)" in texte and "GET /health ✓" in texte and "fastapi" in texte
+    assert "2 interfaces, 1 dépendances" in texte and "mes_connaissances" in texte
+    assert "GET /health" not in texte and "fastapi" not in texte
 
 
 def test_id_session_cloisonne_par_membre_et_sans_caracteres_dangereux():
