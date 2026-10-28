@@ -22,6 +22,18 @@ export default function LigneActiviteFlore({ activite, testid = "flore-activite"
   const courante = [...ops].reverse().find((o) => o.status === "running") || ops[ops.length - 1];
   const libelle = courante?.label || "Flore réfléchit…";
   const sources = [...new Set(ops.flatMap((o) => o.sources || []))];
+  // Une activité terminée sans aucune étape ne s'annonce pas « Analyse terminée » : elle dit ce qu'elle est.
+  const vide = !enCours && ops.length === 0;
+  if (vide) {
+    return (
+      <div className="py-1" data-testid={testid} data-etat="vide">
+        <span className="inline-flex min-h-[28px] items-center gap-2 text-xs text-[#7C93A8]" data-testid={`${testid}-libelle`}>
+          <CheckCircle size={13} className="shrink-0 text-[#7C93A8]/40" aria-hidden="true" />
+          Aucune étape enregistrée
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div className="py-1" data-testid={testid} data-etat={enCours ? "encours" : "termine"}>

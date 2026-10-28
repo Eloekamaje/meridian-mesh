@@ -84,7 +84,8 @@ def test_echec_du_relecteur_ne_supprime_pas_la_reponse(monkeypatch):
         raise TimeoutError("429")
     monkeypatch.setattr(flore.contradicteur, "relire", relecteur_en_panne)
     verdict = asyncio.run(flore.relire_sans_risque("q", "r", SOURCE, None, None))
-    assert verdict == {"ok": True, "problemes": []}
+    # La réponse passe quand même, mais elle ne s'affiche pas comme « relue » (plan de remédiation L0.1).
+    assert verdict == {"ok": True, "problemes": [], "etat": "indisponible"}
 
 
 def test_fiche_affichable_sans_citations_avec_ses_preuves():

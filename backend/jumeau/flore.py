@@ -95,12 +95,45 @@ def validees(claims):
 
 
 async def relire_sans_risque(question, texte, sources, profil, modele, charte="", lecteurs=(), validees=None):
-    """Une panne du relecteur (délai, quota) ne doit jamais faire perdre une réponse déjà produite."""
+    """Une panne du relecteur (délai, quota) ne doit jamais faire perdre une réponse déjà produite. Elle ne doit pas
+    non plus se faire passer pour une relecture : l'état `indisponible` le dit (plan de remédiation L0.1)."""
     try:
         return await contradicteur.relire(question, texte, sources, profil, modele, charte, lecteurs, validees)
     except Exception:
         agent.journal.warning("relecture impossible, réponse envoyée sans relecture", exc_info=True)
-        return {"ok": True, "problemes": []}
+        return {"ok": True, "problemes": [], "etat": "indisponible"}
+
+
+# Ce que la relecture garantit vraiment sur le texte envoyé (plan de remédiation L0.1).
+# `relue` seul autorise le badge « relu » ; une correction n'est jamais relue (une seule révision au plus).
+ETATS_RELECTURE = ("relue", "corrigee_non_relue", "objection_sans_effet", "indisponible", "verdict_illisible")
+
+
+def etat_relecture(verdict, corrige):
+    """État lisible de la relecture pour une réponse donnée."""
+    etat = (verdict or {}).get("etat") or "relue"
+    if etat in ("indisponible", "verdict_illisible"):
+        return etat
+    if verdict["ok"]:
+        return "relue"
+    return "corrigee_non_relue" if corrige else "objection_sans_effet"
+
+
+async def reviser(a, texte, verdict, chrono, emit, libelle=""):
+    """Une seule révision au plus. Rend (texte, corrige) ; `corrige` n'est vrai que si le texte a réellement changé
+    (plan de remédiation L0.2 : une révision qui échoue ne s'affiche pas comme une correction)."""
+    if verdict["ok"]:
+        return texte, False
+    agent.journal.info("révision %s : %s", libelle, verdict["problemes"])
+    await _annoncer(emit, {"type": "etape", "libelle": "Je corrige après relecture…"})
+    avant = texte
+    try:
+        with chrono.phase("agent"):
+            texte = str(await a.invoke_async(contradicteur.consigne_revision(verdict["problemes"]))).strip()
+    except Exception:
+        agent.journal.warning("révision impossible, première réponse conservée", exc_info=True)
+        return avant, False
+    return texte, texte.strip() != avant.strip()
 
 
 def cle_fil(acteur, travail):
@@ -145,13 +178,16 @@ ETAPES = {
 }
 
 
-async def executer(a, message, emit=None):
-    """Le tour de l'agent ; avec `emit`, ses étapes et son brouillon partent au fil de l'eau."""
+async def executer(a, message, emit=None, chrono=None):
+    """Le tour de l'agent ; avec `emit`, ses étapes et son brouillon partent au fil de l'eau. `chrono` reçoit
+    l'instant du premier mot — la latence ressentie, qui n'était mesurée nulle part."""
     if emit is None:
         return str(await a.invoke_async(message)).strip()
     resultat, annonces, derniere = None, set(), None
     async for e in a.stream_async(message):
         if "data" in e and isinstance(e["data"], str):
+            if chrono is not None:
+                chrono.texte()
             await emit({"type": "texte", "delta": e["data"]})
         elif (outil := e.get("current_tool_use")) and outil.get("toolUseId") not in annonces:
             annonces.add(outil.get("toolUseId"))
@@ -246,7 +282,7 @@ async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=No
         a = agent.construire(ctx, dsn, session=connaissance.id_session(jumeau_id, cle), modele=modele,
                              ecriture=ecriture)
         with chrono.phase("agent"):
-            texte = await executer(a, question, emit)
+            texte = await executer(a, question, emit, chrono)
         await _annoncer(emit, {"type": "relecture"})
         # Relecture avant envoi ; une seule révision au plus.
         # ponytail: la consigne de révision reste dans le fil (brouillon, critique, correction) : historique cohérent,
@@ -255,15 +291,7 @@ async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=No
             verdict = await relire_sans_risque(question, texte, ctx["sources"], ctx.get("profil"), modele,
                                                agent.CHARTE.read_text(encoding="utf-8"), ctx.get("lecteurs", []),
                                                validees(ctx["claims"]))
-        corrige = not verdict["ok"]
-        if not verdict["ok"]:
-            agent.journal.info("révision %s : %s", jumeau_id, verdict["problemes"])
-            await _annoncer(emit, {"type": "etape", "libelle": "Je corrige après relecture…"})
-            try:
-                with chrono.phase("agent"):
-                    texte = str(await a.invoke_async(contradicteur.consigne_revision(verdict["problemes"]))).strip()
-            except Exception:
-                agent.journal.warning("révision impossible, première réponse conservée", exc_info=True)
+        texte, corrige = await reviser(a, texte, verdict, chrono, emit, jumeau_id)
         chrono.agent(a)
         with chrono.phase("controles"):
             invalides = await asyncio.to_thread(contradicteur.citations_invalides, texte, ctx["sources"],
@@ -276,7 +304,9 @@ async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=No
         reponse = vers_reponse_flore(ctx["jumeau"], ctx["sources"], texte, invalides, fraiches)
         if dessin and dessin.preuves:  # chaque flèche du schéma renvoie à sa ligne, dans le volet des preuves
             reponse["preuves"] = (reponse["preuves"] + dessin.preuves)[:MAX_PREUVES + len(dessin.preuves)]
-        reponse["durees"], reponse["relu"], reponse["corrige"] = chrono.bilan(), True, corrige
+        reponse["durees"] = chrono.bilan()
+        reponse["relecture_etat"] = etat = etat_relecture(verdict, corrige)
+        reponse["relu"], reponse["corrige"] = etat == "relue", corrige
         agent.journal.info("durées %s : %s", jumeau_id, reponse["durees"])
         return reponse
     except RuntimeError as e:  # modèle non configuré
@@ -342,7 +372,7 @@ async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=
         with chrono.phase("cartes"):
             cartes = await _cartes(ctxs, dsn, db, relations)
         with chrono.phase("agent"):
-            texte = await asyncio.wait_for(executer(a, mobilisation.demande(cartes, question), emit),
+            texte = await asyncio.wait_for(executer(a, mobilisation.demande(cartes, question), emit, chrono),
                                            mobilisation.DUREE_MAX)
         await _annoncer(emit, {"type": "relecture"})
         sources = [s for ctx in ctxs.values() for s in ctx["sources"]]
@@ -351,13 +381,7 @@ async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=
             verdict = await relire_sans_risque(question, texte, sources, profil, modele,
                                                agent.CHARTE.read_text(encoding="utf-8"), branches,
                                                sum(validees(ctx["claims"]) for ctx in ctxs.values()))
-        if not verdict["ok"]:
-            await _annoncer(emit, {"type": "etape", "libelle": "Je corrige après relecture…"})
-            try:
-                with chrono.phase("agent"):
-                    texte = str(await a.invoke_async(contradicteur.consigne_revision(verdict["problemes"]))).strip()
-            except Exception:
-                agent.journal.warning("révision impossible, première réponse conservée", exc_info=True)
+        texte, corrige = await reviser(a, texte, verdict, chrono, emit, "mobilisation")
         chrono.agent(a)  # « outils » comprend la consultation des jumeaux (leur propre modèle et leurs outils)
         with chrono.phase("controles"):
             invalides = await asyncio.to_thread(contradicteur.citations_invalides, texte, sources, branches)
@@ -384,7 +408,8 @@ async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=
                               for j, c in mob.contributions.items()],
             "preuves": preuves[:MAX_PREUVES] + (dessin.preuves if dessin else []),
             **({"commande_carte": scene.commande} if scene.commande else {}),
-            "durees": chrono.bilan(), "relu": True, "corrige": not verdict["ok"],
+            "durees": chrono.bilan(), "relecture_etat": etat_relecture(verdict, corrige),
+            "relu": etat_relecture(verdict, corrige) == "relue", "corrige": corrige,
         }
         agent.journal.info("durées mobilisation %s : %s", list(ctxs), reponse["durees"])
         return reponse

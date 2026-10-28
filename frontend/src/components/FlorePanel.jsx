@@ -10,6 +10,7 @@ import { decouperMermaid } from "@/lib/segmentsMermaid";
 import { demanderEnFlux } from "@/lib/fluxFlore";
 import BrouillonFlore from "./BrouillonFlore";
 import MarqueRelecture from "./MarqueRelecture";
+import MarqueOrigine from "./MarqueOrigine";
 import FloreActivite from "./FloreActivite";
 import { couleurDomaine } from "@/lib/domaines";
 import { useContexte } from "@/lib/contexte";
@@ -150,6 +151,7 @@ function CarteReponse({ data, index, propsEtat, setPropsEtat, justifOuverte, set
           )}
         </div>
         <TexteTeletype texte={data.reponse} actif={derniere && !data.auFilDeLEau} gele={!!pilote?.enPause} testid={`flore-texte-${index}`} />
+        <MarqueOrigine data={data} />
         <MarqueRelecture data={data} />
 
         {/* Fiches d'initiatives métier : l'item de droit affiché directement au gestionnaire */}
@@ -298,6 +300,7 @@ function CarteReponse({ data, index, propsEtat, setPropsEtat, justifOuverte, set
       </div>
 
       <TexteTeletype texte={data.reponse} actif={derniere && !data.auFilDeLEau} gele={!!pilote?.enPause} testid={`flore-texte-${index}`} />
+        <MarqueOrigine data={data} />
         <MarqueRelecture data={data} />
 
       {data.propositions?.some((_, pi) => !propsEtat[`${index}-${pi}`]) && (

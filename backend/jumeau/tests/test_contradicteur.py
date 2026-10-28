@@ -16,7 +16,7 @@ def test_citations_invalides_detectees(depot_git):
 
 def test_verdict_json_extrait_d_un_texte_bavard():
     assert contradicteur.analyser_verdict('Voici : {"ok": false, "problemes": ["jargon"]} merci') == \
-        {"ok": False, "problemes": ["jargon"]}
+        {"ok": False, "problemes": ["jargon"], "etat": "relue"}
 
 
 def test_verdict_illisible_ne_bloque_pas_la_reponse():

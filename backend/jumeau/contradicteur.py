@@ -107,15 +107,17 @@ def attributions_infondees(texte, validees):
 
 
 def analyser_verdict(texte):
-    """Premier objet JSON du texte ; illisible = pas d'objection (le relecteur ne doit pas bloquer la réponse)."""
+    """Premier objet JSON du texte ; illisible = pas d'objection, mais l'état le dit : la réponse n'est pas « relue »
+    (plan de remédiation L0.1 : une étiquette ne promet jamais plus que ce que le mécanisme a fait)."""
     m = re.search(r"\{.*\}", texte, re.DOTALL)
     try:
         verdict = json.loads(m.group(0)) if m else None
     except json.JSONDecodeError:
         verdict = None
     if not isinstance(verdict, dict):
-        return {"ok": True, "problemes": []}
-    return {"ok": bool(verdict.get("ok", True)), "problemes": [str(p) for p in verdict.get("problemes", [])][:3]}
+        return {"ok": True, "problemes": [], "etat": "verdict_illisible"}
+    return {"ok": bool(verdict.get("ok", True)), "problemes": [str(p) for p in verdict.get("problemes", [])][:3],
+            "etat": "relue"}
 
 
 async def _juger(question, reponse, profil, modele, charte):
@@ -131,11 +133,12 @@ async def relire(question, reponse, sources, profil, modele, charte="", lecteurs
     # révision, sans appel au LLM. `validees` : nombre de connaissances validées (None = non contrôlé).
     invalides = await asyncio.to_thread(citations_invalides, reponse, sources, lecteurs)
     if invalides:
-        return {"ok": False, "problemes": [f"Citations introuvables : {', '.join(invalides)}. "
-                                           "Relis ces lignes avec lire_code ou lire_dans, ou retire l'affirmation."]}
+        return {"ok": False, "etat": "relue", "problemes": [
+            f"Citations introuvables : {', '.join(invalides)}. "
+            "Relis ces lignes avec lire_code ou lire_dans, ou retire l'affirmation."]}
     infondees = attributions_infondees(reponse, validees) if validees is not None else []
     if infondees:
-        return {"ok": False, "problemes": [
+        return {"ok": False, "etat": "relue", "problemes": [
             "L'équipe n'a encore validé aucune connaissance de cette application : ne dis pas « confirmé » ou "
             f"« validé par l'équipe », ni ✓, sauf pour la mission déclarée. À corriger : {' | '.join(infondees[:3])}"]}
     return await _juger(question, reponse, profil, modele, charte)

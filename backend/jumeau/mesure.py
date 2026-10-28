@@ -22,6 +22,11 @@ class Chrono:
         finally:
             self._ajouter(nom, time.monotonic() - t)
 
+    def texte(self):
+        """L'instant du premier mot envoyé à l'interlocuteur. Mesuré une seule fois, et seulement si un mot part :
+        c'est la latence que l'on ressent, celle qu'aucun chronomètre ne relevait (plan de remédiation L0.6/L2.4)."""
+        self.phases.setdefault("premier_texte", round(time.monotonic() - self.debut, 2))
+
     def agent(self, agent_strands):
         """Sépare le temps de l'agent entre ses outils (métriques Strands) et le modèle (le reste)."""
         metriques = getattr(agent_strands, "event_loop_metrics", None)
