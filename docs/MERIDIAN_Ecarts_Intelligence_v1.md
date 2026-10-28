@@ -1,7 +1,7 @@
 # MÉRIDIAN — Ce qui manque pour être aussi intelligent que sa vision
 ## Écarts avec Claude Code et les produits de l'industrie, constatés dans le code et mesurés
 
-**Statut :** Analyse, à discuter
+**Statut :** Analyse, à discuter — **amendée le 2026-10-28** après exécution du plan de remédiation
 **Version :** 1.0
 **Date :** 2026-10-28
 **Documents liés :** Product Vision & Operating Model (§4, §7, §9, §14, §15), Non-Functional Requirements (§5, §8),
@@ -26,22 +26,44 @@ publique (§8). Une affirmation sur un produit tiers que nous n'avons pas pu con
 
 # 1. Où en est Méridian, en une page
 
-**Ce qui existe et fonctionne** (branche `jumeau-phase0`, 533 tests) :
+**Ce qui existe et fonctionne** (branche `jumeau-phase0`, 552 tests) :
 
 - Des **jumeaux nés du code** (4 réels). Chacun porte des connaissances prouvées ligne par ligne, une fiche vivante
   et un gardien qui suit les commits.
 - Des **sources branchées** selon un même contrat (Confluence, Jira, ServiceNow, Datadog). Elles sont écrites et
   testées, **mais aucune n'a tourné sur un vrai compte**.
 - **Vérifier comme on teste** (v3 §2) : recettes déterministes, juge d'appui, recoupement entre systèmes. Une
-  connaissance n'atteint M3 que si deux systèmes concordent. 5 connaissances sont recoupées pour de vrai.
+  connaissance n'atteint M3 que si deux systèmes **de types distincts** concordent — et un fichier Markdown du dépôt
+  n'est plus un système à part (voir « État après remédiation » ci-dessous).
 - **Des garde-fous avant l'envoi** : citations vérifiées, fraîcheur des preuves, confirmations inventées
   refusées, échappement HTML.
 - **Des schémas fondés sur le code** : l'enchaînement d'une fonctionnalité est lu dans le graphe d'appels, chaque
   flèche est prouvée par sa ligne, et le harness dessine le Mermaid.
-- **Une réponse au fil de l'eau** : vraies étapes, brouillon « en relecture », puis « relu ». Le premier texte
-  arrive en 2 s.
+- **Une réponse au fil de l'eau** : vraies étapes, brouillon « en relecture », puis l'état réel de la relecture
+  (`relu`, `corrigé — non relu`, `non relu`). La latence du premier mot est désormais **mesurée** (`durees.premier_texte`) ;
+  aucun chiffre n'est publié tant qu'un relevé de banc daté n'est pas joint.
 - **Flore** répond seule ou orchestre plusieurs jumeaux. Elle montre sur l'Atlas, travaille dans un Travail
   (plan, hypothèses, livrables) et route d'elle-même vers l'application nommée.
+
+**État après remédiation (2026-10-28, mesuré sur la base réelle).** Le 28 octobre, les défauts d'honnêteté et de
+méthode listés dans le plan de remédiation ont été corrigés (`MERIDIAN_Plan_Remediation_v1.md`). Les chiffres publiés plus haut ont changé en
+conséquence, et il faut lire ceux-ci :
+
+| Mesure | Avant | Après |
+|---|---|---|
+| Connaissances recoupées (M3) | 9 | **0** — les 9 reposaient sur « le README du même commit approuve le code » |
+| Faits établis par une source | — | **398** (`DEPEND_DE`, `EXPOSE`, `LIT_VARIABLE`, `EXECUTE_IMAGE`) |
+| Hypothèses (phrase métier, preuve = ligne de code) | comptées comme M2 | **148**, ramenées à M1 |
+| Connaissances sans état de vérification | 50 | **0** (état `en_attente` posé à la naissance) |
+| « Vérifié » par recette | circulaire (l'extraction était filtrée par la recette) | **non circulaire** : la preuve vient de l'index, la recette la juge |
+| Recoupement | un mot du juge | **déterministe** quand une recette s'applique ; sinon l'observation « tel système ne nomme pas l'énoncé » accompagne le verdict |
+| Couverture d'un jumeau | 32 % pour tous | **49 % / 83 % / 76 %** (part de ce qui est établi) |
+| Connecteurs réellement branchés | 12 affichés, 7 simulés | **6 branchés**, 6 déclarés non branchés |
+| Latence du premier mot | citée à 2 s, jamais mesurée | **mesurée** partout (`durees.premier_texte`), aucun chiffre publié sans relevé |
+
+Une phrase du présent document était donc trop optimiste : « 5 connaissances sont recoupées pour de vrai ». Il n'y
+en a plus aucune : le seul chemin vers M3 est désormais une source **d'un autre type**, et aucune n'est branchée.
+C'est la mesure de ce qui reste à faire, et non une régression.
 
 **Où cela se situe dans la vision.** Nous sommes au milieu de **Méridian 1 — Comprendre**, pour une poignée
 d'applications sans données d'entreprise réelles. Les étapes **faire émerger**, **investiguer**, **décider** et
@@ -58,13 +80,13 @@ Légende de l'écart : 🔴 bloque la vision · 🟠 limite fortement · 🟢 en
 | 1 | **Contexte d'entreprise réel** | Glean indexe chaque application connectée (Slack, Drive, Jira, Confluence…) dans un graphe qui respecte les droits [G1] ; Rovo relie Jira, Confluence, JSM, Slack et e-mail dans le Teamwork Graph [R1] | Les lecteurs existent, mais aucun n'est branché sur un vrai compte ; le contexte, ce sont 4 dépôts de démonstration | 🔴 |
 | 2 | **Identité et droits à chaque réponse** | Glean et Rovo ne montrent à chacun que ce qu'il pourrait voir dans la source d'origine [G2][R2] | `X-Persona` déclaratif, non authentifié ; OIDC reporté ; les droits de revue et de consigne ne sont pas appliqués | 🔴 |
 | 3 | **Comprendre le code** | Analyse statique d'abord, le modèle nomme ensuite (CodeBoarding, Swimm, CodeWiki) [C1–C3] | Index de code et graphe d'appels (`appels.py`) ; ne voit ni l'injection de dépendances (`Depends`), ni les requêtes SQL externalisées, ni les appels entre applications | 🟠 |
-| 4 | **Vérifier ce qu'il affirme** | Claude Code teste et relit ; Google *Check Grounding* note l'ancrage de chaque phrase [V1] ; l'API Citations d'Anthropic rend les passages exacts [V2] | **Point fort** : recettes, juge d'appui, recoupement, garde-fous déterministes, schémas prouvés. Une seule connaissance validée par l'équipe sur 525 | 🟢 |
+| 4 | **Vérifier ce qu'il affirme** | Claude Code teste et relit ; Google *Check Grounding* note l'ancrage de chaque phrase [V1] ; l'API Citations d'Anthropic rend les passages exacts [V2] | **Point fort du mécanisme, résultat vide.** Les recettes sont déterministes et ne fabriquent plus leur propre preuve, la copie entre deux sources est calculée, et M3 exige deux sources de **types distincts**. Conséquence assumée : **0 connaissance recoupée**, 398 faits établis, 148 hypothèses, 1 validation humaine sur 546 | 🟢 |
 | 5 | **Raisonner en plusieurs étapes** | Claude Code planifie, délègue à des sous-agents au contexte isolé, recueille leurs résultats [A1] ; Glean annonce une planification adaptative et des sous-agents parallèles (rapporté) [G1] | Plan et étapes dans un Travail ; mobilisation en étoile ; **pas de moteur d'investigation** (hypothèses mises à l'épreuve, options comparées) | 🟠 |
 | 6 | **Experts spécialisés** (Vision §7) | Des capacités définies par leur domaine, leurs outils, leurs critères de preuve et leurs limites | Flore, les jumeaux, le juge d'appui et le relecteur ; **aucun expert métier** (risque, données, sécurité, architecture) | 🔴 |
 | 7 | **Faire émerger, sans qu'on demande** | Glean et Rovo poussent des réponses et des agents dans le flux de travail (rapporté) [G1][R1] | Le gardien publie des situations sur un changement de code ; pas d'opportunité, pas d'anomalie d'exploitation réelle (Datadog non branché) | 🔴 |
 | 8 | **Mémoire et apprentissage** | Claude Code : `CLAUDE.md` et mémoire relus à chaque session, compétences chargées à la demande [A1] | Connaissances et consignes d'équipe (sans interface) ; **ni retour d'usage qui améliore les réponses, ni mémoire des décisions et de leurs effets** (Learning Model) | 🔴 |
 | 9 | **Rendu riche** | Artifacts de Claude dans un cadre isolé sur une autre origine [D1] ; Google Code Wiki régénère ses diagrammes à chaque changement [C4] | Schémas Mermaid prouvés, scènes sur l'Atlas ; ni page libre isolée, ni schéma préparé d'avance | 🟢 |
-| 10 | **Vitesse perçue** | Réponse diffusée au fil de l'eau, outils visibles en direct | Premier texte en 2 s, réponse relue en 12 à 22 s (objectif NFR < 5 s pour une analyse) | 🟠 |
+| 10 | **Vitesse perçue** | Réponse diffusée au fil de l'eau, outils visibles en direct | Diffusion réelle, mais **aucune mesure fiable** : le premier mot est horodaté depuis le 2026-10-28, et la seule mesure persistée donne 17,4 s de moyenne (objectif NFR < 5 s) | 🟠 |
 
 Quatre capacités transversales complètent la grille :
 
@@ -134,6 +156,11 @@ Elles sont la base de la différence de Méridian, et il faut les garder :
 
 Ce sont des propriétés de **confiance**. Dans une banque, elles valent plus qu'une réponse plus rapide ou plus
 éloquente.
+
+**Depuis le 2026-10-28, la garantie 3 est vraie au sens strict — et c'est exactement pourquoi il n'y a plus aucune
+connaissance recoupée.** Un fichier Markdown du dépôt n'est plus un système indépendant ; le seul chemin vers M3
+exige donc une source d'un autre type, et aucune n'est branchée. Le mécanisme est désormais plus honnête que
+flatteur, ce qui est le but, mais il ne produit rien tant que Confluence ou Jira ne sont pas connectés.
 
 ---
 
