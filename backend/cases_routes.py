@@ -548,6 +548,7 @@ def build_cases_router(deps):
                     "quand": datetime.now(timezone.utc).isoformat(),
                 }
         else:
+            await EcritureTravail(db, cid).retirer_precision()  # reste d'un tour échoué : jamais rattaché à ce tour-ci
             rep = await generer_reponse_flore("case", payload.texte, case.get("jumeaux", []), None, x_persona, x_espace, travail=cid)
             jumeaux_participants_msg = []
             if case.get("jumeaux"):

@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 RISQUES = ("faible", "moyen", "eleve")
 MAX_TITRE, MAX_TEXTE, MAX_CONTENU = 120, 1000, 4000
-ECHANGES_AVANT_RAPPEL = 3  # un échange = question + réponse, soit 2 messages de la conversation
+ECHANGES_AVANT_RAPPEL = 3  # un échange = un message de l'interlocuteur
 ECHANGES_SANS_PLAN = 2
 MIN_OPTIONS, MAX_OPTIONS, MAX_OPTION = 2, 4, 80
 
@@ -103,6 +103,8 @@ class EcritureTravail:
         if len({o.lower() for o in propres}) < len(propres):
             raise ValueError("options en double")
         question = _texte(question, MAX_TEXTE)
+        if (await self.etat()).get("precision"):
+            raise ValueError("une seule précision par réponse : attendez la réponse à la première")
         await self._ecrire({"$set": {"precision": {"question": question, "options": propres}}},
                            f"Précision demandée par Flore — {question[:80]}")
 
@@ -121,16 +123,22 @@ def _identifiant(prefixe):
     return f"{prefixe}-{uuid.uuid4().hex[:8]}"
 
 
+def _echanges(conversation):
+    """Échanges avec l'interlocuteur : ses messages, pas les événements de veille ni les décisions consignées."""
+    return sum(1 for m in conversation if m.get("role") == "utilisateur")
+
+
 def _rappel_plan(case, plan):
     """Rappel du harness : plan oublié (aucune étape levée ou ajoutée depuis un moment) ou absent."""
-    nb = len(case.get("conversation") or [])
+    conversation = case.get("conversation") or []
     if not plan:
-        if nb // 2 >= ECHANGES_SANS_PLAN:
+        # Une seule fois, au moment où le Travail dépasse un simple échange : un Travail simple n'a pas besoin de plan.
+        if _echanges(conversation) == ECHANGES_SANS_PLAN:
             return ["Pas encore de plan : si la demande demande plusieurs étapes, planifiez-la (planifier)."]
         return []
     if all(q.get("resolue") for q in plan) or case.get("plan_au_message") is None:
         return []
-    immobile = (nb - case["plan_au_message"]) // 2
+    immobile = _echanges(conversation[case["plan_au_message"]:])
     if immobile >= ECHANGES_AVANT_RAPPEL:
         return [f"Rappel : le plan n'a pas bougé depuis {immobile} échanges ; "
                 "levez les étapes faites (lever_etape) ou dites ce qui bloque."]

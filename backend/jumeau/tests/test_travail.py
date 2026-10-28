@@ -117,7 +117,8 @@ def test_planifier_n_ecrase_pas_une_question_ajoutee_entre_temps_et_borne_les_et
 
 
 def _msgs(n):
-    return [{"role": "user", "texte": "m"}] * n
+    """n messages alternés interlocuteur / Flore (n // 2 échanges)."""
+    return [{"role": "utilisateur" if k % 2 == 0 else "flore", "texte": "m"} for k in range(n)]
 
 
 def test_rappel_quand_le_plan_n_a_pas_bouge_depuis_plusieurs_echanges():
@@ -130,9 +131,12 @@ def test_rappel_quand_le_plan_n_a_pas_bouge_depuis_plusieurs_echanges():
     assert "Rappel" not in etat_texte({**base, "questions": fini, "conversation": _msgs(10)})
 
 
-def test_rappel_de_planifier_quand_plusieurs_echanges_sans_plan():
+def test_rappel_de_planifier_une_seule_fois_et_sans_compter_la_veille():
     assert "Pas encore de plan" in etat_texte({"titre": "T", "conversation": _msgs(4)})
     assert "Pas encore de plan" not in etat_texte({"titre": "T", "conversation": _msgs(2)})
+    assert "Pas encore de plan" not in etat_texte({"titre": "T", "conversation": _msgs(6)})  # déjà rappelé
+    veille = [{"role": "evenement", "texte": "v"}] * 5
+    assert "Pas encore de plan" not in etat_texte({"titre": "T", "conversation": _msgs(2) + veille})
 
 
 def test_planifier_et_lever_une_etape_enregistrent_la_position_dans_la_conversation():
@@ -152,6 +156,8 @@ def test_precision_s_inscrit_dans_le_travail_puis_se_retire_une_fois():
         c = await db.cases.find_one({"id": "t1"})
         assert c["precision"] == {"question": "Quel périmètre ?", "options": ["Le portail seul", "Tout le SI"]}
         assert c["historique"][-1]["texte"].startswith("Précision demandée par Flore")
+        with pytest.raises(ValueError):  # une seule précision par réponse
+            await e.precision("Autre question ?", ["x", "y"])
         assert await e.retirer_precision() == c["precision"]
         assert await e.retirer_precision() is None
     avec_travail(test)

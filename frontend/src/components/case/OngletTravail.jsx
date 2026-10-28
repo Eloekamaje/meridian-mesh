@@ -576,6 +576,8 @@ export default function OngletTravail({
   }, [texteSaisie]);
 
   const messages = cas.conversation || [];
+  // Une précision reste ouverte tant que l'interlocuteur n'a pas répondu (un message de veille peut la suivre).
+  const dernierMessageUtilisateur = messages.map((m) => m.role).lastIndexOf("utilisateur");
   const coupure = cas.derniere_visite;
   // Le « nouveau » est ce que les AUTRES ont écrit : vos propres messages ne comptent jamais
   const idxCoupure = coupure ? messages.findIndex((m) => m.quand && m.quand > coupure && m.role !== "utilisateur") : -1;
@@ -1014,7 +1016,7 @@ export default function OngletTravail({
                     >
 
                     {/* Décision attendue (situation) : réponses rapides ; votre choix devient votre message et Flore répond */}
-                    {m.decisions?.length > 0 && !m.reponse && (!m.precision || (i === messages.length - 1 && !envoiMsg)) && (
+                    {m.decisions?.length > 0 && !m.reponse && (!m.precision || (i > dernierMessageUtilisateur && !envoiMsg)) && (
                       <div data-testid="decisions-attendues">
                         <div className="mb-1.5 font-code text-[11px] uppercase tracking-[0.16em] text-[#F2B84B]">{m.precision ? "Précision demandée" : "Décision attendue"}</div>
                         <div className="flex flex-wrap gap-2">
