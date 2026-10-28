@@ -85,3 +85,9 @@ def test_fondements_egares_hors_schema_retires():
     sortie = schemas.verifier("Avant.\n\n%% c:3596\n\n%% c:1393\nAprès.", C)
     assert "%%" not in sortie and sortie.startswith("Avant.") and sortie.endswith("Après.")
     assert "%% c:812" in schemas.verifier(bloc("a --> b  %% c:812"), C)  # dans un schéma, il reste
+
+
+def test_doublon_ecrit_a_la_main_retire_en_silence_quand_le_harness_a_dessine():
+    # Constaté : « (Schéma non affiché : 6 lien(s)…) » sous le vrai schéma, à cause d'un second schéma écrit à la main.
+    sortie = schemas.verifier(bloc("a --> b", "b --> c"), C, deja_dessine=True)
+    assert "```mermaid" not in sortie and "non affiché" not in sortie and sortie.startswith("Voici.")

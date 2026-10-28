@@ -271,7 +271,8 @@ async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=No
             if trace is not None:
                 trace.update(texte=texte, invalides=list(invalides))
             fraiches = await asyncio.to_thread(contradicteur.fraicheur, texte, ctx.get("lecteurs", []))
-            texte = avec_schema(schemas.verifier(texte, {c["id"]: c for c in ctx["claims"] if c.get("id")}), dessin)
+            texte = avec_schema(schemas.verifier(texte, {c["id"]: c for c in ctx["claims"] if c.get("id")},
+                                                 deja_dessine=bool(dessin and dessin.mermaid)), dessin)
         reponse = vers_reponse_flore(ctx["jumeau"], ctx["sources"], texte, invalides, fraiches)
         if dessin and dessin.preuves:  # chaque flèche du schéma renvoie à sa ligne, dans le volet des preuves
             reponse["preuves"] = (reponse["preuves"] + dessin.preuves)[:MAX_PREUVES + len(dessin.preuves)]
@@ -361,7 +362,8 @@ async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=
         with chrono.phase("controles"):
             invalides = await asyncio.to_thread(contradicteur.citations_invalides, texte, sources, branches)
             texte = avec_schema(schemas.verifier(texte, {c["id"]: c for ctx in ctxs.values() for c in ctx["claims"]
-                                                         if c.get("id")}, relations), dessin)
+                                                         if c.get("id")}, relations,
+                                                 deja_dessine=bool(dessin and dessin.mermaid)), dessin)
             tout = "\n".join([texte, *(p for c in mob.contributions.values() for p in c.preuves)])
             fraiches = await asyncio.to_thread(contradicteur.fraicheur, tout, branches)
         # Preuves de chaque jumeau, étiquetées à son nom, prises à tour de rôle : le volet ne se remplit pas avec

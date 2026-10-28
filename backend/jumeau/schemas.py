@@ -95,12 +95,14 @@ def _bloc(code, connaissances, relations):
     return "\n".join(gardees[:1] + a_libeller + gardees[1:] + styles), ecartees, etats
 
 
-def verifier(texte, connaissances, relations=None):
+def verifier(texte, connaissances, relations=None, deja_dessine=False):
     """Réécrit chaque bloc mermaid du texte : seules restent les flèches fondées, avec leur état et une légende.
     `connaissances` : {id: connaissance (statut, verification)} ; `relations` : {id: relation du Mesh (etat)}."""
     relations = relations or {}
 
     def remplacer(m):
+        if deja_dessine:  # le schéma vérifié par le harness est là : un doublon écrit à la main part en silence
+            return ""
         code, ecartees, etats = _bloc(m.group(1), connaissances, relations)
         if code is None:
             return f"(Schéma non affiché : {ecartees} lien(s) sans preuve qui les appuie.)" if ecartees else ""
