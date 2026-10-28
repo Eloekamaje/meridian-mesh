@@ -1245,10 +1245,13 @@ async def generer_reponse_flore(contexte, question, selection, domaine, x_person
             return HORS_PERIMETRE
     sel = [j for j in (selection or []) if j in aut and niveau_au_moins(aut[j], "resume")]
     # Un jumeau réel sélectionné : Flore le mobilise (ses Claims et son code) et répond avec ses preuves.
-    # ponytail: un seul jumeau réel répond ; l'orchestration de plusieurs jumeaux viendra avec Flore-agent.
+    # Un seul : chemin direct. Plusieurs : Flore les mobilise en sous-agents (flore.mobiliser).
     reels = [j["id"] for j in tous if j.get("reel") and j["id"] in sel and niveau_au_moins(aut[j["id"]], "complet")]
     if reels:
-        reponse_jumeau = await jumeau_flore.repondre(reels[0], question, x_persona, travail, profil=persona, db=db)
+        if len(reels) == 1:
+            reponse_jumeau = await jumeau_flore.repondre(reels[0], question, x_persona, travail, profil=persona, db=db)
+        else:
+            reponse_jumeau = await jumeau_flore.mobiliser(reels, question, x_persona, travail, profil=persona, db=db)
         if reponse_jumeau:
             return reponse_jumeau
     if not sel and domaine:

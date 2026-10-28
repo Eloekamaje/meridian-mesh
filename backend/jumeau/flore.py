@@ -9,7 +9,7 @@ import re
 
 import psycopg
 
-from jumeau import agent, connaissance, contradicteur, depot, gardien
+from jumeau import agent, carte, connaissance, contradicteur, depot, gardien, mobilisation
 from jumeau.connaissance import RE_CITATION
 from jumeau.travail import EcritureTravail, etat_texte
 
@@ -148,3 +148,72 @@ async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=No
         return _indisponible(nom, "erreur pendant la réponse.")
     finally:
         FILS.rendre(jumeau_id, cle)
+
+
+async def _cartes(ctxs, dsn, db):
+    """Cartes des jumeaux autorisés ; sans registre (db), pas de voisins."""
+    textes = []
+    for jid, ctx in ctxs.items():
+        if db is None:
+            c = carte.carte(ctx["jumeau"], ctx["sources"], ctx["claims"], [], {})
+        else:
+            with psycopg.connect(dsn) as conn:
+                c = await carte.carte_du_jumeau(conn, db, jid)
+        textes.append(carte.texte(c))
+    return "\n\n".join(textes)
+
+
+async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=None):
+    """Réponse de Flore qui mobilise plusieurs jumeaux réels (étoile) ; None si aucun n'est un jumeau réel ingéré.
+
+    Seuls `jumeau_ids` (déjà filtrés par le serveur selon les droits) sont mobilisables.
+    """
+    ctxs, dsn = {}, None
+    for jid in dict.fromkeys(jumeau_ids):
+        ctx, dsn_jumeau = await asyncio.to_thread(_contexte, jid, acteur, profil)
+        if ctx:
+            ctxs[jid], dsn = ctx, dsn_jumeau
+    if not ctxs:
+        return None
+    cle = cle_fil(acteur, travail)
+    noms = " et ".join(c["jumeau"]["nom"] for c in ctxs.values())
+    if not FILS.prendre("mobilisation", cle):
+        return _indisponible(noms, "une réponse est déjà en cours sur ce fil.")
+    try:
+        modele = agent.modele()
+        ecriture = EcritureTravail(db, travail) if travail and db is not None else None
+        etat = etat_texte(await ecriture.etat()) if ecriture else None
+        mob = mobilisation.Mobilisation(ctxs, dsn, modele)
+        outils = [mob.outil()] + (agent.outils_travail(ecriture, agent.Budget()) if ecriture else [])
+        a = mobilisation.orchestrateur(modele, mobilisation.prompt(await _cartes(ctxs, dsn, db), etat), outils)
+        texte = str(await a.invoke_async(question)).strip()
+        sources = [s for ctx in ctxs.values() for s in ctx["sources"]]
+        verdict = await relire_sans_risque(question, texte, sources, profil, modele,
+                                           agent.CHARTE.read_text(encoding="utf-8"))
+        if not verdict["ok"]:
+            try:
+                texte = str(await a.invoke_async(contradicteur.consigne_revision(verdict["problemes"]))).strip()
+            except Exception:
+                agent.journal.warning("révision impossible, première réponse conservée", exc_info=True)
+        invalides = await asyncio.to_thread(contradicteur.citations_invalides, texte, sources)
+        preuves, vus = [], set()
+        sources_par_jumeau = [(mob.contributions[j].preuves, ctxs[j]["sources"]) for j in mob.contributions]
+        for citations, srcs in sources_par_jumeau + [([texte], sources)]:
+            for p in preuves_depuis("\n".join(citations), srcs, invalides):
+                if p["detail"] not in vus:
+                    vus.add(p["detail"])
+                    preuves.append(p)
+        return {
+            "comportement": "expliquer",
+            "reponse": retirer_citations(texte),
+            "contributions": [{"jumeau": ctxs[j]["jumeau"]["nom"], "texte": retirer_citations(c.constat)}
+                              for j, c in mob.contributions.items()],
+            "preuves": preuves[:MAX_PREUVES],
+        }
+    except RuntimeError as e:  # modèle non configuré
+        return _indisponible(noms, str(e))
+    except Exception:
+        agent.journal.exception("mobilisation %s", list(ctxs))
+        return _indisponible(noms, "erreur pendant la réponse.")
+    finally:
+        FILS.rendre("mobilisation", cle)
