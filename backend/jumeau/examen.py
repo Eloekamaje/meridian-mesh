@@ -42,6 +42,8 @@ def depuis_connaissances(jumeau, claims, fiche, contradictions=()):
                   for cle, titre in comprendre.PRESENTATION if cle in ("faire", "regles", "garde", "avec")],
         "sources": _sources(claims, contradictions),
         "maturite": _maturite(claims),
+        "contradictions": [{k: x.get(k) for k in ("id", "enonce", "preuve_a", "systeme_a", "preuve_b", "systeme_b")}
+                           for x in contradictions],
         "ignore": f["ignore"]["puces"] + f["ignore"]["texte"]
                   + [f"Contradiction à trancher : {x['enonce']} ({x['systeme_a']} contre {x['systeme_b']})" for x in contradictions],
     }

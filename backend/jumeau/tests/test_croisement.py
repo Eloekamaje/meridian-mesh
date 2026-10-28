@@ -128,7 +128,34 @@ def test_contradiction_enregistree_listee_puis_tranchee(conn, depot_git):
     ouvertes = depot.contradictions_ouvertes(conn, "tbt")
     assert [(o["id"], o["systeme_a"], o["systeme_b"]) for o in ouvertes] == [(cid, "git", "confluence")]
     assert "Contradiction à trancher" in str(examen.examiner(conn, "tbt", {"nom": "TBT"})["presentation"]["ignore"])
-    depot.trancher_contradiction(conn, "tbt", cid, "alice", "le code fait foi")
+    structure = examen.examiner(conn, "tbt", {"nom": "TBT"})["presentation"]["contradictions"]
+    assert structure == [{"id": cid, "enonce": "Le seuil diffère", "preuve_a": "app.py#L1-L2", "systeme_a": "git",
+                          "preuve_b": CITATION_DOC, "systeme_b": "confluence"}]
+    depot.trancher_contradiction(conn, "tbt", cid, "alice", "a", "le code fait foi")
     assert depot.contradictions_ouvertes(conn, "tbt") == []
+    row = conn.execute("SELECT verdict, tranchee_par, motif FROM contradiction WHERE id = %s", (cid,)).fetchone()
+    assert row == ("a", "alice", "le code fait foi")
     with pytest.raises(LookupError):
-        depot.trancher_contradiction(conn, "tbt", cid, "alice", "deux fois")
+        depot.trancher_contradiction(conn, "tbt", cid, "bob", "b", "deux fois")
+
+
+@besoin_pg
+def test_trancher_refuse_verdict_invalide_et_autre_jumeau(conn, depot_git):
+    depot.enregistrer(conn, JUMEAU, {**SOURCE, "emplacement": str(depot_git), "curseur": sha_courant(depot_git)},
+                      [claim("motor")], ACTIVITE)
+    cid = depot.enregistrer_contradiction(conn, JUMEAU, "x", ("app.py#L1-L2", "git"), (CITATION_DOC, "confluence"), "flore")
+    with pytest.raises(ValueError):
+        depot.trancher_contradiction(conn, "tbt", cid, "alice", "les deux")
+    with pytest.raises(LookupError):
+        depot.trancher_contradiction(conn, "autre", cid, "alice", "a")
+    assert len(depot.contradictions_ouvertes(conn, "tbt")) == 1
+
+
+def test_route_trancher_refuse_verdict_invalide_sans_toucher_la_base():
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from jumeau import routes
+    app = FastAPI()
+    app.include_router(routes.router)
+    app.dependency_overrides[routes.connexion] = lambda: None
+    assert TestClient(app).post("/v2/contradictions/1/revue", json={"verdict": "c"}).status_code == 422

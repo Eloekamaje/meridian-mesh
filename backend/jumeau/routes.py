@@ -9,7 +9,8 @@ import psycopg
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 
-from jumeau import depot, flore, gardien
+from jumeau import connaissance, depot, flore, gardien
+from jumeau.source_git import lire_au_sha
 from jumeau.source_git import extrait
 
 router = APIRouter(prefix="/v2", tags=["jumeau"])
@@ -25,6 +26,11 @@ def connexion():
 
 class Revue(BaseModel):
     decision: Literal["ACCEPTED", "CONTESTED"]
+    motif: Optional[str] = Field(default=None, max_length=2000)
+
+
+class Tranche(BaseModel):
+    verdict: Literal["a", "b", "aucune"]
     motif: Optional[str] = Field(default=None, max_length=2000)
 
 
@@ -57,6 +63,45 @@ def reviser(claim_id: int, revue: Revue, conn=Depends(connexion),
     except LookupError:
         raise HTTPException(404, "Claim introuvable")
     return {"ok": True}
+
+
+@router.post("/contradictions/{contradiction_id}/revue")
+def trancher(contradiction_id: int, decision: Tranche, conn=Depends(connexion),
+             x_persona: str = Header(default="architecte", max_length=64)):
+    c = depot.contradiction_par_id(conn, contradiction_id)
+    try:
+        if not c:
+            raise LookupError(contradiction_id)
+        depot.trancher_contradiction(conn, c["jumeau_id"], contradiction_id, x_persona, decision.verdict, decision.motif)
+    except LookupError:
+        raise HTTPException(404, "Contradiction introuvable ou déjà tranchée")
+    return {"ok": True}
+
+
+def _extrait_citation(conn, jumeau_id, locator, systeme, contexte=3):
+    """Lignes du code citées (et leur contexte) ; pour une autre source, locator et système seulement."""
+    base = {"systeme": systeme, "locator": locator, "lignes": None}
+    m = connaissance.RE_CITATION.fullmatch(locator) if systeme == "git" else None
+    if not m:
+        return base
+    depot_nom, chemin, debut, fin = connaissance.decouper(m)
+    try:
+        source = connaissance.resoudre_source(depot.sources_du_jumeau(conn, jumeau_id), depot_nom, chemin)
+        lignes = lire_au_sha(source.get("copie") or source["emplacement"], source["curseur"])(chemin)
+    except (LookupError, ValueError):
+        return base
+    if lignes is None:
+        return base
+    de, a = max(1, debut - contexte), min(len(lignes), fin + contexte)
+    return {**base, "lignes": [{"n": n, "texte": lignes[n - 1], "citee": debut <= n <= fin} for n in range(de, a + 1)]}
+
+
+@router.get("/contradictions/{contradiction_id}/extraits")
+def lire_extraits_contradiction(contradiction_id: int, conn=Depends(connexion)):
+    c = depot.contradiction_par_id(conn, contradiction_id)
+    if not c:
+        raise HTTPException(404, "Contradiction introuvable")
+    return [_extrait_citation(conn, c["jumeau_id"], c[f"preuve_{x}"], c[f"systeme_{x}"]) for x in "ab"]
 
 
 @router.get("/jumeaux/{jumeau_id}/fiche")

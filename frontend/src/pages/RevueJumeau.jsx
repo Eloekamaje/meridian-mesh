@@ -19,6 +19,7 @@ export default function RevueJumeau() {
   const [examen, setExamen] = useState(null);
   const [erreur, setErreur] = useState(null);
   const [admission, setAdmission] = useState(false);
+  const [relecture, setRelecture] = useState(0);
 
   useEffect(() => {
     let actif = true;
@@ -43,7 +44,7 @@ export default function RevueJumeau() {
     return () => {
       actif = false;
     };
-  }, [jid, version]);
+  }, [jid, version, relecture]);
 
   const admettre = async () => {
     setAdmission(true);
@@ -98,7 +99,7 @@ export default function RevueJumeau() {
           )}
           {examen && jumeau && (
             <>
-              <RevueContenu examen={examen} jumeau={jumeau} />
+              <RevueContenu examen={examen} jumeau={jumeau} onTranchee={() => setRelecture((n) => n + 1)} />
               {/* Né du code : ce que dit le jumeau et chaque connaissance avec sa preuve, à valider ou contester */}
               {jumeau.reel && (
                 <div className="mt-4" data-testid="revue-preuves">

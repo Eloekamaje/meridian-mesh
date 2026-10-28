@@ -175,6 +175,7 @@ CREATE TABLE IF NOT EXISTS contradiction (
     motif        text,
     CHECK (statut = 'OUVERTE' OR tranchee_par IS NOT NULL)
 );
+ALTER TABLE contradiction ADD COLUMN IF NOT EXISTS verdict text CHECK (verdict IN ('a', 'b', 'aucune'));
 CREATE INDEX IF NOT EXISTS contradiction_jumeau ON contradiction (jumeau_id, statut);
 
 -- Invariant 3 : preuves et revues sont immuables (ligne à ligne et TRUNCATE).

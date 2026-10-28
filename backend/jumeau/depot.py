@@ -177,13 +177,25 @@ def enregistrer_contradiction(conn, jumeau, enonce, a, b, acteur, claim_id=None)
         (jumeau["tenant_id"], jumeau["id"], claim_id, enonce, *a, *b, acteur)).fetchone()[0]
 
 
-def trancher_contradiction(conn, jumeau_id, contradiction_id, acteur, motif):
-    """Décision humaine : la contradiction n'est plus ouverte."""
+VERDICTS = ("a", "b", "aucune")
+
+
+def trancher_contradiction(conn, jumeau_id, contradiction_id, acteur, verdict, motif=None):
+    """Décision humaine, définitive : `a` ou `b` a raison, ou `aucune` (les deux sont à corriger)."""
+    if verdict not in VERDICTS:
+        raise ValueError(f"verdict inconnu : {verdict}")
     if not conn.execute(
-            "UPDATE contradiction SET statut = 'TRANCHEE', tranchee_par = %s, tranchee_le = now(), motif = %s "
-            "WHERE id = %s AND jumeau_id = %s AND statut = 'OUVERTE' RETURNING id",
-            (acteur, motif, contradiction_id, jumeau_id)).fetchone():
+            "UPDATE contradiction SET statut = 'TRANCHEE', tranchee_par = %s, tranchee_le = now(), verdict = %s, "
+            "motif = %s WHERE id = %s AND jumeau_id = %s AND statut = 'OUVERTE' RETURNING id",
+            (acteur, verdict, motif, contradiction_id, jumeau_id)).fetchone():
         raise LookupError(contradiction_id)
+
+
+def contradiction_par_id(conn, contradiction_id):
+    with conn.cursor(row_factory=dict_row) as cur:
+        return cur.execute(
+            "SELECT id, jumeau_id, statut, preuve_a, preuve_b, systeme_a, systeme_b FROM contradiction WHERE id = %s",
+            (contradiction_id,)).fetchone()
 
 
 def contradictions_ouvertes(conn, jumeau_id):

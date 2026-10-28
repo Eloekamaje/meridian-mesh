@@ -1,3 +1,6 @@
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
+import api from "@/lib/api";
 import { STRATE_LABELS, STATUTS_SOURCES, AUTONOMIE } from "@/lib/jumeaux";
 
 export function Section({ titre, items }) {
@@ -36,7 +39,75 @@ function Liste({ items, vide = "Rien d'établi pour l'instant" }) {
   );
 }
 
-function Presentation({ examen }) {
+const FOCUS = "focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#60A5FA]";
+const BOUTON = `h-9 rounded-md border border-[rgba(148,163,184,0.3)] px-3 text-xs text-[#CBD5E1] transition-colors hover:bg-[#60A5FA]/10 disabled:opacity-50 ${FOCUS}`;
+
+// Une des deux preuves : système, locator et, pour le code, l'extrait dépliable.
+function PreuveContradiction({ preuve, systeme }) {
+  return (
+    <div className="min-w-0 flex-1 rounded border border-[rgba(148,163,184,0.16)] p-2">
+      <div className="font-code text-[10px] uppercase text-[#7C93A8]">{systeme}</div>
+      <div className="break-all font-code text-[10px] text-[#94A3B8]">{preuve.locator}</div>
+      {preuve.lignes && (
+        <details className="mt-1">
+          <summary className={`cursor-pointer text-[11px] text-[#60A5FA] ${FOCUS}`}>Voir l'extrait</summary>
+          <pre className="mt-1 overflow-auto bg-[#071019] p-2 font-code text-[11px] leading-5">
+            {preuve.lignes.map((l) => (
+              <div key={l.n} className={l.citee ? "bg-[#60A5FA]/15 text-[#F2F6F8]" : "text-[#7C93A8]"}>
+                <span className="mr-3 inline-block w-10 select-none text-right opacity-60">{l.n}</span>{l.texte}
+              </div>
+            ))}
+          </pre>
+        </details>
+      )}
+    </div>
+  );
+}
+
+// Contradiction ouverte : l'équipe dit qui a raison (même interaction que la Preuve d'un claim).
+function Contradiction({ c, onTranchee }) {
+  const [extraits, setExtraits] = useState(null);
+  const [motif, setMotif] = useState("");
+  const [envoi, setEnvoi] = useState(false);
+  useEffect(() => {
+    let actif = true;
+    api.get(`/v2/contradictions/${c.id}/extraits`).then(({ data }) => actif && setExtraits(data)).catch(() => {});
+    return () => { actif = false; };
+  }, [c.id]);
+
+  const trancher = async (verdict) => {
+    setEnvoi(true);
+    try {
+      await api.post(`/v2/contradictions/${c.id}/revue`, { verdict, motif: motif || null });
+      toast.success("Contradiction tranchée");
+      onTranchee();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Décision impossible");
+      setEnvoi(false);
+    }
+  };
+
+  const [a, b] = extraits || [{ locator: c.preuve_a, systeme: c.systeme_a }, { locator: c.preuve_b, systeme: c.systeme_b }];
+  return (
+    <li className="list-none rounded-lg border border-[#F2B84B]/40 p-3" data-testid={`contradiction-${c.id}`}>
+      <p className="text-[13px] font-semibold text-[#F2F6F8]">Contradiction à trancher : {c.enonce}</p>
+      <div className="mt-2 flex flex-col gap-2 md:flex-row">
+        <PreuveContradiction preuve={a} systeme={c.systeme_a} />
+        <PreuveContradiction preuve={b} systeme={c.systeme_b} />
+      </div>
+      <label htmlFor={`motif-contradiction-${c.id}`} className="mb-1 mt-3 block text-[10px] uppercase tracking-wider text-[#94A3B8]">Motif (facultatif)</label>
+      <input id={`motif-contradiction-${c.id}`} value={motif} onChange={(e) => setMotif(e.target.value)} maxLength={2000}
+        className={`mb-2 w-full rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-3 py-2 text-xs text-[#F2F6F8] ${FOCUS}`} />
+      <div className="flex flex-wrap gap-2">
+        <button type="button" disabled={envoi} onClick={() => trancher("a")} data-testid="verdict-a" className={BOUTON}>{c.systeme_a} a raison</button>
+        <button type="button" disabled={envoi} onClick={() => trancher("b")} data-testid="verdict-b" className={BOUTON}>{c.systeme_b} a raison</button>
+        <button type="button" disabled={envoi} onClick={() => trancher("aucune")} data-testid="verdict-aucune" className={BOUTON}>Les deux sont à corriger</button>
+      </div>
+    </li>
+  );
+}
+
+function Presentation({ examen, onTranchee }) {
   const p = examen.presentation;
   return (
     <div className="space-y-6" data-testid="revue-presentation">
@@ -76,7 +147,12 @@ function Presentation({ examen }) {
             Croisées par deux systèmes : {p.maturite.croisees} · Croisées et validées : {p.maturite.validees}
           </p>
         )}
-        <Liste items={p.ignore} vide="Rien de signalé" />
+        <Liste items={p.ignore.filter((t) => !t.startsWith("Contradiction à trancher"))} vide={p.contradictions?.length ? "" : "Rien de signalé"} />
+        {p.contradictions?.length > 0 && (
+          <ul className="mt-3 space-y-3" aria-label="Contradictions à trancher">
+            {p.contradictions.map((c) => <Contradiction key={c.id} c={c} onTranchee={onTranchee} />)}
+          </ul>
+        )}
       </section>
     </div>
   );
@@ -107,12 +183,12 @@ export function PlusLoin({ titre, children, testid }) {
   );
 }
 
-export default function RevueContenu({ examen, jumeau }) {
+export default function RevueContenu({ examen, jumeau, onTranchee }) {
   if (examen.presentation) {
     const total = examen.comprendre.reduce((n, b) => n + b.items.length, 0);
     return (
       <div className="space-y-4">
-        <Presentation examen={examen} />
+        <Presentation examen={examen} onTranchee={onTranchee} />
         <PlusLoin titre={`Pour aller plus loin : ce que le jumeau a établi (${total} connaissances)`} testid="plus-loin-comprendre">
           <Comprendre blocs={examen.comprendre} />
         </PlusLoin>
