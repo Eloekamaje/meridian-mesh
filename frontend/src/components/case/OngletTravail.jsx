@@ -27,6 +27,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import api from "@/lib/api";
+import { formaterGrasCode } from "@/lib/renduMarkdown";
 import { usePerimetre } from "@/lib/perimetre";
 import { useContexte } from "@/lib/contexte";
 import { couleurDomaine } from "@/lib/domaines";
@@ -445,14 +446,6 @@ export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif, onVoir
   );
 }
 
-// Fonction utilitaire pour formater gras et code inline
-function formaterGrasCode(txt) {
-  if (!txt) return "";
-  let res = txt
-    .replace(/\*\*(.*?)\*\*/g, "<strong class='font-semibold text-white'>$1</strong>")
-    .replace(/`([^`]+)`/g, "<code class='font-code text-xs text-blue-300 bg-blue-500/10 px-1 py-0.5 rounded'>$1</code>");
-  return res;
-}
 
 export default function OngletTravail({ 
   cas, 

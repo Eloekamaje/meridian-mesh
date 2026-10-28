@@ -3,9 +3,16 @@
 // CorpsMessageFlore (qui gère en plus le texte en train de s'écrire), un document de Canvas
 // s'affiche d'un bloc dès son ouverture.
 
+// Le texte vient du modèle, qui peut reprendre un dépôt ou une page Confluence : il est échappé AVANT d'y poser le
+// gras et le code (sinon un `<img onerror=…>` cité s'exécuterait dans le navigateur).
+export function echapperHtml(txt) {
+  return String(txt).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
 export function formaterGrasCode(txt) {
   if (!txt) return "";
-  return txt
+  return echapperHtml(txt)
     .replace(/\*\*(.*?)\*\*/g, "<strong class='font-semibold text-white'>$1</strong>")
     .replace(/`([^`]+)`/g, "<code class='font-code text-xs text-blue-300 bg-blue-500/10 px-1 py-0.5 rounded'>$1</code>");
 }
