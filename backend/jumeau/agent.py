@@ -15,6 +15,7 @@ from pathlib import Path
 
 import psycopg
 from strands import Agent, tool
+from strands.agent.conversation_manager import SummarizingConversationManager
 from strands.session.file_session_manager import FileSessionManager
 from strands.session.s3_session_manager import S3SessionManager
 
@@ -446,6 +447,20 @@ def gestionnaire_session(session):
     return FileSessionManager(session_id=session, storage_dir=str(SESSIONS))
 
 
+# Vérifié dans Strands : le résumé se déclenche au dépassement de contexte ou, en proactif, au seuil ci-dessous
+# (ignoré si la taille du contexte est inconnue) ; il est dans l'état du gestionnaire, que la session persiste et restaure.
+RATIO_RESUME = 0.4
+MESSAGES_RECENTS_CONSERVES = 12
+SEUIL_COMPACTION = 0.7
+CONSIGNE_RESUME = """Résume le début de cet échange pour que le travail puisse continuer sans le relire. En français, sous ces rubriques :
+- Demande de l'interlocuteur : ce qu'il veut obtenir, dans ses termes.
+- Ce qui est établi : les faits retenus, chacun avec sa citation de preuve `chemin#Ldébut-Lfin` conservée telle quelle.
+- Décisions et validations : ce qui a été tranché ou validé, et par qui.
+- Ce qui reste ouvert : questions sans réponse, points à vérifier.
+- Prochaine étape.
+Aucun détail d'exploration (recherches, fichiers parcourus sans résultat, outils appelés) ; ne rien inventer."""
+
+
 def construire(ctx, dsn, session, modele=None, ecriture=None, budget=None):
     """Agent du jumeau ; le fil `session` (personnel ou celui d'un Travail) est restauré depuis le disque.
     Sans `session`, l'agent part d'un fil vierge (passe du gardien : sa mémoire, ce sont ses connaissances)."""
@@ -456,4 +471,8 @@ def construire(ctx, dsn, session, modele=None, ecriture=None, budget=None):
     tools = outils(ctx, dsn, nom_modele, budget) + (outils_travail(ecriture, budget) if ecriture else [])
     return Agent(model=m, system_prompt=prompt_systeme(ctx), tools=tools,
                  session_manager=gestionnaire_session(session) if session else None,
+                 conversation_manager=SummarizingConversationManager(
+                     summary_ratio=RATIO_RESUME, preserve_recent_messages=MESSAGES_RECENTS_CONSERVES,
+                     summarization_system_prompt=CONSIGNE_RESUME,
+                     proactive_compression={"compression_threshold": SEUIL_COMPACTION}) if session else None,
                  callback_handler=None)

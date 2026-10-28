@@ -161,3 +161,18 @@ def test_un_seul_flux_actif_par_fil():
     assert fils.prendre("tbt", "bob")
     fils.rendre("tbt", "alice")
     assert fils.prendre("tbt", "alice")
+
+
+def test_avec_session_les_longs_fils_sont_resumes_en_francais(tmp_path, monkeypatch):
+    monkeypatch.setattr(agent, "SESSIONS", tmp_path)
+    a = agent.construire(CONTEXTE, dsn="postgresql://inutilise", session="t", modele=modele_factice())
+    cm = a.conversation_manager
+    assert type(cm).__name__ == "SummarizingConversationManager"
+    assert "Demande de l'interlocuteur" in cm.summarization_system_prompt
+    assert "#L" in cm.summarization_system_prompt
+    assert cm.preserve_recent_messages == agent.MESSAGES_RECENTS_CONSERVES
+
+
+def test_sans_session_pas_de_resume():
+    a = agent.construire(CONTEXTE, dsn="postgresql://inutilise", session=None, modele=modele_factice())
+    assert type(a.conversation_manager).__name__ != "SummarizingConversationManager"
