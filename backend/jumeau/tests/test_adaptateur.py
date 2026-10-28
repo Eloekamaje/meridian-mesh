@@ -154,3 +154,13 @@ def test_route_recomposee_avec_le_prefixe_du_routeur():
     ]
     objets = sorted(c["objet"] for c in adapter({"routes": routes}, fichiers.get, "d", SHA, "App"))
     assert objets == ["DELETE /articles/{slug}", "DELETE /articles/{slug}/comments/{slug}", "GET /articles"]
+
+
+def test_une_variable_nommee_dans_un_commentaire_n_est_pas_lue():
+    # Constaté sur meridian : « JUMEAU_JIRA_HOTE » était prouvée par la docstring du module, pas par sa lecture.
+    fichiers = {"jira.py": ['"""Seul l\'hôte autorisé (JUMEAU_JIRA_HOTE) est interrogé."""', "import os",
+                            'HOTE = os.environ.get("JUMEAU_JIRA_HOTE")'],
+                "craco.config.js": ["// Craco sets NODE_ENV=development for start"]}
+    vars_ = [{"chemin": "jira.py", "variable": "JUMEAU_JIRA_HOTE"}, {"chemin": "craco.config.js", "variable": "NODE_ENV"}]
+    claims = adapter(resultats(routes=[], paquets=[], variables=vars_, images=[]), fichiers.get, "m", SHA, "TBT")
+    assert [(c["objet"], c["preuves"][0]["ligne_debut"]) for c in claims] == [("JUMEAU_JIRA_HOTE", 3)]

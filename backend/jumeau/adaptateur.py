@@ -6,6 +6,8 @@ Un Claim n'est retenu que si sa preuve se vérifie dans le fichier : citation lo
 import hashlib
 import re
 
+from jumeau import recettes
+
 # Confiance initiale par règle (Architecture Jumeau §7.1, correction 4) ; la calibration l'ajustera.
 CONFIANCE_INITIALE = {"API_USAGE": 0.9, "DEPENDENCY": 0.85}
 
@@ -72,9 +74,9 @@ def _avec_prefixes(routes):
     return [{**r, "prefixe": prefixes.get((r["chemin"], r["debut"]))} for r in routes]
 
 
-def _jeton(predicat, cle, transformer=lambda v: v, filtre=lambda l: True):
+def _jeton(predicat, cle, transformer=lambda v: v, filtre=lambda l, v: True):
     def extraire(r, lignes):
-        retenues = [l if filtre(l) else "" for l in lignes]  # garde la numérotation
+        retenues = [l if filtre(l, r[cle]) else "" for l in lignes]  # garde la numérotation
         ligne = localiser(retenues, transformer(r[cle]))
         return (predicat, r[cle], "DEPENDENCY", ligne, ligne) if ligne else None
     return extraire
@@ -85,9 +87,12 @@ DECLARATION_IMAGE = re.compile(r"^\s*(image\s*:|FROM\s)", re.IGNORECASE)
 EXTRACTEURS = {
     "routes": _route,
     "paquets": _jeton("DEPEND_DE", "paquet"),
-    "variables": _jeton("LIT_VARIABLE", "variable"),
+    # Une variable est prouvée par une ligne qui la lit (os.environ, getenv, process.env, compose…), jamais par un
+    # commentaire ou une docstring qui la nomme : la même recette que la vérification (Harness v3 §2).
+    "variables": _jeton("LIT_VARIABLE", "variable",
+                        filtre=lambda l, v: recettes.recette("LIT_VARIABLE", v, [l]) == "verifie"),
     # « docker.io/library/mongo » s'écrit « image: mongo:7.0 » (compose) ou « FROM mongo » (Dockerfile).
-    "images": _jeton("EXECUTE_IMAGE", "image", lambda v: v.rsplit("/", 1)[-1], DECLARATION_IMAGE.match),
+    "images": _jeton("EXECUTE_IMAGE", "image", lambda v: v.rsplit("/", 1)[-1], lambda l, v: DECLARATION_IMAGE.match(l)),
 }
 
 
