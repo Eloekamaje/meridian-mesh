@@ -3,6 +3,9 @@ import { STATUTS_SOURCE, ENVIRONNEMENTS, champRempli } from "@/lib/sources";
 import SourceGithub from "@/components/commande/SourceGithub";
 import SourceConfluence from "@/components/commande/SourceConfluence";
 
+// Connecteurs « connexion + périmètre » : un composant de configuration par système.
+const SOURCES_CONNEXION = { confluence: SourceConfluence };
+
 export default function InspecteurSource({ source, connecteur, onChange, onTester, onFermer }) {
   if (!source) {
     return (
@@ -14,6 +17,7 @@ export default function InspecteurSource({ source, connecteur, onChange, onTeste
     );
   }
   const st = STATUTS_SOURCE[source.statut] || STATUTS_SOURCE.ajoutee;
+  const Branchee = SOURCES_CONNEXION[connecteur?.id];
   const champ = (c) => (
     <div key={c.cle}>
       <label className="font-code text-[10px] uppercase tracking-[0.15em] text-[#7C93A8]">
@@ -95,8 +99,8 @@ export default function InspecteurSource({ source, connecteur, onChange, onTeste
       <div className="mt-4 border-t border-[rgba(148,163,184,0.16)] pt-4">
         <div className="mb-3 font-code text-[10px] uppercase tracking-[0.2em] text-[#7C93A8]">Connexion {connecteur?.nom}</div>
         {connecteur?.id === "github" && <SourceGithub source={source} onChange={onChange} />}
-        {connecteur?.id === "confluence" && <SourceConfluence source={source} onChange={onChange} />}
-        {!["github", "confluence"].includes(connecteur?.id) &&
+        {Branchee && <Branchee source={source} onChange={onChange} />}
+        {connecteur?.id !== "github" && !Branchee &&
           <div className="space-y-3">{(connecteur?.champs || []).map(champ)}</div>}
       </div>
 

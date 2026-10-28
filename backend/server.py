@@ -24,7 +24,7 @@ from jumeau import flore as jumeau_flore
 from jumeau import registre as jumeau_registre
 from jumeau import naissance as jumeau_naissance
 from jumeau import examen as jumeau_examen
-from jumeau import confluence as jumeau_confluence
+from jumeau.systemes import SYSTEMES
 from jumeau import github as jumeau_github
 import asyncio
 import psycopg
@@ -1021,8 +1021,8 @@ async def maj_commande(cid: str, payload: CommandePatch):
     if not patch:
         return {"ok": True}
     if patch.get("sources"):
-        connexions = {c["id"]: c["reference"] for base in (db.connexions_github, db.connexions_confluence)
-                      async for c in base.find({}, {"_id": 0, "id": 1, "reference": 1})}
+        connexions = {c["id"]: c["reference"] for systeme in ("github", *SYSTEMES)
+                      async for c in _connexions(systeme).find({}, {"_id": 0, "id": 1, "reference": 1})}
         avant = {s.get("id"): s.get("statut") for s in
                  ((await db.commandes.find_one({"id": cid}, {"_id": 0, "sources": 1})) or {}).get("sources", [])}
         patch["sources"] = [_statut_serveur(_proteger_source(s, connexions), avant) for s in patch["sources"]]
@@ -1040,11 +1040,11 @@ def _statut_serveur(source, avant):
     return source
 
 
-PREFIXES_CONNEXION = {"github": "gh-", "confluence": "cf-"}
+PREFIXES_CONNEXION = {"github": "gh-", **{nom: m.PREFIXE for nom, m in SYSTEMES.items()}}
 
 
 def _proteger_source(source, connexions):
-    """Une source GitHub ou Confluence désigne une connexion déclarée de son connecteur ; le serveur en déduit la
+    """Une source GitHub, Confluence… désigne une connexion déclarée de son connecteur ; le serveur en déduit la
     référence de son jeton. Le client ne fournit jamais de référence : ni secret d'une autre connexion, ni variable
     du serveur."""
     prefixe = PREFIXES_CONNEXION.get(source.get("connecteur"))
@@ -1102,10 +1102,6 @@ async def _appel_github(appel, *args):
     return await _appel_service("GitHub", appel, *args)
 
 
-async def _appel_confluence(appel, *args):
-    return await _appel_service("Confluence", appel, *args)
-
-
 async def _reference_connexion(cxid: str) -> str:
     doc = await db.connexions_github.find_one({"id": cxid}, {"_id": 0, "reference": 1})
     if not doc:
@@ -1151,54 +1147,65 @@ async def branches_github(cxid: str, depot: str = Query(..., max_length=200), q:
     return await _appel_github(jumeau_github.branches, await _reference_connexion(cxid), depot, q)
 
 
-# Connexions Confluence : même principe que GitHub, avec une adresse e-mail en plus du jeton d'API.
-CONNEXION_CONFLUENCE_VALIDE = re.compile(r"cf-[a-z0-9-]{1,50}")
+# Connexions « e-mail + jeton d'API » (Confluence, Jira…) : même principe que GitHub, une collection par système
+# (registre jumeau/systemes.py ; GitHub garde ses routes : jeton seul, dépôts et branches).
+def _systeme(systeme: str):
+    if systeme not in SYSTEMES:
+        raise HTTPException(404, "Système inconnu")
+    return SYSTEMES[systeme]
 
 
-async def _reference_connexion_confluence(cxid: str) -> str:
-    doc = await db.connexions_confluence.find_one({"id": cxid}, {"_id": 0, "reference": 1})
+def _connexions(systeme: str):
+    return db[f"connexions_{systeme}"]
+
+
+async def _reference_connexion_de(systeme: str, cxid: str) -> str:
+    doc = await _connexions(systeme).find_one({"id": cxid}, {"_id": 0, "reference": 1})
     if not doc:
-        raise HTTPException(404, "Connexion Confluence introuvable")
+        raise HTTPException(404, f"Connexion {_systeme(systeme).SERVICE} introuvable")
     return doc["reference"]
 
 
-class JetonConfluence(BaseModel):
+class JetonAtlassian(BaseModel):
     email: str = Field(min_length=3, max_length=200)
     jeton: str = Field(min_length=1, max_length=500)
 
 
-@api_router.get("/connexions/confluence")
-async def lister_connexions_confluence():
-    return await db.connexions_confluence.find({}, {"_id": 0, "reference": 0}).sort("login", 1).to_list(100)
+@api_router.get("/connexions/{systeme}")
+async def lister_connexions(systeme: str):
+    _systeme(systeme)
+    return await _connexions(systeme).find({}, {"_id": 0, "reference": 0}).sort("login", 1).to_list(100)
 
 
-@api_router.post("/connexions/confluence", status_code=201)
-async def declarer_connexion_confluence(payload: JetonConfluence):
-    """Les identifiants sont vérifiés auprès de Confluence avant d'être conservés : un refus n'écrase rien."""
+@api_router.post("/connexions/{systeme}", status_code=201)
+async def declarer_connexion(systeme: str, payload: JetonAtlassian):
+    """Les identifiants sont vérifiés auprès du service avant d'être conservés : un refus n'écrase rien."""
+    module = _systeme(systeme)
     try:
-        secret = jumeau_confluence.identifiants(payload.email, payload.jeton)
+        secret = module.identifiants(payload.email, payload.jeton)
     except jumeau_github.Invalide as e:
         raise HTTPException(400, str(e))
-    compte = await _appel_confluence(jumeau_confluence.compte_du_jeton, secret)
+    compte = await _appel_service(module.SERVICE, module.compte_du_jeton, secret)
     login = compte["login"].lower()
-    # Identifiant tiré du compte Confluence (accountId) : un autre jeton ne peut pas écraser cette connexion.
-    cxid = f"cf-{re.sub(r'[^a-z0-9]+', '-', login).strip('-')[:30]}-{hashlib.sha256(compte['compte'].encode()).hexdigest()[:8]}"
-    if not CONNEXION_CONFLUENCE_VALIDE.fullmatch(cxid):
+    # Identifiant tiré du compte du service (accountId) : un autre jeton ne peut pas écraser cette connexion.
+    cxid = f"{module.PREFIXE}{re.sub(r'[^a-z0-9]+', '-', login).strip('-')[:30]}-{hashlib.sha256(compte['compte'].encode()).hexdigest()[:8]}"
+    if not re.fullmatch(rf"{module.PREFIXE}[a-z0-9-]{{1,50}}", cxid):
         raise HTTPException(400, "Adresse e-mail inattendue")
     try:
-        reference = await asyncio.to_thread(jumeau_naissance.deposer_jeton, f"connexions/confluence/{cxid}", secret)
+        reference = await asyncio.to_thread(jumeau_naissance.deposer_jeton, f"connexions/{systeme}/{cxid}", secret)
     except (RuntimeError, OSError) as e:
         logger.warning("connexion %s : jeton non déposé dans Vault (%s)", cxid, type(e).__name__)
         raise HTTPException(503, "Coffre de secrets indisponible : jeton non enregistré")
     jumeau_github.oublier(reference)
     doc = {"id": cxid, **compte, "maj_le": datetime.now(timezone.utc).isoformat()}
-    await db.connexions_confluence.update_one({"id": cxid}, {"$set": {**doc, "reference": reference}}, upsert=True)
+    await _connexions(systeme).update_one({"id": cxid}, {"$set": {**doc, "reference": reference}}, upsert=True)
     return doc
 
 
-@api_router.get("/connexions/confluence/{cxid}/espaces")
-async def espaces_confluence(cxid: str, q: str = Query("", max_length=100)):
-    return await _appel_confluence(jumeau_confluence.espaces, await _reference_connexion_confluence(cxid), q)
+@api_router.get("/connexions/{systeme}/{cxid}/perimetres")
+async def perimetres_connexion(systeme: str, cxid: str, q: str = Query("", max_length=100)):
+    module = _systeme(systeme)
+    return await _appel_service(module.SERVICE, module.perimetres, await _reference_connexion_de(systeme, cxid), q)
 
 
 @api_router.post("/commandes/{cid}/tester")
@@ -1211,8 +1218,8 @@ async def tester_sources(cid: str, payload: TestLot, x_persona: str = Header("ar
     modifie = False
     for s in doc["sources"]:
         if s["id"] in payload.ids:
-            # GitHub (git ls-remote) et Confluence (API) : test réel avec le jeton résolu depuis Vault ; autres connecteurs : simulés
-            testeurs = {"github": jumeau_naissance.tester_git, "confluence": jumeau_confluence.tester}
+            # GitHub (git ls-remote) et systèmes branchés (API) : test réel avec le jeton résolu depuis Vault ; autres connecteurs : simulés
+            testeurs = {"github": jumeau_naissance.tester_git, **{nom: m.tester for nom, m in SYSTEMES.items()}}
             resultats[s["id"]] = (await asyncio.to_thread(testeurs[s["connecteur"]], s.get("config", {}))
                                   if s["connecteur"] in testeurs else _simuler_test(s))
             s.update(resultats[s["id"]])

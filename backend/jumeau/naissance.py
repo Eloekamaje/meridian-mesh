@@ -277,10 +277,10 @@ async def naitre(conn, db, commande, jumeau_id, rediger=None):
             origine = {"branche": branche(config), "url": url_depot(config), "secret_ref": config.get("secret") or None}
             await asyncio.to_thread(ingerer, conn, jumeau, chemin, origine)
             chemins.append(chemin)
-        from jumeau import confluence  # import local : confluence.py importe ce module
+        from jumeau.systemes import SYSTEMES  # import local : les lecteurs importent ce module
         for s in commande["sources"]:
-            if s["connecteur"] == "confluence" and s["statut"] == "prete":
-                depot.declarer_source(conn, jumeau, confluence.source_de(s["config"]))
+            if s["connecteur"] in SYSTEMES and s["statut"] == "prete":
+                depot.declarer_source(conn, jumeau, SYSTEMES[s["connecteur"]].source_de(s["config"]))
         await franchir("clone")
         await registre.projeter(db, conn)
         await franchir("ingestion")

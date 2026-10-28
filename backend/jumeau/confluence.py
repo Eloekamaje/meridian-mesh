@@ -20,6 +20,7 @@ from jumeau.naissance import HOTE_VALIDE, _resultat, resoudre_secret
 
 CLE_ESPACE = re.compile(r"[A-Za-z0-9_~-]{1,255}")
 REF_PAGE = re.compile(r"\d{1,19}")
+PREFIXE, SERVICE = "cf-", "Confluence"  # préfixe des connexions, nom dans les messages
 MAX_REPONSE = 5_000_000  # octets : une page démesurée ne sature pas la mémoire
 MAX_ESPACES = 250  # ponytail : les 250 premiers espaces ; recherche côté Confluence si un compte en voit davantage
 
@@ -94,7 +95,7 @@ def _id_espace(reference, cle):
     return _memo(reference, ("id-espace", cle), chercher)
 
 
-def espaces(reference, recherche=""):
+def perimetres(reference, recherche=""):
     """Espaces lisibles avec ces identifiants, filtrés par `recherche` (liste lue une fois puis filtrée ici)."""
     tous = _memo(reference, "espaces", lambda: [
         {"cle": s["key"], "nom": s["name"]}

@@ -148,8 +148,8 @@ def test_debit_limite_par_jeton(wiki):
 def test_espaces_filtres_et_connexion_declaree(wiki):
     reponses, _ = wiki
     reponses["/wiki/rest/api/user/current"] = {"displayName": "Ana", "accountId": "5f1a", "email": "Ana@banque.fr"}
-    assert confluence.espaces("vault:r", "tableau") == [{"cle": "TBT", "nom": "Tableau de bord"}]
-    assert confluence.espaces("vault:r", "zzz") == []
+    assert confluence.perimetres("vault:r", "tableau") == [{"cle": "TBT", "nom": "Tableau de bord"}]
+    assert confluence.perimetres("vault:r", "zzz") == []
     assert confluence.compte_du_jeton("ana@banque.fr:tok") == {"login": "ana@banque.fr", "compte": "5f1a", "nom": "Ana"}
 
 
