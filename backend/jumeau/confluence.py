@@ -20,6 +20,7 @@ from jumeau.naissance import HOTE_VALIDE, _resultat, resoudre_secret
 
 CLE_ESPACE = re.compile(r"[A-Za-z0-9_~-]{1,255}")
 REF_PAGE = re.compile(r"\d{1,19}")
+MAX_REPONSE = 5_000_000  # octets : une page démesurée ne sature pas la mémoire
 MAX_ESPACES = 250  # ponytail : les 250 premiers espaces ; recherche côté Confluence si un compte en voit davantage
 
 _ouvrir = urllib.request.build_opener(_SansRedirection).open
@@ -51,7 +52,10 @@ def _get_avec(secret, chemin, **params):
         "Authorization": "Basic " + base64.b64encode(secret.encode()).decode(), "Accept": "application/json"})
     try:
         with _ouvrir(requete, timeout=DELAI) as r:
-            return json.load(r)
+            corps = r.read(MAX_REPONSE + 1)
+        if len(corps) > MAX_REPONSE:
+            raise ValueError("réponse de Confluence trop volumineuse")
+        return json.loads(corps)
     except urllib.error.HTTPError as e:
         if e.code == 429:
             raise TropDeDemandes("quota Confluence atteint : réessayez dans une minute") from e
@@ -67,9 +71,15 @@ def _get(reference, chemin, **params):
 
 
 def compte_du_jeton(secret):
-    """Vérifie les identifiants auprès de Confluence avant de les conserver (un refus n'écrase rien)."""
+    """Vérifie les identifiants auprès de Confluence avant de les conserver (un refus n'écrase rien). L'identité vient
+    de Confluence (accountId), jamais de l'e-mail saisi : on ne peut pas se déclarer sous le nom d'un collègue."""
+    declare = secret.partition(":")[0]
     u = _get_avec(secret, "/wiki/rest/api/user/current")
-    return {"login": secret.partition(":")[0], "nom": u.get("displayName") or secret.partition(":")[0]}
+    if not u.get("accountId"):
+        raise Invalide("Confluence n'a pas identifié le compte de ces identifiants")
+    if u.get("email") and u["email"].lower() != declare.lower():
+        raise Invalide("l'adresse e-mail saisie n'est pas celle du compte de ce jeton")
+    return {"login": declare, "compte": u["accountId"], "nom": u.get("displayName") or declare}
 
 
 def _id_espace(reference, cle):
@@ -185,6 +195,8 @@ lecteurs.FABRIQUES["CONFLUENCE"] = lambda s: LecteurConfluence(s["nom"], s["empl
 
 def source_de(config):
     """Ligne de la table `source` d'une source Confluence prête de la commande."""
+    if not CLE_ESPACE.fullmatch(config.get("espace") or ""):
+        raise ValueError("clé d'espace Confluence invalide")
     return {"type": "CONFLUENCE", "nom": f"confluence-{config['espace']}", "emplacement": config["espace"],
             "curseur": None, "url": f"https://{_hote()}/wiki/spaces/{config['espace']}", "secret_ref": config.get("secret")}
 

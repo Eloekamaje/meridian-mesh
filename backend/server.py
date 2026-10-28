@@ -1023,12 +1023,21 @@ async def maj_commande(cid: str, payload: CommandePatch):
     if patch.get("sources"):
         connexions = {c["id"]: c["reference"] for base in (db.connexions_github, db.connexions_confluence)
                       async for c in base.find({}, {"_id": 0, "id": 1, "reference": 1})}
-        patch["sources"] = [_proteger_source(s, connexions) for s in patch["sources"]]
+        avant = {s.get("id"): s.get("statut") for s in
+                 ((await db.commandes.find_one({"id": cid}, {"_id": 0, "sources": 1})) or {}).get("sources", [])}
+        patch["sources"] = [_statut_serveur(_proteger_source(s, connexions), avant) for s in patch["sources"]]
     patch["maj_le"] = datetime.now(timezone.utc).isoformat()
     res = await db.commandes.update_one({"id": cid}, {"$set": patch})
     if res.matched_count == 0:
         raise HTTPException(404, "Commande introuvable")
     return {"ok": True, "maj_le": patch["maj_le"]}
+
+
+def _statut_serveur(source, avant):
+    """« prête » se gagne par un test de connexion sur le serveur : le client ne peut pas se l'attribuer."""
+    if source.get("statut") == "prete" and avant.get(source.get("id")) != "prete":
+        return {**source, "statut": avant.get(source.get("id")) or "a_configurer"}
+    return source
 
 
 PREFIXES_CONNEXION = {"github": "gh-", "confluence": "cf-"}
@@ -1172,7 +1181,8 @@ async def declarer_connexion_confluence(payload: JetonConfluence):
         raise HTTPException(400, str(e))
     compte = await _appel_confluence(jumeau_confluence.compte_du_jeton, secret)
     login = compte["login"].lower()
-    cxid = f"cf-{re.sub(r'[^a-z0-9]+', '-', login).strip('-')[:30]}-{hashlib.sha256(login.encode()).hexdigest()[:8]}"
+    # Identifiant tiré du compte Confluence (accountId) : un autre jeton ne peut pas écraser cette connexion.
+    cxid = f"cf-{re.sub(r'[^a-z0-9]+', '-', login).strip('-')[:30]}-{hashlib.sha256(compte['compte'].encode()).hexdigest()[:8]}"
     if not CONNEXION_CONFLUENCE_VALIDE.fullmatch(cxid):
         raise HTTPException(400, "Adresse e-mail inattendue")
     try:

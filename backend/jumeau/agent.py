@@ -408,6 +408,9 @@ def outils(ctx, dsn, nom_modele, budget):
         except (LookupError, ValueError, OSError) as e:
             journal.warning("source %s : %s", source, e)
             return f"Source indisponible : {e}"
+        except Exception:  # jeton refusé, quota, coffre indisponible : message contrôlé, jamais l'erreur brute
+            journal.warning("source %s indisponible", source, exc_info=True)
+            return "Source indisponible pour le moment."
 
     @tool
     def chercher_dans(source: str, texte: str) -> str:

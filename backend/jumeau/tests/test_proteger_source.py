@@ -29,3 +29,10 @@ def test_jamais_la_connexion_ou_le_secret_d_un_autre_connecteur():
     assert server._proteger_source(source("confluence", "gh-ana"), CONNEXIONS)["config"]["secret"] == ""
     assert server._proteger_source(source("github", "cf-ana"), CONNEXIONS)["config"]["secret"] == ""
     assert server._proteger_source(source("confluence", None), CONNEXIONS)["config"]["secret"] == ""
+
+
+def test_le_client_ne_s_attribue_pas_le_statut_prete():
+    avant = {"s1": "a_configurer", "s2": "prete"}
+    assert server._statut_serveur({"id": "s1", "statut": "prete"}, avant)["statut"] == "a_configurer"
+    assert server._statut_serveur({"id": "s2", "statut": "prete"}, avant)["statut"] == "prete"
+    assert server._statut_serveur({"id": "neuve", "statut": "prete"}, avant)["statut"] == "a_configurer"
