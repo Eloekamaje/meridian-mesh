@@ -21,7 +21,7 @@ import psycopg
 from pydantic import BaseModel, Field
 from strands import Agent
 
-from jumeau import agent, comprendre, connaissance, contradicteur, depot, methodes, poignee, registre, temps
+from jumeau import agent, comprendre, connaissance, contradicteur, depot, lecteurs, methodes, poignee, registre, temps
 from jumeau.ingerer import ingerer
 from jumeau.source_git import sha_courant
 
@@ -211,17 +211,17 @@ async def _rediger(ctx, dsn, sigs, commits):
     # Fil vierge à chaque passe : une passe précédente ne doit pas dicter la fiche (méthode à jour, code relu).
     a = agent.construire(ctx, dsn, session=None, budget=agent.Budget(**BUDGET_PASSE))
     fiche = str(await a.invoke_async(CONSIGNE_FICHE)).strip()
-    invalides = contradicteur.citations_invalides(fiche, ctx["sources"])
+    invalides = contradicteur.citations_invalides(fiche, ctx["sources"], ctx.get("lecteurs", ()))
     if invalides:
         fiche = str(await a.invoke_async(contradicteur.consigne_revision(
             [f"Citations introuvables : {', '.join(invalides)}. Corrige-les avec lire_code ou retire l'affirmation."]
         ))).strip()
-        fiche = contradicteur.retirer_citations_invalides(fiche, contradicteur.citations_invalides(fiche, ctx["sources"]))
+        fiche = contradicteur.retirer_citations_invalides(fiche, contradicteur.citations_invalides(fiche, ctx["sources"], ctx.get("lecteurs", ())))
     if mots(fiche) > MAX_MOTS_FICHE:  # une fiche trop longue perd le lecteur : une révision, comme pour les citations
         courte = str(await a.invoke_async(
             f"Ta fiche fait {mots(fiche)} mots ; la méthode en demande {MOTS_FICHE} au plus. Raccourcis-la sans changer "
             "ses sections ni ses citations ; réponds uniquement par la fiche.")).strip()
-        if mots(courte) < mots(fiche) and not contradicteur.citations_invalides(courte, ctx["sources"]):
+        if mots(courte) < mots(fiche) and not contradicteur.citations_invalides(courte, ctx["sources"], ctx.get("lecteurs", ())):
             fiche = courte
     recit = None
     if sigs:
@@ -307,6 +307,8 @@ async def veiller(conn, db, jumeau_id, chemins=None, rediger=_rediger):
         await registre.projeter(db, conn)
     bilan = {"changement": True, "version": version, "depots": ingeres, "signaux": len(sigs), "commits": len(commits)}
     ctx = {"jumeau": jumeau, "sources": [s for s in sources if s["index_code"]],
+           # Les sources branchées (documentation, trajectoire…) : la méthode y route les questions du « pourquoi ».
+           "lecteurs": lecteurs.lecteurs_de(depot.toutes_les_sources(conn, jumeau_id)),
            "claims": connaissance.connaissances(conn, jumeau_id, limite=500),
            "acteur": "gardien", "profil": {"nom": "Gardien du jumeau", "role": "veille automatique"}}
     try:

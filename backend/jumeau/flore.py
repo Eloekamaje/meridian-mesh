@@ -12,6 +12,7 @@ import psycopg
 
 from jumeau import agent, carte, connaissance, contradicteur, depot, gardien, lecteurs, mobilisation
 from jumeau.connaissance import RE_CITATION
+from jumeau.lecteurs import RE_CITATION_SOURCE
 from jumeau.travail import EcritureTravail, etat_texte
 
 MAX_PREUVES = 8
@@ -39,12 +40,22 @@ def preuves_depuis(texte, sources, exclure=()):
         etiquette = f"{chemin}:{debut}" + (f"-{fin}" if fin != debut else "")
         preuves.append({"source": f"{source['nom']} · {etiquette}" if len(sources) > 1 else etiquette, "detail": locator})
         if len(preuves) == MAX_PREUVES:
+            return preuves
+    # Citations d'une source branchée (documentation, trajectoire…) : déjà au format vérifiable systeme://…@version.
+    for m in RE_CITATION_SOURCE.finditer(texte):
+        if m.group(0) in exclure or m.group(0) in vues:
+            continue
+        vues.add(m.group(0))
+        lignes = m["debut"] + (f"-{m['fin']}" if m["fin"] and m["fin"] != m["debut"] else "")
+        preuves.append({"source": f"{m['systeme'].capitalize()} · {m['espace']} · {m['ref']} (v{m['version']}) L{lignes}",
+                        "detail": m.group(0)})
+        if len(preuves) == MAX_PREUVES:
             break
     return preuves
 
 
 # Un groupe de citations (« a.py#L1, b.py#L2 et c.py#L3 »), éventuellement entre accents graves ou parenthèses.
-_CIT = r"`?" + connaissance.MOTIF_CITATION + r"`?"
+_CIT = r"`?(?:" + connaissance.MOTIF_CITATION + "|" + re.sub(r"\(\?P<\w+>", "(?:", RE_CITATION_SOURCE.pattern) + r")`?"
 _GROUPE = _CIT + r"(?:\s*(?:,|et|·)\s*" + _CIT + r")*"
 RE_GROUPE_ENTRE_PARENTHESES = re.compile(r"\s*\(\s*(?:voir\s+)?" + _GROUPE + r"\s*\)")
 RE_GROUPE = re.compile(r"[ \t]*(?:[—·][ \t]*)?" + _GROUPE)

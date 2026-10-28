@@ -101,4 +101,7 @@ def retirer_citations_invalides(texte, invalides):
         return "" if connaissance.cle_citation(*connaissance.decouper(m)) in invalides else m.group(0)
     motif = re.compile(r"\s*`?(?:" + RE_CITATION.pattern + r")`?")
     propre = motif.sub(remplacer, texte)
+    # Citations de source branchée : retirées telles quelles quand aucun lecteur ne les confirme.
+    propre = re.sub(r"\s*`?(" + RE_CITATION_SOURCE.pattern + r")`?",
+                    lambda m: "" if m.group(1) in invalides else m.group(0), propre)
     return re.sub(r"[ \t]+([.,;:])", r"\1", propre)

@@ -121,3 +121,14 @@ def test_la_methode_route_les_questions_vers_les_sources():
 
 def test_lecture_de_toutes_les_sources_du_jumeau_existe():
     assert hasattr(depot, "toutes_les_sources")
+
+
+def test_citations_de_page_dans_le_volet_retirees_du_texte_et_les_fausses_supprimees():
+    from jumeau import contradicteur, flore
+    texte = "Seuls les conseillers valident `confluence://TBT/123@7#L1-L2`, voir aussi (confluence://TBT/9@1#L4)."
+    preuves = flore.preuves_depuis(texte, [])
+    assert [p["detail"] for p in preuves] == ["confluence://TBT/123@7#L1-L2", "confluence://TBT/9@1#L4"]
+    assert preuves[0]["source"] == "Confluence · TBT · 123 (v7) L1-2"
+    assert "confluence://" not in flore.retirer_citations(texte)
+    nettoye = contradicteur.retirer_citations_invalides(texte, ["confluence://TBT/9@1#L4"])
+    assert "confluence://TBT/9@1#L4" not in nettoye and "confluence://TBT/123@7#L1-L2" in nettoye
