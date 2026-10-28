@@ -125,6 +125,50 @@ def _contexte(jumeau_id, acteur, profil):
             "lecteurs": lecteurs_branches, "fiche": fiche["contenu"] if fiche else None}, dsn
 
 
+# Ce que fait Flore, dit simplement, à mesure qu'elle appelle ses outils (la vraie activité, pas un défilé écrit
+# d'avance). Un outil absent de la liste n'est pas annoncé.
+ETAPES = {
+    "mes_connaissances": "Je consulte ce que l'on sait de l'application…",
+    "architecture": "Je regarde de quoi l'application est faite…",
+    "chercher_texte": "Je cherche dans le code…", "chercher_symbole": "Je cherche dans le code…",
+    "tracer_appels": "Je regarde qui appelle quoi…",
+    "suivre_appels": "Je suis l'enchaînement dans le code…",
+    "lire_code": "Je lis le code concerné…",
+    "historique_du_code": "Je regarde l'histoire du code…", "ce_qui_a_change": "Je regarde ce qui a changé…",
+    "chercher_dans": "Je cherche dans la documentation et les outils de l'équipe…",
+    "lire_dans": "Je lis la documentation concernée…",
+    "dessiner_schema": "Je dessine le schéma…",
+    "consulter_jumeau": "Je consulte l'application concernée…",
+    "montrer_sur_atlas": "Je prépare la carte…",
+    "consulter_methode": "Je choisis comment m'y prendre…",
+    "proposer_connaissance": "Je consigne ce que j'ai appris…", "recouper_connaissance": "Je recoupe avec une autre source…",
+}
+
+
+async def executer(a, message, emit=None):
+    """Le tour de l'agent ; avec `emit`, ses étapes et son brouillon partent au fil de l'eau."""
+    if emit is None:
+        return str(await a.invoke_async(message)).strip()
+    resultat, annonces, derniere = None, set(), None
+    async for e in a.stream_async(message):
+        if "data" in e and isinstance(e["data"], str):
+            await emit({"type": "texte", "delta": e["data"]})
+        elif (outil := e.get("current_tool_use")) and outil.get("toolUseId") not in annonces:
+            annonces.add(outil.get("toolUseId"))
+            libelle = ETAPES.get(outil.get("name"))
+            if libelle and libelle != derniere:  # une même étape répétée ne s'annonce qu'une fois de suite
+                derniere = libelle
+                await emit({"type": "etape", "libelle": libelle})
+        elif "result" in e:
+            resultat = e["result"]
+    return str(resultat).strip()
+
+
+async def _annoncer(emit, evenement):
+    if emit is not None:
+        await emit(evenement)
+
+
 SEUIL_FAUTE = 0.85  # « conduite » ↔ « conduit » : 0,93 ; « conduire » ↔ « conduit » : 0,80 (refusé)
 
 
@@ -176,7 +220,7 @@ def _indisponible(nom, raison):
             "contributions": [], "preuves": []}
 
 
-async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=None, trace=None):
+async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=None, trace=None, emit=None):
     """Réponse de Flore mobilisant un jumeau réel, ou None si `jumeau_id` n'est pas un jumeau réel ingéré.
 
     Dans un Travail (`travail` et `db`), Flore reçoit son état et les outils pour y écrire (plan, hypothèses,
@@ -193,6 +237,7 @@ async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=No
     if not FILS.prendre(jumeau_id, cle):
         return _indisponible(nom, "une réponse est déjà en cours sur ce fil.")
     try:
+        await _annoncer(emit, {"type": "etape", "libelle": f"Je regarde {nom}…"})
         modele = agent.modele()
         ecriture = EcritureTravail(db, travail) if travail and db is not None else None
         if ecriture:
@@ -201,7 +246,8 @@ async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=No
         a = agent.construire(ctx, dsn, session=connaissance.id_session(jumeau_id, cle), modele=modele,
                              ecriture=ecriture)
         with chrono.phase("agent"):
-            texte = str(await a.invoke_async(question)).strip()
+            texte = await executer(a, question, emit)
+        await _annoncer(emit, {"type": "relecture"})
         # Relecture avant envoi ; une seule révision au plus.
         # ponytail: la consigne de révision reste dans le fil (brouillon, critique, correction) : historique cohérent,
         # mais plus long ; fil séparé si elle gêne la mémoire.
@@ -209,8 +255,10 @@ async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=No
             verdict = await relire_sans_risque(question, texte, ctx["sources"], ctx.get("profil"), modele,
                                                agent.CHARTE.read_text(encoding="utf-8"), ctx.get("lecteurs", []),
                                                validees(ctx["claims"]))
+        corrige = not verdict["ok"]
         if not verdict["ok"]:
             agent.journal.info("révision %s : %s", jumeau_id, verdict["problemes"])
+            await _annoncer(emit, {"type": "etape", "libelle": "Je corrige après relecture…"})
             try:
                 with chrono.phase("agent"):
                     texte = str(await a.invoke_async(contradicteur.consigne_revision(verdict["problemes"]))).strip()
@@ -227,7 +275,7 @@ async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=No
         reponse = vers_reponse_flore(ctx["jumeau"], ctx["sources"], texte, invalides, fraiches)
         if dessin and dessin.preuves:  # chaque flèche du schéma renvoie à sa ligne, dans le volet des preuves
             reponse["preuves"] = (reponse["preuves"] + dessin.preuves)[:MAX_PREUVES + len(dessin.preuves)]
-        reponse["durees"] = chrono.bilan()
+        reponse["durees"], reponse["relu"], reponse["corrige"] = chrono.bilan(), True, corrige
         agent.journal.info("durées %s : %s", jumeau_id, reponse["durees"])
         return reponse
     except RuntimeError as e:  # modèle non configuré
@@ -258,12 +306,13 @@ async def _cartes(ctxs, dsn, db, relations=None):
     return "\n\n".join(textes)
 
 
-async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=None):
+async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=None, emit=None):
     """Réponse de Flore qui mobilise plusieurs jumeaux réels (étoile) ; None si aucun n'est un jumeau réel ingéré.
 
     Seuls `jumeau_ids` (déjà filtrés par le serveur selon les droits) sont mobilisables.
     """
     ctxs, dsn, chrono = {}, None, mesure.Chrono()
+    await _annoncer(emit, {"type": "etape", "libelle": "Je regarde les applications concernées…"})
     with chrono.phase("contexte"):
         for jid in dict.fromkeys(jumeau_ids):
             ctx, dsn_jumeau = await asyncio.to_thread(_contexte, jid, acteur, profil)
@@ -292,8 +341,9 @@ async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=
         with chrono.phase("cartes"):
             cartes = await _cartes(ctxs, dsn, db, relations)
         with chrono.phase("agent"):
-            texte = str(await asyncio.wait_for(a.invoke_async(mobilisation.demande(cartes, question)),
-                                               mobilisation.DUREE_MAX)).strip()
+            texte = await asyncio.wait_for(executer(a, mobilisation.demande(cartes, question), emit),
+                                           mobilisation.DUREE_MAX)
+        await _annoncer(emit, {"type": "relecture"})
         sources = [s for ctx in ctxs.values() for s in ctx["sources"]]
         branches = [l for ctx in ctxs.values() for l in ctx.get("lecteurs", [])]
         with chrono.phase("relecture"):
@@ -301,6 +351,7 @@ async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=
                                                agent.CHARTE.read_text(encoding="utf-8"), branches,
                                                sum(validees(ctx["claims"]) for ctx in ctxs.values()))
         if not verdict["ok"]:
+            await _annoncer(emit, {"type": "etape", "libelle": "Je corrige après relecture…"})
             try:
                 with chrono.phase("agent"):
                     texte = str(await a.invoke_async(contradicteur.consigne_revision(verdict["problemes"]))).strip()
@@ -331,7 +382,7 @@ async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=
                               for j, c in mob.contributions.items()],
             "preuves": preuves[:MAX_PREUVES] + (dessin.preuves if dessin else []),
             **({"commande_carte": scene.commande} if scene.commande else {}),
-            "durees": chrono.bilan(),
+            "durees": chrono.bilan(), "relu": True, "corrige": not verdict["ok"],
         }
         agent.journal.info("durées mobilisation %s : %s", list(ctxs), reponse["durees"])
         return reponse

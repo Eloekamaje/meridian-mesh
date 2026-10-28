@@ -462,6 +462,15 @@ def build_cases_router(deps):
 
     @router.post("/cases/{cid}/messages", status_code=201)
     async def message_case(cid: str, payload: MessageCase, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+        return await traiter_message(cid, payload, x_persona, x_espace)
+
+    @router.post("/cases/{cid}/messages/flux")
+    async def message_case_flux(cid: str, payload: MessageCase, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+        """Le même échange, au fil de l'eau (étapes réelles, brouillon en relecture, puis le message enregistré)."""
+        from jumeau import flux
+        return flux.en_flux(lambda emit: traiter_message(cid, payload, x_persona, x_espace, emit))
+
+    async def traiter_message(cid, payload, x_persona, x_espace, emit=None):
         _, espace = resoudre_perimetre(x_persona, x_espace)
         case = await charger_case(cid, espace, x_persona)
         if not payload.texte.strip():
@@ -549,7 +558,8 @@ def build_cases_router(deps):
                 }
         else:
             await EcritureTravail(db, cid).retirer_precision()  # reste d'un tour échoué : jamais rattaché à ce tour-ci
-            rep = await generer_reponse_flore("case", payload.texte, case.get("jumeaux", []), None, x_persona, x_espace, travail=cid)
+            rep = await generer_reponse_flore("case", payload.texte, case.get("jumeaux", []), None, x_persona, x_espace, travail=cid,
+                                              emit=emit)
             jumeaux_participants_msg = []
             if case.get("jumeaux"):
                 jumeaux_docs = await db.jumeaux.find({"id": {"$in": case["jumeaux"]}}, NO_ID).to_list(len(case["jumeaux"]))
@@ -573,6 +583,8 @@ def build_cases_router(deps):
                 "contributions": rep.get("contributions") or [],
                 "jumeaux_participants": jumeaux_participants_msg,
                 "action": rep.get("action"),
+                "relu": rep.get("relu"),
+                "corrige": rep.get("corrige"),
                 "quand": datetime.now(timezone.utc).isoformat(),
             }
             # question à options posée par Flore (demander_precision) : mêmes réponses rapides que les décisions attendues

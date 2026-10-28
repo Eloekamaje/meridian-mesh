@@ -21,6 +21,7 @@ from initiatives_routes import build_initiatives_router
 from mesh_vue_routes import build_mesh_vue_router
 from jumeau.routes import router as jumeau_router
 from jumeau import flore as jumeau_flore
+from jumeau import flux as jumeau_flux
 from jumeau import registre as jumeau_registre
 from jumeau import naissance as jumeau_naissance
 from jumeau import examen as jumeau_examen
@@ -1320,7 +1321,7 @@ async def suivre_naissance(cid: str):
     return {"jumeau_id": doc.get("jumeau_id"), **(doc.get("naissance") or {"etat": "non_lancee"})}
 
 
-async def generer_reponse_flore(contexte, question, selection, domaine, x_persona, x_espace, travail=None):
+async def generer_reponse_flore(contexte, question, selection, domaine, x_persona, x_espace, travail=None, emit=None):
     persona, espace = resoudre_perimetre(x_persona, x_espace)
     tous = await db.jumeaux.find({}, NO_ID).to_list(200)
     aut = autorisations(espace, [j["id"] for j in tous])
@@ -1339,9 +1340,9 @@ async def generer_reponse_flore(contexte, question, selection, domaine, x_person
             question, [j for j in tous if j.get("reel") and j["id"] in aut and niveau_au_moins(aut[j["id"]], "complet")])
     if reels:
         if len(reels) == 1:
-            reponse_jumeau = await jumeau_flore.repondre(reels[0], question, x_persona, travail, profil=persona, db=db)
+            reponse_jumeau = await jumeau_flore.repondre(reels[0], question, x_persona, travail, profil=persona, db=db, emit=emit)
         else:
-            reponse_jumeau = await jumeau_flore.mobiliser(reels, question, x_persona, travail, profil=persona, db=db)
+            reponse_jumeau = await jumeau_flore.mobiliser(reels, question, x_persona, travail, profil=persona, db=db, emit=emit)
         if reponse_jumeau:
             return reponse_jumeau
     if not sel and domaine:
@@ -1364,7 +1365,7 @@ async def generer_reponse_flore(contexte, question, selection, domaine, x_person
     # ponytail: toutes les cartes visibles dans le prompt ; présélection par le registre au-delà d'une vingtaine.
     visibles = [j["id"] for j in tous if j.get("reel") and j["id"] in aut and niveau_au_moins(aut[j["id"]], "complet")]
     if not sel and visibles and os.environ.get("JUMEAU_PG_DSN"):
-        reponse_flore = await jumeau_flore.mobiliser(visibles, question, x_persona, travail, profil=persona, db=db)
+        reponse_flore = await jumeau_flore.mobiliser(visibles, question, x_persona, travail, profil=persona, db=db, emit=emit)
         if reponse_flore and reponse_flore.get("comportement") != "signaler":  # indisponible : repli sur la recherche
             return reponse_flore
     trouve = await recherche_plein_texte(q, aut)
@@ -1378,6 +1379,13 @@ async def generer_reponse_flore(contexte, question, selection, domaine, x_person
 @api_router.post("/aurora/demander")
 async def aurora_demander(payload: AuroraDemande, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
     return await generer_reponse_flore(payload.contexte, payload.question, payload.selection, payload.domaine, x_persona, x_espace)
+
+
+@api_router.post("/aurora/demander/flux")
+async def aurora_demander_flux(payload: AuroraDemande, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+    """La même réponse, au fil de l'eau : étapes réelles, brouillon en relecture, puis la réponse relue (jumeau/flux.py)."""
+    return jumeau_flux.en_flux(lambda emit: generer_reponse_flore(
+        payload.contexte, payload.question, payload.selection, payload.domaine, x_persona, x_espace, emit=emit))
 
 
 @api_router.get("/aurora/suggestions")
