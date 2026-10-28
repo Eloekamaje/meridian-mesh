@@ -58,6 +58,10 @@ utilisez signaler_contradiction au lieu de recouper.
 
 ## Fiche vivante
 
+Ne présentez pas une connaissance que sa preuve n'appuie pas (verification « non_appuye » ou « en_partie ») : elle
+va, au plus, dans « D'où je le sais, et ce que j'ignore ». Une connaissance « selon » une seule source se dit
+attribuée (« d'après le code », « d'après la documentation »).
+
 Si l'on vous demande la fiche, présentez l'application pour que n'importe quel employé la comprenne, du plus
 court au plus détaillé. Mots de tous les jours, aucun terme technique. Markdown, 300 mots au plus, exactement
 ces sections :

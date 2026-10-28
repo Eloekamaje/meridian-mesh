@@ -344,7 +344,9 @@ async def veiller(conn, db, jumeau_id, chemins=None, rediger=_rediger):
            "sources": [s for s in sources if s["index_code"]],
            # Les sources branchées (documentation, trajectoire…) : la méthode y route les questions du « pourquoi ».
            "lecteurs": branches,
-           "claims": connaissance.connaissances(conn, jumeau_id, limite=500),
+           # Ce que sa preuve n'appuie pas ne nourrit pas la fiche (Harness v3 §2) ; la méthode le dit aussi.
+           "claims": [c for c in connaissance.connaissances(conn, jumeau_id, limite=500)
+                      if (c.get("verification") or {}).get("etat") not in ("non_appuye", "en_partie")],
            "acteur": "gardien", "profil": {"nom": "Gardien du jumeau", "role": "veille automatique"}}
     try:
         fiche, recit = await rediger(ctx, os.environ.get("JUMEAU_PG_DSN", ""), sigs, commits)
