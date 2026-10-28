@@ -2,6 +2,7 @@
 import asyncio
 
 from jumeau import poignee
+from jumeau.tests.conftest import ACTIVITE, JUMEAU, SOURCE, besoin_pg, claim
 from jumeau.poignee import Designation, Designations, Verdict
 
 REELS = [{"id": "tbt", "nom": "TBT"}, {"id": "cdm", "nom": "Comptes"}, {"id": "xyz", "nom": "Autre"}]
@@ -23,6 +24,8 @@ class Relations:
 
     async def update_one(self, filtre, maj):
         d = self.docs[filtre["id"]]
+        if "etat" in filtre and d.get("etat") in filtre["etat"]["$nin"]:
+            return  # mise à jour conditionnelle, comme Mongo
         d.update(maj.get("$set", {}))
         for cle, valeur in maj.get("$addToSet", {}).items():
             d[cle] = d[cle] + [valeur] if valeur not in d[cle] else d[cle]
@@ -35,7 +38,7 @@ class Base:
         self.relations = Relations(docs)
 
 
-def installer(monkeypatch, designations, verdicts=None, reels=REELS, citation_valide=True):
+def installer(monkeypatch, designations, verdicts=None, reels=REELS, citation_valide=True, cite_a=True):
     missions, jugements = [], []
 
     async def decider(juge, consigne):
@@ -59,6 +62,9 @@ def installer(monkeypatch, designations, verdicts=None, reels=REELS, citation_va
     monkeypatch.setattr(poignee, "_interroger", interroger)
     monkeypatch.setattr(poignee.contradicteur, "citations_invalides",
                         lambda texte, sources: [] if citation_valide else [texte])
+    monkeypatch.setattr(poignee, "indices_de", lambda conn, a_id: {"tbt"})
+    monkeypatch.setattr(poignee, "_lignes_citees",
+                        lambda citation, sources: "requests.post(TBT_URL + '/alertes')" if cite_a else "x = 1")
     return missions, jugements
 
 
@@ -179,3 +185,30 @@ def test_plafonds_d_echanges_et_de_verifications(monkeypatch):
     db = Base()
     assert serrer(db) == {"proposees": 2, "verifiees": 1, "refus": 0} and len(missions) == 1
     assert db.relations.docs["rel-gardien-tbt-xyz"]["etat"] == "validation"  # reprise à la passe suivante
+
+
+def test_confirmation_forgee_par_une_citation_qui_ne_parle_pas_de_a(monkeypatch):
+    # La formulation piégée de A obtient « confirme » avec une citation qui existe, mais ne désigne pas A.
+    v = Verdict(verdict="confirme", explication="Oui", citation="api.py#L1-L2")
+    installer(monkeypatch, Designations(designations=[Designation(echange=1, jumeau="cdm")]), [v], cite_a=False)
+    db = Base()
+    serrer(db)
+    assert db.relations.docs["rel-gardien-tbt-cdm"]["etat"] == "supposee"
+
+
+def test_une_relation_tranchee_entre_temps_n_est_pas_ecrasee():
+    import asyncio as aio
+    db = Base([{"id": "r", "etat": "confirmee", "evolution": [], "observations_contraires": []}])
+    v = Verdict(verdict="ne_sait_pas", explication="?", citation="")
+    aio.run(poignee._conclure(db, {"id": "r", "etat": "validation"}, {"nom": "A"}, {"nom": "B"}, v))
+    assert db.relations.docs["r"]["etat"] == "confirmee"
+
+
+@besoin_pg
+def test_ce_qui_designe_a_dans_le_code_d_un_autre(conn):
+    from jumeau import depot
+    exposee = {**claim("x"), "predicat": "EXPOSE", "objet": "POST /virements/{id}/alertes", "type": "API_USAGE"}
+    depot.enregistrer(conn, JUMEAU, SOURCE, [exposee], ACTIVITE)
+    indices = poignee.indices_de(conn, "tbt")
+    assert {"tbt", "tbt-repo", "virements", "alertes"} <= indices
+    assert "post" not in indices and "{id}" not in indices

@@ -15,6 +15,7 @@ from jumeau.contradicteur import citations_invalides
 
 MAX_JUMEAUX = 4            # jumeaux réveillés par requête
 MAX_MISSIONS = 2           # missions par jumeau : la première et une relance
+DUREE_MAX = 300           # secondes pour toute une mobilisation (tours de l'orchestratrice compris)
 MAX_MISSION = 600          # caractères d'une mission : une question, pas une contribution recopiée
 OUTILS_PAR_MISSION = 12    # appels d'outils du sous-agent, par mission
 

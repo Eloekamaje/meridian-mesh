@@ -4,6 +4,8 @@ Ce que Flore et les autres gardiens lisent sans réveiller le jumeau : qui il es
 avec qui il dit échanger, ses voisins dans le Mesh et son code. L'extraction technique (dépendances, réglages) reste à
 la porte intérieure : on la demande au jumeau lui-même.
 """
+import asyncio
+
 from jumeau import connaissance, depot
 
 MAX_PAR_RUBRIQUE = 8
@@ -51,7 +53,7 @@ def texte(c):
 async def carte_du_jumeau(conn, db, jumeau_id, visibles=None):
     """Carte d'un jumeau réel : connaissances (Postgres), relations et noms (registre Mongo). Avec `visibles`, seuls
     les voisins de cet ensemble apparaissent : une carte ne révèle pas un jumeau que le lecteur ne voit pas."""
-    jumeau = depot.jumeau_par_id(conn, jumeau_id)
+    jumeau = await asyncio.to_thread(depot.jumeau_par_id, conn, jumeau_id)  # Postgres hors de la boucle asynchrone
     if not jumeau:
         return None
     relations = await db.relations.find({"$or": [{"source": jumeau_id}, {"cible": jumeau_id}]},
@@ -60,5 +62,6 @@ async def carte_du_jumeau(conn, db, jumeau_id, visibles=None):
         relations = [r for r in relations if ({r["source"], r["cible"]} - {jumeau_id}) <= visibles]
     autres = {r["source"] for r in relations} | {r["cible"] for r in relations}
     noms = {j["id"]: j["nom"] async for j in db.jumeaux.find({"id": {"$in": sorted(autres)}}, {"_id": 0, "id": 1, "nom": 1})}
-    return carte(jumeau, depot.sources_du_jumeau(conn, jumeau_id),
-                 connaissance.connaissances(conn, jumeau_id, limite=1000), relations, noms)
+    sources, claims = await asyncio.to_thread(
+        lambda: (depot.sources_du_jumeau(conn, jumeau_id), connaissance.connaissances(conn, jumeau_id, limite=1000)))
+    return carte(jumeau, sources, claims, relations, noms)

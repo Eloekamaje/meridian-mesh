@@ -158,8 +158,11 @@ async def _cartes(ctxs, dsn, db):
         if db is None:
             c = carte.carte(ctx["jumeau"], ctx["sources"], ctx["claims"], [], {})
         else:
-            with psycopg.connect(dsn) as conn:
+            conn = await asyncio.to_thread(psycopg.connect, dsn)
+            try:
                 c = await carte.carte_du_jumeau(conn, db, jid, visibles=set(ctxs))
+            finally:
+                await asyncio.to_thread(conn.close)
         textes.append(carte.texte(c))
     return "\n\n".join(textes)
 
@@ -187,7 +190,9 @@ async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=
         mob = mobilisation.Mobilisation(ctxs, dsn, modele)
         outils = [mob.outil()] + (agent.outils_travail(ecriture, agent.Budget()) if ecriture else [])
         a = mobilisation.orchestrateur(modele, mobilisation.prompt(etat), outils)
-        texte = str(await a.invoke_async(mobilisation.demande(await _cartes(ctxs, dsn, db), question))).strip()
+        # Durée bornée : chaque outil a son plafond, mais pas le nombre de tours de l'orchestratrice.
+        texte = str(await asyncio.wait_for(a.invoke_async(mobilisation.demande(await _cartes(ctxs, dsn, db), question)),
+                                           mobilisation.DUREE_MAX)).strip()
         sources = [s for ctx in ctxs.values() for s in ctx["sources"]]
         verdict = await relire_sans_risque(question, texte, sources, profil, modele,
                                            agent.CHARTE.read_text(encoding="utf-8"))
@@ -215,6 +220,9 @@ async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=
                               for j, c in mob.contributions.items()],
             "preuves": preuves[:MAX_PREUVES],
         }
+    except asyncio.TimeoutError:
+        agent.journal.warning("mobilisation %s : durée dépassée", list(ctxs))
+        return _indisponible(noms, "la mobilisation a dépassé sa durée maximale.")
     except RuntimeError as e:  # modèle non configuré
         return _indisponible(noms, str(e))
     except Exception:

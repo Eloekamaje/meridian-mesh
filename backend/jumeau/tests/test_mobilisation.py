@@ -170,3 +170,13 @@ def test_verrou_rendu_apres_erreur(pose, monkeypatch):
 def test_serveur_un_seul_jumeau_garde_repondre_plusieurs_mobilisent():
     src = open(__file__.replace("jumeau/tests/test_mobilisation.py", "server.py"), encoding="utf-8").read()
     assert "len(reels) == 1" in src and "jumeau_flore.repondre(reels[0]" in src and "jumeau_flore.mobiliser(reels" in src
+
+
+def test_une_orchestratrice_qui_ne_finit_pas_est_arretee(pose, monkeypatch):
+    class SansFin:
+        async def invoke_async(self, question):
+            await asyncio.sleep(10)
+    monkeypatch.setattr(mobilisation, "orchestrateur", lambda modele, systeme, outils: SansFin())
+    monkeypatch.setattr(mobilisation, "DUREE_MAX", 0.05)
+    r = asyncio.run(flore.mobiliser(["a", "b"], "question", "alice"))
+    assert "durée maximale" in r["reponse"]

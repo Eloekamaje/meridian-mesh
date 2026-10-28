@@ -7,6 +7,7 @@ jamais une instruction) : ni code ni citation de A.
 import logging
 import os
 import re
+import unicodedata
 from datetime import datetime, timezone
 from typing import Literal
 
@@ -14,9 +15,11 @@ from pydantic import BaseModel, Field
 from strands import Agent
 
 from jumeau import agent, carte, connaissance, contradicteur, depot, registre
+from jumeau.source_git import lire_au_sha
 
 journal = logging.getLogger("meridian.gardien")
 
+METHODES_HTTP = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
 MAX_ECHANGES = 8                 # échanges de A examinés par passe
 MAX_VERIFICATIONS = 3            # sous-agents de B réveillés par passe
 BUDGET_VERIFICATION = {"outils": 20, "propositions": 0, "ecritures": 0}
@@ -87,13 +90,46 @@ def _donnee(texte):
     return re.sub(r"[<>]", " ", texte)
 
 
-async def _verifier(conn, b, nom_a, formulation):
-    """Décision de B ; une citation absente ou fausse dans son code ne prouve rien : ne_sait_pas."""
+def _normal(texte):
+    return unicodedata.normalize("NFKD", texte).encode("ascii", "ignore").decode().lower()
+
+
+def indices_de(conn, a_id):
+    """Ce qui, dans le code d'un autre, désigne A : son identifiant, son nom, ses dépôts, ses interfaces."""
+    jumeau = depot.jumeau_par_id(conn, a_id) or {"nom": a_id}
+    noms = {a_id, *(s["nom"] for s in depot.sources_du_jumeau(conn, a_id))}  # identifiants : toujours retenus
+    mots = set(re.findall(r"[A-Za-zÀ-ÿ0-9_-]{4,}", jumeau["nom"]))         # mots courts : trop de faux échos
+    for c in connaissance.connaissances(conn, a_id, "EXPOSE", limite=200):
+        mots |= {m for m in re.split(r"[/{}\s]+", c["objet"]) if len(m) >= 4 and m.upper() not in METHODES_HTTP}
+    return {_normal(m) for m in noms | mots if m}
+
+
+def _lignes_citees(citation, sources):
+    lignes = []
+    for m in connaissance.RE_CITATION.finditer(citation):
+        depot_cite, chemin, debut, fin = connaissance.decouper(m)
+        source = connaissance.resoudre_source(sources, depot_cite, chemin)
+        contenu = lire_au_sha(source.get("copie") or source["emplacement"], source["curseur"])(chemin) or []
+        lignes += contenu[debut - 1:fin]
+    return "\n".join(lignes)
+
+
+async def _verifier(conn, b, a_id, nom_a, formulation):
+    """Décision de B ; une citation absente ou fausse dans son code ne prouve rien : ne_sait_pas. Une confirmation
+    doit en plus citer des lignes qui désignent A (son nom, ses dépôts, ses interfaces) : une citation qui existe mais
+    ne parle pas de A ne confirme rien (confirmation forgée par une formulation piégée de A)."""
     ctx = _contexte(conn, b)
     verdict = await _interroger(ctx, CONSIGNE_B.format(nom_a=_donnee(nom_a), formulation=_donnee(formulation)))
     if verdict.verdict != "ne_sait_pas" and (not connaissance.RE_CITATION.search(verdict.citation)
                                              or contradicteur.citations_invalides(verdict.citation, ctx["sources"])):
         return Verdict(verdict="ne_sait_pas", explication=f"Preuve non retenue : {verdict.explication}")
+    if verdict.verdict == "confirme":
+        try:
+            cite = _normal(_lignes_citees(verdict.citation, ctx["sources"]))
+        except (LookupError, ValueError):
+            cite = ""
+        if not any(i in cite for i in indices_de(conn, a_id)):
+            return Verdict(verdict="ne_sait_pas", explication="Les lignes citées ne désignent pas l'autre application.")
     return verdict
 
 
@@ -148,7 +184,8 @@ async def serrer(conn, db, jumeau_id):
         return bilan
     cartes = "\n\n".join(carte.texte(c) for c in [await carte.carte_du_jumeau(conn, db, j["id"]) for j in autres] if c)
     decision = await _decider(_juge(), CONSIGNE_JUGE.format(
-        nom=a["nom"], cartes=cartes, echanges="\n".join(f"- {i} : {c['objet']}" for i, c in echanges.items())))
+        nom=_donnee(a["nom"]), cartes=_donnee(cartes),
+        echanges="\n".join(f"- {i} : {_donnee(c['objet'])}" for i, c in echanges.items())))
     vus = set()
     for d in decision.designations:
         if d.jumeau is None:
@@ -165,5 +202,5 @@ async def serrer(conn, db, jumeau_id):
         if bilan["verifiees"] >= MAX_VERIFICATIONS:
             continue  # reprise à la passe suivante : la relation reste en validation
         bilan["verifiees"] += 1
-        await _conclure(db, relation, a, b, await _verifier(conn, b["id"], a["nom"], formulation))
+        await _conclure(db, relation, a, b, await _verifier(conn, b["id"], jumeau_id, a["nom"], formulation))
     return bilan
