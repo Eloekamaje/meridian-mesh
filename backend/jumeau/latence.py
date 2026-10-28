@@ -7,6 +7,7 @@ import argparse
 import asyncio
 import logging
 import statistics
+import uuid
 
 from jumeau import flore
 
@@ -29,11 +30,12 @@ async def mesurer(jumeaux, question):
     visibles = jumeaux if isinstance(jumeaux, list) else list(NOMS)
     cible = [jumeaux] if isinstance(jumeaux, str) else flore.application_nommee(
         question, [{"id": j, "nom": NOMS.get(j, j)} for j in visibles])
+    acteur = f"banc-latence-{uuid.uuid4().hex[:8]}"  # fil vierge : sans mémoire d'une mesure précédente
     if cible:
-        r = await flore.repondre(cible[0], question, "banc-latence")
+        r = await flore.repondre(cible[0], question, acteur)
     else:
-        r = await flore.mobiliser(visibles, question, "banc-latence")
-    return (r or {}).get("durees") or {}
+        r = await flore.mobiliser(visibles, question, acteur)
+    return {**((r or {}).get("durees") or {}), "schema": "```mermaid" in (r or {}).get("reponse", "")}
 
 
 def main():
@@ -47,7 +49,8 @@ def main():
         p95 = totaux[min(len(totaux) - 1, int(0.95 * len(totaux)))]
         phases = {k: round(statistics.median(m.get(k, 0) for m in mesures), 1)
                   for k in ("contexte", "cartes", "modele", "outils", "relecture", "controles")}
-        print(f"[{classe}] {question}\n  p50 {statistics.median(totaux):.1f} s · p95 {p95:.1f} s · objectif "
+        schema = " · schéma dessiné" if any(m.get("schema") for m in mesures) else ""
+        print(f"[{classe}] {question}{schema}\n  p50 {statistics.median(totaux):.1f} s · p95 {p95:.1f} s · objectif "
               f"{OBJECTIFS[classe]} s (première réponse utile) · phases {phases}")
 
 
