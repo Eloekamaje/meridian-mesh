@@ -6,13 +6,12 @@ l'instance autorisée (JUMEAU_SERVICENOW_HOTE) est interrogée, en HTTPS, sans r
 groupe d'affectation). Sa version est son nombre de modifications : ServiceNow ne sert pas les anciennes versions,
 une citation périmée échoue donc à la vérification.
 """
-import os
 import re
 import urllib.request
 
 from jumeau import atlassian, lecteurs
 from jumeau.github import MAX_RESULTATS, Invalide, JetonRefuse, TropDeDemandes, _memo, _SansRedirection
-from jumeau.naissance import hote_public, _resultat, resoudre_secret
+from jumeau.naissance import _resultat, resoudre_secret
 
 NOM_CI = re.compile(r"\w[\w .-]{0,79}")  # ni ^, ni =, ni deux-points : rien qui change une requête encodée
 UTILISATEUR = re.compile(r"[\w.@-]{1,100}")
@@ -30,11 +29,10 @@ CHAMPS = {"incident": [*COMMUN, ("close_notes", "Notes de clôture")],
 _ouvrir = urllib.request.build_opener(_SansRedirection).open
 
 
-def _hote():
-    hote = os.environ.get("JUMEAU_SERVICENOW_HOTE", "").lower()
-    if not hote or not hote_public(hote):
-        raise Invalide("instance ServiceNow non configurée (JUMEAU_SERVICENOW_HOTE, ex. banque.service-now.com)")
-    return hote
+def hote_autorise(hote=None):
+    """Instance de la connexion, validée (*.service-now.com) ; JUMEAU_SERVICENOW_HOTE, si définie, la remplace."""
+    return atlassian.choisir_hote(SERVICE, "JUMEAU_SERVICENOW_HOTE", "banque.service-now.com",
+                                  atlassian.sous_domaine_de("service-now.com"), hote)
 
 
 def identifiants(utilisateur, mot_de_passe):
@@ -44,21 +42,21 @@ def identifiants(utilisateur, mot_de_passe):
     return f"{utilisateur}:{mot_de_passe}"
 
 
-def _get_avec(secret, chemin, **params):
-    return atlassian.appeler(_ouvrir, SERVICE, _hote, secret, chemin, params)["result"]
+def _get_avec(secret, hote, chemin, **params):
+    return atlassian.appeler(_ouvrir, SERVICE, lambda: hote_autorise(hote), secret, chemin, params)["result"]
 
 
-def _table(secret, table, requete, champs, limite):
-    return _get_avec(secret, f"/api/now/table/{table}", sysparm_query=requete, sysparm_fields=champs,
+def _table(secret, table, requete, champs, limite, hote=None):
+    return _get_avec(secret, hote, f"/api/now/table/{table}", sysparm_query=requete, sysparm_fields=champs,
                      sysparm_limit=limite, sysparm_display_value="true")
 
 
-def compte_du_jeton(secret):
+def compte_du_jeton(secret, hote=None):
     """Identité du compte chez ServiceNow (sys_id), jamais le nom saisi seul ; aucun nom de personne conservé."""
     declare = secret.partition(":")[0]
     if not UTILISATEUR.fullmatch(declare):
         raise Invalide("nom d'utilisateur ServiceNow attendu")
-    trouves = _table(secret, "sys_user", f"user_name={declare}", "sys_id,user_name", 1)
+    trouves = _table(secret, "sys_user", f"user_name={declare}", "sys_id,user_name", 1, hote)
     if not trouves or not trouves[0].get("sys_id") or (trouves[0].get("user_name") or "").lower() != declare.lower():
         raise Invalide("ServiceNow n'a pas identifié le compte de ces identifiants")
     return {"login": declare, "compte": trouves[0]["sys_id"], "nom": declare}
@@ -70,12 +68,12 @@ def _ci(nom):
     return nom
 
 
-def perimetres(reference, recherche=""):
+def perimetres(reference, recherche="", hote=None):
     """CI applicatifs lisibles avec ces identifiants, filtrés par `recherche`."""
     secret = resoudre_secret(reference)
     tous = _memo(reference, "ci", lambda: [
         {"cle": c["name"], "nom": c.get("short_description") or c["name"]}
-        for c in _table(secret, "cmdb_ci_appl", "ORDERBYname", "name,short_description", MAX_CI)
+        for c in _table(secret, "cmdb_ci_appl", "ORDERBYname", "name,short_description", MAX_CI, hote)
         if NOM_CI.fullmatch(c.get("name") or "")])
     motif = recherche.strip().lower()
     return [p for p in tous if motif in p["cle"].lower() or motif in p["nom"].lower()][:MAX_RESULTATS]
@@ -88,15 +86,15 @@ def _chiffres(date):
 class LecteurServiceNow(lecteurs.Lecteur):
     systeme = "servicenow"
 
-    def __init__(self, nom, espace, reference):
+    def __init__(self, nom, espace, reference, hote=None):
         super().__init__(nom, espace)
-        self.reference = reference
+        self.reference, self.hote = reference, hote
 
     def _filtre(self):
         return f"cmdb_ci.name={_ci(self.espace)}"
 
     def _table(self, table, requete, champs, limite):
-        return _table(resoudre_secret(self.reference), table, requete, champs, limite)
+        return _table(resoudre_secret(self.reference), table, requete, champs, limite, self.hote)
 
     def version_courante(self):
         """Dernier enregistrement modifié de chaque table et sa date de mise à jour."""
@@ -134,7 +132,7 @@ class LecteurServiceNow(lecteurs.Lecteur):
                 "lignes": lignes}
 
 
-lecteurs.FABRIQUES["SERVICENOW"] = lambda s: LecteurServiceNow(s["nom"], s["emplacement"], s["secret_ref"])
+lecteurs.FABRIQUES["SERVICENOW"] = lambda s: LecteurServiceNow(s["nom"], s["emplacement"], s["secret_ref"], atlassian.hote_de_url(s.get("url")))
 
 
 def source_de(config):
@@ -142,7 +140,7 @@ def source_de(config):
     if not NOM_CI.fullmatch(config.get("ci") or ""):
         raise ValueError("nom d'élément de configuration invalide")
     return {"type": "SERVICENOW", "nom": f"servicenow-{config['ci']}", "emplacement": config["ci"], "curseur": None,
-            "url": f"https://{_hote()}/", "secret_ref": config.get("secret")}
+            "url": f"https://{hote_autorise(config.get('hote'))}/", "secret_ref": config.get("secret")}
 
 
 def tester(config):
@@ -154,9 +152,9 @@ def tester(config):
         return _resultat("autorisation_insuffisante", "Identifiants introuvables", "Aucune connexion ServiceNow choisie.",
                          "Choisir ou déclarer une connexion")
     try:
-        secret = resoudre_secret(config["secret"])
-        existe = _table(secret, "cmdb_ci_appl", f"name={_ci(ci)}", "name", 1)
-        _table(secret, "incident", f"cmdb_ci.name={ci}", "number", 1)
+        secret, hote = resoudre_secret(config["secret"]), config.get("hote")
+        existe = _table(secret, "cmdb_ci_appl", f"name={_ci(ci)}", "name", 1, hote)
+        _table(secret, "incident", f"cmdb_ci.name={ci}", "number", 1, hote)
     except Invalide as e:
         return _resultat("configuration_incomplete", "Configuration incomplète", str(e), "Corriger la configuration")
     except JetonRefuse:

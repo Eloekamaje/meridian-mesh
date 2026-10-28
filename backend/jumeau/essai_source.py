@@ -4,6 +4,10 @@ redirection, réponses bornées). Le jeton n'est jamais affiché.
 
     python -m jumeau.essai_source --systeme confluence --hote banque.atlassian.net --perimetre TBT \\
         --secret vault:meridian/confluence/pilote#jeton      (ou env:MERIDIAN_CONFLUENCE_PILOTE = « e-mail:jeton »)
+
+Ou avec une connexion déclarée dans l'application (hôte et référence du jeton lus dans Mongo, MONGO_URL et DB_NAME) :
+
+    python -m jumeau.essai_source --systeme jira --connexion jr-ana-banque-fr-1a2b3c4d --perimetre PAY
 """
 import argparse
 import os
@@ -15,6 +19,16 @@ from jumeau.naissance import resoudre_secret
 
 MODULES = {"confluence": confluence, "jira": jira}
 VARIABLE_HOTE = {"confluence": "JUMEAU_CONFLUENCE_HOTE", "jira": "JUMEAU_JIRA_HOTE"}
+
+
+def lire_connexion(systeme, cxid):
+    """Hôte et référence du jeton d'une connexion enregistrée (None si elle n'existe pas)."""
+    from pymongo import MongoClient
+    client = MongoClient(os.environ["MONGO_URL"], serverSelectionTimeoutMS=5000)
+    try:
+        return client[os.environ["DB_NAME"]][f"connexions_{systeme}"].find_one({"id": cxid}, {"_id": 0, "hote": 1, "reference": 1})
+    finally:
+        client.close()
 
 
 def _manquant(args):
@@ -39,12 +53,22 @@ def _propre(texte, secret):
 
 def executer(args, sortie=print):
     """Lance les étapes dans l'ordre ; code de sortie 0 si toutes passent, 1 sinon, 2 s'il manque de quoi commencer."""
+    connexion = getattr(args, "connexion", None)
+    if connexion:
+        try:
+            doc = lire_connexion(args.systeme, connexion)
+        except Exception as e:  # Mongo absent, variables manquantes…
+            sortie(f"Essai impossible : connexion illisible ({type(e).__name__}). Aucun appel n'a été fait.")
+            return 2
+        if not doc:
+            sortie(f"Essai impossible : connexion {connexion} introuvable. Aucun appel n'a été fait.")
+            return 2
+        args = argparse.Namespace(**{**vars(args), "secret": doc["reference"], "hote": doc.get("hote") or args.hote})
     manque = _manquant(args)
     if manque:
         sortie("Essai impossible, il manque : " + " ; ".join(manque) + ". Aucun appel n'a été fait.")
         return 2
-    if args.hote:
-        os.environ[VARIABLE_HOTE[args.systeme]] = args.hote.lower()
+    hote = args.hote or None  # sinon JUMEAU_<SYSTÈME>_HOTE ; les appels passent tous par ce même hôte
     try:
         secret = resoudre_secret(args.secret)
     except Exception as e:  # Vault absent, variable non autorisée…
@@ -52,15 +76,15 @@ def executer(args, sortie=print):
         return 2
     module, perimetre = MODULES[args.systeme], args.perimetre
     lecteur = {"confluence": confluence.LecteurConfluence, "jira": jira.LecteurJira}[args.systeme](
-        f"essai-{perimetre}", perimetre, args.secret)
+        f"essai-{perimetre}", perimetre, args.secret, hote)
     etat = {}
 
     def authentification():
-        c = module.compte_du_jeton(secret)
+        c = module.compte_du_jeton(secret, hote)
         return f"compte {c['compte']} ({c['nom']})"
 
     def perimetre_lu():
-        trouves = module.perimetres(args.secret, perimetre)
+        trouves = module.perimetres(args.secret, perimetre, hote)
         cles = [p["cle"].lower() for p in trouves]
         if perimetre.lower() not in cles:
             raise LookupError(f"« {perimetre} » absent des {len(trouves)} périmètres lisibles (plafond de la liste : 100 projets, 250 espaces)")
@@ -116,6 +140,7 @@ def main(argv=None):
     p.add_argument("--systeme", choices=sorted(MODULES), required=True)
     p.add_argument("--hote", help="ex. banque.atlassian.net (sinon JUMEAU_<SYSTÈME>_HOTE)")
     p.add_argument("--perimetre", help="clé de l'espace Confluence ou du projet Jira")
+    p.add_argument("--connexion", help="identifiant d'une connexion déclarée (remplace --hote et --secret)")
     p.add_argument("--secret", help="référence du jeton : vault:chemin#clé ou env:MERIDIAN_…")
     p.add_argument("--terme", help="mot à chercher (par défaut : un mot du nom du périmètre)")
     return executer(p.parse_args(argv))

@@ -1,13 +1,52 @@
 """Ce que partagent Confluence et Jira Cloud : identifiants e-mail:jeton, appel HTTPS borné, identité du compte."""
 import base64
 import json
+import os
+import re
 import urllib.error
 import urllib.request
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 from jumeau.github import DELAI, Invalide, JetonRefuse, TropDeDemandes, _limiter
+from jumeau.naissance import hote_public
 
 MAX_REPONSE = 5_000_000  # octets : une réponse démesurée ne sature pas la mémoire
+
+
+def normaliser_hote(saisie):
+    """Adresse saisie → nom d'hôte : minuscules, sans schéma https, chemin, requête ni port ('' si rien)."""
+    texte = (saisie or "").strip().lower()
+    if re.match(r"[a-z][a-z0-9+.-]*://", texte):
+        if not texte.startswith("https://"):
+            raise Invalide("adresse en HTTPS attendue")
+        texte = texte[len("https://"):]
+    texte = re.split(r"[/?#]", texte, maxsplit=1)[0]
+    return re.sub(r":\d+$", "", texte)
+
+
+def choisir_hote(service, variable, exemple, autorise, hote=None):
+    """Hôte à interroger. Si l'organisation a fixé `variable`, seul cet hôte est accepté (l'environnement reste la
+    politique) ; sinon l'hôte de la connexion doit être public et chez l'éditeur (`autorise`). Sans hôte (ancienne
+    connexion), l'environnement."""
+    politique = os.environ.get(variable, "").lower()
+    cible = normaliser_hote(hote) or politique
+    if not cible or not hote_public(cible):
+        raise Invalide(f"adresse du site {service} manquante ou invalide (ex. {exemple})")
+    if politique:
+        if cible != politique:
+            raise Invalide(f"{service} : seule l'adresse fixée par l'organisation est autorisée")
+    elif not autorise(cible):
+        raise Invalide(f"adresse {service} hors des domaines de l'éditeur (ex. {exemple})")
+    return cible
+
+
+def sous_domaine_de(suffixe):
+    return lambda hote: hote.endswith("." + suffixe) and len(hote) > len(suffixe) + 1
+
+
+def hote_de_url(url):
+    """Hôte d'une URL de source déjà déclarée (None si absente : retombe sur l'environnement)."""
+    return urlparse(url).hostname if url else None
 
 
 def identifiants(email, jeton):

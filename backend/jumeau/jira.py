@@ -5,13 +5,12 @@ est interrogé, en HTTPS, sans redirection. Un périmètre est un projet ; un ti
 ADF est parcourue, jamais interprétée) et sa version est sa date de mise à jour : si le ticket a changé, une
 citation ancienne ne se vérifie plus.
 """
-import os
 import re
 import urllib.request
 
 from jumeau import atlassian, lecteurs
 from jumeau.github import MAX_RESULTATS, Invalide, JetonRefuse, TropDeDemandes, _memo, _SansRedirection
-from jumeau.naissance import hote_public, _resultat, resoudre_secret
+from jumeau.naissance import _resultat, resoudre_secret
 
 CLE_PROJET = re.compile(r"[A-Z][A-Z0-9_]{1,19}")
 REF_TICKET = re.compile(r"[A-Z][A-Z0-9_]{1,19}-\d{1,9}")
@@ -23,24 +22,23 @@ _ouvrir = urllib.request.build_opener(_SansRedirection).open
 identifiants = atlassian.identifiants
 
 
-def _hote():
-    hote = os.environ.get("JUMEAU_JIRA_HOTE", "").lower()
-    if not hote or not hote_public(hote):
-        raise Invalide("hôte Jira non configuré (JUMEAU_JIRA_HOTE, ex. banque.atlassian.net)")
-    return hote
+def hote_autorise(hote=None):
+    """Adresse du site de la connexion, validée (*.atlassian.net) ; JUMEAU_JIRA_HOTE, si définie, la remplace."""
+    return atlassian.choisir_hote(SERVICE, "JUMEAU_JIRA_HOTE", "banque.atlassian.net",
+                                  atlassian.sous_domaine_de("atlassian.net"), hote)
 
 
-def _get_avec(secret, chemin, **params):
-    return atlassian.appeler(_ouvrir, SERVICE, _hote, secret, chemin, params)
+def _get_avec(secret, hote, chemin, **params):
+    return atlassian.appeler(_ouvrir, SERVICE, lambda: hote_autorise(hote), secret, chemin, params)
 
 
-def _get(reference, chemin, **params):
-    return _get_avec(resoudre_secret(reference), chemin, **params)
+def _get(reference, hote, chemin, **params):
+    return _get_avec(resoudre_secret(reference), hote, chemin, **params)
 
 
-def compte_du_jeton(secret):
+def compte_du_jeton(secret, hote=None):
     """Vérifie les identifiants auprès de Jira avant de les conserver (un refus n'écrase rien)."""
-    return atlassian.compte(_get_avec(secret, "/rest/api/3/myself"), secret, "emailAddress")
+    return atlassian.compte(_get_avec(secret, hote, "/rest/api/3/myself"), secret, "emailAddress")
 
 
 def _projet(cle):
@@ -49,11 +47,11 @@ def _projet(cle):
     return cle
 
 
-def perimetres(reference, recherche=""):
+def perimetres(reference, recherche="", hote=None):
     """Projets lisibles avec ces identifiants, filtrés par `recherche`."""
     tous = _memo(reference, "projets", lambda: [
         {"cle": p["key"], "nom": p["name"]}
-        for p in _get(reference, "/rest/api/3/project/search", maxResults=MAX_PROJETS)["values"]])
+        for p in _get(reference, hote, "/rest/api/3/project/search", maxResults=MAX_PROJETS)["values"]])
     motif = recherche.strip().lower()
     return [p for p in tous if motif in p["cle"].lower() or motif in p["nom"].lower()][:MAX_RESULTATS]
 
@@ -99,16 +97,16 @@ def _version(ticket):
 class LecteurJira(lecteurs.Lecteur):
     systeme = "jira"
 
-    def __init__(self, nom, espace, reference):
+    def __init__(self, nom, espace, reference, hote=None):
         super().__init__(nom, espace)
-        self.reference = reference
+        self.reference, self.hote = reference, hote
 
     def _jql(self, filtre=""):
         return f'project = "{_projet(self.espace)}"' + filtre
 
     def version_courante(self):
         """Dernier ticket modifié du projet et sa date de mise à jour."""
-        r = _get(self.reference, "/rest/api/3/search/jql", jql=self._jql() + " ORDER BY updated DESC",
+        r = _get(self.reference, self.hote, "/rest/api/3/search/jql", jql=self._jql() + " ORDER BY updated DESC",
                  fields="updated", maxResults=1)
         return f"{r['issues'][0]['key']}@{_version(r['issues'][0])}" if r["issues"] else ""
 
@@ -116,7 +114,7 @@ class LecteurJira(lecteurs.Lecteur):
         motif = " ".join(re.sub(r"[^\w\s.]", " ", texte).split())  # ni guillemet, ni barre oblique, ni opérateur
         if not motif:
             return
-        r = _get(self.reference, "/rest/api/3/search/jql", jql=self._jql(f' AND text ~ "{motif}"'),
+        r = _get(self.reference, self.hote, "/rest/api/3/search/jql", jql=self._jql(f' AND text ~ "{motif}"'),
                  fields="summary", maxResults=MAX_RESULTATS)
         for t in r["issues"]:
             yield {"ref": t["key"], "titre": t["fields"].get("summary") or ""}
@@ -127,7 +125,7 @@ class LecteurJira(lecteurs.Lecteur):
             return None
         try:
             t = _memo(self.reference, ("ticket", ref), lambda: _get(
-                self.reference, f"/rest/api/3/issue/{ref}",
+                self.reference, self.hote, f"/rest/api/3/issue/{ref}",
                 fields="summary,issuetype,status,project,updated,description,comment"))
         except LookupError:
             return None
@@ -142,7 +140,7 @@ class LecteurJira(lecteurs.Lecteur):
         return {"titre": f"{t['key']} {f.get('summary') or ''}", "version": _version(t), "lignes": lignes}
 
 
-lecteurs.FABRIQUES["JIRA"] = lambda s: LecteurJira(s["nom"], s["emplacement"], s["secret_ref"])
+lecteurs.FABRIQUES["JIRA"] = lambda s: LecteurJira(s["nom"], s["emplacement"], s["secret_ref"], atlassian.hote_de_url(s.get("url")))
 
 
 def source_de(config):
@@ -150,7 +148,7 @@ def source_de(config):
     if not CLE_PROJET.fullmatch(config.get("projet") or ""):
         raise ValueError("clé de projet Jira invalide")
     return {"type": "JIRA", "nom": f"jira-{config['projet']}", "emplacement": config["projet"],
-            "curseur": None, "url": f"https://{_hote()}/projects/{config['projet']}", "secret_ref": config.get("secret")}
+            "curseur": None, "url": f"https://{hote_autorise(config.get('hote'))}/projects/{config['projet']}", "secret_ref": config.get("secret")}
 
 
 def tester(config):
@@ -162,7 +160,7 @@ def tester(config):
         return _resultat("autorisation_insuffisante", "Jeton introuvable", "Aucune connexion Jira choisie.",
                          "Choisir ou déclarer une connexion")
     try:
-        _get(config["secret"], f"/rest/api/3/project/{_projet(projet)}")
+        _get(config["secret"], config.get("hote"), f"/rest/api/3/project/{_projet(projet)}")
     except Invalide as e:
         return _resultat("configuration_incomplete", "Configuration incomplète", str(e), "Corriger la configuration")
     except JetonRefuse:

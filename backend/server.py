@@ -1029,11 +1029,13 @@ async def maj_commande(cid: str, payload: CommandePatch):
     if not patch:
         return {"ok": True}
     if patch.get("sources"):
-        connexions = {c["id"]: c["reference"] for systeme in ("github", *SYSTEMES)
-                      async for c in _connexions(systeme).find({}, {"_id": 0, "id": 1, "reference": 1})}
+        docs = [c for systeme in ("github", *SYSTEMES)
+                async for c in _connexions(systeme).find({}, {"_id": 0, "id": 1, "reference": 1, "hote": 1})]
+        connexions = {c["id"]: c["reference"] for c in docs}
+        hotes = {c["id"]: c["hote"] for c in docs if c.get("hote")}
         avant = {s.get("id"): s.get("statut") for s in
                  ((await db.commandes.find_one({"id": cid}, {"_id": 0, "sources": 1})) or {}).get("sources", [])}
-        patch["sources"] = [_statut_serveur(_proteger_source(s, connexions), avant) for s in patch["sources"]]
+        patch["sources"] = [_statut_serveur(_proteger_source(s, connexions, hotes), avant) for s in patch["sources"]]
     patch["maj_le"] = datetime.now(timezone.utc).isoformat()
     res = await db.commandes.update_one({"id": cid}, {"$set": patch})
     if res.matched_count == 0:
@@ -1051,16 +1053,19 @@ def _statut_serveur(source, avant):
 PREFIXES_CONNEXION = {"github": "gh-", **{nom: m.PREFIXE for nom, m in SYSTEMES.items()}}
 
 
-def _proteger_source(source, connexions):
+def _proteger_source(source, connexions, hotes=None):
     """Une source GitHub, Confluence… désigne une connexion déclarée de son connecteur ; le serveur en déduit la
     référence de son jeton. Le client ne fournit jamais de référence : ni secret d'une autre connexion, ni variable
-    du serveur."""
+    du serveur. De même l'adresse du site (`hote`) : celle de la connexion, jamais celle du client."""
     prefixe = PREFIXES_CONNEXION.get(source.get("connecteur"))
     if not prefixe or not isinstance(source.get("config"), dict):
         return source
     cxid = source["config"].get("connexion")
-    return {**source, "config": {**source["config"],
-                                 "secret": connexions.get(cxid, "") if str(cxid).startswith(prefixe) else ""}}
+    propre = str(cxid).startswith(prefixe)
+    config = {**source["config"], "secret": connexions.get(cxid, "") if propre else ""}
+    if source["connecteur"] in SYSTEMES:
+        config["hote"] = (hotes or {}).get(cxid, "") if propre else ""
+    return {**source, "config": config}
 
 
 connecteur_branche = jumeau_connecteurs.connecteur_branche
@@ -1161,14 +1166,16 @@ def _connexions(systeme: str):
     return db[f"connexions_{systeme}"]
 
 
-async def _reference_connexion_de(systeme: str, cxid: str) -> str:
-    doc = await _connexions(systeme).find_one({"id": cxid}, {"_id": 0, "reference": 1})
+async def _reference_connexion_de(systeme: str, cxid: str) -> dict:
+    """Référence du jeton et adresse du site de la connexion (absente d'une ancienne connexion)."""
+    doc = await _connexions(systeme).find_one({"id": cxid}, {"_id": 0, "reference": 1, "hote": 1})
     if not doc:
         raise HTTPException(404, f"Connexion {_systeme(systeme).SERVICE} introuvable")
-    return doc["reference"]
+    return doc
 
 
 class JetonAtlassian(BaseModel):  # aussi les deux clés de Datadog (`email` = clé d'API, `jeton` = clé d'application)
+    hote: Optional[str] = Field(None, max_length=300)  # adresse du site ; absente : JUMEAU_<SYSTÈME>_HOTE
     email: str = Field(min_length=3, max_length=200)
     jeton: str = Field(min_length=1, max_length=500)
 
@@ -1185,9 +1192,10 @@ async def declarer_connexion(systeme: str, payload: JetonAtlassian):
     module = _systeme(systeme)
     try:
         secret = module.identifiants(payload.email, payload.jeton)
+        hote = module.hote_autorise(payload.hote)
     except jumeau_github.Invalide as e:
         raise HTTPException(400, str(e))
-    compte = await _appel_service(module.SERVICE, module.compte_du_jeton, secret)
+    compte = await _appel_service(module.SERVICE, module.compte_du_jeton, secret, hote)
     login = compte["login"].lower()
     # Identifiant tiré du compte du service (accountId) : un autre jeton ne peut pas écraser cette connexion.
     cxid = f"{module.PREFIXE}{re.sub(r'[^a-z0-9]+', '-', login).strip('-')[:30]}-{hashlib.sha256(compte['compte'].encode()).hexdigest()[:8]}"
@@ -1199,7 +1207,7 @@ async def declarer_connexion(systeme: str, payload: JetonAtlassian):
         logger.warning("connexion %s : jeton non déposé dans Vault (%s)", cxid, type(e).__name__)
         raise HTTPException(503, "Coffre de secrets indisponible : jeton non enregistré")
     jumeau_github.oublier(reference)
-    doc = {"id": cxid, **compte, "maj_le": datetime.now(timezone.utc).isoformat()}
+    doc = {"id": cxid, **compte, "hote": hote, "maj_le": datetime.now(timezone.utc).isoformat()}
     await _connexions(systeme).update_one({"id": cxid}, {"$set": {**doc, "reference": reference}}, upsert=True)
     return doc
 
@@ -1207,7 +1215,8 @@ async def declarer_connexion(systeme: str, payload: JetonAtlassian):
 @api_router.get("/connexions/{systeme}/{cxid}/perimetres")
 async def perimetres_connexion(systeme: str, cxid: str, q: str = Query("", max_length=100)):
     module = _systeme(systeme)
-    return await _appel_service(module.SERVICE, module.perimetres, await _reference_connexion_de(systeme, cxid), q)
+    connexion = await _reference_connexion_de(systeme, cxid)
+    return await _appel_service(module.SERVICE, module.perimetres, connexion["reference"], q, connexion.get("hote"))
 
 
 @api_router.post("/commandes/{cid}/tester")

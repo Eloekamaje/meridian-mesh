@@ -13,10 +13,10 @@ import urllib.error
 import urllib.request
 from urllib.parse import urlencode
 
-from jumeau import lecteurs
+from jumeau import atlassian, lecteurs
 from jumeau.atlassian import MAX_REPONSE
 from jumeau.github import DELAI, MAX_RESULTATS, Invalide, JetonRefuse, TropDeDemandes, _limiter, _memo, _SansRedirection
-from jumeau.naissance import hote_public, _resultat, resoudre_secret
+from jumeau.naissance import _resultat, resoudre_secret
 
 CLE = re.compile(r"[A-Za-z0-9]{8,80}")
 NOM_SERVICE = re.compile(r"[A-Za-z0-9][\w.-]{0,99}")
@@ -37,24 +37,26 @@ def identifiants(cle_api, cle_app):
     return f"{cle_api}:{cle_app}"
 
 
-def _hote():
-    hote = os.environ.get("JUMEAU_DATADOG_HOTE", "").lower()
-    if not hote or not hote_public(hote):
-        raise Invalide("hôte Datadog non configuré (JUMEAU_DATADOG_HOTE, ex. api.datadoghq.eu)")
-    return hote
+SITES = ("api.datadoghq.com", "api.datadoghq.eu", "api.us3.datadoghq.com", "api.us5.datadoghq.com",
+         "api.ap1.datadoghq.com", "api.ddog-gov.com")
+
+
+def hote_autorise(hote=None):
+    """Site Datadog de la connexion, validé (sites officiels) ; JUMEAU_DATADOG_HOTE, si définie, le remplace."""
+    return atlassian.choisir_hote(SERVICE, "JUMEAU_DATADOG_HOTE", "api.datadoghq.eu", SITES.__contains__, hote)
 
 
 def _aujourdhui():
     return datetime.datetime.now(datetime.timezone.utc).date()
 
 
-def _appeler(secret, chemin, params=None, corps=None):
+def _appeler(secret, chemin, params=None, corps=None, hote=None):
     """GET (ou POST JSON si `corps`) sur l'hôte autorisé ; erreurs typées, jamais les clés dans un message."""
     cle_api, deux_points, cle_app = (secret or "").partition(":")
     if not (deux_points and CLE.fullmatch(cle_api) and CLE.fullmatch(cle_app)):
         raise Invalide("aucune clé : Datadog demande une clé d'API et une clé d'application")
     _limiter(secret, SERVICE)
-    url = f"https://{_hote()}{chemin}" + (f"?{urlencode(params)}" if params else "")
+    url = f"https://{hote_autorise(hote)}{chemin}" + (f"?{urlencode(params)}" if params else "")
     en_tetes = {"DD-API-KEY": cle_api, "DD-APPLICATION-KEY": cle_app, "Accept": "application/json"}
     if corps is not None:
         en_tetes["Content-Type"] = "application/json"
@@ -75,10 +77,10 @@ def _appeler(secret, chemin, params=None, corps=None):
         raise
 
 
-def compte_du_jeton(secret):
+def compte_du_jeton(secret, hote=None):
     """Vérifie les clés auprès de Datadog avant de les conserver : l'identité est celle de l'utilisateur de la clé
     d'application, jamais une saisie."""
-    d = _appeler(secret, "/api/v2/current_user").get("data") or {}
+    d = _appeler(secret, "/api/v2/current_user", hote=hote).get("data") or {}
     email = ((d.get("attributes") or {}).get("email") or "").lower()
     if not d.get("id") or not email:
         raise Invalide("Datadog n'a pas identifié le propriétaire de ces clés")
@@ -91,13 +93,13 @@ def _service(nom):
     return nom
 
 
-def perimetres(reference, recherche=""):
+def perimetres(reference, recherche="", hote=None):
     """Services du catalogue Datadog lisibles avec ces clés, filtrés par `recherche`."""
     tous = _memo(reference, "services", lambda: [
         {"cle": n, "nom": n} for n in sorted({
             ((d.get("attributes") or {}).get("schema") or {}).get("dd-service") or ""
             for d in _appeler(resoudre_secret(reference), "/api/v2/services/definitions",
-                              {"page[size]": MAX_SERVICES}).get("data", [])} - {""}) if NOM_SERVICE.fullmatch(n)])
+                              {"page[size]": MAX_SERVICES}, hote=hote).get("data", [])} - {""}) if NOM_SERVICE.fullmatch(n)])
     motif = recherche.strip().lower()
     return [s for s in tous if motif in s["cle"].lower()][:MAX_RESULTATS]
 
@@ -111,24 +113,24 @@ def _iso(t):
     return t.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _agreger(secret, service, jour, erreurs=False):
+def _agreger(secret, service, jour, erreurs=False, hote=None):
     """(requêtes, latence p95 en ms) du service sur la journée ; seuls les spans d'entrée du service comptent."""
     debut, fin = _fenetre(jour)
     requete = f"service:{service} @_top_level:1" + (" status:error" if erreurs else "")
     corps = {"data": {"type": "aggregate_request", "attributes": {
         "compute": [{"aggregation": "count", "type": "total"}, {"aggregation": "pc95", "metric": "@duration", "type": "total"}],
         "filter": {"from": _iso(debut), "to": _iso(fin), "query": requete}}}}
-    buckets = _appeler(secret, "/api/v2/spans/analytics/aggregate", corps=corps).get("data") or []
+    buckets = _appeler(secret, "/api/v2/spans/analytics/aggregate", corps=corps, hote=hote).get("data") or []
     calcul = ((buckets[0].get("attributes") or {}).get("compute") or {}) if buckets else {}
     return int(calcul.get("c0") or 0), float(calcul.get("c1") or 0) / 1e6
 
 
-def _mesure(reference, service, jour):
+def _mesure(reference, service, jour, hote=None):
     """{requetes, erreurs, p95} du jour ; LookupError si le service n'a eu aucune requête ce jour-là."""
     def calcul():
         secret = resoudre_secret(reference)
-        requetes, p95 = _agreger(secret, _service(service), jour)
-        return {"requetes": requetes, "erreurs": _agreger(secret, service, jour, erreurs=True)[0] if requetes else 0, "p95": p95}
+        requetes, p95 = _agreger(secret, _service(service), jour, hote=hote)
+        return {"requetes": requetes, "erreurs": _agreger(secret, service, jour, erreurs=True, hote=hote)[0] if requetes else 0, "p95": p95}
     m = _memo(reference, ("mesure", service, jour), calcul)
     if not m["requetes"]:
         raise LookupError("aucune requête observée")
@@ -142,10 +144,10 @@ def _variation(actuel, avant, forme, ecart=False):
     return f"{forme(actuel)} (semaine précédente : {forme(avant)}{pct})".replace(".", ",")
 
 
-def _lignes_comportement(reference, service, jour):
-    m = _mesure(reference, service, jour)
+def _lignes_comportement(reference, service, jour, hote=None):
+    m = _mesure(reference, service, jour, hote)
     try:
-        p = _mesure(reference, service, jour - datetime.timedelta(days=7))
+        p = _mesure(reference, service, jour - datetime.timedelta(days=7), hote)
     except LookupError:
         p = None
     taux = lambda x: x["erreurs"] / x["requetes"] * 100
@@ -156,11 +158,11 @@ def _lignes_comportement(reference, service, jour):
             "Latence p95 : " + _variation(m["p95"], avant(lambda x: x["p95"]), lambda v: f"{v:.0f} ms")]
 
 
-def _lignes_dependances(reference, service, jour):
+def _lignes_dependances(reference, service, jour, hote=None):
     debut, fin = _fenetre(jour)
     def calcul():
         return _appeler(resoudre_secret(reference), "/api/v1/service_dependencies", {
-            "env": os.environ.get("JUMEAU_DATADOG_ENV", "prod"), "start": int(debut.timestamp()), "end": int(fin.timestamp())})
+            "env": os.environ.get("JUMEAU_DATADOG_ENV", "prod"), "start": int(debut.timestamp()), "end": int(fin.timestamp())}, hote=hote)
     tout = _memo(reference, ("dependances", jour), calcul)
     if service not in tout:
         raise LookupError("service inconnu")
@@ -173,9 +175,9 @@ class LecteurDatadog(lecteurs.Lecteur):
     systeme = "datadog"
     perissable = False  # une journée passée ne change plus : la citer reste exact
 
-    def __init__(self, nom, espace, reference):
+    def __init__(self, nom, espace, reference, hote=None):
         super().__init__(nom, espace)
-        self.reference = reference
+        self.reference, self.hote = reference, hote
 
     def _derniere_journee(self):
         return _aujourdhui() - datetime.timedelta(days=1)
@@ -197,7 +199,7 @@ class LecteurDatadog(lecteurs.Lecteur):
 
     def _moniteurs(self, texte):
         params = {"monitor_tags": f"service:{_service(self.espace)}", "name": texte, "page_size": MAX_RESULTATS}
-        return _appeler(resoudre_secret(self.reference), "/api/v1/monitor", params)
+        return _appeler(resoudre_secret(self.reference), "/api/v1/monitor", params, hote=self.hote)
 
     def _chercher(self, texte):
         motif = texte.lower()
@@ -221,12 +223,18 @@ class LecteurDatadog(lecteurs.Lecteur):
             return None
         lignes = _lignes_comportement if ref == "comportement" else _lignes_dependances
         try:
-            return {"titre": f"{ref} {service} {jour}", "version": str(jour), "lignes": lignes(self.reference, service, jour)}
+            return {"titre": f"{ref} {service} {jour}", "version": str(jour), "lignes": lignes(self.reference, service, jour, self.hote)}
         except LookupError:
             return None
 
 
-lecteurs.FABRIQUES["DATADOG"] = lambda s: LecteurDatadog(s["nom"], s["emplacement"], s["secret_ref"])
+def _hote_api(url):
+    """L'URL de la source est celle de l'application (app.…) ; l'API est sur api.…"""
+    hote = atlassian.hote_de_url(url)
+    return "api." + hote.removeprefix("app.") if hote else None
+
+
+lecteurs.FABRIQUES["DATADOG"] = lambda s: LecteurDatadog(s["nom"], s["emplacement"], s["secret_ref"], _hote_api(s.get("url")))
 
 
 def source_de(config):
@@ -234,7 +242,7 @@ def source_de(config):
     if not NOM_SERVICE.fullmatch(config.get("service") or ""):
         raise ValueError("nom de service Datadog invalide")
     return {"type": "DATADOG", "nom": f"datadog-{config['service']}", "emplacement": config["service"], "curseur": None,
-            "url": f"https://app.{_hote().removeprefix('api.')}/apm/services/{config['service']}", "secret_ref": config.get("secret")}
+            "url": f"https://app.{hote_autorise(config.get('hote')).removeprefix('api.')}/apm/services/{config['service']}", "secret_ref": config.get("secret")}
 
 
 def tester(config):
@@ -246,7 +254,7 @@ def tester(config):
         return _resultat("autorisation_insuffisante", "Clés introuvables", "Aucune connexion Datadog choisie.",
                          "Choisir ou déclarer une connexion")
     try:
-        _mesure(config["secret"], service, _aujourdhui() - datetime.timedelta(days=1))
+        _mesure(config["secret"], service, _aujourdhui() - datetime.timedelta(days=1), config.get("hote"))
     except Invalide as e:
         return _resultat("configuration_incomplete", "Configuration incomplète", str(e), "Corriger la configuration")
     except JetonRefuse:

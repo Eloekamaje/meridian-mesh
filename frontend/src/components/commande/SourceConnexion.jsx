@@ -6,13 +6,16 @@ import { BORDURE, CHAMP, ETIQUETTE, Choix } from "@/components/commande/SourceGi
 // Source « connexion + périmètre » de la commande (Confluence, Jira…) : une connexion de l'espace d'abord (e-mail +
 // jeton d'API), puis le périmètre choisi par autocomplétion parmi ceux que cette connexion peut lire.
 // `cfg` : { systeme, nom, perimetre: { cle, titre, label, placeholder, prefixe }, compte?: { label, type, secret, invite } }
-// (libellés des deux champs envoyés sous les noms `email` et `jeton` ; Atlassian par défaut).
+// (libellés des deux champs envoyés sous les noms `email` et `jeton` ; Atlassian par défaut) ; `cfg.hote` : { exemple }
+// de l'adresse du site, envoyée sous le nom `hote` (validée par le serveur selon l'éditeur).
+const VIDE = { hote: "", email: "", jeton: "" };
+
 function Connexion({ cfg, choisie, onChoisir }) {
   const { systeme, nom } = cfg;
   const compte = { label: "Adresse e-mail du compte Atlassian", type: "email", secret: "Jeton d'API", invite: "Collez le jeton", ...cfg.compte };
   const [connexions, setConnexions] = useState(null);
   const [ajout, setAjout] = useState(false);
-  const [saisie, setSaisie] = useState({ email: "", jeton: "" });
+  const [saisie, setSaisie] = useState(VIDE);
   const [etat, setEtat] = useState({ encours: false, erreur: null });
 
   useEffect(() => {
@@ -28,7 +31,7 @@ function Connexion({ cfg, choisie, onChoisir }) {
     try {
       const { data } = await api.post(`/connexions/${systeme}`, saisie);
       setConnexions((liste) => [...(liste || []).filter((c) => c.id !== data.id), data]);
-      setSaisie({ email: "", jeton: "" });
+      setSaisie(VIDE);
       setAjout(false);
       setEtat({ encours: false, erreur: null });
       onChoisir(data.id);
@@ -54,6 +57,9 @@ function Connexion({ cfg, choisie, onChoisir }) {
       )}
       {ajout ? (
         <div className="mt-2 space-y-1.5">
+          <label htmlFor={`${systeme}-hote`} className="text-[11px] text-[#94A3B8]">Adresse du site</label>
+          <input id={`${systeme}-hote`} type="text" autoComplete="off" spellCheck={false} value={saisie.hote} onChange={(e) => setSaisie({ ...saisie, hote: e.target.value })}
+            placeholder={cfg.hote?.exemple} data-testid={`insp-${systeme}-hote`} className={`${CHAMP} w-full`} />
           <label htmlFor={`${systeme}-email`} className="text-[11px] text-[#94A3B8]">{compte.label}</label>
           <input id={`${systeme}-email`} type={compte.type} autoComplete="off" value={saisie.email} onChange={(e) => setSaisie({ ...saisie, email: e.target.value })}
             data-testid={`insp-${systeme}-email`} className={`${CHAMP} w-full`} />
@@ -61,7 +67,7 @@ function Connexion({ cfg, choisie, onChoisir }) {
           <div className="flex gap-2">
             <input id={`${systeme}-jeton`} type="password" autoComplete="off" value={saisie.jeton} onChange={(e) => setSaisie({ ...saisie, jeton: e.target.value })}
               placeholder={compte.invite} data-testid={`insp-${systeme}-jeton`} className={`${CHAMP} flex-1`} />
-            <button type="button" onClick={declarer} disabled={!saisie.email.trim() || !saisie.jeton.trim() || etat.encours} data-testid={`insp-${systeme}-verifier`}
+            <button type="button" onClick={declarer} disabled={!saisie.hote.trim() || !saisie.email.trim() || !saisie.jeton.trim() || etat.encours} data-testid={`insp-${systeme}-verifier`}
               className="rounded-md bg-[#60A5FA] px-3 text-xs font-semibold text-[#071019] hover:bg-[#93C5FD] disabled:opacity-40">
               {etat.encours ? "Vérification…" : "Vérifier"}
             </button>

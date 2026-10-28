@@ -37,8 +37,9 @@ class FausseBase(dict):
 def systeme_factice(prefixe="zz-"):
     return types.SimpleNamespace(
         PREFIXE=prefixe, SERVICE="Zed", identifiants=lambda e, j: f"{e}:{j}",
-        compte_du_jeton=lambda secret: {"login": "Ana@Banque.fr", "compte": "5f1a", "nom": "Ana"},
-        perimetres=lambda reference, q: [{"cle": "P", "nom": reference + q}])
+        hote_autorise=lambda hote=None: hote or "h.zed.net",
+        compte_du_jeton=lambda secret, hote=None: {"login": "Ana@Banque.fr", "compte": "5f1a", "nom": "Ana"},
+        perimetres=lambda reference, q, hote=None: [{"cle": "P", "nom": reference + q}])
 
 
 @pytest.fixture

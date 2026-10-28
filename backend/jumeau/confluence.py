@@ -4,7 +4,6 @@ Identifiants (e-mail + jeton d'API) lus dans Vault sous la forme « e-mail:jeton
 Seul l'hôte autorisé (JUMEAU_CONFLUENCE_HOTE) est interrogé, en HTTPS, sans suivre de redirection. Le contenu lu est
 du texte : le HTML de stockage n'est jamais exécuté.
 """
-import os
 import re
 import urllib.request
 from html.parser import HTMLParser
@@ -12,7 +11,7 @@ from urllib.parse import quote
 
 from jumeau import atlassian, lecteurs
 from jumeau.github import MAX_RESULTATS, Invalide, JetonRefuse, TropDeDemandes, _memo, _SansRedirection
-from jumeau.naissance import hote_public, _resultat, resoudre_secret
+from jumeau.naissance import _resultat, resoudre_secret
 
 CLE_ESPACE = re.compile(r"[A-Za-z0-9_~-]{1,255}")
 REF_PAGE = re.compile(r"\d{1,19}")
@@ -22,46 +21,45 @@ MAX_ESPACES = 250  # ponytail : les 250 premiers espaces ; recherche côté Conf
 _ouvrir = urllib.request.build_opener(_SansRedirection).open
 
 
-def _hote():
-    hote = os.environ.get("JUMEAU_CONFLUENCE_HOTE", "").lower()
-    if not hote or not hote_public(hote):
-        raise Invalide("hôte Confluence non configuré (JUMEAU_CONFLUENCE_HOTE, ex. banque.atlassian.net)")
-    return hote
+def hote_autorise(hote=None):
+    """Adresse du site de la connexion, validée (*.atlassian.net) ; JUMEAU_CONFLUENCE_HOTE, si définie, la remplace."""
+    return atlassian.choisir_hote(SERVICE, "JUMEAU_CONFLUENCE_HOTE", "banque.atlassian.net",
+                                  atlassian.sous_domaine_de("atlassian.net"), hote)
 
 
 identifiants = atlassian.identifiants
 
 
-def _get_avec(secret, chemin, **params):
-    return atlassian.appeler(_ouvrir, SERVICE, _hote, secret, chemin, params)
+def _get_avec(secret, hote, chemin, **params):
+    return atlassian.appeler(_ouvrir, SERVICE, lambda: hote_autorise(hote), secret, chemin, params)
 
 
-def _get(reference, chemin, **params):
-    return _get_avec(resoudre_secret(reference), chemin, **params)
+def _get(reference, hote, chemin, **params):
+    return _get_avec(resoudre_secret(reference), hote, chemin, **params)
 
 
-def compte_du_jeton(secret):
+def compte_du_jeton(secret, hote=None):
     """Vérifie les identifiants auprès de Confluence avant de les conserver (un refus n'écrase rien)."""
-    return atlassian.compte(_get_avec(secret, "/wiki/rest/api/user/current"), secret, "email")
+    return atlassian.compte(_get_avec(secret, hote, "/wiki/rest/api/user/current"), secret, "email")
 
 
-def _id_espace(reference, cle):
+def _id_espace(reference, cle, hote=None):
     if not CLE_ESPACE.fullmatch(cle or ""):
         raise Invalide("clé d'espace invalide")
 
     def chercher():
-        trouve = [s for s in _get(reference, "/wiki/api/v2/spaces", keys=cle)["results"] if s["key"].lower() == cle.lower()]
+        trouve = [s for s in _get(reference, hote, "/wiki/api/v2/spaces", keys=cle)["results"] if s["key"].lower() == cle.lower()]
         if not trouve:
             raise LookupError(f"espace {cle} introuvable")
         return trouve[0]["id"]
     return _memo(reference, ("id-espace", cle), chercher)
 
 
-def perimetres(reference, recherche=""):
+def perimetres(reference, recherche="", hote=None):
     """Espaces lisibles avec ces identifiants, filtrés par `recherche` (liste lue une fois puis filtrée ici)."""
     tous = _memo(reference, "espaces", lambda: [
         {"cle": s["key"], "nom": s["name"]}
-        for s in _get(reference, "/wiki/api/v2/spaces", limit=MAX_ESPACES, status="current")["results"]])
+        for s in _get(reference, hote, "/wiki/api/v2/spaces", limit=MAX_ESPACES, status="current")["results"]])
     motif = recherche.strip().lower()
     return [s for s in tous if motif in s["cle"].lower() or motif in s["nom"].lower()][:MAX_RESULTATS]
 
@@ -116,14 +114,14 @@ def en_lignes(html):
 class LecteurConfluence(lecteurs.Lecteur):
     systeme = "confluence"
 
-    def __init__(self, nom, espace, reference):
+    def __init__(self, nom, espace, reference, hote=None):
         super().__init__(nom, espace)
-        self.reference = reference
+        self.reference, self.hote = reference, hote
 
     def version_courante(self):
         """Dernière modification de l'espace : page la plus récemment modifiée, sa version et sa date."""
-        id_espace = _id_espace(self.reference, self.espace)
-        r = _get(self.reference, f"/wiki/api/v2/spaces/{quote(str(id_espace))}/pages", sort="-modified-date", limit=1)
+        id_espace = _id_espace(self.reference, self.espace, self.hote)
+        r = _get(self.reference, self.hote, f"/wiki/api/v2/spaces/{quote(str(id_espace))}/pages", sort="-modified-date", limit=1)
         if not r["results"]:
             return ""
         p = r["results"][0]
@@ -134,7 +132,7 @@ class LecteurConfluence(lecteurs.Lecteur):
             raise Invalide("clé d'espace invalide")
         motif = re.sub(r'["\\]', "", texte)
         cql = f'space="{self.espace}" and type = page and text ~ "{motif}"'  # sinon pièces jointes, commentaires
-        for r in _get(self.reference, "/wiki/rest/api/search", cql=cql, limit=MAX_RESULTATS)["results"]:
+        for r in _get(self.reference, self.hote, "/wiki/rest/api/search", cql=cql, limit=MAX_RESULTATS)["results"]:
             if (r.get("content") or {}).get("id"):
                 yield {"ref": r["content"]["id"], "titre": r.get("title") or "",
                        "extrait": " ".join(en_lignes(re.sub(r"@@@(end)?hl@@@", "", r.get("excerpt") or "")))}
@@ -145,15 +143,15 @@ class LecteurConfluence(lecteurs.Lecteur):
         params = {"body-format": "storage", **({"version": version} if version else {})}
         try:
             p = _memo(self.reference, ("page", ref, version), lambda: _get(
-                self.reference, f"/wiki/api/v2/pages/{ref}", **params))
-            if str(p.get("spaceId")) != str(_id_espace(self.reference, self.espace)):
+                self.reference, self.hote, f"/wiki/api/v2/pages/{ref}", **params))
+            if str(p.get("spaceId")) != str(_id_espace(self.reference, self.espace, self.hote)):
                 return None  # une page d'un autre espace n'est pas une preuve de celui-ci
         except LookupError:
             return None
         return {"titre": p["title"], "version": p["version"]["number"], "lignes": en_lignes(p["body"]["storage"]["value"])}
 
 
-lecteurs.FABRIQUES["CONFLUENCE"] = lambda s: LecteurConfluence(s["nom"], s["emplacement"], s["secret_ref"])
+lecteurs.FABRIQUES["CONFLUENCE"] = lambda s: LecteurConfluence(s["nom"], s["emplacement"], s["secret_ref"], atlassian.hote_de_url(s.get("url")))
 
 
 def source_de(config):
@@ -161,7 +159,7 @@ def source_de(config):
     if not CLE_ESPACE.fullmatch(config.get("espace") or ""):
         raise ValueError("clé d'espace Confluence invalide")
     return {"type": "CONFLUENCE", "nom": f"confluence-{config['espace']}", "emplacement": config["espace"],
-            "curseur": None, "url": f"https://{_hote()}/wiki/spaces/{config['espace']}", "secret_ref": config.get("secret")}
+            "curseur": None, "url": f"https://{hote_autorise(config.get('hote'))}/wiki/spaces/{config['espace']}", "secret_ref": config.get("secret")}
 
 
 def tester(config):
@@ -173,7 +171,7 @@ def tester(config):
         return _resultat("autorisation_insuffisante", "Jeton introuvable", "Aucune connexion Confluence choisie.",
                          "Choisir ou déclarer une connexion")
     try:
-        _id_espace(config["secret"], espace)
+        _id_espace(config["secret"], espace, config.get("hote"))
     except Invalide as e:
         return _resultat("configuration_incomplete", "Configuration incomplète", str(e), "Corriger la configuration")
     except JetonRefuse:
