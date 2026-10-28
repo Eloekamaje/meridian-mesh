@@ -94,7 +94,7 @@ CONTEXTE = """## Contexte de cette conversation
 {autoportrait}"""
 
 
-def modele(nom=None):
+def modele(nom=None, temperature=None):
     fournisseur = os.environ.get("JUMEAU_MODELE", "deepseek")
     if fournisseur == "deepseek":
         # ponytail: API hébergée hors Canada — réservée au code non bancaire (Architecture Jumeau §10).
@@ -103,13 +103,15 @@ def modele(nom=None):
             raise RuntimeError("Modèle non configuré : clé DeepSeek absente")
         from strands.models.openai import OpenAIModel
         return OpenAIModel(client_args={"api_key": cle, "base_url": "https://api.deepseek.com"},
-                           model_id=nom or os.environ.get("DEEPSEEK_MODELE", "deepseek-chat"))
+                           model_id=nom or os.environ.get("DEEPSEEK_MODELE", "deepseek-chat"),
+                           **({} if temperature is None else {"params": {"temperature": temperature}}))
     if fournisseur == "bedrock":
         from strands.models import BedrockModel
         if not os.environ.get("BEDROCK_MODELE"):
             raise RuntimeError("Modèle non configuré : BEDROCK_MODELE absent")
         return BedrockModel(model_id=nom or os.environ["BEDROCK_MODELE"],
-                            region_name=os.environ.get("AWS_REGION", "ca-central-1"))
+                            region_name=os.environ.get("AWS_REGION", "ca-central-1"),
+                            **({} if temperature is None else {"temperature": temperature}))
     raise RuntimeError(f"JUMEAU_MODELE inconnu : {fournisseur}")
 
 
@@ -119,7 +121,7 @@ def modele_juge():
 
     `JUMEAU_MODELE_JUGE` (par exemple un modèle d'une autre famille, ou Bedrock d'un autre fournisseur) ; à défaut,
     le modèle de l'auteur — et la dépendance reste visible ici plutôt que dissimulée."""
-    return modele(os.environ.get("JUMEAU_MODELE_JUGE") or None)
+    return modele(os.environ.get("JUMEAU_MODELE_JUGE") or None, temperature=0)  # un verdict, pas une prose
 
 
 def nettoyer(sortie, projet, copie):

@@ -61,6 +61,7 @@ export const ETATS_VERIFICATION = {
   selon: ["selon une source", "#93C5FD", "une seule source l'appuie"],
   conteste: ["contesté", "#F2B84B", "deux sources se contredisent"],
   en_partie: ["en partie", "#FB923C", "un détail n'est pas appuyé"],
+  incertain: ["incertain", "#9CA3AF", "le juge se contredit sur les mêmes preuves : ni l'un ni l'autre ne fait foi"],
   non_appuye: ["non appuyé", "#F87171", "sa preuve ne dit pas cela"],
 };
 const SYSTEMES = { git: "le code", documentation: "la documentation", confluence: "Confluence", jira: "Jira",

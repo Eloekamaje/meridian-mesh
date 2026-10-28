@@ -147,11 +147,13 @@ CREATE INDEX IF NOT EXISTS verification_claim ON verification (claim_id, id DESC
 -- « en_partie » (Harness v3 §2) : comme le Check Grounding de Google, une affirmation appuyée en partie n'est pas appuyée.
 -- Recette de forme (plan L1bis.2) : 'ok' / 'absente' pour APPLIQUE_REGLE et DETIENT, NULL sinon.
 ALTER TABLE verification ADD COLUMN IF NOT EXISTS forme text CHECK (forme IN ('ok', 'absente'));
+-- Citations du juge, vérifiées mot pour mot par le harness (Harness v3 §2) : jsonb, liste de passages.
+ALTER TABLE verification ADD COLUMN IF NOT EXISTS citations jsonb NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE verification DROP CONSTRAINT IF EXISTS verification_etat_check;
 -- « en_attente » : toute connaissance naît avec un état explicite (plan de remédiation L1.6). Avant, 50 des 546
 -- connaissances n'avaient aucune ligne de vérification, alors que le document affirmait que chacune en avait un.
 ALTER TABLE verification ADD CONSTRAINT verification_etat_check
-    CHECK (etat IN ('verifie', 'selon', 'recoupe', 'conteste', 'en_partie', 'non_appuye', 'en_attente'));
+    CHECK (etat IN ('verifie', 'selon', 'recoupe', 'conteste', 'en_partie', 'non_appuye', 'incertain', 'en_attente'));
 ALTER TABLE verification DROP CONSTRAINT IF EXISTS verification_methode_check;
 ALTER TABLE verification ADD CONSTRAINT verification_methode_check
     CHECK (methode IN ('recette', 'juge', 'aucune'));

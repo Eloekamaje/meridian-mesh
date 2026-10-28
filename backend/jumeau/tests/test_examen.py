@@ -74,6 +74,7 @@ def test_verification_comptee_et_non_appuyee_hors_presentation():
     claims = [v("A", "verifie"), v("B", "selon"), v("C", "non_appuye"), v("D", "en_partie"), claim("DEPEND_DE", "x")]
     p = examen.depuis_connaissances({"nom": "X"}, claims, FICHE)["presentation"]
     assert p["verification"] == {"verifie": 1, "selon": 1, "recoupe": 0, "conteste": 0, "en_partie": 1, "non_appuye": 1,
+                                 "incertain": 0,
                                  "a_verifier": 1}
     assert p["ignore"] == ["Qui l'utilisera réellement", "Non appuyée par sa preuve : C", "Appuyée en partie seulement : D"]
 

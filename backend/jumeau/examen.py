@@ -21,8 +21,9 @@ def _maturite(claims):
             "hypotheses": sum(c.get("maturite") == "M1" for c in claims)}
 
 
-ETATS = ("verifie", "selon", "recoupe", "conteste", "en_partie", "non_appuye")
-A_REVOIR = {"non_appuye": "Non appuyée par sa preuve", "en_partie": "Appuyée en partie seulement"}
+ETATS = ("verifie", "selon", "recoupe", "conteste", "en_partie", "non_appuye", "incertain")
+A_REVOIR = {"non_appuye": "Non appuyée par sa preuve", "en_partie": "Appuyée en partie seulement",
+            "incertain": "Verdicts divergents sur les mêmes preuves"}
 MAX_A_REVOIR = 8
 
 

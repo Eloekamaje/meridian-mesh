@@ -97,7 +97,8 @@ def _passe(conn, tmp_path, predicat, chemin, debut, fin, verdict):
                                                        "type": "T", "confiance": 0.5}, p, {"extracteur": "test"})
 
     async def juger(modele, dossiers):
-        return {d["id"]: Appui(id=d["id"], appui=verdict, concordance="une_seule_source", copie=False, raison="r")
+        return {d["id"]: Appui(id=d["id"], appui=verdict, concordance="une_seule_source", copie=False, raison="r",
+                     citations=[" ".join(d["extraits"][0]["lignes"])])
                 for d in dossiers}
 
     asyncio.run(recoupement.verifier(conn, j, juger=juger))

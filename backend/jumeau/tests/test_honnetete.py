@@ -147,7 +147,7 @@ def test_le_juge_prend_son_propre_modele(monkeypatch):
     monkeypatch.setenv("JUMEAU_MODELE", "deepseek")
     monkeypatch.setenv("DEEPSEEK_API_KEY", "cle")
     monkeypatch.delenv("JUMEAU_MODELE_JUGE", raising=False)
-    monkeypatch.setattr("strands.models.openai.OpenAIModel", lambda client_args, model_id: Faux(model_id))
+    monkeypatch.setattr("strands.models.openai.OpenAIModel", lambda client_args, model_id, **_: Faux(model_id))
     assert agent_mod.modele_juge().model_id == "deepseek-chat"          # à défaut : même modèle, dit ici
     monkeypatch.setenv("JUMEAU_MODELE_JUGE", "autre-famille")
     assert agent_mod.modele_juge().model_id == "autre-famille"          # séparé : l'auteur garde le sien

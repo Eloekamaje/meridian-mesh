@@ -4,10 +4,13 @@ l'appuient et concordent la disent « recoupée », seul chemin vers M3. L'humai
 
 États : verifie (recette), selon (une source l'appuie), recoupe (deux systèmes concordants), conteste (deux systèmes
 discordants : une contradiction est ouverte pour l'équipe), en_partie (un détail n'est pas appuyé : comme pour le
-Check Grounding de Google, une phrase appuyée en partie n'est pas appuyée), non_appuye (la preuve ne dit pas cela).
+Check Grounding de Google, une phrase appuyée en partie n'est pas appuyée), non_appuye (la preuve ne dit pas cela), incertain (rejugée sur les mêmes
+preuves, le juge a changé de camp : ni l'un ni l'autre verdict ne fait foi).
 """
 import logging
 import re
+
+from psycopg.types.json import Jsonb
 
 from jumeau import depot, juge, recettes
 from jumeau.source_git import lire_au_sha
@@ -160,10 +163,61 @@ def etat_du_jugement(appui, systemes, copie=None):
     return "selon"
 
 
-def _enregistrer(conn, c, etat, methode, systemes, raison=None, forme=None):
-    conn.execute("INSERT INTO verification (claim_id, etat, methode, systemes, empreinte, raison, forme) "
-                 "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-                 (c["id"], etat, methode, sorted(systemes), c["empreinte"], (raison or "")[:MAX_RAISON] or None, forme))
+CITATION_MIN, CITATION_MAX, MAX_CITATIONS = 8, 300, 3
+
+
+def _normal(texte):
+    return " ".join(str(texte).split()).casefold()
+
+
+def citations_valides(citations, extraits):
+    """Les citations du juge qui figurent mot pour mot (espaces normalisés, casse ignorée) dans les lignes d'un extrait
+    de CE dossier. 8 à 300 caractères, 3 au plus. Contrôle sans modèle : le juge ne peut pas inventer ce qu'il cite."""
+    textes = [_normal(" ".join(e.get("lignes") or [])) for e in extraits]
+    gardees = {}
+    for citation in citations or []:
+        n = _normal(citation)
+        if CITATION_MIN <= len(n) <= CITATION_MAX and any(n in t for t in textes):
+            gardees.setdefault(n, " ".join(str(citation).split()))
+    return list(gardees.values())[:MAX_CITATIONS]
+
+
+def appui_ancre(appui, extraits):
+    """(décision, citations valides) : un « oui » sans citation valide n'est pas un « oui », il devient « partiel »."""
+    valides = citations_valides(appui.citations, extraits) if appui.appui != "non" else []
+    if appui.appui == "oui" and not valides:
+        appui = appui.model_copy(update={"appui": "partiel", "raison": "[citation absente ou introuvable] " + appui.raison})
+    return appui, valides
+
+
+CAMP = {"selon": 1, "recoupe": 1, "en_partie": 0, "non_appuye": 0}
+
+
+def _ids(empreinte):
+    return (empreinte or "").rpartition(":")[2]  # sans le préfixe de version de la règle
+
+
+def departager(ancien, c, etat, raison):
+    """(état, raison) : rejugé sur les MÊMES preuves, le juge qui change de camp ne tranche pas. Ni l'un ni l'autre
+    verdict ne fait foi : « incertain », la connaissance reste hypothèse. Preuves changées : le nouveau verdict vaut.
+    On ne rend pas le juge stable par le vote, on rend son désaccord visible."""
+    if (ancien and ancien["etat"] in CAMP and etat in CAMP and CAMP[ancien["etat"]] != CAMP[etat]
+            and _ids(ancien["empreinte"]) == _ids(c["empreinte"])):
+        return "incertain", "[verdicts divergents sur les mêmes preuves] " + raison
+    return etat, raison
+
+
+def _dernier_jugement(conn, claim_id):
+    r = conn.execute("SELECT etat, empreinte FROM verification WHERE claim_id = %s AND methode = 'juge' "
+                     "ORDER BY id DESC LIMIT 1", (claim_id,)).fetchone()
+    return {"etat": r[0], "empreinte": r[1]} if r else None
+
+
+def _enregistrer(conn, c, etat, methode, systemes, raison=None, forme=None, citations=()):
+    conn.execute("INSERT INTO verification (claim_id, etat, methode, systemes, empreinte, raison, forme, citations) "
+                 "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                 (c["id"], etat, methode, sorted(systemes), c["empreinte"], (raison or "")[:MAX_RAISON] or None, forme,
+                  Jsonb(list(citations))))
 
 
 def _ouvrir_contradiction(conn, jumeau, c, raison):
@@ -182,7 +236,7 @@ async def verifier(conn, jumeau, lecteurs=(), modele=None, juger=juge.juger, lim
     """Une passe de vérification. Les recettes s'exécutent toutes (sans modèle) ; le juge prend au plus `limite`
     connaissances, d'abord celles qui ont plusieurs systèmes (le recoupement), puis celles proposées en conversation."""
     bilan = {"verifie": 0, "selon": 0, "recoupe": 0, "conteste": 0, "en_partie": 0, "non_appuye": 0,
-             "en_attente": 0, "pannes": 0}
+             "incertain": 0, "en_attente": 0, "pannes": 0}
     a_juger = []
     for c in a_verifier(conn, jumeau["id"]):
         systemes = {p["systeme"] for p in c["preuves"]}
@@ -222,19 +276,21 @@ async def verifier(conn, jumeau, lecteurs=(), modele=None, juger=juge.juger, lim
         # Forme : seulement les lignes de code ; sans code lisible, rien à constater (None).
         forme_code = recettes.forme(c["predicat"], [x for l in code for x in l]) if code else None
         par_id[c["id"]] = (c, {e["systeme"] for e in extraits}, recopie(extraits),
-                           systemes_muets(c["objet"], extraits), forme_code)
+                           systemes_muets(c["objet"], extraits), forme_code, extraits)
     decisions = await juger(modele, dossiers) if dossiers else {}
-    for cid, (c, systemes, recopie_observee, muets, forme_code) in par_id.items():
+    for cid, (c, systemes, recopie_observee, muets, forme_code, extraits) in par_id.items():
         appui = decisions.get(cid)
         if appui is None:  # lot en panne ou décision manquante : rejoué à la passe suivante
             bilan["en_attente"] += 1
             bilan["pannes"] += 1
             continue
+        appui, citations = appui_ancre(appui, extraits)
         etat = etat_du_jugement(appui, systemes, recopie_observee)
         raison = appui.raison + (f" [{', '.join(muets)} ne nomme pas l'énoncé]" if muets else "")
         if forme_code == recettes.FORME_ABSENTE:  # l'état dit pourquoi la connaissance reste M1
             raison = "[forme absente : les lignes citées n'ont pas la forme attendue] " + raison
-        _enregistrer(conn, c, etat, "juge", systemes, raison, forme_code)
+        etat, raison = departager(_dernier_jugement(conn, cid), c, etat, raison)
+        _enregistrer(conn, c, etat, "juge", systemes, raison, forme_code, citations)
         if etat == "conteste":
             _ouvrir_contradiction(conn, jumeau, c, appui.raison)
         bilan[etat] += 1
@@ -246,10 +302,11 @@ async def verifier(conn, jumeau, lecteurs=(), modele=None, juger=juge.juger, lim
 
 
 def etats(conn, jumeau_id):
-    """{claim_id: {etat, methode, systemes, raison, forme}} : la dernière vérification de chaque connaissance courante."""
-    return {cid: {"etat": e, "methode": m, "systemes": s, "raison": r, "forme": f}
-            for cid, e, m, s, r, f in conn.execute(
-        """SELECT DISTINCT ON (v.claim_id) v.claim_id, v.etat, v.methode, v.systemes, v.raison, v.forme
+    """{claim_id: {etat, methode, systemes, raison, forme, citations}} : la dernière vérification de chaque connaissance courante."""
+    return {cid: {"etat": e, "methode": m, "systemes": s, "raison": r, "forme": f,
+                "citations": ci}
+            for cid, e, m, s, r, f, ci in conn.execute(
+        """SELECT DISTINCT ON (v.claim_id) v.claim_id, v.etat, v.methode, v.systemes, v.raison, v.forme, v.citations
            FROM verification v JOIN claim c ON c.id = v.claim_id
            WHERE c.jumeau_id = %s AND c.valide_jusqua IS NULL ORDER BY v.claim_id, v.id DESC""", (jumeau_id,))}
 

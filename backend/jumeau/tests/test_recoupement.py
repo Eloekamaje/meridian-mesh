@@ -10,8 +10,8 @@ from jumeau.lecteurs import LecteurMemoire
 from jumeau.tests.conftest import JUMEAU, besoin_pg
 
 
-def appui(id, appui="oui", concordance="concordantes", copie=False):
-    return Appui(id=id, appui=appui, concordance=concordance, copie=copie, raison="r")
+def appui(id, appui="oui", concordance="concordantes", copie=False, citations=()):
+    return Appui(id=id, appui=appui, concordance=concordance, copie=copie, raison="r", citations=list(citations))
 
 
 @pytest.mark.parametrize("decision, systemes, attendu", [
@@ -65,13 +65,14 @@ def test_une_passe_recettes_juge_recoupement_maturite(conn, depot_git):
 
     async def juger(modele, dossiers):
         vus.append(sorted(d["id"] for d in dossiers))
-        return {d["id"]: appui(d["id"], concordance="concordantes" if len(d["extraits"]) > 1 else "une_seule_source")
+        return {d["id"]: appui(d["id"], concordance="concordantes" if len(d["extraits"]) > 1 else "une_seule_source",
+                               citations=[" ".join(d["extraits"][0]["lignes"])])
                 for d in dossiers}
 
     bilan = asyncio.run(recoupement.verifier(conn, j, [wiki], juger=juger))
     # `pannes` : une décision du juge qui manque est comptée, plus seulement reléguée à « en_attente » (L1.7).
     assert bilan == {"verifie": 1, "selon": 1, "recoupe": 1, "conteste": 0, "en_partie": 0, "non_appuye": 1,
-                     "en_attente": 0, "pannes": 0}
+                     "incertain": 0, "en_attente": 0, "pannes": 0}
     etats = recoupement.etats(conn, "tbt")
     assert {cid: etats[cid]["etat"] for cid in (fastapi, redis, regle, acteur)} == {
         fastapi: "verifie", redis: "non_appuye", regle: "recoupe", acteur: "selon"}
@@ -102,7 +103,8 @@ def test_deux_systemes_discordants_ouvrent_une_contradiction_et_restent_m2(conn,
                                                 "hash": "h", "source_id": ids["Wiki"]}])
 
     async def juger(modele, dossiers):
-        return {d["id"]: appui(d["id"], concordance="contradictoires") for d in dossiers}
+        return {d["id"]: appui(d["id"], concordance="contradictoires", citations=[" ".join(d["extraits"][0]["lignes"])])
+                for d in dossiers}
 
     assert asyncio.run(recoupement.verifier(conn, j, [wiki], juger=juger))["conteste"] == 1
     c = conn.execute("SELECT systeme_a, systeme_b, statut, signalee_par FROM contradiction WHERE claim_id = %s",
