@@ -51,3 +51,23 @@ def test_citations_invalides_retirees_du_texte():
     texte = "A `a.py#L1` et B `absent.py#L3-L4`, puis C git://d@abc1234:absent.py#L3-L4."
     assert contradicteur.retirer_citations_invalides(texte, ["absent.py#L3-L4", "d:absent.py#L3-L4"]) == \
         "A `a.py#L1` et B, puis C."
+
+
+# --- Attribution à l'équipe (constaté : « confirmé par l'équipe propriétaire » sur Conduit, sans aucune validation) --
+
+def test_confirmation_inventee_detectee_sans_validation():
+    texte = ("Elle conserve tout dans une base unique — confirmé par l'équipe propriétaire. "
+             "Rien de tout cela n'est validé par l'équipe. La mission déclarée par l'équipe est « publier » ✓. "
+             "Observé dans le code, pas encore confirmé par l'équipe.")
+    assert contradicteur.attributions_infondees(texte, 0) == [
+        "Elle conserve tout dans une base unique — confirmé par l'équipe propriétaire."]
+    assert contradicteur.attributions_infondees("Règle R12 ✓.", 0) == ["Règle R12 ✓."]
+    assert contradicteur.attributions_infondees(texte, 2) == []  # des validées existent : non contrôlé ici
+
+
+def test_relire_demande_revision_sans_appeler_le_modele(monkeypatch):
+    async def juge(*a):
+        raise AssertionError("le modèle ne doit pas être appelé")
+    monkeypatch.setattr(contradicteur, "_juger", juge)
+    verdict = asyncio.run(contradicteur.relire("q", "Une base unique, validée par l'équipe.", [], {}, None, validees=0))
+    assert not verdict["ok"] and "aucune connaissance" in verdict["problemes"][0]

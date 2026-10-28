@@ -87,10 +87,14 @@ def vers_reponse_flore(jumeau, sources, texte, invalides=(), fraicheur=None):
     }
 
 
-async def relire_sans_risque(question, texte, sources, profil, modele, charte="", lecteurs=()):
+def validees(claims):
+    return sum(c.get("statut") == "ACCEPTED" for c in claims)
+
+
+async def relire_sans_risque(question, texte, sources, profil, modele, charte="", lecteurs=(), validees=None):
     """Une panne du relecteur (délai, quota) ne doit jamais faire perdre une réponse déjà produite."""
     try:
-        return await contradicteur.relire(question, texte, sources, profil, modele, charte, lecteurs)
+        return await contradicteur.relire(question, texte, sources, profil, modele, charte, lecteurs, validees)
     except Exception:
         agent.journal.warning("relecture impossible, réponse envoyée sans relecture", exc_info=True)
         return {"ok": True, "problemes": []}
@@ -149,7 +153,8 @@ async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=No
         # ponytail: la consigne de révision reste dans le fil (brouillon, critique, correction) : historique cohérent,
         # mais plus long ; fil séparé si elle gêne la mémoire.
         verdict = await relire_sans_risque(question, texte, ctx["sources"], ctx.get("profil"), modele,
-                                           agent.CHARTE.read_text(encoding="utf-8"), ctx.get("lecteurs", []))
+                                           agent.CHARTE.read_text(encoding="utf-8"), ctx.get("lecteurs", []),
+                                           validees(ctx["claims"]))
         if not verdict["ok"]:
             agent.journal.info("révision %s : %s", jumeau_id, verdict["problemes"])
             try:
@@ -216,7 +221,8 @@ async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=
         sources = [s for ctx in ctxs.values() for s in ctx["sources"]]
         branches = [l for ctx in ctxs.values() for l in ctx.get("lecteurs", [])]
         verdict = await relire_sans_risque(question, texte, sources, profil, modele,
-                                           agent.CHARTE.read_text(encoding="utf-8"), branches)
+                                           agent.CHARTE.read_text(encoding="utf-8"), branches,
+                                           sum(validees(ctx["claims"]) for ctx in ctxs.values()))
         if not verdict["ok"]:
             try:
                 texte = str(await a.invoke_async(contradicteur.consigne_revision(verdict["problemes"]))).strip()

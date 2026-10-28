@@ -87,6 +87,25 @@ def citations_invalides(texte, sources, lecteurs=()):
     return invalides
 
 
+# « Confirmé / validé par l'équipe », ou ✓ : une attribution à l'équipe, qui doit être vraie (charte, Preuves).
+RE_ATTRIBUTION = re.compile(r"(?:confirm|valid)\w*\s+par\s+l['’]\s*équipe|✓", re.IGNORECASE)
+RE_NEGATION = re.compile(r"\b(?:pas|rien|aucune?|jamais|ni|non)\b|\bn['’]", re.IGNORECASE)
+# Ce que l'équipe a déclaré à l'admission (sa mission, qui est propriétaire) ; « l'équipe propriétaire » seule n'en est pas.
+RE_DECLARE = re.compile(r"mission|déclar|(?:est|sont)\s+(?:l['’]\s*équipe\s+)?propriétaire", re.IGNORECASE)
+RE_PHRASE = re.compile(r"(?<=[.!?;])\s+|\n+")
+
+
+def attributions_infondees(texte, validees):
+    """Phrases qui disent l'équipe d'accord alors qu'elle n'a rien validé : contrôle déterministe, sans modèle.
+    Une phrase négative (« rien n'est encore confirmé par l'équipe ») ou sur ce que l'équipe a déclaré (mission,
+    propriétaire) passe. ponytail: dès qu'une connaissance est validée, on ne rapproche pas phrase et connaissance
+    (il faudrait citer la connaissance validée) ; seul le cas « aucune validée », celui constaté, est contrôlé."""
+    if validees:
+        return []
+    return [p.strip()[:200] for p in RE_PHRASE.split(texte)
+            if RE_ATTRIBUTION.search(p) and not RE_NEGATION.search(p) and not RE_DECLARE.search(p)]
+
+
 def analyser_verdict(texte):
     """Premier objet JSON du texte ; illisible = pas d'objection (le relecteur ne doit pas bloquer la réponse)."""
     m = re.search(r"\{.*\}", texte, re.DOTALL)
@@ -107,12 +126,18 @@ async def _juger(question, reponse, profil, modele, charte):
     return analyser_verdict(str(resultat))
 
 
-async def relire(question, reponse, sources, profil, modele, charte="", lecteurs=()):
-    # Contrôle déterministe d'abord : une citation fausse suffit à demander une révision, sans appel au LLM.
+async def relire(question, reponse, sources, profil, modele, charte="", lecteurs=(), validees=None):
+    # Contrôles déterministes d'abord : une citation fausse ou une confirmation inventée suffit à demander une
+    # révision, sans appel au LLM. `validees` : nombre de connaissances validées (None = non contrôlé).
     invalides = await asyncio.to_thread(citations_invalides, reponse, sources, lecteurs)
     if invalides:
         return {"ok": False, "problemes": [f"Citations introuvables : {', '.join(invalides)}. "
                                            "Relis ces lignes avec lire_code ou lire_dans, ou retire l'affirmation."]}
+    infondees = attributions_infondees(reponse, validees) if validees is not None else []
+    if infondees:
+        return {"ok": False, "problemes": [
+            "L'équipe n'a encore validé aucune connaissance de cette application : ne dis pas « confirmé » ou "
+            f"« validé par l'équipe », ni ✓, sauf pour la mission déclarée. À corriger : {' | '.join(infondees[:3])}"]}
     return await _juger(question, reponse, profil, modele, charte)
 
 
