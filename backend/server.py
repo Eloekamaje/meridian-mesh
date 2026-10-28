@@ -1356,6 +1356,14 @@ async def generer_reponse_flore(contexte, question, selection, domaine, x_person
             if not any(niveau_au_moins(n, "preuves") for n in aut.values()):
                 out["preuves"] = []
             return out
+    # Hors scripts de démonstration : Flore répond elle-même, en orchestratrice, avec les cartes des jumeaux réels que
+    # l'interlocuteur peut voir (« qui es-tu ? » sans réveiller de jumeau ; une question d'application, en mobilisant).
+    # ponytail: toutes les cartes visibles dans le prompt ; présélection par le registre au-delà d'une vingtaine.
+    visibles = [j["id"] for j in tous if j.get("reel") and j["id"] in aut and niveau_au_moins(aut[j["id"]], "complet")]
+    if not sel and visibles and os.environ.get("JUMEAU_PG_DSN"):
+        reponse_flore = await jumeau_flore.mobiliser(visibles, question, x_persona, travail, profil=persona, db=db)
+        if reponse_flore:
+            return reponse_flore
     trouve = await recherche_plein_texte(q, aut)
     if trouve:
         return trouve
