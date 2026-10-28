@@ -32,6 +32,33 @@ Réponds uniquement par un objet JSON : {"ok": true} si tout va bien, sinon
 """
 
 
+MAX_FRAICHEUR = 8  # au plus autant de documents relus que de preuves affichées
+
+
+def fraicheur(texte, lecteurs=()):
+    """Vérifier avant de citer (Harness v3 §4) : {citation: mention} pour chaque citation de source dont le document a
+    changé depuis la version citée, ou qui n'a pas pu être revérifiée. Le texte de la réponse n'est pas modifié."""
+    mentions, vues = {}, set()
+    for m in RE_CITATION_SOURCE.finditer(texte):
+        citation = m.group(0)
+        if citation in vues or len(vues) == MAX_FRAICHEUR:
+            continue
+        vues.add(citation)
+        lecteur = next((l for l in lecteurs if l.systeme == m["systeme"] and l.espace == m["espace"]), None)
+        if lecteur is None or not lecteur.perissable:
+            continue
+        try:
+            actuelle = lecteur.version_actuelle(m["ref"])
+        except Exception:  # source injoignable : la réponse part, la preuve le dit
+            mentions[citation] = "non revérifiée"
+            continue
+        if actuelle is None:
+            mentions[citation] = "n'existe plus"
+        elif actuelle != m["version"]:
+            mentions[citation] = f"a changé depuis (v{m['version']} → v{actuelle})"
+    return mentions
+
+
 def citations_invalides(texte, sources, lecteurs=()):
     """Citations qui ne pointent sur aucune ligne existante du code au commit de leur dépôt (ou dont le dépôt ne
     peut être déterminé), ou qu'aucun lecteur branché ne confirme (source inconnue, version ou lignes fausses)."""

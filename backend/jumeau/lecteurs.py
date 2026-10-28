@@ -49,6 +49,7 @@ class Lecteur:
     """Une source branchée. Les sous-classes implémentent `_chercher` et `_lire` ; les bornes et la vérification
     sont communes."""
     systeme = ""
+    perissable = True  # une version citée peut être dépassée par une plus récente
 
     def __init__(self, nom, espace):
         self.nom, self.espace = nom, espace
@@ -87,6 +88,11 @@ class Lecteur:
         except (LookupError, ValueError, OSError):
             return False
         return doc is not None and str(doc["version"]) == m["version"] and 1 <= debut <= fin <= len(doc["lignes"])
+
+    def version_actuelle(self, ref):
+        """Dernière version du document `ref`, ou None s'il n'existe plus."""
+        doc = self._lire(str(ref), None)
+        return str(doc["version"]) if doc else None
 
     def version_courante(self):
         """Version de la source dans son ensemble, pour que le gardien sache si elle a avancé (§6)."""

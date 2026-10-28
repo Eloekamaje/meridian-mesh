@@ -171,6 +171,7 @@ def _lignes_dependances(reference, service, jour):
 
 class LecteurDatadog(lecteurs.Lecteur):
     systeme = "datadog"
+    perissable = False  # une journée passée ne change plus : la citer reste exact
 
     def __init__(self, nom, espace, reference):
         super().__init__(nom, espace)

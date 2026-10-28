@@ -19,7 +19,7 @@ MAX_PREUVES = 8
 FILS = agent.FilsActifs()
 
 
-def preuves_depuis(texte, sources, exclure=()):
+def preuves_depuis(texte, sources, exclure=(), fraicheur=None):
     """Citations de la réponse → preuves affichables sous le message, au commit de leur dépôt, sans doublon.
 
     Une citation dont le dépôt ne peut être déterminé, ou qui figure dans `exclure`, n'est pas retenue.
@@ -47,7 +47,9 @@ def preuves_depuis(texte, sources, exclure=()):
             continue
         vues.add(m.group(0))
         lignes = m["debut"] + (f"-{m['fin']}" if m["fin"] and m["fin"] != m["debut"] else "")
-        preuves.append({"source": f"{m['systeme'].capitalize()} · {m['espace']} · {m['ref']} (v{m['version']}) L{lignes}",
+        mention = (fraicheur or {}).get(m.group(0))
+        preuves.append({"source": f"{m['systeme'].capitalize()} · {m['espace']} · {m['ref']} (v{m['version']}) L{lignes}"
+                                  + (f" — {mention}" if mention else ""),
                         "detail": m.group(0)})
         if len(preuves) == MAX_PREUVES:
             break
@@ -75,13 +77,13 @@ def fiche_affichable(fiche, sources):
             "depots": [{"nom": s["nom"], "branche": s.get("branche"), "commit": s["curseur"][:12]} for s in sources]}
 
 
-def vers_reponse_flore(jumeau, sources, texte, invalides=()):
+def vers_reponse_flore(jumeau, sources, texte, invalides=(), fraicheur=None):
     """Format d'une réponse de Flore ; les citations introuvables dans le code n'entrent pas dans le volet."""
     return {
         "comportement": "expliquer",
         "reponse": retirer_citations(texte),
         "contributions": [{"jumeau": jumeau["nom"], "texte": "Connaissances et code de l'application consultés."}],
-        "preuves": preuves_depuis(texte, sources, invalides),
+        "preuves": preuves_depuis(texte, sources, invalides, fraicheur),
     }
 
 
@@ -154,7 +156,8 @@ async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=No
                 agent.journal.warning("révision impossible, première réponse conservée", exc_info=True)
         invalides = await asyncio.to_thread(contradicteur.citations_invalides, texte, ctx["sources"],
                                            ctx.get("lecteurs", []))
-        return vers_reponse_flore(ctx["jumeau"], ctx["sources"], texte, invalides)
+        fraiches = await asyncio.to_thread(contradicteur.fraicheur, texte, ctx.get("lecteurs", []))
+        return vers_reponse_flore(ctx["jumeau"], ctx["sources"], texte, invalides, fraiches)
     except RuntimeError as e:  # modèle non configuré
         return _indisponible(nom, str(e))
     except Exception:
@@ -216,11 +219,13 @@ async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=
             except Exception:
                 agent.journal.warning("révision impossible, première réponse conservée", exc_info=True)
         invalides = await asyncio.to_thread(contradicteur.citations_invalides, texte, sources, branches)
+        tout = "\n".join([texte, *(p for c in mob.contributions.values() for p in c.preuves)])
+        fraiches = await asyncio.to_thread(contradicteur.fraicheur, tout, branches)
         # Preuves de chaque jumeau, étiquetées à son nom, prises à tour de rôle : le volet ne se remplit pas avec
         # le premier jumeau seulement, et l'on sait de quelle application vient chaque ligne.
         par_jumeau = [[{**p, "source": f"{ctxs[j]['jumeau']['nom']} · {p['source']}"}
                        for p in preuves_depuis("\n".join(mob.contributions[j].preuves + [texte]), ctxs[j]["sources"],
-                                               invalides)]
+                                               invalides, fraiches)]
                       for j in mob.contributions]
         preuves, vus = [], set()
         for p in (p for rang in itertools.zip_longest(*par_jumeau) for p in rang if p):
