@@ -50,9 +50,11 @@ def monde(monkeypatch):
     return base, deposes
 
 
-def test_confluence_est_inscrit_avec_son_prefixe():
-    assert server.SYSTEMES["confluence"].PREFIXE == "cf-"
-    assert server.PREFIXES_CONNEXION["confluence"] == "cf-" and server.PREFIXES_CONNEXION["github"] == "gh-"
+def test_systemes_inscrits_avec_leur_prefixe_et_leur_contrat():
+    assert {n: m.PREFIXE for n, m in server.SYSTEMES.items()} == {"confluence": "cf-", "jira": "jr-"}
+    assert server.PREFIXES_CONNEXION == {"github": "gh-", "confluence": "cf-", "jira": "jr-"}
+    for m in server.SYSTEMES.values():
+        assert all(callable(getattr(m, f)) for f in ("identifiants", "compte_du_jeton", "perimetres", "tester", "source_de"))
 
 
 def test_systeme_inconnu_refuse(monde):

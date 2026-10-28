@@ -279,7 +279,7 @@ async def naitre(conn, db, commande, jumeau_id, rediger=None):
             chemins.append(chemin)
         from jumeau.systemes import SYSTEMES  # import local : les lecteurs importent ce module
         for s in commande["sources"]:
-            if s["connecteur"] in SYSTEMES and s["statut"] == "prete":
+            if s["connecteur"] in SYSTEMES and s["statut"] == "prete" and s["config"].get("secret"):
                 depot.declarer_source(conn, jumeau, SYSTEMES[s["connecteur"]].source_de(s["config"]))
         await franchir("clone")
         await registre.projeter(db, conn)

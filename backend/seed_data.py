@@ -1038,11 +1038,8 @@ CONNECTEURS = [
      ]},
     {"id": "jira", "nom": "Jira", "categorie": "Gestion de projet", "capacites": "Billets, projets, trajectoire fonctionnelle",
      "champs": [
-        {"cle": "site", "label": "Site Atlassian", "type": "texte", "requis": True},
-        {"cle": "projets", "label": "Projets", "type": "liste", "requis": True},
-        {"cle": "types_billets", "label": "Types de billets", "type": "liste"},
-        {"cle": "periode", "label": "Période historique", "type": "select", "options": ["3 mois", "6 mois", "12 mois", "24 mois"], "defaut": "12 mois"},
-        {"cle": "auth", "label": "Méthode d'authentification", "type": "select", "options": ["jeton API", "OAuth"], "defaut": "jeton API"},
+        {"cle": "connexion", "label": "Connexion Jira", "type": "connexion_jira", "requis": True},
+        {"cle": "projet", "label": "Projet", "type": "projet_jira", "requis": True},
      ]},
     {"id": "datadog", "nom": "Datadog", "categorie": "Observabilité", "capacites": "Métriques, traces, comportement normal",
      "champs": [

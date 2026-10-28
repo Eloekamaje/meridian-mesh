@@ -2,9 +2,10 @@ import { Lightning, WarningCircle, X } from "@phosphor-icons/react";
 import { STATUTS_SOURCE, ENVIRONNEMENTS, champRempli } from "@/lib/sources";
 import SourceGithub from "@/components/commande/SourceGithub";
 import SourceConfluence from "@/components/commande/SourceConfluence";
+import SourceJira from "@/components/commande/SourceJira";
 
 // Connecteurs « connexion + périmètre » : un composant de configuration par système.
-const SOURCES_CONNEXION = { confluence: SourceConfluence };
+const SOURCES_CONNEXION = { confluence: SourceConfluence, jira: SourceJira };
 
 export default function InspecteurSource({ source, connecteur, onChange, onTester, onFermer }) {
   if (!source) {

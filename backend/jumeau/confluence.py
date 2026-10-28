@@ -4,24 +4,19 @@ Identifiants (e-mail + jeton d'API) lus dans Vault sous la forme « e-mail:jeton
 Seul l'hôte autorisé (JUMEAU_CONFLUENCE_HOTE) est interrogé, en HTTPS, sans suivre de redirection. Le contenu lu est
 du texte : le HTML de stockage n'est jamais exécuté.
 """
-import base64
-import json
 import os
 import re
-import urllib.error
 import urllib.request
 from html.parser import HTMLParser
-from urllib.parse import quote, urlencode
+from urllib.parse import quote
 
-from jumeau import lecteurs
-from jumeau.github import (DELAI, MAX_RESULTATS, Invalide, JetonRefuse, TropDeDemandes, _limiter, _memo,
-                           _SansRedirection)
+from jumeau import atlassian, lecteurs
+from jumeau.github import MAX_RESULTATS, Invalide, JetonRefuse, TropDeDemandes, _memo, _SansRedirection
 from jumeau.naissance import HOTE_VALIDE, _resultat, resoudre_secret
 
 CLE_ESPACE = re.compile(r"[A-Za-z0-9_~-]{1,255}")
 REF_PAGE = re.compile(r"\d{1,19}")
 PREFIXE, SERVICE = "cf-", "Confluence"  # préfixe des connexions, nom dans les messages
-MAX_REPONSE = 5_000_000  # octets : une page démesurée ne sature pas la mémoire
 MAX_ESPACES = 250  # ponytail : les 250 premiers espaces ; recherche côté Confluence si un compte en voit davantage
 
 _ouvrir = urllib.request.build_opener(_SansRedirection).open
@@ -34,37 +29,11 @@ def _hote():
     return hote
 
 
-def identifiants(email, jeton):
-    email, jeton = email.strip(), jeton.strip()
-    if ":" in email or "@" not in email:
-        raise Invalide("adresse e-mail attendue")
-    return f"{email}:{jeton}"
+identifiants = atlassian.identifiants
 
 
 def _get_avec(secret, chemin, **params):
-    if not secret:
-        raise Invalide("aucun jeton : Confluence demande une adresse e-mail et un jeton d'API")
-    email, deux_points, jeton = secret.partition(":")
-    if not (deux_points and email and jeton) or not secret.isascii() or not secret.isprintable() or " " in secret:
-        raise Invalide("identifiants mal formés")
-    _limiter(secret, "Confluence")
-    url = f"https://{_hote()}{chemin}" + (f"?{urlencode(params)}" if params else "")
-    requete = urllib.request.Request(url, headers={
-        "Authorization": "Basic " + base64.b64encode(secret.encode()).decode(), "Accept": "application/json"})
-    try:
-        with _ouvrir(requete, timeout=DELAI) as r:
-            corps = r.read(MAX_REPONSE + 1)
-        if len(corps) > MAX_REPONSE:
-            raise ValueError("réponse de Confluence trop volumineuse")
-        return json.loads(corps)
-    except urllib.error.HTTPError as e:
-        if e.code == 429:
-            raise TropDeDemandes("quota Confluence atteint : réessayez dans une minute") from e
-        if e.code in (401, 403):
-            raise JetonRefuse("Confluence refuse ces identifiants") from e
-        if e.code == 404:
-            raise LookupError("introuvable") from e
-        raise
+    return atlassian.appeler(_ouvrir, SERVICE, _hote, secret, chemin, params)
 
 
 def _get(reference, chemin, **params):
@@ -72,15 +41,8 @@ def _get(reference, chemin, **params):
 
 
 def compte_du_jeton(secret):
-    """Vérifie les identifiants auprès de Confluence avant de les conserver (un refus n'écrase rien). L'identité vient
-    de Confluence (accountId), jamais de l'e-mail saisi : on ne peut pas se déclarer sous le nom d'un collègue."""
-    declare = secret.partition(":")[0]
-    u = _get_avec(secret, "/wiki/rest/api/user/current")
-    if not u.get("accountId"):
-        raise Invalide("Confluence n'a pas identifié le compte de ces identifiants")
-    if u.get("email") and u["email"].lower() != declare.lower():
-        raise Invalide("l'adresse e-mail saisie n'est pas celle du compte de ce jeton")
-    return {"login": declare, "compte": u["accountId"], "nom": u.get("displayName") or declare}
+    """Vérifie les identifiants auprès de Confluence avant de les conserver (un refus n'écrase rien)."""
+    return atlassian.compte(_get_avec(secret, "/wiki/rest/api/user/current"), secret, "email")
 
 
 def _id_espace(reference, cle):
