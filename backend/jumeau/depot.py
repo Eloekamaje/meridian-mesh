@@ -138,6 +138,13 @@ def sources_du_jumeau(conn, jumeau_id):
             "WHERE jumeau_id = %s AND type = 'GIT' ORDER BY nom", (jumeau_id,)).fetchall()
 
 
+def ci_du_jumeau(conn, jumeau_id):
+    """Ancre d'identité : l'élément de configuration de la CMDB (périmètre de sa source ServiceNow), ou None."""
+    r = conn.execute("SELECT emplacement FROM source WHERE jumeau_id = %s AND type = 'SERVICENOW' ORDER BY id LIMIT 1",
+                     (jumeau_id,)).fetchone()
+    return r[0] if r else None
+
+
 def toutes_les_sources(conn, jumeau_id):
     """Toutes les sources du jumeau, de tout type (code et sources branchées), pour en faire des lecteurs."""
     with conn.cursor(row_factory=dict_row) as cur:

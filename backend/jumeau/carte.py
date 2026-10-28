@@ -17,7 +17,7 @@ def _objets(claims, predicat):
             for c in claims if c["predicat"] == predicat and c["statut"] != "CONTESTED"][:MAX_PAR_RUBRIQUE]
 
 
-def carte(jumeau, sources, claims, relations, noms):
+def carte(jumeau, sources, claims, relations, noms, ci=None):
     """`relations` : documents du Mesh (source, cible, etat) ; `noms` : id de jumeau → nom affichable."""
     voisins = []
     for r in relations:
@@ -29,7 +29,7 @@ def carte(jumeau, sources, claims, relations, noms):
                         "etat": r.get("etat")})
     return {
         "id": jumeau["id"], "nom": jumeau["nom"], "mission": jumeau.get("mission"), "domaine": jumeau.get("domaine"),
-        "equipe": jumeau.get("equipe"),
+        "equipe": jumeau.get("equipe"), "ci": ci,
         "capacites": _objets(claims, "REALISE_CAPACITE"),
         "offre": _objets(claims, "EXPOSE"),
         "echanges": _objets(claims, "ECHANGE_AVEC"),
@@ -41,7 +41,8 @@ def carte(jumeau, sources, claims, relations, noms):
 def texte(c):
     """La carte en quelques lignes, pour le prompt de Flore ou d'un autre gardien."""
     lignes = [f"### {c['nom']} [{c['id']}]", f"Mission : {c.get('mission') or 'non déclarée'}"
-              + (f" · domaine {c['domaine']}" if c.get("domaine") else "")]
+              + (f" · domaine {c['domaine']}" if c.get("domaine") else "")
+              + (f" · CMDB {c['ci']}" if c.get("ci") else "")]
     for titre, cle in (("Sait faire", "capacites"), ("Offre", "offre"), ("Échange avec", "echanges")):
         if c[cle]:
             lignes.append(f"{titre} : " + " ; ".join(c[cle]))
@@ -62,6 +63,7 @@ async def carte_du_jumeau(conn, db, jumeau_id, visibles=None):
         relations = [r for r in relations if ({r["source"], r["cible"]} - {jumeau_id}) <= visibles]
     autres = {r["source"] for r in relations} | {r["cible"] for r in relations}
     noms = {j["id"]: j["nom"] async for j in db.jumeaux.find({"id": {"$in": sorted(autres)}}, {"_id": 0, "id": 1, "nom": 1})}
-    sources, claims = await asyncio.to_thread(
-        lambda: (depot.sources_du_jumeau(conn, jumeau_id), connaissance.connaissances(conn, jumeau_id, limite=1000)))
-    return carte(jumeau, sources, claims, relations, noms)
+    sources, claims, ci = await asyncio.to_thread(
+        lambda: (depot.sources_du_jumeau(conn, jumeau_id), connaissance.connaissances(conn, jumeau_id, limite=1000),
+                 depot.ci_du_jumeau(conn, jumeau_id)))
+    return carte(jumeau, sources, claims, relations, noms, ci)

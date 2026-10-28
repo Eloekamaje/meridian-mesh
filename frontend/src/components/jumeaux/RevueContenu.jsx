@@ -116,7 +116,7 @@ function Presentation({ examen, onTranchee }) {
         {(p.phrases.length ? p.phrases : [examen.identite?.mission || "Présentation en préparation par le gardien du jumeau."])
           .map((t, i) => <p key={i} className={i === 0 ? "mt-1.5 text-base font-semibold text-[#F2F6F8]" : "mt-1 text-sm text-[#CBD5E1]"}>{t}</p>)}
         <p className="mt-2 font-code text-[11px] text-[#94A3B8]">
-          Statut : {p.reperes.statut} · Responsable : {p.reperes.responsable} · Criticité : {p.reperes.criticite}
+          Statut : {p.reperes.statut} · Responsable : {p.reperes.responsable} · Criticité : {p.reperes.criticite}{p.reperes.cmdb && ` · CMDB : ${p.reperes.cmdb}`}
         </p>
       </section>
       {p.journee && (

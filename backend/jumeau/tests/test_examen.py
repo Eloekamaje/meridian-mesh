@@ -36,7 +36,8 @@ def test_presentation_par_niveaux():
     e = examen.depuis_connaissances({"nom": "X", "statut": "observation", "proprietaire": "Équipe Y"}, CLAIMS, FICHE)
     p = e["presentation"]
     assert p["phrases"] == ["Une maquette qui montre le suivi de dossiers.", "Elle sert à convaincre des évaluateurs."]
-    assert p["reperes"] == {"statut": "en observation", "responsable": "Équipe Y", "criticite": "faible — aucune donnée réelle"}
+    assert p["reperes"] == {"statut": "en observation", "responsable": "Équipe Y", "criticite": "faible — aucune donnée réelle",
+                            "cmdb": "non rattachée"}
     assert p["journee"] == "Une agente ouvre un dossier. Un réviseur le vérifie."
     assert [(b["cle"], b["items"]) for b in p["blocs"]] == [
         ("faire", ["Ouvrir un dossier hors ligne"]), ("regles", ["Pas d'orientation sans consentement"]),

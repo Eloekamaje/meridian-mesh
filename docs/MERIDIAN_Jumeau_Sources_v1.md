@@ -77,3 +77,18 @@ version courante ; le gardien relit les sources qui ont avancé.
 Confluence Cloud (API REST v2) ou Data Center : jeton déposé dans Vault (connexion réutilisable, comme GitHub),
 espace choisi dans la commande, pages converties en lignes de texte, version = numéro de version de la page,
 recherche par CQL limitée à l'espace. Jira, Datadog, ServiceNow suivront le même contrat.
+
+# 8. Deux ancres : identité et substance (décision du 2026-10-27)
+
+- **Ancre d'identité : l'élément de configuration de la CMDB** (périmètre de la source ServiceNow), pour tous les
+  jumeaux, avec ou sans code : identité stable, responsable, criticité, relations déclarées. Elle dit *qui* est
+  l'application, pas *ce qu'elle fait* (déclarative, peut être périmée).
+- **Ancre de substance : ce que l'application fait pour la banque**, la première disponible dans cet ordre : le code
+  de la banque (y compris autour d'un progiciel : intégrations, extensions, paramétrage scripté) ; le paramétrage
+  exporté et versionné ; les interfaces observées (comportement) ; le schéma de données limité aux tables utilisées ;
+  la documentation.
+- **Naissance** : un élément de configuration et au moins une source de substance ; le code n'est plus obligatoire.
+  Un jumeau sans code le dit (« substance : interfaces observées ») et ses connaissances restent M2 tant qu'une
+  seconde source ne les confirme pas.
+- **Ancrage** : chaque connaissance issue d'une source se rattache, quand il existe, à un élément de l'ancre de
+  substance (fichier ou symbole du code) ; le gardien lit d'abord l'ancre de substance, puis rattache le reste.

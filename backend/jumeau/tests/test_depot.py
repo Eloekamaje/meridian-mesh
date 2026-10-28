@@ -173,3 +173,11 @@ def test_source_confluence_declaree_puis_lue_par_son_lecteur(conn):
     lignes = conn.execute("SELECT type, secret_ref FROM source WHERE jumeau_id = 'tbt' ORDER BY nom").fetchall()
     assert lignes == [("CONFLUENCE", "vault:r"), ("GIT", None)]
     assert [s["nom"] for s in depot.sources_du_jumeau(conn, "tbt")] == ["tbt-repo"]  # le code reste le code
+
+
+def test_ci_du_jumeau_est_le_perimetre_de_sa_source_servicenow(conn):
+    depot.enregistrer(conn, JUMEAU, SOURCE, [claim("motor")], ACTIVITE)
+    assert depot.ci_du_jumeau(conn, "tbt") is None
+    depot.declarer_source(conn, JUMEAU, {"type": "SERVICENOW", "nom": "servicenow-TBT-PROD", "emplacement": "TBT-PROD",
+                                         "curseur": None, "url": "https://x.service-now.com/", "secret_ref": "vault:x"})
+    assert depot.ci_du_jumeau(conn, "tbt") == "TBT-PROD"

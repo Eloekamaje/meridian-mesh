@@ -34,3 +34,9 @@ def test_carte_en_texte_court_pour_un_prompt():
     assert "Mission : Traite les virements" in texte
     assert "Voisins : Fraude (vers, confirmee) ; Comptes (depuis, validation)" in texte
     assert len(texte) < 800
+
+
+def test_carte_porte_l_ancre_d_identite_cmdb():
+    c = carte.carte(JUMEAU, SOURCES, CLAIMS, RELATIONS, NOMS, ci="TBT-PROD")
+    assert c["ci"] == "TBT-PROD" and "CMDB TBT-PROD" in carte.texte(c)
+    assert "CMDB" not in carte.texte(carte.carte(JUMEAU, SOURCES, CLAIMS, RELATIONS, NOMS))

@@ -36,7 +36,8 @@ def depuis_connaissances(jumeau, claims, fiche, contradictions=()):
     presentation = {
         "phrases": [t for t in trente if not t.lower().startswith("criticité")],
         "reperes": {"statut": STATUTS.get(jumeau.get("statut"), jumeau.get("statut") or "inconnu"),
-                    "responsable": jumeau.get("proprietaire") or "à confirmer", "criticite": criticite},
+                    "responsable": jumeau.get("proprietaire") or "à confirmer", "criticite": criticite,
+                    "cmdb": jumeau.get("ci") or "non rattachée"},
         "journee": " ".join(f["journee"]["texte"] + f["journee"]["puces"]),
         "blocs": [{"cle": cle, "titre": titre, "items": f[cle]["puces"] or f[cle]["texte"]}
                   for cle, titre in comprendre.PRESENTATION if cle in ("faire", "regles", "garde", "avec")],

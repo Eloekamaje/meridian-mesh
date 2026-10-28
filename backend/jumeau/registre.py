@@ -33,6 +33,7 @@ def document(j):
                             "nom": f"Dépôt {d['nom']}" + (f" · {d['branche']}" if d.get("branche") else "")
                                    + f" · {d['curseur'][:12]}"} for d in j.get("liste_depots") or []],
         "reel": True,
+        "ci": j.get("ci"),  # ancre d'identité (CMDB), quand la source ServiceNow est branchée
     }
 
 
@@ -42,6 +43,8 @@ def jumeaux_reels(conn):
             """SELECT j.id, j.nom, j.equipe, j.domaine, j.mission, s.curseur,
                       (SELECT count(*) FROM claim c WHERE c.jumeau_id = j.id AND c.valide_jusqua IS NULL) AS claims,
                       (SELECT count(*) FROM source WHERE jumeau_id = j.id AND type = 'GIT') AS depots,
+                      (SELECT emplacement FROM source WHERE jumeau_id = j.id AND type = 'SERVICENOW'
+                       ORDER BY id LIMIT 1) AS ci,
                       (SELECT json_agg(json_build_object('nom', nom, 'branche', branche, 'curseur', curseur)
                                        ORDER BY nom) FROM source WHERE jumeau_id = j.id AND type = 'GIT') AS liste_depots
                FROM jumeau j
