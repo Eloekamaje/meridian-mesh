@@ -19,14 +19,14 @@ relevé est la première publication qui s'appuie dessus.
 
 | Élément | Valeur |
 |---|---|
-| Commande | `python -m jumeau.latence --repetitions 1` |
+| Commande | `cd backend && .venv/bin/python -m jumeau.latence --repetitions 1` |
 | Modèle | `deepseek-chat`, API hébergée (`api.deepseek.com`) |
 | Repères | les quatre questions de `jumeau/latence.py` |
 | Objectifs du banc | 2,0 s (simple) · 5,0 s (analyse) |
 | Chemin | celui de l'écran : Flore diffuse au fil de l'eau (`emit`) |
 | Répétitions | **1** — voir §4 |
 
-# 2. Résultats
+# 2. Résultats (relevé du 2026-10-28, une passe)
 
 | Classe | Question | Réponse complète | **Premier mot** | Objectif |
 |---|---|---|---|---|
@@ -44,7 +44,7 @@ Détail des phases (médiane de la passe unique) :
 | comment fonctionne la publication… | 0,0 | 13,8 | 1,6 | 1,9 | 0,0 |
 | illustre-moi avec un schéma… | 0,0 | 18,7 | 0,4 | 1,9 | 0,0 |
 
-# 3. Ce que ces chiffres disent
+# 3. Ce que ces chiffres disent (relevé du 2026-10-28)
 
 - **Une seule question sur quatre tient l'objectif** sur le premier mot (1,5 s < 2,0 s). Une seconde l'approche
   (0,8 s) mais son premier mot est un préambule : la réponse utile arrive bien plus tard.
@@ -65,7 +65,10 @@ Pour publier une tendance : `--repetitions 5` au moins, et une comparaison entre
 Le coût est réel (chaque passe appelle le modèle une fois par question, plus une relecture), d'où la répétition
 unique de ce premier relevé.
 
-# 5. Comment refaire ce relevé
+# 5. Comment obtenir les chiffres
+
+Les chiffres de ce relevé se reproduisent avec la commande de la section 1 (`--repetitions 1`, relevé du 2026-10-28).
+Pour refaire le relevé en version publiable :
 
 ```bash
 cd backend && set -a && . ./.env && set +a

@@ -11,6 +11,8 @@ d'index, sessions persistées), chacun avec ses preuves `fichier:ligne` ou ses `
 
 **Tagline :** **DÉCOUVRIR · COMPRENDRE · DÉCIDER**
 
+**Règle des chiffres :** chaque chiffre mouvant de ce document se reproduit par une commande de la section « Comment obtenir les chiffres », ou porte la date de son relevé.
+
 ---
 
 # 0. Le diagnostic en trois phrases
@@ -22,7 +24,7 @@ qu'on sait, c'est le défaut le plus grave possible, et c'est aussi le moins co�
 
 Deux règles gouvernent tout ce plan :
 
-1. **Une correction n'existe que si un test échoue avant et passe après.** Le dépôt a 442 tests verts ; la
+1. **Une correction n'existe que si un test échoue avant et passe après.** Le dépôt a des tests verts (commande T1) ; la
    discipline est déjà là, il suffit de l'appliquer aux promesses.
 2. **On n'ajoute aucune capacité avant la fin du lot 1.** Pas de MCP, pas de sous-agents parallèles, pas de nouvelle
    interface, pas de nouveau prédicat. Chaque capacité ajoutée multiplie la surface non vérifiée.
@@ -33,7 +35,7 @@ Deux règles gouvernent tout ce plan :
 
 | Lot | État | Preuve |
 |---|---|---|
-| **0 — Honnêteté** | **fait** | `jumeau/tests/test_honnetete.py` (10 tests) + `frontend/src/lib/marqueRelecture.test.js` et `origineFlore.test.js` (5 tests) ; suite `jumeau` : **457 passés, 0 échec** |
+| **0 — Honnêteté** | **fait** | `jumeau/tests/test_honnetete.py` + `frontend/src/lib/marqueRelecture.test.js` et `origineFlore.test.js` (commande T2) ; suite `jumeau` : **0 échec** (commande T1 ; relevé du 2026-10-28 : 457 passés) |
 | L0.1 `relu` conditionnel | fait | `ETATS_RELECTURE` ; une relecture en panne s'affiche « non relu » |
 | L0.2 `corrige` = texte changé | fait | `reviser()` rend `corrige` faux si la révision échoue ou ne change rien |
 | L0.3 « non relu » à l'écran | fait | `MarqueRelecture` lit `relecture_etat` |
@@ -41,29 +43,54 @@ Deux règles gouvernent tout ce plan :
 | L0.5 réponses de démonstration marquées | fait | `jumeau/origine.py` + `MarqueOrigine` ; les indicateurs écrits à la main ne sont plus affichés |
 | L0.6 premier mot horodaté | fait | `durees.premier_texte` posé par `flux.en_flux` ; « 2 s » retiré des Écarts |
 | **0bis — L'index** | **fait, un point ouvert** | |
-| L0bis.1 preuve = ligne d'appel | fait | `appels.ligne_d_appel` exige une construction d'appel ; sur Conduit, **56 des 176 lignes** que l'ancienne règle retenait ne contenaient aucun appel |
+| L0bis.1 preuve = ligne d'appel | fait | `appels.ligne_d_appel` exige une construction d'appel ; sur Conduit (relevé du 2026-10-28), **56 des 176 lignes** que l'ancienne règle retenait ne contenaient aucun appel |
 | L0bis.2 JSON + résolution | fait | `search_graph` et `trace_path` en `format="json"` ; l'arête porte `resolution` (lsp/heuristic) et `confiance` |
 | L0bis.3 index reconstructible | **partiel** | l'ingestion réindexe déjà à chaque passe, et une relecture impossible dit maintenant quoi faire (`ingerer.py`) ; **reste ouvert** : versionner l'index avec le commit plutôt que de le laisser dans un cache indexé par chemin absolu |
 | L0bis.4 index absent signalé | fait | `cbm.indexe()` ; Flore dit « index de code de ce dépôt non disponible, il se reconstruit à la prochaine ingestion » au lieu d'« Outil indisponible » |
-| **1 — Épistémologie** | **fait** (un point clos par un constat) | suite `jumeau` avec Postgres : **552 passés, 0 échec** |
+| **1 — Épistémologie** | **fait** (un point clos par un constat) | suite `jumeau` avec Postgres : **0 échec** (commande T1 ; relevé du 2026-10-28 : 552 passés) |
 | L1.1 recette non circulaire | fait | `adaptateur` n'appelle plus `recettes` ; la preuve vient de l'index (`start_line`) ou d'une règle de déclaration propre, la recette juge ensuite — elle peut donc le contredire |
 | L1.2 le déterministe ne s'efface plus | fait | la recette s'exécute même avec plusieurs systèmes ; deux systèmes dont l'extrait passe donnent `recoupe` **déterministe** |
-| L1.3 M3 hors du dépôt | fait | `systeme_de_preuve` = type de la source, au Python **et** en SQL ; **les 9 M3 sont tombées à M2** (vérifié sur la base réelle : 546 M2, 0 M3) |
+| L1.3 M3 hors du dépôt | fait | `systeme_de_preuve` = type de la source, au Python **et** en SQL ; **les 9 M3 sont tombées à M2** (relevé du 2026-10-28 sur la base réelle, commande S1 : 546 M2, 0 M3) |
 | L1.4 concordance déterministe | **clos avec un constat** | `copie` est calculée (recouvrement de mots ≥ 0,85) et ne peut que retirer le recoupement. Au-delà, la comparaison lexicale **ne peut pas** servir de veto : une ligne de code ne répète pas les mots d'une phrase métier, et deux tests de recoupement légitime sont tombés quand je l'ai essayé. L'observation (« tel système ne nomme pas l'énoncé ») est enregistrée avec le verdict, jamais utilisée comme condition |
 | L1.5 preuves remplacées | fait | une preuve du même fichier remplace l'ancienne ; `recouper` refuse dès qu'un système est déjà représenté (plus d'empilement) |
-| L1.6 aucun état manquant | fait | état `en_attente` posé à la naissance (trigger), maturité recalculée à la clôture : **0 connaissance sans état** (557 rattrapées), **0 M3 close** |
+| L1.6 aucun état manquant | fait | état `en_attente` posé à la naissance (trigger), maturité recalculée à la clôture : **0 connaissance sans état** (S3), **0 M3 close** (S7) ; 557 rattrapées au relevé du 2026-10-28 |
 | L1.7 juge distinct | fait | `JUMEAU_MODELE_JUGE` sépare le modèle du juge ; une décision manquante est comptée (`pannes`) dans le bilan de la passe et journalisée en avertissement |
-| **1bis — La compréhension** | **fait, un point refusé** | `jumeau/tests/test_prouvables.py` (4 tests) |
+| **1bis — La compréhension** | **fait, un point refusé** | `jumeau/tests/test_prouvables.py` (commande T1) |
 | L1bis.1 extracteur `cross_service` | **non fait, mesuré** | voir §2bis : **aucun** appel HTTP sortant vers une application nommée dans les quatre dépôts ; le mode `cross_service` de l'index rend la même liste que `calls` |
-| L1bis.2 prédicats non prouvables | fait | règle d'autorité : une phrase sur le métier prouvée **uniquement par du code** reste M1. Base réelle : **398 faits établis, 148 hypothèses** (APPLIQUE_REGLE 45, REALISE_CAPACITE 33, DETIENT 28, SERT_ACTEUR 26, ECHANGE_AVEC 15, RISQUE 1) |
-| **2 — Démonstration** | **fait, un point partiel** | suite `jumeau` avec Postgres : **552 passés, 0 échec** |
+| L1bis.2 prédicats non prouvables | fait | règle d'autorité : une phrase sur le métier prouvée **uniquement par du code** reste M1. Base réelle (relevé du 2026-10-28, commande S2) : **398 faits établis, 148 hypothèses** (APPLIQUE_REGLE 45, REALISE_CAPACITE 33, DETIENT 28, SERT_ACTEUR 26, ECHANGE_AVEC 15, RISQUE 1) |
+| **2 — Démonstration** | **fait, un point partiel** | suite `jumeau` avec Postgres : **0 échec** (commande T1) |
 | L2.1 deux univers distincts | fait | l'API porte `origine: reel \| demonstration` ; l'Atlas cercle en pointillé les jumeaux de démonstration ; la page Jumeaux a la vue « Nés d'une vraie source » |
-| L2.2 vérité de référence | fait | `jumeau/references/<jumeau>.json` ; 5 couples pour Conduit, écrits à la main. L'exactitude n'est plus `null` dès qu'un jumeau a ses références |
+| L2.2 vérité de référence | fait | `jumeau/references/<jumeau>.json` ; des couples pour Conduit (commande X4), écrits à la main. L'exactitude n'est plus `null` dès qu'un jumeau a ses références |
 | L2.3 chiffres inventés | fait | aucun indicateur d'un chemin non calculé n'est affiché (`origine.ORIGINES_SANS_MESURE`) ; la couverture de situation du gardien ne ment plus |
-| L2.4 banc publié | fait | le banc passe par le chemin de l'écran et chronomètre le premier mot ; relevé daté dans `MERIDIAN_Latence_2026-10-28.md` (1 question sur 4 tient l'objectif, aucune réponse complète sous 5 s) |
-| L2.5 connecteurs | fait | 6 branchés, 6 refusés explicitement (`non_branche`) ; le catalogue expose `branche` |
+| L2.4 banc publié | fait | le banc passe par le chemin de l'écran et chronomètre le premier mot ; relevé daté dans `MERIDIAN_Latence_2026-10-28.md` (relevé du 2026-10-28 : 1 question sur 4 tient l'objectif, aucune réponse complète sous 5 s) |
+| L2.5 connecteurs | fait | les connecteurs branchés (commande X1) ; les autres sont refusés explicitement (`non_branche`) ; le catalogue expose `branche` |
 | L2.6 découverte des sources | fait | la liste écrite d'avance est retirée : la découverte se déclare `non_branchee` |
-| L2.7 couverture calculée | fait | part de ce qui est **établi** : Conduit 49 %, Gestion des articles 83 %, Méridian 76 % — au lieu de 32 % pour tous |
+| L2.7 couverture calculée | fait | part de ce qui est **établi** (commande S5) : relevé du 2026-10-28, Conduit 49 %, Gestion des articles 83 %, Méridian 76 % — au lieu de 32 % pour tous |
+
+---
+
+# Comment obtenir les chiffres
+
+Chaque chiffre mouvant de ce document porte une référence de cette section ; les autres sont des relevés datés.
+
+- **T1** — suite `jumeau` (Postgres requis) : `cd backend && .venv/bin/python -m pytest jumeau/tests -q -n 0`
+- **T2** — tests frontend du lot 0 : `cd frontend && CI=true npx craco test --watchAll=false src/lib`
+- **S0** — toute requête S se lance ainsi : `psql "$JUMEAU_PG_DSN" -c "…"` (le DSN reste dans l'environnement, jamais dans un document)
+- **S1** — connaissances courantes par maturité : `SELECT maturite, count(*) FROM claim WHERE valide_jusqua IS NULL GROUP BY 1 ORDER BY 1`
+- **S2** — faits établis et hypothèses : `SELECT predicat_prouvable(predicat) AS etabli, count(*) FROM claim WHERE valide_jusqua IS NULL GROUP BY 1`
+- **S3** — connaissances sans état : `SELECT count(*) FROM claim c WHERE NOT EXISTS (SELECT 1 FROM verification v WHERE v.claim_id = c.id)`
+- **S4** — connaissances validées par l'équipe : `SELECT count(*) FROM claim WHERE statut = 'ACCEPTED'`
+- **S5** — couverture par jumeau : `SELECT j.id, round(100.0 * count(c.id) FILTER (WHERE predicat_prouvable(c.predicat)) / nullif(count(c.id), 0)) AS couverture FROM jumeau j LEFT JOIN claim c ON c.jumeau_id = j.id AND c.valide_jusqua IS NULL GROUP BY j.id`
+- **S6** — jumeaux réels : `SELECT count(*) FROM jumeau`
+- **S7** — connaissances closes en M3 : `SELECT count(*) FROM claim WHERE valide_jusqua IS NOT NULL AND maturite = 'M3'`
+- **X1** — connecteurs branchés : `cd backend && .venv/bin/python -c "from jumeau import connecteurs as c; print(sum(bool(c.connecteur_branche(k)) for k in c.SYSTEME_DU_CONNECTEUR))"`
+- **X2** — index de code des dépôts : `codebase-memory-mcp cli --quiet list_projects`
+- **X3** — latence : `cd backend && .venv/bin/python -m jumeau.latence --repetitions 5` (voir `MERIDIAN_Latence_2026-10-28.md`)
+- **X4** — couples de référence de Conduit : `python3 -c "import json; print(len(json.load(open('backend/jumeau/references/conduit.json'))))"`
+- **X5** — méthodes : `ls backend/jumeau/methodes/*.md | wc -l`
+
+Les relevés datés (constats d'audit du 2026-10-28) ne se rejouent pas à l'identique : ils disent ce qui était vrai ce jour-là.
+
 
 ---
 
@@ -94,8 +121,8 @@ ouvre ses bases SQLite en écriture (verrous, WAL) même pour une simple lecture
 hors du dépôt, il échoue sur `could not load saved runtime settings` ; exécuté avec un accès normal, il répond :
 
 ```bash
-$ codebase-memory-mcp cli --quiet list_projects        # 6 projets
-$ cbm.interroger("…copies-conduit")                    # {'routes': 27, 'paquets': 0, 'variables': 2, 'images': 1}
+$ codebase-memory-mcp cli --quiet list_projects        # relevé du 2026-10-28 : 6 projets (commande X2)
+$ cbm.interroger("…copies-conduit")                    # relevé du 2026-10-28 : {'routes': 27, 'paquets': 0, 'variables': 2, 'images': 1}
 ```
 
 Le cache de configuration avait d'ailleurs **zéro ligne** : il n'était pas corrompu, il était illisible faute de
@@ -108,9 +135,9 @@ droits d'écriture. Il n'y a donc **pas de P0 « moteur cassé »**. Restent qua
 | L0bis.3 | **Rendre l'index reconstructible** : il vit dans un cache opaque indexé par **chemin absolu** (`index_code = home-majella-…-meridian-mesh`) ; un déménagement de répertoire le rend introuvable. Réindexer depuis le commit, ou versionner l'index avec le dépôt | `python -m jumeau.ingerer --depot <un des 4>` réussit sur une machine neuve |
 | L0bis.4 | **Dire quand l'index manque** au lieu de laisser les outils répondre « Outil indisponible » (`agent.py:211-213`) | la fiche du jumeau, et Flore, signalent un index absent |
 
-**Constat annexe, à verser au lot 1bis.** `cbm.interroger` rend `paquets: 0` sur un dépôt qui en a douze : le binaire
-ne relie pas les dépendances de `pyproject.toml`. Les 243 `DEPEND_DE` de la base viennent donc de `manifestes.py`, le
-contournement de 53 lignes — c'est-à-dire que **la seule famille de connaissances « vérifiée » par recette est produite
+**Constat annexe, à verser au lot 1bis.** `cbm.interroger` rend `paquets: 0` sur un dépôt qui en déclare douze : le binaire
+ne relie pas les dépendances de `pyproject.toml`. Les 243 `DEPEND_DE` de la base (relevé du 2026-10-28) viennent donc de `manifestes.py`, le
+contournement de 53 lignes (relevé du 2026-10-28, `wc -l backend/jumeau/manifestes.py`) — c'est-à-dire que **la seule famille de connaissances « vérifiée » par recette est produite
 hors de l'index**. Cela renforce L1bis.1 plutôt que L0bis.
 
 ---
@@ -130,7 +157,7 @@ confiance ou un pipeline annoté.
 ```
 
 La recette ne peut donc jamais échouer sur ces connaissances : elle rejoue la règle qui a fabriqué la preuve. Les 394
-connaissances « vérifiées » ne portent aucune information de confiance.
+connaissances « vérifiées » (relevé du 2026-10-28) ne portent aucune information de confiance.
 
 **Correction.** L'extracteur choisit sa preuve selon l'index de code (cbm), sans appeler `recettes`. La recette
 vérifie ensuite, indépendamment. Les trois autres prédicats passent par `localiser()` (`adaptateur.py:15`), qui
@@ -153,7 +180,7 @@ prédicats couverts. Le juge ne tranche que là où aucune recette ne peut s'ex�
 ## L1.3 — L'indépendance devient une propriété, pas une extension de fichier
 
 **Constat.** `recoupement.py:28` et la fonction SQL `systeme_de_preuve` déclarent « documentation » tout `.md` du
-dépôt. Les **9 connaissances M3** de la base sont toutes sur le jumeau `meridian`, et leur « second système
+dépôt. Les **9 connaissances M3** de la base (relevé du 2026-10-28) sont toutes sur le jumeau `meridian`, et leur « second système
 indépendant » est **le README ou le fichier de méthode du même dépôt, au même commit**. Exemple : connaissance 9332,
 `MOTS_FICHE = 300` dans `gardien.py` face à « 300 mots au plus » dans `methodes/comprendre-application.md`.
 
@@ -181,10 +208,10 @@ juge répond « concordantes ».
 ## L1.5 — Les preuves se remplacent, elles ne s'empilent plus
 
 **Constat.** `a_verifier` construit l'empreinte de **toutes** les preuves de soutien, tous commits confondus.
-**225 connaissances courantes** portent des preuves de plusieurs commits ; une en porte **859**
+**225 connaissances courantes** (relevé du 2026-10-28) portent des preuves de plusieurs commits ; une en porte **859**
 (`REACT_APP_BACKEND_URL`). Conséquences : M3 peut s'obtenir en appariant une ligne du commit A avec un document du
 commit B ; la fraîcheur des preuves perd son sens ; le juge reçoit des dizaines de versions historiques du même
-fichier ; et la boucle re-vérifie sans fin (3 504 lignes de vérification pour 394 connaissances, ≈ 9 passes chacune).
+fichier ; et la boucle re-vérifie sans fin (relevé du 2026-10-28 : 3 504 lignes de vérification pour 394 connaissances, ≈ 9 passes chacune).
 
 **Correction.** Une preuve nouvelle sur le même `(claim, source, chemin)` **remplace** l'ancienne (colonne
 `remplace_par`, ou clôture de l'ancienne) ; l'empreinte ne porte que sur les preuves courantes. Migration des 225
@@ -195,8 +222,8 @@ par passe devient stable ; une requête `SELECT` le prouve.
 
 ## L1.6 — Aucune connaissance sans état, aucune maturité orpheline
 
-**Constat.** 50 des 546 connaissances courantes n'ont **aucune** ligne `verification`, alors que le document affirme
-que chacune a un état explicite. Et 16 connaissances **clôturées** portent encore M3 : la fermeture ne recalcule pas
+**Constat.** 50 des 546 connaissances courantes (relevé du 2026-10-28) n'ont **aucune** ligne `verification`, alors que le document affirme
+que chacune a un état explicite. Et 16 connaissances **clôturées** (relevé du 2026-10-28) portent encore M3 : la fermeture ne recalcule pas
 la maturité.
 
 **Correction.** Une ligne `verification` en `etat = 'en_attente'` est créée à la naissance de la connaissance
@@ -208,7 +235,7 @@ n'est M3.
 ## L1.7 — Le juge n'est plus l'auteur, et une panne ne disparaît plus
 
 **Constat.** Même modèle, même fournisseur, même clé pour l'auteur et le juge. Et un lot en panne abandonne
-**12 connaissances en silence** : un `warning`, un `en_attente`, aucune remontée.
+**12 connaissances en silence** (relevé du 2026-10-28) : un `warning`, un `en_attente`, aucune remontée.
 
 **Correction.** Le juge tourne sur un modèle d'une autre famille (ou d'un autre fournisseur) ; l'échec d'un lot est
 compté dans le bilan de la passe et remonté dans la revue. `juge.py:72` explicite `tools=[]` comme
@@ -232,7 +259,7 @@ variable de configuration » : ce serait exactement le genre de connaissance cre
 **Constat, mesuré en base.** L'ingestion ne produit que **quatre familles** : routes, paquets, variables, images
 (`cbm.py:8-14`). Toute la couche qui ressemble à de la compréhension est **écrite par le modèle**, jamais extraite :
 
-| Prédicat | Origine | Nb (courantes) |
+| Prédicat | Origine | Nb (courantes, relevé du 2026-10-28 ; commande S2) |
 |---|---|---|
 | `DEPEND_DE`, `EXPOSE`, `LIT_VARIABLE`, `EXECUTE_IMAGE` | `INGESTION` | **398** |
 | `APPLIQUE_REGLE`, `REALISE_CAPACITE`, `DETIENT`, `SERT_ACTEUR`, `ECHANGE_AVEC`, `RISQUE` | **`CONVERSATION`** | **148** |
@@ -260,13 +287,13 @@ quarante-deux jumeaux inventés.**
 
 | # | Correction | Critère |
 |---|---|---|
-| L2.1 | Séparer visiblement les deux univers : démonstration (Mongo, 42 jumeaux de seed) et réel (Postgres, 4 jumeaux). Aucune vue ne les mélange sans le dire | l'Atlas affiche son origine ; un jumeau de démonstration porte un badge |
-| L2.2 | Une vérité de référence pour l'évaluation : faute de connaissances validées (il y en a **une**), le jeu d'exactitude ne peut pas se déduire du jumeau. Écrire les questions/réponses attendues à la main, 5 par jumeau | `evaluation.scores.exactitude` n'est plus `null` |
+| L2.1 | Séparer visiblement les deux univers : démonstration (Mongo, 42 jumeaux de seed au relevé du 2026-10-28) et réel (Postgres, commande S6 : 4 au même relevé). Aucune vue ne les mélange sans le dire | l'Atlas affiche son origine ; un jumeau de démonstration porte un badge |
+| L2.2 | Une vérité de référence pour l'évaluation : faute de connaissances validées (il y en a **une** au relevé du 2026-10-28, commande S4), le jeu d'exactitude ne peut pas se déduire du jumeau. Écrire les questions/réponses attendues à la main, 5 par jumeau | `evaluation.scores.exactitude` n'est plus `null` |
 | L2.3 | Supprimer ou calculer les indicateurs inventés (`confiance: 84, couverture: 76, fraicheur: "il y a 3 min"`) | aucun chiffre affiché sans requête qui le produit |
 | L2.4 | Publier le banc : premier texte et total, p50/p95, relevé daté et versionné dans le dépôt | plus aucun chiffre de performance cité hors du banc |
-| L2.5 | Les **12 connecteurs** de l'interface : 5 ont une implémentation, et `_simuler_test` (`server.py:1063-1074`) rend `{"statut": "prete"}` sans le moindre paquet réseau — il peut donc déclarer prête une source PostgreSQL qui n'existe pas | un connecteur non implémenté est dit « non branché » |
+| L2.5 | Au relevé du 2026-10-28, les **12 connecteurs** de l'interface : 5 ont une implémentation, et `_simuler_test` (`server.py:1063-1074`) rend `{"statut": "prete"}` sans le moindre paquet réseau — il peut donc déclarer prête une source PostgreSQL qui n'existe pas | un connecteur non implémenté est dit « non branché » |
 | L2.6 | La « découverte automatique des sources » est une **liste codée en dur** (`server.py:1240-1255` : « PostgreSQL Settlement », « Oracle Clearing »…) | la découverte rend ce que les sources déclarent, ou rien |
-| L2.7 | `registre.couverture` est une formule (`min(20 + 12*nb_sources, 88)`) appliquée avec `couverture(1)` : **tout jumeau réel affiche 32 %** quel que soit son contenu | la couverture est calculée sur les connaissances vérifiées |
+| L2.7 | `registre.couverture` est une formule (`min(20 + 12*nb_sources, 88)`) appliquée avec `couverture(1)` : **tout jumeau réel affichait 32 %** (relevé du 2026-10-28) quel que soit son contenu | la couverture est calculée sur les connaissances vérifiées |
 
 ---
 
@@ -280,7 +307,7 @@ la même machine défaillante, mais à l'échelle d'un vrai Confluence.
 2. **Le positionnement.** Le document d'écarts mise sur la compréhension et le Mesh ; l'actif réel est la **trace de
    ce que l'entreprise croit sur son SI, qui l'a confirmé, et quand la croyance a vieilli**. C'est un produit de
    conformité et d'audit (E-23, B-13, journal d'audit) — vendable plus tôt, et cohérent avec la contrainte bancaire.
-3. **Le ratio de gouvernance.** 546 connaissances, **1 validation**. Le bon indicateur n'est pas « combien produites »
+3. **Le ratio de gouvernance.** 546 connaissances courantes et **une validation** (relevé du 2026-10-28 ; commandes S1 et S4). Le bon indicateur n'est pas « combien produites »
    mais « combien exigent une attention humaine ». Tant que ce ratio n'est pas d'un ordre de grandeur soutenable, le
    produit crée le travail qu'il prétend supprimer.
 4. **Les plafonds silencieux.** `MAX_ESPACES = 250` (Confluence), `MAX_PROJETS = 250` (Jira), `MAX_CI = 250`
@@ -319,7 +346,7 @@ Le plan détruit une partie du récit ; il ne touche pas à ce qui fait la valeu
 - la **recherche agentique** plutôt que les embeddings — le choix est juste et défendu ;
 - les **lecteurs réels** (HTTP authentifié, refus d'hôte non public, version de document) — il ne leur manque qu'un
   vrai compte ;
-- les **442 tests verts** — c'est l'infrastructure qui rend ce plan exécutable.
+- les **tests verts** (commande T1) — c'est l'infrastructure qui rend ce plan exécutable.
 
 ---
 
@@ -349,7 +376,7 @@ Trois conséquences, dans l'ordre d'importance :
    périmé et non reconstructible. Sans le lot 0bis, les lots 1 et 1bis répareraient la vérification d'un moteur qui
    ne peut plus apprendre.
 2. **Le lot 1bis devient aussi important que le lot 1.** On savait que la vérification était faible ; on sait
-   maintenant **pourquoi** : 148 des 546 connaissances courantes ne viennent pas du code mais du modèle. Réparer le
+   maintenant **pourquoi** : 148 des 546 connaissances courantes (relevé du 2026-10-28) ne viennent pas du code mais du modèle. Réparer le
    juge sans réparer l'extraction reviendrait à mieux noter des affirmations que personne n'a extraites.
 3. **Le lot 3 s'alourdit avant la première source réelle.** Droits par lecteur, minimisation (IBAN, noms), plafonds
    silencieux et multi-tenant ne sont pas des finitions : ce sont des conditions d'entrée chez un client bancaire.
@@ -362,7 +389,7 @@ L'audit du moteur concluait que l'index était en panne, que les cinq outils de 
 configuration était illisible. **La vérification montre que c'était un artefact d'environnement, pas un défaut du
 produit** : le binaire ouvre ses bases SQLite en écriture même pour lire, donc un montage en lecture seule le fait
 échouer sur `could not load saved runtime settings`. Hors de ce montage, `list_projects` rend 6 projets et
-`cbm.interroger` rend 27 routes pour Conduit. Le cache n'était pas corrompu (table `config` vide, ce qui est l'état
+`cbm.interroger` rend 27 routes pour Conduit (relevé du 2026-10-28). Le cache n'était pas corrompu (table `config` vide, ce qui est l'état
 normal).
 
 Conséquence sur le plan : le « P0 moteur cassé » **disparaît**, et le lot 0bis se réduit aux quatre défauts réels

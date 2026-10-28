@@ -26,7 +26,7 @@ publique (§8). Une affirmation sur un produit tiers que nous n'avons pas pu con
 
 # 1. Où en est Méridian, en une page
 
-**Ce qui existe et fonctionne** (branche `jumeau-phase0`, 552 tests) :
+**Ce qui existe et fonctionne** (branche `jumeau-phase0`, suite de tests : commande T1) :
 
 - Des **jumeaux nés du code** (4 réels). Chacun porte des connaissances prouvées ligne par ligne, une fiche vivante
   et un gardien qui suit les commits.
@@ -49,25 +49,42 @@ publique (§8). Une affirmation sur un produit tiers que nous n'avons pas pu con
 méthode listés dans le plan de remédiation ont été corrigés (`MERIDIAN_Plan_Remediation_v1.md`). Les chiffres publiés plus haut ont changé en
 conséquence, et il faut lire ceux-ci :
 
-| Mesure | Avant | Après |
+| Mesure | Avant (audit du 2026-10-28) | Après (commandes de la section « Comment obtenir les chiffres ») |
 |---|---|---|
-| Connaissances recoupées (M3) | 9 | **0** — les 9 reposaient sur « le README du même commit approuve le code » |
-| Faits établis par une source | — | **398** (`DEPEND_DE`, `EXPOSE`, `LIT_VARIABLE`, `EXECUTE_IMAGE`) |
-| Hypothèses (phrase métier, preuve = ligne de code) | comptées comme M2 | **148**, ramenées à M1 |
-| Connaissances sans état de vérification | 50 | **0** (état `en_attente` posé à la naissance) |
+| Connaissances recoupées (M3) | 9 | **0** (S1) — les 9 reposaient sur « le README du même commit approuve le code » |
+| Faits établis par une source | — | **398** (S2 : `DEPEND_DE`, `EXPOSE`, `LIT_VARIABLE`, `EXECUTE_IMAGE`) |
+| Hypothèses (phrase métier, preuve = ligne de code) | comptées comme M2 | **148** (S2), ramenées à M1 |
+| Connaissances sans état de vérification | 50 | **0** (S3 ; état `en_attente` posé à la naissance) |
 | « Vérifié » par recette | circulaire (l'extraction était filtrée par la recette) | **non circulaire** : la preuve vient de l'index, la recette la juge |
 | Recoupement | un mot du juge | **déterministe** quand une recette s'applique ; sinon l'observation « tel système ne nomme pas l'énoncé » accompagne le verdict |
-| Couverture d'un jumeau | 32 % pour tous | **49 % / 83 % / 76 %** (part de ce qui est établi) |
-| Connecteurs réellement branchés | 12 affichés, 7 simulés | **6 branchés**, 6 déclarés non branchés |
+| Couverture d'un jumeau | 32 % pour tous | **49 % / 83 % / 76 %** au relevé du 2026-10-28 (S5 : part de ce qui est établi) |
+| Connecteurs réellement branchés | 12 affichés, 7 simulés | **6 branchés** (X1), les autres déclarés non branchés |
 | Latence du premier mot | citée à 2 s, jamais mesurée | **mesurée** ; relevé du 2026-10-28 : 1,5 / 3,3 / 10,2 / 0,8 s, une question sur quatre sous l'objectif |
 
-Une phrase du présent document était donc trop optimiste : « 5 connaissances sont recoupées pour de vrai ». Il n'y
-en a plus aucune : le seul chemin vers M3 est désormais une source **d'un autre type**, et aucune n'est branchée.
+Une phrase de la version précédente était donc trop optimiste : « 5 connaissances sont recoupées pour de vrai ». Il n'y
+en a plus aucune (S1) : le seul chemin vers M3 est désormais une source **d'un autre type**, et aucune n'est branchée.
 C'est la mesure de ce qui reste à faire, et non une régression.
 
 **Où cela se situe dans la vision.** Nous sommes au milieu de **Méridian 1 — Comprendre**, pour une poignée
 d'applications sans données d'entreprise réelles. Les étapes **faire émerger**, **investiguer**, **décider** et
 **apprendre** de la boucle (§15) existent dans les documents, et presque pas dans le code.
+
+---
+
+# Comment obtenir les chiffres
+
+Chaque chiffre mouvant de ce document porte une référence de cette section ; les autres sont des relevés datés.
+
+- **T1** — suite `jumeau` (Postgres requis) : `cd backend && .venv/bin/python -m pytest jumeau/tests -q -n 0`
+- **S0** — toute requête S se lance ainsi : `psql "$JUMEAU_PG_DSN" -c "…"` (le DSN reste dans l'environnement, jamais dans un document)
+- **S1** — connaissances courantes par maturité : `SELECT maturite, count(*) FROM claim WHERE valide_jusqua IS NULL GROUP BY 1 ORDER BY 1`
+- **S2** — faits établis et hypothèses : `SELECT predicat_prouvable(predicat) AS etabli, count(*) FROM claim WHERE valide_jusqua IS NULL GROUP BY 1`
+- **S3** — connaissances sans état : `SELECT count(*) FROM claim c WHERE NOT EXISTS (SELECT 1 FROM verification v WHERE v.claim_id = c.id)`
+- **S4** — connaissances validées par l'équipe : `SELECT count(*) FROM claim WHERE statut = 'ACCEPTED'`
+- **S5** — couverture par jumeau : `SELECT j.id, round(100.0 * count(c.id) FILTER (WHERE predicat_prouvable(c.predicat)) / nullif(count(c.id), 0)) AS couverture FROM jumeau j LEFT JOIN claim c ON c.jumeau_id = j.id AND c.valide_jusqua IS NULL GROUP BY j.id`
+- **X1** — connecteurs branchés : `cd backend && .venv/bin/python -c "from jumeau import connecteurs as c; print(sum(bool(c.connecteur_branche(k)) for k in c.SYSTEME_DU_CONNECTEUR))"`
+- **X3** — latence : `cd backend && .venv/bin/python -m jumeau.latence --repetitions 5` (voir `MERIDIAN_Latence_2026-10-28.md`)
+- **X5** — méthodes : `ls backend/jumeau/methodes/*.md | wc -l`
 
 ---
 
@@ -80,13 +97,13 @@ Légende de l'écart : 🔴 bloque la vision · 🟠 limite fortement · 🟢 en
 | 1 | **Contexte d'entreprise réel** | Glean indexe chaque application connectée (Slack, Drive, Jira, Confluence…) dans un graphe qui respecte les droits [G1] ; Rovo relie Jira, Confluence, JSM, Slack et e-mail dans le Teamwork Graph [R1] | Les lecteurs existent, mais aucun n'est branché sur un vrai compte ; le contexte, ce sont 4 dépôts de démonstration | 🔴 |
 | 2 | **Identité et droits à chaque réponse** | Glean et Rovo ne montrent à chacun que ce qu'il pourrait voir dans la source d'origine [G2][R2] | `X-Persona` déclaratif, non authentifié ; OIDC reporté ; les droits de revue et de consigne ne sont pas appliqués | 🔴 |
 | 3 | **Comprendre le code** | Analyse statique d'abord, le modèle nomme ensuite (CodeBoarding, Swimm, CodeWiki) [C1–C3] | Index de code et graphe d'appels (`appels.py`) ; ne voit ni l'injection de dépendances (`Depends`), ni les requêtes SQL externalisées, ni les appels entre applications | 🟠 |
-| 4 | **Vérifier ce qu'il affirme** | Claude Code teste et relit ; Google *Check Grounding* note l'ancrage de chaque phrase [V1] ; l'API Citations d'Anthropic rend les passages exacts [V2] | **Point fort du mécanisme, résultat vide.** Les recettes sont déterministes et ne fabriquent plus leur propre preuve, la copie entre deux sources est calculée, et M3 exige deux sources de **types distincts**. Conséquence assumée : **0 connaissance recoupée**, 398 faits établis, 148 hypothèses, 1 validation humaine sur 546 | 🟢 |
+| 4 | **Vérifier ce qu'il affirme** | Claude Code teste et relit ; Google *Check Grounding* note l'ancrage de chaque phrase [V1] ; l'API Citations d'Anthropic rend les passages exacts [V2] | **Point fort du mécanisme, résultat vide.** Les recettes sont déterministes et ne fabriquent plus leur propre preuve, la copie entre deux sources est calculée, et M3 exige deux sources de **types distincts**. Conséquence assumée : **0 connaissance recoupée** (S1), 398 faits établis et 148 hypothèses (S2), une seule validation humaine (S4) sur l'ensemble des connaissances courantes (S1) | 🟢 |
 | 5 | **Raisonner en plusieurs étapes** | Claude Code planifie, délègue à des sous-agents au contexte isolé, recueille leurs résultats [A1] ; Glean annonce une planification adaptative et des sous-agents parallèles (rapporté) [G1] | Plan et étapes dans un Travail ; mobilisation en étoile ; **pas de moteur d'investigation** (hypothèses mises à l'épreuve, options comparées) | 🟠 |
 | 6 | **Experts spécialisés** (Vision §7) | Des capacités définies par leur domaine, leurs outils, leurs critères de preuve et leurs limites | Flore, les jumeaux, le juge d'appui et le relecteur ; **aucun expert métier** (risque, données, sécurité, architecture) | 🔴 |
 | 7 | **Faire émerger, sans qu'on demande** | Glean et Rovo poussent des réponses et des agents dans le flux de travail (rapporté) [G1][R1] | Le gardien publie des situations sur un changement de code ; pas d'opportunité, pas d'anomalie d'exploitation réelle (Datadog non branché) | 🔴 |
 | 8 | **Mémoire et apprentissage** | Claude Code : `CLAUDE.md` et mémoire relus à chaque session, compétences chargées à la demande [A1] | Connaissances et consignes d'équipe (sans interface) ; **ni retour d'usage qui améliore les réponses, ni mémoire des décisions et de leurs effets** (Learning Model) | 🔴 |
 | 9 | **Rendu riche** | Artifacts de Claude dans un cadre isolé sur une autre origine [D1] ; Google Code Wiki régénère ses diagrammes à chaque changement [C4] | Schémas Mermaid prouvés, scènes sur l'Atlas ; ni page libre isolée, ni schéma préparé d'avance | 🟢 |
-| 10 | **Vitesse perçue** | Réponse diffusée au fil de l'eau, outils visibles en direct | Diffusion réelle et **mesurée depuis le 2026-10-28** : premier mot 1,5 · 3,3 · 10,2 · 0,8 s ; réponse complète 6 à 21 s (objectif NFR < 5 s). Voir `MERIDIAN_Latence_2026-10-28.md` | 🟠 |
+| 10 | **Vitesse perçue** | Réponse diffusée au fil de l'eau, outils visibles en direct | Diffusion réelle et **mesurée depuis le 2026-10-28** : relevé du 2026-10-28, premier mot 1,5 · 3,3 · 10,2 · 0,8 s ; réponse complète 6 à 21 s (objectif NFR < 5 s). Voir `MERIDIAN_Latence_2026-10-28.md` | 🟠 |
 
 Quatre capacités transversales complètent la grille :
 
@@ -105,7 +122,7 @@ Quatre capacités transversales complètent la grille :
 |---|---|---|
 | Mémoire projet relue à chaque session (`CLAUDE.md`) [A1] | Fiche vivante, consignes d'équipe | Interface des consignes ; consignes alimentées par les contestations motivées |
 | Mémoire automatique (retours de l'utilisateur, avec leur pourquoi) | — | Apprendre d'un « réponse fausse » ou d'un « utile », sans modifier les règles critiques sans gouvernance (Discovery §90) |
-| Compétences chargées à la demande | Méthodes (7) | Des méthodes par métier et par expert ; des méthodes propres à une équipe |
+| Compétences chargées à la demande | Méthodes (X5) | Des méthodes par métier et par expert ; des méthodes propres à une équipe |
 | Contrôles déterministes autour des outils (hooks) | Garde-fous du harness | Des contrôles configurables par l'équipe (« toute connaissance sur des données personnelles passe en revue ») |
 | Sous-agents au contexte isolé, lancés en parallèle | Mobilisation des jumeaux, l'un après l'autre | Consultation en parallèle ; experts comme sous-agents |
 | Index du code préparé d'avance | Index cbm, connaissances | Enchaînements et schémas préparés par le gardien à chaque commit |
@@ -158,7 +175,7 @@ Ce sont des propriétés de **confiance**. Dans une banque, elles valent plus qu
 éloquente.
 
 **Depuis le 2026-10-28, la garantie 3 est vraie au sens strict — et c'est exactement pourquoi il n'y a plus aucune
-connaissance recoupée.** Un fichier Markdown du dépôt n'est plus un système indépendant ; le seul chemin vers M3
+connaissance recoupée** (S1). Un fichier Markdown du dépôt n'est plus un système indépendant ; le seul chemin vers M3
 exige donc une source d'un autre type, et aucune n'est branchée. Le mécanisme est désormais plus honnête que
 flatteur, ce qui est le but, mais il ne produit rien tant que Confluence ou Jira ne sont pas connectés.
 

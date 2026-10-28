@@ -20,8 +20,8 @@ Claude Code. Trois mécanismes manquent.
 La règle de la v2 reste en vigueur : *le savoir-faire va dans les méthodes, l'agent juge et agit par ses outils,
 le harness ne garde que les garde-fous ; une décision se rend structurée, jamais par « fait ».*
 
-Un fait mesuré motive ce document. Sur les 525 connaissances courantes de la base locale, **une seule est
-validée**, et toutes les autres sont M2. La propriété « Gouvernance » de l'Architecture §1 n'a donc, en
+Un fait mesuré motive ce document. Sur les connaissances courantes de la base locale (relevé du 2026-10-28 : 525 ; commande S1), **une seule est
+validée** (S4), et toutes les autres sont M2 à cette date. La propriété « Gouvernance » de l'Architecture §1 n'a donc, en
 pratique, aucun effet.
 
 ---
@@ -53,8 +53,8 @@ continu. L'humain décide ; il ne vérifie pas.
 **Constat (code et données, 2026-10-28).** La maturité M3 compte les **systèmes** des preuves. Rien ne vérifie
 que deux preuves disent **la même chose**, alors que l'Architecture Jumeau définit M3 comme « deux sources
 indépendantes **concordantes** ». Rien ne vérifie non plus qu'une ligne citée appuie bien l'énoncé : le gardien
-(`clore_sans_preuve`) vérifie seulement que la ligne existe. Les 10 343 preuves sont toutes du code, et 397 des
-525 connaissances viennent de l'ingestion.
+(`clore_sans_preuve`) vérifie seulement que la ligne existe. Au relevé du 2026-10-28 (commande S8), les 10 343 preuves
+sont toutes du code, et 397 des 525 connaissances viennent de l'ingestion (commande S9).
 
 **Règle.** Chaque connaissance est vérifiée comme on teste, à la manière d'un journaliste qui recoupe ses sources :
 
@@ -86,11 +86,11 @@ indépendantes **concordantes** ». Rien ne vérifie non plus qu'une ligne cité
   présentation et passe dans « ce que j'ignore ».
 - L'extracteur ne prouve plus une variable par un commentaire qui la nomme.
 
-**Premiers résultats réels (meridian).**
+**Premiers résultats réels (meridian, relevé du 2026-10-28 ; passes non rejouables à l'identique).**
 - Première passe : 175 connaissances vérifiées, 21 selon le code, 12 non appuyées. Huit des non appuyées venaient
   de l'extracteur : des variables « lues » dans des commentaires.
 - Après correction de l'extracteur : 182 vérifiées, 3 non appuyées.
-- Recoupement par l'agent dans la documentation du dépôt : **5 connaissances recoupées, M3**. Le juge a refusé
+- Recoupement par l'agent dans la documentation du dépôt : **5 connaissances recoupées, M3** (relevé du 2026-10-28). Le juge a refusé
   une seconde source qui ne disait pas la même chose (« selon »), et en a jugé une autre seulement « en partie ».
 
 **Limites.**
@@ -231,7 +231,7 @@ Plusieurs correspondances de la v1 tiennent :
 - les sources sont des données, jamais des instructions.
 
 Le déclenchement du gardien gagnerait toutefois à suivre la règle de Claude Code : « ne pas sonder ; un événement
-d'abord, une veille de secours longue ». Aujourd'hui, le gardien sonde toutes les 120 s. Les événements (GitHub
+d'abord, une veille de secours longue ». Aujourd'hui, le gardien sonde à intervalle fixe (`python -m jumeau.gardien --surveiller SECONDES` ; l'intervalle de production n'est pas codé dans le dépôt). Les événements (GitHub
 Actions, versions de page) deviennent le signal principal, et la veille passe à 30 min (AWS v1, décision
 GitHub Actions).
 
@@ -248,3 +248,21 @@ GitHub Actions).
 | 5 | §7 Questions adressées | à faire | identité |
 | 6 | §3 Le jumeau en MCP | document dédié, puis à faire | identité, document dédié |
 | 7 | §8 Événements d'abord, veille longue | à faire | déploiement AWS |
+
+---
+
+# Comment obtenir les chiffres
+
+Chaque chiffre mouvant de ce document porte une référence de cette section ; les autres sont des relevés datés.
+
+- **T1** — suite `jumeau` (Postgres requis) : `cd backend && .venv/bin/python -m pytest jumeau/tests -q -n 0`
+- **S0** — toute requête S se lance ainsi : `psql "$JUMEAU_PG_DSN" -c "…"` (le DSN reste dans l'environnement, jamais dans un document)
+- **S1** — connaissances courantes par maturité : `SELECT maturite, count(*) FROM claim WHERE valide_jusqua IS NULL GROUP BY 1 ORDER BY 1`
+- **S4** — connaissances validées par l'équipe : `SELECT count(*) FROM claim WHERE statut = 'ACCEPTED'`
+- **S8** — preuves par type de source : `SELECT type, count(*) FROM preuve GROUP BY 1`
+- **S9** — connaissances courantes issues de l'ingestion : `SELECT count(*) FROM claim WHERE valide_jusqua IS NULL AND origine = 'INGESTION'`
+- **S10** — état de vérification courant de chaque connaissance : `SELECT etat, count(*) FROM (SELECT DISTINCT ON (v.claim_id) v.claim_id, v.etat FROM verification v JOIN claim c ON c.id = v.claim_id WHERE c.valide_jusqua IS NULL ORDER BY v.claim_id, v.id DESC) x GROUP BY etat`
+- **X3** — évaluation d'un jumeau (appelle le modèle) : `cd backend && .venv/bin/python -m jumeau.evaluation --jumeau conduit`
+- **X5** — méthodes : `ls backend/jumeau/methodes/*.md | wc -l`
+
+Les passes de vérification des « premiers résultats réels » (§2) ne se rejouent pas à l'identique : elles sont datées du 2026-10-28.
