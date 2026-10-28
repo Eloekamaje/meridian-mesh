@@ -102,8 +102,10 @@ def test_service_invalide_refuse_avant_tout_appel(datadog_cloud):
     assert datadog_cloud["envoyees"] == []
 
 
-def test_version_courante_est_la_derniere_journee_complete(datadog_cloud):
-    assert lecteur().version_courante() == JOUR
+def test_version_courante_est_la_semaine_de_la_derniere_journee_complete(datadog_cloud):
+    import datetime
+    annee, semaine, _ = datetime.date.fromisoformat(JOUR).isocalendar()
+    assert lecteur().version_courante() == f"{annee}-S{semaine:02d}"  # la fiche ne se réécrit pas chaque jour
 
 
 def test_chercher_dans_les_documents_et_les_moniteurs(datadog_cloud):

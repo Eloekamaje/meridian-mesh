@@ -17,7 +17,7 @@ from urllib.parse import quote, urlparse
 from datetime import datetime, timezone
 from pathlib import Path
 
-from jumeau import depot, gardien, registre
+from jumeau import depot, gardien, lecteurs, registre
 from jumeau.ingerer import ingerer
 
 journal = logging.getLogger("meridian.naissance")
@@ -292,6 +292,7 @@ async def _naitre_sans_code(conn, db, commande, jumeau_id, rediger):
     etapes = []
     await _etat(db, cid, etat="en_cours", etapes=[], debut=datetime.now(timezone.utc).isoformat())
     try:
+        await asyncio.to_thread(_verifier_sources, commande)
         depot.creer_jumeau(conn, jumeau)
         _declarer_sources(conn, jumeau, commande)
         etapes.append({"etape": "sources", "quand": datetime.now(timezone.utc).isoformat()})
@@ -303,6 +304,18 @@ async def _naitre_sans_code(conn, db, commande, jumeau_id, rediger):
         journal.exception("naissance sans code de %s", jumeau_id)
         await _etat(db, cid, etat="echec", message=str(e)[:200] if isinstance(e, (RuntimeError, ValueError))
                     else "erreur pendant la naissance")
+
+
+def _verifier_sources(commande):
+    """Chaque source branchée répond (sa version courante) avant toute écriture : sinon la naissance échoue proprement."""
+    from jumeau.systemes import SYSTEMES
+    rangs = [SYSTEMES[s["connecteur"]].source_de(s["config"]) for s in commande["sources"]
+             if s["connecteur"] in SYSTEMES and s["statut"] == "prete" and s["config"].get("secret")]
+    for l in lecteurs.lecteurs_de(rangs):
+        try:
+            l.version_courante()
+        except Exception as e:
+            raise RuntimeError(f"la source {l.nom} ne répond pas : naissance reportée") from e
 
 
 def _declarer_sources(conn, jumeau, commande):

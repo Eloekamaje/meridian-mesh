@@ -14,7 +14,7 @@ import logging
 import os
 import hashlib
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import psycopg
@@ -195,6 +195,15 @@ def enregistrer_fiche(conn, jumeau_id, sha, contenu):
         (jumeau_id, sha, contenu))
 
 
+DELAI_FICHE_SANS_CODE = timedelta(hours=12)
+
+
+def fiche_recente(conn, jumeau_id, delai):
+    """Date de la dernière fiche si elle a moins de `delai`, sinon None."""
+    r = conn.execute("SELECT max(cree_le) FROM fiche_vivante WHERE jumeau_id = %s", (jumeau_id,)).fetchone()
+    return r[0].isoformat() if r and r[0] and datetime.now(timezone.utc) - r[0] < delai else None
+
+
 def fiche_courante(conn, jumeau_id):
     r = conn.execute("SELECT sha, contenu FROM fiche_vivante WHERE jumeau_id = %s ORDER BY cree_le DESC LIMIT 1",
                      (jumeau_id,)).fetchone()
@@ -248,9 +257,19 @@ def empreinte(sources):
     return ",".join(f"{s['nom']}@{s['curseur'][:12]}" for s in sorted(sources, key=lambda s: s["nom"]))
 
 
+class SourceInjoignable(Exception):
+    """Une source branchée ne dit pas sa version : la passe ne rédige rien plutôt que de se tromper."""
+
+
 def empreinte_lecteurs(branches):
     """Version d'un jumeau sans dépôt : l'état de chacune de ses sources (une source qui avance change la version)."""
-    brut = ",".join(f"{l.nom}:{l.version_courante()}" for l in sorted(branches, key=lambda l: l.nom))
+    versions = []
+    for l in sorted(branches, key=lambda l: l.nom):
+        try:
+            versions.append(f"{l.nom}:{l.version_courante()}")
+        except Exception as e:  # réseau, secret absent, quota : on réessaiera à la passe suivante
+            raise SourceInjoignable(f"source {l.nom} injoignable") from e
+    brut = ",".join(versions)
     return "sources:" + hashlib.sha256(brut.encode()).hexdigest()[:16] if brut else ""
 
 
@@ -301,9 +320,16 @@ async def veiller(conn, db, jumeau_id, chemins=None, rediger=_rediger):
     sources = depot.sources_du_jumeau(conn, jumeau_id)
     branches = lecteurs.lecteurs_de(depot.toutes_les_sources(conn, jumeau_id))
     # Sans dépôt (progiciel), pas d'ingestion de code : la version est celle des sources branchées.
-    version = empreinte(sources) if sources else empreinte_lecteurs(branches)
+    try:
+        version = empreinte(sources) if sources else empreinte_lecteurs(branches)
+    except SourceInjoignable as e:
+        journal.warning("gardien %s : %s, passe sans rédaction", jumeau_id, e)
+        return {"changement": False, "erreur": str(e)}
     if not ingeres and fiche_du_sha(conn, jumeau_id, version):
         return {"changement": False}
+    # Sans code, une source qui bouge souvent (un ticket modifié) ne fait pas rédiger une fiche à chaque fois.
+    if not sources and (recente := fiche_recente(conn, jumeau_id, DELAI_FICHE_SANS_CODE)):
+        return {"changement": False, "fiche_recente": recente}
     sigs, sit = (signaux(avant, connaissances_courantes(conn, jumeau_id)) if ingeres else []), None
     if len(sources) > 1:
         commits = [{**c, "message": f"[{c['depot']}] {c['message']}"} for c in commits]

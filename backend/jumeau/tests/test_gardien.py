@@ -199,6 +199,7 @@ def test_veille_sans_depot_la_version_est_l_empreinte_des_sources(monkeypatch):
     monkeypatch.setattr(gardien.connaissance, "connaissances", lambda *a, **k: [])
     monkeypatch.setattr(gardien, "fiche_du_sha", lambda c, j, sha: sha in fiches)
     monkeypatch.setattr(gardien, "enregistrer_fiche", lambda c, j, sha, contenu: fiches.__setitem__(sha, contenu))
+    monkeypatch.setattr(gardien, "fiche_recente", lambda c, j, delai: None)
 
     async def rien(*a, **k):
         return {}
@@ -218,3 +219,25 @@ def test_veille_sans_depot_la_version_est_l_empreinte_des_sources(monkeypatch):
     assert passe() == {"changement": False}  # rien n'a avancé : pas de nouvelle fiche
     version["v"] = "2"
     assert passe()["changement"] and len(fiches) == 2  # une source a avancé : nouvelle fiche
+
+
+def test_sans_depot_une_source_injoignable_ou_une_fiche_recente_ne_font_pas_rediger(monkeypatch):
+    monkeypatch.setattr(depot, "jumeau_par_id", lambda c, j: {"id": j, "nom": "P", "tenant_id": "t", "equipe": "e"})
+    monkeypatch.setattr(depot, "sources_du_jumeau", lambda c, j: [])
+    monkeypatch.setattr(depot, "toutes_les_sources", lambda c, j: [])
+    monkeypatch.setattr(gardien, "connaissances_courantes", lambda c, j: set())
+    monkeypatch.setattr(gardien, "fiche_du_sha", lambda c, j, sha: False)
+
+    async def rediger(*a):
+        raise AssertionError("aucune rédaction attendue")
+
+    class Panne:
+        nom = "Datadog svc"
+        def version_courante(self):
+            raise OSError("réseau")
+    monkeypatch.setattr(gardien.lecteurs, "lecteurs_de", lambda s: [Panne()])
+    r = asyncio.run(gardien.veiller(None, None, "p", rediger=rediger))
+    assert r["changement"] is False and "injoignable" in r["erreur"]
+    monkeypatch.setattr(gardien.lecteurs, "lecteurs_de", lambda s: [_lecteur("2")])
+    monkeypatch.setattr(gardien, "fiche_recente", lambda c, j, delai: "2026-10-28T08:00:00+00:00")
+    assert asyncio.run(gardien.veiller(None, None, "p", rediger=rediger))["fiche_recente"]

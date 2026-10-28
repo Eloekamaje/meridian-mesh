@@ -54,6 +54,7 @@ def jumeaux_reels(conn):
                FROM jumeau j
                LEFT JOIN LATERAL (SELECT curseur FROM source WHERE jumeau_id = j.id AND type = 'GIT'
                              ORDER BY id DESC LIMIT 1) s ON true
+               WHERE EXISTS (SELECT 1 FROM source WHERE jumeau_id = j.id)
                ORDER BY j.id""").fetchall()
 
 

@@ -1362,7 +1362,7 @@ async def generer_reponse_flore(contexte, question, selection, domaine, x_person
     visibles = [j["id"] for j in tous if j.get("reel") and j["id"] in aut and niveau_au_moins(aut[j["id"]], "complet")]
     if not sel and visibles and os.environ.get("JUMEAU_PG_DSN"):
         reponse_flore = await jumeau_flore.mobiliser(visibles, question, x_persona, travail, profil=persona, db=db)
-        if reponse_flore:
+        if reponse_flore and reponse_flore.get("comportement") != "signaler":  # indisponible : repli sur la recherche
             return reponse_flore
     trouve = await recherche_plein_texte(q, aut)
     if trouve:

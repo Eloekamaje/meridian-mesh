@@ -180,8 +180,10 @@ class LecteurDatadog(lecteurs.Lecteur):
         return _aujourdhui() - datetime.timedelta(days=1)
 
     def version_courante(self):
-        """Dernière journée complète : elle avance chaque jour."""
-        return str(self._derniere_journee())
+        """Semaine de la dernière journée complète : le comportement bouge chaque jour, la fiche n'a pas à suivre
+        chaque jour (une citation reste, elle, datée de sa journée)."""
+        annee, semaine, _ = self._derniere_journee().isocalendar()
+        return f"{annee}-S{semaine:02d}"
 
     def _jour(self, version):
         if version is None:

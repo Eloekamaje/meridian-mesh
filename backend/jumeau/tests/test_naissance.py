@@ -313,6 +313,7 @@ def test_naissance_sans_code_cree_declare_projette_et_redige(monkeypatch):
     monkeypatch.setenv("JUMEAU_DATADOG_HOTE", "api.datadoghq.eu")
     monkeypatch.setenv("JUMEAU_SERVICENOW_HOTE", "banque.service-now.com")
     appels = []
+    monkeypatch.setattr(naissance, "_verifier_sources", lambda commande: None)  # sans réseau
     monkeypatch.setattr(depot, "creer_jumeau", lambda conn, j: appels.append(("jumeau", j["id"])))
     monkeypatch.setattr(depot, "declarer_source", lambda conn, j, s: appels.append(("source", s["type"])))
 
@@ -336,3 +337,18 @@ def test_naissance_sans_substance_n_ecrit_rien(monkeypatch):
     asyncio.run(naissance.naitre(None, db, {"id": "c1", **_pretes("servicenow")}, "progiciel"))
     etat = _etat(db)
     assert etat["etat"] == "sans_substance" and "Datadog" in etat["message"]
+
+
+def test_naissance_sans_code_reportee_si_une_source_ne_repond_pas(monkeypatch):
+    # Rien n'est écrit (ni jumeau, ni source, ni registre) : pas de jumeau à moitié né.
+    monkeypatch.setenv("JUMEAU_DATADOG_HOTE", "api.datadoghq.eu")
+    monkeypatch.setenv("JUMEAU_SERVICENOW_HOTE", "banque.service-now.com")
+    monkeypatch.setattr(depot, "creer_jumeau", lambda *a: pytest.fail("jumeau créé malgré une source muette"))
+
+    def muette(commande):
+        raise RuntimeError("la source datadog-paiements ne répond pas : naissance reportée")
+    monkeypatch.setattr(naissance, "_verifier_sources", muette)
+    db = _Db()
+    asyncio.run(naissance.naitre(None, db, {"id": "c1", **_pretes("servicenow", "datadog")}, "progiciel"))
+    etat = _etat(db)
+    assert etat["etat"] == "echec" and "ne répond pas" in etat["message"]
