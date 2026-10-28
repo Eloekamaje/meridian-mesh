@@ -1,0 +1,258 @@
+- generic [ref=f2e2]:
+  - generic [ref=f2e3]:
+    - complementary [ref=f2e4]:
+      - generic [ref=f2e5]:
+        - img "Méridian" [ref=f2e6]
+        - generic [ref=f2e7]:
+          - button "Rechercher dans le SI" [ref=f2e8] [cursor=pointer]
+          - button "Masquer le panneau latéral (afficher uniquement les icônes)" [ref=f2e11] [cursor=pointer]
+      - button "Nouveau travail" [ref=f2e15] [cursor=pointer]
+      - navigation [ref=f2e19]:
+        - link "Atlas" [ref=f2e20] [cursor=pointer]:
+          - /url: /atlas
+        - link "Actualités" [ref=f2e25] [cursor=pointer]:
+          - /url: /actualites
+        - link "Travaux" [ref=f2e30] [cursor=pointer]:
+          - /url: /travaux
+        - link "Jumeaux" [ref=f2e35] [cursor=pointer]:
+          - /url: /jumeaux
+        - link "Administration" [ref=f2e40] [cursor=pointer]:
+          - /url: /administration
+        - link "Démonstration" [ref=f2e45] [cursor=pointer]:
+          - /url: /demo
+      - generic [ref=f2e50]:
+        - generic [ref=f2e51]: Récentes
+        - link "Retrait PostgreSQL — essai 2" [ref=f2e84] [cursor=pointer]:
+          - /url: /travaux/retrait-postgresql-essai-2
+        - link "Retirer PostgreSQL de Méridian Mesh ?" [ref=f2e86] [cursor=pointer]:
+          - /url: /travaux/retirer-postgresql-de-meridian-mesh
+        - link "qui es-tu ?" [ref=f2e88] [cursor=pointer]:
+          - /url: /travaux/qui-es-tu
+        - link "Test jumeau Méridian" [ref=f2e90] [cursor=pointer]:
+          - /url: /travaux/test-jumeau-meridian
+        - link "Paiement différé pour les clients professionnels" [ref=f2e92] [cursor=pointer]:
+          - /url: /travaux/case-paiement-differe
+        - link "Surveiller le parcours de paiement" [ref=f2e94] [cursor=pointer]:
+          - /url: /travaux/case-surveiller-le-parcours-de-paiement-30484
+        - link "Vérifier la relation possible Fraude → Conformité" [ref=f2e96] [cursor=pointer]:
+          - /url: /travaux/case-verification-fraude-conformite
+        - 'link "Dossier d''arbitrage : Mutualisation du suivi des dossiers (CASE-101)" [ref=f2e98] [cursor=pointer]':
+          - /url: /travaux/demo-polaris-work-g
+      - button "ME Majella Elobo Architecture d'entreprise · Mesh 38" [ref=f2e100] [cursor=pointer]:
+        - generic [ref=f2e56]:
+          - generic [ref=f2e57]: ME
+          - generic [ref=f2e58]:
+            - generic [ref=f2e59]: Majella Elobo
+            - generic [ref=f2e60]: Architecture d'entreprise · Mesh 38
+    - main [ref=f2e64]:
+      - generic [ref=f2e66]:
+        - generic [ref=f2e68]:
+          - generic [ref=f2e69]:
+            - 'button "Retour : Jumeaux" [ref=f2e70] [cursor=pointer]':
+              - generic [ref=f2e73]: Jumeaux
+            - generic [ref=f2e74]:
+              - heading "Revue — Conduit" [level=1] [ref=f2e101]
+              - generic [ref=f2e76]: conduit · Domaine Client
+          - generic [ref=f2e77]:
+            - generic [ref=f2e102]: Actif
+            - button "Centrer dans l'Atlas" [ref=f2e78] [cursor=pointer]
+        - generic [ref=f2e103]:
+          - generic [ref=f2e104]:
+            - region "Fiche vivante" [ref=f2e105]:
+              - paragraph [ref=f2e106]: Ce que le jumeau dit de l'application
+              - list "Code lu par le jumeau" [ref=f2e107]:
+                - listitem [ref=f2e108]: conduit · master · 029eb7781c60
+              - generic [ref=f2e109]:
+                - heading "Ce qu'elle fait pour l'entreprise" [level=3] [ref=f2e111]
+                - paragraph [ref=f2e112]: Conduit est la plateforme de publication d'articles destinée aux lecteurs et aux auteurs, telle que l'équipe la décrit. Elle permet d'écrire, publier, découvrir et commenter des articles. (le dépôt se présente comme une API de démonstration du domaine « articles », sans maintenance active annoncée)
+                - heading "Ses grands services" [level=3] [ref=f2e114]
+                - paragraph [ref=f2e115]:
+                  - text: •
+                  - strong [ref=f2e116]: Publication
+                  - text: ": créer un article avec titre, description, corps et étiquettes, sous une adresse unique dérivée du titre; un doublon est refusé."
+                - paragraph [ref=f2e117]:
+                  - text: •
+                  - strong [ref=f2e118]: Lecture et tri
+                  - text: ": liste d'articles filtrable par étiquette, auteur et favoris, avec pagination, ainsi qu'un fil personnalisé reprenant les articles des auteurs suivis."
+                - paragraph [ref=f2e119]:
+                  - text: •
+                  - strong [ref=f2e120]: Communauté
+                  - text: ": comptes et connexion, profils publics, suivi d'auteurs, favoris et commentaires."
+                - heading "Ce sur quoi elle s'appuie" [level=3] [ref=f2e122]
+                - paragraph [ref=f2e123]: •Une base d'informations relationnelle PostgreSQL, qui conserve articles, étiquettes, favoris, commentaires et utilisateurs.
+                - paragraph [ref=f2e124]: •Une quinzaine de bibliothèques tierces (cadre applicatif web, accès à la base, jetons d'accès, évolution du schéma de données) et un réglage d'adresse de la base.
+                - heading "Ses évolutions récentes" [level=3] [ref=f2e126]
+                - paragraph [ref=f2e127]: •L'histoire disponible s'arrête en août 2022 et ne contient presque que des mises à jour de bibliothèques automatiques, sans changement de fonctionnalité décrit.
+                - paragraph [ref=f2e128]: •Une évolution de la structure des tables principales est passée en février 2022; son objet n'est pas explicite.
+                - heading "Ce qui reste inconnu" [level=3] [ref=f2e130]
+                - paragraph [ref=f2e131]: "•Nombre d'utilisateurs, volumétrie, criticité pour l'entreprise, environnement d'exploitation: ni le code ni l'équipe ne les documentent."
+                - paragraph [ref=f2e132]: •Les usages liés au compte au-delà de la connexion (inscription, déconnexion) ne sont pas confirmés par l'équipe.
+                - paragraph [ref=f2e133]: "•L'intention métier des changements: les messages lus sont techniques et n'expliquent pas le pourquoi."
+              - button "Repose sur 8 preuve s · afficher" [ref=f2e135] [cursor=pointer]
+            - paragraph [ref=f2e136]: 26 connaissances prouvées par le code
+            - region "APIs exposées" [ref=f2e137]:
+              - heading "APIs exposées ( 9 )" [level=2] [ref=f2e138]
+              - 'button "DELETE /articles/{slug} PROPOSED · M2 90 %" [active] [pressed] [ref=f2e139] [cursor=pointer]':
+                - generic [ref=f2e142]: "DELETE /articles/{slug}"
+                - generic [ref=f2e143]: PROPOSED · M2
+                - generic [ref=f2e144]: 90 %
+              - 'button "DELETE /articles/{slug}/favorite PROPOSED · M2 90 %" [ref=f2e145] [cursor=pointer]':
+                - generic [ref=f2e148]: "DELETE /articles/{slug}/favorite"
+                - generic [ref=f2e149]: PROPOSED · M2
+                - generic [ref=f2e150]: 90 %
+              - 'button "DELETE /profiles/{username}/follow PROPOSED · M2 90 %" [ref=f2e151] [cursor=pointer]':
+                - generic [ref=f2e154]: "DELETE /profiles/{username}/follow"
+                - generic [ref=f2e155]: PROPOSED · M2
+                - generic [ref=f2e156]: 90 %
+              - button "GET /articles/feed PROPOSED · M2 90 %" [ref=f2e157] [cursor=pointer]:
+                - generic [ref=f2e160]: GET /articles/feed
+                - generic [ref=f2e161]: PROPOSED · M2
+                - generic [ref=f2e162]: 90 %
+              - 'button "GET /profiles/{username} PROPOSED · M2 90 %" [ref=f2e163] [cursor=pointer]':
+                - generic [ref=f2e166]: "GET /profiles/{username}"
+                - generic [ref=f2e167]: PROPOSED · M2
+                - generic [ref=f2e168]: 90 %
+              - 'button "POST /articles/{slug}/favorite PROPOSED · M2 90 %" [ref=f2e169] [cursor=pointer]':
+                - generic [ref=f2e172]: "POST /articles/{slug}/favorite"
+                - generic [ref=f2e173]: PROPOSED · M2
+                - generic [ref=f2e174]: 90 %
+              - button "POST /login PROPOSED · M2 90 %" [ref=f2e175] [cursor=pointer]:
+                - generic [ref=f2e178]: POST /login
+                - generic [ref=f2e179]: PROPOSED · M2
+                - generic [ref=f2e180]: 90 %
+              - 'button "POST /profiles/{username}/follow PROPOSED · M2 90 %" [ref=f2e181] [cursor=pointer]':
+                - generic [ref=f2e184]: "POST /profiles/{username}/follow"
+                - generic [ref=f2e185]: PROPOSED · M2
+                - generic [ref=f2e186]: 90 %
+              - 'button "PUT /articles/{slug} PROPOSED · M2 90 %" [ref=f2e187] [cursor=pointer]':
+                - generic [ref=f2e190]: "PUT /articles/{slug}"
+                - generic [ref=f2e191]: PROPOSED · M2
+                - generic [ref=f2e192]: 90 %
+            - region "Dépendances logicielles" [ref=f2e193]:
+              - heading "Dépendances logicielles ( 14 )" [level=2] [ref=f2e194]
+              - button "aiosql PROPOSED · M2 85 %" [ref=f2e195] [cursor=pointer]:
+                - generic [ref=f2e198]: aiosql
+                - generic [ref=f2e199]: PROPOSED · M2
+                - generic [ref=f2e200]: 85 %
+              - button "alembic PROPOSED · M2 85 %" [ref=f2e201] [cursor=pointer]:
+                - generic [ref=f2e204]: alembic
+                - generic [ref=f2e205]: PROPOSED · M2
+                - generic [ref=f2e206]: 85 %
+              - button "asyncpg PROPOSED · M2 85 %" [ref=f2e207] [cursor=pointer]:
+                - generic [ref=f2e210]: asyncpg
+                - generic [ref=f2e211]: PROPOSED · M2
+                - generic [ref=f2e212]: 85 %
+              - button "databases PROPOSED · M2 85 %" [ref=f2e213] [cursor=pointer]:
+                - generic [ref=f2e216]: databases
+                - generic [ref=f2e217]: PROPOSED · M2
+                - generic [ref=f2e218]: 85 %
+              - button "fastapi PROPOSED · M2 85 %" [ref=f2e219] [cursor=pointer]:
+                - generic [ref=f2e222]: fastapi
+                - generic [ref=f2e223]: PROPOSED · M2
+                - generic [ref=f2e224]: 85 %
+              - button "loguru PROPOSED · M2 85 %" [ref=f2e225] [cursor=pointer]:
+                - generic [ref=f2e228]: loguru
+                - generic [ref=f2e229]: PROPOSED · M2
+                - generic [ref=f2e230]: 85 %
+              - button "passlib PROPOSED · M2 85 %" [ref=f2e231] [cursor=pointer]:
+                - generic [ref=f2e234]: passlib
+                - generic [ref=f2e235]: PROPOSED · M2
+                - generic [ref=f2e236]: 85 %
+              - button "psycopg2-binary PROPOSED · M2 85 %" [ref=f2e237] [cursor=pointer]:
+                - generic [ref=f2e240]: psycopg2-binary
+                - generic [ref=f2e241]: PROPOSED · M2
+                - generic [ref=f2e242]: 85 %
+              - button "pydantic PROPOSED · M2 85 %" [ref=f2e243] [cursor=pointer]:
+                - generic [ref=f2e246]: pydantic
+                - generic [ref=f2e247]: PROPOSED · M2
+                - generic [ref=f2e248]: 85 %
+              - button "pyjwt PROPOSED · M2 85 %" [ref=f2e249] [cursor=pointer]:
+                - generic [ref=f2e252]: pyjwt
+                - generic [ref=f2e253]: PROPOSED · M2
+                - generic [ref=f2e254]: 85 %
+              - button "pypika PROPOSED · M2 85 %" [ref=f2e255] [cursor=pointer]:
+                - generic [ref=f2e258]: pypika
+                - generic [ref=f2e259]: PROPOSED · M2
+                - generic [ref=f2e260]: 85 %
+              - button "python-slugify PROPOSED · M2 85 %" [ref=f2e261] [cursor=pointer]:
+                - generic [ref=f2e264]: python-slugify
+                - generic [ref=f2e265]: PROPOSED · M2
+                - generic [ref=f2e266]: 85 %
+              - button "Unidecode PROPOSED · M2 85 %" [ref=f2e267] [cursor=pointer]:
+                - generic [ref=f2e270]: Unidecode
+                - generic [ref=f2e271]: PROPOSED · M2
+                - generic [ref=f2e272]: 85 %
+              - button "uvicorn PROPOSED · M2 85 %" [ref=f2e273] [cursor=pointer]:
+                - generic [ref=f2e276]: uvicorn
+                - generic [ref=f2e277]: PROPOSED · M2
+                - generic [ref=f2e278]: 85 %
+            - region "Configuration lue" [ref=f2e279]:
+              - heading "Configuration lue ( 2 )" [level=2] [ref=f2e280]
+              - button "DATABASE_URL PROPOSED · M2 85 %" [ref=f2e281] [cursor=pointer]:
+                - generic [ref=f2e284]: DATABASE_URL
+                - generic [ref=f2e285]: PROPOSED · M2
+                - generic [ref=f2e286]: 85 %
+              - button "PYTHONUNBUFFERED PROPOSED · M2 85 %" [ref=f2e287] [cursor=pointer]:
+                - generic [ref=f2e290]: PYTHONUNBUFFERED
+                - generic [ref=f2e291]: PROPOSED · M2
+                - generic [ref=f2e292]: 85 %
+            - region "Images exécutées" [ref=f2e293]:
+              - heading "Images exécutées ( 1 )" [level=2] [ref=f2e294]
+              - button "docker.io/library/postgres PROPOSED · M2 85 %" [ref=f2e295] [cursor=pointer]:
+                - generic [ref=f2e298]: docker.io/library/postgres
+                - generic [ref=f2e299]: PROPOSED · M2
+                - generic [ref=f2e300]: 85 %
+          - region "Preuve du claim" [ref=f2e302]:
+            - generic [ref=f2e303]:
+              - 'heading "Conduit · EXPOSE · DELETE /articles/{slug}" [level=2] [ref=f2e304]'
+              - generic [ref=f2e305]: git://conduit@029eb7781c60:app/api/routes/articles/articles_resource.py#L109-L120
+              - status [ref=f2e306]: Preuve intègre au SHA indexé
+            - generic [ref=f2e309]:
+              - generic [ref=f2e310]:
+                - generic [ref=f2e311]: "106"
+                - text: return ArticleInResponse(article=ArticleForResponse.from_orm(article))
+              - generic [ref=f2e312]: "107"
+              - generic [ref=f2e314]: "108"
+              - generic [ref=f2e316]:
+                - generic [ref=f2e317]: "109"
+                - text: "@router.delete("
+              - generic [ref=f2e318]:
+                - generic [ref=f2e319]: "110"
+                - text: "\"/{slug}\","
+              - generic [ref=f2e320]:
+                - generic [ref=f2e321]: "111"
+                - text: status_code=status.HTTP_204_NO_CONTENT,
+              - generic [ref=f2e322]:
+                - generic [ref=f2e323]: "112"
+                - text: name="articles:delete-article",
+              - generic [ref=f2e324]:
+                - generic [ref=f2e325]: "113"
+                - text: dependencies=[Depends(check_article_modification_permissions)],
+              - generic [ref=f2e326]:
+                - generic [ref=f2e327]: "114"
+                - text: response_class=Response,
+              - generic [ref=f2e328]:
+                - generic [ref=f2e329]: "115"
+                - text: )
+              - generic [ref=f2e330]:
+                - generic [ref=f2e331]: "116"
+                - text: async def delete_article_by_slug(
+              - generic [ref=f2e332]:
+                - generic [ref=f2e333]: "117"
+                - text: "article: Article = Depends(get_article_by_slug_from_path),"
+              - generic [ref=f2e334]:
+                - generic [ref=f2e335]: "118"
+                - text: "articles_repo: ArticlesRepository = Depends(get_repository(ArticlesRepository)),"
+              - generic [ref=f2e336]:
+                - generic [ref=f2e337]: "119"
+                - text: ") -> None:"
+              - generic [ref=f2e338]:
+                - generic [ref=f2e339]: "120"
+                - text: await articles_repo.delete_article(article=article)
+            - generic [ref=f2e340]:
+              - generic [ref=f2e341]: Motif (facultatif)
+              - textbox "Motif (facultatif)" [ref=f2e342]
+              - generic [ref=f2e343]:
+                - button "Valider" [ref=f2e344] [cursor=pointer]
+                - button "Contester" [ref=f2e345] [cursor=pointer]
+  - region "Notifications alt+T"

@@ -1,0 +1,7 @@
+- iframe [ref=f1e1]:
+  - generic [ref=f2e2]:
+    - generic [ref=f2e3]: "Uncaught runtime errors:"
+    - button "Dismiss" [ref=f2e4] [cursor=pointer]: ×
+    - generic [ref=f2e6]:
+      - generic [ref=f2e7]: ERROR
+      - generic [ref=f2e8]: "Cannot read properties of null (reading 'x') TypeError: Cannot read properties of null (reading 'x') at http://localhost:3000/static/js/bundle.js:48510:12 at Array.map (<anonymous>) at separerNoeuds (http://localhost:3000/static/js/bundle.js:48503:21) at construireGraphe (http://localhost:3000/static/js/bundle.js:49057:23) at http://localhost:3000/static/js/bundle.js:59799:81 at updateMemo (http://localhost:3000/static/js/bundle.js:95378:17) at Object.useMemo (http://localhost:3000/static/js/bundle.js:103872:16) at exports.useMemo (http://localhost:3000/static/js/bundle.js:110378:32) at Atlas (http://localhost:3000/static/js/bundle.js:59797:53) at react-stack-bottom-frame (http://localhost:3000/static/js/bundle.js:103358:18)"

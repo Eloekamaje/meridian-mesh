@@ -42,10 +42,10 @@ Deux règles gouvernent tout ce plan :
 | L0.4 plus d'étape inventée | fait | `FloreActivite` n'affiche plus de libellés fabriqués ; une activité sans étape dit « Aucune étape enregistrée » |
 | L0.5 réponses de démonstration marquées | fait | `jumeau/origine.py` + `MarqueOrigine` ; les indicateurs écrits à la main ne sont plus affichés |
 | L0.6 premier mot horodaté | fait | `durees.premier_texte` posé par `flux.en_flux` ; « 2 s » retiré des Écarts |
-| **0bis — L'index** | **fait, un point ouvert** | |
+| **0bis — L'index** | **fait** | |
 | L0bis.1 preuve = ligne d'appel | fait | `appels.ligne_d_appel` exige une construction d'appel ; sur Conduit (relevé du 2026-10-28), **56 des 176 lignes** que l'ancienne règle retenait ne contenaient aucun appel |
 | L0bis.2 JSON + résolution | fait | `search_graph` et `trace_path` en `format="json"` ; l'arête porte `resolution` (lsp/heuristic) et `confiance` |
-| L0bis.3 index reconstructible | **partiel** | l'ingestion réindexe déjà à chaque passe, et une relecture impossible dit maintenant quoi faire (`ingerer.py`) ; **reste ouvert** : versionner l'index avec le commit plutôt que de le laisser dans un cache indexé par chemin absolu |
+| L0bis.3 index reconstructible | fait (2026-10-28) | l'index se nomme `jum-<jumeau>-<dépôt>-<sha12>` (`cbm.nom_index`), un index d'un autre commit est dit périmé (`cbm.perime`), `python -m jumeau.reindexer --jumeau <id>` le refait ; l'index du commit précédent est retiré (`cbm.retirer_ancien`) ; les 4 jumeaux réels sont réindexés et les anciens index supprimés ; les tests qui indexent avec le vrai binaire nettoient leurs index (`index_jetables`). Reste : un `JUMEAU_CBM_CACHE` différent du cache du démon déjà lancé fait échouer l'indexation — un seul cache par machine |
 | L0bis.4 index absent signalé | fait | `cbm.indexe()` ; Flore dit « index de code de ce dépôt non disponible, il se reconstruit à la prochaine ingestion » au lieu d'« Outil indisponible » |
 | **1 — Épistémologie** | **fait** (un point clos par un constat) | suite `jumeau` avec Postgres : **0 échec** (commande T1 ; relevé du 2026-10-28 : 552 passés) |
 | L1.1 recette non circulaire | fait | `adaptateur` n'appelle plus `recettes` ; la preuve vient de l'index (`start_line`) ou d'une règle de déclaration propre, la recette juge ensuite — elle peut donc le contredire |
@@ -55,7 +55,9 @@ Deux règles gouvernent tout ce plan :
 | L1.5 preuves remplacées | fait | une preuve du même fichier remplace l'ancienne ; `recouper` refuse dès qu'un système est déjà représenté (plus d'empilement) |
 | L1.6 aucun état manquant | fait | état `en_attente` posé à la naissance (trigger), maturité recalculée à la clôture : **0 connaissance sans état** (S3), **0 M3 close** (S7) ; 557 rattrapées au relevé du 2026-10-28 |
 | L1.7 juge distinct | fait | `JUMEAU_MODELE_JUGE` sépare le modèle du juge ; une décision manquante est comptée (`pannes`) dans le bilan de la passe et journalisée en avertissement |
-| **1bis — La compréhension** | **fait, un point refusé** | `jumeau/tests/test_prouvables.py` (commande T1) |
+| **1bis — La compréhension** | **fait, un point refusé** | `jumeau/tests/test_prouvables.py`, `test_forme.py`, `test_plafond.py` (commande T1) |
+| L1bis.2 bis règles et données | fait (2026-10-28) | recette de forme + juge ; connaissances existantes revérifiées par la version de règle (`recoupement.VERSION_REGLE`) ; le juge n'est pas stable d'une passe à l'autre (relevé : deux règles de Méridian établies puis non établies), ce qui plaide pour un jeu de référence des verdicts |
+| L1bis.4 plafond d'ingestion | fait (2026-10-28) | `JUMEAU_PLAFOND` ; sous-ensemble déterministe, troncature signalée dans « ce que j'ignore », validées jamais closes par la troncature |
 | L1bis.1 extracteur `cross_service` | **non fait, mesuré** | voir §2bis : **aucun** appel HTTP sortant vers une application nommée dans les quatre dépôts ; le mode `cross_service` de l'index rend la même liste que `calls` |
 | L1bis.2 prédicats non prouvables | fait | règle d'autorité : une phrase sur le métier prouvée **uniquement par du code** reste M1. Base réelle (relevé du 2026-10-28, commande S2) : **398 faits établis, 148 hypothèses** (APPLIQUE_REGLE 45, REALISE_CAPACITE 33, DETIENT 28, SERT_ACTEUR 26, ECHANGE_AVEC 15, RISQUE 1) |
 | **2 — Démonstration** | **fait, un point partiel** | suite `jumeau` avec Postgres : **0 échec** (commande T1) |

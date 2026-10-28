@@ -1,0 +1,30 @@
+[ 1548759ms] ReferenceError: EnLigne is not defined
+    at http://localhost:3000/main.1192085c389fb0f360fd.hot-update.js:1070:96
+    at Array.map (<anonymous>)
+    at FicheVivante (http://localhost:3000/main.1192085c389fb0f360fd.hot-update.js:999:24)
+    at react-stack-bottom-frame (http://localhost:3000/static/js/bundle.js:103464:18)
+    at renderWithHooks (http://localhost:3000/static/js/bundle.js:94781:20)
+    at updateFunctionComponent (http://localhost:3000/static/js/bundle.js:96050:17)
+    at beginWork (http://localhost:3000/static/js/bundle.js:96668:16)
+    at runWithFiberInDEV (http://localhost:3000/static/js/bundle.js:92008:14)
+    at performUnitOfWork (http://localhost:3000/static/js/bundle.js:99253:93)
+    at workLoopSync (http://localhost:3000/static/js/bundle.js:99147:38)
+[ 1548759ms] [WARNING] %s
+
+%s
+ An error occurred in the <FicheVivante> component. Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://react.dev/link/error-boundaries to learn more about error boundaries. @ https://assets.emergent.sh/scripts/emergent-main.js:55
+[ 2719187ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ https://assets.emergent.sh/scripts/emergent-main.js:55
+[ 8075819ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ https://assets.emergent.sh/scripts/emergent-main.js:55
+[ 8106385ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:3000/commande/cmd-08266563:0
+[ 8928010ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:8001/api/connexions/github:0
+[ 9056250ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:3000/commande/cmd-08266563:0
+[ 9212466ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:8001/api/v2/jumeaux/nouveau-jumeau/fiche:0
+[ 9212479ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:8001/api/v2/jumeaux/nouveau-jumeau/fiche:0
+[ 9410124ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ https://assets.emergent.sh/scripts/emergent-main.js:55
+[ 9754316ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ https://assets.emergent.sh/scripts/emergent-main.js:55
+[10943454ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ https://assets.emergent.sh/scripts/emergent-main.js:55
+[10950361ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ https://assets.emergent.sh/scripts/emergent-main.js:55
+[57327852ms] [ERROR] WebSocket connection to 'ws://localhost:3000/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/static/js/bundle.js:108914
+[57329881ms] [ERROR] WebSocket connection to 'ws://localhost:3000/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/static/js/bundle.js:108914
+[84610029ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ https://assets.emergent.sh/scripts/emergent-main.js:55
