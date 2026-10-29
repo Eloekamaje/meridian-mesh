@@ -11,7 +11,6 @@ import {
   SidebarSimple, 
   X,
   Sparkle, 
-  Bell, 
   Users, 
   Check, 
   CaretDown,
@@ -23,7 +22,9 @@ import { usePerimetre } from "@/lib/perimetre";
 import { useContexte } from "@/lib/contexte";
 import { usePilotage } from "@/lib/pilotage";
 import { useIdentite } from "@/lib/identite";
+import { useEvenements } from "@/lib/evenements";
 import IndicateurClic from "@/components/IndicateurClic";
+import Notifications from "@/components/Notifications";
 import logoComplet from "@/assets/logo/meridian-logo-clair.png";
 import logoSymbole from "@/assets/logo/meridian-symbole.png";
 
@@ -58,6 +59,8 @@ export default function SidebarGauche({ mode = "bureau", onOuvrir, onFermer }) {
   const [menuProfil, setMenuProfil] = useState(false);
   const [recents, setRecents] = useState([]);
   const [tousTravaux, setTousTravaux] = useState([]);
+  const [enCours, setEnCours] = useState(() => new Set()); // fils où Flore travaille encore
+  const pretSse = useRef(false);
   const [recherche, setRecherche] = useState("");
   const [trouves, setTrouves] = useState(null); // réponse du serveur à GET /cases?q=
   const [aExaminer, setAExaminer] = useState(0); // travaux dont une décision est remise en question
@@ -106,6 +109,30 @@ export default function SidebarGauche({ mode = "bureau", onOuvrir, onFermer }) {
       .catch(() => {});
     // En démonstration, la liste se recharge quand le travail naît, s'enrichit ou se fige
   }, [pilote?.versionTravaux, location.pathname, majTravaux]);
+
+  // Les tours de Flore encore en cours : un instantané au montage, puis le canal SSE (démarrage/fin).
+  // Le badge survit à la sortie de la page sans polling ; une fin recharge les Récents.
+  useEffect(() => {
+    api.get("/tours/en-cours")
+      .then((r) => { if (!pretSse.current) setEnCours(new Set(r.data?.fils || [])); })
+      .catch(() => {});
+  }, []);
+
+  useEvenements((e) => {
+    if (e.type === "pret") {
+      pretSse.current = true;
+      setEnCours(new Set(e.fils || []));
+    } else if (e.type === "tour.demarre" && e.fil) {
+      setEnCours((avant) => new Set(avant).add(e.fil));
+    } else if (e.type === "tour.fini" && e.fil) {
+      setEnCours((avant) => { const suite = new Set(avant); suite.delete(e.fil); return suite; });
+      setMajTravaux((v) => v + 1);
+      // Plusieurs tours peuvent partager un même fil : on relit la vérité plutôt que de retirer le fil.
+      api.get("/tours/en-cours")
+        .then((r) => setEnCours(new Set(r.data?.fils || [])))
+        .catch(() => {});
+    }
+  });
 
   // « Nouveau travail » : en démonstration le clic lance la séquence scénarisée
   // (le moteur ouvre la page) ; hors démonstration il ouvre la vraie page de création.
@@ -159,6 +186,8 @@ export default function SidebarGauche({ mode = "bureau", onOuvrir, onFermer }) {
               <MagnifyingGlass size={15} />
             </button>
 
+            <Notifications persona={persona} cible={cible} />
+
             {/* Bouton pour replier la barre latérale vers les icônes seules */}
             <button 
               onClick={basculerRepli}
@@ -183,6 +212,7 @@ export default function SidebarGauche({ mode = "bureau", onOuvrir, onFermer }) {
             <img src={logoSymbole} alt="Méridian" className="h-6 w-auto select-none transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0" draggable={false} data-testid="sidebar-symbole" />
             <SidebarSimple size={18} className="absolute text-white opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100" />
           </button>
+          <Notifications persona={persona} cible={cible} />
         </div>
       )}
 
@@ -301,11 +331,18 @@ export default function SidebarGauche({ mode = "bureau", onOuvrir, onFermer }) {
               title={c.titre}
             >
               <span className="truncate">{c.titre}</span>
-              {estConversation(c) && <span className="ml-auto shrink-0 font-code text-[9px] text-[#64748B]" data-testid={`recent-conversation-${c.id}`}>conversation</span>}
-              {c.mouvement && <span className={`ml-auto h-2 w-2 shrink-0 rounded-full ${c.mouvement.niveau === 1 ? "bg-[#F87171]" : "bg-[#60A5FA]"}`} title={c.mouvement.texte} data-testid={`recent-mouvement-${c.id}`} />}
-              {c.demo_phase === "en_construction" && (
-                <span className="shrink-0 rounded-full bg-[#60A5FA]/20 px-1.5 py-px font-code text-[8px] uppercase tracking-wider text-[#BFDBFE]">en cours</span>
-              )}
+              <span className="ml-auto flex shrink-0 items-center gap-1.5">
+                {estConversation(c) && <span className="font-code text-[9px] text-[#64748B]" data-testid={`recent-conversation-${c.id}`}>conversation</span>}
+                {c.mouvement && <span className={`h-2 w-2 shrink-0 rounded-full ${c.mouvement.niveau === 1 ? "bg-[#F87171]" : "bg-[#60A5FA]"}`} title={c.mouvement.texte} data-testid={`recent-mouvement-${c.id}`} />}
+                {(enCours.has(c.id) || c.demo_phase === "en_construction") && (
+                  <span className="flex shrink-0 items-center gap-1 rounded-full bg-[#60A5FA]/20 px-1.5 py-px font-code text-[8px] uppercase tracking-wider text-[#BFDBFE]"
+                        title={enCours.has(c.id) ? "Flore travaille sur ce travail" : "Démonstration en construction"}
+                        data-testid={`recent-en-cours-${c.id}`}>
+                    <span className="h-1 w-1 animate-pulse rounded-full bg-current" />
+                    en cours
+                  </span>
+                )}
+              </span>
             </NavLink>
           ))}
         </div>

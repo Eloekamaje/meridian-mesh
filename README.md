@@ -92,6 +92,25 @@ cd frontend && yarn install && yarn start
 
 Variables d'environnement : `backend/.env` (`MONGO_URL`, `DB_NAME`), `frontend/.env` (`REACT_APP_BACKEND_URL`).
 
+### Plusieurs workers (Redis)
+
+Le bus SSE et l'état des tours partagés passent par Redis dès que `REDIS_URL` est défini. Avec plusieurs
+workers uvicorn, Redis est **obligatoire** : le démarrage échoue plutôt que de laisser chaque worker croire
+qu'il est seul.
+
+```bash
+docker compose up -d redis
+export REDIS_URL=redis://127.0.0.1:6379/0
+cd backend && uvicorn server:app --host 0.0.0.0 --port 8001 --workers 2
+```
+
+`TOUR_TTL` (secondes, défaut 600) règle la conservation du flux et des métadonnées d'un tour.
+`TOUR_HEARTBEAT` (5 s), `TOUR_STALE` (30 s) et `TOUR_REAPER` (10 s) règlent le battement de cœur du worker
+propriétaire et le ramassage d'un tour dont le worker a disparu. Le flux SSE porte un `id:` Redis Stream :
+une reprise utilise cet identifiant opaque, pas un index de tableau. Les notifications restent persistées
+dans Mongo ; Redis ne porte que le temps réel. En production, Redis doit être authentifié (ACL/TLS) et
+l'URL ne doit pas apparaître dans les logs.
+
 ## Données de démonstration
 
 Seed automatique au démarrage (clé `SEED_VERSION` : un changement réinitialise les données). Bouton **« Réinitialiser la démo »** dans Administration (trace au journal d'audit). Jeu : 12 jumeaux, 14 relations (6 états : observée, supposée, validation A2A, contestée, obsolète, confirmée), 11 situations, situation principale « Latence du parcours de paiement ». Un **Parcours Olympiade** guidé (bouton dans la barre latérale) fait la démonstration complète.

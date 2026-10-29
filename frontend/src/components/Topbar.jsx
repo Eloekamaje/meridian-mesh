@@ -9,7 +9,7 @@ import { useDemo } from "@/lib/demo";
 import { usePilotage } from "@/lib/pilotage";
 import { parseQuand } from "@/lib/temps";
 
-const TYPES_NOTIF = { mention: "#60A5FA", assignation: "#F2B84B", a_revoir: "#F87171" };
+const TYPES_NOTIF = { mention: "#60A5FA", assignation: "#F2B84B", a_revoir: "#F87171", investigation_terminee: "#34D399" };
 
 const NAV = [
   { to: "/atlas", label: "Atlas", icon: Compass, testid: "nav-atlas" },

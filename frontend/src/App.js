@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { DemoProvider } from "@/lib/demo";
 import { MeshProvider } from "@/lib/mesh";
 import { PerimetreProvider } from "@/lib/perimetre";
+import { EvenementsProvider } from "@/lib/evenements";
 import { ContexteProvider } from "@/lib/contexte";
 import Layout from "@/components/Layout";
 import Actualites from "@/pages/Actualites";
@@ -46,6 +47,7 @@ function ProduitApp() {
       <DemoProvider>
         <ContexteProvider>
         <MeshProvider>
+        <EvenementsProvider>
         <Routes>
           <Route element={<Layout />}>
             {/* L'Atlas est l'accueil ; les autres fonctions sont de vraies pages (zone centrale) */}
@@ -84,6 +86,7 @@ function ProduitApp() {
             <Route path="/registry" element={<Navigate to="/jumeaux" replace />} />
           </Route>
         </Routes>
+        </EvenementsProvider>
         </MeshProvider>
         </ContexteProvider>
       </DemoProvider>

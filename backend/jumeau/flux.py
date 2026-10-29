@@ -21,6 +21,7 @@ import uuid
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
 
+from jumeau import evenements, partage, tours_redis as magasin
 from jumeau.protocole import Traducteur, encoder
 
 journal = logging.getLogger("meridian.jumeau")
@@ -125,21 +126,29 @@ class Tour:
 
     def __init__(self, fil, proprietaire):
         self.id = uuid.uuid4().hex
+        self.fil = fil
         self.proprietaire = proprietaire
         self.traducteur = Traducteur(fil or self.id, self.id)
         self.lignes = []
+        self.lecteurs = 0  # connexions qui lisent ce tour en ce moment
+        self.fin_lue = False  # au moins un lecteur a lu la fin publiée
         self.fini = False
         self.tache = None
         self._signal = asyncio.Event()
 
-    def publier(self, evenements):
+    async def publier(self, evenements):
         self.lignes.extend(encoder(e) for e in evenements)
         self._reveiller()
 
-    def terminer(self):
+    async def terminer(self):
+        if self.fini:
+            return
         self.fini = True
+        evenements.publier(self.proprietaire, "tour.fini", fil=self.fil, tour=self.id)
         self._reveiller()
-        asyncio.get_running_loop().call_later(CONSERVATION_TOUR, TOURS.pop, self.id, None)
+
+    async def etat_fin(self):
+        return self.lecteurs, self.fin_lue
 
     def _reveiller(self):
         signal, self._signal = self._signal, asyncio.Event()
@@ -147,22 +156,44 @@ class Tour:
 
     async def lire(self, depuis=0, requete=None):
         """Les lignes depuis `depuis`, puis la suite en direct ; s'arrête à la fin du tour ou au départ du lecteur."""
-        i = max(depuis, 0)
-        while True:
-            while i < len(self.lignes):
-                yield self.lignes[i]
-                i += 1
-            if self.fini:
-                return
-            signal = self._signal
-            if requete is None:
-                await signal.wait()
-                continue
-            try:
-                await asyncio.wait_for(signal.wait(), SONDE_DECONNEXION)
-            except asyncio.TimeoutError:
-                if await requete.is_disconnected():
-                    return  # le lecteur est parti ; le tour, lui, continue
+        try:
+            i = max(int(depuis), 0)
+        except (TypeError, ValueError):
+            i = 0  # curseur opaque d'un autre backend : on rejoue depuis le début
+        self.lecteurs += 1
+        try:
+            while True:
+                while i < len(self.lignes):
+                    yield self.lignes[i]
+                    i += 1
+                if self.fini:
+                    await asyncio.sleep(0)  # une déconnexion déjà reçue peut annuler ce lecteur ici
+                    if requete is not None and await requete.is_disconnected():
+                        return
+                    self.fin_lue = True  # ce lecteur était là jusqu'à la fin
+                    return
+                signal = self._signal
+                if requete is None:
+                    await signal.wait()
+                    continue
+                try:
+                    await asyncio.wait_for(signal.wait(), SONDE_DECONNEXION)
+                except asyncio.TimeoutError:
+                    if await requete.is_disconnected():
+                        return  # le lecteur est parti ; le tour, lui, continue
+        finally:
+            self.lecteurs -= 1
+
+
+async def _laisser_lire_la_fin(tour, delai=1.0):
+    """La fin vient d'être publiée : laisse un court instant aux lecteurs encore là pour la lire (ou pour constater
+    leur départ). Au-delà, on considère que personne n'écoutait."""
+    limite = time.monotonic() + delai
+    while time.monotonic() < limite:
+        lecteurs, fin_lue = await tour.etat_fin()
+        if lecteurs == 0 or fin_lue:
+            return
+        await asyncio.sleep(0.01)
 
 
 def _sse(generateur):
@@ -170,13 +201,69 @@ def _sse(generateur):
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
-def en_flux(produire, sur_interruption=None, requete=None, fil=None, proprietaire=None):
+def _ligne_evenement(evenement):
+    return "data: " + json.dumps(evenement, ensure_ascii=False, default=str) + "\n\n"
+
+
+async def _canal_evenements(requete, persona):
+    """Un seul canal par onglet : instantané à l'ouverture, puis les changements de cette persona.
+
+    Avec Redis, l'abonnement précède l'instantané : un tour qui démarre pendant la lecture de `fils`
+    est livré après le `pret`, jamais perdu. Le canal d'arrêt ferme les flux au shutdown."""
+    if magasin.actif():
+        pubsub = await partage.abonner(persona)
+        try:
+            fils = await fils_en_cours(persona)
+            yield _ligne_evenement({"type": "pret", "fils": fils})
+            while True:
+                if await requete.is_disconnected():
+                    return
+                try:
+                    message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=20)
+                except Exception:
+                    return
+                if message is None:
+                    yield ": ping\n\n"
+                    continue
+                if message.get("channel") == partage.canal_arret():
+                    return
+                yield "data: " + (message.get("data") or "") + "\n\n"
+        finally:
+            try:
+                await pubsub.unsubscribe(partage.canal(persona), partage.canal_arret())
+                await pubsub.aclose()
+            except Exception:
+                pass
+        return
+
+    file = evenements.BUS.abonner(persona)
+    try:
+        fils = await fils_en_cours(persona)
+        yield _ligne_evenement({"type": "pret", "fils": fils})
+        while True:
+            if await requete.is_disconnected():
+                return
+            try:
+                evenement = await asyncio.wait_for(file.get(), 20)
+            except asyncio.TimeoutError:
+                yield ": ping\n\n"  # garde la connexion vivante à travers les proxies
+                continue
+            if evenement.get("type") == "fermeture":
+                return
+            yield _ligne_evenement(evenement)
+    finally:
+        evenements.BUS.desabonner(persona, file)
+
+
+def en_flux(produire, sur_interruption=None, requete=None, fil=None, proprietaire=None, si_seul=None):
     """`produire(emit)` est une coroutine qui rend la réponse finale ; ses événements partent au fil de l'eau, en
     AG-UI. Le tour continue si le client se déconnecte (coupure : il se reprend par `/api/tours/{id}/flux`). Seul
     `arreter(id)` l'annule ; `sur_interruption(brouillon, activite)` reçoit alors ce qui avait été écrit (la
     concaténation des `texte`) et l'activité du tour. `fil` : le fil AG-UI (le Travail) ; `proprietaire` : le seul
-    interlocuteur qui peut arrêter ou reprendre ce tour."""
-    tour = Tour(fil, proprietaire)
+    interlocuteur qui peut arrêter ou reprendre ce tour. `si_seul(reponse)` : appelé quand le tour finit sans plus
+    personne pour le lire (l'interlocuteur a quitté la page : on le prévient que l'analyse est prête)."""
+    tour = magasin.TourRedis(fil, proprietaire) if magasin.actif() else Tour(fil, proprietaire)
+    tour.traducteur = Traducteur(fil or tour.id, tour.id)
     TOURS[tour.id] = tour
     tour.sur_interruption = sur_interruption
     tour.brouillon = []
@@ -189,25 +276,35 @@ def en_flux(produire, sur_interruption=None, requete=None, fil=None, proprietair
             tour.brouillon.append(evenement.get("delta") or "")
             if horodatage["premier_texte"] is None and horodatage["debut"]:
                 horodatage["premier_texte"] = round(time.monotonic() - horodatage["debut"], 2)
-        tour.publier(tour.traducteur.traduire(evenement))
+        await tour.publier(tour.traducteur.traduire(evenement))
 
     async def tache():
         horodatage["debut"] = time.monotonic()
-        tour.publier(tour.traducteur.debut())
+        await tour.publier(tour.traducteur.debut())
         try:
             reponse = await produire(emit)
             durees = reponse.get("durees") if isinstance(reponse, dict) else None
             if isinstance(durees, dict) and horodatage["premier_texte"] is not None:
                 durees.setdefault("premier_texte", horodatage["premier_texte"])
-            tour.publier(tour.traducteur.fin(json.loads(json.dumps(reponse, default=str))))  # dates en texte
+            await tour.publier(tour.traducteur.fin(json.loads(json.dumps(reponse, default=str))))  # dates en texte
+            await tour.terminer()  # les lecteurs présents peuvent maintenant lire la fin et sortir
+            if si_seul is not None:
+                await _laisser_lire_la_fin(tour)
+                _, fin_lue = await tour.etat_fin()
+                if not fin_lue:  # personne n'a lu la fin : l'interlocuteur a quitté la page
+                    try:
+                        await si_seul(reponse)
+                    except Exception:
+                        journal.exception("prévenir de la fin d'un tour")
         except asyncio.CancelledError:
             raise  # arrêt demandé : `arreter` finit le tour
         except HTTPException as e:
-            tour.publier(tour.traducteur.erreur(str(e.detail)))
+            await tour.publier(tour.traducteur.erreur(str(e.detail)))
         except Exception:
             journal.exception("réponse au fil de l'eau")
-            tour.publier(tour.traducteur.erreur("Flore est momentanément injoignable."))
-        tour.terminer()
+            await tour.publier(tour.traducteur.erreur("Flore est momentanément injoignable."))
+        await tour.terminer()
+        asyncio.get_running_loop().call_later(CONSERVATION_TOUR, TOURS.pop, tour.id, None)
 
     tour._lancer = tache
     return _sse(_premiere_lecture(tour, requete))
@@ -215,7 +312,19 @@ def en_flux(produire, sur_interruption=None, requete=None, fil=None, proprietair
 
 async def _premiere_lecture(tour, requete):
     """Le tour démarre avec la première lecture (une boucle d'événements tourne alors) ; il est gardé dans _TACHES :
-    il se termine même si ce lecteur part."""
+    il se termine même si ce lecteur part. L'état Redis est créé avant de publier le démarrage."""
+    if hasattr(tour, "creer"):
+        try:
+            await tour.creer()
+        except BaseException:
+            TOURS.pop(tour.id, None)
+            if hasattr(tour, "abandonner"):
+                try:
+                    await tour.abandonner()
+                except Exception:
+                    pass
+            raise
+    evenements.publier(tour.proprietaire, "tour.demarre", fil=tour.fil, tour=tour.id)
     tour.tache = asyncio.create_task(tour._lancer())
     _TACHES.add(tour.tache)
     tour.tache.add_done_callback(_TACHES.discard)
@@ -239,24 +348,102 @@ async def arreter(tour_id, persona):
             await tour.sur_interruption("".join(tour.brouillon), tour.activite.ops)
         except Exception:
             journal.exception("enregistrement d'une réponse interrompue")
-    tour.publier(tour.traducteur.arret())
-    tour.terminer()
+    await tour.publier(tour.traducteur.arret())
+    await tour.terminer()
+    asyncio.get_running_loop().call_later(CONSERVATION_TOUR, TOURS.pop, tour.id, None)
     return True
 
 
+async def fils_en_cours(proprietaire):
+    """Les fils (Travaux) dont un tour de Flore tourne encore pour cet interlocuteur. Un tour fini reste
+    consultable `CONSERVATION_TOUR` secondes, mais ne compte plus comme « en cours »."""
+    if magasin.actif():
+        return await magasin.actifs(proprietaire)
+    return sorted({t.fil for t in TOURS.values()
+                   if t.fil and not t.fini and t.proprietaire == proprietaire})
+
+
+_CONTROLE = None
+
+
+async def demarrer_controle():
+    """Avec Redis, chaque worker écoute les demandes d'arrêt ; seul le propriétaire de la tâche agit."""
+    global _CONTROLE
+    if not magasin.actif() or _CONTROLE is not None:
+        return
+
+    async def arreter_distant(tid, persona):
+        tour = TOURS.get(tid)
+        if tour is not None and tour.proprietaire == persona:
+            await arreter(tid, persona)
+
+    async def veiller():
+        while True:
+            try:
+                await magasin.ecouter_controle(arreter_distant)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                journal.exception("écoute des arrêts Redis")
+                await asyncio.sleep(2)
+
+    _CONTROLE = asyncio.create_task(veiller())
+
+
+async def arreter_controle():
+    global _CONTROLE
+    if _CONTROLE is not None:
+        _CONTROLE.cancel()
+        await asyncio.gather(_CONTROLE, return_exceptions=True)
+        _CONTROLE = None
+
+
+def fermer_lecteurs():
+    """Ferme les SSE mémoire locaux au shutdown ; les lecteurs Redis écoutent le canal d'arrêt."""
+    for tour in list(TOURS.values()):
+        if isinstance(tour, Tour):
+            tour.fini = True
+            tour._reveiller()
+
+
 def ajouter_routes_tours(router, header):
-    """Arrêter et reprendre un tour : réservé à son interlocuteur (sinon 404, sans dire qu'il existe)."""
+    """Arrêter, reprendre et suivre un tour : réservé à son interlocuteur (sinon 404, sans dire qu'il existe)."""
     from fastapi import Request
+
+    @router.get("/evenements")
+    async def canal_evenements(request: Request, x_persona: str = header("architecte")):
+        return _sse(_canal_evenements(request, x_persona))
+
+    @router.get("/tours/en-cours")
+    async def tours_en_cours(x_persona: str = header("architecte")):
+        return {"fils": await fils_en_cours(x_persona)}
 
     @router.post("/tours/{tid}/arreter")
     async def arreter_tour(tid: str, x_persona: str = header("architecte")):
-        if TOURS.get(tid) is None or TOURS[tid].proprietaire != x_persona:
-            raise HTTPException(404, "Tour introuvable")
-        return {"arrete": await arreter(tid, x_persona)}
+        tour = TOURS.get(tid)
+        if tour is not None and tour.proprietaire == x_persona:
+            return {"arrete": await arreter(tid, x_persona)}
+        if magasin.actif():
+            m = await magasin.meta(tid)
+            if m and m.get("proprietaire") == x_persona:
+                if m.get("fini") == "1":
+                    return {"arrete": False}
+                await magasin.demander_arret(tid, x_persona)
+                for _ in range(20):
+                    courant = await magasin.meta(tid)
+                    if not courant or courant.get("fini") == "1":
+                        return {"arrete": True}
+                    await asyncio.sleep(0.1)
+                return {"arrete": False, "accepte": True}
+        raise HTTPException(404, "Tour introuvable")
 
     @router.get("/tours/{tid}/flux")
-    async def reprendre_tour(tid: str, request: Request, depuis: int = 0, x_persona: str = header("architecte")):
+    async def reprendre_tour(tid: str, request: Request, depuis: str = "0", x_persona: str = header("architecte")):
         tour = TOURS.get(tid)
-        if tour is None or tour.proprietaire != x_persona:
-            raise HTTPException(404, "Tour introuvable")
-        return _sse(tour.lire(depuis, request))
+        if tour is not None and tour.proprietaire == x_persona:
+            return _sse(tour.lire(depuis, request))
+        if magasin.actif():
+            m = await magasin.meta(tid)
+            if m and m.get("proprietaire") == x_persona:
+                return _sse(magasin.lire(tid, depuis, request))
+        raise HTTPException(404, "Tour introuvable")

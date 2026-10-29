@@ -63,8 +63,10 @@ async function* evenements(reponse) {
     const blocs = tampon.split("\n\n");
     tampon = blocs.pop();
     for (const bloc of blocs) {
-      const ligne = bloc.split("\n").find((l) => l.startsWith("data: "));
-      if (ligne) yield JSON.parse(ligne.slice(6));
+      const lignes = bloc.split("\n");
+      const ligne = lignes.find((l) => l.startsWith("data: "));
+      const id = lignes.find((l) => l.startsWith("id: "));
+      if (ligne) yield { id: id ? id.slice(4).trim() : null, event: JSON.parse(ligne.slice(6)) };
     }
   }
 }
@@ -73,10 +75,11 @@ async function* evenements(reponse) {
 // relue, qu'elle rend. `signal` : « Arrêter » — le serveur est prié d'arrêter le tour (il enregistre ce qui était
 // écrit) AVANT que la promesse ne rejette une AbortError (estArret) : la relecture qui suit voit la réponse partielle.
 // Une coupure de réseau n'arrête pas le tour : `onCoupure(true)`, puis reprise depuis le dernier événement lu
-// (`/tours/{id}/flux?depuis=n`), `onCoupure(false)` quand le fil est renoué. Rejette sur une erreur annoncée.
+// (`/tours/{id}/flux?depuis=<id>` ou un compteur pour l'ancien backend), `onCoupure(false)` quand le fil est renoué. Rejette sur une erreur annoncée.
 export async function demanderEnFlux(chemin, corps, { onEtape, onTexte, onRelecture, onOutil, onMission, onCoupure, signal } = {}) {
   let tour = null;
   let lus = 0;
+  let dernierId = null;
   const lire = lecteurAgUi({ onEtape, onTexte, onRelecture, onOutil, onMission, onDebut: (id) => { tour = id; } });
   const entetes = { Accept: "text/event-stream", ...entetesPerimetre() };
   let reponse = await fetch(`${API()}${chemin}`, {
@@ -85,9 +88,10 @@ export async function demanderEnFlux(chemin, corps, { onEtape, onTexte, onRelect
   if (!reponse.ok || !reponse.body) throw new Error(`flux indisponible (${reponse.status})`);
   for (let essai = 0; ; ) {
     try {
-      for await (const e of evenements(reponse)) {
+      for await (const { id, event } of evenements(reponse)) {
+        if (id) dernierId = id;
         lus += 1;
-        const r = lire(e);
+        const r = lire(event);
         if (r) return r.fin;
         if (essai && lus) { onCoupure?.(false); essai = 0; } // le fil est renoué
       }
@@ -106,7 +110,8 @@ export async function demanderEnFlux(chemin, corps, { onEtape, onTexte, onRelect
       onCoupure?.(true);
       await attendre(PAUSES_REPRISE[essai], signal);
       essai += 1;
-      reponse = await fetch(`${API()}/tours/${tour}/flux?depuis=${lus}`, { headers: entetes, signal })
+      const depuis = dernierId != null ? encodeURIComponent(dernierId) : lus;
+      reponse = await fetch(`${API()}/tours/${tour}/flux?depuis=${depuis}`, { headers: entetes, signal })
         .catch((e) => (estArret(e) ? Promise.reject(e) : { ok: false, status: 0 }));
       if (reponse.status === 404) throw Object.assign(err, { tourEnCours: true }); // tour oublié : l'appelant relit
       if (!reponse.ok || !reponse.body) reponse = { ok: false, body: { getReader: () => ({ read: () => Promise.reject(err) }) } };

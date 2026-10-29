@@ -40,6 +40,7 @@ def ajouter_routes_fil(router, deps):
     reviser(claim, jumeau, persona, decision, motif) : la revue humaine (LookupError, ValueError si déjà revue)."""
     db, charger_case, repondre = deps["db"], deps["charger_case"], deps["repondre"]
     resoudre_perimetre, autorisations, reviser = deps["resoudre_perimetre"], deps["autorisations"], deps["reviser"]
+    prevenir_fin = deps.get("prevenir_fin") or (lambda cid, persona: None)
 
     async def ouvrir(cid, persona, espace_hdr):
         _, espace = resoudre_perimetre(persona, espace_hdr)
@@ -101,7 +102,8 @@ def ajouter_routes_fil(router, deps):
         async def interrompu(brouillon, activite=None):
             if brouillon:  # rien d'écrit : rien n'est ajouté
                 await ajouter(fil.message_interrompu(brouillon, activite))
-        return flux.en_flux(produire, sur_interruption=interrompu, fil=cid, proprietaire=x_persona)
+        return flux.en_flux(produire, sur_interruption=interrompu, fil=cid, proprietaire=x_persona,
+                             si_seul=prevenir_fin(cid, x_persona))
 
     @router.post("/cases/{cid}/messages/{n}/modifier/flux")
     async def modifier(cid: str, n: int, payload: Modification, x_persona: str = Header("architecte"),
@@ -122,7 +124,8 @@ def ajouter_routes_fil(router, deps):
 
         async def interrompu(brouillon, activite=None):
             await ajouter(fil.message_interrompu(brouillon, activite))
-        return flux.en_flux(produire, sur_interruption=interrompu, fil=cid, proprietaire=x_persona)
+        return flux.en_flux(produire, sur_interruption=interrompu, fil=cid, proprietaire=x_persona,
+                             si_seul=prevenir_fin(cid, x_persona))
 
     @router.post("/cases/{cid}/messages/{n}/approbation")
     async def approuver(cid: str, n: int, payload: Approbation, x_persona: str = Header("architecte"),

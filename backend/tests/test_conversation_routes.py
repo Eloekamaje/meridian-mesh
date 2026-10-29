@@ -63,6 +63,7 @@ class Collection:
 class Db:
     def __init__(self, cases):
         self.cases, self.jumeaux, self.retours = Collection(cases), Collection(), Collection()
+        self.notifications = Collection()
 
 
 def un_fil():
@@ -124,9 +125,13 @@ def monde(monkeypatch):
     db, faux = Db([CASE, AUTRE]), Faux()
 
     async def rien(*a, **k): return None
+
+    async def noter(personas, type_, texte, lien):
+        for p in personas:
+            await db.notifications.insert_one({"persona": p, "type": type_, "texte": texte, "lien": lien})
     router = cases_routes.build_cases_router({
         "db": db, "resoudre_perimetre": resoudre_perimetre,
-        "autorisations": droits, "journaler": rien, "notifier": rien,
+        "autorisations": droits, "journaler": rien, "notifier": noter,
         "generer_reponse_flore": faux, "slugify": lambda s: s, "NO_ID": {"_id": 0},
         "datetime": __import__("datetime").datetime, "timezone": __import__("datetime").timezone})
     api = APIRouter(prefix="/api")
@@ -278,7 +283,12 @@ def lancer_puis_couper(monde, chemin, corps, lectures=2, arreter=True):
             if message["type"] == "http.response.body" and b"data:" in message.get("body", b""):
                 recus.append(message["body"])
                 if len(recus) == max(lectures, 1):
-                    asyncio.get_running_loop().call_later(0.3 if lectures == 0 else 0, lambda: asyncio.ensure_future(couper()))
+                    if arreter:
+                        asyncio.get_running_loop().call_later(0.3 if lectures == 0 else 0,
+                                                             lambda: asyncio.ensure_future(couper()))
+                    else:
+                        parti.set()  # coupure réelle : le serveur doit la voir avant la fin du tour
+                        await asyncio.sleep(0)
         scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "POST", "path": chemin,
                  "raw_path": chemin.encode(), "query_string": b"", "root_path": "", "scheme": "http",
                  "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(octets)).encode())],
@@ -472,3 +482,10 @@ def test_approbation_d_une_proposition_absente_ou_deja_revue_ailleurs(avec_propo
     monkeypatch.setattr(cases_routes, "reviser_proposee", deja)  # tranchée sur la page Revue entre-temps
     r = client.post("/api/cases/t1/messages/3/approbation", json={"claim": 7, "decision": "ACCEPTED"})
     assert r.status_code == 409 and "déjà revue" in r.text and "decision" not in conv(db)[3]["a_approuver"][0]
+
+
+def test_une_reponse_finie_apres_le_depart_de_l_interlocuteur_le_previent(monde):
+    client, db, faux = monde
+    lancer_puis_couper(monde, "/api/cases/t1/messages/flux", {"texte": "Et la sécurité ?"}, arreter=False)
+    assert conv(db)[-1]["texte"] == "Nouvelle réponse."
+    assert [(n["persona"], n["type"], n["lien"]) for n in db.notifications.docs] == [("architecte", "investigation_terminee", "/travaux/t1")]

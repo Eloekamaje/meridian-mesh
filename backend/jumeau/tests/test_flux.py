@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from fastapi import FastAPI, HTTPException
+from fastapi import APIRouter, FastAPI, Header, HTTPException
 from fastapi.testclient import TestClient
 
 from jumeau import flux
@@ -246,3 +246,59 @@ def test_une_mission_montre_les_outils_de_son_jumeau_puis_son_bilan(monkeypatch)
     assert evts[0]["parent"] == "conduit"
     assert evts[2] == {"type": "mission", "jumeau": "conduit", "etat": "fait", "confiance": "elevee", "preuves": 1,
                        "constat": "Conduit garde tout dans une base."}
+
+
+def test_un_tour_fini_sans_personne_pour_le_lire_le_dit_a_son_auteur():
+    appels = []
+
+    async def si_seul(reponse):
+        appels.append(reponse)
+
+    class Requete:
+        parti = False
+
+        async def is_disconnected(self):
+            return self.parti
+
+    async def produire(emit):
+        await emit({"type": "texte", "delta": "x"})
+        await asyncio.sleep(0.6)
+        return {"reponse": "fini"}
+
+    async def scenario(partir):
+        appels.clear()
+        requete = Requete()
+        it = _lancer(produire, requete=requete, si_seul=si_seul)
+        while "TEXT_MESSAGE_CONTENT" not in await it.__anext__():
+            pass
+        if partir:
+            requete.parti = True
+            with pytest.raises(StopAsyncIteration):
+                await asyncio.wait_for(it.__anext__(), 5)
+        else:
+            async for _ in it:
+                pass
+        await asyncio.gather(*list(flux._TACHES), return_exceptions=True)
+        return list(appels)
+    assert asyncio.run(scenario(partir=True)) == [{"reponse": "fini"}]
+    assert asyncio.run(scenario(partir=False)) == []
+
+
+def test_les_tours_en_cours_sont_rendus_a_leur_interlocuteur():
+    app = FastAPI()
+    routes = APIRouter()
+    flux.ajouter_routes_tours(routes, Header)
+    app.include_router(routes)
+    client = TestClient(app)
+    mien = flux.Tour("travail-en-cours", "test-en-cours")
+    autre = flux.Tour("travail-d-un-autre", "test-autre")
+    flux.TOURS[mien.id] = mien
+    flux.TOURS[autre.id] = autre
+    try:
+        r = client.get("/tours/en-cours", headers={"X-Persona": "test-en-cours"})
+        assert r.json() == {"fils": ["travail-en-cours"]}  # ni le tour d'un autre, ni…
+        mien.fini = True
+        assert client.get("/tours/en-cours", headers={"X-Persona": "test-en-cours"}).json() == {"fils": []}
+    finally:  # … ni un tour fini (encore consultable, mais plus « en cours »)
+        flux.TOURS.pop(mien.id, None)
+        flux.TOURS.pop(autre.id, None)

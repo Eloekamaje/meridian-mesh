@@ -9,6 +9,8 @@ import hashlib
 import os
 import re
 import random
+import signal
+import sys
 import logging
 import secrets
 import unicodedata
@@ -21,6 +23,9 @@ from initiatives_routes import build_initiatives_router
 from mesh_vue_routes import build_mesh_vue_router
 from jumeau.routes import router as jumeau_router
 from jumeau import cbm as jumeau_cbm
+from jumeau import evenements as jumeau_evenements
+from jumeau import partage as jumeau_partage
+from jumeau import tours_redis as jumeau_tours_redis
 from jumeau import flore as jumeau_flore
 from jumeau import flux as jumeau_flux
 from jumeau import registre as jumeau_registre
@@ -78,6 +83,48 @@ async def projeter_jumeaux_reels():
         logger.info("Jumeaux réels projetés dans le registre : %d", n)
     except psycopg.Error:
         logger.exception("Projection des jumeaux réels impossible ; le registre de démo reste utilisable")
+
+
+def _nombre_workers():
+    nombres = []
+    for cle in ("WEB_CONCURRENCY", "UVICORN_WORKERS", "GUNICORN_WORKERS"):
+        valeur = os.getenv(cle)
+        if not valeur:
+            continue
+        try:
+            nombres.append(int(valeur))
+        except ValueError:
+            pass
+
+    def ajouter(argv):
+        for i, arg in enumerate(argv):
+            if arg in ("--workers", "-w") and i + 1 < len(argv):
+                try:
+                    nombres.append(int(argv[i + 1]))
+                except ValueError:
+                    pass
+            elif arg.startswith("--workers=") or arg.startswith("-w="):
+                try:
+                    nombres.append(int(arg.split("=", 1)[1]))
+                except ValueError:
+                    pass
+
+    ajouter(sys.argv)
+    try:  # worker uvicorn : le nombre de workers vit dans la ligne de commande du superviseur
+        cmd = Path(f"/proc/{os.getppid()}/cmdline").read_bytes().replace(b"\0", b" ").decode()
+        ajouter(cmd.split())
+    except OSError:
+        pass
+    return max(nombres or [1])
+
+
+@app.on_event("startup")
+async def demarrer_partage():
+    if _nombre_workers() > 1 and not jumeau_partage.actif():
+        raise RuntimeError("REDIS_URL est requis avec plusieurs workers uvicorn")
+    await jumeau_partage.verifier()
+    await jumeau_tours_redis.demarrer_taches()
+    await jumeau_flux.demarrer_controle()
 
 
 @app.on_event("startup")
@@ -197,6 +244,9 @@ async def notifier(persona_ids, type_, texte, lien):
     ]
     if docs:
         await db.notifications.insert_many(docs)
+        for doc in docs:
+            jumeau_evenements.publier(doc["persona"], "notification.creee",
+                                      notification={k: doc[k] for k in ("id", "persona", "type", "texte", "lien", "lu", "quand")})
 
 
 async def marquer_cases_a_revoir(jumeaux_ids, raison):
@@ -1590,6 +1640,39 @@ app.add_middleware(
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
 
+def _fermer_flux_sur_arret():
+    """Uvicorn attend les connexions avant son shutdown : on ferme les SSE dès le signal pour ne pas bloquer."""
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            precedent = signal.getsignal(sig)
+        except (ValueError, OSError):
+            continue
+        if not callable(precedent):
+            continue
+
+        def gerer(signum, frame, precedent=precedent):
+            jumeau_evenements.fermer()
+            jumeau_flux.fermer_lecteurs()
+            precedent(signum, frame)
+
+        try:
+            signal.signal(sig, gerer)
+        except (ValueError, OSError):
+            pass
+
+
+@app.on_event("startup")
+async def fermer_flux_sur_arret():
+    _fermer_flux_sur_arret()
+
+
 @app.on_event("shutdown")
 async def shutdown_db_client():
+    await jumeau_tours_redis.arreter_taches()
+    await jumeau_flux.arreter_controle()
+    jumeau_evenements.fermer()
+    jumeau_flux.fermer_lecteurs()
+    if jumeau_partage.actif():
+        await jumeau_partage.publier_arret()
+    await jumeau_partage.fermer()
     client.close()

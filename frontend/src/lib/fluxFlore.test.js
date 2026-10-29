@@ -99,6 +99,15 @@ const corpsSSE = (evts, coupure = false) => {
   } }) };
 };
 
+const corpsSSEId = (evts, coupure = false) => {
+  const morceaux = evts.map(([id, e]) => new TextEncoder().encode(`id: ${id}\ndata: ${JSON.stringify(e)}\n\n`));
+  return { getReader: () => ({ read: async () => {
+    if (morceaux.length) return { value: morceaux.shift(), done: false };
+    if (coupure) throw new TypeError("network error");
+    return { value: undefined, done: true };
+  } }) };
+};
+
 test("une coupure se reprend depuis le dernier événement lu, et la réponse arrive", async () => {
   global.TextDecoder = global.TextDecoder || TextDecoder;
   global.TextEncoder = global.TextEncoder || require("util").TextEncoder;
@@ -120,6 +129,29 @@ test("une coupure se reprend depuis le dernier événement lu, et la réponse ar
   expect(appels[1]).toMatch(/\/api\/tours\/R1\/flux\?depuis=2$/);
   expect(textes).toEqual(["Bon", "jour"]);
   expect(coupures).toEqual([true, false]);
+}, 10000);
+
+test("une reprise utilise l'identifiant SSE opaque du flux Redis", async () => {
+  global.TextDecoder = global.TextDecoder || TextDecoder;
+  global.TextEncoder = global.TextEncoder || require("util").TextEncoder;
+  const appels = [];
+  global.fetch = jest.fn((url) => {
+    appels.push(url);
+    if (appels.length === 1) {
+      return Promise.resolve({ ok: true, body: corpsSSEId([
+        ["12-0", { type: "RUN_STARTED", threadId: "t", runId: "R2" }],
+        ["13-0", { type: "TEXT_MESSAGE_CONTENT", messageId: "m", delta: "Bon" }],
+      ], true) });
+    }
+    return Promise.resolve({ ok: true, body: corpsSSEId([
+      ["14-0", { type: "RUN_FINISHED", result: { reponse: "Bonjour" } }],
+    ]) });
+  });
+  const textes = [];
+  const promesse = demanderEnFlux("/cases/t/messages/flux", { texte: "q" }, { onTexte: (d) => textes.push(d) });
+  expect(await promesse).toEqual({ reponse: "Bonjour" });
+  expect(appels[1]).toMatch(/\/api\/tours\/R2\/flux\?depuis=13-0$/);
+  expect(textes).toEqual(["Bon"]);
 }, 10000);
 
 test("« Arrêter » demande l'arrêt du tour au serveur avant de rendre la main", async () => {
