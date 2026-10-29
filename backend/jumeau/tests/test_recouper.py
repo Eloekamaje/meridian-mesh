@@ -176,7 +176,7 @@ def test_connaissances_expose_la_verification(monde):
     conn = monde["conn"]
     # Toute connaissance naît avec son état (L1.6) : « en_attente », jamais rien du tout.
     assert connaissance.connaissances(conn, "tbt")[0]["verification"] == {
-        "etat": "en_attente", "methode": "aucune", "systemes": [], "raison": None, "forme": None}
+        "etat": "en_attente", "methode": "aucune", "systemes": [], "raison": None, "forme": None, "citations": []}
     recoupement._enregistrer(conn, recoupement.a_verifier(conn, "tbt")[0], "selon", "juge", {"git"}, "une source")
     v = connaissance.connaissances(conn, "tbt")[0]["verification"]
-    assert v == {"etat": "selon", "methode": "juge", "systemes": ["git"], "raison": "une source", "forme": None}
+    assert v == {"etat": "selon", "methode": "juge", "systemes": ["git"], "raison": "une source", "forme": None, "citations": []}

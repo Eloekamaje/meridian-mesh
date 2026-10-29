@@ -52,3 +52,9 @@ def test_carte_porte_la_verification_et_ecarte_le_non_appuye():
               {"predicat": "ECHANGE_AVEC", "objet": "Courriel", "statut": "PROPOSED"}]
     c = carte.carte(JUMEAU, SOURCES, claims, [], {})
     assert c["echanges"] == ["Fraude (d'après le code)", "Comptes (recoupé)", "Courriel"]
+
+
+def test_une_connaissance_incertaine_ne_se_publie_pas():
+    claims = [{"predicat": "ECHANGE_AVEC", "objet": "Fraude", "statut": "PROPOSED", "verification": {"etat": "incertain"}},
+              {"predicat": "ECHANGE_AVEC", "objet": "Comptes", "statut": "PROPOSED", "verification": {"etat": "verifie"}}]
+    assert carte.carte(JUMEAU, SOURCES, claims, [], {})["echanges"] == ["Comptes (vérifié)"]

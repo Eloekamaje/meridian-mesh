@@ -6,12 +6,12 @@ la porte intérieure : on la demande au jumeau lui-même.
 """
 import asyncio
 
-from jumeau import connaissance, depot
+from jumeau import connaissance, depot, schemas
 
 MAX_PAR_RUBRIQUE = 8
 
 
-NON_APPUYEES = ("non_appuye", "en_partie")  # ce que sa preuve n'appuie pas ne se publie pas (Harness v3 §2)
+NON_APPUYEES = schemas.NON_TENUES  # ce que sa preuve n'appuie pas ne se publie pas (Harness v3 §2)
 # Le système d'une preuve est désormais le type de sa source (L1.3) : les libellés suivent.
 SOURCES_LISIBLES = {"git": "le code", "confluence": "la documentation", "jira": "le suivi de projet",
                     "servicenow": "l'exploitation", "datadog": "l'observabilité"}

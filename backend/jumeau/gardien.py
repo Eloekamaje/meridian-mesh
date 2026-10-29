@@ -21,7 +21,7 @@ import psycopg
 from pydantic import BaseModel, Field
 from strands import Agent
 
-from jumeau import agent, comprendre, connaissance, contradicteur, depot, lecteurs, methodes, poignee, recoupement, registre, temps
+from jumeau import agent, comprendre, connaissance, contradicteur, depot, lecteurs, methodes, poignee, recoupement, registre, schemas, temps
 from jumeau.ingerer import ingerer
 from jumeau.source_git import sha_courant
 
@@ -346,7 +346,7 @@ async def veiller(conn, db, jumeau_id, chemins=None, rediger=_rediger):
            "lecteurs": branches,
            # Ce que sa preuve n'appuie pas ne nourrit pas la fiche (Harness v3 §2) ; la méthode le dit aussi.
            "claims": [c for c in connaissance.connaissances(conn, jumeau_id, limite=500)
-                      if (c.get("verification") or {}).get("etat") not in ("non_appuye", "en_partie")],
+                      if (c.get("verification") or {}).get("etat") not in schemas.NON_TENUES],
            "acteur": "gardien", "profil": {"nom": "Gardien du jumeau", "role": "veille automatique"}}
     try:
         fiche, recit = await rediger(ctx, os.environ.get("JUMEAU_PG_DSN", ""), sigs, commits)

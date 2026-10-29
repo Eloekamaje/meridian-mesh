@@ -30,7 +30,9 @@ DEBUTS = ("flowchart", "graph")
 INTERDITS = ("click", "%%{", "callback", "href")  # liens, scripts, directives d'initialisation (mode de sécurité)
 MAX_LIGNES, MAX_CARACTERES = 60, 4000
 
-NON_TENUES = ("non_appuye", "en_partie")
+# Ce qui ne se publie pas (schéma, carte, fiche) : la preuve ne l'appuie pas, seulement en partie, ou deux verdicts
+# du juge divergent sur les mêmes preuves. Une seule liste, lue partout (Harness v3 §2).
+NON_TENUES = ("non_appuye", "en_partie", "incertain")
 STYLES = {  # état → style de la flèche, et sa légende
     "valide": ("stroke:#4ADE80,stroke-width:3px", "vert épais = validé par l'équipe"),
     "verifie": ("stroke:#34D399,stroke-width:2px", "vert = vérifié"),
