@@ -36,9 +36,17 @@ class Collection:
         if d is None:
             return
         for k, v in maj.get("$set", {}).items():
-            d[k] = copy.deepcopy(v)
+            *chemin, dernier = k.split(".")  # « conversation.3.retour » : chemin à points, comme Mongo
+            cible = d
+            for morceau in chemin:
+                cible = cible[int(morceau)] if isinstance(cible, list) else cible.setdefault(morceau, {})
+            if isinstance(cible, list):
+                cible[int(dernier)] = copy.deepcopy(v)
+            else:
+                cible[dernier] = copy.deepcopy(v)
         for k, v in maj.get("$push", {}).items():
-            d.setdefault(k, []).extend(copy.deepcopy(v["$each"] if isinstance(v, dict) else [v]))
+            lot = v["$each"] if isinstance(v, dict) and "$each" in v else [v]
+            d.setdefault(k, []).extend(copy.deepcopy(lot))
 
     async def insert_one(self, d):
         self.docs.append(copy.deepcopy(d))
