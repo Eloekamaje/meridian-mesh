@@ -179,6 +179,18 @@ class OptionCase(BaseModel):
     risque: str = "moyen"
 
 
+def reviser_proposee(claim, jumeau, persona, decision, motif):
+    """La revue humaine d'une connaissance proposée (approbation en ligne), dans la couche cognitive."""
+    import os
+    import psycopg
+    from jumeau import depot
+    dsn = os.environ.get("JUMEAU_PG_DSN")
+    if not dsn:
+        raise RuntimeError("Couche cognitive non configurée (JUMEAU_PG_DSN)")
+    with psycopg.connect(dsn, autocommit=True) as conn:
+        depot.reviser(conn, claim, persona, decision, motif, proposee_de=jumeau)
+
+
 def build_cases_router(deps):
     db = deps["db"]
     resoudre_perimetre = deps["resoudre_perimetre"]
@@ -542,6 +554,7 @@ def build_cases_router(deps):
 
     jumeau_flux.ajouter_routes_tours(router, Header)  # arrêter / reprendre un tour de Flore (P2)
     ajouter_routes_fil(router, {"db": db, "charger_case": charger_case, "resoudre_perimetre": resoudre_perimetre,
+                                "autorisations": autorisations, "reviser": lambda *a: reviser_proposee(*a),
                                 "repondre": repondre_dans_travail})
 
     async def traiter_message(cid, payload, x_persona, x_espace, emit=None):

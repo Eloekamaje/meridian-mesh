@@ -323,6 +323,8 @@ async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=No
         reponse["durees"] = chrono.bilan()
         reponse["relecture_etat"] = etat = etat_relecture(verdict, corrige)
         reponse["relu"], reponse["corrige"] = etat == "relue", corrige
+        if ctx.get("proposees"):
+            reponse["a_approuver"] = ctx["proposees"]  # les connaissances proposées pendant ce tour, à trancher
         agent.journal.info("durées %s : %s", jumeau_id, reponse["durees"])
         return reponse
     except RuntimeError as e:  # modèle non configuré
@@ -427,6 +429,8 @@ async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=
             "durees": chrono.bilan(), "relecture_etat": etat_relecture(verdict, corrige),
             "relu": etat_relecture(verdict, corrige) == "relue", "corrige": corrige,
         }
+        if proposees := [p for ctx in ctxs.values() for p in ctx.get("proposees", [])]:
+            reponse["a_approuver"] = proposees  # proposées par les sous-agents : chacune à trancher
         agent.journal.info("durées mobilisation %s : %s", list(ctxs), reponse["durees"])
         return reponse
     except asyncio.TimeoutError:

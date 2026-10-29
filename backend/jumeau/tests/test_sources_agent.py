@@ -148,3 +148,16 @@ def test_sans_depot_pas_d_outil_de_code_mais_les_outils_de_source_restent():
     assert not noms & {"architecture", "chercher_texte", "chercher_symbole", "tracer_appels", "lire_code",
                        "historique_du_code", "ce_qui_a_change"}
     assert {"chercher_dans", "lire_dans", "proposer_connaissance", "mes_connaissances", "consulter_methode"} <= noms
+
+
+def test_une_proposition_est_notee_pour_l_approbation_en_ligne_et_un_refus_ne_l_est_pas(monkeypatch):
+    monkeypatch.setattr(agent.psycopg, "connect", lambda *a, **k: _Conn())
+    monkeypatch.setattr(connaissance, "proposer_source", lambda *a: 3)
+    c = ctx()
+    o = {t.tool_name: t for t in agent.outils(c, "dsn", "m", agent.Budget())}
+    o["proposer_connaissance"](predicat="AUTORISE", objet="les conseillers valident", type_claim="BUSINESS_RULE",
+                               justification="j", citation="confluence://TBT/123@7#L1")
+    o["proposer_connaissance"](predicat="A", objet="x", type_claim="BUSINESS_RULE", justification="j",
+                               citation="jira://TBT/1@1#L1")  # refusée : rien à approuver
+    assert c["proposees"] == [{"claim": 3, "jumeau": c["jumeau"]["id"], "nom": c["jumeau"]["nom"],
+                               "predicat": "AUTORISE", "objet": "les conseillers valident"}]

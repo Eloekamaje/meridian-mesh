@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 NON_VERSION = ("role", "versions", "version", "retour")
 # Au-delà des champs du contrat, la réponse du modèle peut porter ces compléments (affichés tels quels).
 COMPLEMENTS = ("propositions", "action", "relu", "jumeaux_participants", "decisions", "precision", "kpis",
-               "tableauComparatif", "documentCanvas", "activite")
+               "tableauComparatif", "documentCanvas", "activite", "a_approuver")
 
 
 def _maintenant():
@@ -126,3 +126,23 @@ def correspond(titre, messages, q):
     if not q:
         return True
     return any(q in (t or "").casefold() for t in [titre] + [m.get("texte") for m in messages])
+
+
+def decider_proposition(message, claim, valeur, par, quand=None):
+    """L'approbation en ligne d'une connaissance proposée par Flore pendant ce tour : la décision est inscrite UNE
+    fois, dans le message et dans sa version active (les boutons disparaissent). Lève LookupError si la proposition
+    n'est pas dans ce message, ValueError si elle est déjà tranchée ou si le message n'est pas de Flore."""
+    _verifier_flore(message)
+    props = message.get("a_approuver") or []
+    i = next((k for k, p in enumerate(props) if p.get("claim") == claim), None)
+    if i is None:
+        raise LookupError(claim)
+    if props[i].get("decision"):
+        raise ValueError("Proposition déjà tranchée")
+    decision = {"valeur": valeur, "par": par, "quand": quand or _maintenant()}
+    nouvelles = [*props[:i], {**props[i], "decision": decision}, *props[i + 1:]]
+    versions = list(message.get("versions") or [])
+    k = message.get("version", 0)
+    if 0 <= k < len(versions):
+        versions = [*versions[:k], {**versions[k], "a_approuver": nouvelles}, *versions[k + 1:]]
+    return {**message, "a_approuver": nouvelles, "versions": versions}

@@ -58,6 +58,17 @@ def test_acceptation_exige_une_revue_humaine(conn):
     assert c["revues"][0]["acteur"] == "alice"
 
 
+def test_approbation_en_ligne_une_seule_fois_et_sur_le_bon_jumeau(conn):
+    depot.enregistrer(conn, JUMEAU, SOURCE, [claim("motor")], ACTIVITE)
+    cid = depot.lister_claims(conn, "tbt")[0]["id"]
+    with pytest.raises(LookupError):
+        depot.reviser(conn, cid, "alice", "ACCEPTED", None, proposee_de="autre-jumeau")
+    depot.reviser(conn, cid, "alice", "ACCEPTED", None, proposee_de="tbt")
+    with pytest.raises(ValueError, match="déjà revue"):
+        depot.reviser(conn, cid, "bob", "CONTESTED", None, proposee_de="tbt")
+    assert depot.lister_claims(conn, "tbt")[0]["statut"] == "ACCEPTED"
+
+
 def test_contestation_garde_la_maturite(conn):
     depot.enregistrer(conn, JUMEAU, SOURCE, [claim("motor")], ACTIVITE)
     cid = depot.lister_claims(conn, "tbt")[0]["id"]

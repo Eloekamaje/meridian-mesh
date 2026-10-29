@@ -79,6 +79,10 @@ let webpackConfig = {
       },
     },
   },
+  // Les tests résolvent le même alias que webpack (composants importés avec « @/ »).
+  jest: {
+    configure: { moduleNameMapper: { "^@/(.*)$": "<rootDir>/src/$1" } },
+  },
   webpack: {
     alias: {
       '@': path.resolve(__dirname, 'src'),

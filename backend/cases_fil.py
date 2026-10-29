@@ -1,10 +1,12 @@
-"""Versions, branches, régénération, modification et arrêt dans le fil d'un Travail (contrat Conversation v1, §3).
+"""Versions, branches, régénération, modification, arrêt et approbation en ligne dans le fil d'un Travail
+(contrat Conversation v1, §3).
 La logique des messages est dans conversation.py (pure) ; ici, seulement les routes et la persistance."""
 from datetime import datetime, timezone
-from typing import Any, Optional
+import asyncio
+from typing import Any, Literal, Optional
 
 from fastapi import Header, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import conversation as fil
 from jumeau import flux
@@ -25,11 +27,19 @@ class Choix(BaseModel):
     index: int
 
 
+class Approbation(BaseModel):
+    """La décision humaine sur une connaissance que Flore a proposée pendant ce tour (mêmes valeurs que la Revue)."""
+    claim: int
+    decision: Literal["ACCEPTED", "CONTESTED"]
+    motif: Optional[str] = Field(default=None, max_length=2000)
+
+
 def ajouter_routes_fil(router, deps):
     """deps : db, charger_case(cid, espace, persona), resoudre_perimetre, repondre(cid, case, question, params,
-    persona, espace, emit) -> la réponse brute de Flore."""
+    persona, espace, emit) -> la réponse brute de Flore ; autorisations(espace, ids) -> {id: niveau} ;
+    reviser(claim, jumeau, persona, decision, motif) : la revue humaine (LookupError, ValueError si déjà revue)."""
     db, charger_case, repondre = deps["db"], deps["charger_case"], deps["repondre"]
-    resoudre_perimetre = deps["resoudre_perimetre"]
+    resoudre_perimetre, autorisations, reviser = deps["resoudre_perimetre"], deps["autorisations"], deps["reviser"]
 
     async def ouvrir(cid, persona, espace_hdr):
         _, espace = resoudre_perimetre(persona, espace_hdr)
@@ -113,3 +123,32 @@ def ajouter_routes_fil(router, deps):
         async def interrompu(brouillon, activite=None):
             await ajouter(fil.message_interrompu(brouillon, activite))
         return flux.en_flux(produire, sur_interruption=interrompu, fil=cid, proprietaire=x_persona)
+
+    @router.post("/cases/{cid}/messages/{n}/approbation")
+    async def approuver(cid: str, n: int, payload: Approbation, x_persona: str = Header("architecte"),
+                        x_espace: Optional[str] = Header(None)):
+        """Approbation en ligne (P2) : exécutée une seule fois côté serveur (verrou dans la revue), réservée à qui
+        peut « Valider » ce jumeau, puis inscrite dans le message (les boutons disparaissent, panneau comme Travail)."""
+        _, espace = resoudre_perimetre(x_persona, x_espace)
+        case = await charger_case(cid, espace, x_persona)
+        messages = list(case.get("conversation") or [])
+        m = messages[n] if 0 <= n < len(messages) else {}
+        prop = next((p for p in m.get("a_approuver") or [] if p.get("claim") == payload.claim), None)
+        if m.get("role") != "flore" or prop is None:
+            raise HTTPException(404, "Proposition introuvable")
+        if prop.get("decision"):
+            raise HTTPException(409, "Proposition déjà tranchée")
+        if autorisations(espace, [prop["jumeau"]]).get(prop["jumeau"]) != "complet":
+            raise HTTPException(403, f"Permission « Valider » requise sur {prop.get('nom') or prop['jumeau']}")
+        try:
+            await asyncio.to_thread(reviser, payload.claim, prop["jumeau"], x_persona, payload.decision, payload.motif)
+        except LookupError:
+            raise HTTPException(404, "Connaissance introuvable")
+        except RuntimeError as e:
+            raise HTTPException(503, str(e))
+        except ValueError as e:  # déjà revue (page Revue, autre onglet) : rien n'est inscrit ici
+            raise HTTPException(409, str(e))
+        nouveau = fil.decider_proposition(m, payload.claim, payload.decision, x_persona)
+        await db.cases.update_one({"id": cid}, {"$set": {f"conversation.{n}": nouveau,
+                                                         "maj_le": datetime.now(timezone.utc).isoformat()}})
+        return nouveau

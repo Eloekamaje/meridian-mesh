@@ -147,3 +147,17 @@ def test_un_tour_arrete_garde_son_activite():
     m = c.message_interrompu("Début", ACTIVITE)
     assert m["interrompu"] is True and m["activite"] == ACTIVITE
     assert "activite" not in c.message_interrompu("Début")
+
+
+def test_decider_une_proposition_une_seule_fois_sans_muter():
+    m = c.message_flore({"reponse": "ok", "a_approuver": [{"claim": 3, "jumeau": "conduit", "objet": "x"}]})
+    apres = c.decider_proposition(m, 3, "ACCEPTED", "architecte", quand="t")
+    assert apres["a_approuver"][0]["decision"] == {"valeur": "ACCEPTED", "par": "architecte", "quand": "t"}
+    assert apres["versions"][0]["a_approuver"][0]["decision"]["valeur"] == "ACCEPTED"
+    assert "decision" not in m["a_approuver"][0]
+    with pytest.raises(ValueError, match="déjà"):
+        c.decider_proposition(apres, 3, "CONTESTED", "architecte")
+    with pytest.raises(LookupError):
+        c.decider_proposition(m, 99, "ACCEPTED", "architecte")
+    with pytest.raises(ValueError):
+        c.decider_proposition({"role": "utilisateur", "texte": "q"}, 3, "ACCEPTED", "architecte")

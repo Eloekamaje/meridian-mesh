@@ -109,6 +109,12 @@ class Faux:
                 "relecture_etat": "relue", "corrige": False, "origine": "modele", "durees": {}}
 
 
+def droits(espace, ids):
+    """Les droits d'un espace, comme server.autorisations : « * » = tout complet, sinon par jumeau (ou « * »)."""
+    regles = espace["jumeaux"]
+    return {i: "complet" if regles == "*" else regles.get(i, regles.get("*", "aucun")) for i in ids}
+
+
 @pytest.fixture
 def monde(monkeypatch):
     class Ecriture:
@@ -120,7 +126,7 @@ def monde(monkeypatch):
     async def rien(*a, **k): return None
     router = cases_routes.build_cases_router({
         "db": db, "resoudre_perimetre": resoudre_perimetre,
-        "autorisations": lambda esp, ids: {i: "complet" for i in ids}, "journaler": rien, "notifier": rien,
+        "autorisations": droits, "journaler": rien, "notifier": rien,
         "generer_reponse_flore": faux, "slugify": lambda s: s, "NO_ID": {"_id": 0},
         "datetime": __import__("datetime").datetime, "timezone": __import__("datetime").timezone})
     api = APIRouter(prefix="/api")
@@ -419,3 +425,50 @@ def test_reprendre_un_tour_depuis_une_position_puis_seul_l_auteur(monde):
     assert client.get(f"/api/tours/{run}/flux", headers={"X-Persona": "support"}).status_code == 404
     assert client.post(f"/api/tours/{run}/arreter", headers={"X-Persona": "support"}).status_code == 404
     assert client.get("/api/tours/inconnu/flux").status_code == 404
+
+
+# ---- approbation en ligne : une connaissance proposée par Flore, tranchée dans la conversation ----
+@pytest.fixture
+def avec_proposition(monde, monkeypatch):
+    client, db, faux = monde
+    revues = []
+
+    def reviser(claim, jumeau, persona, decision, motif):
+        if any(r[0] == claim for r in revues):
+            raise ValueError("Connaissance déjà revue")
+        revues.append((claim, jumeau, persona, decision, motif))
+    monkeypatch.setattr(cases_routes, "reviser_proposee", reviser)
+    doc = next(d for d in db.cases.docs if d["id"] == "t1")
+    doc["conversation"][3] = c.message_flore({"reponse": "Elle est faible.", "a_approuver": [
+        {"claim": 7, "jumeau": "conduit", "nom": "Conduit", "predicat": "AUTORISE", "objet": "publier"}]})
+    return client, db, revues
+
+
+def test_approuver_execute_la_revue_une_fois_et_l_inscrit_dans_le_message(avec_proposition):
+    client, db, revues = avec_proposition
+    r = client.post("/api/cases/t1/messages/3/approbation", json={"claim": 7, "decision": "ACCEPTED"})
+    assert r.status_code == 200, r.text
+    assert r.json()["a_approuver"][0]["decision"]["valeur"] == "ACCEPTED"
+    assert conv(db)[3]["a_approuver"][0]["decision"]["par"] == "architecte"
+    assert revues == [(7, "conduit", "architecte", "ACCEPTED", None)]
+    assert client.post("/api/cases/t1/messages/3/approbation", json={"claim": 7, "decision": "CONTESTED"}).status_code == 409
+    assert len(revues) == 1
+
+
+def test_approbation_sans_permission_valider_refusee_sans_rien_executer(avec_proposition):
+    client, db, revues = avec_proposition
+    r = client.post("/api/cases/t1/messages/3/approbation", json={"claim": 7, "decision": "ACCEPTED"},
+                    headers={"X-Espace": "espace-architecture"})  # « relations » seulement sur Conduit
+    assert r.status_code == 403 and revues == [] and "decision" not in conv(db)[3]["a_approuver"][0]
+
+
+def test_approbation_d_une_proposition_absente_ou_deja_revue_ailleurs(avec_proposition, monkeypatch):
+    client, db, revues = avec_proposition
+    assert client.post("/api/cases/t1/messages/3/approbation", json={"claim": 8, "decision": "ACCEPTED"}).status_code == 404
+    assert client.post("/api/cases/t1/messages/0/approbation", json={"claim": 7, "decision": "ACCEPTED"}).status_code == 404
+
+    def deja(*a):
+        raise ValueError("Connaissance déjà revue")
+    monkeypatch.setattr(cases_routes, "reviser_proposee", deja)  # tranchée sur la page Revue entre-temps
+    r = client.post("/api/cases/t1/messages/3/approbation", json={"claim": 7, "decision": "ACCEPTED"})
+    assert r.status_code == 409 and "déjà revue" in r.text and "decision" not in conv(db)[3]["a_approuver"][0]

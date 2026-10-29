@@ -347,6 +347,9 @@ def outils(ctx, dsn, nom_modele, budget):
                     source = connaissance.resoudre_source(sources, depot, chemin)
                     cid = connaissance.proposer(conn, jumeau, source, predicat, objet, type_claim, chemin, debut, fin,
                                                 justification, ctx["acteur"], nom_modele)
+            # l'interlocuteur pourra la trancher dans la conversation (approbation en ligne) : seul un humain décide
+            ctx["proposees"] = [*ctx.get("proposees", []), {"claim": cid, "jumeau": jumeau["id"], "nom": jumeau["nom"],
+                                                            "predicat": predicat, "objet": objet}]
             if connaissance.prouvable(predicat):
                 return f"Proposition enregistrée (claim {cid}), en attente de revue par l'équipe."
             if (predicat or "").upper() in connaissance.FORMES:

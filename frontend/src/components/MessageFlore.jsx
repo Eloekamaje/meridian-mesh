@@ -5,6 +5,7 @@ import api from "@/lib/api";
 import useFluxAction from "@/lib/useFluxAction";
 import { erreurAction, explicationArret, navBranches, navVersions, urlMessage } from "@/lib/conversationFlore";
 import MarkdownFlore from "./MarkdownFlore";
+import PropositionsFlore from "./PropositionsFlore";
 import MarqueRelecture from "./MarqueRelecture";
 import MarqueOrigine from "./MarqueOrigine";
 import BrouillonFlore from "./BrouillonFlore";
@@ -64,6 +65,18 @@ export function MessageFlore({
     }
   };
 
+  // Approbation en ligne : la revue humaine d'une connaissance proposée, exécutée une seule fois par le serveur
+  const decider = async (claim, decision) => {
+    try {
+      const { data } = await api.post(urlMessage(prefixe, index, "approbation"), { claim, decision });
+      onMessage?.(index, data);
+      toast.success(decision === "ACCEPTED" ? "Connaissance validée" : "Connaissance contestée");
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || erreurAction(err, "Décision"));
+      if (err?.response?.status === 409) onRelire?.(); // tranchée ailleurs : on montre l'état réel
+    }
+  };
+
   const choisirVersion = async (i) => {
     try {
       const { data } = await api.post(urlMessage(prefixe, index, "version"), { index: i });
@@ -94,6 +107,7 @@ export function MessageFlore({
         <MarqueRelecture data={message} />
       </div>
       {preuves ?? (message.preuves?.length > 0 && <PreuvesMessage preuves={message.preuves} />)}
+      <PropositionsFlore propositions={message.a_approuver} index={index} actif={agit} bloque={occupe} onDecider={decider} />
       {children}
       {flux && <BrouillonFlore flux={flux} onArreter={arreter} testid="flore-regeneration" />}
       {!flux && (

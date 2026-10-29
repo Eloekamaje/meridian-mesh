@@ -248,7 +248,12 @@ Critère : les capacités 1, 2, 3 et 6 du §4 sont complètes.
 > **CopilotKit : proposé au retrait** (vérifié le 2026-10-28 : `@copilotkit/react-core` 1.83.0 publiée le jour même,
 > 31 dépendances et `maplibre-gl` exigée, serveur Node/Express ; l'interopérabilité est portée par AG-UI, et
 > l'adopter remplacerait les composants de P1). En attente de la décision de l'utilisateur.
-> Reste : approbation en ligne, reprise après coupure, explication d'un tour arrêté.
+> Fait ensuite : l'activité du tour est enregistrée avec la réponse ; un tour arrêté s'explique (outils faits, en
+> cours, texte écrit, « non relu », « Reprendre la réponse ») ; **reprise après coupure** (`flux.Tour` : seul
+> « Arrêter » arrête, `POST /api/tours/{id}/arreter` ; une coupure se renoue par `GET /api/tours/{id}/flux?depuis=n`) ;
+> **approbation en ligne** des connaissances proposées pendant le tour (`POST /cases/{cid}/messages/{n}/approbation`,
+> permission « Valider », une seule exécution sous verrou Postgres, décision inscrite dans le message ; panneau
+> comme Travail). P2 est terminé côté fonctions ; l'écran reste à voir.
 - `en_flux` parle AG-UI.
 - La conversation passe sur CopilotKit, dans les écrans existants.
 - **Outils structurés** à l'écran.

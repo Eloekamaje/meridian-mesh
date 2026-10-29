@@ -244,14 +244,18 @@ def jumeau_par_id(conn, jumeau_id):
                            (jumeau_id,)).fetchone()
 
 
-def reviser(conn, claim_id, acteur, decision, motif):
-    """Revue humaine : la revue est écrite avant le statut (exigé par le trigger d'acceptation). Rend l'énoncé revu."""
+def reviser(conn, claim_id, acteur, decision, motif, proposee_de=None):
+    """Revue humaine : la revue est écrite avant le statut (exigé par le trigger d'acceptation). Rend l'énoncé revu.
+    `proposee_de` (approbation en ligne) : la connaissance doit être de ce jumeau (sinon LookupError) et encore
+    PROPOSED (sinon ValueError) — vérifié sous verrou : deux décisions simultanées n'en exécutent qu'une."""
     with conn.transaction():
         tenant = conn.execute(
-            "SELECT tenant_id, sujet, predicat, objet FROM claim WHERE id = %s AND valide_jusqua IS NULL FOR UPDATE",
-            (claim_id,)).fetchone()
-        if not tenant:
+            "SELECT tenant_id, sujet, predicat, objet, jumeau_id, statut FROM claim WHERE id = %s "
+            "AND valide_jusqua IS NULL FOR UPDATE", (claim_id,)).fetchone()
+        if not tenant or (proposee_de is not None and tenant[4] != proposee_de):
             raise LookupError(claim_id)
+        if proposee_de is not None and tenant[5] != "PROPOSED":
+            raise ValueError("Connaissance déjà revue")
         conn.execute(
             "INSERT INTO revue (tenant_id, claim_id, acteur, decision, motif) VALUES (%s, %s, %s, %s, %s)",
             (tenant[0], claim_id, acteur, decision, motif))
