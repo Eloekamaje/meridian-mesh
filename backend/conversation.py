@@ -1,5 +1,6 @@
 """Conversation : logique pure sur une liste de messages (contrat Conversation v1). Aucune base, aucune mutation :
 chaque fonction rend de nouvelles listes et de nouveaux dicts."""
+import copy
 from datetime import datetime, timezone
 
 # Ce qui, d'un message de Flore, appartient à une version (les champs du haut sont ceux de la version active).
@@ -29,7 +30,7 @@ def _version(reponse):
 def message_flore(reponse):
     """Le message de Flore au format du contrat, depuis la réponse de `generer_reponse_flore` (version 0)."""
     version = _version(reponse)
-    return {"role": "flore", **version, "versions": [dict(version)], "version": 0}
+    return {"role": "flore", **version, "versions": [copy.deepcopy(version)], "version": 0}
 
 
 def message_interrompu(texte_partiel):

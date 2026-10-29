@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 import cases_routes
 import conversation as c
+from seed_data import ESPACES, PERSONAS
 from jumeau import flux
 
 
@@ -64,11 +65,19 @@ def un_fil():
             c.message_flore({"reponse": "Elle est faible.", "origine": "modele"})]
 
 
-CASE = {"id": "t1", "titre": "Socle Kafka", "responsable": "architecte", "jumeaux": [], "conversation": un_fil(),
+CASE = {"id": "t1", "titre": "Socle Kafka", "responsable": "architecte", "portee": "personnel", "jumeaux": [], "conversation": un_fil(),
         "historique": [], "maj_le": "2026-01-01"}
 AUTRE = {"id": "t2", "titre": "Dette technique", "responsable": "architecte", "jumeaux": [],
          "conversation": [{"role": "utilisateur", "texte": "ÉTAT des lieux", "quand": "t"}], "historique": [],
          "maj_le": "2026-02-01"}
+
+
+def resoudre_perimetre(persona_id, espace_id):
+    """Même règle que server.resoudre_perimetre (un persona inconnu retombe sur le premier : identité reportée)."""
+    persona = next((p for p in PERSONAS if p["id"] == persona_id), PERSONAS[0])
+    if not espace_id or espace_id not in persona["espaces"]:
+        espace_id = persona["par_defaut"]
+    return persona, next(e for e in ESPACES if e["id"] == espace_id)
 
 
 class Faux:
@@ -101,7 +110,7 @@ def monde(monkeypatch):
 
     async def rien(*a, **k): return None
     router = cases_routes.build_cases_router({
-        "db": db, "resoudre_perimetre": lambda p, e: ({"id": p}, {"id": e or "e"}),
+        "db": db, "resoudre_perimetre": resoudre_perimetre,
         "autorisations": lambda esp, ids: {i: "complet" for i in ids}, "journaler": rien, "notifier": rien,
         "generer_reponse_flore": faux, "slugify": lambda s: s, "NO_ID": {"_id": 0},
         "datetime": __import__("datetime").datetime, "timezone": __import__("datetime").timezone})
@@ -142,7 +151,9 @@ def test_regenerer_ajoute_une_version_active_et_reprend_la_question_precedente(m
     assert faux.appels[0]["question"] == "Et la dette ?"
     final = ev[-1]["reponse"]
     assert final["texte"] == "Autre version." and final["version"] == 1 and len(final["versions"]) == 2
-    assert conv(db)[3] == final and len(conv(db)) == 4
+    # `durees.premier_texte` est une mesure du flux, ajoutée par en_flux à la seule copie envoyée au client
+    assert {**conv(db)[3], "durees": {}} == {**final, "durees": {}} and len(conv(db)) == 4
+    assert "premier_texte" not in conv(db)[3]["durees"] and "premier_texte" in final["durees"]
 
 
 def test_regenerer_une_question_est_refuse(monde):
@@ -183,7 +194,7 @@ def test_choisir_une_branche_restaure_la_suite(monde):
 
 def test_un_autre_persona_ne_touche_pas_au_travail(monde):
     client, db, _ = monde
-    h = {"X-Persona": "intrus"}
+    h = {"X-Persona": "support"}
     for chemin, corps in [("messages/1/version", {"index": 0}), ("messages/0/branche", {"index": 0}),
                           ("messages/3/regenerer/flux", {}), ("messages/0/modifier/flux", {"texte": "x"})]:
         assert client.post(f"/api/cases/t1/{chemin}", json=corps, headers=h).status_code == 403, chemin
@@ -222,22 +233,35 @@ def test_sans_q_la_reponse_est_inchangee(monde):
 
 # ---- arrêt ----
 def lancer_puis_couper(monde, chemin, corps, lectures=2):
-    """Vrai flux ASGI ; le client lit deux événements « texte » puis coupe. Rend la conversation ensuite."""
+    """Appel ASGI direct (le client de test met la réponse en tampon, il ne sait pas couper) : après `lectures`
+    événements reçus, le client envoie `http.disconnect`, comme un navigateur dont on annule la requête."""
     client, db, faux = monde
-    faux.bloque = True
-    import httpx
+    faux.bloque = not faux.muet
+    octets = json.dumps(corps).encode()
 
     async def scenario():
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=client.app), base_url="http://t") as http:
-            async with http.stream("POST", chemin, json=corps) as r:
-                lus = 0
-                if lectures == 0:
-                    await asyncio.sleep(0.3)
-                async for ligne in r.aiter_lines():
-                    if ligne.startswith("data:"):
-                        lus += 1
-                    if lus >= lectures:
-                        break
+        parti, recus, corps_envoye = asyncio.Event(), [], False
+
+        async def receive():
+            nonlocal corps_envoye
+            if not corps_envoye:
+                corps_envoye = True
+                return {"type": "http.request", "body": octets, "more_body": False}
+            await parti.wait()
+            return {"type": "http.disconnect"}
+
+        async def send(message):
+            if message["type"] == "http.response.body" and b"data:" in message.get("body", b""):
+                recus.append(message["body"])
+            if len(recus) >= lectures:
+                parti.set()
+        if lectures == 0:
+            asyncio.get_running_loop().call_later(0.3, parti.set)
+        scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "POST", "path": chemin,
+                 "raw_path": chemin.encode(), "query_string": b"", "root_path": "", "scheme": "http",
+                 "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(octets)).encode())],
+                 "client": ("t", 1), "server": ("t", 80)}
+        await asyncio.wait_for(client.app(scope, receive, send), 10)
         for _ in range(20):
             await asyncio.sleep(0.05)
             await asyncio.gather(*list(flux._TACHES), return_exceptions=True)
@@ -261,8 +285,9 @@ def test_arret_regeneration_ajoute_une_version_interrompue(monde):
 
 def test_arret_regeneration_sans_rien_d_ecrit_n_ajoute_rien(monde):
     monde[2].muet = True
+    avant = conv(monde[1])
     msgs = lancer_puis_couper(monde, "/api/cases/t1/messages/3/regenerer/flux", {}, lectures=0)
-    assert msgs[3]["versions"] == un_fil()[3]["versions"] and len(msgs) == 4
+    assert msgs == avant
 
 
 def test_arret_modification_garde_la_branche_la_question_et_la_reponse_partielle(monde):
