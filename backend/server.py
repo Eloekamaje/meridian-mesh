@@ -1444,6 +1444,27 @@ async def aurora_demander_flux(payload: AuroraDemande, x_persona: str = Header("
         payload.contexte, payload.question, payload.selection, payload.domaine, x_persona, x_espace, emit=emit), proprietaire=x_persona)
 
 
+@api_router.get("/preuves/extrait")
+async def extrait_preuve(locator: str = Query(..., max_length=500), x_persona: str = Header("architecte"),
+                         x_espace: Optional[str] = Header(None)):
+    """L'extrait d'une preuve citée par Flore (pastille, panneau de preuve) : les lignes citées au commit, avec leur
+    contexte. Réservé à qui voit les preuves de ce jumeau ; sinon 404, sans dire que le code existe."""
+    from jumeau.routes import extrait_preuve as lire
+    dsn = os.environ.get("JUMEAU_PG_DSN")
+    if not dsn:
+        raise HTTPException(503, "Couche cognitive non configurée (JUMEAU_PG_DSN)")
+    _, espace = resoudre_perimetre(x_persona, x_espace)
+
+    def chercher():
+        with psycopg.connect(dsn, autocommit=True) as conn:
+            return lire(conn, locator)
+    jid, extrait = await asyncio.to_thread(chercher)
+    niveau = autorisations(espace, [jid]).get(jid) if jid else None
+    if not jid or not niveau or not niveau_au_moins(niveau, "preuves"):
+        raise HTTPException(404, "Preuve introuvable")
+    return {"jumeau": jid, **extrait}
+
+
 @api_router.get("/aurora/suggestions")
 async def aurora_suggestions(contexte: str = "global", x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
     _, espace = resoudre_perimetre(x_persona, x_espace)

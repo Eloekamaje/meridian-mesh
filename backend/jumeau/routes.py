@@ -3,6 +3,7 @@
 ponytail: l'acteur vient de l'en-tête X-Persona de la démo ; OIDC + Cedar en phase 1 (Architecture Jumeau §4.2).
 """
 import os
+import re
 from typing import Literal, Optional
 
 import psycopg
@@ -116,6 +117,25 @@ def trancher(contradiction_id: int, decision: Tranche, conn=Depends(connexion),
     except LookupError:
         raise HTTPException(404, "Contradiction introuvable ou déjà tranchée")
     return {"ok": True}
+
+
+RE_DEPOT_LOCATOR = re.compile(r"git://([\w][\w.-]*)@[0-9a-f]+:")
+
+
+def depot_du_locator(locator):
+    """Le nom du dépôt d'une preuve de code (`git://depot@sha:chemin#La-Lb`), ou None."""
+    m = RE_DEPOT_LOCATOR.match(locator or "")
+    return m.group(1) if m else None
+
+
+def extrait_preuve(conn, locator):
+    """(jumeau, extrait) d'une preuve de code citée dans une réponse ; (None, None) si son dépôt est inconnu ou
+    ambigu (un même nom chez deux jumeaux : on ne devine pas)."""
+    nom = depot_du_locator(locator)
+    lignes = conn.execute("SELECT DISTINCT jumeau_id FROM source WHERE nom = %s AND type = 'GIT'", (nom,)).fetchall() if nom else []
+    if len(lignes) != 1:
+        return None, None
+    return lignes[0][0], _extrait_citation(conn, lignes[0][0], locator, "git")
 
 
 def _extrait_citation(conn, jumeau_id, locator, systeme, contexte=3):

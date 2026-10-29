@@ -1,4 +1,4 @@
-import { Children, isValidElement, useState } from "react";
+import { Children, isValidElement, useContext, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -10,6 +10,7 @@ import "katex/dist/katex.min.css";
 import "highlight.js/styles/github-dark.css";
 import SchemaMermaid from "./SchemaMermaid";
 import { decouperMermaid } from "@/lib/segmentsMermaid";
+import { PreuvesContexte, couperPastille, numeroPastille, typeSource } from "@/lib/preuvesFlore";
 
 // Le seul rendu Markdown de Flore (panneau, Travail, Canvas, brouillon). react-markdown n'injecte jamais de HTML brut
 // (pas de rehype-raw) et neutralise les URL `javascript:`. Les `$` seuls ne sont pas des formules (« 5 $ et 6 $ »).
@@ -49,7 +50,8 @@ const COMPOSANTS = {
   ol: (p) => <ol className="list-decimal space-y-1 pl-5 marker:font-code marker:text-[#60A5FA]" {...clean(p)} />,
   blockquote: (p) => <blockquote className="rounded-r-md border-l-2 border-[#60A5FA]/60 bg-blue-500/[0.04] py-1 pl-3 italic text-blue-200/90" {...clean(p)} />,
   hr: () => <hr className="border-white/[0.08]" />,
-  a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-[#60A5FA] underline underline-offset-2 hover:text-[#93C5FD] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#60A5FA]">{children}</a>,
+  li: Puce,
+  a: ({ href, children }) => (numeroPastille(href) != null ? <Pastille n={numeroPastille(href)} /> : <a href={href} target="_blank" rel="noopener noreferrer" className="text-[#60A5FA] underline underline-offset-2 hover:text-[#93C5FD] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#60A5FA]">{children}</a>),
   strong: (p) => <strong className="font-semibold text-white" {...clean(p)} />,
   table: ({ children }) => <div className="overflow-x-auto rounded-xl border border-white/[0.08] bg-[#0A131C]"><table className="w-full text-left text-xs">{children}</table></div>,
   thead: ({ children }) => <thead className="border-b border-white/[0.08] font-code text-[10px] uppercase tracking-wider text-[#7C93A8]">{children}</thead>,
@@ -63,10 +65,40 @@ const COMPOSANTS = {
 // react-markdown passe `node` : on ne le répercute pas sur le DOM.
 function clean({ node, ...reste }) { return reste; }
 
+// Une pastille de preuve (Design System §131, « evidence chips ») : survol = la source, clic = la carte de preuve.
+function Pastille({ n }) {
+  const ctx = useContext(PreuvesContexte);
+  const preuve = ctx?.preuves?.[n - 1];
+  if (!preuve) return null; // pas de preuve à ce rang : rien d'affiché (jamais un numéro qui ne mène nulle part)
+  return (
+    <button type="button" onClick={() => ctx.ouvrir?.(n)} title={`${typeSource(preuve.detail)} · ${preuve.source}`}
+      aria-label={`Preuve ${n} : ${preuve.source}`} data-testid={`pastille-${n}`}
+      className="mx-0.5 inline-flex min-w-[18px] -translate-y-px items-center justify-center rounded-[5px] bg-[#60A5FA]/15 px-1 align-baseline font-code text-[10px] leading-[16px] text-[#93C5FD] transition-colors hover:bg-[#60A5FA]/30 focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#60A5FA]">
+      {n}
+    </button>
+  );
+}
+
+// Note d'impact : un effet (« bloquant », « dégradé », « sans effet », « inconnu ») sans pastille le dit.
+const RE_CLASSE_EFFET = /^\s*(bloquant|dégradé|degrade|sans effet(?: visible)?|inconnu)(?=[\s:—-])/i;
+const texteHast = (n) => (n?.type === "text" ? n.value : (n?.children || []).map(texteHast).join(""));
+const aUnePastille = (n) => (n?.type === "element" && n.tagName === "a" && numeroPastille(n.properties?.href) != null)
+  || (n?.children || []).some(aUnePastille);
+function Puce({ node, children }) {
+  const sansPreuve = RE_CLASSE_EFFET.test(texteHast(node)) && !aUnePastille(node);
+  return (
+    <li>
+      {children}
+      {sansPreuve && <span className="ml-1.5 rounded-[5px] bg-[#F2B84B]/15 px-1.5 font-code text-[10px] text-[#F2B84B]" data-testid="sans-preuve">sans preuve</span>}
+    </li>
+  );
+}
+
 // `enLigne` : une cellule ou une puce (pas de paragraphe autour). `className` s'ajoute au conteneur.
 export default function MarkdownFlore({ texte, enLigne = false, className = "" }) {
   const composants = enLigne ? { ...COMPOSANTS, p: ({ children }) => <>{children}</> } : COMPOSANTS;
-  const segments = enLigne ? [{ type: "texte", texte }] : decouperMermaid(texte);
+  const propre = couperPastille(texte); // au fil de l'eau : jamais une pastille à moitié écrite
+  const segments = enLigne ? [{ type: "texte", texte: propre }] : decouperMermaid(propre);
   const Conteneur = enLigne ? "span" : "div";
   return (
     <Conteneur className={`space-y-3 text-[14.5px] leading-relaxed text-[#D8E2EA] ${className}`} data-testid="markdown-flore">

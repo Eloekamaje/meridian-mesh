@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useContext, useEffect, useMemo, useRef, useState } from "react";
+import { PreuvesContexte } from "@/lib/preuvesFlore";
 import { useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Sparkle, PaperPlaneRight, FileText, X, Plus, Eye, Lightning, FolderOpen, ArrowRight, Compass, ChatCircleDots } from "@phosphor-icons/react";
@@ -124,6 +125,18 @@ function TexteTeletype({ texte, actif, gele = false, testid }) {
       <MarkdownFlore texte={(texte || "").slice(0, n)} />
       {!fini && <span className="curseur-teletype">▍</span>}
     </div>
+  );
+}
+
+// Une preuve de code ou de source du volet : numérotée comme sa pastille dans le texte, elle ouvre la même carte.
+function PreuveDuVolet({ p, n }) {
+  const ctx = useContext(PreuvesContexte);
+  return (
+    <button type="button" onClick={() => ctx?.ouvrir?.(n)} disabled={!ctx?.ouvrir} data-testid={`flore-preuve-${n}`}
+      className="flex w-full items-baseline gap-2 rounded-lg px-1 py-0.5 text-left text-sm text-[#94A3B8] transition-colors hover:bg-[#60A5FA]/5 disabled:cursor-default">
+      <span className="shrink-0 rounded-[5px] bg-[#60A5FA]/15 px-1 font-code text-[10px] text-[#93C5FD]">{n}</span>
+      <span><span className="font-code text-[11px] text-[#F2F6F8]">{p.source}</span> — {p.detail}</span>
+    </button>
   );
 }
 
@@ -318,10 +331,7 @@ function CarteReponse({ data, fMsg, nr, actions, index, propsEtat, setPropsEtat,
                     </span>
                   </button>
                 ) : (
-                  <span className="flex items-baseline gap-2 text-sm text-[#94A3B8]">
-                    <FileText size={13} className="shrink-0 translate-y-0.5 text-[#7C93A8]" />
-                    <span><span className="font-code text-[11px] text-[#F2F6F8]">{p.source}</span> — {p.detail}</span>
-                  </span>
+                  <PreuveDuVolet p={p} n={pi + 1} />
                 )}
               </li>
             ))}

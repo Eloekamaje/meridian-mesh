@@ -32,12 +32,8 @@ def preuves_depuis(texte, sources, exclure=(), fraicheur=None):
         depot_cite, chemin, debut, fin = connaissance.decouper(m)
         if connaissance.cle_citation(depot_cite, chemin, debut, fin) in exclure:
             continue
-        try:
-            source = connaissance.resoudre_source(sources, depot_cite, chemin)
-        except (LookupError, ValueError):
-            continue
-        locator = f"git://{source['nom']}@{source['curseur'][:12]}:{chemin}#L{debut}-L{fin}"
-        if locator in vues:
+        locator, source = _locator(m, sources)
+        if locator is None or locator in vues:
             continue
         vues.add(locator)
         etiquette = f"{chemin}:{debut}" + (f"-{fin}" if fin != debut else "")
@@ -59,6 +55,36 @@ def preuves_depuis(texte, sources, exclure=(), fraicheur=None):
     return preuves
 
 
+def _locator(m, sources):
+    """L'emplacement d'une citation de code au commit de son dépôt (et la source), ou (None, None)."""
+    depot_cite, chemin, debut, fin = connaissance.decouper(m)
+    try:
+        source = connaissance.resoudre_source(sources, depot_cite, chemin)
+    except (LookupError, ValueError):
+        return None, None
+    return f"git://{source['nom']}@{source['curseur'][:12]}:{chemin}#L{debut}-L{fin}", source
+
+
+def pastiller(texte, preuves, sources):
+    """Chaque groupe de citations devient ses pastilles numérotées `[n](#preuve-n)`, n étant la place de la preuve
+    dans le volet (la preuve reste lisible sous le message, et chaque phrase montre la sienne). Une citation sans
+    preuve dans le volet (fausse, introuvable) disparaît, comme avec retirer_citations."""
+    rang = {p["detail"]: i + 1 for i, p in enumerate(preuves)}
+
+    def pastilles(groupe):
+        numeros = [rang.get(_locator(m, sources)[0]) for m in RE_CITATION.finditer(groupe.group(0))]
+        numeros += [rang.get(m.group(0)) for m in RE_CITATION_SOURCE.finditer(groupe.group(0))]
+        return "".join(f" [{n}](#preuve-{n})" for n in dict.fromkeys(n for n in numeros if n))
+    propre = RE_GROUPE.sub(pastilles, RE_GROUPE_ENTRE_PARENTHESES.sub(pastilles, texte))
+    return _nettoyer(propre)
+
+
+def _nettoyer(texte):
+    propre = re.sub(r"[ \t]*\[[cr]:[\w.-]+\]", "", texte)  # marques de fondement de schéma (cartes), pas pour le lecteur
+    propre = re.sub(r"[ \t]+([.,;:])", r"\1", propre)
+    return re.sub(r",([.;:])", r"\1", propre)
+
+
 # Un groupe de citations (« a.py#L1, b.py#L2 et c.py#L3 »), éventuellement entre accents graves ou parenthèses.
 _CIT = r"`?(?:" + connaissance.MOTIF_CITATION + "|" + re.sub(r"\(\?P<\w+>", "(?:", RE_CITATION_SOURCE.pattern) + r")`?"
 _GROUPE = _CIT + r"(?:\s*(?:,|et|·)\s*" + _CIT + r")*"
@@ -68,10 +94,7 @@ RE_GROUPE = re.compile(r"[ \t]*(?:[—·][ \t]*)?" + _GROUPE)
 
 def retirer_citations(texte):
     """Les preuves vont dans le volet sous le message (charte de Flore) : le texte reste lisible, sans restes."""
-    propre = RE_GROUPE.sub("", RE_GROUPE_ENTRE_PARENTHESES.sub("", texte))
-    propre = re.sub(r"[ \t]*\[[cr]:[\w.-]+\]", "", propre)  # marques de fondement de schéma (cartes), pas pour le lecteur
-    propre = re.sub(r"[ \t]+([.,;:])", r"\1", propre)
-    return re.sub(r",([.;:])", r"\1", propre)
+    return _nettoyer(RE_GROUPE.sub("", RE_GROUPE_ENTRE_PARENTHESES.sub("", texte)))
 
 
 def fiche_affichable(fiche, sources):
@@ -83,11 +106,12 @@ def fiche_affichable(fiche, sources):
 
 def vers_reponse_flore(jumeau, sources, texte, invalides=(), fraicheur=None):
     """Format d'une réponse de Flore ; les citations introuvables dans le code n'entrent pas dans le volet."""
+    preuves = preuves_depuis(texte, sources, invalides, fraicheur)
     return {
         "comportement": "expliquer",
-        "reponse": retirer_citations(texte),
+        "reponse": pastiller(texte, preuves, sources),
         "contributions": [{"jumeau": jumeau["nom"], "texte": "Connaissances et code de l'application consultés."}],
-        "preuves": preuves_depuis(texte, sources, invalides, fraicheur),
+        "preuves": preuves,
     }
 
 
@@ -423,12 +447,13 @@ async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=
             if p["detail"] not in vus:
                 vus.add(p["detail"])
                 preuves.append(p)
+        volet = preuves[:MAX_PREUVES] + (dessin.preuves if dessin else [])
         reponse = {
             "comportement": "expliquer",
-            "reponse": retirer_citations(texte),
+            "reponse": pastiller(texte, volet, tous["sources"]),
             "contributions": [{"jumeau": ctxs[j]["jumeau"]["nom"], "texte": retirer_citations(c.constat)}
                               for j, c in mob.contributions.items()],
-            "preuves": preuves[:MAX_PREUVES] + (dessin.preuves if dessin else []),
+            "preuves": volet,
             **({"commande_carte": scene.commande} if scene.commande else {}),
             "durees": chrono.bilan(), "relecture_etat": etat_relecture(verdict, corrige),
             "relu": etat_relecture(verdict, corrige) == "relue", "corrige": corrige,

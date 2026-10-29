@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ArrowsClockwise, CaretLeft, CaretRight, Copy, PencilSimple, ThumbsDown, ThumbsUp } from "@phosphor-icons/react";
 import api from "@/lib/api";
@@ -6,6 +6,8 @@ import useFluxAction from "@/lib/useFluxAction";
 import { erreurAction, explicationArret, navBranches, navVersions, urlMessage } from "@/lib/conversationFlore";
 import MarkdownFlore from "./MarkdownFlore";
 import PropositionsFlore from "./PropositionsFlore";
+import PanneauPreuve from "./PanneauPreuve";
+import { PreuvesContexte, phraseDe, sansPastilles } from "@/lib/preuvesFlore";
 import MarqueRelecture from "./MarqueRelecture";
 import MarqueOrigine from "./MarqueOrigine";
 import BrouillonFlore from "./BrouillonFlore";
@@ -40,9 +42,13 @@ export function MessageFlore({
 }) {
   const [pourquoi, setPourquoi] = useState(false);
   const [motif, setMotif] = useState("");
+  const [preuveOuverte, setPreuveOuverte] = useState(null); // n de la pastille ouverte
   const { flux, lancer, arreter } = useFluxAction();
   const agit = !!prefixe && index != null;
   const occupe = bloque || !!flux;
+  const fermerPreuve = useCallback(() => setPreuveOuverte(null), []);
+  const contextePreuves = useMemo(() => ({ preuves: message.preuves || [], texte: message.texte, ouvrir: setPreuveOuverte }),
+    [message.preuves, message.texte]);
 
   const retour = async (valeur, motifLibre) => {
     try {
@@ -88,6 +94,7 @@ export function MessageFlore({
 
   const nav = navVersions(message);
   return (
+    <PreuvesContexte.Provider value={contextePreuves}>
     <div className="space-y-2" data-testid={testid}>
       {activite && <LigneActiviteFlore activite={activite} testid={testid ? `${testid}-activite` : undefined} />}
       {corps ?? <MarkdownFlore texte={message.texte} />}
@@ -106,13 +113,13 @@ export function MessageFlore({
         <MarqueOrigine data={message} />
         <MarqueRelecture data={message} />
       </div>
-      {preuves ?? (message.preuves?.length > 0 && <PreuvesMessage preuves={message.preuves} />)}
+      {preuves ?? (message.preuves?.length > 0 && <PreuvesMessage preuves={message.preuves} texte={message.texte} onOuvrir={setPreuveOuverte} />)}
       <PropositionsFlore propositions={message.a_approuver} index={index} actif={agit} bloque={occupe} onDecider={decider} />
       {children}
       {flux && <BrouillonFlore flux={flux} onArreter={arreter} testid="flore-regeneration" />}
       {!flux && (
         <div className="flex flex-wrap items-center gap-1 pt-1 text-xs" role="group" aria-label="Actions sur la réponse">
-          <button type="button" className={BTN} onClick={() => copier(message.texte || "", "Réponse copiée")} aria-label="Copier la réponse" title="Copier la réponse"><Copy size={13} /></button>
+          <button type="button" className={BTN} onClick={() => copier(sansPastilles(message.texte), "Réponse copiée")} aria-label="Copier la réponse" title="Copier la réponse"><Copy size={13} /></button>
           {agit && (
             <>
               <button type="button" className={BTN} onClick={() => retour("utile")} aria-label="Réponse utile" aria-pressed={message.retour?.valeur === "utile"} title="Réponse utile" data-testid={`retour-utile-${index}`}><ThumbsUp size={13} weight={message.retour?.valeur === "utile" ? "fill" : "regular"} /></button>
@@ -137,7 +144,10 @@ export function MessageFlore({
           <button type="submit" className="rounded-md bg-[#60A5FA] px-2.5 py-1 text-xs font-semibold text-[#071019] focus-visible:outline focus-visible:outline-2 focus-visible:outline-white">Envoyer</button>
         </form>
       )}
+      <PanneauPreuve preuve={preuveOuverte ? message.preuves?.[preuveOuverte - 1] : null} n={preuveOuverte}
+        phrase={preuveOuverte ? phraseDe(message.texte, preuveOuverte) : null} onFermer={fermerPreuve} />
     </div>
+    </PreuvesContexte.Provider>
   );
 }
 

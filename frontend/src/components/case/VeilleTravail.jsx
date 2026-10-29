@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { bilanEffets } from "@/lib/preuvesFlore";
 import { CaretDown, Eye, Warning, CheckCircle, Question, CalendarCheck, TrendUp } from "@phosphor-icons/react";
 
 // Un fait observé par un jumeau, confronté par Méridian à la note de passation de la décision.
@@ -159,17 +160,32 @@ export function RepriseVeille({ messages, depuis }) {
 }
 
 // « Ce que je dis repose sur N preuves » : dépliable, sous le message de Flore.
-export function PreuvesMessage({ preuves }) {
+// Le volet des preuves (Design System §60) : leur nombre et celui des sources ; numérotées comme les pastilles du
+// texte ; une note d'impact donne son bilan (« 4/5 effets prouvés »). `onOuvrir(n)` ouvre la carte de la preuve n.
+export function PreuvesMessage({ preuves, texte, onOuvrir }) {
   const [ouvert, setOuvert] = useState(false);
+  const sources = new Set(preuves.map((p) => (/^[a-z]+:\/\/([^@/:]+)/.exec(p.detail || "")?.[1]) || p.source)).size;
+  const bilan = bilanEffets(texte);
   return (
     <div data-testid="preuves-message">
+      {bilan && (
+        <div className={`mb-1 font-code text-[11px] ${bilan.prouves === bilan.total ? "text-[#34D399]" : "text-[#F2B84B]"}`} data-testid="bilan-effets">
+          {bilan.prouves}/{bilan.total} effet{bilan.total > 1 ? "s" : ""} prouvé{bilan.prouves > 1 ? "s" : ""}
+        </div>
+      )}
       <button type="button" onClick={() => setOuvert((o) => !o)} aria-expanded={ouvert} className="flex items-center gap-1.5 font-code text-[11px] text-[#60A5FA] hover:underline">
-        <Eye size={12} /> Ce que je dis repose sur {preuves.length} preuve{preuves.length > 1 ? "s" : ""} · {ouvert ? "masquer" : "afficher"}
+        <Eye size={12} /> Ce que je dis repose sur {preuves.length} preuve{preuves.length > 1 ? "s" : ""}
+        {sources > 1 ? ` · ${sources} sources` : ""} · {ouvert ? "masquer" : "afficher"}
       </button>
       {ouvert && (
         <ul className="mt-1.5 space-y-1 border-l-2 border-[#60A5FA]/25 pl-2.5">
           {preuves.map((p, k) => (
-            <li key={k} className="text-[12px] leading-snug text-[#94A3B8]"><span className="font-semibold text-[#BFDBFE]">{p.source}</span> — {p.detail}</li>
+            <li key={k} className="text-[12px] leading-snug text-[#94A3B8]">
+              <button type="button" onClick={() => onOuvrir?.(k + 1)} disabled={!onOuvrir} className="text-left hover:text-[#CBD5E1] disabled:cursor-default">
+                <span className="mr-1.5 rounded-[5px] bg-[#60A5FA]/15 px-1 font-code text-[10px] text-[#93C5FD]">{k + 1}</span>
+                <span className="font-semibold text-[#BFDBFE]">{p.source}</span> — {p.detail}
+              </button>
+            </li>
           ))}
         </ul>
       )}

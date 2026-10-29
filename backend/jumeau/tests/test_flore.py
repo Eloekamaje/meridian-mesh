@@ -155,3 +155,28 @@ def test_aucune_ou_plusieurs_applications_nommees_laissent_l_orchestration():
     assert flore.application_nommee("comment conduire le projet ?", JUMEAUX) == []  # « conduire » n'est pas Conduit
     assert flore.application_nommee("Conduit échange-t-il avec Méridian ?", JUMEAUX) == []
     assert flore.application_nommee("la publication d'un article", JUMEAUX) == []  # « article » seul n'est pas un nom
+
+
+def test_pastilles_numerotees_dans_l_ordre_du_volet_et_citations_fausses_retirees():
+    texte = ("Les droits sont une liste blanche (`backend/server.py#L91-L112`). "
+             "Le niveau décide des champs `backend/server.py#L122-L136` et `backend/server.py#L91-L112` renvoyés.\n"
+             "- Portée bornée — backend/portee.py#L7-L8\n- Inventé `x.py#L1-L2`")
+    preuves = flore.preuves_depuis(texte, [SOURCE], exclure={("", "x.py", 1, 2)} | set())
+    preuves = [p for p in preuves if "x.py" not in p["detail"]]  # x.py : citation fausse, hors du volet
+    assert flore.pastiller(texte, preuves, [SOURCE]) == (
+        "Les droits sont une liste blanche [1](#preuve-1). "
+        "Le niveau décide des champs [2](#preuve-2) [1](#preuve-1) renvoyés.\n"
+        "- Portée bornée [3](#preuve-3)\n- Inventé")
+
+
+def test_la_reponse_porte_ses_pastilles_et_le_volet_reste_le_meme():
+    r = flore.vers_reponse_flore(JUMEAU, [SOURCE], TEXTE)
+    assert "git://" not in r["reponse"] and "[1](#preuve-1)" in r["reponse"] and "[2](#preuve-2)" in r["reponse"]
+    assert len(r["preuves"]) == 2
+
+
+def test_le_depot_d_une_preuve_se_lit_dans_son_emplacement():
+    from jumeau.routes import depot_du_locator
+    assert depot_du_locator(f"git://meridian-mesh@{SHA}:backend/server.py#L1-L2") == "meridian-mesh"
+    assert depot_du_locator("confluence://TBT/123@7#L1") is None
+    assert depot_du_locator("git://../etc@x:passwd#L1-L1") is None  # un nom de dépôt, rien d'autre
