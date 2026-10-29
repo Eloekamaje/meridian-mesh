@@ -4,12 +4,14 @@ from typing import Any, Dict, Literal, Optional
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
+import conversation as fil
 import maturation
 import portee as portees
 import re
 from seed_data import EPICS, EPIC_PAR_REF
 import veille as moteur_veille
 from jumeau.travail import EcritureTravail
+from cases_fil import ajouter_routes_fil
 
 
 class CaseCreate(BaseModel):
@@ -53,6 +55,10 @@ class InvestigationCase(BaseModel):
 
 class MessageCase(BaseModel):
     texte: str
+    # Le panneau Flore y ajoute son contexte ; absents, Flore répond comme dans le Travail.
+    contexte: Optional[str] = None
+    selection: Optional[list] = None
+    domaine: Optional[str] = None
 
 
 class RetourMessage(BaseModel):
@@ -237,7 +243,7 @@ def build_cases_router(deps):
         return conv
 
     @router.get("/cases")
-    async def lister_cases(x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+    async def lister_cases(q: Optional[str] = None, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
         _, espace = resoudre_perimetre(x_persona, x_espace)
         tous = await db.jumeaux.find({}, {"_id": 0, "id": 1}).to_list(200)
         aut = autorisations(espace, [j["id"] for j in tous])
@@ -245,6 +251,8 @@ def build_cases_router(deps):
         visibles = [c for c in cases if c.get("id") == "demo-polaris-work-g" or (
             (not c.get("jumeaux") or any(j in aut for j in c["jumeaux"])) and portees.acces(c, x_persona, espace["id"]))]
         visibles = [await materialiser_veille(c) for c in visibles]
+        if q and q.strip():  # titre et texte des messages visibles ; sous-chaîne, jamais une expression du client
+            visibles = [c for c in visibles if fil.correspond(c.get("titre"), visible_pour(c, aut), q)]
         visibles.sort(key=lambda c: c.get("maj_le", ""), reverse=True)
         for c in visibles:
             c["conversation"] = visible_pour(c, aut)
@@ -474,7 +482,41 @@ def build_cases_router(deps):
     async def message_case_flux(cid: str, payload: MessageCase, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
         """Le même échange, au fil de l'eau (étapes réelles, brouillon en relecture, puis le message enregistré)."""
         from jumeau import flux
-        return flux.en_flux(lambda emit: traiter_message(cid, payload, x_persona, x_espace, emit))
+
+        async def interrompu(brouillon):
+            """Arrêt par l'interlocuteur : la question et ce que Flore avait écrit, marqué interrompu."""
+            _, espace = resoudre_perimetre(x_persona, x_espace)
+            await charger_case(cid, espace, x_persona)  # jamais d'écriture hors des droits
+            now = datetime.now(timezone.utc).isoformat()
+            msg_user = {"role": "utilisateur", "texte": payload.texte.strip(), "quand": now}
+            await db.cases.update_one({"id": cid}, {"$push": {"conversation": {"$each": [msg_user, fil.message_interrompu(brouillon)]}},
+                                                    "$set": {"maj_le": now}})
+        return flux.en_flux(lambda emit: traiter_message(cid, payload, x_persona, x_espace, emit), sur_interruption=interrompu)
+
+    async def repondre_dans_travail(cid, case, question, params, x_persona, x_espace, emit=None):
+        """La réponse brute de Flore dans un Travail (hors scripts de démonstration), avec ce qui l'accompagne."""
+        await EcritureTravail(db, cid).retirer_precision()  # reste d'un tour échoué : jamais rattaché à ce tour-ci
+        selection = params.selection if params.selection is not None else case.get("jumeaux", [])
+        rep = await generer_reponse_flore(params.contexte or "case", question, selection, params.domaine, x_persona, x_espace,
+                                          travail=cid, emit=emit)
+        participants = []
+        if case.get("jumeaux"):
+            docs = await db.jumeaux.find({"id": {"$in": case["jumeaux"]}}, NO_ID).to_list(len(case["jumeaux"]))
+            par_id = {j["id"]: j for j in docs}
+            participants = [{"app_id": jid.replace("demo-polaris-", ""), "nom": par_id.get(jid, {}).get("nom", jid),
+                             "domaine": par_id.get(jid, {}).get("domaine", "Général"), "participe": True} for jid in case["jumeaux"]]
+        sortie = {**rep, "reponse": rep.get("reponse", ""), "propositions": rep.get("propositions") or [],
+                  "jumeaux_participants": participants}
+        # question à options posée par Flore (demander_precision) : mêmes réponses rapides que les décisions attendues
+        precision = await EcritureTravail(db, cid).retirer_precision()
+        if precision:
+            sortie["decisions"], sortie["precision"] = precision["options"], True
+            if precision["question"] not in sortie["reponse"]:
+                sortie["reponse"] = f"{sortie['reponse']}\n\n{precision['question']}".strip()
+        return sortie
+
+    ajouter_routes_fil(router, {"db": db, "charger_case": charger_case, "resoudre_perimetre": resoudre_perimetre,
+                                "repondre": repondre_dans_travail})
 
     async def traiter_message(cid, payload, x_persona, x_espace, emit=None):
         _, espace = resoudre_perimetre(x_persona, x_espace)
@@ -563,42 +605,8 @@ def build_cases_router(deps):
                     "quand": datetime.now(timezone.utc).isoformat(),
                 }
         else:
-            await EcritureTravail(db, cid).retirer_precision()  # reste d'un tour échoué : jamais rattaché à ce tour-ci
-            rep = await generer_reponse_flore("case", payload.texte, case.get("jumeaux", []), None, x_persona, x_espace, travail=cid,
-                                              emit=emit)
-            jumeaux_participants_msg = []
-            if case.get("jumeaux"):
-                jumeaux_docs = await db.jumeaux.find({"id": {"$in": case["jumeaux"]}}, NO_ID).to_list(len(case["jumeaux"]))
-                docs_par_id = {j["id"]: j for j in jumeaux_docs}
-                jumeaux_participants_msg = [
-                    {
-                        "app_id": jid.replace("demo-polaris-", ""),
-                        "nom": docs_par_id.get(jid, {}).get("nom", jid),
-                        "domaine": docs_par_id.get(jid, {}).get("domaine", "Général"),
-                        "participe": True,
-                    }
-                    for jid in case["jumeaux"]
-                ]
-
-            msg_flore = {
-                "role": "flore",
-                "texte": rep.get("reponse", ""),
-                "comportement": rep.get("comportement"),
-                "preuves": rep.get("preuves") or [],
-                "propositions": rep.get("propositions") or [],
-                "contributions": rep.get("contributions") or [],
-                "jumeaux_participants": jumeaux_participants_msg,
-                "action": rep.get("action"),
-                "relu": rep.get("relu"),
-                "corrige": rep.get("corrige"),
-                "quand": datetime.now(timezone.utc).isoformat(),
-            }
-            # question à options posée par Flore (demander_precision) : mêmes réponses rapides que les décisions attendues
-            precision = await EcritureTravail(db, cid).retirer_precision()
-            if precision:
-                msg_flore["decisions"], msg_flore["precision"] = precision["options"], True
-                if precision["question"] not in msg_flore["texte"]:
-                    msg_flore["texte"] = f"{msg_flore['texte']}\n\n{precision['question']}".strip()
+            msg_flore = fil.message_flore(await repondre_dans_travail(cid, case, payload.texte, payload, x_persona, x_espace, emit))
+        msg_flore = fil.normaliser(msg_flore)
         await db.cases.update_one(
             {"id": cid},
             {

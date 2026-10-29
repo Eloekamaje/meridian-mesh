@@ -22,13 +22,26 @@ journal = logging.getLogger("meridian.jumeau")
 _TACHES = set()
 
 
-def en_flux(produire):
+SONDE_DECONNEXION = 0.25  # secondes entre deux questions « le client est-il parti ? »
+
+
+class _ClientParti(Exception):
+    pass
+
+
+def en_flux(produire, sur_interruption=None, requete=None):
     """`produire(emit)` est une coroutine qui rend la réponse finale ; ses événements partent au fil de l'eau.
-    ponytail: si le client se déconnecte, la réponse se termine quand même (elle peut être enregistrée)."""
+    Sans `sur_interruption`, si le client se déconnecte la réponse se termine quand même (elle peut être enregistrée).
+    Avec `sur_interruption(brouillon)` (coroutine), la déconnexion ANNULE la génération puis remet au rappel ce qui
+    avait été écrit (la concaténation des événements `texte`). La déconnexion est vue par la fermeture du flux ou,
+    si `requete` est donnée, par `requete.is_disconnected()`."""
     file = asyncio.Queue()
+    brouillon = []
     horodatage = {"debut": None, "premier_texte": None}
 
     async def emit(evenement):
+        if evenement.get("type") == "texte":
+            brouillon.append(evenement.get("delta") or "")
         if evenement.get("type") == "texte" and horodatage["premier_texte"] is None and horodatage["debut"]:
             horodatage["premier_texte"] = round(time.monotonic() - horodatage["debut"], 2)
         await file.put(evenement)
@@ -49,12 +62,48 @@ def en_flux(produire):
         finally:
             await file.put(None)
 
+    async def interrompre(en_cours):
+        """Annule la génération, attend qu'elle soit finie, puis remet le brouillon. Tâche à part : la
+        déconnexion peut avoir annulé la nôtre."""
+        en_cours.cancel()
+        await asyncio.gather(en_cours, return_exceptions=True)
+        try:
+            await sur_interruption("".join(brouillon))
+        except Exception:
+            journal.exception("enregistrement d'une réponse interrompue")
+
+    async def suivante():
+        """Le prochain événement ; lève _ClientParti si `requete` dit que le client est parti."""
+        if requete is None:
+            return await file.get()
+        lecture = asyncio.ensure_future(file.get())
+        try:
+            while True:
+                fait, _ = await asyncio.wait({lecture}, timeout=SONDE_DECONNEXION)
+                if fait:
+                    return lecture.result()
+                if await requete.is_disconnected():
+                    raise _ClientParti()
+        finally:
+            if not lecture.done():
+                lecture.cancel()
+
     async def evenements():
         en_cours = asyncio.create_task(tache())
         _TACHES.add(en_cours)  # référence gardée : la réponse se termine même si le client part
         en_cours.add_done_callback(_TACHES.discard)
-        while (e := await file.get()) is not None:
-            yield f"data: {json.dumps(e, ensure_ascii=False, default=str)}\n\n"
+        termine = False
+        try:
+            while (e := await suivante()) is not None:
+                yield f"data: {json.dumps(e, ensure_ascii=False, default=str)}\n\n"
+            termine = True
+        except _ClientParti:
+            pass
+        finally:
+            if not termine and sur_interruption is not None and not en_cours.done():
+                relais = asyncio.create_task(interrompre(en_cours))
+                _TACHES.add(relais)
+                relais.add_done_callback(_TACHES.discard)
 
     return StreamingResponse(evenements(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
