@@ -484,6 +484,15 @@ def build_cases_router(deps):
         await db.cases.update_one({"id": cid}, update)
         return await db.cases.find_one({"id": cid}, NO_ID)
 
+    @router.delete("/cases/{cid}", status_code=204)
+    async def supprimer_conversation(cid: str, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+        """Retirer une conversation (contrat §2) ; charger_case la cache déjà à tout autre que son auteur."""
+        _, espace = resoudre_perimetre(x_persona, x_espace)
+        case = await charger_case(cid, espace, x_persona)
+        if case.get("statut") != "conversation":
+            raise HTTPException(400, "Seule une conversation se supprime ici ; un travail conservé se clôt")
+        await db.cases.delete_one({"id": cid})
+
     @router.post("/cases/{cid}/messages", status_code=201)
     async def message_case(cid: str, payload: MessageCase, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
         return await traiter_message(cid, payload, x_persona, x_espace)

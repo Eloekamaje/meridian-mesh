@@ -56,6 +56,9 @@ class Collection:
     async def insert_one(self, d):
         self.docs.append(copy.deepcopy(d))
 
+    async def delete_one(self, f):
+        self.docs = [d for d in self.docs if not self._ok(d, f)]
+
 
 class Db:
     def __init__(self, cases):
@@ -368,3 +371,17 @@ def test_la_promotion_d_une_portee_personnelle_reste_privee(monde):
 
 def test_on_ne_transforme_pas_un_travail_en_conversation(monde):
     assert monde[0].patch("/api/cases/t1", json={"statut": "conversation"}).status_code == 400
+
+
+def test_supprimer_une_conversation_reserve_a_son_auteur(avec_conversation):
+    client, db, _, cid = avec_conversation
+    assert client.delete(f"/api/cases/{cid}", headers={"X-Persona": "paiements-dev"}).status_code == 404
+    assert client.delete(f"/api/cases/{cid}").status_code == 204
+    assert cid not in [d["id"] for d in db.cases.docs]
+
+
+def test_un_travail_conserve_ne_se_supprime_pas_par_cette_route(monde):
+    client, db, _ = monde
+    cid = client.post("/api/cases", json={"titre": "Ordinaire"}).json()["id"]
+    assert client.delete(f"/api/cases/{cid}").status_code == 400
+    assert cid in [d["id"] for d in db.cases.docs]
