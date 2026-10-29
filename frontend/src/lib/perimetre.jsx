@@ -16,6 +16,8 @@ const objet = (d) => (d && typeof d === "object" && !Array.isArray(d) ? d : null
 
 export function PerimetreProvider({ children }) {
   const [persona, setPersona] = useState(() => localStorage.getItem(LS_PERSONA) || "architecte");
+  const [authMode, setAuthMode] = useState("demo");
+  const [utilisateur, setUtilisateur] = useState(null);
   const [cible, setCible] = useState(() => localStorage.getItem(LS_CIBLE) || "mesh-global");
   const [personas, setPersonas] = useState([]);
   const [espaces, setEspaces] = useState([]);
@@ -28,6 +30,16 @@ export function PerimetreProvider({ children }) {
 
   useEffect(() => {
     api.get("/personas").then((r) => setPersonas(liste(r.data))).catch(() => {});
+    api.get("/moi").then((r) => {
+      const d = objet(r.data);
+      if (!d) return;
+      if (d.persona) {
+        localStorage.setItem(LS_PERSONA, d.persona);
+        setPersona(d.persona);
+      }
+      if (d.auth_mode) setAuthMode(d.auth_mode);
+      if (d.utilisateur) setUtilisateur(d.utilisateur);
+    }).catch(() => {});
   }, []);
 
   const rafraichir = useCallback(async () => {
@@ -46,6 +58,7 @@ export function PerimetreProvider({ children }) {
   useEffect(() => { rafraichir(); }, [rafraichir]);
 
   const changerPersona = useCallback(async (p) => {
+    if (authMode !== "demo") return;
     localStorage.setItem(LS_PERSONA, p);
     setPersona(p);
     let defaut = "mesh-global";
@@ -59,7 +72,7 @@ export function PerimetreProvider({ children }) {
     setCible(defaut);
     setVersion((v) => v + 1);
     api.post("/journal", { action: "changement d'identité", detail: `persona ${p}` }, { headers: { "X-Persona": p, "X-Espace": defaut } }).catch(() => {});
-  }, []);
+  }, [authMode]);
 
   const changerCible = useCallback((c) => {
     localStorage.setItem(LS_CIBLE, c);
@@ -78,7 +91,7 @@ export function PerimetreProvider({ children }) {
 
   return (
     <PerimetreCtx.Provider
-      value={{ persona, cible, espaceId, vueActive, personas, espaces, vues, info, version, changerPersona, changerCible, rechargerVues }}
+      value={{ persona, cible, espaceId, vueActive, personas, espaces, vues, info, version, authMode, utilisateur, changerPersona, changerCible, rechargerVues }}
     >
       {children}
     </PerimetreCtx.Provider>

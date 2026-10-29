@@ -39,7 +39,7 @@ const NAV_ITEMS = [
 export default function SidebarGauche({ mode = "bureau", onOuvrir, onFermer }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { personas, persona, changerPersona, espaces, cible, changerCible } = usePerimetre();
+  const { personas, persona, changerPersona, espaces, cible, changerCible, authMode } = usePerimetre();
   const { basculerFlore, repliAuto } = useContexte();
   // Non nul uniquement dans la démonstration Polaris : la coquille est alors verrouillée
   const pilote = usePilotage();
@@ -380,26 +380,34 @@ export default function SidebarGauche({ mode = "bureau", onOuvrir, onFermer }) {
             {/* Menu profil / Persona switcher */}
             {menuProfil && (
               <div className="absolute bottom-12 left-0 z-50 w-56 rounded-2xl border border-white/10 bg-[#0C1724] p-2 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150">
-                <div className="px-2 py-1 text-[10px] font-code uppercase tracking-wider text-[#7C93A8]">
-                  Changer de rôle / persona
-                </div>
-                {personas.map((p) => (
-                  <button
-                    key={p.id}
-                    onClick={() => {
-                      changerPersona(p.id);
-                      setMenuProfil(false);
-                    }}
-                    className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors ${
-                      persona === p.id 
-                        ? "bg-blue-500/20 text-blue-200 font-semibold" 
-                        : "text-[#CBD5E1] hover:bg-white/[0.06] hover:text-white"
-                    }`}
-                  >
-                    <span>{p.nom}</span>
-                    {persona === p.id && <Check size={12} className="text-blue-400" />}
-                  </button>
-                ))}
+                {authMode === "demo" ? (
+                  <>
+                    <div className="px-2 py-1 text-[10px] font-code uppercase tracking-wider text-[#7C93A8]">
+                      Changer de rôle / persona
+                    </div>
+                    {personas.map((p) => (
+                      <button
+                        key={p.id}
+                        onClick={() => {
+                          changerPersona(p.id);
+                          setMenuProfil(false);
+                        }}
+                        className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors ${
+                          persona === p.id
+                            ? "bg-blue-500/20 text-blue-200 font-semibold"
+                            : "text-[#CBD5E1] hover:bg-white/[0.06] hover:text-white"
+                        }`}
+                      >
+                        <span>{p.nom}</span>
+                        {persona === p.id && <Check size={12} className="text-blue-400" />}
+                      </button>
+                    ))}
+                  </>
+                ) : (
+                  <div className="px-2 py-1 text-[10px] font-code uppercase tracking-wider text-[#7C93A8]">
+                    Identité vérifiée par le fournisseur
+                  </div>
+                )}
               </div>
             )}
           </div>

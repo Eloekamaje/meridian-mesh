@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Header, Query
+from fastapi import FastAPI, APIRouter, HTTPException, Header, Query, Request
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -17,6 +17,7 @@ import unicodedata
 from pathlib import Path
 from uuid import uuid4
 
+import auth as auth_identite
 from cases_routes import build_cases_router
 from actualites_routes import build_actualites_router
 from initiatives_routes import build_initiatives_router
@@ -52,6 +53,7 @@ client = AsyncIOMotorClient(os.environ["MONGO_URL"])
 db = client[os.environ["DB_NAME"]]
 
 app = FastAPI(title="Méridian")
+auth_identite.installer(app)
 api_router = APIRouter(prefix="/api")
 
 NO_ID = {"_id": 0}
@@ -120,6 +122,7 @@ def _nombre_workers():
 
 @app.on_event("startup")
 async def demarrer_partage():
+    auth_identite.verifier_config()
     if _nombre_workers() > 1 and not jumeau_partage.actif():
         raise RuntimeError("REDIS_URL est requis avec plusieurs workers uvicorn")
     await jumeau_partage.verifier()
@@ -285,9 +288,26 @@ async def health():
 
 # ---------- Périmètres : personas, espaces, vues, journal ----------
 
+@api_router.get("/moi")
+async def moi(request: Request, x_persona: str = Header("architecte")):
+    persona = next((p for p in PERSONAS if p["id"] == x_persona), PERSONAS[0])
+    return {
+        "persona": persona["id"],
+        "nom": persona["nom"],
+        "role": persona["role"],
+        "equipe": persona.get("equipe"),
+        "utilisateur": getattr(request.state, "utilisateur", None),
+        "auth_mode": getattr(request.state, "auth_mode", "demo"),
+        "espaces": persona["espaces"],
+        "par_defaut": persona["par_defaut"],
+    }
+
+
 @api_router.get("/personas")
-async def lister_personas():
-    return [{"id": p["id"], "nom": p["nom"], "role": p["role"], "equipe": p.get("equipe")} for p in PERSONAS]
+async def lister_personas(request: Request, x_persona: str = Header("architecte")):
+    mode = getattr(request.state, "auth_mode", "demo")
+    selection = [p for p in PERSONAS if p["id"] == x_persona] if mode != "demo" else PERSONAS
+    return [{"id": p["id"], "nom": p["nom"], "role": p["role"], "equipe": p.get("equipe")} for p in selection]
 
 
 @api_router.get("/espaces")

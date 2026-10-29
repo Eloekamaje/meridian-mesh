@@ -111,6 +111,21 @@ une reprise utilise cet identifiant opaque, pas un index de tableau. Les notific
 dans Mongo ; Redis ne porte que le temps réel. En production, Redis doit être authentifié (ACL/TLS) et
 l'URL ne doit pas apparaître dans les logs.
 
+## Identité
+
+`AUTH_MODE` décide qui fixe la persona :
+
+- `demo` (défaut local) : `X-Persona` est accepté, mais doit désigner une persona connue. **Interdit en production.**
+- `proxy` : un proxy authentifiant (oauth2-proxy, ALB, etc.) fournit `X-Auth-Request-User` /
+  `X-Auth-Request-Groups` et `X-Auth-Proxy-Secret`. Le client ne peut pas imposer `X-Persona`.
+  `AUTH_PERSONA_MAP` associe utilisateurs ou groupes aux personas : `{"grp-arch":"architecte"}`.
+- `oidc` : l'API vérifie un JWT `Authorization: Bearer` avec `AUTH_OIDC_JWKS_URL` (ou `AUTH_OIDC_SECRET`
+  pour HS256), `AUTH_AUDIENCE`, `AUTH_ISSUER`, puis lit `persona` ou `groups` (`AUTH_GROUPS_CLAIM`).
+
+Sans mapping, OIDC accepte une claim `persona` valide. Le header `X-Persona` est toujours remplacé par
+l'identité résolue côté serveur. `GET /api/moi` expose la persona et le mode au frontend, qui masque alors
+le sélecteur de rôle.
+
 ## Données de démonstration
 
 Seed automatique au démarrage (clé `SEED_VERSION` : un changement réinitialise les données). Bouton **« Réinitialiser la démo »** dans Administration (trace au journal d'audit). Jeu : 12 jumeaux, 14 relations (6 états : observée, supposée, validation A2A, contestée, obsolète, confirmée), 11 situations, situation principale « Latence du parcours de paiement ». Un **Parcours Olympiade** guidé (bouton dans la barre latérale) fait la démonstration complète.
