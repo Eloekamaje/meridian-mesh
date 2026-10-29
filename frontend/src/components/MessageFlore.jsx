@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { ArrowsClockwise, CaretLeft, CaretRight, Copy, PencilSimple, ThumbsDown, ThumbsUp } from "@phosphor-icons/react";
 import api from "@/lib/api";
 import useFluxAction from "@/lib/useFluxAction";
-import { erreurAction, navBranches, navVersions, urlMessage } from "@/lib/conversationFlore";
+import { erreurAction, explicationArret, navBranches, navVersions, urlMessage } from "@/lib/conversationFlore";
 import MarkdownFlore from "./MarkdownFlore";
 import MarqueRelecture from "./MarqueRelecture";
 import MarqueOrigine from "./MarqueOrigine";
@@ -79,7 +79,15 @@ export function MessageFlore({
       {activite && <LigneActiviteFlore activite={activite} testid={testid ? `${testid}-activite` : undefined} />}
       {corps ?? <MarkdownFlore texte={message.texte} />}
       {message.interrompu && (
-        <span className="inline-block rounded-full border border-[#F2B84B]/50 px-2 py-0.5 font-code text-[10px] text-[#F2B84B]" data-testid="flore-interrompu">interrompu</span>
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-[#F2B84B]/40 bg-[#F2B84B]/[0.06] px-2.5 py-1.5 text-xs text-[#F2B84B]" data-testid="flore-interrompu">
+          <span>{explicationArret(message)}</span>
+          {agit && !flux && (
+            <button type="button" onClick={regenerer} disabled={occupe} data-testid={`reprendre-${index}`}
+              className="rounded border border-[#F2B84B]/50 px-2 py-0.5 text-[11px] hover:bg-[#F2B84B]/10 disabled:opacity-50 focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#F2B84B]">
+              Reprendre la réponse
+            </button>
+          )}
+        </div>
       )}
       <div>
         <MarqueOrigine data={message} />

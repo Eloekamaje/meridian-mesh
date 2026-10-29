@@ -25,7 +25,7 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import MarkdownFlore from "@/components/MarkdownFlore";
 import { MessageFlore, QuestionFlore } from "@/components/MessageFlore";
-import { prefixeTravail, reponseInterrompue, remplacerMessage, tronquerApres } from "@/lib/conversationFlore";
+import { prefixeTravail, reponseInterrompue, remplacerMessage, tronquerApres, activiteDuMessage } from "@/lib/conversationFlore";
 import { usePerimetre } from "@/lib/perimetre";
 import { useContexte } from "@/lib/contexte";
 import { couleurDomaine } from "@/lib/domaines";
@@ -977,7 +977,7 @@ export default function OngletTravail({
                     <MessageFlore
                       message={m} index={i} prefixe={prefixe} bloque={envoiMsg}
                       onMessage={majMessage} onMessages={majMessages} onRelire={relire}
-                      activite={m._activite}
+                      activite={activiteDuMessage(m)}
                       corps={
                     <CorpsMessageFlore
                       message={m}

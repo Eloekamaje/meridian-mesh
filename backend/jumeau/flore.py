@@ -206,6 +206,7 @@ async def executer(a, message, emit=None, chrono=None):
         elif isinstance(m := e.get("message"), dict):
             for bloc in m.get("content") or []:
                 if (u := bloc.get("toolUse")) and u.get("toolUseId") in debuts:
+                    debuts[u["toolUseId"]] = time.monotonic()  # arguments complets : l'outil s'exécute maintenant
                     await emit({"type": "outil", "id": u["toolUseId"], "arguments": u.get("input")})
                 elif (r := bloc.get("toolResult")) and (oid := r.get("toolUseId")) in debuts:
                     await emit({"type": "outil", "id": oid, "etat": "erreur" if r.get("status") == "error" else "fait",

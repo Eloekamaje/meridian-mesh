@@ -34,17 +34,38 @@ class _ClientParti(Exception):
     pass
 
 
+class Activite:
+    """L'activité d'un tour, telle qu'elle a eu lieu : étapes et outils dans l'ordre, au format que l'interface
+    affiche (`{label, outil?}`, comme journalActivite). Gardée avec la réponse, et avec un tour arrêté."""
+
+    def __init__(self):
+        self.ops = []
+
+    def suivre(self, e):
+        if e.get("type") == "etape":
+            self.ops = [*self.ops, {"label": e.get("libelle") or ""}]
+        elif e.get("type") == "outil":
+            champs = {k: v for k, v in e.items() if k != "type"}
+            i = next((k for k, o in enumerate(self.ops) if (o.get("outil") or {}).get("id") == e.get("id")), None)
+            if i is None:
+                self.ops = [*self.ops, {"label": e.get("libelle") or e.get("nom") or "", "outil": champs}]
+            else:
+                self.ops = [*self.ops[:i], {**self.ops[i], "outil": {**self.ops[i]["outil"], **champs}}, *self.ops[i + 1:]]
+
+
 def en_flux(produire, sur_interruption=None, requete=None, fil=None):
     """`produire(emit)` est une coroutine qui rend la réponse finale ; ses événements partent au fil de l'eau.
     Sans `sur_interruption`, si le client se déconnecte la réponse se termine quand même (elle peut être enregistrée).
-    Avec `sur_interruption(brouillon)` (coroutine), la déconnexion ANNULE la génération puis remet au rappel ce qui
-    avait été écrit (la concaténation des événements `texte`). La déconnexion est vue par la fermeture du flux ou,
+    Avec `sur_interruption(brouillon, activite)` (coroutine), la déconnexion ANNULE la génération puis remet au
+    rappel ce qui avait été écrit (la concaténation des événements `texte`) et l'activité du tour (Activite.ops). La déconnexion est vue par la fermeture du flux ou,
     si `requete` est donnée, par `requete.is_disconnected()`. `fil` : l'identifiant AG-UI du fil (le Travail)."""
     file = asyncio.Queue()
     brouillon = []
+    activite = Activite()
     horodatage = {"debut": None, "premier_texte": None}
 
     async def emit(evenement):
+        activite.suivre(evenement)
         if evenement.get("type") == "texte":
             brouillon.append(evenement.get("delta") or "")
         if evenement.get("type") == "texte" and horodatage["premier_texte"] is None and horodatage["debut"]:
@@ -73,7 +94,7 @@ def en_flux(produire, sur_interruption=None, requete=None, fil=None):
         en_cours.cancel()
         await asyncio.gather(en_cours, return_exceptions=True)
         try:
-            await sur_interruption("".join(brouillon))
+            await sur_interruption("".join(brouillon), activite.ops)
         except Exception:
             journal.exception("enregistrement d'une réponse interrompue")
 

@@ -10,6 +10,7 @@ import portee as portees
 import re
 from seed_data import EPICS, EPIC_PAR_REF
 import veille as moteur_veille
+from jumeau import flux as jumeau_flux
 from jumeau.travail import EcritureTravail
 from cases_fil import ajouter_routes_fil
 
@@ -502,13 +503,13 @@ def build_cases_router(deps):
         """Le même échange, au fil de l'eau (étapes réelles, brouillon en relecture, puis le message enregistré)."""
         from jumeau import flux
 
-        async def interrompu(brouillon):
+        async def interrompu(brouillon, activite=None):
             """Arrêt par l'interlocuteur : la question et ce que Flore avait écrit, marqué interrompu."""
             _, espace = resoudre_perimetre(x_persona, x_espace)
             await charger_case(cid, espace, x_persona)  # jamais d'écriture hors des droits
             now = datetime.now(timezone.utc).isoformat()
             msg_user = {"role": "utilisateur", "texte": payload.texte.strip(), "quand": now}
-            await db.cases.update_one({"id": cid}, {"$push": {"conversation": {"$each": [msg_user, fil.message_interrompu(brouillon)]}},
+            await db.cases.update_one({"id": cid}, {"$push": {"conversation": {"$each": [msg_user, fil.message_interrompu(brouillon, activite)]}},
                                                     "$set": {"maj_le": now}})
         return flux.en_flux(lambda emit: traiter_message(cid, payload, x_persona, x_espace, emit), sur_interruption=interrompu, fil=cid)
 
@@ -516,8 +517,13 @@ def build_cases_router(deps):
         """La réponse brute de Flore dans un Travail (hors scripts de démonstration), avec ce qui l'accompagne."""
         await EcritureTravail(db, cid).retirer_precision()  # reste d'un tour échoué : jamais rattaché à ce tour-ci
         selection = params.selection if params.selection is not None else case.get("jumeaux", [])
+        suivi = jumeau_flux.Activite()  # ce que Flore a fait, gardé avec la réponse (relu au rechargement)
+
+        async def suivre(e):
+            suivi.suivre(e)
+            await emit(e)
         rep = await generer_reponse_flore(params.contexte or "case", question, selection, params.domaine, x_persona, x_espace,
-                                          travail=cid, emit=emit)
+                                          travail=cid, emit=suivre if emit else None)
         participants = []
         if case.get("jumeaux"):
             docs = await db.jumeaux.find({"id": {"$in": case["jumeaux"]}}, NO_ID).to_list(len(case["jumeaux"]))
@@ -525,7 +531,7 @@ def build_cases_router(deps):
             participants = [{"app_id": jid.replace("demo-polaris-", ""), "nom": par_id.get(jid, {}).get("nom", jid),
                              "domaine": par_id.get(jid, {}).get("domaine", "Général"), "participe": True} for jid in case["jumeaux"]]
         sortie = {**rep, "reponse": rep.get("reponse", ""), "propositions": rep.get("propositions") or [],
-                  "jumeaux_participants": participants}
+                  "jumeaux_participants": participants, "activite": suivi.ops or None}
         # question à options posée par Flore (demander_precision) : mêmes réponses rapides que les décisions attendues
         precision = await EcritureTravail(db, cid).retirer_precision()
         if precision:

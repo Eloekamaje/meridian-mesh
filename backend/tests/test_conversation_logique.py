@@ -132,3 +132,18 @@ def test_correspond_cherche_titre_et_texte_sans_casse_ni_regex():
     assert c.correspond("", msgs, "a.b (") and not c.correspond("", msgs, "a.*")
     assert not c.correspond("Socle", msgs, "zzz")
     assert c.correspond("Socle", msgs, "  ") and c.correspond(None, [{"texte": None}], "")
+
+
+ACTIVITE = [{"label": "Je lis le code concerné…", "outil": {"id": "u1", "nom": "lire_code", "etat": "fait", "duree": 0.1}},
+            {"label": "Je suis l'enchaînement…", "outil": {"id": "u2", "nom": "suivre_appels", "etat": "en_cours"}}]
+
+
+def test_l_activite_du_tour_est_gardee_avec_la_reponse_et_sa_version():
+    m = c.message_flore({"reponse": "ok", "activite": ACTIVITE})
+    assert m["activite"] == ACTIVITE and m["versions"][0]["activite"] == ACTIVITE
+
+
+def test_un_tour_arrete_garde_son_activite():
+    m = c.message_interrompu("Début", ACTIVITE)
+    assert m["interrompu"] is True and m["activite"] == ACTIVITE
+    assert "activite" not in c.message_interrompu("Début")

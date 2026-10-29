@@ -58,7 +58,7 @@ def test_fermeture_du_flux_annule_et_remet_le_brouillon():
             etat["annule"] = True
             raise
 
-    async def sur_interruption(brouillon):
+    async def sur_interruption(brouillon, activite=None):
         etat["brouillon"] = brouillon
 
     async def scenario():
@@ -89,7 +89,7 @@ def test_requete_deconnectee_annule_sans_attendre_la_fermeture():
             etat["annule"] = True
             raise
 
-    async def sur_interruption(brouillon):
+    async def sur_interruption(brouillon, activite=None):
         etat["brouillon"] = brouillon
 
     async def scenario():
@@ -112,7 +112,7 @@ def test_pas_d_interruption_quand_la_reponse_est_finie():
         await emit({"type": "texte", "delta": "ok"})
         return {"reponse": "ok"}
 
-    async def sur_interruption(brouillon):
+    async def sur_interruption(brouillon, activite=None):
         appels.append(brouillon)
 
     async def scenario():
@@ -140,3 +140,38 @@ def test_sans_rappel_la_reponse_se_termine_quand_meme():
         await asyncio.gather(*list(flux._TACHES), return_exceptions=True)
     asyncio.run(scenario())
     assert fini == [True]
+
+
+def test_l_activite_suit_etapes_et_outils_dans_l_ordre_sans_muter():
+    a = flux.Activite()
+    a.suivre({"type": "etape", "libelle": "Je regarde Conduit…"})
+    a.suivre({"type": "outil", "id": "u1", "nom": "lire_code", "libelle": "Je lis…", "etat": "en_cours"})
+    avant = a.ops[1]
+    a.suivre({"type": "texte", "delta": "x"})  # le texte n'est pas de l'activité
+    a.suivre({"type": "outil", "id": "u1", "arguments": {"chemin": "a.py"}})
+    a.suivre({"type": "outil", "id": "u1", "etat": "fait", "duree": 0.2, "extrait": "def f()"})
+    assert [o["label"] for o in a.ops] == ["Je regarde Conduit…", "Je lis…"]
+    assert a.ops[1]["outil"] == {"id": "u1", "nom": "lire_code", "libelle": "Je lis…", "etat": "fait",
+                                 "arguments": {"chemin": "a.py"}, "duree": 0.2, "extrait": "def f()"}
+    assert avant["outil"]["etat"] == "en_cours"
+
+
+def test_l_interruption_remet_aussi_l_activite():
+    recu = {}
+
+    async def produire(emit):
+        await emit({"type": "outil", "id": "u1", "nom": "lire_code", "libelle": "Je lis…", "etat": "en_cours"})
+        await emit({"type": "texte", "delta": "Bon"})
+        await asyncio.sleep(30)
+
+    async def sur_interruption(brouillon, activite):
+        recu.update(brouillon=brouillon, activite=activite)
+
+    async def scenario():
+        it = _lancer(produire, sur_interruption=sur_interruption)
+        while "TEXT_MESSAGE_CONTENT" not in await it.__anext__():
+            pass
+        await it.aclose()
+        await asyncio.gather(*list(flux._TACHES), return_exceptions=True)
+    asyncio.run(scenario())
+    assert recu["brouillon"] == "Bon" and recu["activite"][0]["outil"]["etat"] == "en_cours"

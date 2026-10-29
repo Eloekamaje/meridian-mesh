@@ -1,6 +1,11 @@
 // Logique sans écran de la conversation unique (MERIDIAN_Conversation_Contrat_v1) : le panneau Flore et le fil d'un
 // Travail parlent au même serveur, sous le même préfixe /cases/{cid}, avec les mêmes actions.
 
+import { activiteDuTour } from "./fluxFlore";
+
+// L'activité d'une réponse : celle vue en direct, sinon celle que le serveur a enregistrée (après rechargement).
+export const activiteDuMessage = (m) => m?._activite || activiteDuTour(m?.activite || [], `enregistree-${m?.quand || ""}`);
+
 export const prefixeTravail = (cid) => `/cases/${encodeURIComponent(cid)}`;
 export const urlMessage = (prefixe, n, action) => `${prefixe}/messages/${n}/${action}`;
 
@@ -40,7 +45,7 @@ export function regrouper(messages) {
       e.data = { ...m, reponse: m.texte };
       e.fMsg = m;
       e.nr = n;
-      e.trace = m._activite || null;
+      e.trace = activiteDuMessage(m);
       if (e !== courant) echanges.push(e);
       courant = null;
     }
@@ -108,4 +113,19 @@ export function garderReperes(avant, conv) {
   });
   reperes.filter((r) => r.apres >= conv.length).forEach((r) => res.push(r.m));
   return res;
+}
+
+// Un tour arrêté, expliqué : ce que Flore avait fait, ce qui était en cours, ce qui avait été écrit. Rien n'est
+// présenté comme vérifié (la réponse n'a pas été relue).
+export function explicationArret(m) {
+  const outils = (m?.activite || []).map((o) => o.outil).filter(Boolean);
+  const faits = outils.filter((o) => o.etat !== "en_cours").map((o) => o.nom);
+  const enCours = outils.filter((o) => o.etat === "en_cours").map((o) => o.nom);
+  const n = (m?.texte || "").length;
+  const parties = ["Arrêté par vous"];
+  if (faits.length) parties.push(`${faits.length} outil${faits.length > 1 ? "s" : ""} fait${faits.length > 1 ? "s" : ""} (${[...new Set(faits)].join(", ")})`);
+  if (enCours.length) parties.push(`${enCours.length} en cours (${[...new Set(enCours)].join(", ")})`);
+  parties.push(n ? `${n} caractère${n > 1 ? "s" : ""} écrit${n > 1 ? "s" : ""}` : "rien d'écrit");
+  parties.push("non relu");
+  return parties.join(" · ");
 }

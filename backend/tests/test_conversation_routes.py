@@ -99,6 +99,8 @@ class Faux:
         if self.muet:
             await asyncio.sleep(30)
         if emit:
+            await emit({"type": "outil", "id": "u1", "nom": "lire_code", "libelle": "Je lis le code concerné…", "etat": "en_cours"})
+            await emit({"type": "outil", "id": "u1", "etat": "fait", "duree": 0.1, "extrait": "def f()"})
             await emit({"type": "texte", "delta": self.reponse[:4]})
             await emit({"type": "texte", "delta": self.reponse[4:8]})
         if self.bloque:
@@ -385,3 +387,13 @@ def test_un_travail_conserve_ne_se_supprime_pas_par_cette_route(monde):
     cid = client.post("/api/cases", json={"titre": "Ordinaire"}).json()["id"]
     assert client.delete(f"/api/cases/{cid}").status_code == 400
     assert cid in [d["id"] for d in db.cases.docs]
+
+
+def test_l_activite_est_enregistree_avec_la_reponse_et_avec_un_tour_arrete(monde):
+    client, db, faux = monde
+    evenements(client.post("/api/cases/t1/messages/flux", json={"texte": "Et la sécurité ?"}))
+    outil = conv(db)[-1]["activite"][0]["outil"]
+    assert outil["nom"] == "lire_code" and outil["etat"] == "fait"
+    faux.bloque = True
+    lancer_puis_couper(monde, "/api/cases/t1/messages/flux", {"texte": "Autre ?"})
+    assert conv(db)[-1]["interrompu"] is True and conv(db)[-1]["activite"][0]["outil"]["nom"] == "lire_code"

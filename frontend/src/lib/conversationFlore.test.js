@@ -1,4 +1,4 @@
-import { prefixeTravail, urlMessage, navigation, navVersions, navBranches, regrouper, erreurAction, resultatsRecherche, remplacerMessage, floreAProduit, estConversation, tronquerApres, garderReperes } from "./conversationFlore";
+import { prefixeTravail, urlMessage, navigation, navVersions, navBranches, regrouper, erreurAction, resultatsRecherche, remplacerMessage, floreAProduit, estConversation, tronquerApres, garderReperes, activiteDuMessage, explicationArret } from "./conversationFlore";
 
 test("les URL se construisent par préfixe /cases/{cid}", () => {
   expect(prefixeTravail("abc")).toBe("/cases/abc");
@@ -73,4 +73,21 @@ test("relire la conversation garde les marqueurs locaux à leur place", () => {
   expect(garderReperes([], serveur)).toBe(serveur);
   // une conversation raccourcie (modification) : le marqueur d'au-delà est rangé en bas, jamais perdu
   expect(garderReperes(avant, serveur.slice(0, 1)).map((m) => m.texte)).toEqual(["a", "m1"]);
+});
+
+test("l'activité d'une réponse : la locale d'abord, sinon celle enregistrée par le serveur", () => {
+  const locale = { id: "l", status: "done", ops: [] };
+  expect(activiteDuMessage({ _activite: locale, activite: [{ label: "x" }] })).toBe(locale);
+  const lue = activiteDuMessage({ activite: [{ label: "Je lis…", outil: { id: "u", nom: "lire_code", etat: "fait" } }] });
+  expect(lue.status).toBe("done");
+  expect(lue.ops[0].outil.nom).toBe("lire_code");
+  expect(activiteDuMessage({ texte: "ancien message" })).toBeNull();
+});
+
+test("un tour arrêté s'explique : outils faits, en cours, texte écrit, non relu", () => {
+  const m = { texte: "Il existe", interrompu: true, activite: [
+    { label: "a", outil: { nom: "lire_code", etat: "fait" } }, { label: "b", outil: { nom: "lire_code", etat: "fait" } },
+    { label: "Je regarde…" }, { label: "c", outil: { nom: "suivre_appels", etat: "en_cours" } }] };
+  expect(explicationArret(m)).toBe("Arrêté par vous · 2 outils faits (lire_code) · 1 en cours (suivre_appels) · 9 caractères écrits · non relu");
+  expect(explicationArret({ texte: "", interrompu: true })).toBe("Arrêté par vous · rien d'écrit · non relu");
 });

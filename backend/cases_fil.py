@@ -88,9 +88,9 @@ def ajouter_routes_fil(router, deps):
         async def produire(emit):
             return await ajouter(await repondre(cid, case, question, payload or Params(), x_persona, x_espace, emit))
 
-        async def interrompu(brouillon):
+        async def interrompu(brouillon, activite=None):
             if brouillon:  # rien d'écrit : rien n'est ajouté
-                await ajouter(fil.message_interrompu(brouillon))
+                await ajouter(fil.message_interrompu(brouillon, activite))
         return flux.en_flux(produire, sur_interruption=interrompu, fil=cid)
 
     @router.post("/cases/{cid}/messages/{n}/modifier/flux")
@@ -110,6 +110,6 @@ def ajouter_routes_fil(router, deps):
             rep = await repondre(cid, case, nouveaux[n]["texte"], payload, x_persona, x_espace, emit)
             return await ajouter(fil.message_flore(rep))
 
-        async def interrompu(brouillon):
-            await ajouter(fil.message_interrompu(brouillon))
+        async def interrompu(brouillon, activite=None):
+            await ajouter(fil.message_interrompu(brouillon, activite))
         return flux.en_flux(produire, sur_interruption=interrompu, fil=cid)

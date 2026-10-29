@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 NON_VERSION = ("role", "versions", "version", "retour")
 # Au-delà des champs du contrat, la réponse du modèle peut porter ces compléments (affichés tels quels).
 COMPLEMENTS = ("propositions", "action", "relu", "jumeaux_participants", "decisions", "precision", "kpis",
-               "tableauComparatif", "documentCanvas")
+               "tableauComparatif", "documentCanvas", "activite")
 
 
 def _maintenant():
@@ -33,9 +33,11 @@ def message_flore(reponse):
     return {"role": "flore", **version, "versions": [copy.deepcopy(version)], "version": 0}
 
 
-def message_interrompu(texte_partiel):
-    """Ce que Flore avait écrit quand l'interlocuteur a arrêté : jamais relu, jamais complété."""
-    return message_flore({"reponse": texte_partiel, "interrompu": True, "relecture_etat": "non_relue"})
+def message_interrompu(texte_partiel, activite=None):
+    """Ce que Flore avait écrit quand l'interlocuteur a arrêté, et ce qu'elle avait fait jusque-là (outils faits ou
+    en cours) : jamais relu, jamais complété."""
+    return message_flore({"reponse": texte_partiel, "interrompu": True, "relecture_etat": "non_relue",
+                          "activite": activite or None})
 
 
 def _versions(message):
