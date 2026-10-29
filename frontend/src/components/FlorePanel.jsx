@@ -8,7 +8,7 @@ import TrustBadges from "./TrustBadges";
 import MarkdownFlore from "./MarkdownFlore";
 import { MessageFlore, QuestionFlore } from "./MessageFlore";
 import { demanderEnFlux, estArret } from "@/lib/fluxFlore";
-import { prefixeTravail, regrouper, reponseInterrompue, floreAProduit, estConversation, STATUT_CONVERSATION, STATUT_CONSERVE } from "@/lib/conversationFlore";
+import { prefixeTravail, regrouper, reponseInterrompue, floreAProduit, estConversation, STATUT_CONVERSATION, STATUT_CONSERVE, tronquerApres, garderReperes } from "@/lib/conversationFlore";
 import { usePerimetre } from "@/lib/perimetre";
 import BrouillonFlore from "./BrouillonFlore";
 import MarqueRelecture from "./MarqueRelecture";
@@ -553,7 +553,8 @@ export default function FlorePanel() {
       const { data } = await api.get(`/cases/${cid}`);
       const conv = data.conversation || [];
       setTravail(data);
-      setMessages(sansAnimation ? conv.map((m, i) => (i === conv.length - 1 && m.role === "flore" ? { ...m, auFilDeLEau: true } : m)) : conv);
+      const relue = sansAnimation ? conv.map((m, i) => (i === conv.length - 1 && m.role === "flore" ? { ...m, auFilDeLEau: true } : m)) : conv;
+      setMessages((avant) => garderReperes(avant, relue));
       return true;
     } catch {
       return false;
@@ -624,7 +625,7 @@ export default function FlorePanel() {
       let enregistree = false;
       if (cid) {
         try {
-          await demanderEnFlux(`${prefixeTravail(cid)}/messages/flux`, { texte: finale }, rappels);
+          await demanderEnFlux(`${prefixeTravail(cid)}/messages/flux`, { texte: finale, contexte, selection, domaine: domaineSel }, rappels);
           enregistree = true;
         } catch (err) {
           if (err.annoncee || estArret(err)) throw err;
@@ -780,7 +781,8 @@ export default function FlorePanel() {
   // serveur (les marqueurs locaux n'en ont pas).
   const prefixe = !pilote && travailId ? prefixeTravail(travailId) : null;
   const majMessage = (n, msg) => setMessages((ms) => { let k = -1; return ms.map((m) => (m.marqueur || ++k !== n ? m : msg)); });
-  const actions = { prefixe, onMessage: majMessage, onMessages: setMessages, onRelire: () => relire(), bloque: chargement };
+  const actions = { prefixe, onMessage: majMessage, onMessages: setMessages, onRelire: () => relire(), bloque: chargement,
+    onTronquer: (n, texte) => setMessages((ms) => tronquerApres(ms, n, texte)) };
 
   if (lot) return <LotBar lot={lot} />;
 

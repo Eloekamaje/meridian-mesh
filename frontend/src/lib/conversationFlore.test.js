@@ -1,4 +1,4 @@
-import { prefixeTravail, urlMessage, navigation, navVersions, navBranches, regrouper, erreurAction, resultatsRecherche, remplacerMessage, floreAProduit, estConversation } from "./conversationFlore";
+import { prefixeTravail, urlMessage, navigation, navVersions, navBranches, regrouper, erreurAction, resultatsRecherche, remplacerMessage, floreAProduit, estConversation, tronquerApres, garderReperes } from "./conversationFlore";
 
 test("les URL se construisent par préfixe /cases/{cid}", () => {
   expect(prefixeTravail("abc")).toBe("/cases/abc");
@@ -53,4 +53,24 @@ test("la proposition de conserver vient d'un plan, d'une option, d'une décision
   expect(floreAProduit(null, [{ role: "flore", documentCanvas: "a.md" }])).toBe(true);
   expect(floreAProduit(null, [{ role: "utilisateur", decisions: ["x"] }])).toBe(false);
   expect(estConversation({ statut: "conversation" })).toBe(true);
+});
+
+test("modifier une question : la suite disparaît tout de suite, les marqueurs d'avant restent", () => {
+  const ms = [{ role: "utilisateur", texte: "a" }, { role: "flore", texte: "A" }, { marqueur: true, texte: "Contexte actualisé : x" },
+    { role: "utilisateur", texte: "b" }, { role: "flore", texte: "B" }, { marqueur: true, texte: "y" }];
+  expect(tronquerApres(ms, 2, "b2")).toEqual([ms[0], ms[1], ms[2], { role: "utilisateur", texte: "b2" }]);
+  expect(tronquerApres(ms, 0, "a2")).toEqual([{ role: "utilisateur", texte: "a2" }]);
+});
+
+test("relire la conversation garde les marqueurs locaux à leur place", () => {
+  const avant = [{ role: "utilisateur", texte: "a" }, { role: "flore", texte: "A" }, { marqueur: true, texte: "m1" },
+    { role: "utilisateur", texte: "b" }];
+  const serveur = [{ role: "utilisateur", texte: "a" }, { role: "flore", texte: "A*" }, { role: "utilisateur", texte: "b" },
+    { role: "flore", texte: "B" }];
+  expect(garderReperes(avant, serveur)).toEqual([serveur[0], serveur[1], avant[2], serveur[2], serveur[3]]);
+  // un marqueur posé après le dernier message reste en bas ; sans marqueur, la conversation du serveur telle quelle
+  expect(garderReperes([...serveur, { marqueur: true, texte: "fin" }], serveur).at(-1).texte).toBe("fin");
+  expect(garderReperes([], serveur)).toBe(serveur);
+  // une conversation raccourcie (modification) : le marqueur d'au-delà est rangé en bas, jamais perdu
+  expect(garderReperes(avant, serveur.slice(0, 1)).map((m) => m.texte)).toEqual(["a", "m1"]);
 });

@@ -122,7 +122,7 @@ export function MessageFlore({
 // `variante` : "panneau" (bulle bleue) ou "travail" (bulle sombre). `etiquette` : rôle affiché en démonstration.
 // `extraActions` : boutons propres à l'écran (ex. copier le lien vers le message).
 export function QuestionFlore({
-  message, index, prefixe, onMessages, onRelire, bloque = false, variante = "travail", etiquette, extraActions, testid,
+  message, index, prefixe, onMessages, onRelire, onTronquer, bloque = false, variante = "travail", etiquette, extraActions, testid,
 }) {
   const [edition, setEdition] = useState(false);
   const [brouillon, setBrouillon] = useState("");
@@ -138,11 +138,13 @@ export function QuestionFlore({
     const texte = brouillon.trim();
     if (!texte || texte === message.texte) { setEdition(false); return; }
     setEdition(false);
+    onTronquer?.(index, texte); // comme le serveur : la suite part dans une branche, la nouvelle réponse s'écrit à sa place
     try {
       const rep = await lancer(urlMessage(prefixe, index, "modifier/flux"), { texte }, () => onRelire?.());
       if (rep?.messages) onMessages?.(rep.messages);
     } catch (err) {
       toast.error(erreurAction(err, "Modification"));
+      onRelire?.(); // rien n'a changé côté serveur : on remet la conversation telle qu'elle est
     }
   };
   const choisirBranche = async (i) => {

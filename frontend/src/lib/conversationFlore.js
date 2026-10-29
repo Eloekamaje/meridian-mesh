@@ -77,3 +77,35 @@ export function floreAProduit(travail, messages) {
   return (messages || []).some((m) => m.role === "flore"
     && (rempli(m.decisions) || rempli(m.options) || rempli(m.plan) || rempli(m.livrables) || !!m.documentCanvas || !!m.propose_passation));
 }
+
+// Modifier la question n (index serveur) : elle prend le nouveau texte et la suite disparaît tout de suite, comme le
+// fera le serveur (la suite est rangée dans une branche) ; les marqueurs locaux d'avant restent.
+export function tronquerApres(messages, n, texte) {
+  const garde = [];
+  let k = -1;
+  for (const m of messages || []) {
+    if (!m.marqueur) k += 1;
+    if (k > n || (m.marqueur && k === n)) break;
+    garde.push(k === n ? { ...m, texte } : m);
+  }
+  return garde;
+}
+
+// Les marqueurs « Contexte actualisé » ne vivent que dans le navigateur : relire la conversation du serveur les
+// remet après le même nombre de messages qu'avant (en bas si la conversation est devenue plus courte).
+export function garderReperes(avant, conv) {
+  const reperes = [];
+  let k = 0;
+  for (const m of avant || []) {
+    if (m.marqueur) reperes.push({ apres: k, m });
+    else k += 1;
+  }
+  if (!reperes.length) return conv;
+  const res = [];
+  conv.forEach((m, i) => {
+    reperes.filter((r) => r.apres === i).forEach((r) => res.push(r.m));
+    res.push(m);
+  });
+  reperes.filter((r) => r.apres >= conv.length).forEach((r) => res.push(r.m));
+  return res;
+}

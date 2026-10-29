@@ -25,7 +25,7 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import MarkdownFlore from "@/components/MarkdownFlore";
 import { MessageFlore, QuestionFlore } from "@/components/MessageFlore";
-import { prefixeTravail, reponseInterrompue, remplacerMessage } from "@/lib/conversationFlore";
+import { prefixeTravail, reponseInterrompue, remplacerMessage, tronquerApres } from "@/lib/conversationFlore";
 import { usePerimetre } from "@/lib/perimetre";
 import { useContexte } from "@/lib/contexte";
 import { couleurDomaine } from "@/lib/domaines";
@@ -588,6 +588,7 @@ export default function OngletTravail({
   const prefixe = !pilote && cas?.id != null ? prefixeTravail(cas.id) : null;
   const majMessage = (n, msg) => setCas((c) => ({ ...c, conversation: remplacerMessage(c.conversation || [], n, msg) }));
   const majMessages = (msgs) => setCas((c) => ({ ...c, conversation: msgs }));
+  const tronquer = (n, texte) => setCas((c) => ({ ...c, conversation: tronquerApres(c.conversation || [], n, texte) }));
   const relire = () => api.get(`/cases/${cas.id}`).then(({ data: frais }) => setCas(frais)).catch(() => {});
   const ctrlRef = useRef(null);
   const arreter = () => ctrlRef.current?.abort();
@@ -952,7 +953,7 @@ export default function OngletTravail({
                   <div className="animate-in fade-in duration-200" id={`message-${i}`} data-testid={`case-msg-${i}`}>
                     <QuestionFlore
                       message={m} index={i} prefixe={prefixe} bloque={envoiMsg}
-                      onMessages={majMessages} onRelire={relire}
+                      onMessages={majMessages} onRelire={relire} onTronquer={tronquer}
                       extraActions={cas.id != null && (
                         <button
                           type="button"
