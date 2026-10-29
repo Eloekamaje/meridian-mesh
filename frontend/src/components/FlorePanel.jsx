@@ -8,7 +8,7 @@ import TrustBadges from "./TrustBadges";
 import MarkdownFlore from "./MarkdownFlore";
 import { MessageFlore, QuestionFlore } from "./MessageFlore";
 import { demanderEnFlux, estArret, journalActivite, activiteDuTour } from "@/lib/fluxFlore";
-import { prefixeTravail, regrouper, reponseInterrompue, floreAProduit, estConversation, STATUT_CONVERSATION, STATUT_CONSERVE, tronquerApres, garderReperes } from "@/lib/conversationFlore";
+import { prefixeTravail, regrouper, reponseInterrompue, floreAProduit, estConversation, STATUT_CONVERSATION, STATUT_CONSERVE, tronquerApres, garderReperes, attendreReponse } from "@/lib/conversationFlore";
 import { usePerimetre } from "@/lib/perimetre";
 import BrouillonFlore from "./BrouillonFlore";
 import MarqueRelecture from "./MarqueRelecture";
@@ -607,13 +607,14 @@ export default function FlorePanel() {
     setQuestion("");
     const maintenant = new Date().toISOString();
     const monMessage = { role: "utilisateur", texte: finale, quand: maintenant };
+    const nAvant = messages.filter((m) => !m.marqueur).length; // messages du serveur avant cette question
     const ctrl = new AbortController();
     ctrlRef.current = ctrl;
     const journal = journalActivite((ops) => setFlux((f) => f && { ...f, etapes: ops }));
     let ecrit = "";
     const rappels = {
       signal: ctrl.signal,
-      onEtape: journal.onEtape, onOutil: journal.onOutil,
+      onEtape: journal.onEtape, onOutil: journal.onOutil, onCoupure: (c) => setFlux((f) => f && { ...f, coupure: c }),
       onTexte: (d) => { ecrit += d; setFlux((f) => f && { ...f, brouillon: f.brouillon + d }); },
       onRelecture: () => setFlux((f) => f && { ...f, relecture: true }),
     };
@@ -628,7 +629,7 @@ export default function FlorePanel() {
           await demanderEnFlux(`${prefixeTravail(cid)}/messages/flux`, { texte: finale, contexte, selection, domaine: domaineSel }, rappels);
           enregistree = true;
         } catch (err) {
-          if (err.annoncee || estArret(err)) throw err;
+          if (err.annoncee || estArret(err) || err.tourEnCours) throw err;
         }
       }
       if (!enregistree) {
@@ -655,6 +656,11 @@ export default function FlorePanel() {
         // Le brouillon reste affiché « interrompu », puis la conversation est relue (le serveur a gardé la réponse partielle)
         setFlux((f) => f && { ...f, interrompu: true });
         if (!(cid && await relire(cid))) setMessages((m) => [...m, monMessage, reponseInterrompue(ecrit)]);
+      } else if (err.tourEnCours && cid) {
+        // La connexion n'a pas pu être renouée, mais Flore termine sa réponse côté serveur : on l'attend, sans la redemander
+        toast.info("Connexion perdue : Flore termine sa réponse, elle s'affichera ici.");
+        if (await attendreReponse(() => api.get(`/cases/${cid}`).then((r) => r.data), nAvant)) await relire(cid);
+        else toast.error("La réponse n'est pas encore arrivée : rouvrez la conversation dans un moment.");
       } else {
         setMessages((m) => [...m, monMessage, { role: "flore", texte: "Flore est momentanément injoignable.", contributions: [], preuves: [], indicateurs: null, quand: maintenant }]);
       }

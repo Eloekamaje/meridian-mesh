@@ -1,4 +1,4 @@
-import { prefixeTravail, urlMessage, navigation, navVersions, navBranches, regrouper, erreurAction, resultatsRecherche, remplacerMessage, floreAProduit, estConversation, tronquerApres, garderReperes, activiteDuMessage, explicationArret } from "./conversationFlore";
+import { prefixeTravail, urlMessage, navigation, navVersions, navBranches, regrouper, erreurAction, resultatsRecherche, remplacerMessage, floreAProduit, estConversation, tronquerApres, garderReperes, activiteDuMessage, explicationArret, attendreReponse } from "./conversationFlore";
 
 test("les URL se construisent par préfixe /cases/{cid}", () => {
   expect(prefixeTravail("abc")).toBe("/cases/abc");
@@ -90,4 +90,12 @@ test("un tour arrêté s'explique : outils faits, en cours, texte écrit, non re
     { label: "Je regarde…" }, { label: "c", outil: { nom: "suivre_appels", etat: "en_cours" } }] };
   expect(explicationArret(m)).toBe("Arrêté par vous · 2 outils faits (lire_code) · 1 en cours (suivre_appels) · 9 caractères écrits · non relu");
   expect(explicationArret({ texte: "", interrompu: true })).toBe("Arrêté par vous · rien d'écrit · non relu");
+});
+
+test("après une coupure non renouée, on relit jusqu'à la réponse enregistrée", async () => {
+  const lectures = [{ conversation: [1, 2] }, { conversation: [1, 2, 3] }, { conversation: [1, 2, 3, 4] }];
+  const charger = jest.fn(async () => lectures.shift());
+  expect(await attendreReponse(charger, 2, { pas: 1 })).toEqual({ conversation: [1, 2, 3, 4] });
+  expect(charger).toHaveBeenCalledTimes(3);
+  expect(await attendreReponse(async () => ({ conversation: [] }), 2, { pas: 1, essais: 2 })).toBeNull();
 });

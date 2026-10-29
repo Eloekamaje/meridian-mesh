@@ -129,3 +129,14 @@ export function explicationArret(m) {
   parties.push("non relu");
   return parties.join(" · ");
 }
+
+// La connexion n'a pas pu être renouée, mais le tour continue côté serveur : relire le Travail jusqu'à ce que la
+// question et sa réponse y soient (`nAvant` : nombre de messages avant l'envoi). Rend le Travail, ou null.
+export async function attendreReponse(charger, nAvant, { pas = 3000, essais = 40 } = {}) {
+  for (let i = 0; i < essais; i += 1) {
+    await new Promise((ok) => setTimeout(ok, pas));
+    const travail = await charger().catch(() => null);
+    if ((travail?.conversation || []).length >= nAvant + 2) return travail;
+  }
+  return null;
+}

@@ -1441,7 +1441,7 @@ async def aurora_demander(payload: AuroraDemande, x_persona: str = Header("archi
 async def aurora_demander_flux(payload: AuroraDemande, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
     """La même réponse, au fil de l'eau : étapes réelles, brouillon en relecture, puis la réponse relue (jumeau/flux.py)."""
     return jumeau_flux.en_flux(lambda emit: generer_reponse_flore(
-        payload.contexte, payload.question, payload.selection, payload.domaine, x_persona, x_espace, emit=emit))
+        payload.contexte, payload.question, payload.selection, payload.domaine, x_persona, x_espace, emit=emit), proprietaire=x_persona)
 
 
 @api_router.get("/aurora/suggestions")

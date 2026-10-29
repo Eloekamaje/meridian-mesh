@@ -242,11 +242,12 @@ def test_sans_q_la_reponse_est_inchangee(monde):
 
 
 # ---- arrêt ----
-def lancer_puis_couper(monde, chemin, corps, lectures=2):
+def lancer_puis_couper(monde, chemin, corps, lectures=2, arreter=True):
     """Appel ASGI direct (le client de test met la réponse en tampon, il ne sait pas couper) : après `lectures`
-    événements reçus, le client envoie `http.disconnect`, comme un navigateur dont on annule la requête."""
+    événements reçus, le client demande l'arrêt du tour (comme le bouton « Arrêter ») puis se déconnecte. Avec
+    `arreter=False`, il se déconnecte seulement (coupure de réseau) : le tour doit se terminer quand même."""
     client, db, faux = monde
-    faux.bloque = not faux.muet
+    faux.bloque = not faux.muet and arreter
     octets = json.dumps(corps).encode()
 
     async def scenario():
@@ -260,13 +261,18 @@ def lancer_puis_couper(monde, chemin, corps, lectures=2):
             await parti.wait()
             return {"type": "http.disconnect"}
 
+        async def couper():
+            if arreter:
+                debut = json.loads(recus[0].decode().split("data: ", 1)[1].split("\n", 1)[0])
+                assert debut["type"] == "RUN_STARTED"
+                await flux.arreter(debut["runId"], "architecte")
+            parti.set()
+
         async def send(message):
             if message["type"] == "http.response.body" and b"data:" in message.get("body", b""):
                 recus.append(message["body"])
-            if len(recus) >= lectures:
-                parti.set()
-        if lectures == 0:
-            asyncio.get_running_loop().call_later(0.3, parti.set)
+                if len(recus) == max(lectures, 1):
+                    asyncio.get_running_loop().call_later(0.3 if lectures == 0 else 0, lambda: asyncio.ensure_future(couper()))
         scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "POST", "path": chemin,
                  "raw_path": chemin.encode(), "query_string": b"", "root_path": "", "scheme": "http",
                  "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(octets)).encode())],
@@ -397,3 +403,19 @@ def test_l_activite_est_enregistree_avec_la_reponse_et_avec_un_tour_arrete(monde
     faux.bloque = True
     lancer_puis_couper(monde, "/api/cases/t1/messages/flux", {"texte": "Autre ?"})
     assert conv(db)[-1]["interrompu"] is True and conv(db)[-1]["activite"][0]["outil"]["nom"] == "lire_code"
+
+
+def test_une_coupure_sans_arret_laisse_la_reponse_se_terminer_et_l_enregistre(monde):
+    msgs = lancer_puis_couper(monde, "/api/cases/t1/messages/flux", {"texte": "Et la sécurité ?"}, arreter=False)
+    assert msgs[-1]["texte"] == "Nouvelle réponse." and msgs[-1]["interrompu"] is False
+
+
+def test_reprendre_un_tour_depuis_une_position_puis_seul_l_auteur(monde):
+    client, db, faux = monde
+    ev = evenements(client.post("/api/cases/t1/messages/flux", json={"texte": "Et la sécurité ?"}))
+    run = ev[0]["runId"]
+    suite = evenements(client.get(f"/api/tours/{run}/flux", params={"depuis": 3}))
+    assert suite == ev[3:] and suite[-1]["type"] == "RUN_FINISHED"
+    assert client.get(f"/api/tours/{run}/flux", headers={"X-Persona": "support"}).status_code == 404
+    assert client.post(f"/api/tours/{run}/arreter", headers={"X-Persona": "support"}).status_code == 404
+    assert client.get("/api/tours/inconnu/flux").status_code == 404

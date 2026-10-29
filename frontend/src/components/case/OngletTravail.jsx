@@ -25,7 +25,7 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import MarkdownFlore from "@/components/MarkdownFlore";
 import { MessageFlore, QuestionFlore } from "@/components/MessageFlore";
-import { prefixeTravail, reponseInterrompue, remplacerMessage, tronquerApres, activiteDuMessage } from "@/lib/conversationFlore";
+import { prefixeTravail, reponseInterrompue, remplacerMessage, tronquerApres, activiteDuMessage, attendreReponse } from "@/lib/conversationFlore";
 import { usePerimetre } from "@/lib/perimetre";
 import { useContexte } from "@/lib/contexte";
 import { couleurDomaine } from "@/lib/domaines";
@@ -634,7 +634,7 @@ export default function OngletTravail({
       try {
         data = await demanderEnFlux(`/cases/${idTravail}/messages/flux`, { texte: q }, {
           signal: ctrl.signal,
-          onEtape: journal.onEtape, onOutil: journal.onOutil,
+          onEtape: journal.onEtape, onOutil: journal.onOutil, onCoupure: (c) => setFluxMsg((f) => f && { ...f, coupure: c }),
           onTexte: (d) => { ecrit += d; setFluxMsg((f) => f && { ...f, brouillon: f.brouillon + d }); },
           onRelecture: () => setFluxMsg((f) => f && { ...f, relecture: true }),
         });
@@ -648,6 +648,14 @@ export default function OngletTravail({
             setCas({ ...(frais || travailNe), conversation });
             navigate(`/travaux/${idTravail}`, { replace: true, state: { continuite: true } });
           } else setCas((c) => ({ ...c, ...(frais || {}), conversation }));
+          return;
+        }
+        if (err.tourEnCours) {
+          // Connexion non renouée, mais Flore termine côté serveur : on attend la réponse enregistrée, sans la redemander
+          toast.info("Connexion perdue : Flore termine sa réponse, elle s'affichera ici.");
+          const frais = await attendreReponse(() => api.get(`/cases/${idTravail}`).then((r) => r.data), avant.length);
+          if (frais) setCas(frais);
+          else toast.error("La réponse n'est pas encore arrivée : rechargez le travail dans un moment.");
           return;
         }
         if (err.annoncee) throw err;

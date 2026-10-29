@@ -38,7 +38,7 @@ def test_erreur_lisible_sans_fuite():
     assert evenements(panne)[1:] == [{"type": "RUN_ERROR", "message": "Flore est momentanément injoignable."}]
 
 
-# ---- arrêt : la déconnexion annule la génération et le brouillon écrit est remis au rappel ----
+# ---- arrêt : seul « Arrêter » annule ; un lecteur qui part laisse le tour se terminer ----
 import asyncio
 
 
@@ -46,7 +46,11 @@ def _lancer(produire, **kw):
     return flux.en_flux(produire, **kw).body_iterator
 
 
-def test_fermeture_du_flux_annule_et_remet_le_brouillon():
+def _tour(ligne):
+    return json.loads(ligne[6:])["runId"]
+
+
+def test_arreter_annule_remet_le_brouillon_et_finit_le_tour_cancelled():
     etat = {"annule": False, "brouillon": None}
 
     async def produire(emit):
@@ -62,17 +66,19 @@ def test_fermeture_du_flux_annule_et_remet_le_brouillon():
         etat["brouillon"] = brouillon
 
     async def scenario():
-        it = _lancer(produire, sur_interruption=sur_interruption)
-        await it.__anext__()
-        await it.__anext__()
-        await it.aclose()  # le client est parti
-        await asyncio.gather(*list(flux._TACHES), return_exceptions=True)
+        it = _lancer(produire, sur_interruption=sur_interruption, proprietaire="moi")
+        tour = _tour(await it.__anext__())
+        assert await flux.arreter(tour, "quelqu'un d'autre") is False
+        assert await flux.arreter(tour, "moi") is True
+        reste = [json.loads(l[6:]) async for l in it]
+        assert reste[-1] == {"type": "RUN_FINISHED", "threadId": tour, "runId": tour, "outcome": {"type": "cancelled"}}
+        assert await flux.arreter(tour, "moi") is False  # déjà fini
     asyncio.run(scenario())
     assert etat == {"annule": True, "brouillon": "Bonjour"}
 
 
-def test_requete_deconnectee_annule_sans_attendre_la_fermeture():
-    etat = {"annule": False, "brouillon": None}
+def test_un_lecteur_qui_part_n_annule_rien_le_tour_se_termine():
+    etat = {"interrompu": False, "fini": False}
 
     class Requete:
         def __init__(self):
@@ -83,26 +89,28 @@ def test_requete_deconnectee_annule_sans_attendre_la_fermeture():
 
     async def produire(emit):
         await emit({"type": "texte", "delta": "Début"})
-        try:
-            await asyncio.sleep(30)
-        except asyncio.CancelledError:
-            etat["annule"] = True
-            raise
+        await asyncio.sleep(0.6)
+        etat["fini"] = True
+        return {"reponse": "Début et fin"}
 
     async def sur_interruption(brouillon, activite=None):
-        etat["brouillon"] = brouillon
+        etat["interrompu"] = True
 
     async def scenario():
         requete = Requete()
         it = _lancer(produire, sur_interruption=sur_interruption, requete=requete)
-        while "TEXT_MESSAGE_CONTENT" not in await it.__anext__():  # le client part après le premier mot
+        tour = _tour(await it.__anext__())
+        while "TEXT_MESSAGE_CONTENT" not in await it.__anext__():
             pass
         requete.parti = True
         with pytest.raises(StopAsyncIteration):
-            await asyncio.wait_for(it.__anext__(), 5)
+            await asyncio.wait_for(it.__anext__(), 5)  # ce lecteur s'arrête…
         await asyncio.gather(*list(flux._TACHES), return_exceptions=True)
+        # … le tour non : la reprise lit tout, jusqu'à la réponse relue
+        reprise = [json.loads(l[6:]) async for l in flux.TOURS[tour].lire(0)]
+        assert reprise[-1]["type"] == "RUN_FINISHED" and reprise[-1]["result"] == {"reponse": "Début et fin"}
     asyncio.run(scenario())
-    assert etat == {"annule": True, "brouillon": "Début"}
+    assert etat == {"interrompu": False, "fini": True}
 
 
 def test_pas_d_interruption_quand_la_reponse_est_finie():
@@ -169,9 +177,9 @@ def test_l_interruption_remet_aussi_l_activite():
 
     async def scenario():
         it = _lancer(produire, sur_interruption=sur_interruption)
+        tour = _tour(await it.__anext__())
         while "TEXT_MESSAGE_CONTENT" not in await it.__anext__():
             pass
-        await it.aclose()
-        await asyncio.gather(*list(flux._TACHES), return_exceptions=True)
+        await flux.arreter(tour, None)
     asyncio.run(scenario())
     assert recu["brouillon"] == "Bon" and recu["activite"][0]["outil"]["etat"] == "en_cours"

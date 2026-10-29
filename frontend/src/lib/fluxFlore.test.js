@@ -88,3 +88,61 @@ test("le journal d'activité garde l'ordre : étapes et outils, un outil mis à 
   expect(fin.ops.every((o) => o.status === "done")).toBe(true);
   expect(activiteDuTour([], "x")).toBeNull();
 });
+
+// Un faux corps de réponse : des événements AG-UI, puis éventuellement une coupure de réseau.
+const corpsSSE = (evts, coupure = false) => {
+  const morceaux = evts.map((e) => new TextEncoder().encode(`data: ${JSON.stringify(e)}\n\n`));
+  return { getReader: () => ({ read: async () => {
+    if (morceaux.length) return { value: morceaux.shift(), done: false };
+    if (coupure) throw new TypeError("network error");
+    return { value: undefined, done: true };
+  } }) };
+};
+
+test("une coupure se reprend depuis le dernier événement lu, et la réponse arrive", async () => {
+  global.TextDecoder = global.TextDecoder || TextDecoder;
+  global.TextEncoder = global.TextEncoder || require("util").TextEncoder;
+  const appels = [];
+  global.fetch = jest.fn((url) => {
+    appels.push(url);
+    if (appels.length === 1) {
+      return Promise.resolve({ ok: true, body: corpsSSE([{ type: "RUN_STARTED", threadId: "t", runId: "R1" },
+        { type: "TEXT_MESSAGE_CONTENT", messageId: "m", delta: "Bon" }], true) });
+    }
+    return Promise.resolve({ ok: true, body: corpsSSE([{ type: "TEXT_MESSAGE_CONTENT", messageId: "m", delta: "jour" },
+      { type: "RUN_FINISHED", result: { reponse: "Bonjour" } }]) });
+  });
+  const textes = [];
+  const coupures = [];
+  const promesse = demanderEnFlux("/cases/t/messages/flux", { texte: "q" },
+    { onTexte: (d) => textes.push(d), onCoupure: (c) => coupures.push(c) });
+  expect(await promesse).toEqual({ reponse: "Bonjour" });
+  expect(appels[1]).toMatch(/\/api\/tours\/R1\/flux\?depuis=2$/);
+  expect(textes).toEqual(["Bon", "jour"]);
+  expect(coupures).toEqual([true, false]);
+}, 10000);
+
+test("« Arrêter » demande l'arrêt du tour au serveur avant de rendre la main", async () => {
+  global.TextDecoder = global.TextDecoder || TextDecoder;
+  global.TextEncoder = global.TextEncoder || require("util").TextEncoder;
+  const ctrl = new AbortController();
+  const appels = [];
+  global.fetch = jest.fn((url, opts) => {
+    appels.push([url, opts?.method]);
+    if (appels.length > 1) return Promise.resolve({ ok: true, json: async () => ({ arrete: true }) });
+    let envoye = false;
+    return Promise.resolve({ ok: true, body: { getReader: () => ({ read: () => {
+      if (!envoye) {
+        envoye = true;
+        return Promise.resolve({ value: new TextEncoder().encode(`data: ${JSON.stringify({ type: "RUN_STARTED", threadId: "t", runId: "R2" })}\n\n`), done: false });
+      }
+      return new Promise((_, rej) => opts.signal.addEventListener("abort", () => rej(Object.assign(new Error("a"), { name: "AbortError" }))));
+    } }) } });
+  });
+  const promesse = demanderEnFlux("/cases/t/messages/flux", { texte: "q" }, { signal: ctrl.signal });
+  await new Promise((r) => setTimeout(r, 0));
+  ctrl.abort();
+  const err = await promesse.catch((e) => e);
+  expect(estArret(err)).toBe(true);
+  expect(appels[1]).toEqual([expect.stringMatching(/\/api\/tours\/R2\/arreter$/), "POST"]);
+});

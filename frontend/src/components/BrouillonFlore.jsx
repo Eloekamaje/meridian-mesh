@@ -12,6 +12,11 @@ export default function BrouillonFlore({ flux, onArreter, testid = "flore-brouil
     <div className="space-y-2" data-testid={testid}>
       <LigneActiviteFlore testid={`${testid}-activite`} activite={{ id: "en-cours", status: flux.interrompu ? "done" : "running",
         ops: etapes.map((op, i) => ({ ...op, status: statut(op, i) })) }} />
+      {flux.coupure && (
+        <div role="status" className="rounded-md border border-[#60A5FA]/40 bg-[#60A5FA]/[0.08] px-2.5 py-1.5 text-xs text-[#93C5FD]" data-testid={`${testid}-coupure`}>
+          Connexion perdue — la réponse continue côté serveur. Reprise…
+        </div>
+      )}
       {flux.brouillon && (
         <div className="rounded-xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-4">
           <MarkdownFlore texte={brouillonLisible(flux.brouillon)} />

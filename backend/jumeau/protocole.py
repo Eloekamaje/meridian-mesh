@@ -75,6 +75,11 @@ class Traducteur:
         return self._fermer_texte() + self._fermer_etape() + [
             ag.RunFinishedEvent(thread_id=self.fil, run_id=self.tour, result=reponse)]
 
+    def arret(self):
+        """Arrêté par l'interlocuteur : le tour finit avec l'issue AG-UI « cancelled »."""
+        return self._fermer_texte() + self._fermer_etape() + [
+            ag.RunFinishedEvent(thread_id=self.fil, run_id=self.tour, outcome=ag.RunFinishedCancelledOutcome(type="cancelled"))]
+
     def erreur(self, message):
         return [ag.RunErrorEvent(message=message)]
 

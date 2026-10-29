@@ -511,7 +511,7 @@ def build_cases_router(deps):
             msg_user = {"role": "utilisateur", "texte": payload.texte.strip(), "quand": now}
             await db.cases.update_one({"id": cid}, {"$push": {"conversation": {"$each": [msg_user, fil.message_interrompu(brouillon, activite)]}},
                                                     "$set": {"maj_le": now}})
-        return flux.en_flux(lambda emit: traiter_message(cid, payload, x_persona, x_espace, emit), sur_interruption=interrompu, fil=cid)
+        return flux.en_flux(lambda emit: traiter_message(cid, payload, x_persona, x_espace, emit), sur_interruption=interrompu, fil=cid, proprietaire=x_persona)
 
     async def repondre_dans_travail(cid, case, question, params, x_persona, x_espace, emit=None):
         """La réponse brute de Flore dans un Travail (hors scripts de démonstration), avec ce qui l'accompagne."""
@@ -540,6 +540,7 @@ def build_cases_router(deps):
                 sortie["reponse"] = f"{sortie['reponse']}\n\n{precision['question']}".strip()
         return sortie
 
+    jumeau_flux.ajouter_routes_tours(router, Header)  # arrêter / reprendre un tour de Flore (P2)
     ajouter_routes_fil(router, {"db": db, "charger_case": charger_case, "resoudre_perimetre": resoudre_perimetre,
                                 "repondre": repondre_dans_travail})
 

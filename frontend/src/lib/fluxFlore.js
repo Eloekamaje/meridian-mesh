@@ -3,12 +3,13 @@ import { entetesPerimetre } from "./api";
 // Un tour de Flore en AG-UI (backend jumeau/protocole.py) → les rappels de l'interface. Rend { fin: réponse } au
 // RUN_FINISHED ; lève une erreur annoncée au RUN_ERROR. `onOutil(outil)` reçoit l'état complet de l'outil à chaque
 // changement : { id, nom, libelle, etat: en_cours|fait|erreur, arguments, extrait, duree }.
-export function lecteurAgUi({ onEtape, onTexte, onRelecture, onOutil } = {}) {
+export function lecteurAgUi({ onEtape, onTexte, onRelecture, onOutil, onDebut } = {}) {
   const outils = {};
   const args = {};
   const maj = (id, champs) => { outils[id] = { ...outils[id], ...champs }; onOutil?.(outils[id]); };
   return (e) => {
     switch (e.type) {
+      case "RUN_STARTED": onDebut?.(e.runId); break;
       case "STEP_STARTED": onEtape?.(e.stepName); break;
       case "TEXT_MESSAGE_CONTENT": onTexte?.(e.delta); break;
       case "CUSTOM": if (e.name === "relecture") onRelecture?.(); break;
@@ -27,7 +28,10 @@ export function lecteurAgUi({ onEtape, onTexte, onRelecture, onOutil } = {}) {
       case "TOOL_CALL_RESULT":
         maj(e.toolCallId, { etat: e.metadata?.etat || "fait", extrait: e.content, duree: e.metadata?.duree ?? null });
         break;
-      case "RUN_FINISHED": return { fin: e.result };
+      case "RUN_FINISHED":
+        // arrêté (ailleurs, ou avant une reprise) : comme un arrêt ici, l'appelant relit la conversation
+        if (e.outcome?.type === "cancelled") throw Object.assign(new Error("tour arrêté"), { name: "AbortError" });
+        return { fin: e.result };
       case "RUN_ERROR": throw Object.assign(new Error(e.message), { annoncee: true });
       default: break;
     }
@@ -35,35 +39,75 @@ export function lecteurAgUi({ onEtape, onTexte, onRelecture, onOutil } = {}) {
   };
 }
 
-// `signal` (AbortController) : l'interlocuteur arrête la réponse ; la promesse rejette alors une AbortError (estArret).
-// Réponse de Flore au fil de l'eau : ses vrais outils, son brouillon (encore en relecture), puis la réponse relue.
-// Rend la réponse finale ; rejette en cas d'erreur annoncée ou de flux impossible.
-export async function demanderEnFlux(chemin, corps, { onEtape, onTexte, onRelecture, onOutil, signal } = {}) {
-  const lire = lecteurAgUi({ onEtape, onTexte, onRelecture, onOutil });
-  const reponse = await fetch(`${process.env.REACT_APP_BACKEND_URL || ""}/api${chemin}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "text/event-stream", ...entetesPerimetre() },
-    body: JSON.stringify(corps),
-    signal,
-  });
-  if (!reponse.ok || !reponse.body) throw new Error(`flux indisponible (${reponse.status})`);
+const API = () => `${process.env.REACT_APP_BACKEND_URL || ""}/api`;
+const PAUSES_REPRISE = [1000, 2000, 4000]; // ms avant chaque tentative de reprise après une coupure
+
+const attendre = (ms, signal) => new Promise((ok, ko) => {
+  const t = setTimeout(ok, ms);
+  signal?.addEventListener("abort", () => { clearTimeout(t); ko(Object.assign(new Error("arrêt"), { name: "AbortError" })); });
+});
+
+// Les événements d'une réponse SSE, un par ligne `data:`.
+async function* evenements(reponse) {
   const lecteur = reponse.body.getReader();
   const decodeur = new TextDecoder();
   let tampon = "";
   for (;;) {
     const { value, done } = await lecteur.read();
-    if (done) break;
+    if (done) return;
     tampon += decodeur.decode(value, { stream: true });
     const blocs = tampon.split("\n\n");
     tampon = blocs.pop();
     for (const bloc of blocs) {
       const ligne = bloc.split("\n").find((l) => l.startsWith("data: "));
-      if (!ligne) continue;
-      const r = lire(JSON.parse(ligne.slice(6)));
-      if (r) return r.fin;
+      if (ligne) yield JSON.parse(ligne.slice(6));
     }
   }
-  throw new Error("flux interrompu avant la réponse");
+}
+
+// Réponse de Flore au fil de l'eau (AG-UI) : ses vrais outils, son brouillon (encore en relecture), puis la réponse
+// relue, qu'elle rend. `signal` : « Arrêter » — le serveur est prié d'arrêter le tour (il enregistre ce qui était
+// écrit) AVANT que la promesse ne rejette une AbortError (estArret) : la relecture qui suit voit la réponse partielle.
+// Une coupure de réseau n'arrête pas le tour : `onCoupure(true)`, puis reprise depuis le dernier événement lu
+// (`/tours/{id}/flux?depuis=n`), `onCoupure(false)` quand le fil est renoué. Rejette sur une erreur annoncée.
+export async function demanderEnFlux(chemin, corps, { onEtape, onTexte, onRelecture, onOutil, onCoupure, signal } = {}) {
+  let tour = null;
+  let lus = 0;
+  const lire = lecteurAgUi({ onEtape, onTexte, onRelecture, onOutil, onDebut: (id) => { tour = id; } });
+  const entetes = { Accept: "text/event-stream", ...entetesPerimetre() };
+  let reponse = await fetch(`${API()}${chemin}`, {
+    method: "POST", headers: { "Content-Type": "application/json", ...entetes }, body: JSON.stringify(corps), signal,
+  });
+  if (!reponse.ok || !reponse.body) throw new Error(`flux indisponible (${reponse.status})`);
+  for (let essai = 0; ; ) {
+    try {
+      for await (const e of evenements(reponse)) {
+        lus += 1;
+        const r = lire(e);
+        if (r) return r.fin;
+        if (essai && lus) { onCoupure?.(false); essai = 0; } // le fil est renoué
+      }
+      throw new Error("flux interrompu avant la réponse");
+    } catch (err) {
+      if (estArret(err) || signal?.aborted) {
+        // ponytail: un arrêt avant RUN_STARTED (premières millisecondes) ne peut pas viser le tour ; il se termine
+        if (tour && !(err.message === "tour arrêté")) {
+          await fetch(`${API()}/tours/${tour}/arreter`, { method: "POST", headers: entetesPerimetre() }).catch(() => {});
+        }
+        throw err;
+      }
+      if (err.annoncee || !tour) throw err;
+      // le tour continue côté serveur : l'appelant ne doit pas reposer la question (il attend la réponse enregistrée)
+      if (essai >= PAUSES_REPRISE.length) throw Object.assign(err, { tourEnCours: true });
+      onCoupure?.(true);
+      await attendre(PAUSES_REPRISE[essai], signal);
+      essai += 1;
+      reponse = await fetch(`${API()}/tours/${tour}/flux?depuis=${lus}`, { headers: entetes, signal })
+        .catch((e) => (estArret(e) ? Promise.reject(e) : { ok: false, status: 0 }));
+      if (reponse.status === 404) throw Object.assign(err, { tourEnCours: true }); // tour oublié : l'appelant relit
+      if (!reponse.ok || !reponse.body) reponse = { ok: false, body: { getReader: () => ({ read: () => Promise.reject(err) }) } };
+    }
+  }
 }
 
 // Le brouillon s'affiche sans ses citations (elles iront dans le volet des preuves de la réponse relue).
