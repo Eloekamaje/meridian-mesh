@@ -19,9 +19,10 @@ from strands.agent.conversation_manager import SummarizingConversationManager
 from strands.session.file_session_manager import FileSessionManager
 from strands.session.s3_session_manager import S3SessionManager
 
-from jumeau import appels, cbm, connaissance, croisement, depot, methodes, temps
+from jumeau import appels, cbm, connaissance, contradicteur, croisement, depot, methodes, temps
 from jumeau.connaissance import ancrer as ancrer_code
 from jumeau.connaissance import recouper as recouper_code
+from jumeau.connaissance import RE_CITATION
 from jumeau.lecteurs import NATURES, RE_CITATION_SOURCE
 
 SESSIONS = Path(os.environ.get("JUMEAU_SESSIONS", Path.home() / ".local/share/meridian/sessions"))
@@ -497,15 +498,6 @@ def outils(ctx, dsn, nom_modele, budget):
             journal.warning("ce_qui_a_change : %s", e)
             return {"erreur": "date attendue au format AAAA-MM-JJ" if isinstance(e, ValueError) else "indisponible"}
 
-    @tool
-    def consulter_methode(nom: str) -> str:
-        """Charge les consignes d'une méthode du catalogue, à suivre pour répondre.
-
-        Args:
-            nom: nom exact d'une méthode du catalogue, par exemple presenter-application.
-        """
-        return methodes.lire(nom) or f"Méthode inconnue. Disponibles : {', '.join(m['nom'] for m in methodes.catalogue())}"
-
     def donnee(lecteur, contenu):
         """Contenu de source rendu comme donnée : balisé, `<` `>` neutralisés (jamais une instruction)."""
         contenu = contenu.replace("<", "‹").replace(">", "›")
@@ -582,16 +574,27 @@ def outils(ctx, dsn, nom_modele, budget):
             *([recouper_connaissance] if sources or lecteurs else []), *([dessiner_schema] if dessin else [])]
 
 
+@tool
+def consulter_methode(nom: str) -> str:
+    """Charge les consignes d'une méthode du catalogue, à suivre pour répondre.
+
+    Args:
+        nom: nom exact d'une méthode du catalogue, par exemple presenter-application.
+    """
+    return methodes.lire(nom) or f"Méthode inconnue. Disponibles : {', '.join(m['nom'] for m in methodes.catalogue())}"
+
+
 def historique_fusionne(sources, depuis="", chemin=""):
     """Historique de plusieurs dépôts, du plus récent au plus ancien, chaque commit avec son dépôt."""
     commits = [{**c, "depot": s["nom"]} for s in sources for c in temps.historique(s, depuis, chemin)]
     return sorted(commits, key=lambda c: c["date"], reverse=True)[:temps.MAX_COMMITS]
 
 
-def outils_travail(ecriture, budget):
+def outils_travail(ecriture, budget, verifier=None):
     """Outils d'écriture dans le Travail : Flore y tient son plan et y dépose ce qu'elle produit.
 
     Aucun outil ne décide : les décisions restent aux humains (Vision §16, « humain dans la décision »).
+    `verifier(texte)` rend les citations invalides du texte (garde-fou des verdicts d'hypothèse).
     """
     async def ecrire(action, *args):
         if not budget.ecriture():
@@ -631,6 +634,25 @@ def outils_travail(ecriture, budget):
             texte: l'hypothèse, en une phrase.
         """
         return await ecrire(ecriture.hypothese, texte)
+
+    @tool
+    async def eprouver_hypothese(hypothese: str, verdict: str, preuves: list[str]) -> str:
+        """Inscrit ce que donne la mise à l'épreuve d'une hypothèse, APRÈS l'avoir testée avec tes outils
+        (tracer_appels, lire_code, consulter_jumeau…). L'équipe la valide ensuite : tu constates, tu ne décides pas.
+
+        Args:
+            hypothese: l'hypothèse, en une phrase (celle de proposer_hypothese si elle existe).
+            verdict: « tient » (les preuves la confirment), « tombe » (les preuves la contredisent) ou « indecise ».
+            preuves: citations lues qui fondent le verdict (`chemin#Ldébut-Lfin` ou locator de source) ;
+                « tient » et « tombe » en exigent au moins une.
+        """
+        cites = [p for p in preuves or [] if RE_CITATION.search(p) or RE_CITATION_SOURCE.search(p)]
+        if verdict in ("tient", "tombe") and not cites:
+            return ("Refusé : un verdict « tient » ou « tombe » exige au moins une citation lue. "
+                    "Sans preuve, le verdict est « indecise ».")
+        if cites and verifier and (fausses := verifier(" ".join(cites))):
+            return f"Refusé : citation invalide ({', '.join(fausses)}). Ne cite que des lignes lues."
+        return await ecrire(ecriture.eprouver, hypothese, verdict, cites)
 
     @tool
     async def proposer_option(titre: str, description: str, risque: str = "moyen") -> str:
@@ -675,8 +697,8 @@ def outils_travail(ecriture, budget):
             return "Question posée dans le Travail. Arrête-toi : conclus ta réponse sans y répondre et attends le choix."
         return retour
 
-    return [planifier, lever_etape, proposer_hypothese, proposer_option, deposer_livrable, actualiser_resume,
-            demander_precision]
+    return [planifier, lever_etape, proposer_hypothese, eprouver_hypothese, proposer_option, deposer_livrable,
+            actualiser_resume, demander_precision]
 
 
 def gestionnaire_session(session):
@@ -711,7 +733,8 @@ def construire(ctx, dsn, session, modele=None, ecriture=None, budget=None):
     nom_modele = m.get_config().get("model_id", "inconnu")
     SESSIONS.mkdir(parents=True, exist_ok=True)
     budget = budget or Budget()
-    tools = outils(ctx, dsn, nom_modele, budget) + (outils_travail(ecriture, budget) if ecriture else [])
+    verifier = lambda t: contradicteur.citations_invalides(t, ctx["sources"], ctx.get("lecteurs", []))  # noqa: E731
+    tools = outils(ctx, dsn, nom_modele, budget) + (outils_travail(ecriture, budget, verifier) if ecriture else [])
     return Agent(model=m, system_prompt=prompt_systeme(ctx), tools=tools,
                  session_manager=gestionnaire_session(session) if session else None,
                  conversation_manager=SummarizingConversationManager(

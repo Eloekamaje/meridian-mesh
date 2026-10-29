@@ -175,7 +175,8 @@ ETAPES = {
     "consulter_jumeau": "Je consulte l'application concernée…",
     "montrer_sur_atlas": "Je prépare la carte…",
     "consulter_methode": "Je choisis comment m'y prendre…",
-    "proposer_connaissance": "Je consigne ce que j'ai appris…", "recouper_connaissance": "Je recoupe avec une autre source…",
+    "proposer_connaissance": "Je consigne ce que j'ai appris…",
+    "eprouver_hypothese": "Je mets une hypothèse à l'épreuve…", "proposer_hypothese": "Je pose une hypothèse à vérifier…", "recouper_connaissance": "Je recoupe avec une autre source…",
 }
 
 
@@ -383,8 +384,11 @@ async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=
         tous = {"sources": [s for c in ctxs.values() for s in c["sources"]],
                 "claims": [c for x in ctxs.values() for c in x["claims"]]}
         dessin = dessin_pour(tous) if tous["sources"] else None
-        outils = ([mob.outil(), scene.outil()] + ([agent.outil_dessin(dessin, agent.Budget())] if dessin else [])
-                  + (agent.outils_travail(ecriture, agent.Budget()) if ecriture else []))
+        lecteurs_tous = [l for c in ctxs.values() for l in c.get("lecteurs", [])]
+        verifier = lambda t: contradicteur.citations_invalides(t, tous["sources"], lecteurs_tous)  # noqa: E731
+        outils = ([mob.outil(), scene.outil(), agent.consulter_methode]
+                  + ([agent.outil_dessin(dessin, agent.Budget())] if dessin else [])
+                  + (agent.outils_travail(ecriture, agent.Budget(), verifier) if ecriture else []))
         a = mobilisation.orchestrateur(modele, mobilisation.prompt(etat), outils)
         # Durée bornée : chaque outil a son plafond, mais pas le nombre de tours de l'orchestratrice.
         with chrono.phase("cartes"):

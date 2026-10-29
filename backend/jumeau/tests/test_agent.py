@@ -77,7 +77,7 @@ def test_agent_a_les_outils_attendus_et_aucun_outil_de_validation(tmp_path, monk
 
 
 OUTILS_TRAVAIL = {"planifier", "lever_etape", "proposer_hypothese", "proposer_option", "deposer_livrable",
-                  "actualiser_resume", "demander_precision"}
+                  "actualiser_resume", "demander_precision", "eprouver_hypothese"}
 
 
 def test_dans_un_travail_flore_recoit_les_outils_du_travail_et_son_etat(tmp_path, monkeypatch):
@@ -222,3 +222,40 @@ def test_un_index_present_garde_le_message_d_outil_indisponible(monkeypatch):
     monkeypatch.setattr(agent.cbm, "indexe", lambda source, appeler=None: True)
     outils = {t.tool_name: t for t in agent.outils(CONTEXTE, "dsn", "m", agent.Budget())}
     assert outils["chercher_texte"](texte="autorisations") == "Outil indisponible pour ce dépôt."
+
+
+def test_mettre_une_hypothese_a_l_epreuve_exige_une_preuve_verifiee_pour_trancher():
+    vu = []
+
+    class Ecriture:
+        async def eprouver(self, texte, verdict, preuves):
+            vu.append((texte, verdict, preuves))
+
+    invalides = {"app/faux.py#L1-L2"}
+    o = {t.tool_name: t for t in agent.outils_travail(Ecriture(), agent.Budget(),
+                                                       verifier=lambda t: [c for c in invalides if c in t])}
+    eprouver = o["eprouver_hypothese"]
+
+    def appel(**kw):
+        return asyncio.run(eprouver(**kw))
+    assert "exige" in appel(hypothese="h", verdict="tient", preuves=[])
+    assert "exige" in appel(hypothese="h", verdict="tombe", preuves=["pas une citation"])
+    assert "invalide" in appel(hypothese="h", verdict="tient", preuves=["`app/faux.py#L1-L2`"])
+    assert vu == []
+    assert "Enregistré" in appel(hypothese="h", verdict="tombe", preuves=["`app/api.py#L3-L9`"])
+    assert "Enregistré" in appel(hypothese="h2", verdict="indecise", preuves=[])
+    assert vu == [("h", "tombe", ["`app/api.py#L3-L9`"]), ("h2", "indecise", [])]
+
+
+def test_dans_un_travail_le_verdict_d_hypothese_est_verifie_contre_les_vraies_sources(tmp_path, monkeypatch):
+    monkeypatch.setattr(agent, "SESSIONS", tmp_path)
+
+    class Ecriture:
+        async def etat(self):
+            return {}
+
+    a = agent.construire({**CONTEXTE, "travail": "Travail : t"}, dsn="postgresql://inutilise", session="test",
+                         modele=modele_factice(), ecriture=Ecriture())
+    sortie = asyncio.run(a.tool_registry.registry["eprouver_hypothese"](
+        hypothese="h", verdict="tient", preuves=["`inexistant.py#L1-L2`"]))
+    assert "invalide" in sortie

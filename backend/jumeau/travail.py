@@ -7,6 +7,8 @@ import uuid
 from datetime import datetime, timezone
 
 RISQUES = ("faible", "moyen", "eleve")
+VERDICTS_EPREUVE = ("tient", "tombe", "indecise")
+MAX_PREUVES_EPREUVE = 8
 MAX_TITRE, MAX_TEXTE, MAX_CONTENU = 120, 1000, 4000
 ECHANGES_AVANT_RAPPEL = 3  # un échange = un message de l'interlocuteur
 ECHANGES_SANS_PLAN = 2
@@ -74,6 +76,18 @@ class EcritureTravail:
         hyp = {"id": _identifiant("hyp"), "texte": _texte(texte, MAX_TEXTE), "statut": "a_valider",
                "quand": datetime.now(timezone.utc).isoformat()}
         return await self._ajouter("hypotheses", "texte", hyp, f"Hypothèse proposée par Flore — {hyp['texte'][:80]}")
+
+    async def eprouver(self, texte, verdict, preuves):
+        """Le constat de Flore après avoir mis l'hypothèse à l'épreuve avec ses outils : elle tient, elle tombe, ou on
+        ne peut pas trancher. Inscrit à côté de l'hypothèse (créée si besoin), qui reste à valider par l'équipe."""
+        if verdict not in VERDICTS_EPREUVE:
+            raise ValueError(f"verdict attendu : {', '.join(VERDICTS_EPREUVE)}")
+        hyp = await self.hypothese(texte)
+        epreuve = {"verdict": verdict, "preuves": [_texte(p, MAX_TITRE) for p in (preuves or [])][:MAX_PREUVES_EPREUVE],
+                   "quand": datetime.now(timezone.utc).isoformat()}
+        await self.db.cases.update_one({"id": self.cid, "hypotheses.id": hyp["id"]},
+                                       {"$set": {"hypotheses.$.epreuve": epreuve}})
+        await self._ecrire({}, f"Hypothèse mise à l'épreuve par Flore ({verdict}) — {hyp['texte'][:80]}")
 
     async def option(self, titre, description, risque):
         opt = {"id": _identifiant("opt"), "titre": _texte(titre, MAX_TITRE), "description": (description or "")[:MAX_CONTENU],

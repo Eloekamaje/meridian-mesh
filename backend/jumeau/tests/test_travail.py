@@ -173,3 +173,19 @@ def test_precision_refuse_les_arguments_invalides(question, options):
             await e.precision(question, options)
         assert "precision" not in await db.cases.find_one({"id": "t1"})
     avec_travail(test)
+
+
+def test_eprouver_une_hypothese_inscrit_le_constat_sans_la_valider():
+    async def test(e, db):
+        await e.hypothese("Aucune autre application n'appelle Conduit")
+        await e.eprouver("Aucune autre application n'appelle Conduit", "tombe", ["conduit:app/api.py#L3-L9"])
+        await e.eprouver("Conduit garde ses données sur un seul disque", "indecise", [])  # absente : créée
+        c = await db.cases.find_one({"id": "t1"})
+        h1, h2 = c["hypotheses"]
+        assert h1["statut"] == "a_valider"  # le constat de Flore ne décide pas : l'équipe valide
+        assert h1["epreuve"]["verdict"] == "tombe" and h1["epreuve"]["preuves"] == ["conduit:app/api.py#L3-L9"]
+        assert h2["texte"] == "Conduit garde ses données sur un seul disque" and h2["epreuve"]["verdict"] == "indecise"
+        assert c["historique"][-1]["texte"].startswith("Hypothèse mise à l'épreuve par Flore")
+        with pytest.raises(ValueError):
+            await e.eprouver("x", "peut-etre", [])
+    avec_travail(test)
