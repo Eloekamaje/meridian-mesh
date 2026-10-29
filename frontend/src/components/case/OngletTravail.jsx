@@ -11,7 +11,6 @@ import {
   Plus, 
   CaretDown, 
   CaretRight, 
-  Microphone, 
   ArrowDown, 
   Coins, 
   Clock, 
@@ -19,7 +18,6 @@ import {
   Buildings,
   Copy,
   ArrowsClockwise,
-  DotsThree,
   DownloadSimple,
   MapTrifold,
   X
@@ -648,6 +646,17 @@ export default function OngletTravail({
   const rafraichirEtat = (id) =>
     api.get(`/cases/${id}`).then(({ data: frais }) => setCas((c) => ({ ...frais, conversation: c.conversation }))).catch(() => {});
 
+  // 👍/👎 : enregistré sur le message côté serveur (et dans le jeu des retours, pour l'évaluation).
+  const donnerRetour = async (index, valeur) => {
+    try {
+      const { data } = await api.post(`/cases/${cas.id}/messages/${index}/retour`, { valeur });
+      setCas((c) => ({ ...c, conversation: (c.conversation || []).map((m, k) => (k === index ? { ...m, retour: data } : m)) }));
+      toast.success(valeur === "utile" ? "Retour enregistré : réponse utile" : "Retour enregistré : réponse fausse ou inutile");
+    } catch {
+      toast.error("Retour non enregistré");
+    }
+  };
+
   const envoyer = async (e, texteDirect) => {
     e?.preventDefault?.();
     const q = (texteDirect ?? nouveauMsg).trim();
@@ -989,7 +998,7 @@ export default function OngletTravail({
                 {m.role === "evenement" ? (
                   <EvenementVeille m={m} index={i} nouveau={!!coupure && m.quand > coupure} />
                 ) : m.role === "utilisateur" ? (
-                  <div className="flex flex-col items-end gap-1.5 animate-in fade-in duration-200" data-testid={`case-msg-${i}`}>
+                  <div className="flex flex-col items-end gap-1.5 animate-in fade-in duration-200" id={`message-${i}`} data-testid={`case-msg-${i}`}>
                     {/* Micro-actions discrètes au-dessus de la bulle (Style ChatGPT) */}
                     <div className="flex items-center gap-1.5 text-[#64748B] opacity-60 hover:opacity-100 transition-opacity pr-1 text-xs">
                       <button 
@@ -1000,17 +1009,15 @@ export default function OngletTravail({
                         <Copy size={12} />
                       </button>
                       <button 
-                        onClick={() => toast.success("Lien prêt")} 
-                        title="Partager" 
+                        onClick={() => {
+                          navigator.clipboard?.writeText(`${window.location.origin}/travaux/${cas.id}#message-${i}`);
+                          toast.success("Lien vers ce message copié");
+                        }} 
+                        title="Copier le lien vers ce message" 
+                        aria-label="Copier le lien vers ce message"
                         className="flex h-6 w-6 items-center justify-center rounded-md hover:bg-white/[0.06] hover:text-white transition-colors"
                       >
                         <ArrowUp size={12} />
-                      </button>
-                      <button 
-                        title="Options" 
-                        className="flex h-6 w-6 items-center justify-center rounded-md hover:bg-white/[0.06] hover:text-white transition-colors"
-                      >
-                        <DotsThree size={13} />
                       </button>
                     </div>
 
@@ -1020,7 +1027,7 @@ export default function OngletTravail({
                   </div>
                 ) : (
                   /* Réponse Flore IA : Zéro card lourde, texte au fil de l'eau, lecture pure */
-                  <div className="space-y-2 animate-in fade-in duration-200" data-testid={`case-msg-${i}`}>
+                  <div className="space-y-2 animate-in fade-in duration-200" id={`message-${i}`} data-testid={`case-msg-${i}`}>
                     
                     {/* Corps formaté du message de Flore — décisions/suggestions/actions en enfants :
                         n'apparaissent qu'une fois la réponse complète (voir CorpsMessageFlore) */}
@@ -1110,8 +1117,11 @@ export default function OngletTravail({
                         <Copy size={13} />
                       </button>
                       <button 
-                        onClick={() => toast.success("Merci pour votre retour")} 
-                        title="Bonne réponse" 
+                        onClick={() => donnerRetour(i, "utile")} 
+                        title="Réponse utile" 
+                        aria-label="Réponse utile"
+                        aria-pressed={m.retour?.valeur === "utile"}
+                        data-testid={`case-retour-utile-${i}`}
                         className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-white/[0.06] hover:text-white transition-colors"
                       >
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1120,8 +1130,11 @@ export default function OngletTravail({
                         </svg>
                       </button>
                       <button 
-                        onClick={() => toast.info("Feedback pris en compte")} 
-                        title="Mauvaise réponse" 
+                        onClick={() => donnerRetour(i, "faux")} 
+                        title="Réponse fausse ou inutile" 
+                        aria-label="Réponse fausse ou inutile"
+                        aria-pressed={m.retour?.valeur === "faux"}
+                        data-testid={`case-retour-faux-${i}`}
                         className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-white/[0.06] hover:text-white transition-colors"
                       >
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1131,22 +1144,17 @@ export default function OngletTravail({
                       </button>
                       <button 
                         onClick={() => {
-                          const derniereQuestion = [...messages].reverse().find(x => x.role === "utilisateur");
-                          if (derniereQuestion) {
-                            setNouveauMsg(derniereQuestion.texte);
-                          }
+                          const question = [...messages.slice(0, i)].reverse().find((x) => x.role === "utilisateur");
+                          if (question) envoyer(null, question.texte); // la question repart : une nouvelle réponse s'ajoute
                         }} 
-                        title="Régénérer la réponse" 
+                        disabled={envoiMsg}
+                        title="Reposer la question" 
+                        aria-label="Reposer la question" 
                         className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-white/[0.06] hover:text-white transition-colors"
                       >
                         <ArrowsClockwise size={13} />
                       </button>
-                      <button 
-                        title="Options" 
-                        className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-white/[0.06] hover:text-white transition-colors"
-                      >
-                        <DotsThree size={13} />
-                      </button>
+
                     </div>
                     </CorpsMessageFlore>
                   </div>
@@ -1218,14 +1226,6 @@ export default function OngletTravail({
           <form onSubmit={soumettre} className="mx-auto max-w-3xl">
             <div className="flex items-center gap-2 rounded-2xl border border-white/[0.12] bg-[#0A131C]/90 px-3.5 py-2.5 shadow-2xl backdrop-blur-xl transition-colors focus-within:border-blue-400/60">
 
-              {/* Bouton + pour outils / pièces jointes */}
-              <button
-                type="button"
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-[#7C93A8] hover:bg-white/[0.06] hover:text-white transition-colors"
-                title="Ajouter une ressource ou un jumeau"
-              >
-                <Plus size={16} />
-              </button>
 
               {/* Champ de saisie aéré — grandit avec son contenu (voir l'effet sur taRef) */}
               <textarea
@@ -1245,14 +1245,6 @@ export default function OngletTravail({
                 className="max-h-32 flex-1 resize-none overflow-y-auto bg-transparent px-1 py-1 text-sm text-[#F2F6F8] placeholder:text-[#526578] focus:outline-none"
               />
 
-              {/* Bouton micro vocal */}
-              <button
-                type="button"
-                className="hidden sm:flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-[#7C93A8] hover:bg-white/[0.06] hover:text-white transition-colors"
-                title="Commande vocale"
-              >
-                <Microphone size={16} />
-              </button>
 
               {/* Bouton d'envoi vibrant — en démo, l'index humain pointe dessus une fois la réplique prête */}
               <div className="relative shrink-0">

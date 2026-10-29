@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, SquaresFour, Microphone, PaperPlaneTilt, X, Compass, ArrowsLeftRight, Eye, Scales, FileText, ChartLineUp, Warning, Sparkle, CaretDown } from "@phosphor-icons/react";
+import { Plus, SquaresFour, PaperPlaneTilt, X, Compass, ArrowsLeftRight, Eye, Scales, FileText, ChartLineUp, Warning, Sparkle, CaretDown } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useMesh } from "@/lib/mesh";
@@ -175,9 +175,7 @@ export default function ComposerFlore({ placeholder = "Demandez à Flore…", co
           <button onClick={() => ajouterChip("Écarts au BCM")} data-testid={`${testidPrefix}-ecarts-btn`} title="Contexte : écarts détectés" className="flex items-center gap-1 rounded-full border border-[rgba(148,163,184,0.16)] px-2.5 py-1 text-[11px] text-[#94A3B8] transition-colors hover:border-[#41576D] hover:text-[#F2F6F8]">
             <Warning size={12} /> Écarts
           </button>
-          <button onClick={() => toast.info("La dictée vocale arrive prochainement.")} data-testid={`${testidPrefix}-micro`} title="Dicter (bientôt)" className="flex h-7 w-7 items-center justify-center rounded-full border border-[rgba(148,163,184,0.16)] text-[#7C93A8] transition-colors hover:text-[#F2F6F8]">
-            <Microphone size={13} />
-          </button>
+          
           {flottant && (
             <button onClick={() => setReplie(true)} data-testid={`${testidPrefix}-replie`} title="Replier la barre" className="flex h-7 w-7 items-center justify-center rounded-full border border-[rgba(148,163,184,0.16)] text-[#7C93A8] transition-colors hover:text-[#F2F6F8]">
               <CaretDown size={13} />

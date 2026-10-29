@@ -1,8 +1,8 @@
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Literal, Optional
 
 from fastapi import APIRouter, Header, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import maturation
 import portee as portees
@@ -53,6 +53,12 @@ class InvestigationCase(BaseModel):
 
 class MessageCase(BaseModel):
     texte: str
+
+
+class RetourMessage(BaseModel):
+    """👍/👎 sur une réponse de Flore : enregistré, pour l'évaluation (jamais un simple message de remerciement)."""
+    valeur: Literal["utile", "faux"]
+    motif: Optional[str] = Field(default=None, max_length=500)
 
 
 class Passation(BaseModel):
@@ -601,6 +607,23 @@ def build_cases_router(deps):
             },
         )
         return {"utilisateur": msg_user, "flore": msg_flore, "reponse_complete": msg_flore}
+
+    @router.post("/cases/{cid}/messages/{n}/retour")
+    async def retour_message(cid: str, n: int, payload: RetourMessage, x_persona: str = Header("architecte"),
+                             x_espace: Optional[str] = Header(None)):
+        _, espace = resoudre_perimetre(x_persona, x_espace)
+        case = await charger_case(cid, espace, x_persona)
+        conversation = case.get("conversation") or []
+        if not 0 <= n < len(conversation) or conversation[n].get("role") != "flore":
+            raise HTTPException(404, "Réponse de Flore introuvable")
+        retour = {"valeur": payload.valeur, "motif": (payload.motif or "").strip() or None, "par": x_persona,
+                  "quand": datetime.now(timezone.utc).isoformat()}
+        await db.cases.update_one({"id": cid}, {"$set": {f"conversation.{n}.retour": retour}})
+        # Le jeu des retours nourrit l'évaluation : la question, la réponse et ce qu'en a dit l'humain.
+        question = next((m.get("texte") for m in reversed(conversation[:n]) if m.get("role") == "utilisateur"), None)
+        await db.retours.insert_one({"travail": cid, "message": n, "question": question,
+                                     "reponse": conversation[n].get("texte"), **retour})
+        return retour
 
     @router.post("/cases/{cid}/decisions", status_code=201)
     async def decider_case(cid: str, payload: DecisionCase, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
