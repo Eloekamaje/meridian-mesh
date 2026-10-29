@@ -139,7 +139,7 @@ def conv(db, cid="t1"):
 def test_nouvelle_question_enregistre_un_message_de_flore_du_contrat(monde):
     client, db, faux = monde
     ev = evenements(client.post("/api/cases/t1/messages/flux", json={"texte": "Et la sécurité ?"}))
-    assert ev[-1]["type"] == "final"
+    assert ev[0]["type"] == "RUN_STARTED" and ev[0]["threadId"] == "t1" and ev[-1]["type"] == "RUN_FINISHED"
     m = conv(db)[-1]
     assert m["texte"] == "Nouvelle réponse." and m["version"] == 0 and len(m["versions"]) == 1 and m["interrompu"] is False
     assert faux.appels[0]["travail"] == "t1" and faux.appels[0]["contexte"] == "case"
@@ -156,7 +156,7 @@ def test_regenerer_ajoute_une_version_active_et_reprend_la_question_precedente(m
     faux.reponse = "Autre version."
     ev = evenements(client.post("/api/cases/t1/messages/3/regenerer/flux", json={}))
     assert faux.appels[0]["question"] == "Et la dette ?"
-    final = ev[-1]["reponse"]
+    final = ev[-1]["result"]
     assert final["texte"] == "Autre version." and final["version"] == 1 and len(final["versions"]) == 2
     # `durees.premier_texte` est une mesure du flux, ajoutée par en_flux à la seule copie envoyée au client
     assert {**conv(db)[3], "durees": {}} == {**final, "durees": {}} and len(conv(db)) == 4
@@ -182,7 +182,7 @@ def test_choisir_une_version(monde):
 def test_modifier_une_question_range_la_branche_puis_repond(monde):
     client, db, faux = monde
     ev = evenements(client.post("/api/cases/t1/messages/0/modifier/flux", json={"texte": "Quel est le socle exact ?"}))
-    msgs = ev[-1]["reponse"]["messages"]
+    msgs = ev[-1]["result"]["messages"]
     assert [m["role"] for m in msgs] == ["utilisateur", "flore"]
     assert msgs[0]["texte"] == "Quel est le socle exact ?" and msgs[0]["branche"] == 1
     assert msgs[0]["branches"][0]["texte"] == "Quel est le socle ?" and len(msgs[0]["branches"][0]["suite"]) == 3
@@ -337,7 +337,7 @@ def test_un_autre_persona_ne_voit_ni_ne_touche_une_conversation(avec_conversatio
     assert client.get(f"/api/cases/{cid}", headers=h).status_code == 404
     assert client.patch(f"/api/cases/{cid}", json={"statut": "actif"}, headers=h).status_code == 404
     ev = evenements(client.post(f"/api/cases/{cid}/messages/flux", json={"texte": "x"}, headers=h))
-    assert ev == [{"type": "erreur", "message": "Case introuvable"}] and conv(db, cid) == []
+    assert ev[1:] == [{"type": "RUN_ERROR", "message": "Case introuvable"}] and conv(db, cid) == []
     for chemin, corps in [("messages/1/version", {"index": 0}), ("messages/0/branche", {"index": 0}),
                           ("messages/1/regenerer/flux", {}), ("messages/0/modifier/flux", {"texte": "x"})]:
         assert client.post(f"/api/cases/{cid}/{chemin}", json=corps, headers=h).status_code == 404, chemin

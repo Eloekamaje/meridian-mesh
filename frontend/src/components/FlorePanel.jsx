@@ -7,7 +7,7 @@ import api from "@/lib/api";
 import TrustBadges from "./TrustBadges";
 import MarkdownFlore from "./MarkdownFlore";
 import { MessageFlore, QuestionFlore } from "./MessageFlore";
-import { demanderEnFlux, estArret } from "@/lib/fluxFlore";
+import { demanderEnFlux, estArret, journalActivite, activiteDuTour } from "@/lib/fluxFlore";
 import { prefixeTravail, regrouper, reponseInterrompue, floreAProduit, estConversation, STATUT_CONVERSATION, STATUT_CONSERVE, tronquerApres, garderReperes } from "@/lib/conversationFlore";
 import { usePerimetre } from "@/lib/perimetre";
 import BrouillonFlore from "./BrouillonFlore";
@@ -609,11 +609,11 @@ export default function FlorePanel() {
     const monMessage = { role: "utilisateur", texte: finale, quand: maintenant };
     const ctrl = new AbortController();
     ctrlRef.current = ctrl;
-    const etapes = [];
+    const journal = journalActivite((ops) => setFlux((f) => f && { ...f, etapes: ops }));
     let ecrit = "";
     const rappels = {
       signal: ctrl.signal,
-      onEtape: (l) => { etapes.push(l); setFlux((f) => f && { ...f, etapes: [...etapes] }); },
+      onEtape: journal.onEtape, onOutil: journal.onOutil,
       onTexte: (d) => { ecrit += d; setFlux((f) => f && { ...f, brouillon: f.brouillon + d }); },
       onRelecture: () => setFlux((f) => f && { ...f, relecture: true }),
     };
@@ -641,7 +641,7 @@ export default function FlorePanel() {
           ({ data } = await api.post("/aurora/demander", corps)); // flux impossible (proxy, ancien serveur) : d'un bloc
         }
       }
-      const activite = etapes.length ? { id: `trace-${Date.now()}`, status: "done", ops: etapes.map((label) => ({ label, status: "done" })) } : null;
+      const activite = activiteDuTour(journal.ops, `trace-${Date.now()}`);
       if (enregistree && await relire(cid, true)) {
         setMessages((m) => m.map((x, i) => (i === m.length - 1 && activite ? { ...x, _activite: activite } : x)));
       } else if (data) {

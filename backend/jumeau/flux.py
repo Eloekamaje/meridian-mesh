@@ -1,11 +1,13 @@
 """Réponse de Flore au fil de l'eau (exigences non fonctionnelles §8 : progression visible < 3 s).
 
-Contrat (Server-Sent Events, une ligne `data: <json>` par événement) :
-- {"type": "etape", "libelle": "Je suis l'enchaînement…"} : un outil réellement appelé, en mots simples ;
-- {"type": "texte", "delta": "…"} : le brouillon qui s'écrit (encore en relecture) ;
-- {"type": "relecture"} : le brouillon est fini, la relecture et les contrôles tournent ;
-- {"type": "final", "reponse": {...}} : la réponse relue, contrôlée, à afficher (remplace le brouillon) ;
-- {"type": "erreur", "message": "…"}.
+Sur le fil : le protocole AG-UI (Server-Sent Events, traduction dans jumeau/protocole.py). `produire(emit)` émet
+le vocabulaire interne de Flore :
+- {"type": "etape", "libelle": "Je regarde Conduit…"} → STEP_STARTED / STEP_FINISHED ;
+- {"type": "outil", "id", "nom", "libelle", "etat": "en_cours"}, puis {"id", "arguments"}, puis
+  {"id", "etat": "fait"|"erreur", "duree", "extrait"} → TOOL_CALL_START / ARGS / END / RESULT ;
+- {"type": "texte", "delta": "…"} : le brouillon (encore en relecture) → TEXT_MESSAGE_* ;
+- {"type": "relecture"} : brouillon fini, relecture en cours → CUSTOM « relecture ».
+La réponse relue, contrôlée, part dans RUN_FINISHED.result ; une erreur lisible dans RUN_ERROR.message.
 
 La réponse finale porte `durees.premier_texte` : l'instant du premier mot envoyé, mesuré ici et nulle part ailleurs
 (plan de remédiation L0.6 : une latence annoncée doit être une latence mesurée).
@@ -14,9 +16,12 @@ import asyncio
 import json
 import logging
 import time
+import uuid
 
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
+
+from jumeau.protocole import Traducteur, encoder
 
 journal = logging.getLogger("meridian.jumeau")
 _TACHES = set()
@@ -29,12 +34,12 @@ class _ClientParti(Exception):
     pass
 
 
-def en_flux(produire, sur_interruption=None, requete=None):
+def en_flux(produire, sur_interruption=None, requete=None, fil=None):
     """`produire(emit)` est une coroutine qui rend la réponse finale ; ses événements partent au fil de l'eau.
     Sans `sur_interruption`, si le client se déconnecte la réponse se termine quand même (elle peut être enregistrée).
     Avec `sur_interruption(brouillon)` (coroutine), la déconnexion ANNULE la génération puis remet au rappel ce qui
     avait été écrit (la concaténation des événements `texte`). La déconnexion est vue par la fermeture du flux ou,
-    si `requete` est donnée, par `requete.is_disconnected()`."""
+    si `requete` est donnée, par `requete.is_disconnected()`. `fil` : l'identifiant AG-UI du fil (le Travail)."""
     file = asyncio.Queue()
     brouillon = []
     horodatage = {"debut": None, "premier_texte": None}
@@ -93,9 +98,20 @@ def en_flux(produire, sur_interruption=None, requete=None):
         _TACHES.add(en_cours)  # référence gardée : la réponse se termine même si le client part
         en_cours.add_done_callback(_TACHES.discard)
         termine = False
+        tour = uuid.uuid4().hex
+        ag = Traducteur(fil or tour, tour)
         try:
+            for ev in ag.debut():
+                yield encoder(ev)
             while (e := await suivante()) is not None:
-                yield f"data: {json.dumps(e, ensure_ascii=False, default=str)}\n\n"
+                if e["type"] == "final":
+                    sortie = ag.fin(json.loads(json.dumps(e["reponse"], default=str)))  # dates en texte, comme avant
+                elif e["type"] == "erreur":
+                    sortie = ag.erreur(e["message"])
+                else:
+                    sortie = ag.traduire(e)
+                for ev in sortie:
+                    yield encoder(ev)
             termine = True
         except _ClientParti:
             pass

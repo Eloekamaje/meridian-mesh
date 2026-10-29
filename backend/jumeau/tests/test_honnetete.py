@@ -128,7 +128,7 @@ def test_le_premier_texte_est_horodate_dans_les_durees():
         return evenements
 
     evenements = asyncio.run(lire())
-    final = [e for e in evenements if e["type"] == "final"][0]["reponse"]
+    final = [e for e in evenements if e["type"] == "RUN_FINISHED"][0]["result"]
     assert "premier_texte" in final["durees"]
     assert final["durees"]["premier_texte"] >= 0
 
@@ -185,3 +185,33 @@ def test_executer_horodate_le_premier_texte_du_flux():
     assert texte == "Bonjour"
     assert [m["delta"] for m in morceaux] == ["Bon", "jour"]
     assert chrono.bilan()["premier_texte"] >= 0.02
+
+
+def test_executer_emet_chaque_outil_debut_arguments_resultat():
+    """Ce que Flore a vraiment fait, outil par outil (P2, option A) : début, arguments complets, issue et durée."""
+    class AgentOutils:
+        async def stream_async(self, _):
+            for partiel in ('{"che', '{"chemin": "a.py"}'):  # Strands répète l'appel pendant que ses arguments arrivent
+                yield {"current_tool_use": {"toolUseId": "u1", "name": "lire_code", "input": partiel}}
+            yield {"message": {"role": "assistant", "content": [
+                {"text": "Je lis."}, {"toolUse": {"toolUseId": "u1", "name": "lire_code", "input": {"chemin": "a.py"}}}]}}
+            yield {"message": {"role": "user", "content": [
+                {"toolResult": {"toolUseId": "u1", "status": "success", "content": [{"text": "def f():\n" + "x" * 900}]}}]}}
+            yield {"current_tool_use": {"toolUseId": "u2", "name": "inconnu", "input": {}}}
+            yield {"message": {"role": "user", "content": [
+                {"toolResult": {"toolUseId": "u2", "status": "error", "content": [{"text": "refus"}]}}]}}
+            yield {"result": "fini"}
+
+    evts = []
+
+    async def emit(e):
+        evts.append(e)
+
+    assert asyncio.run(flore.executer(AgentOutils(), "q", emit, mesure.Chrono())) == "fini"
+    u1 = [e for e in evts if e.get("id") == "u1"]
+    assert u1[0] == {"type": "outil", "id": "u1", "nom": "lire_code", "libelle": flore.ETAPES["lire_code"], "etat": "en_cours"}
+    assert u1[1] == {"type": "outil", "id": "u1", "arguments": {"chemin": "a.py"}}
+    assert u1[2]["etat"] == "fait" and u1[2]["duree"] >= 0 and len(u1[2]["extrait"]) <= flore.EXTRAIT_OUTIL + 1
+    assert len(u1) == 3  # annoncé une seule fois malgré les répétitions
+    u2 = [e for e in evts if e.get("id") == "u2"]
+    assert u2[0]["libelle"] is None and u2[-1]["etat"] == "erreur" and u2[-1]["extrait"] == "refus"

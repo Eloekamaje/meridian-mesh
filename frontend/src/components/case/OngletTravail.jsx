@@ -32,7 +32,7 @@ import { couleurDomaine } from "@/lib/domaines";
 import { CREATION_TRAVAIL_ACTIVE, FLORE_REPONSE_EN_CONSTRUCTION, PROPOSITION_DEMO } from "@/lib/messagesFlore";
 import FloreActivite, { delaiMin, activiteTerminee } from "@/components/FloreActivite";
 import BrouillonFlore from "@/components/BrouillonFlore";
-import { demanderEnFlux, estArret } from "@/lib/fluxFlore";
+import { demanderEnFlux, estArret, journalActivite, activiteDuTour } from "@/lib/fluxFlore";
 import LigneActiviteFlore from "@/components/LigneActiviteFlore";
 import IndicateurClic from "@/components/IndicateurClic";
 import { usePilotage } from "@/lib/pilotage";
@@ -625,7 +625,7 @@ export default function OngletTravail({
         idTravail = c.id;
         travailNe = c;
       }
-      const etapes = [];
+      const journal = journalActivite((ops) => setFluxMsg((f) => f && { ...f, etapes: ops }));
       let ecrit = "";
       const ctrl = new AbortController();
       ctrlRef.current = ctrl;
@@ -634,7 +634,7 @@ export default function OngletTravail({
       try {
         data = await demanderEnFlux(`/cases/${idTravail}/messages/flux`, { texte: q }, {
           signal: ctrl.signal,
-          onEtape: (l) => { etapes.push(l); setFluxMsg((f) => f && { ...f, etapes: [...etapes] }); },
+          onEtape: journal.onEtape, onOutil: journal.onOutil,
           onTexte: (d) => { ecrit += d; setFluxMsg((f) => f && { ...f, brouillon: f.brouillon + d }); },
           onRelecture: () => setFluxMsg((f) => f && { ...f, relecture: true }),
         });
@@ -655,9 +655,7 @@ export default function OngletTravail({
         ({ data } = await api.post(`/cases/${idTravail}/messages`, { texte: q }));
       }
       // L'activité est la vraie (outils appelés) ; un texte déjà vu au fil de l'eau ne se réécrit pas.
-      const activite = etapes.length
-        ? { id: `fin-${Date.now()}`, status: "done", ops: etapes.map((label) => ({ label, status: "done" })) }
-        : activiteTerminee("travail");
+      const activite = activiteDuTour(journal.ops, `fin-${Date.now()}`) || activiteTerminee("travail");
       const reponseFlore = { ...data.flore, anime: !auFilDeLEau, _activite: activite };
       if (travailNe) {
         setCas({ ...travailNe, conversation: [data.utilisateur, reponseFlore] });

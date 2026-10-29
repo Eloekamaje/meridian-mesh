@@ -91,7 +91,7 @@ def ajouter_routes_fil(router, deps):
         async def interrompu(brouillon):
             if brouillon:  # rien d'écrit : rien n'est ajouté
                 await ajouter(fil.message_interrompu(brouillon))
-        return flux.en_flux(produire, sur_interruption=interrompu)
+        return flux.en_flux(produire, sur_interruption=interrompu, fil=cid)
 
     @router.post("/cases/{cid}/messages/{n}/modifier/flux")
     async def modifier(cid: str, n: int, payload: Modification, x_persona: str = Header("architecte"),
@@ -112,4 +112,4 @@ def ajouter_routes_fil(router, deps):
 
         async def interrompu(brouillon):
             await ajouter(fil.message_interrompu(brouillon))
-        return flux.en_flux(produire, sur_interruption=interrompu)
+        return flux.en_flux(produire, sur_interruption=interrompu, fil=cid)

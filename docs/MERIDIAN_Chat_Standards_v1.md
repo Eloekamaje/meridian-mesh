@@ -241,6 +241,14 @@ Critère : un test parcourt les actions de message, et chacune déclenche un app
 Critère : les capacités 1, 2, 3 et 6 du §4 sont complètes.
 
 **P2 — Le protocole (1 semaine).**
+
+> **Avancement (2026-10-28).** Fait : `en_flux` parle AG-UI (`ag-ui-protocol` 1.0.0, traduction unique dans
+> `jumeau/protocole.py`, sortie identique à l'encodeur officiel) ; chaque outil réel est émis (début, arguments,
+> issue, durée, extrait) et affiché ligne par ligne, détail au clic (maquette `p2-protocole-v1`, option A).
+> **CopilotKit : proposé au retrait** (vérifié le 2026-10-28 : `@copilotkit/react-core` 1.83.0 publiée le jour même,
+> 31 dépendances et `maplibre-gl` exigée, serveur Node/Express ; l'interopérabilité est portée par AG-UI, et
+> l'adopter remplacerait les composants de P1). En attente de la décision de l'utilisateur.
+> Reste : approbation en ligne, reprise après coupure, explication d'un tour arrêté.
 - `en_flux` parle AG-UI.
 - La conversation passe sur CopilotKit, dans les écrans existants.
 - **Outils structurés** à l'écran.

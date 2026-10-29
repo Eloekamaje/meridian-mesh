@@ -28,3 +28,63 @@ test("le signal est transmis à fetch et l'arrêt rejette une AbortError", async
   expect(signalVu).toBe(ctrl.signal);
   expect(estArret(err)).toBe(true);
 });
+
+import { lecteurAgUi } from "./fluxFlore";
+
+test("un tour AG-UI : étapes, outil (début, arguments, issue), brouillon, relecture, réponse", () => {
+  const vus = { etapes: [], textes: [], outils: [], relu: 0 };
+  const lire = lecteurAgUi({
+    onEtape: (l) => vus.etapes.push(l), onTexte: (d) => vus.textes.push(d),
+    onRelecture: () => { vus.relu += 1; }, onOutil: (o) => vus.outils.push(o),
+  });
+  const fin = [
+    { type: "RUN_STARTED", threadId: "t1", runId: "r" },
+    { type: "STEP_STARTED", stepName: "Je regarde Conduit…" },
+    { type: "TOOL_CALL_START", toolCallId: "u1", toolCallName: "lire_code", metadata: { libelle: "Je lis le code concerné…" } },
+    { type: "TOOL_CALL_ARGS", toolCallId: "u1", delta: '{"chemin":' },
+    { type: "TOOL_CALL_ARGS", toolCallId: "u1", delta: '"a.py"}' },
+    { type: "TOOL_CALL_END", toolCallId: "u1" },
+    { type: "TOOL_CALL_RESULT", toolCallId: "u1", messageId: "m", content: "def f()", metadata: { etat: "fait", duree: 0.1 } },
+    { type: "TEXT_MESSAGE_START", messageId: "m" }, { type: "TEXT_MESSAGE_CONTENT", messageId: "m", delta: "Bon" },
+    { type: "TEXT_MESSAGE_END", messageId: "m" }, { type: "CUSTOM", name: "relecture" },
+    { type: "STEP_FINISHED", stepName: "Je regarde Conduit…" },
+    { type: "RUN_FINISHED", result: { reponse: "Bonjour" } },
+  ].map(lire).find((r) => r?.fin);
+  expect(fin.fin).toEqual({ reponse: "Bonjour" });
+  expect(vus.etapes).toEqual(["Je regarde Conduit…"]); // avec onOutil, l'outil n'est pas aussi une étape
+  expect(vus.textes).toEqual(["Bon"]);
+  expect(vus.relu).toBe(1);
+  expect(vus.outils.at(-1)).toEqual({ id: "u1", nom: "lire_code", libelle: "Je lis le code concerné…", etat: "fait",
+    arguments: { chemin: "a.py" }, extrait: "def f()", duree: 0.1 });
+  expect(vus.outils[0].etat).toBe("en_cours");
+});
+
+test("RUN_ERROR rejette une erreur annoncée", () => {
+  const lire = lecteurAgUi({});
+  expect(() => lire({ type: "RUN_ERROR", message: "Case introuvable" })).toThrow("Case introuvable");
+  try { lire({ type: "RUN_ERROR", message: "x" }); } catch (e) { expect(e.annoncee).toBe(true); }
+});
+
+test("sans onOutil, un outil s'annonce comme une étape (appelants qui ne montrent que des libellés)", () => {
+  const etapes = [];
+  lecteurAgUi({ onEtape: (l) => etapes.push(l) })({ type: "TOOL_CALL_START", toolCallId: "u", toolCallName: "x", metadata: { libelle: "Je lis…" } });
+  expect(etapes).toEqual(["Je lis…"]);
+});
+
+import { journalActivite, activiteDuTour } from "./fluxFlore";
+
+test("le journal d'activité garde l'ordre : étapes et outils, un outil mis à jour à sa place", () => {
+  const vus = [];
+  const j = journalActivite((ops) => vus.push(ops));
+  j.onEtape("Je regarde Conduit…");
+  j.onOutil({ id: "u1", nom: "lire_code", libelle: "Je lis le code…", etat: "en_cours" });
+  j.onEtape("Je corrige après relecture…");
+  j.onOutil({ id: "u1", nom: "lire_code", libelle: "Je lis le code…", etat: "fait", duree: 0.2 });
+  expect(vus.at(-1).map((o) => o.label)).toEqual(["Je regarde Conduit…", "Je lis le code…", "Je corrige après relecture…"]);
+  expect(vus.at(-1)[1].outil.etat).toBe("fait");
+  expect(vus[0]).not.toBe(vus[1]); // une nouvelle liste à chaque changement (rendu React)
+  const fin = activiteDuTour(j.ops, "x");
+  expect(fin.status).toBe("done");
+  expect(fin.ops.every((o) => o.status === "done")).toBe(true);
+  expect(activiteDuTour([], "x")).toBeNull();
+});

@@ -5,11 +5,13 @@ import { brouillonLisible } from "@/lib/fluxFlore";
 // La réponse en cours (jumeau/flux.py) : les vraies étapes de Flore, puis son brouillon marqué « en relecture ».
 // `onArreter` : bouton « Arrêter » ; une fois arrêté, le brouillon reste affiché, marqué « interrompu ».
 export default function BrouillonFlore({ flux, onArreter, testid = "flore-brouillon" }) {
-  const etapes = flux.etapes.length ? flux.etapes : ["Flore se met au travail…"];
+  const etapes = flux.etapes.length ? flux.etapes : [{ label: "Flore se met au travail…" }];
+  // Un outil a son propre état (en cours, fait, erreur) ; une étape est en cours tant qu'elle est la dernière.
+  const statut = (op, i) => (flux.interrompu || (op.outil ? op.outil.etat !== "en_cours" : i < etapes.length - 1) ? "done" : "running");
   return (
     <div className="space-y-2" data-testid={testid}>
       <LigneActiviteFlore testid={`${testid}-activite`} activite={{ id: "en-cours", status: flux.interrompu ? "done" : "running",
-        ops: etapes.map((label, i) => ({ label, status: flux.interrompu || i < etapes.length - 1 ? "done" : "running" })) }} />
+        ops: etapes.map((op, i) => ({ ...op, status: statut(op, i) })) }} />
       {flux.brouillon && (
         <div className="rounded-xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-4">
           <MarkdownFlore texte={brouillonLisible(flux.brouillon)} />

@@ -8,6 +8,7 @@ import difflib
 import itertools
 import os
 import re
+import time
 import unicodedata
 
 import psycopg
@@ -178,23 +179,37 @@ ETAPES = {
 }
 
 
+EXTRAIT_OUTIL = 300  # caractères du résultat d'un outil montrés à l'écran (le reste est dans la réponse, cité)
+
+
+def _extrait(resultat):
+    """Le début du résultat d'un outil, en texte : une donnée lue, affichée comme telle, jamais une instruction."""
+    texte = " ".join(b["text"] for b in resultat.get("content") or [] if isinstance(b, dict) and isinstance(b.get("text"), str))
+    return texte if len(texte) <= EXTRAIT_OUTIL else texte[:EXTRAIT_OUTIL] + "…"
+
+
 async def executer(a, message, emit=None, chrono=None):
-    """Le tour de l'agent ; avec `emit`, ses étapes et son brouillon partent au fil de l'eau. `chrono` reçoit
-    l'instant du premier mot — la latence ressentie, qui n'était mesurée nulle part."""
+    """Le tour de l'agent ; avec `emit`, son brouillon et chacun de ses outils (début, arguments, issue, durée)
+    partent au fil de l'eau. `chrono` reçoit l'instant du premier mot — la latence ressentie."""
     if emit is None:
         return str(await a.invoke_async(message)).strip()
-    resultat, annonces, derniere = None, set(), None
+    resultat, debuts = None, {}
     async for e in a.stream_async(message):
         if "data" in e and isinstance(e["data"], str):
             if chrono is not None:
                 chrono.texte()
             await emit({"type": "texte", "delta": e["data"]})
-        elif (outil := e.get("current_tool_use")) and outil.get("toolUseId") not in annonces:
-            annonces.add(outil.get("toolUseId"))
-            libelle = ETAPES.get(outil.get("name"))
-            if libelle and libelle != derniere:  # une même étape répétée ne s'annonce qu'une fois de suite
-                derniere = libelle
-                await emit({"type": "etape", "libelle": libelle})
+        elif (outil := e.get("current_tool_use")) and (oid := outil.get("toolUseId")) and oid not in debuts:
+            debuts[oid] = time.monotonic()  # Strands répète l'appel pendant que ses arguments arrivent : annoncé une fois
+            await emit({"type": "outil", "id": oid, "nom": outil.get("name"), "libelle": ETAPES.get(outil.get("name")),
+                        "etat": "en_cours"})
+        elif isinstance(m := e.get("message"), dict):
+            for bloc in m.get("content") or []:
+                if (u := bloc.get("toolUse")) and u.get("toolUseId") in debuts:
+                    await emit({"type": "outil", "id": u["toolUseId"], "arguments": u.get("input")})
+                elif (r := bloc.get("toolResult")) and (oid := r.get("toolUseId")) in debuts:
+                    await emit({"type": "outil", "id": oid, "etat": "erreur" if r.get("status") == "error" else "fait",
+                                "duree": round(time.monotonic() - debuts[oid], 2), "extrait": _extrait(r)})
         elif "result" in e:
             resultat = e["result"]
     return str(resultat).strip()

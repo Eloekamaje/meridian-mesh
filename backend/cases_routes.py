@@ -510,7 +510,7 @@ def build_cases_router(deps):
             msg_user = {"role": "utilisateur", "texte": payload.texte.strip(), "quand": now}
             await db.cases.update_one({"id": cid}, {"$push": {"conversation": {"$each": [msg_user, fil.message_interrompu(brouillon)]}},
                                                     "$set": {"maj_le": now}})
-        return flux.en_flux(lambda emit: traiter_message(cid, payload, x_persona, x_espace, emit), sur_interruption=interrompu)
+        return flux.en_flux(lambda emit: traiter_message(cid, payload, x_persona, x_espace, emit), sur_interruption=interrompu, fil=cid)
 
     async def repondre_dans_travail(cid, case, question, params, x_persona, x_espace, emit=None):
         """La réponse brute de Flore dans un Travail (hors scripts de démonstration), avec ce qui l'accompagne."""

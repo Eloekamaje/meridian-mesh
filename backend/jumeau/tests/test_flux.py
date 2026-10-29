@@ -22,8 +22,10 @@ def test_etapes_brouillon_puis_final():
         await emit({"type": "texte", "delta": "Publier "})
         await emit({"type": "relecture"})
         return {"reponse": "Publier un article.", "relu": True}
-    assert [e["type"] for e in evenements(produire)] == ["etape", "texte", "relecture", "final"]
-    assert evenements(produire)[-1]["reponse"]["relu"] is True
+    assert [e["type"] for e in evenements(produire)] == [
+        "RUN_STARTED", "STEP_STARTED", "TEXT_MESSAGE_START", "TEXT_MESSAGE_CONTENT", "TEXT_MESSAGE_END", "CUSTOM",
+        "STEP_FINISHED", "RUN_FINISHED"]
+    assert evenements(produire)[-1]["result"]["relu"] is True
 
 
 def test_erreur_lisible_sans_fuite():
@@ -32,8 +34,8 @@ def test_erreur_lisible_sans_fuite():
 
     async def panne(emit):
         raise RuntimeError("secret interne")
-    assert evenements(refuse) == [{"type": "erreur", "message": "Travail introuvable"}]
-    assert evenements(panne) == [{"type": "erreur", "message": "Flore est momentanément injoignable."}]
+    assert evenements(refuse)[1:] == [{"type": "RUN_ERROR", "message": "Travail introuvable"}]
+    assert evenements(panne)[1:] == [{"type": "RUN_ERROR", "message": "Flore est momentanément injoignable."}]
 
 
 # ---- arrêt : la déconnexion annule la génération et le brouillon écrit est remis au rappel ----
@@ -93,7 +95,8 @@ def test_requete_deconnectee_annule_sans_attendre_la_fermeture():
     async def scenario():
         requete = Requete()
         it = _lancer(produire, sur_interruption=sur_interruption, requete=requete)
-        await it.__anext__()
+        while "TEXT_MESSAGE_CONTENT" not in await it.__anext__():  # le client part après le premier mot
+            pass
         requete.parti = True
         with pytest.raises(StopAsyncIteration):
             await asyncio.wait_for(it.__anext__(), 5)
