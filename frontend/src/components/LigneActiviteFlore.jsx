@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { grouperConsultations, resumeConsultations } from "@/lib/fluxFlore";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { CaretDown, CheckCircle, CircleNotch, WarningCircle } from "@phosphor-icons/react";
 
@@ -51,6 +52,57 @@ function LigneOutil({ op, testid }) {
     </div>
   );
 }
+// Les secondes écoulées depuis `debut`, rafraîchies tant que `actif` (chronomètre affiché par le navigateur).
+function useSecondes(debut, actif) {
+  const [maintenant, setMaintenant] = useState(() => Date.now());
+  useEffect(() => {
+    if (!actif) return undefined;
+    const t = setInterval(() => setMaintenant(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [actif]);
+  return debut ? Math.max(0, Math.round((maintenant - debut) / 1000)) : null;
+}
+
+const SILENCE = 15; // s sans nouvelle d'un jumeau : on le dit, sans le déclarer perdu
+const CONFIANCES = { elevee: "élevée", moyenne: "moyenne", faible: "faible" };
+
+// Un jumeau consulté (Design System §85, carte d'expert ; §87, états) : sa mission, ce qu'il fait réellement
+// (ses outils, dessous), un chronomètre ; à la fin, confiance, nombre de preuves et constat.
+function LigneConsultation({ op, sous, testid }) {
+  const { outil } = op;
+  const mission = outil.mission;
+  const enCours = !mission && outil.etat === "en_cours";
+  const echec = mission?.etat === "echec" || outil.etat === "erreur";
+  const ecoule = useSecondes(outil.debut, enCours);
+  const dernier = Math.max(outil.debut || 0, ...sous.map((s) => s.outil.debut || 0));
+  const silence = useSecondes(dernier || null, enCours);
+  const Icone = echec ? WarningCircle : enCours ? CircleNotch : CheckCircle;
+  const actuel = [...sous].reverse().find((s) => s.outil.etat === "en_cours") || sous[sous.length - 1];
+  return (
+    <div className="space-y-0.5" data-testid={testid}>
+      <div className="flex items-start gap-2">
+        <Icone size={12} aria-hidden="true" className={`mt-0.5 shrink-0 ${enCours ? "animate-spin text-[#60A5FA] motion-reduce:animate-none"
+          : echec ? "text-[#F87171]" : "text-[#34D399]"}`} />
+        <span className="min-w-0 flex-1">
+          <span className={enCours ? "text-[#D8E2EA]" : "text-[#94A3B8]"}>{outil.arguments?.jumeau || "Jumeau"}</span>
+          {outil.arguments?.mission && <span className="text-[#64748B]"> — {outil.arguments.mission}</span>}
+        </span>
+        <span className="shrink-0 font-code text-[10px] text-[#64748B]">
+          {enCours ? `${ecoule ?? 0} s…` : echec ? "n'a pas pu répondre" : `terminé${outil.duree != null ? ` · ${String(outil.duree).replace(".", ",")} s` : ""}`}
+        </span>
+      </div>
+      {mission && mission.etat === "fait" && (
+        <div className="ml-5 text-[11px] text-[#7C93A8]">
+          <span className="font-code">{`confiance ${CONFIANCES[mission.confiance] || mission.confiance} · ${mission.preuves} preuve${mission.preuves > 1 ? "s" : ""}`}</span>
+          {mission.constat && <span> — {mission.constat}</span>}
+        </div>
+      )}
+      {enCours && actuel && <div className="ml-5 truncate text-[11px] text-[#7C93A8]">{`${actuel.label}${actuel.outil.arguments ? ` ${premierArgument(actuel.outil.arguments)}` : ""}`}</div>}
+      {enCours && silence >= SILENCE && <div className="ml-5 text-[11px] text-[#64748B]">{`aucune nouvelle depuis ${silence} s : toujours en cours`}</div>}
+    </div>
+  );
+}
+
 export default function LigneActiviteFlore({ activite, testid = "flore-activite" }) {
   const [choix, setOuvert] = useState(null); // null : suit l'activité (dépliée en cours s'il y a des outils)
   const reduit = useReducedMotion();
@@ -60,7 +112,10 @@ export default function LigneActiviteFlore({ activite, testid = "flore-activite"
   const ops = activite.ops || [];
   const ouvert = choix ?? (enCours && ops.some((o) => o.outil));
   const courante = [...ops].reverse().find((o) => o.status === "running") || ops[ops.length - 1];
-  const libelle = courante?.label || "Flore réfléchit…";
+  const consultations = grouperConsultations(ops);
+  const sousOutils = new Set(consultations.flatMap((c) => c.sous.map((s) => s.outil.id)));
+  const consultationEnCours = consultations.some((c) => !c.outil.mission && c.outil.etat === "en_cours");
+  const libelle = (enCours && consultationEnCours && resumeConsultations(ops)) || courante?.label || "Flore réfléchit…";
   const sources = [...new Set(ops.flatMap((o) => o.sources || []))];
   // Une activité terminée sans aucune étape ne s'annonce pas « Analyse terminée » : elle dit ce qu'elle est.
   const vide = !enCours && ops.length === 0;
@@ -116,7 +171,9 @@ export default function LigneActiviteFlore({ activite, testid = "flore-activite"
 
       {ouvert && (
         <div className="mt-1.5 space-y-1.5 border-l border-white/[0.08] pl-3 text-xs" data-testid={`${testid}-detail`}>
-          {ops.map((o, i) => (o.outil ? <LigneOutil key={o.outil.id} op={o} testid={`${testid}-outil-${i}`} /> : (
+          {ops.map((o, i) => (sousOutils.has(o.outil?.id) ? null
+            : o.outil?.nom === "consulter_jumeau" ? <LigneConsultation key={o.outil.id} op={o} sous={consultations.find((c) => c.outil.id === o.outil.id).sous} testid={`${testid}-consultation-${i}`} />
+            : o.outil ? <LigneOutil key={o.outil.id} op={o} testid={`${testid}-outil-${i}`} /> : (
             <div key={`${i}-${o.label}`} className="flex items-start gap-2">
               {o.status === "running" ? (
                 <CircleNotch size={12} className="mt-0.5 shrink-0 animate-spin text-[#60A5FA] motion-reduce:animate-none" aria-hidden="true" />

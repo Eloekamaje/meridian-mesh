@@ -634,7 +634,7 @@ export default function OngletTravail({
       try {
         data = await demanderEnFlux(`/cases/${idTravail}/messages/flux`, { texte: q }, {
           signal: ctrl.signal,
-          onEtape: journal.onEtape, onOutil: journal.onOutil, onCoupure: (c) => setFluxMsg((f) => f && { ...f, coupure: c }),
+          onEtape: journal.onEtape, onOutil: journal.onOutil, onMission: journal.onMission, onCoupure: (c) => setFluxMsg((f) => f && { ...f, coupure: c }),
           onTexte: (d) => { ecrit += d; setFluxMsg((f) => f && { ...f, brouillon: f.brouillon + d }); },
           onRelecture: () => setFluxMsg((f) => f && { ...f, relecture: true }),
         });

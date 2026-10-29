@@ -624,7 +624,7 @@ export default function FlorePanel() {
     let ecrit = "";
     const rappels = {
       signal: ctrl.signal,
-      onEtape: journal.onEtape, onOutil: journal.onOutil, onCoupure: (c) => setFlux((f) => f && { ...f, coupure: c }),
+      onEtape: journal.onEtape, onOutil: journal.onOutil, onMission: journal.onMission, onCoupure: (c) => setFlux((f) => f && { ...f, coupure: c }),
       onTexte: (d) => { ecrit += d; setFlux((f) => f && { ...f, brouillon: f.brouillon + d }); },
       onRelecture: () => setFlux((f) => f && { ...f, relecture: true }),
     };

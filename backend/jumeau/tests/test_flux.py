@@ -183,3 +183,66 @@ def test_l_interruption_remet_aussi_l_activite():
         await flux.arreter(tour, None)
     asyncio.run(scenario())
     assert recu["brouillon"] == "Bon" and recu["activite"][0]["outil"]["etat"] == "en_cours"
+
+
+def test_suivi_des_outils_d_un_sous_agent_marques_de_leur_parent_sans_son_texte():
+    evts = []
+
+    async def emit(e):
+        evts.append(e)
+
+    async def scenario():
+        s = flux.SuiviOutils(emit, parent="conduit", ignorer={"Contribution"})
+        for e in [{"current_tool_use": {"toolUseId": "u1", "name": "lire_code"}},
+                  {"current_tool_use": {"toolUseId": "u1", "name": "lire_code"}},
+                  {"current_tool_use": {"toolUseId": "s1", "name": "Contribution"}},
+                  {"message": {"role": "user", "content": [{"toolResult": {"toolUseId": "u1", "status": "success",
+                                                                           "content": [{"text": "def f()"}]}}]}}]:
+            assert await s.suivre(e) is True
+        assert await s.suivre({"data": "texte du sous-agent"}) is False
+    asyncio.run(scenario())
+    assert [(e["id"], e.get("etat")) for e in evts] == [("u1", "en_cours"), ("u1", "fait")]
+    assert evts[0]["parent"] == "conduit" and evts[0]["libelle"] == flux.LIBELLES_OUTILS["lire_code"]
+
+
+def test_la_fin_d_une_mission_s_attache_a_la_consultation_de_son_jumeau():
+    a = flux.Activite()
+    a.suivre({"type": "outil", "id": "c1", "nom": "consulter_jumeau", "libelle": "x", "etat": "en_cours"})
+    a.suivre({"type": "outil", "id": "c1", "arguments": {"jumeau": "conduit", "mission": "m"}})
+    a.suivre({"type": "outil", "id": "u1", "nom": "lire_code", "etat": "en_cours", "parent": "conduit"})
+    a.suivre({"type": "mission", "jumeau": "conduit", "etat": "fait", "confiance": "elevee", "preuves": 3, "constat": "c"})
+    assert a.ops[0]["outil"]["mission"] == {"etat": "fait", "confiance": "elevee", "preuves": 3, "constat": "c"}
+    assert a.ops[1]["outil"]["parent"] == "conduit"
+
+
+def test_une_mission_montre_les_outils_de_son_jumeau_puis_son_bilan(monkeypatch):
+    from jumeau import mobilisation
+
+    class Resultat:
+        structured_output = mobilisation.Contribution(constat="Conduit garde tout dans une base.", preuves=["a.py#L1-L2"],
+                                                      confiance="elevee")
+
+    class SousAgent:
+        async def stream_async(self, consigne, structured_output_model=None):
+            yield {"current_tool_use": {"toolUseId": "u1", "name": "lire_code"}}
+            yield {"data": "je réfléchis"}
+            yield {"message": {"role": "user", "content": [{"toolResult": {"toolUseId": "u1", "status": "success",
+                                                                           "content": [{"text": "x"}]}}]}}
+            yield {"result": Resultat()}
+
+    monkeypatch.setattr(mobilisation.agent, "construire", lambda *a, **k: SousAgent())
+
+    async def garder(preuves, sources):
+        return preuves
+    monkeypatch.setattr(mobilisation, "preuves_verifiees", garder)
+    evts = []
+
+    async def emit(e):
+        evts.append(e)
+    mob = mobilisation.Mobilisation({"conduit": {"jumeau": {"nom": "Conduit"}, "sources": []}}, "dsn", "m", emit=emit)
+    sortie = asyncio.run(mob.consulter("conduit", "Que se passe-t-il si tu tombes ?"))
+    assert "Conduit garde tout" in sortie
+    assert [(e["type"], e.get("etat")) for e in evts] == [("outil", "en_cours"), ("outil", "fait"), ("mission", "fait")]
+    assert evts[0]["parent"] == "conduit"
+    assert evts[2] == {"type": "mission", "jumeau": "conduit", "etat": "fait", "confiance": "elevee", "preuves": 1,
+                       "constat": "Conduit garde tout dans une base."}

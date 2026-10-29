@@ -23,7 +23,7 @@ def contribution(**kw):
 def faux_consulter(monkeypatch):
     appels = []
 
-    async def consulter(c, dsn, mission, modele):
+    async def consulter(c, dsn, mission, modele, emit=None, parent=None):
         appels.append((c["jumeau"]["id"], mission))
         return contribution()
     monkeypatch.setattr(mobilisation, "consulter", consulter)

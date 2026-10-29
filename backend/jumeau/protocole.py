@@ -45,7 +45,7 @@ class Traducteur:
         oid = e["id"]
         if e.get("etat") == "en_cours":
             self.outils_ouverts.add(oid)
-            meta = {"libelle": e["libelle"]} if e.get("libelle") else None
+            meta = {k: e[k] for k in ("libelle", "parent") if e.get(k)} or None
             return [ag.ToolCallStartEvent(tool_call_id=oid, tool_call_name=e.get("nom") or "outil", metadata=meta)]
         sortie = []
         if "arguments" in e:

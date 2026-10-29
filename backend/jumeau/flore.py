@@ -8,12 +8,11 @@ import difflib
 import itertools
 import os
 import re
-import time
 import unicodedata
 
 import psycopg
 
-from jumeau import agent, carte, connaissance, contradicteur, depot, gardien, lecteurs, mesure, mobilisation, schemas
+from jumeau import agent, carte, connaissance, contradicteur, depot, flux, gardien, lecteurs, mesure, mobilisation, schemas
 from jumeau.connaissance import RE_CITATION
 from jumeau.lecteurs import RE_CITATION_SOURCE
 from jumeau.travail import EcritureTravail, etat_texte
@@ -183,34 +182,9 @@ def _contexte(jumeau_id, acteur, profil):
             "lecteurs": lecteurs_branches, "fiche": fiche["contenu"] if fiche else None}, dsn
 
 
-# Ce que fait Flore, dit simplement, à mesure qu'elle appelle ses outils (la vraie activité, pas un défilé écrit
-# d'avance). Un outil absent de la liste n'est pas annoncé.
-ETAPES = {
-    "mes_connaissances": "Je consulte ce que l'on sait de l'application…",
-    "architecture": "Je regarde de quoi l'application est faite…",
-    "chercher_texte": "Je cherche dans le code…", "chercher_symbole": "Je cherche dans le code…",
-    "tracer_appels": "Je regarde qui appelle quoi…",
-    "suivre_appels": "Je suis l'enchaînement dans le code…",
-    "lire_code": "Je lis le code concerné…",
-    "historique_du_code": "Je regarde l'histoire du code…", "ce_qui_a_change": "Je regarde ce qui a changé…",
-    "chercher_dans": "Je cherche dans la documentation et les outils de l'équipe…",
-    "lire_dans": "Je lis la documentation concernée…",
-    "dessiner_schema": "Je dessine le schéma…",
-    "consulter_jumeau": "Je consulte l'application concernée…",
-    "montrer_sur_atlas": "Je prépare la carte…",
-    "consulter_methode": "Je choisis comment m'y prendre…",
-    "proposer_connaissance": "Je consigne ce que j'ai appris…",
-    "eprouver_hypothese": "Je mets une hypothèse à l'épreuve…", "proposer_hypothese": "Je pose une hypothèse à vérifier…", "recouper_connaissance": "Je recoupe avec une autre source…",
-}
-
-
-EXTRAIT_OUTIL = 300  # caractères du résultat d'un outil montrés à l'écran (le reste est dans la réponse, cité)
-
-
-def _extrait(resultat):
-    """Le début du résultat d'un outil, en texte : une donnée lue, affichée comme telle, jamais une instruction."""
-    texte = " ".join(b["text"] for b in resultat.get("content") or [] if isinstance(b, dict) and isinstance(b.get("text"), str))
-    return texte if len(texte) <= EXTRAIT_OUTIL else texte[:EXTRAIT_OUTIL] + "…"
+# Les libellés des outils et leur suivi vivent dans flux (partagés avec la mobilisation des jumeaux).
+ETAPES = flux.LIBELLES_OUTILS
+EXTRAIT_OUTIL = flux.EXTRAIT_OUTIL
 
 
 async def executer(a, message, emit=None, chrono=None):
@@ -218,24 +192,14 @@ async def executer(a, message, emit=None, chrono=None):
     partent au fil de l'eau. `chrono` reçoit l'instant du premier mot — la latence ressentie."""
     if emit is None:
         return str(await a.invoke_async(message)).strip()
-    resultat, debuts = None, {}
+    resultat, suivi = None, flux.SuiviOutils(emit)
     async for e in a.stream_async(message):
         if "data" in e and isinstance(e["data"], str):
             if chrono is not None:
                 chrono.texte()
             await emit({"type": "texte", "delta": e["data"]})
-        elif (outil := e.get("current_tool_use")) and (oid := outil.get("toolUseId")) and oid not in debuts:
-            debuts[oid] = time.monotonic()  # Strands répète l'appel pendant que ses arguments arrivent : annoncé une fois
-            await emit({"type": "outil", "id": oid, "nom": outil.get("name"), "libelle": ETAPES.get(outil.get("name")),
-                        "etat": "en_cours"})
-        elif isinstance(m := e.get("message"), dict):
-            for bloc in m.get("content") or []:
-                if (u := bloc.get("toolUse")) and u.get("toolUseId") in debuts:
-                    debuts[u["toolUseId"]] = time.monotonic()  # arguments complets : l'outil s'exécute maintenant
-                    await emit({"type": "outil", "id": u["toolUseId"], "arguments": u.get("input")})
-                elif (r := bloc.get("toolResult")) and (oid := r.get("toolUseId")) in debuts:
-                    await emit({"type": "outil", "id": oid, "etat": "erreur" if r.get("status") == "error" else "fait",
-                                "duree": round(time.monotonic() - debuts[oid], 2), "extrait": _extrait(r)})
+        elif await suivi.suivre(e):
+            pass
         elif "result" in e:
             resultat = e["result"]
     return str(resultat).strip()
@@ -402,7 +366,7 @@ async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=
         modele = agent.modele()
         ecriture = EcritureTravail(db, travail) if travail and db is not None else None
         etat = etat_texte(await ecriture.etat()) if ecriture else None
-        mob = mobilisation.Mobilisation(ctxs, dsn, modele)
+        mob = mobilisation.Mobilisation(ctxs, dsn, modele, emit)
         scene, relations = mobilisation.Scene(ctxs), {}  # seuls les jumeaux autorisés (déjà filtrés par le serveur)
         # Un schéma peut se fonder sur le code ou les connaissances de chacun des jumeaux mobilisés.
         tous = {"sources": [s for c in ctxs.values() for s in c["sources"]],

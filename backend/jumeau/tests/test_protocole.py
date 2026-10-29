@@ -49,3 +49,11 @@ def test_erreur_et_evenement_inconnu():
     assert lus(t, {"type": "inconnu", "x": 1}) == [{"type": "CUSTOM", "name": "inconnu", "value": {"type": "inconnu", "x": 1}}]
     assert [json.loads(e.model_dump_json(by_alias=True, exclude_none=True)) for e in t.erreur("Case introuvable")] == \
         [{"type": "RUN_ERROR", "message": "Case introuvable"}]
+
+
+def test_l_outil_d_un_jumeau_porte_son_parent_et_la_mission_part_en_custom():
+    t = Traducteur("t", "r")
+    evts = lus(t, {"type": "outil", "id": "u1", "nom": "lire_code", "libelle": "Je lis…", "etat": "en_cours", "parent": "conduit"},
+               {"type": "mission", "jumeau": "conduit", "etat": "fait", "confiance": "elevee", "preuves": 2, "constat": "c"})
+    assert evts[0]["metadata"] == {"libelle": "Je lis…", "parent": "conduit"}
+    assert evts[1]["type"] == "CUSTOM" and evts[1]["name"] == "mission" and evts[1]["value"]["jumeau"] == "conduit"

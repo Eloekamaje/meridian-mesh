@@ -3,7 +3,7 @@ import { entetesPerimetre } from "./api";
 // Un tour de Flore en AG-UI (backend jumeau/protocole.py) → les rappels de l'interface. Rend { fin: réponse } au
 // RUN_FINISHED ; lève une erreur annoncée au RUN_ERROR. `onOutil(outil)` reçoit l'état complet de l'outil à chaque
 // changement : { id, nom, libelle, etat: en_cours|fait|erreur, arguments, extrait, duree }.
-export function lecteurAgUi({ onEtape, onTexte, onRelecture, onOutil, onDebut } = {}) {
+export function lecteurAgUi({ onEtape, onTexte, onRelecture, onOutil, onDebut, onMission } = {}) {
   const outils = {};
   const args = {};
   const maj = (id, champs) => { outils[id] = { ...outils[id], ...champs }; onOutil?.(outils[id]); };
@@ -12,12 +12,16 @@ export function lecteurAgUi({ onEtape, onTexte, onRelecture, onOutil, onDebut } 
       case "RUN_STARTED": onDebut?.(e.runId); break;
       case "STEP_STARTED": onEtape?.(e.stepName); break;
       case "TEXT_MESSAGE_CONTENT": onTexte?.(e.delta); break;
-      case "CUSTOM": if (e.name === "relecture") onRelecture?.(); break;
+      case "CUSTOM":
+        if (e.name === "relecture") onRelecture?.();
+        else if (e.name === "mission") onMission?.(e.value); // fin de la mission d'un jumeau (carte d'expert)
+        break;
       case "TOOL_CALL_START": {
         const libelle = e.metadata?.libelle || null;
         if (libelle && !onOutil) onEtape?.(libelle); // un appelant qui ne montre que des libellés le voit quand même
         args[e.toolCallId] = "";
-        maj(e.toolCallId, { id: e.toolCallId, nom: e.toolCallName, libelle, etat: "en_cours" });
+        const parent = e.metadata?.parent;
+        maj(e.toolCallId, { id: e.toolCallId, nom: e.toolCallName, libelle, etat: "en_cours", debut: Date.now(), ...(parent ? { parent } : {}) });
         break;
       }
       case "TOOL_CALL_ARGS": args[e.toolCallId] = (args[e.toolCallId] || "") + e.delta; break;
@@ -70,10 +74,10 @@ async function* evenements(reponse) {
 // écrit) AVANT que la promesse ne rejette une AbortError (estArret) : la relecture qui suit voit la réponse partielle.
 // Une coupure de réseau n'arrête pas le tour : `onCoupure(true)`, puis reprise depuis le dernier événement lu
 // (`/tours/{id}/flux?depuis=n`), `onCoupure(false)` quand le fil est renoué. Rejette sur une erreur annoncée.
-export async function demanderEnFlux(chemin, corps, { onEtape, onTexte, onRelecture, onOutil, onCoupure, signal } = {}) {
+export async function demanderEnFlux(chemin, corps, { onEtape, onTexte, onRelecture, onOutil, onMission, onCoupure, signal } = {}) {
   let tour = null;
   let lus = 0;
-  const lire = lecteurAgUi({ onEtape, onTexte, onRelecture, onOutil, onDebut: (id) => { tour = id; } });
+  const lire = lecteurAgUi({ onEtape, onTexte, onRelecture, onOutil, onMission, onDebut: (id) => { tour = id; } });
   const entetes = { Accept: "text/event-stream", ...entetesPerimetre() };
   let reponse = await fetch(`${API()}${chemin}`, {
     method: "POST", headers: { "Content-Type": "application/json", ...entetes }, body: JSON.stringify(corps), signal,
@@ -132,7 +136,28 @@ export function journalActivite(surChangement) {
       if (i < 0) ops.push(op); else ops[i] = op;
       publier();
     },
+    // Fin de la mission d'un jumeau : sur sa (dernière) consultation (Design System §85 : état, confiance, preuves)
+    onMission: ({ jumeau, type, ...bilan }) => {
+      const i = ops.map((o) => o.outil).findLastIndex((o) => o?.nom === "consulter_jumeau" && o.arguments?.jumeau === jumeau);
+      if (i < 0) return;
+      ops[i] = { ...ops[i], outil: { ...ops[i].outil, mission: bilan } };
+      publier();
+    },
   };
+}
+
+// Les consultations de jumeaux, chacune avec les outils de sa mission (rangés sous elle par `parent`).
+export function grouperConsultations(ops) {
+  return (ops || []).filter((o) => o.outil?.nom === "consulter_jumeau").map((c) => ({
+    ...c, sous: ops.filter((o) => o.outil?.parent && o.outil.parent === c.outil.arguments?.jumeau),
+  }));
+}
+
+export function resumeConsultations(ops) {
+  const c = grouperConsultations(ops);
+  if (!c.length) return null;
+  const finies = c.filter((x) => x.outil.mission || x.outil.etat !== "en_cours").length;
+  return `${c.length} jumeau${c.length > 1 ? "x" : ""} consulté${c.length > 1 ? "s" : ""} · ${finies} terminé${finies > 1 ? "s" : ""}`;
 }
 
 // L'activité d'un tour fini, gardée avec la réponse (null s'il n'y a rien eu).

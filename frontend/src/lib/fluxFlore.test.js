@@ -55,7 +55,7 @@ test("un tour AG-UI : étapes, outil (début, arguments, issue), brouillon, rele
   expect(vus.textes).toEqual(["Bon"]);
   expect(vus.relu).toBe(1);
   expect(vus.outils.at(-1)).toEqual({ id: "u1", nom: "lire_code", libelle: "Je lis le code concerné…", etat: "fait",
-    arguments: { chemin: "a.py" }, extrait: "def f()", duree: 0.1 });
+    arguments: { chemin: "a.py" }, extrait: "def f()", duree: 0.1, debut: expect.any(Number) });
   expect(vus.outils[0].etat).toBe("en_cours");
 });
 
@@ -145,4 +145,33 @@ test("« Arrêter » demande l'arrêt du tour au serveur avant de rendre la main
   const err = await promesse.catch((e) => e);
   expect(estArret(err)).toBe(true);
   expect(appels[1]).toEqual([expect.stringMatching(/\/api\/tours\/R2\/arreter$/), "POST"]);
+});
+
+import { grouperConsultations, resumeConsultations } from "./fluxFlore";
+
+test("les outils d'un jumeau se rangent sous sa consultation ; le bilan de mission s'y attache", () => {
+  const vus = [];
+  const j = journalActivite((ops) => vus.push(ops));
+  const lire = lecteurAgUi({ onOutil: j.onOutil, onMission: j.onMission });
+  [
+    { type: "TOOL_CALL_START", toolCallId: "c1", toolCallName: "consulter_jumeau", metadata: { libelle: "Je consulte…" } },
+    { type: "TOOL_CALL_ARGS", toolCallId: "c1", delta: '{"jumeau":"conduit","mission":"Si tu tombes ?"}' },
+    { type: "TOOL_CALL_END", toolCallId: "c1" },
+    { type: "TOOL_CALL_START", toolCallId: "u1", toolCallName: "lire_code", metadata: { libelle: "Je lis…", parent: "conduit" } },
+    { type: "CUSTOM", name: "mission", value: { type: "mission", jumeau: "conduit", etat: "fait", confiance: "elevee", preuves: 2, constat: "c" } },
+  ].forEach(lire);
+  const ops = vus.at(-1);
+  expect(ops[1].outil.parent).toBe("conduit");
+  expect(typeof ops[0].outil.debut).toBe("number");
+  expect(ops[0].outil.mission).toEqual({ etat: "fait", confiance: "elevee", preuves: 2, constat: "c" });
+  const groupes = grouperConsultations(ops);
+  expect(groupes).toHaveLength(1);
+  expect(groupes[0].sous.map((o) => o.outil.nom)).toEqual(["lire_code"]);
+});
+
+test("le résumé des consultations : combien de jumeaux, combien terminés", () => {
+  const consult = (jumeau, mission) => ({ label: "x", outil: { nom: "consulter_jumeau", arguments: { jumeau }, etat: mission ? "fait" : "en_cours", mission } });
+  expect(resumeConsultations([consult("a", { etat: "fait" }), consult("b")])).toBe("2 jumeaux consultés · 1 terminé");
+  expect(resumeConsultations([consult("a")])).toBe("1 jumeau consulté · 0 terminé");
+  expect(resumeConsultations([{ label: "Je lis…" }])).toBeNull();
 });

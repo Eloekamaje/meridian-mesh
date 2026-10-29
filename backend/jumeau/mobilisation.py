@@ -9,7 +9,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 from strands import Agent, tool
 
-from jumeau import agent, methodes
+from jumeau import agent, flux, methodes
 from jumeau.connaissance import RE_CITATION
 from jumeau.contradicteur import citations_invalides
 
@@ -47,13 +47,21 @@ async def preuves_verifiees(preuves, sources):
     return await asyncio.to_thread(garder)
 
 
-async def consulter(ctx, dsn, mission, modele):
-    """Réveille le jumeau de `ctx` pour une mission ; rend sa Contribution, citations vérifiées."""
+async def consulter(ctx, dsn, mission, modele, emit=None, parent=None):
+    """Réveille le jumeau de `ctx` pour une mission ; rend sa Contribution, citations vérifiées. Avec `emit`, ses
+    outils s'affichent au fil de l'eau sous sa consultation (`parent`) — jamais son texte, qui n'est qu'une donnée."""
     budget = agent.Budget(outils=OUTILS_PAR_MISSION, propositions=0, ecritures=0)
     sous_agent = agent.construire(ctx, dsn, session=None, modele=modele, budget=budget)
+    consigne = CONSIGNE_MISSION.format(mission=mission)
     # Structure imposée par un appel d'outil : seule forme acceptée par DeepSeek.
-    sortie = (await sous_agent.invoke_async(CONSIGNE_MISSION.format(mission=mission),
-                                            structured_output_model=Contribution)).structured_output
+    if emit is None:
+        sortie = (await sous_agent.invoke_async(consigne, structured_output_model=Contribution)).structured_output
+    else:
+        suivi, resultat = flux.SuiviOutils(emit, parent=parent, ignorer={Contribution.__name__}), None
+        async for e in sous_agent.stream_async(consigne, structured_output_model=Contribution):
+            if not await suivi.suivre(e) and "result" in e:
+                resultat = e["result"]
+        sortie = getattr(resultat, "structured_output", None)
     if sortie is None:
         raise ValueError("contribution illisible")
     return sortie.model_copy(update={"preuves": await preuves_verifiees(sortie.preuves, ctx["sources"])})
@@ -105,8 +113,8 @@ class Scene:
 class Mobilisation:
     """État d'une requête : jumeaux autorisés, missions faites, dernière contribution de chaque jumeau."""
 
-    def __init__(self, contextes, dsn, modele):
-        self.contextes, self.dsn, self.modele = contextes, dsn, modele
+    def __init__(self, contextes, dsn, modele, emit=None):
+        self.contextes, self.dsn, self.modele, self.emit = contextes, dsn, modele, emit
         self.missions, self.contributions = {}, {}
 
     def outil(self):
@@ -121,6 +129,10 @@ class Mobilisation:
             return await self.consulter(jumeau, mission)
         return consulter_jumeau
 
+    async def _bilan(self, jumeau, bilan):
+        if self.emit is not None:
+            await self.emit({"type": "mission", "jumeau": jumeau, **bilan})
+
     async def consulter(self, jumeau, mission):
         ctx = self.contextes.get(jumeau)
         if not ctx:
@@ -133,11 +145,15 @@ class Mobilisation:
             return "Plafond de jumeaux mobilisés atteint pour cette requête : réponds avec ce que tu as."
         self.missions[jumeau] = self.missions.get(jumeau, 0) + 1
         try:
-            c = await consulter(ctx, self.dsn, mission, self.modele)
+            c = await consulter(ctx, self.dsn, mission, self.modele, self.emit, parent=jumeau)
         except Exception:
             agent.journal.exception("mission jumeau %s", jumeau)
+            await self._bilan(jumeau, {"etat": "echec"})
             return f"Le jumeau {ctx['jumeau']['nom']} n'a pas pu répondre à cette mission."
         self.contributions[jumeau] = c
+        # carte d'expert (Design System §85) : état, confiance, nombre de preuves, constat
+        await self._bilan(jumeau, {"etat": "fait", "confiance": c.confiance, "preuves": len(c.preuves),
+                                   "constat": c.constat[:300]})
         return donnee(ctx["jumeau"]["nom"], c)
 
 

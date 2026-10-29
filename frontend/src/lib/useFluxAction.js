@@ -18,7 +18,7 @@ export default function useFluxAction() {
     try {
       return await demanderEnFlux(chemin, corps, {
         signal: c.signal,
-        onEtape: journal.onEtape, onOutil: journal.onOutil, onCoupure: (c) => setFlux((f) => f && { ...f, coupure: c }),
+        onEtape: journal.onEtape, onOutil: journal.onOutil, onMission: journal.onMission, onCoupure: (c) => setFlux((f) => f && { ...f, coupure: c }),
         onTexte: (d) => { brouillon += d; setFlux((f) => f && { ...f, brouillon }); },
         onRelecture: () => setFlux((f) => f && { ...f, relecture: true }),
       });
