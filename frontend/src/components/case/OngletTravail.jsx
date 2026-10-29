@@ -32,6 +32,8 @@ import { couleurDomaine } from "@/lib/domaines";
 import { CREATION_TRAVAIL_ACTIVE, FLORE_REPONSE_EN_CONSTRUCTION, PROPOSITION_DEMO } from "@/lib/messagesFlore";
 import FloreActivite, { delaiMin, activiteTerminee } from "@/components/FloreActivite";
 import BrouillonFlore from "@/components/BrouillonFlore";
+import FileMessages from "@/components/FileMessages";
+import useFileMessages from "@/lib/useFileMessages";
 import { demanderEnFlux, estArret, journalActivite, activiteDuTour } from "@/lib/fluxFlore";
 import LigneActiviteFlore from "@/components/LigneActiviteFlore";
 import IndicateurClic from "@/components/IndicateurClic";
@@ -592,6 +594,8 @@ export default function OngletTravail({
   const relire = () => api.get(`/cases/${cas.id}`).then(({ data: frais }) => setCas(frais)).catch(() => {});
   const ctrlRef = useRef(null);
   const arreter = () => ctrlRef.current?.abort();
+  // Écrire pendant que Flore répond : en file, envoyé en une question à la fin du tour (« Réorienter » = Arrêter)
+  const fileMsgs = useFileMessages(envoiMsg, (texte) => envoyer(null, texte));
 
   const envoyer = async (e, texteDirect) => {
     e?.preventDefault?.();
@@ -1125,10 +1129,15 @@ export default function OngletTravail({
             const soumettre = (e) => {
               e?.preventDefault?.();
               if (pilote) { if (pretAEnvoyer) pilote.envoyerSaisie(); return; }
+              if (envoiMsg) { fileMsgs.ajouter(nouveauMsg); setNouveauMsg(""); return; }
               envoyer(e);
             };
             return (
           <form onSubmit={soumettre} className="mx-auto max-w-3xl">
+            {!pilote && (
+              <FileMessages file={fileMsgs.file} occupe={envoiMsg} onRetirer={fileMsgs.retirer}
+                onModifier={(i) => setNouveauMsg(fileMsgs.reprendre(i))} onReorienter={arreter} testid="case-file" />
+            )}
             <div className="flex items-center gap-2 rounded-2xl border border-white/[0.12] bg-[#0A131C]/90 px-3.5 py-2.5 shadow-2xl backdrop-blur-xl transition-colors focus-within:border-blue-400/60">
 
 

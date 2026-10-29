@@ -12,6 +12,8 @@ import { demanderEnFlux, estArret, journalActivite, activiteDuTour } from "@/lib
 import { prefixeTravail, regrouper, reponseInterrompue, floreAProduit, estConversation, STATUT_CONVERSATION, STATUT_CONSERVE, tronquerApres, garderReperes, attendreReponse } from "@/lib/conversationFlore";
 import { usePerimetre } from "@/lib/perimetre";
 import BrouillonFlore from "./BrouillonFlore";
+import FileMessages from "./FileMessages";
+import useFileMessages from "@/lib/useFileMessages";
 import MarqueRelecture from "./MarqueRelecture";
 import MarqueOrigine from "./MarqueOrigine";
 import FloreActivite from "./FloreActivite";
@@ -589,6 +591,8 @@ export default function FlorePanel() {
   };
 
   const arreter = () => ctrlRef.current?.abort();
+  // Écrire pendant que Flore répond : en file, envoyé en une question à la fin du tour (« Réorienter » = Arrêter)
+  const fileMsgs = useFileMessages(chargement, (texte) => demander(texte));
 
   // SEUL endroit qui décide quand la conversation du panneau devient un Travail. Aujourd'hui : automatiquement, à la
   // première question (comme « Nouveau travail » : titre tiré de la question, jumeaux = sélection). Pour passer à
@@ -1124,21 +1128,25 @@ export default function FlorePanel() {
             ))}
           </div>
         )}
-        <form onSubmit={(e) => { e.preventDefault(); demander(); }} className="flex items-center gap-2">
+        <FileMessages file={fileMsgs.file} occupe={chargement} onRetirer={fileMsgs.retirer}
+          onModifier={(i) => setQuestion(fileMsgs.reprendre(i))} onReorienter={arreter} testid="flore-file" />
+        <form onSubmit={(e) => {
+          e.preventDefault();
+          if (chargement) { fileMsgs.ajouter(question); setQuestion(""); } else demander();
+        }} className="flex items-center gap-2">
           <input
             ref={inputRef}
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             placeholder={
               chargement
-                ? "Flore croise les sources…"
+                ? "Flore répond… écrivez la suite (Entrée : en attente)"
                 : selection.length > 0
                   ? "Que voulez-vous comprendre sur cette sélection ?"
                   : domaineSel
                     ? `Interroger le domaine ${domaineSel}…`
                     : "Demander à Flore…  (⌘K)"
             }
-            disabled={chargement}
             data-testid="flore-input"
             className="h-10 flex-1 rounded-lg border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-3 text-sm text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#60A5FA]/60 focus:outline-none"
           />
