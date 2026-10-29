@@ -29,20 +29,39 @@ Une conversation est une liste de messages, dans l'ordre :
   celui qui est affiché, et la branche courante y figure aussi.
 - `interrompu` : la réponse a été arrêtée par l'interlocuteur. Son texte est ce qui avait été écrit.
 
-## 2. Une conversation est un Travail (amendé le 2026-10-28)
+## 2. Une conversation est un Travail privé, à l'état « conversation » (décision du 2026-10-28)
 
-**Il n'y a pas de seconde liste de conversations.** Les Travaux sont les sessions de travail, c'est-à-dire les
-conversations, et la barre latérale (`SidebarGauche`, « Récents », « Nouveau travail ») est leur historique (règle
-« suivre l'existant »).
+Décision prise sur recommandation de l'expert UX, d'après les standards observés : ChatGPT, Claude, Gemini,
+Notion et Slack gardent toutes les conversations, privées à leur auteur, et le passage à un espace durable y est
+toujours explicite.
 
-- **Le panneau Flore converse dans un Travail.** À la première question d'une conversation, il crée un Travail, comme
-  « Nouveau travail » (`POST /api/cases`, titre tiré de la question, `jumeaux` = la sélection). Les questions suivantes
-  vont dans ce même Travail (`POST /api/cases/{cid}/messages/flux`). La conversation apparaît donc dans les Récents, et
-  rouvrir le panneau la reprend. « Nouvelle conversation » dans le panneau en démarre une autre.
-- **La recherche s'ajoute à l'existant** : `GET /api/cases?q=` cherche dans le titre et le texte des messages
-  (insensible à la casse, jamais une expression régulière fournie par le client). L'interface l'offre dans la barre
-  latérale (Récents) et sur la page Travaux. Elle n'est pas dans le panneau.
-- Renommer et supprimer passent par les routes existantes des Travaux.
+**Il n'y a pas de seconde liste de conversations.** Les Travaux sont les sessions, et la barre latérale
+(`SidebarGauche`, « Récents ») est leur historique (règle « suivre l'existant »).
+
+- **Création.** À la première question d'une conversation, le panneau Flore crée un Travail (`POST /api/cases`) avec
+  `statut: "conversation"` et `auteur` = l'interlocuteur (`X-Persona`). Les questions suivantes vont dans ce même
+  Travail (`POST /api/cases/{cid}/messages/flux`). Rouvrir le panneau le reprend, et « Nouvelle conversation » en
+  démarre un autre.
+- **Visibilité.** Une conversation n'est visible que de son auteur :
+  - `GET /api/cases` ne la renvoie qu'à lui ;
+  - toute route `/api/cases/{cid}/…` refuse les autres (404, sans révéler qu'elle existe).
+  
+  Dans les Récents de la barre latérale, l'auteur la voit avec une marque discrète (« conversation »). La page
+  Travaux liste par défaut les Travaux conservés, et les conversations sur un filtre.
+- **Conserver.** « Conserver comme travail » fait `PATCH /api/cases/{cid}` `{statut: "actif"}` : le même Travail
+  devient partagé selon sa portée, et l'onglet complet apparaît (plan, hypothèses, décisions, veille). On ne crée
+  plus de copie.
+- **Proposer de conserver.** Le bandeau de proposition existant se déclenche quand Flore produit un plan, une
+  option, une décision ou un livrable. Il ne promeut jamais sans un clic.
+- **Ajouter à un travail existant.** Les messages de la conversation sont rattachés au Travail choisi, puis la
+  conversation est retirée.
+- **Recherche.** `GET /api/cases?q=` cherche dans le titre et le texte des messages, parmi ce que l'interlocuteur a
+  le droit de voir (insensible à la casse, jamais une expression régulière fournie par le client). Elle est offerte
+  dans la barre latérale (Récents) et sur la page Travaux.
+- **Renommer, supprimer** : les routes existantes des Travaux, réservées à l'auteur pour une conversation.
+- **Pas de mode éphémère** pour l'instant, sauf exigence de conformité de la banque.
+- **Limite connue.** L'auteur est l'en-tête `X-Persona`, non authentifié. Un persona inconnu est ramené au premier
+  persona (`resoudre_perimetre`). La confidentialité réelle attend l'identité OIDC.
 
 ## 3. Versions, branches, arrêt (panneau ET Travail)
 
