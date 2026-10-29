@@ -576,6 +576,25 @@ export default function FlorePanel() {
 
   const arreter = () => ctrlRef.current?.abort();
 
+  // SEUL endroit qui décide quand la conversation du panneau devient un Travail. Aujourd'hui : automatiquement, à la
+  // première question (comme « Nouveau travail » : titre tiré de la question, jumeaux = sélection). Pour passer à
+  // « à la demande », rendre null ici tant que l'utilisateur n'a pas choisi (la conversation reste alors locale).
+  const assurerTravail = async (premiereQuestion) => {
+    if (travailId) return travailId;
+    try {
+      const { data: c } = await api.post("/cases", {
+        titre: premiereQuestion.length > 90 ? `${premiereQuestion.slice(0, 87)}…` : premiereQuestion,
+        type: "demande", objectif: premiereQuestion, jumeaux: selection, espace: info?.espace?.id,
+      });
+      setTravailId(c.id);
+      localStorage.setItem(CLE_TRAVAIL, c.id);
+      window.dispatchEvent(new Event("meridian:travaux-maj")); // les Récents de la barre latérale
+      return c.id;
+    } catch {
+      return null;
+    }
+  };
+
   const demander = async (q) => {
     const finale = (q ?? question).trim();
     if (!finale || chargement) return;
@@ -596,18 +615,7 @@ export default function FlorePanel() {
     setFlux({ question: finale, etapes: [], brouillon: "", relecture: false });
     let cid = travailId;
     try {
-      // Première question : le Travail naît, comme « Nouveau travail » (titre tiré de la question, jumeaux = sélection)
-      if (!cid) {
-        try {
-          const { data: c } = await api.post("/cases", {
-            titre: finale.length > 90 ? `${finale.slice(0, 87)}…` : finale, type: "demande", objectif: finale, jumeaux: selection, espace: info?.espace?.id,
-          });
-          cid = c.id;
-          setTravailId(cid);
-          localStorage.setItem(CLE_TRAVAIL, cid);
-          window.dispatchEvent(new Event("meridian:travaux-maj"));
-        } catch { cid = null; }
-      }
+      cid = await assurerTravail(finale);
       let data = null;
       let enregistree = false;
       if (cid) {
@@ -741,6 +749,12 @@ export default function FlorePanel() {
     if (contexte === "case" && floreOuverte) fermerFlore();
   }, [contexte, floreOuverte, fermerFlore]);
 
+  // Actions de la conversation unique : mêmes routes que dans un Travail, sous /cases/{cid}. Les index sont ceux du
+  // serveur (les marqueurs locaux n'en ont pas).
+  const prefixe = !pilote && travailId ? prefixeTravail(travailId) : null;
+  const majMessage = (n, msg) => setMessages((ms) => { let k = -1; return ms.map((m) => (m.marqueur || ++k !== n ? m : msg)); });
+  const actions = { prefixe, onMessage: majMessage, onMessages: setMessages, onRelire: () => relire(), bloque: chargement };
+
   if (lot) return <LotBar lot={lot} />;
 
   if (pilote ? !pilote.ouvert : !floreOuverte || contexte === "case") return null;
@@ -768,7 +782,7 @@ export default function FlorePanel() {
                 Démo guidée
               </span>
             )}
-            {!pilote && echanges.length > 0 && (
+            {!pilote && !travailId && echangesReels.length > 0 && (
               <button
                 onClick={creerCase}
                 disabled={creationCase}
@@ -779,8 +793,30 @@ export default function FlorePanel() {
                 <FolderOpen size={12} /> {creationCase ? "Création…" : "Conserver comme travail"}
               </button>
             )}
+            {!pilote && travailId && (
+              <button
+                onClick={() => { fermerFlore(); navigate(`/travaux/${travailId}`); }}
+                data-testid="flore-ouvrir-travail-btn"
+                title="Ouvrir cette conversation dans ses travaux"
+                className="flex items-center gap-1.5 rounded-md border border-[#F2B84B]/40 bg-[#F2B84B]/[0.07] px-2.5 py-1.5 text-[11px] font-semibold text-[#F2B84B] transition-colors hover:bg-[#F2B84B]/15"
+              >
+                <FolderOpen size={12} /> Ouvrir le travail
+              </button>
+            )}
+            {!pilote && (travailId || messages.length > 0) && (
+              <button
+                onClick={nouvelleConversation}
+                disabled={chargement}
+                data-testid="flore-nouvelle-conversation-btn"
+                title="Nouvelle conversation"
+                aria-label="Nouvelle conversation"
+                className="rounded-md p-1.5 text-[#7C93A8] transition-colors hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#60A5FA] disabled:opacity-40"
+              >
+                <ChatCircleDots size={15} />
+              </button>
+            )}
             {!pilote && (
-              <button onClick={fermerFlore} data-testid="flore-fermer-btn" title="Fermer Flore (Échap)" className="rounded-md p-1.5 text-[#7C93A8] transition-colors hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]">
+              <button onClick={fermerFlore} data-testid="flore-fermer-btn" title="Fermer Flore (Échap)" aria-label="Fermer Flore" className="rounded-md p-1.5 text-[#7C93A8] transition-colors hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]">
                 <X size={15} />
               </button>
             )}
@@ -880,7 +916,7 @@ export default function FlorePanel() {
       </div>
 
       {/* Une exploration qui s'approfondit peut devenir un Travail — Flore propose sans imposer */}
-      {!pilote && echanges.length >= 2 && !caseId && !propTravailMasquee && (
+      {!pilote && !travailId && echangesReels.length >= 2 && !caseId && !propTravailMasquee && (
         <div className="mx-4 mb-2 rounded-lg border border-[#F2B84B]/30 bg-[rgba(242,184,75,0.10)] px-3 py-2.5" data-testid="flore-proposition-travail">
           <p className="text-[11px] leading-snug text-[#D8E2EA]">
             Cette exploration implique {selection.length > 0 ? `${selection.length} jumeau${selection.length > 1 ? "x" : ""}` : "plusieurs jumeaux"} et pourrait mériter une mémoire persistante.
@@ -921,7 +957,7 @@ export default function FlorePanel() {
       )}
 
       {/* Conversation */}
-      <div ref={conversationRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4" data-testid="flore-echanges">
+      <div ref={conversationRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4" data-testid="flore-echanges" role="log" aria-live="polite" aria-label="Conversation avec Flore">
         {fil.length === 0 && !chargement && !pilote?.activite && (
           <div className="mt-8 text-center">
             <Sparkle size={22} weight="fill" className="mx-auto text-[#60A5FA]/60" />
@@ -942,19 +978,16 @@ export default function FlorePanel() {
           ) : (
           <div key={e.id || i} className="space-y-2">
             {e.question && (
-              <div className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-sm border border-[#60A5FA]/30 bg-[#60A5FA]/10 px-4 py-2.5 shadow-sm" data-testid={`flore-question-${i}`}>
-                {pilote && (
-                  <div className="mb-0.5 font-code text-[9px] uppercase tracking-wider text-[#BFDBFE]">
-                    {pilote.scenario?.roleLabel || "Gestionnaire"}
-                  </div>
-                )}
-                <p className="text-sm leading-relaxed text-[#F2F6F8]">{e.question}</p>
-              </div>
+              <QuestionFlore
+                message={e.qMsg || { role: "utilisateur", texte: e.question }} index={e.nq} variante="panneau"
+                etiquette={pilote ? (pilote.scenario?.roleLabel || "Gestionnaire") : undefined}
+                {...actions} testid={`flore-question-${i}`}
+              />
             )}
             {e.trace && <LigneActiviteFlore activite={e.trace} testid={`flore-activite-trace-${i}`} />}
             {e.data && (
               <CarteReponse
-                data={e.data} index={i} derniere={i === idxDerniereReponse}
+                data={e.data} fMsg={e.fMsg} nr={e.nr} actions={actions} index={i} derniere={i === idxDerniereReponse}
                 propsEtat={propsEtat} setPropsEtat={setPropsEtat}
                 justifOuverte={justifOuverte} setJustifOuverte={setJustifOuverte}
                 ajouterJumeau={ajouterJumeau} navigate={navigate}
@@ -969,7 +1002,7 @@ export default function FlorePanel() {
             <div className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-sm border border-[#60A5FA]/30 bg-[#60A5FA]/10 px-4 py-2.5">
               <p className="text-sm leading-relaxed text-[#F2F6F8]">{flux.question}</p>
             </div>
-            <BrouillonFlore flux={flux} />
+            <BrouillonFlore flux={flux} onArreter={arreter} />
           </div>
         )}
         {chargement && !flux && (
@@ -1064,14 +1097,28 @@ export default function FlorePanel() {
             data-testid="flore-input"
             className="h-10 flex-1 rounded-lg border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-3 text-sm text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#60A5FA]/60 focus:outline-none"
           />
+          {chargement ? (
+            <button
+              type="button"
+              onClick={arreter}
+              data-testid="flore-stop-btn"
+              title="Arrêter la réponse"
+              aria-label="Arrêter la réponse"
+              className="flex h-10 shrink-0 items-center justify-center rounded-lg border border-white/20 px-3 text-xs font-semibold text-[#F2F6F8] transition-colors hover:border-[#F87171]/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#60A5FA]"
+            >
+              Arrêter
+            </button>
+          ) : (
           <button
             type="submit"
             disabled={chargement || !question.trim()}
             data-testid="flore-send-btn"
+            aria-label="Envoyer"
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#60A5FA] text-[#071019] transition-colors hover:bg-[#93C5FD] disabled:opacity-30"
           >
             <PaperPlaneRight size={16} weight="fill" />
           </button>
+          )}
         </form>
       </div>
       )}

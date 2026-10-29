@@ -4,7 +4,10 @@
 const fs = require("fs");
 const path = require("path");
 
-const ECRANS = ["components/case/OngletTravail.jsx", "components/FlorePanel.jsx", "components/ComposerFlore.jsx"];
+const ECRANS = [
+  "components/case/OngletTravail.jsx", "components/FlorePanel.jsx", "components/ComposerFlore.jsx",
+  "components/MessageFlore.jsx", "components/MarkdownFlore.jsx", "components/BrouillonFlore.jsx",
+];
 
 function boutons(source) {
   const trouves = [];
@@ -30,10 +33,24 @@ test.each(ECRANS)("aucun bouton factice dans %s", (fichier) => {
   expect(factices).toEqual([]);
 });
 
-test("les retours 👍/👎 partent au serveur, pas dans un simple message", () => {
-  const source = fs.readFileSync(path.join(__dirname, "..", "components/case/OngletTravail.jsx"), "utf8");
-  expect(source).toContain("/messages/${index}/retour");
-  expect(source).not.toMatch(/Merci pour votre retour|Feedback pris en compte|Lien prêt/);
+test("les retours 👍/👎 partent au serveur (MessageFlore, partagé), pas dans un simple message", () => {
+  const lire = (f) => fs.readFileSync(path.join(__dirname, "..", f), "utf8");
+  const partage = lire("components/MessageFlore.jsx");
+  expect(partage).toContain('urlMessage(prefixe, index, "retour")');
+  for (const action of ["regenerer/flux", "version", "modifier/flux", "branche"]) expect(partage).toContain(`"${action}"`);
+  // Le Travail et le panneau utilisent ce composant, pas leur propre copie
+  for (const f of ["components/case/OngletTravail.jsx", "components/FlorePanel.jsx"]) {
+    expect(lire(f)).toContain("MessageFlore");
+    expect(lire(f)).not.toMatch(/Merci pour votre retour|Feedback pris en compte|Lien prêt/);
+  }
+});
+
+test("un seul rendu Markdown : plus d'analyseur maison ni de HTML brut", () => {
+  const lire = (f) => fs.readFileSync(path.join(__dirname, "..", f), "utf8");
+  for (const f of ["components/case/OngletTravail.jsx", "components/FlorePanel.jsx", "components/MarkdownFlore.jsx"]) {
+    expect(lire(f)).not.toMatch(/formaterGrasCode|dangerouslySetInnerHTML.*formater/);
+  }
+  expect(lire("components/MarkdownFlore.jsx")).not.toMatch(/from "rehype-raw"/);
 });
 
 test.each(ECRANS)("aucun bouton qui annonce seulement « bientôt » dans %s", (fichier) => {
