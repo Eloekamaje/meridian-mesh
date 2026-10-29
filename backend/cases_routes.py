@@ -26,6 +26,7 @@ class CaseCreate(BaseModel):
     espace: Optional[str] = None
     sensibilite: str = "interne"
     conversation: list = []
+    statut: Optional[str] = None  # seulement "conversation" : un Travail privé à son auteur, conservé à la demande
 
 
 class CasePatch(BaseModel):
@@ -195,6 +196,8 @@ def build_cases_router(deps):
         case = await db.cases.find_one({"id": cid}, NO_ID)
         if not case:
             raise HTTPException(404, "Case introuvable")
+        if case.get("statut") == "conversation" and case.get("auteur") != persona_id:
+            raise HTTPException(404, "Case introuvable")  # privée à son auteur : on ne révèle pas qu'elle existe
         if cid == "demo-polaris-work-g":
             return case
         tous = await db.jumeaux.find({}, {"_id": 0, "id": 1}).to_list(200)
@@ -243,7 +246,7 @@ def build_cases_router(deps):
         return conv
 
     @router.get("/cases")
-    async def lister_cases(q: Optional[str] = None, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+    async def lister_cases(q: Optional[str] = None, inclure_conversations: bool = False, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
         _, espace = resoudre_perimetre(x_persona, x_espace)
         tous = await db.jumeaux.find({}, {"_id": 0, "id": 1}).to_list(200)
         aut = autorisations(espace, [j["id"] for j in tous])
@@ -251,6 +254,8 @@ def build_cases_router(deps):
         visibles = [c for c in cases if c.get("id") == "demo-polaris-work-g" or (
             (not c.get("jumeaux") or any(j in aut for j in c["jumeaux"])) and portees.acces(c, x_persona, espace["id"]))]
         visibles = [await materialiser_veille(c) for c in visibles]
+        if not inclure_conversations:  # les Travaux conservés ; les conversations (de l'auteur seul) sur demande
+            visibles = [c for c in visibles if c.get("statut") != "conversation"]
         if q and q.strip():  # titre et texte des messages visibles ; sous-chaîne, jamais une expression du client
             visibles = [c for c in visibles if fil.correspond(c.get("titre"), visible_pour(c, aut), q)]
         visibles.sort(key=lambda c: c.get("maj_le", ""), reverse=True)
@@ -296,6 +301,8 @@ def build_cases_router(deps):
         now = datetime.now(timezone.utc).isoformat()
         if payload.portee not in portees.PORTEES:
             raise HTTPException(400, "Portée inconnue")
+        if payload.statut not in (None, "conversation"):
+            raise HTTPException(400, "Statut de création inconnu")
         responsable = payload.responsable or x_persona
         dernier = await db.cases.find({}, {"_id": 0, "num": 1}).sort("num", -1).to_list(1)
         num = (dernier[0]["num"] if dernier and dernier[0].get("num") else 40) + 1
@@ -304,7 +311,8 @@ def build_cases_router(deps):
             "num": num,
             "titre": payload.titre.strip(),
             "type": payload.type,
-            "statut": "ouvert",
+            "statut": payload.statut or "ouvert",
+            **({"auteur": x_persona} if payload.statut == "conversation" else {}),
             "sensibilite": payload.sensibilite,
             "objectif": payload.objectif,
             "resume": "",
@@ -449,6 +457,8 @@ def build_cases_router(deps):
         _, espace = resoudre_perimetre(x_persona, x_espace)
         case = await charger_case(cid, espace, x_persona)
         champs = {k: v for k, v in payload.model_dump().items() if v is not None}
+        if champs.get("statut") == "conversation":
+            raise HTTPException(400, "Un travail ne redevient pas une conversation")
         if not champs:
             return case
         now = datetime.now(timezone.utc).isoformat()

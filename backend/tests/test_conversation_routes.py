@@ -28,8 +28,12 @@ class Collection:
         lot = [copy.deepcopy(d) for d in self.docs if self._ok(d, f)]
 
         class Curseur:
+            def sort(self, cle, sens=1):
+                lot.sort(key=lambda d: d.get(cle) or 0, reverse=sens < 0)
+                return self
+
             async def to_list(self, n):
-                return lot
+                return lot[:n]
         return Curseur()
 
     async def update_one(self, f, maj):
@@ -207,8 +211,9 @@ def test_travail_inconnu(monde):
 
 
 # ---- recherche ----
-def noms(client, q=None, **kw):
-    return [x["id"] for x in client.get("/api/cases", params={"q": q} if q is not None else None, **kw).json()]
+def noms(client, q=None, inclure=False, **kw):
+    params = {**({"q": q} if q is not None else {}), **({"inclure_conversations": 1} if inclure else {})}
+    return [x["id"] for x in client.get("/api/cases", params=params or None, **kw).json()]
 
 
 def test_recherche_dans_le_titre_et_le_texte_sans_casse(monde):
@@ -296,3 +301,70 @@ def test_arret_modification_garde_la_branche_la_question_et_la_reponse_partielle
     assert msgs[0]["texte"] == "Autre question ?" and len(msgs[0]["branches"]) == 2
     assert len(msgs[0]["branches"][0]["suite"]) == 3
     assert msgs[1]["interrompu"] is True and msgs[1]["texte"] == "Nouvelle réponse."[:8]
+
+
+# ---- une conversation est un Travail privé à l'état « conversation » ----
+@pytest.fixture
+def avec_conversation(monde):
+    client, db, faux = monde
+    r = client.post("/api/cases", json={"titre": "Ma question", "portee": "entreprise"}.copy() | {"statut": "conversation"})
+    assert r.status_code == 201, r.text
+    return client, db, faux, r.json()["id"]
+
+
+def test_creer_une_conversation_enregistre_statut_et_auteur(avec_conversation):
+    _, db, _, cid = avec_conversation
+    doc = next(d for d in db.cases.docs if d["id"] == cid)
+    assert doc["statut"] == "conversation" and doc["auteur"] == "architecte"
+
+
+def test_creer_refuse_un_autre_statut(monde):
+    assert monde[0].post("/api/cases", json={"titre": "x", "statut": "clos"}).status_code == 400
+
+
+def test_un_travail_ordinaire_n_a_pas_de_statut_conversation(monde):
+    client, db, _ = monde
+    cid = client.post("/api/cases", json={"titre": "Ordinaire"}).json()["id"]
+    assert next(d for d in db.cases.docs if d["id"] == cid)["statut"] == "ouvert"
+
+
+def test_un_autre_persona_ne_voit_ni_ne_touche_une_conversation(avec_conversation):
+    client, db, _, cid = avec_conversation
+    h = {"X-Persona": "paiements-dev"}  # même portée « entreprise » : seule la règle de conversation l'arrête
+    assert client.get(f"/api/cases/{cid}", headers=h).status_code == 404
+    assert client.patch(f"/api/cases/{cid}", json={"statut": "actif"}, headers=h).status_code == 404
+    ev = evenements(client.post(f"/api/cases/{cid}/messages/flux", json={"texte": "x"}, headers=h))
+    assert ev == [{"type": "erreur", "message": "Case introuvable"}] and conv(db, cid) == []
+    for chemin, corps in [("messages/1/version", {"index": 0}), ("messages/0/branche", {"index": 0}),
+                          ("messages/1/regenerer/flux", {}), ("messages/0/modifier/flux", {"texte": "x"})]:
+        assert client.post(f"/api/cases/{cid}/{chemin}", json=corps, headers=h).status_code == 404, chemin
+    assert cid not in noms(client, headers=h, inclure=True)
+    assert next(d for d in db.cases.docs if d["id"] == cid)["statut"] == "conversation"
+
+
+def test_la_liste_par_defaut_exclut_les_conversations_et_le_parametre_les_inclut(avec_conversation):
+    client, _, _, cid = avec_conversation
+    assert cid not in noms(client)
+    assert cid in noms(client, inclure=True)
+    assert cid in noms(client, "ma question", inclure=True) and cid not in noms(client, "ma question")
+
+
+def test_la_promotion_rend_le_travail_visible_selon_sa_portee(avec_conversation):
+    client, _, _, cid = avec_conversation
+    h = {"X-Persona": "paiements-dev"}
+    assert client.patch(f"/api/cases/{cid}", json={"statut": "actif"}, headers=h).status_code == 404
+    assert client.patch(f"/api/cases/{cid}", json={"statut": "actif"}).status_code == 200
+    assert cid in noms(client)                       # désormais un Travail ordinaire, pour son auteur
+    assert cid in noms(client, headers=h)            # portée « entreprise » : visible des autres
+    assert client.get(f"/api/cases/{cid}", headers=h).status_code == 200
+
+
+def test_la_promotion_d_une_portee_personnelle_reste_privee(monde):
+    client, _, _ = monde
+    cid = client.post("/api/cases", json={"titre": "Perso", "statut": "conversation"}).json()["id"]
+    client.patch(f"/api/cases/{cid}", json={"statut": "actif"})
+    assert cid not in noms(client, headers={"X-Persona": "paiements-dev"})
+
+
+def test_on_ne_transforme_pas_un_travail_en_conversation(monde):
+    assert monde[0].patch("/api/cases/t1", json={"statut": "conversation"}).status_code == 400

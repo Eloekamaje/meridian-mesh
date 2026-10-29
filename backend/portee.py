@@ -30,6 +30,8 @@ def libelle_equipe(equipe_id):
 
 def acces(case: dict, persona_id: str, espace_id: str = "") -> bool:
     """La personne peut-elle voir ce travail (indépendamment du périmètre sur les jumeaux) ?"""
+    if case.get("statut") == "conversation":  # privée à son auteur, quelle que soit la portée
+        return persona_id == case.get("auteur")
     p = portee_de(case)
     if p == "entreprise":
         return True
