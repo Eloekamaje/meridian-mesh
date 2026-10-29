@@ -1,4 +1,4 @@
-import { prefixeTravail, urlMessage, navigation, navVersions, navBranches, regrouper, erreurAction, resultatsRecherche, remplacerMessage } from "./conversationFlore";
+import { prefixeTravail, urlMessage, navigation, navVersions, navBranches, regrouper, erreurAction, resultatsRecherche, remplacerMessage, floreAProduit, estConversation } from "./conversationFlore";
 
 test("les URL se construisent par préfixe /cases/{cid}", () => {
   expect(prefixeTravail("abc")).toBe("/cases/abc");
@@ -44,4 +44,13 @@ test("recherche : liste du serveur si elle filtre, sinon repli sur le titre", ()
   expect(resultatsRecherche("lot", tous, [tous[1]])).toEqual([tous[1]]);
   expect(resultatsRecherche("pai", tous, tous)).toEqual([tous[0]]); // ancien serveur : tout est rendu
   expect(resultatsRecherche("", tous, null)).toBe(tous);
+});
+
+test("la proposition de conserver vient d'un plan, d'une option, d'une décision ou d'un livrable", () => {
+  expect(floreAProduit(null, [{ role: "flore", texte: "bonjour" }])).toBe(false);
+  expect(floreAProduit({ plan: [] , options: [] }, [])).toBe(false);
+  expect(floreAProduit({ options: [{ id: 1 }] }, [])).toBe(true);
+  expect(floreAProduit(null, [{ role: "flore", documentCanvas: "a.md" }])).toBe(true);
+  expect(floreAProduit(null, [{ role: "utilisateur", decisions: ["x"] }])).toBe(false);
+  expect(estConversation({ statut: "conversation" })).toBe(true);
 });

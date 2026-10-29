@@ -8,7 +8,7 @@ import TrustBadges from "./TrustBadges";
 import MarkdownFlore from "./MarkdownFlore";
 import { MessageFlore, QuestionFlore } from "./MessageFlore";
 import { demanderEnFlux, estArret } from "@/lib/fluxFlore";
-import { prefixeTravail, regrouper, reponseInterrompue } from "@/lib/conversationFlore";
+import { prefixeTravail, regrouper, reponseInterrompue, floreAProduit, estConversation, STATUT_CONVERSATION, STATUT_CONSERVE } from "@/lib/conversationFlore";
 import { usePerimetre } from "@/lib/perimetre";
 import BrouillonFlore from "./BrouillonFlore";
 import MarqueRelecture from "./MarqueRelecture";
@@ -457,6 +457,7 @@ export default function FlorePanel() {
   const echanges = useMemo(() => regrouper(messages), [messages]);
   const echangesReels = echanges.filter((e) => e.question);
   const ctrlRef = useRef(null);
+  const [travail, setTravail] = useState(null); // le Travail du panneau (statut, plan, options…) tel que relu du serveur
   const [chargement, setChargement] = useState(false);
   const [flux, setFlux] = useState(null); // réponse en cours : vraies étapes, brouillon (en relecture)
   const [suggestions, setSuggestions] = useState([]);
@@ -551,6 +552,7 @@ export default function FlorePanel() {
     try {
       const { data } = await api.get(`/cases/${cid}`);
       const conv = data.conversation || [];
+      setTravail(data);
       setMessages(sansAnimation ? conv.map((m, i) => (i === conv.length - 1 && m.role === "flore" ? { ...m, auFilDeLEau: true } : m)) : conv);
       return true;
     } catch {
@@ -562,7 +564,7 @@ export default function FlorePanel() {
   useEffect(() => {
     if (!floreOuverte || !travailId || pilote) return;
     api.get(`/cases/${travailId}`)
-      .then(({ data }) => setMessages(data.conversation || []))
+      .then(({ data }) => { setTravail(data); setMessages(data.conversation || []); })
       .catch((err) => { if (err.response?.status === 404) nouvelleConversation(); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [floreOuverte]);
@@ -570,6 +572,7 @@ export default function FlorePanel() {
   const nouvelleConversation = () => {
     localStorage.removeItem(CLE_TRAVAIL);
     setTravailId(null);
+    setTravail(null);
     setMessages([]);
     setPropTravailMasquee(false);
   };
@@ -584,9 +587,10 @@ export default function FlorePanel() {
     try {
       const { data: c } = await api.post("/cases", {
         titre: premiereQuestion.length > 90 ? `${premiereQuestion.slice(0, 87)}…` : premiereQuestion,
-        type: "demande", objectif: premiereQuestion, jumeaux: selection, espace: info?.espace?.id,
+        type: "demande", objectif: premiereQuestion, jumeaux: selection, espace: info?.espace?.id, statut: STATUT_CONVERSATION,
       });
       setTravailId(c.id);
+      setTravail({ ...c, statut: c.statut || STATUT_CONVERSATION });
       localStorage.setItem(CLE_TRAVAIL, c.id);
       window.dispatchEvent(new Event("meridian:travaux-maj")); // les Récents de la barre latérale
       return c.id;
@@ -688,9 +692,26 @@ export default function FlorePanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [questionFlore, floreOuverte]);
 
+  // Conserver : la conversation EST déjà un Travail (à l'état « conversation ») — on le passe à « actif », sans copie.
+  // Seule une conversation restée locale (serveur sans Travaux) en crée un.
   const creerCase = async () => {
     if (!echangesReels.length || creationCase) return;
     setCreationCase(true);
+    if (travailId) {
+      try {
+        await api.patch(`/cases/${travailId}`, { statut: STATUT_CONSERVE });
+        setTravail((t) => ({ ...t, statut: STATUT_CONSERVE }));
+        window.dispatchEvent(new Event("meridian:travaux-maj"));
+        toast.success("Conversation conservée comme travail");
+        fermerFlore();
+        navigate(`/travaux/${travailId}`);
+      } catch {
+        toast.error("Conservation du travail impossible");
+      } finally {
+        setCreationCase(false);
+      }
+      return;
+    }
     const premiere = echangesReels[0].question;
     const now = new Date().toISOString();
     try {
@@ -728,6 +749,12 @@ export default function FlorePanel() {
         ]),
       ];
       await api.patch(`/cases/${cid}`, { conversation: fusion });
+      // Rattachée au Travail choisi : la conversation du panneau est retirée (contrat §2)
+      if (travailId && travailId !== cid && estConversation(travail)) {
+        await api.delete(`/cases/${travailId}`).catch(() => {});
+        nouvelleConversation();
+        window.dispatchEvent(new Event("meridian:travaux-maj"));
+      }
       toast.success(`Exploration ajoutée à « ${c.titre} »`);
       fermerFlore();
       navigate(`/travaux/${cid}`);
@@ -740,7 +767,7 @@ export default function FlorePanel() {
 
   const proposerAjout = () => {
     setChoixTravail("chargement");
-    api.get("/cases").then((r) => setChoixTravail(r.data.filter((c) => c.statut !== "clos"))).catch(() => setChoixTravail([]));
+    api.get("/cases").then((r) => setChoixTravail(r.data.filter((c) => c.statut !== "clos" && !estConversation(c)))).catch(() => setChoixTravail([]));
   };
 
   // Sur une page Travail, la conversation avec Flore EST le dossier (onglet Conversation) :
@@ -782,7 +809,7 @@ export default function FlorePanel() {
                 Démo guidée
               </span>
             )}
-            {!pilote && !travailId && echangesReels.length > 0 && (
+            {!pilote && (!travailId || estConversation(travail)) && echangesReels.length > 0 && (
               <button
                 onClick={creerCase}
                 disabled={creationCase}
@@ -793,7 +820,7 @@ export default function FlorePanel() {
                 <FolderOpen size={12} /> {creationCase ? "Création…" : "Conserver comme travail"}
               </button>
             )}
-            {!pilote && travailId && (
+            {!pilote && travailId && !estConversation(travail) && travail && (
               <button
                 onClick={() => { fermerFlore(); navigate(`/travaux/${travailId}`); }}
                 data-testid="flore-ouvrir-travail-btn"
@@ -916,10 +943,10 @@ export default function FlorePanel() {
       </div>
 
       {/* Une exploration qui s'approfondit peut devenir un Travail — Flore propose sans imposer */}
-      {!pilote && !travailId && echangesReels.length >= 2 && !caseId && !propTravailMasquee && (
+      {!pilote && (!travailId || estConversation(travail)) && floreAProduit(travail, messages) && !caseId && !propTravailMasquee && (
         <div className="mx-4 mb-2 rounded-lg border border-[#F2B84B]/30 bg-[rgba(242,184,75,0.10)] px-3 py-2.5" data-testid="flore-proposition-travail">
           <p className="text-[11px] leading-snug text-[#D8E2EA]">
-            Cette exploration implique {selection.length > 0 ? `${selection.length} jumeau${selection.length > 1 ? "x" : ""}` : "plusieurs jumeaux"} et pourrait mériter une mémoire persistante.
+            Flore vient de produire un plan, une option, une décision ou un livrable : cette conversation pourrait devenir un travail partagé. Rien n'est conservé sans votre clic.
           </p>
           <div className="mt-2 flex flex-wrap gap-1.5">
             <button onClick={() => { setPropTravailMasquee(true); creerCase(); }} disabled={creationCase} data-testid="flore-prop-conserver-btn" className="rounded-md bg-[#F2B84B] px-2.5 py-1.5 text-[10px] font-semibold text-[#071019] transition-colors hover:bg-[#F8CF7A] disabled:opacity-50">

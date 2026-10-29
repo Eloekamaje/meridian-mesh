@@ -18,7 +18,7 @@ import {
   PlayCircle
 } from "@phosphor-icons/react";
 import api from "@/lib/api";
-import { resultatsRecherche } from "@/lib/conversationFlore";
+import { resultatsRecherche, estConversation, PARAM_CONVERSATIONS } from "@/lib/conversationFlore";
 import { usePerimetre } from "@/lib/perimetre";
 import { useContexte } from "@/lib/contexte";
 import { usePilotage } from "@/lib/pilotage";
@@ -67,7 +67,7 @@ export default function SidebarGauche({ mode = "bureau", onOuvrir, onFermer }) {
     const q = recherche.trim();
     if (!q) { setTrouves(null); return undefined; }
     const t = setTimeout(() => {
-      api.get("/cases", { params: { q } }).then((r) => setTrouves(r.data)).catch(() => setTrouves(null));
+      api.get("/cases", { params: { q, ...PARAM_CONVERSATIONS } }).then((r) => setTrouves(r.data)).catch(() => setTrouves(null));
     }, 250);
     return () => clearTimeout(t);
   }, [recherche]);
@@ -93,7 +93,7 @@ export default function SidebarGauche({ mode = "bureau", onOuvrir, onFermer }) {
   }, []);
 
   useEffect(() => {
-    api.get("/cases")
+    api.get("/cases", { params: PARAM_CONVERSATIONS })
       .then((r) => {
         const sorted = [...r.data].sort((a, b) => (b.maj_le || "").localeCompare(a.maj_le || ""));
         // Ce qui bouge passe en premier (décision remise en question, puis fait nouveau), puis le plus récent
@@ -301,6 +301,7 @@ export default function SidebarGauche({ mode = "bureau", onOuvrir, onFermer }) {
               title={c.titre}
             >
               <span className="truncate">{c.titre}</span>
+              {estConversation(c) && <span className="ml-auto shrink-0 font-code text-[9px] text-[#64748B]" data-testid={`recent-conversation-${c.id}`}>conversation</span>}
               {c.mouvement && <span className={`ml-auto h-2 w-2 shrink-0 rounded-full ${c.mouvement.niveau === 1 ? "bg-[#F87171]" : "bg-[#60A5FA]"}`} title={c.mouvement.texte} data-testid={`recent-mouvement-${c.id}`} />}
               {c.demo_phase === "en_construction" && (
                 <span className="shrink-0 rounded-full bg-[#60A5FA]/20 px-1.5 py-px font-code text-[8px] uppercase tracking-wider text-[#BFDBFE]">en cours</span>

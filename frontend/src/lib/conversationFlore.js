@@ -60,3 +60,20 @@ export function resultatsRecherche(q, tous, reponse) {
   if (Array.isArray(reponse) && reponse.length < tous.length) return reponse;
   return tous.filter((c) => (c.titre || "").toLowerCase().includes(mot) || (c.objectif || "").toLowerCase().includes(mot));
 }
+
+// Le Travail créé par le panneau naît « conversation » (privé à l'auteur) ; « Conserver » le passe à « actif ».
+export const STATUT_CONVERSATION = "conversation";
+export const STATUT_CONSERVE = "actif";
+export const estConversation = (c) => c?.statut === STATUT_CONVERSATION;
+// Paramètre de liste : le serveur ne rend les conversations de l'auteur que si on les demande (nom à aligner à l'intégration)
+export const PARAM_CONVERSATIONS = { inclure_conversations: 1 };
+
+// Flore a-t-elle produit un plan, une option, une décision ou un livrable ? (c'est alors, et alors seulement, qu'on
+// propose de conserver — jamais après N échanges, jamais sans clic.)
+const rempli = (v) => (Array.isArray(v) ? v.length > 0 : !!v);
+export function floreAProduit(travail, messages) {
+  const champs = ["plan", "options", "livrables", "decisions"];
+  if (travail && champs.some((k) => rempli(travail[k]))) return true;
+  return (messages || []).some((m) => m.role === "flore"
+    && (rempli(m.decisions) || rempli(m.options) || rempli(m.plan) || rempli(m.livrables) || !!m.documentCanvas || !!m.propose_passation));
+}

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { resultatsRecherche } from "@/lib/conversationFlore";
+import { resultatsRecherche, estConversation, PARAM_CONVERSATIONS } from "@/lib/conversationFlore";
 import { useNavigate } from "react-router-dom";
 import { Plus, MagnifyingGlass, Rows, Kanban as KanbanIcon, ClockCounterClockwise, X, DotsThree, ArrowRight, Compass, CaretDown, Flag } from "@phosphor-icons/react";
 import { toast } from "sonner";
@@ -115,6 +115,7 @@ export default function Travaux() {
   const [vuesMenu, setVuesMenu] = useState(false);
   const [filtreType, setFiltreType] = useState("tous");
   const [filtreStatut, setFiltreStatut] = useState("tous");
+  const [conversations, setConversations] = useState(false); // filtre : mes conversations (non conservées) au lieu des Travaux
   const [recherche, setRecherche] = useState("");
   const [mesSeulement, setMesSeulement] = useState(false);
   const { mesh } = useMesh();
@@ -123,8 +124,8 @@ export default function Travaux() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    api.get("/cases").then((r) => setCases(r.data)).catch(() => {});
-  }, [version]);
+    api.get("/cases", { params: conversations ? PARAM_CONVERSATIONS : {} }).then((r) => setCases(r.data)).catch(() => {});
+  }, [version, conversations]);
 
   // Recherche : le serveur cherche aussi dans le texte des messages (GET /cases?q=) ; sans lui, le titre seul.
   const [trouves, setTrouves] = useState(null);
@@ -132,20 +133,21 @@ export default function Travaux() {
     const q = recherche.trim();
     if (!q) { setTrouves(null); return undefined; }
     const t = setTimeout(() => {
-      api.get("/cases", { params: { q } }).then((r) => setTrouves(r.data)).catch(() => setTrouves(null));
+      api.get("/cases", { params: { q, ...(conversations ? PARAM_CONVERSATIONS : {}) } }).then((r) => setTrouves(r.data)).catch(() => setTrouves(null));
     }, 250);
     return () => clearTimeout(t);
-  }, [recherche, version]);
+  }, [recherche, version, conversations]);
 
   const filtres = useMemo(() => {
     const parRecherche = resultatsRecherche(recherche, cases, trouves);
     return parRecherche.filter(
       (c) =>
+        (conversations ? estConversation(c) : !estConversation(c)) &&
         (!mesSeulement || c.responsable === persona) &&
         (filtreType === "tous" || c.type === filtreType) &&
         (filtreStatut === "tous" || c.statut === filtreStatut)
     );
-  }, [cases, trouves, filtreType, filtreStatut, recherche, mesSeulement, persona]);
+  }, [cases, trouves, filtreType, filtreStatut, recherche, mesSeulement, persona, conversations]);
 
   // Regroupement par signification : attention / progrès / le reste
   const sections = useMemo(() => {
@@ -215,6 +217,10 @@ export default function Travaux() {
               <button onClick={() => setMesSeulement(!mesSeulement)} data-testid="filtre-mes-travaux"
                 className={`h-8 rounded-full border px-3 text-xs transition-colors ${mesSeulement ? "border-[#60A5FA] bg-[#60A5FA] text-[#071019]" : "border-[rgba(148,163,184,0.16)] bg-[#0F1D28] text-[#94A3B8] hover:text-[#F2F6F8]"}`}>
                 Mes travaux
+              </button>
+              <button onClick={() => setConversations(!conversations)} aria-pressed={conversations} data-testid="filtre-conversations"
+                className={`h-8 rounded-full border px-3 text-xs transition-colors ${conversations ? "border-[#60A5FA] bg-[#60A5FA] text-[#071019]" : "border-[rgba(148,163,184,0.16)] bg-[#0F1D28] text-[#94A3B8] hover:text-[#F2F6F8]"}`}>
+                Conversations
               </button>
               <select value={filtreType} onChange={(e) => setFiltreType(e.target.value)} data-testid="filtre-type-travail" className="h-8 rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2 text-xs text-[#D8E2EA] focus:outline-none">
                 <option value="tous" label="Tous les types" />
