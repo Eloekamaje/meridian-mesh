@@ -29,25 +29,24 @@ Une conversation est une liste de messages, dans l'ordre :
   celui qui est affiché, et la branche courante y figure aussi.
 - `interrompu` : la réponse a été arrêtée par l'interlocuteur. Son texte est ce qui avait été écrit.
 
-## 2. Les conversations du panneau (nouveau, persisté côté serveur)
+## 2. Une conversation est un Travail (amendé le 2026-10-28)
 
-Chaque conversation appartient à son auteur (`X-Persona`) et à son espace (`X-Espace`). Personne d'autre ne la voit.
+**Il n'y a pas de seconde liste de conversations.** Les Travaux sont les sessions de travail, c'est-à-dire les
+conversations, et la barre latérale (`SidebarGauche`, « Récents », « Nouveau travail ») est leur historique (règle
+« suivre l'existant »).
 
-| Route | Effet |
-|---|---|
-| `GET /api/conversations?q=` | `[{id, titre, maj_le, nb_messages}]`, plus récentes d'abord ; `q` cherche dans le titre et le texte |
-| `POST /api/conversations` | `{titre?}` → `{id, titre, messages: []}` |
-| `GET /api/conversations/{id}` | `{id, titre, messages}` |
-| `PATCH /api/conversations/{id}` | `{titre}` |
-| `DELETE /api/conversations/{id}` | supprime |
-| `POST /api/conversations/{id}/messages/flux` | `{question, contexte, selection, domaine}` → flux SSE (§4) ; à la fin, les deux messages sont enregistrés |
-| `POST /api/conversations/{id}/messages/{n}/retour` | comme pour un Travail |
-
-Le titre est fixé par défaut d'après la première question (60 caractères au plus).
+- **Le panneau Flore converse dans un Travail.** À la première question d'une conversation, il crée un Travail, comme
+  « Nouveau travail » (`POST /api/cases`, titre tiré de la question, `jumeaux` = la sélection). Les questions suivantes
+  vont dans ce même Travail (`POST /api/cases/{cid}/messages/flux`). La conversation apparaît donc dans les Récents, et
+  rouvrir le panneau la reprend. « Nouvelle conversation » dans le panneau en démarre une autre.
+- **La recherche s'ajoute à l'existant** : `GET /api/cases?q=` cherche dans le titre et le texte des messages
+  (insensible à la casse, jamais une expression régulière fournie par le client). L'interface l'offre dans la barre
+  latérale (Récents) et sur la page Travaux. Elle n'est pas dans le panneau.
+- Renommer et supprimer passent par les routes existantes des Travaux.
 
 ## 3. Versions, branches, arrêt (panneau ET Travail)
 
-Les mêmes routes existent sous les deux préfixes : `/api/conversations/{id}` et `/api/cases/{cid}`.
+Toutes ces routes sont sous `/api/cases/{cid}` (le panneau converse dans un Travail, §2).
 
 | Route | Effet |
 |---|---|
