@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { X, FileText, Copy, ArrowsOut, ArrowsIn, Check, DownloadSimple } from "@phosphor-icons/react";
 import { toast } from "sonner";
-import { RenduMarkdown } from "@/lib/renduMarkdown";
+import MarkdownFlore from "@/components/MarkdownFlore";
 
 // Document de repli hors démonstration : aucun document réel n'existe encore tant que la création
 // de travail par conversation n'est pas active (voir messagesFlore.js::CREATION_TRAVAIL_ACTIVE).
@@ -96,14 +96,14 @@ export default function CanvasDocument({
         </div>
       </div>
 
-      {/* Contenu Markdown — rendu générique, propre à CE document (voir lib/renduMarkdown.jsx) */}
+      {/* Contenu Markdown — rendu générique, propre à CE document (MarkdownFlore) */}
       <div className="relative flex-1 overflow-y-auto px-8 py-7">
         <div className="mx-auto max-w-2xl">
           <div className="mb-5 flex items-center gap-2 border-b border-white/[0.1] pb-4">
             <FileText size={16} className="text-[#60A5FA]" />
             <span className="font-code text-[10px] uppercase tracking-wider text-[#7C93A8]">Document généré par Flore</span>
           </div>
-          <RenduMarkdown texte={contenu} />
+          <MarkdownFlore texte={contenu} />
         </div>
       </div>
     </div>

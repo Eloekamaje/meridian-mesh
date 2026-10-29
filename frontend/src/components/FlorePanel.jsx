@@ -1,13 +1,15 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Sparkle, PaperPlaneRight, FileText, X, Plus, Eye, Lightning, FolderOpen, ArrowRight, Compass } from "@phosphor-icons/react";
+import { Sparkle, PaperPlaneRight, FileText, X, Plus, Eye, Lightning, FolderOpen, ArrowRight, Compass, ChatCircleDots } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import TrustBadges from "./TrustBadges";
-import SchemaMermaid from "./SchemaMermaid";
-import { decouperMermaid } from "@/lib/segmentsMermaid";
-import { demanderEnFlux } from "@/lib/fluxFlore";
+import MarkdownFlore from "./MarkdownFlore";
+import { MessageFlore, QuestionFlore } from "./MessageFlore";
+import { demanderEnFlux, estArret } from "@/lib/fluxFlore";
+import { prefixeTravail, regrouper, reponseInterrompue } from "@/lib/conversationFlore";
+import { usePerimetre } from "@/lib/perimetre";
 import BrouillonFlore from "./BrouillonFlore";
 import MarqueRelecture from "./MarqueRelecture";
 import MarqueOrigine from "./MarqueOrigine";
@@ -17,6 +19,8 @@ import { useContexte } from "@/lib/contexte";
 import { useMesh } from "@/lib/mesh";
 import { usePilotage } from "@/lib/pilotage";
 import LigneActiviteFlore from "./LigneActiviteFlore";
+
+const CLE_TRAVAIL = "meridian.flore.travail";
 
 function contexteDepuis(pathname) {
   // « case » = page DÉTAIL d'un travail uniquement (Flore y est l'onglet Conversation du dossier) ;
@@ -117,15 +121,13 @@ function TexteTeletype({ texte, actif, gele = false, testid }) {
   const fini = n >= (texte || "").length;
   return (
     <div className="mt-2 text-sm leading-relaxed text-[#D8E2EA]" data-testid={testid}>
-      {decouperMermaid((texte || "").slice(0, n)).map((seg, i) => (seg.type === "mermaid"
-        ? <SchemaMermaid key={i} code={seg.code} complet={seg.complet} />
-        : <span key={i}>{seg.texte}</span>))}
+      <MarkdownFlore texte={(texte || "").slice(0, n)} />
       {!fini && <span className="curseur-teletype">▍</span>}
     </div>
   );
 }
 
-function CarteReponse({ data, index, propsEtat, setPropsEtat, justifOuverte, setJustifOuverte, ajouterJumeau, navigate, derniere }) {
+function CarteReponse({ data, fMsg, nr, actions, index, propsEtat, setPropsEtat, justifOuverte, setJustifOuverte, ajouterJumeau, navigate, derniere }) {
   const { commanderCarte, setPreuveSurvolee } = useContexte();
   const pilote = usePilotage();
   if (pilote) {
@@ -280,6 +282,53 @@ function CarteReponse({ data, index, propsEtat, setPropsEtat, justifOuverte, set
     );
   }
 
+  const blocPreuves = data.preuves?.length > 0 ? (
+
+        <div className="mt-3" data-testid={`flore-preuves-${index}`}>
+          <div className="font-code text-[9px] uppercase tracking-[0.2em] text-[#7C93A8]">Preuves</div>
+          <ul className="mt-2 space-y-1">
+            {data.preuves.map((p, pi) => (
+              <li key={pi}>
+                {p.preuveId && pilote ? (
+                  // Preuve de démonstration : ouvre le panneau de lecture (suspend la lecture)
+                  <button
+                    onClick={() => pilote.ouvrirPreuve(p.preuveId)}
+                    data-testid={`flore-preuve-demo-${p.preuveId}`}
+                    className="flex w-full items-baseline gap-2 rounded-lg border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2.5 py-2 text-left text-sm text-[#94A3B8] transition-colors hover:border-[#60A5FA]/50 hover:bg-[#60A5FA]/5"
+                  >
+                    <FileText size={13} className="shrink-0 translate-y-0.5 text-[#7C93A8]" />
+                    <span>
+                      <span className="font-code text-[11px] text-[#F2F6F8]">{p.source}</span> — {p.detail}
+                    </span>
+                  </button>
+                ) : p.relation_id ? (
+                  // Preuve relationnelle : survol = le trajet pulse sur la carte ; clic = centrer + sélectionner
+                  <button
+                    onMouseEnter={() => setPreuveSurvolee(p.relation_id)}
+                    onMouseLeave={() => setPreuveSurvolee(null)}
+                    onClick={() => commanderCarte({ type: "relation", relationId: p.relation_id })}
+                    data-testid={`flore-preuve-rel-${p.relation_id}`}
+                    className="flex w-full items-baseline gap-2 rounded-lg border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2.5 py-2 text-left text-sm text-[#94A3B8] transition-colors hover:border-[#60A5FA]/50 hover:bg-[#60A5FA]/5"
+                  >
+                    <FileText size={13} className="shrink-0 translate-y-0.5 text-[#7C93A8]" />
+                    <span>
+                      <span className="font-code text-[11px] text-[#F2F6F8]">{p.source}</span> — {p.detail}
+                      {p.confiance != null && <span className="font-code text-[10px] text-[#60A5FA]"> · {p.confiance} %</span>}
+                      {p.quand && <span className="font-code text-[10px] text-[#7C93A8]"> · {p.quand}</span>}
+                    </span>
+                  </button>
+                ) : (
+                  <span className="flex items-baseline gap-2 text-sm text-[#94A3B8]">
+                    <FileText size={13} className="shrink-0 translate-y-0.5 text-[#7C93A8]" />
+                    <span><span className="font-code text-[11px] text-[#F2F6F8]">{p.source}</span> — {p.detail}</span>
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+  ) : null;
+
   return (
     <div className="rounded-xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-4" data-testid={`flore-reponse-${index}`}>
       <div className="flex items-center gap-2 font-code text-[9px] uppercase tracking-[0.25em] text-[#7C93A8]">
@@ -299,10 +348,11 @@ function CarteReponse({ data, index, propsEtat, setPropsEtat, justifOuverte, set
         )}
       </div>
 
-      <TexteTeletype texte={data.reponse} actif={derniere && !data.auFilDeLEau} gele={!!pilote?.enPause} testid={`flore-texte-${index}`} />
-        <MarqueOrigine data={data} />
-        <MarqueRelecture data={data} />
-
+      <MessageFlore
+        message={fMsg || { role: "flore", texte: data.reponse, ...data }} index={nr} {...actions}
+        corps={<TexteTeletype texte={data.reponse} actif={derniere && !data.auFilDeLEau} gele={!!pilote?.enPause} testid={`flore-texte-${index}`} />}
+        preuves={blocPreuves} testid={`flore-message-${index}`}
+      >
       {data.propositions?.some((_, pi) => !propsEtat[`${index}-${pi}`]) && (
         <div className="mt-3" data-testid={`flore-propositions-${index}`}>
           <div className="font-code text-[9px] uppercase tracking-[0.2em] text-[#7C93A8]">Proposition pour la carte</div>
@@ -369,52 +419,6 @@ function CarteReponse({ data, index, propsEtat, setPropsEtat, justifOuverte, set
         </div>
       )}
 
-      {data.preuves?.length > 0 && (
-        <div className="mt-3" data-testid={`flore-preuves-${index}`}>
-          <div className="font-code text-[9px] uppercase tracking-[0.2em] text-[#7C93A8]">Preuves</div>
-          <ul className="mt-2 space-y-1">
-            {data.preuves.map((p, pi) => (
-              <li key={pi}>
-                {p.preuveId && pilote ? (
-                  // Preuve de démonstration : ouvre le panneau de lecture (suspend la lecture)
-                  <button
-                    onClick={() => pilote.ouvrirPreuve(p.preuveId)}
-                    data-testid={`flore-preuve-demo-${p.preuveId}`}
-                    className="flex w-full items-baseline gap-2 rounded-lg border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2.5 py-2 text-left text-sm text-[#94A3B8] transition-colors hover:border-[#60A5FA]/50 hover:bg-[#60A5FA]/5"
-                  >
-                    <FileText size={13} className="shrink-0 translate-y-0.5 text-[#7C93A8]" />
-                    <span>
-                      <span className="font-code text-[11px] text-[#F2F6F8]">{p.source}</span> — {p.detail}
-                    </span>
-                  </button>
-                ) : p.relation_id ? (
-                  // Preuve relationnelle : survol = le trajet pulse sur la carte ; clic = centrer + sélectionner
-                  <button
-                    onMouseEnter={() => setPreuveSurvolee(p.relation_id)}
-                    onMouseLeave={() => setPreuveSurvolee(null)}
-                    onClick={() => commanderCarte({ type: "relation", relationId: p.relation_id })}
-                    data-testid={`flore-preuve-rel-${p.relation_id}`}
-                    className="flex w-full items-baseline gap-2 rounded-lg border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2.5 py-2 text-left text-sm text-[#94A3B8] transition-colors hover:border-[#60A5FA]/50 hover:bg-[#60A5FA]/5"
-                  >
-                    <FileText size={13} className="shrink-0 translate-y-0.5 text-[#7C93A8]" />
-                    <span>
-                      <span className="font-code text-[11px] text-[#F2F6F8]">{p.source}</span> — {p.detail}
-                      {p.confiance != null && <span className="font-code text-[10px] text-[#60A5FA]"> · {p.confiance} %</span>}
-                      {p.quand && <span className="font-code text-[10px] text-[#7C93A8]"> · {p.quand}</span>}
-                    </span>
-                  </button>
-                ) : (
-                  <span className="flex items-baseline gap-2 text-sm text-[#94A3B8]">
-                    <FileText size={13} className="shrink-0 translate-y-0.5 text-[#7C93A8]" />
-                    <span><span className="font-code text-[11px] text-[#F2F6F8]">{p.source}</span> — {p.detail}</span>
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
         <TrustBadges indicateurs={data.indicateurs} />
         {data.action && (
@@ -427,6 +431,7 @@ function CarteReponse({ data, index, propsEtat, setPropsEtat, justifOuverte, set
           </button>
         )}
       </div>
+      </MessageFlore>
     </div>
   );
 }
@@ -444,7 +449,14 @@ export default function FlorePanel() {
   const { jumeauPar, mesh } = useMesh();
   const pilote = usePilotage();
   const [question, setQuestion] = useState("");
-  const [echanges, setEchanges] = useState([]);
+  const { info } = usePerimetre();
+  // La conversation du panneau est un Travail (MERIDIAN_Conversation_Contrat_v1 §2) : `travailId` est le sien.
+  // Hors serveur (création impossible), elle reste locale : les messages ne sont alors pas enregistrés.
+  const [travailId, setTravailId] = useState(() => localStorage.getItem(CLE_TRAVAIL) || null);
+  const [messages, setMessages] = useState([]);
+  const echanges = useMemo(() => regrouper(messages), [messages]);
+  const echangesReels = echanges.filter((e) => e.question);
+  const ctrlRef = useRef(null);
   const [chargement, setChargement] = useState(false);
   const [flux, setFlux] = useState(null); // réponse en cours : vraies étapes, brouillon (en relecture)
   const [suggestions, setSuggestions] = useState([]);
@@ -469,7 +481,7 @@ export default function FlorePanel() {
     const sig = `${atlasCtx.domaine || ""}|${atlasCtx.jumeau || ""}|${atlasCtx.relation || ""}`;
     if (prevAtlasSig.current && prevAtlasSig.current !== sig && floreOuverte && echanges.length > 0) {
       const cible = atlasCtx.jumeau ? `jumeau ${atlasCtx.jumeau}` : atlasCtx.relation ? `relation ${atlasCtx.relation}` : atlasCtx.domaine ? `domaine ${atlasCtx.domaine}` : "Mesh global";
-      setEchanges((e) => [...e, { marqueur: true, texte: `Contexte actualisé : ${cible}` }]);
+      setMessages((m) => [...m, { marqueur: true, texte: `Contexte actualisé : ${cible}` }]);
     }
     prevAtlasSig.current = sig;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -533,34 +545,108 @@ export default function FlorePanel() {
     conversationRef.current?.scrollTo({ top: conversationRef.current.scrollHeight, behavior: "smooth" });
   }, [fil, chargement, pilote?.activite, pilote?.reflexionFlore]);
 
+  // Relit le Travail depuis le serveur (source de vérité : versions, branches, retours, réponses interrompues).
+  const relire = async (cid = travailId, sansAnimation = false) => {
+    if (!cid) return false;
+    try {
+      const { data } = await api.get(`/cases/${cid}`);
+      const conv = data.conversation || [];
+      setMessages(sansAnimation ? conv.map((m, i) => (i === conv.length - 1 && m.role === "flore" ? { ...m, auFilDeLEau: true } : m)) : conv);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  // Rouvrir le panneau reprend le Travail en cours (relu depuis le serveur) ; s'il a disparu, on repart de zéro.
+  useEffect(() => {
+    if (!floreOuverte || !travailId || pilote) return;
+    api.get(`/cases/${travailId}`)
+      .then(({ data }) => setMessages(data.conversation || []))
+      .catch((err) => { if (err.response?.status === 404) nouvelleConversation(); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [floreOuverte]);
+
+  const nouvelleConversation = () => {
+    localStorage.removeItem(CLE_TRAVAIL);
+    setTravailId(null);
+    setMessages([]);
+    setPropTravailMasquee(false);
+  };
+
+  const arreter = () => ctrlRef.current?.abort();
+
   const demander = async (q) => {
     const finale = (q ?? question).trim();
     if (!finale || chargement) return;
     setChargement(true);
     setQuestion("");
-    const corps = { contexte, question: finale, selection, domaine: domaineSel };
+    const maintenant = new Date().toISOString();
+    const monMessage = { role: "utilisateur", texte: finale, quand: maintenant };
+    const ctrl = new AbortController();
+    ctrlRef.current = ctrl;
     const etapes = [];
+    let ecrit = "";
+    const rappels = {
+      signal: ctrl.signal,
+      onEtape: (l) => { etapes.push(l); setFlux((f) => f && { ...f, etapes: [...etapes] }); },
+      onTexte: (d) => { ecrit += d; setFlux((f) => f && { ...f, brouillon: f.brouillon + d }); },
+      onRelecture: () => setFlux((f) => f && { ...f, relecture: true }),
+    };
     setFlux({ question: finale, etapes: [], brouillon: "", relecture: false });
+    let cid = travailId;
     try {
-      let data;
-      try {
-        data = await demanderEnFlux("/aurora/demander/flux", corps, {
-          onEtape: (l) => { etapes.push(l); setFlux((f) => f && { ...f, etapes: [...etapes] }); },
-          onTexte: (d) => setFlux((f) => f && { ...f, brouillon: f.brouillon + d }),
-          onRelecture: () => setFlux((f) => f && { ...f, relecture: true }),
-        });
-        data = { ...data, auFilDeLEau: true };
-      } catch (err) {
-        if (err.annoncee) throw err;
-        ({ data } = await api.post("/aurora/demander", corps)); // flux impossible (proxy, ancien serveur) : d'un bloc
+      // Première question : le Travail naît, comme « Nouveau travail » (titre tiré de la question, jumeaux = sélection)
+      if (!cid) {
+        try {
+          const { data: c } = await api.post("/cases", {
+            titre: finale.length > 90 ? `${finale.slice(0, 87)}…` : finale, type: "demande", objectif: finale, jumeaux: selection, espace: info?.espace?.id,
+          });
+          cid = c.id;
+          setTravailId(cid);
+          localStorage.setItem(CLE_TRAVAIL, cid);
+          window.dispatchEvent(new Event("meridian:travaux-maj"));
+        } catch { cid = null; }
       }
-      const trace = etapes.length ? { id: `trace-${Date.now()}`, status: "done", ops: etapes.map((label) => ({ label, status: "done" })) } : null;
-      setEchanges((e) => [...e, { question: finale, data, trace }]);
+      let data = null;
+      let enregistree = false;
+      if (cid) {
+        try {
+          await demanderEnFlux(`${prefixeTravail(cid)}/messages/flux`, { texte: finale }, rappels);
+          enregistree = true;
+        } catch (err) {
+          if (err.annoncee || estArret(err)) throw err;
+        }
+      }
+      if (!enregistree) {
+        const corps = { contexte, question: finale, selection, domaine: domaineSel };
+        try {
+          data = await demanderEnFlux("/aurora/demander/flux", corps, rappels);
+          data = { ...data, auFilDeLEau: true };
+        } catch (err) {
+          if (err.annoncee || estArret(err)) throw err;
+          ({ data } = await api.post("/aurora/demander", corps)); // flux impossible (proxy, ancien serveur) : d'un bloc
+        }
+      }
+      const activite = etapes.length ? { id: `trace-${Date.now()}`, status: "done", ops: etapes.map((label) => ({ label, status: "done" })) } : null;
+      if (enregistree && await relire(cid, true)) {
+        setMessages((m) => m.map((x, i) => (i === m.length - 1 && activite ? { ...x, _activite: activite } : x)));
+      } else if (data) {
+        const { reponse, ...reste } = data;
+        setMessages((m) => [...m, monMessage, { role: "flore", texte: reponse, ...reste, quand: maintenant, _activite: activite }]);
+      }
       setJustifOuverte(null);
-      if (data.commande_carte) commanderCarte(data.commande_carte);
-    } catch {
-      setEchanges((e) => [...e, { question: finale, data: { reponse: "Flore est momentanément injoignable.", contributions: [], preuves: [], indicateurs: null } }]);
+      if (data?.commande_carte) commanderCarte(data.commande_carte);
+    } catch (err) {
+      if (estArret(err)) {
+        // Le brouillon reste affiché « interrompu », puis la conversation est relue (le serveur a gardé la réponse partielle)
+        setFlux((f) => f && { ...f, interrompu: true });
+        if (!(cid && await relire(cid))) setMessages((m) => [...m, monMessage, reponseInterrompue(ecrit)]);
+      } else {
+        setMessages((m) => [...m, monMessage, { role: "flore", texte: "Flore est momentanément injoignable.", contributions: [], preuves: [], indicateurs: null, quand: maintenant }]);
+      }
     } finally {
+      ctrlRef.current = null;
       setChargement(false);
       setFlux(null);
     }
@@ -595,9 +681,9 @@ export default function FlorePanel() {
   }, [questionFlore, floreOuverte]);
 
   const creerCase = async () => {
-    if (!echanges.length || creationCase) return;
+    if (!echangesReels.length || creationCase) return;
     setCreationCase(true);
-    const premiere = echanges[0].question;
+    const premiere = echangesReels[0].question;
     const now = new Date().toISOString();
     try {
       const { data } = await api.post("/cases", {
@@ -605,9 +691,9 @@ export default function FlorePanel() {
         type: "demande",
         objectif: premiere,
         jumeaux: selection,
-        conversation: echanges.flatMap((e) => [
+        conversation: echangesReels.flatMap((e) => [
           { role: "utilisateur", texte: e.question, quand: now },
-          { role: "flore", comportement: e.data.comportement, texte: e.data.reponse, quand: now },
+          ...(e.data ? [{ role: "flore", comportement: e.data.comportement, texte: e.data.reponse, quand: now }] : []),
         ]),
       });
       toast.success("Travail conservé depuis la conversation");
@@ -628,9 +714,9 @@ export default function FlorePanel() {
       const { data: c } = await api.get(`/cases/${cid}`);
       const fusion = [
         ...(c.conversation || []),
-        ...echanges.flatMap((e) => [
+        ...echangesReels.flatMap((e) => [
           { role: "utilisateur", texte: e.question, quand: now },
-          { role: "flore", comportement: e.data.comportement, texte: e.data.reponse, quand: now },
+          ...(e.data ? [{ role: "flore", comportement: e.data.comportement, texte: e.data.reponse, quand: now }] : []),
         ]),
       ];
       await api.patch(`/cases/${cid}`, { conversation: fusion });

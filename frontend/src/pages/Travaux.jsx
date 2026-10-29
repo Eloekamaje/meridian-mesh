@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { resultatsRecherche } from "@/lib/conversationFlore";
 import { useNavigate } from "react-router-dom";
 import { Plus, MagnifyingGlass, Rows, Kanban as KanbanIcon, ClockCounterClockwise, X, DotsThree, ArrowRight, Compass, CaretDown, Flag } from "@phosphor-icons/react";
 import { toast } from "sonner";
@@ -125,16 +126,26 @@ export default function Travaux() {
     api.get("/cases").then((r) => setCases(r.data)).catch(() => {});
   }, [version]);
 
+  // Recherche : le serveur cherche aussi dans le texte des messages (GET /cases?q=) ; sans lui, le titre seul.
+  const [trouves, setTrouves] = useState(null);
+  useEffect(() => {
+    const q = recherche.trim();
+    if (!q) { setTrouves(null); return undefined; }
+    const t = setTimeout(() => {
+      api.get("/cases", { params: { q } }).then((r) => setTrouves(r.data)).catch(() => setTrouves(null));
+    }, 250);
+    return () => clearTimeout(t);
+  }, [recherche, version]);
+
   const filtres = useMemo(() => {
-    const q = recherche.trim().toLowerCase();
-    return cases.filter(
+    const parRecherche = resultatsRecherche(recherche, cases, trouves);
+    return parRecherche.filter(
       (c) =>
         (!mesSeulement || c.responsable === persona) &&
         (filtreType === "tous" || c.type === filtreType) &&
-        (filtreStatut === "tous" || c.statut === filtreStatut) &&
-        (!q || c.titre.toLowerCase().includes(q) || (c.objectif || "").toLowerCase().includes(q))
+        (filtreStatut === "tous" || c.statut === filtreStatut)
     );
-  }, [cases, filtreType, filtreStatut, recherche, mesSeulement, persona]);
+  }, [cases, trouves, filtreType, filtreStatut, recherche, mesSeulement, persona]);
 
   // Regroupement par signification : attention / progrès / le reste
   const sections = useMemo(() => {
@@ -181,7 +192,7 @@ export default function Travaux() {
             <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
               <div className="relative min-w-[10rem] flex-1 sm:flex-none">
                 <MagnifyingGlass size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#7C93A8]" />
-                <input value={recherche} onChange={(e) => setRecherche(e.target.value)} placeholder="Rechercher un travail…" data-testid="recherche-travail"
+                <input value={recherche} onChange={(e) => setRecherche(e.target.value)} placeholder="Rechercher un travail (titre et messages)…" data-testid="recherche-travail"
                   className="h-9 w-full rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] pl-7 pr-3 text-xs sm:h-8 sm:w-48 text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#60A5FA]/60 focus:outline-none" />
               </div>
               <div className="relative">

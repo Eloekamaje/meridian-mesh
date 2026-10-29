@@ -18,6 +18,7 @@ import {
   PlayCircle
 } from "@phosphor-icons/react";
 import api from "@/lib/api";
+import { resultatsRecherche } from "@/lib/conversationFlore";
 import { usePerimetre } from "@/lib/perimetre";
 import { useContexte } from "@/lib/contexte";
 import { usePilotage } from "@/lib/pilotage";
@@ -56,8 +57,21 @@ export default function SidebarGauche({ mode = "bureau", onOuvrir, onFermer }) {
 
   const [menuProfil, setMenuProfil] = useState(false);
   const [recents, setRecents] = useState([]);
+  const [tousTravaux, setTousTravaux] = useState([]);
+  const [recherche, setRecherche] = useState("");
+  const [trouves, setTrouves] = useState(null); // réponse du serveur à GET /cases?q=
   const [aExaminer, setAExaminer] = useState(0); // travaux dont une décision est remise en question
   const refProfil = useRef(null);
+
+  useEffect(() => {
+    const q = recherche.trim();
+    if (!q) { setTrouves(null); return undefined; }
+    const t = setTimeout(() => {
+      api.get("/cases", { params: { q } }).then((r) => setTrouves(r.data)).catch(() => setTrouves(null));
+    }, 250);
+    return () => clearTimeout(t);
+  }, [recherche]);
+  const affiches = recherche.trim() ? resultatsRecherche(recherche, tousTravaux, trouves) : recents;
 
   const basculerRepli = () => {
     if (mode === "rail") { onOuvrir?.(); return; }
@@ -70,6 +84,14 @@ export default function SidebarGauche({ mode = "bureau", onOuvrir, onFermer }) {
     });
   };
 
+  // Un travail né ailleurs (le panneau Flore) : les Récents se rechargent
+  const [majTravaux, setMajTravaux] = useState(0);
+  useEffect(() => {
+    const maj = () => setMajTravaux((v) => v + 1);
+    window.addEventListener("meridian:travaux-maj", maj);
+    return () => window.removeEventListener("meridian:travaux-maj", maj);
+  }, []);
+
   useEffect(() => {
     api.get("/cases")
       .then((r) => {
@@ -78,11 +100,12 @@ export default function SidebarGauche({ mode = "bureau", onOuvrir, onFermer }) {
         const poids = (c) => (c.mouvement ? c.mouvement.niveau : 9);
         sorted.sort((a, b) => poids(a) - poids(b));
         setRecents(sorted.slice(0, 8));
+        setTousTravaux(sorted);
         setAExaminer(sorted.filter((c) => c.mouvement?.niveau === 1).length);
       })
       .catch(() => {});
     // En démonstration, la liste se recharge quand le travail naît, s'enrichit ou se fige
-  }, [pilote?.versionTravaux, location.pathname]);
+  }, [pilote?.versionTravaux, location.pathname, majTravaux]);
 
   // « Nouveau travail » : en démonstration le clic lance la séquence scénarisée
   // (le moteur ouvre la page) ; hors démonstration il ouvre la vraie page de création.
@@ -252,12 +275,17 @@ export default function SidebarGauche({ mode = "bureau", onOuvrir, onFermer }) {
             Récentes
           </div>
 
-          {recents.length === 0 && (
+          <input
+            type="search" value={recherche} onChange={(e) => setRecherche(e.target.value)}
+            placeholder="Rechercher un travail…" aria-label="Rechercher dans les travaux" data-testid="sidebar-recherche"
+            className="mb-1 h-7 w-full rounded-lg border border-white/[0.08] bg-transparent px-2 text-[11px] text-[#D8E2EA] placeholder:text-[#526578] focus:border-[#60A5FA]/60 focus:outline-none"
+          />
+          {affiches.length === 0 && (
             <div className="px-2.5 py-1.5 text-[11px] text-[#64748B]" data-testid="sidebar-recents-vide">
-              Aucun travail pour l'instant.
+              {recherche.trim() ? "Aucun travail trouvé." : "Aucun travail pour l'instant."}
             </div>
           )}
-          {recents.slice(0, 8).map((c) => (
+          {affiches.slice(0, 8).map((c) => (
             <NavLink
               key={c.id}
               to={`/travaux/${c.id}`}

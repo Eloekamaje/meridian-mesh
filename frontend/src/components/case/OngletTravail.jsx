@@ -16,8 +16,6 @@ import {
   Clock, 
   ShieldCheck,
   Buildings,
-  Copy,
-  ArrowsClockwise,
   DownloadSimple,
   MapTrifold,
   X
@@ -25,17 +23,16 @@ import {
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import api from "@/lib/api";
-import { formaterGrasCode } from "@/lib/renduMarkdown";
-import { decouperMermaid } from "@/lib/segmentsMermaid";
-import SchemaMermaid from "@/components/SchemaMermaid";
+import MarkdownFlore from "@/components/MarkdownFlore";
+import { MessageFlore, QuestionFlore } from "@/components/MessageFlore";
+import { prefixeTravail, reponseInterrompue, remplacerMessage } from "@/lib/conversationFlore";
 import { usePerimetre } from "@/lib/perimetre";
 import { useContexte } from "@/lib/contexte";
 import { couleurDomaine } from "@/lib/domaines";
 import { CREATION_TRAVAIL_ACTIVE, FLORE_REPONSE_EN_CONSTRUCTION, PROPOSITION_DEMO } from "@/lib/messagesFlore";
 import FloreActivite, { delaiMin, activiteTerminee } from "@/components/FloreActivite";
 import BrouillonFlore from "@/components/BrouillonFlore";
-import MarqueRelecture from "@/components/MarqueRelecture";
-import { demanderEnFlux } from "@/lib/fluxFlore";
+import { demanderEnFlux, estArret } from "@/lib/fluxFlore";
 import LigneActiviteFlore from "@/components/LigneActiviteFlore";
 import IndicateurClic from "@/components/IndicateurClic";
 import { usePilotage } from "@/lib/pilotage";
@@ -43,7 +40,7 @@ import { useEcran } from "@/lib/ecran";
 import { rel } from "./utils";
 import CanvasDocument from "./CanvasDocument";
 import Atlas from "@/pages/Atlas";
-import { BandeauVeille, EvenementVeille, RepriseVeille, PreuvesMessage } from "./VeilleTravail";
+import { BandeauVeille, EvenementVeille, RepriseVeille } from "./VeilleTravail";
 
 // Dictionnaire des Jumeaux participants du SI pour CASE-101
 export const DICT_JUMEAUX_PARTICIPANTS = {
@@ -153,7 +150,8 @@ function useDeroule(message, pilote) {
     const t = setTimeout(() => setN((x) => Math.min(total, x + 3)), 36); // ~83 car/s (voir FlorePanel.jsx)
     return () => clearTimeout(t);
   }, [n, total, animer, enPause, cle]);
-  return { visible: (message.texte || "").slice(0, n), fini: n >= total };
+  // Un texte qui change (autre version, régénération) s'affiche entier : seul un message fraîchement publié s'écrit.
+  return { visible: (message.texte || "").slice(0, animer ? n : total), fini: !animer || n >= total };
 }
 
 // Rendu formaté, fluide et aéré du texte (Style ChatGPT / Claude)
@@ -161,7 +159,6 @@ export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif, onVoir
   const pilote = usePilotage();
   const texte = message.texte || "";
   const { visible, fini } = useDeroule(message, pilote);
-  const segments = decouperMermaid(visible);
 
   // Détecte si le message présente l'architecture ou la convergence pour intégrer le pipeline
   const montrePipeline = 
@@ -173,67 +170,7 @@ export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif, onVoir
 
   return (
     <div className="space-y-3.5 text-[15px] leading-relaxed text-[#DCE6EE]">
-      {segments.map((seg, si) => seg.type === "mermaid"
-        ? <SchemaMermaid key={`schema-${si}`} code={seg.code} complet={seg.complet} />
-        : seg.texte.split("\n").map((ligne, li) => {
-        const idx = `${si}-${li}`;
-        const trimmed = ligne.trim();
-        if (!trimmed) return <div key={idx} className="h-1.5" />;
-
-        // Sous-titre Markdown ###
-        if (trimmed.startsWith("### ")) {
-          return (
-            <h3 key={idx} className="font-display text-base font-bold text-white pt-2">
-              {trimmed.replace("### ", "")}
-            </h3>
-          );
-        }
-
-        // Sous-titre Markdown ##
-        if (trimmed.startsWith("## ")) {
-          return (
-            <h2 key={idx} className="font-display text-lg font-bold text-white pt-3">
-              {trimmed.replace("## ", "")}
-            </h2>
-          );
-        }
-
-        // Puce de liste
-        if (trimmed.startsWith("* ") || trimmed.startsWith("- ") || trimmed.startsWith("• ") || trimmed.startsWith("— ")) {
-          const contenu = trimmed.replace(/^[\*\-•—]\s*/, "");
-          return (
-            <div key={idx} className="flex items-start gap-2 pl-2 text-sm text-[#CBD5E1]">
-              <span className="text-[#60A5FA] mt-1 text-xs">•</span>
-              <span dangerouslySetInnerHTML={{ __html: formaterGrasCode(contenu) }} />
-            </div>
-          );
-        }
-
-        // Liste numérotée (1. 2. 3. ...)
-        const numerotee = trimmed.match(/^(\d+)\.\s+(.*)$/);
-        if (numerotee) {
-          return (
-            <div key={idx} className="flex items-start gap-2 pl-2 text-sm text-[#CBD5E1]">
-              <span className="mt-px shrink-0 font-code text-xs font-semibold text-[#60A5FA]">{numerotee[1]}.</span>
-              <span dangerouslySetInnerHTML={{ __html: formaterGrasCode(numerotee[2]) }} />
-            </div>
-          );
-        }
-
-        // Citation / callout >
-        if (trimmed.startsWith("> ")) {
-          return (
-            <div key={idx} className="border-l-2 border-[#60A5FA]/60 pl-3 py-1 my-2 text-sm italic text-blue-200/90 bg-blue-500/[0.04] rounded-r-md">
-              <span dangerouslySetInnerHTML={{ __html: formaterGrasCode(trimmed.replace("> ", "")) }} />
-            </div>
-          );
-        }
-
-        // Paragraphe classique
-        return (
-          <p key={idx} dangerouslySetInnerHTML={{ __html: formaterGrasCode(ligne) }} />
-        );
-      }))}
+      <MarkdownFlore texte={visible} />
 
       {/* Curseur clignotant : Flore est encore en train d'écrire (sinon, rien ne le distingue d'une lecture) */}
       {!fini && <span className="curseur-teletype -mt-2 inline-block">▍</span>}
@@ -382,8 +319,9 @@ export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif, onVoir
                     <td
                       key={ci}
                       className={`py-2 px-3 ${ci === 0 ? "pl-4 font-medium text-[#CBD5E1]" : "text-[#94A3B8]"} ${ci === message.tableau.colonnes.length - 1 ? "pr-4" : ""}`}
-                      dangerouslySetInnerHTML={{ __html: formaterGrasCode(cellule) }}
-                    />
+                      >
+                      <MarkdownFlore enLigne texte={cellule} />
+                    </td>
                   ))}
                 </tr>
               ))}
@@ -646,16 +584,13 @@ export default function OngletTravail({
   const rafraichirEtat = (id) =>
     api.get(`/cases/${id}`).then(({ data: frais }) => setCas((c) => ({ ...frais, conversation: c.conversation }))).catch(() => {});
 
-  // 👍/👎 : enregistré sur le message côté serveur (et dans le jeu des retours, pour l'évaluation).
-  const donnerRetour = async (index, valeur) => {
-    try {
-      const { data } = await api.post(`/cases/${cas.id}/messages/${index}/retour`, { valeur });
-      setCas((c) => ({ ...c, conversation: (c.conversation || []).map((m, k) => (k === index ? { ...m, retour: data } : m)) }));
-      toast.success(valeur === "utile" ? "Retour enregistré : réponse utile" : "Retour enregistré : réponse fausse ou inutile");
-    } catch {
-      toast.error("Retour non enregistré");
-    }
-  };
+  // Actions de la conversation unique (MessageFlore / QuestionFlore) : même préfixe /cases/{cid} que le panneau Flore.
+  const prefixe = !pilote && cas?.id != null ? prefixeTravail(cas.id) : null;
+  const majMessage = (n, msg) => setCas((c) => ({ ...c, conversation: remplacerMessage(c.conversation || [], n, msg) }));
+  const majMessages = (msgs) => setCas((c) => ({ ...c, conversation: msgs }));
+  const relire = () => api.get(`/cases/${cas.id}`).then(({ data: frais }) => setCas(frais)).catch(() => {});
+  const ctrlRef = useRef(null);
+  const arreter = () => ctrlRef.current?.abort();
 
   const envoyer = async (e, texteDirect) => {
     e?.preventDefault?.();
@@ -690,15 +625,30 @@ export default function OngletTravail({
         travailNe = c;
       }
       const etapes = [];
+      let ecrit = "";
+      const ctrl = new AbortController();
+      ctrlRef.current = ctrl;
       setFluxMsg({ etapes: [], brouillon: "", relecture: false });
       let data, auFilDeLEau = true;
       try {
         data = await demanderEnFlux(`/cases/${idTravail}/messages/flux`, { texte: q }, {
+          signal: ctrl.signal,
           onEtape: (l) => { etapes.push(l); setFluxMsg((f) => f && { ...f, etapes: [...etapes] }); },
-          onTexte: (d) => setFluxMsg((f) => f && { ...f, brouillon: f.brouillon + d }),
+          onTexte: (d) => { ecrit += d; setFluxMsg((f) => f && { ...f, brouillon: f.brouillon + d }); },
           onRelecture: () => setFluxMsg((f) => f && { ...f, relecture: true }),
         });
       } catch (err) {
+        if (estArret(err)) {
+          // Arrêt : le brouillon reste affiché « interrompu », puis on relit le Travail (le serveur a gardé la réponse partielle)
+          setFluxMsg((f) => f && { ...f, interrompu: true });
+          const { data: frais } = await api.get(`/cases/${idTravail}`).catch(() => ({ data: null }));
+          const conversation = frais?.conversation || [...avant, monMessage, reponseInterrompue(ecrit)];
+          if (travailNe) {
+            setCas({ ...(frais || travailNe), conversation });
+            navigate(`/travaux/${idTravail}`, { replace: true, state: { continuite: true } });
+          } else setCas((c) => ({ ...c, ...(frais || {}), conversation }));
+          return;
+        }
         if (err.annoncee) throw err;
         auFilDeLEau = false; // flux impossible (proxy, ancien serveur) : la réponse arrive d'un bloc
         ({ data } = await api.post(`/cases/${idTravail}/messages`, { texte: q }));
@@ -726,6 +676,7 @@ export default function OngletTravail({
       setNouveauMsg(q); // le texte n'est pas perdu
       toast.error(brouillon ? "Création du travail impossible" : "Message impossible");
     } finally {
+      ctrlRef.current = null;
       setEnvoiMsg(false);
       setFluxMsg(null);
     }
@@ -978,7 +929,7 @@ export default function OngletTravail({
           onScroll={verifierPositionScroll}
           className="flex-1 overflow-y-auto px-6 sm:px-12"
         >
-          <div className="mx-auto max-w-3xl space-y-7 py-8" data-testid="case-conversation">
+          <div className="mx-auto max-w-3xl space-y-7 py-8" data-testid="case-conversation" role="log" aria-live="polite" aria-label="Conversation avec Flore">
             {messages.map((m, i) => (
               <div key={i} className="space-y-3">
                 {/* Reprise de visite */}
@@ -998,32 +949,25 @@ export default function OngletTravail({
                 {m.role === "evenement" ? (
                   <EvenementVeille m={m} index={i} nouveau={!!coupure && m.quand > coupure} />
                 ) : m.role === "utilisateur" ? (
-                  <div className="flex flex-col items-end gap-1.5 animate-in fade-in duration-200" id={`message-${i}`} data-testid={`case-msg-${i}`}>
-                    {/* Micro-actions discrètes au-dessus de la bulle (Style ChatGPT) */}
-                    <div className="flex items-center gap-1.5 text-[#64748B] opacity-60 hover:opacity-100 transition-opacity pr-1 text-xs">
-                      <button 
-                        onClick={() => { navigator.clipboard?.writeText(m.texte); toast.success("Message copié"); }} 
-                        title="Copier le message" 
-                        className="flex h-6 w-6 items-center justify-center rounded-md hover:bg-white/[0.06] hover:text-white transition-colors"
-                      >
-                        <Copy size={12} />
-                      </button>
-                      <button 
-                        onClick={() => {
-                          navigator.clipboard?.writeText(`${window.location.origin}/travaux/${cas.id}#message-${i}`);
-                          toast.success("Lien vers ce message copié");
-                        }} 
-                        title="Copier le lien vers ce message" 
-                        aria-label="Copier le lien vers ce message"
-                        className="flex h-6 w-6 items-center justify-center rounded-md hover:bg-white/[0.06] hover:text-white transition-colors"
-                      >
-                        <ArrowUp size={12} />
-                      </button>
-                    </div>
-
-                    <div className="max-w-[85%] rounded-2xl rounded-tr-xs bg-[#162534] px-5 py-3.5 text-[14.5px] text-[#F2F6F8] leading-relaxed shadow-sm">
-                      {m.texte}
-                    </div>
+                  <div className="animate-in fade-in duration-200" id={`message-${i}`} data-testid={`case-msg-${i}`}>
+                    <QuestionFlore
+                      message={m} index={i} prefixe={prefixe} bloque={envoiMsg}
+                      onMessages={majMessages} onRelire={relire}
+                      extraActions={cas.id != null && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard?.writeText(`${window.location.origin}/travaux/${cas.id}#message-${i}`);
+                            toast.success("Lien vers ce message copié");
+                          }}
+                          title="Copier le lien vers ce message"
+                          aria-label="Copier le lien vers ce message"
+                          className="flex h-7 min-w-7 items-center justify-center rounded-lg px-1.5 transition-colors hover:bg-white/[0.06] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#60A5FA]"
+                        >
+                          <ArrowUp size={12} />
+                        </button>
+                      )}
+                    />
                   </div>
                 ) : (
                   /* Réponse Flore IA : Zéro card lourde, texte au fil de l'eau, lecture pure */
@@ -1031,6 +975,11 @@ export default function OngletTravail({
                     
                     {/* Corps formaté du message de Flore — décisions/suggestions/actions en enfants :
                         n'apparaissent qu'une fois la réponse complète (voir CorpsMessageFlore) */}
+                    <MessageFlore
+                      message={m} index={i} prefixe={prefixe} bloque={envoiMsg}
+                      onMessage={majMessage} onMessages={majMessages} onRelire={relire}
+                      activite={m._activite}
+                      corps={
                     <CorpsMessageFlore
                       message={m}
                       onOuvrirCanvas={() => setCanvasActif(true)}
@@ -1068,8 +1017,6 @@ export default function OngletTravail({
                         </button>
                       </div>
                     )}
-                    {/* Sur quoi repose ce que Flore vient de dire (preuves du rapport) */}
-                    {m.preuves?.length > 0 && <PreuvesMessage preuves={m.preuves} />}
                     {/* Pistes que Flore propose de creuser : un clic les envoie comme votre question (sur le dernier message seulement) */}
                     {m.suggestions?.length > 0 && i === messages.length - 1 && !envoiMsg && (
                       <div className="flex flex-wrap gap-2" data-testid="suggestions-flore">
@@ -1107,56 +1054,9 @@ export default function OngletTravail({
                       </button>
                     )}
 
-                    {/* Rangée de micro-actions sous la réponse de Flore (Style ChatGPT) */}
-                    <div className="flex items-center gap-1.5 pt-2 text-[#64748B] text-xs">
-                      <button 
-                        onClick={() => { navigator.clipboard?.writeText(m.texte); toast.success("Réponse copiée"); }} 
-                        title="Copier la réponse" 
-                        className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-white/[0.06] hover:text-white transition-colors"
-                      >
-                        <Copy size={13} />
-                      </button>
-                      <button 
-                        onClick={() => donnerRetour(i, "utile")} 
-                        title="Réponse utile" 
-                        aria-label="Réponse utile"
-                        aria-pressed={m.retour?.valeur === "utile"}
-                        data-testid={`case-retour-utile-${i}`}
-                        className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-white/[0.06] hover:text-white transition-colors"
-                      >
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M7 10v12" />
-                          <path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h3" />
-                        </svg>
-                      </button>
-                      <button 
-                        onClick={() => donnerRetour(i, "faux")} 
-                        title="Réponse fausse ou inutile" 
-                        aria-label="Réponse fausse ou inutile"
-                        aria-pressed={m.retour?.valeur === "faux"}
-                        data-testid={`case-retour-faux-${i}`}
-                        className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-white/[0.06] hover:text-white transition-colors"
-                      >
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M17 14V2" />
-                          <path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-3" />
-                        </svg>
-                      </button>
-                      <button 
-                        onClick={() => {
-                          const question = [...messages.slice(0, i)].reverse().find((x) => x.role === "utilisateur");
-                          if (question) envoyer(null, question.texte); // la question repart : une nouvelle réponse s'ajoute
-                        }} 
-                        disabled={envoiMsg}
-                        title="Reposer la question" 
-                        aria-label="Reposer la question" 
-                        className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-white/[0.06] hover:text-white transition-colors"
-                      >
-                        <ArrowsClockwise size={13} />
-                      </button>
-
-                    </div>
                     </CorpsMessageFlore>
+                      }
+                    />
                   </div>
                 )}
                 {/* Ligne d'activité de Flore : ancrée juste après la dernière réplique de narration
@@ -1168,8 +1068,6 @@ export default function OngletTravail({
                   .map((a) => (
                     <LigneActiviteFlore key={a.id} activite={a} testid={`travail-activite-${a.id}`} />
                   ))}
-                {m._activite && <LigneActiviteFlore activite={m._activite} testid={`travail-activite-msg-${i}`} />}
-                {m.role === "flore" && <MarqueRelecture data={m} />}
               </div>
             ))}
 
@@ -1190,7 +1088,7 @@ export default function OngletTravail({
               </div>
             )}
 
-            {envoiMsg && (fluxMsg ? <BrouillonFlore flux={fluxMsg} testid="case-msg-brouillon" />
+            {envoiMsg && (fluxMsg ? <BrouillonFlore flux={fluxMsg} onArreter={arreter} testid="case-msg-brouillon" />
               : <FloreActivite genre="travail" testid="case-msg-attente" />)}
             <div ref={finFilRef} />
           </div>
@@ -1248,11 +1146,24 @@ export default function OngletTravail({
 
               {/* Bouton d'envoi vibrant — en démo, l'index humain pointe dessus une fois la réplique prête */}
               <div className="relative shrink-0">
+                {!pilote && envoiMsg && fluxMsg ? (
+                  <button
+                    type="button"
+                    onClick={arreter}
+                    data-testid="case-msg-stop-btn"
+                    title="Arrêter la réponse"
+                    aria-label="Arrêter la réponse"
+                    className="flex h-8 items-center justify-center rounded-xl border border-white/20 px-3 text-xs font-semibold text-[#F2F6F8] transition-colors hover:border-[#F87171]/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#60A5FA]"
+                  >
+                    Arrêter
+                  </button>
+                ) : (
                 <button
                   type="submit"
                   disabled={pilote ? !pretAEnvoyer : envoiMsg || !nouveauMsg.trim()}
                   data-testid="case-msg-send-btn"
                   title="Envoyer le message"
+                  aria-label="Envoyer le message"
                   className={`flex h-8 w-8 items-center justify-center rounded-xl transition-all ${
                     (pilote ? pretAEnvoyer : nouveauMsg.trim() && !envoiMsg)
                       ? `bg-[#60A5FA] text-[#071019] shadow-md shadow-[#60A5FA]/20 hover:scale-105${pretAEnvoyer ? " animate-pulse" : ""}`
@@ -1261,6 +1172,7 @@ export default function OngletTravail({
                 >
                   <ArrowUp size={16} weight="bold" />
                 </button>
+                )}
                 {pretAEnvoyer && <IndicateurClic texte="Prêt" sousTexte="Cliquez pour envoyer" testid="indicateur-clic-envoyer" />}
               </div>
             </div>
