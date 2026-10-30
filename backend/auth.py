@@ -198,6 +198,8 @@ async def middleware(request: Request, call_next):
     try:
         persona, utilisateur = resoudre(request)
         tenant = _tenant_identite(request, mode_courant)
+        if mode_courant in ("proxy", "oidc") and tenant is None:
+            raise AuthError(403, "Tenant absent de l'identité authentifiée")
         entete_tenant = request.headers.get("x-tenant")
         if tenant is not None and entete_tenant is not None:
             try:

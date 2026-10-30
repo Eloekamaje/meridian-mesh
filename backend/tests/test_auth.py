@@ -31,7 +31,8 @@ def test_proxy_exige_le_secret_et_ignore_le_header_client(monkeypatch):
     monkeypatch.setenv("AUTH_PROXY_SECRET", "secret-proxy")
     monkeypatch.setenv("AUTH_PERSONA_MAP", '{"grp-arch": "architecte"}')
     client = _client()
-    entetes = {"X-Auth-Proxy-Secret": "secret-proxy", "X-Auth-Request-Groups": "grp-arch", "X-Persona": "support"}
+    entetes = {"X-Auth-Proxy-Secret": "secret-proxy", "X-Auth-Request-Groups": "grp-arch",
+               "X-Persona": "support", "X-Auth-Request-Tenant": "banque"}
     assert client.get("/api/qui", headers=entetes).json() == {"persona": "architecte"}
     assert client.get("/api/qui", headers={**entetes, "X-Auth-Proxy-Secret": "faux"}).status_code == 401
 
@@ -41,8 +42,8 @@ def test_oidc_verifie_la_signature_et_la_persona(monkeypatch):
     monkeypatch.setenv("AUTH_OIDC_SECRET", "secret-oidc")
     monkeypatch.setenv("AUTH_AUDIENCE", "meridian")
     monkeypatch.setenv("AUTH_ISSUER", "idp-test")
-    jeton = jwt.encode({"sub": "u1", "name": "Alice", "persona": "support", "aud": "meridian", "iss": "idp-test"},
-                       "secret-oidc", algorithm="HS256")
+    jeton = jwt.encode({"sub": "u1", "name": "Alice", "persona": "support", "tenant": "banque",
+                        "aud": "meridian", "iss": "idp-test"}, "secret-oidc", algorithm="HS256")
     client = _client()
     assert client.get("/api/qui", headers={"Authorization": f"Bearer {jeton}", "X-Persona": "architecte"}).json() == {"persona": "support"}
     assert client.get("/api/qui", headers={"Authorization": "Bearer invalide"}).status_code == 401
@@ -101,10 +102,10 @@ def test_oidc_extrait_le_tenant_du_jeton_et_refuse_le_conflit(monkeypatch):
     assert client.get("/api/tenant", headers={**entetes, "X-Tenant": "banque"}).json() == {"tenant": "banque"}
 
 
-def test_oidc_sans_claim_tenant_laisse_le_contexte_absent(monkeypatch):
+def test_oidc_sans_claim_tenant_est_refuse(monkeypatch):
     monkeypatch.setenv("AUTH_MODE", "oidc")
     monkeypatch.setenv("AUTH_OIDC_SECRET", "secret-oidc")
     jeton = jwt.encode({"sub": "u1", "persona": "architecte"}, "secret-oidc", algorithm="HS256")
     client = _client_tenant()
 
-    assert client.get("/api/tenant", headers={"Authorization": f"Bearer {jeton}"}).json() == {"tenant": None}
+    assert client.get("/api/tenant", headers={"Authorization": f"Bearer {jeton}"}).status_code == 403
