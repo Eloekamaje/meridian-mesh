@@ -3,7 +3,7 @@
 **Date :** 2026-10-30  
 **Branche :** `jumeau-p4-confort`
 
-**Documents directeurs :** [PRD-001](../prd/PRD-001-enterprise-intelligence-mesh.md), [ADR-0001](../adr/0001-identite-typed-twin-discovery.md), [ADR-0002](../adr/0002-orchestrateur-general.md), [ADR-0003](../adr/0003-mesh-transversal-intelligence.md), [ADR-0004](../adr/0004-capability-first-harness.md), [ADR-0005](../adr/0005-enterprise-object-model.md), [ADR-0007](../adr/0007-polyglot-postgres-graph.md)
+**Documents directeurs :** [PRD-001](../prd/PRD-001-enterprise-intelligence-mesh.md), [ADR-0001](../adr/0001-identite-typed-twin-discovery.md), [ADR-0002](../adr/0002-orchestrateur-general.md), [ADR-0003](../adr/0003-mesh-transversal-intelligence.md), [ADR-0004](../adr/0004-capability-first-harness.md), [ADR-0005](../adr/0005-enterprise-object-model.md), [ADR-0007](../adr/0007-polyglot-postgres-graph.md), [ADR-0008](../adr/0008-travail-work-store.md)
 
 > **État vs cible.** Les trois outils de l'orchestrateur sont une amorce. La cible est le harness capacitaire d'ADR-0004, le modèle d'entreprise d'ADR-0005 et l'architecture polyglotte d'ADR-0007 (Postgres pour la connaissance, graph store pour le Mesh). Les écarts sont des chantiers, pas des exceptions.
 
@@ -92,7 +92,7 @@ Le dépôt `gsf-mockup` ne contient pas de spec OpenAPI statique. Le connecteur 
 
 - Neo4j de production dispose désormais d'un service `docker-compose.prod.yml` (volume, auth, healthcheck, mémoire) et des variables `NEO4J_*` ; le branchement à un Neptune managé et la haute disponibilité cloud restent à faire.
 - Le tenant est extrait du proxy/OIDC et vérifié dans l'API ; les policies RLS sont fournies et appliquées au contexte de la Boucle et du catalogue d'outils, mais **pas encore activées** ni généralisées à tous les chemins legacy.
-- Mongo reste lu par les **cases**, le fil Aujourd'hui et l'Atlas ; la parité des identités, situations, initiatives et relations est à zéro, mais la migration des cases n'est pas faite.
+- Mongo canonique est migré (parité zéro sur identités, relations, situations, initiatives). Les **cases** restent un store de travail distinct par ADR-0008 ; le fil Aujourd'hui et la carte Atlas lisent encore leurs collections legacy.
 - La découverte est automatique pour les dépôts (OpenAPI/WSDL/GraphQL/gRPC/AsyncAPI), les claims `EXPOSE` et OTLP ; les exports propriétaires de gateway/CMDB restent à brancher.
 - L'Atlas rend l'impact canonique quand un tenant est sélectionné ; les relations Mongo restent la source principale de la carte et des voisins.
 - Dans le modèle **1 twin ↔ 1 application**, `application_id = twin_id = id réel de l'application` ; la promotion ne change pas cet id. Le multi-twins par application n'est pas retenu.
@@ -108,7 +108,7 @@ Le dépôt `gsf-mockup` ne contient pas de spec OpenAPI statique. Le connecteur 
 1. Déployer Neo4j/Neptune en production, rejouer le backfill multi-tenant et vérifier l'idempotence à l'échelle.
 2. Activer RLS en production (rôle applicatif non-superuser, `meridian.tenant_id` posé par transaction) et vérifier les chemins legacy.
 3. Brancher les exports propriétaires gateway/CMDB sur le même graphe d'interface (les formats standards sont déjà couverts).
-4. Migrer les `cases` (forme de travail) puis retirer les lectures Mongo restantes après parité.
+4. Spécifier le store **Travail** (ADR-0008) puis retirer les lectures Mongo du fil Aujourd'hui/Atlas après parité.
 5. Enrichir le jeu d'or de l'orchestrateur et mesurer les choix d'outils multi-protocoles.
 
 ## Commandes d'exploitation
