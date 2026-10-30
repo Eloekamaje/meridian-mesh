@@ -77,9 +77,9 @@ Preuve live sur « régénère le flux du gsf-mockup » : `repo:gsf-mockup → t
 - Parité Mongo/canonique : **0 écart** sur 42 identités, 13 situations, 10 initiatives et 45 relations ; `parite_mongo.py` rend les écarts sans migrer ni supprimer.
 - Graphe continu : le Gardien synchronise l'identité Postgres et les relations Mongo vers le `GraphStore` à chaque passe (`_synchroniser_graphe`), avec confiance en pourcentage normalisée.
 - API graphe : `/api/boucle/graphe/resume`, `/graphe/{twin}/voisins`, `/graphe/{twin}/impact`, `/graphe/chemins` ; lecture tenant-scopée, profondeur bornée.
-- Tenant authentifié : proxy (`AUTH_TENANT_HEADER`, défaut `X-Auth-Request-Tenant`) et OIDC (`AUTH_TENANT_CLAIM`, défaut `tenant`) posent `request.state.tenant` ; un `X-Tenant` divergent est refusé.
+- Tenant authentifié : proxy (`AUTH_TENANT_HEADER`, défaut `X-Auth-Request-Tenant`) et OIDC (`AUTH_TENANT_CLAIM`, défaut `tenant`) posent `request.state.tenant` ; l'absence de tenant et un `X-Tenant` divergent sont refusés.
 - Outils : ingestion OpenAPI/MCP (`ingestion_outils.py`), chargement par `JUMEAU_OPENAPI` / `JUMEAU_MCP_OUTILS` dans le catalogue et CLI ; aucun `tools/call` exécuté.
-- Tests : **1247 tests jumeau** (2 skip), **8 auth**, **12 routes Boucle**, **161 frontend**, build OK. Live : 42 Twins, 45 relations, 23 objets en `demo`.
+- Tests : **1250 tests jumeau** (2 skip), **8 auth**, **12 routes Boucle**, **161 frontend**, build OK. Live : 42 Twins, 45 relations, 23 objets en `demo`.
 
 ## Constat du connecteur sur gsf-mockup
 
