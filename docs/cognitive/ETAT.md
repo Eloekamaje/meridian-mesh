@@ -72,6 +72,7 @@ Preuve live sur « régénère le flux du gsf-mockup » : `repo:gsf-mockup → t
 - Catalogue : `GET /api/outils` expose les manifestes intégrés + `JUMEAU_MANIFESTES`, sans exécution.
 - Graphe : `graph_store.py` choisit Neo4j si configuré, sinon mémoire ; `graphe_sync` prêt.
 - OpenAPI : génération de manifestes read-only/écriture depuis les opérations, enregistrables dans le registre.
+- Backfill réel sur Neo4j local (tenant `demo`) : **23 objets canoniques** (13 situations, 10 initiatives), **42 Twins**, **45 relations**, 0 erreur. `scripts/dev-neo4j.sh` génère un mot de passe local hors dépôt ; l'API Boucle expose le tenant `demo` avec `X-Tenant: demo` (le tenant `local` reste vide).
 - Tests : **1260 backend jumeau** (3 skip), **161 frontend**, build OK. Live dating : 0 participant, 12 composants, audit persistant, schéma proposition.
 
 ## Constat du connecteur sur gsf-mockup
