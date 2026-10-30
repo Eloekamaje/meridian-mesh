@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 
 import boucle_routes
 from jumeau import attention, boucle, entreprise_depot, evaluation_outils, evaluation_profils
-from jumeau import memoire_org, outcomes, rls
+from jumeau import memoire_org, outcomes, portefeuille, rls
 from jumeau import specialiste_decouverte, specialiste_impact, specialiste_preuve
 from jumeau import specialistes, temporalite, twins_types
 from jumeau import composition, graph_store, profils, reponse_cognitive
@@ -88,6 +88,8 @@ class AnalyseSpecialistes(BaseModel):
 class AnalyseCognitive(AnalyseSpecialistes):
     profil: str | None = None
     autorite_max: str | None = None
+    scope: str | None = None
+    domaine: str | None = None
 
 
 class DemandeComposition(BaseModel):
@@ -460,21 +462,44 @@ async def analyser_cognitif(
         profil, payload.question, autorite_max=payload.autorite_max,
         application_id=payload.application_id, situation_id=payload.situation_id,
         twin_ids=payload.twin_ids)
-    noms = list(plan.specialistes_socle)
-    dsn = boucle_routes._dsn()
-    base = specialistes.ContexteSpecialiste(
-        tenant=tenant, question=payload.question, situation_id=payload.situation_id,
-        twin_ids=tuple(payload.twin_ids), application_id=payload.application_id,
-        claim_ids=tuple(payload.claim_ids), profondeur=payload.profondeur)
-    dossiers = await _lancer_specialistes(noms, base, tenant, dsn) if noms else []
-    dossier = _fusionner_dossiers(dossiers, tenant) if dossiers else {
-        "tenant": tenant, "statut": "partiel", "propositions": [],
-        "specialistes": [], "limites": ["aucun spécialiste mobilisé par la composition"],
-    }
+    global_scope = (
+        payload.scope in {"enterprise", "portfolio"}
+        or payload.domaine is not None
+        or (not payload.application_id and not payload.twin_ids and not payload.situation_id)
+    )
+    noms = []
+    valeur = None
+    if global_scope:
+        agregat = await _avec_connexion(tenant, lambda conn: portefeuille.agreger(
+            conn, tenant, domaine=payload.domaine, limite=100))
+        dossier = {
+            "tenant": tenant, "statut": "ok",
+            "propositions": agregat["propositions"],
+            "specialistes": [{"specialiste": "portefeuille", "statut": "ok",
+                              "propositions": agregat["propositions"],
+                              "limites": list(agregat["limites"])}],
+            "limites": list(agregat["limites"]),
+        }
+        valeur = agregat["valeur"]
+    else:
+        noms = list(plan.specialistes_socle)
+        dsn = boucle_routes._dsn()
+        base = specialistes.ContexteSpecialiste(
+            tenant=tenant, question=payload.question, situation_id=payload.situation_id,
+            twin_ids=tuple(payload.twin_ids), application_id=payload.application_id,
+            claim_ids=tuple(payload.claim_ids), profondeur=payload.profondeur)
+        dossiers = await _lancer_specialistes(noms, base, tenant, dsn) if noms else []
+        dossier = _fusionner_dossiers(dossiers, tenant) if dossiers else {
+            "tenant": tenant, "statut": "partiel", "propositions": [],
+            "specialistes": [], "limites": ["aucun spécialiste mobilisé par la composition"],
+        }
     reponse = reponse_cognitive.composer(
         payload.question, profil, plan, dossier, autorite_max=payload.autorite_max)
-    return {
+    resultat = {
         "tenant": tenant,
+        "scope": ("enterprise" if global_scope and not payload.domaine else "portfolio")
+        if global_scope else "application",
+        "domaine": payload.domaine,
         "profil": boucle_routes._assainir(profil.as_dict()),
         "composition": boucle_routes._assainir(plan.as_dict()),
         "specialistes_executes": list(noms),
@@ -488,6 +513,9 @@ async def analyser_cognitif(
             "autorite": reponse.autorite,
         },
     }
+    if valeur is not None:
+        resultat["valeur"] = boucle_routes._assainir(valeur)
+    return resultat
 
 
 @router.get("/profils")
@@ -549,4 +577,21 @@ async def jeu_evaluation_profils():
 async def evaluer_profils(payload: EvaluationProfilsRequete):
     """Évalue des réponses déjà produites : vérité, adaptation et sécurité par profil."""
     resultat = evaluation_profils.evaluer_jeu(evaluation_profils.JEU_PROFILS, payload.reponses)
+    return boucle_routes._assainir(resultat)
+
+
+@router.get("/portefeuille")
+async def lire_portefeuille(
+    request: Request,
+    domaine: str | None = Query(None, max_length=120),
+    limite: int = Query(50, ge=1, le=500),
+    x_persona: str = Header("architecte", max_length=64),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Agrège situations, décisions, initiatives, outcomes et learnings à l'échelle portefeuille."""
+    boucle_routes._verifier_contexte(x_persona, x_espace)
+    tenant = boucle_routes._tenant(request, x_tenant)
+    resultat = await _avec_connexion(tenant, lambda conn: portefeuille.agreger(
+        conn, tenant, domaine=domaine, limite=limite))
     return boucle_routes._assainir(resultat)

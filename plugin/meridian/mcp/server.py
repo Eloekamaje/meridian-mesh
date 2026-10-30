@@ -64,13 +64,21 @@ def meridian_composition(
 
 
 @server.tool()
-def meridian_analyser(question: str, profil: str | None = None,
-                      situation_id: str | None = None, twin_ids: list[str] | None = None,
-                      application_id: str | None = None, profondeur: int = 2) -> dict:
+def meridian_analyser(
+    question: str,
+    profil: str | None = None,
+    situation_id: str | None = None,
+    twin_ids: list[str] | None = None,
+    application_id: str | None = None,
+    profondeur: int = 2,
+    scope: str | None = None,
+    domaine: str | None = None,
+) -> dict:
     """Analyse une question : même socle de faits, lentille du profil, aucune écriture."""
     return _appel("POST", "/boucle/analyser", corps={
         "question": question, "profil": profil, "situation_id": situation_id,
         "twin_ids": twin_ids or [], "application_id": application_id, "profondeur": profondeur,
+        "scope": scope, "domaine": domaine,
     })
 
 
@@ -96,6 +104,15 @@ def meridian_learnings(situation_id: str | None = None, twin_ids: list[str] | No
     if twin_ids:
         params["twin_ids"] = ",".join(twin_ids)
     return _appel("GET", "/boucle/learnings", params=params)
+
+
+@server.tool()
+def meridian_portefeuille(domaine: str | None = None, limite: int = 50) -> dict:
+    """Agrège le portefeuille : situations, décisions, initiatives, outcomes, learnings et valeur."""
+    params = {"limite": limite}
+    if domaine:
+        params["domaine"] = domaine
+    return _appel("GET", "/boucle/portefeuille", params=params)
 
 
 @server.tool()

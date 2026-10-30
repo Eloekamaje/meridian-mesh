@@ -6,9 +6,9 @@ Il ne remplace pas le backend Méridian : il l'expose proprement.
 
 ## Contenu
 
-- 3 **skills** : `incident-ops`, `architecture-impact`, `benefits-okr`.
+- 4 **skills** : `incident-ops`, `architecture-impact`, `benefits-okr`, `enterprise-portfolio`.
 - 3 **subagents** : `verificateur`, `analyste-impact`, `decouvreur`.
-- 1 **serveur MCP read-only** : profils, composition, analyse située, impact, Claims, learnings, attention.
+- 1 **serveur MCP read-only** : profils, composition, analyse globale/applicative, portefeuille, impact, Claims, learnings, attention.
 - 1 **policy** d'autorité : lecture/proposition, écritures interdites sans approbation humaine.
 - 1 **contrat de réponse** : socle de faits invariant + lentille de profil.
 - 3 **profils pilotes** : ops, architecte, product_owner.
@@ -91,6 +91,8 @@ Exemple :
 Analyse l'incident de latence paiements avec la skill meridian-incident-ops.
 Utilise le profil ops, la situation sit-latence-paiements et les Twins paiements/comptes.
 ```
+
+Pour une question globale : utiliser `meridian_portefeuille` ou `meridian_analyser` sans application ; le résultat contient `valeur` (situations, situations hautes, décisions, initiatives, outcomes, learnings).
 
 Le résultat contient :
 

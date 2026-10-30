@@ -19,7 +19,7 @@ def test_manifest_et_catalogues_sont_valides():
 
     assert manifest["schema"] == "meridian.plugin/1"
     assert set(profils) == {"ops", "architecte", "product_owner"}
-    assert len(manifest["skills"]) == 3 and len(manifest["agents"]) == 3
+    assert len(manifest["skills"]) == 4 and len(manifest["agents"]) == 3
     assert manifest["read_only"] is True
     assert policy["writes"]["allowed"] is False
     assert policy["unknown_profile"] == "generaliste_lecture_seule"
@@ -60,7 +60,9 @@ def test_le_serveur_mcp_expose_des_tools_read_only(monkeypatch):
 
     outils = asyncio.run(module.server.list_tools())
     noms = {outil.name for outil in outils}
-    assert {"meridian_analyser", "meridian_impact", "meridian_claims", "meridian_learnings"} <= noms
+    attendus = {"meridian_analyser", "meridian_portefeuille", "meridian_impact",
+                "meridian_claims", "meridian_learnings"}
+    assert attendus <= noms
     assert "meridian_ecrire" not in noms and "meridian_supprimer" not in noms
 
 

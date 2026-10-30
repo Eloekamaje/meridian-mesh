@@ -9,7 +9,8 @@
   "skills": [
     "skills/incident-ops/SKILL.md",
     "skills/architecture-impact/SKILL.md",
-    "skills/benefits-okr/SKILL.md"
+    "skills/benefits-okr/SKILL.md",
+    "skills/enterprise-portfolio/SKILL.md"
   ],
   "agents": [
     "agents/verificateur.md",
