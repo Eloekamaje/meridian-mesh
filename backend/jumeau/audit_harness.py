@@ -3,8 +3,9 @@
 Chaque ligne décrit un appel : outil, capacité, acteur, arguments expurgés, durée, statut et erreur. Aucun contenu
 métier ni secret n'est conservé : les clés et jetons sensibles deviennent « *** ». L'écriture ne lève jamais : une
 base indisponible rend un statut `erreur` sans empêcher l'outil de rendre son résultat. Un même événement rejoué
-avec le même horodatage n'est écrit qu'une fois ; deux appels distincts restent deux lignes. Aucun accès réseau,
-aucun code n'est chargé ni exécuté ici.
+avec le même horodatage n'est écrit qu'une fois ; deux appels distincts restent deux lignes. Le lot ouvre sa propre
+connexion Postgres courte et la referme ; aucun autre accès réseau n'est effectué, aucun code n'est chargé ni
+exécuté ici.
 """
 from __future__ import annotations
 
@@ -15,6 +16,7 @@ import json
 import math
 from typing import Any
 
+import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
@@ -201,6 +203,38 @@ class AuditPostgres:
         return derniers(self.conn, self.tenant_id if tenant_id is None else tenant_id, limite)
 
 
+def enregistrer_lignes(dsn: Any, tenant_id: Any, acteur: Any, lignes: Any) -> dict:
+    """Persiste un lot d'audit dans une connexion courte, expurgée et silencieuse.
+
+    Le lot est borné au tenant et à l'acteur fournis ; chaque ligne passe par `AuditPostgres`. Une base
+    indisponible, un tenant invalide ou une ligne refusée ne lèvent pas : ils comptent une erreur et le lot
+    continue. Le résultat ne contient aucun contenu de ligne, aucune erreur technique et aucun DSN.
+    """
+    try:
+        lot = list(lignes or ())
+    except Exception:
+        return {"ecrits": 0, "erreurs": 1}
+    if not lot:
+        return {"ecrits": 0, "erreurs": 0}
+    if not isinstance(dsn, str) or not dsn.strip():
+        return {"ecrits": 0, "erreurs": len(lot)}
+
+    ecrits = 0
+    erreurs = 0
+    try:
+        with psycopg.connect(dsn, connect_timeout=5) as conn:
+            audit = AuditPostgres(conn, tenant_id, acteur)
+            for ligne in lot:
+                statut = audit.enregistrer(ligne)
+                if statut.get("statut") == "ok":
+                    ecrits += 1
+                else:
+                    erreurs += 1
+    except Exception:
+        return {"ecrits": ecrits, "erreurs": len(lot) - ecrits}
+    return {"ecrits": ecrits, "erreurs": erreurs}
+
+
 def derniers(conn: Any, tenant_id: Any, limite: Any = 50) -> list[dict]:
     """Lecture bornée du journal d'un tenant ; jamais de ligne d'un autre tenant."""
     tenant = _tenant(tenant_id)
@@ -217,4 +251,5 @@ __all__ = [
     "AuditPostgres",
     "ErreurAudit",
     "derniers",
+    "enregistrer_lignes",
 ]

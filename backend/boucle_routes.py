@@ -3,9 +3,11 @@
 Lecture seule : les objets sont lus dans ``objet_entreprise`` (Postgres) via
 :mod:`jumeau.entreprise_depot` et :mod:`jumeau.boucle`. Aucune route n'écrit.
 
-Le tenant est lu dans l'en-tête ``X-Tenant`` (défaut ``local``). C'est un pont transitoire, le temps que le tenant
-provienne de l'identité authentifiée ; un en-tête vide est refusé et toutes les lectures sont filtrées par tenant.
-Les en-têtes ``X-Persona`` / ``X-Espace`` restent les contextes d'usage de la démonstration.
+Le tenant est résolu par :mod:`jumeau.tenant`. En mode demo seulement, l'absence de ``X-Tenant`` vaut ``local`` ;
+hors demo (proxy, OIDC, production), l'en-tête est obligatoire et un en-tête vide ou invalide est refusé. Aucun repli
+silencieux n'est fait en production. Si un tenant authentifié est déjà posé sur ``request.state.tenant``, il fait foi
+et un ``X-Tenant`` différent est refusé. Les en-têtes ``X-Persona`` / ``X-Espace`` restent les contextes d'usage de la
+démonstration.
 """
 from __future__ import annotations
 
@@ -20,10 +22,11 @@ import unicodedata
 from urllib.parse import parse_qsl, unquote_plus, urlsplit
 
 import psycopg
-from fastapi import APIRouter, Header, HTTPException, Query
+from fastapi import APIRouter, Header, HTTPException, Query, Request
 from psycopg.rows import dict_row
 
 from jumeau import boucle, entreprise_depot, modele_entreprise
+from jumeau.tenant import TenantError, exiger_tenant, normaliser_slug, resoudre_tenant
 from seed_data import ESPACES, PERSONAS
 
 router = APIRouter(prefix="/boucle", tags=["boucle"])
@@ -54,12 +57,21 @@ def _normaliser(valeur, *, minuscule: bool = False) -> str:
     return texte.lower() if minuscule else texte.upper()
 
 
-def _tenant(x_tenant: str | None) -> str:
-    if x_tenant is None:
-        return "local"
-    tenant = str(x_tenant).strip()
-    if not tenant:
-        raise HTTPException(400, "X-Tenant ne peut pas être vide")
+def _tenant(request: Request, x_tenant: str | None) -> str:
+    """Résout le tenant de la requête, sans repli implicite hors demo."""
+    mode = getattr(request.state, "auth_mode", None)
+    authentifie = getattr(request.state, "tenant", None)
+    try:
+        if authentifie is not None:
+            contexte = resoudre_tenant(authentifie, auth_mode=mode)
+            if x_tenant is not None and normaliser_slug(x_tenant) != contexte.id:
+                raise HTTPException(403, "Tenant différent de l'identité authentifiée")
+        else:
+            contexte = resoudre_tenant(x_tenant, auth_mode=mode)
+        tenant = exiger_tenant(contexte).id
+    except TenantError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+    request.state.tenant = tenant
     return tenant
 
 
@@ -173,17 +185,18 @@ async def _dans_le_thread(action):
 
 @router.get("/objets")
 async def lister_objets(
+    request: Request,
     famille: str | None = Query(None, max_length=64),
     type_: str | None = Query(None, alias="type", max_length=64),
     mode: str | None = Query(None, max_length=32),
     limite: int = Query(100, ge=1, le=1000),
     x_persona: str = Header("architecte", max_length=64),
     x_espace: str | None = Header(None, max_length=64),
-    x_tenant: str | None = Header(None, alias="X-Tenant", max_length=128),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
     """Liste les objets canoniques du tenant, filtrés par famille, type, mode et bornés par ``limite``."""
     _verifier_contexte(x_persona, x_espace)
-    tenant = _tenant(x_tenant)
+    tenant = _tenant(request, x_tenant)
     filtres = _filtres(famille, type_, mode, limite)
     dsn = _dsn()
 
@@ -198,14 +211,15 @@ async def lister_objets(
 @router.get("/objets/{objet_id}")
 async def lire_objet(
     objet_id: str,
+    request: Request,
     historique: bool = Query(False),
     x_persona: str = Header("architecte", max_length=64),
     x_espace: str | None = Header(None, max_length=64),
-    x_tenant: str | None = Header(None, alias="X-Tenant", max_length=128),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
     """Lit un objet du tenant ; ``historique=true`` ajoute sa chaîne canonique et ses versions conservées."""
     _verifier_contexte(x_persona, x_espace)
-    tenant = _tenant(x_tenant)
+    tenant = _tenant(request, x_tenant)
     dsn = _dsn()
 
     def lire():
@@ -226,13 +240,14 @@ async def lire_objet(
 
 @router.get("/synthese")
 async def synthese(
+    request: Request,
     x_persona: str = Header("architecte", max_length=64),
     x_espace: str | None = Header(None, max_length=64),
-    x_tenant: str | None = Header(None, alias="X-Tenant", max_length=128),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
     """Compte les objets du tenant par famille, type et mode, sans exposer leur contenu."""
     _verifier_contexte(x_persona, x_espace)
-    tenant = _tenant(x_tenant)
+    tenant = _tenant(request, x_tenant)
     dsn = _dsn()
 
     def lire():

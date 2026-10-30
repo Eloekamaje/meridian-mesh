@@ -67,7 +67,12 @@ Preuve live sur « régénère le flux du gsf-mockup » : `repo:gsf-mockup → t
 - API canonique : `/api/boucle/objets`, `/api/boucle/objets/{id}`, `/api/boucle/synthese`, lecture tenant-scopée, filtres et chaîne/historique.
 - UI : page `/boucle` avec six familles, filtres, détail, chaîne et liens Travail/Atlas ; entrée de navigation.
 - Migration legacy en dry-run : 13 situations, 10 initiatives, 45 relations lues, 0 erreur ; aucune écriture massive tant que le graph store de production n'est pas branché.
-- Tests : **1195 backend jumeau** (3 skip), **161 frontend**, build OK. Live dating : `concevoir_architecture` seul, 0 participant, 12 composants, audit 1 appel, schéma proposition.
+- Tenant : `tenant.py` (demo local, production sans fallback, slug, absence « non observé »), branché dans Boucle.
+- Audit : `outil_audit` persistant best-effort après tour ; live dating = 1 ligne `concevoir_architecture · concevoir · ok · local`.
+- Catalogue : `GET /api/outils` expose les manifestes intégrés + `JUMEAU_MANIFESTES`, sans exécution.
+- Graphe : `graph_store.py` choisit Neo4j si configuré, sinon mémoire ; `graphe_sync` prêt.
+- OpenAPI : génération de manifestes read-only/écriture depuis les opérations, enregistrables dans le registre.
+- Tests : **1260 backend jumeau** (3 skip), **161 frontend**, build OK. Live dating : 0 participant, 12 composants, audit persistant, schéma proposition.
 
 ## Constat du connecteur sur gsf-mockup
 
@@ -85,8 +90,8 @@ Le dépôt `gsf-mockup` ne contient pas de spec OpenAPI statique. Le connecteur 
 
 ## Prochain lot
 
-1. Exécuter le backfill canonique réel après branchement du graph store de production (Neo4j/Neptune) et vérifier l'idempotence.
-2. Brancher l'audit persistant et le chargeur de manifestes dans le serveur ; compléter MCP/OpenAPI.
-3. Porter le tenant de requête et la règle d'absence dans tous les chemins.
+1. Déployer Neo4j/Neptune, exécuter le backfill canonique réel et vérifier l'idempotence.
+2. Extraire le tenant authentifié du middleware OIDC/proxy et appliquer RLS aux autres chemins.
+3. Ajouter l'adaptateur MCP et brancher `openapi_outils` dans l'ingestion des sources.
 4. Enrichir le jeu d'or de l'orchestrateur et mesurer les choix d'outils.
 5. Retirer progressivement Mongo canonique après double lecture contrôlée.

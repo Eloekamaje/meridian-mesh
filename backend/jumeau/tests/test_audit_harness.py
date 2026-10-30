@@ -26,6 +26,19 @@ SCHEMA_SORTIE = {
 }
 
 
+class _ConnexionCourte:
+    def __init__(self, conn):
+        self.conn = conn
+        self.fermee = False
+
+    def __enter__(self):
+        return self.conn
+
+    def __exit__(self, *_):
+        self.fermee = True
+        return False
+
+
 def manifeste():
     return ManifesteOutil(
         nom="lire_traces",
@@ -148,6 +161,67 @@ def test_une_base_indisponible_rend_un_statut_sans_lever():
     statut = audit.enregistrer({"outil": "lire_traces", "statut": "ok"})
     assert statut["statut"] == "erreur"
     assert statut["insere"] is False
+
+
+@besoin_pg
+def test_enregistrer_lignes_ecrit_un_lot_expurge_dans_une_connexion_courte(conn, monkeypatch):
+    connexion = _ConnexionCourte(conn)
+    monkeypatch.setattr(audit_harness.psycopg, "connect", lambda *_, **__: connexion)
+
+    resultat = audit_harness.enregistrer_lignes("postgresql://test/test", "banque", "flore", [
+        {"outil": "lire_traces", "capacite": "observer",
+         "arguments": {"application": "alpha", "api_key": "sk-secret-123456"}, "statut": "ok"},
+        {"nom": "creer_travail", "capacite": "agir",
+         "arguments": {"note": "Bearer abcdefghijklmnop"}, "duree_ms": 2, "statut": "ok"},
+    ])
+
+    assert resultat == {"ecrits": 2, "erreurs": 0}
+    assert connexion.fermee is True
+    lignes = audit_harness.derniers(conn, "banque", 10)
+    assert len(lignes) == 2
+    assert {(ligne["tenant_id"], ligne["acteur"]) for ligne in lignes} == {("banque", "flore")}
+    encode = str(lignes)
+    assert "sk-secret-123456" not in encode
+    assert "abcdefghijklmnop" not in encode
+    assert "postgresql://test/test" not in encode
+
+
+@besoin_pg
+def test_enregistrer_lignes_compte_les_refus_sans_interrompre_le_lot(conn, monkeypatch):
+    monkeypatch.setattr(audit_harness.psycopg, "connect", lambda *_, **__: _ConnexionCourte(conn))
+
+    resultat = audit_harness.enregistrer_lignes("postgresql://test/test", "banque", "flore", [
+        {"outil": "lire_traces", "statut": "ok"},
+        {"arguments": "pas un objet"},
+        "pas une ligne",
+    ])
+
+    assert resultat == {"ecrits": 1, "erreurs": 2}
+    assert len(audit_harness.derniers(conn, "banque", 10)) == 1
+
+
+def test_enregistrer_lignes_ne_leve_jamais_et_ne_revele_ni_dsn_ni_erreur(monkeypatch):
+    def casse(*_, **__):
+        raise RuntimeError("secret=postgresql://interdit")
+
+    monkeypatch.setattr(audit_harness.psycopg, "connect", casse)
+    resultat = audit_harness.enregistrer_lignes(
+        "postgresql://interdit", "banque", "flore", [{"outil": "lire_traces"}, {"outil": "autre"}])
+
+    assert resultat == {"ecrits": 0, "erreurs": 2}
+    assert "postgresql" not in str(resultat)
+    assert "interdit" not in str(resultat)
+
+
+def test_enregistrer_lignes_sans_dsn_compte_les_erreurs_sans_se_connecter(monkeypatch):
+    def interdit(*_, **__):
+        raise AssertionError("aucune connexion sans DSN")
+
+    monkeypatch.setattr(audit_harness.psycopg, "connect", interdit)
+    assert audit_harness.enregistrer_lignes(None, "banque", "flore", [{"outil": "lire_traces"}]) == {
+        "ecrits": 0, "erreurs": 1}
+    assert audit_harness.enregistrer_lignes("postgresql://test", "banque", "flore", []) == {
+        "ecrits": 0, "erreurs": 0}
 
 
 @besoin_pg

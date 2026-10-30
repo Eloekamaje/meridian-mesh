@@ -14,6 +14,7 @@ import signal
 import sys
 import logging
 import secrets
+import threading
 import unicodedata
 from pathlib import Path
 from uuid import uuid4
@@ -39,6 +40,10 @@ from jumeau import identite as jumeau_identite  # noqa: E402
 from jumeau import identite_depot as jumeau_identite_depot  # noqa: E402
 from jumeau import conception as jumeau_conception  # noqa: E402
 from jumeau import orchestrateur as jumeau_orchestrateur  # noqa: E402
+from jumeau import audit_harness as jumeau_audit_harness  # noqa: E402
+from jumeau import capacites as jumeau_capacites  # noqa: E402
+from jumeau import chargeur_manifestes as jumeau_chargeur_manifestes  # noqa: E402
+from jumeau import harness as jumeau_harness  # noqa: E402
 from jumeau import decouverte_interfaces as jumeau_decouverte_interfaces  # noqa: E402
 from jumeau import interfaces_depot as jumeau_interfaces_depot  # noqa: E402
 from jumeau import connecteurs_runtime as jumeau_connecteurs_runtime  # noqa: E402
@@ -1726,7 +1731,43 @@ def _poser_resolution(reponse, resolution):
     return reponse
 
 
-async def generer_reponse_flore(contexte, question, selection, domaine, x_persona, x_espace, travail=None, emit=None):
+def enregistrer_lignes(dsn, tenant_id, acteur, lignes):
+    """Pont testable vers l'audit persistant : une seule fonction, jamais d'exception vers l'appelant."""
+    return jumeau_audit_harness.enregistrer_lignes(dsn, tenant_id, acteur, lignes)
+
+
+def _persister_audit_orchestration(reponse, x_persona, tenant=None):
+    """Après un tour de l'orchestrateur, écrit son audit en arrière-plan ; ne bloque ni ne casse la réponse."""
+    if not isinstance(reponse, dict):
+        return
+    orchestration = reponse.get("orchestration")
+    if not isinstance(orchestration, dict):
+        return
+    lignes = orchestration.get("audit")
+    if not isinstance(lignes, list) or not lignes:
+        return
+    dsn = os.environ.get("JUMEAU_PG_DSN")
+    if not dsn:
+        return
+    tenant_id = str(tenant or os.environ.get("JUMEAU_TENANT") or "local").strip()[:128] or "local"
+    acteur = str(x_persona or "architecte")
+    instantane = [dict(ligne) for ligne in lignes if isinstance(ligne, dict)]
+    if not instantane:
+        return
+
+    def ecrire():
+        try:
+            enregistrer_lignes(dsn, tenant_id, acteur, instantane)
+        except Exception:
+            logger.debug("audit orchestrateur non persisté")
+
+    try:
+        threading.Thread(target=ecrire, name="audit-orchestrateur", daemon=True).start()
+    except Exception:
+        logger.debug("audit orchestrateur non planifié")
+
+
+async def generer_reponse_flore(contexte, question, selection, domaine, x_persona, x_espace, travail=None, emit=None, *, tenant=None):
     if not await limites.autoriser(f"tours:{x_persona}", limites.maxi_tours(), limites.fenetre_tours()):
         raise HTTPException(429, "Trop de tours Flore en peu de temps ; réessayez dans un instant")
     persona, espace = resoudre_perimetre(x_persona, x_espace)
@@ -1759,6 +1800,7 @@ async def generer_reponse_flore(contexte, question, selection, domaine, x_person
             question, jumeaux=candidats, selection=sel, mobiliser=mobiliser_orchestre,
             concevoir=concevoir_orchestre)
         if reponse_orchestree:
+            _persister_audit_orchestration(reponse_orchestree, x_persona, tenant)
             return marquer_origine(reponse_orchestree, "modele")
         return marquer_origine({
             "comportement": "signaler",
@@ -1848,15 +1890,19 @@ async def decouvrir_interfaces_du_jumeau(jid: str, x_persona: str = Header("arch
 
 
 @api_router.post("/aurora/demander")
-async def aurora_demander(payload: AuroraDemande, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
-    return await generer_reponse_flore(payload.contexte, payload.question, payload.selection, payload.domaine, x_persona, x_espace)
+async def aurora_demander(payload: AuroraDemande, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None),
+                          x_tenant: Optional[str] = Header(None)):
+    return await generer_reponse_flore(payload.contexte, payload.question, payload.selection, payload.domaine, x_persona, x_espace,
+                                       tenant=x_tenant)
 
 
 @api_router.post("/aurora/demander/flux")
-async def aurora_demander_flux(payload: AuroraDemande, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+async def aurora_demander_flux(payload: AuroraDemande, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None),
+                               x_tenant: Optional[str] = Header(None)):
     """La même réponse, au fil de l'eau : étapes réelles, brouillon en relecture, puis la réponse relue (jumeau/flux.py)."""
     return jumeau_flux.en_flux(lambda emit: generer_reponse_flore(
-        payload.contexte, payload.question, payload.selection, payload.domaine, x_persona, x_espace, emit=emit), proprietaire=x_persona)
+        payload.contexte, payload.question, payload.selection, payload.domaine, x_persona, x_espace, emit=emit, tenant=x_tenant),
+        proprietaire=x_persona)
 
 
 @api_router.get("/preuves/extrait")
@@ -1890,6 +1936,59 @@ async def aurora_suggestions(contexte: str = "global", x_persona: str = Header("
         s for s in sugs
         if not any(j["id"] not in aut and len(j["nom"]) > 4 and j["nom"].lower() in s.lower() for j in tous)
     ]
+
+
+def _chemins_manifestes():
+    valeur = os.environ.get("JUMEAU_MANIFESTES")
+    if not valeur:
+        return []
+    return [morceau.strip() for morceau in str(valeur).replace(os.pathsep, "\n").splitlines() if morceau.strip()]
+
+
+def _catalogue_outils(tenant_id, persona_id, perimetre_id):
+    """Les manifestes intégrés et les fichiers JUMEAU_MANIFESTES, filtrés par portée ; aucune exécution."""
+    registre = jumeau_capacites.RegistreCapacites(jumeau_capacites.manifestes_integres())
+    for chemin in _chemins_manifestes():
+        try:
+            jumeau_chargeur_manifestes.charger(registre, chemin)
+        except Exception:
+            logger.warning("catalogue d'outils : manifeste externe ignoré")
+    return [
+        jumeau_harness.expurger(manifeste.as_dict())
+        for manifeste in registre.lister(tenant=tenant_id, persona=persona_id, perimetre=perimetre_id)
+    ]
+
+
+@api_router.get("/outils")
+async def lister_outils(
+    tenant: Optional[str] = Query(None, max_length=128),
+    persona: Optional[str] = Query(None, max_length=64),
+    perimetre: Optional[str] = Query(None, max_length=96),
+    x_persona: str = Header("architecte", max_length=64),
+    x_espace: Optional[str] = Header(None, max_length=96),
+    x_tenant: Optional[str] = Header(None, max_length=128),
+):
+    """Catalogue read-only des outils visibles : manifestes intégrés et fichiers JUMEAU_MANIFESTES."""
+    brut_tenant = tenant if tenant is not None else x_tenant
+    if brut_tenant is None:
+        tenant_id = os.environ.get("JUMEAU_TENANT") or "local"
+    else:
+        tenant_id = str(brut_tenant).strip()
+        if not tenant_id:
+            raise HTTPException(400, "Tenant ne peut pas être vide")
+    persona_id = str(persona if persona is not None else x_persona or "").strip()
+    if not persona_id:
+        raise HTTPException(400, "Persona ne peut pas être vide")
+    _, espace = resoudre_perimetre(persona_id, x_espace)
+    perimetre_id = str(perimetre if perimetre is not None else espace["id"]).strip()
+    if not perimetre_id:
+        raise HTTPException(400, "Périmètre ne peut pas être vide")
+    return {
+        "tenant": jumeau_harness.expurger(tenant_id),
+        "persona": jumeau_harness.expurger(persona_id),
+        "perimetre": jumeau_harness.expurger(perimetre_id),
+        "outils": _catalogue_outils(tenant_id, persona_id, perimetre_id),
+    }
 
 
 # ---------- Cases (module dédié) ----------
