@@ -523,3 +523,33 @@ BEGIN
 END $$ LANGUAGE plpgsql;
 CREATE OR REPLACE TRIGGER claim_accepte_exige_preuve BEFORE INSERT OR UPDATE OF statut ON claim
     FOR EACH ROW EXECUTE FUNCTION claim_accepte_exige_preuve();
+
+-- ---------------------------------------------------------------------------
+-- Audit des appels d'outils (ADR-0004) : append-only, tenant-scopé, sans
+-- contenu sensible. Une ligne par découverte, chargement ou appel ; jamais de
+-- mise à jour ni de suppression. L'idempotence couvre une ligne rejouée avec
+-- le même horodatage, pas deux appels distincts.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS outil_audit (
+    id         bigserial PRIMARY KEY,
+    tenant_id  text NOT NULL,
+    outil      text NOT NULL,
+    capacite   text,
+    acteur     text NOT NULL,
+    arguments  jsonb NOT NULL DEFAULT '{}'::jsonb,
+    duree_ms   double precision NOT NULL DEFAULT 0 CHECK (duree_ms >= 0),
+    statut     text NOT NULL,
+    erreur     text,
+    quand      timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS outil_audit_tenant_quand
+    ON outil_audit (tenant_id, quand DESC);
+CREATE INDEX IF NOT EXISTS outil_audit_tenant_outil_quand
+    ON outil_audit (tenant_id, outil, quand DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS outil_audit_idempotence
+    ON outil_audit (tenant_id, outil, coalesce(capacite, ''), acteur, md5(arguments::text),
+                    duree_ms, statut, coalesce(erreur, ''), quand);
+CREATE OR REPLACE TRIGGER outil_audit_immuable BEFORE UPDATE OR DELETE ON outil_audit
+    FOR EACH ROW EXECUTE FUNCTION immuable();
+CREATE OR REPLACE TRIGGER outil_audit_sans_truncate BEFORE TRUNCATE ON outil_audit
+    FOR EACH STATEMENT EXECUTE FUNCTION immuable();

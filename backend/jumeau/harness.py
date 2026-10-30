@@ -155,7 +155,8 @@ def _texte_expurge(valeur: str) -> str:
     return texte[:_JOUR]
 
 
-def _expurger(valeur: Any, cle: Any = None, profondeur: int = 0) -> Any:
+def expurger(valeur: Any, cle: Any = None, profondeur: int = 0) -> Any:
+    """Copie JSON-safe d'une valeur, clés et jetons sensibles remplacés par « *** »."""
     if profondeur > _MAX_PROFONDEUR:
         return "[…]"
     if cle is not None and re.search(_CLE_SENSIBLE, str(cle)):
@@ -168,12 +169,15 @@ def _expurger(valeur: Any, cle: Any = None, profondeur: int = 0) -> Any:
         return _texte_expurge(valeur)
     if isinstance(valeur, Mapping):
         return {
-            str(nom): _expurger(contenu, nom, profondeur + 1)
+            str(nom): expurger(contenu, nom, profondeur + 1)
             for nom, contenu in valeur.items()
         }
     if isinstance(valeur, (list, tuple, set, frozenset)):
-        return [_expurger(contenu, None, profondeur + 1) for contenu in valeur]
+        return [expurger(contenu, None, profondeur + 1) for contenu in valeur]
     return _texte_expurge(str(valeur))
+
+
+_expurger = expurger
 
 
 def _secondes(timeout_ms: Any) -> float:
@@ -222,6 +226,16 @@ def _lier(callback: Callable, arguments: Mapping) -> dict:
     ):
         raise ValueError("argument inconnu")
     return valeurs
+
+
+def _consommer(tache: Any) -> None:
+    """Consomme l'exception éventuelle d'une écriture d'audit asynchrone, sans bruit ni blocage."""
+    if tache.cancelled():
+        return
+    try:
+        tache.exception()
+    except Exception:
+        return
 
 
 def _invoquer(callback: Callable, arguments: Mapping) -> Any:
@@ -325,6 +339,7 @@ class Harness:
         persona: str | None = None,
         perimetre: str | None = None,
         audit: list[dict] | None = None,
+        audit_sink: Any = None,
     ) -> None:
         self.registre = registre if registre is not None else RegistreCapacites()
         self.adaptateurs = dict(adaptateurs or {})
@@ -332,6 +347,7 @@ class Harness:
         self.tenant = tenant
         self.persona = persona
         self.perimetre = perimetre
+        self.audit_sink = audit_sink
         self._audit: list[dict] = audit if isinstance(audit, list) else []
         self._decouverte: dict[str, Callable] = {
             "rechercher_outil": self._rechercher,
@@ -386,6 +402,33 @@ class Harness:
         }
         ligne.update(details)
         self._audit.append(ligne)
+        self._persister(ligne)
+
+    def _persister(self, ligne: Mapping) -> None:
+        """Écrit la ligne au sink sans jamais modifier ni retenir le résultat de l'appel d'outil."""
+        sink = self.audit_sink
+        if sink is None:
+            return
+        charge = dict(ligne)
+        charge.setdefault("outil", charge.get("nom"))
+        charge["quand"] = time.time()
+        try:
+            ecrire = getattr(sink, "enregistrer", None)
+            if ecrire is None and callable(sink):
+                ecrire = sink
+            if ecrire is None:
+                return
+            resultat = ecrire(copy.deepcopy(charge))
+        except Exception:
+            return
+        if inspect.isawaitable(resultat):
+            try:
+                boucle = asyncio.get_running_loop()
+            except RuntimeError:
+                if inspect.iscoroutine(resultat):
+                    resultat.close()
+                return
+            boucle.create_task(resultat).add_done_callback(_consommer)
 
     def _verifier(self, nom: Any, approuves: Iterable[str] | None = None,
                   executeur: Callable | None = None) -> ManifesteOutil:
@@ -580,4 +623,5 @@ __all__ = [
     "OutilInconnu",
     "EcritureNonApprouvee",
     "manifestes_decouverte",
+    "expurger",
 ]

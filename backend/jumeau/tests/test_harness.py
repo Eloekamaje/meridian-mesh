@@ -273,3 +273,67 @@ def test_la_decouverte_suit_la_portee_demandee_au_tour():
 
     assert [outil["nom"] for outil in recherche["outils"]] == ["traces_banque"]
     assert json.loads(catalogue["decrire_outil"]("traces_assurance"))["statut"] == "indisponible"
+
+
+class SinkMemoire:
+    def __init__(self):
+        self.lignes = []
+
+    def enregistrer(self, ligne):
+        self.lignes.append(dict(ligne))
+        return {"statut": "ok"}
+
+
+class SinkCasse:
+    def enregistrer(self, ligne):
+        raise RuntimeError("base indisponible")
+
+
+def test_un_audit_sink_recoit_chaque_appel_sans_remplacer_l_audit_memoire():
+    sink = SinkMemoire()
+    harnais = Harness(
+        RegistreCapacites([manifeste()]),
+        {"lire_traces": lambda application, **extra: {"traces": [application]}},
+        audit_sink=sink,
+    )
+
+    assert asyncio.run(harnais.appeler(
+        "lire_traces", {"application": "alpha", "token": "abcdef123456"})) == {
+        "traces": ["alpha"]}
+    assert asyncio.run(harnais.appeler(
+        "lire_traces", {"application": "beta"})) == {"traces": ["beta"]}
+
+    assert len(sink.lignes) == 2
+    assert [ligne["outil"] for ligne in sink.lignes] == ["lire_traces", "lire_traces"]
+    assert all(ligne["statut"] == "ok" for ligne in sink.lignes)
+    assert sink.lignes[0]["arguments"]["token"] == "***"
+    assert "abcdef123456" not in json.dumps(sink.lignes, ensure_ascii=False)
+    assert [ligne["statut"] for ligne in harnais.auditer()] == ["ok", "ok"]
+
+
+def test_un_echec_du_sink_d_audit_ne_casse_pas_l_appel_d_outil():
+    harnais = Harness(
+        RegistreCapacites([manifeste()]),
+        {"lire_traces": lambda application: {"traces": [application]}},
+        audit_sink=SinkCasse(),
+    )
+
+    assert asyncio.run(harnais.appeler("lire_traces", {"application": "alpha"})) == {
+        "traces": ["alpha"]}
+    assert harnais.auditer()[-1]["statut"] == "ok"
+
+
+def test_un_echec_du_sink_est_aussi_sans_effet_sur_un_appel_en_erreur():
+    def casse(application):
+        raise ValueError("indisponible")
+
+    harnais = Harness(
+        RegistreCapacites([manifeste()]),
+        {"lire_traces": casse},
+        audit_sink=SinkCasse(),
+    )
+
+    with pytest.raises(ValueError):
+        asyncio.run(harnais.appeler("lire_traces", {"application": "alpha"}))
+    assert harnais.auditer()[-1]["statut"] == "erreur"
+    assert harnais.auditer()[-1]["erreur"] == "ValueError"

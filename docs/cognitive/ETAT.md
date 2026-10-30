@@ -61,7 +61,10 @@ Preuve live sur « régénère le flux du gsf-mockup » : `repo:gsf-mockup → t
 - `harness` : registre capacitaire branché dans l'orchestrateur, catalogue filtré, audit en mémoire, `rechercher_outil`/`decrire_outil`, timeout des outils asynchrones.
 - `GrapheNeo4j` : adaptateur Cypher paramétré du port `GraphStore`, testé par session factice.
 - Produit : `/` et `/aujourdhui` ouvrent Aujourd'hui ; Atlas reste l'exploration.
-- Tests : **1132 backend jumeau** (3 skip), **153 frontend**, build OK. Live dating : `concevoir_architecture` seul, 0 participant, 12 composants, audit 1 appel, schéma proposition.
+- Boucle P1 canonique : Situation → Investigation → Décision → Initiative → Outcome → Learning, persistée dans `objet_entreprise` (`boucle.py`), avec transitions et liens validés.
+- Audit harness persistant : table `outil_audit` append-only, expurgation, sink optionnel dans `harness.py` ; chargeur de manifestes JSON.
+- Synchronisation graphe : mapping identité/relations legacy vers `NoeudTwin`/`Arete`, dry-run, réconciliation, sans accès direct aux stores.
+- Tests : **1172 backend jumeau** (3 skip), **153 frontend**, build OK. Live dating : `concevoir_architecture` seul, 0 participant, 12 composants, audit 1 appel, schéma proposition.
 
 ## Constat du connecteur sur gsf-mockup
 
@@ -79,8 +82,8 @@ Le dépôt `gsf-mockup` ne contient pas de spec OpenAPI statique. Le connecteur 
 
 ## Prochain lot
 
-1. Brancher `objet_entreprise` dans les API/UI et migrer les collections Mongo canoniques.
-2. Rendre l'audit du harness persistant et le catalogue dynamique MCP/OpenAPI.
-3. Brancher `GrapheNeo4j`/Neptune dans l'ingestion, puis migrer les relations Mongo.
+1. Brancher `objet_entreprise`/`boucle` dans les API/UI et migrer les collections Mongo canoniques.
+2. Brancher l'audit persistant et le chargeur de manifestes dans le serveur ; compléter MCP/OpenAPI.
+3. Brancher `graphe_sync` + `GrapheNeo4j`/Neptune dans l'ingestion, puis migrer les relations Mongo.
 4. Porter le tenant de requête et la règle d'absence dans tous les chemins.
 5. Enrichir le jeu d'or de l'orchestrateur et mesurer les choix d'outils.
