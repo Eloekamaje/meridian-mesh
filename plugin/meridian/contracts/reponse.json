@@ -1,0 +1,20 @@
+{
+  "required": ["question", "profil", "composition", "socle", "lecture", "actions", "autorite", "prochaines_etapes"],
+  "invariants": [
+    "socle.faits est identique pour tous les profils sur un même contexte",
+    "aucune action n'est exécutée par le plugin",
+    "l'autorité ne dépasse jamais celle du profil et reste en proposition",
+    "un profil inconnu ou non vérifié reste en lecture seule"
+  ],
+  "socle": {
+    "faits": "liste des propositions sourcées",
+    "preuves": "identifiants et locators",
+    "incertitudes": "questions et hypothèses",
+    "limites": "sources absentes ou partielles"
+  },
+  "lentille": {
+    "lecture": "sections adaptées au profil",
+    "actions": "actions proposées, jamais exécutées",
+    "prochaines_etapes": "prochaines étapes humaines"
+  }
+}

@@ -1,0 +1,95 @@
+"""Plugin Méridian : manifest, skills, agents, policy et tools MCP read-only."""
+import asyncio
+import json
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+REPO = ROOT.parents[1]
+
+
+def _json(chemin):
+    return json.loads((ROOT / chemin).read_text(encoding="utf-8"))
+
+
+def test_manifest_et_catalogues_sont_valides():
+    manifest = _json("meridian.plugin.json")
+    profils = _json("profiles.json")["profiles"]
+    policy = _json("policies/authority.json")
+    contrat = _json("contracts/reponse.json")
+
+    assert manifest["schema"] == "meridian.plugin/1"
+    assert set(profils) == {"ops", "architecte", "product_owner"}
+    assert len(manifest["skills"]) == 3 and len(manifest["agents"]) == 3
+    assert manifest["read_only"] is True
+    assert policy["writes"]["allowed"] is False
+    assert policy["unknown_profile"] == "generaliste_lecture_seule"
+    assert "socle" in contrat["required"] and "autorite" in contrat["required"]
+
+
+def test_skills_et_agents_ont_un_frontmatter_exploitable():
+    for chemin in _json("meridian.plugin.json")["skills"]:
+        texte = (ROOT / chemin).read_text(encoding="utf-8")
+        assert texte.startswith("---\n")
+        assert "name:" in texte and "description:" in texte
+    for chemin in _json("meridian.plugin.json")["agents"]:
+        texte = (ROOT / chemin).read_text(encoding="utf-8")
+        assert texte.startswith("---\n")
+        assert "name:" in texte and "description:" in texte
+        assert "mode: subagent" in texte
+
+
+def test_les_profils_du_plugin_existent_dans_le_noyau():
+    import sys
+
+    sys.path.insert(0, str(REPO / "backend"))
+    from jumeau import profils
+
+    plugin = _json("profiles.json")["profiles"]
+    for identifiant, configuration in plugin.items():
+        profil = profils.resoudre_profil(profil=identifiant)
+        assert profil.inconnu is False
+        assert set(configuration["methods"]) <= set(profil.methodes)
+        assert set(configuration["skills"]) <= set(profil.competences)
+
+
+def test_le_serveur_mcp_expose_des_tools_read_only(monkeypatch):
+    import sys
+
+    sys.path.insert(0, str(REPO))
+    from plugin.meridian.mcp import server as module
+
+    outils = asyncio.run(module.server.list_tools())
+    noms = {outil.name for outil in outils}
+    assert {"meridian_analyser", "meridian_impact", "meridian_claims", "meridian_learnings"} <= noms
+    assert "meridian_ecrire" not in noms and "meridian_supprimer" not in noms
+
+
+def test_un_tool_mcp_appelle_l_api_avec_tenant_et_persona(monkeypatch):
+    import sys
+
+    sys.path.insert(0, str(REPO))
+    from plugin.meridian.mcp import server as module
+
+    appels = []
+
+    class Reponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"ok": True}
+
+    def faux(methode, url, **kwargs):
+        appels.append((methode, url, kwargs))
+        return Reponse()
+
+    monkeypatch.setattr(module.requests, "request", faux)
+    monkeypatch.setattr(module, "API", "http://test/api")
+    monkeypatch.setattr(module, "TENANT", "demo")
+    monkeypatch.setattr(module, "PERSONA", "architecte")
+
+    assert module.meridian_impact("paiements") == {"ok": True}
+    methode, url, kwargs = appels[0]
+    assert (methode, url) == ("GET", "http://test/api/boucle/graphe/paiements/impact")
+    assert kwargs["headers"]["X-Tenant"] == "demo"
+    assert kwargs["headers"]["X-Persona"] == "architecte"

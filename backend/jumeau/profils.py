@@ -164,7 +164,7 @@ CATALOGUE_PROFILS: dict[str, Profil] = {
         id="product_owner",
         libelle="Product owner",
         postures=("facilitateur", "concepteur"),
-        methodes=("scrum", "story_mapping", "okr"),
+        methodes=("scrum", "story_mapping", "okr", "benefits"),
         competences=(
             "faciliter_decision", "mesurer_outcome", "retrouver_learning", "analyser_impact",
         ),
@@ -331,7 +331,7 @@ _ALIAS_SOURCES: dict[str, tuple[str, ...]] = {
         "support", "support technique", "service desk", "helpdesk", "help desk",
         "technicien support", "technicienne support", "agent support", "exploitation",
         "support production", "run", "sre", "operateur support", "customer support",
-        "support client", "assistance",
+        "support client", "assistance", "ops", "operations", "opérations", "exploitation si",
     ),
     "risque": (
         "risque", "risques", "risk", "risk manager", "gestionnaire de risque",

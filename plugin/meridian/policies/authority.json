@@ -1,0 +1,19 @@
+{
+  "default_authority": "lecture",
+  "profiles": {
+    "ops": "proposition",
+    "architecte": "proposition",
+    "product_owner": "proposition"
+  },
+  "writes": {
+    "allowed": false,
+    "requires_human_approval": true
+  },
+  "tenant_source": "identity",
+  "composition": {
+    "max_methods": 3,
+    "max_skills": 6,
+    "max_specialists": 3
+  },
+  "unknown_profile": "generaliste_lecture_seule"
+}

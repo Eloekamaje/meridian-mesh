@@ -1,0 +1,108 @@
+"""Serveur MCP read-only du plugin Méridian.
+
+Les tools appellent l'API Méridian déjà authentifiée et bornée au tenant. Aucun tool n'écrit, ne
+promeut, ne décide ni n'exécute une action. Les erreurs sont rendues sans secret ni URL sensible.
+"""
+from __future__ import annotations
+
+import os
+
+import requests
+from mcp.server.mcpserver import MCPServer
+
+API = os.environ.get("MERIDIAN_API_URL", "http://127.0.0.1:8001/api").rstrip("/")
+TENANT = os.environ.get("MERIDIAN_TENANT", "local")
+PERSONA = os.environ.get("MERIDIAN_PERSONA", "architecte")
+
+server = MCPServer(
+    name="meridian",
+    title="Méridian",
+    description="Lecture du Mesh, des Claims, des impacts et des réponses situées Méridian.",
+    version="0.1.0",
+)
+
+
+def _entetes() -> dict[str, str]:
+    entetes = {"Accept": "application/json", "X-Persona": PERSONA}
+    if TENANT:
+        entetes["X-Tenant"] = TENANT
+    return entetes
+
+
+def _appel(methode: str, chemin: str, *, params=None, corps=None) -> dict:
+    try:
+        reponse = requests.request(
+            methode, f"{API}{chemin}", headers=_entetes(), params=params, json=corps, timeout=20)
+        reponse.raise_for_status()
+        donnees = reponse.json()
+        return donnees if isinstance(donnees, dict) else {"donnees": donnees}
+    except requests.RequestException as exc:
+        return {"erreur": type(exc).__name__, "message": "API Méridian indisponible"}
+    except ValueError:
+        return {"erreur": "ReponseInvalide", "message": "Réponse Méridian non JSON"}
+
+
+@server.tool()
+def meridian_profils() -> dict:
+    """Liste les profils composés disponibles (lecture seule)."""
+    return _appel("GET", "/boucle/profils")
+
+
+@server.tool()
+def meridian_composition(
+    profil: str,
+    question: str = "",
+    application_id: str | None = None,
+    situation_id: str | None = None,
+    twin_ids: list[str] | None = None,
+) -> dict:
+    """Prévisualise la composition méthode/compétence/spécialiste pour un profil."""
+    return _appel("POST", "/boucle/composition", corps={
+        "profil": profil, "question": question, "application_id": application_id,
+        "situation_id": situation_id, "twin_ids": twin_ids or [],
+    })
+
+
+@server.tool()
+def meridian_analyser(question: str, profil: str | None = None,
+                      situation_id: str | None = None, twin_ids: list[str] | None = None,
+                      application_id: str | None = None, profondeur: int = 2) -> dict:
+    """Analyse une question : même socle de faits, lentille du profil, aucune écriture."""
+    return _appel("POST", "/boucle/analyser", corps={
+        "question": question, "profil": profil, "situation_id": situation_id,
+        "twin_ids": twin_ids or [], "application_id": application_id, "profondeur": profondeur,
+    })
+
+
+@server.tool()
+def meridian_impact(twin_id: str, profondeur: int = 2) -> dict:
+    """Impact amont/aval d'un Twin dans le graphe (lecture seule)."""
+    return _appel("GET", f"/boucle/graphe/{twin_id}/impact", params={"profondeur": profondeur})
+
+
+@server.tool()
+def meridian_claims(twin_id: str, limite: int = 100) -> dict:
+    """Claims d'un Twin, avec leurs preuves et leur état (lecture seule)."""
+    return _appel("GET", f"/boucle/twins/{twin_id}/claims", params={"limite": limite})
+
+
+@server.tool()
+def meridian_learnings(situation_id: str | None = None, twin_ids: list[str] | None = None,
+                       limite: int = 20) -> dict:
+    """Learnings réutilisables pour une situation ou des Twins (lecture seule)."""
+    params = {"limite": limite}
+    if situation_id:
+        params["situation_id"] = situation_id
+    if twin_ids:
+        params["twin_ids"] = ",".join(twin_ids)
+    return _appel("GET", "/boucle/learnings", params=params)
+
+
+@server.tool()
+def meridian_attention(type_: str = "SITUATION", limite: int = 20) -> dict:
+    """Objets classés par l'attention Méridian, avec score et raisons (lecture seule)."""
+    return _appel("GET", "/boucle/attention", params={"type": type_, "limite": limite})
+
+
+if __name__ == "__main__":
+    server.run("stdio")

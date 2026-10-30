@@ -89,7 +89,8 @@ Preuve live sur « régénère le flux du gsf-mockup » : `repo:gsf-mockup → t
 - Profils composés : `profils.py` résout explicite/identité/inférence/défaut, avec autorité jamais supérieure à la lecture pour un profil inconnu ; `methodes_cognitives.py` et `competences_cognitives.py` sont des catalogues versionnés ; `composition.py` produit un plan borné (méthodes, compétences, spécialistes, budget, autorité).
 - Réponses situées : `reponse_cognitive.py` conserve un **socle de faits unique** et change seulement la lecture, le vocabulaire, les actions et les prochaines étapes. Un dev, un PO et un profil inconnu reçoivent les mêmes faits ; l'inconnu reste en lecture seule.
 - API : `/api/boucle/profils`, `/composition`, `/analyser` ; `POST /analyser` exécute un socle de preuves indépendant du profil et applique la lentille du profil.
-- Tests : **1488 tests jumeau** (2 skip), **8 auth**, **12 routes Boucle**, **166 frontend**, build non-CI OK (le build CI reste bloqué par des avertissements ESLint préexistants). Live : 12 profils, 14 méthodes, 14 compétences ; dev/PO reçoivent **6 faits identiques** avec des lectures différentes, profil inconnu en lecture seule.
+- Plugin portable : `plugin/meridian/` fournit **3 skills** (incident-ops, architecture-impact, benefits-okr), **3 subagents** (vérificateur, impact, découverte), un **serveur MCP read-only** (profils, composition, analyse, impacts, Claims, learnings, attention), une policy d'autorité et un contrat de réponse. Les profils pilotes sont **ops, architecte, product_owner** ; les domain packs restent vides.
+- Tests : **1488 tests jumeau** (2 skip), **5 tests plugin**, **8 auth**, **12 routes Boucle**, **166 frontend**, build non-CI OK (le build CI reste bloqué par des avertissements ESLint préexistants). Live : 12 profils, 14 méthodes, 14 compétences ; dev/PO reçoivent **6 faits identiques** avec des lectures différentes, profil inconnu en lecture seule.
 
 ## Constat du connecteur sur gsf-mockup
 
@@ -116,7 +117,7 @@ Le dépôt `gsf-mockup` ne contient pas de spec OpenAPI statique. Le connecteur 
 2. Activer RLS en production (rôle applicatif non-superuser, `meridian.tenant_id` posé par transaction) et vérifier les chemins legacy.
 3. Brancher les exports propriétaires gateway/CMDB sur le même graphe d'interface (les formats standards sont déjà couverts).
 4. Spécifier le store **Travail** (ADR-0008) puis retirer les lectures Mongo du fil Aujourd'hui/Atlas après parité.
-5. Brancher les adaptateurs externes sur `Executeur`, ajouter les domain packs (Paiements, Risque), puis construire l'UI de revue des compositions et des réponses.
+5. Brancher les adaptateurs externes sur `Executeur`, ajouter les domain packs (Paiements, Risque), puis installer le plugin dans les harness et mesurer deux workflows réels.
 
 ## Commandes d'exploitation
 

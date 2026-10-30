@@ -1,0 +1,25 @@
+{
+  "profiles": {
+    "ops": {
+      "label": "Opérations",
+      "postures": ["operateur", "investigateur"],
+      "methods": ["postmortem", "kanban", "capa"],
+      "skills": ["analyser_impact", "verifier_preuve", "rechercher_memoire", "detecter_contradiction"],
+      "authority": "proposition"
+    },
+    "architecte": {
+      "label": "Architecture / TI",
+      "postures": ["concepteur", "explorateur"],
+      "methods": ["adr", "impact_mapping"],
+      "skills": ["lire_interfaces", "analyser_impact", "rediger_adr", "tracer_chemin", "evaluer_risque"],
+      "authority": "proposition"
+    },
+    "product_owner": {
+      "label": "Produit / business",
+      "postures": ["facilitateur", "concepteur"],
+      "methods": ["okr", "story_mapping", "benefits"],
+      "skills": ["faciliter_decision", "mesurer_outcome", "retrouver_learning", "analyser_impact"],
+      "authority": "proposition"
+    }
+  }
+}

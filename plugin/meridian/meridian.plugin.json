@@ -1,0 +1,31 @@
+{
+  "schema": "meridian.plugin/1",
+  "name": "meridian",
+  "version": "0.1.0",
+  "description": "Plugin portable Méridian : méthodes, subagents et outils read-only pour l'entreprise.",
+  "profiles": "profiles.json",
+  "policy": "policies/authority.json",
+  "response_contract": "contracts/reponse.json",
+  "skills": [
+    "skills/incident-ops/SKILL.md",
+    "skills/architecture-impact/SKILL.md",
+    "skills/benefits-okr/SKILL.md"
+  ],
+  "agents": [
+    "agents/verificateur.md",
+    "agents/analyste-impact.md",
+    "agents/decouvreur.md"
+  ],
+  "mcp": {
+    "name": "meridian",
+    "command": "python",
+    "args": ["-m", "plugin.meridian.mcp.server"],
+    "env": {
+      "MERIDIAN_API_URL": "http://127.0.0.1:8001/api",
+      "MERIDIAN_TENANT": "local",
+      "MERIDIAN_PERSONA": "architecte"
+    }
+  },
+  "domain_packs": [],
+  "read_only": true
+}
