@@ -10,10 +10,13 @@ import json
 from collections.abc import Mapping
 from pathlib import Path
 
-from jumeau import mcp_outils, openapi_outils
+from jumeau import interface_outils, interfaces, mcp_outils, openapi_outils, protocoles_outils
 from jumeau.capacites import RegistreCapacites
 
-__all__ = ["ErreurIngestion", "ingerer_mcp", "ingerer_openapi"]
+__all__ = [
+    "ErreurIngestion", "ingerer_interface", "ingerer_mcp", "ingerer_openapi",
+    "ingerer_protocoles",
+]
 
 _TAILLE_MAX = 5_000_000
 
@@ -56,6 +59,7 @@ def _specifications(specifications):
             "tenant": entree.get("tenant"),
             "persona": entree.get("persona"),
             "perimetre": entree.get("perimetre"),
+            "type": str(entree.get("type") or "").strip().lower(),
         }
 
 
@@ -111,6 +115,88 @@ def ingerer_mcp(registre: RegistreCapacites, specifications) -> dict:
     return rapport
 
 
+def _detecter_type(chemin, texte: str) -> str:
+    suffixe = str(chemin).lower().rsplit(".", 1)[-1] if "." in str(chemin) else ""
+    debut = texte.lstrip()[:4096]
+    if suffixe == "wsdl" or "<definitions" in debut or ":definitions" in debut:
+        return "wsdl"
+    if suffixe == "proto" or "syntax" in debut and "service" in debut:
+        return "grpc"
+    if suffixe in {"graphql", "gql"} or "type Query" in debut or "type Mutation" in debut:
+        return "graphql"
+    if "asyncapi" in debut.lower():
+        return "asyncapi"
+    return "openapi"
+
+
+def _ingerer_une_interface(registre, entree):
+    texte = _lire(entree["path"])
+    type_ = entree["type"] or _detecter_type(entree["path"], texte)
+    if type_ == "wsdl":
+        graphe = interfaces.parse_wsdl(entree["application"], texte, str(entree["path"]))
+        noms = interface_outils.charger_dans(
+            registre, graphe, version=entree["version"], tenant=entree["tenant"],
+            persona=entree["persona"], perimetre=entree["perimetre"])
+        return noms
+    if type_ == "openapi":
+        return openapi_outils.charger_dans(
+            registre, entree["application"], texte, locator=str(entree["path"]),
+            version=entree["version"], tenant=entree["tenant"], persona=entree["persona"],
+            perimetre=entree["perimetre"])
+    return _ingerer_protocole(registre, entree, type_, texte)
+
+
+def _ingerer_protocole(registre, entree, type_, texte):
+    if type_ == "graphql":
+        manifestes = protocoles_outils.manifests_graphql(
+            entree["application"], texte, entree["version"], entree["tenant"],
+            entree["persona"], entree["perimetre"])
+    elif type_ == "grpc":
+        manifestes = protocoles_outils.manifests_grpc(
+            entree["application"], texte, entree["version"], entree["tenant"],
+            entree["persona"], entree["perimetre"])
+    elif type_ == "asyncapi":
+        manifestes = protocoles_outils.manifests_asyncapi(
+            entree["application"], texte, entree["version"], entree["tenant"],
+            entree["persona"], entree["perimetre"])
+    else:
+        raise ErreurIngestion(f"type d'outil inconnu : {type_}")
+    return protocoles_outils.charger_dans(registre, manifestes)
+
+
+def ingerer_interface(registre: RegistreCapacites, specifications) -> dict:
+    """Charge OpenAPI ou WSDL déjà connus en manifestes (REST et SOAP)."""
+    rapport = {"outils": [], "erreurs": []}
+    for entree in _specifications(specifications):
+        try:
+            rapport["outils"].extend(_ingerer_une_interface(registre, entree))
+        except Exception as exc:
+            rapport["erreurs"].append({
+                "application": entree["application"],
+                "path": str(entree["path"]),
+                "raison": str(exc)[:240],
+            })
+    return rapport
+
+
+def ingerer_protocoles(registre: RegistreCapacites, specifications) -> dict:
+    """Charge GraphQL, gRPC ou AsyncAPI selon le type détecté ou déclaré."""
+    rapport = {"outils": [], "erreurs": []}
+    for entree in _specifications(specifications):
+        try:
+            type_ = entree["type"] or _detecter_type(
+                entree["path"], _lire(entree["path"]))
+            rapport["outils"].extend(
+                _ingerer_protocole(registre, entree, type_, _lire(entree["path"])))
+        except Exception as exc:
+            rapport["erreurs"].append({
+                "application": entree["application"],
+                "path": str(entree["path"]),
+                "raison": str(exc)[:240],
+            })
+    return rapport
+
+
 def main():
     import argparse
 
@@ -119,6 +205,14 @@ def main():
                          metavar="APPLICATION=PATH", help="spécification OpenAPI (répétable)")
     parseur.add_argument("--mcp", action="append", default=[],
                          metavar="APPLICATION=PATH", help="descripteurs tools/list JSON (répétable)")
+    parseur.add_argument("--interface", action="append", default=[],
+                         metavar="APPLICATION=PATH", help="OpenAPI ou WSDL (répétable)")
+    parseur.add_argument("--graphql", action="append", default=[],
+                         metavar="APPLICATION=PATH", help="SDL GraphQL (répétable)")
+    parseur.add_argument("--grpc", action="append", default=[],
+                         metavar="APPLICATION=PATH", help="fichier .proto (répétable)")
+    parseur.add_argument("--asyncapi", action="append", default=[],
+                         metavar="APPLICATION=PATH", help="document AsyncAPI (répétable)")
     arguments = parseur.parse_args()
 
     def spec(valeur):
@@ -126,10 +220,21 @@ def main():
         return {"application": application, "path": chemin}
 
     registre = RegistreCapacites()
-    rapport = ingerer_openapi(registre, [spec(v) for v in arguments.openapi if "=" in v])
-    mcp = ingerer_mcp(registre, [spec(v) for v in arguments.mcp if "=" in v])
-    rapport["outils"].extend(mcp["outils"])
-    rapport["erreurs"].extend(mcp["erreurs"])
+    rapport = {"outils": [], "erreurs": []}
+    for type_, valeurs in (
+        (None, arguments.openapi), ("mcp", arguments.mcp), (None, arguments.interface),
+        ("graphql", arguments.graphql), ("grpc", arguments.grpc), ("asyncapi", arguments.asyncapi),
+    ):
+        entrees = [spec(v) for v in valeurs if "=" in v]
+        if type_:
+            entrees = [{**entree, "type": type_} for entree in entrees]
+        resultat = (
+            ingerer_mcp(registre, entrees) if type_ == "mcp"
+            else ingerer_protocoles(registre, entrees) if type_ in {"graphql", "grpc", "asyncapi"}
+            else ingerer_interface(registre, entrees)
+        )
+        rapport["outils"].extend(resultat["outils"])
+        rapport["erreurs"].extend(resultat["erreurs"])
     print(json.dumps(rapport, ensure_ascii=False, indent=2))
 
 

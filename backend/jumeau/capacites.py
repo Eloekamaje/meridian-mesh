@@ -33,7 +33,7 @@ CAPACITES = (
     "chercher_outil",
 )
 MODES_PREUVE = ("DECLARED", "OBSERVED", "INFERRED", "PROPOSED", "AUCUNE")
-SOURCES = ("builtin", "mcp", "manifeste", "openapi")
+SOURCES = ("builtin", "mcp", "manifeste", "openapi", "graphql", "grpc", "asyncapi", "interface")
 AXES_PORTEE = ("tenant", "persona", "perimetre")
 
 _SLUG = r"^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"

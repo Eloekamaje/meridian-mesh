@@ -25,7 +25,7 @@ import psycopg
 from fastapi import APIRouter, Header, HTTPException, Query, Request
 from psycopg.rows import dict_row
 
-from jumeau import boucle, entreprise_depot, graph_store, modele_entreprise
+from jumeau import boucle, entreprise_depot, graph_store, modele_entreprise, rls
 from jumeau.tenant import TenantError, exiger_tenant, normaliser_slug, resoudre_tenant
 from seed_data import ESPACES, PERSONAS
 
@@ -222,6 +222,9 @@ async def lister_objets(
 
     def lire():
         with psycopg.connect(dsn, connect_timeout=5) as conn:
+            if rls.est_actif():
+                with rls.contexte_tenant(conn, tenant):
+                    return entreprise_depot.lister_objets(conn, tenant, **filtres)
             return entreprise_depot.lister_objets(conn, tenant, **filtres)
 
     objets = await _dans_le_thread(lire)
@@ -244,6 +247,9 @@ async def lire_objet(
 
     def lire():
         with psycopg.connect(dsn, connect_timeout=5) as conn:
+            if rls.est_actif():
+                with rls.contexte_tenant(conn, tenant):
+                    return boucle.lire_boucle(conn, tenant, objet_id, historique=historique, as_dict=True)
             return boucle.lire_boucle(conn, tenant, objet_id, historique=historique, as_dict=True)
 
     resultat = await _dans_le_thread(lire)
@@ -272,6 +278,14 @@ async def synthese(
 
     def lire():
         with psycopg.connect(dsn, connect_timeout=5) as conn:
+            if rls.est_actif():
+                with rls.contexte_tenant(conn, tenant):
+                    with conn.cursor(row_factory=dict_row) as cur:
+                        return cur.execute(
+                            "SELECT famille, type, mode, count(*) AS nombre FROM objet_entreprise "
+                            "WHERE tenant_id = %s GROUP BY famille, type, mode ORDER BY famille, type, mode",
+                            (tenant,),
+                        ).fetchall()
             with conn.cursor(row_factory=dict_row) as cur:
                 return cur.execute(
                     "SELECT famille, type, mode, count(*) AS nombre FROM objet_entreprise "

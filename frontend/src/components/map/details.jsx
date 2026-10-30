@@ -1,9 +1,10 @@
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
 import { Star, Sparkle, ArrowSquareOut, CaretDown } from "@phosphor-icons/react";
 import { couleurDomaine, ETATS_RELATION } from "@/lib/domaines";
 import { idNumerique } from "@/lib/atlasGraph";
 import { useContexte } from "@/lib/contexte";
+import api from "@/lib/api";
 
 // Teinte du score de compréhension : consolidé → teal, à renforcer → ambre, insuffisant → rouge doux
 const couleurComprehension = (c) => (c >= 90 ? "#60A5FA" : c >= 60 ? "#F2B84B" : "#F87171");
@@ -210,6 +211,25 @@ export function ComparaisonDomaines({ a, b, statsDomaine }) {
 }
 
 export function TwinDetail({ selected, favori, onBasculerFavori, statsTwin, onInterroger, voisins = [], relationsRecentes = [], onChoisirVoisin, onExplorerRelations, onOuvrirInvestigation }) {
+  const [searchParams] = useSearchParams();
+  const [impactCanonique, setImpactCanonique] = useState(null);
+  const tenant = (localStorage.getItem("meridian.tenant") || searchParams.get("tenant") || "").trim();
+  const idJumeau = selected?.id;
+  useEffect(() => {
+    if (!tenant || !idJumeau) {
+      setImpactCanonique(null);
+      return undefined;
+    }
+    let actif = true;
+    setImpactCanonique(null);
+    api.get(`/boucle/graphe/${encodeURIComponent(idJumeau)}/impact?profondeur=2`, { headers: { "X-Tenant": tenant } })
+      .then((reponse) => { if (actif) setImpactCanonique(reponse?.data || null); })
+      .catch(() => { if (actif) setImpactCanonique(null); });
+    return () => { actif = false; };
+  }, [idJumeau, tenant]);
+  const impactAval = impactCanonique?.impact?.aval || [];
+  const impactAmont = impactCanonique?.impact?.amont || [];
+  const impactVisible = impactCanonique?.mode === "neo4j" && (impactAval.length > 0 || impactAmont.length > 0);
   const det = selected.sources_detail || [];
   const pretes = det.filter((s) => s.statut === "prete").length;
   const comprehension = selected.couverture ?? 0;
@@ -305,6 +325,42 @@ export function TwinDetail({ selected, favori, onBasculerFavori, statsTwin, onIn
             ))}
           </ul>
         </Section>
+      )}
+
+      {impactVisible && (
+        <div data-testid="twin-impact-canonique">
+          <Section
+            titre="Impact canonique"
+            action={<span className="font-code text-[9px] text-[#7C93A8]" data-testid="twin-impact-comptes">{impactAmont.length} amont · {impactAval.length} aval</span>}
+          >
+            <div className="grid grid-cols-2 gap-2">
+              {[["Amont", impactAmont], ["Aval", impactAval]].map(([sens, voisinsImpact]) => (
+                <div key={sens}>
+                  <div className="font-code text-[9px] uppercase tracking-[0.16em] text-[#7C93A8]">{sens}</div>
+                  {voisinsImpact.length === 0 ? (
+                    <div className="mt-0.5 text-[10px] text-[#5B7089]">—</div>
+                  ) : (
+                    <ul className="mt-0.5 space-y-0.5">
+                      {voisinsImpact.slice(0, 6).map((v) => (
+                        <li key={v.id}>
+                          <button
+                            type="button"
+                            onClick={() => onChoisirVoisin?.(v.id)}
+                            data-testid={`twin-impact-${sens.toLowerCase()}-${v.id}`}
+                            className="flex w-full items-center gap-1 rounded px-1 py-0.5 text-left transition-colors hover:bg-[rgba(148,163,184,0.10)]"
+                          >
+                            <span className="truncate font-code text-[10px] text-[#D8E2EA]">{v.id}</span>
+                            {v.etat && <span className="ml-auto shrink-0 font-code text-[8px] text-[#7C93A8]">{v.etat}</span>}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ))}
+            </div>
+          </Section>
+        </div>
       )}
 
       {selected.projets?.length > 0 && (

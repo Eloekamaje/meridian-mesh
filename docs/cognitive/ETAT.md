@@ -78,8 +78,10 @@ Preuve live sur « régénère le flux du gsf-mockup » : `repo:gsf-mockup → t
 - Graphe continu : le Gardien synchronise l'identité Postgres et les relations Mongo vers le `GraphStore` à chaque passe (`_synchroniser_graphe`), avec confiance en pourcentage normalisée.
 - API graphe : `/api/boucle/graphe/resume`, `/graphe/{twin}/voisins`, `/graphe/{twin}/impact`, `/graphe/chemins` ; lecture tenant-scopée, profondeur bornée.
 - Tenant authentifié : proxy (`AUTH_TENANT_HEADER`, défaut `X-Auth-Request-Tenant`) et OIDC (`AUTH_TENANT_CLAIM`, défaut `tenant`) posent `request.state.tenant` ; l'absence de tenant et un `X-Tenant` divergent sont refusés.
-- Outils : ingestion OpenAPI/MCP (`ingestion_outils.py`), chargement par `JUMEAU_OPENAPI` / `JUMEAU_MCP_OUTILS` dans le catalogue et CLI ; aucun `tools/call` exécuté.
-- Tests : **1250 tests jumeau** (2 skip), **8 auth**, **12 routes Boucle**, **161 frontend**, build OK. Live : 42 Twins, 45 relations, 23 objets en `demo`.
+- Outils multi-protocoles : `interface_outils.py` compile toute opération connue (REST, SOAP/WSDL, gRPC) en manifeste ; `protocoles_outils.py` couvre GraphQL, gRPC et AsyncAPI ; OpenAPI et MCP restent des adaptateurs parmi d'autres. Chargement par `JUMEAU_OPENAPI`, `JUMEAU_MCP_OUTILS`, `JUMEAU_INTERFACES`, `JUMEAU_PROTOCOLES`, CLI et lecture des `interface_operation` Postgres dans `/api/outils`. Aucun `tools/call` exécuté.
+- Atlas : le panneau d'un twin lit `/api/boucle/graphe/{id}/impact` quand un tenant est fourni (`localStorage.meridian.tenant` ou `?tenant=`) et affiche les impacts amont/aval canoniques, en plus des voisins Mongo.
+- RLS : `jumeau/rls.py` fournit les policies tenant, le contexte `set_config(..., true)` et une activation explicite ; le mode est opt-in (`JUMEAU_RLS=1`) et n'est pas activé sur la base locale.
+- Tests : **1272 tests jumeau** (2 skip), **8 auth**, **12 routes Boucle**, **166 frontend**, build non-CI OK (le build CI reste bloqué par des avertissements ESLint préexistants). Live : 42 Twins, 45 relations, 23 objets et 5 opérations d'interface en `demo`.
 
 ## Constat du connecteur sur gsf-mockup
 
@@ -88,10 +90,10 @@ Le dépôt `gsf-mockup` ne contient pas de spec OpenAPI statique. Le connecteur 
 ## Limites actuelles
 
 - Neo4j/Neptune de **production** n'est pas branché : le graphe live tourne sur Neo4j local Docker ; l'API et le Gardien fonctionnent, pas encore la haute disponibilité ni le backfill de production.
-- Le tenant est extrait du proxy/OIDC et vérifié dans l'API, mais **RLS Postgres** n'est pas encore appliquée aux chemins legacy ; les requêtes canoniques filtrent par tenant.
+- Le tenant est extrait du proxy/OIDC et vérifié dans l'API ; les policies RLS sont fournies mais **pas encore activées** sur les bases, et les chemins legacy restent filtrés par code.
 - Mongo reste lu par les **cases**, le fil Aujourd'hui et l'Atlas ; la parité des identités, situations, initiatives et relations est à zéro, mais la migration des cases n'est pas faite.
-- L'ingestion OpenAPI/MCP est volontaire (CLI ou variables d'environnement) ; elle n'est pas encore déclenchée automatiquement par les connecteurs de sources.
-- L'Atlas consomme encore les relations Mongo ; les endpoints de graphe canonique sont disponibles mais pas encore rendus dans le panneau.
+- Les adaptateurs de protocoles sont volontaires (CLI, variables d'environnement ou opérations d'interface déjà découvertes) ; la découverte automatique depuis la gateway/le CMDB reste à brancher.
+- L'Atlas rend l'impact canonique quand un tenant est sélectionné ; les relations Mongo restent la source principale de la carte et des voisins.
 - Dans le modèle **1 twin ↔ 1 application**, `application_id = twin_id = id réel de l'application` ; la promotion ne change pas cet id. Le multi-twins par application n'est pas retenu.
 - L'Atlas affiche les interfaces/impacts et les situations sont publiées ; la propagation fine des changements au fil « Aujourd'hui » reste à renforcer.
 - Le connecteur lit OpenAPI, configuration, claims `EXPOSE`, WSDL et OTLP tiré depuis une source APM/gateway authentifiée. Un export propriétaire non OTLP (Datadog/Kong/Apigee natif) reste un adaptateur optionnel.
@@ -103,10 +105,10 @@ Le dépôt `gsf-mockup` ne contient pas de spec OpenAPI statique. Le connecteur 
 ## Prochain lot
 
 1. Déployer Neo4j/Neptune en production, rejouer le backfill multi-tenant et vérifier l'idempotence à l'échelle.
-2. Poser `app.tenant_id` par transaction et activer RLS sur les tables canoniques et legacy.
-3. Brancher l'Atlas sur `/api/boucle/graphe/*` pour les impacts et parcours canoniques.
+2. Activer RLS en production (rôle applicatif non-superuser, `meridian.tenant_id` posé par transaction) et vérifier les chemins legacy.
+3. Brancher la découverte automatique gateway/CMDB/OTLP sur les adaptateurs de protocoles (OpenAPI, WSDL, GraphQL, gRPC, AsyncAPI).
 4. Migrer les `cases` (forme de travail) puis retirer les lectures Mongo restantes après parité.
-5. Déclencher OpenAPI/MCP depuis les connecteurs et enrichir le jeu d'or de l'orchestrateur.
+5. Enrichir le jeu d'or de l'orchestrateur et mesurer les choix d'outils multi-protocoles.
 
 ## Commandes d'exploitation
 
@@ -120,8 +122,17 @@ python -m jumeau.parite_mongo --tenant demo
 
 # ingestion explicite d'outils
 python -m jumeau.ingestion_outils --openapi comptes=/chemin/openapi.json
+python -m jumeau.ingestion_outils --interface ventes=/chemin/ventes.wsdl
+python -m jumeau.ingestion_outils --graphql comptes=/chemin/schema.graphql
+python -m jumeau.ingestion_outils --grpc paiements=/chemin/service.proto
+python -m jumeau.ingestion_outils --asyncapi ventes=/chemin/asyncapi.yaml
 JUMEAU_OPENAPI='[{"application":"comptes","path":"/chemin/openapi.json","tenant":"demo"}]' \
+JUMEAU_INTERFACES='[{"application":"ventes","path":"/chemin/ventes.wsdl","tenant":"demo"}]' \
+JUMEAU_PROTOCOLES='[{"application":"comptes","path":"/chemin/schema.graphql","type":"graphql","tenant":"demo"}]' \
   uvicorn server:app --host 127.0.0.1 --port 8001
+
+# RLS : activation explicite par un rôle de déploiement, puis JUMEAU_RLS=1
+python -m jumeau.rls --activer   # si le CLI est ajouté au déploiement
 
 # lectures graphe tenant-scopées
 curl -H 'X-Tenant: demo' http://127.0.0.1:8001/api/boucle/graphe/resume

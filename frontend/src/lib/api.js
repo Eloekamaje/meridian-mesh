@@ -9,10 +9,13 @@ const api = axios.create({
 // Qui demande et dans quel périmètre : partagé par axios et par les réponses au fil de l'eau (fetch).
 export function entetesPerimetre() {
   const cible = localStorage.getItem("meridian.perimetre") || "mesh-global";
-  return {
+  const entetes = {
     "X-Persona": localStorage.getItem("meridian.persona") || "architecte",
     "X-Espace": cible.startsWith("vue:") ? localStorage.getItem("meridian.perimetre.espace") || "mesh-global" : cible,
   };
+  const tenant = (localStorage.getItem("meridian.tenant") || "").trim();
+  if (tenant) entetes["X-Tenant"] = tenant;
+  return entetes;
 }
 
 api.interceptors.request.use((config) => {

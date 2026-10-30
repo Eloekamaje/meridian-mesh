@@ -46,6 +46,7 @@ from jumeau import capacites as jumeau_capacites  # noqa: E402
 from jumeau import chargeur_manifestes as jumeau_chargeur_manifestes  # noqa: E402
 from jumeau import harness as jumeau_harness  # noqa: E402
 from jumeau import ingestion_outils as jumeau_ingestion_outils  # noqa: E402
+from jumeau import interface_outils as jumeau_interface_outils  # noqa: E402
 from jumeau import decouverte_interfaces as jumeau_decouverte_interfaces  # noqa: E402
 from jumeau import interfaces_depot as jumeau_interfaces_depot  # noqa: E402
 from jumeau import connecteurs_runtime as jumeau_connecteurs_runtime  # noqa: E402
@@ -1977,10 +1978,39 @@ def _ingerer_specifications(registre):
                 logger.warning("catalogue d'outils : MCP ignoré (%s)", rapport["erreurs"][0]["application"])
         except Exception:
             logger.warning("catalogue d'outils : descripteurs MCP ignorés")
+    for nom_env, fonction in (
+        ("JUMEAU_INTERFACES", jumeau_ingestion_outils.ingerer_interface),
+        ("JUMEAU_PROTOCOLES", jumeau_ingestion_outils.ingerer_protocoles),
+    ):
+        for entree in _specifications_env(nom_env):
+            try:
+                rapport = fonction(registre, [entree])
+                if rapport["erreurs"]:
+                    logger.warning("catalogue d'outils : %s ignoré (%s)", nom_env,
+                                   rapport["erreurs"][0]["application"])
+            except Exception:
+                logger.warning("catalogue d'outils : %s ignoré", nom_env)
+
+
+def _ingerer_interfaces_postgres(registre, tenant_id, persona_id, perimetre_id):
+    """Ajoute les opérations d'interface déjà découvertes, sans écraser un manifeste plus précis."""
+    dsn = os.environ.get("JUMEAU_PG_DSN")
+    if not dsn:
+        return
+    try:
+        with psycopg.connect(dsn, connect_timeout=3) as conn:
+            graphe = jumeau_interfaces_depot.lire_graph(conn, tenant_id)
+        for manifeste in jumeau_interface_outils.manifests_depuis_interface(
+            graphe, tenant=tenant_id, persona=persona_id, perimetre=perimetre_id
+        ):
+            if registre.decrire(manifeste.nom) is None:
+                registre.enregistrer(manifeste)
+    except Exception:
+        logger.warning("catalogue d'outils : opérations d'interface ignorées")
 
 
 def _catalogue_outils(tenant_id, persona_id, perimetre_id):
-    """Manifestes intégrés, fichiers JUMEAU_MANIFESTES et spécifications OpenAPI/MCP ; aucune exécution."""
+    """Manifestes intégrés, fichiers, protocoles et opérations d'interface connues ; aucune exécution."""
     registre = jumeau_capacites.RegistreCapacites(jumeau_capacites.manifestes_integres())
     for chemin in _chemins_manifestes():
         try:
@@ -1988,6 +2018,7 @@ def _catalogue_outils(tenant_id, persona_id, perimetre_id):
         except Exception:
             logger.warning("catalogue d'outils : manifeste externe ignoré")
     _ingerer_specifications(registre)
+    _ingerer_interfaces_postgres(registre, tenant_id, persona_id, perimetre_id)
     return [
         jumeau_harness.expurger(manifeste.as_dict())
         for manifeste in registre.lister(tenant=tenant_id, persona=persona_id, perimetre=perimetre_id)
