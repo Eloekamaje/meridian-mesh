@@ -8,7 +8,7 @@ NON_VERSION = ("role", "versions", "version", "retour")
 # Au-delà des champs du contrat, la réponse du modèle peut porter ces compléments (affichés tels quels).
 COMPLEMENTS = ("propositions", "action", "relu", "jumeaux_participants", "decisions", "precision", "kpis",
                "tableauComparatif", "documentCanvas", "documentTexte", "livrable_id", "schemas", "resolution",
-               "activite", "a_approuver")
+               "proposition", "intention", "orchestration", "activite", "a_approuver")
 
 
 def _maintenant():

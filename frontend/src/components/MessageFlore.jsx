@@ -122,6 +122,16 @@ export function MessageFlore({
       <div>
         <MarqueOrigine data={message} />
         <MarqueRelecture data={message} />
+        {message.proposition && (
+          <span
+            className="mt-2 ml-2 inline-block rounded-full border border-[#F2B84B]/40 bg-[#F2B84B]/10 px-2 py-0.5 font-code text-[10px] text-[#F2B84B]"
+            data-testid="message-proposition"
+            title="Proposition — à valider"
+            aria-label="Proposition — à valider"
+          >
+            Proposition
+          </span>
+        )}
       </div>
       {ligneCout && (
         <p className="font-code text-[10px] text-[#526578]" data-testid="message-cout-temps"

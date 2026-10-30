@@ -40,6 +40,13 @@ def test_message_flore_garde_la_trace_de_resolution():
     assert m["resolution"] == resolution and m["versions"][0]["resolution"] == resolution
 
 
+def test_message_flore_garde_proposition_et_intention():
+    intention = {"type": "concevoir", "greenfield": True, "besoin_preuves": False}
+    m = c.message_flore(rep("Proposition", proposition=True, intention=intention))
+    assert m["proposition"] is True and m["intention"] == intention
+    assert m["versions"][0]["proposition"] is True and m["versions"][0]["intention"] == intention
+
+
 def test_message_flore_garde_le_document_du_livrable():
     m = c.message_flore(rep("R", documentCanvas="Note d'impact", documentTexte="# Note",
                             livrable_id="liv-1"))

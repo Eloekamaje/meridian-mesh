@@ -267,3 +267,60 @@ test("MessageFlore et CorpsMessageFlore transmettent les schémas du message au 
   const travail = lire("components/case/OngletTravail.jsx");
   expect(travail).toContain("schemas={message.schemas}");
 });
+
+const schemaProposition = {
+  ...schemaSimple,
+  mode: "proposition",
+  hypotheses: ["Le portail reste stable", "Les statuts partent chaque nuit"],
+  hors_scope: ["Application mobile", "Facturation"],
+  fleches: [
+    { de: "a", vers: "b", libelle: "ouvre", etat: "propose" },
+    { de: "b", vers: "c", libelle: "publie", etat: "propose" },
+  ],
+};
+
+test("l'état propose est orange, pointillé et fin", () => {
+  const html = renderToStaticMarkup(<SchemaSvg schema={schemaProposition} />);
+  expect(html).toContain('stroke="#F2B84B"');
+  expect(html).toContain('stroke-width="1.5"');
+  expect(html).toContain('stroke-dasharray="3 3"');
+});
+
+test("une proposition est étiquetée et expose hypothèses et hors-scope dans son accessibilité", () => {
+  const html = renderToStaticMarkup(<SchemaSvg schema={schemaProposition} />);
+  expect(html).toContain('data-mode="proposition"');
+  expect(html).toMatch(/aria-label="[^"]*Proposition/);
+  expect(html).toContain('data-testid="schema-badge-proposition"');
+  expect(html).toContain(">Proposition</span>");
+  expect(html).toMatch(/<desc[^>]*>[^<]*Hypothèses : Le portail reste stable ; Les statuts partent chaque nuit\./);
+  expect(html).toMatch(/<desc[^>]*>[^<]*Hors scope : Application mobile ; Facturation\./);
+});
+
+test("une conception sans bloc Mermaid rend quand même son schéma", () => {
+  const html = renderToStaticMarkup(<MarkdownFlore texte="Voici la conception proposée." schemas={[schemaProposition]} />);
+  expect(html).toContain("Voici la conception proposée.");
+  expect((html.match(/data-testid="schema-svg"/g) || [])).toHaveLength(1);
+  expect(html).not.toContain('data-testid="schema-mermaid"');
+  expect(html).toContain('data-testid="schema-badge-proposition"');
+});
+
+test("un message avec Mermaid ne rend pas le schéma une seconde fois", () => {
+  const texte = "Avant.\n```mermaid\nflowchart LR\na --> b\n```\nAprès.";
+  const html = renderToStaticMarkup(<MarkdownFlore texte={texte} schemas={[schemaSimple]} />);
+  expect((html.match(/data-testid="schema-svg"/g) || [])).toHaveLength(1);
+  expect(html).not.toContain('data-testid="schema-mermaid"');
+});
+
+test("MessageFlore signale une proposition par un badge discret, sans pastille de preuve", () => {
+  const message = {
+    role: "flore", texte: "Conception proposée.", schemas: [schemaProposition],
+    proposition: { label: "Valider la conception" }, versions: [{}], version: 0, preuves: [],
+  };
+  const html = renderToStaticMarkup(<MessageFlore message={message} index={0} prefixe="/cases/c1" />);
+  expect(html).toContain('data-testid="message-proposition"');
+  expect(html).toContain("Proposition");
+  expect(html).not.toContain('data-testid="pastille-');
+
+  const sans = renderToStaticMarkup(<MessageFlore message={{ ...message, proposition: undefined }} index={0} prefixe="/cases/c1" />);
+  expect(sans).not.toContain('data-testid="message-proposition"');
+});

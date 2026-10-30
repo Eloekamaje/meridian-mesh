@@ -17,6 +17,7 @@ export const ETATS_FLECHES = {
   verifie: { couleur: "#34D399", largeur: 2, pointille: null },
   recoupe: { couleur: "#22D3EE", largeur: 2, pointille: null },
   selon: { couleur: "#93C5FD", largeur: 1.5, pointille: null },
+  propose: { couleur: "#F2B84B", largeur: 1.5, pointille: "3 3" },
   conteste: { couleur: "#F2B84B", largeur: 1.5, pointille: "6 3" },
   inconnu: { couleur: "#7C93A8", largeur: 1, pointille: "3 3" },
 };
@@ -161,6 +162,24 @@ function descriptionArchitecture(schema, boites, fleches) {
   const morceaux = fleches.map((f) => `${boites.find((b) => b.id === f.de)?.libelle || f.de} vers ${boites.find((b) => b.id === f.vers)?.libelle || f.vers} (${f.etat})`);
   const debut = schema.titre ? `Schéma « ${schema.titre} »` : `Schéma ${schema.type}`;
   return `${debut} : ${boites.length} boîte(s), ${fleches.length} flèche(s). ${morceaux.join(" ; ")}`.slice(0, 1000);
+}
+
+function textesDe(valeur) {
+  return (Array.isArray(valeur) ? valeur : valeur == null ? [] : [valeur])
+    .map((item) => (typeof item === "object" && item !== null
+      ? item.texte ?? item.libelle ?? item.label ?? item.description ?? ""
+      : item))
+    .map((texte) => String(texte ?? "").trim())
+    .filter(Boolean);
+}
+
+export function descriptionProposition(schema) {
+  const hypotheses = textesDe(schema?.hypotheses);
+  const horsScope = textesDe(schema?.hors_scope ?? schema?.horsScope);
+  return [
+    hypotheses.length ? `Hypothèses : ${hypotheses.join(" ; ")}.` : "",
+    horsScope.length ? `Hors scope : ${horsScope.join(" ; ")}.` : "",
+  ].filter(Boolean).join(" ");
 }
 
 export function disposerArchitecture(schema) {
@@ -560,30 +579,53 @@ function Groupe({ groupe }) {
 export default function SchemaSvg({ schema }) {
   const prefixe = `schema-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   if (!schemaValide(schema)) return null;
+  const proposition = schema.mode === "proposition";
   const sequence = schema.type === "sequence";
   const disposition = sequence ? disposerSequence(schema) : disposerArchitecture(schema);
   if (!disposition) return null;
   const etats = new Set((sequence ? disposition.messages : disposition.fleches).map((f) => f.etat));
-  const titreA11y = disposition.titre ? `Schéma : ${disposition.titre}` : `Schéma ${schema.type}`;
+  const titreA11y = proposition
+    ? `Proposition : ${disposition.titre || `schéma ${schema.type}`}`
+    : (disposition.titre ? `Schéma : ${disposition.titre}` : `Schéma ${schema.type}`);
+  const description = [disposition.description, descriptionProposition(schema)].filter(Boolean).join(" ").slice(0, 4000);
   const idTitre = `${prefixe}-titre`;
   const idDescription = `${prefixe}-description`;
 
   return (
-    <div className="my-2 w-full overflow-x-auto" data-testid="schema-svg-cadre">
+    <div
+      className="my-2 w-full overflow-x-auto"
+      data-testid="schema-svg-cadre"
+      data-mode={proposition ? "proposition" : undefined}
+      role={proposition ? "group" : undefined}
+      aria-label={proposition ? "Schéma de proposition : hypothèses et hors-scope à valider" : undefined}
+    >
+    {proposition && (
+      <div className="mb-1 flex" data-testid="schema-proposition">
+        <span
+          className="inline-flex items-center rounded-full border border-[#F2B84B]/40 bg-[#F2B84B]/10 px-2 py-0.5 font-code text-[10px] font-semibold tracking-wide text-[#F2B84B]"
+          data-testid="schema-badge-proposition"
+        >
+          Proposition
+        </span>
+      </div>
+    )}
     <svg
       xmlns="http://www.w3.org/2000/svg"
       role="img"
-      aria-labelledby={`${idTitre} ${idDescription}`}
+      aria-labelledby={proposition ? undefined : `${idTitre} ${idDescription}`}
+      aria-describedby={proposition ? idDescription : undefined}
+      aria-label={proposition ? titreA11y : undefined}
       viewBox={`0 0 ${disposition.largeur} ${disposition.hauteur}`}
       width="100%"
       preserveAspectRatio="xMidYMid meet"
       data-testid="schema-svg"
       data-type={schema.type}
+      data-mode={proposition ? "proposition" : undefined}
       className="block"
       style={{ width: "100%", minWidth: `${disposition.largeur}px`, height: "auto" }}
     >
       <title id={idTitre}>{titreA11y}</title>
-      <desc id={idDescription}>{disposition.description}</desc>
+      <desc id={idDescription}>{description}</desc>
       <DefinitionFleches prefixe={prefixe} etats={etats} />
       <rect x={0} y={0} width={disposition.largeur} height={disposition.hauteur} rx={6} fill={COULEURS.fond} />
       <rect x={0.5} y={0.5} width={disposition.largeur - 1} height={disposition.hauteur - 1} rx={6} fill="none" stroke={COULEURS.regle} />

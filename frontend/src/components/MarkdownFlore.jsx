@@ -250,6 +250,9 @@ export default function MarkdownFlore({ texte, enLigne = false, className = "", 
           ? <SchemaSvg key={i} schema={schema} />
           : <SchemaMermaid key={i} code={s.code} complet={s.complet} />;
       })}
+      {!enLigne && schemasDisponibles.slice(indiceSchema).filter(schemaValide).map((schema, i) => (
+        <SchemaSvg key={`schema-restant-${i}`} schema={schema} />
+      ))}
     </Conteneur>
   );
 }
