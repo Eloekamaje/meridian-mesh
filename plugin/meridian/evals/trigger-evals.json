@@ -1,0 +1,12 @@
+[
+  {"query": "Un incident de production sur Paiements dure depuis 14 h, le SLA est menacé. Analyse l'impact et les mitigations.", "should_trigger": true, "skill": "incident-ops"},
+  {"query": "Prépare un postmortem de l'incident carte et vérifie les preuves.", "should_trigger": true, "skill": "incident-ops"},
+  {"query": "Si je change GET /status, quelles applications et interfaces sont impactées ?", "should_trigger": true, "skill": "architecture-impact"},
+  {"query": "Prépare un ADR pour rendre le contrôle R-118 asynchrone.", "should_trigger": true, "skill": "architecture-impact"},
+  {"query": "Cette initiative a-t-elle produit le bénéfice attendu ?", "should_trigger": true, "skill": "benefits-okr"},
+  {"query": "Quelle priorité donner à cette initiative selon son ROI ?", "should_trigger": true, "skill": "benefits-okr"},
+  {"query": "Où la valeur et le risque sont-ils concentrés dans le domaine Paiement ?", "should_trigger": true, "skill": "enterprise-portfolio"},
+  {"query": "Quelles sont les priorités du portefeuille entreprise cette semaine ?", "should_trigger": true, "skill": "enterprise-portfolio"},
+  {"query": "Génère un logo pour la marque Méridian.", "should_trigger": false},
+  {"query": "Quel est le solde du compte client ?", "should_trigger": false}
+]
