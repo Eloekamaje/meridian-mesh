@@ -1,4 +1,5 @@
 ---
+compatibility: Requires Méridian API and MCP server (mcp/requests).
 name: meridian-enterprise-portfolio
 description: Lire un portefeuille ou un domaine entier avec Méridian et produire une lecture business. Utiliser pour une question globale, un portefeuille, un domaine, une priorisation ou une valeur métier.
 ---
@@ -24,3 +25,7 @@ Répondre à une question d'entreprise, pas seulement d'application : que se pas
 
 ## Sortie
 Utiliser `valeur`, `attention`, `propositions` et `limites`. Le socle reste traçable ; la lentille business ne change pas les faits.
+
+## Référence
+
+Lire `references/portfolio-contract.md` pour le contrat détaillé.

@@ -23,7 +23,14 @@ Les domain packs sont volontairement absents.
 
 ## Claude Code
 
-Copier ou lier les skills et agents :
+Installer le marketplace local :
+
+```bash
+/plugin marketplace add "$PWD/plugin/meridian"
+/plugin install meridian@meridian
+```
+
+Ou copier/lier les skills et agents manuellement :
 
 ```bash
 mkdir -p ~/.claude/skills ~/.claude/agents

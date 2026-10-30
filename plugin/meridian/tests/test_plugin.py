@@ -31,6 +31,10 @@ def test_skills_et_agents_ont_un_frontmatter_exploitable():
         texte = (ROOT / chemin).read_text(encoding="utf-8")
         assert texte.startswith("---\n")
         assert "name:" in texte and "description:" in texte
+        assert "compatibility:" in texte
+        dossier = (ROOT / chemin).parent
+        assert (dossier / "evals" / "evals.json").exists()
+        assert any((dossier / "references").glob("*.md"))
     for chemin in _json("meridian.plugin.json")["agents"]:
         texte = (ROOT / chemin).read_text(encoding="utf-8")
         assert texte.startswith("---\n")
@@ -65,6 +69,10 @@ def test_le_serveur_mcp_expose_des_tools_read_only(monkeypatch):
                 "meridian_valeur_resume"}
     assert attendus <= noms
     assert "meridian_ecrire" not in noms and "meridian_supprimer" not in noms
+    for outil in outils:
+        assert outil.annotations is not None
+        assert outil.annotations.read_only_hint is True
+        assert outil.annotations.destructive_hint is False
 
 
 def test_un_tool_mcp_appelle_l_api_avec_tenant_et_persona(monkeypatch):

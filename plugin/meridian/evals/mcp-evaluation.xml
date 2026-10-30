@@ -1,0 +1,42 @@
+<evaluation>
+  <qa_pair>
+    <question>Combien de profils composés le serveur MCP Méridian expose-t-il ?</question>
+    <answer>12</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Quel profil dois-je utiliser pour une question de priorité, bénéfice ou OKR ?</question>
+    <answer>product_owner</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Quel profil dois-je utiliser pour une question de SLA, panne ou postmortem ?</question>
+    <answer>ops</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Quel profil dois-je utiliser pour un changement d'API ou d'interface ?</question>
+    <answer>architecte</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Quel tool MCP répond sur le portefeuille global plutôt que sur une seule application ?</question>
+    <answer>meridian_portefeuille</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Quel tool MCP lit le Value Ledger ?</question>
+    <answer>meridian_valeurs</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Quel champ sépare les agrégats de valeur par devise ?</question>
+    <answer>devises</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Que doit-on déclarer quand aucune observation d'outcome n'existe ?</question>
+    <answer>une dette de mesure</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Quelle autorité maximale un profil inconnu reçoit-il ?</question>
+    <answer>lecture</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Le serveur MCP peut-il écrire ou promouvoir une valeur ?</question>
+    <answer>non</answer>
+  </qa_pair>
+</evaluation>

@@ -1,4 +1,5 @@
 ---
+compatibility: Requires Méridian API and MCP server (mcp/requests).
 name: meridian-incident-ops
 description: Analyser un incident ou un SLA avec Méridian, sans écrire ni décider. Utiliser quand la question porte sur une panne, une latence, un incident, un SLA, une mitigation ou un postmortem.
 ---
@@ -28,3 +29,7 @@ Transformer une situation opérationnelle en dossier vérifiable : impact, preuv
 
 ## Sortie
 Respecter `contracts/reponse.json`. Les faits sont identiques à ceux du profil architecture ou produit ; seule la lentille change.
+
+## Référence
+
+Lire `references/response-contract.md` pour le contrat détaillé.

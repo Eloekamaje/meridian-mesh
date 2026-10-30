@@ -1,0 +1,24 @@
+{
+  "name": "meridian",
+  "owner": {
+    "name": "Méridian"
+  },
+  "metadata": {
+    "description": "Plugin Méridian : skills, subagents et MCP read-only pour l'entreprise.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "meridian",
+      "description": "Analyse située, portefeuille et Value Ledger via le Mesh Méridian.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/incident-ops",
+        "./skills/architecture-impact",
+        "./skills/benefits-okr",
+        "./skills/enterprise-portfolio"
+      ]
+    }
+  ]
+}

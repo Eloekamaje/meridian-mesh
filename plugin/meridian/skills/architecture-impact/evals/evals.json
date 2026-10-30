@@ -1,0 +1,11 @@
+{
+  "skill_name": "meridian-architecture-impact",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Utilise la skill meridian-architecture-impact sur une question réelle de ton domaine.",
+      "expected_output": "Un dossier avec socle de faits, preuves, limites, actions proposées et autorité, sans écriture.",
+      "assertions": []
+    }
+  ]
+}

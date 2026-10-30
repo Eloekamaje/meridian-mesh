@@ -1,4 +1,5 @@
 ---
+compatibility: Requires Méridian API and MCP server (mcp/requests).
 name: meridian-architecture-impact
 description: Analyser un changement d'architecture, d'API ou d'interface avec Méridian. Utiliser pour un impact technique, un ADR, une dépendance, une interface ou un plan de changement.
 ---
@@ -24,3 +25,7 @@ description: Analyser un changement d'architecture, d'API ou d'interface avec M�
 
 ## Sortie
 Respecter `contracts/reponse.json`. Même socle que les autres profils, lecture architecture.
+
+## Référence
+
+Lire `references/output-contract.md` pour le contrat détaillé.
