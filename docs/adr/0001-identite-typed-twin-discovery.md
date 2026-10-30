@@ -80,7 +80,7 @@ Méridian adopte **quatre types distincts** et **un processus** :
 
 **Précision.** Le **type** Application est le seul type d'entité métier canonique. Une instance peut être `CANDIDATE` (non canonique) ou `CONFIRMED` (canonique au sens fort). Aucun autre type ne peut devenir une Application par promotion.
 
-**Application candidate.** Une Application peut être à l'état `CANDIDATE` : c'est une proposition argumentée, non canonique, qui peut être promue ou rejetée. Une Application candidate a son propre `application_id`, stable et distinct du `twin_id` ; elle n'est pas un alias actif et ne peut pas être présentée comme confirmée.
+**Application candidate.** Une Application peut être à l'état `CANDIDATE` : c'est une proposition argumentée, non canonique, qui peut être promue ou rejetée. Dans le modèle actuel **1 twin ↔ 1 application**, `application_id` est l'identifiant réel de l'application et coïncide avec le `twin_id` ; ce n'est pas une dette. Une séparation d'identifiants ne serait nécessaire que si plusieurs twins représentaient la même application, cas différé. L'application candidate n'est pas un alias actif et ne peut pas être présentée comme confirmée.
 
 **Twin provisoire.** Un Twin peut être créé à partir d'un ou plusieurs artefacts, sans Application confirmée. Il est durable, répondant, mais son identité est marquée `PROVISIONAL`. Il peut être lié à une Application candidate. Il ne peut pas se faire passer pour une Application canonique.
 

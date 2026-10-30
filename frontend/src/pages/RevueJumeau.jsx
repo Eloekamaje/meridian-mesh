@@ -8,7 +8,9 @@ import { useMesh } from "@/lib/mesh";
 import { usePerimetre } from "@/lib/perimetre";
 import RevueContenu, { PlusLoin } from "@/components/jumeaux/RevueContenu";
 import ConnaissancesCode from "@/components/jumeaux/ConnaissancesCode";
-import { STATUTS } from "@/lib/jumeaux";
+import InterfacesJumeau from "@/components/jumeaux/InterfacesJumeau";
+import PromotionJumeau from "@/components/jumeaux/PromotionJumeau";
+import { STATUTS, estJumeauProvisoire, estJumeauReel } from "@/lib/jumeaux";
 
 export default function RevueJumeau() {
   const { jid } = useParams();
@@ -61,6 +63,8 @@ export default function RevueJumeau() {
 
   const st = jumeau ? STATUTS[jumeau.statut] || [jumeau.statut, "#7C93A8"] : null;
   const estAdmission = jumeau?.statut === "observation";
+  const reel = estJumeauReel(jumeau);
+  const peutPromouvoir = reel && jumeau?.niveau === "complet" && estJumeauProvisoire(jumeau);
 
   return (
     <div className="flex h-full flex-col" data-testid="revue-page">
@@ -85,7 +89,7 @@ export default function RevueJumeau() {
       />
 
       <div className="flex-1 overflow-y-auto px-4 py-5 sm:px-8 sm:py-6">
-        <div className={`mx-auto ${jumeau?.reel ? "max-w-6xl" : "max-w-4xl"}`}>
+        <div className={`mx-auto ${reel ? "max-w-6xl" : "max-w-4xl"}`}>
           {erreur && (
             <div className="rounded-xl border border-[#F87171]/25 bg-[#F87171]/[0.05] px-5 py-6" data-testid="revue-erreur">
               <p className="text-sm text-[#F87171]">{erreur}</p>
@@ -100,13 +104,32 @@ export default function RevueJumeau() {
           {examen && jumeau && (
             <>
               <RevueContenu examen={examen} jumeau={jumeau} onTranchee={() => setRelecture((n) => n + 1)} />
+              {peutPromouvoir && (
+                <div className="mt-4">
+                  <PromotionJumeau
+                    jumeau={jumeau}
+                    jid={jid}
+                    onPromu={() => {
+                      setRelecture((n) => n + 1);
+                      recharger().catch(() => {});
+                    }}
+                  />
+                </div>
+              )}
               {/* Né du code : ce que dit le jumeau et chaque connaissance avec sa preuve, à valider ou contester */}
-              {jumeau.reel && (
+              {reel && (
                 <div className="mt-4" data-testid="revue-preuves">
                   <PlusLoin titre="Pour vérifier : chaque connaissance et sa preuve, à valider ou contester">
                     <div className="mt-3"><ConnaissancesCode jid={jid} /></div>
                   </PlusLoin>
                 </div>
+              )}
+              {reel && (
+                <section className="mt-6 rounded-xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-5" data-testid="revue-interfaces">
+                  <h2 className="font-code text-[10px] uppercase tracking-[0.25em] text-[#94A3B8]">Interfaces et impacts</h2>
+                  <p className="mt-1 text-[11px] text-[#7C93A8]">Contrats, opérations et assertions découverts, et le dernier run de découverte.</p>
+                  <div className="mt-3"><InterfacesJumeau jid={jid} /></div>
+                </section>
               )}
               {(jumeau.gouvernance || []).length > 0 && (
                 <section className="mt-6 rounded-xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-5" data-testid="revue-gouvernance">

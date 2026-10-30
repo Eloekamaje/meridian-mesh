@@ -150,6 +150,11 @@ def _provisoire(jumeau):
     return bool(raisons), raisons
 
 
+def est_provisoire(jumeau) -> tuple[bool, list[str]]:
+    """Wrapper public : un twin est provisoire par sa mission, son nom ou son statut, avec les raisons."""
+    return _provisoire(jumeau)
+
+
 def _nom_depot(texte):
     brut = re.split(r"\s*[·|]\s*", str(texte or "").strip(), maxsplit=1)[0]
     brut = re.sub(r"^\s*(?:D[ée]p[oô]t|Depot|Repository|Repo)\s+", "", brut, flags=re.IGNORECASE)

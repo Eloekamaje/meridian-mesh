@@ -34,6 +34,88 @@ export const ACTION_LIGNE = {
   observation: "Revoir l'admission",
 };
 
+// Identité d'un twin : il reste provisoire tant que sa mission ou son nom n'ont pas été confirmés par l'équipe.
+// Même vocabulaire que le résolveur du backend, pour que l'écran de revue et la réponse de Flore disent la même chose.
+const MISSIONS_PROVISOIRES = new Set(["aucune", "dfggg", "inconnu", "inconnue", "sans mission", "tbd", "todo"]);
+const FRAGMENTS_MISSION_PROVISOIRE = [
+  "a confirmer", "a definir", "a preciser", "dfggg", "mission inconnue",
+  "non declare", "non declaree", "non renseigne", "non renseignee", "placeholder",
+];
+const NOMS_PROVISOIRES = new Set([
+  "jumeau provisoire", "non nomme", "non nommee", "nouveau jumeau",
+  "nouvelle jumeau", "placeholder", "sans nom", "twin provisoire", "untitled",
+]);
+
+export function normaliserIdentite(texte) {
+  return String(texte || "")
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+export function estMissionProvisoire(mission) {
+  const norme = normaliserIdentite(mission);
+  if (!norme) return true;
+  // Le registre remplit une mission absente par cette phrase générée : ce n'est pas une mission déclarée.
+  if (norme.startsWith("application ") && norme.endsWith("comprise a partir de son code")) return true;
+  return MISSIONS_PROVISOIRES.has(norme) || FRAGMENTS_MISSION_PROVISOIRE.some((f) => norme.includes(f));
+}
+
+export function estNomProvisoire(nom) {
+  const norme = normaliserIdentite(nom);
+  return !norme || NOMS_PROVISOIRES.has(norme) || norme.startsWith("nouveau jumeau");
+}
+
+export function raisonsProvisoire(jumeau) {
+  if (!jumeau || typeof jumeau !== "object") return ["jumeau inconnu"];
+  const raisons = [];
+  if (jumeau.provisoire === true || jumeau.identite_provisoire === true
+      || jumeau.identite?.kind === "TWIN_PROVISIONAL" || jumeau.identite?.statut === "PROVISIONAL") {
+    raisons.push("identité marquée provisoire");
+  }
+  const mission = String(jumeau.mission || "").trim();
+  if (estMissionProvisoire(mission)) raisons.push(mission ? `mission provisoire « ${mission} »` : "mission absente");
+  const nom = String(jumeau.nom || "").trim();
+  if (estNomProvisoire(nom)) raisons.push(`nom provisoire « ${nom || "sans nom"} »`);
+  return raisons;
+}
+
+export function estJumeauProvisoire(jumeau) {
+  return raisonsProvisoire(jumeau).length > 0;
+}
+
+export function estJumeauReel(jumeau) {
+  return jumeau?.origine === "reel" || jumeau?.reel === true;
+}
+
+const PREFIXE_DEPOT = /^(?:d[ée]p[oô]t|depot|repository|repo)\s+/i;
+
+// Nom proposé à la promotion : jamais le libellé provisoire, sinon le premier dépôt rattaché.
+export function nomProposePromotion(jumeau = {}) {
+  const nom = String(jumeau.nom || "").trim();
+  if (!estNomProvisoire(nom)) return nom;
+  const explicite = [
+    jumeau.nom_propose, jumeau.identite?.nom_propose, jumeau.candidat,
+    jumeau.candidat?.nom, jumeau.candidat?.label, jumeau.application_candidate?.nom, jumeau.identite?.label,
+  ].map((v) => (typeof v === "string" ? v : v?.nom || v?.label || "")).find((v) => String(v || "").trim());
+  if (explicite) return String(explicite).trim();
+  for (const source of jumeau.sources_detail || []) {
+    const brut = String(source?.nom || source?.cle || "").split(" · ")[0].replace(PREFIXE_DEPOT, "").replace(/^git-/, "").trim();
+    if (brut && !estNomProvisoire(brut)) return brut;
+  }
+  return "";
+}
+
+export function missionProposeePromotion(jumeau = {}) {
+  const mission = String(jumeau.mission || "").trim();
+  if (!estMissionProvisoire(mission)) return mission;
+  return [
+    jumeau.mission_proposee, jumeau.identite?.mission_proposee, jumeau.candidat?.mission,
+  ].map((v) => String(v || "").trim()).find(Boolean) || "";
+}
+
 export const qualifConnaissance = (c) => (c >= 80 ? "Bonne" : c >= 60 ? "Correcte" : c >= 40 ? "Faible" : "Insuffisante");
 
 export function resumeStrates(j) {

@@ -433,3 +433,19 @@ CREATE TABLE IF NOT EXISTS discovery_run (
 );
 CREATE INDEX IF NOT EXISTS discovery_run_tenant_application
     ON discovery_run (tenant_id, application_id, started_at DESC);
+
+-- Promotion d'un twin provisoire en application : décision humaine, identité de l'application inchangée (même id),
+-- trace auditée de ce qui a changé. Aucune auto-promotion : la ligne est écrite par le dépôt d'identité.
+CREATE TABLE IF NOT EXISTS identity_decision (
+    id         bigserial PRIMARY KEY,
+    tenant_id  text NOT NULL,
+    jumeau_id  text NOT NULL REFERENCES jumeau(id),
+    acteur     text NOT NULL,
+    action     text NOT NULL,
+    avant      jsonb NOT NULL,
+    apres      jsonb NOT NULL,
+    preuve     jsonb,
+    cree_le    timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS identity_decision_tenant_jumeau
+    ON identity_decision (tenant_id, jumeau_id);

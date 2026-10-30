@@ -35,6 +35,7 @@ from jumeau import partage as jumeau_partage  # noqa: E402
 from jumeau import tours_redis as jumeau_tours_redis  # noqa: E402
 from jumeau import flore as jumeau_flore  # noqa: E402
 from jumeau import identite as jumeau_identite  # noqa: E402
+from jumeau import identite_depot as jumeau_identite_depot  # noqa: E402
 from jumeau import decouverte_interfaces as jumeau_decouverte_interfaces  # noqa: E402
 from jumeau import interfaces_depot as jumeau_interfaces_depot  # noqa: E402
 from jumeau import depot as jumeau_depot  # noqa: E402
@@ -480,6 +481,12 @@ class JumeauCreate(BaseModel):
     sources: Dict[str, bool] = {}
 
 
+class Promotion(BaseModel):
+    nom: str
+    mission: str
+    motif: Optional[str] = None
+
+
 @api_router.post("/jumeaux", status_code=201)
 async def creer_jumeau(payload: JumeauCreate, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
     _, espace = resoudre_perimetre(x_persona, x_espace)
@@ -528,6 +535,50 @@ async def admettre_jumeau(jid: str, x_persona: str = Header("architecte"), x_esp
     jumeau = await db.jumeaux.find_one({"id": jid}, NO_ID)
     await marquer_cases_a_revoir([jid], f"le jumeau {jumeau['nom'] if jumeau else jid} a été admis dans le Mesh")
     return {"ok": True, "statut": "actif"}
+
+
+@api_router.post("/jumeaux/{jid}/promouvoir")
+async def promouvoir_jumeau(jid: str, payload: Promotion, x_persona: str = Header("architecte"),
+                            x_espace: Optional[str] = Header(None)):
+    """Promotion humaine d'un twin provisoire : même id, identité décidée, décision auditée en Postgres."""
+    _, espace = resoudre_perimetre(x_persona, x_espace)
+    tous = await db.jumeaux.find({}, {"_id": 0, "id": 1}).to_list(200)
+    aut = autorisations(espace, [j["id"] for j in tous])
+    if jid not in aut or not niveau_au_moins(aut[jid], "complet"):
+        raise HTTPException(404, "Jumeau introuvable")
+    dsn = os.environ.get("JUMEAU_PG_DSN")
+    if not dsn:
+        raise HTTPException(503, "Couche cognitive non configurée (JUMEAU_PG_DSN)")
+
+    def promouvoir():
+        with psycopg.connect(dsn, connect_timeout=5) as conn:
+            jumeau = jumeau_depot.jumeau_par_id(conn, jid)
+            if not jumeau:
+                raise LookupError(jid)
+            preuve = {"motif": payload.motif} if payload.motif else None
+            return jumeau_identite_depot.promouvoir(
+                conn, jumeau["tenant_id"], jid, payload.nom, payload.mission, x_persona, preuve=preuve)
+
+    try:
+        resultat = await asyncio.to_thread(promouvoir)
+    except LookupError:
+        raise HTTPException(404, "Jumeau introuvable")
+    except jumeau_identite_depot.JumeauDejaCanonique:
+        raise HTTPException(409, "Ce jumeau est déjà une application canonique")
+    except PermissionError:
+        raise HTTPException(409, "Promotion refusée : le jumeau appartient à un autre tenant")
+    except jumeau_identite_depot.PromotionRefusee as e:
+        raise HTTPException(400, str(e))
+    except psycopg.Error:
+        logger.exception("Promotion du jumeau %s impossible", jid)
+        raise HTTPException(503, "Couche cognitive indisponible")
+    await db.jumeaux.update_one(
+        {"id": jid},
+        {"$set": {"nom": resultat["nom"], "mission": resultat["mission"], "statut": "actif"}},
+    )
+    await journaler(x_persona, espace["id"], "promotion d'un jumeau", jid,
+                    f"{resultat['avant']['nom']} → {resultat['nom']}")
+    return resultat
 
 
 @api_router.delete("/jumeaux/{jid}")
