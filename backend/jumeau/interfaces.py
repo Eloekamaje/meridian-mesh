@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import xml.etree.ElementTree as ET
 from dataclasses import asdict, dataclass, field
 from typing import Any, Iterable, Optional
 from urllib.parse import unquote_plus, urlsplit, urlunsplit
@@ -354,6 +355,134 @@ def _est_wsdl(url: str, cle: str) -> bool:
     parties = urlsplit(url)
     return ("wsdl" in cle.lower() or parties.path.lower().endswith(".wsdl")
             or "wsdl" in parties.query.lower())
+
+
+def _local_balise(balise: Any) -> str:
+    """Nom local d'une balise XML, quel que soit le préfixe ou l'espace de noms."""
+    return balise.rsplit("}", 1)[-1] if isinstance(balise, str) else ""
+
+
+def _enfants(element: ET.Element, nom: str) -> list[ET.Element]:
+    return [enfant for enfant in list(element) if _local_balise(enfant.tag) == nom]
+
+
+def _soap_action(operation: ET.Element) -> Optional[str]:
+    """L'action SOAP, portée par l'opération ou par son enfant `soap:operation`."""
+    action = _texte(operation.get("soapAction"))
+    if action:
+        return action
+    for descendant in operation.iter():
+        if descendant is operation or _local_balise(descendant.tag) != "operation":
+            continue
+        action = _texte(descendant.get("soapAction"))
+        if action:
+            return action
+    return None
+
+
+def _operations_wsdl(definitions: ET.Element) -> list[dict]:
+    """Une opération par nom : `binding/operation` apporte `soapAction`, `portType/operation` le nom."""
+    operations: dict[str, dict] = {}
+    for element in definitions.iter():
+        local = _local_balise(element.tag)
+        if local not in ("binding", "portType"):
+            continue
+        for operation in _enfants(element, "operation"):
+            nom = _texte(operation.get("name"))
+            if nom is None:
+                continue
+            info = operations.setdefault(nom, {"name": nom, "action": None})
+            if local == "binding":
+                action = _soap_action(operation)
+                if action and info["action"] is None:
+                    info["action"] = action
+    return list(operations.values())
+
+
+def _bindings_wsdl(graph: InterfaceGraph, definitions: ET.Element, contrat: Contract) -> None:
+    """Les adresses `service/port/address` deviennent des bindings SOAP, jamais avec un secret."""
+    services = [element for element in definitions.iter() if _local_balise(element.tag) == "service"]
+    if not services:
+        graph.diagnostics.append("aucune adresse de service lisible")
+        return
+    for service in services:
+        ports = _enfants(service, "port")
+        if not ports:
+            graph.diagnostics.append("service sans port lisible")
+            continue
+        for port in ports:
+            adresses = [element for element in port.iter() if _local_balise(element.tag) == "address"]
+            if not adresses:
+                graph.diagnostics.append("port sans adresse de service")
+                continue
+            for adresse in adresses:
+                brut = _texte(adresse.get("location"))
+                if brut is None:
+                    graph.diagnostics.append("adresse de service sans location")
+                    continue
+                if "${" in brut:
+                    graph.diagnostics.append("adresse de service non résolue")
+                    continue
+                url = _assainir_url(brut)
+                if url is None:
+                    graph.diagnostics.append("adresse de service relative ou invalide ignorée")
+                    continue
+                graph.bindings.append(Binding(
+                    id=_id("bnd", "soap", url, contrat.environment, None), protocol="soap", url=url,
+                    environment=contrat.environment))
+
+
+def parse_wsdl(application_id: str, texte: str, locator: str,
+               environment: str = "inconnu") -> InterfaceGraph:
+    """Lit un WSDL SOAP sans réseau ni secret : ce qui est lisible est retenu, le reste est diagnostiqué.
+
+    Les namespaces et les préfixes sont ignorés pour la lecture ; un XML invalide rend un contrat et un graphe
+    `partial`, jamais une exception. Les opérations viennent de `binding/operation` et `portType/operation`, leur
+    `path` est `soapAction` quand il existe. Une adresse relative ou absente est signalée, jamais inventée.
+    """
+    texte = texte if isinstance(texte, str) else ""
+    digest = _digest(texte)
+    contrat = Contract(
+        id=_id("ctr", "wsdl", application_id, environment, locator, digest), format="wsdl", version=None,
+        digest=digest, locator=locator, application_id=application_id, environment=environment)
+    graph = InterfaceGraph(contracts=[contrat])
+    if not texte.strip():
+        graph.partial = True
+        graph.diagnostics.append("document vide")
+        return graph
+    try:
+        racine = ET.fromstring(texte)
+    except (ET.ParseError, ValueError, UnicodeError) as erreur:
+        position = getattr(erreur, "position", None)
+        detail = f", ligne {position[0]}" if position else ""
+        graph.partial = True
+        graph.diagnostics.append(f"XML invalide ({type(erreur).__name__}{detail})")
+        return graph
+
+    definitions = racine if _local_balise(racine.tag) == "definitions" else next(
+        (element for element in racine.iter() if _local_balise(element.tag) == "definitions"), None)
+    if definitions is None:
+        graph.partial = True
+        graph.diagnostics.append("élément definitions absent")
+        return graph
+
+    namespace = _texte(definitions.get("targetNamespace"))
+    operations = _operations_wsdl(definitions)
+    if not operations:
+        graph.diagnostics.append("aucune opération de binding ou de portType lisible")
+    for info in operations:
+        action = info["action"] or info["name"]
+        graph.operations.append(Operation(
+            id=_id("op", contrat.id, "soap", namespace or "", "SOAP", action, info["name"]),
+            contract_id=contrat.id, protocol="soap", method="SOAP", path=action, name=info["name"],
+            version=None, environment=contrat.environment))
+        graph.assertions.append(Assertion(
+            subject=contrat.application_id, predicate="EXPOSE", object=f"SOAP {action}", mode="declared",
+            source="wsdl", locator=contrat.locator, environment=contrat.environment,
+            confidence=CONFIANCE_HAUTE, evidence=f"{contrat.locator}#{contrat.digest}"))
+    _bindings_wsdl(graph, definitions, contrat)
+    graph.partial = bool(graph.diagnostics)
+    return _dedupliquer(graph)
 
 
 def depuis_claims(application_id: str, claims: Iterable[dict], environment: str = "inconnu") -> InterfaceGraph:

@@ -34,7 +34,8 @@ Preuve live sur « régénère le flux du gsf-mockup » : `repo:gsf-mockup → t
 - `gardien.veiller()` : après une ingestion, lance la découverte d'interfaces en best-effort et journalise le run.
 - API : `GET /jumeaux/{jid}/interfaces` (graphe + runs) et `POST /jumeaux/{jid}/interfaces/decouvrir` (run manuel), protégés par le périmètre.
 - Remplacement de périmètre : un run remplace les opérations/assertions de sa source et de son format ; les autres sources restent intactes. Un second run identique ne produit plus de faux changements.
-- Tests : **914 tests jumeau** (3 skip), **130 tests frontend**, build OK. Exécution réelle sur `gsf-mockup` : 3 opérations `GET /`, `GET /status`, `POST /status` ; premier run 7 changements, second run 0.
+- WSDL/SOAP : `parse_wsdl` + détection `.wsdl`/`.xml` par contenu, adresses assainies, opérations `SOAP`.
+- Tests : **920 tests jumeau** (3 skip), **130 tests frontend**, build OK. Exécution réelle sur `gsf-mockup` : 3 opérations `GET /`, `GET /status`, `POST /status` ; premier run 7 changements, second run 0.
 - Promotion gouvernée : `POST /jumeaux/{jid}/promouvoir` + table `identity_decision`, formulaire dans la revue, audit acteur/avant/après, id inchangé.
 - Revue d'un jumeau réel : section « Interfaces et impacts » avec contrats, opérations, assertions et dernier DiscoveryRun.
 
@@ -47,13 +48,13 @@ Le dépôt `gsf-mockup` ne contient pas de spec OpenAPI statique. Le connecteur 
 - Dans le modèle actuel 1 twin ↔ 1 application, `application_id = twin_id = id réel de l'application` ; la promotion ne change pas cet id. Une séparation ne sera nécessaire que pour plusieurs twins d'une même application (différé).
 - La persistance des interfaces n'est pas encore branchée à l'ingestion du Gardien ni à l'Atlas.
 - Le change/impact engine est pur : pas encore d'événements `DiscoveryRun`, de webhook ni de propagation UI.
-- Le connecteur ne lit ni WSDL, ni APM, ni gateway ; ce sont les prochains capteurs.
+- Le connecteur lit OpenAPI, configuration, claims `EXPOSE` et WSDL ; il ne lit pas encore APM, gateway runtime ni service mesh.
 - Le graphe est affiché dans la revue du jumeau, pas encore dans l'Atlas ; les impacts ne déclenchent pas encore de notification.
 - La promotion d'un twin provisoire est demandée dans la réponse mais n'a pas encore d'action serveur dédiée.
 
 ## Prochain lot
 
 1. Afficher les interfaces/impacts dans l'Atlas et les relier au fil « Aujourd'hui ».
-2. Brancher WSDL, gateway/APM et les changements de contrat sur les notifications.
+2. Brancher gateway/APM/service mesh en mode ombre et les changements de contrat sur les notifications.
 3. WSDL, gateway/APM en mode ombre, puis tests d'isolation multi-tenant de bout en bout.
 4. Brancher les changements du DiscoveryRun sur les notifications et le fil « Aujourd'hui ».

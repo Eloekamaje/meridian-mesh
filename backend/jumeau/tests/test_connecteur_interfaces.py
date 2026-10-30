@@ -29,6 +29,27 @@ paths:
       operationId: creerPaiement
 """
 
+WSDL = """<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://schemas.xmlsoap.org/wsdl/"
+             xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+             targetNamespace="urn:stock">
+  <portType name="StockPortType">
+    <operation name="lireStock"/>
+  </portType>
+  <binding name="StockBinding" type="StockPortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="lireStock">
+      <soap:operation soapAction="urn:stock/lireStock"/>
+    </operation>
+  </binding>
+  <service name="StockService">
+    <port name="StockPort" binding="StockBinding">
+      <soap:address location="https://stock.example.test/ws?token=abc123"/>
+    </port>
+  </service>
+</definitions>
+"""
+
 
 def _ecrire_openapi_json(chemin, donnees=None):
     chemin.write_text(json.dumps(donnees or OPENAPI_JSON), encoding="utf-8")
@@ -85,6 +106,32 @@ def test_config_produit_des_consommes_candidates(tmp_path):
     assert {a.locator for a in g.assertions} == {
         "application.properties", "application.yml", ".env.prod", "app.conf", "service.config"}
     assert g.partial is False
+
+
+def test_wsdl_detecte_par_contenu_xml_non_wsdl_et_node_modules_ignores(tmp_path):
+    (tmp_path / "stock.wsdl").write_text(WSDL, encoding="utf-8")
+    (tmp_path / "services").mkdir()
+    (tmp_path / "services" / "facturation.xml").write_text(
+        WSDL.replace("urn:stock", "urn:facture").replace("stock.example.test", "facture.example.test"),
+        encoding="utf-8")
+    (tmp_path / "configuration.xml").write_text("<configuration><item/></configuration>", encoding="utf-8")
+    (tmp_path / "node_modules").mkdir()
+    (tmp_path / "node_modules" / "ignore.wsdl").write_text(WSDL, encoding="utf-8")
+
+    g = collecter(tmp_path, "erp", "prod")
+
+    assert {c.locator for c in g.contracts} == {"stock.wsdl", "services/facturation.xml"}
+    assert {c.format for c in g.contracts} == {"wsdl"}
+    assert {o.name for o in g.operations} == {"lireStock"}
+    assert {b.url for b in g.bindings} == {
+        "https://stock.example.test/ws?token=***",
+        "https://facture.example.test/ws?token=***",
+    }
+    assert {a.source for a in g.assertions} == {"wsdl"}
+    assert {a.locator for a in g.assertions} == {"stock.wsdl", "services/facturation.xml"}
+    assert g.partial is False and g.diagnostics == []
+    rendu = json.dumps(g.as_dict(), ensure_ascii=False)
+    assert "abc123" not in rendu and str(tmp_path) not in rendu
 
 
 def test_node_modules_et_git_sont_ignores(tmp_path):

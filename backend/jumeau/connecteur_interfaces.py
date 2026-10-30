@@ -1,10 +1,10 @@
 """Connecteur de fichiers : une racine Git ou locale devient un graphe d'interfaces.
 
 Adaptateur de système source, sans agent, sans modèle et sans réseau : le parcours est trié, les documents
-OpenAPI/Swagger sont reconnus par leur contenu, la configuration par son nom, puis `interfaces.py` fait la lecture.
-Les secrets ne sont jamais rendus : la configuration n'est lue que pour ses URLs, que le parseur assainit. Un fichier
-trop gros, illisible ou au-delà de la limite rend le graphe `partial` et laisse un diagnostic localisé par un chemin
-relatif à la racine.
+OpenAPI/Swagger et WSDL sont reconnus par leur contenu, la configuration par son nom, puis `interfaces.py` fait la
+lecture. Les secrets ne sont jamais rendus : la configuration n'est lue que pour ses URLs, que le parseur assainit. Un
+fichier trop gros, illisible ou au-delà de la limite rend le graphe `partial` et laisse un diagnostic localisé par un
+chemin relatif à la racine.
 """
 from __future__ import annotations
 
@@ -25,10 +25,12 @@ DOSSIERS_IGNORES = frozenset({
     "test", "tests", "__tests__",
 })
 EXTENSIONS_OPENAPI = frozenset({".json", ".yaml", ".yml"})
+EXTENSIONS_WSDL = frozenset({".wsdl", ".xml"})
 MOTIFS_CONFIG = ("application*.properties", "application*.yml", "application*.yaml",
                  ".env", ".env.*", "*.conf", "*.config")
 MOTIF_OPENAPI_JSON = re.compile(r'"\s*(?:openapi|swagger)\s*"\s*:', re.IGNORECASE)
 MOTIF_OPENAPI_YAML = re.compile(r"(?m)^[\"']?(?:openapi|swagger)[\"']?\s*:", re.IGNORECASE)
+MOTIF_WSDL = re.compile(r"<(?:\w+:)?definitions(?=[\s/>])", re.IGNORECASE)
 
 
 def _nom_config(nom: str) -> bool:
@@ -42,8 +44,16 @@ def _est_openapi(texte: str) -> bool:
     return bool(MOTIF_OPENAPI_JSON.search(texte) or MOTIF_OPENAPI_YAML.search(texte))
 
 
+def _est_wsdl(texte: str) -> bool:
+    """Un WSDL est reconnu par son élément racine, avec ou sans préfixe de namespace."""
+    texte = texte.lstrip("\ufeff")
+    return bool(MOTIF_WSDL.search(texte))
+
+
 def _est_candidat(chemin: Path) -> bool:
-    return chemin.suffix.lower() in EXTENSIONS_OPENAPI or _nom_config(chemin.name)
+    suffixe = chemin.suffix.lower()
+    return (suffixe in EXTENSIONS_OPENAPI or suffixe in EXTENSIONS_WSDL
+            or _nom_config(chemin.name))
 
 
 def _est_binaire(donnees: bytes) -> bool:
@@ -121,9 +131,10 @@ def collecter(racine, application_id, environment: str = "inconnu", max_fichiers
               max_octets: int = 2_000_000) -> interfaces.InterfaceGraph:
     """Scanne `racine` (au plus `max_fichiers` candidats, chacun au plus `max_octets`) et rend un `InterfaceGraph`.
 
-    Le parcours est trié et relatif à la racine ; `.git`, `node_modules`, `vendor`, `build`, `dist`, `.venv`,
-    `__pycache__`, `.cache` et les dossiers de tests sont ignorés. Une erreur, un binaire ou un dépassement laisse
-    un diagnostic, sans jamais recopier une valeur de secret ni un chemin absolu.
+    OpenAPI/Swagger et WSDL sont reconnus par leur contenu ; la configuration par son nom. Le parcours est trié et
+    relatif à la racine ; `.git`, `node_modules`, `vendor`, `build`, `dist`, `.venv`, `__pycache__`, `.cache` et les
+    dossiers de tests sont ignorés. Une erreur, un binaire ou un dépassement laisse un diagnostic, sans jamais
+    recopier une valeur de secret ni un chemin absolu.
     """
     base = Path(racine)
     if not base.is_dir():
@@ -151,9 +162,13 @@ def collecter(racine, application_id, environment: str = "inconnu", max_fichiers
         if probleme is not None:
             morceaux.append(probleme)
             continue
-        if chemin.suffix.lower() in EXTENSIONS_OPENAPI and _est_openapi(texte):
+        suffixe = chemin.suffix.lower()
+        if suffixe in EXTENSIONS_OPENAPI and _est_openapi(texte):
             morceaux.append(_avec_locator(
                 interfaces.parse_openapi(application_id, texte, locator, environment), locator))
+        elif suffixe in EXTENSIONS_WSDL and _est_wsdl(texte):
+            morceaux.append(_avec_locator(
+                interfaces.parse_wsdl(application_id, texte, locator, environment), locator))
         elif _nom_config(chemin.name):
             morceaux.append(_avec_locator(
                 interfaces.parse_config(application_id, texte, locator, environment), locator))

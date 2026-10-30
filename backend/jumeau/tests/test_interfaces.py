@@ -30,6 +30,32 @@ paths:
       operationId: creerPaiement
 """
 
+WSDL = """<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://schemas.xmlsoap.org/wsdl/"
+             xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+             xmlns:tns="urn:comptes"
+             targetNamespace="urn:comptes">
+  <portType name="ComptesPortType">
+    <operation name="listerComptes"/>
+    <operation name="lireCompte"/>
+  </portType>
+  <binding name="ComptesBinding" type="tns:ComptesPortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="listerComptes">
+      <soap:operation soapAction="urn:comptes/listerComptes"/>
+    </operation>
+    <operation name="lireCompte">
+      <soap:operation soapAction="urn:comptes/lireCompte"/>
+    </operation>
+  </binding>
+  <service name="ComptesService">
+    <port name="ComptesPort" binding="tns:ComptesBinding">
+      <soap:address location="https://comptes.example.test/ws"/>
+    </port>
+  </service>
+</definitions>
+"""
+
 
 def test_openapi_json_operations_version_assertions_et_preuve():
     g = interfaces.parse_openapi("comptes", OPENAPI_JSON, "openapi.json", "prod")
@@ -75,6 +101,61 @@ def test_openapi_sans_paths_signale_le_document_partiel():
     assert g.partial is True
     assert any("paths" in diagnostic for diagnostic in g.diagnostics)
     assert g.contracts[0].version == "1" and g.operations == []
+
+
+def test_wsdl_service_binding_porttype_operations_assertions_et_preuve():
+    g = interfaces.parse_wsdl("comptes", WSDL, "wsdl/comptes.wsdl", "prod")
+    contrat = g.contracts[0]
+    assert contrat.format == "wsdl" and contrat.version is None
+    assert contrat.digest == hashlib.sha256(WSDL.encode("utf-8")).hexdigest()
+    assert [(o.name, o.method, o.protocol, o.path, o.environment) for o in g.operations] == [
+        ("listerComptes", "SOAP", "soap", "urn:comptes/listerComptes", "prod"),
+        ("lireCompte", "SOAP", "soap", "urn:comptes/lireCompte", "prod"),
+    ]
+    assert [(b.protocol, b.url, b.environment) for b in g.bindings] == [
+        ("soap", "https://comptes.example.test/ws", "prod"),
+    ]
+    assert [(a.predicate, a.object, a.mode, a.source, a.locator, a.environment) for a in g.assertions] == [
+        ("EXPOSE", "SOAP urn:comptes/listerComptes", "declared", "wsdl", "wsdl/comptes.wsdl", "prod"),
+        ("EXPOSE", "SOAP urn:comptes/lireCompte", "declared", "wsdl", "wsdl/comptes.wsdl", "prod"),
+    ]
+    assert all(a.confidence >= 0.9 and a.evidence == f"{contrat.locator}#{contrat.digest}"
+               for a in g.assertions)
+    assert g.partial is False and g.diagnostics == []
+
+
+def test_wsdl_sans_address_est_partiel_et_n_invente_pas_de_binding():
+    sans_address = WSDL[:WSDL.index("  <service")] + "</definitions>\n"
+    g = interfaces.parse_wsdl("comptes", sans_address, "comptes.wsdl")
+    assert g.partial is True and g.diagnostics
+    assert g.bindings == []
+    assert [o.name for o in g.operations] == ["listerComptes", "lireCompte"]
+    assert "https://" not in json.dumps(g.as_dict(), ensure_ascii=False)
+
+
+def test_wsdl_adresse_relative_signalee_sans_inventer_d_url():
+    relatif = WSDL.replace('location="https://comptes.example.test/ws"', 'location="/ws/comptes"')
+    g = interfaces.parse_wsdl("comptes", relatif, "comptes.wsdl")
+    assert g.partial is True and g.bindings == []
+    assert any("relative" in diagnostic for diagnostic in g.diagnostics)
+
+
+def test_wsdl_invalide_ne_crashe_pas_et_laisse_un_diagnostic():
+    g = interfaces.parse_wsdl("comptes", "<definitions><service>", "casse.wsdl")
+    assert g.partial is True and g.diagnostics
+    assert g.contracts[0].format == "wsdl" and g.operations == [] and g.bindings == []
+
+
+def test_wsdl_redige_identifiants_et_secret_de_requete():
+    avec_secrets = WSDL.replace(
+        'location="https://comptes.example.test/ws"',
+        'location="https://alice:s3cr3t@comptes.example.test/ws?token=abc123&amp;name=public"')
+    g = interfaces.parse_wsdl("comptes", avec_secrets, "comptes.wsdl")
+    assert [b.url for b in g.bindings] == [
+        "https://comptes.example.test/ws?token=***&name=public"]
+    rendu = json.dumps(g.as_dict(), ensure_ascii=False)
+    assert "alice" not in rendu and "s3cr3t" not in rendu and "abc123" not in rendu
+    assert "name=public" in rendu
 
 
 def test_config_properties_urls_commentaires_placeholders_doublons_et_secrets():
