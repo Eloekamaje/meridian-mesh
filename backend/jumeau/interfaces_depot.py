@@ -11,7 +11,14 @@ from urllib.parse import parse_qsl, unquote_plus, urlsplit
 
 from psycopg.rows import dict_row
 
+from jumeau.interfaces import Assertion, Binding, Contract, InterfaceGraph, Operation
+
 MODES = ("declared", "observed", "inferred")
+_CHAMPS_CONTRACT = ("id", "format", "version", "digest", "locator", "application_id", "environment")
+_CHAMPS_OPERATION = ("id", "contract_id", "protocol", "method", "path", "name", "version", "environment")
+_CHAMPS_BINDING = ("id", "protocol", "url", "environment", "gateway")
+_CHAMPS_ASSERTION = ("subject", "predicate", "object", "mode", "source", "locator", "environment", "confidence",
+                     "evidence", "observed_at", "valid_from")
 _MARQUEURS_SECRETS = ("password", "passwd", "secret", "token", "credential", "authorization")
 _CLES_SECRETES = frozenset({"pwd", "pass", "auth", "apikey", "api_key", "api-key", "access_key",
                             "private_key", "key"})
@@ -186,3 +193,56 @@ def lire(conn, tenant_id, application_id=None, predicat=None) -> dict:
         bindings = [_ligne(ligne) for ligne in cur.fetchall()]
 
     return {"contracts": contracts, "operations": operations, "bindings": bindings, "assertions": assertions}
+
+
+def _objet(classe, ligne, champs):
+    return classe(**{champ: _valeur(ligne.get(champ)) for champ in champs})
+
+
+def lire_graph(conn, tenant_id, application_id=None) -> InterfaceGraph:
+    """Relit un graphe d'interfaces en objets typés, filtré par tenant puis, si fourni, par application.
+
+    L'application filtre les contrats (`application_id`) et les assertions (`subject`). Les opérations suivent leurs
+    contrats ; les bindings sont retenus par l'URL citée dans une assertion ou par l'environnement du contrat, comme
+    dans `lire`. Les `Decimal` et les dates redeviennent des `float` et des chaînes ISO. Le caractère partiel d'un run
+    n'étant pas persisté sur ces tables, il est rendu à `False` : l'état du run vit dans `discovery_run`.
+    """
+    tenant = _tenant(tenant_id)
+    with conn.cursor(row_factory=dict_row) as cur:
+        if application_id is None:
+            cur.execute("SELECT * FROM interface_contract WHERE tenant_id = %s ORDER BY application_id, id",
+                        (tenant,))
+        else:
+            cur.execute("SELECT * FROM interface_contract WHERE tenant_id = %s AND application_id = %s "
+                        "ORDER BY application_id, id", (tenant, application_id))
+        contracts = [_objet(Contract, ligne, _CHAMPS_CONTRACT) for ligne in cur.fetchall()]
+
+        contrats = sorted({contrat.id for contrat in contracts})
+        if contrats:
+            cur.execute("SELECT * FROM interface_operation WHERE tenant_id = %s AND contract_id = ANY(%s) "
+                        "ORDER BY contract_id, method, path, id", (tenant, contrats))
+        else:
+            cur.execute("SELECT * FROM interface_operation WHERE tenant_id = %s AND false", (tenant,))
+        operations = [_objet(Operation, ligne, _CHAMPS_OPERATION) for ligne in cur.fetchall()]
+
+        if application_id is None:
+            cur.execute("SELECT * FROM interface_assertion WHERE tenant_id = %s "
+                        "ORDER BY subject, predicate, object, id", (tenant,))
+        else:
+            cur.execute("SELECT * FROM interface_assertion WHERE tenant_id = %s AND subject = %s "
+                        "ORDER BY subject, predicate, object, id", (tenant, application_id))
+        assertions = [_objet(Assertion, ligne, _CHAMPS_ASSERTION) for ligne in cur.fetchall()]
+
+        if application_id is None:
+            cur.execute("SELECT * FROM interface_binding WHERE tenant_id = %s ORDER BY environment, url, id",
+                        (tenant,))
+        else:
+            objets = sorted({assertion.object for assertion in assertions})
+            environnements = sorted({assertion.environment for assertion in assertions}
+                                    | {contrat.environment for contrat in contracts})
+            cur.execute("SELECT * FROM interface_binding WHERE tenant_id = %s "
+                        "AND (url = ANY(%s) OR environment = ANY(%s)) ORDER BY environment, url, id",
+                        (tenant, objets, environnements))
+        bindings = [_objet(Binding, ligne, _CHAMPS_BINDING) for ligne in cur.fetchall()]
+
+    return InterfaceGraph(contracts=contracts, operations=operations, bindings=bindings, assertions=assertions)

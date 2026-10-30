@@ -318,6 +318,15 @@ async def veiller(conn, db, jumeau_id, chemins=None, rediger=_rediger):
         commits += [{**c, "depot": source["nom"]} for c in nouveaux]
         ingeres.append(source["nom"])
     sources = depot.sources_du_jumeau(conn, jumeau_id)
+    if ingeres:
+        # La découverte d'interfaces fait partie de la passe : elle transforme les EXPOSE du code en graphe daté,
+        # journalise un DiscoveryRun et calcule les changements/impacts. Une panne de ce journal ne bloque pas la veille.
+        try:
+            decouverte_interfaces.executer(
+                conn, jumeau["tenant_id"], jumeau_id,
+                claims=connaissance.connaissances(conn, jumeau_id, limite=1000), source="gardien")
+        except Exception:
+            journal.warning("gardien %s : découverte d'interfaces impossible", jumeau_id, exc_info=True)
     branches = lecteurs.lecteurs_de(depot.toutes_les_sources(conn, jumeau_id))
     # Sans dépôt (progiciel), pas d'ingestion de code : la version est celle des sources branchées.
     try:

@@ -412,3 +412,24 @@ CREATE INDEX IF NOT EXISTS interface_binding_tenant ON interface_binding (tenant
 CREATE INDEX IF NOT EXISTS interface_assertion_tenant ON interface_assertion (tenant_id);
 CREATE INDEX IF NOT EXISTS interface_assertion_subject ON interface_assertion (tenant_id, subject);
 CREATE INDEX IF NOT EXISTS interface_assertion_predicate ON interface_assertion (tenant_id, predicate);
+
+-- Journal d'une découverte : un run est un processus daté, avec son statut, ses compteurs, ses changements et ses
+-- impacts. `changes` et `impacts` gardent la preuve telle qu'elle a été produite, même si une opération disparaît
+-- ensuite du graphe courant.
+CREATE TABLE IF NOT EXISTS discovery_run (
+    id             text PRIMARY KEY,
+    tenant_id      text NOT NULL,
+    application_id text NOT NULL,
+    source         text NOT NULL,
+    environment    text NOT NULL,
+    started_at     timestamptz NOT NULL,
+    ended_at       timestamptz,
+    status         text NOT NULL CHECK (status IN ('ok', 'partial', 'error')),
+    stats          jsonb NOT NULL DEFAULT '{}'::jsonb,
+    changes        jsonb NOT NULL DEFAULT '[]'::jsonb,
+    impacts        jsonb NOT NULL DEFAULT '[]'::jsonb,
+    error          text,
+    cree_le        timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS discovery_run_tenant_application
+    ON discovery_run (tenant_id, application_id, started_at DESC);
