@@ -451,3 +451,22 @@ CREATE TABLE IF NOT EXISTS identity_decision (
 );
 CREATE INDEX IF NOT EXISTS identity_decision_tenant_jumeau
     ON identity_decision (tenant_id, jumeau_id);
+
+
+-- ---------------------------------------------------------------------------
+-- Postgres canonique des Claims, preuves, sources, temporalité et recherche.
+-- La topologie du Mesh (Twins, relations, domaines, capacités, processus,
+-- parcours, situations) est possédée par le graph store (ADR-0007).
+-- Aucune projection du même objet entre les deux stores.
+-- ---------------------------------------------------------------------------
+ALTER TABLE jumeau ADD COLUMN IF NOT EXISTS type text NOT NULL DEFAULT 'APPLICATION'
+    CHECK (type IN ('APPLICATION', 'PROCESS', 'CAPABILITY', 'JOURNEY', 'ORGANIZATION', 'PRODUCT', 'DATA_DOMAIN'));
+ALTER TABLE claim ADD COLUMN IF NOT EXISTS mode text NOT NULL DEFAULT 'DECLARED'
+    CHECK (mode IN ('DECLARED', 'OBSERVED', 'INFERRED', 'PROPOSED', 'CONFIRMED'));
+
+CREATE INDEX IF NOT EXISTS jumeau_texte ON jumeau USING GIN (
+    to_tsvector('french', coalesce(nom, '') || ' ' || coalesce(mission, ''))
+);
+CREATE INDEX IF NOT EXISTS claim_texte ON claim USING GIN (
+    to_tsvector('french', coalesce(sujet, '') || ' ' || coalesce(predicat, '') || ' ' || coalesce(objet, ''))
+);

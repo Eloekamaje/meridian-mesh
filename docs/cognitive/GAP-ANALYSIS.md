@@ -4,6 +4,8 @@
 **Périmètre :** code du dépôt `meridian-mesh`, docs `docs/prd/PRD-001-enterprise-intelligence-mesh.md`, ADR-0002 à ADR-0005, `docs/cognitive/ETAT.md`.  
 **Règle :** une exigence n'est `conforme` que si le code la satisfait de bout en bout. Une fonctionnalité présente seulement dans les données de démonstration, un prompt ou un test mocké est `partiel` ou `absent`. Les statuts sont volontairement sévères : `ETAT.md` décrit une amorce, pas la cible.
 
+**Mise à jour de décision (2026-10-30).** D1 est tranchée par [ADR-0007](../adr/0007-polyglot-postgres-graph.md) : **Postgres** possède l'identité, les Claims, les preuves et les décisions ; un **graph store natif** (Neo4j/Neptune) possède la topologie du Mesh. Aucune projection, aucun objet dupliqué. ADR-0006 (Postgres unique) est remplacé. Le module `pg_graphe.py` a été retiré ; le port `backend/jumeau/graphe.py` (adaptateur mémoire) prépare les adaptateurs vendeurs.
+
 **Note de bas de page :** le working tree contient deux modules non suivis : `backend/jumeau/modele_entreprise.py` (types purs des 8 familles) et `backend/jumeau/capacites.py` (registre capacitaire en mémoire). Ils ne sont importés ni par `backend/server.py`, ni par `backend/jumeau/orchestrateur.py`, ni par `schema.sql` ; ils sont donc signalés comme socle « pur » non branché, et un module pur ne suffit pas à rendre une exigence conforme.
 
 ---

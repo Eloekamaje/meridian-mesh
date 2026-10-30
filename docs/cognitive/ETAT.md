@@ -3,9 +3,9 @@
 **Date :** 2026-10-30  
 **Branche :** `jumeau-p4-confort`
 
-**Documents directeurs :** [PRD-001](../prd/PRD-001-enterprise-intelligence-mesh.md), [ADR-0001](../adr/0001-identite-typed-twin-discovery.md), [ADR-0002](../adr/0002-orchestrateur-general.md), [ADR-0003](../adr/0003-mesh-transversal-intelligence.md), [ADR-0004](../adr/0004-capability-first-harness.md), [ADR-0005](../adr/0005-enterprise-object-model.md)
+**Documents directeurs :** [PRD-001](../prd/PRD-001-enterprise-intelligence-mesh.md), [ADR-0001](../adr/0001-identite-typed-twin-discovery.md), [ADR-0002](../adr/0002-orchestrateur-general.md), [ADR-0003](../adr/0003-mesh-transversal-intelligence.md), [ADR-0004](../adr/0004-capability-first-harness.md), [ADR-0005](../adr/0005-enterprise-object-model.md), [ADR-0007](../adr/0007-polyglot-postgres-graph.md)
 
-> **État vs cible.** Les trois outils de l'orchestrateur sont une amorce. La cible est le harness capacitaire d'ADR-0004 et le modèle d'entreprise d'ADR-0005 ; les écarts sont des chantiers, pas des exceptions.
+> **État vs cible.** Les trois outils de l'orchestrateur sont une amorce. La cible est le harness capacitaire d'ADR-0004, le modèle d'entreprise d'ADR-0005 et l'architecture polyglotte d'ADR-0007 (Postgres pour la connaissance, graph store pour le Mesh). Les écarts sont des chantiers, pas des exceptions.
 
 ## Lots livrés
 

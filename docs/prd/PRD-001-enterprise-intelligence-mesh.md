@@ -222,6 +222,16 @@ Le produit doit exposer des **capacités d'entreprise**, pas seulement des outil
 - **FR-082** — Toute action sensible DOIT être auditée.
 - **FR-083** — Les secrets NE DOIVENT jamais entrer dans un prompt, un log, une preuve ou une réponse.
 
+### 7.10 Stockage, graphe et recherche
+
+- **FR-090** — Postgres est le store **transactionnel et probatoire** : identité canonique des Twins, sources, observations, preuves, Claims, décisions, initiatives, outcomes, apprentissages et audit.
+- **FR-091** — Le **graph store** (Neo4j ou Neptune) possède la **topologie du Mesh** : nœuds Twin référençant l'identité Postgres, relations, domaines, capacités, processus, parcours, situations, impacts. Il n'est **pas** une projection de Postgres.
+- **FR-092** — Aucun objet n'est dupliqué intégralement entre Postgres et le graphe ; les références croisées sont des IDs.
+- **FR-093** — Une interface `GraphStore` isole le domaine du vendeur ; changer Neo4j/Neptune ne change pas le modèle métier.
+- **FR-094** — Aucun store Mongo, Neptune ou Neo4j n'est une projection ou une copie d'un autre store. Une projection est interdite.
+- **FR-095** — La découverte est **à paliers** : portefeuille pour tout le parc, déclaré pour les apps importantes, observé pour les critiques, profond pour les apps sélectionnées ou impactées.
+- **FR-096** — À 5 000+ applications, le produit NE DOIT PAS charger tout le parc dans un prompt, rendre tous les nœuds ou réveiller un agent par application.
+
 ---
 
 ## 8. Exigences non fonctionnelles
@@ -236,6 +246,8 @@ Le produit doit exposer des **capacités d'entreprise**, pas seulement des outil
 - **NFR-008 — Extensibilité** : ajouter une source, un outil ou un type de Twin NE DOIT PAS exiger une réécriture du noyau.
 - **NFR-009 — Résilience** : une source ou un outil en panne NE DOIT PAS produire une absence ni une conclusion.
 - **NFR-010 — Évaluation** : les choix d'outils, les claims et les décisions DOIVENT être mesurés par un jeu d'or.
+- **NFR-011 — Indépendance du graphe** : le domaine ne dépend d'aucun langage de graphe propriétaire (Cypher/Gremlin) ; seule l'interface `GraphStore` est exposée.
+- **NFR-012 — Cohérence polyglotte** : toute référence croisée entre Postgres et le graphe est résolue par ID, idempotente et testée ; un objet orphelin est signalé, jamais inventé.
 
 ---
 
@@ -324,6 +336,9 @@ Projections par rôle, multi-tenant, performance, évaluation, gouvernance à l'
 - **AC-006** — Une décision peut être reliée à une initiative, un outcome et un apprentissage.
 - **AC-007** — Une absence est formulée « non observé dans tel périmètre, à telle date », jamais « n'existe pas ».
 - **AC-008** — Une proposition est toujours distinguée d'une observation dans l'API et l'UI.
+- **AC-009** — Un parcours d'impact sur 5 000 applications est exécuté par le graph store, avec tenant et profondeur bornés.
+- **AC-010** — Aucun objet canonique n'est copié dans un autre store ; un test d'architecture échoue si une projection est ajoutée sans ADR.
+- **AC-011** — Le portefeuille de 5 000 applications est consultable par domaine, capacité, criticité et recherche sans charger tout le parc.
 
 ---
 
@@ -357,6 +372,8 @@ Projections par rôle, multi-tenant, performance, évaluation, gouvernance à l'
 | Modèle d'entreprise et types de Twin | [ADR-0005](../adr/0005-enterprise-object-model.md) |
 | Identité typée, Twin provisoire | [ADR-0001](../adr/0001-identite-typed-twin-discovery.md) |
 | Orchestrateur général (amendé) | [ADR-0002](../adr/0002-orchestrateur-general.md) |
+| Architecture polyglotte Postgres + graph | [ADR-0007](../adr/0007-polyglot-postgres-graph.md) |
+| Postgres unique (rejeté) | [ADR-0006](../adr/0006-postgres-unique-sans-projection.md) |
 
 ---
 
@@ -365,3 +382,4 @@ Projections par rôle, multi-tenant, performance, évaluation, gouvernance à l'
 | Version | Date | Changement |
 |---|---|---|
 | 1.0 | 2026-10-30 | Base initiale : Enterprise Intelligence Mesh, modèle d'entreprise, capacités, harness, critères d'acceptation. |
+| 1.1 | 2026-10-30 | Stockage polyglotte : Postgres pour la connaissance, graph store pour la topologie ; aucune projection. |

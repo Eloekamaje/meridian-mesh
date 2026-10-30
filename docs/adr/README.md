@@ -9,6 +9,8 @@ Index des décisions d'architecture de Méridian.
 | [0003](0003-mesh-transversal-intelligence.md) | Le Mesh est la couche d'intelligence transversale, pas une source ni un outil | accepted | 2026-10-30 |
 | [0004](0004-capability-first-harness.md) | Harness capacitaire avec registre d'outils dynamique | accepted | 2026-10-30 |
 | [0005](0005-enterprise-object-model.md) | Modèle d'entreprise : huit familles d'objets et Twins non applicatifs | accepted | 2026-10-30 |
+| [0006](0006-postgres-unique-sans-projection.md) | Postgres unique, sans projection ni read model séparé | superseded by 0007 | 2026-10-30 |
+| [0007](0007-polyglot-postgres-graph.md) | Architecture polyglotte : Postgres pour la connaissance, graph store pour le Mesh | accepted | 2026-10-30 |
 
 ## Règles
 
