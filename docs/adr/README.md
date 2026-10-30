@@ -11,6 +11,7 @@ Index des décisions d'architecture de Méridian.
 | [0005](0005-enterprise-object-model.md) | Modèle d'entreprise : huit familles d'objets et Twins non applicatifs | accepted | 2026-10-30 |
 | [0006](0006-postgres-unique-sans-projection.md) | Postgres unique, sans projection ni read model séparé | superseded by 0007 | 2026-10-30 |
 | [0007](0007-polyglot-postgres-graph.md) | Architecture polyglotte : Postgres pour la connaissance, graph store pour le Mesh | accepted | 2026-10-30 |
+| [0008](0008-travail-work-store.md) | Le Travail est un store de travail, pas un objet d'entreprise | accepted | 2026-10-30 |
 
 ## Règles
 
