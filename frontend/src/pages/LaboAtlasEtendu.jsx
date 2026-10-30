@@ -75,8 +75,8 @@ export default function LaboAtlasEtendu() {
       const { data } = await api.post("/cases", {
         titre: `Échange avec ${j.nom}`, type: "demande", objectif: `Comprendre ${j.nom} (${j.domaine}) — essai du laboratoire`,
         espace: info?.espace?.id,
+        conversation: [{ role: "flore", comportement: "expliquer", texte: accueil, quand: now }],
       });
-      await api.patch(`/cases/${data.id}`, { conversation: [{ role: "flore", comportement: "expliquer", texte: accueil, quand: now }] });
       navigate(`/travaux/${data.id}`);
     } catch {
       toast.error("Impossible d'ouvrir le travail");

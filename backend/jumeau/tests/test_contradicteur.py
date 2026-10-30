@@ -47,6 +47,26 @@ def test_citation_invalide_epargne_l_appel_au_relecteur(depot_git, monkeypatch):
     assert appels == []
 
 
+def test_citation_de_piece_est_verifiee_contre_les_sections_du_travail(monkeypatch):
+    appels = []
+
+    async def juge(*_):
+        appels.append(1)
+        return {"ok": True, "problemes": []}
+    monkeypatch.setattr(contradicteur, "_juger", juge)
+    doc = {"id": "p1", "nom": "spec.docx", "texte": "# Alpha\nx\n# Beta\ny",
+           "sections": [{"id": "s1", "titre": "Alpha", "niveau": 1, "debut": 0, "fin": 9},
+                        {"id": "s2", "titre": "Beta", "niveau": 1, "debut": 9, "fin": 18}]}
+    verdict = asyncio.run(contradicteur.relire("q", "D'après `pièce:p1#s1`, x.", [], {}, modele=None,
+                                               pieces_jointes=[doc]))
+    assert verdict["ok"] is True and appels == [1]
+    appels.clear()
+    verdict = asyncio.run(contradicteur.relire("q", "D'après `pièce:p1#s9`, x.", [], {}, modele=None,
+                                               pieces_jointes=[doc]))
+    assert verdict["ok"] is False and "pièce:p1#s9" in verdict["problemes"][0]
+    assert appels == []
+
+
 def test_citations_invalides_retirees_du_texte():
     texte = "A `a.py#L1` et B `absent.py#L3-L4`, puis C git://d@abc1234:absent.py#L3-L4."
     assert contradicteur.retirer_citations_invalides(texte, ["absent.py#L3-L4", "d:absent.py#L3-L4"]) == \

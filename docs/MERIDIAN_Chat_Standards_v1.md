@@ -273,6 +273,28 @@ en moins de 2 s.
 **P4 — Le confort.** Pièces jointes (versées comme sources du Travail, pas comme vérité), voix, mention `@jumeau`,
 commandes `/`, partage par lien avec les droits, coût et temps affichés.
 
+> **Avancement (2026-10-29).** Fait : **pièces jointes du Travail**. Dépôt borné (PDF, Word, PowerPoint, Excel,
+> OpenDocument, RTF, EPUB, CSV, texte, Markdown, JSON, HTML ; 10 Mo et 10 pièces par travail), conversion des
+> formats bureautiques par **anydoc** (MIT, locale, détection par le contenu, sans OCR hébergé), extraction bornée
+> (caractères, pages, durée, bombes zip), stockage GridFS partagé entre workers, téléchargement `attachment` +
+> `nosniff`, retrait par l'auteur ou le responsable, cascade avec la conversation et la réinitialisation de la démo.
+> Le texte est injecté dans le contexte de Flore comme **donnée non vérifiée** (nom, auteur, date ; « d'après la
+> pièce jointe… »), jamais comme un Claim. Le Markdown est découpé en **sections** (titres, slides, préambule) :
+> Flore reçoit un sommaire et les sections pertinentes pour la question, puis peut lire une section non fournie
+> avec `lire_piece` (fenêtre `debut`), chercher avec `chercher_pieces` et lire un tableau avec `lire_table`
+> (bornés au Travail, plafonnés). Les citations portent `pièce:<id>#<section>` et sont vérifiées contre le
+> sommaire réel par le contradicteur, sans être confondues avec des preuves de code ; les citations invalides sont
+> retirées après révision. Un harnais `evaluation_pieces` mesure recall@k et MRR. En mode proxy/OIDC, l'envoi au
+> modèle externe est coupé par défaut (`PIECES_ENVOI_MODELE_EXTERNE`). Intégrité plateforme : mutations de
+> conversation réservées aux contributeurs, PATCH de conversation refusé, fusion serveur réservée au responsable
+> (pièces déplacées sous quota atomique), journal filtré et non forgeable, rate limiting (tours et pièces), purge des
+> dérivés et des retours à la suppression, CORS sans credentials. Les pièces sont injectées comme données
+> utilisateur, jamais dans le prompt système ; avec des pièces, Flore n'écrit dans le Travail que si l'utilisateur
+> l'autorise explicitement pour le tour, et l'extraction tourne dans un processus séparé borné. Limites honnêtes :
+> pas d'OCR (un scan reste sans texte),
+> variantes macro (`.docm`, `.xlsm`, `.pptm`) et images refusées. Restent : voix, mention `@jumeau`, commandes `/`,
+> partage par lien, coût et temps affichés.
+
 **Avant d'écrire le code de P1 et de P2**, la maquette passe par le compagnon visuel (règle du projet).
 
 ---

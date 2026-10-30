@@ -1,4 +1,5 @@
 """Identité : demo explicite, proxy de confiance et OIDC HS256 ; le header client ne gagne jamais."""
+import pytest
 from fastapi import FastAPI, Header
 from fastapi.testclient import TestClient
 from jose import jwt
@@ -56,3 +57,10 @@ def test_verifier_config_refuse_un_mode_ou_un_secret_manquant(monkeypatch):
         assert "AUTH_PROXY_SECRET" in str(erreur)
     else:
         raise AssertionError("configuration proxy sans secret acceptée")
+
+
+def test_demo_refuse_en_production(monkeypatch):
+    monkeypatch.setenv("AUTH_MODE", "demo")
+    monkeypatch.setenv("APP_ENV", "production")
+    with pytest.raises(RuntimeError, match="demo"):
+        auth.verifier_config()

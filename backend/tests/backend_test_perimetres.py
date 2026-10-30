@@ -3,9 +3,9 @@
 Tous les tests mutatifs restaurent l'état initial via pymongo à la fin.
 """
 import os
-import pytest
 import requests
 from pymongo import MongoClient
+from uuid import uuid4
 
 if "REACT_APP_BACKEND_URL" not in os.environ:
     with open("/app/frontend/.env") as f:
@@ -235,11 +235,46 @@ def test_creer_vue_puis_verifier_puis_delete():
 
 # ---------- Journal ----------
 def test_journal_endpoint():
-    # écrire une entrée d'abord pour garantir des données
-    requests.post(f"{BASE}/journal",
-                  headers=H("architecte", "mesh-global"),
-                  json={"action": "test", "detail": "backend_test_perimetres"})
-    r = requests.get(f"{BASE}/journal")
+    # une action client connue ; le détail envoyé par le client est ignoré (dérivé côté serveur)
+    r = requests.post(f"{BASE}/journal",
+                      headers=H("architecte", "mesh-global"),
+                      json={"action": "changement de périmètre", "detail": "valeur client ignorée"})
+    assert r.status_code == 201
+    r = requests.get(f"{BASE}/journal", headers=H("architecte", "mesh-global"))
     assert r.status_code == 200
+    assert r.headers.get("Cache-Control") == "private, no-store"
     assert isinstance(r.json(), list)
     assert len(r.json()) >= 1
+
+
+def test_journal_refuse_une_action_client_inconnue():
+    r = requests.post(f"{BASE}/journal",
+                      headers=H("architecte", "mesh-global"),
+                      json={"action": "test", "detail": "backend_test_perimetres"})
+    assert r.status_code == 400
+
+
+def test_journal_filtre_par_perimetre():
+    marqueur = f"test-perimetre-{uuid4().hex}"
+    DB["journal"].insert_one({"quand": "9999-12-31T23:59:59+00:00", "persona": "paiements",
+                              "espace": "espace-paiements", "action": "test", "cible": "", "detail": marqueur})
+    try:
+        support = requests.get(f"{BASE}/journal", headers=H("support", "espace-support")).json()
+        assert all(entree["detail"] != marqueur for entree in support)
+        paiements = requests.get(f"{BASE}/journal", headers=H("paiements", "espace-paiements")).json()
+        assert any(entree["detail"] == marqueur for entree in paiements)
+        global_ = requests.get(f"{BASE}/journal", headers=H("architecte", "mesh-global")).json()
+        assert any(entree["detail"] == marqueur for entree in global_)
+    finally:
+        DB["journal"].delete_many({"detail": marqueur})
+
+
+def test_changement_de_perimetre_journalise_le_detail_du_serveur():
+    r = requests.post(f"{BASE}/journal", headers=H("support", "espace-support"),
+                      json={"action": "changement de périmètre", "detail": "détail fourni par le client"})
+    assert r.status_code == 201
+    entree = DB["journal"].find_one({"persona": "support", "action": "changement de périmètre"},
+                                    sort=[("quand", -1)])
+    assert entree is not None
+    assert entree["detail"] == "espace-support — Équipe Support"
+    assert "détail fourni par le client" not in entree["detail"]

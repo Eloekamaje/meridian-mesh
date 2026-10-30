@@ -21,7 +21,7 @@ export default function Administration() {
   const [confirmReset, setConfirmReset] = useState(false);
   const [recherche, setRecherche] = useState("");
   const [resetEnCours, setResetEnCours] = useState(false);
-  const { version } = usePerimetre();
+  const { version, authMode } = usePerimetre();
   useEffect(() => {
     api.get("/jumeaux").then((r) => setJumeaux(r.data)).catch(() => {});
     api.get("/journal").then((r) => setJournal(r.data)).catch(() => {});
@@ -169,26 +169,28 @@ export default function Administration() {
           </ul>
         </section>
 
-        <section className="rise col-span-12 rounded-xl border border-[#F87171]/20 bg-[#F87171]/[0.03] p-5" style={{ animationDelay: "360ms" }} data-testid="admin-reset">
-          <h2 className="flex items-center gap-2 font-code text-[10px] uppercase tracking-[0.25em] text-[#7C93A8]">
-            <ArrowCounterClockwise size={14} className="text-[#F87171]" /> Zone de démonstration
-          </h2>
-          <p className="mt-2 text-xs text-[#7C93A8]">
-            Restaure le jeu de données initial : situations ignorées ou décidées, jumeaux admis, vues enregistrées, dossiers de changement et journal sont remis à zéro.
-          </p>
-          <button
-            onClick={reinitialiser}
-            disabled={resetEnCours}
-            data-testid="reset-demo-btn"
-            className={`mt-3 rounded-md border px-3 py-2 text-xs font-semibold transition-colors ${
-              confirmReset
-                ? "border-[#F87171] bg-[#F87171]/15 text-[#F87171]"
-                : "border-[rgba(148,163,184,0.16)] text-[#94A3B8] hover:border-[#F87171]/50 hover:text-[#F87171]"
-            } disabled:opacity-50`}
-          >
-            {resetEnCours ? "Réinitialisation…" : confirmReset ? "Confirmer la réinitialisation ?" : "Réinitialiser la démo"}
-          </button>
-        </section>
+        {authMode === "demo" && (
+          <section className="rise col-span-12 rounded-xl border border-[#F87171]/20 bg-[#F87171]/[0.03] p-5" style={{ animationDelay: "360ms" }} data-testid="admin-reset">
+            <h2 className="flex items-center gap-2 font-code text-[10px] uppercase tracking-[0.25em] text-[#7C93A8]">
+              <ArrowCounterClockwise size={14} className="text-[#F87171]" /> Zone de démonstration
+            </h2>
+            <p className="mt-2 text-xs text-[#7C93A8]">
+              Restaure le jeu de données initial : situations ignorées ou décidées, jumeaux admis, vues enregistrées, dossiers de changement et journal sont remis à zéro.
+            </p>
+            <button
+              onClick={reinitialiser}
+              disabled={resetEnCours}
+              data-testid="reset-demo-btn"
+              className={`mt-3 rounded-md border px-3 py-2 text-xs font-semibold transition-colors ${
+                confirmReset
+                  ? "border-[#F87171] bg-[#F87171]/15 text-[#F87171]"
+                  : "border-[rgba(148,163,184,0.16)] text-[#94A3B8] hover:border-[#F87171]/50 hover:text-[#F87171]"
+              } disabled:opacity-50`}
+            >
+              {resetEnCours ? "Réinitialisation…" : confirmReset ? "Confirmer la réinitialisation ?" : "Réinitialiser la démo"}
+            </button>
+          </section>
+        )}
 
         <section className="rise col-span-12 rounded-xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-5" style={{ animationDelay: "300ms" }} data-testid="admin-journal">
           <h2 className="flex items-center gap-2 font-code text-[10px] uppercase tracking-[0.25em] text-[#7C93A8]">

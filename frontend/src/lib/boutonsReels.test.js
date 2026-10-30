@@ -5,8 +5,10 @@ const fs = require("fs");
 const path = require("path");
 
 const ECRANS = [
-  "components/case/OngletTravail.jsx", "components/FlorePanel.jsx", "components/ComposerFlore.jsx",
-  "components/MessageFlore.jsx", "components/MarkdownFlore.jsx", "components/BrouillonFlore.jsx",
+  "components/case/OngletTravail.jsx", "components/case/PiecesJointes.jsx", "components/case/PanneauPiece.jsx",
+  "components/FlorePanel.jsx",
+  "components/ComposerFlore.jsx", "components/MessageFlore.jsx", "components/MarkdownFlore.jsx",
+  "components/BrouillonFlore.jsx",
 ];
 
 function boutons(source) {

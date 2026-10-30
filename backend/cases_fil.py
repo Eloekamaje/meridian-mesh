@@ -3,7 +3,7 @@
 La logique des messages est dans conversation.py (pure) ; ici, seulement les routes et la persistance."""
 from datetime import datetime, timezone
 import asyncio
-from typing import Any, Literal, Optional
+from typing import Literal, Optional
 
 from fastapi import Header, HTTPException
 from pydantic import BaseModel, Field
@@ -17,6 +17,8 @@ class Params(BaseModel):
     contexte: Optional[str] = None
     selection: Optional[list] = None
     domaine: Optional[str] = None
+    # Sans autorisation explicite, une régénération ne modifie pas le Travail quand des pièces sont présentes.
+    autoriser_ecriture: bool = False
 
 
 class Modification(Params):
@@ -40,11 +42,14 @@ def ajouter_routes_fil(router, deps):
     reviser(claim, jumeau, persona, decision, motif) : la revue humaine (LookupError, ValueError si déjà revue)."""
     db, charger_case, repondre = deps["db"], deps["charger_case"], deps["repondre"]
     resoudre_perimetre, autorisations, reviser = deps["resoudre_perimetre"], deps["autorisations"], deps["reviser"]
+    exiger_contributeur = deps["exiger_contributeur"]
     prevenir_fin = deps.get("prevenir_fin") or (lambda cid, persona: None)
 
     async def ouvrir(cid, persona, espace_hdr):
+        """Charger le fil pour une mutation : seuls le responsable et les participants y écrivent."""
         _, espace = resoudre_perimetre(persona, espace_hdr)
         case = await charger_case(cid, espace, persona)
+        exiger_contributeur(case, persona)
         return case, list(case.get("conversation") or [])
 
     async def ecrire(cid, messages):
@@ -103,7 +108,7 @@ def ajouter_routes_fil(router, deps):
             if brouillon:  # rien d'écrit : rien n'est ajouté
                 await ajouter(fil.message_interrompu(brouillon, activite))
         return flux.en_flux(produire, sur_interruption=interrompu, fil=cid, proprietaire=x_persona,
-                             si_seul=prevenir_fin(cid, x_persona))
+                            si_seul=prevenir_fin(cid, x_persona))
 
     @router.post("/cases/{cid}/messages/{n}/modifier/flux")
     async def modifier(cid: str, n: int, payload: Modification, x_persona: str = Header("architecte"),
@@ -125,7 +130,7 @@ def ajouter_routes_fil(router, deps):
         async def interrompu(brouillon, activite=None):
             await ajouter(fil.message_interrompu(brouillon, activite))
         return flux.en_flux(produire, sur_interruption=interrompu, fil=cid, proprietaire=x_persona,
-                             si_seul=prevenir_fin(cid, x_persona))
+                            si_seul=prevenir_fin(cid, x_persona))
 
     @router.post("/cases/{cid}/messages/{n}/approbation")
     async def approuver(cid: str, n: int, payload: Approbation, x_persona: str = Header("architecte"),

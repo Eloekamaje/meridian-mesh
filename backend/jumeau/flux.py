@@ -43,12 +43,16 @@ LIBELLES_OUTILS = {
     "historique_du_code": "Je regarde l'histoire du code…", "ce_qui_a_change": "Je regarde ce qui a changé…",
     "chercher_dans": "Je cherche dans la documentation et les outils de l'équipe…",
     "lire_dans": "Je lis la documentation concernée…",
+    "lire_piece": "Je lis la pièce jointe…", "chercher_pieces": "Je cherche dans les pièces jointes…",
+    "lire_table": "Je lis un tableau de la pièce…",
     "dessiner_schema": "Je dessine le schéma…",
     "consulter_jumeau": "Je consulte l'application concernée…",
     "montrer_sur_atlas": "Je prépare la carte…",
     "consulter_methode": "Je choisis comment m'y prendre…",
     "proposer_connaissance": "Je consigne ce que j'ai appris…",
-    "eprouver_hypothese": "Je mets une hypothèse à l'épreuve…", "proposer_hypothese": "Je pose une hypothèse à vérifier…", "recouper_connaissance": "Je recoupe avec une autre source…",
+    "eprouver_hypothese": "Je mets une hypothèse à l'épreuve…",
+    "proposer_hypothese": "Je pose une hypothèse à vérifier…",
+    "recouper_connaissance": "Je recoupe avec une autre source…",
 }
 
 EXTRAIT_OUTIL = 300  # caractères du résultat d'un outil montrés à l'écran (le reste est dans la réponse, cité)

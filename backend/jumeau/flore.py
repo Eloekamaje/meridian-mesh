@@ -18,7 +18,48 @@ from jumeau.lecteurs import RE_CITATION_SOURCE
 from jumeau.travail import EcritureTravail, etat_texte
 
 MAX_PREUVES = 8
+NOTE_PIECES_NON_TRANSMISES = (
+    "## Pièces jointes non transmises\n\n"
+    "Le modèle configuré est externe et l'envoi de pièces n'est pas autorisé pour ce Travail. "
+    "Dis-le à l'interlocuteur ; ne prétends pas avoir lu les pièces."
+)
+SANS_ECRITURE_AVEC_PIECES = (
+    "Tu ne peux pas modifier le Travail dans ce tour ; propose l'action à l'humain."
+)
 FILS = agent.FilsActifs()
+
+
+def bloc_donnees_pieces(pieces_prompt="", avertissement=""):
+    """Le contenu des pièces reste une donnée balisée, jamais une instruction du prompt système."""
+    return "\n\n".join(bloc for bloc in (pieces_prompt, avertissement) if bloc)
+
+
+def message_utilisateur(question, pieces_prompt="", avertissement=""):
+    """La question, précédée du bloc de pièces non fiables quand il y en a un."""
+    bloc = bloc_donnees_pieces(pieces_prompt, avertissement)
+    if not bloc:
+        return question
+    return f"<donnees_pieces>\n{bloc}\n</donnees_pieces>\n\nQuestion : {question}"
+
+
+def pieces_non_transmises(pieces_docs):
+    """Des pièces existent, mais le modèle configuré est externe sans autorisation : rien ne part vers lui."""
+    if not pieces_docs:
+        return False
+    try:
+        from pieces import modele_externe, modele_externe_autorise
+    except ImportError:
+        return False
+    return bool(modele_externe()) and not bool(modele_externe_autorise())
+
+
+def retirer_citations_pieces(texte, pieces_docs):
+    """Texte débarrassé des citations de pièces qui ne désignent aucune section réelle (contrat de pieces.py)."""
+    try:
+        from pieces import retirer_citations_pieces_invalides
+    except ImportError:
+        return texte, []
+    return retirer_citations_pieces_invalides(texte, pieces_docs or [])
 
 
 def preuves_depuis(texte, sources, exclure=(), fraicheur=None):
@@ -46,9 +87,8 @@ def preuves_depuis(texte, sources, exclure=(), fraicheur=None):
         vues.add(m.group(0))
         lignes = m["debut"] + (f"-{m['fin']}" if m["fin"] and m["fin"] != m["debut"] else "")
         mention = (fraicheur or {}).get(m.group(0))
-        preuves.append({"source": f"{m['systeme'].capitalize()} · {m['espace']} · {m['ref']} (v{m['version']}) L{lignes}"
-                                  + (f" — {mention}" if mention else ""),
-                        "detail": m.group(0)})
+        etiquette = f"{m['systeme'].capitalize()} · {m['espace']} · {m['ref']} (v{m['version']}) L{lignes}"
+        preuves.append({"source": etiquette + (f" — {mention}" if mention else ""), "detail": m.group(0)})
         if len(preuves) == MAX_PREUVES:
             break
     return preuves
@@ -118,11 +158,13 @@ def validees(claims):
     return sum(c.get("statut") == "ACCEPTED" for c in claims)
 
 
-async def relire_sans_risque(question, texte, sources, profil, modele, charte="", lecteurs=(), validees=None):
+async def relire_sans_risque(question, texte, sources, profil, modele, charte="", lecteurs=(), validees=None,
+                             pieces_jointes=None):
     """Une panne du relecteur (délai, quota) ne doit jamais faire perdre une réponse déjà produite. Elle ne doit pas
     non plus se faire passer pour une relecture : l'état `indisponible` le dit (plan de remédiation L0.1)."""
     try:
-        return await contradicteur.relire(question, texte, sources, profil, modele, charte, lecteurs, validees)
+        return await contradicteur.relire(
+            question, texte, sources, profil, modele, charte, lecteurs, validees, pieces_jointes)
     except Exception:
         agent.journal.warning("relecture impossible, réponse envoyée sans relecture", exc_info=True)
         return {"ok": True, "problemes": [], "etat": "indisponible"}
@@ -228,8 +270,8 @@ def application_nommee(question, jumeaux):
     for j in jumeaux:
         for nom in {" ".join(_mots(j.get("nom") or "")), " ".join(_mots(j["id"]))} - {""}:
             exact = f" {nom} " in phrase
-            proche = (" " not in nom and len(nom) >= 5
-                      and any(len(m) >= 5 and difflib.SequenceMatcher(None, nom, m).ratio() >= SEUIL_FAUTE for m in mots))
+            proche = (" " not in nom and len(nom) >= 5 and any(
+                len(m) >= 5 and difflib.SequenceMatcher(None, nom, m).ratio() >= SEUIL_FAUTE for m in mots))
             if exact or proche:
                 trouves.append(j["id"])
                 break
@@ -243,7 +285,7 @@ def dessin_pour(ctx):
         source = connaissance.resoudre_source(ctx["sources"], m["depot"], m["chemin"])
         debut = int(m["debut"])
         lu = connaissance.lire_code(source, m["chemin"], debut, int(m["fin"] or debut))
-        return [l["texte"] for l in lu["lignes"]], lu["locator"], f"{m['chemin']}:{debut}"
+        return [ligne["texte"] for ligne in lu["lignes"]], lu["locator"], f"{m['chemin']}:{debut}"
     return schemas.Dessin({c["id"]: c for c in ctx["claims"] if c.get("id")}, lire_lignes)
 
 
@@ -261,11 +303,13 @@ def _indisponible(nom, raison):
             "contributions": [], "preuves": []}
 
 
-async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=None, trace=None, emit=None):
+async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=None, trace=None, emit=None,
+                   autoriser_ecriture=False):
     """Réponse de Flore mobilisant un jumeau réel, ou None si `jumeau_id` n'est pas un jumeau réel ingéré.
 
     Dans un Travail (`travail` et `db`), Flore reçoit son état et les outils pour y écrire (plan, hypothèses,
-    options, livrables, résumé) : elle travaille dans le Travail, elle ne fait pas que répondre.
+    options, livrables, résumé) : elle travaille dans le Travail, elle ne fait pas que répondre. Avec des pièces
+    jointes, les outils d'écriture ne sont ouverts que si l'humain les autorise pour ce tour.
     `trace` (dict facultatif) reçoit le texte brut, avec ses citations, et les citations invalides (évaluations).
     """
     chrono = mesure.Chrono()
@@ -273,6 +317,17 @@ async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=No
         ctx, dsn = await asyncio.to_thread(_contexte, jumeau_id, acteur, profil)
     if not ctx:
         return None
+    if travail and db is not None:  # les pièces jointes du Travail, dans les droits déjà vérifiés par l'appelant
+        from pieces import du_travail, sections_pour_prompt_detail
+        ctx["pieces"] = await du_travail(db, travail)
+        if pieces_non_transmises(ctx["pieces"]):
+            ctx["pieces"] = []
+            ctx["pieces_prompt"] = NOTE_PIECES_NON_TRANSMISES
+        elif ctx["pieces"]:
+            ctx["pieces_prompt"], ctx["pieces_selection"] = sections_pour_prompt_detail(ctx["pieces"], question)
+    avertissement = SANS_ECRITURE_AVEC_PIECES if ctx.get("pieces") and not autoriser_ecriture else ""
+    message = message_utilisateur(question, ctx.get("pieces_prompt") or "", avertissement)
+    journal_pieces = []
     nom = ctx["jumeau"]["nom"]
     cle = cle_fil(acteur, travail)
     if not FILS.prendre(jumeau_id, cle):
@@ -280,29 +335,36 @@ async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=No
     try:
         await _annoncer(emit, {"type": "etape", "libelle": f"Je regarde {nom}…"})
         modele = agent.modele()
-        ecriture = EcritureTravail(db, travail) if travail and db is not None else None
+        ecriture = (EcritureTravail(db, travail)
+                    if travail and db is not None and (not ctx.get("pieces") or autoriser_ecriture) else None)
         if ecriture:
             ctx["travail"] = etat_texte(await ecriture.etat())
         ctx["dessin"] = dessin = dessin_pour(ctx) if ctx["sources"] else None
+        supplement = ({"outils_pieces": lambda b: agent.outils_pieces(db, travail, b, journal_pieces)}
+                      if ctx.get("pieces") else {})
         a = agent.construire(ctx, dsn, session=connaissance.id_session(jumeau_id, cle), modele=modele,
-                             ecriture=ecriture)
+                             ecriture=ecriture, **supplement)
         with chrono.phase("agent"):
-            texte = await executer(a, question, emit, chrono)
+            texte = await executer(a, message, emit, chrono)
         await _annoncer(emit, {"type": "relecture"})
         # Relecture avant envoi ; une seule révision au plus.
         # ponytail: la consigne de révision reste dans le fil (brouillon, critique, correction) : historique cohérent,
         # mais plus long ; fil séparé si elle gêne la mémoire.
         with chrono.phase("relecture"):
-            verdict = await relire_sans_risque(question, texte, ctx["sources"], ctx.get("profil"), modele,
-                                               agent.CHARTE.read_text(encoding="utf-8"), ctx.get("lecteurs", []),
-                                               validees(ctx["claims"]))
+            verdict = await relire_sans_risque(
+                question, texte, ctx["sources"], ctx.get("profil"), modele,
+                agent.CHARTE.read_text(encoding="utf-8"), ctx.get("lecteurs", []),
+                validees(ctx["claims"]), ctx.get("pieces"))
         texte, corrige = await reviser(a, texte, verdict, chrono, emit, jumeau_id)
+        texte, invalides_pieces = await asyncio.to_thread(retirer_citations_pieces, texte, ctx.get("pieces"))
+        if trace is not None and invalides_pieces:
+            trace["invalides"] = [*trace.get("invalides", []), *invalides_pieces]
         chrono.agent(a)
         with chrono.phase("controles"):
-            invalides = await asyncio.to_thread(contradicteur.citations_invalides, texte, ctx["sources"],
-                                               ctx.get("lecteurs", []))
+            invalides = await asyncio.to_thread(
+                contradicteur.citations_invalides, texte, ctx["sources"], ctx.get("lecteurs", []))
             if trace is not None:
-                trace.update(texte=texte, invalides=list(invalides))
+                trace.update(texte=texte, invalides=[*trace.get("invalides", []), *invalides])
             fraiches = await asyncio.to_thread(contradicteur.fraicheur, texte, ctx.get("lecteurs", []))
             texte = avec_schema(schemas.verifier(texte, {c["id"]: c for c in ctx["claims"] if c.get("id")},
                                                  deja_dessine=bool(dessin and dessin.mermaid)), dessin)
@@ -312,6 +374,8 @@ async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=No
         reponse["durees"] = chrono.bilan()
         reponse["relecture_etat"] = etat = etat_relecture(verdict, corrige)
         reponse["relu"], reponse["corrige"] = etat == "relue", corrige
+        reponse["pieces_selection"] = ctx.get("pieces_selection") or []
+        reponse["pieces_lectures"] = journal_pieces
         if ctx.get("proposees"):
             reponse["a_approuver"] = ctx["proposees"]  # les connaissances proposées pendant ce tour, à trancher
         agent.journal.info("durées %s : %s", jumeau_id, reponse["durees"])
@@ -344,10 +408,12 @@ async def _cartes(ctxs, dsn, db, relations=None):
     return "\n\n".join(textes)
 
 
-async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=None, emit=None):
+async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=None, emit=None,
+                    autoriser_ecriture=False):
     """Réponse de Flore qui mobilise plusieurs jumeaux réels (étoile) ; None si aucun n'est un jumeau réel ingéré.
 
-    Seuls `jumeau_ids` (déjà filtrés par le serveur selon les droits) sont mobilisables.
+    Seuls `jumeau_ids` (déjà filtrés par le serveur selon les droits) sont mobilisables. Avec des pièces jointes,
+    les outils d'écriture ne sont ouverts que si l'humain les autorise pour ce tour.
     """
     ctxs, dsn, chrono = {}, None, mesure.Chrono()
     await _annoncer(emit, {"type": "etape", "libelle": "Je regarde les applications concernées…"})
@@ -358,13 +424,27 @@ async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=
                 ctxs[jid], dsn = ctx, dsn_jumeau
     if not ctxs:
         return None
+    pieces_travail, pieces_prompt, pieces_selection, journal_pieces = [], "", [], []
+    if travail and db is not None:
+        from pieces import du_travail, sections_pour_prompt_detail
+        pieces_travail = await du_travail(db, travail)
+        if pieces_non_transmises(pieces_travail):
+            pieces_travail = []
+            pieces_prompt = NOTE_PIECES_NON_TRANSMISES
+        elif pieces_travail:
+            pieces_prompt, pieces_selection = sections_pour_prompt_detail(pieces_travail, question)
+        # Le texte des pièces reste à l'orchestratrice : les sous-agents ne reçoivent que les cartes de leur
+        # application, et le contexte (donc le coût) ne se multiplie pas par le nombre de jumeaux mobilisés.
     cle = cle_fil(acteur, travail)
     noms = " et ".join(c["jumeau"]["nom"] for c in ctxs.values())
     if not FILS.prendre("mobilisation", cle):
         return _indisponible(noms, "une réponse est déjà en cours sur ce fil.")
     try:
         modele = agent.modele()
-        ecriture = EcritureTravail(db, travail) if travail and db is not None else None
+        ecriture = (EcritureTravail(db, travail)
+                    if travail and db is not None and (not pieces_travail or autoriser_ecriture) else None)
+        if pieces_travail and not autoriser_ecriture:
+            pieces_prompt = bloc_donnees_pieces(pieces_prompt, SANS_ECRITURE_AVEC_PIECES)
         etat = etat_texte(await ecriture.etat()) if ecriture else None
         mob = mobilisation.Mobilisation(ctxs, dsn, modele, emit)
         scene, relations = mobilisation.Scene(ctxs), {}  # seuls les jumeaux autorisés (déjà filtrés par le serveur)
@@ -372,26 +452,33 @@ async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=
         tous = {"sources": [s for c in ctxs.values() for s in c["sources"]],
                 "claims": [c for x in ctxs.values() for c in x["claims"]]}
         dessin = dessin_pour(tous) if tous["sources"] else None
-        lecteurs_tous = [l for c in ctxs.values() for l in c.get("lecteurs", [])]
+        lecteurs_tous = [lecteur for c in ctxs.values() for lecteur in c.get("lecteurs", [])]
         verifier = lambda t: contradicteur.citations_invalides(t, tous["sources"], lecteurs_tous)  # noqa: E731
-        outils = ([mob.outil(), scene.outil(), agent.consulter_methode]
-                  + ([agent.outil_dessin(dessin, agent.Budget())] if dessin else [])
-                  + (agent.outils_travail(ecriture, agent.Budget(), verifier) if ecriture else []))
+        budget = agent.Budget()
+        outils = [mob.outil(), scene.outil(), agent.consulter_methode]
+        if pieces_travail:
+            outils += agent.outils_pieces(db, travail, budget, journal_pieces)
+        if dessin:
+            outils.append(agent.outil_dessin(dessin, budget))
+        if ecriture:
+            outils += agent.outils_travail(ecriture, budget, verifier, pieces_travail)
         a = mobilisation.orchestrateur(modele, mobilisation.prompt(etat), outils)
         # Durée bornée : chaque outil a son plafond, mais pas le nombre de tours de l'orchestratrice.
         with chrono.phase("cartes"):
             cartes = await _cartes(ctxs, dsn, db, relations)
         with chrono.phase("agent"):
-            texte = await asyncio.wait_for(executer(a, mobilisation.demande(cartes, question), emit, chrono),
-                                           mobilisation.DUREE_MAX)
+            texte = await asyncio.wait_for(
+                executer(a, mobilisation.demande(cartes, question, pieces_prompt), emit, chrono),
+                mobilisation.DUREE_MAX)
         await _annoncer(emit, {"type": "relecture"})
         sources = [s for ctx in ctxs.values() for s in ctx["sources"]]
-        branches = [l for ctx in ctxs.values() for l in ctx.get("lecteurs", [])]
+        branches = [lecteur for ctx in ctxs.values() for lecteur in ctx.get("lecteurs", [])]
         with chrono.phase("relecture"):
-            verdict = await relire_sans_risque(question, texte, sources, profil, modele,
-                                               agent.CHARTE.read_text(encoding="utf-8"), branches,
-                                               sum(validees(ctx["claims"]) for ctx in ctxs.values()))
+            verdict = await relire_sans_risque(
+                question, texte, sources, profil, modele, agent.CHARTE.read_text(encoding="utf-8"), branches,
+                sum(validees(ctx["claims"]) for ctx in ctxs.values()), pieces_travail)
         texte, corrige = await reviser(a, texte, verdict, chrono, emit, "mobilisation")
+        texte, _invalides_pieces = await asyncio.to_thread(retirer_citations_pieces, texte, pieces_travail)
         chrono.agent(a)  # « outils » comprend la consultation des jumeaux (leur propre modèle et leurs outils)
         with chrono.phase("controles"):
             invalides = await asyncio.to_thread(contradicteur.citations_invalides, texte, sources, branches)
@@ -421,6 +508,7 @@ async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=
             **({"commande_carte": scene.commande} if scene.commande else {}),
             "durees": chrono.bilan(), "relecture_etat": etat_relecture(verdict, corrige),
             "relu": etat_relecture(verdict, corrige) == "relue", "corrige": corrige,
+            "pieces_selection": pieces_selection, "pieces_lectures": journal_pieces,
         }
         if proposees := [p for ctx in ctxs.values() for p in ctx.get("proposees", [])]:
             reponse["a_approuver"] = proposees  # proposées par les sous-agents : chacune à trancher

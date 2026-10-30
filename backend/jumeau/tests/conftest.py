@@ -8,6 +8,9 @@ import pytest
 
 from jumeau import depot
 
+# Les tests gardent l'extraction locale : les extracteurs sont monkeypatchés dans le processus de test.
+os.environ.setdefault("PIECES_EXTRACTION_PROCESSUS", "0")
+
 DSN = os.environ.get("JUMEAU_PG_DSN")
 besoin_pg = pytest.mark.skipif(not DSN, reason="JUMEAU_PG_DSN non défini")
 

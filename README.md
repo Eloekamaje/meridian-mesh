@@ -124,7 +124,113 @@ l'URL ne doit pas apparaître dans les logs.
 
 Sans mapping, OIDC accepte une claim `persona` valide. Le header `X-Persona` est toujours remplacé par
 l'identité résolue côté serveur. `GET /api/moi` expose la persona et le mode au frontend, qui masque alors
-le sélecteur de rôle.
+le sélecteur de rôle. En production, définir `APP_ENV=production` : `AUTH_MODE=demo` est refusé au démarrage.
+
+## Pièces jointes d'un Travail
+
+Un Travail accepte des pièces jointes : PDF, Word (`.doc`/`.docx`), PowerPoint (`.ppt`/`.pptx`/`.pps`/`.ppsx`/`.pot`),
+Excel (`.xls`/`.xlsx`/`.xlsb`), OpenDocument (`.odt`/`.ods`/`.odp`), RTF, EPUB, CSV, texte, Markdown, JSON, HTML.
+Les formats bureautiques passent par [anydoc](https://github.com/firecrawl/anydoc) (MIT, conversion locale en
+Markdown, détection par le contenu) ; en cas d'absence du wheel natif, PDF/Word/Excel gardent un extracteur Python
+de repli. anydoc est un wheel natif (Linux/macOS/Windows, Python ≥ 3.10) : sur une plateforme sans wheel, prévoir
+Rust, ou retirer la dépendance et accepter le repli. **Aucun OCR hébergé** : un PDF scanné reste une pièce sans
+texte, jamais envoyée à un service externe. Les variantes macro (`.docm`, `.xlsm`, `.pptm`, `.ppsm`) sont refusées.
+
+Elles sont **versées comme sources du Travail, jamais comme des connaissances** : Flore les lit avec leur nom,
+leur auteur et leur date, dit « d'après la pièce jointe … » et ne les cite jamais comme du code. Un document joint
+ne crée ni Claim ni relation ; il reste dans le travail et disparaît avec lui.
+
+Le Markdown est découpé en **sections** à l'upload (titres ATX, slides PowerPoint, préambule). À chaque tour, Flore
+reçoit un **sommaire** et les sections les plus pertinentes pour la question (sélection lexicale bornée, budget
+réservé par pièce), pas le document entier. Une section non fournie se lit avec `lire_piece` (fenêtre `debut`),
+et les passages peuvent être recherchés avec `chercher_pieces` ; les deux sont limités au Travail courant et à un
+plafond de lectures. Les tableaux (CSV, Excel, OpenDocument) exposent leurs feuilles/colonnes/lignes via
+`lire_table`, qui rend une fenêtre bornée en Markdown — jamais de SQL ni de code exécuté.
+
+Une citation de pièce est formulée « d'après la pièce “nom”, § titre » et porte le repère vérifiable
+`pièce:<id>#<section>` (ou `pièce:<id>#table:<feuille>:<début>-<fin>`) : le contradicteur le contrôle contre le
+sommaire réel, sans le confondre avec une preuve de code. Les citations de section sont cliquables dans le Travail
+et ouvrent la section source. Ce n'est jamais un Claim. Les images distantes ne sont jamais chargées depuis une
+réponse.
+
+Seuls le **responsable** et les **participants** du Travail peuvent déposer une pièce ; un lecteur simple peut la
+télécharger mais pas en ajouter. En mode `proxy`/`oidc`, les pièces ne sont transmises au modèle que si
+`PIECES_ENVOI_MODELE_EXTERNE=1` (ou si `JUMEAU_MODELE` n'est pas un modèle externe) ; en `demo`, l'envoi est
+autorisé par défaut. Sinon Flore dit qu'elle ne les a pas reçues — le fichier reste dans le Travail.
+
+Limites par défaut (variables d'environnement) :
+
+- `PIECES_MAX_OCTETS` (10 Mo) : taille d'un fichier ; `PIECES_MAX_PAR_CASE` (10) : nombre par travail.
+- `PIECES_MAX_CARACTERES` (200 000) : texte conservé par pièce ; `PIECES_MAX_CARACTERES_PROMPT` (40 000) et
+  `PIECES_MAX_CARACTERES_PIECE_PROMPT` (12 000) : budget du contexte envoyé à Flore à chaque tour.
+- `PIECES_MAX_PAGES_PDF` (300) et `PIECES_MAX_FEUILLES_XLSX` (20) : bornes du **repli Python** ; le chemin anydoc
+  a ses propres limites de ressources et le texte est de toute façon tronqué après conversion.
+- `PIECES_DUREE_EXTRACTION` (15 s) : durée au-delà de laquelle l'ajout est refusé (le fil d'extraction ne peut pas
+  être tué ; le pool dédié en borne l'impact).
+- `PIECES_MAX_DECOMPRESSE` (40 Mo) : refus des archives bureautiques qui se décompressent au-delà.
+- `PIECES_CONCURRENCE` (2) : extractions simultanées au plus par worker (un pool dédié, borné).
+- `PIECES_MAX_CARACTERES_TOC` (4 000), `PIECES_MAX_SECTIONS` (300) et `PIECES_MAX_SECTIONS_PIECE_PROMPT` (4) :
+  bornes du sommaire et du nombre de sections proposées à Flore.
+
+Le contenu est stocké dans Mongo (GridFS) et partagé par les workers ; la réinitialisation de la démo et la
+suppression d'une conversation suppriment aussi les fichiers. Retirer une pièce purge ses dérivés dans le fil
+(`pieces_lectures`, `pieces_selection`, activité des outils de pièces) ; les citations déjà écrites peuvent rester
+dans le texte, mais ne pointent plus vers un fichier. Les formats non lisibles (scan sans OCR, images) sont
+refusés, ou conservés sans texte avec un état affiché honnêtement.
+
+La recherche de sections est **lexicale** (titres + texte), complétée par `chercher_pieces` et `lire_piece` ; c'est
+le choix complet à l'échelle d'un Travail (10 pièces), sans dépendance à un modèle d'embedding ni envoi de texte à
+un service tiers. `evaluation_pieces` mesure recall@k/MRR ; une extension sémantique reste possible mais n'est pas
+nécessaire au fonctionnement. Les images distantes d'une réponse ne sont jamais chargées.
+
+Le contenu des pièces n'entre **jamais dans le prompt système** : il est fourni comme données balisées dans le
+message utilisateur. Avec des pièces, Flore n'écrit dans le Travail que si l'utilisateur coche « Autoriser Flore à
+modifier le travail » pour le tour ; sinon elle propose l'action sans l'exécuter. L'extraction (anydoc, pypdf,
+python-docx, openpyxl) tourne dans un **processus séparé** avec timeout, mémoire/CPU bornés et réseau coupé
+(`PIECES_EXTRACTION_PROCESSUS=0` pour les tests/développement). Au démarrage, les compteurs de quota des pièces sont
+réconciliés avec la base.
+
+| Endpoint | Rôle |
+|---|---|
+| `GET /api/cases/{cid}/pieces` | Métadonnées des pièces (jamais le texte) |
+| `POST /api/cases/{cid}/pieces` | Dépôt multipart (`fichier`) |
+| `GET /api/cases/{cid}/pieces/{pid}` | Téléchargement en pièce jointe (`nosniff`) |
+| `GET /api/cases/{cid}/pieces/{pid}/extrait` | Texte extrait, borné |
+| `GET /api/cases/{cid}/pieces/{pid}/sections/{sid}` | Fenêtre d'une section (`debut`, `limite`) |
+| `DELETE /api/cases/{cid}/pieces/{pid}` | Retrait par l'auteur ou le responsable |
+
+## Évaluation de la sélection de sections
+
+Un harnais reproductible mesure la sélection lexicale sans base :
+`backend/evaluation_pieces.py` lit un JSONL `{question, piece, section}` et un JSON de pièces, puis calcule
+`recall@k` et `MRR` sur les sections réellement incluses par `sections_pour_prompt_detail`.
+
+```bash
+cd backend
+python -m evaluation_pieces --docs docs.json --questions questions.jsonl --k 4
+```
+
+## Limites de plateforme
+
+- `PATCH /api/cases/{cid}` ne modifie **jamais** la conversation (400) ; elle s'ajoute par `POST /messages` ou
+  `POST /cases/{cid}/fusion`. Toutes les mutations de conversation (messages, versions, branches, régénération,
+  modification) sont réservées au **responsable ou aux participants**.
+- La fusion est réservée au **responsable** de la cible : elle réserve la source, déplace ses pièces sous quota
+  atomique, normalise les messages importés (sans preuves/approbations clientes), puis supprime la source.
+- Le journal est filtré par périmètre et les conversations privées n'y exposent ni titre ni nom de pièce ;
+  `POST /api/journal` n'accepte que les changements d'identité/périmètre, avec un détail dérivé serveur.
+- Décider ou agir sur une situation exige que **tous ses jumeaux** soient dans le périmètre (la lecture peut être
+  partielle) ; l'audit est écrit dans l'espace résolu, jamais dans le header brut.
+- Rate limiting : `TOURS_RATE_MAX` (30/60 s par défaut en production, appliqué aussi à `/aurora` et aux
+  régénérations), `PIECES_RATE_UPLOAD_MAX` (30/300 s) et `PIECES_RATE_LECTURE_MAX` (240/60 s) ; désactivé hors
+  production sauf réglage explicite. Redis partage les compteurs (script Lua atomique), avec repli mémoire hors Redis.
+- CORS : `allow_credentials=False` (auth par en-têtes) ; `APP_ENV=production` refuse `CORS_ORIGINS=*` au démarrage.
+- Suppression : pièces, fichiers GridFS, dérivés de conversation et entrées `retours` du Travail sont purgés.
+- Mongo du compose de démonstration est **local** (127.0.0.1, sans auth). Pour un déploiement partagé :
+  `docker compose --env-file .env.prod -f docker-compose.prod.yml up -d` (Mongo `--auth`, Redis mot de passe,
+  Postgres, ports en boucle locale) ; copier `.env.prod.example` vers `.env.prod` et renseigner les secrets.
+- `starlette>=1.6,<2` est requis par le middleware de limite de corps ; les embeddings/pgvector restent une
+  décision d'infrastructure fondée sur `evaluation_pieces`.
 
 ## Données de démonstration
 
@@ -140,6 +246,7 @@ Seed automatique au démarrage (clé `SEED_VERSION` : un changement réinitialis
 | `GET /api/activite` | Flux d'événements temps réel (simulé) |
 | `POST /api/demo/reinitialiser` | Réinitialisation du jeu de démo (journalisée) |
 | `POST /api/perimetre/set` · `GET /api/perimetre` | Gestion persona/espace/vue active |
+| `POST /api/cases/{cid}/fusion` | Ajout serveur d'une conversation à un Travail (append-only) |
 | `POST /api/relations/{id}/confirmer` | Confirmation A2A d'une relation |
 | `GET /api/journal` | Journal d'audit (accès, décisions, exports) |
 

@@ -24,6 +24,10 @@ Vérifie :
 1. Elle répond à la question posée, d'abord et directement.
 2. Chaque affirmation factuelle sur l'application est suivie d'une citation `chemin#Ldébut-Lfin`
    (les phrases sur Flore elle-même, les questions de suite et les « je ne sais pas » n'en ont pas besoin).
+   Une affirmation tirée d'une pièce jointe du Travail est fondée par `pièce:<id_pièce>#<id_section>` (ou
+   `pièce:<id>#document` pour le texte intégral) : c'est une source du Travail, pas une connaissance validée.
+   Une phrase explicitement attribuée à une pièce n'a donc pas besoin de `chemin#L` ; une pièce jointe ne remplace
+   jamais une preuve de code pour une affirmation générale sur l'application.
 3. Elle respecte la charte de Flore ci-dessous pour le rôle de l'interlocuteur : vouvoiement, pas de jargon
    non expliqué pour un rôle métier, pas de récitation de ses règles internes ou de sa méthode, pas de tableau.
 
@@ -45,7 +49,8 @@ def fraicheur(texte, lecteurs=()):
         if citation in vues or len(vues) == MAX_FRAICHEUR:
             continue
         vues.add(citation)
-        lecteur = next((l for l in lecteurs if l.systeme == m["systeme"] and l.espace == m["espace"]), None)
+        lecteur = next((trouve for trouve in lecteurs
+                        if trouve.systeme == m["systeme"] and trouve.espace == m["espace"]), None)
         if lecteur is None or not lecteur.perissable:
             continue
         try:
@@ -69,7 +74,7 @@ def citations_invalides(texte, sources, lecteurs=()):
         citation = m.group(0)
         if citation not in vues:
             vues.add(citation)
-            if not any(l.verifier(citation) for l in lecteurs):
+            if not any(trouve.verifier(citation) for trouve in lecteurs):
                 invalides.append(citation)
     for m in RE_CITATION.finditer(texte):
         depot, chemin, debut, fin = connaissance.decouper(m)
@@ -128,7 +133,8 @@ async def _juger(question, reponse, profil, modele, charte):
     return analyser_verdict(str(resultat))
 
 
-async def relire(question, reponse, sources, profil, modele, charte="", lecteurs=(), validees=None):
+async def relire(question, reponse, sources, profil, modele, charte="", lecteurs=(), validees=None,
+                 pieces_jointes=None):
     # Contrôles déterministes d'abord : une citation fausse ou une confirmation inventée suffit à demander une
     # révision, sans appel au LLM. `validees` : nombre de connaissances validées (None = non contrôlé).
     invalides = await asyncio.to_thread(citations_invalides, reponse, sources, lecteurs)
@@ -136,6 +142,12 @@ async def relire(question, reponse, sources, profil, modele, charte="", lecteurs
         return {"ok": False, "etat": "relue", "problemes": [
             f"Citations introuvables : {', '.join(invalides)}. "
             "Relis ces lignes avec lire_code ou lire_dans, ou retire l'affirmation."]}
+    from pieces import citations_pieces_invalides
+    invalides_pieces = await asyncio.to_thread(citations_pieces_invalides, reponse, pieces_jointes or [])
+    if invalides_pieces:
+        return {"ok": False, "etat": "relue", "problemes": [
+            f"Citations de pièces introuvables : {', '.join(invalides_pieces)}. "
+            "Utilise le sommaire fourni, sous la forme `pièce:<id_pièce>#<id_section>`."]}
     infondees = attributions_infondees(reponse, validees) if validees is not None else []
     if infondees:
         return {"ok": False, "etat": "relue", "problemes": [

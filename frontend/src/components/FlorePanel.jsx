@@ -461,7 +461,7 @@ export default function FlorePanel() {
   const { jumeauPar, mesh } = useMesh();
   const pilote = usePilotage();
   const [question, setQuestion] = useState("");
-  const { info } = usePerimetre();
+  const { info, persona } = usePerimetre();
   // La conversation du panneau est un Travail (MERIDIAN_Conversation_Contrat_v1 §2) : `travailId` est le sien.
   // Hors serveur (création impossible), elle reste locale : les messages ne sont alors pas enregistrés.
   const [travailId, setTravailId] = useState(() => localStorage.getItem(CLE_TRAVAIL) || null);
@@ -643,7 +643,9 @@ export default function FlorePanel() {
           await demanderEnFlux(`${prefixeTravail(cid)}/messages/flux`, { texte: finale, contexte, selection, domaine: domaineSel }, rappels);
           enregistree = true;
         } catch (err) {
-          if (err.annoncee || estArret(err) || err.tourEnCours) throw err;
+          // 400/403/429 (et tout 4xx annoncé) : le refus du Travail fait foi — jamais de repli sur /aurora.
+          const refusSansRepli = [400, 403, 429].includes(err.statut);
+          if (err.annoncee || refusSansRepli || estArret(err) || err.tourEnCours) throw err;
         }
       }
       if (!enregistree) {
@@ -675,6 +677,9 @@ export default function FlorePanel() {
         toast.info("Connexion perdue : Flore termine sa réponse, elle s'affichera ici.");
         if (await attendreReponse(() => api.get(`/cases/${cid}`).then((r) => r.data), nAvant)) await relire(cid);
         else toast.error("La réponse n'est pas encore arrivée : rouvrez la conversation dans un moment.");
+      } else if (err.annoncee) {
+        // Le serveur a refusé la demande (droits, quota…) : son message s'affiche tel quel.
+        setMessages((m) => [...m, monMessage, { role: "flore", texte: err.message || "Flore est momentanément injoignable.", contributions: [], preuves: [], indicateurs: null, quand: maintenant }]);
       } else {
         setMessages((m) => [...m, monMessage, { role: "flore", texte: "Flore est momentanément injoignable.", contributions: [], preuves: [], indicateurs: null, quand: maintenant }]);
       }
@@ -758,25 +763,19 @@ export default function FlorePanel() {
 
   const ajouterATravail = async (cid) => {
     if (ajoutEnCours) return;
+    // Conversation restée locale (aucune source côté serveur) : on garde le chemin de création d'un nouveau Travail.
+    if (!travailId) {
+      await creerCase();
+      return;
+    }
     setAjoutEnCours(true);
-    const now = new Date().toISOString();
     try {
-      const { data: c } = await api.get(`/cases/${cid}`);
-      const fusion = [
-        ...(c.conversation || []),
-        ...echangesReels.flatMap((e) => [
-          { role: "utilisateur", texte: e.question, quand: now },
-          ...(e.data ? [{ role: "flore", comportement: e.data.comportement, texte: e.data.reponse, quand: now }] : []),
-        ]),
-      ];
-      await api.patch(`/cases/${cid}`, { conversation: fusion });
-      // Rattachée au Travail choisi : la conversation du panneau est retirée (contrat §2)
-      if (travailId && travailId !== cid && estConversation(travail)) {
-        await api.delete(`/cases/${travailId}`).catch(() => {});
-        nouvelleConversation();
-        window.dispatchEvent(new Event("meridian:travaux-maj"));
-      }
-      toast.success(`Exploration ajoutée à « ${c.titre} »`);
+      // Le serveur copie la conversation source dans la cible, puis supprime la source s'il y en a une.
+      const { data } = await api.post(`/cases/${cid}/fusion`, { source_cid: travailId });
+      setTravail(data); // la cible à jour
+      nouvelleConversation(); // la source n'existe plus côté serveur
+      window.dispatchEvent(new Event("meridian:travaux-maj"));
+      toast.success(`Exploration ajoutée à « ${data.titre} »`);
       fermerFlore();
       navigate(`/travaux/${cid}`);
     } catch {
@@ -788,7 +787,10 @@ export default function FlorePanel() {
 
   const proposerAjout = () => {
     setChoixTravail("chargement");
-    api.get("/cases").then((r) => setChoixTravail(r.data.filter((c) => c.statut !== "clos" && !estConversation(c)))).catch(() => setChoixTravail([]));
+    // La fusion est réservée au responsable de la cible : ne proposer que ses propres Travaux.
+    api.get("/cases")
+      .then((r) => setChoixTravail(r.data.filter((c) => c.statut !== "clos" && !estConversation(c) && c.responsable === persona)))
+      .catch(() => setChoixTravail([]));
   };
 
   // Sur une page Travail, la conversation avec Flore EST le dossier (onglet Conversation) :

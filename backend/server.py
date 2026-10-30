@@ -1,5 +1,6 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Header, Query, Request
+from fastapi import FastAPI, APIRouter, HTTPException, Header, Query, Request, Response
 from dotenv import load_dotenv
+from starlette.middleware.body_limit import RequestBodyLimitMiddleware
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field
@@ -17,28 +18,33 @@ import unicodedata
 from pathlib import Path
 from uuid import uuid4
 
-import auth as auth_identite
-from cases_routes import build_cases_router
-from actualites_routes import build_actualites_router
-from initiatives_routes import build_initiatives_router
-from mesh_vue_routes import build_mesh_vue_router
-from jumeau.routes import router as jumeau_router
-from jumeau import cbm as jumeau_cbm
-from jumeau import evenements as jumeau_evenements
-from jumeau import partage as jumeau_partage
-from jumeau import tours_redis as jumeau_tours_redis
-from jumeau import flore as jumeau_flore
-from jumeau import flux as jumeau_flux
-from jumeau import registre as jumeau_registre
-from jumeau import connecteurs as jumeau_connecteurs
-from jumeau import origine as jumeau_origine
-from jumeau import naissance as jumeau_naissance
-from jumeau import examen as jumeau_examen
-from jumeau.systemes import SYSTEMES
-from jumeau import github as jumeau_github
-import asyncio
-import psycopg
-from seed_data import (
+ROOT_DIR = Path(__file__).parent
+load_dotenv(ROOT_DIR / ".env")  # avant les modules qui lisent leur configuration à l'import (auth, pieces, limites)
+
+import auth as auth_identite  # noqa: E402
+import limites  # noqa: E402
+import pieces  # noqa: E402
+from cases_routes import build_cases_router  # noqa: E402
+from actualites_routes import build_actualites_router  # noqa: E402
+from initiatives_routes import build_initiatives_router  # noqa: E402
+from mesh_vue_routes import build_mesh_vue_router  # noqa: E402
+from jumeau.routes import router as jumeau_router  # noqa: E402
+from jumeau import cbm as jumeau_cbm  # noqa: E402
+from jumeau import evenements as jumeau_evenements  # noqa: E402
+from jumeau import partage as jumeau_partage  # noqa: E402
+from jumeau import tours_redis as jumeau_tours_redis  # noqa: E402
+from jumeau import flore as jumeau_flore  # noqa: E402
+from jumeau import flux as jumeau_flux  # noqa: E402
+from jumeau import registre as jumeau_registre  # noqa: E402
+from jumeau import connecteurs as jumeau_connecteurs  # noqa: E402
+from jumeau import origine as jumeau_origine  # noqa: E402
+from jumeau import naissance as jumeau_naissance  # noqa: E402
+from jumeau import examen as jumeau_examen  # noqa: E402
+from jumeau.systemes import SYSTEMES  # noqa: E402
+from jumeau import github as jumeau_github  # noqa: E402
+import asyncio  # noqa: E402
+import psycopg  # noqa: E402
+from seed_data import (  # noqa: E402
     cas_verification_fraude,
     TWINS, RELATIONS, REGIONS, SITUATIONS, CHANGE_LAB, ACTIVITE,
     AURORA_SCRIPTS, AURORA_FALLBACK, AURORA_SUGGESTIONS, DEMO_ACTES, SOURCES_LABELS,
@@ -46,14 +52,15 @@ from seed_data import (
     INITIATIVES, DELEGATIONS, VEILLE_DETTE_FILES,
 )
 
-ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / ".env")
+CORS_ORIGINES = [o.strip() for o in os.environ.get("CORS_ORIGINS", "*").split(",") if o.strip()] or ["*"]
 
 client = AsyncIOMotorClient(os.environ["MONGO_URL"])
 db = client[os.environ["DB_NAME"]]
 
 app = FastAPI(title="Méridian")
 auth_identite.installer(app)
+
+
 api_router = APIRouter(prefix="/api")
 
 NO_ID = {"_id": 0}
@@ -123,6 +130,7 @@ def _nombre_workers():
 @app.on_event("startup")
 async def demarrer_partage():
     auth_identite.verifier_config()
+    limites.verifier_cors(CORS_ORIGINES)  # un joker CORS ne démarre jamais en production
     if _nombre_workers() > 1 and not jumeau_partage.actif():
         raise RuntimeError("REDIS_URL est requis avec plusieurs workers uvicorn")
     await jumeau_partage.verifier()
@@ -137,6 +145,7 @@ async def seed_database():
     if not meta or meta.get("version") != SEED_VERSION:
         for col in ["jumeaux", "relations", "situations", "change_lab", "dossiers", "vues", "journal", "commandes", "cases", "notifications", "initiatives", "delegations"]:
             await db[col].delete_many({})
+        await pieces.reinitialiser(db)
         await db.meta.replace_one({"id": "seed"}, {"id": "seed", "version": SEED_VERSION}, upsert=True)
         logger.info("Seed version %s — réinitialisation des données de démo", SEED_VERSION)
     await peupler_demo()
@@ -157,6 +166,16 @@ async def seed_database():
     for sit in SITUATIONS:
         if sit.get("nature") in ("opportunite", "trajectoire") and not await db.situations.find_one({"id": sit["id"], "nature": sit["nature"]}, {"_id": 1}):
             await db.situations.replace_one({"id": sit["id"]}, dict(sit), upsert=True)
+    # Pièces jointes : quota atomique par Travail. Les cases antérieurs n'ont pas de compteur — on l'initialise
+    # avec leur nombre réel de pièces, sans réinitialiser quoi que ce soit.
+    async for case in db.cases.find({"pieces_count": {"$exists": False}}, {"_id": 0, "id": 1}):
+        compte = await db.pieces.count_documents({"case_id": case["id"]})
+        await db.cases.update_one({"id": case["id"]}, {"$set": {"pieces_count": compte}})
+    # Découpage des pièces antérieures : le texte reste intact, seules les bornes de sections sont ajoutées.
+    await pieces.migrer_sections(db)
+    # Index idempotents : une pièce est unique dans son Travail, et la liste se lit par Travail.
+    await db.pieces.create_index([("case_id", 1), ("id", 1)], unique=True, name="piece_par_case")
+    await db.pieces.create_index("case_id", name="pieces_par_case")
 
 
 def slugify(nom: str) -> str:
@@ -351,19 +370,36 @@ async def creer_vue(payload: VueCreate, x_persona: str = Header("architecte")):
     return doc
 
 
+ACTIONS_JOURNAL_CLIENT = {"changement d'identité", "changement de périmètre"}
+
+
+def filtre_journal(persona_id: str, espace: dict):
+    """Un espace global voit tout ; sinon le journal reste borné à la personne et à son espace."""
+    if espace.get("global"):
+        return {}
+    return {"$or": [{"persona": persona_id}, {"espace": espace["id"]}]}
+
+
 @api_router.get("/journal")
-async def lire_journal():
-    return await db.journal.find({}, NO_ID).sort("quand", -1).to_list(30)
+async def lire_journal(response: Response, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+    _, espace = resoudre_perimetre(x_persona, x_espace)
+    response.headers["Cache-Control"] = "private, no-store"
+    return await db.journal.find(filtre_journal(x_persona, espace), NO_ID).sort("quand", -1).to_list(30)
 
 
 class JournalEntree(BaseModel):
     action: str
-    detail: str = ""
+    detail: str = ""  # ignoré : le détail est toujours dérivé côté serveur
 
 
 @api_router.post("/journal", status_code=201)
 async def ecrire_journal(payload: JournalEntree, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
-    await journaler(x_persona, x_espace, payload.action, "", payload.detail)
+    if payload.action not in ACTIONS_JOURNAL_CLIENT:
+        raise HTTPException(400, "Action de journal inconnue")
+    persona, espace = resoudre_perimetre(x_persona, x_espace)
+    detail = (f"{persona['id']} — {persona['nom']}" if payload.action == "changement d'identité"
+              else f"{espace['id']} — {espace['label']}")
+    await journaler(persona["id"], espace["id"], payload.action, "", detail)
     return {"ok": True}
 
 
@@ -602,12 +638,31 @@ async def obtenir_situation(sid: str, x_persona: str = Header("architecte"), x_e
     return filtre
 
 
+async def situation_dans_perimetre(sid: str, espace: dict):
+    """La situation existe et **tous** ses jumeaux sont autorisés dans l'espace actif (écriture).
+
+    La lecture peut montrer une situation partiellement visible ; décider ou agir engage tous ses jumeaux, donc un
+    périmètre partiel ne suffit pas."""
+    doc = await db.situations.find_one({"id": sid}, NO_ID)
+    if not doc:
+        raise HTTPException(404, "Situation introuvable")
+    tous = await db.jumeaux.find({}, {"_id": 0, "id": 1}).to_list(200)
+    aut = autorisations(espace, [j["id"] for j in tous])
+    jumeaux = doc.get("jumeaux") or []
+    if not jumeaux or not all(j in aut for j in jumeaux):
+        raise HTTPException(403, "Cette situation est hors de votre périmètre")
+    return doc
+
+
 class ActionSituation(BaseModel):
     action: str
 
 
 @api_router.post("/situations/{sid}/action")
-async def agir_situation(sid: str, payload: ActionSituation):
+async def agir_situation(sid: str, payload: ActionSituation, x_persona: str = Header("architecte"),
+                         x_espace: Optional[str] = Header(None)):
+    _, espace = resoudre_perimetre(x_persona, x_espace)
+    await situation_dans_perimetre(sid, espace)
     mapping = {"ignorer": "ignorée", "surveiller": "surveillée", "investiguer": "en investigation", "examiner": None, "coincidence": "classée", "observer": "en observation", "qualifier": "qualifiée"}
     if payload.action not in mapping:
         raise HTTPException(400, "Action inconnue")
@@ -616,6 +671,7 @@ async def agir_situation(sid: str, payload: ActionSituation):
         res = await db.situations.update_one({"id": sid}, {"$set": {"statut": nouveau}})
         if res.matched_count == 0:
             raise HTTPException(404, "Situation introuvable")
+    await journaler(x_persona, espace["id"], f"situation : {payload.action}", sid, "")
     return {"ok": True, "statut": nouveau}
 
 
@@ -625,13 +681,15 @@ class DecisionSituation(BaseModel):
 
 @api_router.post("/situations/{sid}/decision")
 async def decider_situation(sid: str, payload: DecisionSituation, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+    _, espace = resoudre_perimetre(x_persona, x_espace)
+    await situation_dans_perimetre(sid, espace)
     res = await db.situations.update_one(
         {"id": sid},
         {"$set": {"statut": "décidée", "decision": payload.decision, "decidee_le": datetime.now(timezone.utc).isoformat()}},
     )
     if res.matched_count == 0:
         raise HTTPException(404, "Situation introuvable")
-    await journaler(x_persona, x_espace, "décision", sid, payload.decision)
+    await journaler(x_persona, espace["id"], "décision", sid, payload.decision)
     return {"ok": True, "decision": payload.decision}
 
 
@@ -1405,6 +1463,8 @@ marquer_origine = jumeau_origine.marquer_origine
 
 
 async def generer_reponse_flore(contexte, question, selection, domaine, x_persona, x_espace, travail=None, emit=None):
+    if not await limites.autoriser(f"tours:{x_persona}", limites.maxi_tours(), limites.fenetre_tours()):
+        raise HTTPException(429, "Trop de tours Flore en peu de temps ; réessayez dans un instant")
     persona, espace = resoudre_perimetre(x_persona, x_espace)
     tous = await db.jumeaux.find({}, NO_ID).to_list(200)
     aut = autorisations(espace, [j["id"] for j in tous])
@@ -1625,9 +1685,13 @@ async def notifications_tout_lire(x_persona: str = Header("architecte")):
 
 @api_router.post("/demo/reinitialiser")
 async def reinitialiser_demo(x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+    if auth_identite.mode() != "demo":
+        raise HTTPException(403, "La réinitialisation n'est disponible qu'en mode démonstration")
     for col in ["jumeaux", "relations", "situations", "change_lab", "dossiers", "vues", "journal", "commandes", "cases", "notifications", "initiatives", "delegations"]:
         await db[col].delete_many({})
+    await pieces.reinitialiser(db)
     await peupler_demo()
+    await db.cases.update_many({}, {"$set": {"pieces_count": 0}})  # les pièces viennent d'être effacées avec la démo
     await projeter_jumeaux_reels()
     await journaler(x_persona, x_espace, "réinitialisation de la démo", "mesh", "Données de démonstration restaurées à l'état initial")
     return {"ok": True}
@@ -1649,10 +1713,17 @@ async def activite(x_persona: str = Header("architecte"), x_espace: Optional[str
 
 app.include_router(api_router)
 
+# Le corps de requête est borné par les octets réellement reçus : un Content-Length absent ou mensonger (envoi
+# chunked) ne contourne pas la limite. La marge couvre l'enveloppe multipart d'une pièce au maximum autorisé.
+# Ajouté avant CORS pour que CORS reste le middleware le plus externe (les en-têtes CORS accompagnent aussi un 413).
+app.add_middleware(RequestBodyLimitMiddleware, max_body_size=pieces.MAX_OCTETS + 2 * 1024 * 1024)
+# L'authentification passe par des en-têtes (Authorization / X-Persona), jamais par un cookie : les credentials
+# CORS sont donc désactivés. En production, un joker « * » est refusé au démarrage (voir demarrer_partage) :
+# les origines autorisées doivent y être explicites.
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
+    allow_credentials=False,
+    allow_origins=CORS_ORIGINES,
     allow_methods=["*"],
     allow_headers=["*"],
 )

@@ -108,6 +108,26 @@ const corpsSSEId = (evts, coupure = false) => {
   } }) };
 };
 
+test("une réponse 429 du flux Travail est annoncée, avec son statut et le message du serveur", async () => {
+  global.fetch = jest.fn(() => Promise.resolve({
+    ok: false,
+    status: 429,
+    json: async () => ({ detail: "Trop de tours Flore en peu de temps ; réessayez dans un instant" }),
+  }));
+  const err = await demanderEnFlux("/cases/t/messages/flux", { texte: "q" }).catch((e) => e);
+  expect(err.statut).toBe(429);
+  expect(err.annoncee).toBe(true);
+  expect(err.message).toBe("Trop de tours Flore en peu de temps ; réessayez dans un instant");
+});
+
+test("un 404 du flux Travail n'est pas annoncé : la route peut manquer (repli possible)", async () => {
+  global.fetch = jest.fn(() => Promise.resolve({ ok: false, status: 404, json: async () => ({ detail: "pas de tour" }) }));
+  const err = await demanderEnFlux("/cases/t/messages/flux", { texte: "q" }).catch((e) => e);
+  expect(err.statut).toBe(404);
+  expect(err.annoncee).toBe(false);
+  expect(err.message).toBe("pas de tour");
+});
+
 test("une coupure se reprend depuis le dernier événement lu, et la réponse arrive", async () => {
   global.TextDecoder = global.TextDecoder || TextDecoder;
   global.TextEncoder = global.TextEncoder || require("util").TextEncoder;

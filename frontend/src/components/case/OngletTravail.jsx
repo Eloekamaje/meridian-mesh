@@ -18,6 +18,7 @@ import {
   Buildings,
   DownloadSimple,
   MapTrifold,
+  Paperclip,
   X
 } from "@phosphor-icons/react";
 import { useNavigate } from "react-router-dom";
@@ -40,6 +41,8 @@ import IndicateurClic from "@/components/IndicateurClic";
 import { usePilotage } from "@/lib/pilotage";
 import { useEcran } from "@/lib/ecran";
 import { rel } from "./utils";
+import { BoutonJoindre, ListePieces } from "./PiecesJointes";
+import PanneauPiece from "./PanneauPiece";
 import CanvasDocument from "./CanvasDocument";
 import Atlas from "@/pages/Atlas";
 import { BandeauVeille, EvenementVeille, RepriseVeille } from "./VeilleTravail";
@@ -157,7 +160,7 @@ function useDeroule(message, pilote) {
 }
 
 // Rendu formaté, fluide et aéré du texte (Style ChatGPT / Claude)
-export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif, onVoirAtlas, atlasActif, children }) {
+export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif, onVoirAtlas, atlasActif, onOuvrirPiece, children }) {
   const pilote = usePilotage();
   const texte = message.texte || "";
   const { visible, fini } = useDeroule(message, pilote);
@@ -172,7 +175,7 @@ export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif, onVoir
 
   return (
     <div className="space-y-3.5 text-[15px] leading-relaxed text-[#DCE6EE]">
-      <MarkdownFlore texte={visible} />
+      <MarkdownFlore texte={visible} onOuvrirPiece={onOuvrirPiece} />
 
       {/* Curseur clignotant : Flore est encore en train d'écrire (sinon, rien ne le distingue d'une lecture) */}
       {!fini && <span className="curseur-teletype -mt-2 inline-block">▍</span>}
@@ -322,7 +325,7 @@ export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif, onVoir
                       key={ci}
                       className={`py-2 px-3 ${ci === 0 ? "pl-4 font-medium text-[#CBD5E1]" : "text-[#94A3B8]"} ${ci === message.tableau.colonnes.length - 1 ? "pr-4" : ""}`}
                       >
-                      <MarkdownFlore enLigne texte={cellule} />
+                      <MarkdownFlore enLigne texte={cellule} onOuvrirPiece={onOuvrirPiece} />
                     </td>
                   ))}
                 </tr>
@@ -412,6 +415,10 @@ export default function OngletTravail({
   const { selection, commanderCarte } = useContexte();
   // Travail pas encore né (« Nouveau travail ») : même conversation, sans identifiant
   const brouillon = cas?.id == null;
+  // Les pièces jointes sont des sources du Travail (jamais des connaissances) : pas de dépôt en démo, ni avant
+  // que le travail existe, ni dans le récit Polaris dont les réponses sont scriptées.
+  const piecesAutorisees = !pilote && !brouillon && cas?.id !== "demo-polaris-work-g" && cas?.peut_deposer !== false;
+  const majPieces = (suivantes) => setCas((c) => ({ ...c, pieces: suivantes }));
   // Le dossier CASE_101 et ses deux preuves sont le contenu du scénario de démonstration : ils n'appartiennent qu'au
   // travail de démonstration (né pendant la démo, ou le travail de démonstration du jeu de données), jamais aux travaux réels
   const contenuScenario = pilote ? !!pilote.documentGenere : cas?.id === "demo-polaris-work-g";
@@ -421,6 +428,9 @@ export default function OngletTravail({
   const documentGenereTexte = messageDocument?.documentTexte || null;
   const [nouveauMsg, setNouveauMsg] = useState("");
   const [envoiMsg, setEnvoiMsg] = useState(false);
+  const [autoriserEcriture, setAutoriserEcriture] = useState(false);
+  // Une autorisation vaut pour le tour en cours : changer de travail la remet à zéro (défaut : décochée).
+  useEffect(() => { setAutoriserEcriture(false); }, [cas?.id]);
   const [fluxMsg, setFluxMsg] = useState(null); // réponse en cours : vraies étapes, brouillon (en relecture)
   // Rubriques du volet (Résultats, Sources & Jumeaux) : chacune se plie et se déplie.
   // Dès qu'un document existe, le volet apparaît avec ses deux rubriques pliées par défaut —
@@ -436,6 +446,10 @@ export default function OngletTravail({
   }, [contenuScenario]);
   const [jumeauInspecte, setJumeauInspecte] = useState(null);
   const [preuveInspectee, setPreuveInspectee] = useState(null);
+  // Section de pièce ouverte par une citation (`pièce:<id>#<section>`) : { pieceId, sectionId } ou null.
+  const [pieceInspectee, setPieceInspectee] = useState(null);
+  // Une citation ouverte appartient au travail courant : changer de travail referme le panneau.
+  useEffect(() => { setPieceInspectee(null); }, [cas?.id]);
   const [estEnBas, setEstEnBas] = useState(true);
   // Seule source de vérité pour « doit-on suivre le bas du fil ? » — mise à jour uniquement par le
   // scroll réel de l'utilisateur (jamais par un effet de défilement automatique lui-même, ce qui
@@ -608,6 +622,7 @@ export default function OngletTravail({
     const avant = cas.conversation || [];
     const monMessage = { role: "utilisateur", texte: q, quand: maintenant };
     setCas((c) => ({ ...c, conversation: [...avant, monMessage] }));
+    const corps = { texte: q, autoriser_ecriture: (cas.pieces || []).length > 0 && autoriserEcriture };
     // « Nouveau travail » hors démonstration : la création réelle n'existe pas encore — Flore l'annonce, aucun appel réseau
     if (brouillon && !CREATION_TRAVAIL_ACTIVE) {
       await delaiMin(Promise.resolve());
@@ -636,7 +651,7 @@ export default function OngletTravail({
       setFluxMsg({ etapes: [], brouillon: "", relecture: false });
       let data, auFilDeLEau = true;
       try {
-        data = await demanderEnFlux(`/cases/${idTravail}/messages/flux`, { texte: q }, {
+        data = await demanderEnFlux(`/cases/${idTravail}/messages/flux`, corps, {
           signal: ctrl.signal,
           onEtape: journal.onEtape, onOutil: journal.onOutil, onMission: journal.onMission, onCoupure: (c) => setFluxMsg((f) => f && { ...f, coupure: c }),
           onTexte: (d) => { ecrit += d; setFluxMsg((f) => f && { ...f, brouillon: f.brouillon + d }); },
@@ -664,7 +679,7 @@ export default function OngletTravail({
         }
         if (err.annoncee) throw err;
         auFilDeLEau = false; // flux impossible (proxy, ancien serveur) : la réponse arrive d'un bloc
-        ({ data } = await api.post(`/cases/${idTravail}/messages`, { texte: q }));
+        ({ data } = await api.post(`/cases/${idTravail}/messages`, corps));
       }
       // L'activité est la vraie (outils appelés) ; un texte déjà vu au fil de l'eau ne se réécrit pas.
       const activite = activiteDuTour(journal.ops, `fin-${Date.now()}`) || activiteTerminee("travail");
@@ -828,7 +843,7 @@ export default function OngletTravail({
                 <CaretDown size={11} className={`shrink-0 text-[#7C93A8] transition-transform duration-200 ${pliees.sources ? "-rotate-90" : ""}`} />
                 <Globe size={14} className="text-[#60A5FA]" />
                 <span>Sources & Jumeaux</span>
-                <span className="rounded-full bg-white/[0.08] px-1.5 py-0.2 font-code text-[10px] text-[#7C93A8]">{jumeauxParticipants.length + (contenuScenario ? 2 : 0)}</span>
+                <span className="rounded-full bg-white/[0.08] px-1.5 py-0.2 font-code text-[10px] text-[#7C93A8]">{jumeauxParticipants.length + (contenuScenario ? 2 : 0) + (cas.pieces || []).length}</span>
               </button>
               <button 
                 onClick={() => setVoletSourcesOuvert(false)}
@@ -928,6 +943,26 @@ export default function OngletTravail({
                 </p>
               </div>
             )}
+
+            {(piecesAutorisees || (cas.pieces || []).length > 0) && (
+              <div className="mt-3 border-t border-white/[0.08] pt-3" data-testid="volet-pieces-jointes">
+                <div className="mb-2 flex items-center justify-between text-[11px] font-semibold text-white">
+                  <span className="flex items-center gap-1.5">
+                    <Paperclip size={13} className="text-[#60A5FA]" />
+                    Pièces jointes
+                  </span>
+                  <span className="font-code text-[10px] text-[#7C93A8]">{(cas.pieces || []).length}</span>
+                </div>
+                <ListePieces cas={cas} onChange={majPieces} lectureSeule={!piecesAutorisees} />
+                {piecesAutorisees && !(cas.pieces || []).length && (
+                  <p className="text-[11px] leading-relaxed text-[#7C93A8]">
+                    Ajoutez un PDF, un document Word, un tableau Excel ou un fichier texte avec le trombone du
+                    compositeur. Ils seront lus comme <span className="text-[#CBD5E1]">sources du travail</span>,
+                    jamais comme des connaissances validées.
+                  </p>
+                )}
+              </div>
+            )}
               </>
             )}
           </div>
@@ -990,9 +1025,11 @@ export default function OngletTravail({
                       message={m} index={i} prefixe={prefixe} bloque={envoiMsg}
                       onMessage={majMessage} onMessages={majMessages} onRelire={relire}
                       activite={activiteDuMessage(m)}
+                      onOuvrirPiece={setPieceInspectee}
                       corps={
                     <CorpsMessageFlore
                       message={m}
+                      onOuvrirPiece={setPieceInspectee}
                       onOuvrirCanvas={() => setCanvasActif(true)}
                       canvasActif={canvasActif}
                       atlasActif={atlasActif}
@@ -1138,8 +1175,23 @@ export default function OngletTravail({
               <FileMessages file={fileMsgs.file} occupe={envoiMsg} onRetirer={fileMsgs.retirer}
                 onModifier={(i) => setNouveauMsg(fileMsgs.reprendre(i))} onReorienter={arreter} testid="case-file" />
             )}
+            {piecesAutorisees && <ListePieces cas={cas} onChange={majPieces} compact lectureSeule={!piecesAutorisees} />}
+            {!pilote && (cas.pieces || []).length > 0 && (
+              <label className="mb-2 flex w-fit cursor-pointer items-center gap-2 rounded-lg px-1 py-0.5 font-code text-[11px] text-[#7C93A8] transition-colors hover:text-[#CBD5E1]">
+                <input
+                  type="checkbox"
+                  checked={autoriserEcriture}
+                  onChange={(e) => setAutoriserEcriture(e.target.checked)}
+                  disabled={envoiMsg}
+                  data-testid="case-autoriser-ecriture"
+                  className="h-3.5 w-3.5 accent-[#60A5FA]"
+                />
+                <span>Autoriser Flore à modifier le travail</span>
+              </label>
+            )}
             <div className="flex items-center gap-2 rounded-2xl border border-white/[0.12] bg-[#0A131C]/90 px-3.5 py-2.5 shadow-2xl backdrop-blur-xl transition-colors focus-within:border-blue-400/60">
 
+              {piecesAutorisees && <BoutonJoindre cas={cas} onChange={majPieces} disabled={envoiMsg} testid="case-piece-joindre" />}
 
               {/* Champ de saisie aéré — grandit avec son contenu (voir l'effet sur taRef) */}
               <textarea
@@ -1246,6 +1298,16 @@ export default function OngletTravail({
             )}
           </div>
         </div>
+      )}
+
+      {/* La section citée se lit par-dessus le fil (et par-dessus le Canvas/volet) sans changer leur mise en page. */}
+      {pieceInspectee && cas?.id != null && (
+        <PanneauPiece
+          casId={cas.id}
+          pieceId={pieceInspectee.pieceId}
+          sectionId={pieceInspectee.sectionId}
+          onFermer={() => setPieceInspectee(null)}
+        />
       )}
     </div>
   );

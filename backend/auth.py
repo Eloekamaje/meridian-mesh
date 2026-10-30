@@ -186,4 +186,6 @@ def verifier_config():
     if mode_courant == "oidc" and not (os.getenv("AUTH_OIDC_SECRET") or os.getenv("AUTH_OIDC_JWKS_URL")):
         raise RuntimeError("AUTH_OIDC_SECRET ou AUTH_OIDC_JWKS_URL est requis en mode oidc")
     if mode_courant == "demo":
+        if os.getenv("APP_ENV", "").strip().lower() in {"prod", "production"}:
+            raise RuntimeError("AUTH_MODE=demo est interdit en production (APP_ENV=production)")
         logger.warning("AUTH_MODE=demo : X-Persona est accepté sans authentification ; interdit en production")

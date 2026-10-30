@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { cloneElement, isValidElement, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ArrowsClockwise, CaretLeft, CaretRight, Copy, PencilSimple, ThumbsDown, ThumbsUp } from "@phosphor-icons/react";
 import api from "@/lib/api";
@@ -38,7 +38,7 @@ function ChoixVersion({ nav, libelle, onChoisir, bloque, testid }) {
 
 export function MessageFlore({
   message, index, prefixe, onMessage, onMessages, onRelire, bloque = false,
-  corps, activite, preuves, testid, children,
+  corps, activite, preuves, testid, children, onOuvrirPiece,
 }) {
   const [pourquoi, setPourquoi] = useState(false);
   const [motif, setMotif] = useState("");
@@ -93,11 +93,18 @@ export function MessageFlore({
   };
 
   const nav = navVersions(message);
+  // Le corps standard rend le Markdown ici ; un corps fourni par l'écran (ex. CorpsMessageFlore) reçoit le
+  // même geste pour ses citations de pièces, sans que chaque appelant ait à le recâbler.
+  const corpsRendu = corps
+    ? (isValidElement(corps) && onOuvrirPiece
+      ? cloneElement(corps, { onOuvrirPiece: corps.props?.onOuvrirPiece ?? onOuvrirPiece })
+      : corps)
+    : <MarkdownFlore texte={message.texte} onOuvrirPiece={onOuvrirPiece} />;
   return (
     <PreuvesContexte.Provider value={contextePreuves}>
     <div className="space-y-2" data-testid={testid}>
       {activite && <LigneActiviteFlore activite={activite} testid={testid ? `${testid}-activite` : undefined} />}
-      {corps ?? <MarkdownFlore texte={message.texte} />}
+      {corpsRendu}
       {message.interrompu && (
         <div className="flex flex-wrap items-center gap-2 rounded-md border border-[#F2B84B]/40 bg-[#F2B84B]/[0.06] px-2.5 py-1.5 text-xs text-[#F2B84B]" data-testid="flore-interrompu">
           <span>{explicationArret(message)}</span>

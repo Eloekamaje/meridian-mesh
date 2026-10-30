@@ -10,6 +10,8 @@ from fastapi.testclient import TestClient
 
 import cases_routes
 import conversation as c
+import limites
+import pieces
 from seed_data import ESPACES, PERSONAS
 from jumeau import flux
 
@@ -19,7 +21,23 @@ class Collection:
         self.docs = [copy.deepcopy(d) for d in docs]
 
     def _ok(self, d, f):
-        return all(d.get(k) == v for k, v in f.items())
+        for k, v in f.items():
+            if k == "$or":
+                if not any(self._ok(d, condition) for condition in v):
+                    return False
+            elif isinstance(v, dict) and any(operateur in v for operateur in ("$exists", "$lte", "$in", "$ne")):
+                if "$exists" in v and (k in d) != v["$exists"]:
+                    return False
+                if "$lte" in v and (d.get(k) is None or d.get(k) > v["$lte"]):
+                    return False
+                if "$in" in v and d.get(k) not in v["$in"]:
+                    return False
+                if "$ne" in v and (d.get(k) == v["$ne"]
+                                   or (isinstance(d.get(k), list) and v["$ne"] in d.get(k))):
+                    return False
+            elif d.get(k) != v:
+                return False
+        return True
 
     async def find_one(self, f, proj=None):
         return next((copy.deepcopy(d) for d in self.docs if self._ok(d, f)), None)
@@ -34,12 +52,19 @@ class Collection:
 
             async def to_list(self, n):
                 return lot[:n]
+
+            def __aiter__(self):
+                self._iter = iter(lot)
+                return self
+
+            async def __anext__(self):
+                try:
+                    return next(self._iter)
+                except StopIteration:
+                    raise StopAsyncIteration
         return Curseur()
 
-    async def update_one(self, f, maj):
-        d = next((d for d in self.docs if self._ok(d, f)), None)
-        if d is None:
-            return
+    def _appliquer(self, d, maj):
         for k, v in maj.get("$set", {}).items():
             *chemin, dernier = k.split(".")  # « conversation.3.retour » : chemin à points, comme Mongo
             cible = d
@@ -52,6 +77,33 @@ class Collection:
         for k, v in maj.get("$push", {}).items():
             lot = v["$each"] if isinstance(v, dict) and "$each" in v else [v]
             d.setdefault(k, []).extend(copy.deepcopy(lot))
+        for k, v in maj.get("$addToSet", {}).items():
+            if v not in d.setdefault(k, []):
+                d[k].append(copy.deepcopy(v))
+        for k in maj.get("$unset", {}):
+            d.pop(k, None)
+        for k, v in maj.get("$inc", {}).items():
+            d[k] = (d.get(k) or 0) + v
+
+    async def update_one(self, f, maj):
+        class Resultat:
+            matched_count = 0
+            modified_count = 0
+        resultat = Resultat()
+        d = next((d for d in self.docs if self._ok(d, f)), None)
+        if d is None:
+            return resultat
+        resultat.matched_count = resultat.modified_count = 1
+        self._appliquer(d, maj)
+        return resultat
+
+    async def find_one_and_update(self, f, maj):
+        d = next((d for d in self.docs if self._ok(d, f)), None)
+        if d is None:
+            return None
+        avant = copy.deepcopy(d)
+        self._appliquer(d, maj)
+        return avant
 
     async def insert_one(self, d):
         self.docs.append(copy.deepcopy(d))
@@ -59,11 +111,19 @@ class Collection:
     async def delete_one(self, f):
         self.docs = [d for d in self.docs if not self._ok(d, f)]
 
+    async def delete_many(self, f):
+        self.docs = [d for d in self.docs if not self._ok(d, f)]
+
+    async def count_documents(self, f):
+        return sum(1 for d in self.docs if self._ok(d, f))
+
 
 class Db:
-    def __init__(self, cases):
-        self.cases, self.jumeaux, self.retours = Collection(cases), Collection(), Collection()
+    def __init__(self, cases, jumeaux=()):
+        self.cases, self.jumeaux, self.retours = Collection(cases), Collection(jumeaux), Collection()
         self.notifications = Collection()
+        self.pieces = Collection()  # pièces jointes du Travail (P4)
+        self.relations, self.situations = Collection(), Collection()
 
 
 def un_fil():
@@ -94,9 +154,10 @@ class Faux:
     def __init__(self):
         self.appels, self.reponse, self.bloque, self.muet = [], "Nouvelle réponse.", False, False
 
-    async def __call__(self, contexte, question, selection, domaine, persona, espace, travail=None, emit=None):
+    async def __call__(self, contexte, question, selection, domaine, persona, espace, travail=None, emit=None,
+                       autoriser_ecriture=False):
         self.appels.append({"contexte": contexte, "question": question, "selection": selection, "domaine": domaine,
-                            "travail": travail})
+                            "travail": travail, "autoriser_ecriture": autoriser_ecriture})
         if self.muet:
             await asyncio.sleep(30)
         if emit:
@@ -111,9 +172,13 @@ class Faux:
 
 
 def droits(espace, ids):
-    """Les droits d'un espace, comme server.autorisations : « * » = tout complet, sinon par jumeau (ou « * »)."""
+    """Les droits d'un espace, comme server.autorisations : « * » = tout complet, sinon par jumeau (ou « * »),
+    et un jumeau sans règle est absent (jamais autorisé)."""
     regles = espace["jumeaux"]
-    return {i: "complet" if regles == "*" else regles.get(i, regles.get("*", "aucun")) for i in ids}
+    if regles == "*":
+        return {i: "complet" for i in ids}
+    niveaux = {i: regles.get(i, regles.get("*")) for i in ids}
+    return {i: n for i, n in niveaux.items() if n is not None}
 
 
 @pytest.fixture
@@ -142,7 +207,7 @@ def monde(monkeypatch):
 
 
 def evenements(rep):
-    return [json.loads(l[6:]) for l in rep.text.splitlines() if l.startswith("data: ")]
+    return [json.loads(ligne[6:]) for ligne in rep.text.splitlines() if ligne.startswith("data: ")]
 
 
 def conv(db, cid="t1"):
@@ -161,7 +226,33 @@ def test_nouvelle_question_enregistre_un_message_de_flore_du_contrat(monde):
 def test_le_panneau_peut_passer_contexte_selection_domaine(monde):
     client, _, faux = monde
     client.post("/api/cases/t1/messages/flux", json={"texte": "Q", "contexte": "global", "selection": ["a"], "domaine": "Client"})
-    assert faux.appels[0] | {} == {"contexte": "global", "question": "Q", "selection": ["a"], "domaine": "Client", "travail": "t1"}
+    assert faux.appels[0] | {} == {"contexte": "global", "question": "Q", "selection": ["a"], "domaine": "Client",
+                                   "travail": "t1", "autoriser_ecriture": False}
+
+
+def test_le_message_transmet_l_autorisation_d_ecriture(monde):
+    client, _, faux = monde
+    client.post("/api/cases/t1/messages/flux", json={"texte": "Q", "autoriser_ecriture": True})
+    assert faux.appels[-1]["autoriser_ecriture"] is True
+    client.post("/api/cases/t1/messages", json={"texte": "Q", "autoriser_ecriture": True})
+    assert faux.appels[-1]["autoriser_ecriture"] is True
+
+
+def test_le_drapeau_n_est_passe_qu_aux_generateurs_qui_l_acceptent():
+    async def avec(question, autoriser_ecriture=False): pass
+    async def sans(question): pass
+    async def generique(*args, **kwargs): pass
+    assert cases_routes._accepte_autorisation_ecriture(avec)
+    assert not cases_routes._accepte_autorisation_ecriture(sans)
+    assert cases_routes._accepte_autorisation_ecriture(generique)
+
+
+def test_les_regenerations_n_autorisent_pas_l_ecriture_par_defaut(monde):
+    client, _, faux = monde
+    evenements(client.post("/api/cases/t1/messages/3/regenerer/flux", json={}))
+    assert faux.appels[-1]["autoriser_ecriture"] is False
+    evenements(client.post("/api/cases/t1/messages/3/regenerer/flux", json={"autoriser_ecriture": True}))
+    assert faux.appels[-1]["autoriser_ecriture"] is True
 
 
 def test_regenerer_ajoute_une_version_active_et_reprend_la_question_precedente(monde):
@@ -284,8 +375,8 @@ def lancer_puis_couper(monde, chemin, corps, lectures=2, arreter=True):
                 recus.append(message["body"])
                 if len(recus) == max(lectures, 1):
                     if arreter:
-                        asyncio.get_running_loop().call_later(0.3 if lectures == 0 else 0,
-                                                             lambda: asyncio.ensure_future(couper()))
+                        asyncio.get_running_loop().call_later(
+                            0.3 if lectures == 0 else 0, lambda: asyncio.ensure_future(couper()))
                     else:
                         parti.set()  # coupure réelle : le serveur doit la voir avant la fin du tour
                         await asyncio.sleep(0)
@@ -489,3 +580,318 @@ def test_une_reponse_finie_apres_le_depart_de_l_interlocuteur_le_previent(monde)
     lancer_puis_couper(monde, "/api/cases/t1/messages/flux", {"texte": "Et la sécurité ?"}, arreter=False)
     assert conv(db)[-1]["texte"] == "Nouvelle réponse."
     assert [(n["persona"], n["type"], n["lien"]) for n in db.notifications.docs] == [("architecte", "investigation_terminee", "/travaux/t1")]
+
+
+# ---- autorisations des routes voisines (P4) ----
+def test_seul_le_responsable_modifie_les_champs_proteges(monde):
+    client, db, _ = monde
+    cid = client.post("/api/cases", json={"titre": "Partagé", "portee": "entreprise",
+                                          "participants": ["paiements-dev"]}).json()["id"]
+    h = {"X-Persona": "paiements-dev"}
+    r = client.patch(f"/api/cases/{cid}", json={"statut": "en_cours"}, headers=h)
+    assert r.status_code == 403 and "responsable" in r.json()["detail"]
+    r = client.patch(f"/api/cases/{cid}", json={"jumeaux": ["paiements"]}, headers=h)
+    assert r.status_code == 403
+    # Les champs de travail ordinaires restent ouverts aux participants.
+    r = client.patch(f"/api/cases/{cid}", json={"objectif": "Nouvel objectif"}, headers=h)
+    assert r.status_code == 200 and r.json()["objectif"] == "Nouvel objectif"
+
+
+def test_le_remplacement_arbitraire_d_un_case_n_existe_plus(monde):
+    client, db, _ = monde
+    avant = next(d["titre"] for d in db.cases.docs if d["id"] == "t1")
+    assert client.put("/api/cases/t1", json={"titre": "pirate"}).status_code == 405
+    assert next(d["titre"] for d in db.cases.docs if d["id"] == "t1") == avant
+
+
+# ---- intégrité de la conversation : un lecteur ne modifie pas, PATCH ne touche pas au fil ----
+def test_un_lecteur_simple_ne_modifie_pas_un_travail_partage(monde):
+    client, db, faux = monde
+    h = {"X-Persona": "support"}
+    conversation = [{"role": "utilisateur", "texte": "Q", "quand": "t"},
+                    c.message_flore({"reponse": "R", "origine": "modele"})]
+    cid = client.post("/api/cases", json={"titre": "Partagé", "portee": "entreprise",
+                                          "conversation": conversation}).json()["id"]
+    assert client.patch(f"/api/cases/{cid}", json={"objectif": "x"}, headers=h).status_code == 403
+    assert client.post(f"/api/cases/{cid}/messages", json={"texte": "x"}, headers=h).status_code == 403
+    for chemin, corps in [("messages/1/version", {"index": 0}), ("messages/0/branche", {"index": 0}),
+                          ("messages/1/regenerer/flux", {}), ("messages/0/modifier/flux", {"texte": "x"})]:
+        assert client.post(f"/api/cases/{cid}/{chemin}", json=corps, headers=h).status_code == 403, chemin
+    ev = evenements(client.post(f"/api/cases/{cid}/messages/flux", json={"texte": "x"}, headers=h))
+    assert ev[-1]["type"] == "RUN_ERROR" and "responsable" in ev[-1]["message"]
+    assert faux.appels == []
+    assert [m["texte"] for m in next(d for d in db.cases.docs if d["id"] == cid)["conversation"]] == ["Q", "R"]
+
+
+def test_patch_ne_touche_pas_a_la_conversation(monde):
+    client, db, _ = monde
+    avant = conv(db)
+    r = client.patch("/api/cases/t1", json={"conversation": [{"role": "utilisateur", "texte": "pirate"}]})
+    assert r.status_code == 400
+    assert r.json()["detail"] == "La conversation s'ajoute par /messages ou /fusion"
+    assert conv(db) == avant
+
+
+def test_un_participant_modifie_les_champs_ordinaires_mais_pas_la_conversation(monde):
+    client, _, _ = monde
+    h = {"X-Persona": "paiements-dev"}
+    cid = client.post("/api/cases", json={"titre": "Cible", "participants": ["paiements-dev"]}).json()["id"]
+    r = client.patch(f"/api/cases/{cid}", json={"conversation": [{"role": "utilisateur", "texte": "x"}]}, headers=h)
+    assert r.status_code == 400 and "conversation" in r.json()["detail"]
+    r = client.patch(f"/api/cases/{cid}", json={"objectif": "Ordinaire"}, headers=h)
+    assert r.status_code == 200 and r.json()["objectif"] == "Ordinaire"
+
+
+# ---- fusion : réservée au responsable, atomique, normalisée ----
+def _source(client, messages, persona="architecte"):
+    return client.post("/api/cases", json={"titre": "Source", "statut": "conversation", "conversation": messages},
+                       headers={"X-Persona": persona}).json()["id"]
+
+
+def test_fusion_d_une_conversation_par_le_responsable(monde):
+    client, db, _ = monde
+    cible = client.post("/api/cases", json={"titre": "Cible"}).json()["id"]
+    messages = [{"role": "utilisateur", "texte": "Bonjour", "quand": "t"}]
+    source = _source(client, messages)
+    r = client.post(f"/api/cases/{cible}/fusion", json={"source_cid": source})
+    assert r.status_code == 200, r.text
+    assert [m["texte"] for m in r.json()["conversation"]] == ["Bonjour"]
+    assert source not in [d["id"] for d in db.cases.docs]
+    doc = next(d for d in db.cases.docs if d["id"] == cible)
+    assert [m["texte"] for m in doc["conversation"]] == ["Bonjour"]
+    assert any("fusionnée" in entree["texte"].lower() for entree in doc["historique"])
+
+
+def test_une_double_fusion_ne_duplique_pas_les_messages(monde):
+    client, db, _ = monde
+    cible = client.post("/api/cases", json={"titre": "Cible"}).json()["id"]
+    source = _source(client, [{"role": "utilisateur", "texte": "Bonjour", "quand": "t"}])
+    assert client.post(f"/api/cases/{cible}/fusion", json={"source_cid": source}).status_code == 200
+    seconde = client.post(f"/api/cases/{cible}/fusion", json={"source_cid": source})
+    assert seconde.status_code == 200, seconde.text
+    assert [m["texte"] for m in seconde.json()["conversation"]] == ["Bonjour"]
+    assert [m["texte"] for m in next(d for d in db.cases.docs if d["id"] == cible)["conversation"]] == ["Bonjour"]
+
+
+def test_la_fusion_deplace_les_pieces_avant_les_messages(monde, monkeypatch):
+    client, db, _ = monde
+    cible = client.post("/api/cases", json={"titre": "Cible"}).json()["id"]
+    source = _source(client, [{"role": "utilisateur", "texte": "Bonjour", "quand": "t"}])
+    db.pieces.docs.append({"id": "p1", "case_id": source})
+    etapes = []
+
+    async def deplacer(db_, source_cid, cible_cid):
+        etapes.append("pieces")
+        for doc in db_.pieces.docs:
+            if doc["case_id"] == source_cid:
+                doc["case_id"] = cible_cid
+        return 1
+
+    monkeypatch.setattr(cases_routes.pieces, "deplacer_pieces", deplacer)
+    update_one = db.cases.update_one
+
+    async def tracer(filtre, maj):
+        if filtre.get("id") == cible and "conversation" in maj.get("$push", {}):
+            etapes.append("messages")
+        return await update_one(filtre, maj)
+
+    monkeypatch.setattr(db.cases, "update_one", tracer)
+    r = client.post(f"/api/cases/{cible}/fusion", json={"source_cid": source})
+    assert r.status_code == 200, r.text
+    assert etapes == ["pieces", "messages"]
+    assert [p["case_id"] for p in db.pieces.docs] == [cible]
+
+
+def test_fusion_refusee_a_un_participant(monde):
+    client, db, _ = monde
+    h = {"X-Persona": "paiements-dev"}
+    cible = client.post("/api/cases", json={"titre": "Cible", "participants": ["paiements-dev"]}).json()["id"]
+    source = _source(client, [{"role": "utilisateur", "texte": "Bonjour", "quand": "t"}], persona="paiements-dev")
+    r = client.post(f"/api/cases/{cible}/fusion", json={"source_cid": source}, headers=h)
+    assert r.status_code == 403
+    assert source in [d["id"] for d in db.cases.docs]
+    assert next(d for d in db.cases.docs if d["id"] == cible)["conversation"] == []
+
+
+def test_fusion_cible_pleine_refusee_sans_ajouter_de_messages(monde):
+    client, db, _ = monde
+    cible = client.post("/api/cases", json={"titre": "Pleine"}).json()["id"]
+    next(d for d in db.cases.docs if d["id"] == cible)["pieces_count"] = pieces.MAX_PAR_CASE
+    source = _source(client, [{"role": "utilisateur", "texte": "Bonjour", "quand": "t"}])
+    db.pieces.docs.append({"id": "p1", "case_id": source})
+    r = client.post(f"/api/cases/{cible}/fusion", json={"source_cid": source})
+    assert r.status_code == 400 and "quota" in r.json()["detail"]
+    assert next(d for d in db.cases.docs if d["id"] == cible)["conversation"] == []
+    source_doc = next(d for d in db.cases.docs if d["id"] == source)
+    assert "fusion_vers" not in source_doc and "fusion_id" not in source_doc and "fusion_etat" not in source_doc
+    assert [p["case_id"] for p in db.pieces.docs] == [source]
+
+
+def test_fusion_d_une_source_deja_reservee_est_refusee_409(monde):
+    client, db, _ = monde
+    cible = client.post("/api/cases", json={"titre": "Cible"}).json()["id"]
+    source = _source(client, [{"role": "utilisateur", "texte": "Bonjour", "quand": "t"}])
+    next(d for d in db.cases.docs if d["id"] == source)["fusion_vers"] = "autre-cible"
+    r = client.post(f"/api/cases/{cible}/fusion", json={"source_cid": source})
+    assert r.status_code == 409 and "déjà fusionnée" in r.json()["detail"]
+    assert next(d for d in db.cases.docs if d["id"] == cible)["conversation"] == []
+
+
+def test_un_import_forge_ne_transporte_pas_les_champs_de_confiance(monde):
+    client, db, _ = monde
+    forge = [
+        {"role": "utilisateur", "texte": "Q", "preuves": [{"id": "fausse"}], "decisions": [{"texte": "x"}]},
+        {"role": "flore", "texte": "R", "preuves": [{"id": "fausse"}], "a_approuver": [{"claim": 1}],
+         "versions": [{"texte": "R"}], "version_active": 3, "documentCanvas": "x", "kpis": {"gain": "1"}},
+        {"role": "systeme", "texte": "ignoré"},
+        {"role": "utilisateur", "texte": "x" * 20_001},
+        "pas un message",
+    ]
+    cid = client.post("/api/cases", json={"titre": "Import", "conversation": forge}).json()["id"]
+    messages = next(d for d in db.cases.docs if d["id"] == cid)["conversation"]
+    assert [m["role"] for m in messages] == ["utilisateur", "flore"]
+    assert messages[0]["texte"] == "Q" and "preuves" not in messages[0] and "decisions" not in messages[0]
+    for champ in ("preuves", "a_approuver", "versions", "version_active", "documentCanvas", "kpis"):
+        assert champ not in messages[1]
+    assert messages[1]["importe"] is True
+
+
+def test_la_fusion_normalise_aussi_les_messages_importes(monde):
+    client, db, _ = monde
+    cible = client.post("/api/cases", json={"titre": "Cible"}).json()["id"]
+    source = _source(client, [])
+    next(d for d in db.cases.docs if d["id"] == source)["conversation"] = [
+        {"role": "flore", "texte": "R", "preuves": [{"id": "fausse"}], "a_approuver": [{"claim": 1}],
+         "retour": {"valeur": "utile"}},
+    ]
+    r = client.post(f"/api/cases/{cible}/fusion", json={"source_cid": source})
+    assert r.status_code == 200, r.text
+    message = r.json()["conversation"][0]
+    assert message["importe"] is True and "preuves" not in message and "a_approuver" not in message
+    assert "retour" not in message
+
+
+def test_le_demarrage_reconcilie_les_reservations_de_quota_orphelines(monde):
+    client, db, _ = monde
+    next(d for d in db.cases.docs if d["id"] == "t1")["pieces_count"] = 3
+    handler = next(f for f in client.app.router.on_startup if f.__name__ == "reconcilier_les_compteurs")
+    asyncio.run(handler())
+    assert next(d for d in db.cases.docs if d["id"] == "t1")["pieces_count"] == 0  # aucune pièce réelle
+
+
+def test_fusion_refuse_la_conversation_d_un_autre_auteur(monde):
+    client, db, _ = monde
+    h = {"X-Persona": "paiements-dev"}
+    cible = client.post("/api/cases", json={"titre": "Cible", "participants": ["paiements-dev"]}).json()["id"]
+    source = client.post("/api/cases", json={"titre": "Privée", "statut": "conversation"}).json()["id"]
+    r = client.post(f"/api/cases/{cible}/fusion", json={"source_cid": source}, headers=h)
+    assert r.status_code == 404
+    assert source in [d["id"] for d in db.cases.docs]
+    assert next(d for d in db.cases.docs if d["id"] == cible)["conversation"] == []
+
+
+def test_fusion_refusee_a_un_lecteur_simple(monde):
+    client, _, _ = monde
+    h = {"X-Persona": "support"}
+    cible = client.post("/api/cases", json={"titre": "Public", "portee": "entreprise"}).json()["id"]
+    source = client.post("/api/cases", json={"titre": "Perso", "statut": "conversation"}, headers=h).json()["id"]
+    r = client.post(f"/api/cases/{cible}/fusion", json={"source_cid": source}, headers=h)
+    assert r.status_code == 403
+
+
+def test_une_source_qui_n_est_pas_une_conversation_est_refusee(monde):
+    client, _, _ = monde
+    cible = client.post("/api/cases", json={"titre": "Cible"}).json()["id"]
+    source = client.post("/api/cases", json={"titre": "Travail"}).json()["id"]
+    r = client.post(f"/api/cases/{cible}/fusion", json={"source_cid": source})
+    assert r.status_code == 400 and "conversation" in r.json()["detail"]
+
+
+# ---- jumeaux hors périmètre : jamais dans la vue d'un travail ----
+def test_les_jumeaux_hors_perimetre_ne_sortent_pas_du_travail(monde):
+    client, db, _ = monde
+    db.jumeaux.docs = [{"id": "paiements", "nom": "Paiements", "domaine": "Paiements"},
+                       {"id": "fraude", "nom": "Fraude", "domaine": "Risque"}]
+    h = {"X-Persona": "support"}
+    cid = client.post("/api/cases", json={"titre": "Périmètre", "portee": "entreprise",
+                                          "jumeaux": ["paiements", "fraude"]}, headers=h).json()["id"]
+    vue = client.get(f"/api/cases/{cid}", headers=h).json()
+    assert vue["jumeaux"] == ["paiements"]
+    assert [p["app_id"] for p in vue["jumeaux_participants"]] == ["paiements"]
+    item = next(c for c in client.get("/api/cases", headers=h).json() if c["id"] == cid)
+    assert item["jumeaux"] == ["paiements"]
+
+    patche = client.patch(f"/api/cases/{cid}", json={"objectif": "Filtré"}, headers=h)
+    assert patche.status_code == 200 and patche.json()["jumeaux"] == ["paiements"]
+
+    source = _source(client, [{"role": "utilisateur", "texte": "Bonjour", "quand": "t"}], persona="support")
+    fusion = client.post(f"/api/cases/{cid}/fusion", json={"source_cid": source}, headers=h)
+    assert fusion.status_code == 200 and fusion.json()["jumeaux"] == ["paiements"]
+
+
+# ---- limites et situations : les routes globales (server.py) ----
+@pytest.fixture
+def serveur():
+    import os
+    os.environ.setdefault("MONGO_URL", "mongodb://localhost:27017")
+    os.environ.setdefault("DB_NAME", "meridian_tests")
+    import server
+    return server
+
+
+def _client_serveur(serveur):
+    app = FastAPI()
+    app.include_router(serveur.api_router)
+    return TestClient(app)
+
+
+def test_aurora_demander_est_limite_429(serveur, monkeypatch):
+    monkeypatch.delenv("APP_ENV", raising=False)
+    monkeypatch.setenv("TOURS_RATE_MAX", "1")
+    monkeypatch.setenv("TOURS_RATE_FENETRE", "60")
+    monkeypatch.setattr(limites.partage, "actif", lambda: False)
+    limites.reinitialiser()
+    monkeypatch.setattr(serveur, "resoudre_perimetre", resoudre_perimetre)
+    monkeypatch.setattr(serveur, "autorisations", droits)
+    monkeypatch.setattr(serveur, "db", Db([]))
+    client = _client_serveur(serveur)
+    assert client.post("/api/aurora/demander", json={"question": ""}).status_code == 200
+    r = client.post("/api/aurora/demander", json={"question": ""})
+    assert r.status_code == 429 and "Trop de tours Flore" in r.json()["detail"]
+
+
+def test_une_situation_hors_perimetre_est_refusee(serveur, monkeypatch):
+    db = Db([])
+    db.jumeaux.docs = [{"id": "fraude"}]
+    db.situations.docs = [{"id": "sit-fraude", "jumeaux": ["fraude"], "statut": "active"}]
+    monkeypatch.setattr(serveur, "resoudre_perimetre", resoudre_perimetre)
+    monkeypatch.setattr(serveur, "autorisations", droits)
+    monkeypatch.setattr(serveur, "db", db)
+
+    async def rien(*a, **k):
+        return None
+    monkeypatch.setattr(serveur, "journaler", rien)
+    client = _client_serveur(serveur)
+    h = {"X-Persona": "support"}
+    assert client.post("/api/situations/sit-fraude/action", json={"action": "surveiller"}, headers=h).status_code == 403
+    assert client.post("/api/situations/sit-fraude/decision", json={"decision": "x"}, headers=h).status_code == 403
+    assert db.situations.docs[0]["statut"] == "active"
+
+
+def test_une_situation_autorisee_journalise_dans_l_espace(serveur, monkeypatch):
+    db = Db([])
+    db.jumeaux.docs = [{"id": "support"}]
+    db.situations.docs = [{"id": "sit-support", "jumeaux": ["support"], "statut": "active"}]
+    captures = []
+
+    async def noter(persona, espace, action, cible, detail=""):
+        captures.append((persona, espace, action, cible))
+    monkeypatch.setattr(serveur, "resoudre_perimetre", resoudre_perimetre)
+    monkeypatch.setattr(serveur, "autorisations", droits)
+    monkeypatch.setattr(serveur, "db", db)
+    monkeypatch.setattr(serveur, "journaler", noter)
+    client = _client_serveur(serveur)
+    r = client.post("/api/situations/sit-support/decision", json={"decision": "x"},
+                    headers={"X-Persona": "support"})
+    assert r.status_code == 200
+    assert captures == [("support", "espace-support", "décision", "sit-support")]

@@ -1,11 +1,14 @@
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Literal, Optional
+from inspect import Parameter, signature
+from typing import Literal, Optional
+from uuid import NAMESPACE_URL, uuid5
 
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
 import conversation as fil
 import maturation
+import pieces
 import portee as portees
 import re
 from seed_data import EPICS, EPIC_PAR_REF
@@ -13,6 +16,45 @@ import veille as moteur_veille
 from jumeau import flux as jumeau_flux
 from jumeau.travail import EcritureTravail
 from cases_fil import ajouter_routes_fil
+from pieces_routes import ajouter_routes_pieces
+
+
+ROLES_IMPORTES = {"utilisateur", "flore", "evenement"}
+CHAMPS_NON_IMPORTES = {
+    # Ce qu'un message importé ne peut pas transporter : preuves, effets serveur, états de relecture, versions,
+    # propositions à approuver, décisions déjà prises, sorties d'interface.
+    "preuves", "a_approuver", "activite", "retour", "versions", "version", "version_active",
+    "documentCanvas", "documentTexte", "kpis", "tableauComparatif", "contributions", "termes",
+    "relecture_etat", "relu", "corrige", "decisions", "precision", "origine", "durees",
+    "hors_perimetre", "jumeaux_participants", "reponses", "propose_passation", "interrompu",
+    "branche", "branches", "suite", "importe",
+}
+
+
+def normaliser_conversation_importee(messages) -> list:
+    """La conversation reçue du client (création, fusion) : uniquement des messages du contrat, sans aucun champ
+    de confiance ou d'effet serveur. Un message de Flore importé est marqué comme tel."""
+    propres = []
+    for message in messages or []:
+        if not isinstance(message, dict) or message.get("role") not in ROLES_IMPORTES:
+            continue
+        texte = message.get("texte")
+        if not isinstance(texte, str) or len(texte) > 20_000:
+            continue
+        propre = {k: v for k, v in message.items() if k not in CHAMPS_NON_IMPORTES}
+        if propre["role"] == "flore":
+            propre["importe"] = True
+        propres.append(propre)
+    return propres
+
+
+def _accepte_autorisation_ecriture(fonction) -> bool:
+    """Vrai si le générateur de réponse accepte le drapeau (nommé, ou via **kwargs)."""
+    try:
+        parametres = signature(fonction).parameters.values()
+    except (TypeError, ValueError):
+        return False
+    return any(p.name == "autoriser_ecriture" or p.kind == Parameter.VAR_KEYWORD for p in parametres)
 
 
 class CaseCreate(BaseModel):
@@ -56,11 +98,13 @@ class InvestigationCase(BaseModel):
 
 
 class MessageCase(BaseModel):
-    texte: str
+    texte: str = Field(..., max_length=20_000)
     # Le panneau Flore y ajoute son contexte ; absents, Flore répond comme dans le Travail.
     contexte: Optional[str] = None
     selection: Optional[list] = None
     domaine: Optional[str] = None
+    # Avec des pièces jointes, l'humain autorise explicitement Flore à modifier le Travail pour ce tour.
+    autoriser_ecriture: bool = False
 
 
 class RetourMessage(BaseModel):
@@ -158,6 +202,10 @@ class PorteeCase(BaseModel):
     portee: str  # personnel | equipe | entreprise
 
 
+class FusionCase(BaseModel):
+    source_cid: str
+
+
 class DecisionAttendue(BaseModel):
     texte: str
 
@@ -205,6 +253,11 @@ def build_cases_router(deps):
 
     router = APIRouter()
 
+    @router.on_event("startup")
+    async def reconcilier_les_compteurs():
+        """Après les migrations de server.py (dont celle des sections) : recale les réservations de quota orphelines."""
+        await pieces.reconcilier_compteurs(db)
+
     async def charger_case(cid: str, espace: dict, persona_id: str = ""):
         case = await db.cases.find_one({"id": cid}, NO_ID)
         if not case:
@@ -224,6 +277,15 @@ def build_cases_router(deps):
     async def jumeaux_autorises(espace):
         tous = await db.jumeaux.find({}, {"_id": 0, "id": 1}).to_list(200)
         return autorisations(espace, [j["id"] for j in tous])
+
+    def exiger_contributeur(case, persona_id):
+        """Une écriture dans un Travail : son responsable ou l'un de ses participants (la démonstration Polaris
+        reste ouverte). Un lecteur simple ne modifie jamais la conversation ni les champs du Travail."""
+        if case.get("id") == "demo-polaris-work-g":
+            return
+        if persona_id == case.get("responsable") or persona_id in (case.get("participants") or []):
+            return
+        raise HTTPException(403, "Seuls le responsable et les participants peuvent modifier ce travail")
 
     async def materialiser_veille(case):
         """Écrit dans le fil les événements de veille dus à ce jour (une seule fois chacun : identifiants stables)."""
@@ -258,6 +320,18 @@ def build_cases_router(deps):
             conv.sort(key=lambda m: m.get("quand", ""))
         return conv
 
+    def vue_case(case, aut):
+        """La vue d'un Travail pour une personne : jamais le document brut, et jamais un jumeau hors de son
+        périmètre (fil, jumeaux, participants). La démonstration Polaris garde ses jumeaux de démonstration."""
+        vue = dict(case)
+        vue["conversation"] = visible_pour(case, aut)
+        if vue.get("id") != "demo-polaris-work-g":
+            vue["jumeaux"] = [j for j in case.get("jumeaux") or [] if j in aut]
+            if "jumeaux_participants" in case:
+                vue["jumeaux_participants"] = [p for p in case["jumeaux_participants"] or []
+                                               if p.get("app_id") in aut]
+        return vue
+
     @router.get("/cases")
     async def lister_cases(q: Optional[str] = None, inclure_conversations: bool = False, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
         _, espace = resoudre_perimetre(x_persona, x_espace)
@@ -266,7 +340,7 @@ def build_cases_router(deps):
         cases = await db.cases.find({}, NO_ID).to_list(200)
         visibles = [c for c in cases if c.get("id") == "demo-polaris-work-g" or (
             (not c.get("jumeaux") or any(j in aut for j in c["jumeaux"])) and portees.acces(c, x_persona, espace["id"]))]
-        visibles = [await materialiser_veille(c) for c in visibles]
+        visibles = [vue_case(await materialiser_veille(c), aut) for c in visibles]
         if not inclure_conversations:  # les Travaux conservés ; les conversations (de l'auteur seul) sur demande
             visibles = [c for c in visibles if c.get("statut") != "conversation"]
         if q and q.strip():  # titre et texte des messages visibles ; sous-chaîne, jamais une expression du client
@@ -339,10 +413,11 @@ def build_cases_router(deps):
             "portee": payload.portee,
             "equipe": portees.equipe_de(responsable),
             "espace": payload.espace or espace["id"],
-            "conversation": payload.conversation,
+            "conversation": normaliser_conversation_importee(payload.conversation),
             "options": [],
             "decisions": [],
             "livrables": [],
+            "pieces_count": 0,
             "a_revoir": False,
             "visites": {},
             "historique": [{"quand": now, "texte": "Travail conservé"}],
@@ -352,24 +427,22 @@ def build_cases_router(deps):
         await db.cases.insert_one(doc)
         if responsable != x_persona:
             await notifier([responsable], "assignation", f"Vous êtes responsable du travail « {doc['titre']} »", f"/travaux/{cid}")
-        await journaler(x_persona, espace["id"], "création d'un case", cid, doc["titre"])
+        if payload.statut == "conversation":  # le titre (et le slug) d'une conversation privée ne fuit pas dans l'espace
+            await journaler(x_persona, "", "création d'un case", "", "conversation privée")
+        else:
+            await journaler(x_persona, espace["id"], "création d'un case", cid, doc["titre"])
         doc.pop("_id", None)
+        doc["peut_deposer"] = True  # le créateur est responsable (ou participant) : il peut joindre
         return doc
-
-    @router.put("/cases/{cid}")
-    async def enregistrer_ou_remplacer_case(cid: str, payload: Dict[str, Any], x_persona: str = Header("architecte")):
-        doc = dict(payload)
-        doc["id"] = cid
-        doc.pop("_id", None)
-        await db.cases.replace_one({"id": cid}, doc, upsert=True)
-        return {"ok": True, "id": cid}
 
     @router.get("/cases/{cid}")
     async def obtenir_case(cid: str, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
         _, espace = resoudre_perimetre(x_persona, x_espace)
         case = await charger_case(cid, espace, x_persona)
         case = await materialiser_veille(case)
-        case["conversation"] = visible_pour(case, await jumeaux_autorises(espace))
+        aut = await jumeaux_autorises(espace)
+        case["conversation"] = visible_pour(case, aut)
+        case["pieces"] = await pieces.lister(db, cid)  # sources du Travail, jamais des connaissances
         # Évolution depuis la dernière visite de ce persona, puis la visite est enregistrée
         visites = case.get("visites", {})
         precedentes = case.get("visites_precedentes", {})
@@ -385,6 +458,9 @@ def build_cases_router(deps):
         case["portee"] = portees.portee_de(case)
         case["equipe_label"] = portees.libelle_equipe(case.get("equipe") or portees.equipe_de(case.get("responsable")))
         case["peut_partager"] = x_persona == case.get("responsable")
+        case["peut_deposer"] = (cid != "demo-polaris-work-g"
+                                and (x_persona == case.get("responsable")
+                                     or x_persona in (case.get("participants") or [])))
         if (case.get("veille") or {}).get("mode") == "maturation":
             m = case["veille"]["maturation"]
             case["veille"]["confiance"] = round(maturation.confiance_a(m, datetime.now(timezone.utc)))
@@ -463,17 +539,24 @@ def build_cases_router(deps):
             if visites.get(x_persona):
                 miseajour[f"visites_precedentes.{x_persona}"] = visites[x_persona]
             await db.cases.update_one({"id": cid}, {"$set": miseajour})
-        return case
+        return vue_case(case, aut)
 
     @router.patch("/cases/{cid}")
     async def maj_case(cid: str, payload: CasePatch, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
         _, espace = resoudre_perimetre(x_persona, x_espace)
         case = await charger_case(cid, espace, x_persona)
+        exiger_contributeur(case, x_persona)
         champs = {k: v for k, v in payload.model_dump().items() if v is not None}
+        if "conversation" in champs:
+            raise HTTPException(400, "La conversation s'ajoute par /messages ou /fusion")
+        proteges = {"responsable", "participants", "jumeaux", "statut", "sensibilite"}
+        if proteges & champs.keys() and case.get("responsable") != x_persona:
+            raise HTTPException(403, "Seul le responsable du travail peut modifier le responsable, les participants, "
+                                     "les jumeaux, le statut ou la sensibilité")
         if champs.get("statut") == "conversation":
             raise HTTPException(400, "Un travail ne redevient pas une conversation")
         if not champs:
-            return case
+            return vue_case(case, await jumeaux_autorises(espace))
         now = datetime.now(timezone.utc).isoformat()
         histo = []
         if "statut" in champs and champs["statut"] != case.get("statut"):
@@ -482,8 +565,6 @@ def build_cases_router(deps):
             histo.append({"quand": now, "texte": "Objectif mis à jour"})
         if "jumeaux" in champs and champs["jumeaux"] != case.get("jumeaux"):
             histo.append({"quand": now, "texte": "Contexte SI ajusté"})
-        if "conversation" in champs:
-            histo.append({"quand": now, "texte": "Une exploration avec Flore a été ajoutée au travail"})
         if "a_revoir" in champs and champs["a_revoir"] is False and case.get("a_revoir"):
             histo.append({"quand": now, "texte": "Revue effectuée — hypothèses confirmées à jour"})
         nouveau_resp = champs.get("responsable")
@@ -495,7 +576,7 @@ def build_cases_router(deps):
         if histo:
             update["$push"] = {"historique": {"$each": histo}}
         await db.cases.update_one({"id": cid}, update)
-        return await db.cases.find_one({"id": cid}, NO_ID)
+        return vue_case(await db.cases.find_one({"id": cid}, NO_ID), await jumeaux_autorises(espace))
 
     @router.delete("/cases/{cid}", status_code=204)
     async def supprimer_conversation(cid: str, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
@@ -504,7 +585,91 @@ def build_cases_router(deps):
         case = await charger_case(cid, espace, x_persona)
         if case.get("statut") != "conversation":
             raise HTTPException(400, "Seule une conversation se supprime ici ; un travail conservé se clôt")
+        await pieces.supprimer_case(db, cid)
         await db.cases.delete_one({"id": cid})
+
+    @router.post("/cases/{cid}/fusion")
+    async def fusionner_conversation(cid: str, payload: FusionCase, x_persona: str = Header("architecte"),
+                                     x_espace: Optional[str] = Header(None)):
+        """Fusionne une conversation personnelle dans un Travail : les messages normalisés s'ajoutent à la fin, la
+        source disparaît. Seul le responsable de la cible fusionne (un participant pourrait injecter de faux
+        messages de Flore) ; la source est réservée atomiquement et ses pièces déplacées avant les messages.
+
+        Une double requête est idempotente : le marqueur `fusion_id` n'est poussé qu'une fois dans la cible, donc les
+        messages ne sont jamais dupliqués. Sans transaction Mongo, chaque étape se reprend sans recommencer la
+        précédente."""
+        _, espace = resoudre_perimetre(x_persona, x_espace)
+        # Identifiant stable de la fusion : une reprise (ou une seconde requête après la suppression de la source)
+        # retrouve le marqueur déjà poussé dans la cible.
+        fusion_id = str(uuid5(NAMESPACE_URL, f"meridian:fusion:{payload.source_cid}:{cid}"))
+        cible = await charger_case(cid, espace, x_persona)
+        if payload.source_cid == cid:
+            raise HTTPException(400, "La source et la cible sont le même travail")
+        try:
+            source = await charger_case(payload.source_cid, espace, x_persona)
+        except HTTPException as e:
+            # Seule une première requête du responsable a pu poser le marqueur ; les autres gardent le 404
+            # (une conversation privée ne révèle pas son existence).
+            if (e.status_code == 404 and (cid == "demo-polaris-work-g" or x_persona == cible.get("responsable"))):
+                frais = await db.cases.find_one({"id": cid}, NO_ID)
+                if frais and fusion_id in (frais.get("fusions") or []):
+                    return vue_case(frais, await jumeaux_autorises(espace))
+            raise
+        if source.get("statut") != "conversation":
+            raise HTTPException(400, "La source doit être une conversation")
+        if cible.get("statut") == "conversation":
+            raise HTTPException(400, "La cible doit être un Travail conservé")
+        if cid != "demo-polaris-work-g" and x_persona != cible.get("responsable"):
+            raise HTTPException(403, "Seul le responsable du travail peut fusionner une conversation")
+
+        async def liberer():
+            await db.cases.update_one(
+                {"id": payload.source_cid},
+                {"$unset": {"fusion_vers": "", "fusion_id": "", "fusion_etat": ""}},
+            )
+
+        reserve = await db.cases.update_one(
+            {"id": payload.source_cid,
+             "$or": [{"fusion_vers": None}, {"fusion_vers": {"$exists": False}}]},
+            {"$set": {"fusion_vers": cid, "fusion_id": fusion_id, "fusion_etat": "en_cours"}},
+        )
+        if not getattr(reserve, "modified_count", 0):
+            actuel = await db.cases.find_one({"id": payload.source_cid}, NO_ID)
+            if not actuel or actuel.get("fusion_vers") != cid:
+                raise HTTPException(409, "Cette conversation est déjà fusionnée ou en cours de fusion")
+            fusion_id = str(actuel.get("fusion_id") or fusion_id)  # reprise de la même fusion
+            if not actuel.get("fusion_id"):
+                await db.cases.update_one({"id": payload.source_cid},
+                                          {"$set": {"fusion_id": fusion_id, "fusion_etat": "en_cours"}})
+
+        messages = normaliser_conversation_importee(source.get("conversation") or [])
+        now = datetime.now(timezone.utc).isoformat()
+        texte = f"Conversation fusionnée — {len(messages)} message(s)" if messages else "Conversation fusionnée — aucun message"
+        # Les pièces passent avant les messages : une cible pleine refuse la fusion sans rien déplacer.
+        try:
+            await pieces.deplacer_pieces(db, payload.source_cid, cid)
+        except ValueError as e:
+            await liberer()
+            raise HTTPException(400, str(e))
+        except Exception:
+            await liberer()
+            raise HTTPException(409, "Fusion impossible ; la conversation source est intacte, réessayez.")
+        # Marqueur atomique : la même fusion ne pousse ses messages qu'une fois (filtre sur `fusions`).
+        # matched 0 : les messages sont déjà poussés (reprise) — on continue sans les dupliquer.
+        try:
+            await db.cases.update_one(
+                {"id": cid, "fusions": {"$ne": fusion_id}},
+                {"$push": {"conversation": {"$each": messages}, "historique": {"quand": now, "texte": texte}},
+                 "$addToSet": {"fusions": fusion_id},
+                 "$set": {"maj_le": now}},
+            )
+        except Exception:
+            await liberer()
+            raise HTTPException(409, "Fusion impossible ; la conversation source est intacte, réessayez.")
+        await db.cases.delete_one({"id": payload.source_cid})
+        await pieces.supprimer_case(db, payload.source_cid)  # pièces arrivées entre le déplacement et la suppression
+        await journaler(x_persona, "", "fusion de conversation", cid, "conversation privée")
+        return vue_case(await db.cases.find_one({"id": cid}, NO_ID), await jumeaux_autorises(espace))
 
     @router.post("/cases/{cid}/messages", status_code=201)
     async def message_case(cid: str, payload: MessageCase, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
@@ -524,7 +689,7 @@ def build_cases_router(deps):
             await db.cases.update_one({"id": cid}, {"$push": {"conversation": {"$each": [msg_user, fil.message_interrompu(brouillon, activite)]}},
                                                     "$set": {"maj_le": now}})
         return flux.en_flux(lambda emit: traiter_message(cid, payload, x_persona, x_espace, emit), sur_interruption=interrompu, fil=cid, proprietaire=x_persona,
-                              si_seul=prevenir_fin(cid, x_persona))
+                            si_seul=prevenir_fin(cid, x_persona))
 
     async def repondre_dans_travail(cid, case, question, params, x_persona, x_espace, emit=None):
         """La réponse brute de Flore dans un Travail (hors scripts de démonstration), avec ce qui l'accompagne."""
@@ -535,8 +700,11 @@ def build_cases_router(deps):
         async def suivre(e):
             suivi.suivre(e)
             await emit(e)
-        rep = await generer_reponse_flore(params.contexte or "case", question, selection, params.domaine, x_persona, x_espace,
-                                          travail=cid, emit=suivre if emit else None)
+        appel = {"travail": cid, "emit": suivre if emit else None}
+        if _accepte_autorisation_ecriture(generer_reponse_flore):
+            appel["autoriser_ecriture"] = getattr(params, "autoriser_ecriture", False)
+        rep = await generer_reponse_flore(params.contexte or "case", question, selection, params.domaine, x_persona,
+                                          x_espace, **appel)
         participants = []
         if case.get("jumeaux"):
             docs = await db.jumeaux.find({"id": {"$in": case["jumeaux"]}}, NO_ID).to_list(len(case["jumeaux"]))
@@ -566,12 +734,15 @@ def build_cases_router(deps):
 
     ajouter_routes_fil(router, {"db": db, "charger_case": charger_case, "resoudre_perimetre": resoudre_perimetre,
                                 "autorisations": autorisations, "reviser": lambda *a: reviser_proposee(*a),
-                                "prevenir_fin": prevenir_fin,
+                                "prevenir_fin": prevenir_fin, "exiger_contributeur": exiger_contributeur,
                                 "repondre": repondre_dans_travail})
+    ajouter_routes_pieces(router, {"db": db, "charger_case": charger_case,
+                                   "resoudre_perimetre": resoudre_perimetre, "journaler": journaler})
 
     async def traiter_message(cid, payload, x_persona, x_espace, emit=None):
         _, espace = resoudre_perimetre(x_persona, x_espace)
         case = await charger_case(cid, espace, x_persona)
+        exiger_contributeur(case, x_persona)
         if not payload.texte.strip():
             raise HTTPException(400, "Message vide")
         now = datetime.now(timezone.utc).isoformat()

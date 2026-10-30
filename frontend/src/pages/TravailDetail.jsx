@@ -64,6 +64,8 @@ export default function TravailDetail() {
   const [passationOuverte, setPassationOuverte] = useState(false);
   const [confierOuvert, setConfierOuvert] = useState(false);
   const enVeille = !!cas?.veille;
+  const peutDeposer = cas?.peut_deposer === true; // responsable ou participant : seul à pouvoir écrire
+  const actionsMenu = peutDeposer && (cas?.a_revoir || cas?.peut_partager || (!enVeille && cas?.statut !== "clos"));
   useEffect(() => { if (enVeille) setVoletSourcesOuvert(false); }, [enVeille]);
 
   const nbSources = (cas?.jumeaux_participants || []).length;
@@ -154,41 +156,45 @@ export default function TravailDetail() {
           {casNe && <div className="flex shrink-0 items-center gap-2">
             <PartagerTravail cas={cas} onChange={setCas} />
 
-            <div className="relative">
-              <button 
-                onClick={() => setMenu(!menu)} 
-                data-testid="travail-menu-btn" 
-                className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.03] text-[#7C93A8] transition-colors hover:border-white/20 hover:text-white"
-              >
-                <DotsThree size={16} weight="bold" />
-              </button>
-              {menu && (
-                <div className="glass absolute right-0 top-8 z-50 w-56 rounded-xl border border-white/10 bg-[#0C1724] p-1.5 shadow-2xl backdrop-blur-xl" data-testid="travail-menu">
-                  {cas.a_revoir && (
-                    <button onClick={() => { setMenu(false); maj({ a_revoir: false }); }} data-testid="travail-marquer-revu-btn" className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] text-[#F87171] hover:bg-white/[0.06]">
-                      <SealCheck size={12} /> Marquer comme revu
-                    </button>
-                  )}
-                  {cas.peut_partager && (
-                    <button onClick={() => { setMenu(false); setConfierOuvert(true); }} data-testid="travail-confier-btn" className="w-full rounded px-2.5 py-1.5 text-left text-[11px] text-[#94A3B8] hover:bg-white/[0.06] hover:text-white">
-                      Confier à…
-                    </button>
-                  )}
-                  {!enVeille && cas.statut !== "clos" && (
-                    <button onClick={() => { setMenu(false); setPassationOuverte(true); }} data-testid="travail-consigner-decision-btn" className="w-full rounded px-2.5 py-1.5 text-left text-[11px] text-[#94A3B8] hover:bg-white/[0.06] hover:text-white">
-                      Consigner une décision
-                    </button>
-                  )}
-                  <button
-                    onClick={() => { setMenu(false); maj({ statut: cas.statut === "clos" ? "en_cours" : "clos" }); }}
-                    data-testid="travail-clore-btn"
-                    className="w-full rounded px-2.5 py-1.5 text-left text-[11px] text-[#94A3B8] hover:bg-white/[0.06] hover:text-white"
-                  >
-                    {cas.statut === "clos" ? "Rouvrir le travail" : "Clore le travail"}
-                  </button>
-                </div>
-              )}
-            </div>
+            {actionsMenu && (
+              <div className="relative">
+                <button
+                  onClick={() => setMenu(!menu)}
+                  data-testid="travail-menu-btn"
+                  className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.03] text-[#7C93A8] transition-colors hover:border-white/20 hover:text-white"
+                >
+                  <DotsThree size={16} weight="bold" />
+                </button>
+                {menu && (
+                  <div className="glass absolute right-0 top-8 z-50 w-56 rounded-xl border border-white/10 bg-[#0C1724] p-1.5 shadow-2xl backdrop-blur-xl" data-testid="travail-menu">
+                    {cas.a_revoir && peutDeposer && (
+                      <button onClick={() => { setMenu(false); maj({ a_revoir: false }); }} data-testid="travail-marquer-revu-btn" className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] text-[#F87171] hover:bg-white/[0.06]">
+                        <SealCheck size={12} /> Marquer comme revu
+                      </button>
+                    )}
+                    {cas.peut_partager && (
+                      <button onClick={() => { setMenu(false); setConfierOuvert(true); }} data-testid="travail-confier-btn" className="w-full rounded px-2.5 py-1.5 text-left text-[11px] text-[#94A3B8] hover:bg-white/[0.06] hover:text-white">
+                        Confier à…
+                      </button>
+                    )}
+                    {!enVeille && cas.statut !== "clos" && peutDeposer && (
+                      <button onClick={() => { setMenu(false); setPassationOuverte(true); }} data-testid="travail-consigner-decision-btn" className="w-full rounded px-2.5 py-1.5 text-left text-[11px] text-[#94A3B8] hover:bg-white/[0.06] hover:text-white">
+                        Consigner une décision
+                      </button>
+                    )}
+                    {cas.peut_partager && peutDeposer && (
+                      <button
+                        onClick={() => { setMenu(false); maj({ statut: cas.statut === "clos" ? "en_cours" : "clos" }); }}
+                        data-testid="travail-clore-btn"
+                        className="w-full rounded px-2.5 py-1.5 text-left text-[11px] text-[#94A3B8] hover:bg-white/[0.06] hover:text-white"
+                      >
+                        {cas.statut === "clos" ? "Rouvrir le travail" : "Clore le travail"}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Icône à deux traits horizontaux pour afficher/masquer le volet Résultats & Sources */}
             {(
@@ -219,9 +225,11 @@ export default function TravailDetail() {
             <p className="text-xs text-[#F87171]">
               <span className="font-semibold uppercase tracking-wider">À revoir</span> — une connaissance du Mesh liée à ce travail a changé ; les conclusions peuvent être remises en cause.
             </p>
-            <button onClick={() => maj({ a_revoir: false })} className="shrink-0 rounded-md border border-[#F87171]/40 px-2.5 py-1.5 text-[11px] font-semibold text-[#F87171] transition-colors hover:bg-[#F87171]/10">
-              Marquer comme revu
-            </button>
+            {peutDeposer && (
+              <button onClick={() => maj({ a_revoir: false })} data-testid="travail-marquer-revu-banner-btn" className="shrink-0 rounded-md border border-[#F87171]/40 px-2.5 py-1.5 text-[11px] font-semibold text-[#F87171] transition-colors hover:bg-[#F87171]/10">
+                Marquer comme revu
+              </button>
+            )}
           </div>
         </div>
         </div>
@@ -241,7 +249,7 @@ export default function TravailDetail() {
         setVoletSourcesOuvert={setVoletSourcesOuvert}
         canvasOuvert={canvasOuvert}
         setCanvasOuvert={setCanvasOuvert}
-        onConsignerDecision={casNe ? () => setPassationOuverte(true) : undefined}
+        onConsignerDecision={casNe && peutDeposer ? () => setPassationOuverte(true) : undefined}
         entete={entete}
       />
       {confierOuvert && <ConfierTravail cas={cas} personas={personas} moi={persona} onFermer={() => setConfierOuvert(false)} onConfie={(data) => { setCas(data); setConfierOuvert(false); }} />}

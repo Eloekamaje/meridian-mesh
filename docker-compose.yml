@@ -1,10 +1,12 @@
 services:
+  # Démo locale : Mongo n'est pas authentifié et n'écoute que sur 127.0.0.1.
+  # Pour un déploiement partagé, activer --auth + MONGO_INITDB_ROOT_* et un utilisateur applicatif, avec TLS.
   mongodb:
     image: mongo:7.0
     container_name: meridian-mongo
     restart: always
     ports:
-      - "27017:27017"
+      - "127.0.0.1:27017:27017"
     volumes:
       - meridian_mongo_data:/data/db
     healthcheck:

@@ -46,6 +46,22 @@ export function lecteurAgUi({ onEtape, onTexte, onRelecture, onOutil, onDebut, o
 const API = () => `${process.env.REACT_APP_BACKEND_URL || ""}/api`;
 const PAUSES_REPRISE = [1000, 2000, 4000]; // ms avant chaque tentative de reprise après une coupure
 
+// Une réponse non-ok du flux Travail porte son statut et le message du serveur. Les 4xx (sauf 404/405,
+// qui peuvent signaler une route absente) sont « annoncés » : l'interface les montre, sans repli.
+export async function erreurFlux(reponse) {
+  const statut = reponse.status ?? 0;
+  let message = `flux indisponible (${statut})`;
+  try {
+    const corps = await (reponse.clone ? reponse.clone() : reponse).json();
+    if (typeof corps?.detail === "string" && corps.detail.trim()) message = corps.detail;
+    else if (typeof corps?.message === "string" && corps.message.trim()) message = corps.message;
+  } catch { /* corps absent ou non JSON : le message générique suffit */ }
+  return Object.assign(new Error(message), {
+    statut,
+    annoncee: statut >= 400 && statut < 500 && statut !== 404 && statut !== 405,
+  });
+}
+
 const attendre = (ms, signal) => new Promise((ok, ko) => {
   const t = setTimeout(ok, ms);
   signal?.addEventListener("abort", () => { clearTimeout(t); ko(Object.assign(new Error("arrêt"), { name: "AbortError" })); });
@@ -85,7 +101,7 @@ export async function demanderEnFlux(chemin, corps, { onEtape, onTexte, onRelect
   let reponse = await fetch(`${API()}${chemin}`, {
     method: "POST", headers: { "Content-Type": "application/json", ...entetes }, body: JSON.stringify(corps), signal,
   });
-  if (!reponse.ok || !reponse.body) throw new Error(`flux indisponible (${reponse.status})`);
+  if (!reponse.ok || !reponse.body) throw await erreurFlux(reponse);
   for (let essai = 0; ; ) {
     try {
       for await (const { id, event } of evenements(reponse)) {

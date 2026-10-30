@@ -986,8 +986,8 @@ export default function Atlas() {
         objectif: seul ? `Comprendre ${seul.nom} (${seul.domaine})` : `Comprendre ${js.map((x) => x.nom).join(", ")}`,
         jumeaux: js.map((x) => x.id),
         espace: info?.espace?.id,
+        conversation: [{ role: "flore", comportement: "expliquer", texte: accueil, quand: now }],
       });
-      await api.patch(`/cases/${data.id}`, { conversation: [{ role: "flore", comportement: "expliquer", texte: accueil, quand: now }] });
       navigate(`/travaux/${data.id}`);
     } catch {
       toast.error("Impossible d'ouvrir le travail");
