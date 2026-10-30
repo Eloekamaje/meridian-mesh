@@ -88,6 +88,8 @@ Dans `opencode.json` :
 
 Les agents `agents/*.md` peuvent être copiés dans `.opencode/agents/` ou convertis dans la section `agent` de la configuration.
 
+Chaque skill suit la divulgation progressive : `SKILL.md` court, `references/` pour les contrats et `evals/` pour les cas de test. Les skills passent le validateur Agent Skills et sont packageables avec `skill-creator/scripts/package_skill.py`.
+
 ## Utilisation
 
 Une skill choisit une posture et une méthode, puis appelle `meridian_analyser`.

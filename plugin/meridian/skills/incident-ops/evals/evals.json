@@ -3,9 +3,26 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "Utilise la skill meridian-incident-ops sur une question réelle de ton domaine.",
-      "expected_output": "Un dossier avec socle de faits, preuves, limites, actions proposées et autorité, sans écriture.",
-      "assertions": []
+      "prompt": "Un incident de latence touche Paiements depuis 14 h. Analyse l'impact, le SLA et les options de mitigation.",
+      "expected_output": "Un dossier incident avec socle de faits, impact, SLA, mitigation, limites et autorité de proposition.",
+      "files": [],
+      "expectations": [
+        "Le socle contient des faits et preuves",
+        "La lecture contient incident ou SLA",
+        "Aucune action n'est exécutée",
+        "Les hypothèses sont distinguées des causes"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Le support reçoit trois tickets sur des rejets carte. Que faut-il vérifier avant de conclure à une panne ?",
+      "expected_output": "Une analyse prudente qui cite les preuves disponibles et les vérifications manquantes.",
+      "files": [],
+      "expectations": [
+        "Les preuves sont citées",
+        "Les limites sont explicites",
+        "Aucune causalité inventée"
+      ]
     }
   ]
 }

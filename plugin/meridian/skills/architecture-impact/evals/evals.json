@@ -3,9 +3,25 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "Utilise la skill meridian-architecture-impact sur une question réelle de ton domaine.",
-      "expected_output": "Un dossier avec socle de faits, preuves, limites, actions proposées et autorité, sans écriture.",
-      "assertions": []
+      "prompt": "Si je change GET /status sur Conduit, quelles applications et interfaces sont impactées ?",
+      "expected_output": "Un impact amont/aval avec preuves, interfaces et limites.",
+      "files": [],
+      "expectations": [
+        "L'impact prouvé est séparé de l'inféré",
+        "Les opérations observer/agir sont distinguées",
+        "Aucune relation inventée"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Prépare un ADR pour rendre le contrôle R-118 asynchrone et dis-moi ce qu'il faut vérifier.",
+      "expected_output": "Une proposition d'ADR avec impacts, risques et vérifications, sans décision automatique.",
+      "files": [],
+      "expectations": [
+        "Un ADR est proposé",
+        "Les écritures sont marquées approbation requise",
+        "Les limites sont explicites"
+      ]
     }
   ]
 }

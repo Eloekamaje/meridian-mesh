@@ -3,9 +3,25 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "Utilise la skill meridian-enterprise-portfolio sur une question réelle de ton domaine.",
-      "expected_output": "Un dossier avec socle de faits, preuves, limites, actions proposées et autorité, sans écriture.",
-      "assertions": []
+      "prompt": "Où la valeur et le risque sont-ils concentrés dans le domaine Paiement ?",
+      "expected_output": "Une lecture portefeuille avec situations, valeur, valeur à risque et limites.",
+      "files": [],
+      "expectations": [
+        "Le domaine est respecté",
+        "Le Value Ledger est séparé par devise/unité",
+        "Aucune causalité n'est affirmée"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Quelles sont les priorités du portefeuille entreprise cette semaine ?",
+      "expected_output": "Une lecture entreprise avec attention, situations hautes, décisions et dette de mesure.",
+      "files": [],
+      "expectations": [
+        "Le scope entreprise est utilisé",
+        "Les situations hautes sont citées",
+        "Le périmètre et les limites sont explicites"
+      ]
     }
   ]
 }

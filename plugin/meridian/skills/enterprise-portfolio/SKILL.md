@@ -1,7 +1,7 @@
 ---
 compatibility: Requires Méridian API and MCP server (mcp/requests).
 name: meridian-enterprise-portfolio
-description: Lire un portefeuille ou un domaine entier avec Méridian et produire une lecture business. Utiliser pour une question globale, un portefeuille, un domaine, une priorisation ou une valeur métier.
+description: Lire un portefeuille, un domaine ou l'entreprise entière avec Méridian et produire une lecture business. Utiliser de façon proactive dès qu'un utilisateur demande une vue globale, une priorisation de portefeuille, une concentration de valeur/risque ou un impact transverse, pas une seule application.
 ---
 
 # Portefeuille et valeur business
@@ -29,3 +29,14 @@ Utiliser `valeur`, `attention`, `propositions` et `limites`. Le socle reste tra�
 ## Référence
 
 Lire `references/portfolio-contract.md` pour le contrat détaillé.
+
+## Exemple
+
+**Entrée** : « Où la valeur et le risque sont-ils concentrés dans Paiement ? »
+
+**Sortie attendue** : situations, situations hautes, décisions, initiatives, Value Ledger par devise/unité,
+limites de rattachement et absence de causalité.
+
+## Quand ne pas utiliser
+
+Pour une seule application sans question de portefeuille : utiliser `meridian-architecture-impact`.

@@ -1,7 +1,7 @@
 ---
 compatibility: Requires Méridian API and MCP server (mcp/requests).
 name: meridian-incident-ops
-description: Analyser un incident ou un SLA avec Méridian, sans écrire ni décider. Utiliser quand la question porte sur une panne, une latence, un incident, un SLA, une mitigation ou un postmortem.
+description: Analyser un incident, une panne, une latence, un SLA ou un postmortem avec Méridian. Utiliser de façon proactive et en priorité dès qu'un utilisateur mentionne un incident, une panne, une latence, un SLA, un postmortem, une mitigation, un ticket support ou une production dégradée, même s'il ne nomme pas Méridian.
 ---
 
 # Incident / Opérations
@@ -33,3 +33,15 @@ Respecter `contracts/reponse.json`. Les faits sont identiques à ceux du profil 
 ## Référence
 
 Lire `references/response-contract.md` pour le contrat détaillé.
+
+## Exemple
+
+**Entrée** : « Depuis 14 h, les paiements sont lents et le support reçoit des tickets. »
+
+**Sortie attendue** : socle de faits/preuves, lecture incident + SLA, options de mitigation, limites, autorité `proposition`.
+Ne pas conclure à une cause sans preuve.
+
+## Quand ne pas utiliser
+
+Pour une priorisation de portefeuille ou un bénéfice attendu : utiliser `meridian-enterprise-portfolio`
+ou `meridian-benefits-okr`.

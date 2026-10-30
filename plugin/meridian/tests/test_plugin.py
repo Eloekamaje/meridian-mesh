@@ -33,7 +33,9 @@ def test_skills_et_agents_ont_un_frontmatter_exploitable():
         assert "name:" in texte and "description:" in texte
         assert "compatibility:" in texte
         dossier = (ROOT / chemin).parent
-        assert (dossier / "evals" / "evals.json").exists()
+        evals = _json(str((dossier / "evals" / "evals.json").relative_to(ROOT)))
+        assert evals["skill_name"].startswith("meridian-")
+        assert evals["evals"] and all(case["expectations"] for case in evals["evals"])
         assert any((dossier / "references").glob("*.md"))
     for chemin in _json("meridian.plugin.json")["agents"]:
         texte = (ROOT / chemin).read_text(encoding="utf-8")

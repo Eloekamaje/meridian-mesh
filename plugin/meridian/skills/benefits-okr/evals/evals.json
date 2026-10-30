@@ -3,9 +3,26 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "Utilise la skill meridian-benefits-okr sur une question réelle de ton domaine.",
-      "expected_output": "Un dossier avec socle de faits, preuves, limites, actions proposées et autorité, sans écriture.",
-      "assertions": []
+      "prompt": "L'initiative de réduction des rejets a-t-elle produit le bénéfice attendu ?",
+      "expected_output": "Une analyse baseline/cible/observé avec attribution et dette de mesure.",
+      "files": [],
+      "expectations": [
+        "La baseline ou son absence est explicite",
+        "L'écart est calculé si comparable",
+        "Aucun learning n'est inventé",
+        "La dette de mesure est visible"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Priorise ces deux initiatives selon leur valeur et leur risque.",
+      "expected_output": "Une comparaison d'options avec valeur attendue, risque, coût du délai et décision humaine.",
+      "files": [],
+      "expectations": [
+        "Les options sont comparées",
+        "La valeur attendue est distinguée de la valeur réalisée",
+        "Aucune décision n'est prise par l'agent"
+      ]
     }
   ]
 }

@@ -1,7 +1,7 @@
 ---
 compatibility: Requires Méridian API and MCP server (mcp/requests).
 name: meridian-benefits-okr
-description: Relier une initiative, un outcome et un learning avec Méridian. Utiliser pour une priorité, un bénéfice, un OKR, une décision ou une capitalisation.
+description: Relier priorité, bénéfice, valeur, ROI, OKR, KPI, business case, outcome et learning avec Méridian. Utiliser de façon proactive dès qu'un utilisateur demande si une initiative vaut le coup, si un bénéfice est réalisé, ou ce qu'il faut mesurer, même s'il ne nomme pas Méridian.
 ---
 
 # Bénéfices, OKR et apprentissage
@@ -30,3 +30,14 @@ Respecter `contracts/reponse.json`. Même socle que les autres profils, lecture 
 ## Référence
 
 Lire `references/value-ledger.md` pour le contrat détaillé.
+
+## Exemple
+
+**Entrée** : « Cette initiative a-t-elle produit le bénéfice attendu ? »
+
+**Sortie attendue** : baseline, cible, observé, écart, attribution et dette de mesure.
+Si l'outcome n'existe pas, le dire ; ne pas inventer de learning.
+
+## Quand ne pas utiliser
+
+Pour une panne ou un SLA : utiliser `meridian-incident-ops`.
