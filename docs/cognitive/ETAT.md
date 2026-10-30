@@ -3,6 +3,10 @@
 **Date :** 2026-10-30  
 **Branche :** `jumeau-p4-confort`
 
+**Documents directeurs :** [PRD-001](../prd/PRD-001-enterprise-intelligence-mesh.md), [ADR-0001](../adr/0001-identite-typed-twin-discovery.md), [ADR-0002](../adr/0002-orchestrateur-general.md), [ADR-0003](../adr/0003-mesh-transversal-intelligence.md), [ADR-0004](../adr/0004-capability-first-harness.md), [ADR-0005](../adr/0005-enterprise-object-model.md)
+
+> **État vs cible.** Les trois outils de l'orchestrateur sont une amorce. La cible est le harness capacitaire d'ADR-0004 et le modèle d'entreprise d'ADR-0005 ; les écarts sont des chantiers, pas des exceptions.
+
 ## Lots livrés
 
 ### Lot 1 — identité et résolution (commit `1961729`)

@@ -154,11 +154,11 @@ def test_executer_rend_le_texte_general_du_modele_sans_outil(monkeypatch):
 
 
 def test_le_prompt_porte_la_politique_mesh_source_conception_et_proposition():
-    prompt = orchestrateur.PROMPT_SYSTEME.lower()
-    for attendu in ("agent général", "mesh", "source", "pas le point de départ",
+    prompt = " ".join(orchestrateur.PROMPT_SYSTEME.lower().split())
+    for attendu in ("agent d'entreprise", "mesh", "ni une source", "le point de départ",
                     "resoudre_application", "mobiliser_jumeaux", "concevoir_architecture",
                     "aucun jumeau", "atlas", "proposition", "fait observé", "preuve",
-                    "clarification", "budget"):
+                    "clarification", "budget", "pas le noyau", "dépôt git"):
         assert attendu in prompt
     complet = orchestrateur.prompt_systeme(JUMEAUX, ["alpha"], budget_max=4)
     assert "`alpha`" in complet and "`beta`" not in complet

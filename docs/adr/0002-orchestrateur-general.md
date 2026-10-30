@@ -1,9 +1,11 @@
 # ADR-0002 — Orchestrateur général : intention par le modèle, pas par routeur hardcodé
 
-- **Statut :** Accepté
+- **Statut :** Accepté — **amendé par ADR-0003 et ADR-0004**
 - **Date :** 2026-10-30
 - **Portée :** routage Flore, conception greenfield, mobilisation des jumeaux
 - **Complète :** ADR-0001
+
+> **Amendement du 2026-10-30.** La formulation « le Mesh est une source » et l'idée que les trois outils constituent le noyau sont remplacées par [ADR-0003](0003-mesh-transversal-intelligence.md) (le Mesh est la couche d'intelligence transversale, ni source ni outil) et [ADR-0004](0004-capability-first-harness.md) (harness capacitaire, outils adaptateurs). Le corps ci-dessous reste l'historique de la décision ; il ne doit pas être utilisé comme politique courante.
 
 ## Contexte
 
