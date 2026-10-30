@@ -84,7 +84,9 @@ Preuve live sur « régénère le flux du gsf-mockup » : `repo:gsf-mockup → t
 - RLS : `jumeau/rls.py` fournit les policies tenant, le contexte `set_config(..., true)` et une activation explicite ; le mode est opt-in (`JUMEAU_RLS=1`) et n'est pas activé sur la base locale.
 - Cognition exécutable : `executeur.py` (politique, approbation, allowlist, timeout, audit), `twins_types.py` (PROCESS/CAPABILITY/JOURNEY/etc. + Claims), `outcomes.py` (Outcome mesuré → Learning réutilisable), `memoire_org.py` (mémoire ANNOTATION), `attention.py` (score/dédup à l'échelle), `temporalite.py` (validité, fraîcheur, topologie datée), `evaluation_outils.py` (jeu d'or).
 - API cognitive : `/api/boucle/twins`, `/twins/{id}/claims`, `/outcomes`, `/learnings`, `/memoire`, `/attention`, `/topologie`, `/evaluation` ; aucune exécution d'outil externe sans politique.
-- Tests : **1365 tests jumeau** (2 skip), **8 auth**, **12 routes Boucle**, **166 frontend**, build non-CI OK (le build CI reste bloqué par des avertissements ESLint préexistants). Live : 42 Twins, 45 relations, 23 objets, 8 outils et 8 cas d'or cognitifs en `demo`.
+- Spécialistes cognitifs : noyau `specialistes.py` (contrat, autorité proposition, orchestration parallèle, timeout, déduplication) et trois spécialistes — `decouverte`, `preuve`, `impact`/`outcome`. Ils lisent un contexte borné et produisent des artefacts ; aucun n'écrit, ne promeut ni ne décide. **Domain packs volontairement différés.**
+- API : `POST /api/boucle/specialistes/analyser` exécute les spécialistes en parallèle, avec une connexion tenant-scopée par spécialiste pour éviter tout partage non thread-safe.
+- Tests : **1410 tests jumeau** (2 skip), **8 auth**, **12 routes Boucle**, **166 frontend**, build non-CI OK (le build CI reste bloqué par des avertissements ESLint préexistants). Live : 42 Twins, 45 relations, 23 objets, 8 outils, 8 cas d'or et un dossier à 4 spécialistes en `demo`.
 
 ## Constat du connecteur sur gsf-mockup
 
@@ -111,7 +113,7 @@ Le dépôt `gsf-mockup` ne contient pas de spec OpenAPI statique. Le connecteur 
 2. Activer RLS en production (rôle applicatif non-superuser, `meridian.tenant_id` posé par transaction) et vérifier les chemins legacy.
 3. Brancher les exports propriétaires gateway/CMDB sur le même graphe d'interface (les formats standards sont déjà couverts).
 4. Spécifier le store **Travail** (ADR-0008) puis retirer les lectures Mongo du fil Aujourd'hui/Atlas après parité.
-5. Brancher les adaptateurs externes sur `Executeur`, puis mesurer les choix d'outils multi-protocoles sur le jeu d'or.
+5. Brancher les adaptateurs externes sur `Executeur`, puis ajouter les domain packs (Paiements, Risque) et mesurer les spécialistes sur le jeu d'or.
 
 ## Commandes d'exploitation
 

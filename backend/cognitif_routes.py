@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import nullcontext
+from dataclasses import replace
 from typing import Any
 
 import psycopg
@@ -16,7 +17,9 @@ from pydantic import BaseModel, Field
 
 import boucle_routes
 from jumeau import attention, boucle, entreprise_depot, evaluation_outils, memoire_org, outcomes, rls
-from jumeau import temporalite, twins_types
+from jumeau import specialiste_decouverte, specialiste_impact, specialiste_preuve
+from jumeau import specialistes, temporalite, twins_types
+from jumeau import graph_store
 
 router = APIRouter(prefix="/boucle", tags=["cognitif"])
 
@@ -69,6 +72,16 @@ class CreationMemoire(BaseModel):
 
 class EvaluationSelections(BaseModel):
     selections: dict[str, list[str]] = Field(default_factory=dict)
+
+
+class AnalyseSpecialistes(BaseModel):
+    question: str = ""
+    situation_id: str | None = None
+    twin_ids: list[str] = Field(default_factory=list)
+    application_id: str | None = None
+    claim_ids: list[str] = Field(default_factory=list)
+    profondeur: int = 2
+    specialistes: list[str] = Field(default_factory=lambda: ["decouverte", "preuve", "impact", "outcome"])
 
 
 def _contexte(conn, tenant):
@@ -331,3 +344,77 @@ async def evaluation(payload: EvaluationSelections):
     resultat = evaluation_outils.evaluer(evaluation_outils.JEU_COGNITIF, selectionneur)
     return {"resultat": resultat, "seuils": evaluation_outils.seuils(
         evaluation_outils.JEU_COGNITIF, resultat, minimum=0.8)}
+
+
+_SPECIALISTES = {
+    "decouverte": specialiste_decouverte.SpecialisteDecouverte,
+    "preuve": specialiste_preuve.SpecialistePreuve,
+    "impact": specialiste_impact.SpecialisteImpact,
+    "outcome": specialiste_impact.SpecialisteOutcome,
+}
+
+
+def _fusionner_dossiers(dossiers, tenant):
+    propositions = {}
+    limites = []
+    for dossier in dossiers:
+        limites.extend(dossier.get("limites") or [])
+        for proposition in dossier.get("propositions") or []:
+            cle = (proposition["specialiste"], proposition["type"], proposition["titre"])
+            precedent = propositions.get(cle)
+            if precedent is None or proposition["confiance"] > precedent["confiance"]:
+                propositions[cle] = proposition
+    ordonnees = sorted(propositions.values(),
+                       key=lambda p: (-p["confiance"], p["type"], p["titre"], p["specialiste"]))
+    return {
+        "tenant": tenant,
+        "statut": "ok" if all(d.get("statut") == "ok" for d in dossiers) else "partiel",
+        "propositions": boucle_routes._assainir(ordonnees),
+        "specialistes": boucle_routes._assainir(dossiers),
+        "limites": list(dict.fromkeys(limites)),
+    }
+
+
+@router.post("/specialistes/analyser")
+async def analyser_specialistes(
+    payload: AnalyseSpecialistes,
+    request: Request,
+    x_persona: str = Header("architecte", max_length=64),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Fait travailler les spécialistes en parallèle sur un dossier borné ; aucune écriture canonique."""
+    boucle_routes._verifier_contexte(x_persona, x_espace)
+    tenant = boucle_routes._tenant(request, x_tenant)
+    noms = payload.specialistes or ["decouverte", "preuve", "impact", "outcome"]
+    inconnus = [nom for nom in noms if nom not in _SPECIALISTES]
+    if inconnus:
+        raise HTTPException(400, f"Spécialiste inconnu : {inconnus[0]}")
+    dsn = boucle_routes._dsn()
+    base = specialistes.ContexteSpecialiste(
+        tenant=tenant, question=payload.question, situation_id=payload.situation_id,
+        twin_ids=tuple(payload.twin_ids), application_id=payload.application_id,
+        claim_ids=tuple(payload.claim_ids), profondeur=payload.profondeur)
+
+    async def lancer(nom):
+        instance = _SPECIALISTES[nom]()
+        graph_context = None
+        try:
+            if nom in {"impact", "decouverte"}:
+                try:
+                    graph_context = graph_store.ouvrir()
+                except Exception:
+                    graph_context = None
+            magasin = graph_context["store"] if graph_context is not None else None
+            with psycopg.connect(dsn, connect_timeout=5) as conn:
+                with _contexte(conn, tenant):
+                    contexte = replace(base, conn=conn, store=magasin)
+                    orchestrateur = specialistes.OrchestrateurSpecialistes([instance], timeout_s=8.0)
+                    dossier = await orchestrateur.analyser(contexte)
+                    return dossier["specialistes"][0]
+        finally:
+            if graph_context is not None:
+                graph_context["fermer"]()
+
+    dossiers = await asyncio.gather(*(lancer(nom) for nom in noms))
+    return _fusionner_dossiers(dossiers, tenant)
