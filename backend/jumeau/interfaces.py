@@ -15,6 +15,7 @@ from typing import Any, Iterable, Optional
 from urllib.parse import unquote_plus, urlsplit, urlunsplit
 
 METHODES_HTTP = ("get", "put", "post", "delete", "options", "head", "patch", "trace")
+_RE_EXPOSE = re.compile(r"^\s*(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+(/[^\s]*)\s*$", re.IGNORECASE)
 CONFIANCE_HAUTE = 0.95
 CONFIANCE_MOYENNE = 0.6
 CONFIANCE_BASSE = 0.4
@@ -353,6 +354,48 @@ def _est_wsdl(url: str, cle: str) -> bool:
     parties = urlsplit(url)
     return ("wsdl" in cle.lower() or parties.path.lower().endswith(".wsdl")
             or "wsdl" in parties.query.lower())
+
+
+def depuis_claims(application_id: str, claims: Iterable[dict], environment: str = "inconnu") -> InterfaceGraph:
+    """Transforme les claims `EXPOSE` du code en opérations déclarées, pour les dépôts sans OpenAPI statique.
+
+    Le code est une source déclarée, pas une observation runtime : les assertions restent `declared` et gardent la
+    preuve du claim (`locator` / `claim id`). Une ligne `EXPOSE` mal formée est signalée, jamais inventée.
+    """
+    claims = [c for c in (claims or []) if isinstance(c, dict)]
+    utiles = []
+    for claim in claims:
+        if str(claim.get("predicat") or "").upper() != "EXPOSE":
+            continue
+        m = _RE_EXPOSE.match(str(claim.get("objet") or ""))
+        if not m:
+            continue
+        methode, chemin = m.group(1).upper(), m.group(2)
+        preuve = str(claim.get("preuve") or claim.get("id") or "claim:expose")
+        utiles.append({
+            "method": methode, "path": chemin, "preuve": preuve,
+            "confidence": min(float(claim.get("confiance") or 0.6), 0.8),
+            "claim_id": claim.get("id"),
+        })
+    empreinte = _empreinte(application_id, environment, [(u["method"], u["path"], u["preuve"]) for u in utiles])
+    contrat = Contract(
+        id=_id("ctr", "code", application_id, environment, empreinte), format="code", version=None,
+        digest=empreinte, locator="code", application_id=application_id, environment=environment)
+    graph = InterfaceGraph(contracts=[contrat])
+    for u in utiles:
+        operation = Operation(
+            id=_id("op", contrat.id, "rest", u["method"], u["path"], u["method"]), contract_id=contrat.id,
+            protocol="rest", method=u["method"], path=u["path"], name=f"{u['method']} {u['path']}",
+            version=None, environment=environment)
+        graph.operations.append(operation)
+        graph.assertions.append(Assertion(
+            subject=application_id, predicate="EXPOSE", object=f"{u['method']} {u['path']}", mode="declared",
+            source="code", locator=u["preuve"], environment=environment, confidence=u["confidence"],
+            evidence=str(u["claim_id"] or u["preuve"])))
+    if not utiles:
+        graph.partial = True
+        graph.diagnostics.append("aucune exposition `EXPOSE` exploitable dans les claims")
+    return _dedupliquer(graph)
 
 
 def parse_config(application_id: str, texte: str, locator: str,

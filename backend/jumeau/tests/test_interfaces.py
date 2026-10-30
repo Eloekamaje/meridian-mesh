@@ -177,3 +177,25 @@ def test_as_dict_est_serialisable_en_json():
     assert rendu["operations"][0]["contract_id"] == rendu["contracts"][0]["id"]
     assert rendu["bindings"] and rendu["assertions"]
     assert rendu["partial"] is False and rendu["diagnostics"] == []
+
+
+def test_les_claims_expose_deviennent_des_operations_declarees():
+    claims = [
+        {"id": "c1", "predicat": "EXPOSE", "objet": "GET /", "preuve": "server.py#L10", "confiance": 0.7},
+        {"id": "c2", "predicat": "EXPOSE", "objet": "POST /status", "preuve": "server.py#L20", "confiance": 0.5},
+        {"id": "c3", "predicat": "DEPEND_DE", "objet": "fastapi"},
+        {"id": "c4", "predicat": "EXPOSE", "objet": "pas une route"},
+    ]
+    graph = interfaces.depuis_claims("gsf-mockup", claims, "test")
+    assert len(graph.operations) == 2
+    assert {(o.method, o.path) for o in graph.operations} == {("GET", "/"), ("POST", "/status")}
+    assert all(a.mode == "declared" and a.source == "code" for a in graph.assertions)
+    assert [a.confidence for a in graph.assertions] == [0.7, 0.5]
+    assert [a.locator for a in graph.assertions] == ["server.py#L10", "server.py#L20"]
+    assert graph.partial is False
+
+
+def test_les_claims_expose_sans_route_ne_sont_pas_inventes():
+    graph = interfaces.depuis_claims("gsf-mockup", [{"predicat": "EXPOSE", "objet": "MongoDB"}])
+    assert graph.operations == [] and graph.assertions == [] and graph.partial is True
+    assert "aucune exposition" in graph.diagnostics[0]

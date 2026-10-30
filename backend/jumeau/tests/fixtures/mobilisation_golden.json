@@ -1,0 +1,428 @@
+{
+  "version": 1,
+  "description": "Jeu d'or de résolution d'identité pour la mobilisation. Registres réduits, fictifs et sans secret. Chaque cas fige une décision : une application canonique se résout par son nom ou son id, un dépôt mène au twin qui le porte sans jamais devenir une application, une absence reste non concluante et une ambiguïté ne choisit pas silencieusement.",
+  "registres": {
+    "principal": [
+      {
+        "id": "conduit",
+        "nom": "Conduit",
+        "mission": "Publie et organise les articles du portail",
+        "statut": "actif",
+        "sources_detail": [
+          {
+            "cle": "git-conduit",
+            "nom": "Dépôt conduit · main · aaaaaaaaaaaa"
+          }
+        ]
+      },
+      {
+        "id": "atlas-app",
+        "nom": "Atlas",
+        "mission": "Cartographie les applications et leurs dépendances",
+        "statut": "actif",
+        "sources_detail": [
+          {
+            "cle": "git-atlas-mesh",
+            "nom": "Dépôt atlas-mesh · main · bbbbbbbbbbbb"
+          }
+        ]
+      },
+      {
+        "id": "paiements",
+        "nom": "Paiements",
+        "mission": "Encaisse et rapproche les paiements clients",
+        "statut": "actif",
+        "sources_detail": [
+          {
+            "cle": "git-payments",
+            "nom": "Dépôt payments · main · cccccccccccc"
+          }
+        ]
+      },
+      {
+        "id": "facturation",
+        "nom": "Facturation",
+        "mission": "Émet et suit les factures clients",
+        "statut": "actif",
+        "sources_detail": [
+          {
+            "cle": "git-factu",
+            "nom": "Dépôt factu · main · dddddddddddd"
+          }
+        ]
+      },
+      {
+        "id": "nouveau-jumeau",
+        "nom": "Nouveau jumeau",
+        "mission": "dfggg",
+        "statut": "provisoire",
+        "sources_detail": [
+          {
+            "cle": "git-gsf-mockup",
+            "nom": "Dépôt gsf-mockup · main · 11cdf5b3a732"
+          }
+        ]
+      },
+      {
+        "id": "flux-metier",
+        "nom": "Flux",
+        "mission": "Circule les événements métier entre les applications",
+        "statut": "actif",
+        "sources_detail": [
+          {
+            "cle": "git-flux",
+            "nom": "Dépôt flux · main · eeeeeeeeeeee"
+          }
+        ]
+      }
+    ],
+    "provisoire_nomme": [
+      {
+        "id": "atelier-facturation",
+        "nom": "Atelier facturation",
+        "mission": "Prépare les factures et les relances clients",
+        "statut": "provisoire",
+        "sources_detail": [
+          {
+            "cle": "git-atelier-facturation",
+            "nom": "Dépôt atelier-facturation · main · ffffffffffff"
+          }
+        ]
+      }
+    ],
+    "sans_mission": [
+      {
+        "id": "dossier-client",
+        "nom": "Dossier client",
+        "mission": "",
+        "statut": "actif",
+        "sources_detail": [
+          {
+            "cle": "git-dossier-client",
+            "nom": "Dépôt dossier-client · main · 999999999999"
+          }
+        ]
+      }
+    ],
+    "partage_canonique": [
+      {
+        "id": "alpha",
+        "nom": "Alpha",
+        "mission": "Gère les dossiers clients",
+        "statut": "actif",
+        "sources_detail": [
+          {
+            "cle": "git-partage",
+            "nom": "Dépôt partage · main · 777777777777"
+          }
+        ]
+      },
+      {
+        "id": "beta",
+        "nom": "Beta",
+        "mission": "Suit les dossiers clients",
+        "statut": "actif",
+        "sources_detail": [
+          {
+            "cle": "git-partage",
+            "nom": "Dépôt partage · main · 777777777777"
+          }
+        ]
+      }
+    ],
+    "partage_provisoire": [
+      {
+        "id": "gamma",
+        "nom": "Gamma",
+        "mission": "Consolide les dossiers clients",
+        "statut": "actif",
+        "sources_detail": [
+          {
+            "cle": "git-commun",
+            "nom": "Dépôt commun · main · 888888888888"
+          }
+        ]
+      },
+      {
+        "id": "delta",
+        "nom": "Delta",
+        "mission": "dfggg",
+        "statut": "provisoire",
+        "sources_detail": [
+          {
+            "cle": "git-commun",
+            "nom": "Dépôt commun · main · 888888888888"
+          }
+        ]
+      }
+    ],
+    "prototype_source": [
+      {
+        "id": "prototype-caisse",
+        "nom": "Prototype caisse",
+        "mission": "dfggg",
+        "statut": "provisoire",
+        "sources_detail": [
+          {
+            "cle": "git-payments",
+            "nom": "Dépôt payments · main · 666666666666"
+          }
+        ]
+      }
+    ]
+  },
+  "cas": [
+    {
+      "nom": "nom exact : Conduit est canonique",
+      "question": "Où en est Conduit ?",
+      "jumeaux": "principal",
+      "attendu": {
+        "twin_id": "conduit",
+        "application_id": "conduit",
+        "statut": "canonique",
+        "matched_on": "nom",
+        "requires_confirmation": false,
+        "absent": false,
+        "ambigu": false
+      }
+    },
+    {
+      "nom": "id : atlas-app résout Atlas",
+      "question": "Résume atlas-app",
+      "jumeaux": "principal",
+      "attendu": {
+        "twin_id": "atlas-app",
+        "application_id": "atlas-app",
+        "statut": "canonique",
+        "matched_on": "id",
+        "requires_confirmation": false,
+        "absent": false,
+        "ambigu": false
+      }
+    },
+    {
+      "nom": "faute de frappe : Conduite résout Conduit",
+      "question": "Où en est Conduite ?",
+      "jumeaux": "principal",
+      "attendu": {
+        "twin_id": "conduit",
+        "application_id": "conduit",
+        "statut": "canonique",
+        "matched_on": "nom",
+        "requires_confirmation": false,
+        "absent": false,
+        "ambigu": false
+      }
+    },
+    {
+      "nom": "gsf-mockup : dépôt rattaché au twin provisoire, jamais une application",
+      "question": "Que fait gsf-mockup ?",
+      "jumeaux": "principal",
+      "attendu": {
+        "twin_id": "nouveau-jumeau",
+        "application_id": "nouveau-jumeau",
+        "statut": "provisoire",
+        "matched_on": "source",
+        "requires_confirmation": true,
+        "absent": false,
+        "ambigu": false
+      }
+    },
+    {
+      "nom": "nom provisoire : Nouveau jumeau reste provisoire",
+      "question": "Que fait Nouveau jumeau ?",
+      "jumeaux": "principal",
+      "attendu": {
+        "twin_id": "nouveau-jumeau",
+        "application_id": "nouveau-jumeau",
+        "statut": "provisoire",
+        "matched_on": "nom",
+        "requires_confirmation": true,
+        "absent": false,
+        "ambigu": false
+      }
+    },
+    {
+      "nom": "mission significative : Facturation est canonique",
+      "question": "Que fait Facturation ?",
+      "jumeaux": "principal",
+      "attendu": {
+        "twin_id": "facturation",
+        "application_id": "facturation",
+        "statut": "canonique",
+        "matched_on": "nom",
+        "requires_confirmation": false,
+        "absent": false,
+        "ambigu": false
+      }
+    },
+    {
+      "nom": "source ambiguë : deux twins canoniques sur git-partage",
+      "question": "Régénère git-partage",
+      "jumeaux": "partage_canonique",
+      "attendu": {
+        "twin_id": null,
+        "application_id": null,
+        "statut": "ambigu",
+        "matched_on": "source",
+        "requires_confirmation": true,
+        "absent": false,
+        "ambigu": true
+      }
+    },
+    {
+      "nom": "question inconnue : absence non concluante",
+      "question": "Quel est le taux de change de la livre sterling ?",
+      "jumeaux": "principal",
+      "attendu": {
+        "twin_id": null,
+        "application_id": null,
+        "statut": "absent",
+        "matched_on": "aucun",
+        "requires_confirmation": true,
+        "absent": true,
+        "ambigu": false
+      }
+    },
+    {
+      "nom": "source trompeuse : payments n'est pas une application",
+      "question": "Payments est-elle en production ?",
+      "jumeaux": "prototype_source",
+      "attendu": {
+        "twin_id": "prototype-caisse",
+        "application_id": "prototype-caisse",
+        "statut": "provisoire",
+        "matched_on": "source",
+        "requires_confirmation": true,
+        "absent": false,
+        "ambigu": false
+      }
+    },
+    {
+      "nom": "deux mentions : Conduit et Atlas sont ambigus",
+      "question": "Compare Conduit et Atlas",
+      "jumeaux": "principal",
+      "attendu": {
+        "twin_id": null,
+        "application_id": null,
+        "statut": "ambigu",
+        "matched_on": "nom",
+        "requires_confirmation": true,
+        "absent": false,
+        "ambigu": true
+      }
+    },
+    {
+      "nom": "application canonique : Paiements résout par son nom",
+      "question": "Paiements",
+      "jumeaux": "principal",
+      "attendu": {
+        "twin_id": "paiements",
+        "application_id": "paiements",
+        "statut": "canonique",
+        "matched_on": "nom",
+        "requires_confirmation": false,
+        "absent": false,
+        "ambigu": false
+      }
+    },
+    {
+      "nom": "twin provisoire nommé : Atelier facturation",
+      "question": "Où en est Atelier facturation ?",
+      "jumeaux": "provisoire_nomme",
+      "attendu": {
+        "twin_id": "atelier-facturation",
+        "application_id": "atelier-facturation",
+        "statut": "provisoire",
+        "matched_on": "nom",
+        "requires_confirmation": true,
+        "absent": false,
+        "ambigu": false
+      }
+    },
+    {
+      "nom": "source partagée : canonique et provisoire restent ambigus",
+      "question": "Régénère commun",
+      "jumeaux": "partage_provisoire",
+      "attendu": {
+        "twin_id": null,
+        "application_id": null,
+        "statut": "ambigu",
+        "matched_on": "source",
+        "requires_confirmation": true,
+        "absent": false,
+        "ambigu": true
+      }
+    },
+    {
+      "nom": "nom contenu dans un mot : reflux ne résout pas Flux",
+      "question": "Analyse le reflux des événements",
+      "jumeaux": "principal",
+      "attendu": {
+        "twin_id": null,
+        "application_id": null,
+        "statut": "absent",
+        "matched_on": "aucun",
+        "requires_confirmation": true,
+        "absent": true,
+        "ambigu": false
+      }
+    },
+    {
+      "nom": "clé de dépôt explicite : git-conduit prouve le twin canonique",
+      "question": "Régénère git-conduit",
+      "jumeaux": "principal",
+      "attendu": {
+        "twin_id": "conduit",
+        "application_id": "conduit",
+        "statut": "canonique",
+        "matched_on": "source",
+        "requires_confirmation": false,
+        "absent": false,
+        "ambigu": false
+      }
+    },
+    {
+      "nom": "homonyme dépôt/application : conduit résout l'application",
+      "question": "conduit",
+      "jumeaux": "principal",
+      "attendu": {
+        "twin_id": "conduit",
+        "application_id": "conduit",
+        "statut": "canonique",
+        "matched_on": "nom",
+        "requires_confirmation": false,
+        "absent": false,
+        "ambigu": false
+      }
+    },
+    {
+      "nom": "mission absente : Dossier client reste provisoire",
+      "question": "Où en est Dossier client ?",
+      "jumeaux": "sans_mission",
+      "attendu": {
+        "twin_id": "dossier-client",
+        "application_id": "dossier-client",
+        "statut": "provisoire",
+        "matched_on": "nom",
+        "requires_confirmation": true,
+        "absent": false,
+        "ambigu": false
+      }
+    },
+    {
+      "nom": "dépôt presque homonyme : gsf-mockup2 ne correspond pas",
+      "question": "Où est gsf-mockup2 ?",
+      "jumeaux": "principal",
+      "attendu": {
+        "twin_id": null,
+        "application_id": null,
+        "statut": "absent",
+        "matched_on": "aucun",
+        "requires_confirmation": true,
+        "absent": true,
+        "ambigu": false
+      }
+    }
+  ]
+}

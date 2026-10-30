@@ -341,3 +341,74 @@ CREATE TABLE IF NOT EXISTS evaluation (
     details           jsonb NOT NULL
 );
 CREATE INDEX IF NOT EXISTS evaluation_jumeau ON evaluation (jumeau_id, quand DESC);
+
+-- Graphe d'interfaces : contrats, opérations, points d'accès et assertions, par tenant. Les identifiants sont
+-- calculés sur le contenu et ne portent pas le tenant : la clé est donc (tenant_id, id) pour que deux tenants
+-- puissent décrire le même contrat sans se le voler ni le voir.
+CREATE TABLE IF NOT EXISTS interface_contract (
+    id             text NOT NULL,
+    tenant_id      text NOT NULL,
+    application_id text NOT NULL,
+    format         text NOT NULL,
+    version        text,
+    digest         text NOT NULL,
+    locator        text NOT NULL,
+    environment    text NOT NULL,
+    cree_le        timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, id)
+);
+
+CREATE TABLE IF NOT EXISTS interface_operation (
+    id          text NOT NULL,
+    tenant_id   text NOT NULL,
+    contract_id text NOT NULL,
+    protocol    text NOT NULL,
+    method      text NOT NULL,
+    path        text NOT NULL,
+    name        text NOT NULL,
+    version     text,
+    environment text NOT NULL,
+    cree_le     timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, id),
+    FOREIGN KEY (tenant_id, contract_id) REFERENCES interface_contract (tenant_id, id)
+);
+
+CREATE TABLE IF NOT EXISTS interface_binding (
+    id          text NOT NULL,
+    tenant_id   text NOT NULL,
+    protocol    text NOT NULL,
+    url         text NOT NULL,
+    environment text NOT NULL,
+    gateway     text,
+    cree_le     timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, id)
+);
+
+-- Une ligne = une preuve : la clé unique distingue le mode et la source, jamais une fusion sémantique.
+CREATE TABLE IF NOT EXISTS interface_assertion (
+    id          bigserial PRIMARY KEY,
+    tenant_id   text NOT NULL,
+    subject     text NOT NULL,
+    predicate   text NOT NULL,
+    object      text NOT NULL,
+    mode        text NOT NULL CHECK (mode IN ('declared', 'observed', 'inferred')),
+    source      text NOT NULL,
+    locator     text NOT NULL,
+    environment text NOT NULL,
+    confidence  numeric(3, 2) NOT NULL,
+    evidence    text NOT NULL,
+    observed_at text,
+    valid_from  text,
+    valid_to    text,
+    cree_le     timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (tenant_id, subject, predicate, object, mode, source, locator, environment, evidence)
+);
+
+CREATE INDEX IF NOT EXISTS interface_contract_tenant ON interface_contract (tenant_id);
+CREATE INDEX IF NOT EXISTS interface_contract_application ON interface_contract (tenant_id, application_id);
+CREATE INDEX IF NOT EXISTS interface_operation_tenant ON interface_operation (tenant_id);
+CREATE INDEX IF NOT EXISTS interface_operation_contract ON interface_operation (tenant_id, contract_id);
+CREATE INDEX IF NOT EXISTS interface_binding_tenant ON interface_binding (tenant_id);
+CREATE INDEX IF NOT EXISTS interface_assertion_tenant ON interface_assertion (tenant_id);
+CREATE INDEX IF NOT EXISTS interface_assertion_subject ON interface_assertion (tenant_id, subject);
+CREATE INDEX IF NOT EXISTS interface_assertion_predicate ON interface_assertion (tenant_id, predicate);
