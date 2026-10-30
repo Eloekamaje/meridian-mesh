@@ -13,6 +13,7 @@ import MarqueOrigine from "./MarqueOrigine";
 import BrouillonFlore from "./BrouillonFlore";
 import LigneActiviteFlore from "./LigneActiviteFlore";
 import { PreuvesMessage } from "./case/VeilleTravail";
+import { coutTemps } from "@/lib/coutTemps";
 
 // Les deux composants de la conversation unique : la même question, la même réponse de Flore — rendu, marques, preuves,
 // actions — dans le panneau et dans le fil d'un Travail. `prefixe` = /cases/{cid} ; sans lui (démonstration, travail
@@ -49,6 +50,7 @@ export function MessageFlore({
   const fermerPreuve = useCallback(() => setPreuveOuverte(null), []);
   const contextePreuves = useMemo(() => ({ preuves: message.preuves || [], texte: message.texte, ouvrir: setPreuveOuverte }),
     [message.preuves, message.texte]);
+  const ligneCout = coutTemps(message);
 
   const retour = async (valeur, motifLibre) => {
     try {
@@ -120,6 +122,12 @@ export function MessageFlore({
         <MarqueOrigine data={message} />
         <MarqueRelecture data={message} />
       </div>
+      {ligneCout && (
+        <p className="font-code text-[10px] text-[#526578]" data-testid="message-cout-temps"
+           title={ligneCout.titre || undefined}>
+          {ligneCout.texte}
+        </p>
+      )}
       {preuves ?? (message.preuves?.length > 0 && <PreuvesMessage preuves={message.preuves} texte={message.texte} onOuvrir={setPreuveOuverte} />)}
       <PropositionsFlore propositions={message.a_approuver} index={index} actif={agit} bloque={occupe} onDecider={decider} />
       {children}

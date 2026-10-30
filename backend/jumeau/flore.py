@@ -150,6 +150,10 @@ def vers_reponse_flore(jumeau, sources, texte, invalides=(), fraicheur=None):
         "comportement": "expliquer",
         "reponse": pastiller(texte, preuves, sources),
         "contributions": [{"jumeau": jumeau["nom"], "texte": "Connaissances et code de l'application consultés."}],
+        "jumeaux_participants": [{"id": jumeau.get("id") or jumeau.get("nom") or "jumeau",
+                                  "app_id": jumeau.get("id") or jumeau.get("nom") or "jumeau",
+                                  "nom": jumeau.get("nom") or jumeau.get("id") or "Jumeau",
+                                  "domaine": jumeau.get("domaine") or "SI", "participe": True}],
         "preuves": preuves,
     }
 
@@ -372,6 +376,10 @@ async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=No
         if dessin and dessin.preuves:  # chaque flèche du schéma renvoie à sa ligne, dans le volet des preuves
             reponse["preuves"] = (reponse["preuves"] + dessin.preuves)[:MAX_PREUVES + len(dessin.preuves)]
         reponse["durees"] = chrono.bilan()
+        usage = mesure.fusionner_usages(mesure.usage(a), (verdict or {}).get("usage"))
+        usage["cout"] = mesure.cout(usage)
+        usage["modele"] = modele.get_config().get("model_id", "inconnu") if modele else "inconnu"
+        reponse["usage"] = usage
         reponse["relecture_etat"] = etat = etat_relecture(verdict, corrige)
         reponse["relu"], reponse["corrige"] = etat == "relue", corrige
         reponse["pieces_selection"] = ctx.get("pieces_selection") or []
@@ -509,7 +517,14 @@ async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=
             "durees": chrono.bilan(), "relecture_etat": etat_relecture(verdict, corrige),
             "relu": etat_relecture(verdict, corrige) == "relue", "corrige": corrige,
             "pieces_selection": pieces_selection, "pieces_lectures": journal_pieces,
+            "jumeaux_participants": [{"id": jid, "app_id": jid, "nom": ctx["jumeau"]["nom"],
+                                      "domaine": ctx["jumeau"].get("domaine") or "SI", "participe": True}
+                                     for jid, ctx in ctxs.items()],
         }
+        usage = mesure.fusionner_usages(mesure.usage(a), *mob.usages, (verdict or {}).get("usage"))
+        usage["cout"] = mesure.cout(usage)
+        usage["modele"] = modele.get_config().get("model_id", "inconnu") if modele else "inconnu"
+        reponse["usage"] = usage
         if proposees := [p for ctx in ctxs.values() for p in ctx.get("proposees", [])]:
             reponse["a_approuver"] = proposees  # proposées par les sous-agents : chacune à trancher
         agent.journal.info("durées mobilisation %s : %s", list(ctxs), reponse["durees"])

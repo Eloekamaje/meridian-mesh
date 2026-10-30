@@ -20,6 +20,12 @@ def test_preuves_extraites_des_citations_sans_doublon():
     ]
 
 
+def test_la_reponse_porte_le_jumeau_consulte():
+    r = flore.vers_reponse_flore(JUMEAU, [SOURCE], TEXTE)
+    assert r["jumeaux_participants"] == [{"id": "meridian", "app_id": "meridian", "nom": "Méridian",
+                                           "domaine": "SI", "participe": True}]
+
+
 def test_preuves_bornees():
     texte = " ".join(f"git://meridian-mesh@{SHA}:f.py#L{n}-L{n}" for n in range(1, 30))
     assert len(flore.preuves_depuis(texte, [SOURCE])) == flore.MAX_PREUVES

@@ -9,7 +9,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 from strands import Agent, tool
 
-from jumeau import agent, flux, methodes
+from jumeau import agent, flux, mesure, methodes
 from jumeau.connaissance import RE_CITATION
 from jumeau.contradicteur import citations_invalides
 
@@ -47,7 +47,7 @@ async def preuves_verifiees(preuves, sources):
     return await asyncio.to_thread(garder)
 
 
-async def consulter(ctx, dsn, mission, modele, emit=None, parent=None):
+async def consulter(ctx, dsn, mission, modele, emit=None, parent=None, usages=None):
     """Réveille le jumeau de `ctx` pour une mission ; rend sa Contribution, citations vérifiées. Avec `emit`, ses
     outils s'affichent au fil de l'eau sous sa consultation (`parent`) — jamais son texte, qui n'est qu'une donnée."""
     budget = agent.Budget(outils=OUTILS_PAR_MISSION, propositions=0, ecritures=0)
@@ -64,6 +64,8 @@ async def consulter(ctx, dsn, mission, modele, emit=None, parent=None):
         sortie = getattr(resultat, "structured_output", None)
     if sortie is None:
         raise ValueError("contribution illisible")
+    if usages is not None:
+        usages.append(mesure.usage(sous_agent))  # le coût du sous-agent compte dans le tour
     return sortie.model_copy(update={"preuves": await preuves_verifiees(sortie.preuves, ctx["sources"])})
 
 
@@ -115,7 +117,7 @@ class Mobilisation:
 
     def __init__(self, contextes, dsn, modele, emit=None):
         self.contextes, self.dsn, self.modele, self.emit = contextes, dsn, modele, emit
-        self.missions, self.contributions = {}, {}
+        self.missions, self.contributions, self.usages = {}, {}, []
 
     def outil(self):
         @tool
@@ -145,7 +147,8 @@ class Mobilisation:
             return "Plafond de jumeaux mobilisés atteint pour cette requête : réponds avec ce que tu as."
         self.missions[jumeau] = self.missions.get(jumeau, 0) + 1
         try:
-            c = await consulter(ctx, self.dsn, mission, self.modele, self.emit, parent=jumeau)
+            c = await consulter(ctx, self.dsn, mission, self.modele, self.emit, parent=jumeau,
+                                usages=self.usages)
         except Exception:
             agent.journal.exception("mission jumeau %s", jumeau)
             await self._bilan(jumeau, {"etat": "echec"})

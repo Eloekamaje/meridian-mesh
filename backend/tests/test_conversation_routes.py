@@ -153,6 +153,7 @@ class Faux:
 
     def __init__(self):
         self.appels, self.reponse, self.bloque, self.muet = [], "Nouvelle réponse.", False, False
+        self.participants = []
 
     async def __call__(self, contexte, question, selection, domaine, persona, espace, travail=None, emit=None,
                        autoriser_ecriture=False):
@@ -168,6 +169,7 @@ class Faux:
         if self.bloque:
             await asyncio.sleep(30)
         return {"reponse": self.reponse, "comportement": "repondre", "preuves": [], "contributions": [],
+                "jumeaux_participants": self.participants,
                 "relecture_etat": "relue", "corrige": False, "origine": "modele", "durees": {}}
 
 
@@ -228,6 +230,24 @@ def test_le_panneau_peut_passer_contexte_selection_domaine(monde):
     client.post("/api/cases/t1/messages/flux", json={"texte": "Q", "contexte": "global", "selection": ["a"], "domaine": "Client"})
     assert faux.appels[0] | {} == {"contexte": "global", "question": "Q", "selection": ["a"], "domaine": "Client",
                                    "travail": "t1", "autoriser_ecriture": False}
+
+
+def test_le_jumeau_consulte_arrive_avec_ses_sources_dans_le_fil(monde):
+    client, db, faux = monde
+    db.jumeaux.docs = [{"id": "tbt", "nom": "TBT", "domaine": "Support", "mission": "Missions TBT",
+                        "sources_detail": [{"cle": "git-tbt", "nom": "Dépôt TBT", "statut": "prete"}]}]
+    faux.participants = [{"id": "tbt", "app_id": "tbt", "nom": "TBT", "domaine": "Support", "participe": True}]
+    client.post("/api/cases/t1/messages/flux", json={"texte": "Que fait TBT ?"})
+    case = client.get("/api/cases/t1").json()
+    dernier = [m for m in case["conversation"] if m["role"] == "flore"][-1]
+    participant = next(p for p in dernier["jumeaux_participants"] if p["app_id"] == "tbt")
+    assert participant["sources_detail"] == [{"cle": "git-tbt", "nom": "Dépôt TBT", "statut": "prete"}]
+
+
+def test_les_mentions_ajoutent_au_selection(monde):
+    client, _, faux = monde
+    client.post("/api/cases/t1/messages/flux", json={"texte": "@TBT que fais-tu ?", "mentions": ["tbt", "tbt", ""]})
+    assert faux.appels[-1]["selection"] == ["tbt"]
 
 
 def test_le_message_transmet_l_autorisation_d_ecriture(monde):

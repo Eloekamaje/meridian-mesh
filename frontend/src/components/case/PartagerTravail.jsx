@@ -85,6 +85,9 @@ export default function PartagerTravail({ cas, onChange }) {
           <button onClick={copier} data-testid="partage-copier" className="mt-1 flex w-full items-center gap-2 rounded-lg border-t border-white/[0.06] px-2.5 py-2 text-left text-xs text-[#94A3B8] transition-colors hover:text-white">
             <LinkIcon size={13} /> Copier le lien
           </button>
+          <p className="px-2.5 pb-1.5 pt-1 text-[11px] leading-relaxed text-[#7C93A8]" data-testid="partage-lien-droits">
+            Le lien n'ouvre rien à qui n'a pas déjà les droits : la portée et le périmètre s'appliquent à l'ouverture.
+          </p>
         </div>
       )}
     </div>

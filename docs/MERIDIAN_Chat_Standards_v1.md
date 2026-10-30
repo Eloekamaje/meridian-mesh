@@ -292,8 +292,11 @@ commandes `/`, partage par lien avec les droits, coût et temps affichés.
 > utilisateur, jamais dans le prompt système ; avec des pièces, Flore n'écrit dans le Travail que si l'utilisateur
 > l'autorise explicitement pour le tour, et l'extraction tourne dans un processus séparé borné. Limites honnêtes :
 > pas d'OCR (un scan reste sans texte),
-> variantes macro (`.docm`, `.xlsm`, `.pptm`) et images refusées. Restent : voix, mention `@jumeau`, commandes `/`,
-> partage par lien, coût et temps affichés.
+> variantes macro (`.docm`, `.xlsm`, `.pptm`) et images refusées. **Coût et temps affichés** : fait (durées,
+> premier mot, jetons, estimation tarifaire, relecture et sous-agents compris). **Mention `@jumeau`**, **commandes
+> `/`** (consignes explicites, relues avant envoi) et **partage par lien** (lien du Travail, portée et périmètre
+> appliqués à l'ouverture) : faits. Le volet **Sources & Jumeaux** reprend les jumeaux réellement consultés et
+> leurs sources, et s'ouvre une fois quand une réponse en apporte. Reste la voix, volontairement hors périmètre.
 
 **Avant d'écrire le code de P1 et de P2**, la maquette passe par le compagnon visuel (règle du projet).
 

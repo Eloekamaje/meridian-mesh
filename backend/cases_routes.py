@@ -102,6 +102,7 @@ class MessageCase(BaseModel):
     # Le panneau Flore y ajoute son contexte ; absents, Flore répond comme dans le Travail.
     contexte: Optional[str] = None
     selection: Optional[list] = None
+    mentions: Optional[list] = Field(default=None, max_length=8)  # jumeaux explicitement mentionnés (@Nom)
     domaine: Optional[str] = None
     # Avec des pièces jointes, l'humain autorise explicitement Flore à modifier le Travail pour ce tour.
     autoriser_ecriture: bool = False
@@ -324,7 +325,14 @@ def build_cases_router(deps):
         """La vue d'un Travail pour une personne : jamais le document brut, et jamais un jumeau hors de son
         périmètre (fil, jumeaux, participants). La démonstration Polaris garde ses jumeaux de démonstration."""
         vue = dict(case)
-        vue["conversation"] = visible_pour(case, aut)
+        conversation = visible_pour(case, aut)
+        vue["conversation"] = [
+            ({**message,
+              "jumeaux_participants": [p for p in message["jumeaux_participants"] or []
+                                       if (p.get("app_id") or p.get("id")) in aut]}
+             if message.get("jumeaux_participants") else message)
+            for message in conversation
+        ]
         if vue.get("id") != "demo-polaris-work-g":
             vue["jumeaux"] = [j for j in case.get("jumeaux") or [] if j in aut]
             if "jumeaux_participants" in case:
@@ -527,6 +535,8 @@ def build_cases_router(deps):
                     "domaine": docs_par_id.get(jid, {}).get("domaine", "Général"),
                     "statut": docs_par_id.get(jid, {}).get("statut", "actif"),
                     "role": docs_par_id.get(jid, {}).get("mission", "Composant SI participant"),
+                    "sources": docs_par_id.get(jid, {}).get("sources") or {},
+                    "sources_detail": docs_par_id.get(jid, {}).get("sources_detail") or [],
                     "participe": True,
                 }
                 for jid in case["jumeaux"]
@@ -694,7 +704,10 @@ def build_cases_router(deps):
     async def repondre_dans_travail(cid, case, question, params, x_persona, x_espace, emit=None):
         """La réponse brute de Flore dans un Travail (hors scripts de démonstration), avec ce qui l'accompagne."""
         await EcritureTravail(db, cid).retirer_precision()  # reste d'un tour échoué : jamais rattaché à ce tour-ci
-        selection = params.selection if params.selection is not None else case.get("jumeaux", [])
+        selection = list(params.selection if params.selection is not None else case.get("jumeaux", []))
+        for mention in (getattr(params, "mentions", None) or []):
+            if isinstance(mention, str) and mention and mention not in selection:
+                selection.append(mention)  # route explicitement vers le jumeau mentionné ; les droits filtrent ensuite
         suivi = jumeau_flux.Activite()  # ce que Flore a fait, gardé avec la réponse (relu au rechargement)
 
         async def suivre(e):
@@ -705,14 +718,35 @@ def build_cases_router(deps):
             appel["autoriser_ecriture"] = getattr(params, "autoriser_ecriture", False)
         rep = await generer_reponse_flore(params.contexte or "case", question, selection, params.domaine, x_persona,
                                           x_espace, **appel)
+        # Les jumeaux du Travail et ceux réellement consultés (mention, routage automatique) : tous avec leurs sources.
+        ids = []
+        for participant in [*(case.get("jumeaux") or []), *(rep.get("jumeaux_participants") or [])]:
+            cle = participant if isinstance(participant, str) else (participant.get("id") or participant.get("app_id"))
+            if cle and cle not in ids:
+                ids.append(cle)
         participants = []
-        if case.get("jumeaux"):
-            docs = await db.jumeaux.find({"id": {"$in": case["jumeaux"]}}, NO_ID).to_list(len(case["jumeaux"]))
+        if ids:
+            docs = await db.jumeaux.find({"id": {"$in": ids}}, NO_ID).to_list(len(ids))
             par_id = {j["id"]: j for j in docs}
-            participants = [{"app_id": jid.replace("demo-polaris-", ""), "nom": par_id.get(jid, {}).get("nom", jid),
-                             "domaine": par_id.get(jid, {}).get("domaine", "Général"), "participe": True} for jid in case["jumeaux"]]
+            noms = {p.get("id") or p.get("app_id"): p.get("nom") for p in rep.get("jumeaux_participants") or []}
+            for jid in ids:
+                doc = par_id.get(jid, {})
+                participants.append({"id": jid, "app_id": jid.replace("demo-polaris-", ""),
+                                     "nom": doc.get("nom") or noms.get(jid) or jid,
+                                     "domaine": doc.get("domaine") or "Général",
+                                     "statut": doc.get("statut", "actif"),
+                                     "role": doc.get("mission", "Composant SI participant"),
+                                     "sources": doc.get("sources") or {},
+                                     "sources_detail": doc.get("sources_detail") or [],
+                                     "participe": True})
+        vus, fusion = set(), []
+        for participant in [*participants, *(rep.get("jumeaux_participants") or [])]:
+            cle = participant.get("app_id") or participant.get("id")
+            if cle and cle not in vus:
+                vus.add(cle)
+                fusion.append(participant)
         sortie = {**rep, "reponse": rep.get("reponse", ""), "propositions": rep.get("propositions") or [],
-                  "jumeaux_participants": participants, "activite": suivi.ops or None}
+                  "jumeaux_participants": fusion, "activite": suivi.ops or None}
         # question à options posée par Flore (demander_precision) : mêmes réponses rapides que les décisions attendues
         precision = await EcritureTravail(db, cid).retirer_precision()
         if precision:

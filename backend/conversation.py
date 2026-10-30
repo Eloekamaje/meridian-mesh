@@ -20,7 +20,8 @@ def _version(reponse):
         "texte": texte, "preuves": reponse.get("preuves") or [], "contributions": reponse.get("contributions") or [],
         "comportement": reponse.get("comportement"), "relecture_etat": reponse.get("relecture_etat") or "relue",
         "corrige": bool(reponse.get("corrige")), "origine": reponse.get("origine"),
-        "durees": reponse.get("durees") or {}, "quand": reponse.get("quand") or _maintenant(),
+        "durees": reponse.get("durees") or {}, "usage": reponse.get("usage") or {},
+        "quand": reponse.get("quand") or _maintenant(),
         "interrompu": bool(reponse.get("interrompu")),
     }
     version.update({k: reponse[k] for k in COMPLEMENTS if reponse.get(k) is not None})

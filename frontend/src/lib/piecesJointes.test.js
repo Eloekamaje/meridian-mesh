@@ -137,3 +137,35 @@ test("les actions d'écriture ne sont proposées qu'aux contributeurs", () => {
   expect(source).toContain('data-testid="travail-menu-btn"');
   expect(source.indexOf("{actionsMenu && (")).toBeLessThan(source.indexOf('data-testid="travail-menu-btn"'));
 });
+
+
+test("le lien de partage ne promet pas plus que les droits", () => {
+  const source = lire("components/case/PartagerTravail.jsx");
+  expect(source).toContain("window.location.href");
+  expect(source).toContain('data-testid="partage-lien-droits"');
+  expect(source).toContain("n'ouvre rien à qui n'a pas déjà les droits");
+});
+
+
+test("le volet Sources & Jumeaux reprend aussi les jumeaux réellement consultés", () => {
+  const source = lire("components/case/OngletTravail.jsx");
+  expect(source).toContain("participantsMessages");
+  expect(source).toContain("jumeaux_participants");
+  expect(source).toContain("jumeauxVisibles");
+});
+
+
+test("le volet affiche les sources du jumeau consulté", () => {
+  const source = lire("components/case/OngletTravail.jsx");
+  expect(source).toContain("sources_detail");
+  expect(source).toContain("source-detail-");
+  expect(source).toContain("sources-jumeau-");
+});
+
+
+test("le volet s'ouvre une fois quand un jumeau consulté a des sources", () => {
+  const source = lire("pages/TravailDetail.jsx");
+  expect(source).toContain("participantsMessages");
+  expect(source).toContain("voletAutoOuvert");
+  expect(source).toContain("setVoletSourcesOuvert(true)");
+});

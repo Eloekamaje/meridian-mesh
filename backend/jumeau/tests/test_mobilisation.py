@@ -23,7 +23,7 @@ def contribution(**kw):
 def faux_consulter(monkeypatch):
     appels = []
 
-    async def consulter(c, dsn, mission, modele, emit=None, parent=None):
+    async def consulter(c, dsn, mission, modele, emit=None, parent=None, usages=None):
         appels.append((c["jumeau"]["id"], mission))
         return contribution()
     monkeypatch.setattr(mobilisation, "consulter", consulter)
@@ -58,7 +58,7 @@ def test_plafond_de_jumeaux_par_requete(faux_consulter):
 
 
 def test_panne_d_un_sous_agent_rendue_a_flore_sans_planter(monkeypatch):
-    async def panne(*a):
+    async def panne(*a, **k):
         raise RuntimeError("boom")
     monkeypatch.setattr(mobilisation, "consulter", panne)
     assert "pas pu répondre" in asyncio.run(mob("a").consulter("a", "q"))

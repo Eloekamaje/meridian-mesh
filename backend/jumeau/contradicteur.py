@@ -13,7 +13,7 @@ import re
 
 from strands import Agent
 
-from jumeau import connaissance
+from jumeau import connaissance, mesure
 from jumeau.connaissance import RE_CITATION
 from jumeau.lecteurs import RE_CITATION_SOURCE
 from jumeau.source_git import lire_au_sha
@@ -130,7 +130,9 @@ async def _juger(question, reponse, profil, modele, charte):
     role = (profil or {}).get("role", "non précisé")
     resultat = await relecteur.invoke_async(f"Rôle de l'interlocuteur : {role}\n\nQuestion :\n{question}\n\n"
                                             f"Réponse à relire :\n{reponse}")
-    return analyser_verdict(str(resultat))
+    verdict = analyser_verdict(str(resultat))
+    verdict["usage"] = mesure.usage(relecteur)
+    return verdict
 
 
 async def relire(question, reponse, sources, profil, modele, charte="", lecteurs=(), validees=None,

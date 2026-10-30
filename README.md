@@ -47,6 +47,9 @@ Barre persistante en bas de l'application, **synchronisée bidirectionnellement 
 - **Aurora → Atlas** : Aurora commande la carte (éclairer des relations, isoler un parcours, naviguer vers un domaine) et propose des voisins pertinents avec justification — jamais sans confirmation (*Ajouter au contexte / Examiner / Ignorer*).
 - **Focus visuel ≠ sélection analytique** : entrer dans un domaine conserve la sélection ; Aurora propose alors de la conserver, la retirer ou d'ajouter les jumeaux du domaine.
 - Réponses **calculées depuis le vrai Mesh** (toujours filtrées par les autorisations serveur) : recherche plein texte avec scoring de pertinence, scénarios prescriptés pour le parcours de démonstration, accusé de contexte sans analyse automatique.
+- **Mentions et commandes** : dans le Travail, `@Nom` ouvre la liste des jumeaux visibles et route explicitement la question vers celui qui est mentionné (les droits serveur filtrent toujours) ; `/resumer`, `/investiguer`, `/decision`, `/preuves`, `/pieces` et `/aide` remplissent une consigne explicite, que l'on relit avant l'envoi. Aucune commande n'exécute une action cachée.
+- **Sources & Jumeaux** : le volet reprend les jumeaux du Travail **et ceux réellement consultés** (mention ou routage automatique), avec leurs sources (dépôts, lecteurs) ; il s'ouvre une fois quand une réponse apporte une source, puis reste fermé si l'utilisateur le referme.
+- **Partage par lien** : le bouton « Partager » copie le lien du Travail et rappelle que la portée et le périmètre s'appliquent à l'ouverture ; le lien n'élargit jamais les droits.
 - La barre se replie en pastille flottante sans perdre le contexte (`⌘K` pour la rappeler).
 
 ## Sécurité — RBAC côté serveur
@@ -231,6 +234,16 @@ python -m evaluation_pieces --docs docs.json --questions questions.jsonl --k 4
   Postgres, ports en boucle locale) ; copier `.env.prod.example` vers `.env.prod` et renseigner les secrets.
 - `starlette>=1.6,<2` est requis par le middleware de limite de corps ; les embeddings/pgvector restent une
   décision d'infrastructure fondée sur `evaluation_pieces`.
+
+## Coût et temps affichés
+
+Chaque réponse de Flore conserve ses **durées** (total, premier mot, phases) et son **usage** (jetons d'entrée,
+de sortie, cache) — agent principal, relecture et sous-agents compris. Le message affiche une ligne discrète
+`12,4 s · premier mot 1,8 s · 3 245 jetons · ~0,0034 $`, avec le détail des phases au survol.
+
+Le coût est une **estimation** : `JUMEAU_COUT_ENTREE_MILLION` (0,27 par défaut pour DeepSeek),
+`JUMEAU_COUT_SORTIE_MILLION` (1,10) et `JUMEAU_COUT_DEVISE` (USD). Mettre les deux tarifs à `0` masque le coût.
+Pour Bedrock ou un autre fournisseur, renseigner ses propres tarifs.
 
 ## Données de démonstration
 

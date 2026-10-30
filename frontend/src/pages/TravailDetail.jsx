@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { DotsThree, SealCheck } from "@phosphor-icons/react";
 import { toast } from "sonner";
@@ -68,7 +68,10 @@ export default function TravailDetail() {
   const actionsMenu = peutDeposer && (cas?.a_revoir || cas?.peut_partager || (!enVeille && cas?.statut !== "clos"));
   useEffect(() => { if (enVeille) setVoletSourcesOuvert(false); }, [enVeille]);
 
-  const nbSources = (cas?.jumeaux_participants || []).length;
+  const participantsMessages = (cas?.conversation || []).reduce(
+    (n, m) => n + (m.role === "flore" && Array.isArray(m.jumeaux_participants) ? m.jumeaux_participants.length : 0), 0);
+  const nbSources = (cas?.jumeaux_participants || []).length + (cas?.pieces || []).length + participantsMessages;
+  const voletAutoOuvert = useRef(false);
   const casNe = !brouillon && !!cas?.id; // le travail existe : en-tête complet, volet
   useEffect(() => {
     // `canvasOuvert` (l'état réellement affiché), pas `pilote.canvasOuvert` : le Canvas ne s'ouvre plus
@@ -76,11 +79,16 @@ export default function TravailDetail() {
     // reflète — le volet ne doit pas revenir par-dessus pour autant. Jamais sur mobile non plus : le
     // volet y prend toute la largeur (inset-x-3) et recouvrirait entièrement le message qui vient
     // d'arriver — sur ce format, le visiteur l'ouvre lui-même s'il le souhaite.
-    if (pilote && nbSources > 0 && !canvasOuvert && ecran !== "mobile") setVoletSourcesOuvert(true);
+    // Une seule ouverture automatique : si l'utilisateur referme le volet, il ne se rouvre pas à chaque réponse.
+    if (!voletAutoOuvert.current && nbSources > 0 && !canvasOuvert && ecran !== "mobile") {
+      voletAutoOuvert.current = true;
+      setVoletSourcesOuvert(true);
+    }
   }, [nbSources]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     setErreur(null);
+    voletAutoOuvert.current = false; // un autre travail peut avoir ses propres sources à révéler
     if (brouillon) return; // rien à charger : le travail n'est pas encore né
     // Quand le travail naît de la conversation, la page reste la même (state.continuite) : on ne la
     // vide pas, et on ne la recharge pas non plus — l'état local, que `envoyer()` vient de mettre à

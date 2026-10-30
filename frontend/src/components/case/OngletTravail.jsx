@@ -29,6 +29,7 @@ import { MessageFlore, QuestionFlore } from "@/components/MessageFlore";
 import { prefixeTravail, reponseInterrompue, remplacerMessage, tronquerApres, activiteDuMessage, attendreReponse } from "@/lib/conversationFlore";
 import { usePerimetre } from "@/lib/perimetre";
 import { useContexte } from "@/lib/contexte";
+import { useMesh } from "@/lib/mesh";
 import { couleurDomaine } from "@/lib/domaines";
 import { CREATION_TRAVAIL_ACTIVE, FLORE_REPONSE_EN_CONSTRUCTION, PROPOSITION_DEMO } from "@/lib/messagesFlore";
 import FloreActivite, { delaiMin, activiteTerminee } from "@/components/FloreActivite";
@@ -41,6 +42,7 @@ import IndicateurClic from "@/components/IndicateurClic";
 import { usePilotage } from "@/lib/pilotage";
 import { useEcran } from "@/lib/ecran";
 import { rel } from "./utils";
+import { appliquerCommande, appliquerMention, commandesFiltrees, normaliser, requeteCommande, requeteMention, resoudreCommande } from "@/lib/mentionsCommandes";
 import { BoutonJoindre, ListePieces } from "./PiecesJointes";
 import PanneauPiece from "./PanneauPiece";
 import CanvasDocument from "./CanvasDocument";
@@ -413,6 +415,7 @@ export default function OngletTravail({
   const ecran = useEcran();
   const { info } = usePerimetre();
   const { selection, commanderCarte } = useContexte();
+  const { mesh } = useMesh();
   // Travail pas encore né (« Nouveau travail ») : même conversation, sans identifiant
   const brouillon = cas?.id == null;
   // Les pièces jointes sont des sources du Travail (jamais des connaissances) : pas de dépôt en démo, ni avant
@@ -429,8 +432,16 @@ export default function OngletTravail({
   const [nouveauMsg, setNouveauMsg] = useState("");
   const [envoiMsg, setEnvoiMsg] = useState(false);
   const [autoriserEcriture, setAutoriserEcriture] = useState(false);
+  // Mentions @jumeau et commandes / : elles remplissent le message, jamais une action cachée.
+  const [mentions, setMentions] = useState([]);
+  const [mentionRequete, setMentionRequete] = useState(null);
+  const [commandeRequete, setCommandeRequete] = useState(null);
+  const jumeauxMention = mentionRequete === null ? [] : (mesh?.jumeaux || [])
+    .filter((j) => normaliser(`${j.nom || ""} ${j.id || ""} ${j.domaine || ""}`).includes(normaliser(mentionRequete)))
+    .slice(0, 6);
+  const commandesDisponibles = commandeRequete === null ? [] : commandesFiltrees(commandeRequete);
   // Une autorisation vaut pour le tour en cours : changer de travail la remet à zéro (défaut : décochée).
-  useEffect(() => { setAutoriserEcriture(false); }, [cas?.id]);
+  useEffect(() => { setAutoriserEcriture(false); setMentions([]); setMentionRequete(null); setCommandeRequete(null); }, [cas?.id]);
   const [fluxMsg, setFluxMsg] = useState(null); // réponse en cours : vraies étapes, brouillon (en relecture)
   // Rubriques du volet (Résultats, Sources & Jumeaux) : chacune se plie et se déplie.
   // Dès qu'un document existe, le volet apparaît avec ses deux rubriques pliées par défaut —
@@ -536,9 +547,21 @@ export default function OngletTravail({
   // Le « nouveau » est ce que les AUTRES ont écrit : vos propres messages ne comptent jamais
   const idxCoupure = coupure ? messages.findIndex((m) => m.quand && m.quand > coupure && m.role !== "utilisateur") : -1;
 
-  // Résolution des jumeaux participants
-  const jumeauxParticipants = (cas.jumeaux_participants && cas.jumeaux_participants.length > 0)
-    ? cas.jumeaux_participants
+  // Jumeaux du Travail + ceux réellement consultés dans les réponses (mention, routage automatique).
+  // Les participants de message sont filtrés par le serveur (vue_case) et par les jumeaux visibles du Mesh.
+  const participantsMessages = messages.flatMap((m) => m.role === "flore" ? (m.jumeaux_participants || []) : []);
+  const jumeauxVisibles = new Set((mesh?.jumeaux || []).map((j) => j.id));
+  const parCle = new Map();
+  for (const participant of [...(cas.jumeaux_participants || []), ...participantsMessages]) {
+    const cle = participant.app_id || participant.id;
+    if (!cle || parCle.has(cle)) continue;
+    const reel = participant.id || participant.app_id;
+    const demo = DICT_JUMEAUX_PARTICIPANTS[cle] || String(cle).startsWith("app-") || String(reel).startsWith("demo-polaris-");
+    if (jumeauxVisibles.size && !jumeauxVisibles.has(reel) && !demo) continue;
+    parCle.set(cle, participant);
+  }
+  const jumeauxParticipants = parCle.size
+    ? [...parCle.values()]
     : (cas.jumeaux || []).map((id) => {
         const ref = DICT_JUMEAUX_PARTICIPANTS[id];
         if (ref) return { id, ...ref };
@@ -613,16 +636,29 @@ export default function OngletTravail({
 
   const envoyer = async (e, texteDirect) => {
     e?.preventDefault?.();
-    const q = (texteDirect ?? nouveauMsg).trim();
+    const brut = (texteDirect ?? nouveauMsg).trim();
+    const commande = resoudreCommande(brut);
+    if (commande?.local) {
+      toast.info(commande.local);
+      setNouveauMsg("");
+      setCommandeRequete(null);
+      return;
+    }
+    const q = (commande?.prompt || brut).trim();
     if (!q || envoiMsg || pilote) return;
+    const mentionsActives = mentions.filter((m) => m.nom && q.includes(`@${m.nom}`)).map((m) => m.id);
     setEnvoiMsg(true);
     setNouveauMsg("");
+    setMentions([]);
+    setMentionRequete(null);
+    setCommandeRequete(null);
     const maintenant = new Date().toISOString();
     // Le message de l'utilisateur apparaît tout de suite ; la réponse de Flore le rejoint quand elle arrive
     const avant = cas.conversation || [];
     const monMessage = { role: "utilisateur", texte: q, quand: maintenant };
     setCas((c) => ({ ...c, conversation: [...avant, monMessage] }));
-    const corps = { texte: q, autoriser_ecriture: (cas.pieces || []).length > 0 && autoriserEcriture };
+    const corps = { texte: q, mentions: mentionsActives,
+                    autoriser_ecriture: (cas.pieces || []).length > 0 && autoriserEcriture };
     // « Nouveau travail » hors démonstration : la création réelle n'existe pas encore — Flore l'annonce, aucun appel réseau
     if (brouillon && !CREATION_TRAVAIL_ACTIVE) {
       await delaiMin(Promise.resolve());
@@ -869,9 +905,16 @@ export default function OngletTravail({
                   }`}
                   data-testid={`source-jumeau-${j.app_id}`}
                 >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: j.domaineCouleur || "#60A5FA" }} />
-                    <span className="truncate">{j.nom}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: j.domaineCouleur || "#60A5FA" }} />
+                      <span className="truncate">{j.nom}</span>
+                    </div>
+                    {(j.sources_detail || []).length > 0 && (
+                      <div className="truncate pl-4 font-code text-[9px] text-[#7C93A8]" data-testid={`source-detail-${j.app_id}`}>
+                        {j.sources_detail.map((source) => source.nom || source.cle).filter(Boolean).join(" · ")}
+                      </div>
+                    )}
                   </div>
                   <span className="font-code text-[10px] text-[#7C93A8] shrink-0">
                     {j.app_id}
@@ -927,6 +970,15 @@ export default function OngletTravail({
                 <p className="mt-1 text-[11px] leading-relaxed text-slate-300">
                   {jumeauInspecte.participation}
                 </p>
+                {(jumeauInspecte.sources_detail || []).length > 0 && (
+                  <div className="mt-2 space-y-1 border-t border-white/[0.06] pt-2" data-testid={`sources-jumeau-${jumeauInspecte.app_id}`}>
+                    {jumeauInspecte.sources_detail.map((source) => (
+                      <p key={source.cle || source.nom} className="font-code text-[10px] text-[#94A3B8]">
+                        {source.nom || source.cle} · {source.statut || "source"}
+                      </p>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -1189,6 +1241,41 @@ export default function OngletTravail({
                 <span>Autoriser Flore à modifier le travail</span>
               </label>
             )}
+            {mentionRequete !== null && (
+              <div className="mb-2 overflow-hidden rounded-xl border border-white/[0.10] bg-[#0A131C] shadow-xl" data-testid="case-mention-menu">
+                {jumeauxMention.length ? jumeauxMention.map((j) => (
+                  <button type="button" key={j.id} data-testid={`case-mention-${j.id}`}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      setNouveauMsg(appliquerMention(nouveauMsg, j.nom));
+                      setMentions((prev) => prev.some((m) => m.id === j.id) ? prev : [...prev, { id: j.id, nom: j.nom }]);
+                      setMentionRequete(null);
+                      taRef.current?.focus();
+                    }}
+                    className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-xs text-[#CBD5E1] hover:bg-white/[0.06] hover:text-white">
+                    <span className="truncate">@{j.nom}</span>
+                    <span className="shrink-0 font-code text-[10px] text-[#7C93A8]">{j.domaine || j.id}</span>
+                  </button>
+                )) : <p className="px-3 py-2 text-xs text-[#7C93A8]">Aucun jumeau ne correspond.</p>}
+              </div>
+            )}
+            {commandeRequete !== null && mentionRequete === null && (
+              <div className="mb-2 max-h-64 overflow-y-auto rounded-xl border border-white/[0.10] bg-[#0A131C] shadow-xl" data-testid="case-commande-menu">
+                {commandesDisponibles.length ? commandesDisponibles.map((c) => (
+                  <button type="button" key={c.nom} data-testid={`case-commande-${c.nom}`}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      setNouveauMsg(appliquerCommande(nouveauMsg, c));
+                      setCommandeRequete(null);
+                      taRef.current?.focus();
+                    }}
+                    className="flex w-full flex-col gap-0.5 px-3 py-2 text-left hover:bg-white/[0.06]">
+                    <span className="text-xs font-medium text-[#F2F6F8]">/{c.nom} <span className="font-normal text-[#94A3B8]">· {c.titre}</span></span>
+                    <span className="text-[11px] text-[#7C93A8]">{c.aide}</span>
+                  </button>
+                )) : <p className="px-3 py-2 text-xs text-[#7C93A8]">Aucune commande ne correspond.</p>}
+              </div>
+            )}
             <div className="flex items-center gap-2 rounded-2xl border border-white/[0.12] bg-[#0A131C]/90 px-3.5 py-2.5 shadow-2xl backdrop-blur-xl transition-colors focus-within:border-blue-400/60">
 
               {piecesAutorisees && <BoutonJoindre cas={cas} onChange={majPieces} disabled={envoiMsg} testid="case-piece-joindre" />}
@@ -1198,8 +1285,14 @@ export default function OngletTravail({
                 ref={taRef}
                 value={texteSaisie}
                 readOnly={!!pilote}
-                onChange={(e) => setNouveauMsg(e.target.value)}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setNouveauMsg(v);
+                  setMentionRequete(requeteMention(v));
+                  setCommandeRequete(requeteCommande(v));
+                }}
                 onKeyDown={(e) => {
+                  if (e.key === "Escape") { setMentionRequete(null); setCommandeRequete(null); return; }
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
                     soumettre(e);
