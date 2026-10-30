@@ -24,7 +24,7 @@ CHAMPS_NON_IMPORTES = {
     # Ce qu'un message importé ne peut pas transporter : preuves, effets serveur, états de relecture, versions,
     # propositions à approuver, décisions déjà prises, sorties d'interface.
     "preuves", "a_approuver", "activite", "retour", "versions", "version", "version_active",
-    "documentCanvas", "documentTexte", "kpis", "tableauComparatif", "contributions", "termes",
+    "documentCanvas", "documentTexte", "livrable_id", "kpis", "tableauComparatif", "contributions", "termes",
     "relecture_etat", "relu", "corrige", "decisions", "precision", "origine", "durees",
     "hors_perimetre", "jumeaux_participants", "reponses", "propose_passation", "interrompu",
     "branche", "branches", "suite", "importe",
@@ -46,6 +46,13 @@ def normaliser_conversation_importee(messages) -> list:
             propre["importe"] = True
         propres.append(propre)
     return propres
+
+
+def _nouveaux_livrables(avant, apres) -> list:
+    """Les livrables déposés pendant ce tour : les mêmes titres sont des versions, pas des documents neufs."""
+    connus = {livrable.get("id") for livrable in (avant or []) if isinstance(livrable, dict)}
+    return [livrable for livrable in (apres or [])
+            if isinstance(livrable, dict) and livrable.get("id") not in connus]
 
 
 def _accepte_autorisation_ecriture(fonction) -> bool:
@@ -747,6 +754,14 @@ def build_cases_router(deps):
                 fusion.append(participant)
         sortie = {**rep, "reponse": rep.get("reponse", ""), "propositions": rep.get("propositions") or [],
                   "jumeaux_participants": fusion, "activite": suivi.ops or None}
+        # Un livrable déposé pendant le tour devient ouvrable dans le Canvas, comme un document généré.
+        apres = await db.cases.find_one({"id": cid}, {"_id": 0, "livrables": 1})
+        nouveaux = _nouveaux_livrables(case.get("livrables"), (apres or {}).get("livrables"))
+        if nouveaux:
+            dernier = nouveaux[-1]
+            sortie["documentCanvas"] = dernier.get("titre")
+            sortie["documentTexte"] = dernier.get("contenu")
+            sortie["livrable_id"] = dernier.get("id")
         # question à options posée par Flore (demander_precision) : mêmes réponses rapides que les décisions attendues
         precision = await EcritureTravail(db, cid).retirer_precision()
         if precision:

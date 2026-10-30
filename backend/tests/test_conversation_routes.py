@@ -244,6 +244,13 @@ def test_le_jumeau_consulte_arrive_avec_ses_sources_dans_le_fil(monde):
     assert participant["sources_detail"] == [{"cle": "git-tbt", "nom": "Dépôt TBT", "statut": "prete"}]
 
 
+def test_seuls_les_livrables_du_tour_sont_nouveaux():
+    ancien = [{"id": "liv-1", "titre": "Ancien"}]
+    apres = [*ancien, {"id": "liv-2", "titre": "Nouveau"}]
+    assert cases_routes._nouveaux_livrables(ancien, apres) == [{"id": "liv-2", "titre": "Nouveau"}]
+    assert cases_routes._nouveaux_livrables(ancien, ancien) == []
+
+
 def test_les_mentions_ajoutent_au_selection(monde):
     client, _, faux = monde
     client.post("/api/cases/t1/messages/flux", json={"texte": "@TBT que fais-tu ?", "mentions": ["tbt", "tbt", ""]})

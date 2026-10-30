@@ -48,7 +48,7 @@ Barre persistante en bas de l'application, **synchronisée bidirectionnellement 
 - **Focus visuel ≠ sélection analytique** : entrer dans un domaine conserve la sélection ; Aurora propose alors de la conserver, la retirer ou d'ajouter les jumeaux du domaine.
 - Réponses **calculées depuis le vrai Mesh** (toujours filtrées par les autorisations serveur) : recherche plein texte avec scoring de pertinence, scénarios prescriptés pour le parcours de démonstration, accusé de contexte sans analyse automatique.
 - **Mentions et commandes** : dans le Travail, `@Nom` ouvre la liste des jumeaux visibles et route explicitement la question vers celui qui est mentionné (les droits serveur filtrent toujours) ; `/resumer`, `/investiguer`, `/decision`, `/preuves`, `/pieces` et `/aide` remplissent une consigne explicite, que l'on relit avant l'envoi. Aucune commande n'exécute une action cachée.
-- **Sources & Jumeaux** : le volet reprend les jumeaux du Travail **et ceux réellement consultés** (mention ou routage automatique), avec leurs sources (dépôts, lecteurs) ; il s'ouvre une fois quand une réponse apporte une source, puis reste fermé si l'utilisateur le referme.
+- **Sources & Jumeaux** : le volet est groupé en **Jumeaux** (ceux du Travail et ceux réellement consultés, avec badge et sources), **Preuves du dossier** (démonstration) et **Pièces jointes**. Toutes les rubriques et sous-rubriques sont **pliées par défaut** ; un clic les ouvre. Il s'ouvre une fois quand une réponse apporte une source, puis reste fermé si l'utilisateur le referme. Les preuves d'une réponse restent sous le message (pastilles), pas dans ce volet.
 - **Partage par lien** : le bouton « Partager » copie le lien du Travail et rappelle que la portée et le périmètre s'appliquent à l'ouverture ; le lien n'élargit jamais les droits.
 - La barre se replie en pastille flottante sans perdre le contexte (`⌘K` pour la rappeler).
 
@@ -234,6 +234,13 @@ python -m evaluation_pieces --docs docs.json --questions questions.jsonl --k 4
   Postgres, ports en boucle locale) ; copier `.env.prod.example` vers `.env.prod` et renseigner les secrets.
 - `starlette>=1.6,<2` est requis par le middleware de limite de corps ; les embeddings/pgvector restent une
   décision d'infrastructure fondée sur `evaluation_pieces`.
+
+## Canvas des documents
+
+Les documents produits par Flore dans un Travail réel (`livrables`) apparaissent dans **Résultats** : un clic
+ouvre le Canvas avec le Markdown du livrable, copiable, téléchargeable et affichable en plein écran. Un livrable
+déposé pendant un tour ouvre le Canvas une fois ; une mise à jour du même livrable rafraîchit la liste sans
+réouvrir le Canvas. Le dossier Polaris garde son document de démonstration.
 
 ## Coût et temps affichés
 

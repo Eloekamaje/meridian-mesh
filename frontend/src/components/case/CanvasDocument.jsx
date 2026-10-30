@@ -3,11 +3,10 @@ import { X, FileText, Copy, ArrowsOut, ArrowsIn, Check, DownloadSimple } from "@
 import { toast } from "sonner";
 import MarkdownFlore from "@/components/MarkdownFlore";
 
-// Document de repli hors démonstration : aucun document réel n'existe encore tant que la création
-// de travail par conversation n'est pas active (voir messagesFlore.js::CREATION_TRAVAIL_ACTIVE).
-const CONTENU_REPLI = `# Document de démonstration
+// Repli visuel uniquement : un Travail réel ouvre ses livrables (case.livrables) depuis le volet Résultats.
+const CONTENU_REPLI = `# Aucun document ouvert
 
-Ce document illustre la mise en page du Canvas. Un vrai travail y publiera son propre contenu.`;
+Choisissez un livrable dans « Résultats » pour l'afficher ici.`;
 
 export default function CanvasDocument({
   titre = "document.md",

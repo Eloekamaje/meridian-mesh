@@ -169,3 +169,21 @@ test("le volet s'ouvre une fois quand un jumeau consulté a des sources", () => 
   expect(source).toContain("voletAutoOuvert");
   expect(source).toContain("setVoletSourcesOuvert(true)");
 });
+
+
+test("les livrables réels ouvrent le Canvas depuis Résultats", () => {
+  const source = lire("components/case/OngletTravail.jsx");
+  expect(source).toContain("const livrables = cas.livrables");
+  expect(source).toContain("documentOuvert");
+  expect(source).toContain("item-resultat-");
+  expect(lire("pages/TravailDetail.jsx")).toContain("cas?.livrables");
+});
+
+
+test("les rubriques et sous-rubriques sont pliées par défaut", () => {
+  const source = lire("components/case/OngletTravail.jsx");
+  expect(source).toContain("useState({ resultats: true, sources: true })");
+  expect(source).toContain("useState({ jumeaux: true, preuves: true, pieces: true })");
+  expect(source).toContain("basculerGroupe");
+  expect(source).toContain('data-testid="groupe-pieces-bascule"');
+});

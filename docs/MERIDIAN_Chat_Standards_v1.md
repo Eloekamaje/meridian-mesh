@@ -296,7 +296,9 @@ commandes `/`, partage par lien avec les droits, coût et temps affichés.
 > premier mot, jetons, estimation tarifaire, relecture et sous-agents compris). **Mention `@jumeau`**, **commandes
 > `/`** (consignes explicites, relues avant envoi) et **partage par lien** (lien du Travail, portée et périmètre
 > appliqués à l'ouverture) : faits. Le volet **Sources & Jumeaux** reprend les jumeaux réellement consultés et
-> leurs sources, et s'ouvre une fois quand une réponse en apporte. Reste la voix, volontairement hors périmètre.
+> leurs sources, et s'ouvre une fois quand une réponse en apporte. Le **Canvas des documents réels** ouvre les
+> livrables du Travail (copie, téléchargement, plein écran) ; le document de démonstration reste un cas à part.
+> Reste la voix, volontairement hors périmètre.
 
 **Avant d'écrire le code de P1 et de P2**, la maquette passe par le compagnon visuel (règle du projet).
 

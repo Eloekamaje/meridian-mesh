@@ -70,7 +70,8 @@ export default function TravailDetail() {
 
   const participantsMessages = (cas?.conversation || []).reduce(
     (n, m) => n + (m.role === "flore" && Array.isArray(m.jumeaux_participants) ? m.jumeaux_participants.length : 0), 0);
-  const nbSources = (cas?.jumeaux_participants || []).length + (cas?.pieces || []).length + participantsMessages;
+  const nbSources = (cas?.jumeaux_participants || []).length + (cas?.pieces || []).length
+    + participantsMessages + (cas?.livrables || []).length;
   const voletAutoOuvert = useRef(false);
   const casNe = !brouillon && !!cas?.id; // le travail existe : en-tête complet, volet
   useEffect(() => {

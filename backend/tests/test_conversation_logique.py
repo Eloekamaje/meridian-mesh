@@ -24,6 +24,14 @@ def test_message_flore_a_la_forme_du_contrat():
     assert m["quand"] and m["versions"][0]["quand"]
 
 
+def test_message_flore_garde_le_document_du_livrable():
+    m = c.message_flore(rep("R", documentCanvas="Note d'impact", documentTexte="# Note",
+                            livrable_id="liv-1"))
+    assert m["documentCanvas"] == "Note d'impact"
+    assert m["documentTexte"] == "# Note"
+    assert m["versions"][0]["livrable_id"] == "liv-1"
+
+
 def test_message_flore_garde_l_usage_et_le_cout():
     m = c.message_flore(rep("R", usage={"total": 1200, "cout": {"montant": 0.0005, "devise": "USD"}}))
     assert m["usage"]["total"] == 1200

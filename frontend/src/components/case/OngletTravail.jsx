@@ -429,6 +429,8 @@ export default function OngletTravail({
   const messageDocument = [...(cas.conversation || [])].reverse().find((m) => m.documentCanvas);
   const documentGenereNom = messageDocument?.documentCanvas || "document.md";
   const documentGenereTexte = messageDocument?.documentTexte || null;
+  const livrables = cas.livrables || [];
+  const [documentOuvert, setDocumentOuvert] = useState(null);
   const [nouveauMsg, setNouveauMsg] = useState("");
   const [envoiMsg, setEnvoiMsg] = useState(false);
   const [autoriserEcriture, setAutoriserEcriture] = useState(false);
@@ -441,13 +443,26 @@ export default function OngletTravail({
     .slice(0, 6);
   const commandesDisponibles = commandeRequete === null ? [] : commandesFiltrees(commandeRequete);
   // Une autorisation vaut pour le tour en cours : changer de travail la remet à zéro (défaut : décochée).
-  useEffect(() => { setAutoriserEcriture(false); setMentions([]); setMentionRequete(null); setCommandeRequete(null); }, [cas?.id]);
+  useEffect(() => {
+    setAutoriserEcriture(false); setMentions([]); setMentionRequete(null); setCommandeRequete(null);
+    setPlieesGroupes({ jumeaux: true, preuves: true, pieces: true });
+  }, [cas?.id]);
   const [fluxMsg, setFluxMsg] = useState(null); // réponse en cours : vraies étapes, brouillon (en relecture)
   // Rubriques du volet (Résultats, Sources & Jumeaux) : chacune se plie et se déplie.
   // Dès qu'un document existe, le volet apparaît avec ses deux rubriques pliées par défaut —
   // il annonce simplement qu'il y a quelque chose à consulter, sans s'imposer déjà ouvert.
-  const [pliees, setPliees] = useState(() => (contenuScenario ? { resultats: true, sources: true } : {}));
+  // Rubriques et sous-rubriques sont pliées par défaut : le volet annonce les sources, il ne les impose pas.
+  const [pliees, setPliees] = useState({ resultats: true, sources: true });
+  const [plieesGroupes, setPlieesGroupes] = useState({ jumeaux: true, preuves: true, pieces: true });
   const basculerRubrique = (cle) => setPliees((p) => ({ ...p, [cle]: !p[cle] }));
+  const basculerGroupe = (cle) => {
+    const replie = !plieesGroupes[cle];
+    setPlieesGroupes((p) => ({ ...p, [cle]: replie }));
+    if (replie) {
+      if (cle === "jumeaux") setJumeauInspecte(null);
+      if (cle === "preuves") setPreuveInspectee(null);
+    }
+  };
   const documentApparuRef = useRef(contenuScenario);
   useEffect(() => {
     if (contenuScenario && !documentApparuRef.current) {
@@ -479,6 +494,18 @@ export default function OngletTravail({
   const canvasActif = canvasOuvertProp !== undefined ? canvasOuvertProp : canvasLocal;
   const setCanvasActif = setCanvasOuvertProp || setCanvasLocal;
   const toggleCanvas = onBasculerCanvas || (() => setCanvasActif((v) => !v));
+  const ouvrirLivrable = (livrable) => { setDocumentOuvert(livrable); setCanvasActif(true); };
+  const livrablesVus = useRef(livrables.length);
+  useEffect(() => { setDocumentOuvert(null); livrablesVus.current = livrables.length; }, [cas?.id]);
+  useEffect(() => {
+    // Un livrable déposé pendant le tour ouvre le Canvas une fois ; les versions mises à jour ne le rouvrent pas.
+    if (livrables.length > livrablesVus.current) {
+      const dernier = livrables[livrables.length - 1];
+      setDocumentOuvert(dernier);
+      if (!canvasActif && ecran !== "mobile") setCanvasActif(true);
+    }
+    livrablesVus.current = livrables.length;
+  }, [livrables.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // L'Atlas réel, révélé en panneau à droite exactement comme le Canvas révèle un document (jamais
   // une bascule de page forcée) — voir CorpsMessageFlore::message.atlasScene et onVoirAtlas plus bas.
@@ -804,10 +831,9 @@ export default function OngletTravail({
             className="absolute inset-x-3 top-3 z-40 max-h-[75%] overflow-y-auto rounded-2xl border border-white/10 bg-[#0C1724]/95 p-4 sm:inset-x-auto sm:right-6 sm:w-80 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-200"
             data-testid="volet-flottant-sources-resultats"
           >
-            {/* Section RÉSULTATS : en démonstration, le dossier n'apparaît qu'une fois généré par Flore */}
-            {contenuScenario && (
+            {/* Section RÉSULTATS : le dossier de démonstration ou les livrables réels du Travail. */}
+            {(contenuScenario || livrables.length > 0) && (
               <>
-            {/* Section RÉSULTATS — en-tête cliquable : plie / déplie la rubrique */}
             <div className={`flex items-center justify-between text-xs font-semibold text-white ${pliees.resultats ? "" : "mb-2.5"}`}>
               <button
                 type="button"
@@ -819,9 +845,13 @@ export default function OngletTravail({
                 <CaretDown size={11} className={`shrink-0 text-[#7C93A8] transition-transform duration-200 ${pliees.resultats ? "-rotate-90" : ""}`} />
                 <FileText size={14} className="text-blue-400" />
                 <span>Résultats</span>
+                <span className="rounded-full bg-white/[0.08] px-1.5 py-0.2 font-code text-[10px] text-[#7C93A8]">{(contenuScenario ? 1 : 0) + livrables.length}</span>
               </button>
               <button
-                onClick={() => setCanvasActif(true)}
+                onClick={() => {
+                  if (livrables.length) ouvrirLivrable(livrables[livrables.length - 1]);
+                  else setCanvasActif(true);
+                }}
                 className="text-[#7C93A8] hover:text-white transition-colors"
                 title="Ouvrir le document dans le Canvas"
                 data-testid="btn-plus-resultats"
@@ -832,37 +862,52 @@ export default function OngletTravail({
 
             {!pliees.resultats && (
               <>
-            {/* Item Document CASE-101 */}
-            <div 
-              onClick={() => setCanvasActif(!canvasActif)}
-              className={`group cursor-pointer rounded-xl border p-2.5 transition-all ${
-                canvasActif
-                  ? "border-blue-400/60 bg-blue-500/20"
-                  : "border-white/[0.08] bg-white/[0.03] hover:border-blue-400/40 hover:bg-white/[0.06]"
-              }`}
-              data-testid="item-resultat-document"
-            >
-              <div className="flex items-start gap-2.5">
-                <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-500/20 text-blue-300">
-                  <FileText size={16} />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate font-code text-xs font-semibold text-blue-200">
-                    {documentGenereNom}
+            {contenuScenario && (
+              <button
+                type="button"
+                onClick={() => { setDocumentOuvert({ titre: documentGenereNom, contenu: documentGenereTexte }); setCanvasActif(!canvasActif); }}
+                className={`group mb-1.5 w-full rounded-xl border p-2.5 text-left transition-all ${
+                  canvasActif && !documentOuvert
+                    ? "border-blue-400/60 bg-blue-500/20"
+                    : "border-white/[0.08] bg-white/[0.03] hover:border-blue-400/40 hover:bg-white/[0.06]"
+                }`}
+                data-testid="item-resultat-document"
+              >
+                <div className="flex items-start gap-2.5">
+                  <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-500/20 text-blue-300"><FileText size={16} /></div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-code text-xs font-semibold text-blue-200">{documentGenereNom}</div>
+                    <div className="text-[11px] text-[#7C93A8]">Recommandation officielle</div>
                   </div>
-                  <div className="text-[11px] text-[#7C93A8]">
-                    Recommandation officielle
-                  </div>
+                  <span className="shrink-0 text-[11px] font-code text-blue-400">{canvasActif && !documentOuvert ? "Ouvert ↗" : "+ Ouvrir"}</span>
                 </div>
-                <span className="shrink-0 text-[11px] font-code text-blue-400">
-                  {canvasActif ? "Ouvert ↗" : "+ Ouvrir"}
-                </span>
-              </div>
-            </div>
+              </button>
+            )}
+            {livrables.slice().reverse().map((livrable) => (
+              <button
+                type="button"
+                key={livrable.id || livrable.titre}
+                onClick={() => ouvrirLivrable(livrable)}
+                className={`group mb-1.5 w-full rounded-xl border p-2.5 text-left transition-all ${
+                  documentOuvert?.id === livrable.id
+                    ? "border-blue-400/60 bg-blue-500/20"
+                    : "border-white/[0.08] bg-white/[0.03] hover:border-blue-400/40 hover:bg-white/[0.06]"
+                }`}
+                data-testid={`item-resultat-${livrable.id || "livrable"}`}
+              >
+                <div className="flex items-start gap-2.5">
+                  <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-500/20 text-blue-300"><FileText size={16} /></div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-code text-xs font-semibold text-blue-200">{livrable.titre || "Document"}</div>
+                    <div className="text-[11px] text-[#7C93A8]">{livrable.cree_le ? new Date(livrable.cree_le).toLocaleDateString("fr-FR") : "Livrable du travail"}</div>
+                  </div>
+                  <span className="shrink-0 text-[11px] font-code text-blue-400">{documentOuvert?.id === livrable.id ? "Ouvert ↗" : "+ Ouvrir"}</span>
+                </div>
+              </button>
+            ))}
               </>
             )}
 
-            {/* Séparateur fin */}
             <div className="my-3.5 border-t border-white/[0.08]" />
               </>
             )}
@@ -879,7 +924,10 @@ export default function OngletTravail({
                 <CaretDown size={11} className={`shrink-0 text-[#7C93A8] transition-transform duration-200 ${pliees.sources ? "-rotate-90" : ""}`} />
                 <Globe size={14} className="text-[#60A5FA]" />
                 <span>Sources & Jumeaux</span>
-                <span className="rounded-full bg-white/[0.08] px-1.5 py-0.2 font-code text-[10px] text-[#7C93A8]">{jumeauxParticipants.length + (contenuScenario ? 2 : 0) + (cas.pieces || []).length}</span>
+                <span className="rounded-full bg-white/[0.08] px-1.5 py-0.2 font-code text-[10px] text-[#7C93A8]"
+                      title={`${jumeauxParticipants.length} jumeau(x) · ${contenuScenario ? 2 : 0} preuve(s) du dossier · ${(cas.pieces || []).length} pièce(s)`}>
+                  {jumeauxParticipants.length + (contenuScenario ? 2 : 0) + (cas.pieces || []).length}
+                </span>
               </button>
               <button 
                 onClick={() => setVoletSourcesOuvert(false)}
@@ -893,8 +941,19 @@ export default function OngletTravail({
             {!pliees.sources && (
               <>
             <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
-              {/* 4 Jumeaux Participants */}
-              {jumeauxParticipants.map((j) => (
+              <button type="button" onClick={() => basculerGroupe("jumeaux")}
+                aria-expanded={!plieesGroupes.jumeaux} data-testid="groupe-jumeaux"
+                className="flex w-full items-center justify-between px-1 pb-0.5 font-code text-[9px] uppercase tracking-[0.16em] text-[#7C93A8] transition-colors hover:text-[#BFDBFE]">
+                <span className="flex items-center gap-1.5">
+                  <CaretDown size={10} className={`shrink-0 transition-transform duration-200 ${plieesGroupes.jumeaux ? "-rotate-90" : ""}`} />
+                  Jumeaux
+                </span>
+                <span>{jumeauxParticipants.length}</span>
+              </button>
+              {!plieesGroupes.jumeaux && jumeauxParticipants.length === 0 && (
+                <p className="px-1 pb-1 text-[11px] text-[#7C93A8]">Aucun jumeau consulté pour ce travail.</p>
+              )}
+              {!plieesGroupes.jumeaux && jumeauxParticipants.map((j) => (
                 <div 
                   key={j.app_id || j.id}
                   onClick={() => setJumeauInspecte(jumeauInspecte?.app_id === j.app_id ? null : j)}
@@ -925,6 +984,16 @@ export default function OngletTravail({
 
               {contenuScenario && (
               <>
+              <button type="button" onClick={() => basculerGroupe("preuves")}
+                aria-expanded={!plieesGroupes.preuves} data-testid="groupe-preuves-dossier"
+                className="mt-2 flex w-full items-center justify-between px-1 pb-0.5 font-code text-[9px] uppercase tracking-[0.16em] text-[#7C93A8] transition-colors hover:text-[#BFDBFE]">
+                <span className="flex items-center gap-1.5">
+                  <CaretDown size={10} className={`shrink-0 transition-transform duration-200 ${plieesGroupes.preuves ? "-rotate-90" : ""}`} />
+                  Preuves du dossier
+                </span>
+                <span>2</span>
+              </button>
+              {!plieesGroupes.preuves && (<>
               <div 
                 onClick={() => setPreuveInspectee(preuveInspectee === "ev-g-initiatives" ? null : "ev-g-initiatives")}
                 className={`flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs transition-colors cursor-pointer border ${
@@ -956,6 +1025,7 @@ export default function OngletTravail({
                 </div>
                 <span className="font-code text-[10px] text-[#7C93A8] shrink-0">ev-g-couverture</span>
               </div>
+              </>)}
               </>
               )}
             </div>
@@ -998,20 +1068,27 @@ export default function OngletTravail({
 
             {(piecesAutorisees || (cas.pieces || []).length > 0) && (
               <div className="mt-3 border-t border-white/[0.08] pt-3" data-testid="volet-pieces-jointes">
-                <div className="mb-2 flex items-center justify-between text-[11px] font-semibold text-white">
+                <button type="button" onClick={() => basculerGroupe("pieces")}
+                  aria-expanded={!plieesGroupes.pieces} data-testid="groupe-pieces-bascule"
+                  className="mb-2 flex w-full items-center justify-between text-[11px] font-semibold text-white transition-colors hover:text-[#BFDBFE]">
                   <span className="flex items-center gap-1.5">
+                    <CaretDown size={10} className={`shrink-0 text-[#7C93A8] transition-transform duration-200 ${plieesGroupes.pieces ? "-rotate-90" : ""}`} />
                     <Paperclip size={13} className="text-[#60A5FA]" />
                     Pièces jointes
                   </span>
                   <span className="font-code text-[10px] text-[#7C93A8]">{(cas.pieces || []).length}</span>
-                </div>
-                <ListePieces cas={cas} onChange={majPieces} lectureSeule={!piecesAutorisees} />
-                {piecesAutorisees && !(cas.pieces || []).length && (
-                  <p className="text-[11px] leading-relaxed text-[#7C93A8]">
-                    Ajoutez un PDF, un document Word, un tableau Excel ou un fichier texte avec le trombone du
-                    compositeur. Ils seront lus comme <span className="text-[#CBD5E1]">sources du travail</span>,
-                    jamais comme des connaissances validées.
-                  </p>
+                </button>
+                {!plieesGroupes.pieces && (
+                  <>
+                    <ListePieces cas={cas} onChange={majPieces} lectureSeule={!piecesAutorisees} />
+                    {piecesAutorisees && !(cas.pieces || []).length && (
+                      <p className="text-[11px] leading-relaxed text-[#7C93A8]">
+                        Ajoutez un PDF, un document Word, un tableau Excel ou un fichier texte avec le trombone du
+                        compositeur. Ils seront lus comme <span className="text-[#CBD5E1]">sources du travail</span>,
+                        jamais comme des connaissances validées.
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
             )}
@@ -1082,7 +1159,10 @@ export default function OngletTravail({
                     <CorpsMessageFlore
                       message={m}
                       onOuvrirPiece={setPieceInspectee}
-                      onOuvrirCanvas={() => setCanvasActif(true)}
+                      onOuvrirCanvas={() => {
+                        if (m.documentCanvas) setDocumentOuvert({ titre: m.documentCanvas, contenu: m.documentTexte });
+                        setCanvasActif(true);
+                      }}
                       canvasActif={canvasActif}
                       atlasActif={atlasActif}
                       onVoirAtlas={() => {
@@ -1387,7 +1467,9 @@ export default function OngletTravail({
                 </div>
               </>
             ) : (
-              <CanvasDocument titre={documentGenereNom} contenu={documentGenereTexte || undefined} onFermer={toggleCanvas} />
+              <CanvasDocument titre={documentOuvert?.titre || documentGenereNom}
+                              contenu={documentOuvert?.contenu || documentGenereTexte || undefined}
+                              onFermer={toggleCanvas} />
             )}
           </div>
         </div>
