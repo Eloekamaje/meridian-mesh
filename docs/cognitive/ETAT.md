@@ -82,7 +82,9 @@ Preuve live sur « régénère le flux du gsf-mockup » : `repo:gsf-mockup → t
 - Découverte : Git/claims `EXPOSE`/OTLP et fichiers GraphQL, gRPC, AsyncAPI, OpenAPI et WSDL alimentent `interface_operation` ; le catalogue Postgres est lu par `/api/outils` avec le contexte tenant.
 - Atlas : le panneau d'un twin lit `/api/boucle/graphe/{id}/impact` quand un tenant est fourni (`localStorage.meridian.tenant` ou `?tenant=`) et affiche les impacts amont/aval canoniques, en plus des voisins Mongo.
 - RLS : `jumeau/rls.py` fournit les policies tenant, le contexte `set_config(..., true)` et une activation explicite ; le mode est opt-in (`JUMEAU_RLS=1`) et n'est pas activé sur la base locale.
-- Tests : **1275 tests jumeau** (2 skip), **8 auth**, **12 routes Boucle**, **166 frontend**, build non-CI OK (le build CI reste bloqué par des avertissements ESLint préexistants). Live : 42 Twins, 45 relations, 23 objets et 5 opérations d'interface en `demo`.
+- Cognition exécutable : `executeur.py` (politique, approbation, allowlist, timeout, audit), `twins_types.py` (PROCESS/CAPABILITY/JOURNEY/etc. + Claims), `outcomes.py` (Outcome mesuré → Learning réutilisable), `memoire_org.py` (mémoire ANNOTATION), `attention.py` (score/dédup à l'échelle), `temporalite.py` (validité, fraîcheur, topologie datée), `evaluation_outils.py` (jeu d'or).
+- API cognitive : `/api/boucle/twins`, `/twins/{id}/claims`, `/outcomes`, `/learnings`, `/memoire`, `/attention`, `/topologie`, `/evaluation` ; aucune exécution d'outil externe sans politique.
+- Tests : **1365 tests jumeau** (2 skip), **8 auth**, **12 routes Boucle**, **166 frontend**, build non-CI OK (le build CI reste bloqué par des avertissements ESLint préexistants). Live : 42 Twins, 45 relations, 23 objets, 8 outils et 8 cas d'or cognitifs en `demo`.
 
 ## Constat du connecteur sur gsf-mockup
 
@@ -94,7 +96,7 @@ Le dépôt `gsf-mockup` ne contient pas de spec OpenAPI statique. Le connecteur 
 - Le tenant est extrait du proxy/OIDC et vérifié dans l'API ; les policies RLS sont fournies et appliquées au contexte de la Boucle et du catalogue d'outils, mais **pas encore activées** ni généralisées à tous les chemins legacy.
 - Mongo canonique est migré (parité zéro sur identités, relations, situations, initiatives). Les **cases** restent un store de travail distinct par ADR-0008 ; le fil Aujourd'hui et la carte Atlas lisent encore leurs collections legacy.
 - La découverte est automatique pour les dépôts (OpenAPI/WSDL/GraphQL/gRPC/AsyncAPI), les claims `EXPOSE` et OTLP ; les exports propriétaires de gateway/CMDB restent à brancher.
-- L'Atlas rend l'impact canonique quand un tenant est sélectionné ; les relations Mongo restent la source principale de la carte et des voisins.
+- L'Atlas rend l'impact canonique quand un tenant est sélectionné ; les relations Mongo restent la source principale de la carte et des voisins. Les formulaires de création Outcome/Twin/mémoire ne sont pas encore dans l'UI.
 - Dans le modèle **1 twin ↔ 1 application**, `application_id = twin_id = id réel de l'application` ; la promotion ne change pas cet id. Le multi-twins par application n'est pas retenu.
 - L'Atlas affiche les interfaces/impacts et les situations sont publiées ; la propagation fine des changements au fil « Aujourd'hui » reste à renforcer.
 - Le connecteur lit OpenAPI, configuration, claims `EXPOSE`, WSDL et OTLP tiré depuis une source APM/gateway authentifiée. Un export propriétaire non OTLP (Datadog/Kong/Apigee natif) reste un adaptateur optionnel.
@@ -109,7 +111,7 @@ Le dépôt `gsf-mockup` ne contient pas de spec OpenAPI statique. Le connecteur 
 2. Activer RLS en production (rôle applicatif non-superuser, `meridian.tenant_id` posé par transaction) et vérifier les chemins legacy.
 3. Brancher les exports propriétaires gateway/CMDB sur le même graphe d'interface (les formats standards sont déjà couverts).
 4. Spécifier le store **Travail** (ADR-0008) puis retirer les lectures Mongo du fil Aujourd'hui/Atlas après parité.
-5. Enrichir le jeu d'or de l'orchestrateur et mesurer les choix d'outils multi-protocoles.
+5. Brancher les adaptateurs externes sur `Executeur`, puis mesurer les choix d'outils multi-protocoles sur le jeu d'or.
 
 ## Commandes d'exploitation
 

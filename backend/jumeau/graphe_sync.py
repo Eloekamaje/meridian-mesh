@@ -26,6 +26,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from collections.abc import Mapping
+from datetime import date, datetime
 
 from jumeau.graphe import ETATS_RELATION, TYPES_TWIN, Arete, NoeudTwin
 
@@ -85,6 +86,20 @@ def _optionnel(valeur):
         return None
     texte = str(valeur).strip()
     return texte or None
+
+
+def _date_iso(valeur):
+    """Une période du graphe est ISO ou absente : un libellé comme « il y a 8 mois » n'est pas une date."""
+    texte = _optionnel(valeur)
+    if texte is None or texte == VALID_TO_INACTIF:
+        return texte
+    if isinstance(valeur, (datetime, date)):
+        return valeur.isoformat()
+    try:
+        datetime.fromisoformat(texte.replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return texte
 
 
 def _identifiant_brut(objet, position, relation=False):
@@ -180,7 +195,8 @@ def arete_depuis_relation(tenant_id, relation: dict) -> Arete:
     if 1 < confiance <= 100:
         confiance /= 100
 
-    valid_to = _optionnel(_premier(relation, _CLES_VALID_TO))
+    valid_from = _date_iso(_premier(relation, _CLES_VALID_FROM))
+    valid_to = _date_iso(_premier(relation, _CLES_VALID_TO))
     if valid_to is None and relation.get("active") is False:
         valid_to = VALID_TO_INACTIF
 
@@ -192,7 +208,7 @@ def arete_depuis_relation(tenant_id, relation: dict) -> Arete:
         type=_type_relation(_premier(relation, _CLES_TYPE_RELATION)),
         etat=_etat_relation(_premier(relation, _CLES_ETAT)),
         confiance=confiance,
-        valid_from=_optionnel(_premier(relation, _CLES_VALID_FROM)),
+        valid_from=valid_from,
         valid_to=valid_to,
         preuve_ids=_preuve_ids(relation),
     )

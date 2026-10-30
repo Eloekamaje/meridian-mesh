@@ -179,3 +179,14 @@ def test_une_confiance_en_pourcentage_est_normalisee():
         "id": "r", "source": "a", "cible": "b", "type": "echange", "confiance": 82,
     })
     assert arete.confiance == 0.82
+
+
+def test_une_periode_non_iso_est_abandonnee_pas_interpretee():
+    from jumeau.graphe_sync import arete_depuis_relation
+
+    arete = arete_depuis_relation("banque", {
+        "id": "r", "source": "a", "cible": "b", "type": "echange",
+        "valid_from": "il y a 8 mois", "valid_to": "2026-10-30T00:00:00Z",
+    })
+    assert arete.valid_from is None
+    assert arete.valid_to == "2026-10-30T00:00:00Z"

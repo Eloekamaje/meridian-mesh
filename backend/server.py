@@ -31,6 +31,7 @@ from actualites_routes import build_actualites_router  # noqa: E402
 from initiatives_routes import build_initiatives_router  # noqa: E402
 from mesh_vue_routes import build_mesh_vue_router  # noqa: E402
 from boucle_routes import router as boucle_router  # noqa: E402
+from cognitif_routes import router as cognitif_router  # noqa: E402
 from jumeau.routes import router as jumeau_router  # noqa: E402
 from jumeau import cbm as jumeau_cbm  # noqa: E402
 from jumeau import evenements as jumeau_evenements  # noqa: E402
@@ -2116,6 +2117,7 @@ api_router.include_router(build_mesh_vue_router({
 
 api_router.include_router(jumeau_router)
 api_router.include_router(boucle_router)
+api_router.include_router(cognitif_router)
 
 
 # ---------- Notifications ----------
