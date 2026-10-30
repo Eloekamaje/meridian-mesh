@@ -12,9 +12,10 @@ import {
   X,
   Sparkle, 
   Users, 
-  Check, 
+  Check,
   CaretDown,
-  PlayCircle
+  PlayCircle,
+  ArrowsClockwise
 } from "@phosphor-icons/react";
 import api from "@/lib/api";
 import { resultatsRecherche, estConversation, PARAM_CONVERSATIONS } from "@/lib/conversationFlore";
@@ -31,6 +32,7 @@ import logoSymbole from "@/assets/logo/meridian-symbole.png";
 const NAV_ITEMS = [
   { to: "/atlas", label: "Atlas", icon: Compass, testid: "nav-atlas" },
   { to: "/actualites", label: "Actualités", icon: Newspaper, testid: "nav-actualites" },
+  { to: "/boucle", label: "Boucle", icon: ArrowsClockwise, testid: "nav-boucle" },
   { to: "/travaux", label: "Travaux", icon: Briefcase, testid: "nav-travaux" },
   { to: "/jumeaux", label: "Jumeaux", icon: CirclesThree, testid: "nav-jumeaux" },
   { to: "/administration", label: "Administration", icon: GearSix, testid: "nav-administration" },

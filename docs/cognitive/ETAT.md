@@ -64,7 +64,10 @@ Preuve live sur « régénère le flux du gsf-mockup » : `repo:gsf-mockup → t
 - Boucle P1 canonique : Situation → Investigation → Décision → Initiative → Outcome → Learning, persistée dans `objet_entreprise` (`boucle.py`), avec transitions et liens validés.
 - Audit harness persistant : table `outil_audit` append-only, expurgation, sink optionnel dans `harness.py` ; chargeur de manifestes JSON.
 - Synchronisation graphe : mapping identité/relations legacy vers `NoeudTwin`/`Arete`, dry-run, réconciliation, sans accès direct aux stores.
-- Tests : **1172 backend jumeau** (3 skip), **153 frontend**, build OK. Live dating : `concevoir_architecture` seul, 0 participant, 12 composants, audit 1 appel, schéma proposition.
+- API canonique : `/api/boucle/objets`, `/api/boucle/objets/{id}`, `/api/boucle/synthese`, lecture tenant-scopée, filtres et chaîne/historique.
+- UI : page `/boucle` avec six familles, filtres, détail, chaîne et liens Travail/Atlas ; entrée de navigation.
+- Migration legacy en dry-run : 13 situations, 10 initiatives, 45 relations lues, 0 erreur ; aucune écriture massive tant que le graph store de production n'est pas branché.
+- Tests : **1195 backend jumeau** (3 skip), **161 frontend**, build OK. Live dating : `concevoir_architecture` seul, 0 participant, 12 composants, audit 1 appel, schéma proposition.
 
 ## Constat du connecteur sur gsf-mockup
 
@@ -82,8 +85,8 @@ Le dépôt `gsf-mockup` ne contient pas de spec OpenAPI statique. Le connecteur 
 
 ## Prochain lot
 
-1. Brancher `objet_entreprise`/`boucle` dans les API/UI et migrer les collections Mongo canoniques.
+1. Exécuter le backfill canonique réel après branchement du graph store de production (Neo4j/Neptune) et vérifier l'idempotence.
 2. Brancher l'audit persistant et le chargeur de manifestes dans le serveur ; compléter MCP/OpenAPI.
-3. Brancher `graphe_sync` + `GrapheNeo4j`/Neptune dans l'ingestion, puis migrer les relations Mongo.
-4. Porter le tenant de requête et la règle d'absence dans tous les chemins.
-5. Enrichir le jeu d'or de l'orchestrateur et mesurer les choix d'outils.
+3. Porter le tenant de requête et la règle d'absence dans tous les chemins.
+4. Enrichir le jeu d'or de l'orchestrateur et mesurer les choix d'outils.
+5. Retirer progressivement Mongo canonique après double lecture contrôlée.

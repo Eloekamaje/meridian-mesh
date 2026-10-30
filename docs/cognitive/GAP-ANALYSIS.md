@@ -10,6 +10,8 @@
 
 ---
 
+**Mise à jour P1 API/UI (2026-10-30).** L'API canonique `/api/boucle/*`, la page `/boucle` et la migration dry-run sont livrées. Le dry-run lit 13 situations, 10 initiatives et 45 relations ; l'écriture massive attend le graph store de production. La migration Mongo n'est pas encore exécutée et reste une dette.
+
 **Mise à jour P0/P1 (2026-10-30).** `objet_entreprise`/`entreprise_depot`, le contrat Claim (`mode`, `version`, `remplace_id`, preuve obligatoire), le harness capacitaire et l'entrée produit Aujourd'hui sont branchés au niveau socle. La boucle Situation → Investigation → Décision → Initiative → Outcome → Learning est persistable (`boucle.py`), l'audit harness est append-only (`outil_audit`), et `graphe_sync` prépare la migration topologique. Restent l'API/UI, la migration Mongo et le tenant de requête. Les statuts du tableau restent la photographie d'avant ces lots.
 
 ## 1. Résumé exécutif

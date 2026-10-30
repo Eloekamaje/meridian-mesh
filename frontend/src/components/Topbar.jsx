@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
-import { ShieldCheck, LockSimple, Bell, Flag, Users, Sparkle, Compass, Newspaper, Briefcase, CirclesThree, GearSix, Plus, List, Play } from "@phosphor-icons/react";
+import { ShieldCheck, LockSimple, Bell, Flag, Users, Sparkle, Compass, Newspaper, Briefcase, CirclesThree, GearSix, Plus, List, Play, ArrowsClockwise } from "@phosphor-icons/react";
 import api from "@/lib/api";
 import { usePerimetre } from "@/lib/perimetre";
 import { useMesh } from "@/lib/mesh";
@@ -14,6 +14,7 @@ const TYPES_NOTIF = { mention: "#60A5FA", assignation: "#F2B84B", a_revoir: "#F8
 const NAV = [
   { to: "/atlas", label: "Atlas", icon: Compass, testid: "nav-atlas" },
   { to: "/actualites", label: "Actualités", icon: Newspaper, testid: "nav-actualites" },
+  { to: "/boucle", label: "Boucle", icon: ArrowsClockwise, testid: "nav-boucle" },
   { to: "/travaux", label: "Travaux", icon: Briefcase, testid: "nav-travaux" },
   { to: "/jumeaux", label: "Jumeaux", icon: CirclesThree, testid: "nav-jumeaux" },
 ];

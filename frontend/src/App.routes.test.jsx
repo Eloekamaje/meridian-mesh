@@ -26,6 +26,7 @@ jest.mock("@/components/Layout", () => {
 });
 
 jest.mock("@/pages/Actualites", () => mockPage("page-actualites"));
+jest.mock("@/pages/Boucle", () => mockPage("page-boucle"));
 jest.mock("@/pages/Atlas", () => mockPage("page-atlas"));
 jest.mock("@/pages/Comprendre", () => mockPage("page-comprendre"));
 jest.mock("@/pages/LaboAtlas", () => mockPage("page-labo-atlas"));
@@ -86,6 +87,14 @@ test("/actualites reste un lien profond vers Aujourd'hui", async () => {
   const { hote, racine } = await ouvrir("/actualites");
   expect(hote.querySelector('[data-testid="chemin"]').textContent).toBe("/actualites");
   expect(hote.querySelector('[data-testid="page-actualites"]')).not.toBeNull();
+  await fermer(racine);
+});
+
+test("/boucle affiche la page Boucle sans changer l'accueil", async () => {
+  const { hote, racine } = await ouvrir("/boucle");
+  expect(hote.querySelector('[data-testid="chemin"]').textContent).toBe("/boucle");
+  expect(hote.querySelector('[data-testid="page-boucle"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="page-actualites"]')).toBeNull();
   await fermer(racine);
 });
 

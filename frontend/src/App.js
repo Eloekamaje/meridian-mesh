@@ -9,6 +9,7 @@ import { EvenementsProvider } from "@/lib/evenements";
 import { ContexteProvider } from "@/lib/contexte";
 import Layout from "@/components/Layout";
 import Actualites from "@/pages/Actualites";
+import Boucle from "@/pages/Boucle";
 import Comprendre from "@/pages/Comprendre";
 import Atlas from "@/pages/Atlas";
 import LaboAtlas from "@/pages/LaboAtlas";
@@ -50,6 +51,7 @@ export function RoutesProduit() {
         <Route path="/actualites" element={<Actualites />} />
         <Route path="/actualites/comprendre/:hid" element={<Comprendre />} />
         <Route path="/aujourdhui" element={<Actualites />} />
+        <Route path="/boucle" element={<Boucle />} />
         <Route path="/atlas" element={<Atlas />} />
         {/* Laboratoire du graphe : pages d'essai, hors du produit livré — disponibles en développement, ou avec REACT_APP_LABO=1 */}
         {LABO && <Route path="/labo/atlas" element={<LaboAtlas />} />}
