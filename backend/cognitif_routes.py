@@ -16,10 +16,11 @@ from fastapi import APIRouter, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 import boucle_routes
-from jumeau import attention, boucle, entreprise_depot, evaluation_outils, memoire_org, outcomes, rls
+from jumeau import attention, boucle, entreprise_depot, evaluation_outils, evaluation_profils
+from jumeau import memoire_org, outcomes, rls
 from jumeau import specialiste_decouverte, specialiste_impact, specialiste_preuve
 from jumeau import specialistes, temporalite, twins_types
-from jumeau import graph_store
+from jumeau import composition, graph_store, profils, reponse_cognitive
 
 router = APIRouter(prefix="/boucle", tags=["cognitif"])
 
@@ -82,6 +83,24 @@ class AnalyseSpecialistes(BaseModel):
     claim_ids: list[str] = Field(default_factory=list)
     profondeur: int = 2
     specialistes: list[str] = Field(default_factory=lambda: ["decouverte", "preuve", "impact", "outcome"])
+
+
+class AnalyseCognitive(AnalyseSpecialistes):
+    profil: str | None = None
+    autorite_max: str | None = None
+
+
+class DemandeComposition(BaseModel):
+    profil: str | None = None
+    question: str = ""
+    application_id: str | None = None
+    situation_id: str | None = None
+    twin_ids: list[str] = Field(default_factory=list)
+    autorite_max: str | None = None
+
+
+class EvaluationProfilsRequete(BaseModel):
+    reponses: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
 def _contexte(conn, tenant):
@@ -354,6 +373,30 @@ _SPECIALISTES = {
 }
 
 
+async def _lancer_specialistes(noms, base, tenant, dsn):
+    async def lancer(nom):
+        instance = _SPECIALISTES[nom]()
+        graph_context = None
+        try:
+            if nom in {"impact", "decouverte"}:
+                try:
+                    graph_context = graph_store.ouvrir()
+                except Exception:
+                    graph_context = None
+            magasin = graph_context["store"] if graph_context is not None else None
+            with psycopg.connect(dsn, connect_timeout=5) as conn:
+                with _contexte(conn, tenant):
+                    contexte = replace(base, conn=conn, store=magasin)
+                    orchestrateur = specialistes.OrchestrateurSpecialistes([instance], timeout_s=8.0)
+                    dossier = await orchestrateur.analyser(contexte)
+                    return dossier["specialistes"][0]
+        finally:
+            if graph_context is not None:
+                graph_context["fermer"]()
+
+    return await asyncio.gather(*(lancer(nom) for nom in noms))
+
+
 def _fusionner_dossiers(dossiers, tenant):
     propositions = {}
     limites = []
@@ -395,26 +438,115 @@ async def analyser_specialistes(
         tenant=tenant, question=payload.question, situation_id=payload.situation_id,
         twin_ids=tuple(payload.twin_ids), application_id=payload.application_id,
         claim_ids=tuple(payload.claim_ids), profondeur=payload.profondeur)
-
-    async def lancer(nom):
-        instance = _SPECIALISTES[nom]()
-        graph_context = None
-        try:
-            if nom in {"impact", "decouverte"}:
-                try:
-                    graph_context = graph_store.ouvrir()
-                except Exception:
-                    graph_context = None
-            magasin = graph_context["store"] if graph_context is not None else None
-            with psycopg.connect(dsn, connect_timeout=5) as conn:
-                with _contexte(conn, tenant):
-                    contexte = replace(base, conn=conn, store=magasin)
-                    orchestrateur = specialistes.OrchestrateurSpecialistes([instance], timeout_s=8.0)
-                    dossier = await orchestrateur.analyser(contexte)
-                    return dossier["specialistes"][0]
-        finally:
-            if graph_context is not None:
-                graph_context["fermer"]()
-
-    dossiers = await asyncio.gather(*(lancer(nom) for nom in noms))
+    dossiers = await _lancer_specialistes(noms, base, tenant, dsn)
     return _fusionner_dossiers(dossiers, tenant)
+
+
+@router.post("/analyser")
+async def analyser_cognitif(
+    payload: AnalyseCognitive,
+    request: Request,
+    x_persona: str = Header("architecte", max_length=64),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Résout le profil, compose les spécialistes et rend une réponse située sur un socle unique."""
+    boucle_routes._verifier_contexte(x_persona, x_espace)
+    tenant = boucle_routes._tenant(request, x_tenant)
+    profil = profils.resoudre_profil(
+        profil=payload.profil, identite={"role": x_persona},
+        question=payload.question, autorite_max=payload.autorite_max)
+    plan = composition.planifier(
+        profil, payload.question, autorite_max=payload.autorite_max,
+        application_id=payload.application_id, situation_id=payload.situation_id,
+        twin_ids=payload.twin_ids)
+    noms = list(plan.specialistes_socle)
+    dsn = boucle_routes._dsn()
+    base = specialistes.ContexteSpecialiste(
+        tenant=tenant, question=payload.question, situation_id=payload.situation_id,
+        twin_ids=tuple(payload.twin_ids), application_id=payload.application_id,
+        claim_ids=tuple(payload.claim_ids), profondeur=payload.profondeur)
+    dossiers = await _lancer_specialistes(noms, base, tenant, dsn) if noms else []
+    dossier = _fusionner_dossiers(dossiers, tenant) if dossiers else {
+        "tenant": tenant, "statut": "partiel", "propositions": [],
+        "specialistes": [], "limites": ["aucun spécialiste mobilisé par la composition"],
+    }
+    reponse = reponse_cognitive.composer(
+        payload.question, profil, plan, dossier, autorite_max=payload.autorite_max)
+    return {
+        "tenant": tenant,
+        "profil": boucle_routes._assainir(profil.as_dict()),
+        "composition": boucle_routes._assainir(plan.as_dict()),
+        "specialistes_executes": list(noms),
+        "dossier": boucle_routes._assainir(dossier),
+        "reponse": boucle_routes._assainir(reponse.as_dict()),
+        "qualite": {
+            "faits": len(reponse.socle.faits),
+            "preuves": len(reponse.socle.preuves),
+            "specialistes_ok": sum(1 for d in dossier["specialistes"] if d.get("statut") == "ok"),
+            "limites": len(reponse.socle.limites),
+            "autorite": reponse.autorite,
+        },
+    }
+
+
+@router.get("/profils")
+async def lister_profils(
+    request: Request,
+    x_persona: str = Header("architecte", max_length=64),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    boucle_routes._verifier_contexte(x_persona, x_espace)
+    boucle_routes._tenant(request, x_tenant)
+    return {"profils": [profil.as_dict() for profil in profils.CATALOGUE_PROFILS.values()]}
+
+
+@router.get("/profils/{profil_id}")
+async def lire_profil(
+    profil_id: str,
+    request: Request,
+    x_persona: str = Header("architecte", max_length=64),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    boucle_routes._verifier_contexte(x_persona, x_espace)
+    boucle_routes._tenant(request, x_tenant)
+    profil = profils.CATALOGUE_PROFILS.get(profil_id)
+    if profil is None:
+        raise HTTPException(404, "Profil inconnu")
+    return {"profil": boucle_routes._assainir(profil.as_dict())}
+
+
+@router.post("/composition")
+async def previsualiser_composition(
+    payload: DemandeComposition,
+    request: Request,
+    x_persona: str = Header("architecte", max_length=64),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Prévisualise la composition sans exécuter aucun spécialiste."""
+    boucle_routes._verifier_contexte(x_persona, x_espace)
+    tenant = boucle_routes._tenant(request, x_tenant)
+    profil = profils.resoudre_profil(
+        profil=payload.profil, identite={"role": x_persona},
+        question=payload.question, autorite_max=payload.autorite_max)
+    plan = composition.planifier(
+        profil, payload.question, autorite_max=payload.autorite_max,
+        application_id=payload.application_id, situation_id=payload.situation_id,
+        twin_ids=payload.twin_ids)
+    return {"tenant": tenant, "profil": boucle_routes._assainir(profil.as_dict()),
+            "composition": boucle_routes._assainir(plan.as_dict())}
+
+
+@router.get("/evaluation/profils/jeu")
+async def jeu_evaluation_profils():
+    return {"cas": [cas.as_dict() for cas in evaluation_profils.JEU_PROFILS]}
+
+
+@router.post("/evaluation/profils")
+async def evaluer_profils(payload: EvaluationProfilsRequete):
+    """Évalue des réponses déjà produites : vérité, adaptation et sécurité par profil."""
+    resultat = evaluation_profils.evaluer_jeu(evaluation_profils.JEU_PROFILS, payload.reponses)
+    return boucle_routes._assainir(resultat)

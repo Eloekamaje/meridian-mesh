@@ -86,7 +86,10 @@ Preuve live sur « régénère le flux du gsf-mockup » : `repo:gsf-mockup → t
 - API cognitive : `/api/boucle/twins`, `/twins/{id}/claims`, `/outcomes`, `/learnings`, `/memoire`, `/attention`, `/topologie`, `/evaluation` ; aucune exécution d'outil externe sans politique.
 - Spécialistes cognitifs : noyau `specialistes.py` (contrat, autorité proposition, orchestration parallèle, timeout, déduplication) et trois spécialistes — `decouverte`, `preuve`, `impact`/`outcome`. Ils lisent un contexte borné et produisent des artefacts ; aucun n'écrit, ne promeut ni ne décide. **Domain packs volontairement différés.**
 - API : `POST /api/boucle/specialistes/analyser` exécute les spécialistes en parallèle, avec une connexion tenant-scopée par spécialiste pour éviter tout partage non thread-safe.
-- Tests : **1410 tests jumeau** (2 skip), **8 auth**, **12 routes Boucle**, **166 frontend**, build non-CI OK (le build CI reste bloqué par des avertissements ESLint préexistants). Live : 42 Twins, 45 relations, 23 objets, 8 outils, 8 cas d'or et un dossier à 4 spécialistes en `demo`.
+- Profils composés : `profils.py` résout explicite/identité/inférence/défaut, avec autorité jamais supérieure à la lecture pour un profil inconnu ; `methodes_cognitives.py` et `competences_cognitives.py` sont des catalogues versionnés ; `composition.py` produit un plan borné (méthodes, compétences, spécialistes, budget, autorité).
+- Réponses situées : `reponse_cognitive.py` conserve un **socle de faits unique** et change seulement la lecture, le vocabulaire, les actions et les prochaines étapes. Un dev, un PO et un profil inconnu reçoivent les mêmes faits ; l'inconnu reste en lecture seule.
+- API : `/api/boucle/profils`, `/composition`, `/analyser` ; `POST /analyser` exécute un socle de preuves indépendant du profil et applique la lentille du profil.
+- Tests : **1488 tests jumeau** (2 skip), **8 auth**, **12 routes Boucle**, **166 frontend**, build non-CI OK (le build CI reste bloqué par des avertissements ESLint préexistants). Live : 12 profils, 14 méthodes, 14 compétences ; dev/PO reçoivent **6 faits identiques** avec des lectures différentes, profil inconnu en lecture seule.
 
 ## Constat du connecteur sur gsf-mockup
 
@@ -113,7 +116,7 @@ Le dépôt `gsf-mockup` ne contient pas de spec OpenAPI statique. Le connecteur 
 2. Activer RLS en production (rôle applicatif non-superuser, `meridian.tenant_id` posé par transaction) et vérifier les chemins legacy.
 3. Brancher les exports propriétaires gateway/CMDB sur le même graphe d'interface (les formats standards sont déjà couverts).
 4. Spécifier le store **Travail** (ADR-0008) puis retirer les lectures Mongo du fil Aujourd'hui/Atlas après parité.
-5. Brancher les adaptateurs externes sur `Executeur`, puis ajouter les domain packs (Paiements, Risque) et mesurer les spécialistes sur le jeu d'or.
+5. Brancher les adaptateurs externes sur `Executeur`, ajouter les domain packs (Paiements, Risque), puis construire l'UI de revue des compositions et des réponses.
 
 ## Commandes d'exploitation
 
