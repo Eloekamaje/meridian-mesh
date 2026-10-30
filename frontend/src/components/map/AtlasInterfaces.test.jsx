@@ -108,6 +108,44 @@ test("AtlasInterfaces affiche les comptes, les impacts breaking d'abord et les a
   await act(async () => { racine.unmount(); });
 });
 
+test("AtlasInterfaces utilise les données du parent et bascule la couche sans refetch", async () => {
+  const onBasculerCouche = jest.fn();
+  const onRecharger = jest.fn();
+  const { hote, racine } = monter();
+
+  await rendre(racine, { donnees, chargement: false, erreur: null, onRecharger, coucheActive: false, onBasculerCouche });
+
+  expect(api.get).not.toHaveBeenCalled();
+  const interrupteur = hote.querySelector('[data-testid="atlas-interfaces-couche"]');
+  expect(interrupteur).not.toBeNull();
+  expect(interrupteur.getAttribute("aria-checked")).toBe("false");
+  expect(interrupteur.textContent).toContain("Afficher sur la carte");
+  expect(hote.querySelector('[data-testid="atlas-interfaces-nb-impacts"]').textContent).toContain("2 impacts");
+
+  await act(async () => { interrupteur.click(); });
+  expect(onBasculerCouche).toHaveBeenCalledTimes(1);
+  expect(onRecharger).not.toHaveBeenCalled();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("AtlasInterfaces reflète la couche active fournie par le parent", async () => {
+  const { hote, racine } = monter();
+
+  await rendre(racine, {
+    donnees,
+    chargement: false,
+    erreur: null,
+    onRecharger: jest.fn(),
+    coucheActive: true,
+    onBasculerCouche: jest.fn(),
+  });
+
+  expect(hote.querySelector('[data-testid="atlas-interfaces-couche"]').getAttribute("aria-checked")).toBe("true");
+
+  await act(async () => { racine.unmount(); });
+});
+
 test("AtlasInterfaces affiche l'état vide", async () => {
   api.get.mockResolvedValue({ data: { applications: [], operations: [], edges: [], impacts: [], runs: [] } });
   const { hote, racine } = monter();

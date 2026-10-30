@@ -1,7 +1,7 @@
 """Connecteur runtime APM/gateway, en mode ombre : les appels observés deviennent des assertions `observed`.
 
-Le connecteur ne fait aucun réseau, ne lit aucun secret et n'écrit rien : il transforme un export normalisé
-(APM, gateway, service mesh) en `InterfaceGraph` séparé. Le déclaré n'est jamais modifié ni promu : les assertions
+Le connecteur ne fait aucun réseau, ne lit aucun secret et n'écrit rien : il transforme un export normalisé ou
+OTLP JSON (APM, gateway, service mesh) en `InterfaceGraph` séparé. Le déclaré n'est jamais modifié ni promu : les assertions
 produites portent toutes `mode="observed"`, et une fusion éventuelle avec le graphe déclaré reste une décision de
 l'appelant, via `interfaces.merge`. Les identifiants sont calculés sur le contenu : le contrat porte l'empreinte des
 observations triées, les opérations gardent une identité stable (application propriétaire, environnement, protocole,
@@ -19,6 +19,7 @@ import os
 import re
 import stat
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Optional
 from urllib.parse import parse_qsl, unquote_plus, urlsplit
@@ -27,7 +28,8 @@ from jumeau.interfaces import Assertion, Contract, InterfaceGraph, Operation
 
 __all__ = [
     "MAX_OBSERVATIONS", "TAILLE_MAX", "charger_observations", "depuis_fichier", "depuis_observations",
-    "depuis_texte", "lire_export", "lire_observations", "resume", "resume_observations",
+    "depuis_otlp", "depuis_texte", "lire_export", "lire_observations", "lire_otlp", "resume",
+    "resume_observations",
 ]
 
 TAILLE_MAX = 2_000_000
@@ -46,6 +48,17 @@ _RE_CONTROLE = re.compile(r"[\x00-\x1f\x7f]")
 _RE_METHODE = re.compile(r"^\S{1,64}$")
 _RE_USERINFO_SCHEMA = re.compile(r"(?i)https?://[^/\s@]*@")
 _RE_USERINFO_SANS_SCHEMA = re.compile(r"^[^/\s@]+:[^/\s@]*@[^/\s]+")
+_KINDS_OTLP = {
+    "SPAN_KIND_UNSPECIFIED": 0, "SPAN_KIND_INTERNAL": 1, "SPAN_KIND_SERVER": 2,
+    "SPAN_KIND_CLIENT": 3, "SPAN_KIND_PRODUCER": 4, "SPAN_KIND_CONSUMER": 5,
+    "UNSPECIFIED": 0, "INTERNAL": 1, "SERVER": 2, "CLIENT": 3, "PRODUCER": 4, "CONSUMER": 5,
+}
+_CLES_OTLP_SENSIBLES = (
+    "http.url", "url.full", "http.target", "url.path", "http.route", "http.path",
+    "http.method", "http.request.method", "rpc.method", "rpc.service", "rpc.system",
+    "service.name", "service", "peer.service", "server.address", "net.peer.name",
+    "gateway", "gateway.name", "apm.gateway", "http.gateway", "operation_id", "operation.id",
+)
 
 
 def _empreinte(*parties: Any) -> str:
@@ -202,6 +215,270 @@ def _champ_protocole(valeur: Any) -> tuple[Optional[str], Optional[str]]:
         return "rest", None
     texte = texte.lower()
     return {"http": "rest", "https": "rest"}.get(texte, texte), None
+
+
+def _valeur_otlp(valeur: Any) -> Any:
+    """Décode une valeur d'attribut OTLP JSON (stringValue, intValue, arrayValue, etc.)."""
+    if not isinstance(valeur, dict):
+        return valeur
+    if "stringValue" in valeur:
+        brut = valeur["stringValue"]
+        return brut if isinstance(brut, str) else None
+    if "intValue" in valeur:
+        return _entier_brut(valeur["intValue"])
+    if "doubleValue" in valeur:
+        brut = valeur["doubleValue"]
+        if isinstance(brut, bool):
+            return None
+        if isinstance(brut, (int, float)):
+            return float(brut)
+        if isinstance(brut, str):
+            try:
+                return float(brut.strip())
+            except ValueError:
+                return None
+        return None
+    if "boolValue" in valeur:
+        brut = valeur["boolValue"]
+        return brut if isinstance(brut, bool) else None
+    if "arrayValue" in valeur:
+        brut = valeur["arrayValue"]
+        if isinstance(brut, dict):
+            brut = brut.get("values", [])
+        return [_valeur_otlp(item) for item in brut] if isinstance(brut, list) else None
+    if "kvlistValue" in valeur:
+        brut = valeur["kvlistValue"]
+        if isinstance(brut, dict):
+            brut = brut.get("values", [])
+        return _attributs_otlp(brut)
+    return None
+
+
+def _attributs_otlp(liste: Any) -> dict:
+    """Convertit une liste OTLP `{key, value}` (ou une table simple) en dictionnaire."""
+    if isinstance(liste, dict):
+        return {str(cle): _valeur_otlp(valeur) for cle, valeur in liste.items()}
+    resultat = {}
+    if not isinstance(liste, list):
+        return resultat
+    for item in liste:
+        if not isinstance(item, dict):
+            continue
+        cle = item.get("key")
+        if isinstance(cle, str) and cle:
+            resultat[cle] = _valeur_otlp(item.get("value"))
+    return resultat
+
+
+def _entier_brut(valeur: Any) -> Optional[int]:
+    if isinstance(valeur, bool) or valeur is None:
+        return None
+    if isinstance(valeur, int):
+        return valeur
+    if isinstance(valeur, float) and valeur.is_integer():
+        return int(valeur)
+    if isinstance(valeur, str):
+        try:
+            return int(valeur.strip(), 10)
+        except ValueError:
+            return None
+    return None
+
+
+def _entier_otlp(attributes: dict, *cles: str) -> Optional[int]:
+    for cle in cles:
+        entier = _entier_brut(attributes.get(cle))
+        if entier is not None:
+            return entier
+    return None
+
+
+def _texte_otlp(attributes: dict, *cles: str) -> Optional[str]:
+    for cle in cles:
+        valeur = attributes.get(cle)
+        if isinstance(valeur, str):
+            texte = valeur.strip()
+            if texte:
+                return texte
+    return None
+
+
+def _iso_depuis_ns(valeur: Any) -> Optional[str]:
+    """Horodatage Unix en nanosecondes vers ISO 8601 UTC, sans passer par un flottant."""
+    entier = _entier_brut(valeur)
+    if entier is None or entier <= 0:
+        return None
+    secondes, nanos = divmod(entier, 1_000_000_000)
+    try:
+        base = datetime.fromtimestamp(secondes, tz=timezone.utc)
+    except (OverflowError, OSError, ValueError):
+        return None
+    rendu = base.strftime("%Y-%m-%dT%H:%M:%S")
+    if nanos:
+        rendu += "." + f"{nanos:09d}".rstrip("0")
+    return rendu + "Z"
+
+
+def _kind_otlp(span: dict) -> int:
+    valeur = span.get("kind", span.get("spanKind"))
+    if isinstance(valeur, bool):
+        return 0
+    if isinstance(valeur, int):
+        return valeur if 0 <= valeur <= 5 else 0
+    if isinstance(valeur, str):
+        texte = valeur.strip().upper()
+        if texte in _KINDS_OTLP:
+            return _KINDS_OTLP[texte]
+        entier = _entier_brut(texte)
+        return entier if entier is not None and 0 <= entier <= 5 else 0
+    return 0
+
+
+def _protocole_otlp(attributes: dict) -> str:
+    systeme = _texte_otlp(attributes, "rpc.system")
+    if systeme:
+        return "grpc" if systeme.lower() == "grpc" else systeme.lower()
+    if "rpc.method" in attributes or "rpc.service" in attributes:
+        return "grpc"
+    return "rest"
+
+
+def _duree_otlp(span: dict, attributes: dict) -> Optional[float]:
+    debut = _entier_brut(span.get("startTimeUnixNano") or span.get("start_time_unix_nano"))
+    fin = _entier_brut(span.get("endTimeUnixNano") or span.get("end_time_unix_nano"))
+    if debut is not None and fin is not None and fin >= debut:
+        return (fin - debut) / 1_000_000.0
+    for cle in ("duration_ms", "duration"):
+        valeur = attributes.get(cle)
+        if isinstance(valeur, bool) or valeur is None:
+            continue
+        if isinstance(valeur, (int, float)):
+            nombre = float(valeur)
+        elif isinstance(valeur, str):
+            try:
+                nombre = float(valeur.strip())
+            except ValueError:
+                continue
+        else:
+            continue
+        if math.isfinite(nombre) and nombre >= 0:
+            return nombre
+    return None
+
+
+def _secret_otlp(attributes: dict, nom_span: Any) -> bool:
+    for cle in _CLES_OTLP_SENSIBLES:
+        valeur = attributes.get(cle)
+        if isinstance(valeur, str) and (_contient_userinfo(valeur) or _secret_de_requete(valeur)):
+            return True
+    return isinstance(nom_span, str) and (_contient_userinfo(nom_span) or _secret_de_requete(nom_span))
+
+
+def _observation_otlp(span: dict, attributes: dict, index: int,
+                      strict: bool) -> tuple[Optional[dict], list[str]]:
+    """Observation normalisée issue d'un span OTLP, ou diagnostics sans recopier les valeurs."""
+    if strict and _secret_otlp(attributes, span.get("name")):
+        raise ValueError(f"OTLP span {index} : identifiants ou secret dans un attribut")
+
+    diagnostics = []
+    ts = _iso_depuis_ns(span.get("startTimeUnixNano") or span.get("start_time_unix_nano"))
+    if ts is None:
+        return None, [f"OTLP span {index} : startTimeUnixNano manquant ou invalide"]
+
+    methode_http = _texte_otlp(attributes, "http.request.method", "http.method")
+    methode_rpc = _texte_otlp(attributes, "rpc.method")
+    if methode_http and (_contient_userinfo(methode_http) or _secret_de_requete(methode_http)):
+        methode_http = None
+    if methode_rpc and (_contient_userinfo(methode_rpc) or _secret_de_requete(methode_rpc)):
+        methode_rpc = None
+    if methode_http:
+        methode = methode_http
+    elif methode_rpc:
+        methode = methode_rpc.rsplit("/", 1)[-1] or methode_rpc
+    else:
+        return None, [f"OTLP span {index} : méthode manquante"]
+
+    chemin = _texte_otlp(attributes, "http.route", "http.target", "url.path", "http.url", "url.full",
+                         "http.path")
+    if chemin is None and methode_rpc:
+        service_rpc = (_texte_otlp(attributes, "rpc.service") or "").strip("/")
+        if _contient_userinfo(service_rpc) or _secret_de_requete(service_rpc):
+            service_rpc = ""
+        methode_complete = methode_rpc.lstrip("/")
+        if "/" in methode_complete:
+            chemin = f"/{methode_complete}"
+        elif service_rpc:
+            chemin = f"/{service_rpc}/{methode_complete}"
+        else:
+            chemin = f"/{methode_complete}"
+    if chemin is None:
+        return None, [f"OTLP span {index} : chemin manquant"]
+
+    service = _texte_otlp(attributes, "service.name", "service")
+    peer = _texte_otlp(attributes, "peer.service")
+    adresse_serveur = _texte_otlp(attributes, "server.address")
+    nom_pair = _texte_otlp(attributes, "net.peer.name")
+    kind = _kind_otlp(span)
+    caller: Optional[str] = None
+    callee: Optional[str] = None
+    if kind == 2:
+        callee = service
+        caller = peer or nom_pair
+        if callee is None:
+            diagnostics.append(f"OTLP span {index} : callee indéterminé (service.name absent)")
+    elif kind == 3 or kind == 4:
+        caller = service
+        callee = peer or adresse_serveur or nom_pair
+        if caller is None:
+            diagnostics.append(f"OTLP span {index} : caller indéterminé (service.name absent)")
+    elif kind == 5:
+        callee = service
+        caller = peer or nom_pair
+        if callee is None:
+            diagnostics.append(f"OTLP span {index} : callee indéterminé (service.name absent)")
+    elif service:
+        caller = service
+        callee = peer or adresse_serveur or nom_pair
+        if callee:
+            diagnostics.append(f"OTLP span {index} : sens caller/callee indéterminé (kind absent)")
+        else:
+            diagnostics.append(f"OTLP span {index} : callee indéterminé (kind absent)")
+    else:
+        callee = peer or adresse_serveur or nom_pair
+        if callee:
+            diagnostics.append(f"OTLP span {index} : caller indéterminé (kind absent)")
+    if caller is None and callee is None:
+        diagnostics.append(f"OTLP span {index} : caller et callee indéterminés")
+        return None, diagnostics
+
+    statut = _entier_otlp(attributes, "http.status_code", "http.response.status_code")
+    if statut is None:
+        statut_grpc = _entier_otlp(attributes, "rpc.grpc.status_code")
+        if statut_grpc is not None:
+            statut = 200 if statut_grpc == 0 else 500
+    if statut is not None and not 0 <= statut <= 599:
+        diagnostics.append(f"OTLP span {index} : status hors bornes ignoré")
+        statut = None
+
+    trace = span.get("traceId") or span.get("trace_id")
+    if not isinstance(trace, str) or not trace.strip():
+        trace = None
+    gateway = _texte_otlp(attributes, "gateway.name", "gateway", "apm.gateway", "http.gateway")
+    operation_id = _texte_otlp(attributes, "operation_id", "operation.id")
+    protocole = _protocole_otlp(attributes)
+    if _contient_userinfo(protocole) or _secret_de_requete(protocole):
+        protocole = "rest"
+
+    brute = {
+        "ts": ts, "caller": caller, "callee": callee, "protocol": protocole,
+        "method": methode, "path": chemin, "operation_id": operation_id, "status": statut,
+        "duration_ms": _duree_otlp(span, attributes), "trace_id": trace, "gateway": gateway,
+    }
+    normalisee, erreur = _normaliser(brute, index)
+    if erreur:
+        diagnostics.append(erreur.replace(f"observation {index}", f"OTLP span {index}", 1))
+        return None, diagnostics
+    return normalisee, diagnostics
 
 
 def _normaliser(observation: Any, index: int) -> tuple[Optional[dict], Optional[str]]:
@@ -419,6 +696,26 @@ def depuis_observations(application_id: str, observations: Any, environment: str
     return _dedupliquer(graph)
 
 
+def depuis_otlp(application_id: str, payload: Any, environment: str = "inconnu",
+                source: str = "apm") -> InterfaceGraph:
+    """Convertit un export OTLP JSON (dict, fichier, texte ou octets) en graphe `observed`.
+
+    Le sens vient de `span.kind` : un span `CLIENT` expose le `service.name` comme `caller`, un span `SERVER`
+    comme `callee` ; `peer.service`, `server.address` ou `net.peer.name` fournissent l'autre côté. Sans direction
+    identifiable, l'observation reste partielle et un diagnostic est ajouté, sans inventer d'application. Les
+    spans sans horodatage, méthode ou chemin exploitables sont ignorés avec un compteur ; le graphe produit ne
+    contient que des assertions `observed`.
+    """
+    application = _application(application_id)
+    observations, diagnostics = _observations_otlp(
+        _charge_otlp(payload, TAILLE_MAX), MAX_OBSERVATIONS, True)
+    graph = depuis_observations(application, observations, environment, source)
+    if diagnostics:
+        graph.diagnostics = diagnostics + graph.diagnostics
+        graph.partial = True
+    return graph
+
+
 def _lire_fichier(chemin: Path, max_octets: int) -> str:
     try:
         attributs = chemin.stat()
@@ -463,6 +760,104 @@ def _lire_source(source: Any, max_octets: int) -> str:
     raise ValueError("export : chemin de fichier ou texte JSON attendu")
 
 
+def _est_otlp(donnees: Any) -> bool:
+    return isinstance(donnees, dict) and any(cle in donnees for cle in ("resourceSpans", "resource_spans"))
+
+
+def _charge_otlp(source: Any, max_octets: int) -> dict:
+    if isinstance(source, dict):
+        try:
+            taille = len(json.dumps(source, ensure_ascii=False).encode("utf-8"))
+        except (TypeError, ValueError):
+            raise ValueError("OTLP : JSON invalide") from None
+        if taille > max_octets:
+            raise ValueError(f"export OTLP trop volumineux (maximum {max_octets} octets)")
+        return source
+    texte = _lire_source(source, max_octets).lstrip("\ufeff")
+    if not texte.strip():
+        raise ValueError("export OTLP vide")
+    try:
+        donnees = json.loads(texte)
+    except json.JSONDecodeError as erreur:
+        raise ValueError(f"JSON invalide (ligne {erreur.lineno}, colonne {erreur.colno})") from None
+    if not isinstance(donnees, dict):
+        raise ValueError("OTLP : objet JSON attendu")
+    return donnees
+
+
+def _observations_otlp(donnees: Any, max_spans: int, strict: bool) -> tuple[list[dict], list[str]]:
+    """Convertit un document OTLP JSON en observations normalisées, sans réseau ni valeur fautive."""
+    if not isinstance(donnees, dict):
+        raise ValueError("OTLP : objet JSON attendu")
+    resource_spans = donnees.get("resourceSpans")
+    if resource_spans is None:
+        resource_spans = donnees.get("resource_spans")
+    if not isinstance(resource_spans, list):
+        raise ValueError("OTLP : resourceSpans attendu")
+
+    observations: list[dict] = []
+    diagnostics: list[str] = []
+    vus = set()
+    total = ignores = 0
+    for index_rs, resource_span in enumerate(resource_spans, 1):
+        if not isinstance(resource_span, dict):
+            ignores += 1
+            diagnostics.append(f"OTLP resourceSpans {index_rs} : objet attendu")
+            continue
+        ressource = resource_span.get("resource")
+        attributs_ressource = (_attributs_otlp(ressource.get("attributes"))
+                               if isinstance(ressource, dict) else {})
+        scopes = resource_span.get("scopeSpans")
+        if scopes is None:
+            scopes = resource_span.get("scope_spans")
+        if scopes is None:
+            scopes = resource_span.get("instrumentationLibrarySpans")
+        if scopes is None:
+            continue
+        if not isinstance(scopes, list):
+            ignores += 1
+            diagnostics.append(f"OTLP resourceSpans {index_rs} : scopeSpans attendu")
+            continue
+        for index_scope, scope in enumerate(scopes, 1):
+            if not isinstance(scope, dict):
+                ignores += 1
+                diagnostics.append(f"OTLP scopeSpans {index_scope} : objet attendu")
+                continue
+            spans = scope.get("spans")
+            if spans is None:
+                continue
+            if not isinstance(spans, list):
+                ignores += 1
+                diagnostics.append(f"OTLP scopeSpans {index_scope} : spans attendu")
+                continue
+            for span in spans:
+                total += 1
+                if total > max_spans:
+                    raise ValueError(f"export OTLP trop volumineux (maximum {max_spans} spans)")
+                if not isinstance(span, dict):
+                    ignores += 1
+                    diagnostics.append(f"OTLP span {total} : objet attendu")
+                    continue
+                marque = (span.get("traceId") or span.get("trace_id"),
+                          span.get("spanId") or span.get("span_id"))
+                if all(isinstance(partie, str) and partie for partie in marque):
+                    if marque in vus:
+                        continue
+                    vus.add(marque)
+                attributs = dict(attributs_ressource)
+                attributs.update(_attributs_otlp(span.get("attributes")))
+                observation, messages = _observation_otlp(span, attributs, total, strict)
+                if observation is None:
+                    ignores += 1
+                    diagnostics.extend(messages)
+                    continue
+                diagnostics.extend(messages)
+                observations.append(observation)
+    if ignores:
+        diagnostics.insert(0, f"OTLP : {ignores} span(s) ignoré(s) sur {total}")
+    return observations, diagnostics
+
+
 def _valider_observation(observation: Any, index: int) -> None:
     _, erreur = _normaliser(observation, index)
     if erreur:
@@ -474,22 +869,34 @@ def _valider_observation(observation: Any, index: int) -> None:
 
 
 def lire_export(source: Any, max_octets: int = TAILLE_MAX, max_observations: int = MAX_OBSERVATIONS,
-                strict: bool = True) -> list[dict]:
+                strict: bool = True, format: str = "auto") -> list[dict]:
     """Lit un export JSON (fichier, texte ou octets) sans réseau, avec schéma et taille bornés.
 
-    La racine est une liste d'observations, ou un objet qui les porte sous `observations`. Les erreurs ne
-    recopient jamais le document ; avec `strict`, toute URL porteuse d'identifiants ou de secret de requête est
-    refusée. `strict=False` laisse la transformation masquer ces valeurs.
+    `format="auto"` reconnaît un export OTLP (`resourceSpans`) et le convertit en observations normalisées ;
+    `"otlp"` l'impose, `"normalise"` lit le schéma historique. La racine normalisée est une liste d'observations,
+    ou un objet qui les porte sous `observations`. Les erreurs ne recopient jamais le document ; avec `strict`,
+    toute URL porteuse d'identifiants ou de secret de requête est refusée. `strict=False` laisse la
+    transformation masquer ces valeurs.
     """
     if max_octets < 0 or max_observations < 0:
         raise ValueError("les limites doivent être positives ou nulles")
-    texte = _lire_source(source, max_octets).lstrip("\ufeff")
-    if not texte.strip():
-        raise ValueError("export vide")
-    try:
-        donnees = json.loads(texte)
-    except json.JSONDecodeError as erreur:
-        raise ValueError(f"JSON invalide (ligne {erreur.lineno}, colonne {erreur.colno})") from None
+    if format not in ("auto", "otlp", "normalise"):
+        raise ValueError("format : auto, otlp ou normalise attendu")
+    if isinstance(source, dict):
+        donnees = source
+    else:
+        texte = _lire_source(source, max_octets).lstrip("\ufeff")
+        if not texte.strip():
+            raise ValueError("export vide")
+        try:
+            donnees = json.loads(texte)
+        except json.JSONDecodeError as erreur:
+            raise ValueError(f"JSON invalide (ligne {erreur.lineno}, colonne {erreur.colno})") from None
+    if format == "otlp" or (format == "auto" and _est_otlp(donnees)):
+        if isinstance(source, dict):
+            donnees = _charge_otlp(source, max_octets)
+        observations, _ = _observations_otlp(donnees, max_observations, strict)
+        return observations
     if isinstance(donnees, dict) and "observations" in donnees:
         donnees = donnees["observations"]
     if not isinstance(donnees, list):
@@ -504,6 +911,20 @@ def lire_export(source: Any, max_octets: int = TAILLE_MAX, max_observations: int
             if erreur:
                 raise ValueError(erreur)
     return [dict(observation) for observation in donnees]
+
+
+def lire_otlp(source: Any, max_octets: int = TAILLE_MAX, max_spans: int = MAX_OBSERVATIONS,
+              strict: bool = True) -> list[dict]:
+    """Lit un export OTLP JSON (dict, fichier, texte ou octets) et rend des observations normalisées.
+
+    Les spans incomplets sont ignorés avec un diagnostic, les doublons `(traceId, spanId)` sont écartés et les
+    limites de taille et de nombre de spans s'appliquent. Avec `strict`, un identifiant ou un secret de requête
+    fait refuser l'export sans recopier la valeur ; sinon le chemin est masqué avant restitution.
+    """
+    if max_octets < 0 or max_spans < 0:
+        raise ValueError("les limites doivent être positives ou nulles")
+    observations, _ = _observations_otlp(_charge_otlp(source, max_octets), max_spans, strict)
+    return observations
 
 
 lire_observations = lire_export
@@ -626,12 +1047,14 @@ def main(argv=None) -> int:
     analyseur.add_argument("application_id")
     analyseur.add_argument("--environment", default="inconnu")
     analyseur.add_argument("--source", default="apm")
+    analyseur.add_argument("--format", choices=("auto", "otlp", "normalise"), default="auto")
     analyseur.add_argument("--max-octets", type=int, default=TAILLE_MAX)
     analyseur.add_argument("--max-observations", type=int, default=MAX_OBSERVATIONS)
     arguments = analyseur.parse_args(argv)
     try:
         observations = lire_export(arguments.fichier, max_octets=arguments.max_octets,
-                                   max_observations=arguments.max_observations)
+                                   max_observations=arguments.max_observations,
+                                   format=arguments.format)
         graph = depuis_observations(arguments.application_id, observations, arguments.environment, arguments.source)
     except (ValueError, OSError) as erreur:
         print(f"lecture impossible : {erreur}", file=sys.stderr)

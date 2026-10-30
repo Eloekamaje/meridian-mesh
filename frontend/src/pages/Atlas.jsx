@@ -15,6 +15,7 @@ import NoeudGraphe from "@/components/map/NoeudGraphe";
 import AreteGraphe from "@/components/map/AreteGraphe";
 import AtlasEchelle from "@/components/map/AtlasEchelle";
 import { analyserMesh, aretesGraphe, habillerNoeud, tailleDe, STYLE_ETAT } from "@/lib/atlasRendu";
+import { aretesInterfaces } from "@/lib/atlasInterfaces";
 import CielEtoile from "@/components/map/CielEtoile";
 import RegionNode from "@/components/map/RegionNode";
 import AreteOrthogonale from "@/components/map/AreteOrthogonale";
@@ -80,6 +81,10 @@ export default function Atlas() {
   const [replaying, setReplaying] = useState(false);
   const [expliquerOuvert, setExpliquerOuvert] = useState(false);
   const [interfacesOuvertes, setInterfacesOuvertes] = useState(false);
+  const [coucheInterfaces, setCoucheInterfaces] = useState(false);
+  const [etatInterfaces, setEtatInterfaces] = useState({ donnees: null, erreur: null, chargement: false });
+  const [relanceInterfaces, setRelanceInterfaces] = useState(0);
+  const interfacesChargees = useRef({ version: null });
   const direct = modeTemps === "direct";
   const [outil, setOutil] = useState("deplacement");
   const { selection, setSelection, domaineSel, setDomaineSel, focusCarte, commanderCarte, setFocusVisuel, ouvrirFlore, fermerFlore, floreOuverte, setAtlasCtx, atlasEtat, setAtlasEtat, demanderAFlore, preuveSurvolee, setRepliAuto } = useContexte();
@@ -113,6 +118,11 @@ export default function Atlas() {
   const [vueListe, setVueListe] = useState(null);
   const [favorisIds, setFavorisIds] = useState(() => favoris());
   const onBasculerFavori = useCallback((id) => setFavorisIds(basculerFavori(id)), []);
+  const rechargerInterfaces = useCallback(() => {
+    interfacesChargees.current.version = null;
+    setEtatInterfaces({ donnees: null, erreur: null, chargement: true });
+    setRelanceInterfaces((n) => n + 1);
+  }, []);
 
   // Moteur Universel de Focus Situationnel (Illumination -> Plongeon cinématique -> Sanctuaire)
   const [theatreSituationnel, setTheatreSituationnel] = useState({
@@ -567,6 +577,27 @@ export default function Atlas() {
     centrerJumeau(j);
   }, [mesh, focus, centrerJumeau]);
 
+  const interfacesDemandees = interfacesOuvertes || coucheInterfaces;
+  useEffect(() => {
+    if (!interfacesDemandees) return undefined;
+    if (etatInterfaces.donnees && interfacesChargees.current.version === version) return undefined;
+    let actif = true;
+    interfacesChargees.current.version = version;
+    setEtatInterfaces({ donnees: null, erreur: null, chargement: true });
+    api.get("/mesh/interfaces")
+      .then(({ data }) => {
+        if (actif) setEtatInterfaces({ donnees: data || {}, erreur: null, chargement: false });
+      })
+      .catch((e) => {
+        if (actif) setEtatInterfaces({
+          donnees: null,
+          erreur: e.response?.data?.detail || "Interfaces et impacts indisponibles.",
+          chargement: false,
+        });
+      });
+    return () => { actif = false; };
+  }, [interfacesDemandees, version, relanceInterfaces, etatInterfaces.donnees]);
+
   const { nodes, edges, snapshot } = useMemo(() => {
     const g = construireGraphe({
       mesh, situation, focus, vueActive, perimetreTravail,
@@ -818,6 +849,10 @@ export default function Atlas() {
 
   // Couches de relations (BCM déclaré / Réalité découverte / Écarts) + accentuation au survol/épinglage
   const aretesDuGraphe = useMemo(() => (graphe && analyse ? aretesGraphe(mesh, nodes, analyse) : null), [graphe, analyse, mesh, nodes]);
+  const aretesInterfacesGraphe = useMemo(
+    () => (coucheInterfaces && graphe && analyse ? aretesInterfaces(etatInterfaces.donnees, nodes, analyse) : []),
+    [coucheInterfaces, graphe, analyse, etatInterfaces.donnees, nodes]
+  );
   const edgesVisibles = useMemo(() => {
     let es = (aretesDuGraphe || edges).filter((e) => {
       // Corridors parents : agrégats multi-états, toujours visibles (ils portent tous les flux)
@@ -828,6 +863,10 @@ export default function Atlas() {
       if (etat === "supposee" || etat === "contestee") return couchesRel.ecarts;
       return true;
     });
+    if (aretesInterfacesGraphe.length) {
+      const ids = new Set(es.map((e) => e.id));
+      es = es.concat(aretesInterfacesGraphe.filter((e) => !ids.has(e.id)));
+    }
     // Corridors (vue Global) : quasi invisibles au repos ; le survol d'un territoire
     // illumine SES liaisons et éteint les autres — lève l'ambiguïté des arcs croisés
     es = es.map((e) => {
@@ -886,7 +925,7 @@ export default function Atlas() {
       es = [...es.filter((e) => e.id !== preuveSurvolee), ...es.filter((e) => e.id === preuveSurvolee)];
     }
     return es;
-  }, [edges, aretesDuGraphe, graphe, selected, domaineSel, domDe, couchesRel, survolJumeau, relSurvolee, selectedRelation, preuveSurvolee, secteurCurseur]);
+  }, [edges, aretesDuGraphe, aretesInterfacesGraphe, graphe, selected, domaineSel, domDe, couchesRel, survolJumeau, relSurvolee, selectedRelation, preuveSurvolee, secteurCurseur]);
 
   // Rendu graphe : au survol d'un jumeau (sans sélection), ses voisins restent éclairés, le reste s'estompe
   const nodesRendus = useMemo(() => {
@@ -2051,6 +2090,12 @@ export default function Atlas() {
           centrerJumeau={centrerJumeau}
           majUrl={majUrl}
           onFermer={() => setInterfacesOuvertes(false)}
+          coucheActive={coucheInterfaces}
+          onBasculerCouche={() => setCoucheInterfaces((active) => !active)}
+          donnees={etatInterfaces.donnees}
+          chargement={etatInterfaces.chargement}
+          erreur={etatInterfaces.erreur}
+          onRecharger={rechargerInterfaces}
         />
       )}
 

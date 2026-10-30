@@ -532,6 +532,8 @@ class Promotion(BaseModel):
 
 class ObservationsRuntime(BaseModel):
     observations: list[dict] = Field(default_factory=list, max_length=50000)
+    otlp: Optional[dict] = None
+    format: str = "normalise"
     source: str = "apm"
     environment: str = "production"
 
@@ -605,8 +607,16 @@ async def observer_interfaces_du_jumeau(jid: str, payload: ObservationsRuntime,
             jumeau = jumeau_depot.jumeau_par_id(conn, jid)
             if not jumeau:
                 raise LookupError(jid)
-            graph = jumeau_connecteurs_runtime.depuis_observations(
-                jid, payload.observations, payload.environment, payload.source)
+            if payload.format == "otlp":
+                if not payload.otlp:
+                    raise ValueError("format otlp : payload otlp absent")
+                graph = jumeau_connecteurs_runtime.depuis_otlp(
+                    jid, payload.otlp, payload.environment, payload.source)
+            elif payload.format == "normalise":
+                graph = jumeau_connecteurs_runtime.depuis_observations(
+                    jid, payload.observations, payload.environment, payload.source)
+            else:
+                raise ValueError("format attendu : normalise ou otlp")
             stats = jumeau_interfaces_depot.enregistrer(conn, jumeau["tenant_id"], graph, remplacer=False)
             return {"jumeau_id": jid, "mode": "shadow", "source": payload.source,
                     "environment": payload.environment, "stats": stats,

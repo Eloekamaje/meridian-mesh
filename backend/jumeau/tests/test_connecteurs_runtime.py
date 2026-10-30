@@ -4,6 +4,7 @@ import os
 import socket
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,8 @@ from jumeau import interfaces
 
 TS = "2026-10-30T12:00:00Z"
 TS2 = "2026-10-30T12:00:05Z"
+TS_NS = int(datetime(2026, 10, 30, 12, 0, tzinfo=timezone.utc).timestamp()) * 1_000_000_000
+TRACE_OTLP = "0af7651916cd43dd8448eb211c80319c"
 
 
 def observation(**champs):
@@ -23,6 +26,43 @@ def observation(**champs):
     }
     base.update(champs)
     return base
+
+
+def attribut_otlp(cle, valeur):
+    if isinstance(valeur, bool):
+        contenu = {"boolValue": valeur}
+    elif isinstance(valeur, int):
+        contenu = {"intValue": str(valeur)}
+    elif isinstance(valeur, float):
+        contenu = {"doubleValue": valeur}
+    else:
+        contenu = {"stringValue": str(valeur)}
+    return {"key": cle, "value": contenu}
+
+
+def span_otlp(kind=3, span_id="b7ad6b7169203331", trace_id=TRACE_OTLP, debut=TS_NS,
+              fin=TS_NS + 12_000_000, attributs=None, sans=()):
+    valeurs = {
+        "http.method": "GET", "http.route": "/comptes", "http.status_code": 200,
+        "peer.service": "app-b",
+    }
+    valeurs.update(dict(attributs or {}))
+    for cle in sans:
+        valeurs.pop(cle, None)
+    return {
+        "traceId": trace_id, "spanId": span_id, "name": "GET /comptes", "kind": kind,
+        "startTimeUnixNano": str(debut), "endTimeUnixNano": str(fin),
+        "attributes": [attribut_otlp(cle, valeur) for cle, valeur in valeurs.items()],
+    }
+
+
+def payload_otlp(spans, service="app-a"):
+    return {
+        "resourceSpans": [{
+            "resource": {"attributes": [attribut_otlp("service.name", service)]},
+            "scopeSpans": [{"scope": {"name": "test"}, "spans": spans}],
+        }],
+    }
 
 
 def test_observation_caller_produit_consomme_observee():
@@ -247,3 +287,168 @@ def test_cli_imprime_le_graphe_et_erreur_sans_stdout(tmp_path):
         cwd=backend, env=env, capture_output=True, text=True, timeout=60)
     assert echec.returncode == 2 and echec.stdout == ""
     assert "s3cr3t" not in echec.stderr
+
+
+def test_otlp_client_et_serveur_produisent_consomme_et_expose_observed():
+    client = span_otlp(span_id="client-1")
+    g = runtime.depuis_otlp("app-a", payload_otlp([client], service="app-a"), environment="prod")
+
+    assert [(a.subject, a.predicate, a.object, a.mode) for a in g.assertions] == [
+        ("app-a", "CONSOMME", "app-b : GET /comptes", "observed")]
+    assert g.partial is False and g.diagnostics == []
+    assert g.contracts[0].environment == "prod" and g.contracts[0].application_id == "app-a"
+
+    serveur = span_otlp(
+        kind=2, span_id="serveur-1",
+        attributs={"http.method": "POST", "http.route": "/paiements", "http.status_code": 201,
+                   "peer.service": "app-c"})
+    g = runtime.depuis_otlp("app-b", payload_otlp([serveur], service="app-b"), environment="prod")
+
+    assert [(a.subject, a.predicate, a.object, a.mode) for a in g.assertions] == [
+        ("app-b", "EXPOSE", "POST /paiements", "observed")]
+    assert g.partial is False and g.diagnostics == []
+
+
+def test_lire_export_auto_detecte_otlp_et_garde_le_normalise():
+    charge = json.dumps(payload_otlp([span_otlp()]))
+
+    otlp = runtime.lire_export(charge)
+    assert [(o["caller"], o["callee"], o["trace_id"], o["path"]) for o in otlp] == [
+        ("app-a", "app-b", TRACE_OTLP, "/comptes")]
+    assert runtime.lire_export(charge, format="otlp") == otlp
+    assert runtime.lire_export(charge.encode("utf-8")) == otlp
+    assert runtime.depuis_otlp("app-a", charge.encode("utf-8")).assertions[0].predicate == "CONSOMME"
+    assert runtime.lire_export(json.dumps([observation()])) == [observation()]
+    assert runtime.lire_export(json.dumps({"observations": [observation()]})) == [observation()]
+
+
+def test_otlp_http_trace_status_duree_et_route():
+    g = runtime.depuis_otlp(
+        "app-a", payload_otlp([span_otlp(attributs={"http.route": "/comptes/{id}",
+                                                    "http.status_code": 204})]))
+    a = g.assertions[0]
+    meta = json.loads(a.evidence)
+
+    assert (meta["trace_id"], meta["status"], meta["duration_ms"]) == (TRACE_OTLP, 204, 12.0)
+    assert (g.operations[0].method, g.operations[0].path) == ("GET", "/comptes/{id}")
+    assert a.confidence == 0.95
+
+
+def test_otlp_grpc_method_service_statut_et_duree():
+    span = span_otlp(
+        kind=2, span_id="grpc-1", fin=TS_NS + 5_000_000,
+        attributs={"rpc.system": "grpc", "rpc.service": "comptes.Comptes", "rpc.method": "Lister",
+                   "rpc.grpc.status_code": 0, "peer.service": "app-a"},
+        sans=("http.method", "http.route", "http.status_code"))
+    g = runtime.depuis_otlp("app-b", payload_otlp([span], service="app-b"))
+
+    assert [(o.protocol, o.method, o.path) for o in g.operations] == [
+        ("grpc", "LISTER", "/comptes.Comptes/Lister")]
+    a = g.assertions[0]
+    assert (a.predicate, a.object, a.mode) == ("EXPOSE", "LISTER /comptes.Comptes/Lister", "observed")
+    meta = json.loads(a.evidence)
+    assert (meta["status"], meta["duration_ms"], meta["trace_id"]) == (200, 5.0, TRACE_OTLP)
+
+
+def test_otlp_spans_incomplets_ignores_avec_compteur_de_diagnostics():
+    sans_ts = span_otlp(span_id="sans-ts")
+    sans_ts.pop("startTimeUnixNano")
+    sans_methode = span_otlp(span_id="sans-methode", sans=("http.method",))
+    sans_chemin = span_otlp(span_id="sans-chemin", sans=("http.route",))
+    valide = span_otlp(span_id="valide")
+
+    g = runtime.depuis_otlp(
+        "app-a", payload_otlp([sans_ts, sans_methode, sans_chemin, valide]))
+
+    assert [(a.predicate, a.object, a.mode) for a in g.assertions] == [
+        ("CONSOMME", "app-b : GET /comptes", "observed")]
+    assert g.partial is True
+    texte = " | ".join(g.diagnostics)
+    assert "startTimeUnixNano" in texte and "méthode manquante" in texte and "chemin manquant" in texte
+    assert "3 span(s) ignoré(s) sur 4" in texte
+
+
+def test_otlp_sens_indetermine_reste_partiel_sans_inventer():
+    ambigu = span_otlp(kind=0, span_id="ambigu", sans=("peer.service",))
+    g = runtime.depuis_otlp("app-a", payload_otlp([ambigu]))
+
+    assert [(a.predicate, a.object, a.mode) for a in g.assertions] == [
+        ("CONSOMME", "GET /comptes", "observed")]
+    assert g.partial is True
+    assert any("callee indéterminé" in diagnostic for diagnostic in g.diagnostics)
+
+    avec_pair = span_otlp(kind=0, span_id="ambigu-avec-pair")
+    g = runtime.depuis_otlp("app-a", payload_otlp([avec_pair]))
+
+    assert [(a.predicate, a.object) for a in g.assertions] == [("CONSOMME", "app-b : GET /comptes")]
+    assert any("sens caller/callee indéterminé" in diagnostic for diagnostic in g.diagnostics)
+
+
+def test_otlp_deduplique_les_spans_identiques():
+    span = span_otlp()
+
+    g = runtime.depuis_otlp("app-a", payload_otlp([span, dict(span)]))
+
+    assert len(g.assertions) == 1 and len(g.operations) == 1
+
+
+def test_otlp_json_invalide_taille_et_secret_sans_fuite(tmp_path):
+    secret = "s3cr3t-otlp"
+    with pytest.raises(ValueError, match="JSON invalide") as invalide:
+        runtime.depuis_otlp("app-a", '{"resourceSpans": "' + secret)
+    assert secret not in str(invalide.value)
+
+    charge = json.dumps(payload_otlp([span_otlp()]))
+    with pytest.raises(ValueError, match="trop volumineux"):
+        runtime.lire_otlp(charge, max_octets=10)
+    with pytest.raises(ValueError, match="trop volumineux"):
+        runtime.lire_otlp(json.dumps(payload_otlp([span_otlp(span_id=str(i)) for i in range(3)])),
+                          max_spans=2)
+    chemin = tmp_path / "otlp.json"
+    chemin.write_text(charge, encoding="utf-8")
+    with pytest.raises(ValueError, match="trop volumineux"):
+        runtime.lire_otlp(chemin, max_octets=10)
+
+    avec_secret = span_otlp(
+        attributs={"http.url": "https://alice:s3cr3t@api.example.test/comptes?token=abc123"},
+        sans=("http.route",))
+    for lecture in (lambda: runtime.depuis_otlp("app-a", payload_otlp([avec_secret])),
+                    lambda: runtime.lire_export(json.dumps(payload_otlp([avec_secret])))):
+        with pytest.raises(ValueError) as erreur:
+            lecture()
+        message = str(erreur.value)
+        assert all(interdit not in message for interdit in ("alice", "s3cr3t", "abc123"))
+
+    observations = runtime.lire_otlp(payload_otlp([avec_secret]), strict=False)
+    assert observations[0]["path"] == "/comptes?token=***"
+    rendu = json.dumps(observations)
+    assert all(interdit not in rendu for interdit in
+               ("alice", "s3cr3t", "abc123", "api.example.test"))
+
+
+def test_otlp_ne_produit_aucune_assertion_declared():
+    spans = [span_otlp(span_id="client"), span_otlp(kind=2, span_id="serveur")]
+    g = runtime.depuis_otlp("app-a", payload_otlp(spans, service="app-a"), environment="prod")
+
+    assert g.assertions
+    assert {a.predicate for a in g.assertions} == {"CONSOMME", "EXPOSE"}
+    assert all(a.mode == "observed" for a in g.assertions)
+    assert not any(a.mode == "declared" for a in g.assertions)
+
+
+def test_cli_format_otlp(tmp_path):
+    chemin = tmp_path / "otlp.json"
+    chemin.write_text(json.dumps(payload_otlp([span_otlp()])), encoding="utf-8")
+    backend = Path(__file__).resolve().parents[2]
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(backend) + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+
+    resultat = subprocess.run(
+        [sys.executable, "-m", "jumeau.connecteurs_runtime", str(chemin), "app-a",
+         "--format", "otlp", "--environment", "prod"],
+        cwd=backend, env=env, capture_output=True, text=True, timeout=60)
+
+    assert resultat.returncode == 0
+    rendu = json.loads(resultat.stdout)
+    assert rendu["assertions"][0]["mode"] == "observed"
+    assert rendu["assertions"][0]["object"] == "app-b : GET /comptes"

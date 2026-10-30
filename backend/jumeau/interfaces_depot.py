@@ -111,6 +111,27 @@ def operations_publiques(graph, visibles) -> list[dict]:
                                          operation["id"]))
 
 
+def _operation_citee(objet, references, producteurs, operations_par_app, exposees):
+    """Une assertion CONSOMME peut citer l'id, METHOD path, le chemin, ou `<cible> : METHOD path` (runtime)."""
+    if isinstance(objet, str) and " : " in objet:
+        cible, reference = objet.split(" : ", 1)
+        cible, reference = cible.strip(), reference.strip()
+        candidates = [operation for operation in operations_par_app.get(cible, [])
+                      if producteurs.get(operation.id) == cible and reference in _references_operation(operation)]
+        # Deux contrats peuvent porter la même opération (code + runtime) : une production prouvée par EXPOSE
+        # tranche ; sinon on ne choisit pas au hasard entre plusieurs candidats.
+        prouvees = [operation for operation in candidates if operation.id in exposees]
+        if len(prouvees) == 1:
+            return prouvees[0]
+        if len(candidates) == 1:
+            return candidates[0]
+        return None
+    operation = references.get(objet)
+    if operation is not None:
+        return operation
+    return None
+
+
 def deriver_aretes(graph, visibles) -> list[dict]:
     """Dérive les arêtes CONSOMME → opération → application productrice via contrat/EXPOSE.
 
@@ -127,6 +148,27 @@ def deriver_aretes(graph, visibles) -> list[dict]:
             operations.setdefault(operation.id, operation)
     producteurs = {operation.id: contrats[operation.contract_id].application_id
                    for operation in operations.values()}
+    operations_par_app: dict[str, list[Operation]] = {}
+    for operation in operations.values():
+        operations_par_app.setdefault(producteurs[operation.id], []).append(operation)
+    def _format_de_source(source):
+        valeur = str(source or "").strip().lower()
+        if valeur in ("code", "openapi", "wsdl"):
+            return valeur
+        if valeur in ("gateway", "apm", "runtime", "datadog", "otel", "otlp"):
+            return "runtime"
+        return None
+
+    exposees = set()
+    for operation in operations.values():
+        format_contrat = contrats[operation.contract_id].format
+        for assertion in graph.assertions:
+            if (assertion.predicate == "EXPOSE" and assertion.subject == producteurs[operation.id]
+                    and assertion.object in _references_operation(operation)):
+                format_source = _format_de_source(assertion.source)
+                if format_source is None or format_source == format_contrat:
+                    exposees.add(operation.id)
+                    break
 
     references: dict[str, Operation] = {}
     ambigues = set()
@@ -144,7 +186,7 @@ def deriver_aretes(graph, visibles) -> list[dict]:
     for assertion in graph.assertions:
         if assertion.predicate != "CONSOMME" or assertion.subject not in visibles:
             continue
-        operation = references.get(assertion.object)
+        operation = _operation_citee(assertion.object, references, producteurs, operations_par_app, exposees)
         if operation is None:
             continue
         cible = producteurs[operation.id]

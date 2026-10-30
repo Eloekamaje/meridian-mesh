@@ -86,23 +86,41 @@ function Compte({ testid, valeur }) {
   return <span data-testid={testid} className="rounded border border-[rgba(148,163,184,0.16)] px-2 py-1 text-[#94A3B8]">{valeur}</span>;
 }
 
-export default function AtlasInterfaces({ version = 0, jumeauPar, setSelection, centrerJumeau, majUrl, onFermer }) {
+export default function AtlasInterfaces({
+  version = 0,
+  jumeauPar,
+  setSelection,
+  centrerJumeau,
+  majUrl,
+  onFermer,
+  coucheActive = false,
+  onBasculerCouche,
+  donnees: donneesParent,
+  chargement: chargementParent,
+  erreur: erreurParent,
+  onRecharger,
+}) {
   const [rechargement, setRechargement] = useState(0);
-  const [etat, setEtat] = useState({ donnees: null, erreur: null, chargement: true });
+  const [etatLocal, setEtatLocal] = useState({ donnees: null, erreur: null, chargement: true });
+  const piloteParParent = donneesParent !== undefined || chargementParent !== undefined || erreurParent !== undefined || typeof onRecharger === "function";
 
   useEffect(() => {
+    if (piloteParParent) return undefined;
     let actif = true;
-    setEtat({ donnees: null, erreur: null, chargement: true });
+    setEtatLocal({ donnees: null, erreur: null, chargement: true });
     api.get("/mesh/interfaces")
-      .then(({ data }) => actif && setEtat({ donnees: data || {}, erreur: null, chargement: false }))
-      .catch((e) => actif && setEtat({
+      .then(({ data }) => actif && setEtatLocal({ donnees: data || {}, erreur: null, chargement: false }))
+      .catch((e) => actif && setEtatLocal({
         donnees: null,
         erreur: e.response?.data?.detail || "Interfaces et impacts indisponibles.",
         chargement: false,
       }));
     return () => { actif = false; };
-  }, [version, rechargement]);
+  }, [version, rechargement, piloteParParent]);
 
+  const etat = piloteParParent
+    ? { donnees: donneesParent ?? null, erreur: erreurParent ?? null, chargement: !!chargementParent }
+    : etatLocal;
   const donnees = etat.donnees || {};
   const operations = Array.isArray(donnees.operations) ? donnees.operations : [];
   const edges = Array.isArray(donnees.edges) ? donnees.edges : [];
@@ -120,6 +138,11 @@ export default function AtlasInterfaces({ version = 0, jumeauPar, setSelection, 
     const cible = jumeauPar?.(edge.target) || jumeauPar?.(edge.source) || null;
     if (cible && centrerJumeau) centrerJumeau(cible);
     else majUrl?.({ sel: ids[ids.length - 1], domaine: null });
+  };
+
+  const relancer = () => {
+    if (piloteParParent) onRecharger?.();
+    else setRechargement((n) => n + 1);
   };
 
   return (
@@ -145,6 +168,34 @@ export default function AtlasInterfaces({ version = 0, jumeauPar, setSelection, 
       </div>
 
       <div className="flex-1 space-y-4 overflow-y-auto p-4 text-xs leading-relaxed text-[#D8E2EA]">
+        <button
+          type="button"
+          role="switch"
+          aria-checked={!!coucheActive}
+          aria-label="Afficher les interfaces sur la carte"
+          onClick={onBasculerCouche}
+          disabled={!onBasculerCouche}
+          data-testid="atlas-interfaces-couche"
+          className={`flex w-full items-center justify-between gap-2 rounded-lg border ${BORDURE} px-2.5 py-2 text-left transition-colors ${onBasculerCouche ? "hover:bg-[rgba(148,163,184,0.08)]" : "opacity-50"} ${FOCUS}`}
+        >
+          <span className="flex items-center gap-1.5 font-code text-[10px] uppercase tracking-[0.12em] text-[#94A3B8]">
+            <ArrowsLeftRight size={12} className="text-[#60A5FA]" aria-hidden />
+            Afficher sur la carte
+          </span>
+          <span
+            aria-hidden="true"
+            className={`relative inline-flex h-4 w-7 shrink-0 rounded-full border transition-colors ${
+              coucheActive ? "border-[#60A5FA]/60 bg-[#60A5FA]/25" : "border-[rgba(148,163,184,0.30)] bg-[rgba(148,163,184,0.10)]"
+            }`}
+          >
+            <span
+              className={`absolute top-1/2 h-3 w-3 -translate-y-1/2 rounded-full transition-all ${
+                coucheActive ? "left-3.5 bg-[#60A5FA]" : "left-0.5 bg-[#94A3B8]"
+              }`}
+            />
+          </span>
+        </button>
+
         {etat.chargement && (
           <p className={ETIQUETTE} data-testid="atlas-interfaces-chargement">Lecture des interfaces et des impacts…</p>
         )}
@@ -157,7 +208,7 @@ export default function AtlasInterfaces({ version = 0, jumeauPar, setSelection, 
                 <p className="text-xs text-[#F87171]">{etat.erreur}</p>
                 <button
                   type="button"
-                  onClick={() => setRechargement((n) => n + 1)}
+                  onClick={relancer}
                   data-testid="atlas-interfaces-reessayer"
                   className={`mt-2 flex items-center gap-1.5 rounded border ${BORDURE} px-2 py-1 text-[11px] text-[#94A3B8] transition-colors hover:text-[#F2F6F8] ${FOCUS}`}
                 >

@@ -57,6 +57,19 @@ def test_une_consommation_par_method_path_designe_la_bonne_operation():
     assert aretes[0]["operation"] == "POST /paiements"
 
 
+def test_une_consommation_runtime_prefixee_par_la_cible_designe_l_operation():
+    graph = _graphe([
+        _assertion("paiements", "CONSOMME", "facturation : GET /paiements", mode="observed",
+                   source="gateway", confidence=0.9, evidence="trace-42"),
+    ])
+    aretes = interfaces_depot.deriver_aretes(graph, VISIBLES)
+    assert len(aretes) == 1
+    assert aretes[0]["source"] == "paiements"
+    assert aretes[0]["target"] == "facturation"
+    assert aretes[0]["operation_id"] == "op-get"
+    assert aretes[0]["mode"] == "observed"
+
+
 def test_une_operation_inconnue_ne_produit_aucune_arete():
     graph = _graphe([
         _assertion("paiements", "CONSOMME", "GET /inconnue"),

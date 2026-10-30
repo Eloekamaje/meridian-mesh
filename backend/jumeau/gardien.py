@@ -21,7 +21,8 @@ import psycopg
 from pydantic import BaseModel, Field
 from strands import Agent
 
-from jumeau import agent, comprendre, connaissance, contradicteur, depot, lecteurs, methodes, poignee, recoupement, registre, schemas, temps
+from jumeau import (agent, comprendre, connaissance, contradicteur, decouverte_interfaces, depot, impacts_situations,
+                    lecteurs, methodes, poignee, recoupement, registre, schemas, temps)
 from jumeau.ingerer import ingerer
 from jumeau.source_git import sha_courant
 
@@ -322,9 +323,12 @@ async def veiller(conn, db, jumeau_id, chemins=None, rediger=_rediger):
         # La découverte d'interfaces fait partie de la passe : elle transforme les EXPOSE du code en graphe daté,
         # journalise un DiscoveryRun et calcule les changements/impacts. Une panne de ce journal ne bloque pas la veille.
         try:
-            decouverte_interfaces.executer(
+            resultat = decouverte_interfaces.executer(
                 conn, jumeau["tenant_id"], jumeau_id,
                 claims=connaissance.connaissances(conn, jumeau_id, limite=1000), source="gardien")
+            sit = impacts_situations.situation_depuis_run(resultat["run"], jumeau)
+            if sit:
+                await publier(db, sit)
         except Exception:
             journal.warning("gardien %s : découverte d'interfaces impossible", jumeau_id, exc_info=True)
     branches = lecteurs.lecteurs_de(depot.toutes_les_sources(conn, jumeau_id))
