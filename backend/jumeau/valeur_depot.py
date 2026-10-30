@@ -41,7 +41,7 @@ def _texte(valeur, champ, obligatoire=True):
 def _json(valeur):
     if valeur is None:
         return None
-    if not isinstance(valeur, (Mapping, list, tuple)):
+    if not isinstance(valeur, (Mapping, list, tuple, int, float, str, bool)):
         raise ValeurInvalide("valeur JSON attendue")
     return valeur
 

@@ -1,0 +1,47 @@
+{
+  "schema": "meridian.value-pilote/1",
+  "tenant": "demo",
+  "description": "Hypothèses de valeur du pilote. Aucun résultat réalisé n'est déclaré : observe reste null tant qu'une mesure réelle n'est pas disponible.",
+  "valeurs": [
+    {
+      "id": "val-pilote-incident",
+      "type": "cout_evite",
+      "libelle": "Coût évité attendu par la réduction de la latence de paiement",
+      "proprietaire": "ops",
+      "beneficiaire": "Paiements",
+      "domaine": "Paiement",
+      "objet_source_type": "situation",
+      "objet_source_id": "sit-latence-paiements",
+      "baseline": null,
+      "cible": 1000,
+      "observe": null,
+      "unite": "EUR",
+      "devise": "EUR",
+      "periode": null,
+      "attribution": "contribution",
+      "confiance": 0.35,
+      "preuves": [],
+      "statut": "hypothese"
+    },
+    {
+      "id": "val-pilote-r118",
+      "type": "conformite",
+      "libelle": "Hypothèse de zéro non-conformité R-118 constatée après le changement réglementaire",
+      "proprietaire": "architecte",
+      "beneficiaire": "Conformité",
+      "domaine": "Risque",
+      "objet_source_type": "situation",
+      "objet_source_id": "sit-anomalie-fraude",
+      "baseline": null,
+      "cible": 0,
+      "observe": null,
+      "unite": "non-conformite",
+      "devise": null,
+      "periode": null,
+      "attribution": "contribution",
+      "confiance": 0.3,
+      "preuves": [],
+      "statut": "hypothese"
+    }
+  ]
+}

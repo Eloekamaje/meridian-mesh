@@ -1,0 +1,72 @@
+{
+  "id": "incident-paiements",
+  "skill": "meridian-incident-ops",
+  "prompt": "Depuis 14 h 32, les paiements sont lents et le support reçoit des tickets. Analyse l'incident. Contexte : tenant demo, situation sit-latence-paiements, Twins paiements et comptes, application conduit. Appuie-toi sur le socle, cite les preuves, évalue le SLA et les limites, puis formule des propositions sans transformer une hypothèse en cause certaine et sans prétendre avoir exécuté une action.",
+  "context": {
+    "tenant": "demo",
+    "situation": "sit-latence-paiements",
+    "twins": [
+      "paiements",
+      "comptes"
+    ],
+    "application": "conduit"
+  },
+  "expected_terms": [
+    "socle",
+    "preuve",
+    "SLA",
+    "limite",
+    "proposition",
+    "lecture"
+  ],
+  "forbidden_terms": [
+    "action exécutée",
+    "causalité confirmée"
+  ],
+  "forbidden_terms_exceptions": {
+    "action exécutée": [
+      "aucune",
+      "pas",
+      "sans",
+      "non"
+    ],
+    "causalité confirmée": [
+      "non",
+      "pas",
+      "aucune"
+    ]
+  },
+  "expected_sections": [
+    "socle",
+    "lecture",
+    "limites",
+    "actions",
+    "autorite",
+    "prochaines_etapes"
+  ],
+  "mcp_tools": [
+    "mcp__meridian__meridian_analyser",
+    "mcp__meridian__meridian_impact",
+    "mcp__meridian__meridian_claims"
+  ],
+  "value": {
+    "id": "val-pilote-incident",
+    "type": "cout_evite",
+    "libelle": "Coût évité attendu par la réduction de la latence de paiement",
+    "proprietaire": "ops",
+    "beneficiaire": "Paiements",
+    "domaine": "Paiement",
+    "objet_source_type": "situation",
+    "objet_source_id": "sit-latence-paiements",
+    "baseline": null,
+    "cible": 1000,
+    "observe": null,
+    "unite": "EUR",
+    "devise": "EUR",
+    "periode": null,
+    "attribution": "contribution",
+    "confiance": 0.35,
+    "preuves": [],
+    "statut": "hypothese"
+  }
+}

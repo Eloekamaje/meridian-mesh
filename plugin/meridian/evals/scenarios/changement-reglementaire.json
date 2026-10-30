@@ -1,0 +1,70 @@
+{
+  "id": "changement-reglementaire",
+  "skill": "meridian-architecture-impact",
+  "prompt": "Un changement réglementaire impose de revoir la règle R-118 de contrôle Fraude. Évalue son impact sur l'application conduit et ses interfaces. Contexte : tenant demo, situation sit-anomalie-fraude, Twins fraude et paiements, application conduit. Distingue l'impact prouvé, inféré et inconnu, cite les preuves et les limites, et marque toute écriture comme soumise à approbation. Ne présente pas le changement comme déjà en production et ne prétends pas avoir exécuté une action ; formule des propositions.",
+  "context": {
+    "tenant": "demo",
+    "situation": "sit-anomalie-fraude",
+    "twins": [
+      "fraude",
+      "paiements"
+    ],
+    "application": "conduit"
+  },
+  "expected_terms": [
+    "impact",
+    "interface",
+    "preuve",
+    "limite",
+    "approbation",
+    "proposition"
+  ],
+  "forbidden_terms": [
+    "déployé",
+    "action exécutée"
+  ],
+  "forbidden_terms_exceptions": {
+    "déployé": [
+      "pas",
+      "non",
+      "aucun"
+    ],
+    "action exécutée": [
+      "aucune",
+      "pas",
+      "sans",
+      "non"
+    ]
+  },
+  "expected_sections": [
+    "socle",
+    "impact",
+    "limites",
+    "approbation",
+    "prochaines_etapes"
+  ],
+  "mcp_tools": [
+    "mcp__meridian__meridian_analyser",
+    "mcp__meridian__meridian_impact"
+  ],
+  "value": {
+    "id": "val-pilote-r118",
+    "type": "conformite",
+    "libelle": "Hypothèse de zéro non-conformité R-118 constatée après le changement réglementaire",
+    "proprietaire": "architecte",
+    "beneficiaire": "Conformité",
+    "domaine": "Risque",
+    "objet_source_type": "situation",
+    "objet_source_id": "sit-anomalie-fraude",
+    "baseline": null,
+    "cible": 0,
+    "observe": null,
+    "unite": "non-conformite",
+    "devise": null,
+    "periode": null,
+    "attribution": "contribution",
+    "confiance": 0.3,
+    "preuves": [],
+    "statut": "hypothese"
+  }
+}
