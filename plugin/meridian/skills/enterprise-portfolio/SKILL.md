@@ -10,7 +10,7 @@ Répondre à une question d'entreprise, pas seulement d'application : que se pas
 
 ## Méthode
 1. Appeler `meridian_portefeuille` avec le domaine demandé ou sans domaine pour l'entreprise.
-2. Lire `valeur` : situations, situations hautes, décisions, initiatives, outcomes, learnings, bénéfices renseignés.
+2. Lire `valeur` et `valeur_ledger` : situations, décisions, initiatives, outcomes, valeurs attendues/observées, dette de mesure, valeur à risque par devise.
 3. Lire `attention` et les propositions, sans conclure à une causalité.
 4. Si une application précise est mentionnée, appeler ensuite `meridian_analyser` pour le détail.
 5. Produire une lecture business : exposition, priorités, bénéfices, décisions attendues, risques.

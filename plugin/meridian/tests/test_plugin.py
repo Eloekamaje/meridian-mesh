@@ -61,7 +61,8 @@ def test_le_serveur_mcp_expose_des_tools_read_only(monkeypatch):
     outils = asyncio.run(module.server.list_tools())
     noms = {outil.name for outil in outils}
     attendus = {"meridian_analyser", "meridian_portefeuille", "meridian_impact",
-                "meridian_claims", "meridian_learnings"}
+                "meridian_claims", "meridian_learnings", "meridian_valeurs",
+                "meridian_valeur_resume"}
     assert attendus <= noms
     assert "meridian_ecrire" not in noms and "meridian_supprimer" not in noms
 

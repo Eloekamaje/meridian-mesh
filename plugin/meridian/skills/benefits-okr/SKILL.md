@@ -10,11 +10,12 @@ Aider à décider et à apprendre : bénéfice attendu, mesure, cible, outcome o
 
 ## Méthode
 1. Appeler `meridian_analyser` avec `profil="product_owner"` et le contexte.
-2. Lire les learnings existants ; ne jamais fabriquer un learning sans enseignement explicite.
-3. Distinguer bénéfice attendu, mesure observée, cible et écart.
-4. Proposer une décision, une priorité ou une mesure d'outcome.
-5. Si aucun outcome n'existe, le dire et proposer de mesurer.
-6. Capitaliser seulement si un humain fournit l'enseignement et les conditions de réutilisation.
+2. Appeler `meridian_valeurs` ou `meridian_valeur_resume` pour le Value Ledger.
+3. Lire les learnings existants ; ne jamais fabriquer un learning sans enseignement explicite.
+4. Distinguer bénéfice attendu, mesure observée, cible, baseline, attribution et écart.
+5. Si la baseline ou l'outcome manque, déclarer une **dette de mesure**, pas une valeur réalisée.
+6. Proposer une décision, une priorité ou une mesure d'outcome.
+7. Capitaliser seulement si un humain fournit l'enseignement et les conditions de réutilisation.
 
 ## Garde-fous
 - pas de bénéfice inventé ;

@@ -116,6 +116,27 @@ def meridian_portefeuille(domaine: str | None = None, limite: int = 50) -> dict:
 
 
 @server.tool()
+def meridian_valeurs(statut: str | None = None, domaine: str | None = None,
+                     type_: str | None = None, limite: int = 200) -> dict:
+    """Value Ledger : valeurs attendues, observées, statuts et écarts (lecture seule)."""
+    params = {"limite": limite}
+    if statut:
+        params["statut"] = statut
+    if domaine:
+        params["domaine"] = domaine
+    if type_:
+        params["type"] = type_
+    return _appel("GET", "/boucle/valeurs", params=params)
+
+
+@server.tool()
+def meridian_valeur_resume(domaine: str | None = None) -> dict:
+    """Résumé du Value Ledger, séparé par devise et unité (lecture seule)."""
+    params = {"domaine": domaine} if domaine else {}
+    return _appel("GET", "/boucle/valeurs/resume", params=params)
+
+
+@server.tool()
 def meridian_attention(type_: str = "SITUATION", limite: int = 20) -> dict:
     """Objets classés par l'attention Méridian, avec score et raisons (lecture seule)."""
     return _appel("GET", "/boucle/attention", params={"type": type_, "limite": limite})

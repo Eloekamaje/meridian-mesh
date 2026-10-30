@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 
 import boucle_routes
 from jumeau import attention, boucle, entreprise_depot, evaluation_outils, evaluation_profils
-from jumeau import memoire_org, outcomes, portefeuille, rls
+from jumeau import memoire_org, outcomes, portefeuille, rls, valeur as valeur_module
 from jumeau import specialiste_decouverte, specialiste_impact, specialiste_preuve
 from jumeau import specialistes, temporalite, twins_types
 from jumeau import composition, graph_store, profils, reponse_cognitive
@@ -103,6 +103,47 @@ class DemandeComposition(BaseModel):
 
 class EvaluationProfilsRequete(BaseModel):
     reponses: dict[str, dict[str, Any]] = Field(default_factory=dict)
+
+
+class CreationValeur(BaseModel):
+    id: str = Field(min_length=1, max_length=128)
+    type: str
+    libelle: str = Field(min_length=1, max_length=240)
+    proprietaire: str = Field(min_length=1, max_length=160)
+    beneficiaire: str | None = None
+    domaine: str | None = None
+    objet_source_type: str | None = None
+    objet_source_id: str | None = None
+    baseline: Any = None
+    cible: Any = None
+    observe: Any = None
+    unite: str | None = None
+    devise: str | None = None
+    periode: str | None = None
+    attribution: str = "inconnue"
+    confiance: float = 0.5
+    preuves: list[Any] = Field(default_factory=list)
+    fraicheur: Any = None
+    cout: Any = None
+    risque: Any = None
+    statut: str = "hypothese"
+    date_revue: str | None = None
+    donnees: dict[str, Any] = Field(default_factory=dict)
+
+
+class MiseAJourValeur(BaseModel):
+    statut: str | None = None
+    observe: Any = None
+    baseline: Any = None
+    cible: Any = None
+    confiance: float | None = None
+    preuves: list[Any] | None = None
+    fraicheur: Any = None
+    cout: Any = None
+    risque: Any = None
+    date_revue: str | None = None
+    attribution: str | None = None
+    donnees: dict[str, Any] | None = None
 
 
 def _contexte(conn, tenant):
@@ -595,3 +636,89 @@ async def lire_portefeuille(
     resultat = await _avec_connexion(tenant, lambda conn: portefeuille.agreger(
         conn, tenant, domaine=domaine, limite=limite))
     return boucle_routes._assainir(resultat)
+
+
+@router.get("/valeurs/resume")
+async def resume_valeurs(
+    request: Request,
+    domaine: str | None = Query(None, max_length=120),
+    x_persona: str = Header("architecte", max_length=64),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    boucle_routes._verifier_contexte(x_persona, x_espace)
+    tenant = boucle_routes._tenant(request, x_tenant)
+    resultat = await _avec_connexion(
+        tenant, lambda conn: valeur_module.resume(conn, tenant, domaine=domaine))
+    return boucle_routes._assainir(resultat)
+
+
+@router.get("/valeurs")
+async def lister_valeurs(
+    request: Request,
+    statut: str | None = Query(None, max_length=32),
+    domaine: str | None = Query(None, max_length=120),
+    type_: str | None = Query(None, alias="type", max_length=40),
+    proprietaire: str | None = Query(None, max_length=160),
+    limite: int = Query(200, ge=1, le=1000),
+    x_persona: str = Header("architecte", max_length=64),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    boucle_routes._verifier_contexte(x_persona, x_espace)
+    tenant = boucle_routes._tenant(request, x_tenant)
+    valeurs = await _avec_connexion(tenant, lambda conn: valeur_module.lister(
+        conn, tenant, statut=statut, domaine=domaine, type_=type_,
+        proprietaire=proprietaire, limite=limite))
+    return {"tenant": tenant, "valeurs": boucle_routes._assainir(valeurs)}
+
+
+@router.get("/valeurs/{valeur_id}")
+async def lire_valeur(
+    valeur_id: str,
+    request: Request,
+    x_persona: str = Header("architecte", max_length=64),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    boucle_routes._verifier_contexte(x_persona, x_espace)
+    tenant = boucle_routes._tenant(request, x_tenant)
+    valeur = await _avec_connexion(
+        tenant, lambda conn: valeur_module.lire(conn, tenant, valeur_id))
+    if valeur is None:
+        raise HTTPException(404, "Valeur introuvable")
+    return {"tenant": tenant, "valeur": boucle_routes._assainir(valeur)}
+
+
+@router.post("/valeurs", status_code=201)
+async def creer_valeur(
+    payload: CreationValeur,
+    request: Request,
+    x_persona: str = Header("architecte", max_length=64),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    boucle_routes._verifier_contexte(x_persona, x_espace)
+    tenant = boucle_routes._tenant(request, x_tenant)
+    donnees = payload.model_dump()
+    donnees["tenant_id"] = tenant
+    valeur = await _avec_connexion(
+        tenant, lambda conn: valeur_module.creer(conn, tenant, donnees))
+    return {"tenant": tenant, "valeur": boucle_routes._assainir(valeur)}
+
+
+@router.patch("/valeurs/{valeur_id}")
+async def maj_valeur(
+    valeur_id: str,
+    payload: MiseAJourValeur,
+    request: Request,
+    x_persona: str = Header("architecte", max_length=64),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    boucle_routes._verifier_contexte(x_persona, x_espace)
+    tenant = boucle_routes._tenant(request, x_tenant)
+    changements = {cle: v for cle, v in payload.model_dump().items() if v is not None}
+    valeur = await _avec_connexion(
+        tenant, lambda conn: valeur_module.mettre_a_jour(conn, tenant, valeur_id, changements))
+    return {"tenant": tenant, "valeur": boucle_routes._assainir(valeur)}

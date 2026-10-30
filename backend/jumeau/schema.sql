@@ -553,3 +553,44 @@ CREATE OR REPLACE TRIGGER outil_audit_immuable BEFORE UPDATE OR DELETE ON outil_
     FOR EACH ROW EXECUTE FUNCTION immuable();
 CREATE OR REPLACE TRIGGER outil_audit_sans_truncate BEFORE TRUNCATE ON outil_audit
     FOR EACH STATEMENT EXECUTE FUNCTION immuable();
+
+-- ---------------------------------------------------------------------------
+-- Value Ledger : valeur attendue, observée, attribuée et réalisée.
+-- Bounded context distinct des huit familles d'entreprise (ADR-0009).
+-- Une ligne relie une décision/initiative/outcome à une hypothèse de valeur.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS valeur (
+    id                  text NOT NULL,
+    tenant_id           text NOT NULL,
+    type                text NOT NULL,
+    libelle             text NOT NULL,
+    proprietaire        text NOT NULL,
+    beneficiaire        text,
+    domaine             text,
+    objet_source_type   text,
+    objet_source_id     text,
+    baseline            jsonb,
+    cible               jsonb,
+    observe             jsonb,
+    unite               text,
+    devise              text,
+    periode             text,
+    attribution         text NOT NULL DEFAULT 'inconnue'
+        CHECK (attribution IN ('directe', 'contribution', 'activation', 'inconnue')),
+    confiance           double precision NOT NULL DEFAULT 0.5
+        CHECK (confiance >= 0 AND confiance <= 1),
+    preuves             jsonb NOT NULL DEFAULT '[]',
+    fraicheur           jsonb,
+    cout                jsonb,
+    risque              jsonb,
+    statut              text NOT NULL DEFAULT 'hypothese'
+        CHECK (statut IN ('hypothese', 'mesuree', 'validee', 'realisee', 'deplacee', 'detruite', 'abandonnee')),
+    date_revue          date,
+    donnees             jsonb NOT NULL DEFAULT '{}',
+    cree_le             timestamptz NOT NULL DEFAULT now(),
+    maj_le              timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, id)
+);
+CREATE INDEX IF NOT EXISTS valeur_tenant_statut ON valeur (tenant_id, statut);
+CREATE INDEX IF NOT EXISTS valeur_tenant_domaine ON valeur (tenant_id, domaine);
+CREATE INDEX IF NOT EXISTS valeur_objet ON valeur (tenant_id, objet_source_type, objet_source_id);

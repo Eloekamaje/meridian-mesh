@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from jumeau import attention, entreprise_depot
+from jumeau import attention, entreprise_depot, valeur
 
 __all__ = ["agreger"]
 
@@ -151,11 +151,16 @@ def agreger(conn, tenant_id, *, domaine=None, limite=50) -> dict:
         return _texte(valeur, 20).upper()
 
     haute = sum(1 for situation in situations if _priorite(situation) == "HAUTE")
+    try:
+        valeur_ledger = valeur.resume(conn, tenant, domaine=domaine)
+    except Exception:
+        valeur_ledger = None
     return {
         "tenant": tenant,
         "scope": {"kind": "portfolio" if domaine else "enterprise", "domaine": domaine or None},
         "propositions": propositions,
         "attention": classes,
+        "valeur_ledger": valeur_ledger,
         "valeur": {
             "situations": len(situations),
             "situations_haute": haute,

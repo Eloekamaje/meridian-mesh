@@ -8,7 +8,7 @@ Il ne remplace pas le backend Méridian : il l'expose proprement.
 
 - 4 **skills** : `incident-ops`, `architecture-impact`, `benefits-okr`, `enterprise-portfolio`.
 - 3 **subagents** : `verificateur`, `analyste-impact`, `decouvreur`.
-- 1 **serveur MCP read-only** : profils, composition, analyse globale/applicative, portefeuille, impact, Claims, learnings, attention.
+- 1 **serveur MCP read-only** : profils, composition, analyse globale/applicative, portefeuille, Value Ledger, impact, Claims, learnings, attention.
 - 1 **policy** d'autorité : lecture/proposition, écritures interdites sans approbation humaine.
 - 1 **contrat de réponse** : socle de faits invariant + lentille de profil.
 - 3 **profils pilotes** : ops, architecte, product_owner.
@@ -93,6 +93,8 @@ Utilise le profil ops, la situation sit-latence-paiements et les Twins paiements
 ```
 
 Pour une question globale : utiliser `meridian_portefeuille` ou `meridian_analyser` sans application ; le résultat contient `valeur` (situations, situations hautes, décisions, initiatives, outcomes, learnings).
+
+Le Value Ledger est accessible par `meridian_valeurs` et `meridian_valeur_resume` ; il ne mélange jamais devises et unités.
 
 Le résultat contient :
 
