@@ -18,6 +18,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import psycopg
+from psycopg.rows import dict_row
 from pydantic import BaseModel, Field
 from strands import Agent
 
@@ -288,6 +289,53 @@ def _rafraichir(source):
                       "secret": source.get("secret_ref")}, Path(source["emplacement"]))
 
 
+async def _synchroniser_graphe(conn, db, jumeau, store=None):
+    """Synchronise l'identité Postgres et les relations Mongo du tenant vers le GraphStore.
+
+    Sans `GRAPH_STORE=neo4j`, la fabrique rend un store mémoire ; on ne synchronise alors rien pour éviter
+    de donner l'illusion d'une topologie persistée. Une panne du graphe est journalisée et ne bloque jamais
+    la veille : le prochain passage rejouera l'upsert idempotent.
+    """
+    if conn is None or db is None:
+        return None
+    from jumeau import graph_store
+
+    contexte = None
+    try:
+        contexte = graph_store.ouvrir()
+        if contexte["mode"] != graph_store.MODE_NEO4J and store is None:
+            return None
+        magasin = store or contexte["store"]
+        with conn.cursor(row_factory=dict_row) as cur:
+            twins = cur.execute(
+                "SELECT id, tenant_id, type, nom AS label, mission, domaine, equipe "
+                "FROM jumeau WHERE tenant_id = %s ORDER BY id",
+                (jumeau["tenant_id"],),
+            ).fetchall()
+        identifiants = {twin["id"] for twin in twins}
+        relations = []
+        if identifiants:
+            filtre = {"$or": [
+                {"source": {"$in": list(identifiants)}},
+                {"cible": {"$in": list(identifiants)}},
+            ]}
+            async for relation in db.relations.find(filtre, {"_id": 0}):
+                document = dict(relation)
+                document.setdefault("tenant_id", jumeau["tenant_id"])
+                relations.append(document)
+        return graph_store.synchroniser_depuis_identites(
+            magasin, jumeau["tenant_id"], twins, relations)
+    except (ValueError, RuntimeError):
+        journal.debug("gardien %s : graphe non configuré ou indisponible", jumeau["id"], exc_info=True)
+        return None
+    except Exception:
+        journal.warning("gardien %s : synchronisation du graphe impossible", jumeau["id"], exc_info=True)
+        return None
+    finally:
+        if contexte is not None:
+            contexte["fermer"]()
+
+
 async def veiller(conn, db, jumeau_id, chemins=None, rediger=_rediger):
     """Une passe du gardien sur tous les dépôts du jumeau (ou ceux de `chemins`).
 
@@ -298,6 +346,7 @@ async def veiller(conn, db, jumeau_id, chemins=None, rediger=_rediger):
     jumeau = depot.jumeau_par_id(conn, jumeau_id)
     if not jumeau:
         raise ValueError(f"jumeau inconnu : {jumeau_id} (l'ingérer une première fois)")
+    await _synchroniser_graphe(conn, db, jumeau)
     connues = depot.sources_du_jumeau(conn, jumeau_id)
     chemins = [Path(c).resolve() for c in (chemins or [s["emplacement"] for s in connues])]
     avant = connaissances_courantes(conn, jumeau_id)

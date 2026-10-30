@@ -14,6 +14,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from jose import jwk, jwt
 
+from jumeau import tenant as tenant_context
 from seed_data import PERSONAS
 
 logger = logging.getLogger("meridian.auth")
@@ -43,6 +44,38 @@ def _mapping():
     except ValueError:
         logger.error("AUTH_PERSONA_MAP n'est pas un JSON valide")
         return {}
+
+
+def _tenant_entete(request):
+    """Tenant posé par un proxy authentifiant, dans un en-tête de confiance."""
+    nom = os.getenv("AUTH_TENANT_HEADER", "X-Auth-Request-Tenant")
+    valeur = (request.headers.get(nom) or "").strip()
+    if not valeur:
+        return None
+    try:
+        return tenant_context.normaliser_slug(valeur)
+    except tenant_context.TenantInvalide:
+        raise AuthError(403, "Tenant de l'identité invalide")
+
+
+def _tenant_oidc(request):
+    """Claim tenant du jeton OIDC, après vérification de la signature."""
+    claims = getattr(request.state, "oidc_claims", None) or {}
+    valeur = claims.get(os.getenv("AUTH_TENANT_CLAIM", "tenant"))
+    if valeur is None:
+        return None
+    try:
+        return tenant_context.normaliser_slug(str(valeur))
+    except tenant_context.TenantInvalide:
+        raise AuthError(403, "Tenant de l'identité invalide")
+
+
+def _tenant_identite(request, mode_courant):
+    if mode_courant == "proxy":
+        return _tenant_entete(request)
+    if mode_courant == "oidc":
+        return _tenant_oidc(request)
+    return None
 
 
 def _choisir(candidats):
@@ -130,6 +163,7 @@ def _persona_oidc(request):
             audience=os.getenv("AUTH_AUDIENCE") or None,
             issuer=os.getenv("AUTH_ISSUER") or None,
         )
+        request.state.oidc_claims = claims
     except AuthError:
         raise
     except Exception:
@@ -160,16 +194,34 @@ async def middleware(request: Request, call_next):
     chemin = request.url.path
     if request.method == "OPTIONS" or chemin == "/api/health" or not chemin.startswith("/api"):
         return await call_next(request)
+    mode_courant = mode()
     try:
         persona, utilisateur = resoudre(request)
+        tenant = _tenant_identite(request, mode_courant)
+        entete_tenant = request.headers.get("x-tenant")
+        if tenant is not None and entete_tenant is not None:
+            try:
+                entete_normalise = tenant_context.normaliser_slug(entete_tenant)
+            except tenant_context.TenantInvalide:
+                raise AuthError(403, "Tenant invalide")
+            if entete_normalise != tenant:
+                raise AuthError(403, "Tenant différent de l'identité authentifiée")
     except AuthError as exc:
         return JSONResponse({"detail": exc.detail}, status_code=exc.status)
-    entetes = [(nom, valeur) for nom, valeur in request.scope["headers"] if nom.lower() != b"x-persona"]
+    entetes = [
+        (nom, valeur) for nom, valeur in request.scope["headers"]
+        if nom.lower() != b"x-persona" and not (nom.lower() == b"x-tenant" and tenant is not None)
+    ]
     entetes.append((b"x-persona", persona.encode("utf-8")))
+    if tenant is not None:
+        entetes.append((b"x-tenant", tenant.encode("utf-8")))
     request.scope["headers"] = entetes
     request.state.persona = persona
-    request.state.auth_mode = mode()
+    request.state.auth_mode = mode_courant
     request.state.utilisateur = utilisateur
+    if tenant is not None:
+        request.state.tenant = tenant
+        request.state.auth_tenant = tenant
     return await call_next(request)
 
 

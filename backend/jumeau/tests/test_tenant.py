@@ -7,6 +7,7 @@ from fastapi import APIRouter, FastAPI, Request
 from fastapi.testclient import TestClient
 
 import boucle_routes
+from jumeau.graphe import Arete, GrapheMemoire, NoeudTwin
 from jumeau.tenant import (
     TenantContext,
     TenantInvalide,
@@ -228,3 +229,52 @@ def test_les_routes_boucle_ne_laissent_pas_le_client_choisir_en_production(monke
     assert client.get("/api/boucle/synthese").json()["tenant"] == "banque"
     assert client.get("/api/boucle/synthese", headers={"X-Tenant": "assurance"}).status_code == 403
     assert client.get("/api/boucle/synthese", headers={"X-Tenant": "banque"}).json()["tenant"] == "banque"
+
+
+def test_les_routes_graphe_sont_bornees_au_tenant(monkeypatch):
+    store = GrapheMemoire()
+    store.upsert_twin(NoeudTwin("a", "banque", "APPLICATION", "A"))
+    store.upsert_twin(NoeudTwin("b", "banque", "APPLICATION", "B"))
+    store.upsert_relation(Arete("r1", "banque", "a", "b", "echange", "confirmee"))
+    monkeypatch.setattr(boucle_routes.graph_store, "ouvrir", lambda: {
+        "store": store, "mode": "memoire", "fermer": lambda: None})
+    client = _client(monkeypatch)
+
+    voisins = client.get("/api/boucle/graphe/a/voisins", headers={"X-Tenant": "banque"})
+    assert voisins.status_code == 200
+    assert voisins.json()["tenant"] == "banque" and voisins.json()["voisins"][0]["id"] == "b"
+
+    autre = client.get("/api/boucle/graphe/a/voisins", headers={"X-Tenant": "assurance"})
+    assert autre.status_code == 200 and autre.json()["voisins"] == []
+
+    impact = client.get("/api/boucle/graphe/a/impact", headers={"X-Tenant": "banque"})
+    assert impact.status_code == 200 and impact.json()["impact"]["aval"][0]["id"] == "b"
+
+    chemins = client.get("/api/boucle/graphe/chemins?source=a&cible=b",
+                         headers={"X-Tenant": "banque"})
+    assert chemins.status_code == 200 and chemins.json()["chemins"] == [["a", "b"]]
+
+
+def test_les_routes_graphe_valident_les_parametres(monkeypatch):
+    monkeypatch.setattr(boucle_routes.graph_store, "ouvrir", lambda: {
+        "store": GrapheMemoire(), "mode": "memoire", "fermer": lambda: None})
+    client = _client(monkeypatch)
+
+    assert client.get("/api/boucle/graphe/a/voisins?sens=diagonal",
+                      headers={"X-Tenant": "banque"}).status_code == 422
+    assert client.get("/api/boucle/graphe/a/voisins?profondeur=9",
+                      headers={"X-Tenant": "banque"}).status_code == 422
+
+
+def test_le_resume_graphe_compte_les_noeuds_du_tenant(monkeypatch):
+    store = GrapheMemoire()
+    store.upsert_twin(NoeudTwin("a", "banque", "APPLICATION", "A"))
+    store.upsert_twin(NoeudTwin("b", "banque", "APPLICATION", "B"))
+    store.upsert_relation(Arete("r1", "banque", "a", "b"))
+    monkeypatch.setattr(boucle_routes.graph_store, "ouvrir", lambda: {
+        "store": store, "mode": "memoire", "fermer": lambda: None})
+    client = _client(monkeypatch)
+
+    reponse = client.get("/api/boucle/graphe/resume", headers={"X-Tenant": "banque"})
+    assert reponse.status_code == 200
+    assert reponse.json()["twins"] == 2 and reponse.json()["relations"] == 1

@@ -1,6 +1,6 @@
 """Identité : demo explicite, proxy de confiance et OIDC HS256 ; le header client ne gagne jamais."""
 import pytest
-from fastapi import FastAPI, Header
+from fastapi import FastAPI, Header, Request
 from fastapi.testclient import TestClient
 from jose import jwt
 
@@ -64,3 +64,47 @@ def test_demo_refuse_en_production(monkeypatch):
     monkeypatch.setenv("APP_ENV", "production")
     with pytest.raises(RuntimeError, match="demo"):
         auth.verifier_config()
+
+
+def _client_tenant():
+    app = FastAPI()
+
+    @app.get("/api/tenant")
+    def tenant(request: Request):
+        return {"tenant": getattr(request.state, "tenant", None)}
+
+    auth.installer(app)
+    return TestClient(app)
+
+
+def test_proxy_extrait_le_tenant_de_confiance(monkeypatch):
+    monkeypatch.setenv("AUTH_MODE", "proxy")
+    monkeypatch.setenv("AUTH_PROXY_SECRET", "secret-proxy")
+    monkeypatch.setenv("AUTH_PERSONA_MAP", '{"architecte": "architecte"}')
+    client = _client_tenant()
+    entetes = {"X-Auth-Proxy-Secret": "secret-proxy", "X-Auth-Request-Tenant": "Banque",
+               "X-Auth-Request-User": "architecte"}
+
+    assert client.get("/api/tenant", headers=entetes).json() == {"tenant": "banque"}
+    assert client.get("/api/tenant", headers={**entetes, "X-Auth-Request-Tenant": "Banque Client"}).status_code == 403
+
+
+def test_oidc_extrait_le_tenant_du_jeton_et_refuse_le_conflit(monkeypatch):
+    monkeypatch.setenv("AUTH_MODE", "oidc")
+    monkeypatch.setenv("AUTH_OIDC_SECRET", "secret-oidc")
+    jeton = jwt.encode({"sub": "u1", "tenant": "banque", "persona": "architecte"}, "secret-oidc", algorithm="HS256")
+    client = _client_tenant()
+    entetes = {"Authorization": f"Bearer {jeton}"}
+
+    assert client.get("/api/tenant", headers=entetes).json() == {"tenant": "banque"}
+    assert client.get("/api/tenant", headers={**entetes, "X-Tenant": "assurance"}).status_code == 403
+    assert client.get("/api/tenant", headers={**entetes, "X-Tenant": "banque"}).json() == {"tenant": "banque"}
+
+
+def test_oidc_sans_claim_tenant_laisse_le_contexte_absent(monkeypatch):
+    monkeypatch.setenv("AUTH_MODE", "oidc")
+    monkeypatch.setenv("AUTH_OIDC_SECRET", "secret-oidc")
+    jeton = jwt.encode({"sub": "u1", "persona": "architecte"}, "secret-oidc", algorithm="HS256")
+    client = _client_tenant()
+
+    assert client.get("/api/tenant", headers={"Authorization": f"Bearer {jeton}"}).json() == {"tenant": None}

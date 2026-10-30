@@ -242,3 +242,42 @@ def test_sans_depot_une_source_injoignable_ou_une_fiche_recente_ne_font_pas_redi
     monkeypatch.setattr(gardien.lecteurs, "lecteurs_de", lambda s: [_lecteur("2")])
     monkeypatch.setattr(gardien, "fiche_recente", lambda c, j, delai: "2026-10-28T08:00:00+00:00")
     assert asyncio.run(gardien.veiller(None, None, "p", rediger=rediger))["fiche_recente"]
+
+
+def test_synchronisation_graphe_depuis_postgres_et_relations(monkeypatch):
+    from jumeau.graphe import GrapheMemoire
+
+    class _Curseur:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def execute(self, _sql, _params):
+            return self
+
+        def fetchall(self):
+            return [{"id": "a", "tenant_id": "demo", "type": "APPLICATION", "label": "A"},
+                    {"id": "b", "tenant_id": "demo", "type": "APPLICATION", "label": "B"}]
+
+    class _Conn:
+        def cursor(self, row_factory=None):
+            return _Curseur()
+
+    class _Relations:
+        def find(self, _filtre, _projection):
+            async def lignes():
+                yield {"id": "r1", "source": "a", "cible": "b", "type": "echange", "etat": "confirmee"}
+            return lignes()
+
+    class _Db:
+        relations = _Relations()
+
+    store = GrapheMemoire()
+    monkeypatch.setenv("GRAPH_STORE", "memoire")
+    rapport = asyncio.run(gardien._synchroniser_graphe(
+        _Conn(), _Db(), {"id": "a", "tenant_id": "demo"}, store=store))
+    assert rapport["twins"] == 2 and rapport["relations"] == 1
+    assert set(store.noeuds) == {("demo", "a"), ("demo", "b")}
+    assert store.aretes[("demo", "r1")].target == "b"

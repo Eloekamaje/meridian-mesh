@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, Dict
 from datetime import datetime, timezone
 import hashlib
+import json
 import os
 import re
 import random
@@ -44,6 +45,7 @@ from jumeau import audit_harness as jumeau_audit_harness  # noqa: E402
 from jumeau import capacites as jumeau_capacites  # noqa: E402
 from jumeau import chargeur_manifestes as jumeau_chargeur_manifestes  # noqa: E402
 from jumeau import harness as jumeau_harness  # noqa: E402
+from jumeau import ingestion_outils as jumeau_ingestion_outils  # noqa: E402
 from jumeau import decouverte_interfaces as jumeau_decouverte_interfaces  # noqa: E402
 from jumeau import interfaces_depot as jumeau_interfaces_depot  # noqa: E402
 from jumeau import connecteurs_runtime as jumeau_connecteurs_runtime  # noqa: E402
@@ -1945,14 +1947,47 @@ def _chemins_manifestes():
     return [morceau.strip() for morceau in str(valeur).replace(os.pathsep, "\n").splitlines() if morceau.strip()]
 
 
+def _specifications_env(nom):
+    """Spécifications OpenAPI/MCP déclarées en JSON : [{application, path, version?, tenant?}]."""
+    valeur = os.environ.get(nom)
+    if not valeur:
+        return []
+    try:
+        charge = json.loads(valeur)
+    except ValueError:
+        logger.warning("catalogue d'outils : %s n'est pas un JSON valide", nom)
+        return []
+    if isinstance(charge, dict):
+        charge = [charge]
+    return [entree for entree in charge if isinstance(entree, dict)] if isinstance(charge, list) else []
+
+
+def _ingerer_specifications(registre):
+    for entree in _specifications_env("JUMEAU_OPENAPI"):
+        try:
+            rapport = jumeau_ingestion_outils.ingerer_openapi(registre, [entree])
+            if rapport["erreurs"]:
+                logger.warning("catalogue d'outils : OpenAPI ignoré (%s)", rapport["erreurs"][0]["application"])
+        except Exception:
+            logger.warning("catalogue d'outils : spécification OpenAPI ignorée")
+    for entree in _specifications_env("JUMEAU_MCP_OUTILS"):
+        try:
+            rapport = jumeau_ingestion_outils.ingerer_mcp(registre, [entree])
+            if rapport["erreurs"]:
+                logger.warning("catalogue d'outils : MCP ignoré (%s)", rapport["erreurs"][0]["application"])
+        except Exception:
+            logger.warning("catalogue d'outils : descripteurs MCP ignorés")
+
+
 def _catalogue_outils(tenant_id, persona_id, perimetre_id):
-    """Les manifestes intégrés et les fichiers JUMEAU_MANIFESTES, filtrés par portée ; aucune exécution."""
+    """Manifestes intégrés, fichiers JUMEAU_MANIFESTES et spécifications OpenAPI/MCP ; aucune exécution."""
     registre = jumeau_capacites.RegistreCapacites(jumeau_capacites.manifestes_integres())
     for chemin in _chemins_manifestes():
         try:
             jumeau_chargeur_manifestes.charger(registre, chemin)
         except Exception:
             logger.warning("catalogue d'outils : manifeste externe ignoré")
+    _ingerer_specifications(registre)
     return [
         jumeau_harness.expurger(manifeste.as_dict())
         for manifeste in registre.lister(tenant=tenant_id, persona=persona_id, perimetre=perimetre_id)

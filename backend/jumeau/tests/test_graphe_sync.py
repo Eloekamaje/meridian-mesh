@@ -170,3 +170,12 @@ def test_rapport_est_json_avec_les_quatre_cles_attendues():
     )
     assert set(rapport) == {"twins", "relations", "ignores", "erreurs"}
     assert json.loads(json.dumps(rapport, ensure_ascii=False)) == rapport
+
+
+def test_une_confiance_en_pourcentage_est_normalisee():
+    from jumeau.graphe_sync import arete_depuis_relation
+
+    arete = arete_depuis_relation("banque", {
+        "id": "r", "source": "a", "cible": "b", "type": "echange", "confiance": 82,
+    })
+    assert arete.confiance == 0.82

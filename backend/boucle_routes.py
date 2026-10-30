@@ -25,7 +25,7 @@ import psycopg
 from fastapi import APIRouter, Header, HTTPException, Query, Request
 from psycopg.rows import dict_row
 
-from jumeau import boucle, entreprise_depot, modele_entreprise
+from jumeau import boucle, entreprise_depot, graph_store, modele_entreprise
 from jumeau.tenant import TenantError, exiger_tenant, normaliser_slug, resoudre_tenant
 from seed_data import ESPACES, PERSONAS
 
@@ -111,6 +111,26 @@ def _dsn() -> str:
     if not dsn:
         raise HTTPException(503, _DSN_MANQUANT)
     return dsn
+
+
+def _executer_graphe(action):
+    """Ouvre le graphe, exécute une lecture tenant-scoped et ferme toujours la session."""
+    try:
+        contexte = graph_store.ouvrir()
+    except ValueError as exc:
+        raise HTTPException(503, "Graphe non configuré (GRAPH_STORE=neo4j)") from exc
+    except RuntimeError as exc:
+        raise HTTPException(503, "Graphe indisponible") from exc
+    try:
+        return action(contexte["store"]), contexte["mode"]
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(503, "Graphe indisponible") from exc
+    finally:
+        contexte["fermer"]()
 
 
 def _cle_sensible(cle) -> bool:
@@ -280,3 +300,93 @@ async def synthese(
         "types": {cle: types[cle] for cle in sorted(types)},
         "modes": {cle: modes[cle] for cle in sorted(modes)},
     }
+
+
+@router.get("/graphe/resume")
+async def graphe_resume(
+    request: Request,
+    x_persona: str = Header("architecte", max_length=64),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Compte les Twins et relations du tenant dans le graph store, sans exposer leur contenu."""
+    _verifier_contexte(x_persona, x_espace)
+    tenant = _tenant(request, x_tenant)
+
+    def compter(store):
+        try:
+            etat = store.as_dict(tenant)
+        except TypeError:
+            etat = store.as_dict()
+        if not isinstance(etat, Mapping):
+            return {"twins": 0, "relations": 0}
+        return {"twins": len(etat.get("noeuds") or []), "relations": len(etat.get("aretes") or [])}
+
+    comptes, mode = await asyncio.to_thread(_executer_graphe, compter)
+    return {"tenant": tenant, "mode": mode, **comptes}
+
+
+@router.get("/graphe/{twin_id}/voisins")
+async def graphe_voisins(
+    twin_id: str,
+    request: Request,
+    profondeur: int = Query(1, ge=1, le=8),
+    sens: str = Query("sortant", pattern="^(sortant|entrant|les_deux)$"),
+    x_persona: str = Header("architecte", max_length=64),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Voisinage topologique du twin dans le graph store, borné au tenant authentifié."""
+    _verifier_contexte(x_persona, x_espace)
+    tenant = _tenant(request, x_tenant)
+    if not twin_id.strip() or len(twin_id) > 128:
+        raise HTTPException(400, "twin_id invalide")
+    voisins, mode = await asyncio.to_thread(
+        _executer_graphe,
+        lambda store: store.voisins(tenant, twin_id.strip(), profondeur, sens),
+    )
+    return {"tenant": tenant, "twin": twin_id.strip(), "profondeur": profondeur,
+            "sens": sens, "mode": mode, "voisins": _assainir(voisins)}
+
+
+@router.get("/graphe/{twin_id}/impact")
+async def graphe_impact(
+    twin_id: str,
+    request: Request,
+    profondeur: int = Query(3, ge=1, le=8),
+    x_persona: str = Header("architecte", max_length=64),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Impact amont/aval du twin, sans jamais dépasser le tenant."""
+    _verifier_contexte(x_persona, x_espace)
+    tenant = _tenant(request, x_tenant)
+    if not twin_id.strip() or len(twin_id) > 128:
+        raise HTTPException(400, "twin_id invalide")
+    impact, mode = await asyncio.to_thread(
+        _executer_graphe,
+        lambda store: store.impact(tenant, twin_id.strip(), profondeur),
+    )
+    return {"tenant": tenant, "twin": twin_id.strip(), "profondeur": profondeur,
+            "mode": mode, "impact": _assainir(impact)}
+
+
+@router.get("/graphe/chemins")
+async def graphe_chemins(
+    request: Request,
+    source: str = Query(..., min_length=1, max_length=128),
+    cible: str = Query(..., min_length=1, max_length=128),
+    profondeur: int = Query(6, ge=1, le=8),
+    x_persona: str = Header("architecte", max_length=64),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Chemins orientés source → cible, bornés et tenant-scoped."""
+    _verifier_contexte(x_persona, x_espace)
+    tenant = _tenant(request, x_tenant)
+    chemins, mode = await asyncio.to_thread(
+        _executer_graphe,
+        lambda store: store.chemins(tenant, source.strip(), cible.strip(), profondeur),
+    )
+    return {"tenant": tenant, "source": source.strip(), "cible": cible.strip(),
+            "profondeur": profondeur, "mode": mode, "chemins": _assainir(chemins)}

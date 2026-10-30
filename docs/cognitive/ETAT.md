@@ -73,7 +73,13 @@ Preuve live sur « régénère le flux du gsf-mockup » : `repo:gsf-mockup → t
 - Graphe : `graph_store.py` choisit Neo4j si configuré, sinon mémoire ; `graphe_sync` prêt.
 - OpenAPI : génération de manifestes read-only/écriture depuis les opérations, enregistrables dans le registre.
 - Backfill réel sur Neo4j local (tenant `demo`) : **23 objets canoniques** (13 situations, 10 initiatives), **42 Twins**, **45 relations**, 0 erreur. `scripts/dev-neo4j.sh` génère un mot de passe local hors dépôt ; l'API Boucle expose le tenant `demo` avec `X-Tenant: demo` (le tenant `local` reste vide).
-- Tests : **1260 backend jumeau** (3 skip), **161 frontend**, build OK. Live dating : 0 participant, 12 composants, audit persistant, schéma proposition.
+- Identités canoniques : backfill `jumeaux` Mongo → Postgres (`migration_identites.py`), **42 identités** en tenant `demo`, sans écrasement ni secret ; les tables canoniques sont passées en `demo`.
+- Parité Mongo/canonique : **0 écart** sur 42 identités, 13 situations, 10 initiatives et 45 relations ; `parite_mongo.py` rend les écarts sans migrer ni supprimer.
+- Graphe continu : le Gardien synchronise l'identité Postgres et les relations Mongo vers le `GraphStore` à chaque passe (`_synchroniser_graphe`), avec confiance en pourcentage normalisée.
+- API graphe : `/api/boucle/graphe/resume`, `/graphe/{twin}/voisins`, `/graphe/{twin}/impact`, `/graphe/chemins` ; lecture tenant-scopée, profondeur bornée.
+- Tenant authentifié : proxy (`AUTH_TENANT_HEADER`, défaut `X-Auth-Request-Tenant`) et OIDC (`AUTH_TENANT_CLAIM`, défaut `tenant`) posent `request.state.tenant` ; un `X-Tenant` divergent est refusé.
+- Outils : ingestion OpenAPI/MCP (`ingestion_outils.py`), chargement par `JUMEAU_OPENAPI` / `JUMEAU_MCP_OUTILS` dans le catalogue et CLI ; aucun `tools/call` exécuté.
+- Tests : **1247 tests jumeau** (2 skip), **8 auth**, **12 routes Boucle**, **161 frontend**, build OK. Live : 42 Twins, 45 relations, 23 objets en `demo`.
 
 ## Constat du connecteur sur gsf-mockup
 
@@ -81,6 +87,11 @@ Le dépôt `gsf-mockup` ne contient pas de spec OpenAPI statique. Le connecteur 
 
 ## Limites actuelles
 
+- Neo4j/Neptune de **production** n'est pas branché : le graphe live tourne sur Neo4j local Docker ; l'API et le Gardien fonctionnent, pas encore la haute disponibilité ni le backfill de production.
+- Le tenant est extrait du proxy/OIDC et vérifié dans l'API, mais **RLS Postgres** n'est pas encore appliquée aux chemins legacy ; les requêtes canoniques filtrent par tenant.
+- Mongo reste lu par les **cases**, le fil Aujourd'hui et l'Atlas ; la parité des identités, situations, initiatives et relations est à zéro, mais la migration des cases n'est pas faite.
+- L'ingestion OpenAPI/MCP est volontaire (CLI ou variables d'environnement) ; elle n'est pas encore déclenchée automatiquement par les connecteurs de sources.
+- L'Atlas consomme encore les relations Mongo ; les endpoints de graphe canonique sont disponibles mais pas encore rendus dans le panneau.
 - Dans le modèle **1 twin ↔ 1 application**, `application_id = twin_id = id réel de l'application` ; la promotion ne change pas cet id. Le multi-twins par application n'est pas retenu.
 - L'Atlas affiche les interfaces/impacts et les situations sont publiées ; la propagation fine des changements au fil « Aujourd'hui » reste à renforcer.
 - Le connecteur lit OpenAPI, configuration, claims `EXPOSE`, WSDL et OTLP tiré depuis une source APM/gateway authentifiée. Un export propriétaire non OTLP (Datadog/Kong/Apigee natif) reste un adaptateur optionnel.
@@ -91,8 +102,32 @@ Le dépôt `gsf-mockup` ne contient pas de spec OpenAPI statique. Le connecteur 
 
 ## Prochain lot
 
-1. Déployer Neo4j/Neptune, exécuter le backfill canonique réel et vérifier l'idempotence.
-2. Extraire le tenant authentifié du middleware OIDC/proxy et appliquer RLS aux autres chemins.
-3. Ajouter l'adaptateur MCP et brancher `openapi_outils` dans l'ingestion des sources.
-4. Enrichir le jeu d'or de l'orchestrateur et mesurer les choix d'outils.
-5. Retirer progressivement Mongo canonique après double lecture contrôlée.
+1. Déployer Neo4j/Neptune en production, rejouer le backfill multi-tenant et vérifier l'idempotence à l'échelle.
+2. Poser `app.tenant_id` par transaction et activer RLS sur les tables canoniques et legacy.
+3. Brancher l'Atlas sur `/api/boucle/graphe/*` pour les impacts et parcours canoniques.
+4. Migrer les `cases` (forme de travail) puis retirer les lectures Mongo restantes après parité.
+5. Déclencher OpenAPI/MCP depuis les connecteurs et enrichir le jeu d'or de l'orchestrateur.
+
+## Commandes d'exploitation
+
+```bash
+# identités legacy → Postgres (dry-run, puis réel)
+python -m jumeau.migration_identites --tenant demo --dry-run
+python -m jumeau.migration_identites --tenant demo
+
+# parité Mongo / identités + objets + graphe
+python -m jumeau.parite_mongo --tenant demo
+
+# ingestion explicite d'outils
+python -m jumeau.ingestion_outils --openapi comptes=/chemin/openapi.json
+JUMEAU_OPENAPI='[{"application":"comptes","path":"/chemin/openapi.json","tenant":"demo"}]' \
+  uvicorn server:app --host 127.0.0.1 --port 8001
+
+# lectures graphe tenant-scopées
+curl -H 'X-Tenant: demo' http://127.0.0.1:8001/api/boucle/graphe/resume
+curl -H 'X-Tenant: demo' http://127.0.0.1:8001/api/boucle/graphe/paiements/impact
+```
+
+Le mot de passe Neo4j local n'est jamais versionné : `scripts/dev-neo4j.sh` le génère dans
+`/tmp/meridian-neo4j.env`. En production, fournir `GRAPH_STORE=neo4j`, `NEO4J_URI`, `NEO4J_USER`,
+`NEO4J_PASSWORD` et `NEO4J_DATABASE` par le gestionnaire de secrets.

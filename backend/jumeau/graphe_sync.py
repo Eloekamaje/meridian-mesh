@@ -177,6 +177,8 @@ def arete_depuis_relation(tenant_id, relation: dict) -> Arete:
         confiance = 0.5 if confiance in (None, "") else float(confiance)
     except (TypeError, ValueError) as exc:
         raise ValueError("confiance invalide") from exc
+    if 1 < confiance <= 100:
+        confiance /= 100
 
     valid_to = _optionnel(_premier(relation, _CLES_VALID_TO))
     if valid_to is None and relation.get("active") is False:
