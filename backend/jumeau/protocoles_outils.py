@@ -21,6 +21,9 @@ __all__ = [
     "manifests_asyncapi",
     "manifests_graphql",
     "manifests_grpc",
+    "operations_asyncapi",
+    "operations_graphql",
+    "operations_grpc",
 ]
 
 _LONGUEUR_NOM_MAX = 80
@@ -306,6 +309,50 @@ def _application(application_id: Any) -> str:
     if not isinstance(application_id, str) or not application_id.strip():
         raise ErreurProtocoles("application_id : chaîne non vide attendue")
     return application_id.strip()
+
+
+def operations_graphql(sdl: str) -> list[dict]:
+    """Rend les champs Query/Mutation/Subscription sans exécuter la requête."""
+    if not isinstance(sdl, str) or not sdl.strip():
+        return []
+    champs = _champs_par_type(sdl)
+    return [
+        {"genre": genre, "nom": nom, "lecture_seule": genre != "Mutation"}
+        for genre in ("Query", "Mutation", "Subscription")
+        for nom in champs[genre]
+    ]
+
+
+def operations_grpc(proto_text: str) -> list[dict]:
+    """Rend les rpc d'un fichier protobuf, service et méthode, sans compiler le proto."""
+    if not isinstance(proto_text, str) or not proto_text.strip():
+        return []
+    structurel = _texte_structurel(proto_text)
+    resultats = []
+    for service in _RE_SERVICE.finditer(structurel):
+        nom_service = service.group(1)
+        ouvrante = service.end() - 1
+        fin = _sauter_bloc(structurel, ouvrante)
+        corps = structurel[ouvrante + 1: max(ouvrante + 1, fin - 1)]
+        for rpc in _RE_RPC.finditer(corps):
+            resultats.append({
+                "service": nom_service,
+                "methode": rpc.group(1),
+                "lecture_seule": rpc.group(1).lower().startswith(_PREFIXES_LECTURE_GRPC),
+            })
+    return resultats
+
+
+def operations_asyncapi(document: Any) -> list[dict]:
+    """Rend les opérations AsyncAPI (canal, identifiant, sens) sans lire le payload."""
+    charge = _document_asyncapi(document)
+    if charge is None:
+        return []
+    return [
+        {"canal": canal, "identifiant": identifiant, "sens": sens,
+         "lecture_seule": sens in _LECTURES_ASYNCAPI}
+        for canal, identifiant, sens in _operations_asyncapi(charge)
+    ]
 
 
 def manifests_graphql(

@@ -47,6 +47,7 @@ from jumeau import chargeur_manifestes as jumeau_chargeur_manifestes  # noqa: E4
 from jumeau import harness as jumeau_harness  # noqa: E402
 from jumeau import ingestion_outils as jumeau_ingestion_outils  # noqa: E402
 from jumeau import interface_outils as jumeau_interface_outils  # noqa: E402
+from jumeau import rls as jumeau_rls  # noqa: E402
 from jumeau import decouverte_interfaces as jumeau_decouverte_interfaces  # noqa: E402
 from jumeau import interfaces_depot as jumeau_interfaces_depot  # noqa: E402
 from jumeau import connecteurs_runtime as jumeau_connecteurs_runtime  # noqa: E402
@@ -1999,7 +2000,11 @@ def _ingerer_interfaces_postgres(registre, tenant_id, persona_id, perimetre_id):
         return
     try:
         with psycopg.connect(dsn, connect_timeout=3) as conn:
-            graphe = jumeau_interfaces_depot.lire_graph(conn, tenant_id)
+            if jumeau_rls.est_actif():
+                with jumeau_rls.contexte_tenant(conn, tenant_id):
+                    graphe = jumeau_interfaces_depot.lire_graph(conn, tenant_id)
+            else:
+                graphe = jumeau_interfaces_depot.lire_graph(conn, tenant_id)
         for manifeste in jumeau_interface_outils.manifests_depuis_interface(
             graphe, tenant=tenant_id, persona=persona_id, perimetre=perimetre_id
         ):

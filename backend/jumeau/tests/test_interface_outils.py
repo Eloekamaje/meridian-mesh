@@ -131,3 +131,23 @@ def test_cli_detecte_openapi_et_affiche_les_noms(tmp_path, capsys):
     assert interface_outils.main([
         "--application", "comptes", "--fichier", str(fichier), "--tenant", "banque"]) == 0
     assert json.loads(capsys.readouterr().out) == ["comptes.listercomptes"]
+
+
+def test_graphql_et_asyncapi_sont_compiles_depuis_les_operations_connues():
+    graph = interfaces.InterfaceGraph(
+        contracts=[contrat("ctr-gql", "atlas", "graphql"), contrat("ctr-evt", "ventes", "asyncapi")],
+        operations=[
+            operation("op-gql-q", "ctr-gql", "graphql", "QUERY", "comptes", "comptes"),
+            operation("op-gql-m", "ctr-gql", "graphql", "MUTATION", "creerCompte", "creerCompte"),
+            operation("op-evt-p", "ctr-evt", "asyncapi", "PUBLISH", "comptes/crees", "publierCompte"),
+            operation("op-evt-s", "ctr-evt", "asyncapi", "SUBSCRIBE", "comptes/crees", "recevoirCompte"),
+        ],
+    )
+    par_nom = {m.nom: m for m in interface_outils.manifests_depuis_interface(graph)}
+
+    assert par_nom["atlas.comptes"].lecture_seule is True
+    assert par_nom["atlas.creercompte"].lecture_seule is False
+    assert par_nom["atlas.creercompte"].effets_de_bord == ("graphql:creerCompte",)
+    assert par_nom["ventes.publiercompte"].lecture_seule is False
+    assert par_nom["ventes.publiercompte"].effets_de_bord == ("asyncapi:comptes/crees",)
+    assert par_nom["ventes.recevoircompte"].lecture_seule is True

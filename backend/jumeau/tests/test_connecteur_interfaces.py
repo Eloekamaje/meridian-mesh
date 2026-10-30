@@ -268,3 +268,36 @@ def test_cli_imprime_le_json_et_rend_2_si_la_racine_est_invalide(tmp_path):
         cwd=backend, env=env, capture_output=True, text=True, timeout=60)
     assert absent.returncode == 2
     assert absent.stdout == ""
+
+
+GRAPHQL = "type Query { listerComptes: [Compte] } type Mutation { creerCompte(nom: String!): Compte }"
+PROTO = 'syntax = "proto3"; service Comptes { rpc GetCompte (Req) returns (Rep); rpc CreerCompte (Req) returns (Rep); }'
+ASYNCAPI = """
+asyncapi: '2.6.0'
+channels:
+  comptes/crees:
+    publish:
+      operationId: publierCompte
+    subscribe:
+      operationId: recevoirCompte
+"""
+
+
+def test_graphql_grpc_et_asyncapi_sont_decouverts_par_contenu(tmp_path):
+    (tmp_path / "schema.graphql").write_text(GRAPHQL, encoding="utf-8")
+    (tmp_path / "comptes.proto").write_text(PROTO, encoding="utf-8")
+    (tmp_path / "events.yaml").write_text(ASYNCAPI, encoding="utf-8")
+
+    g = collecter(tmp_path, "comptes", "prod")
+
+    assert g.partial is False and g.diagnostics == []
+    assert {(o.protocol, o.method, o.path, o.name) for o in g.operations} == {
+        ("graphql", "QUERY", "listerComptes", "listerComptes"),
+        ("graphql", "MUTATION", "creerCompte", "creerCompte"),
+        ("grpc", "RPC", "Comptes.GetCompte", "GetCompte"),
+        ("grpc", "RPC", "Comptes.CreerCompte", "CreerCompte"),
+        ("asyncapi", "PUBLISH", "comptes/crees", "publierCompte"),
+        ("asyncapi", "SUBSCRIBE", "comptes/crees", "recevoirCompte"),
+    }
+    assert {a.source for a in g.assertions} == {"graphql", "grpc", "asyncapi"}
+    assert {c.format for c in g.contracts} == {"graphql", "grpc", "asyncapi"}

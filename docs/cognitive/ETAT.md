@@ -78,10 +78,11 @@ Preuve live sur « régénère le flux du gsf-mockup » : `repo:gsf-mockup → t
 - Graphe continu : le Gardien synchronise l'identité Postgres et les relations Mongo vers le `GraphStore` à chaque passe (`_synchroniser_graphe`), avec confiance en pourcentage normalisée.
 - API graphe : `/api/boucle/graphe/resume`, `/graphe/{twin}/voisins`, `/graphe/{twin}/impact`, `/graphe/chemins` ; lecture tenant-scopée, profondeur bornée.
 - Tenant authentifié : proxy (`AUTH_TENANT_HEADER`, défaut `X-Auth-Request-Tenant`) et OIDC (`AUTH_TENANT_CLAIM`, défaut `tenant`) posent `request.state.tenant` ; l'absence de tenant et un `X-Tenant` divergent sont refusés.
-- Outils multi-protocoles : `interface_outils.py` compile toute opération connue (REST, SOAP/WSDL, gRPC) en manifeste ; `protocoles_outils.py` couvre GraphQL, gRPC et AsyncAPI ; OpenAPI et MCP restent des adaptateurs parmi d'autres. Chargement par `JUMEAU_OPENAPI`, `JUMEAU_MCP_OUTILS`, `JUMEAU_INTERFACES`, `JUMEAU_PROTOCOLES`, CLI et lecture des `interface_operation` Postgres dans `/api/outils`. Aucun `tools/call` exécuté.
+- Outils multi-protocoles : `interface_outils.py` compile toute opération connue (REST, SOAP/WSDL, gRPC, GraphQL, AsyncAPI) en manifeste ; `protocoles_outils.py` fournit les extracteurs GraphQL/gRPC/AsyncAPI ; `interfaces_protocoles.py` les ramène au graphe d'interface commun. `connecteur_interfaces.py` découvre désormais ces fichiers dans les dépôts, donc le Gardien les persiste et `/api/outils` les expose sans spec OpenAPI. OpenAPI/MCP restent des adaptateurs parmi d'autres ; aucun `tools/call` exécuté.
+- Découverte : Git/claims `EXPOSE`/OTLP et fichiers GraphQL, gRPC, AsyncAPI, OpenAPI et WSDL alimentent `interface_operation` ; le catalogue Postgres est lu par `/api/outils` avec le contexte tenant.
 - Atlas : le panneau d'un twin lit `/api/boucle/graphe/{id}/impact` quand un tenant est fourni (`localStorage.meridian.tenant` ou `?tenant=`) et affiche les impacts amont/aval canoniques, en plus des voisins Mongo.
 - RLS : `jumeau/rls.py` fournit les policies tenant, le contexte `set_config(..., true)` et une activation explicite ; le mode est opt-in (`JUMEAU_RLS=1`) et n'est pas activé sur la base locale.
-- Tests : **1272 tests jumeau** (2 skip), **8 auth**, **12 routes Boucle**, **166 frontend**, build non-CI OK (le build CI reste bloqué par des avertissements ESLint préexistants). Live : 42 Twins, 45 relations, 23 objets et 5 opérations d'interface en `demo`.
+- Tests : **1275 tests jumeau** (2 skip), **8 auth**, **12 routes Boucle**, **166 frontend**, build non-CI OK (le build CI reste bloqué par des avertissements ESLint préexistants). Live : 42 Twins, 45 relations, 23 objets et 5 opérations d'interface en `demo`.
 
 ## Constat du connecteur sur gsf-mockup
 
@@ -90,9 +91,9 @@ Le dépôt `gsf-mockup` ne contient pas de spec OpenAPI statique. Le connecteur 
 ## Limites actuelles
 
 - Neo4j/Neptune de **production** n'est pas branché : le graphe live tourne sur Neo4j local Docker ; l'API et le Gardien fonctionnent, pas encore la haute disponibilité ni le backfill de production.
-- Le tenant est extrait du proxy/OIDC et vérifié dans l'API ; les policies RLS sont fournies mais **pas encore activées** sur les bases, et les chemins legacy restent filtrés par code.
+- Le tenant est extrait du proxy/OIDC et vérifié dans l'API ; les policies RLS sont fournies et appliquées au contexte de la Boucle et du catalogue d'outils, mais **pas encore activées** ni généralisées à tous les chemins legacy.
 - Mongo reste lu par les **cases**, le fil Aujourd'hui et l'Atlas ; la parité des identités, situations, initiatives et relations est à zéro, mais la migration des cases n'est pas faite.
-- Les adaptateurs de protocoles sont volontaires (CLI, variables d'environnement ou opérations d'interface déjà découvertes) ; la découverte automatique depuis la gateway/le CMDB reste à brancher.
+- La découverte est automatique pour les dépôts (OpenAPI/WSDL/GraphQL/gRPC/AsyncAPI), les claims `EXPOSE` et OTLP ; les exports propriétaires de gateway/CMDB restent à brancher.
 - L'Atlas rend l'impact canonique quand un tenant est sélectionné ; les relations Mongo restent la source principale de la carte et des voisins.
 - Dans le modèle **1 twin ↔ 1 application**, `application_id = twin_id = id réel de l'application` ; la promotion ne change pas cet id. Le multi-twins par application n'est pas retenu.
 - L'Atlas affiche les interfaces/impacts et les situations sont publiées ; la propagation fine des changements au fil « Aujourd'hui » reste à renforcer.
@@ -106,7 +107,7 @@ Le dépôt `gsf-mockup` ne contient pas de spec OpenAPI statique. Le connecteur 
 
 1. Déployer Neo4j/Neptune en production, rejouer le backfill multi-tenant et vérifier l'idempotence à l'échelle.
 2. Activer RLS en production (rôle applicatif non-superuser, `meridian.tenant_id` posé par transaction) et vérifier les chemins legacy.
-3. Brancher la découverte automatique gateway/CMDB/OTLP sur les adaptateurs de protocoles (OpenAPI, WSDL, GraphQL, gRPC, AsyncAPI).
+3. Brancher les exports propriétaires gateway/CMDB sur le même graphe d'interface (les formats standards sont déjà couverts).
 4. Migrer les `cases` (forme de travail) puis retirer les lectures Mongo restantes après parité.
 5. Enrichir le jeu d'or de l'orchestrateur et mesurer les choix d'outils multi-protocoles.
 

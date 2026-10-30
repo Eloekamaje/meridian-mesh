@@ -18,7 +18,7 @@ from fnmatch import fnmatch
 from pathlib import Path
 from typing import Iterator, Optional
 
-from jumeau import interfaces
+from jumeau import interfaces, interfaces_protocoles
 
 DOSSIERS_IGNORES = frozenset({
     ".git", "node_modules", "vendor", "build", "dist", ".venv", "__pycache__", ".cache",
@@ -26,11 +26,15 @@ DOSSIERS_IGNORES = frozenset({
 })
 EXTENSIONS_OPENAPI = frozenset({".json", ".yaml", ".yml"})
 EXTENSIONS_WSDL = frozenset({".wsdl", ".xml"})
+EXTENSIONS_PROTOCOLES = frozenset({".graphql", ".gql", ".proto"})
 MOTIFS_CONFIG = ("application*.properties", "application*.yml", "application*.yaml",
                  ".env", ".env.*", "*.conf", "*.config")
 MOTIF_OPENAPI_JSON = re.compile(r'"\s*(?:openapi|swagger)\s*"\s*:', re.IGNORECASE)
 MOTIF_OPENAPI_YAML = re.compile(r"(?m)^[\"']?(?:openapi|swagger)[\"']?\s*:", re.IGNORECASE)
 MOTIF_WSDL = re.compile(r"<(?:\w+:)?definitions(?=[\s/>])", re.IGNORECASE)
+MOTIF_GRAPHQL = re.compile(r"(?m)^\s*(?:extend\s+)?type\s+(?:Query|Mutation|Subscription)\b")
+MOTIF_PROTO = re.compile(r"(?m)^\s*(?:syntax\s*=|service\s+\w+\s*\{)")
+MOTIF_ASYNCAPI = re.compile(r"(?im)^\s*[\"']?asyncapi[\"']?\s*:")
 
 
 def _nom_config(nom: str) -> bool:
@@ -50,10 +54,22 @@ def _est_wsdl(texte: str) -> bool:
     return bool(MOTIF_WSDL.search(texte))
 
 
+def _est_graphql(texte: str) -> bool:
+    return bool(MOTIF_GRAPHQL.search(texte.lstrip("\ufeff")))
+
+
+def _est_proto(texte: str) -> bool:
+    return bool(MOTIF_PROTO.search(texte.lstrip("\ufeff")))
+
+
+def _est_asyncapi(texte: str) -> bool:
+    return bool(MOTIF_ASYNCAPI.search(texte.lstrip("\ufeff")))
+
+
 def _est_candidat(chemin: Path) -> bool:
     suffixe = chemin.suffix.lower()
     return (suffixe in EXTENSIONS_OPENAPI or suffixe in EXTENSIONS_WSDL
-            or _nom_config(chemin.name))
+            or suffixe in EXTENSIONS_PROTOCOLES or _nom_config(chemin.name))
 
 
 def _est_binaire(donnees: bytes) -> bool:
@@ -169,6 +185,15 @@ def collecter(racine, application_id, environment: str = "inconnu", max_fichiers
         elif suffixe in EXTENSIONS_WSDL and _est_wsdl(texte):
             morceaux.append(_avec_locator(
                 interfaces.parse_wsdl(application_id, texte, locator, environment), locator))
+        elif suffixe in (".graphql", ".gql") or _est_graphql(texte):
+            morceaux.append(_avec_locator(
+                interfaces_protocoles.parse_graphql(application_id, texte, locator, environment), locator))
+        elif suffixe == ".proto" or _est_proto(texte):
+            morceaux.append(_avec_locator(
+                interfaces_protocoles.parse_proto(application_id, texte, locator, environment), locator))
+        elif _est_asyncapi(texte):
+            morceaux.append(_avec_locator(
+                interfaces_protocoles.parse_asyncapi(application_id, texte, locator, environment), locator))
         elif _nom_config(chemin.name):
             morceaux.append(_avec_locator(
                 interfaces.parse_config(application_id, texte, locator, environment), locator))

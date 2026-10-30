@@ -37,7 +37,8 @@ _RE_WSDL = re.compile(r"<\s*(?:[\w.-]+:)?definitions\b", re.IGNORECASE)
 _RE_OPENAPI = re.compile(r"(?im)^\s*(?:openapi|swagger)\s*:|[\"'](?:openapi|swagger)[\"']\s*:")
 _LONGUEUR_NOM_MAX = 80
 _LONGUEUR_TEXTE_MAX = 200
-_LIBELLES_PROTOCOLE = {"rest": "REST", "soap": "SOAP", "grpc": "gRPC"}
+_LIBELLES_PROTOCOLE = {"rest": "REST", "soap": "SOAP", "grpc": "gRPC", "graphql": "GraphQL",
+                       "asyncapi": "AsyncAPI"}
 
 
 def _champ(objet: Any, nom: str, defaut: Any = None) -> Any:
@@ -117,6 +118,10 @@ def _protocole(operation: Any, contrat: Any) -> str:
         return "soap"
     if brut == "grpc" or format_contrat == "grpc":
         return "grpc"
+    if brut == "graphql" or format_contrat == "graphql":
+        return "graphql"
+    if brut == "asyncapi" or format_contrat == "asyncapi":
+        return "asyncapi"
     return "rest"
 
 
@@ -227,6 +232,12 @@ def manifests_depuis_interface(
                              or _commence_par(methode_brute, _PREFIXES_LECTURE_GRPC))
             effets = () if lecture_seule else (
                 _effet("grpc", methode_brute or action, nom_operation),)
+        elif protocole == "graphql":
+            lecture_seule = methode in ("QUERY", "SUBSCRIPTION")
+            effets = () if lecture_seule else (_effet("graphql", nom_operation or action, "mutation"),)
+        elif protocole == "asyncapi":
+            lecture_seule = methode in ("SUBSCRIBE", "RECEIVE")
+            effets = () if lecture_seule else (_effet("asyncapi", action or nom_operation, "publish"),)
         else:
             lecture_seule = methode in _METHODES_LECTURE
             effets = () if lecture_seule else (_effet("http", methode or "UNKNOWN", "operation"),)

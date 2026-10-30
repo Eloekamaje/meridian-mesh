@@ -210,3 +210,31 @@ def test_run_erreur_est_journalise_puis_relance(conn, tmp_path):
     assert ligne[3] and ligne[4] and ligne[5] == {} and ligne[6] == [] and ligne[7] == []
     assert interfaces_depot.compter(conn, "banque") == {
         "contracts": 0, "operations": 0, "bindings": 0, "assertions": 0}
+
+
+@besoin_pg
+def test_graphql_grpc_asyncapi_persistes_et_compilables(conn, tmp_path):
+    from jumeau import interface_outils
+
+    (tmp_path / "schema.graphql").write_text(
+        "type Query { lister: String } type Mutation { creer(nom: String!): String }",
+        encoding="utf-8")
+    (tmp_path / "service.proto").write_text(
+        'syntax = "proto3"; service Comptes { rpc GetCompte (Req) returns (Rep); }',
+        encoding="utf-8")
+    (tmp_path / "events.yaml").write_text(
+        "asyncapi: '2.6.0'\nchannels:\n  comptes:\n    publish:\n      operationId: publier\n",
+        encoding="utf-8")
+
+    res = decouverte_interfaces.executer(
+        conn, "banque", "comptes", racine=tmp_path, environment="prod")
+
+    assert res["run"]["status"] == "ok"
+    assert {o["protocol"] for o in res["graphe"]["operations"]} == {"graphql", "grpc", "asyncapi"}
+    lu = interfaces_depot.lire_graph(conn, "banque", "comptes")
+    manifestes = interface_outils.manifests_depuis_interface(lu, tenant="banque")
+    par_nom = {m.nom: m for m in manifestes}
+    assert par_nom["comptes.lister"].lecture_seule is True
+    assert par_nom["comptes.creer"].lecture_seule is False
+    assert par_nom["comptes.getcompte"].lecture_seule is True
+    assert par_nom["comptes.publier"].lecture_seule is False
