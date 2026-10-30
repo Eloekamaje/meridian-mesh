@@ -40,7 +40,9 @@ Preuve live sur « régénère le flux du gsf-mockup » : `repo:gsf-mockup → t
 - Arêtes d'interfaces : couche Atlas optionnelle, arêtes React Flow déclaré/observé/inféré, dérivation cible productrice prouvée par EXPOSE.
 - OTLP : parsing des traces `resourceSpans` (CLIENT/SERVER, HTTP/gRPC, statut, trace) vers observations `observed`.
 - Situations : une découverte avec impact `breaking`/`warning` publie une situation d'interface dans le fil, sans bloquer la passe du Gardien.
-- Tests : **963 tests jumeau** (3 skip), **140 tests frontend**, build OK. Exécution réelle sur `gsf-mockup` : 3 opérations `GET /`, `GET /status`, `POST /status` ; premier run 7 changements, second run 0.
+- Tirage OTLP authentifié : HTTPS + allowlist `JUMEAU_OTLP_HOTES`, secret Vault/env, pas de redirection, taille bornée ; endpoint `POST /jumeaux/{jid}/interfaces/observer/pull`.
+- Notifications d'impact : persona par équipe (fallback gouvernance), upsert idempotent, SSE `notification.creee`, lien Atlas.
+- Tests : **997 tests jumeau** (3 skip), **140 tests frontend**, build OK. Exécution réelle sur `gsf-mockup` : 3 opérations `GET /`, `GET /status`, `POST /status` ; premier run 7 changements, second run 0.
 - Promotion gouvernée : `POST /jumeaux/{jid}/promouvoir` + table `identity_decision`, formulaire dans la revue, audit acteur/avant/après, id inchangé.
 - Revue d'un jumeau réel : section « Interfaces et impacts » avec contrats, opérations, assertions et dernier DiscoveryRun.
 
@@ -50,14 +52,13 @@ Le dépôt `gsf-mockup` ne contient pas de spec OpenAPI statique. Le connecteur 
 
 ## Limites actuelles
 
-- Dans le modèle actuel 1 twin ↔ 1 application, `application_id = twin_id = id réel de l'application` ; la promotion ne change pas cet id. Une séparation ne sera nécessaire que pour plusieurs twins d'une même application (différé).
+- Dans le modèle **1 twin ↔ 1 application**, `application_id = twin_id = id réel de l'application` ; la promotion ne change pas cet id. Le multi-twins par application n'est pas retenu.
 - La persistance des interfaces n'est pas encore branchée à l'ingestion du Gardien ni à l'Atlas.
 - Le change/impact engine est pur : pas encore d'événements `DiscoveryRun`, de webhook ni de propagation UI.
 - Le connecteur lit OpenAPI, configuration, claims `EXPOSE` et WSDL ; il ne lit pas encore APM, gateway runtime ni service mesh.
 - Les arêtes d'interface sont dessinées en rendu graphe ; un `CONSOMME` vers une URL externe sans production résolue ne crée toujours pas d'arête (aucune cible inventée).
-- Le connecteur runtime lit un export normalisé ou OTLP, pas encore un tirage APM/gateway authentifié.
-- Les situations d'impact sont publiées dans le fil ; la notification persona/SSE dédiée reste à brancher.
-- Le modèle multi-twins par application reste différé.
+- Le tirage authentifié accepte un endpoint OTLP/APM/gateway compatible OTLP ; un connecteur propriétaire (Datadog, Kong, Apigee) reste à écrire si l'export n'est pas OTLP.
+- Les notifications persona/SSE sont branchées pour les impacts breaking/warning.
 - La promotion d'un twin provisoire est demandée dans la réponse mais n'a pas encore d'action serveur dédiée.
 
 ## Prochain lot

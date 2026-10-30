@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 from strands import Agent
 
 from jumeau import (agent, comprendre, connaissance, contradicteur, decouverte_interfaces, depot, impacts_situations,
-                    lecteurs, methodes, poignee, recoupement, registre, schemas, temps)
+                    lecteurs, methodes, notifications_impacts, poignee, recoupement, registre, schemas, temps)
 from jumeau.ingerer import ingerer
 from jumeau.source_git import sha_courant
 
@@ -329,6 +329,7 @@ async def veiller(conn, db, jumeau_id, chemins=None, rediger=_rediger):
             sit = impacts_situations.situation_depuis_run(resultat["run"], jumeau)
             if sit:
                 await publier(db, sit)
+                await notifications_impacts.publier_notification(db, jumeau, resultat["run"], sit)
         except Exception:
             journal.warning("gardien %s : découverte d'interfaces impossible", jumeau_id, exc_info=True)
     branches = lecteurs.lecteurs_de(depot.toutes_les_sources(conn, jumeau_id))

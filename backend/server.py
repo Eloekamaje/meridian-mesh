@@ -39,6 +39,7 @@ from jumeau import identite_depot as jumeau_identite_depot  # noqa: E402
 from jumeau import decouverte_interfaces as jumeau_decouverte_interfaces  # noqa: E402
 from jumeau import interfaces_depot as jumeau_interfaces_depot  # noqa: E402
 from jumeau import connecteurs_runtime as jumeau_connecteurs_runtime  # noqa: E402
+from jumeau import connecteurs_runtime_pull as jumeau_connecteurs_runtime_pull  # noqa: E402
 from jumeau import depot as jumeau_depot  # noqa: E402
 from jumeau import connaissance as jumeau_connaissance  # noqa: E402
 from jumeau import flux as jumeau_flux  # noqa: E402
@@ -538,6 +539,13 @@ class ObservationsRuntime(BaseModel):
     environment: str = "production"
 
 
+class TirageRuntime(BaseModel):
+    url: str
+    secret_ref: Optional[str] = None
+    environment: str = "production"
+    source: str = "apm"
+
+
 @api_router.post("/jumeaux", status_code=201)
 async def creer_jumeau(payload: JumeauCreate, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
     _, espace = resoudre_perimetre(x_persona, x_espace)
@@ -631,6 +639,57 @@ async def observer_interfaces_du_jumeau(jid: str, payload: ObservationsRuntime,
         raise HTTPException(400, str(e))
     except psycopg.Error:
         logger.exception("Observations runtime du jumeau %s impossibles", jid)
+        raise HTTPException(503, "Couche cognitive indisponible")
+
+
+@api_router.post("/jumeaux/{jid}/interfaces/observer/pull")
+async def tirer_interfaces_du_jumeau(jid: str, payload: TirageRuntime,
+                                     x_persona: str = Header("architecte"),
+                                     x_espace: Optional[str] = Header(None)):
+    """Tire un export OTLP d'un collecteur autorisé, puis l'ingère en mode ombre (jamais promu)."""
+    _, espace = resoudre_perimetre(x_persona, x_espace)
+    tous = await db.jumeaux.find({}, {"_id": 0, "id": 1}).to_list(200)
+    aut = autorisations(espace, [j["id"] for j in tous])
+    if jid not in aut or not niveau_au_moins(aut[jid], "complet"):
+        raise HTTPException(404, "Jumeau introuvable")
+    if not jumeau_connecteurs_runtime_pull.hotes_autorises():
+        raise HTTPException(503, "Aucun hôte OTLP autorisé : définir JUMEAU_OTLP_HOTES")
+    dsn = os.environ.get("JUMEAU_PG_DSN")
+    if not dsn:
+        raise HTTPException(503, "Couche cognitive non configurée (JUMEAU_PG_DSN)")
+
+    def tirer():
+        with psycopg.connect(dsn, connect_timeout=5) as conn:
+            jumeau = jumeau_depot.jumeau_par_id(conn, jid)
+            if not jumeau:
+                raise LookupError(jid)
+            tenant = jumeau["tenant_id"]
+        graph = jumeau_connecteurs_runtime_pull.depuis_url(
+            jid, payload.url, payload.secret_ref, payload.environment, payload.source)
+        with psycopg.connect(dsn, connect_timeout=5) as conn:
+            stats = jumeau_interfaces_depot.enregistrer(conn, tenant, graph, remplacer=False)
+        return {"jumeau_id": jid, "mode": "shadow", "source": payload.source,
+                "environment": payload.environment, "stats": stats,
+                "resume": jumeau_connecteurs_runtime.resume(graph),
+                "graphe": graph.as_dict()}
+
+    try:
+        return await asyncio.to_thread(tirer)
+    except LookupError:
+        raise HTTPException(404, "Jumeau introuvable")
+    except (jumeau_connecteurs_runtime_pull.HoteRefuse,
+            jumeau_connecteurs_runtime_pull.SecretRefuse,
+            jumeau_connecteurs_runtime_pull.ReponseTropGrande,
+            jumeau_connecteurs_runtime_pull.JSONInvalide,
+            jumeau_connecteurs_runtime_pull.SchemaOTLP) as e:
+        raise HTTPException(400, str(e))
+    except (jumeau_connecteurs_runtime_pull.ReponseHTTP,
+            jumeau_connecteurs_runtime_pull.SourceInjoignable) as e:
+        raise HTTPException(502, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except psycopg.Error:
+        logger.exception("Tirage OTLP du jumeau %s impossible", jid)
         raise HTTPException(503, "Couche cognitive indisponible")
 
 
