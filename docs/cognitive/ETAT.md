@@ -42,7 +42,8 @@ Preuve live sur « régénère le flux du gsf-mockup » : `repo:gsf-mockup → t
 - Situations : une découverte avec impact `breaking`/`warning` publie une situation d'interface dans le fil, sans bloquer la passe du Gardien.
 - Tirage OTLP authentifié : HTTPS + allowlist `JUMEAU_OTLP_HOTES`, secret Vault/env, pas de redirection, taille bornée ; endpoint `POST /jumeaux/{jid}/interfaces/observer/pull`.
 - Notifications d'impact : persona par équipe (fallback gouvernance), upsert idempotent, SSE `notification.creee`, lien Atlas.
-- Tests : **997 tests jumeau** (3 skip), **140 tests frontend**, build OK. Exécution réelle sur `gsf-mockup` : 3 opérations `GET /`, `GET /status`, `POST /status` ; premier run 7 changements, second run 0.
+- Connecteur OTLP de bout en bout : catalogue UI, configuration URL/secret/fréquence, déclaration `source OTLP`, test sans réseau, tirage authentifié, source publique avec dernier tirage/erreur, bouton manuel, tirage d'arrière-plan avec fréquence et backoff.
+- Tests : **1035 tests jumeau** (3 skip), **143 tests frontend**, build OK. Exécution réelle sur `gsf-mockup` : 3 opérations `GET /`, `GET /status`, `POST /status` ; premier run 7 changements, second run 0.
 - Promotion gouvernée : `POST /jumeaux/{jid}/promouvoir` + table `identity_decision`, formulaire dans la revue, audit acteur/avant/après, id inchangé.
 - Revue d'un jumeau réel : section « Interfaces et impacts » avec contrats, opérations, assertions et dernier DiscoveryRun.
 
@@ -55,15 +56,14 @@ Le dépôt `gsf-mockup` ne contient pas de spec OpenAPI statique. Le connecteur 
 - Dans le modèle **1 twin ↔ 1 application**, `application_id = twin_id = id réel de l'application` ; la promotion ne change pas cet id. Le multi-twins par application n'est pas retenu.
 - La persistance des interfaces n'est pas encore branchée à l'ingestion du Gardien ni à l'Atlas.
 - Le change/impact engine est pur : pas encore d'événements `DiscoveryRun`, de webhook ni de propagation UI.
-- Le connecteur lit OpenAPI, configuration, claims `EXPOSE` et WSDL ; il ne lit pas encore APM, gateway runtime ni service mesh.
+- Le connecteur lit OpenAPI, configuration, claims `EXPOSE`, WSDL et OTLP tiré depuis une source APM/gateway authentifiée. Un export propriétaire non OTLP (Datadog/Kong/Apigee natif) reste un adaptateur optionnel.
 - Les arêtes d'interface sont dessinées en rendu graphe ; un `CONSOMME` vers une URL externe sans production résolue ne crée toujours pas d'arête (aucune cible inventée).
-- Le tirage authentifié accepte un endpoint OTLP/APM/gateway compatible OTLP ; un connecteur propriétaire (Datadog, Kong, Apigee) reste à écrire si l'export n'est pas OTLP.
+- Le tirage authentifié accepte un endpoint OTLP/APM/gateway compatible OTLP ; un connecteur propriétaire (Datadog, Kong, Apigee) reste optionnel si l'export n'est pas OTLP.
 - Les notifications persona/SSE sont branchées pour les impacts breaking/warning.
 - La promotion d'un twin provisoire est demandée dans la réponse mais n'a pas encore d'action serveur dédiée.
 
 ## Prochain lot
 
-1. Brancher le tirage APM/gateway/service mesh authentifié et les notifications persona/SSE.
-2. Relier les situations d'interface au fil « Aujourd'hui » et à l'Atlas.
-3. WSDL, gateway/APM en mode ombre, puis tests d'isolation multi-tenant de bout en bout.
+1. Ajouter un adaptateur propriétaire pour une source APM/gateway qui n'expose pas OTLP.
+2. Renforcer les tests d'isolation multi-tenant de bout en bout et le rate-limit des tirages.
 4. Brancher les changements du DiscoveryRun sur les notifications et le fil « Aujourd'hui ».

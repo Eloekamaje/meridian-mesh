@@ -40,6 +40,8 @@ from jumeau import decouverte_interfaces as jumeau_decouverte_interfaces  # noqa
 from jumeau import interfaces_depot as jumeau_interfaces_depot  # noqa: E402
 from jumeau import connecteurs_runtime as jumeau_connecteurs_runtime  # noqa: E402
 from jumeau import connecteurs_runtime_pull as jumeau_connecteurs_runtime_pull  # noqa: E402
+from jumeau import pulls_runtime as jumeau_pulls_runtime  # noqa: E402
+from jumeau import pulls_runtime as jumeau_pulls_runtime  # noqa: E402
 from jumeau import depot as jumeau_depot  # noqa: E402
 from jumeau import connaissance as jumeau_connaissance  # noqa: E402
 from jumeau import flux as jumeau_flux  # noqa: E402
@@ -691,6 +693,44 @@ async def tirer_interfaces_du_jumeau(jid: str, payload: TirageRuntime,
     except psycopg.Error:
         logger.exception("Tirage OTLP du jumeau %s impossible", jid)
         raise HTTPException(503, "Couche cognitive indisponible")
+
+
+@api_router.post("/jumeaux/{jid}/interfaces/observer/pull-source")
+async def tirer_sources_otlp_du_jumeau(jid: str, x_persona: str = Header("architecte"),
+                                       x_espace: Optional[str] = Header(None)):
+    """Tire les sources OTLP persistées du jumeau, publie les impacts et rend les runs observés.
+
+    Aucun URL ni secret n'est accepté dans le corps : la configuration vient de `source`. Une source en panne
+    n'empêche pas les autres (tirage best-effort) ; l'absence de jumeau ou de couche cognitive est explicite.
+    """
+    _, espace = resoudre_perimetre(x_persona, x_espace)
+    tous = await db.jumeaux.find({}, {"_id": 0, "id": 1}).to_list(200)
+    aut = autorisations(espace, [j["id"] for j in tous])
+    if jid not in aut or not niveau_au_moins(aut[jid], "complet"):
+        raise HTTPException(404, "Jumeau introuvable")
+    dsn = os.environ.get("JUMEAU_PG_DSN")
+    if not dsn:
+        raise HTTPException(503, "Couche cognitive non configurée (JUMEAU_PG_DSN)")
+
+    try:
+        conn = await asyncio.to_thread(psycopg.connect, dsn, connect_timeout=5, autocommit=True)
+    except psycopg.Error:
+        logger.exception("Tirage des sources OTLP du jumeau %s impossible", jid)
+        raise HTTPException(503, "Couche cognitive indisponible")
+    try:
+        jumeau = await asyncio.to_thread(jumeau_depot.jumeau_par_id, conn, jid)
+        if not jumeau:
+            raise HTTPException(404, "Jumeau introuvable")
+        sources = await asyncio.to_thread(jumeau_pulls_runtime.sources_otlp, conn, jid)
+        if sources and not jumeau_connecteurs_runtime_pull.hotes_autorises():
+            raise HTTPException(503, "Aucun hôte OTLP autorisé : définir JUMEAU_OTLP_HOTES")
+        runs = await jumeau_pulls_runtime.tirer_et_publier(db, conn, jumeau, sources, force=True)
+        return {"jumeau_id": jid, "runs": runs}
+    except psycopg.Error:
+        logger.exception("Tirage des sources OTLP du jumeau %s impossible", jid)
+        raise HTTPException(503, "Couche cognitive indisponible")
+    finally:
+        await asyncio.to_thread(conn.close)
 
 
 @api_router.post("/jumeaux/{jid}/promouvoir")
@@ -1769,7 +1809,8 @@ async def interfaces_du_jumeau(jid: str, x_persona: str = Header("architecte"),
             tenant = jumeau["tenant_id"]
             return {"jumeau_id": jid, "application_id": jid, "tenant": tenant,
                     "interfaces": jumeau_interfaces_depot.lire(conn, tenant, jid),
-                    "runs": jumeau_interfaces_depot.derniers_runs(conn, tenant, jid)}
+                    "runs": jumeau_interfaces_depot.derniers_runs(conn, tenant, jid),
+                    "sources": jumeau_pulls_runtime.etat_sources(conn, jid)}
 
     resultat = await asyncio.to_thread(lire)
     if resultat is None:

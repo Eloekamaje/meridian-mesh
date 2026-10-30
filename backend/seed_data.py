@@ -1046,6 +1046,13 @@ CONNECTEURS = [
         {"cle": "connexion", "label": "Connexion Datadog", "type": "connexion_datadog", "requis": True},
         {"cle": "service", "label": "Service", "type": "service_datadog", "requis": True},
      ]},
+    {"id": "otlp", "nom": "APM / Gateway OTLP", "categorie": "Observabilité", "capacites": "traces observées, appels consommés/exposés",
+     "champs": [
+        {"cle": "url", "label": "URL OTLP", "type": "texte", "requis": True},
+        {"cle": "secret_ref", "label": "Référence du secret", "type": "texte", "requis": True},
+        {"cle": "environnement", "label": "Environnement", "type": "select", "options": ["production", "préproduction", "recette", "développement"], "defaut": "production"},
+        {"cle": "frequence", "label": "Fréquence", "type": "select", "options": ["horaire", "quotidienne", "hebdomadaire"], "defaut": "quotidienne"},
+     ]},
     {"id": "splunk", "nom": "Splunk", "categorie": "Observabilité", "capacites": "Événements observés, journaux, corrélations",
      "champs": [
         {"cle": "hote", "label": "Hôte", "type": "texte", "requis": True},
@@ -1103,6 +1110,7 @@ CONTRIBUTIONS = {
     "jira": {"objectif": "Comprendre le métier", "contribution": "Trajectoire fonctionnelle"},
     "confluence": {"objectif": "Comprendre le métier", "contribution": "Contexte métier et décisions"},
     "datadog": {"objectif": "Comprendre le comportement", "contribution": "Comportement normal"},
+    "otlp": {"objectif": "Comprendre le comportement", "contribution": "Traces observées et appels consommés/exposés"},
     "splunk": {"objectif": "Comprendre le comportement", "contribution": "Événements observés"},
     "kafka": {"objectif": "Comprendre le comportement", "contribution": "Événements produits et consommés"},
     "servicenow": {"objectif": "Comprendre l'historique", "contribution": "Mémoire des incidents et changements"},
@@ -1113,7 +1121,7 @@ CONTRIBUTIONS = {
 PROFILS = [
     {"id": "profil-bdd-prod", "nom": "Base de données Production", "applicable": ["postgresql", "oracle"],
      "regles": {"environnement": "production", "config": {"frequence": "horaire", "lecture_seule": True, "politique_secret": "coffre central", "historique": "90 jours"}}},
-    {"id": "profil-obs-std", "nom": "Observabilité standard", "applicable": ["datadog", "splunk"],
+    {"id": "profil-obs-std", "nom": "Observabilité standard", "applicable": ["datadog", "otlp", "splunk"],
      "regles": {"environnement": "production", "config": {"periode": "30 jours", "lecture_seule": True, "politique_secret": "coffre central"}}},
 ]
 

@@ -97,9 +97,11 @@ ALTER TABLE source ADD COLUMN IF NOT EXISTS branche text;
 ALTER TABLE source ADD COLUMN IF NOT EXISTS troncature jsonb;
 ALTER TABLE source ADD COLUMN IF NOT EXISTS url text;
 ALTER TABLE source ADD COLUMN IF NOT EXISTS secret_ref text;
--- Sources branchées autres que le code (lecteurs) : le CHECK d'origine ne connaît que GIT et DOCUMENTATION.
+-- Configuration d'une source runtime (OTLP) : url, secret_ref, environnement, fréquence ; jamais le secret brut.
+ALTER TABLE source ADD COLUMN IF NOT EXISTS configuration jsonb;
+-- Sources branchées autres que le code (lecteurs, OTLP) : le CHECK d'origine ne connaît que GIT et DOCUMENTATION.
 ALTER TABLE source DROP CONSTRAINT IF EXISTS source_type_check;
-ALTER TABLE source ADD CONSTRAINT source_type_check CHECK (type IN ('GIT', 'DOCUMENTATION', 'CONFLUENCE', 'JIRA', 'SERVICENOW', 'DATADOG'));
+ALTER TABLE source ADD CONSTRAINT source_type_check CHECK (type IN ('GIT', 'DOCUMENTATION', 'CONFLUENCE', 'JIRA', 'SERVICENOW', 'DATADOG', 'OTLP'));
 
 -- Quelles sources observent encore chaque Claim : il n'est clos que quand plus aucune ne le voit.
 CREATE TABLE IF NOT EXISTS claim_source (

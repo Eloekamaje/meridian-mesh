@@ -33,12 +33,14 @@ def _message_court(erreur: BaseException) -> str:
     return (texte or type(erreur).__name__)[:_LONGUEUR_ERREUR]
 
 
-def _collecter(application_id, racine, claims, environment) -> interfaces.InterfaceGraph:
+def _collecter(application_id, racine, claims, environment, graph=None) -> interfaces.InterfaceGraph:
     morceaux = []
     if racine is not None:
         morceaux.append(collecter(racine, application_id, environment))
     if claims is not None:
         morceaux.append(interfaces.depuis_claims(application_id, claims, environment))
+    if graph is not None:
+        morceaux.append(graph)
     return interfaces.merge(morceaux)
 
 
@@ -61,13 +63,15 @@ def _journaliser(conn, *, run_id, tenant_id, application_id, source, environment
 
 
 def executer(conn, tenant_id, application_id, racine=None, claims=None, environment="inconnu",
-             source="local") -> dict:
+             source="local", graph=None) -> dict:
     """Collecte puis persiste un graphe d'interfaces et journalise le run correspondant.
 
-    `racine` fait passer par le connecteur de fichiers, `claims` par les revendications `EXPOSE` du code ; les deux
-    peuvent être fournis et sont alors fusionnés. Le graphe d'avant est relu pour l'application, le graphe d'après
-    est enregistré, puis `diff_graphs` et `impacts` sont calculés. Les impacts lisent aussi le contexte du tenant
-    entier, afin qu'une assertion `CONSOMME` d'une autre application reste une preuve valable.
+    `racine` fait passer par le connecteur de fichiers, `claims` par les revendications `EXPOSE` du code, et
+    `graph` par un graphe déjà observé (runtime/OTLP) ; les sources fournies sont fusionnées. Le graphe d'avant est
+    relu pour l'application, le graphe d'après est enregistré, puis `diff_graphs` et `impacts` sont calculés. Les
+    impacts lisent aussi le contexte du tenant entier, afin qu'une assertion `CONSOMME` d'une autre application
+    reste une preuve valable. Le remplacement est limité au périmètre présent dans le graphe : un graphe runtime
+    remplace les contrats runtime et les assertions OTLP, jamais le code déclaré.
 
     Rend `{"run", "changements", "impacts", "graphe"}`. En cas d'erreur, le run `error` est écrit puis l'exception
     est relancée.
@@ -81,12 +85,12 @@ def executer(conn, tenant_id, application_id, racine=None, claims=None, environm
     run_id = f"run-{uuid.uuid4()}"
     started_at = _maintenant()
     try:
-        graph = _collecter(application_id, racine, claims, environment)
+        graphe = _collecter(application_id, racine, claims, environment, graph)
         avant = interfaces_depot.lire_graph(conn, tenant_id, application_id)
         contexte = interfaces_depot.lire_graph(conn, tenant_id)
-        compte = interfaces_depot.enregistrer(conn, tenant_id, graph, remplacer=True)
-        changements = decouverte.diff_graphs(avant, graph)
-        constats = decouverte.impacts(changements, interfaces.merge([contexte, graph]))
+        compte = interfaces_depot.enregistrer(conn, tenant_id, graphe, remplacer=True)
+        changements = decouverte.diff_graphs(avant, graphe)
+        constats = decouverte.impacts(changements, interfaces.merge([contexte, graphe]))
     except Exception as erreur:  # noqa: BLE001 - toute panne de collecte ou de dépôt doit laisser une trace
         ended_at = _maintenant()
         try:
@@ -99,18 +103,18 @@ def executer(conn, tenant_id, application_id, racine=None, claims=None, environm
         raise
 
     ended_at = _maintenant()
-    status = "partial" if graph.partial else "ok"
+    status = "partial" if graphe.partial else "ok"
     changements_json = [change.as_dict() for change in changements]
     impacts_json = [constat.as_dict() for constat in constats]
     stats = {
         **compte,
         "changements": len(changements_json),
         "impacts": len(impacts_json),
-        "partial": bool(graph.partial),
-        "diagnostics": list(graph.diagnostics),
+        "partial": bool(graphe.partial),
+        "diagnostics": list(graphe.diagnostics),
     }
     run = _journaliser(
         conn, run_id=run_id, tenant_id=tenant_id, application_id=application_id, source=source,
         environment=environment, started_at=started_at, ended_at=ended_at, status=status, stats=stats,
         changes=changements_json, impacts=impacts_json, error=None)
-    return {"run": run, "changements": changements_json, "impacts": impacts_json, "graphe": graph.as_dict()}
+    return {"run": run, "changements": changements_json, "impacts": impacts_json, "graphe": graphe.as_dict()}

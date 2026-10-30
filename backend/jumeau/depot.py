@@ -28,7 +28,8 @@ def recalculer_maturites(conn):
 
 
 # Substance d'un jumeau, par ordre de préférence : le code, puis ce que la banque a d'un progiciel sans son code.
-SUBSTANCES = (("GIT", "code"), ("DATADOG", "interfaces observées (Datadog)"), ("CONFLUENCE", "documentation (Confluence)"))
+SUBSTANCES = (("GIT", "code"), ("DATADOG", "interfaces observées (Datadog)"),
+              ("OTLP", "traces OTLP (interfaces observées)"), ("CONFLUENCE", "documentation (Confluence)"))
 
 
 def substance(types):
@@ -197,13 +198,19 @@ def fusionner(conn, jumeau_id, garder, retirer):
 
 
 def declarer_source(conn, jumeau, source):
-    """Enregistre une source branchée (hors code) du jumeau : pas d'ingestion, ses lecteurs la lisent à la demande."""
+    """Enregistre une source branchée (hors code) du jumeau : pas d'ingestion, ses lecteurs la lisent à la demande.
+    `configuration` (jsonb) est optionnelle : les sources qui n'en portent pas gardent leur ligne inchangée."""
+    configuration = source.get("configuration")
+    url = source.get("url") or (configuration or {}).get("url")
+    secret_ref = source.get("secret_ref") or (configuration or {}).get("secret_ref")
+    emplacement = source.get("emplacement") or url
     conn.execute(
-        "INSERT INTO source (tenant_id, jumeau_id, type, nom, emplacement, curseur, url, secret_ref) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (jumeau_id, nom) DO UPDATE SET "
-        "emplacement = EXCLUDED.emplacement, url = EXCLUDED.url, secret_ref = EXCLUDED.secret_ref",
-        (jumeau["tenant_id"], jumeau["id"], source["type"], source["nom"], source["emplacement"],
-         source.get("curseur"), source.get("url"), source.get("secret_ref")))
+        "INSERT INTO source (tenant_id, jumeau_id, type, nom, emplacement, curseur, url, secret_ref, configuration) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (jumeau_id, nom) DO UPDATE SET "
+        "emplacement = EXCLUDED.emplacement, url = EXCLUDED.url, secret_ref = EXCLUDED.secret_ref, "
+        "configuration = coalesce(EXCLUDED.configuration, source.configuration)",
+        (jumeau["tenant_id"], jumeau["id"], source["type"], source["nom"], emplacement,
+         source.get("curseur"), url, secret_ref, Jsonb(configuration) if configuration is not None else None))
 
 
 def sources_du_jumeau(conn, jumeau_id):
@@ -230,6 +237,14 @@ def toutes_les_sources(conn, jumeau_id):
     """Toutes les sources du jumeau, de tout type (code et sources branchées), pour en faire des lecteurs."""
     with conn.cursor(row_factory=dict_row) as cur:
         return cur.execute("SELECT * FROM source WHERE jumeau_id = %s ORDER BY nom", (jumeau_id,)).fetchall()
+
+
+def sources_runtime(conn, jumeau_id):
+    """Les sources runtime (OTLP) du jumeau, avec leur configuration ; jamais le secret brut."""
+    with conn.cursor(row_factory=dict_row) as cur:
+        return cur.execute(
+            "SELECT id, nom, emplacement, url, secret_ref, configuration FROM source "
+            "WHERE jumeau_id = %s AND type = 'OTLP' ORDER BY nom", (jumeau_id,)).fetchall()
 
 
 def source_du_jumeau(conn, jumeau_id, nom=None):

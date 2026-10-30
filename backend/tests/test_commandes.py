@@ -30,7 +30,7 @@ def test_connecteurs_catalogue(s):
     assert r.status_code == 200
     d = r.json()
     assert "connecteurs" in d and "contributions" in d and "profils" in d
-    assert len(d["connecteurs"]) == 12, f"attendu 12 connecteurs, reçu {len(d['connecteurs'])}"
+    assert len(d["connecteurs"]) == 13, f"attendu 13 connecteurs, reçu {len(d['connecteurs'])}"
     categories = {c.get("categorie") for c in d["connecteurs"]}
     assert len(categories) == 10, f"attendu 10 catégories, reçu {len(categories)} : {categories}"
     # PostgreSQL doit exposer les 6 champs

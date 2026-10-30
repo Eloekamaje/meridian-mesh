@@ -1,13 +1,13 @@
 """Ce qu'un connecteur déclare et ce qu'il fait (plan de remédiation L2.5, L2.6).
 
-Le catalogue en annonce douze ; six seulement alimentent un lecteur. `_simuler_test` rendait « prête » une source
-PostgreSQL, Kafka ou AWS dont aucun code n'interroge l'hôte : une promesse sans mécanisme, affichée à côté d'un test
-de connexion.
+Le catalogue en annonce treize ; sept alimentent un lecteur, le clone Git ou le tirage OTLP. `_simuler_test` rendait
+« prête » une source PostgreSQL, Kafka ou AWS dont aucun code n'interroge l'hôte : une promesse sans mécanisme,
+affichée à côté d'un test de connexion.
 """
 from jumeau import connecteurs
 from seed_data import CONNECTEURS
 
-BRANCHES = ["github", "confluence", "jira", "servicenow", "cmdb", "datadog"]
+BRANCHES = ["github", "confluence", "jira", "servicenow", "cmdb", "datadog", "otlp"]
 NON_BRANCHES = ["postgresql", "oracle", "splunk", "kafka", "apigee", "aws"]
 
 
@@ -18,9 +18,10 @@ def source(connecteur, **config):
 def test_seuls_les_connecteurs_implementes_sont_branches():
     assert [c for c in BRANCHES if connecteurs.connecteur_branche(c)] == BRANCHES
     assert [c for c in NON_BRANCHES if connecteurs.connecteur_branche(c)] == []
-    # « cmdb » est le même système que ServiceNow, « github » alimente le clone Git.
+    # « cmdb » est le même système que ServiceNow, « github » alimente le clone Git, « otlp » le tirage runtime.
     assert connecteurs.connecteur_branche("cmdb") == "servicenow"
     assert connecteurs.connecteur_branche("github") == "git"
+    assert connecteurs.connecteur_branche("otlp") == "otlp"
 
 
 def test_un_connecteur_non_branche_ne_peut_pas_etre_dit_pret():

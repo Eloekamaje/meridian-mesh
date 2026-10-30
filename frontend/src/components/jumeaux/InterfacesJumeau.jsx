@@ -1,5 +1,15 @@
 import { useEffect, useState } from "react";
-import { ArrowClockwise, ArrowsLeftRight, FileCode, PlugsConnected, Pulse, WarningCircle } from "@phosphor-icons/react";
+import {
+  ArrowClockwise,
+  ArrowsLeftRight,
+  CircleNotch,
+  DownloadSimple,
+  FileCode,
+  PlugsConnected,
+  Pulse,
+  WarningCircle,
+} from "@phosphor-icons/react";
+import { toast } from "sonner";
 import api from "@/lib/api";
 
 const BORDURE = "border-[rgba(148,163,184,0.16)]";
@@ -94,6 +104,124 @@ function confiance(valeur) {
   return `${Math.round((nombre <= 1 ? nombre : nombre / 100) * 100)} %`;
 }
 
+// Sources OTLP déclarées par le serveur : le panneau ne saisit jamais d'URL ni de secret.
+function sourcesOtlpDeLaReponse(donnees) {
+  const candidats = [
+    donnees?.otlp_sources,
+    donnees?.sources_otlp,
+    donnees?.observer?.sources,
+    donnees?.observateur?.sources,
+    donnees?.sources,
+    donnees?.interfaces?.sources,
+  ];
+  const brut = candidats.find((valeur) => Array.isArray(valeur));
+  if (!brut) return null;
+  const noms = brut.map((source) => {
+    if (typeof source === "string") return source.trim();
+    if (source && typeof source === "object") {
+      const nom = source.nom || source.name || source.source || source.host || source.hote || "";
+      return typeof nom === "string" ? nom.trim() : "";
+    }
+    return "";
+  }).filter(Boolean);
+  return [...new Set(noms)];
+}
+
+function runsDuTirage(donnees) {
+  if (Array.isArray(donnees?.runs)) return donnees.runs;
+  if (Array.isArray(donnees?.runs_crees)) return donnees.runs_crees;
+  if (Array.isArray(donnees?.resultats)) return donnees.resultats;
+  if (Array.isArray(donnees?.resultats?.runs)) return donnees.resultats.runs;
+  if (donnees?.run && typeof donnees.run === "object") return [donnees.run];
+  return [];
+}
+
+function sourcesDesRuns(runs) {
+  const valeurs = runs.flatMap((run) => {
+    if (!run || typeof run !== "object") return [];
+    return Array.isArray(run.sources) ? run.sources : [run.source];
+  }).filter(Boolean).map((source) => String(source).trim()).filter(Boolean);
+  return [...new Set(valeurs)];
+}
+
+function libelleRuns(nombre) {
+  return `${nombre} run${nombre > 1 ? "s" : ""}`;
+}
+
+function messageErreurTirage(statut, detail) {
+  if (detail) return String(detail);
+  if (statut === 400) return "Tirage refusé : vérifiez les sources OTLP configurées.";
+  if (statut === 404) return "Jumeau introuvable : le tirage n'a pas été lancé.";
+  if (statut === 503) return "Tirage indisponible : aucune source OTLP ou couche cognitive non configurée.";
+  return "Tirage des observations impossible pour l'instant.";
+}
+
+function absenceSourceOtlp(detail) {
+  return /(aucune?|pas de)\s+(source|h[oô]te)[^.]*otlp|otlp[^.]*(aucune?|pas de)\s+(source|h[oô]te)/i
+    .test(String(detail || ""));
+}
+
+function resumeTirage({ tirage, run, sources }) {
+  if (tirage.enCours) return ["Tirage des observations OTLP en cours…", "#60A5FA"];
+  if (tirage.aucuneSource) return ["Aucune source OTLP configurée : le tirage serveur est indisponible.", "#F2B84B"];
+  if (tirage.erreur) return [`Dernier tirage en échec : ${tirage.erreur}`, "#F87171"];
+  if (tirage.dernier) {
+    const detailSources = tirage.dernier.sources.length
+      ? ` · ${tirage.dernier.sources.map((source) => texte(source, 60)).join(", ")}`
+      : "";
+    return [`Dernier tirage : ${libelleRuns(tirage.dernier.runs.length)}${detailSources} · ${dateCourte(tirage.dernier.at)}`, "#34D399"];
+  }
+  if (sources && sources.length === 0) return ["Aucune source OTLP configurée pour ce jumeau.", "#F2B84B"];
+  if (run) {
+    const source = run.source ? ` · source ${texte(run.source, 40)}` : "";
+    return [`Dernier run : ${run.status || "statut inconnu"}${source} · ${dateCourte(run.started_at)}`, "#7C93A8"];
+  }
+  return ["Aucun run de tirage OTLP pour l'instant.", "#7C93A8"];
+}
+
+function TirageObservations({ tirage, run, sources, onTirer }) {
+  const [resume, couleur] = resumeTirage({ tirage, run, sources });
+  return (
+    <div className={`flex flex-wrap items-center gap-2 rounded-lg border ${BORDURE} px-3 py-2`} data-testid="interfaces-tirage">
+      <button type="button" onClick={onTirer} disabled={tirage.enCours} data-testid="interfaces-tirer"
+        title="Utilise les sources OTLP configurées côté serveur, sans URL ni secret dans l'interface"
+        className={`flex items-center gap-1.5 rounded border ${BORDURE} px-2.5 py-1 text-[11px] text-[#F2F6F8] transition-colors hover:bg-[rgba(148,163,184,0.10)] disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS}`}>
+        {tirage.enCours
+          ? <CircleNotch size={13} className="animate-spin" aria-hidden />
+          : <DownloadSimple size={13} aria-hidden />}
+        {tirage.enCours ? "Tirage en cours…" : "Tirer les observations"}
+      </button>
+      <span className="font-code text-[10px]" style={{ color: couleur }} data-testid="interfaces-tirage-etat" aria-live="polite">
+        {resume}
+      </span>
+    </div>
+  );
+}
+
+function SourcesOtlp({ sources }) {
+  const liste = Array.isArray(sources) ? sources : [];
+  if (!liste.length) return null;
+  return (
+    <section className={`rounded-lg border ${BORDURE} px-3 py-2`} data-testid="interfaces-sources-otlp" aria-label="Sources OTLP">
+      <div className={ETIQUETTE}>Sources OTLP</div>
+      <ul className="mt-1 space-y-1">
+        {liste.map((source, i) => {
+          const erreur = source?.derniere_erreur;
+          return (
+            <li key={source?.id || i} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px]" data-testid="interfaces-source-otlp">
+              <span className="font-medium text-[#D8E2EA]">{texte(source?.nom, 80)}</span>
+              <span className="text-[#7C93A8]">{source?.environment || "environnement inconnu"}</span>
+              <span className="text-[#7C93A8]">· {source?.frequence || "fréquence inconnue"}</span>
+              {source?.derniere_pull && <span className="text-[#34D399]">· dernier tirage {dateCourte(source.derniere_pull)}</span>}
+              {erreur && <span className="text-[#F2B84B]">· {texte(erreur, 80)}</span>}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
 function Badge({ texte: libelle, couleur }) {
   return (
     <span className="rounded border px-1.5 py-0.5 font-code text-[9px] uppercase tracking-wider"
@@ -110,6 +238,7 @@ function MessageVide({ children }) {
 export default function InterfacesJumeau({ jid }) {
   const [version, setVersion] = useState(0);
   const [etat, setEtat] = useState({ donnees: null, erreur: null, chargement: true });
+  const [tirage, setTirage] = useState({ enCours: false, dernier: null, erreur: null, aucuneSource: false });
 
   useEffect(() => {
     if (!jid) return undefined;
@@ -124,6 +253,56 @@ export default function InterfacesJumeau({ jid }) {
       }));
     return () => { actif = false; };
   }, [jid, version]);
+
+  useEffect(() => {
+    setTirage({ enCours: false, dernier: null, erreur: null, aucuneSource: false });
+  }, [jid]);
+
+  const tirerObservations = async () => {
+    if (!jid || tirage.enCours) return;
+    setTirage({ enCours: true, dernier: null, erreur: null, aucuneSource: false });
+    let reponse;
+    try {
+      // Le serveur tire ses sources OTLP configurées : aucun corps, aucune URL ni secret dans le panneau.
+      reponse = await api.post(`/jumeaux/${encodeURIComponent(jid)}/interfaces/observer/pull-source`);
+    } catch (erreur) {
+      const detail = erreur.response?.data?.detail;
+      const message = messageErreurTirage(erreur.response?.status, detail);
+      setTirage({
+        enCours: false,
+        dernier: null,
+        erreur: message,
+        aucuneSource: absenceSourceOtlp(detail) || absenceSourceOtlp(message),
+      });
+      toast.error(message);
+      return;
+    }
+
+    const runs = runsDuTirage(reponse?.data);
+    const sources = [...new Set([...(sourcesOtlpDeLaReponse(reponse?.data) || []), ...sourcesDesRuns(runs)])];
+    setTirage({
+      enCours: true,
+      dernier: { runs, sources, at: new Date().toISOString() },
+      erreur: null,
+      aucuneSource: false,
+    });
+    const detailSources = sources.length ? ` · ${sources.map((source) => texte(source, 60)).join(", ")}` : "";
+    toast.success(`Observations tirées : ${libelleRuns(runs.length)}${detailSources}`);
+
+    try {
+      const { data } = await api.get(`/jumeaux/${encodeURIComponent(jid)}/interfaces`);
+      setEtat({ donnees: data, erreur: null, chargement: false });
+    } catch (erreur) {
+      setEtat((precedent) => ({
+        donnees: precedent.donnees,
+        erreur: erreur.response?.data?.detail || "Tirage effectué, mais les interfaces n'ont pas pu être relues.",
+        chargement: false,
+      }));
+      toast.error("Tirage effectué, mais les interfaces n'ont pas pu être relues.");
+    } finally {
+      setTirage((precedent) => ({ ...precedent, enCours: false }));
+    }
+  };
 
   if (etat.chargement) {
     return (
@@ -160,15 +339,20 @@ export default function InterfacesJumeau({ jid }) {
   const stats = run?.stats && typeof run.stats === "object" && !Array.isArray(run.stats) ? run.stats : {};
   const changes = Array.isArray(run?.changes) ? run.changes : [];
   const impacts = Array.isArray(run?.impacts) ? run.impacts : [];
+  const sourcesOtlp = sourcesOtlpDeLaReponse(etat.donnees);
   const vide = !contrats.length && !operations.length && !bindings.length && !assertions.length && !runs.length;
 
   if (vide) {
     return (
-      <div className={`rounded-lg border ${BORDURE} p-4`} data-testid="interfaces-jumeau">
-        <p className="text-xs text-[#94A3B8]" data-testid="interfaces-vide">
-          Aucune interface découverte pour l'instant. Lancez une découverte pour lire les contrats, opérations et
-          assertions de cette application, et laisser un premier DiscoveryRun.
-        </p>
+      <div className="space-y-3" data-testid="interfaces-jumeau">
+        <TirageObservations tirage={tirage} run={run} sources={sourcesOtlp} onTirer={tirerObservations} />
+        <SourcesOtlp sources={etat.donnees?.sources} />
+        <div className={`rounded-lg border ${BORDURE} p-4`}>
+          <p className="text-xs text-[#94A3B8]" data-testid="interfaces-vide">
+            Aucune interface découverte pour l'instant. Lancez une découverte pour lire les contrats, opérations et
+            assertions de cette application, et laisser un premier DiscoveryRun.
+          </p>
+        </div>
       </div>
     );
   }
@@ -182,6 +366,9 @@ export default function InterfacesJumeau({ jid }) {
         {bindings.length > 0 && <span>{bindings.length} binding{bindings.length > 1 ? "s" : ""}</span>}
         <span className="ml-auto">Application {etat.donnees?.application_id || jid}{etat.donnees?.tenant ? ` · tenant ${etat.donnees.tenant}` : ""}</span>
       </div>
+
+      <TirageObservations tirage={tirage} run={run} sources={sourcesOtlp} onTirer={tirerObservations} />
+      <SourcesOtlp sources={etat.donnees?.sources} />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <section aria-label="Contrats d'interface">

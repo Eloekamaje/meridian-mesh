@@ -17,8 +17,25 @@ from urllib.parse import quote, urlparse
 from datetime import datetime, timezone
 from pathlib import Path
 
-from jumeau import depot, gardien, lecteurs, registre
+from jumeau import depot, lecteurs, registre
 from jumeau.ingerer import ingerer
+
+# `gardien` est importé à la demande : il importe le tirage OTLP, qui remonte à `github`, qui importe ce module.
+# L'import paresseux évite un cycle selon l'ordre d'import du processus, sans changer l'API du module.
+def __getattr__(nom):
+    if nom == "gardien":
+        from jumeau import gardien
+        return gardien
+    raise AttributeError(nom)
+
+
+def _gardien():
+    """Le module gardien, ou celui qu'un test a posé sur `naissance.gardien`."""
+    pose = globals().get("gardien")
+    if pose is not None:
+        return pose
+    from jumeau import gardien as module
+    return module
 
 journal = logging.getLogger("meridian.naissance")
 DEPOTS = Path(os.environ.get("JUMEAU_DEPOTS", Path.home() / ".local/share/meridian/depots"))
@@ -260,7 +277,9 @@ def sources_de_code(commande):
     return configs
 
 
-SUBSTANCES_SANS_CODE = (("datadog", "Datadog (interfaces observées)"), ("confluence", "Confluence (documentation)"))
+SUBSTANCES_SANS_CODE = (("datadog", "Datadog (interfaces observées)"),
+                        ("otlp", "APM / Gateway OTLP (traces observées)"),
+                        ("confluence", "Confluence (documentation)"))
 
 
 def substance_sans_code(commande):
@@ -297,7 +316,7 @@ async def _naitre_sans_code(conn, db, commande, jumeau_id, rediger):
         _declarer_sources(conn, jumeau, commande)
         etapes.append({"etape": "sources", "quand": datetime.now(timezone.utc).isoformat()})
         await registre.projeter(db, conn)
-        await gardien.veiller(conn, db, jumeau_id, **({"rediger": rediger} if rediger else {}))
+        await _gardien().veiller(conn, db, jumeau_id, **({"rediger": rediger} if rediger else {}))
         etapes.append({"etape": "fiche", "quand": datetime.now(timezone.utc).isoformat()})
         await _etat(db, cid, etat="ne", etapes=etapes, depots=[], fin=datetime.now(timezone.utc).isoformat())
     except Exception as e:
@@ -319,10 +338,16 @@ def _verifier_sources(commande):
 
 
 def _declarer_sources(conn, jumeau, commande):
-    from jumeau.systemes import SYSTEMES  # import local : les lecteurs importent ce module
+    from jumeau import connecteurs  # import local : connecteurs importe les lecteurs, qui importent ce module
+    from jumeau.systemes import SYSTEMES
     for s in commande["sources"]:
-        if s["connecteur"] in SYSTEMES and s["statut"] == "prete" and s["config"].get("secret"):
-            depot.declarer_source(conn, jumeau, SYSTEMES[s["connecteur"]].source_de(s["config"]))
+        config = s.get("config") or {}
+        if s.get("statut") != "prete":
+            continue
+        if s["connecteur"] in SYSTEMES and config.get("secret"):
+            depot.declarer_source(conn, jumeau, SYSTEMES[s["connecteur"]].source_de(config))
+        elif s["connecteur"] == "otlp" and config.get("url") and config.get("secret_ref"):
+            depot.declarer_source(conn, jumeau, connecteurs.source_de_otlp(s))
 
 
 async def naitre(conn, db, commande, jumeau_id, rediger=None):
@@ -359,7 +384,7 @@ async def naitre(conn, db, commande, jumeau_id, rediger=None):
         await franchir("clone")
         await registre.projeter(db, conn)
         await franchir("ingestion")
-        await gardien.veiller(conn, db, jumeau_id, **({"rediger": rediger} if rediger else {}))
+        await _gardien().veiller(conn, db, jumeau_id, **({"rediger": rediger} if rediger else {}))
         await franchir("fiche")
         await _etat(db, cid, etat="ne", depots=[c.name for c in chemins], fin=datetime.now(timezone.utc).isoformat())
     except Exception as e:

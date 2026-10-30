@@ -22,7 +22,8 @@ from pydantic import BaseModel, Field
 from strands import Agent
 
 from jumeau import (agent, comprendre, connaissance, contradicteur, decouverte_interfaces, depot, impacts_situations,
-                    lecteurs, methodes, notifications_impacts, poignee, recoupement, registre, schemas, temps)
+                    lecteurs, methodes, notifications_impacts, poignee, pulls_runtime, recoupement, registre,
+                    schemas, temps)
 from jumeau.ingerer import ingerer
 from jumeau.source_git import sha_courant
 
@@ -332,6 +333,14 @@ async def veiller(conn, db, jumeau_id, chemins=None, rediger=_rediger):
                 await notifications_impacts.publier_notification(db, jumeau, resultat["run"], sit)
         except Exception:
             journal.warning("gardien %s : découverte d'interfaces impossible", jumeau_id, exc_info=True)
+    # Tirage OTLP d'arrière-plan, une seule fois par passe et avant les retours précoces : une source en panne
+    # n'empêche ni les autres sources ni la veille Git. Les impacts sont publiés par le même chemin.
+    try:
+        runs_otlp = await pulls_runtime.tirer_et_publier(db, conn, jumeau)
+        if runs_otlp:
+            journal.info("gardien %s : %s source(s) OTLP tirée(s)", jumeau_id, len(runs_otlp))
+    except Exception:
+        journal.warning("gardien %s : tirage OTLP impossible", jumeau_id, exc_info=True)
     branches = lecteurs.lecteurs_de(depot.toutes_les_sources(conn, jumeau_id))
     # Sans dépôt (progiciel), pas d'ingestion de code : la version est celle des sources branchées.
     try:
