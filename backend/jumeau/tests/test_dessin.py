@@ -42,6 +42,9 @@ def test_fleches_fondees_gardees_les_autres_refusees_avec_raison():
     assert [p["detail"] for p in d.preuves] == ["git://conduit@abc:app/routes.py#L64-L64",
                                                 "git://conduit@abc:app/routes.py#L71-L71"]
     assert "lu dans le code" in d.legende and "vert = vérifié" in d.legende and "4 lien(s) non dessiné(s)" in d.legende
+    assert d.structure["type"] == "sequence" and len(d.structure["boites"]) == 4
+    assert [(f["de"], f["vers"], f["etat"]) for f in d.structure["fleches"]] == [
+        ("route", "adresse", "code"), ("route", "depot", "code"), ("depot", "base", "verifie")]
 
 
 def test_flux_avec_groupes_et_styles_poses_par_le_harness():
@@ -55,7 +58,8 @@ def test_flux_avec_groupes_et_styles_poses_par_le_harness():
 def test_rien_de_fonde_rien_de_dessine_et_type_inconnu():
     d = dessin()
     assert "rien n'est dessiné" in d.dessiner("flux", "", BOITES, [{"de": "route", "vers": "base", "fondement": "x"}])
-    assert d.bloc() == "" and "Type inconnu" in d.dessiner("camembert", "", BOITES, [])
+    assert d.bloc() == "" and d.structure is None
+    assert "Type inconnu" in d.dessiner("camembert", "", BOITES, [])
 
 
 def test_le_schema_prend_place_apres_le_premier_paragraphe():

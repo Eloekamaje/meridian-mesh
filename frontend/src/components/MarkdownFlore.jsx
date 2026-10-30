@@ -1,4 +1,4 @@
-import { Children, isValidElement, useContext, useState } from "react";
+import { Children, createContext, isValidElement, useContext, useState } from "react";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -9,12 +9,16 @@ import { Copy } from "@phosphor-icons/react";
 import "katex/dist/katex.min.css";
 import "highlight.js/styles/github-dark.css";
 import SchemaMermaid from "./SchemaMermaid";
+import SchemaSvg, { schemaValide } from "./SchemaSvg";
 import { decouperMermaid } from "@/lib/segmentsMermaid";
 import { PreuvesContexte, couperPastille, numeroPastille, typeSource } from "@/lib/preuvesFlore";
 
 // Le seul rendu Markdown de Flore (panneau, Travail, Canvas, brouillon). react-markdown n'injecte jamais de HTML brut
 // (pas de rehype-raw) et neutralise les URL `javascript:`. Les `$` seuls ne sont pas des formules (« 5 $ et 6 $ »).
 const REMARK = [remarkGfm, [remarkMath, { singleDollarTextMath: false }]];
+// Les schémas d'un message suivent ses blocs Mermaid, y compris quand un écran fournit son propre corps
+// (le panneau Flore rend son télétype) : le contexte évite de recâbler chaque appelant.
+export const SchemasContexte = createContext(null);
 const REHYPE = [rehypeKatex, [rehypeHighlight, { detect: false, ignoreMissing: true }]];
 
 // Une citation de pièce (`pièce:<id>#<section>`, souvent entre accents graves) devient un lien interne :
@@ -222,7 +226,7 @@ function Puce({ node, children }) {
 }
 
 // `enLigne` : une cellule ou une puce (pas de paragraphe autour). `className` s'ajoute au conteneur.
-export default function MarkdownFlore({ texte, enLigne = false, className = "", onOuvrirPiece }) {
+export default function MarkdownFlore({ texte, enLigne = false, className = "", onOuvrirPiece, schemas }) {
   const composants = {
     ...COMPOSANTS,
     a: (p) => <LienMarkdown {...p} onOuvrirPiece={onOuvrirPiece} />,
@@ -231,11 +235,21 @@ export default function MarkdownFlore({ texte, enLigne = false, className = "", 
   const propre = lierCitations(couperPastille(texte)); // au fil de l'eau : jamais une pastille à moitié écrite
   const segments = enLigne ? [{ type: "texte", texte: propre }] : decouperMermaid(propre);
   const Conteneur = enLigne ? "span" : "div";
+  const schemasDuContexte = useContext(SchemasContexte);
+  const schemasDisponibles = Array.isArray(schemas) ? schemas : (schemasDuContexte || []);
+  let indiceSchema = 0; // un schéma structuré par bloc Mermaid, dans l'ordre de la réponse
   return (
     <Conteneur className={`space-y-3 text-[14.5px] leading-relaxed text-[#D8E2EA] ${className}`} data-testid="markdown-flore">
-      {segments.map((s, i) => (s.type === "mermaid"
-        ? <SchemaMermaid key={i} code={s.code} complet={s.complet} />
-        : <ReactMarkdown key={i} remarkPlugins={REMARK} rehypePlugins={REHYPE} urlTransform={transformerUrl} components={composants}>{s.texte || ""}</ReactMarkdown>))}
+      {segments.map((s, i) => {
+        if (s.type !== "mermaid") {
+          return <ReactMarkdown key={i} remarkPlugins={REMARK} rehypePlugins={REHYPE} urlTransform={transformerUrl} components={composants}>{s.texte || ""}</ReactMarkdown>;
+        }
+        const schema = schemasDisponibles[indiceSchema];
+        indiceSchema += 1;
+        return schemaValide(schema)
+          ? <SchemaSvg key={i} schema={schema} />
+          : <SchemaMermaid key={i} code={s.code} complet={s.complet} />;
+      })}
     </Conteneur>
   );
 }

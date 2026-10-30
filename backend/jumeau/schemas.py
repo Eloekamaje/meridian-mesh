@@ -148,7 +148,7 @@ class Dessin:
     def __init__(self, connaissances, lire_lignes):
         # lire_lignes(citation) -> (lignes citées, locator git://, étiquette) ; ValueError/LookupError si introuvable.
         self.connaissances, self.lire_lignes = connaissances, lire_lignes
-        self.mermaid, self.legende, self.preuves = None, "", []
+        self.mermaid, self.legende, self.preuves, self.structure = None, "", [], None
 
     def _fondement(self, fleche, boites):
         """(état, preuve affichable ou None) si la flèche est fondée, sinon (None, raison du refus)."""
@@ -194,6 +194,19 @@ class Dessin:
         if not gardees:
             return "Aucune flèche fondée : rien n'est dessiné. " + " ; ".join(refus)
         self.mermaid = (_sequence if type_ == "sequence" else _flux)(tableau, gardees, groupes)
+        utilisees = {f[c] for f, _ in gardees for c in ("de", "vers")}
+        groupes_structure = []
+        for groupe in list(groupes or [])[:6]:
+            ids = [_id(i) for i in groupe.get("ids", []) if _id(i) in utilisees]
+            if ids:
+                groupes_structure.append({"libelle": _libelle(groupe.get("libelle")), "ids": ids})
+        self.structure = {
+            "type": type_, "titre": _libelle(titre, 80),
+            "boites": [{"id": i, "libelle": tableau[i]["libelle"]} for i in tableau if i in utilisees],
+            "fleches": [{"de": f["de"], "vers": f["vers"], "libelle": _libelle(f.get("libelle"), 40), "etat": e}
+                        for f, e in gardees],
+            "groupes": groupes_structure,
+        }
         self.preuves = preuves  # le dernier schéma dessiné fait foi (une correction remplace le précédent)
         etats = {e for _, e in gardees}
         legende = ([STYLE_CODE[1]] if "code" in etats else []) + [STYLES[e][1] for e in STYLES if e in etats]

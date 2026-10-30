@@ -4,7 +4,7 @@ import { ArrowsClockwise, CaretLeft, CaretRight, Copy, PencilSimple, ThumbsDown,
 import api from "@/lib/api";
 import useFluxAction from "@/lib/useFluxAction";
 import { erreurAction, explicationArret, navBranches, navVersions, urlMessage } from "@/lib/conversationFlore";
-import MarkdownFlore from "./MarkdownFlore";
+import MarkdownFlore, { SchemasContexte } from "./MarkdownFlore";
 import PropositionsFlore from "./PropositionsFlore";
 import PanneauPreuve from "./PanneauPreuve";
 import { PreuvesContexte, phraseDe, sansPastilles } from "@/lib/preuvesFlore";
@@ -101,8 +101,9 @@ export function MessageFlore({
     ? (isValidElement(corps) && onOuvrirPiece
       ? cloneElement(corps, { onOuvrirPiece: corps.props?.onOuvrirPiece ?? onOuvrirPiece })
       : corps)
-    : <MarkdownFlore texte={message.texte} onOuvrirPiece={onOuvrirPiece} />;
+    : <MarkdownFlore texte={message.texte} schemas={message.schemas} onOuvrirPiece={onOuvrirPiece} />;
   return (
+    <SchemasContexte.Provider value={message.schemas || []}>
     <PreuvesContexte.Provider value={contextePreuves}>
     <div className="space-y-2" data-testid={testid}>
       {activite && <LigneActiviteFlore activite={activite} testid={testid ? `${testid}-activite` : undefined} />}
@@ -163,6 +164,7 @@ export function MessageFlore({
         phrase={preuveOuverte ? phraseDe(message.texte, preuveOuverte) : null} onFermer={fermerPreuve} />
     </div>
     </PreuvesContexte.Provider>
+    </SchemasContexte.Provider>
   );
 }
 

@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 NON_VERSION = ("role", "versions", "version", "retour")
 # Au-delà des champs du contrat, la réponse du modèle peut porter ces compléments (affichés tels quels).
 COMPLEMENTS = ("propositions", "action", "relu", "jumeaux_participants", "decisions", "precision", "kpis",
-               "tableauComparatif", "documentCanvas", "documentTexte", "livrable_id", "activite", "a_approuver")
+               "tableauComparatif", "documentCanvas", "documentTexte", "livrable_id", "schemas", "activite", "a_approuver")
 
 
 def _maintenant():

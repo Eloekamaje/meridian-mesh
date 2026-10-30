@@ -384,6 +384,8 @@ async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=No
         reponse["relu"], reponse["corrige"] = etat == "relue", corrige
         reponse["pieces_selection"] = ctx.get("pieces_selection") or []
         reponse["pieces_lectures"] = journal_pieces
+        if dessin and dessin.structure:
+            reponse["schemas"] = [dessin.structure]
         if ctx.get("proposees"):
             reponse["a_approuver"] = ctx["proposees"]  # les connaissances proposées pendant ce tour, à trancher
         agent.journal.info("durées %s : %s", jumeau_id, reponse["durees"])
@@ -517,6 +519,7 @@ async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=
             "durees": chrono.bilan(), "relecture_etat": etat_relecture(verdict, corrige),
             "relu": etat_relecture(verdict, corrige) == "relue", "corrige": corrige,
             "pieces_selection": pieces_selection, "pieces_lectures": journal_pieces,
+            **({"schemas": [dessin.structure]} if dessin and dessin.structure else {}),
             "jumeaux_participants": [{"id": jid, "app_id": jid, "nom": ctx["jumeau"]["nom"],
                                       "domaine": ctx["jumeau"].get("domaine") or "SI", "participe": True}
                                      for jid, ctx in ctxs.items()],

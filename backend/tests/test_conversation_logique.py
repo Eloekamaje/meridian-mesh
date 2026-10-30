@@ -24,6 +24,13 @@ def test_message_flore_a_la_forme_du_contrat():
     assert m["quand"] and m["versions"][0]["quand"]
 
 
+def test_message_flore_garde_les_schemas_structurels():
+    schema = {"type": "flux", "titre": "T", "boites": [{"id": "a", "libelle": "A"}],
+              "fleches": [{"de": "a", "vers": "b", "libelle": "x", "etat": "code"}], "groupes": []}
+    m = c.message_flore(rep("R", schemas=[schema]))
+    assert m["schemas"] == [schema] and m["versions"][0]["schemas"] == [schema]
+
+
 def test_message_flore_garde_le_document_du_livrable():
     m = c.message_flore(rep("R", documentCanvas="Note d'impact", documentTexte="# Note",
                             livrable_id="liv-1"))

@@ -177,7 +177,7 @@ export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif, onVoir
 
   return (
     <div className="space-y-3.5 text-[15px] leading-relaxed text-[#DCE6EE]">
-      <MarkdownFlore texte={visible} onOuvrirPiece={onOuvrirPiece} />
+      <MarkdownFlore texte={visible} schemas={message.schemas} onOuvrirPiece={onOuvrirPiece} />
 
       {/* Curseur clignotant : Flore est encore en train d'écrire (sinon, rien ne le distingue d'une lecture) */}
       {!fini && <span className="curseur-teletype -mt-2 inline-block">▍</span>}
