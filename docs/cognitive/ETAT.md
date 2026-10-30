@@ -32,7 +32,9 @@ Preuve live sur « régénère le flux du gsf-mockup » : `repo:gsf-mockup → t
 - `interfaces_depot.lire_graph()` : relit le graphe typé.
 - `interfaces.depuis_claims()` : les `EXPOSE` du code deviennent des opérations déclarées ; un dépôt sans OpenAPI statique n'est plus vide.
 - `gardien.veiller()` : après une ingestion, lance la découverte d'interfaces en best-effort et journalise le run.
-- Tests : 7 nouveaux, **900 tests jumeau** (3 skip), exécution réelle sur `gsf-mockup` : 3 opérations `GET /`, `GET /status`, `POST /status`.
+- API : `GET /jumeaux/{jid}/interfaces` (graphe + runs) et `POST /jumeaux/{jid}/interfaces/decouvrir` (run manuel), protégés par le périmètre.
+- Remplacement de périmètre : un run remplace les opérations/assertions de sa source et de son format ; les autres sources restent intactes. Un second run identique ne produit plus de faux changements.
+- Tests : **901 tests jumeau** (3 skip). Exécution réelle sur `gsf-mockup` : 3 opérations `GET /`, `GET /status`, `POST /status` ; premier run 7 changements, second run 0.
 
 ## Constat du connecteur sur gsf-mockup
 
@@ -44,12 +46,12 @@ Le dépôt `gsf-mockup` ne contient pas de spec OpenAPI statique. Le connecteur 
 - La persistance des interfaces n'est pas encore branchée à l'ingestion du Gardien ni à l'Atlas.
 - Le change/impact engine est pur : pas encore d'événements `DiscoveryRun`, de webhook ni de propagation UI.
 - Le connecteur ne lit ni WSDL, ni APM, ni gateway ; ce sont les prochains capteurs.
-- La persistance des interfaces n'est pas encore exposée par l'API ni affichée dans l'Atlas.
+- Le graphe est exposé par l'API mais pas encore affiché dans l'Atlas ; les impacts ne déclenchent pas encore de notification.
 - La promotion d'un twin provisoire est demandée dans la réponse mais n'a pas encore d'action serveur dédiée.
 
 ## Prochain lot
 
-1. Exposer les interfaces/impacts dans l'API et l'Atlas.
+1. Afficher les interfaces/impacts dans l'Atlas et les relier au fil « Aujourd'hui ».
 2. Ajouter la promotion applicative avec décision humaine et audit.
 3. WSDL, gateway/APM en mode ombre, puis tests d'isolation multi-tenant de bout en bout.
 4. Brancher les changements du DiscoveryRun sur les notifications et le fil « Aujourd'hui ».

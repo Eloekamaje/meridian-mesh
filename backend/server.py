@@ -35,6 +35,10 @@ from jumeau import partage as jumeau_partage  # noqa: E402
 from jumeau import tours_redis as jumeau_tours_redis  # noqa: E402
 from jumeau import flore as jumeau_flore  # noqa: E402
 from jumeau import identite as jumeau_identite  # noqa: E402
+from jumeau import decouverte_interfaces as jumeau_decouverte_interfaces  # noqa: E402
+from jumeau import interfaces_depot as jumeau_interfaces_depot  # noqa: E402
+from jumeau import depot as jumeau_depot  # noqa: E402
+from jumeau import connaissance as jumeau_connaissance  # noqa: E402
 from jumeau import flux as jumeau_flux  # noqa: E402
 from jumeau import registre as jumeau_registre  # noqa: E402
 from jumeau import connecteurs as jumeau_connecteurs  # noqa: E402
@@ -1531,6 +1535,67 @@ async def generer_reponse_flore(contexte, question, selection, domaine, x_person
     if sel:
         return marquer_origine(await reponse_selection(None, sel, aut, tous, id_vers_nom), "scenario")
     return marquer_origine(_poser_resolution(dict(AURORA_FALLBACK), resolution), "repli")
+
+
+def _jumeau_visible(jid, aut):
+    return jid in aut and niveau_au_moins(aut[jid], "preuves")
+
+
+@api_router.get("/jumeaux/{jid}/interfaces")
+async def interfaces_du_jumeau(jid: str, x_persona: str = Header("architecte"),
+                               x_espace: Optional[str] = Header(None)):
+    """Le graphe d'interfaces persisté et les derniers DiscoveryRun d'un jumeau visible."""
+    _, espace = resoudre_perimetre(x_persona, x_espace)
+    tous = await db.jumeaux.find({}, {"_id": 0, "id": 1}).to_list(200)
+    aut = autorisations(espace, [j["id"] for j in tous])
+    if not _jumeau_visible(jid, aut):
+        raise HTTPException(404, "Jumeau introuvable")
+    dsn = os.environ.get("JUMEAU_PG_DSN")
+    if not dsn:
+        raise HTTPException(503, "Couche cognitive non configurée (JUMEAU_PG_DSN)")
+
+    def lire():
+        with psycopg.connect(dsn) as conn:
+            jumeau = jumeau_depot.jumeau_par_id(conn, jid)
+            if not jumeau:
+                return None
+            tenant = jumeau["tenant_id"]
+            return {"jumeau_id": jid, "application_id": jid, "tenant": tenant,
+                    "interfaces": jumeau_interfaces_depot.lire(conn, tenant, jid),
+                    "runs": jumeau_interfaces_depot.derniers_runs(conn, tenant, jid)}
+
+    resultat = await asyncio.to_thread(lire)
+    if resultat is None:
+        raise HTTPException(404, "Jumeau introuvable")
+    return resultat
+
+
+@api_router.post("/jumeaux/{jid}/interfaces/decouvrir")
+async def decouvrir_interfaces_du_jumeau(jid: str, x_persona: str = Header("architecte"),
+                                         x_espace: Optional[str] = Header(None)):
+    """Déclenche un DiscoveryRun à partir des claims EXPOSE du jumeau (lecture seule sur les sources)."""
+    _, espace = resoudre_perimetre(x_persona, x_espace)
+    tous = await db.jumeaux.find({}, {"_id": 0, "id": 1}).to_list(200)
+    aut = autorisations(espace, [j["id"] for j in tous])
+    if not _jumeau_visible(jid, aut):
+        raise HTTPException(404, "Jumeau introuvable")
+    dsn = os.environ.get("JUMEAU_PG_DSN")
+    if not dsn:
+        raise HTTPException(503, "Couche cognitive non configurée (JUMEAU_PG_DSN)")
+
+    def executer():
+        with psycopg.connect(dsn) as conn:
+            jumeau = jumeau_depot.jumeau_par_id(conn, jid)
+            if not jumeau:
+                return None
+            claims = jumeau_connaissance.connaissances(conn, jid, limite=1000)
+            return jumeau_decouverte_interfaces.executer(
+                conn, jumeau["tenant_id"], jid, claims=claims, environment="production", source="api")
+
+    resultat = await asyncio.to_thread(executer)
+    if resultat is None:
+        raise HTTPException(404, "Jumeau introuvable")
+    return resultat
 
 
 @api_router.post("/aurora/demander")

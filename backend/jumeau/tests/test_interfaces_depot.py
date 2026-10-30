@@ -172,3 +172,16 @@ def test_schema_rejoue_est_idempotent(conn):
     depot.appliquer_schema(conn)
     interfaces_depot.enregistrer(conn, "banque", graphe())
     assert interfaces_depot.compter(conn, "banque")["assertions"] == 4
+
+
+@besoin_pg
+def test_remplacer_retire_les_operations_et_assertions_de_la_meme_source(conn):
+    g = graphe()
+    interfaces_depot.enregistrer(conn, "banque", g, remplacer=True)
+    vide = interfaces.InterfaceGraph(contracts=list(g.contracts))
+    interfaces_depot.enregistrer(conn, "banque", vide, remplacer=True)
+    lu = interfaces_depot.lire(conn, "banque", application_id="comptes")
+    assert lu["operations"] == []
+    assert [a for a in lu["assertions"] if a["predicate"] == "EXPOSE"] == []
+    assert [a["predicate"] for a in lu["assertions"]] == ["CONSOMME"]  # la config n'est pas dans ce remplacement
+    assert {c["id"] for c in lu["contracts"]} == {g.contracts[0].id}

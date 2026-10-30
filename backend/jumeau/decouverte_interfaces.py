@@ -84,7 +84,7 @@ def executer(conn, tenant_id, application_id, racine=None, claims=None, environm
         graph = _collecter(application_id, racine, claims, environment)
         avant = interfaces_depot.lire_graph(conn, tenant_id, application_id)
         contexte = interfaces_depot.lire_graph(conn, tenant_id)
-        compte = interfaces_depot.enregistrer(conn, tenant_id, graph)
+        compte = interfaces_depot.enregistrer(conn, tenant_id, graph, remplacer=True)
         changements = decouverte.diff_graphs(avant, graph)
         constats = decouverte.impacts(changements, interfaces.merge([contexte, graph]))
     except Exception as erreur:  # noqa: BLE001 - toute panne de collecte ou de dépôt doit laisser une trace

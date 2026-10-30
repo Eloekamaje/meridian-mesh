@@ -377,13 +377,15 @@ def depuis_claims(application_id: str, claims: Iterable[dict], environment: str 
             "confidence": min(float(claim.get("confiance") or 0.6), 0.8),
             "claim_id": claim.get("id"),
         })
-    if not utiles:
-        return InterfaceGraph(partial=True, diagnostics=["aucune exposition `EXPOSE` exploitable dans les claims"])
     empreinte = _empreinte(application_id, environment, [(u["method"], u["path"], u["preuve"]) for u in utiles])
     contrat = Contract(
         id=_id("ctr", "code", application_id, environment, empreinte), format="code", version=None,
         digest=empreinte, locator="code", application_id=application_id, environment=environment)
     graph = InterfaceGraph(contracts=[contrat])
+    if not utiles:
+        graph.partial = True
+        graph.diagnostics.append("aucune exposition `EXPOSE` exploitable dans les claims")
+        return _dedupliquer(graph)
     for u in utiles:
         operation = Operation(
             id=_id("op", contrat.id, "rest", u["method"], u["path"], u["method"]), contract_id=contrat.id,

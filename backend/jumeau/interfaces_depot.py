@@ -69,8 +69,14 @@ def _texte_temporel(valeur):
     return str(valeur)
 
 
-def enregistrer(conn, tenant_id, graph) -> dict:
-    """Upsert idempotent du graphe ; refuse un tenant vide et toute URL de binding porteuse d'un secret."""
+def enregistrer(conn, tenant_id, graph, remplacer=False) -> dict:
+    """Upsert idempotent du graphe ; refuse un tenant vide et toute URL de binding porteuse d'un secret.
+
+    Avec `remplacer`, le périmètre du graphe (application, environnement, formats de contrats et sources
+    d'assertions) est remplacé : les opérations du même contrat/format qui ne sont plus observées et les assertions
+    de la même source qui ne sont plus déclarées sont supprimées. Les autres sources (APM, config, autres formats)
+    restent intactes.
+    """
     tenant = _tenant(tenant_id)
     if graph is None:
         raise ValueError("graphe d'interfaces absent")
@@ -82,6 +88,32 @@ def enregistrer(conn, tenant_id, graph) -> dict:
             raise ValueError(f"mode d'assertion invalide : {assertion.mode!r}")
 
     with conn.transaction():
+        if remplacer:
+            formats = sorted({contrat.format for contrat in graph.contracts})
+            sources = {assertion.source for assertion in graph.assertions}
+            if any(contrat.format == "code" for contrat in graph.contracts):
+                sources.add("code")
+            if any(contrat.format == "openapi" for contrat in graph.contracts):
+                sources.add("openapi")
+            applications = sorted({contrat.application_id for contrat in graph.contracts}
+                                  | {assertion.subject for assertion in graph.assertions})
+            environnements = sorted({contrat.environment for contrat in graph.contracts}
+                                    | {assertion.environment for assertion in graph.assertions})
+            if formats:
+                conn.execute(
+                    "DELETE FROM interface_operation WHERE tenant_id = %s AND contract_id IN "
+                    "(SELECT id FROM interface_contract WHERE tenant_id = %s AND application_id = ANY(%s) "
+                    "AND environment = ANY(%s) AND format = ANY(%s))",
+                    (tenant, tenant, applications, environnements, formats))
+                conn.execute(
+                    "DELETE FROM interface_contract WHERE tenant_id = %s AND application_id = ANY(%s) "
+                    "AND environment = ANY(%s) AND format = ANY(%s) AND NOT (id = ANY(%s))",
+                    (tenant, applications, environnements, formats, [contrat.id for contrat in graph.contracts]))
+            if sources:
+                conn.execute(
+                    "DELETE FROM interface_assertion WHERE tenant_id = %s AND subject = ANY(%s) "
+                    "AND environment = ANY(%s) AND source = ANY(%s)",
+                    (tenant, applications, environnements, sorted(sources)))
         for contrat in graph.contracts:
             conn.execute(
                 "INSERT INTO interface_contract "
@@ -197,6 +229,20 @@ def lire(conn, tenant_id, application_id=None, predicat=None) -> dict:
 
 def _objet(classe, ligne, champs):
     return classe(**{champ: _valeur(ligne.get(champ)) for champ in champs})
+
+
+def derniers_runs(conn, tenant_id, application_id=None, limite=20) -> list[dict]:
+    """Les derniers DiscoveryRun d'un tenant/application, du plus récent au plus ancien."""
+    tenant = _tenant(tenant_id)
+    with conn.cursor(row_factory=dict_row) as cur:
+        if application_id is None:
+            cur.execute("SELECT * FROM discovery_run WHERE tenant_id = %s ORDER BY started_at DESC LIMIT %s",
+                        (tenant, max(1, min(int(limite), 100))))
+        else:
+            cur.execute("SELECT * FROM discovery_run WHERE tenant_id = %s AND application_id = %s "
+                        "ORDER BY started_at DESC LIMIT %s",
+                        (tenant, application_id, max(1, min(int(limite), 100))))
+        return [_ligne(ligne) for ligne in cur.fetchall()]
 
 
 def lire_graph(conn, tenant_id, application_id=None) -> InterfaceGraph:
