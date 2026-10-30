@@ -90,7 +90,7 @@ Le dépôt `gsf-mockup` ne contient pas de spec OpenAPI statique. Le connecteur 
 
 ## Limites actuelles
 
-- Neo4j/Neptune de **production** n'est pas branché : le graphe live tourne sur Neo4j local Docker ; l'API et le Gardien fonctionnent, pas encore la haute disponibilité ni le backfill de production.
+- Neo4j de production dispose désormais d'un service `docker-compose.prod.yml` (volume, auth, healthcheck, mémoire) et des variables `NEO4J_*` ; le branchement à un Neptune managé et la haute disponibilité cloud restent à faire.
 - Le tenant est extrait du proxy/OIDC et vérifié dans l'API ; les policies RLS sont fournies et appliquées au contexte de la Boucle et du catalogue d'outils, mais **pas encore activées** ni généralisées à tous les chemins legacy.
 - Mongo reste lu par les **cases**, le fil Aujourd'hui et l'Atlas ; la parité des identités, situations, initiatives et relations est à zéro, mais la migration des cases n'est pas faite.
 - La découverte est automatique pour les dépôts (OpenAPI/WSDL/GraphQL/gRPC/AsyncAPI), les claims `EXPOSE` et OTLP ; les exports propriétaires de gateway/CMDB restent à brancher.
@@ -141,5 +141,5 @@ curl -H 'X-Tenant: demo' http://127.0.0.1:8001/api/boucle/graphe/paiements/impac
 ```
 
 Le mot de passe Neo4j local n'est jamais versionné : `scripts/dev-neo4j.sh` le génère dans
-`/tmp/meridian-neo4j.env`. En production, fournir `GRAPH_STORE=neo4j`, `NEO4J_URI`, `NEO4J_USER`,
-`NEO4J_PASSWORD` et `NEO4J_DATABASE` par le gestionnaire de secrets.
+`/tmp/meridian-neo4j.env`. En production, `docker-compose.prod.yml` fournit Neo4j avec `NEO4J_PASSWORD` ;
+renseigner aussi `GRAPH_STORE=neo4j`, `NEO4J_URI`, `NEO4J_USER` et `NEO4J_DATABASE` dans `.env.prod`.
