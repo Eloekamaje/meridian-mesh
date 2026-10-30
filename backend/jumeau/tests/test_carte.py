@@ -33,6 +33,7 @@ def test_carte_en_texte_court_pour_un_prompt():
     assert texte.startswith("### TBT [tbt]")
     assert "Mission : Traite les virements" in texte
     assert "Voisins : Fraude (vers, confirmee) [r:r1] ; Comptes (depuis, validation) [r:r2]" in texte  # citables
+    assert "Code : tbt-api · main · aaaaaaaaaaaa" in texte
     assert len(texte) < 800
 
 

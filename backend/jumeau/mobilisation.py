@@ -187,6 +187,10 @@ consulter_methode ; suis-la (son plan, ses hypothèses à mettre à l'épreuve, 
   (recoupé), (vérifié), (d'après le code…), (contesté) ; sans mention, il n'est pas encore vérifié. Les marques
   [c:…] (une connaissance) et [r:…] (une relation) servent à fonder les flèches d'un schéma ; ne les écris jamais
   dans ton texte.
+- Les cartes indiquent aussi leur dépôt source (`Code : ...`). Un dépôt n'est pas une application : si
+  l'interlocuteur nomme un dépôt, cherche le twin rattaché dans les cartes ; s'il est provisoire, consulte-le et
+  propose sa nomination, sans conclure à l'absence. Ne conclus jamais à l'absence sur les seuls noms : vérifie les
+  dépôts, les connaissances et les relations.
 - Pour un schéma ou une illustration d'une fonctionnalité d'une application : demande au jumeau concerné
   l'enchaînement avec suivre_appels (chaque étape avec sa ligne d'appel, « dépôt:chemin#La-Lb », et la fonction
   appelée), puis dessine toi-même avec dessiner_schema en reprenant ces fondements tels quels. N'écris pas le

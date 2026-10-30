@@ -267,7 +267,8 @@ def _mots(texte):
 def application_nommee(question, jumeaux):
     """[id] de l'application que la question nomme, s'il n'y en a qu'une, sinon [] : nom complet ou identifiant ; pour
     un nom d'un seul mot, une faute de frappe proche (« conduite » → Conduit). Le système route lui-même vers son
-    jumeau : l'interlocuteur n'a pas à sélectionner ni à rattacher l'application."""
+    jumeau : l'interlocuteur n'a pas à sélectionner ni à rattacher l'application. Un dépôt n'est pas un nom
+    d'application : cette résolution passe par `identite.resoudre` côté serveur."""
     mots = _mots(question)
     phrase = f" {' '.join(mots)} "
     trouves = []

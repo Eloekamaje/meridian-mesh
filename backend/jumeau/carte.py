@@ -61,6 +61,8 @@ def texte(c):
     lignes = [f"### {c['nom']} [{c['id']}]", f"Mission : {c.get('mission') or 'non déclarée'}"
               + (f" · domaine {c['domaine']}" if c.get("domaine") else "")
               + (f" · CMDB {c['ci']}" if c.get("ci") else "")]
+    if c.get("code"):
+        lignes.append("Code : " + " ; ".join(c["code"]))
     for titre, cle in (("Sait faire", "capacites"), ("Offre", "offre"), ("Échange avec", "echanges")):
         if c[cle]:
             lignes.append(f"{titre} : " + " ; ".join(c[cle]))

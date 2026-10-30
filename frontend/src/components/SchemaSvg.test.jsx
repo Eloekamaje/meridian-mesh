@@ -178,6 +178,8 @@ test("un schéma vide ou de type inconnu ne rend rien", () => {
 test("le SVG est accessible, responsive et reprend les couleurs d'état du contrat", () => {
   const html = renderToStaticMarkup(<SchemaSvg schema={schemaSimple} />);
   expect(html).toContain('data-testid="schema-svg"');
+  expect(html).toContain('data-testid="schema-svg-cadre"');
+  expect(html).toContain("overflow-x-auto");
   expect(html).toContain('role="img"');
   expect(html).toContain("aria-labelledby=");
   expect(html).toContain("Schéma : Parcours client");
@@ -253,6 +255,8 @@ test("un message de Flore rend le SVG du schéma, pas le Mermaid", () => {
   };
   const html = renderToStaticMarkup(<MessageFlore message={message} index={0} prefixe="/cases/c1" />);
   expect(html).toContain('data-testid="schema-svg"');
+  expect(html).toContain('data-testid="schema-svg-cadre"');
+  expect(html).toContain("overflow-x-auto");
   expect(html).not.toContain('data-testid="schema-mermaid"');
 });
 

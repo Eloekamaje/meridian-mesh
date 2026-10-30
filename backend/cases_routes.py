@@ -24,7 +24,7 @@ CHAMPS_NON_IMPORTES = {
     # Ce qu'un message importé ne peut pas transporter : preuves, effets serveur, états de relecture, versions,
     # propositions à approuver, décisions déjà prises, sorties d'interface.
     "preuves", "a_approuver", "activite", "retour", "versions", "version", "version_active",
-    "documentCanvas", "documentTexte", "livrable_id", "schemas", "kpis", "tableauComparatif", "contributions", "termes",
+    "documentCanvas", "documentTexte", "livrable_id", "schemas", "resolution", "kpis", "tableauComparatif", "contributions", "termes",
     "relecture_etat", "relu", "corrige", "decisions", "precision", "origine", "durees",
     "hors_perimetre", "jumeaux_participants", "reponses", "propose_passation", "interrompu",
     "branche", "branches", "suite", "importe",

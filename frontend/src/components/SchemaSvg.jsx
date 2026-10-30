@@ -29,6 +29,7 @@ const ECART_VERTICAL = 24;
 const LARGEUR_MIN = 88;
 const LARGEUR_MAX = 280;
 const CARACTERES_MAX = 34;
+const CARACTERES_FLECHE = 64;
 const LARGEUR_CARACTERE = 7;
 const POLICE = 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif';
 const POLICE_CODE = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
@@ -68,7 +69,7 @@ function normaliserFleches(fleches, ids) {
     const vers = fleche?.vers == null ? "" : String(fleche.vers);
     if (!ids.has(de) || !ids.has(vers)) continue;
     const etat = ETATS_FLECHES[fleche?.etat] ? fleche.etat : "inconnu";
-    sortie.push({ de, vers, etat, libelle: tronquerLibelle(fleche.libelle, 40) });
+    sortie.push({ de, vers, etat, libelle: tronquerLibelle(fleche.libelle, CARACTERES_FLECHE) });
   }
   return sortie;
 }
@@ -568,6 +569,7 @@ export default function SchemaSvg({ schema }) {
   const idDescription = `${prefixe}-description`;
 
   return (
+    <div className="my-2 w-full overflow-x-auto" data-testid="schema-svg-cadre">
     <svg
       xmlns="http://www.w3.org/2000/svg"
       role="img"
@@ -577,8 +579,8 @@ export default function SchemaSvg({ schema }) {
       preserveAspectRatio="xMidYMid meet"
       data-testid="schema-svg"
       data-type={schema.type}
-      className="my-2 block w-full"
-      style={{ width: "100%", height: "auto" }}
+      className="block"
+      style={{ width: "100%", minWidth: `${disposition.largeur}px`, height: "auto" }}
     >
       <title id={idTitre}>{titreA11y}</title>
       <desc id={idDescription}>{disposition.description}</desc>
@@ -620,5 +622,6 @@ export default function SchemaSvg({ schema }) {
         </>
       )}
     </svg>
+    </div>
   );
 }

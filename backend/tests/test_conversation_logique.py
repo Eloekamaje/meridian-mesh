@@ -31,6 +31,15 @@ def test_message_flore_garde_les_schemas_structurels():
     assert m["schemas"] == [schema] and m["versions"][0]["schemas"] == [schema]
 
 
+def test_message_flore_garde_la_trace_de_resolution():
+    resolution = {"statut": "provisoire", "twin_id": "nouveau-jumeau", "absent": False,
+                  "chemin": [{"type": "source", "id": "repo:gsf-mockup"},
+                             {"type": "twin", "id": "nouveau-jumeau"},
+                             {"type": "application", "id": "nouveau-jumeau"}]}
+    m = c.message_flore(rep("R", resolution=resolution))
+    assert m["resolution"] == resolution and m["versions"][0]["resolution"] == resolution
+
+
 def test_message_flore_garde_le_document_du_livrable():
     m = c.message_flore(rep("R", documentCanvas="Note d'impact", documentTexte="# Note",
                             livrable_id="liv-1"))

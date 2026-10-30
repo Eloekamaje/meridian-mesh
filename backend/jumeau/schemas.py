@@ -203,7 +203,7 @@ class Dessin:
         self.structure = {
             "type": type_, "titre": _libelle(titre, 80),
             "boites": [{"id": i, "libelle": tableau[i]["libelle"]} for i in tableau if i in utilisees],
-            "fleches": [{"de": f["de"], "vers": f["vers"], "libelle": _libelle(f.get("libelle"), 40), "etat": e}
+            "fleches": [{"de": f["de"], "vers": f["vers"], "libelle": _libelle(f.get("libelle"), 64), "etat": e}
                         for f, e in gardees],
             "groupes": groupes_structure,
         }

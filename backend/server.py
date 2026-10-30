@@ -34,6 +34,7 @@ from jumeau import evenements as jumeau_evenements  # noqa: E402
 from jumeau import partage as jumeau_partage  # noqa: E402
 from jumeau import tours_redis as jumeau_tours_redis  # noqa: E402
 from jumeau import flore as jumeau_flore  # noqa: E402
+from jumeau import identite as jumeau_identite  # noqa: E402
 from jumeau import flux as jumeau_flux  # noqa: E402
 from jumeau import registre as jumeau_registre  # noqa: E402
 from jumeau import connecteurs as jumeau_connecteurs  # noqa: E402
@@ -1462,6 +1463,16 @@ async def suivre_naissance(cid: str):
 marquer_origine = jumeau_origine.marquer_origine
 
 
+def _poser_resolution(reponse, resolution):
+    """La trace de résolution et son préambule accompagnent la réponse, même en cas d'ambiguïté ou d'absence."""
+    if isinstance(reponse, dict) and resolution is not None:
+        reponse["resolution"] = resolution.as_dict()
+        preambule = resolution.preambule()
+        if preambule and preambule not in str(reponse.get("reponse") or ""):
+            reponse["reponse"] = f"{preambule}\n\n{reponse.get('reponse') or ''}".strip()
+    return reponse
+
+
 async def generer_reponse_flore(contexte, question, selection, domaine, x_persona, x_espace, travail=None, emit=None):
     if not await limites.autoriser(f"tours:{x_persona}", limites.maxi_tours(), limites.fenetre_tours()):
         raise HTTPException(429, "Trop de tours Flore en peu de temps ; réessayez dans un instant")
@@ -1478,16 +1489,19 @@ async def generer_reponse_flore(contexte, question, selection, domaine, x_person
     # Un jumeau réel sélectionné : Flore le mobilise (ses Claims et son code) et répond avec ses preuves.
     # Un seul : chemin direct. Plusieurs : Flore les mobilise en sous-agents (flore.mobiliser).
     reels = [j["id"] for j in tous if j.get("reel") and j["id"] in sel and niveau_au_moins(aut[j["id"]], "complet")]
-    if not sel:  # sans sélection, l'application que la question nomme : son jumeau directement, sans orchestration
-        reels = jumeau_flore.application_nommee(
-            question, [j for j in tous if j.get("reel") and j["id"] in aut and niveau_au_moins(aut[j["id"]], "complet")])
+    resolution = None
+    if not sel:  # sans sélection : résolution typée (application / artefact / twin), pas un alias de dépôt
+        candidats = [j for j in tous if j.get("reel") and j["id"] in aut and niveau_au_moins(aut[j["id"]], "complet")]
+        resolution = jumeau_identite.resoudre(question, candidats)
+        if resolution.twin_id:
+            reels = [resolution.twin_id]
     if reels:
         if len(reels) == 1:
             reponse_jumeau = await jumeau_flore.repondre(reels[0], question, x_persona, travail, profil=persona, db=db, emit=emit)
         else:
             reponse_jumeau = await jumeau_flore.mobiliser(reels, question, x_persona, travail, profil=persona, db=db, emit=emit)
         if reponse_jumeau:
-            return marquer_origine(reponse_jumeau, "modele")
+            return marquer_origine(_poser_resolution(reponse_jumeau, resolution), "modele")
     if not sel and domaine:
         sel = [j["id"] for j in tous if j.get("domaine") == domaine and j["id"] in aut and niveau_au_moins(aut[j["id"]], "resume")]
     if sel:
@@ -1510,56 +1524,13 @@ async def generer_reponse_flore(contexte, question, selection, domaine, x_person
     if not sel and visibles and os.environ.get("JUMEAU_PG_DSN"):
         reponse_flore = await jumeau_flore.mobiliser(visibles, question, x_persona, travail, profil=persona, db=db, emit=emit)
         if reponse_flore and reponse_flore.get("comportement") != "signaler":  # indisponible : repli sur la recherche
-            return marquer_origine(reponse_flore, "modele")
+            return marquer_origine(_poser_resolution(reponse_flore, resolution), "modele")
     trouve = await recherche_plein_texte(q, aut)
     if trouve:
         return marquer_origine(trouve, "recherche")
     if sel:
         return marquer_origine(await reponse_selection(None, sel, aut, tous, id_vers_nom), "scenario")
-    return marquer_origine(dict(AURORA_FALLBACK), "repli")
-    sel = [j for j in (selection or []) if j in aut and niveau_au_moins(aut[j], "resume")]
-    # Un jumeau réel sélectionné : Flore le mobilise (ses Claims et son code) et répond avec ses preuves.
-    # Un seul : chemin direct. Plusieurs : Flore les mobilise en sous-agents (flore.mobiliser).
-    reels = [j["id"] for j in tous if j.get("reel") and j["id"] in sel and niveau_au_moins(aut[j["id"]], "complet")]
-    if not sel:  # sans sélection, l'application que la question nomme : son jumeau directement, sans orchestration
-        reels = jumeau_flore.application_nommee(
-            question, [j for j in tous if j.get("reel") and j["id"] in aut and niveau_au_moins(aut[j["id"]], "complet")])
-    if reels:
-        if len(reels) == 1:
-            reponse_jumeau = await jumeau_flore.repondre(reels[0], question, x_persona, travail, profil=persona, db=db, emit=emit)
-        else:
-            reponse_jumeau = await jumeau_flore.mobiliser(reels, question, x_persona, travail, profil=persona, db=db, emit=emit)
-        if reponse_jumeau:
-            return reponse_jumeau
-    if not sel and domaine:
-        sel = [j["id"] for j in tous if j.get("domaine") == domaine and j["id"] in aut and niveau_au_moins(aut[j["id"]], "resume")]
-    if sel:
-        intent = intention_selection(q)
-        if intent:
-            return await reponse_selection(intent, sel, aut, tous, id_vers_nom)
-    if not sel and any(k in q for k in MOTS_PROJETS) and any(niveau_au_moins(n, "preuves") for n in aut.values()):
-        return reponse_projets([j for j in tous if j["id"] in aut and niveau_au_moins(aut[j["id"]], "preuves")], aut, id_vers_nom)
-    for script in AURORA_SCRIPTS:
-        if script["contexte"] in (contexte, "global") and any(normalise_txt(k) in q for k in script["mots_cles"]):
-            out = dict(script)
-            out["contributions"] = [c for c in script.get("contributions", []) if nom_vers_id.get(c.get("jumeau", "")) in aut]
-            if not any(niveau_au_moins(n, "preuves") for n in aut.values()):
-                out["preuves"] = []
-            return out
-    # Hors scripts de démonstration : Flore répond elle-même, en orchestratrice, avec les cartes des jumeaux réels que
-    # l'interlocuteur peut voir (« qui es-tu ? » sans réveiller de jumeau ; une question d'application, en mobilisant).
-    # ponytail: toutes les cartes visibles dans le prompt ; présélection par le registre au-delà d'une vingtaine.
-    visibles = [j["id"] for j in tous if j.get("reel") and j["id"] in aut and niveau_au_moins(aut[j["id"]], "complet")]
-    if not sel and visibles and os.environ.get("JUMEAU_PG_DSN"):
-        reponse_flore = await jumeau_flore.mobiliser(visibles, question, x_persona, travail, profil=persona, db=db, emit=emit)
-        if reponse_flore and reponse_flore.get("comportement") != "signaler":  # indisponible : repli sur la recherche
-            return reponse_flore
-    trouve = await recherche_plein_texte(q, aut)
-    if trouve:
-        return trouve
-    if sel:
-        return await reponse_selection(None, sel, aut, tous, id_vers_nom)
-    return AURORA_FALLBACK
+    return marquer_origine(_poser_resolution(dict(AURORA_FALLBACK), resolution), "repli")
 
 
 @api_router.post("/aurora/demander")
