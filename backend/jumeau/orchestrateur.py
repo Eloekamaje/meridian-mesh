@@ -12,9 +12,10 @@ import inspect
 import json
 import logging
 
-from strands import Agent, tool
+from strands import Agent
 
-from jumeau import agent, identite
+from jumeau import agent, capacites, identite
+from jumeau.harness import Harness
 
 journal = logging.getLogger("meridian.orchestrateur")
 
@@ -39,7 +40,9 @@ Politique :
 - Un Twin n'est pas limité à une application : processus, capacités, parcours, organisations, produits et
   domaines de données sont des entités d'entreprise. Ne réduis pas le Mesh à un catalogue d'applications.
 - Les outils ci-dessous sont des adaptateurs à des capacités d'entreprise, pas le noyau du produit. Le noyau est
-  le modèle d'entreprise, le Mesh, les Claims, les preuves et la politique.
+  le modèle d'entreprise, le Mesh, les Claims, les preuves et la politique. Le catalogue est capacitaire : chaque
+  outil est déclaré par un manifeste (portée, schémas, preuve, effets). Utilise `rechercher_outil` pour découvrir
+  une capacité ou un outil, puis `decrire_outil` pour lire son contrat avant de l'appeler.
 - Si un outil a produit une réponse complète, ne la réécris pas et ne la résume pas : le serveur utilisera
   directement cette réponse. Indique seulement qu'elle est prête.
 - Le budget de ce tour est d'au plus {budget_max} appels d'outils ; utilise le minimum nécessaire.
@@ -55,6 +58,7 @@ class Contexte:
     resolution: dict | None = None
     outils: list[dict] = field(default_factory=list)
     erreurs: list[str] = field(default_factory=list)
+    audit: list[dict] = field(default_factory=list)
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -152,18 +156,19 @@ async def _appeler(callback, *arguments):
     return await valeur if inspect.isawaitable(valeur) else valeur
 
 
-def outils(jumeaux, selection, mobiliser, concevoir, contexte, budget_max=6):
-    """Les trois outils du tour, liés au contexte et à son budget."""
+def registre_defaut() -> capacites.RegistreCapacites:
+    """Le catalogue du tour : les trois adaptateurs historiques, déclarés par manifeste."""
+    return capacites.RegistreCapacites(capacites.manifestes_integres())
+
+
+def construire_harness(jumeaux, selection, mobiliser, concevoir, contexte, *,
+                       registre=None, approuves=(), tenant=None, persona=None,
+                       perimetre=None, budget=None) -> Harness:
+    """Relie le registre capacitaire aux trois callables historiques, sans code arbitraire."""
     visibles = _identifiants(jumeaux)
-    budget = _Budget(budget_max)
+    budget = budget if budget is not None else _Budget(6)
 
-    @tool
     def resoudre_application(terme: str) -> str:
-        """Résous un terme vers une application visible, sans mobiliser aucun jumeau.
-
-        Args:
-            terme: le nom, l'identifiant ou le dépôt mentionné par l'interlocuteur.
-        """
         if not budget.prendre():
             return _epuise("resoudre_application")
         _noter(contexte, "resoudre_application", {"terme": terme})
@@ -180,14 +185,7 @@ def outils(jumeaux, selection, mobiliser, concevoir, contexte, budget_max=6):
         except Exception:
             return _echec(contexte, "resoudre_application")
 
-    @tool
     async def mobiliser_jumeaux(jumeaux: list[str], question: str) -> str:
-        """Mobilise des jumeaux autorisés pour répondre à une mission précise.
-
-        Args:
-            jumeaux: identifiants des jumeaux visibles et sélectionnés à consulter.
-            question: la mission confiée aux jumeaux, en une ou deux phrases.
-        """
         if not budget.prendre():
             return _epuise("mobiliser_jumeaux")
         demandes = _autorises(_demandes(jumeaux), visibles, selection)
@@ -203,13 +201,7 @@ def outils(jumeaux, selection, mobiliser, concevoir, contexte, budget_max=6):
         contexte.reponse = reponse
         return "réponse prête"
 
-    @tool
     async def concevoir_architecture(question: str) -> str:
-        """Conçois une architecture cible pour une application inexistante, sans mobiliser de jumeau.
-
-        Args:
-            question: la description de l'application à concevoir et du besoin visé.
-        """
         if not budget.prendre():
             return _epuise("concevoir_architecture")
         _noter(contexte, "concevoir_architecture", {"question": str(question or "")})
@@ -222,7 +214,34 @@ def outils(jumeaux, selection, mobiliser, concevoir, contexte, budget_max=6):
         contexte.reponse = reponse
         return "proposition prête"
 
-    return [resoudre_application, mobiliser_jumeaux, concevoir_architecture]
+    return Harness(
+        registre if registre is not None else registre_defaut(),
+        {
+            "resoudre_application": resoudre_application,
+            "mobiliser_jumeaux": mobiliser_jumeaux,
+            "concevoir_architecture": concevoir_architecture,
+        },
+        approuves=approuves,
+        tenant=tenant,
+        persona=persona,
+        perimetre=perimetre,
+        audit=contexte.audit,
+    )
+
+
+def outils(jumeaux, selection, mobiliser, concevoir, contexte, budget_max=6, *,
+           registre=None, approuves=(), tenant=None, persona=None, perimetre=None):
+    """Les outils visibles du tour, liés au registre capacitaire et au budget."""
+    budget = _Budget(budget_max)
+    harnais = construire_harness(
+        jumeaux, selection, mobiliser, concevoir, contexte,
+        registre=registre, approuves=approuves, tenant=tenant, persona=persona,
+        perimetre=perimetre, budget=budget,
+    )
+    tour = harnais.outils(contexte, budget, selection, tenant=tenant,
+                          persona=persona, perimetre=perimetre, approuves=approuves)
+    priorite = {"resoudre_application": 0, "mobiliser_jumeaux": 1, "concevoir_architecture": 2}
+    return sorted(tour, key=lambda outil: (priorite.get(outil.tool_name, 3), outil.tool_name))
 
 
 def _modele(modele):
@@ -265,7 +284,11 @@ async def executer(question, *, jumeaux, selection=None, mobiliser, concevoir,
         return None
     def enrichir(reponse):
         reponse = dict(reponse)
-        reponse["orchestration"] = {"outils": list(contexte.outils), "erreurs": list(contexte.erreurs)}
+        reponse["orchestration"] = {
+            "outils": list(contexte.outils),
+            "audit": list(contexte.audit),
+            "erreurs": list(contexte.erreurs),
+        }
         if contexte.resolution is not None:
             reponse.setdefault("resolution", contexte.resolution)
         return reponse

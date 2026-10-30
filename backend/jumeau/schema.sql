@@ -470,3 +470,56 @@ CREATE INDEX IF NOT EXISTS jumeau_texte ON jumeau USING GIN (
 CREATE INDEX IF NOT EXISTS claim_texte ON claim USING GIN (
     to_tsvector('french', coalesce(sujet, '') || ' ' || coalesce(predicat, '') || ' ' || coalesce(objet, ''))
 );
+
+-- ---------------------------------------------------------------------------
+-- P0-A : socle d'entreprise. Un objet typé appartient à une des huit familles,
+-- porte un mode de connaissance et une temporalité, et vit sous son tenant.
+-- La clé (tenant_id, id) permet à deux tenants de nommer le même objet sans se
+-- le voler ni le voir.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS objet_entreprise (
+    id            text NOT NULL,
+    tenant_id     text NOT NULL,
+    famille       text NOT NULL CHECK (famille IN (
+                      'identite_structure', 'sources_preuves', 'connaissance', 'emergence',
+                      'investigation', 'decision', 'resultat_apprentissage', 'interaction_gouvernance')),
+    type          text NOT NULL,
+    mode          text NOT NULL CHECK (mode IN ('DECLARED', 'OBSERVED', 'INFERRED', 'PROPOSED', 'CONFIRMED')),
+    titre         text NOT NULL DEFAULT '',
+    donnees       jsonb NOT NULL DEFAULT '{}'::jsonb,
+    version       int NOT NULL DEFAULT 1 CHECK (version >= 1),
+    observe_le    timestamptz NOT NULL DEFAULT now(),
+    valide_depuis timestamptz NOT NULL DEFAULT now(),
+    valide_jusqua timestamptz,
+    cree_le       timestamptz NOT NULL DEFAULT now(),
+    maj_le        timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, id),
+    CHECK (valide_jusqua IS NULL OR valide_jusqua >= valide_depuis)
+);
+CREATE INDEX IF NOT EXISTS objet_entreprise_tenant_famille_type
+    ON objet_entreprise (tenant_id, famille, type);
+CREATE INDEX IF NOT EXISTS objet_entreprise_tenant_validite
+    ON objet_entreprise (tenant_id, valide_depuis, valide_jusqua);
+
+-- ---------------------------------------------------------------------------
+-- P0-B : contrat Claim complet. L'unicité (jumeau_id, predicat, objet) reste
+-- inchangée ; version et remplace_id ajoutent l'historique de remplacement.
+-- ---------------------------------------------------------------------------
+ALTER TABLE claim ADD COLUMN IF NOT EXISTS version int NOT NULL DEFAULT 1;
+ALTER TABLE claim ADD COLUMN IF NOT EXISTS remplace_id bigint;
+DO $$ BEGIN
+    ALTER TABLE claim ADD CONSTRAINT claim_version_positive CHECK (version >= 1);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- Un Claim ACCEPTED exige une preuve de soutien, en plus de la revue humaine.
+-- Le trigger de revue (claim_accepte_exige_revue) reste en place.
+CREATE OR REPLACE FUNCTION claim_accepte_exige_preuve() RETURNS trigger AS $$
+BEGIN
+    IF NEW.statut = 'ACCEPTED' AND NOT EXISTS (
+        SELECT 1 FROM claim_preuve WHERE claim_id = NEW.id AND role = 'SUPPORT') THEN
+        RAISE EXCEPTION 'claim % : ACCEPTED sans preuve SUPPORT', NEW.id;
+    END IF;
+    RETURN NEW;
+END $$ LANGUAGE plpgsql;
+CREATE OR REPLACE TRIGGER claim_accepte_exige_preuve BEFORE INSERT OR UPDATE OF statut ON claim
+    FOR EACH ROW EXECUTE FUNCTION claim_accepte_exige_preuve();

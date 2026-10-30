@@ -131,7 +131,8 @@ def test_executer_donne_priorite_a_la_reponse_d_un_outil(monkeypatch):
     assert resultat["orchestration"]["outils"][0]["outil"] == "mobiliser_jumeaux"
     assert vus["question"] == "Que fait Alpha ?"
     assert set(vus["options"]["tools"][i].tool_name for i in range(len(vus["options"]["tools"]))) == {
-        "resoudre_application", "mobiliser_jumeaux", "concevoir_architecture"}
+        "resoudre_application", "mobiliser_jumeaux", "concevoir_architecture",
+        "rechercher_outil", "decrire_outil"}
     assert vus["options"]["callback_handler"] is None
     assert "Mesh" in vus["options"]["system_prompt"]
 
@@ -158,7 +159,8 @@ def test_le_prompt_porte_la_politique_mesh_source_conception_et_proposition():
     for attendu in ("agent d'entreprise", "mesh", "ni une source", "le point de départ",
                     "resoudre_application", "mobiliser_jumeaux", "concevoir_architecture",
                     "aucun jumeau", "atlas", "proposition", "fait observé", "preuve",
-                    "clarification", "budget", "pas le noyau", "dépôt git"):
+                    "clarification", "budget", "pas le noyau", "dépôt git", "capacitaire",
+                    "rechercher_outil", "decrire_outil", "manifeste"):
         assert attendu in prompt
     complet = orchestrateur.prompt_systeme(JUMEAUX, ["alpha"], budget_max=4)
     assert "`alpha`" in complet and "`beta`" not in complet
@@ -218,3 +220,36 @@ def test_budget_max_plafonne_le_nombre_d_appels(monkeypatch):
     assert len(appels) == 2
     assert len(contexte.outils) == 2
     assert json.loads(derniere)["erreur"] == "budget d'outils épuisé"
+
+
+def test_les_outils_du_tour_viennent_des_manifestes_du_registre():
+    outils, _ = fabriquer()
+    autorises = {manifeste.nom for manifeste in orchestrateur.registre_defaut()}
+    autorises |= {"rechercher_outil", "decrire_outil"}
+
+    assert set(outils) <= autorises
+    assert {"resoudre_application", "mobiliser_jumeaux", "concevoir_architecture"} <= set(outils)
+
+
+def test_executer_expose_outils_et_audit_sans_secret(monkeypatch):
+    class FauxAgent:
+        def __init__(self, **options):
+            self.outils = {outil.tool_name: outil for outil in options["tools"]}
+
+        async def invoke_async(self, question):
+            self.outils["resoudre_application"]("Alpha")
+            self.outils["rechercher_outil"]("traces")
+            return "Réponse générale."
+
+    monkeypatch.setattr(orchestrateur, "Agent", FauxAgent)
+    resultat = asyncio.run(orchestrateur.executer(
+        "Bonjour", jumeaux=JUMEAUX, mobiliser=sans_appel, concevoir=sans_appel,
+        modele=object()))
+
+    orchestration = resultat["orchestration"]
+    assert [entree["outil"] for entree in orchestration["outils"]] == ["resoudre_application"]
+    assert {"nom", "capacite", "arguments", "duree_ms", "statut"} <= set(orchestration["audit"][-1])
+    assert [entree["nom"] for entree in orchestration["audit"]] == [
+        "resoudre_application", "rechercher_outil"]
+    assert all(entree["statut"] == "ok" for entree in orchestration["audit"])
+    assert "secret" not in json.dumps(orchestration, ensure_ascii=False).lower()

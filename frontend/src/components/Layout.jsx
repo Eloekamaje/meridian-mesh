@@ -23,6 +23,10 @@ export default function Layout() {
   const ecran = useEcran();
   const [tiroir, setTiroir] = useState(false);
   const fermerTiroir = () => setTiroir(false);
+  // « Aujourd'hui » est l'entrée du produit ; l'Atlas est l'exploration. Le nom accessible de la zone
+  // centrale le dit, sans dépendre du libellé de la barre latérale.
+  const estAujourdhui = ["/", "/actualites", "/aujourdhui"].includes(location.pathname) || location.pathname.startsWith("/actualites/");
+  const estAtlas = location.pathname === "/atlas";
 
   useEffect(() => { setTiroir(false); }, [location.pathname]);
   useEffect(() => { if (ecran === "bureau") setTiroir(false); }, [ecran]);
@@ -61,7 +65,10 @@ export default function Layout() {
             </div>
           </header>
         )}
-        <main className="relative min-h-0 flex-1 overflow-hidden">
+        <main
+          className="relative min-h-0 flex-1 overflow-hidden"
+          aria-label={estAujourdhui ? "Aujourd'hui — actualités et situations" : estAtlas ? "Atlas — exploration du Mesh" : undefined}
+        >
           {/* Quand un travail naît de la conversation (state.continuite), la page ne se remonte pas : le fil continue en place */}
           <div key={location.state?.continuite ? "/travaux/nouveau" : location.pathname} className="page-transition h-full">
             <Outlet />

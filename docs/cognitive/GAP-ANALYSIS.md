@@ -10,6 +10,8 @@
 
 ---
 
+**Mise à jour P0 (2026-10-30).** `objet_entreprise`/`entreprise_depot`, le contrat Claim (`mode`, `version`, `remplace_id`, preuve obligatoire), le harness capacitaire et l'entrée produit Aujourd'hui sont désormais branchés au niveau socle. Les statuts ci-dessous restent la photographie d'avant ce lot ; ils seront réévalués après intégration API/UI et migration Mongo.
+
 ## 1. Résumé exécutif
 
 1. **Le noyau reste app-first.** `jumeau` n'a ni `type`, ni périmètre, ni version (`backend/jumeau/schema.sql:jumeau`), `identite.resoudre` pose `application_id = twin_id` (`backend/jumeau/identite.py:resoudre`), et l'accueil de l'UI est l'Atlas des applications (`frontend/src/App.js:Routes`).

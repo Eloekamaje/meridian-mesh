@@ -54,6 +54,15 @@ Preuve live sur « régénère le flux du gsf-mockup » : `repo:gsf-mockup → t
 - Promotion gouvernée : `POST /jumeaux/{jid}/promouvoir` + table `identity_decision`, formulaire dans la revue, audit acteur/avant/après, id inchangé.
 - Revue d'un jumeau réel : section « Interfaces et impacts » avec contrats, opérations, assertions et dernier DiscoveryRun.
 
+### P0 — socle d'entreprise, Claim et harness
+
+- `objet_entreprise` : table canonique générique (8 familles, 5 modes, temporalité, version) + `entreprise_depot` avec isolation tenant.
+- `claim` : `mode`, `version`, `remplace_id` ; trigger `claim_accepte_exige_preuve` : un Claim `ACCEPTED` exige une preuve `SUPPORT` en plus de la revue.
+- `harness` : registre capacitaire branché dans l'orchestrateur, catalogue filtré, audit en mémoire, `rechercher_outil`/`decrire_outil`, timeout des outils asynchrones.
+- `GrapheNeo4j` : adaptateur Cypher paramétré du port `GraphStore`, testé par session factice.
+- Produit : `/` et `/aujourdhui` ouvrent Aujourd'hui ; Atlas reste l'exploration.
+- Tests : **1132 backend jumeau** (3 skip), **153 frontend**, build OK. Live dating : `concevoir_architecture` seul, 0 participant, 12 composants, audit 1 appel, schéma proposition.
+
 ## Constat du connecteur sur gsf-mockup
 
 Le dépôt `gsf-mockup` ne contient pas de spec OpenAPI statique. Le connecteur fichiers rend donc 0 contrat. Le bridge `depuis_claims` lit les 3 claims `EXPOSE` (`GET /`, `GET /status`, `POST /status`) et produit 3 opérations déclarées, persistables. Les échanges externes réels restent à observer par gateway/APM ou par une source de configuration dédiée.
@@ -70,6 +79,8 @@ Le dépôt `gsf-mockup` ne contient pas de spec OpenAPI statique. Le connecteur 
 
 ## Prochain lot
 
-1. Ajouter un adaptateur propriétaire pour une source APM/gateway qui n'expose pas OTLP.
-2. Renforcer les tests d'isolation multi-tenant de bout en bout et le rate-limit des tirages.
-3. Enrichir le jeu d'or de l'orchestrateur (comparer, diagnostic, ambigu, question générale) et mesurer les choix d'outils.
+1. Brancher `objet_entreprise` dans les API/UI et migrer les collections Mongo canoniques.
+2. Rendre l'audit du harness persistant et le catalogue dynamique MCP/OpenAPI.
+3. Brancher `GrapheNeo4j`/Neptune dans l'ingestion, puis migrer les relations Mongo.
+4. Porter le tenant de requête et la règle d'absence dans tous les chemins.
+5. Enrichir le jeu d'or de l'orchestrateur et mesurer les choix d'outils.
