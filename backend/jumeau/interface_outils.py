@@ -3,7 +3,7 @@
 Un graphe d'interfaces déjà lu (OpenAPI, WSDL, configuration, claims) devient une liste de manifestes
 capacitaires. REST, SOAP et gRPC sont reconnus : une opération de lecture devient `observer`, une
 écriture devient `agir` avec un effet de bord explicite. Le module est pur : ni base, ni réseau, ni
-exécution, ni secret. La provenance `interface:<protocole>` qualifie le manifeste produit.
+exécution, ni secret. La provenance `interface` et le protocole dans la description qualifient le manifeste produit.
 """
 from __future__ import annotations
 
