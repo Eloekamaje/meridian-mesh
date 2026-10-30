@@ -1,7 +1,9 @@
 {
-  "required": ["question", "profil", "composition", "socle", "lecture", "actions", "autorite", "prochaines_etapes"],
+  "required": ["question", "profil", "composition", "socle", "lecture", "decision_support", "actions", "autorite", "prochaines_etapes"],
   "invariants": [
     "socle.faits est identique pour tous les profils sur un même contexte",
+    "decision_support est dérivé des faits du dossier, sans fait inventé",
+    "aucune recommandation n'est générée sans recommandation explicite d'une proposition",
     "aucune action n'est exécutée par le plugin",
     "l'autorité ne dépasse jamais celle du profil et reste en proposition",
     "un profil inconnu ou non vérifié reste en lecture seule"
@@ -11,6 +13,15 @@
     "preuves": "identifiants et locators",
     "incertitudes": "questions et hypothèses",
     "limites": "sources absentes ou partielles"
+  },
+  "decision_support": {
+    "options": "au plus 4 options dérivées des faits OPTION, PROPOSITION, ACTION ou QUESTION, avec id slug stable, label, type, confiance et preuves",
+    "recommandation": "null sauf recommandation explicite d'une proposition ; jamais générée",
+    "confiance": "minimum et moyenne des confiances des options, ou null sans fait",
+    "conditions_de_retournement": "conditions issues des faits QUESTION ou HYPOTHESE, ou dont le texte contient condition/reverse ; vide sinon",
+    "abstention": "raison d'abstention si aucun fait, autorité lecture ou signaux baseline/outcome absents ; null sinon",
+    "autorite": "même autorité que la réponse",
+    "prochaines_etapes": "mêmes prochaines étapes humaines que la réponse"
   },
   "lentille": {
     "lecture": "sections adaptées au profil",

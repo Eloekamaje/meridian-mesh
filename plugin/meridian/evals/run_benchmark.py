@@ -1,9 +1,10 @@
-"""Runner reproductible du benchmark avec/sans skill Méridian.
+"""Runner reproductible du benchmark Méridian à quatre bras.
 
-Le runner lance la CLI Claude Code sur des scénarios JSON, compare une condition
-avec skill (racine du dépôt) et une condition sans skill (répertoire vide), puis
-note uniquement des critères objectifs déclarés dans le scénario. Aucune note
-subjective n'est produite.
+Le runner lance la CLI Claude Code sur des scénarios JSON et compare des bras
+déclaratifs : ``skill+mcp`` (racine du dépôt), ``checklist+mcp`` (répertoire vide
+avec checklist générique), ``data-only`` (pack JSON gelé, sans MCP) et ``human``
+(import de réponses déjà produites). Seuls des critères objectifs déclarés dans
+le scénario sont notés ; aucune note subjective n'est automatisée.
 """
 from __future__ import annotations
 
@@ -42,6 +43,19 @@ DEFAULT_MCP_TOOLS = (
     "meridian_attention",
 )
 
+ARM_SKILL_MCP = "skill+mcp"
+ARM_CHECKLIST_MCP = "checklist+mcp"
+ARM_DATA_ONLY = "data-only"
+ARM_HUMAN = "human"
+ARMS = (ARM_SKILL_MCP, ARM_CHECKLIST_MCP, ARM_DATA_ONLY, ARM_HUMAN)
+ARM_ALIASES = {
+    "with-skill": ARM_SKILL_MCP,
+    "without-skill": ARM_CHECKLIST_MCP,
+}
+DEFAULT_ARM = ARM_SKILL_MCP
+DEFAULT_ARMS = (ARM_SKILL_MCP, ARM_CHECKLIST_MCP, ARM_DATA_ONLY)
+CHECKLIST_PATH = Path(__file__).resolve().parent / "checklists" / "generic.md"
+
 
 class ScenarioError(ValueError):
     """Scénario absent, illisible ou invalide."""
@@ -73,6 +87,20 @@ def _positive_float(value: str) -> float:
     return resultat
 
 
+def normalize_arm(value: str) -> str:
+    """Normalise un nom de bras et résout les alias historiques."""
+    return ARM_ALIASES.get(value.strip().lower(), value.strip().lower())
+
+
+def _arm_value(value: str) -> str:
+    """Type argparse d'un bras, avec alias ``with-skill``/``without-skill``."""
+    arm = normalize_arm(value)
+    if arm not in ARMS:
+        raise argparse.ArgumentTypeError(
+            f"bras inconnu : {value} (attendu : {', '.join(ARMS)})")
+    return arm
+
+
 def default_output_dir() -> Path:
     """Retourne le répertoire de sortie horodaté par défaut."""
     horodatage = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -91,13 +119,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Chemin d'un fichier de scénario JSON (option répétable).",
     )
     parser.add_argument("--runs", type=_positive_int, default=DEFAULT_RUNS,
-                        help=f"Nombre de runs par scénario et condition (défaut : {DEFAULT_RUNS}).")
+                        help=f"Nombre de runs par scénario et bras (défaut : {DEFAULT_RUNS}).")
+    parser.add_argument("--arm", action="append", type=_arm_value, metavar="BRAS",
+                        help=("Bras à exécuter (répétable) : skill+mcp (défaut), checklist+mcp, "
+                              "data-only, human. Alias : with-skill, without-skill."))
     conditions = parser.add_mutually_exclusive_group()
     conditions.add_argument("--with-skill", dest="with_skill", action="store_true",
-                            help="Exécuter uniquement la condition avec skill.")
+                            help="Alias historique de --arm skill+mcp.")
     conditions.add_argument("--no-with-skill", dest="with_skill", action="store_false",
-                            help="Exécuter uniquement la condition sans skill.")
+                            help="Alias historique de --arm checklist+mcp.")
     parser.set_defaults(with_skill=None)
+    parser.add_argument("--human-dir", type=Path,
+                        help="Dossier des réponses humaines <scenario>-human.json.")
     parser.add_argument("--mcp-config", type=Path,
                         help="Fichier MCP existant ; sinon une configuration temporaire est générée.")
     parser.add_argument("--model", help="Modèle transmis à la CLI Claude Code.")
@@ -115,7 +148,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help="Persona Méridian pour le MCP généré.")
     parser.add_argument("--dry-run", action="store_true",
                         help="Afficher les commandes sans exécuter ni écrire de résultats.")
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    explicite = args.arm is not None
+    if explicite and args.with_skill is not None:
+        parser.error("--arm est incompatible avec --with-skill/--no-with-skill")
+    if explicite:
+        args.arm = list(dict.fromkeys(args.arm))
+    elif args.with_skill is True:
+        args.arm = [ARM_SKILL_MCP]
+    elif args.with_skill is False:
+        args.arm = [ARM_CHECKLIST_MCP]
+    else:
+        args.arm = list(DEFAULT_ARMS)
+    return args
 
 
 def _string_list(value: Any, champ: str) -> list[str]:
@@ -189,16 +234,29 @@ def normalize_scenario(raw: Any, fallback_id: str, index: int | None, source: Pa
     else:
         mcp_tools = list(DEFAULT_MCP_TOOLS)
 
+    data_pack = raw.get("data_pack")
+    if data_pack is not None and (not isinstance(data_pack, str) or not data_pack.strip()):
+        raise ScenarioError(f"{source} : le champ data_pack doit être un chemin non vide")
+    if isinstance(data_pack, str):
+        chemin_pack = Path(data_pack).expanduser()
+        if not chemin_pack.is_absolute():
+            chemin_pack = Path(source).expanduser().parent / chemin_pack
+        data_pack = str(chemin_pack.resolve())
+
+    sections = raw.get("expected_sections")
+    if sections is None:
+        sections = raw.get("sections")
     scenario = {
         "id": str(identifiant),
         "slug": _slugify(str(identifiant)),
         "source": str(source),
         "prompt": prompt.strip(),
         "mcp_tools": mcp_tools,
+        "data_pack": data_pack,
         "expected_terms": _string_list(raw.get("expected_terms"), "expected_terms"),
         "forbidden_terms": _string_list(raw.get("forbidden_terms"), "forbidden_terms"),
         "forbidden_terms_exceptions": _exceptions(raw.get("forbidden_terms_exceptions")),
-        "expected_sections": _string_list(raw.get("expected_sections"), "expected_sections"),
+        "expected_sections": _string_list(sections, "expected_sections"),
         "max_seconds": _optional_float(raw.get("max_seconds"), "max_seconds"),
         "max_cost": _optional_float(raw.get("max_cost"), "max_cost"),
         "must_complete": bool(raw.get("must_complete", True)),
@@ -249,11 +307,39 @@ def load_scenarios(paths: Iterable[str | Path]) -> list[dict[str, Any]]:
     return scenarios
 
 
+def arms_depuis_args(args: argparse.Namespace) -> list[str]:
+    """Retourne les bras canoniques demandés, alias historiques compris."""
+    demandes = getattr(args, "arm", None)
+    if demandes:
+        resultat: list[str] = []
+        for valeur in demandes:
+            arm = normalize_arm(valeur)
+            if arm not in resultat:
+                resultat.append(arm)
+        return resultat
+    with_skill = getattr(args, "with_skill", None)
+    if with_skill is True:
+        return [ARM_SKILL_MCP]
+    if with_skill is False:
+        return [ARM_CHECKLIST_MCP]
+    return list(DEFAULT_ARMS)
+
+
 def conditions_depuis_option(with_skill: bool | None) -> list[tuple[str, bool]]:
-    """Retourne les conditions à exécuter selon l'option CLI."""
-    if with_skill is None:
-        return [("with-skill", True), ("without-skill", False)]
-    return [("with-skill", True)] if with_skill else [("without-skill", False)]
+    """Compatibilité : retourne les bras historiques sous forme (nom, avec_skill)."""
+    if with_skill is False:
+        return [(ARM_CHECKLIST_MCP, False)]
+    return [(ARM_SKILL_MCP, True)]
+
+
+def arm_utilise_mcp(arm: str) -> bool:
+    """Indique si un bras ouvre le serveur MCP Méridian."""
+    return arm in (ARM_SKILL_MCP, ARM_CHECKLIST_MCP)
+
+
+def arm_utilise_skill(arm: str) -> bool:
+    """Indique si un bras s'exécute dans le dépôt avec les skills visibles."""
+    return arm == ARM_SKILL_MCP
 
 
 def build_mcp_config(repo_root: Path, api_url: str, tenant: str, persona: str) -> dict[str, Any]:
@@ -280,8 +366,11 @@ def _write_json(chemin: Path, donnees: Any) -> None:
     chemin.write_text(json.dumps(donnees, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-def prepare_mcp_config(args: argparse.Namespace, repo_root: Path) -> tuple[str, Path | None, dict[str, Any]]:
+def prepare_mcp_config(args: argparse.Namespace, repo_root: Path, required: bool = True
+                       ) -> tuple[str | None, Path | None, dict[str, Any]]:
     """Prépare le fichier MCP et retourne son chemin, son dossier temporaire et sa trace."""
+    if not required:
+        return None, None, {"source": "disabled", "reason": "aucun bras MCP demandé"}
     if args.mcp_config is not None:
         chemin = Path(args.mcp_config).expanduser().resolve()
         if not chemin.is_file():
@@ -298,6 +387,48 @@ def prepare_mcp_config(args: argparse.Namespace, repo_root: Path) -> tuple[str, 
     return str(chemin), dossier, trace
 
 
+def load_checklist(chemin: str | Path | None = None) -> str:
+    """Charge la checklist générique neutre du bras checklist+mcp."""
+    fichier = Path(chemin).expanduser() if chemin is not None else CHECKLIST_PATH
+    try:
+        contenu = fichier.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise BenchmarkError(f"checklist introuvable ou illisible : {fichier} ({exc})") from exc
+    if not contenu:
+        raise BenchmarkError(f"checklist vide : {fichier}")
+    return contenu
+
+
+def load_data_pack(scenario: dict[str, Any]) -> str:
+    """Charge le pack JSON gelé d'un scénario pour le bras data-only."""
+    chemin_brut = scenario.get("data_pack")
+    if not chemin_brut:
+        raise ScenarioError(
+            f"scénario {scenario['id']} : le champ data_pack est requis pour le bras data-only")
+    chemin = Path(str(chemin_brut)).expanduser()
+    try:
+        contenu = chemin.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ScenarioError(f"data_pack illisible pour {scenario['id']} : {chemin} ({exc})") from exc
+    try:
+        json.loads(contenu)
+    except json.JSONDecodeError as exc:
+        raise ScenarioError(f"data_pack JSON invalide pour {scenario['id']} : {exc}") from exc
+    return contenu.strip()
+
+
+def build_prompt(scenario: dict[str, Any], arm: str = DEFAULT_ARM) -> str:
+    """Construit le prompt d'un bras, avec pack gelé pour data-only."""
+    if arm != ARM_DATA_ONLY:
+        return scenario["prompt"]
+    pack = load_data_pack(scenario)
+    entete = (
+        "Contexte du run : données gelées, aucun outil MCP. Travaille uniquement à partir "
+        "du pack JSON ci-dessous, sans accès en direct ni appel d'outil Méridian.\n\n"
+    )
+    return f"{entete}```json\n{pack}\n```\n\n{scenario['prompt']}"
+
+
 def _normalize_tool_name(nom: str) -> str:
     """Ajoute le préfixe MCP Méridian à un nom d'outil court."""
     nom = nom.strip()
@@ -308,9 +439,13 @@ def _normalize_tool_name(nom: str) -> str:
     return f"mcp__meridian__{nom}"
 
 
-def allowed_tools(scenario: dict[str, Any]) -> list[str]:
-    """Construit la liste déterministe des outils autorisés pour un scénario."""
-    outils = ["Skill", "Read"]
+def allowed_tools(scenario: dict[str, Any], arm: str = DEFAULT_ARM) -> list[str]:
+    """Construit la liste déterministe des outils autorisés pour un scénario et un bras."""
+    if arm == ARM_DATA_ONLY:
+        return ["Read"]
+    outils = ["Read"]
+    if arm == ARM_SKILL_MCP:
+        outils.insert(0, "Skill")
     for outil in scenario["mcp_tools"]:
         normalise = _normalize_tool_name(outil)
         if normalise not in outils:
@@ -318,25 +453,34 @@ def allowed_tools(scenario: dict[str, Any]) -> list[str]:
     return outils
 
 
-def build_command(scenario: dict[str, Any], mcp_config: str, args: argparse.Namespace,
-                  claude_bin: str = "claude") -> list[str]:
-    """Construit la commande Claude Code d'un run."""
+def build_command(scenario: dict[str, Any], mcp_config: str | None, args: argparse.Namespace,
+                  claude_bin: str = "claude", arm: str = DEFAULT_ARM,
+                  checklist: str | None = None) -> list[str]:
+    """Construit la commande Claude Code d'un run pour un bras donné."""
+    arm = normalize_arm(arm)
     commande = [
         claude_bin,
         "-p",
-        scenario["prompt"],
-        "--mcp-config",
-        mcp_config,
-        "--strict-mcp-config",
+        build_prompt(scenario, arm),
+    ]
+    if arm_utilise_mcp(arm):
+        if not mcp_config:
+            raise BenchmarkError(f"configuration MCP requise pour le bras {arm}")
+        commande.extend(["--mcp-config", mcp_config, "--strict-mcp-config"])
+    if arm == ARM_CHECKLIST_MCP:
+        texte = load_checklist() if checklist is None else checklist
+        if texte.strip():
+            commande.extend(["--append-system-prompt", texte.strip()])
+    commande.extend([
         "--allowedTools",
-        ",".join(allowed_tools(scenario)),
+        ",".join(allowed_tools(scenario, arm)),
         "--max-budget-usd",
         str(args.max_budget_usd),
         "--output-format",
         "stream-json",
         "--verbose",
         "--include-partial-messages",
-    ]
+    ])
     if args.model:
         commande.extend(["--model", args.model])
     return commande
@@ -603,7 +747,7 @@ def _kill_process(proc: subprocess.Popen) -> None:
 
 def run_once(scenario: dict[str, Any], condition: str, command: list[str], cwd: Path,
              output_dir: Path, run_index: int, timeout: float,
-             save: bool = True) -> dict[str, Any]:
+             save: bool = True, arm: str | None = None) -> dict[str, Any]:
     """Exécute un run, sauvegarde ses artefacts et retourne son bilan."""
     debut = time.monotonic()
     stdout = ""
@@ -668,6 +812,7 @@ def run_once(scenario: dict[str, Any], condition: str, command: list[str], cwd: 
     run: dict[str, Any] = {
         "scenario": scenario["id"],
         "condition": condition,
+        "arm": arm or condition,
         "run": run_index,
         "command": command,
         "cwd": str(cwd),
@@ -713,39 +858,290 @@ def run_once(scenario: dict[str, Any], condition: str, command: list[str], cwd: 
     return run
 
 
+def _run_arm(run: dict[str, Any]) -> str:
+    """Retourne le bras d'un run, avec repli sur l'ancien champ condition."""
+    return str(run.get("arm") or run.get("condition") or "inconnu")
+
+
+def _arm_order(arm: str) -> tuple[int, str]:
+    """Trie les bras dans l'ordre du protocole, puis les inconnus."""
+    return (ARMS.index(arm) if arm in ARMS else len(ARMS), arm)
+
+
 def summarize_runs(runs: list[dict[str, Any]]) -> dict[str, Any]:
-    """Agrège des runs en compteurs et taux de réussite."""
+    """Agrège des runs en compteurs, taux de réussite, coût et durée."""
     total = len(runs)
     reussis = sum(1 for run in runs if run.get("passed"))
+    manquants = sum(1 for run in runs if run.get("missing"))
+    couts = [
+        cout for cout in (_to_float(run.get("cost_usd")) for run in runs) if cout is not None
+    ]
+    durees = [
+        duree for duree in (_to_float(run.get("duration_seconds")) for run in runs)
+        if duree is not None
+    ]
     return {
         "runs": total,
         "passed": reussis,
         "failed": total - reussis,
+        "missing": manquants,
         "pass_rate": round(reussis / total, 4) if total else 0.0,
+        "total_cost_usd": round(sum(couts), 6) if couts else None,
+        "mean_cost_usd": round(sum(couts) / len(couts), 6) if couts else None,
+        "mean_duration_seconds": round(sum(durees) / len(durees), 3) if durees else None,
+    }
+
+
+def summarize_by_arm(runs: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Agrège les runs par bras."""
+    bras = sorted({_run_arm(run) for run in runs}, key=_arm_order)
+    return {
+        arm: summarize_runs([run for run in runs if _run_arm(run) == arm])
+        for arm in bras
     }
 
 
 def summarize_by_condition(runs: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    """Agrège les runs par condition."""
-    conditions = sorted({run["condition"] for run in runs})
+    """Alias historique de :func:`summarize_by_arm`."""
+    return summarize_by_arm(runs)
+
+
+def _delta(valeur: float | None, reference: float | None, decimales: int = 6) -> float | None:
+    """Calcule un écart arrondi, ou ``None`` si une valeur manque."""
+    if valeur is None or reference is None:
+        return None
+    return round(valeur - reference, decimales)
+
+
+def compare_arms(runs: list[dict[str, Any]]) -> dict[str, Any]:
+    """Compare les bras au bras de référence ``skill+mcp``."""
+    par_bras = summarize_by_arm(runs)
+    reference = par_bras.get(ARM_SKILL_MCP)
+    deltas: dict[str, dict[str, Any]] = {}
+    for arm, bilan in par_bras.items():
+        if arm == ARM_SKILL_MCP or reference is None:
+            deltas[arm] = {
+                "pass_rate_delta_vs_skill_mcp": None,
+                "mean_cost_delta_usd": None,
+                "mean_duration_delta_seconds": None,
+            }
+            continue
+        deltas[arm] = {
+            "pass_rate_delta_vs_skill_mcp": _delta(
+                bilan["pass_rate"], reference["pass_rate"], 4),
+            "mean_cost_delta_usd": _delta(
+                bilan["mean_cost_usd"], reference["mean_cost_usd"]),
+            "mean_duration_delta_seconds": _delta(
+                bilan["mean_duration_seconds"], reference["mean_duration_seconds"], 3),
+        }
     return {
-        condition: summarize_runs([run for run in runs if run["condition"] == condition])
-        for condition in conditions
+        "reference": ARM_SKILL_MCP,
+        "by_arm": par_bras,
+        "deltas_vs_reference": deltas,
     }
 
 
+def human_answer_path(scenario: dict[str, Any], human_dir: str | Path | None) -> Path | None:
+    """Retourne le fichier ``<scenario>-human.json`` attendu, existant ou non."""
+    if human_dir is None:
+        return None
+    dossier = Path(human_dir).expanduser()
+    candidats = [
+        dossier / f"{scenario['slug']}-{ARM_HUMAN}.json",
+        dossier / f"{scenario['id']}-{ARM_HUMAN}.json",
+    ]
+    for candidat in candidats:
+        if candidat.is_file():
+            return candidat
+    return candidats[0]
+
+
+def _as_bool(value: Any) -> bool:
+    """Convertit une valeur JSON en booléen sans interpréter ``"false"`` comme vrai."""
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "oui", "passed", "pass", "ok"}
+    return bool(value)
+
+
+def _human_value(value: Any) -> Any:
+    """Rend une valeur JSON humaine sans lever d'exception."""
+    return value if isinstance(value, str) else _as_text(value)
+
+
+def _human_criteria(payload: dict[str, Any]) -> list[dict[str, Any]] | None:
+    """Importe des critères ou grades fournis par le fichier humain."""
+    valeur = payload.get("criteria", payload.get("grades"))
+    criteres: list[dict[str, Any]] = []
+    if isinstance(valeur, list):
+        for element in valeur:
+            if isinstance(element, dict):
+                nom = element.get("name") or element.get("criterion") or element.get("id") or "critere"
+                passe = element.get("passed", element.get("pass", element.get("ok", False)))
+                detail = element.get("detail") or element.get("comment") or element.get("note") or ""
+                criteres.append({"name": str(nom), "passed": _as_bool(passe), "detail": str(detail)})
+            elif isinstance(element, str) and element.strip():
+                criteres.append({"name": element.strip(), "passed": True, "detail": "critère importé"})
+    elif isinstance(valeur, dict):
+        for nom, statut in valeur.items():
+            if isinstance(statut, dict):
+                passe = statut.get("passed", statut.get("pass", statut.get("ok", False)))
+                detail = statut.get("detail") or statut.get("comment") or statut.get("note") or ""
+            else:
+                passe = statut
+                detail = "grade importé"
+            criteres.append({
+                "name": str(nom),
+                "passed": _as_bool(passe),
+                "detail": str(detail),
+            })
+    return criteres or None
+
+
+def _human_base(scenario: dict[str, Any], arm: str) -> dict[str, Any]:
+    """Construit le squelette commun d'un run humain."""
+    return {
+        "scenario": scenario["id"],
+        "condition": arm,
+        "arm": arm,
+        "run": 1,
+        "command": [],
+        "cwd": "",
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "elapsed_seconds": 0.0,
+        "duration_seconds": None,
+        "timed_out": False,
+        "returncode": None,
+        "launch_error": "",
+        "result_found": False,
+        "result": "",
+        "is_error": False,
+        "cost_usd": None,
+        "num_turns": None,
+        "tool_calls": {},
+        "tool_sequence": [],
+        "errors": [],
+        "parse_errors": [],
+        "stderr": "",
+        "missing": True,
+        "missing_reason": "",
+        "human_source": "",
+    }
+
+
+def load_human_run(scenario: dict[str, Any], arm: str = ARM_HUMAN,
+                   human_dir: str | Path | None = None
+                   ) -> tuple[dict[str, Any], Any | None]:
+    """Charge une réponse humaine existante ou marque le run comme manquant."""
+    run = _human_base(scenario, arm)
+    chemin = human_answer_path(scenario, human_dir)
+    if chemin is None:
+        run["missing_reason"] = "aucun --human-dir fourni"
+    elif not chemin.is_file():
+        run["missing_reason"] = f"fichier humain absent : {chemin}"
+        run["human_source"] = str(chemin)
+    else:
+        run["human_source"] = str(chemin)
+        try:
+            payload = json.loads(chemin.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            run["missing_reason"] = f"fichier humain illisible : {chemin} ({exc})"
+        else:
+            if isinstance(payload, dict):
+                return _human_from_payload(scenario, arm, run, payload), payload
+            run["missing_reason"] = f"objet JSON attendu dans {chemin}"
+
+    run["criteria"] = [
+        {"name": "human_answer", "passed": False, "detail": run["missing_reason"]},
+        *grade_run(scenario, run),
+    ]
+    run["passed"] = False
+    return run, None
+
+
+def _human_from_payload(scenario: dict[str, Any], arm: str, run: dict[str, Any],
+                        payload: dict[str, Any]) -> dict[str, Any]:
+    """Normalise une réponse humaine et ses grades éventuels."""
+    reponse = payload.get("result")
+    if reponse is None:
+        reponse = payload.get("answer", payload.get("response", payload.get("text")))
+    if reponse is None:
+        reponses = payload.get("answers")
+        if isinstance(reponses, dict):
+            reponse = reponses.get(scenario["slug"], reponses.get(scenario["id"]))
+        elif isinstance(reponses, str):
+            reponse = reponses
+    run["result"] = _human_value(reponse)
+    run["cost_usd"] = _to_float(payload.get("cost_usd", payload.get("cost")))
+    run["duration_seconds"] = _to_float(
+        payload.get("duration_seconds", payload.get("duration")))
+    run["num_turns"] = _to_int(payload.get("num_turns", payload.get("turns")))
+    criteres = _human_criteria(payload)
+    if criteres is None and "passed" in payload:
+        criteres = [{
+            "name": "human_grade",
+            "passed": _as_bool(payload.get("passed")),
+            "detail": "grade humain importé",
+        }]
+    if criteres is None:
+        run["result_found"] = bool(run["result"])
+        criteres = grade_run(scenario, run)
+    else:
+        run["result_found"] = True
+    run["criteria"] = criteres
+    run["passed"] = (
+        _as_bool(payload.get("passed")) if "passed" in payload
+        else all(critere["passed"] for critere in criteres)
+    )
+    run["missing"] = False
+    run["missing_reason"] = ""
+    return run
+
+
+def save_human_run(run: dict[str, Any], output_dir: Path, run_index: int = 1,
+                   payload: Any | None = None) -> dict[str, Any]:
+    """Sauvegarde la réponse humaine, son résultat texte et son bilan."""
+    dossier = Path(output_dir)
+    dossier.mkdir(parents=True, exist_ok=True)
+    prefixe = f"run-{run_index:02d}"
+    chemin_brut = dossier / f"{prefixe}.human.json"
+    chemin_resultat = dossier / f"{prefixe}.result.txt"
+    chemin_bilan = dossier / f"{prefixe}.json"
+    if payload is None:
+        payload = {
+            "missing": run.get("missing", False),
+            "reason": run.get("missing_reason", ""),
+            "scenario": run["scenario"],
+            "arm": run["arm"],
+        }
+    _write_json(chemin_brut, payload)
+    chemin_resultat.write_text(run.get("result") or "", encoding="utf-8")
+    run["artifacts"] = {
+        "human": str(chemin_brut),
+        "result": str(chemin_resultat),
+        "summary": str(chemin_bilan),
+    }
+    _write_json(chemin_bilan, run)
+    return run
+
+
 def print_dry_run(scenarios: list[dict[str, Any]], args: argparse.Namespace,
-                  mcp_config: str, repo_root: Path) -> None:
+                  mcp_config: str | None, repo_root: Path,
+                  arms: list[str] | None = None, checklist: str | None = None) -> None:
     """Affiche les commandes prévues sans exécuter ni écrire de résultats."""
-    conditions = conditions_depuis_option(args.with_skill)
+    arms = arms or arms_depuis_args(args)
+    espaces = Path(tempfile.gettempdir()) / "meridian-benchmark-empty"
     for scenario in scenarios:
         print(f"# Scénario {scenario['id']} ({scenario['slug']})")
-        espaces = Path(tempfile.gettempdir()) / "meridian-benchmark-empty"
-        for condition, avec_skill in conditions:
-            cwd = repo_root if avec_skill else espaces
-            print(f"# Condition {condition}, cwd={cwd}")
+        for arm in arms:
+            if arm == ARM_HUMAN:
+                source = human_answer_path(scenario, getattr(args, "human_dir", None))
+                emplacement = str(source) if source is not None else "<--human-dir non fourni>"
+                print(f"# Bras {arm} : import {emplacement} (aucune commande Claude)")
+                continue
+            cwd = repo_root if arm_utilise_skill(arm) else espaces
+            print(f"# Bras {arm}, cwd={cwd}")
             for run_index in range(1, args.runs + 1):
-                commande = build_command(scenario, mcp_config, args)
+                commande = build_command(scenario, mcp_config, args, arm=arm, checklist=checklist)
                 print(f"# run {run_index}/{args.runs}")
                 print(shlex.join(commande))
 
@@ -759,6 +1155,7 @@ def _public_scenario(scenario: dict[str, Any]) -> dict[str, Any]:
         "prompt": scenario["prompt"],
         "skill": scenario.get("skill"),
         "mcp_tools": scenario["mcp_tools"],
+        "data_pack": scenario.get("data_pack"),
         "expected_terms": scenario["expected_terms"],
         "forbidden_terms": scenario["forbidden_terms"],
         "expected_sections": scenario["expected_sections"],
@@ -769,38 +1166,49 @@ def _public_scenario(scenario: dict[str, Any]) -> dict[str, Any]:
 
 
 def run_benchmark(scenarios: list[dict[str, Any]], args: argparse.Namespace,
-                  repo_root: Path, output_dir: Path, mcp_config: str,
-                  mcp_trace: dict[str, Any]) -> dict[str, Any]:
-    """Exécute tous les scenarios et conditions puis écrit le résumé global."""
-    conditions = conditions_depuis_option(args.with_skill)
+                  repo_root: Path, output_dir: Path, mcp_config: str | None,
+                  mcp_trace: dict[str, Any],
+                  checklist: str | None = None) -> dict[str, Any]:
+    """Exécute tous les scénarios et bras puis écrit le résumé global."""
+    arms = arms_depuis_args(args)
     tous_les_runs: list[dict[str, Any]] = []
     bilans_scenarios = []
     for scenario in scenarios:
         runs_scenario: list[dict[str, Any]] = []
-        for condition, avec_skill in conditions:
-            dossier_condition = output_dir / scenario["slug"] / condition
+        for arm in arms:
+            dossier_arm = output_dir / scenario["slug"] / arm
+            if arm == ARM_HUMAN:
+                run, payload = load_human_run(
+                    scenario, arm, getattr(args, "human_dir", None))
+                save_human_run(run, dossier_arm, 1, payload)
+                runs_scenario.append(run)
+                tous_les_runs.append(run)
+                continue
             for run_index in range(1, args.runs + 1):
-                commande = build_command(scenario, mcp_config, args)
-                if avec_skill:
+                commande = build_command(
+                    scenario, mcp_config, args, arm=arm, checklist=checklist)
+                if arm_utilise_skill(arm):
                     run = run_once(
                         scenario=scenario,
-                        condition=condition,
+                        condition=arm,
                         command=commande,
                         cwd=repo_root,
-                        output_dir=dossier_condition,
+                        output_dir=dossier_arm,
                         run_index=run_index,
                         timeout=args.timeout,
+                        arm=arm,
                     )
                 else:
                     with tempfile.TemporaryDirectory(prefix="meridian-benchmark-empty-") as espace:
                         run = run_once(
                             scenario=scenario,
-                            condition=condition,
+                            condition=arm,
                             command=commande,
                             cwd=Path(espace),
-                            output_dir=dossier_condition,
+                            output_dir=dossier_arm,
                             run_index=run_index,
                             timeout=args.timeout,
+                            arm=arm,
                         )
                 runs_scenario.append(run)
                 tous_les_runs.append(run)
@@ -810,7 +1218,9 @@ def run_benchmark(scenarios: list[dict[str, Any]], args: argparse.Namespace,
             "scenario": _public_scenario(scenario),
             "runs": runs_scenario,
             "summary": summarize_runs(runs_scenario),
+            "by_arm": summarize_by_arm(runs_scenario),
             "by_condition": summarize_by_condition(runs_scenario),
+            "comparison": compare_arms(runs_scenario),
         }
         bilans_scenarios.append(bilan)
         _write_json(output_dir / scenario["slug"] / "summary.json", bilan)
@@ -821,7 +1231,9 @@ def run_benchmark(scenarios: list[dict[str, Any]], args: argparse.Namespace,
         "output_dir": str(output_dir),
         "config": {
             "runs": args.runs,
-            "conditions": [condition for condition, _ in conditions],
+            "arms": arms,
+            "conditions": arms,
+            "human_dir": str(getattr(args, "human_dir", "") or ""),
             "model": args.model,
             "max_budget_usd": args.max_budget_usd,
             "timeout": args.timeout,
@@ -829,8 +1241,10 @@ def run_benchmark(scenarios: list[dict[str, Any]], args: argparse.Namespace,
         },
         "summary": {
             **summarize_runs(tous_les_runs),
+            "by_arm": summarize_by_arm(tous_les_runs),
             "by_condition": summarize_by_condition(tous_les_runs),
         },
+        "comparison": compare_arms(tous_les_runs),
         "scenarios": bilans_scenarios,
         "runs": tous_les_runs,
     }
@@ -847,17 +1261,35 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Erreur de scénario : {exc}", file=sys.stderr)
         return 2
 
+    arms = arms_depuis_args(args)
+    checklist: str | None = None
+    if ARM_DATA_ONLY in arms:
+        try:
+            for scenario in scenarios:
+                load_data_pack(scenario)
+        except ScenarioError as exc:
+            print(f"Erreur de data pack : {exc}", file=sys.stderr)
+            return 2
+    if ARM_CHECKLIST_MCP in arms:
+        try:
+            checklist = load_checklist()
+        except BenchmarkError as exc:
+            print(f"Erreur de checklist : {exc}", file=sys.stderr)
+            return 2
+
     repo_root = REPO_ROOT
     output_dir = Path(args.output).expanduser() if args.output else default_output_dir()
+    mcp_requis = any(arm_utilise_mcp(arm) for arm in arms)
     try:
-        mcp_config, dossier_mcp, mcp_trace = prepare_mcp_config(args, repo_root)
+        mcp_config, dossier_mcp, mcp_trace = prepare_mcp_config(
+            args, repo_root, required=mcp_requis)
     except BenchmarkError as exc:
         print(f"Erreur MCP : {exc}", file=sys.stderr)
         return 2
 
     try:
         if args.dry_run:
-            print_dry_run(scenarios, args, mcp_config, repo_root)
+            print_dry_run(scenarios, args, mcp_config, repo_root, arms, checklist)
             return 0
         try:
             output_dir.mkdir(parents=True, exist_ok=True)
@@ -868,6 +1300,7 @@ def main(argv: list[str] | None = None) -> int:
                 output_dir=output_dir,
                 mcp_config=mcp_config,
                 mcp_trace=mcp_trace,
+                checklist=checklist,
             )
         except OSError as exc:
             print(f"Erreur d'écriture des résultats : {exc}", file=sys.stderr)

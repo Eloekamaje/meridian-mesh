@@ -11,6 +11,7 @@
     ],
     "application": "conduit"
   },
+  "data_pack": "../data/changement-reglementaire.json",
   "expected_terms": [
     "impact",
     "interface",

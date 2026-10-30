@@ -1,0 +1,35 @@
+{
+  "scenario": "portefeuille-baseline-absente",
+  "version": 1,
+  "provenance": "authored",
+  "scenario_file": "scenarios/portefeuille-baseline-absente.json",
+  "data_pack": "data/portefeuille-baseline-absente.json",
+  "expected_decision_points": [
+    "Vérifier l'absence de baseline et de valeur observée.",
+    "Déclarer la dette de mesure avant toute recommandation.",
+    "Distinguer hypothèse de valeur et valeur réalisée.",
+    "Refuser de recommander financer, différer ou arrêter sans baseline.",
+    "Proposer un plan de mesure avec unité, période et source."
+  ],
+  "required_evidence": [
+    "Baseline chiffrée et période de référence.",
+    "Valeur observée, unité et devise.",
+    "Preuves et méthode d'attribution.",
+    "Propriétaire et date de revue de chaque hypothèse.",
+    "Données de portefeuille bornées au domaine Paiement."
+  ],
+  "acceptable_options": [
+    "Différer la décision jusqu'à l'établissement d'une baseline.",
+    "Financer uniquement la mesure ou la collecte de preuves.",
+    "Maintenir le statu quo sous revue avec une échéance explicite.",
+    "Formuler des hypothèses explicitement non mesurées et non décisionnelles."
+  ],
+  "unacceptable_claims": [
+    "Affirmer une valeur réalisée ou un ROI réalisé sans observe.",
+    "Présenter un gain constaté alors que la baseline est absente.",
+    "Recommander un financement, un report ou un arrêt sans baseline.",
+    "Inventer une mesure, une baseline ou une preuve de valeur.",
+    "Prétendre avoir exécuté une décision ou une action."
+  ],
+  "abstention_condition": "Sans baseline et sans valeur observée, aucune recommandation de financement, de report ou d'arrêt n'est acceptable : déclarer la dette de mesure et proposer un plan de mesure."
+}

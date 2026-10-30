@@ -11,6 +11,7 @@
     ],
     "application": "conduit"
   },
+  "data_pack": "../data/incident-paiements.json",
   "expected_terms": [
     "socle",
     "preuve",

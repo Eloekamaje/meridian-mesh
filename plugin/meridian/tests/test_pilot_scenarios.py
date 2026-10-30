@@ -11,6 +11,7 @@ RACINE = Path(__file__).resolve().parents[1]
 EVALS = RACINE / "evals"
 SCENARIOS = EVALS / "scenarios"
 FICHIER_VALEURS = EVALS / "value-pilote.json"
+SCENARIOS_PILOTES = {"incident-paiements", "changement-reglementaire"}
 
 CHAMPS_SCENARIO = (
     "id",
@@ -82,6 +83,7 @@ def _scenarios():
     return {
         chemin.stem: _json(chemin)
         for chemin in sorted(SCENARIOS.glob("*.json"))
+        if chemin.stem in SCENARIOS_PILOTES
     }
 
 
@@ -142,7 +144,8 @@ def test_les_scenarios_interdisent_les_termes_attendus():
     scenarios = _scenarios()
     incident = scenarios["incident-paiements"]
     assert "causalité confirmée" in incident["forbidden_terms"]
-    assert "non" in incident["forbidden_terms_exceptions"]["causalité confirmée"]
+    exceptions = incident["forbidden_terms_exceptions"]
+    assert "non" in exceptions["causalité confirmée"]
     reglementaire = scenarios["changement-reglementaire"]
     assert "déployé" in reglementaire["forbidden_terms"]
     for scenario in scenarios.values():

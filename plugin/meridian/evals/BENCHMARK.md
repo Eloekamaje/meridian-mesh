@@ -19,10 +19,12 @@ Méridian read-only et le même modèle. Ce benchmark est un **smoke test**, pas
 Prompt : incident depuis 14 h, SLA menacé, contexte `sit-latence-paiements`, Twins `paiements`/`comptes`,
 application `conduit`.
 
-| Condition | Résultat | Tours | Durée | Coût | Outils |
-|---|---|---:|---:|---:|---|
-| Avec `incident-ops` | **Passe** : socle, preuves, SLA, limites, autorité, prochaines étapes | 9 | 77 s | 0,56 USD | 2 appels `meridian_analyser` |
-| Sans skill | **Échoue** : réponse produite, mais sections `actions` et `prochaines_etapes` absentes | 22 | 144 s | 1,23 USD | 10+ appels Claims/impact/portefeuille |
+| Bras | Résultat | Durée | Coût | Outils |
+|---|---|---:|---:|---|
+| `skill+mcp` | **Passe** | 93 s | 0,66 USD | Skill + 5 outils MCP |
+| `checklist+mcp` | **Échoue** : `prochaines_etapes` absentes | 161 s | 1,06 USD | 9 outils MCP, aucun Skill |
+| `data-only` | **Passe** | 125 s | 0,72 USD | aucun outil, pack gelé |
+| `human` | non exécuté | — | — | schéma de revue fourni |
 
 ## Workflow 2 — portefeuille Paiement
 
@@ -35,18 +37,16 @@ Prompt : concentration de valeur et de risque dans le domaine Paiement, avec Val
 
 ## Lecture
 
-Ce dispositif ne permet pas d'affirmer que Méridian améliore les décisions : les deux bras ont Méridian, n=1. Il permet de dire que la skill passe les critères de structure et réduit le coût/temps sur ce cas, pas qu'elle produit une meilleure décision business.
+Ce dispositif ne permet pas d'affirmer que Méridian améliore les décisions : n=1, données demo, pas de revue humaine. Il permet de dire que la skill passe les critères de structure et réduit le coût/temps face à une checklist, pas qu'elle produit une meilleure décision business.
 
-- Sur l'incident, le baseline finit par répondre mais coûte 2,2× plus cher, prend 1,9× plus de temps et manque
-  les sections de décision attendues ; la skill termine dans le budget et passe les critères objectifs.
+- Sur l'incident, `skill+mcp` est le seul bras rapide et complet ; `checklist+mcp` coûte plus cher et manque une section ; `data-only` passe mais ne teste pas l'accès MCP.
 - Sur le portefeuille, les deux terminent ; la skill va plus vite et tient mieux la règle « corrélation ≠ causalité ».
-- Le baseline reste capable de répondre : la skill améliore la **discipline de processus**, pas la seule capacité.
-- Une exécution ne prouve pas une supériorité générale. Il faut 3 répétitions, une grille humaine et des cas
-  supplémentaires avant de conclure.
+- `data-only` montre qu'un pack gelé suffit parfois au contrat : le bénéfice propre du MCP n'est donc pas isolé. La skill améliore la **discipline de processus**, pas seulement la capacité.
+- Une exécution ne prouve pas une supériorité générale. Il faut au moins 3 répétitions (idéalement 5), une grille humaine et des cas supplémentaires avant de conclure.
 
 ## Ce qu'il faudrait pour une preuve
 
-Quatre bras : skill+MCP, checklist générique+MCP, données gelées sans MCP, analyste humain. Cinq répétitions, clés de correction écrites avant les runs, notation aveugle, intervalles de confiance, et décision de gouvernance go/no-go. Voir la revue ECC du 2026-10-30.
+Les trois bras agent sont exécutables ; le bras humain reste à importer via `--human-dir` (aucune revue humaine n'a été fabriquée). Il faut cinq répétitions, clés de correction écrites avant les runs, notation aveugle, intervalles de confiance et décision de gouvernance go/no-go.
 
 ## Commandes de reproduction
 

@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://meridian.local/evals/human/review.schema.json",
+  "title": "Revue humaine d'un scénario Méridian",
+  "description": "Schéma de revue humaine indépendante pour les scénarios et paquets de données Méridian.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "reviewer_id",
+    "scenario",
+    "decision_accuracy",
+    "evidence_grounding",
+    "calibration",
+    "usefulness",
+    "trust",
+    "critical_errors",
+    "would_approve",
+    "time_seconds",
+    "comments"
+  ],
+  "properties": {
+    "reviewer_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "Identifiant stable du reviewer, sans donnée personnelle."
+    },
+    "scenario": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z0-9][a-z0-9-]*$",
+      "description": "Identifiant du scénario évalué."
+    },
+    "decision_accuracy": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4,
+      "description": "Justesse de la décision ou de l'abstention."
+    },
+    "evidence_grounding": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4,
+      "description": "Ancrage des affirmations dans les preuves disponibles."
+    },
+    "calibration": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4,
+      "description": "Cohérence entre confiance affichée, preuve et incertitude."
+    },
+    "usefulness": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5,
+      "description": "Utilité pratique de la réponse pour un décideur."
+    },
+    "trust": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5,
+      "description": "Confiance globale accordée à la réponse."
+    },
+    "critical_errors": {
+      "type": "array",
+      "description": "Erreurs graves constatées ; tableau vide si aucune.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "description"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "invented_fact",
+              "stale_evidence_ignored",
+              "unsupported_recommendation",
+              "false_execution",
+              "other"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ]
+          }
+        }
+      }
+    },
+    "would_approve": {
+      "type": "boolean",
+      "description": "La réponse serait-elle approuvée en l'état ?"
+    },
+    "time_seconds": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 86400,
+      "description": "Temps de revue mesuré, en secondes."
+    },
+    "comments": {
+      "type": "string",
+      "maxLength": 4000,
+      "description": "Justification courte, factuelle et actionnable."
+    },
+    "reviewed_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Horodatage facultatif de la revue."
+    },
+    "review_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Version facultative du protocole de revue."
+    }
+  }
+}

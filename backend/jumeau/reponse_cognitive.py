@@ -8,7 +8,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+import math
+import re
 from typing import Any
+import unicodedata
 
 from jumeau import composition, profils
 
@@ -42,6 +45,19 @@ _GROUPES_TYPE = {
     "ACTION": ("options", "mitigation", "plan", "changements"),
     "HYPOTHESE": ("options", "questions", "risques"),
 }
+
+_TYPES_OPTION = frozenset({"OPTION", "PROPOSITION", "ACTION", "QUESTION"})
+_TYPES_CONDITION = frozenset({"QUESTION", "HYPOTHESE"})
+_MOTS_CONDITION = (
+    "condition", "reverse", "retournement", "inverse", "renversement")
+_SIGNAUX_OUTCOME = frozenset({"OUTCOME", "LEARNING"})
+_CHAMPS_BASELINE = (
+    "baseline", "baselines", "baseline_valeur", "valeur_baseline",
+    "valeur_initiale", "valeur_de_reference", "mesure_initiale")
+_CHAMPS_OUTCOME = (
+    "outcome", "outcomes", "outcome_ids", "outcome_valeur",
+    "valeur_outcome", "valeur_observee", "observe", "resultat",
+    "resultats", "resultat_observe", "benefice")
 
 _ACTIONS_PROFIL = {
     "developpeur": ("verifier_interface", "ouvrir_impact", "preparer_changement", "preparer_test"),
@@ -96,6 +112,258 @@ def _preuves(faits: tuple[dict, ...]) -> tuple[str, ...]:
             if texte and texte not in preuves:
                 preuves.append(texte)
     return tuple(preuves)
+
+
+def _donnees_fait(fait: Mapping) -> Mapping:
+    donnees = fait.get("donnees")
+    return donnees if isinstance(donnees, Mapping) else {}
+
+
+def _slug(valeur: str) -> str:
+    texte = unicodedata.normalize("NFKD", _texte(valeur, 240))
+    texte = texte.encode("ascii", "ignore").decode().lower()
+    texte = re.sub(r"[^a-z0-9]+", "-", texte).strip("-")
+    return texte[:80].strip("-") or "option"
+
+
+def _identifiant_option(label: str, vus: set[str]) -> str:
+    base = _slug(label)
+    identifiant = base
+    rang = 2
+    while identifiant in vus:
+        identifiant = f"{base}-{rang}"
+        rang += 1
+    vus.add(identifiant)
+    return identifiant
+
+
+def _confiance_fait(fait: Mapping) -> float | None:
+    valeur = fait.get("confiance")
+    if isinstance(valeur, bool) or valeur is None:
+        return None
+    try:
+        nombre = float(valeur)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(nombre):
+        return None
+    return round(max(0.0, min(1.0, nombre)), 3)
+
+
+def _preuves_fait(fait: Mapping) -> list[str]:
+    valeurs = fait.get("preuves") or ()
+    if isinstance(valeurs, (str, Mapping)):
+        valeurs = [valeurs]
+    resultat = []
+    for preuve in valeurs:
+        if isinstance(preuve, Mapping):
+            preuve = preuve.get("id") or preuve.get("locator")
+        texte = _texte(preuve, 300)
+        if texte and texte not in resultat:
+            resultat.append(texte)
+    return resultat
+
+
+def _options(faits: tuple[dict, ...]) -> list[dict]:
+    options = []
+    vus: set[str] = set()
+    for fait in faits:
+        type_ = _texte(fait.get("type"), 40).upper()
+        if type_ not in _TYPES_OPTION:
+            continue
+        label = _texte(fait.get("titre"), 240)
+        if not label:
+            continue
+        options.append({
+            "id": _identifiant_option(label, vus),
+            "label": label,
+            "type": type_,
+            "confiance": _confiance_fait(fait),
+            "preuves": _preuves_fait(fait),
+        })
+        if len(options) >= 4:
+            break
+    return options
+
+
+def _texte_explicite(valeur: Any, fait: Mapping) -> str | None:
+    if valeur is None or valeur is False:
+        return None
+    if isinstance(valeur, str):
+        return _texte(valeur, 500) or None
+    if isinstance(valeur, Mapping):
+        for cle in ("label", "titre", "texte", "resume", "id", "option_id"):
+            texte = _texte(valeur.get(cle), 500)
+            if texte:
+                return texte
+        return None
+    if isinstance(valeur, (list, tuple)):
+        for element in valeur:
+            texte = _texte_explicite(element, fait)
+            if texte:
+                return texte
+        return None
+    if valeur is True:
+        return _texte(fait.get("titre") or fait.get("resume"), 500) or None
+    return None
+
+
+def _recommandation(faits: tuple[dict, ...]) -> str | None:
+    for fait in faits:
+        donnees = _donnees_fait(fait)
+        for source in (fait, donnees):
+            for cle in ("recommandation", "recommendation",
+                        "recommande", "recommended"):
+                if cle in source:
+                    texte = _texte_explicite(source[cle], fait)
+                    if texte:
+                        return texte
+    return None
+
+
+def _conditions_retournement(faits: tuple[dict, ...]) -> list[str]:
+    conditions = []
+    for fait in faits:
+        type_ = _texte(fait.get("type"), 40).upper()
+        donnees = _donnees_fait(fait)
+        textes = [
+            _texte(fait.get("titre"), 500),
+            _texte(fait.get("resume"), 500),
+            " ".join(
+                _texte(valeur, 500) for valeur in donnees.values()
+                if isinstance(valeur, str)),
+        ]
+        texte = " ".join(textes).casefold()
+        explicites = []
+        for source in (fait, donnees):
+            for cle in ("conditions_de_retournement",
+                        "conditions_retournement",
+                        "condition_de_retournement",
+                        "condition_retournement", "conditions",
+                        "condition"):
+                valeur = source.get(cle)
+                if isinstance(valeur, str):
+                    texte_valeur = _texte(valeur, 500)
+                    if texte_valeur:
+                        explicites.append(texte_valeur)
+                elif isinstance(valeur, (list, tuple)):
+                    for element in valeur:
+                        if isinstance(element, Mapping):
+                            element = (element.get("texte")
+                                       or element.get("label")
+                                       or element.get("titre"))
+                        texte_element = _texte(element, 500)
+                        if texte_element:
+                            explicites.append(texte_element)
+        if (type_ not in _TYPES_CONDITION and not explicites
+                and not any(mot in texte for mot in _MOTS_CONDITION)):
+            continue
+        if explicites:
+            valeurs = explicites
+        else:
+            titre = _texte(fait.get("titre"), 500)
+            resume = _texte(fait.get("resume"), 500)
+            porteurs = [
+                valeur for valeur in (titre, resume)
+                if valeur and any(
+                    mot in valeur.casefold() for mot in _MOTS_CONDITION)]
+            valeurs = porteurs or [titre or resume]
+        for valeur in valeurs:
+            if valeur and valeur not in conditions:
+                conditions.append(valeur)
+    return conditions
+
+
+def _confiance_options(options: list[dict]) -> dict | None:
+    valeurs = [
+        option["confiance"] for option in options
+        if isinstance(option.get("confiance"), (int, float))]
+    if not valeurs:
+        return None
+    return {
+        "min": min(valeurs),
+        "moyenne": round(sum(valeurs) / len(valeurs), 3),
+    }
+
+
+def _renseigne(valeur: Any) -> bool:
+    if valeur is None or valeur is False:
+        return False
+    if isinstance(valeur, bool):
+        return valeur
+    if isinstance(valeur, str):
+        return bool(_texte(valeur, 200))
+    if isinstance(valeur, (int, float)):
+        return valeur != 0
+    if isinstance(valeur, Mapping):
+        return bool(valeur)
+    if isinstance(valeur, (list, tuple, set, frozenset)):
+        return bool(valeur)
+    return True
+
+
+def _mentionne_signal(texte: str) -> bool:
+    texte = texte.casefold()
+    if not any(mot in texte for mot in ("baseline", "outcome")):
+        return False
+    return not any(
+        negation in texte
+        for negation in ("aucun", "aucune", "sans ", "pas de ", "pas d",
+                         "manque", "absent", "absente", "inconnu",
+                         "inconnue", "non mesur", "à mesurer"))
+
+
+def _signaux_decision(
+        faits: tuple[dict, ...], dossier: Mapping) -> bool:
+    sources = list(faits)
+    for source in (dossier, dossier.get("valeur"),
+                   dossier.get("valeur_ledger")):
+        if isinstance(source, Mapping):
+            sources.append(source)
+    for source in sources:
+        type_ = _texte(source.get("type"), 40).upper()
+        if type_ in _SIGNAUX_OUTCOME or type_ == "BASELINE":
+            return True
+        for conteneur in (source, _donnees_fait(source)):
+            for cle in _CHAMPS_BASELINE + _CHAMPS_OUTCOME:
+                if _renseigne(conteneur.get(cle)):
+                    return True
+            for cle in ("outcomes", "benefices_renseignes"):
+                valeur = conteneur.get(cle)
+                if (isinstance(valeur, (int, float))
+                        and not isinstance(valeur, bool) and valeur > 0):
+                    return True
+        if type_ in _TYPES_CONDITION:
+            continue
+        texte = " ".join((
+            _texte(source.get("titre"), 500),
+            _texte(source.get("resume"), 500)))
+        if _mentionne_signal(texte):
+            return True
+    return False
+
+
+def _decision_support(
+        faits: tuple[dict, ...], dossier: Mapping, autorite: str,
+        prochaines: tuple[str, ...]) -> dict:
+    options = _options(faits)
+    raisons = []
+    if not faits:
+        raisons.append("aucun fait vérifié : décision impossible")
+    if autorite == "lecture":
+        raisons.append("autorité de lecture : aucune décision recommandée")
+    if not _signaux_decision(faits, dossier):
+        raisons.append(
+            "signaux baseline/outcome absents : décision non étayée")
+    return {
+        "options": options,
+        "recommandation": _recommandation(faits),
+        "confiance": _confiance_options(options),
+        "conditions_de_retournement": _conditions_retournement(faits),
+        "abstention": " ; ".join(raisons) if raisons else None,
+        "autorite": autorite,
+        "prochaines_etapes": list(prochaines),
+    }
 
 
 def _limites(plan: composition.PlanComposition, dossier: Mapping) -> tuple[str, ...]:
@@ -157,6 +425,7 @@ class ReponseCognitive:
     composition: composition.PlanComposition
     socle: Socle
     lecture: dict[str, list[dict]] = field(default_factory=dict)
+    decision_support: dict = field(default_factory=dict)
     actions: tuple[str, ...] = ()
     autorite: str = "lecture"
     prochaines_etapes: tuple[str, ...] = ()
@@ -170,6 +439,18 @@ class ReponseCognitive:
             "socle": self.socle.as_dict(),
             "lecture": {section: [dict(fait) for fait in faits]
                         for section, faits in self.lecture.items()},
+            "decision_support": {
+                **self.decision_support,
+                "options": [
+                    dict(option)
+                    for option in self.decision_support.get("options", ())
+                ],
+                "conditions_de_retournement": list(
+                    self.decision_support.get(
+                        "conditions_de_retournement", ())),
+                "prochaines_etapes": list(
+                    self.decision_support.get("prochaines_etapes", ())),
+            },
             "actions": list(self.actions),
             "autorite": self.autorite,
             "prochaines_etapes": list(self.prochaines_etapes),
@@ -225,6 +506,8 @@ def composer(
     elif not actions_autorisees:
         actions_autorisees = (_ACTIONS_PROFIL.get(profil.id, _ACTIONS_PROFIL["generaliste"])[0],)
     prochaines = _PROCHAINES.get(profil.id, _PROCHAINES["generaliste"])
+    decision_support = _decision_support(
+        faits, dossier, autorite, prochaines)
     avertissements = list(limites)
     if not faits:
         avertissements.append("aucun fait vérifié dans le dossier : réponse bornée, aucune invention")
@@ -236,6 +519,7 @@ def composer(
             faits=faits, preuves=_preuves(faits),
             incertitudes=incertitudes, limites=limites),
         lecture=lecture,
+        decision_support=decision_support,
         actions=actions_autorisees,
         autorite=autorite,
         prochaines_etapes=tuple(prochaines),

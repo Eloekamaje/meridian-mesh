@@ -1,0 +1,95 @@
+{
+  "id": "portefeuille-baseline-absente",
+  "skill": "meridian-benefits-okr",
+  "prompt": "Le comité veut savoir s'il faut financer, différer ou arrêter le portefeuille Paiement. Aucune baseline de valeur ni mesure observée n'est disponible : les hypothèses de valeur restent à l'état d'hypothèse, sans observe. Analyse le portefeuille. Contexte : tenant demo, portée portfolio, domaine Paiement. Déclare la dette de mesure, distingue explicitement les hypothèses de toute valeur mesurée, et ne recommande ni financement, ni report, ni arrêt sans baseline. Cite le socle, les preuves, les limites et les prochaines étapes ; ne prétends pas avoir exécuté une action.",
+  "context": {
+    "tenant": "demo",
+    "scope": "portfolio",
+    "domaine": "Paiement",
+    "persona": "architecte"
+  },
+  "data_pack": "../data/portefeuille-baseline-absente.json",
+  "expected_terms": [
+    "portefeuille",
+    "baseline",
+    "dette de mesure",
+    "valeur réalisée",
+    "hypothèse",
+    "abstention",
+    "preuve",
+    "limite",
+    "décision"
+  ],
+  "forbidden_terms": [
+    "valeur réalisée",
+    "ROI réalisé",
+    "gain constaté",
+    "décision recommandée",
+    "action exécutée"
+  ],
+  "forbidden_terms_exceptions": {
+    "valeur réalisée": [
+      "pas",
+      "non",
+      "aucune",
+      "sans"
+    ],
+    "ROI réalisé": [
+      "pas",
+      "non",
+      "aucun",
+      "sans"
+    ],
+    "gain constaté": [
+      "pas",
+      "non",
+      "aucun",
+      "sans"
+    ],
+    "décision recommandée": [
+      "pas",
+      "non",
+      "aucune",
+      "sans"
+    ],
+    "action exécutée": [
+      "aucune",
+      "pas",
+      "sans",
+      "non"
+    ]
+  },
+  "expected_sections": [
+    "socle",
+    "lecture",
+    "limites",
+    "dette_de_mesure",
+    "prochaines_etapes"
+  ],
+  "mcp_tools": [
+    "mcp__meridian__meridian_analyser",
+    "mcp__meridian__meridian_portefeuille",
+    "mcp__meridian__meridian_valeurs",
+    "mcp__meridian__meridian_valeur_resume"
+  ],
+  "value": {
+    "id": "val-adversarial-baseline-absente",
+    "type": "strategie",
+    "libelle": "Hypothèse de valeur du portefeuille Paiement sans baseline mesurée",
+    "proprietaire": "portefeuille",
+    "beneficiaire": "Paiement",
+    "domaine": "Paiement",
+    "objet_source_type": "portefeuille",
+    "objet_source_id": "Paiement",
+    "baseline": null,
+    "cible": null,
+    "observe": null,
+    "unite": "EUR",
+    "devise": "EUR",
+    "periode": null,
+    "attribution": "inconnue",
+    "confiance": 0.1,
+    "preuves": [],
+    "statut": "hypothese"
+  }
+}

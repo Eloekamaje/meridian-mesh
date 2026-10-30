@@ -1,0 +1,1687 @@
+{
+  "composition": {
+    "autorite": "proposition",
+    "avertissements": [],
+    "budget": {
+      "competences_max": 6,
+      "methodes_max": 3,
+      "specialistes_max": 4,
+      "timeout_s": 8.0
+    },
+    "competences": [
+      {
+        "description": "Qualifier une menace, son exposition et son mode de preuve sans conclure seul.",
+        "entrees": "menace et exposition",
+        "eval": [
+          "probabilité et impact justifiés",
+          "mode de preuve explicite"
+        ],
+        "id": "evaluer_risque",
+        "lecture_seule": true,
+        "nom": "Évaluer un risque",
+        "outils": [
+          "gardien",
+          "limites",
+          "temporalite"
+        ],
+        "sorties": "risque qualifié et incertitudes",
+        "specialiste": "preuve"
+      },
+      {
+        "description": "Comparer des options explicites et préparer un arbitrage laissé à l'humain.",
+        "entrees": "options et critères",
+        "eval": [
+          "options comparées",
+          "décision humaine"
+        ],
+        "id": "faciliter_decision",
+        "lecture_seule": true,
+        "nom": "Faciliter une décision",
+        "outils": [
+          "options",
+          "preuve"
+        ],
+        "sorties": "décision proposée et arbitrages",
+        "specialiste": "impact"
+      },
+      {
+        "description": "Consigner une décision d'architecture, ses options et ses conséquences.",
+        "entrees": "décision et options",
+        "eval": [
+          "contexte et conséquences",
+          "validation humaine"
+        ],
+        "id": "rediger_adr",
+        "lecture_seule": false,
+        "nom": "Rédiger un ADR",
+        "outils": [
+          "depot",
+          "documentation"
+        ],
+        "sorties": "ADR proposé",
+        "specialiste": "impact"
+      },
+      {
+        "description": "Estimer les effets directs et indirects d'un changement sur la topologie connue.",
+        "entrees": "changement et topologie",
+        "eval": [
+          "chemin d'impact justifié",
+          "profondeur bornée"
+        ],
+        "id": "analyser_impact",
+        "lecture_seule": true,
+        "nom": "Analyser un impact",
+        "outils": [
+          "graphe",
+          "impacts_situations"
+        ],
+        "sorties": "impacts directs et indirects",
+        "specialiste": "impact"
+      },
+      {
+        "description": "Relier une source à une cible par un chemin continu et citer chaque arête.",
+        "entrees": "nœud source et nœud cible",
+        "eval": [
+          "chemin continu",
+          "arêtes citées"
+        ],
+        "id": "tracer_chemin",
+        "lecture_seule": true,
+        "nom": "Tracer un chemin",
+        "outils": [
+          "graphe",
+          "graphe_neo4j"
+        ],
+        "sorties": "chemin causal ou de dépendance",
+        "specialiste": "impact"
+      },
+      {
+        "description": "Inventorier les contrats exposés ou consommés et en restituer les frontières.",
+        "entrees": "spécifications, contrats ou code d'interface",
+        "eval": [
+          "inventaire non vide",
+          "source de chaque interface citée"
+        ],
+        "id": "lire_interfaces",
+        "lecture_seule": true,
+        "nom": "Lire les interfaces",
+        "outils": [
+          "connecteur_interfaces",
+          "decouverte_interfaces"
+        ],
+        "sorties": "inventaire des interfaces et de leurs contrats",
+        "specialiste": "decouverte"
+      }
+    ],
+    "justification": [
+      "profil architecte (identite, confiance 0.90)",
+      "3 méthode(s), 6 compétence(s), 3 spécialiste(s)"
+    ],
+    "methodes": [
+      {
+        "artefacts": [
+          "décision d'architecture",
+          "options comparées",
+          "conséquences et risques"
+        ],
+        "competences": [
+          "evaluer_risque",
+          "faciliter_decision",
+          "rediger_adr"
+        ],
+        "description": "Consigner une décision d'architecture, les options écartées et leurs conséquences.",
+        "etapes": [
+          "exposer le contexte",
+          "comparer les options",
+          "trancher et justifier",
+          "consigner les conséquences"
+        ],
+        "gates": [
+          "humain : décision d'architecture entérinée par l'autorité compétente"
+        ],
+        "id": "adr",
+        "lecture_seule": false,
+        "mode_preuve": "DECLARED",
+        "nom": "ADR",
+        "postures": [
+          "concepteur",
+          "gardien",
+          "investigateur"
+        ],
+        "version": "1.0"
+      },
+      {
+        "artefacts": [
+          "carte d'impact",
+          "hypothèses hiérarchisées",
+          "mesures associées"
+        ],
+        "competences": [
+          "analyser_impact",
+          "faciliter_decision",
+          "tracer_chemin"
+        ],
+        "description": "Relier un objectif à ses acteurs, à leurs impacts attendus et aux livrables qui les prouvent.",
+        "etapes": [
+          "formuler l'objectif",
+          "identifier les acteurs",
+          "décrire les impacts",
+          "choisir les livrables",
+          "fixer les mesures"
+        ],
+        "gates": [
+          "humain : atelier de validation des impacts avec les parties prenantes"
+        ],
+        "id": "impact_mapping",
+        "lecture_seule": true,
+        "mode_preuve": "INFERRED",
+        "nom": "Impact mapping",
+        "postures": [
+          "concepteur",
+          "facilitateur",
+          "investigateur"
+        ],
+        "version": "1.0"
+      },
+      {
+        "artefacts": [
+          "registre RAID",
+          "plan projet",
+          "échéancier"
+        ],
+        "competences": [
+          "analyser_impact",
+          "evaluer_risque",
+          "tracer_chemin"
+        ],
+        "description": "Planification projet, registre RAID et pilotage des risques, hypothèses et dépendances.",
+        "etapes": [
+          "cadrer le périmètre",
+          "construire l'échéancier",
+          "tenir le registre RAID",
+          "piloter les dépendances",
+          "clôturer et capitaliser"
+        ],
+        "gates": [
+          "humain : comité de pilotage sur le plan et les risques"
+        ],
+        "id": "pmbok",
+        "lecture_seule": false,
+        "mode_preuve": "DECLARED",
+        "nom": "PMBOK",
+        "postures": [
+          "facilitateur",
+          "gardien",
+          "operateur"
+        ],
+        "version": "1.0"
+      }
+    ],
+    "profil": {
+      "autorite": "proposition",
+      "competences": [
+        "lire_interfaces",
+        "analyser_impact",
+        "rediger_adr",
+        "tracer_chemin",
+        "evaluer_risque"
+      ],
+      "confiance": 0.9,
+      "domaines": [],
+      "id": "architecte",
+      "inconnu": false,
+      "libelle": "Architecte",
+      "methodes": [
+        "adr",
+        "impact_mapping"
+      ],
+      "postures": [
+        "concepteur",
+        "explorateur"
+      ],
+      "source": "identite"
+    },
+    "specialistes": [
+      "preuve",
+      "impact",
+      "decouverte"
+    ],
+    "specialistes_socle": [
+      "preuve",
+      "impact"
+    ]
+  },
+  "dossier": {
+    "limites": [
+      "agrégat borné au tenant et au domaine demandé",
+      "aucune causalité déduite entre situation, décision et outcome",
+      "un objet est rattaché par son domaine explicite ou celui de ses Twins liés"
+    ],
+    "propositions": [
+      {
+        "actions": [
+          "ouvrir_situation",
+          "verifier_preuve"
+        ],
+        "confiance": 0.75,
+        "donnees": {
+          "domaine": null,
+          "id": "sit-changement-settlement"
+        },
+        "preuves": [],
+        "resume": "Trois scénarios ont été comparés dans Change Lab. Le scénario rétrocompatible est recommandé — validation humaine attendue.",
+        "specialiste": "portefeuille",
+        "titre": "Scénario de changement : remplacer settlementDate par settlementTimestamp",
+        "type": "RISQUE"
+      },
+      {
+        "actions": [
+          "ouvrir_situation",
+          "verifier_preuve"
+        ],
+        "confiance": 0.75,
+        "donnees": {
+          "domaine": null,
+          "id": "sit-latence-paiements"
+        },
+        "preuves": [],
+        "resume": "Le temps de réponse du parcours de paiement a dérivé de 240 ms à 1,9 s en douze minutes. L'investigation est conclue : la décision vous appartient.",
+        "specialiste": "portefeuille",
+        "titre": "Latence du parcours de paiement en hausse depuis 14 h 32",
+        "type": "RISQUE"
+      },
+      {
+        "actions": [
+          "ouvrir_situation",
+          "verifier_preuve"
+        ],
+        "confiance": 0.75,
+        "donnees": {
+          "domaine": null,
+          "id": "sit-relation-emergente"
+        },
+        "preuves": [],
+        "resume": "Les ralentissements de Paiements précèdent une augmentation des demandes Support dans 82 % des périodes observées. La relation est en validation A2A entre les deux jumeaux.",
+        "specialiste": "portefeuille",
+        "titre": "Relation émergente : ralentissements Paiements → demandes Support",
+        "type": "RISQUE"
+      },
+      {
+        "actions": [
+          "ouvrir_situation",
+          "verifier_preuve"
+        ],
+        "confiance": 0.75,
+        "donnees": {
+          "domaine": null,
+          "id": "sit-trajectoire-files"
+        },
+        "preuves": [],
+        "resume": "Le chantier « Basculer les contrôles Fraude en asynchrone » (PAY-140, échéance 20 novembre) suppose que les files legacy soient migrées. Or leur migration (OPS-15) est bloquée : trois tickets attendent depuis deux semaines et l'échéance du 30 septembre est déjà atteinte.",
+        "specialiste": "portefeuille",
+        "titre": "Trajectoire : PAY-140 suppose la fin d'OPS-15, qui est bloqué",
+        "type": "RISQUE"
+      },
+      {
+        "actions": [
+          "ouvrir_situation"
+        ],
+        "confiance": 0.6,
+        "donnees": {
+          "domaine": null,
+          "id": "sit-anomalie-fraude"
+        },
+        "preuves": [],
+        "resume": "Le nombre de contrôles synchrones par transaction est passé de 1,2 à 3,4. Un comportement nouveau qui demande une explication.",
+        "specialiste": "portefeuille",
+        "titre": "Fraude adopte un nouveau rythme de contrôle depuis la règle R-118",
+        "type": "CONSTAT"
+      },
+      {
+        "actions": [
+          "ouvrir_situation"
+        ],
+        "confiance": 0.6,
+        "donnees": {
+          "domaine": null,
+          "id": "sit-app-2748"
+        },
+        "preuves": [],
+        "resume": "Un service non répertorié émet des événements proches du domaine Paiement depuis trois jours. Voisin potentiel de Facturation.",
+        "specialiste": "portefeuille",
+        "titre": "Nouvelle application observée : APP-2748",
+        "type": "CONSTAT"
+      },
+      {
+        "actions": [
+          "ouvrir_situation"
+        ],
+        "confiance": 0.6,
+        "donnees": {
+          "domaine": null,
+          "id": "sit-contradiction-github"
+        },
+        "preuves": [],
+        "resume": "Le code déclare un import payments.client dans identity.session, mais aucune trace d'appel n'existe depuis 90 jours. Code, traces et documentation se contredisent.",
+        "specialiste": "portefeuille",
+        "titre": "Contradiction : GitHub déclare une dépendance Identité → Paiements qu'aucune trace ne confirme",
+        "type": "CONSTAT"
+      },
+      {
+        "actions": [
+          "ouvrir_situation"
+        ],
+        "confiance": 0.6,
+        "donnees": {
+          "domaine": null,
+          "id": "sit-mutualisation-notifications"
+        },
+        "preuves": [],
+        "resume": "Commandes et Facturation envoient chacune leurs alertes clients par des chemins distincts, alors que Notifications sait déjà porter les deux.",
+        "specialiste": "portefeuille",
+        "titre": "Opportunité : mutualiser l'envoi d'alertes entre Commandes et Facturation",
+        "type": "CONSTAT"
+      },
+      {
+        "actions": [
+          "ouvrir_situation"
+        ],
+        "confiance": 0.6,
+        "donnees": {
+          "domaine": null,
+          "id": "sit-optimisation-facturation"
+        },
+        "preuves": [],
+        "resume": "La clôture quotidienne pourrait être décalée de 40 minutes sans impact sur les consommateurs, libérant des ressources en heure de pointe.",
+        "specialiste": "portefeuille",
+        "titre": "Opportunité : décaler la clôture de facturation de 40 minutes",
+        "type": "CONSTAT"
+      },
+      {
+        "actions": [
+          "ouvrir_situation"
+        ],
+        "confiance": 0.6,
+        "donnees": {
+          "domaine": null,
+          "id": "sit-regle-implicite"
+        },
+        "preuves": [],
+        "resume": "Un comportement systématique observé sur 14 jours, jamais documenté. Règle métier implicite candidate.",
+        "specialiste": "portefeuille",
+        "titre": "Règle implicite : les clôtures Facturation après 22 h 40 déclenchent un pic Comptes",
+        "type": "CONSTAT"
+      },
+      {
+        "actions": [
+          "ouvrir_initiative",
+          "mesurer_outcome"
+        ],
+        "confiance": 0.6,
+        "donnees": {
+          "domaine": null,
+          "id": "init-contrat-paiements"
+        },
+        "preuves": [
+          "Analyse statique du dépôt Paiements : référence au contrat v3",
+          "Trafic observé (Datadog) : charge utile conforme v2",
+          "Documentation Confluence : migration v3 planifiée, non confirmée"
+        ],
+        "resume": "Initiative du portefeuille",
+        "specialiste": "portefeuille",
+        "titre": "Version du contrat Comptes : v2 ou v3 ?",
+        "type": "ACTION"
+      },
+      {
+        "actions": [
+          "ouvrir_initiative",
+          "mesurer_outcome"
+        ],
+        "confiance": 0.6,
+        "donnees": {
+          "domaine": null,
+          "id": "init-decision-utc"
+        },
+        "preuves": [
+          "Comparaison des trois scénarios menée dans le Change Lab",
+          "Scénario rétrocompatible recommandé par les jumeaux"
+        ],
+        "resume": "Initiative du portefeuille",
+        "specialiste": "portefeuille",
+        "titre": "Divergence de dates de règlement entre Paiements et Comptes",
+        "type": "ACTION"
+      },
+      {
+        "actions": [
+          "ouvrir_initiative",
+          "mesurer_outcome"
+        ],
+        "confiance": 0.6,
+        "donnees": {
+          "domaine": null,
+          "id": "init-delai-j3"
+        },
+        "preuves": [
+          "18 observations concordantes sur les comptes professionnels",
+          "Documentation Confluence datée de mars"
+        ],
+        "resume": "Initiative du portefeuille",
+        "specialiste": "portefeuille",
+        "titre": "Délai de règlement documenté (7 j) contredit par l'observation (5 j)",
+        "type": "ACTION"
+      },
+      {
+        "actions": [
+          "ouvrir_initiative",
+          "mesurer_outcome"
+        ],
+        "confiance": 0.6,
+        "donnees": {
+          "domaine": null,
+          "id": "init-delais-coordonnes"
+        },
+        "preuves": [
+          "Variations synchrones à ±4 minutes"
+        ],
+        "resume": "Initiative du portefeuille",
+        "specialiste": "portefeuille",
+        "titre": "Trois jumeaux augmentent leurs délais de façon coordonnée",
+        "type": "ACTION"
+      },
+      {
+        "actions": [
+          "ouvrir_initiative",
+          "mesurer_outcome"
+        ],
+        "confiance": 0.6,
+        "donnees": {
+          "domaine": null,
+          "id": "init-info-contrat-comptes"
+        },
+        "preuves": [],
+        "resume": "Initiative du portefeuille",
+        "specialiste": "portefeuille",
+        "titre": "Paiements utilise désormais une nouvelle version du contrat Comptes",
+        "type": "ACTION"
+      },
+      {
+        "actions": [
+          "ouvrir_initiative",
+          "mesurer_outcome"
+        ],
+        "confiance": 0.6,
+        "donnees": {
+          "domaine": null,
+          "id": "init-investigation-degradation"
+        },
+        "preuves": [
+          "Latence p99 1,9 s (seuil 800 ms)",
+          "Relation Paiements → Support découverte cette nuit",
+          "Chronologie corrélée au déploiement d'API Gateway"
+        ],
+        "resume": "Initiative du portefeuille",
+        "specialiste": "portefeuille",
+        "titre": "Dégradation coordonnée : quatre jumeaux, deux explications contradictoires",
+        "type": "ACTION"
+      }
+    ],
+    "specialistes": [
+      {
+        "limites": [
+          "agrégat borné au tenant et au domaine demandé",
+          "aucune causalité déduite entre situation, décision et outcome",
+          "un objet est rattaché par son domaine explicite ou celui de ses Twins liés"
+        ],
+        "propositions": [
+          {
+            "actions": [
+              "ouvrir_situation",
+              "verifier_preuve"
+            ],
+            "confiance": 0.75,
+            "donnees": {
+              "domaine": null,
+              "id": "sit-changement-settlement"
+            },
+            "preuves": [],
+            "resume": "Trois scénarios ont été comparés dans Change Lab. Le scénario rétrocompatible est recommandé — validation humaine attendue.",
+            "specialiste": "portefeuille",
+            "titre": "Scénario de changement : remplacer settlementDate par settlementTimestamp",
+            "type": "RISQUE"
+          },
+          {
+            "actions": [
+              "ouvrir_situation",
+              "verifier_preuve"
+            ],
+            "confiance": 0.75,
+            "donnees": {
+              "domaine": null,
+              "id": "sit-latence-paiements"
+            },
+            "preuves": [],
+            "resume": "Le temps de réponse du parcours de paiement a dérivé de 240 ms à 1,9 s en douze minutes. L'investigation est conclue : la décision vous appartient.",
+            "specialiste": "portefeuille",
+            "titre": "Latence du parcours de paiement en hausse depuis 14 h 32",
+            "type": "RISQUE"
+          },
+          {
+            "actions": [
+              "ouvrir_situation",
+              "verifier_preuve"
+            ],
+            "confiance": 0.75,
+            "donnees": {
+              "domaine": null,
+              "id": "sit-relation-emergente"
+            },
+            "preuves": [],
+            "resume": "Les ralentissements de Paiements précèdent une augmentation des demandes Support dans 82 % des périodes observées. La relation est en validation A2A entre les deux jumeaux.",
+            "specialiste": "portefeuille",
+            "titre": "Relation émergente : ralentissements Paiements → demandes Support",
+            "type": "RISQUE"
+          },
+          {
+            "actions": [
+              "ouvrir_situation",
+              "verifier_preuve"
+            ],
+            "confiance": 0.75,
+            "donnees": {
+              "domaine": null,
+              "id": "sit-trajectoire-files"
+            },
+            "preuves": [],
+            "resume": "Le chantier « Basculer les contrôles Fraude en asynchrone » (PAY-140, échéance 20 novembre) suppose que les files legacy soient migrées. Or leur migration (OPS-15) est bloquée : trois tickets attendent depuis deux semaines et l'échéance du 30 septembre est déjà atteinte.",
+            "specialiste": "portefeuille",
+            "titre": "Trajectoire : PAY-140 suppose la fin d'OPS-15, qui est bloqué",
+            "type": "RISQUE"
+          },
+          {
+            "actions": [
+              "ouvrir_situation"
+            ],
+            "confiance": 0.6,
+            "donnees": {
+              "domaine": null,
+              "id": "sit-anomalie-fraude"
+            },
+            "preuves": [],
+            "resume": "Le nombre de contrôles synchrones par transaction est passé de 1,2 à 3,4. Un comportement nouveau qui demande une explication.",
+            "specialiste": "portefeuille",
+            "titre": "Fraude adopte un nouveau rythme de contrôle depuis la règle R-118",
+            "type": "CONSTAT"
+          },
+          {
+            "actions": [
+              "ouvrir_situation"
+            ],
+            "confiance": 0.6,
+            "donnees": {
+              "domaine": null,
+              "id": "sit-app-2748"
+            },
+            "preuves": [],
+            "resume": "Un service non répertorié émet des événements proches du domaine Paiement depuis trois jours. Voisin potentiel de Facturation.",
+            "specialiste": "portefeuille",
+            "titre": "Nouvelle application observée : APP-2748",
+            "type": "CONSTAT"
+          },
+          {
+            "actions": [
+              "ouvrir_situation"
+            ],
+            "confiance": 0.6,
+            "donnees": {
+              "domaine": null,
+              "id": "sit-contradiction-github"
+            },
+            "preuves": [],
+            "resume": "Le code déclare un import payments.client dans identity.session, mais aucune trace d'appel n'existe depuis 90 jours. Code, traces et documentation se contredisent.",
+            "specialiste": "portefeuille",
+            "titre": "Contradiction : GitHub déclare une dépendance Identité → Paiements qu'aucune trace ne confirme",
+            "type": "CONSTAT"
+          },
+          {
+            "actions": [
+              "ouvrir_situation"
+            ],
+            "confiance": 0.6,
+            "donnees": {
+              "domaine": null,
+              "id": "sit-mutualisation-notifications"
+            },
+            "preuves": [],
+            "resume": "Commandes et Facturation envoient chacune leurs alertes clients par des chemins distincts, alors que Notifications sait déjà porter les deux.",
+            "specialiste": "portefeuille",
+            "titre": "Opportunité : mutualiser l'envoi d'alertes entre Commandes et Facturation",
+            "type": "CONSTAT"
+          },
+          {
+            "actions": [
+              "ouvrir_situation"
+            ],
+            "confiance": 0.6,
+            "donnees": {
+              "domaine": null,
+              "id": "sit-optimisation-facturation"
+            },
+            "preuves": [],
+            "resume": "La clôture quotidienne pourrait être décalée de 40 minutes sans impact sur les consommateurs, libérant des ressources en heure de pointe.",
+            "specialiste": "portefeuille",
+            "titre": "Opportunité : décaler la clôture de facturation de 40 minutes",
+            "type": "CONSTAT"
+          },
+          {
+            "actions": [
+              "ouvrir_situation"
+            ],
+            "confiance": 0.6,
+            "donnees": {
+              "domaine": null,
+              "id": "sit-regle-implicite"
+            },
+            "preuves": [],
+            "resume": "Un comportement systématique observé sur 14 jours, jamais documenté. Règle métier implicite candidate.",
+            "specialiste": "portefeuille",
+            "titre": "Règle implicite : les clôtures Facturation après 22 h 40 déclenchent un pic Comptes",
+            "type": "CONSTAT"
+          },
+          {
+            "actions": [
+              "ouvrir_initiative",
+              "mesurer_outcome"
+            ],
+            "confiance": 0.6,
+            "donnees": {
+              "domaine": null,
+              "id": "init-contrat-paiements"
+            },
+            "preuves": [
+              "Analyse statique du dépôt Paiements : référence au contrat v3",
+              "Trafic observé (Datadog) : charge utile conforme v2",
+              "Documentation Confluence : migration v3 planifiée, non confirmée"
+            ],
+            "resume": "Initiative du portefeuille",
+            "specialiste": "portefeuille",
+            "titre": "Version du contrat Comptes : v2 ou v3 ?",
+            "type": "ACTION"
+          },
+          {
+            "actions": [
+              "ouvrir_initiative",
+              "mesurer_outcome"
+            ],
+            "confiance": 0.6,
+            "donnees": {
+              "domaine": null,
+              "id": "init-decision-utc"
+            },
+            "preuves": [
+              "Comparaison des trois scénarios menée dans le Change Lab",
+              "Scénario rétrocompatible recommandé par les jumeaux"
+            ],
+            "resume": "Initiative du portefeuille",
+            "specialiste": "portefeuille",
+            "titre": "Divergence de dates de règlement entre Paiements et Comptes",
+            "type": "ACTION"
+          },
+          {
+            "actions": [
+              "ouvrir_initiative",
+              "mesurer_outcome"
+            ],
+            "confiance": 0.6,
+            "donnees": {
+              "domaine": null,
+              "id": "init-delai-j3"
+            },
+            "preuves": [
+              "18 observations concordantes sur les comptes professionnels",
+              "Documentation Confluence datée de mars"
+            ],
+            "resume": "Initiative du portefeuille",
+            "specialiste": "portefeuille",
+            "titre": "Délai de règlement documenté (7 j) contredit par l'observation (5 j)",
+            "type": "ACTION"
+          },
+          {
+            "actions": [
+              "ouvrir_initiative",
+              "mesurer_outcome"
+            ],
+            "confiance": 0.6,
+            "donnees": {
+              "domaine": null,
+              "id": "init-delais-coordonnes"
+            },
+            "preuves": [
+              "Variations synchrones à ±4 minutes"
+            ],
+            "resume": "Initiative du portefeuille",
+            "specialiste": "portefeuille",
+            "titre": "Trois jumeaux augmentent leurs délais de façon coordonnée",
+            "type": "ACTION"
+          },
+          {
+            "actions": [
+              "ouvrir_initiative",
+              "mesurer_outcome"
+            ],
+            "confiance": 0.6,
+            "donnees": {
+              "domaine": null,
+              "id": "init-info-contrat-comptes"
+            },
+            "preuves": [],
+            "resume": "Initiative du portefeuille",
+            "specialiste": "portefeuille",
+            "titre": "Paiements utilise désormais une nouvelle version du contrat Comptes",
+            "type": "ACTION"
+          },
+          {
+            "actions": [
+              "ouvrir_initiative",
+              "mesurer_outcome"
+            ],
+            "confiance": 0.6,
+            "donnees": {
+              "domaine": null,
+              "id": "init-investigation-degradation"
+            },
+            "preuves": [
+              "Latence p99 1,9 s (seuil 800 ms)",
+              "Relation Paiements → Support découverte cette nuit",
+              "Chronologie corrélée au déploiement d'API Gateway"
+            ],
+            "resume": "Initiative du portefeuille",
+            "specialiste": "portefeuille",
+            "titre": "Dégradation coordonnée : quatre jumeaux, deux explications contradictoires",
+            "type": "ACTION"
+          }
+        ],
+        "specialiste": "portefeuille",
+        "statut": "ok"
+      }
+    ],
+    "statut": "ok",
+    "tenant": "demo"
+  },
+  "profil": {
+    "autorite": "proposition",
+    "competences": [
+      "lire_interfaces",
+      "analyser_impact",
+      "rediger_adr",
+      "tracer_chemin",
+      "evaluer_risque"
+    ],
+    "confiance": 0.9,
+    "domaines": [],
+    "id": "architecte",
+    "inconnu": false,
+    "libelle": "Architecte",
+    "methodes": [
+      "adr",
+      "impact_mapping"
+    ],
+    "postures": [
+      "concepteur",
+      "explorateur"
+    ],
+    "source": "identite"
+  },
+  "reponse": {
+    "actions": [
+      "ouvrir_impact"
+    ],
+    "autorite": "proposition",
+    "avertissements": [
+      "agrégat borné au tenant et au domaine demandé",
+      "aucune causalité déduite entre situation, décision et outcome",
+      "un objet est rattaché par son domaine explicite ou celui de ses Twins liés"
+    ],
+    "composition": {
+      "autorite": "proposition",
+      "avertissements": [],
+      "budget": {
+        "competences_max": 6,
+        "methodes_max": 3,
+        "specialistes_max": 4,
+        "timeout_s": 8.0
+      },
+      "competences": [
+        {
+          "description": "Qualifier une menace, son exposition et son mode de preuve sans conclure seul.",
+          "entrees": "menace et exposition",
+          "eval": [
+            "probabilité et impact justifiés",
+            "mode de preuve explicite"
+          ],
+          "id": "evaluer_risque",
+          "lecture_seule": true,
+          "nom": "Évaluer un risque",
+          "outils": [
+            "gardien",
+            "limites",
+            "temporalite"
+          ],
+          "sorties": "risque qualifié et incertitudes",
+          "specialiste": "preuve"
+        },
+        {
+          "description": "Comparer des options explicites et préparer un arbitrage laissé à l'humain.",
+          "entrees": "options et critères",
+          "eval": [
+            "options comparées",
+            "décision humaine"
+          ],
+          "id": "faciliter_decision",
+          "lecture_seule": true,
+          "nom": "Faciliter une décision",
+          "outils": [
+            "options",
+            "preuve"
+          ],
+          "sorties": "décision proposée et arbitrages",
+          "specialiste": "impact"
+        },
+        {
+          "description": "Consigner une décision d'architecture, ses options et ses conséquences.",
+          "entrees": "décision et options",
+          "eval": [
+            "contexte et conséquences",
+            "validation humaine"
+          ],
+          "id": "rediger_adr",
+          "lecture_seule": false,
+          "nom": "Rédiger un ADR",
+          "outils": [
+            "depot",
+            "documentation"
+          ],
+          "sorties": "ADR proposé",
+          "specialiste": "impact"
+        },
+        {
+          "description": "Estimer les effets directs et indirects d'un changement sur la topologie connue.",
+          "entrees": "changement et topologie",
+          "eval": [
+            "chemin d'impact justifié",
+            "profondeur bornée"
+          ],
+          "id": "analyser_impact",
+          "lecture_seule": true,
+          "nom": "Analyser un impact",
+          "outils": [
+            "graphe",
+            "impacts_situations"
+          ],
+          "sorties": "impacts directs et indirects",
+          "specialiste": "impact"
+        },
+        {
+          "description": "Relier une source à une cible par un chemin continu et citer chaque arête.",
+          "entrees": "nœud source et nœud cible",
+          "eval": [
+            "chemin continu",
+            "arêtes citées"
+          ],
+          "id": "tracer_chemin",
+          "lecture_seule": true,
+          "nom": "Tracer un chemin",
+          "outils": [
+            "graphe",
+            "graphe_neo4j"
+          ],
+          "sorties": "chemin causal ou de dépendance",
+          "specialiste": "impact"
+        },
+        {
+          "description": "Inventorier les contrats exposés ou consommés et en restituer les frontières.",
+          "entrees": "spécifications, contrats ou code d'interface",
+          "eval": [
+            "inventaire non vide",
+            "source de chaque interface citée"
+          ],
+          "id": "lire_interfaces",
+          "lecture_seule": true,
+          "nom": "Lire les interfaces",
+          "outils": [
+            "connecteur_interfaces",
+            "decouverte_interfaces"
+          ],
+          "sorties": "inventaire des interfaces et de leurs contrats",
+          "specialiste": "decouverte"
+        }
+      ],
+      "justification": [
+        "profil architecte (identite, confiance 0.90)",
+        "3 méthode(s), 6 compétence(s), 3 spécialiste(s)"
+      ],
+      "methodes": [
+        {
+          "artefacts": [
+            "décision d'architecture",
+            "options comparées",
+            "conséquences et risques"
+          ],
+          "competences": [
+            "evaluer_risque",
+            "faciliter_decision",
+            "rediger_adr"
+          ],
+          "description": "Consigner une décision d'architecture, les options écartées et leurs conséquences.",
+          "etapes": [
+            "exposer le contexte",
+            "comparer les options",
+            "trancher et justifier",
+            "consigner les conséquences"
+          ],
+          "gates": [
+            "humain : décision d'architecture entérinée par l'autorité compétente"
+          ],
+          "id": "adr",
+          "lecture_seule": false,
+          "mode_preuve": "DECLARED",
+          "nom": "ADR",
+          "postures": [
+            "concepteur",
+            "gardien",
+            "investigateur"
+          ],
+          "version": "1.0"
+        },
+        {
+          "artefacts": [
+            "carte d'impact",
+            "hypothèses hiérarchisées",
+            "mesures associées"
+          ],
+          "competences": [
+            "analyser_impact",
+            "faciliter_decision",
+            "tracer_chemin"
+          ],
+          "description": "Relier un objectif à ses acteurs, à leurs impacts attendus et aux livrables qui les prouvent.",
+          "etapes": [
+            "formuler l'objectif",
+            "identifier les acteurs",
+            "décrire les impacts",
+            "choisir les livrables",
+            "fixer les mesures"
+          ],
+          "gates": [
+            "humain : atelier de validation des impacts avec les parties prenantes"
+          ],
+          "id": "impact_mapping",
+          "lecture_seule": true,
+          "mode_preuve": "INFERRED",
+          "nom": "Impact mapping",
+          "postures": [
+            "concepteur",
+            "facilitateur",
+            "investigateur"
+          ],
+          "version": "1.0"
+        },
+        {
+          "artefacts": [
+            "registre RAID",
+            "plan projet",
+            "échéancier"
+          ],
+          "competences": [
+            "analyser_impact",
+            "evaluer_risque",
+            "tracer_chemin"
+          ],
+          "description": "Planification projet, registre RAID et pilotage des risques, hypothèses et dépendances.",
+          "etapes": [
+            "cadrer le périmètre",
+            "construire l'échéancier",
+            "tenir le registre RAID",
+            "piloter les dépendances",
+            "clôturer et capitaliser"
+          ],
+          "gates": [
+            "humain : comité de pilotage sur le plan et les risques"
+          ],
+          "id": "pmbok",
+          "lecture_seule": false,
+          "mode_preuve": "DECLARED",
+          "nom": "PMBOK",
+          "postures": [
+            "facilitateur",
+            "gardien",
+            "operateur"
+          ],
+          "version": "1.0"
+        }
+      ],
+      "profil": {
+        "autorite": "proposition",
+        "competences": [
+          "lire_interfaces",
+          "analyser_impact",
+          "rediger_adr",
+          "tracer_chemin",
+          "evaluer_risque"
+        ],
+        "confiance": 0.9,
+        "domaines": [],
+        "id": "architecte",
+        "inconnu": false,
+        "libelle": "Architecte",
+        "methodes": [
+          "adr",
+          "impact_mapping"
+        ],
+        "postures": [
+          "concepteur",
+          "explorateur"
+        ],
+        "source": "identite"
+      },
+      "specialistes": [
+        "preuve",
+        "impact",
+        "decouverte"
+      ],
+      "specialistes_socle": [
+        "preuve",
+        "impact"
+      ]
+    },
+    "lecture": {
+      "architecture": [
+        {
+          "actions": [
+            "ouvrir_situation"
+          ],
+          "confiance": 0.6,
+          "donnees": {
+            "domaine": null,
+            "id": "sit-anomalie-fraude"
+          },
+          "preuves": [],
+          "resume": "Le nombre de contrôles synchrones par transaction est passé de 1,2 à 3,4. Un comportement nouveau qui demande une explication.",
+          "specialiste": "portefeuille",
+          "titre": "Fraude adopte un nouveau rythme de contrôle depuis la règle R-118",
+          "type": "CONSTAT"
+        },
+        {
+          "actions": [
+            "ouvrir_situation"
+          ],
+          "confiance": 0.6,
+          "donnees": {
+            "domaine": null,
+            "id": "sit-app-2748"
+          },
+          "preuves": [],
+          "resume": "Un service non répertorié émet des événements proches du domaine Paiement depuis trois jours. Voisin potentiel de Facturation.",
+          "specialiste": "portefeuille",
+          "titre": "Nouvelle application observée : APP-2748",
+          "type": "CONSTAT"
+        },
+        {
+          "actions": [
+            "ouvrir_situation"
+          ],
+          "confiance": 0.6,
+          "donnees": {
+            "domaine": null,
+            "id": "sit-contradiction-github"
+          },
+          "preuves": [],
+          "resume": "Le code déclare un import payments.client dans identity.session, mais aucune trace d'appel n'existe depuis 90 jours. Code, traces et documentation se contredisent.",
+          "specialiste": "portefeuille",
+          "titre": "Contradiction : GitHub déclare une dépendance Identité → Paiements qu'aucune trace ne confirme",
+          "type": "CONSTAT"
+        },
+        {
+          "actions": [
+            "ouvrir_situation"
+          ],
+          "confiance": 0.6,
+          "donnees": {
+            "domaine": null,
+            "id": "sit-mutualisation-notifications"
+          },
+          "preuves": [],
+          "resume": "Commandes et Facturation envoient chacune leurs alertes clients par des chemins distincts, alors que Notifications sait déjà porter les deux.",
+          "specialiste": "portefeuille",
+          "titre": "Opportunité : mutualiser l'envoi d'alertes entre Commandes et Facturation",
+          "type": "CONSTAT"
+        },
+        {
+          "actions": [
+            "ouvrir_situation"
+          ],
+          "confiance": 0.6,
+          "donnees": {
+            "domaine": null,
+            "id": "sit-optimisation-facturation"
+          },
+          "preuves": [],
+          "resume": "La clôture quotidienne pourrait être décalée de 40 minutes sans impact sur les consommateurs, libérant des ressources en heure de pointe.",
+          "specialiste": "portefeuille",
+          "titre": "Opportunité : décaler la clôture de facturation de 40 minutes",
+          "type": "CONSTAT"
+        },
+        {
+          "actions": [
+            "ouvrir_situation"
+          ],
+          "confiance": 0.6,
+          "donnees": {
+            "domaine": null,
+            "id": "sit-regle-implicite"
+          },
+          "preuves": [],
+          "resume": "Un comportement systématique observé sur 14 jours, jamais documenté. Règle métier implicite candidate.",
+          "specialiste": "portefeuille",
+          "titre": "Règle implicite : les clôtures Facturation après 22 h 40 déclenchent un pic Comptes",
+          "type": "CONSTAT"
+        },
+        {
+          "actions": [
+            "ouvrir_initiative",
+            "mesurer_outcome"
+          ],
+          "confiance": 0.6,
+          "donnees": {
+            "domaine": null,
+            "id": "init-contrat-paiements"
+          },
+          "preuves": [
+            "Analyse statique du dépôt Paiements : référence au contrat v3",
+            "Trafic observé (Datadog) : charge utile conforme v2",
+            "Documentation Confluence : migration v3 planifiée, non confirmée"
+          ],
+          "resume": "Initiative du portefeuille",
+          "specialiste": "portefeuille",
+          "titre": "Version du contrat Comptes : v2 ou v3 ?",
+          "type": "ACTION"
+        },
+        {
+          "actions": [
+            "ouvrir_initiative",
+            "mesurer_outcome"
+          ],
+          "confiance": 0.6,
+          "donnees": {
+            "domaine": null,
+            "id": "init-decision-utc"
+          },
+          "preuves": [
+            "Comparaison des trois scénarios menée dans le Change Lab",
+            "Scénario rétrocompatible recommandé par les jumeaux"
+          ],
+          "resume": "Initiative du portefeuille",
+          "specialiste": "portefeuille",
+          "titre": "Divergence de dates de règlement entre Paiements et Comptes",
+          "type": "ACTION"
+        },
+        {
+          "actions": [
+            "ouvrir_initiative",
+            "mesurer_outcome"
+          ],
+          "confiance": 0.6,
+          "donnees": {
+            "domaine": null,
+            "id": "init-delai-j3"
+          },
+          "preuves": [
+            "18 observations concordantes sur les comptes professionnels",
+            "Documentation Confluence datée de mars"
+          ],
+          "resume": "Initiative du portefeuille",
+          "specialiste": "portefeuille",
+          "titre": "Délai de règlement documenté (7 j) contredit par l'observation (5 j)",
+          "type": "ACTION"
+        },
+        {
+          "actions": [
+            "ouvrir_initiative",
+            "mesurer_outcome"
+          ],
+          "confiance": 0.6,
+          "donnees": {
+            "domaine": null,
+            "id": "init-delais-coordonnes"
+          },
+          "preuves": [
+            "Variations synchrones à ±4 minutes"
+          ],
+          "resume": "Initiative du portefeuille",
+          "specialiste": "portefeuille",
+          "titre": "Trois jumeaux augmentent leurs délais de façon coordonnée",
+          "type": "ACTION"
+        },
+        {
+          "actions": [
+            "ouvrir_initiative",
+            "mesurer_outcome"
+          ],
+          "confiance": 0.6,
+          "donnees": {
+            "domaine": null,
+            "id": "init-info-contrat-comptes"
+          },
+          "preuves": [],
+          "resume": "Initiative du portefeuille",
+          "specialiste": "portefeuille",
+          "titre": "Paiements utilise désormais une nouvelle version du contrat Comptes",
+          "type": "ACTION"
+        },
+        {
+          "actions": [
+            "ouvrir_initiative",
+            "mesurer_outcome"
+          ],
+          "confiance": 0.6,
+          "donnees": {
+            "domaine": null,
+            "id": "init-investigation-degradation"
+          },
+          "preuves": [
+            "Latence p99 1,9 s (seuil 800 ms)",
+            "Relation Paiements → Support découverte cette nuit",
+            "Chronologie corrélée au déploiement d'API Gateway"
+          ],
+          "resume": "Initiative du portefeuille",
+          "specialiste": "portefeuille",
+          "titre": "Dégradation coordonnée : quatre jumeaux, deux explications contradictoires",
+          "type": "ACTION"
+        }
+      ],
+      "risques": [
+        {
+          "actions": [
+            "ouvrir_situation",
+            "verifier_preuve"
+          ],
+          "confiance": 0.75,
+          "donnees": {
+            "domaine": null,
+            "id": "sit-changement-settlement"
+          },
+          "preuves": [],
+          "resume": "Trois scénarios ont été comparés dans Change Lab. Le scénario rétrocompatible est recommandé — validation humaine attendue.",
+          "specialiste": "portefeuille",
+          "titre": "Scénario de changement : remplacer settlementDate par settlementTimestamp",
+          "type": "RISQUE"
+        },
+        {
+          "actions": [
+            "ouvrir_situation",
+            "verifier_preuve"
+          ],
+          "confiance": 0.75,
+          "donnees": {
+            "domaine": null,
+            "id": "sit-latence-paiements"
+          },
+          "preuves": [],
+          "resume": "Le temps de réponse du parcours de paiement a dérivé de 240 ms à 1,9 s en douze minutes. L'investigation est conclue : la décision vous appartient.",
+          "specialiste": "portefeuille",
+          "titre": "Latence du parcours de paiement en hausse depuis 14 h 32",
+          "type": "RISQUE"
+        },
+        {
+          "actions": [
+            "ouvrir_situation",
+            "verifier_preuve"
+          ],
+          "confiance": 0.75,
+          "donnees": {
+            "domaine": null,
+            "id": "sit-relation-emergente"
+          },
+          "preuves": [],
+          "resume": "Les ralentissements de Paiements précèdent une augmentation des demandes Support dans 82 % des périodes observées. La relation est en validation A2A entre les deux jumeaux.",
+          "specialiste": "portefeuille",
+          "titre": "Relation émergente : ralentissements Paiements → demandes Support",
+          "type": "RISQUE"
+        },
+        {
+          "actions": [
+            "ouvrir_situation",
+            "verifier_preuve"
+          ],
+          "confiance": 0.75,
+          "donnees": {
+            "domaine": null,
+            "id": "sit-trajectoire-files"
+          },
+          "preuves": [],
+          "resume": "Le chantier « Basculer les contrôles Fraude en asynchrone » (PAY-140, échéance 20 novembre) suppose que les files legacy soient migrées. Or leur migration (OPS-15) est bloquée : trois tickets attendent depuis deux semaines et l'échéance du 30 septembre est déjà atteinte.",
+          "specialiste": "portefeuille",
+          "titre": "Trajectoire : PAY-140 suppose la fin d'OPS-15, qui est bloqué",
+          "type": "RISQUE"
+        }
+      ]
+    },
+    "prochaines_etapes": [
+      "Vérifier les interfaces et les décisions d'architecture.",
+      "Préparer un ADR."
+    ],
+    "profil": {
+      "autorite": "proposition",
+      "competences": [
+        "lire_interfaces",
+        "analyser_impact",
+        "rediger_adr",
+        "tracer_chemin",
+        "evaluer_risque"
+      ],
+      "confiance": 0.9,
+      "domaines": [],
+      "id": "architecte",
+      "inconnu": false,
+      "libelle": "Architecte",
+      "methodes": [
+        "adr",
+        "impact_mapping"
+      ],
+      "postures": [
+        "concepteur",
+        "explorateur"
+      ],
+      "source": "identite"
+    },
+    "question": "Le comité veut savoir s'il faut financer, différer ou arrêter le portefeuille Paiement. Aucune baseline de valeur ni mesure observée n'est disponible : les hypothèses de valeur restent à l'état d'hypothèse, sans observe. Analyse le portefeuille. Contexte : tenant demo, portée portfolio, domaine Paiement. Déclare la dette de mesure, distingue explicitement les hypothèses de toute valeur mesurée, et ne recommande ni financement, ni report, ni arrêt sans baseline. Cite le socle, les preuves, les limites et les prochaines étapes ; ne prétends pas avoir exécuté une action.",
+    "socle": {
+      "faits": [
+        {
+          "actions": [
+            "ouvrir_situation",
+            "verifier_preuve"
+          ],
+          "confiance": 0.75,
+          "donnees": {
+            "domaine": null,
+            "id": "sit-changement-settlement"
+          },
+          "preuves": [],
+          "resume": "Trois scénarios ont été comparés dans Change Lab. Le scénario rétrocompatible est recommandé — validation humaine attendue.",
+          "specialiste": "portefeuille",
+          "titre": "Scénario de changement : remplacer settlementDate par settlementTimestamp",
+          "type": "RISQUE"
+        },
+        {
+          "actions": [
+            "ouvrir_situation",
+            "verifier_preuve"
+          ],
+          "confiance": 0.75,
+          "donnees": {
+            "domaine": null,
+            "id": "sit-latence-paiements"
+          },
+          "preuves": [],
+          "resume": "Le temps de réponse du parcours de paiement a dérivé de 240 ms à 1,9 s en douze minutes. L'investigation est conclue : la décision vous appartient.",
+          "specialiste": "portefeuille",
+          "titre": "Latence du parcours de paiement en hausse depuis 14 h 32",
+          "type": "RISQUE"
+        },
+        {
+          "actions": [
+            "ouvrir_situation",
+            "verifier_preuve"
+          ],
+          "confiance": 0.75,
+          "donnees": {
+            "domaine": null,
+            "id": "sit-relation-emergente"
+          },
+          "preuves": [],
+          "resume": "Les ralentissements de Paiements précèdent une augmentation des demandes Support dans 82 % des périodes observées. La relation est en validation A2A entre les deux jumeaux.",
+          "specialiste": "portefeuille",
+          "titre": "Relation émergente : ralentissements Paiements → demandes Support",
+          "type": "RISQUE"
+        },
+        {
+          "actions": [
+            "ouvrir_situation",
+            "verifier_preuve"
+          ],
+          "confiance": 0.75,
+          "donnees": {
+            "domaine": null,
+            "id": "sit-trajectoire-files"
+          },
+          "preuves": [],
+          "resume": "Le chantier « Basculer les contrôles Fraude en asynchrone » (PAY-140, échéance 20 novembre) suppose que les files legacy soient migrées. Or leur migration (OPS-15) est bloquée : trois tickets attendent depuis deux semaines et l'échéance du 30 septembre est déjà atteinte.",
+          "specialiste": "portefeuille",
+          "titre": "Trajectoire : PAY-140 suppose la fin d'OPS-15, qui est bloqué",
+          "type": "RISQUE"
+        },
+        {
+          "actions": [
+            "ouvrir_situation"
+          ],
+          "confiance": 0.6,
+          "donnees": {
+            "domaine": null,
+            "id": "sit-anomalie-fraude"
+          },
+          "preuves": [],
+          "resume": "Le nombre de contrôles synchrones par transaction est passé de 1,2 à 3,4. Un comportement nouveau qui demande une explication.",
+          "specialiste": "portefeuille",
+          "titre": "Fraude adopte un nouveau rythme de contrôle depuis la règle R-118",
+          "type": "CONSTAT"
+        },
+        {
+          "actions": [
+            "ouvrir_situation"
+          ],
+          "confiance": 0.6,
+          "donnees": {
+            "domaine": null,
+            "id": "sit-app-2748"
+          },
+          "preuves": [],
+          "resume": "Un service non répertorié émet des événements proches du domaine Paiement depuis trois jours. Voisin potentiel de Facturation.",
+          "specialiste": "portefeuille",
+          "titre": "Nouvelle application observée : APP-2748",
+          "type": "CONSTAT"
+        },
+        {
+          "actions": [
+            "ouvrir_situation"
+          ],
+          "confiance": 0.6,
+          "donnees": {
+            "domaine": null,
+            "id": "sit-contradiction-github"
+          },
+          "preuves": [],
+          "resume": "Le code déclare un import payments.client dans identity.session, mais aucune trace d'appel n'existe depuis 90 jours. Code, traces et documentation se contredisent.",
+          "specialiste": "portefeuille",
+          "titre": "Contradiction : GitHub déclare une dépendance Identité → Paiements qu'aucune trace ne confirme",
+          "type": "CONSTAT"
+        },
+        {
+          "actions": [
+            "ouvrir_situation"
+          ],
+          "confiance": 0.6,
+          "donnees": {
+            "domaine": null,
+            "id": "sit-mutualisation-notifications"
+          },
+          "preuves": [],
+          "resume": "Commandes et Facturation envoient chacune leurs alertes clients par des chemins distincts, alors que Notifications sait déjà porter les deux.",
+          "specialiste": "portefeuille",
+          "titre": "Opportunité : mutualiser l'envoi d'alertes entre Commandes et Facturation",
+          "type": "CONSTAT"
+        },
+        {
+          "actions": [
+            "ouvrir_situation"
+          ],
+          "confiance": 0.6,
+          "donnees": {
+            "domaine": null,
+            "id": "sit-optimisation-facturation"
+          },
+          "preuves": [],
+          "resume": "La clôture quotidienne pourrait être décalée de 40 minutes sans impact sur les consommateurs, libérant des ressources en heure de pointe.",
+          "specialiste": "portefeuille",
+          "titre": "Opportunité : décaler la clôture de facturation de 40 minutes",
+          "type": "CONSTAT"
+        },
+        {
+          "actions": [
+            "ouvrir_situation"
+          ],
+          "confiance": 0.6,
+          "donnees": {
+            "domaine": null,
+            "id": "sit-regle-implicite"
+          },
+          "preuves": [],
+          "resume": "Un comportement systématique observé sur 14 jours, jamais documenté. Règle métier implicite candidate.",
+          "specialiste": "portefeuille",
+          "titre": "Règle implicite : les clôtures Facturation après 22 h 40 déclenchent un pic Comptes",
+          "type": "CONSTAT"
+        },
+        {
+          "actions": [
+            "ouvrir_initiative",
+            "mesurer_outcome"
+          ],
+          "confiance": 0.6,
+          "donnees": {
+            "domaine": null,
+            "id": "init-contrat-paiements"
+          },
+          "preuves": [
+            "Analyse statique du dépôt Paiements : référence au contrat v3",
+            "Trafic observé (Datadog) : charge utile conforme v2",
+            "Documentation Confluence : migration v3 planifiée, non confirmée"
+          ],
+          "resume": "Initiative du portefeuille",
+          "specialiste": "portefeuille",
+          "titre": "Version du contrat Comptes : v2 ou v3 ?",
+          "type": "ACTION"
+        },
+        {
+          "actions": [
+            "ouvrir_initiative",
+            "mesurer_outcome"
+          ],
+          "confiance": 0.6,
+          "donnees": {
+            "domaine": null,
+            "id": "init-decision-utc"
+          },
+          "preuves": [
+            "Comparaison des trois scénarios menée dans le Change Lab",
+            "Scénario rétrocompatible recommandé par les jumeaux"
+          ],
+          "resume": "Initiative du portefeuille",
+          "specialiste": "portefeuille",
+          "titre": "Divergence de dates de règlement entre Paiements et Comptes",
+          "type": "ACTION"
+        },
+        {
+          "actions": [
+            "ouvrir_initiative",
+            "mesurer_outcome"
+          ],
+          "confiance": 0.6,
+          "donnees": {
+            "domaine": null,
+            "id": "init-delai-j3"
+          },
+          "preuves": [
+            "18 observations concordantes sur les comptes professionnels",
+            "Documentation Confluence datée de mars"
+          ],
+          "resume": "Initiative du portefeuille",
+          "specialiste": "portefeuille",
+          "titre": "Délai de règlement documenté (7 j) contredit par l'observation (5 j)",
+          "type": "ACTION"
+        },
+        {
+          "actions": [
+            "ouvrir_initiative",
+            "mesurer_outcome"
+          ],
+          "confiance": 0.6,
+          "donnees": {
+            "domaine": null,
+            "id": "init-delais-coordonnes"
+          },
+          "preuves": [
+            "Variations synchrones à ±4 minutes"
+          ],
+          "resume": "Initiative du portefeuille",
+          "specialiste": "portefeuille",
+          "titre": "Trois jumeaux augmentent leurs délais de façon coordonnée",
+          "type": "ACTION"
+        },
+        {
+          "actions": [
+            "ouvrir_initiative",
+            "mesurer_outcome"
+          ],
+          "confiance": 0.6,
+          "donnees": {
+            "domaine": null,
+            "id": "init-info-contrat-comptes"
+          },
+          "preuves": [],
+          "resume": "Initiative du portefeuille",
+          "specialiste": "portefeuille",
+          "titre": "Paiements utilise désormais une nouvelle version du contrat Comptes",
+          "type": "ACTION"
+        },
+        {
+          "actions": [
+            "ouvrir_initiative",
+            "mesurer_outcome"
+          ],
+          "confiance": 0.6,
+          "donnees": {
+            "domaine": null,
+            "id": "init-investigation-degradation"
+          },
+          "preuves": [
+            "Latence p99 1,9 s (seuil 800 ms)",
+            "Relation Paiements → Support découverte cette nuit",
+            "Chronologie corrélée au déploiement d'API Gateway"
+          ],
+          "resume": "Initiative du portefeuille",
+          "specialiste": "portefeuille",
+          "titre": "Dégradation coordonnée : quatre jumeaux, deux explications contradictoires",
+          "type": "ACTION"
+        }
+      ],
+      "incertitudes": [],
+      "limites": [
+        "agrégat borné au tenant et au domaine demandé",
+        "aucune causalité déduite entre situation, décision et outcome",
+        "un objet est rattaché par son domaine explicite ou celui de ses Twins liés"
+      ],
+      "preuves": [
+        "Analyse statique du dépôt Paiements : référence au contrat v3",
+        "Trafic observé (Datadog) : charge utile conforme v2",
+        "Documentation Confluence : migration v3 planifiée, non confirmée",
+        "Comparaison des trois scénarios menée dans le Change Lab",
+        "Scénario rétrocompatible recommandé par les jumeaux",
+        "18 observations concordantes sur les comptes professionnels",
+        "Documentation Confluence datée de mars",
+        "Variations synchrones à ±4 minutes",
+        "Latence p99 1,9 s (seuil 800 ms)",
+        "Relation Paiements → Support découverte cette nuit",
+        "Chronologie corrélée au déploiement d'API Gateway"
+      ]
+    }
+  }
+}

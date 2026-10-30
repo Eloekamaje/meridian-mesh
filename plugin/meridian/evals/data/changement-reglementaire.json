@@ -1,0 +1,1476 @@
+{
+  "composition": {
+    "autorite": "proposition",
+    "avertissements": [],
+    "budget": {
+      "competences_max": 6,
+      "methodes_max": 3,
+      "specialistes_max": 4,
+      "timeout_s": 8.0
+    },
+    "competences": [
+      {
+        "description": "Estimer les effets directs et indirects d'un changement sur la topologie connue.",
+        "entrees": "changement et topologie",
+        "eval": [
+          "chemin d'impact justifié",
+          "profondeur bornée"
+        ],
+        "id": "analyser_impact",
+        "lecture_seule": true,
+        "nom": "Analyser un impact",
+        "outils": [
+          "graphe",
+          "impacts_situations"
+        ],
+        "sorties": "impacts directs et indirects",
+        "specialiste": "impact"
+      },
+      {
+        "description": "Comparer des options explicites et préparer un arbitrage laissé à l'humain.",
+        "entrees": "options et critères",
+        "eval": [
+          "options comparées",
+          "décision humaine"
+        ],
+        "id": "faciliter_decision",
+        "lecture_seule": true,
+        "nom": "Faciliter une décision",
+        "outils": [
+          "options",
+          "preuve"
+        ],
+        "sorties": "décision proposée et arbitrages",
+        "specialiste": "impact"
+      },
+      {
+        "description": "Relier une source à une cible par un chemin continu et citer chaque arête.",
+        "entrees": "nœud source et nœud cible",
+        "eval": [
+          "chemin continu",
+          "arêtes citées"
+        ],
+        "id": "tracer_chemin",
+        "lecture_seule": true,
+        "nom": "Tracer un chemin",
+        "outils": [
+          "graphe",
+          "graphe_neo4j"
+        ],
+        "sorties": "chemin causal ou de dépendance",
+        "specialiste": "impact"
+      },
+      {
+        "description": "Qualifier une menace, son exposition et son mode de preuve sans conclure seul.",
+        "entrees": "menace et exposition",
+        "eval": [
+          "probabilité et impact justifiés",
+          "mode de preuve explicite"
+        ],
+        "id": "evaluer_risque",
+        "lecture_seule": true,
+        "nom": "Évaluer un risque",
+        "outils": [
+          "gardien",
+          "limites",
+          "temporalite"
+        ],
+        "sorties": "risque qualifié et incertitudes",
+        "specialiste": "preuve"
+      },
+      {
+        "description": "Consigner une décision d'architecture, ses options et ses conséquences.",
+        "entrees": "décision et options",
+        "eval": [
+          "contexte et conséquences",
+          "validation humaine"
+        ],
+        "id": "rediger_adr",
+        "lecture_seule": false,
+        "nom": "Rédiger un ADR",
+        "outils": [
+          "depot",
+          "documentation"
+        ],
+        "sorties": "ADR proposé",
+        "specialiste": "impact"
+      },
+      {
+        "description": "Inventorier les contrats exposés ou consommés et en restituer les frontières.",
+        "entrees": "spécifications, contrats ou code d'interface",
+        "eval": [
+          "inventaire non vide",
+          "source de chaque interface citée"
+        ],
+        "id": "lire_interfaces",
+        "lecture_seule": true,
+        "nom": "Lire les interfaces",
+        "outils": [
+          "connecteur_interfaces",
+          "decouverte_interfaces"
+        ],
+        "sorties": "inventaire des interfaces et de leurs contrats",
+        "specialiste": "decouverte"
+      }
+    ],
+    "justification": [
+      "profil architecte (identite, confiance 0.90)",
+      "3 méthode(s), 6 compétence(s), 3 spécialiste(s)"
+    ],
+    "methodes": [
+      {
+        "artefacts": [
+          "carte d'impact",
+          "hypothèses hiérarchisées",
+          "mesures associées"
+        ],
+        "competences": [
+          "analyser_impact",
+          "faciliter_decision",
+          "tracer_chemin"
+        ],
+        "description": "Relier un objectif à ses acteurs, à leurs impacts attendus et aux livrables qui les prouvent.",
+        "etapes": [
+          "formuler l'objectif",
+          "identifier les acteurs",
+          "décrire les impacts",
+          "choisir les livrables",
+          "fixer les mesures"
+        ],
+        "gates": [
+          "humain : atelier de validation des impacts avec les parties prenantes"
+        ],
+        "id": "impact_mapping",
+        "lecture_seule": true,
+        "mode_preuve": "INFERRED",
+        "nom": "Impact mapping",
+        "postures": [
+          "concepteur",
+          "facilitateur",
+          "investigateur"
+        ],
+        "version": "1.0"
+      },
+      {
+        "artefacts": [
+          "décision d'architecture",
+          "options comparées",
+          "conséquences et risques"
+        ],
+        "competences": [
+          "evaluer_risque",
+          "faciliter_decision",
+          "rediger_adr"
+        ],
+        "description": "Consigner une décision d'architecture, les options écartées et leurs conséquences.",
+        "etapes": [
+          "exposer le contexte",
+          "comparer les options",
+          "trancher et justifier",
+          "consigner les conséquences"
+        ],
+        "gates": [
+          "humain : décision d'architecture entérinée par l'autorité compétente"
+        ],
+        "id": "adr",
+        "lecture_seule": false,
+        "mode_preuve": "DECLARED",
+        "nom": "ADR",
+        "postures": [
+          "concepteur",
+          "gardien",
+          "investigateur"
+        ],
+        "version": "1.0"
+      },
+      {
+        "artefacts": [
+          "registre des exigences",
+          "glossaire métier",
+          "matrice de traçabilité"
+        ],
+        "competences": [
+          "faciliter_decision",
+          "lire_interfaces",
+          "rechercher_memoire"
+        ],
+        "description": "Élicitation et consolidation des exigences métier avec traçabilité vers les sources.",
+        "etapes": [
+          "cadrer la demande",
+          "identifier les parties prenantes",
+          "éliciter les besoins",
+          "consolider les exigences",
+          "faire valider le périmètre"
+        ],
+        "gates": [
+          "humain : validation des exigences par le commanditaire"
+        ],
+        "id": "babok",
+        "lecture_seule": true,
+        "mode_preuve": "DECLARED",
+        "nom": "BABOK",
+        "postures": [
+          "concepteur",
+          "explorateur",
+          "facilitateur",
+          "investigateur"
+        ],
+        "version": "1.0"
+      }
+    ],
+    "profil": {
+      "autorite": "proposition",
+      "competences": [
+        "lire_interfaces",
+        "analyser_impact",
+        "rediger_adr",
+        "tracer_chemin",
+        "evaluer_risque"
+      ],
+      "confiance": 0.9,
+      "domaines": [],
+      "id": "architecte",
+      "inconnu": false,
+      "libelle": "Architecte",
+      "methodes": [
+        "adr",
+        "impact_mapping"
+      ],
+      "postures": [
+        "concepteur",
+        "explorateur"
+      ],
+      "source": "identite"
+    },
+    "specialistes": [
+      "impact",
+      "preuve",
+      "decouverte"
+    ],
+    "specialistes_socle": [
+      "decouverte",
+      "preuve",
+      "impact",
+      "outcome"
+    ]
+  },
+  "dossier": {
+    "limites": [
+      "aucun claim lisible pour ce contexte, aucune proposition inventée"
+    ],
+    "propositions": [
+      {
+        "actions": [
+          "observer_interface"
+        ],
+        "confiance": 0.85,
+        "donnees": {
+          "application_id": "conduit",
+          "approbation_requise": false,
+          "bindings": 0,
+          "contrats": 1,
+          "detail_bindings": [],
+          "detail_contrats": [
+            {
+              "application_id": "conduit",
+              "environment": "production",
+              "format": "runtime",
+              "id": "ctr_853e6c88e59a0ab2",
+              "locator": "gateway:production",
+              "operations": 1,
+              "version": null
+            }
+          ],
+          "detail_operations": [
+            {
+              "approbation_requise": false,
+              "capacite": "observer",
+              "lecture_seule": true,
+              "name": "GET /status",
+              "operation": "GET /status",
+              "operation_id": "op_cd98df62997142c9"
+            }
+          ],
+          "ecritures": 0,
+          "graphe_partiel": false,
+          "lecture_seule": true,
+          "lectures": 1,
+          "nombre_bindings": 0,
+          "nombre_contrats": 1,
+          "nombre_operations": 1,
+          "operations": 1,
+          "operations_a_observer": [
+            "op_cd98df62997142c9"
+          ],
+          "operations_sous_approbation": [],
+          "postures_inconnues": 0,
+          "priorite_observation": [
+            {
+              "approbation_requise": false,
+              "capacite": "observer",
+              "lecture_seule": true,
+              "name": "GET /status",
+              "operation": "GET /status",
+              "operation_id": "op_cd98df62997142c9"
+            }
+          ]
+        },
+        "preuves": [
+          "ctr_853e6c88e59a0ab2",
+          "gateway:production"
+        ],
+        "resume": "1 contrat(s), 1 opération(s) (1 lecture(s), 0 écriture(s)), 0 binding(s). Priorité d'observation : les lectures d'abord. Aucune écriture déclarée.",
+        "specialiste": "decouverte",
+        "titre": "Modèle d'interfaces : conduit",
+        "type": "MODELE"
+      },
+      {
+        "actions": [
+          "observer_interface"
+        ],
+        "confiance": 0.8,
+        "donnees": {
+          "application_id": "conduit",
+          "approbation_requise": false,
+          "capacite": "observer",
+          "contract_id": "ctr_853e6c88e59a0ab2",
+          "couverture": "non_couverte",
+          "couverture_source": "contexte",
+          "effets_de_bord": [],
+          "environment": "production",
+          "lecture_seule": true,
+          "manifeste": "conduit.get-status",
+          "method": "GET",
+          "mode_preuve": "OBSERVED",
+          "name": "GET /status",
+          "operation": "GET /status",
+          "operation_id": "op_cd98df62997142c9",
+          "origine": "graphe_interfaces",
+          "path": "/status",
+          "protocol": "rest"
+        },
+        "preuves": [
+          "op_cd98df62997142c9",
+          "ctr_853e6c88e59a0ab2",
+          "gateway:production"
+        ],
+        "resume": "Opération GET /status déclarée dans le graphe ; posture observer (lecture seule). Elle n'est pas couverte par un outil déclaré dans ce contexte : l'observer d'abord, sans écriture.",
+        "specialiste": "decouverte",
+        "titre": "Opération GET /status",
+        "type": "PROPOSITION"
+      },
+      {
+        "actions": [
+          "ouvrir_impact",
+          "verifier_relations"
+        ],
+        "confiance": 0.7,
+        "donnees": {
+          "amont": 4,
+          "amont_ids": [
+            "alertes-risque",
+            "paiements",
+            "api-gateway",
+            "scoring"
+          ],
+          "aval": 0,
+          "aval_ids": [],
+          "ids": [
+            "alertes-risque",
+            "paiements",
+            "api-gateway",
+            "scoring"
+          ],
+          "profondeur": 2,
+          "total": 4,
+          "tronque": false,
+          "twin_id": "fraude"
+        },
+        "preuves": [
+          "alertes-risque",
+          "paiements",
+          "api-gateway",
+          "scoring"
+        ],
+        "resume": "À profondeur 2, fraude compte 4 dépendance(s) amont et 0 dépendance(s) aval observées dans le graphe.",
+        "specialiste": "impact",
+        "titre": "Impact de fraude : 4 amont, 0 aval",
+        "type": "IMPACT"
+      },
+      {
+        "actions": [
+          "ouvrir_impact",
+          "verifier_relations"
+        ],
+        "confiance": 0.7,
+        "donnees": {
+          "amont": 4,
+          "amont_ids": [
+            "api-gateway",
+            "scoring",
+            "portail-web",
+            "strong-auth"
+          ],
+          "aval": 3,
+          "aval_ids": [
+            "comptes",
+            "fraude",
+            "support"
+          ],
+          "ids": [
+            "api-gateway",
+            "scoring",
+            "portail-web",
+            "strong-auth",
+            "comptes",
+            "fraude",
+            "support"
+          ],
+          "profondeur": 2,
+          "total": 7,
+          "tronque": false,
+          "twin_id": "paiements"
+        },
+        "preuves": [
+          "api-gateway",
+          "scoring",
+          "portail-web",
+          "strong-auth",
+          "comptes",
+          "fraude",
+          "support"
+        ],
+        "resume": "À profondeur 2, paiements compte 4 dépendance(s) amont et 3 dépendance(s) aval observées dans le graphe.",
+        "specialiste": "impact",
+        "titre": "Impact de paiements : 4 amont, 3 aval",
+        "type": "IMPACT"
+      },
+      {
+        "actions": [
+          "mesurer_outcome"
+        ],
+        "confiance": 0.6,
+        "donnees": {
+          "learnings": 0,
+          "limite": 10,
+          "situation_id": "sit-anomalie-fraude",
+          "twin_ids": [
+            "fraude",
+            "paiements"
+          ]
+        },
+        "preuves": [],
+        "resume": "Aucun learning réutilisable n'a été trouvé pour la situation sit-anomalie-fraude ; mesurer un outcome avant toute réutilisation.",
+        "specialiste": "outcome",
+        "titre": "Aucun learning réutilisable",
+        "type": "QUESTION"
+      }
+    ],
+    "specialistes": [
+      {
+        "erreur": null,
+        "limites": [],
+        "propositions": [
+          {
+            "actions": [
+              "observer_interface"
+            ],
+            "confiance": 0.8,
+            "donnees": {
+              "application_id": "conduit",
+              "approbation_requise": false,
+              "capacite": "observer",
+              "contract_id": "ctr_853e6c88e59a0ab2",
+              "couverture": "non_couverte",
+              "couverture_source": "contexte",
+              "effets_de_bord": [],
+              "environment": "production",
+              "lecture_seule": true,
+              "manifeste": "conduit.get-status",
+              "method": "GET",
+              "mode_preuve": "OBSERVED",
+              "name": "GET /status",
+              "operation": "GET /status",
+              "operation_id": "op_cd98df62997142c9",
+              "origine": "graphe_interfaces",
+              "path": "/status",
+              "protocol": "rest"
+            },
+            "preuves": [
+              "op_cd98df62997142c9",
+              "ctr_853e6c88e59a0ab2",
+              "gateway:production"
+            ],
+            "resume": "Opération GET /status déclarée dans le graphe ; posture observer (lecture seule). Elle n'est pas couverte par un outil déclaré dans ce contexte : l'observer d'abord, sans écriture.",
+            "specialiste": "decouverte",
+            "titre": "Opération GET /status",
+            "type": "PROPOSITION"
+          },
+          {
+            "actions": [
+              "observer_interface"
+            ],
+            "confiance": 0.85,
+            "donnees": {
+              "application_id": "conduit",
+              "approbation_requise": false,
+              "bindings": 0,
+              "contrats": 1,
+              "detail_bindings": [],
+              "detail_contrats": [
+                {
+                  "application_id": "conduit",
+                  "environment": "production",
+                  "format": "runtime",
+                  "id": "ctr_853e6c88e59a0ab2",
+                  "locator": "gateway:production",
+                  "operations": 1,
+                  "version": null
+                }
+              ],
+              "detail_operations": [
+                {
+                  "approbation_requise": false,
+                  "capacite": "observer",
+                  "lecture_seule": true,
+                  "name": "GET /status",
+                  "operation": "GET /status",
+                  "operation_id": "op_cd98df62997142c9"
+                }
+              ],
+              "ecritures": 0,
+              "graphe_partiel": false,
+              "lecture_seule": true,
+              "lectures": 1,
+              "nombre_bindings": 0,
+              "nombre_contrats": 1,
+              "nombre_operations": 1,
+              "operations": 1,
+              "operations_a_observer": [
+                "op_cd98df62997142c9"
+              ],
+              "operations_sous_approbation": [],
+              "postures_inconnues": 0,
+              "priorite_observation": [
+                {
+                  "approbation_requise": false,
+                  "capacite": "observer",
+                  "lecture_seule": true,
+                  "name": "GET /status",
+                  "operation": "GET /status",
+                  "operation_id": "op_cd98df62997142c9"
+                }
+              ]
+            },
+            "preuves": [
+              "ctr_853e6c88e59a0ab2",
+              "gateway:production"
+            ],
+            "resume": "1 contrat(s), 1 opération(s) (1 lecture(s), 0 écriture(s)), 0 binding(s). Priorité d'observation : les lectures d'abord. Aucune écriture déclarée.",
+            "specialiste": "decouverte",
+            "titre": "Modèle d'interfaces : conduit",
+            "type": "MODELE"
+          }
+        ],
+        "specialiste": "decouverte",
+        "statut": "ok"
+      },
+      {
+        "erreur": null,
+        "limites": [
+          "aucun claim lisible pour ce contexte, aucune proposition inventée"
+        ],
+        "propositions": [],
+        "specialiste": "preuve",
+        "statut": "partiel"
+      },
+      {
+        "erreur": null,
+        "limites": [],
+        "propositions": [
+          {
+            "actions": [
+              "ouvrir_impact",
+              "verifier_relations"
+            ],
+            "confiance": 0.7,
+            "donnees": {
+              "amont": 4,
+              "amont_ids": [
+                "alertes-risque",
+                "paiements",
+                "api-gateway",
+                "scoring"
+              ],
+              "aval": 0,
+              "aval_ids": [],
+              "ids": [
+                "alertes-risque",
+                "paiements",
+                "api-gateway",
+                "scoring"
+              ],
+              "profondeur": 2,
+              "total": 4,
+              "tronque": false,
+              "twin_id": "fraude"
+            },
+            "preuves": [
+              "alertes-risque",
+              "paiements",
+              "api-gateway",
+              "scoring"
+            ],
+            "resume": "À profondeur 2, fraude compte 4 dépendance(s) amont et 0 dépendance(s) aval observées dans le graphe.",
+            "specialiste": "impact",
+            "titre": "Impact de fraude : 4 amont, 0 aval",
+            "type": "IMPACT"
+          },
+          {
+            "actions": [
+              "ouvrir_impact",
+              "verifier_relations"
+            ],
+            "confiance": 0.7,
+            "donnees": {
+              "amont": 4,
+              "amont_ids": [
+                "api-gateway",
+                "scoring",
+                "portail-web",
+                "strong-auth"
+              ],
+              "aval": 3,
+              "aval_ids": [
+                "comptes",
+                "fraude",
+                "support"
+              ],
+              "ids": [
+                "api-gateway",
+                "scoring",
+                "portail-web",
+                "strong-auth",
+                "comptes",
+                "fraude",
+                "support"
+              ],
+              "profondeur": 2,
+              "total": 7,
+              "tronque": false,
+              "twin_id": "paiements"
+            },
+            "preuves": [
+              "api-gateway",
+              "scoring",
+              "portail-web",
+              "strong-auth",
+              "comptes",
+              "fraude",
+              "support"
+            ],
+            "resume": "À profondeur 2, paiements compte 4 dépendance(s) amont et 3 dépendance(s) aval observées dans le graphe.",
+            "specialiste": "impact",
+            "titre": "Impact de paiements : 4 amont, 3 aval",
+            "type": "IMPACT"
+          }
+        ],
+        "specialiste": "impact",
+        "statut": "ok"
+      },
+      {
+        "erreur": null,
+        "limites": [],
+        "propositions": [
+          {
+            "actions": [
+              "mesurer_outcome"
+            ],
+            "confiance": 0.6,
+            "donnees": {
+              "learnings": 0,
+              "limite": 10,
+              "situation_id": "sit-anomalie-fraude",
+              "twin_ids": [
+                "fraude",
+                "paiements"
+              ]
+            },
+            "preuves": [],
+            "resume": "Aucun learning réutilisable n'a été trouvé pour la situation sit-anomalie-fraude ; mesurer un outcome avant toute réutilisation.",
+            "specialiste": "outcome",
+            "titre": "Aucun learning réutilisable",
+            "type": "QUESTION"
+          }
+        ],
+        "specialiste": "outcome",
+        "statut": "ok"
+      }
+    ],
+    "statut": "partiel",
+    "tenant": "demo"
+  },
+  "profil": {
+    "autorite": "proposition",
+    "competences": [
+      "lire_interfaces",
+      "analyser_impact",
+      "rediger_adr",
+      "tracer_chemin",
+      "evaluer_risque"
+    ],
+    "confiance": 0.9,
+    "domaines": [],
+    "id": "architecte",
+    "inconnu": false,
+    "libelle": "Architecte",
+    "methodes": [
+      "adr",
+      "impact_mapping"
+    ],
+    "postures": [
+      "concepteur",
+      "explorateur"
+    ],
+    "source": "identite"
+  },
+  "reponse": {
+    "actions": [
+      "ouvrir_impact"
+    ],
+    "autorite": "proposition",
+    "avertissements": [
+      "aucun claim lisible pour ce contexte, aucune proposition inventée",
+      "preuve : partiel"
+    ],
+    "composition": {
+      "autorite": "proposition",
+      "avertissements": [],
+      "budget": {
+        "competences_max": 6,
+        "methodes_max": 3,
+        "specialistes_max": 4,
+        "timeout_s": 8.0
+      },
+      "competences": [
+        {
+          "description": "Estimer les effets directs et indirects d'un changement sur la topologie connue.",
+          "entrees": "changement et topologie",
+          "eval": [
+            "chemin d'impact justifié",
+            "profondeur bornée"
+          ],
+          "id": "analyser_impact",
+          "lecture_seule": true,
+          "nom": "Analyser un impact",
+          "outils": [
+            "graphe",
+            "impacts_situations"
+          ],
+          "sorties": "impacts directs et indirects",
+          "specialiste": "impact"
+        },
+        {
+          "description": "Comparer des options explicites et préparer un arbitrage laissé à l'humain.",
+          "entrees": "options et critères",
+          "eval": [
+            "options comparées",
+            "décision humaine"
+          ],
+          "id": "faciliter_decision",
+          "lecture_seule": true,
+          "nom": "Faciliter une décision",
+          "outils": [
+            "options",
+            "preuve"
+          ],
+          "sorties": "décision proposée et arbitrages",
+          "specialiste": "impact"
+        },
+        {
+          "description": "Relier une source à une cible par un chemin continu et citer chaque arête.",
+          "entrees": "nœud source et nœud cible",
+          "eval": [
+            "chemin continu",
+            "arêtes citées"
+          ],
+          "id": "tracer_chemin",
+          "lecture_seule": true,
+          "nom": "Tracer un chemin",
+          "outils": [
+            "graphe",
+            "graphe_neo4j"
+          ],
+          "sorties": "chemin causal ou de dépendance",
+          "specialiste": "impact"
+        },
+        {
+          "description": "Qualifier une menace, son exposition et son mode de preuve sans conclure seul.",
+          "entrees": "menace et exposition",
+          "eval": [
+            "probabilité et impact justifiés",
+            "mode de preuve explicite"
+          ],
+          "id": "evaluer_risque",
+          "lecture_seule": true,
+          "nom": "Évaluer un risque",
+          "outils": [
+            "gardien",
+            "limites",
+            "temporalite"
+          ],
+          "sorties": "risque qualifié et incertitudes",
+          "specialiste": "preuve"
+        },
+        {
+          "description": "Consigner une décision d'architecture, ses options et ses conséquences.",
+          "entrees": "décision et options",
+          "eval": [
+            "contexte et conséquences",
+            "validation humaine"
+          ],
+          "id": "rediger_adr",
+          "lecture_seule": false,
+          "nom": "Rédiger un ADR",
+          "outils": [
+            "depot",
+            "documentation"
+          ],
+          "sorties": "ADR proposé",
+          "specialiste": "impact"
+        },
+        {
+          "description": "Inventorier les contrats exposés ou consommés et en restituer les frontières.",
+          "entrees": "spécifications, contrats ou code d'interface",
+          "eval": [
+            "inventaire non vide",
+            "source de chaque interface citée"
+          ],
+          "id": "lire_interfaces",
+          "lecture_seule": true,
+          "nom": "Lire les interfaces",
+          "outils": [
+            "connecteur_interfaces",
+            "decouverte_interfaces"
+          ],
+          "sorties": "inventaire des interfaces et de leurs contrats",
+          "specialiste": "decouverte"
+        }
+      ],
+      "justification": [
+        "profil architecte (identite, confiance 0.90)",
+        "3 méthode(s), 6 compétence(s), 3 spécialiste(s)"
+      ],
+      "methodes": [
+        {
+          "artefacts": [
+            "carte d'impact",
+            "hypothèses hiérarchisées",
+            "mesures associées"
+          ],
+          "competences": [
+            "analyser_impact",
+            "faciliter_decision",
+            "tracer_chemin"
+          ],
+          "description": "Relier un objectif à ses acteurs, à leurs impacts attendus et aux livrables qui les prouvent.",
+          "etapes": [
+            "formuler l'objectif",
+            "identifier les acteurs",
+            "décrire les impacts",
+            "choisir les livrables",
+            "fixer les mesures"
+          ],
+          "gates": [
+            "humain : atelier de validation des impacts avec les parties prenantes"
+          ],
+          "id": "impact_mapping",
+          "lecture_seule": true,
+          "mode_preuve": "INFERRED",
+          "nom": "Impact mapping",
+          "postures": [
+            "concepteur",
+            "facilitateur",
+            "investigateur"
+          ],
+          "version": "1.0"
+        },
+        {
+          "artefacts": [
+            "décision d'architecture",
+            "options comparées",
+            "conséquences et risques"
+          ],
+          "competences": [
+            "evaluer_risque",
+            "faciliter_decision",
+            "rediger_adr"
+          ],
+          "description": "Consigner une décision d'architecture, les options écartées et leurs conséquences.",
+          "etapes": [
+            "exposer le contexte",
+            "comparer les options",
+            "trancher et justifier",
+            "consigner les conséquences"
+          ],
+          "gates": [
+            "humain : décision d'architecture entérinée par l'autorité compétente"
+          ],
+          "id": "adr",
+          "lecture_seule": false,
+          "mode_preuve": "DECLARED",
+          "nom": "ADR",
+          "postures": [
+            "concepteur",
+            "gardien",
+            "investigateur"
+          ],
+          "version": "1.0"
+        },
+        {
+          "artefacts": [
+            "registre des exigences",
+            "glossaire métier",
+            "matrice de traçabilité"
+          ],
+          "competences": [
+            "faciliter_decision",
+            "lire_interfaces",
+            "rechercher_memoire"
+          ],
+          "description": "Élicitation et consolidation des exigences métier avec traçabilité vers les sources.",
+          "etapes": [
+            "cadrer la demande",
+            "identifier les parties prenantes",
+            "éliciter les besoins",
+            "consolider les exigences",
+            "faire valider le périmètre"
+          ],
+          "gates": [
+            "humain : validation des exigences par le commanditaire"
+          ],
+          "id": "babok",
+          "lecture_seule": true,
+          "mode_preuve": "DECLARED",
+          "nom": "BABOK",
+          "postures": [
+            "concepteur",
+            "explorateur",
+            "facilitateur",
+            "investigateur"
+          ],
+          "version": "1.0"
+        }
+      ],
+      "profil": {
+        "autorite": "proposition",
+        "competences": [
+          "lire_interfaces",
+          "analyser_impact",
+          "rediger_adr",
+          "tracer_chemin",
+          "evaluer_risque"
+        ],
+        "confiance": 0.9,
+        "domaines": [],
+        "id": "architecte",
+        "inconnu": false,
+        "libelle": "Architecte",
+        "methodes": [
+          "adr",
+          "impact_mapping"
+        ],
+        "postures": [
+          "concepteur",
+          "explorateur"
+        ],
+        "source": "identite"
+      },
+      "specialistes": [
+        "impact",
+        "preuve",
+        "decouverte"
+      ],
+      "specialistes_socle": [
+        "decouverte",
+        "preuve",
+        "impact",
+        "outcome"
+      ]
+    },
+    "lecture": {
+      "adr": [
+        {
+          "actions": [
+            "observer_interface"
+          ],
+          "confiance": 0.8,
+          "donnees": {
+            "application_id": "conduit",
+            "approbation_requise": false,
+            "capacite": "observer",
+            "contract_id": "ctr_853e6c88e59a0ab2",
+            "couverture": "non_couverte",
+            "couverture_source": "contexte",
+            "effets_de_bord": [],
+            "environment": "production",
+            "lecture_seule": true,
+            "manifeste": "conduit.get-status",
+            "method": "GET",
+            "mode_preuve": "OBSERVED",
+            "name": "GET /status",
+            "operation": "GET /status",
+            "operation_id": "op_cd98df62997142c9",
+            "origine": "graphe_interfaces",
+            "path": "/status",
+            "protocol": "rest"
+          },
+          "preuves": [
+            "op_cd98df62997142c9",
+            "ctr_853e6c88e59a0ab2",
+            "gateway:production"
+          ],
+          "resume": "Opération GET /status déclarée dans le graphe ; posture observer (lecture seule). Elle n'est pas couverte par un outil déclaré dans ce contexte : l'observer d'abord, sans écriture.",
+          "specialiste": "decouverte",
+          "titre": "Opération GET /status",
+          "type": "PROPOSITION"
+        }
+      ],
+      "architecture": [
+        {
+          "actions": [
+            "observer_interface"
+          ],
+          "confiance": 0.85,
+          "donnees": {
+            "application_id": "conduit",
+            "approbation_requise": false,
+            "bindings": 0,
+            "contrats": 1,
+            "detail_bindings": [],
+            "detail_contrats": [
+              {
+                "application_id": "conduit",
+                "environment": "production",
+                "format": "runtime",
+                "id": "ctr_853e6c88e59a0ab2",
+                "locator": "gateway:production",
+                "operations": 1,
+                "version": null
+              }
+            ],
+            "detail_operations": [
+              {
+                "approbation_requise": false,
+                "capacite": "observer",
+                "lecture_seule": true,
+                "name": "GET /status",
+                "operation": "GET /status",
+                "operation_id": "op_cd98df62997142c9"
+              }
+            ],
+            "ecritures": 0,
+            "graphe_partiel": false,
+            "lecture_seule": true,
+            "lectures": 1,
+            "nombre_bindings": 0,
+            "nombre_contrats": 1,
+            "nombre_operations": 1,
+            "operations": 1,
+            "operations_a_observer": [
+              "op_cd98df62997142c9"
+            ],
+            "operations_sous_approbation": [],
+            "postures_inconnues": 0,
+            "priorite_observation": [
+              {
+                "approbation_requise": false,
+                "capacite": "observer",
+                "lecture_seule": true,
+                "name": "GET /status",
+                "operation": "GET /status",
+                "operation_id": "op_cd98df62997142c9"
+              }
+            ]
+          },
+          "preuves": [
+            "ctr_853e6c88e59a0ab2",
+            "gateway:production"
+          ],
+          "resume": "1 contrat(s), 1 opération(s) (1 lecture(s), 0 écriture(s)), 0 binding(s). Priorité d'observation : les lectures d'abord. Aucune écriture déclarée.",
+          "specialiste": "decouverte",
+          "titre": "Modèle d'interfaces : conduit",
+          "type": "MODELE"
+        },
+        {
+          "actions": [
+            "mesurer_outcome"
+          ],
+          "confiance": 0.6,
+          "donnees": {
+            "learnings": 0,
+            "limite": 10,
+            "situation_id": "sit-anomalie-fraude",
+            "twin_ids": [
+              "fraude",
+              "paiements"
+            ]
+          },
+          "preuves": [],
+          "resume": "Aucun learning réutilisable n'a été trouvé pour la situation sit-anomalie-fraude ; mesurer un outcome avant toute réutilisation.",
+          "specialiste": "outcome",
+          "titre": "Aucun learning réutilisable",
+          "type": "QUESTION"
+        }
+      ],
+      "impact": [
+        {
+          "actions": [
+            "ouvrir_impact",
+            "verifier_relations"
+          ],
+          "confiance": 0.7,
+          "donnees": {
+            "amont": 4,
+            "amont_ids": [
+              "alertes-risque",
+              "paiements",
+              "api-gateway",
+              "scoring"
+            ],
+            "aval": 0,
+            "aval_ids": [],
+            "ids": [
+              "alertes-risque",
+              "paiements",
+              "api-gateway",
+              "scoring"
+            ],
+            "profondeur": 2,
+            "total": 4,
+            "tronque": false,
+            "twin_id": "fraude"
+          },
+          "preuves": [
+            "alertes-risque",
+            "paiements",
+            "api-gateway",
+            "scoring"
+          ],
+          "resume": "À profondeur 2, fraude compte 4 dépendance(s) amont et 0 dépendance(s) aval observées dans le graphe.",
+          "specialiste": "impact",
+          "titre": "Impact de fraude : 4 amont, 0 aval",
+          "type": "IMPACT"
+        },
+        {
+          "actions": [
+            "ouvrir_impact",
+            "verifier_relations"
+          ],
+          "confiance": 0.7,
+          "donnees": {
+            "amont": 4,
+            "amont_ids": [
+              "api-gateway",
+              "scoring",
+              "portail-web",
+              "strong-auth"
+            ],
+            "aval": 3,
+            "aval_ids": [
+              "comptes",
+              "fraude",
+              "support"
+            ],
+            "ids": [
+              "api-gateway",
+              "scoring",
+              "portail-web",
+              "strong-auth",
+              "comptes",
+              "fraude",
+              "support"
+            ],
+            "profondeur": 2,
+            "total": 7,
+            "tronque": false,
+            "twin_id": "paiements"
+          },
+          "preuves": [
+            "api-gateway",
+            "scoring",
+            "portail-web",
+            "strong-auth",
+            "comptes",
+            "fraude",
+            "support"
+          ],
+          "resume": "À profondeur 2, paiements compte 4 dépendance(s) amont et 3 dépendance(s) aval observées dans le graphe.",
+          "specialiste": "impact",
+          "titre": "Impact de paiements : 4 amont, 3 aval",
+          "type": "IMPACT"
+        }
+      ]
+    },
+    "prochaines_etapes": [
+      "Vérifier les interfaces et les décisions d'architecture.",
+      "Préparer un ADR."
+    ],
+    "profil": {
+      "autorite": "proposition",
+      "competences": [
+        "lire_interfaces",
+        "analyser_impact",
+        "rediger_adr",
+        "tracer_chemin",
+        "evaluer_risque"
+      ],
+      "confiance": 0.9,
+      "domaines": [],
+      "id": "architecte",
+      "inconnu": false,
+      "libelle": "Architecte",
+      "methodes": [
+        "adr",
+        "impact_mapping"
+      ],
+      "postures": [
+        "concepteur",
+        "explorateur"
+      ],
+      "source": "identite"
+    },
+    "question": "Un changement réglementaire impose de revoir la règle R-118 de contrôle Fraude. Évalue son impact sur l'application conduit et ses interfaces. Contexte : tenant demo, situation sit-anomalie-fraude, Twins fraude et paiements, application conduit. Distingue l'impact prouvé, inféré et inconnu, cite les preuves et les limites, et marque toute écriture comme soumise à approbation. Ne présente pas le changement comme déjà en production et ne prétends pas avoir exécuté une action ; formule des propositions.",
+    "socle": {
+      "faits": [
+        {
+          "actions": [
+            "observer_interface"
+          ],
+          "confiance": 0.85,
+          "donnees": {
+            "application_id": "conduit",
+            "approbation_requise": false,
+            "bindings": 0,
+            "contrats": 1,
+            "detail_bindings": [],
+            "detail_contrats": [
+              {
+                "application_id": "conduit",
+                "environment": "production",
+                "format": "runtime",
+                "id": "ctr_853e6c88e59a0ab2",
+                "locator": "gateway:production",
+                "operations": 1,
+                "version": null
+              }
+            ],
+            "detail_operations": [
+              {
+                "approbation_requise": false,
+                "capacite": "observer",
+                "lecture_seule": true,
+                "name": "GET /status",
+                "operation": "GET /status",
+                "operation_id": "op_cd98df62997142c9"
+              }
+            ],
+            "ecritures": 0,
+            "graphe_partiel": false,
+            "lecture_seule": true,
+            "lectures": 1,
+            "nombre_bindings": 0,
+            "nombre_contrats": 1,
+            "nombre_operations": 1,
+            "operations": 1,
+            "operations_a_observer": [
+              "op_cd98df62997142c9"
+            ],
+            "operations_sous_approbation": [],
+            "postures_inconnues": 0,
+            "priorite_observation": [
+              {
+                "approbation_requise": false,
+                "capacite": "observer",
+                "lecture_seule": true,
+                "name": "GET /status",
+                "operation": "GET /status",
+                "operation_id": "op_cd98df62997142c9"
+              }
+            ]
+          },
+          "preuves": [
+            "ctr_853e6c88e59a0ab2",
+            "gateway:production"
+          ],
+          "resume": "1 contrat(s), 1 opération(s) (1 lecture(s), 0 écriture(s)), 0 binding(s). Priorité d'observation : les lectures d'abord. Aucune écriture déclarée.",
+          "specialiste": "decouverte",
+          "titre": "Modèle d'interfaces : conduit",
+          "type": "MODELE"
+        },
+        {
+          "actions": [
+            "observer_interface"
+          ],
+          "confiance": 0.8,
+          "donnees": {
+            "application_id": "conduit",
+            "approbation_requise": false,
+            "capacite": "observer",
+            "contract_id": "ctr_853e6c88e59a0ab2",
+            "couverture": "non_couverte",
+            "couverture_source": "contexte",
+            "effets_de_bord": [],
+            "environment": "production",
+            "lecture_seule": true,
+            "manifeste": "conduit.get-status",
+            "method": "GET",
+            "mode_preuve": "OBSERVED",
+            "name": "GET /status",
+            "operation": "GET /status",
+            "operation_id": "op_cd98df62997142c9",
+            "origine": "graphe_interfaces",
+            "path": "/status",
+            "protocol": "rest"
+          },
+          "preuves": [
+            "op_cd98df62997142c9",
+            "ctr_853e6c88e59a0ab2",
+            "gateway:production"
+          ],
+          "resume": "Opération GET /status déclarée dans le graphe ; posture observer (lecture seule). Elle n'est pas couverte par un outil déclaré dans ce contexte : l'observer d'abord, sans écriture.",
+          "specialiste": "decouverte",
+          "titre": "Opération GET /status",
+          "type": "PROPOSITION"
+        },
+        {
+          "actions": [
+            "ouvrir_impact",
+            "verifier_relations"
+          ],
+          "confiance": 0.7,
+          "donnees": {
+            "amont": 4,
+            "amont_ids": [
+              "alertes-risque",
+              "paiements",
+              "api-gateway",
+              "scoring"
+            ],
+            "aval": 0,
+            "aval_ids": [],
+            "ids": [
+              "alertes-risque",
+              "paiements",
+              "api-gateway",
+              "scoring"
+            ],
+            "profondeur": 2,
+            "total": 4,
+            "tronque": false,
+            "twin_id": "fraude"
+          },
+          "preuves": [
+            "alertes-risque",
+            "paiements",
+            "api-gateway",
+            "scoring"
+          ],
+          "resume": "À profondeur 2, fraude compte 4 dépendance(s) amont et 0 dépendance(s) aval observées dans le graphe.",
+          "specialiste": "impact",
+          "titre": "Impact de fraude : 4 amont, 0 aval",
+          "type": "IMPACT"
+        },
+        {
+          "actions": [
+            "ouvrir_impact",
+            "verifier_relations"
+          ],
+          "confiance": 0.7,
+          "donnees": {
+            "amont": 4,
+            "amont_ids": [
+              "api-gateway",
+              "scoring",
+              "portail-web",
+              "strong-auth"
+            ],
+            "aval": 3,
+            "aval_ids": [
+              "comptes",
+              "fraude",
+              "support"
+            ],
+            "ids": [
+              "api-gateway",
+              "scoring",
+              "portail-web",
+              "strong-auth",
+              "comptes",
+              "fraude",
+              "support"
+            ],
+            "profondeur": 2,
+            "total": 7,
+            "tronque": false,
+            "twin_id": "paiements"
+          },
+          "preuves": [
+            "api-gateway",
+            "scoring",
+            "portail-web",
+            "strong-auth",
+            "comptes",
+            "fraude",
+            "support"
+          ],
+          "resume": "À profondeur 2, paiements compte 4 dépendance(s) amont et 3 dépendance(s) aval observées dans le graphe.",
+          "specialiste": "impact",
+          "titre": "Impact de paiements : 4 amont, 3 aval",
+          "type": "IMPACT"
+        },
+        {
+          "actions": [
+            "mesurer_outcome"
+          ],
+          "confiance": 0.6,
+          "donnees": {
+            "learnings": 0,
+            "limite": 10,
+            "situation_id": "sit-anomalie-fraude",
+            "twin_ids": [
+              "fraude",
+              "paiements"
+            ]
+          },
+          "preuves": [],
+          "resume": "Aucun learning réutilisable n'a été trouvé pour la situation sit-anomalie-fraude ; mesurer un outcome avant toute réutilisation.",
+          "specialiste": "outcome",
+          "titre": "Aucun learning réutilisable",
+          "type": "QUESTION"
+        }
+      ],
+      "incertitudes": [
+        "Aucun learning réutilisable"
+      ],
+      "limites": [
+        "aucun claim lisible pour ce contexte, aucune proposition inventée",
+        "preuve : partiel"
+      ],
+      "preuves": [
+        "ctr_853e6c88e59a0ab2",
+        "gateway:production",
+        "op_cd98df62997142c9",
+        "alertes-risque",
+        "paiements",
+        "api-gateway",
+        "scoring",
+        "portail-web",
+        "strong-auth",
+        "comptes",
+        "fraude",
+        "support"
+      ]
+    }
+  }
+}
