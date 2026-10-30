@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { ReactFlow, Background, Controls, ControlButton, MiniMap, SelectionMode, ViewportPortal } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { X, Sparkle, CornersOut, MagnifyingGlass, Globe, CaretDown } from "@phosphor-icons/react";
+import { X, Sparkle, CornersOut, MagnifyingGlass, Globe, CaretDown, PlugsConnected } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useMesh } from "@/lib/mesh";
@@ -20,6 +20,7 @@ import RegionNode from "@/components/map/RegionNode";
 import AreteOrthogonale from "@/components/map/AreteOrthogonale";
 import AreteCorridor from "@/components/map/AreteCorridor";
 import AtlasControle from "@/components/map/AtlasControle";
+import AtlasInterfaces from "@/components/map/AtlasInterfaces";
 import AtlasToolbar from "@/components/map/AtlasToolbar";
 import AtlasLegende from "@/components/map/AtlasLegende";
 import AtlasPanneau from "@/components/map/AtlasPanneau";
@@ -78,6 +79,7 @@ export default function Atlas() {
   const [dateRef, setDateRef] = useState(null); // ms — curseur temporel
   const [replaying, setReplaying] = useState(false);
   const [expliquerOuvert, setExpliquerOuvert] = useState(false);
+  const [interfacesOuvertes, setInterfacesOuvertes] = useState(false);
   const direct = modeTemps === "direct";
   const [outil, setOutil] = useState("deplacement");
   const { selection, setSelection, domaineSel, setDomaineSel, focusCarte, commanderCarte, setFocusVisuel, ouvrirFlore, fermerFlore, floreOuverte, setAtlasCtx, atlasEtat, setAtlasEtat, demanderAFlore, preuveSurvolee, setRepliAuto } = useContexte();
@@ -1928,7 +1930,23 @@ export default function Atlas() {
       />
 
       {!theatreSituationnel.actif && (
-        <AtlasToolbar outil={outil} setOutil={setOutil} rfRef={rfRef} onExpliquer={() => setExpliquerOuvert((o) => !o)} expliquerOuvert={expliquerOuvert} modeEdition={modeEdition} setModeEdition={setModeEdition} vueListe={vueListe} onOuvrirListe={setVueListe} conteneurRef={carteRef} />
+        <AtlasToolbar outil={outil} setOutil={setOutil} rfRef={rfRef} onExpliquer={() => { setExpliquerOuvert((o) => !o); setInterfacesOuvertes(false); }} expliquerOuvert={expliquerOuvert} modeEdition={modeEdition} setModeEdition={setModeEdition} vueListe={vueListe} onOuvrirListe={setVueListe} conteneurRef={carteRef} />
+      )}
+
+      {!theatreSituationnel.actif && (
+        <button
+          type="button"
+          onClick={() => { setInterfacesOuvertes((o) => !o); setExpliquerOuvert(false); }}
+          aria-expanded={interfacesOuvertes}
+          title="Interfaces et impacts — opérations, arêtes et consommateurs impactés"
+          data-testid="atlas-interfaces-toggle"
+          className={`glass absolute right-4 top-4 z-20 flex items-center gap-1.5 rounded-xl px-2.5 py-2 font-code text-[10px] uppercase tracking-[0.12em] transition-colors ${
+            interfacesOuvertes ? "text-[#60A5FA]" : "text-[#94A3B8] hover:text-[#F2F6F8]"
+          }`}
+        >
+          <PlugsConnected size={14} />
+          <span className="hidden sm:inline">Interfaces</span>
+        </button>
       )}
 
       {/* Pile basse centrée — chip Flore, mode réorganisation, bandeaux temporels, niveau de zoom :
@@ -2022,6 +2040,17 @@ export default function Atlas() {
           domaineActif={domaineActif}
           jumeauPar={jumeauPar}
           selection={selection}
+        />
+      )}
+
+      {interfacesOuvertes && !theatreSituationnel.actif && (
+        <AtlasInterfaces
+          version={version}
+          jumeauPar={jumeauPar}
+          setSelection={setSelection}
+          centrerJumeau={centrerJumeau}
+          majUrl={majUrl}
+          onFermer={() => setInterfacesOuvertes(false)}
         />
       )}
 

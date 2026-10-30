@@ -38,6 +38,7 @@ from jumeau import identite as jumeau_identite  # noqa: E402
 from jumeau import identite_depot as jumeau_identite_depot  # noqa: E402
 from jumeau import decouverte_interfaces as jumeau_decouverte_interfaces  # noqa: E402
 from jumeau import interfaces_depot as jumeau_interfaces_depot  # noqa: E402
+from jumeau import connecteurs_runtime as jumeau_connecteurs_runtime  # noqa: E402
 from jumeau import depot as jumeau_depot  # noqa: E402
 from jumeau import connaissance as jumeau_connaissance  # noqa: E402
 from jumeau import flux as jumeau_flux  # noqa: E402
@@ -457,6 +458,48 @@ async def get_mesh(x_persona: str = Header("architecte"), x_espace: Optional[str
     }
 
 
+@api_router.get("/mesh/interfaces")
+async def get_mesh_interfaces(x_persona: str = Header("architecte"),
+                              x_espace: Optional[str] = Header(None)):
+    """Le graphe d'interfaces du Mesh visible : applications, opérations, arêtes consommateur→producteur, impacts.
+
+    Le tenant est lu dans Postgres pour les seules applications autorisées. S'il en couvre plusieurs, la lecture est
+    refusée plutôt que de mélanger deux graphes. Aucune application hors périmètre n'entre dans la réponse.
+    """
+    _, espace = resoudre_perimetre(x_persona, x_espace)
+    tous = await db.jumeaux.find({}, {"_id": 0, "id": 1}).to_list(None)
+    aut = autorisations(espace, [j["id"] for j in tous])
+    visibles = sorted(aut)
+    dsn = os.environ.get("JUMEAU_PG_DSN")
+    if not dsn:
+        raise HTTPException(503, "Couche cognitive non configurée (JUMEAU_PG_DSN)")
+
+    def lire():
+        with psycopg.connect(dsn) as conn:
+            tenants = jumeau_interfaces_depot.tenants_pour(conn, visibles)
+            if len(tenants) > 1:
+                raise HTTPException(409, "Périmètre couvrant plusieurs tenants : lecture refusée")
+            if not tenants:
+                return {"tenant": None, "applications": visibles, "operations": [], "edges": [],
+                        "impacts": [], "runs": []}
+            tenant = tenants[0]
+            graphe = jumeau_interfaces_depot.lire_graph_pour(conn, tenant, visibles)
+            runs = jumeau_interfaces_depot.derniers_runs_pour(conn, tenant, visibles)
+            return {
+                "tenant": tenant,
+                "applications": visibles,
+                "operations": jumeau_interfaces_depot.operations_publiques(graphe, visibles),
+                "edges": jumeau_interfaces_depot.deriver_aretes(graphe, visibles),
+                "impacts": jumeau_interfaces_depot.impacts_des_runs(runs, visibles),
+                "runs": jumeau_interfaces_depot.runs_publiques(runs, visibles),
+            }
+
+    try:
+        return await asyncio.to_thread(lire)
+    except psycopg.Error:
+        raise HTTPException(503, "Couche cognitive indisponible")
+
+
 # ---------- Jumeaux (Registry) ----------
 
 @api_router.get("/jumeaux")
@@ -485,6 +528,12 @@ class Promotion(BaseModel):
     nom: str
     mission: str
     motif: Optional[str] = None
+
+
+class ObservationsRuntime(BaseModel):
+    observations: list[dict] = Field(default_factory=list, max_length=50000)
+    source: str = "apm"
+    environment: str = "production"
 
 
 @api_router.post("/jumeaux", status_code=201)
@@ -535,6 +584,44 @@ async def admettre_jumeau(jid: str, x_persona: str = Header("architecte"), x_esp
     jumeau = await db.jumeaux.find_one({"id": jid}, NO_ID)
     await marquer_cases_a_revoir([jid], f"le jumeau {jumeau['nom'] if jumeau else jid} a été admis dans le Mesh")
     return {"ok": True, "statut": "actif"}
+
+
+@api_router.post("/jumeaux/{jid}/interfaces/observer")
+async def observer_interfaces_du_jumeau(jid: str, payload: ObservationsRuntime,
+                                        x_persona: str = Header("architecte"),
+                                        x_espace: Optional[str] = Header(None)):
+    """Ingère un export APM/gateway normalisé en mode ombre : assertions observées, jamais promues."""
+    _, espace = resoudre_perimetre(x_persona, x_espace)
+    tous = await db.jumeaux.find({}, {"_id": 0, "id": 1}).to_list(200)
+    aut = autorisations(espace, [j["id"] for j in tous])
+    if jid not in aut or not niveau_au_moins(aut[jid], "complet"):
+        raise HTTPException(404, "Jumeau introuvable")
+    dsn = os.environ.get("JUMEAU_PG_DSN")
+    if not dsn:
+        raise HTTPException(503, "Couche cognitive non configurée (JUMEAU_PG_DSN)")
+
+    def ingerer():
+        with psycopg.connect(dsn, connect_timeout=5) as conn:
+            jumeau = jumeau_depot.jumeau_par_id(conn, jid)
+            if not jumeau:
+                raise LookupError(jid)
+            graph = jumeau_connecteurs_runtime.depuis_observations(
+                jid, payload.observations, payload.environment, payload.source)
+            stats = jumeau_interfaces_depot.enregistrer(conn, jumeau["tenant_id"], graph, remplacer=False)
+            return {"jumeau_id": jid, "mode": "shadow", "source": payload.source,
+                    "environment": payload.environment, "stats": stats,
+                    "resume": jumeau_connecteurs_runtime.resume(graph),
+                    "graphe": graph.as_dict()}
+
+    try:
+        return await asyncio.to_thread(ingerer)
+    except LookupError:
+        raise HTTPException(404, "Jumeau introuvable")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except psycopg.Error:
+        logger.exception("Observations runtime du jumeau %s impossibles", jid)
+        raise HTTPException(503, "Couche cognitive indisponible")
 
 
 @api_router.post("/jumeaux/{jid}/promouvoir")

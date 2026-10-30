@@ -69,6 +69,144 @@ def _texte_temporel(valeur):
     return str(valeur)
 
 
+def _identifiants(application_ids) -> list[str]:
+    if isinstance(application_ids, str):
+        application_ids = [application_ids]
+    return sorted({identifiant.strip() for identifiant in (application_ids or [])
+                   if isinstance(identifiant, str) and identifiant.strip()})
+
+
+def _contrats_visibles(graph, visibles: set[str]) -> dict[str, Contract]:
+    return {contrat.id: contrat for contrat in graph.contracts if contrat.application_id in visibles}
+
+
+def _references_operation(operation) -> set[str]:
+    """Références qu'une assertion CONSOMME peut citer : identifiant, METHOD path (casse libre) ou chemin."""
+    method = str(operation.method or "")
+    return {reference for reference in (
+        operation.id, f"{method} {operation.path}", f"{method.upper()} {operation.path}",
+        f"{method.lower()} {operation.path}", operation.path) if reference}
+
+
+def operations_publiques(graph, visibles) -> list[dict]:
+    """Les opérations des seules applications visibles, avec leur application productrice."""
+    visibles = set(_identifiants(visibles))
+    contrats = _contrats_visibles(graph, visibles)
+    operations = {}
+    for operation in graph.operations:
+        contrat = contrats.get(operation.contract_id)
+        if contrat is None:
+            continue
+        operations.setdefault(operation.id, {
+            "id": operation.id,
+            "application_id": contrat.application_id,
+            "method": operation.method,
+            "path": operation.path,
+            "protocol": operation.protocol,
+            "environment": operation.environment,
+            "name": operation.name,
+        })
+    return sorted(operations.values(),
+                  key=lambda operation: (operation["application_id"], operation["method"], operation["path"],
+                                         operation["id"]))
+
+
+def deriver_aretes(graph, visibles) -> list[dict]:
+    """Dérive les arêtes CONSOMME → opération → application productrice via contrat/EXPOSE.
+
+    Une assertion dont l'objet ne correspond à aucune opération connue ne produit rien : la cible n'est jamais
+    inventée. Les applications hors périmètre (source, cible, opération) sont écartées. Une même arête
+    `(source, cible, opération, mode, source d'assertion)` n'est rendue qu'une fois ; la preuve de meilleure
+    confiance est conservée.
+    """
+    visibles = set(_identifiants(visibles))
+    contrats = _contrats_visibles(graph, visibles)
+    operations = {}
+    for operation in sorted(graph.operations, key=lambda o: (o.id, o.contract_id, o.method or "", o.path or "")):
+        if operation.contract_id in contrats:
+            operations.setdefault(operation.id, operation)
+    producteurs = {operation.id: contrats[operation.contract_id].application_id
+                   for operation in operations.values()}
+
+    references: dict[str, Operation] = {}
+    ambigues = set()
+    for operation in operations.values():
+        for reference in _references_operation(operation):
+            existante = references.get(reference)
+            if existante is not None and existante.id != operation.id:
+                ambigues.add(reference)
+            else:
+                references[reference] = operation
+    for reference in ambigues:
+        references.pop(reference, None)
+
+    aretes: dict[tuple, dict] = {}
+    for assertion in graph.assertions:
+        if assertion.predicate != "CONSOMME" or assertion.subject not in visibles:
+            continue
+        operation = references.get(assertion.object)
+        if operation is None:
+            continue
+        cible = producteurs[operation.id]
+        libelle = f"{operation.method} {operation.path}"
+        cle = (assertion.subject, cible, libelle, assertion.mode, assertion.source)
+        candidate = {
+            "source": assertion.subject,
+            "target": cible,
+            "operation_id": operation.id,
+            "operation": libelle,
+            "mode": assertion.mode,
+            "assertion_source": assertion.source,
+            "confidence": float(assertion.confidence),
+            "evidence": assertion.evidence,
+        }
+        existante = aretes.get(cle)
+        if existante is None or (candidate["confidence"], candidate["evidence"] or "", candidate["operation_id"]) > (
+                existante["confidence"], existante["evidence"] or "", existante["operation_id"]):
+            aretes[cle] = candidate
+    return sorted(aretes.values(), key=lambda arete: (arete["source"], arete["target"], arete["operation"],
+                                                      arete["mode"], arete["assertion_source"],
+                                                      arete["operation_id"]))
+
+
+def impacts_des_runs(runs, visibles) -> list[dict]:
+    """Les impacts des runs récents, bornés aux applications visibles (run et application impactée)."""
+    visibles = set(_identifiants(visibles))
+    impacts = []
+    for run in runs or []:
+        if not isinstance(run, dict) or run.get("application_id") not in visibles:
+            continue
+        for impact in run.get("impacts") or []:
+            if not isinstance(impact, dict) or impact.get("application") not in visibles:
+                continue
+            impacts.append({
+                "application": impact.get("application"),
+                "operation": impact.get("operation"),
+                "change_type": impact.get("change_type"),
+                "severity": impact.get("severity"),
+                "raison": impact.get("raison") or "",
+                "evidence": impact.get("evidence") or [],
+                "run_id": run.get("id"),
+                "at": run.get("started_at"),
+            })
+    return sorted(impacts, key=lambda impact: (impact["at"] or "", impact["run_id"] or "", impact["application"] or "",
+                                               impact["operation"] or "", impact["change_type"] or "",
+                                               impact["severity"] or ""), reverse=True)
+
+
+def runs_publiques(runs, visibles) -> list[dict]:
+    """La vue publique d'un DiscoveryRun, sans changements ni erreur brute."""
+    visibles = set(_identifiants(visibles))
+    retenus = [{
+        "id": run.get("id"),
+        "application_id": run.get("application_id"),
+        "status": run.get("status"),
+        "started_at": run.get("started_at"),
+        "stats": run.get("stats") or {},
+    } for run in runs or [] if isinstance(run, dict) and run.get("application_id") in visibles]
+    return sorted(retenus, key=lambda run: (run["started_at"] or "", run["id"] or ""), reverse=True)
+
+
 def enregistrer(conn, tenant_id, graph, remplacer=False) -> dict:
     """Upsert idempotent du graphe ; refuse un tenant vide et toute URL de binding porteuse d'un secret.
 
@@ -231,6 +369,17 @@ def _objet(classe, ligne, champs):
     return classe(**{champ: _valeur(ligne.get(champ)) for champ in champs})
 
 
+def tenants_pour(conn, application_ids) -> list[str]:
+    """Les tenants Postgres distincts des applications demandées, triés (pour refuser tout mélange)."""
+    identifiants = _identifiants(application_ids)
+    if not identifiants:
+        return []
+    with conn.cursor() as cur:
+        cur.execute("SELECT DISTINCT tenant_id FROM jumeau WHERE id = ANY(%s) ORDER BY tenant_id",
+                    (identifiants,))
+        return [ligne[0] for ligne in cur.fetchall()]
+
+
 def derniers_runs(conn, tenant_id, application_id=None, limite=20) -> list[dict]:
     """Les derniers DiscoveryRun d'un tenant/application, du plus récent au plus ancien."""
     tenant = _tenant(tenant_id)
@@ -242,6 +391,24 @@ def derniers_runs(conn, tenant_id, application_id=None, limite=20) -> list[dict]
             cur.execute("SELECT * FROM discovery_run WHERE tenant_id = %s AND application_id = %s "
                         "ORDER BY started_at DESC LIMIT %s",
                         (tenant, application_id, max(1, min(int(limite), 100))))
+        return [_ligne(ligne) for ligne in cur.fetchall()]
+
+
+def derniers_runs_pour(conn, tenant_id, application_ids, limite=20) -> list[dict]:
+    """Les derniers runs de chaque application visible, avec au plus `limite` runs par application."""
+    tenant = _tenant(tenant_id)
+    identifiants = _identifiants(application_ids)
+    if not identifiants:
+        return []
+    limite = max(1, min(int(limite), 100))
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            "SELECT id, tenant_id, application_id, source, environment, started_at, ended_at, status, stats, "
+            "changes, impacts, error FROM ("
+            "SELECT *, row_number() OVER (PARTITION BY application_id ORDER BY started_at DESC, id DESC) AS rang "
+            "FROM discovery_run WHERE tenant_id = %s AND application_id = ANY(%s)"
+            ") AS runs WHERE rang <= %s ORDER BY started_at DESC, application_id, id",
+            (tenant, identifiants, limite))
         return [_ligne(ligne) for ligne in cur.fetchall()]
 
 
@@ -292,3 +459,33 @@ def lire_graph(conn, tenant_id, application_id=None) -> InterfaceGraph:
         bindings = [_objet(Binding, ligne, _CHAMPS_BINDING) for ligne in cur.fetchall()]
 
     return InterfaceGraph(contracts=contracts, operations=operations, bindings=bindings, assertions=assertions)
+
+
+def lire_graph_pour(conn, tenant_id, application_ids) -> InterfaceGraph:
+    """Relit le graphe des seules applications demandées (contrats, opérations et assertions).
+
+    Les bindings ne sont pas chargés : la vue Mesh n'en expose aucun. Une application hors liste ne peut donc
+    entrer ni comme source d'assertion, ni comme productrice d'opération.
+    """
+    tenant = _tenant(tenant_id)
+    identifiants = _identifiants(application_ids)
+    if not identifiants:
+        return InterfaceGraph()
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute("SELECT * FROM interface_contract WHERE tenant_id = %s AND application_id = ANY(%s) "
+                    "ORDER BY application_id, id", (tenant, identifiants))
+        contracts = [_objet(Contract, ligne, _CHAMPS_CONTRACT) for ligne in cur.fetchall()]
+
+        contrats = sorted({contrat.id for contrat in contracts})
+        if contrats:
+            cur.execute("SELECT * FROM interface_operation WHERE tenant_id = %s AND contract_id = ANY(%s) "
+                        "ORDER BY contract_id, method, path, id", (tenant, contrats))
+        else:
+            cur.execute("SELECT * FROM interface_operation WHERE tenant_id = %s AND false", (tenant,))
+        operations = [_objet(Operation, ligne, _CHAMPS_OPERATION) for ligne in cur.fetchall()]
+
+        cur.execute("SELECT * FROM interface_assertion WHERE tenant_id = %s AND subject = ANY(%s) "
+                    "ORDER BY subject, predicate, object, id", (tenant, identifiants))
+        assertions = [_objet(Assertion, ligne, _CHAMPS_ASSERTION) for ligne in cur.fetchall()]
+
+    return InterfaceGraph(contracts=contracts, operations=operations, assertions=assertions)

@@ -35,7 +35,9 @@ Preuve live sur « régénère le flux du gsf-mockup » : `repo:gsf-mockup → t
 - API : `GET /jumeaux/{jid}/interfaces` (graphe + runs) et `POST /jumeaux/{jid}/interfaces/decouvrir` (run manuel), protégés par le périmètre.
 - Remplacement de périmètre : un run remplace les opérations/assertions de sa source et de son format ; les autres sources restent intactes. Un second run identique ne produit plus de faux changements.
 - WSDL/SOAP : `parse_wsdl` + détection `.wsdl`/`.xml` par contenu, adresses assainies, opérations `SOAP`.
-- Tests : **920 tests jumeau** (3 skip), **130 tests frontend**, build OK. Exécution réelle sur `gsf-mockup` : 3 opérations `GET /`, `GET /status`, `POST /status` ; premier run 7 changements, second run 0.
+- Atlas : bouton/panneau « Interfaces » alimenté par `GET /mesh/interfaces` (opérations, arêtes, impacts, runs) et « voir sur la carte ».
+- Runtime en ombre : `POST /jumeaux/{jid}/interfaces/observer` ingère un export APM/gateway normalisé (`CONSOMME`/`EXPOSE`, `mode=observed`, source, trace) sans écraser le déclaré.
+- Tests : **944 tests jumeau** (3 skip), **133 tests frontend**, build OK. Exécution réelle sur `gsf-mockup` : 3 opérations `GET /`, `GET /status`, `POST /status` ; premier run 7 changements, second run 0.
 - Promotion gouvernée : `POST /jumeaux/{jid}/promouvoir` + table `identity_decision`, formulaire dans la revue, audit acteur/avant/après, id inchangé.
 - Revue d'un jumeau réel : section « Interfaces et impacts » avec contrats, opérations, assertions et dernier DiscoveryRun.
 
@@ -49,12 +51,14 @@ Le dépôt `gsf-mockup` ne contient pas de spec OpenAPI statique. Le connecteur 
 - La persistance des interfaces n'est pas encore branchée à l'ingestion du Gardien ni à l'Atlas.
 - Le change/impact engine est pur : pas encore d'événements `DiscoveryRun`, de webhook ni de propagation UI.
 - Le connecteur lit OpenAPI, configuration, claims `EXPOSE` et WSDL ; il ne lit pas encore APM, gateway runtime ni service mesh.
-- Le graphe est affiché dans la revue du jumeau, pas encore dans l'Atlas ; les impacts ne déclenchent pas encore de notification.
+- Les arêtes Atlas ne sont pas encore dessinées comme liens React Flow ; le panneau les liste.
+- Un `CONSOMME` vers une URL externe sans opération productrice résolue ne crée pas d'arête : aucune cible n'est inventée.
+- Le connecteur runtime est un import normalisé, pas encore un connecteur APM/gateway qui tire les données ; les observations ne déclenchent pas encore de notification.
 - La promotion d'un twin provisoire est demandée dans la réponse mais n'a pas encore d'action serveur dédiée.
 
 ## Prochain lot
 
-1. Afficher les interfaces/impacts dans l'Atlas et les relier au fil « Aujourd'hui ».
-2. Brancher gateway/APM/service mesh en mode ombre et les changements de contrat sur les notifications.
+1. Dessiner les arêtes d'interfaces dans l'Atlas et les relier au fil « Aujourd'hui ».
+2. Brancher le tirage APM/gateway/service mesh et les changements de contrat sur les notifications.
 3. WSDL, gateway/APM en mode ombre, puis tests d'isolation multi-tenant de bout en bout.
 4. Brancher les changements du DiscoveryRun sur les notifications et le fil « Aujourd'hui ».
