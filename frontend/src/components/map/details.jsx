@@ -180,6 +180,153 @@ export function DomaineDetail({ label, stats, actions, onActionSituation }) {
   );
 }
 
+const QUESTION_CONTEXTE_COGNITIF = "Explique-moi ce Twin et son contexte";
+
+const listeTexte = (valeur) => (Array.isArray(valeur) ? valeur : []);
+
+function nombreMemoires(contexte, donnees, socle) {
+  const candidats = [
+    contexte?.memoires,
+    contexte?.memoire,
+    donnees?.memoires,
+    donnees?.memoire,
+    donnees?.dossier?.memoires,
+    socle?.memoires,
+    donnees?.reponse?.memoires,
+    donnees?.qualite?.memoires,
+    donnees?.qualite?.memoire,
+  ];
+  for (const candidat of candidats) {
+    if (Array.isArray(candidat)) return candidat.length;
+    if (typeof candidat === "number" && Number.isFinite(candidat)) return Math.trunc(candidat);
+  }
+  return 0;
+}
+
+function vueContexteCognitif(donnees) {
+  if (!donnees || typeof donnees !== "object") return null;
+  const contexte = donnees.contexte_cognitif || donnees.contexteCognitif || donnees.contexte;
+  if (!contexte || typeof contexte !== "object") return null;
+  const reponse = donnees.reponse || {};
+  const socle = reponse.socle || {};
+  const raisonnement = donnees.raisonnement || {};
+  const profil = donnees.profil || reponse.profil || contexte.profil || {};
+  const faits = Array.isArray(contexte.faits) ? contexte.faits : listeTexte(socle.faits);
+  const preuves = Array.isArray(contexte.preuves) ? contexte.preuves : listeTexte(socle.preuves);
+  const fingerprint = typeof contexte.fingerprint === "string"
+    ? contexte.fingerprint
+    : typeof raisonnement.contexte_fingerprint === "string" ? raisonnement.contexte_fingerprint : "";
+  const traceId = typeof raisonnement.trace_id === "string"
+    ? raisonnement.trace_id
+    : typeof donnees.trace_id === "string" ? donnees.trace_id : "";
+  const etapes = listeTexte(raisonnement.etapes);
+  if (!fingerprint && !contexte.profil_id && faits.length === 0 && !traceId) return null;
+  const qualite = donnees.qualite || {};
+  const decision = reponse.decision_support || donnees.decision_support || {};
+  const limites = [...new Set([
+    ...listeTexte(contexte.limites),
+    ...listeTexte(raisonnement.limites),
+    ...listeTexte(socle.limites),
+    ...listeTexte(reponse.avertissements),
+  ].filter((valeur) => typeof valeur === "string" && valeur.trim()))];
+  return {
+    libelle: profil.libelle || profil.id || contexte.profil_id || "",
+    autorite: profil.autorite || reponse.autorite || contexte.autorite || raisonnement.autorite || "",
+    fingerprint,
+    faits,
+    preuves,
+    nombreFaits: faits.length || (typeof qualite.faits === "number" ? qualite.faits : 0),
+    nombrePreuves: preuves.length || (typeof qualite.preuves === "number" ? qualite.preuves : 0),
+    memoires: nombreMemoires(contexte, donnees, socle),
+    traceId,
+    etapes: etapes.length,
+    abstention: typeof decision.abstention === "string" ? decision.abstention : "",
+    limites,
+  };
+}
+
+function ContexteCognitif({ donnees }) {
+  const [tousFaits, setTousFaits] = useState(false);
+  const vue = vueContexteCognitif(donnees);
+  if (!vue) return null;
+  const faitsVisibles = tousFaits ? vue.faits : vue.faits.slice(0, 3);
+  const empreinte = vue.fingerprint
+    ? `${vue.fingerprint.slice(0, 12)}${vue.fingerprint.length > 12 ? "…" : ""}`
+    : "—";
+  return (
+    <div data-testid="twin-contexte-cognitif">
+      <Section
+        titre="Contexte cognitif"
+        cle="contexte-cognitif"
+        compte={vue.nombreFaits}
+        action={<span className="font-code text-[9px] text-[#7C93A8]" title={vue.fingerprint || undefined}>{empreinte}</span>}
+      >
+        <div className="space-y-2" data-testid="contexte-cognitif-contenu">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-code text-[10px] text-[#7C93A8]">
+            <span>Lentille <span className="text-[#D8E2EA]" data-testid="contexte-cognitif-lentille">{vue.libelle || "—"}</span></span>
+            <span>Autorité <span className="text-[#D8E2EA]" data-testid="contexte-cognitif-autorite">{vue.autorite || "—"}</span></span>
+          </div>
+          <div className="flex flex-wrap gap-x-3 gap-y-1 font-code text-[10px] text-[#7C93A8]" data-testid="contexte-cognitif-comptes">
+            <span>{vue.nombreFaits} fait{vue.nombreFaits > 1 ? "s" : ""}</span>
+            <span>{vue.nombrePreuves} preuve{vue.nombrePreuves > 1 ? "s" : ""}</span>
+            <span>{vue.memoires} mémoire{vue.memoires > 1 ? "s" : ""}</span>
+          </div>
+
+          {vue.faits.length > 0 && (
+            <div data-testid="contexte-cognitif-faits">
+              <div className="font-code text-[9px] uppercase tracking-[0.2em] text-[#7C93A8]">Faits de contexte</div>
+              <ul className="mt-1 space-y-1">
+                {faitsVisibles.map((fait, i) => {
+                  const titre = typeof fait === "string" ? fait : fait?.titre || fait?.resume || "—";
+                  const type = typeof fait === "object" && fait?.type ? fait.type : "";
+                  return (
+                    <li key={fait?.id || i} className="flex items-start gap-1.5 text-[11px] leading-snug text-[#94A3B8]">
+                      <span className="mt-0.5 shrink-0 font-code text-[8px] uppercase tracking-wider text-[#5B7089]">{type || "·"}</span>
+                      <span>{titre}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+              {vue.faits.length > 3 && (
+                <button
+                  type="button"
+                  onClick={() => setTousFaits((ouvert) => !ouvert)}
+                  data-testid="contexte-cognitif-tout"
+                  className="mt-1.5 font-code text-[10px] text-[#60A5FA] transition-colors hover:text-[#93C5FD]"
+                >
+                  {tousFaits ? "Réduire" : `Voir les ${vue.faits.length} faits`}
+                </button>
+              )}
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-code text-[10px] text-[#7C93A8]" data-testid="contexte-cognitif-raisonnement">
+            <span title={vue.traceId || undefined}>Trace <span className="text-[#D8E2EA]">{vue.traceId || "—"}</span></span>
+            <span>{vue.etapes} étape{vue.etapes > 1 ? "s" : ""}</span>
+          </div>
+
+          {vue.abstention && (
+            <p className="text-[11px] leading-snug text-[#F2B84B]" data-testid="contexte-cognitif-abstention">
+              Abstention · <span className="text-[#D8E2EA]">{vue.abstention}</span>
+            </p>
+          )}
+
+          {vue.limites.length > 0 && (
+            <div data-testid="contexte-cognitif-limites">
+              <div className="font-code text-[9px] uppercase tracking-[0.2em] text-[#7C93A8]">Limites</div>
+              <ul className="mt-1 space-y-1">
+                {vue.limites.map((limite, i) => <li key={i} className="text-[11px] leading-snug text-[#94A3B8]">· {limite}</li>)}
+              </ul>
+            </div>
+          )}
+
+          <p className="font-code text-[9px] text-[#5B7089]">Lecture seule — aucune action automatique.</p>
+        </div>
+      </Section>
+    </div>
+  );
+}
+
 export function ComparaisonDomaines({ a, b, statsDomaine }) {
   const sa = statsDomaine(a);
   const sb = statsDomaine(b);
@@ -213,6 +360,7 @@ export function ComparaisonDomaines({ a, b, statsDomaine }) {
 export function TwinDetail({ selected, favori, onBasculerFavori, statsTwin, onInterroger, voisins = [], relationsRecentes = [], onChoisirVoisin, onExplorerRelations, onOuvrirInvestigation }) {
   const [searchParams] = useSearchParams();
   const [impactCanonique, setImpactCanonique] = useState(null);
+  const [contexteCognitif, setContexteCognitif] = useState(null);
   const tenant = (localStorage.getItem("meridian.tenant") || searchParams.get("tenant") || "").trim();
   const idJumeau = selected?.id;
   useEffect(() => {
@@ -225,6 +373,22 @@ export function TwinDetail({ selected, favori, onBasculerFavori, statsTwin, onIn
     api.get(`/boucle/graphe/${encodeURIComponent(idJumeau)}/impact?profondeur=2`, { headers: { "X-Tenant": tenant } })
       .then((reponse) => { if (actif) setImpactCanonique(reponse?.data || null); })
       .catch(() => { if (actif) setImpactCanonique(null); });
+    return () => { actif = false; };
+  }, [idJumeau, tenant]);
+  useEffect(() => {
+    if (!tenant || !idJumeau) {
+      setContexteCognitif(null);
+      return undefined;
+    }
+    let actif = true;
+    setContexteCognitif(null);
+    api.post("/boucle/analyser", {
+      question: QUESTION_CONTEXTE_COGNITIF,
+      surface: "twin",
+      twin_id: idJumeau,
+    }, { headers: { "X-Tenant": tenant } })
+      .then((reponse) => { if (actif) setContexteCognitif(reponse?.data || null); })
+      .catch(() => { if (actif) setContexteCognitif(null); });
     return () => { actif = false; };
   }, [idJumeau, tenant]);
   const impactAval = impactCanonique?.impact?.aval || [];
@@ -280,6 +444,8 @@ export function TwinDetail({ selected, favori, onBasculerFavori, statsTwin, onIn
           {det.length > 0 ? `${pretes}/${det.length} sources prêtes` : "Aucune source détaillée"}{comprehension < 90 ? " — une partie des règles reste à documenter" : " — connaissance consolidée"}.
         </p>
       </Section>
+
+      {contexteCognitif && <ContexteCognitif donnees={contexteCognitif} />}
 
       {selected.capacites?.length > 0 && (
         <Section titre="Capacités métier">

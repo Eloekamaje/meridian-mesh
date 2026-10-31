@@ -68,7 +68,9 @@ def test_le_serveur_mcp_expose_des_tools_read_only(monkeypatch):
     noms = {outil.name for outil in outils}
     attendus = {"meridian_analyser", "meridian_portefeuille", "meridian_impact",
                 "meridian_claims", "meridian_learnings", "meridian_valeurs",
-                "meridian_valeur_resume"}
+                "meridian_valeur_resume", "meridian_contexte", "meridian_memoire_durable",
+                "meridian_memoire_consolidation", "meridian_calibration",
+                "meridian_contrefactuel"}
     assert attendus <= noms
     assert "meridian_ecrire" not in noms and "meridian_supprimer" not in noms
     for outil in outils:
@@ -106,3 +108,82 @@ def test_un_tool_mcp_appelle_l_api_avec_tenant_et_persona(monkeypatch):
     assert (methode, url) == ("GET", "http://test/api/boucle/graphe/paiements/impact")
     assert kwargs["headers"]["X-Tenant"] == "demo"
     assert kwargs["headers"]["X-Persona"] == "architecte"
+
+
+def test_les_nouveaux_tools_sont_annotes_read_only():
+    import sys
+
+    sys.path.insert(0, str(REPO))
+    from plugin.meridian.mcp import server as module
+
+    outils = {outil.name: outil for outil in asyncio.run(module.server.list_tools())}
+    nouveaux = {"meridian_contexte", "meridian_memoire_durable",
+                "meridian_memoire_consolidation", "meridian_calibration",
+                "meridian_contrefactuel"}
+    assert nouveaux <= set(outils)
+    for nom in nouveaux:
+        annotations = outils[nom].annotations
+        assert annotations is not None
+        assert annotations.read_only_hint is True
+        assert annotations.destructive_hint is False
+        assert annotations.idempotent_hint is True
+
+
+def test_les_nouveaux_tools_construisent_des_requetes_read_only(monkeypatch):
+    import sys
+
+    sys.path.insert(0, str(REPO))
+    from plugin.meridian.mcp import server as module
+
+    appels = []
+
+    class Reponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"ok": True}
+
+    def faux(methode, url, **kwargs):
+        appels.append((methode, url, kwargs))
+        return Reponse()
+
+    monkeypatch.setattr(module.requests, "request", faux)
+    monkeypatch.setattr(module, "API", "http://test/api")
+    monkeypatch.setattr(module, "TENANT", "demo")
+    monkeypatch.setattr(module, "PERSONA", "architecte")
+
+    module.meridian_contexte("twins", twin_id="paiements", domaine="finance")
+    module.meridian_memoire_durable(scope="tenant", q="latence", limite=10)
+    module.meridian_memoire_consolidation([{"id": "m1"}], seuil_similarite=0.8)
+    module.meridian_calibration("dec-1")
+    module.meridian_contrefactuel([{"id": "a"}], {"cout": 1}, criteres=["cout"])
+
+    methode, url, kwargs = appels[0]
+    assert (methode, url) == ("POST", "http://test/api/boucle/contexte/resoudre")
+    assert kwargs["json"] == {
+        "surface": "twins", "twin_id": "paiements", "situation_id": None,
+        "work_id": None, "domaine": "finance", "date": None,
+        "utilisateur": None, "perimetre": None,
+    }
+
+    methode, url, kwargs = appels[1]
+    assert (methode, url) == ("GET", "http://test/api/boucle/memoire/durable")
+    assert kwargs["params"] == {"limite": 10, "scope": "tenant", "q": "latence"}
+
+    methode, url, kwargs = appels[2]
+    assert (methode, url) == ("POST", "http://test/api/boucle/memoire/consolidation")
+    assert kwargs["json"] == {"memoires": [{"id": "m1"}], "seuil_similarite": 0.8}
+    assert "ids" not in kwargs["json"] and "acteur" not in kwargs["json"]
+
+    methode, url, kwargs = appels[3]
+    assert (methode, url) == ("GET", "http://test/api/boucle/calibration/rapport")
+    assert kwargs["params"] == {"decision_id": "dec-1"}
+
+    methode, url, kwargs = appels[4]
+    assert (methode, url) == ("POST", "http://test/api/boucle/contrefactuel")
+    assert kwargs["json"] == {
+        "options": [{"id": "a"}], "changements": {"cout": 1}, "criteres": ["cout"],
+    }
+    assert all(kwargs["headers"]["X-Tenant"] == "demo" for _, _, kwargs in appels)
+    assert all(kwargs["headers"]["X-Persona"] == "architecte" for _, _, kwargs in appels)

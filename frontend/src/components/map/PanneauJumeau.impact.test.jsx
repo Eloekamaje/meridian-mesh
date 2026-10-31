@@ -7,7 +7,7 @@ global.TextDecoder = TextDecoder;
 global.TextEncoder = TextEncoder;
 global.IS_REACT_ACT_ENVIRONMENT = true;
 
-jest.mock("@/lib/api", () => ({ __esModule: true, default: { get: jest.fn() } }));
+jest.mock("@/lib/api", () => ({ __esModule: true, default: { get: jest.fn(), post: jest.fn() } }));
 jest.mock("@/lib/atlasGraph", () => ({ idNumerique: (id) => String(id) }));
 jest.mock("react-router-dom", () => require("react-router"), { virtual: true });
 
@@ -52,6 +52,7 @@ async function rendre(montage, props = {}) {
 beforeEach(() => {
   jest.clearAllMocks();
   localStorage.clear();
+  api.post.mockResolvedValue({ data: {} });
 });
 
 test("affiche l'impact canonique du tenant stocké, borné à 6 ids par sens", async () => {

@@ -146,5 +146,75 @@ def meridian_attention(type_: str = "SITUATION", limite: int = 20) -> dict:
     return _appel("GET", "/boucle/attention", params={"type": type_, "limite": limite})
 
 
+@server.tool(annotations=_LECTURE)
+def meridian_contexte(
+    surface: str,
+    twin_id: str | None = None,
+    situation_id: str | None = None,
+    work_id: str | None = None,
+    domaine: str | None = None,
+    date: str | None = None,
+    utilisateur: str | None = None,
+    perimetre: str | None = None,
+) -> dict:
+    """Résout explicitement une surface et ses entités, sans id deviné (lecture seule)."""
+    return _appel("POST", "/boucle/contexte/resoudre", corps={
+        "surface": surface, "twin_id": twin_id, "situation_id": situation_id,
+        "work_id": work_id, "domaine": domaine, "date": date,
+        "utilisateur": utilisateur, "perimetre": perimetre,
+    })
+
+
+@server.tool(annotations=_LECTURE)
+def meridian_memoire_durable(
+    scope: str | None = None,
+    scope_id: str | None = None,
+    classe: str | None = None,
+    q: str | None = None,
+    limite: int = 50,
+) -> dict:
+    """Liste ou recherche la mémoire durable, sans création ni suppression (lecture seule)."""
+    params = {"limite": limite}
+    if scope:
+        params["scope"] = scope
+    if scope_id:
+        params["scope_id"] = scope_id
+    if classe:
+        params["classe"] = classe
+    if q:
+        params["q"] = q
+    return _appel("GET", "/boucle/memoire/durable", params=params)
+
+
+@server.tool(annotations=_LECTURE)
+def meridian_memoire_consolidation(
+    memoires: list[dict],
+    seuil_similarite: float = 0.9,
+) -> dict:
+    """Propose doublons et conflits de mémoire, sans approbation ni écriture (lecture seule)."""
+    return _appel("POST", "/boucle/memoire/consolidation", corps={
+        "memoires": memoires, "seuil_similarite": seuil_similarite,
+    })
+
+
+@server.tool(annotations=_LECTURE)
+def meridian_calibration(decision_id: str | None = None) -> dict:
+    """Rapport de calibration des prédictions, global ou par décision (lecture seule)."""
+    params = {"decision_id": decision_id} if decision_id else {}
+    return _appel("GET", "/boucle/calibration/rapport", params=params)
+
+
+@server.tool(annotations=_LECTURE)
+def meridian_contrefactuel(
+    options: list[dict],
+    changements: dict,
+    criteres: list[str] | None = None,
+) -> dict:
+    """Compare des options contrefactuelles sans prétention causale (lecture seule)."""
+    return _appel("POST", "/boucle/contrefactuel", corps={
+        "options": options, "changements": changements, "criteres": criteres or [],
+    })
+
+
 if __name__ == "__main__":
     server.run("stdio")

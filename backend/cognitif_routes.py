@@ -18,11 +18,12 @@ from pydantic import BaseModel, Field
 import auth as auth_identite
 
 import boucle_routes
-from jumeau import attention, boucle, calibration, contexte as contexte_module, contrefactuel
+from jumeau import application_memoire, attention, boucle, calibration
+from jumeau import contexte as contexte_module, contrefactuel, decision_cognitive
 from jumeau import entreprise_depot
 from jumeau import evaluation_outils, evaluation_profils
 from jumeau import consolidation_memoire, memoire_durable, memoire_org, outcomes, portefeuille
-from jumeau import raisonnement as raisonnement_module, resolveur_contexte
+from jumeau import raisonnement as raisonnement_module, resolveur_contexte, retrieval_memoire
 from jumeau import rls, valeur as valeur_module
 from jumeau import specialiste_decouverte, specialiste_impact, specialiste_preuve
 from jumeau import specialistes, temporalite, twins_types
@@ -84,6 +85,7 @@ class EvaluationSelections(BaseModel):
 class AnalyseSpecialistes(BaseModel):
     question: str = ""
     situation_id: str | None = None
+    twin_id: str | None = None
     twin_ids: list[str] = Field(default_factory=list)
     application_id: str | None = None
     claim_ids: list[str] = Field(default_factory=list)
@@ -98,6 +100,9 @@ class AnalyseCognitive(AnalyseSpecialistes):
     domaine: str | None = None
     surface: str | None = None
     date: str | None = None
+    options: list[dict[str, Any]] = Field(default_factory=list)
+    changements: dict[str, Any] = Field(default_factory=dict)
+    criteres: list[str] = Field(default_factory=list)
 
 
 class DemandeComposition(BaseModel):
@@ -558,15 +563,30 @@ async def analyser_cognitif(
     profil = profils.resoudre_profil(
         profil=profil_demande, identite={"role": x_persona},
         question=payload.question, autorite_max="proposition")
+    twin_ids = list(dict.fromkeys(
+        [identifiant for identifiant in (*payload.twin_ids, payload.twin_id) if identifiant]))
     plan = composition.planifier(
         profil, payload.question, autorite_max="proposition",
         application_id=payload.application_id, situation_id=payload.situation_id,
-        twin_ids=payload.twin_ids)
+        twin_ids=tuple(twin_ids))
     global_scope = (
         payload.scope in {"enterprise", "portfolio"}
         or payload.domaine is not None
-        or (not payload.application_id and not payload.twin_ids and not payload.situation_id)
+        or (not payload.application_id and not twin_ids and not payload.situation_id)
     )
+    surface = payload.surface or (
+        "situation" if payload.situation_id else
+        "twin" if (twin_ids or payload.application_id) else
+        "atlas" if payload.domaine else "global")
+    try:
+        contexte_resolu = resolveur_contexte.resoudre(
+            tenant, surface,
+            twin_id=(twin_ids[0] if twin_ids else payload.application_id),
+            situation_id=payload.situation_id,
+            domaine=payload.domaine if surface == "atlas" else None,
+            date=payload.date, utilisateur=x_persona, perimetre=payload.scope)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     noms = []
     valeur = None
     if global_scope:
@@ -586,7 +606,7 @@ async def analyser_cognitif(
         dsn = boucle_routes._dsn()
         base = specialistes.ContexteSpecialiste(
             tenant=tenant, question=payload.question, situation_id=payload.situation_id,
-            twin_ids=tuple(payload.twin_ids), application_id=payload.application_id,
+            twin_ids=tuple(twin_ids), application_id=payload.application_id,
             claim_ids=tuple(payload.claim_ids), profondeur=payload.profondeur)
         dossiers = await _lancer_specialistes(noms, base, tenant, dsn) if noms else []
         dossier = _fusionner_dossiers(dossiers, tenant) if dossiers else {
@@ -596,8 +616,19 @@ async def analyser_cognitif(
     reponse = reponse_cognitive.composer(
         payload.question, profil, plan, dossier, autorite_max="proposition")
     contexte_pack = contexte_module.construire(payload.question, profil, dossier)
+    try:
+        candidats = await _avec_connexion(tenant, lambda conn: retrieval_memoire.recuperer(
+            conn, tenant, question=payload.question, twin_ids=tuple(twin_ids),
+            situation_id=payload.situation_id, limite=12))
+        contexte_pack = retrieval_memoire.enrichir_pack(contexte_pack.as_dict(), candidats)
+    except Exception:
+        contexte_pack = contexte_pack.as_dict()
+    reponse_dict = reponse.as_dict()
+    reponse_dict["decision_support"] = decision_cognitive.decision_support_enrichi(
+        reponse_dict.get("decision_support"), options=payload.options or None,
+        changements=payload.changements, criteres=payload.criteres)
     trace = raisonnement_module.construire(
-        payload.question, profil, plan, contexte_pack, dossier, reponse.as_dict())
+        payload.question, profil, plan, contexte_pack, dossier, reponse_dict)
     resultat = {
         "tenant": tenant,
         "scope": ("enterprise" if global_scope and not payload.domaine else "portfolio")
@@ -607,14 +638,16 @@ async def analyser_cognitif(
         "composition": boucle_routes._assainir(plan.as_dict()),
         "specialistes_executes": list(noms),
         "dossier": boucle_routes._assainir(dossier),
-        "reponse": boucle_routes._assainir(reponse.as_dict()),
-        "contexte": boucle_routes._assainir(contexte_pack.as_dict()),
+        "reponse": boucle_routes._assainir(reponse_dict),
+        "contexte": boucle_routes._assainir(contexte_pack),
+        "contexte_resolu": boucle_routes._assainir(contexte_resolu.as_dict()),
         "raisonnement": boucle_routes._assainir(trace.as_dict()),
         "qualite": {
             "faits": len(reponse.socle.faits),
             "preuves": len(reponse.socle.preuves),
             "specialistes_ok": sum(1 for d in dossier["specialistes"] if d.get("statut") == "ok"),
             "limites": len(reponse.socle.limites),
+            "memoire": len(contexte_pack.get("memoire") or ()),
             "autorite": reponse.autorite,
         },
     }
@@ -995,11 +1028,12 @@ async def proposer_consolidation(
         if payload.ids:
             if not payload.acteur:
                 raise ValueError("acteur obligatoire pour approuver une consolidation")
-            plan = consolidation_memoire.approuver(
-                proposition, acteur=payload.acteur, ids=payload.ids)
+            plan = await _avec_connexion(tenant, lambda conn: application_memoire.appliquer_consolidation(
+                conn, tenant, proposition, ids=payload.ids, acteur=payload.acteur))
     except (TypeError, ValueError) as exc:
         raise HTTPException(400, str(exc)) from exc
-    resultat = {"tenant": tenant, "proposition": proposition.as_dict(), "ecritures": False}
+    resultat = {"tenant": tenant, "proposition": proposition.as_dict(),
+                "ecritures": bool(plan and plan.get("ecritures"))}
     if plan is not None:
         resultat["plan"] = plan
     return boucle_routes._assainir(resultat)

@@ -122,13 +122,15 @@ preuves, alternatives, incertitudes, décision proposée et limites.
 | Mémoire organisationnelle `ANNOTATION` | implémenté |
 | Session / conversation | partiel (`cases`) |
 | Mémoire durable utilisateur | implémenté (`memoire_durable.py`, consentement, rétention, export, suppression) |
-| Context Pack | implémenté (`contexte.py`) |
-| Context Resolver | implémenté (`resolveur_contexte.py`, surfaces, période, résumé/détail) |
+| Retrieval mémoire → contexte | implémenté (`retrieval_memoire.py`) ; durable, annotations, learnings et Claims classés |
+| Context Pack | implémenté (`contexte.py`) et enrichi par la mémoire |
+| Context Resolver | implémenté (`resolveur_contexte.py`) et branché dans `/analyser` |
 | Trace de raisonnement | implémenté (`raisonnement.py`) |
-| Divulgation progressive | API implémentée ; UI à brancher |
+| Divulgation progressive | API + panneau Atlas « Contexte cognitif » |
 | Rétention / consentement / suppression | implémenté pour la mémoire durable ; politique globale à généraliser |
-| Consolidation mémoire | implémentée en proposition + plan d'approbation (`consolidation_memoire.py`) |
-| Counterfactuel / calibration | implémentés (`contrefactuel.py`, `calibration.py`) |
+| Consolidation mémoire | proposition + application gouvernée des mémoires durables (`application_memoire.py`) |
+| Counterfactuel / calibration | `contrefactuel.py`, `calibration.py`, `decision_cognitive.py` ; calibration encore manuelle |
+| Session memory / cases | partiel, Mongo |
 | RLS / OIDC | non activé |
 
 ## 6. Critères d'acceptation
