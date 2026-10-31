@@ -12,15 +12,17 @@ from dataclasses import replace
 from typing import Any
 
 import psycopg
-from fastapi import APIRouter, Header, HTTPException, Query, Request
+from fastapi import APIRouter, Header, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
 import auth as auth_identite
 
 import boucle_routes
-from jumeau import attention, boucle, contexte as contexte_module, entreprise_depot
+from jumeau import attention, boucle, calibration, contexte as contexte_module, contrefactuel
+from jumeau import entreprise_depot
 from jumeau import evaluation_outils, evaluation_profils
-from jumeau import memoire_org, outcomes, portefeuille, raisonnement as raisonnement_module
+from jumeau import consolidation_memoire, memoire_durable, memoire_org, outcomes, portefeuille
+from jumeau import raisonnement as raisonnement_module, resolveur_contexte
 from jumeau import rls, valeur as valeur_module
 from jumeau import specialiste_decouverte, specialiste_impact, specialiste_preuve
 from jumeau import specialistes, temporalite, twins_types
@@ -94,6 +96,8 @@ class AnalyseCognitive(AnalyseSpecialistes):
     autorite_max: str | None = None
     scope: str | None = None
     domaine: str | None = None
+    surface: str | None = None
+    date: str | None = None
 
 
 class DemandeComposition(BaseModel):
@@ -107,6 +111,54 @@ class DemandeComposition(BaseModel):
 
 class EvaluationProfilsRequete(BaseModel):
     reponses: dict[str, dict[str, Any]] = Field(default_factory=dict)
+
+
+class CreationMemoireDurable(BaseModel):
+    id: str | None = Field(None, max_length=128)
+    scope: str
+    scope_id: str = Field(min_length=1, max_length=200)
+    classe: str
+    contenu: str = Field(min_length=1, max_length=4000)
+    provenance: str = Field(min_length=1, max_length=4000)
+    consentement: bool = False
+    confiance: float = 0.5
+    expire_le: str | None = None
+    donnees: Any = None
+
+
+class DemandeContexte(BaseModel):
+    surface: str
+    twin_id: str | None = None
+    situation_id: str | None = None
+    work_id: str | None = None
+    domaine: str | None = None
+    date: str | None = None
+    utilisateur: str | None = None
+    perimetre: str | None = None
+
+
+class CreationPrediction(BaseModel):
+    id: str | None = Field(None, max_length=128)
+    decision_id: str = Field(min_length=1, max_length=200)
+    confidence: float
+    outcome: bool | None = None
+
+
+class ResolutionPrediction(BaseModel):
+    outcome: bool
+
+
+class DemandeContrefactuel(BaseModel):
+    options: list[dict[str, Any]] = Field(default_factory=list)
+    changements: dict[str, Any] = Field(default_factory=dict)
+    criteres: list[str] = Field(default_factory=list)
+
+
+class DemandeConsolidation(BaseModel):
+    memoires: list[dict[str, Any]] = Field(default_factory=list)
+    seuil_similarite: float = 0.9
+    ids: list[str] = Field(default_factory=list)
+    acteur: str | None = None
 
 
 class CreationValeur(BaseModel):
@@ -737,3 +789,217 @@ async def maj_valeur(
     valeur = await _avec_connexion(
         tenant, lambda conn: valeur_module.mettre_a_jour(conn, tenant, valeur_id, changements))
     return {"tenant": tenant, "valeur": boucle_routes._assainir(valeur)}
+
+
+@router.post("/contexte/resoudre")
+async def resoudre_contexte(
+    payload: DemandeContexte,
+    request: Request,
+    x_persona: str = Header("architecte", max_length=64),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Résout explicitement une surface et ses entités, sans laisser le modèle deviner un id."""
+    boucle_routes._verifier_contexte(x_persona, x_espace)
+    tenant = boucle_routes._tenant(request, x_tenant)
+    try:
+        resultat = resolveur_contexte.resoudre(
+            tenant, payload.surface, twin_id=payload.twin_id,
+            situation_id=payload.situation_id, work_id=payload.work_id,
+            domaine=payload.domaine, date=payload.date,
+            utilisateur=x_persona, perimetre=payload.perimetre)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"tenant": tenant, "contexte": boucle_routes._assainir(resultat.as_dict())}
+
+
+@router.get("/memoire/durable")
+async def lister_memoire_durable(
+    request: Request,
+    scope: str | None = Query(None, max_length=32),
+    scope_id: str | None = Query(None, max_length=200),
+    classe: str | None = Query(None, max_length=32),
+    q: str | None = Query(None, max_length=500),
+    limite: int = Query(200, ge=1, le=1000),
+    x_persona: str = Header("architecte", max_length=64),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    boucle_routes._verifier_contexte(x_persona, x_espace)
+    tenant = boucle_routes._tenant(request, x_tenant)
+    if q:
+        valeurs = await _avec_connexion(tenant, lambda conn: memoire_durable.chercher(
+            conn, tenant, q, scope=scope, scope_id=scope_id, limite=limite))
+    else:
+        valeurs = await _avec_connexion(tenant, lambda conn: memoire_durable.lister(
+            conn, tenant, scope=scope, scope_id=scope_id, classe=classe, limite=limite))
+    return {"tenant": tenant, "memoires": boucle_routes._assainir(valeurs)}
+
+
+@router.get("/memoire/durable/export")
+async def exporter_memoire_durable(
+    request: Request,
+    scope: str | None = Query(None, max_length=32),
+    scope_id: str | None = Query(None, max_length=200),
+    x_persona: str = Header("architecte", max_length=64),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    boucle_routes._verifier_contexte(x_persona, x_espace)
+    tenant = boucle_routes._tenant(request, x_tenant)
+    valeurs = await _avec_connexion(tenant, lambda conn: memoire_durable.exporter(
+        conn, tenant, scope=scope, scope_id=scope_id))
+    return {"tenant": tenant, "memoires": boucle_routes._assainir(valeurs)}
+
+
+@router.post("/memoire/durable/purge")
+async def purger_memoire_durable(
+    request: Request,
+    x_persona: str = Header("architecte", max_length=64),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    boucle_routes._verifier_contexte(x_persona, x_espace)
+    tenant = boucle_routes._tenant(request, x_tenant)
+    supprimees = await _avec_connexion(tenant, lambda conn: memoire_durable.purger(conn, tenant))
+    return {"tenant": tenant, "supprimees": supprimees}
+
+
+@router.post("/memoire/durable", status_code=201)
+async def creer_memoire_durable(
+    payload: CreationMemoireDurable,
+    request: Request,
+    x_persona: str = Header("architecte", max_length=64),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    boucle_routes._verifier_contexte(x_persona, x_espace)
+    tenant = boucle_routes._tenant(request, x_tenant)
+    memoire = await _avec_connexion(tenant, lambda conn: memoire_durable.creer(
+        conn, tenant, id=payload.id, scope=payload.scope, scope_id=payload.scope_id,
+        classe=payload.classe, contenu=payload.contenu, provenance=payload.provenance,
+        consentement=payload.consentement, confiance=payload.confiance,
+        expire_le=payload.expire_le, donnees=payload.donnees))
+    return {"tenant": tenant, "memoire": boucle_routes._assainir(memoire)}
+
+
+@router.get("/memoire/durable/{memoire_id}")
+async def lire_memoire_durable(
+    memoire_id: str,
+    request: Request,
+    x_persona: str = Header("architecte", max_length=64),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    boucle_routes._verifier_contexte(x_persona, x_espace)
+    tenant = boucle_routes._tenant(request, x_tenant)
+    memoire = await _avec_connexion(
+        tenant, lambda conn: memoire_durable.lire(conn, tenant, memoire_id))
+    if memoire is None:
+        raise HTTPException(404, "Mémoire introuvable")
+    return {"tenant": tenant, "memoire": boucle_routes._assainir(memoire)}
+
+
+@router.delete("/memoire/durable/{memoire_id}", status_code=204)
+async def supprimer_memoire_durable(
+    memoire_id: str,
+    request: Request,
+    x_persona: str = Header("architecte", max_length=64),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    boucle_routes._verifier_contexte(x_persona, x_espace)
+    tenant = boucle_routes._tenant(request, x_tenant)
+    supprimee = await _avec_connexion(
+        tenant, lambda conn: memoire_durable.supprimer(conn, tenant, memoire_id))
+    if not supprimee:
+        raise HTTPException(404, "Mémoire introuvable")
+    return Response(status_code=204)
+
+
+@router.post("/calibration/predictions", status_code=201)
+async def enregistrer_prediction(
+    payload: CreationPrediction,
+    request: Request,
+    x_persona: str = Header("architecte", max_length=64),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    boucle_routes._verifier_contexte(x_persona, x_espace)
+    tenant = boucle_routes._tenant(request, x_tenant)
+    prediction = await _avec_connexion(tenant, lambda conn: calibration.enregistrer(
+        conn, tenant, id=payload.id, decision_id=payload.decision_id,
+        confidence=payload.confidence, outcome=payload.outcome))
+    return {"tenant": tenant, "prediction": boucle_routes._assainir(prediction.as_dict())}
+
+
+@router.post("/calibration/predictions/{prediction_id}/outcome")
+async def resoudre_prediction(
+    prediction_id: str,
+    payload: ResolutionPrediction,
+    request: Request,
+    x_persona: str = Header("architecte", max_length=64),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    boucle_routes._verifier_contexte(x_persona, x_espace)
+    tenant = boucle_routes._tenant(request, x_tenant)
+    try:
+        prediction = await _avec_connexion(tenant, lambda conn: calibration.resoudre(
+            conn, tenant, prediction_id, payload.outcome))
+    except LookupError as exc:
+        raise HTTPException(404, "Prédiction introuvable") from exc
+    return {"tenant": tenant, "prediction": boucle_routes._assainir(prediction.as_dict())}
+
+
+@router.get("/calibration/rapport")
+async def rapport_calibration(
+    request: Request,
+    decision_id: str | None = Query(None, max_length=200),
+    x_persona: str = Header("architecte", max_length=64),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    boucle_routes._verifier_contexte(x_persona, x_espace)
+    tenant = boucle_routes._tenant(request, x_tenant)
+    resultat = await _avec_connexion(tenant, lambda conn: calibration.rapport(
+        conn, tenant, decision_id=decision_id))
+    return boucle_routes._assainir(resultat)
+
+
+@router.post("/contrefactuel")
+async def comparer_contrefactuel(payload: DemandeContrefactuel):
+    try:
+        resultat = contrefactuel.comparer(
+            payload.options, payload.changements, criteres=payload.criteres)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return boucle_routes._assainir(resultat)
+
+
+@router.post("/memoire/consolidation")
+async def proposer_consolidation(
+    payload: DemandeConsolidation,
+    request: Request,
+    x_persona: str = Header("architecte", max_length=64),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Propose doublons et conflits ; n'écrit jamais sans approbation humaine explicite."""
+    boucle_routes._verifier_contexte(x_persona, x_espace)
+    tenant = boucle_routes._tenant(request, x_tenant)
+    try:
+        proposition = consolidation_memoire.proposer(
+            payload.memoires, tenant_id=tenant, seuil_similarite=payload.seuil_similarite)
+        plan = None
+        if payload.ids:
+            if not payload.acteur:
+                raise ValueError("acteur obligatoire pour approuver une consolidation")
+            plan = consolidation_memoire.approuver(
+                proposition, acteur=payload.acteur, ids=payload.ids)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    resultat = {"tenant": tenant, "proposition": proposition.as_dict(), "ecritures": False}
+    if plan is not None:
+        resultat["plan"] = plan
+    return boucle_routes._assainir(resultat)

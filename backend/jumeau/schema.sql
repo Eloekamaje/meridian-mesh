@@ -594,3 +594,43 @@ CREATE TABLE IF NOT EXISTS valeur (
 CREATE INDEX IF NOT EXISTS valeur_tenant_statut ON valeur (tenant_id, statut);
 CREATE INDEX IF NOT EXISTS valeur_tenant_domaine ON valeur (tenant_id, domaine);
 CREATE INDEX IF NOT EXISTS valeur_objet ON valeur (tenant_id, objet_source_type, objet_source_id);
+
+-- ---------------------------------------------------------------------------
+-- Mémoire durable : session, préférence, contexte, décision ou apprentissage.
+-- Portée explicite, consentement et rétention ; le tenant est la frontière.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS memoire_durable (
+    id            text NOT NULL,
+    tenant_id     text NOT NULL,
+    scope         text NOT NULL CHECK (scope IN ('user', 'session', 'twin', 'situation')),
+    scope_id      text NOT NULL,
+    classe        text NOT NULL CHECK (classe IN ('session', 'preference', 'contexte', 'decision', 'apprentissage')),
+    contenu       text NOT NULL,
+    provenance    text NOT NULL,
+    consentement  boolean NOT NULL DEFAULT false,
+    consenti_le   timestamptz,
+    expire_le     timestamptz NOT NULL,
+    confiance     double precision NOT NULL DEFAULT 0.5 CHECK (confiance >= 0 AND confiance <= 1),
+    donnees       jsonb NOT NULL DEFAULT '{}',
+    cree_le       timestamptz NOT NULL DEFAULT now(),
+    maj_le        timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, id)
+);
+CREATE INDEX IF NOT EXISTS memoire_durable_scope ON memoire_durable (tenant_id, scope, scope_id);
+CREATE INDEX IF NOT EXISTS memoire_durable_expire ON memoire_durable (tenant_id, expire_le);
+
+-- ---------------------------------------------------------------------------
+-- Calibration : confiance annoncée et outcome observé d'une décision.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS prediction_calibration (
+    id          text NOT NULL,
+    tenant_id   text NOT NULL,
+    decision_id text NOT NULL,
+    confidence  double precision NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
+    outcome     boolean,
+    cree_le     timestamptz NOT NULL DEFAULT now(),
+    resolue_le  timestamptz,
+    PRIMARY KEY (tenant_id, id)
+);
+CREATE INDEX IF NOT EXISTS prediction_calibration_decision
+    ON prediction_calibration (tenant_id, decision_id);

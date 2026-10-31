@@ -121,13 +121,14 @@ preuves, alternatives, incertitudes, décision proposée et limites.
 | Claims, preuves, temporalité | implémenté |
 | Mémoire organisationnelle `ANNOTATION` | implémenté |
 | Session / conversation | partiel (`cases`) |
-| Mémoire durable utilisateur | absent / à spécifier |
-| Context Pack | implémenté (`jumeau/contexte.py`) |
-| Trace de raisonnement | implémenté (`jumeau/raisonnement.py`) |
-| Divulgation progressive | partielle (API, pas UI) |
-| Rétention / consentement / suppression | à implémenter |
-| Consolidation mémoire | partielle (`memoire_org`, `outcomes`) |
-| Counterfactuel / calibration | partiel / à mesurer |
+| Mémoire durable utilisateur | implémenté (`memoire_durable.py`, consentement, rétention, export, suppression) |
+| Context Pack | implémenté (`contexte.py`) |
+| Context Resolver | implémenté (`resolveur_contexte.py`, surfaces, période, résumé/détail) |
+| Trace de raisonnement | implémenté (`raisonnement.py`) |
+| Divulgation progressive | API implémentée ; UI à brancher |
+| Rétention / consentement / suppression | implémenté pour la mémoire durable ; politique globale à généraliser |
+| Consolidation mémoire | implémentée en proposition + plan d'approbation (`consolidation_memoire.py`) |
+| Counterfactuel / calibration | implémentés (`contrefactuel.py`, `calibration.py`) |
 | RLS / OIDC | non activé |
 
 ## 6. Critères d'acceptation
@@ -142,7 +143,7 @@ preuves, alternatives, incertitudes, décision proposée et limites.
 
 ## 7. Questions ouvertes
 
-1. Quelle durée de rétention pour les sessions, preuves et learnings ?
+1. Quelle durée de rétention pour les sessions et learnings au-delà de la mémoire durable à 30 jours ?
 2. Quel consentement pour la mémoire durable par utilisateur ?
 3. Quelle politique de suppression pour les preuves immuables ?
 4. Quel niveau de détail exposer dans la trace de raisonnement ?
