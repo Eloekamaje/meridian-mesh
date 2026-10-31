@@ -7,6 +7,7 @@ preuve ; les erreurs de domaine sont traduites en 400/403/404/503.
 from __future__ import annotations
 
 import asyncio
+import logging
 from contextlib import nullcontext
 from dataclasses import replace
 from typing import Any
@@ -22,14 +23,15 @@ from jumeau import application_memoire, attention, boucle, calibration
 from jumeau import contexte as contexte_module, contrefactuel, decision_cognitive
 from jumeau import entreprise_depot
 from jumeau import evaluation_outils, evaluation_profils
-from jumeau import consolidation_memoire, memoire_durable, memoire_org, outcomes, portefeuille
-from jumeau import raisonnement as raisonnement_module, resolveur_contexte, retrieval_memoire
+from jumeau import consolidation_memoire, memoire_durable, memoire_org, outcomes, portefeuille, retention
+from jumeau import raisonnement as raisonnement_module, resolveur_contexte, retrieval_memoire, session_memoire
 from jumeau import rls, valeur as valeur_module
 from jumeau import specialiste_decouverte, specialiste_impact, specialiste_preuve
 from jumeau import specialistes, temporalite, twins_types
 from jumeau import composition, graph_store, profils, reponse_cognitive
 
 router = APIRouter(prefix="/boucle", tags=["cognitif"])
+logger = logging.getLogger("meridian.cognitif")
 
 
 class CreationTwin(BaseModel):
@@ -63,6 +65,8 @@ class CreationOutcome(BaseModel):
     twin_ids: list[str] = Field(default_factory=list)
     enseignement: str = Field(min_length=1, max_length=4000)
     conditions_reutilisation: list[str] = Field(default_factory=list)
+    prediction_id: str | None = Field(None, max_length=128)
+    succes: bool | None = None
 
 
 class ReutilisationLearning(BaseModel):
@@ -103,6 +107,9 @@ class AnalyseCognitive(AnalyseSpecialistes):
     options: list[dict[str, Any]] = Field(default_factory=list)
     changements: dict[str, Any] = Field(default_factory=dict)
     criteres: list[str] = Field(default_factory=list)
+    session_id: str | None = Field(None, max_length=200)
+    decision_id: str | None = Field(None, max_length=200)
+    confidence: float | None = None
 
 
 class DemandeComposition(BaseModel):
@@ -235,6 +242,7 @@ async def _appeler(action):
     except HTTPException:
         raise
     except Exception as exc:  # noqa: BLE001 - traduction contrôlée en statut HTTP
+        logger.exception("route cognitive en échec : %s", type(exc).__name__)
         raise _erreur(exc) from exc
 
 
@@ -346,8 +354,16 @@ async def creer_outcome(
         situation_ids=payload.situation_ids, twin_ids=payload.twin_ids,
         enseignement=payload.enseignement, conditions_reutilisation=payload.conditions_reutilisation,
         acteur=x_persona))
+    prediction = None
+    if payload.prediction_id and payload.succes is not None:
+        try:
+            prediction = await _avec_connexion(tenant, lambda conn: decision_cognitive.resoudre_outcome(
+                conn, tenant, payload.prediction_id, payload.succes))
+        except Exception:
+            prediction = None
     return {"tenant": tenant, "outcome": boucle_routes._assainir(resultat["outcome"]),
-            "learning": boucle_routes._assainir(resultat["learning"])}
+            "learning": boucle_routes._assainir(resultat["learning"]),
+            "prediction": boucle_routes._assainir(prediction.as_dict()) if prediction is not None else None}
 
 
 @router.get("/learnings")
@@ -619,7 +635,9 @@ async def analyser_cognitif(
     try:
         candidats = await _avec_connexion(tenant, lambda conn: retrieval_memoire.recuperer(
             conn, tenant, question=payload.question, twin_ids=tuple(twin_ids),
-            situation_id=payload.situation_id, limite=12))
+            situation_id=payload.situation_id,
+            scope=("session" if payload.session_id else None),
+            scope_id=payload.session_id, limite=12))
         contexte_pack = retrieval_memoire.enrichir_pack(contexte_pack.as_dict(), candidats)
     except Exception:
         contexte_pack = contexte_pack.as_dict()
@@ -627,6 +645,27 @@ async def analyser_cognitif(
     reponse_dict["decision_support"] = decision_cognitive.decision_support_enrichi(
         reponse_dict.get("decision_support"), options=payload.options or None,
         changements=payload.changements, criteres=payload.criteres)
+    session_resultat = None
+    if payload.session_id:
+        try:
+            resume_session = " | ".join(
+                str(fait.get("titre") or "") for fait in (contexte_pack.get("faits") or ())[:3]
+            ) or str(reponse_dict.get("decision_support", {}).get("abstention") or "Analyse cognitive")
+            session_resultat = await _avec_connexion(
+                tenant, lambda conn: session_memoire.memoriser_session(
+                    conn, tenant, payload.session_id, payload.question, resume_session,
+                    acteur=x_persona,
+                    donnees={"fingerprint": contexte_pack.get("fingerprint")}))
+        except Exception:
+            session_resultat = None
+    prediction = None
+    if payload.decision_id and payload.confidence is not None:
+        try:
+            prediction = await _avec_connexion(tenant, lambda conn: decision_cognitive.enregistrer_confiance(
+                conn, tenant, decision_id=payload.decision_id,
+                confidence=payload.confidence))
+        except Exception:
+            prediction = None
     trace = raisonnement_module.construire(
         payload.question, profil, plan, contexte_pack, dossier, reponse_dict)
     resultat = {
@@ -642,6 +681,8 @@ async def analyser_cognitif(
         "contexte": boucle_routes._assainir(contexte_pack),
         "contexte_resolu": boucle_routes._assainir(contexte_resolu.as_dict()),
         "raisonnement": boucle_routes._assainir(trace.as_dict()),
+        "prediction": boucle_routes._assainir(prediction.as_dict()) if prediction is not None else None,
+        "memoire_session": boucle_routes._assainir(session_resultat) if session_resultat is not None else None,
         "qualite": {
             "faits": len(reponse.socle.faits),
             "preuves": len(reponse.socle.preuves),
@@ -1037,3 +1078,67 @@ async def proposer_consolidation(
     if plan is not None:
         resultat["plan"] = plan
     return boucle_routes._assainir(resultat)
+
+
+@router.get("/retention/rapport")
+async def retention_rapport(
+    request: Request,
+    x_persona: str = Header("architecte", max_length=64),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    boucle_routes._verifier_contexte(x_persona, x_espace)
+    tenant = boucle_routes._tenant(request, x_tenant)
+    resultat = await _avec_connexion(tenant, lambda conn: retention.rapport(conn, tenant))
+    return boucle_routes._assainir(resultat)
+
+
+class PurgeRetention(BaseModel):
+    dry_run: bool = True
+
+
+@router.post("/retention/purger")
+async def retention_purger(
+    payload: PurgeRetention,
+    request: Request,
+    x_persona: str = Header("architecte", max_length=64),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    boucle_routes._verifier_contexte(x_persona, x_espace)
+    tenant = boucle_routes._tenant(request, x_tenant)
+    resultat = await _avec_connexion(tenant, lambda conn: retention.purger(
+        conn, tenant, dry_run=payload.dry_run))
+    return boucle_routes._assainir(resultat)
+
+
+@router.get("/memoire/session")
+async def lister_sessions(
+    request: Request,
+    limite: int = Query(50, ge=1, le=500),
+    x_persona: str = Header("architecte", max_length=64),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    boucle_routes._verifier_contexte(x_persona, x_espace)
+    tenant = boucle_routes._tenant(request, x_tenant)
+    sessions = await _avec_connexion(tenant, lambda conn: session_memoire.lister_sessions(
+        conn, tenant, limite=limite))
+    return {"tenant": tenant, "sessions": boucle_routes._assainir(sessions)}
+
+
+@router.get("/memoire/session/{session_id}")
+async def lire_session(
+    session_id: str,
+    request: Request,
+    limite: int = Query(20, ge=1, le=100),
+    x_persona: str = Header("architecte", max_length=64),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    boucle_routes._verifier_contexte(x_persona, x_espace)
+    tenant = boucle_routes._tenant(request, x_tenant)
+    memoires = await _avec_connexion(tenant, lambda conn: session_memoire.charger_session(
+        conn, tenant, session_id, limite=limite))
+    return {"tenant": tenant, "session_id": session_id,
+            "memoires": boucle_routes._assainir(memoires)}

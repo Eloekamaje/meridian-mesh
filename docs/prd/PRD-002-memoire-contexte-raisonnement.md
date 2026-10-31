@@ -130,7 +130,10 @@ preuves, alternatives, incertitudes, décision proposée et limites.
 | Rétention / consentement / suppression | implémenté pour la mémoire durable ; politique globale à généraliser |
 | Consolidation mémoire | proposition + application gouvernée des mémoires durables (`application_memoire.py`) |
 | Counterfactuel / calibration | `contrefactuel.py`, `calibration.py`, `decision_cognitive.py` ; calibration encore manuelle |
-| Session memory / cases | partiel, Mongo |
+| Session memory / cases | implémenté (`session_memoire.py`, import de cas, résumé borné) |
+| Rétention généralisée | implémentée (`retention.py`, dry-run, Claims/Preuves immuables) |
+| Calibration automatique | branchée dans `/analyser` et `/outcomes` |
+| Adaptateur d'écriture HTTP | implémenté (`http_adapter.py`, gouverné par `Executeur`) |
 | RLS / OIDC | non activé |
 
 ## 6. Critères d'acceptation
