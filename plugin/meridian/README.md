@@ -90,7 +90,7 @@ Les agents `agents/*.md` peuvent être copiés dans `.opencode/agents/` ou conve
 
 Chaque skill suit la divulgation progressive : `SKILL.md` court, `references/` pour les contrats et `evals/` pour les cas de test. Les skills passent le validateur Agent Skills et sont packageables avec `skill-creator/scripts/package_skill.py`.
 
-Le benchmark local avec/sans skill est documenté dans [`evals/BENCHMARK.md`](evals/BENCHMARK.md). Il suggère un gain de discipline et de temps sur un incident, mais reste un signal à répéter.
+Le benchmark et la décision de pilote sont documentés dans [`evals/BENCHMARK.md`](evals/BENCHMARK.md) et [`evals/PILOT-REVIEW.md`](evals/PILOT-REVIEW.md). Décision : no-go production, go conditionnel pour une seconde itération avec revue humaine et outcome réel.
 
 ## Utilisation
 

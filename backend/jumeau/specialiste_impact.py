@@ -118,6 +118,9 @@ class SpecialisteImpact:
                 ids.append(identifiant)
         visibles = ids[:_MAX_IDS]
         tronque = len(ids) > _MAX_IDS
+        visibles_amont = [identifiant for identifiant in visibles if identifiant in amont]
+        visibles_aval = [identifiant for identifiant in visibles if identifiant in aval
+                         and identifiant not in visibles_amont]
         titre = f"Impact de {twin_id} : {total_amont} amont, {total_aval} aval"
         resume = (
             f"À profondeur {profondeur}, {twin_id} compte {total_amont} dépendance(s) amont et "
@@ -132,8 +135,8 @@ class SpecialisteImpact:
             "aval": total_aval,
             "total": total_amont + total_aval,
             "ids": visibles,
-            "amont_ids": amont[:_MAX_IDS],
-            "aval_ids": aval[:_MAX_IDS],
+            "amont_ids": visibles_amont,
+            "aval_ids": visibles_aval,
             "tronque": tronque,
         }
         confiance = 0.7 if total_amont + total_aval else 0.55

@@ -277,3 +277,23 @@ def test_outcome_borne_les_learnings_et_ne_mute_pas_les_lignes(monkeypatch):
     assert resultat.statut == "partiel"
     assert any("tronqués" in limite for limite in resultat.limites)
     assert lignes == avant
+
+
+def test_les_listes_amont_aval_sont_coherentes_avec_la_troncature():
+    from jumeau.specialiste_impact import SpecialisteImpact
+
+    class Store:
+        def impact(self, tenant, twin, profondeur):
+            return {
+                "amont": [{"id": f"a{i}"} for i in range(6)],
+                "aval": [{"id": f"v{i}"} for i in range(3)],
+            }
+
+    contexte = __import__("jumeau.specialistes", fromlist=["ContexteSpecialiste"]).ContexteSpecialiste(
+        tenant="demo", twin_ids=("paiements",), store=Store())
+    resultat = SpecialisteImpact(inclure_chemins=False).analyser(contexte)
+    proposition = resultat.propositions[0]
+    donnees = proposition.donnees
+    assert len(donnees["ids"]) == 8 and donnees["tronque"] is True
+    assert len(donnees["amont_ids"]) + len(donnees["aval_ids"]) == 8
+    assert set(donnees["amont_ids"] + donnees["aval_ids"]) == set(donnees["ids"])

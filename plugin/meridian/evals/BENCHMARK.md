@@ -32,12 +32,13 @@ Prompt : impact de la règle R-118 sur `conduit`, avec impact prouvé/inféré/i
 
 | Bras | Résultat | Durée | Coût |
 |---|---|---:|---:|
-| `skill+mcp` | **1/1** | 160 s | 1,13 USD |
-| `checklist+mcp` | 0/1 | 114 s | 0,76 USD |
-| `data-only` | 0/1 | 85 s | 0,56 USD |
+| `skill+mcp` | **5/5** | 143 s | 0,95 USD |
+| `checklist+mcp` | 1/5 | 135 s | 1,02 USD |
+| `data-only` | 1/5 | 78 s | 0,52 USD |
 | `human` | non exécuté | — | — |
 
-Une seule répétition : smoke test, pas une mesure.
+Le bras skill a dû être porté à **2,00 USD** de budget : trois runs à 1,25 USD étaient épuisés avant
+la réponse finale. La comparaison de coût doit donc être lue avec ce budget différent.
 
 **Portefeuille (smoke antérieur, hors runner)** : avec `enterprise-portfolio` 10 tours / 0,58 USD ;
 sans skill 16 tours / 0,64 USD, avec une ouverture « chaîne causale » ensuite corrigée.
@@ -49,7 +50,7 @@ Ce dispositif ne permet pas d'affirmer que Méridian améliore les décisions : 
 - Sur l'incident, `skill+mcp` passe 5/5 ; `checklist+mcp` et `data-only` échouent sur le contrat de sections, et la checklist coûte plus cher. Le format imposé par la skill crée un avantage mesuré qui n'est pas encore une preuve de meilleure décision.
 - Sur le portefeuille, les deux terminent ; la skill va plus vite et tient mieux la règle « corrélation ≠ causalité ».
 - `data-only` échoue aussi sur le contrat : un pack gelé ne suffit pas ici. Le bénéfice propre du MCP n'est pas isolé ; la skill améliore surtout la **discipline de processus**.
-- Cinq répétitions sur l'incident et une seule sur R-118 ne prouvent pas une supériorité générale : il faut la revue humaine et cinq répétitions sur le second scénario.
+- Les deux scénarios ont maintenant 5 répétitions skill, mais R-118 exige un budget supérieur ; le panel de revue est un panel d'agents, pas d'humains.
 
 ## Ce qu'il faudrait pour une preuve
 

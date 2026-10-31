@@ -503,8 +503,6 @@ def composer(
     if profil.inconnu:
         autorite = "lecture"
         actions_autorisees = ()
-    elif not actions_autorisees:
-        actions_autorisees = (_ACTIONS_PROFIL.get(profil.id, _ACTIONS_PROFIL["generaliste"])[0],)
     prochaines = _PROCHAINES.get(profil.id, _PROCHAINES["generaliste"])
     decision_support = _decision_support(
         faits, dossier, autorite, prochaines)

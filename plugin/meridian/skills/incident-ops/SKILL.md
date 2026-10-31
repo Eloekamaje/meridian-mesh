@@ -60,3 +60,7 @@ Toujours inclure ces sections, même si une section est vide :
 
 Ne jamais omettre `Actions proposées` ou `Prochaines étapes`. Si aucune action n'est sûre, écrire
 « Aucune action exécutée ; propositions à valider ».
+
+## Précision topologique
+
+Ne jamais inverser amont et aval : citer le sens exact du fait. Une action de rôle n'est pas un fait du socle ; l'étiqueter comme proposition.

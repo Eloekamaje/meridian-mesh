@@ -54,3 +54,7 @@ Toujours inclure :
 7. `## Autorité`
 8. `## Prochaines étapes`
 9. `## Limites`
+
+## Précision topologique
+
+Ne jamais inverser amont et aval. Les actions et prochaines étapes sont des propositions de rôle, pas des faits du socle.
