@@ -40,3 +40,15 @@ limites de rattachement et absence de causalité.
 ## Quand ne pas utiliser
 
 Pour une seule application sans question de portefeuille : utiliser `meridian-architecture-impact`.
+
+## Format de sortie obligatoire
+
+Toujours inclure :
+
+1. `## Socle de faits`
+2. `## Valeur`
+3. `## Risque`
+4. `## Actions proposées`
+5. `## Autorité`
+6. `## Prochaines étapes`
+7. `## Limites`

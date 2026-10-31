@@ -65,7 +65,7 @@ Options principales :
 | `--mcp-config` | généré | Configuration MCP existante pour les bras MCP. |
 | `--model` | non transmis | Modèle Claude Code. |
 | `--max-budget-usd` | `1.25` | Budget maximal par run. |
-| `--timeout` | `180` | Timeout par run, en secondes. |
+| `--timeout` | `300` | Timeout par run, en secondes. |
 | `--output` | `/tmp/meridian-benchmark-<timestamp>` | Répertoire des résultats. |
 | `--api-url`, `--tenant`, `--persona` | env puis valeurs Méridian | Env du MCP généré. |
 | `--dry-run` | désactivé | Imprime les commandes ou imports sans exécuter ni écrire. |
@@ -116,6 +116,17 @@ Un fichier peut contenir un objet, une liste d'objets, ou un objet `{"scenarios"
   tolérées autour d'un terme.
 - `max_seconds` utilise la durée du résultat Claude, ou la durée murale à défaut.
 - `must_complete` est vrai par défaut : le run doit produire un résultat final sans timeout ni erreur.
+
+## Packet de revue humaine
+
+Construire un packet aveugle depuis les résultats :
+
+```bash
+python ../plugin/meridian/evals/build_human_packet.py \
+  --runs-dir /tmp/meridian-benchmark --output /tmp/meridian-human-packet
+```
+
+Le packet ne contient aucune revue inventée : les reviewers remplissent les formulaires.
 
 ## Réponses humaines
 

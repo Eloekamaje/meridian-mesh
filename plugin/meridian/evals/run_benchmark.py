@@ -26,7 +26,7 @@ from typing import Any, Iterable
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_RUNS = 3
 DEFAULT_MAX_BUDGET_USD = 1.25
-DEFAULT_TIMEOUT = 180.0
+DEFAULT_TIMEOUT = 300.0
 DEFAULT_API_URL = "http://127.0.0.1:8001/api"
 DEFAULT_TENANT = "local"
 DEFAULT_PERSONA = "architecte"

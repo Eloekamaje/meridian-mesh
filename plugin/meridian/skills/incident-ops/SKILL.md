@@ -45,3 +45,18 @@ Ne pas conclure à une cause sans preuve.
 
 Pour une priorisation de portefeuille ou un bénéfice attendu : utiliser `meridian-enterprise-portfolio`
 ou `meridian-benefits-okr`.
+
+## Format de sortie obligatoire
+
+Toujours inclure ces sections, même si une section est vide :
+
+1. `## Socle de faits`
+2. `## Lecture incident`
+3. `## SLA`
+4. `## Actions proposées`
+5. `## Autorité`
+6. `## Prochaines étapes`
+7. `## Limites`
+
+Ne jamais omettre `Actions proposées` ou `Prochaines étapes`. Si aucune action n'est sûre, écrire
+« Aucune action exécutée ; propositions à valider ».

@@ -40,3 +40,17 @@ Aucune relation déduite d'un nom.
 ## Quand ne pas utiliser
 
 Pour un incident de production sans changement : utiliser `meridian-incident-ops`.
+
+## Format de sortie obligatoire
+
+Toujours inclure :
+
+1. `## Socle de faits`
+2. `## Impact prouvé`
+3. `## Impact inféré`
+4. `## Impact inconnu`
+5. `## Interfaces`
+6. `## Actions proposées`
+7. `## Autorité`
+8. `## Prochaines étapes`
+9. `## Limites`

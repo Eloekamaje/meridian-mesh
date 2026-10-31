@@ -41,3 +41,15 @@ Si l'outcome n'existe pas, le dire ; ne pas inventer de learning.
 ## Quand ne pas utiliser
 
 Pour une panne ou un SLA : utiliser `meridian-incident-ops`.
+
+## Format de sortie obligatoire
+
+Toujours inclure :
+
+1. `## Socle de faits`
+2. `## Valeur attendue et observée`
+3. `## Décision`
+4. `## Actions proposées`
+5. `## Autorité`
+6. `## Prochaines étapes`
+7. `## Limites`
