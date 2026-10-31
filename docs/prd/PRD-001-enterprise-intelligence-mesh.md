@@ -234,6 +234,15 @@ Le produit doit exposer des **capacités d'entreprise**, pas seulement des outil
 
 ---
 
+### 7.11 Mémoire, contexte et raisonnement
+
+Les exigences détaillées sont définies dans [PRD-002](PRD-002-memoire-contexte-raisonnement.md) :
+mémoire de session, épisodique, sémantique, procédurale, organisationnelle et de valeur ; Context Pack
+borné et fingerprinté ; trace de raisonnement auditable, abstention et DecisionSupport. Les fiches
+produit associées sont indexées dans [PRODUCT-SHEETS.md](PRODUCT-SHEETS.md).
+
+---
+
 ## 8. Exigences non fonctionnelles
 
 - **NFR-001 — Preuve** : toute affirmation d'entreprise DOIT citer une source, une preuve et une date.
@@ -374,6 +383,9 @@ Projections par rôle, multi-tenant, performance, évaluation, gouvernance à l'
 | Orchestrateur général (amendé) | [ADR-0002](../adr/0002-orchestrateur-general.md) |
 | Architecture polyglotte Postgres + graph | [ADR-0007](../adr/0007-polyglot-postgres-graph.md) |
 | Postgres unique (rejeté) | [ADR-0006](../adr/0006-postgres-unique-sans-projection.md) |
+| Travail comme store de travail | [ADR-0008](../adr/0008-travail-work-store.md) |
+| Value Ledger | [ADR-0009](../adr/0009-value-ledger.md) |
+| Mémoire, contexte et raisonnement | [PRD-002](PRD-002-memoire-contexte-raisonnement.md) |
 
 ---
 
@@ -383,3 +395,4 @@ Projections par rôle, multi-tenant, performance, évaluation, gouvernance à l'
 |---|---|---|
 | 1.0 | 2026-10-30 | Base initiale : Enterprise Intelligence Mesh, modèle d'entreprise, capacités, harness, critères d'acceptation. |
 | 1.1 | 2026-10-30 | Stockage polyglotte : Postgres pour la connaissance, graph store pour la topologie ; aucune projection. |
+| 1.2 | 2026-10-30 | Ajout du volet mémoire, contexte et raisonnement (PRD-002) et index des fiches produit. |

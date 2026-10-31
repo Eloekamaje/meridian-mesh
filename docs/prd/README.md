@@ -3,6 +3,9 @@
 | PRD | Titre | Statut | Version | Date |
 |-----|-------|--------|---------|------|
 | [PRD-001](PRD-001-enterprise-intelligence-mesh.md) | Méridian, Enterprise Intelligence Mesh | accepted | 1.0 | 2026-10-30 |
+| [PRD-002](PRD-002-memoire-contexte-raisonnement.md) | Mémoire, contexte et raisonnement | accepted | 1.0 | 2026-10-30 |
+
+Les **fiches produit** sont indexées dans [PRODUCT-SHEETS.md](PRODUCT-SHEETS.md).
 
 ## Règles
 

@@ -18,8 +18,10 @@ from pydantic import BaseModel, Field
 import auth as auth_identite
 
 import boucle_routes
-from jumeau import attention, boucle, entreprise_depot, evaluation_outils, evaluation_profils
-from jumeau import memoire_org, outcomes, portefeuille, rls, valeur as valeur_module
+from jumeau import attention, boucle, contexte as contexte_module, entreprise_depot
+from jumeau import evaluation_outils, evaluation_profils
+from jumeau import memoire_org, outcomes, portefeuille, raisonnement as raisonnement_module
+from jumeau import rls, valeur as valeur_module
 from jumeau import specialiste_decouverte, specialiste_impact, specialiste_preuve
 from jumeau import specialistes, temporalite, twins_types
 from jumeau import composition, graph_store, profils, reponse_cognitive
@@ -541,6 +543,9 @@ async def analyser_cognitif(
         }
     reponse = reponse_cognitive.composer(
         payload.question, profil, plan, dossier, autorite_max="proposition")
+    contexte_pack = contexte_module.construire(payload.question, profil, dossier)
+    trace = raisonnement_module.construire(
+        payload.question, profil, plan, contexte_pack, dossier, reponse.as_dict())
     resultat = {
         "tenant": tenant,
         "scope": ("enterprise" if global_scope and not payload.domaine else "portfolio")
@@ -551,6 +556,8 @@ async def analyser_cognitif(
         "specialistes_executes": list(noms),
         "dossier": boucle_routes._assainir(dossier),
         "reponse": boucle_routes._assainir(reponse.as_dict()),
+        "contexte": boucle_routes._assainir(contexte_pack.as_dict()),
+        "raisonnement": boucle_routes._assainir(trace.as_dict()),
         "qualite": {
             "faits": len(reponse.socle.faits),
             "preuves": len(reponse.socle.preuves),
