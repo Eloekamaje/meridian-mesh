@@ -102,6 +102,7 @@ Le dépôt `gsf-mockup` ne contient pas de spec OpenAPI statique. Le connecteur 
 
 - Neo4j de production dispose désormais d'un service `docker-compose.prod.yml` (volume, auth, healthcheck, mémoire) et des variables `NEO4J_*` ; le branchement à un Neptune managé et la haute disponibilité cloud restent à faire.
 - DecisionSupport est exposé dans chaque réponse (`options`, `recommandation` nulle sans proposition explicite, `abstention`, `conditions_de_retournement`).
+- Autorité : un client ne peut plus demander `decision`/`approbation` via le body ; le profil est une lentille, l'autorité agent est plafonnée à `proposition`. Hors demo, le profil du body est ignoré au profit de l'identité authentifiée.
 - Le tenant est extrait du proxy/OIDC et vérifié dans l'API ; les policies RLS sont fournies et appliquées au contexte de la Boucle et du catalogue d'outils, mais **pas encore activées** ni généralisées à tous les chemins legacy.
 - Mongo canonique est migré (parité zéro sur identités, relations, situations, initiatives). Les **cases** restent un store de travail distinct par ADR-0008 ; le fil Aujourd'hui et la carte Atlas lisent encore leurs collections legacy.
 - La découverte est automatique pour les dépôts (OpenAPI/WSDL/GraphQL/gRPC/AsyncAPI), les claims `EXPOSE` et OTLP ; les exports propriétaires de gateway/CMDB restent à brancher.

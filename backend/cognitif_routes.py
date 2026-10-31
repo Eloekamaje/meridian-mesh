@@ -15,6 +15,8 @@ import psycopg
 from fastapi import APIRouter, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
+import auth as auth_identite
+
 import boucle_routes
 from jumeau import attention, boucle, entreprise_depot, evaluation_outils, evaluation_profils
 from jumeau import memoire_org, outcomes, portefeuille, rls, valeur as valeur_module
@@ -496,11 +498,14 @@ async def analyser_cognitif(
     """Résout le profil, compose les spécialistes et rend une réponse située sur un socle unique."""
     boucle_routes._verifier_contexte(x_persona, x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
+    # Le profil est une lentille, pas un droit. En demo, le sélecteur est accepté ; hors demo,
+    # l'identité authentifiée fait foi et l'autorité de l'agent reste plafonnée à proposition.
+    profil_demande = payload.profil if auth_identite.mode() == "demo" else None
     profil = profils.resoudre_profil(
-        profil=payload.profil, identite={"role": x_persona},
-        question=payload.question, autorite_max=payload.autorite_max)
+        profil=profil_demande, identite={"role": x_persona},
+        question=payload.question, autorite_max="proposition")
     plan = composition.planifier(
-        profil, payload.question, autorite_max=payload.autorite_max,
+        profil, payload.question, autorite_max="proposition",
         application_id=payload.application_id, situation_id=payload.situation_id,
         twin_ids=payload.twin_ids)
     global_scope = (
@@ -535,7 +540,7 @@ async def analyser_cognitif(
             "specialistes": [], "limites": ["aucun spécialiste mobilisé par la composition"],
         }
     reponse = reponse_cognitive.composer(
-        payload.question, profil, plan, dossier, autorite_max=payload.autorite_max)
+        payload.question, profil, plan, dossier, autorite_max="proposition")
     resultat = {
         "tenant": tenant,
         "scope": ("enterprise" if global_scope and not payload.domaine else "portfolio")
@@ -598,11 +603,14 @@ async def previsualiser_composition(
     """Prévisualise la composition sans exécuter aucun spécialiste."""
     boucle_routes._verifier_contexte(x_persona, x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
+    # Le profil est une lentille, pas un droit. En demo, le sélecteur est accepté ; hors demo,
+    # l'identité authentifiée fait foi et l'autorité de l'agent reste plafonnée à proposition.
+    profil_demande = payload.profil if auth_identite.mode() == "demo" else None
     profil = profils.resoudre_profil(
-        profil=payload.profil, identite={"role": x_persona},
-        question=payload.question, autorite_max=payload.autorite_max)
+        profil=profil_demande, identite={"role": x_persona},
+        question=payload.question, autorite_max="proposition")
     plan = composition.planifier(
-        profil, payload.question, autorite_max=payload.autorite_max,
+        profil, payload.question, autorite_max="proposition",
         application_id=payload.application_id, situation_id=payload.situation_id,
         twin_ids=payload.twin_ids)
     return {"tenant": tenant, "profil": boucle_routes._assainir(profil.as_dict()),
