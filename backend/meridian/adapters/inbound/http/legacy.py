@@ -23,6 +23,7 @@ ROOT_DIR = Path(__file__).resolve().parents[4]
 load_dotenv(ROOT_DIR / ".env")  # avant les modules qui lisent leur configuration à l'import (auth, pieces, limites)
 
 import auth as auth_identite  # noqa: E402
+from meridian.application import tenant_context  # noqa: E402
 import limites  # noqa: E402
 import pieces  # noqa: E402
 from meridian.adapters.inbound.http.cases import build_cases_router  # noqa: E402
@@ -99,6 +100,18 @@ client = AsyncIOMotorClient(os.environ["MONGO_URL"])
 db = client[os.environ["DB_NAME"]]
 
 app = FastAPI(title="Méridian")
+
+
+@app.middleware("http")
+async def _tenant_courant(request, call_next):
+    """Pose le tenant de la requête pour les écritures Travail sans paramètre tenant."""
+    entete = request.headers.get("X-Tenant")
+    tenant = entete or getattr(request.state, "tenant", None) or "local"
+    jeton = tenant_context.definir(tenant)
+    try:
+        return await call_next(request)
+    finally:
+        tenant_context.reinitialiser(jeton)
 auth_identite.installer(app)
 
 

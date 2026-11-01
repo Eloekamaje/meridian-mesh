@@ -19,6 +19,7 @@ import psycopg
 
 from meridian.adapters.outbound.postgres.depot import appliquer_schema
 from meridian.adapters.outbound.postgres.travail_depot import TravailDepot as TravailPostgres
+from meridian.application import tenant_context
 
 logger = logging.getLogger("meridian")
 
@@ -51,20 +52,30 @@ def installer(db, dsn: str | None = None, tenant: str | None = None):
         return actuel
     with psycopg.connect(dsn, autocommit=True) as conn:
         appliquer_schema(conn)
-    cible = TravailPostgres(
-        dsn=dsn, tenant_id=tenant or os.environ.get(TENANT_ENV) or DEFAUT_TENANT)
-    proxy = TravailCollection(actuel, cible)
+    defaut = tenant or os.environ.get(TENANT_ENV) or DEFAUT_TENANT
+    cible = TravailPostgres(dsn=dsn, tenant_id=defaut)
+    proxy = TravailCollection(actuel, cible, dsn=dsn, tenant_defaut=defaut)
     db.cases = proxy
-    logger.info("Double écriture Travail active (tenant Postgres %s)", cible.tenant_id)
+    logger.info("Double écriture Travail active (tenant Postgres par requête, défaut %s)",
+                proxy.tenant_defaut)
     return proxy
 
 
 class TravailCollection:
     """Proxy de la collection `cases` : lectures Mongo, écritures Mongo puis miroir Postgres."""
 
-    def __init__(self, collection, cible):
+    def __init__(self, collection, cible=None, *, dsn: str | None = None,
+                 tenant_defaut: str = DEFAUT_TENANT):
         self._collection = collection
         self._cible = cible
+        self.dsn = dsn
+        self.tenant_defaut = tenant_defaut
+
+    def _cible_courante(self):
+        tenant = tenant_context.courant_explicite()
+        if self._cible is not None and (tenant is None or tenant == getattr(self._cible, "tenant_id", tenant)):
+            return self._cible
+        return TravailPostgres(dsn=self.dsn, tenant_id=tenant or self.tenant_defaut)
 
     def __getattr__(self, nom: str):
         return getattr(self._collection, nom)
@@ -104,10 +115,11 @@ class TravailCollection:
         identifiants = list(dict.fromkeys(identifiants))
         if not identifiants:
             return
+        cible = self._cible_courante()
         try:
             curseur = self._collection.find({"_id": {"$in": identifiants}})
             for document in await curseur.to_list(None):
-                await self._cible.upsert(document)
+                await cible.upsert(document)
         except Exception:  # noqa: BLE001 - Mongo reste la référence, le worker rattrapera
             logger.exception("Miroir Postgres du Travail impossible après une écriture Mongo")
 
@@ -115,6 +127,7 @@ class TravailCollection:
         if not supprimes or not cibles:
             return
         cles = [cle for _, cle in cibles]
+        cible = self._cible_courante()
         try:
             if supprimes < len(cibles):
                 identifiants = [identifiant for identifiant, _ in cibles]
@@ -123,11 +136,13 @@ class TravailCollection:
                 restants = {document["_id"] for document in survivants}
                 cles = [cle for identifiant, cle in cibles if identifiant not in restants]
             if cles:
-                await self._cible.supprimer_plusieurs(cles)
+                await cible.supprimer_plusieurs(cles)
         except Exception:  # noqa: BLE001 - même politique que l'upsert : ne pas casser Mongo
             logger.exception("Suppression Postgres du Travail impossible après une suppression Mongo")
 
     async def insert_one(self, document, *args, **kwargs):
+        if isinstance(document, dict):
+            document.setdefault("tenant_id", tenant_context.courant(self.tenant_defaut))
         resultat = await self._collection.insert_one(document, *args, **kwargs)
         identifiant = getattr(resultat, "inserted_id", None)
         if identifiant is None:

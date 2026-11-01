@@ -36,6 +36,10 @@ def main(argv=None) -> int:
     groupe.add_argument("--apply", dest="appliquer", action="store_true")
     analyseur.set_defaults(appliquer=False)
     analyseur.add_argument("--max-lots", type=int, default=None)
+    analyseur.add_argument("--supprimer-absents", action="store_true",
+                           help="retirer du read model les cas absents de Mongo")
+    analyseur.add_argument("--poser-tenant-mongo", action="store_true",
+                           help="poser tenant_id sur les cas Mongo qui n'en ont pas (avec --apply)")
     args = analyseur.parse_args(argv)
 
     tenant = normaliser_slug(args.tenant or os.environ.get("JUMEAU_TENANT") or "local")
@@ -49,6 +53,9 @@ def main(argv=None) -> int:
     async def scenario():
         try:
             source = TravailMongo(client[base].cases)
+            if args.appliquer and args.poser_tenant_mongo:
+                await source.collection.update_many(
+                    {"tenant_id": {"$exists": False}}, {"$set": {"tenant_id": tenant}})
             if not args.appliquer:
                 return await remplir(source, None, limite=max(1, args.limite),
                                      appliquer=False, max_lots=args.max_lots)
@@ -59,7 +66,8 @@ def main(argv=None) -> int:
                     postgres_depot.appliquer_schema(conn)
                 cible = TravailPostgres(conn=conn, tenant_id=tenant)
                 return await remplir(source, cible, limite=max(1, args.limite),
-                                     appliquer=True, max_lots=args.max_lots)
+                                     appliquer=True, max_lots=args.max_lots,
+                                     supprimer_les_absents=args.supprimer_absents)
         finally:
             client.close()
 

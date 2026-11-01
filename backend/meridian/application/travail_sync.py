@@ -22,6 +22,7 @@ class Bilan:
     lus: int = 0
     ecrits: int = 0
     lots: int = 0
+    supprimes: int = 0
     curseur: Curseur = field(default_factory=Curseur)
 
 
@@ -44,8 +45,18 @@ def _document(document: dict[str, Any]) -> dict[str, Any]:
     return propre
 
 
+async def supprimer_absents(source, cible) -> int:
+    """Retire du read model les cas qui n'existent plus dans la source (balayage complet)."""
+    source_ids = await source.identifiants()
+    cible_ids = cible.identifiants()
+    absents = sorted(cible_ids - source_ids)
+    if not absents:
+        return 0
+    return int(await cible.supprimer_plusieurs(absents))
+
+
 async def remplir(source, cible, *, limite: int = 500, appliquer: bool = True,
-                  max_lots: int | None = None) -> Bilan:
+                  max_lots: int | None = None, supprimer_les_absents: bool = False) -> Bilan:
     """Backfill complet, idempotent : relit les cas par `_id` croissant et les upsert."""
     bilan = Bilan()
     apres: str | None = None
@@ -63,6 +74,8 @@ async def remplir(source, cible, *, limite: int = 500, appliquer: bool = True,
             apres = _identifiant(document)
         if len(lot) < limite or (max_lots is not None and bilan.lots >= max_lots):
             break
+    if supprimer_les_absents and appliquer and cible is not None:
+        bilan.supprimes = await supprimer_absents(source, cible)
     return bilan
 
 

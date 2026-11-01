@@ -71,6 +71,8 @@ def _analyseur(prog: str, worker: bool) -> argparse.ArgumentParser:
                                help="secondes entre deux passes (défaut : 5)")
         analyseur.add_argument("--max-lots", type=int, default=100,
                                help="lots maximum par passe (défaut : 100)")
+        analyseur.add_argument("--reconcilier-suppressions", action="store_true",
+                               help="au démarrage, retirer du read model les cas absents de Mongo")
         analyseur.add_argument("--depuis", default=None,
                                help="reprendre après ce maj_le ISO au lieu du dernier curseur Postgres")
         analyseur.add_argument("--une-passe", action="store_true",
@@ -167,6 +169,10 @@ def main(argv=None) -> int:
                            else cible.dernier_curseur())
                 journal.info("travail sync : tenant=%s curseur initial maj_le=%s id=%s",
                              tenant, curseur.maj_le, curseur.id)
+                if args.reconcilier_suppressions:
+                    from meridian.application.travail_sync import supprimer_absents
+                    supprimees = await supprimer_absents(source, cible)
+                    journal.info("travail sync : %d cas absents supprimés", supprimees)
                 await _boucle(source, cible, curseur=curseur,
                               intervalle=args.intervalle, limite=args.limite,
                               max_lots=args.max_lots, une_passe=args.une_passe)

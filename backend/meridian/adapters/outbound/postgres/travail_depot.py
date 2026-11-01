@@ -107,6 +107,7 @@ class TravailDepot:
         if not identifiant:
             raise ValueError("travail sans identifiant")
         document["id"] = identifiant
+        document["tenant_id"] = self.tenant_id
         if document.get("_id") is not None:
             document["_id"] = str(document["_id"])
         conn, fermer = self._connexion()
@@ -146,6 +147,15 @@ class TravailDepot:
                 cur.execute("DELETE FROM travail WHERE tenant_id = %s AND id = %s",
                             (self.tenant_id, cid))
                 return cur.rowcount > 0
+        finally:
+            if fermer:
+                conn.close()
+
+    def identifiants(self) -> set[str]:
+        conn, fermer = self._connexion()
+        try:
+            return {str(ligne[0]) for ligne in conn.execute(
+                "SELECT id FROM travail WHERE tenant_id = %s", (self.tenant_id,)).fetchall()}
         finally:
             if fermer:
                 conn.close()

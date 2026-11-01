@@ -19,6 +19,9 @@ class SourceFaux:
             documents = [d for d in documents if str(d["_id"]) > str(apres_id)]
         return documents[:limite]
 
+    async def identifiants(self):
+        return {str(d.get("id") or d["_id"]) for d in self.documents}
+
     async def lister_apres(self, maj_le, apres_id, limite):
         documents = sorted(self.documents,
                            key=lambda d: (d.get("maj_le") or "", str(d["_id"])))
@@ -37,6 +40,16 @@ class CibleFaux:
         self.documents = {}
         self.upserts = 0
         self.changements = 0
+
+    def identifiants(self):
+        return set(self.documents)
+
+    async def supprimer_plusieurs(self, ids):
+        supprimes = 0
+        for identifiant in ids:
+            if self.documents.pop(str(identifiant), None) is not None:
+                supprimes += 1
+        return supprimes
 
     async def upsert(self, travail):
         self.upserts += 1
@@ -104,3 +117,13 @@ def test_une_mise_a_jour_posterieure_est_reprise_seule():
     suite = asyncio.run(synchroniser(source, cible, curseur=premier.curseur, limite=10))
     assert suite.lus == 1 and suite.curseur.maj_le == "2026-01-03T00:00:00+00:00"
     assert cible.documents["case-a"]["titre"] == "Travail modifié"
+
+
+def test_le_backfill_peut_supprimer_les_cas_absents_de_mongo():
+    source = SourceFaux([document("a", "2026-01-01T00:00:00+00:00")])
+    cible = CibleFaux()
+    asyncio.run(remplir(source, cible, limite=10))
+    cible.documents["case-absent"] = {"id": "case-absent", "titre": "orphelin"}
+    bilan = asyncio.run(remplir(source, cible, limite=10, supprimer_les_absents=True))
+    assert bilan.supprimes == 1
+    assert set(cible.documents) == {"case-a"}

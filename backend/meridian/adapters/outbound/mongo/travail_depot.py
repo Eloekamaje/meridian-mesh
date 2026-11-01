@@ -59,6 +59,10 @@ class TravailDepot:
                    .sort("_id", 1).limit(int(limite)))
         return await curseur.to_list(int(limite))
 
+    async def identifiants(self) -> set[str]:
+        curseur = self.collection.find({}, {"_id": 1})
+        return {str(document.get("id") or document["_id"]) for document in await curseur.to_list(None)}
+
     async def lister_apres(self, maj_le: str | None, apres_id: str | None,
                            limite: int) -> list[dict[str, Any]]:
         if maj_le is None:

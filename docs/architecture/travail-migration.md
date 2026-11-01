@@ -68,6 +68,8 @@ set -a; . ./.env; set +a
 # 0. Backfill à blanc (défaut), puis application : Postgres part complet.
 .venv/bin/python -m meridian.adapters.outbound.postgres.migrer_travail --tenant local --dry-run
 .venv/bin/python -m meridian.adapters.outbound.postgres.migrer_travail --tenant local --apply
+# avec rattrapage des cas orphelins et pose du tenant Mongo :
+.venv/bin/python -m meridian.adapters.outbound.postgres.migrer_travail --tenant local --apply --supprimer-absents --poser-tenant-mongo
 
 # 1. Double écriture : les nouvelles écritures Mongo sont miroitées.
 export JUMEAU_TRAVAIL_DUAL_WRITE=1

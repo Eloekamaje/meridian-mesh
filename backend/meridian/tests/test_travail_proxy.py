@@ -13,6 +13,7 @@ import pytest
 from meridian.adapters.outbound.mongo.travail_proxy import (
     DSN_ENV, FLAG_ENV, TENANT_ENV, TravailCollection, installer,
 )
+from meridian.application import tenant_context
 
 besoin_mongo_et_pg = pytest.mark.skipif(
     not os.environ.get("MONGO_URL") or not os.environ.get("JUMEAU_PG_DSN"),
@@ -464,3 +465,18 @@ def test_fumee_double_ecriture_mongo_postgres():
             conn.execute("DELETE FROM travail WHERE tenant_id = %s", (tenant,))
     finally:
         conn.close()
+
+
+def test_insert_one_ajoute_le_tenant_de_la_requete():
+    collection = CollectionFaux()
+    cible = CibleFaux()
+    cible.tenant_id = "tenant-a"
+    proxy = TravailCollection(collection, cible)
+    jeton = tenant_context.definir("tenant-a")
+    try:
+        resultat = asyncio.run(proxy.insert_one({"id": "c1", "titre": "Tenant"}))
+    finally:
+        tenant_context.reinitialiser(jeton)
+    assert resultat.inserted_id
+    assert collection.documents[0]["tenant_id"] == "tenant-a"
+    assert cible.documents["c1"]["tenant_id"] == "tenant-a"
