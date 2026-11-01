@@ -19,7 +19,7 @@ from psycopg.types.json import Jsonb
 from meridian.adapters.outbound.connectors import connecteurs_runtime_pull
 from meridian.adapters.outbound.postgres import decouverte_interfaces
 from meridian.adapters.outbound.redis import notifications_impacts
-from meridian.application import impacts_situations
+from meridian.application import impacts_situations, initiatives_auto
 
 __all__ = ["sources_otlp", "etat_sources", "tirer", "tirer_et_publier"]
 
@@ -183,6 +183,11 @@ async def _publier_situation(db, situation: dict) -> None:
         {"id": {"$regex": f"^{re.escape(prefixe)}", "$ne": situation["id"]}, "statut": "active"},
         {"$set": {"statut": "archivee"}})
     await db.situations.replace_one({"id": situation["id"]}, situation, upsert=True)
+    try:
+        await initiatives_auto.proposer(db, situation)
+    except Exception:  # noqa: BLE001 - la situation est déjà publiée
+        journal.warning("tirage OTLP : proposition d'initiative impossible pour %s",
+                        situation.get("id"), exc_info=True)
 
 
 async def tirer_et_publier(db, conn, jumeau, sources=None, force=False) -> list[dict]:

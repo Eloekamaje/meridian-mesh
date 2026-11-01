@@ -29,6 +29,7 @@ ETATS_RUN = ("QUEUED", "FETCHING", "INDEXING", "EXTRACTING", "PROJECTING",
 ETATS_ACTIFS = ("QUEUED", "FETCHING", "INDEXING", "EXTRACTING", "PROJECTING", "RETRY_WAIT")
 ETATS_TERMINAUX = ("SUCCEEDED", "FAILED", "CANCELLED")
 ETAPES = ("FETCHING", "INDEXING", "EXTRACTING", "PROJECTING")
+TYPES_LECTEURS = ("CONFLUENCE", "JIRA", "SERVICENOW", "DATADOG")
 ORDRE_ETAPES = {etape: rang for rang, etape in enumerate(ETAPES)}
 
 INTERVALLE_DEFAUT = 3600
@@ -131,7 +132,8 @@ def _source(conn, source_id, tenant: str | None = None) -> dict:
         raise SourceIntrouvable("source introuvable")
     source = _une(
         conn,
-        "SELECT id, tenant_id, jumeau_id, type, nom, emplacement, curseur FROM source WHERE id = %s",
+        "SELECT id, tenant_id, jumeau_id, type, nom, emplacement, curseur, url, secret_ref, configuration "
+        "FROM source WHERE id = %s",
         (identifiant,),
     )
     if source is None or (tenant is not None and source["tenant_id"] != tenant):
@@ -227,7 +229,8 @@ def planifier_sources(conn, intervalle_s=None) -> int:
         conn,
         "SELECT s.id, s.tenant_id FROM source s "
         "LEFT JOIN source_schedule ss ON ss.tenant_id = s.tenant_id AND ss.source_id = s.id "
-        "WHERE s.type = 'GIT' AND ss.source_id IS NULL ORDER BY s.tenant_id, s.id",
+        "WHERE s.type = ANY(%s) AND ss.source_id IS NULL ORDER BY s.tenant_id, s.id",
+        (["GIT", *TYPES_LECTEURS],),
     )
     for source in sources:
         planifier_source(conn, source["id"], intervalle, tenant=source["tenant_id"])
@@ -724,12 +727,20 @@ async def ingerer_run(conn, db, run, worker_id=None, fencing_token=None, *, veil
         source = _source(conn, run["source_id"], run["tenant_id"])
         marquer_etape(conn, identifiant, worker_id, fencing_token, "FETCHING",
                       tenant_id=run["tenant_id"])
+        veiller_source = None
         if veiller is None:
             from meridian.adapters.outbound.llm import gardien  # import tardif : le planificateur ne charge pas l'agent
             veiller = gardien.veiller
+            veiller_source = gardien.veiller_source
         journal.info("ingestion run %s : veille de %s (%s)", identifiant, run["jumeau_id"],
                      source.get("nom"))
-        await veiller(conn, db, run["jumeau_id"], chemins=[source["emplacement"]])
+        if source["type"] in TYPES_LECTEURS:
+            if veiller_source is None:
+                from meridian.adapters.outbound.llm import gardien
+                veiller_source = gardien.veiller_source
+            await veiller_source(conn, db, run["jumeau_id"], source)
+        else:
+            await veiller(conn, db, run["jumeau_id"], chemins=[source["emplacement"]])
         source_apres = _source(conn, run["source_id"], run["tenant_id"])
         observed_sha = source_apres.get("curseur")
         for etape in ("INDEXING", "EXTRACTING", "PROJECTING"):

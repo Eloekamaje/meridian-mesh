@@ -26,10 +26,11 @@ from meridian.adapters.outbound.connectors import lecteurs
 from meridian.adapters.outbound.llm import agent, contradicteur, poignee
 from meridian.adapters.outbound.mongo import registre
 from meridian.adapters.outbound.postgres import (
-    comprendre, connaissance, decouverte_interfaces, depot, pulls_runtime, recoupement, temps,
+    comprendre, connaissance, decouverte_interfaces, depot, interfaces_depot, pulls_runtime,
+    recoupement, temps,
 )
 from meridian.adapters.outbound.redis import notifications_impacts
-from meridian.application import impacts_situations, methodes
+from meridian.application import impacts_situations, initiatives_auto, methodes
 from meridian.domain import schemas
 from meridian.adapters.outbound.connectors.ingerer import ingerer
 from meridian.adapters.outbound.connectors.source_git import sha_courant
@@ -259,6 +260,10 @@ async def publier(db, sit):
     await db.situations.update_many({"id": {"$regex": f"^{re.escape(prefixe)}", "$ne": sit["id"]}, "statut": "active"},
                                     {"$set": {"statut": "archivee"}})
     await db.situations.replace_one({"id": sit["id"]}, sit, upsert=True)
+    try:
+        await initiatives_auto.proposer(db, sit)
+    except Exception:  # la proposition est un bonus : la situation est déjà publiée
+        journal.warning("gardien : proposition d'initiative impossible pour %s", sit.get("id"), exc_info=True)
 
 
 def empreinte(sources):
@@ -362,6 +367,70 @@ async def _synchroniser_graphe(conn, db, jumeau, store=None):
             contexte["fermer"]()
 
 
+def _decouverte_a_rejouer(conn, jumeau) -> bool:
+    """Une découverte sans run ou en erreur doit être relancée, même sans nouveau SHA."""
+    if conn is None:
+        return False
+    runs = interfaces_depot.derniers_runs(conn, jumeau["tenant_id"], jumeau["id"], limite=1)
+    return not runs or runs[0].get("status") == "error"
+
+
+def _situation_source(jumeau, source, version):
+    identifiant = hashlib.sha256(f"{source['id']}:{version}".encode()).hexdigest()[:12]
+    return {
+        "id": f"sit-source-{jumeau['id']}-{source['id']}-{identifiant}",
+        "verbe": "a_comprendre",
+        "nature": "changement",
+        "type": "source",
+        "titre": f"Source {source['nom']} mise à jour",
+        "resume": f"La source {source['nom']} a changé de version.",
+        "priorite": "basse",
+        "statut": "active",
+        "score": 48,
+        "detectee": datetime.now(timezone.utc).isoformat(),
+        "question": f"Que change la mise à jour de la source {source['nom']} ?",
+        "jumeaux": [jumeau["id"]],
+        "source": {"id": source["id"], "nom": source["nom"], "type": source["type"]},
+        "decouverte_quoi": f"version {str(version)[:32]}",
+    }
+
+
+async def veiller_source(conn, db, jumeau_id, source, lecteur=None):
+    """Détecte le changement de version d'une source branchée (Confluence, Jira, ServiceNow, Datadog).
+
+    Le lecteur expose ``version_courante`` ; la version précédente est le curseur de la source. Une première
+    observation pose le curseur sans bruit, une version suivante publie une situation de source. Les Claims de
+    cette source restent lus/proposés à la demande : ce chemin ne prétend pas extraire un delta documentaire.
+    """
+    from meridian.adapters.outbound.connectors import systemes  # enregistre les fabriques de lecteurs
+    jumeau = depot.jumeau_par_id(conn, jumeau_id)
+    if not jumeau:
+        raise ValueError(f"jumeau inconnu : {jumeau_id}")
+    if lecteur is None:
+        candidats = lecteurs.lecteurs_de([source])
+        if not candidats:
+            raise ValueError(f"source {source.get('nom')} sans lecteur")
+        lecteur = candidats[0]
+    version = await asyncio.to_thread(lecteur.version_courante)
+    if not version:
+        raise ValueError(f"source {source.get('nom')} sans version courante")
+    actuel = conn.execute("SELECT curseur FROM source WHERE id = %s", (source["id"],)).fetchone()
+    precedent = actuel[0] if actuel is not None else source.get("curseur")
+    if version == precedent:
+        return {"changement": False, "source": source.get("nom")}
+    if precedent is None:
+        depot.maj_curseur_source(conn, source["id"], jumeau["tenant_id"], version)
+        return {"changement": False, "premiere": True, "source": source.get("nom")}
+    situation = _situation_source(jumeau, source, version)
+    if db is not None:
+        await publier(db, situation)
+    depot.maj_curseur_source(conn, source["id"], jumeau["tenant_id"], version)
+    journal.info("source %s/%s : version changée, situation %s", jumeau["tenant_id"],
+                 source.get("nom"), situation["id"])
+    return {"changement": True, "source": source.get("nom"), "version": version,
+            "situation": situation["id"]}
+
+
 async def veiller(conn, db, jumeau_id, chemins=None, rediger=_rediger):
     """Une passe du gardien sur tous les dépôts du jumeau (ou ceux de `chemins`).
 
@@ -395,7 +464,10 @@ async def veiller(conn, db, jumeau_id, chemins=None, rediger=_rediger):
         commits += [{**c, "depot": source["nom"]} for c in nouveaux]
         ingeres.append(source["nom"])
     sources = depot.sources_du_jumeau(conn, jumeau_id)
-    if ingeres:
+    # Une découverte en erreur est rejouée à la passe suivante, même sans nouveau SHA : sinon une panne
+    # transitoire laisserait le graphe d'interfaces en retard jusqu'au prochain commit.
+    decouverte_a_rejouer = _decouverte_a_rejouer(conn, jumeau)
+    if ingeres or decouverte_a_rejouer:
         # La découverte d'interfaces fait partie de la passe : elle transforme les EXPOSE du code en graphe daté,
         # journalise un DiscoveryRun et calcule les changements/impacts. Une panne de ce journal ne bloque pas la veille.
         try:

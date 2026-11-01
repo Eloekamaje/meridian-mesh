@@ -24,6 +24,13 @@ source_schedule → ingestion_run → réclamation sous bail → Gardien
   nouvelle branche à la passe suivante.
 - `POST /pause` / `/resume`.
 - Un seul run vivant par source ; bail, fencing, retry/backoff, reprise après crash.
+- Sources branchées (`CONFLUENCE`, `JIRA`, `SERVICENOW`, `DATADOG`) : planifiées dans
+  `source_schedule`. Le worker compare `version_courante()` au curseur ; une première
+  observation pose le curseur, une version suivante publie une situation de type
+  `source`. Les Claims de ces sources restent lus/proposés à la demande : ce n'est pas
+  une extraction de delta documentaire. Une situation de priorité haute dépose en plus
+  une **proposition d'initiative** `en_attente` (idempotente) ; aucune décision n'est
+  automatique.
 
 ## Webhook (accélérateur)
 
@@ -87,5 +94,9 @@ Toutes les sources restent en **PAT** aujourd'hui : le PAT est résolu par `vaul
   feature n'est vue qu'après `PATCH /api/boucle/sources/{id}/branche` (ou modification de la source). Le
   changement n'écrit que la base et enfile un run : le clone/fetch reste fait par le worker.
 - Un dépôt local sans `url` distante n'est pas rafraîchi par le worker : le mettre à jour avec Git.
+- Les sources branchées détectent un changement de version, mais n'extraient pas encore
+  automatiquement un delta de Claims : la lecture et la proposition restent à la demande.
+- Une découverte d'interfaces en erreur est rejouée à la passe suivante ; une
+  découverte `partial` n'est pas rejouée automatiquement.
 - Sans worker supervisé, les runs restent `QUEUED` ; le webhook ne fait qu'avancer l'échéance.
 - Un échec de fetch/ingestion est réessayé avec backoff ; le jumeau conserve sa dernière connaissance.

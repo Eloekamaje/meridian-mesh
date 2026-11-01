@@ -8,7 +8,7 @@ from datetime import datetime
 
 import pytest
 
-from meridian.adapters.outbound.postgres import depot
+from meridian.adapters.outbound.postgres import depot, interfaces_depot
 from meridian.adapters.outbound.llm import gardien
 from meridian.tests.conftest import ACTIVITE, JUMEAU, SOURCE, besoin_pg, claim
 
@@ -284,3 +284,13 @@ def test_synchronisation_graphe_depuis_postgres_et_relations(monkeypatch):
     assert rapport["twins"] == 2 and rapport["relations"] == 1
     assert set(store.noeuds) == {("demo", "a"), ("demo", "b")}
     assert store.aretes[("demo", "r1")].target == "b"
+
+
+def test_decouverte_interface_rejouee_apres_erreur(monkeypatch):
+    monkeypatch.setattr(interfaces_depot, "derniers_runs",
+                        lambda *a, **k: [{"status": "error"}])
+    assert gardien._decouverte_a_rejouer(object(), {"tenant_id": "t", "id": "j"}) is True
+
+    monkeypatch.setattr(interfaces_depot, "derniers_runs",
+                        lambda *a, **k: [{"status": "ok"}])
+    assert gardien._decouverte_a_rejouer(object(), {"tenant_id": "t", "id": "j"}) is False

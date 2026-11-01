@@ -229,6 +229,15 @@ def maj_index(conn, source_id, copie, index_code):
     conn.execute("UPDATE source SET copie = %s, index_code = %s WHERE id = %s", (str(copie), index_code, source_id))
 
 
+def maj_curseur_source(conn, source_id, tenant_id, curseur):
+    """Met à jour la version d'une source branchée (Confluence, Jira, etc.), sans toucher aux Claims."""
+    ligne = conn.execute(
+        "UPDATE source SET curseur = %s WHERE id = %s AND tenant_id = %s "
+        "RETURNING id, tenant_id, jumeau_id, type, nom, curseur",
+        (str(curseur), source_id, tenant_id)).fetchone()
+    return ligne
+
+
 def ci_du_jumeau(conn, jumeau_id):
     """Ancre d'identité : l'élément de configuration de la CMDB (périmètre de sa source ServiceNow), ou None."""
     r = conn.execute("SELECT emplacement FROM source WHERE jumeau_id = %s AND type = 'SERVICENOW' ORDER BY id LIMIT 1",
