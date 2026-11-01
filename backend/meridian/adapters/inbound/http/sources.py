@@ -2,7 +2,7 @@
 
 Le routeur ne déclenche jamais l'ingestion dans la requête HTTP : il enfile un run durable et rend ``202`` avec
 son identifiant, le worker le réclame ensuite. Aucune réponse ne contient d'emplacement, d'URL ou de secret :
-:mod:`jumeau.ingestion_runtime` ne projette que des champs sûrs.
+:mod:`meridian.adapters.outbound.postgres.ingestion_runtime` ne projette que des champs sûrs.
 """
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ import psycopg
 from fastapi import APIRouter, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
-from jumeau import ingestion_runtime as runtime
+from meridian.adapters.outbound.postgres import ingestion_runtime as runtime
 
 journal = logging.getLogger("meridian.ingestion.http")
 

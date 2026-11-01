@@ -25,19 +25,37 @@ from meridian.adapters.inbound.http import boucle as boucle_routes
 from meridian.adapters.outbound import analyse_runtime
 from meridian.application import analyse_service
 from meridian.application.analyse_service import ConfigurationManquante
-from jumeau import evaluation_cognitive
-from jumeau.execution import depot
-from jumeau.execution.modele import CommandeExecution, ConflitIdempotence, QuotaDepasse
-from jumeau import application_memoire, attention, boucle, calibration
-from jumeau import contrefactuel, decision_cognitive
-from jumeau import entreprise_depot
-from jumeau import evaluation_outils, evaluation_profils
-from jumeau import consolidation_memoire, memoire_durable, memoire_org, outcomes, portefeuille, retention
-from jumeau import resolveur_contexte, session_memoire
-from jumeau import rls, valeur as valeur_module
-from jumeau import specialiste_decouverte, specialiste_impact, specialiste_preuve
-from jumeau import specialistes, temporalite, twins_types
-from jumeau import composition, graph_store, profils
+from meridian.application import evaluation_cognitive
+from meridian.adapters.outbound.postgres import execution_depot as depot
+from meridian.application.execution.modele import CommandeExecution, ConflitIdempotence, QuotaDepasse
+from meridian.adapters.outbound.postgres import application_memoire
+from meridian.domain import attention
+from meridian.adapters.outbound.postgres import boucle
+from meridian.adapters.outbound.postgres import calibration
+from meridian.domain import contrefactuel
+from meridian.adapters.outbound.postgres import decision_cognitive
+from meridian.adapters.outbound.postgres import entreprise_depot
+from meridian.application import evaluation_outils
+from meridian.application import evaluation_profils
+from meridian.application import consolidation_memoire
+from meridian.adapters.outbound.postgres import memoire_durable
+from meridian.adapters.outbound.postgres import memoire_org
+from meridian.adapters.outbound.postgres import outcomes
+from meridian.adapters.outbound.postgres import portefeuille
+from meridian.adapters.outbound.postgres import retention
+from meridian.application import resolveur_contexte
+from meridian.adapters.outbound.postgres import session_memoire
+from meridian.adapters.outbound.postgres import rls
+from meridian.adapters.outbound.postgres import valeur as valeur_module
+from meridian.adapters.outbound.postgres import specialiste_decouverte
+from meridian.adapters.outbound.postgres import specialiste_impact
+from meridian.application import specialiste_preuve
+from meridian.domain import specialistes
+from meridian.domain import temporalite
+from meridian.adapters.outbound.postgres import twins_types
+from meridian.application import composition
+from meridian.adapters.outbound.neo4j import graph_store
+from meridian.domain import profils
 
 router = APIRouter(prefix="/boucle", tags=["cognitif"])
 logger = logging.getLogger("meridian.cognitif")

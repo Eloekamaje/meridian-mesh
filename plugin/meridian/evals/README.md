@@ -195,7 +195,7 @@ Un fichier peut contenir un objet, une liste d'objets, ou un objet `{"scenarios"
 `gold/outils-claims-decisions.json` fige des cas hors ligne : outils attendus/interdits, statut de Claim et décision attendue (recommandation, abstention, autorité). Il est noté sans modèle, sans réseau et sans base par `backend/jumeau/evaluation_gold.py`, qui réutilise `evaluation_outils` pour la sélection d'outils :
 
 ```bash
-cd backend && .venv/bin/python -m jumeau.evaluation_gold
+cd backend && .venv/bin/python -m meridian.application.evaluation_gold
 ```
 
 Un cas n'est exact que si les trois composants le sont. Les Claims `ACCEPTED` exigent une preuve SUPPORT et le jeu reste plafonné à l'autorité `proposition`.

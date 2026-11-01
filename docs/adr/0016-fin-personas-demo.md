@@ -75,4 +75,4 @@ qui change la lecture de la même vérité factuelle sans accorder d'autorité s
 
 - [ADR-0010](0010-monolithe-modulaire-hexagonal.md), [ADR-0011](0011-runtime-durable-postgres.md)
 - [ADR-0015](0015-frontiere-agent-workflow-outils.md)
-- `backend/auth.py`, `backend/jumeau/execution/routes.py`, `backend/cognitif_routes.py`
+- `backend/auth.py`, `backend/meridian/application/execution/routes.py`, `backend/cognitif_routes.py`

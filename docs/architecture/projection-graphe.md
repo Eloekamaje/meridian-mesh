@@ -24,7 +24,7 @@ scripts/dev-outbox-worker.sh --une-passe  # une file bornée (100 événements) 
 systemctl enable --now meridian-outbox-worker
 ```
 
-Équivalent direct : `python -m jumeau.execution.outbox_worker` (ou `--une-passe`).
+Équivalent direct : `python -m meridian.adapters.inbound.worker.outbox_worker` (ou `--une-passe`).
 
 Variables requises côté worker :
 
@@ -65,15 +65,15 @@ par Git et ne doit jamais être collé dans un ticket ou un log. Pour le contene
 ## Backfill et vérification
 
 Postgres `jumeau` porte les Twins, Mongo `relations` porte les liens. Le backfill lit ces deux
-sources et délègue l'upsert idempotent à `jumeau.graphe_sync` ; il ne supprime jamais rien.
+sources et délègue l'upsert idempotent à `meridian.application.graphe_sync` ; il ne supprime jamais rien.
 
 ```bash
 cd backend
 set -a; . ./.env; set +a
 set -a; . /tmp/meridian-neo4j.env; set +a
 
-.venv/bin/python -m jumeau.backfill_graphe --tenant demo --dry-run   # défaut, n'ouvre pas Neo4j
-.venv/bin/python -m jumeau.backfill_graphe --tenant demo --apply     # exige GRAPH_STORE=neo4j
+.venv/bin/python -m meridian.adapters.outbound.neo4j.backfill_graphe --tenant demo --dry-run   # défaut, n'ouvre pas Neo4j
+.venv/bin/python -m meridian.adapters.outbound.neo4j.backfill_graphe --tenant demo --apply     # exige GRAPH_STORE=neo4j
 ```
 
 `--dry-run` calcule le mapping, les orphelins et les erreurs sur un graphe mémoire. `--apply` refuse
@@ -89,7 +89,7 @@ scripts/dev-graphe-e2e.sh
 ```
 
 Le script enfile un `graph.synchroniser` pour `__smoke_graphe__`, lance
-`.venv/bin/python -m jumeau.execution.outbox_worker --une-passe` avec `GRAPH_STORE=neo4j`, vérifie
+`.venv/bin/python -m meridian.adapters.inbound.worker.outbox_worker --une-passe` avec `GRAPH_STORE=neo4j`, vérifie
 que `publie_le` est posé et que la relation est lisible dans Neo4j, puis supprime les nœuds du
 tenant de smoke. Pour rejouer seulement la projection : `scripts/dev-outbox-worker.sh --une-passe`.
 
@@ -98,7 +98,7 @@ tenant de smoke. Pour rejouer seulement la projection : `scripts/dev-outbox-work
 1. Vérifier que Neo4j est joignable et que le worker est supervisé :
    `systemctl status meridian-outbox-worker`.
 2. Démarrer l'API/le Gardien avec `JUMEAU_GRAPH_PROJECTION=outbox`.
-3. Déclencher une passe (`python -m jumeau.gardien --jumeau <id>`) et vérifier la file :
+3. Déclencher une passe (`python -m meridian.adapters.outbound.llm.gardien --jumeau <id>`) et vérifier la file :
 
    ```sql
    SELECT id, tenant_id, type, cree_le, publie_le, tentatives

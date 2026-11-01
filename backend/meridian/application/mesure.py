@@ -1,7 +1,7 @@
 """Durée de chaque phase d'une réponse (exigences non fonctionnelles §5, §8 : première réponse utile < 2 s p50).
 
 On ne peut pas tenir un objectif qu'on ne mesure pas : chaque réponse porte ses durées (contexte, modèle, outils,
-relecture, contrôles), journalisées, et `python -m jumeau.latence` en tire les p50/p95 par classe de question.
+relecture, contrôles), journalisées, et `python -m meridian.adapters.outbound.llm.latence` en tire les p50/p95 par classe de question.
 """
 import os
 import time

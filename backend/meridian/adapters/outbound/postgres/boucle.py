@@ -1,7 +1,7 @@
 """Boucle P1 canonique : Situation → Investigation → Decision → Initiative → Outcome → Learning.
 
 Ce module ne fait ni réseau ni agent. Il construit des objets canoniques reliés, valide leurs transitions et les
-persiste via :mod:`jumeau.entreprise_depot`. Un Outcome exige une mesure et une Initiative ; un Learning exige un
+persiste via :mod:`meridian.adapters.outbound.postgres.entreprise_depot`. Un Outcome exige une mesure et une Initiative ; un Learning exige un
 Outcome mesuré ou une Investigation. Tous les objets d'une boucle appartiennent au même tenant.
 """
 from __future__ import annotations

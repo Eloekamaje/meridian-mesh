@@ -31,7 +31,7 @@ connecteur GitHub (organisation, dépôts, branches, référence de jeton `coffr
 - le test de connexion est simulé (`_simuler_test`) ;
 - l'aperçu d'import renvoie une liste écrite en dur ;
 - « Lancer » insère une fiche dans le registre Mongo, **sans appeler l'ingestion réelle**
-  (`python -m jumeau.ingerer`).
+  (`python -m meridian.adapters.outbound.connectors.ingerer`).
 
 Il existe donc deux chemins disjoints : l'interface (factice) et la ligne de commande (réelle). Sur AWS, ils doivent
 devenir un seul chemin : **la commande déclenche la naissance du jumeau.**

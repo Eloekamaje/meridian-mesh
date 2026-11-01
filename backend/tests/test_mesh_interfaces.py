@@ -1,6 +1,6 @@
 """Dérivation pure du Mesh d'interfaces : arêtes, impacts et vues publiques (sans base ni serveur)."""
-from jumeau import interfaces_depot
-from jumeau.interfaces import Assertion, Contract, InterfaceGraph, Operation
+from meridian.adapters.outbound.postgres import interfaces_depot
+from meridian.domain.interfaces import Assertion, Contract, InterfaceGraph, Operation
 
 VISIBLES = ["facturation", "paiements"]
 

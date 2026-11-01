@@ -202,7 +202,7 @@ def collecter(racine, application_id, environment: str = "inconnu", max_fichiers
 
 
 def main(argv=None) -> int:
-    p = argparse.ArgumentParser(prog="python -m jumeau.connecteur_interfaces",
+    p = argparse.ArgumentParser(prog="python -m meridian.adapters.outbound.connectors.connecteur_interfaces",
                                 description="Scanner une racine et imprimer le graphe d'interfaces en JSON.")
     p.add_argument("racine")
     p.add_argument("application_id")

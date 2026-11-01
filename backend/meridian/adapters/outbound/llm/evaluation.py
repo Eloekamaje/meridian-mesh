@@ -1,7 +1,7 @@
 """Évaluation du jumeau : un jeu de référence tiré du jumeau lui-même (Jumeau Harness v3 §6).
 
-    python -m jumeau.evaluation --jumeau tbt [--max 10]
-    python -m jumeau.evaluation --verdicts [--tous]
+    python -m meridian.adapters.outbound.llm.evaluation --jumeau tbt [--max 10]
+    python -m meridian.adapters.outbound.llm.evaluation --verdicts [--tous]
 
 Deux étages : l'exactitude (les connaissances validées sont les réponses attendues) et l'ancrage (les sept
 questions de la méthode comprendre-application). Chaque réponse passe par le vrai chemin de Flore ; un juge sans

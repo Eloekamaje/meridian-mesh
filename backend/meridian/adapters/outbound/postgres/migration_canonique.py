@@ -4,7 +4,7 @@ Ce module prépare et effectue un backfill rejouable des collections Mongo histo
 canoniques :
 
 - `situations` et `initiatives` deviennent des objets `objet_entreprise` (familles `emergence` et `decision`) ;
-- `jumeaux` et `relations` alimentent la topologie du `GraphStore` via les mapping de `jumeau.graphe_sync`.
+- `jumeaux` et `relations` alimentent la topologie du `GraphStore` via les mapping de `meridian.application.graphe_sync`.
 
 Les fonctions de mapping sont pures, testables et volontairement pauvres : elles ne copient que des champs
 d'affichage, normalisent ids, dates et statuts, retirent les clés sensibles et ne déduisent aucun lien. Un lien

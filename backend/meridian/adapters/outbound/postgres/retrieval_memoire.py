@@ -724,7 +724,7 @@ def recuperer(
 ) -> list[CandidatMemoire]:
     """Récupère et classe les souvenirs pertinents du tenant, sans modèle ni réseau.
 
-    Les entrées durables sont lues via :func:`jumeau.memoire_durable.lister` avec la portée
+    Les entrées durables sont lues via :func:`meridian.adapters.outbound.postgres.memoire_durable.lister` avec la portée
     demandée, puis filtrées sur ``expire_le`` et sur la question. Les annotations et les
     learnings sont lus dans le dépôt d'entreprise ; un learning ancré sur la situation ou un
     Twin reste candidat même sans recouvrement lexical. Les Claims ne sont lus que pour des
@@ -855,7 +855,7 @@ def enrichir_pack(pack: Any, candidats: Any, *, max_ajouts: Any = 6,
                   max_tokens: Any = None) -> dict:
     """Rend une copie du pack enrichie d'une liste ``memoire`` bornée et empreintée.
 
-    ``pack`` peut être un :class:`jumeau.contexte.ContextePack`, un espace de noms ou un
+    ``pack`` peut être un :class:`meridian.domain.contexte.ContextePack`, un espace de noms ou un
     dictionnaire ; la source n'est jamais mutée. ``candidats`` peut contenir des
     :class:`CandidatMemoire` ou des dictionnaires équivalents. Les secrets sont retirés une
     seconde fois et ``fingerprint_memoire`` est un SHA-256 stable des identifiants et contenus

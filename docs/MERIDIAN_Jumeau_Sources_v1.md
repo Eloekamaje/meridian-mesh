@@ -103,7 +103,7 @@ avoir que la lecture de ce périmètre.
 **Commande d'essai** (six étapes, OK ou ÉCHEC avec la cause, jamais le jeton ; sans l'un des trois éléments elle
 s'arrête sans appel réseau) :
 
-    python -m jumeau.essai_source --systeme confluence|jira --hote banque.atlassian.net \
+    python -m meridian.adapters.outbound.connectors.essai_source --systeme confluence|jira --hote banque.atlassian.net \
         --perimetre TBT --secret vault:meridian/confluence/pilote#jeton [--terme mot]
 
 Étapes : authentification, lecture du périmètre, recherche, lecture à une version, vérification d'une citation (et

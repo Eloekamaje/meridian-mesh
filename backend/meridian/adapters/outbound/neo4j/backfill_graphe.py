@@ -1,7 +1,7 @@
 """Backfill contrôlé des Twins et relations canoniques vers le GraphStore.
 
 Postgres (`jumeau`) porte les Twins ; Mongo (`relations`) porte les liens legacy du tenant. Le module
-ne fait que lire ces deux sources et délègue l'écriture idempotente à `jumeau.graphe_sync` : upsert
+ne fait que lire ces deux sources et délègue l'écriture idempotente à `meridian.application.graphe_sync` : upsert
 par `(tenant_id, id)`, aucune suppression, aucun déplacement de `graphe_sync`.
 
 `--dry-run` est le défaut : le mapping et les orphelins sont calculés sur un graphe mémoire, sans
@@ -10,8 +10,8 @@ projection. Le rapport JSON est stable et ne contient aucun secret.
 
 Usage :
 
-    python -m jumeau.backfill_graphe --tenant demo --dry-run
-    python -m jumeau.backfill_graphe --tenant demo --apply
+    python -m meridian.adapters.outbound.neo4j.backfill_graphe --tenant demo --dry-run
+    python -m meridian.adapters.outbound.neo4j.backfill_graphe --tenant demo --apply
 """
 from __future__ import annotations
 
@@ -24,8 +24,9 @@ from collections.abc import Mapping
 import psycopg
 from psycopg.rows import dict_row
 
-from jumeau import graphe_sync, graph_store
-from jumeau.graphe import GrapheMemoire
+from meridian.application import graphe_sync
+from meridian.adapters.outbound.neo4j import graph_store
+from meridian.domain.graphe import GrapheMemoire
 
 
 def lire_twins(conn, tenant_id: str) -> list[dict]:

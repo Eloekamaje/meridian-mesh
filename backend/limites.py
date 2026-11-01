@@ -13,7 +13,7 @@ import logging
 import os
 import time
 
-from jumeau import partage
+from meridian.adapters.outbound.redis import partage
 
 MAX_TOURS_PRODUCTION = 30
 FENETRE_TOURS_DEFAUT = 60

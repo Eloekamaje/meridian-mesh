@@ -15,7 +15,7 @@ Environment=GRAPH_STORE=neo4j
 Environment=JUMEAU_WORKSPACE=/var/lib/meridian
 Environment=HOME=/var/lib/meridian
 StateDirectory=meridian
-ExecStart=/opt/meridian/backend/.venv/bin/python -m jumeau.execution.outbox_worker
+ExecStart=/opt/meridian/backend/.venv/bin/python -m meridian.adapters.inbound.worker.outbox_worker
 Restart=always
 RestartSec=5
 TimeoutStopSec=30

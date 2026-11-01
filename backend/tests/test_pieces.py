@@ -264,7 +264,8 @@ def test_le_contexte_de_flore_est_une_donnee_non_verifiee_et_neutralisee():
 
 
 def test_le_prompt_de_flore_porte_les_pieces_comme_donnees():
-    from jumeau import agent, flore
+    from meridian.adapters.outbound.llm import agent
+    from meridian.adapters.outbound.llm import flore
     piece = {"nom": "note.txt", "type_libelle": "Texte", "joint_par": "architecte",
              "joint_le": "2026-10-29T10:00:00+00:00", "etat": "lu", "texte": "Bonjour"}
     ctx = {"jumeau": {"nom": "X", "equipe": "E"}, "sources": [], "claims": [], "acteur": "a", "profil": {},
@@ -594,7 +595,7 @@ def test_modele_externe_et_son_autorisation_ne_dependent_pas_de_auth(monkeypatch
 
 
 def test_bedrock_hors_canada_ne_transmet_pas_les_pieces(monkeypatch):
-    from jumeau import flore
+    from meridian.adapters.outbound.llm import flore
 
     monkeypatch.setenv("JUMEAU_MODELE", "bedrock")
     monkeypatch.setenv("AWS_REGION", "us-east-1")

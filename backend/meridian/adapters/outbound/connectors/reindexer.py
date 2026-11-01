@@ -1,6 +1,6 @@
 """Reconstruit l'index de code des dépôts d'un jumeau au commit ingéré (idempotent).
 
-    python -m jumeau.reindexer --jumeau tbt
+    python -m meridian.adapters.outbound.connectors.reindexer --jumeau tbt
 """
 import argparse
 import os

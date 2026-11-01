@@ -35,7 +35,7 @@ Deux règles gouvernent tout ce plan :
 
 | Lot | État | Preuve |
 |---|---|---|
-| **0 — Honnêteté** | **fait** | `jumeau/tests/test_honnetete.py` + `frontend/src/lib/marqueRelecture.test.js` et `origineFlore.test.js` (commande T2) ; suite `jumeau` : **0 échec** (commande T1 ; relevé du 2026-10-28 : 457 passés) |
+| **0 — Honnêteté** | **fait** | `meridian/tests/test_honnetete.py` + `frontend/src/lib/marqueRelecture.test.js` et `origineFlore.test.js` (commande T2) ; suite `jumeau` : **0 échec** (commande T1 ; relevé du 2026-10-28 : 457 passés) |
 | L0.1 `relu` conditionnel | fait | `ETATS_RELECTURE` ; une relecture en panne s'affiche « non relu » |
 | L0.2 `corrige` = texte changé | fait | `reviser()` rend `corrige` faux si la révision échoue ou ne change rien |
 | L0.3 « non relu » à l'écran | fait | `MarqueRelecture` lit `relecture_etat` |
@@ -45,7 +45,7 @@ Deux règles gouvernent tout ce plan :
 | **0bis — L'index** | **fait** | |
 | L0bis.1 preuve = ligne d'appel | fait | `appels.ligne_d_appel` exige une construction d'appel ; sur Conduit (relevé du 2026-10-28), **56 des 176 lignes** que l'ancienne règle retenait ne contenaient aucun appel |
 | L0bis.2 JSON + résolution | fait | `search_graph` et `trace_path` en `format="json"` ; l'arête porte `resolution` (lsp/heuristic) et `confiance` |
-| L0bis.3 index reconstructible | fait (2026-10-28) | l'index se nomme `jum-<jumeau>-<dépôt>-<sha12>` (`cbm.nom_index`), un index d'un autre commit est dit périmé (`cbm.perime`), `python -m jumeau.reindexer --jumeau <id>` le refait ; l'index du commit précédent est retiré (`cbm.retirer_ancien`) ; les 4 jumeaux réels sont réindexés et les anciens index supprimés ; les tests qui indexent avec le vrai binaire nettoient leurs index (`index_jetables`). Reste : un `JUMEAU_CBM_CACHE` différent du cache du démon déjà lancé fait échouer l'indexation — un seul cache par machine |
+| L0bis.3 index reconstructible | fait (2026-10-28) | l'index se nomme `jum-<jumeau>-<dépôt>-<sha12>` (`cbm.nom_index`), un index d'un autre commit est dit périmé (`cbm.perime`), `python -m meridian.adapters.outbound.connectors.reindexer --jumeau <id>` le refait ; l'index du commit précédent est retiré (`cbm.retirer_ancien`) ; les 4 jumeaux réels sont réindexés et les anciens index supprimés ; les tests qui indexent avec le vrai binaire nettoient leurs index (`index_jetables`). Reste : un `JUMEAU_CBM_CACHE` différent du cache du démon déjà lancé fait échouer l'indexation — un seul cache par machine |
 | L0bis.4 index absent signalé | fait | `cbm.indexe()` ; Flore dit « index de code de ce dépôt non disponible, il se reconstruit à la prochaine ingestion » au lieu d'« Outil indisponible » |
 | **1 — Épistémologie** | **fait** (un point clos par un constat) | suite `jumeau` avec Postgres : **0 échec** (commande T1 ; relevé du 2026-10-28 : 552 passés) |
 | L1.1 recette non circulaire | fait | `adaptateur` n'appelle plus `recettes` ; la preuve vient de l'index (`start_line`) ou d'une règle de déclaration propre, la recette juge ensuite — elle peut donc le contredire |
@@ -55,7 +55,7 @@ Deux règles gouvernent tout ce plan :
 | L1.5 preuves remplacées | fait | une preuve du même fichier remplace l'ancienne ; `recouper` refuse dès qu'un système est déjà représenté (plus d'empilement) |
 | L1.6 aucun état manquant | fait | état `en_attente` posé à la naissance (trigger), maturité recalculée à la clôture : **0 connaissance sans état** (S3), **0 M3 close** (S7) ; 557 rattrapées au relevé du 2026-10-28 |
 | L1.7 juge distinct | fait | `JUMEAU_MODELE_JUGE` sépare le modèle du juge ; une décision manquante est comptée (`pannes`) dans le bilan de la passe et journalisée en avertissement |
-| **1bis — La compréhension** | **fait, un point refusé** | `jumeau/tests/test_prouvables.py`, `test_forme.py`, `test_plafond.py` (commande T1) |
+| **1bis — La compréhension** | **fait, un point refusé** | `meridian/tests/test_prouvables.py`, `test_forme.py`, `test_plafond.py` (commande T1) |
 | L1bis.2 bis règles et données | fait (2026-10-28) | recette de forme + juge ; connaissances existantes revérifiées par la version de règle (`recoupement.VERSION_REGLE`) ; le juge n'est pas stable d'une passe à l'autre (relevé : deux règles de Méridian établies puis non établies), ce qui plaide pour un jeu de référence des verdicts |
 | L1bis.4 plafond d'ingestion | fait (2026-10-28) | `JUMEAU_PLAFOND` ; sous-ensemble déterministe, troncature signalée dans « ce que j'ignore », validées jamais closes par la troncature |
 | L1bis.1 extracteur `cross_service` | **non fait, mesuré** | voir §2bis : **aucun** appel HTTP sortant vers une application nommée dans les quatre dépôts ; le mode `cross_service` de l'index rend la même liste que `calls` |
@@ -75,7 +75,7 @@ Deux règles gouvernent tout ce plan :
 
 Chaque chiffre mouvant de ce document porte une référence de cette section ; les autres sont des relevés datés.
 
-- **T1** — suite `jumeau` (Postgres requis) : `cd backend && .venv/bin/python -m pytest jumeau/tests -q -n 0`
+- **T1** — suite `jumeau` (Postgres requis) : `cd backend && .venv/bin/python -m pytest meridian/tests -q -n 0`
 - **T2** — tests frontend du lot 0 : `cd frontend && CI=true npx craco test --watchAll=false src/lib`
 - **S0** — toute requête S se lance ainsi : `psql "$JUMEAU_PG_DSN" -c "…"` (le DSN reste dans l'environnement, jamais dans un document)
 - **S1** — connaissances courantes par maturité : `SELECT maturite, count(*) FROM claim WHERE valide_jusqua IS NULL GROUP BY 1 ORDER BY 1`
@@ -87,7 +87,7 @@ Chaque chiffre mouvant de ce document porte une référence de cette section ; l
 - **S7** — connaissances closes en M3 : `SELECT count(*) FROM claim WHERE valide_jusqua IS NOT NULL AND maturite = 'M3'`
 - **X1** — connecteurs branchés : `cd backend && .venv/bin/python -c "from jumeau import connecteurs as c; print(sum(bool(c.connecteur_branche(k)) for k in c.SYSTEME_DU_CONNECTEUR))"`
 - **X2** — index de code des dépôts : `codebase-memory-mcp cli --quiet list_projects`
-- **X3** — latence : `cd backend && .venv/bin/python -m jumeau.latence --repetitions 5` (voir `MERIDIAN_Latence_2026-10-28.md`)
+- **X3** — latence : `cd backend && .venv/bin/python -m meridian.adapters.outbound.llm.latence --repetitions 5` (voir `MERIDIAN_Latence_2026-10-28.md`)
 - **X4** — couples de référence de Conduit : `python3 -c "import json; print(len(json.load(open('backend/jumeau/references/conduit.json'))))"`
 - **X5** — méthodes : `ls backend/jumeau/methodes/*.md | wc -l`
 
@@ -134,7 +134,7 @@ droits d'écriture. Il n'y a donc **pas de P0 « moteur cassé »**. Restent qua
 |---|---|---|
 | L0bis.1 | **La preuve d'une flèche doit être la ligne d'appel, pas la première ligne qui nomme la fonction.** `appels.py:49-55` retient la première occurrence du nom et n'écarte que les lignes commençant par `#`, `//`, `"""`, `'''` : une chaîne de caractères ou un commentaire bloc (`/* */`, `<!-- -->`) devient le « fondement » d'une arête | une flèche dont la ligne citée ne contient pas de construction d'appel est rejetée |
 | L0bis.2 | **Consommer `--format json` et `--include-evidence`** : `appels.py` parse aujourd'hui la sortie **texte** en regex et jette la confiance du résolveur | aucune citation de preuve issue d'un découpage de chaînes |
-| L0bis.3 | **Rendre l'index reconstructible** : il vit dans un cache opaque indexé par **chemin absolu** (`index_code = home-majella-…-meridian-mesh`) ; un déménagement de répertoire le rend introuvable. Réindexer depuis le commit, ou versionner l'index avec le dépôt | `python -m jumeau.ingerer --depot <un des 4>` réussit sur une machine neuve |
+| L0bis.3 | **Rendre l'index reconstructible** : il vit dans un cache opaque indexé par **chemin absolu** (`index_code = home-majella-…-meridian-mesh`) ; un déménagement de répertoire le rend introuvable. Réindexer depuis le commit, ou versionner l'index avec le dépôt | `python -m meridian.adapters.outbound.connectors.ingerer --depot <un des 4>` réussit sur une machine neuve |
 | L0bis.4 | **Dire quand l'index manque** au lieu de laisser les outils répondre « Outil indisponible » (`agent.py:211-213`) | la fiche du jumeau, et Flore, signalent un index absent |
 
 **Constat annexe, à verser au lot 1bis.** `cbm.interroger` rend `paquets: 0` sur un dépôt qui en déclare douze : le binaire

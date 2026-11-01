@@ -14,7 +14,7 @@ EnvironmentFile=/opt/meridian/backend/.env
 Environment=JUMEAU_WORKSPACE=/var/lib/meridian
 Environment=HOME=/var/lib/meridian
 StateDirectory=meridian
-ExecStart=/opt/meridian/backend/.venv/bin/python -m jumeau.source_worker
+ExecStart=/opt/meridian/backend/.venv/bin/python -m meridian.adapters.inbound.worker.source_worker
 Restart=always
 RestartSec=5
 TimeoutStopSec=30

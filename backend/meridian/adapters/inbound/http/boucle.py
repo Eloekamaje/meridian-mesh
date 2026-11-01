@@ -1,9 +1,9 @@
 """API de lecture de la boucle canonique d'entreprise.
 
 Lecture seule : les objets sont lus dans ``objet_entreprise`` (Postgres) via
-:mod:`jumeau.entreprise_depot` et :mod:`jumeau.boucle`. Aucune route n'écrit.
+:mod:`meridian.adapters.outbound.postgres.entreprise_depot` et :mod:`meridian.adapters.outbound.postgres.boucle`. Aucune route n'écrit.
 
-Le tenant est résolu par :mod:`jumeau.tenant`. En mode demo seulement, l'absence de ``X-Tenant`` vaut ``local`` ;
+Le tenant est résolu par :mod:`meridian.domain.tenant`. En mode demo seulement, l'absence de ``X-Tenant`` vaut ``local`` ;
 hors demo (proxy, OIDC, production), l'en-tête est obligatoire et un en-tête vide ou invalide est refusé. Aucun repli
 silencieux n'est fait en production. Si un tenant authentifié est déjà posé sur ``request.state.tenant``, il fait foi
 et un ``X-Tenant`` différent est refusé. ``X-Espace`` reste un contexte de lecture, jamais une identité.
@@ -24,8 +24,12 @@ import psycopg
 from fastapi import APIRouter, Header, HTTPException, Query, Request
 from psycopg.rows import dict_row
 
-from jumeau import boucle, entreprise_depot, graph_store, modele_entreprise, rls
-from jumeau.tenant import TenantError, exiger_tenant, normaliser_slug, resoudre_tenant
+from meridian.adapters.outbound.postgres import boucle
+from meridian.adapters.outbound.postgres import entreprise_depot
+from meridian.adapters.outbound.neo4j import graph_store
+from meridian.domain import modele_entreprise
+from meridian.adapters.outbound.postgres import rls
+from meridian.domain.tenant import TenantError, exiger_tenant, normaliser_slug, resoudre_tenant
 from seed_data import ESPACES
 
 router = APIRouter(prefix="/boucle", tags=["boucle"])

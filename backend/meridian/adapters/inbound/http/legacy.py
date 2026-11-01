@@ -31,21 +31,21 @@ from meridian.adapters.inbound.http.initiatives import build_initiatives_router 
 from meridian.adapters.inbound.http.mesh_vue import build_mesh_vue_router  # noqa: E402
 from meridian.adapters.inbound.http.boucle import router as boucle_router, _tenant as resoudre_tenant_boucle  # noqa: E402
 from meridian.adapters.inbound.http.cognitif import router as cognitif_router  # noqa: E402
-from jumeau.execution.routes import construire_router as construire_runs_router  # noqa: E402
+from meridian.adapters.inbound.http.runs import construire_router as construire_runs_router
 from meridian.adapters.inbound.http.interfaces import router as jumeau_router  # noqa: E402
 from meridian.adapters.inbound.http.sources import construire_router as construire_sources_router  # noqa: E402
-from jumeau import cbm as jumeau_cbm  # noqa: E402
-from jumeau import evenements as jumeau_evenements  # noqa: E402
-from jumeau import partage as jumeau_partage  # noqa: E402
-from jumeau import tours_redis as jumeau_tours_redis  # noqa: E402
-from jumeau import flore as jumeau_flore  # noqa: E402
-from jumeau import identite_depot as jumeau_identite_depot  # noqa: E402
-from jumeau import conception as jumeau_conception  # noqa: E402
-from jumeau import orchestrateur as jumeau_orchestrateur  # noqa: E402
-from jumeau import audit_harness as jumeau_audit_harness  # noqa: E402
-from jumeau import capacites as jumeau_capacites  # noqa: E402
-from jumeau import chargeur_manifestes as jumeau_chargeur_manifestes  # noqa: E402
-from jumeau import import_identite as jumeau_import_identite  # noqa: E402,F401  (surface de compatibilité)
+from meridian.adapters.outbound.connectors import cbm as jumeau_cbm
+from meridian.adapters.outbound.redis import evenements as jumeau_evenements
+from meridian.adapters.outbound.redis import partage as jumeau_partage
+from meridian.adapters.outbound.redis import tours_redis as jumeau_tours_redis
+from meridian.adapters.outbound.llm import flore as jumeau_flore
+from meridian.adapters.outbound.postgres import identite_depot as jumeau_identite_depot
+from meridian.adapters.outbound.llm import conception as jumeau_conception
+from meridian.adapters.outbound.llm import orchestrateur as jumeau_orchestrateur
+from meridian.adapters.outbound.postgres import audit_harness as jumeau_audit_harness
+from meridian.domain import capacites as jumeau_capacites
+from meridian.adapters.outbound.connectors import chargeur_manifestes as jumeau_chargeur_manifestes
+from meridian.domain import import_identite as jumeau_import_identite
 from meridian.adapters.outbound.mongo.commandes_depot import CommandesDepot  # noqa: E402
 from meridian.adapters.outbound.naissance_runtime import NaissanceRuntimeLocal  # noqa: E402
 from meridian.application.commandes import (  # noqa: E402
@@ -64,25 +64,25 @@ from meridian.application.commandes import (  # noqa: E402
     tester_sources as tester_sources_metier,
 )
 from meridian.domain.import_identite import ImportInvalide as ImportIdentiteInvalide  # noqa: E402
-from jumeau import harness as jumeau_harness  # noqa: E402
-from jumeau import ingestion_outils as jumeau_ingestion_outils  # noqa: E402
-from jumeau import interface_outils as jumeau_interface_outils  # noqa: E402
-from jumeau import rls as jumeau_rls  # noqa: E402
-from jumeau import decouverte_interfaces as jumeau_decouverte_interfaces  # noqa: E402
-from jumeau import interfaces_depot as jumeau_interfaces_depot  # noqa: E402
-from jumeau import connecteurs_runtime as jumeau_connecteurs_runtime  # noqa: E402
-from jumeau import connecteurs_runtime_pull as jumeau_connecteurs_runtime_pull  # noqa: E402
-from jumeau import pulls_runtime as jumeau_pulls_runtime  # noqa: E402
-from jumeau import depot as jumeau_depot  # noqa: E402
-from jumeau import connaissance as jumeau_connaissance  # noqa: E402
+from meridian.adapters.outbound.llm import harness as jumeau_harness
+from meridian.application import ingestion_outils as jumeau_ingestion_outils
+from meridian.application import interface_outils as jumeau_interface_outils
+from meridian.adapters.outbound.postgres import rls as jumeau_rls
+from meridian.adapters.outbound.postgres import decouverte_interfaces as jumeau_decouverte_interfaces
+from meridian.adapters.outbound.postgres import interfaces_depot as jumeau_interfaces_depot
+from meridian.adapters.outbound.connectors import connecteurs_runtime as jumeau_connecteurs_runtime
+from meridian.adapters.outbound.connectors import connecteurs_runtime_pull as jumeau_connecteurs_runtime_pull
+from meridian.adapters.outbound.postgres import pulls_runtime as jumeau_pulls_runtime
+from meridian.adapters.outbound.postgres import depot as jumeau_depot
+from meridian.adapters.outbound.postgres import connaissance as jumeau_connaissance
 from meridian.adapters.inbound.http import flux as jumeau_flux  # noqa: E402
-from jumeau import registre as jumeau_registre  # noqa: E402
-from jumeau import connecteurs as jumeau_connecteurs  # noqa: E402
-from jumeau import origine as jumeau_origine  # noqa: E402
-from jumeau import naissance as jumeau_naissance  # noqa: E402
-from jumeau import examen as jumeau_examen  # noqa: E402
-from jumeau.systemes import SYSTEMES  # noqa: E402
-from jumeau import github as jumeau_github  # noqa: E402
+from meridian.adapters.outbound.mongo import registre as jumeau_registre
+from meridian.adapters.outbound.connectors import connecteurs as jumeau_connecteurs
+from meridian.domain import origine as jumeau_origine
+from meridian.adapters.outbound.connectors import naissance as jumeau_naissance
+from meridian.adapters.outbound.postgres import examen as jumeau_examen
+from meridian.adapters.outbound.connectors.systemes import SYSTEMES
+from meridian.adapters.outbound.connectors import github as jumeau_github
 import asyncio  # noqa: E402
 import psycopg  # noqa: E402
 from pymongo.errors import DuplicateKeyError  # noqa: E402

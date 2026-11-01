@@ -144,7 +144,7 @@ def texte(outil, *args):
 
 def indexe(source, appeler=None):
     """L'index de cette source répond-il pour CE commit ? Absent ou périmé : faux, l'ingestion (ou
-    `python -m jumeau.reindexer`) le reconstruit depuis la copie au SHA (plan de remédiation L0bis.3 et L0bis.4)."""
+    `python -m meridian.adapters.outbound.connectors.reindexer`) le reconstruit depuis la copie au SHA (plan de remédiation L0bis.3 et L0bis.4)."""
     projet = source.get("index_code")
     if not projet or perime(source):
         return False

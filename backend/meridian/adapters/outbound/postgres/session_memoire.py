@@ -1,7 +1,7 @@
 """Mémoire de session : résumé borné, provenance et import des conversations.
 
 Cette couche unifie le souvenir d'une session sans recopier la conversation
-privée. Elle s'appuie sur :mod:`jumeau.memoire_durable` pour le stockage, la
+privée. Elle s'appuie sur :mod:`meridian.adapters.outbound.postgres.memoire_durable` pour le stockage, la
 portée, la rétention et le refus des secrets. Le résumé ne garde que les
 derniers messages utiles, sous une limite stricte de caractères ; les pièces,
 les jetons et le fil complet d'un case Mongo ne sont jamais copiés.

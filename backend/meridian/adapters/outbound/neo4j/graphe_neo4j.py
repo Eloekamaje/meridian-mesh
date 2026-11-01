@@ -1,7 +1,7 @@
 """Adaptateur Neo4j du port `GraphStore` : topologie tenant-scoped, Cypher paramétré.
 
 L'adaptateur ne dépend pas du driver `neo4j` : il reçoit une session (ou une transaction) exposant
-`run(requete, params)`. Le domaine ne voit ni Cypher ni Neo4j ; seuls les modèles de `jumeau.graphe`
+`run(requete, params)`. Le domaine ne voit ni Cypher ni Neo4j ; seuls les modèles de `meridian.domain.graphe`
 entrent et sortent. Toutes les valeurs variables passent par des paramètres Cypher ; les étiquettes
 sont statiques (`:Twin`, `:RELATION`) et le type métier d'une relation reste une propriété, jamais une
 étiquette dynamique.

@@ -1,6 +1,6 @@
 """Ingestion d'un dépôt Git dans un jumeau : index local → Claims vérifiés → Postgres.
 
-    python -m jumeau.ingerer --jumeau tbt --nom TBT --equipe equipe-tbt --domaine Paiement \\
+    python -m meridian.adapters.outbound.connectors.ingerer --jumeau tbt --nom TBT --equipe equipe-tbt --domaine Paiement \\
         --mission "Traite les virements" --depot /chemin/vers/depot
 """
 import argparse

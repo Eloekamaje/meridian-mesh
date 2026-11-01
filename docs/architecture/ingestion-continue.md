@@ -13,7 +13,7 @@ source_schedule → ingestion_run → réclamation sous bail → Gardien
 
 ## Exécution
 
-- `python -m jumeau.source_worker` : polling continu.
+- `python -m meridian.adapters.inbound.worker.source_worker` : polling continu.
 - `scripts/dev-source-worker.sh` : même boucle en développement.
 - `scripts/meridian-source-worker.service` : unité systemd de supervision (`Restart=always`).
 - `--une-passe` : une passe bornée.
@@ -56,7 +56,7 @@ prochaine échéance `source_schedule`.
 - ECS/Fargate pour l’API et les workers ; AWS Batch/EC2+EBS pour les gros index.
 - SQS pour la file, EventBridge Scheduler pour le polling, S3 pour les artefacts, RDS pour les runs,
   Neo4j/Neptune pour le graphe, Secrets Manager pour les jetons.
-- Adapters optionnels dans `jumeau/aws_adapters.py` : Secrets Manager (`aws:<secret>#champ`), publication
+- Adapters optionnels dans `meridian/adapters/outbound/aws/adapters.py` : Secrets Manager (`aws:<secret>#champ`), publication
   SQS/EventBridge pour l'outbox, et mapping `source_schedule` → EventBridge Scheduler. boto3 n'est importé
   qu'au premier appel ; les tests utilisent des doubles, sans réseau. Aucun déploiement AWS n'est revendiqué.
 - Aucun port entrant requis pour le pull. Si le webhook est activé, n'exposer que `POST /api/boucle/sources/{id}/webhook` via l'API Gateway/ALB, avec HMAC. Alternative Kubernetes : CronJob + Job + S3/MinIO.

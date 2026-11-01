@@ -2,8 +2,8 @@
 
 Backfill complet (dry-run par défaut) :
 
-    python -m jumeau.migrer_travail --tenant local
-    python -m jumeau.migrer_travail --tenant local --apply
+    python -m meridian.adapters.inbound.worker.travail_worker --tenant local
+    python -m meridian.adapters.inbound.worker.travail_worker --tenant local --apply
 
 Worker de rattrapage (les écritures restent Mongo) :
 
@@ -22,7 +22,7 @@ import sys
 import psycopg
 from motor.motor_asyncio import AsyncIOMotorClient
 
-from jumeau.tenant import normaliser_slug
+from meridian.domain.tenant import normaliser_slug
 from meridian.adapters.inbound.worker.config import dsn_worker
 from meridian.adapters.outbound.mongo.travail_depot import TravailDepot as TravailMongo
 from meridian.adapters.outbound.postgres import depot as postgres_depot
@@ -88,7 +88,7 @@ def _analyseur(prog: str, worker: bool) -> argparse.ArgumentParser:
 
 
 def main_backfill(argv=None) -> int:
-    args = _analyseur("python -m jumeau.migrer_travail", worker=False).parse_args(argv)
+    args = _analyseur("python -m meridian.adapters.inbound.worker.travail_worker", worker=False).parse_args(argv)
     tenant = _tenant(args.tenant)
     dsn = _dsn(args) if args.appliquer else None
     client, base = _mongo(args)

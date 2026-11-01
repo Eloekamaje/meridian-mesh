@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from strands import Agent, tool
 
 from meridian.adapters.outbound.llm import agent
-from jumeau import flux
+from meridian.application import progression as flux
 from meridian.application import mesure
 from meridian.application import methodes
 from meridian.adapters.outbound.postgres.connaissance import RE_CITATION

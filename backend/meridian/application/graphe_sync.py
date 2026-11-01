@@ -2,7 +2,7 @@
 
 Postgres reste propriétaire de l'identité, des Claims et des preuves ; le graphe possède la topologie. Ce module ne
 lit ni Postgres ni Mongo et n'ouvre aucune connexion : il traduit des documents déjà chargés en modèles du port
-`jumeau.graphe`, puis délègue les écritures au store injecté.
+`meridian.domain.graphe`, puis délègue les écritures au store injecté.
 
 Le mapping est volontairement pauvre :
 

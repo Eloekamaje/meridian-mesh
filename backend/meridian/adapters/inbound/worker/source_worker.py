@@ -1,6 +1,6 @@
 """Worker durable de l'alimentation pull-first des jumeaux.
 
-    JUMEAU_WORKER_PG_DSN=... python -m jumeau.source_worker
+    JUMEAU_WORKER_PG_DSN=... python -m meridian.adapters.inbound.worker.source_worker
 
 La boucle lit les échéances Postgres, enfile au plus un run par source due, réclame les runs avec bail/fencing,
 puis exécute ``gardien.veiller`` sur la seule source concernée. Un SIGTERM termine proprement la passe courante
@@ -23,7 +23,9 @@ import sys
 import psycopg
 from motor.motor_asyncio import AsyncIOMotorClient
 
-from jumeau import depot, ingestion_runtime as runtime, rls
+from meridian.adapters.outbound.postgres import depot
+from meridian.adapters.outbound.postgres import ingestion_runtime as runtime
+from meridian.adapters.outbound.postgres import rls
 
 from .config import dsn_avec_tenant, dsn_worker, normaliser_tenants, tenants_worker
 
@@ -248,7 +250,7 @@ async def _main_async(options) -> int:
 
 def main(argv=None) -> int:
     analyseur = argparse.ArgumentParser(
-        prog="python -m jumeau.source_worker",
+        prog="python -m meridian.adapters.inbound.worker.source_worker",
         description="Boucle pull-first d'ingestion des sources (Postgres + Mongo, sans webhook).")
     analyseur.add_argument("--dsn", default=None,
                            help="DSN Postgres (défaut : JUMEAU_WORKER_PG_DSN puis JUMEAU_PG_DSN)")

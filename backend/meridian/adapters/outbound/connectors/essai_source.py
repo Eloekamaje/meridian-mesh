@@ -2,12 +2,12 @@
 existe. Les six étapes passent par les vrais lecteurs, donc par leurs garde-fous (hôte autorisé, HTTPS, pas de
 redirection, réponses bornées). Le jeton n'est jamais affiché.
 
-    python -m jumeau.essai_source --systeme confluence --hote banque.atlassian.net --perimetre TBT \\
+    python -m meridian.adapters.outbound.connectors.essai_source --systeme confluence --hote banque.atlassian.net --perimetre TBT \\
         --secret vault:meridian/confluence/pilote#jeton      (ou env:MERIDIAN_CONFLUENCE_PILOTE = « e-mail:jeton »)
 
 Ou avec une connexion déclarée dans l'application (hôte et référence du jeton lus dans Mongo, MONGO_URL et DB_NAME) :
 
-    python -m jumeau.essai_source --systeme jira --connexion jr-ana-banque-fr-1a2b3c4d --perimetre PAY
+    python -m meridian.adapters.outbound.connectors.essai_source --systeme jira --connexion jr-ana-banque-fr-1a2b3c4d --perimetre PAY
 """
 import argparse
 import os
@@ -137,7 +137,7 @@ def executer(args, sortie=print):
 
 
 def main(argv=None):
-    p = argparse.ArgumentParser(prog="python -m jumeau.essai_source", description=__doc__.split("\n\n")[0])
+    p = argparse.ArgumentParser(prog="python -m meridian.adapters.outbound.connectors.essai_source", description=__doc__.split("\n\n")[0])
     p.add_argument("--systeme", choices=sorted(MODULES), required=True)
     p.add_argument("--hote", help="ex. banque.atlassian.net (sinon JUMEAU_<SYSTÈME>_HOTE)")
     p.add_argument("--perimetre", help="clé de l'espace Confluence ou du projet Jira")

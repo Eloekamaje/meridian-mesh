@@ -1,5 +1,5 @@
 """Banc de latence : des questions de référence par classe (exigences non fonctionnelles §5, §8), leurs durées
-par phase, comparées à l'objectif. Usage : python -m jumeau.latence [--repetitions 1]
+par phase, comparées à l'objectif. Usage : python -m meridian.adapters.outbound.llm.latence [--repetitions 1]
 
 Ponctuel et manuel (chaque question coûte des appels au modèle) ; à rejouer avant et après une optimisation.
 """

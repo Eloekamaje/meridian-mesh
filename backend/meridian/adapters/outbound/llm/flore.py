@@ -17,7 +17,7 @@ from meridian.adapters.outbound.postgres import carte
 from meridian.adapters.outbound.postgres import connaissance
 from meridian.adapters.outbound.llm import contradicteur
 from meridian.adapters.outbound.postgres import depot
-from jumeau import flux
+from meridian.application import progression as flux
 from meridian.adapters.outbound.llm import gardien
 from meridian.adapters.outbound.connectors import lecteurs
 from meridian.application import mesure

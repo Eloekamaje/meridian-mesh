@@ -1,7 +1,7 @@
 # GAP ANALYSIS — Méridian vs PRD-001 et ADR-0002/0003/0004/0005
 
-**Date :** 2026-10-30  
-**Périmètre :** code du dépôt `meridian-mesh`, docs `docs/prd/PRD-001-enterprise-intelligence-mesh.md`, ADR-0002 à ADR-0005, `docs/cognitive/ETAT.md`.  
+**Date :** 2026-10-30
+**Périmètre :** code du dépôt `meridian-mesh`, docs `docs/prd/PRD-001-enterprise-intelligence-mesh.md`, ADR-0002 à ADR-0005, `docs/cognitive/ETAT.md`.
 **Règle :** une exigence n'est `conforme` que si le code la satisfait de bout en bout. Une fonctionnalité présente seulement dans les données de démonstration, un prompt ou un test mocké est `partiel` ou `absent`. Les statuts sont volontairement sévères : `ETAT.md` décrit une amorce, pas la cible.
 
 **Mise à jour de décision (2026-10-30).** D1 est tranchée par [ADR-0007](../adr/0007-polyglot-postgres-graph.md) : **Postgres** possède l'identité, les Claims, les preuves et les décisions ; un **graph store natif** (Neo4j/Neptune) possède la topologie du Mesh. Aucune projection, aucun objet dupliqué. ADR-0006 (Postgres unique) est remplacé. Le module `pg_graphe.py` a été retiré ; le port `backend/jumeau/graphe.py` (adaptateur mémoire) prépare les adaptateurs vendeurs.
@@ -52,7 +52,7 @@ Légende : `conforme` = satisfait par le code ; `partiel` = mécanisme réel mai
 | **FR-052** | Initiative reliée à une décision et à un outcome attendu | partiel | `modele_entreprise.Initiative` (pur, avec `outcome_attendu_ids`) ; `backend/initiatives_routes.py:travail_de_initiative`, `repondre` ; `seed_data.INITIATIVES` | Le type pur prévoit le lien, mais l'initiative Mongo est seulement liée à un travail ; aucun outcome attendu persisté ni lien de preuve | P1 |
 | **FR-053/054** | Outcome mesuré et relié ; Learning réutilisable | absent | `modele_entreprise.Outcome/Learning` (classes pures, non branchées) ; aucune table/API/mesure | Les types existent dans le module pur, mais aucune mesure, aucun lien à une initiative, aucune réutilisation ; la boucle décision → initiative → outcome → apprentissage est absente du runtime | P1 |
 | **FR-060/061** | Flore agent situé, distinguant existant/conception/comparaison/investigation/décision | partiel | `orchestrateur.executer`, `orchestrateur.PROMPT` ; `server.generer_reponse_flore` | Un seul agent et une politique, mais trois outils applicatifs ; la distinction est confiée au modèle, sans capacités typées ni jeu d'or | P0 |
-| **FR-062/AC-001** | Greenfield sans jumeau, sans Atlas, proposition étiquetée | conforme | `conception.repondre` ; `backend/jumeau/tests/test_conception.py` | Aucun jumeau, aucune preuve, `proposition=True`, schéma `mode="proposition"` | P2 |
+| **FR-062/AC-001** | Greenfield sans jumeau, sans Atlas, proposition étiquetée | conforme | `conception.repondre` ; `backend/meridian/tests/test_conception.py` | Aucun jumeau, aucune preuve, `proposition=True`, schéma `mode="proposition"` | P2 |
 | **FR-063/064** | Application existante : identité, sources, preuves ; absence non concluante | partiel | `identite.resoudre` ; `mobilisation.preuves_verifiees` ; `Resolution.preambule` | Preuves vérifiées par citation ; la règle « non observé dans tel périmètre, à telle date » n'est centralisée que pour l'identité | P1 |
 | **FR-065** | Clarification si l'ambiguïté change la réponse | partiel | `identite.Resolution` (`statut="ambigu"`, `requires_confirmation`) ; `orchestrateur.PROMPT` | L'ambiguïté d'identité est déterministe ; l'ambiguïté générale dépend du modèle et n'est pas testée | P1 |
 | **FR-066** | Trace d'orchestration : capacités et outils utilisés | conforme | `orchestrateur.Contexte.outils` ; `orchestrateur.executer:enrichir` | Trace en mémoire, non append-only ; suffisante pour la réponse | P2 |
@@ -68,7 +68,7 @@ Légende : `conforme` = satisfait par le code ; `partiel` = mécanisme réel mai
 | **NFR-004/009** | Sécurité, moindre privilège, résilience aux pannes | partiel | `pulls_runtime.tirer_et_publier` ; `orchestrateur.executer` ; `server.generer_reponse_flore` | Sources en panne isolées ; pas de timeout/retry par outil ; pas de politique de privilège centrale ; un échec d'orchestrateur produit un signal, pas une absence | P1 |
 | **NFR-006** | p95 de latence défini par produit | partiel | `backend/jumeau/latence.py:main` (`REFERENCES`, `OBJECTIFS`, p50/p95) ; `mesure.Chrono` | Banc manuel avec objectifs 2 s/5 s ; p95 calculé mais non comparé à un SLO de production ; aucune mesure continue | P2 |
 | **NFR-007** | Coût et usage par tour | partiel | `mesure.usage` ; `conception._usage` ; `frontend/src/components/MessageFlore.jsx:MessageFlore` | Coût exposé en conception et dans l'UI ; l'orchestrateur n'agrège pas systématiquement l'usage des outils | P2 |
-| **NFR-010** | Évaluer outils, Claims et décisions par un jeu d'or | partiel | `backend/jumeau/evaluation.py:passe` ; `backend/jumeau/tests/test_orchestrateur.py` | L'évaluation couvre les Q&A du jumeau ; les tests d'orchestrateur mockent l'agent et ne mesurent pas le choix d'outil ; pas de jeu d'or Claims/décisions | P1 |
+| **NFR-010** | Évaluer outils, Claims et décisions par un jeu d'or | partiel | `backend/meridian/adapters/outbound/llm/evaluation.py:passe` ; `backend/meridian/tests/test_orchestrateur.py` | L'évaluation couvre les Q&A du jumeau ; les tests d'orchestrateur mockent l'agent et ne mesurent pas le choix d'outil ; pas de jeu d'or Claims/décisions | P1 |
 | **AC-002/003** | Réponse existante avec Claims/preuves/fraîcheur/contradictions ; situation transverse multi-Twins et domaine | partiel | `mobilisation.preuves_verifiees` ; `server.filtre_situation` | Preuves citées possibles ; fraîcheur et contradictions non garanties ; situations multi-jumeaux mais sans Twin Domain/Capability | P1 |
 | **AC-004** | Twin PROCESS/CAPABILITY/JOURNEY créable sans modifier le noyau | partiel | `modele_entreprise.Twin` (pur) ; `schema.sql:jumeau` ; `identite.resoudre` | Le type existe dans le module pur, mais `jumeau` n'a pas de champ `type`, `application_id` est l'identité du Twin et la création/lecture n'est pas supportée | P0 |
 | **AC-005** | Outil read-only ajouté par manifeste/MCP, filtré et audité | partiel | `capacites.py:RegistreCapacites` (pur) ; `orchestrateur.outils` | Le registre existe, mais aucun outil n'est ajouté à chaud, filtré par politique ou audité de bout en bout | P0 |
@@ -109,7 +109,7 @@ Les projections sont des vues de jumeaux filtrées par persona et espace (`serve
 
 ### 3.7 Tests et évaluation insuffisants pour la cible
 
-Les tests sont nombreux et sérieux sur l'identité, les interfaces et la conception (`backend/jumeau/tests/`), et deux suites testent les modules purs (`test_modele_entreprise.py`, `test_capacites.py`). Mais il n'existe pas de test d'architecture qui échoue si un outil est ajouté dans `orchestrateur.outils`, si `Twin == application`, ou si le Mesh est présenté comme une source. `test_orchestrateur.py` mocke l'agent et vérifie la présence des trois outils ; il ne mesure pas la sélection réelle. `evaluation.py:passe` évalue des Q&A de jumeau (exactitude, ancrage), pas les choix d'outils, les modes de Claim ni les décisions. Aucun test d'isolation multi-tenant de bout en bout.
+Les tests sont nombreux et sérieux sur l'identité, les interfaces et la conception (`backend/meridian/tests/`), et deux suites testent les modules purs (`test_modele_entreprise.py`, `test_capacites.py`). Mais il n'existe pas de test d'architecture qui échoue si un outil est ajouté dans `orchestrateur.outils`, si `Twin == application`, ou si le Mesh est présenté comme une source. `test_orchestrateur.py` mocke l'agent et vérifie la présence des trois outils ; il ne mesure pas la sélection réelle. `evaluation.py:passe` évalue des Q&A de jumeau (exactitude, ancrage), pas les choix d'outils, les modes de Claim ni les décisions. Aucun test d'isolation multi-tenant de bout en bout.
 
 ---
 
@@ -132,85 +132,85 @@ Les tests sont nombreux et sérieux sur l'identité, les interfaces et la concep
 
 ### P0 — Socle de vérité et d'extensibilité
 
-**P0-A — Modèle d'entreprise minimal et types de Twin.**  
-Contenu : ajouter `type`, `scope`, `version` à `jumeau` (APPLICATION par défaut, puis PROCESS, CAPABILITY, JOURNEY, ORGANIZATION, PRODUCT, DATA_DOMAIN) ; créer les tables canoniques `domain`, `relationship`, `situation`, `investigation`, `decision`, `initiative` (squelettes, cycle de vie en P1-A) ; permettre à un Claim de cibler autre chose qu'une application.  
-Fichiers : `backend/jumeau/modele_entreprise.py` (brancher les types purs), `backend/jumeau/schema.sql`, `backend/jumeau/depot.py`, `backend/jumeau/registre.py`, `backend/jumeau/identite.py`, `backend/server.py`, `frontend/src/pages/Jumeaux.jsx`, `frontend/src/pages/Atlas.jsx`.  
-Dépendances : aucune.  
-Critères : AC-004 ; un Twin PROCESS/CAPABILITY/JOURNEY est créé et lu sans modifier le noyau ; un Claim peut porter sur un PROCESS ; les données de démonstration sont séparées des objets canoniques.  
+**P0-A — Modèle d'entreprise minimal et types de Twin.**
+Contenu : ajouter `type`, `scope`, `version` à `jumeau` (APPLICATION par défaut, puis PROCESS, CAPABILITY, JOURNEY, ORGANIZATION, PRODUCT, DATA_DOMAIN) ; créer les tables canoniques `domain`, `relationship`, `situation`, `investigation`, `decision`, `initiative` (squelettes, cycle de vie en P1-A) ; permettre à un Claim de cibler autre chose qu'une application.
+Fichiers : `backend/jumeau/modele_entreprise.py` (brancher les types purs), `backend/jumeau/schema.sql`, `backend/jumeau/depot.py`, `backend/jumeau/registre.py`, `backend/jumeau/identite.py`, `backend/server.py`, `frontend/src/pages/Jumeaux.jsx`, `frontend/src/pages/Atlas.jsx`.
+Dépendances : aucune.
+Critères : AC-004 ; un Twin PROCESS/CAPABILITY/JOURNEY est créé et lu sans modifier le noyau ; un Claim peut porter sur un PROCESS ; les données de démonstration sont séparées des objets canoniques.
 Tests : migration idempotente ; création/lecture des 3 types ; test d'architecture qui échoue si `application_id` est utilisé comme type universel dans le noyau.
 
-**P0-B — Contrat Claim complet.**  
-Contenu : aligner le schéma sur le modèle pur (`mode` avec les 5 valeurs, `version`, `remplace_id`) ; exiger au moins une preuve `SUPPORT` pour passer à `ACCEPTED` (le trigger doit vérifier `claim_preuve`, pas seulement `revue`) ; exposer les modes dans l'API et l'UI.  
-Fichiers : `backend/jumeau/schema.sql`, `backend/jumeau/depot.py`, `backend/jumeau/connaissance.py`, `backend/jumeau/routes.py`, `frontend/src/components/MessageFlore.jsx`.  
-Dépendances : P0-A pour le typage des sujets.  
-Critères : FR-002/003/004/006 ; un Claim sans preuve reste `PROPOSED/INFERRED` et ne peut pas être `ACCEPTED` ; l'historique d'un remplacement est lisible ; les 5 modes sont visibles.  
+**P0-B — Contrat Claim complet.**
+Contenu : aligner le schéma sur le modèle pur (`mode` avec les 5 valeurs, `version`, `remplace_id`) ; exiger au moins une preuve `SUPPORT` pour passer à `ACCEPTED` (le trigger doit vérifier `claim_preuve`, pas seulement `revue`) ; exposer les modes dans l'API et l'UI.
+Fichiers : `backend/jumeau/schema.sql`, `backend/jumeau/depot.py`, `backend/jumeau/connaissance.py`, `backend/jumeau/routes.py`, `frontend/src/components/MessageFlore.jsx`.
+Dépendances : P0-A pour le typage des sujets.
+Critères : FR-002/003/004/006 ; un Claim sans preuve reste `PROPOSED/INFERRED` et ne peut pas être `ACCEPTED` ; l'historique d'un remplacement est lisible ; les 5 modes sont visibles.
 Tests : `test_claim_modes.py`, `test_promotion_preuve.py`, test de migration des Claims existants (backfill `DECLARED`), test API/UI.
 
-**P0-C — Harness capacitaire v0.**  
-Contenu : définir le manifeste d'outil (nom, capacité, objets lus/écrits, schéma, portée, permissions, coût, timeout, mode de preuve) ; créer registre + politique + exécuteur + audit append-only ; exposer `search_tools`/`describe_tool` ; convertir les trois outils actuels en adaptateurs, pas en noyau.  
-Fichiers : `backend/jumeau/capacites.py` (brancher le registre pur), nouveaux `backend/jumeau/harness/politique.py`, `executeur.py`, `chargeur.py` ; `backend/jumeau/schema.sql` (`tool_manifest`, `tool_call_audit`) ; `backend/jumeau/orchestrateur.py` ; `backend/server.py`.  
-Dépendances : P0-A et P0-B (types d'objets et modes de preuve).  
-Critères : AC-005 ; un outil read-only ajouté par manifeste est découvert et appelé sans modifier le code du noyau ; un outil sans permission explicite n'est pas exposé ; le catalogue est filtré par tenant/persona/périmètre/risque ; une action sensible est bloquée sans approbation ; chaque appel est audité.  
+**P0-C — Harness capacitaire v0.**
+Contenu : définir le manifeste d'outil (nom, capacité, objets lus/écrits, schéma, portée, permissions, coût, timeout, mode de preuve) ; créer registre + politique + exécuteur + audit append-only ; exposer `search_tools`/`describe_tool` ; convertir les trois outils actuels en adaptateurs, pas en noyau.
+Fichiers : `backend/jumeau/capacites.py` (brancher le registre pur), nouveaux `backend/jumeau/harness/politique.py`, `executeur.py`, `chargeur.py` ; `backend/jumeau/schema.sql` (`tool_manifest`, `tool_call_audit`) ; `backend/jumeau/orchestrateur.py` ; `backend/server.py`.
+Dépendances : P0-A et P0-B (types d'objets et modes de preuve).
+Critères : AC-005 ; un outil read-only ajouté par manifeste est découvert et appelé sans modifier le code du noyau ; un outil sans permission explicite n'est pas exposé ; le catalogue est filtré par tenant/persona/périmètre/risque ; une action sensible est bloquée sans approbation ; chaque appel est audité.
 Tests : `test_harness_manifeste.py` (ajout à chaud), `test_harness_politique.py` (filtrage et refus), `test_harness_audit.py`, test de non-régression des trois outils.
 
-**P0-D — Frontière tenant et règle d'absence.**  
-Contenu : porter le tenant dans le contexte de requête (auth/middleware), supprimer `tenant_id="local"` de `naissance.naitre`, appliquer le tenant à toutes les lectures/écritures, formaliser « non observé dans tel périmètre, à telle date ».  
-Fichiers : `backend/auth.py`, `backend/server.py`, `backend/jumeau/depot.py`, `backend/jumeau/naissance.py`, `backend/jumeau/routes.py`.  
-Dépendances : P0-B.  
-Critères : NFR-003 ; deux tenants ne peuvent ni se lire ni se citer ; AC-007 ; aucune réponse hors tenant.  
+**P0-D — Frontière tenant et règle d'absence.**
+Contenu : porter le tenant dans le contexte de requête (auth/middleware), supprimer `tenant_id="local"` de `naissance.naitre`, appliquer le tenant à toutes les lectures/écritures, formaliser « non observé dans tel périmètre, à telle date ».
+Fichiers : `backend/auth.py`, `backend/server.py`, `backend/jumeau/depot.py`, `backend/jumeau/naissance.py`, `backend/jumeau/routes.py`.
+Dépendances : P0-B.
+Critères : NFR-003 ; deux tenants ne peuvent ni se lire ni se citer ; AC-007 ; aucune réponse hors tenant.
 Tests : isolation croisée API, test de naissance avec tenant explicite, test de la formulation d'absence.
 
 ### P1 — Boucle d'exploitation et projections
 
-**P1-A — Boucle Situation → Investigation → Decision → Initiative canonique.**  
-Contenu : relier les objets P0-A aux Claims et preuves ; structurer une décision (options, critères, incertitudes, acteur, date, preuves) ; relier une initiative à une décision et à un outcome attendu ; projeter les `cases`/`initiatives` Mongo vers ces objets sans casser les routes existantes.  
-Fichiers : `backend/jumeau/schema.sql`, nouveau `backend/jumeau/boucle.py`, `backend/cases_routes.py`, `backend/initiatives_routes.py`, `backend/server.py`.  
-Dépendances : P0-A, P0-C.  
-Critères : AC-003/AC-006 partiels ; une situation relie plusieurs Twins et un domaine ; une décision est reliée à une investigation, une initiative et des preuves ; les routes UI existantes continuent de fonctionner.  
+**P1-A — Boucle Situation → Investigation → Decision → Initiative canonique.**
+Contenu : relier les objets P0-A aux Claims et preuves ; structurer une décision (options, critères, incertitudes, acteur, date, preuves) ; relier une initiative à une décision et à un outcome attendu ; projeter les `cases`/`initiatives` Mongo vers ces objets sans casser les routes existantes.
+Fichiers : `backend/jumeau/schema.sql`, nouveau `backend/jumeau/boucle.py`, `backend/cases_routes.py`, `backend/initiatives_routes.py`, `backend/server.py`.
+Dépendances : P0-A, P0-C.
+Critères : AC-003/AC-006 partiels ; une situation relie plusieurs Twins et un domaine ; une décision est reliée à une investigation, une initiative et des preuves ; les routes UI existantes continuent de fonctionner.
 Tests : `test_boucle.py`, test de projection Mongo → canonique, test API décision/initiative.
 
-**P1-B — Outcome et Learning.**  
-Contenu : créer `outcome` (mesure, période, cible, preuve, initiative) et `learning` (énoncé, conditions de réutilisation, situation source) ; exposer la mesure et la réutilisation dans l'UI.  
-Fichiers : `backend/jumeau/schema.sql`, nouveau `backend/outcomes_routes.py`, `backend/initiatives_routes.py`, `frontend/src/pages/TravailDetail.jsx`.  
-Dépendances : P1-A.  
-Critères : FR-053/054 ; une décision peut être reliée à une initiative, un outcome mesuré et un apprentissage réutilisable ; AC-006.  
+**P1-B — Outcome et Learning.**
+Contenu : créer `outcome` (mesure, période, cible, preuve, initiative) et `learning` (énoncé, conditions de réutilisation, situation source) ; exposer la mesure et la réutilisation dans l'UI.
+Fichiers : `backend/jumeau/schema.sql`, nouveau `backend/outcomes_routes.py`, `backend/initiatives_routes.py`, `frontend/src/pages/TravailDetail.jsx`.
+Dépendances : P1-A.
+Critères : FR-053/054 ; une décision peut être reliée à une initiative, un outcome mesuré et un apprentissage réutilisable ; AC-006.
 Tests : test de chaîne complète décision → initiative → outcome → learning → nouvelle situation.
 
-**P1-C — Projections par rôle et UI situation-first.**  
-Contenu : définir les 9 projections de FR-080 ; appliquer droits + tenant ; faire de « Aujourd'hui »/situations l'entrée principale et de l'Atlas une exploration secondaire ; ajouter les vues métier.  
-Fichiers : `backend/server.py`, `backend/mesh_vue_routes.py`, `frontend/src/App.js`, `frontend/src/pages/Atlas.jsx`, nouveau `frontend/src/pages/Projections.jsx`.  
-Dépendances : P0-A, P1-A.  
-Critères : FR-080/081 ; neuf rôles ; aucune projection ne fuit un tenant ou un jumeau hors périmètre ; l'Atlas n'est plus l'accueil unique.  
+**P1-C — Projections par rôle et UI situation-first.**
+Contenu : définir les 9 projections de FR-080 ; appliquer droits + tenant ; faire de « Aujourd'hui »/situations l'entrée principale et de l'Atlas une exploration secondaire ; ajouter les vues métier.
+Fichiers : `backend/server.py`, `backend/mesh_vue_routes.py`, `frontend/src/App.js`, `frontend/src/pages/Atlas.jsx`, nouveau `frontend/src/pages/Projections.jsx`.
+Dépendances : P0-A, P1-A.
+Critères : FR-080/081 ; neuf rôles ; aucune projection ne fuit un tenant ou un jumeau hors périmètre ; l'Atlas n'est plus l'accueil unique.
 Tests : test API des 9 projections, test d'isolation, test de navigation UI.
 
-**P1-D — Tests d'architecture et évaluation de la cible.**  
-Contenu : tests qui échouent si un outil est ajouté hors manifeste, si `Twin == application`, si le Mesh est présenté comme source ; jeu d'or pour la sélection d'outils, les modes de Claim et les décisions.  
-Fichiers : `backend/jumeau/tests/test_architecture.py`, `backend/jumeau/evaluation.py`, `backend/jumeau/tests/test_orchestrateur.py`, `backend/jumeau/tests/test_conception.py`.  
-Dépendances : P0-C, P1-A.  
-Critères : NFR-010 ; les régressions d'architecture échouent en CI ; les choix d'outils sont mesurés sur des cas réels.  
+**P1-D — Tests d'architecture et évaluation de la cible.**
+Contenu : tests qui échouent si un outil est ajouté hors manifeste, si `Twin == application`, si le Mesh est présenté comme source ; jeu d'or pour la sélection d'outils, les modes de Claim et les décisions.
+Fichiers : `backend/meridian/tests/test_architecture.py`, `backend/meridian/adapters/outbound/llm/evaluation.py`, `backend/meridian/tests/test_orchestrateur.py`, `backend/meridian/tests/test_conception.py`.
+Dépendances : P0-C, P1-A.
+Critères : NFR-010 ; les régressions d'architecture échouent en CI ; les choix d'outils sont mesurés sur des cas réels.
 Tests : `test_architecture.py`, `test_evaluation_outils.py`, `test_evaluation_claims.py`.
 
 ### P2 — Échelle et exploitation
 
-**P2-A — Mesh temporel et fraîcheur.**  
-Contenu : période de validité sur `relationship`, API « topologie à une date », propagation de la fraîcheur des preuves aux projections.  
-Fichiers : `backend/jumeau/schema.sql`, `backend/server.py`, `backend/mesh_vue_routes.py`, `frontend/src/pages/Atlas.jsx`.  
-Dépendances : P0-A, P1-A.  
-Critères : FR-033/NFR-002 ; une relation et une situation sont lisibles à une date ; une preuve périmée est signalée.  
+**P2-A — Mesh temporel et fraîcheur.**
+Contenu : période de validité sur `relationship`, API « topologie à une date », propagation de la fraîcheur des preuves aux projections.
+Fichiers : `backend/jumeau/schema.sql`, `backend/server.py`, `backend/mesh_vue_routes.py`, `frontend/src/pages/Atlas.jsx`.
+Dépendances : P0-A, P1-A.
+Critères : FR-033/NFR-002 ; une relation et une situation sont lisibles à une date ; une preuve périmée est signalée.
 Tests : test de snapshot daté, test de fraîcheur.
 
-**P2-B — Coût, latence et robustesse du harness.**  
-Contenu : budget par outil, timeout, retry, circuit breaker, quotas, télémétrie coût/latence.  
-Fichiers : `backend/jumeau/harness/executeur.py`, `backend/jumeau/mesure.py`, `backend/jumeau/orchestrateur.py`.  
-Dépendances : P0-C.  
-Critères : NFR-006/007/009 ; un outil lent ou en panne ne bloque pas le tour ; chaque tour expose son coût.  
+**P2-B — Coût, latence et robustesse du harness.**
+Contenu : budget par outil, timeout, retry, circuit breaker, quotas, télémétrie coût/latence.
+Fichiers : `backend/jumeau/harness/executeur.py`, `backend/jumeau/mesure.py`, `backend/jumeau/orchestrateur.py`.
+Dépendances : P0-C.
+Critères : NFR-006/007/009 ; un outil lent ou en panne ne bloque pas le tour ; chaque tour expose son coût.
 Tests : test de timeout/retry, test de budget, test de panne isolée.
 
-**P2-C — Séparation démonstration / canonique.**  
-Contenu : sortir les situations, cas et initiatives de démonstration des requêtes canoniques ; les isoler dans un espace `demo_*` ou les migrer vers le modèle P0-A.  
-Fichiers : `backend/server.py:seed_database`, `backend/seed_data.py`, `backend/cases_routes.py`, `backend/initiatives_routes.py`, frontend.  
-Dépendances : P0-A, P1-A.  
-Critères : aucune situation/décision de démonstration n'est présentée comme un objet d'entreprise ; les tests et la démo restent reproductibles.  
+**P2-C — Séparation démonstration / canonique.**
+Contenu : sortir les situations, cas et initiatives de démonstration des requêtes canoniques ; les isoler dans un espace `demo_*` ou les migrer vers le modèle P0-A.
+Fichiers : `backend/server.py:seed_database`, `backend/seed_data.py`, `backend/cases_routes.py`, `backend/initiatives_routes.py`, frontend.
+Dépendances : P0-A, P1-A.
+Critères : aucune situation/décision de démonstration n'est présentée comme un objet d'entreprise ; les tests et la démo restent reproductibles.
 Tests : test de séparation des collections, test de navigation démo.
 
 ---

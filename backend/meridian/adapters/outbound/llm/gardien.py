@@ -3,8 +3,8 @@
 À chaque nouveau commit : réingestion, comparaison des connaissances d'avant et d'après, signaux déterministes,
 fiche vivante rédigée par Flore, situation publiée dans « Aujourd'hui ».
 
-    python -m jumeau.gardien --jumeau tbt                      # une passe sur tous les dépôts du jumeau
-    python -m jumeau.gardien --jumeau tbt --surveiller 300     # surveillance continue
+    python -m meridian.adapters.outbound.llm.gardien --jumeau tbt                      # une passe sur tous les dépôts du jumeau
+    python -m meridian.adapters.outbound.llm.gardien --jumeau tbt --surveiller 300     # surveillance continue
 
 ponytail: la surveillance interroge le dépôt à intervalle fixe ; un webhook Git (EventBridge) la remplacera.
 """
@@ -301,7 +301,7 @@ async def _synchroniser_graphe(conn, db, jumeau, store=None):
 
     `JUMEAU_GRAPH_PROJECTION` choisit le chemin : `direct` (défaut, compatibilité) fait l'upsert
     immédiat puis planifie aussi l'outbox ; `outbox` n'écrit jamais dans le graphe et se contente
-    d'enfiler la projection, consommée par `python -m jumeau.execution.outbox_worker`. Une valeur
+    d'enfiler la projection, consommée par `python -m meridian.adapters.inbound.worker.outbox_worker`. Une valeur
     inconnue est refusée (aucune écriture, erreur journalisée), jamais interprétée comme `direct`.
 
     En mode `direct`, sans `GRAPH_STORE=neo4j`, la fabrique rend un store mémoire ; on ne synchronise

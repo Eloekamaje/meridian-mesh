@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 import conversation as fil
 from auth import acteur as acteur_courant
-from jumeau import flux
+from meridian.adapters.inbound.http import flux
 
 
 class Params(BaseModel):

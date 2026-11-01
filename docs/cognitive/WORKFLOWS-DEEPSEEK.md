@@ -1,6 +1,6 @@
 # Workflows réels avec DeepSeek
 
-Le runtime backend utilise `JUMEAU_MODELE=deepseek` par défaut (`backend/jumeau/agent.py`), avec
+Le runtime backend utilise `JUMEAU_MODELE=deepseek` par défaut (`backend/meridian/adapters/outbound/llm/agent.py`), avec
 `DEEPSEEK_API_KEY` et `deepseek-chat`. Les workflows ci-dessous ont été exécutés sur le backend
 local, tenant `demo`, via `POST /api/aurora/demander` — sans Claude Code.
 

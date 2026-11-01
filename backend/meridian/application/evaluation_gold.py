@@ -1,6 +1,6 @@
 """Jeu d'or outils/Claims/décisions : chargement, validation et notation hors ligne.
 
-Le jeu réutilise :mod:`jumeau.evaluation_outils` pour la partie choix d'outils, puis note
+Le jeu réutilise :mod:`meridian.application.evaluation_outils` pour la partie choix d'outils, puis note
 deux composants purs : le statut attendu des Claims et la décision attendue. Aucun modèle,
 aucun réseau, aucune base. Un cas n'est exact que si les trois composants sont exacts.
 """

@@ -282,7 +282,7 @@ Au démarrage, `SEED_VERSION` réinitialise les collections de travail si sa val
 
 ```bash
 # suite canonique (Postgres requis)
-cd backend && JUMEAU_PG_DSN='postgresql://...' .venv/bin/python -m pytest jumeau/tests -q
+cd backend && JUMEAU_PG_DSN='postgresql://...' .venv/bin/python -m pytest meridian/tests -q
 
 # frontend
 cd frontend && CI=true npm test -- --watchAll=false && npm run build

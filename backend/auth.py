@@ -12,7 +12,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from jose import jwk, jwt
 
-from jumeau import tenant as tenant_context
+from meridian.domain import tenant as tenant_context
 
 logger = logging.getLogger("meridian.auth")
 MODES = {"demo", "proxy", "oidc"}

@@ -11,7 +11,7 @@ import os
 
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
-from jumeau.tenant import normaliser_slug
+from meridian.domain.tenant import normaliser_slug
 
 __all__ = [
     "DSN_ENV",
@@ -86,7 +86,7 @@ def option_connexion_tenant(tenant) -> str | None:
     """Option libpq qui fixe le tenant au niveau de la session.
 
     Utile aux workers qui ne peuvent pas envelopper chaque transaction dans
-    :func:`jumeau.rls.contexte_tenant` (outbox, exécution) : chaque connexion ne voit
+    :func:`meridian.adapters.outbound.postgres.rls.contexte_tenant` (outbox, exécution) : chaque connexion ne voit
     alors qu'un seul tenant. Le slug est validé avant interpolation.
     """
     if tenant is None:

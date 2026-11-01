@@ -11,9 +11,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from auth import acteur as acteur_courant
-from jumeau import connaissance, depot, flore, gardien
-from jumeau.source_git import lire_au_sha
-from jumeau.source_git import extrait
+from meridian.adapters.outbound.postgres import connaissance
+from meridian.adapters.outbound.postgres import depot
+from meridian.adapters.outbound.llm import flore
+from meridian.adapters.outbound.llm import gardien
+from meridian.adapters.outbound.connectors.source_git import lire_au_sha
+from meridian.adapters.outbound.connectors.source_git import extrait
 
 router = APIRouter(prefix="/v2", tags=["jumeau"])
 

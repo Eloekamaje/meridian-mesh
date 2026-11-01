@@ -38,7 +38,7 @@ import os
 import psycopg
 from neo4j import GraphDatabase
 
-from jumeau.execution import depot
+from meridian.adapters.outbound.postgres import execution_depot as depot
 
 tenant = os.environ["SMOKE_TENANT"]
 driver = GraphDatabase.driver(
@@ -73,7 +73,7 @@ PY
 )"
 
 echo "outbox_id=$OID ; une passe du worker"
-"$PY" -m jumeau.execution.outbox_worker --une-passe
+"$PY" -m meridian.adapters.inbound.worker.outbox_worker --une-passe
 
 SMOKE_OID="$OID" "$PY" - <<'PY'
 import os

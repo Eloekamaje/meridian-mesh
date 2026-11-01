@@ -25,26 +25,26 @@ server.py                 point d'entrée ASGI mince
 3. `ports` ne dépend que de `domain` (ou de types standard).
 4. `adapters` peuvent dépendre de `application`, `ports`, `domain` et de leur SDK.
 5. Seule la racine de composition (`server.py`/`meridian/composition.py`) assemble les adapters.
-6. Les anciens chemins (`backend/jumeau/...`, `backend/*_routes.py`, `backend/server.py`) sont des **shims de compatibilité** ; ils ne doivent plus recevoir de nouvelle logique.
+6. `backend/jumeau/` est supprimé. `backend/*_routes.py` et `backend/server.py` restent des **shims de compatibilité** vers `meridian/adapters/inbound/http` ; ils ne doivent plus recevoir de nouvelle logique.
 
 ## Migration réalisée
 
 | Ancien | Cible | État |
 |---|---|---|
-| `jumeau/modele_entreprise.py` | `meridian/domain/modele_entreprise.py` | déplacé, shim |
-| `jumeau/rls.py` | `meridian/adapters/outbound/postgres/rls.py` | déplacé, shim |
-| `jumeau/graph_store.py` | `meridian/adapters/outbound/neo4j/graph_store.py` | déplacé, shim |
-| `jumeau/aws_adapters.py` | `meridian/adapters/outbound/aws/adapters.py` | déplacé, shim |
+| `jumeau/modele_entreprise.py` | `meridian/domain/modele_entreprise.py` | déplacé, ancien chemin supprimé |
+| `jumeau/rls.py` | `meridian/adapters/outbound/postgres/rls.py` | déplacé, ancien chemin supprimé |
+| `jumeau/graph_store.py` | `meridian/adapters/outbound/neo4j/graph_store.py` | déplacé, ancien chemin supprimé |
+| `jumeau/aws_adapters.py` | `meridian/adapters/outbound/aws/adapters.py` | déplacé, ancien chemin supprimé |
 | `server.py` | `meridian/adapters/inbound/http/legacy.py` | déplacé ; `server.py` remplace son module en `sys.modules` |
-| `jumeau/import_identite.py` | `meridian/domain/import_identite.py` | déplacé, shim |
-| `jumeau/source_routes.py` | `meridian/adapters/inbound/http/sources.py` | déplacé, shim |
-| `jumeau/source_worker.py` | `meridian/adapters/inbound/worker/source_worker.py` | déplacé, shim |
+| `jumeau/import_identite.py` | `meridian/domain/import_identite.py` | déplacé, ancien chemin supprimé |
+| `jumeau/source_routes.py` | `meridian/adapters/inbound/http/sources.py` | déplacé, ancien chemin supprimé |
+| `jumeau/source_worker.py` | `meridian/adapters/inbound/worker/source_worker.py` | déplacé, ancien chemin supprimé |
 | `jumeau/analyse_service.py` | `meridian/application/analyse_service.py` | déplacé, port `RuntimeAnalyse` |
-| `jumeau/backfill_graphe.py` | `meridian/adapters/outbound/neo4j/backfill_graphe.py` | déplacé, shim |
-| `jumeau/flux.py` | `meridian/adapters/inbound/http/flux.py` | déplacé, shim |
-| `jumeau/execution/**` | `meridian/application/execution/**` + `adapters/outbound/{postgres,neo4j}/**` + `adapters/inbound/{http/runs,worker/execution_worker}` | déplacé, shims |
-| `jumeau/execution/outbox_worker.py` | `meridian/adapters/inbound/worker/outbox_worker.py` | déplacé, shim |
-| `jumeau/routes.py` | `meridian/adapters/inbound/http/interfaces.py` | déplacé, shim |
+| `jumeau/backfill_graphe.py` | `meridian/adapters/outbound/neo4j/backfill_graphe.py` | déplacé, ancien chemin supprimé |
+| `jumeau/flux.py` | `meridian/adapters/inbound/http/flux.py` | déplacé, ancien chemin supprimé |
+| `jumeau/execution/**` | `meridian/application/execution/**` + `adapters/outbound/{postgres,neo4j}/**` + `adapters/inbound/{http/runs,worker/execution_worker}` | déplacé, ancien chemin supprimés |
+| `jumeau/execution/outbox_worker.py` | `meridian/adapters/inbound/worker/outbox_worker.py` | déplacé, ancien chemin supprimé |
+| `jumeau/routes.py` | `meridian/adapters/inbound/http/interfaces.py` | déplacé, ancien chemin supprimé |
 | — | `meridian/application/commandes.py`, `meridian/ports/commandes.py`, `meridian/adapters/outbound/mongo/commandes_depot.py` | première tranche application/port/adapter |
 | `*_routes.py` | `meridian/adapters/inbound/http/*.py` | déplacés, shims `sys.modules` |
 
@@ -87,27 +87,24 @@ Tous les modules top-level restants ont été déplacés par lots, avec shim `sy
 Les données de ces modules suivent : `schema.sql` (Postgres), `methodes/` (application),
 `charte_flore.md` et `references/` (LLM).
 
-Il ne reste en `jumeau` que des shims de compatibilité. `rls` et `gardien` pointent désormais vers
-`meridian` (`domain.tenant`, `application.outbox`) ; `flore` et `mobilisation` conservent l'import
-`jumeau.flux` (SSE inbound) comme dette explicite.
+`backend/jumeau/` a été **supprimé** après migration de tous les imports, tests, CLI et scripts vers
+`meridian`. Le seul reliquat fonctionnel est la compatibilité des anciens noms de commandes, mise à
+jour dans les docs et les unités systemd.
 
 ## État de `jumeau`
 
-À ce stade, `backend/jumeau/` est un **namespace de compatibilité** : chaque module est un shim
-`sys.modules` vers `meridian`. Les seuls fichiers non-shims sont `__init__.py` et
-`execution/__init__.py` (ré-exports). `analyse_service.py` vit dans `application/` et dépend du port
-`RuntimeAnalyse`, implémenté dans `adapters/outbound/analyse_runtime.py`.
+`backend/jumeau/` est **supprimé**. Les tests vivent dans `backend/meridian/tests` ; le code dans
+`meridian/{domain,application,ports,adapters}`. `analyse_service` dépend du port `RuntimeAnalyse`,
+implémenté dans `adapters/outbound/analyse_runtime.py`.
 
 ## Prochaines extractions
 
-1. ~Extraire `analyse_service` derrière des ports~ (fait : `RuntimeAnalyse`).
-2. Déplacer `flux` sous `meridian/adapters/inbound/http/` avec l'accord du propriétaire de l'inbound.
-3. Extraire des ports étroits (`KnowledgeStore`, `EntrepriseStore`, `GraphStore`, `EventPublisher`)
+1. Extraire des ports étroits (`KnowledgeStore`, `EntrepriseStore`, `GraphStore`, `EventPublisher`)
    pour sortir les services DB-couplés aujourd'hui placés sous `adapters/outbound/postgres/`.
-4. Supprimer les shims après migration de tous les appelants et tests.
+2. Poursuivre la migration du write path Travail vers Postgres.
 
 ## Tests de garde
 
-`backend/jumeau/tests/test_architecture.py` vérifie que le domaine reste pur, que l'application ne dépend
+`backend/meridian/tests/test_architecture.py` vérifie que le domaine reste pur, que l'application ne dépend
 ni des adapters ni des SDK, que les ports ne dépendent pas des couches externes, que les adapters
 sortants ne dépendent pas de l'inbound, et que boto3 reste un import paresseux.

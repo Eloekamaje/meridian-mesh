@@ -1,6 +1,6 @@
 """Boucle locale du dispatcher outbox et du projecteur graphe.
 
-    JUMEAU_WORKER_PG_DSN=... GRAPH_STORE=neo4j ... PYTHONPATH=. python -m jumeau.execution.outbox_worker
+    JUMEAU_WORKER_PG_DSN=... GRAPH_STORE=neo4j ... PYTHONPATH=. python -m meridian.adapters.inbound.worker.outbox_worker
 
 Les événements `graph.synchroniser` sont projetés dans le GraphStore ; les autres types
 sont marqués publiés sans consommateur local. `--une-passe` traite une file bornée puis
@@ -20,9 +20,10 @@ import threading
 
 import psycopg
 
-from jumeau import graph_store, rls
-from jumeau.execution.outbox import DispatcherOutbox
-from jumeau.execution.projecteur_graphe import ProjecteurGraphe
+from meridian.adapters.outbound.neo4j import graph_store
+from meridian.adapters.outbound.postgres import rls
+from meridian.adapters.outbound.postgres.execution_defaults import DispatcherOutbox
+from meridian.adapters.outbound.neo4j.projecteur_graphe import ProjecteurGraphe
 
 from .config import dsn_worker, option_connexion_tenant, tenants_worker
 
@@ -97,7 +98,7 @@ def principal() -> None:
         publieurs = {"graph.synchroniser": projecteur.traiter, "graph.sync": projecteur.traiter}
         if os.environ.get("JUMEAU_SQS_QUEUE_URL") or os.environ.get("JUMEAU_EVENTBRIDGE_BUS") \
                 or os.environ.get("JUMEAU_EVENTBRIDGE_BUS_NAME"):
-            from jumeau.aws_adapters import publieur_depuis_env
+            from meridian.adapters.outbound.aws.adapters import publieur_depuis_env
             publieurs["*"] = publieur_depuis_env().publier_ligne
         dispatcher = DispatcherOutbox(
             lambda: _connexion(dsn, tenant),

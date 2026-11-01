@@ -1,7 +1,7 @@
 """Mémoire organisationnelle durable : dépôt, recherche lexicale et rappel par situation.
 
 Les entrées sont persistées comme objets ``ANNOTATION`` de la famille ``interaction_gouvernance`` de
-:mod:`jumeau.modele_entreprise`. Ce type existe déjà et n'exige pas les liens Outcome/Investigation du type
+:mod:`meridian.domain.modele_entreprise`. Ce type existe déjà et n'exige pas les liens Outcome/Investigation du type
 ``LEARNING`` : une note organisationnelle peut être conservée sans prétendre être une leçon mesurée. La recherche
 est purement lexicale, déterministe, sans modèle ni réseau, et toujours bornée au tenant.
 """

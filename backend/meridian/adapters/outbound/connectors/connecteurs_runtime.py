@@ -1041,7 +1041,7 @@ def resume_observations(observations: Any, application_id: Optional[str] = None)
 
 def main(argv=None) -> int:
     analyseur = argparse.ArgumentParser(
-        prog="python -m jumeau.connecteurs_runtime",
+        prog="python -m meridian.adapters.outbound.connectors.connecteurs_runtime",
         description="Lire un export APM/gateway normalisé et imprimer le graphe runtime observé en JSON.")
     analyseur.add_argument("fichier")
     analyseur.add_argument("application_id")

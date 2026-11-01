@@ -3,4 +3,4 @@
 # Usage : scripts/dev-source-worker.sh [--une-passe] [--intervalle 5] [...]
 set -euo pipefail
 cd "$(dirname "$0")/../backend"
-exec .venv/bin/python -m jumeau.source_worker "$@"
+exec .venv/bin/python -m meridian.adapters.inbound.worker.source_worker "$@"

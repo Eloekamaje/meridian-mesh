@@ -75,7 +75,7 @@ d'applications sans données d'entreprise réelles. Les étapes **faire émerger
 
 Chaque chiffre mouvant de ce document porte une référence de cette section ; les autres sont des relevés datés.
 
-- **T1** — suite `jumeau` (Postgres requis) : `cd backend && .venv/bin/python -m pytest jumeau/tests -q -n 0`
+- **T1** — suite `jumeau` (Postgres requis) : `cd backend && .venv/bin/python -m pytest meridian/tests -q -n 0`
 - **S0** — toute requête S se lance ainsi : `psql "$JUMEAU_PG_DSN" -c "…"` (le DSN reste dans l'environnement, jamais dans un document)
 - **S1** — connaissances courantes par maturité : `SELECT maturite, count(*) FROM claim WHERE valide_jusqua IS NULL GROUP BY 1 ORDER BY 1`
 - **S2** — faits établis et hypothèses : `SELECT predicat_prouvable(predicat) AS etabli, count(*) FROM claim WHERE valide_jusqua IS NULL GROUP BY 1`
@@ -83,7 +83,7 @@ Chaque chiffre mouvant de ce document porte une référence de cette section ; l
 - **S4** — connaissances validées par l'équipe : `SELECT count(*) FROM claim WHERE statut = 'ACCEPTED'`
 - **S5** — couverture par jumeau : `SELECT j.id, round(100.0 * count(c.id) FILTER (WHERE predicat_prouvable(c.predicat)) / nullif(count(c.id), 0)) AS couverture FROM jumeau j LEFT JOIN claim c ON c.jumeau_id = j.id AND c.valide_jusqua IS NULL GROUP BY j.id`
 - **X1** — connecteurs branchés : `cd backend && .venv/bin/python -c "from jumeau import connecteurs as c; print(sum(bool(c.connecteur_branche(k)) for k in c.SYSTEME_DU_CONNECTEUR))"`
-- **X3** — latence : `cd backend && .venv/bin/python -m jumeau.latence --repetitions 5` (voir `MERIDIAN_Latence_2026-10-28.md`)
+- **X3** — latence : `cd backend && .venv/bin/python -m meridian.adapters.outbound.llm.latence --repetitions 5` (voir `MERIDIAN_Latence_2026-10-28.md`)
 - **X5** — méthodes : `ls backend/jumeau/methodes/*.md | wc -l`
 
 ---

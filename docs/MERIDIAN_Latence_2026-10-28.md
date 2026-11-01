@@ -19,7 +19,7 @@ relevé est la première publication qui s'appuie dessus.
 
 | Élément | Valeur |
 |---|---|
-| Commande | `cd backend && .venv/bin/python -m jumeau.latence --repetitions 1` |
+| Commande | `cd backend && .venv/bin/python -m meridian.adapters.outbound.llm.latence --repetitions 1` |
 | Modèle | `deepseek-chat`, API hébergée (`api.deepseek.com`) |
 | Repères | les quatre questions de `jumeau/latence.py` |
 | Objectifs du banc | 2,0 s (simple) · 5,0 s (analyse) |
@@ -72,7 +72,7 @@ Pour refaire le relevé en version publiable :
 
 ```bash
 cd backend && set -a && . ./.env && set +a
-.venv/bin/python -m jumeau.latence --repetitions 5
+.venv/bin/python -m meridian.adapters.outbound.llm.latence --repetitions 5
 ```
 
 Le banc imprime, par question : p50 et p95 de la réponse complète, **p50 du premier mot**, et le détail des phases.

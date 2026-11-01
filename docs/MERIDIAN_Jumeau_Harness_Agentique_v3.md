@@ -186,7 +186,7 @@ prompts et le modèle changent souvent.
 **Ce que fait Claude Code.** On rejoue un jeu de cas à chaque changement de prompt ou de modèle (pass@k), et
 une régression se voit avant d'atteindre les utilisateurs.
 
-**Règle (implémentée).** `python -m jumeau.evaluation --jumeau <id>` construit puis rejoue un jeu à deux étages :
+**Règle (implémentée).** `python -m meridian.adapters.outbound.llm.evaluation --jumeau <id>` construit puis rejoue un jeu à deux étages :
 
 1. **Exactitude**, à partir des connaissances **validées** : la connaissance validée est la réponse attendue
    (« Avec qui TBT échange-t-elle ? » → la relation prouvée). Un juge sans outils rend une décision structurée :
@@ -231,7 +231,7 @@ Plusieurs correspondances de la v1 tiennent :
 - les sources sont des données, jamais des instructions.
 
 Le déclenchement du gardien gagnerait toutefois à suivre la règle de Claude Code : « ne pas sonder ; un événement
-d'abord, une veille de secours longue ». Aujourd'hui, le gardien sonde à intervalle fixe (`python -m jumeau.gardien --surveiller SECONDES` ; l'intervalle de production n'est pas codé dans le dépôt). Les événements (GitHub
+d'abord, une veille de secours longue ». Aujourd'hui, le gardien sonde à intervalle fixe (`python -m meridian.adapters.outbound.llm.gardien --surveiller SECONDES` ; l'intervalle de production n'est pas codé dans le dépôt). Les événements (GitHub
 Actions, versions de page) deviennent le signal principal, et la veille passe à 30 min (AWS v1, décision
 GitHub Actions).
 
@@ -255,14 +255,14 @@ GitHub Actions).
 
 Chaque chiffre mouvant de ce document porte une référence de cette section ; les autres sont des relevés datés.
 
-- **T1** — suite `jumeau` (Postgres requis) : `cd backend && .venv/bin/python -m pytest jumeau/tests -q -n 0`
+- **T1** — suite `jumeau` (Postgres requis) : `cd backend && .venv/bin/python -m pytest meridian/tests -q -n 0`
 - **S0** — toute requête S se lance ainsi : `psql "$JUMEAU_PG_DSN" -c "…"` (le DSN reste dans l'environnement, jamais dans un document)
 - **S1** — connaissances courantes par maturité : `SELECT maturite, count(*) FROM claim WHERE valide_jusqua IS NULL GROUP BY 1 ORDER BY 1`
 - **S4** — connaissances validées par l'équipe : `SELECT count(*) FROM claim WHERE statut = 'ACCEPTED'`
 - **S8** — preuves par type de source : `SELECT type, count(*) FROM preuve GROUP BY 1`
 - **S9** — connaissances courantes issues de l'ingestion : `SELECT count(*) FROM claim WHERE valide_jusqua IS NULL AND origine = 'INGESTION'`
 - **S10** — état de vérification courant de chaque connaissance : `SELECT etat, count(*) FROM (SELECT DISTINCT ON (v.claim_id) v.claim_id, v.etat FROM verification v JOIN claim c ON c.id = v.claim_id WHERE c.valide_jusqua IS NULL ORDER BY v.claim_id, v.id DESC) x GROUP BY etat`
-- **X3** — évaluation d'un jumeau (appelle le modèle) : `cd backend && .venv/bin/python -m jumeau.evaluation --jumeau conduit`
+- **X3** — évaluation d'un jumeau (appelle le modèle) : `cd backend && .venv/bin/python -m meridian.adapters.outbound.llm.evaluation --jumeau conduit`
 - **X5** — méthodes : `ls backend/jumeau/methodes/*.md | wc -l`
 
 Les passes de vérification des « premiers résultats réels » (§2) ne se rejouent pas à l'identique : elles sont datées du 2026-10-28.

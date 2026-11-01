@@ -215,7 +215,7 @@ def depuis_url(application_id: str, url: str, secret_ref: Optional[str] = None,
 
 def main(argv=None) -> int:
     analyseur = argparse.ArgumentParser(
-        prog="python -m jumeau.connecteurs_runtime_pull",
+        prog="python -m meridian.adapters.outbound.connectors.connecteurs_runtime_pull",
         description="Tirer un export OTLP d'un collecteur autorisé et imprimer le graphe observé en JSON.")
     analyseur.add_argument("url")
     analyseur.add_argument("application_id")

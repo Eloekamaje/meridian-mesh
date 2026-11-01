@@ -10,8 +10,8 @@ les lignes. Les workers qui traitent un tenant à la fois peuvent utiliser
 sur une connexion d'API). L'activation est une opération de déploiement, jamais une écriture
 automatique du serveur :
 
-    python -m jumeau.rls --verifier
-    python -m jumeau.rls --activer
+    python -m meridian.adapters.outbound.postgres.rls --verifier
+    python -m meridian.adapters.outbound.postgres.rls --activer
 
 Le CLI refuse un rôle `SUPERUSER` ou `BYPASSRLS` pour l'activation : les policies ne s'appliquent
 pas à un tel rôle. Les workers multi-tenant peuvent, eux, utiliser un rôle dédié `BYPASSRLS` ; voir
@@ -265,7 +265,7 @@ def configurer_worker(conn, *, tenants=(), env=None, multi: bool = True) -> dict
         raise ConfigurationWorker(
             "JUMEAU_WORKER_TENANTS exige l'activation RLS complète : une activation "
             "partielle laisserait des tables visibles pour tous les tenants. "
-            "Relancer `python -m jumeau.rls --activer` sans --tables, ou retirer la "
+            "Relancer `python -m meridian.adapters.outbound.postgres.rls --activer` sans --tables, ou retirer la "
             "liste de tenants (voir docs/architecture/rls.md)."
         )
     if selection and mode == MODE_WORKER_BYPASS:

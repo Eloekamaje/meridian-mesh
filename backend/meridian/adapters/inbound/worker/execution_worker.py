@@ -1,6 +1,6 @@
 """Boucle worker et point d'entrée local.
 
-    JUMEAU_WORKER_PG_DSN=... PYTHONPATH=. python -m jumeau.execution.worker
+    JUMEAU_WORKER_PG_DSN=... PYTHONPATH=. python -m meridian.adapters.inbound.worker.execution_worker
 
 Le worker ne dépend pas de FastAPI. Il réclame des runs, exécute le registre
 d'exécuteurs et termine ou planifie un retry.
@@ -19,7 +19,7 @@ import threading
 
 import psycopg
 
-from jumeau import rls
+from meridian.adapters.outbound.postgres import rls
 from meridian.adapters.inbound.worker.config import (
     dsn_avec_tenant,
     dsn_worker,

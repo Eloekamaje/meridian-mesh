@@ -5,11 +5,11 @@ mais Postgres refuse en plus toute ligne hors du tenant courant. Elles sont **op
 jamais activées au démarrage de l'API ou des workers.
 
 - Code : `backend/meridian/adapters/outbound/postgres/rls.py`
-  (compatibilité : `backend/jumeau/rls.py`).
+  (compatibilité : `backend/meridian/adapters/outbound/postgres/rls.py`).
 - Contexte : `JUMEAU_RLS=1` fait poser `meridian.tenant_id` par transaction (ou par session sur
   une connexion worker dédiée à un tenant).
-- Activation : commande explicite `python -m jumeau.rls --activer`.
-- Vérification : `python -m jumeau.rls --verifier`.
+- Activation : commande explicite `python -m meridian.adapters.outbound.postgres.rls --activer`.
+- Vérification : `python -m meridian.adapters.outbound.postgres.rls --verifier`.
 - Workers : DSN dédié `JUMEAU_WORKER_PG_DSN` (repli `JUMEAU_PG_DSN`), rôle
   `meridian_worker` pour le balayage global ou `meridian_app` + `JUMEAU_WORKER_TENANTS`
   pour une passe par tenant.
@@ -122,7 +122,7 @@ le DSN du propriétaire le temps de l'activation, puis restaurer le DSN applicat
    ```bash
    cd backend
    set -a; . ./.env; set +a
-   .venv/bin/python -m jumeau.rls --verifier
+   .venv/bin/python -m meridian.adapters.outbound.postgres.rls --verifier
    ```
 
    Sortie `KO` ou code retour `1` = policy manquante, RLS non activé/non forcé, ou rôle qui
@@ -131,7 +131,7 @@ le DSN du propriétaire le temps de l'activation, puis restaurer le DSN applicat
    `CREATE POLICY`, dans une transaction.
 
    ```bash
-   .venv/bin/python -m jumeau.rls --activer
+   .venv/bin/python -m meridian.adapters.outbound.postgres.rls --activer
    ```
 
    `--tables` permet de restreindre l'activation à un sous-ensemble (syntaxe :
@@ -143,7 +143,7 @@ le DSN du propriétaire le temps de l'activation, puis restaurer le DSN applicat
 4. Vérifier après activation :
 
    ```bash
-   .venv/bin/python -m jumeau.rls --verifier
+   .venv/bin/python -m meridian.adapters.outbound.postgres.rls --verifier
    ```
 
 5. Configurer les workers **avant** de les relancer. Le DSN worker est prioritaire :
@@ -236,7 +236,7 @@ Règles :
 Diagnostic du CLI :
 
 ```bash
-.venv/bin/python -m jumeau.rls --verifier
+.venv/bin/python -m meridian.adapters.outbound.postgres.rls --verifier
 ```
 
 Le rapport liste chaque table (`ok`/`KO`), le schéma, le rôle et les politiques supplémentaires.
@@ -286,7 +286,7 @@ Le retour arrière est explicite et immédiat :
 ```bash
 cd backend
 set -a; . ./.env; set +a
-.venv/bin/python -m jumeau.rls --desactiver
+.venv/bin/python -m meridian.adapters.outbound.postgres.rls --desactiver
 ```
 
 Puis retirer `JUMEAU_RLS=1` de l'environnement de l'API **et des workers**, et redémarrer les
@@ -373,7 +373,7 @@ avertissement : les policies ne protègent pas ce processus. Ce rôle est réser
    set -a; . ./.env; set +a
    export JUMEAU_WORKER_PG_DSN="postgresql://meridian_app:...@.../meridian"
    JUMEAU_WORKER_TENANTS=tenant-a \
-     .venv/bin/python -m jumeau.source_worker --une-passe --sans-schema
+     .venv/bin/python -m meridian.adapters.inbound.worker.source_worker --une-passe --sans-schema
    ```
 
    Avec un rôle `NOBYPASSRLS`, la même commande **sans** `JUMEAU_WORKER_TENANTS` doit échouer au
@@ -381,8 +381,8 @@ avertissement : les policies ne protègent pas ce processus. Ce rôle est réser
 3. Exécution et outbox, un tenant par processus :
 
    ```bash
-   JUMEAU_WORKER_TENANTS=tenant-a .venv/bin/python -m jumeau.execution.worker
-   JUMEAU_WORKER_TENANTS=tenant-a .venv/bin/python -m jumeau.execution.outbox_worker
+   JUMEAU_WORKER_TENANTS=tenant-a .venv/bin/python -m meridian.adapters.inbound.worker.execution_worker
+   JUMEAU_WORKER_TENANTS=tenant-a .venv/bin/python -m meridian.adapters.inbound.worker.outbox_worker
    ```
 4. Contrôle SQL du rôle et des policies, avec le DSN worker :
 

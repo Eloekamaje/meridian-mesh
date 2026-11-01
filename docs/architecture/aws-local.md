@@ -24,7 +24,7 @@ Tests automatisés (les tests moto sont ignorés si moto est absent) :
 ```bash
 cd backend
 set -a; . ./.env; set +a
-.venv/bin/python -m pytest jumeau/tests/test_aws_adapters.py jumeau/tests/test_aws_adapters_local.py -q
+.venv/bin/python -m pytest meridian/tests/test_aws_adapters.py meridian/tests/test_aws_adapters_local.py -q
 ```
 
 ## Option 2 — moto_server ou LocalStack, opt-in

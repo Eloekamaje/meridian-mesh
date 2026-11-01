@@ -13,7 +13,7 @@ import conversation as c
 import limites
 import pieces
 from seed_data import ESPACES
-from jumeau import flux
+from meridian.adapters.inbound.http import flux
 
 
 class Collection:

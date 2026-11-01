@@ -15,8 +15,8 @@ import portee as portees
 import re
 from seed_data import EPICS, EPIC_PAR_REF
 import veille as moteur_veille
-from jumeau import flux as jumeau_flux
-from jumeau.travail import EcritureTravail
+from meridian.adapters.inbound.http import flux as jumeau_flux
+from meridian.adapters.outbound.mongo.travail import EcritureTravail
 from cases_fil import ajouter_routes_fil
 from meridian.adapters.inbound.http.pieces import ajouter_routes_pieces
 
@@ -232,7 +232,7 @@ def reviser_proposee(claim, jumeau, acteur, decision, motif):
     """La revue humaine d'une connaissance proposée (approbation en ligne), dans la couche cognitive."""
     import os
     import psycopg
-    from jumeau import depot
+    from meridian.adapters.outbound.postgres import depot
     dsn = os.environ.get("JUMEAU_PG_DSN")
     if not dsn:
         raise RuntimeError("Couche cognitive non configurée (JUMEAU_PG_DSN)")
@@ -621,7 +621,7 @@ def build_cases_router(deps):
     @router.post("/cases/{cid}/messages/flux")
     async def message_case_flux(cid: str, payload: MessageCase, acteur: str = Depends(acteur_courant), x_espace: Optional[str] = Header(None)):
         """Le même échange, au fil de l'eau (étapes réelles, brouillon en relecture, puis le message enregistré)."""
-        from jumeau import flux
+        from meridian.adapters.inbound.http import flux
 
         async def interrompu(brouillon, activite=None):
             """Arrêt par l'interlocuteur : la question et ce que Flore avait écrit, marqué interrompu."""

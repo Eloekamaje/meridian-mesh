@@ -20,7 +20,7 @@ from fastapi import APIRouter, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from jumeau import rls
+from meridian.adapters.outbound.postgres import rls
 from meridian.adapters.outbound.postgres import execution_depot as depot
 from meridian.application.execution.modele import (
     ApprobationIntrouvable,

@@ -35,7 +35,7 @@ Pour le pilote actuel, les choix suivants sont retenus.
    - Le passage outbox-only est un lot séparé avec projecteur en service et métrique de retard.
 
 4. **Worker : processus manuel supervisé hors Compose.**
-   - `python -m jumeau.execution.worker` et `outbox_worker` sont les points d'entrée.
+   - `python -m meridian.adapters.inbound.worker.execution_worker` et `outbox_worker` sont les points d'entrée.
    - L'intégration Compose/AWS attend une image backend et une politique de santé/redémarrage.
 
 5. **Exécuteur agent : `asyncio.run` accepté pour le pilote.**
@@ -78,4 +78,4 @@ Pour le pilote actuel, les choix suivants sont retenus.
 
 - [ADR-0010](0010-monolithe-modulaire-hexagonal.md), [ADR-0011](0011-runtime-durable-postgres.md)
 - [ADR-0013](0013-projection-graphe.md), [ADR-0016](0016-fin-personas-demo.md)
-- `backend/jumeau/execution/`, `backend/jumeau/gardien.py`, `backend/jumeau/rls.py`
+- `backend/meridian/application/execution/`, `backend/jumeau/gardien.py`, `backend/jumeau/rls.py`

@@ -50,7 +50,7 @@ def test_les_profils_du_plugin_existent_dans_le_noyau():
     import sys
 
     sys.path.insert(0, str(REPO / "backend"))
-    from jumeau import profils
+    from meridian.domain import profils
 
     plugin = _json("profiles.json")["profiles"]
     for identifiant, configuration in plugin.items():
@@ -195,7 +195,7 @@ def test_les_domain_packs_sont_valides_et_en_lecture_seule():
     import sys
 
     sys.path.insert(0, str(REPO / "backend"))
-    from jumeau import packs_domaines
+    from meridian.domain import packs_domaines
 
     packs = {pack.id: pack for pack in packs_domaines.charger_packs(ROOT / "domain-packs")}
     assert set(packs) == {"paiements", "risque"}

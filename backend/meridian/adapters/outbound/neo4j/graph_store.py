@@ -10,7 +10,7 @@ Limites assumées :
 - `ouvrir` ne teste pas la connexion : le premier appel au store révèle un serveur injoignable ;
 - la fermeture est explicite et idempotente ; l'appelant doit l'invoquer, par exemple dans un `finally` ;
 - `NEO4J_DATABASE` vaut `neo4j` par défaut, comme la base par défaut du serveur ;
-- `synchroniser_depuis_identites` ne fait que déléguer à `jumeau.graphe_sync.synchroniser`.
+- `synchroniser_depuis_identites` ne fait que déléguer à `meridian.application.graphe_sync.synchroniser`.
 """
 from __future__ import annotations
 

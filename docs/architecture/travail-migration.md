@@ -35,8 +35,8 @@ Depuis `backend/`, avec l'environnement chargé :
 set -a; . ./.env; set +a
 
 # 1. Backfill à blanc (défaut), puis application.
-.venv/bin/python -m jumeau.migrer_travail --tenant local --dry-run
-.venv/bin/python -m jumeau.migrer_travail --tenant local --apply
+.venv/bin/python -m meridian.adapters.outbound.postgres.migrer_travail --tenant local --dry-run
+.venv/bin/python -m meridian.adapters.outbound.postgres.migrer_travail --tenant local --apply
 
 # 2. Worker de rattrapage (writes toujours Mongo), depuis la racine du dépôt.
 scripts/dev-travail-worker.sh --une-passe
@@ -112,7 +112,7 @@ par tenant dans un lot ultérieur).
 ```bash
 cd backend
 set -a; . ./.env; set +a
-.venv/bin/python -m pytest jumeau/tests/test_travail_sync.py jumeau/tests/test_travail_store.py -q
+.venv/bin/python -m pytest meridian/tests/test_travail_sync.py meridian/tests/test_travail_store.py -q
 ```
 
 Le test de fumée `test_travail_smoke.py` (si `MONGO_URL` et `JUMEAU_PG_DSN` sont

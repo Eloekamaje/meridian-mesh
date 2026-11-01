@@ -1206,7 +1206,7 @@ Deux fondations existent déjà dans l'arbre de travail et doivent être réutil
 - Intégration : gsf-mockup de bout en bout ; run rejoué ; source coupée ; SHA changé.
 - Sécurité : IDOR tenant, secrets, prompt injection, lecture seule, audit.
 - Jeu d'or : identité, typage, promotions, sécurité.
-- Non-régression : suite `backend/jumeau/tests` existante.
+- Non-régression : suite `backend/meridian/tests` existante.
 
 **Définition de terminé.**
 - AC-01 à AC-15 passent.
