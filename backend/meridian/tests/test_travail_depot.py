@@ -37,3 +37,16 @@ def test_lister_lire_et_mettre_a_jour_sans_mongo():
     assert asyncio.run(depot.lire("c2"))["titre"] == "Deux"
     assert asyncio.run(depot.mettre_a_jour("c1", {"titre": "Modifié"}))
     assert collection.maj == [({"id": "c1"}, {"$set": {"titre": "Modifié"}})]
+
+
+def test_identifiants_utilise_l_id_applicatif_pas_l_objectid():
+    class Curseur:
+        async def to_list(self, limite):
+            return [{"_id": "oid-1", "id": "case-1"}]
+
+    class Collection:
+        def find(self, filtre, projection):
+            assert projection == {"_id": 1, "id": 1}
+            return Curseur()
+
+    assert asyncio.run(TravailDepot(Collection()).identifiants()) == {"case-1"}
