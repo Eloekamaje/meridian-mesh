@@ -343,3 +343,12 @@ async def apercu_import(
         "message": f"{len(prepare['nouvelles'])} source(s) prêtes à importer, "
                    f"{len(prepare['ignorees'])} déjà présente(s) et ignorée(s).",
     }
+
+
+async def suivre_naissance(store: CommandesStore, cid: str) -> dict:
+    """État de naissance d'une commande, sans transport HTTP."""
+    doc = await store.lire(cid)
+    if doc is None:
+        raise CommandeIntrouvable(cid)
+    return {"jumeau_id": doc.get("jumeau_id"),
+            **(doc.get("naissance") or {"etat": "non_lancee"})}

@@ -51,3 +51,12 @@ def test_apercu_import_refuse_un_connecteur_non_branche():
              "sources": [{"connecteur": "postgresql", "nom": "db"}]},
             connus=["github"],
         ))
+
+
+def test_suivre_naissance_rend_l_etat_ou_non_lancee():
+    store = Store({"id": "c1", "jumeau_id": "app", "naissance": {"etat": "en_cours"}})
+    assert _run(commandes.suivre_naissance(store, "c1"))["etat"] == "en_cours"
+    store = Store({"id": "c1"})
+    assert _run(commandes.suivre_naissance(store, "c1"))["etat"] == "non_lancee"
+    with pytest.raises(commandes.CommandeIntrouvable):
+        _run(commandes.suivre_naissance(Store(None), "c1"))

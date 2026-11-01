@@ -2,8 +2,11 @@
 
 > **Note 2026-11-01** : les runs réels du pilote utilisent désormais
 > [`run_deepseek.py`](run_deepseek.py) sur le backend `JUMEAU_MODELE=deepseek`, **sans Claude
-> Code**. Les chiffres ci-dessous proviennent du harness Claude Code historique et ne doivent pas
-> être relus comme un résultat DeepSeek. Voir [`PILOT-2026-11-01.md`](PILOT-2026-11-01.md).
+> Code**. Le runner appelle `/api/boucle/analyser` (contrat structuré) et
+> `/api/aurora/demander` (prose), sur le tenant synthétique `pilot` créé par
+> [`seed_pilot.py`](seed_pilot.py). Résultat : **2/2 scénarios PASS**, 0,106180 USD estimés.
+> Les chiffres ci-dessous proviennent du harness Claude Code historique et ne doivent pas être
+> relus comme un résultat DeepSeek. Voir [`PILOT-2026-11-01.md`](PILOT-2026-11-01.md).
 
 ## But
 

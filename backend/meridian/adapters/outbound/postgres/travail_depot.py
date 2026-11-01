@@ -138,6 +138,32 @@ class TravailDepot:
             if fermer:
                 conn.close()
 
+    async def supprimer(self, cid: str) -> bool:
+        """Retire un cas du read model (double écriture) ; le tenant limite la portée."""
+        conn, fermer = self._connexion()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM travail WHERE tenant_id = %s AND id = %s",
+                            (self.tenant_id, cid))
+                return cur.rowcount > 0
+        finally:
+            if fermer:
+                conn.close()
+
+    async def supprimer_plusieurs(self, ids: list[str]) -> int:
+        identifiants = [str(i) for i in ids if i is not None]
+        if not identifiants:
+            return 0
+        conn, fermer = self._connexion()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM travail WHERE tenant_id = %s AND id = ANY(%s)",
+                            (self.tenant_id, identifiants))
+                return cur.rowcount
+        finally:
+            if fermer:
+                conn.close()
+
     def dernier_curseur(self):
         """Curseur exact `(maj_le, _id)` du document le plus récent, pour reprendre sans trou."""
         conn, fermer = self._connexion()

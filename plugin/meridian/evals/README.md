@@ -11,10 +11,13 @@ Deux runners coexistent :
 
 ## Runner DeepSeek (runs réels)
 
-`run_deepseek.py` envoie le prompt du scénario à `POST /api/aurora/demander` avec le contexte et
-la sélection (`context.twins`), puis applique les mêmes critères objectifs que le harness Claude
-(termes attendus/interdits, sections, durée, coût). Il ajoute deux critères : `http_status` et
-`modele_deepseek` (le modèle rapporté doit être DeepSeek, jamais Claude).
+`run_deepseek.py` appelle deux routes : `POST /api/boucle/analyser` pour le contrat structuré
+(`socle`, `lecture`, `limites`, `actions`, `autorite`, `prochaines_etapes`,
+`decision_support`) et `POST /api/aurora/demander` pour la prose DeepSeek. Il applique les mêmes
+critères objectifs que le harness Claude (termes attendus/interdits, sections, durée, coût) au
+contrat structuré et à la prose, jamais à une sortie Claude. Il ajoute des critères de statut
+HTTP, de structure du contrat et `modele_deepseek` (le modèle rapporté doit être DeepSeek,
+jamais Claude).
 
 Prérequis :
 
@@ -23,6 +26,14 @@ Prérequis :
   le runner) ;
 - `requests` disponible dans le Python utilisé (le `.venv` du backend convient).
 
+Le tenant `pilot` du pilote se crée avec `seed_pilot.py` (idempotent, synthétique, sans
+toucher `demo`) :
+
+```bash
+PYTHONPATH=..:../backend .venv/bin/python ../plugin/meridian/evals/seed_pilot.py --dry-run
+PYTHONPATH=..:../backend .venv/bin/python ../plugin/meridian/evals/seed_pilot.py
+```
+
 Depuis `backend/` :
 
 ```bash
@@ -30,8 +41,8 @@ PYTHONPATH=..:../backend .venv/bin/python ../plugin/meridian/evals/run_deepseek.
   --scenario ../plugin/meridian/evals/scenarios/incident-paiements.json \
   --scenario ../plugin/meridian/evals/scenarios/changement-reglementaire.json \
   --api-url http://127.0.0.1:8002/api \
-  --tenant demo \
-  --output /tmp/meridian-deepseek-pilot
+  --tenant pilot \
+  --output /tmp/meridian-deepseek-pilot-pilot-20261101
 ```
 
 Avec `--start-backend`, le runner démarre un backend local temporaire sur le port de `--api-url`
@@ -61,15 +72,18 @@ Sorties :
   <scenario>/
     summary.json
     run-01.json                 # bilan, payload, usage, critères
-    run-01.result.txt           # texte final
-    run-01.response.json        # réponse brute du backend
+    run-01.contract.json        # réponse brute de /boucle/analyser
+    run-01.contract.txt         # contrat sans écho de la question (noté)
+    run-01.prose.json           # réponse brute de /aurora/demander
+    run-01.prose.txt            # prose DeepSeek
+    run-01.result.txt           # contrat + prose (texte noté)
 ```
 
 Le code de sortie vaut `0` après exécution même si des critères échouent, `2` si le scénario ou le
-backend est invalide. Le run du 2026-11-01 est documenté dans
+backend est invalide. Le run du 2026-11-01 sur le tenant synthétique `pilot` est documenté dans
 [`PILOT-2026-11-01.md`](PILOT-2026-11-01.md) : **2/2 runs complets** sur `deepseek-chat`,
-**0/2 scénarios** au sens des critères, car le tenant `demo` n'a pas les Twins du pilote et
-`/aurora/demander` renvoie de la prose, pas le contrat de sections du plugin.
+**2/2 scénarios** au sens des critères, **0,106180 USD** estimés. Le fixture `pilot` se crée avec
+[`seed_pilot.py`](seed_pilot.py) et ne touche jamais `demo`.
 
 ## Runner Claude Code (historique)
 

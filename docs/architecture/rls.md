@@ -110,27 +110,80 @@ WHERE rolname = current_user;
 Attendu pour l'API : `rolsuper = false` et `rolbypassrls = false`.
 Attendu pour `meridian_worker` : `rolsuper = false`, `rolbypassrls = true`.
 
-## Ordre d'activation
+## Provisionnement des rôles
+
+Le template idempotent `scripts/rls-provision.sql` crée `meridian_app`
+(`NOSUPERUSER NOBYPASSRLS`) et `meridian_worker` (`NOSUPERUSER BYPASSRLS`), réaffirme leurs attributs,
+puis accorde les droits DML, les séquences et les privilèges par défaut des futurs objets :
+
+```bash
+psql "$JUMEAU_PG_DSN" \
+  -v app_password="$MERIDIAN_APP_PASSWORD" \
+  -v worker_password="$MERIDIAN_WORKER_PASSWORD" \
+  -v owner_role=meridian \
+  -f scripts/rls-provision.sql
+```
+
+- Exécuter avec un rôle `CREATEROLE` (superuser pour créer le rôle `BYPASSRLS`). `owner_role` est le
+  rôle de déploiement/propriétaire des tables (défaut `meridian`) ; il sert aux
+  `ALTER DEFAULT PRIVILEGES`, pas seulement aux objets existants.
+- Le script ne réécrit pas le mot de passe d'un rôle existant : faire une rotation explicite avec
+  `ALTER ROLE ... PASSWORD` si nécessaire.
+- `meridian_worker` est `BYPASSRLS` pour les workers qui balaient tous les tenants. Alternative sans
+  `BYPASSRLS` : `meridian_app` + `JUMEAU_WORKER_TENANTS`, une passe par tenant (voir
+  [Workers multi-tenant](#workers-multi-tenant)).
+
+## Preuve locale sur base jetable
+
+`scripts/rls-verify-local.sh` rejoue le chemin de production sur une base et des rôles jetables,
+sans toucher à la base cible :
+
+```bash
+export JUMEAU_PG_DSN='postgresql://.../meridian'   # rôle admin local (CREATEDB/CREATEROLE)
+scripts/rls-verify-local.sh
+```
+
+Le script :
+
+1. crée `meridian_rls_verify_<pid>`, `meridian_rls_owner_<pid>` (déploiement) et
+   `meridian_rls_app_<pid>` (applicatif), les deux rôles étant `LOGIN NOSUPERUSER NOBYPASSRLS` ;
+2. applique `schema.sql` avec le rôle propriétaire, puis accorde les droits DML à l'applicatif ;
+3. active RLS avec le CLI et le DSN propriétaire (le CLI refuse un superuser) ;
+4. vérifie avec `--verifier` et le DSN applicatif ;
+5. insère deux tenants via `rls.contexte_tenant`, puis prouve que chaque tenant ne voit que ses
+   lignes, que l'absence de contexte ne voit rien et qu'un `INSERT` croisé est refusé (`SQLSTATE
+   42501`) ;
+6. supprime base et rôles dans un `trap`, y compris en cas d'échec. `KEEP_VERIFY_DB=1` conserve
+   l'ensemble pour inspection.
+
+Sortie attendue : `PASS` et code retour `0` ; sinon `FAIL` et code non nul.
+
+## Ordre d'activation en production
 
 Les commandes ci-dessous supposent que `.env` porte le DSN du rôle d'activation (propriétaire des
-tables, `NOSUPERUSER NOBYPASSRLS`). Si l'API utilise `meridian_app`, remplacer `JUMEAU_PG_DSN` par
-le DSN du propriétaire le temps de l'activation, puis restaurer le DSN applicatif.
+tables, `NOSUPERUSER NOBYPASSRLS`). Si l'API utilise `meridian_app`, utiliser le DSN du propriétaire
+le temps de l'activation, puis restaurer le DSN applicatif.
 
 1. **Sauvegarder** la base (snapshot RDS ou `pg_dump`).
-2. Vérifier l'état courant, sans rien modifier :
+
+2. **Créer les rôles** avec `scripts/rls-provision.sql` (voir ci-dessus), puis vérifier leurs
+   attributs :
+
+   ```bash
+   psql "$JUMEAU_PG_DSN" -c \
+     "SELECT rolname, rolsuper, rolbypassrls FROM pg_roles \
+      WHERE rolname IN ('meridian_app', 'meridian_worker');"
+   ```
+
+   Attendu : `meridian_app` → `false/false` ; `meridian_worker` → `false/true` ; jamais
+   `rolsuper = true`. Ne jamais donner `SUPERUSER` à l'API.
+
+3. **Activer les policies** avec le rôle propriétaire/déploiement. L'opération est idempotente :
+   `DROP POLICY IF EXISTS` précède chaque `CREATE POLICY`, dans une transaction.
 
    ```bash
    cd backend
    set -a; . ./.env; set +a
-   .venv/bin/python -m meridian.adapters.outbound.postgres.rls --verifier
-   ```
-
-   Sortie `KO` ou code retour `1` = policy manquante, RLS non activé/non forcé, ou rôle qui
-   contourne RLS.
-3. Activer les policies. L'opération est idempotente : `DROP POLICY IF EXISTS` précède chaque
-   `CREATE POLICY`, dans une transaction.
-
-   ```bash
    .venv/bin/python -m meridian.adapters.outbound.postgres.rls --activer
    ```
 
@@ -138,15 +191,34 @@ le DSN du propriétaire le temps de l'activation, puis restaurer le DSN applicat
    `--tables objet_entreprise`). Ne l'utiliser que si **tous** les writers de ces tables posent le
    contexte : un worker, un trigger ou un CLI de maintenance qui écrit sans contexte échouera. En
    pratique, l'activation par défaut suppose que les workers sont adaptés (voir
-   [Workers multi-tenant](#workers-multi-tenant)).
+   [Workers multi-tenant](#workers-multi-tenant)). `--verifier` reste un contrôle non destructif
+   utilisable avant l'activation.
 
-4. Vérifier après activation :
+4. **Vérifier avec le rôle applicatif** (pas le superuser) :
 
    ```bash
-   .venv/bin/python -m meridian.adapters.outbound.postgres.rls --verifier
+   cd backend
+   JUMEAU_PG_DSN="postgresql://meridian_app:...@.../meridian" \
+     .venv/bin/python -m meridian.adapters.outbound.postgres.rls --verifier
    ```
 
-5. Configurer les workers **avant** de les relancer. Le DSN worker est prioritaire :
+   Sortie `KO` ou code retour `1` = policy manquante, RLS non activé/non forcé, ou rôle qui
+   contourne RLS. La même preuve, isolée sur une base jetable, est rejouable avec
+   `scripts/rls-verify-local.sh`.
+
+5. **Activer le contexte côté API** **après** que tous les chemins appelés par l'API posent leur
+   tenant :
+
+   ```bash
+   JUMEAU_RLS=1
+   ```
+
+   `JUMEAU_RLS` ne crée ni ne supprime les policies : une policy déjà créée s'applique à tout rôle
+   non-superuser, même avec `JUMEAU_RLS=0`. Le flag ne fait que demander à l'application de poser
+   `meridian.tenant_id`. Les workers détectent aussi les policies actives en base : ils refusent un
+   balayage global avec un rôle `NOBYPASSRLS`, même si `JUMEAU_RLS` a été oublié.
+
+6. **Configurer les workers**, puis redémarrer l'API et les workers. Le DSN worker est prioritaire :
 
    ```bash
    # Rôle global, pour un worker qui balaie tous les tenants (source, outbox, exécution).
@@ -161,20 +233,7 @@ le DSN du propriétaire le temps de l'activation, puis restaurer le DSN applicat
    locale). Le mode retenu est vérifié au démarrage et journalisé (voir
    [Workers multi-tenant](#workers-multi-tenant)).
 
-6. Activer le contexte côté API **après** que tous les chemins appelés par l'API posent leur
-   tenant :
-
-   ```bash
-   JUMEAU_RLS=1
-   ```
-
-   `JUMEAU_RLS` ne crée ni ne supprime les policies : une policy déjà créée s'applique à tout rôle
-   non-superuser, même avec `JUMEAU_RLS=0`. Le flag ne fait que demander à l'application de poser
-   `meridian.tenant_id`. Les workers détectent aussi les policies actives en base : ils refusent un
-   balayage global avec un rôle `NOBYPASSRLS`, même si `JUMEAU_RLS` a été oublié.
-
-7. Redémarrer l'API et les workers, puis vérifier les parcours critiques (Boucle, catalogue
-   d'outils, runs, ingestion). Vérifier le rôle réellement utilisé par chaque worker :
+   Vérifier le rôle réellement utilisé par chaque worker :
 
    ```bash
    psql "$JUMEAU_WORKER_PG_DSN" -c \
@@ -183,10 +242,12 @@ le DSN du propriétaire le temps de l'activation, puis restaurer le DSN applicat
 
    Attendu : `meridian_app` → `false/false` ; `meridian_worker` → `false/true` ; jamais
    `rolsuper = true`. Le log de démarrage doit indiquer le mode : passe par tenant, ou
-   avertissement `BYPASSRLS`.
+   avertissement `BYPASSRLS`. Vérifier enfin les parcours critiques (Boucle, catalogue d'outils,
+   runs, ingestion).
 
 Ne jamais activer RLS sur une base de développement sans le vouloir : la commande est explicite et
-le CLI refuse les rôles superuser/BYPASSRLS.
+le CLI refuse les rôles superuser/BYPASSRLS. `scripts/rls-verify-local.sh` ne vise qu'une base
+jetable et nettoie derrière lui.
 
 ## Utilisation côté routes et workers
 

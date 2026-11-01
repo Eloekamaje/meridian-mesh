@@ -47,6 +47,7 @@ from meridian.domain import capacites as jumeau_capacites
 from meridian.adapters.outbound.connectors import chargeur_manifestes as jumeau_chargeur_manifestes
 from meridian.domain import import_identite as jumeau_import_identite
 from meridian.adapters.outbound.mongo.commandes_depot import CommandesDepot  # noqa: E402
+from meridian.adapters.outbound.mongo import travail_proxy  # noqa: E402
 from meridian.adapters.outbound.naissance_runtime import NaissanceRuntimeLocal  # noqa: E402
 from meridian.application.commandes import (  # noqa: E402
     CHAMPS_SECRETS, CommandeIntrouvable, CommandeModifiee, EtapeInvalide,
@@ -60,6 +61,7 @@ from meridian.application.commandes import (  # noqa: E402
     naissance_possible,
     proteger_source as _proteger_source_metier,
     sans_secrets as _sans_secrets,
+    suivre_naissance as suivre_naissance_metier,
     statut_serveur as _statut_serveur,
     tester_sources as tester_sources_metier,
 )
@@ -167,12 +169,20 @@ async def demarrer_partage():
 
 
 @app.on_event("startup")
+async def activer_double_ecriture_travail():
+    try:
+        travail_proxy.installer(db)
+    except Exception:  # noqa: BLE001 - le drapeau ne doit pas empêcher l'API de démarrer
+        logger.exception("Double écriture Travail indisponible ; écritures Mongo seules")
+
+
+@app.on_event("startup")
 async def seed_database():
     jumeau_cbm.verifier_cache()
     meta = await db.meta.find_one({"id": "seed"})
     if not meta or meta.get("version") != SEED_VERSION:
         for col in ["jumeaux", "relations", "situations", "change_lab", "dossiers", "vues", "journal", "commandes", "cases", "notifications", "initiatives", "delegations", "actualites_ecartees"]:
-            await db[col].delete_many({})
+            await (db.cases if col == "cases" else db[col]).delete_many({})
         await pieces.reinitialiser(db)
         await db.meta.replace_one({"id": "seed"}, {"id": "seed", "version": SEED_VERSION}, upsert=True)
         logger.info("Seed version %s — réinitialisation des données de démo", SEED_VERSION)
@@ -1648,10 +1658,10 @@ async def lancer_commande(cid: str, acteur: str = Depends(auth_identite.acteur),
 
 @api_router.get("/commandes/{cid}/naissance")
 async def suivre_naissance(cid: str):
-    doc = await db.commandes.find_one({"id": cid}, {"_id": 0, "naissance": 1, "jumeau_id": 1})
-    if not doc:
-        raise HTTPException(404, "Commande introuvable")
-    return {"jumeau_id": doc.get("jumeau_id"), **(doc.get("naissance") or {"etat": "non_lancee"})}
+    try:
+        return await suivre_naissance_metier(CommandesDepot(db.commandes), cid)
+    except CommandeIntrouvable as exc:
+        raise HTTPException(404, "Commande introuvable") from exc
 
 
 # D'où vient une réponse de Flore (plan de remédiation L0.5) : une réponse de démonstration ne se présente jamais

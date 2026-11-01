@@ -1,9 +1,17 @@
 """Runner de pilote Méridian sur le backend DeepSeek.
 
-Le runner n'appelle jamais Claude Code : il envoie le prompt d'un scénario à
-``POST /api/aurora/demander``, puis note les critères objectifs déjà utilisés par
-``run_benchmark.py`` (termes attendus/interdits, sections, durée, coût). Le
-backend doit tourner avec ``JUMEAU_MODELE=deepseek`` et ``DEEPSEEK_API_KEY``.
+Le runner n'appelle jamais Claude Code. Pour chaque scénario il appelle deux
+routes du backend :
+
+- ``POST /api/boucle/analyser`` pour le contrat structuré
+  (``socle``, ``lecture``, ``limites``, ``actions``, ``autorite``,
+  ``prochaines_etapes``, ``decision_support``) ;
+- ``POST /api/aurora/demander`` pour la prose DeepSeek et son usage
+  (latence, jetons, coût).
+
+Les critères objectifs de ``run_benchmark.py`` sont notés sur le contrat
+structuré et la prose, jamais sur une sortie Claude. Le backend doit tourner avec
+``JUMEAU_MODELE=deepseek`` et ``DEEPSEEK_API_KEY``.
 
 Usage (depuis ``backend/``) ::
 
@@ -11,7 +19,7 @@ Usage (depuis ``backend/``) ::
         ../plugin/meridian/evals/run_deepseek.py \
         --scenario ../plugin/meridian/evals/scenarios/incident-paiements.json \
         --scenario ../plugin/meridian/evals/scenarios/changement-reglementaire.json \
-        --output /tmp/meridian-deepseek-pilot
+        --tenant pilot --output /tmp/meridian-deepseek-pilot
 
 Avec ``--start-backend``, un backend local temporaire est démarré sur le port de
 ``--api-url`` s'il ne répond pas déjà. Sinon, le runner attend un backend
@@ -104,8 +112,18 @@ def health_url(api_url: str) -> str:
 
 
 def jumeaux_url(api_url: str) -> str:
-    """Retourne ``<api>/jumeaux``."""
+    """Retourne ``<api>/jumeaux`` (registre legacy, repli)."""
     return f"{api_url.rstrip('/')}/jumeaux"
+
+
+def twins_url(api_url: str) -> str:
+    """Retourne ``<api>/boucle/twins`` (Twins typés du tenant)."""
+    return f"{api_url.rstrip('/')}/boucle/twins"
+
+
+def analyser_url(api_url: str) -> str:
+    """Retourne ``<api>/boucle/analyser``."""
+    return f"{api_url.rstrip('/')}/boucle/analyser"
 
 
 def demander_url(api_url: str) -> str:
@@ -205,6 +223,29 @@ def build_payload(scenario: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
+def build_analyser_payload(scenario: dict[str, Any], persona: str = DEFAULT_PERSONA) -> dict[str, Any]:
+    """Construit la requête du contrat structuré.
+
+    La surface ``situation`` n'accepte que ``situation_id`` ; quand le scénario
+    n'en déclare pas, le runner cible les Twins / l'application.
+    """
+    contexte = scenario.get("context") if isinstance(scenario.get("context"), dict) else {}
+    selection = contexte.get("twins") if isinstance(contexte.get("twins"), list) else []
+    payload: dict[str, Any] = {
+        "question": scenario["prompt"],
+        "profil": persona,
+    }
+    situation = str(contexte.get("situation") or "").strip()
+    if situation:
+        payload["situation_id"] = situation
+        return payload
+    if selection:
+        payload["twin_ids"] = [str(jumeau) for jumeau in selection]
+    if contexte.get("application"):
+        payload["application_id"] = str(contexte["application"])
+    return payload
+
+
 def _espace(scenario: dict[str, Any]) -> str | None:
     """Espace explicite du scénario, s'il est déclaré."""
     contexte = scenario.get("context") if isinstance(scenario.get("context"), dict) else {}
@@ -213,7 +254,7 @@ def _espace(scenario: dict[str, Any]) -> str | None:
 
 
 def liste_jumeaux(api_url: str, tenant: str) -> list[dict[str, Any]]:
-    """Lit les jumeaux visibles pour le tenant, sans échouer si l'appel rate."""
+    """Lit le registre legacy, sans échouer si l'appel rate."""
     import requests
 
     try:
@@ -225,6 +266,22 @@ def liste_jumeaux(api_url: str, tenant: str) -> list[dict[str, Any]]:
     if isinstance(donnees, dict):
         donnees = donnees.get("jumeaux") or donnees.get("items") or []
     return [j for j in donnees if isinstance(j, dict)] if isinstance(donnees, list) else []
+
+
+def liste_twins(api_url: str, tenant: str) -> tuple[list[dict[str, Any]], str]:
+    """Lit les Twins typés du tenant, avec repli sur le registre legacy."""
+    import requests
+
+    try:
+        reponse = requests.get(twins_url(api_url), headers=_headers(tenant), timeout=10)
+        reponse.raise_for_status()
+        donnees = reponse.json()
+    except (requests.RequestException, ValueError):
+        return liste_jumeaux(api_url, tenant), "jumeaux"
+    if isinstance(donnees, dict):
+        donnees = donnees.get("twins") or donnees.get("items") or []
+    lignes = [j for j in donnees if isinstance(j, dict)] if isinstance(donnees, list) else []
+    return lignes, "boucle"
 
 
 def _usage_normalise(brut: Any) -> dict[str, Any]:
@@ -260,6 +317,63 @@ def _usage_normalise(brut: Any) -> dict[str, Any]:
     }
 
 
+def _sans_question(valeur: Any) -> Any:
+    """Retire les échos de la question pour ne pas noter le prompt lui-même."""
+    if isinstance(valeur, dict):
+        return {str(cle): _sans_question(element)
+                for cle, element in valeur.items() if str(cle) != "question"}
+    if isinstance(valeur, list):
+        return [_sans_question(element) for element in valeur]
+    return valeur
+
+
+def _texte_contrat(donnees: Any) -> str:
+    """Rend le contrat structuré en texte stable, sans les champs ``question``."""
+    if not isinstance(donnees, dict):
+        return ""
+    return json.dumps(_sans_question(donnees), ensure_ascii=False, sort_keys=True)
+
+
+def _critere_contrat(sections: Any, socle_sections: Any = None) -> dict[str, Any]:
+    """Vérifie les clés du contrat structuré attendu, pas seulement du texte.
+
+    Le backend expose les limites dans ``socle.limites`` (et les répète dans
+    ``avertissements``) : la section ``limites`` est donc satisfaite à ce niveau.
+    """
+    presentes = {str(cle) for cle in (sections or [])}
+    presentes |= {str(cle) for cle in (socle_sections or [])}
+    attendues = ("socle", "lecture", "limites", "actions", "autorite",
+                 "prochaines_etapes", "decision_support")
+    manquantes = [cle for cle in attendues if cle not in presentes]
+    return {
+        "name": "contrat_structure",
+        "passed": not manquantes,
+        "detail": ("contrat complet : " + ", ".join(attendues) if not manquantes
+                   else "sections manquantes : " + ", ".join(manquantes)),
+    }
+
+
+def _appel(url: str, payload: dict[str, Any], entetes: dict[str, str],
+           timeout: float) -> tuple[int | None, Any, str, float]:
+    """Appelle une route JSON et retourne (statut, charge, erreur, durée)."""
+    import requests
+
+    debut = time.monotonic()
+    try:
+        reponse = requests.post(url, json=payload, headers=entetes, timeout=timeout)
+    except requests.Timeout:
+        return None, None, f"timeout après {timeout:.0f} s", time.monotonic() - debut
+    except requests.RequestException as exc:
+        return None, None, f"requête impossible : {exc}", time.monotonic() - debut
+    duree = time.monotonic() - debut
+    try:
+        donnees = reponse.json()
+    except ValueError:
+        donnees = None
+    erreur = "" if 200 <= reponse.status_code < 300 else f"HTTP {reponse.status_code}"
+    return reponse.status_code, donnees, erreur, duree
+
+
 def _critere_modele(usage: dict[str, Any]) -> dict[str, Any]:
     """Vérifie que le modèle rapporté est bien DeepSeek, jamais Claude."""
     modele = usage.get("model")
@@ -277,85 +391,62 @@ def _critere_modele(usage: dict[str, Any]) -> dict[str, Any]:
 
 
 def executer_run(scenario: dict[str, Any], api_url: str, tenant: str, timeout: float,
-                 run_index: int) -> tuple[dict[str, Any], dict[str, Any] | None]:
-    """Envoie un scénario à Aurora et retourne (bilan, réponse brute)."""
-    import requests
-
-    payload = build_payload(scenario)
+                 run_index: int, persona: str = DEFAULT_PERSONA
+                 ) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Appelle le contrat structuré puis la prose DeepSeek, et retourne (bilan, bruts)."""
+    payload_contrat = build_analyser_payload(scenario, persona)
+    payload_prose = build_payload(scenario)
     entetes = _headers(tenant, _espace(scenario))
-    debut = time.monotonic()
-    try:
-        reponse = requests.post(demander_url(api_url), json=payload, headers=entetes,
-                                timeout=timeout)
-        duree = time.monotonic() - debut
-    except requests.Timeout:
-        duree = time.monotonic() - debut
-        return {
-            "arm": "deepseek",
-            "run": run_index,
-            "result": "",
-            "result_found": False,
-            "timed_out": True,
-            "is_error": True,
-            "launch_error": f"timeout après {timeout:.0f} s",
-            "returncode": None,
-            "duration_seconds": round(duree, 3),
-            "cost_usd": None,
-            "usage": _usage_normalise(None),
-            "http_status": None,
-            "model": None,
-            "payload": payload,
-        }, None
-    except requests.RequestException as exc:
-        duree = time.monotonic() - debut
-        return {
-            "arm": "deepseek",
-            "run": run_index,
-            "result": "",
-            "result_found": False,
-            "timed_out": False,
-            "is_error": True,
-            "launch_error": f"requête impossible : {exc}",
-            "returncode": None,
-            "duration_seconds": round(duree, 3),
-            "cost_usd": None,
-            "usage": _usage_normalise(None),
-            "http_status": None,
-            "model": None,
-            "payload": payload,
-        }, None
+    statut_contrat, contrat, erreur_contrat, duree_contrat = _appel(
+        analyser_url(api_url), payload_contrat, entetes, timeout)
+    statut_prose, prose_brut, erreur_prose, duree_prose = _appel(
+        demander_url(api_url), payload_prose, entetes, timeout)
 
-    try:
-        donnees = reponse.json()
-    except ValueError:
-        donnees = None
-    texte = ""
-    if isinstance(donnees, dict):
-        texte = str(donnees.get("reponse") or donnees.get("answer") or "")
-    elif isinstance(donnees, str):
-        texte = donnees
-    usage = _usage_normalise(donnees.get("usage") if isinstance(donnees, dict) else None)
-    est_ok = 200 <= reponse.status_code < 300 and bool(texte.strip())
+    contrat_texte = _texte_contrat(contrat)
+    prose_texte = ""
+    if isinstance(prose_brut, dict):
+        prose_texte = str(prose_brut.get("reponse") or prose_brut.get("answer") or "")
+    elif isinstance(prose_brut, str):
+        prose_texte = prose_brut
+    usage = _usage_normalise(prose_brut.get("usage") if isinstance(prose_brut, dict) else None)
+    reponse_contrat = contrat.get("reponse") if isinstance(contrat, dict) else None
+    reponse_contrat = reponse_contrat if isinstance(reponse_contrat, dict) else {}
+    sections = sorted(reponse_contrat.keys())
+    socle = reponse_contrat.get("socle") if isinstance(reponse_contrat.get("socle"), dict) else {}
+    socle_sections = sorted(socle.keys())
+    est_ok = (statut_contrat == 200 and bool(contrat_texte.strip())
+              and statut_prose == 200 and bool(prose_texte.strip()))
+    erreurs = [erreur for erreur in (erreur_contrat, erreur_prose) if erreur]
+    resultat = "\n\n".join(part for part in (contrat_texte, prose_texte) if part.strip())
     bilan = {
         "arm": "deepseek",
         "run": run_index,
-        "result": texte,
-        "result_found": bool(texte.strip()),
-        "timed_out": False,
+        "result": resultat,
+        "contract_text": contrat_texte,
+        "prose_text": prose_texte,
+        "result_found": bool(contrat_texte.strip()) and bool(prose_texte.strip()),
+        "timed_out": "timeout" in erreur_contrat or "timeout" in erreur_prose,
         "is_error": not est_ok,
-        "launch_error": "" if est_ok else f"HTTP {reponse.status_code}",
+        "launch_error": " ; ".join(erreurs),
         "returncode": 0 if est_ok else 1,
-        "duration_seconds": round(duree, 3),
+        "duration_seconds": round(duree_contrat + duree_prose, 3),
+        "contract_duration_seconds": round(duree_contrat, 3),
+        "prose_duration_seconds": round(duree_prose, 3),
         "cost_usd": usage["cost_usd"],
         "usage": usage,
-        "http_status": reponse.status_code,
+        "http_status": statut_prose,
+        "contract_http_status": statut_contrat,
+        "contract_sections": sections,
+        "contract_socle_sections": socle_sections,
         "model": usage["model"],
-        "payload": payload,
-        "comportement": donnees.get("comportement") if isinstance(donnees, dict) else None,
-        "durees_backend": donnees.get("durees") if isinstance(donnees, dict) else None,
-        "jumeaux_participants": donnees.get("jumeaux_participants") if isinstance(donnees, dict) else None,
+        "payload": payload_prose,
+        "contract_payload": payload_contrat,
+        "comportement": prose_brut.get("comportement") if isinstance(prose_brut, dict) else None,
+        "durees_backend": prose_brut.get("durees") if isinstance(prose_brut, dict) else None,
+        "jumeaux_participants": (prose_brut.get("jumeaux_participants")
+                                 if isinstance(prose_brut, dict) else None),
     }
-    return bilan, donnees if isinstance(donnees, dict) else None
+    return bilan, {"contract": contrat, "prose": prose_brut}
 
 
 def _ecrire_json(chemin: Path, donnees: Any) -> None:
@@ -366,14 +457,30 @@ def _ecrire_json(chemin: Path, donnees: Any) -> None:
 
 
 def _criteres_run(scenario: dict[str, Any], run: dict[str, Any]) -> list[dict[str, Any]]:
-    """Critères objectifs du scénario, plus la preuve du fournisseur DeepSeek."""
+    """Critères objectifs du scénario, contrat structuré et fournisseur compris."""
     criteres = rb.grade_run(scenario, run)
-    criteres.append({
-        "name": "http_status",
-        "passed": run.get("http_status") == 200,
-        "detail": f"HTTP {run.get('http_status')}",
-    })
-    criteres.append(_critere_modele(run.get("usage") or {}))
+    contrat_ok = run.get("contract_http_status") == 200
+    prose_ok = run.get("http_status") == 200
+    criteres.extend([
+        {
+            "name": "http_status",
+            "passed": contrat_ok and prose_ok,
+            "detail": (f"boucle/analyser HTTP {run.get('contract_http_status')}, "
+                       f"aurora/demander HTTP {run.get('http_status')}"),
+        },
+        {
+            "name": "contract_http_status",
+            "passed": contrat_ok,
+            "detail": f"boucle/analyser HTTP {run.get('contract_http_status')}",
+        },
+        {
+            "name": "prose_http_status",
+            "passed": prose_ok,
+            "detail": f"aurora/demander HTTP {run.get('http_status')}",
+        },
+        _critere_contrat(run.get("contract_sections"), run.get("contract_socle_sections")),
+        _critere_modele(run.get("usage") or {}),
+    ])
     return criteres
 
 
@@ -386,12 +493,20 @@ def _resume_runs(runs: list[dict[str, Any]]) -> dict[str, Any]:
                      if isinstance(r.get("usage"), dict) and r["usage"].get("output_tokens") is not None]
     total = [r["usage"]["total_tokens"] for r in runs
              if isinstance(r.get("usage"), dict) and r["usage"].get("total_tokens") is not None]
+    durees_contrat = [r["contract_duration_seconds"] for r in runs
+                      if r.get("contract_duration_seconds") is not None]
+    durees_prose = [r["prose_duration_seconds"] for r in runs
+                    if r.get("prose_duration_seconds") is not None]
     modeles = sorted({str(r.get("model")) for r in runs if r.get("model")})
     return {
         **base,
         "total_input_tokens": sum(jetons_entree) if jetons_entree else None,
         "total_output_tokens": sum(jetons_sortie) if jetons_sortie else None,
         "total_tokens": sum(total) if total else None,
+        "mean_contract_duration_seconds": (
+            round(sum(durees_contrat) / len(durees_contrat), 3) if durees_contrat else None),
+        "mean_prose_duration_seconds": (
+            round(sum(durees_prose) / len(durees_prose), 3) if durees_prose else None),
         "models": modeles,
     }
 
@@ -415,9 +530,10 @@ def ecrire_rapport(dossier: Path, resume: dict[str, Any]) -> Path:
         "# Pilote DeepSeek — " + resume["generated_at"],
         "",
         f"- Backend : `{resume['api_url']}` (tenant `{resume['tenant']}`, persona `{resume['persona']}`)",
-        "- Fournisseur : **DeepSeek**, via `POST /api/aurora/demander` ; **Claude Code n'a pas été appelé**.",
+        "- Contrat structuré : `POST /api/boucle/analyser` ; prose : `POST /api/aurora/demander`.",
+        "- Fournisseur de la prose : **DeepSeek** ; **Claude Code n'a pas été appelé**.",
         f"- Exécution : **{resume['summary']['runs_completed']}/{resume['summary']['runs']} runs complets** "
-        "(HTTP 200 et texte non vide).",
+        "(contrat et prose HTTP 200, textes non vides).",
         f"- Critères du scénario : **{resume['summary']['scenarios_passed']}/{resume['summary']['scenarios']} scénarios réussis**.",
         "",
         "## Résultats",
@@ -429,6 +545,8 @@ def ecrire_rapport(dossier: Path, resume: dict[str, Any]) -> Path:
         table.append([
             scenario["id"],
             "réussi" if scenario["passed"] else "échec",
+            _fmt(s.get("mean_contract_duration_seconds"), " s"),
+            _fmt(s.get("mean_prose_duration_seconds"), " s"),
             _fmt(s.get("mean_duration_seconds"), " s"),
             _fmt(s.get("total_input_tokens")),
             _fmt(s.get("total_output_tokens")),
@@ -437,19 +555,23 @@ def ecrire_rapport(dossier: Path, resume: dict[str, Any]) -> Path:
             ", ".join(s.get("models") or []) or "—",
         ])
     lignes.append(_tableau_markdown(
-        table, ["Scénario", "Statut", "Durée", "Jetons entrée", "Jetons sortie",
-                "Jetons total", "Coût estimé", "Modèle"]))
+        table, ["Scénario", "Statut", "Durée contrat", "Durée prose", "Durée totale",
+                "Jetons entrée", "Jetons sortie", "Jetons total", "Coût estimé", "Modèle"]))
     lignes.extend(["", "## Critères", ""])
     for scenario in resume["scenarios"]:
         lignes.append(f"### {scenario['id']}")
         lignes.append("")
         for run in scenario["runs"]:
-            echecs = [c["name"] for c in run.get("criteria", []) if not c.get("passed")]
+            echecs = [c for c in run.get("criteria", []) if not c.get("passed")]
             etat = "réussi" if run.get("passed") else "échec"
-            lignes.append(f"- run {run['run']} : **{etat}**, {run['duration_seconds']} s, "
+            lignes.append(f"- run {run['run']} : **{etat}**, contrat {run.get('contract_duration_seconds')} s, "
+                          f"prose {run.get('prose_duration_seconds')} s, "
                           f"{_fmt(run.get('cost_usd'), ' USD')}")
             if echecs:
-                lignes.append(f"  - critères en échec : {', '.join(echecs)}")
+                lignes.append("  - critères en échec : "
+                              + ", ".join(c["name"] for c in echecs))
+                for critere in echecs:
+                    lignes.append(f"    - `{critere['name']}` : {critere.get('detail', '')}")
         lignes.append("")
     absents = sorted({
         jumeau for scenario in resume["scenarios"]
@@ -464,10 +586,12 @@ def ecrire_rapport(dossier: Path, resume: dict[str, Any]) -> Path:
     else:
         lignes.append("- Aucune sélection absente du tenant n'a été détectée.")
     lignes.extend([
-        f"- Jumeaux visibles dans le tenant : {', '.join(f'`{j}`' for j in resume.get('jumeaux_du_tenant') or []) or '`—`'}.",
-        "- `/aurora/demander` renvoie une réponse Flore en prose, pas le contrat de sections du plugin "
-        "(`socle`, `lecture`, `actions`, etc.) : les critères de sections peuvent échouer même sur une "
-        "réponse valide.",
+        f"- Jumeaux visibles dans le tenant ({resume.get('jumeaux_source', 'boucle')}) : "
+        f"{', '.join(f'`{j}`' for j in resume.get('jumeaux_du_tenant') or []) or '`—`'}.",
+        "- La surface `situation` de `/boucle/analyser` n'accepte que `situation_id` ; le runner envoie donc "
+        "la situation et non la liste des Twins. Les Twins sont vérifiés séparément via `/boucle/twins` et "
+        "les Claims du tenant portent le contexte.",
+        "- Le fixture `pilot` est **synthétique** et séparé de `demo` ; il ne prouve pas un état de production.",
         "- Le coût est une estimation du backend (`usage.cout`), pas une facture.",
         "- Aucune revue humaine, aucun outcome réel, aucune preuve de supériorité statistique.",
         "- Les résultats et réponses complètes sont stockés ; les traiter selon la politique de confidentialité du projet.",
@@ -491,9 +615,11 @@ def main(argv: list[str] | None = None) -> int:
         for scenario in scenarios:
             print(json.dumps({
                 "scenario": scenario["id"],
-                "url": demander_url(args.api_url),
                 "headers": _headers(args.tenant, _espace(scenario)),
-                "payload": build_payload(scenario),
+                "contract_url": analyser_url(args.api_url),
+                "contract_payload": build_analyser_payload(scenario, args.persona),
+                "prose_url": demander_url(args.api_url),
+                "prose_payload": build_payload(scenario),
             }, ensure_ascii=False))
         return 0
 
@@ -505,7 +631,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"Backend injoignable : {health_url(args.api_url)} "
                       "(lancer un backend ou utiliser --start-backend)", file=sys.stderr)
                 return 2
-            jumeaux = liste_jumeaux(args.api_url, args.tenant)
+            jumeaux, source_jumeaux = liste_twins(args.api_url, args.tenant)
             ids_connus = {str(j.get("id")) for j in jumeaux}
             tous_les_runs: list[dict[str, Any]] = []
             bilans = []
@@ -516,7 +642,7 @@ def main(argv: list[str] | None = None) -> int:
                 runs_scenario = []
                 for run_index in range(1, args.runs + 1):
                     bilan, brut = executer_run(scenario, args.api_url, args.tenant,
-                                               args.timeout, run_index)
+                                               args.timeout, run_index, args.persona)
                     bilan["criteria"] = _criteres_run(scenario, bilan)
                     bilan["passed"] = all(c["passed"] for c in bilan["criteria"])
                     runs_scenario.append(bilan)
@@ -524,8 +650,14 @@ def main(argv: list[str] | None = None) -> int:
                     _ecrire_json(dossier_scenario / f"run-{run_index:02d}.json", bilan)
                     (dossier_scenario / f"run-{run_index:02d}.result.txt").write_text(
                         bilan["result"], encoding="utf-8")
-                    if brut is not None:
-                        _ecrire_json(dossier_scenario / f"run-{run_index:02d}.response.json", brut)
+                    (dossier_scenario / f"run-{run_index:02d}.contract.txt").write_text(
+                        bilan["contract_text"], encoding="utf-8")
+                    (dossier_scenario / f"run-{run_index:02d}.prose.txt").write_text(
+                        bilan["prose_text"], encoding="utf-8")
+                    _ecrire_json(dossier_scenario / f"run-{run_index:02d}.contract.json",
+                                 brut.get("contract"))
+                    _ecrire_json(dossier_scenario / f"run-{run_index:02d}.prose.json",
+                                 brut.get("prose"))
                 bilan_scenario = {
                     "id": scenario["id"],
                     "slug": scenario["slug"],
@@ -547,15 +679,28 @@ def main(argv: list[str] | None = None) -> int:
                 "tenant": args.tenant,
                 "persona": args.persona,
                 "jumeaux_du_tenant": sorted(ids_connus),
+                "jumeaux_source": source_jumeaux,
                 "config": {"runs": args.runs, "timeout": args.timeout,
-                           "start_backend": args.start_backend},
+                           "start_backend": args.start_backend,
+                           "contract_url": analyser_url(args.api_url),
+                           "prose_url": demander_url(args.api_url)},
                 "summary": {
                     **_resume_runs(tous_les_runs),
                     "scenarios": len(bilans),
                     "scenarios_passed": sum(1 for b in bilans if b["passed"]),
+                    "contracts_completed": sum(
+                        1 for run in tous_les_runs
+                        if run.get("contract_http_status") == 200
+                        and bool((run.get("contract_text") or "").strip())),
+                    "prose_completed": sum(
+                        1 for run in tous_les_runs
+                        if run.get("http_status") == 200
+                        and bool((run.get("prose_text") or "").strip())),
                     "runs_completed": sum(
                         1 for run in tous_les_runs
-                        if run.get("http_status") == 200 and run.get("result_found")),
+                        if run.get("http_status") == 200
+                        and run.get("contract_http_status") == 200
+                        and run.get("result_found")),
                 },
                 "scenarios": bilans,
                 "runs": tous_les_runs,
@@ -566,7 +711,11 @@ def main(argv: list[str] | None = None) -> int:
                 "scenarios_passed": resume["summary"]["scenarios_passed"],
                 "scenarios": resume["summary"]["scenarios"],
                 "runs_completed": resume["summary"]["runs_completed"],
+                "contracts_completed": resume["summary"]["contracts_completed"],
+                "prose_completed": resume["summary"]["prose_completed"],
                 "runs": resume["summary"]["runs"],
+                "mean_contract_duration_seconds": resume["summary"]["mean_contract_duration_seconds"],
+                "mean_prose_duration_seconds": resume["summary"]["mean_prose_duration_seconds"],
                 "total_tokens": resume["summary"]["total_tokens"],
                 "total_cost_usd": resume["summary"]["total_cost_usd"],
             }, ensure_ascii=False))
