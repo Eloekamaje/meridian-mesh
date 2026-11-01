@@ -2,7 +2,7 @@
 
 Il se déduisait des connaissances **validées** du jumeau — la base en compte une seule —, d'où un score
 `exactitude: null` : une mesure qui n'existait pas. Les couples question/réponse vivent maintenant dans
-`jumeau/references/<jumeau>.json`, écrits par un humain.
+`meridian/adapters/outbound/llm/references/<jumeau>.json`, écrits par un humain.
 """
 import json
 from pathlib import Path

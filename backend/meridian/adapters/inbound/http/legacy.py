@@ -1431,7 +1431,7 @@ def _champ_rempli(valeur):
 
 
 def _simuler_test(source):
-    """Test de connexion déterministe (jumeau/connecteurs.py) : seuls les connecteurs branchés peuvent être prêts."""
+    """Test de connexion déterministe (meridian/adapters/outbound/connectors/connecteurs.py) : seuls les connecteurs branchés peuvent être prêts."""
     return jumeau_connecteurs.test_simule(source, CONNECTEURS)
 
 
@@ -1510,7 +1510,7 @@ async def branches_github(cxid: str, depot: str = Query(..., max_length=200), q:
 
 
 # Connexions « e-mail + jeton d'API » (Confluence, Jira…) : même principe que GitHub, une collection par système
-# (registre jumeau/systemes.py ; GitHub garde ses routes : jeton seul, dépôts et branches).
+# (registre meridian/adapters/outbound/connectors/systemes.py ; GitHub garde ses routes : jeton seul, dépôts et branches).
 def _systeme(systeme: str):
     if systeme not in SYSTEMES:
         raise HTTPException(404, "Système inconnu")
@@ -1836,7 +1836,7 @@ async def aurora_demander(payload: AuroraDemande, acteur: str = Depends(auth_ide
 @api_router.post("/aurora/demander/flux")
 async def aurora_demander_flux(payload: AuroraDemande, acteur: str = Depends(auth_identite.acteur), x_espace: Optional[str] = Header(None),
                                x_tenant: Optional[str] = Header(None)):
-    """La même réponse, au fil de l'eau : étapes réelles, brouillon en relecture, puis la réponse relue (jumeau/flux.py)."""
+    """La même réponse, au fil de l'eau : étapes réelles, brouillon en relecture, puis la réponse relue (meridian/adapters/inbound/http/flux.py)."""
     return jumeau_flux.en_flux(lambda emit: generer_reponse_flore(
         payload.contexte, payload.question, payload.selection, payload.domaine, acteur, x_espace, emit=emit, tenant=x_tenant),
         proprietaire=acteur)

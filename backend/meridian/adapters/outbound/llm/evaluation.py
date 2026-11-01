@@ -63,7 +63,7 @@ REFERENCES = Path(__file__).with_name("references")  # questions/réponses écri
 def questions_reference(jumeau_id):
     """Le jeu d'exactitude ne pouvait pas se déduire du jumeau : il repose sur ses connaissances **validées**, et la
     base en compte une seule. Faute de vérité de référence, la mesure valait `null` (plan de remédiation L2.2) ;
-    ces couples question/réponse sont donc écrits à la main, dans `jumeau/references/<jumeau>.json`."""
+    ces couples question/réponse sont donc écrits à la main, dans `meridian/adapters/outbound/llm/references/<jumeau>.json`."""
     fichier = REFERENCES / f"{jumeau_id}.json"
     if not fichier.exists():
         return []

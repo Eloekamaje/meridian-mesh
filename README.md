@@ -67,9 +67,14 @@ Niveaux d'autorisation par jumeau : `existence` → `résumé` → `preuves` →
 ```
 /app
 ├── backend/
-│   ├── server.py        # API, RBAC par espaces, intentions Aurora, seed
-│   ├── seed_data.py     # Jeu de démonstration (SEED_VERSION, reseed auto)
-│   └── tests/           # Tests pytest des endpoints
+│   ├── server.py        # point d'entrée ASGI (shim mince)
+│   ├── meridian/        # domaine, application, ports, adapters
+│   │   ├── domain/      # types et invariants purs
+│   │   ├── application/ # cas d'usage et orchestration
+│   │   ├── ports/       # contrats
+│   │   ├── adapters/    # inbound HTTP/workers, outbound Postgres/Mongo/Neo4j/AWS/LLM
+│   │   └── tests/       # tests pytest
+│   └── seed_data.py     # catalogues et seed métier (SEED_VERSION)
 └── frontend/src/
     ├── pages/           # Atlas, Aujourdhui, Investigations, ChangeLab, Jumeaux, Administration
     ├── components/      # Topbar, AuroraBar, Layout, map/ (TwinNode, RegionNode)

@@ -192,7 +192,7 @@ Un fichier peut contenir un objet, une liste d'objets, ou un objet `{"scenarios"
 
 ## Jeu d'or outils/Claims/décisions
 
-`gold/outils-claims-decisions.json` fige des cas hors ligne : outils attendus/interdits, statut de Claim et décision attendue (recommandation, abstention, autorité). Il est noté sans modèle, sans réseau et sans base par `backend/jumeau/evaluation_gold.py`, qui réutilise `evaluation_outils` pour la sélection d'outils :
+`gold/outils-claims-decisions.json` fige des cas hors ligne : outils attendus/interdits, statut de Claim et décision attendue (recommandation, abstention, autorité). Il est noté sans modèle, sans réseau et sans base par `backend/meridian/application/evaluation_gold.py`, qui réutilise `evaluation_outils` pour la sélection d'outils :
 
 ```bash
 cd backend && .venv/bin/python -m meridian.application.evaluation_gold

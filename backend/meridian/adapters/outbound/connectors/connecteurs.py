@@ -8,7 +8,7 @@ l'API.
 import re
 from datetime import datetime, timezone
 
-# Ces imports ne servent qu'à enregistrer les fabriques de lecteurs (effet de bord de jumeau/lecteurs.py) : sans eux,
+# Ces imports ne servent qu'à enregistrer les fabriques de lecteurs (effet de bord de meridian/adapters/outbound/connectors/lecteurs.py) : sans eux,
 # « branché » dépendrait de ce que le processus a déjà importé — une réponse qui varie selon l'ordre des imports.
 from meridian.adapters.outbound.connectors import confluence
 from meridian.adapters.outbound.connectors import datadog

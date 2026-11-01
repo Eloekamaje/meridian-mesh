@@ -1,6 +1,6 @@
 """Réponse de Flore au fil de l'eau (exigences non fonctionnelles §8 : progression visible < 3 s).
 
-Sur le fil : le protocole AG-UI (Server-Sent Events, traduction dans jumeau/protocole.py). `produire(emit)` émet
+Sur le fil : le protocole AG-UI (Server-Sent Events, traduction dans meridian/application/protocole.py). `produire(emit)` émet
 le vocabulaire interne de Flore :
 - {"type": "etape", "libelle": "Je regarde Conduit…"} → STEP_STARTED / STEP_FINISHED ;
 - {"type": "outil", "id", "nom", "libelle", "etat": "en_cours"}, puis {"id", "arguments"}, puis
