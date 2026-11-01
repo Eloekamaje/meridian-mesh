@@ -293,20 +293,34 @@ def _rafraichir(source):
 async def _synchroniser_graphe(conn, db, jumeau, store=None):
     """Synchronise l'identité Postgres et les relations Mongo du tenant vers le GraphStore.
 
-    Sans `GRAPH_STORE=neo4j`, la fabrique rend un store mémoire ; on ne synchronise alors rien pour éviter
-    de donner l'illusion d'une topologie persistée. Une panne du graphe est journalisée et ne bloque jamais
-    la veille : le prochain passage rejouera l'upsert idempotent.
+    `JUMEAU_GRAPH_PROJECTION` choisit le chemin : `direct` (défaut, compatibilité) fait l'upsert
+    immédiat puis planifie aussi l'outbox ; `outbox` n'écrit jamais dans le graphe et se contente
+    d'enfiler la projection, consommée par `python -m jumeau.execution.outbox_worker`. Une valeur
+    inconnue est refusée (aucune écriture, erreur journalisée), jamais interprétée comme `direct`.
+
+    En mode `direct`, sans `GRAPH_STORE=neo4j`, la fabrique rend un store mémoire ; on ne synchronise
+    alors rien pour éviter de donner l'illusion d'une topologie persistée. Une panne du graphe est
+    journalisée et ne bloque jamais la veille : le prochain passage rejouera l'upsert idempotent.
     """
     if conn is None or db is None:
         return None
     from jumeau import graph_store
+    from jumeau.execution.outbox import MODE_DIRECT, mode_projection, planifier_projection
+
+    try:
+        mode = mode_projection()
+    except ValueError as exc:
+        journal.error("gardien %s : %s ; aucune projection graphe", jumeau["id"], exc)
+        return None
 
     contexte = None
     try:
-        contexte = graph_store.ouvrir()
-        if contexte["mode"] != graph_store.MODE_NEO4J and store is None:
-            return None
-        magasin = store or contexte["store"]
+        magasin = None
+        if mode == MODE_DIRECT:
+            contexte = graph_store.ouvrir()
+            if contexte["mode"] != graph_store.MODE_NEO4J and store is None:
+                return None
+            magasin = store or contexte["store"]
         with conn.cursor(row_factory=dict_row) as cur:
             twins = cur.execute(
                 "SELECT id, tenant_id, type, nom AS label, mission, domaine, equipe "
@@ -324,9 +338,10 @@ async def _synchroniser_graphe(conn, db, jumeau, store=None):
                 document = dict(relation)
                 document.setdefault("tenant_id", jumeau["tenant_id"])
                 relations.append(document)
-        rapport = graph_store.synchroniser_depuis_identites(
-            magasin, jumeau["tenant_id"], twins, relations)
-        from jumeau.execution.outbox import planifier_projection
+        rapport = None
+        if mode == MODE_DIRECT:
+            rapport = graph_store.synchroniser_depuis_identites(
+                magasin, jumeau["tenant_id"], twins, relations)
         planifier_projection(conn, jumeau["tenant_id"], twins, relations)
         return rapport
     except (ValueError, RuntimeError):

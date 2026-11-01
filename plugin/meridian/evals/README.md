@@ -117,6 +117,16 @@ Un fichier peut contenir un objet, une liste d'objets, ou un objet `{"scenarios"
 - `max_seconds` utilise la durée du résultat Claude, ou la durée murale à défaut.
 - `must_complete` est vrai par défaut : le run doit produire un résultat final sans timeout ni erreur.
 
+## Jeu d'or outils/Claims/décisions
+
+`gold/outils-claims-decisions.json` fige des cas hors ligne : outils attendus/interdits, statut de Claim et décision attendue (recommandation, abstention, autorité). Il est noté sans modèle, sans réseau et sans base par `backend/jumeau/evaluation_gold.py`, qui réutilise `evaluation_outils` pour la sélection d'outils :
+
+```bash
+cd backend && .venv/bin/python -m jumeau.evaluation_gold
+```
+
+Un cas n'est exact que si les trois composants le sont. Les Claims `ACCEPTED` exigent une preuve SUPPORT et le jeu reste plafonné à l'autorité `proposition`.
+
 ## Packet de revue humaine
 
 Construire un packet aveugle depuis les résultats :
@@ -190,3 +200,8 @@ scénario, de checklist, de data pack ou de configuration invalide.
   dépend de la grille fournie ou des critères objectifs du scénario.
 - Les résultats et les flux bruts peuvent contenir les réponses complètes : les traiter selon la
   politique de confidentialité du projet.
+
+## Pilote local
+
+Les commandes, résultats et limites de la session du 2026-11-01 sont consignés dans
+[`PILOT-2026-11-01.md`](PILOT-2026-11-01.md).

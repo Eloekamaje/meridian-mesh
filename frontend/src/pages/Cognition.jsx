@@ -12,6 +12,8 @@ import {
   XCircle,
 } from "@phosphor-icons/react";
 import api from "@/lib/api";
+import Depliable from "@/components/ui/Depliable";
+import IdentifiantCopiable from "@/components/ui/IdentifiantCopiable";
 
 const SCOPES = [
   ["user", "Utilisateur"],
@@ -27,6 +29,15 @@ const CLASSES = [
   ["decision", "Décision"],
   ["apprentissage", "Apprentissage"],
 ];
+
+const MEMOIRE_INITIALE = {
+  scope: "",
+  scope_id: "",
+  classe: "",
+  contenu: "",
+  provenance: "",
+  consentement: false,
+};
 
 const LABELS_SCOPE = new Map(SCOPES);
 const LABELS_CLASSE = new Map(CLASSES);
@@ -151,6 +162,11 @@ export default function Cognition() {
   const [scope, setScope] = useState("");
   const [classe, setClasse] = useState("");
   const [rechargementMemoire, setRechargementMemoire] = useState(0);
+  const [memoireOuverte, setMemoireOuverte] = useState(false);
+  const [formulaireMemoire, setFormulaireMemoire] = useState(MEMOIRE_INITIALE);
+  const [creationMemoireEnCours, setCreationMemoireEnCours] = useState(false);
+  const [creationMemoireErreur, setCreationMemoireErreur] = useState("");
+  const [creationMemoireMessage, setCreationMemoireMessage] = useState("");
   const [selectionMemoires, setSelectionMemoires] = useState(() => new Set());
   const [exportEnCours, setExportEnCours] = useState(false);
   const [exportMessage, setExportMessage] = useState("");
@@ -288,6 +304,68 @@ export default function Cognition() {
     });
   };
 
+  const changerMemoire = (cle, valeur) => {
+    setFormulaireMemoire((avant) => ({ ...avant, [cle]: valeur }));
+  };
+
+  const creerMemoireDurable = async (evenement) => {
+    evenement.preventDefault();
+    setCreationMemoireErreur("");
+    setCreationMemoireMessage("");
+
+    const scopeId = texte(formulaireMemoire.scope_id).trim();
+    const contenu = texte(formulaireMemoire.contenu).trim();
+    const provenance = texte(formulaireMemoire.provenance).trim();
+
+    if (!formulaireMemoire.scope) {
+      setCreationMemoireErreur("La portée est obligatoire.");
+      return;
+    }
+    if (!scopeId) {
+      setCreationMemoireErreur("L'identifiant de portée est obligatoire.");
+      return;
+    }
+    if (!formulaireMemoire.classe) {
+      setCreationMemoireErreur("La classe est obligatoire.");
+      return;
+    }
+    if (!contenu) {
+      setCreationMemoireErreur("Le contenu est obligatoire.");
+      return;
+    }
+    if (!provenance) {
+      setCreationMemoireErreur("La provenance est obligatoire.");
+      return;
+    }
+    if (formulaireMemoire.scope === "user" && !formulaireMemoire.consentement) {
+      setCreationMemoireErreur("Le scope utilisateur exige un consentement explicite.");
+      return;
+    }
+
+    setCreationMemoireEnCours(true);
+    try {
+      const reponse = await api.post("/boucle/memoire/durable", {
+        scope: formulaireMemoire.scope,
+        scope_id: scopeId,
+        classe: formulaireMemoire.classe,
+        contenu,
+        provenance,
+        consentement: formulaireMemoire.consentement,
+      });
+      const identifiant = texte(reponse.data?.memoire?.id).trim();
+      setCreationMemoireMessage([
+        identifiant ? `Mémoire ${identifiant} enregistrée.` : "Mémoire durable enregistrée.",
+        "La liste est actualisée avec les filtres actifs.",
+      ].join(" "));
+      setFormulaireMemoire({ ...MEMOIRE_INITIALE });
+      setRechargementMemoire((valeur) => valeur + 1);
+    } catch (erreur) {
+      setCreationMemoireErreur(messageErreur(erreur, "La mémoire durable n'a pas pu être enregistrée."));
+    } finally {
+      setCreationMemoireEnCours(false);
+    }
+  };
+
   const deciderApprobation = async (approuve) => {
     if (!approbationChoisie) return;
     const run = texte(approbationChoisie.run_id);
@@ -314,6 +392,7 @@ export default function Cognition() {
   };
 
   const exporterMemoire = async () => {
+    setMemoireOuverte(true);
     setExportEnCours(true);
     setExportErreur("");
     setExportMessage("");
@@ -334,6 +413,7 @@ export default function Cognition() {
   };
 
   const purgerMemoire = async () => {
+    setMemoireOuverte(true);
     setPurgeEnCours(true);
     setPurgeErreur("");
     setPurgeMessage("");
@@ -445,6 +525,11 @@ export default function Cognition() {
 
   const score = typeof evaluation?.score === "number" ? Math.round(evaluation.score * 100) : null;
   const verifications = Object.entries(evaluation?.verifications || {});
+  const resumeMemoire = chargementMemoire
+    ? "Chargement des souvenirs…"
+    : erreurMemoire
+      ? "Mémoire indisponible · afficher"
+      : `${memoires.length} mémoire(s) affichée(s) · création, filtres et consolidation`;
 
   return (
     <div className="h-full overflow-y-auto px-4 py-5 pb-24 sm:px-8 sm:py-8 lg:px-12" data-testid="cognition-page">
@@ -654,7 +739,7 @@ export default function Cognition() {
                   data-testid="cognition-memoire-export">
                   <DownloadSimple size={13} /> {exportEnCours ? "Export…" : "Exporter"}
                 </button>
-                <button type="button" onClick={() => { setPurgeConfirmee(true); setPurgeMessage(""); setPurgeErreur(""); }} disabled={purgeEnCours}
+                <button type="button" onClick={() => { setMemoireOuverte(true); setPurgeConfirmee(true); setPurgeMessage(""); setPurgeErreur(""); }} disabled={purgeEnCours}
                   className="flex h-8 items-center gap-1.5 rounded-md border border-[#F87171]/35 px-2.5 text-xs text-[#FCA5A5] transition-colors hover:bg-[#F87171]/10 disabled:cursor-not-allowed disabled:opacity-50"
                   data-testid="cognition-memoire-purge">
                   <Trash size={13} /> Purger
@@ -662,6 +747,127 @@ export default function Cognition() {
               </div>
             )}
           />
+
+          <Depliable
+            id="cognition-memoire-section"
+            testid="cognition-memoire-section"
+            className="mt-4"
+            titre="Souvenirs et administration"
+            resume={resumeMemoire}
+            ouvert={memoireOuverte}
+            onOuvertChange={setMemoireOuverte}
+          >
+          <form
+            onSubmit={creerMemoireDurable}
+            noValidate
+            className="mt-0 rounded-lg border border-[rgba(148,163,184,0.14)] bg-[#0B1620] p-3.5"
+            aria-labelledby="cognition-memoire-creation-titre"
+            data-testid="cognition-memoire-creation"
+          >
+            <h3 id="cognition-memoire-creation-titre" className="flex items-center gap-1.5 font-code text-[9px] uppercase tracking-wider text-[#7C93A8]">
+              <CheckCircle size={12} className="text-[#34D399]" /> Ajouter un souvenir durable
+            </h3>
+            <div className="mt-2.5 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              <div>
+                <label htmlFor="cognition-memoire-nouveau-scope" className="block font-code text-[9px] uppercase tracking-wider text-[#7C93A8]">Portée</label>
+                <select
+                  id="cognition-memoire-nouveau-scope"
+                  value={formulaireMemoire.scope}
+                  onChange={(evenement) => changerMemoire("scope", evenement.target.value)}
+                  required
+                  data-testid="cognition-memoire-nouveau-scope"
+                  className="mt-1 h-8 w-full rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2 text-xs text-[#D8E2EA] focus:border-[#60A5FA]/60 focus:outline-none"
+                >
+                  <option value="">Choisir une portée</option>
+                  {SCOPES.map(([valeur, label]) => <option key={valeur} value={valeur}>{label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="cognition-memoire-nouveau-scope-id" className="block font-code text-[9px] uppercase tracking-wider text-[#7C93A8]">Identifiant de portée</label>
+                <input
+                  id="cognition-memoire-nouveau-scope-id"
+                  value={formulaireMemoire.scope_id}
+                  onChange={(evenement) => changerMemoire("scope_id", evenement.target.value)}
+                  required
+                  autoComplete="off"
+                  placeholder="alice, app-paiement…"
+                  data-testid="cognition-memoire-nouveau-scope-id"
+                  className="mt-1 h-8 w-full rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2.5 font-code text-xs text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#60A5FA]/60 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label htmlFor="cognition-memoire-nouveau-classe" className="block font-code text-[9px] uppercase tracking-wider text-[#7C93A8]">Classe</label>
+                <select
+                  id="cognition-memoire-nouveau-classe"
+                  value={formulaireMemoire.classe}
+                  onChange={(evenement) => changerMemoire("classe", evenement.target.value)}
+                  required
+                  data-testid="cognition-memoire-nouveau-classe"
+                  className="mt-1 h-8 w-full rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2 text-xs text-[#D8E2EA] focus:border-[#60A5FA]/60 focus:outline-none"
+                >
+                  <option value="">Choisir une classe</option>
+                  {CLASSES.map(([valeur, label]) => <option key={valeur} value={valeur}>{label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="cognition-memoire-nouveau-provenance" className="block font-code text-[9px] uppercase tracking-wider text-[#7C93A8]">Provenance</label>
+                <input
+                  id="cognition-memoire-nouveau-provenance"
+                  value={formulaireMemoire.provenance}
+                  onChange={(evenement) => changerMemoire("provenance", evenement.target.value)}
+                  required
+                  autoComplete="off"
+                  placeholder="conversation:42, atlas:app-…"
+                  data-testid="cognition-memoire-nouveau-provenance"
+                  className="mt-1 h-8 w-full rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2.5 font-code text-xs text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#60A5FA]/60 focus:outline-none"
+                />
+              </div>
+              <div className="sm:col-span-2 lg:col-span-4">
+                <label htmlFor="cognition-memoire-nouveau-contenu" className="block font-code text-[9px] uppercase tracking-wider text-[#7C93A8]">Contenu</label>
+                <textarea
+                  id="cognition-memoire-nouveau-contenu"
+                  value={formulaireMemoire.contenu}
+                  onChange={(evenement) => changerMemoire("contenu", evenement.target.value)}
+                  required
+                  rows={2}
+                  placeholder="Le souvenir à conserver, sans secret…"
+                  data-testid="cognition-memoire-nouveau-contenu"
+                  className="mt-1 w-full rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2.5 py-2 text-xs text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#60A5FA]/60 focus:outline-none"
+                />
+              </div>
+            </div>
+            <div className="mt-2.5 flex flex-wrap items-center gap-2">
+              <label htmlFor="cognition-memoire-nouveau-consentement" className="flex items-center gap-2 text-[11px] text-[#94A3B8]">
+                <input
+                  id="cognition-memoire-nouveau-consentement"
+                  type="checkbox"
+                  checked={formulaireMemoire.consentement}
+                  onChange={(evenement) => changerMemoire("consentement", evenement.target.checked)}
+                  data-testid="cognition-memoire-nouveau-consentement"
+                  className="h-3.5 w-3.5 accent-[#60A5FA]"
+                />
+                Consentement explicite (requis pour le scope utilisateur)
+              </label>
+              <button
+                type="submit"
+                disabled={creationMemoireEnCours}
+                data-testid="cognition-memoire-nouvelle-enregistrer"
+                className="flex h-8 items-center gap-1.5 rounded-md bg-[#34D399] px-3 text-xs font-semibold text-[#071019] transition-colors hover:bg-[#6EE7B7] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Check size={13} weight="bold" /> {creationMemoireEnCours ? "Enregistrement…" : "Enregistrer la mémoire"}
+              </button>
+              {creationMemoireErreur && (
+                <p role="alert" data-testid="cognition-memoire-creation-erreur" className="text-xs text-[#FCA5A5]">
+                  {creationMemoireErreur}
+                </p>
+              )}
+              {creationMemoireMessage && (
+                <p role="status" data-testid="cognition-memoire-creation-succes" className="text-xs text-[#6EE7B7]">
+                  {creationMemoireMessage}
+                </p>
+              )}
+            </div>
+          </form>
 
           <div className="mt-4 flex flex-wrap items-end gap-3">
             <div>
@@ -732,9 +938,16 @@ export default function Cognition() {
                             <Badge>{LABELS_CLASSE.get(memoire.classe) || texte(memoire.classe)}</Badge>
                             <Badge ton={memoire.consentement ? "ok" : "alerte"}>{memoire.consentement ? "Consentement explicite" : "Sans consentement"}</Badge>
                           </div>
-                          <p className="mt-1.5 break-all font-code text-[10px] text-[#7C93A8]">
-                            {texte(memoire.id)} · provenance : {texte(memoire.provenance) || "—"}
-                          </p>
+                          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                            <IdentifiantCopiable
+                              identifiant={memoire.id}
+                              libelle="Mémoire"
+                              testid={`cognition-memoire-id-${memoire.id}`}
+                            />
+                            <span className="break-all font-code text-[10px] text-[#7C93A8]">
+                              provenance : {texte(memoire.provenance) || "—"}
+                            </span>
+                          </div>
                           <p className="mt-0.5 font-code text-[10px] text-[#7C93A8]">
                             Confiance : {typeof memoire.confiance === "number" ? Math.round(memoire.confiance * 100) : "—"} % · expire le {dateCourte(memoire.expire_le)} · créée le {dateCourte(memoire.cree_le)}
                           </p>
@@ -829,6 +1042,7 @@ export default function Cognition() {
               </div>
             </div>
           )}
+          </Depliable>
         </section>
       </div>
     </div>

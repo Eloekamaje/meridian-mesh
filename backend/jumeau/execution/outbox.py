@@ -2,11 +2,31 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any, Callable, Mapping
 
 from jumeau.execution import depot
 
 journal = logging.getLogger("meridian.execution.outbox")
+
+MODE_DIRECT = "direct"
+MODE_OUTBOX = "outbox"
+MODE_ENV = "JUMEAU_GRAPH_PROJECTION"
+MODES = (MODE_DIRECT, MODE_OUTBOX)
+
+
+def mode_projection(env=None) -> str:
+    """Mode de projection graphe : `direct` (défaut, compatibilité) ou `outbox`.
+
+    Une valeur inconnue est refusée : l'appelant doit alors s'abstenir d'écrire dans le
+    graphe plutôt que de retomber silencieusement sur un chemin non demandé.
+    """
+    source = os.environ if env is None else env
+    brut = str(source.get(MODE_ENV) or "").strip().lower()
+    valeur = brut or MODE_DIRECT
+    if valeur not in MODES:
+        raise ValueError(f"{MODE_ENV} inconnu : {valeur!r} (valeurs acceptées : direct, outbox)")
+    return valeur
 
 
 class DispatcherOutbox:
@@ -15,7 +35,7 @@ class DispatcherOutbox:
         self.publieurs = dict(publieurs or {})
 
     def _publier(self, ligne: Mapping[str, Any]) -> None:
-        publieur = self.publieurs.get(ligne["type"])
+        publieur = self.publieurs.get(ligne["type"]) or self.publieurs.get("*")
         if publieur is None:
             journal.debug("outbox : type sans consommateur %s", ligne["type"])
             return
@@ -35,7 +55,7 @@ def planifier_projection(conn, tenant_id: str, twins, relations, run_id: str = "
     """Producteur d'événement de projection, transactionnel avec l'appelant.
 
     Les doubles de test du gardien n'exposent pas de transaction : dans ce cas, la projection
-    d'outbox est simplement ignorée, le graphe direct restant la preuve de la synchronisation.
+    d'outbox est simplement ignorée (le test ne dispose alors d'aucun journal durable).
     """
     if not hasattr(conn, "transaction") or not hasattr(conn, "execute"):
         return 0

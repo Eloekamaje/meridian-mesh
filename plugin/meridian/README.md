@@ -12,8 +12,21 @@ Il ne remplace pas le backend Méridian : il l'expose proprement.
 - 1 **policy** d'autorité : lecture/proposition, écritures interdites sans approbation humaine.
 - 1 **contrat de réponse** : socle de faits invariant + lentille de profil.
 - 3 **profils pilotes** : ops, architecte, product_owner.
+- 2 **domain packs** : `paiements` et `risque`, qui activent des méthodes/compétences existantes, portent 4 questions d'évaluation avec preuves attendues et restent en lecture seule (`domain-packs/*.json`).
+- 1 **jeu d'or hors ligne** outils/Claims/décisions : `evals/gold/outils-claims-decisions.json`, exécutable sans modèle ni réseau via `backend/jumeau/evaluation_gold.py`.
 
-Les domain packs sont volontairement absents.
+## Domain packs
+
+Les packs sont des descripteurs JSON, pas un framework parallèle : ils référencent uniquement les méthodes et compétences des catalogues (`methodes_cognitives`, `competences_cognitives`) et déclarent un périmètre, 3 à 5 questions d'évaluation avec preuves attendues/clés de réponse, et une autorité lecture seule.
+
+Le chargeur/validateur est `backend/jumeau/packs_domaines.py` (`charger_packs`, `valider_pack`). La composition accepte un pack explicite :
+
+```python
+from jumeau import composition
+plan = composition.planifier("ops", "incident de paiement", pack="paiements")
+```
+
+Un pack inconnu, une méthode/compétence hors catalogue, une autorité d'écriture ou un nombre d'évaluations hors borne sont refusés.
 
 ## Prérequis
 
@@ -22,6 +35,9 @@ Les domain packs sont volontairement absents.
 - variables `MERIDIAN_TENANT` et `MERIDIAN_PERSONA`.
 
 ## Claude Code
+
+Installation projet reproductible (sans configuration globale) :
+[`docs/plugin/INSTALL.md`](../../docs/plugin/INSTALL.md).
 
 Installer le marketplace local :
 

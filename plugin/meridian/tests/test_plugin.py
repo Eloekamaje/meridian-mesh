@@ -20,6 +20,8 @@ def test_manifest_et_catalogues_sont_valides():
     assert manifest["schema"] == "meridian.plugin/1"
     assert set(profils) == {"ops", "architecte", "product_owner"}
     assert len(manifest["skills"]) == 4 and len(manifest["agents"]) == 3
+    assert len(manifest["domain_packs"]) == 2
+    assert all((ROOT / chemin).is_file() for chemin in manifest["domain_packs"])
     assert manifest["read_only"] is True
     assert policy["writes"]["allowed"] is False
     assert policy["unknown_profile"] == "generaliste_lecture_seule"
@@ -187,3 +189,19 @@ def test_les_nouveaux_tools_construisent_des_requetes_read_only(monkeypatch):
     }
     assert all(kwargs["headers"]["X-Tenant"] == "demo" for _, _, kwargs in appels)
     assert all(kwargs["headers"]["X-Persona"] == "architecte" for _, _, kwargs in appels)
+
+
+def test_les_domain_packs_sont_valides_et_en_lecture_seule():
+    import sys
+
+    sys.path.insert(0, str(REPO / "backend"))
+    from jumeau import packs_domaines
+
+    packs = {pack.id: pack for pack in packs_domaines.charger_packs(ROOT / "domain-packs")}
+    assert set(packs) == {"paiements", "risque"}
+    for pack in packs.values():
+        assert 3 <= len(pack.evaluations) <= 5
+        assert pack.methodes and pack.competences
+        assert pack.autorite.lecture_seule is True
+        assert pack.autorite.ecriture is False
+        assert packs_domaines.valider_pack(pack)["valide"] is True

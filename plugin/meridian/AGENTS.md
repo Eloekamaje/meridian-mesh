@@ -6,4 +6,4 @@
 - Les actions sont des propositions ; aucune écriture, promotion, décision ou exécution.
 - Un profil inconnu reste en lecture seule.
 - Signaler les limites, preuves périmées et incertitudes.
-- Ne pas ajouter de domain pack sans validation explicite.
+- Les domain packs `paiements` et `risque` sont en lecture seule ; ne pas en ajouter sans validation explicite.

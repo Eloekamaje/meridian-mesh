@@ -62,8 +62,11 @@ class PATSource(AuthSource):
     def token(self) -> str | None:
         if not self.reference:
             return None
-        from jumeau.naissance import resoudre_secret
         try:
+            if self.reference.lower().startswith(("aws:", "secretsmanager:")):
+                from jumeau.aws_adapters import secrets_depuis_env
+                return secrets_depuis_env().resoudre(self.reference)
+            from jumeau.naissance import resoudre_secret
             return resoudre_secret(self.reference)
         except Exception as exc:  # noqa: BLE001 - jamais le secret dans l'erreur
             raise AuthSourceInvalide("PAT introuvable ou refusé") from exc

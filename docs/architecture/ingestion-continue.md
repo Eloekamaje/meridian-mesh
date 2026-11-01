@@ -19,6 +19,9 @@ source_schedule → ingestion_run → réclamation sous bail → Gardien
 - `--une-passe` : une passe bornée.
 - `GET /api/boucle/sources/sante` : état, dernier succès, lag, erreur assainie.
 - `POST /api/boucle/sources/{id}/ingest` : ingestion manuelle, `202` (le worker réclame le run).
+- `PATCH /api/boucle/sources/{id}/branche` : valide `source.branche` (charset Git, pas de `-` initial), puis
+  enfile un run forcé `202`. La requête ne clone pas le dépôt et reste bornée au tenant ; le worker ingère la
+  nouvelle branche à la passe suivante.
 - `POST /pause` / `/resume`.
 - Un seul run vivant par source ; bail, fencing, retry/backoff, reprise après crash.
 
@@ -53,12 +56,16 @@ prochaine échéance `source_schedule`.
 - ECS/Fargate pour l’API et les workers ; AWS Batch/EC2+EBS pour les gros index.
 - SQS pour la file, EventBridge Scheduler pour le polling, S3 pour les artefacts, RDS pour les runs,
   Neo4j/Neptune pour le graphe, Secrets Manager pour les jetons.
+- Adapters optionnels dans `jumeau/aws_adapters.py` : Secrets Manager (`aws:<secret>#champ`), publication
+  SQS/EventBridge pour l'outbox, et mapping `source_schedule` → EventBridge Scheduler. boto3 n'est importé
+  qu'au premier appel ; les tests utilisent des doubles, sans réseau. Aucun déploiement AWS n'est revendiqué.
 - Aucun port entrant requis pour le pull. Si le webhook est activé, n'exposer que `POST /api/boucle/sources/{id}/webhook` via l'API Gateway/ALB, avec HMAC. Alternative Kubernetes : CronJob + Job + S3/MinIO.
 
 ## Authentification des sources
 
-Pour l'instant, seul le PAT est utilisé : `PATSource` résout une référence `vault:`/`env:`, sans jamais stocker
-le token dans `source.configuration`. Le port `AuthSource` reste prêt à recevoir un autre adaptateur plus tard,
+Pour l'instant, seul le PAT est utilisé : `PATSource` résout une référence `env:`, `vault:` ou
+`aws:`/`secretsmanager:`, sans jamais stocker le token dans `source.configuration`. L'adapter Secrets Manager
+rend uniquement la valeur au appelant. Le port `AuthSource` reste prêt à recevoir un autre adaptateur plus tard,
 mais aucun adaptateur GitHub App n'est embarqué.
 
 ## Commande d'identité
@@ -77,7 +84,8 @@ Toutes les sources restent en **PAT** aujourd'hui : le PAT est résolu par `vaul
 ## Limites connues
 
 - Seule la branche configurée est suivie (`source.branche`, `main` par défaut) ; une PR ou une branche
-  feature n'est vue qu'après ajout/modification de la source.
+  feature n'est vue qu'après `PATCH /api/boucle/sources/{id}/branche` (ou modification de la source). Le
+  changement n'écrit que la base et enfile un run : le clone/fetch reste fait par le worker.
 - Un dépôt local sans `url` distante n'est pas rafraîchi par le worker : le mettre à jour avec Git.
 - Sans worker supervisé, les runs restent `QUEUED` ; le webhook ne fait qu'avancer l'échéance.
 - Un échec de fetch/ingestion est réessayé avec backoff ; le jumeau conserve sa dernière connaissance.

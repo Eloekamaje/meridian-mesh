@@ -273,6 +273,7 @@ Au démarrage, `SEED_VERSION` réinitialise les collections de travail si sa val
 | `POST /api/commandes/{cid}/import/apercu` | Analyse d'un import CMDB/manifeste avant identité et sources |
 | `GET /api/boucle/sources/sante` · `POST /api/boucle/sources/{id}/ingest` | Santé et ingestion manuelle des sources |
 | `POST /api/boucle/sources/{id}/webhook` | Accélérateur signé : enfile un run si la branche/dépôt/SHA change |
+| `PATCH /api/boucle/sources/{id}/branche` | Change la branche suivie et enfile un run |
 | `POST /api/cases/{cid}/fusion` | Ajout serveur d'une conversation à un Travail (append-only) |
 | `POST /api/relations/{id}/confirmer` | Confirmation A2A d'une relation |
 | `GET /api/journal` | Journal d'audit (accès, décisions, exports) |

@@ -276,6 +276,7 @@ def test_synchronisation_graphe_depuis_postgres_et_relations(monkeypatch):
 
     store = GrapheMemoire()
     monkeypatch.setenv("GRAPH_STORE", "memoire")
+    monkeypatch.setenv("JUMEAU_GRAPH_PROJECTION", "direct")
     rapport = asyncio.run(gardien._synchroniser_graphe(
         _Conn(), _Db(), {"id": "a", "tenant_id": "demo"}, store=store))
     assert rapport["twins"] == 2 and rapport["relations"] == 1

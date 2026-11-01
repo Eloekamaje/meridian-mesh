@@ -25,6 +25,13 @@ Le graphe est une **projection événementielle idempotente** de Postgres.
 - Une panne Neo4j ne bloque pas les écritures canoniques ; l'outbox retarde et reprend.
 - Les requêtes d'impact indiquent explicitement la fraîcheur du graphe.
 
+### Mise en œuvre
+
+`JUMEAU_GRAPH_PROJECTION` choisit le chemin : `direct` (défaut, compatibilité avec le pilote) fait
+l'upsert immédiat puis planifie l'outbox ; `outbox` n'écrit pas dans le graphe et n'enfile que
+`graph.synchroniser`, consommé par `python -m jumeau.execution.outbox_worker`. Une valeur inconnue est
+refusée sans écriture. Runbook : [projection-graphe.md](../architecture/projection-graphe.md).
+
 ## Alternatives Considered
 
 ### Alternative 1: Double écriture directe

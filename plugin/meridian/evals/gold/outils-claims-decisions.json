@@ -1,0 +1,179 @@
+{
+  "schema": "meridian.gold/1",
+  "version": 1,
+  "description": "Jeu d'or hors ligne : choix d'outils, statut de Claim et décision attendue. Aucun modèle, aucun réseau, aucune base.",
+  "cas": [
+    {
+      "id": "resolution-paiements",
+      "question": "L'application Paiements existe-t-elle dans le Mesh, et sous quel identifiant ?",
+      "outils_attendus": ["resoudre_application"],
+      "outils_interdits": ["concevoir_architecture"],
+      "criteres": {"must_not_write": true},
+      "claims": [],
+      "decision": {
+        "verdict": "aucune",
+        "recommandation": false,
+        "abstention": false,
+        "autorite_max": "lecture"
+      },
+      "tags": ["resolution", "paiements", "lecture"],
+      "poids": 1.0
+    },
+    {
+      "id": "claim-dependance-prouvee",
+      "question": "Quelle preuve appuie la claim selon laquelle Paiements dépend de Comptes ?",
+      "outils_attendus": ["resoudre_application", "mobiliser_jumeaux"],
+      "outils_interdits": ["concevoir_architecture"],
+      "criteres": {"must_cite_preuve": true},
+      "claims": [
+        {"id": "claim-paiements-comptes", "statut": "ACCEPTED", "preuve_requise": true}
+      ],
+      "decision": {
+        "verdict": "aucune",
+        "recommandation": false,
+        "abstention": false,
+        "autorite_max": "lecture"
+      },
+      "tags": ["claims", "preuve", "paiements"],
+      "poids": 1.0
+    },
+    {
+      "id": "claim-sans-preuve-refusee",
+      "question": "Peut-on accepter la claim de dépendance Paiements vers Comptes sans preuve SUPPORT ?",
+      "outils_attendus": ["resoudre_application", "mobiliser_jumeaux"],
+      "outils_interdits": ["concevoir_architecture"],
+      "criteres": {"must_not_write": true},
+      "claims": [
+        {"id": "claim-sans-preuve", "statut": "PROPOSED", "preuve_requise": false}
+      ],
+      "decision": {
+        "verdict": "refuser",
+        "recommandation": false,
+        "abstention": false,
+        "autorite_max": "lecture"
+      },
+      "tags": ["claims", "preuve", "garde"],
+      "poids": 1.0
+    },
+    {
+      "id": "claim-contredite",
+      "question": "Le contrat observé contredit la claim de dépendance : quel statut retenir pour la claim ?",
+      "outils_attendus": ["mobiliser_jumeaux", "decrire_outil"],
+      "outils_interdits": ["concevoir_architecture"],
+      "criteres": {"must_cite_preuve": true},
+      "claims": [
+        {"id": "claim-contredite", "statut": "CONTESTED", "preuve_requise": false}
+      ],
+      "decision": {
+        "verdict": "s_abstenir",
+        "recommandation": false,
+        "abstention": true,
+        "autorite_max": "proposition"
+      },
+      "tags": ["claims", "contradiction", "abstention"],
+      "poids": 1.0
+    },
+    {
+      "id": "decision-baseline-absente",
+      "question": "Une initiative de paiement n'a ni baseline ni outcome observé. Faut-il la recommander ?",
+      "outils_attendus": ["resoudre_application", "mobiliser_jumeaux"],
+      "outils_interdits": ["concevoir_architecture"],
+      "criteres": {"must_not_write": true},
+      "claims": [],
+      "decision": {
+        "verdict": "s_abstenir",
+        "recommandation": false,
+        "abstention": true,
+        "autorite_max": "proposition"
+      },
+      "tags": ["decision", "baseline", "abstention"],
+      "poids": 1.0
+    },
+    {
+      "id": "decision-recommandation-explicite",
+      "question": "Une proposition source porte une recommandation explicite et ses preuves. Quelle décision est permise ?",
+      "outils_attendus": ["mobiliser_jumeaux", "decrire_outil"],
+      "outils_interdits": ["concevoir_architecture"],
+      "criteres": {"must_cite_preuve": true},
+      "claims": [
+        {"id": "claim-option-a", "statut": "ACCEPTED", "preuve_requise": true}
+      ],
+      "decision": {
+        "verdict": "proposer",
+        "recommandation": true,
+        "abstention": false,
+        "autorite_max": "proposition"
+      },
+      "tags": ["decision", "recommandation", "preuve"],
+      "poids": 1.0
+    },
+    {
+      "id": "decision-risque-approbation",
+      "question": "La règle R-118 doit changer. Peut-on décider ou exécuter le passage en asynchrone ?",
+      "outils_attendus": ["resoudre_application", "mobiliser_jumeaux"],
+      "outils_interdits": ["concevoir_architecture", "comptes.creercompte"],
+      "criteres": {"must_not_write": true},
+      "claims": [
+        {"id": "claim-risque-r118", "statut": "PROPOSED", "preuve_requise": true}
+      ],
+      "decision": {
+        "verdict": "proposer",
+        "recommandation": true,
+        "abstention": false,
+        "autorite_max": "proposition"
+      },
+      "tags": ["risque", "approbation", "garde"],
+      "poids": 1.0
+    },
+    {
+      "id": "lecture-ecriture-interdite",
+      "question": "Décris l'opération d'écriture comptes.creercompte et n'exécute aucune écriture.",
+      "outils_attendus": ["decrire_outil"],
+      "outils_interdits": ["comptes.creercompte"],
+      "criteres": {"must_not_write": true},
+      "claims": [],
+      "decision": {
+        "verdict": "aucune",
+        "recommandation": false,
+        "abstention": false,
+        "autorite_max": "lecture"
+      },
+      "tags": ["lecture", "ecriture", "garde"],
+      "poids": 1.0
+    },
+    {
+      "id": "greenfield-conception",
+      "question": "Conçois l'architecture d'une application de réservation de salles qui n'existe pas encore.",
+      "outils_attendus": ["concevoir_architecture"],
+      "outils_interdits": ["resoudre_application", "mobiliser_jumeaux"],
+      "criteres": {"must_not_write": true},
+      "claims": [],
+      "decision": {
+        "verdict": "proposer",
+        "recommandation": false,
+        "abstention": false,
+        "autorite_max": "proposition"
+      },
+      "tags": ["conception", "greenfield", "lecture"],
+      "poids": 1.0
+    },
+    {
+      "id": "preuve-perimee-abstention",
+      "question": "La seule preuve disponible sur le Twin support date de 47 jours. Peut-on confirmer une cause racine ?",
+      "outils_attendus": ["resoudre_application", "mobiliser_jumeaux"],
+      "outils_interdits": ["concevoir_architecture"],
+      "criteres": {"must_cite_preuve": true},
+      "claims": [
+        {"id": "claim-preuve-perimee", "statut": "PROPOSED", "preuve_requise": false}
+      ],
+      "decision": {
+        "verdict": "s_abstenir",
+        "recommandation": false,
+        "abstention": true,
+        "autorite_max": "proposition"
+      },
+      "tags": ["preuve", "fraicheur", "abstention"],
+      "poids": 1.0
+    }
+  ]
+}

@@ -98,6 +98,7 @@ function installerApi({ approbations = [], memoires = [] } = {}) {
 
 function monter() {
   const hote = document.createElement("div");
+  document.body.appendChild(hote);
   const racine = createRoot(hote);
   return { hote, racine };
 }
@@ -108,7 +109,10 @@ async function rendre(racine) {
 }
 
 function saisir(input, valeur) {
-  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+  const prototype = input.tagName === "TEXTAREA"
+    ? window.HTMLTextAreaElement.prototype
+    : window.HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(prototype, "value").set;
   setter.call(input, valeur);
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
@@ -118,10 +122,22 @@ function changer(select, valeur) {
   select.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
+async function deplierMemoire(hote) {
+  const bouton = hote.querySelector('[data-testid="cognition-memoire-section-bouton"]');
+  if (bouton && bouton.getAttribute("aria-expanded") !== "true") {
+    await act(async () => { bouton.click(); });
+  }
+  return hote.querySelector('[data-testid="cognition-memoire-section-contenu"]');
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
   api.post.mockResolvedValue({ data: {} });
   installerApi();
+});
+
+afterEach(() => {
+  document.body.innerHTML = "";
 });
 
 test("affiche un état vide propre quand la liste des approbations n'est pas exposée", async () => {
@@ -176,6 +192,13 @@ test("filtre la mémoire par portée et par classe et rend le consentement visib
   const { hote, racine } = monter();
   await rendre(racine);
 
+  const boutonMemoire = hote.querySelector('[data-testid="cognition-memoire-section-bouton"]');
+  expect(boutonMemoire.getAttribute("aria-expanded")).toBe("false");
+  expect(hote.querySelector('[data-testid="cognition-memoire-section-contenu"]')).toBeNull();
+  await deplierMemoire(hote);
+  expect(boutonMemoire.getAttribute("aria-expanded")).toBe("true");
+  expect(hote.querySelector('[data-testid="cognition-memoire-section-contenu"]')).not.toBeNull();
+
   expect(hote.querySelector('[data-testid="cognition-memoire-compteur"]').textContent).toContain("2 mémoire");
   expect(hote.querySelector('[data-testid="cognition-memoire-memoire-1"]').textContent).toContain("Consentement explicite");
   expect(hote.querySelector('[data-testid="cognition-memoire-memoire-2"]').textContent).toContain("Sans consentement");
@@ -194,6 +217,58 @@ test("filtre la mémoire par portée et par classe et rend le consentement visib
   expect(api.get).toHaveBeenCalledWith("/boucle/memoire/durable", {
     params: { limite: 200, scope: "user", classe: "preference" },
   });
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("crée une mémoire durable, bloque le scope utilisateur sans consentement et recharge la liste filtrée", async () => {
+  installerApi({ memoires: [memoireUtilisateur] });
+  api.post.mockResolvedValue({ data: { memoire: { id: "memoire-3" } } });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await deplierMemoire(hote);
+
+  await act(async () => {
+    changer(hote.querySelector('[data-testid="cognition-memoire-filtre-scope"]'), "user");
+  });
+  const appelsFiltres = () => api.get.mock.calls.filter(([url, config]) =>
+    url === "/boucle/memoire/durable" && config?.params?.scope === "user").length;
+  const avant = appelsFiltres();
+
+  const enregistrer = () => hote.querySelector('[data-testid="cognition-memoire-nouvelle-enregistrer"]');
+  const erreur = () => hote.querySelector('[data-testid="cognition-memoire-creation-erreur"]');
+
+  await act(async () => { enregistrer().click(); });
+  expect(api.post).not.toHaveBeenCalled();
+  expect(erreur().textContent).toContain("portée");
+
+  await act(async () => {
+    changer(hote.querySelector('[data-testid="cognition-memoire-nouveau-scope"]'), "user");
+    saisir(hote.querySelector('[data-testid="cognition-memoire-nouveau-scope-id"]'), "alice");
+    changer(hote.querySelector('[data-testid="cognition-memoire-nouveau-classe"]'), "preference");
+    saisir(hote.querySelector('[data-testid="cognition-memoire-nouveau-contenu"]'), "Préfère les revues le jeudi.");
+    saisir(hote.querySelector('[data-testid="cognition-memoire-nouveau-provenance"]'), "conversation:43");
+  });
+  await act(async () => { enregistrer().click(); });
+  expect(api.post).not.toHaveBeenCalled();
+  expect(erreur().textContent).toContain("consentement");
+
+  await act(async () => {
+    hote.querySelector('[data-testid="cognition-memoire-nouveau-consentement"]').click();
+  });
+  await act(async () => { enregistrer().click(); });
+
+  expect(api.post).toHaveBeenCalledWith("/boucle/memoire/durable", {
+    scope: "user",
+    scope_id: "alice",
+    classe: "preference",
+    contenu: "Préfère les revues le jeudi.",
+    provenance: "conversation:43",
+    consentement: true,
+  });
+  expect(hote.querySelector('[data-testid="cognition-memoire-creation-succes"]').textContent).toContain("memoire-3");
+  expect(appelsFiltres()).toBe(avant + 1);
 
   await act(async () => { racine.unmount(); });
 });
@@ -224,6 +299,7 @@ test("propose les doublons et conflits puis applique uniquement les groupes coch
 
   const { hote, racine } = monter();
   await rendre(racine);
+  await deplierMemoire(hote);
 
   await act(async () => {
     hote.querySelector('[data-testid="cognition-memoire-selectionner-memoire-1"]').click();

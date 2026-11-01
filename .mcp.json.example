@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "meridian": {
+      "type": "stdio",
+      "command": "backend/.venv/bin/python",
+      "args": ["-m", "plugin.meridian.mcp.server"],
+      "env": {
+        "PYTHONPATH": ".",
+        "MERIDIAN_API_URL": "http://127.0.0.1:8001/api",
+        "MERIDIAN_TENANT": "demo",
+        "MERIDIAN_PERSONA": "architecte"
+      }
+    }
+  }
+}

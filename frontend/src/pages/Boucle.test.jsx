@@ -11,7 +11,7 @@ jest.mock("react-router-dom", () => ({
 
 jest.mock("@/lib/api", () => ({
   __esModule: true,
-  default: { get: jest.fn() },
+  default: { get: jest.fn(), post: jest.fn() },
 }));
 
 global.IS_REACT_ACT_ENVIRONMENT = true;
@@ -154,6 +154,7 @@ function installerApi(options = {}) {
 
 function monter() {
   const hote = document.createElement("div");
+  document.body.appendChild(hote);
   const racine = createRoot(hote);
   return { hote, racine };
 }
@@ -163,14 +164,31 @@ async function rendre(racine) {
 }
 
 function saisir(input, valeur) {
-  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+  const prototype = input.tagName === "TEXTAREA"
+    ? window.HTMLTextAreaElement.prototype
+    : window.HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(prototype, "value").set;
   setter.call(input, valeur);
   input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+async function deplier(hote, testid) {
+  const bouton = hote.querySelector(`[data-testid="${testid}-bouton"]`);
+  if (bouton && bouton.getAttribute("aria-expanded") !== "true") {
+    await act(async () => { bouton.click(); });
+  }
+  return hote.querySelector(`[data-testid="${testid}-contenu"]`);
 }
 
 beforeEach(() => {
   jest.clearAllMocks();
   mockNavigate.mockReset();
+  api.post.mockReset();
+  api.post.mockResolvedValue({ data: {} });
+});
+
+afterEach(() => {
+  document.body.innerHTML = "";
 });
 
 test("affiche les six étapes, la synthèse et filtre par recherche locale", async () => {
@@ -283,6 +301,7 @@ test("ouvre le détail, montre la chaîne amont et les liens Travail et Atlas sa
   expect(detail).not.toBeNull();
   expect(hote.querySelector('[data-testid="boucle-detail-titre"]').textContent).toContain("<img src=x");
   expect(detail.querySelector("img")).toBeNull();
+  await deplier(hote, "boucle-chaine-section");
   expect(detail.querySelector('[data-testid="boucle-chaine"]')).not.toBeNull();
   expect(detail.querySelectorAll('[data-testid="boucle-chaine-etape"]')).toHaveLength(4);
   expect(detail.textContent).toContain("Latence des paiements");
@@ -352,6 +371,193 @@ test("affiche l'état vide et garde les objets si la synthèse échoue", async (
   expect(hote.querySelector('[data-testid="boucle-vide"]')).not.toBeNull();
   expect(hote.querySelector('[data-testid="boucle-vide"]').textContent).toContain("Aucun objet dans la boucle.");
   expect(hote.querySelector('[data-testid="boucle-synthese-erreur"]')).not.toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("crée un outcome, bloque les saisies invalides et recharge la liste", async () => {
+  installerApi();
+  api.post.mockResolvedValue({
+    data: { outcome: { id: "out-2" }, learning: { id: "lea-2" } },
+  });
+  const appelsObjets = () => api.get.mock.calls.filter(([url]) => url === "/boucle/objets").length;
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  const avant = appelsObjets();
+
+  const enregistrer = () => hote.querySelector('[data-testid="boucle-outcome-enregistrer"]');
+  const erreur = () => hote.querySelector('[data-testid="boucle-outcome-erreur"]');
+
+  await act(async () => { enregistrer().click(); });
+  expect(api.post).not.toHaveBeenCalled();
+  expect(erreur().textContent).toContain("initiative");
+
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-outcome-initiative"]'), "ini-1");
+    saisir(hote.querySelector('[data-testid="boucle-outcome-metrique"]'), "p95");
+    saisir(hote.querySelector('[data-testid="boucle-outcome-valeur"]'), "pas-un-nombre");
+    saisir(hote.querySelector('[data-testid="boucle-outcome-enseignement"]'), "Le contrôle asynchrone réduit la latence.");
+  });
+  await act(async () => { enregistrer().click(); });
+  expect(api.post).not.toHaveBeenCalled();
+  expect(erreur().textContent).toContain("nombre");
+
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-outcome-valeur"]'), "180");
+    saisir(hote.querySelector('[data-testid="boucle-outcome-unite"]'), "ms");
+    saisir(hote.querySelector('[data-testid="boucle-outcome-cible"]'), "200");
+  });
+  await act(async () => { enregistrer().click(); });
+
+  expect(api.post).toHaveBeenCalledWith("/boucle/outcomes", {
+    initiative_id: "ini-1",
+    mesure: { metrique: "p95", valeur: 180, unite: "ms" },
+    enseignement: "Le contrôle asynchrone réduit la latence.",
+    cible: 200,
+  });
+  expect(hote.querySelector('[data-testid="boucle-outcome-succes"]').textContent).toContain("out-2");
+  expect(hote.querySelector('[data-testid="boucle-outcome-succes"]').textContent).toContain("lea-2");
+  expect(appelsObjets()).toBe(avant + 1);
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("montre les preuves, claims et outcomes exposés et ouvre un outcome lié", async () => {
+  const outcomeLie = { ...outcome, id: "out-2", titre: "Outcome lié" };
+  const outcomeAvecLiens = {
+    ...outcome,
+    donnees: {
+      ...outcome.donnees,
+      preuves: ["preuve-1", { id: "preuve-2", source: "suivi-cartes" }],
+      claim_ids: ["claim-1"],
+      outcome_ids: ["out-2"],
+    },
+  };
+  installerApi({
+    liste: [...objets, outcomeLie],
+    details: {
+      "out-1": { objet: outcomeAvecLiens, chaine: [], historique: [] },
+    },
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+
+  await act(async () => {
+    hote.querySelector('[data-objet-id="out-1"]').click();
+  });
+
+  const boutonLiens = hote.querySelector('[data-testid="boucle-liens-bouton"]');
+  expect(boutonLiens).not.toBeNull();
+  expect(boutonLiens.getAttribute("aria-expanded")).toBe("false");
+  expect(hote.querySelector('[data-testid="boucle-claims"]')).toBeNull();
+  await deplier(hote, "boucle-liens");
+
+  const liens = hote.querySelector('[data-testid="boucle-liens"]');
+  expect(liens).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-preuves"]').textContent).toContain("preuve-1");
+  expect(hote.querySelector('[data-testid="boucle-preuves"]').textContent).toContain("suivi-cartes");
+  expect(hote.querySelector('[data-testid="boucle-claims"]').textContent).toContain("claim-1");
+  expect(hote.querySelector('[data-testid="boucle-outcomes"]').textContent).toContain("out-2");
+  expect(hote.querySelector('[data-testid="boucle-claim-claim-1-copier"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-preuve-0-copier"]')).not.toBeNull();
+
+  const writeText = jest.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+  await act(async () => {
+    hote.querySelector('[data-testid="boucle-claim-claim-1-copier"]').click();
+  });
+  expect(writeText).toHaveBeenCalledWith("claim-1");
+
+  await act(async () => {
+    hote.querySelector('[data-testid="boucle-outcome-lien-out-2"]').click();
+  });
+  expect(api.get).toHaveBeenCalledWith("/boucle/objets/out-2", { params: { historique: true } });
+  expect(hote.querySelector('[data-testid="boucle-detail-titre"]').textContent).toContain("Outcome lié");
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("crée un twin non applicatif, valide les champs et recharge la liste", async () => {
+  let twins = [];
+  const objetsTwins = [];
+  api.get.mockImplementation((url) => {
+    if (url === "/boucle/objets") return Promise.resolve({ data: { tenant: "local", objets } });
+    if (url === "/boucle/synthese") return Promise.resolve({ data: synthese });
+    if (url === "/boucle/twins") return Promise.resolve({ data: { twins } });
+    return Promise.resolve({ data: {} });
+  });
+  api.post.mockImplementation((url, corps) => {
+    if (url !== "/boucle/twins") return Promise.resolve({ data: {} });
+    const twin = { id: corps.id, type: corps.type, nom: corps.nom, domaine: corps.domaine || null };
+    twins = [...twins, twin];
+    objetsTwins.push(corps);
+    return Promise.resolve({ data: { twin } });
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  const appelsTwins = () => api.get.mock.calls.filter(([url]) => url === "/boucle/twins").length;
+  const avant = appelsTwins();
+
+  expect(api.get).toHaveBeenCalledWith("/boucle/twins", { params: { limite: 200 } });
+  expect(hote.querySelector('[data-testid="boucle-twins-vide"]')).not.toBeNull();
+  expect([...hote.querySelector('[data-testid="boucle-twin-type"]').options].map((option) => option.value))
+    .toEqual(["PROCESS", "CAPABILITY", "JOURNEY", "ORGANIZATION", "PRODUCT", "DATA_DOMAIN"]);
+
+  const enregistrer = () => hote.querySelector('[data-testid="boucle-twin-enregistrer"]');
+  const erreur = () => hote.querySelector('[data-testid="boucle-twin-erreur"]');
+
+  await act(async () => { enregistrer().click(); });
+  expect(api.post).not.toHaveBeenCalled();
+  expect(erreur().textContent).toContain("identifiant");
+
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-twin-id"]'), "process-facturation");
+  });
+  await act(async () => { enregistrer().click(); });
+  expect(api.post).not.toHaveBeenCalled();
+  expect(erreur().textContent).toContain("nom");
+
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-twin-nom"]'), "Facturation client");
+    saisir(hote.querySelector('[data-testid="boucle-twin-mission"]'), "Émettre et recouvrer les factures.");
+    saisir(hote.querySelector('[data-testid="boucle-twin-domaine"]'), "Finance");
+  });
+  await act(async () => { enregistrer().click(); });
+
+  expect(api.post).toHaveBeenCalledTimes(1);
+  expect(objetsTwins[0]).toEqual({
+    id: "process-facturation",
+    type: "PROCESS",
+    nom: "Facturation client",
+    equipe: "à confirmer",
+    mission: "Émettre et recouvrer les factures.",
+    domaine: "Finance",
+  });
+  expect(hote.querySelector('[data-testid="boucle-twin-succes"]').textContent).toContain("process-facturation");
+  expect(appelsTwins()).toBe(avant + 1);
+  expect(hote.querySelector('[data-testid="boucle-twin-process-facturation"]').textContent).toContain("Facturation client");
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("affiche l'erreur de l'API quand la création du twin échoue", async () => {
+  installerApi();
+  api.post.mockRejectedValue({ response: { data: { detail: "changement de type refusé" } } });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-twin-id"]'), "cap-paiement");
+    saisir(hote.querySelector('[data-testid="boucle-twin-nom"]'), "Capacité paiement");
+  });
+  await act(async () => { hote.querySelector('[data-testid="boucle-twin-enregistrer"]').click(); });
+
+  expect(hote.querySelector('[data-testid="boucle-twin-erreur"]').textContent).toContain("changement de type refusé");
+  expect(hote.querySelector('[data-testid="boucle-twin-succes"]')).toBeNull();
 
   await act(async () => { racine.unmount(); });
 });

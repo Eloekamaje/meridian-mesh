@@ -27,6 +27,9 @@
       "MERIDIAN_PERSONA": "architecte"
     }
   },
-  "domain_packs": [],
+  "domain_packs": [
+    "domain-packs/paiements.json",
+    "domain-packs/risque.json"
+  ],
   "read_only": true
 }

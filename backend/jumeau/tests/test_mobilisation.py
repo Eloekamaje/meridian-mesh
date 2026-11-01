@@ -168,7 +168,8 @@ def test_verrou_rendu_apres_erreur(pose, monkeypatch):
 
 
 def test_serveur_un_seul_jumeau_garde_repondre_plusieurs_mobilisent():
-    src = open(__file__.replace("jumeau/tests/test_mobilisation.py", "server.py"), encoding="utf-8").read()
+    from pathlib import Path
+    src = (Path(__file__).resolve().parents[2] / "meridian/adapters/inbound/http/legacy.py").read_text(encoding="utf-8")
     assert "len(reels) == 1" in src and "jumeau_flore.repondre(reels[0]" in src and "jumeau_flore.mobiliser(reels" in src
 
 

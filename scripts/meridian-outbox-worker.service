@@ -1,0 +1,30 @@
+[Unit]
+Description=Meridian - worker outbox et projection graphe
+Documentation=file:///opt/meridian/docs/architecture/projection-graphe.md
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Adapter ces chemins et cet utilisateur à l'installation réelle (ne pas exécuter en root).
+# User=meridian
+# Group=meridian
+WorkingDirectory=/opt/meridian/backend
+EnvironmentFile=/opt/meridian/backend/.env
+Environment=GRAPH_STORE=neo4j
+Environment=JUMEAU_WORKSPACE=/var/lib/meridian
+Environment=HOME=/var/lib/meridian
+StateDirectory=meridian
+ExecStart=/opt/meridian/backend/.venv/bin/python -m jumeau.execution.outbox_worker
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+# Le worker n'écoute aucun port ; il lit Postgres et écrit dans le graphe.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/var/lib/meridian
+
+[Install]
+WantedBy=multi-user.target

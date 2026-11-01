@@ -37,6 +37,7 @@ MAX_TENTATIVES_DEFAUT = 5
 BACKOFF_BASE_DEFAUT = 30
 BACKOFF_MAX_DEFAUT = 3600
 ERREUR_MAX = 500
+BRANCHE_VALIDE = re.compile(r"[A-Za-z0-9._/-]{1,255}\Z")
 
 
 class SourceIntrouvable(LookupError):
@@ -136,6 +137,38 @@ def _source(conn, source_id, tenant: str | None = None) -> dict:
     if source is None or (tenant is not None and source["tenant_id"] != tenant):
         raise SourceIntrouvable("source introuvable")
     return source
+
+
+def valider_branche(branche) -> str:
+    """Nom de branche Git sûr : charset attendu, ni ``-`` initial, ni chemin ambigu."""
+    nom = str(branche or "").strip()
+    if (not nom or not BRANCHE_VALIDE.fullmatch(nom) or nom.startswith("-")
+            or nom.startswith("/") or nom.endswith("/") or "//" in nom or ".." in nom
+            or nom.endswith(".lock") or "@{" in nom):
+        raise ValueError(f"branche invalide : {nom!r}")
+    return nom
+
+
+def changer_branche_source(conn, source_id, tenant, branche) -> dict:
+    """Met à jour ``source.branche`` pour le seul tenant propriétaire, sans toucher au dépôt ni au curseur."""
+    tenant = _tenant(tenant)
+    source = _source(conn, source_id, tenant)
+    nom = valider_branche(branche)
+    with conn.transaction():
+        ligne = _une(
+            conn,
+            "UPDATE source SET branche = %s WHERE id = %s AND tenant_id = %s "
+            "RETURNING id, tenant_id, jumeau_id, branche",
+            (nom, source["id"], tenant),
+        )
+    if ligne is None:
+        raise SourceIntrouvable("source introuvable")
+    journal.info("source %s/%s : branche suivie mise à jour", tenant, source["id"])
+    return ligne
+
+
+changer_branche = changer_branche_source
+validate_branch = valider_branche
 
 
 def _schedule_publique(schedule: Mapping[str, Any] | None) -> dict | None:

@@ -81,28 +81,36 @@ Preuve live sur « régénère le flux du gsf-mockup » : `repo:gsf-mockup → t
 - Outils multi-protocoles : `interface_outils.py` compile toute opération connue (REST, SOAP/WSDL, gRPC, GraphQL, AsyncAPI) en manifeste ; `protocoles_outils.py` fournit les extracteurs GraphQL/gRPC/AsyncAPI ; `interfaces_protocoles.py` les ramène au graphe d'interface commun. `connecteur_interfaces.py` découvre désormais ces fichiers dans les dépôts, donc le Gardien les persiste et `/api/outils` les expose sans spec OpenAPI. OpenAPI/MCP restent des adaptateurs parmi d'autres ; aucun `tools/call` exécuté.
 - Découverte : Git/claims `EXPOSE`/OTLP et fichiers GraphQL, gRPC, AsyncAPI, OpenAPI et WSDL alimentent `interface_operation` ; le catalogue Postgres est lu par `/api/outils` avec le contexte tenant.
 - Atlas : le panneau d'un twin lit `/api/boucle/graphe/{id}/impact` quand un tenant est fourni (`localStorage.meridian.tenant` ou `?tenant=`) et affiche les impacts amont/aval canoniques, en plus des voisins Mongo.
-- RLS : `jumeau/rls.py` fournit les policies tenant, le contexte `set_config(..., true)` et une activation explicite ; le mode est opt-in (`JUMEAU_RLS=1`) et n'est pas activé sur la base locale.
+- RLS : `jumeau/rls.py` fournit les policies tenant (tables à `tenant_id` et tables filles via leur parent), le contexte `set_config(..., true)` par transaction et un CLI explicite `--activer`/`--verifier`/`--desactiver` ; le CLI refuse un rôle superuser/BYPASSRLS. Le mode est opt-in (`JUMEAU_RLS=1`), n'est pas activé au démarrage ni sur la base locale ; voir [rls.md](../architecture/rls.md).
 - Cognition exécutable : `executeur.py` (politique, approbation, allowlist, timeout, audit), `twins_types.py` (PROCESS/CAPABILITY/JOURNEY/etc. + Claims), `outcomes.py` (Outcome mesuré → Learning réutilisable), `memoire_org.py` (mémoire ANNOTATION), `attention.py` (score/dédup à l'échelle), `temporalite.py` (validité, fraîcheur, topologie datée), `evaluation_outils.py` (jeu d'or).
 - API cognitive : `/api/boucle/twins`, `/twins/{id}/claims`, `/outcomes`, `/learnings`, `/memoire`, `/attention`, `/topologie`, `/evaluation` ; aucune exécution d'outil externe sans politique.
-- Spécialistes cognitifs : noyau `specialistes.py` (contrat, autorité proposition, orchestration parallèle, timeout, déduplication) et trois spécialistes — `decouverte`, `preuve`, `impact`/`outcome`. Ils lisent un contexte borné et produisent des artefacts ; aucun n'écrit, ne promeut ni ne décide. **Domain packs volontairement différés.**
+- Spécialistes cognitifs : noyau `specialistes.py` (contrat, autorité proposition, orchestration parallèle, timeout, déduplication) et trois spécialistes — `decouverte`, `preuve`, `impact`/`outcome`. Ils lisent un contexte borné et produisent des artefacts ; aucun n'écrit, ne promeut ni ne décide.
+- Adapters AWS : `meridian/adapters/outbound/aws/adapters.py` fournit Secrets Manager, publication SQS/EventBridge et mapping `source_schedule` → EventBridge Scheduler, avec boto3 importé paresseusement et tests à doubles ; harness local `moto` 4/4 (Secrets, SQS, EventBridge, Scheduler), aucun compte AWS réel n'est revendiqué.
+- Neo4j léger : `docker-compose.neo4j.yml` (5-community, 256–512 Mo) et `scripts/dev-neo4j-light.sh` (vérifié sur 7688) ; `backfill_graphe` a projeté 3 Twins en dry-run puis en apply idempotent ; `scripts/dev-graphe-e2e.sh` valide outbox → worker → Neo4j.
+- Workflows réels : deux appels `POST /api/boucle/analyser` sur le tenant `demo` ont rendu 200 (portefeuille Paiement 0,15 s ; impact Conduit 0,24 s, 3 faits, profil architecte, autorité `proposition`). Le benchmark plugin réel a été tenté mais bloqué par le crédit API (0/2, 0 $) ; le dry-run valide 6 commandes, le MCP stdio expose 15 tools.
+- Travail : port `TravailStore` et adapter Mongo `travail_depot.py` posés et testés ; les lectures Mongo legacy de Aujourd'hui/Atlas ne sont pas encore basculées (migration de données ADR-0008 à faire).
+- Domain packs : `plugin/meridian/domain-packs/paiements.json` et `risque.json` activent uniquement des méthodes/compétences des catalogues existants, portent 4 questions d'évaluation avec preuves attendues et clés de réponse, et déclarent une autorité lecture seule (aucune écriture, promotion, décision ou exécution). `backend/jumeau/packs_domaines.py` charge/valide les packs ; `composition.planifier(..., pack=...)` les branche sans créer de framework parallèle. Un pack inconnu ou hors catalogue est refusé.
 - API : `POST /api/boucle/specialistes/analyser` exécute les spécialistes en parallèle, avec une connexion tenant-scopée par spécialiste pour éviter tout partage non thread-safe.
 - Profils composés : `profils.py` résout explicite/identité/inférence/défaut, avec autorité jamais supérieure à la lecture pour un profil inconnu ; `methodes_cognitives.py` et `competences_cognitives.py` sont des catalogues versionnés ; `composition.py` produit un plan borné (méthodes, compétences, spécialistes, budget, autorité).
 - Réponses situées : `reponse_cognitive.py` conserve un **socle de faits unique** et change seulement la lecture, le vocabulaire, les actions et les prochaines étapes. Un dev, un PO et un profil inconnu reçoivent les mêmes faits ; l'inconnu reste en lecture seule.
 - API : `/api/boucle/profils`, `/composition`, `/analyser` ; `POST /analyser` exécute un socle de preuves indépendant du profil et applique la lentille du profil.
 - Value Ledger : `valeur` (Postgres, ADR-0009), types/statuts/attribution, baseline → cible → observe → écart, preuves et confiance ; `/api/boucle/valeurs` et `/valeurs/resume`. Les devises et unités ne sont jamais additionnées, et une valeur sans baseline reste une mesure.
 - Pilote : `plugin/meridian/evals/` contient un runner à quatre bras (`skill+mcp`, `checklist+mcp`, `data-only`, `human`), deux scénarios pilotes, deux variantes adverses, des data packs gelés, des clés de correction, un schéma de revue humaine et un seed de valeur idempotent. Pilote incident 5 runs : skill **5/5** (113 s, 0,77 USD), checklist **0/5** (173 s, 1,31 USD), data-only **0/5** (84 s, 0,55 USD). R-118 5 runs : skill **5/5** à budget 2,00 USD (143 s, 0,95 USD), checklist **1/5**, data-only **1/5**. Panel de 8 reviewers agents : 13/16 approbations, 3 rejets skill corrigés depuis. **Décision : no-go production, go conditionnel** pour une seconde itération avec revue humaine et outcome réel.
-- Plugin portable : `plugin/meridian/` fournit **4 skills** (incident-ops, architecture-impact, benefits-okr, enterprise-portfolio), **3 subagents** (vérificateur, impact, découverte), un **serveur MCP read-only** (profils, composition, analyse globale ou applicative, portefeuille, impacts, Claims, learnings, attention), une policy d'autorité et un contrat de réponse. Les profils pilotes sont **ops, architecte, product_owner** ; les skills ont des `references/`, des `evals/` et passent le validateur Agent Skills. Les tools MCP portent les annotations read-only et le serveur a un jeu d'évaluation de 10 questions. Les domain packs restent vides.
-- Tests : **1831 tests jumeau** (3 skip), **49 tests plugin**, **186 frontend**, **8 auth**, build non-CI OK (le build CI reste bloqué par des avertissements ESLint préexistants). Live : 12 profils, 14 méthodes, 14 compétences ; dev/PO reçoivent **6 faits identiques** avec des lectures différentes, profil inconnu en lecture seule. Portefeuille Paiement : **10 situations, 3 hautes, 6 initiatives**, Value Ledger séparé par devise/unité ; `/analyser` sans application bascule en lecture portefeuille/entreprise.
+- Plugin portable : `plugin/meridian/` fournit **4 skills** (incident-ops, architecture-impact, benefits-okr, enterprise-portfolio), **3 subagents** (vérificateur, impact, découverte), un **serveur MCP read-only** (profils, composition, analyse globale ou applicative, portefeuille, impacts, Claims, learnings, attention), une policy d'autorité et un contrat de réponse. Les profils pilotes sont **ops, architecte, product_owner** ; les skills ont des `references/`, des `evals/` et passent le validateur Agent Skills. Les tools MCP portent les annotations read-only et le serveur a un jeu d'évaluation de 10 questions. Les **domain packs Paiements et Risque** sont livrés et validés ; ils restent en lecture seule.
+- Jeu d'or outils/Claims/décisions : `plugin/meridian/evals/gold/outils-claims-decisions.json` (10 cas) et `backend/jumeau/evaluation_gold.py` notent, sans modèle ni réseau, les outils choisis, le statut attendu des Claims (preuve SUPPORT obligatoire pour `ACCEPTED`) et la décision (recommandation, abstention, autorité plafonnée à `proposition`). Un cas n'est exact que si les trois composants le sont.
+- Tests : **1932 tests jumeau** (3 skip), **50 tests plugin**, **191 frontend**, **8 auth**, build non-CI OK (le build CI reste bloqué par des avertissements ESLint préexistants). Live : 12 profils, 14 méthodes, 14 compétences ; dev/PO reçoivent **6 faits identiques** avec des lectures différentes, profil inconnu en lecture seule. Portefeuille Paiement : **10 situations, 3 hautes, 6 initiatives**, Value Ledger séparé par devise/unité ; `/analyser` sans application bascule en lecture portefeuille/entreprise.
 
 ### Alimentation continue et identité de commande
 
 - Pull-first : `source_schedule → ingestion_run → réclamation sous bail → Gardien → Claims/preuves/interfaces/outbox/graphe/situations` ; webhook entrant optionnel (accélérateur, jamais la source de vérité).
 - `python -m jumeau.source_worker` (polling continu ou `--une-passe`), `scripts/dev-source-worker.sh`, unité systemd `scripts/meridian-source-worker.service` (`Restart=always`) ; `GET /api/boucle/sources/sante`, `POST /api/boucle/sources/{id}/ingest`, `/webhook`, `/pause` et `/resume` ; un seul run vivant par source, bail/fencing, retry/backoff et reprise après crash.
+- RLS workers : `JUMEAU_WORKER_PG_DSN`, passes par tenant (`JUMEAU_WORKER_TENANTS`) ou rôle `BYPASSRLS` explicite ; tests `test_worker_rls.py` ; activation production toujours manuelle.
+- `PATCH /api/boucle/sources/{id}/branche` change la branche suivie (validation Git, tenant-scoped) puis enfile un run forcé.
 - Webhook optionnel `POST /api/boucle/sources/{id}/webhook` : HMAC-SHA256 (`JUMEAU_WEBHOOK_SECRET`), branche/dépôt/SHA vérifiés, enfile seulement un run — le SHA reste revérifié par le gardien.
 - Index : `JUMEAU_INDEX_STORE=local|s3|none`, artefact au SHA réindexable, manifeste sans secret ; `none` supprime la copie après ingestion.
 - Authentification des sources : `PATSource` résout `vault:`/`env:`, le token n'est jamais persisté dans `source.configuration` ; le port `AuthSource` reste ouvert.
 - Identité de commande : `application_id` stable distinct du nom, import CMDB JSON/CSV ou manifeste via `POST /api/commandes/{cid}/import/apercu`, UI formulaire/CMDB/manifeste, aucun domaine ni mission dans l'identité.
-- Tests : commande, import/ingestion/auth/index/origine ciblés, suite `jumeau` **1831 passés, 3 skip**, **186 tests frontend**, build non-CI OK.
+- Tests : commande, import/ingestion/auth/index/origine/AWS/branche ciblés, suite `jumeau` **1932 passés, 3 skip**, **191 tests frontend**, build non-CI OK.
 - Détail d'exploitation : [ingestion-continue.md](../architecture/ingestion-continue.md).
 
 ## Constat du connecteur sur gsf-mockup
@@ -111,17 +119,19 @@ Le dépôt `gsf-mockup` ne contient pas de spec OpenAPI statique. Le connecteur 
 
 ## Limites actuelles
 
+- Hexagonal : `meridian/domain/`, `meridian/application/`, `meridian/ports/` et `meridian/adapters/{inbound/http,inbound/worker,outbound/postgres,outbound/neo4j,outbound/aws,outbound/mongo}` structurent le code ; `server.py` est un shim ASGI, les anciens chemins sont des shims `sys.modules`. 34 modules `jumeau` ont été déplacés (domaine, application, dépôts Postgres/Neo4j), les cas d'usage commande CRUD/aperçu sont extraits, un port `TravailStore` + adapter Mongo sont posés. `legacy.py` garde `lancer_commande` et les routes historiques ; voir [organisation-cible.md](../architecture/organisation-cible.md).
 - Neo4j de production dispose désormais d'un service `docker-compose.prod.yml` (volume, auth, healthcheck, mémoire) et des variables `NEO4J_*` ; le branchement à un Neptune managé et la haute disponibilité cloud restent à faire.
-- Runtime durable : `backend/jumeau/execution/` (runs, bail/fencing, heartbeat, reaper, outbox/inbox, timers, SSE), `/api/runs` et `/api/boucle/analyser/runs` ; projection outbox → graphe fournie (`outbox.py`, `projecteur_graphe.py`).
+- Runtime durable : `backend/jumeau/execution/` (runs, bail/fencing, heartbeat, reaper, outbox/inbox, timers, SSE), `/api/runs` et `/api/boucle/analyser/runs` ; projection outbox → graphe fournie (`outbox.py`, `projecteur_graphe.py`), avec bascule `JUMEAU_GRAPH_PROJECTION=direct|outbox` (défaut `direct` pour compatibilité) et worker supervisable `python -m jumeau.execution.outbox_worker`. Runbook : [projection-graphe.md](../architecture/projection-graphe.md).
+- La projection outbox est opt-in : le chemin `direct` reste le défaut et le worker outbox doit être supervisé en production avant la bascule ; l'outbox n'a pas encore de DLQ dédiée.
 - Session memory, rétention généralisée, calibration automatique et adaptateur HTTP gouverné : `session_memoire.py`, `retention.py`, `http_adapter.py` ; `/analyser` mémorise la session, enregistre la prédiction et `/outcomes` résout l'outcome.
 - Mémoire durable : `memoire_durable.py` (scope user/session/twin/situation, consentement, rétention 30 j, export, suppression, purge), résolveur de contexte, consolidation mémoire, contre-factuel et calibration. Context Pack et trace de raisonnement : `contexte.py` borne faits/preuves/entités et produit une empreinte stable ; `raisonnement.py` expose plan, spécialistes, preuves, alternatives, contradictions, abstention et limites. `POST /boucle/analyser` renvoie `contexte` et `raisonnement`.
 - PRD-002 et l'index des fiches produit relient mémoire, contexte, raisonnement, apprentissage et valeur. La politique de rétention globale et l'UI de divulgation progressive restent des chantiers.
 - DecisionSupport est exposé dans chaque réponse (`options`, `recommandation` nulle sans proposition explicite, `abstention`, `conditions_de_retournement`).
 - Autorité : un client ne peut plus demander `decision`/`approbation` via le body ; le profil est une lentille, l'autorité agent est plafonnée à `proposition`. Hors demo, le profil du body est ignoré au profit de l'identité authentifiée.
-- Le tenant est extrait du proxy/OIDC et vérifié dans l'API ; les policies RLS sont fournies et appliquées au contexte de la Boucle et du catalogue d'outils, mais **pas encore activées** ni généralisées à tous les chemins legacy.
+- Le tenant est extrait du proxy/OIDC et vérifié dans l'API ; les policies RLS sont fournies et appliquées au contexte de la Boucle et du catalogue d'outils, mais **pas encore activées** en production ni généralisées à tous les chemins legacy. L'activation est un geste de déploiement explicite (`python -m jumeau.rls --activer`) avec un rôle non-superuser ; les workers multi-tenant restent à adapter ([runbook](../architecture/rls.md)).
 - Mongo canonique est migré (parité zéro sur identités, relations, situations, initiatives). Les **cases** restent un store de travail distinct par ADR-0008 ; le fil Aujourd'hui et la carte Atlas lisent encore leurs collections legacy.
 - La découverte est automatique pour les dépôts (OpenAPI/WSDL/GraphQL/gRPC/AsyncAPI), les claims `EXPOSE` et OTLP ; les exports propriétaires de gateway/CMDB restent à brancher.
-- L'Atlas rend l'impact canonique quand un tenant est sélectionné ; les relations Mongo restent la source principale de la carte et des voisins. Les formulaires de création Outcome/Twin/mémoire ne sont pas encore dans l'UI.
+- L'Atlas rend l'impact canonique quand un tenant est sélectionné ; les relations Mongo restent la source principale de la carte et des voisins. Les formulaires Outcome et mémoire durable sont livrés dans `/boucle` et `/cognition` ; la création d'un Twin hors commande et la divulgation progressive restent à faire.
 - Dans le modèle **1 twin ↔ 1 application**, `application_id = twin_id = id réel de l'application` ; la promotion ne change pas cet id. Le multi-twins par application n'est pas retenu.
 - L'Atlas affiche les interfaces/impacts et les situations sont publiées ; la propagation fine des changements au fil « Aujourd'hui » reste à renforcer.
 - Le connecteur lit OpenAPI, configuration, claims `EXPOSE`, WSDL et OTLP tiré depuis une source APM/gateway authentifiée. Un export propriétaire non OTLP (Datadog/Kong/Apigee natif) reste un adaptateur optionnel.
@@ -132,11 +142,12 @@ Le dépôt `gsf-mockup` ne contient pas de spec OpenAPI statique. Le connecteur 
 
 ## Prochain lot
 
-1. Déployer Neo4j/Neptune en production, rejouer le backfill multi-tenant et vérifier l'idempotence à l'échelle.
-2. Activer RLS en production (rôle applicatif non-superuser, `meridian.tenant_id` posé par transaction) et vérifier les chemins legacy.
-3. Brancher les exports propriétaires gateway/CMDB sur le même graphe d'interface (les formats standards sont déjà couverts).
-4. Spécifier le store **Travail** (ADR-0008) puis retirer les lectures Mongo du fil Aujourd'hui/Atlas après parité.
-5. Brancher les adaptateurs externes sur `Executeur`, ajouter les domain packs (Paiements, Risque), puis installer le plugin dans les harness et mesurer deux workflows réels.
+1. Déployer Neo4j/Neptune et le worker outbox, basculer `JUMEAU_GRAPH_PROJECTION=outbox`, rejouer le backfill multi-tenant et vérifier l'idempotence à l'échelle.
+2. Activer RLS en production avec un rôle non-superuser selon [le runbook RLS](../architecture/rls.md), vérifier les chemins legacy et adapter les workers multi-tenant (passe par tenant ou rôle de transition explicite).
+3. Extraire les routes/cas d'usage de `server.py` vers inbound/application/ports, puis retirer les lectures Mongo legacy du fil Aujourd'hui/Atlas et spécifier le store **Travail** (ADR-0008).
+4. Exécuter les adapters AWS contre un compte réel (SQS/EventBridge, Secrets Manager, Scheduler), brancher les exports propriétaires gateway/CMDB et mesurer les coûts/latences.
+5. Étendre les packs Paiements/Risque à des datasets réels, installer le plugin dans les harness et mesurer deux workflows réels jusqu'à l'outcome.
+6. Compléter l'UI : création de Twin hors commande, liens de preuve par identifiant, divulgation progressive ; traiter le rafraîchissement des dépôts locaux sans URL.
 
 ## Runtime d'exécution : étapes, quotas, approbations et RLS
 
@@ -144,7 +155,7 @@ Le dépôt `gsf-mockup` ne contient pas de spec OpenAPI statique. Le connecteur 
 - `GET /api/runs/approvals` liste les approbations du tenant (statut par défaut `PROPOSE`, filtres `run_id`/`statut`, `limite` bornée à 200). Les payloads ne sont jamais renvoyés dans la liste ni dans le détail.
 - Quota de runs actifs (`QUEUED`, `RUNNING`, `WAITING_APPROVAL`, `WAITING_RETRY`) : `EXECUTION_MAX_ACTIFS_PAR_TENANT` (défaut `20`). Une création au-delà du quota retourne `429` ; un rejeu idempotent reste accepté.
 - Allowlist d'outils : `EXECUTION_ALLOWLIST` est un JSON `tenant -> acteur -> outil -> {"lecture": [...], "ecriture": [...]}`. Vide ou absente, aucun outil n'est autorisé. Aucune URL n'y est définie ; les `OutilHTTP` restent fournis par l'appelant. Un outil d'écriture doit lister explicitement son opération dans `ecriture` et passera par une approbation humaine.
-- RLS : les tables `execution_*` et `memoire_durable` sont dans `rls.TABLES` ; l'activation reste manuelle et opt-in (`python -m jumeau.rls --activer`, puis `JUMEAU_RLS=1`). Les routes d'exécution posent `meridian.tenant_id` dans une transaction lorsque RLS est actif ; aucune policy n'est activée au démarrage.
+- RLS : les tables `execution_*`, `memoire_durable`, `valeur`, `prediction_calibration`, `source_schedule` et `ingestion_run` sont dans `rls.TABLES` ; les tables filles (`claim_preuve`, `claim_source`, `verification`, `fiche_vivante`, `evaluation`) sont couvertes via leur parent. L'activation reste manuelle et opt-in (`python -m jumeau.rls --activer`, `--verifier` pour le contrôle, puis `JUMEAU_RLS=1`). Les routes d'exécution posent `meridian.tenant_id` dans une transaction lorsque RLS est actif ; aucune policy n'est activée au démarrage. Les workers multi-tenant (`source_worker`, `execution.worker`) ne peuvent pas fonctionner sous RLS sans passe par tenant : voir la limite documentée dans [rls.md](../architecture/rls.md).
 
 ## Commandes d'exploitation
 
@@ -167,8 +178,14 @@ JUMEAU_INTERFACES='[{"application":"ventes","path":"/chemin/ventes.wsdl","tenant
 JUMEAU_PROTOCOLES='[{"application":"comptes","path":"/chemin/schema.graphql","type":"graphql","tenant":"demo"}]' \
   uvicorn server:app --host 127.0.0.1 --port 8001
 
-# RLS : activation explicite par un rôle de déploiement, puis JUMEAU_RLS=1
-python -m jumeau.rls --activer   # si le CLI est ajouté au déploiement
+# RLS : vérifier, activer explicitement avec un rôle non-superuser, puis JUMEAU_RLS=1
+python -m jumeau.rls --verifier
+python -m jumeau.rls --activer
+python -m jumeau.rls --verifier
+
+# projection graphe par outbox : Gardien producteur, worker consommateur supervisé
+JUMEAU_GRAPH_PROJECTION=outbox python -m jumeau.gardien --jumeau tbt
+scripts/dev-outbox-worker.sh          # ou python -m jumeau.execution.outbox_worker
 
 # lectures graphe tenant-scopées
 curl -H 'X-Tenant: demo' http://127.0.0.1:8001/api/boucle/graphe/resume

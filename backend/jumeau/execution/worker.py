@@ -1,9 +1,13 @@
 """Boucle worker et point d'entrée local.
 
-    JUMEAU_PG_DSN=... PYTHONPATH=. python -m jumeau.execution.worker
+    JUMEAU_WORKER_PG_DSN=... PYTHONPATH=. python -m jumeau.execution.worker
 
 Le worker ne dépend pas de FastAPI. Il réclame des runs, exécute le registre
 d'exécuteurs et termine ou planifie un retry.
+
+Avec RLS actif, un rôle ``NOBYPASSRLS`` exige exactement un tenant
+(``JUMEAU_WORKER_TENANTS``) par processus, posé sur la session ; le balayage global
+utilise le rôle dédié ``meridian_worker`` (``BYPASSRLS``).
 """
 from __future__ import annotations
 
@@ -12,15 +16,27 @@ import logging
 import os
 import signal
 import threading
-import time
-from typing import Any
 
 import psycopg
 
+from jumeau import rls
 from jumeau.execution.executeurs import executeur_par_type
 from jumeau.execution.moteur import MoteurExecution
+from meridian.adapters.inbound.worker.config import (
+    dsn_avec_tenant,
+    dsn_worker,
+    option_connexion_tenant,
+    tenants_worker,
+)
 
 journal = logging.getLogger("meridian.execution.worker")
+
+
+def _connexion(dsn: str, tenant: str | None = None):
+    """Connexion du moteur ; le tenant est posé au niveau session quand fourni."""
+    option = option_connexion_tenant(tenant)
+    supplements = {"options": option} if option else {}
+    return psycopg.connect(dsn, autocommit=True, **supplements)
 
 
 class BoucleWorker:
@@ -56,17 +72,33 @@ class BoucleWorker:
 
 def principal() -> None:
     parseur = argparse.ArgumentParser(description="Worker d'exécution Méridian")
-    parseur.add_argument("--dsn", default=os.environ.get("JUMEAU_PG_DSN"))
+    parseur.add_argument("--dsn", default=None,
+                         help="DSN Postgres (défaut : JUMEAU_WORKER_PG_DSN puis JUMEAU_PG_DSN)")
     parseur.add_argument("--worker-id", default=None)
     parseur.add_argument("--intervalle", type=float, default=0.5)
     args = parseur.parse_args()
-    if not args.dsn:
-        raise SystemExit("JUMEAU_PG_DSN ou --dsn requis")
-    # Le service d'analyse lit la même configuration que le moteur.
-    os.environ["JUMEAU_PG_DSN"] = args.dsn
+    dsn = args.dsn or dsn_worker()
+    if not dsn:
+        raise SystemExit("JUMEAU_WORKER_PG_DSN ou JUMEAU_PG_DSN (ou --dsn) requis")
     logging.basicConfig(level=logging.INFO)
+    try:
+        with psycopg.connect(dsn, autocommit=True) as conn:
+            configuration = rls.configurer_worker(
+                conn, tenants=tenants_worker(), multi=False)
+    except rls.ConfigurationWorker as exc:
+        raise SystemExit(str(exc)) from exc
+    if configuration["rls"] and configuration["mode"] == rls.MODE_WORKER_BYPASS:
+        journal.warning(
+            "worker d'exécution : rôle %s BYPASSRLS, lecture globale des tenants ; "
+            "rôle dédié attendu", configuration["role"]["nom"])
+    tenant = (configuration["tenants"][0]
+              if configuration["rls"] and configuration["mode"] != rls.MODE_WORKER_BYPASS
+              else None)
+    # Le service d'analyse et l'exécuteur cognitif ouvrent leurs propres connexions depuis
+    # JUMEAU_PG_DSN : en mode un-tenant, elles doivent porter le tenant de session.
+    os.environ["JUMEAU_PG_DSN"] = dsn_avec_tenant(dsn, tenant) if tenant else dsn
     moteur = MoteurExecution(
-        connect=lambda: psycopg.connect(args.dsn, autocommit=True),
+        connect=lambda: _connexion(dsn, tenant),
         executeur=executeur_par_type,
         worker_id=args.worker_id,
     )
