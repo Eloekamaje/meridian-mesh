@@ -23,7 +23,7 @@ from contextlib import contextmanager
 import os
 import sys
 
-from jumeau.tenant import normaliser_slug
+from meridian.domain.tenant import normaliser_slug
 
 __all__ = [
     "MODE_WORKER_BYPASS",
@@ -90,6 +90,7 @@ TABLES = (
     "execution_etape",
     "source_schedule",
     "ingestion_run",
+    "travail",
 )
 
 # Tables filles sans `tenant_id` : la policy vérifie l'appartenance du parent.

@@ -1,7 +1,6 @@
 """Intégration minimale du journal d'étapes au run `cognitif.analyser`."""
 import asyncio
 import os
-from types import SimpleNamespace
 
 import psycopg
 import pytest
@@ -47,7 +46,45 @@ def _payload():
     }
 
 
-def test_run_cognitif_journalise_les_quatre_etapes(conn, monkeypatch):
+class RuntimeFactice:
+    """Runtime minimal : aucun Postgres, aucun graphe, aucun spécialiste concret."""
+
+    def mode_auth(self):
+        return "demo"
+
+    def assainir(self, valeur):
+        return valeur
+
+    async def agreger_portefeuille(self, tenant, *, domaine=None, limite=100):
+        return {"propositions": [], "limites": [], "valeur": None}
+
+    async def lancer_specialistes(self, noms, base, tenant):
+        return []
+
+    def proximite_graphe(self, tenant, twin_ids):
+        return {}
+
+    async def recuperer_memoire(self, tenant, **kwargs):
+        return []
+
+    def enrichir_pack(self, pack, candidats, *, max_tokens=None):
+        return {**dict(pack), "memoire": []}
+
+    async def memoriser_session(self, tenant, session_id, question, resume, *,
+                                acteur, donnees=None):
+        return None
+
+    async def lire_calibration(self, tenant, prediction_id):
+        return None
+
+    async def calibrer_decision(self, tenant, decision_support, **kwargs):
+        return None
+
+    def decision_support_enrichi(self, decision_support, **kwargs):
+        return {**dict(decision_support or {}), "contrefactuel": None}
+
+
+def test_run_cognitif_journalise_les_quatre_etapes(conn):
     commande = CommandeExecution(
         tenant_id="banque", type="cognitif.analyser", idempotency_key="analyse-etapes",
         payload={"analyse": _payload()}, acteur="test",
@@ -55,25 +92,10 @@ def test_run_cognitif_journalise_les_quatre_etapes(conn, monkeypatch):
     run, _ = depot.creer_run(conn, commande)
     pris = depot.reclamer_run(conn, "w-test", 30)
 
-    async def sans_specialiste(*args, **kwargs):
-        return []
-
-    async def sans_memoire(*args, **kwargs):
-        return []
-
-    monkeypatch.setattr(analyse_service, "_lancer_specialistes", sans_specialiste)
-    monkeypatch.setattr(analyse_service, "_avec_connexion", sans_memoire)
-    monkeypatch.setattr(analyse_service, "_proximite_graphe", lambda *args, **kwargs: {})
-    monkeypatch.setattr(
-        analyse_service.resolveur_contexte, "resoudre",
-        lambda *args, **kwargs: SimpleNamespace(
-            entites=(), as_dict=lambda: {"tenant": "banque", "surface": "twin"}),
-    )
-
     manager = ProcessManager(_factory(conn), pris)
     resultat = asyncio.run(analyse_service.executer(
         tenant="banque", acteur="test", payload=_payload(),
-        run_id=run["run_id"], processus=manager,
+        runtime=RuntimeFactice(), run_id=run["run_id"], processus=manager,
     ))
 
     assert resultat["evaluation"]

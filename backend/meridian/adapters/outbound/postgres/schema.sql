@@ -852,3 +852,18 @@ CREATE INDEX IF NOT EXISTS ingestion_run_file
 CREATE UNIQUE INDEX IF NOT EXISTS ingestion_run_actif_par_source
     ON ingestion_run (tenant_id, source_id)
     WHERE etat IN ('QUEUED', 'FETCHING', 'INDEXING', 'EXTRACTING', 'PROJECTING', 'RETRY_WAIT');
+
+-- Travail (fil Aujourd'hui / Actualités) : read model Postgres alimenté depuis Mongo.
+-- `donnees` garde le document de cas complet ; `version` ne bouge que si le contenu change,
+-- ce qui rend le backfill rejouable. Les écritures restent Mongo tant que le chemin d'écriture
+-- n'est pas migré (docs/architecture/travail-migration.md). RLS volontairement non activé ici.
+CREATE TABLE IF NOT EXISTS travail (
+    id        text NOT NULL,
+    tenant_id text NOT NULL,
+    donnees   jsonb NOT NULL,
+    version   bigint NOT NULL DEFAULT 1,
+    maj_le    timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, id)
+);
+CREATE INDEX IF NOT EXISTS travail_recents
+    ON travail (tenant_id, maj_le DESC, id DESC);

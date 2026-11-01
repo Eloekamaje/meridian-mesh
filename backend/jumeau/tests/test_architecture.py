@@ -70,15 +70,8 @@ def test_le_domaine_ne_depend_pas_des_autres_couches():
             ), f"{fichier.name} dépend de {module}"
 
 
-# Dette assumée : ce service d'analyse est encore couplé à auth/boucle_routes/psycopg ; il doit
-# recevoir des ports avant de satisfaire la règle. Il reste isolé du reste de l'application.
-APPLICATION_EXCEPTIONS = {"analyse_service.py"}
-
-
 def test_l_application_ne_depend_pas_des_adapters_ni_de_l_infrastructure():
     for fichier in APPLICATION.rglob("*.py"):
-        if fichier.name in APPLICATION_EXCEPTIONS:
-            continue
         for module in _modules(fichier):
             assert not module.startswith(("jumeau", "meridian.adapters")), (
                 f"{fichier.name} dépend de {module}")

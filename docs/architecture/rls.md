@@ -25,7 +25,7 @@ discovery_run, identity_decision, objet_entreprise, outil_audit,
 valeur, memoire_durable, prediction_calibration,
 execution_run, execution_evenement, execution_outbox, execution_timer,
 execution_effet, execution_approbation, execution_etape,
-source_schedule, ingestion_run
+source_schedule, ingestion_run, travail
 ```
 
 `rls.TABLES_DERIVEES` couvre les tables filles sans `tenant_id`, via une policy `EXISTS` sur leur
@@ -258,7 +258,7 @@ WHERE n.nspname = current_schema()
     'valeur','memoire_durable','prediction_calibration',
     'execution_run','execution_evenement','execution_outbox','execution_timer',
     'execution_effet','execution_approbation','execution_etape',
-    'source_schedule','ingestion_run',
+    'source_schedule','ingestion_run','travail',
     'claim_preuve','claim_source','verification','fiche_vivante','evaluation'])
 ORDER BY c.relname;
 

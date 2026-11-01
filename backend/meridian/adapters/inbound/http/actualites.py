@@ -1,9 +1,12 @@
+import os
 import re
 from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
+
+from meridian.adapters.outbound.travail_store import travail_store
 
 import maturation
 import portee as portees
@@ -142,6 +145,12 @@ def build_actualites_router(deps):
 
     router = APIRouter()
 
+    def store_travail():
+        try:
+            return travail_store(db, os.environ.get("JUMEAU_PG_DSN"))
+        except RuntimeError as exc:
+            raise HTTPException(503, str(exc)) from exc
+
     @router.get("/actualites")
     async def actualites(
         date: Optional[str] = None,
@@ -260,7 +269,7 @@ def build_actualites_router(deps):
                     })
 
         # --- Travaux : une histoire par travail et par période (événements regroupés) ---
-        async for c in db.cases.find({}, NO_ID):
+        for c in await store_travail().lister_recents(limite=None):
             if c.get("jumeaux") and not any(j in aut for j in c["jumeaux"]):
                 continue
             if not portees.acces(c, acteur):
@@ -541,7 +550,7 @@ def build_actualites_router(deps):
             }
 
         elif hid.startswith("case-"):
-            c = await db.cases.find_one({"id": hid[5:]}, NO_ID)
+            c = await store_travail().lire(hid[5:])
             if not c or (c.get("jumeaux") and not any(j in aut for j in c["jumeaux"])) or not portees.acces(c, acteur):
                 raise HTTPException(404, "Actualité introuvable")
             histoire = {

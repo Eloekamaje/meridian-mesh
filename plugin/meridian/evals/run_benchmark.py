@@ -251,6 +251,7 @@ def normalize_scenario(raw: Any, fallback_id: str, index: int | None, source: Pa
         "slug": _slugify(str(identifiant)),
         "source": str(source),
         "prompt": prompt.strip(),
+        "context": raw.get("context") if isinstance(raw.get("context"), dict) else {},
         "mcp_tools": mcp_tools,
         "data_pack": data_pack,
         "expected_terms": _string_list(raw.get("expected_terms"), "expected_terms"),

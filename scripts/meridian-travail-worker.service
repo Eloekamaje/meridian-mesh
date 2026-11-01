@@ -1,0 +1,31 @@
+[Unit]
+Description=Meridian - synchronisation du read model Travail (Mongo vers Postgres)
+Documentation=file:///opt/meridian/docs/architecture/travail-migration.md
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Adapter ces chemins et cet utilisateur à l'installation réelle (ne pas exécuter en root).
+# User=meridian
+# Group=meridian
+WorkingDirectory=/opt/meridian/backend
+EnvironmentFile=/opt/meridian/backend/.env
+# Tenant du read model : laisser JUMEAU_TENANT dans .env, ou le fixer ici.
+#Environment=JUMEAU_TENANT=local
+Environment=JUMEAU_WORKSPACE=/var/lib/meridian
+Environment=HOME=/var/lib/meridian
+StateDirectory=meridian
+ExecStart=/opt/meridian/backend/.venv/bin/python -m meridian.adapters.inbound.worker.travail_worker --intervalle 5
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+# Le worker n'écoute aucun port ; il lit Mongo et écrit le read model Postgres.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/var/lib/meridian
+
+[Install]
+WantedBy=multi-user.target

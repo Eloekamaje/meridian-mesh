@@ -1,31 +1,20 @@
 """Cas d'usage `cognitif.analyser` exécutable hors FastAPI.
 
 La route HTTP et le worker partagent ce service. Il ne prend ni `Request` ni dépendance
-de transport : tenant, acteur et payload suffisent.
+de transport : tenant, acteur, payload et runtime injecté suffisent.
 """
 from __future__ import annotations
 
 import asyncio
-import os
-from contextlib import nullcontext
-from dataclasses import replace
 from types import SimpleNamespace
 from typing import Any, Mapping
 
-import psycopg
-
-import auth as auth_identite
-import boucle_routes
-from jumeau import calibration, composition, contexte as contexte_module, decision_cognitive, evaluation_cognitive
-from jumeau.execution.modele import AnnulationExecution, ApprobationRequise
-from jumeau import graph_store, portefeuille, profils, raisonnement as raisonnement_module
-from jumeau import reponse_cognitive, resolveur_contexte, retrieval_memoire, rls
-from jumeau import session_memoire, specialistes
-from jumeau import specialiste_decouverte, specialiste_impact, specialiste_preuve
-
-
-class ConfigurationManquante(RuntimeError):
-    """Configuration runtime absente (DSN)."""
+from meridian.application import composition, evaluation_cognitive, reponse_cognitive
+from meridian.application import resolveur_contexte
+from meridian.application.execution.modele import AnnulationExecution, ApprobationRequise
+from meridian.domain import contexte as contexte_module
+from meridian.domain import profils, raisonnement, specialistes
+from meridian.ports.analyse import ConfigurationManquante, RuntimeAnalyse
 
 
 def _objet(payload: Mapping[str, Any] | Any) -> Any:
@@ -34,86 +23,7 @@ def _objet(payload: Mapping[str, Any] | Any) -> Any:
     return SimpleNamespace(**dict(payload or {}))
 
 
-def _contexte(conn, tenant):
-    return rls.contexte_tenant(conn, tenant) if rls.est_actif() else nullcontext()
-
-
-def _dsn() -> str:
-    dsn = os.environ.get("JUMEAU_PG_DSN")
-    if not dsn:
-        raise ConfigurationManquante("JUMEAU_PG_DSN non défini")
-    return dsn
-
-
-def _assainir(valeur):
-    return boucle_routes._assainir(valeur)
-
-
-def _proximite_graphe(tenant: str, twin_ids: list[str]) -> dict[str, float]:
-    """Scores 1/(1+distance) pour les voisins des Twins actifs, sans rendre le graphe obligatoire."""
-    if not twin_ids:
-        return {}
-    contexte = None
-    try:
-        from jumeau import graph_store
-        contexte = graph_store.ouvrir()
-        scores: dict[str, float] = {}
-        for twin_id in twin_ids[:10]:
-            for voisin in contexte["store"].voisins(tenant, twin_id, profondeur=2):
-                identifiant = str(voisin.get("id") or "")
-                if identifiant:
-                    scores[identifiant] = max(scores.get(identifiant, 0.0),
-                                              1.0 / (1.0 + max(1, int(voisin.get("profondeur") or 1))))
-        return scores
-    except Exception:
-        return {}
-    finally:
-        if contexte is not None:
-            contexte["fermer"]()
-
-
-async def _avec_connexion(tenant: str, action):
-    def executer():
-        with psycopg.connect(_dsn(), connect_timeout=5) as conn:
-            with _contexte(conn, tenant):
-                return action(conn)
-
-    return await asyncio.to_thread(executer)
-
-
-SPECIALISTES = {
-    "decouverte": specialiste_decouverte.SpecialisteDecouverte,
-    "preuve": specialiste_preuve.SpecialistePreuve,
-    "impact": specialiste_impact.SpecialisteImpact,
-    "outcome": specialiste_impact.SpecialisteOutcome,
-}
-
-
-async def _lancer_specialistes(noms, base, tenant, dsn):
-    async def lancer(nom):
-        instance = SPECIALISTES[nom]()
-        graph_context = None
-        try:
-            if nom in {"impact", "decouverte"}:
-                try:
-                    graph_context = graph_store.ouvrir()
-                except Exception:
-                    graph_context = None
-            magasin = graph_context["store"] if graph_context is not None else None
-            with psycopg.connect(dsn, connect_timeout=5) as conn:
-                with _contexte(conn, tenant):
-                    contexte = replace(base, conn=conn, store=magasin)
-                    orchestrateur = specialistes.OrchestrateurSpecialistes([instance], timeout_s=8.0)
-                    dossier = await orchestrateur.analyser(contexte)
-                    return dossier["specialistes"][0]
-        finally:
-            if graph_context is not None:
-                graph_context["fermer"]()
-
-    return await asyncio.gather(*(lancer(nom) for nom in noms))
-
-
-def _fusionner_dossiers(dossiers, tenant):
+def _fusionner_dossiers(dossiers, tenant, runtime: RuntimeAnalyse):
     propositions = {}
     limites = []
     for dossier in dossiers:
@@ -128,8 +38,8 @@ def _fusionner_dossiers(dossiers, tenant):
     return {
         "tenant": tenant,
         "statut": "ok" if all(d.get("statut") == "ok" for d in dossiers) else "partiel",
-        "propositions": _assainir(ordonnees),
-        "specialistes": _assainir(dossiers),
+        "propositions": runtime.assainir(ordonnees),
+        "specialistes": runtime.assainir(dossiers),
         "limites": list(dict.fromkeys(limites)),
     }
 
@@ -164,9 +74,9 @@ async def _phase(processus, nom: str, seq: int, entree, fonction, *, sortie,
     return resultat
 
 
-async def executer(tenant: str, acteur: str, payload: Mapping[str, Any] | Any,
-                   run_id: str | None = None, verifier_annulation=None,
-                   processus=None) -> dict:
+async def executer(tenant: str, acteur: str, payload: Mapping[str, Any] | Any, *,
+                   runtime: RuntimeAnalyse | None = None, run_id: str | None = None,
+                   verifier_annulation=None, processus=None) -> dict:
     """Exécute la même analyse cognitive que la route `/analyser`, sans transport HTTP.
 
     Les étapes `contexte`, `specialistes`, `reponse` et `evaluation` sont journalisées
@@ -174,6 +84,9 @@ async def executer(tenant: str, acteur: str, payload: Mapping[str, Any] | Any,
     `evaluation` sont reprises depuis leur checkpoint : la résolution de contexte est
     volontairement recalculée pour rester bon marché et toujours fraîche.
     """
+    if runtime is None:
+        raise ConfigurationManquante("runtime d'analyse non configuré")
+
     def verifier():
         if verifier_annulation is not None and verifier_annulation():
             raise AnnulationExecution("analyse annulée")
@@ -182,7 +95,7 @@ async def executer(tenant: str, acteur: str, payload: Mapping[str, Any] | Any,
     p = _objet(payload)
 
     async def resoudre_contexte():
-        profil_demande = p.profil if auth_identite.mode() == "demo" else None
+        profil_demande = p.profil if runtime.mode_auth() == "demo" else None
         profil_local = profils.resoudre_profil(
             profil=profil_demande, identite={"role": acteur},
             question=p.question, autorite_max="proposition")
@@ -220,7 +133,7 @@ async def executer(tenant: str, acteur: str, payload: Mapping[str, Any] | Any,
         }
 
     def sortie_contexte(valeur_locale):
-        return _assainir({
+        return runtime.assainir({
             "profil": valeur_locale["profil"].as_dict(),
             "composition": valeur_locale["plan"].as_dict(),
             "twin_ids": valeur_locale["twin_ids"],
@@ -243,8 +156,8 @@ async def executer(tenant: str, acteur: str, payload: Mapping[str, Any] | Any,
         noms_local: list[str] = []
         valeur_locale = None
         if global_scope:
-            agregat = await _avec_connexion(tenant, lambda conn: portefeuille.agreger(
-                conn, tenant, domaine=p.domaine, limite=100))
+            agregat = await runtime.agreger_portefeuille(
+                tenant, domaine=p.domaine, limite=100)
             dossier_local = {
                 "tenant": tenant, "statut": "ok",
                 "propositions": agregat["propositions"],
@@ -260,9 +173,9 @@ async def executer(tenant: str, acteur: str, payload: Mapping[str, Any] | Any,
                 tenant=tenant, question=p.question, situation_id=p.situation_id,
                 twin_ids=tuple(twin_ids), application_id=p.application_id,
                 claim_ids=tuple(p.claim_ids), profondeur=p.profondeur)
-            dossiers = (await _lancer_specialistes(noms_local, base, tenant, _dsn())
+            dossiers = (await runtime.lancer_specialistes(noms_local, base, tenant)
                         if noms_local else [])
-            dossier_local = _fusionner_dossiers(dossiers, tenant) if dossiers else {
+            dossier_local = _fusionner_dossiers(dossiers, tenant, runtime) if dossiers else {
                 "tenant": tenant, "statut": "partiel", "propositions": [],
                 "specialistes": [],
                 "limites": ["aucun spécialiste mobilisé par la composition"],
@@ -271,7 +184,7 @@ async def executer(tenant: str, acteur: str, payload: Mapping[str, Any] | Any,
 
     specialistes_ = await _phase(
         processus, "specialistes", 1, {"run_id": run_id, "global_scope": global_scope},
-        executer_specialistes, sortie=_assainir)
+        executer_specialistes, sortie=runtime.assainir)
     dossier = specialistes_["dossier"]
     noms = list(specialistes_.get("noms") or [])
     valeur = specialistes_.get("valeur")
@@ -282,23 +195,23 @@ async def executer(tenant: str, acteur: str, payload: Mapping[str, Any] | Any,
         reponse = reponse_cognitive.composer(
             p.question, profil, plan, dossier, autorite_max="proposition")
         max_tokens = max(200, min(int(getattr(p, "max_tokens", None) or 6000), 20000))
-        proximite = _proximite_graphe(tenant, twin_ids)
+        proximite = runtime.proximite_graphe(tenant, twin_ids)
         entites = tuple(getattr(contexte_resolu, "entites", ()) or ())
         contexte_pack = contexte_module.construire(
             p.question, profil, dossier, max_tokens=max_tokens,
             entites=entites, proximite=proximite)
         try:
-            candidats = await _avec_connexion(tenant, lambda conn: retrieval_memoire.recuperer(
-                conn, tenant, question=p.question, twin_ids=tuple(twin_ids),
+            candidats = await runtime.recuperer_memoire(
+                tenant, question=p.question, twin_ids=tuple(twin_ids),
                 situation_id=p.situation_id,
                 scope=("session" if p.session_id else None),
-                scope_id=p.session_id, limite=12, proximite=proximite))
-            contexte_pack = retrieval_memoire.enrichir_pack(
+                scope_id=p.session_id, limite=12, proximite=proximite)
+            contexte_pack = runtime.enrichir_pack(
                 contexte_pack.as_dict(), candidats, max_tokens=max_tokens)
         except Exception:
             contexte_pack = contexte_pack.as_dict()
         reponse_dict = reponse.as_dict()
-        reponse_dict["decision_support"] = decision_cognitive.decision_support_enrichi(
+        reponse_dict["decision_support"] = runtime.decision_support_enrichi(
             reponse_dict.get("decision_support"), options=p.options or None,
             changements=p.changements, criteres=p.criteres)
         session_resultat = None
@@ -309,11 +222,10 @@ async def executer(tenant: str, acteur: str, payload: Mapping[str, Any] | Any,
                     for fait in (contexte_pack.get("faits") or ())[:3]
                 ) or str(reponse_dict.get("decision_support", {}).get("abstention")
                          or "Analyse cognitive")
-                session_resultat = await _avec_connexion(
-                    tenant, lambda conn: session_memoire.memoriser_session(
-                        conn, tenant, p.session_id, p.question, resume_session,
-                        acteur=acteur,
-                        donnees={"fingerprint": contexte_pack.get("fingerprint")}))
+                session_resultat = await runtime.memoriser_session(
+                    tenant, p.session_id, p.question, resume_session,
+                    acteur=acteur,
+                    donnees={"fingerprint": contexte_pack.get("fingerprint")})
             except Exception:
                 session_resultat = None
         prediction = None
@@ -325,14 +237,12 @@ async def executer(tenant: str, acteur: str, payload: Mapping[str, Any] | Any,
                     prediction_id = "pred-" + hashlib.sha256(
                         f"{tenant}:{run_id}:{p.decision_id}".encode("utf-8")).hexdigest()[:32]
                 if prediction_id:
-                    prediction = await _avec_connexion(
-                        tenant, lambda conn: calibration.lire(conn, tenant, prediction_id))
+                    prediction = await runtime.lire_calibration(tenant, prediction_id)
                 if prediction is None:
-                    prediction = await _avec_connexion(
-                        tenant, lambda conn: decision_cognitive.calibrer_decision_support(
-                            conn, tenant, reponse_dict.get("decision_support"),
-                            decision_id=p.decision_id, confidence=p.confidence,
-                            prediction_id=prediction_id))
+                    prediction = await runtime.calibrer_decision(
+                        tenant, reponse_dict.get("decision_support"),
+                        decision_id=p.decision_id, confidence=p.confidence,
+                        prediction_id=prediction_id)
             except Exception:
                 prediction = None
         return {
@@ -344,13 +254,13 @@ async def executer(tenant: str, acteur: str, payload: Mapping[str, Any] | Any,
 
     reponse_phase = await _phase(
         processus, "reponse", 2, {"run_id": run_id, "specialistes": noms},
-        composer_reponse, sortie=_assainir)
+        composer_reponse, sortie=runtime.assainir)
     reponse_dict = reponse_phase["reponse"]
     contexte_pack = reponse_phase["contexte"]
     session_resultat = reponse_phase.get("session")
     prediction = reponse_phase.get("prediction")
 
-    trace = raisonnement_module.construire(
+    trace = raisonnement.construire(
         p.question, profil, plan, contexte_pack, dossier, reponse_dict)
     socle = reponse_dict.get("socle") or {}
     resultat = {
@@ -358,16 +268,17 @@ async def executer(tenant: str, acteur: str, payload: Mapping[str, Any] | Any,
         "scope": ("enterprise" if global_scope and not p.domaine else "portfolio")
         if global_scope else "application",
         "domaine": p.domaine,
-        "profil": _assainir(profil.as_dict()),
-        "composition": _assainir(plan.as_dict()),
+        "profil": runtime.assainir(profil.as_dict()),
+        "composition": runtime.assainir(plan.as_dict()),
         "specialistes_executes": list(noms),
-        "dossier": _assainir(dossier),
-        "reponse": _assainir(reponse_dict),
-        "contexte": _assainir(contexte_pack),
-        "contexte_resolu": _assainir(contexte_resolu.as_dict()),
-        "raisonnement": _assainir(trace.as_dict()),
-        "prediction": _assainir(prediction),
-        "memoire_session": _assainir(session_resultat) if session_resultat is not None else None,
+        "dossier": runtime.assainir(dossier),
+        "reponse": runtime.assainir(reponse_dict),
+        "contexte": runtime.assainir(contexte_pack),
+        "contexte_resolu": runtime.assainir(contexte_resolu.as_dict()),
+        "raisonnement": runtime.assainir(trace.as_dict()),
+        "prediction": runtime.assainir(prediction),
+        "memoire_session": (runtime.assainir(session_resultat)
+                            if session_resultat is not None else None),
         "qualite": {
             "faits": len(socle.get("faits") or ()),
             "preuves": len(socle.get("preuves") or ()),
@@ -379,12 +290,13 @@ async def executer(tenant: str, acteur: str, payload: Mapping[str, Any] | Any,
         },
     }
     if valeur is not None:
-        resultat["valeur"] = _assainir(valeur)
+        resultat["valeur"] = runtime.assainir(valeur)
     verifier()
 
     async def evaluer():
         return evaluation_cognitive.evaluer(resultat)
 
     resultat["evaluation"] = await _phase(
-        processus, "evaluation", 3, {"run_id": run_id}, evaluer, sortie=_assainir)
+        processus, "evaluation", 3, {"run_id": run_id}, evaluer,
+        sortie=runtime.assainir)
     return resultat

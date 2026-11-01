@@ -45,12 +45,15 @@ from jumeau import orchestrateur as jumeau_orchestrateur  # noqa: E402
 from jumeau import audit_harness as jumeau_audit_harness  # noqa: E402
 from jumeau import capacites as jumeau_capacites  # noqa: E402
 from jumeau import chargeur_manifestes as jumeau_chargeur_manifestes  # noqa: E402
-from jumeau import import_identite as jumeau_import_identite  # noqa: E402
+from jumeau import import_identite as jumeau_import_identite  # noqa: E402,F401  (surface de compatibilité)
 from meridian.adapters.outbound.mongo.commandes_depot import CommandesDepot  # noqa: E402
+from meridian.adapters.outbound.naissance_runtime import NaissanceRuntimeLocal  # noqa: E402
 from meridian.application.commandes import (  # noqa: E402
     CHAMPS_SECRETS, CommandeIntrouvable, CommandeModifiee, EtapeInvalide,
+    JumeauExistant, LancementRefuse, NaissanceIndisponible,
     apercu_import as apercu_commande,
     creer_commande as creer_commande_metier,
+    lancer_commande as lancer_commande_metier,
     lister_commandes as lister_commandes_metier,
     lire_commande as lire_commande_metier,
     maj_commande as maj_commande_metier,
@@ -1363,7 +1366,8 @@ async def _connexions_commandes():
 
 
 def _depot_commandes():
-    return CommandesDepot(db.commandes, connexions=_connexions_commandes)
+    return CommandesDepot(db.commandes, connexions=_connexions_commandes,
+                          jumeaux=getattr(db, "jumeaux", None))
 
 
 @api_router.post("/commandes", status_code=201)
@@ -1616,121 +1620,30 @@ async def apercu_import(cid: str, payload: ImportApercu):
         raise HTTPException(400, str(exc)) from exc
 
 
-# Reste dans l'adapter : le lancement crée le jumeau, l'espace en mémoire et la tâche de naissance en un seul
-# geste ; l'extraire demanderait des ports Jumeaux/Naissance hors du périmètre de CommandesStore.
+# Le lancement crée le jumeau, met à jour la commande et démarre la tâche de naissance : la règle vit dans
+# l'application, le runtime local (tâches, notifications, journal) reste un adapter.
 @api_router.post("/commandes/{cid}/lancer")
 async def lancer_commande(cid: str, acteur: str = Depends(auth_identite.acteur), x_espace: Optional[str] = Header(None)):
     _, espace = resoudre_perimetre(acteur, x_espace)
-    doc = await db.commandes.find_one({"id": cid}, NO_ID)
-    if not doc:
-        raise HTTPException(404, "Commande introuvable")
-    if doc.get("etat") == "lancee" and doc.get("jumeau_id"):
-        # Rejeu idempotent : le client a perdu la réponse du premier lancement.
-        pretes = [s for s in doc.get("sources", []) if s.get("statut") == "prete"]
-        return {"ok": True, "jumeau_id": doc["jumeau_id"], "sources_lancees": len(pretes),
-                "sources_reportees": len(doc.get("sources", [])) - len(pretes),
-                "naissance": (doc.get("naissance") or {}).get("etat"), "deja": True}
-    j = doc["jumeau"]
-    application_id = (j.get("application_id") or "").strip().lower()
-    nom = (j.get("nom") or "").strip()
-    proprietaire = (j.get("proprietaire") or "").strip()
-    if not application_id or not nom or not proprietaire:
-        raise HTTPException(422, "Identité incomplète (application_id, nom et propriétaire requis)")
-    if len(nom) > 200 or len(proprietaire) > 200:
-        raise HTTPException(422, "Nom ou propriétaire trop long (200 caractères maximum)")
-    if not jumeau_import_identite.APPLICATION_ID.fullmatch(application_id):
-        raise HTTPException(422, "application_id invalide (minuscules, chiffres, . _ -)")
-    j = {**j, "application_id": application_id, "nom": nom, "proprietaire": proprietaire}
-    doc = {**doc, "jumeau": j}
-    pretes = [s for s in doc.get("sources", []) if s.get("statut") == "prete"]
-    non_branchees = [s for s in pretes if not connecteur_branche(s.get("connecteur"))]
-    if non_branchees:
-        noms = ", ".join(sorted({str(s.get("nom") or s.get("connecteur")) for s in non_branchees}))
-        raise HTTPException(422, f"Connecteur non branché dans les sources prêtes : {noms}")
-    if not pretes:
-        raise HTTPException(422, "Au moins une source prête est requise pour lancer")
-    if not os.environ.get("JUMEAU_PG_DSN"):
-        raise HTTPException(503, "La naissance nécessite la couche cognitive Postgres (JUMEAU_PG_DSN).")
-    connecteurs = {s.get("connecteur") for s in pretes}
-    if not naissance_possible(connecteurs):
-        raise HTTPException(
-            422,
-            "Aucune source prête ne permet une naissance : ajoutez GitHub, ou ServiceNow/CMDB avec Datadog, OTLP ou Confluence.",
+    store = _depot_commandes()
+    runtime = NaissanceRuntimeLocal(db, store, notifier=notifier, journaler=journaler)
+    try:
+        resultat = await lancer_commande_metier(
+            store, runtime, cid,
+            acteur=acteur, espace_id=espace["id"],
+            connecteur_branche=connecteur_branche,
         )
-    jid = application_id
-    if jid in NAISSANCES_EN_COURS or await db.jumeaux.find_one({"id": jid}):
-        raise HTTPException(409, "Un jumeau porte déjà cet identifiant — choisissez un autre App ID")
-    nouveau = {
-        "id": jid, "nom": nom, "domaine": "Non classé", "mission": "",
-        "proprietaire": proprietaire,
-        "statut": "observation", "autonomie": "aucune",
-        "couverture": min(20 + len(pretes) * 9, 88), "fraicheur": "à l'instant", "sante": "inconnu",
-        "position": {"x": 1260, "y": 40},
-        "sources": {s.get("connecteur"): True for s in pretes if s.get("connecteur")},
-    }
-    try:
-        await db.jumeaux.insert_one({**nouveau, "_id": jid})
-    except DuplicateKeyError as exc:
-        raise HTTPException(409, "Un jumeau porte déjà cet identifiant — choisissez un autre App ID") from exc
-    if isinstance(espace.get("jumeaux"), dict) and "*" not in espace["jumeaux"]:
-        espace["jumeaux"][jid] = "complet"
-    maintenant = datetime.now(timezone.utc).isoformat()
-    etat_commande = {"etat": "lancee", "jumeau_id": jid, "lancee_le": maintenant,
-                     "naissance": {"etat": "en_cours", "debut": maintenant}}
-    await db.commandes.update_one({"id": cid}, {"$set": etat_commande})
-    await journaler(acteur, espace["id"], "lancement d'une commande", jid, f"{nom} — {len(pretes)} source(s) prête(s)")
-    NAISSANCES_EN_COURS.add(jid)
-    TACHES_NAISSANCE.add(t := asyncio.create_task(_naitre(doc, jid)))
-    t.add_done_callback(TACHES_NAISSANCE.discard)
-    t.add_done_callback(lambda _: NAISSANCES_EN_COURS.discard(jid))
-    return {"ok": True, "jumeau_id": jid, "sources_lancees": len(pretes),
-            "sources_reportees": len(doc.get("sources", [])) - len(pretes), "naissance": "en_cours"}
-
-
-TACHES_NAISSANCE = set()  # références fortes : une tâche asyncio sans référence peut être collectée en cours de route
-NAISSANCES_EN_COURS = set()  # un seul lancement par jumeau, même si deux demandes arrivent en même temps
-NAISSANCES_SIMULTANEES = asyncio.Semaphore(2)
-DUREE_MAX_NAISSANCE = 30 * 60  # secondes
-
-
-async def _naitre(commande, jid):
-    """ponytail: tâche dans le processus de l'API, bornée en nombre et en durée ; Step Functions sur AWS."""
-    try:
-        async with NAISSANCES_SIMULTANEES:
-            with psycopg.connect(os.environ["JUMEAU_PG_DSN"], autocommit=True) as conn:
-                await asyncio.wait_for(jumeau_naissance.naitre(conn, db, commande, jid), DUREE_MAX_NAISSANCE)
-        etat = await db.commandes.find_one({"id": commande["id"]}, {"_id": 0, "naissance": 1})
-        naissance = (etat or {}).get("naissance") or {}
-        if naissance.get("etat") == "echec":
-            await _echec_naissance(commande, jid, naissance.get("message") or "erreur pendant la naissance")
-        elif naissance.get("etat") == "sans_substance":
-            await _notifier_naissance(
-                jid,
-                f"Le jumeau {commande.get('jumeau', {}).get('nom') or jid} est créé, mais sa naissance est "
-                f"incomplète : {naissance.get('message') or 'source de substance manquante'}.",
-            )
-    except asyncio.TimeoutError:
-        await _echec_naissance(commande, jid, "durée dépassée")
-    except Exception:  # noqa: BLE001 - la commande doit refléter un échec, jamais rester « en cours »
-        journal.exception("naissance de %s", jid)
-        await _echec_naissance(commande, jid, "erreur pendant la naissance")
-
-
-async def _echec_naissance(commande, jid, message):
-    await db.commandes.update_one(
-        {"id": commande["id"]},
-        {"$set": {"naissance.etat": "echec", "naissance.message": message,
-                  "naissance.fin": datetime.now(timezone.utc).isoformat()}},
-    )
-    nom = (commande.get("jumeau") or {}).get("nom") or jid
-    await _notifier_naissance(jid, f"La naissance de {nom} a échoué : {message}.")
-
-
-async def _notifier_naissance(jid, texte):
-    try:
-        await notifier("naissance", texte, f"/jumeaux/{jid}/revue")
-    except Exception:  # noqa: BLE001 - une notification manquée ne masque pas l'échec déjà journalisé
-        journal.warning("notification de naissance impossible", exc_info=True)
+    except CommandeIntrouvable as exc:
+        raise HTTPException(404, "Commande introuvable") from exc
+    except JumeauExistant as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except NaissanceIndisponible as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except LancementRefuse as exc:
+        raise HTTPException(422, str(exc)) from exc
+    if not resultat.get("deja") and isinstance(espace.get("jumeaux"), dict) and "*" not in espace["jumeaux"]:
+        espace["jumeaux"][resultat["jumeau_id"]] = "complet"
+    return resultat
 
 
 @api_router.get("/commandes/{cid}/naissance")

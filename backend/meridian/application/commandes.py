@@ -1,6 +1,7 @@
 """Cas d'usage de la commande de jumeau : CRUD, tests de sources, import et aperçu."""
 from __future__ import annotations
 
+import logging
 import secrets
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from datetime import datetime, timezone
@@ -8,6 +9,9 @@ from typing import Any
 
 from meridian.domain import import_identite
 from meridian.ports.commandes import CommandesStore
+from meridian.ports.naissance import NaissanceRuntime
+
+journal = logging.getLogger("meridian")
 
 CHAMPS_SECRETS = {"secret", "token", "jeton", "password", "passwd", "mot_de_passe",
                   "api_key", "apikey", "authorization", "bearer"}
@@ -27,6 +31,34 @@ class CommandeModifiee(RuntimeError):
 
 class EtapeInvalide(ValueError):
     """L'étape demandée ne fait pas partie du parcours de commande."""
+
+
+class LancementRefuse(ValueError):
+    """Le lancement ne satisfait pas une condition métier."""
+
+
+class IdentiteInvalide(LancementRefuse):
+    """L'identité du jumeau à créer est incomplète ou mal formée."""
+
+
+class ConnecteurNonBranche(LancementRefuse):
+    """Une source prête désigne un connecteur que le serveur n'implémente pas."""
+
+
+class SourcePreteRequise(LancementRefuse):
+    """Aucune source prête ne peut alimenter la naissance."""
+
+
+class NaissanceImpossible(LancementRefuse):
+    """Les sources prêtes ne fournissent ni code, ni ancre et substance."""
+
+
+class JumeauExistant(RuntimeError):
+    """Un jumeau porte déjà cet identifiant."""
+
+
+class NaissanceIndisponible(RuntimeError):
+    """La couche cognitive Postgres n'est pas configurée."""
 
 
 def sans_secrets(valeur: Any) -> Any:
@@ -186,6 +218,97 @@ def naissance_possible(connecteurs: Iterable[str]) -> bool:
         bool(connecteurs & {"servicenow", "cmdb"})
         and bool(connecteurs & {"datadog", "otlp", "confluence"})
     )
+
+
+async def lancer_commande(
+    store: CommandesStore,
+    runtime: NaissanceRuntime,
+    cid: str,
+    *,
+    acteur: str,
+    espace_id: str,
+    connecteur_branche: Callable[[Any], Any],
+) -> dict[str, Any]:
+    """Lance la naissance d'un jumeau : validation, registre, commande et tâche de naissance."""
+    doc = await store.lire(cid)
+    if doc is None:
+        raise CommandeIntrouvable(cid)
+    if doc.get("etat") == "lancee" and doc.get("jumeau_id"):
+        # Rejeu idempotent : le client a perdu la réponse du premier lancement.
+        pretes = [s for s in doc.get("sources", []) if s.get("statut") == "prete"]
+        return {"ok": True, "jumeau_id": doc["jumeau_id"], "sources_lancees": len(pretes),
+                "sources_reportees": len(doc.get("sources", [])) - len(pretes),
+                "naissance": (doc.get("naissance") or {}).get("etat"), "deja": True}
+    j = doc["jumeau"]
+    application_id = (j.get("application_id") or "").strip().lower()
+    nom = (j.get("nom") or "").strip()
+    proprietaire = (j.get("proprietaire") or "").strip()
+    if not application_id or not nom or not proprietaire:
+        raise IdentiteInvalide("Identité incomplète (application_id, nom et propriétaire requis)")
+    if len(nom) > 200 or len(proprietaire) > 200:
+        raise IdentiteInvalide("Nom ou propriétaire trop long (200 caractères maximum)")
+    if not import_identite.APPLICATION_ID.fullmatch(application_id):
+        raise IdentiteInvalide("application_id invalide (minuscules, chiffres, . _ -)")
+    j = {**j, "application_id": application_id, "nom": nom, "proprietaire": proprietaire}
+    doc = {**doc, "jumeau": j}
+    pretes = [s for s in doc.get("sources", []) if s.get("statut") == "prete"]
+    non_branchees = [s for s in pretes if not connecteur_branche(s.get("connecteur"))]
+    if non_branchees:
+        noms = ", ".join(sorted({str(s.get("nom") or s.get("connecteur")) for s in non_branchees}))
+        raise ConnecteurNonBranche(f"Connecteur non branché dans les sources prêtes : {noms}")
+    if not pretes:
+        raise SourcePreteRequise("Au moins une source prête est requise pour lancer")
+    if not runtime.disponible():
+        raise NaissanceIndisponible("La naissance nécessite la couche cognitive Postgres (JUMEAU_PG_DSN).")
+    connecteurs = {s.get("connecteur") for s in pretes}
+    if not naissance_possible(connecteurs):
+        raise NaissanceImpossible(
+            "Aucune source prête ne permet une naissance : ajoutez GitHub, ou ServiceNow/CMDB "
+            "avec Datadog, OTLP ou Confluence.",
+        )
+    jid = application_id
+    if runtime.en_cours(jid) or await store.jumeau_existe(jid):
+        raise JumeauExistant("Un jumeau porte déjà cet identifiant — choisissez un autre App ID")
+    nouveau = {
+        "id": jid, "nom": nom, "domaine": "Non classé", "mission": "",
+        "proprietaire": proprietaire,
+        "statut": "observation", "autonomie": "aucune",
+        "couverture": min(20 + len(pretes) * 9, 88), "fraicheur": "à l'instant", "sante": "inconnu",
+        "position": {"x": 1260, "y": 40},
+        "sources": {s.get("connecteur"): True for s in pretes if s.get("connecteur")},
+    }
+    if not await store.inserer_jumeau(nouveau):
+        raise JumeauExistant("Un jumeau porte déjà cet identifiant — choisissez un autre App ID")
+    maintenant = _maintenant()
+    etat_commande = {"etat": "lancee", "jumeau_id": jid, "lancee_le": maintenant,
+                     "naissance": {"etat": "en_cours", "debut": maintenant}}
+    await store.marquer_lancee(cid, etat_commande)
+    await runtime.demarrer(doc, jid, acteur=acteur, espace_id=espace_id)
+    return {"ok": True, "jumeau_id": jid, "sources_lancees": len(pretes),
+            "sources_reportees": len(doc.get("sources", [])) - len(pretes), "naissance": "en_cours"}
+
+
+async def notifier_naissance(runtime: NaissanceRuntime, jid: str, texte: str) -> None:
+    """Une notification manquée ne masque pas l'échec déjà journalisé."""
+    try:
+        await runtime.notifier(jid, texte)
+    except Exception:  # noqa: BLE001 - la commande reflète déjà l'issue, la notification reste secondaire
+        journal.warning("notification de naissance impossible", exc_info=True)
+
+
+async def echec_naissance(
+    store: CommandesStore,
+    runtime: NaissanceRuntime,
+    commande: Mapping[str, Any],
+    jid: str,
+    message: str,
+    *,
+    maintenant: str | None = None,
+) -> None:
+    """La commande reflète un échec de naissance, jamais un état « en cours » qui ne finirait pas."""
+    await store.marquer_echec_naissance(commande["id"], message, maintenant or _maintenant())
+    nom = (commande.get("jumeau") or {}).get("nom") or jid
+    await notifier_naissance(runtime, jid, f"La naissance de {nom} a échoué : {message}.")
 
 
 async def apercu_import(

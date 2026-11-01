@@ -39,7 +39,7 @@ server.py                 point d'entrée ASGI mince
 | `jumeau/import_identite.py` | `meridian/domain/import_identite.py` | déplacé, shim |
 | `jumeau/source_routes.py` | `meridian/adapters/inbound/http/sources.py` | déplacé, shim |
 | `jumeau/source_worker.py` | `meridian/adapters/inbound/worker/source_worker.py` | déplacé, shim |
-| `jumeau/analyse_service.py` | `meridian/application/analyse_service.py` | déplacé, exception de ports documentée |
+| `jumeau/analyse_service.py` | `meridian/application/analyse_service.py` | déplacé, port `RuntimeAnalyse` |
 | `jumeau/backfill_graphe.py` | `meridian/adapters/outbound/neo4j/backfill_graphe.py` | déplacé, shim |
 | `jumeau/flux.py` | `meridian/adapters/inbound/http/flux.py` | déplacé, shim |
 | `jumeau/execution/**` | `meridian/application/execution/**` + `adapters/outbound/{postgres,neo4j}/**` + `adapters/inbound/{http/runs,worker/execution_worker}` | déplacé, shims |
@@ -87,22 +87,20 @@ Tous les modules top-level restants ont été déplacés par lots, avec shim `sy
 Les données de ces modules suivent : `schema.sql` (Postgres), `methodes/` (application),
 `charte_flore.md` et `references/` (LLM).
 
-Il ne reste en `jumeau` que `analyse_service` (couplé à `jumeau.execution`, à `auth`/`boucle_routes`
-et à psycopg), `flux` (FastAPI/SSE, dont le propriétaire est `adapters/inbound/http`) et
-`backfill_graphe` (hors périmètre de ce lot). Les autres dépendances legacy assumées sont
-`postgres/rls.py → jumeau.tenant`, `llm/flore.py` et `llm/mobilisation.py → jumeau.flux`, et
-`llm/gardien.py → jumeau.execution.outbox` (migration en cours par un autre lot).
+Il ne reste en `jumeau` que des shims de compatibilité. `rls` et `gardien` pointent désormais vers
+`meridian` (`domain.tenant`, `application.outbox`) ; `flore` et `mobilisation` conservent l'import
+`jumeau.flux` (SSE inbound) comme dette explicite.
 
 ## État de `jumeau`
 
 À ce stade, `backend/jumeau/` est un **namespace de compatibilité** : chaque module est un shim
 `sys.modules` vers `meridian`. Les seuls fichiers non-shims sont `__init__.py` et
-`execution/__init__.py` (ré-exports). `analyse_service.py` vit dans `application/` mais reste une
-exception de dépendance tant qu'il n'a pas reçu ses ports (`auth`, `boucle_routes`, `psycopg`).
+`execution/__init__.py` (ré-exports). `analyse_service.py` vit dans `application/` et dépend du port
+`RuntimeAnalyse`, implémenté dans `adapters/outbound/analyse_runtime.py`.
 
 ## Prochaines extractions
 
-1. Extraire `analyse_service` derrière des ports, puis le déplacer sous `meridian/application/`.
+1. ~Extraire `analyse_service` derrière des ports~ (fait : `RuntimeAnalyse`).
 2. Déplacer `flux` sous `meridian/adapters/inbound/http/` avec l'accord du propriétaire de l'inbound.
 3. Extraire des ports étroits (`KnowledgeStore`, `EntrepriseStore`, `GraphStore`, `EventPublisher`)
    pour sortir les services DB-couplés aujourd'hui placés sous `adapters/outbound/postgres/`.

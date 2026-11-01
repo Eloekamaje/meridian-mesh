@@ -74,7 +74,7 @@ def test_toutes_les_tables_avec_tenant_sont_couvertes():
         "valeur", "memoire_durable", "prediction_calibration",
         "execution_run", "execution_evenement", "execution_outbox", "execution_timer",
         "execution_effet", "execution_approbation", "execution_etape",
-        "source_schedule", "ingestion_run",
+        "source_schedule", "ingestion_run", "travail",
     }
     assert attendues == set(rls.TABLES)
     assert set(rls.TABLES) | set(rls.TABLES_DERIVEES) == set(rls.TOUTES_LES_TABLES)
@@ -218,7 +218,7 @@ def test_tables_execution_memoire_ingestion_et_valeur_couvertes():
         "memoire_durable", "valeur", "prediction_calibration",
         "execution_run", "execution_evenement", "execution_outbox", "execution_timer",
         "execution_effet", "execution_approbation", "execution_etape",
-        "source_schedule", "ingestion_run",
+        "source_schedule", "ingestion_run", "travail",
     }
     assert attendues <= set(rls.TABLES)
     sql = rls.sql_activation()

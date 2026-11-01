@@ -106,7 +106,7 @@ Les agents `agents/*.md` peuvent être copiés dans `.opencode/agents/` ou conve
 
 Chaque skill suit la divulgation progressive : `SKILL.md` court, `references/` pour les contrats et `evals/` pour les cas de test. Les skills passent le validateur Agent Skills et sont packageables avec `skill-creator/scripts/package_skill.py`.
 
-Le benchmark et la décision de pilote sont documentés dans [`evals/BENCHMARK.md`](evals/BENCHMARK.md) et [`evals/PILOT-REVIEW.md`](evals/PILOT-REVIEW.md). Décision : no-go production, go conditionnel pour une seconde itération avec revue humaine et outcome réel.
+Le benchmark et la décision de pilote sont documentés dans [`evals/BENCHMARK.md`](evals/BENCHMARK.md), [`evals/PILOT-REVIEW.md`](evals/PILOT-REVIEW.md) et [`evals/PILOT-2026-11-01.md`](evals/PILOT-2026-11-01.md). Les runs réels du pilote utilisent [`evals/run_deepseek.py`](evals/run_deepseek.py) sur le backend `JUMEAU_MODELE=deepseek` ; **Claude Code n'a pas été appelé**. Le harness Claude reste disponible comme artefact historique. Décision : no-go production, go conditionnel pour une seconde itération avec revue humaine et outcome réel.
 
 ## Utilisation
 

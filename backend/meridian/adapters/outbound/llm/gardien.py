@@ -311,7 +311,8 @@ async def _synchroniser_graphe(conn, db, jumeau, store=None):
     if conn is None or db is None:
         return None
     from meridian.adapters.outbound.neo4j import graph_store
-    from jumeau.execution.outbox import MODE_DIRECT, mode_projection, planifier_projection
+    from meridian.application.outbox import MODE_DIRECT, mode_projection, planifier_projection
+    from meridian.adapters.outbound.postgres import execution_depot as _outbox_depot
 
     try:
         mode = mode_projection()
@@ -348,7 +349,7 @@ async def _synchroniser_graphe(conn, db, jumeau, store=None):
         if mode == MODE_DIRECT:
             rapport = graph_store.synchroniser_depuis_identites(
                 magasin, jumeau["tenant_id"], twins, relations)
-        planifier_projection(conn, jumeau["tenant_id"], twins, relations)
+        planifier_projection(conn, jumeau["tenant_id"], twins, relations, depot=_outbox_depot)
         return rapport
     except (ValueError, RuntimeError):
         journal.debug("gardien %s : graphe non configuré ou indisponible", jumeau["id"], exc_info=True)

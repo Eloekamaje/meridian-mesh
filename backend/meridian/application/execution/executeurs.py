@@ -15,6 +15,7 @@ def executer_cognitif(
     run: Mapping[str, Any],
     *,
     analyse_service: Any,
+    runtime: Any = None,
     connect: Callable[[], Any],
     depot: Any,
 ) -> Mapping[str, Any]:
@@ -32,13 +33,15 @@ def executer_cognitif(
     processus = ProcessManager(connect, run, verifier_annulation=annule, depot=depot)
     return asyncio.run(analyse_service.executer(
         tenant=str(run["tenant_id"]), acteur=acteur, payload=analyse,
-        run_id=str(run["run_id"]), verifier_annulation=annule, processus=processus,
+        runtime=runtime, run_id=str(run["run_id"]),
+        verifier_annulation=annule, processus=processus,
     ))
 
 
 def creer_executeurs(
     *,
     analyse_service: Any,
+    runtime: Any = None,
     connect: Callable[[], Any],
     depot: Any,
 ) -> dict[str, Callable[[Mapping[str, Any]], Mapping[str, Any]]]:
@@ -46,7 +49,8 @@ def creer_executeurs(
 
     def cognitif_analyser(run: Mapping[str, Any]) -> Mapping[str, Any]:
         return executer_cognitif(
-            run, analyse_service=analyse_service, connect=connect, depot=depot)
+            run, analyse_service=analyse_service, runtime=runtime,
+            connect=connect, depot=depot)
 
     return {"cognitif.analyser": cognitif_analyser}
 

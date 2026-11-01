@@ -7,7 +7,7 @@ Installation **projet**, sans modification de `~/.claude`.
 - dépôt cloné à la racine attendue ;
 - backend Méridian joignable (`http://127.0.0.1:8001/api`) ;
 - `backend/.venv` avec `mcp` et `requests`, ou `MERIDIAN_PYTHON` vers un Python équivalent ;
-- CLI `claude` pour le MCP et les runs.
+- CLI `claude` pour le MCP ; les runs réels DeepSeek (`run_deepseek.py`) n'en ont pas besoin.
 
 ## Vérifier et lier les skills
 
@@ -43,9 +43,22 @@ Alternative versionnable : copier `.mcp.json.example` en `.mcp.json`, puis adapt
 le chemin Python et l'URL. `.mcp.json` est une configuration locale de projet ; ne
 pas le confondre avec la configuration globale.
 
-## Benchmark
+## Benchmark DeepSeek (runs réels, sans Claude Code)
 
-Depuis `backend/` :
+Le backend doit tourner avec `JUMEAU_MODELE=deepseek` et `DEEPSEEK_API_KEY`. Depuis `backend/` :
+
+```bash
+PYTHONPATH=..:../backend .venv/bin/python ../plugin/meridian/evals/run_deepseek.py \
+  --scenario ../plugin/meridian/evals/scenarios/incident-paiements.json \
+  --scenario ../plugin/meridian/evals/scenarios/changement-reglementaire.json \
+  --api-url http://127.0.0.1:8002/api --tenant demo --runs 1 \
+  --output /tmp/meridian-deepseek-pilot
+```
+
+Ajouter `--start-backend` pour démarrer un backend local temporaire si `/health` ne répond pas.
+Le runner n'appelle jamais Claude Code et n'affiche aucun secret.
+
+## Harness Claude Code (historique)
 
 ```bash
 PYTHONPATH=..:../backend .venv/bin/python ../plugin/meridian/evals/run_benchmark.py \
@@ -54,8 +67,8 @@ PYTHONPATH=..:../backend .venv/bin/python ../plugin/meridian/evals/run_benchmark
   --runs 1 --max-budget-usd 1.00 --tenant demo --arm skill+mcp --dry-run
 ```
 
-Retirer `--dry-run` pour un run réel. `--arm skill+mcp` borne le coût à un seul
-run par scénario ; les bras `checklist+mcp` et `data-only` sont optionnels.
+Retirer `--dry-run` pour un run réel. Ce harness reste un artefact de comparaison ; les runs réels
+du 2026-11-01 utilisent `run_deepseek.py`.
 
 ## Limites
 

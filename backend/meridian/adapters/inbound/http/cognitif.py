@@ -22,9 +22,10 @@ from pydantic import BaseModel, Field
 import auth as auth_identite
 
 from meridian.adapters.inbound.http import boucle as boucle_routes
+from meridian.adapters.outbound import analyse_runtime
 from meridian.application import analyse_service
+from meridian.application.analyse_service import ConfigurationManquante
 from jumeau import evaluation_cognitive
-from jumeau.analyse_service import ConfigurationManquante
 from jumeau.execution import depot
 from jumeau.execution.modele import CommandeExecution, ConflitIdempotence, QuotaDepasse
 from jumeau import application_memoire, attention, boucle, calibration
@@ -268,6 +269,10 @@ async def _avec_connexion(tenant, action):
                 return action(conn)
 
     return await _appeler(executer)
+
+
+def _runtime_analyse():
+    return analyse_runtime.RuntimeAnalysePostgres()
 
 
 @router.get("/twins")
@@ -587,7 +592,9 @@ async def analyser_cognitif(
     boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
     try:
-        return await analyse_service.executer(tenant=tenant, acteur=acteur, payload=payload)
+        return await analyse_service.executer(
+            tenant=tenant, acteur=acteur, payload=payload,
+            runtime=_runtime_analyse())
     except HTTPException:
         raise
     except ValueError as exc:

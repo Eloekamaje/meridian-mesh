@@ -1,4 +1,77 @@
-# Runner de benchmark Méridian
+# Runners de benchmark Méridian
+
+Deux runners coexistent :
+
+- **`run_deepseek.py`** — runs réels sur le backend Méridian configuré avec
+  `JUMEAU_MODELE=deepseek` ; **n'appelle jamais Claude Code**. C'est le chemin utilisé pour le
+  pilote du 2026-11-01.
+- **`run_benchmark.py`** — harness historique de la CLI Claude Code, conservé pour comparer des
+  bras déclaratifs. Il n'est **pas** utilisé par le runner DeepSeek ; les runs réels du pilote ne
+  l'ont pas invoqué.
+
+## Runner DeepSeek (runs réels)
+
+`run_deepseek.py` envoie le prompt du scénario à `POST /api/aurora/demander` avec le contexte et
+la sélection (`context.twins`), puis applique les mêmes critères objectifs que le harness Claude
+(termes attendus/interdits, sections, durée, coût). Il ajoute deux critères : `http_status` et
+`modele_deepseek` (le modèle rapporté doit être DeepSeek, jamais Claude).
+
+Prérequis :
+
+- backend Méridian joignable à `MERIDIAN_API_URL` (défaut `http://127.0.0.1:8001/api`) ;
+- `JUMEAU_MODELE=deepseek` et `DEEPSEEK_API_KEY` côté backend (la clé n'est ni lue ni affichée par
+  le runner) ;
+- `requests` disponible dans le Python utilisé (le `.venv` du backend convient).
+
+Depuis `backend/` :
+
+```bash
+PYTHONPATH=..:../backend .venv/bin/python ../plugin/meridian/evals/run_deepseek.py \
+  --scenario ../plugin/meridian/evals/scenarios/incident-paiements.json \
+  --scenario ../plugin/meridian/evals/scenarios/changement-reglementaire.json \
+  --api-url http://127.0.0.1:8002/api \
+  --tenant demo \
+  --output /tmp/meridian-deepseek-pilot
+```
+
+Avec `--start-backend`, le runner démarre un backend local temporaire sur le port de `--api-url`
+s'il ne répond pas déjà, avec `JUMEAU_MODELE=deepseek`, puis l'arrête à la fin. Sans cette option,
+il vérifie `/health` et échoue proprement si le backend est absent.
+
+Options principales :
+
+| Option | Défaut | Rôle |
+|---|---|---|
+| `--scenario` | requis, répétable | Fichier JSON de scénario. |
+| `--runs` | `1` | Runs par scénario. |
+| `--output` | `/tmp/meridian-deepseek-<timestamp>` | Répertoire des résultats. |
+| `--api-url` | `MERIDIAN_API_URL` puis `http://127.0.0.1:8001/api` | Base de l'API, `/api` compris. |
+| `--tenant` | `MERIDIAN_TENANT` puis `demo` | En-tête `X-Tenant`. |
+| `--persona` | `MERIDIAN_PERSONA` puis `architecte` | Persona enregistré dans le rapport. |
+| `--timeout` | `300` | Timeout par appel, en secondes. |
+| `--start-backend` | désactivé | Démarre un backend local si `/health` ne répond pas. |
+| `--dry-run` | désactivé | Affiche les requêtes sans appel ni écriture. |
+
+Sorties :
+
+```text
+<output>/
+  summary.json                  # résumé global, runs, jetons, coût, critères
+  REPORT.md                     # rapport Markdown concis
+  <scenario>/
+    summary.json
+    run-01.json                 # bilan, payload, usage, critères
+    run-01.result.txt           # texte final
+    run-01.response.json        # réponse brute du backend
+```
+
+Le code de sortie vaut `0` après exécution même si des critères échouent, `2` si le scénario ou le
+backend est invalide. Le run du 2026-11-01 est documenté dans
+[`PILOT-2026-11-01.md`](PILOT-2026-11-01.md) : **2/2 runs complets** sur `deepseek-chat`,
+**0/2 scénarios** au sens des critères, car le tenant `demo` n'a pas les Twins du pilote et
+`/aurora/demander` renvoie de la prose, pas le contrat de sections du plugin.
+
+## Runner Claude Code (historique)
 
 `run_benchmark.py` rejoue un ou plusieurs scénarios JSON avec la CLI Claude Code, ou importe des
 réponses humaines, puis compare quatre bras :

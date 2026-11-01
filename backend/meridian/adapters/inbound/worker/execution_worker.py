@@ -26,6 +26,7 @@ from meridian.adapters.inbound.worker.config import (
     option_connexion_tenant,
     tenants_worker,
 )
+from meridian.adapters.outbound import analyse_runtime
 from meridian.adapters.outbound.postgres import execution_depot
 from meridian.application.execution.executeurs import creer_executeurs, executeur_par_type
 from meridian.application.execution.moteur import MoteurExecution
@@ -99,13 +100,14 @@ def principal() -> None:
     # JUMEAU_PG_DSN : en mode un-tenant, elles doivent porter le tenant de session.
     os.environ["JUMEAU_PG_DSN"] = dsn_avec_tenant(dsn, tenant) if tenant else dsn
 
-    from jumeau import analyse_service
+    from meridian.application import analyse_service
 
     def connecter_analyse():
         return psycopg.connect(os.environ["JUMEAU_PG_DSN"], autocommit=True)
 
     executeurs = creer_executeurs(
         analyse_service=analyse_service,
+        runtime=analyse_runtime.RuntimeAnalysePostgres(),
         connect=connecter_analyse,
         depot=execution_depot,
     )

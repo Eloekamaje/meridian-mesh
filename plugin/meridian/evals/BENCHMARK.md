@@ -1,5 +1,10 @@
 # Smoke test skills Méridian — 2026-10-30
 
+> **Note 2026-11-01** : les runs réels du pilote utilisent désormais
+> [`run_deepseek.py`](run_deepseek.py) sur le backend `JUMEAU_MODELE=deepseek`, **sans Claude
+> Code**. Les chiffres ci-dessous proviennent du harness Claude Code historique et ne doivent pas
+> être relus comme un résultat DeepSeek. Voir [`PILOT-2026-11-01.md`](PILOT-2026-11-01.md).
+
 ## But
 
 Comparer une exécution **avec skill** et **sans skill** sur deux workflows bancaires, avec le même MCP
