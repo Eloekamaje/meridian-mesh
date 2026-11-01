@@ -23,7 +23,6 @@ ROOT_DIR = Path(__file__).resolve().parents[4]
 load_dotenv(ROOT_DIR / ".env")  # avant les modules qui lisent leur configuration à l'import (auth, pieces, limites)
 
 import auth as auth_identite  # noqa: E402
-from meridian.application import tenant_context  # noqa: E402
 import limites  # noqa: E402
 import pieces  # noqa: E402
 from meridian.adapters.inbound.http.cases import build_cases_router  # noqa: E402

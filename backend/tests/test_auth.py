@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 from jose import jwt
 
 import auth
+from meridian.application import tenant_context
 
 
 def _client():
@@ -71,7 +72,8 @@ def _client_tenant():
 
     @app.get("/api/tenant")
     def tenant(request: Request):
-        return {"tenant": getattr(request.state, "tenant", None)}
+        return {"tenant": getattr(request.state, "tenant", None),
+                "contexte": tenant_context.courant_explicite()}
 
     auth.installer(app)
     return TestClient(app)
@@ -84,7 +86,7 @@ def test_proxy_extrait_le_tenant_de_confiance(monkeypatch):
     entetes = {"X-Auth-Proxy-Secret": "secret-proxy", "X-Auth-Request-Tenant": "Banque",
                "X-Auth-Request-User": "alice"}
 
-    assert client.get("/api/tenant", headers=entetes).json() == {"tenant": "banque"}
+    assert client.get("/api/tenant", headers=entetes).json() == {"tenant": "banque", "contexte": "banque"}
     assert client.get("/api/tenant", headers={**entetes, "X-Auth-Request-Tenant": "Banque Client"}).status_code == 403
 
 
@@ -95,9 +97,9 @@ def test_oidc_extrait_le_tenant_du_jeton_et_refuse_le_conflit(monkeypatch):
     client = _client_tenant()
     entetes = {"Authorization": f"Bearer {jeton}"}
 
-    assert client.get("/api/tenant", headers=entetes).json() == {"tenant": "banque"}
+    assert client.get("/api/tenant", headers=entetes).json() == {"tenant": "banque", "contexte": "banque"}
     assert client.get("/api/tenant", headers={**entetes, "X-Tenant": "assurance"}).status_code == 403
-    assert client.get("/api/tenant", headers={**entetes, "X-Tenant": "banque"}).json() == {"tenant": "banque"}
+    assert client.get("/api/tenant", headers={**entetes, "X-Tenant": "banque"}).json() == {"tenant": "banque", "contexte": "banque"}
 
 
 def test_oidc_sans_claim_tenant_est_refuse(monkeypatch):
@@ -107,3 +109,10 @@ def test_oidc_sans_claim_tenant_est_refuse(monkeypatch):
     client = _client_tenant()
 
     assert client.get("/api/tenant", headers={"Authorization": f"Bearer {jeton}"}).status_code == 403
+
+
+def test_demo_pose_le_tenant_x_tenant_pour_les_ecritures(monkeypatch):
+    monkeypatch.delenv("AUTH_MODE", raising=False)
+    client = _client_tenant()
+    assert client.get("/api/tenant", headers={"X-Tenant": "Demo"}).json() == {
+        "tenant": None, "contexte": "demo"}

@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from jose import jwk, jwt
 
 from meridian.domain import tenant as tenant_context
+from meridian.application import tenant_context as contexte_ecriture
 
 logger = logging.getLogger("meridian.auth")
 MODES = {"demo", "proxy", "oidc"}
@@ -185,7 +186,19 @@ async def middleware(request: Request, call_next):
     if tenant is not None:
         request.state.tenant = tenant
         request.state.auth_tenant = tenant
-    return await call_next(request)
+    contexte = tenant
+    if contexte is None:
+        entete_demo = (request.headers.get("x-tenant") or "").strip()
+        if entete_demo:
+            try:
+                contexte = tenant_context.normaliser_slug(entete_demo)
+            except tenant_context.TenantInvalide:
+                contexte = None
+    jeton = contexte_ecriture.definir(contexte or "local")
+    try:
+        return await call_next(request)
+    finally:
+        contexte_ecriture.reinitialiser(jeton)
 
 
 def installer(app):
