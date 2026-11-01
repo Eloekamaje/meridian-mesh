@@ -102,6 +102,7 @@ app = FastAPI(title="Méridian")
 
 
 auth_identite.installer(app)
+pieces.verifier_configuration_stockage()
 
 
 api_router = APIRouter(prefix="/api")

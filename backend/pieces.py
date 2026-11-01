@@ -25,8 +25,9 @@ from pathlib import Path
 from uuid import uuid4
 
 from charset_normalizer import from_bytes
-from gridfs.errors import NoFile
 from motor.motor_asyncio import AsyncIOMotorGridFSBucket
+
+from meridian.adapters.outbound.stockage import stockage_pieces, verifier_stockage
 
 try:  # conversion native (Rust) des documents bureautiques ; repli local si le wheel n'est pas disponible
     import anydoc
@@ -649,6 +650,14 @@ def _bucket(db):
     return AsyncIOMotorGridFSBucket(db, bucket_name=BUCKET)
 
 
+def _stockage(db, stockage=None):
+    return stockage_pieces(db, bucket_factory=_bucket, choix=stockage)
+
+
+def verifier_configuration_stockage() -> None:
+    verifier_stockage()
+
+
 def _entier(valeur, defaut: int = 0) -> int:
     try:
         return int(valeur)
@@ -699,16 +708,6 @@ async def _liberer_place(db, case_id: str) -> None:
         pass  # le compteur ne doit pas masquer l'échec d'ajout, déjà signalé
 
 
-async def _abandonner(flux) -> None:
-    """Annule un flux GridFS interrompu, s'il existe encore."""
-    if flux is None:
-        return
-    try:
-        await flux.abort()
-    except Exception:
-        pass
-
-
 async def enregistrer(db, case_id: str, fichier, acteur: str) -> dict:
     """Valide, extrait et stocke une pièce ; rend ses métadonnées publiques.
 
@@ -732,17 +731,17 @@ async def enregistrer(db, case_id: str, fichier, acteur: str) -> dict:
             raise PieceRefusee("Ce travail n'existe plus.", statut=404)
         raise PieceRefusee(f"Ce travail a déjà {MAX_PAR_CASE} pièces jointes.")
     ajoutee = False
-    flux = None
+    fichier_id = None
+    magasin = _stockage(db)
     try:
         analyse = await _extraire(nom, mime, data)
         # La conversation a pu être supprimée pendant l'extraction : ne pas ressusciter une pièce orpheline.
         if not await db.cases.find_one({"id": case_id}, {"_id": 1}):
             raise PieceRefusee("Ce travail a été supprimé pendant l'ajout de la pièce.", statut=404)
         pid = uuid4().hex
-        entete = {"case_id": case_id, "piece_id": pid, "nom": nom, "joint_par": acteur}
-        flux = _bucket(db).open_upload_stream(f"{case_id}/{pid}", metadata=entete)
-        await flux.write(data)
-        await flux.close()
+        entete = {"case_id": case_id, "piece_id": pid, "nom": nom, "joint_par": acteur,
+                  "type_mime": mime}
+        fichier_id = await magasin.ecrire(f"{case_id}/{pid}", data, entete)
         doc = {
             "id": pid, "case_id": case_id, "nom": nom, "type_mime": mime,
             "type_libelle": analyse["type_libelle"], "taille": len(data), "sha256": hashlib.sha256(data).hexdigest(),
@@ -750,7 +749,8 @@ async def enregistrer(db, case_id: str, fichier, acteur: str) -> dict:
             "etat": analyse["etat"], "note": analyse["note"], "tronque": analyse["tronque"],
             "caracteres": analyse["caracteres"], "pages": analyse["pages"],
             "texte": analyse["texte"], "sections": decouper_sections(analyse["texte"]),
-            "tables": analyse.get("tables") or [], "fichier_id": flux._id,
+            "tables": analyse.get("tables") or [], "fichier_id": fichier_id,
+            "stockage": magasin.nom,
         }
         await db.pieces.insert_one(doc)
         if not await db.cases.find_one({"id": case_id}, {"_id": 1}):
@@ -758,16 +758,16 @@ async def enregistrer(db, case_id: str, fichier, acteur: str) -> dict:
                 await db.pieces.delete_one({"case_id": case_id, "id": pid})
             except Exception:
                 pass
-            try:
-                await _bucket(db).delete(flux._id)
-            except Exception:
-                pass
             raise PieceRefusee("Ce travail a été supprimé pendant l'ajout de la pièce.", statut=404)
         ajoutee = True
         return public(doc)
     finally:
         if not ajoutee:
-            await _abandonner(flux)
+            if fichier_id is not None:
+                try:
+                    await magasin.supprimer(fichier_id)
+                except Exception:
+                    pass
             await _liberer_place(db, case_id)
 
 
@@ -878,15 +878,9 @@ async def lire_table(db, case_id: str, piece_id: str, feuille=None, debut: int =
     if ext not in TABLEURS:
         raise ValueError("Pièce sans tableau structuré")
     try:
-        flux = await _bucket(db).open_download_stream(doc["fichier_id"])
-        try:
-            data = await flux.read()
-        finally:
-            flux.close()
-    except NoFile as e:
+        data = await _stockage(db, doc.get("stockage") or "mongo").lire(doc["fichier_id"])
+    except FileNotFoundError as e:
         raise ValueError("contenu de la pièce introuvable") from e
-    except FileNotFoundError:
-        raise
     except Exception as e:  # stockage indisponible : pas de tableau exploitable
         raise ValueError("Pièce sans tableau structuré") from e
     try:
@@ -927,12 +921,8 @@ async def contenu(db, case_id: str, pid: str) -> tuple[dict, bytes]:
     if not doc:
         raise FileNotFoundError("Pièce jointe introuvable")
     try:
-        sortie = await _bucket(db).open_download_stream(doc["fichier_id"])
-        try:
-            data = await sortie.read()
-        finally:
-            sortie.close()
-    except NoFile as e:
+        data = await _stockage(db, doc.get("stockage") or "mongo").lire(doc["fichier_id"])
+    except FileNotFoundError as e:
         raise FileNotFoundError("Pièce jointe introuvable") from e
     return public(doc), data
 
@@ -1041,7 +1031,7 @@ async def supprimer(db, case_id: str, pid: str) -> dict:
     if not doc:
         raise FileNotFoundError("Pièce jointe introuvable")
     try:
-        await _bucket(db).delete(doc["fichier_id"])
+        await _stockage(db, doc.get("stockage") or "mongo").supprimer(doc["fichier_id"])
     except Exception:
         pass  # le contenu manque déjà : la métadonnée doit quand même disparaître
     res = await db.pieces.delete_one({"_id": doc["_id"]})
@@ -1090,18 +1080,16 @@ async def deplacer_pieces(db, source_cid: str, cible_cid: str) -> int:
         if deplaces < nombre:  # des pièces ont disparu entre la lecture et le déplacement : rendre la différence
             await db.cases.update_one({"id": cible_cid}, {"$inc": {"pieces_count": deplaces - nombre}})
             nombre = deplaces
-        await db[f"{BUCKET}.files"].update_many(
-            {"metadata.case_id": source_cid, "metadata.piece_id": {"$in": ids}},
-            {"$set": {"metadata.case_id": cible_cid}},
-        )
+        await _stockage(db, "mongo").deplacer(ids, cible_cid)
+        if _stockage(db).nom != "mongo":
+            await _stockage(db).deplacer(ids, cible_cid)
     except Exception:
         try:  # meilleur effort : remettre les pièces déjà déplacées dans la source avant de rendre la place
             await db.pieces.update_many({"case_id": cible_cid, "id": {"$in": ids}},
                                         {"$set": {"case_id": source_cid}})
-            await db[f"{BUCKET}.files"].update_many(
-                {"metadata.case_id": cible_cid, "metadata.piece_id": {"$in": ids}},
-                {"$set": {"metadata.case_id": source_cid}},
-            )
+            await _stockage(db, "mongo").deplacer(ids, source_cid)
+            if _stockage(db).nom != "mongo":
+                await _stockage(db).deplacer(ids, source_cid)
         except Exception:
             pass
         await db.cases.update_one({"id": cible_cid}, {"$inc": {"pieces_count": -nombre}})
@@ -1113,7 +1101,7 @@ async def supprimer_case(db, case_id: str) -> None:
     """Retire toutes les pièces d'un Travail et les retours qui en dépendent : rien ne doit rester orphelin."""
     async for doc in db.pieces.find({"case_id": case_id}):
         try:
-            await _bucket(db).delete(doc["fichier_id"])
+            await _stockage(db, doc.get("stockage") or "mongo").supprimer(doc["fichier_id"])
         except Exception:
             pass
     await db.pieces.delete_many({"case_id": case_id})
@@ -1125,8 +1113,9 @@ async def supprimer_case(db, case_id: str) -> None:
 async def reinitialiser(db) -> None:
     """La démonstration se réinitialise : les pièces jointes des travaux disparaissent avec eux."""
     await db.pieces.delete_many({})
-    for collection in (f"{BUCKET}.files", f"{BUCKET}.chunks"):
-        await db.drop_collection(collection)
+    await _stockage(db, "mongo").vider()
+    if _stockage(db).nom != "mongo":
+        await _stockage(db).vider()
 
 
 async def reconcilier_compteurs(db) -> int:

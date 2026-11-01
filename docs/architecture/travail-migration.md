@@ -4,7 +4,8 @@ Le Travail (les « cases » du fil Aujourd'hui / Actualités) est **écrit dans 
 défaut. La sortie se fait en quatre temps : un read model Postgres `travail`, un backfill
 rejouable, une **double écriture** optionnelle, puis la bascule de la lecture et une
 bascule opt-in des écritures (`JUMEAU_TRAVAIL_WRITE=postgres`) qui remplace `db.cases`
-par une collection Postgres. Les pièces jointes restent dans Mongo.
+par une collection Postgres. Le contenu des pièces jointes passe par un adapter
+Mongo/GridFS, local ou S3/MinIO (voir [stockage-pieces.md](stockage-pieces.md)).
 
 ## Modèle Postgres
 
@@ -130,7 +131,7 @@ La fabrique est `meridian.adapters.outbound.travail_store.travail_store(db, dsn)
 Avec la double écriture active, les écritures (`POST /actualites/.../travail`,
 messages, etc.) vont dans Mongo **et** dans Postgres. Avec
 `JUMEAU_TRAVAIL_WRITE=postgres`, `db.cases` est une collection Postgres et Mongo n'est
-plus écrit pour les cas ; les pièces jointes restent dans Mongo.
+plus écrit pour les cas ; le stockage des pièces jointes est indépendant.
 
 ## Correspondance des tenants
 
