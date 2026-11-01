@@ -1,9 +1,10 @@
 # Migration progressive du Travail (Mongo → Postgres)
 
-Le Travail (les « cases » du fil Aujourd'hui / Actualités) reste **écrit dans Mongo**
-comme source de référence. La sortie se fait en quatre temps : un read model Postgres
-`travail`, un backfill rejouable, une **double écriture** optionnelle qui garde Postgres
-à jour, puis la bascule de la lecture et, plus tard, la suppression des écritures Mongo.
+Le Travail (les « cases » du fil Aujourd'hui / Actualités) est **écrit dans Mongo** par
+défaut. La sortie se fait en quatre temps : un read model Postgres `travail`, un backfill
+rejouable, une **double écriture** optionnelle, puis la bascule de la lecture et une
+bascule opt-in des écritures (`JUMEAU_TRAVAIL_WRITE=postgres`) qui remplace `db.cases`
+par une collection Postgres. Les pièces jointes restent dans Mongo.
 
 ## Modèle Postgres
 
@@ -75,17 +76,28 @@ set -a; . ./.env; set +a
 export JUMEAU_TRAVAIL_DUAL_WRITE=1
 export JUMEAU_TRAVAIL_TENANT=local     # même tenant que le backfill
 # puis redémarrer l'API
-scripts/dev-travail-worker.sh --une-passe   # vérification/rattrapage ponctuel
+scripts/dev-travail-worker.sh --une-passe --reconcilier-chaque 300
+# en service : worker continu, réconciliation des suppressions toutes les 300 s
+scripts/dev-travail-worker.sh
 
 # 2. Bascule de la lecture (API), après vérification du read model.
 export JUMEAU_TRAVAIL_STORE=postgres
 # puis redémarrer l'API
 
-# 3. Plus tard : retirer les écritures Mongo.
-#    C'est un changement de code (écrire directement dans TravailPostgres), pas un
-#    simple drapeau. Une fois ce chemin livré, retirer le proxy, le worker de sync
-#    et ce document ; la table `travail` devient la source d'écriture.
+# 3. Bascule des écritures : `db.cases` devient une collection Postgres.
+export JUMEAU_TRAVAIL_WRITE=postgres
+# JUMEAU_TRAVAIL_STORE=postgres reste recommandé pour la lecture Actualités.
+# puis redémarrer l'API. Vérifier : création, PATCH, ajout de message, pièce,
+# suppression d'une conversation, puis SELECT count(*) FROM travail.
+#
+# Rollback : retirer JUMEAU_TRAVAIL_WRITE et redémarrer. Les écritures faites
+# pendant la bascule ne sont pas dans Mongo ; un export Postgres -> Mongo est
+# nécessaire avant de revenir durablement à Mongo.
 ```
+
+La bascule d'écriture est opt-in et testée par `test_travail_collection_postgres.py`
+et une fumée API réelle. Les écritures d'un tenant sont sérialisées par un advisory
+lock Postgres (`pg_advisory_lock(hashtext(tenant))`) en plus du verrou asyncio local.
 
 Pendant la phase 2, la double écriture doit rester active : c'est elle qui rend les
 écritures immédiatement visibles à la lecture Postgres. Le worker peut rester en filet
@@ -102,6 +114,7 @@ de sécurité (intervalle court) mais n'est plus le chemin principal.
 | `--dry-run` / `--apply` | backfill : compter (défaut) ou écrire |
 | `--une-passe` | worker : rattraper puis sortir |
 | `--depuis` | worker : reprendre après un `maj_le` ISO explicite |
+| `--reconcilier-chaque` | worker : secondes entre deux réconciliations des suppressions (défaut 300, 0 pour désactiver) |
 
 Le worker démarre au dernier curseur `(maj_le, _id)` présent dans Postgres. Si la table
 est vide, il relit tout (équivalent à un backfill) puis se met à jour.
@@ -115,17 +128,20 @@ est vide, il relit tout (équivalent à un backfill) puis se met à jour.
 
 La fabrique est `meridian.adapters.outbound.travail_store.travail_store(db, dsn)`.
 Avec la double écriture active, les écritures (`POST /actualites/.../travail`,
-messages, etc.) vont dans Mongo **et** dans Postgres.
+messages, etc.) vont dans Mongo **et** dans Postgres. Avec
+`JUMEAU_TRAVAIL_WRITE=postgres`, `db.cases` est une collection Postgres et Mongo n'est
+plus écrit pour les cas ; les pièces jointes restent dans Mongo.
 
 ## Correspondance des tenants
 
-Les cas Mongo ne portent pas de tenant. Le backfill et le worker écrivent donc sous :
+Le tenant est posé par le middleware d'authentification (demo `X-Tenant`, proxy ou
+claim OIDC) et écrit dans le document. Le backfill et le worker écrivent sous :
 
 1. `--tenant` s'il est fourni ;
 2. sinon `JUMEAU_TENANT` ;
 3. sinon `local` (même défaut que le reste de l'API).
 
-La double écriture suit un réglage distinct, `JUMEAU_TRAVAIL_TENANT`, avec le même
+La double écriture suit le contexte de requête puis `JUMEAU_TRAVAIL_TENANT`, avec le même
 défaut `local`. Aligner les deux réglages pendant la bascule. Tous les cas d'un
 backfill vont dans ce tenant. Pour plusieurs tenants, lancer le backfill et le worker
 une fois par tenant (la source Mongo devra alors être filtrée par tenant dans un lot
@@ -142,20 +158,21 @@ ultérieur) ; la double écriture, elle, ne sait pas encore distinguer les tenan
 
 ## Limites connues
 
-* **Les cas sont toujours sans tenant.** La double écriture range tout sous
-  `JUMEAU_TRAVAIL_TENANT` ; un déploiement multi-tenant réel exige une colonne/portée de
-  tenant dans les cas.
-* Le miroir est *best effort* : une panne Postgres après une écriture Mongo réussie
-  laisse un retard, rattrapé par le worker ou un backfill. Il n'y a pas de transaction
-  distribuée entre les deux bases.
-* Le worker et le backfill ne propagent pas les suppressions ; seule la double écriture
-  le fait. Un cas supprimé pendant que la double écriture est désactivée reste dans
-  `travail` jusqu'à un nettoyage manuel.
+* **Le tenant est porté par la requête et par le document.** Le middleware
+  d'authentification pose le tenant effectif (demo, proxy ou OIDC), le proxy l'écrit
+  dans le cas Mongo et Postgres ; `--poser-tenant-mongo` migre les cas historiques.
+  La portée multi-tenant reste portée par un seul `tenant_id` par déploiement.
+* Le miroir est *best effort* avec trois tentatives et un backoff court : une panne
+  Postgres prolongée laisse un retard, rattrapé par le worker ou un backfill. Il n'y a
+  pas de transaction distribuée entre les deux bases.
+* Les suppressions sont propagées par la double écriture, par `--supprimer-absents`
+  au backfill et par `--reconcilier-chaque` (défaut 300 s) dans le worker ; un cas
+  supprimé hors de ces chemins reste dans `travail` jusqu'à la prochaine passe.
 * Une mise à jour miroite le document complet relu après l'opération Mongo : le coût est
   celui d'une lecture + d'un upsert par document touché (y compris `update_many`).
-* Seules les écritures listées ci-dessus sont miroitées. Un `replace_one`, `bulk_write`
-  ou `find_one_and_delete` appelé sur `db.cases` resterait Mongo seul ; les appelants
-  actuels n'en utilisent pas.
+* Les écritures listées ci-dessus, `replace_one` et `bulk_write` sont miroitées.
+  Un `find_one_and_delete` ou une opération bulk inconnue resterait Mongo seul ; les
+  appelants actuels n'en utilisent pas.
 * Le curseur compare `maj_le` comme chaîne ISO, comme le fait Mongo. Des formats de
   date hétérogènes (anciens documents) peuvent fausser l'ordre ; un backfill complet
   corrige le read model.

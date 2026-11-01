@@ -9,10 +9,12 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
+from pymongo import InsertOne, UpdateOne
 
 from meridian.adapters.outbound.mongo.travail_proxy import (
-    DSN_ENV, FLAG_ENV, TENANT_ENV, TravailCollection, installer,
+    DSN_ENV, FLAG_ENV, TENANT_ENV, WRITE_ENV, TravailCollection, installer,
 )
+from meridian.adapters.outbound.postgres.travail_collection import PostgresTravailCollection
 from meridian.application import tenant_context
 
 besoin_mongo_et_pg = pytest.mark.skipif(
@@ -177,6 +179,22 @@ class CollectionFaux:
             self.documents.append(document)
             return dict(document) if return_document else None
         return None
+
+    async def replace_one(self, filtre, remplacement, upsert=False):
+        self.appels.append(("replace_one", filtre, remplacement))
+        for index, document in enumerate(self.documents):
+            if _correspond(document, filtre):
+                nouveau = dict(remplacement)
+                nouveau.setdefault("_id", document.get("_id"))
+                self.documents[index] = nouveau
+                return SimpleNamespace(matched_count=1, modified_count=1, upserted_id=None)
+        if upsert:
+            nouveau = dict(remplacement)
+            nouveau.setdefault("_id", self._id())
+            self.documents.append(nouveau)
+            return SimpleNamespace(matched_count=0, modified_count=0,
+                                   upserted_id=nouveau["_id"])
+        return SimpleNamespace(matched_count=0, modified_count=0, upserted_id=None)
 
     async def delete_one(self, filtre):
         self.appels.append(("delete_one", filtre))
@@ -480,3 +498,47 @@ def test_insert_one_ajoute_le_tenant_de_la_requete():
     assert resultat.inserted_id
     assert collection.documents[0]["tenant_id"] == "tenant-a"
     assert cible.documents["c1"]["tenant_id"] == "tenant-a"
+
+
+def test_replace_one_miroite_le_document_remplace():
+    collection = CollectionFaux([_document("c1")])
+    cible = CibleFaux()
+    proxy = TravailCollection(collection, cible)
+
+    resultat = asyncio.run(proxy.replace_one(
+        {"id": "c1"}, {"id": "c1", "titre": "Remplacé"}))
+
+    assert resultat.modified_count == 1
+    assert collection.documents[0]["titre"] == "Remplacé"
+    assert cible.documents["c1"]["titre"] == "Remplacé"
+    assert cible.documents["c1"]["tenant_id"] == "local"
+
+
+def test_bulk_write_miroite_les_operations():
+    collection = CollectionFaux([_document("c1")])
+    cible = CibleFaux()
+    proxy = TravailCollection(collection, cible)
+    operations = [
+        InsertOne({"_id": "oid-new", "id": "c2", "titre": "Nouveau",
+                   "maj_le": "2026-01-02T00:00:00+00:00"}),
+        UpdateOne({"id": "c1"}, {"$set": {"titre": "Modifié"}}),
+    ]
+
+    resultat = asyncio.run(proxy.bulk_write(operations))
+
+    assert resultat.inserted_count == 1
+    assert resultat.matched_count == 1
+    assert {cle for cle in cible.documents} == {"c1", "c2"}
+    assert cible.documents["c1"]["titre"] == "Modifié"
+
+
+@besoin_mongo_et_pg
+def test_installer_bascule_les_ecritures_sur_postgres(monkeypatch):
+    monkeypatch.setenv(WRITE_ENV, "postgres")
+    monkeypatch.setenv(DSN_ENV, os.environ["JUMEAU_PG_DSN"])
+    db = BaseFaux(CollectionFaux([_document("c1")]))
+
+    resultat = installer(db)
+
+    assert isinstance(resultat, PostgresTravailCollection)
+    assert db.cases is resultat

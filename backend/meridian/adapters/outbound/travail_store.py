@@ -1,13 +1,15 @@
 """Fabrique du store Travail : Mongo par défaut, Postgres quand `JUMEAU_TRAVAIL_STORE=postgres`.
 
-Le chemin d'écriture reste Mongo dans ce lot : seul le read model d'Actualités change de
-source. Le tenant Postgres suit `JUMEAU_TENANT` (défaut `local`, comme le reste de l'API).
+La lecture suit `JUMEAU_TRAVAIL_STORE` ; l'écriture bascule avec
+`JUMEAU_TRAVAIL_WRITE=postgres` (voir `mongo/travail_proxy.py`). Le tenant Postgres
+suit le contexte de requête, puis `JUMEAU_TENANT` (défaut `local`).
 """
 from __future__ import annotations
 
 import os
 
 from meridian.adapters.outbound.mongo.travail_depot import TravailDepot as TravailMongo
+from meridian.application import tenant_context
 from meridian.adapters.outbound.postgres.travail_depot import TravailDepot as TravailPostgres
 
 STORE_ENV = "JUMEAU_TRAVAIL_STORE"
@@ -24,6 +26,8 @@ def travail_store(db, dsn: str | None = None, tenant: str | None = None):
         if not dsn:
             raise RuntimeError(
                 f"{STORE_ENV}=postgres mais JUMEAU_PG_DSN (ou le DSN fourni) est absent")
-        return TravailPostgres(dsn=dsn,
-                               tenant_id=tenant or os.environ.get(TENANT_ENV) or "local")
+        return TravailPostgres(
+            dsn=dsn,
+            tenant_id=(tenant or tenant_context.courant_explicite()
+                       or os.environ.get(TENANT_ENV) or "local"))
     raise RuntimeError(f"{STORE_ENV} doit valoir mongo ou postgres (reçu {choix!r})")

@@ -101,16 +101,6 @@ db = client[os.environ["DB_NAME"]]
 app = FastAPI(title="Méridian")
 
 
-@app.middleware("http")
-async def _tenant_courant(request, call_next):
-    """Pose le tenant de la requête pour les écritures Travail sans paramètre tenant."""
-    entete = request.headers.get("X-Tenant")
-    tenant = entete or getattr(request.state, "tenant", None) or "local"
-    jeton = tenant_context.definir(tenant)
-    try:
-        return await call_next(request)
-    finally:
-        tenant_context.reinitialiser(jeton)
 auth_identite.installer(app)
 
 

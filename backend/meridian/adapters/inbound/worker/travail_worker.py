@@ -18,6 +18,7 @@ import logging
 import os
 import signal
 import sys
+import time
 
 import psycopg
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -73,6 +74,9 @@ def _analyseur(prog: str, worker: bool) -> argparse.ArgumentParser:
                                help="lots maximum par passe (défaut : 100)")
         analyseur.add_argument("--reconcilier-suppressions", action="store_true",
                                help="au démarrage, retirer du read model les cas absents de Mongo")
+        analyseur.add_argument("--reconcilier-chaque", type=float, default=300.0,
+                               help="secondes entre deux réconciliations des suppressions "
+                                    "(défaut : 300 ; 0 pour désactiver)")
         analyseur.add_argument("--depuis", default=None,
                                help="reprendre après ce maj_le ISO au lieu du dernier curseur Postgres")
         analyseur.add_argument("--une-passe", action="store_true",
@@ -130,16 +134,24 @@ def _arreter(arret: asyncio.Event):
 
 
 async def _boucle(source, cible, *, curseur: Curseur, intervalle: float, limite: int,
-                  max_lots: int, une_passe: bool) -> None:
+                  max_lots: int, une_passe: bool, reconcilier_chaque: float = 0.0) -> None:
     arret = asyncio.Event()
     if not une_passe:
         _arreter(arret)
+    derniere_reconciliation = time.monotonic()
     while not arret.is_set():
         bilan = await synchroniser(source, cible, curseur=curseur, limite=max(1, limite),
                                    appliquer=True, max_lots=max(1, max_lots))
         curseur = bilan.curseur
         journal.info("travail sync : %d lus, %d écrits, curseur maj_le=%s id=%s",
                      bilan.lus, bilan.ecrits, curseur.maj_le, curseur.id)
+        if reconcilier_chaque > 0:
+            ecoule = time.monotonic() - derniere_reconciliation
+            if ecoule >= reconcilier_chaque:
+                from meridian.application.travail_sync import supprimer_absents
+                supprimees = await supprimer_absents(source, cible)
+                journal.info("travail sync : %d cas absents supprimés", supprimees)
+                derniere_reconciliation = time.monotonic()
         if une_passe:
             return
         try:
@@ -175,7 +187,8 @@ def main(argv=None) -> int:
                     journal.info("travail sync : %d cas absents supprimés", supprimees)
                 await _boucle(source, cible, curseur=curseur,
                               intervalle=args.intervalle, limite=args.limite,
-                              max_lots=args.max_lots, une_passe=args.une_passe)
+                              max_lots=args.max_lots, une_passe=args.une_passe,
+                              reconcilier_chaque=max(0.0, args.reconcilier_chaque))
         finally:
             client.close()
 

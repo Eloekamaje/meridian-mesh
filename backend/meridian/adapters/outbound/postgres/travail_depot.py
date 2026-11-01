@@ -6,6 +6,7 @@ document change. Aucune suppression n'est faite ici.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any
 
@@ -42,6 +43,25 @@ class TravailDepot:
         if not self.dsn:
             raise RuntimeError("DSN Postgres requis pour le store Travail")
         return psycopg.connect(self.dsn, autocommit=True), True
+
+    @contextmanager
+    def verrou(self):
+        """Sérialise les écritures d'un tenant entre processus via un advisory lock."""
+        conn, fermer = self._connexion()
+        verrouille = False
+        if self.dsn:
+            conn.execute("SELECT pg_advisory_lock(hashtext(%s))", (self.tenant_id,))
+            verrouille = True
+        try:
+            yield TravailDepot(conn=conn, tenant_id=self.tenant_id, dsn=self.dsn)
+        finally:
+            if verrouille:
+                try:
+                    conn.execute("SELECT pg_advisory_unlock(hashtext(%s))", (self.tenant_id,))
+                except Exception:  # noqa: BLE001 - la fermeture liberera le verrou
+                    pass
+            if fermer:
+                conn.close()
 
     async def lister(self, filtre: dict[str, Any] | None = None,
                      limite: int = 200) -> list[dict[str, Any]]:
