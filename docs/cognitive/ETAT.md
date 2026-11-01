@@ -1,8 +1,11 @@
 # État d'avancement cognitif
 
-**Date :** 2026-10-31
+**Date :** 2026-11-01
 
 **Branche :** `jumeau-p4-confort`
+
+> **Dernière session :** [SESSION-2026-11-01.md](SESSION-2026-11-01.md) — dettes de code soldées,
+> migration Travail progressive, runner DeepSeek ; commits `db9a3a8`, `cdd0a46`, `5074a29`.
 
 **Documents directeurs :** [PRD-001](../prd/PRD-001-enterprise-intelligence-mesh.md), [ADR-0001](../adr/0001-identite-typed-twin-discovery.md), [ADR-0002](../adr/0002-orchestrateur-general.md), [ADR-0003](../adr/0003-mesh-transversal-intelligence.md), [ADR-0004](../adr/0004-capability-first-harness.md), [ADR-0005](../adr/0005-enterprise-object-model.md), [ADR-0007](../adr/0007-polyglot-postgres-graph.md), [ADR-0008](../adr/0008-travail-work-store.md)
 
