@@ -239,7 +239,7 @@ def test_le_harness_est_sans_execution_dynamique_ni_reseau():
         assert re.search(motif, source) is None, motif
     arbre = ast.parse(source)
     autorises = {"__future__", "asyncio", "collections", "copy", "inspect", "json", "re", "time",
-                 "typing", "strands", "jumeau"}
+                 "typing", "strands", "jumeau", "meridian"}
     for noeud in ast.walk(arbre):
         if isinstance(noeud, ast.Import):
             assert all(alias.name.split(".")[0] in autorises for alias in noeud.names)

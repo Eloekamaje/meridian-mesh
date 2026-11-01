@@ -7,7 +7,7 @@ import pytest
 from jumeau import rls
 from jumeau.tests.conftest import besoin_pg
 
-SCHEMA = Path(__file__).resolve().parents[1] / "schema.sql"
+SCHEMA = Path(__file__).resolve().parents[2] / "meridian" / "adapters" / "outbound" / "postgres" / "schema.sql"
 
 
 class _Transaction:

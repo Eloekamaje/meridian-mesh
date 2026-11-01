@@ -1,7 +1,9 @@
 """Exécution durable : runs, états, outbox et workers.
 
-Ce paquet est volontairement indépendant de FastAPI, Strands et des clients de stores.
-Les routes et les adapters sont branchés dans `jumeau.execution.routes`.
+Ce paquet ne porte plus l'implémentation : les cas d'usage vivent dans
+`meridian.application.execution`, le dépôt Postgres dans
+`meridian.adapters.outbound.postgres.execution_depot` et les adapters inbound dans
+`meridian.adapters.inbound`. Les sous-modules ci-dessous restent des shims.
 """
 from jumeau.execution.modele import (
     ApprobationIntrouvable,

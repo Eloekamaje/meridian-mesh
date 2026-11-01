@@ -22,7 +22,8 @@ from pydantic import BaseModel, Field
 import auth as auth_identite
 
 from meridian.adapters.inbound.http import boucle as boucle_routes
-from jumeau import analyse_service, evaluation_cognitive
+from meridian.application import analyse_service
+from jumeau import evaluation_cognitive
 from jumeau.analyse_service import ConfigurationManquante
 from jumeau.execution import depot
 from jumeau.execution.modele import CommandeExecution, ConflitIdempotence, QuotaDepasse

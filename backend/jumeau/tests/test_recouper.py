@@ -62,7 +62,7 @@ def test_outil_recouper_refus_et_plafond(monkeypatch):
 
 
 def test_la_methode_enseigne_a_recouper():
-    corps = (Path(__file__).parent.parent / "methodes" / "comprendre-application.md").read_text()
+    corps = (Path(__file__).resolve().parents[2] / "meridian" / "application" / "methodes" / "comprendre-application.md").read_text()
     assert "recouper_connaissance" in corps and "signaler_contradiction" in corps
 
 

@@ -72,7 +72,7 @@ from jumeau import connecteurs_runtime_pull as jumeau_connecteurs_runtime_pull  
 from jumeau import pulls_runtime as jumeau_pulls_runtime  # noqa: E402
 from jumeau import depot as jumeau_depot  # noqa: E402
 from jumeau import connaissance as jumeau_connaissance  # noqa: E402
-from jumeau import flux as jumeau_flux  # noqa: E402
+from meridian.adapters.inbound.http import flux as jumeau_flux  # noqa: E402
 from jumeau import registre as jumeau_registre  # noqa: E402
 from jumeau import connecteurs as jumeau_connecteurs  # noqa: E402
 from jumeau import origine as jumeau_origine  # noqa: E402

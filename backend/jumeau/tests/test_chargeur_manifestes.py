@@ -146,7 +146,7 @@ def test_le_chargeur_est_sans_execution_dynamique_ni_reseau():
     for motif in interdits:
         assert re.search(motif, source) is None, motif
     arbre = ast.parse(source)
-    autorises = {"__future__", "collections", "json", "pathlib", "typing", "jumeau"}
+    autorises = {"__future__", "collections", "json", "pathlib", "typing", "jumeau", "meridian"}
     for noeud in ast.walk(arbre):
         if isinstance(noeud, ast.Import):
             assert all(alias.name.split(".")[0] in autorises for alias in noeud.names)
