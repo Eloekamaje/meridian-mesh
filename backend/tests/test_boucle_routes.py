@@ -10,7 +10,7 @@ import pytest
 from fastapi import APIRouter, FastAPI
 from fastapi.testclient import TestClient
 
-import boucle_routes
+from meridian.adapters.inbound.http import boucle as boucle_routes
 
 
 def _objet(identifiant, tenant="local", famille="emergence", type_="SITUATION", mode="OBSERVED",

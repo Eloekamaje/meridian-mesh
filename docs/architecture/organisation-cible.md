@@ -25,7 +25,7 @@ server.py                 point d'entrée ASGI mince
 3. `ports` ne dépend que de `domain` (ou de types standard).
 4. `adapters` peuvent dépendre de `application`, `ports`, `domain` et de leur SDK.
 5. Seule la racine de composition (`server.py`/`meridian/composition.py`) assemble les adapters.
-6. `backend/jumeau/` est supprimé. `backend/*_routes.py` et `backend/server.py` restent des **shims de compatibilité** vers `meridian/adapters/inbound/http` ; ils ne doivent plus recevoir de nouvelle logique.
+6. `backend/jumeau/` et `backend/*_routes.py` sont supprimés. `backend/server.py` reste le seul **shim d'entrée ASGI** vers `meridian/adapters/inbound/http/legacy`.
 
 ## Migration réalisée
 
@@ -46,7 +46,7 @@ server.py                 point d'entrée ASGI mince
 | `jumeau/execution/outbox_worker.py` | `meridian/adapters/inbound/worker/outbox_worker.py` | déplacé, ancien chemin supprimé |
 | `jumeau/routes.py` | `meridian/adapters/inbound/http/interfaces.py` | déplacé, ancien chemin supprimé |
 | — | `meridian/application/commandes.py`, `meridian/ports/commandes.py`, `meridian/adapters/outbound/mongo/commandes_depot.py` | première tranche application/port/adapter |
-| `*_routes.py` | `meridian/adapters/inbound/http/*.py` | déplacés, shims `sys.modules` |
+| `*_routes.py` | `meridian/adapters/inbound/http/*.py` | déplacés, anciens chemins supprimés |
 
 ### Lot domain/application/adapters du 2026-11-01
 

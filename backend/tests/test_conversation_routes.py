@@ -8,7 +8,7 @@ import pytest
 from fastapi import APIRouter, FastAPI
 from fastapi.testclient import TestClient
 
-import cases_routes
+from meridian.adapters.inbound.http import cases as cases_routes
 import conversation as c
 import limites
 import pieces

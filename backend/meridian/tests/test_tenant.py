@@ -6,7 +6,7 @@ import pytest
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.testclient import TestClient
 
-import boucle_routes
+from meridian.adapters.inbound.http import boucle as boucle_routes
 from meridian.domain.graphe import Arete, GrapheMemoire, NoeudTwin
 from meridian.domain.tenant import TenantContext, TenantInvalide, TenantRequis, absence, exiger_tenant, normaliser_slug, resoudre_tenant
 

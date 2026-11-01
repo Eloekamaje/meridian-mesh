@@ -1482,7 +1482,7 @@ def _client_pieces(monkeypatch):
     from fastapi import APIRouter, FastAPI
     from fastapi.testclient import TestClient
 
-    import pieces_routes
+    from meridian.adapters.inbound.http import pieces as pieces_routes
 
     class Cases:
         def __init__(self):
