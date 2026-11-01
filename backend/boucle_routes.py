@@ -6,8 +6,7 @@ Lecture seule : les objets sont lus dans ``objet_entreprise`` (Postgres) via
 Le tenant est résolu par :mod:`jumeau.tenant`. En mode demo seulement, l'absence de ``X-Tenant`` vaut ``local`` ;
 hors demo (proxy, OIDC, production), l'en-tête est obligatoire et un en-tête vide ou invalide est refusé. Aucun repli
 silencieux n'est fait en production. Si un tenant authentifié est déjà posé sur ``request.state.tenant``, il fait foi
-et un ``X-Tenant`` différent est refusé. Les en-têtes ``X-Persona`` / ``X-Espace`` restent les contextes d'usage de la
-démonstration.
+et un ``X-Tenant`` différent est refusé. ``X-Espace`` reste un contexte de lecture, jamais une identité.
 """
 from __future__ import annotations
 
@@ -27,7 +26,7 @@ from psycopg.rows import dict_row
 
 from jumeau import boucle, entreprise_depot, graph_store, modele_entreprise, rls
 from jumeau.tenant import TenantError, exiger_tenant, normaliser_slug, resoudre_tenant
-from seed_data import ESPACES, PERSONAS
+from seed_data import ESPACES
 
 router = APIRouter(prefix="/boucle", tags=["boucle"])
 
@@ -75,14 +74,13 @@ def _tenant(request: Request, x_tenant: str | None) -> str:
     return tenant
 
 
-def _verifier_contexte(x_persona: str, x_espace: str | None) -> None:
-    persona = next((p for p in PERSONAS if p["id"] == x_persona), PERSONAS[0])
-    if not x_espace or x_espace not in persona["espaces"]:
-        espace_id = persona["par_defaut"]
-    else:
-        espace_id = x_espace
-    if not any(e["id"] == espace_id for e in ESPACES):
+def _verifier_espace(x_espace: str | None) -> str:
+    """Valide un espace ; l'espace reste un contexte de lecture."""
+    if not x_espace:
+        return "mesh-global"
+    if not any(e["id"] == x_espace for e in ESPACES):
         raise HTTPException(400, "Espace inconnu")
+    return x_espace
 
 
 def _filtres(famille: str | None, type_: str | None, mode: str | None, limite: int) -> dict:
@@ -138,6 +136,10 @@ def _cle_sensible(cle) -> bool:
     if normalisee.endswith(("_ref", "-ref", "_reference", "-reference")):
         return False
     compacte = normalisee.replace("-", "_")
+    # Budgets de contexte : « tokens » est une mesure, pas un secret.
+    if compacte in {"tokens", "tokens_estimes", "tokens_utilises", "tokens_memoire",
+                    "token_budget", "budget_tokens", "nb_tokens"}:
+        return False
     if compacte in _CLES_SECRETES:
         return True
     if compacte.endswith("_key"):
@@ -210,12 +212,11 @@ async def lister_objets(
     type_: str | None = Query(None, alias="type", max_length=64),
     mode: str | None = Query(None, max_length=32),
     limite: int = Query(100, ge=1, le=1000),
-    x_persona: str = Header("architecte", max_length=64),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
     """Liste les objets canoniques du tenant, filtrés par famille, type, mode et bornés par ``limite``."""
-    _verifier_contexte(x_persona, x_espace)
+    _verifier_espace(x_espace)
     tenant = _tenant(request, x_tenant)
     filtres = _filtres(famille, type_, mode, limite)
     dsn = _dsn()
@@ -236,12 +237,11 @@ async def lire_objet(
     objet_id: str,
     request: Request,
     historique: bool = Query(False),
-    x_persona: str = Header("architecte", max_length=64),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
     """Lit un objet du tenant ; ``historique=true`` ajoute sa chaîne canonique et ses versions conservées."""
-    _verifier_contexte(x_persona, x_espace)
+    _verifier_espace(x_espace)
     tenant = _tenant(request, x_tenant)
     dsn = _dsn()
 
@@ -267,12 +267,11 @@ async def lire_objet(
 @router.get("/synthese")
 async def synthese(
     request: Request,
-    x_persona: str = Header("architecte", max_length=64),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
     """Compte les objets du tenant par famille, type et mode, sans exposer leur contenu."""
-    _verifier_contexte(x_persona, x_espace)
+    _verifier_espace(x_espace)
     tenant = _tenant(request, x_tenant)
     dsn = _dsn()
 
@@ -319,12 +318,11 @@ async def synthese(
 @router.get("/graphe/resume")
 async def graphe_resume(
     request: Request,
-    x_persona: str = Header("architecte", max_length=64),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
     """Compte les Twins et relations du tenant dans le graph store, sans exposer leur contenu."""
-    _verifier_contexte(x_persona, x_espace)
+    _verifier_espace(x_espace)
     tenant = _tenant(request, x_tenant)
 
     def compter(store):
@@ -346,12 +344,11 @@ async def graphe_voisins(
     request: Request,
     profondeur: int = Query(1, ge=1, le=8),
     sens: str = Query("sortant", pattern="^(sortant|entrant|les_deux)$"),
-    x_persona: str = Header("architecte", max_length=64),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
     """Voisinage topologique du twin dans le graph store, borné au tenant authentifié."""
-    _verifier_contexte(x_persona, x_espace)
+    _verifier_espace(x_espace)
     tenant = _tenant(request, x_tenant)
     if not twin_id.strip() or len(twin_id) > 128:
         raise HTTPException(400, "twin_id invalide")
@@ -368,12 +365,11 @@ async def graphe_impact(
     twin_id: str,
     request: Request,
     profondeur: int = Query(3, ge=1, le=8),
-    x_persona: str = Header("architecte", max_length=64),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
     """Impact amont/aval du twin, sans jamais dépasser le tenant."""
-    _verifier_contexte(x_persona, x_espace)
+    _verifier_espace(x_espace)
     tenant = _tenant(request, x_tenant)
     if not twin_id.strip() or len(twin_id) > 128:
         raise HTTPException(400, "twin_id invalide")
@@ -391,12 +387,11 @@ async def graphe_chemins(
     source: str = Query(..., min_length=1, max_length=128),
     cible: str = Query(..., min_length=1, max_length=128),
     profondeur: int = Query(6, ge=1, le=8),
-    x_persona: str = Header("architecte", max_length=64),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
     """Chemins orientés source → cible, bornés et tenant-scoped."""
-    _verifier_contexte(x_persona, x_espace)
+    _verifier_espace(x_espace)
     tenant = _tenant(request, x_tenant)
     chemins, mode = await asyncio.to_thread(
         _executer_graphe,

@@ -336,7 +336,7 @@ class Harness:
         *,
         approuves: Iterable[str] = (),
         tenant: str | None = None,
-        persona: str | None = None,
+        acteur: str | None = None,
         perimetre: str | None = None,
         audit: list[dict] | None = None,
         audit_sink: Any = None,
@@ -345,7 +345,7 @@ class Harness:
         self.adaptateurs = dict(adaptateurs or {})
         self.approuves = {str(nom) for nom in (approuves or ())}
         self.tenant = tenant
-        self.persona = persona
+        self.acteur = acteur
         self.perimetre = perimetre
         self.audit_sink = audit_sink
         self._audit: list[dict] = audit if isinstance(audit, list) else []
@@ -374,7 +374,7 @@ class Harness:
     def _manifests(
         self,
         tenant: Any = None,
-        persona: Any = None,
+        acteur: Any = None,
         perimetre: Any = None,
         lecture_seule: bool | None = None,
         approuves: Iterable[str] | None = None,
@@ -382,7 +382,7 @@ class Harness:
         approuves = self._approuves(approuves)
         candidats = self.registre.lister(
             tenant=self.tenant if tenant is None else tenant,
-            persona=self.persona if persona is None else persona,
+            acteur=self.acteur if acteur is None else acteur,
             perimetre=self.perimetre if perimetre is None else perimetre,
         )
         return [
@@ -514,7 +514,7 @@ class Harness:
         selection: Any = None,
         *,
         tenant: Any = None,
-        persona: Any = None,
+        acteur: Any = None,
         perimetre: Any = None,
         lecture_seule: bool | None = None,
         approuves: Iterable[str] | None = None,
@@ -522,30 +522,30 @@ class Harness:
         """Les adaptateurs visibles pour la portée, plus les deux outils de découverte."""
         approuves_effectifs = self._approuves(approuves)
         sortie: list[AgentTool] = []
-        for manifeste in self._manifests(tenant, persona, perimetre, lecture_seule, approuves):
+        for manifeste in self._manifests(tenant, acteur, perimetre, lecture_seule, approuves):
             callback = self._callable(manifeste.nom)
             if callback is None:
                 continue
             if manifeste.nom == "rechercher_outil":
-                callback = self._decouverte_recherche(tenant, persona, perimetre,
+                callback = self._decouverte_recherche(tenant, acteur, perimetre,
                                                       approuves_effectifs)
             elif manifeste.nom == "decrire_outil":
-                callback = self._decouverte_description(tenant, persona, perimetre,
+                callback = self._decouverte_description(tenant, acteur, perimetre,
                                                         approuves_effectifs)
             sortie.append(_OutilHarness(self, manifeste, callback, approuves_effectifs))
         return sortie
 
-    def _decouverte_recherche(self, tenant: Any, persona: Any, perimetre: Any,
+    def _decouverte_recherche(self, tenant: Any, acteur: Any, perimetre: Any,
                               approuves: Iterable[str]) -> Callable:
         def rechercher(requete: str, capacite: str | None = None) -> str:
-            return self._rechercher(requete, capacite, tenant=tenant, persona=persona,
+            return self._rechercher(requete, capacite, tenant=tenant, acteur=acteur,
                                     perimetre=perimetre, approuves=approuves)
         return rechercher
 
-    def _decouverte_description(self, tenant: Any, persona: Any, perimetre: Any,
+    def _decouverte_description(self, tenant: Any, acteur: Any, perimetre: Any,
                                 approuves: Iterable[str]) -> Callable:
         def decrire(nom: str) -> str:
-            return self._decrire(nom, tenant=tenant, persona=persona, perimetre=perimetre,
+            return self._decrire(nom, tenant=tenant, acteur=acteur, perimetre=perimetre,
                                  approuves=approuves)
         return decrire
 
@@ -571,14 +571,14 @@ class Harness:
         return {"audit": self.auditer()}
 
     def _rechercher(self, requete: str, capacite: str | None = None, *,
-                    tenant: Any = None, persona: Any = None, perimetre: Any = None,
+                    tenant: Any = None, acteur: Any = None, perimetre: Any = None,
                     approuves: Iterable[str] | None = None) -> str:
         tenant_effectif = self.tenant if tenant is None else tenant
-        persona_effectif = self.persona if persona is None else persona
+        acteur_effectif = self.acteur if acteur is None else acteur
         perimetre_effectif = self.perimetre if perimetre is None else perimetre
         visibles = {
             manifeste.nom
-            for manifeste in self._manifests(tenant_effectif, persona_effectif,
+            for manifeste in self._manifests(tenant_effectif, acteur_effectif,
                                              perimetre_effectif, approuves=approuves)
         }
         resultats = [
@@ -586,7 +586,7 @@ class Harness:
             for manifeste in self.registre.chercher(
                 requete,
                 tenant=tenant_effectif,
-                persona=persona_effectif,
+                acteur=acteur_effectif,
                 perimetre=perimetre_effectif,
                 capacite=capacite,
             )
@@ -599,14 +599,14 @@ class Harness:
             "outils": [manifeste.as_dict() for manifeste in resultats],
         })
 
-    def _decrire(self, nom: str, *, tenant: Any = None, persona: Any = None,
+    def _decrire(self, nom: str, *, tenant: Any = None, acteur: Any = None,
                  perimetre: Any = None, approuves: Iterable[str] | None = None) -> str:
         manifeste = self.registre.decrire(nom)
         if manifeste is None:
             return _json({"statut": "introuvable", "nom": str(nom or "")})
         visibles = {
             candidat.nom
-            for candidat in self._manifests(tenant, persona, perimetre, approuves=approuves)
+            for candidat in self._manifests(tenant, acteur, perimetre, approuves=approuves)
         }
         if manifeste.nom not in visibles:
             return _json({"statut": "indisponible", "nom": manifeste.nom})

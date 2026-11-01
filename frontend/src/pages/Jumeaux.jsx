@@ -129,7 +129,7 @@ export default function Jumeaux() {
             <button key={c.id} onClick={() => navigate(`/commande/${c.id}`)} data-testid={`reprendre-${c.id}`} className="flex items-center gap-2 rounded-lg border border-[#F2B84B]/25 bg-[#F2B84B]/[0.04] px-3 py-2 text-left transition-colors hover:border-[#F2B84B]/50">
               <HourglassMedium size={14} className="text-[#F2B84B]" />
               <div>
-                <div className="text-xs font-semibold text-[#F2F6F8]">Commande en cours — {c.jumeau?.nom || "sans nom"}</div>
+                <div className="text-xs font-semibold text-[#F2F6F8]">Commande en cours — {c.jumeau?.nom || c.jumeau?.application_id || "sans nom"}</div>
                 <div className="font-code text-[9px] text-[#7C93A8]">étape {c.etape}/4 · {c.sources?.length || 0} source(s) · reprendre →</div>
               </div>
             </button>

@@ -287,18 +287,18 @@ def test_un_tour_fini_sans_personne_pour_le_lire_le_dit_a_son_auteur():
 def test_les_tours_en_cours_sont_rendus_a_leur_interlocuteur():
     app = FastAPI()
     routes = APIRouter()
-    flux.ajouter_routes_tours(routes, Header)
+    flux.ajouter_routes_tours(routes)
     app.include_router(routes)
     client = TestClient(app)
-    mien = flux.Tour("travail-en-cours", "test-en-cours")
-    autre = flux.Tour("travail-d-un-autre", "test-autre")
+    mien = flux.Tour("travail-en-cours", "demo")
+    autre = flux.Tour("travail-d-un-autre", "un-autre")
     flux.TOURS[mien.id] = mien
     flux.TOURS[autre.id] = autre
     try:
-        r = client.get("/tours/en-cours", headers={"X-Persona": "test-en-cours"})
+        r = client.get("/tours/en-cours")
         assert r.json() == {"fils": ["travail-en-cours"]}  # ni le tour d'un autre, ni…
         mien.fini = True
-        assert client.get("/tours/en-cours", headers={"X-Persona": "test-en-cours"}).json() == {"fils": []}
+        assert client.get("/tours/en-cours").json() == {"fils": []}
     finally:  # … ni un tour fini (encore consultable, mais plus « en cours »)
         flux.TOURS.pop(mien.id, None)
         flux.TOURS.pop(autre.id, None)

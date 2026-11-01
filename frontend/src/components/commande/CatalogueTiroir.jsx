@@ -5,11 +5,9 @@ const MODES_AJOUT = [
   ["nouvelle", "Nouvelle instance", "Configurer une instance à partir de zéro"],
   ["profil", "Depuis un profil existant", "Hériter des règles d'un profil (fréquence, secret, sécurité)"],
   ["dupliquer", "Dupliquer une configuration", "Reprendre la configuration d'une instance existante"],
-  ["import", "Importer plusieurs instances", "Manifeste ou fichier structuré"],
-  ["cmdb", "Découvrir depuis la CMDB", "Récupérer les instances déclarées"],
 ];
 
-export default function CatalogueTiroir({ catalogue, sources, onAjoute, onImport, onFermer }) {
+export default function CatalogueTiroir({ catalogue, sources, onAjoute, onFermer }) {
   const [recherche, setRecherche] = useState("");
   const [categorie, setCategorie] = useState("");
   const [choisi, setChoisi] = useState(null);
@@ -36,7 +34,7 @@ export default function CatalogueTiroir({ catalogue, sources, onAjoute, onImport
       if (choisi) return;
       if (e.key === "ArrowDown") { e.preventDefault(); setActif((a) => Math.min(a + 1, resultats.length - 1)); }
       if (e.key === "ArrowUp") { e.preventDefault(); setActif((a) => Math.max(a - 1, 0)); }
-      if (e.key === "Enter" && resultats[actif]) { e.preventDefault(); setChoisi(resultats[actif]); }
+      if (e.key === "Enter" && resultats[actif]?.branche !== false) { e.preventDefault(); setChoisi(resultats[actif]); }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
@@ -82,21 +80,25 @@ export default function CatalogueTiroir({ catalogue, sources, onAjoute, onImport
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
             {resultats.map((c, i) => {
               const n = instancesDe(c.id).length;
+              const dispo = c.branche !== false;
               return (
                 <button
                   key={c.id}
-                  onClick={() => setChoisi(c)}
-                  onMouseEnter={() => setActif(i)}
+                  onClick={() => dispo && setChoisi(c)}
+                  onMouseEnter={() => dispo && setActif(i)}
+                  disabled={!dispo}
+                  aria-disabled={!dispo}
                   data-testid={`connecteur-${c.id}`}
-                  className={`w-full rounded-lg p-3 text-left transition-colors ${i === actif ? "bg-[#60A5FA]/[0.08]" : "hover:bg-[rgba(148,163,184,0.07)]"}`}
+                  className={`w-full rounded-lg p-3 text-left transition-colors ${!dispo ? "cursor-not-allowed opacity-50" : i === actif ? "bg-[#60A5FA]/[0.08]" : "hover:bg-[rgba(148,163,184,0.07)]"}`}
                 >
                   <div className="flex items-center gap-2.5">
                     <Database size={15} className="shrink-0 text-[#60A5FA]" />
                     <span className="font-display text-sm font-bold text-[#F2F6F8]">{c.nom}</span>
+                    {!dispo && <span className="rounded border border-[#F2B84B]/30 px-1.5 py-0.5 font-code text-[8px] uppercase text-[#F2B84B]">Non branché</span>}
                     <span className="ml-auto font-code text-[9px] text-[#7C93A8]">{c.categorie}</span>
                   </div>
                   <p className="mt-1 text-[11px] text-[#94A3B8]">{c.capacites}</p>
-                  <p className="mt-0.5 font-code text-[9px] text-[#7C93A8]">{n > 0 ? `${n} instance${n > 1 ? "s" : ""} déjà configurée${n > 1 ? "s" : ""}` : "aucune instance pour l'instant"}</p>
+                  <p className="mt-0.5 font-code text-[9px] text-[#7C93A8]">{!dispo ? "Aucun lecteur ne l'interroge encore" : n > 0 ? `${n} instance${n > 1 ? "s" : ""} déjà configurée${n > 1 ? "s" : ""}` : "aucune instance pour l'instant"}</p>
                 </button>
               );
             })}
@@ -114,8 +116,6 @@ export default function CatalogueTiroir({ catalogue, sources, onAjoute, onImport
                 <button
                   onClick={() => {
                     if (mode === "profil" || mode === "dupliquer") return;
-                    if (mode === "import") { onImport("fichier"); return; }
-                    if (mode === "cmdb") { onImport("cmdb"); return; }
                     onAjoute(choisi, mode, {});
                   }}
                   data-testid={`mode-${mode}`}

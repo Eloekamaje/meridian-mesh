@@ -57,7 +57,7 @@ def ecriture(**changements):
 
 
 def politique(**changements):
-    champs = {"tenant": "banque", "persona": "flore", "perimetre": "paiements"}
+    champs = {"tenant": "banque", "acteur": "flore", "perimetre": "paiements"}
     champs.update(changements)
     return PolitiqueExecution(**champs)
 
@@ -93,7 +93,7 @@ def test_lecture_autorisee_execute_et_audite():
     assert len(puits.lignes) == 1
     ligne = puits.lignes[0]
     assert ligne["tenant"] == "banque"
-    assert ligne["persona"] == "flore"
+    assert ligne["acteur"] == "flore"
     assert ligne["perimetre"] == "paiements"
     assert ligne["outil"] == "lire_traces"
     assert ligne["capacite"] == "observer"
@@ -172,10 +172,10 @@ def test_ecriture_autorisee_avec_approbation_explicite():
 
 @pytest.mark.parametrize(
     "axe, valeur",
-    (("tenant", "assurance"), ("persona", "autre"), ("perimetre", "autre")),
+    (("tenant", "assurance"), ("acteur", "autre"), ("perimetre", "autre")),
 )
-def test_hors_portee_tenant_persona_perimetre(axe, valeur):
-    contrat = manifeste(tenant="banque", persona="flore", perimetre="paiements")
+def test_hors_portee_tenant_acteur_perimetre(axe, valeur):
+    contrat = manifeste(tenant="banque", acteur="flore", perimetre="paiements")
     executeur = Executeur(RegistreCapacites([contrat]), {"lire_traces": lambda application: {}})
 
     with pytest.raises(ExecutionRefusee) as refus:
@@ -189,7 +189,7 @@ def test_hors_portee_tenant_persona_perimetre(axe, valeur):
 def test_portee_manifeste_exige_une_politique_correspondante():
     contrat = manifeste(tenant="banque")
     executeur = Executeur(RegistreCapacites([contrat]), {"lire_traces": lambda application: {}})
-    sans_tenant = PolitiqueExecution(tenant=None, persona="flore", perimetre="paiements")
+    sans_tenant = PolitiqueExecution(tenant=None, acteur="flore", perimetre="paiements")
 
     with pytest.raises(ExecutionRefusee) as refus:
         asyncio.run(executeur.executer("lire_traces", {}, politique=sans_tenant))
@@ -403,7 +403,7 @@ def test_lister_filtre_lecture_ecriture_portee_allowlist_et_cout():
     assert noms(politique(allowlist=("lire_global",), max_cout=1.0)) == {"lire_global"}
     assert noms(
         PolitiqueExecution(
-            tenant="assurance", persona="flore", perimetre="paiements", max_cout=1.0)
+            tenant="assurance", acteur="flore", perimetre="paiements", max_cout=1.0)
     ) == {"lire_global", "lire_autre"}
 
 

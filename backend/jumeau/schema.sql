@@ -634,3 +634,221 @@ CREATE TABLE IF NOT EXISTS prediction_calibration (
 );
 CREATE INDEX IF NOT EXISTS prediction_calibration_decision
     ON prediction_calibration (tenant_id, decision_id);
+
+-- ---------------------------------------------------------------------------
+-- Exécution durable : runs, événements, outbox et timers.
+-- Postgres est la source de vérité ; Redis n'est qu'un accélérateur.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS execution_run (
+    tenant_id          text NOT NULL,
+    run_id             text NOT NULL,
+    command_id         text NOT NULL,
+    type               text NOT NULL,
+    idempotency_key    text NOT NULL,
+    payload            jsonb NOT NULL DEFAULT '{}',
+    payload_empreinte  text,
+    etat               text NOT NULL DEFAULT 'QUEUED'
+                       CHECK (etat IN ('QUEUED', 'RUNNING', 'WAITING_RETRY', 'WAITING_APPROVAL', 'SUCCEEDED', 'FAILED', 'CANCELLED', 'EXPIRED')),
+    priorite           text NOT NULL DEFAULT 'standard'
+                       CHECK (priorite IN ('interactive', 'standard', 'batch')),
+    acteur             text NOT NULL DEFAULT 'systeme',
+    correlation_id     text,
+    causation_id       text,
+    deadline_at        timestamptz,
+    cancel_requested_at timestamptz,
+    bail_proprietaire  text,
+    bail_jusqu_a       timestamptz,
+    fencing_token      bigint NOT NULL DEFAULT 0,
+    tentative          int NOT NULL DEFAULT 0 CHECK (tentative >= 0),
+    max_tentatives     int NOT NULL DEFAULT 3 CHECK (max_tentatives >= 1),
+    resultat           jsonb,
+    erreur             text,
+    cree_le            timestamptz NOT NULL DEFAULT now(),
+    demarre_le         timestamptz,
+    fini_le            timestamptz,
+    maj_le             timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, run_id),
+    UNIQUE (tenant_id, idempotency_key)
+);
+CREATE INDEX IF NOT EXISTS execution_run_file
+    ON execution_run (etat, priorite, cree_le);
+CREATE INDEX IF NOT EXISTS execution_run_deadline
+    ON execution_run (etat, deadline_at);
+ALTER TABLE execution_run ADD COLUMN IF NOT EXISTS payload_empreinte text;
+
+CREATE TABLE IF NOT EXISTS execution_evenement (
+    id        bigserial PRIMARY KEY,
+    tenant_id text NOT NULL,
+    run_id    text NOT NULL,
+    type      text NOT NULL,
+    donnees   jsonb NOT NULL DEFAULT '{}',
+    cree_le   timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS execution_evenement_run
+    ON execution_evenement (tenant_id, run_id, id);
+
+CREATE TABLE IF NOT EXISTS execution_outbox (
+    id         bigserial PRIMARY KEY,
+    tenant_id  text NOT NULL,
+    run_id     text NOT NULL,
+    type       text NOT NULL,
+    payload    jsonb NOT NULL DEFAULT '{}',
+    cree_le    timestamptz NOT NULL DEFAULT now(),
+    publie_le  timestamptz,
+    tentatives int NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS execution_outbox_a_publier
+    ON execution_outbox (publie_le, id);
+
+CREATE TABLE IF NOT EXISTS execution_timer (
+    id        bigserial PRIMARY KEY,
+    tenant_id text NOT NULL,
+    run_id    text NOT NULL,
+    type      text NOT NULL,
+    due_at     timestamptz NOT NULL,
+    payload   jsonb NOT NULL DEFAULT '{}',
+    traite_le timestamptz
+);
+CREATE INDEX IF NOT EXISTS execution_timer_du
+    ON execution_timer (traite_le, due_at);
+
+
+-- Effets gouvernés : un effet par (run, étape, cible, opération). La clé composite rend
+-- l'exécution rejouable sans double appel ; le statut trace la décision humaine.
+CREATE TABLE IF NOT EXISTS execution_effet (
+    tenant_id  text NOT NULL,
+    run_id     text NOT NULL,
+    etape      text NOT NULL,
+    cible      text NOT NULL,
+    operation  text NOT NULL,
+    outil      text NOT NULL,
+    politique  text NOT NULL CHECK (politique IN ('lecture', 'ecriture')),
+    statut     text NOT NULL DEFAULT 'PROPOSE'
+               CHECK (statut IN ('PROPOSE', 'APPROUVE', 'EXECUTE', 'REJETE')),
+    payload    jsonb NOT NULL DEFAULT '{}',
+    resultat   jsonb,
+    erreur     text,
+    tentatives int NOT NULL DEFAULT 0 CHECK (tentatives >= 0),
+    cree_le    timestamptz NOT NULL DEFAULT now(),
+    maj_le     timestamptz NOT NULL DEFAULT now(),
+    execute_le timestamptz,
+    PRIMARY KEY (tenant_id, run_id, etape, cible, operation)
+);
+CREATE INDEX IF NOT EXISTS execution_effet_run
+    ON execution_effet (tenant_id, run_id);
+
+-- Demande d'approbation durable : elle survit au redémarrage du worker et porte la
+-- décision (acteur, motif, dates) séparément de l'effet qu'elle autorise.
+CREATE TABLE IF NOT EXISTS execution_approbation (
+    id         bigserial PRIMARY KEY,
+    tenant_id  text NOT NULL,
+    run_id     text NOT NULL,
+    etape      text NOT NULL,
+    outil      text NOT NULL,
+    cible      text NOT NULL,
+    operation  text NOT NULL,
+    payload    jsonb NOT NULL DEFAULT '{}',
+    statut     text NOT NULL DEFAULT 'PROPOSE'
+               CHECK (statut IN ('PROPOSE', 'APPROUVE', 'REJETE')),
+    demandeur  text NOT NULL,
+    acteur     text,
+    motif      text,
+    cree_le    timestamptz NOT NULL DEFAULT now(),
+    decide_le  timestamptz,
+    UNIQUE (tenant_id, run_id, etape, cible, operation)
+);
+CREATE INDEX IF NOT EXISTS execution_approbation_run
+    ON execution_approbation (tenant_id, run_id, statut);
+
+-- Journal d'étapes d'un run multi-étapes. `seq` fixe l'ordre ; `sortie` est le
+-- checkpoint relu après un crash pour ne pas rejouer une étape TERMINE.
+CREATE TABLE IF NOT EXISTS execution_etape (
+    tenant_id  text NOT NULL,
+    run_id     text NOT NULL,
+    seq        int NOT NULL CHECK (seq >= 0),
+    nom        text NOT NULL,
+    etat       text NOT NULL DEFAULT 'EN_ATTENTE'
+               CHECK (etat IN ('EN_ATTENTE', 'EN_COURS', 'TERMINE', 'ECHEC', 'ANNULE', 'SUSPENDU')),
+    entree     jsonb NOT NULL DEFAULT '{}',
+    sortie     jsonb,
+    erreur     text,
+    cree_le    timestamptz NOT NULL DEFAULT now(),
+    demarre_le timestamptz,
+    fini_le    timestamptz,
+    maj_le     timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, run_id, seq),
+    UNIQUE (tenant_id, run_id, nom)
+);
+CREATE INDEX IF NOT EXISTS execution_etape_run
+    ON execution_etape (tenant_id, run_id, seq);
+CREATE INDEX IF NOT EXISTS execution_etape_etat
+    ON execution_etape (tenant_id, etat);
+
+
+-- Nettoyage des tables d'exécution sans consommateur (pilote).
+DROP TABLE IF EXISTS execution_inbox;
+ALTER TABLE execution_run DROP COLUMN IF EXISTS expected_version;
+ALTER TABLE execution_run DROP CONSTRAINT IF EXISTS execution_run_etat_check;
+ALTER TABLE execution_run ADD CONSTRAINT execution_run_etat_check
+    CHECK (etat IN ('QUEUED', 'RUNNING', 'WAITING_RETRY', 'WAITING_APPROVAL', 'SUCCEEDED', 'FAILED', 'CANCELLED', 'EXPIRED'));
+
+
+-- Alimentation continue pull-first des jumeaux : chaque source suivie a une échéance durable. Aucun webhook :
+-- le worker relit les sources dues, réclame un run sous bail et repousse l'échéance. Le bail et le fencing
+-- empêchent deux workers de committer le même run ; `tentative` compte les échecs consécutifs de la source.
+CREATE TABLE IF NOT EXISTS source_schedule (
+    tenant_id         text NOT NULL,
+    source_id         bigint NOT NULL REFERENCES source(id) ON DELETE CASCADE,
+    jumeau_id         text NOT NULL REFERENCES jumeau(id),
+    intervalle_s      int NOT NULL DEFAULT 3600 CHECK (intervalle_s > 0),
+    next_run_at       timestamptz NOT NULL DEFAULT now(),
+    last_run_at       timestamptz,
+    last_success_at   timestamptz,
+    last_error        text,
+    etat              text NOT NULL DEFAULT 'active' CHECK (etat IN ('active', 'paused')),
+    bail_proprietaire text,
+    bail_jusqu_a      timestamptz,
+    fencing_token     bigint NOT NULL DEFAULT 0 CHECK (fencing_token >= 0),
+    tentative         int NOT NULL DEFAULT 0 CHECK (tentative >= 0),
+    max_tentatives    int NOT NULL DEFAULT 5 CHECK (max_tentatives >= 1),
+    cree_le           timestamptz NOT NULL DEFAULT now(),
+    maj_le            timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, source_id)
+);
+CREATE INDEX IF NOT EXISTS source_schedule_du
+    ON source_schedule (etat, next_run_at);
+
+-- Un run d'ingestion par source suivie. Les états intermédiaires sont observables par l'API ; `previous_sha` et
+-- `observed_sha` rendent le changement de version vérifiable sans relire la source. `metriques` est un JSON libre
+-- (durée, dépôts, signaux), jamais une URL ni un secret.
+CREATE TABLE IF NOT EXISTS ingestion_run (
+    id             text PRIMARY KEY,
+    tenant_id      text NOT NULL,
+    source_id      bigint NOT NULL REFERENCES source(id) ON DELETE CASCADE,
+    jumeau_id      text NOT NULL REFERENCES jumeau(id),
+    previous_sha   text,
+    observed_sha   text,
+    etat           text NOT NULL DEFAULT 'QUEUED'
+                   CHECK (etat IN ('QUEUED', 'FETCHING', 'INDEXING', 'EXTRACTING', 'PROJECTING',
+                                   'SUCCEEDED', 'FAILED', 'RETRY_WAIT', 'CANCELLED')),
+    tentative      int NOT NULL DEFAULT 0 CHECK (tentative >= 0),
+    max_tentatives int NOT NULL DEFAULT 5 CHECK (max_tentatives >= 1),
+    erreur         text,
+    cree_le        timestamptz NOT NULL DEFAULT now(),
+    demarre_le     timestamptz,
+    fini_le        timestamptz,
+    maj_le         timestamptz NOT NULL DEFAULT now(),
+    next_attempt_at timestamptz,
+    bail_proprietaire text,
+    bail_jusqu_a   timestamptz,
+    fencing_token  bigint NOT NULL DEFAULT 0 CHECK (fencing_token >= 0),
+    metriques      jsonb NOT NULL DEFAULT '{}'::jsonb
+);
+CREATE INDEX IF NOT EXISTS ingestion_run_source
+    ON ingestion_run (tenant_id, source_id, cree_le DESC);
+CREATE INDEX IF NOT EXISTS ingestion_run_file
+    ON ingestion_run (etat, next_attempt_at, cree_le);
+-- Un seul run vivant par source : un planificateur qui repasse ne crée jamais de doublon.
+CREATE UNIQUE INDEX IF NOT EXISTS ingestion_run_actif_par_source
+    ON ingestion_run (tenant_id, source_id)
+    WHERE etat IN ('QUEUED', 'FETCHING', 'INDEXING', 'EXTRACTING', 'PROJECTING', 'RETRY_WAIT');

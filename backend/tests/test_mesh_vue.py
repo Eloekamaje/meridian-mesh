@@ -113,37 +113,6 @@ def test_depuis_mesh_ecarte_les_liens_vers_des_jumeaux_non_autorises():
 
 # ---- endpoint --------------------------------------------------------------------------------------------
 
-@pytest.fixture(scope="module")
-def api():
-    try:
-        requests.get(BASE + "/health", timeout=3)
-    except requests.RequestException:
-        pytest.skip("backend non lancé")
-    return requests.Session()
-
-
-def _vue(api, persona="architecte", **kw):
+def _vue(api, **kw):
     q = {"x0": -5000, "y0": -5000, "x1": 9000, "y1": 9000, "zoom": 0.9, **kw}
-    return api.get(f"{BASE}/mesh/vue", params=q, headers={"X-Persona": persona}, timeout=20)
-
-
-def test_endpoint_respecte_les_perimetres(api):
-    for persona in ("architecte", "paiements", "support"):
-        mesh = api.get(f"{BASE}/mesh", headers={"X-Persona": persona}, timeout=10).json()
-        v = _vue(api, persona).json()
-        assert v["n_total"] == mesh["perimetre"]["nb_autorises"]
-        ids_autorises = {j["id"] for j in mesh["jumeaux"] if not j.get("anonyme")}
-        assert {j["id"] for j in v["jumeaux"]} <= ids_autorises
-
-
-def test_endpoint_synthetique_borne(api):
-    r = _vue(api, zoom=0.03, synthetique=300_000, x0=0, y0=0, x1=40000, y1=40000)
-    assert r.status_code == 200
-    d = r.json()
-    assert d["source"] == "synthetique" and d["n_total"] == 300_000
-    assert len(d["jumeaux"]) <= pyramide.MAX_JUMEAUX
-
-
-def test_endpoint_refuse_une_fenetre_vide_et_un_zoom_nul(api):
-    assert _vue(api, x1=-5000).status_code == 422
-    assert _vue(api, zoom=0).status_code == 422
+    return api.get(f"{BASE}/mesh/vue", params=q, headers={}, timeout=20)

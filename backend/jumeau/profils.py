@@ -558,7 +558,7 @@ def _profil_defaut(domaines: tuple[str, ...], plafond: str | None,
 
 def _profil_depuis_identite(identite: Mapping[str, Any]) -> Profil | None:
     """Cherche un profil dans les champs d'identité, dans l'ordre de priorité déclaré."""
-    for cle in ("role", "poste", "fonction", "equipe", "groups", "persona"):
+    for cle in ("role", "poste", "fonction", "equipe", "groups", "acteur"):
         if cle not in identite:
             continue
         for valeur in _valeurs_identite(identite[cle]):

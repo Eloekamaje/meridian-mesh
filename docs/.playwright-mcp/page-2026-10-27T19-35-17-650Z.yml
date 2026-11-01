@@ -1,7 +1,0 @@
-- iframe [ref=e1]:
-  - generic [ref=f1e2]:
-    - generic [ref=f1e3]: "Uncaught runtime errors:"
-    - button "Dismiss" [ref=f1e4] [cursor=pointer]: ×
-    - generic [ref=f1e6]:
-      - generic [ref=f1e7]: ERROR
-      - generic [ref=f1e8]: "EnLigne is not defined ReferenceError: EnLigne is not defined at http://localhost:3000/static/js/bundle.js:23702:96 at Array.map (<anonymous>) at FicheVivante (http://localhost:3000/static/js/bundle.js:23631:24) at react-stack-bottom-frame (http://localhost:3000/static/js/bundle.js:102868:18) at renderWithHooks (http://localhost:3000/static/js/bundle.js:94185:20) at updateFunctionComponent (http://localhost:3000/static/js/bundle.js:95454:17) at beginWork (http://localhost:3000/static/js/bundle.js:96072:16) at runWithFiberInDEV (http://localhost:3000/static/js/bundle.js:91412:14) at performUnitOfWork (http://localhost:3000/static/js/bundle.js:98657:93) at workLoopSync (http://localhost:3000/static/js/bundle.js:98551:38)"

@@ -22,8 +22,8 @@ def prefixe():
     return os.getenv("REDIS_PREFIX", "meridian:")
 
 
-def canal(persona):
-    return f"{prefixe()}evenements:{persona}"
+def canal(acteur):
+    return f"{prefixe()}evenements:{acteur}"
 
 
 def canal_arret():
@@ -66,10 +66,10 @@ async def fermer():
     _clients.clear()
 
 
-async def publier(persona, evenement):
+async def publier(acteur, evenement):
     if not actif():
         return
-    await (await client()).publish(canal(persona), json.dumps(evenement, ensure_ascii=False, default=str))
+    await (await client()).publish(canal(acteur), json.dumps(evenement, ensure_ascii=False, default=str))
 
 
 async def publier_arret():
@@ -79,8 +79,8 @@ async def publier_arret():
     await (await client()).publish(canal_arret(), "1")
 
 
-async def abonner(persona):
-    """Un abonnement par flux SSE : les événements de la persona et le signal d'arrêt du serveur."""
+async def abonner(acteur):
+    """Un abonnement par flux SSE : les événements de l'acteur, le canal global et le signal d'arrêt."""
     pubsub = (await client()).pubsub()
-    await pubsub.subscribe(canal(persona), canal_arret())
+    await pubsub.subscribe(canal(acteur), canal("*"), canal_arret())
     return pubsub

@@ -18,7 +18,7 @@ import logging
 import time
 import uuid
 
-from fastapi import HTTPException
+from fastapi import Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
 from jumeau import evenements, partage, tours_redis as magasin
@@ -209,15 +209,15 @@ def _ligne_evenement(evenement):
     return "data: " + json.dumps(evenement, ensure_ascii=False, default=str) + "\n\n"
 
 
-async def _canal_evenements(requete, persona):
-    """Un seul canal par onglet : instantané à l'ouverture, puis les changements de cette persona.
+async def _canal_evenements(requete, acteur):
+    """Un seul canal par onglet : instantané à l'ouverture, puis les changements de cette acteur.
 
     Avec Redis, l'abonnement précède l'instantané : un tour qui démarre pendant la lecture de `fils`
     est livré après le `pret`, jamais perdu. Le canal d'arrêt ferme les flux au shutdown."""
     if magasin.actif():
-        pubsub = await partage.abonner(persona)
+        pubsub = await partage.abonner(acteur)
         try:
-            fils = await fils_en_cours(persona)
+            fils = await fils_en_cours(acteur)
             yield _ligne_evenement({"type": "pret", "fils": fils})
             while True:
                 if await requete.is_disconnected():
@@ -234,15 +234,15 @@ async def _canal_evenements(requete, persona):
                 yield "data: " + (message.get("data") or "") + "\n\n"
         finally:
             try:
-                await pubsub.unsubscribe(partage.canal(persona), partage.canal_arret())
+                await pubsub.unsubscribe(partage.canal(acteur), partage.canal("*"), partage.canal_arret())
                 await pubsub.aclose()
             except Exception:
                 pass
         return
 
-    file = evenements.BUS.abonner(persona)
+    file = evenements.BUS.abonner(acteur)
     try:
-        fils = await fils_en_cours(persona)
+        fils = await fils_en_cours(acteur)
         yield _ligne_evenement({"type": "pret", "fils": fils})
         while True:
             if await requete.is_disconnected():
@@ -256,7 +256,7 @@ async def _canal_evenements(requete, persona):
                 return
             yield _ligne_evenement(evenement)
     finally:
-        evenements.BUS.desabonner(persona, file)
+        evenements.BUS.desabonner(acteur, file)
 
 
 def en_flux(produire, sur_interruption=None, requete=None, fil=None, proprietaire=None, si_seul=None):
@@ -336,11 +336,11 @@ async def _premiere_lecture(tour, requete):
         yield ligne
 
 
-async def arreter(tour_id, persona):
+async def arreter(tour_id, acteur):
     """Bouton « Arrêter » : annule la génération, enregistre ce qui avait été écrit (sur_interruption), puis finit
     le tour (RUN_FINISHED, issue « cancelled »). Rend False si le tour est inconnu, d'un autre ou déjà fini."""
     tour = TOURS.get(tour_id)
-    if tour is None or tour.proprietaire != persona or tour.fini:
+    if tour is None or tour.proprietaire != acteur or tour.fini:
         return False
     if tour.tache is not None:
         tour.tache.cancel()
@@ -376,10 +376,10 @@ async def demarrer_controle():
     if not magasin.actif() or _CONTROLE is not None:
         return
 
-    async def arreter_distant(tid, persona):
+    async def arreter_distant(tid, acteur):
         tour = TOURS.get(tid)
-        if tour is not None and tour.proprietaire == persona:
-            await arreter(tid, persona)
+        if tour is not None and tour.proprietaire == acteur:
+            await arreter(tid, acteur)
 
     async def veiller():
         while True:
@@ -410,29 +410,31 @@ def fermer_lecteurs():
             tour._reveiller()
 
 
-def ajouter_routes_tours(router, header):
+def ajouter_routes_tours(router):
     """Arrêter, reprendre et suivre un tour : réservé à son interlocuteur (sinon 404, sans dire qu'il existe)."""
     from fastapi import Request
 
+    from auth import acteur as acteur_courant
+
     @router.get("/evenements")
-    async def canal_evenements(request: Request, x_persona: str = header("architecte")):
-        return _sse(_canal_evenements(request, x_persona))
+    async def canal_evenements(request: Request, acteur: str = Depends(acteur_courant)):
+        return _sse(_canal_evenements(request, acteur))
 
     @router.get("/tours/en-cours")
-    async def tours_en_cours(x_persona: str = header("architecte")):
-        return {"fils": await fils_en_cours(x_persona)}
+    async def tours_en_cours(acteur: str = Depends(acteur_courant)):
+        return {"fils": await fils_en_cours(acteur)}
 
     @router.post("/tours/{tid}/arreter")
-    async def arreter_tour(tid: str, x_persona: str = header("architecte")):
+    async def arreter_tour(tid: str, acteur: str = Depends(acteur_courant)):
         tour = TOURS.get(tid)
-        if tour is not None and tour.proprietaire == x_persona:
-            return {"arrete": await arreter(tid, x_persona)}
+        if tour is not None and tour.proprietaire == acteur:
+            return {"arrete": await arreter(tid, acteur)}
         if magasin.actif():
             m = await magasin.meta(tid)
-            if m and m.get("proprietaire") == x_persona:
+            if m and m.get("proprietaire") == acteur:
                 if m.get("fini") == "1":
                     return {"arrete": False}
-                await magasin.demander_arret(tid, x_persona)
+                await magasin.demander_arret(tid, acteur)
                 for _ in range(20):
                     courant = await magasin.meta(tid)
                     if not courant or courant.get("fini") == "1":
@@ -442,12 +444,12 @@ def ajouter_routes_tours(router, header):
         raise HTTPException(404, "Tour introuvable")
 
     @router.get("/tours/{tid}/flux")
-    async def reprendre_tour(tid: str, request: Request, depuis: str = "0", x_persona: str = header("architecte")):
+    async def reprendre_tour(tid: str, request: Request, depuis: str = "0", acteur: str = Depends(acteur_courant)):
         tour = TOURS.get(tid)
-        if tour is not None and tour.proprietaire == x_persona:
+        if tour is not None and tour.proprietaire == acteur:
             return _sse(tour.lire(depuis, request))
         if magasin.actif():
             m = await magasin.meta(tid)
-            if m and m.get("proprietaire") == x_persona:
+            if m and m.get("proprietaire") == acteur:
                 return _sse(magasin.lire(tid, depuis, request))
         raise HTTPException(404, "Tour introuvable")

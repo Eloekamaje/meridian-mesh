@@ -5,6 +5,7 @@ contexte de Flore, « Nouveau travail ». Rejouée au démarrage du serveur (le 
 chaque ingestion. Postgres reste la source de vérité ; le registre n'en est qu'une vue.
 """
 from psycopg.rows import dict_row
+from pymongo.errors import DuplicateKeyError
 
 from jumeau import depot
 
@@ -103,6 +104,10 @@ async def projeter(db, conn):
         statut = doc.pop("statut")
         # Le statut n'est posé qu'à la création : un jumeau né d'une commande reste « en observation »
         # jusqu'à son admission par un humain.
-        await db.jumeaux.update_one({"id": j["id"]}, {"$set": doc, "$setOnInsert": {"statut": statut}}, upsert=True)
+        try:
+            await db.jumeaux.update_one({"id": j["id"]}, {"$set": doc, "$setOnInsert": {"statut": statut}}, upsert=True)
+        except DuplicateKeyError:
+            # Course entre deux projections : l'autre a créé la ligne, on se contente de la mettre à jour.
+            await db.jumeaux.update_one({"id": j["id"]}, {"$set": doc})
         await _placer(db, j["id"], doc.get("domaine"))
     return len(reels)

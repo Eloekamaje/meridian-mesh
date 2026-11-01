@@ -1,12 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
-import { ShieldCheck, LockSimple, Bell, Flag, Users, Sparkle, Compass, Newspaper, Briefcase, CirclesThree, GearSix, Plus, List, Play, ArrowsClockwise } from "@phosphor-icons/react";
+import { ShieldCheck, LockSimple, Bell, Flag, Users, Sparkle, Compass, Newspaper, Briefcase, CirclesThree, GearSix, Plus, List, ArrowsClockwise, Brain } from "@phosphor-icons/react";
 import api from "@/lib/api";
 import { usePerimetre } from "@/lib/perimetre";
 import { useMesh } from "@/lib/mesh";
 import { useContexte } from "@/lib/contexte";
-import { useDemo } from "@/lib/demo";
-import { usePilotage } from "@/lib/pilotage";
 import { parseQuand } from "@/lib/temps";
 
 const TYPES_NOTIF = { mention: "#60A5FA", assignation: "#F2B84B", a_revoir: "#F87171", investigation_terminee: "#34D399" };
@@ -15,17 +13,16 @@ const NAV = [
   { to: "/atlas", label: "Atlas", icon: Compass, testid: "nav-atlas" },
   { to: "/actualites", label: "Actualités", icon: Newspaper, testid: "nav-actualites" },
   { to: "/boucle", label: "Boucle", icon: ArrowsClockwise, testid: "nav-boucle" },
+  { to: "/cognition", label: "Cognition", icon: Brain, testid: "nav-cognition" },
   { to: "/travaux", label: "Travaux", icon: Briefcase, testid: "nav-travaux" },
   { to: "/jumeaux", label: "Jumeaux", icon: CirclesThree, testid: "nav-jumeaux" },
 ];
 
-// En-tête contextuel permanent : espace actif · état du Mesh · sollicitations · Flore · identité
+// En-tête contextuel permanent : espace actif · état du Mesh · sollicitations · Flore
 export default function Topbar() {
-  const { personas, persona, espaces, vues, cible, info, changerPersona, changerCible, version } = usePerimetre();
+  const { espaces, vues, cible, info, changerCible, version } = usePerimetre();
   const { mesh } = useMesh();
   const { floreOuverte, basculerFlore } = useContexte();
-  const { demarrer, courant } = useDemo();
-  const pilote = usePilotage();
   const navigate = useNavigate();
   const [notifs, setNotifs] = useState([]);
   const [nonLues, setNonLues] = useState(0);
@@ -65,7 +62,7 @@ export default function Topbar() {
       api.get("/initiatives/compteurs").then((r) => setATraiter(r.data.a_traiter)).catch(() => {});
     }, 20000);
     return () => clearInterval(t);
-  }, [persona, cible]);
+  }, [cible]);
 
   useEffect(() => {
     const fermer = (e) => {
@@ -96,39 +93,31 @@ export default function Topbar() {
           <span className="hidden font-display text-sm font-black tracking-[0.18em] text-[#F2F6F8] md:inline">MÉRIDIAN</span>
         </div>
         <nav className="hidden items-center gap-1 md:flex" data-testid="sidebar-nav">
-          {NAV.map(({ to, label, icon: Icon, testid }) => {
-            // Kiosque Polaris : « Atlas » reste dans la démo, les autres sorties sont neutralisées
-            const cibleNav = pilote ? (to === "/atlas" ? "/atlas" : null) : to;
-            const desactive = pilote && !cibleNav;
-            return (
-              <NavLink
-                key={to}
-                to={cibleNav || to}
-                data-testid={testid}
-                title={desactive ? "Indisponible pendant la démonstration" : label}
-                onClick={(e) => desactive && e.preventDefault()}
-                className={({ isActive }) =>
-                  `flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs transition-colors ${
-                    desactive
-                      ? "cursor-not-allowed text-[#4B6072]"
-                      : isActive
-                        ? "bg-[rgba(96,165,250,0.14)] font-semibold text-[#BFDBFE]"
-                        : "text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"
-                  }`
-                }
-              >
-                <Icon size={15} /> <span className="hidden xl:inline">{label}</span>
-              </NavLink>
-            );
-          })}
+          {NAV.map(({ to, label, icon: Icon, testid }) => (
+            <NavLink
+              key={to}
+              to={to}
+              data-testid={testid}
+              title={label}
+              className={({ isActive }) =>
+                `flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs transition-colors ${
+                  isActive
+                    ? "bg-[rgba(96,165,250,0.14)] font-semibold text-[#BFDBFE]"
+                    : "text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"
+                }`
+              }
+            >
+              <Icon size={15} /> <span className="hidden xl:inline">{label}</span>
+            </NavLink>
+          ))}
         </nav>
         {/* Menu secondaire — hamburger */}
         <div className="relative" ref={refMenu}>
           <button
-            onClick={() => { if (pilote) return; setMenuOuvert(!menuOuvert); }}
+            onClick={() => setMenuOuvert(!menuOuvert)}
             data-testid="nav-menu-btn"
-            title={pilote ? "Indisponible pendant la démonstration" : "Espaces, récents, parcours guidé, administration"}
-            className={`flex h-8 w-8 items-center justify-center rounded-md border transition-colors ${pilote ? "cursor-not-allowed border-[rgba(148,163,184,0.16)] text-[#4B6072]" : menuOuvert ? "border-[#60A5FA]/50 bg-[rgba(96,165,250,0.10)] text-[#BFDBFE]" : "border-[rgba(148,163,184,0.16)] text-[#94A3B8] hover:text-[#F2F6F8]"}`}
+            title="Espaces, récents, administration"
+            className={`flex h-8 w-8 items-center justify-center rounded-md border transition-colors ${menuOuvert ? "border-[#60A5FA]/50 bg-[rgba(96,165,250,0.10)] text-[#BFDBFE]" : "border-[rgba(148,163,184,0.16)] text-[#94A3B8] hover:text-[#F2F6F8]"}`}
           >
             <List size={15} weight="bold" />
           </button>
@@ -136,32 +125,23 @@ export default function Topbar() {
             <div className="glass hud absolute left-0 top-10 z-50 w-72 rounded-xl p-2" data-testid="nav-menu">
               {/* Mobile : la navigation primaire vit dans ce menu */}
               <div className="pb-1 md:hidden">
-                {NAV.map(({ to, label, icon: Icon, testid }) => {
-                  const cibleNav = pilote ? (to === "/atlas" ? "/atlas" : null) : to;
-                  const desactive = pilote && !cibleNav;
-                  return (
-                    <NavLink
-                      key={to}
-                      to={cibleNav || to}
-                      data-testid={`menu-${testid}`}
-                      onClick={(e) => {
-                        if (desactive) { e.preventDefault(); return; }
-                        setMenuOuvert(false);
-                      }}
-                      className={({ isActive }) =>
-                        `flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs transition-colors ${
-                          desactive
-                            ? "cursor-not-allowed text-[#4B6072]"
-                            : isActive
-                              ? "bg-[rgba(96,165,250,0.14)] font-semibold text-[#BFDBFE]"
-                              : "text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"
-                        }`
-                      }
-                    >
-                      <Icon size={15} /> {label}
-                    </NavLink>
-                  );
-                })}
+                {NAV.map(({ to, label, icon: Icon, testid }) => (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    data-testid={`menu-${testid}`}
+                    onClick={() => setMenuOuvert(false)}
+                    className={({ isActive }) =>
+                      `flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs transition-colors ${
+                        isActive
+                          ? "bg-[rgba(96,165,250,0.14)] font-semibold text-[#BFDBFE]"
+                          : "text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"
+                      }`
+                    }
+                  >
+                    <Icon size={15} /> {label}
+                  </NavLink>
+                ))}
               </div>
               {espacesSecondaires.length > 0 && (
                 <div className="pb-1">
@@ -184,17 +164,6 @@ export default function Topbar() {
                 </div>
               )}
               <div className="border-t border-[rgba(148,163,184,0.12)] pt-1">
-                <div className="pb-1 lg:hidden">
-                  <div className="px-2.5 pb-1 pt-1 font-code text-[9px] uppercase tracking-[0.25em] text-[#7C93A8]">Profil</div>
-                  {personas.map((p) => (
-                    <button key={p.id} onClick={() => { changerPersona(p.id); setMenuOuvert(false); }} data-testid={`menu-persona-${p.id}`} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors ${persona === p.id ? "bg-[rgba(96,165,250,0.14)] font-semibold text-[#BFDBFE]" : "text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"}`}>
-                      <Users size={13} className="shrink-0 text-[#7C93A8]" /> <span className="truncate">{p.nom} — {p.role}</span>
-                    </button>
-                  ))}
-                </div>
-                <button onClick={() => { demarrer(); setMenuOuvert(false); }} data-testid="demo-start-btn" className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs text-[#94A3B8] transition-colors hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]">
-                  <Play size={14} weight={courant >= 0 ? "fill" : "regular"} /> Parcours guidé
-                </button>
                 {adminAutorise && (
                   <NavLink to="/administration" data-testid="nav-administration" onClick={() => setMenuOuvert(false)} className={({ isActive }) => `flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs transition-colors ${isActive ? "bg-[rgba(96,165,250,0.14)] font-semibold text-[#BFDBFE]" : "text-[#94A3B8] hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]"}`}>
                     <GearSix size={14} /> Administration
@@ -208,44 +177,35 @@ export default function Topbar() {
 
       {/* Espace actif — l'autorisation devient une simple icône (détail au survol) */}
       <div className="flex min-w-0 items-center gap-1.5">
-        {pilote ? (
-          <span className="flex h-8 items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 font-display text-xs font-semibold text-slate-200" data-testid="selecteur-perimetre">
-            <ShieldCheck size={14} className="text-emerald-400" />
-            <span>Mesh global</span>
+        {info && (
+          <span
+            title={info.espace.global ? "Vue complète du périmètre autorisé" : `Filtré côté serveur · ${info.nb_autorises} jumeaux`}
+            data-testid="perimetre-badge"
+            className="hidden shrink-0 sm:inline-flex"
+          >
+            {info.espace.global ? <ShieldCheck size={14} className="text-[#34D399]" /> : <LockSimple size={14} className="text-[#F2B84B]" />}
           </span>
-        ) : (
-          <>
-            {info && (
-              <span
-                title={info.espace.global ? "Vue complète du périmètre autorisé" : `Filtré côté serveur · ${info.nb_autorises} jumeaux`}
-                data-testid="perimetre-badge"
-                className="hidden shrink-0 sm:inline-flex"
-              >
-                {info.espace.global ? <ShieldCheck size={14} className="text-[#34D399]" /> : <LockSimple size={14} className="text-[#F2B84B]" />}
-              </span>
-            )}
-            <select
-              value={cible}
-              onChange={(e) => changerCible(e.target.value)}
-              data-testid="selecteur-perimetre"
-              title="Équipe / espace actif"
-              className="h-8 w-36 min-w-0 truncate rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2.5 text-xs font-semibold text-[#F2F6F8] focus:border-[#60A5FA]/60 focus:outline-none sm:w-48"
-            >
-              <optgroup label="Espaces">
-                {espaces.map((e) => (
-                  <option key={e.id} value={e.id} label={e.global ? `${e.label} · autorisé` : e.label} />
-                ))}
-              </optgroup>
-              {vues.length > 0 && (
-                <optgroup label="Vues enregistrées">
-                  {vues.map((v) => (
-                    <option key={v.id} value={`vue:${v.id}`} label={`Vue — ${v.nom}`} />
-                  ))}
-                </optgroup>
-              )}
-            </select>
-          </>
         )}
+        <select
+          value={cible}
+          onChange={(e) => changerCible(e.target.value)}
+          data-testid="selecteur-perimetre"
+          title="Équipe / espace actif"
+          className="h-8 w-36 min-w-0 truncate rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2.5 text-xs font-semibold text-[#F2F6F8] focus:border-[#60A5FA]/60 focus:outline-none sm:w-48"
+        >
+          <optgroup label="Espaces">
+            {espaces.map((e) => (
+              <option key={e.id} value={e.id} label={e.global ? `${e.label} · autorisé` : e.label} />
+            ))}
+          </optgroup>
+          {vues.length > 0 && (
+            <optgroup label="Vues enregistrées">
+              {vues.map((v) => (
+                <option key={v.id} value={`vue:${v.id}`} label={`Vue — ${v.nom}`} />
+              ))}
+            </optgroup>
+          )}
+        </select>
       </div>
 
       <div className="flex-1" />
@@ -274,18 +234,16 @@ export default function Topbar() {
           Mesh vivant · {actifs} jumeaux{fraicheurMesh && <span className="normal-case tracking-normal text-[#7C93A8]" data-testid="mesh-fraicheur"> · {fraicheurMesh}</span>}
         </span>
 
-        {!pilote && (
-          <button
-            onClick={() => navigate("/actualites?vue=a_traiter")}
-            data-testid="a-traiter-pill"
-            title="Sollicitations du Mesh en attente"
-            className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
-              aTraiter > 0 ? "border-[#F59E0B]/40 bg-[rgba(245,158,11,0.10)] text-[#F59E0B] hover:bg-[#F59E0B]/10" : "border-[rgba(148,163,184,0.16)] text-[#7C93A8]"
-            }`}
-          >
-            <Flag size={12} /> {aTraiter}<span className="hidden sm:inline">&nbsp;à traiter</span>
-          </button>
-        )}
+        <button
+          onClick={() => navigate("/actualites?vue=a_traiter")}
+          data-testid="a-traiter-pill"
+          title="Sollicitations du Mesh en attente"
+          className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
+            aTraiter > 0 ? "border-[#F59E0B]/40 bg-[rgba(245,158,11,0.10)] text-[#F59E0B] hover:bg-[#F59E0B]/10" : "border-[rgba(148,163,184,0.16)] text-[#7C93A8]"
+          }`}
+        >
+          <Flag size={12} /> {aTraiter}<span className="hidden sm:inline">&nbsp;à traiter</span>
+        </button>
 
         {/* Flore — présence conversationnelle globale de Méridian (⌘K) */}
         <button
@@ -346,22 +304,6 @@ export default function Topbar() {
               </div>
             </div>
           )}
-        </div>
-
-        {/* Identité */}
-        <div className="hidden items-center gap-1.5 border-l border-[rgba(148,163,184,0.16)] pl-2.5 lg:flex">
-          <Users size={14} className="text-[#7C93A8]" />
-          <select
-            value={persona}
-            onChange={(e) => changerPersona(e.target.value)}
-            data-testid="selecteur-persona"
-            title="Profil actif"
-            className="h-8 w-24 min-w-0 rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2 text-xs text-[#D8E2EA] focus:outline-none lg:w-40"
-          >
-            {personas.map((p) => (
-              <option key={p.id} value={p.id} label={`${p.nom} — ${p.role}`} />
-            ))}
-          </select>
         </div>
       </div>
     </header>

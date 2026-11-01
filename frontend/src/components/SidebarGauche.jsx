@@ -11,20 +11,14 @@ import {
   SidebarSimple, 
   X,
   Sparkle, 
-  Users, 
-  Check,
-  CaretDown,
-  PlayCircle,
-  ArrowsClockwise
+  ArrowsClockwise,
+  Brain
 } from "@phosphor-icons/react";
 import api from "@/lib/api";
 import { resultatsRecherche, estConversation, PARAM_CONVERSATIONS } from "@/lib/conversationFlore";
-import { usePerimetre } from "@/lib/perimetre";
 import { useContexte } from "@/lib/contexte";
-import { usePilotage } from "@/lib/pilotage";
 import { useIdentite } from "@/lib/identite";
 import { useEvenements } from "@/lib/evenements";
-import IndicateurClic from "@/components/IndicateurClic";
 import Notifications from "@/components/Notifications";
 import logoComplet from "@/assets/logo/meridian-logo-clair.png";
 import logoSymbole from "@/assets/logo/meridian-symbole.png";
@@ -33,6 +27,7 @@ const NAV_ITEMS = [
   { to: "/atlas", label: "Atlas", icon: Compass, testid: "nav-atlas" },
   { to: "/actualites", label: "Actualités", icon: Newspaper, testid: "nav-actualites" },
   { to: "/boucle", label: "Boucle", icon: ArrowsClockwise, testid: "nav-boucle" },
+  { to: "/cognition", label: "Cognition", icon: Brain, testid: "nav-cognition" },
   { to: "/travaux", label: "Travaux", icon: Briefcase, testid: "nav-travaux" },
   { to: "/jumeaux", label: "Jumeaux", icon: CirclesThree, testid: "nav-jumeaux" },
   { to: "/administration", label: "Administration", icon: GearSix, testid: "nav-administration" },
@@ -41,13 +36,9 @@ const NAV_ITEMS = [
 export default function SidebarGauche({ mode = "bureau", onOuvrir, onFermer }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { personas, persona, changerPersona, espaces, cible, changerCible, authMode } = usePerimetre();
   const { basculerFlore, repliAuto } = useContexte();
-  // Non nul uniquement dans la démonstration Polaris : la coquille est alors verrouillée
-  const pilote = usePilotage();
 
   // État replié : mémorisé dans le localStorage pour confort utilisateur.
-  // En démonstration la barre reste dépliée : le bouton « Nouveau travail » doit être visible.
   const [replieMemo, setReplieMemo] = useState(() => {
     return localStorage.getItem("meridian_sidebar_replie") === "true";
   });
@@ -55,10 +46,9 @@ export default function SidebarGauche({ mode = "bureau", onOuvrir, onFermer }) {
   const [depliageForce, setDepliageForce] = useState(false);
   useEffect(() => { if (!repliAuto) setDepliageForce(false); }, [repliAuto]);
   // bureau : replié à la demande (ou par un panneau de détail) ; rail (tablette) : toujours en icônes ; tiroir : toujours complet
-  const replie = mode === "rail" ? true : mode === "tiroir" ? false : !pilote && (repliAuto ? !depliageForce : replieMemo);
+  const replie = mode === "rail" ? true : mode === "tiroir" ? false : (repliAuto ? !depliageForce : replieMemo);
   const tiroir = mode === "tiroir";
 
-  const [menuProfil, setMenuProfil] = useState(false);
   const [recents, setRecents] = useState([]);
   const [tousTravaux, setTousTravaux] = useState([]);
   const [enCours, setEnCours] = useState(() => new Set()); // fils où Flore travaille encore
@@ -66,7 +56,6 @@ export default function SidebarGauche({ mode = "bureau", onOuvrir, onFermer }) {
   const [recherche, setRecherche] = useState("");
   const [trouves, setTrouves] = useState(null); // réponse du serveur à GET /cases?q=
   const [aExaminer, setAExaminer] = useState(0); // travaux dont une décision est remise en question
-  const refProfil = useRef(null);
 
   useEffect(() => {
     const q = recherche.trim();
@@ -109,8 +98,7 @@ export default function SidebarGauche({ mode = "bureau", onOuvrir, onFermer }) {
         setAExaminer(sorted.filter((c) => c.mouvement?.niveau === 1).length);
       })
       .catch(() => {});
-    // En démonstration, la liste se recharge quand le travail naît, s'enrichit ou se fige
-  }, [pilote?.versionTravaux, location.pathname, majTravaux]);
+  }, [location.pathname, majTravaux]);
 
   // Les tours de Flore encore en cours : un instantané au montage, puis le canal SSE (démarrage/fin).
   // Le badge survit à la sortie de la page sans polling ; une fin recharge les Récents.
@@ -136,32 +124,13 @@ export default function SidebarGauche({ mode = "bureau", onOuvrir, onFermer }) {
     }
   });
 
-  // « Nouveau travail » : en démonstration le clic lance la séquence scénarisée
-  // (le moteur ouvre la page) ; hors démonstration il ouvre la vraie page de création.
+  // « Nouveau travail » ouvre la page de création.
   const ouvrirNouveauTravail = () => {
     if (tiroir) onFermer?.();
-    if (pilote) {
-      if (pilote.ouvertureEnAttente) pilote.demarrerOuverture();
-      return;
-    }
     navigate("/travaux/nouveau");
   };
 
-  // Navigation verrouillée en démonstration : « Atlas » reste dans la démo, le reste est neutralisé
-  const lienActif = (to) => !pilote || to === "/atlas";
-
-  useEffect(() => {
-    const fermer = (e) => {
-      if (refProfil.current && !refProfil.current.contains(e.target)) {
-        setMenuProfil(false);
-      }
-    };
-    document.addEventListener("mousedown", fermer);
-    return () => document.removeEventListener("mousedown", fermer);
-  }, []);
-
   const identite = useIdentite();
-  const personaActuel = identite.profil;
 
   return (
     <aside 
@@ -188,7 +157,7 @@ export default function SidebarGauche({ mode = "bureau", onOuvrir, onFermer }) {
               <MagnifyingGlass size={15} />
             </button>
 
-            <Notifications persona={persona} cible={cible} />
+            <Notifications />
 
             {/* Bouton pour replier la barre latérale vers les icônes seules */}
             <button 
@@ -214,27 +183,23 @@ export default function SidebarGauche({ mode = "bureau", onOuvrir, onFermer }) {
             <img src={logoSymbole} alt="Méridian" className="h-6 w-auto select-none transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0" draggable={false} data-testid="sidebar-symbole" />
             <SidebarSimple size={18} className="absolute text-white opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100" />
           </button>
-          <Notifications persona={persona} cible={cible} />
+          <Notifications />
         </div>
       )}
 
       {/* ===================================================================== */}
       {/* BOUTON D'ACTION : NOUVEAU TRAVAIL (Style ChatGPT)                     */}
       {/* ===================================================================== */}
-      {/* Démonstration : le clic est le geste que le visiteur doit faire — halo, main et bulle l'y invitent */}
       {!replie ? (
         <div className="relative mb-4">
           <button
             onClick={ouvrirNouveauTravail}
-            className={`flex min-h-[44px] w-full items-center gap-2.5 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs font-medium text-white transition-all hover:border-white/20 hover:bg-white/[0.08] shadow-sm ${
-              pilote?.ouvertureEnAttente ? "animate-pulse ring-2 ring-[#BFDBFE] ring-offset-2 ring-offset-[#091420]" : ""
-            }`}
+            className="flex min-h-[44px] w-full items-center gap-2.5 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs font-medium text-white transition-all hover:border-white/20 hover:bg-white/[0.08] shadow-sm"
             data-testid="btn-nouveau-travail-sidebar"
           >
             <Plus size={15} className="text-[#60A5FA]" />
             <span>Nouveau travail</span>
           </button>
-          {pilote?.ouvertureEnAttente && <IndicateurClic />}
         </div>
       ) : (
         <button
@@ -255,10 +220,9 @@ export default function SidebarGauche({ mode = "bureau", onOuvrir, onFermer }) {
           <NavLink
             key={to}
             to={to}
-            onClick={(e) => { if (!lienActif(to)) e.preventDefault(); else if (tiroir) onFermer?.(); }}
+            onClick={() => { if (tiroir) onFermer?.(); }}
             data-testid={testid}
-            aria-disabled={!lienActif(to) || undefined}
-            title={!lienActif(to) ? "Indisponible pendant la démonstration" : replie ? label : undefined}
+            title={replie ? label : undefined}
             className={({ isActive }) =>
               `flex items-center gap-3 rounded-xl transition-colors ${
                 replie 
@@ -275,24 +239,6 @@ export default function SidebarGauche({ mode = "bureau", onOuvrir, onFermer }) {
             {!replie && to === "/travaux" && aExaminer > 0 && <span className="ml-auto rounded-full bg-[#F87171]/15 px-1.5 font-code text-[11px] text-[#F87171]" data-testid="nav-travaux-compteur" title="Décisions à examiner">{aExaminer}</span>}
           </NavLink>
         ))}
-        {/* Entrée de la démonstration : même menu partout ; pendant la démo elle est active et inerte */}
-        <NavLink
-          to="/demo"
-          onClick={(e) => { if (pilote) e.preventDefault(); else if (tiroir) onFermer?.(); }}
-          data-testid="nav-demo"
-          title={replie ? "Démonstration" : undefined}
-          className={({ isActive }) => {
-            const actif = isActive || !!pilote;
-            return `flex items-center gap-3 rounded-xl transition-colors ${
-              replie
-                ? `h-9 w-9 justify-center hover:bg-white/[0.06] ${actif ? "bg-[#60A5FA]/20 text-[#BFDBFE]" : "text-[#60A5FA]"}`
-                : `px-3 py-2 text-xs font-medium ${actif ? "bg-[#60A5FA]/15 font-semibold text-white" : "text-[#93C5FD] hover:bg-[#60A5FA]/10 hover:text-white"}`
-            }`;
-          }}
-        >
-          <PlayCircle size={17} className="shrink-0" />
-          {!replie && <span>Démonstration</span>}
-        </NavLink>
       </nav>
 
       {/* Séparateur */}
@@ -321,7 +267,7 @@ export default function SidebarGauche({ mode = "bureau", onOuvrir, onFermer }) {
             <NavLink
               key={c.id}
               to={`/travaux/${c.id}`}
-              onClick={(e) => { if (pilote && !pilote.travailOuvrable) e.preventDefault(); else if (tiroir) onFermer?.(); }}
+              onClick={() => { if (tiroir) onFermer?.(); }}
               data-testid={`sidebar-recent-${c.id}`}
               className={({ isActive }) =>
                 `flex items-center gap-2 truncate rounded-xl px-2.5 py-1.5 text-xs transition-colors ${
@@ -336,9 +282,9 @@ export default function SidebarGauche({ mode = "bureau", onOuvrir, onFermer }) {
               <span className="ml-auto flex shrink-0 items-center gap-1.5">
                 {estConversation(c) && <span className="font-code text-[9px] text-[#64748B]" data-testid={`recent-conversation-${c.id}`}>conversation</span>}
                 {c.mouvement && <span className={`h-2 w-2 shrink-0 rounded-full ${c.mouvement.niveau === 1 ? "bg-[#F87171]" : "bg-[#60A5FA]"}`} title={c.mouvement.texte} data-testid={`recent-mouvement-${c.id}`} />}
-                {(enCours.has(c.id) || c.demo_phase === "en_construction") && (
+                {enCours.has(c.id) && (
                   <span className="flex shrink-0 items-center gap-1 rounded-full bg-[#60A5FA]/20 px-1.5 py-px font-code text-[8px] uppercase tracking-wider text-[#BFDBFE]"
-                        title={enCours.has(c.id) ? "Flore travaille sur ce travail" : "Démonstration en construction"}
+                        title="Flore travaille sur ce travail"
                         data-testid={`recent-en-cours-${c.id}`}>
                     <span className="h-1 w-1 animate-pulse rounded-full bg-current" />
                     en cours
@@ -355,70 +301,29 @@ export default function SidebarGauche({ mode = "bureau", onOuvrir, onFermer }) {
       {/* ===================================================================== */}
       {/* PIED DE BARRE LATÉRALE : PROFIL UTILISATEUR & STATUT MESH              */}
       {/* ===================================================================== */}
-      <div className="mt-auto shrink-0 pt-2 w-full" ref={refProfil}>
+      <div className="mt-auto shrink-0 pt-2 w-full">
         {!replie ? (
-          <div className="relative">
-            <button
-              onClick={() => { if (!pilote) setMenuProfil(!menuProfil); }}
-              className="flex w-full items-center justify-between rounded-xl px-2 py-2 transition-colors hover:bg-white/[0.06]"
-              data-testid="sidebar-profil-btn"
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-[#60A5FA] to-[#60A5FA] font-display text-xs font-bold text-[#071019] shadow-sm">
-                  {identite.initiales}
+          <div className="flex w-full items-center justify-between rounded-xl px-2 py-2" data-testid="sidebar-profil">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-[#60A5FA] to-[#60A5FA] font-display text-xs font-bold text-[#071019] shadow-sm">
+                {identite.initiales}
+              </div>
+              <div className="min-w-0 text-left">
+                <div className="truncate text-xs font-semibold text-white">
+                  {identite.nom}
                 </div>
-                <div className="min-w-0 text-left">
-                  <div className="truncate text-xs font-semibold text-white">
-                    {identite.nom}
-                  </div>
-                  <div className="truncate text-[10px] text-[#7C93A8]">
-                    {identite.sous}
-                  </div>
+                <div className="truncate text-[10px] text-[#7C93A8]">
+                  {identite.sous}
                 </div>
               </div>
-              <CaretDown size={13} className="text-[#64748B]" />
-            </button>
-
-            {/* Menu profil / Persona switcher */}
-            {menuProfil && (
-              <div className="absolute bottom-12 left-0 z-50 w-56 rounded-2xl border border-white/10 bg-[#0C1724] p-2 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150">
-                {authMode === "demo" ? (
-                  <>
-                    <div className="px-2 py-1 text-[10px] font-code uppercase tracking-wider text-[#7C93A8]">
-                      Changer de rôle / persona
-                    </div>
-                    {personas.map((p) => (
-                      <button
-                        key={p.id}
-                        onClick={() => {
-                          changerPersona(p.id);
-                          setMenuProfil(false);
-                        }}
-                        className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors ${
-                          persona === p.id
-                            ? "bg-blue-500/20 text-blue-200 font-semibold"
-                            : "text-[#CBD5E1] hover:bg-white/[0.06] hover:text-white"
-                        }`}
-                      >
-                        <span>{p.nom}</span>
-                        {persona === p.id && <Check size={12} className="text-blue-400" />}
-                      </button>
-                    ))}
-                  </>
-                ) : (
-                  <div className="px-2 py-1 text-[10px] font-code uppercase tracking-wider text-[#7C93A8]">
-                    Identité vérifiée par le fournisseur
-                  </div>
-                )}
-              </div>
-            )}
+            </div>
           </div>
         ) : (
           <div className="flex flex-col items-center">
             <button
               onClick={() => setReplieMemo(false)}
               className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-tr from-[#60A5FA] to-[#60A5FA] font-display text-xs font-bold text-[#071019] shadow-sm hover:scale-105 transition-transform"
-              title={`${identite.nom} (${personaActuel.role || "Directeur SI"})`}
+              title={`${identite.nom} (${identite.profil?.role || "Directeur SI"})`}
             >
               {identite.initiales}
             </button>

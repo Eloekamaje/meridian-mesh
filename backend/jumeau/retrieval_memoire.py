@@ -2,9 +2,23 @@
 
 Le module relie les souvenirs déjà persistés en une liste de candidats classés, sans modèle
 ni réseau. Chaque lecture reste bornée au tenant ; les contenus, provenances et données sont
-expurgés des secrets avant de pouvoir enrichir un Context Pack. Le classement est déterministe :
-phrase exacte, couverture lexicale, autorité de la source, correspondance de portée, confiance
-et récence.
+expurgés des secrets avant de pouvoir enrichir un Context Pack.
+
+Classement (CTX-003)
+--------------------
+Le score combine la pertinence lexicale disponible (phrase exacte et couverture), la proximité
+de graphe optionnelle, la confiance, la fraîcheur et l'autorité de la source :
+
+``3.0 * phrase + 2.5 * couverture + 2.0 * proximite + 1.2 * autorite
++ 1.0 * portee + 0.8 * portee_id + 0.7 * contexte_twin_situation
++ 1.0 * confiance + 0.5 * fraicheur``
+
+Aucun provider d'embeddings n'existe : la pertinence sémantique n'est pas inventée, elle reste
+approximée par le lexical. ``proximite`` est optionnelle et se lit soit dans un mapping
+``identifiant -> score`` (``[0, 1]``), soit dans une distance en sauts (``> 1``, convertie en
+``1/(1+d)``), soit dans les données du candidat ; sans information de graphe, elle retombe sur
+l'ancrage Twin/Situation. La déduplication porte sur l'identité de Claim, de preuve et de
+contenu normalisé, pas seulement sur le texte exact.
 """
 from __future__ import annotations
 
@@ -76,6 +90,7 @@ class CandidatMemoire:
     confiance: float = 0.0
     preuves: tuple[str, ...] = ()
     score: float = 0.0
+    proximite: float = 0.0
     raisons: tuple[str, ...] = ()
     donnees: dict = field(default_factory=dict)
 
@@ -92,6 +107,7 @@ class CandidatMemoire:
             "confiance": self.confiance,
             "preuves": list(self.preuves),
             "score": self.score,
+            "proximite": self.proximite,
             "raisons": list(self.raisons),
             "donnees": deepcopy(self.donnees),
         }
@@ -486,7 +502,9 @@ def _candidats_claims(conn: Any, tenant: str, twin_ids: list[str]) -> list[dict]
                 "preuves": _preuves(claim.get("preuve"), claim.get("preuves"),
                                     claim.get("preuve_ids")),
                 "donnees": _assainir_donnees({
+                    "sujet": sujet,
                     "predicat": predicat,
+                    "objet": objet,
                     "type": claim.get("type"),
                     "statut": claim.get("statut"),
                     "maturite": claim.get("maturite"),
@@ -512,19 +530,114 @@ def _meilleur_brut(gauche: Mapping, droite: Mapping) -> bool:
     return cle_gauche > cle_droite
 
 
+def _identites_brut(brut: Mapping) -> list[tuple]:
+    """Identités de déduplication : id source, Claim, preuve et contenu normalisé."""
+    source = _texte(brut.get("source"), 40).lower()
+    portee = (_texte(brut.get("scope"), 80), _texte(brut.get("scope_id"), 200))
+    identites: list[tuple] = []
+    identifiant = _texte(brut.get("id"), 200)
+    if identifiant:
+        identites.append(("id", source, identifiant))
+    contenu = _normaliser(brut.get("contenu"))
+    if contenu:
+        identites.append(("contenu", source, portee, contenu))
+    donnees = brut.get("donnees")
+    donnees = donnees if isinstance(donnees, Mapping) else {}
+    if source == "claim":
+        sujet = _normaliser(donnees.get("sujet"))
+        predicat = _normaliser(donnees.get("predicat"))
+        objet = _normaliser(donnees.get("objet"))
+        if sujet or predicat or objet:
+            identites.append(("claim", portee, sujet, predicat, objet))
+    preuves = tuple(sorted(
+        _normaliser(preuve) for preuve in brut.get("preuves") or () if _normaliser(preuve)
+    ))
+    if preuves:
+        identites.append(("preuve", source, portee, preuves))
+    return identites or [("objet", source, id(brut))]
+
+
 def _dedupliquer(bruts: list[dict]) -> list[dict]:
-    meilleurs: dict[tuple[str, str], dict] = {}
-    for brut in bruts:
-        cle = (brut["source"], _texte(brut.get("id")))
-        actuel = meilleurs.get(cle)
+    """Fusionne les doublons reliés par id, Claim, preuve ou contenu normalisé."""
+    if len(bruts) < 2:
+        return list(bruts)
+    parents = list(range(len(bruts)))
+
+    def trouver(index: int) -> int:
+        while parents[index] != index:
+            parents[index] = parents[parents[index]]
+            index = parents[index]
+        return index
+
+    def unir(gauche: int, droite: int) -> None:
+        racine_gauche, racine_droite = trouver(gauche), trouver(droite)
+        if racine_gauche != racine_droite:
+            parents[racine_droite] = racine_gauche
+
+    vus: dict[tuple, int] = {}
+    for index, brut in enumerate(bruts):
+        for identite in _identites_brut(brut):
+            precedent = vus.setdefault(identite, index)
+            if precedent != index:
+                unir(index, precedent)
+    groupes: dict[int, dict] = {}
+    for index, brut in enumerate(bruts):
+        racine = trouver(index)
+        actuel = groupes.get(racine)
         if actuel is None or _meilleur_brut(brut, actuel):
-            meilleurs[cle] = brut
-    return list(meilleurs.values())
+            groupes[racine] = brut
+    return list(groupes.values())
+
+
+def _proximite_valeur(valeur: Any) -> float | None:
+    """Lit un score ``[0, 1]`` ou une distance ``> 1`` et rend une proximité normalisée."""
+    if isinstance(valeur, Mapping):
+        for cle in ("score", "proximite", "proximity", "proximity_score"):
+            if cle in valeur:
+                return _proximite_valeur(valeur[cle])
+        for cle in ("distance", "distance_graphe", "graph_distance", "sauts"):
+            if cle in valeur:
+                distance = _nombre(valeur[cle], -1.0)
+                return None if distance < 0 else 1.0 / (1.0 + distance)
+        return None
+    nombre = _nombre(valeur, -1.0)
+    if nombre < 0:
+        return None
+    if nombre <= 1.0:
+        return max(0.0, min(nombre, 1.0))
+    return 1.0 / (1.0 + nombre)
+
+
+def _proximite_brut(brut: Mapping, proximite: Mapping | None) -> float | None:
+    donnees = _donnees(brut)
+    for conteneur in (brut, donnees):
+        if not isinstance(conteneur, Mapping):
+            continue
+        for cle in ("proximite", "proximity", "proximity_score"):
+            if cle in conteneur:
+                score = _proximite_valeur(conteneur[cle])
+                if score is not None:
+                    return score
+        for cle in ("distance_graphe", "graph_distance"):
+            if cle in conteneur:
+                distance = _nombre(conteneur[cle], -1.0)
+                if distance >= 0:
+                    return 1.0 / (1.0 + distance)
+    if proximite:
+        identifiant = _texte(brut.get("id"), 200)
+        source = _texte(brut.get("source"), 40).lower()
+        for cle in (identifiant, f"{source}:{identifiant}", _texte(brut.get("scope_id"), 200)):
+            if cle and cle in proximite:
+                score = _proximite_valeur(proximite[cle])
+                if score is not None:
+                    return score
+    return None
 
 
 def _classer(
     bruts: list[dict], question: str, *, scope: str | None, scope_id: str | None,
     twin_ids: set[str], situation_id: str | None, limite: int,
+    proximite: Mapping | None = None,
 ) -> list[CandidatMemoire]:
     if not bruts:
         return []
@@ -554,8 +667,11 @@ def _classer(
             contexte = 1.0
         confiance = _confiance(brut.get("confiance"), _CONFIANCE_DEFAUT.get(brut["source"], 0.5))
         recence = (_nombre(brut.get("recence"), 0.0) / maximum) if maximum else 0.0
+        prox = _proximite_brut(brut, proximite)
+        if prox is None:
+            prox = 1.0 if contexte else 0.0
         score = round(
-            3.0 * (1.0 if phrase else 0.0) + 2.5 * couverture + 1.2 * autorite
+            3.0 * (1.0 if phrase else 0.0) + 2.5 * couverture + 2.0 * prox + 1.2 * autorite
             + 1.0 * portee + 0.8 * portee_id + 0.7 * contexte
             + 1.0 * confiance + 0.5 * recence,
             6,
@@ -572,6 +688,8 @@ def _classer(
             raisons.append("portée id exacte")
         if contexte:
             raisons.append("contexte twin/situation")
+        if prox > 0:
+            raisons.append(f"proximité graphe {prox:.2f}")
         raisons.append(f"confiance {confiance:.2f}")
         if recence > 0:
             raisons.append("récence")
@@ -586,6 +704,7 @@ def _classer(
             confiance=confiance,
             preuves=tuple(brut.get("preuves") or ()),
             score=score,
+            proximite=round(prox, 6),
             raisons=tuple(raisons),
             donnees=dict(brut.get("donnees") or {}),
         ))
@@ -597,6 +716,7 @@ def _classer(
 def recuperer(
     conn: Any, tenant_id: Any, *, question: Any = "", twin_ids: Any = (),
     situation_id: Any = None, scope: Any = None, scope_id: Any = None, limite: Any = 12,
+    proximite: Any = None,
 ) -> list[CandidatMemoire]:
     """Récupère et classe les souvenirs pertinents du tenant, sans modèle ni réseau.
 
@@ -604,9 +724,12 @@ def recuperer(
     demandée, puis filtrées sur ``expire_le`` et sur la question. Les annotations et les
     learnings sont lus dans le dépôt d'entreprise ; un learning ancré sur la situation ou un
     Twin reste candidat même sans recouvrement lexical. Les Claims ne sont lus que pour des
-    ``twin_ids`` explicites, après vérification que chaque Twin appartient au tenant. Les
-    doublons ``(source, id)`` sont fusionnés, les secrets sont retirés et le résultat est
-    borné par ``limite``.
+    ``twin_ids`` explicites, après vérification que chaque Twin appartient au tenant.
+
+    ``proximite`` est optionnel : mapping ``identifiant -> score`` (``[0, 1]``) ou distance en
+    sauts (``> 1``). Faute de provider sémantique, la pertinence reste lexicale. Les doublons
+    d'id, de Claim, de preuve et de contenu normalisé sont fusionnés, les secrets sont retirés
+    et le résultat est borné par ``limite``.
     """
     tenant = _tenant(tenant_id)
     texte_question = _texte(question, 4000)
@@ -616,6 +739,8 @@ def recuperer(
     scope_valide = _scope(scope)
     scope_id_valide = _texte(scope_id, 200) or None
     borne = _limite(limite)
+    if proximite is not None and not isinstance(proximite, Mapping):
+        raise RetrievalMemoireInvalide("proximite : mapping identifiant -> score attendu")
     tokens = _tokens_utiles(texte_question)
 
     bruts: list[dict] = []
@@ -625,7 +750,7 @@ def recuperer(
     bruts.extend(_candidats_claims(conn, tenant, twins_liste))
     return _classer(
         _dedupliquer(bruts), texte_question, scope=scope_valide, scope_id=scope_id_valide,
-        twin_ids=twins, situation_id=situation, limite=borne,
+        twin_ids=twins, situation_id=situation, limite=borne, proximite=proximite,
     )
 
 
@@ -666,6 +791,7 @@ def _candidat_en_dict(candidat: Any) -> dict | None:
         "confiance": _confiance(donnees.get("confiance"), 0.5),
         "preuves": list(_preuves(donnees.get("preuves"))),
         "score": _nombre(donnees.get("score"), 0.0),
+        "proximite": max(0.0, min(_nombre(donnees.get("proximite"), 0.0), 1.0)),
         "raisons": [
             _assainir_texte(raison, 200) for raison in _liste(donnees.get("raisons"))
             if _texte(raison)
@@ -683,14 +809,54 @@ def _fingerprint_memoire(memoire: list[dict]) -> str:
     return hashlib.sha256(texte.encode("utf-8")).hexdigest()
 
 
-def enrichir_pack(pack: Any, candidats: Any, *, max_ajouts: Any = 6) -> dict:
+def _tokens_estimes(valeur: Any) -> int:
+    texte = " ".join(str(valeur or "").split())
+    return max(1, math.ceil(len(texte) / 4)) if texte else 0
+
+
+def _cout_memoire(entree: Mapping) -> int:
+    morceaux = [
+        entree.get("id"), entree.get("source"), entree.get("classe"),
+        entree.get("contenu"), entree.get("provenance"), entree.get("scope"),
+        entree.get("scope_id"), _json_stable(entree.get("donnees")),
+    ]
+    morceaux.extend(_liste(entree.get("preuves")))
+    morceaux.extend(_liste(entree.get("raisons")))
+    return sum(_tokens_estimes(morceau) for morceau in morceaux)
+
+
+def _plafond_memoire(base: Mapping, max_tokens: Any) -> int | None:
+    if max_tokens is not None:
+        if isinstance(max_tokens, bool):
+            raise RetrievalMemoireInvalide("max_tokens doit être un entier positif ou nul")
+        try:
+            plafond = int(max_tokens)
+        except (TypeError, ValueError) as exc:
+            raise RetrievalMemoireInvalide(
+                "max_tokens doit être un entier positif ou nul") from exc
+        if plafond < 0:
+            raise RetrievalMemoireInvalide("max_tokens doit être un entier positif ou nul")
+        return plafond
+    budget = base.get("budget")
+    if not isinstance(budget, Mapping) or "tokens" not in budget:
+        return None
+    total = _nombre(budget.get("tokens"), -1.0)
+    if total < 0:
+        return None
+    utilise = max(0.0, _nombre(budget.get("tokens_utilises"), 0.0))
+    return max(0, int(total - utilise))
+
+
+def enrichir_pack(pack: Any, candidats: Any, *, max_ajouts: Any = 6,
+                  max_tokens: Any = None) -> dict:
     """Rend une copie du pack enrichie d'une liste ``memoire`` bornée et empreintée.
 
     ``pack`` peut être un :class:`jumeau.contexte.ContextePack`, un espace de noms ou un
     dictionnaire ; la source n'est jamais mutée. ``candidats`` peut contenir des
     :class:`CandidatMemoire` ou des dictionnaires équivalents. Les secrets sont retirés une
     seconde fois et ``fingerprint_memoire`` est un SHA-256 stable des identifiants et contenus
-    retenus, indépendant de l'ordre des candidats.
+    retenus, indépendant de l'ordre des candidats. Le budget de tokens du pack (s'il existe)
+    borne les ajouts mémoire ; une troncature est écrite dans ``limites``.
     """
     if isinstance(max_ajouts, bool):
         raise RetrievalMemoireInvalide("max_ajouts doit être un entier positif ou nul")
@@ -703,19 +869,40 @@ def enrichir_pack(pack: Any, candidats: Any, *, max_ajouts: Any = 6) -> dict:
     ajouts = min(ajouts, _MAX_AJOUTS)
 
     base = _pack_en_dict(pack)
+    plafond = _plafond_memoire(base, max_tokens)
     memoire: list[dict] = []
-    vus: set[tuple[str, str]] = set()
+    vus: set[tuple] = set()
+    tokens_memoire = 0
+    tronque = False
     for candidat in _liste(candidats):
         if len(memoire) >= ajouts:
             break
         converti = _candidat_en_dict(candidat)
         if converti is None:
             continue
-        cle = (converti["source"], converti["id"])
-        if cle in vus:
+        identites = set(_identites_brut(converti))
+        if identites & vus:
             continue
-        vus.add(cle)
+        cout = _cout_memoire(converti)
+        if plafond is not None and tokens_memoire + cout > plafond:
+            tronque = True
+            continue
+        vus.update(identites)
         memoire.append(converti)
+        tokens_memoire += cout
     base["memoire"] = memoire
     base["fingerprint_memoire"] = _fingerprint_memoire(memoire)
+    budget = base.get("budget")
+    budget = dict(budget) if isinstance(budget, Mapping) else {}
+    if plafond is not None:
+        budget["tokens_memoire"] = tokens_memoire
+        if "tokens_utilises" in budget:
+            budget["tokens_utilises"] = (
+                _nombre(budget.get("tokens_utilises"), 0.0) + tokens_memoire)
+        base["budget"] = budget
+    if tronque:
+        limites = list(base.get("limites") or ())
+        limites.append(
+            f"mémoire tronquée au budget de {plafond} tokens estimés")
+        base["limites"] = limites
     return base

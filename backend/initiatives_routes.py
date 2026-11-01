@@ -1,12 +1,13 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 
 import maturation
 import portee as portees
 import ouverture_travail
+from auth import acteur as acteur_courant
 
 GENRES_A_TRAITER = {"a_confirmer", "investigation_recommandee", "decision_a_examiner", "action_proposee"}
 GENRES_RADAR = {"a_surveiller", "information"}
@@ -38,18 +39,14 @@ def build_initiatives_router(deps):
 
     router = APIRouter()
 
-    async def contexte(x_persona, x_espace):
-        persona, espace = resoudre_perimetre(x_persona, x_espace)
+    async def contexte(acteur, x_espace):
+        _, espace = resoudre_perimetre(acteur, x_espace)
         tous = await db.jumeaux.find({}, NO_ID).to_list(200)
         aut = autorisations(espace, [j["id"] for j in tous])
-        return persona, espace, aut
+        return acteur, espace, aut
 
-    def visible(init, persona, espace, aut):
-        if init.get("jumeaux") and not any(j in aut for j in init["jumeaux"]):
-            return False
-        if espace.get("global"):
-            return True
-        return init.get("destinataire") in (None, persona["id"])
+    def visible(init, acteur, espace, aut):
+        return not (init.get("jumeaux") and not any(j in aut for j in init["jumeaux"]))
 
     def vue_de(init):
         if init["statut"] == "suivi":
@@ -60,7 +57,7 @@ def build_initiatives_router(deps):
             return "a_traiter"
         return "radar"
 
-    async def travail_de_initiative(init, intention, persona, espace, suite=None):
+    async def travail_de_initiative(init, intention, acteur, espace, suite=None):
         """Le travail d'une proposition du Mesh pour cette personne : créé avec la parole de Flore, ou rouvert (sans doublon).
         `suite` : messages à écrire ensuite dans le fil (la réponse de la personne et celle de Flore)."""
         now = datetime.now(timezone.utc).isoformat()
@@ -72,7 +69,7 @@ def build_initiatives_router(deps):
             veille = maturation.nouvelle_veille(init["titre"], maturation.confiance_depuis_libelle(init.get("confiance", "")))
             m = veille["maturation"]
             messages.append(maturation.message_flore_suivi(init["titre"], m["confiance_depart"], m["seuil"], m["plancher"], now))
-        existant = await db.cases.find_one({"origine.initiative_id": init["id"], "responsable": persona["id"]}, NO_ID)
+        existant = await db.cases.find_one({"origine.initiative_id": init["id"], "responsable": acteur}, NO_ID)
         if existant:
             maj = {"maj_le": now}
             if intention not in existant["origine"].get("intentions", []):
@@ -90,8 +87,8 @@ def build_initiatives_router(deps):
         num = (dernier[0]["num"] if dernier and dernier[0].get("num") else 40) + 1
         await db.cases.insert_one({
             "id": cid, "num": num, "titre": init["titre"], "type": "investigation" if intention == "investiguer" else "decouverte", "statut": "ouvert",
-            "sensibilite": "interne", "portee": "personnel", "equipe": portees.equipe_de(persona["id"]), "objectif": init.get("raison", ""), "resume": "", "prochaine_etape": "", "questions": [], "hypotheses": [],
-            "jumeaux": init.get("jumeaux", []), "situations": [], "participants": [persona["id"]], "responsable": persona["id"], "espace": espace["id"],
+            "sensibilite": "interne", "portee": "personnel", "objectif": init.get("raison", ""), "resume": "", "prochaine_etape": "", "questions": [], "hypotheses": [],
+            "jumeaux": init.get("jumeaux", []), "situations": [], "participants": [acteur], "responsable": acteur, "espace": espace["id"],
             "conversation": messages + (suite or []), "options": [], "decisions": [], "livrables": [], "a_revoir": False, "visites": {},
             **({"veille": veille} if veille else {}),
             "origine": {"initiative_id": init["id"], "genre": init.get("genre"), "intentions": [intention], "quand": now},
@@ -101,33 +98,33 @@ def build_initiatives_router(deps):
         return cid, True
 
     @router.post("/initiatives/{iid}/travail")
-    async def ouvrir_travail_initiative(iid: str, payload: OuvertureInitiative, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+    async def ouvrir_travail_initiative(iid: str, payload: OuvertureInitiative, acteur: str = Depends(acteur_courant), x_espace: Optional[str] = Header(None)):
         """« Comprendre » une proposition du Mesh : elle devient un travail, dont Flore ouvre la conversation. La proposition, elle, reste en attente."""
         if payload.intention not in ouverture_travail.INTENTIONS:
             raise HTTPException(400, "Intention inconnue")
-        persona, espace, aut = await contexte(x_persona, x_espace)
+        acteur, espace, aut = await contexte(acteur, x_espace)
         init = await db.initiatives.find_one({"id": iid}, NO_ID)
-        if not init or not visible(init, persona, espace, aut):
+        if not init or not visible(init, acteur, espace, aut):
             raise HTTPException(404, "Initiative introuvable ou hors périmètre")
-        cid, cree = await travail_de_initiative(init, payload.intention, persona, espace)
+        cid, cree = await travail_de_initiative(init, payload.intention, acteur, espace)
         return {"id": cid, "cree": cree}
 
     @router.get("/initiatives")
-    async def lister_initiatives(vue: str = "toutes", x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
-        persona, espace, aut = await contexte(x_persona, x_espace)
+    async def lister_initiatives(vue: str = "toutes", acteur: str = Depends(acteur_courant), x_espace: Optional[str] = Header(None)):
+        acteur, espace, aut = await contexte(acteur, x_espace)
         toutes = await db.initiatives.find({}, NO_ID).to_list(200)
         out = []
         for i in toutes:
-            if not visible(i, persona, espace, aut):
+            if not visible(i, acteur, espace, aut):
                 continue
             v = vue_de(i)
             if vue != "toutes" and v != vue:
                 continue
             if vue == "toutes" and v == "traitees":
                 continue
-            if v == "suivis" and not (i.get("reponse") or {}).get("travail_id") and (i.get("reponse") or {}).get("par") == persona["id"]:
+            if v == "suivis" and not (i.get("reponse") or {}).get("travail_id") and (i.get("reponse") or {}).get("par") == acteur:
                 # suivie avant que « suivre » n'ouvre une vérification : elle est rattachée à son travail à la première lecture
-                tid, _ = await travail_de_initiative(i, "suivre", persona, espace)
+                tid, _ = await travail_de_initiative(i, "suivre", acteur, espace)
                 await db.initiatives.update_one({"id": i["id"]}, {"$set": {"reponse.travail_id": tid}})
                 i["reponse"]["travail_id"] = tid
             i["vue"] = v
@@ -136,22 +133,22 @@ def build_initiatives_router(deps):
         return out
 
     @router.get("/initiatives/compteurs")
-    async def compteurs(x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
-        persona, espace, aut = await contexte(x_persona, x_espace)
+    async def compteurs(acteur: str = Depends(acteur_courant), x_espace: Optional[str] = Header(None)):
+        acteur, espace, aut = await contexte(acteur, x_espace)
         toutes = await db.initiatives.find({}, NO_ID).to_list(200)
         c = {"a_traiter": 0, "radar": 0, "suivis": 0}
         for i in toutes:
-            if visible(i, persona, espace, aut):
+            if visible(i, acteur, espace, aut):
                 v = vue_de(i)
                 if v in c:
                     c[v] += 1
         return c
 
     @router.post("/initiatives/{iid}/repondre")
-    async def repondre(iid: str, payload: ReponseInitiative, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
-        persona, espace, aut = await contexte(x_persona, x_espace)
+    async def repondre(iid: str, payload: ReponseInitiative, acteur: str = Depends(acteur_courant), x_espace: Optional[str] = Header(None)):
+        acteur, espace, aut = await contexte(acteur, x_espace)
         init = await db.initiatives.find_one({"id": iid}, NO_ID)
-        if not init or not visible(init, persona, espace, aut):
+        if not init or not visible(init, acteur, espace, aut):
             raise HTTPException(404, "Initiative introuvable ou hors périmètre")
         if init["statut"] != "en_attente":
             raise HTTPException(409, "Cette initiative a déjà reçu une réponse")
@@ -163,12 +160,12 @@ def build_initiatives_router(deps):
 
         if low == "suivre" or "surveiller" in low:
             statut = "suivi"
-            travail_cree, _ = await travail_de_initiative(init, "suivre", persona, espace)  # surveiller = un travail en veille
+            travail_cree, _ = await travail_de_initiative(init, "suivre", acteur, espace)  # surveiller = un travail en veille
         elif low == "ignorer" or "rejeter" in low:
             statut = "refusee"
         elif low.startswith("créer") or low.startswith("creer"):
             statut = "acceptee"
-            travail_cree, _ = await travail_de_initiative(init, "investiguer", persona, espace)
+            travail_cree, _ = await travail_de_initiative(init, "investiguer", acteur, espace)
         elif "ajouter" in low:
             statut = "acceptee"
             tid = payload.travail_id or init.get("travail_id")
@@ -177,12 +174,12 @@ def build_initiatives_router(deps):
             case = await db.cases.find_one({"id": tid})
             if not case:
                 raise HTTPException(404, "Travail introuvable")
-            if not portees.acces(case, persona["id"], espace["id"]):
+            if not portees.acces(case, acteur):
                 raise HTTPException(403, "Ce travail n'est pas partagé avec vous")
             histo = case.get("historique", []) + [{"quand": now, "texte": f"Initiative du Mesh ajoutée : {init['titre']}"}]
             jumeaux = sorted(set(case.get("jumeaux", [])) | set(init.get("jumeaux", [])))
             ajout = ouverture_travail.message_flore_initiative(init, "comprendre", now)
-            ajout["texte"] = f"J'ai ajouté à ce travail une proposition du Mesh.\n\n" + ajout["texte"]
+            ajout["texte"] = "J'ai ajouté à ce travail une proposition du Mesh.\n\n" + ajout["texte"]
             await db.cases.update_one({"id": tid}, {"$set": {"historique": histo, "jumeaux": jumeaux, "maj_le": now}, "$push": {"conversation": ajout}})
             travail_cree = tid
         else:
@@ -196,19 +193,19 @@ def build_initiatives_router(deps):
                 travail_cree = lie["id"]
                 await db.cases.update_one({"id": travail_cree}, {"$push": {"conversation": {"$each": suite}, "historique": {"quand": now, "texte": f"Proposition du Mesh traitée : {init['titre']}"}}, "$set": {"maj_le": now}})
             else:
-                travail_cree, _ = await travail_de_initiative(init, "decider", persona, espace, suite=suite)
+                travail_cree, _ = await travail_de_initiative(init, "decider", acteur, espace, suite=suite)
             if nature == "decision":
-                await db.cases.update_one({"id": travail_cree}, {"$push": {"decisions": {"texte": choix, "type": "arbitrage", "quand": now, "par": persona["id"]}}})
+                await db.cases.update_one({"id": travail_cree}, {"$push": {"decisions": {"texte": choix, "type": "arbitrage", "quand": now, "par": acteur}}})
 
-        reponse = {"choix": choix, "motif": payload.motif, "par": persona["id"], "quand": now, **({"travail_id": travail_cree} if travail_cree else {})}
+        reponse = {"choix": choix, "motif": payload.motif, "par": acteur, "quand": now, **({"travail_id": travail_cree} if travail_cree else {})}
         await db.initiatives.update_one({"id": iid}, {"$set": {"statut": statut, "reponse": reponse, "maj_le": now}})
-        await journaler(persona["id"], "reponse_initiative", iid, f"{choix}" + (f" — motif : {payload.motif}" if payload.motif else ""))
+        await journaler(acteur, "reponse_initiative", iid, f"{choix}" + (f" — motif : {payload.motif}" if payload.motif else ""))
 
         maj = await db.initiatives.find_one({"id": iid}, NO_ID)
         maj["vue"] = vue_de(maj)
         return {"initiative": maj, "travail_id": travail_cree}
 
-    async def travail_de_delegation(d, persona, espace):
+    async def travail_de_delegation(d, acteur, espace):
         """Une délégation est un travail : Flore y dit le mandat reçu (tâche, périmètre, durée, ce qu'elle produira, les limites), et y rend compte.
         Idempotent : le travail est rattaché à la délégation (`travail_id`)."""
         if d.get("travail_id") and await db.cases.find_one({"id": d["travail_id"]}, {"_id": 1}):
@@ -225,7 +222,7 @@ def build_initiatives_router(deps):
             conversation.append(ouverture_travail.message_flore_delegation_terminee(d, jusqu.isoformat()))
         await db.cases.insert_one({
             "id": cid, "num": num, "titre": d["tache"], "type": "demande", "statut": "en_cours" if len(conversation) == 1 else "clos",
-            "sensibilite": "interne", "portee": "personnel", "equipe": portees.equipe_de(d["demandeur"]), "objectif": d.get("livrable", ""), "resume": "", "prochaine_etape": "", "questions": [], "hypotheses": [],
+            "sensibilite": "interne", "portee": "personnel", "objectif": d.get("livrable", ""), "resume": "", "prochaine_etape": "", "questions": [], "hypotheses": [],
             "jumeaux": d.get("jumeaux", []), "situations": [], "participants": [d["demandeur"]], "responsable": d["demandeur"], "espace": espace["id"],
             "conversation": conversation, "options": [], "decisions": [], "livrables": [], "a_revoir": False, "visites": {},
             "origine": {"delegation_id": d["id"], "genre": "delegation", "quand": now},
@@ -235,14 +232,14 @@ def build_initiatives_router(deps):
         return cid
 
     @router.get("/delegations")
-    async def lister_delegations(x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
-        persona, espace, aut = await contexte(x_persona, x_espace)
+    async def lister_delegations(acteur: str = Depends(acteur_courant), x_espace: Optional[str] = Header(None)):
+        acteur, espace, aut = await contexte(acteur, x_espace)
         out = []
         async for d in db.delegations.find({}, NO_ID):
             if d.get("jumeaux") and not any(j in aut for j in d["jumeaux"]):
                 continue
-            if d.get("demandeur") == persona["id"]:
-                d["travail_id"] = await travail_de_delegation(d, persona, espace)  # les délégations d'avant sont rattachées à un travail à la lecture
+            if d.get("demandeur") == acteur:
+                d["travail_id"] = await travail_de_delegation(d, acteur, espace)  # les délégations d'avant sont rattachées à un travail à la lecture
             if d["statut"] == "active" and datetime.fromisoformat(d["jusqu_a"]) <= datetime.now(timezone.utc):
                 d["statut"] = "terminee"
             out.append(d)
@@ -250,8 +247,8 @@ def build_initiatives_router(deps):
         return out
 
     @router.post("/delegations", status_code=201)
-    async def creer_delegation(payload: DelegationCreate, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
-        persona, espace, aut = await contexte(x_persona, x_espace)
+    async def creer_delegation(payload: DelegationCreate, acteur: str = Depends(acteur_courant), x_espace: Optional[str] = Header(None)):
+        acteur, espace, aut = await contexte(acteur, x_espace)
         jumeaux = [j for j in payload.jumeaux if j in aut]
         if not jumeaux:
             raise HTTPException(400, "Aucun jumeau autorisé dans le périmètre de délégation")
@@ -266,7 +263,7 @@ def build_initiatives_router(deps):
             "id": f"deleg-{int(now.timestamp())}",
             "type": payload.type,
             "tache": tache,
-            "demandeur": persona["id"],
+            "demandeur": acteur,
             "jumeaux": jumeaux,
             "cree_le": now.isoformat(),
             "jusqu_a": (now + timedelta(hours=payload.duree_h)).isoformat(),
@@ -277,8 +274,8 @@ def build_initiatives_router(deps):
             "statut": "active",
         }
         await db.delegations.insert_one(dict(doc))
-        doc["travail_id"] = await travail_de_delegation(doc, persona, espace)
-        await journaler(persona["id"], "delegation", doc["id"], tache)
+        doc["travail_id"] = await travail_de_delegation(doc, acteur, espace)
+        await journaler(acteur, "delegation", doc["id"], tache)
         doc.pop("_id", None)
         return doc
 

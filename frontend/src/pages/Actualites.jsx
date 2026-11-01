@@ -233,7 +233,7 @@ function SectionReste({ s, ...carte }) {
 
 export default function Actualites() {
   const navigate = useNavigate();
-  const { version, persona } = usePerimetre();
+  const { version } = usePerimetre();
   const { mesh } = useMesh();
   const { ouvrirFlore } = useContexte();
   const identite = useIdentite();
@@ -281,7 +281,7 @@ export default function Actualites() {
   useEffect(() => {
     setNouvelles(0);
     charger();
-  }, [charger, version, persona]);
+  }, [charger, version]);
 
   const chargerCompteurs = useCallback(
     () => api.get("/initiatives/compteurs").then((r) => setCompteurs(r.data)).catch(() => {}),
@@ -291,14 +291,14 @@ export default function Actualites() {
     chargerCompteurs();
     const t = setInterval(chargerCompteurs, 20000);
     return () => clearInterval(t);
-  }, [chargerCompteurs, version, persona]);
+  }, [chargerCompteurs, version]);
 
   useEffect(() => {
     if (vue === "brief") return;
     const v = vue === "a_traiter" ? "a_traiter" : vue;
     api.get(`/initiatives?vue=${v}`).then((r) => setInitiatives(r.data)).catch(() => {});
     if (vue === "suivis") api.get("/delegations").then((r) => setDelegations(r.data)).catch(() => {});
-  }, [vue, version, persona]);
+  }, [vue, version]);
 
   const initiativeRepondue = (maj) => {
     setInitiatives((liste) => (liste || []).map((i) => (i.id === maj.id ? maj : i)).filter((i) => vue === "suivis" || i.vue === vue || i.statut === "en_attente" ? true : i.vue === vue));

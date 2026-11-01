@@ -243,17 +243,6 @@ def test_admettre_inexistant(s):
 
 
 # ---------- Démo Olympiade (3 actes) & activité ----------
-def test_demo_actes_3(s):
-    r = s.get(f"{BASE}/demo/actes")
-    assert r.status_code == 200
-    d = r.json()
-    assert len(d) == 3
-    assert [a["acte"] for a in d] == [1, 2, 3]
-    assert d[0]["route"] == "/atlas"
-    assert d[1]["route"] == "/investigations/sit-relation-emergente"
-    assert d[2]["route"] == "/travaux/case-olympiade"
-
-
 def test_activite(s):
     r = s.get(f"{BASE}/activite")
     assert r.status_code == 200

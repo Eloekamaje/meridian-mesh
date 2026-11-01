@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Header, Query, Request, Response
+from fastapi import Depends, FastAPI, APIRouter, HTTPException, Header, Query, Request, Response
 from dotenv import load_dotenv
 from starlette.middleware.body_limit import RequestBodyLimitMiddleware
 from starlette.middleware.cors import CORSMiddleware
@@ -30,21 +30,23 @@ from cases_routes import build_cases_router  # noqa: E402
 from actualites_routes import build_actualites_router  # noqa: E402
 from initiatives_routes import build_initiatives_router  # noqa: E402
 from mesh_vue_routes import build_mesh_vue_router  # noqa: E402
-from boucle_routes import router as boucle_router  # noqa: E402
+from boucle_routes import router as boucle_router, _tenant as resoudre_tenant_boucle  # noqa: E402
 from cognitif_routes import router as cognitif_router  # noqa: E402
+from jumeau.execution.routes import construire_router as construire_runs_router  # noqa: E402
 from jumeau.routes import router as jumeau_router  # noqa: E402
+from jumeau.source_routes import construire_router as construire_sources_router  # noqa: E402
 from jumeau import cbm as jumeau_cbm  # noqa: E402
 from jumeau import evenements as jumeau_evenements  # noqa: E402
 from jumeau import partage as jumeau_partage  # noqa: E402
 from jumeau import tours_redis as jumeau_tours_redis  # noqa: E402
 from jumeau import flore as jumeau_flore  # noqa: E402
-from jumeau import identite as jumeau_identite  # noqa: E402
 from jumeau import identite_depot as jumeau_identite_depot  # noqa: E402
 from jumeau import conception as jumeau_conception  # noqa: E402
 from jumeau import orchestrateur as jumeau_orchestrateur  # noqa: E402
 from jumeau import audit_harness as jumeau_audit_harness  # noqa: E402
 from jumeau import capacites as jumeau_capacites  # noqa: E402
 from jumeau import chargeur_manifestes as jumeau_chargeur_manifestes  # noqa: E402
+from jumeau import import_identite as jumeau_import_identite  # noqa: E402
 from jumeau import harness as jumeau_harness  # noqa: E402
 from jumeau import ingestion_outils as jumeau_ingestion_outils  # noqa: E402
 from jumeau import interface_outils as jumeau_interface_outils  # noqa: E402
@@ -66,12 +68,10 @@ from jumeau.systemes import SYSTEMES  # noqa: E402
 from jumeau import github as jumeau_github  # noqa: E402
 import asyncio  # noqa: E402
 import psycopg  # noqa: E402
+from pymongo.errors import DuplicateKeyError  # noqa: E402
 from seed_data import (  # noqa: E402
-    cas_verification_fraude,
-    TWINS, RELATIONS, REGIONS, SITUATIONS, CHANGE_LAB, ACTIVITE,
-    AURORA_SCRIPTS, AURORA_FALLBACK, AURORA_SUGGESTIONS, DEMO_ACTES, SOURCES_LABELS,
-    PERSONAS, ESPACES, VUES, CONNECTEURS, CONTRIBUTIONS, PROFILS, COMMANDE_DEMO, CASES, NOTIFS,
-    INITIATIVES, DELEGATIONS, VEILLE_DETTE_FILES,
+    AURORA_FALLBACK, AURORA_SUGGESTIONS, SOURCES_LABELS,
+    ESPACES, CONNECTEURS, CONTRIBUTIONS, PROFILS,
 )
 
 CORS_ORIGINES = [o.strip() for o in os.environ.get("CORS_ORIGINS", "*").split(",") if o.strip()] or ["*"]
@@ -89,18 +89,7 @@ NO_ID = {"_id": 0}
 logger = logging.getLogger("meridian")
 
 
-SEED_VERSION = 10
-
-
-async def peupler_demo():
-    for name, docs in [("jumeaux", TWINS), ("relations", RELATIONS), ("situations", SITUATIONS), ("vues", VUES), ("cases", CASES), ("notifications", NOTIFS), ("initiatives", INITIATIVES), ("delegations", DELEGATIONS)]:
-        if await db[name].count_documents({}) == 0:
-            await db[name].insert_many([dict(d) for d in docs])
-            logger.info("Seeded %s (%d documents)", name, len(docs))
-    if await db.change_lab.count_documents({}) == 0:
-        await db.change_lab.insert_one(dict(CHANGE_LAB))
-    if await db.commandes.count_documents({}) == 0:
-        await db.commandes.insert_one(dict(COMMANDE_DEMO))
+SEED_VERSION = 13
 
 
 async def projeter_jumeaux_reels():
@@ -165,29 +154,16 @@ async def seed_database():
     jumeau_cbm.verifier_cache()
     meta = await db.meta.find_one({"id": "seed"})
     if not meta or meta.get("version") != SEED_VERSION:
-        for col in ["jumeaux", "relations", "situations", "change_lab", "dossiers", "vues", "journal", "commandes", "cases", "notifications", "initiatives", "delegations"]:
+        for col in ["jumeaux", "relations", "situations", "change_lab", "dossiers", "vues", "journal", "commandes", "cases", "notifications", "initiatives", "delegations", "actualites_ecartees"]:
             await db[col].delete_many({})
         await pieces.reinitialiser(db)
         await db.meta.replace_one({"id": "seed"}, {"id": "seed", "version": SEED_VERSION}, upsert=True)
         logger.info("Seed version %s — réinitialisation des données de démo", SEED_VERSION)
-    await peupler_demo()
     await projeter_jumeaux_reels()
-    # Migration douce : la veille de démonstration est ajoutée à une base déjà peuplée, sans rien réinitialiser
-    await db.cases.update_one(
-        {"id": "case-dette-files", "veille": {"$exists": False}},
-        {"$set": {"veille": VEILLE_DETTE_FILES, "statut": "en_cours", "visites.architecte": "2026-09-12T08:00:00+00:00"}},
-    )
-    # Migration douce : la vérification de démonstration (veille avant décision) est ajoutée à une base déjà peuplée
-    if not await db.cases.find_one({"id": "case-verification-fraude-conformite"}, {"_id": 1}):
-        await db.cases.insert_one(cas_verification_fraude())
-    # Migration douce : Jira devient une source des jumeaux (chantiers, trajectoire) sur une base déjà peuplée
-    if not await db.jumeaux.find_one({"projets": {"$exists": True}}, {"_id": 1}):
-        for t in TWINS:
-            await db.jumeaux.update_one({"id": t["id"]}, {"$set": {"projets": t["projets"], "sources": t["sources"], "sources_detail": t["sources_detail"]}})
-    # Migration douce : les opportunités (genre à part entière) remplacent l'ancienne « recommandation d'optimisation » ; les situations de trajectoire (Jira)
-    for sit in SITUATIONS:
-        if sit.get("nature") in ("opportunite", "trajectoire") and not await db.situations.find_one({"id": sit["id"], "nature": sit["nature"]}, {"_id": 1}):
-            await db.situations.replace_one({"id": sit["id"]}, dict(sit), upsert=True)
+    try:
+        await db.jumeaux.create_index("id", unique=True, name="jumeau_id_unique")
+    except Exception:  # noqa: BLE001 - des doublons historiques ne doivent pas empêcher le démarrage
+        logger.warning("Index unique jumeaux.id non créé : vérifier les doublons historiques", exc_info=True)
     # Pièces jointes : quota atomique par Travail. Les cases antérieurs n'ont pas de compteur — on l'initialise
     # avec leur nombre réel de pièces, sans réinitialiser quoi que ce soit.
     async for case in db.cases.find({"pieces_count": {"$exists": False}}, {"_id": 0, "id": 1}):
@@ -210,12 +186,11 @@ def slugify(nom: str) -> str:
 NIVEAUX = ["existence", "resume", "relations", "preuves", "complet"]
 
 
-def resoudre_perimetre(persona_id: str, espace_id):
-    persona = next((p for p in PERSONAS if p["id"] == persona_id), PERSONAS[0])
-    if not espace_id or espace_id not in persona["espaces"]:
-        espace_id = persona["par_defaut"]
-    espace = next(e for e in ESPACES if e["id"] == espace_id)
-    return persona, espace
+def resoudre_perimetre(acteur: str, espace_id):
+    espace = next((e for e in ESPACES if e["id"] == espace_id), None)
+    if espace is None:
+        espace = next(e for e in ESPACES if e.get("global"))
+    return acteur, espace
 
 
 def autorisations(espace: dict, tous_ids):
@@ -239,8 +214,7 @@ def _resume_projets(projets: list) -> dict:
 
 
 def projete_jumeau(j: dict, niveau: str, aut: Optional[dict] = None):
-    # D'où vient ce jumeau : né de l'ingestion d'une vraie source, ou posé par le jeu de démonstration. Les vues ne
-    # doivent pas les mélanger sans le dire (plan de remédiation L2.1) — 42 jumeaux s'affichent, 4 sont réels.
+    # Tous les jumeaux affichés naissent d'une source réelle ; le registre ne contient plus de seed mocké.
     base = {"id": j["id"], "nom": j["nom"], "domaine": j.get("domaine"), "statut": j.get("statut"),
             "position": j.get("position"), "reel": bool(j.get("reel")),
             "origine": "reel" if j.get("reel") else "demonstration"}
@@ -272,25 +246,20 @@ def filtre_situation(s: dict, aut: dict, nom_vers_id: dict):
     return out
 
 
-async def journaler(persona_id: str, espace_id, action: str, cible: str, detail: str = ""):
+async def journaler(acteur: str, espace_id, action: str, cible: str, detail: str = ""):
     await db.journal.insert_one({
         "quand": datetime.now(timezone.utc).isoformat(),
-        "persona": persona_id, "espace": espace_id or "",
+        "acteur": acteur, "espace": espace_id or "",
         "action": action, "cible": cible, "detail": detail,
     })
 
 
-async def notifier(persona_ids, type_, texte, lien):
+async def notifier(type_, texte, lien):
     now = datetime.now(timezone.utc).isoformat()
-    docs = [
-        {"id": f"notif-{uuid4().hex[:8]}", "persona": p, "type": type_, "texte": texte, "lien": lien, "lu": False, "quand": now}
-        for p in set(persona_ids or []) if p
-    ]
-    if docs:
-        await db.notifications.insert_many(docs)
-        for doc in docs:
-            jumeau_evenements.publier(doc["persona"], "notification.creee",
-                                      notification={k: doc[k] for k in ("id", "persona", "type", "texte", "lien", "lu", "quand")})
+    doc = {"id": f"notif-{uuid4().hex[:8]}", "type": type_, "texte": texte, "lien": lien, "lu": False, "quand": now}
+    await db.notifications.insert_one(doc)
+    jumeau_evenements.publier("*", "notification.creee",
+                              notification={k: doc[k] for k in ("id", "type", "texte", "lien", "lu", "quand")})
 
 
 async def marquer_cases_a_revoir(jumeaux_ids, raison):
@@ -303,7 +272,7 @@ async def marquer_cases_a_revoir(jumeaux_ids, raison):
             {"id": case["id"]},
             {"$set": {"a_revoir": True, "maj_le": now}, "$push": {"historique": {"quand": now, "texte": f"À revoir — {raison}"}}},
         )
-        await notifier(case.get("participants", []), "a_revoir", f"Le travail « {case['titre']} » est à revoir : {raison}", f"/travaux/{case['id']}")
+        await notifier("a_revoir", f"Le travail « {case['titre']} » est à revoir : {raison}", f"/travaux/{case['id']}")
 
 
 HORS_PERIMETRE = {
@@ -327,46 +296,32 @@ async def health():
     return {"status": "ok", "service": "meridian"}
 
 
-# ---------- Périmètres : personas, espaces, vues, journal ----------
+# ---------- Périmètres : espace, vues, journal ----------
 
 @api_router.get("/moi")
-async def moi(request: Request, x_persona: str = Header("architecte")):
-    persona = next((p for p in PERSONAS if p["id"] == x_persona), PERSONAS[0])
+async def moi(request: Request):
     return {
-        "persona": persona["id"],
-        "nom": persona["nom"],
-        "role": persona["role"],
-        "equipe": persona.get("equipe"),
-        "utilisateur": getattr(request.state, "utilisateur", None),
+        "acteur": getattr(request.state, "utilisateur", None) or "demo",
+        "tenant": getattr(request.state, "tenant", None),
         "auth_mode": getattr(request.state, "auth_mode", "demo"),
-        "espaces": persona["espaces"],
-        "par_defaut": persona["par_defaut"],
     }
 
 
-@api_router.get("/personas")
-async def lister_personas(request: Request, x_persona: str = Header("architecte")):
-    mode = getattr(request.state, "auth_mode", "demo")
-    selection = [p for p in PERSONAS if p["id"] == x_persona] if mode != "demo" else PERSONAS
-    return [{"id": p["id"], "nom": p["nom"], "role": p["role"], "equipe": p.get("equipe")} for p in selection]
-
-
 @api_router.get("/espaces")
-async def lister_espaces(x_persona: str = Header("architecte")):
-    persona = next((p for p in PERSONAS if p["id"] == x_persona), PERSONAS[0])
+async def lister_espaces():
     return [
         {"id": e["id"], "label": e["label"], "description": e["description"], "global": e.get("global", False)}
-        for e in ESPACES if e["id"] in persona["espaces"]
+        for e in ESPACES
     ]
 
 
 @api_router.get("/perimetre")
-async def obtenir_perimetre(x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
-    persona, espace = resoudre_perimetre(x_persona, x_espace)
+async def obtenir_perimetre(acteur: str = Depends(auth_identite.acteur)):
+    espace = next(e for e in ESPACES if e.get("global"))
     tous = await db.jumeaux.find({}, {"_id": 0, "id": 1}).to_list(200)
     aut = autorisations(espace, [j["id"] for j in tous])
     return {
-        "persona": {"id": persona["id"], "nom": persona["nom"], "role": persona["role"]},
+        "acteur": acteur,
         "espace": {"id": espace["id"], "label": espace["label"], "global": espace.get("global", False), "politique_dependances": espace.get("politique_dependances")},
         "autorisations": aut,
         "nb_autorises": len(aut),
@@ -374,8 +329,8 @@ async def obtenir_perimetre(x_persona: str = Header("architecte"), x_espace: Opt
 
 
 @api_router.get("/vues")
-async def lister_vues(x_persona: str = Header("architecte")):
-    return await db.vues.find({"persona": x_persona}, NO_ID).to_list(50)
+async def lister_vues():
+    return await db.vues.find({}, NO_ID).to_list(50)
 
 
 class VueCreate(BaseModel):
@@ -385,28 +340,28 @@ class VueCreate(BaseModel):
 
 
 @api_router.post("/vues", status_code=201)
-async def creer_vue(payload: VueCreate, x_persona: str = Header("architecte")):
-    doc = {"id": f"vue-{slugify(payload.nom)}-{random.randint(100, 999)}", "persona": x_persona, "nom": payload.nom, "type": payload.type, "jumeaux": payload.jumeaux}
+async def creer_vue(payload: VueCreate):
+    doc = {"id": f"vue-{slugify(payload.nom)}-{random.randint(100, 999)}", "nom": payload.nom, "type": payload.type, "jumeaux": payload.jumeaux}
     await db.vues.insert_one(doc)
     doc.pop("_id", None)
     return doc
 
 
-ACTIONS_JOURNAL_CLIENT = {"changement d'identité", "changement de périmètre"}
+ACTIONS_JOURNAL_CLIENT = {"changement de périmètre"}
 
 
-def filtre_journal(persona_id: str, espace: dict):
-    """Un espace global voit tout ; sinon le journal reste borné à la personne et à son espace."""
+def filtre_journal(acteur: str, espace: dict):
+    """Un espace global voit tout ; sinon le journal reste borné à l'acteur et à son espace."""
     if espace.get("global"):
         return {}
-    return {"$or": [{"persona": persona_id}, {"espace": espace["id"]}]}
+    return {"$or": [{"acteur": acteur}, {"espace": espace["id"]}]}
 
 
 @api_router.get("/journal")
-async def lire_journal(response: Response, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
-    _, espace = resoudre_perimetre(x_persona, x_espace)
+async def lire_journal(response: Response, acteur: str = Depends(auth_identite.acteur), x_espace: Optional[str] = Header(None)):
+    _, espace = resoudre_perimetre(acteur, x_espace)
     response.headers["Cache-Control"] = "private, no-store"
-    return await db.journal.find(filtre_journal(x_persona, espace), NO_ID).sort("quand", -1).to_list(30)
+    return await db.journal.find(filtre_journal(acteur, espace), NO_ID).sort("quand", -1).to_list(30)
 
 
 class JournalEntree(BaseModel):
@@ -415,21 +370,19 @@ class JournalEntree(BaseModel):
 
 
 @api_router.post("/journal", status_code=201)
-async def ecrire_journal(payload: JournalEntree, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+async def ecrire_journal(payload: JournalEntree, acteur: str = Depends(auth_identite.acteur), x_espace: Optional[str] = Header(None)):
     if payload.action not in ACTIONS_JOURNAL_CLIENT:
         raise HTTPException(400, "Action de journal inconnue")
-    persona, espace = resoudre_perimetre(x_persona, x_espace)
-    detail = (f"{persona['id']} — {persona['nom']}" if payload.action == "changement d'identité"
-              else f"{espace['id']} — {espace['label']}")
-    await journaler(persona["id"], espace["id"], payload.action, "", detail)
+    _, espace = resoudre_perimetre(acteur, x_espace)
+    await journaler(acteur, espace["id"], payload.action, "", f"{espace['id']} — {espace['label']}")
     return {"ok": True}
 
 
 # ---------- Mesh ----------
 
 @api_router.get("/mesh")
-async def get_mesh(x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
-    _, espace = resoudre_perimetre(x_persona, x_espace)
+async def get_mesh(acteur: str = Depends(auth_identite.acteur), x_espace: Optional[str] = Header(None)):
+    _, espace = resoudre_perimetre(acteur, x_espace)
     tous = await db.jumeaux.find({}, NO_ID).to_list(200)
     par_id = {j["id"]: j for j in tous}
     aut = autorisations(espace, list(par_id))
@@ -468,20 +421,20 @@ async def get_mesh(x_persona: str = Header("architecte"), x_espace: Optional[str
     return {
         "jumeaux": visibles + list(anon.values()),
         "relations": rels_out,
-        "regions": REGIONS,
+        "regions": [],
         "perimetre": {"espace": espace["label"], "global": espace.get("global", False), "politique": politique, "nb_autorises": len(visibles), "nb_restreints": len(anon)},
     }
 
 
 @api_router.get("/mesh/interfaces")
-async def get_mesh_interfaces(x_persona: str = Header("architecte"),
+async def get_mesh_interfaces(acteur: str = Depends(auth_identite.acteur),
                               x_espace: Optional[str] = Header(None)):
     """Le graphe d'interfaces du Mesh visible : applications, opérations, arêtes consommateur→producteur, impacts.
 
     Le tenant est lu dans Postgres pour les seules applications autorisées. S'il en couvre plusieurs, la lecture est
     refusée plutôt que de mélanger deux graphes. Aucune application hors périmètre n'entre dans la réponse.
     """
-    _, espace = resoudre_perimetre(x_persona, x_espace)
+    _, espace = resoudre_perimetre(acteur, x_espace)
     tous = await db.jumeaux.find({}, {"_id": 0, "id": 1}).to_list(None)
     aut = autorisations(espace, [j["id"] for j in tous])
     visibles = sorted(aut)
@@ -518,8 +471,8 @@ async def get_mesh_interfaces(x_persona: str = Header("architecte"),
 # ---------- Jumeaux (Registry) ----------
 
 @api_router.get("/jumeaux")
-async def lister_jumeaux(x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
-    _, espace = resoudre_perimetre(x_persona, x_espace)
+async def lister_jumeaux(acteur: str = Depends(auth_identite.acteur), x_espace: Optional[str] = Header(None)):
+    _, espace = resoudre_perimetre(acteur, x_espace)
     tous = await db.jumeaux.find({}, NO_ID).to_list(200)
     aut = autorisations(espace, [j["id"] for j in tous])
     out = []
@@ -561,8 +514,8 @@ class TirageRuntime(BaseModel):
 
 
 @api_router.post("/jumeaux", status_code=201)
-async def creer_jumeau(payload: JumeauCreate, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
-    _, espace = resoudre_perimetre(x_persona, x_espace)
+async def creer_jumeau(payload: JumeauCreate, acteur: str = Depends(auth_identite.acteur), x_espace: Optional[str] = Header(None)):
+    _, espace = resoudre_perimetre(acteur, x_espace)
     jid = slugify(payload.nom)
     if await db.jumeaux.find_one({"id": jid}):
         raise HTTPException(409, "Un jumeau porte déjà ce nom")
@@ -582,17 +535,20 @@ async def creer_jumeau(payload: JumeauCreate, x_persona: str = Header("architect
         "position": {"x": 1260, "y": 40},
         "sources": payload.sources,
     }
-    await db.jumeaux.insert_one(doc)
+    try:
+        await db.jumeaux.insert_one(doc)
+    except DuplicateKeyError as exc:
+        raise HTTPException(409, "Un jumeau porte déjà ce nom") from exc
     if isinstance(espace.get("jumeaux"), dict) and "*" not in espace["jumeaux"]:
         espace["jumeaux"][jid] = "complet"
-    await journaler(x_persona, espace["id"], "commande d'un jumeau", jid, payload.nom)
+    await journaler(acteur, espace["id"], "commande d'un jumeau", jid, payload.nom)
     doc.pop("_id", None)
     return doc
 
 
 @api_router.post("/jumeaux/{jid}/admettre")
-async def admettre_jumeau(jid: str, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
-    _, espace = resoudre_perimetre(x_persona, x_espace)
+async def admettre_jumeau(jid: str, acteur: str = Depends(auth_identite.acteur), x_espace: Optional[str] = Header(None)):
+    _, espace = resoudre_perimetre(acteur, x_espace)
     aut = autorisations(espace, [jid])
     if aut.get(jid) is None:
         raise HTTPException(404, "Jumeau introuvable")
@@ -604,7 +560,7 @@ async def admettre_jumeau(jid: str, x_persona: str = Header("architecte"), x_esp
     )
     if res.matched_count == 0:
         raise HTTPException(404, "Jumeau introuvable")
-    await journaler(x_persona, espace["id"], "admission d'un jumeau", jid)
+    await journaler(acteur, espace["id"], "admission d'un jumeau", jid)
     jumeau = await db.jumeaux.find_one({"id": jid}, NO_ID)
     await marquer_cases_a_revoir([jid], f"le jumeau {jumeau['nom'] if jumeau else jid} a été admis dans le Mesh")
     return {"ok": True, "statut": "actif"}
@@ -612,10 +568,10 @@ async def admettre_jumeau(jid: str, x_persona: str = Header("architecte"), x_esp
 
 @api_router.post("/jumeaux/{jid}/interfaces/observer")
 async def observer_interfaces_du_jumeau(jid: str, payload: ObservationsRuntime,
-                                        x_persona: str = Header("architecte"),
+                                        acteur: str = Depends(auth_identite.acteur),
                                         x_espace: Optional[str] = Header(None)):
     """Ingère un export APM/gateway normalisé en mode ombre : assertions observées, jamais promues."""
-    _, espace = resoudre_perimetre(x_persona, x_espace)
+    _, espace = resoudre_perimetre(acteur, x_espace)
     tous = await db.jumeaux.find({}, {"_id": 0, "id": 1}).to_list(200)
     aut = autorisations(espace, [j["id"] for j in tous])
     if jid not in aut or not niveau_au_moins(aut[jid], "complet"):
@@ -658,10 +614,10 @@ async def observer_interfaces_du_jumeau(jid: str, payload: ObservationsRuntime,
 
 @api_router.post("/jumeaux/{jid}/interfaces/observer/pull")
 async def tirer_interfaces_du_jumeau(jid: str, payload: TirageRuntime,
-                                     x_persona: str = Header("architecte"),
+                                     acteur: str = Depends(auth_identite.acteur),
                                      x_espace: Optional[str] = Header(None)):
     """Tire un export OTLP d'un collecteur autorisé, puis l'ingère en mode ombre (jamais promu)."""
-    _, espace = resoudre_perimetre(x_persona, x_espace)
+    _, espace = resoudre_perimetre(acteur, x_espace)
     tous = await db.jumeaux.find({}, {"_id": 0, "id": 1}).to_list(200)
     aut = autorisations(espace, [j["id"] for j in tous])
     if jid not in aut or not niveau_au_moins(aut[jid], "complet"):
@@ -708,14 +664,14 @@ async def tirer_interfaces_du_jumeau(jid: str, payload: TirageRuntime,
 
 
 @api_router.post("/jumeaux/{jid}/interfaces/observer/pull-source")
-async def tirer_sources_otlp_du_jumeau(jid: str, x_persona: str = Header("architecte"),
+async def tirer_sources_otlp_du_jumeau(jid: str, acteur: str = Depends(auth_identite.acteur),
                                        x_espace: Optional[str] = Header(None)):
     """Tire les sources OTLP persistées du jumeau, publie les impacts et rend les runs observés.
 
     Aucun URL ni secret n'est accepté dans le corps : la configuration vient de `source`. Une source en panne
     n'empêche pas les autres (tirage best-effort) ; l'absence de jumeau ou de couche cognitive est explicite.
     """
-    _, espace = resoudre_perimetre(x_persona, x_espace)
+    _, espace = resoudre_perimetre(acteur, x_espace)
     tous = await db.jumeaux.find({}, {"_id": 0, "id": 1}).to_list(200)
     aut = autorisations(espace, [j["id"] for j in tous])
     if jid not in aut or not niveau_au_moins(aut[jid], "complet"):
@@ -746,10 +702,10 @@ async def tirer_sources_otlp_du_jumeau(jid: str, x_persona: str = Header("archit
 
 
 @api_router.post("/jumeaux/{jid}/promouvoir")
-async def promouvoir_jumeau(jid: str, payload: Promotion, x_persona: str = Header("architecte"),
+async def promouvoir_jumeau(jid: str, payload: Promotion, acteur: str = Depends(auth_identite.acteur),
                             x_espace: Optional[str] = Header(None)):
     """Promotion humaine d'un twin provisoire : même id, identité décidée, décision auditée en Postgres."""
-    _, espace = resoudre_perimetre(x_persona, x_espace)
+    _, espace = resoudre_perimetre(acteur, x_espace)
     tous = await db.jumeaux.find({}, {"_id": 0, "id": 1}).to_list(200)
     aut = autorisations(espace, [j["id"] for j in tous])
     if jid not in aut or not niveau_au_moins(aut[jid], "complet"):
@@ -765,7 +721,7 @@ async def promouvoir_jumeau(jid: str, payload: Promotion, x_persona: str = Heade
                 raise LookupError(jid)
             preuve = {"motif": payload.motif} if payload.motif else None
             return jumeau_identite_depot.promouvoir(
-                conn, jumeau["tenant_id"], jid, payload.nom, payload.mission, x_persona, preuve=preuve)
+                conn, jumeau["tenant_id"], jid, payload.nom, payload.mission, acteur, preuve=preuve)
 
     try:
         resultat = await asyncio.to_thread(promouvoir)
@@ -784,14 +740,14 @@ async def promouvoir_jumeau(jid: str, payload: Promotion, x_persona: str = Heade
         {"id": jid},
         {"$set": {"nom": resultat["nom"], "mission": resultat["mission"], "statut": "actif"}},
     )
-    await journaler(x_persona, espace["id"], "promotion d'un jumeau", jid,
+    await journaler(acteur, espace["id"], "promotion d'un jumeau", jid,
                     f"{resultat['avant']['nom']} → {resultat['nom']}")
     return resultat
 
 
 @api_router.delete("/jumeaux/{jid}")
-async def supprimer_jumeau(jid: str, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
-    _, espace = resoudre_perimetre(x_persona, x_espace)
+async def supprimer_jumeau(jid: str, acteur: str = Depends(auth_identite.acteur), x_espace: Optional[str] = Header(None)):
+    _, espace = resoudre_perimetre(acteur, x_espace)
     aut = autorisations(espace, [jid])
     if aut.get(jid) is None:
         raise HTTPException(404, "Jumeau introuvable")
@@ -802,14 +758,14 @@ async def supprimer_jumeau(jid: str, x_persona: str = Header("architecte"), x_es
         raise HTTPException(404, "Jumeau introuvable")
     await db.relations.delete_many({"$or": [{"source": jid}, {"cible": jid}]})
     await db.cases.update_many({}, {"$pull": {"jumeaux": jid}})
-    await journaler(x_persona, espace["id"], "retrait d'un jumeau", jid)
+    await journaler(acteur, espace["id"], "retrait d'un jumeau", jid)
     return {"ok": True}
 
 
 @api_router.patch("/jumeaux/{jid}")
-async def deplacer_jumeau(jid: str, payload: dict, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+async def deplacer_jumeau(jid: str, payload: dict, acteur: str = Depends(auth_identite.acteur), x_espace: Optional[str] = Header(None)):
     """Position cartographique (mode réorganisation) et reclassification de domaine — toujours validées par un humain."""
-    _, espace = resoudre_perimetre(x_persona, x_espace)
+    _, espace = resoudre_perimetre(acteur, x_espace)
     if not await db.jumeaux.find_one({"id": jid}, {"_id": 0, "id": 1}):
         raise HTTPException(404, "Jumeau introuvable")
     aut = autorisations(espace, [jid])
@@ -827,13 +783,13 @@ async def deplacer_jumeau(jid: str, payload: dict, x_persona: str = Header("arch
         raise HTTPException(400, "Rien à mettre à jour")
     await db.jumeaux.update_one({"id": jid}, {"$set": champs})
     if "domaine" in champs:
-        await journaler(x_persona, espace["id"], "reclassification d'un jumeau", jid)
+        await journaler(acteur, espace["id"], "reclassification d'un jumeau", jid)
     return {"ok": True}
 
 
 @api_router.post("/jumeaux/{jid}/examiner")
-async def examiner_jumeau(jid: str, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
-    _, espace = resoudre_perimetre(x_persona, x_espace)
+async def examiner_jumeau(jid: str, acteur: str = Depends(auth_identite.acteur), x_espace: Optional[str] = Header(None)):
+    _, espace = resoudre_perimetre(acteur, x_espace)
     aut = autorisations(espace, [jid])
     if aut.get(jid) is None:
         raise HTTPException(404, "Jumeau introuvable")
@@ -876,8 +832,8 @@ async def examiner_jumeau(jid: str, x_persona: str = Header("architecte"), x_esp
 # ---------- Situations (Radar & Investigations) ----------
 
 @api_router.get("/situations")
-async def lister_situations(x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
-    _, espace = resoudre_perimetre(x_persona, x_espace)
+async def lister_situations(acteur: str = Depends(auth_identite.acteur), x_espace: Optional[str] = Header(None)):
+    _, espace = resoudre_perimetre(acteur, x_espace)
     tous = await db.jumeaux.find({}, {"_id": 0, "id": 1, "nom": 1}).to_list(200)
     aut = autorisations(espace, [j["id"] for j in tous])
     nom_vers_id = {j["nom"]: j["id"] for j in tous}
@@ -888,8 +844,8 @@ async def lister_situations(x_persona: str = Header("architecte"), x_espace: Opt
 
 
 @api_router.get("/situations/{sid}")
-async def obtenir_situation(sid: str, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
-    _, espace = resoudre_perimetre(x_persona, x_espace)
+async def obtenir_situation(sid: str, acteur: str = Depends(auth_identite.acteur), x_espace: Optional[str] = Header(None)):
+    _, espace = resoudre_perimetre(acteur, x_espace)
     tous = await db.jumeaux.find({}, {"_id": 0, "id": 1, "nom": 1}).to_list(200)
     aut = autorisations(espace, [j["id"] for j in tous])
     nom_vers_id = {j["nom"]: j["id"] for j in tous}
@@ -923,9 +879,9 @@ class ActionSituation(BaseModel):
 
 
 @api_router.post("/situations/{sid}/action")
-async def agir_situation(sid: str, payload: ActionSituation, x_persona: str = Header("architecte"),
+async def agir_situation(sid: str, payload: ActionSituation, acteur: str = Depends(auth_identite.acteur),
                          x_espace: Optional[str] = Header(None)):
-    _, espace = resoudre_perimetre(x_persona, x_espace)
+    _, espace = resoudre_perimetre(acteur, x_espace)
     await situation_dans_perimetre(sid, espace)
     mapping = {"ignorer": "ignorée", "surveiller": "surveillée", "investiguer": "en investigation", "examiner": None, "coincidence": "classée", "observer": "en observation", "qualifier": "qualifiée"}
     if payload.action not in mapping:
@@ -935,7 +891,7 @@ async def agir_situation(sid: str, payload: ActionSituation, x_persona: str = He
         res = await db.situations.update_one({"id": sid}, {"$set": {"statut": nouveau}})
         if res.matched_count == 0:
             raise HTTPException(404, "Situation introuvable")
-    await journaler(x_persona, espace["id"], f"situation : {payload.action}", sid, "")
+    await journaler(acteur, espace["id"], f"situation : {payload.action}", sid, "")
     return {"ok": True, "statut": nouveau}
 
 
@@ -944,8 +900,8 @@ class DecisionSituation(BaseModel):
 
 
 @api_router.post("/situations/{sid}/decision")
-async def decider_situation(sid: str, payload: DecisionSituation, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
-    _, espace = resoudre_perimetre(x_persona, x_espace)
+async def decider_situation(sid: str, payload: DecisionSituation, acteur: str = Depends(auth_identite.acteur), x_espace: Optional[str] = Header(None)):
+    _, espace = resoudre_perimetre(acteur, x_espace)
     await situation_dans_perimetre(sid, espace)
     res = await db.situations.update_one(
         {"id": sid},
@@ -953,15 +909,15 @@ async def decider_situation(sid: str, payload: DecisionSituation, x_persona: str
     )
     if res.matched_count == 0:
         raise HTTPException(404, "Situation introuvable")
-    await journaler(x_persona, espace["id"], "décision", sid, payload.decision)
+    await journaler(acteur, espace["id"], "décision", sid, payload.decision)
     return {"ok": True, "decision": payload.decision}
 
 
 # ---------- Relations (mémoire du Mesh) ----------
 
 @api_router.post("/relations/{rid}/confirmer")
-async def confirmer_relation(rid: str, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
-    _, espace = resoudre_perimetre(x_persona, x_espace)
+async def confirmer_relation(rid: str, acteur: str = Depends(auth_identite.acteur), x_espace: Optional[str] = Header(None)):
+    _, espace = resoudre_perimetre(acteur, x_espace)
     rel = await db.relations.find_one({"id": rid}, NO_ID)
     if not rel:
         raise HTTPException(404, "Relation introuvable")
@@ -972,7 +928,7 @@ async def confirmer_relation(rid: str, x_persona: str = Header("architecte"), x_
         {"id": rid},
         {"$set": {"etat": "confirmee"}, "$addToSet": {"confirmee_par": "Validation humaine"}},
     )
-    await journaler(x_persona, espace["id"], "confirmation d'une relation", rid, f"{rel['source']} → {rel['cible']}")
+    await journaler(acteur, espace["id"], "confirmation d'une relation", rid, f"{rel['source']} → {rel['cible']}")
     await marquer_cases_a_revoir([rel["source"], rel["cible"]], f"la relation {rel['source']} → {rel['cible']} a été confirmée")
     return {"ok": True, "etat": "confirmee", "memoire": "enrichie"}
 
@@ -980,8 +936,8 @@ async def confirmer_relation(rid: str, x_persona: str = Header("architecte"), x_
 # ---------- Décisions ----------
 
 @api_router.get("/decisions")
-async def lister_decisions(x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
-    _, espace = resoudre_perimetre(x_persona, x_espace)
+async def lister_decisions(acteur: str = Depends(auth_identite.acteur), x_espace: Optional[str] = Header(None)):
+    _, espace = resoudre_perimetre(acteur, x_espace)
     tous = await db.jumeaux.find({}, {"_id": 0, "id": 1, "nom": 1}).to_list(200)
     aut = autorisations(espace, [j["id"] for j in tous])
     nom_vers_id = {j["nom"]: j["id"] for j in tous}
@@ -1358,11 +1314,9 @@ async def recherche_plein_texte(q: str, aut: dict):
 # ---------- Atelier de commande d'un jumeau ----------
 
 class CommandeCreate(BaseModel):
-    nom: str = "Nouveau jumeau"
-    domaine: str = "Non classé"
-    mission: str = ""
+    application_id: str = ""
+    nom: str = ""
     proprietaire: str = ""
-    environnement: str = "production"
 
 
 class CommandePatch(BaseModel):
@@ -1377,6 +1331,7 @@ class TestLot(BaseModel):
 
 class ImportApercu(BaseModel):
     mode: str = "cmdb"
+    contenu: str | list | dict | None = None
 
 
 @api_router.get("/connecteurs")
@@ -1386,20 +1341,21 @@ async def lister_connecteurs():
 
 
 @api_router.post("/commandes", status_code=201)
-async def creer_commande(payload: CommandeCreate, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
-    _, espace = resoudre_perimetre(x_persona, x_espace)
+async def creer_commande(payload: CommandeCreate, acteur: str = Depends(auth_identite.acteur), x_espace: Optional[str] = Header(None)):
+    _, espace = resoudre_perimetre(acteur, x_espace)
     cid = f"cmd-{secrets.token_hex(4)}"
     doc = {
         "id": cid,
         "etat": "brouillon",
         "etape": 1,
-        "jumeau": {"nom": payload.nom, "domaine": payload.domaine, "mission": payload.mission, "proprietaire": payload.proprietaire, "environnement": payload.environnement},
+        "jumeau": {"application_id": payload.application_id, "nom": payload.nom,
+                    "proprietaire": payload.proprietaire},
         "sources": [],
-        "cree_par": x_persona,
+        "cree_par": acteur,
         "cree_le": datetime.now(timezone.utc).isoformat(),
     }
     await db.commandes.insert_one(doc)
-    await journaler(x_persona, espace["id"], "ouverture d'une commande", cid, payload.nom)
+    await journaler(acteur, espace["id"], "ouverture d'une commande", cid, payload.nom)
     doc.pop("_id", None)
     return doc
 
@@ -1422,6 +1378,13 @@ async def maj_commande(cid: str, payload: CommandePatch):
     patch = {k: v for k, v in payload.model_dump().items() if v is not None}
     if not patch:
         return {"ok": True}
+    if patch.get("etape") not in (None, 1, 2, 3, 4):
+        raise HTTPException(422, "Étape de commande invalide")
+    etat = await db.commandes.find_one({"id": cid}, {"_id": 0, "etat": 1})
+    if not etat:
+        raise HTTPException(404, "Commande introuvable")
+    if etat.get("etat") != "brouillon":
+        raise HTTPException(409, "Commande déjà lancée : elle n'est plus modifiable")
     if patch.get("sources"):
         docs = [c for systeme in ("github", *SYSTEMES)
                 async for c in _connexions(systeme).find({}, {"_id": 0, "id": 1, "reference": 1, "hote": 1})]
@@ -1431,9 +1394,9 @@ async def maj_commande(cid: str, payload: CommandePatch):
                  ((await db.commandes.find_one({"id": cid}, {"_id": 0, "sources": 1})) or {}).get("sources", [])}
         patch["sources"] = [_statut_serveur(_proteger_source(s, connexions, hotes), avant) for s in patch["sources"]]
     patch["maj_le"] = datetime.now(timezone.utc).isoformat()
-    res = await db.commandes.update_one({"id": cid}, {"$set": patch})
+    res = await db.commandes.update_one({"id": cid, "etat": "brouillon"}, {"$set": patch})
     if res.matched_count == 0:
-        raise HTTPException(404, "Commande introuvable")
+        raise HTTPException(409, "Commande déjà lancée : elle n'est plus modifiable")
     return {"ok": True, "maj_le": patch["maj_le"]}
 
 
@@ -1444,20 +1407,38 @@ def _statut_serveur(source, avant):
     return source
 
 
-PREFIXES_CONNEXION = {"github": "gh-", **{nom: m.PREFIXE for nom, m in SYSTEMES.items()}}
+PREFIXES_CONNEXION = {"github": "gh-", "cmdb": SYSTEMES["servicenow"].PREFIXE,
+                      **{nom: m.PREFIXE for nom, m in SYSTEMES.items()}}
+
+
+CHAMPS_SECRETS = {"secret", "token", "jeton", "password", "passwd", "mot_de_passe",
+                  "api_key", "apikey", "authorization", "bearer"}
+
+
+def _sans_secrets(valeur):
+    """Aucune valeur secrète fournie par le client n'est persistée : seules les références Vault/env le sont."""
+    if isinstance(valeur, dict):
+        return {cle: _sans_secrets(v) for cle, v in valeur.items()
+                if str(cle).strip().lower() not in CHAMPS_SECRETS}
+    if isinstance(valeur, list):
+        return [_sans_secrets(v) for v in valeur]
+    return valeur
 
 
 def _proteger_source(source, connexions, hotes=None):
     """Une source GitHub, Confluence… désigne une connexion déclarée de son connecteur ; le serveur en déduit la
     référence de son jeton. Le client ne fournit jamais de référence : ni secret d'une autre connexion, ni variable
     du serveur. De même l'adresse du site (`hote`) : celle de la connexion, jamais celle du client."""
+    config = _sans_secrets(source.get("config")) if isinstance(source.get("config"), dict) else {}
+    source = {**source, "config": config}
     prefixe = PREFIXES_CONNEXION.get(source.get("connecteur"))
-    if not prefixe or not isinstance(source.get("config"), dict):
+    if not prefixe:
         return source
     cxid = source["config"].get("connexion")
     propre = str(cxid).startswith(prefixe)
     config = {**source["config"], "secret": connexions.get(cxid, "") if propre else ""}
-    if source["connecteur"] in SYSTEMES:
+    systeme = "servicenow" if source["connecteur"] == "cmdb" else source["connecteur"]
+    if systeme in SYSTEMES:
         config["hote"] = (hotes or {}).get(cxid, "") if propre else ""
     return {**source, "config": config}
 
@@ -1620,24 +1601,32 @@ async def perimetres_connexion(systeme: str, cxid: str, q: str = Query("", max_l
 
 
 @api_router.post("/commandes/{cid}/tester")
-async def tester_sources(cid: str, payload: TestLot, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
-    _, espace = resoudre_perimetre(x_persona, x_espace)
+async def tester_sources(cid: str, payload: TestLot, acteur: str = Depends(auth_identite.acteur), x_espace: Optional[str] = Header(None)):
+    _, espace = resoudre_perimetre(acteur, x_espace)
     doc = await db.commandes.find_one({"id": cid}, NO_ID)
     if not doc:
         raise HTTPException(404, "Commande introuvable")
+    if doc.get("etat") != "brouillon":
+        raise HTTPException(409, "Commande déjà lancée : elle n'est plus modifiable")
     resultats = {}
     modifie = False
     for s in doc["sources"]:
         if s["id"] in payload.ids:
             # GitHub (git ls-remote) et systèmes branchés (API) : test réel avec le jeton résolu depuis Vault ; autres connecteurs : simulés
-            testeurs = {"github": jumeau_naissance.tester_git, **{nom: m.tester for nom, m in SYSTEMES.items()}}
+            testeurs = {"github": jumeau_naissance.tester_git, "cmdb": SYSTEMES["servicenow"].tester,
+                        **{nom: m.tester for nom, m in SYSTEMES.items()}}
             resultats[s["id"]] = (await asyncio.to_thread(testeurs[s["connecteur"]], s.get("config", {}))
                                   if s["connecteur"] in testeurs else _simuler_test(s))
             s.update(resultats[s["id"]])
             modifie = True
     if modifie:
-        await db.commandes.update_one({"id": cid}, {"$set": {"sources": doc["sources"], "maj_le": datetime.now(timezone.utc).isoformat()}})
-        await journaler(x_persona, espace["id"], "test de connexions", cid, f"{len(resultats)} source(s) testée(s)")
+        res = await db.commandes.update_one(
+            {"id": cid, "etat": "brouillon"},
+            {"$set": {"sources": doc["sources"], "maj_le": datetime.now(timezone.utc).isoformat()}},
+        )
+        if res.matched_count == 0:
+            raise HTTPException(409, "Commande déjà lancée : elle n'est plus modifiable")
+        await journaler(acteur, espace["id"], "test de connexions", cid, f"{len(resultats)} source(s) testée(s)")
     return {"resultats": resultats}
 
 
@@ -1646,54 +1635,106 @@ async def apercu_import(cid: str, payload: ImportApercu):
     doc = await db.commandes.find_one({"id": cid}, NO_ID)
     if not doc:
         raise HTTPException(404, "Commande introuvable")
-    # Aucune découverte n'est implémentée : interroger un SI pour en lister les sources n'est pas branché. Rendre une
-    # liste écrite d'avance faisait croire à une détection réelle, dans le chemin de production (L2.6).
-    return {"mode": payload.mode, "decouverte": "non_branchee", "detectees": 0, "nouvelles": [],
-            "presentes": [{"connecteur": s["connecteur"], "nom": s["nom"]} for s in doc.get("sources", [])],
-            "a_mapper": [],
-            "message": "La découverte automatique des sources n'est pas encore branchée : aucun connecteur ne sait "
-                       "interroger un SI pour lister ce qu'il contient. Déclarez les sources à la main."}
+    if doc.get("etat") != "brouillon":
+        raise HTTPException(409, "Commande déjà lancée : elle n'est plus modifiable")
+    try:
+        prepare = jumeau_import_identite.preparer(
+            payload.contenu,
+            payload.mode,
+            [(s.get("connecteur"), s.get("nom")) for s in doc.get("sources", [])],
+            connus=[c["id"] for c in CONNECTEURS if connecteur_branche(c["id"])],
+        )
+    except jumeau_import_identite.ImportInvalide as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {
+        "mode": payload.mode,
+        "detectees": 1,
+        "identite": prepare["identite"],
+        "nouvelles": prepare["nouvelles"],
+        "ignorees": prepare["ignorees"],
+        "presentes": [{"connecteur": s["connecteur"], "nom": s["nom"]} for s in doc.get("sources", [])],
+        "a_mapper": [],
+        "message": f"{len(prepare['nouvelles'])} source(s) prêtes à importer, "
+                   f"{len(prepare['ignorees'])} déjà présente(s) et ignorée(s).",
+    }
+
+
+def naissance_possible(connecteurs):
+    """Une naissance réelle exige le code (GitHub) ou l'ancre ServiceNow/CMDB et une source de substance."""
+    connecteurs = set(connecteurs)
+    return "github" in connecteurs or (
+        bool(connecteurs & {"servicenow", "cmdb"})
+        and bool(connecteurs & {"datadog", "otlp", "confluence"})
+    )
 
 
 @api_router.post("/commandes/{cid}/lancer")
-async def lancer_commande(cid: str, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
-    _, espace = resoudre_perimetre(x_persona, x_espace)
+async def lancer_commande(cid: str, acteur: str = Depends(auth_identite.acteur), x_espace: Optional[str] = Header(None)):
+    _, espace = resoudre_perimetre(acteur, x_espace)
     doc = await db.commandes.find_one({"id": cid}, NO_ID)
     if not doc:
         raise HTTPException(404, "Commande introuvable")
+    if doc.get("etat") == "lancee" and doc.get("jumeau_id"):
+        # Rejeu idempotent : le client a perdu la réponse du premier lancement.
+        pretes = [s for s in doc.get("sources", []) if s.get("statut") == "prete"]
+        return {"ok": True, "jumeau_id": doc["jumeau_id"], "sources_lancees": len(pretes),
+                "sources_reportees": len(doc.get("sources", [])) - len(pretes),
+                "naissance": (doc.get("naissance") or {}).get("etat"), "deja": True}
     j = doc["jumeau"]
-    if not j.get("nom") or not j.get("mission") or not j.get("proprietaire"):
-        raise HTTPException(422, "Identité incomplète (nom, mission, propriétaire requis)")
-    pretes = [s for s in doc["sources"] if s["statut"] == "prete"]
+    application_id = (j.get("application_id") or "").strip().lower()
+    nom = (j.get("nom") or "").strip()
+    proprietaire = (j.get("proprietaire") or "").strip()
+    if not application_id or not nom or not proprietaire:
+        raise HTTPException(422, "Identité incomplète (application_id, nom et propriétaire requis)")
+    if len(nom) > 200 or len(proprietaire) > 200:
+        raise HTTPException(422, "Nom ou propriétaire trop long (200 caractères maximum)")
+    if not jumeau_import_identite.APPLICATION_ID.fullmatch(application_id):
+        raise HTTPException(422, "application_id invalide (minuscules, chiffres, . _ -)")
+    j = {**j, "application_id": application_id, "nom": nom, "proprietaire": proprietaire}
+    doc = {**doc, "jumeau": j}
+    pretes = [s for s in doc.get("sources", []) if s.get("statut") == "prete"]
+    non_branchees = [s for s in pretes if not connecteur_branche(s.get("connecteur"))]
+    if non_branchees:
+        noms = ", ".join(sorted({str(s.get("nom") or s.get("connecteur")) for s in non_branchees}))
+        raise HTTPException(422, f"Connecteur non branché dans les sources prêtes : {noms}")
     if not pretes:
         raise HTTPException(422, "Au moins une source prête est requise pour lancer")
-    jid = slugify(j["nom"])
-    if not jid:
-        raise HTTPException(422, "Le nom du jumeau doit contenir des lettres ou des chiffres")
+    if not os.environ.get("JUMEAU_PG_DSN"):
+        raise HTTPException(503, "La naissance nécessite la couche cognitive Postgres (JUMEAU_PG_DSN).")
+    connecteurs = {s.get("connecteur") for s in pretes}
+    if not naissance_possible(connecteurs):
+        raise HTTPException(
+            422,
+            "Aucune source prête ne permet une naissance : ajoutez GitHub, ou ServiceNow/CMDB avec Datadog, OTLP ou Confluence.",
+        )
+    jid = application_id
     if jid in NAISSANCES_EN_COURS or await db.jumeaux.find_one({"id": jid}):
-        raise HTTPException(409, "Un jumeau porte déjà ce nom")
+        raise HTTPException(409, "Un jumeau porte déjà cet identifiant — choisissez un autre App ID")
     nouveau = {
-        "id": jid, "nom": j["nom"], "domaine": j.get("domaine", "Non classé"), "mission": j["mission"],
-        "proprietaire": j["proprietaire"], "environnement": j.get("environnement", "production"),
+        "id": jid, "nom": nom, "domaine": "Non classé", "mission": "",
+        "proprietaire": proprietaire,
         "statut": "observation", "autonomie": "aucune",
         "couverture": min(20 + len(pretes) * 9, 88), "fraicheur": "à l'instant", "sante": "inconnu",
         "position": {"x": 1260, "y": 40},
-        "sources": {s["connecteur"]: True for s in pretes},
+        "sources": {s.get("connecteur"): True for s in pretes if s.get("connecteur")},
     }
-    await db.jumeaux.insert_one(nouveau)
+    try:
+        await db.jumeaux.insert_one({**nouveau, "_id": jid})
+    except DuplicateKeyError as exc:
+        raise HTTPException(409, "Un jumeau porte déjà cet identifiant — choisissez un autre App ID") from exc
     if isinstance(espace.get("jumeaux"), dict) and "*" not in espace["jumeaux"]:
         espace["jumeaux"][jid] = "complet"
-    await db.commandes.update_one({"id": cid}, {"$set": {"etat": "lancee", "jumeau_id": jid, "lancee_le": datetime.now(timezone.utc).isoformat()}})
-    await journaler(x_persona, espace["id"], "lancement d'une commande", jid, f"{j['nom']} — {len(pretes)} source(s) prête(s)")
-    # Une source de code prête (ou, sans code, l'ancre ServiceNow) : la vraie naissance démarre.
-    naissance = any(s["connecteur"] in ("github", "servicenow") for s in pretes) and bool(os.environ.get("JUMEAU_PG_DSN"))
-    if naissance:
-        NAISSANCES_EN_COURS.add(jid)
-        TACHES_NAISSANCE.add(t := asyncio.create_task(_naitre(doc, jid)))
-        t.add_done_callback(TACHES_NAISSANCE.discard)
-        t.add_done_callback(lambda _: NAISSANCES_EN_COURS.discard(jid))
-    return {"ok": True, "jumeau_id": jid, "sources_lancees": len(pretes), "sources_reportees": len(doc["sources"]) - len(pretes),
-            "naissance": "en_cours" if naissance else None}
+    maintenant = datetime.now(timezone.utc).isoformat()
+    etat_commande = {"etat": "lancee", "jumeau_id": jid, "lancee_le": maintenant,
+                     "naissance": {"etat": "en_cours", "debut": maintenant}}
+    await db.commandes.update_one({"id": cid}, {"$set": etat_commande})
+    await journaler(acteur, espace["id"], "lancement d'une commande", jid, f"{nom} — {len(pretes)} source(s) prête(s)")
+    NAISSANCES_EN_COURS.add(jid)
+    TACHES_NAISSANCE.add(t := asyncio.create_task(_naitre(doc, jid)))
+    t.add_done_callback(TACHES_NAISSANCE.discard)
+    t.add_done_callback(lambda _: NAISSANCES_EN_COURS.discard(jid))
+    return {"ok": True, "jumeau_id": jid, "sources_lancees": len(pretes),
+            "sources_reportees": len(doc.get("sources", [])) - len(pretes), "naissance": "en_cours"}
 
 
 TACHES_NAISSANCE = set()  # références fortes : une tâche asyncio sans référence peut être collectée en cours de route
@@ -1704,13 +1745,42 @@ DUREE_MAX_NAISSANCE = 30 * 60  # secondes
 
 async def _naitre(commande, jid):
     """ponytail: tâche dans le processus de l'API, bornée en nombre et en durée ; Step Functions sur AWS."""
-    async with NAISSANCES_SIMULTANEES:
-        with psycopg.connect(os.environ["JUMEAU_PG_DSN"], autocommit=True) as conn:
-            try:
+    try:
+        async with NAISSANCES_SIMULTANEES:
+            with psycopg.connect(os.environ["JUMEAU_PG_DSN"], autocommit=True) as conn:
                 await asyncio.wait_for(jumeau_naissance.naitre(conn, db, commande, jid), DUREE_MAX_NAISSANCE)
-            except asyncio.TimeoutError:
-                await db.commandes.update_one({"id": commande["id"]},
-                                              {"$set": {"naissance.etat": "echec", "naissance.message": "durée dépassée"}})
+        etat = await db.commandes.find_one({"id": commande["id"]}, {"_id": 0, "naissance": 1})
+        naissance = (etat or {}).get("naissance") or {}
+        if naissance.get("etat") == "echec":
+            await _echec_naissance(commande, jid, naissance.get("message") or "erreur pendant la naissance")
+        elif naissance.get("etat") == "sans_substance":
+            await _notifier_naissance(
+                jid,
+                f"Le jumeau {commande.get('jumeau', {}).get('nom') or jid} est créé, mais sa naissance est "
+                f"incomplète : {naissance.get('message') or 'source de substance manquante'}.",
+            )
+    except asyncio.TimeoutError:
+        await _echec_naissance(commande, jid, "durée dépassée")
+    except Exception:  # noqa: BLE001 - la commande doit refléter un échec, jamais rester « en cours »
+        journal.exception("naissance de %s", jid)
+        await _echec_naissance(commande, jid, "erreur pendant la naissance")
+
+
+async def _echec_naissance(commande, jid, message):
+    await db.commandes.update_one(
+        {"id": commande["id"]},
+        {"$set": {"naissance.etat": "echec", "naissance.message": message,
+                  "naissance.fin": datetime.now(timezone.utc).isoformat()}},
+    )
+    nom = (commande.get("jumeau") or {}).get("nom") or jid
+    await _notifier_naissance(jid, f"La naissance de {nom} a échoué : {message}.")
+
+
+async def _notifier_naissance(jid, texte):
+    try:
+        await notifier("naissance", texte, f"/jumeaux/{jid}/revue")
+    except Exception:  # noqa: BLE001 - une notification manquée ne masque pas l'échec déjà journalisé
+        journal.warning("notification de naissance impossible", exc_info=True)
 
 
 @api_router.get("/commandes/{cid}/naissance")
@@ -1741,7 +1811,7 @@ def enregistrer_lignes(dsn, tenant_id, acteur, lignes):
     return jumeau_audit_harness.enregistrer_lignes(dsn, tenant_id, acteur, lignes)
 
 
-def _persister_audit_orchestration(reponse, x_persona, tenant=None):
+def _persister_audit_orchestration(reponse, acteur, tenant=None):
     """Après un tour de l'orchestrateur, écrit son audit en arrière-plan ; ne bloque ni ne casse la réponse."""
     if not isinstance(reponse, dict):
         return
@@ -1755,7 +1825,7 @@ def _persister_audit_orchestration(reponse, x_persona, tenant=None):
     if not dsn:
         return
     tenant_id = str(tenant or os.environ.get("JUMEAU_TENANT") or "local").strip()[:128] or "local"
-    acteur = str(x_persona or "architecte")
+    acteur = str(acteur or "demo")
     instantane = [dict(ligne) for ligne in lignes if isinstance(ligne, dict)]
     if not instantane:
         return
@@ -1772,13 +1842,12 @@ def _persister_audit_orchestration(reponse, x_persona, tenant=None):
         logger.debug("audit orchestrateur non planifié")
 
 
-async def generer_reponse_flore(contexte, question, selection, domaine, x_persona, x_espace, travail=None, emit=None, *, tenant=None):
-    if not await limites.autoriser(f"tours:{x_persona}", limites.maxi_tours(), limites.fenetre_tours()):
+async def generer_reponse_flore(contexte, question, selection, domaine, acteur, x_espace, travail=None, emit=None, *, tenant=None):
+    if not await limites.autoriser(f"tours:{acteur}", limites.maxi_tours(), limites.fenetre_tours()):
         raise HTTPException(429, "Trop de tours Flore en peu de temps ; réessayez dans un instant")
-    persona, espace = resoudre_perimetre(x_persona, x_espace)
+    _, espace = resoudre_perimetre(acteur, x_espace)
     tous = await db.jumeaux.find({}, NO_ID).to_list(200)
     aut = autorisations(espace, [j["id"] for j in tous])
-    nom_vers_id = {j["nom"]: j["id"] for j in tous}
     id_vers_nom = {j["id"]: j["nom"] for j in tous}
     q = normalise_txt(question)
     for j in tous:
@@ -1794,8 +1863,8 @@ async def generer_reponse_flore(contexte, question, selection, domaine, x_person
         if not ids:
             return None
         if len(ids) == 1:
-            return await jumeau_flore.repondre(ids[0], mission, x_persona, travail, profil=persona, db=db, emit=emit)
-        return await jumeau_flore.mobiliser(ids, mission, x_persona, travail, profil=persona, db=db, emit=emit)
+            return await jumeau_flore.repondre(ids[0], mission, acteur, travail, profil=None, db=db, emit=emit)
+        return await jumeau_flore.mobiliser(ids, mission, acteur, travail, profil=None, db=db, emit=emit)
 
     async def concevoir_orchestre(question_conception):
         return await jumeau_conception.repondre(question_conception, {"type": "concevoir", "greenfield": True})
@@ -1805,7 +1874,7 @@ async def generer_reponse_flore(contexte, question, selection, domaine, x_person
             question, jumeaux=candidats, selection=sel, mobiliser=mobiliser_orchestre,
             concevoir=concevoir_orchestre)
         if reponse_orchestree:
-            _persister_audit_orchestration(reponse_orchestree, x_persona, tenant)
+            _persister_audit_orchestration(reponse_orchestree, acteur, tenant)
             return marquer_origine(reponse_orchestree, "modele")
         return marquer_origine({
             "comportement": "signaler",
@@ -1819,9 +1888,9 @@ async def generer_reponse_flore(contexte, question, selection, domaine, x_person
     resolution = None
     if reels:
         if len(reels) == 1:
-            reponse_jumeau = await jumeau_flore.repondre(reels[0], question, x_persona, travail, profil=persona, db=db, emit=emit)
+            reponse_jumeau = await jumeau_flore.repondre(reels[0], question, acteur, travail, profil=None, db=db, emit=emit)
         else:
-            reponse_jumeau = await jumeau_flore.mobiliser(reels, question, x_persona, travail, profil=persona, db=db, emit=emit)
+            reponse_jumeau = await jumeau_flore.mobiliser(reels, question, acteur, travail, profil=None, db=db, emit=emit)
         if reponse_jumeau:
             return marquer_origine(_poser_resolution(reponse_jumeau, resolution), "modele")
     if sel:
@@ -1837,10 +1906,10 @@ def _jumeau_visible(jid, aut):
 
 
 @api_router.get("/jumeaux/{jid}/interfaces")
-async def interfaces_du_jumeau(jid: str, x_persona: str = Header("architecte"),
+async def interfaces_du_jumeau(jid: str, acteur: str = Depends(auth_identite.acteur),
                                x_espace: Optional[str] = Header(None)):
     """Le graphe d'interfaces persisté et les derniers DiscoveryRun d'un jumeau visible."""
-    _, espace = resoudre_perimetre(x_persona, x_espace)
+    _, espace = resoudre_perimetre(acteur, x_espace)
     tous = await db.jumeaux.find({}, {"_id": 0, "id": 1}).to_list(200)
     aut = autorisations(espace, [j["id"] for j in tous])
     if not _jumeau_visible(jid, aut):
@@ -1867,10 +1936,10 @@ async def interfaces_du_jumeau(jid: str, x_persona: str = Header("architecte"),
 
 
 @api_router.post("/jumeaux/{jid}/interfaces/decouvrir")
-async def decouvrir_interfaces_du_jumeau(jid: str, x_persona: str = Header("architecte"),
+async def decouvrir_interfaces_du_jumeau(jid: str, acteur: str = Depends(auth_identite.acteur),
                                          x_espace: Optional[str] = Header(None)):
     """Déclenche un DiscoveryRun à partir des claims EXPOSE du jumeau (lecture seule sur les sources)."""
-    _, espace = resoudre_perimetre(x_persona, x_espace)
+    _, espace = resoudre_perimetre(acteur, x_espace)
     tous = await db.jumeaux.find({}, {"_id": 0, "id": 1}).to_list(200)
     aut = autorisations(espace, [j["id"] for j in tous])
     if not _jumeau_visible(jid, aut):
@@ -1895,23 +1964,23 @@ async def decouvrir_interfaces_du_jumeau(jid: str, x_persona: str = Header("arch
 
 
 @api_router.post("/aurora/demander")
-async def aurora_demander(payload: AuroraDemande, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None),
+async def aurora_demander(payload: AuroraDemande, acteur: str = Depends(auth_identite.acteur), x_espace: Optional[str] = Header(None),
                           x_tenant: Optional[str] = Header(None)):
-    return await generer_reponse_flore(payload.contexte, payload.question, payload.selection, payload.domaine, x_persona, x_espace,
+    return await generer_reponse_flore(payload.contexte, payload.question, payload.selection, payload.domaine, acteur, x_espace,
                                        tenant=x_tenant)
 
 
 @api_router.post("/aurora/demander/flux")
-async def aurora_demander_flux(payload: AuroraDemande, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None),
+async def aurora_demander_flux(payload: AuroraDemande, acteur: str = Depends(auth_identite.acteur), x_espace: Optional[str] = Header(None),
                                x_tenant: Optional[str] = Header(None)):
     """La même réponse, au fil de l'eau : étapes réelles, brouillon en relecture, puis la réponse relue (jumeau/flux.py)."""
     return jumeau_flux.en_flux(lambda emit: generer_reponse_flore(
-        payload.contexte, payload.question, payload.selection, payload.domaine, x_persona, x_espace, emit=emit, tenant=x_tenant),
-        proprietaire=x_persona)
+        payload.contexte, payload.question, payload.selection, payload.domaine, acteur, x_espace, emit=emit, tenant=x_tenant),
+        proprietaire=acteur)
 
 
 @api_router.get("/preuves/extrait")
-async def extrait_preuve(locator: str = Query(..., max_length=500), x_persona: str = Header("architecte"),
+async def extrait_preuve(locator: str = Query(..., max_length=500), acteur: str = Depends(auth_identite.acteur),
                          x_espace: Optional[str] = Header(None)):
     """L'extrait d'une preuve citée par Flore (pastille, panneau de preuve) : les lignes citées au commit, avec leur
     contexte. Réservé à qui voit les preuves de ce jumeau ; sinon 404, sans dire que le code existe."""
@@ -1919,7 +1988,7 @@ async def extrait_preuve(locator: str = Query(..., max_length=500), x_persona: s
     dsn = os.environ.get("JUMEAU_PG_DSN")
     if not dsn:
         raise HTTPException(503, "Couche cognitive non configurée (JUMEAU_PG_DSN)")
-    _, espace = resoudre_perimetre(x_persona, x_espace)
+    _, espace = resoudre_perimetre(acteur, x_espace)
 
     def chercher():
         with psycopg.connect(dsn, autocommit=True) as conn:
@@ -1932,8 +2001,8 @@ async def extrait_preuve(locator: str = Query(..., max_length=500), x_persona: s
 
 
 @api_router.get("/aurora/suggestions")
-async def aurora_suggestions(contexte: str = "global", x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
-    _, espace = resoudre_perimetre(x_persona, x_espace)
+async def aurora_suggestions(contexte: str = "global", acteur: str = Depends(auth_identite.acteur), x_espace: Optional[str] = Header(None)):
+    _, espace = resoudre_perimetre(acteur, x_espace)
     tous = await db.jumeaux.find({}, {"_id": 0, "id": 1, "nom": 1}).to_list(200)
     aut = autorisations(espace, [j["id"] for j in tous])
     sugs = AURORA_SUGGESTIONS.get(contexte, AURORA_SUGGESTIONS["global"])
@@ -1994,7 +2063,7 @@ def _ingerer_specifications(registre):
                 logger.warning("catalogue d'outils : %s ignoré", nom_env)
 
 
-def _ingerer_interfaces_postgres(registre, tenant_id, persona_id, perimetre_id):
+def _ingerer_interfaces_postgres(registre, tenant_id, acteur_id, perimetre_id):
     """Ajoute les opérations d'interface déjà découvertes, sans écraser un manifeste plus précis."""
     dsn = os.environ.get("JUMEAU_PG_DSN")
     if not dsn:
@@ -2007,7 +2076,7 @@ def _ingerer_interfaces_postgres(registre, tenant_id, persona_id, perimetre_id):
             else:
                 graphe = jumeau_interfaces_depot.lire_graph(conn, tenant_id)
         for manifeste in jumeau_interface_outils.manifests_depuis_interface(
-            graphe, tenant=tenant_id, persona=persona_id, perimetre=perimetre_id
+            graphe, tenant=tenant_id, acteur=acteur_id, perimetre=perimetre_id
         ):
             if registre.decrire(manifeste.nom) is None:
                 registre.enregistrer(manifeste)
@@ -2015,7 +2084,7 @@ def _ingerer_interfaces_postgres(registre, tenant_id, persona_id, perimetre_id):
         logger.warning("catalogue d'outils : opérations d'interface ignorées")
 
 
-def _catalogue_outils(tenant_id, persona_id, perimetre_id):
+def _catalogue_outils(tenant_id, acteur_id, perimetre_id):
     """Manifestes intégrés, fichiers, protocoles et opérations d'interface connues ; aucune exécution."""
     registre = jumeau_capacites.RegistreCapacites(jumeau_capacites.manifestes_integres())
     for chemin in _chemins_manifestes():
@@ -2024,19 +2093,18 @@ def _catalogue_outils(tenant_id, persona_id, perimetre_id):
         except Exception:
             logger.warning("catalogue d'outils : manifeste externe ignoré")
     _ingerer_specifications(registre)
-    _ingerer_interfaces_postgres(registre, tenant_id, persona_id, perimetre_id)
+    _ingerer_interfaces_postgres(registre, tenant_id, acteur_id, perimetre_id)
     return [
         jumeau_harness.expurger(manifeste.as_dict())
-        for manifeste in registre.lister(tenant=tenant_id, persona=persona_id, perimetre=perimetre_id)
+        for manifeste in registre.lister(tenant=tenant_id, acteur=acteur_id, perimetre=perimetre_id)
     ]
 
 
 @api_router.get("/outils")
 async def lister_outils(
     tenant: Optional[str] = Query(None, max_length=128),
-    persona: Optional[str] = Query(None, max_length=64),
     perimetre: Optional[str] = Query(None, max_length=96),
-    x_persona: str = Header("architecte", max_length=64),
+    acteur: str = Depends(auth_identite.acteur),
     x_espace: Optional[str] = Header(None, max_length=96),
     x_tenant: Optional[str] = Header(None, max_length=128),
 ):
@@ -2048,18 +2116,18 @@ async def lister_outils(
         tenant_id = str(brut_tenant).strip()
         if not tenant_id:
             raise HTTPException(400, "Tenant ne peut pas être vide")
-    persona_id = str(persona if persona is not None else x_persona or "").strip()
-    if not persona_id:
-        raise HTTPException(400, "Persona ne peut pas être vide")
-    _, espace = resoudre_perimetre(persona_id, x_espace)
+    acteur_id = str(acteur or "").strip()
+    if not acteur_id:
+        raise HTTPException(400, "Acteur ne peut pas être vide")
+    _, espace = resoudre_perimetre(acteur_id, x_espace)
     perimetre_id = str(perimetre if perimetre is not None else espace["id"]).strip()
     if not perimetre_id:
         raise HTTPException(400, "Périmètre ne peut pas être vide")
     return {
         "tenant": jumeau_harness.expurger(tenant_id),
-        "persona": jumeau_harness.expurger(persona_id),
+        "acteur": jumeau_harness.expurger(acteur_id),
         "perimetre": jumeau_harness.expurger(perimetre_id),
-        "outils": _catalogue_outils(tenant_id, persona_id, perimetre_id),
+        "outils": _catalogue_outils(tenant_id, acteur_id, perimetre_id),
     }
 
 
@@ -2117,56 +2185,38 @@ api_router.include_router(build_mesh_vue_router({
 
 api_router.include_router(jumeau_router)
 api_router.include_router(boucle_router)
+api_router.include_router(construire_sources_router(resoudre_tenant=resoudre_tenant_boucle))
 api_router.include_router(cognitif_router)
+api_router.include_router(construire_runs_router(resoudre_tenant=resoudre_tenant_boucle))
 
 
 # ---------- Notifications ----------
 
 @api_router.get("/notifications")
-async def lister_notifications(x_persona: str = Header("architecte")):
-    docs = await db.notifications.find({"persona": x_persona}, NO_ID).sort("quand", -1).to_list(30)
+async def lister_notifications():
+    docs = await db.notifications.find({}, NO_ID).sort("quand", -1).to_list(30)
     return {"notifications": docs, "non_lues": sum(1 for d in docs if not d.get("lu"))}
 
 
 @api_router.post("/notifications/{nid}/lue")
-async def notification_lue(nid: str, x_persona: str = Header("architecte")):
-    await db.notifications.update_one({"id": nid, "persona": x_persona}, {"$set": {"lu": True}})
+async def notification_lue(nid: str):
+    await db.notifications.update_one({"id": nid}, {"$set": {"lu": True}})
     return {"ok": True}
 
 
 @api_router.post("/notifications/tout-lire")
-async def notifications_tout_lire(x_persona: str = Header("architecte")):
-    await db.notifications.update_many({"persona": x_persona}, {"$set": {"lu": True}})
+async def notifications_tout_lire():
+    await db.notifications.update_many({}, {"$set": {"lu": True}})
     return {"ok": True}
 
-# ---------- Démo & activité ----------
-
-@api_router.post("/demo/reinitialiser")
-async def reinitialiser_demo(x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
-    if auth_identite.mode() != "demo":
-        raise HTTPException(403, "La réinitialisation n'est disponible qu'en mode démonstration")
-    for col in ["jumeaux", "relations", "situations", "change_lab", "dossiers", "vues", "journal", "commandes", "cases", "notifications", "initiatives", "delegations"]:
-        await db[col].delete_many({})
-    await pieces.reinitialiser(db)
-    await peupler_demo()
-    await db.cases.update_many({}, {"$set": {"pieces_count": 0}})  # les pièces viennent d'être effacées avec la démo
-    await projeter_jumeaux_reels()
-    await journaler(x_persona, x_espace, "réinitialisation de la démo", "mesh", "Données de démonstration restaurées à l'état initial")
-    return {"ok": True}
-
-
-@api_router.get("/demo/actes")
-async def demo_actes():
-    return DEMO_ACTES
-
+# ---------- Activité ----------
 
 @api_router.get("/activite")
-async def activite(x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
-    _, espace = resoudre_perimetre(x_persona, x_espace)
+async def activite(acteur: str = Depends(auth_identite.acteur), x_espace: Optional[str] = Header(None)):
+    _, espace = resoudre_perimetre(acteur, x_espace)
     tous = await db.jumeaux.find({}, {"_id": 0, "id": 1}).to_list(200)
     aut = autorisations(espace, [j["id"] for j in tous])
-    pool = [e for e in ACTIVITE if e["jumeau"] in aut]
-    return random.sample(pool, min(6, len(pool))) if pool else []
+    return []
 
 
 app.include_router(api_router)
@@ -2175,9 +2225,9 @@ app.include_router(api_router)
 # chunked) ne contourne pas la limite. La marge couvre l'enveloppe multipart d'une pièce au maximum autorisé.
 # Ajouté avant CORS pour que CORS reste le middleware le plus externe (les en-têtes CORS accompagnent aussi un 413).
 app.add_middleware(RequestBodyLimitMiddleware, max_body_size=pieces.MAX_OCTETS + 2 * 1024 * 1024)
-# L'authentification passe par des en-têtes (Authorization / X-Persona), jamais par un cookie : les credentials
-# CORS sont donc désactivés. En production, un joker « * » est refusé au démarrage (voir demarrer_partage) :
-# les origines autorisées doivent y être explicites.
+# L'authentification passe par l'en-tête Authorization, jamais par un cookie : les credentials CORS sont donc
+# désactivés. En production, un joker « * » est refusé au démarrage (voir demarrer_partage) : les origines
+# autorisées doivent y être explicites.
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=False,

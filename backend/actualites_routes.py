@@ -2,13 +2,14 @@ import re
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 
 import maturation
 import portee as portees
 import ouverture_travail
 import veille as moteur_veille
+from auth import acteur as acteur_courant
 
 
 class OuvertureTravail(BaseModel):
@@ -20,7 +21,6 @@ RAISONS_ECART = {"connu": "Déjà connu", "pas_pour_moi": "Ne me concerne pas", 
 
 class EcartActualite(BaseModel):
     raison: str = "connu"
-    portee: str = "moi"  # moi | equipe : pour soi seul, ou pour l'équipe (l'espace courant)
 
 # Budget d'attention de la vue « Aujourd'hui » : trois choses critiques au plus, cinq pertinentes au plus ; le reste est replié.
 BUDGET_CRITIQUES = 3
@@ -114,8 +114,8 @@ def parse_quand(s, now):
     return now - timedelta(days=n)
 
 
-def profil_de(role: str):
-    r = (role or "").lower()
+def profil_de(acteur: str):
+    r = (acteur or "").lower()
     if "architect" in r or "urbanisation" in r:
         return PROFILS["architecte"]
     if "exploitation" in r or "support" in r or "production" in r or "équipe" in r:
@@ -147,7 +147,7 @@ def build_actualites_router(deps):
         date: Optional[str] = None,
         jours: int = 1,
         portee: str = "personnel",
-        x_persona: str = Header("architecte"),
+        acteur: str = Depends(acteur_courant),
         x_espace: Optional[str] = Header(None),
     ):
         now = datetime.now(timezone.utc)
@@ -163,13 +163,11 @@ def build_actualites_router(deps):
         espace_id = x_espace
         note_portee = None
         if portee == "global":
-            glob = next((e for e in ESPACES if e.get("global") and e["id"] in persona_espaces(x_persona)), None)
+            glob = next((e for e in ESPACES if e.get("global")), None)
             if glob:
                 espace_id = glob["id"]
-            else:
-                note_portee = "Mesh global non autorisé — vue limitée à votre espace"
-        persona, espace = resoudre_perimetre(x_persona, espace_id)
-        profil = profil_de(persona.get("role"))
+        _, espace = resoudre_perimetre(acteur, espace_id)
+        profil = profil_de(acteur)
 
         tous = await db.jumeaux.find({}, NO_ID).to_list(200)
         ids = [j["id"] for j in tous]
@@ -265,9 +263,9 @@ def build_actualites_router(deps):
         async for c in db.cases.find({}, NO_ID):
             if c.get("jumeaux") and not any(j in aut for j in c["jumeaux"]):
                 continue
-            if not portees.acces(c, x_persona, espace["id"]):
+            if not portees.acces(c, acteur):
                 continue  # un travail personnel ou d'équipe n'est pas une actualité pour les autres
-            personnel = x_persona in (c.get("participants") or []) or c.get("responsable") == x_persona
+            personnel = acteur in (c.get("participants") or []) or c.get("responsable") == acteur
             boost = 30 if (portee == "personnel" and personnel) else 0
             lien = f"/travaux/{c['id']}"
             jumeaux_visibles = [j for j in c.get("jumeaux", []) if j in aut]
@@ -282,7 +280,7 @@ def build_actualites_router(deps):
                     entrees.append((ts, h.get("texte", "")))
             # Veille : ce que les jumeaux ont observé depuis la décision. Le mouvement NON LU reste visible dans la vue du jour,
             # quelle que soit sa date : on ne le fait pas disparaître parce qu'un jour a passé.
-            visite = (c.get("visites") or {}).get(x_persona)
+            visite = (c.get("visites") or {}).get(acteur)
             evs = [
                 m for m in c.get("conversation", [])
                 if moteur_veille.est_veille(m) and (not m.get("jumeau") or m["jumeau"] in aut)
@@ -345,16 +343,11 @@ def build_actualites_router(deps):
                 h["score"] -= 20
         histoires.sort(key=lambda h: (h["score"], h["quand"]), reverse=True)
 
-        # Ce que la personne a écarté (avec sa raison) ne revient pas dans la vue — mais reste consultable et rétablissable.
-        # Écartée pour soi, ou pour l'équipe (l'espace courant) par un collègue ; l'écart personnel prime sur celui de l'équipe.
-        mon_equipe = portees.equipe_de(x_persona)
-        ecartees_docs = await db.actualites_ecartees.find({"$or": [{"persona": x_persona}] + ([{"portee": "equipe", "equipe": mon_equipe}] if mon_equipe else [])}, NO_ID).sort("quand", 1).to_list(500)
-        raisons = {}
-        for e in ecartees_docs:
-            if e["histoire_id"] not in raisons or e["persona"] == x_persona:
-                raisons[e["histoire_id"]] = e
+        # Ce que l'acteur a écarté (avec sa raison) ne revient pas dans la vue — mais reste consultable et rétablissable.
+        ecartees_docs = await db.actualites_ecartees.find({"acteur": acteur}, NO_ID).sort("quand", 1).to_list(500)
+        raisons = {e["histoire_id"]: e for e in ecartees_docs}
         ecartees = [{"id": h["id"], "titre": h["titre"], "raison": RAISONS_ECART.get(raisons[h["id"]]["raison"], raisons[h["id"]]["raison"]),
-                     "portee": raisons[h["id"]].get("portee", "moi"), "par": raisons[h["id"]]["persona"]} for h in histoires if h["id"] in raisons]
+                     "par": raisons[h["id"]]["acteur"]} for h in histoires if h["id"] in raisons]
         histoires = [h for h in histoires if h["id"] not in raisons]
 
         # Budget d'attention (vue du jour) : la vue ne montre que ce qui mérite l'attention aujourd'hui, le reste est replié.
@@ -386,8 +379,7 @@ def build_actualites_router(deps):
         reste = par_sections([h for h in histoires if h["id"] not in ids_retenus]) if budget else []
 
         # --- Briefing de Flore (rédaction déterministe, adaptée au rôle) ---
-        prenom = persona.get("nom", "").split(" ")[-1] if persona.get("nom") else ""
-        salutation = f"Bonjour {persona.get('nom', '')}".strip()
+        salutation = "Bonjour" if acteur == "demo" else f"Bonjour {acteur}"
         top = retenues[:3]
         if retenues:
             top1 = retenues[0]
@@ -456,10 +448,10 @@ def build_actualites_router(deps):
         }
 
     @router.get("/actualites/histoire/{hid}")
-    async def histoire_detail(hid: str, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+    async def histoire_detail(hid: str, acteur: str = Depends(acteur_courant), x_espace: Optional[str] = Header(None)):
         """Reconstruit une histoire du fil par son id préfixé + rapport de Flore sur la situation."""
         now = datetime.now(timezone.utc)
-        persona, espace = resoudre_perimetre(x_persona, x_espace)
+        acteur, espace = resoudre_perimetre(acteur, x_espace)
         tous = await db.jumeaux.find({}, NO_ID).to_list(200)
         aut = autorisations(espace, [j["id"] for j in tous])
         nom_vers_id = {j["nom"]: j["id"] for j in tous}
@@ -550,7 +542,7 @@ def build_actualites_router(deps):
 
         elif hid.startswith("case-"):
             c = await db.cases.find_one({"id": hid[5:]}, NO_ID)
-            if not c or (c.get("jumeaux") and not any(j in aut for j in c["jumeaux"])) or not portees.acces(c, x_persona, espace["id"]):
+            if not c or (c.get("jumeaux") and not any(j in aut for j in c["jumeaux"])) or not portees.acces(c, acteur):
                 raise HTTPException(404, "Actualité introuvable")
             histoire = {
                 "id": hid, "genre": "travail", "titre": c["titre"],
@@ -592,38 +584,35 @@ def build_actualites_router(deps):
         return {"histoire": histoire, "rapport": rapport}
 
     @router.post("/actualites/histoire/{hid}/ecarter")
-    async def ecarter(hid: str, payload: EcartActualite, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+    async def ecarter(hid: str, payload: EcartActualite, acteur: str = Depends(acteur_courant), x_espace: Optional[str] = Header(None)):
         """Écarter une actualité pour soi : elle sort de la vue, et la raison est gardée (Méridian apprend ce qui compte pour la personne)."""
         if payload.raison not in RAISONS_ECART:
             raise HTTPException(400, "Raison inconnue")
-        if payload.portee not in ("moi", "equipe"):
-            raise HTTPException(400, "Portée inconnue")
-        await histoire_detail(hid, x_persona, x_espace)  # périmètre : hors droits → 404
-        _, espace = resoudre_perimetre(x_persona, x_espace)
+        await histoire_detail(hid, acteur, x_espace)  # périmètre : hors droits → 404
+        _, espace = resoudre_perimetre(acteur, x_espace)
         now = datetime.now(timezone.utc).isoformat()
         await db.actualites_ecartees.update_one(
-            {"persona": x_persona, "histoire_id": hid}, {"$set": {"raison": payload.raison, "quand": now, "portee": payload.portee, "equipe": portees.equipe_de(x_persona)}}, upsert=True)
-        return {"id": hid, "raison": RAISONS_ECART[payload.raison], "portee": payload.portee}
+            {"acteur": acteur, "histoire_id": hid}, {"$set": {"raison": payload.raison, "quand": now}}, upsert=True)
+        return {"id": hid, "raison": RAISONS_ECART[payload.raison]}
 
     @router.delete("/actualites/histoire/{hid}/ecarter")
-    async def retablir(hid: str, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+    async def retablir(hid: str, acteur: str = Depends(acteur_courant), x_espace: Optional[str] = Header(None)):
         """Rétablir : son propre écart, ou celui que l'équipe a décidé (n'importe quel membre de l'équipe peut le lever)."""
-        mon_equipe = portees.equipe_de(x_persona)
-        await db.actualites_ecartees.delete_many({"histoire_id": hid, "$or": [{"persona": x_persona}] + ([{"portee": "equipe", "equipe": mon_equipe}] if mon_equipe else [])})
+        await db.actualites_ecartees.delete_many({"histoire_id": hid, "acteur": acteur})
         return {"id": hid}
 
     @router.post("/actualites/histoire/{hid}/travail")
-    async def ouvrir_travail(hid: str, payload: OuvertureTravail, x_persona: str = Header("architecte"), x_espace: Optional[str] = Header(None)):
+    async def ouvrir_travail(hid: str, payload: OuvertureTravail, acteur: str = Depends(acteur_courant), x_espace: Optional[str] = Header(None)):
         """Une actualité qu'on ouvre devient un TRAVAIL (le même objet que tous les autres), dont Flore ouvre la conversation selon
         l'intention : présenter la situation, garder un phénomène sous vérification, ou poser la question d'une investigation.
         Idempotent : la même actualité, pour la même personne, rouvre le travail existant (et y ajoute l'intention nouvelle)."""
         if payload.intention not in ouverture_travail.INTENTIONS:
             raise HTTPException(400, "Intention inconnue")
-        detail = await histoire_detail(hid, x_persona, x_espace)  # applique le périmètre : hors droits → 404
+        detail = await histoire_detail(hid, acteur, x_espace)  # applique le périmètre : hors droits → 404
         histoire, rapport = detail["histoire"], detail["rapport"]
         if hid.startswith("case-"):
             return {"id": hid[5:], "cree": False}  # c'est déjà un travail : on le reprend
-        _, espace = resoudre_perimetre(x_persona, x_espace)
+        _, espace = resoudre_perimetre(acteur, x_espace)
         situation = await db.situations.find_one({"id": hid[4:]}, NO_ID) if hid.startswith("sit-") else None
         maintenant = datetime.now(timezone.utc).isoformat()
         # « Suivre » : la vérification est une veille AVANT la décision (le phénomène mûrit) ; Flore dit ce qu'elle guette
@@ -634,7 +623,7 @@ def build_actualites_router(deps):
             veille_suivi = maturation.nouvelle_veille(histoire["titre"], depart, relation["id"] if relation else None)
             m = veille_suivi["maturation"]
             message_suivi = maturation.message_flore_suivi(histoire["titre"], depart, m["seuil"], m["plancher"], maintenant)
-        existant = await db.cases.find_one({"origine.histoire_id": hid, "responsable": x_persona}, NO_ID)
+        existant = await db.cases.find_one({"origine.histoire_id": hid, "responsable": acteur}, NO_ID)
         if existant:
             deja = existant["origine"].get("intentions", [])
             if payload.intention not in deja:
@@ -658,9 +647,9 @@ def build_actualites_router(deps):
         num = (dernier[0]["num"] if dernier and dernier[0].get("num") else 40) + 1
         doc = {
             "id": cid, "num": num, "titre": histoire["titre"], "type": ouverture_travail.type_travail(histoire.get("genre", "")), "statut": "ouvert",
-            "sensibilite": "interne", "portee": "personnel", "equipe": portees.equipe_de(x_persona), "objectif": histoire.get("recit") or histoire["titre"], "resume": "", "prochaine_etape": "",
+            "sensibilite": "interne", "portee": "personnel", "objectif": histoire.get("recit") or histoire["titre"], "resume": "", "prochaine_etape": "",
             "questions": [], "hypotheses": [], "jumeaux": histoire.get("jumeaux", []), "situations": [hid[4:]] if situation else [],
-            "participants": [x_persona], "responsable": x_persona, "espace": espace["id"],
+            "participants": [acteur], "responsable": acteur, "espace": espace["id"],
             "conversation": [ouverture_travail.message_flore(payload.intention, histoire, rapport, situation, maintenant)] + ([message_suivi] if message_suivi else []),
             "options": [], "decisions": [], "livrables": [], "a_revoir": False, "visites": {},
             **({"veille": veille_suivi} if veille_suivi else {}),
@@ -669,12 +658,8 @@ def build_actualites_router(deps):
             "cree_le": maintenant, "maj_le": maintenant,
         }
         await db.cases.insert_one(doc)
-        await journaler(x_persona, espace["id"], "ouverture d'un travail depuis une actualité", cid, histoire["titre"])
+        await journaler(acteur, espace["id"], "ouverture d'un travail depuis une actualité", cid, histoire["titre"])
         return {"id": cid, "cree": True}
 
-    def persona_espaces(persona_id):
-        from seed_data import PERSONAS
-        p = next((x for x in PERSONAS if x["id"] == persona_id), PERSONAS[0])
-        return p["espaces"]
 
     return router

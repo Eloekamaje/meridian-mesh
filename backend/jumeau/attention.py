@@ -52,7 +52,7 @@ _STATUTS_NON_TRANCHES = {
 _CHAMPS_TITRE = ("titre", "nom", "label", "title", "name")
 _CHAMPS_RESUME = ("resume", "résumé", "description", "summary")
 _CHAMPS_JUMEAUX = ("twin_ids", "jumeaux", "twins", "twin_id", "twin")
-_CHAMPS_PERSONA = ("persona", "personas", "personae", "profil", "profils")
+_CHAMPS_ACTEUR = ("acteur", "acteurs", "acteure", "profil", "profils")
 _CHAMPS_DOMAINE = ("domaine", "domaines", "domain", "domains")
 
 _VIDES = {"", "0", "NON", "NO", "FALSE", "FAUX", "NONE", "NULL", "NUL"}
@@ -416,16 +416,16 @@ def _correspond(valeurs: set[str] | None, attendu: Any) -> bool:
     return any(cible == valeur or cible in valeur.split() for valeur in valeurs)
 
 
-def selectionner(objets: Iterable[Any], *, persona: Any = None, domaine: Any = None,
+def selectionner(objets: Iterable[Any], *, acteur: Any = None, domaine: Any = None,
                  limite: int = 20, maintenant: Any = None) -> list[dict]:
-    """Filtre par persona et domaine seulement quand ces champs existent, puis classe.
+    """Filtre par acteur et domaine seulement quand ces champs existent, puis classe.
 
     Un objet qui ne porte pas le champ demandé reste éligible : l'absence de métadonnée n'est
     pas une exclusion. Un champ présent mais vide est traité comme absent.
     """
     retenus = []
     for objet in objets or ():
-        if not _correspond(_valeurs_filtre(objet, _CHAMPS_PERSONA), persona):
+        if not _correspond(_valeurs_filtre(objet, _CHAMPS_ACTEUR), acteur):
             continue
         if not _correspond(_valeurs_filtre(objet, _CHAMPS_DOMAINE), domaine):
             continue
@@ -433,12 +433,12 @@ def selectionner(objets: Iterable[Any], *, persona: Any = None, domaine: Any = N
     return classer(retenus, limite=limite, maintenant=maintenant)
 
 
-def resume_attention(objets: Iterable[Any], *, maintenant: Any = None, persona: Any = None,
+def resume_attention(objets: Iterable[Any], *, maintenant: Any = None, acteur: Any = None,
                      domaine: Any = None) -> dict:
     """Compte les objets retenus par priorité et par type, après déduplication et filtres."""
     liste = list(objets or ())
     selection = selectionner(
-        liste, persona=persona, domaine=domaine,
+        liste, acteur=acteur, domaine=domaine,
         limite=len(liste) if liste else 0, maintenant=maintenant,
     )
     par_priorite: dict[str, int] = {}

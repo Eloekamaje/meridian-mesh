@@ -3,8 +3,8 @@ import { X } from "@phosphor-icons/react";
 import api from "@/lib/api";
 import { typeSource } from "@/lib/preuvesFlore";
 
-// La carte d'une preuve citée par Flore (Design System §67, §70), sur le modèle du panneau de la démonstration
-// (PreuvePanneau) : type, source, lu au commit, extrait (lignes citées surlignées), ce que ça supporte, emplacement.
+// La carte d'une preuve citée par Flore (Design System §67, §70) : type, source, lu au commit,
+// extrait (lignes citées surlignées), ce que ça supporte, emplacement.
 // L'extrait vient du serveur (/preuves/extrait), qui vérifie que l'interlocuteur voit les preuves de ce jumeau.
 export default function PanneauPreuve({ preuve, n, phrase, onFermer }) {
   const [extrait, setExtrait] = useState(null); // null : en cours ; { lignes } ; { erreur }

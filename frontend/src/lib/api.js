@@ -6,11 +6,10 @@ const api = axios.create({
   baseURL: `${process.env.REACT_APP_BACKEND_URL || ""}/api`,
 });
 
-// Qui demande et dans quel périmètre : partagé par axios et par les réponses au fil de l'eau (fetch).
+// Le périmètre de lecture, partagé par axios et par les réponses au fil de l'eau (fetch).
 export function entetesPerimetre() {
   const cible = localStorage.getItem("meridian.perimetre") || "mesh-global";
   const entetes = {
-    "X-Persona": localStorage.getItem("meridian.persona") || "architecte",
     "X-Espace": cible.startsWith("vue:") ? localStorage.getItem("meridian.perimetre.espace") || "mesh-global" : cible,
   };
   const tenant = (localStorage.getItem("meridian.tenant") || "").trim();

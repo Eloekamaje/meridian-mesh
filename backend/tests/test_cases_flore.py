@@ -9,21 +9,15 @@ BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://mesh-insights.previe
 @pytest.fixture(scope="module")
 def arch():
     s = requests.Session()
-    s.headers.update({"Content-Type": "application/json", "X-Persona": "architecte"})
+    s.headers.update({"Content-Type": "application/json"})
     return s
 
 
 @pytest.fixture(scope="module")
 def support():
     s = requests.Session()
-    s.headers.update({"Content-Type": "application/json", "X-Persona": "support"})
+    s.headers.update({"Content-Type": "application/json"})
     return s
-
-
-@pytest.fixture(scope="module", autouse=True)
-def reset_seed_at_end(arch):
-    yield
-    arch.post(f"{BASE_URL}/api/demo/reinitialiser")
 
 
 # ---- CASES CRUD ----

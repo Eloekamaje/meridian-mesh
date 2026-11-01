@@ -11,7 +11,7 @@ from collections.abc import Iterable, Mapping
 from datetime import datetime, timezone
 from typing import Any
 
-from jumeau import boucle, entreprise_depot, tenant as tenant_module
+from jumeau import boucle, calibration, entreprise_depot, tenant as tenant_module
 
 __all__ = [
     "EnseignementRequis",
@@ -177,7 +177,8 @@ def _payload_learning(learning: boucle.Learning, extra: Mapping[str, Any]) -> di
 def mesurer_et_capitaliser(
     conn: Any, tenant_id: Any, initiative_id: Any, mesure: Any, *,
     cible: Any = None, periode: Any = None, preuve_ids: Any = (),
-    decision_id: Any = None, situation_ids: Any = (), twin_ids: Any = (),
+    decision_id: Any = None, prediction_id: Any = None,
+    situation_ids: Any = (), twin_ids: Any = (),
     enseignement: Any = None, conditions_reutilisation: Any = (),
     acteur: Any = "système",
 ) -> dict:
@@ -186,7 +187,9 @@ def mesurer_et_capitaliser(
     L'Initiative doit exister dans le tenant. Aucun Outcome n'est écrit sans ``enseignement`` : la mesure seule
     ne suffit pas à produire une leçon. Le Learning est relié à l'Outcome, à l'Investigation et aux situations,
     Twins et preuves fournis ; ``conditions_reutilisation`` est conservé à la fois comme conditions
-    d'applicabilité canoniques et comme métadonnée de réutilisation. Rend ``{"outcome": ligne, "learning": ligne}``.
+    d'applicabilité canoniques et comme métadonnée de réutilisation. ``prediction_id``, s'il est fourni, doit
+    exister dans le tenant et porter la même décision : il est alors relié au Learning avec la mesure. Rend
+    ``{"outcome": ligne, "learning": ligne}``.
     """
     tenant = _tenant(tenant_id)
     initiative = _lire_attendu(conn, tenant, initiative_id, "INITIATIVE", "initiative")
@@ -215,6 +218,24 @@ def mesurer_et_capitaliser(
     if decision_id:
         decision = _lire_attendu(conn, tenant, decision_id, "DECISION", "décision")
 
+    if prediction_id is not None:
+        prediction_id = _texte_obligatoire(prediction_id, "prediction_id")
+        prediction = calibration.lire(conn, tenant, prediction_id)
+        if prediction is None:
+            raise boucle.BoucleInvalide(
+                f"prédiction introuvable dans le tenant {tenant!r} : {prediction_id}"
+            )
+        if decision_id is None:
+            decision_id = prediction.decision_id
+            decision = _lire_attendu(conn, tenant, decision_id, "DECISION", "décision")
+        elif prediction.decision_id != decision_id:
+            raise boucle.BoucleInvalide(
+                f"prediction_id {prediction_id!r} liée à la décision "
+                f"{prediction.decision_id!r}, attendu {decision_id!r}"
+            )
+    else:
+        prediction_id = None
+
     if not situations:
         situation_derivee = _texte(_valeur_lien(decision, "situation_id")) if decision else ""
         if not situation_derivee:
@@ -242,6 +263,7 @@ def mesurer_et_capitaliser(
     extra = {
         "initiative_id": _texte(initiative.get("id")),
         "decision_id": decision_id,
+        "prediction_id": prediction_id,
         "situation_ids": situations,
         "twin_ids": twins,
         "conditions_reutilisation": conditions,

@@ -17,7 +17,7 @@ from urllib.parse import quote, urlparse
 from datetime import datetime, timezone
 from pathlib import Path
 
-from jumeau import depot, lecteurs, registre
+from jumeau import auth_source, depot, index_store, lecteurs, registre
 from jumeau.ingerer import ingerer
 
 # `gardien` est importé à la demande : il importe le tirage OTLP, qui remonte à `github`, qui importe ce module.
@@ -38,7 +38,7 @@ def _gardien():
     return module
 
 journal = logging.getLogger("meridian.naissance")
-DEPOTS = Path(os.environ.get("JUMEAU_DEPOTS", Path.home() / ".local/share/meridian/depots"))
+DEPOTS = index_store.depots_dir()
 NOM_VALIDE = re.compile(r"(?!\.+$)[A-Za-z0-9._-]+")  # pas de nom fait uniquement de points (« . », « .. »)
 HOTE_VALIDE = re.compile(r"[a-z0-9.-]+")
 
@@ -185,7 +185,10 @@ def tester_git(config):
 def _tester_un_depot(config):
     try:
         url, nom_branche = url_depot(config), branche(config)
-        jeton = resoudre_secret(config.get("secret"))
+        jeton = auth_source.depuis_config(config).token()
+    except auth_source.AuthSourceInvalide as e:
+        return _resultat("autorisation_insuffisante", "Authentification refusée", str(e),
+                         "Vérifier la connexion GitHub")
     except ValueError as e:
         return _resultat("configuration_incomplete", "Configuration incomplète", str(e), "Corriger la configuration")
     except RuntimeError as e:
@@ -211,7 +214,7 @@ def _tester_un_depot(config):
 def cloner(config, cible):
     """Clone partiel (tout l'historique, sans les contenus inutiles), ou mise à jour s'il existe déjà."""
     url, nom_branche = url_depot(config), branche(config)
-    env = env_git(resoudre_secret(config.get("secret")))
+    env = env_git(auth_source.depuis_config(config).token())
     if (Path(cible) / ".git").exists():
         etapes = [["-C", str(cible), "fetch", "-q", "origin", nom_branche],
                   ["-C", str(cible), "reset", "-q", "--hard", "FETCH_HEAD"]]
@@ -282,13 +285,18 @@ SUBSTANCES_SANS_CODE = (("datadog", "Datadog (interfaces observées)"),
                         ("confluence", "Confluence (documentation)"))
 
 
+def _systeme(connecteur):
+    """« cmdb » est le même système que ServiceNow dans le catalogue."""
+    return "servicenow" if connecteur == "cmdb" else connecteur
+
+
 def substance_sans_code(commande):
     """Naissance sans code (Sources v1 §8) : (source ServiceNow qui ancre l'identité, source de substance préférée).
     ValueError, avec ce qui manque, si l'une des deux n'est pas prête."""
     pretes = {}
     for s in commande["sources"]:
         if s["statut"] == "prete":
-            pretes.setdefault(s["connecteur"], s)
+            pretes.setdefault(_systeme(s["connecteur"]), s)
     if "servicenow" not in pretes:
         raise ValueError("Sans le code, il faut une source ServiceNow prête : l'élément de configuration ancre l'identité du jumeau.")
     substance = next((pretes[c] for c, _ in SUBSTANCES_SANS_CODE if c in pretes), None)
@@ -307,7 +315,7 @@ async def _naitre_sans_code(conn, db, commande, jumeau_id, rediger):
         return
     j = commande["jumeau"]
     jumeau = {"id": jumeau_id, "tenant_id": "local", "nom": j["nom"], "equipe": j.get("proprietaire") or "non précisée",
-              "domaine": j.get("domaine"), "mission": j.get("mission")}
+              "domaine": j.get("domaine") or "Non classé", "mission": j.get("mission") or ""}
     etapes = []
     await _etat(db, cid, etat="en_cours", etapes=[], debut=datetime.now(timezone.utc).isoformat())
     try:
@@ -328,8 +336,9 @@ async def _naitre_sans_code(conn, db, commande, jumeau_id, rediger):
 def _verifier_sources(commande):
     """Chaque source branchée répond (sa version courante) avant toute écriture : sinon la naissance échoue proprement."""
     from jumeau.systemes import SYSTEMES
-    rangs = [SYSTEMES[s["connecteur"]].source_de(s["config"]) for s in commande["sources"]
-             if s["connecteur"] in SYSTEMES and s["statut"] == "prete" and s["config"].get("secret")]
+    rangs = [SYSTEMES[_systeme(s["connecteur"])].source_de(s.get("config") or {}) for s in commande["sources"]
+             if _systeme(s.get("connecteur")) in SYSTEMES and s.get("statut") == "prete"
+             and (s.get("config") or {}).get("secret")]
     for l in lecteurs.lecteurs_de(rangs):
         try:
             l.version_courante()
@@ -344,9 +353,10 @@ def _declarer_sources(conn, jumeau, commande):
         config = s.get("config") or {}
         if s.get("statut") != "prete":
             continue
-        if s["connecteur"] in SYSTEMES and config.get("secret"):
-            depot.declarer_source(conn, jumeau, SYSTEMES[s["connecteur"]].source_de(config))
-        elif s["connecteur"] == "otlp" and config.get("url") and config.get("secret_ref"):
+        systeme = _systeme(s["connecteur"])
+        if systeme in SYSTEMES and config.get("secret"):
+            depot.declarer_source(conn, jumeau, SYSTEMES[systeme].source_de(config))
+        elif s.get("connecteur") == "otlp" and config.get("url") and config.get("secret_ref"):
             depot.declarer_source(conn, jumeau, connecteurs.source_de_otlp(s))
 
 
@@ -364,7 +374,7 @@ async def naitre(conn, db, commande, jumeau_id, rediger=None):
         return
     j = commande["jumeau"]
     jumeau = {"id": jumeau_id, "tenant_id": "local", "nom": j["nom"], "equipe": j.get("proprietaire") or "non précisée",
-              "domaine": j.get("domaine"), "mission": j.get("mission")}
+              "domaine": j.get("domaine") or "Non classé", "mission": j.get("mission") or ""}
     etapes = []
 
     async def franchir(etape):
@@ -377,7 +387,9 @@ async def naitre(conn, db, commande, jumeau_id, rediger=None):
         for config in configs:
             nom = depots_de(config)[0][0]
             chemin = await asyncio.to_thread(cloner, config, DEPOTS / jumeau_id / nom)
-            origine = {"branche": branche(config), "url": url_depot(config), "secret_ref": config.get("secret") or None}
+            origine = {"branche": branche(config), "url": url_depot(config),
+                       "secret_ref": config.get("secret") or None,
+                       "configuration": auth_source.configuration_pour_source(config)}
             await asyncio.to_thread(ingerer, conn, jumeau, chemin, origine)
             chemins.append(chemin)
         _declarer_sources(conn, jumeau, commande)

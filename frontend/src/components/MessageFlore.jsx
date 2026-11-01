@@ -16,8 +16,8 @@ import { PreuvesMessage } from "./case/VeilleTravail";
 import { coutTemps } from "@/lib/coutTemps";
 
 // Les deux composants de la conversation unique : la même question, la même réponse de Flore — rendu, marques, preuves,
-// actions — dans le panneau et dans le fil d'un Travail. `prefixe` = /cases/{cid} ; sans lui (démonstration, travail
-// pas encore né, réponse non enregistrée) seul « Copier » est proposé : aucune action ne promet ce qu'elle ne fait pas.
+// actions — dans le panneau et dans le fil d'un Travail. `prefixe` = /cases/{cid} ; sans lui (travail pas encore né,
+// réponse non enregistrée) seul « Copier » est proposé : aucune action ne promet ce qu'elle ne fait pas.
 
 const BTN = "flex h-7 min-w-7 items-center justify-center gap-1 rounded-lg px-1.5 text-[#64748B] transition-colors hover:bg-white/[0.06] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#60A5FA] disabled:opacity-40";
 
@@ -178,7 +178,7 @@ export function MessageFlore({
   );
 }
 
-// `variante` : "panneau" (bulle bleue) ou "travail" (bulle sombre). `etiquette` : rôle affiché en démonstration.
+// `variante` : "panneau" (bulle bleue) ou "travail" (bulle sombre). `etiquette` : rôle affiché à la place de l'auteur.
 // `extraActions` : boutons propres à l'écran (ex. copier le lien vers le message).
 export function QuestionFlore({
   message, index, prefixe, onMessages, onRelire, onTronquer, bloque = false, variante = "travail", etiquette, extraActions, testid,

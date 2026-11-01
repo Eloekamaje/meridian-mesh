@@ -254,9 +254,9 @@ def test_charger_dans_enregistre_et_rend_les_noms():
 def test_portee_et_version_personnalisees():
     manifestes = manifests_depuis_openapi(
         "comptes", json.dumps(spec()), version="3.1.0",
-        tenant="banque", persona="analyste", perimetre="comptes")
+        tenant="banque", acteur="analyste", perimetre="comptes")
     assert all(manifeste.version == "3.1.0" for manifeste in manifestes)
-    assert all((manifeste.tenant, manifeste.persona, manifeste.perimetre) ==
+    assert all((manifeste.tenant, manifeste.acteur, manifeste.perimetre) ==
                ("banque", "analyste", "comptes") for manifeste in manifestes)
 
 

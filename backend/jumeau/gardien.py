@@ -285,8 +285,9 @@ def _rafraichir(source):
     if not source or not source.get("url"):
         return
     from jumeau import naissance  # import tardif : naissance utilise le gardien
+    configuration = dict(source.get("configuration") or {})
     naissance.cloner({"url": source["url"], "branches": source.get("branche") or "main",
-                      "secret": source.get("secret_ref")}, Path(source["emplacement"]))
+                      "secret": source.get("secret_ref"), **configuration}, Path(source["emplacement"]))
 
 
 async def _synchroniser_graphe(conn, db, jumeau, store=None):
@@ -323,8 +324,11 @@ async def _synchroniser_graphe(conn, db, jumeau, store=None):
                 document = dict(relation)
                 document.setdefault("tenant_id", jumeau["tenant_id"])
                 relations.append(document)
-        return graph_store.synchroniser_depuis_identites(
+        rapport = graph_store.synchroniser_depuis_identites(
             magasin, jumeau["tenant_id"], twins, relations)
+        from jumeau.execution.outbox import planifier_projection
+        planifier_projection(conn, jumeau["tenant_id"], twins, relations)
+        return rapport
     except (ValueError, RuntimeError):
         journal.debug("gardien %s : graphe non configuré ou indisponible", jumeau["id"], exc_info=True)
         return None

@@ -643,7 +643,7 @@ export function construireGraphe({
     mesh.jumeaux.forEach((j) => { if (!voisins.has(j.id)) dims.add(j.id); });
   }
 
-  // Moteur Universel de Focus Situationnel (Chat, Incident, Travail, Scénario Polaris)
+  // Moteur Universel de Focus Situationnel (Chat, Incident, Travail)
   const ciblesTheatre = new Set(theatreSituationnel?.actif ? theatreSituationnel.cibles : []);
   const phaseTheatre = theatreSituationnel?.actif ? theatreSituationnel.phase : "idle";
 

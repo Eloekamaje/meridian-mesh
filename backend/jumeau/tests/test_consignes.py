@@ -90,8 +90,8 @@ def client(monkeypatch):
 def test_post_valide_et_deduit_la_cible_avec_l_auteur(client, monkeypatch):
     vu = {}
     monkeypatch.setattr(depot, "ajouter_consigne", lambda conn, j, po, t, pq, a: vu.update(j=j["id"], po=po, a=a) or 7)
-    r = client.post("/api/v2/jumeaux/tbt/consignes", json={"portee": "equipe", "texte": "t", "pourquoi": "p"}, headers={"X-Persona": "bob"})
-    assert r.status_code == 200 and r.json() == {"id": 7} and vu == {"j": "tbt", "po": "equipe", "a": "bob"}
+    r = client.post("/api/v2/jumeaux/tbt/consignes", json={"portee": "equipe", "texte": "t", "pourquoi": "p"}, headers={"X-Acteur": "bob"})
+    assert r.status_code == 200 and r.json() == {"id": 7} and vu == {"j": "tbt", "po": "equipe", "a": "demo"}
 
 
 @pytest.mark.parametrize("corps", [

@@ -14,6 +14,7 @@ from typing import Any
 from jumeau import calibration, contrefactuel
 
 __all__ = [
+    "calibrer_decision_support",
     "construire_contrefactuel",
     "decision_support_enrichi",
     "enregistrer_confiance",
@@ -60,6 +61,70 @@ def resoudre_outcome(conn: Any, tenant: Any, prediction_id: Any, outcome: Any) -
     aucune écriture ne traverse la frontière du tenant.
     """
     return calibration.resoudre(conn, tenant, prediction_id, outcome)
+
+
+def _texte(valeur: Any) -> str:
+    return "" if valeur is None else str(valeur).strip()
+
+
+def _outcome_explicite(decision_support: Mapping, outcome: Any) -> Any:
+    if outcome is not None:
+        return outcome
+    for nom in ("outcome", "resultat_observe"):
+        if nom in decision_support:
+            return decision_support[nom]
+    return None
+
+
+def calibrer_decision_support(
+    conn: Any,
+    tenant: Any,
+    decision_support: Any,
+    *,
+    decision_id: Any = None,
+    confidence: Any = None,
+    prediction_id: Any = None,
+    outcome: Any = None,
+) -> Any:
+    """Enregistre ou résout la prédiction portée par un decision support.
+
+    Une décision (identifiant explicite ou ``decision_id`` du support) et une
+    confiance sont nécessaires : sans elles, rien n'est écrit et ``None`` est
+    rendu. L'outcome n'est jamais déduit de la recommandation ou de l'abstention :
+    seul un booléen explicitement fourni (argument ou clé ``outcome`` /
+    ``resultat_observe``) résout la prédiction. Sans identifiant fourni, la
+    calibration en dérive un déterministe : un rejeu n'ajoute pas de doublon.
+    """
+    if decision_support is None:
+        return None
+    base = _base(decision_support)
+    decision = _texte(decision_id) or _texte(base.get("decision_id"))
+    if confidence is not None:
+        confiance = confidence
+    else:
+        confiance = base.get("confidence")
+        if confiance is None:
+            confiance = base.get("confiance")
+    if not decision or confiance is None:
+        return None
+    resultat = _outcome_explicite(base, outcome)
+    identifiant = _texte(prediction_id) or calibration.identifiant_prediction(
+        tenant, decision, confiance)
+    prediction = calibration.lire(conn, tenant, identifiant)
+    if prediction is None:
+        return calibration.enregistrer(
+            conn, tenant, id=identifiant, decision_id=decision,
+            confidence=confiance, outcome=resultat)
+    if prediction.decision_id != decision:
+        raise calibration.CalibrationInvalide(
+            f"prediction_id {identifiant!r} liée à la décision "
+            f"{prediction.decision_id!r}, attendu {decision!r}")
+    if resultat is None or prediction.outcome == resultat:
+        return prediction
+    if prediction.outcome is not None:
+        raise calibration.CalibrationInvalide(
+            f"outcome déjà résolu pour la prédiction {identifiant!r}")
+    return calibration.resoudre(conn, tenant, identifiant, resultat)
 
 
 def _base(decision_support: Any) -> dict:

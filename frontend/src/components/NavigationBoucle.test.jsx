@@ -16,15 +16,11 @@ jest.mock("@/lib/api", () => ({
 
 jest.mock("@/lib/perimetre", () => ({
   usePerimetre: () => ({
-    personas: [],
-    persona: "architecte",
-    changerPersona: () => {},
     espaces: [],
     vues: [],
     cible: "mesh-global",
     info: null,
     changerCible: () => {},
-    authMode: "demo",
     version: 1,
   }),
 }));
@@ -38,7 +34,6 @@ jest.mock("@/lib/contexte", () => ({
   }),
 }));
 
-jest.mock("@/lib/pilotage", () => ({ usePilotage: () => null }));
 jest.mock("@/lib/identite", () => ({
   useIdentite: () => ({
     profil: { role: "Architecte" },
@@ -49,9 +44,7 @@ jest.mock("@/lib/identite", () => ({
 }));
 jest.mock("@/lib/evenements", () => ({ useEvenements: () => {} }));
 jest.mock("@/lib/mesh", () => ({ useMesh: () => ({ mesh: null }) }));
-jest.mock("@/lib/demo", () => ({ useDemo: () => ({ demarrer: () => {}, courant: -1 }) }));
 jest.mock("@/lib/temps", () => ({ parseQuand: () => null }));
-jest.mock("@/components/IndicateurClic", () => ({ __esModule: true, default: () => null }));
 jest.mock("@/components/Notifications", () => ({ __esModule: true, default: () => null }));
 
 const { MemoryRouter } = require("react-router");
@@ -95,6 +88,18 @@ test("la barre latérale expose l'entrée Boucle sans remplacer Actualités", as
   await act(async () => { monte.racine.unmount(); });
 });
 
+test("la barre latérale expose l'entrée Cognition", async () => {
+  const monte = monter(<SidebarGauche mode="bureau" />);
+  await rendre(monte);
+
+  const cognition = monte.hote.querySelector('[data-testid="nav-cognition"]');
+  expect(cognition).not.toBeNull();
+  expect(cognition.getAttribute("href")).toBe("/cognition");
+  expect(cognition.textContent).toContain("Cognition");
+
+  await act(async () => { monte.racine.unmount(); });
+});
+
 test("la barre supérieure expose l'entrée Boucle", async () => {
   const monte = monter(<Topbar />);
   await rendre(monte);
@@ -103,6 +108,18 @@ test("la barre supérieure expose l'entrée Boucle", async () => {
   expect(boucle).not.toBeNull();
   expect(boucle.getAttribute("href")).toBe("/boucle");
   expect(boucle.textContent).toContain("Boucle");
+
+  await act(async () => { monte.racine.unmount(); });
+});
+
+test("la barre supérieure expose l'entrée Cognition", async () => {
+  const monte = monter(<Topbar />);
+  await rendre(monte);
+
+  const cognition = monte.hote.querySelector('[data-testid="nav-cognition"]');
+  expect(cognition).not.toBeNull();
+  expect(cognition.getAttribute("href")).toBe("/cognition");
+  expect(cognition.textContent).toContain("Cognition");
 
   await act(async () => { monte.racine.unmount(); });
 });

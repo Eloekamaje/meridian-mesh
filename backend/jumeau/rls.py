@@ -41,6 +41,14 @@ TABLES = (
     "ancre",
     "consigne",
     "contradiction",
+    "memoire_durable",
+    "execution_run",
+    "execution_evenement",
+    "execution_outbox",
+    "execution_timer",
+    "execution_effet",
+    "execution_approbation",
+    "execution_etape",
 )
 POLITIQUE = "tenant_isolation"
 

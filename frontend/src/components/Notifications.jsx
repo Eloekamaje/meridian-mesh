@@ -7,8 +7,8 @@ import { useEvenements } from "@/lib/evenements";
 const TYPES_NOTIF = { mention: "#60A5FA", assignation: "#F2B84B", a_revoir: "#F87171", investigation_terminee: "#34D399" };
 
 // Cloche de notifications de la barre latérale : un instantané au montage (et à chaque reconnexion SSE),
-// puis les nouvelles notifications poussées par le canal de la persona.
-export default function Notifications({ persona, cible }) {
+// puis les nouvelles notifications poussées par le canal d'événements.
+export default function Notifications() {
   const navigate = useNavigate();
   const [notifs, setNotifs] = useState([]);
   const [nonLues, setNonLues] = useState(0);
@@ -28,7 +28,7 @@ export default function Notifications({ persona, cible }) {
     })
     .catch(() => {}), []);
 
-  useEffect(() => { charger(); }, [charger, persona, cible]);
+  useEffect(() => { charger(); }, [charger]);
 
   useEvenements((e) => {
     if (e.type === "pret") { charger(); return; }

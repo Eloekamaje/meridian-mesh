@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { CaretDown, CaretRight, MagnifyingGlass, Plus, UploadSimple } from "@phosphor-icons/react";
+import { CaretDown, CaretRight, MagnifyingGlass, Plus } from "@phosphor-icons/react";
 import { STATUTS_SOURCE, estErreurSource, ENVIRONNEMENTS } from "@/lib/sources";
 
 const REGROUPEMENTS = [
@@ -10,7 +10,7 @@ const REGROUPEMENTS = [
   ["statut", "Par statut"],
 ];
 
-export default function AtelierSources({ sources, catalogue, sourceActiveId, onSelect, selLot, setSelLot, onTester, onOuvrirTiroir, onOuvrirImport }) {
+export default function AtelierSources({ sources, catalogue, sourceActiveId, onSelect, selLot, setSelLot, onTester, onOuvrirTiroir }) {
   const [recherche, setRecherche] = useState("");
   const [filtreStatut, setFiltreStatut] = useState(null);
   const [filtreConnecteur, setFiltreConnecteur] = useState("");
@@ -75,9 +75,6 @@ export default function AtelierSources({ sources, catalogue, sourceActiveId, onS
           </button>
         ))}
         <div className="ml-auto flex items-center gap-2">
-          <button onClick={onOuvrirImport} data-testid="import-btn" className="flex items-center gap-1.5 rounded-md border border-[rgba(148,163,184,0.16)] px-2.5 py-1.5 text-[11px] text-[#D8E2EA] transition-colors hover:text-[#F2F6F8]">
-            <UploadSimple size={13} /> Importer
-          </button>
           <button onClick={onOuvrirTiroir} data-testid="ajouter-source-btn" className="flex items-center gap-1.5 rounded-md bg-[#60A5FA] px-3 py-1.5 text-[11px] font-semibold text-[#071019] transition-colors hover:bg-[#93C5FD]">
             <Plus size={13} /> Ajouter une source
           </button>

@@ -279,13 +279,17 @@ def _question(contexte: dict) -> str:
 
 
 def construire_pack(contexte: Any, dossier: Mapping, profil: Any, *, max_faits: int = 12,
-                    max_preuves: int = 20, max_entites: int = 20) -> dict:
+                    max_preuves: int = 20, max_entites: int = 20,
+                    max_tokens: int = 4000, proximite: Mapping | None = None) -> dict:
     """Construit un Context Pack borné pour un contexte résolu.
 
     Le dossier reste intact. S'il ne porte pas de tenant, une copie reçoit le tenant
     résolu ; s'il porte un autre tenant, la construction est refusée pour empêcher
     tout mélange de périmètres. La question vient du dossier ou, à défaut, du
-    contexte lui-même.
+    contexte lui-même. ``max_tokens`` borne en plus les compteurs faits/preuves/entités ;
+    ``proximite`` transmet les scores de graphe optionnels. Les entités résolues servent
+    d'ancrage de proximité et les inconnues, contradictions, preuves périmées et le
+    caractère partiel du pack sont conservés explicitement.
     """
     contexte_brut = _contexte_dict(contexte)
     tenant = _tenant(contexte_brut.get("tenant"))
@@ -308,9 +312,12 @@ def construire_pack(contexte: Any, dossier: Mapping, profil: Any, *, max_faits: 
     question = dossier.get("question")
     if not isinstance(question, str) or not question.strip():
         question = _question(contexte_brut)
+    entites_resolues = tuple(
+        str(entite) for entite in (contexte_brut.get("entites") or ()) if str(entite))
     pack = contexte_module.construire(
         question, profil, donnees, max_faits=max_faits, max_preuves=max_preuves,
-        max_entites=max_entites)
+        max_entites=max_entites, max_tokens=max_tokens, entites=entites_resolues,
+        proximite=proximite)
     return {
         "contexte": dict(contexte_brut),
         "pack": pack.as_dict(),

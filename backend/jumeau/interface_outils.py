@@ -193,7 +193,7 @@ def manifests_depuis_interface(
     graph: Any,
     version: str = "1.0.0",
     tenant: Any = None,
-    persona: Any = None,
+    acteur: Any = None,
     perimetre: Any = None,
 ) -> list[ManifesteOutil]:
     """Rend un manifeste par opération connue, REST, SOAP ou gRPC, sans exécution ni secret.
@@ -256,7 +256,7 @@ def manifests_depuis_interface(
             "schema_entree": {},
             "schema_sortie": {},
             "tenant": tenant,
-            "persona": persona,
+            "acteur": acteur,
             "perimetre": perimetre,
             "lecture_seule": lecture_seule,
             "cout": 0.0,
@@ -273,7 +273,7 @@ def charger_dans(
     graph: Any,
     version: str = "1.0.0",
     tenant: Any = None,
-    persona: Any = None,
+    acteur: Any = None,
     perimetre: Any = None,
 ) -> list[str]:
     """Génère puis enregistre les manifestes dans un `RegistreCapacites` ; rend leurs noms.
@@ -284,7 +284,7 @@ def charger_dans(
     if not callable(enregistrer):
         raise TypeError("registre capacitaire attendu")
     noms: list[str] = []
-    for manifeste in manifests_depuis_interface(graph, version, tenant, persona, perimetre):
+    for manifeste in manifests_depuis_interface(graph, version, tenant, acteur, perimetre):
         enregistrer(manifeste)
         noms.append(manifeste.nom)
     return noms
@@ -311,7 +311,7 @@ def main(argv: Any = None) -> int:
     analyseur.add_argument("--application", required=True)
     analyseur.add_argument("--fichier", required=True)
     analyseur.add_argument("--tenant")
-    analyseur.add_argument("--persona")
+    analyseur.add_argument("--acteur")
     analyseur.add_argument("--perimetre")
     arguments = analyseur.parse_args(argv)
     try:
@@ -323,7 +323,7 @@ def main(argv: Any = None) -> int:
     else:
         graphe = interfaces.parse_openapi(arguments.application, texte, arguments.fichier)
     manifestes = manifests_depuis_interface(
-        graphe, tenant=arguments.tenant, persona=arguments.persona, perimetre=arguments.perimetre)
+        graphe, tenant=arguments.tenant, acteur=arguments.acteur, perimetre=arguments.perimetre)
     print(json.dumps([manifeste.nom for manifeste in manifestes], ensure_ascii=False))
     return 0
 

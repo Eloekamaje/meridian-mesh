@@ -40,14 +40,15 @@ test("aucun api.patch du panneau ne modifie conversation ; seul le statut de cre
   expect(texte).toContain("api.patch(`/cases/${travailId}`, { statut: STATUT_CONSERVE })");
 });
 
-test("la liste « Ajouter à un travail » ne propose que les travaux dont l'utilisateur est responsable", () => {
+test("la liste « Ajouter à un travail » propose les travaux ouverts du périmètre, sans filtre d’acteur", () => {
   const texte = source();
-  expect(texte).toContain("const { info, persona } = usePerimetre()");
+  expect(texte).toContain("const { info } = usePerimetre()");
   const proposition = texte.slice(texte.indexOf("const proposerAjout"), texte.indexOf("// Sur une page Travail"));
   expect(proposition).toContain('api.get("/cases")');
   expect(proposition).toContain('c.statut !== "clos"');
   expect(proposition).toContain("!estConversation(c)");
-  expect(proposition).toContain("c.responsable === persona");
+  expect(proposition).not.toContain("c.responsable ===");
+  expect(proposition).not.toContain("acteur");
 });
 
 test("un refus annoncé (400/403/429) ne replie pas sur /aurora et affiche le message", () => {

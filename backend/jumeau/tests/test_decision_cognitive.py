@@ -230,3 +230,61 @@ def test_decision_support_avec_options_reelles_ne_produit_pas_de_recommandation(
 def test_decision_support_invalide_refuse():
     with pytest.raises(TypeError):
         decision_cognitive.decision_support_enrichi(None)
+
+
+def test_calibrer_decision_support_enregistre_puis_resout_sans_inventer(conn_calibration):
+    support = {"decision_id": "d1", "confidence": 0.8}
+
+    prediction = decision_cognitive.calibrer_decision_support(
+        conn_calibration, "banque", support)
+
+    assert prediction.decision_id == "d1"
+    assert prediction.confidence == 0.8
+    assert prediction.outcome is None
+    assert len(calibration.lister(conn_calibration, "banque", "d1")) == 1
+
+    encore = decision_cognitive.calibrer_decision_support(
+        conn_calibration, "banque", support)
+    assert encore.id == prediction.id
+    assert len(calibration.lister(conn_calibration, "banque", "d1")) == 1
+
+    resolue = decision_cognitive.calibrer_decision_support(
+        conn_calibration, "banque", {**support, "outcome": True})
+    assert resolue.outcome is True
+    assert calibration.lire(conn_calibration, "banque", prediction.id).outcome is True
+
+
+def test_calibrer_decision_support_sans_decision_n_ecrit_rien(conn_calibration):
+    for support in (
+        None,
+        {},
+        {"confidence": 0.8},
+        {"decision_id": "d1"},
+        {"decision_id": "d1", "confidence": None},
+        {"decision_id": "   ", "confidence": 0.8},
+    ):
+        assert decision_cognitive.calibrer_decision_support(
+            conn_calibration, "banque", support) is None
+
+    assert calibration.lister(conn_calibration, "banque") == []
+
+
+def test_calibrer_decision_support_refuse_un_outcome_non_booleen_sans_ecrire(conn_calibration):
+    with pytest.raises(calibration.CalibrationInvalide):
+        decision_cognitive.calibrer_decision_support(
+            conn_calibration, "banque",
+            {"decision_id": "d1", "confidence": 0.5, "outcome": "oui"})
+
+    assert calibration.lister(conn_calibration, "banque") == []
+
+
+def test_calibrer_decision_support_refuse_une_prediction_d_une_autre_decision(conn_calibration):
+    decision_cognitive.enregistrer_confiance(
+        conn_calibration, "banque", decision_id="d1", confidence=0.5, prediction_id="p1")
+
+    with pytest.raises(calibration.CalibrationInvalide):
+        decision_cognitive.calibrer_decision_support(
+            conn_calibration, "banque",
+            {"decision_id": "d2", "confidence": 0.5}, prediction_id="p1")
+
+    assert calibration.lire(conn_calibration, "banque", "p1").decision_id == "d1"

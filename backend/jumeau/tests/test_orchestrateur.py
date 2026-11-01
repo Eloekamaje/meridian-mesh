@@ -52,6 +52,16 @@ def test_resoudre_application_utilise_identite_et_rend_les_candidats(monkeypatch
     assert [entree["outil"] for entree in contexte.outils] == ["resoudre_application"]
 
 
+def test_lister_applications_reste_borne_et_ne_mobilise_rien():
+    outils, contexte = fabriquer()
+    sortie = outils["lister_applications"]()
+    donnees = json.loads(sortie)
+    assert [a["id"] for a in donnees["applications"]] == ["alpha", "beta"]
+    assert donnees["total"] == 2 and donnees["tronque"] is False
+    assert contexte.reponse is None
+    assert contexte.outils[-1]["outil"] == "lister_applications"
+
+
 def test_mobiliser_jumeaux_appelle_le_callback_et_ne_depasse_pas_la_selection():
     appels = []
 
@@ -131,7 +141,7 @@ def test_executer_donne_priorite_a_la_reponse_d_un_outil(monkeypatch):
     assert resultat["orchestration"]["outils"][0]["outil"] == "mobiliser_jumeaux"
     assert vus["question"] == "Que fait Alpha ?"
     assert set(vus["options"]["tools"][i].tool_name for i in range(len(vus["options"]["tools"]))) == {
-        "resoudre_application", "mobiliser_jumeaux", "concevoir_architecture",
+        "lister_applications", "resoudre_application", "mobiliser_jumeaux", "concevoir_architecture",
         "rechercher_outil", "decrire_outil"}
     assert vus["options"]["callback_handler"] is None
     assert "Mesh" in vus["options"]["system_prompt"]
@@ -157,7 +167,7 @@ def test_executer_rend_le_texte_general_du_modele_sans_outil(monkeypatch):
 def test_le_prompt_porte_la_politique_mesh_source_conception_et_proposition():
     prompt = " ".join(orchestrateur.PROMPT_SYSTEME.lower().split())
     for attendu in ("agent d'entreprise", "mesh", "ni une source", "le point de départ",
-                    "resoudre_application", "mobiliser_jumeaux", "concevoir_architecture",
+                    "lister_applications", "resoudre_application", "mobiliser_jumeaux", "concevoir_architecture",
                     "aucun jumeau", "atlas", "proposition", "fait observé", "preuve",
                     "clarification", "budget", "pas le noyau", "dépôt git", "capacitaire",
                     "rechercher_outil", "decrire_outil", "manifeste"):
@@ -228,7 +238,7 @@ def test_les_outils_du_tour_viennent_des_manifestes_du_registre():
     autorises |= {"rechercher_outil", "decrire_outil"}
 
     assert set(outils) <= autorises
-    assert {"resoudre_application", "mobiliser_jumeaux", "concevoir_architecture"} <= set(outils)
+    assert {"lister_applications", "resoudre_application", "mobiliser_jumeaux", "concevoir_architecture"} <= set(outils)
 
 
 def test_executer_expose_outils_et_audit_sans_secret(monkeypatch):

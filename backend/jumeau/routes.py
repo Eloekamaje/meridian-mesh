@@ -1,15 +1,16 @@
 """API du jumeau réel (phase 0) : Claims prouvés, extraits vérifiés, revue humaine.
 
-ponytail: l'acteur vient de l'en-tête X-Persona de la démo ; OIDC + Cedar en phase 1 (Architecture Jumeau §4.2).
+L'acteur vient de l'identité authentifiée (ou vaut ``demo``), jamais d'un en-tête client.
 """
 import os
 import re
 from typing import Literal, Optional
 
 import psycopg
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from auth import acteur as acteur_courant
 from jumeau import connaissance, depot, flore, gardien
 from jumeau.source_git import lire_au_sha
 from jumeau.source_git import extrait
@@ -63,10 +64,9 @@ def lire_extrait(preuve_id: int, conn=Depends(connexion)):
 
 
 @router.post("/claims/{claim_id}/revue")
-def reviser(claim_id: int, revue: Revue, conn=Depends(connexion),
-            x_persona: str = Header(default="architecte", max_length=64)):
+def reviser(claim_id: int, revue: Revue, request: Request, conn=Depends(connexion)):
     try:
-        enonce = depot.reviser(conn, claim_id, x_persona, revue.decision, revue.motif)
+        enonce = depot.reviser(conn, claim_id, acteur_courant(request), revue.decision, revue.motif)
     except LookupError:
         raise HTTPException(404, "Claim introuvable")
     if revue.decision == "CONTESTED" and depot.nettoyer_consigne(revue.motif):
@@ -87,11 +87,10 @@ def lister_consignes(jumeau_id: str, conn=Depends(connexion)):
 
 
 @router.post("/jumeaux/{jumeau_id}/consignes")
-def ajouter_consigne(jumeau_id: str, consigne: NouvelleConsigne, conn=Depends(connexion),
-                     x_persona: str = Header(default="architecte", max_length=64)):
+def ajouter_consigne(jumeau_id: str, consigne: NouvelleConsigne, request: Request, conn=Depends(connexion)):
     jumeau = _jumeau_ou_404(conn, jumeau_id)
     try:
-        return {"id": depot.ajouter_consigne(conn, jumeau, consigne.portee, consigne.texte, consigne.pourquoi, x_persona)}
+        return {"id": depot.ajouter_consigne(conn, jumeau, consigne.portee, consigne.texte, consigne.pourquoi, acteur_courant(request))}
     except ValueError as e:  # obligatoires, trop longs, ou quota de la portée atteint
         raise HTTPException(422, str(e))
 
@@ -107,13 +106,12 @@ def retirer_consigne(jumeau_id: str, consigne_id: int, conn=Depends(connexion)):
 
 
 @router.post("/contradictions/{contradiction_id}/revue")
-def trancher(contradiction_id: int, decision: Tranche, conn=Depends(connexion),
-             x_persona: str = Header(default="architecte", max_length=64)):
+def trancher(contradiction_id: int, decision: Tranche, request: Request, conn=Depends(connexion)):
     c = depot.contradiction_par_id(conn, contradiction_id)
     try:
         if not c:
             raise LookupError(contradiction_id)
-        depot.trancher_contradiction(conn, c["jumeau_id"], contradiction_id, x_persona, decision.verdict, decision.motif)
+        depot.trancher_contradiction(conn, c["jumeau_id"], contradiction_id, acteur_courant(request), decision.verdict, decision.motif)
     except LookupError:
         raise HTTPException(404, "Contradiction introuvable ou déjà tranchée")
     return {"ok": True}

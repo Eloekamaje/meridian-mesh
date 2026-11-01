@@ -1,4 +1,4 @@
-"""Backend tests for Atlas v28 : PATCH /api/jumeaux/{id} (position + domaine) + reinitialiser demo."""
+"""Backend tests for Atlas v28 : PATCH /api/jumeaux/{id} (position + domaine)."""
 import os
 import pytest
 import requests
@@ -9,7 +9,7 @@ BASE_URL = os.environ["REACT_APP_BACKEND_URL"].rstrip("/")
 @pytest.fixture(scope="module")
 def client():
     s = requests.Session()
-    s.headers.update({"Content-Type": "application/json", "X-Persona": "architecte"})
+    s.headers.update({"Content-Type": "application/json"})
     return s
 
 
@@ -65,12 +65,6 @@ class TestPatchJumeauPosition:
         assert j2["domaine"] == autre
         # Restore
         client.patch(f"{BASE_URL}/api/jumeaux/{jid}", json={"domaine": original_domaine})
-
-
-class TestReinitialiser:
-    def test_reinit_ok(self, client):
-        r = client.post(f"{BASE_URL}/api/demo/reinitialiser")
-        assert r.status_code in (200, 201), r.text
 
 
 class TestMeshStability:

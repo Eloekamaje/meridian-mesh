@@ -281,6 +281,11 @@ def test_ancre_servicenow_et_substance_datadog_preferee_a_confluence():
     assert naissance.substance_sans_code(_pretes("servicenow", "confluence"))[1]["connecteur"] == "confluence"
 
 
+def test_cmdb_est_l_alias_servicenow_pour_l_ancrage():
+    ancre, substance = naissance.substance_sans_code(_pretes("cmdb", "datadog"))
+    assert (ancre["connecteur"], substance["connecteur"]) == ("cmdb", "datadog")
+
+
 def test_sans_servicenow_ou_sans_substance_la_naissance_dit_ce_qui_manque():
     with pytest.raises(ValueError, match="ServiceNow"):
         naissance.substance_sans_code(_pretes("datadog"))

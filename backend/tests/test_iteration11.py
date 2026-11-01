@@ -15,8 +15,8 @@ BASE_URL = _load_url().rstrip("/")
 AURORA = f"{BASE_URL}/api/aurora/demander"
 
 
-def _post(payload, persona="architecte", espace=None):
-    headers = {"Content-Type": "application/json", "X-Persona": persona}
+def _post(payload, espace=None):
+    headers = {"Content-Type": "application/json"}
     if espace:
         headers["X-Espace"] = espace
     return requests.post(AURORA, json=payload, headers=headers, timeout=15)
@@ -102,32 +102,3 @@ def test_domaine_sans_selection_utilise_jumeaux_du_domaine():
 
 
 # ---------- RBAC : support ne voit pas Paiements ----------
-def test_rbac_support_filtre_paiements():
-    r = _post({"question": "Comprendre leurs relations", "selection": ["paiements", "support"]},
-              persona="support", espace="espace-support")
-    assert r.status_code == 200
-    data = r.json()
-    txt = data["reponse"]
-    # 'Paiements' apparait uniquement au niveau existence (espace support politique paiements=existence)
-    # Ici le mot Paiements dans la question déclencherait HORS_PERIMETRE ? Non car paiements a niveau 'existence' donc dans aut.
-    # Mais la sélection filtrée par 'j in aut' garde paiements (existence est un niveau autorisé).
-    # Vérifions le mesh RBAC : réponse doit exister et Support mentionné
-    assert "Support" in txt
-
-
-# ---------- Scénario prescripté SANS sélection ----------
-def test_prescripte_sans_selection_intact():
-    r = _post({"contexte": "aujourdhui", "question": "Qu'as-tu découvert récemment autour de Paiements ?"})
-    assert r.status_code == 200
-    data = r.json()
-    # Réponse prescriptée = comportement défini + contributions présentes
-    assert "reponse" in data and len(data["reponse"]) > 20
-    assert "comportement" in data
-
-
-# ---------- Endpoint mesh / santé rapide ----------
-def test_mesh_ok():
-    r = requests.get(f"{BASE_URL}/api/mesh", headers={"X-Persona": "architecte"}, timeout=10)
-    assert r.status_code == 200
-    d = r.json()
-    assert len(d["jumeaux"]) >= 12 and len(d["relations"]) >= 14

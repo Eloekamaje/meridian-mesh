@@ -5,6 +5,7 @@
 """
 import argparse
 import asyncio
+import logging
 import os
 import shutil
 import subprocess
@@ -12,14 +13,15 @@ from pathlib import Path
 
 import psycopg
 
-from jumeau import cbm, depot, manifestes, registre
+from jumeau import cbm, depot, index_store, manifestes, registre
 from jumeau.adaptateur import adapter
 from jumeau.source_git import lire_au_sha, sha_courant
 
 ACTIVITE = {"extracteur": "cbm-adaptateur", "version": "phase0-1"}
+journal = logging.getLogger(__name__)
 
 
-COPIES = Path(os.environ.get("JUMEAU_COPIES", Path.home() / ".local/share/meridian/copies"))
+COPIES = index_store.copies_dir()
 
 
 def branche_courante(chemin_depot):
@@ -65,32 +67,85 @@ def indexer_au_sha(jumeau_id, chemin_depot, sha):
     return copie, cbm.indexer(copie, cbm.nom_index(jumeau_id, nom, sha))
 
 
+def _magasin():
+    """Magasin d'index de la configuration ; construit à chaque ingestion (l'environnement peut changer en test)."""
+    return index_store.depuis_env()
+
+
+def _indexer_avec_artefact(store, tenant, nom, jumeau_id, chemin_depot, sha):
+    """(copie, projet, artefact) : restauré depuis le magasin si possible, sinon copie Git + index.
+
+    L'artefact est une copie source au SHA (sans ``.git``). S'il existe, l'index binaire local est réutilisé
+    quand il est déjà à ce commit ; sinon la copie restaurée est réindexée. Une copie restaurée n'est pas un
+    dépôt Git : ``copie`` vaut alors None et les lecteurs retombent sur `emplacement` (clone du dépôt).
+    """
+    projet = cbm.nom_index(jumeau_id, nom, sha)
+    destination = COPIES / jumeau_id / nom
+    if store.has(tenant, nom, sha):
+        try:
+            if cbm.indexe({"index_code": projet, "curseur": sha}):
+                return None, projet, True  # le cache binaire local est déjà à ce commit
+            copie = store.restore(tenant, nom, sha, destination, remplacer=True)
+            if copie is not None:
+                return copie, cbm.indexer(copie, projet), True
+        except Exception as e:
+            journal.warning("artefact d'index %s/%s/%s illisible, réindexation depuis le dépôt : %s",
+                            tenant, nom, sha, e)
+    copie, projet = indexer_au_sha(jumeau_id, chemin_depot, sha)
+    return copie, projet, False
+
+
+def _retirer_copie(copie):
+    """Zéro-rétention : la copie de travail ne survit pas à l'ingestion (l'index binaire reste, lui, local)."""
+    shutil.rmtree(copie, ignore_errors=True)
+
+
 def ingerer(conn, jumeau, chemin_depot, origine=None):
     """Ingère un dépôt du jumeau. `origine` : branche, url, secret_ref (pour que le gardien sache le relire)."""
     sha = sha_courant(chemin_depot)
     if not sha:
         raise ValueError(f"{chemin_depot} n'est pas un dépôt Git")
-    precedent = (depot.source_du_jumeau(conn, jumeau["id"], Path(chemin_depot).name) or {}).get("index_code")
-    copie, projet = indexer_au_sha(jumeau["id"], chemin_depot, sha)
+    nom = Path(chemin_depot).name
+    tenant = jumeau.get("tenant_id") or "local"
+    store = _magasin()
+    precedent = (depot.source_du_jumeau(conn, jumeau["id"], nom) or {}).get("index_code")
+    copie = None
     try:
-        resultats, troncature = cbm.interroger(projet)
-    except RuntimeError as e:
-        # L'index vit dans le cache du binaire, nommé d'après le commit : l'ingestion le refait, mais si sa
-        # relecture échoue il faut le dire clairement (plan de remédiation L0bis.3).
-        raise RuntimeError(f"index de code illisible pour {chemin_depot} (projet {projet}) : {e}. "
-                           "Relancer l'ingestion reconstruit l'index depuis la copie au SHA.") from e
-    lire = lire_au_sha(chemin_depot, sha)
-    # Dépendances de pyproject.toml / package.json, que codebase-memory-mcp ne relie pas (dédoublonnées).
-    vus = {(r["chemin"], r["paquet"]) for r in resultats["paquets"]}
-    resultats["paquets"] += [r for r in manifestes.dependances(lire, manifestes.lister(chemin_depot, sha))
-                             if (r["chemin"], r["paquet"]) not in vus]
-    claims = adapter(resultats, lire, Path(chemin_depot).name, sha[:12], jumeau["nom"])
-    bruts = sum(len(v) for v in resultats.values())
-    source = {"nom": Path(chemin_depot).name, "type": "GIT", "emplacement": str(chemin_depot), "curseur": sha,
-              "copie": str(copie), "index_code": projet, "branche": branche_courante(chemin_depot), "troncature": troncature or None, **(origine or {})}
-    depot.appliquer_schema(conn)
-    depot.enregistrer(conn, jumeau, source, claims, {**ACTIVITE, "sha": sha})
-    cbm.retirer_ancien(precedent, projet)  # une fois le nouvel index enregistré, et seulement alors
+        copie, projet, restauree = _indexer_avec_artefact(store, tenant, nom, jumeau["id"], chemin_depot, sha)
+        try:
+            resultats, troncature = cbm.interroger(projet)
+        except RuntimeError as e:
+            # L'index vit dans le cache du binaire, nommé d'après le commit : l'ingestion le refait, mais si sa
+            # relecture échoue il faut le dire clairement (plan de remédiation L0bis.3).
+            raise RuntimeError(f"index de code illisible pour {chemin_depot} (projet {projet}) : {e}. "
+                               "Relancer l'ingestion reconstruit l'index depuis la copie au SHA.") from e
+        lire = lire_au_sha(chemin_depot, sha)
+        # Dépendances de pyproject.toml / package.json, que codebase-memory-mcp ne relie pas (dédoublonnées).
+        vus = {(r["chemin"], r["paquet"]) for r in resultats["paquets"]}
+        resultats["paquets"] += [r for r in manifestes.dependances(lire, manifestes.lister(chemin_depot, sha))
+                                 if (r["chemin"], r["paquet"]) not in vus]
+        claims = adapter(resultats, lire, nom, sha[:12], jumeau["nom"])
+        bruts = sum(len(v) for v in resultats.values())
+        conservee = copie if (copie is not None and not restauree and store.mode != "none") else None
+        if store.mode != "none" and copie is not None:
+            try:
+                store.save(tenant, nom, sha, copie, index_code=projet)
+            except Exception as e:  # le stockage ne doit pas empêcher l'ingestion
+                journal.warning("artefact d'index non sauvegardé pour %s/%s/%s : %s", tenant, nom, sha, e)
+        source = {"nom": nom, "type": "GIT", "emplacement": str(chemin_depot), "curseur": sha,
+                  "copie": str(conservee) if conservee else None, "index_code": projet,
+                  "branche": branche_courante(chemin_depot), "troncature": troncature or None, **(origine or {})}
+        depot.appliquer_schema(conn)
+        depot.enregistrer(conn, jumeau, source, claims, {**ACTIVITE, "sha": sha})
+        if store.mode != "none":
+            try:
+                store.delete_source(tenant, nom, sauf=sha)  # un seul artefact par source, au commit courant
+            except Exception as e:
+                journal.warning("ancien artefact d'index non nettoyé pour %s/%s : %s", tenant, nom, e)
+        cbm.retirer_ancien(precedent, projet)  # une fois le nouvel index enregistré, et seulement alors
+    finally:
+        if store.mode == "none" and copie is not None:
+            _retirer_copie(copie)
     return {"sha": sha, "observations": bruts, "claims": len(claims), "troncature": troncature}
 
 

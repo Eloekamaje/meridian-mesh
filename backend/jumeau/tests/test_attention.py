@@ -75,15 +75,15 @@ def test_signature_ne_recopie_ni_secret_ni_titre_en_clair():
     assert empreinte.startswith("SITUATION:")
 
 
-def test_limite_et_filtres_persona_domaine():
+def test_limite_et_filtres_acteur_domaine():
     objets = [
-        objet("a", persona="Architecte", domaine="Paiement"),
-        objet("b", persona="exploitant", domaine="paiement"),
-        objet("c", persona="architecte", domaine="risque"),
+        objet("a", acteur="Architecte", domaine="Paiement"),
+        objet("b", acteur="exploitant", domaine="paiement"),
+        objet("c", acteur="architecte", domaine="risque"),
         objet("d"),
     ]
     retenus = attention.selectionner(
-        objets, persona="architecte", domaine="paiement", limite=10, maintenant=MAINTENANT)
+        objets, acteur="architecte", domaine="paiement", limite=10, maintenant=MAINTENANT)
     assert {item["id"] for item in retenus} == {"a", "d"}
 
     assert len(attention.classer(objets, limite=2, maintenant=MAINTENANT)) == 2
@@ -133,7 +133,7 @@ def test_resume_attention_compte_par_priorite_et_type():
 
 def test_aucune_mutation_des_objets_recus():
     objets = [
-        objet("a", persona="architecte", domaine="paiement", impacts=["x"]),
+        objet("a", acteur="architecte", domaine="paiement", impacts=["x"]),
         objet("b", priorite="HAUTE", titre="B"),
     ]
     avant = deepcopy(objets)
@@ -141,7 +141,7 @@ def test_aucune_mutation_des_objets_recus():
     attention.signature(objets[0])
     attention.score(objets[0], maintenant=MAINTENANT)
     attention.classer(objets, maintenant=MAINTENANT)
-    attention.selectionner(objets, persona="architecte", maintenant=MAINTENANT)
+    attention.selectionner(objets, acteur="architecte", maintenant=MAINTENANT)
     attention.resume_attention(objets, maintenant=MAINTENANT)
 
     assert objets == avant

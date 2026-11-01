@@ -12,6 +12,7 @@ from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
+import hashlib
 import math
 from typing import Any
 import uuid
@@ -27,6 +28,7 @@ __all__ = [
     "PredictionIntrouvable",
     "brier",
     "enregistrer",
+    "identifiant_prediction",
     "lire",
     "lister",
     "rapport",
@@ -152,6 +154,19 @@ def _identifiant(valeur: Any) -> str:
     if valeur is None:
         return f"pred-{uuid.uuid4().hex[:12]}"
     return _id_existant(valeur)
+
+
+def identifiant_prediction(tenant: Any, decision_id: Any, confidence: Any) -> str:
+    """Identifiant déterministe d'une prédiction pour un couple décision/confiance.
+
+    Le même tenant, la même décision et la même confiance produisent le même
+    identifiant : un enregistrement automatique rejoué ne duplique pas la ligne.
+    """
+    tenant_propre = _tenant(tenant)
+    decision = _texte_obligatoire(decision_id, "decision_id")
+    confiance = _confiance(confidence)
+    charge = f"{tenant_propre}:{decision}:{confiance:.17g}"
+    return "pred-" + hashlib.sha256(charge.encode("utf-8")).hexdigest()[:32]
 
 
 def _limite(valeur: Any) -> int:

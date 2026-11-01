@@ -7,7 +7,7 @@ import SourceServiceNow from "@/components/commande/SourceServiceNow";
 import SourceDatadog from "@/components/commande/SourceDatadog";
 
 // Connecteurs « connexion + périmètre » : un composant de configuration par système.
-const SOURCES_CONNEXION = { confluence: SourceConfluence, jira: SourceJira, servicenow: SourceServiceNow, datadog: SourceDatadog };
+const SOURCES_CONNEXION = { confluence: SourceConfluence, jira: SourceJira, servicenow: SourceServiceNow, cmdb: SourceServiceNow, datadog: SourceDatadog };
 
 export default function InspecteurSource({ source, connecteur, onChange, onTester, onFermer }) {
   if (!source) {
@@ -60,6 +60,13 @@ export default function InspecteurSource({ source, connecteur, onChange, onTeste
         </span>
         {source.dernier_test && <span className="font-code text-[9px] text-[#7C93A8]">dernier test {source.dernier_test.date} — {source.dernier_test.resultat === "ok" ? "réussi" : "échoué"}</span>}
       </div>
+
+      {connecteur?.branche === false && (
+        <div className="mt-3 rounded-lg border border-[#F2B84B]/30 bg-[#F2B84B]/[0.05] p-3" data-testid="inspecteur-non-branche">
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-[#F2B84B]"><WarningCircle size={13} /> Connecteur non branché</div>
+          <p className="mt-1 text-[11px] leading-relaxed text-[#94A3B8]">Aucun lecteur ne l'interroge encore : cette source ne peut pas alimenter la découverte et ne sera jamais prête.</p>
+        </div>
+      )}
 
       {source.erreur && (
         <div className="mt-3 rounded-lg border border-[#F87171]/30 bg-[#F87171]/[0.05] p-3" data-testid="inspecteur-erreur">

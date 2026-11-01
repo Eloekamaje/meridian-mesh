@@ -29,7 +29,7 @@ def graphe_rest():
 
 def test_rest_get_est_observer_et_post_est_agir():
     manifestes = interface_outils.manifests_depuis_interface(
-        graphe_rest(), tenant="banque", persona="analyste", perimetre="comptes")
+        graphe_rest(), tenant="banque", acteur="analyste", perimetre="comptes")
     par_nom = {manifeste.nom: manifeste for manifeste in manifestes}
 
     assert set(par_nom) == {"comptes.listercomptes", "comptes.creercompte"}
@@ -47,7 +47,7 @@ def test_rest_get_est_observer_et_post_est_agir():
     assert all(manifeste.source == "interface" for manifeste in manifestes)
     assert all(manifeste.timeout_ms == 5000 and manifeste.cout == 0.0 for manifeste in manifestes)
     assert all(manifeste.schema_entree == {} and manifeste.schema_sortie == {} for manifeste in manifestes)
-    assert all((manifeste.tenant, manifeste.persona, manifeste.perimetre) ==
+    assert all((manifeste.tenant, manifeste.acteur, manifeste.perimetre) ==
                ("banque", "analyste", "comptes") for manifeste in manifestes)
     assert "REST" in lecture.description and "listerComptes" in lecture.description
     assert "comptes" in lecture.description and "prod" in lecture.description
@@ -99,7 +99,7 @@ def test_charger_dans_enregistre_et_preserve_la_portee():
     registre = RegistreCapacites()
     noms = interface_outils.charger_dans(
         registre, graphe_rest(), version="2.0.0",
-        tenant="banque", persona="analyste", perimetre="comptes")
+        tenant="banque", acteur="analyste", perimetre="comptes")
 
     assert noms == ["comptes.listercomptes", "comptes.creercompte"]
     assert all(nom in registre for nom in noms)
@@ -107,11 +107,11 @@ def test_charger_dans_enregistre_et_preserve_la_portee():
     for nom in noms:
         manifeste = registre.decrire(nom)
         assert manifeste.version == "2.0.0"
-        assert (manifeste.tenant, manifeste.persona, manifeste.perimetre) == (
+        assert (manifeste.tenant, manifeste.acteur, manifeste.perimetre) == (
             "banque", "analyste", "comptes")
     assert interface_outils.charger_dans(
         registre, graphe_rest(), version="2.0.0",
-        tenant="banque", persona="analyste", perimetre="comptes") == noms
+        tenant="banque", acteur="analyste", perimetre="comptes") == noms
 
 
 def test_sans_operation_rend_une_liste_vide():

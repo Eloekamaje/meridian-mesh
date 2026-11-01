@@ -9,23 +9,13 @@ import { numeroCase, SENSIBILITES, rel } from "@/components/case/utils";
 import OngletTravail from "@/components/case/OngletTravail";
 import DecisionPassation from "@/components/case/DecisionPassation";
 import PartagerTravail from "@/components/case/PartagerTravail";
-import ConfierTravail from "@/components/case/ConfierTravail";
-import SurfacePreparation from "@/components/SurfacePreparation";
 import { BoutonRetour } from "@/components/EntetePage";
-import { usePilotage } from "@/lib/pilotage";
 import { useEcran } from "@/lib/ecran";
-import { CREATION_TRAVAIL_ACTIVE, FLORE_PRESENTATION, PROPOSITION_DEMO } from "@/lib/messagesFlore";
 
 // « Nouveau travail » est cette même page : un travail qui n'est pas encore né (pas d'identifiant), avec un fil vide et la même
 // saisie. Au premier envoi le travail naît et la conversation continue au même endroit — un seul chat pour tous les travaux.
-// Hors démonstration, la création réelle n'existe pas encore : Flore se présente, puis annonce qu'elle arrive.
-function nouveauBrouillon(pilote) {
-  // `anime: true` + un horodatage propre à ce montage : la présentation s'écrit au fil de l'eau à
-  // chaque nouvelle arrivée sur « Nouveau travail », comme n'importe quelle autre réponse de Flore.
-  const presentation = !pilote && !CREATION_TRAVAIL_ACTIVE
-    ? [{ role: "flore", comportement: "expliquer", texte: FLORE_PRESENTATION, proposition: PROPOSITION_DEMO, quand: new Date().toISOString(), anime: true }]
-    : [];
-  return { id: null, brouillon: true, titre: "Nouveau travail", type: "demande", jumeaux: [], conversation: presentation };
+function nouveauBrouillon() {
+  return { id: null, brouillon: true, titre: "Nouveau travail", type: "demande", jumeaux: [], conversation: [] };
 }
 
 export default function TravailDetail() {
@@ -33,36 +23,17 @@ export default function TravailDetail() {
   const brouillon = cid === "nouveau";
   const location = useLocation();
   const navigate = useNavigate();
-  const { version, persona } = usePerimetre();
-  const pilote = usePilotage();
+  const { version } = usePerimetre();
   const ecran = useEcran();
-  // Démonstration : le travail est déjà né quand la page s'ouvre — aucun écran de chargement
-  const [cas, setCas] = useState(() => (brouillon ? nouveauBrouillon(pilote) : pilote?.lireTravail ? pilote.lireTravail(cid) : null));
-  const [personas, setPersonas] = useState([]);
+  const [cas, setCas] = useState(() => (brouillon ? nouveauBrouillon() : null));
   const [erreur, setErreur] = useState(null);
   const [menu, setMenu] = useState(false);
-  // Démonstration : le volet « Sources & Jumeaux » s'ouvre quand Flore a consulté des jumeaux (pas avant : il serait vide)
   // Fermé par défaut : il flotte par-dessus la conversation et recouvrirait le début des phrases de Flore ; l'icône de l'en-tête l'ouvre
   const [voletSourcesOuvert, setVoletSourcesOuvert] = useState(false);
   const [canvasOuvert, setCanvasOuvert] = useState(false);
 
-  // Démonstration : le travail évolue avec le scénario (titre, résumé, rubriques de l'Aperçu).
-  // Rechargement silencieux : la page et le fil ne se remontent pas.
-  useEffect(() => {
-    if (!pilote || brouillon) return;
-    api.get(`/cases/${cid}`).then((r) => setCas(r.data)).catch(() => {});
-  }, [pilote?.versionTravaux]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Démonstration : le canvas s'ouvre quand Flore publie son document (et se ferme si on rejoue)
-  useEffect(() => {
-    if (!pilote) return;
-    setCanvasOuvert(!!pilote.canvasOuvert);
-    if (pilote.canvasOuvert) setVoletSourcesOuvert(false); // le document est dans le canvas : le volet ne le recouvre pas
-  }, [pilote?.canvasOuvert]); // eslint-disable-line react-hooks/exhaustive-deps
-
   // Un travail en veille montre d'abord sa note de passation et ses actions : la fenêtre « Sources & Jumeaux » ne les recouvre pas
   const [passationOuverte, setPassationOuverte] = useState(false);
-  const [confierOuvert, setConfierOuvert] = useState(false);
   const enVeille = !!cas?.veille;
   const peutDeposer = cas?.peut_deposer === true; // responsable ou participant : seul à pouvoir écrire
   const actionsMenu = peutDeposer && (cas?.a_revoir || cas?.peut_partager || (!enVeille && cas?.statut !== "clos"));
@@ -75,11 +46,8 @@ export default function TravailDetail() {
   const voletAutoOuvert = useRef(false);
   const casNe = !brouillon && !!cas?.id; // le travail existe : en-tête complet, volet
   useEffect(() => {
-    // `canvasOuvert` (l'état réellement affiché), pas `pilote.canvasOuvert` : le Canvas ne s'ouvre plus
-    // tout seul depuis le moteur de démo, il peut donc être ouvert manuellement sans que ce champ le
-    // reflète — le volet ne doit pas revenir par-dessus pour autant. Jamais sur mobile non plus : le
-    // volet y prend toute la largeur (inset-x-3) et recouvrirait entièrement le message qui vient
-    // d'arriver — sur ce format, le visiteur l'ouvre lui-même s'il le souhaite.
+    // Jamais sur mobile : le volet y prend toute la largeur (inset-x-3) et recouvrirait entièrement
+    // le message qui vient d'arriver — sur ce format, l'utilisateur l'ouvre lui-même s'il le souhaite.
     // Une seule ouverture automatique : si l'utilisateur referme le volet, il ne se rouvre pas à chaque réponse.
     if (!voletAutoOuvert.current && nbSources > 0 && !canvasOuvert && ecran !== "mobile") {
       voletAutoOuvert.current = true;
@@ -95,12 +63,11 @@ export default function TravailDetail() {
     // vide pas, et on ne la recharge pas non plus — l'état local, que `envoyer()` vient de mettre à
     // jour avec la réponse de Flore encore en train de s'écrire, est déjà exact ; la recharger
     // écraserait cette réponse par sa version figée et couperait net son déroulé.
-    const continuite = !pilote && location.state?.continuite;
-    if (!pilote && !continuite) setCas(null);
+    const continuite = location.state?.continuite;
+    if (!continuite) setCas(null);
     if (!continuite) {
       api.get(`/cases/${cid}`).then((r) => setCas(r.data)).catch((e) => setErreur(e.response?.data?.detail || "Travail introuvable"));
     }
-    api.get("/personas").then((r) => setPersonas(r.data)).catch(() => {});
   }, [cid, version]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const maj = async (champs) => {
@@ -112,11 +79,6 @@ export default function TravailDetail() {
     }
   };
 
-  const nomPersona = (id) => {
-    const p = personas.find((x) => x.id === id);
-    return p ? `${p.nom} — ${p.role}` : id;
-  };
-
   if (erreur) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4" data-testid="travail-erreur">
@@ -126,10 +88,6 @@ export default function TravailDetail() {
     );
   }
   if (!cas) return <div className="p-8 font-code text-[11px] text-[#7C93A8]" data-testid="travail-chargement">Chargement du travail…</div>;
-
-  // Démonstration : un seul fil de conversation, partagé avec Flore. Il ne contient que
-  // les messages déjà prononcés — aucun message futur du scénario n'est préchargé ici.
-  const casVu = pilote?.conversation ? { ...cas, conversation: pilote.conversation } : cas;
 
   const t = TYPES_CASE[cas.type] || [cas.type, "#7C93A8"];
   const sens = SENSIBILITES[cas.sensibilite] || [cas.sensibilite || "interne", "#60A5FA"];
@@ -144,12 +102,10 @@ export default function TravailDetail() {
         <div className="flex items-center justify-between gap-4">
           {/* Titre */}
           <div className="flex min-w-0 items-center gap-3">
-            {!pilote && (
-              // On arrive d'une actualité : le retour vers elle est mis en évidence (le travail reste un travail comme les autres)
-              location.state?.retour
-                ? <BoutonRetour accent label={location.state.retour.label} onClick={() => navigate(location.state.retour.to)} testid="travail-retour-origine" />
-                : <BoutonRetour label="Travaux" onClick={() => navigate("/travaux")} testid="travail-retour-travaux" />
-            )}
+            {/* On arrive d'une actualité : le retour vers elle est mis en évidence (le travail reste un travail comme les autres) */}
+            {location.state?.retour
+              ? <BoutonRetour accent label={location.state.retour.label} onClick={() => navigate(location.state.retour.to)} testid="travail-retour-origine" />
+              : <BoutonRetour label="Travaux" onClick={() => navigate("/travaux")} testid="travail-retour-travaux" />}
             <h1 className="truncate font-display text-sm font-semibold tracking-tight text-[#F2F6F8]" data-testid="travail-titre">
               {cas.titre}
             </h1>
@@ -179,11 +135,6 @@ export default function TravailDetail() {
                     {cas.a_revoir && peutDeposer && (
                       <button onClick={() => { setMenu(false); maj({ a_revoir: false }); }} data-testid="travail-marquer-revu-btn" className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[11px] text-[#F87171] hover:bg-white/[0.06]">
                         <SealCheck size={12} /> Marquer comme revu
-                      </button>
-                    )}
-                    {cas.peut_partager && (
-                      <button onClick={() => { setMenu(false); setConfierOuvert(true); }} data-testid="travail-confier-btn" className="w-full rounded px-2.5 py-1.5 text-left text-[11px] text-[#94A3B8] hover:bg-white/[0.06] hover:text-white">
-                        Confier à…
                       </button>
                     )}
                     {!enVeille && cas.statut !== "clos" && peutDeposer && (
@@ -243,16 +194,13 @@ export default function TravailDetail() {
         </div>
         </div>
       )}
-
-      {/* Démonstration : la surface annonce la synthèse qu'elle prépare */}
-      {pilote?.preparation?.surface === "travail" && <SurfacePreparation preparation={pilote.preparation} testid="travail-preparation" />}
     </>
   );
 
   return (
     <div className="flex h-full" data-testid="travail-detail">
       <OngletTravail
-        cas={casVu}
+        cas={cas}
         setCas={setCas}
         voletSourcesOuvert={voletSourcesOuvert && casNe}
         setVoletSourcesOuvert={setVoletSourcesOuvert}
@@ -261,7 +209,6 @@ export default function TravailDetail() {
         onConsignerDecision={casNe && peutDeposer ? () => setPassationOuverte(true) : undefined}
         entete={entete}
       />
-      {confierOuvert && <ConfierTravail cas={cas} personas={personas} moi={persona} onFermer={() => setConfierOuvert(false)} onConfie={(data) => { setCas(data); setConfierOuvert(false); }} />}
       {passationOuverte && <DecisionPassation cas={cas} onFermer={() => setPassationOuverte(false)} onEnregistree={(data) => { setCas(data); setPassationOuverte(false); }} />}
     </div>
   );

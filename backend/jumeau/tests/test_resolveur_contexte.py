@@ -220,3 +220,44 @@ def test_construire_pack_refuse_un_contexte_non_resolu():
     """Le résolveur n'invente pas un contexte à partir d'un objet quelconque."""
     with pytest.raises(resolveur.ContexteInvalide):
         resolveur.construire_pack({"surface": "twin"}, DOSSIER, PROFIL)
+
+
+def test_construire_pack_transmet_le_budget_tokens_et_les_signaux_partiels():
+    """Le résolveur borne aussi en tokens et conserve contradictions/preuves périmées."""
+    contexte_resolu = resolveur.resoudre("banque", "twin", twin_id="paiements")
+    dossier = deepcopy(DOSSIER)
+    dossier["statut"] = "partiel"
+    dossier["contradictions"] = ["Deux impacts se contredisent"]
+    dossier["preuves_perimees"] = ["p-archive"]
+    dossier["propositions"][0]["perime"] = True
+
+    resultat = resolveur.construire_pack(
+        contexte_resolu, dossier, PROFIL, max_tokens=50, max_faits=3)
+
+    pack = resultat["pack"]
+    assert pack["budget"]["tokens"] == 50
+    assert "tokens_utilises" in pack["budget"]
+    assert pack["completude"] == "partiel"
+    assert "Deux impacts se contredisent" in pack["contradictions"]
+    assert "p-archive" in pack["preuves_perimees"]
+    assert "p1" in pack["preuves_perimees"]
+    assert any("tokens" in limite or "partiel" in limite for limite in pack["limites"])
+
+
+def test_resume_et_detail_conservent_inconnues_contradictions_et_preuves_perimees():
+    """La divulgation progressive ne masque jamais les signaux d'incertitude."""
+    pack = resolveur.construire_pack(
+        resolveur.resoudre("banque", "global"), DOSSIER, PROFIL)["pack"]
+    pack["inconnues"] = ["Inconnue explicite"]
+    pack["contradictions"] = ["Contradiction explicite"]
+    pack["preuves_perimees"] = ["preuve-perimee"]
+    pack["completude"] = "partiel"
+
+    court = resolveur.resume(pack, limite=1)
+    complet = resolveur.detail(pack)
+
+    for vue in (court, complet):
+        assert vue["inconnues"] == ["Inconnue explicite"]
+        assert vue["contradictions"] == ["Contradiction explicite"]
+        assert vue["preuves_perimees"] == ["preuve-perimee"]
+        assert vue["completude"] == "partiel"

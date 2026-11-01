@@ -294,6 +294,8 @@ def test_parametres_invalides_refuses(sources_factices):
     with pytest.raises(RetrievalMemoireInvalide):
         recuperer(object(), TENANT, question="delai", limite=0)
     with pytest.raises(RetrievalMemoireInvalide):
+        recuperer(object(), TENANT, question="delai", proximite=["pas", "un", "mapping"])
+    with pytest.raises(RetrievalMemoireInvalide):
         enrichir_pack({}, [], max_ajouts=-1)
 
 
@@ -389,3 +391,67 @@ def test_recuperer_ignore_une_memoire_durable_expiree(conn):
 
     assert recuperer(
         conn, TENANT, question="delai carte", scope="situation", scope_id="sit-1") == []
+
+
+def test_proximite_graphe_optionnelle_departage_a_contenu_egal(sources_factices):
+    """À couverture lexicale égale, le score de graphe fourni classe le candidat proche."""
+    etat = sources_factices
+    etat["twins"]["twin-1"] = {"id": "twin-1", "tenant_id": TENANT}
+    etat["annotations"] = [
+        _annotation("near", "Le delai de carte baisse", twins=["twin-1"], confiance=0.7),
+        _annotation("far", "Le delai de carte monte", twins=["twin-1"], confiance=0.7),
+    ]
+
+    resultat = recuperer(
+        object(), TENANT, question="delai carte", twin_ids=["twin-1"],
+        proximite={"near": 1.0, "far": 0.0})
+
+    assert [candidat.id for candidat in resultat] == ["near", "far"]
+    assert resultat[0].proximite == 1.0 and resultat[1].proximite == 0.0
+    assert resultat[0].score > resultat[1].score
+    assert any("proximité graphe" in raison for raison in resultat[0].raisons)
+
+
+def test_deduplication_par_contenu_claim_et_preuve(sources_factices):
+    """Les doublons de contenu normalisé, de Claim et de preuve sont fusionnés."""
+    etat = sources_factices
+    etat["twins"]["twin-1"] = {"id": "twin-1", "tenant_id": TENANT}
+    etat["annotations"] = [
+        _annotation("a1", "Le delai de carte baisse", twins=["twin-1"], confiance=0.6,
+                    donnees={"preuve_ids": ["p1"]}),
+        _annotation("a2", "le delai de carte, baisse !", twins=["twin-1"], confiance=0.9,
+                    donnees={"preuve_ids": ["p1"]}),
+    ]
+    etat["claims"]["twin-1"] = [
+        {**CLAIM, "id": 7, "confiance": 0.5},
+        {**CLAIM, "id": 8, "confiance": 0.8},
+    ]
+
+    resultat = recuperer(
+        object(), TENANT, question="delai carte", twin_ids=["twin-1"], limite=10)
+    annotations = [candidat for candidat in resultat if candidat.source == "annotation"]
+    claims = [candidat for candidat in resultat if candidat.source == "claim"]
+
+    assert [candidat.id for candidat in annotations] == ["a2"]
+    assert [candidat.id for candidat in claims] == ["8"]
+
+
+def test_enrichir_pack_borne_la_memoire_au_budget_tokens_du_pack():
+    """Les ajouts mémoire consomment le budget restant et déclarent la troncature."""
+    pack = {"tenant": "banque", "budget": {"tokens": 80, "tokens_utilises": 40},
+            "limites": []}
+    candidats = [
+        CandidatMemoire(id="m1", source="durable", classe="contexte",
+                        contenu="x" * 120, provenance="revue"),
+        CandidatMemoire(id="m2", source="durable", classe="contexte",
+                        contenu="y" * 120, provenance="revue"),
+    ]
+
+    resultat = enrichir_pack(pack, candidats, max_ajouts=5)
+
+    assert [entree["id"] for entree in resultat["memoire"]] == ["m1"]
+    assert resultat["budget"]["tokens_memoire"] <= 60
+    assert resultat["budget"]["tokens_utilises"] == (
+        40 + resultat["budget"]["tokens_memoire"])
+    assert any("mémoire tronquée" in limite for limite in resultat["limites"])
+    assert pack["limites"] == []

@@ -47,8 +47,8 @@ def _cle(tid, suffixe):
     return f"{partage.prefixe()}tour:{tid}:{suffixe}"
 
 
-def _encours(persona):
-    return f"{partage.prefixe()}encours:{persona}"
+def _encours(acteur):
+    return f"{partage.prefixe()}encours:{acteur}"
 
 
 def _actifs():
@@ -258,17 +258,17 @@ async def meta(tid):
     return await r.hgetall(_meta(tid))
 
 
-async def actifs(persona):
-    """Les fils avec au moins un tour non fini pour cette persona, vus par n'importe quel worker."""
-    if not persona:
+async def actifs(acteur):
+    """Les fils avec au moins un tour non fini pour cette acteur, vus par n'importe quel worker."""
+    if not acteur:
         return []
     r = await partage.client()
-    identifiants = await r.smembers(_encours(persona))
+    identifiants = await r.smembers(_encours(acteur))
     fils = set()
     for tid in identifiants:
         m = await r.hgetall(_meta(tid))
         if not m or m.get("fini") == "1":
-            await r.srem(_encours(persona), tid)
+            await r.srem(_encours(acteur), tid)
             continue
         if m.get("fil"):
             fils.add(m["fil"])
@@ -366,9 +366,9 @@ async def arreter_taches():
     _BATTEMENT = _REAPER = None
 
 
-async def demander_arret(tid, persona):
+async def demander_arret(tid, acteur):
     r = await partage.client()
-    await r.publish(partage.canal_controle(), json.dumps({"tour": tid, "persona": persona}))
+    await r.publish(partage.canal_controle(), json.dumps({"tour": tid, "acteur": acteur}))
 
 
 async def ecouter_controle(callback):
@@ -382,7 +382,7 @@ async def ecouter_controle(callback):
                 continue
             try:
                 data = json.loads(message.get("data") or "{}")
-                await callback(data.get("tour"), data.get("persona"))
+                await callback(data.get("tour"), data.get("acteur"))
             except Exception:
                 continue
     finally:

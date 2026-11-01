@@ -30,7 +30,7 @@ STATUTS_REFUS = (
     STATUT_ADAPTATEUR_ABSENT,
 )
 
-_AXES = ("tenant", "persona", "perimetre")
+_AXES = ("tenant", "acteur", "perimetre")
 
 
 class ExecutionRefusee(Exception):
@@ -65,7 +65,7 @@ class PolitiqueExecution:
     """Bornes d'exécution demandées par un appelant : portée, écritures, coût, délai et allowlist."""
 
     tenant: str | None = None
-    persona: str | None = None
+    acteur: str | None = None
     perimetre: str | None = None
     autoriser_ecritures: bool = False
     max_cout: float = 0.0
@@ -216,7 +216,7 @@ class Executeur:
         acteur = approbation.acteur if ecriture and isinstance(approbation, Approbation) else None
         ligne: dict[str, Any] = {
             "tenant": politique.tenant,
-            "persona": politique.persona,
+            "acteur": politique.acteur,
             "perimetre": politique.perimetre,
             "outil": nom,
             "nom": nom,

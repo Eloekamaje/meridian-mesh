@@ -31,15 +31,11 @@ import { usePerimetre } from "@/lib/perimetre";
 import { useContexte } from "@/lib/contexte";
 import { useMesh } from "@/lib/mesh";
 import { couleurDomaine } from "@/lib/domaines";
-import { CREATION_TRAVAIL_ACTIVE, FLORE_REPONSE_EN_CONSTRUCTION, PROPOSITION_DEMO } from "@/lib/messagesFlore";
-import FloreActivite, { delaiMin, activiteTerminee } from "@/components/FloreActivite";
+import FloreActivite, { activiteTerminee } from "@/components/FloreActivite";
 import BrouillonFlore from "@/components/BrouillonFlore";
 import FileMessages from "@/components/FileMessages";
 import useFileMessages from "@/lib/useFileMessages";
 import { demanderEnFlux, estArret, journalActivite, activiteDuTour } from "@/lib/fluxFlore";
-import LigneActiviteFlore from "@/components/LigneActiviteFlore";
-import IndicateurClic from "@/components/IndicateurClic";
-import { usePilotage } from "@/lib/pilotage";
 import { useEcran } from "@/lib/ecran";
 import { rel } from "./utils";
 import { appliquerCommande, appliquerMention, commandesFiltrees, normaliser, requeteCommande, requeteMention, resoudreCommande } from "@/lib/mentionsCommandes";
@@ -49,131 +45,36 @@ import CanvasDocument from "./CanvasDocument";
 import Atlas from "@/pages/Atlas";
 import { BandeauVeille, EvenementVeille, RepriseVeille } from "./VeilleTravail";
 
-// Dictionnaire des Jumeaux participants du SI pour CASE-101
-export const DICT_JUMEAUX_PARTICIPANTS = {
-  "demo-polaris-app-portail": {
-    app_id: "app-portail",
-    nom: "Portail client",
-    domaine: "Client",
-    domaineCouleur: "#60A5FA",
-    type: "Parcours Web Client",
-    statut: "actif",
-    participation: "Fournit les données de parcours client et l'estimation de volumétrie pour l'auto-suivi des demandes.",
-  },
-  "demo-polaris-app-conseiller": {
-    app_id: "app-conseiller",
-    nom: "Poste conseiller",
-    domaine: "Distribution",
-    domaineCouleur: "#FB7185",
-    type: "Interface succursales",
-    statut: "actif",
-    participation: "Fournit le diagnostic de charge de traitement des conseillers en succursale.",
-  },
-  "demo-polaris-app-dossiers": {
-    app_id: "app-dossiers",
-    nom: "Gestion des dossiers",
-    domaine: "Opérations",
-    domaineCouleur: "#A3E635",
-    type: "Socle métier central",
-    statut: "80% existant en production",
-    participation: "Détient la machine à états officielle et le cycle de vie complet de chaque dossier.",
-  },
-  "demo-polaris-app-statuts": {
-    app_id: "app-statuts",
-    nom: "Diffusion des statuts",
-    domaine: "Opérations",
-    domaineCouleur: "#A3E635",
-    type: "Exposition temps réel",
-    statut: "actif en production",
-    participation: "Expose les flux d'événements Kafka pour diffuser les changements d'état en direct.",
-  },
-};
-
-// Pipeline Architectural Horizontal (Fidèle au diagramme horizontal de la capture)
-export function PipelineArchitecture() {
-  return (
-    <div className="my-5 overflow-x-auto py-2" data-testid="pipeline-architecture-convergence">
-      <div className="flex items-center gap-2 min-w-max">
-        {/* Nœud 1 : Portail client */}
-        <div className="rounded-xl border border-blue-400/30 bg-blue-500/10 px-3.5 py-2 text-center shadow-sm">
-          <div className="text-[9px] font-code font-semibold uppercase tracking-wider text-blue-300">Canal Client</div>
-          <div className="text-xs font-bold text-white mt-0.5">Portail client Web</div>
-          <div className="text-[10px] text-blue-200/70 font-code">app-portail</div>
-        </div>
-
-        <span className="text-blue-400/70 font-code text-xs px-1">──▶</span>
-
-        {/* Nœud 2 : Diffusion des statuts (Kafka) */}
-        <div className="rounded-xl border border-blue-400/40 bg-blue-500/15 px-3.5 py-2 text-center shadow-sm ring-1 ring-blue-400/20">
-          <div className="text-[9px] font-code font-semibold uppercase tracking-wider text-blue-300">Hub Événements Temps Réel</div>
-          <div className="text-xs font-bold text-white mt-0.5">Diffusion des statuts</div>
-          <div className="text-[10px] text-blue-200/70 font-code">app-statuts (Kafka)</div>
-        </div>
-
-        <span className="text-emerald-400/70 font-code text-xs px-1">◀──</span>
-
-        {/* Nœud 3 : Socle Existant (80%) */}
-        <div className="rounded-xl border border-emerald-400/50 bg-emerald-500/20 px-4 py-2 text-center shadow-md ring-1 ring-emerald-400/30">
-          <div className="text-[9px] font-code font-semibold uppercase tracking-wider text-emerald-300">Socle Existant (80%)</div>
-          <div className="text-xs font-bold text-emerald-100 mt-0.5">Gestion des dossiers</div>
-          <div className="text-[10px] text-emerald-300/80 font-code">app-dossiers (Production)</div>
-        </div>
-
-        <span className="text-rose-400/70 font-code text-xs px-1">◀──</span>
-
-        {/* Nœud 4 : Poste conseiller */}
-        <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 px-3.5 py-2 text-center shadow-sm">
-          <div className="text-[9px] font-code font-semibold uppercase tracking-wider text-rose-300">Canal Succursale</div>
-          <div className="text-xs font-bold text-white mt-0.5">Poste conseiller</div>
-          <div className="text-[10px] text-rose-200/70 font-code">app-conseiller</div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // Réponses déjà déroulées : un message ne se rejoue jamais (remontage de la page, retour au travail)
 const REPONSES_JOUEES = new Set();
 
-// Déroulé progressif de la réponse de Flore — même en usage réel, pas seulement en démonstration :
-// une réponse fraîchement publiée s'écrit toujours au fil de l'eau (`message.anime`, posé par
-// l'appelant sur le message qu'il vient de recevoir, jamais sur l'historique déjà chargé). Même
-// cadence que le moteur de démo (3 caractères / 18 ms) ; gelé pendant la pause ; cartes et document
-// après le texte. `animer` distingue « en train de s'écrire » (curseur visible) d'une réponse déjà
-// ancienne, révélée d'un bloc.
-function useDeroule(message, pilote) {
+// Déroulé progressif de la réponse de Flore : une réponse fraîchement publiée s'écrit toujours au fil
+// de l'eau (`message.anime`, posé par l'appelant sur le message qu'il vient de recevoir, jamais sur
+// l'historique déjà chargé). Cartes et document après le texte. `animer` distingue « en train de
+// s'écrire » (curseur visible) d'une réponse déjà ancienne, révélée d'un bloc.
+function useDeroule(message) {
   const total = (message.texte || "").length;
   const cle = message.quand;
   const reduit = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
   const animer = !!message.anime && !REPONSES_JOUEES.has(cle) && !reduit;
   const [n, setN] = useState(animer ? 0 : total);
-  const enPause = !!pilote?.enPause;
   useEffect(() => {
     if (n >= total) {
       REPONSES_JOUEES.add(cle);
       return undefined;
     }
-    if (!animer || enPause) return undefined;
+    if (!animer) return undefined;
     const t = setTimeout(() => setN((x) => Math.min(total, x + 3)), 36); // ~83 car/s (voir FlorePanel.jsx)
     return () => clearTimeout(t);
-  }, [n, total, animer, enPause, cle]);
+  }, [n, total, animer, cle]);
   // Un texte qui change (autre version, régénération) s'affiche entier : seul un message fraîchement publié s'écrit.
   return { visible: (message.texte || "").slice(0, animer ? n : total), fini: !animer || n >= total };
 }
 
 // Rendu formaté, fluide et aéré du texte (Style ChatGPT / Claude)
 export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif, onVoirAtlas, atlasActif, onOuvrirPiece, children }) {
-  const pilote = usePilotage();
   const texte = message.texte || "";
-  const { visible, fini } = useDeroule(message, pilote);
-
-  // Détecte si le message présente l'architecture ou la convergence pour intégrer le pipeline
-  const montrePipeline = 
-    texte.includes("app-dossiers") || 
-    texte.includes("Diffusion des statuts") || 
-    texte.includes("80 %") ||
-    texte.includes("triple redondance") ||
-    message.comportement === "arbitrer";
+  const { visible, fini } = useDeroule(message);
 
   return (
     <div className="space-y-3.5 text-[15px] leading-relaxed text-[#DCE6EE]">
@@ -181,9 +82,6 @@ export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif, onVoir
 
       {/* Curseur clignotant : Flore est encore en train d'écrire (sinon, rien ne le distingue d'une lecture) */}
       {!fini && <span className="curseur-teletype -mt-2 inline-block">▍</span>}
-
-      {/* Pipeline architectural horizontal */}
-      {fini && montrePipeline && <PipelineArchitecture />}
 
       {/* KPIs épurés et légers (Style stat strip moderne) */}
       {fini && message.kpis && (
@@ -252,30 +150,6 @@ export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif, onVoir
         </div>
       )}
 
-      {/* Tableau comparatif épuré */}
-      {fini && message.tableauComparatif && (
-        <div className="my-4 overflow-x-auto rounded-xl border border-white/[0.08] bg-[#0A131C]">
-          <table className="w-full min-w-[28rem] text-left text-xs">
-            <thead>
-              <tr className="border-b border-white/[0.08] font-code text-[10px] uppercase tracking-wider text-[#7C93A8]">
-                <th className="py-2.5 pl-4 pr-2">Critère</th>
-                <th className="px-2 py-2.5 text-rose-300">Trajectoire Silos</th>
-                <th className="py-2.5 pl-2 pr-4 text-emerald-300">Socle Mutualisé (CASE-101)</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/[0.05]">
-              {message.tableauComparatif.map((row, rk) => (
-                <tr key={rk}>
-                  <td className="py-2 pl-4 pr-2 font-medium text-[#CBD5E1]">{row.critere}</td>
-                  <td className="px-2 py-2 text-rose-300">{row.silos}</td>
-                  <td className="py-2 pl-2 pr-4 font-code font-semibold text-emerald-300">{row.socle}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
       {/* Sélections groupées — plusieurs listes distinctes avec leur propre titre (ex. « À privilégier »
           / « À réexaminer », ou les groupes d'une répartition) : contrairement à une seule liste plate,
           chaque groupe reste visuellement séparé, avec ses puces propres. */}
@@ -305,8 +179,7 @@ export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif, onVoir
         </div>
       )}
 
-      {/* Tableau générique — colonnes/lignes libres, pour tout ce que le comparatif silos/socle et les
-          sélections groupées ne peuvent pas rendre correctement */}
+      {/* Tableau générique — colonnes/lignes libres */}
       {fini && message.tableau && (
         <div className="my-4 overflow-x-auto rounded-xl border border-white/[0.08] bg-[#0A131C]">
           <table className="w-full min-w-[32rem] text-left text-xs">
@@ -359,7 +232,7 @@ export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif, onVoir
       )}
 
       {/* Boutons légers pour ouvrir ou télécharger le Document si disponible */}
-      {fini && (message.documentCanvas || texte.includes("CASE_101_ARBITRAGE_CONVERGENCE.md")) && (
+      {fini && message.documentCanvas && (
         <div className="flex flex-wrap items-center gap-2 pt-2">
           <button
             onClick={onOuvrirCanvas}
@@ -367,7 +240,7 @@ export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif, onVoir
             data-testid="btn-ouvrir-canvas-inline"
           >
             <FileText size={14} className="text-blue-400" />
-            <span>{message.documentCanvas || "CASE_101_ARBITRAGE_CONVERGENCE.md"}</span>
+            <span>{message.documentCanvas}</span>
             <span className="text-blue-400 font-semibold">{canvasActif ? "(Canvas ouvert ↗)" : "(Ouvrir ↗)"}</span>
           </button>
           {message.documentTexte && (
@@ -391,7 +264,7 @@ export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif, onVoir
 
       {/* Décisions, suggestions, actions… : n'apparaissent qu'une fois la réponse complète — ni
           pendant son déroulé (`fini`), ni sur une simple annonce (« Je vais… ») suivie d'un
-          traitement encore à venir (`termine`, absent hors démo : toujours vrai dans ce cas) */}
+          traitement encore à venir (`termine`, absent : toujours vrai dans ce cas) */}
       {fini && message.termine !== false && children}
     </div>
   );
@@ -410,7 +283,6 @@ export default function OngletTravail({
   onConsignerDecision,
   entete,
 }) {
-  const pilote = usePilotage();
   const navigate = useNavigate();
   const ecran = useEcran();
   const { info } = usePerimetre();
@@ -418,17 +290,10 @@ export default function OngletTravail({
   const { mesh } = useMesh();
   // Travail pas encore né (« Nouveau travail ») : même conversation, sans identifiant
   const brouillon = cas?.id == null;
-  // Les pièces jointes sont des sources du Travail (jamais des connaissances) : pas de dépôt en démo, ni avant
-  // que le travail existe, ni dans le récit Polaris dont les réponses sont scriptées.
-  const piecesAutorisees = !pilote && !brouillon && cas?.id !== "demo-polaris-work-g" && cas?.peut_deposer !== false;
+  // Les pièces jointes sont des sources du Travail (jamais des connaissances) : pas de dépôt avant
+  // que le travail existe, ni pour un lecteur qui n'a pas le droit d'écrire.
+  const piecesAutorisees = !brouillon && cas?.peut_deposer !== false;
   const majPieces = (suivantes) => setCas((c) => ({ ...c, pieces: suivantes }));
-  // Le dossier CASE_101 et ses deux preuves sont le contenu du scénario de démonstration : ils n'appartiennent qu'au
-  // travail de démonstration (né pendant la démo, ou le travail de démonstration du jeu de données), jamais aux travaux réels
-  const contenuScenario = pilote ? !!pilote.documentGenere : cas?.id === "demo-polaris-work-g";
-  // Le document réellement généré par CE scénario — jamais un contenu figé d'un ancien récit
-  const messageDocument = [...(cas.conversation || [])].reverse().find((m) => m.documentCanvas);
-  const documentGenereNom = messageDocument?.documentCanvas || "document.md";
-  const documentGenereTexte = messageDocument?.documentTexte || null;
   const livrables = cas.livrables || [];
   const [documentOuvert, setDocumentOuvert] = useState(null);
   const [nouveauMsg, setNouveauMsg] = useState("");
@@ -445,7 +310,7 @@ export default function OngletTravail({
   // Une autorisation vaut pour le tour en cours : changer de travail la remet à zéro (défaut : décochée).
   useEffect(() => {
     setAutoriserEcriture(false); setMentions([]); setMentionRequete(null); setCommandeRequete(null);
-    setPlieesGroupes({ jumeaux: true, preuves: true, pieces: true });
+    setPlieesGroupes({ jumeaux: true, pieces: true });
   }, [cas?.id]);
   const [fluxMsg, setFluxMsg] = useState(null); // réponse en cours : vraies étapes, brouillon (en relecture)
   // Rubriques du volet (Résultats, Sources & Jumeaux) : chacune se plie et se déplie.
@@ -453,25 +318,14 @@ export default function OngletTravail({
   // il annonce simplement qu'il y a quelque chose à consulter, sans s'imposer déjà ouvert.
   // Rubriques et sous-rubriques sont pliées par défaut : le volet annonce les sources, il ne les impose pas.
   const [pliees, setPliees] = useState({ resultats: true, sources: true });
-  const [plieesGroupes, setPlieesGroupes] = useState({ jumeaux: true, preuves: true, pieces: true });
+  const [plieesGroupes, setPlieesGroupes] = useState({ jumeaux: true, pieces: true });
   const basculerRubrique = (cle) => setPliees((p) => ({ ...p, [cle]: !p[cle] }));
   const basculerGroupe = (cle) => {
     const replie = !plieesGroupes[cle];
     setPlieesGroupes((p) => ({ ...p, [cle]: replie }));
-    if (replie) {
-      if (cle === "jumeaux") setJumeauInspecte(null);
-      if (cle === "preuves") setPreuveInspectee(null);
-    }
+    if (replie && cle === "jumeaux") setJumeauInspecte(null);
   };
-  const documentApparuRef = useRef(contenuScenario);
-  useEffect(() => {
-    if (contenuScenario && !documentApparuRef.current) {
-      documentApparuRef.current = true;
-      setPliees((p) => ({ ...p, resultats: true, sources: true }));
-    }
-  }, [contenuScenario]);
   const [jumeauInspecte, setJumeauInspecte] = useState(null);
-  const [preuveInspectee, setPreuveInspectee] = useState(null);
   // Section de pièce ouverte par une citation (`pièce:<id>#<section>`) : { pieceId, sectionId } ou null.
   const [pieceInspectee, setPieceInspectee] = useState(null);
   // Une citation ouverte appartient au travail courant : changer de travail referme le panneau.
@@ -485,7 +339,7 @@ export default function OngletTravail({
   useEffect(() => { estEnBasRef.current = estEnBas; }, [estEnBas]);
 
   // Gestion synchronisée ou locale des volets
-  const [voletSourcesLocal, setVoletSourcesLocal] = useState(!pilote);
+  const [voletSourcesLocal, setVoletSourcesLocal] = useState(true);
   const [canvasLocal, setCanvasLocal] = useState(false);
 
   const voletSourcesOuvert = voletSourcesOuvertProp !== undefined ? voletSourcesOuvertProp : voletSourcesLocal;
@@ -557,15 +411,13 @@ export default function OngletTravail({
   const coupureRef = useRef(null);
   const taRef = useRef(null);
   // Champ de saisie qui grandit avec son contenu (comme ChatGPT/Claude) — sinon les lignes au-delà
-  // de la première restent invisibles (la hauteur ne bouge jamais toute seule). Rejoue aussi
-  // pendant la frappe simulée de la démo (le texte change sans passer par onChange).
-  const texteSaisie = pilote ? pilote.saisie?.texte || "" : nouveauMsg;
+  // de la première restent invisibles (la hauteur ne bouge jamais toute seule).
   useEffect(() => {
     const el = taRef.current;
     if (!el) return;
     el.style.height = "auto";
     el.style.height = `${el.scrollHeight}px`;
-  }, [texteSaisie]);
+  }, [nouveauMsg]);
 
   const messages = cas.conversation || [];
   // Une précision reste ouverte tant que l'interlocuteur n'a pas répondu (un message de veille peut la suivre).
@@ -583,25 +435,20 @@ export default function OngletTravail({
     const cle = participant.app_id || participant.id;
     if (!cle || parCle.has(cle)) continue;
     const reel = participant.id || participant.app_id;
-    const demo = DICT_JUMEAUX_PARTICIPANTS[cle] || String(cle).startsWith("app-") || String(reel).startsWith("demo-polaris-");
-    if (jumeauxVisibles.size && !jumeauxVisibles.has(reel) && !demo) continue;
+    if (jumeauxVisibles.size && !jumeauxVisibles.has(reel)) continue;
     parCle.set(cle, participant);
   }
   const jumeauxParticipants = parCle.size
     ? [...parCle.values()]
-    : (cas.jumeaux || []).map((id) => {
-        const ref = DICT_JUMEAUX_PARTICIPANTS[id];
-        if (ref) return { id, ...ref };
-        return {
-          id,
-          app_id: id.replace("demo-polaris-", ""),
-          nom: id.replace("demo-polaris-", "").replace("app-", ""),
-          domaine: "SI",
-          domaineCouleur: "#60A5FA",
-          statut: "actif",
-          participation: "Jumeau numérique participant à la mission.",
-        };
-      });
+    : (cas.jumeaux || []).map((id) => ({
+        id,
+        app_id: id,
+        nom: id,
+        domaine: "SI",
+        domaineCouleur: "#60A5FA",
+        statut: "actif",
+        participation: "Jumeau numérique participant à la mission.",
+      }));
 
   // Positionnement du fil : à l'ouverture, sur le repère « nouveau depuis votre dernière visite » (sinon en bas) ; ensuite, en bas à chaque
   // nouveau message — mais seulement si l'utilisateur y était déjà : remonté lire l'historique, un nouveau message ne doit jamais l'en arracher
@@ -609,7 +456,7 @@ export default function OngletTravail({
   // développement) exécute chaque effet deux fois, et le second appel ne doit pas passer pour un nouveau message.
   const etatPrecedent = useRef(null);
   useEffect(() => {
-    const etat = `${messages.length}|${envoiMsg}|${pilote?.activite?.ops?.length}`;
+    const etat = `${messages.length}|${envoiMsg}`;
     if (etatPrecedent.current === null) {
       etatPrecedent.current = etat;
       if (idxCoupure > 0) coupureRef.current?.scrollIntoView({ block: "center" });
@@ -619,7 +466,7 @@ export default function OngletTravail({
     if (etatPrecedent.current === etat) return;
     etatPrecedent.current = etat;
     if (estEnBasRef.current) finFilRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages.length, envoiMsg, pilote?.activite?.ops?.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [messages.length, envoiMsg]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const verifierPositionScroll = () => {
     if (!defilementRef.current) return;
@@ -651,7 +498,7 @@ export default function OngletTravail({
     api.get(`/cases/${id}`).then(({ data: frais }) => setCas((c) => ({ ...frais, conversation: c.conversation }))).catch(() => {});
 
   // Actions de la conversation unique (MessageFlore / QuestionFlore) : même préfixe /cases/{cid} que le panneau Flore.
-  const prefixe = !pilote && cas?.id != null ? prefixeTravail(cas.id) : null;
+  const prefixe = cas?.id != null ? prefixeTravail(cas.id) : null;
   const majMessage = (n, msg) => setCas((c) => ({ ...c, conversation: remplacerMessage(c.conversation || [], n, msg) }));
   const majMessages = (msgs) => setCas((c) => ({ ...c, conversation: msgs }));
   const tronquer = (n, texte) => setCas((c) => ({ ...c, conversation: tronquerApres(c.conversation || [], n, texte) }));
@@ -672,7 +519,7 @@ export default function OngletTravail({
       return;
     }
     const q = (commande?.prompt || brut).trim();
-    if (!q || envoiMsg || pilote) return;
+    if (!q || envoiMsg) return;
     const mentionsActives = mentions.filter((m) => m.nom && q.includes(`@${m.nom}`)).map((m) => m.id);
     setEnvoiMsg(true);
     setNouveauMsg("");
@@ -686,16 +533,6 @@ export default function OngletTravail({
     setCas((c) => ({ ...c, conversation: [...avant, monMessage] }));
     const corps = { texte: q, mentions: mentionsActives,
                     autoriser_ecriture: (cas.pieces || []).length > 0 && autoriserEcriture };
-    // « Nouveau travail » hors démonstration : la création réelle n'existe pas encore — Flore l'annonce, aucun appel réseau
-    if (brouillon && !CREATION_TRAVAIL_ACTIVE) {
-      await delaiMin(Promise.resolve());
-      setCas((c) => ({
-        ...c,
-        conversation: [...avant, monMessage, { role: "flore", comportement: "expliquer", texte: FLORE_REPONSE_EN_CONSTRUCTION, proposition: PROPOSITION_DEMO, quand: maintenant, anime: true }],
-      }));
-      setEnvoiMsg(false);
-      return;
-    }
     try {
       // La première question fait naître le travail ; la conversation continue ensuite dans la même page
       let idTravail = cas.id;
@@ -831,8 +668,8 @@ export default function OngletTravail({
             className="absolute inset-x-3 top-3 z-40 max-h-[75%] overflow-y-auto rounded-2xl border border-white/10 bg-[#0C1724]/95 p-4 sm:inset-x-auto sm:right-6 sm:w-80 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-200"
             data-testid="volet-flottant-sources-resultats"
           >
-            {/* Section RÉSULTATS : le dossier de démonstration ou les livrables réels du Travail. */}
-            {(contenuScenario || livrables.length > 0) && (
+            {/* Section RÉSULTATS : les livrables réels du Travail. */}
+            {livrables.length > 0 && (
               <>
             <div className={`flex items-center justify-between text-xs font-semibold text-white ${pliees.resultats ? "" : "mb-2.5"}`}>
               <button
@@ -845,13 +682,10 @@ export default function OngletTravail({
                 <CaretDown size={11} className={`shrink-0 text-[#7C93A8] transition-transform duration-200 ${pliees.resultats ? "-rotate-90" : ""}`} />
                 <FileText size={14} className="text-blue-400" />
                 <span>Résultats</span>
-                <span className="rounded-full bg-white/[0.08] px-1.5 py-0.2 font-code text-[10px] text-[#7C93A8]">{(contenuScenario ? 1 : 0) + livrables.length}</span>
+                <span className="rounded-full bg-white/[0.08] px-1.5 py-0.2 font-code text-[10px] text-[#7C93A8]">{livrables.length}</span>
               </button>
               <button
-                onClick={() => {
-                  if (livrables.length) ouvrirLivrable(livrables[livrables.length - 1]);
-                  else setCanvasActif(true);
-                }}
+                onClick={() => ouvrirLivrable(livrables[livrables.length - 1])}
                 className="text-[#7C93A8] hover:text-white transition-colors"
                 title="Ouvrir le document dans le Canvas"
                 data-testid="btn-plus-resultats"
@@ -862,27 +696,6 @@ export default function OngletTravail({
 
             {!pliees.resultats && (
               <>
-            {contenuScenario && (
-              <button
-                type="button"
-                onClick={() => { setDocumentOuvert({ titre: documentGenereNom, contenu: documentGenereTexte }); setCanvasActif(!canvasActif); }}
-                className={`group mb-1.5 w-full rounded-xl border p-2.5 text-left transition-all ${
-                  canvasActif && !documentOuvert
-                    ? "border-blue-400/60 bg-blue-500/20"
-                    : "border-white/[0.08] bg-white/[0.03] hover:border-blue-400/40 hover:bg-white/[0.06]"
-                }`}
-                data-testid="item-resultat-document"
-              >
-                <div className="flex items-start gap-2.5">
-                  <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-500/20 text-blue-300"><FileText size={16} /></div>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate font-code text-xs font-semibold text-blue-200">{documentGenereNom}</div>
-                    <div className="text-[11px] text-[#7C93A8]">Recommandation officielle</div>
-                  </div>
-                  <span className="shrink-0 text-[11px] font-code text-blue-400">{canvasActif && !documentOuvert ? "Ouvert ↗" : "+ Ouvrir"}</span>
-                </div>
-              </button>
-            )}
             {livrables.slice().reverse().map((livrable) => (
               <button
                 type="button"
@@ -925,8 +738,8 @@ export default function OngletTravail({
                 <Globe size={14} className="text-[#60A5FA]" />
                 <span>Sources & Jumeaux</span>
                 <span className="rounded-full bg-white/[0.08] px-1.5 py-0.2 font-code text-[10px] text-[#7C93A8]"
-                      title={`${jumeauxParticipants.length} jumeau(x) · ${contenuScenario ? 2 : 0} preuve(s) du dossier · ${(cas.pieces || []).length} pièce(s)`}>
-                  {jumeauxParticipants.length + (contenuScenario ? 2 : 0) + (cas.pieces || []).length}
+                      title={`${jumeauxParticipants.length} jumeau(x) · ${(cas.pieces || []).length} pièce(s)`}>
+                  {jumeauxParticipants.length + (cas.pieces || []).length}
                 </span>
               </button>
               <button 
@@ -982,52 +795,6 @@ export default function OngletTravail({
                 </div>
               ))}
 
-              {contenuScenario && (
-              <>
-              <button type="button" onClick={() => basculerGroupe("preuves")}
-                aria-expanded={!plieesGroupes.preuves} data-testid="groupe-preuves-dossier"
-                className="mt-2 flex w-full items-center justify-between px-1 pb-0.5 font-code text-[9px] uppercase tracking-[0.16em] text-[#7C93A8] transition-colors hover:text-[#BFDBFE]">
-                <span className="flex items-center gap-1.5">
-                  <CaretDown size={10} className={`shrink-0 transition-transform duration-200 ${plieesGroupes.preuves ? "-rotate-90" : ""}`} />
-                  Preuves du dossier
-                </span>
-                <span>2</span>
-              </button>
-              {!plieesGroupes.preuves && (<>
-              <div 
-                onClick={() => setPreuveInspectee(preuveInspectee === "ev-g-initiatives" ? null : "ev-g-initiatives")}
-                className={`flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs transition-colors cursor-pointer border ${
-                  preuveInspectee === "ev-g-initiatives"
-                    ? "border-emerald-400 bg-emerald-500/20 text-white"
-                    : "border-transparent bg-white/[0.03] text-[#CBD5E1] hover:bg-white/[0.07] hover:text-white"
-                }`}
-                data-testid="source-preuve-initiatives"
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  <FileText size={13} className="text-[#60A5FA] shrink-0" />
-                  <span className="truncate">Fiches initiatives (6,6 M€)</span>
-                </div>
-                <span className="font-code text-[10px] text-[#7C93A8] shrink-0">ev-g-initiatives</span>
-              </div>
-
-              <div 
-                onClick={() => setPreuveInspectee(preuveInspectee === "ev-g-couverture" ? null : "ev-g-couverture")}
-                className={`flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs transition-colors cursor-pointer border ${
-                  preuveInspectee === "ev-g-couverture"
-                    ? "border-emerald-400 bg-emerald-500/20 text-white"
-                    : "border-transparent bg-white/[0.03] text-[#CBD5E1] hover:bg-white/[0.07] hover:text-white"
-                }`}
-                data-testid="source-preuve-couverture"
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  <FileText size={13} className="text-emerald-400 shrink-0" />
-                  <span className="truncate">Matrice audit SI (80%)</span>
-                </div>
-                <span className="font-code text-[10px] text-[#7C93A8] shrink-0">ev-g-couverture</span>
-              </div>
-              </>)}
-              </>
-              )}
             </div>
 
             {/* Tiroir d'inspection si un élément est cliqué */}
@@ -1049,20 +816,6 @@ export default function OngletTravail({
                     ))}
                   </div>
                 )}
-              </div>
-            )}
-
-            {preuveInspectee && (
-              <div className="mt-3 rounded-xl border border-emerald-400/30 bg-[#06181B] p-2.5 text-xs animate-in fade-in">
-                <div className="flex items-center justify-between font-semibold text-emerald-200">
-                  <span>{preuveInspectee === "ev-g-initiatives" ? "Demandes 6,6 M€" : "Audit technique SI (80%)"}</span>
-                  <button onClick={() => setPreuveInspectee(null)} className="text-[#64748B] hover:text-white">✕</button>
-                </div>
-                <p className="mt-1 text-[11px] leading-relaxed text-slate-300">
-                  {preuveInspectee === "ev-g-initiatives"
-                    ? "3 initiatives en silos (2,0 M€ + 2,0 M€ + 2,6 M€) demandant la même information d'état."
-                    : "80% de la logique et machine à états déjà dans app-dossiers. Économie nette de 5,1 M€ en mutualisant."}
-                </p>
               </div>
             )}
 
@@ -1223,31 +976,11 @@ export default function OngletTravail({
                         ))}
                       </div>
                     )}
-                    {/* Suite proposée par Flore (ex. « Découvrir la démonstration ») */}
-                    {m.proposition && (
-                      <button
-                        onClick={() => m.proposition.action === "demo" && navigate("/demo")}
-                        data-testid="proposition-flore"
-                        className="rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-3 py-1.5 text-xs text-[#DCE6EE] transition-colors hover:border-[#60A5FA]/40 hover:text-[#60A5FA]"
-                      >
-                        {m.proposition.label}
-                      </button>
-                    )}
-
                     </CorpsMessageFlore>
                       }
                     />
                   </div>
                 )}
-                {/* Ligne d'activité de Flore : ancrée juste après la dernière réplique de narration
-                    AVANT sa clôture (jamais recalculée en continu, jamais sur celle qui la referme —
-                    voir avancerAncrageActivites) : elle se retrouve donc déjà juste avant la réponse
-                    qu'elle prépare, sans jamais avoir à « sauter » par-dessus elle après coup. */}
-                {(pilote?.activites || [])
-                  .filter((a) => a.apres === i + 1)
-                  .map((a) => (
-                    <LigneActiviteFlore key={a.id} activite={a} testid={`travail-activite-${a.id}`} />
-                  ))}
               </div>
             ))}
 
@@ -1292,23 +1025,17 @@ export default function OngletTravail({
         {/* ========================================================================= */}
         <div className="shrink-0 p-4 pb-5" data-testid="case-composer-zone">
           {(() => {
-            // Démo interactive : une fois la réplique tapée, elle reste EN ATTENTE — c'est le clic
-            // du visiteur sur « Envoyer » qui la publie, jamais un timer (à chaque réplique du profil démo).
-            const pretAEnvoyer = !!pilote?.saisie && !pilote.saisie.enFrappe;
             const soumettre = (e) => {
               e?.preventDefault?.();
-              if (pilote) { if (pretAEnvoyer) pilote.envoyerSaisie(); return; }
               if (envoiMsg) { fileMsgs.ajouter(nouveauMsg); setNouveauMsg(""); return; }
               envoyer(e);
             };
             return (
           <form onSubmit={soumettre} className="mx-auto max-w-3xl">
-            {!pilote && (
-              <FileMessages file={fileMsgs.file} occupe={envoiMsg} onRetirer={fileMsgs.retirer}
-                onModifier={(i) => setNouveauMsg(fileMsgs.reprendre(i))} onReorienter={arreter} testid="case-file" />
-            )}
+            <FileMessages file={fileMsgs.file} occupe={envoiMsg} onRetirer={fileMsgs.retirer}
+              onModifier={(i) => setNouveauMsg(fileMsgs.reprendre(i))} onReorienter={arreter} testid="case-file" />
             {piecesAutorisees && <ListePieces cas={cas} onChange={majPieces} compact lectureSeule={!piecesAutorisees} />}
-            {!pilote && (cas.pieces || []).length > 0 && (
+            {(cas.pieces || []).length > 0 && (
               <label className="mb-2 flex w-fit cursor-pointer items-center gap-2 rounded-lg px-1 py-0.5 font-code text-[11px] text-[#7C93A8] transition-colors hover:text-[#CBD5E1]">
                 <input
                   type="checkbox"
@@ -1363,8 +1090,7 @@ export default function OngletTravail({
               {/* Champ de saisie aéré — grandit avec son contenu (voir l'effet sur taRef) */}
               <textarea
                 ref={taRef}
-                value={texteSaisie}
-                readOnly={!!pilote}
+                value={nouveauMsg}
                 onChange={(e) => {
                   const v = e.target.value;
                   setNouveauMsg(v);
@@ -1378,16 +1104,16 @@ export default function OngletTravail({
                     soumettre(e);
                   }
                 }}
-                placeholder={pilote ? "Conversation de démonstration" : ecran === "mobile" ? "Posez une question…" : "Posez une question à Flore et aux jumeaux du SI…"}
+                placeholder={ecran === "mobile" ? "Posez une question…" : "Posez une question à Flore et aux jumeaux du SI…"}
                 rows={1}
                 data-testid="case-msg-input"
                 className="max-h-32 flex-1 resize-none overflow-y-auto bg-transparent px-1 py-1 text-sm text-[#F2F6F8] placeholder:text-[#526578] focus:outline-none"
               />
 
 
-              {/* Bouton d'envoi vibrant — en démo, l'index humain pointe dessus une fois la réplique prête */}
+              {/* Bouton d'envoi vibrant */}
               <div className="relative shrink-0">
-                {!pilote && envoiMsg && fluxMsg ? (
+                {envoiMsg && fluxMsg ? (
                   <button
                     type="button"
                     onClick={arreter}
@@ -1401,20 +1127,19 @@ export default function OngletTravail({
                 ) : (
                 <button
                   type="submit"
-                  disabled={pilote ? !pretAEnvoyer : envoiMsg || !nouveauMsg.trim()}
+                  disabled={envoiMsg || !nouveauMsg.trim()}
                   data-testid="case-msg-send-btn"
                   title="Envoyer le message"
                   aria-label="Envoyer le message"
                   className={`flex h-8 w-8 items-center justify-center rounded-xl transition-all ${
-                    (pilote ? pretAEnvoyer : nouveauMsg.trim() && !envoiMsg)
-                      ? `bg-[#60A5FA] text-[#071019] shadow-md shadow-[#60A5FA]/20 hover:scale-105${pretAEnvoyer ? " animate-pulse" : ""}`
+                    nouveauMsg.trim() && !envoiMsg
+                      ? "bg-[#60A5FA] text-[#071019] shadow-md shadow-[#60A5FA]/20 hover:scale-105"
                       : "bg-white/[0.05] text-[#475569] opacity-30 cursor-not-allowed"
                   }`}
                 >
                   <ArrowUp size={16} weight="bold" />
                 </button>
                 )}
-                {pretAEnvoyer && <IndicateurClic texte="Prêt" sousTexte="Cliquez pour envoyer" testid="indicateur-clic-envoyer" />}
               </div>
             </div>
           </form>
@@ -1467,8 +1192,8 @@ export default function OngletTravail({
                 </div>
               </>
             ) : (
-              <CanvasDocument titre={documentOuvert?.titre || documentGenereNom}
-                              contenu={documentOuvert?.contenu || documentGenereTexte || undefined}
+              <CanvasDocument titre={documentOuvert?.titre}
+                              contenu={documentOuvert?.contenu}
                               onFermer={toggleCanvas} />
             )}
           </div>

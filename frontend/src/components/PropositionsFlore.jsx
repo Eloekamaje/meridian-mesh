@@ -3,7 +3,7 @@ import { CheckCircle, XCircle } from "@phosphor-icons/react";
 
 // Approbation en ligne (P2) : les connaissances que Flore a proposées pendant ce tour, à trancher ici comme sur la
 // page Revue. La décision est exécutée une seule fois côté serveur ; une fois tranchée, la carte dit qui a décidé.
-// `actif` : le message appartient à un Travail (sinon, en démonstration, la proposition se lit sans se trancher).
+// `actif` : le message appartient à un Travail (sinon la proposition se lit sans se trancher).
 const LIBELLES = { ACCEPTED: "Validée", CONTESTED: "Contestée" };
 
 export default function PropositionsFlore({ propositions, index, actif, bloque = false, onDecider }) {

@@ -1,6 +1,6 @@
 """Les vues disent d'où vient un jumeau (plan de remédiation L2.1).
 
-Le registre contient 42 jumeaux, dont 4 seulement naissent d'une source réelle ; rien à l'écran ne le disait.
+Le registre ne contient plus de jumeaux mockés : les entrées réelles naissent d'une source.
 """
 import pytest
 
@@ -31,12 +31,13 @@ def test_la_decouverte_des_sources_ne_fabrique_plus_de_liste(monkeypatch):
 
     class Commandes:
         async def find_one(self, *a, **k):
-            return {"id": "c1", "sources": [{"connecteur": "github", "nom": "Dépôt TBT"}]}
+            return {"id": "c1", "etat": "brouillon", "sources": [{"connecteur": "github", "nom": "Dépôt TBT"}]}
 
     class Db:
         commandes = Commandes()
 
     monkeypatch.setattr(server, "db", Db())
-    r = asyncio.run(server.apercu_import("c1", server.ImportApercu(mode="cmdb")))
-    assert r["decouverte"] == "non_branchee" and r["detectees"] == 0 and r["nouvelles"] == []
+    r = asyncio.run(server.apercu_import("c1", server.ImportApercu(
+        mode="cmdb", contenu=[{"application_id": "tbt", "nom": "TBT", "proprietaire": "Équipe TBT"}])))
+    assert r["detectees"] == 1 and r["nouvelles"] == []
     assert r["presentes"] == [{"connecteur": "github", "nom": "Dépôt TBT"}]  # ce qui est déclaré, rien de plus

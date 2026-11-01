@@ -3,8 +3,8 @@ import { grouperConsultations, resumeConsultations } from "@/lib/fluxFlore";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { CaretDown, CheckCircle, CircleNotch, WarningCircle } from "@phosphor-icons/react";
 
-// Ligne d'activité de Flore — la même partout dans Méridian (vrai backend, démonstration, panneau
-// Flore, page Travail, page Nouveau travail).
+// Ligne d'activité de Flore — la même partout dans Méridian (panneau Flore, page Travail,
+// page Nouveau travail).
 //
 // Une SEULE ligne discrète sous le dernier message :
 //   • en cours : petit indicateur animé + libellé court qui se remplace sur place + chevron ;

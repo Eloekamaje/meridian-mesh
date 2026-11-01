@@ -1,6 +1,6 @@
-"""Identité : demo explicite, proxy de confiance et OIDC HS256 ; le header client ne gagne jamais."""
+"""Identité : demo explicite, proxy de confiance et OIDC HS256 ; le client ne choisit jamais l'acteur."""
 import pytest
-from fastapi import FastAPI, Header, Request
+from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 from jose import jwt
 
@@ -11,41 +11,40 @@ def _client():
     app = FastAPI()
 
     @app.get("/api/qui")
-    def qui(x_persona: str = Header("architecte")):
-        return {"persona": x_persona}
+    def qui(request: Request):
+        return {"acteur": request.state.acteur}
 
     auth.installer(app)
     return TestClient(app)
 
 
-def test_demo_accepte_les_personas_connues_et_refuse_les_autres(monkeypatch):
+def test_demo_utilise_l_acteur_demo_et_ignore_l_en_tete_client(monkeypatch):
     monkeypatch.delenv("AUTH_MODE", raising=False)
     client = _client()
-    assert client.get("/api/qui").json() == {"persona": "architecte"}
-    assert client.get("/api/qui", headers={"X-Persona": "support"}).json() == {"persona": "support"}
-    assert client.get("/api/qui", headers={"X-Persona": "intrus"}).status_code == 401
+    assert client.get("/api/qui").json() == {"acteur": "demo"}
+    assert client.get("/api/qui", headers={}).json() == {"acteur": "demo"}
 
 
-def test_proxy_exige_le_secret_et_ignore_le_header_client(monkeypatch):
+def test_proxy_exige_le_secret_et_prend_l_utilisateur_authentifie(monkeypatch):
     monkeypatch.setenv("AUTH_MODE", "proxy")
     monkeypatch.setenv("AUTH_PROXY_SECRET", "secret-proxy")
-    monkeypatch.setenv("AUTH_PERSONA_MAP", '{"grp-arch": "architecte"}')
     client = _client()
-    entetes = {"X-Auth-Proxy-Secret": "secret-proxy", "X-Auth-Request-Groups": "grp-arch",
-               "X-Persona": "support", "X-Auth-Request-Tenant": "banque"}
-    assert client.get("/api/qui", headers=entetes).json() == {"persona": "architecte"}
+    entetes = {"X-Auth-Proxy-Secret": "secret-proxy", "X-Auth-Request-User": "alice",
+               "X-Auth-Request-Tenant": "banque"}
+    assert client.get("/api/qui", headers=entetes).json() == {"acteur": "alice"}
     assert client.get("/api/qui", headers={**entetes, "X-Auth-Proxy-Secret": "faux"}).status_code == 401
+    assert client.get("/api/qui", headers={"X-Auth-Proxy-Secret": "secret-proxy"}).status_code == 403
 
 
-def test_oidc_verifie_la_signature_et_la_persona(monkeypatch):
+def test_oidc_verifie_la_signature_et_prend_l_identite_du_jeton(monkeypatch):
     monkeypatch.setenv("AUTH_MODE", "oidc")
     monkeypatch.setenv("AUTH_OIDC_SECRET", "secret-oidc")
     monkeypatch.setenv("AUTH_AUDIENCE", "meridian")
     monkeypatch.setenv("AUTH_ISSUER", "idp-test")
-    jeton = jwt.encode({"sub": "u1", "name": "Alice", "persona": "support", "tenant": "banque",
+    jeton = jwt.encode({"sub": "u1", "name": "Alice", "tenant": "banque",
                         "aud": "meridian", "iss": "idp-test"}, "secret-oidc", algorithm="HS256")
     client = _client()
-    assert client.get("/api/qui", headers={"Authorization": f"Bearer {jeton}", "X-Persona": "architecte"}).json() == {"persona": "support"}
+    assert client.get("/api/qui", headers={"Authorization": f"Bearer {jeton}"}).json() == {"acteur": "Alice"}
     assert client.get("/api/qui", headers={"Authorization": "Bearer invalide"}).status_code == 401
 
 
@@ -81,10 +80,9 @@ def _client_tenant():
 def test_proxy_extrait_le_tenant_de_confiance(monkeypatch):
     monkeypatch.setenv("AUTH_MODE", "proxy")
     monkeypatch.setenv("AUTH_PROXY_SECRET", "secret-proxy")
-    monkeypatch.setenv("AUTH_PERSONA_MAP", '{"architecte": "architecte"}')
     client = _client_tenant()
     entetes = {"X-Auth-Proxy-Secret": "secret-proxy", "X-Auth-Request-Tenant": "Banque",
-               "X-Auth-Request-User": "architecte"}
+               "X-Auth-Request-User": "alice"}
 
     assert client.get("/api/tenant", headers=entetes).json() == {"tenant": "banque"}
     assert client.get("/api/tenant", headers={**entetes, "X-Auth-Request-Tenant": "Banque Client"}).status_code == 403
@@ -93,7 +91,7 @@ def test_proxy_extrait_le_tenant_de_confiance(monkeypatch):
 def test_oidc_extrait_le_tenant_du_jeton_et_refuse_le_conflit(monkeypatch):
     monkeypatch.setenv("AUTH_MODE", "oidc")
     monkeypatch.setenv("AUTH_OIDC_SECRET", "secret-oidc")
-    jeton = jwt.encode({"sub": "u1", "tenant": "banque", "persona": "architecte"}, "secret-oidc", algorithm="HS256")
+    jeton = jwt.encode({"sub": "u1", "tenant": "banque", "name": "Alice"}, "secret-oidc", algorithm="HS256")
     client = _client_tenant()
     entetes = {"Authorization": f"Bearer {jeton}"}
 
@@ -105,7 +103,7 @@ def test_oidc_extrait_le_tenant_du_jeton_et_refuse_le_conflit(monkeypatch):
 def test_oidc_sans_claim_tenant_est_refuse(monkeypatch):
     monkeypatch.setenv("AUTH_MODE", "oidc")
     monkeypatch.setenv("AUTH_OIDC_SECRET", "secret-oidc")
-    jeton = jwt.encode({"sub": "u1", "persona": "architecte"}, "secret-oidc", algorithm="HS256")
+    jeton = jwt.encode({"sub": "u1", "name": "Alice"}, "secret-oidc", algorithm="HS256")
     client = _client_tenant()
 
     assert client.get("/api/tenant", headers={"Authorization": f"Bearer {jeton}"}).status_code == 403

@@ -35,11 +35,11 @@ def test_un_descripteur_sans_nom_est_refuse():
 
 def test_importer_outils_inscrit_dans_le_registre_avec_la_portee():
     registre = RegistreCapacites()
-    noms = mcp_outils.importer_outils(registre, "atlas", OUTILS, tenant="demo", persona="architecte")
+    noms = mcp_outils.importer_outils(registre, "atlas", OUTILS, tenant="demo", acteur="architecte")
     assert noms == ["atlas.chercher", "atlas.ecrire", "atlas.inconnu"]
     assert registre.decrire("atlas.chercher").tenant == "demo"
-    assert registre.decrire("atlas.chercher").persona == "architecte"
-    assert len(registre.lister(tenant="demo", persona="architecte")) == 3
+    assert registre.decrire("atlas.chercher").acteur == "architecte"
+    assert len(registre.lister(tenant="demo", acteur="architecte")) == 3
 
 
 def test_session_mcp_lit_tools_list_sans_executer():

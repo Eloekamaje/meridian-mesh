@@ -12,7 +12,7 @@ import cases_routes
 import conversation as c
 import limites
 import pieces
-from seed_data import ESPACES, PERSONAS
+from seed_data import ESPACES
 from jumeau import flux
 
 
@@ -133,19 +133,17 @@ def un_fil():
             c.message_flore({"reponse": "Elle est faible.", "origine": "modele"})]
 
 
-CASE = {"id": "t1", "titre": "Socle Kafka", "responsable": "architecte", "portee": "personnel", "jumeaux": [], "conversation": un_fil(),
+CASE = {"id": "t1", "titre": "Socle Kafka", "responsable": "demo", "portee": "personnel", "jumeaux": [], "conversation": un_fil(),
         "historique": [], "maj_le": "2026-01-01"}
-AUTRE = {"id": "t2", "titre": "Dette technique", "responsable": "architecte", "jumeaux": [],
+AUTRE = {"id": "t2", "titre": "Dette technique", "responsable": "demo", "jumeaux": [],
          "conversation": [{"role": "utilisateur", "texte": "ÉTAT des lieux", "quand": "t"}], "historique": [],
          "maj_le": "2026-02-01"}
 
 
-def resoudre_perimetre(persona_id, espace_id):
-    """Même règle que server.resoudre_perimetre (un persona inconnu retombe sur le premier : identité reportée)."""
-    persona = next((p for p in PERSONAS if p["id"] == persona_id), PERSONAS[0])
-    if not espace_id or espace_id not in persona["espaces"]:
-        espace_id = persona["par_defaut"]
-    return persona, next(e for e in ESPACES if e["id"] == espace_id)
+def resoudre_perimetre(acteur, espace_id):
+    """Même règle que server.resoudre_perimetre : l'espace demandé, sinon le Mesh global."""
+    espace = next((e for e in ESPACES if e["id"] == espace_id), None) or next(e for e in ESPACES if e.get("global"))
+    return acteur, espace
 
 
 class Faux:
@@ -155,7 +153,7 @@ class Faux:
         self.appels, self.reponse, self.bloque, self.muet = [], "Nouvelle réponse.", False, False
         self.participants = []
 
-    async def __call__(self, contexte, question, selection, domaine, persona, espace, travail=None, emit=None,
+    async def __call__(self, contexte, question, selection, domaine, acteur, espace, travail=None, emit=None,
                        autoriser_ecriture=False):
         self.appels.append({"contexte": contexte, "question": question, "selection": selection, "domaine": domaine,
                             "travail": travail, "autoriser_ecriture": autoriser_ecriture})
@@ -193,9 +191,8 @@ def monde(monkeypatch):
 
     async def rien(*a, **k): return None
 
-    async def noter(personas, type_, texte, lien):
-        for p in personas:
-            await db.notifications.insert_one({"persona": p, "type": type_, "texte": texte, "lien": lien})
+    async def noter(type_, texte, lien):
+        await db.notifications.insert_one({"type": type_, "texte": texte, "lien": lien})
     router = cases_routes.build_cases_router({
         "db": db, "resoudre_perimetre": resoudre_perimetre,
         "autorisations": droits, "journaler": rien, "notifier": noter,
@@ -330,15 +327,6 @@ def test_choisir_une_branche_restaure_la_suite(monde):
     assert client.post("/api/cases/t1/messages/0/branche", json={"index": 9}).status_code == 400
 
 
-def test_un_autre_persona_ne_touche_pas_au_travail(monde):
-    client, db, _ = monde
-    h = {"X-Persona": "support"}
-    for chemin, corps in [("messages/1/version", {"index": 0}), ("messages/0/branche", {"index": 0}),
-                          ("messages/3/regenerer/flux", {}), ("messages/0/modifier/flux", {"texte": "x"})]:
-        assert client.post(f"/api/cases/t1/{chemin}", json=corps, headers=h).status_code == 403, chemin
-    assert len(conv(db)) == 4 and conv(db)[0]["texte"] == "Quel est le socle ?"
-
-
 def test_travail_inconnu(monde):
     client, _, _ = monde
     assert client.post("/api/cases/nope/messages/1/version", json={"index": 0}).status_code == 404
@@ -394,7 +382,7 @@ def lancer_puis_couper(monde, chemin, corps, lectures=2, arreter=True):
             if arreter:
                 debut = json.loads(recus[0].decode().split("data: ", 1)[1].split("\n", 1)[0])
                 assert debut["type"] == "RUN_STARTED"
-                await flux.arreter(debut["runId"], "architecte")
+                await flux.arreter(debut["runId"], "demo")
             parti.set()
 
         async def send(message):
@@ -460,7 +448,7 @@ def avec_conversation(monde):
 def test_creer_une_conversation_enregistre_statut_et_auteur(avec_conversation):
     _, db, _, cid = avec_conversation
     doc = next(d for d in db.cases.docs if d["id"] == cid)
-    assert doc["statut"] == "conversation" and doc["auteur"] == "architecte"
+    assert doc["statut"] == "conversation" and doc["auteur"] == "demo"
 
 
 def test_creer_refuse_un_autre_statut(monde):
@@ -473,20 +461,6 @@ def test_un_travail_ordinaire_n_a_pas_de_statut_conversation(monde):
     assert next(d for d in db.cases.docs if d["id"] == cid)["statut"] == "ouvert"
 
 
-def test_un_autre_persona_ne_voit_ni_ne_touche_une_conversation(avec_conversation):
-    client, db, _, cid = avec_conversation
-    h = {"X-Persona": "paiements-dev"}  # même portée « entreprise » : seule la règle de conversation l'arrête
-    assert client.get(f"/api/cases/{cid}", headers=h).status_code == 404
-    assert client.patch(f"/api/cases/{cid}", json={"statut": "actif"}, headers=h).status_code == 404
-    ev = evenements(client.post(f"/api/cases/{cid}/messages/flux", json={"texte": "x"}, headers=h))
-    assert ev[1:] == [{"type": "RUN_ERROR", "message": "Case introuvable"}] and conv(db, cid) == []
-    for chemin, corps in [("messages/1/version", {"index": 0}), ("messages/0/branche", {"index": 0}),
-                          ("messages/1/regenerer/flux", {}), ("messages/0/modifier/flux", {"texte": "x"})]:
-        assert client.post(f"/api/cases/{cid}/{chemin}", json=corps, headers=h).status_code == 404, chemin
-    assert cid not in noms(client, headers=h, inclure=True)
-    assert next(d for d in db.cases.docs if d["id"] == cid)["statut"] == "conversation"
-
-
 def test_la_liste_par_defaut_exclut_les_conversations_et_le_parametre_les_inclut(avec_conversation):
     client, _, _, cid = avec_conversation
     assert cid not in noms(client)
@@ -494,32 +468,8 @@ def test_la_liste_par_defaut_exclut_les_conversations_et_le_parametre_les_inclut
     assert cid in noms(client, "ma question", inclure=True) and cid not in noms(client, "ma question")
 
 
-def test_la_promotion_rend_le_travail_visible_selon_sa_portee(avec_conversation):
-    client, _, _, cid = avec_conversation
-    h = {"X-Persona": "paiements-dev"}
-    assert client.patch(f"/api/cases/{cid}", json={"statut": "actif"}, headers=h).status_code == 404
-    assert client.patch(f"/api/cases/{cid}", json={"statut": "actif"}).status_code == 200
-    assert cid in noms(client)                       # désormais un Travail ordinaire, pour son auteur
-    assert cid in noms(client, headers=h)            # portée « entreprise » : visible des autres
-    assert client.get(f"/api/cases/{cid}", headers=h).status_code == 200
-
-
-def test_la_promotion_d_une_portee_personnelle_reste_privee(monde):
-    client, _, _ = monde
-    cid = client.post("/api/cases", json={"titre": "Perso", "statut": "conversation"}).json()["id"]
-    client.patch(f"/api/cases/{cid}", json={"statut": "actif"})
-    assert cid not in noms(client, headers={"X-Persona": "paiements-dev"})
-
-
 def test_on_ne_transforme_pas_un_travail_en_conversation(monde):
     assert monde[0].patch("/api/cases/t1", json={"statut": "conversation"}).status_code == 400
-
-
-def test_supprimer_une_conversation_reserve_a_son_auteur(avec_conversation):
-    client, db, _, cid = avec_conversation
-    assert client.delete(f"/api/cases/{cid}", headers={"X-Persona": "paiements-dev"}).status_code == 404
-    assert client.delete(f"/api/cases/{cid}").status_code == 204
-    assert cid not in [d["id"] for d in db.cases.docs]
 
 
 def test_un_travail_conserve_ne_se_supprime_pas_par_cette_route(monde):
@@ -550,8 +500,6 @@ def test_reprendre_un_tour_depuis_une_position_puis_seul_l_auteur(monde):
     run = ev[0]["runId"]
     suite = evenements(client.get(f"/api/tours/{run}/flux", params={"depuis": 3}))
     assert suite == ev[3:] and suite[-1]["type"] == "RUN_FINISHED"
-    assert client.get(f"/api/tours/{run}/flux", headers={"X-Persona": "support"}).status_code == 404
-    assert client.post(f"/api/tours/{run}/arreter", headers={"X-Persona": "support"}).status_code == 404
     assert client.get("/api/tours/inconnu/flux").status_code == 404
 
 
@@ -561,10 +509,10 @@ def avec_proposition(monde, monkeypatch):
     client, db, faux = monde
     revues = []
 
-    def reviser(claim, jumeau, persona, decision, motif):
+    def reviser(claim, jumeau, acteur, decision, motif):
         if any(r[0] == claim for r in revues):
             raise ValueError("Connaissance déjà revue")
-        revues.append((claim, jumeau, persona, decision, motif))
+        revues.append((claim, jumeau, acteur, decision, motif))
     monkeypatch.setattr(cases_routes, "reviser_proposee", reviser)
     doc = next(d for d in db.cases.docs if d["id"] == "t1")
     doc["conversation"][3] = c.message_flore({"reponse": "Elle est faible.", "a_approuver": [
@@ -577,8 +525,8 @@ def test_approuver_execute_la_revue_une_fois_et_l_inscrit_dans_le_message(avec_p
     r = client.post("/api/cases/t1/messages/3/approbation", json={"claim": 7, "decision": "ACCEPTED"})
     assert r.status_code == 200, r.text
     assert r.json()["a_approuver"][0]["decision"]["valeur"] == "ACCEPTED"
-    assert conv(db)[3]["a_approuver"][0]["decision"]["par"] == "architecte"
-    assert revues == [(7, "conduit", "architecte", "ACCEPTED", None)]
+    assert conv(db)[3]["a_approuver"][0]["decision"]["par"] == "demo"
+    assert revues == [(7, "conduit", "demo", "ACCEPTED", None)]
     assert client.post("/api/cases/t1/messages/3/approbation", json={"claim": 7, "decision": "CONTESTED"}).status_code == 409
     assert len(revues) == 1
 
@@ -606,24 +554,10 @@ def test_une_reponse_finie_apres_le_depart_de_l_interlocuteur_le_previent(monde)
     client, db, faux = monde
     lancer_puis_couper(monde, "/api/cases/t1/messages/flux", {"texte": "Et la sécurité ?"}, arreter=False)
     assert conv(db)[-1]["texte"] == "Nouvelle réponse."
-    assert [(n["persona"], n["type"], n["lien"]) for n in db.notifications.docs] == [("architecte", "investigation_terminee", "/travaux/t1")]
+    assert [(n["type"], n["lien"]) for n in db.notifications.docs] == [("investigation_terminee", "/travaux/t1")]
 
 
 # ---- autorisations des routes voisines (P4) ----
-def test_seul_le_responsable_modifie_les_champs_proteges(monde):
-    client, db, _ = monde
-    cid = client.post("/api/cases", json={"titre": "Partagé", "portee": "entreprise",
-                                          "participants": ["paiements-dev"]}).json()["id"]
-    h = {"X-Persona": "paiements-dev"}
-    r = client.patch(f"/api/cases/{cid}", json={"statut": "en_cours"}, headers=h)
-    assert r.status_code == 403 and "responsable" in r.json()["detail"]
-    r = client.patch(f"/api/cases/{cid}", json={"jumeaux": ["paiements"]}, headers=h)
-    assert r.status_code == 403
-    # Les champs de travail ordinaires restent ouverts aux participants.
-    r = client.patch(f"/api/cases/{cid}", json={"objectif": "Nouvel objectif"}, headers=h)
-    assert r.status_code == 200 and r.json()["objectif"] == "Nouvel objectif"
-
-
 def test_le_remplacement_arbitraire_d_un_case_n_existe_plus(monde):
     client, db, _ = monde
     avant = next(d["titre"] for d in db.cases.docs if d["id"] == "t1")
@@ -632,24 +566,6 @@ def test_le_remplacement_arbitraire_d_un_case_n_existe_plus(monde):
 
 
 # ---- intégrité de la conversation : un lecteur ne modifie pas, PATCH ne touche pas au fil ----
-def test_un_lecteur_simple_ne_modifie_pas_un_travail_partage(monde):
-    client, db, faux = monde
-    h = {"X-Persona": "support"}
-    conversation = [{"role": "utilisateur", "texte": "Q", "quand": "t"},
-                    c.message_flore({"reponse": "R", "origine": "modele"})]
-    cid = client.post("/api/cases", json={"titre": "Partagé", "portee": "entreprise",
-                                          "conversation": conversation}).json()["id"]
-    assert client.patch(f"/api/cases/{cid}", json={"objectif": "x"}, headers=h).status_code == 403
-    assert client.post(f"/api/cases/{cid}/messages", json={"texte": "x"}, headers=h).status_code == 403
-    for chemin, corps in [("messages/1/version", {"index": 0}), ("messages/0/branche", {"index": 0}),
-                          ("messages/1/regenerer/flux", {}), ("messages/0/modifier/flux", {"texte": "x"})]:
-        assert client.post(f"/api/cases/{cid}/{chemin}", json=corps, headers=h).status_code == 403, chemin
-    ev = evenements(client.post(f"/api/cases/{cid}/messages/flux", json={"texte": "x"}, headers=h))
-    assert ev[-1]["type"] == "RUN_ERROR" and "responsable" in ev[-1]["message"]
-    assert faux.appels == []
-    assert [m["texte"] for m in next(d for d in db.cases.docs if d["id"] == cid)["conversation"]] == ["Q", "R"]
-
-
 def test_patch_ne_touche_pas_a_la_conversation(monde):
     client, db, _ = monde
     avant = conv(db)
@@ -659,20 +575,8 @@ def test_patch_ne_touche_pas_a_la_conversation(monde):
     assert conv(db) == avant
 
 
-def test_un_participant_modifie_les_champs_ordinaires_mais_pas_la_conversation(monde):
-    client, _, _ = monde
-    h = {"X-Persona": "paiements-dev"}
-    cid = client.post("/api/cases", json={"titre": "Cible", "participants": ["paiements-dev"]}).json()["id"]
-    r = client.patch(f"/api/cases/{cid}", json={"conversation": [{"role": "utilisateur", "texte": "x"}]}, headers=h)
-    assert r.status_code == 400 and "conversation" in r.json()["detail"]
-    r = client.patch(f"/api/cases/{cid}", json={"objectif": "Ordinaire"}, headers=h)
-    assert r.status_code == 200 and r.json()["objectif"] == "Ordinaire"
-
-
-# ---- fusion : réservée au responsable, atomique, normalisée ----
-def _source(client, messages, persona="architecte"):
-    return client.post("/api/cases", json={"titre": "Source", "statut": "conversation", "conversation": messages},
-                       headers={"X-Persona": persona}).json()["id"]
+def _source(client, messages):
+    return client.post("/api/cases", json={"titre": "Source", "statut": "conversation", "conversation": messages}).json()["id"]
 
 
 def test_fusion_d_une_conversation_par_le_responsable(monde):
@@ -727,17 +631,6 @@ def test_la_fusion_deplace_les_pieces_avant_les_messages(monde, monkeypatch):
     assert r.status_code == 200, r.text
     assert etapes == ["pieces", "messages"]
     assert [p["case_id"] for p in db.pieces.docs] == [cible]
-
-
-def test_fusion_refusee_a_un_participant(monde):
-    client, db, _ = monde
-    h = {"X-Persona": "paiements-dev"}
-    cible = client.post("/api/cases", json={"titre": "Cible", "participants": ["paiements-dev"]}).json()["id"]
-    source = _source(client, [{"role": "utilisateur", "texte": "Bonjour", "quand": "t"}], persona="paiements-dev")
-    r = client.post(f"/api/cases/{cible}/fusion", json={"source_cid": source}, headers=h)
-    assert r.status_code == 403
-    assert source in [d["id"] for d in db.cases.docs]
-    assert next(d for d in db.cases.docs if d["id"] == cible)["conversation"] == []
 
 
 def test_fusion_cible_pleine_refusee_sans_ajouter_de_messages(monde):
@@ -806,26 +699,6 @@ def test_le_demarrage_reconcilie_les_reservations_de_quota_orphelines(monde):
     assert next(d for d in db.cases.docs if d["id"] == "t1")["pieces_count"] == 0  # aucune pièce réelle
 
 
-def test_fusion_refuse_la_conversation_d_un_autre_auteur(monde):
-    client, db, _ = monde
-    h = {"X-Persona": "paiements-dev"}
-    cible = client.post("/api/cases", json={"titre": "Cible", "participants": ["paiements-dev"]}).json()["id"]
-    source = client.post("/api/cases", json={"titre": "Privée", "statut": "conversation"}).json()["id"]
-    r = client.post(f"/api/cases/{cible}/fusion", json={"source_cid": source}, headers=h)
-    assert r.status_code == 404
-    assert source in [d["id"] for d in db.cases.docs]
-    assert next(d for d in db.cases.docs if d["id"] == cible)["conversation"] == []
-
-
-def test_fusion_refusee_a_un_lecteur_simple(monde):
-    client, _, _ = monde
-    h = {"X-Persona": "support"}
-    cible = client.post("/api/cases", json={"titre": "Public", "portee": "entreprise"}).json()["id"]
-    source = client.post("/api/cases", json={"titre": "Perso", "statut": "conversation"}, headers=h).json()["id"]
-    r = client.post(f"/api/cases/{cible}/fusion", json={"source_cid": source}, headers=h)
-    assert r.status_code == 403
-
-
 def test_une_source_qui_n_est_pas_une_conversation_est_refusee(monde):
     client, _, _ = monde
     cible = client.post("/api/cases", json={"titre": "Cible"}).json()["id"]
@@ -839,7 +712,7 @@ def test_les_jumeaux_hors_perimetre_ne_sortent_pas_du_travail(monde):
     client, db, _ = monde
     db.jumeaux.docs = [{"id": "paiements", "nom": "Paiements", "domaine": "Paiements"},
                        {"id": "fraude", "nom": "Fraude", "domaine": "Risque"}]
-    h = {"X-Persona": "support"}
+    h = {"X-Espace": "espace-support"}
     cid = client.post("/api/cases", json={"titre": "Périmètre", "portee": "entreprise",
                                           "jumeaux": ["paiements", "fraude"]}, headers=h).json()["id"]
     vue = client.get(f"/api/cases/{cid}", headers=h).json()
@@ -851,7 +724,7 @@ def test_les_jumeaux_hors_perimetre_ne_sortent_pas_du_travail(monde):
     patche = client.patch(f"/api/cases/{cid}", json={"objectif": "Filtré"}, headers=h)
     assert patche.status_code == 200 and patche.json()["jumeaux"] == ["paiements"]
 
-    source = _source(client, [{"role": "utilisateur", "texte": "Bonjour", "quand": "t"}], persona="support")
+    source = client.post("/api/cases", json={"titre": "Source", "statut": "conversation", "conversation": [{"role": "utilisateur", "texte": "Bonjour", "quand": "t"}]}, headers=h).json()["id"]
     fusion = client.post(f"/api/cases/{cid}/fusion", json={"source_cid": source}, headers=h)
     assert fusion.status_code == 200 and fusion.json()["jumeaux"] == ["paiements"]
 
@@ -899,7 +772,7 @@ def test_une_situation_hors_perimetre_est_refusee(serveur, monkeypatch):
         return None
     monkeypatch.setattr(serveur, "journaler", rien)
     client = _client_serveur(serveur)
-    h = {"X-Persona": "support"}
+    h = {"X-Espace": "espace-support"}
     assert client.post("/api/situations/sit-fraude/action", json={"action": "surveiller"}, headers=h).status_code == 403
     assert client.post("/api/situations/sit-fraude/decision", json={"decision": "x"}, headers=h).status_code == 403
     assert db.situations.docs[0]["statut"] == "active"
@@ -911,14 +784,14 @@ def test_une_situation_autorisee_journalise_dans_l_espace(serveur, monkeypatch):
     db.situations.docs = [{"id": "sit-support", "jumeaux": ["support"], "statut": "active"}]
     captures = []
 
-    async def noter(persona, espace, action, cible, detail=""):
-        captures.append((persona, espace, action, cible))
+    async def noter(acteur, espace, action, cible, detail=""):
+        captures.append((acteur, espace, action, cible))
     monkeypatch.setattr(serveur, "resoudre_perimetre", resoudre_perimetre)
     monkeypatch.setattr(serveur, "autorisations", droits)
     monkeypatch.setattr(serveur, "db", db)
     monkeypatch.setattr(serveur, "journaler", noter)
     client = _client_serveur(serveur)
     r = client.post("/api/situations/sit-support/decision", json={"decision": "x"},
-                    headers={"X-Persona": "support"})
+                    headers={"X-Espace": "espace-support"})
     assert r.status_code == 200
-    assert captures == [("support", "espace-support", "décision", "sit-support")]
+    assert captures == [("demo", "espace-support", "décision", "sit-support")]

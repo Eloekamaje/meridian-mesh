@@ -13,25 +13,14 @@ if "REACT_APP_BACKEND_URL" not in os.environ:
 BASE = os.environ["REACT_APP_BACKEND_URL"].rstrip("/") + "/api"
 
 
-@pytest.fixture(scope="module")
-def s():
-    return requests.Session()
-
-
-@pytest.fixture(scope="module", autouse=True)
-def reset_demo(s):
-    r = s.post(f"{BASE}/demo/reinitialiser", timeout=30)
-    assert r.status_code == 200
-
-
 def test_compteurs(s):
-    d = s.get(f"{BASE}/initiatives/compteurs", headers={"X-Persona": "architecte"}, timeout=15).json()
+    d = s.get(f"{BASE}/initiatives/compteurs", headers={}, timeout=15).json()
     assert d["a_traiter"] >= 4
     assert d["radar"] >= 1
 
 
 def test_a_traiter_contenu(s):
-    d = s.get(f"{BASE}/initiatives?vue=a_traiter", headers={"X-Persona": "architecte"}, timeout=15).json()
+    d = s.get(f"{BASE}/initiatives?vue=a_traiter", headers={}, timeout=15).json()
     ids = {i["id"] for i in d}
     assert "init-decision-utc" in ids and "init-investigation-degradation" in ids
     # les initiatives de l'équipe Paiements sont visibles depuis le Mesh global (architecte)
@@ -41,20 +30,13 @@ def test_a_traiter_contenu(s):
         assert i["pourquoi_vous"] and i["attendu"]  # 7 questions
 
 
-def test_radar_et_rbac_support(s):
-    d = s.get(f"{BASE}/initiatives?vue=radar", headers={"X-Persona": "support"}, timeout=15).json()
-    # support ne voit que ce qui touche son périmètre
-    for i in d:
-        assert not i.get("jumeaux") or any(j in {"support", "notifications", "paiements"} for j in i["jumeaux"])
-
-
 def test_reponse_suivre_puis_409(s):
     r = s.post(f"{BASE}/initiatives/init-delais-coordonnes/repondre", json={"choix": "Suivre"}, timeout=15)
     assert r.status_code == 200
     assert r.json()["initiative"]["statut"] == "suivi"
     r2 = s.post(f"{BASE}/initiatives/init-delais-coordonnes/repondre", json={"choix": "Ignorer"}, timeout=15)
     assert r2.status_code == 409
-    suivis = s.get(f"{BASE}/initiatives?vue=suivis", headers={"X-Persona": "architecte"}, timeout=15).json()
+    suivis = s.get(f"{BASE}/initiatives?vue=suivis", headers={}, timeout=15).json()
     assert any(i["id"] == "init-delais-coordonnes" for i in suivis)
 
 
@@ -62,7 +44,7 @@ def test_reponse_confirmation_par_destinataire(s):
     r = s.post(
         f"{BASE}/initiatives/init-contrat-paiements/repondre",
         json={"choix": "Version 3 — le code fait foi"},
-        headers={"X-Persona": "paiements"},
+        headers={},
         timeout=15,
     )
     assert r.status_code == 200

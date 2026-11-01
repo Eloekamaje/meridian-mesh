@@ -117,9 +117,8 @@ export default function Travaux() {
   const [filtreStatut, setFiltreStatut] = useState("tous");
   const [conversations, setConversations] = useState(false); // filtre : mes conversations (non conservées) au lieu des Travaux
   const [recherche, setRecherche] = useState("");
-  const [mesSeulement, setMesSeulement] = useState(false);
   const { mesh } = useMesh();
-  const { version, persona, info } = usePerimetre();
+  const { version } = usePerimetre();
   const { setSelection } = useContexte();
   const navigate = useNavigate();
 
@@ -143,11 +142,10 @@ export default function Travaux() {
     return parRecherche.filter(
       (c) =>
         (conversations ? estConversation(c) : !estConversation(c)) &&
-        (!mesSeulement || c.responsable === persona) &&
         (filtreType === "tous" || c.type === filtreType) &&
         (filtreStatut === "tous" || c.statut === filtreStatut)
     );
-  }, [cases, trouves, filtreType, filtreStatut, recherche, mesSeulement, persona, conversations]);
+  }, [cases, trouves, filtreType, filtreStatut, recherche, conversations]);
 
   // Regroupement par signification : attention / progrès / le reste
   const sections = useMemo(() => {
@@ -214,10 +212,6 @@ export default function Travaux() {
                   </div>
                 )}
               </div>
-              <button onClick={() => setMesSeulement(!mesSeulement)} data-testid="filtre-mes-travaux"
-                className={`h-8 rounded-full border px-3 text-xs transition-colors ${mesSeulement ? "border-[#60A5FA] bg-[#60A5FA] text-[#071019]" : "border-[rgba(148,163,184,0.16)] bg-[#0F1D28] text-[#94A3B8] hover:text-[#F2F6F8]"}`}>
-                Mes travaux
-              </button>
               <button onClick={() => setConversations(!conversations)} aria-pressed={conversations} data-testid="filtre-conversations"
                 className={`h-8 rounded-full border px-3 text-xs transition-colors ${conversations ? "border-[#60A5FA] bg-[#60A5FA] text-[#071019]" : "border-[rgba(148,163,184,0.16)] bg-[#0F1D28] text-[#94A3B8] hover:text-[#F2F6F8]"}`}>
                 Conversations

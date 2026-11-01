@@ -6,7 +6,7 @@ import pytest
 import requests
 
 BASE = os.environ.get("MERIDIAN_API", "http://localhost:8001").rstrip("/") + "/api"
-H = {"X-Persona": "architecte"}
+H = {}
 OPP = "sit-sit-mutualisation-notifications"
 
 
@@ -105,7 +105,7 @@ def test_ecarter_puis_retablir(api):
         assert OPP not in [h["id"] for h in d["histoires"]]
         assert {"id": OPP, "titre": "Opportunité : mutualiser l'envoi d'alertes entre Commandes et Facturation", "raison": "Trop tôt", "portee": "moi", "par": "architecte"} in d["ecartees"]
         # l'écart est personnel
-        autre = api.get(f"{BASE}/actualites", headers={"X-Persona": "support"}).json()
+        autre = api.get(f"{BASE}/actualites", headers={}).json()
         assert OPP not in [e["id"] for e in autre["ecartees"]]
     finally:
         api.delete(f"{BASE}/actualites/histoire/{OPP}/ecarter", headers=H)

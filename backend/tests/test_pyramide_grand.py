@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import pyramide  # noqa: E402
 
 BASE = os.environ.get("MERIDIAN_API", "http://localhost:8001").rstrip("/") + "/api"
-H = {"X-Persona": "architecte"}
+H = {}
 
 
 @pytest.fixture(scope="module")

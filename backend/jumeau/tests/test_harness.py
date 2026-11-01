@@ -99,12 +99,12 @@ def test_un_outil_read_only_est_expose_et_une_ecriture_exige_une_approbation():
 
 
 def test_les_filtres_de_portee_sont_appliques_aux_outils_exposes():
-    banque = manifeste(nom="traces_banque", tenant="banque", persona="flore", perimetre="paiements")
+    banque = manifeste(nom="traces_banque", tenant="banque", acteur="flore", perimetre="paiements")
     assurance = manifeste(nom="traces_assurance", tenant="assurance")
     registre = RegistreCapacites([banque, assurance])
     adaptateurs = {nom: lambda application: {"traces": []} for nom in ("traces_banque", "traces_assurance")}
 
-    harnais = Harness(registre, adaptateurs, tenant="banque", persona="flore", perimetre="paiements")
+    harnais = Harness(registre, adaptateurs, tenant="banque", acteur="flore", perimetre="paiements")
     assert noms(harnais.outils()) == {"traces_banque", "rechercher_outil", "decrire_outil"}
 
     autre = Harness(registre, adaptateurs, tenant="assurance")
@@ -184,7 +184,7 @@ def test_les_outils_de_decouverte_interrogent_le_registre_sans_executer():
     assert description["capacite"] == "observer"
     assert description["schema_entree"] == SCHEMA_ENTREE
     assert description["schema_sortie"] == SCHEMA_SORTIE
-    assert description["portee"] == {"tenant": None, "persona": None, "perimetre": None}
+    assert description["portee"] == {"tenant": None, "acteur": None, "perimetre": None}
     assert appels == []
 
     introuvable = json.loads(catalogue["decrire_outil"]("inexistant"))
@@ -247,16 +247,17 @@ def test_le_harness_est_sans_execution_dynamique_ni_reseau():
             assert (noeud.module or "").split(".")[0] in autorises
 
 
-def test_le_catalogue_integre_reste_trois_adaptateurs_plus_la_decouverte():
+def test_le_catalogue_integre_reste_quatre_adaptateurs_plus_la_decouverte():
     registre = RegistreCapacites(capacites.manifestes_integres())
     harnais = Harness(registre, {
+        "lister_applications": lambda: None,
         "resoudre_application": lambda terme: None,
         "mobiliser_jumeaux": lambda jumeaux, question: None,
         "concevoir_architecture": lambda question: None,
     })
 
     assert noms(harnais.outils()) == {
-        "resoudre_application", "mobiliser_jumeaux", "concevoir_architecture",
+        "lister_applications", "resoudre_application", "mobiliser_jumeaux", "concevoir_architecture",
         "rechercher_outil", "decrire_outil"}
     assert "rechercher_outil" in registre and "decrire_outil" in registre
 

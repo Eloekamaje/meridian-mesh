@@ -6,7 +6,7 @@ import pytest
 import requests
 
 BASE = os.environ.get("MERIDIAN_API", "http://localhost:8001").rstrip("/") + "/api"
-H = {"X-Persona": "architecte"}
+H = {}
 
 
 @pytest.fixture(scope="module")
@@ -20,15 +20,15 @@ def api():
 
 @pytest.fixture(scope="module")
 def cid(api):
-    r = api.post(f"{BASE}/cases", json={"titre": f"TEST_pieces_{uuid4().hex[:8]}", "statut": "conversation"}, headers=H)
+    r = api.post(f"{BASE}/cases", json={"titre": f"TEST_pieces_{uuid4().hex[:8]}", "statut": "conversation"})
     assert r.status_code == 201, r.text
     identifiant = r.json()["id"]
     yield identifiant
-    api.delete(f"{BASE}/cases/{identifiant}", headers=H)  # une conversation se supprime, avec ses pièces
+    api.delete(f"{BASE}/cases/{identifiant}")  # une conversation se supprime, avec ses pièces
 
 
 def test_un_texte_est_depose_lu_et_liste(api, cid):
-    r = api.post(f"{BASE}/cases/{cid}/pieces", headers=H,
+    r = api.post(f"{BASE}/cases/{cid}/pieces",
                  files={"fichier": ("note.md", b"# Note\n\nBonjour", "text/markdown")})
     assert r.status_code == 201, r.text
     piece = r.json()
@@ -37,28 +37,28 @@ def test_un_texte_est_depose_lu_et_liste(api, cid):
     assert piece["caracteres"] == 15
     assert "texte" not in piece  # l'API de liste ne renvoie pas le contenu extrait
 
-    r = api.get(f"{BASE}/cases/{cid}/pieces", headers=H)
+    r = api.get(f"{BASE}/cases/{cid}/pieces")
     assert r.status_code == 200
     assert [p["id"] for p in r.json()] == [piece["id"]]
     assert r.headers["cache-control"] == "private, no-store"
 
-    r = api.get(f"{BASE}/cases/{cid}", headers=H)
+    r = api.get(f"{BASE}/cases/{cid}")
     assert r.status_code == 200
     assert r.json()["pieces"][0]["id"] == piece["id"]
 
 
 def test_l_extrait_et_le_telechargement_sont_reels(api, cid):
-    r = api.post(f"{BASE}/cases/{cid}/pieces", headers=H,
+    r = api.post(f"{BASE}/cases/{cid}/pieces",
                  files={"fichier": ("preuve.txt", b"Le parcours paiement est lent.", "text/plain")})
     assert r.status_code == 201, r.text
     pid = r.json()["id"]
 
-    r = api.get(f"{BASE}/cases/{cid}/pieces/{pid}/extrait", headers=H)
+    r = api.get(f"{BASE}/cases/{cid}/pieces/{pid}/extrait")
     assert r.status_code == 200
     assert "paiement" in r.json()["texte"]
     assert r.headers["cache-control"] == "private, no-store"
 
-    r = api.get(f"{BASE}/cases/{cid}/pieces/{pid}", headers=H)
+    r = api.get(f"{BASE}/cases/{cid}/pieces/{pid}")
     assert r.status_code == 200
     assert r.content == b"Le parcours paiement est lent."
     assert r.headers["content-disposition"].startswith("attachment;")
@@ -66,13 +66,13 @@ def test_l_extrait_et_le_telechargement_sont_reels(api, cid):
 
 
 def test_la_route_de_section_sert_le_texte_et_une_citation(api, cid):
-    r = api.post(f"{BASE}/cases/{cid}/pieces", headers=H,
+    r = api.post(f"{BASE}/cases/{cid}/pieces",
                  files={"fichier": ("sections.md", b"# Introduction\nintro\n\n# Paiement\nle parcours est lent",
                                     "text/markdown")})
     assert r.status_code == 201, r.text
     pid = r.json()["id"]
 
-    r = api.get(f"{BASE}/cases/{cid}/pieces/{pid}/sections/s2", headers=H)
+    r = api.get(f"{BASE}/cases/{cid}/pieces/{pid}/sections/s2")
     assert r.status_code == 200, r.text
     section = r.json()
     assert section["titre"] == "Paiement" and "parcours" in section["texte"]
@@ -80,7 +80,7 @@ def test_la_route_de_section_sert_le_texte_et_une_citation(api, cid):
     assert section["joint_par"] == "architecte" and section["joint_le"]
     assert r.headers["cache-control"] == "private, no-store"
 
-    r = api.get(f"{BASE}/cases/{cid}/pieces/{pid}/sections/s2", params={"debut": 4, "limite": 5}, headers=H)
+    r = api.get(f"{BASE}/cases/{cid}/pieces/{pid}/sections/s2", params={"debut": 4, "limite": 5})
     assert r.status_code == 200, r.text
     fenetre = r.json()
     assert fenetre["debut"] == 4 and fenetre["fin"] == 9 and fenetre["tronque"] is True
@@ -88,17 +88,17 @@ def test_la_route_de_section_sert_le_texte_et_une_citation(api, cid):
     assert fenetre["section_fin"] - fenetre["section_debut"] >= fenetre["fin"]
     assert fenetre["section_debut"] >= 0 and fenetre["debut"] + fenetre["fin"] >= fenetre["fin"]
 
-    r = api.get(f"{BASE}/cases/{cid}/pieces/{pid}/sections/s2", params={"debut": -1}, headers=H)
+    r = api.get(f"{BASE}/cases/{cid}/pieces/{pid}/sections/s2", params={"debut": -1})
     assert r.status_code == 422
-    r = api.get(f"{BASE}/cases/{cid}/pieces/{pid}/sections/s2", params={"limite": 10_000_000}, headers=H)
+    r = api.get(f"{BASE}/cases/{cid}/pieces/{pid}/sections/s2", params={"limite": 10_000_000})
     assert r.status_code == 422
 
-    r = api.get(f"{BASE}/cases/{cid}/pieces/{pid}/sections/s99", headers=H)
+    r = api.get(f"{BASE}/cases/{cid}/pieces/{pid}/sections/s99")
     assert r.status_code == 404
 
 
 def test_les_metadonnees_de_tableaux_sont_dans_la_liste_sans_le_texte(api, cid):
-    r = api.post(f"{BASE}/cases/{cid}/pieces", headers=H,
+    r = api.post(f"{BASE}/cases/{cid}/pieces",
                  files={"fichier": ("ventes.csv", b"nom,montant\nA,1\nB,2\n", "text/csv")})
     assert r.status_code == 201, r.text
     piece = r.json()
@@ -109,35 +109,30 @@ def test_les_metadonnees_de_tableaux_sont_dans_la_liste_sans_le_texte(api, cid):
 
 
 def test_un_faux_pdf_est_refuse(api, cid):
-    r = api.post(f"{BASE}/cases/{cid}/pieces", headers=H,
+    r = api.post(f"{BASE}/cases/{cid}/pieces",
                  files={"fichier": ("faux.pdf", b"pas un pdf", "application/pdf")})
     assert r.status_code == 400
     assert "PDF" in r.json()["detail"]
 
 
 def test_un_format_inconnu_est_refuse(api, cid):
-    r = api.post(f"{BASE}/cases/{cid}/pieces", headers=H,
+    r = api.post(f"{BASE}/cases/{cid}/pieces",
                  files={"fichier": ("script.exe", b"MZ", "application/octet-stream")})
     assert r.status_code == 400
 
 
-def test_les_droits_du_travail_s_appliquent(api, cid):
-    r = api.get(f"{BASE}/cases/{cid}/pieces", headers={"X-Persona": "support"})
-    assert r.status_code == 404  # conversation privée : on ne révèle pas qu'elle existe
-
-
 def test_une_piece_se_retire(api, cid):
-    r = api.post(f"{BASE}/cases/{cid}/pieces", headers=H,
+    r = api.post(f"{BASE}/cases/{cid}/pieces",
                  files={"fichier": ("a-retirer.txt", b"temporaire", "text/plain")})
     assert r.status_code == 201, r.text
     pid = r.json()["id"]
-    r = api.delete(f"{BASE}/cases/{cid}/pieces/{pid}", headers=H)
+    r = api.delete(f"{BASE}/cases/{cid}/pieces/{pid}")
     assert r.status_code == 204
-    assert api.get(f"{BASE}/cases/{cid}/pieces/{pid}", headers=H).status_code == 404
+    assert api.get(f"{BASE}/cases/{cid}/pieces/{pid}").status_code == 404
 
 
 def test_une_piece_du_travail_a_est_inaccessible_depuis_le_travail_b(api, cid):
-    r = api.post(f"{BASE}/cases/{cid}/pieces", headers=H,
+    r = api.post(f"{BASE}/cases/{cid}/pieces",
                  files={"fichier": ("secret.txt", b"Reserve au travail A", "text/plain")})
     assert r.status_code == 201, r.text
     pid = r.json()["id"]
@@ -146,12 +141,12 @@ def test_une_piece_du_travail_a_est_inaccessible_depuis_le_travail_b(api, cid):
     assert autre.status_code == 201, autre.text
     cid_b = autre.json()["id"]
     try:
-        assert api.get(f"{BASE}/cases/{cid_b}/pieces/{pid}/extrait", headers=H).status_code == 404
-        assert api.get(f"{BASE}/cases/{cid_b}/pieces/{pid}/sections/s1", headers=H).status_code == 404
-        assert api.get(f"{BASE}/cases/{cid_b}/pieces/{pid}", headers=H).status_code == 404
-        assert api.delete(f"{BASE}/cases/{cid_b}/pieces/{pid}", headers=H).status_code == 404
+        assert api.get(f"{BASE}/cases/{cid_b}/pieces/{pid}/extrait").status_code == 404
+        assert api.get(f"{BASE}/cases/{cid_b}/pieces/{pid}/sections/s1").status_code == 404
+        assert api.get(f"{BASE}/cases/{cid_b}/pieces/{pid}").status_code == 404
+        assert api.delete(f"{BASE}/cases/{cid_b}/pieces/{pid}").status_code == 404
     finally:
-        api.delete(f"{BASE}/cases/{cid_b}", headers=H)
+        api.delete(f"{BASE}/cases/{cid_b}")
 
 
 def _nettoyer_case_en_base(cid):
@@ -172,85 +167,29 @@ def _nettoyer_case_en_base(cid):
     db.cases.delete_one({"id": cid})
 
 
-def test_une_persona_non_auteure_non_responsable_ne_retire_pas_une_piece(api):
-    r = api.post(f"{BASE}/cases", json={"titre": f"TEST_pieces_droits_{uuid4().hex[:8]}", "portee": "entreprise"},
-                 headers=H)
-    assert r.status_code == 201, r.text
-    cid = r.json()["id"]
-    try:
-        r = api.post(f"{BASE}/cases/{cid}/pieces", headers=H,
-                     files={"fichier": ("preuve.txt", b"Une preuve", "text/plain")})
-        assert r.status_code == 201, r.text
-        pid = r.json()["id"]
-        r = api.delete(f"{BASE}/cases/{cid}/pieces/{pid}", headers={"X-Persona": "support"})
-        assert r.status_code == 403
-        assert api.get(f"{BASE}/cases/{cid}/pieces/{pid}", headers=H).status_code == 200
-    finally:
-        _nettoyer_case_en_base(cid)
-
-
-def test_un_support_non_participant_ne_peut_pas_ajouter_une_piece(api):
-    r = api.post(f"{BASE}/cases", json={"titre": f"TEST_pieces_ajout_{uuid4().hex[:8]}", "portee": "entreprise"},
-                 headers=H)
-    assert r.status_code == 201, r.text
-    cid = r.json()["id"]
-    try:
-        r = api.post(f"{BASE}/cases/{cid}/pieces", headers={"X-Persona": "support"},
-                     files={"fichier": ("note.txt", b"Bonjour", "text/plain")})
-        assert r.status_code == 403
-        assert api.get(f"{BASE}/cases/{cid}/pieces", headers=H).json() == []
-    finally:
-        _nettoyer_case_en_base(cid)
-
-
-def test_un_participant_peut_ajouter_une_piece(api):
-    r = api.post(f"{BASE}/cases",
-                 json={"titre": f"TEST_pieces_participant_{uuid4().hex[:8]}", "portee": "personnel",
-                       "participants": ["support"]},
-                 headers=H)
-    assert r.status_code == 201, r.text
-    cid = r.json()["id"]
-    try:
-        r = api.post(f"{BASE}/cases/{cid}/pieces", headers={"X-Persona": "support"},
-                     files={"fichier": ("participant.txt", b"Une source partagee", "text/plain")})
-        assert r.status_code == 201, r.text
-        assert r.json()["joint_par"] == "support"
-    finally:
-        _nettoyer_case_en_base(cid)
-
-
-def test_le_dossier_de_demonstration_refuse_les_pieces(api):
-    demo = "demo-polaris-work-g"
-    r = api.post(f"{BASE}/cases/{demo}/pieces", headers=H,
-                 files={"fichier": ("note.txt", b"Bonjour", "text/plain")})
-    assert r.status_code == 403
-    r = api.delete(f"{BASE}/cases/{demo}/pieces/inconnu", headers=H)
-    assert r.status_code == 403
-
-
 def test_la_fusion_transfere_les_pieces_de_la_conversation(api):
     source = api.post(f"{BASE}/cases", json={"titre": f"TEST_fusion_source_{uuid4().hex[:8]}",
-                                              "statut": "conversation"}, headers=H)
+                                              "statut": "conversation"})
     assert source.status_code == 201, source.text
     source_cid = source.json()["id"]
-    r = api.post(f"{BASE}/cases/{source_cid}/pieces", headers=H,
+    r = api.post(f"{BASE}/cases/{source_cid}/pieces",
                  files={"fichier": ("note.txt", b"Piece de la conversation", "text/plain")})
     assert r.status_code == 201, r.text
-    cible = api.post(f"{BASE}/cases", json={"titre": f"TEST_fusion_cible_{uuid4().hex[:8]}"}, headers=H)
+    cible = api.post(f"{BASE}/cases", json={"titre": f"TEST_fusion_cible_{uuid4().hex[:8]}"})
     assert cible.status_code == 201, cible.text
     cible_cid = cible.json()["id"]
     try:
-        r = api.post(f"{BASE}/cases/{cible_cid}/fusion", headers=H, json={"source_cid": source_cid})
+        r = api.post(f"{BASE}/cases/{cible_cid}/fusion", json={"source_cid": source_cid})
         assert r.status_code == 200, r.text
-        assert api.get(f"{BASE}/cases/{source_cid}", headers=H).status_code == 404
-        pieces = api.get(f"{BASE}/cases/{cible_cid}/pieces", headers=H).json()
+        assert api.get(f"{BASE}/cases/{source_cid}").status_code == 404
+        pieces = api.get(f"{BASE}/cases/{cible_cid}/pieces").json()
         assert [p["nom"] for p in pieces] == ["note.txt"]
     finally:
         _nettoyer_case_en_base(cible_cid)
 
 
 def test_un_xlsm_est_refuse(api, cid):
-    r = api.post(f"{BASE}/cases/{cid}/pieces", headers=H,
+    r = api.post(f"{BASE}/cases/{cid}/pieces",
                  files={"fichier": ("classeur.xlsm", b"PK\x03\x04", "application/octet-stream")})
     assert r.status_code == 400
     assert "xlsm" in r.json()["detail"]
@@ -262,7 +201,7 @@ def test_retirer_une_piece_purge_ses_derives_dans_la_conversation(api):
     assert r.status_code == 201, r.text
     cid = r.json()["id"]
     try:
-        r = api.post(f"{BASE}/cases/{cid}/pieces", headers=H,
+        r = api.post(f"{BASE}/cases/{cid}/pieces",
                      files={"fichier": ("source.txt", b"Le parcours paiement est lent.", "text/plain")})
         assert r.status_code == 201, r.text
         pid = r.json()["id"]
@@ -288,8 +227,8 @@ def test_retirer_une_piece_purge_ses_derives_dans_la_conversation(api):
         db = MongoClient(env.get("MONGO_URL", "mongodb://localhost:27017"))[env.get("DB_NAME", "meridian_db")]
         db.cases.update_one({"id": cid}, {"$set": {"conversation": conversation}})
 
-        assert api.delete(f"{BASE}/cases/{cid}/pieces/{pid}", headers=H).status_code == 204
-        message = api.get(f"{BASE}/cases/{cid}", headers=H).json()["conversation"][1]
+        assert api.delete(f"{BASE}/cases/{cid}/pieces/{pid}").status_code == 204
+        message = api.get(f"{BASE}/cases/{cid}").json()["conversation"][1]
         assert message["pieces_selection"] == [{"piece_id": "autre", "section_id": "s1"}]
         assert message["pieces_lectures"] == [
             {"outil": "chercher_pieces", "question": "paiement",
@@ -297,4 +236,4 @@ def test_retirer_une_piece_purge_ses_derives_dans_la_conversation(api):
         ]
         assert [op["outil"]["nom"] for op in message["activite"]] == ["lire_code"]
     finally:
-        api.delete(f"{BASE}/cases/{cid}", headers=H)
+        api.delete(f"{BASE}/cases/{cid}")

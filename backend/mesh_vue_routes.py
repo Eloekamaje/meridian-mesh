@@ -9,9 +9,10 @@ import random
 import time
 from typing import Optional
 
-from fastapi import APIRouter, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 
 import pyramide
+from auth import acteur as acteur_courant
 
 TTL_S = 30.0
 MAX_SYNTHETIQUE = 5_000_000
@@ -86,12 +87,12 @@ def build_mesh_vue_router(deps: dict) -> APIRouter:
         synthetique: Optional[int] = Query(None, ge=1, le=MAX_SYNTHETIQUE, description="essais d'échelle : n jumeaux fictifs"),
         domaines: int = Query(8, ge=1, le=MAX_DOMAINES, description="essais d'échelle : nombre de domaines fictifs"),
         graine: int = 1,
-        x_persona: str = Header("architecte"),
+        acteur: str = Depends(acteur_courant),
         x_espace: Optional[str] = Header(None),
     ):
         if x1 <= x0 or y1 <= y0:
             raise HTTPException(422, "Fenêtre vide")
-        _, espace = resoudre_perimetre(x_persona, x_espace)
+        _, espace = resoudre_perimetre(acteur, x_espace)
         p = pyramide_synthetique(synthetique, graine, domaines) if synthetique else await pyramide_reelle(espace)
         rep = p.vue(x0, y0, x1, y1, zoom)
         rep["source"] = "synthetique" if synthetique else "reel"

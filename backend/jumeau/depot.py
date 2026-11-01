@@ -76,15 +76,18 @@ def enregistrer(conn, jumeau, source, claims, activite):
              jumeau.get("domaine"), jumeau.get("mission")))
         source_id = conn.execute(
             "INSERT INTO source (tenant_id, jumeau_id, type, nom, emplacement, curseur, copie, index_code, branche, "
-            "url, secret_ref, troncature) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (jumeau_id, nom) "
-            "DO UPDATE SET emplacement = EXCLUDED.emplacement, curseur = EXCLUDED.curseur, copie = EXCLUDED.copie, "
-            "index_code = EXCLUDED.index_code, branche = coalesce(EXCLUDED.branche, source.branche), "
-            "url = coalesce(EXCLUDED.url, source.url), secret_ref = coalesce(EXCLUDED.secret_ref, source.secret_ref), "
-            "troncature = EXCLUDED.troncature "
-            "RETURNING id",
+            "url, secret_ref, configuration, troncature) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+            "ON CONFLICT (jumeau_id, nom) DO UPDATE SET emplacement = EXCLUDED.emplacement, "
+            "curseur = EXCLUDED.curseur, copie = EXCLUDED.copie, index_code = EXCLUDED.index_code, "
+            "branche = coalesce(EXCLUDED.branche, source.branche), url = coalesce(EXCLUDED.url, source.url), "
+            "secret_ref = coalesce(EXCLUDED.secret_ref, source.secret_ref), "
+            "configuration = coalesce(EXCLUDED.configuration, source.configuration), "
+            "troncature = EXCLUDED.troncature RETURNING id",
             (t, jumeau["id"], source["type"], source["nom"], source["emplacement"], source["curseur"],
              source.get("copie"), source.get("index_code"), source.get("branche"), source.get("url"),
-             source.get("secret_ref"), Jsonb(source["troncature"]) if source.get("troncature") else None)).fetchone()[0]
+             source.get("secret_ref"),
+             Jsonb(source["configuration"]) if source.get("configuration") else None,
+             Jsonb(source["troncature"]) if source.get("troncature") else None)).fetchone()[0]
         tronque = bool(source.get("troncature"))
         vus = []
         for c in claims:
@@ -217,7 +220,7 @@ def sources_du_jumeau(conn, jumeau_id):
     """Les dépôts du jumeau, chacun sur sa branche, au dernier commit ingéré."""
     with conn.cursor(row_factory=dict_row) as cur:
         return cur.execute(
-            "SELECT id, nom, emplacement, curseur, copie, index_code, branche, url, secret_ref FROM source "
+            "SELECT id, nom, emplacement, curseur, copie, index_code, branche, url, secret_ref, configuration FROM source "
             "WHERE jumeau_id = %s AND type = 'GIT' ORDER BY nom", (jumeau_id,)).fetchall()
 
 

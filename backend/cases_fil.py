@@ -5,10 +5,11 @@ from datetime import datetime, timezone
 import asyncio
 from typing import Literal, Optional
 
-from fastapi import Header, HTTPException
+from fastapi import Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 
 import conversation as fil
+from auth import acteur as acteur_courant
 from jumeau import flux
 
 
@@ -37,19 +38,19 @@ class Approbation(BaseModel):
 
 
 def ajouter_routes_fil(router, deps):
-    """deps : db, charger_case(cid, espace, persona), resoudre_perimetre, repondre(cid, case, question, params,
-    persona, espace, emit) -> la réponse brute de Flore ; autorisations(espace, ids) -> {id: niveau} ;
-    reviser(claim, jumeau, persona, decision, motif) : la revue humaine (LookupError, ValueError si déjà revue)."""
+    """deps : db, charger_case(cid, espace, acteur), resoudre_perimetre, repondre(cid, case, question, params,
+    acteur, espace, emit) -> la réponse brute de Flore ; autorisations(espace, ids) -> {id: niveau} ;
+    reviser(claim, jumeau, acteur, decision, motif) : la revue humaine (LookupError, ValueError si déjà revue)."""
     db, charger_case, repondre = deps["db"], deps["charger_case"], deps["repondre"]
     resoudre_perimetre, autorisations, reviser = deps["resoudre_perimetre"], deps["autorisations"], deps["reviser"]
     exiger_contributeur = deps["exiger_contributeur"]
-    prevenir_fin = deps.get("prevenir_fin") or (lambda cid, persona: None)
+    prevenir_fin = deps.get("prevenir_fin") or (lambda cid: None)
 
-    async def ouvrir(cid, persona, espace_hdr):
+    async def ouvrir(cid, acteur, espace_hdr):
         """Charger le fil pour une mutation : seuls le responsable et les participants y écrivent."""
-        _, espace = resoudre_perimetre(persona, espace_hdr)
-        case = await charger_case(cid, espace, persona)
-        exiger_contributeur(case, persona)
+        _, espace = resoudre_perimetre(acteur, espace_hdr)
+        case = await charger_case(cid, espace, acteur)
+        exiger_contributeur(case, acteur)
         return case, list(case.get("conversation") or [])
 
     async def ecrire(cid, messages):
@@ -71,30 +72,30 @@ def ajouter_routes_fil(router, deps):
         return q
 
     @router.post("/cases/{cid}/messages/{n}/version")
-    async def choisir_version(cid: str, n: int, payload: Choix, x_persona: str = Header("architecte"),
+    async def choisir_version(cid: str, n: int, payload: Choix, acteur: str = Depends(acteur_courant),
                               x_espace: Optional[str] = Header(None)):
-        _, messages = await ouvrir(cid, x_persona, x_espace)
+        _, messages = await ouvrir(cid, acteur, x_espace)
         nouveau = valider(messages, n, lambda: fil.choisir_version(messages[n], payload.index))
         await ecrire(cid, messages[:n] + [nouveau] + messages[n + 1:])
         return nouveau
 
     @router.post("/cases/{cid}/messages/{n}/branche")
-    async def choisir_branche(cid: str, n: int, payload: Choix, x_persona: str = Header("architecte"),
+    async def choisir_branche(cid: str, n: int, payload: Choix, acteur: str = Depends(acteur_courant),
                               x_espace: Optional[str] = Header(None)):
-        _, messages = await ouvrir(cid, x_persona, x_espace)
+        _, messages = await ouvrir(cid, acteur, x_espace)
         nouveaux = valider(messages, n, lambda: fil.choisir_branche(messages, n, payload.index))
         await ecrire(cid, nouveaux)
         return {"messages": nouveaux}
 
     @router.post("/cases/{cid}/messages/{n}/regenerer/flux")
-    async def regenerer(cid: str, n: int, payload: Optional[Params] = None, x_persona: str = Header("architecte"),
+    async def regenerer(cid: str, n: int, payload: Optional[Params] = None, acteur: str = Depends(acteur_courant),
                         x_espace: Optional[str] = Header(None)):
-        case, messages = await ouvrir(cid, x_persona, x_espace)
+        case, messages = await ouvrir(cid, acteur, x_espace)
         valider(messages, n, lambda: fil.choisir_version(messages[n], messages[n].get("version", 0)))
         question = question_avant(messages, n)
 
         async def ajouter(reponse):
-            _, courants = await ouvrir(cid, x_persona, x_espace)
+            _, courants = await ouvrir(cid, acteur, x_espace)
             if n >= len(courants):
                 raise HTTPException(404, "Message introuvable")
             nouveau = fil.ajouter_version(courants[n], reponse)
@@ -102,43 +103,43 @@ def ajouter_routes_fil(router, deps):
             return nouveau
 
         async def produire(emit):
-            return await ajouter(await repondre(cid, case, question, payload or Params(), x_persona, x_espace, emit))
+            return await ajouter(await repondre(cid, case, question, payload or Params(), acteur, x_espace, emit))
 
         async def interrompu(brouillon, activite=None):
             if brouillon:  # rien d'écrit : rien n'est ajouté
                 await ajouter(fil.message_interrompu(brouillon, activite))
-        return flux.en_flux(produire, sur_interruption=interrompu, fil=cid, proprietaire=x_persona,
-                            si_seul=prevenir_fin(cid, x_persona))
+        return flux.en_flux(produire, sur_interruption=interrompu, fil=cid, proprietaire=acteur,
+                            si_seul=prevenir_fin(cid))
 
     @router.post("/cases/{cid}/messages/{n}/modifier/flux")
-    async def modifier(cid: str, n: int, payload: Modification, x_persona: str = Header("architecte"),
+    async def modifier(cid: str, n: int, payload: Modification, acteur: str = Depends(acteur_courant),
                        x_espace: Optional[str] = Header(None)):
-        case, messages = await ouvrir(cid, x_persona, x_espace)
+        case, messages = await ouvrir(cid, acteur, x_espace)
         nouveaux = valider(messages, n, lambda: fil.ranger_branche_et_modifier(messages, n, payload.texte))
         await ecrire(cid, nouveaux)  # la branche est rangée d'abord : rien n'est perdu quoi qu'il arrive ensuite
 
         async def ajouter(message):
-            _, courants = await ouvrir(cid, x_persona, x_espace)
+            _, courants = await ouvrir(cid, acteur, x_espace)
             suite = courants + [message]
             await ecrire(cid, suite)
             return {"messages": suite}
 
         async def produire(emit):
-            rep = await repondre(cid, case, nouveaux[n]["texte"], payload, x_persona, x_espace, emit)
+            rep = await repondre(cid, case, nouveaux[n]["texte"], payload, acteur, x_espace, emit)
             return await ajouter(fil.message_flore(rep))
 
         async def interrompu(brouillon, activite=None):
             await ajouter(fil.message_interrompu(brouillon, activite))
-        return flux.en_flux(produire, sur_interruption=interrompu, fil=cid, proprietaire=x_persona,
-                            si_seul=prevenir_fin(cid, x_persona))
+        return flux.en_flux(produire, sur_interruption=interrompu, fil=cid, proprietaire=acteur,
+                            si_seul=prevenir_fin(cid))
 
     @router.post("/cases/{cid}/messages/{n}/approbation")
-    async def approuver(cid: str, n: int, payload: Approbation, x_persona: str = Header("architecte"),
+    async def approuver(cid: str, n: int, payload: Approbation, acteur: str = Depends(acteur_courant),
                         x_espace: Optional[str] = Header(None)):
         """Approbation en ligne (P2) : exécutée une seule fois côté serveur (verrou dans la revue), réservée à qui
         peut « Valider » ce jumeau, puis inscrite dans le message (les boutons disparaissent, panneau comme Travail)."""
-        _, espace = resoudre_perimetre(x_persona, x_espace)
-        case = await charger_case(cid, espace, x_persona)
+        _, espace = resoudre_perimetre(acteur, x_espace)
+        case = await charger_case(cid, espace, acteur)
         messages = list(case.get("conversation") or [])
         m = messages[n] if 0 <= n < len(messages) else {}
         prop = next((p for p in m.get("a_approuver") or [] if p.get("claim") == payload.claim), None)
@@ -149,14 +150,14 @@ def ajouter_routes_fil(router, deps):
         if autorisations(espace, [prop["jumeau"]]).get(prop["jumeau"]) != "complet":
             raise HTTPException(403, f"Permission « Valider » requise sur {prop.get('nom') or prop['jumeau']}")
         try:
-            await asyncio.to_thread(reviser, payload.claim, prop["jumeau"], x_persona, payload.decision, payload.motif)
+            await asyncio.to_thread(reviser, payload.claim, prop["jumeau"], acteur, payload.decision, payload.motif)
         except LookupError:
             raise HTTPException(404, "Connaissance introuvable")
         except RuntimeError as e:
             raise HTTPException(503, str(e))
         except ValueError as e:  # déjà revue (page Revue, autre onglet) : rien n'est inscrit ici
             raise HTTPException(409, str(e))
-        nouveau = fil.decider_proposition(m, payload.claim, payload.decision, x_persona)
+        nouveau = fil.decider_proposition(m, payload.claim, payload.decision, acteur)
         await db.cases.update_one({"id": cid}, {"$set": {f"conversation.{n}": nouveau,
                                                          "maj_le": datetime.now(timezone.utc).isoformat()}})
         return nouveau

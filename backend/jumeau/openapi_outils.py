@@ -327,7 +327,7 @@ def manifests_depuis_openapi(
     locator: str = "openapi",
     version: str = "1.0.0",
     tenant: Any = None,
-    persona: Any = None,
+    acteur: Any = None,
     perimetre: Any = None,
 ) -> list[ManifesteOutil]:
     """Lit un document OpenAPI et rend un manifeste par opération, sans exécution ni secret.
@@ -366,7 +366,7 @@ def manifests_depuis_openapi(
             schema_entree=_schema_entree(element, detail, document) if isinstance(document, dict) else {},
             schema_sortie={},
             tenant=tenant,
-            persona=persona,
+            acteur=acteur,
             perimetre=perimetre,
             lecture_seule=lecture_seule,
             cout=0.0,
@@ -385,7 +385,7 @@ def charger_dans(
     locator: str = "openapi",
     version: str = "1.0.0",
     tenant: Any = None,
-    persona: Any = None,
+    acteur: Any = None,
     perimetre: Any = None,
 ) -> list[str]:
     """Génère puis enregistre les manifestes dans un `RegistreCapacites` ; rend leurs noms."""
@@ -393,7 +393,7 @@ def charger_dans(
     if not callable(enregistrer):
         raise TypeError("registre capacitaire attendu")
     manifestes = manifests_depuis_openapi(
-        application_id, texte, locator, version, tenant, persona, perimetre)
+        application_id, texte, locator, version, tenant, acteur, perimetre)
     noms: list[str] = []
     for manifeste in manifestes:
         enregistrer(manifeste)

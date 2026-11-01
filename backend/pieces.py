@@ -709,7 +709,7 @@ async def _abandonner(flux) -> None:
         pass
 
 
-async def enregistrer(db, case_id: str, fichier, persona: str) -> dict:
+async def enregistrer(db, case_id: str, fichier, acteur: str) -> dict:
     """Valide, extrait et stocke une pièce ; rend ses métadonnées publiques.
 
     La place est réservée atomiquement sur le case (`pieces_count`) avant toute lecture : deux envois simultanés
@@ -739,14 +739,14 @@ async def enregistrer(db, case_id: str, fichier, persona: str) -> dict:
         if not await db.cases.find_one({"id": case_id}, {"_id": 1}):
             raise PieceRefusee("Ce travail a été supprimé pendant l'ajout de la pièce.", statut=404)
         pid = uuid4().hex
-        entete = {"case_id": case_id, "piece_id": pid, "nom": nom, "joint_par": persona}
+        entete = {"case_id": case_id, "piece_id": pid, "nom": nom, "joint_par": acteur}
         flux = _bucket(db).open_upload_stream(f"{case_id}/{pid}", metadata=entete)
         await flux.write(data)
         await flux.close()
         doc = {
             "id": pid, "case_id": case_id, "nom": nom, "type_mime": mime,
             "type_libelle": analyse["type_libelle"], "taille": len(data), "sha256": hashlib.sha256(data).hexdigest(),
-            "joint_par": persona, "joint_le": datetime.now(timezone.utc).isoformat(),
+            "joint_par": acteur, "joint_le": datetime.now(timezone.utc).isoformat(),
             "etat": analyse["etat"], "note": analyse["note"], "tronque": analyse["tronque"],
             "caracteres": analyse["caracteres"], "pages": analyse["pages"],
             "texte": analyse["texte"], "sections": decouper_sections(analyse["texte"]),

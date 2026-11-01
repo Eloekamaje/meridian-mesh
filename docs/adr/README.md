@@ -13,6 +13,15 @@ Index des décisions d'architecture de Méridian.
 | [0007](0007-polyglot-postgres-graph.md) | Architecture polyglotte : Postgres pour la connaissance, graph store pour le Mesh | accepted | 2026-10-30 |
 | [0008](0008-travail-work-store.md) | Le Travail est un store de travail, pas un objet d'entreprise | accepted | 2026-10-30 |
 | [0009](0009-value-ledger.md) | Value Ledger séparé des objets d'entreprise | accepted | 2026-10-30 |
+| [0010](0010-monolithe-modulaire-hexagonal.md) | Monolithe modulaire hexagonal, ports et adapters | accepted | 2026-10-31 |
+| [0011](0011-runtime-durable-postgres.md) | Runtime durable adossé à PostgreSQL | accepted | 2026-10-31 |
+| [0012](0012-outbox-idempotence.md) | Outbox, inbox, idempotence et concurrence | accepted | 2026-10-31 |
+| [0013](0013-projection-graphe.md) | Projection graphe et cohérence éventuelle | accepted | 2026-10-31 |
+| [0014](0014-adapters-aws-sans-lock-in.md) | Adapters AWS sans lock-in | accepted | 2026-10-31 |
+| [0015](0015-frontiere-agent-workflow-outils.md) | Frontière agent, workflow et outils | accepted | 2026-10-31 |
+| [0016](0016-fin-personas-demo.md) | Fin des personas de démonstration | accepted | 2026-10-31 |
+| [0017](0017-cloture-pilote.md) | Choix de clôture du pilote | superseded by 0018 | 2026-10-31 |
+| [0018](0018-suppression-effective-personas-polaris.md) | Suppression effective des personas et de Polaris | accepted | 2026-10-31 |
 
 ## Règles
 

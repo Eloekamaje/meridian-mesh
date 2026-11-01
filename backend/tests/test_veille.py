@@ -104,7 +104,7 @@ def api():
     return requests.Session()
 
 
-H = {"X-Persona": "architecte"}
+H = {}
 
 
 def test_le_travail_en_veille_recoit_des_evenements_dans_son_fil(api):
@@ -133,34 +133,6 @@ def test_la_liste_expose_le_mouvement(api):
     assert "mouvement" in c and c["revue_le"]
     # (le niveau dépend de la dernière visite de la personne : lu = None ; sinon la revue due et l'effet secondaire donnent 1 — voir test_mouvement_*)
     assert c["mouvement"] is None or c["mouvement"]["niveau"] == 1
-
-
-def test_un_evenement_d_un_jumeau_hors_perimetre_n_apparait_pas(api):
-    # l'espace Paiements n'a pas accès à Logistique/Notifications : son fil ne montre pas leurs observations
-    r = api.get(f"{BASE}/cases/case-dette-files", headers={"X-Persona": "paiements"})
-    if r.status_code != 200:
-        pytest.skip("travail hors périmètre de ce persona")
-    jum = {m["jumeau"] for m in r.json()["conversation"] if m["role"] == "evenement" and m.get("jumeau")}
-    assert "logistique" not in jum and "notifications" not in jum
-
-
-
-@pytest.fixture(scope="module", autouse=True)
-def _nettoyage_travaux_de_test():
-    yield
-    from nettoyage import supprimer_cases
-    supprimer_cases({"titre": "Essai veille (test)"})
-
-
-# ---- cycle complet sur un travail temporaire -----------------------------------------------------
-def _travail_en_veille(api, revue="2026-09-19T00:00:00+00:00"):
-    c = api.post(f"{BASE}/cases", headers=H, json={"titre": "Essai veille (test)", "jumeaux": ["paiements"]}).json()
-    api.post(f"{BASE}/cases/{c['id']}/decisions", headers=H, json={"texte": "Basculer en asynchrone", "passation": {
-        "hypotheses": ["La bascule réduit la latence."],
-        "attendus": [{"id": "a1", "indicateur": "Latence p95", "sens": "baisse", "depart": 1900, "cible": 300, "unite": "ms"}],
-        "risques": [{"id": "r1", "texte": "Doublons de paiement", "jumeau": "paiements", "sens": "hausse", "seuil": 0, "unite": "doublons"}],
-        "inconnues": [{"id": "i1", "texte": "Effet sur Support"}], "revue_le": revue}})
-    return c["id"]
 
 
 def test_decision_avec_passation_met_le_travail_en_veille(api):

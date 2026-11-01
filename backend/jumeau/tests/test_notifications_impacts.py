@@ -1,4 +1,4 @@
-"""Notifications d'impact d'interface : persona, texte métier, identifiant stable, aucun secret."""
+"""Notifications d'impact d'interface : tenant-wide, texte métier, identifiant stable, aucun secret."""
 import asyncio
 
 import pytest
@@ -38,11 +38,10 @@ def _run(impacts, run_id="run-abc", **champs):
     return run
 
 
-def test_breaking_notifie_la_persona_avec_un_identifiant_stable():
+def test_breaking_notifie_avec_un_identifiant_stable():
     notification = notifications_impacts.notification_depuis_run(_run([_impact()]), JUMEAU)
 
     assert notification["id"] == "notif-interface-tbt-run-abc"
-    assert notification["persona"] == "paiements"
     assert notification["type"] == "interface_impact"
     assert notification["lien"] == "/atlas?focus=tbt"
     assert notification["lu"] is False
@@ -55,7 +54,6 @@ def test_warning_notifie_avec_la_severite_avertissement():
     notification = notifications_impacts.notification_depuis_run(
         _run([_impact(severity="warning", change_type="operation_changed")]), JUMEAU)
 
-    assert notification["persona"] == "paiements"
     assert "avertissement" in notification["texte"] and "normale" in notification["texte"]
     assert "DELETE /comptes/{id}" in notification["texte"]
 
@@ -83,24 +81,6 @@ def test_deux_runs_produisent_deux_identifiants():
     assert premier["id"] == "notif-interface-tbt-run-1"
     assert second["id"] == "notif-interface-tbt-run-2"
     assert premier["id"] != second["id"]
-
-
-@pytest.mark.parametrize("equipe,persona", [
-    ("equipe-architecture", "architecte"),
-    ("equipe-paiements", "paiements"),
-    ("equipe-support", "support"),
-    ("equipe-inconnue", "architecte"),
-    ("", "architecte"),
-    (None, "architecte"),
-])
-def test_persona_mapping_et_repli(equipe, persona):
-    assert notifications_impacts.persona_pour_jumeau({"id": "x", "equipe": equipe}) == persona
-
-
-def test_persona_repli_sans_jumeau_ou_avec_un_jumeau_sans_equipe():
-    assert notifications_impacts.persona_pour_jumeau(None) == "architecte"
-    assert notifications_impacts.persona_pour_jumeau({}) == "architecte"
-    assert notifications_impacts.persona_pour_jumeau("equipe-support") == "support"
 
 
 def test_une_situation_fournie_ne_change_pas_l_identifiant():
@@ -131,7 +111,7 @@ class _Db:
 def test_publier_notification_est_idempotent_et_publie_le_sse(monkeypatch):
     recus = []
     monkeypatch.setattr(notifications_impacts.evenements, "publier",
-                        lambda persona, type_, **champs: recus.append((persona, type_, champs)))
+                        lambda acteur, type_, **champs: recus.append((acteur, type_, champs)))
     db = _Db()
 
     async def scenario():
@@ -143,4 +123,4 @@ def test_publier_notification_est_idempotent_et_publie_le_sse(monkeypatch):
 
     assert premier and second is None
     assert list(db.notifications.docs) == ["notif-interface-tbt-run-abc"]
-    assert recus == [("paiements", "notification.creee", {"notification": premier})]
+    assert recus == [("*", "notification.creee", {"notification": premier})]

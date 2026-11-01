@@ -79,7 +79,7 @@ def manifests_depuis_outils(
     outils,
     version="1.0.0",
     tenant=None,
-    persona=None,
+    acteur=None,
     perimetre=None,
 ) -> list[ManifesteOutil]:
     """Traduit une liste de descripteurs MCP en manifestes ; lève `ErreurMCP` si la forme est invalide."""
@@ -114,7 +114,7 @@ def manifests_depuis_outils(
             schema_entree=dict(schema) if isinstance(schema, Mapping) else {},
             schema_sortie={},
             tenant=tenant,
-            persona=persona,
+            acteur=acteur,
             perimetre=perimetre,
             lecture_seule=seul,
             cout=0.0,
@@ -132,7 +132,7 @@ def importer_outils(
     outils,
     version="1.0.0",
     tenant=None,
-    persona=None,
+    acteur=None,
     perimetre=None,
 ) -> list[str]:
     """Génère et inscrit les manifestes MCP ; rend leurs noms."""
@@ -141,7 +141,7 @@ def importer_outils(
         raise TypeError("registre capacitaire attendu")
     noms = []
     for manifeste in manifests_depuis_outils(
-        application_id, outils, version, tenant, persona, perimetre
+        application_id, outils, version, tenant, acteur, perimetre
     ):
         enregistrer(manifeste)
         noms.append(manifeste.nom)

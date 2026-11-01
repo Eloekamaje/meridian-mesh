@@ -162,7 +162,7 @@ def test_tirer_et_publier_cree_situation_et_notification_sur_impact(monkeypatch)
     assert situation["priorite"] == "haute" and situation["type"] == "interface"
     assert "portail" in situation["titre"] and "DELETE /comptes/{id}" in situation["titre"]
     notification = db.notifications.docs["notif-interface-comptes-run-impact"]
-    assert notification["persona"] == "paiements"
+    assert "acteur" not in notification
     assert "rupture" in notification["texte"] and "portail" in notification["texte"]
 
 

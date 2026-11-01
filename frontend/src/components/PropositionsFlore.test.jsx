@@ -18,7 +18,7 @@ test("tranchée : la décision s'affiche, les boutons disparaissent", () => {
   expect(html).not.toContain('data-testid="approuver-3-7"');
 });
 
-test("sans Travail (démonstration), la proposition se lit mais ne se tranche pas ici", () => {
+test("sans Travail, la proposition se lit mais ne se tranche pas ici", () => {
   const html = renderToStaticMarkup(<PropositionsFlore propositions={[prop()]} index={3} actif={false} onDecider={() => {}} />);
   expect(html).toContain("publier un article");
   expect(html).not.toContain('data-testid="approuver-3-7"');

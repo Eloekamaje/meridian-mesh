@@ -9,6 +9,7 @@ export const STATUTS_SOURCE = {
   secret_expire: { label: "Secret expiré", couleur: "#F87171" },
   perimetre_vide: { label: "Périmètre vide", couleur: "#F2B84B" },
   configuration_incomplete: { label: "Configuration incomplète", couleur: "#F2B84B" },
+  non_branche: { label: "Non branché", couleur: "#F2B84B" },
 };
 
 export const CLES_ERREUR = ["erreur_connexion", "autorisation_insuffisante", "secret_expire", "perimetre_vide", "configuration_incomplete"];
@@ -16,6 +17,8 @@ export const estErreurSource = (s) => CLES_ERREUR.includes(s);
 export const estPreteSource = (s) => s === "prete";
 
 export const ENVIRONNEMENTS = ["production", "préproduction", "recette", "développement"];
+
+export const APPLICATION_ID = /^[a-z0-9][a-z0-9._-]{1,127}$/;
 
 export const ETAPES_COMMANDE = ["Identité", "Sources et connexions", "Plan de découverte", "Vérifier et lancer"];
 
@@ -25,7 +28,7 @@ export const champRempli = (v) => (Array.isArray(v) ? v.some((x) => x?.depot) : 
 export function statutCalcule(source, connecteur) {
   if (source.statut === "test_en_cours" || source.statut === "prete" || estErreurSource(source.statut)) return source.statut;
   const manquants = (connecteur?.champs || []).filter((c) => c.requis && !champRempli(source.config?.[c.cle]));
-  if (manquants.length === 0 && source.perimetre) return "prete_a_tester";
+  if (manquants.length === 0) return "prete_a_tester";
   return source.statut === "ajoutee" ? "a_configurer" : source.statut;
 }
 

@@ -12,7 +12,7 @@ export default function EnteteCommande({ commande, sauvegarde, onQuitter, onEtap
           <div className="min-w-0">
             <h1 className="font-display text-base font-bold leading-snug tracking-tight text-[#F2F6F8] sm:text-xl" data-testid="commande-titre">Commande du jumeau {j.nom || "…"}</h1>
             <p className="font-code text-[11px] text-[#7C93A8]">
-              {commande.id} · Domaine {j.domaine || "Non classé"} ·{" "}
+              {commande.id} · App ID {j.application_id || "à définir"} ·{" "}
               {sauvegarde === "encours" ? (
                 <span className="text-[#F2B84B]">Enregistrement…</span>
               ) : sauvegarde ? (

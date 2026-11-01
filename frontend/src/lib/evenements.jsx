@@ -1,20 +1,20 @@
 import { useEffect, useRef, useState } from "react";
+import { entetesPerimetre } from "./api";
 import { usePerimetre } from "./perimetre";
-import { usePilotage } from "./pilotage";
 
 // Un seul canal SSE par onglet, partagé par la barre latérale et les notifications. Le serveur envoie d'abord
-// un instantané (« pret »), puis les changements de la persona. Une reconnexion rejoue l'instantané : les
+// un instantané (« pret »), puis les changements du périmètre. Une reconnexion rejoue l'instantané : les
 // événements manqués pendant une coupure sont ainsi rattrapés sans polling.
 const abonnes = new Set();
-let etat = { controller: null, persona: null, cible: null };
+let etat = { controller: null, cible: null };
 
 const API = () => `${process.env.REACT_APP_BACKEND_URL || ""}/api`;
 
-function entetes(persona, cible) {
+function entetes(cible) {
   const espace = cible?.startsWith("vue:")
     ? localStorage.getItem("meridian.perimetre.espace") || "mesh-global"
     : cible || "mesh-global";
-  return { "X-Persona": persona, "X-Espace": espace };
+  return { ...entetesPerimetre(), "X-Espace": espace };
 }
 
 function diffuser(evenement) {
@@ -23,12 +23,12 @@ function diffuser(evenement) {
   }
 }
 
-async function boucle(controller, persona, cible) {
+async function boucle(controller, cible) {
   let essai = 0;
   while (!controller.signal.aborted) {
     try {
       const reponse = await fetch(`${API()}/evenements`, {
-        headers: { Accept: "text/event-stream", ...entetes(persona, cible) },
+        headers: { Accept: "text/event-stream", ...entetes(cible) },
         signal: controller.signal,
         cache: "no-store",
       });
@@ -59,11 +59,11 @@ async function boucle(controller, persona, cible) {
   }
 }
 
-function demarrer(persona, cible) {
+function demarrer(cible) {
   etat.controller?.abort();
   const controller = new AbortController();
-  etat = { controller, persona, cible };
-  boucle(controller, persona, cible).catch(() => {});
+  etat = { controller, cible };
+  boucle(controller, cible).catch(() => {});
   return () => {
     if (etat.controller === controller) {
       etat.controller = null;
@@ -73,15 +73,13 @@ function demarrer(persona, cible) {
 }
 
 export function EvenementsProvider({ children }) {
-  const { persona, cible } = usePerimetre();
-  const pilote = usePilotage();
-  const demo = !!pilote;
+  const { cible } = usePerimetre();
   const [relance, setRelance] = useState(0);
 
   useEffect(() => {
-    if (demo || !persona) return undefined;
-    return demarrer(persona, cible);
-  }, [persona, cible, demo, relance]);
+    if (!cible) return undefined;
+    return demarrer(cible);
+  }, [cible, relance]);
 
   // Au retour d'un onglet ou après une coupure réseau : on rouvre le canal et le serveur renvoie l'instantané.
   useEffect(() => {

@@ -5,8 +5,8 @@ import pytest
 import requests
 
 BASE = os.environ.get("MERIDIAN_API", "http://localhost:8001").rstrip("/") + "/api"
-H = {"X-Persona": "architecte"}
-HP = {"X-Persona": "paiements"}
+H = {}
+HP = {}
 TITRE = "Essai Jira (test)"
 
 
@@ -49,15 +49,6 @@ def test_un_chantier_livre_ne_compte_pas_comme_vivant(api):
     j = _jumeau(api, H, "api-gateway")
     assert any(p["ref"] == "PLT-9" and p["statut"] == "termine" for p in j["projets"])
     assert j["projets_resume"]["n"] == 1  # DIG-88 seul est vivant
-
-
-def test_les_droits_s_appliquent_aux_chantiers(api):
-    j = _jumeau(api, HP, "paiements")
-    rsk = next(p for p in j["projets"] if p["ref"] == "RSK-52")
-    assert rsk["porteur"] is None  # Conformité est hors du périmètre de l'équipe Paiements : elle ne le voit pas
-    assert all(i in {"paiements", "facturation", "comptes"} for p in j["projets"] for i in p["impacte"])
-    noms = [x["id"] for x in api.get(f"{BASE}/mesh", headers=HP).json()["jumeaux"]]
-    assert "conformite" not in noms
 
 
 def test_flore_repond_sur_les_chantiers(api):

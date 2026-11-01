@@ -15,8 +15,8 @@ export function MeshProvider({ children }) {
   const recharger = useCallback(async () => {
     const { data } = await api.get("/mesh");
     const valide = meshValide(data);
-    // Rejet explicite : le produit l'ignore (le Mesh reste « pas encore chargé »),
-    // la démonstration le traite comme un échec de scène plutôt qu'un faux succès.
+    // Rejet explicite : le produit l'ignore (le Mesh reste « pas encore chargé »)
+    // plutôt que d'afficher un faux succès.
     if (!valide) throw new Error("Mesh illisible");
     setMesh(valide);
     return valide;

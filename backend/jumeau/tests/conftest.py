@@ -2,6 +2,7 @@
 import json
 import os
 import subprocess
+import sys
 import uuid
 
 import pytest
@@ -13,6 +14,22 @@ os.environ.setdefault("PIECES_EXTRACTION_PROCESSUS", "0")
 
 DSN = os.environ.get("JUMEAU_PG_DSN")
 besoin_pg = pytest.mark.skipif(not DSN, reason="JUMEAU_PG_DSN non défini")
+
+
+@pytest.fixture(autouse=True)
+def workspace_jetable(tmp_path, monkeypatch):
+    """Aucun test n'écrit dans le vrai workspace : le défaut local reste exercé, mais sous tmp_path."""
+    espace = tmp_path / "workspace"
+    monkeypatch.setenv("JUMEAU_WORKSPACE", str(espace))
+    monkeypatch.delenv("JUMEAU_INDEX_STORE", raising=False)
+    monkeypatch.delenv("JUMEAU_INDEX_DIR", raising=False)
+    ingerer = sys.modules.get("jumeau.ingerer")
+    if ingerer is not None:
+        monkeypatch.setattr(ingerer, "COPIES", espace / "copies")
+    naissance = sys.modules.get("jumeau.naissance")
+    if naissance is not None:
+        monkeypatch.setattr(naissance, "DEPOTS", espace / "depots")
+
 
 JUMEAU = {"id": "tbt", "tenant_id": "banque", "nom": "TBT", "equipe": "equipe-tbt"}
 SOURCE = {"nom": "tbt-repo", "type": "GIT", "emplacement": "/depots/tbt", "curseur": "sha1"}

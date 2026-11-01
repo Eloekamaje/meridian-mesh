@@ -1,4 +1,4 @@
-"""Notifications de persona pour les impacts d'interfaces.
+"""Notifications d'impact d'interfaces, visibles par tout le tenant.
 
 Une découverte d'interfaces ne notifie que si elle prouve un impact `breaking` ou `warning`. La notification
 reste métier — opération, application impactée, sévérité — et ne recopie jamais la preuve brute, qui peut
@@ -11,14 +11,8 @@ from datetime import datetime, timezone
 
 from jumeau import evenements
 
-__all__ = ["persona_pour_jumeau", "notification_depuis_run", "publier_notification"]
+__all__ = ["notification_depuis_run", "publier_notification"]
 
-PERSONAS_PAR_EQUIPE = {
-    "equipe-architecture": "architecte",
-    "equipe-paiements": "paiements",
-    "equipe-support": "support",
-}
-PERSONA_PAR_DEFAUT = "architecte"
 _SEVERITES_UTILES = ("breaking", "warning")
 _RANG_SEVERITE = {"breaking": 0, "warning": 1}
 _LIBELLES_SEVERITE = {"breaking": "rupture (haute)", "warning": "avertissement (normale)"}
@@ -28,14 +22,8 @@ def _champ(jumeau, nom):
     if isinstance(jumeau, dict):
         return jumeau.get(nom)
     if isinstance(jumeau, str):
-        return jumeau if nom == "equipe" else None
+        return jumeau if nom in ("id", "equipe") else None
     return getattr(jumeau, nom, None)
-
-
-def persona_pour_jumeau(jumeau) -> str:
-    """La persona qui reçoit les impacts du jumeau : son équipe, sinon la gouvernance globale."""
-    equipe = str(_champ(jumeau, "equipe") or "").strip().lower()
-    return PERSONAS_PAR_EQUIPE.get(equipe) or PERSONA_PAR_DEFAUT
 
 
 def _jumeau_id(jumeau) -> str:
@@ -108,7 +96,6 @@ def notification_depuis_run(run, jumeau, situation=None) -> dict | None:
     jumeau_id = _jumeau_id(jumeau)
     return {
         "id": f"notif-interface-{jumeau_id}-{run_id}",
-        "persona": persona_pour_jumeau(jumeau),
         "type": "interface_impact",
         "texte": _texte(impacts),
         "lien": f"/atlas?focus={jumeau_id}",
@@ -118,7 +105,7 @@ def notification_depuis_run(run, jumeau, situation=None) -> dict | None:
 
 
 async def publier_notification(db, jumeau, run, situation=None) -> dict | None:
-    """Crée la notification une seule fois et prévient la persona par le canal SSE.
+    """Crée la notification une seule fois et prévient tous les flux du tenant par le canal SSE.
 
     L'identifiant du run sert de clé : une relance de la passe ne crée pas de doublon et ne republie pas
     l'événement. Les erreurs remontent à l'appelant, qui garde la passe best-effort.
@@ -131,5 +118,5 @@ async def publier_notification(db, jumeau, run, situation=None) -> dict | None:
             or getattr(resultat, "matched_count", 1) == 0)
     if not cree:
         return None
-    evenements.publier(doc["persona"], "notification.creee", notification=doc)
+    evenements.publier("*", "notification.creee", notification=doc)
     return doc

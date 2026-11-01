@@ -54,13 +54,7 @@ Barre persistante en bas de l'application, **synchronisée bidirectionnellement 
 
 ## Sécurité — RBAC côté serveur
 
-Pas d'authentification (démo) : le périmètre se pilote via les sélecteurs de la barre supérieure (persona + espace), envoyés au backend par les en-têtes `X-Persona` / `X-Espace`. **Tout le filtrage est fait côté serveur** — les données non autorisées ne quittent jamais l'API.
-
-| Persona | Accès |
-|---|---|
-| `architecte` (A. Rousseau) | Mesh global + tous les espaces |
-| `paiements` (L. Marchand) | Espace Paiements : paiements/facturation complets, comptes en lecture relations |
-| `support` (J. Morel) | Espace Support : support/notifications complets, paiements au niveau « existence » (dépendances anonymisées) |
+Pas d'authentification (démo) : l'acteur vaut `demo` et le périmètre se pilote via le sélecteur d'espace de la barre supérieure, envoyé au backend par l'en-tête `X-Espace`. **Tout le filtrage est fait côté serveur** — les données non autorisées ne quittent jamais l'API.
 
 Niveaux d'autorisation par jumeau : `existence` → `résumé` → `preuves` → `complet`. Aurora refuse les questions hors périmètre et filtre ses analyses au niveau « résumé » minimum.
 
@@ -95,6 +89,19 @@ cd frontend && yarn install && yarn start
 
 Variables d'environnement : `backend/.env` (`MONGO_URL`, `DB_NAME`), `frontend/.env` (`REACT_APP_BACKEND_URL`).
 
+### Alimentation continue des jumeaux
+
+La naissance d'un jumeau ingère sa première version dans le processus de l'API. Les mises à jour suivantes
+sont pull-first : lancer le worker dans un terminal séparé.
+
+```bash
+scripts/dev-source-worker.sh          # polling continu
+scripts/dev-source-worker.sh --une-passe
+```
+
+En production, superviser `scripts/meridian-source-worker.service` (unité systemd fournie, chemins à adapter).
+Sans worker, les runs restent `QUEUED` ; le webhook signé ne fait qu'avancer leur échéance.
+
 ### Plusieurs workers (Redis)
 
 Le bus SSE et l'état des tours partagés passent par Redis dès que `REDIS_URL` est défini. Avec plusieurs
@@ -116,18 +123,16 @@ l'URL ne doit pas apparaître dans les logs.
 
 ## Identité
 
-`AUTH_MODE` décide qui fixe la persona :
+`AUTH_MODE` décide comment l'acteur est authentifié :
 
-- `demo` (défaut local) : `X-Persona` est accepté, mais doit désigner une persona connue. **Interdit en production.**
-- `proxy` : un proxy authentifiant (oauth2-proxy, ALB, etc.) fournit `X-Auth-Request-User` /
-  `X-Auth-Request-Groups` et `X-Auth-Proxy-Secret`. Le client ne peut pas imposer `X-Persona`.
-  `AUTH_PERSONA_MAP` associe utilisateurs ou groupes aux personas : `{"grp-arch":"architecte"}`.
+- `demo` (défaut local) : aucun utilisateur authentifié ; l'acteur vaut `demo`. **Interdit en production.**
+- `proxy` : un proxy authentifiant (oauth2-proxy, ALB, etc.) fournit `X-Auth-Request-User` et
+  `X-Auth-Proxy-Secret`. L'acteur est cet utilisateur ; aucun en-tête client ne le choisit.
 - `oidc` : l'API vérifie un JWT `Authorization: Bearer` avec `AUTH_OIDC_JWKS_URL` (ou `AUTH_OIDC_SECRET`
-  pour HS256), `AUTH_AUDIENCE`, `AUTH_ISSUER`, puis lit `persona` ou `groups` (`AUTH_GROUPS_CLAIM`).
+  pour HS256), `AUTH_AUDIENCE`, `AUTH_ISSUER`, puis prend `name`, `preferred_username`, `email` ou `sub`.
 
-Sans mapping, OIDC accepte une claim `persona` valide. Le header `X-Persona` est toujours remplacé par
-l'identité résolue côté serveur. `GET /api/moi` expose la persona et le mode au frontend, qui masque alors
-le sélecteur de rôle. En production, définir `APP_ENV=production` : `AUTH_MODE=demo` est refusé au démarrage.
+`GET /api/moi` expose l'acteur, le tenant et le mode. En production, définir `APP_ENV=production` :
+`AUTH_MODE=demo` est refusé au démarrage.
 
 ## Pièces jointes d'un Travail
 
@@ -240,7 +245,7 @@ python -m evaluation_pieces --docs docs.json --questions questions.jsonl --k 4
 Les documents produits par Flore dans un Travail réel (`livrables`) apparaissent dans **Résultats** : un clic
 ouvre le Canvas avec le Markdown du livrable, copiable, téléchargeable et affichable en plein écran. Un livrable
 déposé pendant un tour ouvre le Canvas une fois ; une mise à jour du même livrable rafraîchit la liste sans
-réouvrir le Canvas. Le dossier Polaris garde son document de démonstration.
+réouvrir le Canvas.
 
 ## Coût et temps affichés
 
@@ -254,7 +259,7 @@ Pour Bedrock ou un autre fournisseur, renseigner ses propres tarifs.
 
 ## Données de démonstration
 
-Seed automatique au démarrage (clé `SEED_VERSION` : un changement réinitialise les données). Bouton **« Réinitialiser la démo »** dans Administration (trace au journal d'audit). Jeu : 12 jumeaux, 14 relations (6 états : observée, supposée, validation A2A, contestée, obsolète, confirmée), 11 situations, situation principale « Latence du parcours de paiement ». Un **Parcours Olympiade** guidé (bouton dans la barre latérale) fait la démonstration complète.
+Au démarrage, `SEED_VERSION` réinitialise les collections de travail si sa valeur change, puis les jumeaux réels sont projetés. Aucun jeu de démonstration n'est injecté et le bouton « Réinitialiser la démo » a été supprimé avec les personas (ADR-0018).
 
 ## API principale
 
@@ -264,8 +269,10 @@ Seed automatique au démarrage (clé `SEED_VERSION` : un changement réinitialis
 | `GET /api/jumeaux` · `/api/relations` · `/api/situations` | Collections filtrées RBAC |
 | `POST /api/aurora/demander` | Copilote : `{contexte, question, selection, domaine}` → réponse + propositions + commandes carte |
 | `GET /api/activite` | Flux d'événements temps réel (simulé) |
-| `POST /api/demo/reinitialiser` | Réinitialisation du jeu de démo (journalisée) |
-| `POST /api/perimetre/set` · `GET /api/perimetre` | Gestion persona/espace/vue active |
+| `GET /api/perimetre` | Espace global et autorisations actives |
+| `POST /api/commandes/{cid}/import/apercu` | Analyse d'un import CMDB/manifeste avant identité et sources |
+| `GET /api/boucle/sources/sante` · `POST /api/boucle/sources/{id}/ingest` | Santé et ingestion manuelle des sources |
+| `POST /api/boucle/sources/{id}/webhook` | Accélérateur signé : enfile un run si la branche/dépôt/SHA change |
 | `POST /api/cases/{cid}/fusion` | Ajout serveur d'une conversation à un Travail (append-only) |
 | `POST /api/relations/{id}/confirmer` | Confirmation A2A d'une relation |
 | `GET /api/journal` | Journal d'audit (accès, décisions, exports) |
@@ -273,7 +280,12 @@ Seed automatique au démarrage (clé `SEED_VERSION` : un changement réinitialis
 ## Tests
 
 ```bash
-cd backend && pytest tests/ -q
+# suite canonique (Postgres requis)
+cd backend && JUMEAU_PG_DSN='postgresql://...' .venv/bin/python -m pytest jumeau/tests -q
+
+# frontend
+cd frontend && CI=true npm test -- --watchAll=false && npm run build
 ```
 
-Rapports d'itérations d'assurance qualité : `/app/test_reports/iteration_*.json`.
+`backend/tests/` contient des scripts e2e historiques qui visent un backend externe via
+`REACT_APP_BACKEND_URL` ; ils ne font pas partie de la suite locale.

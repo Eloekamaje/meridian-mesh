@@ -197,7 +197,7 @@ export function BoutonJoindre({ cas, onChange, disabled = false, testid = "piece
 }
 
 export function ListePieces({ cas, onChange, compact = false, lectureSeule = false }) {
-  const { persona } = usePerimetre();
+  const { acteur } = usePerimetre();
   const pieces = cas?.pieces || [];
   if (!pieces.length) return null;
 
@@ -224,7 +224,7 @@ export function ListePieces({ cas, onChange, compact = false, lectureSeule = fal
                 {piece.nom}
               </button>
               <span className={`shrink-0 ${etat[1]}`}>{etat[0]}</span>
-              {peutRetirer(piece, cas, persona, lectureSeule) && (
+              {peutRetirer(piece, cas, acteur, lectureSeule) && (
                 <button
                   type="button"
                   onClick={() => retirer(cas, piece, onChange)}
@@ -304,7 +304,7 @@ export function ListePieces({ cas, onChange, compact = false, lectureSeule = fal
               >
                 <DownloadSimple size={13} />
               </button>
-              {peutRetirer(piece, cas, persona, lectureSeule) && (
+              {peutRetirer(piece, cas, acteur, lectureSeule) && (
                 <button
                   type="button"
                   onClick={() => retirer(cas, piece, onChange)}

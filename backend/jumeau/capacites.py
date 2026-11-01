@@ -34,7 +34,7 @@ CAPACITES = (
 )
 MODES_PREUVE = ("DECLARED", "OBSERVED", "INFERRED", "PROPOSED", "AUCUNE")
 SOURCES = ("builtin", "mcp", "manifeste", "openapi", "graphql", "grpc", "asyncapi", "interface")
-AXES_PORTEE = ("tenant", "persona", "perimetre")
+AXES_PORTEE = ("tenant", "acteur", "perimetre")
 
 _SLUG = r"^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
 _VERSION = (
@@ -181,7 +181,7 @@ def _portee_valeur(valeur: Any, axe: str) -> str | None:
     return texte
 
 
-def _portee(portee: Any, tenant: Any, persona: Any, perimetre: Any) -> dict[str, str | None]:
+def _portee(portee: Any, tenant: Any, acteur: Any, perimetre: Any) -> dict[str, str | None]:
     valeurs: dict[str, str | None] = {axe: None for axe in AXES_PORTEE}
     if portee is not None:
         if not isinstance(portee, Mapping):
@@ -192,7 +192,7 @@ def _portee(portee: Any, tenant: Any, persona: Any, perimetre: Any) -> dict[str,
         for axe in AXES_PORTEE:
             if axe in portee:
                 valeurs[axe] = _portee_valeur(portee[axe], axe)
-    for axe, valeur in (("tenant", tenant), ("persona", persona), ("perimetre", perimetre)):
+    for axe, valeur in (("tenant", tenant), ("acteur", acteur), ("perimetre", perimetre)):
         if valeur is None:
             continue
         normalisee = _portee_valeur(valeur, axe)
@@ -325,7 +325,7 @@ class ManifesteOutil:
     types_objets_lus: tuple[str, ...] = ()
     types_objets_ecrits: tuple[str, ...] = ()
     tenant: str | None = None
-    persona: str | None = None
+    acteur: str | None = None
     perimetre: str | None = None
     lecture_seule: bool = True
     cout: float = 0.0
@@ -348,7 +348,7 @@ class ManifesteOutil:
         types_objets_ecrits: Any = (),
         portee: Any = None,
         tenant: Any = None,
-        persona: Any = None,
+        acteur: Any = None,
         perimetre: Any = None,
         lecture_seule: Any = True,
         cout: Any = 0.0,
@@ -359,7 +359,7 @@ class ManifesteOutil:
         signature: Any = None,
         allowlist: Any = (),
     ) -> None:
-        portee_normalisee = _portee(portee, tenant, persona, perimetre)
+        portee_normalisee = _portee(portee, tenant, acteur, perimetre)
         lus = _liste_textes(types_objets_lus, "types_objets_lus")
         ecrits = _liste_textes(types_objets_ecrits, "types_objets_ecrits")
         effets = _liste_textes(effets_de_bord, "effets_de_bord")
@@ -380,7 +380,7 @@ class ManifesteOutil:
             "types_objets_lus": lus,
             "types_objets_ecrits": ecrits,
             "tenant": portee_normalisee["tenant"],
-            "persona": portee_normalisee["persona"],
+            "acteur": portee_normalisee["acteur"],
             "perimetre": portee_normalisee["perimetre"],
             "lecture_seule": seul,
             "cout": _cout(cout),
@@ -396,7 +396,7 @@ class ManifesteOutil:
 
     @property
     def portee(self) -> Portee:
-        return Portee(tenant=self.tenant, persona=self.persona, perimetre=self.perimetre)
+        return Portee(tenant=self.tenant, acteur=self.acteur, perimetre=self.perimetre)
 
     def __hash__(self) -> int:
         return hash((self.nom, self.version))
@@ -413,7 +413,7 @@ class ManifesteOutil:
             "schema_sortie": _liberer(self.schema_sortie),
             "portee": self.portee,
             "tenant": self.tenant,
-            "persona": self.persona,
+            "acteur": self.acteur,
             "perimetre": self.perimetre,
             "lecture_seule": self.lecture_seule,
             "cout": self.cout,
@@ -452,8 +452,8 @@ def _filtre(valeur: Any, nom: str) -> str | None:
     return valeur.strip() or None
 
 
-def _autorise(manifeste: ManifesteOutil, tenant: Any, persona: Any, perimetre: Any) -> bool:
-    for axe, demande in (("tenant", tenant), ("persona", persona), ("perimetre", perimetre)):
+def _autorise(manifeste: ManifesteOutil, tenant: Any, acteur: Any, perimetre: Any) -> bool:
+    for axe, demande in (("tenant", tenant), ("acteur", acteur), ("perimetre", perimetre)):
         if demande is None:
             continue
         offre = getattr(manifeste, axe)
@@ -507,13 +507,13 @@ class RegistreCapacites:
     def lister(
         self,
         tenant: Any = None,
-        persona: Any = None,
+        acteur: Any = None,
         perimetre: Any = None,
         capacite: Any = None,
         lecture_seule: Any = None,
     ) -> list[ManifesteOutil]:
         tenant = _filtre(tenant, "tenant")
-        persona = _filtre(persona, "persona")
+        acteur = _filtre(acteur, "acteur")
         perimetre = _filtre(perimetre, "perimetre")
         if capacite is not None:
             capacite = _capacite(capacite)
@@ -524,7 +524,7 @@ class RegistreCapacites:
             for manifeste in self._actifs.values()
             if (capacite is None or manifeste.capacite == capacite)
             and (lecture_seule is None or manifeste.lecture_seule is lecture_seule)
-            and _autorise(manifeste, tenant, persona, perimetre)
+            and _autorise(manifeste, tenant, acteur, perimetre)
         ]
         return sorted(resultat, key=lambda manifeste: (manifeste.nom, _cle_version(manifeste.version)))
 
@@ -532,12 +532,12 @@ class RegistreCapacites:
         self,
         requete: Any,
         tenant: Any = None,
-        persona: Any = None,
+        acteur: Any = None,
         perimetre: Any = None,
         capacite: Any = None,
         lecture_seule: Any = None,
     ) -> list[ManifesteOutil]:
-        candidats = self.lister(tenant, persona, perimetre, capacite, lecture_seule)
+        candidats = self.lister(tenant, acteur, perimetre, capacite, lecture_seule)
         jetons = _normaliser_texte(requete).split()
         if not jetons:
             return candidats
@@ -615,6 +615,33 @@ _SCHEMA_RESOUDRE_SORTIE = {
     "required": ["choix", "statut", "candidats", "requires_confirmation", "motif"],
     "additionalProperties": False,
 }
+_SCHEMA_LISTER_ENTREE = {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": False,
+}
+_SCHEMA_LISTER_SORTIE = {
+    "type": "object",
+    "properties": {
+        "applications": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "nom": {"type": "string"},
+                    "domaine": {"type": ["string", "null"]},
+                },
+                "required": ["id", "nom", "domaine"],
+                "additionalProperties": False,
+            },
+        },
+        "total": {"type": "integer"},
+        "tronque": {"type": "boolean"},
+    },
+    "required": ["applications", "total", "tronque"],
+    "additionalProperties": False,
+}
 _SCHEMA_MOBILISER_ENTREE = {
     "type": "object",
     "properties": {
@@ -657,8 +684,26 @@ _SCHEMA_CONCEVOIR_SORTIE = {
 
 
 def manifestes_integres() -> list[ManifesteOutil]:
-    """Les trois outils historiques, décrits comme adaptateurs read-only du noyau capacitaire."""
+    """Les quatre outils intégrés, décrits comme adaptateurs read-only du noyau capacitaire."""
     return [
+        ManifesteOutil(
+            nom="lister_applications",
+            version="1.0.0",
+            description=(
+                "Liste les applications réellement visibles dans le périmètre courant, avec un index borné. "
+                "Lecture seule, sans mobilisation ni conclusion."
+            ),
+            capacite="situer",
+            types_objets_lus=("Application", "Twin"),
+            schema_entree=_SCHEMA_LISTER_ENTREE,
+            schema_sortie=_SCHEMA_LISTER_SORTIE,
+            lecture_seule=True,
+            cout=0.0,
+            timeout_ms=5000,
+            mode_preuve="DECLARED",
+            source="builtin",
+            allowlist=("meridian.builtin",),
+        ),
         ManifesteOutil(
             nom="resoudre_application",
             version="1.0.0",

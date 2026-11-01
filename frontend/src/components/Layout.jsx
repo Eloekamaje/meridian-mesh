@@ -2,24 +2,17 @@ import { useEffect, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { List, Plus } from "@phosphor-icons/react";
 import FlorePanel from "./FlorePanel";
-import DemoTour from "./DemoTour";
 import SidebarGauche from "./SidebarGauche";
-import IndicateurClic from "./IndicateurClic";
-import { usePilotage } from "@/lib/pilotage";
 import { useEcran } from "@/lib/ecran";
-import { BarreKiosque, SurcouchesKiosque } from "@/demo/polaris/BarreKiosque";
 import logoComplet from "@/assets/logo/meridian-logo-clair.png";
 
 // Coquille applicative inspirée de ChatGPT : barre latérale gauche, zone centrale pleine hauteur et Flore en colonne latérale
 // (comme un panneau « Google Maps » : elle redimensionne la zone centrale au lieu de la recouvrir).
 // Responsive : bureau (≥ 1024 px) = barre latérale en colonne, repliable ; tablette = rail d'icônes, la barre complète s'ouvre en
 // tiroir par-dessus ; mobile (< 768 px) = barre supérieure et menu en tiroir. Le tiroir se ferme au changement de page.
-// Pendant une démonstration Polaris (pilote non nul) la même coquille porte la bande de contrôles du lecteur en pied de la
-// colonne centrale — aucune autre application.
 export default function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const pilote = usePilotage();
   const ecran = useEcran();
   const [tiroir, setTiroir] = useState(false);
   const fermerTiroir = () => setTiroir(false);
@@ -38,10 +31,7 @@ export default function Layout() {
   }, [tiroir]);
 
   // « Nouveau travail » depuis la barre supérieure (mobile) : même geste que dans la barre latérale
-  const nouveauTravail = () => {
-    if (pilote) { if (pilote.ouvertureEnAttente) pilote.demarrerOuverture(); return; }
-    navigate("/travaux/nouveau");
-  };
+  const nouveauTravail = () => navigate("/travaux/nouveau");
 
   return (
     <div className="flex h-screen h-[100dvh] w-full overflow-hidden bg-[#071019] text-[#DCE6EE]" data-testid="layout">
@@ -61,7 +51,6 @@ export default function Layout() {
               <button onClick={nouveauTravail} aria-label="Nouveau travail" data-testid="btn-nouveau-travail-barre" className="flex h-10 w-10 items-center justify-center rounded-lg text-[#60A5FA] active:bg-white/[0.08]">
                 <Plus size={20} />
               </button>
-              {pilote?.ouvertureEnAttente && <IndicateurClic />}
             </div>
           </header>
         )}
@@ -73,14 +62,10 @@ export default function Layout() {
           <div key={location.state?.continuite ? "/travaux/nouveau" : location.pathname} className="page-transition h-full">
             <Outlet />
           </div>
-          {pilote && <SurcouchesKiosque />}
         </main>
-        {pilote && <BarreKiosque />}
       </div>
 
       <FlorePanel />
-
-      <DemoTour />
 
       {/* Tiroir : la barre latérale complète, par-dessus le contenu (tablette et mobile) */}
       {ecran !== "bureau" && tiroir && (

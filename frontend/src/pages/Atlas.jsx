@@ -7,8 +7,7 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { useMesh } from "@/lib/mesh";
 import { usePerimetre } from "@/lib/perimetre";
-import { usePilotage } from "@/lib/pilotage";
-import SurfacePreparation from "@/components/SurfacePreparation";
+
 import { useContexte } from "@/lib/contexte";
 import TwinNode from "@/components/map/TwinNode";
 import NoeudGraphe from "@/components/map/NoeudGraphe";
@@ -88,7 +87,6 @@ export default function Atlas() {
   const direct = modeTemps === "direct";
   const [outil, setOutil] = useState("deplacement");
   const { selection, setSelection, domaineSel, setDomaineSel, focusCarte, commanderCarte, setFocusVisuel, ouvrirFlore, fermerFlore, floreOuverte, setAtlasCtx, atlasEtat, setAtlasEtat, demanderAFlore, preuveSurvolee, setRepliAuto } = useContexte();
-  const pilote = usePilotage();
   const graphe = searchParams.get("rendu") !== "classique";
   const echelleSynth = Number(searchParams.get("echelle")) || null; // essai d'échelle : N jumeaux fictifs servis par le backend
   const echelle = !!echelleSynth || (mesh?.perimetre?.nb_autorises || 0) >= SEUIL_ECHELLE;
@@ -310,11 +308,10 @@ export default function Atlas() {
     }
   }, [mesh]);
 
-  // Cadrage d'une scène pilotée (démonstration uniquement). Les jumeaux d'un récit sont
-  // répartis sur plusieurs lobes : un fitBounds brut tombe sous le seuil « Global » (0,6)
-  // où l'Atlas masque les jumeaux individuels — le résultat annoncé resterait invisible.
-  // On borne donc le zoom au niveau « constellation », quitte à rogner légèrement.
-  const dernierCadrage = useRef(null); // pts du dernier cadrage de scène
+  // Cadrage d'une scène. Les jumeaux d'une scène sont répartis sur plusieurs lobes : un fitBounds
+  // brut tombe sous le seuil « Global » (0,6) où l'Atlas masque les jumeaux individuels — le
+  // résultat annoncé resterait invisible. On borne donc le zoom au niveau « constellation »,
+  // quitte à rogner légèrement.
   const dernierCadrageIds = useRef(null); // ids des jumeaux du dernier cadrage de scène
   const cadrerScene = useCallback((ptsMesh, options = {}) => {
     if (!ptsMesh || !ptsMesh.length) return;
@@ -327,7 +324,6 @@ export default function Atlas() {
       .filter((n) => n && !n.hidden && n.internals?.positionAbsolute)
       .map((n) => n.internals.positionAbsolute);
     const pts = rendus.length ? rendus : ptsMesh;
-    dernierCadrage.current = pts;
     const duration = options.duration ?? 350;
     const xs = pts.map((p) => p.x);
     const ys = pts.map((p) => p.y);
@@ -387,9 +383,6 @@ export default function Atlas() {
       .filter(Boolean);
     if (pts.length) {
       cadrerScene(pts, { duration: sansAnimation ? 0 : 350, ids: idsCadrage });
-      // Démonstration : la mise en page des lobes se stabilise après le premier rendu de la
-      // scène — un second cadrage, sur les positions alors mesurées, garantit le résultat visible
-      if (pilote) setTimeout(() => cadrerScene(pts, { duration: 300 }), 550);
     }
 
     setTheatreSituationnel({
@@ -399,7 +392,7 @@ export default function Atlas() {
       accents: accentsValides,
       titre: titre || "Scène d'analyse",
     });
-  }, [mesh, posOverrides, cadrerScene, pilote]);
+  }, [mesh, posOverrides, cadrerScene]);
 
   const quitterTheatreSituationnel = useCallback(() => {
     clearTheatreTimers();
@@ -419,7 +412,7 @@ export default function Atlas() {
     theatreTimerRef.current.push(t);
   }, [situationParam, focusCarte, majUrl, commanderCarte]);
 
-  // Commandes carte envoyées par Flore / Chat / Démonstration Polaris
+  // Commandes carte envoyées par Flore / Chat
   useEffect(() => {
     if (!focusCarte) {
       if (theatreSituationnel.actif && !situationParam) {
@@ -469,10 +462,6 @@ export default function Atlas() {
     }
   }, [focusCarte]);
 
-  // Signal de disponibilité du rendu (démonstration) : la scène demandée est déclarée
-  // disponible quand les jumeaux de la commande ACTIVE sont réellement rendus — React
-  // Flow a mesuré leurs nœuds. Aucun acquittement par délai fixe, aucun signal périmé :
-  // la clé porte l'identifiant de commande et l'étape de révélation.
   const statsDomaine = useCallback(
     (label) => statsDuDomaine(mesh, situations, domDe, label),
     [mesh, situations, domDe]
@@ -680,26 +669,6 @@ export default function Atlas() {
     return g;
   }, [mesh, focus, situation, halo, compteurs, selection, relFocus, zoomNiveau, vueActive, posOverrides, domaineSel, perimetreTravail, domDe, statsRegions, focusCarte, temps, amorce, mesures, regionSurvolee, tickCoques, relSurvolee, selectedRelation, zoomActuel, routesFin, provisoire, estTactile, couchesCarte, situationsJumeaux, theatreSituationnel, graphe, analyse, domainesMasques]);
 
-  const [renduSignale, setRenduSignale] = useState(null);
-  useEffect(() => {
-    const cmd = focusCarte;
-    if (!pilote?.signalerRenduPret || !cmd || cmd.type !== "scene" || !cmd.commandId) return undefined;
-    const cle = `${cmd.commandId}:${cmd.etape ?? 0}`;
-    if (renduSignale === cle) return undefined;
-    const attendus = (cmd.accents?.length ? cmd.accents : cmd.ids || []).filter((id) => mesh?.jumeaux.some((j) => j.id === id));
-    if (!attendus.length) return undefined;
-    // Les jumeaux de la commande sont-ils effectivement dans le graphe peint ?
-    const peints = new Set(nodes.filter((n) => n.type === "twin" && !n.hidden).map((n) => n.id));
-    if (!attendus.every((id) => peints.has(id))) return undefined;
-    // …et l'accentuation demandée est-elle appliquée ?
-    if (!attendus.every((id) => selection.includes(id))) return undefined;
-    const raf = requestAnimationFrame(() => {
-      setRenduSignale(cle);
-      pilote.signalerRenduPret(cmd.commandId, cmd.etape ?? 0);
-    });
-    return () => cancelAnimationFrame(raf);
-  }, [focusCarte, nodes, selection, mesh, pilote, renduSignale]);
-
   // Moteur de labels des titres de domaines : sélection > survol > halo > investigations actives ;
   // collision → le titre le moins prioritaire disparaît (jamais de chevauchement de texte)
   const titresVisibles = useMemo(() => {
@@ -821,20 +790,14 @@ export default function Atlas() {
   // Le détail jumeau vit dans sa colonne GAUCHE — il n'interrompt plus Flore.
   const selCle = selectedRelation?.id || domaineSel || vueListe || (comparaison ? "comparaison" : null);
   useEffect(() => {
-    if (floreOuverte && selCle && !pilote) fermerFlore();
+    if (floreOuverte && selCle) fermerFlore();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selCle]);
 
   // Paradigme « Google Maps » : l'ouverture/fermeture de Flore redimensionne le canevas —
   // la carte se recadre pour rester entièrement visible avec tous ses composants.
-  // En démonstration, si une scène est déjà cadrée, on la RECADRE sur le nouveau canevas
-  // au lieu de la remplacer par une vue d'ensemble : le résultat annoncé reste à l'écran.
   useEffect(() => {
     const t = setTimeout(() => {
-      if (pilote && dernierCadrage.current?.length) {
-        cadrerScene(dernierCadrage.current);
-        return;
-      }
       rfRef.current?.fitView({ duration: 400, padding: 0.15, maxZoom: 1.35 });
     }, 60);
     return () => clearTimeout(t);
@@ -1009,11 +972,10 @@ export default function Atlas() {
   }, [selected, mesh]);
 
   // « Parler au jumeau » : chaque conversation est un travail. On le crée avec le(s) jumeau(x) en contexte, Flore
-  // ouvre l'échange, et l'on arrive dans la page du travail. (En démonstration, le réseau est simulé : Flore s'ouvre.)
+  // ouvre l'échange, et l'on arrive dans la page du travail.
   const parlerAuJumeau = async (ids) => {
     const js = ids.map((id) => mesh?.jumeaux.find((x) => x.id === id && !x.anonyme)).filter(Boolean);
     if (!js.length) return;
-    if (pilote) { setSelection(ids); ouvrirFlore(); return; }
     const seul = js.length === 1 ? js[0] : null;
     const nb = seul ? mesh.relations.filter((r) => r.source === seul.id || r.cible === seul.id).length : 0;
     const accueil = seul
@@ -1457,9 +1419,6 @@ export default function Atlas() {
     <div className="relative flex min-h-0 flex-1">
     <div ref={carteRef} onPointerMove={surSurvolCarte} onPointerLeave={() => { setRegionSurvolee(null); setRegionTooltip(null); setSecteurCurseur(null); setRelSurvolee(null); setRelTooltipPos(null); setSurvolJumeau(null); if (telemetrieRef.current) { telemetrieRef.current.textContent = "—"; telemetrieRef.current.style.opacity = "0.35"; } }} className="relative min-w-0 flex-1 overflow-hidden" data-testid="system-map" style={{ background: graphe ? "#071019" : "radial-gradient(ellipse at 50% 38%, #0D1B28 0%, #071019 60%, #04090F 100%)" }}>
       {!graphe && <CielEtoile />}
-      {/* Démonstration : la surface annonce ce qu'elle prépare. À la première ouverture,
-          surface sobre et pleine ; en mise à jour, la vue précédente reste visible dessous. */}
-      {pilote?.preparation?.surface === "atlas" && <SurfacePreparation preparation={pilote.preparation} vierge={pilote.premiereScene} testid="atlas-preparation" />}
       <output
         ref={telemetrieRef}
         data-testid="telemetrie"

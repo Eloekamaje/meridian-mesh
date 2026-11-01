@@ -1,34 +1,41 @@
 """API des capacités cognitives : Twins typés, boucle mesurée, mémoire, attention, temporalité.
 
 Les routes réutilisent le contexte tenant de la Boucle et restent en lecture/écriture canonique : aucun accès
-direct à Mongo, aucun modèle, aucun réseau. Les écritures exigent un acteur (persona) et les Claims exigent une
+direct à Mongo, aucun modèle, aucun réseau. Les écritures exigent un acteur et les Claims exigent une
 preuve ; les erreurs de domaine sont traduites en 400/403/404/503.
 """
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from contextlib import nullcontext
 from dataclasses import replace
 from typing import Any
+from uuid import uuid4
 
 import psycopg
-from fastapi import APIRouter, Header, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 import auth as auth_identite
 
 import boucle_routes
+from jumeau import analyse_service, evaluation_cognitive
+from jumeau.analyse_service import ConfigurationManquante
+from jumeau.execution import depot
+from jumeau.execution.modele import CommandeExecution, ConflitIdempotence, QuotaDepasse
 from jumeau import application_memoire, attention, boucle, calibration
-from jumeau import contexte as contexte_module, contrefactuel, decision_cognitive
+from jumeau import contrefactuel, decision_cognitive
 from jumeau import entreprise_depot
 from jumeau import evaluation_outils, evaluation_profils
 from jumeau import consolidation_memoire, memoire_durable, memoire_org, outcomes, portefeuille, retention
-from jumeau import raisonnement as raisonnement_module, resolveur_contexte, retrieval_memoire, session_memoire
+from jumeau import resolveur_contexte, session_memoire
 from jumeau import rls, valeur as valeur_module
 from jumeau import specialiste_decouverte, specialiste_impact, specialiste_preuve
 from jumeau import specialistes, temporalite, twins_types
-from jumeau import composition, graph_store, profils, reponse_cognitive
+from jumeau import composition, graph_store, profils
 
 router = APIRouter(prefix="/boucle", tags=["cognitif"])
 logger = logging.getLogger("meridian.cognitif")
@@ -110,6 +117,7 @@ class AnalyseCognitive(AnalyseSpecialistes):
     session_id: str | None = Field(None, max_length=200)
     decision_id: str | None = Field(None, max_length=200)
     confidence: float | None = None
+    max_tokens: int | None = Field(None, ge=200, le=20000)
 
 
 class DemandeComposition(BaseModel):
@@ -225,6 +233,10 @@ def _ids(valeur: str | None) -> list[str]:
 
 
 def _erreur(exc: Exception) -> HTTPException:
+    if isinstance(exc, QuotaDepasse):
+        return HTTPException(429, str(exc))
+    if isinstance(exc, ConflitIdempotence):
+        return HTTPException(409, str(exc))
     if isinstance(exc, (PermissionError, twins_types.TwinTenantRefuse)):
         return HTTPException(403, str(exc))
     if isinstance(exc, (LookupError, twins_types.TwinIntrouvable, outcomes.LearningIntrouvable)):
@@ -262,11 +274,11 @@ async def lister_twins(
     request: Request,
     type_: str | None = Query(None, alias="type", max_length=32),
     limite: int = Query(200, ge=1, le=1000),
-    x_persona: str = Header("architecte", max_length=64),
+    acteur: str = Depends(auth_identite.acteur),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
-    boucle_routes._verifier_contexte(x_persona, x_espace)
+    boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
     twins = await _avec_connexion(tenant, lambda conn: twins_types.lister_twins(conn, tenant, type_, limite))
     return {"tenant": tenant, "twins": boucle_routes._assainir(twins)}
@@ -276,15 +288,15 @@ async def lister_twins(
 async def creer_twin(
     payload: CreationTwin,
     request: Request,
-    x_persona: str = Header("architecte", max_length=64),
+    acteur: str = Depends(auth_identite.acteur),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
-    boucle_routes._verifier_contexte(x_persona, x_espace)
+    boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
     twin = await _avec_connexion(tenant, lambda conn: twins_types.creer_twin(
         conn, tenant, payload.id, payload.type, payload.nom, mission=payload.mission,
-        domaine=payload.domaine, equipe=payload.equipe, acteur=x_persona, preuve=payload.preuve))
+        domaine=payload.domaine, equipe=payload.equipe, acteur=acteur, preuve=payload.preuve))
     return {"tenant": tenant, "twin": boucle_routes._assainir(twin)}
 
 
@@ -292,11 +304,11 @@ async def creer_twin(
 async def lire_twin(
     twin_id: str,
     request: Request,
-    x_persona: str = Header("architecte", max_length=64),
+    acteur: str = Depends(auth_identite.acteur),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
-    boucle_routes._verifier_contexte(x_persona, x_espace)
+    boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
     twin = await _avec_connexion(tenant, lambda conn: twins_types.lire_twin(conn, tenant, twin_id))
     if twin is None:
@@ -309,16 +321,16 @@ async def creer_claim(
     twin_id: str,
     payload: CreationClaim,
     request: Request,
-    x_persona: str = Header("architecte", max_length=64),
+    acteur: str = Depends(auth_identite.acteur),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
-    boucle_routes._verifier_contexte(x_persona, x_espace)
+    boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
     claim = await _avec_connexion(tenant, lambda conn: twins_types.creer_claim(
         conn, tenant, twin_id, payload.predicat, payload.objet, source=payload.source,
         preuve=payload.preuve, mode=payload.mode, confiance=payload.confiance,
-        acteur=x_persona, texte=payload.texte))
+        acteur=acteur, texte=payload.texte))
     return {"tenant": tenant, "claim": boucle_routes._assainir(claim)}
 
 
@@ -327,11 +339,11 @@ async def claims_twin(
     twin_id: str,
     request: Request,
     limite: int = Query(100, ge=1, le=1000),
-    x_persona: str = Header("architecte", max_length=64),
+    acteur: str = Depends(auth_identite.acteur),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
-    boucle_routes._verifier_contexte(x_persona, x_espace)
+    boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
     claims = await _avec_connexion(
         tenant, lambda conn: twins_types.claims_du_twin(conn, tenant, twin_id, limite))
@@ -342,18 +354,18 @@ async def claims_twin(
 async def creer_outcome(
     payload: CreationOutcome,
     request: Request,
-    x_persona: str = Header("architecte", max_length=64),
+    acteur: str = Depends(auth_identite.acteur),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
-    boucle_routes._verifier_contexte(x_persona, x_espace)
+    boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
     resultat = await _avec_connexion(tenant, lambda conn: outcomes.mesurer_et_capitaliser(
         conn, tenant, payload.initiative_id, payload.mesure, cible=payload.cible,
         periode=payload.periode, preuve_ids=payload.preuve_ids, decision_id=payload.decision_id,
         situation_ids=payload.situation_ids, twin_ids=payload.twin_ids,
         enseignement=payload.enseignement, conditions_reutilisation=payload.conditions_reutilisation,
-        acteur=x_persona))
+        acteur=acteur))
     prediction = None
     if payload.prediction_id and payload.succes is not None:
         try:
@@ -372,11 +384,11 @@ async def lister_learnings(
     situation_id: str | None = Query(None, max_length=128),
     twin_ids: str | None = Query(None, max_length=1000),
     limite: int = Query(20, ge=1, le=1000),
-    x_persona: str = Header("architecte", max_length=64),
+    acteur: str = Depends(auth_identite.acteur),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
-    boucle_routes._verifier_contexte(x_persona, x_espace)
+    boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
     learnings = await _avec_connexion(tenant, lambda conn: outcomes.learnings_pour(
         conn, tenant, situation_id=situation_id, twin_ids=_ids(twin_ids), limite=limite))
@@ -388,14 +400,14 @@ async def reutiliser_learning(
     learning_id: str,
     payload: ReutilisationLearning,
     request: Request,
-    x_persona: str = Header("architecte", max_length=64),
+    acteur: str = Depends(auth_identite.acteur),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
-    boucle_routes._verifier_contexte(x_persona, x_espace)
+    boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
     learning = await _avec_connexion(tenant, lambda conn: outcomes.marquer_reutilise(
-        conn, tenant, learning_id, payload.situation_id, x_persona))
+        conn, tenant, learning_id, payload.situation_id, acteur))
     return {"tenant": tenant, "learning": boucle_routes._assainir(learning)}
 
 
@@ -403,11 +415,11 @@ async def reutiliser_learning(
 async def memoriser(
     payload: CreationMemoire,
     request: Request,
-    x_persona: str = Header("architecte", max_length=64),
+    acteur: str = Depends(auth_identite.acteur),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
-    boucle_routes._verifier_contexte(x_persona, x_espace)
+    boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
     memoire = await _avec_connexion(tenant, lambda conn: memoire_org.memoriser(
         conn, tenant, payload.contenu, genre=payload.genre, source=payload.source,
@@ -422,11 +434,11 @@ async def chercher_memoire(
     q: str = Query(..., min_length=1, max_length=500),
     twin_ids: str | None = Query(None, max_length=1000),
     limite: int = Query(20, ge=1, le=1000),
-    x_persona: str = Header("architecte", max_length=64),
+    acteur: str = Depends(auth_identite.acteur),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
-    boucle_routes._verifier_contexte(x_persona, x_espace)
+    boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
     memoires = await _avec_connexion(tenant, lambda conn: memoire_org.chercher(
         conn, tenant, q, twin_ids=_ids(twin_ids), limite=limite))
@@ -438,11 +450,11 @@ async def attention_du_jour(
     request: Request,
     type_: str = Query("SITUATION", alias="type", max_length=64),
     limite: int = Query(50, ge=1, le=500),
-    x_persona: str = Header("architecte", max_length=64),
+    acteur: str = Depends(auth_identite.acteur),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
-    boucle_routes._verifier_contexte(x_persona, x_espace)
+    boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
     objets = await _avec_connexion(tenant, lambda conn: entreprise_depot.lister_objets(
         conn, tenant, type_=type_, limite=1000))
@@ -457,11 +469,11 @@ async def attention_du_jour(
 async def topologie_a_date(
     request: Request,
     date: str = Query(..., min_length=1, max_length=80),
-    x_persona: str = Header("architecte", max_length=64),
+    acteur: str = Depends(auth_identite.acteur),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
-    boucle_routes._verifier_contexte(x_persona, x_espace)
+    boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
     resultat, mode = await asyncio.to_thread(
         boucle_routes._executer_graphe,
@@ -542,12 +554,12 @@ def _fusionner_dossiers(dossiers, tenant):
 async def analyser_specialistes(
     payload: AnalyseSpecialistes,
     request: Request,
-    x_persona: str = Header("architecte", max_length=64),
+    acteur: str = Depends(auth_identite.acteur),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
     """Fait travailler les spécialistes en parallèle sur un dossier borné ; aucune écriture canonique."""
-    boucle_routes._verifier_contexte(x_persona, x_espace)
+    boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
     noms = payload.specialistes or ["decouverte", "preuve", "impact", "outcome"]
     inconnus = [nom for nom in noms if nom not in _SPECIALISTES]
@@ -566,145 +578,102 @@ async def analyser_specialistes(
 async def analyser_cognitif(
     payload: AnalyseCognitive,
     request: Request,
-    x_persona: str = Header("architecte", max_length=64),
+    acteur: str = Depends(auth_identite.acteur),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
     """Résout le profil, compose les spécialistes et rend une réponse située sur un socle unique."""
-    boucle_routes._verifier_contexte(x_persona, x_espace)
+    boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
-    # Le profil est une lentille, pas un droit. En demo, le sélecteur est accepté ; hors demo,
-    # l'identité authentifiée fait foi et l'autorité de l'agent reste plafonnée à proposition.
-    profil_demande = payload.profil if auth_identite.mode() == "demo" else None
-    profil = profils.resoudre_profil(
-        profil=profil_demande, identite={"role": x_persona},
-        question=payload.question, autorite_max="proposition")
-    twin_ids = list(dict.fromkeys(
-        [identifiant for identifiant in (*payload.twin_ids, payload.twin_id) if identifiant]))
-    plan = composition.planifier(
-        profil, payload.question, autorite_max="proposition",
-        application_id=payload.application_id, situation_id=payload.situation_id,
-        twin_ids=tuple(twin_ids))
-    global_scope = (
-        payload.scope in {"enterprise", "portfolio"}
-        or payload.domaine is not None
-        or (not payload.application_id and not twin_ids and not payload.situation_id)
-    )
-    surface = payload.surface or (
-        "situation" if payload.situation_id else
-        "twin" if (twin_ids or payload.application_id) else
-        "atlas" if payload.domaine else "global")
     try:
-        contexte_resolu = resolveur_contexte.resoudre(
-            tenant, surface,
-            twin_id=(twin_ids[0] if twin_ids else payload.application_id),
-            situation_id=payload.situation_id,
-            domaine=payload.domaine if surface == "atlas" else None,
-            date=payload.date, utilisateur=x_persona, perimetre=payload.scope)
+        return await analyse_service.executer(tenant=tenant, acteur=acteur, payload=payload)
+    except HTTPException:
+        raise
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    noms = []
-    valeur = None
-    if global_scope:
-        agregat = await _avec_connexion(tenant, lambda conn: portefeuille.agreger(
-            conn, tenant, domaine=payload.domaine, limite=100))
-        dossier = {
-            "tenant": tenant, "statut": "ok",
-            "propositions": agregat["propositions"],
-            "specialistes": [{"specialiste": "portefeuille", "statut": "ok",
-                              "propositions": agregat["propositions"],
-                              "limites": list(agregat["limites"])}],
-            "limites": list(agregat["limites"]),
-        }
-        valeur = agregat["valeur"]
-    else:
-        noms = list(plan.specialistes_socle)
-        dsn = boucle_routes._dsn()
-        base = specialistes.ContexteSpecialiste(
-            tenant=tenant, question=payload.question, situation_id=payload.situation_id,
-            twin_ids=tuple(twin_ids), application_id=payload.application_id,
-            claim_ids=tuple(payload.claim_ids), profondeur=payload.profondeur)
-        dossiers = await _lancer_specialistes(noms, base, tenant, dsn) if noms else []
-        dossier = _fusionner_dossiers(dossiers, tenant) if dossiers else {
-            "tenant": tenant, "statut": "partiel", "propositions": [],
-            "specialistes": [], "limites": ["aucun spécialiste mobilisé par la composition"],
-        }
-    reponse = reponse_cognitive.composer(
-        payload.question, profil, plan, dossier, autorite_max="proposition")
-    contexte_pack = contexte_module.construire(payload.question, profil, dossier)
+    except ConfigurationManquante as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - traduction contrôlée en statut HTTP
+        raise _erreur(exc) from exc
+
+
+@router.post("/analyser/runs", status_code=202)
+async def analyser_durable(
+    payload: AnalyseCognitive,
+    request: Request,
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key", max_length=300),
+):
+    """Crée un run durable `cognitif.analyser` ; le worker exécute le même service que `/analyser`."""
+    acteur = str(getattr(request.state, "utilisateur", None) or "demo")
+    # L'espace reste un contexte de lecture, pas une identité.
+    if x_espace is not None:
+        boucle_routes._verifier_espace(x_espace)
+    tenant = boucle_routes._tenant(request, x_tenant)
+    if len(json.dumps(payload.model_dump(), ensure_ascii=False, default=str)) > 256 * 1024:
+        raise HTTPException(413, "payload d'analyse trop volumineux")
+    cle = (idempotency_key or "").strip() or uuid4().hex
+    commande = CommandeExecution(
+        tenant_id=tenant,
+        type="cognitif.analyser",
+        payload={"analyse": payload.model_dump(), "espace": x_espace},
+        idempotency_key=cle,
+        acteur=acteur,
+    )
     try:
-        candidats = await _avec_connexion(tenant, lambda conn: retrieval_memoire.recuperer(
-            conn, tenant, question=payload.question, twin_ids=tuple(twin_ids),
-            situation_id=payload.situation_id,
-            scope=("session" if payload.session_id else None),
-            scope_id=payload.session_id, limite=12))
-        contexte_pack = retrieval_memoire.enrichir_pack(contexte_pack.as_dict(), candidats)
+        run, cree = await _avec_connexion(tenant, lambda conn: depot.creer_run(conn, commande))
+    except HTTPException:
+        raise
+    except ConflitIdempotence as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise _erreur(exc) from exc
+    corps = depot.run_public(run)
+    entetes = {"Cache-Control": "no-store"}
+    try:
+        entetes["Location"] = str(request.url_for("lire_run", run_id=corps["run_id"]))
     except Exception:
-        contexte_pack = contexte_pack.as_dict()
-    reponse_dict = reponse.as_dict()
-    reponse_dict["decision_support"] = decision_cognitive.decision_support_enrichi(
-        reponse_dict.get("decision_support"), options=payload.options or None,
-        changements=payload.changements, criteres=payload.criteres)
-    session_resultat = None
-    if payload.session_id:
-        try:
-            resume_session = " | ".join(
-                str(fait.get("titre") or "") for fait in (contexte_pack.get("faits") or ())[:3]
-            ) or str(reponse_dict.get("decision_support", {}).get("abstention") or "Analyse cognitive")
-            session_resultat = await _avec_connexion(
-                tenant, lambda conn: session_memoire.memoriser_session(
-                    conn, tenant, payload.session_id, payload.question, resume_session,
-                    acteur=x_persona,
-                    donnees={"fingerprint": contexte_pack.get("fingerprint")}))
-        except Exception:
-            session_resultat = None
-    prediction = None
-    if payload.decision_id and payload.confidence is not None:
-        try:
-            prediction = await _avec_connexion(tenant, lambda conn: decision_cognitive.enregistrer_confiance(
-                conn, tenant, decision_id=payload.decision_id,
-                confidence=payload.confidence))
-        except Exception:
-            prediction = None
-    trace = raisonnement_module.construire(
-        payload.question, profil, plan, contexte_pack, dossier, reponse_dict)
-    resultat = {
-        "tenant": tenant,
-        "scope": ("enterprise" if global_scope and not payload.domaine else "portfolio")
-        if global_scope else "application",
-        "domaine": payload.domaine,
-        "profil": boucle_routes._assainir(profil.as_dict()),
-        "composition": boucle_routes._assainir(plan.as_dict()),
-        "specialistes_executes": list(noms),
-        "dossier": boucle_routes._assainir(dossier),
-        "reponse": boucle_routes._assainir(reponse_dict),
-        "contexte": boucle_routes._assainir(contexte_pack),
-        "contexte_resolu": boucle_routes._assainir(contexte_resolu.as_dict()),
-        "raisonnement": boucle_routes._assainir(trace.as_dict()),
-        "prediction": boucle_routes._assainir(prediction.as_dict()) if prediction is not None else None,
-        "memoire_session": boucle_routes._assainir(session_resultat) if session_resultat is not None else None,
-        "qualite": {
-            "faits": len(reponse.socle.faits),
-            "preuves": len(reponse.socle.preuves),
-            "specialistes_ok": sum(1 for d in dossier["specialistes"] if d.get("statut") == "ok"),
-            "limites": len(reponse.socle.limites),
-            "memoire": len(contexte_pack.get("memoire") or ()),
-            "autorite": reponse.autorite,
-        },
-    }
-    if valeur is not None:
-        resultat["valeur"] = boucle_routes._assainir(valeur)
-    return resultat
+        entetes["Location"] = f"/api/runs/{corps['run_id']}"
+    return JSONResponse(status_code=202 if cree else 200, content=corps, headers=entetes)
+
+
+@router.get("/runs/{run_id}/evaluation")
+async def evaluer_run(
+    run_id: str,
+    request: Request,
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    tenant = boucle_routes._tenant(request, x_tenant)
+    run = await _avec_connexion(tenant, lambda conn: depot.obtenir_run(conn, tenant, run_id))
+    if run is None:
+        raise HTTPException(404, "Run introuvable")
+    return {"tenant": tenant, "run_id": run_id,
+            "evaluation": evaluation_cognitive.evaluer(run.get("resultat") or {})}
+
+
+@router.get("/runs/{run_id}/replay")
+async def rejouer_run(
+    run_id: str,
+    request: Request,
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    tenant = boucle_routes._tenant(request, x_tenant)
+    run = await _avec_connexion(tenant, lambda conn: depot.obtenir_run(conn, tenant, run_id))
+    if run is None:
+        raise HTTPException(404, "Run introuvable")
+    return {"tenant": tenant, "run_id": run_id,
+            "replay": evaluation_cognitive.rejouer(run.get("resultat") or {})}
 
 
 @router.get("/profils")
 async def lister_profils(
     request: Request,
-    x_persona: str = Header("architecte", max_length=64),
+    acteur: str = Depends(auth_identite.acteur),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
-    boucle_routes._verifier_contexte(x_persona, x_espace)
+    boucle_routes._verifier_espace(x_espace)
     boucle_routes._tenant(request, x_tenant)
     return {"profils": [profil.as_dict() for profil in profils.CATALOGUE_PROFILS.values()]}
 
@@ -713,11 +682,11 @@ async def lister_profils(
 async def lire_profil(
     profil_id: str,
     request: Request,
-    x_persona: str = Header("architecte", max_length=64),
+    acteur: str = Depends(auth_identite.acteur),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
-    boucle_routes._verifier_contexte(x_persona, x_espace)
+    boucle_routes._verifier_espace(x_espace)
     boucle_routes._tenant(request, x_tenant)
     profil = profils.CATALOGUE_PROFILS.get(profil_id)
     if profil is None:
@@ -729,18 +698,18 @@ async def lire_profil(
 async def previsualiser_composition(
     payload: DemandeComposition,
     request: Request,
-    x_persona: str = Header("architecte", max_length=64),
+    acteur: str = Depends(auth_identite.acteur),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
     """Prévisualise la composition sans exécuter aucun spécialiste."""
-    boucle_routes._verifier_contexte(x_persona, x_espace)
+    boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
     # Le profil est une lentille, pas un droit. En demo, le sélecteur est accepté ; hors demo,
     # l'identité authentifiée fait foi et l'autorité de l'agent reste plafonnée à proposition.
     profil_demande = payload.profil if auth_identite.mode() == "demo" else None
     profil = profils.resoudre_profil(
-        profil=profil_demande, identite={"role": x_persona},
+        profil=profil_demande, identite={"acteur": acteur},
         question=payload.question, autorite_max="proposition")
     plan = composition.planifier(
         profil, payload.question, autorite_max="proposition",
@@ -767,12 +736,12 @@ async def lire_portefeuille(
     request: Request,
     domaine: str | None = Query(None, max_length=120),
     limite: int = Query(50, ge=1, le=500),
-    x_persona: str = Header("architecte", max_length=64),
+    acteur: str = Depends(auth_identite.acteur),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
     """Agrège situations, décisions, initiatives, outcomes et learnings à l'échelle portefeuille."""
-    boucle_routes._verifier_contexte(x_persona, x_espace)
+    boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
     resultat = await _avec_connexion(tenant, lambda conn: portefeuille.agreger(
         conn, tenant, domaine=domaine, limite=limite))
@@ -783,11 +752,11 @@ async def lire_portefeuille(
 async def resume_valeurs(
     request: Request,
     domaine: str | None = Query(None, max_length=120),
-    x_persona: str = Header("architecte", max_length=64),
+    acteur: str = Depends(auth_identite.acteur),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
-    boucle_routes._verifier_contexte(x_persona, x_espace)
+    boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
     resultat = await _avec_connexion(
         tenant, lambda conn: valeur_module.resume(conn, tenant, domaine=domaine))
@@ -802,11 +771,11 @@ async def lister_valeurs(
     type_: str | None = Query(None, alias="type", max_length=40),
     proprietaire: str | None = Query(None, max_length=160),
     limite: int = Query(200, ge=1, le=1000),
-    x_persona: str = Header("architecte", max_length=64),
+    acteur: str = Depends(auth_identite.acteur),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
-    boucle_routes._verifier_contexte(x_persona, x_espace)
+    boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
     valeurs = await _avec_connexion(tenant, lambda conn: valeur_module.lister(
         conn, tenant, statut=statut, domaine=domaine, type_=type_,
@@ -818,11 +787,11 @@ async def lister_valeurs(
 async def lire_valeur(
     valeur_id: str,
     request: Request,
-    x_persona: str = Header("architecte", max_length=64),
+    acteur: str = Depends(auth_identite.acteur),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
-    boucle_routes._verifier_contexte(x_persona, x_espace)
+    boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
     valeur = await _avec_connexion(
         tenant, lambda conn: valeur_module.lire(conn, tenant, valeur_id))
@@ -835,11 +804,11 @@ async def lire_valeur(
 async def creer_valeur(
     payload: CreationValeur,
     request: Request,
-    x_persona: str = Header("architecte", max_length=64),
+    acteur: str = Depends(auth_identite.acteur),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
-    boucle_routes._verifier_contexte(x_persona, x_espace)
+    boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
     donnees = payload.model_dump()
     donnees["tenant_id"] = tenant
@@ -853,11 +822,11 @@ async def maj_valeur(
     valeur_id: str,
     payload: MiseAJourValeur,
     request: Request,
-    x_persona: str = Header("architecte", max_length=64),
+    acteur: str = Depends(auth_identite.acteur),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
-    boucle_routes._verifier_contexte(x_persona, x_espace)
+    boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
     changements = {cle: v for cle, v in payload.model_dump().items() if v is not None}
     valeur = await _avec_connexion(
@@ -869,19 +838,19 @@ async def maj_valeur(
 async def resoudre_contexte(
     payload: DemandeContexte,
     request: Request,
-    x_persona: str = Header("architecte", max_length=64),
+    acteur: str = Depends(auth_identite.acteur),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
     """Résout explicitement une surface et ses entités, sans laisser le modèle deviner un id."""
-    boucle_routes._verifier_contexte(x_persona, x_espace)
+    boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
     try:
         resultat = resolveur_contexte.resoudre(
             tenant, payload.surface, twin_id=payload.twin_id,
             situation_id=payload.situation_id, work_id=payload.work_id,
             domaine=payload.domaine, date=payload.date,
-            utilisateur=x_persona, perimetre=payload.perimetre)
+            utilisateur=acteur, perimetre=payload.perimetre)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return {"tenant": tenant, "contexte": boucle_routes._assainir(resultat.as_dict())}
@@ -895,11 +864,11 @@ async def lister_memoire_durable(
     classe: str | None = Query(None, max_length=32),
     q: str | None = Query(None, max_length=500),
     limite: int = Query(200, ge=1, le=1000),
-    x_persona: str = Header("architecte", max_length=64),
+    acteur: str = Depends(auth_identite.acteur),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
-    boucle_routes._verifier_contexte(x_persona, x_espace)
+    boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
     if q:
         valeurs = await _avec_connexion(tenant, lambda conn: memoire_durable.chercher(
@@ -915,11 +884,11 @@ async def exporter_memoire_durable(
     request: Request,
     scope: str | None = Query(None, max_length=32),
     scope_id: str | None = Query(None, max_length=200),
-    x_persona: str = Header("architecte", max_length=64),
+    acteur: str = Depends(auth_identite.acteur),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
-    boucle_routes._verifier_contexte(x_persona, x_espace)
+    boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
     valeurs = await _avec_connexion(tenant, lambda conn: memoire_durable.exporter(
         conn, tenant, scope=scope, scope_id=scope_id))
@@ -929,11 +898,11 @@ async def exporter_memoire_durable(
 @router.post("/memoire/durable/purge")
 async def purger_memoire_durable(
     request: Request,
-    x_persona: str = Header("architecte", max_length=64),
+    acteur: str = Depends(auth_identite.acteur),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
-    boucle_routes._verifier_contexte(x_persona, x_espace)
+    boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
     supprimees = await _avec_connexion(tenant, lambda conn: memoire_durable.purger(conn, tenant))
     return {"tenant": tenant, "supprimees": supprimees}
@@ -943,11 +912,11 @@ async def purger_memoire_durable(
 async def creer_memoire_durable(
     payload: CreationMemoireDurable,
     request: Request,
-    x_persona: str = Header("architecte", max_length=64),
+    acteur: str = Depends(auth_identite.acteur),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
-    boucle_routes._verifier_contexte(x_persona, x_espace)
+    boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
     memoire = await _avec_connexion(tenant, lambda conn: memoire_durable.creer(
         conn, tenant, id=payload.id, scope=payload.scope, scope_id=payload.scope_id,
@@ -961,11 +930,11 @@ async def creer_memoire_durable(
 async def lire_memoire_durable(
     memoire_id: str,
     request: Request,
-    x_persona: str = Header("architecte", max_length=64),
+    acteur: str = Depends(auth_identite.acteur),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
-    boucle_routes._verifier_contexte(x_persona, x_espace)
+    boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
     memoire = await _avec_connexion(
         tenant, lambda conn: memoire_durable.lire(conn, tenant, memoire_id))
@@ -978,11 +947,11 @@ async def lire_memoire_durable(
 async def supprimer_memoire_durable(
     memoire_id: str,
     request: Request,
-    x_persona: str = Header("architecte", max_length=64),
+    acteur: str = Depends(auth_identite.acteur),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
-    boucle_routes._verifier_contexte(x_persona, x_espace)
+    boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
     supprimee = await _avec_connexion(
         tenant, lambda conn: memoire_durable.supprimer(conn, tenant, memoire_id))
@@ -995,11 +964,11 @@ async def supprimer_memoire_durable(
 async def enregistrer_prediction(
     payload: CreationPrediction,
     request: Request,
-    x_persona: str = Header("architecte", max_length=64),
+    acteur: str = Depends(auth_identite.acteur),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
-    boucle_routes._verifier_contexte(x_persona, x_espace)
+    boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
     prediction = await _avec_connexion(tenant, lambda conn: calibration.enregistrer(
         conn, tenant, id=payload.id, decision_id=payload.decision_id,
@@ -1012,11 +981,11 @@ async def resoudre_prediction(
     prediction_id: str,
     payload: ResolutionPrediction,
     request: Request,
-    x_persona: str = Header("architecte", max_length=64),
+    acteur: str = Depends(auth_identite.acteur),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
-    boucle_routes._verifier_contexte(x_persona, x_espace)
+    boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
     try:
         prediction = await _avec_connexion(tenant, lambda conn: calibration.resoudre(
@@ -1030,11 +999,11 @@ async def resoudre_prediction(
 async def rapport_calibration(
     request: Request,
     decision_id: str | None = Query(None, max_length=200),
-    x_persona: str = Header("architecte", max_length=64),
+    acteur: str = Depends(auth_identite.acteur),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
-    boucle_routes._verifier_contexte(x_persona, x_espace)
+    boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
     resultat = await _avec_connexion(tenant, lambda conn: calibration.rapport(
         conn, tenant, decision_id=decision_id))
@@ -1055,12 +1024,12 @@ async def comparer_contrefactuel(payload: DemandeContrefactuel):
 async def proposer_consolidation(
     payload: DemandeConsolidation,
     request: Request,
-    x_persona: str = Header("architecte", max_length=64),
+    acteur: str = Depends(auth_identite.acteur),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
     """Propose doublons et conflits ; n'écrit jamais sans approbation humaine explicite."""
-    boucle_routes._verifier_contexte(x_persona, x_espace)
+    boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
     try:
         proposition = consolidation_memoire.proposer(
@@ -1083,11 +1052,11 @@ async def proposer_consolidation(
 @router.get("/retention/rapport")
 async def retention_rapport(
     request: Request,
-    x_persona: str = Header("architecte", max_length=64),
+    acteur: str = Depends(auth_identite.acteur),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
-    boucle_routes._verifier_contexte(x_persona, x_espace)
+    boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
     resultat = await _avec_connexion(tenant, lambda conn: retention.rapport(conn, tenant))
     return boucle_routes._assainir(resultat)
@@ -1101,11 +1070,11 @@ class PurgeRetention(BaseModel):
 async def retention_purger(
     payload: PurgeRetention,
     request: Request,
-    x_persona: str = Header("architecte", max_length=64),
+    acteur: str = Depends(auth_identite.acteur),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
-    boucle_routes._verifier_contexte(x_persona, x_espace)
+    boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
     resultat = await _avec_connexion(tenant, lambda conn: retention.purger(
         conn, tenant, dry_run=payload.dry_run))
@@ -1116,11 +1085,11 @@ async def retention_purger(
 async def lister_sessions(
     request: Request,
     limite: int = Query(50, ge=1, le=500),
-    x_persona: str = Header("architecte", max_length=64),
+    acteur: str = Depends(auth_identite.acteur),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
-    boucle_routes._verifier_contexte(x_persona, x_espace)
+    boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
     sessions = await _avec_connexion(tenant, lambda conn: session_memoire.lister_sessions(
         conn, tenant, limite=limite))
@@ -1132,11 +1101,11 @@ async def lire_session(
     session_id: str,
     request: Request,
     limite: int = Query(20, ge=1, le=100),
-    x_persona: str = Header("architecte", max_length=64),
+    acteur: str = Depends(auth_identite.acteur),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
-    boucle_routes._verifier_contexte(x_persona, x_espace)
+    boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
     memoires = await _avec_connexion(tenant, lambda conn: session_memoire.charger_session(
         conn, tenant, session_id, limite=limite))

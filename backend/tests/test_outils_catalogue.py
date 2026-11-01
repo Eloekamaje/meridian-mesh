@@ -22,7 +22,7 @@ def _client(serveur):
     return TestClient(app)
 
 
-def _manifeste(nom, tenant="banque", persona="architecte", perimetre="mesh-global", **autres):
+def _manifeste(nom, tenant="banque", acteur="demo", perimetre="mesh-global", **autres):
     return {
         "nom": nom,
         "version": "1.0.0",
@@ -41,7 +41,7 @@ def _manifeste(nom, tenant="banque", persona="architecte", perimetre="mesh-globa
             "additionalProperties": False,
         },
         "tenant": tenant,
-        "persona": persona,
+        "acteur": acteur,
         "perimetre": perimetre,
         "lecture_seule": True,
         "timeout_ms": 2000,
@@ -56,7 +56,7 @@ def test_le_catalogue_expose_les_manifestes_integres_sans_dsn(serveur, monkeypat
     monkeypatch.delenv("JUMEAU_MANIFESTES", raising=False)
     monkeypatch.delenv("JUMEAU_TENANT", raising=False)
 
-    reponse = _client(serveur).get("/api/outils", headers={"X-Tenant": "banque", "X-Persona": "architecte"})
+    reponse = _client(serveur).get("/api/outils", headers={"X-Tenant": "banque"})
 
     assert reponse.status_code == 200
     donnees = reponse.json()
@@ -81,14 +81,14 @@ def test_le_catalogue_charge_jumeau_manifestes_et_filtre_la_portee(serveur, monk
     assert all(outil["nom"] != "lire_traces" for outil in local["outils"])
 
     banque = client.get("/api/outils", headers={
-        "X-Tenant": "banque", "X-Persona": "architecte", "X-Espace": "mesh-global"}).json()
+        "X-Tenant": "banque", "X-Espace": "mesh-global"}).json()
     noms = {outil["nom"] for outil in banque["outils"]}
     assert "lire_traces" in noms
     assert "lire_traces_autre" not in noms
     assert {"resoudre_application", "mobiliser_jumeaux", "concevoir_architecture"} <= noms
 
     par_query = client.get("/api/outils", params={
-        "tenant": "banque", "persona": "architecte", "perimetre": "mesh-global"}).json()
+        "tenant": "banque", "perimetre": "mesh-global"}).json()
     assert "lire_traces" in {outil["nom"] for outil in par_query["outils"]}
 
 

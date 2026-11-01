@@ -17,7 +17,7 @@ from jumeau.capacites import ConflitManifeste, ManifesteInvalide, ManifesteOutil
 _TAILLE_MAX = 1_000_000
 _CHAMPS = frozenset({
     "nom", "version", "description", "capacite", "schema_entree", "schema_sortie",
-    "types_objets_lus", "types_objets_ecrits", "portee", "tenant", "persona", "perimetre",
+    "types_objets_lus", "types_objets_ecrits", "portee", "tenant", "acteur", "perimetre",
     "lecture_seule", "cout", "timeout_ms", "mode_preuve", "effets_de_bord", "source",
     "signature", "allowlist",
 })

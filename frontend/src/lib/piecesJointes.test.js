@@ -9,11 +9,11 @@ test("le compositeur du Travail peut joindre et lister les pièces, seulement qu
   expect(source).toContain("BoutonJoindre");
   expect(source).toContain("ListePieces");
   expect(source).toContain("piecesAutorisees");
-  // Le trombone n'est monté que si le dépôt est autorisé (pas en démo, ni sur un brouillon,
-  // ni pour un lecteur simple — le serveur expose `peut_deposer` = responsable ou participant).
+  // Le trombone n'est monté que si le dépôt est autorisé (pas sur un brouillon, ni pour un
+  // lecteur simple — le serveur expose `peut_deposer` = responsable ou participant).
   expect(source).toContain("{piecesAutorisees && <BoutonJoindre");
   expect(source).toContain("cas?.peut_deposer !== false");
-  // Les pièces d'un travail de démonstration restent en lecture seule : ni retrait ni dépôt.
+  // Les pièces restent en lecture seule quand le dépôt ne l'est pas : ni retrait ni dépôt.
   expect(source).toContain("lectureSeule={!piecesAutorisees}");
   expect(lire("components/case/PiecesJointes.jsx")).toContain("lectureSeule");
 });
@@ -105,12 +105,6 @@ test("les tableaux détectés sont comptés, nommés et jamais linkifiés", () =
   expect(markdown).toContain('chaine[decalage + _m.length] === ":"');
 });
 
-test("la réinitialisation de la démo n'est proposée qu'en mode démo", () => {
-  const source = lire("pages/Administration.jsx");
-  expect(source).toContain('authMode === "demo"');
-  expect(source).toContain('data-testid="reset-demo-btn"');
-});
-
 test("les actions d'écriture ne sont proposées qu'aux contributeurs", () => {
   const source = lire("pages/TravailDetail.jsx");
   expect(source).toContain("const peutDeposer = cas?.peut_deposer === true;");
@@ -183,7 +177,7 @@ test("les livrables réels ouvrent le Canvas depuis Résultats", () => {
 test("les rubriques et sous-rubriques sont pliées par défaut", () => {
   const source = lire("components/case/OngletTravail.jsx");
   expect(source).toContain("useState({ resultats: true, sources: true })");
-  expect(source).toContain("useState({ jumeaux: true, preuves: true, pieces: true })");
+  expect(source).toContain("useState({ jumeaux: true, pieces: true })");
   expect(source).toContain("basculerGroupe");
   expect(source).toContain('data-testid="groupe-pieces-bascule"');
 });

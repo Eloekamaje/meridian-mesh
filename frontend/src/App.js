@@ -2,7 +2,6 @@ import "@/App.css";
 import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useParams } from "react-router-dom";
 import { Toaster } from "@/components/ui/sonner";
-import { DemoProvider } from "@/lib/demo";
 import { MeshProvider } from "@/lib/mesh";
 import { PerimetreProvider } from "@/lib/perimetre";
 import { EvenementsProvider } from "@/lib/evenements";
@@ -10,6 +9,7 @@ import { ContexteProvider } from "@/lib/contexte";
 import Layout from "@/components/Layout";
 import Actualites from "@/pages/Actualites";
 import Boucle from "@/pages/Boucle";
+import Cognition from "@/pages/Cognition";
 import Comprendre from "@/pages/Comprendre";
 import Atlas from "@/pages/Atlas";
 import LaboAtlas from "@/pages/LaboAtlas";
@@ -24,19 +24,15 @@ import TravailDetail from "@/pages/TravailDetail";
 import Jumeaux from "@/pages/Jumeaux";
 import RevueJumeau from "@/pages/RevueJumeau";
 import Administration from "@/pages/Administration";
-import PolarisChoixProfil from "@/demo/polaris/PolarisChoixProfil";
 
 // Pages de laboratoire (graphe, échelle) : hors du produit livré — disponibles en développement, ou avec REACT_APP_LABO=1
 const LABO = process.env.NODE_ENV !== "production" || process.env.REACT_APP_LABO === "1";
-import { KiosqueProvider } from "@/demo/polaris/KiosqueProvider";
 
 const RedirectTravail = () => {
   const { cid } = useParams();
   return <Navigate to={`/travaux/${cid}`} replace />;
 };
 
-// L'application Méridian. Ses providers se remontent quand la démonstration démarre ou s'arrête
-// (KiosqueProvider) : ils chargent alors leurs données via le réseau local ou le vrai backend.
 const RedirectFicheJumeau = () => {
   const { jid } = useParams();
   return <Navigate to={`/jumeaux/${encodeURIComponent(jid)}/revue`} replace />;
@@ -52,6 +48,7 @@ export function RoutesProduit() {
         <Route path="/actualites/comprendre/:hid" element={<Comprendre />} />
         <Route path="/aujourdhui" element={<Actualites />} />
         <Route path="/boucle" element={<Boucle />} />
+        <Route path="/cognition" element={<Cognition />} />
         <Route path="/atlas" element={<Atlas />} />
         {/* Laboratoire du graphe : pages d'essai, hors du produit livré — disponibles en développement, ou avec REACT_APP_LABO=1 */}
         {LABO && <Route path="/labo/atlas" element={<LaboAtlas />} />}
@@ -65,8 +62,6 @@ export function RoutesProduit() {
         <Route path="/investigations" element={<Navigate to="/travaux" replace />} />
         <Route path="/investigations/:id" element={<Comprendre depuisSituation intention="investiguer" />} />
         <Route path="/travaux" element={<Travaux />} />
-        {/* Démonstration : choix du profil dans la zone de contenu — puis l'application réelle, pilotée */}
-        <Route path="/demo" element={<PolarisChoixProfil />} />
         <Route path="/travaux/:cid" element={<TravailDetail />} />
         <Route path="/jumeaux" element={<Jumeaux />} />
         <Route path="/jumeaux/:jid/revue" element={<RevueJumeau />} />
@@ -89,15 +84,13 @@ export function RoutesProduit() {
 function ProduitApp() {
   return (
     <PerimetreProvider>
-      <DemoProvider>
-        <ContexteProvider>
-        <MeshProvider>
-        <EvenementsProvider>
-        <RoutesProduit />
-        </EvenementsProvider>
-        </MeshProvider>
-        </ContexteProvider>
-      </DemoProvider>
+      <ContexteProvider>
+      <MeshProvider>
+      <EvenementsProvider>
+      <RoutesProduit />
+      </EvenementsProvider>
+      </MeshProvider>
+      </ContexteProvider>
     </PerimetreProvider>
   );
 }
@@ -105,9 +98,7 @@ function ProduitApp() {
 function App() {
   return (
     <BrowserRouter>
-      <KiosqueProvider>
-        <ProduitApp />
-      </KiosqueProvider>
+      <ProduitApp />
       <Toaster theme="light" position="top-right" />
     </BrowserRouter>
   );

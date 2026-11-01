@@ -57,7 +57,7 @@ def _specifications(specifications):
             "path": chemin,
             "version": str(entree.get("version") or "1.0.0"),
             "tenant": entree.get("tenant"),
-            "persona": entree.get("persona"),
+            "acteur": entree.get("acteur"),
             "perimetre": entree.get("perimetre"),
             "type": str(entree.get("type") or "").strip().lower(),
         }
@@ -76,7 +76,7 @@ def ingerer_openapi(registre: RegistreCapacites, specifications) -> dict:
                 locator=str(entree["path"]),
                 version=entree["version"],
                 tenant=entree["tenant"],
-                persona=entree["persona"],
+                acteur=entree["acteur"],
                 perimetre=entree["perimetre"],
             )
             rapport["outils"].extend(noms)
@@ -102,7 +102,7 @@ def ingerer_mcp(registre: RegistreCapacites, specifications) -> dict:
                 outils,
                 version=entree["version"],
                 tenant=entree["tenant"],
-                persona=entree["persona"],
+                acteur=entree["acteur"],
                 perimetre=entree["perimetre"],
             )
             rapport["outils"].extend(noms)
@@ -136,12 +136,12 @@ def _ingerer_une_interface(registre, entree):
         graphe = interfaces.parse_wsdl(entree["application"], texte, str(entree["path"]))
         noms = interface_outils.charger_dans(
             registre, graphe, version=entree["version"], tenant=entree["tenant"],
-            persona=entree["persona"], perimetre=entree["perimetre"])
+            acteur=entree["acteur"], perimetre=entree["perimetre"])
         return noms
     if type_ == "openapi":
         return openapi_outils.charger_dans(
             registre, entree["application"], texte, locator=str(entree["path"]),
-            version=entree["version"], tenant=entree["tenant"], persona=entree["persona"],
+            version=entree["version"], tenant=entree["tenant"], acteur=entree["acteur"],
             perimetre=entree["perimetre"])
     return _ingerer_protocole(registre, entree, type_, texte)
 
@@ -150,15 +150,15 @@ def _ingerer_protocole(registre, entree, type_, texte):
     if type_ == "graphql":
         manifestes = protocoles_outils.manifests_graphql(
             entree["application"], texte, entree["version"], entree["tenant"],
-            entree["persona"], entree["perimetre"])
+            entree["acteur"], entree["perimetre"])
     elif type_ == "grpc":
         manifestes = protocoles_outils.manifests_grpc(
             entree["application"], texte, entree["version"], entree["tenant"],
-            entree["persona"], entree["perimetre"])
+            entree["acteur"], entree["perimetre"])
     elif type_ == "asyncapi":
         manifestes = protocoles_outils.manifests_asyncapi(
             entree["application"], texte, entree["version"], entree["tenant"],
-            entree["persona"], entree["perimetre"])
+            entree["acteur"], entree["perimetre"])
     else:
         raise ErreurIngestion(f"type d'outil inconnu : {type_}")
     return protocoles_outils.charger_dans(registre, manifestes)

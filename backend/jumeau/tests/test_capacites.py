@@ -82,8 +82,8 @@ def test_doublon_meme_version_est_idempotent_et_contenu_different_refuse():
         registre.enregistrer(manifeste(version="1.5.0"))
 
 
-def test_filtres_capacite_lecture_seule_tenant_persona_perimetre():
-    banque = manifeste(nom="traces_banque", tenant="banque", persona="flore", perimetre="paiements")
+def test_filtres_capacite_lecture_seule_tenant_acteur_perimetre():
+    banque = manifeste(nom="traces_banque", tenant="banque", acteur="flore", perimetre="paiements")
     assurance = manifeste(nom="traces_assurance", tenant="assurance")
     global_ = manifeste(nom="traces_globales")
     prouver = manifeste(nom="lire_claims_prouves", capacite="prouver",
@@ -107,7 +107,7 @@ def test_filtres_capacite_lecture_seule_tenant_persona_perimetre():
         "traces_assurance", "traces_globales", "lire_claims_prouves", "creer_travail"}
     assert {m.nom for m in registre.lister(perimetre="paiements")} == {
         "traces_banque", "traces_assurance", "traces_globales", "lire_claims_prouves", "creer_travail"}
-    assert {m.nom for m in registre.lister(tenant="banque", persona="flore",
+    assert {m.nom for m in registre.lister(tenant="banque", acteur="flore",
                                            perimetre="paiements", capacite="observer")} == {
         "traces_banque", "traces_globales"}
 
@@ -165,18 +165,18 @@ def test_as_dict_est_json_serialisable():
     encode = json.dumps(charge, ensure_ascii=False, allow_nan=False)
     decode = json.loads(encode)
     assert decode["capacites"] == list(CAPACITES)
-    assert len(decode["outils"]) == 4
-    assert decode["outils"][0]["portee"] == {"tenant": None, "persona": None, "perimetre": None}
+    assert len(decode["outils"]) == 5
+    assert decode["outils"][0]["portee"] == {"tenant": None, "acteur": None, "perimetre": None}
     assert json.loads(json.dumps(manifeste().as_dict(), ensure_ascii=False))["nom"] == "lire_traces"
 
 
-def test_manifestes_integres_sont_trois_adaptateurs_lecture_seule():
+def test_manifestes_integres_sont_quatre_adaptateurs_lecture_seule():
     integres = manifestes_integres()
-    assert len(integres) == 3
+    assert len(integres) == 4
     assert [m.nom for m in integres] == [
-        "resoudre_application", "mobiliser_jumeaux", "concevoir_architecture"]
+        "lister_applications", "resoudre_application", "mobiliser_jumeaux", "concevoir_architecture"]
     assert {m.capacite for m in integres} == {"situer", "mobiliser_expert", "concevoir"}
-    assert len({m.nom for m in integres}) == 3
+    assert len({m.nom for m in integres}) == 4
     assert all(m.source == "builtin" for m in integres)
     assert all(m.lecture_seule for m in integres)
     assert all(set(m.portee) == set(AXES_PORTEE) for m in integres)
@@ -184,7 +184,7 @@ def test_manifestes_integres_sont_trois_adaptateurs_lecture_seule():
         if not contrat.lecture_seule:
             assert contrat.effets_de_bord
     registre = RegistreCapacites(integres)
-    assert len(registre) == 3
+    assert len(registre) == 4
     assert registre.lister(lecture_seule=False) == []
 
 

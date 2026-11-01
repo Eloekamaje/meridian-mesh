@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Méridian · Cible hexagonale AWS-ready</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --paper: #f5f5f5; --ink: #2d3142; --muted: #4f5d75; --soft: #6b7280;
+      --accent: #bf4520; --link: #2e5aa8; --rule: rgba(45,49,66,0.12);
+      --font-sans: 'Geist', system-ui, sans-serif;
+      --font-serif: 'Instrument Serif', serif;
+      --font-mono: 'Geist Mono', ui-monospace, monospace;
+    }
+    html { background: var(--paper); }
+    body { font-family: var(--font-sans); background: var(--paper); color: var(--ink); padding: 3.5rem 2rem 4rem; }
+    .frame { max-width: 1120px; margin: 0 auto; }
+    .eyebrow { font-family: var(--font-mono); font-size: 0.66rem; font-weight: 500; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); margin-bottom: 0.6rem; }
+    h1 { font-family: var(--font-serif); font-size: clamp(2rem, 4.2vw, 3.4rem); font-weight: 400; letter-spacing: -0.025em; line-height: 1.05; max-width: 900px; margin-bottom: 1rem; }
+    .lede { max-width: 800px; color: var(--muted); font-size: 1rem; line-height: 1.65; margin-bottom: 2.5rem; }
+    .grid { display: grid; grid-template-columns: 1fr; gap: 2.5rem; }
+    article { display: grid; grid-template-columns: 220px 1fr; gap: 1.5rem; align-items: start; }
+    .meta h2 { font-family: var(--font-serif); font-size: 1.5rem; font-weight: 400; line-height: 1.15; margin-bottom: 0.5rem; }
+    .meta p { color: var(--muted); font-size: 0.82rem; line-height: 1.55; margin-bottom: 0.75rem; }
+    .meta a { color: var(--link); font-family: var(--font-mono); font-size: 0.68rem; text-decoration: none; border-bottom: 1px solid rgba(46,90,168,0.35); }
+    .thumb { display: block; border: 1px solid var(--rule); border-radius: 6px; background: #fff; overflow: hidden; }
+    .thumb img { display: block; width: 100%; height: auto; }
+    .no { font-family: var(--font-mono); font-size: 0.62rem; letter-spacing: 0.14em; color: var(--muted); }
+    .decisions { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--rule); display: grid; grid-template-columns: 1.1fr 1fr 0.9fr; gap: 1rem; }
+    .decision { background: #fff; border: 1px solid var(--rule); border-radius: 6px; padding: 1.1rem 1.2rem; }
+    .decision h3 { font-size: 0.92rem; font-weight: 600; margin-bottom: 0.45rem; }
+    .decision p { color: var(--muted); font-size: 0.8rem; line-height: 1.55; }
+    .decision a { color: var(--link); text-decoration: none; }
+    footer { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--rule); color: var(--soft); font-family: var(--font-mono); font-size: 0.62rem; letter-spacing: 0.04em; display: flex; justify-content: space-between; gap: 1rem; }
+    @media (max-width: 760px) { body { padding: 2rem 1rem 3rem; } article { grid-template-columns: 1fr; } .decisions { grid-template-columns: 1fr; } }
+    @media print { body { padding: 0; } }
+  </style>
+</head>
+<body>
+  <main class="frame">
+    <header>
+      <p class="eyebrow">Méridian · Cible proposée · Octobre 2026</p>
+      <h1>Un cœur hexagonal,<br>un runtime qui survit.</h1>
+      <p class="lede">
+        Trois vues pour discuter la cible : les frontières du cœur, le cycle de vie d’un run et la
+        sémantique sync/async. Les ADR-0010 à 0015 verrouillent les décisions ; l’implémentation reste à faire.
+      </p>
+    </header>
+
+    <section class="grid">
+      <article>
+        <div class="meta">
+          <p class="no">01 · ARCHITECTURE</p>
+          <h2>Ports &amp; adapters</h2>
+          <p>Le domaine est pur. L’application commande. Les adapters traduisent. Les stores, le graphe et l’agent sont des sorties.</p>
+          <a href="cible-ports.html">Ouvrir la vue</a>
+        </div>
+        <a class="thumb" href="cible-ports.html"><img src="cible-ports.png" alt="Ports et adapters de Méridian"></a>
+      </article>
+
+      <article>
+        <div class="meta">
+          <p class="no">02 · RUNTIME</p>
+          <h2>Cycle de vie d’un run</h2>
+          <p>Un run est un état persistant, avec bail, deadline, approbation humaine, retry, annulation et expiration.</p>
+          <a href="cible-run.html">Ouvrir la vue</a>
+        </div>
+        <a class="thumb" href="cible-run.html"><img src="cible-run.png" alt="Machine à états d’un run Méridian"></a>
+      </article>
+
+      <article>
+        <div class="meta">
+          <p class="no">03 · FLUX</p>
+          <h2>Commande, streaming, lecture</h2>
+          <p>La commande retourne 202 et un run_id. Le worker écrit le journal et l’outbox ; SSE rejoue depuis le journal.</p>
+          <a href="cible-sync-async.html">Ouvrir la vue</a>
+        </div>
+        <a class="thumb" href="cible-sync-async.html"><img src="cible-sync-async.png" alt="Flux synchrone et asynchrone d’un run Méridian"></a>
+      </article>
+    </section>
+
+    <section class="decisions">
+      <div class="decision">
+        <h3>Durable d’abord</h3>
+        <p>Postgres porte runs, événements, outbox, inbox, timers et idempotence. Redis reste un accélérateur, pas une vérité.</p>
+      </div>
+      <div class="decision">
+        <h3>Agent = proposition</h3>
+        <p>Le workflow déterministe possède les états, les gates et les approbations. <code>ToolGateway</code> possède les effets.</p>
+      </div>
+      <div class="decision">
+        <h3>AWS = adapter</h3>
+        <p>ECS, RDS, SQS, EventBridge, Bedrock et Secrets Manager restent derrière les ports. Aucun SDK AWS dans le domaine.</p>
+      </div>
+    </section>
+
+    <footer>
+      <span>ADR-0010 → ADR-0015 · docs/architecture/</span>
+      <span>Skin Diagram Design par défaut · cible non implémentée</span>
+    </footer>
+  </main>
+</body>
+</html>

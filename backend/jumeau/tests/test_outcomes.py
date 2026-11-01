@@ -1,7 +1,7 @@
 """Outcomes mesurés et Learnings réutilisables : chaîne complète, refus sans leçon, tenants et classement."""
 import pytest
 
-from jumeau import boucle, entreprise_depot, outcomes
+from jumeau import boucle, calibration, entreprise_depot, outcomes
 from jumeau.tests.conftest import besoin_pg
 
 TENANT = "banque"
@@ -84,6 +84,47 @@ def test_mesurer_et_capitaliser_chaine_complete(conn):
     canonique = boucle.lire_boucle(conn, TENANT, learning["id"], as_dict=False)
     assert isinstance(canonique, boucle.Learning)
     assert canonique.outcome_ids == [outcome["id"]]
+
+
+@besoin_pg
+def test_learning_relie_prediction_decision_conditions_et_mesure(conn):
+    situation, _, decision, initiative = _chaine(conn, "pred")
+    prediction = calibration.enregistrer(
+        conn, TENANT, id="pred-1", decision_id=decision.id, confidence=0.7)
+
+    resultat = outcomes.mesurer_et_capitaliser(
+        conn, TENANT, initiative.id, {"metrique": "delai_moyen_jours", "valeur": 4.2},
+        cible=5, periode="2026-10", decision_id=decision.id,
+        prediction_id=prediction.id, situation_ids=[situation.id],
+        enseignement="Automatiser la pièce réduit le délai",
+        conditions_reutilisation=["volume stable"])
+
+    outcome, learning = resultat["outcome"], resultat["learning"]
+    donnees = learning["donnees"]
+    assert donnees["prediction_id"] == prediction.id
+    assert donnees["decision_id"] == decision.id
+    assert donnees["conditions_reutilisation"] == ["volume stable"]
+    assert donnees["outcome_ids"] == [outcome["id"]]
+    assert outcome["donnees"]["mesure"]["valeur"] == 4.2
+    assert calibration.lire(conn, TENANT, prediction.id).outcome is None
+
+
+@besoin_pg
+def test_prediction_incoherente_refusee_avant_toute_ecriture(conn):
+    _, _, _, initiative = _chaine(conn, "pred-ko")
+    calibration.enregistrer(
+        conn, TENANT, id="pred-autre", decision_id="dec-autre", confidence=0.4)
+    calibration.enregistrer(
+        conn, AUTRE_TENANT, id="pred-etranger", decision_id="dec-etranger", confidence=0.4)
+
+    for prediction_id in ("pred-autre", "pred-absent", "pred-etranger"):
+        with pytest.raises(boucle.BoucleInvalide):
+            outcomes.mesurer_et_capitaliser(
+                conn, TENANT, initiative.id, {"valeur": 1},
+                prediction_id=prediction_id, enseignement="Leçon refusée")
+
+    assert entreprise_depot.lister_objets(conn, TENANT, type_="OUTCOME") == []
+    assert entreprise_depot.lister_objets(conn, TENANT, type_="LEARNING") == []
 
 
 @besoin_pg

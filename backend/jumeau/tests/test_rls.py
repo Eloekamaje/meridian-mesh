@@ -46,3 +46,20 @@ def test_activation_est_opt_in():
     assert rls.est_actif({"JUMEAU_RLS": "0"}) is False
     assert rls.est_actif({"JUMEAU_RLS": "1"}) is True
     assert rls.est_actif({"JUMEAU_RLS": "true"}) is True
+
+
+def test_tables_execution_et_memoire_couvertes():
+    attendues = {
+        "memoire_durable",
+        "execution_run",
+        "execution_evenement",
+        "execution_outbox",
+        "execution_timer",
+        "execution_effet",
+        "execution_approbation",
+        "execution_etape",
+    }
+    assert attendues <= set(rls.TABLES)
+    sql = rls.sql_activation()
+    for table in attendues:
+        assert f"CREATE POLICY {rls.POLITIQUE} ON {table}" in sql

@@ -1493,11 +1493,11 @@ def _client_pieces(monkeypatch):
     db = type("Db", (), {})()
     db.cases = Cases()
 
-    async def charger_case(cid, espace, persona):
-        return {"id": cid, "responsable": "architecte", "participants": []}
+    async def charger_case(cid, espace, acteur):
+        return {"id": cid, "responsable": "demo", "participants": ["demo"]}
 
-    def resoudre_perimetre(persona, espace_id):
-        return {"id": persona}, {"id": "e1"}
+    def resoudre_perimetre(acteur, espace_id):
+        return acteur, {"id": "e1"}
 
     async def journaler(*args):
         pass
@@ -1511,7 +1511,7 @@ def _client_pieces(monkeypatch):
     return TestClient(app), pieces_routes
 
 
-def test_le_depot_des_pieces_est_limite_par_persona(monkeypatch):
+def test_le_depot_des_pieces_est_limite_par_acteur(monkeypatch):
     appels = []
 
     async def fausse_limite(cle, maxi, fenetre):
@@ -1523,19 +1523,18 @@ def test_le_depot_des_pieces_est_limite_par_persona(monkeypatch):
     monkeypatch.setattr(pieces, "PIECES_UPLOAD_MAX", 1)
     monkeypatch.setattr(pieces, "PIECES_UPLOAD_FENETRE", 300)
 
-    async def enregistrer(db, cid, fichier, persona):
+    async def enregistrer(db, cid, fichier, acteur):
         return {"id": "p1", "nom": fichier.filename}
 
     monkeypatch.setattr(pieces, "enregistrer", enregistrer)
     fichiers = {"fichier": ("note.txt", b"Bonjour", "text/plain")}
-    entetes = {"X-Persona": "architecte"}
-    assert client.post("/cases/t1/pieces", files=fichiers, headers=entetes).status_code == 201
-    refus = client.post("/cases/t1/pieces", files=fichiers, headers=entetes)
+    assert client.post("/cases/t1/pieces", files=fichiers).status_code == 201
+    refus = client.post("/cases/t1/pieces", files=fichiers)
     assert refus.status_code == 429
-    assert appels == [("pieces-upload:architecte", 1, 300)] * 2
+    assert appels == [("pieces-upload:demo", 1, 300)] * 2
 
 
-def test_les_lectures_des_pieces_sont_limitees_par_persona(monkeypatch):
+def test_les_lectures_des_pieces_sont_limitees_par_acteur(monkeypatch):
     appels = {}
 
     async def fausse_limite(cle, maxi, fenetre):
@@ -1559,12 +1558,13 @@ def test_les_lectures_des_pieces_sont_limitees_par_persona(monkeypatch):
     monkeypatch.setattr(pieces, "contenu", contenu)
     monkeypatch.setattr(pieces, "extrait", extrait)
     monkeypatch.setattr(pieces, "lire_section", lire_section)
-    routes_lues = (("a", "/cases/t1/pieces/p1"), ("b", "/cases/t1/pieces/p1/extrait"),
-                   ("c", "/cases/t1/pieces/p1/sections/s1"))
-    for persona, chemin in routes_lues:
-        assert client.get(chemin, headers={"X-Persona": persona}).status_code == 200
-        assert client.get(chemin, headers={"X-Persona": persona}).status_code == 429
-    assert appels == {"pieces-lecture:a": 2, "pieces-lecture:b": 2, "pieces-lecture:c": 2}
+    routes_lues = ("/cases/t1/pieces/p1", "/cases/t1/pieces/p1/extrait",
+                   "/cases/t1/pieces/p1/sections/s1")
+    for chemin in routes_lues:
+        appels.clear()
+        assert client.get(chemin).status_code == 200
+        assert client.get(chemin).status_code == 429
+        assert appels == {"pieces-lecture:demo": 2}
 
 
 def test_les_limites_sont_desactivees_quand_le_plafond_est_nul(monkeypatch):
@@ -1579,7 +1579,7 @@ def test_les_limites_sont_desactivees_quand_le_plafond_est_nul(monkeypatch):
     monkeypatch.setattr(pieces, "PIECES_UPLOAD_MAX", 0)
     monkeypatch.setattr(pieces, "PIECES_LECTURE_MAX", 0)
 
-    async def enregistrer(db, cid, fichier, persona):
+    async def enregistrer(db, cid, fichier, acteur):
         return {"id": "p1", "nom": fichier.filename}
 
     async def extrait(db, cid, pid):
@@ -1587,9 +1587,8 @@ def test_les_limites_sont_desactivees_quand_le_plafond_est_nul(monkeypatch):
 
     monkeypatch.setattr(pieces, "enregistrer", enregistrer)
     monkeypatch.setattr(pieces, "extrait", extrait)
-    assert client.post("/cases/t1/pieces", files={"fichier": ("note.txt", b"x", "text/plain")},
-                       headers={"X-Persona": "architecte"}).status_code == 201
-    assert client.get("/cases/t1/pieces/p1/extrait", headers={"X-Persona": "architecte"}).status_code == 200
+    assert client.post("/cases/t1/pieces", files={"fichier": ("note.txt", b"x", "text/plain")}).status_code == 201
+    assert client.get("/cases/t1/pieces/p1/extrait").status_code == 200
     assert appels == []
 
 

@@ -283,7 +283,7 @@ def _manifeste(
     effet: str | None,
     source: str,
     tenant: Any,
-    persona: Any,
+    acteur: Any,
     perimetre: Any,
 ) -> ManifesteOutil:
     return ManifesteOutil(
@@ -294,7 +294,7 @@ def _manifeste(
         schema_entree={},
         schema_sortie={},
         tenant=tenant,
-        persona=persona,
+        acteur=acteur,
         perimetre=perimetre,
         lecture_seule=lecture_seule,
         cout=0.0,
@@ -360,7 +360,7 @@ def manifests_graphql(
     sdl: str,
     version: str = "1.0.0",
     tenant: Any = None,
-    persona: Any = None,
+    acteur: Any = None,
     perimetre: Any = None,
 ) -> list[ManifesteOutil]:
     """Lit une SDL GraphQL et rend un manifeste par champ de Query, Mutation et Subscription.
@@ -392,7 +392,7 @@ def manifests_graphql(
                 effet=None if lecture_seule else "graphql:mutation",
                 source="graphql",
                 tenant=tenant,
-                persona=persona,
+                acteur=acteur,
                 perimetre=perimetre,
             ))
     return manifestes
@@ -403,7 +403,7 @@ def manifests_grpc(
     proto_text: str,
     version: str = "1.0.0",
     tenant: Any = None,
-    persona: Any = None,
+    acteur: Any = None,
     perimetre: Any = None,
 ) -> list[ManifesteOutil]:
     """Lit un fichier `.proto` et rend un manifeste par `rpc`, commentaires ignorés.
@@ -439,7 +439,7 @@ def manifests_grpc(
                 effet=None if lecture_seule else f"grpc:{nom_service}.{methode}",
                 source="grpc",
                 tenant=tenant,
-                persona=persona,
+                acteur=acteur,
                 perimetre=perimetre,
             ))
     return manifestes
@@ -524,7 +524,7 @@ def manifests_asyncapi(
     document: Any,
     version: str = "1.0.0",
     tenant: Any = None,
-    persona: Any = None,
+    acteur: Any = None,
     perimetre: Any = None,
 ) -> list[ManifesteOutil]:
     """Lit un document AsyncAPI (dict, JSON ou YAML) et rend un manifeste par opération.
@@ -552,7 +552,7 @@ def manifests_asyncapi(
             effet=None if lecture_seule else "asyncapi:publish",
             source="asyncapi",
             tenant=tenant,
-            persona=persona,
+            acteur=acteur,
             perimetre=perimetre,
         ))
     return manifestes

@@ -2,7 +2,7 @@ import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { PreuvesContexte } from "@/lib/preuvesFlore";
 import { useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Sparkle, PaperPlaneRight, FileText, X, Plus, Eye, Lightning, FolderOpen, ArrowRight, Compass, ChatCircleDots } from "@phosphor-icons/react";
+import { Sparkle, PaperPlaneRight, FileText, X, Plus, Eye, Lightning, FolderOpen, ChatCircleDots } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import TrustBadges from "./TrustBadges";
@@ -20,7 +20,6 @@ import FloreActivite from "./FloreActivite";
 import { couleurDomaine } from "@/lib/domaines";
 import { useContexte } from "@/lib/contexte";
 import { useMesh } from "@/lib/mesh";
-import { usePilotage } from "@/lib/pilotage";
 import LigneActiviteFlore from "./LigneActiviteFlore";
 
 const CLE_TRAVAIL = "meridian.flore.travail";
@@ -101,18 +100,17 @@ function LotBar({ lot }) {
 
 // Réponse de Flore en télétype : les caractères s'écrivent progressivement avec curseur
 // lumineux (désactivé si prefers-reduced-motion). Les réponses anciennes s'affichent d'un bloc.
-function TexteTeletype({ texte, actif, gele = false, testid }) {
+function TexteTeletype({ texte, actif, testid }) {
   const reduit = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
   const [n, setN] = useState(() => (actif && !reduit ? 0 : (texte || "").length));
-  // Le texte se révèle à l'arrivée du message ; une reprise après pause continue
-  // exactement où la frappe s'était arrêtée (pas de remise à zéro).
+  // Le texte se révèle à l'arrivée du message.
   useEffect(() => {
     if (!actif || reduit) { setN((texte || "").length); return undefined; }
     setN(0);
     return undefined;
   }, [texte, actif, reduit]);
   useEffect(() => {
-    if (!actif || reduit || gele) return undefined;
+    if (!actif || reduit) return undefined;
     const t = setInterval(() => {
       setN((v) => {
         if (v >= texte.length) { clearInterval(t); return v; }
@@ -120,7 +118,7 @@ function TexteTeletype({ texte, actif, gele = false, testid }) {
       });
     }, 36); // ~83 car/s : plus lent que la vitesse d'affichage brute, encore net et lisible
     return () => clearInterval(t);
-  }, [texte, actif, reduit, gele]);
+  }, [texte, actif, reduit]);
   const fini = n >= (texte || "").length;
   return (
     <div className="mt-2 text-sm leading-relaxed text-[#D8E2EA]" data-testid={testid}>
@@ -144,159 +142,6 @@ function PreuveDuVolet({ p, n }) {
 
 function CarteReponse({ data, fMsg, nr, actions, index, propsEtat, setPropsEtat, justifOuverte, setJustifOuverte, ajouterJumeau, navigate, derniere }) {
   const { commanderCarte, setPreuveSurvolee } = useContexte();
-  const pilote = usePilotage();
-  if (pilote) {
-    const aArbitrage = data.reponse && data.reponse.includes("1,5 M€") && data.reponse.includes("6,6 M€");
-    const aDossierFinal = data.reponse && data.reponse.includes("CASE-101 est finalisé");
-    const aInitiatives = data.reponse && (data.reponse.includes("fiches d'initiatives") || data.reponse.includes("3 fiches"));
-
-    return (
-      <div className="space-y-2 rounded-2xl rounded-bl-sm border border-white/10 bg-[#08121D]/90 p-4 shadow-xl backdrop-blur-md" data-testid={`flore-reponse-${index}`}>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5 font-code text-[10px] font-bold uppercase tracking-wider text-[#60A5FA]">
-            <Sparkle size={13} weight="fill" /> Flore
-          </div>
-          {aArbitrage && (
-            <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 font-code text-[9px] font-bold text-emerald-300 border border-emerald-500/30">
-              Arbitrage recommandé
-            </span>
-          )}
-          {aInitiatives && (
-            <span className="rounded-full bg-blue-500/20 px-2 py-0.5 font-code text-[9px] font-bold text-blue-300 border border-blue-500/30">
-              Demandes projets
-            </span>
-          )}
-        </div>
-        <TexteTeletype texte={data.reponse} actif={derniere && !data.auFilDeLEau} gele={!!pilote?.enPause} testid={`flore-texte-${index}`} />
-        <MarqueOrigine data={data} />
-        <MarqueRelecture data={data} />
-
-        {/* Fiches d'initiatives métier : l'item de droit affiché directement au gestionnaire */}
-        {aInitiatives && (
-          <div className="mt-3.5 space-y-2.5 rounded-xl border border-blue-500/30 bg-[#090F1C]/95 p-3.5 shadow-xl backdrop-blur-md">
-            <div className="flex items-center justify-between border-b border-white/10 pb-2">
-              <span className="flex items-center gap-1.5 font-code text-[10px] font-bold uppercase tracking-wider text-blue-300">
-                <Compass size={13} weight="fill" className="text-blue-400" />
-                3 demandes projets soumises au comité
-              </span>
-              <span className="rounded bg-blue-500/20 px-1.5 py-0.5 font-code text-[9px] font-extrabold text-blue-200 border border-blue-400/30">
-                6,0 M€ en silos
-              </span>
-            </div>
-
-            <div className="space-y-2">
-              <div className="rounded-lg border border-emerald-500/25 bg-black/40 p-2.5 transition-all hover:border-emerald-500/50">
-                <div className="flex items-center justify-between">
-                  <span className="font-display text-xs font-bold text-white">Suivi des demandes clients</span>
-                  <span className="font-code text-[10px] font-bold text-emerald-400 bg-emerald-500/15 px-1.5 py-0.5 rounded">2,0 M€</span>
-                </div>
-                <div className="mt-1 flex items-center gap-2 text-[10px] text-slate-400">
-                  <span className="font-code text-emerald-300 font-semibold">Direction Client</span>
-                  <span>·</span>
-                  <span>Informer le client sans relance</span>
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-pink-500/25 bg-black/40 p-2.5 transition-all hover:border-pink-500/50">
-                <div className="flex items-center justify-between">
-                  <span className="font-display text-xs font-bold text-white">Poste conseiller repensé</span>
-                  <span className="font-code text-[10px] font-bold text-pink-400 bg-pink-500/15 px-1.5 py-0.5 rounded">2,0 M€</span>
-                </div>
-                <div className="mt-1 flex items-center gap-2 text-[10px] text-slate-400">
-                  <span className="font-code text-pink-300 font-semibold">Direction Distribution</span>
-                  <span>·</span>
-                  <span>Réduire les tâches d'appoint</span>
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-blue-500/25 bg-black/40 p-2.5 transition-all hover:border-blue-500/50">
-                <div className="flex items-center justify-between">
-                  <span className="font-display text-xs font-bold text-white">Réduction des reprises manuelles</span>
-                  <span className="font-code text-[10px] font-bold text-blue-400 bg-blue-500/15 px-1.5 py-0.5 rounded">2,0 M€</span>
-                </div>
-                <div className="mt-1 flex items-center gap-2 text-[10px] text-slate-400">
-                  <span className="font-code text-blue-300 font-semibold">Direction Opérations</span>
-                  <span>·</span>
-                  <span>Zéro ressaisie ni correction</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-lg border border-white/5 bg-white/[0.04] px-2.5 py-2 text-[10px] text-slate-300 flex items-center gap-2">
-              <Sparkle size={12} weight="fill" className="text-blue-400 shrink-0" />
-              <span>
-                <strong>Jumeaux en arrière-plan :</strong> audit technique des flux SI en cours.
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* Widget d'arbitrage exécutif : KPI immédiatement lisibles pour décideur */}
-        {aArbitrage && (
-          <div className="mt-3.5 rounded-xl kpi-card p-3.5 border border-emerald-500/35 bg-gradient-to-br from-[#0B1E1E]/95 to-[#07131B]/95 shadow-xl">
-            <div className="flex items-center justify-between border-b border-white/10 pb-2">
-              <span className="font-code text-[10px] font-bold uppercase tracking-wider text-emerald-300 flex items-center gap-1.5">
-                <Sparkle size={12} weight="fill" /> Synthèse d'arbitrage exécutif
-              </span>
-              <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 font-code text-[9px] text-emerald-400 font-bold border border-emerald-500/30">-77% de coûts</span>
-            </div>
-            <div className="mt-2.5 grid grid-cols-3 gap-2 text-center">
-              <div className="rounded-lg bg-black/40 p-2 border border-white/5">
-                <div className="font-code text-[9px] uppercase tracking-wider text-slate-400">Économie nette</div>
-                <div className="font-display text-lg font-extrabold text-emerald-400 mt-0.5">+5,1 M€</div>
-                <div className="font-code text-[8px] text-slate-500">1,5 M€ vs 6,6 M€</div>
-              </div>
-              <div className="rounded-lg bg-black/40 p-2 border border-white/5">
-                <div className="font-code text-[9px] uppercase tracking-wider text-slate-400">Délai cible</div>
-                <div className="font-display text-lg font-extrabold text-blue-400 mt-0.5">4 mois</div>
-                <div className="font-code text-[8px] text-slate-500">au lieu de 18</div>
-              </div>
-              <div className="rounded-lg bg-black/40 p-2 border border-white/5">
-                <div className="font-code text-[9px] uppercase tracking-wider text-slate-400">Socle réutilisé</div>
-                <div className="font-display text-lg font-extrabold text-amber-400 mt-0.5">80%</div>
-                <div className="font-code text-[8px] text-slate-500">en production</div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Bouton d'accès direct au dossier exécutif CASE-101 */}
-        {aDossierFinal && (
-          <div className="mt-3.5 rounded-xl border border-emerald-500/40 bg-gradient-to-r from-emerald-950/40 to-blue-950/40 p-3 shadow-lg">
-            <div className="flex items-center justify-between text-xs font-semibold text-emerald-300 mb-2">
-              <span className="flex items-center gap-1.5"><Sparkle size={13} weight="fill" /> Dossier d'arbitrage prêt</span>
-              <span className="font-code text-[10px] text-slate-400">3 validations incluses</span>
-            </div>
-            <button
-              onClick={() => navigate("/travaux/demo-polaris-work-g")}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-emerald-500 to-blue-400 py-2.5 text-xs font-bold text-[#051113] shadow-md shadow-emerald-500/25 transition-all hover:brightness-110 active:scale-[0.98]"
-              data-testid="flore-examiner-case101-btn"
-            >
-              <span>Examiner le dossier d'arbitrage CASE-101</span>
-              <ArrowRight size={14} weight="bold" />
-            </button>
-          </div>
-        )}
-
-        {data.preuves?.length > 0 && (
-          <div className="mt-2.5 flex flex-wrap items-center gap-1.5 pt-1">
-            {data.preuves.map((p, pi) => (
-              <button
-                key={pi}
-                onClick={() => pilote?.ouvrirPreuve?.(p.preuveId)}
-                className="inline-flex items-center gap-1 rounded-full border border-[rgba(96,165,250,0.3)] bg-[#60A5FA]/[0.08] px-2.5 py-0.5 font-code text-[10px] text-[#60A5FA] transition-all hover:bg-[#60A5FA]/20"
-                title={p.detail || p.source}
-              >
-                <FileText size={10} weight="bold" />
-                <span>{p.source}</span>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  }
-
   const blocPreuves = data.preuves?.length > 0 ? (
 
         <div className="mt-3" data-testid={`flore-preuves-${index}`}>
@@ -304,19 +149,7 @@ function CarteReponse({ data, fMsg, nr, actions, index, propsEtat, setPropsEtat,
           <ul className="mt-2 space-y-1">
             {data.preuves.map((p, pi) => (
               <li key={pi}>
-                {p.preuveId && pilote ? (
-                  // Preuve de démonstration : ouvre le panneau de lecture (suspend la lecture)
-                  <button
-                    onClick={() => pilote.ouvrirPreuve(p.preuveId)}
-                    data-testid={`flore-preuve-demo-${p.preuveId}`}
-                    className="flex w-full items-baseline gap-2 rounded-lg border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2.5 py-2 text-left text-sm text-[#94A3B8] transition-colors hover:border-[#60A5FA]/50 hover:bg-[#60A5FA]/5"
-                  >
-                    <FileText size={13} className="shrink-0 translate-y-0.5 text-[#7C93A8]" />
-                    <span>
-                      <span className="font-code text-[11px] text-[#F2F6F8]">{p.source}</span> — {p.detail}
-                    </span>
-                  </button>
-                ) : p.relation_id ? (
+                {p.relation_id ? (
                   // Preuve relationnelle : survol = le trajet pulse sur la carte ; clic = centrer + sélectionner
                   <button
                     onMouseEnter={() => setPreuveSurvolee(p.relation_id)}
@@ -362,7 +195,7 @@ function CarteReponse({ data, fMsg, nr, actions, index, propsEtat, setPropsEtat,
 
       <MessageFlore
         message={fMsg || { role: "flore", texte: data.reponse, ...data }} index={nr} {...actions}
-        corps={<TexteTeletype texte={data.reponse} actif={derniere && !data.auFilDeLEau} gele={!!pilote?.enPause} testid={`flore-texte-${index}`} />}
+        corps={<TexteTeletype texte={data.reponse} actif={derniere && !data.auFilDeLEau} testid={`flore-texte-${index}`} />}
         preuves={blocPreuves} testid={`flore-message-${index}`}
       >
       {data.propositions?.some((_, pi) => !propsEtat[`${index}-${pi}`]) && (
@@ -459,9 +292,8 @@ export default function FlorePanel() {
     commanderCarte, focusVisuel, lot, floreOuverte, ouvrirFlore, fermerFlore, atlasCtx, questionFlore, setQuestionFlore,
   } = useContexte();
   const { jumeauPar, mesh } = useMesh();
-  const pilote = usePilotage();
   const [question, setQuestion] = useState("");
-  const { info, persona } = usePerimetre();
+  const { info } = usePerimetre();
   // La conversation du panneau est un Travail (MERIDIAN_Conversation_Contrat_v1 §2) : `travailId` est le sien.
   // Hors serveur (création impossible), elle reste locale : les messages ne sont alors pas enregistrés.
   const [travailId, setTravailId] = useState(() => localStorage.getItem(CLE_TRAVAIL) || null);
@@ -509,8 +341,7 @@ export default function FlorePanel() {
     api.get(`/cases/${caseId}`).then((r) => setCaseCtx(r.data)).catch(() => setCaseCtx(null));
   }, [caseId]);
 
-  // Pilotage externe (démonstration Polaris) : le fil et l'activité viennent du moteur
-  const fil = pilote ? pilote.echanges : echanges;
+  const fil = echanges;
   const idxDerniereReponse = fil.reduce((acc, e, i) => (e.data ? i : acc), -1);
 
   const selJumeaux = selection.map(jumeauPar).filter(Boolean);
@@ -539,7 +370,7 @@ export default function FlorePanel() {
         ouvrirFlore();
         setTimeout(() => inputRef.current?.focus(), 150);
       }
-      if (e.key === "Escape" && !pilote) fermerFlore();
+      if (e.key === "Escape") fermerFlore();
     };
     const ask = (e) => {
       if (e.detail) setQuestion(e.detail);
@@ -552,11 +383,11 @@ export default function FlorePanel() {
       window.removeEventListener("keydown", handler);
       window.removeEventListener("meridian:flore-ask", ask);
     };
-  }, [ouvrirFlore, fermerFlore, pilote]);
+  }, [ouvrirFlore, fermerFlore]);
 
   useEffect(() => {
     conversationRef.current?.scrollTo({ top: conversationRef.current.scrollHeight, behavior: "smooth" });
-  }, [fil, chargement, pilote?.activite, pilote?.reflexionFlore]);
+  }, [fil, chargement]);
 
   // Relit le Travail depuis le serveur (source de vérité : versions, branches, retours, réponses interrompues).
   const relire = async (cid = travailId, sansAnimation = false) => {
@@ -575,7 +406,7 @@ export default function FlorePanel() {
 
   // Rouvrir le panneau reprend le Travail en cours (relu depuis le serveur) ; s'il a disparu, on repart de zéro.
   useEffect(() => {
-    if (!floreOuverte || !travailId || pilote) return;
+    if (!floreOuverte || !travailId) return;
     api.get(`/cases/${travailId}`)
       .then(({ data }) => { setTravail(data); setMessages(data.conversation || []); })
       .catch((err) => { if (err.response?.status === 404) nouvelleConversation(); });
@@ -693,7 +524,7 @@ export default function FlorePanel() {
   // Superposition : clic en dehors du panneau → fermeture (le bouton « Parler à Flore »
   // gère lui-même son basculement ; Échap ferme aussi — handler clavier ci-dessus)
   useEffect(() => {
-    if (pilote || !floreOuverte) return undefined;
+    if (!floreOuverte) return undefined;
     const clicDehors = (e) => {
       if (panelRef.current?.contains(e.target)) return;
       if (e.target.closest?.('[data-testid="btn-parler-flore"]')) return;
@@ -703,7 +534,7 @@ export default function FlorePanel() {
     // seul un listener en capture les voit passer.
     document.addEventListener("mousedown", clicDehors, true);
     return () => document.removeEventListener("mousedown", clicDehors, true);
-  }, [floreOuverte, fermerFlore, pilote]);
+  }, [floreOuverte, fermerFlore]);
 
   // Questions pré-remplies depuis les pages métier (« Analyser ce travail », …) :
   // envoyées dès que le panneau est ouvert. Garde par ref (StrictMode rejoue les effets)
@@ -787,9 +618,9 @@ export default function FlorePanel() {
 
   const proposerAjout = () => {
     setChoixTravail("chargement");
-    // La fusion est réservée au responsable de la cible : ne proposer que ses propres Travaux.
+    // Ne proposer que les Travaux ouverts du périmètre affiché.
     api.get("/cases")
-      .then((r) => setChoixTravail(r.data.filter((c) => c.statut !== "clos" && !estConversation(c) && c.responsable === persona)))
+      .then((r) => setChoixTravail(r.data.filter((c) => c.statut !== "clos" && !estConversation(c))))
       .catch(() => setChoixTravail([]));
   };
 
@@ -801,14 +632,14 @@ export default function FlorePanel() {
 
   // Actions de la conversation unique : mêmes routes que dans un Travail, sous /cases/{cid}. Les index sont ceux du
   // serveur (les marqueurs locaux n'en ont pas).
-  const prefixe = !pilote && travailId ? prefixeTravail(travailId) : null;
+  const prefixe = travailId ? prefixeTravail(travailId) : null;
   const majMessage = (n, msg) => setMessages((ms) => { let k = -1; return ms.map((m) => (m.marqueur || ++k !== n ? m : msg)); });
   const actions = { prefixe, onMessage: majMessage, onMessages: setMessages, onRelire: () => relire(), bloque: chargement,
     onTronquer: (n, texte) => setMessages((ms) => tronquerApres(ms, n, texte)) };
 
   if (lot) return <LotBar lot={lot} />;
 
-  if (pilote ? !pilote.ouvert : !floreOuverte || contexte === "case") return null;
+  if (!floreOuverte || contexte === "case") return null;
   return (
     <motion.aside
       ref={panelRef}
@@ -828,12 +659,7 @@ export default function FlorePanel() {
             {!caseCtx && <span className="font-code text-[9px] uppercase tracking-[0.2em] text-[#7C93A8]">orchestre les jumeaux du Mesh</span>}
           </div>
           <div className="flex items-center gap-1.5">
-            {pilote && (
-              <span className="rounded border border-[#60A5FA]/40 bg-[#60A5FA]/[0.07] px-1.5 py-0.5 font-code text-[9px] uppercase tracking-[0.2em] text-[#60A5FA]" data-testid="flore-badge-demo">
-                Démo guidée
-              </span>
-            )}
-            {!pilote && (!travailId || estConversation(travail)) && echangesReels.length > 0 && (
+            {(!travailId || estConversation(travail)) && echangesReels.length > 0 && (
               <button
                 onClick={creerCase}
                 disabled={creationCase}
@@ -844,7 +670,7 @@ export default function FlorePanel() {
                 <FolderOpen size={12} /> {creationCase ? "Création…" : "Conserver comme travail"}
               </button>
             )}
-            {!pilote && travailId && !estConversation(travail) && travail && (
+            {travailId && !estConversation(travail) && travail && (
               <button
                 onClick={() => { fermerFlore(); navigate(`/travaux/${travailId}`); }}
                 data-testid="flore-ouvrir-travail-btn"
@@ -854,7 +680,7 @@ export default function FlorePanel() {
                 <FolderOpen size={12} /> Ouvrir le travail
               </button>
             )}
-            {!pilote && (travailId || messages.length > 0) && (
+            {(travailId || messages.length > 0) && (
               <button
                 onClick={nouvelleConversation}
                 disabled={chargement}
@@ -866,11 +692,9 @@ export default function FlorePanel() {
                 <ChatCircleDots size={15} />
               </button>
             )}
-            {!pilote && (
-              <button onClick={fermerFlore} data-testid="flore-fermer-btn" title="Fermer Flore (Échap)" aria-label="Fermer Flore" className="rounded-md p-1.5 text-[#7C93A8] transition-colors hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]">
-                <X size={15} />
-              </button>
-            )}
+            <button onClick={fermerFlore} data-testid="flore-fermer-btn" title="Fermer Flore (Échap)" aria-label="Fermer Flore" className="rounded-md p-1.5 text-[#7C93A8] transition-colors hover:bg-[rgba(148,163,184,0.10)] hover:text-[#F2F6F8]">
+              <X size={15} />
+            </button>
           </div>
         </div>
 
@@ -967,7 +791,7 @@ export default function FlorePanel() {
       </div>
 
       {/* Une exploration qui s'approfondit peut devenir un Travail — Flore propose sans imposer */}
-      {!pilote && (!travailId || estConversation(travail)) && floreAProduit(travail, messages) && !caseId && !propTravailMasquee && (
+      {(!travailId || estConversation(travail)) && floreAProduit(travail, messages) && !caseId && !propTravailMasquee && (
         <div className="mx-4 mb-2 rounded-lg border border-[#F2B84B]/30 bg-[rgba(242,184,75,0.10)] px-3 py-2.5" data-testid="flore-proposition-travail">
           <p className="text-[11px] leading-snug text-[#D8E2EA]">
             Flore vient de produire un plan, une option, une décision ou un livrable : cette conversation pourrait devenir un travail partagé. Rien n'est conservé sans votre clic.
@@ -1009,7 +833,7 @@ export default function FlorePanel() {
 
       {/* Conversation */}
       <div ref={conversationRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4" data-testid="flore-echanges" role="log" aria-live="polite" aria-label="Conversation avec Flore">
-        {fil.length === 0 && !chargement && !pilote?.activite && (
+        {fil.length === 0 && !chargement && (
           <div className="mt-8 text-center">
             <Sparkle size={22} weight="fill" className="mx-auto text-[#60A5FA]/60" />
             <p className="mt-3 text-sm text-[#94A3B8]">Posez une question — Flore mobilise les jumeaux concernés et montre leurs preuves.</p>
@@ -1031,7 +855,6 @@ export default function FlorePanel() {
             {e.question && (
               <QuestionFlore
                 message={e.qMsg || { role: "utilisateur", texte: e.question }} index={e.nq} variante="panneau"
-                etiquette={pilote ? (pilote.scenario?.roleLabel || "Gestionnaire") : undefined}
                 {...actions} testid={`flore-question-${i}`}
               />
             )}
@@ -1061,33 +884,9 @@ export default function FlorePanel() {
             <FloreActivite testid="flore-chargement-activite" />
           </div>
         )}
-        {pilote?.activite && <LigneActiviteFlore activite={pilote.activite} testid="flore-activite-demo" />}
-        {pilote?.reflexionFlore && (
-          <div className="flex items-start gap-2.5 rounded-xl border border-[rgba(148,163,184,0.12)] bg-[#0F1D28]/90 p-3 shadow-sm" data-testid="flore-panel-reflexion">
-            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-[#2563EB] to-[#4F46E5] text-white shadow-sm ring-1 ring-white/10 animate-pulse">
-              <Sparkle size={12} weight="fill" />
-            </div>
-            <div className="flex-1 space-y-1">
-              <div className="flex items-center gap-1.5">
-                <span className="font-code text-[10px] font-semibold text-[#BFDBFE]">Flore</span>
-                <span className="font-code text-[8px] uppercase tracking-wider text-[#64748B]">IA</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1">
-                  <span className="h-1.5 w-1.5 rounded-full bg-[#60A5FA] animate-bounce [animation-delay:-0.3s]" />
-                  <span className="h-1.5 w-1.5 rounded-full bg-[#60A5FA] animate-bounce [animation-delay:-0.15s]" />
-                  <span className="h-1.5 w-1.5 rounded-full bg-[#60A5FA] animate-bounce" />
-                </div>
-                <span className="text-xs text-[#94A3B8] italic">{pilote.reflexionFlore.texte}</span>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
-      {/* Suggestions + composer — inatteignable en démonstration pilotée (pilote.ouvert est toujours
-          false : la conversation de démo vit dans « Nouveau travail » puis « Travail », pas ici) */}
-      {!pilote && (
+      {/* Suggestions + composer */}
       <div className="shrink-0 border-t border-[rgba(148,163,184,0.16)] px-4 py-3">
         {selection.length > 0 && (
           <div className="mb-2.5 flex flex-wrap items-center gap-1.5" data-testid="flore-deleguer">
@@ -1176,7 +975,6 @@ export default function FlorePanel() {
           )}
         </form>
       </div>
-      )}
     </motion.aside>
   );
 }

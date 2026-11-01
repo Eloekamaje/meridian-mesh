@@ -1,10 +1,10 @@
-"""Canal SSE global : le bus isole les personas et les tours publient leurs transitions."""
+"""Canal SSE global : le bus isole les acteurs et les tours publient leurs transitions."""
 import asyncio
 
 from jumeau import evenements, flux
 
 
-def test_le_bus_ne_diffuse_qu_a_la_persona_abonnee():
+def test_le_bus_ne_diffuse_qu_a_la_acteur_abonnee():
     async def scenario():
         file = evenements.BUS.abonner("architecte")
         autre = evenements.BUS.abonner("conformite")
