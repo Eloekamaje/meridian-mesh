@@ -102,3 +102,30 @@ Résultats du 29 octobre 2026 :
 | `lint-render.py` (Chromium 145, réseau bloqué) | 3 fichiers rendus, 0 anomalie, 0 note |
 
 `lint-render.py` exige Playwright et Chromium. S'ils sont absents, la validation s'arrête au contrôle statique et à la géométrie ; le README le signale plutôt que de le passer sous silence.
+
+## Vers le chat et le Canvas
+
+Le compilateur de la skill est déjà `scripts/export_svg.py` : il extrait le premier SVG, embarque
+le CSS utile, préfixe les identifiants et vérifie le XML. Meridian en embarque une copie
+(vendored) dans `backend/meridian/adapters/outbound/diagram_export.py`, utilisée en priorité :
+le runtime ne dépend donc pas de `.opencode/`. Le wrapper `scripts/compiler-diagramme.py`
+permet aussi de forcer un autre compilateur via `DIAGRAM_EXPORT_SCRIPT`. Exemple :
+
+```bash
+python3 scripts/compiler-diagramme.py docs/diagrammes/architecture.html \
+  --titre "Architecture Méridian" --sortie /tmp/architecture.json
+
+# ou envoi direct à l'API de pilotage
+python3 scripts/compiler-diagramme.py docs/diagrammes/architecture.html \
+  --titre "Architecture Méridian" --api-url http://127.0.0.1:8001 --tenant demo
+```
+
+L’artefact produit a le type `svg`, un hash et un `artefact_id`. Le Canvas l’affiche comme image
+SVG dans le fil, avec export et enregistrement. Aucun HTML ou JavaScript n’est injecté.
+
+Le serveur peut aussi compiler directement, sans `.opencode` :
+
+```text
+POST /api/planification/artefacts/compiler
+{"html": "<le HTML design-diagram>", "titre": "Architecture"}
+```

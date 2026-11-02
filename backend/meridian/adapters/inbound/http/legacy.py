@@ -28,6 +28,9 @@ import pieces  # noqa: E402
 from meridian.adapters.inbound.http.cases import build_cases_router  # noqa: E402
 from meridian.adapters.inbound.http.actualites import build_actualites_router  # noqa: E402
 from meridian.adapters.inbound.http.initiatives import build_initiatives_router  # noqa: E402
+from meridian.adapters.inbound.http.planification import construire_router as construire_planification_router  # noqa: E402
+from meridian.application.planification import outils as planification_outils  # noqa: E402
+from meridian.application import dependances  # noqa: E402
 from meridian.adapters.inbound.http.mesh_vue import build_mesh_vue_router  # noqa: E402
 from meridian.adapters.inbound.http.boucle import router as boucle_router, _tenant as resoudre_tenant_boucle  # noqa: E402
 from meridian.adapters.inbound.http.cognitif import router as cognitif_router  # noqa: E402
@@ -109,6 +112,10 @@ api_router = APIRouter(prefix="/api")
 
 NO_ID = {"_id": 0}
 logger = logging.getLogger("meridian")
+
+_etat_dependances = dependances.etat()
+if _etat_dependances["manquantes"]:
+    logger.warning("dépendances manquantes ou dégradées : %s", ", ".join(_etat_dependances["manquantes"]))
 
 
 SEED_VERSION = 13
@@ -323,7 +330,9 @@ async def root():
 
 @api_router.get("/health")
 async def health():
-    return {"status": "ok", "service": "meridian"}
+    etat = dependances.etat()
+    return {"status": etat["status"], "service": "meridian",
+            "dependances": etat["dependances"], "manquantes": etat["manquantes"]}
 
 
 # ---------- Périmètres : espace, vues, journal ----------
@@ -1962,7 +1971,8 @@ def _ingerer_interfaces_postgres(registre, tenant_id, acteur_id, perimetre_id):
 
 def _catalogue_outils(tenant_id, acteur_id, perimetre_id):
     """Manifestes intégrés, fichiers, protocoles et opérations d'interface connues ; aucune exécution."""
-    registre = jumeau_capacites.RegistreCapacites(jumeau_capacites.manifestes_integres())
+    registre = jumeau_capacites.RegistreCapacites(
+        jumeau_capacites.manifestes_integres() + planification_outils.manifestes())
     for chemin in _chemins_manifestes():
         try:
             jumeau_chargeur_manifestes.charger(registre, chemin)
@@ -2064,6 +2074,7 @@ api_router.include_router(boucle_router)
 api_router.include_router(construire_sources_router(resoudre_tenant=resoudre_tenant_boucle))
 api_router.include_router(cognitif_router)
 api_router.include_router(construire_runs_router(resoudre_tenant=resoudre_tenant_boucle))
+api_router.include_router(construire_planification_router())
 
 
 # ---------- Notifications ----------

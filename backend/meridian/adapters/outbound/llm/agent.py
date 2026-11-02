@@ -189,6 +189,12 @@ def prompt_systeme(ctx):
                             for lecteur in ctx["lecteurs"])
     if ctx.get("travail"):
         prompt += f"\n\n## État du Travail (ton état de tâche : tiens-le à jour avec tes outils)\n\n{ctx['travail']}"
+    prompt += ("\n\n## Pilotage capacité / charge / budget\n\n"
+               "Pour toute question de capacité, charge, prévision, scénario ou budget, appelle d'abord l'outil de "
+               "pilotage pertinent (`planification_capacite`, `planification_prevision`, `planification_budget` ou "
+               "`planification_alertes`). Les calculs sont déterministes : ne réinvente pas une date ni un chiffre. "
+               "Présente les résultats en tableau court et, si utile, en schéma Mermaid ; le tool renvoie un artefact "
+               "structuré que l'interface affiche dans le fil.")
     prompt += f"\n\n{DONNEES_PIECES}"
     return prompt
 
@@ -951,6 +957,13 @@ def construire(ctx, dsn, session, modele=None, ecriture=None, budget=None, outil
     if ecriture:
         tools += outils_travail(ecriture, budget, verifier, ctx.get("pieces"))
     tools += supplement
+    try:
+        from meridian.adapters.outbound.planification_outils import construire as construire_planification
+        tenant = (ctx.get("jumeau") or {}).get("tenant_id") or ctx.get("tenant") or "local"
+        planification = construire_planification(dsn, tenant, acteur=ctx.get("acteur") or "flore")
+        tools += planification.outils(lecture_seule=True)
+    except Exception:  # le pilotage est optionnel : une source en panne ne bloque pas Flore
+        journal.warning("outils de pilotage indisponibles", exc_info=True)
     return Agent(model=m, system_prompt=prompt_systeme(ctx), tools=tools,
                  session_manager=gestionnaire_session(session) if session else None,
                  conversation_manager=SummarizingConversationManager(

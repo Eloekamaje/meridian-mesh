@@ -22,6 +22,8 @@ Index des décisions d'architecture de Méridian.
 | [0016](0016-fin-personas-demo.md) | Fin des personas de démonstration | accepted | 2026-10-31 |
 | [0017](0017-cloture-pilote.md) | Choix de clôture du pilote | superseded by 0018 | 2026-10-31 |
 | [0018](0018-suppression-effective-personas-polaris.md) | Suppression effective des personas et de Polaris | accepted | 2026-10-31 |
+| [0019](0019-source-travail-generique-planification.md) | Capacité, charge, prévision et budget : domaine générique, trackers comme adapters | accepted | 2026-11-01 |
+| [0020](0020-roles-projet-lentilles.md) | Rôles projet et lentilles, pas de modèles ni de personas par rôle | accepted | 2026-11-01 |
 
 ## Règles
 

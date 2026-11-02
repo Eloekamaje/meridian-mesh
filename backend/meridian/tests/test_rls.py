@@ -75,6 +75,14 @@ def test_toutes_les_tables_avec_tenant_sont_couvertes():
         "execution_run", "execution_evenement", "execution_outbox", "execution_timer",
         "execution_effet", "execution_approbation", "execution_etape",
         "source_schedule", "ingestion_run", "travail",
+        "planification_source", "planification_equipe", "planification_membre",
+        "planification_competence", "planification_cycle", "planification_release",
+        "planification_element", "planification_dependance", "planification_role",
+        "planification_capacite", "planification_plan", "planification_plan_ligne",
+        "planification_prevision", "planification_budget", "planification_cout",
+        "planification_sync_run", "planification_calibration", "planification_webhook",
+        "planification_absence", "planification_allocation", "planification_temps",
+        "planification_taux", "planification_artefact",
     }
     assert attendues == set(rls.TABLES)
     assert set(rls.TABLES) | set(rls.TABLES_DERIVEES) == set(rls.TOUTES_LES_TABLES)
@@ -219,6 +227,14 @@ def test_tables_execution_memoire_ingestion_et_valeur_couvertes():
         "execution_run", "execution_evenement", "execution_outbox", "execution_timer",
         "execution_effet", "execution_approbation", "execution_etape",
         "source_schedule", "ingestion_run", "travail",
+        "planification_source", "planification_equipe", "planification_membre",
+        "planification_competence", "planification_cycle", "planification_release",
+        "planification_element", "planification_dependance", "planification_role",
+        "planification_capacite", "planification_plan", "planification_plan_ligne",
+        "planification_prevision", "planification_budget", "planification_cout",
+        "planification_sync_run", "planification_calibration", "planification_webhook",
+        "planification_absence", "planification_allocation", "planification_temps",
+        "planification_taux", "planification_artefact",
     }
     assert attendues <= set(rls.TABLES)
     sql = rls.sql_activation()

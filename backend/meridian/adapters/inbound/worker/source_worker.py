@@ -26,6 +26,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from meridian.adapters.outbound.postgres import depot
 from meridian.adapters.outbound.postgres import ingestion_runtime as runtime
 from meridian.adapters.outbound.postgres import rls
+from meridian.application import dependances
 
 from .config import dsn_avec_tenant, dsn_worker, normaliser_tenants, tenants_worker
 
@@ -217,6 +218,10 @@ async def _main_async(options) -> int:
             "JUMEAU_WORKER_PG_DSN ou JUMEAU_PG_DSN absent : worker d'ingestion impossible")
     if not mongo or not base:
         raise SystemExit("MONGO_URL et DB_NAME requis : le gardien publie situations et notifications")
+    etat_dependances = dependances.etat()
+    if "codebase-memory-mcp" in etat_dependances["manquantes"]:
+        journal.warning("codebase-memory-mcp absent : les runs d'ingestion de code échoueront ; "
+                        "définir CBM_BIN ou installer le binaire")
     # Les connexions auxiliaires (rédaction, outils) lisent JUMEAU_PG_DSN : elles doivent
     # utiliser le DSN worker, puis le DSN scopé au tenant pendant chaque passe.
     os.environ["JUMEAU_PG_DSN"] = dsn

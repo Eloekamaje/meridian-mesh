@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { grouperConsultations, resumeConsultations } from "@/lib/fluxFlore";
+import ArtefactPlanification, { artefactDepuisOutil } from "./ArtefactPlanification";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { CaretDown, CheckCircle, CircleNotch, WarningCircle } from "@phosphor-icons/react";
 
@@ -117,6 +118,7 @@ export default function LigneActiviteFlore({ activite, testid = "flore-activite"
   const consultationEnCours = consultations.some((c) => !c.outil.mission && c.outil.etat === "en_cours");
   const libelle = (enCours && consultationEnCours && resumeConsultations(ops)) || courante?.label || "Flore réfléchit…";
   const sources = [...new Set(ops.flatMap((o) => o.sources || []))];
+  const artefacts = ops.map((o) => artefactDepuisOutil(o.outil)).filter(Boolean).slice(-2);
   // Une activité terminée sans aucune étape ne s'annonce pas « Analyse terminée » : elle dit ce qu'elle est.
   const vide = !enCours && ops.length === 0;
   if (vide) {
@@ -133,6 +135,11 @@ export default function LigneActiviteFlore({ activite, testid = "flore-activite"
   return (
     <div className="py-1" data-testid={testid} data-etat={enCours ? "encours" : "termine"}>
       {/* Hauteur fixe : un nouveau libellé ne déplace jamais le fil */}
+      {artefacts.length > 0 && (
+        <div className="mb-2 space-y-2">
+          {artefacts.map((artefact, i) => <ArtefactPlanification key={`${artefact.type}-${i}`} artefact={artefact} />)}
+        </div>
+      )}
       <button
         type="button"
         onClick={() => setOuvert(!ouvert)}

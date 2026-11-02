@@ -1,0 +1,9 @@
+[Unit]
+Description=Meridian - synchronisation des sources de pilotage
+After=network-online.target postgresql.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/meridian/backend
+EnvironmentFile=/opt/meridian/backend/.env
+ExecStart=/opt/meridian/backend/.venv/bin/python -m meridian.adapters.inbound.worker.planification_worker --tenant demo --tous

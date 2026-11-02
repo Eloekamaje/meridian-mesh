@@ -867,3 +867,377 @@ CREATE TABLE IF NOT EXISTS travail (
 );
 CREATE INDEX IF NOT EXISTS travail_recents
     ON travail (tenant_id, maj_le DESC, id DESC);
+
+-- ---------------------------------------------------------------------------
+-- Planification : sources de travail, équipes, capacité, charge, prévisions et budget.
+-- Domaine générique : aucun champ d'éditeur ; les adapters normalisent les données.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS planification_source (
+    tenant_id             text NOT NULL,
+    id                    text NOT NULL,
+    provider              text NOT NULL,
+    usage                 text NOT NULL DEFAULT 'travail'
+        CHECK (usage IN ('travail', 'people', 'finance', 'valeur', 'incidents')),
+    prioritaire           boolean NOT NULL DEFAULT false,
+    nom                   text NOT NULL,
+    perimetre             text,
+    secret_ref            text,
+    configuration         jsonb NOT NULL DEFAULT '{}'::jsonb,
+    curseur               text,
+    capacites             jsonb NOT NULL DEFAULT '{}'::jsonb,
+    etat                  text NOT NULL DEFAULT 'active'
+        CHECK (etat IN ('active', 'pause', 'erreur')),
+    derniere_erreur       text,
+    verrou_proprietaire   text,
+    verrou_jusqu_a        timestamptz,
+    cree_le               timestamptz NOT NULL DEFAULT now(),
+    maj_le                timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, id)
+);
+
+CREATE TABLE IF NOT EXISTS planification_equipe (
+    tenant_id   text NOT NULL,
+    id          text NOT NULL,
+    nom         text NOT NULL,
+    domaine     text,
+    parent_id   text,
+    source_id   text,
+    externe_id  text,
+    cree_le     timestamptz NOT NULL DEFAULT now(),
+    maj_le      timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, id)
+);
+
+CREATE TABLE IF NOT EXISTS planification_membre (
+    tenant_id   text NOT NULL,
+    equipe_id   text NOT NULL,
+    acteur      text NOT NULL,
+    fte         numeric(8, 3) NOT NULL DEFAULT 1
+        CHECK (fte >= 0),
+    role        text,
+    source      text,
+    maj_le      timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, equipe_id, acteur)
+);
+
+CREATE TABLE IF NOT EXISTS planification_competence (
+    tenant_id   text NOT NULL,
+    equipe_id   text NOT NULL,
+    competence  text NOT NULL,
+    niveau      integer NOT NULL DEFAULT 0 CHECK (niveau BETWEEN 0 AND 5),
+    source      text,
+    maj_le      timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, equipe_id, competence)
+);
+
+CREATE TABLE IF NOT EXISTS planification_cycle (
+    tenant_id   text NOT NULL,
+    id          text NOT NULL,
+    equipe_id   text NOT NULL,
+    nom         text NOT NULL,
+    debut       date,
+    fin         date,
+    termine     boolean NOT NULL DEFAULT false,
+    capacite    numeric,
+    unite       text,
+    source_id   text,
+    maj_le      timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, id)
+);
+
+CREATE TABLE IF NOT EXISTS planification_release (
+    tenant_id   text NOT NULL,
+    id          text NOT NULL,
+    nom         text NOT NULL,
+    date_cible  date,
+    statut      text,
+    source_id   text,
+    maj_le      timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, id)
+);
+
+CREATE TABLE IF NOT EXISTS planification_element (
+    tenant_id             text NOT NULL,
+    id                    text NOT NULL,
+    source_id             text NOT NULL,
+    external_id           text NOT NULL,
+    equipe_id             text,
+    parent_id             text,
+    cycle_id              text,
+    release_id            text,
+    type                  text NOT NULL DEFAULT 'item',
+    titre                 text NOT NULL,
+    statut                text NOT NULL DEFAULT 'inconnu',
+    priorite              text NOT NULL DEFAULT 'inconnue',
+    categorie_charge      text NOT NULL DEFAULT 'planifiee'
+        CHECK (categorie_charge IN ('engagee', 'planifiee', 'non_planifiee', 'inconnue')),
+    estimation_valeur     numeric,
+    estimation_unite      text,
+    estimation_methode    text,
+    assigne               text,
+    url                   text,
+    actif                 boolean NOT NULL DEFAULT true,
+    observe_le            timestamptz NOT NULL DEFAULT now(),
+    maj_source            timestamptz,
+    donnees               jsonb NOT NULL DEFAULT '{}'::jsonb,
+    maj_le                timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, id),
+    UNIQUE (tenant_id, source_id, external_id)
+);
+
+CREATE INDEX IF NOT EXISTS planification_element_equipe
+    ON planification_element (tenant_id, equipe_id, actif, statut);
+CREATE INDEX IF NOT EXISTS planification_element_cycle
+    ON planification_element (tenant_id, cycle_id);
+
+CREATE TABLE IF NOT EXISTS planification_dependance (
+    tenant_id          text NOT NULL,
+    id                 text NOT NULL,
+    source_element_id  text NOT NULL,
+    cible_element_id   text NOT NULL,
+    type               text NOT NULL DEFAULT 'lie',
+    source_id          text,
+    maj_le             timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, id)
+);
+
+CREATE TABLE IF NOT EXISTS planification_role (
+    tenant_id        text NOT NULL,
+    id               text NOT NULL,
+    acteur           text NOT NULL,
+    role             text NOT NULL,
+    perimetre_type   text NOT NULL DEFAULT 'tenant'
+        CHECK (perimetre_type IN ('tenant', 'equipe', 'programme', 'portefeuille', 'twin')),
+    perimetre_id     text,
+    debut            date,
+    fin              date,
+    source           text,
+    cree_le          timestamptz NOT NULL DEFAULT now(),
+    maj_le           timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, id)
+);
+
+CREATE INDEX IF NOT EXISTS planification_role_acteur
+    ON planification_role (tenant_id, acteur);
+
+CREATE TABLE IF NOT EXISTS planification_capacite (
+    tenant_id   text NOT NULL,
+    id          text NOT NULL,
+    equipe_id   text NOT NULL,
+    debut       date NOT NULL,
+    fin         date NOT NULL,
+    unite       text NOT NULL,
+    valeur      numeric NOT NULL CHECK (valeur >= 0),
+    confiance   double precision NOT NULL DEFAULT 0.5 CHECK (confiance >= 0 AND confiance <= 1),
+    source      text,
+    fraicheur   text,
+    cree_le     timestamptz NOT NULL DEFAULT now(),
+    maj_le      timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, id)
+);
+
+CREATE TABLE IF NOT EXISTS planification_plan (
+    tenant_id   text NOT NULL,
+    id          text NOT NULL,
+    nom         text NOT NULL,
+    equipe_id   text,
+    horizon     text,
+    version     integer NOT NULL DEFAULT 1,
+    statut      text NOT NULL DEFAULT 'brouillon',
+    auteur      text,
+    hypotheses  jsonb NOT NULL DEFAULT '[]'::jsonb,
+    cree_le     timestamptz NOT NULL DEFAULT now(),
+    maj_le      timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, id)
+);
+
+CREATE TABLE IF NOT EXISTS planification_plan_ligne (
+    tenant_id      text NOT NULL,
+    plan_id        text NOT NULL,
+    element_id     text NOT NULL,
+    equipe_id      text,
+    categorie      text NOT NULL DEFAULT 'planifiee',
+    periode        text,
+    valeur         numeric,
+    unite          text,
+    PRIMARY KEY (tenant_id, plan_id, element_id)
+);
+
+CREATE TABLE IF NOT EXISTS planification_prevision (
+    tenant_id        text NOT NULL,
+    id               text NOT NULL,
+    perimetre_type   text NOT NULL DEFAULT 'equipe',
+    perimetre_id     text,
+    equipe_id        text,
+    horizon          text,
+    methode          text NOT NULL,
+    version          text NOT NULL DEFAULT '1.0.0',
+    entree_hash      text NOT NULL,
+    seed             integer,
+    p50              text,
+    p85              text,
+    p95              text,
+    confiance        double precision NOT NULL DEFAULT 0
+        CHECK (confiance >= 0 AND confiance <= 1),
+    hypotheses       jsonb NOT NULL DEFAULT '[]'::jsonb,
+    exclusions       jsonb NOT NULL DEFAULT '[]'::jsonb,
+    resultat         jsonb NOT NULL DEFAULT '{}'::jsonb,
+    cree_le          timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, id)
+);
+
+CREATE TABLE IF NOT EXISTS planification_budget (
+    tenant_id      text NOT NULL,
+    id             text NOT NULL,
+    initiative_id  text,
+    objet_source_type text,
+    objet_source_id   text,
+    libelle        text NOT NULL,
+    devise         text NOT NULL DEFAULT 'EUR',
+    enveloppe      numeric NOT NULL DEFAULT 0,
+    periode        text,
+    source         text,
+    cree_le        timestamptz NOT NULL DEFAULT now(),
+    maj_le         timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, id)
+);
+
+CREATE TABLE IF NOT EXISTS planification_cout (
+    tenant_id   text NOT NULL,
+    id          text NOT NULL,
+    budget_id   text NOT NULL,
+    equipe_id   text,
+    periode     text,
+    prevu       numeric NOT NULL DEFAULT 0,
+    engage      numeric NOT NULL DEFAULT 0,
+    reel        numeric NOT NULL DEFAULT 0,
+    forecast    numeric NOT NULL DEFAULT 0,
+    source      text,
+    maj_le      timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, id)
+);
+
+CREATE TABLE IF NOT EXISTS planification_sync_run (
+    tenant_id   text NOT NULL,
+    id          text NOT NULL,
+    source_id   text NOT NULL,
+    etat        text NOT NULL DEFAULT 'EN_COURS'
+        CHECK (etat IN ('EN_COURS', 'SUCCEEDED', 'FAILED')),
+    debut       timestamptz NOT NULL DEFAULT now(),
+    fin         timestamptz,
+    lus         integer NOT NULL DEFAULT 0,
+    ecrits      integer NOT NULL DEFAULT 0,
+    erreur      text,
+    metriques   jsonb NOT NULL DEFAULT '{}'::jsonb,
+    PRIMARY KEY (tenant_id, id)
+);
+
+-- Migrations douces pour les bases créées avant l'ajout de ces colonnes.
+ALTER TABLE planification_source ADD COLUMN IF NOT EXISTS usage text NOT NULL DEFAULT 'travail';
+ALTER TABLE planification_source ADD COLUMN IF NOT EXISTS prioritaire boolean NOT NULL DEFAULT false;
+ALTER TABLE planification_budget ADD COLUMN IF NOT EXISTS objet_source_type text;
+ALTER TABLE planification_budget ADD COLUMN IF NOT EXISTS objet_source_id text;
+
+-- Migration douce : les prévisions stockent les dates ISO en texte, pas des nombres.
+ALTER TABLE planification_prevision ALTER COLUMN p50 TYPE text USING p50::text;
+ALTER TABLE planification_prevision ALTER COLUMN p85 TYPE text USING p85::text;
+ALTER TABLE planification_prevision ALTER COLUMN p95 TYPE text USING p95::text;
+
+CREATE TABLE IF NOT EXISTS planification_calibration (
+    tenant_id      text NOT NULL,
+    id             text NOT NULL,
+    prevision_id   text NOT NULL,
+    date_reelle    date NOT NULL,
+    p50            text,
+    p85            text,
+    p95            text,
+    p85_couvert    boolean,
+    ecart_jours    double precision,
+    cree_le        timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, id)
+);
+
+CREATE TABLE IF NOT EXISTS planification_webhook (
+    tenant_id    text NOT NULL,
+    id           text NOT NULL,
+    source_id    text NOT NULL,
+    fournisseur  text,
+    identifiant  text NOT NULL,
+    recu_le      timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, id),
+    UNIQUE (tenant_id, source_id, identifiant)
+);
+
+CREATE TABLE IF NOT EXISTS planification_absence (
+    tenant_id   text NOT NULL,
+    id          text NOT NULL,
+    equipe_id   text NOT NULL,
+    acteur      text,
+    debut       date NOT NULL,
+    fin         date NOT NULL,
+    valeur      numeric NOT NULL DEFAULT 0,
+    unite       text NOT NULL DEFAULT 'jours',
+    source      text,
+    maj_le      timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, id)
+);
+
+CREATE TABLE IF NOT EXISTS planification_allocation (
+    tenant_id      text NOT NULL,
+    id             text NOT NULL,
+    equipe_id      text NOT NULL,
+    acteur         text,
+    element_id     text,
+    initiative_id  text,
+    debut          date,
+    fin            date,
+    valeur         numeric NOT NULL DEFAULT 0,
+    unite          text NOT NULL DEFAULT 'pourcentage',
+    source         text,
+    maj_le         timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, id)
+);
+
+CREATE TABLE IF NOT EXISTS planification_temps (
+    tenant_id     text NOT NULL,
+    id            text NOT NULL,
+    source_id     text NOT NULL,
+    element_id    text,
+    equipe_id     text,
+    acteur        text,
+    date_travail  date NOT NULL,
+    periode       text,
+    valeur        numeric NOT NULL DEFAULT 0,
+    unite         text NOT NULL DEFAULT 'heures',
+    source        text,
+    maj_le        timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, id)
+);
+
+CREATE TABLE IF NOT EXISTS planification_taux (
+    tenant_id   text NOT NULL,
+    id          text NOT NULL,
+    equipe_id   text,
+    role        text,
+    devise      text NOT NULL DEFAULT 'EUR',
+    cout_heure  numeric NOT NULL DEFAULT 0,
+    debut       date,
+    fin         date,
+    source      text,
+    maj_le      timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, id)
+);
+
+CREATE TABLE IF NOT EXISTS planification_artefact (
+    tenant_id   text NOT NULL,
+    id          text NOT NULL,
+    type        text NOT NULL,
+    titre       text NOT NULL,
+    version     text NOT NULL DEFAULT '1.0',
+    hash        text NOT NULL,
+    source      text,
+    donnees     jsonb NOT NULL DEFAULT '{}'::jsonb,
+    cree_le     timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, id)
+);

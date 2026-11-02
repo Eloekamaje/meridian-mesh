@@ -42,6 +42,7 @@ import { appliquerCommande, appliquerMention, commandesFiltrees, normaliser, req
 import { BoutonJoindre, ListePieces } from "./PiecesJointes";
 import PanneauPiece from "./PanneauPiece";
 import CanvasDocument from "./CanvasDocument";
+import { artefactDepuisOutil } from "@/components/ArtefactPlanification";
 import Atlas from "@/pages/Atlas";
 import { BandeauVeille, EvenementVeille, RepriseVeille } from "./VeilleTravail";
 
@@ -72,9 +73,12 @@ function useDeroule(message) {
 }
 
 // Rendu formaté, fluide et aéré du texte (Style ChatGPT / Claude)
-export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif, onVoirAtlas, atlasActif, onOuvrirPiece, children }) {
+export function CorpsMessageFlore({ message, onOuvrirCanvas, onOuvrirArtefact, canvasActif, onVoirAtlas, atlasActif, onOuvrirPiece, children }) {
   const texte = message.texte || "";
   const { visible, fini } = useDeroule(message);
+  const activite = activiteDuMessage(message);
+  const artefacts = (activite?.ops || []).map((o) => artefactDepuisOutil(o.outil)).filter(Boolean);
+  const artefact = artefacts[artefacts.length - 1] || null;
 
   return (
     <div className="space-y-3.5 text-[15px] leading-relaxed text-[#DCE6EE]">
@@ -227,6 +231,20 @@ export function CorpsMessageFlore({ message, onOuvrirCanvas, canvasActif, onVoir
             <MapTrifold size={14} className="text-emerald-400" />
             <span>{message.atlasScene.titre}</span>
             <span className="text-emerald-400 font-semibold">{atlasActif ? "(Atlas ouvert ↗)" : "(Voir dans l'Atlas ↗)"}</span>
+          </button>
+        </div>
+      )}
+
+      {fini && artefact && onOuvrirArtefact && (
+        <div className="pt-2">
+          <button
+            onClick={() => onOuvrirArtefact(artefact)}
+            className="inline-flex items-center gap-2 rounded-xl border border-blue-400/30 bg-blue-500/10 px-3.5 py-1.5 font-code text-xs text-blue-200 transition-all hover:bg-blue-500/20 hover:border-blue-400/50"
+            data-testid="btn-ouvrir-canvas-artefact"
+          >
+            <FileText size={14} className="text-blue-400" />
+            <span>{artefact.titre || "Artefact de pilotage"}</span>
+            <span className="text-blue-400 font-semibold">{canvasActif ? "(Canvas ouvert ↗)" : "(Ouvrir dans le Canvas ↗)"}</span>
           </button>
         </div>
       )}
@@ -916,6 +934,10 @@ export default function OngletTravail({
                         if (m.documentCanvas) setDocumentOuvert({ titre: m.documentCanvas, contenu: m.documentTexte });
                         setCanvasActif(true);
                       }}
+                      onOuvrirArtefact={(artefact) => {
+                        setDocumentOuvert({ titre: artefact.titre || "Artefact de pilotage", contenu: "", artefact });
+                        setCanvasActif(true);
+                      }}
                       canvasActif={canvasActif}
                       atlasActif={atlasActif}
                       onVoirAtlas={() => {
@@ -1194,6 +1216,7 @@ export default function OngletTravail({
             ) : (
               <CanvasDocument titre={documentOuvert?.titre}
                               contenu={documentOuvert?.contenu}
+                              artefact={documentOuvert?.artefact}
                               onFermer={toggleCanvas} />
             )}
           </div>

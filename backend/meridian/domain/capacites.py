@@ -31,6 +31,7 @@ CAPACITES = (
     "concevoir",
     "mobiliser_expert",
     "chercher_outil",
+    "planifier",
 )
 MODES_PREUVE = ("DECLARED", "OBSERVED", "INFERRED", "PROPOSED", "AUCUNE")
 SOURCES = ("builtin", "mcp", "manifeste", "openapi", "graphql", "grpc", "asyncapi", "interface")

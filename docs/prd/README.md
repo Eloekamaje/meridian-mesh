@@ -4,6 +4,7 @@
 |-----|-------|--------|---------|------|
 | [PRD-001](PRD-001-enterprise-intelligence-mesh.md) | Méridian, Enterprise Intelligence Mesh | accepted | 1.0 | 2026-10-30 |
 | [PRD-002](PRD-002-memoire-contexte-raisonnement.md) | Mémoire, contexte et raisonnement | accepted | 1.0 | 2026-10-30 |
+| [PRD-003](PRD-003-capacite-charge-prevision-budget.md) | Capacité, charge, prévision et budget | accepted | 1.2 | 2026-11-01 |
 
 Les **fiches produit** sont indexées dans [PRODUCT-SHEETS.md](PRODUCT-SHEETS.md).
 

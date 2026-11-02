@@ -26,3 +26,69 @@ class TravailSource(Protocol):
 
     async def lister_apres(self, maj_le: str | None, apres_id: str | None,
                            limite: int) -> list[dict[str, Any]]: ...
+
+
+class SourceTravail(Protocol):
+    """Un outil de gestion du travail (Jira, Azure DevOps, Linear, CSV...), distinct du store Travail."""
+
+    provider: str
+
+    def capacites(self) -> dict[str, bool]:
+        """sprints, points, heures, worklogs, dependances, releases, historique, equipes."""
+
+    def lister_equipes(self) -> list[dict[str, Any]]:
+        """[{id, nom, domaine?, parent?}] — identifiants externes, pas encore mappés Méridian."""
+
+    def lister_elements(self, depuis: str | None = None, limite: int = 500) -> list[dict[str, Any]]:
+        """Éléments normalisables ; `depuis` est le curseur du provider."""
+
+    def lister_cycles(self) -> list[dict[str, Any]]:
+        """[{id, equipe_id, nom, debut, fin, termine?}]."""
+
+    def lister_releases(self) -> list[dict[str, Any]]:
+        """[{id, nom, date_cible?, statut?}]."""
+
+    def lister_dependances(self) -> list[dict[str, Any]]:
+        """[{source_id, cible_id, type}] ; liens explicites seulement."""
+
+    def lister_temps(self) -> list[dict[str, Any]]:
+        """[{element_id, equipe_id?, periode, valeur, unite}] agrégé si possible."""
+
+
+class SourcePeople(Protocol):
+    provider: str
+
+    def lister_equipes(self) -> list[dict[str, Any]]: ...
+
+    def lister_membres(self, equipe_id: str | None = None) -> list[dict[str, Any]]: ...
+
+    def lister_capacites(self, debut: str | None = None, fin: str | None = None) -> list[dict[str, Any]]: ...
+
+    def lister_competences(self, equipe_id: str | None = None) -> list[dict[str, Any]]: ...
+
+    def lister_allocations(self, equipe_id: str | None = None) -> list[dict[str, Any]]: ...
+
+    def lister_absences(self, equipe_id: str | None = None,
+                        debut: str | None = None, fin: str | None = None) -> list[dict[str, Any]]: ...
+
+
+class SourceFinance(Protocol):
+    provider: str
+
+    def lister_budgets(self) -> list[dict[str, Any]]: ...
+
+    def lister_couts(self) -> list[dict[str, Any]]: ...
+
+    def lister_taux(self) -> list[dict[str, Any]]: ...
+
+
+class SourceValeur(Protocol):
+    provider: str
+
+    def lister_valeurs(self, initiative_id: str | None = None) -> list[dict[str, Any]]: ...
+
+
+class SourceIncidents(Protocol):
+    provider: str
+
+    def lister_charge_non_planifiee(self, debut: str | None = None, fin: str | None = None) -> list[dict[str, Any]]: ...
