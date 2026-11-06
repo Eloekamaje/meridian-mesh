@@ -1,7 +1,9 @@
 # Méridian
 
+> **État actuel et reste à faire :** [docs/architecture/etat-actuel.md](docs/architecture/etat-actuel.md).
 > **Architecture de référence :** [docs/MERIDIAN_Architecture_Master_v1.md](docs/MERIDIAN_Architecture_Master_v1.md).
-> Ce README décrit le produit et l’usage ; il ne remplace pas le document maître d’architecture.
+> Ce README décrit le produit, l’usage et les points d’entrée ; le document d’état actuel décrit
+> l’implémentation réelle, la matrice de traçabilité doc → code → test et les dettes restantes.
 
 **Méridian** est une plateforme de compréhension et de décision sur un système d'information. Elle n'est pas un simple graphe de topologie : le système est organisé autour de **Situations** (incidents, changements, découvertes) et suit le paradigme **Découvrir → Comprendre → Décider**.
 
@@ -16,7 +18,7 @@
 | **Investigations** (`/investigations`) | Approfondissement : relations, comportements, contradictions, hypothèses |
 | **Décisions** (`/decisions`) | Change Lab : simulation de scénarios de changement |
 | **Jumeaux** (`/jumeaux`) | Registre des jumeaux numériques (admission, administration) |
-| **Administration** (`/administration`) | Espaces, journal d'audit, réinitialisation de la démo |
+| **Administration** (`/administration`) | Sources, couverture, propriétaires, journal d'audit |
 
 ## L'Atlas — navigation hiérarchique
 
@@ -57,48 +59,165 @@ Barre persistante en bas de l'application, **synchronisée bidirectionnellement 
 
 ## Sécurité — RBAC côté serveur
 
-Pas d'authentification (démo) : l'acteur vaut `demo` et le périmètre se pilote via le sélecteur d'espace de la barre supérieure, envoyé au backend par l'en-tête `X-Espace`. **Tout le filtrage est fait côté serveur** — les données non autorisées ne quittent jamais l'API.
+En mode `demo` (local), l'acteur vaut `demo` et le périmètre se pilote via le sélecteur d'espace de la barre supérieure, envoyé au backend par l'en-tête `X-Espace`. En production, `AUTH_MODE=proxy` ou `oidc` authentifie l'acteur côté serveur. **Tout le filtrage est fait côté serveur** — les données non autorisées ne quittent jamais l'API.
 
 Niveaux d'autorisation par jumeau : `existence` → `résumé` → `preuves` → `complet`. Aurora refuse les questions hors périmètre et filtre ses analyses au niveau « résumé » minimum.
 
+## Ce que Méridian sait faire aujourd’hui
+
+- **Comprendre un SI** : Twins, situations, relations, preuves, claims, maturité, contradictions.
+- **Découvrir les liens entre composants** : code, contrats, configuration, Kubernetes/Helm,
+  ingress, traces, JNDI ; CBM comme source principale, parseurs locaux en repli.
+- **Enquêter de façon bornée** : harness agentique, planificateur déterministe ou LLM, outils
+  read-only, budgets, arrêt explicite, revue humaine.
+- **Mémoire multi-niveaux** : mémoire de travail, épisodique, sémantique, procédurale,
+  relationnelle, réflexive, prospective, organisationnelle et documentaire.
+- **Boucle décisionnelle** : Situation → Investigation → Décision → Initiative → Outcome →
+  Learning, avec calibration et réutilisation mesurée.
+- **Planifier** : capacité, charge, prévision, budget, synchronisation Jira/Azure DevOps.
+- **Gouverner** : auth `proxy`/`oidc`, RBAC serveur, tenant, RLS opt-in, rétention, export,
+  suppression.
+
+## Architecture visuelle
+
+Le schéma d’architecture actuel :
+
+![Architecture actuelle de Méridian](docs/diagrammes/architecture-etat-actuel.png)
+
+[Ouvrir en grand (HTML)](docs/diagrammes/architecture-etat-actuel.html) ·
+[SVG](docs/diagrammes/architecture-etat-actuel.svg)
+
+La carte des mémoires de l’agent :
+
+![Mémoire de l’agent Méridian](docs/diagrammes/memoire-agent.png)
+
+[Ouvrir en grand (HTML)](docs/diagrammes/memoire-agent.html) ·
+[SVG](docs/diagrammes/memoire-agent.svg)
+
+La boucle cognitive (cadrage → contexte → dossier → critique → décision → Learning) :
+[diagramme cognitif](docs/diagrammes/architecture-cognitive.html) ·
+[SVG](docs/diagrammes/architecture-cognitive.svg).
+
+Le cycle de vie d’un Twin (commande → préalables → sources → claims → manifeste →
+`twin.born` → découverte → revue → veille) :
+[diagramme Twin](docs/diagrammes/cycle-vie-twin.html) ·
+[SVG](docs/diagrammes/cycle-vie-twin.svg).
+
+Les diagrammes sont produits avec le profil `diagram-design` `meridian` et validés par
+`self_check.py --offline` et `verify-geometry.py`.
+
 ## Pile technique
 
-- **Frontend** : React 19, Tailwind CSS, `@xyflow/react` (React Flow v12) pour la cartographie, Phosphor Icons, Sonner (toasts)
-- **Backend** : FastAPI + Motor (MongoDB async), Pydantic v2
-- **Base** : MongoDB (collections : `jumeaux`, `relations`, `situations`, `change_lab`, `dossiers`, `vues`, `journal`, `meta`)
+- **Frontend** : React 19, Tailwind CSS, `@xyflow/react`, Phosphor Icons, React Router 7,
+  Recharts, Mermaid.
+- **Backend** : FastAPI, Pydantic v2, psycopg 3, Motor/PyMongo, Neo4j, Redis, boto3.
+- **Stockages** :
+  - **Postgres** : source canonique (claims, preuves, objets d’entreprise, décisions,
+    mémoire durable et prospective, exécution, planification, chunks, communautés) ;
+  - **MongoDB** : Travail, cas, conversations, pièces, legacy ;
+  - **Neo4j** : projection graphe (Twins, relations, parcours, communautés) ;
+  - **Redis** : SSE, état des tours, rate limiting, multi-worker ;
+  - **local / S3 / MinIO** : artefacts d’index reconstructibles ;
+  - **CBM / Graphify** : graphe de code et contexte d’architecture.
+- **Modèles** : DeepSeek, Bedrock ou autre fournisseur compatible ; planificateurs LLM bornés
+  avec repli déterministe.
 
 ```
-/app
-├── backend/
-│   ├── server.py        # point d'entrée ASGI (shim mince)
-│   ├── meridian/        # domaine, application, ports, adapters
-│   │   ├── domain/      # types et invariants purs
-│   │   ├── application/ # cas d'usage et orchestration
-│   │   ├── ports/       # contrats
-│   │   ├── adapters/    # inbound HTTP/workers, outbound Postgres/Mongo/Neo4j/AWS/LLM
-│   │   └── tests/       # tests pytest
-│   └── seed_data.py     # catalogues et seed métier (SEED_VERSION)
-└── frontend/src/
-    ├── pages/           # Atlas, Aujourdhui, Investigations, ChangeLab, Jumeaux, Administration
-    ├── components/      # Topbar, AuroraBar, Layout, map/ (TwinNode, RegionNode)
-    └── lib/             # api.js, perimetre.jsx, contexte.jsx (store Atlas↔Aurora), mesh.jsx, domaines.js
+backend/
+├── server.py                  # point d'entrée ASGI
+├── meridian/
+│   ├── domain/                # modèles purs et invariants
+│   ├── application/           # cas d'usage, moteurs, harness, mémoire
+│   ├── ports/                 # contrats
+│   ├── adapters/
+│   │   ├── inbound/http/      # FastAPI
+│   │   ├── inbound/worker/    # source, outbox, travail, planification, réconciliation
+│   │   └── outbound/          # postgres, mongo, neo4j, redis, llm, connectors, aws
+│   └── tests/                 # pytest
+├── requirements.txt
+└── pytest.ini
+frontend/src/
+├── pages/                     # Atlas, Aujourd'hui, Travail, Boucle, Jumeaux, Administration
+├── components/map/            # Atlas, panneau Twin, revue, liens
+├── components/case/           # Travail, pièces, décisions
+└── lib/                       # api, contexte, rendu du graphe
+scripts/                        # workers, évaluation, réconciliation, maintenance
+docs/                           # architecture, ADR, PRD, état actuel
 ```
+
+## Découverte, mémoire et agentique
+
+**Découverte des liens.** CBM fournit le graphe de code multi-langages (routes, appels HTTP,
+variables, tables, ressources) ; les parseurs locaux ne servent que de repli. Les contrats, la
+configuration, Kubernetes/Helm, les ingress et les traces complètent les observations. Le
+moteur produit des liens `suggere`, des questions et des contradictions ; **aucun lien n’est
+confirmé automatiquement**. Namespace, rewrites d’ingress statiques et JNDI sont modélisés.
+
+**Mémoire.** Méridian sépare les mémoires au lieu d’empiler un unique vector store :
+
+| Mémoire | Usage |
+|---|---|
+| Travail / session | contexte du tour, résumé borné |
+| Épisodique | sessions, dossiers, décisions, outcomes |
+| Sémantique | Claims, preuves, connaissances, documents |
+| Procédurale | compétences, méthodes, recettes, Learnings |
+| Relationnelle | Twins, liens, topologie, communautés |
+| Réflexive | croyances, calibration, consolidation, leçons |
+| Prospective | intentions datées, échéances, rappels |
+| Organisationnelle | mémoire d’équipe et de tenant |
+| Documentaire | chunks, embeddings, communautés, RAG |
+
+La récupération est unifiée et hiérarchisée : `claim` > `learning` > `intention` >
+`annotation` > `durable`. Les Learnings sont réutilisables et leur réutilisation peut être
+mesurée (`succes`, `echec`, `inconnu`, outcome et preuves).
+
+**Agentique.** Le harness choisit des outils read-only, observe, s’arrête sur budget ou
+impasse, et produit des candidats. Il ne confirme rien : la revue humaine reste la seule voie
+de confirmation. Le détail est dans
+[docs/architecture/etat-actuel.md](docs/architecture/etat-actuel.md).
 
 ## Démarrage
 
 ```bash
-# Backend (port 8001)
-cd backend && pip install -r requirements.txt
-uvicorn server:app --host 0.0.0.0 --port 8001 --reload
+# 1. Moteurs locaux : Mongo, Redis, Postgres
+export JUMEAU_PG_PASSWORD="motdepasse"
+docker compose up -d mongodb redis postgres
 
-# Parseur PL/I ANTLR (facultatif, tests sémantiques) :
-# cd tools/pli && ./generate.sh ; voir tools/pli/README.md
+# 2. Backend (port 8001)
+cd backend
+python -m venv .venv
+.venv/bin/pip install -r requirements.txt
+export JUMEAU_PG_DSN="postgresql://meridian:motdepasse@127.0.0.1:5434/meridian"
+export MONGO_URL="mongodb://127.0.0.1:27017"
+export DB_NAME="meridian_db"
+.venv/bin/uvicorn server:app --host 0.0.0.0 --port 8001 --reload
 
-# Frontend (port 3000)
-cd frontend && yarn install && yarn start
+# 3. Frontend (port 3000)
+cd ../frontend
+yarn install
+yarn start
 ```
 
-Variables d'environnement : `backend/.env` (`MONGO_URL`, `DB_NAME`), `frontend/.env` (`REACT_APP_BACKEND_URL`).
+Neo4j est optionnel pour la projection graphe :
+`scripts/dev-neo4j-light.sh up` (ou `docker compose -f docker-compose.neo4j.yml up -d` avec
+`NEO4J_PASSWORD`).
+
+Le schéma Postgres est idempotent (`depot.appliquer_schema`, `schema.sql`) et appliqué par les
+workers et les scripts de maintenance. Sur une base neuve, lancer une fois un worker ou un
+script qui applique le schéma avant la première écriture.
+
+Variables principales : `JUMEAU_PG_DSN`, `MONGO_URL`, `DB_NAME`, `REDIS_URL`,
+`JUMEAU_MODELE`, `CBM_BIN`, `AUTH_MODE` (`demo` en local, `proxy`/`oidc` en production) et
+`REACT_APP_BACKEND_URL` côté frontend. Le détail est dans
+[docs/architecture/etat-actuel.md](docs/architecture/etat-actuel.md).
+
+Parseur PL/I ANTLR (facultatif, tests sémantiques) :
+
+```bash
+cd tools/pli && ./generate.sh
+```
+
+Voir [tools/pli/README.md](tools/pli/README.md).
 
 ### Alimentation continue des jumeaux
 
@@ -285,6 +404,11 @@ Au démarrage, `SEED_VERSION` réinitialise les collections de travail si sa val
 | `GET /api/boucle/sources/sante` · `POST /api/boucle/sources/{id}/ingest` | Santé et ingestion manuelle des sources |
 | `POST /api/boucle/sources/{id}/webhook` | Accélérateur signé : enfile un run si la branche/dépôt/SHA change |
 | `PATCH /api/boucle/sources/{id}/branche` | Change la branche suivie et enfile un run |
+| `GET /api/jumeaux/{id}/code-index/resume` · `/coverage` · `/observations` · `/links` | Index de code fédéré et couverture |
+| `GET /api/boucle/relations` · `POST /api/boucle/relations/{id}/revue` | Propositions de liens et revue humaine |
+| `GET /api/boucle/resolutions` · `POST /api/boucle/resolutions/{id}/revue` · `/enqueter` | Cas non résolus, revue et enquête bornée |
+| `GET/POST /api/boucle/intentions` · `POST /api/boucle/intentions/{id}/clore` · `/reporter` | Mémoire prospective |
+| `POST /api/boucle/learnings/{id}/reutilisations` · `GET /api/boucle/learnings/metriques` | Réutilisation mesurée des Learnings |
 | `POST /api/cases/{cid}/fusion` | Ajout serveur d'une conversation à un Travail (append-only) |
 | `POST /api/relations/{id}/confirmer` | Confirmation A2A d'une relation |
 | `GET /api/journal` | Journal d'audit (accès, décisions, exports) |
@@ -301,3 +425,43 @@ cd frontend && CI=true npm test -- --watchAll=false && npm run build
 
 `backend/tests/` contient des scripts e2e historiques qui visent un backend externe via
 `REACT_APP_BACKEND_URL` ; ils ne font pas partie de la suite locale.
+
+Au 6 novembre 2026, la suite complète donne **2 977 tests passés et 4 ignorés**, hors quatre
+tests dépendants de l’environnement (timing heartbeat, quota LLM simulé, données `demo` et
+périmètre de naissance).
+
+## Reste à faire
+
+La liste détaillée, avec critères d’acceptation, est dans
+[docs/architecture/etat-actuel.md](docs/architecture/etat-actuel.md), section « Reste à faire ».
+
+### P0 — avant pilote réel
+
+- corpus de production labellisé + shadow mode ;
+- activation RLS et validation des workers multi-tenant ;
+- déploiement supervisé des workers source/outbox/travail/réconciliation ;
+- validation des connecteurs live (ServiceNow, Datadog, gateway, portail) ;
+- installation et mesure de CBM dans l’environnement cible.
+
+### P1 — qualité et couverture
+
+- enregistrement automatique des réutilisations de Learnings depuis les Context Packs ;
+- UI des intentions et des métriques de réutilisation ;
+- rewrites d’ingress paramétrés et matrice WebSphere/JNDI ;
+- rafraîchissement incrémental des liens à l’échelle ;
+- unification des deux chargeurs de fichiers ;
+- persistance cognitive unifiée `/boucle/analyser` et `/aurora` ;
+- révision traçable des croyances après un outcome ;
+- unification du vocabulaire de statut Twin (`PROVISOIRE`/`PROVISIONAL`, `ACTIF`/`CONFIRMED`) ;
+- décision sur un store dédié des liens ;
+- autres forges (GitLab, Azure DevOps) ;
+- mesure de la couverture CBM Go/PHP/Ruby/batch.
+
+### P2 — industrialisation
+
+- connecteurs live portail API et gateway externe ;
+- verrou multi-instance du worker de réconciliation ;
+- observabilité (métriques, traces, coûts, files) ;
+- versionnement formel du schéma Postgres ;
+- réduction de la double écriture Mongo/Postgres ;
+- performance grands graphes et retrieval.

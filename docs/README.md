@@ -2,6 +2,11 @@
 
 ## Point d’entrée
 
+- **État actuel et reste à faire :** [etat-actuel.md](architecture/etat-actuel.md)
+- **Diagramme d’architecture actuelle :** [architecture-etat-actuel.html](diagrammes/architecture-etat-actuel.html)
+- **Diagramme des mémoires :** [memoire-agent.html](diagrammes/memoire-agent.html)
+- **Diagramme cognitif :** [architecture-cognitive.html](diagrammes/architecture-cognitive.html)
+- **Cycle de vie d’un Twin :** [cycle-vie-twin.html](diagrammes/cycle-vie-twin.html)
 - **Architecture maître :** [MERIDIAN_Architecture_Master_v1.md](MERIDIAN_Architecture_Master_v1.md)
 - **PRD :** [PRD-001](prd/PRD-001-enterprise-intelligence-mesh.md), [PRD-002](prd/PRD-002-memoire-contexte-raisonnement.md), [PRD-003](prd/PRD-003-capacite-charge-prevision-budget.md), [PRD-004](prd/PRD-004-noyau-raisonnement-general.md)
 - **ADR :** [index](adr/README.md)
@@ -19,4 +24,6 @@
 ## Règle
 
 Le document maître est la carte. Les PRD portent les exigences. Les ADR portent les décisions durables.
-Un document daté (`cognitive/ETAT.md`, `GAP-ANALYSIS.md`) est une photographie historique, pas la vérité courante.
+[etat-actuel.md](architecture/etat-actuel.md) est la photographie maintenue de l’implémentation et
+des dettes. Les autres documents datés (`cognitive/ETAT.md`, `GAP-ANALYSIS.md`) restent des
+photographies historiques, pas la vérité courante.

@@ -5,9 +5,13 @@ Quatre références autonomes pour les schémas de Méridian Mesh, et le contrat
 | Fichier | Type | Sujet |
 |---|---|---|
 | `architecture.html` | Architecture | Du Travail aux jumeaux, puis au socle de preuve |
+| `architecture-etat-actuel.html` | Architecture | État actuel : surfaces, API, harness, liens, mémoire, stores, sources |
+| `memoire-agent.html` | Architecture | Les neuf mémoires de l’agent et le retrieval unifié |
+| `architecture-cognitive.html` | Process | Le noyau de raisonnement, du signal au Learning |
+| `cycle-vie-twin.html` | Process | Commande, préalables, sources, claims, manifeste, `twin.born`, revue, veille |
 | `sequence.html` | Sequence | Une question dans le Travail, du brouillon à la réponse citée |
 | `dependency.html` | Dependency graph | Jumeaux, dépôts, registre, pièces et claims |
-| `raisonnement-contexte-jumeaux.html` | Architecture | Raisonnement, contexte, jumeaux, sources : branché et manquant |
+| `raisonnement-contexte-jumeaux.html` | Architecture | Photographie historique des écarts de raisonnement (2026-10) ; voir `architecture-cognitive.html` pour l’état courant |
 
 Les fichiers sont des SVG inline dans un HTML unique : aucun script, aucune image externe, aucune webfont, aucun appel réseau. Ils servent de référence éditoriale ; le rendu applicatif du chat est un SVG design-diagram compilé, affiché dans un viewport zoomable.
 
@@ -125,6 +129,10 @@ Le rendu applicatif par défaut passe par l'**auteur design-diagram** ; le compi
 ## Choix de fidélité
 
 - **Architecture** : 9 nœuds. `Pièces jointes` porte le sous-libellé `GridFS · pieces_fichiers` (le stockage est dans le même nœud) ; `Socle de preuve` regroupe `Code · Claims · Preuves` et affiche les trois états réels (`CODE`, `VÉRIFIÉ`, `CONTESTÉ`). `Réponse citée` est le nœud `CANVAS` dans la zone `TRAVAIL`.
+- **Architecture actuelle** : 9 nœuds, 11 flux. Postgres est le nœud canonique ; les stores spécialisés portent Mongo Travail, Neo4j, Redis et S3/MinIO. Le moteur de liens est le seul accent focal ; le harness reste un service borné.
+- **Mémoire** : 9 nœuds, 8 mémoires autour du retrieval unifié. La chaîne d’autorité `claim > learning > intention > annotation > durable` est affichée dans le nœud focal.
+- **Cognition** : 9 étapes verticales, 9 flux. Le dossier de raisonnement est le point focal ; la boucle d’apprentissage revient du Learning vers le contexte, sans court-circuiter la critique ni les gates.
+- **Cycle de vie du Twin** : 9 étapes verticales, 9 flux. `twin.born` est l’événement pivot ; la veille revient vers l’ingestion sans changer l’identité. `legacy.born` est une passe de reconstruction, jamais une promotion.
 - **Séquence** : 5 lignes de vie (maximum de la skill). `Relecture` est le juge d'appui, sans outils ; la réponse finale est l'étiquette `RÉPONSE CITÉE`, et le Canvas est signalé en note, pas comme une sixième ligne de vie.
 - **Dépendances** : 8 nœuds, 11 arêtes, badge de fan-in sur chaque nœud. `Dépôts Git` concentre 3 dépendances entrantes. Le seul cycle est réel : le jumeau `Méridian` indexe le code qui contient `Flore`, d'où le retour `Méridian → Flore` en accent pointillé.
 
@@ -134,11 +142,15 @@ Depuis la racine du projet :
 
 ```bash
 python3 .opencode/skills/diagram-design/scripts/self_check.py --offline docs/diagrammes/architecture.html
+python3 .opencode/skills/diagram-design/scripts/self_check.py --offline docs/diagrammes/architecture-etat-actuel.html
+python3 .opencode/skills/diagram-design/scripts/self_check.py --offline docs/diagrammes/memoire-agent.html
+python3 .opencode/skills/diagram-design/scripts/self_check.py --offline docs/diagrammes/architecture-cognitive.html
+python3 .opencode/skills/diagram-design/scripts/self_check.py --offline docs/diagrammes/cycle-vie-twin.html
 python3 .opencode/skills/diagram-design/scripts/self_check.py --offline docs/diagrammes/sequence.html
 python3 .opencode/skills/diagram-design/scripts/self_check.py --offline docs/diagrammes/dependency.html
 python3 .opencode/skills/diagram-design/scripts/self_check.py --offline docs/diagrammes/raisonnement-contexte-jumeaux.html
-python3 .opencode/skills/diagram-design/scripts/verify-geometry.py docs/diagrammes/architecture.html docs/diagrammes/sequence.html docs/diagrammes/dependency.html docs/diagrammes/raisonnement-contexte-jumeaux.html
-python3 .opencode/skills/diagram-design/scripts/lint-render.py docs/diagrammes/architecture.html docs/diagrammes/sequence.html docs/diagrammes/dependency.html docs/diagrammes/raisonnement-contexte-jumeaux.html
+python3 .opencode/skills/diagram-design/scripts/verify-geometry.py docs/diagrammes/architecture.html docs/diagrammes/architecture-etat-actuel.html docs/diagrammes/memoire-agent.html docs/diagrammes/architecture-cognitive.html docs/diagrammes/cycle-vie-twin.html docs/diagrammes/sequence.html docs/diagrammes/dependency.html docs/diagrammes/raisonnement-contexte-jumeaux.html
+python3 .opencode/skills/diagram-design/scripts/lint-render.py docs/diagrammes/architecture-etat-actuel.html docs/diagrammes/memoire-agent.html docs/diagrammes/architecture-cognitive.html docs/diagrammes/cycle-vie-twin.html
 ```
 
 Résultats du 29 octobre 2026 :
@@ -148,6 +160,15 @@ Résultats du 29 octobre 2026 :
 | `self_check.py --offline` | 4/4 fichiers `OK` |
 | `verify-geometry.py` | 4 fichiers, 0 anomalie |
 | `lint-render.py` (Chromium 145, réseau bloqué) | 3 références historiques rendues, 0 anomalie ; le 4e est validé par `self_check` et `verify-geometry`, le script de lint local ne résout pas son chemin `output-spec.md` |
+
+Résultats du 6 novembre 2026 pour les quatre nouveaux schémas :
+
+| Contrôle | Résultat |
+|---|---|
+| `self_check.py --offline` | 4/4 fichiers `OK` |
+| `verify-geometry.py` | 4 fichiers, 0 anomalie |
+| export | SVG autonome + PNG 2400 × 1442 |
+| `lint-render.py` | non exécuté : le script local ne résout toujours pas son chemin `output-spec.md` |
 
 `lint-render.py` exige Playwright et Chromium. S'ils sont absents, la validation s'arrête au contrôle statique et à la géométrie ; le README le signale plutôt que de le passer sous silence.
 
