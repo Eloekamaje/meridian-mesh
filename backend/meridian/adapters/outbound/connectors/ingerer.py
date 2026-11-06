@@ -15,7 +15,7 @@ from pathlib import Path
 import psycopg
 
 from meridian.adapters.outbound.connectors import cbm
-from meridian.adapters.outbound.postgres import code_index_store, depot
+from meridian.adapters.outbound.postgres import code_index_store, decouverte_naissance, depot
 from meridian.adapters.outbound.connectors import index_store
 from meridian.adapters.outbound.connectors import legacy_index
 from meridian.adapters.outbound.connectors import manifestes
@@ -256,10 +256,17 @@ def ingerer(conn, jumeau, chemin_depot, origine=None, *, enquete=None):
             except Exception as e:
                 journal.warning("ancien artefact d'index non nettoyé pour %s/%s : %s", tenant, nom, e)
         cbm.retirer_ancien(precedent, projet)  # une fois le nouvel index enregistré, et seulement alors
+        try:
+            liens_rafraichis = decouverte_naissance.reconcilier_twin(
+                conn, tenant, jumeau["id"])
+        except Exception as e:  # la découverte de liens ne doit pas défaire l'ingestion
+            journal.warning("liens non rafraîchis pour %s : %s", jumeau["id"], e)
+            liens_rafraichis = {"statut": "echec", "erreur": str(e)[:300]}
     finally:
         if store.mode == "none" and copie is not None:
             _retirer_copie(copie)
-    return {"sha": sha, "observations": bruts, "claims": len(claims), "troncature": troncature}
+    return {"sha": sha, "observations": bruts, "claims": len(claims),
+            "troncature": troncature, "liens_rafraichis": liens_rafraichis}
 
 
 def projeter_au_registre(conn):

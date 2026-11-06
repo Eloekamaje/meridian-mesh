@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 
 from meridian.application.boucle_investigation import (
-    BudgetInvestigation,
+    BudgetEnquete,
     PlanificateurRegles,
     executer,
 )
@@ -83,7 +83,7 @@ def test_le_budget_etapes_arrete_la_boucle():
     ])
 
     resultat = executer(_cas(), planificateur, outils,
-                        budget=BudgetInvestigation(max_etapes=2))
+                        budget=BudgetEnquete(max_etapes=2))
 
     assert len(resultat.etapes) == 2
     assert resultat.arret == "budget_etapes"

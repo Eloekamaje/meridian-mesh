@@ -150,7 +150,7 @@ rien : elle transporte les preuves, la portée, les inconnues et la prochaine v�
 | Fichier | Rôle |
 |---|---|
 | `backend/meridian/domain/liens_composants.py` | modèle : composant, interface, appel, déploiement, lien, question |
-| `backend/meridian/adapters/outbound/connectors/decouverte_composants.py` | extraction Java/JS, contrats, configuration, Kubernetes, Helm, traces |
+| `backend/meridian/adapters/outbound/connectors/decouverte_composants.py` | orchestration, lecture de fichiers et assemblage des extractions |
 | `backend/meridian/application/moteur_liens.py` | index d'identités, appariement, contradictions, revue, conversion en proposition ou en cas, pont depuis les manifestes, filtre local |
 | `backend/meridian/domain/politique_decouverte.py` | politique des sources : niveaux 0 à 3, opt-in, approbation niveau 3 |
 | `backend/meridian/application/evaluation_liens.py` | précision, rappel, f1, fausses certitudes, questions, externes, contradictions |
@@ -162,7 +162,8 @@ rien : elle transporte les preuves, la portée, les inconnues et la prochaine v�
 | `backend/meridian/adapters/outbound/postgres/investigation_liens.py` | enquête d'un cas et mise à jour des candidats |
 | `frontend/src/components/map/details.jsx` | bouton « Enquêter » et résultat de la boucle |
 | `backend/meridian/adapters/outbound/connectors/corpus_liens.py` | chargement d'un corpus JSON et des racines locales |
-| `backend/meridian/adapters/outbound/postgres/decouverte_naissance.py` | `twin.born` local et réconciliation globale |
+| `backend/meridian/adapters/outbound/postgres/decouverte_naissance.py` | `twin.born` local, réingestion et réconciliation globale |
+| `backend/meridian/adapters/outbound/connectors/ingerer.py` | ingestion Git/CBM et rafraîchissement des liens du Twin |
 | `backend/meridian/adapters/inbound/worker/reconciliation_worker.py` | boucle de réconciliation, arrêt propre |
 | `backend/meridian/adapters/outbound/connectors/java_source.py` | `extraire(fichier, texte)` réutilisable sans disque |
 | `scripts/decouvrir-liens-composants.py` | CLI multi-dépôts, niveaux de sources, JSON, sans base |
@@ -171,12 +172,28 @@ rien : elle transporte les preuves, la portée, les inconnues et la prochaine v�
 | `scripts/worker-reconciliation.py` | worker périodique, dry-run ou `--apply` |
 | `scripts/meridian-reconciliation-worker.service` | unité systemd de réconciliation |
 | `backend/meridian/tests/test_moteur_liens.py` | jeu d'or de quatorze cas |
-| `backend/meridian/tests/test_decouverte_naissance.py` | six cas : naissance locale et réconciliation globale |
+| `backend/meridian/tests/test_decouverte_naissance.py` | dix cas : naissance locale, CBM, lecture bornée, réingestion et réconciliation globale |
 | `backend/meridian/tests/test_politique_decouverte.py` | sept cas de politique de sources |
 | `backend/meridian/tests/test_evaluation_liens.py` | trois cas de mesure |
 | `backend/meridian/tests/test_corpus_liens.py` | trois cas de corpus labellisé |
 | `backend/meridian/tests/test_boucle_investigation.py` | sept cas de boucle bornée |
 | `backend/meridian/tests/test_planificateur_liens.py` | six cas de planificateur LLM |
+| `backend/meridian/domain/chemins.py` | normalisation, motifs, suffixe et préfixe partagés |
+| `backend/meridian/domain/secrets.py` | refus partagé des identifiants et clés sensibles dans les URL |
+| `backend/meridian/adapters/outbound/connectors/extraction_commune.py` | preuves, chemins et appels HTTP partagés |
+| `backend/meridian/adapters/outbound/connectors/extraction_contrats.py` | détection et mapping des contrats |
+| `backend/meridian/adapters/outbound/connectors/extraction_traces.py` | traces JSON → appels observés |
+| `backend/meridian/adapters/outbound/connectors/extraction_code.py` | code local de repli : Java, Python, JS, ASP.NET |
+| `backend/meridian/adapters/outbound/connectors/extraction_config.py` | configuration, Kubernetes, Helm et ingress |
+| `backend/meridian/adapters/outbound/connectors/lecture_fichiers.py` | règles partagées binaire, décodage et dossiers techniques |
+| `backend/meridian/adapters/outbound/connectors/cbm_liens.py` | mapping CBM : routes, appels HTTP, env |
+| `backend/meridian/tests/test_extraction_multilangue.py` | dix cas JAX-RS, servlet, JNDI, Python AST, ASP.NET |
+| `backend/meridian/tests/test_cbm_liens.py` | neuf cas de mapping et de repli CBM |
+| `backend/meridian/tests/test_chemins.py` | cinq cas de normalisation et matching de chemins |
+| `backend/meridian/tests/test_secrets.py` | quatre cas de refus des secrets dans les URL |
+| `backend/meridian/tests/test_lecture_fichiers.py` | trois cas de binaire, décodage et parcours |
+| `backend/meridian/tests/test_extraction_config.py` | trois cas namespace, ingress rewrite et portée |
+| `backend/meridian/tests/test_jndi_liens.py` | un cas JNDI : binding et listener JMS |
 | `backend/meridian/tests/test_outils_investigation.py` | dix cas d'outils read-only |
 | `backend/meridian/tests/test_investigation_liens.py` | sept cas d'enquête, CMDB, APM et code au SHA |
 | `backend/meridian/tests/test_reconciliation_worker.py` | cinq cas de worker |
@@ -232,21 +249,37 @@ Le fixture vérifie :
 25. code au SHA : réutilisation de `source_git` sur les preuves indexées, sans relire tout le dépôt ;
 26. ServiceNow/Datadog : réutilisation opt-in des lecteurs existants, sans Twin inventé ;
 27. portail API et runtime : outils `OutilPortail` et `OutilRuntime` prêts pour les exports existants ;
-28. code distant : `github.lire_fichier` lit un fichier au SHA, sans clone, avec bornes et refus des traversées.
+28. code distant : `github.lire_fichier` lit un fichier au SHA, sans clone, avec bornes et refus des traversées ;
+29. couverture : JAX-RS, servlet JEE, FastAPI/Flask, ASP.NET, clients Python et .NET ;
+30. parsing Python par `ast`, avec repli textuel tracé pour les fichiers invalides ;
+31. une seule source de vérité par extraction : `java_source`, `interfaces`, `connecteur_interfaces`, `connectors`, puis mappage ;
+32. primitives de chemins et helpers d'extraction centralisés, contrats dans un module dédié ;
+33. CBM comme source principale multi-langages, Graphify pour l'architecture, code_index pour la fédération ;
+34. les observations CBM persistées alimentent la découverte à la naissance et la réconciliation, les manifestes restant déclaratifs ;
+35. refus des secrets centralisé dans `domain/secrets.py` ;
+36. règles binaires, décodage et dossiers techniques partagés dans `lecture_fichiers.py`, sans fusionner les parcours des deux chargeurs ;
+37. namespace Kubernetes et chemin backend des rewrites d'ingress modélisés ;
+38. JNDI extrait depuis `@Resource`/`@EJB` et relié aux listeners JMS/KAFKA par binding ;
+39. pas de store dédié aux liens tant que les objets d'entreprise suffisent ;
+40. rafraîchissement incrémental par `reconcilier_twin` après réingestion et par `twin.born` à la naissance, réconciliation globale périodique.
 
 ---
 
 ## 5. Limites assumées
 
-- Le moteur travaille sur des fichiers déjà collectés ; le branchement à l'ingestion GitHub,
-  Nexus ou artefacts reste à faire.
-- Les routes JAX-RS, les annotations SOAP Java et les bindings JNDI ne sont pas encore
-  extraits ; WSDL et configuration WSDL couvrent le premier cas SOAP.
+- Le moteur travaille sur des fichiers déjà collectés ; Git est branché via l'ingestion
+  et `github.lire_fichier`, tandis que Nexus et les artefacts restent à faire.
+- Les routes JAX-RS et les servlets sont extraits ; les annotations SOAP Java restent à
+  faire. WSDL et configuration WSDL couvrent le cas SOAP déclaré.
 - La portée d'une file JMS n'est pas déduite d'un ingress HTTP : elle reste `UNKNOWN` jusqu'à
   une déclaration de frontière.
+- Un rewrite d'ingress paramétré (`/$1`) n'est pas deviné : seul un chemin backend statique
+  est utilisé pour le matching.
 - Le matching de templates reste volontairement conservateur ; un cas ambigu devient une
   question, jamais une attribution au hasard.
-- La persistance des `LienPropose` et leur affichage dans le volet du Twin restent à brancher.
+- La revue et l'affichage sont branchés sur `PropositionRelation` et `ResolutionCase`
+  (`/boucle/relations`, `/boucle/resolutions`, volet du Twin). Le store dédié aux
+  `LienPropose` n'est pas retenu tant que les objets d'entreprise suffisent.
 - Aucun export WebSphere n'est requis ni supposé.
 
 ---

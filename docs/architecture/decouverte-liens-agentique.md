@@ -151,13 +151,81 @@ APPRENTISSAGE
 
 | Source | Producteurs | Consommateurs |
 |---|---|---|
-| Java | routes Spring, `@JmsListener`, Kafka | Feign, RestTemplate, WebClient, JMS |
+| Java | routes Spring, JAX-RS, servlet, `@JmsListener`, Kafka | Feign, RestTemplate, WebClient, JMS |
+| Python | FastAPI, Flask | requests, httpx |
+| .NET / C# | ASP.NET `[Route]`, `[HttpGet]` | `HttpClient` |
 | JavaScript/TypeScript | — | axios, fetch |
 | OpenAPI / WSDL / GraphQL / gRPC / AsyncAPI | opérations exposées | — |
 | Configuration | nom de service, contexte | URL, propriété, endpoint |
 | Kubernetes | Deployment, Service, Ingress | variables d'environnement |
 | Helm | image, service, ingress | variables d'environnement |
 | Traces | — | appels observés |
+
+#### 5.1.1 Parsing : AST d'abord, regex en repli
+
+Le regex a été un bootstrap, pas une fin. Il est conservé pour :
+
+- les langages sans parser disponible dans l'environnement ;
+- les fichiers malformés ou générés ;
+- les formats de déclaration simples.
+
+Le chemin cible est l'AST :
+
+| Langage | Parser | État |
+|---|---|---|
+| Python | `ast` (stdlib) | **branché**, repli regex sur syntaxe invalide |
+| Java | tree-sitter / JavaParser | à brancher |
+| C# | tree-sitter / Roslyn | à brancher |
+| Go | tree-sitter | à brancher |
+
+Un AST permet de résoudre les décorateurs, les constantes, les portées et les chaînes
+de caractères sans confondre un commentaire avec un appel. Un fichier illisible ne
+bloque pas : il redescend sur le texte avec un diagnostic.
+
+#### 5.1.2 Une seule source de vérité par extraction
+
+| Élément | Source canonique |
+|---|---|
+| Java : types, méthodes, annotations, routes Spring/JAX-RS, servlets | `java_source.py` |
+| Contrats OpenAPI/WSDL/GraphQL/gRPC/AsyncAPI | `domain/interfaces.py`, `interfaces_protocoles.py` |
+| Détection et mapping des contrats | `extraction_contrats.py` |
+| Détection des fichiers de contrat | `connecteur_interfaces.py` |
+| Preuves, chemins et appels HTTP partagés | `extraction_commune.py` |
+| Lecture binaire/décodage partagée | `lecture_fichiers.py` |
+| Refus des secrets dans les URL | `domain/secrets.py` |
+| Traces d'appels | `extraction_traces.py` |
+| Code local de repli (Java, Python, JS, ASP.NET) | `extraction_code.py` |
+| Configuration, Kubernetes, Helm, ingress | `extraction_config.py` |
+| Normalisation et matching de chemins | `domain/chemins.py` |
+| Graphe de code multi-langages | CBM (`cbm_observations.py`, `cbm_liens.py`) |
+| Fédération et couverture des observations | `code_index.py`, `code_index_orchestrator.py` |
+| Architecture, documentation, communautés | Graphify (`graphify_semantics.py`) |
+| Orchestration, lecture de fichiers, assemblage | `decouverte_composants.py` |
+| Sources externes (ServiceNow, Datadog, Git, runtime, gateway) | `connectors/*` et `lecteurs.py` |
+
+`decouverte_composants.py` est un **orchestrateur** : il lit les fichiers, choisit la
+source de chaque famille et assemble un `ExtractionDepot`. Il ne doit pas reparser
+Java, les contrats ou les connecteurs externes. Toute nouvelle capacité d'extraction
+doit d'abord enrichir la source canonique, puis être mappée ici. Les contrats, les
+traces, la configuration et le code local sont sortis dans `extraction_contrats.py`,
+`extraction_traces.py`, `extraction_config.py` et `extraction_code.py`.
+
+**CBM est la source principale** pour le code multi-langages : routes, appels HTTP,
+variables d'environnement, tables et ressources. `cbm_liens.py` les mappe vers le
+moteur. `decouverte_composants` ne garde ses parseurs locaux que comme **repli**
+lorsque CBM n'est pas disponible. Graphify apporte l'architecture, les documents et
+les communautés ; il ne remplace pas CBM pour les routes et les appels.
+
+Deux précisions de déploiement :
+
+- `Deploiement.namespace` conserve le namespace Kubernetes ; il ne modifie l'identité
+  du déploiement que lorsqu'il est connu.
+- `RoutePasserelle.chemin_backend` porte une réécriture d'ingress statique
+  (`rewrite-target`). La résolution d'URL garde le chemin externe ; le matching des
+  interfaces utilise le chemin backend. Un rewrite paramétré (`/$1`) n'est pas deviné.
+- `@Resource`/`@EJB` avec `lookup` ou `mappedName` produit un `Appel` JNDI. Un binding
+  `JNDI` traduit le nom vers une file ou un topic, puis le listener JMS/KAFKA fournit
+  le composant producteur.
 
 ### 5.2 Résolution d'identité
 
@@ -338,6 +406,14 @@ Le propriétaire peut :
 - **contester** : le lien devient `conteste`, avec preuve contraire ;
 - **compléter** : ajouter une identité, un binding, un alias ;
 - **observer** : ajouter une preuve runtime.
+
+Ces décisions sont déjà exposées par l'API et le volet du Twin :
+
+- `GET /boucle/relations`, `POST /boucle/relations/{id}/revue` ;
+- `GET /boucle/resolutions`, `POST /boucle/resolutions/{id}/revue` ;
+- `POST /boucle/resolutions/{id}/enqueter` pour lancer l'enquête bornée ;
+- le volet du Twin (`twin-relations`, `twin-resolutions`) affiche les propositions,
+  les cas et permet d'accepter, rejeter ou enquêter.
 
 ### 7.2 Déclarations
 
@@ -595,7 +671,7 @@ T+7 j     revalidation
 | B-005 | Combien de temps conserve-t-on les preuves ? | Sécurité + juridique | Fixer décisions/audit, liens, traces, secrets. | P1 |
 | B-006 | Que fait-on si le modèle est indisponible 24 h ? | Ops + IA | Déterministe seul, file d’attente, modèle de secours approuvé. | P1 |
 | B-007 | Comment mesure-t-on le rappel sans labels ? | Data + architecture | Corpus labellisé + shadow mode + active learning. | P0 |
-| B-008 | Comment traite-t-on les collisions de namespace/cluster ? | Architecture | Ajouter namespace/cluster à l’identité de déploiement. | P1 |
+| B-008 | Comment traite-t-on les collisions de namespace/cluster ? | Architecture | Namespace ajouté à l’identité du déploiement ; une collision de service entre namespaces reste une ambiguïté visible. | résolu — D-007 |
 | B-009 | Comment traite-t-on une API à plusieurs implémentations ? | Architecture | Owner unique, implémentations multiples, ambiguïté explicite. | P2 |
 | B-010 | Comment facture-t-on le coût agentique ? | Produit + finance | Quota par Twin, rapport par domaine, plafond plateforme. | P2 |
 | B-011 | Comment gère-t-on `legacy.born` ? | Architecture | Même passe déterministe, sans confirmation automatique. | P2 |
@@ -727,22 +803,45 @@ T+7 j     revalidation
 - `OutilPortail` lit owner/implémentation d'un extrait de portail API.
 - Worker de réconciliation `reconciliation_worker.py` et script `worker-reconciliation.py`.
 - Unité systemd `scripts/meridian-reconciliation-worker.service`.
-- 68 tests dédiés.
+- Extraction JAX-RS, servlet JEE, FastAPI/Flask (AST Python), ASP.NET et clients
+  Python/.NET.
+- Repli textuel tracé pour les fichiers Python invalides.
+- Primitives de chemins partagées entre `code_links` et `moteur_liens`.
+- Contrats extraits dans `extraction_contrats.py`, helpers dans `extraction_commune.py`.
+- CBM mappé en interfaces, appels HTTP et configurations (`cbm_liens.py`).
+- Les observations CBM persistées alimentent `twin.born` et `reconcilier` ;
+  `extraire_depot` ne relit un fichier avec un parseur local que si CBM ne l'a pas couvert.
+- Suites dédiées : extraction, mapping, chemins, secrets, lecture de fichiers, JNDI,
+  naissance et réconciliation.
 
 ### `twin.born` — première intégration
 
 - Handler outbox : `decouverte_naissance.traiter_twin_born`.
 - Découverte **locale bornée** : seuls les liens et questions où le Twin naissant est impliqué sont persistés.
-- Le résolveur historique reste exécuté pour le matching exact et les ressources.
+- Les observations CBM persistées (`cbm_route`, `cbm_relation_http_calls`, `cbm_env`,
+  routes Java) sont relues par Twin et mappées en interfaces et appels. Le manifeste
+  reste la **déclaration**, le code devient la **preuve**. L'environnement reste
+  `inconnu` tant qu'aucun déploiement ne le rattache.
+- Une interface de code sans environnement complète l'interface déclarée de même
+  méthode et de même chemin : les preuves sont cumulées et le lien n'est pas dupliqué.
+  L'environnement déclaré reste prioritaire ; sans déclaration, `inconnu` reste visible.
+- La lecture des observations de liens est plafonnée à 20 000 lignes par passage ;
+  un diagnostic explicite est ajouté si le plafond est atteint, pour que la découverte
+  ne soit jamais présentée comme complète à tort.
+- Le résolveur historique `proposer_relations` reste exécuté pour le matching exact
+  et les ressources. Il est marqué **legacy** : les nouvelles heuristiques de chemin,
+  de service et de configuration vont dans `moteur_liens`, pas ici.
 - Les liens Mesh éligibles deviennent des `PropositionRelation`.
 - Les questions et les frontières inconnues deviennent des `ResolutionCase`.
 - Le handler est idempotent par les identifiants de proposition et de cas.
+- `reconcilier_twin` réutilise ce handler après une réingestion de dépôt : le code
+  change, les liens du Twin sont rafraîchis sans passe globale.
 - Aucun agent n'est appelé dans ce handler.
 
 ### Réconciliation globale
 
 - `reconcilier(conn, tenant, appliquer, limite)` réutilise le même moteur sur tous les
-  manifestes et bindings du tenant.
+  manifestes, bindings et observations de code du tenant.
 - Dry-run par défaut via `scripts/reconcilier-liens.py`.
 - Les propositions et cas restent idempotents.
 - Aucun lien n'est confirmé, aucun agent n'est appelé.
@@ -751,6 +850,10 @@ T+7 j     revalidation
 
 ### Boucle d'enquête bornée
 
+- Deux boucles distinctes : `investigation_runtime` exécute une investigation
+  applicative structurée (contrat de domaine, preuves, `BudgetInvestigation`) et ne
+  connaît pas les liens ; `boucle_investigation` traite un `ResolutionCase` de lien,
+  avec `BudgetEnquete` et des candidats, sans jamais confirmer.
 - `boucle_investigation.py` : planificateur injecté, outils read-only injectés,
   budget `max_etapes` / `max_outils` / `max_candidats`.
 - `PlanificateurRegles` : repli déterministe selon la preuve manquante.
@@ -776,26 +879,42 @@ T+7 j     revalidation
   reste une preuve. `OutilAPM` fait de même pour les dépendances observées.
 - Le volet du Twin expose un bouton « Enquêter » et la raison d'arrêt.
 
-### Non implémenté
+### Dettes restantes
 
-- API HTTP et UI de revue.
-- Store dédié des liens (les propositions et cas utilisent les objets d'entreprise existants).
+**Bloquées par l'environnement**
+
+- Corpus de production labellisé, shadow mode et rappel de production.
 - Connecteurs live portail API et gateway externe ; les outils `OutilPortail` et
   `OutilRuntime` sont prêts, les sources restent à importer.
-- Lecture du code depuis un dépôt distant ; seules les preuves au SHA et la copie locale
-  sont branchées.
+- Lecture d'autres forges que GitHub ; le dépôt GitHub au SHA est branché.
 - Test live du planificateur LLM (les tests utilisent un décideur injecté).
-- Déploiement supervisé du worker (systemd/Kubernetes) et verrou multi-instance.
-- Namespace/cluster, réécritures de gateway.
-- JAX-RS, .NET, Python, Go.
-- JNDI/WebSphere bindings.
-- Corpus de production labellisé, shadow mode et rappel de production.
-- Rafraîchissement incrémental.
+- Déploiement effectif du worker (l'unité systemd existe) et verrou multi-instance.
+- Couverture CBM des langages non testés localement (Go, PHP, Ruby, batch, fichiers) :
+  elle est attendue de CBM, mais reste à mesurer sur un corpus réel. Sans CBM, ces
+  langages n'ont pas de repli local.
+- Test Postgres des cas de démonstration : il exige un tenant `demo` pré-rempli, absent
+  de l'environnement de test local.
+
+**Dettes fermées par décision**
+
+- Namespace/cluster et réécritures d'ingress statiques : extraits et modélisés
+  (`Deploiement.namespace`, `RoutePasserelle.chemin_backend`).
+- JNDI : extrait depuis le code (`@Resource`/`@EJB`) et relié par binding aux listeners
+  JMS/KAFKA.
+- Les deux chargeurs de fichiers gardent des parcours distincts (filtres, diagnostics,
+  limite de fichiers), mais partagent les règles binaires, le décodage et les dossiers
+  techniques dans `lecture_fichiers.py`.
+- Store dédié des liens : **non retenu** pour l'instant. Les propositions et cas
+  utilisent les objets d'entreprise ; la décision sera réévaluée si le volume ou les
+  besoins de requête le justifient.
+- Rafraîchissement incrémental : `ingerer` appelle `reconcilier_twin` après avoir
+  remplacé l'index d'un dépôt ; `twin.born` couvre la naissance. `reconcilier` reste la
+  passe globale de contrôle.
 
 ### Prochain lot recommandé
 
 1. Corpus de production labellisé + shadow mode.
-2. Revue UI + API.
+2. Étendre la revue UI/API aux cas P2/P3 et à l'échantillonnage, une fois le corpus disponible.
 3. Branchement de la boucle agentique sur un modèle réel et 3 outils read-only.
 4. Déploiement supervisé du worker (systemd/Kubernetes).
 5. Mesure du lift, puis `AUTO_START` P0, puis P1 après seuils.
@@ -817,6 +936,11 @@ T+7 j     revalidation
 | Portée inconnue | visible, non éligible | acquis |
 | Confirmation | humaine uniquement | acquis |
 | Contradiction | conservée | acquis |
+| Namespace / rewrite ingress | namespace et chemin backend extraits ; rewrite paramétré non deviné | **retenu — D-007** |
+| JNDI | `@Resource`/`@EJB` extraits, binding JNDI → listener JMS/KAFKA | **retenu — D-008** |
+| Store des liens | objets d'entreprise ; pas de store dédié tant que le volume le permet | **retenu — D-009** |
+| Rafraîchissement | `reconcilier_twin` après réingestion, `twin.born` à la naissance ; `reconcilier` global périodique | **retenu — D-010** |
+| Chargeurs de fichiers | règles de lecture partagées, parcours distincts | **retenu — D-011** |
 
 ### 16.2 Points encore ouverts
 

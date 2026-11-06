@@ -13,6 +13,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from urllib.parse import urlsplit
 
+from meridian.domain import chemins
 from meridian.domain.decouverte_liens import ResolutionCase
 from meridian.domain.liens_composants import (
     Appel,
@@ -57,65 +58,30 @@ def _env_compatible(a: str, b: str) -> bool:
 
 
 def _normaliser_chemin(chemin: str) -> str:
-    texte = str(chemin or "").strip().replace("\\", "/")
+    texte = str(chemin or "")
     if "://" in texte:
         texte = urlsplit(texte).path
-    texte = texte.split("?", 1)[0].split("#", 1)[0]
-    morceaux = [morceau for morceau in texte.split("/") if morceau and morceau != "."]
-    return "/" + "/".join(morceaux) if morceaux else ""
+    return chemins.normaliser(texte)
 
 
 def _segments(chemin: str) -> list[str]:
-    return [segment for segment in _normaliser_chemin(chemin).split("/") if segment]
+    return chemins.segments(_normaliser_chemin(chemin))
 
 
 def _est_variable(segment: str) -> bool:
-    texte = str(segment or "")
-    return (texte.startswith("{") or texte.startswith(":")
-            or texte in ("*", "**") or texte.startswith("${"))
+    return chemins.est_variable(segment)
 
 
 def _segment_compatible(gauche: str, droite: str) -> bool:
-    if _est_variable(gauche) or _est_variable(droite):
-        return True
-    return gauche.casefold() == droite.casefold()
+    return chemins.segment_compatible(gauche, droite)
 
 
 def _score_chemin(consommateur: str, producteur: str) -> int:
-    """Score de suffixe commun ; 0 si le rapprochement serait trop vague.
-
-    Le suffixe doit atteindre la fin des deux chemins, ce qui absorbe un préfixe de
-    passerelle ou un contexte applicatif sans confondre `/accounts` avec `/{id}`.
-    """
-    gauche, droite = _segments(consommateur), _segments(producteur)
-    if not gauche or not droite:
-        return 0
-    meilleur = 0
-    for i in range(len(gauche)):
-        for j in range(len(droite)):
-            taille = min(len(gauche) - i, len(droite) - j)
-            if taille == 0 or i + taille != len(gauche) or j + taille != len(droite):
-                continue
-            paires = list(zip(gauche[i:], droite[j:]))
-            if not all(_segment_compatible(a, b) for a, b in paires):
-                continue
-            litteral = any(not _est_variable(a) and not _est_variable(b) for a, b in paires)
-            if not litteral:
-                continue
-            score = taille * 2
-            if i == 0 and j == 0:
-                score += 2
-            meilleur = max(meilleur, score)
-    return meilleur
+    return chemins.score_suffixe(consommateur, producteur)
 
 
 def _prefixe(prefixe: str, chemin: str) -> bool:
-    gauche, droite = _segments(prefixe), _segments(chemin)
-    if not gauche:
-        return True
-    if len(gauche) > len(droite):
-        return False
-    return all(_segment_compatible(a, b) for a, b in zip(gauche, droite))
+    return chemins.prefixe(prefixe, chemin)
 
 
 def _nom_propriete(cible: str) -> str:
@@ -157,6 +123,7 @@ class Cible:
     composants: tuple[str, ...] = ()
     service: str = ""
     chemin: str = ""
+    chemin_matching: str = ""
     host: str = ""
     preuves: tuple[Preuve, ...] = ()
     missing_evidence: str = ""
@@ -259,7 +226,9 @@ class IndexIdentites:
                 # Une route d'ingress vers le service publie le endpoint SOAP ; l'action
                 # SOAP n'est pas un chemin HTTP et ne peut pas être comparée telle quelle.
                 return "SERVICE"
-            if _prefixe(route.chemin, interface.chemin) or _prefixe(interface.chemin, route.chemin):
+            chemin_backend = route.chemin_backend or route.chemin
+            if (_prefixe(chemin_backend, interface.chemin)
+                    or _prefixe(interface.chemin, chemin_backend)):
                 return "SERVICE"
         return "UNKNOWN"
 
@@ -319,18 +288,44 @@ def _resoudre(
         )
 
     if appel.cible_type in ("QUEUE", "JNDI"):
-        composants = index.resoudre_queue(appel.cible, environnement)
+        destination = appel.cible
+        preuves = list(appel.preuves)
+        if appel.cible_type == "JNDI":
+            for configuration in configurations.get(f"jndi:{appel.cible}".casefold(), ()):
+                if _env_compatible(configuration.environment, environnement):
+                    destination = configuration.valeur
+                    preuves.extend(configuration.preuves)
+                    break
+        composants = index.resoudre_queue(destination, environnement)
         if composants:
-            return Cible("resolved", composants, service=appel.cible, chemin=appel.chemin,
-                         preuves=appel.preuves)
+            return Cible("resolved", composants, service=destination, chemin=destination,
+                         preuves=tuple(preuves))
+        manque = (f"binding JNDI absent ou destination sans listener : {appel.cible}"
+                  if appel.cible_type == "JNDI"
+                  else f"aucun listener rattaché à la file : {destination}")
         return Cible(
-            status="producteur_inconnu", chemin=appel.chemin or appel.cible,
-            preuves=appel.preuves,
-            missing_evidence=f"aucun listener rattaché à la file : {appel.cible}",
-            next_check=f"identifier le composant qui consomme {appel.cible}",
+            status="producteur_inconnu", chemin=appel.chemin or destination,
+            preuves=tuple(preuves), missing_evidence=manque,
+            next_check=f"identifier le composant qui consomme {destination}",
         )
 
     return Cible("chemin_seul", chemin=appel.chemin, preuves=appel.preuves)
+
+
+def _chemin_apres_reecriture(chemin_appel: str, chemin_url: str,
+                             route: RoutePasserelle) -> str:
+    """Chemin backend d'une route d'ingress, ou vide si la route ne réécrit rien.
+
+    Le chemin le plus précis est celui de l'appel (une propriété peut ne porter qu'une
+    base d'URL) ; le suffixe externe est conservé quand la route le couvre.
+    """
+    if not route.chemin_backend:
+        return ""
+    externe = _normaliser_chemin(chemin_appel or chemin_url)
+    base = _normaliser_chemin(route.chemin)
+    suffixe = externe[len(base):] if base and externe.startswith(base) else ""
+    backend = _normaliser_chemin(route.chemin_backend)
+    return _normaliser_chemin(backend.rstrip("/") + "/" + suffixe.lstrip("/"))
 
 
 def _resoudre_url(appel: Appel, index: IndexIdentites, url: str,
@@ -361,8 +356,9 @@ def _resoudre_url(appel: Appel, index: IndexIdentites, url: str,
         composants = index.resoudre_service(route.service, appel.environment)
         preuves = (*preuves, *route.preuves)
         if composants:
+            chemin_matching = _chemin_apres_reecriture(appel.chemin, chemin, route)
             return Cible("resolved", composants, service=route.service, chemin=chemin,
-                         host=host,
+                         chemin_matching=chemin_matching, host=host,
                          preuves=(*preuves,
                                   *index.preuves_declaration(route.service, composants)))
         return Cible(
@@ -381,23 +377,72 @@ def _resoudre_url(appel: Appel, index: IndexIdentites, url: str,
     )
 
 
+def _unifier_interfaces(interfaces: list[Interface]) -> list[Interface]:
+    """Une observation de code sans environnement complète l'interface déclarée.
+
+    Sans cette unification, la même route déclarée en `prod` et observée par CBM en
+    `inconnu` produirait deux liens identiques. Les preuves de code sont cumulées sur
+    chaque environnement déclaré ; sans déclaration, l'interface reste `inconnu`.
+    """
+    groupes: dict[tuple, list[Interface]] = {}
+    for interface in interfaces:
+        chemin = _normaliser_chemin(interface.chemin)
+        operation = ((interface.methode.upper(), chemin) if chemin
+                     else (interface.methode.upper(), interface.operation.casefold()))
+        groupes.setdefault((interface.application_id, interface.composant_id,
+                            interface.protocole, operation), []).append(interface)
+    resultat: list[Interface] = []
+    for groupe in groupes.values():
+        connues = [interface for interface in groupe if interface.environment != "inconnu"]
+        inconnues = [interface for interface in groupe if interface.environment == "inconnu"]
+        if not connues:
+            resultat.extend(inconnues)
+            continue
+        for base in connues:
+            fusion = base
+            for inconnue in inconnues:
+                fusion = replace(
+                    fusion,
+                    nom=fusion.nom or inconnue.nom,
+                    source_kind=("CODE" if "CODE" in (fusion.source_kind, inconnue.source_kind)
+                                 else fusion.source_kind),
+                    portee=(fusion.portee if fusion.portee != "UNKNOWN"
+                            else inconnue.portee),
+                    service_name=fusion.service_name or inconnue.service_name,
+                    context_path=fusion.context_path or inconnue.context_path,
+                    contrat_ref=fusion.contrat_ref or inconnue.contrat_ref,
+                    preuves=tuple(_uniques([*fusion.preuves, *inconnue.preuves])),
+                )
+            resultat.append(fusion)
+    return resultat
+
+
 def _candidates(appel: Appel, cible: Cible,
                 interfaces: list[Interface]) -> list[tuple[int, Interface]]:
     resultat: list[tuple[int, Interface]] = []
     for interface in interfaces:
         if not _env_compatible(interface.environment, appel.environment):
             continue
-        if not _protocoles_compatibles(appel.protocole, interface.protocole):
-            continue
         if cible.composants and interface.composant_id not in cible.composants:
+            continue
+        if appel.cible_type == "JNDI":
+            # Un nom JNDI traduit par binding désigne une file ou un topic ; l'interface
+            # correspondante est JMS/KAFKA, pas JNDI.
+            if interface.protocole not in ("JMS", "KAFKA"):
+                continue
+            if interface.operation.casefold() == (cible.service or appel.cible).casefold():
+                resultat.append((3, interface))
+            continue
+        if not _protocoles_compatibles(appel.protocole, interface.protocole):
             continue
         if appel.protocole == "HTTP":
             if not _methode_compatible(appel.methode, interface.methode):
                 continue
-            if not appel.chemin:
+            chemin_appel = cible.chemin_matching or appel.chemin
+            if not chemin_appel:
                 score = 1 if not cible.composants else 2
             else:
-                score = _score_chemin(appel.chemin, interface.chemin)
+                score = _score_chemin(chemin_appel, interface.chemin)
             if score:
                 resultat.append((score, interface))
         elif appel.protocole in ("JMS", "KAFKA"):
@@ -461,6 +506,10 @@ def _lien(appel: Appel, interface: Interface, cible: Cible, index: IndexIdentite
     if cible.status == "resolved" and not cible.deduction:
         verifications.append("configure")
     operation = interface.operation
+    # Un appel venu du code ne connaît pas l'environnement de déploiement : l'interface
+    # déclarée est plus précise et porte le lien. Sans déclaration, « inconnu » reste visible.
+    environment = (appel.environment if appel.environment != "inconnu"
+                   else interface.environment)
     provisoire = LienPropose(
         consommateur_composant_id=appel.composant_id,
         consommateur_application_id=appel.application_id,
@@ -468,7 +517,7 @@ def _lien(appel: Appel, interface: Interface, cible: Cible, index: IndexIdentite
         fournisseur_application_id=interface.application_id,
         fournisseur_service=interface.service_name or cible.service,
         interface_id=interface.id, operation=operation, protocole=interface.protocole,
-        environment=appel.environment, portee=portee, nature=nature,
+        environment=environment, portee=portee, nature=nature,
         state="suggere", confiance=0.55, verifications=tuple(verifications),
         preuves=tuple(preuves),
     )
@@ -618,6 +667,7 @@ def moteur_liens(extractions, declarations=(), traces=()) -> RapportLiens:
         index.ajouter_declaration(declaration)
     traces = [trace for trace in (traces or ()) if isinstance(trace, Appel)]
     appels.extend(traces)
+    interfaces = _unifier_interfaces(interfaces)
     index_configurations = _configurations(extractions)
 
     liens: list[LienPropose] = []
@@ -887,7 +937,7 @@ def extractions_depuis_manifests(manifests, bindings=()) -> list[ExtractionDepot
         kind = str(getattr(binding, "kind", "")).upper()
         environment = str(getattr(binding, "environment", "inconnu"))
         preuve = Preuve(
-            source="CONFIG" if kind == "PROPERTY" else "DEPLOIEMENT",
+            source="CONFIG" if kind in ("PROPERTY", "JNDI") else "DEPLOIEMENT",
             locator=str(getattr(binding, "source", "") or f"binding:{kind}"),
             detail=f"{kind} {binding.nom}", confidence=0.9)
         if kind == "SERVICE":
@@ -909,6 +959,12 @@ def extractions_depuis_manifests(manifests, bindings=()) -> list[ExtractionDepot
         elif kind == "PROPERTY":
             configurations.append(Configuration(
                 cle=binding.nom, valeur=binding.valeur,
+                fichier=str(getattr(binding, "source", "") or "binding"),
+                environment=environment, source_kind="CONFIG", preuves=(preuve,)))
+        elif kind == "JNDI":
+            # Le binding traduit un nom JNDI vers une destination (file, topic, service).
+            configurations.append(Configuration(
+                cle=f"jndi:{binding.nom}", valeur=binding.valeur,
                 fichier=str(getattr(binding, "source", "") or "binding"),
                 environment=environment, source_kind="CONFIG", preuves=(preuve,)))
         elif kind in ("QUEUE", "TOPIC"):

@@ -11,10 +11,10 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 import re
-from urllib.parse import parse_qsl, urlsplit
 
 from meridian.domain.graphe import ETATS_RELATION
 from meridian.domain.modele_entreprise import MODES
+from meridian.domain.secrets import sans_secret as _sans_secret
 
 __all__ = [
     "ENVIRONNEMENTS",
@@ -46,10 +46,7 @@ PORTEES_ELIGIBLES = frozenset({"SERVICE", "PARTNER", "PUBLIC"})
 KINDS = ("HTTP", "SOAP", "JMS", "KAFKA", "JNDI", "DB", "GRPC", "BATCH", "FILE", "AUTRE")
 KINDS_RESSOURCE = ("QUEUE", "TOPIC", "TABLE", "FILE", "ENDPOINT", "AUTRE")
 
-_RE_URL = re.compile(r"^[a-z][a-z0-9+.-]*://", re.IGNORECASE)
 _RE_METHODE = re.compile(r"^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+(\S+)", re.IGNORECASE)
-_CLES_SECRETES = frozenset({"password", "passwd", "secret", "token", "credential", "authorization",
-                            "api_key", "apikey", "access_key", "private_key"})
 
 
 class ManifesteInvalide(ValueError):
@@ -142,20 +139,6 @@ def _instant(valeur) -> str:
     except ValueError as exc:
         raise ValueError("date ISO attendue") from exc
     return texte
-
-
-def _sans_secret(valeur: str, champ: str) -> str:
-    if _RE_URL.match(valeur):
-        try:
-            parties = urlsplit(valeur)
-        except ValueError as exc:
-            raise ValueError(f"{champ} : URL invalide") from exc
-        if parties.username is not None or parties.password is not None or "@" in parties.netloc:
-            raise ValueError(f"{champ} : identifiants interdits dans une URL")
-        for cle, _ in parse_qsl(parties.query, keep_blank_values=True):
-            if cle.strip().lower() in _CLES_SECRETES:
-                raise ValueError(f"{champ} : secret interdit dans une URL")
-    return valeur
 
 
 def _cle_operation(valeur: str) -> str:

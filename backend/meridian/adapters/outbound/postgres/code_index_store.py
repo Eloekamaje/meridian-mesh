@@ -27,6 +27,7 @@ __all__ = [
     "lire_couverture",
     "lire_liens",
     "lire_observations",
+    "lire_observations_liens",
     "remplacer",
     "remplacer_source",
     "resume",
@@ -35,6 +36,11 @@ __all__ = [
 STATUTS_OBSERVATION = ("extracted", "inferred", "ambiguous", "conflict")
 LIMITE_DEFAUT = 100
 LIMITE_MAX = 1000
+KINDS_LIENS = (
+    "cbm_route", "spring_route", "jaxrs_route", "web_servlet",
+    "cbm_relation_http_calls", "cbm_env", "jee_injection",
+)
+LIMITE_LIENS = 20000
 SOURCE_VALIDE = re.compile(r"(?!\.+$)[A-Za-z0-9._-]+\Z")
 
 _SQL_OBSERVATION = (
@@ -386,6 +392,33 @@ def lire_observations(conn, tenant_id, jumeau_id, kind=None, fichier=None,
     params.append(maximum)
     with conn.cursor(row_factory=dict_row) as cur:
         return _lignes(cur.execute(sql, tuple(params)).fetchall())
+
+
+def lire_observations_liens(conn, tenant_id, jumeau_ids=(), limite=LIMITE_LIENS
+                            ) -> tuple[list[tuple[str, Observation]], bool]:
+    """Observations utiles au moteur de liens, pour plusieurs jumeaux d'un tenant.
+
+    Ne lit que les types qui portent une route, un appel HTTP ou une URL de
+    configuration. Rend `(jumeau_id, Observation)` et un booléen qui signale
+    explicitement que le plafond a été atteint, pour que l'appelant le journalise.
+    """
+    tenant = _identifiant(tenant_id, "tenant_id")
+    ids = tuple(dict.fromkeys(
+        str(valeur).strip() for valeur in jumeau_ids or () if str(valeur).strip()))
+    if not ids:
+        return [], False
+    maximum = max(1, min(int(limite), LIMITE_LIENS))
+    sql = (
+        "SELECT jumeau_id, provider, parser, parser_version, file, language, kind, symbol, "
+        "start_line, end_line, commit_sha, attributes, confidence, status, fingerprint "
+        "FROM code_observation WHERE tenant_id = %s AND jumeau_id = ANY(%s) "
+        "AND kind = ANY(%s) ORDER BY jumeau_id, file, start_line, kind, symbol LIMIT %s"
+    )
+    with conn.cursor(row_factory=dict_row) as cur:
+        lignes = cur.execute(
+            sql, (tenant, list(ids), list(KINDS_LIENS), maximum + 1)).fetchall()
+    tronque = len(lignes) > maximum
+    return [(ligne["jumeau_id"], _observation(ligne)) for ligne in lignes[:maximum]], tronque
 
 
 def lire_liens(conn, tenant_id, jumeau_id, kind=None, limite=LIMITE_DEFAUT) -> list[dict]:

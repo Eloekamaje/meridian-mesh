@@ -11,13 +11,15 @@ n'est appelé ici.
 """
 from __future__ import annotations
 
+from meridian.adapters.outbound.connectors import cbm_liens
+from meridian.adapters.outbound.postgres import code_index_store
 from meridian.adapters.outbound.postgres import decouverte_liens as decouverte_pg
 from meridian.adapters.outbound.postgres import relations_naissance as relations_pg
 from meridian.application import moteur_liens
 from meridian.domain.decouverte_liens import ResolutionCase
 from meridian.domain.naissance_relationnelle import ManifesteNaissance
 
-__all__ = ["reconcilier", "traiter_twin_born"]
+__all__ = ["reconcilier", "reconcilier_twin", "traiter_twin_born"]
 
 
 def _manifeste(payload) -> ManifesteNaissance:
@@ -33,6 +35,38 @@ def _proprietaires(manifests) -> dict[str, str]:
         if manifeste.application_id:
             proprietaires[manifeste.application_id] = manifeste.owner
     return proprietaires
+
+
+def _extractions_code(conn, manifests) -> tuple[list, list[str]]:
+    """Observations CBM persistées → une extraction par Twin.
+
+    C'est la source principale pour les routes et les appels HTTP. Les manifestes
+    restent la déclaration ; le code apporte la preuve. Une observation orpheline,
+    dont le Twin n'a plus de manifeste, est ignorée plutôt que de créer un composant
+    fantôme.
+    """
+    par_twin = {manifeste.twin_id: manifeste for manifeste in manifests}
+    if not par_twin:
+        return [], []
+    lignes, tronque = code_index_store.lire_observations_liens(
+        conn, manifests[0].tenant_id, tuple(par_twin))
+    groupes: dict[str, list] = {}
+    for twin_id, observation in lignes:
+        groupes.setdefault(twin_id, []).append(observation)
+    extractions = [
+        cbm_liens.extraire_observations(
+            groupes[twin_id], manifeste.application_id or twin_id, twin_id,
+            # Le code n'est pas rattaché à un environnement par l'index : le moteur
+            # traite « inconnu » comme compatible, sans prétendre connaître le déploiement.
+            "inconnu", owner=manifeste.owner, type_composant=manifeste.type)
+        for twin_id, manifeste in par_twin.items() if twin_id in groupes
+    ]
+    diagnostics = []
+    if tronque:
+        diagnostics.append(
+            "observations de liens tronquées à "
+            f"{code_index_store.LIMITE_LIENS} lignes : la découverte reste partielle")
+    return extractions, diagnostics
 
 
 def _case_de_frontiere(lien, tenant_id: str, owners: dict[str, str],
@@ -118,8 +152,11 @@ def traiter_twin_born(conn, payload) -> dict:
     bindings = decouverte_pg.lire_bindings(conn, manifeste.tenant_id)
     owners = _proprietaires(manifests)
 
-    rapport = moteur_liens.moteur_liens(
-        moteur_liens.extractions_depuis_manifests(manifests, bindings))
+    extractions_code, diagnostics_code = _extractions_code(conn, manifests)
+    rapport = moteur_liens.moteur_liens([
+        *moteur_liens.extractions_depuis_manifests(manifests, bindings),
+        *extractions_code,
+    ])
     local = moteur_liens.filtrer_local(rapport, manifeste.twin_id)
     resultat = _persister(conn, manifeste.tenant_id, local, owners,
                           appliquer=True, filtrer_twin=manifeste.twin_id)
@@ -132,8 +169,22 @@ def traiter_twin_born(conn, payload) -> dict:
         "non_eligibles": resultat["non_eligibles"],
         "liens_locaux": resultat["liens"],
         "questions_locales": resultat["questions"],
-        "diagnostics": resultat["diagnostics"],
+        "diagnostics": [*resultat["diagnostics"], *diagnostics_code],
     }
+
+
+def reconcilier_twin(conn, tenant_id: str, twin_id: str) -> dict:
+    """Relance la découverte locale d'un Twin après un changement de code.
+
+    C'est le chemin incrémental : l'ingestion d'un dépôt rafraîchit les liens du Twin
+    concerné sans lancer la réconciliation globale. Un Twin sans manifeste est ignoré.
+    """
+    manifeste = next(
+        (candidat for candidat in relations_pg.lire_manifestes(conn, tenant_id)
+         if candidat.twin_id == twin_id), None)
+    if manifeste is None:
+        return {"statut": "ignore", "raison": "manifeste de naissance absent"}
+    return {"statut": "decouvert", **traiter_twin_born(conn, manifeste.as_dict())}
 
 
 def reconcilier(conn, tenant_id: str, *, appliquer: bool = True,
@@ -144,8 +195,11 @@ def reconcilier(conn, tenant_id: str, *, appliquer: bool = True,
         manifests = manifests[:max(1, int(limite))]
     bindings = decouverte_pg.lire_bindings(conn, tenant_id)
     owners = _proprietaires(manifests)
-    rapport = moteur_liens.moteur_liens(
-        moteur_liens.extractions_depuis_manifests(manifests, bindings))
+    extractions_code, diagnostics_code = _extractions_code(conn, manifests)
+    rapport = moteur_liens.moteur_liens([
+        *moteur_liens.extractions_depuis_manifests(manifests, bindings),
+        *extractions_code,
+    ])
     resultat = _persister(conn, tenant_id, rapport, owners, appliquer=appliquer)
     return {
         "dry_run": not appliquer,
@@ -155,5 +209,5 @@ def reconcilier(conn, tenant_id: str, *, appliquer: bool = True,
         "non_eligibles": resultat["non_eligibles"],
         "liens": resultat["liens"],
         "questions": resultat["questions"],
-        "diagnostics": resultat["diagnostics"],
+        "diagnostics": [*resultat["diagnostics"], *diagnostics_code],
     }

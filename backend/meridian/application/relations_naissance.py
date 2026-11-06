@@ -11,7 +11,6 @@ from urllib.parse import urlsplit
 import re
 
 from meridian.domain.naissance_relationnelle import (
-    PORTEES_ELIGIBLES,
     Consommation,
     Exposition,
     ManifesteNaissance,
@@ -325,7 +324,13 @@ def _eligibilite_ressource(manifeste, autre, consommation, ressource) -> tuple[b
 
 
 def proposer_relations(manifeste, existants) -> ResolutionNaissance:
-    """Joint les consommations externes aux expositions éligibles, directement ou via une ressource."""
+    """Résolveur historique, exact, des consommations et des ressources.
+
+    Il reste exécuté à la naissance pour deux couvertures que le moteur de composants
+    ne remplace pas encore : le matching exact de `logical_ref` et les ressources
+    (JMS/Kafka/DB). `moteur_liens` est la cible ; ne pas ajouter ici de nouvelle
+    heuristique de chemin, de service ou de configuration.
+    """
     manifeste = _manifeste(manifeste)
     autres = [_manifeste(x) for x in (existants or ())]
     autres = [x for x in autres if x.tenant_id == manifeste.tenant_id and x.twin_id != manifeste.twin_id]

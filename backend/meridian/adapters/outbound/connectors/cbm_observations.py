@@ -167,7 +167,9 @@ def _requete_noeuds(label: str, fichiers=(), skip: int = 0) -> str:
         f"MATCH (n:{label}){filtre} "
         "RETURN n.name AS name, n.qualified_name AS qualified_name, "
         "n.file_path AS file_path, n.start_line AS start_line, "
-        "n.end_line AS end_line, n.label AS label "
+        "n.end_line AS end_line, n.label AS label, "
+        "n.method AS method, n.route AS route, n.path AS path, "
+        "n.value AS value, n.url AS url, n.operation AS operation "
         f"ORDER BY n.file_path, n.start_line, n.name SKIP {int(skip)} LIMIT {LIMITE}"
     )
 
@@ -181,7 +183,10 @@ def _requete_relation(type_relation: str, fichiers=(), skip: int = 0) -> str:
         f"MATCH (source)-[:{type_relation}]->(target){filtre} "
         "RETURN source.qualified_name AS source_qualified_name, source.name AS source_name, "
         "target.qualified_name AS target_qualified_name, target.name AS target_name, "
-        "source.file_path AS source_file, target.file_path AS target_file "
+        "source.file_path AS source_file, target.file_path AS target_file, "
+        "source.method AS source_method, source.route AS source_route, "
+        "target.method AS target_method, target.route AS target_route, "
+        "target.path AS target_path "
         f"ORDER BY source.file_path, source.qualified_name, target.file_path, "
         f"target.qualified_name SKIP {int(skip)} LIMIT {LIMITE}"
     )
@@ -293,6 +298,10 @@ def _observation_noeud(row: dict, label: str, racine: str, filtre) -> Observatio
         attributs["name"] = nom
     if qualifie:
         attributs["qualified_name"] = qualifie
+    for cle in ("method", "route", "path", "value", "url", "operation"):
+        valeur = _premier(row, cle)
+        if valeur:
+            attributs[cle] = str(valeur)
     return Observation(
         provider=PROVIDER, parser=PARSER, parser_version=PARSER_VERSION,
         file=chemin, language=_langage(chemin), kind=kind, symbol=symbole,
@@ -325,6 +334,14 @@ def _observation_relation(row: dict, type_attendu: str, racine: str, filtre) -> 
         "source_file": source_file,
         "target_file": target_file,
     }
+    for cle, noms in (
+        ("method", ("method", "source_method", "target_method")),
+        ("route", ("route", "source_route", "target_route")),
+        ("path", ("path", "target_path")),
+    ):
+        valeur = _premier(row, *noms)
+        if valeur:
+            attributs[cle] = str(valeur)
     return Observation(
         provider=PROVIDER, parser=PARSER, parser_version=PARSER_VERSION,
         file=fichier, language=_langage(fichier),

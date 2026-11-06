@@ -57,13 +57,17 @@ _ROUTES_SPRING = {
     "GetMapping": "GET", "PostMapping": "POST", "PutMapping": "PUT",
     "DeleteMapping": "DELETE", "PatchMapping": "PATCH",
 }
+_ROUTES_JAXRS = {
+    "GET": "GET", "POST": "POST", "PUT": "PUT", "PATCH": "PATCH",
+    "DELETE": "DELETE", "HEAD": "HEAD", "OPTIONS": "OPTIONS",
+}
 _STEREOTYPES = (
     "RestController", "Controller", "Service", "Repository", "Component",
     "Configuration", "Stateless", "Stateful", "Singleton", "MessageDriven",
     "Entity", "Table",
 )
 _COMPOSANTS_JEE = frozenset({"Stateless", "Stateful", "Singleton", "MessageDriven"})
-_INJECTIONS_JEE = frozenset({"EJB", "PersistenceContext", "PersistenceUnit"})
+_INJECTIONS_JEE = frozenset({"EJB", "PersistenceContext", "PersistenceUnit", "Resource"})
 _COLONNES_JPA = frozenset({"Column", "JoinColumn", "Id"})
 _RELATIONS_JPA = frozenset({"OneToMany", "ManyToOne", "ManyToMany"})
 _KINDS_WEB = frozenset({"web_servlet", "web_filter"})
@@ -354,6 +358,25 @@ def _prefixe(type_: dict) -> str:
         if chemins:
             return chemins[0]
     return ""
+
+
+def _prefixe_jaxrs(type_: dict) -> str:
+    for annotation in type_.get("annotations", ()):
+        if annotation["simple"] != "Path":
+            continue
+        chemins = _liste_textes(annotation["arguments"].get("value")
+                                or annotation["arguments"].get("path"))
+        if chemins:
+            return chemins[0]
+    return ""
+
+
+def _joindre_chemin(*parties) -> str:
+    morceaux = []
+    for partie in parties:
+        morceaux.extend(fragment for fragment in str(partie or "").strip("/").split("/")
+                        if fragment)
+    return "/" + "/".join(morceaux) if morceaux else ""
 
 
 def _table(type_: dict) -> str:
@@ -731,6 +754,44 @@ def _extraire(fichier: str, texte: str) -> list[Observation]:
             language=LANGAGE, kind=membre["kind"], symbol=membre["nom"],
             start=_ligne(masque, membre["start"]), end=_ligne(masque, membre["end"]),
             attributes=attributes, confidence=1.0, status="extracted"))
+
+    for membre in membres:
+        if membre["constructeur"]:
+            continue
+        type_ = membre["type_"]
+        base = _prefixe_jaxrs(type_)
+        if not base:
+            continue
+        methode = next((_ROUTES_JAXRS[annotation["simple"]]
+                        for annotation in membre["annotations"]
+                        if annotation["simple"] in _ROUTES_JAXRS), "")
+        if not methode:
+            continue
+        sous_chemin = ""
+        for annotation in membre["annotations"]:
+            if annotation["simple"] != "Path":
+                continue
+            chemins = _liste_textes(annotation["arguments"].get("value")
+                                    or annotation["arguments"].get("path"))
+            if chemins:
+                sous_chemin = chemins[0]
+                break
+        chemin = _joindre_chemin(base, sous_chemin)
+        if not chemin:
+            continue
+        fqn = _classe_fqn(type_["package"], type_["nom"])
+        observations.append(Observation(
+            provider=PROVIDER, parser=PARSER, parser_version=PARSER_VERSION, file=fichier,
+            language=LANGAGE, kind="jaxrs_route", symbol=f"{methode} {chemin}",
+            start=_ligne(masque, membre["start"]), end=_ligne(masque, membre["end"]),
+            attributes={
+                "annotation": methode, "framework": "jaxrs",
+                "value": sous_chemin or base, "path": chemin, "paths": [chemin],
+                "method": methode, "methods": [methode], "http_method": methode,
+                "prefix": base, "controller": fqn, "java_class": fqn,
+                "scope": "member", "member": membre["nom"],
+                "member_kind": membre["kind"],
+            }, confidence=1.0, status="extracted"))
 
     for annotation in _scan_annotations(masque, texte, 0, len(masque)):
         annotation["ligne_debut"] = _ligne(masque, annotation["start"])

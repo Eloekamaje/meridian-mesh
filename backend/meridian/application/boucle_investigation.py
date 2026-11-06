@@ -18,7 +18,7 @@ from typing import Mapping
 from meridian.domain.decouverte_liens import CandidatResolution
 
 __all__ = [
-    "BudgetInvestigation",
+    "BudgetEnquete",
     "EtapeInvestigation",
     "PlanificateurRegles",
     "ResultatInvestigation",
@@ -31,7 +31,7 @@ def _texte(valeur, maximum=1000) -> str:
 
 
 @dataclass(frozen=True)
-class BudgetInvestigation:
+class BudgetEnquete:
     max_etapes: int = 6
     max_outils: int = 4
     max_candidats: int = 5
@@ -154,9 +154,9 @@ def _evidence(reponse) -> tuple[str, ...]:
 
 
 def executer(cas, planificateur, outils: Mapping, *,
-             budget: BudgetInvestigation | None = None) -> ResultatInvestigation:
+             budget: BudgetEnquete | None = None) -> ResultatInvestigation:
     """Exécute la boucle bornée ; aucune écriture, aucune confirmation."""
-    budget = budget or BudgetInvestigation()
+    budget = budget or BudgetEnquete()
     etapes: list[EtapeInvestigation] = []
     candidats: dict[str, dict] = {}
     evidence_ids: list[str] = []

@@ -32,7 +32,7 @@ from meridian.adapters.outbound.postgres.outils_investigation import (
     OutilVide,
 )
 from meridian.application.boucle_investigation import (
-    BudgetInvestigation,
+    BudgetEnquete,
     PlanificateurRegles,
     executer,
 )
@@ -101,7 +101,7 @@ def _planificateur(outils):
 
 def enqueter_case(conn, tenant_id: str, case_id: str, *,
                   planificateur=None,
-                  budget: BudgetInvestigation | None = None,
+                  budget: BudgetEnquete | None = None,
                   fichiers=None, cmdb=None,
                   servicenow_fn=None, apm_fn=None,
                   runtime_graph=None, portail=None) -> dict:

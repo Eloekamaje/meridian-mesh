@@ -9,9 +9,11 @@ import os
 
 import pytest
 
+from meridian.adapters.outbound.postgres import code_index_store
 from meridian.adapters.outbound.postgres import decouverte_liens as depot_liens
 from meridian.adapters.outbound.postgres import decouverte_naissance
 from meridian.adapters.outbound.postgres import relations_naissance as depot_relations
+from meridian.domain.code_index import Observation
 from meridian.domain.decouverte_liens import Binding
 from meridian.domain.naissance_relationnelle import (
     Consommation,
@@ -34,6 +36,14 @@ def _manifeste(twin_id: str, *, exposes=(), consomme=(), portee="SERVICE"):
             kind="HTTP", logical_ref=reference, target_hint=hint, environment="prod",
             evidence_ids=(f"code:{twin_id}:{reference}",))
             for reference, hint in consomme),
+    )
+
+
+def _observation(kind: str, symbol: str, attributes: dict, *, file="src/App.java"):
+    return Observation(
+        provider="cbm", parser="cbm-graph", parser_version="1",
+        file=file, language="java", kind=kind, symbol=symbol,
+        start=1, end=1, attributes=attributes,
     )
 
 
@@ -74,6 +84,83 @@ def test_twin_born_decouvre_un_lien_par_configuration(conn):
     assert proposition["state"] == "supposee"
     # Le lien app-c → app-d existe dans le moteur global mais pas dans la passe locale.
     assert not any(p["consumer_id"] == "app-c" for p in propositions)
+
+
+def test_twin_born_utilise_les_observations_cbm(conn):
+    a = _manifeste("app-a")  # aucune consommation déclarée : le code la porte
+    b = _manifeste("app-b")  # aucune exposition déclarée : CBM porte la route
+    depot_relations.enregistrer_manifeste(conn, a)
+    depot_relations.enregistrer_manifeste(conn, b)
+    for binding in _bindings():
+        depot_liens.enregistrer_binding(conn, "banque", binding)
+    code_index_store.remplacer(conn, "banque", "app-a", observations=[
+        _observation("cbm_relation_http_calls", "demo.Client.get", {
+            "target": "comptes-api", "method": "GET", "path": "/accounts/42",
+        }),
+    ])
+    code_index_store.remplacer(conn, "banque", "app-b", observations=[
+        _observation("cbm_route", "/accounts/{id}", {
+            "method": "GET", "route": "/accounts/{id}",
+        }),
+    ])
+
+    resultat = decouverte_naissance.traiter_twin_born(conn, b.as_dict())
+
+    propositions = depot_relations.lister_propositions(conn, "banque")
+    assert resultat["decouverte"] == 1
+    assert resultat["liens_locaux"] == 1
+    assert len(propositions) == 1
+    assert propositions[0]["consumer_id"] == "app-a"
+    assert propositions[0]["provider_id"] == "app-b"
+    assert propositions[0]["object"] == "GET /accounts/{id}"
+
+
+def test_lecture_des_observations_de_liens_filtre_et_borne(conn):
+    code_index_store.remplacer(conn, "banque", "app-a", observations=[
+        _observation("cbm_route", "/accounts", {"method": "GET", "route": "/accounts"}),
+        _observation("cbm_route", "/soldes", {"method": "GET", "route": "/soldes"}),
+        _observation("cbm_class", "demo.App", {"label": "Class"}),
+    ])
+
+    lignes, tronque = code_index_store.lire_observations_liens(
+        conn, "banque", ("app-a",), limite=1)
+
+    assert len(lignes) == 1
+    assert lignes[0][0] == "app-a"
+    assert lignes[0][1].kind == "cbm_route"
+    assert tronque is True
+
+
+def test_manifeste_et_cbm_ne_doublent_pas_l_exposition(conn):
+    a = _manifeste("app-a", consomme=[("${comptes.base-url}", "GET /accounts/{id}")])
+    b = _manifeste("app-b", exposes=["GET /accounts/{id}"])
+    depot_relations.enregistrer_manifeste(conn, a)
+    depot_relations.enregistrer_manifeste(conn, b)
+    for binding in _bindings():
+        depot_liens.enregistrer_binding(conn, "banque", binding)
+    code_index_store.remplacer(conn, "banque", "app-a", observations=[
+        _observation("cbm_relation_http_calls", "demo.Client.get", {
+            "target": "comptes-api", "method": "GET", "path": "/accounts/42",
+        }),
+    ])
+    code_index_store.remplacer(conn, "banque", "app-b", observations=[
+        _observation("cbm_route", "/accounts/{id}", {
+            "method": "GET", "route": "/accounts/{id}",
+        }),
+    ])
+
+    resultat = decouverte_naissance.traiter_twin_born(conn, b.as_dict())
+
+    propositions = depot_relations.lister_propositions(conn, "banque")
+    assert resultat["decouverte"] == 1
+    assert len(propositions) == 1
+
+
+def test_reconcilier_twin_ignore_un_twin_sans_manifeste(conn):
+    resultat = decouverte_naissance.reconcilier_twin(conn, "banque", "absent")
+
+    assert resultat["statut"] == "ignore"
+    assert "manifeste" in resultat["raison"]
 
 
 def test_twin_born_est_idempotent(conn):

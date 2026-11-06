@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 from typing import Mapping
 
 from meridian.domain.naissance_relationnelle import PORTEES_ELIGIBLES, PORTEES_EXPOSITION
+from meridian.domain.secrets import CLES_SECRETES as _CLES_SECRETES
+from meridian.domain.secrets import sans_secret as _sans_secret
 
 __all__ = [
     "PROTOCOLES",
@@ -39,8 +41,8 @@ __all__ = [
     "SourceDepot",
 ]
 
-PROTOCOLES = ("HTTP", "SOAP", "JMS", "KAFKA", "DB", "GRPC", "GRAPHQL", "ASYNCAPI",
-              "BATCH", "FILE", "AUTRE")
+PROTOCOLES = ("HTTP", "SOAP", "JMS", "KAFKA", "JNDI", "DB", "GRPC", "GRAPHQL",
+              "ASYNCAPI", "BATCH", "FILE", "AUTRE")
 SOURCES_PREUVE = ("CODE", "CONFIG", "CONTRAT", "HELM", "DEPLOIEMENT", "TRACE", "DECLARATION")
 MODES_PREUVE = ("DECLARE", "OBSERVE", "DEDUIT")
 ETATS_LIEN = ("suggere", "confirme", "conteste", "rejete")
@@ -50,12 +52,6 @@ VERIFICATIONS = ("implemente", "configure", "observe")
 NATURES_LIEN = ("mesh", "interne", "externe")
 TYPES_QUESTION = ("PROPRIETE_ABSENTE", "SERVICE_INCONNU", "PRODUCTEUR_INCONNU",
                   "AMBIGU", "CONTRADICTION")
-
-_CLES_SECRETES = frozenset({
-    "password", "passwd", "secret", "token", "credential", "authorization",
-    "api_key", "apikey", "access_key", "private_key", "client_secret",
-})
-
 
 def _texte(valeur, champ, maximum=500, obligatoire=True) -> str:
     texte = " ".join(str(valeur or "").split())
@@ -103,13 +99,6 @@ def _instant(valeur) -> str:
         datetime.fromisoformat(texte.replace("Z", "+00:00"))
     except ValueError as exc:
         raise ValueError("date ISO attendue") from exc
-    return texte
-
-
-def _sans_secret(valeur: str, champ: str) -> str:
-    texte = str(valeur or "").strip()
-    if "@" in texte and "://" in texte:
-        raise ValueError(f"{champ} : identifiants interdits dans une URL")
     return texte
 
 
@@ -333,6 +322,7 @@ class RoutePasserelle:
     service: str
     host: str = ""
     environment: str = "inconnu"
+    chemin_backend: str = ""
     preuves: tuple[Preuve, ...] = ()
     id: str = ""
 
@@ -342,14 +332,19 @@ class RoutePasserelle:
         object.__setattr__(self, "service", _texte(self.service, "service", 300))
         object.__setattr__(self, "host", _texte(self.host, "host", 300, obligatoire=False))
         object.__setattr__(self, "environment", _environnement(self.environment))
+        object.__setattr__(self, "chemin_backend", _texte(
+            self.chemin_backend, "chemin_backend", 500, obligatoire=False))
         object.__setattr__(self, "preuves", tuple(self.preuves or ()))
-        object.__setattr__(self, "id", self.id or _identifiant(
-            "route", self.host, self.chemin, self.service, self.environment))
+        parties = [self.host, self.chemin, self.service, self.environment]
+        if self.chemin_backend:
+            parties.append(self.chemin_backend)
+        object.__setattr__(self, "id", self.id or _identifiant("route", *parties))
 
     def as_dict(self) -> dict:
         return {
             "id": self.id, "chemin": self.chemin, "service": self.service,
             "host": self.host, "environment": self.environment,
+            "chemin_backend": self.chemin_backend,
             "preuves": [preuve.as_dict() for preuve in self.preuves],
         }
 
@@ -359,6 +354,7 @@ class Deploiement:
     composant_id: str
     application_id: str
     environment: str = "inconnu"
+    namespace: str = ""
     service_name: str = ""
     hosts: tuple[str, ...] = ()
     images: tuple[str, ...] = ()
@@ -371,6 +367,8 @@ class Deploiement:
         object.__setattr__(self, "composant_id", _texte(self.composant_id, "composant_id", 300))
         object.__setattr__(self, "application_id", _texte(self.application_id, "application_id", 128))
         object.__setattr__(self, "environment", _environnement(self.environment))
+        object.__setattr__(self, "namespace", _texte(
+            self.namespace, "namespace", 300, obligatoire=False))
         object.__setattr__(self, "service_name", _texte(
             self.service_name, "service_name", 300, obligatoire=False))
         object.__setattr__(self, "hosts", tuple(dict.fromkeys(
@@ -381,15 +379,20 @@ class Deploiement:
         object.__setattr__(self, "labels", {str(cle): str(valeur)
                                             for cle, valeur in (self.labels or {}).items()})
         object.__setattr__(self, "preuves", tuple(self.preuves or ()))
-        object.__setattr__(self, "id", self.id or _identifiant(
-            "deploiement", self.application_id, self.composant_id,
-            self.environment, self.service_name))
+        # Le namespace ne change l'identité que lorsqu'il est connu : les déploiements
+        # historiques sans namespace gardent leur identifiant.
+        parties = [self.application_id, self.composant_id,
+                   self.environment, self.service_name]
+        if self.namespace:
+            parties.append(self.namespace)
+        object.__setattr__(self, "id", self.id or _identifiant("deploiement", *parties))
 
     def as_dict(self) -> dict:
         return {
             "id": self.id, "composant_id": self.composant_id,
             "application_id": self.application_id, "environment": self.environment,
-            "service_name": self.service_name, "hosts": list(self.hosts),
+            "namespace": self.namespace, "service_name": self.service_name,
+            "hosts": list(self.hosts),
             "images": list(self.images),
             "routes": [route.as_dict() for route in self.routes],
             "labels": dict(self.labels),

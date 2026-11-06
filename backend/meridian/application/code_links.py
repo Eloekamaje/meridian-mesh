@@ -22,10 +22,10 @@ import re
 from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from functools import lru_cache
 from html import unescape
 from urllib.parse import urlsplit
 
+from meridian.domain import chemins
 from meridian.domain.code_index import Observation
 
 __all__ = ["Link", "STATUTS_LIEN", "lier", "rapport_liens"]
@@ -259,20 +259,7 @@ def _normaliser_dataset(nom: str) -> str:
 
 
 def _nettoyer_chemin(chemin: str) -> str:
-    texte = _texte(chemin).replace("\\", "/")
-    texte = re.sub(r";jsessionid=[^/?#]*", "", texte, flags=re.I)
-    texte = re.sub(r"/+", "/", texte)
-    if not texte:
-        return ""
-    if texte == "/":
-        return "/"
-    absolu = texte.startswith("/")
-    normalise = posixpath.normpath(texte)
-    if normalise == ".":
-        return ""
-    if absolu and not normalise.startswith("/"):
-        normalise = "/" + normalise
-    return normalise.rstrip("/") or "/"
+    return chemins.normaliser(_texte(chemin))
 
 
 def _nettoyer_cible(valeur: str) -> str:
@@ -347,42 +334,15 @@ def _qualite_servlet(motif: str, chemin: str) -> float | None:
     return 1.0 if chemin == _nettoyer_chemin(texte) else None
 
 
-@lru_cache(maxsize=512)
-def _regex_spring(motif: str) -> re.Pattern | None:
-    texte = _nettoyer_chemin(motif)
-    if not texte:
-        return None
-    morceaux: list[str] = []
-    i = 0
-    while i < len(texte):
-        if texte.startswith("**", i):
-            morceaux.append(".*")
-            i += 2
-        elif texte[i] == "*":
-            morceaux.append("[^/]*")
-            i += 1
-        elif texte[i] == "{":
-            fin = texte.find("}", i)
-            if fin < 0:
-                return None
-            morceaux.append("[^/]+")
-            i = fin + 1
-        else:
-            morceaux.append(re.escape(texte[i]))
-            i += 1
-    return re.compile("^" + "".join(morceaux) + "$")
-
-
 def _qualite_spring(motif: str, chemin: str) -> float | None:
     normalise = _nettoyer_chemin(motif)
     if not normalise:
         return None
-    if not any(caractere in normalise for caractere in "*{"):
+    if not any(caractere in normalise for caractere in "*{<"):
         return 1.0 if normalise == chemin else None
-    regex = _regex_spring(normalise)
-    if regex is None or not regex.match(chemin):
+    if not chemins.motif_compatible(normalise, chemin):
         return None
-    return 0.9 if "{" in normalise else 0.95
+    return 0.9 if any(caractere in normalise for caractere in "{<") else 0.95
 
 
 def _groupes_par_motif(candidats: Iterable[tuple[str, float]], motif: str,

@@ -18,11 +18,15 @@ from fnmatch import fnmatch
 from pathlib import Path
 from typing import Iterator, Optional
 
+from meridian.adapters.outbound.connectors.lecture_fichiers import (
+    DOSSIERS_TECHNIQUES,
+    decoder_texte as _decoder,
+    est_binaire as _est_binaire,
+)
 from meridian.domain import interfaces
 from meridian.application import interfaces_protocoles
 
-DOSSIERS_IGNORES = frozenset({
-    ".git", "node_modules", "vendor", "build", "dist", ".venv", "__pycache__", ".cache",
+DOSSIERS_IGNORES = DOSSIERS_TECHNIQUES | frozenset({
     "test", "tests", "__tests__",
 })
 EXTENSIONS_OPENAPI = frozenset({".json", ".yaml", ".yml"})
@@ -73,24 +77,13 @@ def _est_candidat(chemin: Path) -> bool:
             or suffixe in EXTENSIONS_PROTOCOLES or _nom_config(chemin.name))
 
 
-def _est_binaire(donnees: bytes) -> bool:
-    if b"\x00" in donnees:
-        return True
-    echantillon = donnees[:4096]
-    if not echantillon:
-        return False
-    controles = sum(1 for octet in echantillon if octet < 9 or 13 < octet < 32)
-    return controles / len(echantillon) > 0.3
-
-
-def _decoder(donnees: bytes) -> Optional[str]:
-    try:
-        return donnees.decode("utf-8-sig")
-    except UnicodeDecodeError:
-        try:
-            return donnees.decode("latin-1")
-        except UnicodeDecodeError:
-            return None
+# API publique réutilisable par les autres lecteurs de dépôt.
+est_openapi = _est_openapi
+est_wsdl = _est_wsdl
+est_graphql = _est_graphql
+est_proto = _est_proto
+est_asyncapi = _est_asyncapi
+nom_config = _nom_config
 
 
 def _fichiers(racine: Path) -> Iterator[Path]:

@@ -13,10 +13,10 @@ est un objet durable, avec la question exacte et la prochaine vérification.
 from __future__ import annotations
 
 import hashlib
-import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from urllib.parse import parse_qsl, urlsplit
+
+from meridian.domain.secrets import sans_secret as _sans_secret
 
 __all__ = [
     "KINDS_BINDING",
@@ -26,7 +26,6 @@ __all__ = [
     "CandidatResolution",
     "DestinationResolution",
     "ResolutionCase",
-    "ResolutionInvalide",
 ]
 
 KINDS_BINDING = ("PROPERTY", "GATEWAY_ROUTE", "SERVICE", "ALIAS", "JNDI",
@@ -71,25 +70,6 @@ def _instant(valeur) -> str:
     except ValueError as exc:
         raise ValueError("date ISO attendue") from exc
     return texte
-
-
-_CLES_SECRETES = frozenset({"password", "passwd", "secret", "token", "credential",
-                            "authorization", "api_key", "apikey", "access_key", "private_key"})
-
-
-def _sans_secret(valeur: str, champ: str) -> str:
-    if "://" not in valeur:
-        return valeur
-    try:
-        parties = urlsplit(valeur)
-    except ValueError as exc:
-        raise ValueError(f"{champ} : URL invalide") from exc
-    if parties.username is not None or parties.password is not None or "@" in parties.netloc:
-        raise ValueError(f"{champ} : identifiants interdits dans une URL")
-    for cle, _ in parse_qsl(parties.query, keep_blank_values=True):
-        if cle.strip().lower() in _CLES_SECRETES:
-            raise ValueError(f"{champ} : secret interdit dans une URL")
-    return valeur
 
 
 def _identifiant(valeur, prefixe="resolution") -> str:
