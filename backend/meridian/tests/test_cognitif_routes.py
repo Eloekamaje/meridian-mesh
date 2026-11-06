@@ -104,3 +104,28 @@ def test_resoudre_une_resolution_retourne_l_etat(monkeypatch):
 
     assert r.status_code == 200, r.text
     assert r.json()["resolution"]["status"] == "resolved"
+
+
+def test_enqueter_une_resolution_utilise_la_boucle(monkeypatch):
+    vus = {}
+
+    def enqueter(conn, tenant, case_id):
+        vus.update({"tenant": tenant, "case_id": case_id})
+        return {
+            "case": {"id": case_id, "status": "open", "attempts": 1},
+            "investigation": {"arret": "sources épuisées", "candidats": []},
+        }
+
+    async def avec(tenant, action):
+        vus["tenant"] = tenant
+        return action(None)
+
+    monkeypatch.setattr(cognitif, "_avec_connexion", avec)
+    monkeypatch.setattr(cognitif.investigation_liens_pg, "enqueter_case", enqueter)
+
+    r = _client().post("/api/boucle/resolutions/resolution-1/enqueter",
+                       headers={"X-Tenant": "banque"})
+
+    assert r.status_code == 200, r.text
+    assert vus == {"tenant": "banque", "case_id": "resolution-1"}
+    assert r.json()["investigation"]["arret"] == "sources épuisées"

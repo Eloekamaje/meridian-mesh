@@ -1,0 +1,54 @@
+{
+  "tenant": "banque",
+  "niveau_sources": [0, 1],
+  "depots": [
+    {
+      "application_id": "comptes",
+      "composant_id": "comptes-api",
+      "environment": "prod",
+      "owner": "Équipe comptes",
+      "racine": "comptes"
+    },
+    {
+      "application_id": "antifraude",
+      "composant_id": "antifraude-backend",
+      "environment": "prod",
+      "owner": "Équipe antifraude",
+      "racine": "antifraude"
+    },
+    {
+      "application_id": "antifraude",
+      "composant_id": "antifraude-frontend",
+      "environment": "prod",
+      "owner": "Équipe antifraude",
+      "type_composant": "FRONTEND",
+      "racine": "antifraude-frontend"
+    },
+    {
+      "application_id": "paiements",
+      "composant_id": "paiements-api",
+      "environment": "prod",
+      "owner": "Équipe paiements",
+      "racine": "paiements"
+    }
+  ],
+  "attendu": {
+    "liens": [
+      {
+        "consommateur": "antifraude-backend",
+        "fournisseur": "comptes-api",
+        "operation": "GET /accounts/{id}",
+        "nature": "mesh"
+      },
+      {
+        "consommateur": "antifraude-frontend",
+        "fournisseur": "antifraude-backend",
+        "operation": "GET /internal/accounts/{id}",
+        "nature": "interne"
+      }
+    ],
+    "questions": [],
+    "externes": ["api.stripe.com"],
+    "contradictions": []
+  }
+}

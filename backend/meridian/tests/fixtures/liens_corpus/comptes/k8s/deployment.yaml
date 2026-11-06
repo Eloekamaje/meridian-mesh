@@ -1,0 +1,12 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: comptes-api
+  labels:
+    app: comptes
+spec:
+  template:
+    spec:
+      containers:
+        - name: comptes-api
+          image: registry/comptes-api:1.4

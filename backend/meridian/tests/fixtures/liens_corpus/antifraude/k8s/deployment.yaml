@@ -1,0 +1,12 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: antifraude-backend
+  labels:
+    app: antifraude
+spec:
+  template:
+    spec:
+      containers:
+        - name: antifraude-backend
+          image: registry/antifraude-backend:2.0

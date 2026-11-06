@@ -123,7 +123,14 @@ test("affiche le contexte cognitif du twin et permet de dépasser trois faits", 
 
 test("affiche le manifeste et les propositions de relation du Twin", async () => {
   localStorage.setItem("meridian.tenant", "banque");
-  api.post.mockResolvedValue({ data: {} });
+  api.post.mockImplementation((url) => {
+    if (String(url).endsWith("/enqueter")) {
+      return Promise.resolve({ data: { investigation: {
+        arret: "candidat trouvé", candidats: [{ id: "c2" }], budget_atteint: false,
+      } } });
+    }
+    return Promise.resolve({ data: {} });
+  });
   api.get.mockImplementation((url) => {
     if (url.includes("/manifeste")) {
       return Promise.resolve({ data: { manifeste: {
@@ -180,6 +187,17 @@ test("affiche le manifeste et les propositions de relation du Twin", async () =>
   const candidat = montage.hote.querySelector('[data-testid="candidat-c1"]');
   expect(candidat.textContent).toContain("comptes");
   expect(candidat.textContent).toContain("la route correspond au service");
+
+  const enqueter = [...enquete.querySelectorAll("button")].find((b) => b.textContent === "Enquêter");
+  await act(async () => { enqueter.click(); });
+  expect(api.post).toHaveBeenCalledWith(
+    "/boucle/resolutions/case-1/enqueter",
+    {},
+    { headers: { "X-Tenant": "banque" } }
+  );
+  const resultatEnquete = montage.hote.querySelector('[data-testid="enquete-case-1"]');
+  expect(resultatEnquete.textContent).toContain("candidat trouvé");
+  expect(resultatEnquete.textContent).toContain("1 candidat");
 
   const accepter = [...candidat.querySelectorAll("button")].find((b) => b.textContent === "Accepter");
   await act(async () => { accepter.click(); });

@@ -322,7 +322,10 @@ def build_cases_router(deps):
         tous = await jumeaux_du_tenant(db, _tenant_requete(), {"_id": 0, "id": 1})
         aut = autorisations(espace, [j["id"] for j in tous])
         if case.get("jumeaux") and not any(j in aut for j in case["jumeaux"]):
-            raise HTTPException(403, "Ce case est hors de votre périmètre")
+            raise HTTPException(
+                403,
+                "Ce case est hors de votre périmètre. Demandez l'accès au responsable "
+                "du Travail ou changez d'espace.")
         if not portees.acces(case, acteur_id):
             raise HTTPException(403, "Ce travail n'est pas partagé avec vous")
         # Backfill paresseux : les anciens messages gardent leur schéma brut et reçoivent

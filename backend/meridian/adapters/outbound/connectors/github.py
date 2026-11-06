@@ -3,6 +3,8 @@
 Le jeton est lu dans Vault depuis la référence de la source ; il ne quitte jamais le serveur. Seule la forge
 autorisée (JUMEAU_GIT_HOTE) est interrogée, sans suivre de redirection (l'en-tête d'autorisation suivrait).
 """
+import base64
+import binascii
 import hashlib
 import json
 import threading
@@ -13,7 +15,7 @@ import urllib.request
 from urllib.parse import quote, urlencode
 
 from meridian.adapters.outbound.connectors.naissance import (
-    CoffreIndisponible, NOM_VALIDE, SecretAbsent, _hote_autorise, resoudre_secret,
+    NOM_VALIDE, _hote_autorise, resoudre_secret,
 )
 
 # ponytail: 300 dépôts les plus récemment mis à jour ; recherche GitHub si un compte en voit plus.
@@ -156,3 +158,37 @@ def branches(reference, depot, recherche=""):
         b["name"] for b in _get(reference, f"/repos/{quote(proprietaire)}/{quote(nom)}/branches", per_page=100)])
     motif = recherche.strip().lower()
     return [b for b in noms if motif in b.lower()][:MAX_RESULTATS]
+
+
+def lire_fichier(reference, depot, chemin, ref="", max_octets: int = 2_000_000):
+    """Lit un fichier texte d'un dépôt GitHub, à une référence donnée, sans clone.
+
+    Le contenu est borné, décodé depuis base64 et jamais écrit sur disque. Le chemin
+    refuse les traversées (`..`) ; un fichier binaire ou trop gros est refusé.
+    """
+    proprietaire, _, nom = str(depot or "").partition("/")
+    if not NOM_VALIDE.fullmatch(proprietaire or "") or not NOM_VALIDE.fullmatch(nom or ""):
+        raise Invalide("dépôt attendu sous la forme propriétaire/nom")
+    chemin = str(chemin or "").strip()
+    if (not chemin or chemin.startswith(("/", "-"))
+            or any(partie in ("", ".", "..") for partie in chemin.split("/"))
+            or any(ord(caractere) < 32 for caractere in chemin)):
+        raise Invalide("chemin de fichier invalide")
+    params = {"ref": ref} if ref else {}
+    donnees = _get(
+        reference,
+        f"/repos/{quote(proprietaire)}/{quote(nom)}/contents/{quote(chemin, safe='/')}",
+        **params)
+    if (not isinstance(donnees, dict) or donnees.get("type") != "file"
+            or donnees.get("encoding") != "base64"):
+        raise Invalide("fichier GitHub illisible")
+    try:
+        contenu = base64.b64decode(donnees.get("content") or "", validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise Invalide("contenu GitHub invalide") from exc
+    if len(contenu) > max_octets:
+        raise Invalide("fichier GitHub trop volumineux")
+    try:
+        return contenu.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise Invalide("fichier GitHub non textuel") from exc

@@ -20,18 +20,13 @@ from pathlib import Path
 RACINE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(RACINE / "backend"))
 
-from meridian.adapters.outbound.connectors.decouverte_composants import extraire_depot  # noqa: E402
+from meridian.adapters.outbound.connectors.decouverte_composants import (  # noqa: E402
+    extraire_depot,
+    lire_fichiers,
+)
 from meridian.application.moteur_liens import moteur_liens  # noqa: E402
 from meridian.domain.liens_composants import SourceDepot  # noqa: E402
-
-DOSSIERS_IGNORES = frozenset({
-    ".git", ".hg", ".svn", "node_modules", "vendor", "target", "build", "dist",
-    ".venv", "venv", "__pycache__", ".cache", ".idea", ".mypy_cache", ".pytest_cache",
-})
-EXTENSIONS = frozenset({
-    ".java", ".js", ".jsx", ".ts", ".tsx", ".yaml", ".yml", ".json", ".xml",
-    ".wsdl", ".graphql", ".gql", ".proto", ".properties", ".env", ".conf", ".config",
-})
+from meridian.domain.politique_decouverte import PolitiqueSources  # noqa: E402
 
 
 def _depot(valeur: str) -> tuple[str, str, Path]:
@@ -46,36 +41,6 @@ def _depot(valeur: str) -> tuple[str, str, Path]:
     return application, composant, racine
 
 
-def _lire_fichiers(racine: Path, max_fichiers: int, max_octets: int) -> tuple[dict[str, str], list[str]]:
-    fichiers: dict[str, str] = {}
-    diagnostics: list[str] = []
-    for chemin in sorted(racine.rglob("*")):
-        if len(fichiers) >= max_fichiers:
-            diagnostics.append(f"{racine} : limite de {max_fichiers} fichiers atteinte")
-            break
-        if not chemin.is_file() or any(partie in DOSSIERS_IGNORES for partie in chemin.parts):
-            continue
-        if chemin.suffix.lower() not in EXTENSIONS:
-            continue
-        try:
-            if chemin.stat().st_size > max_octets:
-                diagnostics.append(f"{chemin.relative_to(racine)} : fichier trop gros, ignoré")
-                continue
-            donnees = chemin.read_bytes()
-        except OSError as erreur:
-            diagnostics.append(f"{chemin.relative_to(racine)} : illisible ({type(erreur).__name__})")
-            continue
-        if b"\x00" in donnees[:4096]:
-            continue
-        try:
-            texte = donnees.decode("utf-8-sig")
-        except UnicodeDecodeError:
-            diagnostics.append(f"{chemin.relative_to(racine)} : encodage non UTF-8, ignoré")
-            continue
-        fichiers[chemin.relative_to(racine).as_posix()] = texte
-    return fichiers, diagnostics
-
-
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         prog="decouvrir-liens-composants",
@@ -83,15 +48,34 @@ def main(argv=None) -> int:
     parser.add_argument("--depot", action="append", type=_depot, required=True,
                         help="application:composant:chemin (répétable)")
     parser.add_argument("--environnement", default="prod")
+    parser.add_argument("--niveau-sources", default="0",
+                        help="niveaux de sources autorisés, séparés par des virgules "
+                             "(0=code/config/contrats/Helm, 1=kubernetes/gateway/traces, "
+                             "2=CMDB/portail API, 3=serveur/export WebSphere)")
+    parser.add_argument("--source", action="append", default=[],
+                        help="source explicite supplémentaire (répétable)")
+    parser.add_argument("--approuve-par", default="",
+                        help="approbation nommée, obligatoire pour le niveau 3")
     parser.add_argument("--max-fichiers", type=int, default=800)
     parser.add_argument("--max-octets", type=int, default=2_000_000)
     parser.add_argument("--sortie", help="écrit le rapport JSON dans ce fichier")
     args = parser.parse_args(argv)
 
+    try:
+        niveaux = tuple(int(x) for x in args.niveau_sources.split(",") if x.strip())
+        politique = PolitiqueSources(
+            tenant_id="cli", niveaux=niveaux,
+            sources_explicites=tuple(args.source or ()),
+            approuve_par=args.approuve_par)
+    except ValueError as erreur:
+        parser.error(str(erreur))
+
     extractions = []
     diagnostics: list[str] = []
     for application, composant, racine in args.depot:
-        fichiers, problemes = _lire_fichiers(racine, args.max_fichiers, args.max_octets)
+        fichiers, problemes = lire_fichiers(
+            racine, sources_autorisees=politique.sources_autorisees,
+            max_fichiers=args.max_fichiers, max_octets=args.max_octets)
         diagnostics.extend(problemes)
         extraction = extraire_depot(SourceDepot(
             application_id=application, composant_id=composant,
@@ -101,6 +85,7 @@ def main(argv=None) -> int:
 
     rapport = moteur_liens(extractions)
     donnees = rapport.as_dict()
+    donnees["politique_sources"] = politique.as_dict()
     donnees["diagnostics"] = [*diagnostics, *donnees["diagnostics"]]
     texte = json.dumps(donnees, ensure_ascii=False, indent=2)
     if args.sortie:

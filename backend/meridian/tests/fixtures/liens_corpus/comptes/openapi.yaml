@@ -1,0 +1,11 @@
+openapi: 3.0.0
+info:
+  title: Comptes
+  version: "1.4"
+paths:
+  /accounts/{id}:
+    get:
+      operationId: getAccount
+  /accounts:
+    get:
+      operationId: listAccounts

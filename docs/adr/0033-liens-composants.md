@@ -152,11 +152,34 @@ rien : elle transporte les preuves, la portée, les inconnues et la prochaine v�
 | `backend/meridian/domain/liens_composants.py` | modèle : composant, interface, appel, déploiement, lien, question |
 | `backend/meridian/adapters/outbound/connectors/decouverte_composants.py` | extraction Java/JS, contrats, configuration, Kubernetes, Helm, traces |
 | `backend/meridian/application/moteur_liens.py` | index d'identités, appariement, contradictions, revue, conversion en proposition ou en cas, pont depuis les manifestes, filtre local |
-| `backend/meridian/adapters/outbound/postgres/decouverte_naissance.py` | handler `twin.born` : découverte locale bornée, propositions et cas |
+| `backend/meridian/domain/politique_decouverte.py` | politique des sources : niveaux 0 à 3, opt-in, approbation niveau 3 |
+| `backend/meridian/application/evaluation_liens.py` | précision, rappel, f1, fausses certitudes, questions, externes, contradictions |
+| `backend/meridian/application/boucle_investigation.py` | boucle d'enquête bornée, planificateur, outils, budget |
+| `backend/meridian/adapters/outbound/llm/planificateur_liens.py` | planificateur LLM borné et repli déterministe |
+| `backend/meridian/adapters/outbound/postgres/outils_investigation.py` | outils bindings, manifestes, code, CMDB, gateway, source vide |
+| `backend/meridian/adapters/outbound/postgres/sources_investigation.py` | registre CMDB minimal, preuves Git et lecture GitHub distante |
+| `backend/meridian/adapters/outbound/connectors/github.py` | `lire_fichier` au SHA, sans clone |
+| `backend/meridian/adapters/outbound/postgres/investigation_liens.py` | enquête d'un cas et mise à jour des candidats |
+| `frontend/src/components/map/details.jsx` | bouton « Enquêter » et résultat de la boucle |
+| `backend/meridian/adapters/outbound/connectors/corpus_liens.py` | chargement d'un corpus JSON et des racines locales |
+| `backend/meridian/adapters/outbound/postgres/decouverte_naissance.py` | `twin.born` local et réconciliation globale |
+| `backend/meridian/adapters/inbound/worker/reconciliation_worker.py` | boucle de réconciliation, arrêt propre |
 | `backend/meridian/adapters/outbound/connectors/java_source.py` | `extraire(fichier, texte)` réutilisable sans disque |
-| `scripts/decouvrir-liens-composants.py` | CLI multi-dépôts, JSON, sans base |
+| `scripts/decouvrir-liens-composants.py` | CLI multi-dépôts, niveaux de sources, JSON, sans base |
+| `scripts/evaluer-liens.py` | CLI d'évaluation d'un corpus, mode `--strict` |
+| `scripts/reconcilier-liens.py` | réconciliation globale d'un tenant, dry-run par défaut |
+| `scripts/worker-reconciliation.py` | worker périodique, dry-run ou `--apply` |
+| `scripts/meridian-reconciliation-worker.service` | unité systemd de réconciliation |
 | `backend/meridian/tests/test_moteur_liens.py` | jeu d'or de quatorze cas |
-| `backend/meridian/tests/test_decouverte_naissance.py` | quatre cas de découverte locale à la naissance |
+| `backend/meridian/tests/test_decouverte_naissance.py` | six cas : naissance locale et réconciliation globale |
+| `backend/meridian/tests/test_politique_decouverte.py` | sept cas de politique de sources |
+| `backend/meridian/tests/test_evaluation_liens.py` | trois cas de mesure |
+| `backend/meridian/tests/test_corpus_liens.py` | trois cas de corpus labellisé |
+| `backend/meridian/tests/test_boucle_investigation.py` | sept cas de boucle bornée |
+| `backend/meridian/tests/test_planificateur_liens.py` | six cas de planificateur LLM |
+| `backend/meridian/tests/test_outils_investigation.py` | dix cas d'outils read-only |
+| `backend/meridian/tests/test_investigation_liens.py` | sept cas d'enquête, CMDB, APM et code au SHA |
+| `backend/meridian/tests/test_reconciliation_worker.py` | cinq cas de worker |
 
 Le CLI s'utilise sans base ni serveur :
 
@@ -195,7 +218,21 @@ Le fixture vérifie :
 11. WSDL + configuration WSDL : lien SOAP ;
 12. conversion d'un lien en `PropositionRelation` et d'une question en `ResolutionCase` ;
 13. pont depuis les manifestes et bindings existants ;
-14. découverte locale `twin.born`, idempotente et bornée au Twin naissant.
+14. découverte locale `twin.born`, idempotente et bornée au Twin naissant ;
+15. politique de sources : niveau 0 par défaut, niveaux 1/2 opt-in, niveau 3 approuvé ;
+16. mesure du rapport : précision, rappel, f1, fausses certitudes et couverture des preuves ;
+17. corpus labellisé : lien Mesh, lien interne, dépendance externe, politique de sources ;
+18. réconciliation globale dry-run puis apply, idempotente et bornée par tenant ;
+19. boucle d'enquête bornée : outils injectés, budget, arrêt, candidats validés ;
+20. worker de réconciliation : passes, arrêt propre, tolérance aux erreurs ;
+21. enquête sur un cas réel : bindings et manifestes, route HTTP, aucun lien créé ;
+22. planificateur LLM : liste blanche, arrêt, repli déterministe ;
+23. outils read-only : code, CMDB, gateway, bindings, manifestes ;
+24. sources réelles : registre des Twins comme CMDB, copie Git locale sous racine autorisée ;
+25. code au SHA : réutilisation de `source_git` sur les preuves indexées, sans relire tout le dépôt ;
+26. ServiceNow/Datadog : réutilisation opt-in des lecteurs existants, sans Twin inventé ;
+27. portail API et runtime : outils `OutilPortail` et `OutilRuntime` prêts pour les exports existants ;
+28. code distant : `github.lire_fichier` lit un fichier au SHA, sans clone, avec bornes et refus des traversées.
 
 ---
 

@@ -1,4 +1,5 @@
 """API GitHub de l'atelier (sans réseau : l'ouverture d'URL est simulée)."""
+import base64
 import io
 import json
 import urllib.error
@@ -116,3 +117,29 @@ def test_compte_avec_son_avatar(forge):
     reponses["/user"] = {"login": "mtl-ci", "name": "Intégration continue", "avatar_url": "https://avatars/x.png"}
     assert github.compte_du_jeton("ghp_x") == {"login": "mtl-ci", "nom": "Intégration continue",
                                                 "avatar": "https://avatars/x.png"}
+
+
+def test_lire_un_fichier_github_au_ref_demande(forge):
+    reponses, envoyees = forge
+    contenu = base64.b64encode(b'class App { String url = "${comptes.base-url}"; }').decode()
+    reponses["/repos/banque/paie/contents/src/App.java"] = {
+        "type": "file", "encoding": "base64", "content": contenu,
+    }
+
+    texte = github.lire_fichier("vault:r", "banque/paie", "src/App.java", ref="abc123")
+
+    assert "${comptes.base-url}" in texte
+    assert "ref=abc123" in envoyees[0].full_url
+
+
+def test_lire_un_fichier_refuse_la_traversee_et_le_binaire(forge):
+    reponses, _ = forge
+    for chemin in ("../secret", "/etc/passwd", "src/../secret"):
+        with pytest.raises(github.Invalide):
+            github.lire_fichier("vault:r", "banque/paie", chemin)
+    reponses["/repos/banque/paie/contents/src/x.bin"] = {
+        "type": "file", "encoding": "base64",
+        "content": base64.b64encode(b"\x00\xff").decode(),
+    }
+    with pytest.raises(github.Invalide, match="non textuel"):
+        github.lire_fichier("vault:r", "banque/paie", "src/x.bin")

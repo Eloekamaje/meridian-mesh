@@ -334,6 +334,7 @@ export function RelationsCognitives({ twinId, tenant }) {
   const [version, setVersion] = useState(0);
   const [enCours, setEnCours] = useState("");
   const [erreur, setErreur] = useState("");
+  const [enquetes, setEnquetes] = useState({});
   useEffect(() => {
     if (!tenant || !twinId) {
       setManifeste(null);
@@ -363,6 +364,28 @@ export function RelationsCognitives({ twinId, tenant }) {
       setVersion((v) => v + 1);
     } catch (e) {
       setErreur(e?.response?.data?.detail || "Action impossible.");
+    } finally {
+      setEnCours("");
+    }
+  };
+
+  const enqueter = async (resolution) => {
+    const cle = `enqueter-${resolution.id}`;
+    setEnCours(cle);
+    setErreur("");
+    try {
+      const reponse = await api.post(
+        `/boucle/resolutions/${encodeURIComponent(resolution.id)}/enqueter`,
+        {},
+        { headers: { "X-Tenant": tenant } }
+      );
+      setEnquetes((courant) => ({
+        ...courant,
+        [resolution.id]: reponse?.data?.investigation || null,
+      }));
+      setVersion((v) => v + 1);
+    } catch (e) {
+      setErreur(e?.response?.data?.detail || "Enquête impossible.");
     } finally {
       setEnCours("");
     }
@@ -433,7 +456,24 @@ export function RelationsCognitives({ twinId, tenant }) {
                     >
                       {enCours === `investiguer-${resolution.id}` ? "Investigation…" : "Investiguer"}
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => enqueter(resolution)}
+                      disabled={!!enCours}
+                      data-testid={`enqueter-${resolution.id}`}
+                      className="rounded border border-[#22D3EE]/40 px-1.5 py-0.5 font-code text-[9px] text-[#67E8F9] hover:bg-[#22D3EE]/10 disabled:opacity-50"
+                    >
+                      {enCours === `enqueter-${resolution.id}` ? "Enquête…" : "Enquêter"}
+                    </button>
                   </div>
+                  {enquetes[resolution.id] && (
+                    <p className="mt-1 font-code text-[9px] text-[#67E8F9]" data-testid={`enquete-${resolution.id}`}>
+                      Enquête bornée : {enquetes[resolution.id].arret || "arrêt"}
+                      {" · "}
+                      {Array.isArray(enquetes[resolution.id].candidats) ? enquetes[resolution.id].candidats.length : 0} candidat(s)
+                      {enquetes[resolution.id].budget_atteint ? " · budget atteint" : ""}
+                    </p>
+                  )}
                   {Array.isArray(resolution.candidates) && resolution.candidates.length > 0 && (
                     <ul className="mt-1.5 space-y-1.5">
                       {resolution.candidates.map((candidat) => (
@@ -472,7 +512,7 @@ export function RelationsCognitives({ twinId, tenant }) {
                 </li>
               ))}
             </ul>
-            <p className="mt-1 font-code text-[9px] text-[#5B7089]">L'investigateur propose ; le propriétaire tranche.</p>
+            <p className="mt-1 font-code text-[9px] text-[#5B7089]">L'investigateur propose, l'enquête bornée outille ; le propriétaire tranche.</p>
           </div>
         )}
         {erreur && <p className="text-[10px] text-[#F87171]" data-testid="twin-relations-erreur">{erreur}</p>}

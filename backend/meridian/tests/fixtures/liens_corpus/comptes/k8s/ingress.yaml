@@ -1,0 +1,16 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: comptes
+spec:
+  rules:
+    - host: gateway.internal
+      http:
+        paths:
+          - path: /accounts
+            pathType: Prefix
+            backend:
+              service:
+                name: comptes-api
+                port:
+                  number: 8080

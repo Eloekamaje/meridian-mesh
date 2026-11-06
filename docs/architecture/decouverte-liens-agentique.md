@@ -582,6 +582,7 @@ T+7 j     revalidation
 | **D-003** | `AUTO_START` pour **P0 uniquement** au départ ; P1 après **50 cas revus** et **précision ≥ 90 %** ; `AUTO_CONFIRM` interdit. | L'agent peut démarrer seul sur le critique ; la confirmation reste humaine ; auto-revert si la précision chute. |
 | **D-004** | Cross-tenant **interdit par défaut** ; relation `PARTNER` possible avec **double consentement**. | Pas de fuite d'existence ni de preuve brute ; relation partagée, preuves locales. |
 | **D-005** | P3 revu par **échantillonnage architecture/ops**, sans confirmation automatique. | La revue passe à l'échelle sans réintroduire de fausse certitude. |
+| **D-006** | Sources par défaut : **niveau 0** (code, config, contrats, Helm). Niveaux 1 et 2 en opt-in. Niveau 3 sur approbation nommée. | Le CLI et le manifeste peuvent porter une politique explicite ; aucune source inconnue n'est autorisée. |
 
 ### Backlog de brainstorm
 
@@ -703,8 +704,30 @@ T+7 j     revalidation
 - Revue `revoir_lien`.
 - Conversion en `PropositionRelation` et `ResolutionCase`.
 - Pont depuis les manifestes et bindings.
-- CLI multi-dépôts.
-- 18 tests dédiés.
+- Politique de sources `PolitiqueSources` (niveaux 0 à 3, approbation niveau 3).
+- CLI multi-dépôts avec `--niveau-sources`, `--source` et `--approuve-par`.
+- Harnais d'évaluation `evaluer_liens` : précision, rappel, f1, fausses certitudes,
+  couverture des preuves, questions, externes, contradictions.
+- Corpus labellisé `tests/fixtures/liens_corpus/corpus.json` : liens Mesh, interne,
+  externe, politique de sources.
+- CLI `scripts/evaluer-liens.py` avec mode `--strict`.
+- Boucle d'enquête bornée `boucle_investigation.py` : planificateur, outils injectés,
+  budget, arrêt, candidats validés.
+- Outils persistés `OutilBindings`, `OutilManifestes`, `OutilCode`, `OutilCMDB`,
+  `OutilGateway`, `OutilVide`.
+- Planificateur LLM borné `planificateur_liens.py`, avec repli déterministe.
+- Registre des Twins chargé comme CMDB minimale.
+- Lecture des preuves de code au SHA via `source_git` ou `github.lire_fichier` ;
+  copie Git locale en secours, sous `JUMEAU_ENQUETE_CODE=1` et racine autorisée.
+- Service `enqueter_case`, route `POST /boucle/resolutions/{id}/enqueter`.
+- Bouton « Enquêter » dans le volet du Twin, avec raison d'arrêt et nombre de candidats.
+- Raccordement opt-in des lecteurs existants ServiceNow (`OutilServiceNow`) et Datadog
+  (`OutilAPM`), avec repli sur le registre si aucune correspondance.
+- `OutilRuntime` réutilise les assertions `observed` de `connecteurs_runtime`.
+- `OutilPortail` lit owner/implémentation d'un extrait de portail API.
+- Worker de réconciliation `reconciliation_worker.py` et script `worker-reconciliation.py`.
+- Unité systemd `scripts/meridian-reconciliation-worker.service`.
+- 68 tests dédiés.
 
 ### `twin.born` — première intégration
 
@@ -716,24 +739,65 @@ T+7 j     revalidation
 - Le handler est idempotent par les identifiants de proposition et de cas.
 - Aucun agent n'est appelé dans ce handler.
 
+### Réconciliation globale
+
+- `reconcilier(conn, tenant, appliquer, limite)` réutilise le même moteur sur tous les
+  manifestes et bindings du tenant.
+- Dry-run par défaut via `scripts/reconcilier-liens.py`.
+- Les propositions et cas restent idempotents.
+- Aucun lien n'est confirmé, aucun agent n'est appelé.
+- Worker `scripts/worker-reconciliation.py` : une passe ou boucle à intervalle,
+  SIGTERM/SIGINT, dry-run ou `--apply`.
+
+### Boucle d'enquête bornée
+
+- `boucle_investigation.py` : planificateur injecté, outils read-only injectés,
+  budget `max_etapes` / `max_outils` / `max_candidats`.
+- `PlanificateurRegles` : repli déterministe selon la preuve manquante.
+- Un outil inconnu, réutilisé ou en panne arrête la boucle avec une raison explicite.
+- Les candidats passent par `CandidatResolution` ; un candidat invalide est ignoré et tracé.
+- Aucune écriture, aucune confirmation, aucun appel réseau.
+
+### Enquête sur un cas
+
+- `enqueter_case(conn, tenant, case_id)` charge le cas, les bindings et les manifestes.
+- `POST /boucle/resolutions/{id}/enqueter` expose la boucle.
+- Les outils résolvent une propriété par la chaîne de bindings, cherchent une exposition
+  dans les manifestes, lisent un instantané de code, une CMDB ou des routes de gateway.
+- Le cas est mis à jour avec les candidats ; aucune `PropositionRelation` n'est créée.
+- `JUMEAU_ENQUETE_PLANIFICATEUR=llm` active `PlanificateurLLM` ; sans modèle ou en cas
+  d'échec, `PlanificateurRegles` prend le relais.
+- Le registre des Twins (`jumeau`) alimente `OutilCMDB`.
+- `JUMEAU_ENQUETE_CODE=1` active la lecture des preuves de code au SHA via `source_git` ;
+  `JUMEAU_ENQUETE_CODE_ROOT` borne les copies locales de secours.
+- Les lecteurs ServiceNow et Datadog existent déjà ; ils sont branchés en opt-in :
+  `JUMEAU_ENQUETE_CMDB=servicenow` et `JUMEAU_ENQUETE_APM=datadog`.
+- `OutilServiceNow` propose un CI seulement s'il se rattache au registre ; sinon le CI
+  reste une preuve. `OutilAPM` fait de même pour les dépendances observées.
+- Le volet du Twin expose un bouton « Enquêter » et la raison d'arrêt.
+
 ### Non implémenté
 
 - API HTTP et UI de revue.
 - Store dédié des liens (les propositions et cas utilisent les objets d'entreprise existants).
-- Réconciliation globale périodique/événementielle.
-- Boucle agentique multi-étapes avec outils.
-- CMDB, portail API, APM, gateway.
+- Connecteurs live portail API et gateway externe ; les outils `OutilPortail` et
+  `OutilRuntime` sont prêts, les sources restent à importer.
+- Lecture du code depuis un dépôt distant ; seules les preuves au SHA et la copie locale
+  sont branchées.
+- Test live du planificateur LLM (les tests utilisent un décideur injecté).
+- Déploiement supervisé du worker (systemd/Kubernetes) et verrou multi-instance.
 - Namespace/cluster, réécritures de gateway.
 - JAX-RS, .NET, Python, Go.
 - JNDI/WebSphere bindings.
-- Rafraîchissement incrémental et métriques de précision/rappel.
+- Corpus de production labellisé, shadow mode et rappel de production.
+- Rafraîchissement incrémental.
 
 ### Prochain lot recommandé
 
-1. Jeu d'or réel + métriques.
-2. Réconciliation globale périodique/événementielle.
-3. Revue UI + API.
-4. Agent assisté sur 10 cas, avec outils read-only.
+1. Corpus de production labellisé + shadow mode.
+2. Revue UI + API.
+3. Branchement de la boucle agentique sur un modèle réel et 3 outils read-only.
+4. Déploiement supervisé du worker (systemd/Kubernetes).
 5. Mesure du lift, puis `AUTO_START` P0, puis P1 après seuils.
 
 ---
@@ -749,6 +813,7 @@ T+7 j     revalidation
 | Auto-start | P0 d'abord ; P1 après 50 cas revus et précision ≥ 90 % ; jamais d'auto-confirm | **retenu — D-003** |
 | Cross-tenant | interdit par défaut ; `PARTNER` avec double consentement | **retenu — D-004** |
 | Revue P3 | échantillonnage architecture/ops, sans confirmation automatique | **retenu — D-005** |
+| Sources par défaut | niveau 0 ; niveaux 1/2 en opt-in ; niveau 3 sur approbation nommée | **retenu — D-006** |
 | Portée inconnue | visible, non éligible | acquis |
 | Confirmation | humaine uniquement | acquis |
 | Contradiction | conservée | acquis |
@@ -763,7 +828,6 @@ T+7 j     revalidation
 | Revue P1 | 1 jour | proposé |
 | Revue P2 | 3 jours | proposé |
 | Revalidation | sur changement + périodique | proposé |
-| Sources par défaut | code/config/Helm/contrats ; gateway/traces/CMDB en opt-in | proposé |
 | Fournisseur externe | dépendance `externe` ou `SUPPLIER` déclaré | proposé |
 | Rétention des preuves | décisions 7 ans, liens 13 mois, traces 30–90 j, secrets jamais | proposé |
 | Modèle indisponible | déterministe seul + file + modèle de secours approuvé | proposé |

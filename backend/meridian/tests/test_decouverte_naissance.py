@@ -123,3 +123,43 @@ def test_un_producteur_introuvable_ouvre_un_cas(conn):
     assert len(cas) == 1
     assert cas[0]["reference"] == "GET /reports/42"
     assert "aucun producteur" in cas[0]["missing_evidence"]
+
+
+def test_reconciliation_globale_dry_run_puis_apply(conn):
+    a = _manifeste("app-a", consomme=[("${comptes.base-url}", "GET /accounts/{id}")])
+    b = _manifeste("app-b", exposes=["GET /accounts/{id}"])
+    c = _manifeste("app-c", consomme=[("GET /other", "GET /other")])
+    d = _manifeste("app-d", exposes=["GET /other"])
+    for manifeste in (a, b, c, d):
+        depot_relations.enregistrer_manifeste(conn, manifeste)
+    for binding in _bindings():
+        depot_liens.enregistrer_binding(conn, "banque", binding)
+
+    dry = decouverte_naissance.reconcilier(conn, "banque", appliquer=False)
+    assert dry["dry_run"] is True
+    assert dry["twins"] == 4
+    assert dry["propositions"] == 2
+    assert depot_relations.lister_propositions(conn, "banque") == []
+
+    applied = decouverte_naissance.reconcilier(conn, "banque", appliquer=True)
+    assert applied["propositions"] == 2
+    propositions = depot_relations.lister_propositions(conn, "banque")
+    assert len(propositions) == 2
+    assert {p["consumer_id"] for p in propositions} == {"app-a", "app-c"}
+
+    again = decouverte_naissance.reconcilier(conn, "banque", appliquer=True)
+    assert again["propositions"] == 2
+    assert len(depot_relations.lister_propositions(conn, "banque")) == 2
+
+
+def test_reconciliation_globale_bornee_par_limite(conn):
+    a = _manifeste("app-a", consomme=[("${comptes.base-url}", "GET /accounts/{id}")])
+    b = _manifeste("app-b", exposes=["GET /accounts/{id}"])
+    depot_relations.enregistrer_manifeste(conn, a)
+    depot_relations.enregistrer_manifeste(conn, b)
+    for binding in _bindings():
+        depot_liens.enregistrer_binding(conn, "banque", binding)
+
+    rapport = decouverte_naissance.reconcilier(conn, "banque", appliquer=False, limite=1)
+
+    assert rapport["twins"] == 1

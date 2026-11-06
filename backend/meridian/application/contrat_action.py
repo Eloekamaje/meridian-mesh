@@ -24,10 +24,11 @@ _RE_OBJET_ACTION = re.compile(
     re.IGNORECASE,
 )
 _RE_CONFIRMATION = re.compile(
-    r"(confirmer|confirmation|voulez[- ]vous|souhaitez[- ]vous|"
+    r"(confirmez[- ]vous|voulez[- ]vous|souhaitez[- ]vous|"
     r"je peux (?:lancer|preparer|préparer|ouvrir)|"
     r"avant de (?:lancer|demarrer|démarrer|executer|exécuter)|"
-    r"en attente de (?:votre )?(?:accord|confirmation))",
+    r"en attente de (?:votre )?(?:accord|confirmation)|"
+    r"confirmation requise|merci de confirmer)",
     re.IGNORECASE,
 )
 _RE_EXECUTION = re.compile(
@@ -37,6 +38,12 @@ _RE_EXECUTION = re.compile(
     re.IGNORECASE,
 )
 _RE_NEGATION = re.compile(r"(pas|jamais|aucune|sans|n'ai pas|non)\s*$", re.IGNORECASE)
+_RE_ARTEFACT = re.compile(
+    r"(j'ai (?:ajout[eé]|d[eé]pos[eé]|cr[eé][eé]) "
+    r"(?:au travail )?(?:le |un )?(?:rapport|livrable)|"
+    r"(?:rapport|livrable) (?:ajout[eé]|d[eé]pos[eé]|cr[eé][eé]))",
+    re.IGNORECASE,
+)
 
 APPLIQUER = "contrat_action"
 
@@ -59,6 +66,19 @@ def _affirme_execution(texte: str) -> bool:
     return False
 
 
+def _a_artefact(reponse: Mapping[str, Any]) -> bool:
+    return bool(reponse.get("documentCanvas") or reponse.get("documentTexte")
+                or reponse.get("livrable_id") or reponse.get("livrables"))
+
+
+def _affirme_artefact(texte: str) -> bool:
+    for trouve in _RE_ARTEFACT.finditer(texte):
+        avant = texte[max(0, trouve.start() - 40):trouve.start()]
+        if not _RE_NEGATION.search(avant):
+            return True
+    return False
+
+
 def appliquer(question: str, reponse: Mapping[str, Any] | None) -> dict:
     """Ajoute une confirmation si l'action est demandée mais non confirmée.
 
@@ -67,24 +87,40 @@ def appliquer(question: str, reponse: Mapping[str, Any] | None) -> dict:
     réécrit.
     """
     resultat = dict(reponse or {})
-    if resultat.get(APPLIQUER) or not est_demande_action(question):
+    if resultat.get(APPLIQUER):
         return resultat
     texte = str(resultat.get("reponse") or "").strip()
     if not texte:
         return resultat
+    action = est_demande_action(question)
+    artefact = _affirme_artefact(texte) and not _a_artefact(resultat)
+    if not action and not artefact:
+        return resultat
     execution = _affirme_execution(texte)
     confirmation = _a_confirmation(texte)
-    if not execution and confirmation:
-        resultat[APPLIQUER] = "conforme"
-        return resultat
-    if execution:
-        texte += ("\n\n**Correction** : je n'ai pas exécuté cette action. "
-                  "Aucune investigation, analyse ou écriture n'a été lancée.")
-    if not confirmation:
+    if artefact:
+        texte += ("\n\n**Correction** : aucun rapport n'a été déposé dans le Travail. "
+                  "Je peux le préparer ; confirmez-vous que je dois le créer ?")
+        resultat["action_en_attente"] = "rapport"
+        resultat[APPLIQUER] = "artefact_corrige"
+    elif execution:
+        texte = ("**Je n'ai pas exécuté cette action.** Aucune investigation, analyse "
+                 "ou écriture n'a été lancée.\n\n" + texte)
+        if not confirmation:
+            texte += ("\n\n**Confirmation requise** : voulez-vous que je prépare cette "
+                      "investigation ? Je ne la lancerai qu'après votre accord.")
+        resultat["action_en_attente"] = "investigation"
+        resultat[APPLIQUER] = "corrige"
+    elif not confirmation:
+        texte = ("**Je n'ai pas lancé l'investigation.** Voici les éléments préparatoires ; "
+                 "confirmez avant toute action.\n\n" + texte)
         texte += ("\n\n**Confirmation requise** : voulez-vous que je prépare cette "
                   "investigation ? Je ne la lancerai qu'après votre accord.")
+        resultat["action_en_attente"] = "investigation"
+        resultat[APPLIQUER] = "confirmation_ajoutee"
+    else:
+        resultat[APPLIQUER] = "conforme"
+        return resultat
     resultat["reponse"] = texte.strip()
     resultat["comportement"] = "proposer"
-    resultat["action_en_attente"] = "investigation"
-    resultat[APPLIQUER] = "corrige" if execution else "confirmation_ajoutee"
     return resultat

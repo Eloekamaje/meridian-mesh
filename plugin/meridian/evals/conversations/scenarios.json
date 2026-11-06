@@ -251,7 +251,18 @@
                 "aucune de ces",
                 "ni service",
                 "ni capacité",
-                "ne restitue"
+                "ne restitue",
+                "il est impossible",
+                "impossible de",
+                "absence",
+                "absent",
+                "ne contient rien",
+                "ne contient aucune",
+                "aucun compteur",
+                "ne permet pas de mesurer",
+                "ne peut pas être mesuré",
+                "pas de trace",
+                "non mesuré"
               ]
             ],
             "must_not_include": [

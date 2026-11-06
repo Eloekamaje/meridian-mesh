@@ -9,7 +9,7 @@ def test_une_action_demandee_sans_confirmation_est_transformee_en_proposition():
     )
     assert reponse["comportement"] == "proposer"
     assert reponse["action_en_attente"] == "investigation"
-    assert "je n'ai pas exécuté" in reponse["reponse"]
+    assert "n'ai pas exécuté" in reponse["reponse"]
     assert "Confirmation requise" in reponse["reponse"]
     assert reponse[contrat_action.APPLIQUER] == "corrige"
 
@@ -28,6 +28,27 @@ def test_une_question_ordinaire_n_est_pas_modifiee():
     texte = "Conduit publie des articles."
     reponse = contrat_action.appliquer("Que fait Conduit ?", {"reponse": texte})
     assert reponse == {"reponse": texte}
+
+
+def test_un_rapport_annonce_sans_artefact_est_corrige():
+    reponse = contrat_action.appliquer(
+        "Fais-moi un rapport détaillé sur Conduit.",
+        {"reponse": "Voici le rapport. J'ai ajouté le rapport au Travail."},
+    )
+    assert reponse["action_en_attente"] == "rapport"
+    assert "aucun rapport n'a été déposé" in reponse["reponse"]
+    assert reponse["comportement"] == "proposer"
+    assert reponse[contrat_action.APPLIQUER] == "artefact_corrige"
+
+
+def test_un_rapport_avec_artefact_n_est_pas_corrige():
+    texte = "Voici le rapport. J'ai ajouté le rapport au Travail."
+    reponse = contrat_action.appliquer(
+        "Fais-moi un rapport détaillé sur Conduit.",
+        {"reponse": texte, "documentCanvas": "Rapport Conduit"},
+    )
+    assert reponse["reponse"] == texte
+    assert contrat_action.APPLIQUER not in reponse
 
 
 def test_une_negation_d_execution_ne_declenche_pas_la_correction():

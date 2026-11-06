@@ -40,7 +40,6 @@ from meridian.adapters.outbound.postgres import calibration_croyances as calibra
 from meridian.adapters.outbound.postgres import dossiers_raisonnement
 from meridian.application import calibration_croyances as calibration_croyances_app
 from meridian.domain import epistemie as epistemie_domaine
-from meridian.adapters.outbound.postgres import dossiers_raisonnement
 from meridian.adapters.outbound.postgres import entreprise_depot
 from meridian.application import evaluation_outils
 from meridian.application import evaluation_profils
@@ -53,6 +52,7 @@ from meridian.adapters.outbound.postgres import retention
 from meridian.application import resolveur_contexte
 from meridian.adapters.outbound.postgres import relations_naissance as relations_naissance_pg
 from meridian.adapters.outbound.postgres import decouverte_liens as decouverte_liens_pg
+from meridian.adapters.outbound.postgres import investigation_liens as investigation_liens_pg
 from meridian.adapters.outbound.postgres import session_memoire
 from meridian.adapters.outbound.llm import investigateur_liens
 from meridian.adapters.outbound.postgres import rls
@@ -519,6 +519,22 @@ async def investiguer_resolution(
     await _avec_connexion(
         tenant, lambda conn: decouverte_liens_pg.enregistrer_resolution_case(conn, case))
     return {"tenant": tenant, "resolution": case.as_dict()}
+
+
+@router.post("/resolutions/{case_id}/enqueter")
+async def enqueter_resolution(
+    case_id: str,
+    request: Request,
+    acteur: str = Depends(auth_identite.acteur),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    boucle_routes._verifier_espace(x_espace)
+    tenant = boucle_routes._tenant(request, x_tenant)
+    resultat = await _avec_connexion(
+        tenant, lambda conn: investigation_liens_pg.enqueter_case(
+            conn, tenant, case_id))
+    return {"tenant": tenant, **resultat}
 
 
 @router.post("/resolutions/{case_id}/revue")

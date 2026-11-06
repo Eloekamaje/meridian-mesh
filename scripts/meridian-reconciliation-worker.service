@@ -1,0 +1,30 @@
+[Unit]
+Description=Meridian - worker de réconciliation des liens
+Documentation=file:///opt/meridian/docs/architecture/decouverte-liens-agentique.md
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Adapter ces chemins et cet utilisateur à l'installation réelle (ne pas exécuter en root).
+# User=meridian
+# Group=meridian
+WorkingDirectory=/opt/meridian
+EnvironmentFile=/opt/meridian/backend/.env
+Environment=JUMEAU_WORKSPACE=/var/lib/meridian
+Environment=HOME=/var/lib/meridian
+Environment=JUMEAU_ENQUETE_PLANIFICATEUR=regles
+StateDirectory=meridian
+ExecStart=/opt/meridian/backend/.venv/bin/python /opt/meridian/scripts/worker-reconciliation.py --apply --intervalle 3600
+Restart=always
+RestartSec=10
+TimeoutStopSec=30
+# Le worker n'écoute aucun port ; il lit Postgres et écrit des propositions et des cas.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/var/lib/meridian
+
+[Install]
+WantedBy=multi-user.target

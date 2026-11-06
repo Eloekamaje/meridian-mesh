@@ -121,7 +121,10 @@ ABSTENTIONS = (
     "aucune instrumentation", "aucun comptage", "ne peut exister", "pas de mesure",
     "aucune mesure", "pas mesure", "aucune source de mesure", "aucune telemetrie",
     "aucun service de mesure", "ne peut pas produire", "aucun decompte",
-    "aucune analytique", "aucune mesure d usage",
+    "aucune analytique", "aucune mesure d usage", "il est impossible",
+    "impossible de", "absence", "absent", "ne contient rien",
+    "ne contient aucune", "aucun compteur", "ne permet pas de mesurer",
+    "ne peut pas etre mesure", "pas de trace", "non mesure",
 )
 CLARIFICATIONS = (
     "de quel", "quelle application", "quel application", "voulez vous dire",

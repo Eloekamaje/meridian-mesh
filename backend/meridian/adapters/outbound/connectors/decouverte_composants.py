@@ -16,6 +16,7 @@ import json
 import re
 from collections.abc import Iterable, Mapping
 from dataclasses import replace
+from pathlib import Path
 from urllib.parse import parse_qsl, urlsplit
 
 from meridian.adapters.outbound.connectors import java_source
@@ -76,6 +77,87 @@ _EXT_YAML = frozenset({".yaml", ".yml"})
 _KINDS_DEPLOIEMENT = frozenset({"Deployment", "StatefulSet", "DaemonSet", "Job", "CronJob", "Rollout"})
 _KINDS_CHARGE = frozenset({"Deployment", "StatefulSet", "DaemonSet", "Job", "CronJob", "Rollout",
                            "Service", "Ingress", "ConfigMap"})
+_DOSSIERS_IGNORES = frozenset({
+    ".git", ".hg", ".svn", "node_modules", "vendor", "target", "build", "dist",
+    ".venv", "venv", "__pycache__", ".cache", ".idea", ".mypy_cache", ".pytest_cache",
+})
+_EXTENSIONS_LUES = frozenset({
+    ".java", ".js", ".jsx", ".ts", ".tsx", ".yaml", ".yml", ".json", ".xml",
+    ".wsdl", ".graphql", ".gql", ".proto", ".properties", ".env", ".conf", ".config",
+})
+_RE_OPENAPI_TEXTE = re.compile(r'(?im)^\s*["\']?(openapi|swagger|asyncapi)["\']?\s*:')
+_RE_KIND_K8S = re.compile(
+    r"(?m)^\s*kind\s*:\s*(Deployment|StatefulSet|DaemonSet|Job|CronJob|Rollout|"
+    r"Service|Ingress|ConfigMap)\b")
+
+
+def source_fichier(chemin, texte: str) -> str:
+    """Classe un fichier dans un niveau de source, sans lire de valeur sensible."""
+    chemin = Path(chemin)
+    nom = chemin.name.lower()
+    suffixe = chemin.suffix.lower()
+    if suffixe in {".java", ".js", ".jsx", ".ts", ".tsx"}:
+        return "code"
+    if suffixe in {".properties", ".conf", ".config"} or nom.startswith(".env"):
+        return "config"
+    if suffixe in {".wsdl", ".xml", ".graphql", ".gql", ".proto"}:
+        return "contrats"
+    if suffixe in {".yaml", ".yml"}:
+        if nom in {"values.yaml", "values.yml", "chart.yaml"}:
+            return "helm"
+        if _RE_OPENAPI_TEXTE.search(texte):
+            return "contrats"
+        if _RE_KIND_K8S.search(texte):
+            return "kubernetes"
+        return "config"
+    if suffixe == ".json":
+        if "trace" in nom or (texte.lstrip().startswith("[") and '"url"' in texte):
+            return "traces"
+        if re.search(r'"\s*(openapi|swagger|asyncapi)\s*"', texte):
+            return "contrats"
+        return "autre"
+    return "autre"
+
+
+def lire_fichiers(racine, *, sources_autorisees=None, max_fichiers: int = 800,
+                  max_octets: int = 2_000_000) -> tuple[dict[str, str], list[str]]:
+    """Lit les fichiers utiles d'une racine, avec limites et politique de sources."""
+    base = Path(racine)
+    if not base.is_dir():
+        raise ValueError("racine introuvable ou n'est pas un dossier")
+    fichiers: dict[str, str] = {}
+    diagnostics: list[str] = []
+    for chemin in sorted(base.rglob("*")):
+        if len(fichiers) >= max_fichiers:
+            diagnostics.append(f"{base} : limite de {max_fichiers} fichiers atteinte")
+            break
+        if not chemin.is_file() or chemin.is_symlink():
+            continue
+        if any(partie in _DOSSIERS_IGNORES for partie in chemin.relative_to(base).parts):
+            continue
+        if chemin.suffix.lower() not in _EXTENSIONS_LUES:
+            continue
+        try:
+            if chemin.stat().st_size > max_octets:
+                diagnostics.append(f"{chemin.relative_to(base)} : fichier trop gros, ignoré")
+                continue
+            donnees = chemin.read_bytes()
+        except OSError as erreur:
+            diagnostics.append(
+                f"{chemin.relative_to(base)} : illisible ({type(erreur).__name__})")
+            continue
+        if b"\x00" in donnees[:4096]:
+            continue
+        try:
+            texte = donnees.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            diagnostics.append(
+                f"{chemin.relative_to(base)} : encodage non UTF-8, ignoré")
+            continue
+        if sources_autorisees is not None and source_fichier(chemin, texte) not in sources_autorisees:
+            continue
+        fichiers[chemin.relative_to(base).as_posix()] = texte
+    return fichiers, diagnostics
 
 
 def _est_secret(cle: str) -> bool:

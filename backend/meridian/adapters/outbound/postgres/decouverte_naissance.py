@@ -1,14 +1,13 @@
-"""Découverte locale à la naissance : `twin.born` → liens et cas.
+"""Découverte des liens à la naissance et réconciliation globale.
 
-La naissance déclenche une découverte **locale bornée** : le nouveau Twin ne paie pas
-la réconciliation globale. Le handler :
+Deux chemins, un même moteur :
 
-1. exécute d'abord le résolveur historique (matching exact et ressources) ;
-2. construit les entrées du moteur depuis les manifestes et bindings ;
-3. ne garde que les liens et questions où le Twin naissant est impliqué ;
-4. persiste les propositions éligibles et les cas non résolus.
+- `traiter_twin_born` : découverte **locale bornée** au `twin.born` ;
+- `reconcilier` : découverte **globale** du tenant, périodique ou événementielle.
 
-Aucun lien n'est confirmé. Aucun agent n'est appelé ici.
+Le handler de naissance exécute d'abord le résolveur historique (matching exact et
+ressources), puis le moteur de composants. Aucun lien n'est confirmé ; aucun agent
+n'est appelé ici.
 """
 from __future__ import annotations
 
@@ -18,7 +17,7 @@ from meridian.application import moteur_liens
 from meridian.domain.decouverte_liens import ResolutionCase
 from meridian.domain.naissance_relationnelle import ManifesteNaissance
 
-__all__ = ["traiter_twin_born"]
+__all__ = ["reconcilier", "traiter_twin_born"]
 
 
 def _manifeste(payload) -> ManifesteNaissance:
@@ -58,6 +57,55 @@ def _case_de_frontiere(lien, tenant_id: str, owners: dict[str, str],
     )
 
 
+def _persister(conn, tenant_id: str, rapport, owners: dict[str, str], *,
+               appliquer: bool = True, filtrer_twin: str = "") -> dict:
+    propositions: list[str] = []
+    cas: list[str] = []
+    non_eligibles: list[str] = []
+    for lien in rapport.liens:
+        if lien.nature != "mesh":
+            continue
+        if lien.eligible:
+            proposition = moteur_liens.vers_proposition(lien, tenant_id, owners=owners)
+            if appliquer:
+                relations_pg.enregistrer_proposition(conn, proposition)
+            propositions.append(proposition.id)
+            continue
+        if not lien.missing_evidence:
+            continue
+        if filtrer_twin:
+            responsable = (lien.consommateur_composant_id
+                           if lien.consommateur_composant_id == filtrer_twin
+                           else lien.fournisseur_composant_id)
+        else:
+            responsable = lien.consommateur_composant_id
+        case = _case_de_frontiere(lien, tenant_id, owners, responsable)
+        if appliquer:
+            decouverte_pg.enregistrer_resolution_case(conn, case)
+        cas.append(case.id)
+        non_eligibles.append(lien.id)
+
+    for question in rapport.questions:
+        if filtrer_twin and question.composant_id != filtrer_twin:
+            continue
+        twin_id = question.composant_id or filtrer_twin or "inconnu"
+        case = moteur_liens.vers_resolution_case(
+            question, tenant_id, twin_id,
+            owner=owners.get(question.application_id, ""))
+        if appliquer:
+            decouverte_pg.enregistrer_resolution_case(conn, case)
+        cas.append(case.id)
+
+    return {
+        "propositions": len(dict.fromkeys(propositions)),
+        "cas": len(dict.fromkeys(cas)),
+        "non_eligibles": list(dict.fromkeys(non_eligibles)),
+        "liens": len(rapport.liens),
+        "questions": len(rapport.questions),
+        "diagnostics": list(rapport.diagnostics),
+    }
+
+
 def traiter_twin_born(conn, payload) -> dict:
     """Consommateur idempotent de `twin.born` : découverte locale bornée."""
     manifeste = _manifeste(payload)
@@ -73,44 +121,39 @@ def traiter_twin_born(conn, payload) -> dict:
     rapport = moteur_liens.moteur_liens(
         moteur_liens.extractions_depuis_manifests(manifests, bindings))
     local = moteur_liens.filtrer_local(rapport, manifeste.twin_id)
-
-    propositions: list[str] = []
-    cas: list[str] = []
-    non_eligibles: list[str] = []
-    for lien in local.liens:
-        if lien.nature != "mesh":
-            continue
-        if lien.eligible:
-            proposition = moteur_liens.vers_proposition(lien, manifeste.tenant_id,
-                                                         owners=owners)
-            relations_pg.enregistrer_proposition(conn, proposition)
-            propositions.append(proposition.id)
-            continue
-        if lien.missing_evidence:
-            responsable = (lien.consommateur_composant_id
-                           if lien.consommateur_composant_id == manifeste.twin_id
-                           else lien.fournisseur_composant_id)
-            case = _case_de_frontiere(lien, manifeste.tenant_id, owners, responsable)
-            decouverte_pg.enregistrer_resolution_case(conn, case)
-            cas.append(case.id)
-            non_eligibles.append(lien.id)
-
-    for question in local.questions:
-        if question.composant_id != manifeste.twin_id:
-            continue
-        case = moteur_liens.vers_resolution_case(
-            question, manifeste.tenant_id, manifeste.twin_id,
-            owner=owners.get(question.application_id, manifeste.owner))
-        decouverte_pg.enregistrer_resolution_case(conn, case)
-        cas.append(case.id)
+    resultat = _persister(conn, manifeste.tenant_id, local, owners,
+                          appliquer=True, filtrer_twin=manifeste.twin_id)
 
     return {
-        "propositions": historique["propositions"] + len(dict.fromkeys(propositions)),
+        "propositions": historique["propositions"] + resultat["propositions"],
         "historique": historique["propositions"],
-        "decouverte": len(dict.fromkeys(propositions)),
-        "cas": len(dict.fromkeys(cas)),
-        "non_eligibles": list(dict.fromkeys(non_eligibles)),
-        "liens_locaux": len(local.liens),
-        "questions_locales": len(local.questions),
-        "diagnostics": list(local.diagnostics),
+        "decouverte": resultat["propositions"],
+        "cas": resultat["cas"],
+        "non_eligibles": resultat["non_eligibles"],
+        "liens_locaux": resultat["liens"],
+        "questions_locales": resultat["questions"],
+        "diagnostics": resultat["diagnostics"],
+    }
+
+
+def reconcilier(conn, tenant_id: str, *, appliquer: bool = True,
+                limite: int | None = None) -> dict:
+    """Réconcilie tous les Twins d'un tenant, sans broadcast ni confirmation."""
+    manifests = relations_pg.lire_manifestes(conn, tenant_id)
+    if limite is not None:
+        manifests = manifests[:max(1, int(limite))]
+    bindings = decouverte_pg.lire_bindings(conn, tenant_id)
+    owners = _proprietaires(manifests)
+    rapport = moteur_liens.moteur_liens(
+        moteur_liens.extractions_depuis_manifests(manifests, bindings))
+    resultat = _persister(conn, tenant_id, rapport, owners, appliquer=appliquer)
+    return {
+        "dry_run": not appliquer,
+        "twins": len(manifests),
+        "propositions": resultat["propositions"],
+        "cas": resultat["cas"],
+        "non_eligibles": resultat["non_eligibles"],
+        "liens": resultat["liens"],
+        "questions": resultat["questions"],
+        "diagnostics": resultat["diagnostics"],
     }
