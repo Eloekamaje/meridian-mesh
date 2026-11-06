@@ -8,7 +8,7 @@ SHA = "35fcbdd2ae9a"
 TEXTE = (f"Je protège mes routes avec `autorisations` git://meridian-mesh@{SHA}:backend/server.py#L102-L108 "
          f"et je lis MONGO_URL git://meridian-mesh@{SHA}:backend/server.py#L32-L32, "
          f"encore git://meridian-mesh@{SHA}:backend/server.py#L102-L108.")
-JUMEAU = {"id": "meridian", "nom": "Méridian", "equipe": "equipe-meridian"}
+JUMEAU = {"id": "meridian", "tenant_id": "banque", "nom": "Méridian", "equipe": "equipe-meridian"}
 SOURCE = {"nom": "meridian-mesh", "curseur": SHA + "0" * 28}
 
 
@@ -123,6 +123,16 @@ def test_fiche_affichable_liste_les_depots_avec_branche_et_commit():
     assert fiche["depots"][1] == {"nom": "front", "branche": "develop", "commit": "ffffffffffff"}
 
 
+def test_fiche_affichable_lie_les_claims_et_les_retire_du_texte():
+    contenu = "## Ce qu'elle permet de faire\n- Gérer les comptes [claim:12]\n"
+    r = flore.fiche_affichable(
+        {"sha": "x", "contenu": contenu, "claims": [12], "stale": True}, [SOURCE])
+    assert "[claim:12]" not in r["contenu"]
+    assert r["claims"] == [12]
+    assert r["stale"] is True
+    assert r["puces"] == [{"texte": "Gérer les comptes", "claim_ids": [12]}]
+
+
 def test_contexte_d_un_jumeau_sans_code_mobilisable(monkeypatch):
     import contextlib
     from meridian.adapters.outbound.postgres import connaissance
@@ -142,6 +152,10 @@ def test_contexte_d_un_jumeau_sans_code_mobilisable(monkeypatch):
     monkeypatch.setattr(gardien, "fiche_courante", lambda c, j: None)
     ctx, dsn = flore._contexte("meridian", "alice", None)
     assert ctx["sources"] == [] and ctx["lecteurs"] == [dd] and dsn == "dsn"
+    assert ctx["consommateur"].twin_id == "meridian"
+    assert ctx["consommateur"].team_id == "equipe-meridian"
+    assert ctx["consommateur"].tenant_id == "banque"
+    assert ctx["couverture"] == {} and ctx["fiche_stale"] is None
     monkeypatch.setattr(lecteurs, "lecteurs_de", lambda s: [])
     assert flore._contexte("meridian", "alice", None) == (None, None)  # ni code ni source : rien à mobiliser
 

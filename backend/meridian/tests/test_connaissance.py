@@ -5,7 +5,9 @@ import pytest
 
 from meridian.adapters.outbound.postgres import connaissance
 from meridian.adapters.outbound.postgres import depot
+from meridian.adapters.outbound.postgres import partage
 from meridian.adapters.outbound.connectors.source_git import sha_courant
+from meridian.domain.partage import Consommateur
 from meridian.tests.conftest import ACTIVITE, JUMEAU, SOURCE, besoin_pg, claim
 
 
@@ -66,6 +68,25 @@ def test_connaissances_filtrees_par_famille_et_recherche(conn):
     r = connaissance.connaissances(conn, "tbt", predicat="DEPEND_DE", recherche="mot")
     assert [c["objet"] for c in r] == ["motor"]
     assert r[0]["preuve"].startswith("git://tbt@sha1:requirements.txt#L3")
+
+
+@besoin_pg
+def test_connaissances_avec_consommateur_respecte_le_partage(conn):
+    depot.enregistrer(conn, JUMEAU, SOURCE, [claim("motor")], ACTIVITE)
+    cid = conn.execute(
+        "SELECT id FROM claim WHERE jumeau_id = 'tbt' AND objet = 'motor'").fetchone()[0]
+    autre = Consommateur("banque", team_id="autre")
+    assert connaissance.connaissances(conn, "tbt", consommateur=autre) == []
+    partage.accorder(conn, "banque", cid, "TEAM", "equipe-tbt", "SUMMARY", granted_by="alice")
+    equipe = Consommateur("banque", team_id="equipe-tbt")
+    lignes = connaissance.connaissances(conn, "tbt", consommateur=equipe)
+    assert [ligne["objet"] for ligne in lignes] == ["motor"]
+    assert lignes[0]["projection"] == "SUMMARY"
+    assert lignes[0]["preuve"] is None
+    owner = Consommateur("banque", twin_id="tbt")
+    lignes = connaissance.connaissances(conn, "tbt", consommateur=owner)
+    assert lignes[0]["projection"] == "EVIDENCE"
+    assert lignes[0]["preuve"].startswith("git://tbt@sha1")
 
 
 @besoin_pg

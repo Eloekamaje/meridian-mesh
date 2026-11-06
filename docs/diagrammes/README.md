@@ -1,14 +1,25 @@
 # Diagrammes Méridian
 
-Trois références autonomes pour les schémas de Méridian Mesh, et le contrat de style que le rendu React `SchemaSvg` doit reprendre.
+Quatre références autonomes pour les schémas de Méridian Mesh, et le contrat de style que le rendu React `SchemaSvg` doit reprendre.
 
 | Fichier | Type | Sujet |
 |---|---|---|
 | `architecture.html` | Architecture | Du Travail aux jumeaux, puis au socle de preuve |
 | `sequence.html` | Sequence | Une question dans le Travail, du brouillon à la réponse citée |
 | `dependency.html` | Dependency graph | Jumeaux, dépôts, registre, pièces et claims |
+| `raisonnement-contexte-jumeaux.html` | Architecture | Raisonnement, contexte, jumeaux, sources : branché et manquant |
 
-Les fichiers sont des SVG inline dans un HTML unique : aucun script, aucune image externe, aucune webfont, aucun appel réseau. Ils servent de référence éditoriale ; le rendu applicatif reste plus compact.
+Les fichiers sont des SVG inline dans un HTML unique : aucun script, aucune image externe, aucune webfont, aucun appel réseau. Ils servent de référence éditoriale ; le rendu applicatif du chat est un SVG design-diagram compilé, affiché dans un viewport zoomable.
+
+Le chat compile par défaut avec l'**auteur design-diagram** (qualité éditoriale) ; le compilateur
+déterministe reste le repli et le mode rapide explicite. Voir « Deux chemins, un seul contrat »
+ci-dessous.
+
+Le projet utilise le profil `meridian` via `.diagram-design`. Pour l’installer sur une autre machine :
+
+```bash
+scripts/install-diagram-profile.sh
+```
 
 ## Tokens
 
@@ -40,7 +51,7 @@ Elles sont réservées aux flèches qui portent un état de preuve, aux pastille
 | `conteste` | `#F2B84B` | Sources en désaccord, trait pointillé |
 | `inconnu` | `#7C93A8` | Pas encore vérifié, trait pointillé |
 
-Ces valeurs sont celles de `backend/jumeau/schemas.py` et de `SchemaSvg`. Une flèche sans fondement n'est pas dessinée ; elle n'existe donc pas dans le rendu.
+Ces valeurs sont celles de `backend/meridian/domain/schemas.py` et de `SchemaSvg`. Une flèche sans fondement n'est pas dessinée ; elle n'existe donc pas dans le rendu.
 
 ## Règles de composition
 
@@ -52,15 +63,51 @@ Ces valeurs sont celles de `backend/jumeau/schemas.py` et de `SchemaSvg`. Une fl
 - **Pas de webfont.** Piles locales uniquement : serif système pour le titre, sans système pour les noms, mono système pour les valeurs techniques, les étiquettes et les locators. Aucun `<link>` vers Google Fonts.
 - **Connecteurs orthogonaux.** Angles arrondis à `r=8`, ports distincts sur une arête partagée, aucun passage derrière un nœud qui n'est pas l'extrémité, pas de diagonales.
 - **Cycles maîtrisés.** Le calcul des rangs coupe les arêtes de retour d'un parcours DFS : un cycle ne doit pas écraser tout le schéma dans une colonne. L'arête de retour repart sous le schéma, dans un canal réservé, puis remonte dans le couloir de sa cible.
+- **Flux vertical.** Un flux de 6 étapes ou plus est posé de haut en bas, une rangée par étape, avec les branches exceptionnelles dans une colonne latérale. C'est la composition la plus lisible pour un processus linéaire.
+- **Une seule entrée.** Un flux a une entrée unique : chaque étape sauf la première reçoit une flèche entrante. Un flux à plusieurs entrées réelles se dessine comme une architecture.
 - **Étiquettes masquées.** Chaque étiquette de flèche a un rectangle opaque `paper` derrière elle, avec 6 à 10px entre le masque et le trait.
 - **Légende en bas.** Bandeau horizontal après les nœuds, séparé par une hairline ; jamais flottante dans la zone du schéma.
 - **Accessibilité.** `role="img"`, `<title>` en premier enfant du SVG, `<desc>` en une phrase, `aria-labelledby` vers des identifiants uniques. Le contenu doit rester compréhensible sans le visuel.
 
+## Deux chemins, un seul contrat
+
+Par défaut, le chat passe par l'**auteur design-diagram** : il produit un SVG éditorial validé,
+puis le met en cache disque par hash de schéma. Le compilateur déterministe de
+`backend/meridian/application/diagrammes.py` reste le repli immédiat et le mode rapide ; il pose
+les flux longs en colonne verticale.
+
+Le mode rapide est opt-in :
+
+```bash
+JUMEAU_DESIGN_DIAGRAM_MODE=fast
+```
+
+L'auteur est tenté avec un timeout (30 s par défaut, réglable) :
+
+```bash
+JUMEAU_DESIGN_DIAGRAM_TIMEOUT=30       # secondes
+JUMEAU_DESIGN_DIAGRAM_CACHE=/chemin    # défaut : ~/.cache/meridian/design-diagram
+```
+
+Une séquence reste toujours déterministe. Le cache disque évite de réécrire un diagramme
+identique après un redémarrage ; un cache illisible, invalide ou qui déborde du viewBox est
+ignoré et réécrit. Avant de retenir un SVG d'auteur, un contrôle géométrique refuse les nœuds
+hors viewBox, les chevauchements non contenus et les textes hors cadre. Un SVG refusé n'est pas
+publié : le compilateur déterministe prend le relais, avec un flux vertical pour les processus
+longs.
+
+Les zones ne sont dessinées que si elles sont disjointes et n'enferment aucun nœud étranger ;
+sinon elles sont omises pour ne pas masquer le schéma. Une étiquette trop large pour l'espace
+disponible passe sur deux lignes plutôt que d'être tronquée au premier mot utile.
+
+Tests dédiés : `backend/meridian/tests/test_diagram_layout.py`,
+`test_diagrammes.py` et `test_design_diagram.py`.
+
 ## Contrat du rendu React `SchemaSvg`
 
-Le rendu applicatif est **déterministe**. L'agent ne produit jamais de HTML ou de SVG à l'exécution.
+Le rendu applicatif par défaut passe par l'**auteur design-diagram** ; le compilateur déterministe reste le repli et le mode rapide. L'agent ne produit jamais directement de HTML ou de SVG : l'auteur le fait dans un cadre validé, puis le SVG est contrôlé avant exposition.
 
-1. **Source de vérité : la structure vérifiée.** `Dessin.dessiner` (`backend/jumeau/schemas.py`) valide chaque flèche contre une ligne de code, un claim ou une relation, puis persiste :
+1. **Source de vérité : la structure vérifiée.** `Dessin.dessiner` (`backend/meridian/domain/schemas.py`) valide chaque flèche contre une ligne de code, un claim ou une relation, puis persiste :
    - `type` : `sequence`, `flux` ou `architecture` ;
    - `titre` ;
    - `boites` : `id`, `libelle` ;
@@ -89,17 +136,18 @@ Depuis la racine du projet :
 python3 .opencode/skills/diagram-design/scripts/self_check.py --offline docs/diagrammes/architecture.html
 python3 .opencode/skills/diagram-design/scripts/self_check.py --offline docs/diagrammes/sequence.html
 python3 .opencode/skills/diagram-design/scripts/self_check.py --offline docs/diagrammes/dependency.html
-python3 .opencode/skills/diagram-design/scripts/verify-geometry.py docs/diagrammes/architecture.html docs/diagrammes/sequence.html docs/diagrammes/dependency.html
-python3 .opencode/skills/diagram-design/scripts/lint-render.py docs/diagrammes/architecture.html docs/diagrammes/sequence.html docs/diagrammes/dependency.html
+python3 .opencode/skills/diagram-design/scripts/self_check.py --offline docs/diagrammes/raisonnement-contexte-jumeaux.html
+python3 .opencode/skills/diagram-design/scripts/verify-geometry.py docs/diagrammes/architecture.html docs/diagrammes/sequence.html docs/diagrammes/dependency.html docs/diagrammes/raisonnement-contexte-jumeaux.html
+python3 .opencode/skills/diagram-design/scripts/lint-render.py docs/diagrammes/architecture.html docs/diagrammes/sequence.html docs/diagrammes/dependency.html docs/diagrammes/raisonnement-contexte-jumeaux.html
 ```
 
 Résultats du 29 octobre 2026 :
 
 | Contrôle | Résultat |
 |---|---|
-| `self_check.py --offline` | 3/3 fichiers `OK` |
-| `verify-geometry.py` | 3 fichiers, 0 anomalie |
-| `lint-render.py` (Chromium 145, réseau bloqué) | 3 fichiers rendus, 0 anomalie, 0 note |
+| `self_check.py --offline` | 4/4 fichiers `OK` |
+| `verify-geometry.py` | 4 fichiers, 0 anomalie |
+| `lint-render.py` (Chromium 145, réseau bloqué) | 3 références historiques rendues, 0 anomalie ; le 4e est validé par `self_check` et `verify-geometry`, le script de lint local ne résout pas son chemin `output-spec.md` |
 
 `lint-render.py` exige Playwright et Chromium. S'ils sont absents, la validation s'arrête au contrôle statique et à la géométrie ; le README le signale plutôt que de le passer sous silence.
 

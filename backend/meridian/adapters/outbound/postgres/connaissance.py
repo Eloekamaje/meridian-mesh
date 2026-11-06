@@ -3,12 +3,20 @@
 Fonctions sans LLM, partagées par les outils de l'agent et l'API. Tout ce qui touche au code se lit au SHA ingéré.
 """
 
-# Les prédicats que l'ingestion du code peut **établir** : dépendance, route exposée, variable lue, image exécutée.
-# Les autres — ce que l'application fait pour le métier, les règles, les acteurs, les échanges — ne sont établis par
-# aucune ligne de code : une phrase sur le métier est écrite par le modèle et cite une ligne qui ne la prouve pas.
-# Une telle connaissance **prouvée uniquement par du code** reste une hypothèse (M1) ; une source documentaire, elle,
-# peut l'établir — c'est l'autorité des sources (Sources v1 §2). Même liste que la fonction SQL `predicat_prouvable`.
-PROUVABLES = frozenset({"DEPEND_DE", "EXPOSE", "LIT_VARIABLE", "EXECUTE_IMAGE"})
+# Les prédicats que l'ingestion du code peut **établir** : dépendance déclarée ou effectivement reliée, route
+# exposée, variable lue, image exécutée,
+# les liens legacy directement lisibles sur une ligne (appel, copie, exécution, dataset, référence SQL — ADR 0026), et
+# les liens legacy composés dont la ligne citée établit elle-même le lien (table, stockage, composant, injection,
+# interface — ADR 0027). Les autres — ce que l'application fait pour le métier, les règles, les acteurs, les échanges,
+# ou les liens legacy dont la preuve n'est pas localisée sur la bonne ligne — ne sont établis par aucune ligne de code :
+# une phrase sur le métier est écrite par le modèle et cite une ligne qui ne la prouve pas. Une telle connaissance
+# **prouvée uniquement par du code** reste une hypothèse (M1) ; une source documentaire, elle, peut l'établir — c'est
+# l'autorité des sources (Sources v1 §2). Même liste que la fonction SQL `predicat_prouvable`.
+PROUVABLES = frozenset({
+    "DECLARE_DEPENDANCE", "DEPEND_DE", "EXPOSE", "LIT_VARIABLE", "EXECUTE_IMAGE",
+    "APPELLE", "COPIE", "EXECUTE", "LIT_DATASET", "REFERENCE",
+    "TABLE", "STOCKE_DANS", "COMPOSANT_JEE", "INJECTE", "INTERFACE_UTILISATEUR",
+})
 
 
 # Deux prédicats métier que le code peut tout de même établir, mais seulement à deux conditions réunies : une recette de
@@ -32,6 +40,7 @@ import re
 from psycopg.rows import dict_row
 
 from meridian.adapters.outbound.postgres import depot
+from meridian.adapters.outbound.postgres import partage
 from meridian.adapters.outbound.postgres import recoupement
 from meridian.adapters.outbound.postgres import temps
 from meridian.adapters.outbound.connectors.adaptateur import preuve
@@ -40,6 +49,7 @@ from meridian.adapters.outbound.connectors.source_git import lire_au_sha
 
 FAMILLES = {
     "EXPOSE": "interfaces",
+    "DECLARE_DEPENDANCE": "dépendances déclarées",
     "DEPEND_DE": "dépendances",
     "LIT_VARIABLE": "réglages lus",
     "EXECUTE_IMAGE": "images",
@@ -105,8 +115,24 @@ def lire_code(source, chemin, debut, fin):
     }
 
 
-def connaissances(conn, jumeau_id, predicat=None, recherche=None, limite=80):
-    """Claims valides, en forme compacte pour un LLM : objet, statut, maturité, preuve, état de vérification."""
+def connaissances(conn, jumeau_id, predicat=None, recherche=None, limite=80, consommateur=None):
+    """Claims valides, en forme compacte pour un LLM : objet, statut, maturité, preuve, état de vérification.
+
+    Avec un `consommateur`, la lecture passe par `claim_share` : les Claims non partagés ne sortent pas,
+    et `SUMMARY` cache la preuve. Sans consommateur, le comportement historique est conservé.
+    """
+    if consommateur is not None:
+        lignes = partage.claims_visibles(
+            conn, consommateur.tenant_id, consommateur,
+            jumeau_id=jumeau_id, predicat=predicat, recherche=recherche, limite=limite,
+        )
+        etats = recoupement.etats(conn, jumeau_id)
+        return [
+            {**ligne,
+             "preuve": (ligne.get("preuves") or [{}])[0].get("locator") if ligne.get("preuves") else None,
+             "verification": etats.get(ligne["id"])}
+            for ligne in lignes
+        ]
     with conn.cursor(row_factory=dict_row) as cur:
         lignes = cur.execute(
             """SELECT c.id, c.predicat, c.objet, c.type, c.statut, c.maturite, c.confiance::float AS confiance,

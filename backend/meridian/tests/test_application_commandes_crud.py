@@ -14,6 +14,7 @@ class Store:
         self.majs = []
         self.appels = []
         self.maj_ok = True
+        self.suppression_ok = True
 
     async def lire(self, cid):
         self.appels.append(("lire", cid))
@@ -29,6 +30,10 @@ class Store:
     async def mettre_a_jour(self, cid, patch, *, etat="brouillon"):
         self.majs.append((cid, patch, etat))
         return self.maj_ok
+
+    async def supprimer(self, cid, *, etat="brouillon"):
+        self.appels.append(("supprimer", cid, etat))
+        return self.suppression_ok
 
     async def connexions(self):
         return self.connexions_docs
@@ -62,6 +67,32 @@ def test_lister_commandes_ne_rend_que_les_brouillons():
 def test_lire_commande_refuse_une_commande_absente():
     with pytest.raises(commandes.CommandeIntrouvable):
         _run(commandes.lire_commande(Store(None), "c1"))
+
+
+def test_supprimer_commande_supprime_un_brouillon():
+    store = Store({"id": "c1", "etat": "brouillon"})
+    doc = _run(commandes.supprimer_commande(store, "c1"))
+    assert doc["id"] == "c1"
+    assert store.appels == [("lire", "c1"), ("supprimer", "c1", "brouillon")]
+
+
+def test_supprimer_commande_refuse_une_commande_lancee():
+    store = Store({"id": "c1", "etat": "lancee"})
+    with pytest.raises(commandes.CommandeModifiee):
+        _run(commandes.supprimer_commande(store, "c1"))
+    assert store.appels == [("lire", "c1")]
+
+
+def test_supprimer_commande_refuse_une_commande_absente():
+    with pytest.raises(commandes.CommandeIntrouvable):
+        _run(commandes.supprimer_commande(Store(None), "c1"))
+
+
+def test_supprimer_commande_signale_une_course():
+    store = Store({"id": "c1", "etat": "brouillon"})
+    store.suppression_ok = False
+    with pytest.raises(commandes.CommandeIntrouvable):
+        _run(commandes.supprimer_commande(store, "c1"))
 
 
 def test_maj_sans_champ_ne_touche_pas_au_depot():

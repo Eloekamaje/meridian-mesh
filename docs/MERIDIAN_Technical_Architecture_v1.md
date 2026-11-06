@@ -1,3 +1,5 @@
+> **Note de lecture (2026-11-03) :** ce document est une référence technique détaillée. Pour l’état consolidé, les écarts et les décisions ouvertes, lire d’abord [MERIDIAN_Architecture_Master_v1.md](MERIDIAN_Architecture_Master_v1.md).
+
 # MÉRIDIAN — Technical Architecture
 ## Architecture technique cible pour un système d’intelligence vivante de l’entreprise
 

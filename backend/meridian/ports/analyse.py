@@ -31,6 +31,15 @@ class RuntimeAnalyse(Protocol):
 
     def proximite_graphe(self, tenant: str, twin_ids: Sequence[str]) -> dict[str, float]: ...
 
+    async def rechercher_refutation(
+        self,
+        tenant: str,
+        *,
+        question: str,
+        twin_ids: Sequence[str] = (),
+        limite: int = 20,
+    ) -> dict: ...
+
     async def recuperer_memoire(
         self,
         tenant: str,
@@ -42,6 +51,29 @@ class RuntimeAnalyse(Protocol):
         scope_id: str | None = None,
         limite: int = 12,
         proximite: dict[str, float] | None = None,
+        consommateur: Any | None = None,
+        twin_proprietaire: str | None = None,
+    ) -> list[dict]: ...
+
+    async def recuperer_documentation(
+        self,
+        tenant: str,
+        *,
+        question: str,
+        twin_ids: Sequence[str] = (),
+        acteur: str = "",
+        role: str = "",
+        espace: str = "",
+    ) -> list[dict]: ...
+
+    async def recuperer_communautes(
+        self,
+        tenant: str,
+        *,
+        question: str,
+        acteur: str = "",
+        role: str = "",
+        espace: str = "",
     ) -> list[dict]: ...
 
     def enrichir_pack(

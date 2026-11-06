@@ -33,6 +33,20 @@ class Lien(BaseModel):
     libelle: str = Field(description="ce qui circule ou ce que fait le lien")
 
 
+class OptionCible(BaseModel):
+    titre: str = Field(description="nom court de l'option")
+    description: str = Field(default="", description="principe et conséquences de l'option")
+    avantages: list[str] = Field(default_factory=list)
+    inconvenients: list[str] = Field(default_factory=list)
+    risques: list[str] = Field(default_factory=list)
+
+
+class ValidationCible(BaseModel):
+    hypothese: str = Field(description="hypothèse à valider")
+    methode: str = Field(default="test", description="test, mesure ou expérience")
+    critere: str = Field(default="", description="critère de réussite ou d'échec")
+
+
 class ArchitectureCible(BaseModel):
     titre: str = Field(description="titre de l'architecture proposée")
     resume: str = Field(description="résumé de la proposition et de ses choix structurants")
@@ -40,6 +54,9 @@ class ArchitectureCible(BaseModel):
     composants: list[Composant] = Field(default_factory=list, description="composants de l'architecture cible")
     liens: list[Lien] = Field(default_factory=list, description="liens entre composants, par leurs ids")
     hors_scope: list[str] = Field(default_factory=list, description="ce que la proposition ne couvre pas")
+    options: list[OptionCible] = Field(default_factory=list, description="options comparées, au moins deux")
+    critique: list[str] = Field(default_factory=list, description="limites et objections du critique")
+    validation: list[ValidationCible] = Field(default_factory=list, description="plan de validation")
 
 
 PROMPT_SYSTEME = """Tu es un architecte logiciel. Tu conçois une application qui n'existe pas encore : c'est une
@@ -54,6 +71,9 @@ Règles de la proposition :
   entre ces ids avec un libellé. Reste dans les bornes : 12 composants et 20 liens au plus.
 - Intègre la sécurité et la vie privée dès la conception : authentification, autorisation, chiffrement,
   minimisation des données, journalisation et conformité.
+- Produis au moins deux options réelles (options) avec avantages, inconvénients et risques, dont l'option de ne rien faire si elle est pertinente.
+- Inclus une critique explicite (critique) de ta propre proposition : limites, angles morts, risques résiduels.
+- Inclus un plan de validation (validation) qui transforme les hypothèses en tests ou mesures.
 - Sois concret, cohérent et concis.
 """
 
@@ -203,6 +223,18 @@ def texte_proposition(architecture):
         lignes += ["", resume]
     if hypotheses := _textes(architecture.hypotheses, MAX_HYPOTHESES):
         lignes += ["", "**Hypothèses**"] + [f"- {hypothese}" for hypothese in hypotheses]
+    if options := architecture.options:
+        lignes += ["", "**Options comparées**"]
+        for option in options:
+            lignes.append(f"- **{_texte(option.titre, 160)}** — {_texte(option.description, 500)}")
+            if option.risques:
+                lignes.append(f"  Risques : {'; '.join(_textes(option.risques, 5))}")
+    if critique := _textes(architecture.critique, 8):
+        lignes += ["", "**Critique**"] + [f"- {element}" for element in critique]
+    if validation := architecture.validation:
+        lignes += ["", "**Validation**"]
+        for item in validation:
+            lignes.append(f"- {_texte(item.hypothese, 300)} — {_texte(item.critere, 300)}")
     if hors_scope := _textes(architecture.hors_scope, MAX_HORS_SCOPE):
         lignes += ["", "**Hors périmètre**"] + [f"- {element}" for element in hors_scope]
     return "\n".join(lignes)
@@ -253,6 +285,11 @@ async def repondre(question, intention, modele=None):
             "proposition": True,
             "reponse": texte_proposition(architecture),
             "schemas": [construire_schema(architecture)],
+            "hypotheses": list(architecture.hypotheses),
+            "options": [option.model_dump() for option in architecture.options],
+            "critique": list(architecture.critique),
+            "validation": [item.model_dump() for item in architecture.validation],
+            "hors_scope": list(architecture.hors_scope),
             "preuves": [],
             "contributions": [],
             "jumeaux_participants": [],

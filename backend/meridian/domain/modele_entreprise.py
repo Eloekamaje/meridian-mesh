@@ -54,6 +54,10 @@ TYPES_TWIN = (
     "ORGANIZATION",
     "PRODUCT",
     "DATA_DOMAIN",
+    "RESOURCE",
+    "SUPPLIER",
+    "TEAM",
+    "ECOSYSTEM",
 )
 TYPES = TYPES_TWIN
 TYPES_DE_TWIN = TYPES_TWIN
@@ -70,7 +74,7 @@ MODES_CONNAISSANCE = MODES
 TYPES_PAR_FAMILLE = {
     "identite_structure": (
         "TWIN", "DOMAIN", "CAPABILITY", "APPLICATION", "PROCESS", "JOURNEY", "TEAM",
-        "ORGANIZATION", "PRODUCT", "DATA_DOMAIN",
+        "ORGANIZATION", "PRODUCT", "DATA_DOMAIN", "RESOURCE", "SUPPLIER", "ECOSYSTEM",
     ),
     "sources_preuves": ("SOURCE", "ARTIFACT", "OBSERVATION", "EVIDENCE"),
     "connaissance": ("CLAIM", "RELATION", "RELATIONSHIP", "UNKNOWN", "CONTRADICTION"),
@@ -286,7 +290,8 @@ def famille_de(type_objet: Any) -> str:
 
 
 def est_twin_non_applicatif(type_objet: Any) -> bool:
-    """Vrai pour un Twin PROCESS, CAPABILITY, JOURNEY, ORGANIZATION, PRODUCT ou DATA_DOMAIN."""
+    """Vrai pour tout Twin qui n'est pas une APPLICATION : PROCESS, CAPABILITY, JOURNEY, ORGANIZATION,
+    PRODUCT, DATA_DOMAIN, RESOURCE, SUPPLIER, TEAM ou ECOSYSTEM."""
     if isinstance(type_objet, ObjetEntreprise):
         type_objet = type_objet.type
     elif isinstance(type_objet, type) and issubclass(type_objet, ObjetEntreprise):
@@ -442,7 +447,9 @@ class ObjetEntreprise:
 class Twin(ObjetEntreprise):
     """Représentation vivante d'une entité de l'entreprise, pas seulement d'une application.
 
-    Le type peut être APPLICATION, PROCESS, CAPABILITY, JOURNEY, ORGANIZATION, PRODUCT ou DATA_DOMAIN.
+    Le type peut être APPLICATION, PROCESS, CAPABILITY, JOURNEY, ORGANIZATION, PRODUCT, DATA_DOMAIN,
+    RESOURCE, SUPPLIER, TEAM ou ECOSYSTEM. `id` est le `twin_id` interne stable ; `application_id` est
+    une identité applicative optionnelle, jamais générée artificiellement.
     """
 
     famille: str = "identite_structure"
@@ -454,6 +461,7 @@ class Twin(ObjetEntreprise):
     application_id: str | None = None
     alias: list[str] = field(default_factory=list)
     perimetre: str = ""
+    identifiants: dict[str, Any] = field(default_factory=dict)
     statut: str = "PROVISOIRE"
     type_twin: str = ""
 
@@ -474,8 +482,19 @@ class Twin(ObjetEntreprise):
         self.application_id = _texte_ou_none(self.application_id)
         self.alias = _liste_ids(self.alias, "alias")
         self.perimetre = str(self.perimetre or "").strip()
+        if self.identifiants is None:
+            self.identifiants = {}
+        elif not isinstance(self.identifiants, dict):
+            raise ModeleInvalide("identifiants doit être un objet JSON")
+        else:
+            self.identifiants = _jsonable(self.identifiants)
         self.statut = _normaliser_statut(self.statut) or "PROVISOIRE"
         self.type_twin = self.type
+
+    @property
+    def twin_id(self) -> str:
+        """Identité interne stable et universelle du Twin : toujours `jumeau.id`."""
+        return self.id
 
     @property
     def est_application(self) -> bool:

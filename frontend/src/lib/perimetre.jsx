@@ -16,7 +16,11 @@ const objet = (d) => (d && typeof d === "object" && !Array.isArray(d) ? d : null
 export function PerimetreProvider({ children }) {
   const [authMode, setAuthMode] = useState("demo");
   const [utilisateur, setUtilisateur] = useState(null);
+  const [poste, setPoste] = useState(null);
+  const [profilId, setProfilId] = useState(null);
+  const [autorite, setAutorite] = useState("lecture");
   const [acteur, setActeur] = useState("demo");
+  const [charge, setCharge] = useState(false);
   const [cible, setCible] = useState(() => localStorage.getItem(LS_CIBLE) || "mesh-global");
   const [espaces, setEspaces] = useState([]);
   const [vues, setVues] = useState([]);
@@ -33,7 +37,15 @@ export function PerimetreProvider({ children }) {
       if (d.auth_mode) setAuthMode(d.auth_mode);
       if (d.utilisateur) setUtilisateur(d.utilisateur);
       if (d.acteur) setActeur(d.acteur);
-    }).catch(() => {});
+      if (d.poste_libelle) setPoste(d.poste_libelle);
+      else if (d.poste) setPoste(d.poste);
+      if (d.profil) setProfilId(d.profil);
+      if (d.autorite) setAutorite(d.autorite);
+      if (d.tenant) localStorage.setItem("meridian.tenant", d.tenant);
+      if (d.espace && !localStorage.getItem(LS_CIBLE)) localStorage.setItem(LS_CIBLE, d.espace);
+    }).catch((err) => {
+      if (err?.response?.status === 401) setAuthMode("local");
+    }).finally(() => setCharge(true));
   }, []);
 
   const rafraichir = useCallback(async () => {
@@ -59,6 +71,12 @@ export function PerimetreProvider({ children }) {
     api.post("/journal", { action: "changement de périmètre", detail: c }).catch(() => {});
   }, []);
 
+  const deconnecter = useCallback(async () => {
+    try { await api.post("/auth/logout"); } catch {}
+    localStorage.removeItem("meridian.tenant");
+    window.location.assign("/login");
+  }, []);
+
   const rechargerVues = useCallback(async () => {
     try {
       const { data } = await api.get("/vues");
@@ -68,7 +86,8 @@ export function PerimetreProvider({ children }) {
 
   return (
     <PerimetreCtx.Provider
-      value={{ acteur, cible, espaceId, vueActive, espaces, vues, info, version, authMode, utilisateur, changerCible, rechargerVues }}
+      value={{ acteur, cible, espaceId, vueActive, espaces, vues, info, version, authMode, utilisateur,
+        poste, profilId, autorite, charge, changerCible, rechargerVues, deconnecter }}
     >
       {children}
     </PerimetreCtx.Provider>

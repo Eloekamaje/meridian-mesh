@@ -6,7 +6,7 @@ c'est écrire un lecteur et enregistrer sa fabrique ; le contenu lu est une donn
 import re
 
 MAX_RESULTATS = 10
-MAX_LIGNES = 200
+MAX_LIGNES = 1000
 # systeme://espace/ref@version#Ldébut-Lfin — le code garde sa forme (git://… ou chemin#L…), lue par connaissance.py.
 RE_CITATION_SOURCE = re.compile(
     r"(?P<systeme>(?!git)[a-z]+)://(?P<espace>[\w.-]+)/(?P<ref>[\w.-]+)@(?P<version>[\w.-]+)"
@@ -16,6 +16,7 @@ RE_CITATION_SOURCE = re.compile(
 NATURES = {
     "git": ("code", "ce que l'application fait : comportement programmé, règles appliquées"),
     "confluence": ("documentation", "ce qu'elle est censée faire, pour qui, pourquoi"),
+    "sharepoint": ("documentation", "les documents et décisions de l'entreprise"),
     "jira": ("trajectoire", "pourquoi elle a changé, ce qui est prévu"),
     "datadog": ("comportement", "comment elle se comporte réellement : volumes, appels réels"),
     "servicenow": ("exploitation", "comment elle échoue : incidents, criticité vécue"),
@@ -94,6 +95,10 @@ class Lecteur:
         doc = self._lire(str(ref), None)
         return str(doc["version"]) if doc else None
 
+    def parcourir(self, limite: int = 500):
+        """Références des documents indexables ; une source peut ne pas savoir énumérer."""
+        raise NotImplementedError
+
     def version_courante(self):
         """Version de la source dans son ensemble, pour que le gardien sache si elle a avancé (§6)."""
         raise NotImplementedError
@@ -115,6 +120,9 @@ class LecteurMemoire(Lecteur):
         self.documents = documents
         if systeme:
             self.systeme = systeme
+
+    def parcourir(self, limite: int = 500):
+        yield from list(self.documents)[:limite]
 
     def version_courante(self):
         return ",".join(f"{r}@{max(d['versions'], key=int)}" for r, d in sorted(self.documents.items()))
@@ -143,4 +151,7 @@ def lecteurs_de(sources):
     lecteurs = [(s, FABRIQUES[s["type"]](s)) for s in sources if s.get("type") in FABRIQUES]
     for s, l in lecteurs:
         l.source_id = s.get("id")  # rattache les preuves citées à leur source (table `preuve`)
+        l.jumeau_id = s.get("jumeau_id") or ""
+        configuration = s.get("configuration") if isinstance(s.get("configuration"), dict) else {}
+        l.acl = configuration.get("acl") if isinstance(configuration.get("acl"), dict) else {}
     return [l for _, l in lecteurs]

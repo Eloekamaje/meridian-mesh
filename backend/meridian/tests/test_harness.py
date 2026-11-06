@@ -339,3 +339,29 @@ def test_un_echec_du_sink_est_aussi_sans_effet_sur_un_appel_en_erreur():
         asyncio.run(harnais.appeler("lire_traces", {"application": "alpha"}))
     assert harnais.auditer()[-1]["statut"] == "erreur"
     assert harnais.auditer()[-1]["erreur"] == "ValueError"
+
+
+def test_la_decision_du_tour_est_validee_avant_l_outil():
+    appels = []
+    harnais = Harness(
+        RegistreCapacites([manifeste()]),
+        {"lire_traces": lambda application: appels.append(application) or {"traces": []}},
+        budget_outils=0,
+    )
+
+    with pytest.raises(OutilNonApprouve):
+        asyncio.run(harnais.appeler("lire_traces", {"application": "alpha"}))
+    assert appels == []
+
+
+def test_la_presentation_d_un_manifeste_alimente_le_flux():
+    from meridian.application import progression
+    m = manifeste(nom="outil_presente", usage={"quand": "Vérifier un affichage."}, presentation={
+        "libelle": "Je vérifie la présentation…", "groupe": "comprendre", "ordre": 2})
+    harnais = Harness(RegistreCapacites([m]), {"outil_presente": lambda application: {"traces": []}})
+
+    outil = next(o for o in harnais.outils() if o.tool_name == "outil_presente")
+    assert outil.presentation["libelle"] == "Je vérifie la présentation…"
+    assert progression.LIBELLES_OUTILS["outil_presente"] == "Je vérifie la présentation…"
+    assert progression.GROUPES_OUTILS["outil_presente"] == "comprendre"
+    assert "Quand l'utiliser : Vérifier un affichage." in outil.tool_spec["description"]

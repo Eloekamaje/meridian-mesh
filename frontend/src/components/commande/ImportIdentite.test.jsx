@@ -113,3 +113,95 @@ test("refuse un contenu vide et affiche l'erreur du serveur", async () => {
 
   await act(async () => { racine.unmount(); });
 });
+
+test("accepte un Twin TEAM sans App ID dans un manifeste JSON", async () => {
+  api.post.mockRejectedValue({ response: { data: { detail: "application_id requis" } } });
+  const onImporte = jest.fn();
+  const { hote, racine } = monter();
+  await act(async () => {
+    racine.render(<ImportIdentite commandeId="cmd-1" mode="manifeste" onImporte={onImporte} />);
+  });
+
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="import-contenu"]'), JSON.stringify({
+      jumeau: {
+        type: "TEAM",
+        twin_id: "team-paiements",
+        team_id: "equipe-paiements",
+        nom: "Équipe Paiements",
+        proprietaire: "L. Marchand",
+        perimetre: "Paiements",
+        identifiants: { confluence: "PAIEMENTS" },
+      },
+      sources: [{ connecteur: "confluence", nom: "Paiements", environnement: "production" }],
+    }));
+  });
+  await act(async () => { hote.querySelector('[data-testid="import-analyser-btn"]').click(); });
+
+  expect(toast.error).not.toHaveBeenCalled();
+  const rendu = hote.querySelector('[data-testid="import-apercu"]');
+  expect(rendu).not.toBeNull();
+  expect(hote.querySelector('[data-testid="import-type"]').textContent).toBe("TEAM");
+  expect(hote.querySelector('[data-testid="import-twin-id"]').textContent).toBe("team-paiements");
+  expect(hote.querySelector('[data-testid="import-app-id"]')).toBeNull();
+  expect(hote.querySelector('[data-testid="import-identifiant"]').textContent).toContain("equipe-paiements");
+  expect(hote.querySelector('[data-testid="import-perimetre"]').textContent).toContain("Paiements");
+  expect(hote.querySelector('[data-testid="import-identifiants"]').textContent).toContain("confluence=PAIEMENTS");
+  expect(hote.querySelector('[data-testid="import-nouvelles"]').textContent).toContain("confluence");
+
+  await act(async () => { hote.querySelector('[data-testid="import-confirmer-btn"]').click(); });
+  expect(onImporte).toHaveBeenCalledWith(expect.objectContaining({
+    identite: expect.objectContaining({
+      type: "TEAM",
+      twin_id: "team-paiements",
+      team_id: "equipe-paiements",
+      perimetre: "Paiements",
+    }),
+  }));
+  expect(onImporte.mock.calls[0][0].identite.application_id).toBeUndefined();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("accepte les nouveaux champs d'un CSV RESOURCE et les remonte à la commande", async () => {
+  api.post.mockResolvedValue({
+    data: {
+      mode: "cmdb",
+      detectees: 1,
+      identite: { nom: "Ressource tierce", proprietaire: "Paiements" },
+      nouvelles: [],
+      ignorees: [],
+    },
+  });
+  const onImporte = jest.fn();
+  const { hote, racine } = monter();
+  await act(async () => {
+    racine.render(<ImportIdentite commandeId="cmd-1" mode="cmdb" onImporte={onImporte} />);
+  });
+
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="import-contenu"]'),
+      "type,twin_id,resource_id,nom,proprietaire,perimetre,identifiants\n"
+      + "RESOURCE,res-42,CI-123,Ressource tierce,Paiements,Infrastructure,ci=CI-123;contrat=CTR-42\n");
+  });
+  await act(async () => { hote.querySelector('[data-testid="import-analyser-btn"]').click(); });
+
+  expect(hote.querySelector('[data-testid="import-type"]').textContent).toBe("RESOURCE");
+  expect(hote.querySelector('[data-testid="import-twin-id"]').textContent).toBe("res-42");
+  expect(hote.querySelector('[data-testid="import-app-id"]')).toBeNull();
+  expect(hote.querySelector('[data-testid="import-identifiant"]').textContent).toContain("CI-123");
+  expect(hote.querySelector('[data-testid="import-identifiants"]').textContent).toContain("contrat=CTR-42");
+
+  await act(async () => { hote.querySelector('[data-testid="import-confirmer-btn"]').click(); });
+  expect(onImporte).toHaveBeenCalledWith(expect.objectContaining({
+    identite: expect.objectContaining({
+      type: "RESOURCE",
+      twin_id: "res-42",
+      resource_id: "CI-123",
+      perimetre: "Infrastructure",
+      identifiants: { ci: "CI-123", contrat: "CTR-42" },
+    }),
+  }));
+
+  await act(async () => { racine.unmount(); });
+});

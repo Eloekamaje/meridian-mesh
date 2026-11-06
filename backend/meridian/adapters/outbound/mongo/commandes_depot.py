@@ -34,6 +34,10 @@ class CommandesDepot:
         res = await self.collection.update_one({"id": cid, "etat": etat}, {"$set": patch})
         return res.matched_count > 0
 
+    async def supprimer(self, cid: str, *, etat: str = "brouillon") -> bool:
+        res = await self.collection.delete_one({"id": cid, "etat": etat})
+        return res.deleted_count > 0
+
     async def connexions(self) -> list[dict[str, Any]]:
         if self._connexions is None:
             return []

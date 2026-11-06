@@ -35,6 +35,7 @@ def executer_cognitif(
         tenant=str(run["tenant_id"]), acteur=acteur, payload=analyse,
         runtime=runtime, run_id=str(run["run_id"]),
         verifier_annulation=annule, processus=processus,
+        acteur_contexte={"acteur": acteur, "espace": str(payload.get("espace") or "")},
     ))
 
 

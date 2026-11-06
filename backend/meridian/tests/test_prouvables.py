@@ -12,18 +12,23 @@ from meridian.tests.conftest import ACTIVITE, JUMEAU, SOURCE, besoin_pg, claim
 psycopg = pytest.importorskip("psycopg")
 
 SEMANTIQUES = ["APPLIQUE_REGLE", "REALISE_CAPACITE", "DETIENT", "SERT_ACTEUR", "ECHANGE_AVEC"]
+STRUCTURELS = ["APPELLE", "COPIE", "EXECUTE", "LIT_DATASET", "REFERENCE"]
+COMPOSES = ["TABLE", "STOCKE_DANS", "COMPOSANT_JEE", "INJECTE", "INTERFACE_UTILISATEUR"]
 
 
 def test_les_predicats_prouvables_sont_ceux_de_l_ingestion():
-    assert connaissance.prouvable("DEPEND_DE") and connaissance.prouvable("expose")
+    assert connaissance.prouvable("DECLARE_DEPENDANCE") and connaissance.prouvable("DEPEND_DE")
+    assert connaissance.prouvable("expose")
     assert connaissance.prouvable("LIT_VARIABLE") and connaissance.prouvable("EXECUTE_IMAGE")
+    assert all(connaissance.prouvable(p) for p in STRUCTURELS + COMPOSES)
     assert not any(connaissance.prouvable(p) for p in SEMANTIQUES)
     assert not connaissance.prouvable("") and not connaissance.prouvable(None)
 
 
 @besoin_pg
 def test_sql_et_python_disent_la_meme_chose(conn):
-    for predicat in ["DEPEND_DE", "EXPOSE", "LIT_VARIABLE", "EXECUTE_IMAGE", *SEMANTIQUES, "", None]:
+    for predicat in ["DECLARE_DEPENDANCE", "DEPEND_DE", "EXPOSE", "LIT_VARIABLE", "EXECUTE_IMAGE", *STRUCTURELS,
+                     *COMPOSES, *SEMANTIQUES, "", None]:
         assert conn.execute("SELECT predicat_prouvable(%s)", (predicat,)).fetchone()[0] is connaissance.prouvable(predicat)
 
 

@@ -130,6 +130,28 @@ function Presentation({ examen, onTranchee }) {
           <p className="mt-1.5 text-sm leading-relaxed text-[#CBD5E1]">{p.journee}</p>
         </section>
       )}
+      {p.routes_http?.length > 0 && (
+        <section aria-label="Routes HTTP exposées" data-testid="presentation-routes">
+          <div className={ETIQUETTE}>Routes HTTP exposées ({p.routes_http.length})</div>
+          <ul className="mt-2 grid gap-1.5 md:grid-cols-2">
+            {p.routes_http.map((route, i) => (
+              <li key={`${route.methode}-${route.chemin}-${i}`} className="flex min-w-0 items-baseline gap-2 rounded border border-[rgba(148,163,184,0.16)] px-2 py-1.5 font-code text-[11px]">
+                <span className="w-14 shrink-0 font-semibold text-[#60A5FA]">{route.methode}</span>
+                <span className="min-w-0 flex-1 break-all text-[#F2F6F8]">{route.chemin}</span>
+                {route.fichier && <span className="shrink-0 text-[9px] text-[#7C93A8]">{route.fichier}{route.ligne_debut ? `:${route.ligne_debut}` : ""}</span>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {p.enquete?.resume && (
+        <details className="rounded-lg border border-[rgba(148,163,184,0.16)] px-3 py-2" data-testid="presentation-enquete">
+          <summary className="cursor-pointer font-code text-[10px] uppercase tracking-[0.18em] text-[#7C93A8]">
+            Rapport d'enquête — {p.enquete.statut || "état inconnu"}
+          </summary>
+          <pre className="mt-2 whitespace-pre-wrap font-code text-[11px] leading-5 text-[#94A3B8]">{p.enquete.resume}</pre>
+        </details>
+      )}
       <div className="grid gap-5 md:grid-cols-2">
         {p.blocs.map((b) => (
           <section key={b.cle} aria-label={b.titre} data-testid={`presentation-${b.cle}`}>

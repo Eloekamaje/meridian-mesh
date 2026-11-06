@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from meridian.adapters.inbound.http import cognitif
+from meridian.domain import naissance_relationnelle as domaine
 
 
 class RuntimeFactice:
@@ -45,3 +46,61 @@ def test_analyser_traduit_la_configuration_manquante_en_503(monkeypatch):
                        headers={"X-Tenant": "banque"})
 
     assert r.status_code == 503
+
+
+def test_lister_les_relations_utilise_le_tenant(monkeypatch):
+    vus = {}
+
+    async def avec(tenant, action):
+        vus["tenant"] = tenant
+        return [{"id": "relation-1", "state": "supposee"}]
+
+    monkeypatch.setattr(cognitif, "_avec_connexion", avec)
+    r = _client().get("/api/boucle/relations", headers={"X-Tenant": "banque"})
+
+    assert r.status_code == 200, r.text
+    assert vus["tenant"] == "banque"
+    assert r.json()["propositions"][0]["id"] == "relation-1"
+
+
+def test_revue_d_une_relation_retourne_l_etat(monkeypatch):
+    proposition = domaine.PropositionRelation(
+        tenant_id="banque", consumer_id="a", provider_id="b", object="GET /articles",
+        consumer_owner="alice", provider_owner="bob", state="confirmee")
+
+    async def avec(tenant, action):
+        return proposition
+
+    monkeypatch.setattr(cognitif, "_avec_connexion", avec)
+    r = _client().post("/api/boucle/relations/relation-1/revue",
+                       json={"decision": "confirmer"}, headers={"X-Tenant": "banque"})
+
+    assert r.status_code == 200, r.text
+    assert r.json()["relation"]["state"] == "confirmee"
+
+
+def test_lister_les_resolutions_utilise_le_tenant(monkeypatch):
+    vus = {}
+
+    async def avec(tenant, action):
+        vus["tenant"] = tenant
+        return [{"id": "resolution-1", "status": "open"}]
+
+    monkeypatch.setattr(cognitif, "_avec_connexion", avec)
+    r = _client().get("/api/boucle/resolutions", headers={"X-Tenant": "banque"})
+
+    assert r.status_code == 200, r.text
+    assert vus["tenant"] == "banque"
+    assert r.json()["resolutions"][0]["id"] == "resolution-1"
+
+
+def test_resoudre_une_resolution_retourne_l_etat(monkeypatch):
+    async def avec(tenant, action):
+        return {"id": "resolution-1", "status": "resolved", "evidence_ids": ["export:1"]}
+
+    monkeypatch.setattr(cognitif, "_avec_connexion", avec)
+    r = _client().post("/api/boucle/resolutions/resolution-1/resoudre",
+                       json={"evidence_ids": ["export:1"]}, headers={"X-Tenant": "banque"})
+
+    assert r.status_code == 200, r.text
+    assert r.json()["resolution"]["status"] == "resolved"

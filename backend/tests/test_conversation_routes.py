@@ -122,6 +122,7 @@ class Db:
     def __init__(self, cases, jumeaux=()):
         self.cases, self.jumeaux, self.retours = Collection(cases), Collection(jumeaux), Collection()
         self.notifications = Collection()
+        self.preferences = Collection()
         self.pieces = Collection()  # pièces jointes du Travail (P4)
         self.relations, self.situations = Collection(), Collection()
 
@@ -154,7 +155,7 @@ class Faux:
         self.participants = []
 
     async def __call__(self, contexte, question, selection, domaine, acteur, espace, travail=None, emit=None,
-                       autoriser_ecriture=False):
+                       autoriser_ecriture=False, contexte_raisonnement=None, **kwargs):
         self.appels.append({"contexte": contexte, "question": question, "selection": selection, "domaine": domaine,
                             "travail": travail, "autoriser_ecriture": autoriser_ecriture})
         if self.muet:

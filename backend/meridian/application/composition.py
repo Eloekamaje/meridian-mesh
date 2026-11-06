@@ -14,7 +14,7 @@ from meridian.domain import competences_cognitives, methodes_cognitives, packs_d
 __all__ = ["PlanComposition", "composer", "planifier", "valider_plan"]
 
 _AUTORITES = ("lecture", "proposition", "approbation", "decision", "action")
-_SPECIALISTES = frozenset({"decouverte", "preuve", "impact", "outcome"})
+_SPECIALISTES = frozenset({"decouverte", "preuve", "impact", "outcome", "critique", "risque"})
 
 
 def _borne(valeur, maximum: int) -> int:

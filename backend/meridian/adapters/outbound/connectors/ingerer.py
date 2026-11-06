@@ -5,6 +5,7 @@
 """
 import argparse
 import asyncio
+import json
 import logging
 import os
 import shutil
@@ -14,18 +15,23 @@ from pathlib import Path
 import psycopg
 
 from meridian.adapters.outbound.connectors import cbm
-from meridian.adapters.outbound.postgres import depot
+from meridian.adapters.outbound.postgres import code_index_store, depot
 from meridian.adapters.outbound.connectors import index_store
+from meridian.adapters.outbound.connectors import legacy_index
 from meridian.adapters.outbound.connectors import manifestes
 from meridian.adapters.outbound.mongo import registre
 from meridian.adapters.outbound.connectors.adaptateur import adapter
 from meridian.adapters.outbound.connectors.source_git import lire_au_sha, sha_courant
+from meridian.application.exploration_agent import (
+    ExplorationHarness, RepoSnapshot, claims_depuis_rapport,
+)
 
 ACTIVITE = {"extracteur": "cbm-adaptateur", "version": "phase0-1"}
 journal = logging.getLogger(__name__)
 
 
 COPIES = index_store.copies_dir()
+ENQUETES = Path(os.environ.get("JUMEAU_ENQUETE_STATE", Path.home() / ".local/share/meridian/enquetes"))
 
 
 def branche_courante(chemin_depot):
@@ -62,6 +68,14 @@ def _depot_de(chemin):
     r = subprocess.run(["git", "-C", str(chemin), "rev-parse", "--path-format=absolute", "--git-common-dir"],
                        capture_output=True, text=True)
     return r.stdout.strip() if r.returncode == 0 else None
+
+
+def _fichiers_au_sha(depot, sha):
+    resultat = subprocess.run(
+        ["git", "-C", str(depot), "ls-tree", "-r", "--name-only", sha],
+        capture_output=True, text=True, timeout=30,
+    )
+    return [ligne for ligne in resultat.stdout.splitlines() if ligne]
 
 
 def indexer_au_sha(jumeau_id, chemin_depot, sha):
@@ -104,7 +118,70 @@ def _retirer_copie(copie):
     shutil.rmtree(copie, ignore_errors=True)
 
 
-def ingerer(conn, jumeau, chemin_depot, origine=None):
+def _enquete_active(valeur):
+    if valeur is not None:
+        return bool(valeur)
+    return os.environ.get("JUMEAU_ENQUETE", "").strip().lower() in {"1", "true", "oui", "yes"}
+
+
+def _route_de(claim):
+    if str(claim.get("predicat") or "").upper() != "EXPOSE":
+        return None
+    objet = str(claim.get("objet") or "").strip()
+    methode, _, chemin = objet.partition(" ")
+    return (methode.upper(), chemin) if methode and chemin.startswith("/") else None
+
+
+def _filtrer_routes_couvertes(claims, claims_enquete):
+    """Une route trouvée par l'enquête (préfixe réel) remplace la même route CBM sans préfixe."""
+    routes_enquete = [_route_de(c) for c in claims_enquete]
+    routes_enquete = [r for r in routes_enquete if r]
+    if not routes_enquete:
+        return claims
+    gardees = []
+    for claim in claims:
+        route = _route_de(claim)
+        if route and any(route[0] == m and chemin.endswith(route[1])
+                         for m, chemin in routes_enquete):
+            continue
+        gardees.append(claim)
+    return gardees
+
+
+def _enqueter(jumeau, chemin_depot, sha, nom):
+    """Lance l'enquête du harness sur le dépôt figé au SHA, sans bloquer l'ingestion en cas de panne."""
+    etat = ENQUETES / (jumeau.get("tenant_id") or "local") / jumeau["id"] / nom / sha[:12]
+    try:
+        from meridian.adapters.outbound.llm.exploration_adapter import ExplorationAdapter
+        adaptateur = ExplorationAdapter()
+        snapshot = RepoSnapshot.depuis_git(nom, chemin_depot, sha=sha, role="source")
+        harness = ExplorationHarness([snapshot], etat)
+        objectif = (f"Comprends le dépôt {nom} de l'application {jumeau.get('nom') or jumeau['id']} "
+                    "et produis un inventaire sourcé : stacks, points d'entrée, routes, dépendances et inconnues. "
+                    "Cite toujours le dépôt, le SHA, le fichier et les lignes.")
+        rapport = harness.run(objectif, adaptateur, max_steps=30)
+        for claim in claims_depuis_rapport(rapport, jumeau.get("nom") or jumeau["id"], nom):
+            harness.executer("record_claim", claim)
+        claims = []
+        chemin_claims = etat / "claims.json"
+        if chemin_claims.exists():
+            try:
+                valeur = json.loads(chemin_claims.read_text(encoding="utf-8"))
+                if isinstance(valeur, list):
+                    claims = valeur
+            except (OSError, json.JSONDecodeError):
+                claims = []
+        return {"statut": "terminee", "rapport": str(etat / "report.md"),
+                "trace": str(etat / "trace.json"), "claims_path": str(chemin_claims),
+                "claims": claims, "resume": rapport[:2000]}
+    except Exception as erreur:
+        journal.warning("enquête harness impossible pour %s/%s : %s — sortie: %s",
+                        jumeau["id"], nom, erreur,
+                        getattr(locals().get("adaptateur"), "derniere_sortie", "")[:1000])
+        return {"statut": "echec", "erreur": str(erreur)[:500]}
+
+
+def ingerer(conn, jumeau, chemin_depot, origine=None, *, enquete=None):
     """Ingère un dépôt du jumeau. `origine` : branche, url, secret_ref (pour que le gardien sache le relire)."""
     sha = sha_courant(chemin_depot)
     if not sha:
@@ -128,19 +205,51 @@ def ingerer(conn, jumeau, chemin_depot, origine=None):
         vus = {(r["chemin"], r["paquet"]) for r in resultats["paquets"]}
         resultats["paquets"] += [r for r in manifestes.dependances(lire, manifestes.lister(chemin_depot, sha))
                                  if (r["chemin"], r["paquet"]) not in vus]
+        routes_cbm = len(resultats.get("routes") or [])
+        fichiers = _fichiers_au_sha(chemin_depot, sha)
         claims = adapter(resultats, lire, nom, sha[:12], jumeau["nom"])
         bruts = sum(len(v) for v in resultats.values())
+        # L'adaptateur historique garde les quatre Claims structurels compatibles. L'index fédéré, lui,
+        # conserve toutes les observations, la couverture explicite et les liens prouvés : il devient le
+        # socle d'enquête sans promouvoir aveuglément chaque motif syntaxique en connaissance.
+        rapport_code = legacy_index.indexer_legacy(
+            copie or chemin_depot, projet_cbm=projet, commit=sha)
         conservee = copie if (copie is not None and not restauree and store.mode != "none") else None
         if store.mode != "none" and copie is not None:
             try:
                 store.save(tenant, nom, sha, copie, index_code=projet)
             except Exception as e:  # le stockage ne doit pas empêcher l'ingestion
                 journal.warning("artefact d'index non sauvegardé pour %s/%s/%s : %s", tenant, nom, sha, e)
+        enquete_resultat = _enqueter(jumeau, chemin_depot, sha, nom) if _enquete_active(enquete) else None
+        claims_enquete = enquete_resultat.pop("claims", []) if enquete_resultat else []
+        claims = [*_filtrer_routes_couvertes(claims, claims_enquete), *claims_enquete]
+        exploration = {
+            "providers": rapport_code["providers"],
+            "fichiers": len(rapport_code["fichiers_decouverts"]),
+            "fichiers_git": len(fichiers),
+            "couverture": rapport_code["compteurs"],
+            "observations": len(rapport_code["observations"]),
+            "liens": len(rapport_code["liens"]),
+            "erreurs_providers": sorted({e.get("provider", "inconnu") for e in rapport_code["erreurs"]}),
+            "routes": {"cbm": routes_cbm},
+            "claims": len(claims),
+            **({"enquete": enquete_resultat} if enquete_resultat else {}),
+        }
         source = {"nom": nom, "type": "GIT", "emplacement": str(chemin_depot), "curseur": sha,
                   "copie": str(conservee) if conservee else None, "index_code": projet,
-                  "branche": branche_courante(chemin_depot), "troncature": troncature or None, **(origine or {})}
+                  "branche": branche_courante(chemin_depot), "troncature": troncature or None,
+                  "exploration": exploration, **(origine or {})}
         depot.appliquer_schema(conn)
-        depot.enregistrer(conn, jumeau, source, claims, {**ACTIVITE, "sha": sha})
+        # Claims et index de preuve deviennent visibles ensemble. Le remplacement est borné à ce dépôt :
+        # réingérer ``api`` ne supprime jamais les observations déjà publiées pour ``front``.
+        with conn.transaction():
+            depot.enregistrer(conn, jumeau, source, claims, {**ACTIVITE, "sha": sha})
+            liens_code = rapport_code.get("liens") or {}
+            if isinstance(liens_code, dict):
+                liens_code = liens_code.get("liens", [])
+            code_index_store.remplacer_source(
+                conn, tenant, jumeau["id"], nom,
+                rapport_code["observations"], rapport_code["couvertures"], liens_code)
         if store.mode != "none":
             try:
                 store.delete_source(tenant, nom, sauf=sha)  # un seul artefact par source, au commit courant
@@ -174,12 +283,15 @@ def main():
     p.add_argument("--mission", help="mission en une phrase")
     p.add_argument("--tenant", default="local")
     p.add_argument("--depot", required=True, type=Path)
+    p.add_argument("--enquete", action="store_true", help="force l'enquête du harness")
+    p.add_argument("--sans-enquete", action="store_true", help="désactive l'enquête du harness")
     a = p.parse_args()
     jumeau = {"id": a.jumeau, "tenant_id": a.tenant, "nom": a.nom, "equipe": a.equipe,
               "domaine": a.domaine, "mission": a.mission}
     try:
         with psycopg.connect(os.environ["JUMEAU_PG_DSN"], autocommit=True) as conn:
-            print(ingerer(conn, jumeau, a.depot.resolve()))
+            enquete = True if a.enquete else False if a.sans_enquete else None
+            print(ingerer(conn, jumeau, a.depot.resolve(), enquete=enquete))
             print(projeter_au_registre(conn))
     except (ValueError, PermissionError, RuntimeError, subprocess.TimeoutExpired) as e:
         raise SystemExit(f"ingestion interrompue : {e}")

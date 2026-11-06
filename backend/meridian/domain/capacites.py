@@ -8,7 +8,7 @@ Les trois outils historiques sont livrés comme adaptateurs déclarés, jamais c
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 import math
 import re
@@ -313,6 +313,45 @@ def _signature(valeur: Any) -> str | None:
     return signature
 
 
+def _mapping_court(valeur: Any, champ: str) -> dict:
+    if valeur is None:
+        return {}
+    if not isinstance(valeur, Mapping):
+        raise ManifesteInvalide(f"{champ} : objet attendu")
+    resultat = {}
+    for cle, contenu in valeur.items():
+        nom = _texte_court(cle, f"{champ}.clé")
+        if isinstance(contenu, (str, int, float, bool)) or contenu is None:
+            if isinstance(contenu, str):
+                _verifier_texte(contenu, f"{champ}.{nom}")
+            resultat[nom] = contenu
+        elif isinstance(contenu, (list, tuple)):
+            resultat[nom] = list(_liste_textes(contenu, f"{champ}.{nom}"))
+        elif isinstance(contenu, Mapping):
+            resultat[nom] = _mapping_court(contenu, f"{champ}.{nom}")
+        else:
+            raise ManifesteInvalide(f"{champ}.{nom} : valeur non sérialisable")
+    return resultat
+
+
+def _usage(valeur: Any) -> dict:
+    usage = _mapping_court(valeur, "usage")
+    connus = set(usage) - {"quand", "ne_pas", "exemples", "sortie", "avant", "apres"}
+    if connus:
+        raise ManifesteInvalide(f"usage : clés inconnues ({', '.join(sorted(connus))})")
+    return usage
+
+
+def _presentation(valeur: Any) -> dict:
+    presentation = _mapping_court(valeur, "presentation")
+    connus = set(presentation) - {"libelle", "groupe", "ordre", "icone"}
+    if connus:
+        raise ManifesteInvalide(f"presentation : clés inconnues ({', '.join(sorted(connus))})")
+    if "ordre" in presentation and not isinstance(presentation["ordre"], int):
+        raise ManifesteInvalide("presentation.ordre : entier attendu")
+    return presentation
+
+
 @dataclass(frozen=True, init=False)
 class ManifesteOutil:
     """Contrat déclaratif d'un adaptateur ; aucun champ n'autorise l'exécution ni le chargement de code."""
@@ -336,6 +375,8 @@ class ManifesteOutil:
     source: str = "manifeste"
     signature: str | None = None
     allowlist: tuple[str, ...] = ()
+    usage: dict = field(default_factory=dict)
+    presentation: dict = field(default_factory=dict)
 
     def __init__(
         self,
@@ -359,6 +400,8 @@ class ManifesteOutil:
         source: Any = "manifeste",
         signature: Any = None,
         allowlist: Any = (),
+        usage: Any = None,
+        presentation: Any = None,
     ) -> None:
         portee_normalisee = _portee(portee, tenant, acteur, perimetre)
         lus = _liste_textes(types_objets_lus, "types_objets_lus")
@@ -391,6 +434,8 @@ class ManifesteOutil:
             "source": _source(source),
             "signature": _signature(signature),
             "allowlist": _liste_textes(allowlist, "allowlist"),
+            "usage": _usage(usage),
+            "presentation": _presentation(presentation),
         }
         for cle, valeur in valeurs.items():
             object.__setattr__(self, cle, valeur)
@@ -424,6 +469,8 @@ class ManifesteOutil:
             "source": self.source,
             "signature": self.signature,
             "allowlist": list(self.allowlist),
+            "usage": dict(self.usage),
+            "presentation": dict(self.presentation),
         }
 
 
@@ -704,6 +751,12 @@ def manifestes_integres() -> list[ManifesteOutil]:
             mode_preuve="DECLARED",
             source="builtin",
             allowlist=("meridian.builtin",),
+            usage={
+                "quand": "L'utilisateur demande quelles applications sont visibles ou disponibles.",
+                "ne_pas": "Ne pas présenter cette liste comme exhaustive ni comme la liste des jumeaux.",
+                "sortie": "Un index borné d'applications visibles.",
+            },
+            presentation={"libelle": "Je vérifie les applications visibles…", "groupe": "situer", "ordre": 1},
         ),
         ManifesteOutil(
             nom="resoudre_application",
@@ -722,6 +775,12 @@ def manifestes_integres() -> list[ManifesteOutil]:
             mode_preuve="DECLARED",
             source="builtin",
             allowlist=("meridian.builtin",),
+            usage={
+                "quand": "Un nom d'application est cité et une réponse prouvée par son code est nécessaire.",
+                "ne_pas": "Ne pas utiliser pour une application inexistante ou une architecture cible.",
+                "sortie": "Une contribution étayée par des preuves du jumeau.",
+            },
+            presentation={"libelle": "Je résous l'application nommée…", "groupe": "situer", "ordre": 2},
         ),
         ManifesteOutil(
             nom="mobiliser_jumeaux",
@@ -740,6 +799,13 @@ def manifestes_integres() -> list[ManifesteOutil]:
             mode_preuve="OBSERVED",
             source="builtin",
             allowlist=("meridian.builtin",),
+            usage={
+                "quand": "La question porte sur une application existante, son code ou ses processus observés.",
+                "ne_pas": "Ne pas mobiliser pour une application qui n'existe pas encore.",
+                "avant": "Vérifier que l'application est réelle et autorisée.",
+                "sortie": "Une contribution avec citations et preuves.",
+            },
+            presentation={"libelle": "Je consulte l'application concernée…", "groupe": "comprendre", "ordre": 1},
         ),
         ManifesteOutil(
             nom="concevoir_architecture",
@@ -758,6 +824,12 @@ def manifestes_integres() -> list[ManifesteOutil]:
             mode_preuve="PROPOSED",
             source="builtin",
             allowlist=("meridian.builtin",),
+            usage={
+                "quand": "L'utilisateur demande une architecture cible ou une application qui n'existe pas encore.",
+                "ne_pas": "Ne pas présenter la proposition comme un fait observé ni inventer de preuve.",
+                "sortie": "Une conception explicitement proposée, sans jumeau mobilisé.",
+            },
+            presentation={"libelle": "Je conçois une architecture cible…", "groupe": "concevoir", "ordre": 1},
         ),
     ]
 

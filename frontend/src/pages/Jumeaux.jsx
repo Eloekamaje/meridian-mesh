@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, HourglassMedium, MagnifyingGlass, DotsThree, Sparkle } from "@phosphor-icons/react";
+import { Plus, HourglassMedium, MagnifyingGlass, DotsThree, Sparkle, X } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { usePerimetre } from "@/lib/perimetre";
 import { useContexte } from "@/lib/contexte";
 import { couleurDomaine } from "@/lib/domaines";
-import { STATUTS, STRATE_LABELS, FRAICHEUR_ETATS, AUTONOMIE, STATUTS_SOURCES, ACTION_LIGNE, qualifConnaissance, resumeStrates, estEnAttention } from "@/lib/jumeaux";
+import { STRATE_LABELS, FRAICHEUR_ETATS, AUTONOMIE, STATUTS_SOURCES, ACTION_LIGNE, qualifConnaissance, resumeStrates, estEnAttention, estEnNaissance, statutJumeau } from "@/lib/jumeaux";
 import ComposerFlore from "@/components/ComposerFlore";
 
 const VUES_ENREGISTREES = [
@@ -33,6 +33,7 @@ export default function Jumeaux() {
   const [vue, setVue] = useState("tous");
   const [menuOuvert, setMenuOuvert] = useState(null);
   const [suggestionMasquee, setSuggestionMasquee] = useState(false);
+  const [suppression, setSuppression] = useState(null);
 
   // Suggestion locale de Flore : un jumeau dont la connaissance vieillit
   const suggestionFlore = useMemo(() => {
@@ -52,12 +53,20 @@ export default function Jumeaux() {
     api.get("/commandes").then((r) => setBrouillons(r.data)).catch(() => {});
   }, [version]);
 
-  const commander = async () => {
+  const commander = () => navigate("/commande/nouvelle");
+
+  const supprimerBrouillon = async (commande) => {
+    const nom = commande.jumeau?.nom || commande.jumeau?.application_id || "sans nom";
+    if (!window.confirm(`Supprimer le brouillon « ${nom} » ?`)) return;
+    setSuppression(commande.id);
     try {
-      const { data } = await api.post("/commandes", {});
-      navigate(`/commande/${data.id}`);
+      await api.delete(`/commandes/${commande.id}`);
+      setBrouillons((liste) => liste.filter((c) => c.id !== commande.id));
+      toast.success("Brouillon supprimé");
     } catch {
-      toast.error("Création de la commande impossible");
+      toast.error("Suppression du brouillon impossible");
+    } finally {
+      setSuppression(null);
     }
   };
 
@@ -81,6 +90,7 @@ export default function Jumeaux() {
       if (filtreDomaine && j.domaine !== filtreDomaine) return false;
       if (filtreProprio && j.proprietaire !== filtreProprio) return false;
       if (filtreAutonomie && j.autonomie !== filtreAutonomie) return false;
+      if (vue === "admettre" && (estEnNaissance(j) || ["echec", "sans_substance"].includes(j.naissance_etat))) return false;
       if (vue === "connaissance" && (j.couverture ?? 100) >= 60) return false;
       if (vue === "sources-erreur" && !(j.sources_detail || []).some((s) => s.statut !== "prete")) return false;
       if (vue === "obsoletes" && !["retard", "obsolete"].includes(j.fraicheur_etat)) return false;
@@ -126,13 +136,18 @@ export default function Jumeaux() {
       {brouillons.length > 0 && (
         <div className="rise mt-5 flex flex-wrap gap-2" data-testid="commandes-en-cours">
           {brouillons.map((c) => (
-            <button key={c.id} onClick={() => navigate(`/commande/${c.id}`)} data-testid={`reprendre-${c.id}`} className="flex items-center gap-2 rounded-lg border border-[#F2B84B]/25 bg-[#F2B84B]/[0.04] px-3 py-2 text-left transition-colors hover:border-[#F2B84B]/50">
-              <HourglassMedium size={14} className="text-[#F2B84B]" />
-              <div>
-                <div className="text-xs font-semibold text-[#F2F6F8]">Commande en cours — {c.jumeau?.nom || c.jumeau?.application_id || "sans nom"}</div>
-                <div className="font-code text-[9px] text-[#7C93A8]">étape {c.etape}/4 · {c.sources?.length || 0} source(s) · reprendre →</div>
-              </div>
-            </button>
+            <div key={c.id} data-testid={`brouillon-${c.id}`} className="relative flex items-stretch rounded-lg border border-[#F2B84B]/25 bg-[#F2B84B]/[0.04] transition-colors hover:border-[#F2B84B]/50">
+              <button onClick={() => navigate(`/commande/${c.id}`)} data-testid={`reprendre-${c.id}`} className="flex items-center gap-2 py-2 pl-3 pr-8 text-left">
+                <HourglassMedium size={14} className="text-[#F2B84B]" />
+                <div>
+                  <div className="text-xs font-semibold text-[#F2F6F8]">Commande en cours — {c.jumeau?.nom || c.jumeau?.application_id || "sans nom"}</div>
+                  <div className="font-code text-[9px] text-[#7C93A8]">étape {c.etape}/4 · {c.sources?.length || 0} source(s) · reprendre →</div>
+                </div>
+              </button>
+              <button onClick={() => supprimerBrouillon(c)} disabled={suppression === c.id} data-testid={`supprimer-${c.id}`} title="Supprimer ce brouillon" aria-label={`Supprimer le brouillon ${c.jumeau?.nom || "sans nom"}`} className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded text-[#7C93A8] transition-colors hover:bg-[#F87171]/15 hover:text-[#F87171] disabled:opacity-40">
+                <X size={11} weight="bold" />
+              </button>
+            </div>
           ))}
         </div>
       )}
@@ -182,7 +197,9 @@ export default function Jumeaux() {
       {/* Registre — liste plate, domaine en colonne */}
       <div className="mt-4 overflow-hidden rounded-xl border border-[rgba(148,163,184,0.16)]" data-testid="registre-table">
         {lignes.map((j) => {
-          const st = STATUTS[j.statut] || [j.statut, "#7C93A8"];
+          const st = statutJumeau(j);
+          const enNaissance = estEnNaissance(j);
+          const naissanceEchouee = ["echec", "sans_substance"].includes(j.naissance_etat);
           const fr = FRAICHEUR_ETATS[j.fraicheur_etat] || FRAICHEUR_ETATS.partiel;
           const aut = AUTONOMIE[j.autonomie] || AUTONOMIE.aucune;
           const det = j.sources_detail || [];
@@ -193,7 +210,7 @@ export default function Jumeaux() {
           return (
             <div
               key={j.id}
-              onClick={() => navigate(`/jumeaux/${encodeURIComponent(j.id)}/revue`)}
+              onClick={() => { if (!enNaissance && !naissanceEchouee) navigate(`/jumeaux/${encodeURIComponent(j.id)}/revue`); }}
               data-testid={`jumeau-row-${j.id}`}
               className={`glow-hover rise flex cursor-pointer items-center gap-2 border-b border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-4 py-3 transition-colors last:border-b-0 hover:bg-[rgba(148,163,184,0.07)] ${attention ? "border-l-2 border-l-[#F2B84B]/60" : "border-l-2 border-l-transparent"}`}
             >
@@ -268,11 +285,12 @@ export default function Jumeaux() {
                   {/* Action contextuelle + menu secondaire */}
                   <div className="flex shrink-0 items-center justify-end gap-1.5 md:w-48">
                     <button
-                      onClick={(e) => { e.stopPropagation(); navigate(`/jumeaux/${j.id}/revue`); }}
-                      data-testid={j.statut === "observation" ? `revoir-admission-${j.id}` : `examiner-${j.id}`}
-                      className={`hidden rounded px-2.5 py-1 text-[11px] transition-colors sm:block ${j.statut === "observation" ? "border border-[#F2B84B]/50 font-semibold text-[#F2B84B] hover:bg-[#F2B84B]/10" : "border border-[rgba(148,163,184,0.16)] text-[#94A3B8] hover:border-[#41576D] hover:text-[#F2F6F8]"}`}
+                      onClick={(e) => { e.stopPropagation(); if (!enNaissance && !naissanceEchouee) navigate(`/jumeaux/${j.id}/revue`); }}
+                      disabled={enNaissance || naissanceEchouee}
+                      data-testid={enNaissance ? `naissance-en-cours-${j.id}` : naissanceEchouee ? `naissance-echouee-${j.id}` : j.statut === "observation" ? `revoir-admission-${j.id}` : `examiner-${j.id}`}
+                      className={`hidden rounded px-2.5 py-1 text-[11px] transition-colors sm:block disabled:cursor-default disabled:opacity-70 ${enNaissance ? "border border-[#F2B84B]/50 font-semibold text-[#F2B84B]" : naissanceEchouee ? "border border-[#F87171]/40 text-[#F87171]" : j.statut === "observation" ? "border border-[#F2B84B]/50 font-semibold text-[#F2B84B] hover:bg-[#F2B84B]/10" : "border border-[rgba(148,163,184,0.16)] text-[#94A3B8] hover:border-[#41576D] hover:text-[#F2F6F8]"}`}
                     >
-                      {ACTION_LIGNE[j.statut] || "Ouvrir"}
+                      {enNaissance ? "Naissance en cours" : naissanceEchouee ? "Naissance échouée" : ACTION_LIGNE[j.statut] || "Ouvrir"}
                     </button>
                     <div className="relative">
                       <button onClick={(e) => { e.stopPropagation(); setMenuOuvert(menuOuvert === j.id ? null : j.id); }} data-testid={`menu-${j.id}`} className="rounded p-1 text-[#7C93A8] transition-colors hover:text-[#F2F6F8]">

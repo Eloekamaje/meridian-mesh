@@ -52,6 +52,13 @@ def test_branches_d_un_depot(forge):
         github.branches("vault:r", "../etc", "")
 
 
+def test_depot_inconnu_est_une_erreur_de_demande(forge):
+    reponses, _ = forge
+    reponses["/repos/banque/inconnu/branches"] = 404
+    with pytest.raises(github.Invalide, match="introuvable"):
+        github.branches("vault:r", "banque/inconnu")
+
+
 def test_jeton_refuse_ou_absent(forge):
     reponses, _ = forge
     reponses["/user"] = 401

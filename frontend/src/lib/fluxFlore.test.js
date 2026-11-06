@@ -199,7 +199,7 @@ test("« Arrêter » demande l'arrêt du tour au serveur avant de rendre la main
   expect(appels[1]).toEqual([expect.stringMatching(/\/api\/tours\/R2\/arreter$/), "POST"]);
 });
 
-import { grouperConsultations, resumeConsultations } from "./fluxFlore";
+import { grouperConsultations, grouperOperationsConsecutives, resumeConsultations } from "./fluxFlore";
 
 test("les outils d'un jumeau se rangent sous sa consultation ; le bilan de mission s'y attache", () => {
   const vus = [];
@@ -226,4 +226,22 @@ test("le résumé des consultations : combien de jumeaux, combien terminés", ()
   expect(resumeConsultations([consult("a", { etat: "fait" }), consult("b")])).toBe("2 jumeaux consultés · 1 terminé");
   expect(resumeConsultations([consult("a")])).toBe("1 jumeau consulté · 0 terminé");
   expect(resumeConsultations([{ label: "Je lis…" }])).toBeNull();
+});
+
+
+test("des appels consécutifs du même outil forment une seule action", () => {
+  const op = (id, nom = "lire_code") => ({ label: "Je lis…", status: "running",
+    outil: { id, nom, etat: "en_cours", arguments: { chemin: id } } });
+  const groupes = grouperOperationsConsecutives([op("u1"), op("u2"), op("u3", "chercher_symbole")]);
+  expect(groupes).toHaveLength(2);
+  expect(groupes[0].nombre).toBe(2);
+  expect(groupes[0].outils.map((o) => o.id)).toEqual(["u1", "u2"]);
+  expect(groupes[1].nombre).toBe(1);
+});
+
+test("un changement d'outil ou une consultation interrompt le regroupement", () => {
+  const op = (id, nom, parent = "") => ({ label: nom, status: "running", outil: { id, nom, parent, etat: "en_cours" } });
+  const groupes = grouperOperationsConsecutives([op("u1", "lire_code"), op("u2", "lire_code"),
+    op("u3", "chercher_texte"), op("u4", "lire_code"), op("c1", "consulter_jumeau")]);
+  expect(groupes.map((g) => g.nombre)).toEqual([2, 1, 1, 1]);
 });

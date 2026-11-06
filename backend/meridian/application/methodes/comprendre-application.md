@@ -78,5 +78,6 @@ ces sections :
 - « ## D'où je le sais, et ce que j'ignore » : ce que vous ne savez pas encore et qui pourrait le dire.
 
 Puces de 15 mots au plus, sans gras ; celles des quatre blocs du milieu finissent par leur citation
-`chemin#Ldébut-Lfin`. Dépasser 300 mots, c'est perdre le lecteur : le détail reste dans les connaissances. C'est un
-document : ni question finale, ni proposition de suite.
+`chemin#Ldébut-Lfin`, suivie de `[claim:<id>]` quand la puce s'appuie sur une connaissance — l'identifiant
+vient de `proposer_connaissance`. Dépasser 300 mots, c'est perdre le lecteur : le détail reste dans les
+connaissances. C'est un document : ni question finale, ni proposition de suite.

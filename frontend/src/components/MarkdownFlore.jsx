@@ -10,6 +10,7 @@ import "katex/dist/katex.min.css";
 import "highlight.js/styles/github-dark.css";
 import SchemaMermaid from "./SchemaMermaid";
 import SchemaSvg, { schemaValide } from "./SchemaSvg";
+import DiagrammeCompile from "./DiagrammeCompile";
 import { decouperMermaid } from "@/lib/segmentsMermaid";
 import { PreuvesContexte, couperPastille, numeroPastille, typeSource } from "@/lib/preuvesFlore";
 
@@ -226,7 +227,7 @@ function Puce({ node, children }) {
 }
 
 // `enLigne` : une cellule ou une puce (pas de paragraphe autour). `className` s'ajoute au conteneur.
-export default function MarkdownFlore({ texte, enLigne = false, className = "", onOuvrirPiece, schemas }) {
+export default function MarkdownFlore({ texte, enLigne = false, className = "", onOuvrirPiece, schemas, diagrammes }) {
   const composants = {
     ...COMPOSANTS,
     a: (p) => <LienMarkdown {...p} onOuvrirPiece={onOuvrirPiece} />,
@@ -237,6 +238,7 @@ export default function MarkdownFlore({ texte, enLigne = false, className = "", 
   const Conteneur = enLigne ? "span" : "div";
   const schemasDuContexte = useContext(SchemasContexte);
   const schemasDisponibles = Array.isArray(schemas) ? schemas : (schemasDuContexte || []);
+  const diagrammesDisponibles = Array.isArray(diagrammes) ? diagrammes : [];
   let indiceSchema = 0; // un schéma structuré par bloc Mermaid, dans l'ordre de la réponse
   return (
     <Conteneur className={`space-y-3 text-[14.5px] leading-relaxed text-[#D8E2EA] ${className}`} data-testid="markdown-flore">
@@ -247,11 +249,15 @@ export default function MarkdownFlore({ texte, enLigne = false, className = "", 
         const schema = schemasDisponibles[indiceSchema];
         indiceSchema += 1;
         return schemaValide(schema)
-          ? <SchemaSvg key={i} schema={schema} />
+          ? (diagrammesDisponibles[indiceSchema - 1]
+            ? <DiagrammeCompile key={i} diagramme={diagrammesDisponibles[indiceSchema - 1]} />
+            : <SchemaSvg key={i} schema={schema} />)
           : <SchemaMermaid key={i} code={s.code} complet={s.complet} />;
       })}
       {!enLigne && schemasDisponibles.slice(indiceSchema).filter(schemaValide).map((schema, i) => (
-        <SchemaSvg key={`schema-restant-${i}`} schema={schema} />
+        diagrammesDisponibles[indiceSchema + i]
+          ? <DiagrammeCompile key={`schema-restant-${i}`} diagramme={diagrammesDisponibles[indiceSchema + i]} />
+          : <SchemaSvg key={`schema-restant-${i}`} schema={schema} />
       ))}
     </Conteneur>
   );

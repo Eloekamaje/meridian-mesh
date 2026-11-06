@@ -68,7 +68,7 @@ def test_activation_est_idempotente_et_drop_avant_create():
 
 def test_toutes_les_tables_avec_tenant_sont_couvertes():
     attendues = {
-        "jumeau", "source", "preuve", "claim", "revue", "contradiction", "ancre", "consigne",
+        "jumeau", "source", "preuve", "claim", "claim_share", "publication_review", "revue", "contradiction", "ancre", "consigne",
         "interface_contract", "interface_operation", "interface_binding", "interface_assertion",
         "discovery_run", "identity_decision", "objet_entreprise", "outil_audit",
         "valeur", "memoire_durable", "prediction_calibration",
@@ -82,7 +82,9 @@ def test_toutes_les_tables_avec_tenant_sont_couvertes():
         "planification_prevision", "planification_budget", "planification_cout",
         "planification_sync_run", "planification_calibration", "planification_webhook",
         "planification_absence", "planification_allocation", "planification_temps",
-        "planification_taux", "planification_artefact",
+        "planification_taux", "planification_artefact", "dossier_raisonnement",
+        "belief_calibration", "document_chunk", "graph_community",
+        "code_observation", "code_coverage", "code_link",
     }
     assert attendues == set(rls.TABLES)
     assert set(rls.TABLES) | set(rls.TABLES_DERIVEES) == set(rls.TOUTES_LES_TABLES)

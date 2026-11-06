@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from meridian.domain import identite
+from meridian.adapters.outbound import deepseek
 from meridian.adapters.outbound.llm import orchestrateur
 
 JUMEAUX = [
@@ -141,9 +142,11 @@ def test_executer_donne_priorite_a_la_reponse_d_un_outil(monkeypatch):
     assert resultat["reponse"] == complete["reponse"]
     assert resultat["orchestration"]["outils"][0]["outil"] == "mobiliser_jumeaux"
     assert vus["question"] == "Que fait Alpha ?"
-    assert set(vus["options"]["tools"][i].tool_name for i in range(len(vus["options"]["tools"]))) == {
-        "lister_applications", "resoudre_application", "mobiliser_jumeaux", "concevoir_architecture",
-        "rechercher_outil", "decrire_outil"}
+    attendus = {"lister_applications", "resoudre_application", "mobiliser_jumeaux",
+                "concevoir_architecture", "rechercher_outil", "decrire_outil"}
+    if deepseek.disponible():
+        attendus |= {"rechercher_web", "lire_page"}
+    assert set(vus["options"]["tools"][i].tool_name for i in range(len(vus["options"]["tools"]))) == attendus
     assert vus["options"]["callback_handler"] is None
     assert "Mesh" in vus["options"]["system_prompt"]
 

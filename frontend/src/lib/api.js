@@ -4,6 +4,7 @@ import axios from "axios";
 // appels partaient vers /undefined/api/... : on se rabat sur la même origine.
 const api = axios.create({
   baseURL: `${process.env.REACT_APP_BACKEND_URL || ""}/api`,
+  withCredentials: true,
 });
 
 // Le périmètre de lecture, partagé par axios et par les réponses au fil de l'eau (fetch).

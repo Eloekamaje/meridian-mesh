@@ -118,3 +118,11 @@ frontend/node_modules/.cache/default-development/4.pack
 
 # Graphe de connaissance régénérable (graphify update), 74 Mo
 graphify-out/
+
+# Parseur RPGLE Java : jars Maven téléchargés localement et classes compilées
+tools/rpgle/lib/*.jar
+tools/rpgle/classes/
+
+# Parseur PL/I ANTLR généré localement (voir tools/pli/README.md)
+tools/pli/lib/
+tools/pli/generated/

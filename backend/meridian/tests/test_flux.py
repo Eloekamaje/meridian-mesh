@@ -302,3 +302,9 @@ def test_les_tours_en_cours_sont_rendus_a_leur_interlocuteur():
     finally:  # … ni un tour fini (encore consultable, mais plus « en cours »)
         flux.TOURS.pop(mien.id, None)
         flux.TOURS.pop(autre.id, None)
+
+
+def test_les_libelles_et_groupes_viennent_du_registre():
+    from meridian.application import progression as p
+    assert p.LIBELLES_OUTILS["mobiliser_jumeaux"] == "Je consulte l'application concernée…"
+    assert p.GROUPES_OUTILS["mobiliser_jumeaux"] == "comprendre"

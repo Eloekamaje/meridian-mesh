@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { useMesh } from "@/lib/mesh";
 import { usePerimetre } from "@/lib/perimetre";
+import { typeTwin } from "@/lib/sources";
 
 import { useContexte } from "@/lib/contexte";
 import TwinNode from "@/components/map/TwinNode";
@@ -67,6 +68,7 @@ export default function Atlas() {
   const [situations, setSituations] = useState([]);
   const focus = searchParams.get("focus");
   const situationParam = searchParams.get("situation");
+  const [lentille, setLentille] = useState(() => searchParams.get("lentille") || "tous");
   const selParam = searchParams.get("sel");
   const domaineParam = searchParams.get("domaine");
   const [selected, setSelected] = useState(null);
@@ -93,7 +95,21 @@ export default function Atlas() {
   const [domainesMasques, setDomainesMasques] = useState(() => new Set()); // légende-filtre : domaines décochés
   // Légende repliable ; repliée d'office sur les écrans peu hauts, où elle chevauche la barre d'outils
   const [legendeOuverte, setLegendeOuverte] = useState(() => typeof window === "undefined" || window.innerHeight >= 900);
-  const analyse = useMemo(() => (graphe && mesh ? analyserMesh(mesh) : null), [graphe, mesh]);
+  const meshLentille = useMemo(() => {
+    if (!mesh || lentille === "tous") return mesh;
+    const jumeaux = (mesh.jumeaux || []).filter((j) => {
+      const type = typeTwin(j);
+      return lentille === "applications" ? type === "APPLICATION" : type !== "APPLICATION";
+    });
+    const ids = new Set(jumeaux.map((j) => j.id));
+    return {
+      ...mesh,
+      jumeaux,
+      relations: (mesh.relations || []).filter((r) => ids.has(r.source) && ids.has(r.cible)),
+      regions: (mesh.regions || []).filter((r) => jumeaux.some((j) => j.domaine === r.label)),
+    };
+  }, [mesh, lentille]);
+  const analyse = useMemo(() => (graphe && meshLentille ? analyserMesh(meshLentille) : null), [graphe, meshLentille]);
 
   // Conservation de l'état de l'Atlas entre les pages : au retour, on restaure exactement
   // viewport, zoom, sélection et couches — jamais de fitView au retour (les liens partagés
@@ -463,8 +479,8 @@ export default function Atlas() {
   }, [focusCarte]);
 
   const statsDomaine = useCallback(
-    (label) => statsDuDomaine(mesh, situations, domDe, label),
-    [mesh, situations, domDe]
+    (label) => statsDuDomaine(meshLentille, situations, domDe, label),
+    [meshLentille, situations, domDe]
   );
 
   const onNodesChange = useCallback((changes) => {
@@ -589,7 +605,7 @@ export default function Atlas() {
 
   const { nodes, edges, snapshot } = useMemo(() => {
     const g = construireGraphe({
-      mesh, situation, focus, vueActive, perimetreTravail,
+      mesh: meshLentille, situation, focus, vueActive, perimetreTravail,
       posOverrides, compteurs, halo, selection,
       // Rendu graphe : les robots sont toujours visibles (jamais d'étoile) et les liens sont directs
       zoomNiveau: graphe ? Math.min(3, Math.max(2, zoomNiveau)) : zoomNiveau,
@@ -667,7 +683,7 @@ export default function Atlas() {
     });
     ciblesCoques.current = nouvellesCibles;
     return g;
-  }, [mesh, focus, situation, halo, compteurs, selection, relFocus, zoomNiveau, vueActive, posOverrides, domaineSel, perimetreTravail, domDe, statsRegions, focusCarte, temps, amorce, mesures, regionSurvolee, tickCoques, relSurvolee, selectedRelation, zoomActuel, routesFin, provisoire, estTactile, couchesCarte, situationsJumeaux, theatreSituationnel, graphe, analyse, domainesMasques]);
+  }, [meshLentille, focus, situation, halo, compteurs, selection, relFocus, zoomNiveau, vueActive, posOverrides, domaineSel, perimetreTravail, domDe, statsRegions, focusCarte, temps, amorce, mesures, regionSurvolee, tickCoques, relSurvolee, selectedRelation, zoomActuel, routesFin, provisoire, estTactile, couchesCarte, situationsJumeaux, theatreSituationnel, graphe, analyse, domainesMasques]);
 
   // Moteur de labels des titres de domaines : sélection > survol > halo > investigations actives ;
   // collision → le titre le moins prioritaire disparaît (jamais de chevauchement de texte)
@@ -811,7 +827,7 @@ export default function Atlas() {
   }, [snapshot, provisoire, pousser]);
 
   // Couches de relations (BCM déclaré / Réalité découverte / Écarts) + accentuation au survol/épinglage
-  const aretesDuGraphe = useMemo(() => (graphe && analyse ? aretesGraphe(mesh, nodes, analyse) : null), [graphe, analyse, mesh, nodes]);
+  const aretesDuGraphe = useMemo(() => (graphe && analyse ? aretesGraphe(meshLentille, nodes, analyse) : null), [graphe, analyse, meshLentille, nodes]);
   const aretesInterfacesGraphe = useMemo(
     () => (coucheInterfaces && graphe && analyse ? aretesInterfaces(etatInterfaces.donnees, nodes, analyse) : []),
     [coucheInterfaces, graphe, analyse, etatInterfaces.donnees, nodes]
@@ -900,13 +916,13 @@ export default function Atlas() {
     }
     if (!graphe || !focus || selection.length || !mesh) return nodes;
     const voisins = new Set([focus]);
-    mesh.relations.forEach((r) => { if (r.source === focus) voisins.add(r.cible); if (r.cible === focus) voisins.add(r.source); });
+    meshLentille.relations.forEach((r) => { if (r.source === focus) voisins.add(r.cible); if (r.cible === focus) voisins.add(r.source); });
     return nodes.map((n) => {
       if (n.type !== "twin" || n.data?.cadastre) return n;
       if (n.id === focus) return { ...n, selected: n.id === selected?.id, data: { ...n.data, nomVisible: true } };
       return voisins.has(n.id) ? { ...n, data: { ...n.data, nomVisible: true } } : { ...n, data: { ...n.data, dim: true } };
     });
-  }, [graphe, nodes, survolJumeau, selected, selection, mesh, domaineSel]);
+  }, [graphe, nodes, survolJumeau, selected, selection, meshLentille, domaineSel]);
 
   // Jumeau survolé ou épinglé → panneau flottant à gauche
   const jumeauSurvole = useMemo(() => {
@@ -926,7 +942,7 @@ export default function Atlas() {
   const resultatsRecherche = useMemo(() => {
     const q = recherche.trim().toLowerCase();
     if (!q || !mesh) return [];
-    const js = mesh.jumeaux
+    const js = meshLentille.jumeaux
       .filter((j) => !j.anonyme && (j.nom.toLowerCase().includes(q) || j.id.toLowerCase().includes(q) || idNumerique(j.id).includes(q)))
       .slice(0, 8)
       .map((j) => ({ type: "jumeau", id: j.id, label: j.nom, sub: `${idNumerique(j.id)} · ${j.domaine}` }));
@@ -941,7 +957,7 @@ export default function Atlas() {
       .slice(0, 3)
       .map((p) => ({ type: "chantier", id: p.ref, label: `${p.ref} · ${p.titre}`, sub: `chantier Jira · porté par ${p.porteurNom}${p.impacte?.length ? ` · touche ${p.impacte.length}` : ""}`, porteur: p.porteurId, touches: p.impacte || [] }));
     return [...js, ...cs, ...ds];
-  }, [recherche, mesh]);
+  }, [recherche, meshLentille]);
 
   // Voisins directs du jumeau sélectionné (intelligence locale — colonne gauche)
   const voisinsSelection = useMemo(() => {
@@ -1761,6 +1777,22 @@ export default function Atlas() {
             </div>
           )}
         </div>
+        <div className="pointer-events-auto mt-2 w-56">
+          <label className="glass flex items-center gap-2 rounded-xl px-3 py-2">
+            <span className="font-code text-[9px] uppercase tracking-[0.18em] text-[#7C93A8]">Lentille</span>
+            <select
+              value={lentille}
+              onChange={(e) => { setLentille(e.target.value); majUrl({ lentille: e.target.value === "tous" ? null : e.target.value }); }}
+              data-testid="atlas-lentille"
+              aria-label="Lentille de l'Atlas"
+              className="min-w-0 flex-1 bg-transparent text-xs text-[#F2F6F8] focus:outline-none"
+            >
+              <option value="tous">Tous les Twins</option>
+              <option value="applications">Applications</option>
+              <option value="ecosysteme">Écosystème tiers</option>
+            </select>
+          </label>
+        </div>
       </div>
 
       {/* Pile haute centrée — fil d'Ariane et bannières contextuelles : empilement vertical,
@@ -1869,7 +1901,7 @@ export default function Atlas() {
       {/* Rendu graphe : légende-filtre des domaines (plus de territoires — la couleur porte le domaine) et des états de lien */}
       {graphe && !echelle && mesh && (() => {
         const n = new Map();
-        mesh.jumeaux.filter((j) => !j.anonyme && !j.cadastre).forEach((j) => n.set(j.domaine, (n.get(j.domaine) || 0) + 1));
+        meshLentille.jumeaux.filter((j) => !j.anonyme && !j.cadastre).forEach((j) => n.set(j.domaine, (n.get(j.domaine) || 0) + 1));
         const domaines = [...n.entries()].sort((a, b) => b[1] - a[1]);
         return (
           <div className="glass absolute bottom-3 left-3 z-10 w-[200px] rounded-xl p-2.5 sm:bottom-10" data-testid="atlas-legende">

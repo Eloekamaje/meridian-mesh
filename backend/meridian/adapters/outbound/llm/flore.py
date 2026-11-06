@@ -23,7 +23,9 @@ from meridian.adapters.outbound.connectors import lecteurs
 from meridian.application import mesure
 from meridian.adapters.outbound.llm import mobilisation
 from meridian.domain import schemas
+from meridian.adapters.outbound.postgres import comprendre
 from meridian.adapters.outbound.postgres.connaissance import RE_CITATION
+from meridian.domain.partage import Consommateur
 from meridian.adapters.outbound.connectors.lecteurs import RE_CITATION_SOURCE
 from meridian.adapters.outbound.mongo.travail import EcritureTravail, etat_texte
 
@@ -146,11 +148,27 @@ def retirer_citations(texte):
     return _nettoyer(RE_GROUPE.sub("", RE_GROUPE_ENTRE_PARENTHESES.sub("", texte)))
 
 
+RE_CLAIM = re.compile(r"\s*\[claim:\d+\]")
+
+
+def retirer_claims(texte):
+    """Le lien vers la connaissance reste dans le modèle ; le texte affiché ne montre pas l'identifiant brut."""
+    return RE_CLAIM.sub("", texte)
+
+
 def fiche_affichable(fiche, sources):
-    """Fiche vivante pour l'interface : texte lisible, preuves à part (comme les réponses de Flore)."""
-    return {"sha": fiche["sha"], "contenu": retirer_citations(fiche["contenu"]),
-            "preuves": preuves_depuis(fiche["contenu"], sources),
-            "depots": [{"nom": s["nom"], "branche": s.get("branche"), "commit": s["curseur"][:12]} for s in sources]}
+    """Fiche vivante pour l'interface : texte lisible, preuves à part, Claims liés aux puces."""
+    return {
+        "sha": fiche["sha"],
+        "contenu": retirer_claims(retirer_citations(fiche["contenu"])),
+        "preuves": preuves_depuis(fiche["contenu"], sources),
+        "depots": [{"nom": s["nom"], "branche": s.get("branche"), "commit": s["curseur"][:12]} for s in sources],
+        "questions": fiche.get("questions") or [],
+        "couverture": fiche.get("couverture") or {},
+        "claims": fiche.get("claims") or [],
+        "stale": fiche.get("stale", False),
+        "puces": comprendre.puces_avec_claims(fiche["contenu"]),
+    }
 
 
 def vers_reponse_flore(jumeau, sources, texte, invalides=(), fraicheur=None):
@@ -231,11 +249,28 @@ def _contexte(jumeau_id, acteur, profil):
         lecteurs_branches = lecteurs.lecteurs_de(depot.toutes_les_sources(conn, jumeau_id))
         if not jumeau or not (sources or lecteurs_branches):
             return None, None
-        claims = connaissance.connaissances(conn, jumeau_id, limite=500)
+        consommateur = Consommateur(
+            jumeau.get("tenant_id") or "local",
+            team_id=jumeau.get("equipe") or "",
+            twin_id=jumeau["id"],
+        )
+        claims = connaissance.connaissances(
+            conn, jumeau_id, limite=500, consommateur=consommateur)
         fiche = gardien.fiche_courante(conn, jumeau_id)
         consignes = depot.consignes_du_jumeau(conn, jumeau)
-    return {"jumeau": jumeau, "consignes": consignes, "sources": sources, "claims": claims, "acteur": acteur, "profil": profil,
-            "lecteurs": lecteurs_branches, "fiche": fiche["contenu"] if fiche else None}, dsn
+    return {
+        "jumeau": jumeau,
+        "consignes": consignes,
+        "sources": sources,
+        "claims": claims,
+        "acteur": acteur,
+        "profil": profil,
+        "lecteurs": lecteurs_branches,
+        "fiche": fiche["contenu"] if fiche else None,
+        "consommateur": consommateur,
+        "couverture": fiche.get("couverture") if fiche else {},
+        "fiche_stale": fiche.get("stale") if fiche else None,
+    }, dsn
 
 
 # Les libellés des outils et leur suivi vivent dans flux (partagés avec la mobilisation des jumeaux).

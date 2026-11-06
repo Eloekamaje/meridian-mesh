@@ -12,7 +12,9 @@ from collections import deque
 import urllib.request
 from urllib.parse import quote, urlencode
 
-from meridian.adapters.outbound.connectors.naissance import NOM_VALIDE, _hote_autorise, resoudre_secret
+from meridian.adapters.outbound.connectors.naissance import (
+    CoffreIndisponible, NOM_VALIDE, SecretAbsent, _hote_autorise, resoudre_secret,
+)
 
 # ponytail: 300 dépôts les plus récemment mis à jour ; recherche GitHub si un compte en voit plus.
 MAX_PAGES = 3
@@ -109,6 +111,8 @@ def _get_avec(jeton, chemin, **params):
             raise TropDeDemandes(f"quota GitHub épuisé pour ce compte : réessayez dans {-(-attente // 60)} min") from e
         if e.code in (401, 403):
             raise JetonRefuse("GitHub refuse ce jeton") from e
+        if e.code == 404:
+            raise Invalide("ressource GitHub introuvable") from e
         raise
 
 

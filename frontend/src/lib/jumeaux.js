@@ -34,6 +34,17 @@ export const ACTION_LIGNE = {
   observation: "Revoir l'admission",
 };
 
+export function estEnNaissance(j = {}) {
+  return j?.naissance_etat === "en_cours";
+}
+
+export function statutJumeau(j = {}) {
+  if (j?.naissance_etat === "en_cours") return ["Naissance en cours", "#F2B84B"];
+  if (j?.naissance_etat === "echec") return ["Naissance échouée", "#F87171"];
+  if (j?.naissance_etat === "sans_substance") return ["Sans substance", "#F2B84B"];
+  return STATUTS[j?.statut] || [j?.statut || "Inconnu", "#7C93A8"];
+}
+
 // Identité d'un twin : il reste provisoire tant que sa mission ou son nom n'ont pas été confirmés par l'équipe.
 // Même vocabulaire que le résolveur du backend, pour que l'écran de revue et la réponse de Flore disent la même chose.
 const MISSIONS_PROVISOIRES = new Set(["aucune", "dfggg", "inconnu", "inconnue", "sans mission", "tbd", "todo"]);
@@ -128,6 +139,7 @@ export function resumeStrates(j) {
 }
 
 export function estEnAttention(j) {
+  if (j.naissance_etat === "en_cours") return false;
   return (
     j.statut !== "actif" ||
     (j.couverture ?? 100) < 60 ||

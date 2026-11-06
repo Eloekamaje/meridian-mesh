@@ -13,7 +13,10 @@ from dataclasses import asdict, dataclass, field
 from typing import Protocol, runtime_checkable
 
 MAX_PROFONDEUR = 8
-TYPES_TWIN = {"APPLICATION", "PROCESS", "CAPABILITY", "JOURNEY", "ORGANIZATION", "PRODUCT", "DATA_DOMAIN"}
+TYPES_TWIN = {
+    "APPLICATION", "PROCESS", "CAPABILITY", "JOURNEY", "ORGANIZATION", "PRODUCT", "DATA_DOMAIN",
+    "RESOURCE", "SUPPLIER", "TEAM", "ECOSYSTEM",
+}
 ETATS_RELATION = {"supposee", "observee", "validation", "confirmee", "contestee", "obsolete"}
 
 

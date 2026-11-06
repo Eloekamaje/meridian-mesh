@@ -60,7 +60,28 @@ def _sources(claims, contradictions=(), code=True, troncature=None):
             + ([{"nom": "Contradictions", "etat": f"{len(contradictions)} ouverte(s)", "ok": False}] if contradictions else []))
 
 
-def depuis_connaissances(jumeau, claims, fiche, contradictions=(), substance="code", troncature=None):
+def _routes(claims):
+    routes = []
+    for claim in claims:
+        if str(claim.get("predicat") or "").upper() != "EXPOSE":
+            continue
+        objet = str(claim.get("objet") or "").strip()
+        m = re.match(r"^([A-Za-z]+)\s+(\S+)$", objet)
+        if not m:
+            continue
+        preuve = (claim.get("preuves") or [{}])[-1]
+        routes.append({
+            "methode": m.group(1).upper(), "chemin": m.group(2), "objet": objet,
+            "fichier": preuve.get("chemin", ""),
+            "ligne_debut": preuve.get("ligne_debut"),
+            "ligne_fin": preuve.get("ligne_fin"),
+            "verification": claim.get("verification"),
+            "statut": claim.get("statut"),
+        })
+    return sorted(routes, key=lambda route: (route["chemin"], route["methode"]))
+
+
+def depuis_connaissances(jumeau, claims, fiche, contradictions=(), substance="code", troncature=None, enquete=None):
     f = comprendre.lire_fiche(fiche)
     trente = f["trente"]["texte"] + f["trente"]["puces"]
     criticite = next((t.split(":", 1)[1].strip() for t in trente if t.lower().startswith("criticité")), "inconnue")
@@ -77,6 +98,9 @@ def depuis_connaissances(jumeau, claims, fiche, contradictions=(), substance="co
         "verification": _verification(claims),
         "contradictions": [{k: x.get(k) for k in ("id", "enonce", "preuve_a", "systeme_a", "preuve_b", "systeme_b")}
                            for x in contradictions],
+        "routes_http": _routes(claims),
+        **({"enquete": {"statut": enquete.get("statut"), "resume": str(enquete.get("resume") or "")[:4000]}}
+           if enquete else {}),
         "ignore": f["ignore"]["puces"] + f["ignore"]["texte"]
                   + _lignes_troncature(troncature)
                   + _a_revoir(claims)
@@ -92,7 +116,13 @@ def depuis_connaissances(jumeau, claims, fiche, contradictions=(), substance="co
 
 def examiner(conn, jumeau_id, doc):
     fiche = gardien.fiche_courante(conn, jumeau_id)
+    enquete = None
+    for source in depot.sources_du_jumeau(conn, jumeau_id):
+        exploration = source.get("exploration") or {}
+        if isinstance(exploration, dict) and exploration.get("enquete"):
+            enquete = exploration["enquete"]
+            break
     return depuis_connaissances(doc, depot.lister_claims(conn, jumeau_id), fiche and fiche["contenu"],
                                 depot.contradictions_ouvertes(conn, jumeau_id),
                                 depot.substance(depot.types_de_sources(conn, jumeau_id)) or "code",
-                                depot.troncature(conn, jumeau_id))
+                                depot.troncature(conn, jumeau_id), enquete=enquete)

@@ -197,3 +197,17 @@ def test_module_sans_execution_dynamique_ni_reseau():
             assert all(alias.name.split(".")[0] in autorises for alias in noeud.names)
         if isinstance(noeud, ast.ImportFrom):
             assert (noeud.module or "").split(".")[0] in autorises
+
+
+def test_usage_et_presentation_sont_valides_et_serialises():
+    m = manifeste(
+        usage={"quand": "Une question sur le code.", "ne_pas": "Une conception cible."},
+        presentation={"libelle": "Je lis le code…", "groupe": "comprendre", "ordre": 2},
+    )
+    charge = m.as_dict()
+    assert charge["usage"]["quand"] == "Une question sur le code."
+    assert charge["presentation"] == {"libelle": "Je lis le code…", "groupe": "comprendre", "ordre": 2}
+    with pytest.raises(ManifesteInvalide):
+        manifeste(usage={"inconnu": "x"})
+    with pytest.raises(ManifesteInvalide):
+        manifeste(presentation={"ordre": "deux"})

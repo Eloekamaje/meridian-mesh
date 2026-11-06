@@ -1,5 +1,8 @@
 # Méridian
 
+> **Architecture de référence :** [docs/MERIDIAN_Architecture_Master_v1.md](docs/MERIDIAN_Architecture_Master_v1.md).
+> Ce README décrit le produit et l’usage ; il ne remplace pas le document maître d’architecture.
+
 **Méridian** est une plateforme de compréhension et de décision sur un système d'information. Elle n'est pas un simple graphe de topologie : le système est organisé autour de **Situations** (incidents, changements, découvertes) et suit le paradigme **Découvrir → Comprendre → Décider**.
 
 > Dans Méridian, sélectionner le SI revient à donner du contexte à Aurora. Interroger Aurora revient à transformer la vue du SI.
@@ -87,6 +90,9 @@ Niveaux d'autorisation par jumeau : `existence` → `résumé` → `preuves` →
 # Backend (port 8001)
 cd backend && pip install -r requirements.txt
 uvicorn server:app --host 0.0.0.0 --port 8001 --reload
+
+# Parseur PL/I ANTLR (facultatif, tests sémantiques) :
+# cd tools/pli && ./generate.sh ; voir tools/pli/README.md
 
 # Frontend (port 3000)
 cd frontend && yarn install && yarn start

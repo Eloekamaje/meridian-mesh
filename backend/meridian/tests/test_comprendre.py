@@ -25,6 +25,21 @@ def test_fiche_lue_par_niveaux():
     assert f["garde"] == {"puces": [], "texte": []}
 
 
+def test_claims_cites_extrait_les_identifiants():
+    fiche = "- Gérer les dossiers [claim:12]\n- Présenter la solution [claim:7] [claim:12]"
+    assert comprendre.claims_cites(fiche) == [7, 12]
+
+
+def test_puces_avec_claims_lie_chaque_puce():
+    fiche = ("## Ce qu'elle permet de faire\n"
+             "- Gérer les dossiers [claim:12]\n"
+             "- Présenter la solution\n")
+    assert comprendre.puces_avec_claims(fiche) == [
+        {"texte": "Gérer les dossiers", "claim_ids": [12]},
+        {"texte": "Présenter la solution", "claim_ids": []},
+    ]
+
+
 def test_la_methode_et_la_revue_parlent_des_memes_questions():
     texte = " ".join(methodes.lire("comprendre-application").split())
     assert "comprendre-application" in {m["nom"] for m in methodes.catalogue()}

@@ -49,6 +49,16 @@ def test_presentation_par_niveaux():
     assert "fastapi" not in str(e)
 
 
+def test_les_routes_exposees_et_l_enquete_sont_dans_la_presentation():
+    claims = CLAIMS + [claim("EXPOSE", "GET /api/dossiers", chemin="server.py")]
+    e = examen.depuis_connaissances({"nom": "X"}, claims, FICHE,
+                                    enquete={"statut": "terminee", "resume": "11 routes vérifiées"})
+    routes = e["presentation"]["routes_http"]
+    assert routes and routes[0]["objet"] == "GET /api/dossiers"
+    assert routes[0]["fichier"] == "server.py"
+    assert e["presentation"]["enquete"] == {"statut": "terminee", "resume": "11 routes vérifiées"}
+
+
 def test_pour_aller_plus_loin_les_sept_questions():
     e = examen.depuis_connaissances({"nom": "X"}, CLAIMS, None)
     blocs = {b["cle"]: b["items"] for b in e["comprendre"]}

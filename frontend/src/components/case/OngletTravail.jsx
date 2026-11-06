@@ -82,7 +82,7 @@ export function CorpsMessageFlore({ message, onOuvrirCanvas, onOuvrirArtefact, c
 
   return (
     <div className="space-y-3.5 text-[15px] leading-relaxed text-[#DCE6EE]">
-      <MarkdownFlore texte={visible} schemas={message.schemas} onOuvrirPiece={onOuvrirPiece} />
+      <MarkdownFlore texte={visible} schemas={message.schemas} diagrammes={message.diagrammes} onOuvrirPiece={onOuvrirPiece} />
 
       {/* Curseur clignotant : Flore est encore en train d'écrire (sinon, rien ne le distingue d'une lecture) */}
       {!fini && <span className="curseur-teletype -mt-2 inline-block">▍</span>}
@@ -981,6 +981,24 @@ export default function OngletTravail({
                           </button>
                         ))}
                       </div>
+                    )}
+                    {m.retrieval && i === messages.length - 1 && !envoiMsg && (
+                      <details data-testid="retrieval-flore" className="rounded-lg border border-white/[0.08] bg-white/[0.02] px-3 py-2 text-[11px] text-[#7C93A8]">
+                        <summary className="cursor-pointer select-none">
+                          Contexte retrouvé : {(m.retrieval.documents || []).length} document(s)
+                          {m.retrieval.graphe_global ? " · graphe global" : ""}
+                          {m.retrieval.memoire ? ` · ${m.retrieval.memoire} mémoire(s)` : ""}
+                        </summary>
+                        {(m.retrieval.documents || []).length > 0 && (
+                          <ul className="mt-2 space-y-1 font-code text-[10px] text-[#94A3B8]">
+                            {m.retrieval.documents.map((d, k) => (
+                              <li key={`${d.locator}-${k}`} className="truncate" title={d.locator}>
+                                {d.score != null ? `${Number(d.score).toFixed(2)} · ` : ""}{d.locator || "source locale"}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </details>
                     )}
                     {/* Réponses rapides à une question de Flore (revue d'une décision) ; une fois répondu, on garde la trace du choix */}
                     {m.reponses && !m.reponse && cas.veille?.statut === "en_veille" && (

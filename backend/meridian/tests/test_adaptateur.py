@@ -64,10 +64,10 @@ def test_route_devient_claim_api_usage_avec_decorateur_dans_la_preuve():
     assert "/health" in c["preuves"][0]["citation"]
 
 
-def test_paquet_variable_et_image_deviennent_des_dependances_localisees():
+def test_paquet_declare_variable_et_image_deviennent_des_faits_localises():
     claims = adapter(resultats(routes=[]), lire, "meridian", SHA, "TBT")
     par_objet = {c["objet"]: c for c in claims}
-    assert par_objet["motor"]["predicat"] == "DEPEND_DE"
+    assert par_objet["motor"]["predicat"] == "DECLARE_DEPENDANCE"
     assert par_objet["motor"]["preuves"][0]["ligne_debut"] == 3
     assert par_objet["MONGO_URL"]["predicat"] == "LIT_VARIABLE"
     assert par_objet["MONGO_URL"]["preuves"][0]["ligne_debut"] == 2

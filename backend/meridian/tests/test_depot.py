@@ -77,11 +77,11 @@ def test_contestation_garde_la_maturite(conn):
     assert (c["statut"], c["maturite"]) == ("CONTESTED", "M2")
 
 
-def test_ingestion_vide_refusee_sans_rien_cloturer(conn):
+def test_ingestion_vide_reussit_sans_rien_cloturer(conn):
     depot.enregistrer(conn, JUMEAU, SOURCE, [claim("motor")], ACTIVITE)
-    with pytest.raises(ValueError):
-        depot.enregistrer(conn, JUMEAU, SOURCE, [], ACTIVITE)
+    depot.enregistrer(conn, JUMEAU, {**SOURCE, "curseur": "sha-vide"}, [], ACTIVITE)
     assert objets_valides(conn) == {"motor"}
+    assert depot.source_du_jumeau(conn, "tbt")["curseur"] == "sha-vide"
 
 
 def test_claim_rouvert_repart_en_proposition(conn):

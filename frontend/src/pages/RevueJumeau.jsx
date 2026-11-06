@@ -10,7 +10,7 @@ import RevueContenu, { PlusLoin } from "@/components/jumeaux/RevueContenu";
 import ConnaissancesCode from "@/components/jumeaux/ConnaissancesCode";
 import InterfacesJumeau from "@/components/jumeaux/InterfacesJumeau";
 import PromotionJumeau from "@/components/jumeaux/PromotionJumeau";
-import { STATUTS, estJumeauProvisoire, estJumeauReel } from "@/lib/jumeaux";
+import { estJumeauProvisoire, estJumeauReel, estEnNaissance, statutJumeau } from "@/lib/jumeaux";
 
 export default function RevueJumeau() {
   const { jid } = useParams();
@@ -61,8 +61,10 @@ export default function RevueJumeau() {
     }
   };
 
-  const st = jumeau ? STATUTS[jumeau.statut] || [jumeau.statut, "#7C93A8"] : null;
-  const estAdmission = jumeau?.statut === "observation";
+  const st = jumeau ? statutJumeau(jumeau) : null;
+  const enNaissance = estEnNaissance(jumeau);
+  const naissanceEchouee = ["echec", "sans_substance"].includes(jumeau?.naissance_etat);
+  const estAdmission = jumeau?.statut === "observation" && !enNaissance && !naissanceEchouee;
   const reel = estJumeauReel(jumeau);
   const peutPromouvoir = reel && jumeau?.niveau === "complet" && estJumeauProvisoire(jumeau);
 
@@ -149,7 +151,7 @@ export default function RevueJumeau() {
                   </div>
                 </section>
               )}
-              {jumeau.statut !== "actif" && jumeau.niveau === "complet" && (
+              {jumeau.statut !== "actif" && jumeau.niveau === "complet" && !enNaissance && !naissanceEchouee && (
                 <div className="sticky bottom-0 -mx-4 mt-6 border-t border-[rgba(148,163,184,0.16)] bg-[#071019]/95 px-4 py-3 backdrop-blur sm:-mx-8 sm:px-8" data-testid="revue-barre-admission">
                   <button onClick={admettre} disabled={admission} data-testid="confirmer-admission-btn" className="flex w-full items-center justify-center gap-2 rounded-md bg-[#F2B84B] px-4 py-3 text-sm font-semibold text-[#071019] transition-colors hover:bg-[#F8CF7A] disabled:opacity-50">
                   <SealCheck size={16} /> {admission ? "Admission en cours…" : "Confirmer l'admission dans le Mesh"}

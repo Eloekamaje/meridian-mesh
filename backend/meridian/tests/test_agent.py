@@ -208,6 +208,14 @@ def test_dessiner_schema_seulement_quand_flore_peut_l_inserer(tmp_path, monkeypa
     assert "dessiner_schema" in avec.tool_names
 
 
+def test_le_prompt_rappelle_de_dessiner_quand_le_schema_est_possible():
+    from meridian.domain import schemas
+    prompt = agent.prompt_systeme({**CONTEXTE, "dessin": schemas.Dessin({}, lambda c: ([], "", ""))})
+    assert "illustrer-fonctionnalite" in prompt
+    assert "dessiner_schema" in prompt
+    assert "une seule entrée" in prompt
+
+
 def test_un_index_absent_est_dit_comme_tel_et_non_comme_une_panne(monkeypatch):
     """Plan de remédiation L0bis.4 : « Outil indisponible » masquait une connaissance non reconstruite."""
     def en_panne(outil, **args):

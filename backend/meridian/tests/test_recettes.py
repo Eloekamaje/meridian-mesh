@@ -7,7 +7,11 @@ V, N = "verifie", "non_appuye"
 
 
 def test_predicats_et_predicat_sans_recette():
-    assert PREDICATS == {"DEPEND_DE", "EXPOSE", "LIT_VARIABLE", "EXECUTE_IMAGE"}
+    assert PREDICATS == {
+        "DECLARE_DEPENDANCE", "DEPEND_DE", "EXPOSE", "LIT_VARIABLE", "EXECUTE_IMAGE",
+        "APPELLE", "COPIE", "EXECUTE", "LIT_DATASET", "REFERENCE",
+        "TABLE", "STOCKE_DANS", "COMPOSANT_JEE", "INJECTE", "INTERFACE_UTILISATEUR",
+    }
     assert recette("CONNAIT", "x", ["x"]) is None
 
 
@@ -36,6 +40,7 @@ def test_lignes_vides_ou_absentes(predicat):
 ])
 def test_depend_de(objet, lignes, attendu):
     assert recette("DEPEND_DE", objet, lignes) == attendu
+    assert recette("DECLARE_DEPENDANCE", objet, lignes) == attendu
 
 
 GET_CX = "GET /connexions/{systeme}/{cxid}/perimetres"
@@ -59,8 +64,9 @@ GET_CX = "GET /connexions/{systeme}/{cxid}/perimetres"
     ("GET /api/v1/users", ['@router.get("/accounts")'], N),
     # fin alignée sur un segment entier, pas sur une sous-chaîne
     ("GET /api/superusers", ['@router.get("/users")'], N),
-    # une ligne dont le chemin est « / » n'appuie rien (trop ambigu)
+    # une ligne dont le chemin est « / » n'appuie rien (trop ambigu), sauf la racine préfixée
     ("GET /api/users", ['@router.get("/")'], N),
+    ("GET /api/", ['@api_router.get("/")'], V),
     # chemin de la ligne plus long que le chemin cité : non appuyé
     ("GET /users", ['@router.get("/api/users")'], N),
     # décorateur sur plusieurs lignes
@@ -113,3 +119,171 @@ def test_execute_image(objet, lignes, attendu):
 def test_expose_la_racine_seulement_pour_la_racine():
     assert recette("EXPOSE", "GET /", ['@api_router.get("/")']) == "verifie"
     assert recette("EXPOSE", "GET /dossiers", ['@api_router.get("/")']) == "non_appuye"
+
+
+@pytest.mark.parametrize("objet,lignes,attendu", [
+    ("SUBPROG", ["           CALL 'SUBPROG'."], V),
+    ("SUBPROG", ['CALL "SUBPROG" USING SUBPROG-DATA'], V),
+    ("subprog", ["call 'subprog'"], V),
+    ("SUBPROG", ["CALL 'AUTRE'"], N),
+    ("SUBPROG", ["CALL 'SUBPROG2'"], N),
+    ("SUBPROG", ["RECALL 'SUBPROG'"], N),
+    ("SUBPROG", ["* CALL 'SUBPROG'"], N),
+    ("SUBPROG", ["      //* CALL 'SUBPROG'"], N),
+    ("SUBPROG", ["-- CALL 'SUBPROG'"], N),
+    ("SUBPROG", ["# CALL 'SUBPROG'"], N),
+])
+def test_appelle(objet, lignes, attendu):
+    assert recette("APPELLE", objet, lignes) == attendu
+
+
+@pytest.mark.parametrize("objet,lignes,attendu", [
+    ("COMMON", ["       COPY COMMON."], V),
+    ("COMMON", ["COPY COMMON REPLACING ==A== BY ==B=="], V),
+    ("common", ["copy common"], V),
+    ("COMMON", ["COPY AUTRE"], N),
+    ("COMMON", ["COPY COMMON-EXTRA"], N),
+    ("COMMON", ["* COPY COMMON"], N),
+    ("COMMON", ["      //* COPY COMMON"], N),
+    ("COMMON", ["-- COPY COMMON"], N),
+    ("COMMON", ["# COPY COMMON"], N),
+])
+def test_copie(objet, lignes, attendu):
+    assert recette("COPIE", objet, lignes) == attendu
+
+
+@pytest.mark.parametrize("objet,lignes,attendu", [
+    ("MAINPROG", ["//STEP1 EXEC PGM=MAINPROG"], V),
+    ("CLEANUP", ["//STEP2 EXEC PROC=CLEANUP"], V),
+    ("MAINPROG", ["       PROGRAM-ID. MAINPROG."], V),
+    ("mainprog", ["program-id. mainprog."], V),
+    ("MAINPROG", ["//STEP1 EXEC PGM=AUTRE"], N),
+    ("MAINPROG", ["//STEP1 EXEC PGM=MAINPROG2"], N),
+    ("MAINPROG", ["* EXEC PGM=MAINPROG"], N),
+    ("MAINPROG", ["//* EXEC PGM=MAINPROG"], N),
+    ("MAINPROG", ["-- EXEC PGM=MAINPROG"], N),
+    ("MAINPROG", ["# EXEC PGM=MAINPROG"], N),
+])
+def test_execute(objet, lignes, attendu):
+    assert recette("EXECUTE", objet, lignes) == attendu
+
+
+@pytest.mark.parametrize("objet,lignes,attendu", [
+    ("ACME.CLIENTS", ["//IN DD DSN=ACME.CLIENTS,DISP=SHR"], V),
+    ("ACME.CLIENTS", ["SELECT CLIENT-FILE ASSIGN TO ACME.CLIENTS."], V),
+    ("acme.clients", ["//IN DD DSN=acme.clients,DISP=SHR"], V),
+    ("ACME.CLIENTS", ["//IN DD DSN=OTHER.CLIENTS,DISP=SHR"], N),
+    ("ACME.CLIENTS", ["//IN DD DSN=ACME.CLIENTS2,DISP=SHR"], N),
+    ("ACME.CLIENTS", ["//IN DD DSN=ACME.CLIENTS.ARCHIVE,DISP=SHR"], N),
+    ("ACME.CLIENTS", ["* DSN=ACME.CLIENTS"], N),
+    ("ACME.CLIENTS", ["//* DSN=ACME.CLIENTS"], N),
+    ("ACME.CLIENTS", ["-- DSN=ACME.CLIENTS"], N),
+    ("ACME.CLIENTS", ["# DSN=ACME.CLIENTS"], N),
+])
+def test_lit_dataset(objet, lignes, attendu):
+    assert recette("LIT_DATASET", objet, lignes) == attendu
+
+
+@pytest.mark.parametrize("objet,lignes,attendu", [
+    ("AGENCE", ["FOREIGN KEY (AGENCE_ID) REFERENCES AGENCE(ID)"], V),
+    ("CLIENTS", ['REFERENCES "CLIENTS" (ID)'], V),
+    ("clients", ["references clients (id)"], V),
+    ("CLIENTS", ["REFERENCES AUTRE (ID)"], N),
+    ("CLIENTS", ["REFERENCES CLIENTS_ARCHIVE (ID)"], N),
+    ("CLIENTS", ["REFERENCES CLIENTS.ARCHIVE (ID)"], N),
+    ("CLIENTS", ["* REFERENCES CLIENTS"], N),
+    ("CLIENTS", ["//* REFERENCES CLIENTS"], N),
+    ("CLIENTS", ["-- REFERENCES CLIENTS"], N),
+    ("CLIENTS", ["# REFERENCES CLIENTS"], N),
+])
+def test_reference(objet, lignes, attendu):
+    assert recette("REFERENCE", objet, lignes) == attendu
+
+
+@pytest.mark.parametrize("objet,lignes,attendu", [
+    ("CLIENTS", ["CREATE TABLE CLIENTS ("], V),
+    ("clients", ["create table clients"], V),
+    ("CLIENTS", ['CREATE TABLE IF NOT EXISTS "CLIENTS" ('], V),
+    ("CLIENTS", ['@Table(name = "CLIENTS")'], V),
+    ("CLIENTS", ['@javax.persistence.Table(name = "CLIENTS")'], V),
+    ("APP.CLIENTS", ["CREATE TABLE APP.CLIENTS ("], V),
+    ("CLIENTS", ["CREATE TABLE APP.CLIENTS ("], V),
+    ("CLIENTS", ['CREATE TABLE "APP"."CLIENTS" ('], V),
+    ("CLIENTS", ["CREATE TABLE APP.CLIENTS_ARCHIVE ("], N),
+    ("CLIENTS", ["CREATE TABLE CLIENTS_ARCHIVE ("], N),
+    ("CLIENTS", ["CREATE TABLE AUTRE ("], N),
+    ("CLIENTS", ["-- CREATE TABLE CLIENTS ("], N),
+    ("CLIENTS", ["# CREATE TABLE CLIENTS ("], N),
+    ("CLIENTS", ["/* CREATE TABLE CLIENTS */"], N),
+    ("CLIENTS", ['// @Table(name = "CLIENTS")'], N),
+    ("CLIENTS", ['<!-- @Table(name = "CLIENTS") -->'], N),
+])
+def test_table(objet, lignes, attendu):
+    assert recette("TABLE", objet, lignes) == attendu
+
+
+@pytest.mark.parametrize("objet,lignes,attendu", [
+    ("ORDERS", ['@Table(name = "ORDERS")'], V),
+    ("ORDERS", ["CREATE TABLE ORDERS ("], V),
+    ("ORDERS", ["@Entity", "class Order {}"], N),
+    ("ORDERS", ["-- CREATE TABLE ORDERS ("], N),
+    ("ORDERS", ['// @Table(name = "ORDERS")'], N),
+])
+def test_stocke_dans(objet, lignes, attendu):
+    assert recette("STOCKE_DANS", objet, lignes) == attendu
+
+
+@pytest.mark.parametrize("objet,lignes,attendu", [
+    ("Stateless", ["@Stateless"], V),
+    ("stateless", ["@javax.ejb.Stateless"], V),
+    ("MessageDriven", ["@MessageDriven"], V),
+    ("session", ["<session>"], V),
+    ("session", ["<session-type>Stateless</session-type>"], N),
+    ("message-driven", ["<message-driven>"], V),
+    ("Stateless", ["@Stateful"], N),
+    ("Stateless", ["// @Stateless"], N),
+    ("Stateless", ["<!-- @Stateless -->"], N),
+    ("session", ["<!-- <session> -->"], N),
+])
+def test_composant_jee(objet, lignes, attendu):
+    assert recette("COMPOSANT_JEE", objet, lignes) == attendu
+
+
+@pytest.mark.parametrize("objet,lignes,attendu", [
+    ("AuditService", ["@EJB", "private AuditService audit;"], V),
+    ("ClientService", ["@Autowired private ClientService service;"], V),
+    ("EntityManager", ['@PersistenceContext(unitName = "x")', "private EntityManager em;"], V),
+    ("OrderRepository", ["@Inject", "private OrderRepository repo;"], V),
+    ("AuditService", ["@Service", "private AuditService audit;"], N),
+    ("AuditService", ["private AuditService audit;"], N),
+    ("AuditService", ["// @EJB", "private AuditService audit;"], N),
+    ("AuditService", ["/* @EJB */", "private AuditService audit;"], N),
+    ("AuditService", ["<!-- @EJB private AuditService audit; -->"], N),
+    ("javax.sql.DataSource", ["<resource-ref>",
+                              "<res-type>javax.sql.DataSource</res-type>",
+                              "</resource-ref>"], V),
+    ("javax.sql.DataSource", ["<resource-ref>",
+                              "<res-type>javax.sql.Other</res-type>",
+                              "</resource-ref>"], N),
+])
+def test_injecte(objet, lignes, attendu):
+    assert recette("INJECTE", objet, lignes) == attendu
+
+
+@pytest.mark.parametrize("objet,lignes,attendu", [
+    ("/clients/save", ['<form action="/clients/save" method="post">'], V),
+    ("/clients/save", ["<html:form action='/clients/save'>"], V),
+    ("/WEB-INF/pied.jsp", ['<jsp:include page="/WEB-INF/pied.jsp" />'], V),
+    ("/WEB-INF/pied.jsp", ['<c:import url="/WEB-INF/pied.jsp" />'], V),
+    ("/done.jsp", ['<jsp:forward page="/done.jsp" />'], V),
+    ("/WEB-INF/entete.jspf", ['<%@ include file="/WEB-INF/entete.jspf" %>'], V),
+    ("/clients/save", ["<form", '  action="/clients/save"', '  method="post">'], V),
+    ("/clients/save", ['<form action="/other" method="post">'], N),
+    ("/clients", ['<form action="/clients/save" method="post">'], N),
+    ("/WEB-INF/pied.jsp", ['<jsp:include page="/WEB-INF/pied.jspf" />'], N),
+    ("/clients/save", ['<!-- <form action="/clients/save"> -->'], N),
+    ("/clients/save", ["<%-- <form action=\"/clients/save\"> --%>"], N),
+    ("/clients/save", ['// <form action="/clients/save">'], N),
+])
+def test_interface_utilisateur(objet, lignes, attendu):
+    assert recette("INTERFACE_UTILISATEUR", objet, lignes) == attendu

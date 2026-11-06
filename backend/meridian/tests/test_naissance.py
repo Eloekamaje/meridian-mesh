@@ -1,7 +1,9 @@
 """Naissance d'un jumeau depuis la commande : source GitHub réelle, clone, ingestion, fiche, registre."""
 import asyncio
+import io
 import os
 import subprocess
+import urllib.error
 import uuid
 
 import pytest
@@ -58,6 +60,39 @@ def test_resolution_du_secret(monkeypatch):
     assert naissance.resoudre_secret("") is None
     with pytest.raises(RuntimeError):
         naissance.resoudre_secret("vault:meridian/github/banque#jeton")  # Vault non configuré
+
+
+def test_secret_absent_du_coffre_est_signale(monkeypatch):
+    monkeypatch.setenv("VAULT_TOKEN", "jeton-vault")
+    monkeypatch.setenv("VAULT_ADDR", "https://vault.intra")
+
+    def absent(*args, **kwargs):
+        raise urllib.error.HTTPError("https://vault.intra", 404, "absent", {}, None)
+
+    monkeypatch.setattr(naissance.urllib.request, "urlopen", absent)
+    with pytest.raises(naissance.SecretAbsent, match="redéclarez"):
+        naissance.resoudre_secret("vault:meridian/github/gh-x#jeton")
+
+
+def test_secret_incomplet_demande_redeclaration(monkeypatch):
+    monkeypatch.setenv("VAULT_TOKEN", "jeton-vault")
+    monkeypatch.setenv("VAULT_ADDR", "https://vault.intra")
+    monkeypatch.setattr(naissance.urllib.request, "urlopen",
+                        lambda *a, **k: io.BytesIO(b'{"data": {"data": {}}}'))
+    with pytest.raises(naissance.SecretAbsent, match="redéclarez"):
+        naissance.resoudre_secret("vault:meridian/github/gh-x#jeton")
+
+
+def test_ecriture_vault_404_n_est_pas_un_secret_absent(monkeypatch):
+    monkeypatch.setenv("VAULT_TOKEN", "jeton-vault")
+    monkeypatch.setenv("VAULT_ADDR", "https://vault.intra")
+
+    def absent(*args, **kwargs):
+        raise urllib.error.HTTPError("https://vault.intra", 404, "absent", {}, None)
+
+    monkeypatch.setattr(naissance.urllib.request, "urlopen", absent)
+    with pytest.raises(naissance.CoffreIndisponible):
+        naissance.deposer_jeton("connexions/github/gh-x", "ghp_x")
 
 
 def test_le_jeton_ne_passe_ni_par_l_url_ni_par_la_ligne_de_commande():
@@ -318,6 +353,25 @@ def _etat(db):
     return {k.removeprefix("naissance."): v for m in db.commandes.maj for k, v in m.items()}
 
 
+def test_etat_de_naissance_est_projete_sur_le_twin():
+    class Commandes(_Collection):
+        async def find_one(self, filtre, projection=None):
+            return {"jumeau_id": "progiciel"}
+
+    class Jumeaux:
+        def __init__(self):
+            self.maj = []
+
+        async def update_one(self, filtre, op):
+            self.maj.append((filtre, op["$set"]))
+
+    db = _Db()
+    db.commandes = Commandes()
+    db.jumeaux = Jumeaux()
+    asyncio.run(naissance._etat(db, "c1", etat="ne"))
+    assert db.jumeaux.maj == [({"id": "progiciel"}, {"naissance_etat": "ne"})]
+
+
 def test_naissance_sans_code_cree_declare_projette_et_redige(monkeypatch):
     monkeypatch.setenv("JUMEAU_DATADOG_HOTE", "api.datadoghq.eu")
     monkeypatch.setenv("JUMEAU_SERVICENOW_HOTE", "banque.service-now.com")
@@ -361,3 +415,138 @@ def test_naissance_sans_code_reportee_si_une_source_ne_repond_pas(monkeypatch):
     asyncio.run(naissance.naitre(None, db, {"id": "c1", **_pretes("servicenow", "datadog")}, "progiciel"))
     etat = _etat(db)
     assert etat["etat"] == "echec" and "ne répond pas" in etat["message"]
+
+
+# --- naissance typée (ADR-0030) : le type du Twin décide des sources qui le font naître ---
+
+def _commande_type(type_, *connecteurs, nom="Twin"):
+    hotes = {"confluence": "banque.atlassian.net", "servicenow": "banque.service-now.com",
+             "datadog": "api.datadoghq.eu", "jira": "banque.atlassian.net"}
+    return {"id": f"cmd-{type_.lower()}",
+            "jumeau": {"nom": nom, "proprietaire": "Équipe", "type": type_},
+            "sources": [{"id": c, "connecteur": c, "statut": "prete",
+                         "config": {"ci": "CI-1", "service": "svc", "espace": "ESP",
+                                    "hote": hotes.get(c, "exemple.invalid"),
+                                    "secret": "env:MERIDIAN_X"}}
+                        for c in connecteurs]}
+
+
+def _espionner_naissance(monkeypatch):
+    appels = []
+    monkeypatch.setattr(naissance, "_verifier_sources", lambda commande: None)
+    monkeypatch.setattr(depot, "creer_jumeau", lambda conn, j: appels.append(("jumeau", j)))
+    monkeypatch.setattr(depot, "declarer_source", lambda conn, j, s: appels.append(("source", s["type"])))
+
+    async def projeter(db, conn):
+        appels.append(("registre",))
+
+    async def veiller(conn, db, jid, **kw):
+        appels.append(("veiller", jid))
+    monkeypatch.setattr(naissance.registre, "projeter", projeter)
+    monkeypatch.setattr(naissance.gardien, "veiller", veiller)
+    return appels
+
+
+def test_twin_team_sans_application_id_nait_avec_confluence(monkeypatch):
+    appels = _espionner_naissance(monkeypatch)
+    commande = _commande_type("TEAM", "confluence", nom="Équipe Paiements")
+    assert "application_id" not in commande["jumeau"]
+    db = _Db()
+    asyncio.run(naissance.naitre(None, db, commande, "equipe-paiements"))
+    etat = _etat(db)
+    assert etat["etat"] == "ne" and etat["depots"] == []
+    jumeau = next(valeur for nature, valeur in appels if nature == "jumeau")
+    assert jumeau["id"] == "equipe-paiements" and jumeau["type"] == "TEAM"
+    assert ("source", "CONFLUENCE") in appels
+
+
+def test_twin_ecosysteme_sans_code_nait_avec_confluence_et_servicenow(monkeypatch):
+    appels = _espionner_naissance(monkeypatch)
+    commande = _commande_type("ECOSYSTEM", "confluence", "servicenow")
+    assert all(s["connecteur"] != "github" for s in commande["sources"])
+    db = _Db()
+    asyncio.run(naissance.naitre(None, db, commande, "ecosysteme-paiements"))
+    assert _etat(db)["etat"] == "ne"
+    jumeau = next(valeur for nature, valeur in appels if nature == "jumeau")
+    assert jumeau["type"] == "ECOSYSTEM"
+    assert {appel[1] for appel in appels if appel[0] == "source"} == {"CONFLUENCE", "SERVICENOW"}
+
+
+def test_twin_resource_nait_depuis_servicenow_sans_substance(monkeypatch):
+    appels = _espionner_naissance(monkeypatch)
+    commande = _commande_type("RESOURCE", "servicenow")
+    db = _Db()
+    asyncio.run(naissance.naitre(None, db, commande, "crm-saas"))
+    assert _etat(db)["etat"] == "ne"
+    jumeau = next(valeur for nature, valeur in appels if nature == "jumeau")
+    assert jumeau["type"] == "RESOURCE"
+    assert ("source", "SERVICENOW") in appels
+
+
+@pytest.mark.parametrize("type_, connecteur", [
+    ("RESOURCE", "cmdb"), ("RESOURCE", "contrat"), ("SUPPLIER", "export_fournisseur"),
+    ("TEAM", "sharepoint"), ("ECOSYSTEM", "teams")])
+def test_sources_acceptees_selon_le_type(type_, connecteur):
+    rendu, sources = naissance.regle_naissance(_commande_type(type_, connecteur))
+    assert rendu == type_ and [s["connecteur"] for s in sources] == [connecteur]
+
+
+@besoin_pg
+def test_twin_ne_avec_un_perimetre_a_perimetre_id_persiste(conn, monkeypatch):
+    monkeypatch.setattr(naissance, "_verifier_sources", lambda commande: None)
+
+    async def projeter(db, conn):
+        return None
+
+    async def veiller(conn, db, jid, **kw):
+        return None
+
+    monkeypatch.setattr(naissance.registre, "projeter", projeter)
+    monkeypatch.setattr(naissance.gardien, "veiller", veiller)
+    commande = _commande_type("TEAM", "confluence", nom="Équipe Paiements")
+    commande["jumeau"]["perimetre"] = "Périmètre Paiements Europe"
+    db = _Db()
+    asyncio.run(naissance.naitre(conn, db, commande, "equipe-paiements"))
+    assert _etat(db)["etat"] == "ne"
+    ligne = conn.execute(
+        "SELECT perimetre, perimetre_id FROM jumeau WHERE id = %s", ("equipe-paiements",)).fetchone()
+    assert ligne == ("Périmètre Paiements Europe", "perimetre-paiements-europe")
+
+
+def test_application_sans_type_garde_les_regles_actuelles(monkeypatch):
+    assert naissance.type_jumeau({"jumeau": {}}) == "APPLICATION"
+    monkeypatch.setattr(depot, "creer_jumeau", lambda *a: pytest.fail("application créée sans substance"))
+    commande = _commande_type("APPLICATION", "confluence")
+    commande["jumeau"].pop("type")  # commande historique : aucun type déclaré
+    db = _Db()
+    asyncio.run(naissance.naitre(None, db, commande, "paie"))
+    etat = _etat(db)
+    assert etat["etat"] == "sans_substance" and "ServiceNow" in etat["message"]
+
+
+def test_application_explicite_suit_les_memes_regles(monkeypatch):
+    appels = _espionner_naissance(monkeypatch)
+    db = _Db()
+    asyncio.run(naissance.naitre(None, db, _commande_type("APPLICATION", "servicenow", "datadog"), "paie"))
+    assert _etat(db)["etat"] == "ne"
+    assert ("source", "SERVICENOW") in appels and ("source", "DATADOG") in appels
+
+
+@pytest.mark.parametrize("type_", ["APPLICATION", "TEAM", "ECOSYSTEM", "RESOURCE", "SUPPLIER"])
+def test_sans_source_aucun_twin_ne_nait(type_):
+    with pytest.raises(ValueError, match="source"):
+        naissance.regle_naissance({"jumeau": {"nom": "Orphelin", "type": type_}, "sources": []})
+
+
+def test_naissance_non_applicative_sans_source_ne_cree_rien(monkeypatch):
+    monkeypatch.setattr(depot, "creer_jumeau", lambda *a: pytest.fail("Twin créé sans source"))
+    db = _Db()
+    asyncio.run(naissance.naitre(None, db, {"id": "c1", "jumeau": {"nom": "Orphelin", "type": "TEAM"},
+                                          "sources": []}, "orphelin"))
+    etat = _etat(db)
+    assert etat["etat"] == "echec" and "TEAM" in etat["message"] and "source" in etat["message"]
+
+
+def test_type_de_twin_inconnu_est_refuse():
+    with pytest.raises(ValueError, match="inconnu"):
+        naissance.type_jumeau({"jumeau": {"nom": "X", "type": "PROCESS"}})

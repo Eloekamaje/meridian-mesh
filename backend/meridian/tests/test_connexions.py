@@ -81,6 +81,41 @@ def test_declarer_lister_et_chercher_le_perimetre(monde):
     assert e.value.status_code == 404
 
 
+def test_secret_absent_donne_un_message_actionnable(monde):
+    def absent():
+        raise server.jumeau_github.SecretAbsent("secret absent")
+
+    with pytest.raises(HTTPException) as e:
+        asyncio.run(server._appel_service("GitHub", absent))
+    assert e.value.status_code == 409
+    assert "redéclarez" in e.value.detail
+
+
+def test_coffre_indisponible_donne_503(monde):
+    def indisponible():
+        raise server.jumeau_github.CoffreIndisponible("vault down")
+
+    with pytest.raises(HTTPException) as e:
+        asyncio.run(server._appel_service("GitHub", indisponible))
+    assert e.value.status_code == 503
+    assert "Coffre" in e.value.detail
+
+
+def test_route_depots_mappe_le_secret_absent(monde, monkeypatch):
+    async def reference(_cxid):
+        return "vault:meridian/connexions/github/gh-x#jeton"
+
+    def absent(_reference, _recherche):
+        raise server.jumeau_github.SecretAbsent("secret absent")
+
+    monkeypatch.setattr(server, "_reference_connexion", reference)
+    monkeypatch.setattr(server.jumeau_github, "depots", absent)
+    with pytest.raises(HTTPException) as e:
+        asyncio.run(server.depots_github("gh-x", q=""))
+    assert e.value.status_code == 409
+    assert "redéclarez" in e.value.detail
+
+
 def test_identifiants_mal_formes_refuses_avant_tout_appel(monde, monkeypatch):
     def refuse(email, jeton):
         raise server.jumeau_github.Invalide("adresse e-mail attendue")

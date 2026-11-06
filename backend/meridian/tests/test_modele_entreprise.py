@@ -68,15 +68,16 @@ def outcome(**champs):
     return Outcome(**valeurs, metrique="delai_moyen_jours", valeur_attendue=5, valeur_observee=6)
 
 
-def test_les_huit_familles_et_les_sept_types_sont_exposes():
+def test_les_huit_familles_et_les_onze_types_sont_exposes():
     assert len(FAMILLES) == 8
     assert set(FAMILLES) == {
         "identite_structure", "sources_preuves", "connaissance", "emergence",
         "investigation", "decision", "resultat_apprentissage", "interaction_gouvernance",
     }
-    assert len(TYPES_TWIN) == 7
+    assert len(TYPES_TWIN) == 11
     assert set(TYPES_TWIN) == {
         "APPLICATION", "PROCESS", "CAPABILITY", "JOURNEY", "ORGANIZATION", "PRODUCT", "DATA_DOMAIN",
+        "RESOURCE", "SUPPLIER", "TEAM", "ECOSYSTEM",
     }
     assert tuple(TYPES) == tuple(TYPES_TWIN)
     assert set(MODES) == {"DECLARED", "OBSERVED", "INFERRED", "PROPOSED", "CONFIRMED"}
@@ -84,7 +85,8 @@ def test_les_huit_familles_et_les_sept_types_sont_exposes():
 
 
 def test_twin_process_capability_et_journey_sont_valides_pas_seulement_application():
-    for type_ in ("PROCESS", "CAPABILITY", "JOURNEY", "ORGANIZATION", "PRODUCT", "DATA_DOMAIN"):
+    for type_ in ("PROCESS", "CAPABILITY", "JOURNEY", "ORGANIZATION", "PRODUCT", "DATA_DOMAIN",
+                  "RESOURCE", "SUPPLIER", "TEAM", "ECOSYSTEM"):
         objet = twin(type_)
         assert objet.type == type_
         assert objet.famille == "identite_structure"
@@ -97,6 +99,31 @@ def test_twin_process_capability_et_journey_sont_valides_pas_seulement_applicati
     assert est_twin_non_applicatif("APPLICATION") is False
     assert est_twin_non_applicatif("PROCESS") is True
     assert est_twin_non_applicatif("INCONNU") is False
+
+
+def test_twin_identifiants_et_application_id_optionnelle():
+    equipe = twin(
+        "TEAM", application_id=None, perimetre="Équipe cartes",
+        identifiants={"team_id": "equipe-cartes", "source": "annuaire"},
+    )
+    assert equipe.id == equipe.twin_id == "twin-1"
+    assert equipe.application_id is None
+    assert equipe.perimetre == "Équipe cartes"
+    assert equipe.identifiants == {"team_id": "equipe-cartes", "source": "annuaire"}
+    assert equipe.to_dict()["identifiants"] == {
+        "team_id": "equipe-cartes", "source": "annuaire"}
+
+    application = twin("APPLICATION")
+    assert application.application_id is None
+    assert application.identifiants == {}
+
+    ressource = twin(
+        "RESOURCE", identifiants={"resource_id": "ci-123", "cmdb": "ServiceNow"})
+    assert ressource.application_id is None
+    assert est_twin_non_applicatif(ressource) is True
+
+    with pytest.raises(ValueError):
+        twin("TEAM", identifiants=["pas", "un", "objet"])
 
 
 def test_type_mode_et_famille_inconnus_sont_refuses():
@@ -260,4 +287,4 @@ def test_le_module_ne_reduit_pas_twin_a_application_et_n_importe_pas_de_base():
         "asyncpg", "requests", "httpx", "urllib", "socket",
     }
     assert imports.isdisjoint(interdits)
-    assert "APPLICATION" in TYPES_TWIN and len(TYPES_TWIN) == 7
+    assert "APPLICATION" in TYPES_TWIN and len(TYPES_TWIN) == 11

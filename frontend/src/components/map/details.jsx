@@ -327,7 +327,219 @@ function ContexteCognitif({ donnees }) {
   );
 }
 
-export function ComparaisonDomaines({ a, b, statsDomaine }) {
+export function RelationsCognitives({ twinId, tenant }) {
+  const [manifeste, setManifeste] = useState(null);
+  const [propositions, setPropositions] = useState([]);
+  const [resolutions, setResolutions] = useState([]);
+  const [version, setVersion] = useState(0);
+  const [enCours, setEnCours] = useState("");
+  const [erreur, setErreur] = useState("");
+  useEffect(() => {
+    if (!tenant || !twinId) {
+      setManifeste(null);
+      setPropositions([]);
+      setResolutions([]);
+      return undefined;
+    }
+    let actif = true;
+    Promise.all([
+      api.get(`/boucle/twins/${encodeURIComponent(twinId)}/manifeste`, { headers: { "X-Tenant": tenant } }).catch(() => null),
+      api.get(`/boucle/relations?twin_id=${encodeURIComponent(twinId)}&limite=200`, { headers: { "X-Tenant": tenant } }).catch(() => null),
+      api.get(`/boucle/resolutions?twin_id=${encodeURIComponent(twinId)}&status=open&limite=50`, { headers: { "X-Tenant": tenant } }).catch(() => null),
+    ]).then(([m, r, c]) => {
+      if (!actif) return;
+      setManifeste(m?.data?.manifeste || null);
+      setPropositions(Array.isArray(r?.data?.propositions) ? r.data.propositions : []);
+      setResolutions(Array.isArray(c?.data?.resolutions) ? c.data.resolutions : []);
+    });
+    return () => { actif = false; };
+  }, [twinId, tenant, version]);
+
+  const agir = async (chemin, corps, cle) => {
+    setEnCours(cle);
+    setErreur("");
+    try {
+      await api.post(chemin, corps, { headers: { "X-Tenant": tenant } });
+      setVersion((v) => v + 1);
+    } catch (e) {
+      setErreur(e?.response?.data?.detail || "Action impossible.");
+    } finally {
+      setEnCours("");
+    }
+  };
+
+  if (!manifeste && propositions.length === 0 && resolutions.length === 0) return null;
+  const expositions = manifeste?.exposures || [];
+  const consommations = manifeste?.consumptions || [];
+  const inconnues = manifeste?.unknowns || [];
+  const eligibles = expositions.filter((e) => ["SERVICE", "PARTNER", "PUBLIC"].includes(e.portee)).length;
+  const techniques = expositions.filter((e) => ["INTERNAL", "ADMIN", "HEALTH", "DEMO", "DEBUG"].includes(e.portee)).length;
+  const aClasser = expositions.filter((e) => !e.portee || e.portee === "UNKNOWN").length;
+  return (
+    <Section titre="Relations du Mesh" cle="relations-cognitives" compte={propositions.length + resolutions.length}>
+      <div data-testid="twin-relations" className="space-y-2">
+        {manifeste && (
+          <div className="rounded-lg border border-[rgba(148,163,184,0.12)] bg-[#0F1D28] p-2.5" data-testid="twin-manifeste">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-code text-[10px] text-[#7C93A8]">
+              <span>Manifeste <span className="text-[#D8E2EA]">{manifeste.status === "PROVISIONAL" ? "provisoire" : "confirmé"}</span></span>
+              <span>{expositions.length} exposition{expositions.length > 1 ? "s" : ""}</span>
+              <span>{consommations.length} consommation{consommations.length > 1 ? "s" : ""}</span>
+            </div>
+            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 font-code text-[9px] text-[#7C93A8]" data-testid="twin-manifeste-portees">
+              <span className="text-[#34D399]">{eligibles} éligible{eligibles > 1 ? "s" : ""}</span>
+              <span className="text-[#F2B84B]">{techniques} technique{techniques > 1 ? "s" : ""}</span>
+              <span className="text-[#93C5FD]">{aClasser} à classer</span>
+            </div>
+            {eligibles === 0 && (
+              <p className="mt-1 text-[11px] leading-snug text-[#F2B84B]">
+                Aucune exposition éligible : une route interne, admin, santé ou non classée ne peut pas produire de relation de Mesh.
+              </p>
+            )}
+            {consommations.length === 0 && (
+              <p className="mt-1 text-[11px] leading-snug text-[#F2B84B]">
+                Aucune consommation déclarée : les liens sortants ne peuvent pas être proposés.
+              </p>
+            )}
+            {inconnues.length > 0 && (
+              <p className="mt-1 text-[10px] leading-snug text-[#5B7089]">Inconnues : {inconnues.join(" · ")}</p>
+            )}
+          </div>
+        )}
+        {resolutions.length > 0 && (
+          <div className="rounded-lg border border-[rgba(242,184,75,0.25)] bg-[#F2B84B]/[0.04] p-2.5" data-testid="twin-resolutions">
+            <div className="font-code text-[9px] uppercase tracking-[0.18em] text-[#F2B84B]">
+              Enquêtes ouvertes · {resolutions.length}
+            </div>
+            <ul className="mt-1 space-y-2">
+              {resolutions.map((resolution) => (
+                <li key={resolution.id} data-testid={`resolution-${resolution.id}`}>
+                  <p className="font-code text-[10px] text-[#D8E2EA]">{resolution.reference}</p>
+                  {resolution.missing_evidence && (
+                    <p className="text-[10px] leading-snug text-[#94A3B8]">Manque : {resolution.missing_evidence}</p>
+                  )}
+                  {resolution.next_check && (
+                    <p className="text-[10px] leading-snug text-[#7C93A8]">Prochaine vérification : {resolution.next_check}</p>
+                  )}
+                  {resolution.owner && (
+                    <p className="font-code text-[9px] text-[#5B7089]">Propriétaire : {resolution.owner}</p>
+                  )}
+                  <div className="mt-1 flex flex-wrap items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => agir(`/boucle/resolutions/${encodeURIComponent(resolution.id)}/investiguer`, {}, `investiguer-${resolution.id}`)}
+                      disabled={!!enCours}
+                      data-testid={`investiguer-${resolution.id}`}
+                      className="rounded border border-[#60A5FA]/40 px-1.5 py-0.5 font-code text-[9px] text-[#93C5FD] hover:bg-[#60A5FA]/10 disabled:opacity-50"
+                    >
+                      {enCours === `investiguer-${resolution.id}` ? "Investigation…" : "Investiguer"}
+                    </button>
+                  </div>
+                  {Array.isArray(resolution.candidates) && resolution.candidates.length > 0 && (
+                    <ul className="mt-1.5 space-y-1.5">
+                      {resolution.candidates.map((candidat) => (
+                        <li key={candidat.id} className="rounded border border-white/[0.08] bg-[#0F1D28] p-1.5" data-testid={`candidat-${candidat.id}`}>
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                            <span className="font-code text-[10px] text-[#D8E2EA]">{candidat.twin_id}</span>
+                            {candidat.service && <span className="font-code text-[9px] text-[#7C93A8]">{candidat.service}</span>}
+                            <span className="font-code text-[9px] text-[#7C93A8]">{Math.round(Number(candidat.confidence || 0) * 100)} %</span>
+                            <span className="ml-auto font-code text-[8px] uppercase tracking-wider text-[#5B7089]">{candidat.source} · {candidat.status}</span>
+                          </div>
+                          {candidat.reason && <p className="mt-0.5 text-[10px] leading-snug text-[#94A3B8]">{candidat.reason}</p>}
+                          {candidat.status === "proposed" && (
+                            <div className="mt-1 flex gap-1">
+                              <button
+                                type="button"
+                                onClick={() => agir(`/boucle/resolutions/${encodeURIComponent(resolution.id)}/revue`, { candidate_id: candidat.id, decision: "accepter", motif: "" }, `accepter-${candidat.id}`)}
+                                disabled={!!enCours}
+                                className="rounded border border-[#34D399]/40 px-1.5 py-0.5 font-code text-[9px] text-[#6EE7B7] hover:bg-[#34D399]/10 disabled:opacity-50"
+                              >
+                                Accepter
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => agir(`/boucle/resolutions/${encodeURIComponent(resolution.id)}/revue`, { candidate_id: candidat.id, decision: "rejeter", motif: "rejeté par le propriétaire" }, `rejeter-${candidat.id}`)}
+                                disabled={!!enCours}
+                                className="rounded border border-[#F87171]/40 px-1.5 py-0.5 font-code text-[9px] text-[#FCA5A5] hover:bg-[#F87171]/10 disabled:opacity-50"
+                              >
+                                Rejeter
+                              </button>
+                            </div>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1 font-code text-[9px] text-[#5B7089]">L'investigateur propose ; le propriétaire tranche.</p>
+          </div>
+        )}
+        {erreur && <p className="text-[10px] text-[#F87171]" data-testid="twin-relations-erreur">{erreur}</p>}
+        {propositions.length === 0 ? (
+          <p className="text-[11px] text-[#7C93A8]" data-testid="twin-relations-vide">
+            Aucune proposition de relation pour ce Twin.
+          </p>
+        ) : (
+          <ul className="space-y-1.5" data-testid="twin-relations-liste">
+            {propositions.map((p) => {
+              const etat = LIBELLES_ETAT_RELATION[p.state] || { label: p.state, couleur: "#7C93A8" };
+              return (
+                <li key={p.id} className="rounded-lg border border-[rgba(148,163,184,0.12)] bg-[#0F1D28] p-2.5" data-testid={`relation-${p.id}`}>
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span className="rounded border px-1.5 py-0.5 font-code text-[9px] uppercase tracking-wider" style={{ color: etat.couleur, borderColor: `${etat.couleur}55`, backgroundColor: `${etat.couleur}12` }}>{etat.label}</span>
+                    <span className="font-code text-[10px] text-[#D8E2EA]">{p.consumer_id} → {p.provider_id}</span>
+                    <span className="font-code text-[9px] text-[#7C93A8]">{LIBELLES_MODE_RELATION[p.mode] || p.mode}</span>
+                    <span className="font-code text-[9px] text-[#7C93A8]">{p.transport || "HTTP"} · {LIBELLES_PORTEE_RELATION[p.portee] || p.portee || "non classée"}</span>
+                    {p.confidence != null && <span className="ml-auto font-code text-[9px] text-[#7C93A8]">{Math.round(Number(p.confidence) * 100)} %</span>}
+                  </div>
+                  <p className="mt-1 text-[11px] leading-snug text-[#D8E2EA]">{p.object}</p>
+                  {p.via && <p className="mt-0.5 font-code text-[9px] text-[#93C5FD]">via {p.via}</p>}
+                  <p className="mt-0.5 font-code text-[9px] text-[#7C93A8]">
+                    {p.consumer_owner || "—"} · {p.provider_owner || "—"} · {Array.isArray(p.evidence_ids) ? p.evidence_ids.length : 0} preuve(s)
+                  </p>
+                  {p.unknowns?.length > 0 && <p className="mt-0.5 text-[10px] leading-snug text-[#5B7089]">{p.unknowns.join(" · ")}</p>}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        <p className="font-code text-[9px] text-[#5B7089]">Lecture seule — la revue propriétaire passe par l'API.</p>
+      </div>
+    </Section>
+  );
+}
+
+const LIBELLES_ETAT_RELATION = {
+  supposee: { label: "proposée", couleur: "#93C5FD" },
+  validation: { label: "en validation", couleur: "#F2B84B" },
+  confirmee: { label: "confirmée", couleur: "#34D399" },
+  contestee: { label: "contestée", couleur: "#F87171" },
+  observee: { label: "observée", couleur: "#22D3EE" },
+  obsolete: { label: "obsolète", couleur: "#7C93A8" },
+};
+
+const LIBELLES_MODE_RELATION = {
+  DECLARED: "déclaré",
+  OBSERVED: "observé",
+  INFERRED: "inféré",
+  PROPOSED: "proposé",
+  CONFIRMED: "confirmé",
+};
+
+const LIBELLES_PORTEE_RELATION = {
+  INTERNAL: "interne",
+  ADMIN: "admin",
+  HEALTH: "santé",
+  DEMO: "démo",
+  DEBUG: "debug",
+  SERVICE: "service",
+  PARTNER: "partenaire",
+  PUBLIC: "public",
+  UNKNOWN: "non classée",
+};
+
+function ComparaisonDomaines({ a, b, statsDomaine }) {
   const sa = statsDomaine(a);
   const sb = statsDomaine(b);
   if (!sa || !sb) return null;
@@ -446,6 +658,7 @@ export function TwinDetail({ selected, favori, onBasculerFavori, statsTwin, onIn
       </Section>
 
       {contexteCognitif && <ContexteCognitif donnees={contexteCognitif} />}
+      <RelationsCognitives twinId={selected.id} tenant={tenant} />
 
       {selected.capacites?.length > 0 && (
         <Section titre="Capacités métier">

@@ -22,7 +22,8 @@ MAX_JUGEES = 2 * juge.MAX_LOT  # connaissances jugées par passe : coût borné,
 MAX_RAISON = 300
 
 LIBELLES = {"REALISE_CAPACITE": "réalise la capacité", "SERT_ACTEUR": "sert", "DETIENT": "détient",
-            "APPLIQUE_REGLE": "applique la règle", "ECHANGE_AVEC": "échange avec", "DEPEND_DE": "dépend de",
+            "APPLIQUE_REGLE": "applique la règle", "ECHANGE_AVEC": "échange avec",
+            "DECLARE_DEPENDANCE": "déclare la dépendance", "DEPEND_DE": "dépend de",
             "EXPOSE": "expose", "LIT_VARIABLE": "lit la variable", "EXECUTE_IMAGE": "exécute l'image"}
 
 
@@ -39,12 +40,20 @@ def systeme_de_preuve(type_preuve, chemin, type_source):
 
 # Version de la règle de vérification, par prédicat : quand la règle change, ses connaissances se revérifient
 # (l'empreinte la porte), sans effacer l'historique. « forme1 » : règle de forme du plan de remédiation L1bis.2 bis.
-VERSION_REGLE = {"APPLIQUE_REGLE": "forme2", "DETIENT": "forme2"}  # forme2 : SQLModel, filtres, cascades
+VERSION_REGLE = {"APPLIQUE_REGLE": "forme2", "DETIENT": "forme2", "EXPOSE": "prefixe1"}  # forme2 : SQLModel, filtres, cascades
+VERSION_EXTRAITS = "morceaux1"  # une preuve plus longue que le juge est découpée, pas tronquée
 
 
 def empreinte(predicat, preuves):
     version = VERSION_REGLE.get((predicat or "").upper())
+    def _borne(preuve, long, court):
+        valeur = preuve.get(long)
+        return int(valeur if valeur is not None else preuve.get(court) or 0)
+    longues = any(_borne(p, "fin", "ligne_fin") - _borne(p, "debut", "ligne_debut") + 1 > juge.MAX_LIGNES
+                  for p in preuves)
     ids = ",".join(str(p["id"]) for p in preuves)
+    if longues:
+        ids = f"{ids}+{VERSION_EXTRAITS}"  # la preuve est présentée par morceaux : nouvelle identité de preuve
     return f"{version}:{ids}" if version else ids
 
 
@@ -143,10 +152,14 @@ def mentionne_enonce(objet, lignes):
 
 
 def systemes_muets(objet, extraits):
-    """Les systèmes dont l'extrait ne nomme jamais l'énoncé. Ce n'est **pas** un veto : une ligne de code ne répète
+    """Les systèmes dont aucun extrait ne nomme l'énoncé. Ce n'est **pas** un veto : une ligne de code ne répète
     pas les mots d'une phrase métier, et deux tests de recoupement légitime l'ont montré. C'est une observation
     portée avec le verdict, pour que la revue sache quel côté parle vraiment (plan de remédiation L1.4)."""
-    return sorted({e["systeme"] for e in extraits if not mentionne_enonce(objet, e.get("lignes"))})
+    par_systeme = {}
+    for extrait in extraits:
+        par_systeme.setdefault(extrait["systeme"], []).append(extrait)
+    return sorted({systeme for systeme, morceaux in par_systeme.items()
+                   if not any(mentionne_enonce(objet, morceau.get("lignes")) for morceau in morceaux)})
 
 
 def etat_du_jugement(appui, systemes, copie=None):
@@ -234,6 +247,20 @@ def _ouvrir_contradiction(conn, jumeau, c, raison):
                                     "juge-recoupement", c["id"])
 
 
+def _extraits(preuve, lignes, max_lignes=None):
+    """Découpe une preuve longue pour que le juge voie toutes ses lignes, pas seulement les 40 premières.
+
+    Une preuve de plusieurs sections (par exemple « modérer comptes, trajets, litiges et signalements ») couvre
+    plusieurs routes : la tronquer au premier extrait ferait juger « seulement les comptes ».
+    """
+    maximum = max(1, int(max_lignes or juge.MAX_LIGNES))
+    if len(lignes) <= maximum:
+        return [{"systeme": preuve["systeme"], "citation": preuve["locator"], "lignes": list(lignes)}]
+    morceaux = [lignes[i:i + maximum] for i in range(0, len(lignes), maximum)]
+    return [{"systeme": preuve["systeme"], "citation": f"{preuve['locator']} [{i + 1}/{len(morceaux)}]",
+             "lignes": list(morceau)} for i, morceau in enumerate(morceaux)]
+
+
 async def verifier(conn, jumeau, lecteurs=(), modele=None, juger=juge.juger, limite=MAX_JUGEES):
     """Une passe de vérification. Les recettes s'exécutent toutes (sans modèle) ; le juge prend au plus `limite`
     connaissances, d'abord celles qui ont plusieurs systèmes (le recoupement), puis celles proposées en conversation."""
@@ -269,7 +296,7 @@ async def verifier(conn, jumeau, lecteurs=(), modele=None, juger=juge.juger, lim
     dossiers, par_id = [], {}
     for c, systemes in a_juger:
         lus = [(p, l) for p in c["preuves"] if (l := lignes_de(p, lecteurs))]
-        extraits = [{"systeme": p["systeme"], "citation": p["locator"], "lignes": l} for p, l in lus]
+        extraits = [morceau for p, l in lus for morceau in _extraits(p, l)]
         if not extraits:
             bilan["en_attente"] += 1
             continue

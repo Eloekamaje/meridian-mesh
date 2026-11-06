@@ -5,9 +5,11 @@ Avec `REDIS_URL`, Redis devient obligatoire : on ne bascule jamais silencieuseme
 avec plusieurs workers, sinon chaque worker croirait être seul.
 """
 import asyncio
+from contextlib import asynccontextmanager
 import json
 import os
 import re
+import secrets
 
 from redis import asyncio as redis_asyncio
 
@@ -77,6 +79,40 @@ async def publier_arret():
     if not actif():
         return
     await (await client()).publish(canal_arret(), "1")
+
+
+_LIBERER = """
+if redis.call('get', KEYS[1]) == ARGV[1] then
+  return redis.call('del', KEYS[1])
+end
+return 0
+"""
+
+
+@asynccontextmanager
+async def verrou(cle: str, *, ttl: int = 300, attente: float = 30.0):
+    """Verrou distribué multi-workers ; sans Redis, l'appelant garde son verrou mémoire."""
+    if not actif():
+        yield
+        return
+    jeton = secrets.token_urlsafe(24)
+    connexion = await client()
+    limite = asyncio.get_running_loop().time() + max(0.0, attente)
+    acquis = False
+    while not acquis:
+        acquis = bool(await connexion.set(f"{prefixe()}verrou:{cle}", jeton, nx=True, ex=max(1, int(ttl))))
+        if acquis:
+            break
+        if asyncio.get_running_loop().time() >= limite:
+            raise TimeoutError(f"verrou occupé : {cle}")
+        await asyncio.sleep(0.1)
+    try:
+        yield
+    finally:
+        try:
+            await connexion.eval(_LIBERER, 1, f"{prefixe()}verrou:{cle}", jeton)
+        except Exception:
+            pass
 
 
 async def abonner(acteur):

@@ -126,7 +126,7 @@ def _sans_commentaires(texte):
 
 # --- Schémas dessinés par le harness (Harness v3 : l'agent choisit et nomme, le harness vérifie et écrit) ---------
 
-TYPES = ("sequence", "flux", "architecture")
+TYPES = ("sequence", "flux", "architecture", "data-model")
 MAX_BOITES, MAX_FLECHES = 12, 20
 STYLE_CODE = ("stroke:#60A5FA,stroke-width:1.5px", "bleu = lu dans le code (ligne d'appel)")
 RE_CITATION_CODE = re.compile(r"^(?:(?P<depot>[\w.-]+):)?(?P<chemin>[^\s#:]+)#L(?P<debut>\d+)(?:-L(?P<fin>\d+))?$")
@@ -193,8 +193,31 @@ class Dessin:
                 preuves.append(info)
         if not gardees:
             return "Aucune flèche fondée : rien n'est dessiné. " + " ; ".join(refus)
-        self.mermaid = (_sequence if type_ == "sequence" else _flux)(tableau, gardees, groupes)
         utilisees = {f[c] for f, _ in gardees for c in ("de", "vers")}
+        if type_ == "flux":
+            entrantes = {f["vers"] for f, _ in gardees}
+            sources = [i for i in tableau if i in utilisees and i not in entrantes]
+            if len(sources) != 1:
+                noms = ", ".join(sources) or "aucune"
+                return (f"Flux incohérent : {noms} sans flèche entrante. "
+                        "Un flux a une seule entrée : ajoute la flèche depuis l'étape précédente "
+                        "ou retire l'étape isolée. Si plusieurs entrées sont réelles, dessine une architecture.")
+            voisins = {i: set() for i in utilisees}
+            for f, _ in gardees:
+                voisins[f["de"]].add(f["vers"])
+                voisins[f["vers"]].add(f["de"])
+            vus, pile = set(), [sources[0]]
+            while pile:
+                noeud = pile.pop()
+                if noeud in vus:
+                    continue
+                vus.add(noeud)
+                pile.extend(voisins[noeud] - vus)
+            if vus != utilisees:
+                absents = ", ".join(i for i in tableau if i in utilisees and i not in vus)
+                return (f"Flux discontinu : {absents} n'est relié à aucune entrée. "
+                        "Relie toutes les étapes ou retire celles qui sont isolées.")
+        self.mermaid = (_sequence if type_ == "sequence" else _flux)(tableau, gardees, groupes)
         groupes_structure = []
         for groupe in list(groupes or [])[:6]:
             ids = [_id(i) for i in groupe.get("ids", []) if _id(i) in utilisees]

@@ -57,6 +57,27 @@ def test_flux_avec_groupes_et_styles_poses_par_le_harness():
     assert 'depot -->|"écrit"| base' in d.mermaid and "linkStyle 0 stroke:#34D399" in d.mermaid
 
 
+def test_un_flux_a_une_seule_entree_ou_il_est_refuse():
+    d = dessin()
+    rapport = d.dessiner("flux", "", BOITES, [
+        {"de": "route", "vers": "adresse", "fondement": "c:812"},
+        {"de": "depot", "vers": "base", "fondement": "c:812"},
+    ])
+    assert "une seule entrée" in rapport
+    assert d.structure is None
+
+
+def test_un_flux_connecte_est_accepte():
+    d = dessin()
+    rapport = d.dessiner("flux", "", BOITES, [
+        {"de": "route", "vers": "adresse", "fondement": "c:812"},
+        {"de": "route", "vers": "depot", "fondement": "c:812"},
+        {"de": "depot", "vers": "base", "fondement": "c:812"},
+    ])
+    assert "Schéma prêt" in rapport
+    assert d.structure["type"] == "flux"
+
+
 def test_rien_de_fonde_rien_de_dessine_et_type_inconnu():
     d = dessin()
     assert "rien n'est dessiné" in d.dessiner("flux", "", BOITES, [{"de": "route", "vers": "base", "fondement": "x"}])

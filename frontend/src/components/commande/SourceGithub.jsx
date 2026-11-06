@@ -12,7 +12,7 @@ export const CHAMP = `rounded-md border ${BORDURE} bg-[#0F1D28] px-3 py-2 text-x
 const DELAI_RECHERCHE = 250;
 
 // Charge les propositions de `chemin` (avec ?q=) pendant la saisie ; ignore les réponses dépassées.
-function usePropositions(chemin, recherche, actif) {
+function usePropositions(chemin, recherche, actif, relance) {
   const [etat, setEtat] = useState({ items: [], chargement: false, erreur: null });
   useEffect(() => {
     if (!actif || !chemin) return undefined;
@@ -24,15 +24,16 @@ function usePropositions(chemin, recherche, actif) {
         .catch((e) => vivant && setEtat({ items: [], chargement: false, erreur: e.response?.data?.detail || "GitHub indisponible" }));
     }, DELAI_RECHERCHE);
     return () => { vivant = false; clearTimeout(t); };
-  }, [chemin, recherche, actif]);
+  }, [chemin, recherche, actif, relance]);
   return etat;
 }
 
 // Champ à autocomplétion (motif combobox : clavier et lecteurs d'écran gérés par cmdk et Radix).
-export function Choix({ valeur, placeholder, chemin, rendu, valeurDe, onChoisir, desactive, label, testid }) {
+export function Choix({ valeur, placeholder, chemin, rendu, valeurDe, onChoisir, desactive, label, testid, vide = "Aucun résultat" }) {
   const [ouvert, setOuvert] = useState(false);
   const [recherche, setRecherche] = useState("");
-  const { items, chargement, erreur } = usePropositions(chemin, recherche, ouvert);
+  const [relance, setRelance] = useState(0);
+  const { items, chargement, erreur } = usePropositions(chemin, recherche, ouvert, relance);
   return (
     <Popover open={ouvert} onOpenChange={setOuvert}>
       <PopoverTrigger asChild>
@@ -47,7 +48,13 @@ export function Choix({ valeur, placeholder, chemin, rendu, valeurDe, onChoisir,
           <CommandInput value={recherche} onValueChange={setRecherche} placeholder="Rechercher…" className="text-xs" />
           <CommandList>
             <CommandEmpty className="px-3 py-4 text-xs text-[#94A3B8]">
-              {chargement ? "Recherche…" : erreur || "Aucun résultat"}
+              {chargement ? "Recherche…" : erreur ? (
+                <div className="space-y-2">
+                  <p>{erreur}</p>
+                  <button type="button" onClick={() => setRelance((n) => n + 1)} data-testid={`${testid}-reessayer`}
+                    className="text-[#60A5FA] hover:underline">Réessayer</button>
+                </div>
+              ) : vide}
             </CommandEmpty>
             {items.map((item) => (
               <CommandItem key={valeurDe(item)} value={valeurDe(item)} onSelect={() => { onChoisir(item); setOuvert(false); setRecherche(""); }}
@@ -92,6 +99,7 @@ function Connexion({ choisie, onChoisir }) {
   };
 
   if (!connexions) return <p className="text-[11px] text-[#7C93A8]">Chargement des connexions…</p>;
+  const selectionnee = connexions.find((c) => c.id === choisie);
   return (
     <fieldset>
       <legend className={ETIQUETTE}>1 · Compte GitHub</legend>
@@ -121,10 +129,24 @@ function Connexion({ choisie, onChoisir }) {
           <p className="mt-1 text-[10px] text-[#7C93A8]">Le jeton est vérifié auprès de GitHub puis conservé dans Vault ; il ne revient jamais à l'écran.</p>
         </div>
       ) : (
-        <button type="button" onClick={() => setAjout(true)} data-testid="insp-github-nouvelle-connexion"
-          className="mt-2 flex items-center gap-1.5 text-xs text-[#60A5FA] hover:underline">
-          <Plus size={12} aria-hidden /> Nouvelle connexion
-        </button>
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          {selectionnee && (
+            <button type="button" onClick={() => setAjout(true)} data-testid="insp-github-redeclarer"
+              className="flex items-center gap-1.5 text-xs text-[#F2B84B] hover:underline">
+              Redéclarer le jeton de @{selectionnee.login}
+            </button>
+          )}
+          <button type="button" onClick={() => setAjout(true)} data-testid="insp-github-nouvelle-connexion"
+            className="flex items-center gap-1.5 text-xs text-[#60A5FA] hover:underline">
+            <Plus size={12} aria-hidden /> {connexions.length > 0 ? "Nouveau compte" : "Ajouter un compte"}
+          </button>
+        </div>
+      )}
+      {selectionnee && !ajout && (
+        <p className="mt-1 text-[10px] text-[#7C93A8]">
+          Les dépôts ne s'affichent pas ? Le jeton de @{selectionnee.login} est peut-être absent du coffre :
+          utilisez « Redéclarer le jeton ».
+        </p>
       )}
       <div aria-live="polite" className="mt-1 min-h-[16px] text-[11px] text-[#F87171]">{etat.erreur}</div>
     </fieldset>
@@ -153,6 +175,7 @@ export default function SourceGithub({ source, onChange }) {
               <div className="min-w-0 flex-[3]">
                 <Choix label={`Dépôt ${i + 1}`} testid={`insp-github-depot-${i}`} valeur={l.depot} placeholder="Choisir un dépôt" desactive={!pret}
                   chemin={`${base}/depots`} valeurDe={(d) => d.nom}
+                  vide="Aucun dépôt lisible — vérifiez le scope repo du jeton."
                   rendu={(d) => (
                     <span className="flex w-full min-w-0 flex-col">
                       <span className="flex items-center gap-2">
@@ -167,6 +190,7 @@ export default function SourceGithub({ source, onChange }) {
               <div className="min-w-0 flex-[2]">
                 <Choix label={`Branche du dépôt ${i + 1}`} testid={`insp-github-branche-${i}`} valeur={l.branche && `⎇ ${l.branche}`} placeholder="Branche" desactive={!pret || !l.depot}
                   chemin={l.depot ? `${base}/branches?depot=${encodeURIComponent(l.depot)}` : null} valeurDe={(b) => b}
+                  vide="Aucune branche lisible."
                   rendu={(b) => <span className="flex items-center gap-1.5"><GitBranch size={11} aria-hidden />{b}</span>}
                   onChoisir={(b) => majLigne(i, { branche: b })} />
               </div>

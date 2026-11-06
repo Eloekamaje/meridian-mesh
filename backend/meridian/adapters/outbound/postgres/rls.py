@@ -64,8 +64,12 @@ class ConfigurationWorker(RuntimeError):
 TABLES = (
     "jumeau",
     "source",
+    "document_chunk",
+    "graph_community",
     "preuve",
     "claim",
+    "claim_share",
+    "publication_review",
     "revue",
     "contradiction",
     "ancre",
@@ -114,6 +118,11 @@ TABLES = (
     "planification_temps",
     "planification_taux",
     "planification_artefact",
+    "dossier_raisonnement",
+    "belief_calibration",
+    "code_observation",
+    "code_coverage",
+    "code_link",
 )
 
 # Tables filles sans `tenant_id` : la policy vérifie l'appartenance du parent.

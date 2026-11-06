@@ -18,6 +18,9 @@ CHAMPS_SECRETS = {"secret", "token", "jeton", "password", "passwd", "mot_de_pass
 
 ETAPES = (1, 2, 3, 4)
 
+TYPES_TWIN = import_identite.TYPES_TWIN
+TYPE_TWIN_DEFAUT = import_identite.TYPE_TWIN_DEFAUT
+
 Testeur = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
 
 
@@ -107,22 +110,84 @@ def _maintenant() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _vrai(valeur: Any) -> bool:
+    return valeur is True or str(valeur or "").strip().lower() in {"1", "true", "oui", "yes"}
+
+
+def _mode_candidat(source: Mapping[str, Any], mode: str = "") -> bool:
+    marqueur = _vrai(source.get("candidat") or source.get("candidate"))
+    identite = str(source.get("mode_identite") or source.get("mode") or mode or "").strip().lower()
+    return marqueur or identite in {"candidat", "candidate"}
+
+
 async def creer_commande(
     store: CommandesStore,
     *,
+    type_twin: str | None = None,
+    twin_id: str = "",
     application_id: str = "",
+    perimetre: str = "",
+    identifiants: Mapping[str, Any] | None = None,
     nom: str = "",
     proprietaire: str = "",
     acteur: str,
+    candidat: bool = False,
+    mode: str = "",
 ) -> dict[str, Any]:
-    """Ouvre un brouillon de commande, au nom de l'acteur authentifié."""
+    """Ouvre un brouillon de commande typée, au nom de l'acteur authentifié.
+
+    Les appels historiques sans type restent des Twins APPLICATION et conservent la forme de
+    brouillon existante. Dès qu'un champ typé est fourni, l'identité est validée et le twin_id
+    stable est persisté dans la commande.
+    """
+    candidat = candidat or _mode_candidat({}, mode)
+    type_demande = type_twin if type_twin is not None else TYPE_TWIN_DEFAUT
+    identite_demandee = bool(
+        type_twin is not None or twin_id or perimetre or identifiants is not None or candidat
+    )
+    if identite_demandee:
+        try:
+            identite = import_identite.construire_identite(
+                type_demande,
+                twin_id=twin_id,
+                application_id=application_id,
+                perimetre=perimetre,
+                identifiants=identifiants,
+                candidat=candidat,
+            )
+        except import_identite.ImportInvalide as exc:
+            raise IdentiteInvalide(str(exc)) from exc
+        verif_jumeau = getattr(store, "jumeau_existe", None)
+        if twin_id and verif_jumeau is not None and await verif_jumeau(identite["twin_id"]):
+            raise JumeauExistant(_message_doublon(identite["type_twin"]))
+        verif_application = getattr(store, "application_id_existe", None)
+        if (identite["application_id"] and verif_application is not None
+                and await verif_application(identite["application_id"])):
+            raise JumeauExistant(_message_doublon(identite["type_twin"]))
+        if (identite["application_id"] and identite["application_id"] != identite["twin_id"]
+                and verif_jumeau is not None
+                and await verif_jumeau(identite["application_id"])):
+            raise JumeauExistant(_message_doublon(identite["type_twin"]))
+        jumeau = {
+            "type_twin": identite["type_twin"],
+            "twin_id": identite["twin_id"],
+            "application_id": identite["application_id"],
+            "nom": nom,
+            "proprietaire": proprietaire,
+            "perimetre": identite["perimetre"],
+            "identifiants": identite["identifiants"],
+        }
+        if identite["candidat"]:
+            jumeau["candidat"] = True
+    else:
+        jumeau = {"application_id": application_id, "nom": nom,
+                  "proprietaire": proprietaire}
     cid = f"cmd-{secrets.token_hex(4)}"
     doc = {
         "id": cid,
         "etat": "brouillon",
         "etape": 1,
-        "jumeau": {"application_id": application_id, "nom": nom,
-                    "proprietaire": proprietaire},
+        "jumeau": jumeau,
         "sources": [],
         "cree_par": acteur,
         "cree_le": _maintenant(),
@@ -139,6 +204,18 @@ async def lister_commandes(store: CommandesStore) -> list[dict[str, Any]]:
 async def lire_commande(store: CommandesStore, cid: str) -> dict[str, Any]:
     doc = await store.lire(cid)
     if doc is None:
+        raise CommandeIntrouvable(cid)
+    return doc
+
+
+async def supprimer_commande(store: CommandesStore, cid: str) -> dict[str, Any]:
+    """Supprime un brouillon ; une commande lancée n'est jamais supprimable."""
+    doc = await store.lire(cid)
+    if doc is None:
+        raise CommandeIntrouvable(cid)
+    if doc.get("etat") != "brouillon":
+        raise CommandeModifiee(cid)
+    if not await store.supprimer(cid, etat="brouillon"):
         raise CommandeIntrouvable(cid)
     return doc
 
@@ -220,6 +297,68 @@ def naissance_possible(connecteurs: Iterable[str]) -> bool:
     )
 
 
+def _identite_lancement(jumeau: Mapping[str, Any]) -> dict[str, Any]:
+    """Valide le brouillon au lancement, y compris les anciens documents sans type ni twin_id."""
+    try:
+        type_twin = import_identite.normaliser_type_twin(
+            jumeau.get("type_twin") or jumeau.get("type") or TYPE_TWIN_DEFAUT
+        )
+    except import_identite.ImportInvalide as exc:
+        raise IdentiteInvalide(str(exc)) from exc
+    application_id = str(jumeau.get("application_id") or "").strip().lower()
+    twin_id = str(jumeau.get("twin_id") or "").strip().lower()
+    nom = str(jumeau.get("nom") or "").strip()
+    proprietaire = str(jumeau.get("proprietaire") or "").strip()
+    candidat = _mode_candidat(jumeau)
+    manque_application = type_twin == "APPLICATION" and not application_id and not candidat
+    if not nom or not proprietaire or manque_application:
+        if type_twin == "APPLICATION":
+            raise IdentiteInvalide(
+                "Identité incomplète (application_id, nom et propriétaire requis)"
+            )
+        raise IdentiteInvalide("Identité incomplète (nom et propriétaire requis)")
+    if len(nom) > 200 or len(proprietaire) > 200:
+        raise IdentiteInvalide("Nom ou propriétaire trop long (200 caractères maximum)")
+    if application_id and not import_identite.APPLICATION_ID.fullmatch(application_id):
+        raise IdentiteInvalide("application_id invalide (minuscules, chiffres, . _ -)")
+    try:
+        identite = import_identite.construire_identite(
+            type_twin,
+            twin_id=twin_id,
+            application_id=application_id,
+            perimetre=jumeau.get("perimetre"),
+            perimetre_id=jumeau.get("perimetre_id"),
+            identifiants=jumeau.get("identifiants"),
+            candidat=candidat,
+        )
+    except import_identite.ImportInvalide as exc:
+        raise IdentiteInvalide(str(exc)) from exc
+    return {**identite, "nom": nom, "proprietaire": proprietaire}
+
+
+def _message_doublon(type_twin: str) -> str:
+    identifiant = "App ID" if type_twin == "APPLICATION" else "twin_id"
+    return f"Un jumeau porte déjà cet identifiant — choisissez un autre {identifiant}"
+
+
+async def _jumeau_deja_present(
+    store: CommandesStore,
+    runtime: NaissanceRuntime,
+    twin_id: str,
+    application_id: str,
+) -> bool:
+    if runtime.en_cours(twin_id) or await store.jumeau_existe(twin_id):
+        return True
+    if not application_id:
+        return False
+    if application_id != twin_id and runtime.en_cours(application_id):
+        return True
+    verif_application = getattr(store, "application_id_existe", None)
+    if verif_application is not None and await verif_application(application_id):
+        return True
+    return application_id != twin_id and await store.jumeau_existe(application_id)
+
+
 async def lancer_commande(
     store: CommandesStore,
     runtime: NaissanceRuntime,
@@ -239,17 +378,13 @@ async def lancer_commande(
         return {"ok": True, "jumeau_id": doc["jumeau_id"], "sources_lancees": len(pretes),
                 "sources_reportees": len(doc.get("sources", [])) - len(pretes),
                 "naissance": (doc.get("naissance") or {}).get("etat"), "deja": True}
-    j = doc["jumeau"]
-    application_id = (j.get("application_id") or "").strip().lower()
-    nom = (j.get("nom") or "").strip()
-    proprietaire = (j.get("proprietaire") or "").strip()
-    if not application_id or not nom or not proprietaire:
-        raise IdentiteInvalide("Identité incomplète (application_id, nom et propriétaire requis)")
-    if len(nom) > 200 or len(proprietaire) > 200:
-        raise IdentiteInvalide("Nom ou propriétaire trop long (200 caractères maximum)")
-    if not import_identite.APPLICATION_ID.fullmatch(application_id):
-        raise IdentiteInvalide("application_id invalide (minuscules, chiffres, . _ -)")
-    j = {**j, "application_id": application_id, "nom": nom, "proprietaire": proprietaire}
+    identite = _identite_lancement(doc["jumeau"])
+    type_twin = identite["type_twin"]
+    application_id = identite["application_id"]
+    twin_id = identite["twin_id"]
+    nom = identite["nom"]
+    proprietaire = identite["proprietaire"]
+    j = {**doc["jumeau"], **identite}
     doc = {**doc, "jumeau": j}
     pretes = [s for s in doc.get("sources", []) if s.get("statut") == "prete"]
     non_branchees = [s for s in pretes if not connecteur_branche(s.get("connecteur"))]
@@ -266,19 +401,28 @@ async def lancer_commande(
             "Aucune source prête ne permet une naissance : ajoutez GitHub, ou ServiceNow/CMDB "
             "avec Datadog, OTLP ou Confluence.",
         )
-    jid = application_id
-    if runtime.en_cours(jid) or await store.jumeau_existe(jid):
-        raise JumeauExistant("Un jumeau porte déjà cet identifiant — choisissez un autre App ID")
+    jid = twin_id
+    if await _jumeau_deja_present(store, runtime, jid, application_id):
+        raise JumeauExistant(_message_doublon(type_twin))
     nouveau = {
-        "id": jid, "nom": nom, "domaine": "Non classé", "mission": "",
-        "proprietaire": proprietaire,
+        "id": jid, "type": type_twin,
+        "application_id": application_id or None,
+        "nom": nom, "domaine": "Non classé", "mission": "",
+        "proprietaire": proprietaire, "perimetre": identite["perimetre"],
+        "perimetre_id": identite["perimetre_id"],
+        "identifiants": dict(identite["identifiants"]),
         "statut": "observation", "autonomie": "aucune",
-        "couverture": min(20 + len(pretes) * 9, 88), "fraicheur": "à l'instant", "sante": "inconnu",
+        "naissance_etat": "en_cours",
+        # Une source prête ne mesure pas ce que le jumeau comprend. La projection du registre
+        # remplacera ce zéro par la part de Claims réellement établis après l'ingestion.
+        "couverture": 0, "fraicheur": "à l'instant", "sante": "inconnu",
         "position": {"x": 1260, "y": 40},
         "sources": {s.get("connecteur"): True for s in pretes if s.get("connecteur")},
     }
+    if identite["candidat"]:
+        nouveau["candidat"] = True
     if not await store.inserer_jumeau(nouveau):
-        raise JumeauExistant("Un jumeau porte déjà cet identifiant — choisissez un autre App ID")
+        raise JumeauExistant(_message_doublon(type_twin))
     maintenant = _maintenant()
     etat_commande = {"etat": "lancee", "jumeau_id": jid, "lancee_le": maintenant,
                      "naissance": {"etat": "en_cours", "debut": maintenant}}

@@ -12,6 +12,7 @@ import MarqueRelecture from "./MarqueRelecture";
 import MarqueOrigine from "./MarqueOrigine";
 import BrouillonFlore from "./BrouillonFlore";
 import LigneActiviteFlore from "./LigneActiviteFlore";
+import RaisonnementFlore from "./RaisonnementFlore";
 import { PreuvesMessage } from "./case/VeilleTravail";
 import { coutTemps } from "@/lib/coutTemps";
 
@@ -101,13 +102,15 @@ export function MessageFlore({
     ? (isValidElement(corps) && onOuvrirPiece
       ? cloneElement(corps, { onOuvrirPiece: corps.props?.onOuvrirPiece ?? onOuvrirPiece })
       : corps)
-    : <MarkdownFlore texte={message.texte} schemas={message.schemas} onOuvrirPiece={onOuvrirPiece} />;
+    : <MarkdownFlore texte={message.texte} schemas={message.schemas} onOuvrirPiece={onOuvrirPiece}
+        diagrammes={message.diagrammes} />;
   return (
     <SchemasContexte.Provider value={message.schemas || []}>
     <PreuvesContexte.Provider value={contextePreuves}>
     <div className="space-y-2" data-testid={testid}>
       {activite && <LigneActiviteFlore activite={activite} testid={testid ? `${testid}-activite` : undefined} />}
       {corpsRendu}
+      {message.raisonnement && <RaisonnementFlore raisonnement={message.raisonnement} evaluation={message.evaluation_raisonnement} />}
       {message.interrompu && (
         <div className="flex flex-wrap items-center gap-2 rounded-md border border-[#F2B84B]/40 bg-[#F2B84B]/[0.06] px-2.5 py-1.5 text-xs text-[#F2B84B]" data-testid="flore-interrompu">
           <span>{explicationArret(message)}</span>

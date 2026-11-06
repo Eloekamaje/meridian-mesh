@@ -9,11 +9,12 @@ import asyncio
 from types import SimpleNamespace
 from typing import Any, Mapping
 
-from meridian.application import composition, evaluation_cognitive, reponse_cognitive
+from meridian.application import composition, epistemie as epistemie_application, evaluation_cognitive, evaluation_raisonnement, noyau_raisonnement, reponse_cognitive
 from meridian.application import resolveur_contexte
 from meridian.application.execution.modele import AnnulationExecution, ApprobationRequise
 from meridian.domain import contexte as contexte_module
 from meridian.domain import profils, raisonnement, specialistes
+from meridian.domain.partage import Consommateur
 from meridian.ports.analyse import ConfigurationManquante, RuntimeAnalyse
 
 
@@ -76,7 +77,7 @@ async def _phase(processus, nom: str, seq: int, entree, fonction, *, sortie,
 
 async def executer(tenant: str, acteur: str, payload: Mapping[str, Any] | Any, *,
                    runtime: RuntimeAnalyse | None = None, run_id: str | None = None,
-                   verifier_annulation=None, processus=None) -> dict:
+                   verifier_annulation=None, processus=None, acteur_contexte=None) -> dict:
     """Exécute la même analyse cognitive que la route `/analyser`, sans transport HTTP.
 
     Les étapes `contexte`, `specialistes`, `reponse` et `evaluation` sont journalisées
@@ -96,6 +97,8 @@ async def executer(tenant: str, acteur: str, payload: Mapping[str, Any] | Any, *
 
     async def resoudre_contexte():
         profil_demande = p.profil if runtime.mode_auth() == "demo" else None
+        if not profil_demande and acteur_contexte:
+            profil_demande = acteur_contexte.get("poste")
         profil_local = profils.resoudre_profil(
             profil=profil_demande, identite={"role": acteur},
             question=p.question, autorite_max="proposition")
@@ -147,6 +150,7 @@ async def executer(tenant: str, acteur: str, payload: Mapping[str, Any] | Any, *
         resoudre_contexte, sortie=sortie_contexte, reprise=False)
     profil, plan = contexte["profil"], contexte["plan"]
     twin_ids = contexte["twin_ids"]
+    twin_proprietaire = twin_ids[0] if len(twin_ids) == 1 else None
     global_scope = contexte["global_scope"]
     contexte_resolu = contexte["contexte_resolu"]
 
@@ -192,28 +196,109 @@ async def executer(tenant: str, acteur: str, payload: Mapping[str, Any] | Any, *
     verifier()
 
     async def composer_reponse():
-        reponse = reponse_cognitive.composer(
-            p.question, profil, plan, dossier, autorite_max="proposition")
         max_tokens = max(200, min(int(getattr(p, "max_tokens", None) or 6000), 20000))
         proximite = runtime.proximite_graphe(tenant, twin_ids)
         entites = tuple(getattr(contexte_resolu, "entites", ()) or ())
         contexte_pack = contexte_module.construire(
             p.question, profil, dossier, max_tokens=max_tokens,
             entites=entites, proximite=proximite)
+        consommateur = Consommateur(
+            tenant,
+            portfolio_id=str((acteur_contexte or {}).get("espace") or ""),
+        )
         try:
             candidats = await runtime.recuperer_memoire(
                 tenant, question=p.question, twin_ids=tuple(twin_ids),
                 situation_id=p.situation_id,
                 scope=("session" if p.session_id else None),
-                scope_id=p.session_id, limite=12, proximite=proximite)
+                scope_id=p.session_id, limite=12, proximite=proximite,
+                consommateur=consommateur, twin_proprietaire=twin_proprietaire)
             contexte_pack = runtime.enrichir_pack(
                 contexte_pack.as_dict(), candidats, max_tokens=max_tokens)
         except Exception:
             contexte_pack = contexte_pack.as_dict()
+        acteur_nom = str((acteur_contexte or {}).get("acteur") or acteur)
+        role = str((acteur_contexte or {}).get("poste") or "")
+        espace = str((acteur_contexte or {}).get("espace") or "")
+        if hasattr(runtime, "recuperer_documentation"):
+            try:
+                documents = await runtime.recuperer_documentation(
+                    tenant, question=p.question, twin_ids=tuple(twin_ids),
+                    acteur=acteur_nom, role=role, espace=espace)
+                if documents:
+                    contexte_pack = {**contexte_pack, "documents": documents}
+            except Exception:
+                pass
+        if hasattr(runtime, "recuperer_communautes"):
+            try:
+                communautes = await runtime.recuperer_communautes(
+                    tenant, question=p.question, acteur=acteur_nom,
+                    role=role, espace=espace)
+                if communautes:
+                    contexte_pack = {**contexte_pack, "communautes": communautes}
+            except Exception:
+                pass
+        # Exécution active du SourcePlan : les claims et contradictions rejoignent le contexte
+        # avant le cadrage et la réponse.
+        try:
+            recherche = await runtime.rechercher_refutation(
+                tenant, question=p.question, twin_ids=tuple(twin_ids))
+            faits_recherche = epistemie_application.faits_depuis_recherche(recherche)
+            if faits_recherche:
+                contexte_pack = {
+                    **contexte_pack,
+                    "faits": [*(contexte_pack.get("faits") or ()), *faits_recherche],
+                }
+                propositions = list(dossier.get("propositions") or ())
+                propositions.extend(faits_recherche)
+                dossier_contexte = {**dossier, "propositions": propositions}
+        except Exception:
+            recherche = None
+        # Le contexte et les spécialistes entrent dans le dossier AVANT la réponse :
+        # la réponse est une conséquence du dossier, pas l'inverse.
+        dossier_raisonnement = noyau_raisonnement.preparer_dossier(
+            p.question, contexte={
+                "twin_ids": tuple(twin_ids), "situation_id": p.situation_id,
+                "application_id": p.application_id, "sans_questions": True,
+                **(dict(acteur_contexte or {})),
+            },
+            pack_contexte=contexte_pack, dossier_specialistes=dossier_contexte if "dossier_contexte" in locals() else dossier,
+            plan_composition=plan, tenant=tenant)
+        if dossier_raisonnement.cadre and dossier_raisonnement.cadre.questions_bloquantes:
+            questions = list(dossier_raisonnement.cadre.questions_bloquantes)
+            reponse_dict = {
+                "comportement": "clarifier",
+                "reponse": (
+                    "Avant de traiter cette demande, il me manque un point qui change la réponse.\n\n"
+                    + "\n".join(f"- {question}" for question in questions)
+                ),
+                "questions": questions,
+                "preuves": [],
+            }
+            dossier_raisonnement.statut = "clarification_requise"
+            dossier_raisonnement.gates = noyau_raisonnement.evaluer_gates(dossier_raisonnement)
+            dossier_raisonnement.reponse = {
+                **reponse_dict,
+                "raisonnement": dossier_raisonnement.as_dict(),
+                "raisonnement_statut": "clarification_requise",
+                "evaluation_raisonnement": evaluation_raisonnement.evaluer(dossier_raisonnement),
+            }
+            return {
+                "reponse": reponse_dict,
+                "dossier_raisonnement": dossier_raisonnement.as_dict(),
+                "contexte": contexte_pack,
+                "session": None,
+                "prediction": None,
+            }
+        reponse = reponse_cognitive.composer(
+            p.question, profil, plan, dossier_contexte if "dossier_contexte" in locals() else dossier,
+            autorite_max="proposition")
         reponse_dict = reponse.as_dict()
         reponse_dict["decision_support"] = runtime.decision_support_enrichi(
             reponse_dict.get("decision_support"), options=p.options or None,
             changements=p.changements, criteres=p.criteres)
+        dossier_raisonnement = noyau_raisonnement.completer_dossier(
+            dossier_raisonnement, reponse_dict, strict=False)
         session_resultat = None
         if p.session_id:
             try:
@@ -247,6 +332,7 @@ async def executer(tenant: str, acteur: str, payload: Mapping[str, Any] | Any, *
                 prediction = None
         return {
             "reponse": reponse_dict,
+            "dossier_raisonnement": dossier_raisonnement.as_dict(),
             "contexte": contexte_pack,
             "session": session_resultat,
             "prediction": prediction.as_dict() if prediction is not None else None,
@@ -256,12 +342,18 @@ async def executer(tenant: str, acteur: str, payload: Mapping[str, Any] | Any, *
         processus, "reponse", 2, {"run_id": run_id, "specialistes": noms},
         composer_reponse, sortie=runtime.assainir)
     reponse_dict = reponse_phase["reponse"]
+    dossier_raisonnement = dict(reponse_phase["dossier_raisonnement"])
     contexte_pack = reponse_phase["contexte"]
     session_resultat = reponse_phase.get("session")
     prediction = reponse_phase.get("prediction")
 
     trace = raisonnement.construire(
         p.question, profil, plan, contexte_pack, dossier, reponse_dict)
+    dossier_raisonnement["trace_id"] = trace.trace_id
+    if isinstance(dossier_raisonnement.get("reponse"), dict):
+        interieur = dossier_raisonnement["reponse"].get("raisonnement")
+        if isinstance(interieur, dict):
+            interieur["trace_id"] = trace.trace_id
     socle = reponse_dict.get("socle") or {}
     resultat = {
         "tenant": tenant,
@@ -276,6 +368,9 @@ async def executer(tenant: str, acteur: str, payload: Mapping[str, Any] | Any, *
         "contexte": runtime.assainir(contexte_pack),
         "contexte_resolu": runtime.assainir(contexte_resolu.as_dict()),
         "raisonnement": runtime.assainir(trace.as_dict()),
+        "dossier_raisonnement": runtime.assainir(dossier_raisonnement),
+        "evaluation_raisonnement": runtime.assainir(
+            evaluation_raisonnement.evaluer(dossier_raisonnement)),
         "prediction": runtime.assainir(prediction),
         "memoire_session": (runtime.assainir(session_resultat)
                             if session_resultat is not None else None),
@@ -286,6 +381,8 @@ async def executer(tenant: str, acteur: str, payload: Mapping[str, Any] | Any, *
                 1 for d in dossier.get("specialistes") or [] if d.get("statut") == "ok"),
             "limites": len(socle.get("limites") or ()),
             "memoire": len(contexte_pack.get("memoire") or ()),
+            "documents": len(contexte_pack.get("documents") or ()),
+            "communautes": len(contexte_pack.get("communautes") or ()),
             "autorite": reponse_dict.get("autorite"),
         },
     }

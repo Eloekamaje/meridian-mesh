@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 // Rendu SVG déterministe des schémas de Flore, sans dépendance ni HTML injecté. Le Mermaid reste écrit dans
 // la réponse comme repli/export ; ici, on ne dessine que la structure vérifiée fournie par le backend.
@@ -77,7 +77,7 @@ function normaliserFleches(fleches, ids) {
 
 export function schemaValide(schema) {
   if (!schema || typeof schema !== "object") return false;
-  if (!["architecture", "flux", "sequence"].includes(schema.type)) return false;
+  if (!["architecture", "flux", "sequence", "data-model"].includes(schema.type)) return false;
   const boites = normaliserBoites(schema.boites);
   if (!boites.length || !Array.isArray(schema.fleches) || !schema.fleches.length) return false;
   const ids = new Set(boites.map((b) => b.id));
@@ -535,9 +535,9 @@ function Etiquette({ etiquette }) {
   );
 }
 
-function Noeud({ noeud }) {
+function Noeud({ noeud, onClick }) {
   return (
-    <g data-testid="schema-noeud" data-id={noeud.id}>
+    <g data-testid="schema-noeud" data-id={noeud.id} onClick={onClick} style={{ cursor: onClick ? "pointer" : undefined }}>
       <rect x={noeud.x} y={noeud.y} width={noeud.largeur} height={noeud.hauteur} rx={6} fill={COULEURS.fond} stroke={COULEURS.regle} />
       <rect x={noeud.x} y={noeud.y + 12} width={3} height={16} rx={1.5} fill={COULEURS.accent} />
       <text
@@ -578,22 +578,81 @@ function Groupe({ groupe }) {
 
 export default function SchemaSvg({ schema }) {
   const prefixe = `schema-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
-  if (!schemaValide(schema)) return null;
-  const proposition = schema.mode === "proposition";
-  const sequence = schema.type === "sequence";
-  const disposition = sequence ? disposerSequence(schema) : disposerArchitecture(schema);
-  if (!disposition) return null;
-  const etats = new Set((sequence ? disposition.messages : disposition.fleches).map((f) => f.etat));
-  const titreA11y = proposition
-    ? `Proposition : ${disposition.titre || `schéma ${schema.type}`}`
-    : (disposition.titre ? `Schéma : ${disposition.titre}` : `Schéma ${schema.type}`);
-  const description = [disposition.description, descriptionProposition(schema)].filter(Boolean).join(" ").slice(0, 4000);
+  const viewportRef = useRef(null);
+  const dragRef = useRef(null);
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [pleinEcran, setPleinEcran] = useState(false);
+  const [selection, setSelection] = useState(null);
+  const valide = schemaValide(schema);
+  const proposition = schema?.mode === "proposition";
+  const sequence = schema?.type === "sequence";
+  const disposition = valide ? (sequence ? disposerSequence(schema) : disposerArchitecture(schema)) : null;
+  const etats = new Set(disposition ? (sequence ? disposition.messages : disposition.fleches).map((f) => f.etat) : []);
+  const titreA11y = disposition
+    ? (proposition
+      ? `Proposition : ${disposition.titre || `schéma ${schema?.type}`}`
+      : (disposition.titre ? `Schéma : ${disposition.titre}` : `Schéma ${schema?.type}`))
+    : "Schéma";
+  const description = [disposition?.description, descriptionProposition(schema)].filter(Boolean).join(" ").slice(0, 4000);
   const idTitre = `${prefixe}-titre`;
   const idDescription = `${prefixe}-description`;
 
+  const fit = useCallback(() => {
+    const el = viewportRef.current;
+    if (!el || !disposition) return;
+    const largeur = Math.max(1, el.clientWidth);
+    const ratio = largeur / disposition.largeur;
+    setZoom(Math.max(0.1, Math.min(1.4, ratio)));
+    setPan({ x: 0, y: 0 });
+  }, [disposition]);
+
+  useEffect(() => {
+    fit();
+  }, [fit, pleinEcran]);
+
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return undefined;
+    const surMolette = (evenement) => {
+      evenement.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const facteur = evenement.deltaY < 0 ? 1.12 : 0.89;
+      setZoom((courant) => {
+        const suivant = Math.max(0.1, Math.min(4, courant * facteur));
+        const rapport = suivant / courant;
+        setPan((position) => ({
+          x: evenement.clientX - rect.left - (evenement.clientX - rect.left - position.x) * rapport,
+          y: evenement.clientY - rect.top - (evenement.clientY - rect.top - position.y) * rapport,
+        }));
+        return suivant;
+      });
+    };
+    el.addEventListener("wheel", surMolette, { passive: false });
+    return () => el.removeEventListener("wheel", surMolette);
+  }, []);
+
+  const commencerGlisser = (evenement) => {
+    if (evenement.target.closest("button")) return;
+    dragRef.current = { x0: evenement.clientX, y0: evenement.clientY, x: pan.x, y: pan.y };
+    evenement.currentTarget.setPointerCapture?.(evenement.pointerId);
+  };
+  const glisser = (evenement) => {
+    if (!dragRef.current) return;
+    setPan({
+      x: dragRef.current.x + (evenement.clientX - dragRef.current.x0),
+      y: dragRef.current.y + (evenement.clientY - dragRef.current.y0),
+    });
+  };
+  const terminerGlisser = () => { dragRef.current = null; };
+
+  if (!valide || !disposition) return null;
+
   return (
     <div
-      className="my-2 w-full overflow-x-auto"
+      className={pleinEcran
+        ? "fixed inset-0 z-50 flex flex-col overflow-hidden bg-[#071019] p-4"
+        : "my-2 w-full overflow-x-auto"}
       data-testid="schema-svg-cadre"
       data-mode={proposition ? "proposition" : undefined}
       role={proposition ? "group" : undefined}
@@ -609,61 +668,102 @@ export default function SchemaSvg({ schema }) {
         </span>
       </div>
     )}
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      role="img"
-      aria-labelledby={proposition ? undefined : `${idTitre} ${idDescription}`}
-      aria-describedby={proposition ? idDescription : undefined}
-      aria-label={proposition ? titreA11y : undefined}
-      viewBox={`0 0 ${disposition.largeur} ${disposition.hauteur}`}
-      width="100%"
-      preserveAspectRatio="xMidYMid meet"
-      data-testid="schema-svg"
-      data-type={schema.type}
-      data-mode={proposition ? "proposition" : undefined}
-      className="block"
-      style={{ width: "100%", minWidth: `${disposition.largeur}px`, height: "auto" }}
+    <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+      <span className="min-w-0 truncate font-code text-[10px] text-[#64748B]">
+        {selection ? `Nœud : ${selection.libelle}` : "Molette pour zoomer · glisser pour déplacer · cliquer un nœud"}
+      </span>
+      <div className="flex items-center gap-1" role="group" aria-label="Contrôles du schéma">
+        <button type="button" onClick={() => setZoom((z) => Math.max(0.1, z / 1.2))}
+          aria-label="Dézoomer" title="Dézoomer"
+          className="h-7 w-7 rounded-md border border-white/[0.12] font-code text-xs text-[#93C5FD] hover:bg-[#60A5FA]/10">−</button>
+        <span className="w-10 text-center font-code text-[10px] text-[#7C93A8]">{Math.round(zoom * 100)}%</span>
+        <button type="button" onClick={() => setZoom((z) => Math.min(4, z * 1.2))}
+          aria-label="Zoomer" title="Zoomer"
+          className="h-7 w-7 rounded-md border border-white/[0.12] font-code text-xs text-[#93C5FD] hover:bg-[#60A5FA]/10">+</button>
+        <button type="button" onClick={fit} data-testid="schema-fit"
+          className="rounded-md border border-white/[0.12] px-2 py-1 font-code text-[10px] text-[#93C5FD] hover:bg-[#60A5FA]/10">Ajuster</button>
+        <button type="button" onClick={() => setPleinEcran((ouvert) => !ouvert)} data-testid="schema-plein-ecran"
+          className="rounded-md border border-white/[0.12] px-2 py-1 font-code text-[10px] text-[#93C5FD] hover:bg-[#60A5FA]/10">
+          {pleinEcran ? "Fermer" : "Plein écran"}
+        </button>
+      </div>
+    </div>
+    <div
+      ref={viewportRef}
+      onPointerDown={commencerGlisser}
+      onPointerMove={glisser}
+      onPointerUp={terminerGlisser}
+      onPointerCancel={terminerGlisser}
+      className={pleinEcran
+        ? "min-h-0 flex-1 cursor-grab overflow-hidden active:cursor-grabbing"
+        : "h-[360px] cursor-grab overflow-hidden rounded-md border border-white/[0.08] bg-[#0A131C]/40 active:cursor-grabbing"}
+      style={{ touchAction: "none" }}
+      data-testid="schema-viewport"
     >
-      <title id={idTitre}>{titreA11y}</title>
-      <desc id={idDescription}>{description}</desc>
-      <DefinitionFleches prefixe={prefixe} etats={etats} />
-      <rect x={0} y={0} width={disposition.largeur} height={disposition.hauteur} rx={6} fill={COULEURS.fond} />
-      <rect x={0.5} y={0.5} width={disposition.largeur - 1} height={disposition.hauteur - 1} rx={6} fill="none" stroke={COULEURS.regle} />
-      <TitreSchema titre={disposition.titre} />
-      {sequence ? (
-        <>
-          {disposition.acteurs.map((acteur) => (
-            <line
-              key={`ligne-${acteur.id}`}
-              x1={acteur.cx}
-              y1={acteur.y + acteur.hauteur}
-              x2={acteur.cx}
-              y2={disposition.basLigne}
-              stroke={COULEURS.regle}
-              strokeDasharray="3 4"
-            />
-          ))}
-          {disposition.messages.map((message, i) => <Fleche key={`message-${i}`} fleche={message} prefixe={prefixe} />)}
-          {disposition.messages.map((message, i) => <Etiquette key={`etiquette-message-${i}`} etiquette={message.etiquette} />)}
-          {disposition.acteurs.map((acteur) => (
-            <g key={`acteur-${acteur.id}`} data-testid="schema-acteur" data-id={acteur.id}>
-              <rect x={acteur.x} y={acteur.y} width={acteur.largeur} height={acteur.hauteur} rx={6} fill={COULEURS.fond} stroke={COULEURS.regle} />
-              <rect x={acteur.x} y={acteur.y + 12} width={3} height={16} rx={1.5} fill={COULEURS.accent} />
-              <text x={acteur.x + 14} y={acteur.y + acteur.hauteur / 2} dominantBaseline="middle" fill={COULEURS.texte} fontSize={12} fontFamily={POLICE}>
-                {acteur.libelle}
-              </text>
-            </g>
-          ))}
-        </>
-      ) : (
-        <>
-          {disposition.groupes.map((groupe, i) => <Groupe key={`groupe-${i}`} groupe={groupe} />)}
-          {disposition.fleches.map((fleche, i) => <Fleche key={`fleche-${i}`} fleche={fleche} prefixe={prefixe} />)}
-          {disposition.fleches.map((fleche, i) => <Etiquette key={`etiquette-${i}`} etiquette={fleche.etiquette} />)}
-          {disposition.noeuds.map((noeud) => <Noeud key={noeud.id} noeud={noeud} />)}
-        </>
-      )}
-    </svg>
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        role="img"
+        aria-labelledby={proposition ? undefined : `${idTitre} ${idDescription}`}
+        aria-describedby={proposition ? idDescription : undefined}
+        aria-label={proposition ? titreA11y : undefined}
+        viewBox={`0 0 ${disposition.largeur} ${disposition.hauteur}`}
+        width="100%"
+        height={disposition.hauteur}
+        preserveAspectRatio="xMidYMid meet"
+        data-testid="schema-svg"
+        data-type={schema.type}
+        data-mode={proposition ? "proposition" : undefined}
+        className="block max-w-none"
+        style={{
+          width: `${disposition.largeur}px`,
+          height: `${disposition.hauteur}px`,
+          transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+          transformOrigin: "0 0",
+        }}
+      >
+        <title id={idTitre}>{titreA11y}</title>
+        <desc id={idDescription}>{description}</desc>
+        <DefinitionFleches prefixe={prefixe} etats={etats} />
+        <rect x={0} y={0} width={disposition.largeur} height={disposition.hauteur} rx={6} fill={COULEURS.fond} />
+        <rect x={0.5} y={0.5} width={disposition.largeur - 1} height={disposition.hauteur - 1} rx={6} fill="none" stroke={COULEURS.regle} />
+        <TitreSchema titre={disposition.titre} />
+        {sequence ? (
+          <>
+            {disposition.acteurs.map((acteur) => (
+              <line
+                key={`ligne-${acteur.id}`}
+                x1={acteur.cx}
+                y1={acteur.y + acteur.hauteur}
+                x2={acteur.cx}
+                y2={disposition.basLigne}
+                stroke={COULEURS.regle}
+                strokeDasharray="3 4"
+              />
+            ))}
+            {disposition.messages.map((message, i) => <Fleche key={`message-${i}`} fleche={message} prefixe={prefixe} />)}
+            {disposition.messages.map((message, i) => <Etiquette key={`etiquette-message-${i}`} etiquette={message.etiquette} />)}
+            {disposition.acteurs.map((acteur) => (
+              <g key={`acteur-${acteur.id}`} data-testid="schema-acteur" data-id={acteur.id}>
+                <rect x={acteur.x} y={acteur.y} width={acteur.largeur} height={acteur.hauteur} rx={6} fill={COULEURS.fond} stroke={COULEURS.regle} />
+                <rect x={acteur.x} y={acteur.y + 12} width={3} height={16} rx={1.5} fill={COULEURS.accent} />
+                <text x={acteur.x + 14} y={acteur.y + acteur.hauteur / 2} dominantBaseline="middle" fill={COULEURS.texte} fontSize={12} fontFamily={POLICE}>
+                  {acteur.libelle}
+                </text>
+              </g>
+            ))}
+          </>
+        ) : (
+          <>
+            {disposition.groupes.map((groupe, i) => <Groupe key={`groupe-${i}`} groupe={groupe} />)}
+            {disposition.fleches.map((fleche, i) => <Fleche key={`fleche-${i}`} fleche={fleche} prefixe={prefixe} />)}
+            {disposition.fleches.map((fleche, i) => <Etiquette key={`etiquette-${i}`} etiquette={fleche.etiquette} />)}
+            {disposition.noeuds.map((noeud) => (
+              <Noeud key={noeud.id} noeud={noeud} onClick={() => setSelection(noeud)} />
+            ))}
+          </>
+        )}
+      </svg>
+    </div>
     </div>
   );
 }

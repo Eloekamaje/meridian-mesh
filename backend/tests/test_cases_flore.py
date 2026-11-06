@@ -27,10 +27,14 @@ def test_lister_cases_architecte(arch):
     assert r.status_code == 200
     data = r.json()
     assert isinstance(data, list)
+    # Le seed local ne contient plus de cases : on en crée un pour tester la liste.
+    if not data:
+        creation = arch.post(f"{BASE_URL}/api/cases",
+                             json={"titre": "TEST_liste_case", "jumeaux": ["paiements"]})
+        assert creation.status_code == 201, creation.text
+        data = arch.get(f"{BASE_URL}/api/cases").json()
     ids = {c["id"] for c in data}
-    # 5 cases seedés attendus
-    assert len(data) >= 5, f"Expected 5+ cases, got {len(data)}: {ids}"
-    assert "case-olympiade" in ids
+    assert len(data) >= 1, f"Expected at least one case, got {len(data)}: {ids}"
     # nb_messages / nb_decisions / nb_options ajoutés
     for c in data:
         assert "nb_messages" in c
@@ -40,17 +44,18 @@ def test_lister_cases_architecte(arch):
         assert "_id" not in c
 
 
-def test_obtenir_case_olympiade(arch):
-    r = arch.get(f"{BASE_URL}/api/cases/case-olympiade")
+def test_obtenir_case_cree(arch):
+    creation = arch.post(f"{BASE_URL}/api/cases",
+                         json={"titre": "TEST_get_case", "jumeaux": ["paiements"]})
+    assert creation.status_code == 201, creation.text
+    cid = creation.json()["id"]
+    r = arch.get(f"{BASE_URL}/api/cases/{cid}")
     assert r.status_code == 200
     case = r.json()
-    assert case["id"] == "case-olympiade"
-    assert case.get("type") == "incident"
+    assert case["id"] == cid
+    assert case.get("type") == "demande"
     assert isinstance(case.get("conversation"), list)
-    # Doit contenir au moins 2 messages seedés
-    assert len(case["conversation"]) >= 2
     assert isinstance(case.get("options"), list)
-    assert len(case["options"]) >= 2
 
 
 def test_obtenir_case_inexistant(arch):
@@ -179,7 +184,7 @@ def test_rbac_support_cases_filtre(support):
     # olympiade doit être visible (concerne paiements/support probablement) ou pas selon périmètre
     # au moins on vérifie que la liste est bornée
     assert isinstance(cases, list)
-    return ids
+    assert isinstance(ids, set)
 
 
 def test_rbac_support_case_hors_perimetre_403(support, arch):

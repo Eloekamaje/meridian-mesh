@@ -42,6 +42,15 @@ def _code(sha, chemin, ligne):
             "ligne_debut": ligne, "ligne_fin": ligne, "hash": "h"}
 
 
+def test_une_preuve_longue_est_decoupee_pour_le_juge():
+    preuve = {"systeme": "git", "locator": "git://x@abc:app.py#L1-L90"}
+    extraits = recoupement._extraits(preuve, [f"ligne {i}" for i in range(90)], max_lignes=40)
+    assert len(extraits) == 3
+    assert [len(e["lignes"]) for e in extraits] == [40, 40, 10]
+    assert all(e["systeme"] == "git" for e in extraits)
+    assert "1/3" in extraits[0]["citation"] and "3/3" in extraits[-1]["citation"]
+
+
 @besoin_pg
 def test_une_passe_recettes_juge_recoupement_maturite(conn, depot_git):
     sha = subprocess.run(["git", "-C", str(depot_git), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()

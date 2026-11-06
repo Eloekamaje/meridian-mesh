@@ -1,13 +1,25 @@
 import { Rocket, WarningCircle } from "@phosphor-icons/react";
-import { APPLICATION_ID, STATUTS_SOURCE, estErreurSource } from "@/lib/sources";
+import {
+  STATUTS_SOURCE,
+  applicationIdDe,
+  candidatDe,
+  estErreurSource,
+  identifiantMetier,
+  identifiantsDe,
+  typeTwin,
+  validerIdentite,
+} from "@/lib/sources";
 
 export default function Verification({ commande, catalogue, onLancer, lancement, onCorriger }) {
   const sources = commande.sources;
   const pretes = sources.filter((s) => s.statut === "prete");
   const erreurs = sources.filter((s) => estErreurSource(s.statut));
   const nonPretes = sources.filter((s) => s.statut !== "prete");
-  const identiteValide = APPLICATION_ID.test((commande.jumeau.application_id || "").trim())
-    && Boolean((commande.jumeau.nom || "").trim()) && Boolean((commande.jumeau.proprietaire || "").trim());
+  const type = typeTwin(commande.jumeau);
+  const validation = validerIdentite(commande.jumeau);
+  const identiteValide = validation.valide;
+  const identifiant = identifiantMetier(commande.jumeau);
+  const identifiants = Object.entries(identifiantsDe(commande.jumeau));
   const connecteurs = new Set(pretes.map((s) => s.connecteur));
   const naissancePossible = connecteurs.has("github")
     || ((connecteurs.has("servicenow") || connecteurs.has("cmdb"))
@@ -60,8 +72,19 @@ export default function Verification({ commande, catalogue, onLancer, lancement,
       <div className="mt-5 rounded-xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-5" data-testid="verif-manifeste">
         <div className="font-code text-[10px] uppercase tracking-[0.2em] text-[#7C93A8]">Manifeste généré</div>
         <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 text-xs">
-          <div><dt className="font-code text-[9px] uppercase text-[#7C93A8]">Jumeau</dt><dd className="text-[#F2F6F8]">{commande.jumeau.nom} — {commande.jumeau.application_id || "App ID à définir"}</dd></div>
+          <div><dt className="font-code text-[9px] uppercase text-[#7C93A8]">Jumeau</dt><dd className="text-[#F2F6F8]">{commande.jumeau.nom || "—"}</dd></div>
+          <div><dt className="font-code text-[9px] uppercase text-[#7C93A8]">Type</dt><dd className="text-[#F2F6F8]" data-testid="verif-type">{type}</dd></div>
+          {type === "APPLICATION" && (
+            <div><dt className="font-code text-[9px] uppercase text-[#7C93A8]">App ID</dt><dd className="font-code text-[#F2F6F8]" data-testid="verif-app-id">{applicationIdDe(commande.jumeau) || (candidatDe(commande.jumeau) ? "candidat — sans App ID" : "à définir")}</dd></div>
+          )}
+          {type !== "APPLICATION" && identifiant && (
+            <div><dt className="font-code text-[9px] uppercase text-[#7C93A8]">{identifiant.label}</dt><dd className="font-code text-[#F2F6F8]" data-testid="verif-identifiant">{identifiant.valeur || "—"}</dd></div>
+          )}
           <div><dt className="font-code text-[9px] uppercase text-[#7C93A8]">Propriétaire</dt><dd className="text-[#F2F6F8]">{commande.jumeau.proprietaire || "—"}</dd></div>
+          <div><dt className="font-code text-[9px] uppercase text-[#7C93A8]">Périmètre</dt><dd className="text-[#F2F6F8]">{commande.jumeau.perimetre || "—"}</dd></div>
+          {identifiants.length > 0 && (
+            <div className="col-span-2"><dt className="font-code text-[9px] uppercase text-[#7C93A8]">Identifiants externes</dt><dd className="font-code text-[#F2F6F8]" data-testid="verif-identifiants">{identifiants.map(([cle, valeur]) => `${cle}=${valeur}`).join(" · ")}</dd></div>
+          )}
           <div><dt className="font-code text-[9px] uppercase text-[#7C93A8]">Couverture attendue</dt><dd className="text-[#F2F6F8]" data-testid="verif-couverture">{couverture} %</dd></div>
           <div><dt className="font-code text-[9px] uppercase text-[#7C93A8]">Gouvernance</dt><dd className="text-[#F2F6F8]">lecture seule · secrets via coffre · journal d'audit</dd></div>
         </dl>
@@ -78,7 +101,7 @@ export default function Verification({ commande, catalogue, onLancer, lancement,
       <div className="mt-6 flex items-center justify-between">
         <p className="max-w-sm text-[11px] leading-relaxed text-[#7C93A8]">
           {!identiteValide
-            ? "Complétez l'identité (App ID, nom, propriétaire) avant de lancer."
+            ? validation.message
             : !naissancePossible
             ? "Ajoutez GitHub, ou ServiceNow/CMDB avec Datadog, OTLP ou Confluence, pour permettre la naissance."
             : pretes.length > 0

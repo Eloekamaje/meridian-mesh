@@ -23,6 +23,7 @@ from strands.session.s3_session_manager import S3SessionManager
 from meridian.adapters.outbound.connectors import appels
 from meridian.adapters.outbound.connectors import cbm
 from meridian.adapters.outbound.postgres import connaissance
+from meridian.adapters.outbound import bedrock_router
 from meridian.adapters.outbound.llm import contradicteur
 from meridian.adapters.outbound.postgres import croisement
 from meridian.adapters.outbound.postgres import depot
@@ -125,10 +126,12 @@ def modele(nom=None, temperature=None):
                            **({} if temperature is None else {"params": {"temperature": temperature}}))
     if fournisseur == "bedrock":
         from strands.models import BedrockModel
-        if not os.environ.get("BEDROCK_MODELE"):
-            raise RuntimeError("Modèle non configuré : BEDROCK_MODELE absent")
-        return BedrockModel(model_id=nom or os.environ["BEDROCK_MODELE"],
-                            region_name=os.environ.get("AWS_REGION", "ca-central-1"),
+        modele_id = nom or bedrock_router.modele_id("chat")
+        if not modele_id:
+            raise RuntimeError("Modèle non configuré : BEDROCK_MODEL_CHAT ou BEDROCK_MODELE absent")
+        return BedrockModel(model_id=modele_id,
+                            boto_session=bedrock_router.session(),
+                            region_name=bedrock_router.region(),
                             **({} if temperature is None else {"temperature": temperature}))
     raise RuntimeError(f"JUMEAU_MODELE inconnu : {fournisseur}")
 
@@ -139,6 +142,8 @@ def modele_juge():
 
     `JUMEAU_MODELE_JUGE` (par exemple un modèle d'une autre famille, ou Bedrock d'un autre fournisseur) ; à défaut,
     le modèle de l'auteur — et la dépendance reste visible ici plutôt que dissimulée."""
+    if os.environ.get("JUMEAU_MODELE", "deepseek").strip().lower() == "bedrock":
+        return modele(bedrock_router.modele_id("judge"), temperature=0)
     return modele(os.environ.get("JUMEAU_MODELE_JUGE") or None, temperature=0)  # un verdict, pas une prose
 
 
@@ -181,6 +186,22 @@ def prompt_systeme(ctx):
         prompt += "\n\n## Consignes de l'équipe (instructions ; la plus particulière l'emporte)\n\n" + consignes
     if ctx.get("fiche"):
         prompt += f"\n\n## Fiche vivante de l'application (rédigée par le gardien du jumeau)\n\n{ctx['fiche']}"
+    if ctx.get("couverture"):
+        c = ctx["couverture"]
+        prompt += (
+            f"\n\n## Compréhension : {c.get('answered', 0)}/{c.get('total', 0)} questions répondues"
+            f" ({c.get('partial', 0)} partielles, {c.get('unknown', 0)} inconnues,"
+            f" {c.get('contradicted', 0)} contredites)."
+        )
+    if ctx.get("fiche_stale"):
+        prompt += ("\n\n## Fiche vivante à revérifier : certaines connaissances citées ne tiennent plus. "
+                   "Vérifie-les avant de conclure.")
+    if ctx.get("dessin"):
+        prompt += ("\n\n## Schémas\n\nSi la question demande un schéma, un diagramme, une illustration ou le "
+                   "fonctionnement d'une fonctionnalité, consulte la méthode `illustrer-fonctionnalite` et appelle "
+                   "`dessiner_schema`. N'écris pas de Mermaid à la main : le harness vérifie et écrit le schéma. "
+                   "Un flux a une seule entrée : chaque étape sauf la première reçoit une flèche entrante. "
+                   "Si plusieurs entrées sont réelles, utilise le type architecture.")
     prompt += f"\n\n{contexte}"
     if ctx.get("lecteurs"):
         prompt += f"\n\n## Sources branchées\n\n{'En plus du code, tu' if sources else 'Tu'} disposes de ces sources (outils chercher_dans, lire_dans) :\n"
@@ -208,7 +229,7 @@ def outil_dessin(dessin, budget):
         n'est pas dessinée (le compte rendu te dit lesquelles corriger).
 
         Args:
-            type: sequence (« que se passe-t-il quand… »), flux ou architecture.
+            type: sequence (« que se passe-t-il quand… »), flux, architecture ou data-model (tables/entités et relations).
             titre: ce que montre le schéma, en quelques mots.
             boites: [{"id": "route", "libelle": "Publication d'un article"}], 12 au plus, libellés dans les mots du
                 métier.
@@ -228,6 +249,10 @@ def outil_dessin(dessin, budget):
 def outils(ctx, dsn, nom_modele, budget):
     jumeau, sources, lecteurs = ctx["jumeau"], ctx["sources"], ctx.get("lecteurs") or []
 
+    def lecture_autorisee():
+        consommateur = ctx.get("consommateur")
+        return not (consommateur and consommateur.twin_id and consommateur.twin_id != jumeau["id"])
+
     def lecteur_nomme(nom):
         lecteur = next((trouve for trouve in lecteurs if trouve.nom == nom), None)
         if not lecteur:
@@ -246,6 +271,8 @@ def outils(ctx, dsn, nom_modele, budget):
         """Une action de code sur un dépôt, ou sur tous (résultats regroupés par dépôt)."""
         if not budget.outil():
             return EPUISE
+        if not lecture_autorisee():
+            return "Lecture du code non partagée avec ce consommateur."
         try:
             choisies = choisir(depot)
         except ValueError as e:
@@ -270,14 +297,18 @@ def outils(ctx, dsn, nom_modele, budget):
         """Liste les Claims du jumeau (connaissances prouvées sur l'application) avec statut, maturité et preuve.
 
         Args:
-            famille: EXPOSE, DEPEND_DE, LIT_VARIABLE, EXECUTE_IMAGE ou un autre prédicat ; vide = toutes.
+            famille: EXPOSE, DECLARE_DEPENDANCE, DEPEND_DE, LIT_VARIABLE, EXECUTE_IMAGE ou un autre prédicat ;
+                vide = toutes.
             recherche: texte contenu dans l'objet du Claim ; vide = tous.
         """
         if not budget.outil():
             return [EPUISE]
         try:
             with psycopg.connect(dsn) as conn:
-                return connaissance.connaissances(conn, jumeau["id"], famille or None, recherche or None)
+                return connaissance.connaissances(
+                    conn, jumeau["id"], famille or None, recherche or None,
+                    consommateur=ctx.get("consommateur"),
+                )
         except psycopg.Error:
             journal.exception("mes_connaissances")
             return ["Connaissances indisponibles."]
@@ -342,6 +373,8 @@ def outils(ctx, dsn, nom_modele, budget):
         """
         if not budget.outil():
             return {"erreur": EPUISE}
+        if not lecture_autorisee():
+            return {"erreur": "Lecture du code non partagée avec ce consommateur."}
         try:
             return connaissance.lire_code(connaissance.resoudre_source(sources, depot, chemin), chemin, debut, fin)
         except (LookupError, ValueError) as e:
@@ -559,6 +592,8 @@ def outils(ctx, dsn, nom_modele, budget):
             source: nom de la source, tel qu'annoncé dans « Sources branchées ».
             texte: mots à chercher.
         """
+        if not lecture_autorisee():
+            return "Lecture des sources non partagée avec ce consommateur."
         return appeler_source(source, lambda lecteur: "\n".join(
             f"{r['ref']} · {r['titre']} · {r['extrait']}" for r in lecteur.chercher(texte)) or "Aucun résultat.")
 
@@ -572,6 +607,8 @@ def outils(ctx, dsn, nom_modele, budget):
             debut: première ligne (1 = début).
             fin: dernière ligne (au plus 200 lignes lues).
         """
+        if not lecture_autorisee():
+            return "Lecture des sources non partagée avec ce consommateur."
         def lire(lecteur):
             lu = lecteur.lire(ref, debut, fin)
             premiere = int(lu["locator"].rsplit("#L", 1)[1].split("-L")[0])

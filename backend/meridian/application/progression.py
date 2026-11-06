@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import time
 
+from meridian.domain.capacites import manifestes_integres
+
 LIBELLES_OUTILS = {
     "mes_connaissances": "Je consulte ce que l'on sait de l'application…",
     "architecture": "Je regarde de quoi l'application est faite…",
@@ -29,6 +31,19 @@ LIBELLES_OUTILS = {
     "recouper_connaissance": "Je recoupe avec une autre source…",
 }
 
+# Les libellés et groupes viennent du registre quand il en déclare : une seule source pour le prompt,
+# le flux d'activité et l'interface.
+for _manifeste in manifestes_integres():
+    _presentation = getattr(_manifeste, "presentation", {}) or {}
+    if _presentation.get("libelle"):
+        LIBELLES_OUTILS.setdefault(_manifeste.nom, _presentation["libelle"])
+
+GROUPES_OUTILS = {
+    manifeste.nom: manifeste.presentation["groupe"]
+    for manifeste in manifestes_integres()
+    if (getattr(manifeste, "presentation", {}) or {}).get("groupe")
+}
+
 EXTRAIT_OUTIL = 300  # caractères du résultat d'un outil montrés à l'écran (le reste est dans la réponse, cité)
 
 
@@ -43,16 +58,20 @@ class SuiviOutils:
     `parent` : le jumeau dont le sous-agent fait la mission (ses outils s'affichent sous sa consultation) ;
     `ignorer` : des outils internes (sortie structurée) qu'on ne montre pas."""
 
-    def __init__(self, emit, parent=None, ignorer=()):
+    def __init__(self, emit, parent=None, ignorer=(), libelles=None, groupes=None):
         self.emit, self.parent, self.ignorer, self.debuts = emit, parent, set(ignorer), {}
+        self.libelles = dict(LIBELLES_OUTILS if libelles is None else libelles)
+        self.groupes = dict(GROUPES_OUTILS if groupes is None else groupes)
 
     async def suivre(self, e):
         """Rend True si l'événement concernait un outil (annoncé, exécuté ou fini)."""
         if (outil := e.get("current_tool_use")) and (oid := outil.get("toolUseId")):
             if oid not in self.debuts and outil.get("name") not in self.ignorer:
                 self.debuts[oid] = time.monotonic()  # Strands répète l'appel pendant que ses arguments arrivent
-                await self.emit({"type": "outil", "id": oid, "nom": outil.get("name"),
-                                 "libelle": LIBELLES_OUTILS.get(outil.get("name")), "etat": "en_cours",
+                nom = outil.get("name")
+                await self.emit({"type": "outil", "id": oid, "nom": nom,
+                                 "libelle": self.libelles.get(nom), "etat": "en_cours",
+                                 **({"groupe": self.groupes[nom]} if nom in self.groupes else {}),
                                  **({"parent": self.parent} if self.parent else {})})
             return True
         if not isinstance(m := e.get("message"), dict):

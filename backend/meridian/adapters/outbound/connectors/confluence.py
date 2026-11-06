@@ -119,6 +119,25 @@ class LecteurConfluence(lecteurs.Lecteur):
         super().__init__(nom, espace)
         self.reference, self.hote = reference, hote
 
+    def parcourir(self, limite=500):
+        """Pages de l'espace, bornées ; l'indexeur les lit ensuite une à une."""
+        id_espace = _id_espace(self.reference, self.espace, self.hote)
+        cursor, vus = None, 0
+        while vus < limite:
+            params = {"limit": min(100, limite - vus)}
+            if cursor:
+                params["cursor"] = cursor
+            data = _get(self.reference, self.hote, f"/wiki/api/v2/spaces/{quote(str(id_espace))}/pages", **params)
+            for page in data.get("results") or []:
+                yield str(page["id"])
+                vus += 1
+                if vus >= limite:
+                    break
+            suivant = ((data.get("_links") or {}).get("next") or "").split("cursor=")
+            cursor = suivant[1].split("&")[0] if len(suivant) > 1 else None
+            if not cursor or not data.get("results"):
+                break
+
     def version_courante(self):
         """Dernière modification de l'espace : page la plus récemment modifiée, sa version et sa date."""
         id_espace = _id_espace(self.reference, self.espace, self.hote)

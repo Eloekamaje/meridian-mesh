@@ -61,8 +61,33 @@ def test_fiche_vivante_versionnee_par_commit(conn):
     gardien.enregistrer_fiche(conn, "tbt", "sha1", "Première fiche")
     gardien.enregistrer_fiche(conn, "tbt", "sha2", "Fiche à jour")
     gardien.enregistrer_fiche(conn, "tbt", "sha2", "Fiche à jour, réécrite")
-    assert gardien.fiche_courante(conn, "tbt") == {"sha": "sha2", "contenu": "Fiche à jour, réécrite"}
+    fiche = gardien.fiche_courante(conn, "tbt")
+    assert fiche["sha"] == "sha2"
+    assert fiche["contenu"] == "Fiche à jour, réécrite"
+    assert fiche["questions"] == [] and fiche["couverture"] == {} and fiche["claims"] == []
+    assert fiche["stale"] is False
     assert gardien.fiche_courante(conn, "inconnu") is None
+
+
+@besoin_pg
+def test_fiche_conserve_questions_couverture_et_claims(conn):
+    depot.enregistrer(conn, JUMEAU, SOURCE, [claim("motor")], ACTIVITE)
+    cid = conn.execute(
+        "SELECT id FROM claim WHERE jumeau_id = 'tbt' AND objet = 'motor'").fetchone()[0]
+    gardien.enregistrer_fiche(
+        conn, "tbt", "sha1",
+        f"## Ce qu'elle permet de faire\n- Gérer les dossiers [claim:{cid}]\n",
+        questions=[{"cle": "sert", "statut": "answered", "claim_ids": [cid]}],
+        couverture={"total": 7, "answered": 1},
+        claims=[cid],
+    )
+    fiche = gardien.fiche_courante(conn, "tbt")
+    assert fiche["questions"][0]["cle"] == "sert"
+    assert fiche["couverture"]["answered"] == 1
+    assert fiche["claims"] == [cid]
+    assert fiche["stale"] is False
+    conn.execute("UPDATE claim SET valide_jusqua = now() WHERE id = %s", (cid,))
+    assert gardien.fiche_courante(conn, "tbt")["stale"] is True
 
 
 @besoin_pg
@@ -201,7 +226,7 @@ def test_veille_sans_depot_la_version_est_l_empreinte_des_sources(monkeypatch):
     monkeypatch.setattr(gardien, "connaissances_courantes", lambda c, j: set())
     monkeypatch.setattr(gardien.connaissance, "connaissances", lambda *a, **k: [])
     monkeypatch.setattr(gardien, "fiche_du_sha", lambda c, j, sha: sha in fiches)
-    monkeypatch.setattr(gardien, "enregistrer_fiche", lambda c, j, sha, contenu: fiches.__setitem__(sha, contenu))
+    monkeypatch.setattr(gardien, "enregistrer_fiche", lambda c, j, sha, contenu, **_: fiches.__setitem__(sha, contenu))
     monkeypatch.setattr(gardien, "fiche_recente", lambda c, j, delai: None)
 
     async def rien(*a, **k):

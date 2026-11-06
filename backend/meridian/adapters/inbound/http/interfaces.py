@@ -11,8 +11,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from auth import acteur as acteur_courant
+from meridian.adapters.outbound.postgres import carte
 from meridian.adapters.outbound.postgres import connaissance
 from meridian.adapters.outbound.postgres import depot
+from meridian.adapters.outbound.postgres import partage
+from meridian.domain.partage import Consommateur, PartageInvalide
+from meridian.domain.roles import ROLES_PUBLICATION, role_canonique
 from meridian.adapters.outbound.llm import flore
 from meridian.adapters.outbound.llm import gardien
 from meridian.adapters.outbound.connectors.source_git import lire_au_sha
@@ -43,6 +47,19 @@ class NouvelleConsigne(BaseModel):
 class Tranche(BaseModel):
     verdict: Literal["a", "b", "aucune"]
     motif: Optional[str] = Field(default=None, max_length=2000)
+
+
+class PublicationCarte(BaseModel):
+    reviewed_by: Optional[str] = Field(default=None, max_length=200)
+    # EXTERNAL reste connu du domaine mais n'est pas exposé par l'API : hors périmètre pour le moment.
+    scope: Literal["TENANT", "TEAM", "PORTFOLIO"] = "TENANT"
+    scope_id: Optional[str] = Field(default=None, max_length=200)
+
+
+class RevueCarte(BaseModel):
+    share_id: int
+    decision: Literal["APPROVED", "REJECTED"]
+    reason: Optional[str] = Field(default=None, max_length=2000)
 
 
 @router.get("/jumeaux")
@@ -172,3 +189,142 @@ def lire_fiche(jumeau_id: str, conn=Depends(connexion)):
     if not fiche or not sources:
         raise HTTPException(404, "Pas encore de fiche vivante pour ce jumeau")
     return flore.fiche_affichable(fiche, sources)
+
+
+def _consommateur_requete(request: Request) -> Consommateur | None:
+    """Le périmètre authentifié (tenant + espace), jamais un en-tête client."""
+    tenant = getattr(request.state, "tenant", None)
+    if not tenant:
+        return None
+    return Consommateur(
+        str(tenant),
+        portfolio_id=str(getattr(request.state, "perimetre", "")
+                         or getattr(request.state, "espace", "") or ""),
+    )
+
+
+def _peut_publier(request, jumeau) -> bool:
+    """En démo, l'acteur peut publier ; hors démo, rôle, autorité ou équipe propriétaire."""
+    if str(getattr(request.state, "auth_mode", "demo") or "demo") == "demo":
+        return True
+    if role_canonique(getattr(request.state, "role", "")) in ROLES_PUBLICATION:
+        return True
+    autorite = str(getattr(request.state, "autorite", "") or "").strip().lower()
+    if autorite in {"decision", "approbation"}:
+        return True
+    equipes = {str(valeur).strip() for valeur in (getattr(request.state, "equipes", ()) or ())
+               if str(valeur).strip()}
+    equipe = str(getattr(request.state, "equipe", "") or "").strip()
+    if equipe:
+        equipes.add(equipe)
+    return bool(equipes) and str(jumeau.get("equipe") or "").strip() in equipes
+
+
+def _tenant_publication(conn, jumeau_id: str, request: Request) -> str:
+    """Tenant du jumeau si l'acteur peut publier sa carte ; 403 ou 404 sinon."""
+    tenant = getattr(request.state, "tenant", None)
+    if not tenant:
+        raise HTTPException(403, "Tenant authentifié requis")
+    jumeau = depot.jumeau_carte(conn, jumeau_id)
+    if not jumeau or jumeau.get("tenant_id") != tenant:
+        raise HTTPException(404, "Jumeau introuvable")
+    if not _peut_publier(request, jumeau):
+        raise HTTPException(403, "Publication non autorisée")
+    return tenant
+
+
+@router.get("/jumeaux/{jumeau_id}/carte")
+async def lire_carte(
+    jumeau_id: str,
+    request: Request,
+    audience: Literal["business", "architecture", "audit"] = "business",
+    technique: bool = False,
+    conn=Depends(connexion),
+):
+    """Carte de catalogue : identité, owner, capacités, interfaces, dépendances, fraîcheur, criticité."""
+    db = getattr(request.app.state, "db", None)
+    if db is None:
+        raise HTTPException(503, "Registre non configuré")
+    tenant = getattr(request.state, "tenant", None)
+    resultat = await carte.carte_du_jumeau(
+        conn, db, jumeau_id, consommateur=_consommateur_requete(request), tenant_id=tenant,
+        audience=audience, inclure_technique=technique)
+    if not resultat:
+        raise HTTPException(404, "Jumeau introuvable")
+    return resultat
+
+
+@router.post("/jumeaux/{jumeau_id}/carte/publier")
+def publier_carte(
+    jumeau_id: str,
+    request: Request,
+    publication: PublicationCarte | None = None,
+    conn=Depends(connexion),
+):
+    """Publie la carte au tenant : Claims métier en SUMMARY, preuves non exposées."""
+    tenant = getattr(request.state, "tenant", None)
+    if not tenant:
+        raise HTTPException(403, "Tenant authentifié requis")
+    jumeau = depot.jumeau_carte(conn, jumeau_id)
+    if not jumeau or jumeau.get("tenant_id") != tenant:
+        raise HTTPException(404, "Jumeau introuvable")
+    if not _peut_publier(request, jumeau):
+        raise HTTPException(403, "Publication non autorisée")
+    p = publication or PublicationCarte()
+    try:
+        return partage.publier_carte(
+            conn, tenant, jumeau_id, granted_by=acteur_courant(request),
+            scope_type=p.scope, scope_id=p.scope_id, reviewed_by=p.reviewed_by)
+    except PartageInvalide as erreur:
+        raise HTTPException(422, str(erreur))
+
+
+@router.post("/jumeaux/{jumeau_id}/carte/depublier")
+def depublier_carte(
+    jumeau_id: str,
+    request: Request,
+    publication: PublicationCarte | None = None,
+    conn=Depends(connexion),
+):
+    """Retire la carte du catalogue public ; les preuves restent dans le Twin."""
+    tenant = getattr(request.state, "tenant", None)
+    if not tenant:
+        raise HTTPException(403, "Tenant authentifié requis")
+    jumeau = depot.jumeau_carte(conn, jumeau_id)
+    if not jumeau or jumeau.get("tenant_id") != tenant:
+        raise HTTPException(404, "Jumeau introuvable")
+    if not _peut_publier(request, jumeau):
+        raise HTTPException(403, "Publication non autorisée")
+    p = publication or PublicationCarte()
+    try:
+        return partage.depublier_carte(
+            conn, tenant, jumeau_id, revoked_by=acteur_courant(request),
+            scope_type=p.scope, scope_id=p.scope_id)
+    except PartageInvalide as erreur:
+        raise HTTPException(422, str(erreur))
+
+
+@router.get("/jumeaux/{jumeau_id}/carte/a-reviser")
+def lister_carte_a_reviser(jumeau_id: str, request: Request, conn=Depends(connexion)):
+    """Partages de la carte en attente de revue de publication."""
+    tenant = _tenant_publication(conn, jumeau_id, request)
+    return partage.lister_a_reviser(conn, tenant, jumeau_id)
+
+
+@router.post("/jumeaux/{jumeau_id}/carte/revue")
+def decider_revue_carte(
+    jumeau_id: str,
+    revue: RevueCarte,
+    request: Request,
+    conn=Depends(connexion),
+):
+    """Approuve ou rejette une publication en attente et trace le reviewer."""
+    tenant = _tenant_publication(conn, jumeau_id, request)
+    try:
+        return partage.decider_revue(
+            conn, tenant, revue.share_id,
+            reviewer=acteur_courant(request), decision=revue.decision, reason=revue.reason)
+    except PartageInvalide as erreur:
+        raise HTTPException(422, str(erreur))
+    except LookupError:
+        raise HTTPException(404, "Partage introuvable")

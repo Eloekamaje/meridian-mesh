@@ -1,3 +1,7 @@
+import asyncio
+from contextlib import asynccontextmanager
+import os
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from inspect import Parameter, signature
 from typing import Literal, Optional
@@ -7,6 +11,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from auth import acteur as acteur_courant
+import auth as auth_identite
 
 import conversation as fil
 import maturation
@@ -16,9 +21,43 @@ import re
 from seed_data import EPICS, EPIC_PAR_REF
 import veille as moteur_veille
 from meridian.adapters.inbound.http import flux as jumeau_flux
+from meridian.adapters.inbound.http.tenant_twins import jumeaux_du_tenant
 from meridian.adapters.outbound.mongo.travail import EcritureTravail
+from meridian.application import cadrage_conversationnel as cadrage_conv
+from meridian.application import tour_dialogue
+from meridian.application import dialogue as dialogue_service
+from meridian.application import diagrammes as diagrammes_module
+from meridian.application import preferences as preferences_service
+from meridian.application import tenant_context as tenant_courant
+from meridian.adapters.outbound import retrieval_chat
+from meridian.adapters.outbound.redis import partage
+from meridian.application import noyau_raisonnement
+from meridian.domain import dossier_raisonnement as domaine_dossier
+from meridian.domain.partage import Consommateur
+from meridian.adapters.outbound.llm import design_diagram
 from cases_fil import ajouter_routes_fil
 from meridian.adapters.inbound.http.pieces import ajouter_routes_pieces
+
+
+def _tenant_requete() -> str:
+    return tenant_courant.courant_explicite() or os.environ.get("JUMEAU_TENANT") or "local"
+
+
+_VERROUS_TRAVAIL: dict[str, "asyncio.Lock"] = {}
+
+
+@asynccontextmanager
+async def _verrou_travail(cid: str):
+    if partage.actif():
+        async with partage.verrou(f"travail:{cid}"):
+            yield
+        return
+    verrou = _VERROUS_TRAVAIL.get(cid)
+    if verrou is None:
+        verrou = asyncio.Lock()
+        _VERROUS_TRAVAIL[cid] = verrou
+    async with verrou:
+        yield
 
 
 ROLES_IMPORTES = {"utilisateur", "flore", "evenement"}
@@ -30,6 +69,7 @@ CHAMPS_NON_IMPORTES = {
     "orchestration", "kpis", "tableauComparatif", "contributions", "termes",
     "relecture_etat", "relu", "corrige", "decisions", "precision", "origine", "durees",
     "hors_perimetre", "jumeaux_participants", "reponses", "propose_passation", "interrompu",
+    "diagrammes",
     "branche", "branches", "suite", "importe",
 }
 
@@ -240,6 +280,20 @@ def reviser_proposee(claim, jumeau, acteur, decision, motif):
         depot.reviser(conn, claim, acteur, decision, motif, proposee_de=jumeau)
 
 
+async def _persister_dossier_raisonnement(tenant, dossier, travail_id=""):
+    """Écrit la trace du tour dans Postgres sans bloquer le fil ; une panne ne casse pas la réponse."""
+    dsn = os.environ.get("JUMEAU_PG_DSN")
+    if not dsn or not dossier:
+        return
+    try:
+        from meridian.adapters.outbound.postgres import dossiers_raisonnement
+        await asyncio.to_thread(
+            dossiers_raisonnement.enregistrer_dsn, dsn, tenant,
+            dossier, travail_id or "")
+    except Exception:
+        return
+
+
 def build_cases_router(deps):
     db = deps["db"]
     resoudre_perimetre = deps["resoudre_perimetre"]
@@ -265,16 +319,27 @@ def build_cases_router(deps):
             raise HTTPException(404, "Case introuvable")
         if case.get("statut") == "conversation" and case.get("auteur") != acteur_id:
             raise HTTPException(404, "Case introuvable")  # privée à son auteur : on ne révèle pas qu'elle existe
-        tous = await db.jumeaux.find({}, {"_id": 0, "id": 1}).to_list(200)
+        tous = await jumeaux_du_tenant(db, _tenant_requete(), {"_id": 0, "id": 1})
         aut = autorisations(espace, [j["id"] for j in tous])
         if case.get("jumeaux") and not any(j in aut for j in case["jumeaux"]):
             raise HTTPException(403, "Ce case est hors de votre périmètre")
         if not portees.acces(case, acteur_id):
             raise HTTPException(403, "Ce travail n'est pas partagé avec vous")
+        # Backfill paresseux : les anciens messages gardent leur schéma brut et reçoivent
+        # leur artefact design-diagram compilé au premier chargement.
+        conversation = case.get("conversation") or []
+        for index, message in enumerate(conversation):
+            if not isinstance(message, dict) or not message.get("schemas") or message.get("diagrammes"):
+                continue
+            enrichi = diagrammes_module.enrichir_reponse(dict(message))
+            if enrichi.get("diagrammes"):
+                await db.cases.update_one(
+                    {"id": cid}, {"$set": {f"conversation.{index}.diagrammes": enrichi["diagrammes"]}})
+                conversation[index] = enrichi
         return case
 
     async def jumeaux_autorises(espace):
-        tous = await db.jumeaux.find({}, {"_id": 0, "id": 1}).to_list(200)
+        tous = await jumeaux_du_tenant(db, _tenant_requete(), {"_id": 0, "id": 1})
         return autorisations(espace, [j["id"] for j in tous])
 
     def exiger_contributeur(case, acteur_id):
@@ -338,7 +403,7 @@ def build_cases_router(deps):
     @router.get("/cases")
     async def lister_cases(q: Optional[str] = None, inclure_conversations: bool = False, acteur: str = Depends(acteur_courant), x_espace: Optional[str] = Header(None)):
         _, espace = resoudre_perimetre(acteur, x_espace)
-        tous = await db.jumeaux.find({}, {"_id": 0, "id": 1}).to_list(200)
+        tous = await jumeaux_du_tenant(db, _tenant_requete(), {"_id": 0, "id": 1})
         aut = autorisations(espace, [j["id"] for j in tous])
         cases = await db.cases.find({}, NO_ID).to_list(200)
         visibles = [c for c in cases if (
@@ -465,7 +530,8 @@ def build_cases_router(deps):
 
         # Résolution des jumeaux participants (identifiés par app_id dans case["jumeaux"])
         if case.get("jumeaux"):
-            jumeaux_docs = await db.jumeaux.find({"id": {"$in": case["jumeaux"]}}, NO_ID).to_list(len(case["jumeaux"]))
+            jumeaux_docs = [j for j in await jumeaux_du_tenant(db, _tenant_requete())
+                            if j["id"] in case["jumeaux"]]
             docs_par_id = {j["id"]: j for j in jumeaux_docs}
             case["jumeaux_participants"] = [
                 {
@@ -628,11 +694,42 @@ def build_cases_router(deps):
             _, espace = resoudre_perimetre(acteur, x_espace)
             await charger_case(cid, espace, acteur)  # jamais d'écriture hors des droits
             now = datetime.now(timezone.utc).isoformat()
-            msg_user = {"role": "utilisateur", "texte": payload.texte.strip(), "quand": now}
+            msg_user = {"role": "utilisateur", "texte": payload.texte.strip(), "par": acteur, "quand": now}
             await db.cases.update_one({"id": cid}, {"$push": {"conversation": {"$each": [msg_user, fil.message_interrompu(brouillon, activite)]}},
                                                     "$set": {"maj_le": now}})
         return flux.en_flux(lambda emit: traiter_message(cid, payload, acteur, x_espace, emit), sur_interruption=interrompu, fil=cid, proprietaire=acteur,
                             si_seul=prevenir_fin(cid))
+
+    def _dossier_clarification(etat, contexte):
+        """Dossier minimal d'une clarification : une question, portée par un slot identifié."""
+        contexte_cadre = {
+            **cadrage_conv.contexte_pour_noyau(etat),
+            **contexte,
+            "question": etat.question,
+            "sans_questions": True,
+        }
+        demande = noyau_raisonnement.qualifier(etat.question, contexte_cadre)
+        dossier = noyau_raisonnement.preparer_dossier(
+            etat.question, contexte=contexte_cadre,
+            tenant=_tenant_requete())
+        question = etat.question_en_attente
+        cadre = replace(
+            dossier.cadre,
+            questions_bloquantes=(question.texte,),
+            questions_non_bloquantes=(),
+        )
+        reponse = {
+            "comportement": "clarifier",
+            "reponse": (
+                "Avant de traiter cette demande, il me manque un point précis.\n\n"
+                f"- {question.texte}"
+            ),
+            "questions": [question.texte],
+            "raisonnement_statut": "clarification_requise",
+        }
+        dossier = replace(dossier, demande=demande, cadre=cadre, statut="clarification_requise")
+        reponse["raisonnement"] = dossier.as_dict()
+        return replace(dossier, reponse=reponse)
 
     async def repondre_dans_travail(cid, case, question, params, acteur, x_espace, emit=None):
         """La réponse brute de Flore dans un Travail (hors scripts de démonstration), avec ce qui l'accompagne."""
@@ -646,11 +743,130 @@ def build_cases_router(deps):
         async def suivre(e):
             suivi.suivre(e)
             await emit(e)
-        appel = {"travail": cid, "emit": suivre if emit else None}
+        appel = {"travail": cid, "emit": suivre if emit else None,
+                 "session": f"travail:{cid}"}
         if _accepte_autorisation_ecriture(generer_reponse_flore):
             appel["autoriser_ecriture"] = getattr(params, "autoriser_ecriture", False)
-        rep = await generer_reponse_flore(params.contexte or "case", question, selection, params.domaine, acteur,
-                                          x_espace, **appel)
+        precedent = case.get("raisonnement") if isinstance(case.get("raisonnement"), dict) else {}
+        etat_tour = tour_dialogue.EtatTour.depuis_case(case)
+        version_avant = etat_tour.version
+        etat_dialogue = etat_tour.dialogue
+        tour_dialogue_ctx = dialogue_service.preparer_tour(
+            question, etat=etat_dialogue, selection=selection)
+        contexte_raisonnement = {"twin_ids": list(selection or ()), "question": question,
+                                 "dialogue": tour_dialogue_ctx,
+                                 "acte": tour_dialogue_ctx.get("acte", "")}
+        contexte_raisonnement.update(await auth_identite.contexte_acteur(acteur))
+        contexte_raisonnement["preferences"] = preferences_service.depuis_doc(
+            await db.preferences.find_one({"acteur": acteur}, {"_id": 0}) or {})
+        ids = list(selection or case.get("jumeaux") or ())
+        if not ids:
+            ids = [j["id"] for j in await jumeaux_du_tenant(
+                db, _tenant_requete(), {"_id": 0, "id": 1})]
+        mapping = {j["id"]: j.get("domaine") for j in await jumeaux_du_tenant(
+            db, _tenant_requete()) if j["id"] in ids}
+        tenant_requete = _tenant_requete()
+        consommateur = Consommateur(
+            tenant_requete,
+            portfolio_id=str(contexte_raisonnement.get("espace") or ""),
+        )
+        # Un seul Twin sélectionné : c'est lui le propriétaire. Plusieurs Twins : chacun est
+        # lu par partage, sans ouvrir la vue propriétaire à l'un d'eux.
+        twin_proprietaire = selection[0] if len(selection) == 1 else None
+        contexte_raisonnement.update(await retrieval_chat.contexte(
+            tenant_requete, question, twin_ids=selection, acteur=acteur,
+            role=str(contexte_raisonnement.get("poste") or ""),
+            espace=str(contexte_raisonnement.get("espace") or ""),
+            graph_ids=ids, domaines=mapping, consommateur=consommateur,
+            twin_proprietaire=twin_proprietaire))
+        retours = await db.retours.find(
+            {"travail": cid}, {"_id": 0, "valeur": 1, "motif": 1, "question": 1}
+        ).sort("quand", -1).to_list(3)
+        if retours:
+            contexte_raisonnement["retours"] = retours
+        if precedent:
+            contexte_raisonnement["beliefs"] = list(precedent.get("beliefs") or ())
+            contexte_raisonnement["revisions"] = list(precedent.get("revisions") or ())
+
+        etat = etat_tour.cadrage
+        # Une question méta porte sur l'échange précédent, pas sur la question de cadrage
+        # encore ouverte : elle ne doit pas être consommée comme une réponse au slot.
+        if tour_dialogue_ctx.get("acte") == "meta":
+            etat = None
+        if etat and etat.question_en_attente:
+            etat = cadrage_conv.recevoir_reponse(
+                etat, question, acte=tour_dialogue_ctx.get("acte"))
+            question_effective = etat.question
+        else:
+            demande_cadrage = noyau_raisonnement.qualifier(
+                question, {**contexte_raisonnement, "sans_questions": True})
+            etat = cadrage_conv.initialiser(question, demande_cadrage, contexte_raisonnement)
+            question_effective = question
+
+        if etat.question_en_attente:
+            dossier_clarification = _dossier_clarification(etat, contexte_raisonnement)
+            etat_dialogue = dialogue_service.mettre_a_jour(
+                etat_dialogue, question, dossier_clarification.reponse, selection=selection)
+            etat_tour = etat_tour.avec(dialogue=etat_dialogue, cadrage=etat)
+            filtre = {"id": cid}
+            if "etat_tour" in case:
+                filtre["etat_tour.version"] = version_avant
+            resultat = await db.cases.update_one(
+                filtre,
+                {"$set": {
+                    "cadrage_conversationnel": etat.as_dict(),
+                    "dialogue": etat_dialogue.as_dict(),
+                    "etat_tour": etat_tour.as_dict(),
+                },
+                 "$unset": {"raisonnement_en_attente": ""}},
+            )
+            if not getattr(resultat, "matched_count", 0):
+                raise HTTPException(409, "Le Travail a changé pendant ce tour ; recharge et réessaie.")
+            return dossier_clarification.reponse
+
+        contexte_raisonnement = {
+            **cadrage_conv.contexte_pour_noyau(etat),
+            **contexte_raisonnement,
+            "question": question_effective,
+            "sans_questions": True,
+        }
+        rep = await generer_reponse_flore(
+            params.contexte or "case", question_effective, selection, params.domaine, acteur,
+            x_espace, contexte_raisonnement=contexte_raisonnement, **appel)
+        rep = await design_diagram.enrichir_reponse(rep)
+        rep["retrieval"] = {
+            "documents": [{"locator": d.get("locator"), "score": d.get("score")}
+                          for d in (contexte_raisonnement.get("documentation") or [])[:6]],
+            "memoire": len(contexte_raisonnement.get("memoire") or ()),
+            "graphe_global": bool(contexte_raisonnement.get("graphe_global")),
+        }
+        etat_dialogue = dialogue_service.mettre_a_jour(
+            etat_dialogue, question, rep, selection=selection)
+        preferences = contexte_raisonnement.get("preferences")
+        if getattr(preferences, "suggestions", True):
+            rep["suggestions"] = dialogue_service.suggestions(
+                etat_dialogue, rep, acte=tour_dialogue_ctx.get("acte", ""))
+        dossier = rep.get("raisonnement") if isinstance(rep.get("raisonnement"), dict) else {}
+        etat_tour = etat_tour.avec(dialogue=etat_dialogue, cadrage=etat)
+        filtre = {"id": cid}
+        if "etat_tour" in case:
+            filtre["etat_tour.version"] = version_avant
+        resultat = await db.cases.update_one(
+            filtre,
+            {"$set": {"cadrage_conversationnel": etat.as_dict(),
+                      "dialogue": etat_dialogue.as_dict(),
+                      "etat_tour": etat_tour.as_dict()},
+             "$unset": {"raisonnement_en_attente": ""}},
+        )
+        if not getattr(resultat, "matched_count", 0):
+            raise HTTPException(409, "Le Travail a changé pendant ce tour ; recharge et réessaie.")
+        if dossier:
+            await db.cases.update_one(
+                {"id": cid},
+                {"$set": {"raisonnement": dossier}},
+            )
+            await _persister_dossier_raisonnement(
+                _tenant_requete(), dossier, cid)
         # Les jumeaux du Travail et ceux réellement consultés (mention, routage automatique) : tous avec leurs sources.
         ids = []
         base_participants = [] if rep.get("proposition") else (case.get("jumeaux") or [])
@@ -660,7 +876,8 @@ def build_cases_router(deps):
                 ids.append(cle)
         participants = []
         if ids:
-            docs = await db.jumeaux.find({"id": {"$in": ids}}, NO_ID).to_list(len(ids))
+            docs = [j for j in await jumeaux_du_tenant(db, _tenant_requete())
+                    if j["id"] in ids]
             par_id = {j["id"]: j for j in docs}
             noms = {p.get("id") or p.get("app_id"): p.get("nom") for p in rep.get("jumeaux_participants") or []}
             for jid in ids:
@@ -715,14 +932,14 @@ def build_cases_router(deps):
     ajouter_routes_pieces(router, {"db": db, "charger_case": charger_case,
                                    "resoudre_perimetre": resoudre_perimetre, "journaler": journaler})
 
-    async def traiter_message(cid, payload, acteur, x_espace, emit=None):
+    async def _traiter_message(cid, payload, acteur, x_espace, emit=None):
         _, espace = resoudre_perimetre(acteur, x_espace)
         case = await charger_case(cid, espace, acteur)
         exiger_contributeur(case, acteur)
         if not payload.texte.strip():
             raise HTTPException(400, "Message vide")
         now = datetime.now(timezone.utc).isoformat()
-        msg_user = {"role": "utilisateur", "texte": payload.texte.strip(), "quand": now}
+        msg_user = {"role": "utilisateur", "texte": payload.texte.strip(), "par": acteur, "quand": now}
         msg_flore = fil.message_flore(await repondre_dans_travail(cid, case, payload.texte, payload, acteur, x_espace, emit))
         msg_flore = fil.normaliser(msg_flore)
         await db.cases.update_one(
@@ -733,6 +950,11 @@ def build_cases_router(deps):
             },
         )
         return {"utilisateur": msg_user, "flore": msg_flore, "reponse_complete": msg_flore}
+
+    async def traiter_message(cid, payload, acteur, x_espace, emit=None):
+        """Un seul tour de modèle à la fois par Travail (verrou processus)."""
+        async with _verrou_travail(cid):
+            return await _traiter_message(cid, payload, acteur, x_espace, emit)
 
     @router.post("/cases/{cid}/messages/{n}/retour")
     async def retour_message(cid: str, n: int, payload: RetourMessage, acteur: str = Depends(acteur_courant),
@@ -799,7 +1021,8 @@ def build_cases_router(deps):
         _, espace = resoudre_perimetre(acteur, x_espace)
         if not espace.get("global"):
             raise HTTPException(403, "Seuls les rôles du Mesh global rapportent des observations")
-        if not await db.jumeaux.find_one({"id": payload.jumeau}, {"_id": 1}):
+        if not any(j["id"] == payload.jumeau
+                   for j in await jumeaux_du_tenant(db, _tenant_requete(), {"_id": 0, "id": 1})):
             raise HTTPException(404, "Jumeau inconnu")
         maintenant = datetime.now(timezone.utc)
         quand = payload.quand or maintenant.isoformat()
@@ -863,7 +1086,8 @@ def build_cases_router(deps):
         decision_enregistree = False
         lien = None
         if "confirmer la relation" in x and sit.get("relation_id"):
-            aut = autorisations(espace, [j["id"] for j in await db.jumeaux.find({}, {"_id": 0, "id": 1}).to_list(200)])
+            aut = autorisations(espace, [j["id"] for j in await jumeaux_du_tenant(
+                db, _tenant_requete(), {"_id": 0, "id": 1})])
             rel = await db.relations.find_one({"id": sit["relation_id"]}, NO_ID)
             if not rel or not any(aut.get(j) == "complet" for j in (rel["source"], rel["cible"])):
                 raise HTTPException(403, "Permission « Valider » requise sur l'un des jumeaux de la relation")

@@ -126,7 +126,8 @@ test("MessageFlore transmet onOuvrirPiece au Markdown du corps et à ses enfants
   const source = lire("components/MessageFlore.jsx");
   expect(source).toContain("onOuvrirPiece");
   expect(source).toContain("cloneElement(corps, { onOuvrirPiece");
-  expect(source).toContain("<MarkdownFlore texte={message.texte} schemas={message.schemas} onOuvrirPiece={onOuvrirPiece} />");
+  expect(source).toContain("onOuvrirPiece={onOuvrirPiece}");
+  expect(source).toContain("diagrammes={message.diagrammes}");
 });
 
 test("le panneau de pièce charge la section par l'API encodée, affiche le texte et se ferme pour de vrai", () => {

@@ -21,7 +21,8 @@ export function lecteurAgUi({ onEtape, onTexte, onRelecture, onOutil, onDebut, o
         if (libelle && !onOutil) onEtape?.(libelle); // un appelant qui ne montre que des libellés le voit quand même
         args[e.toolCallId] = "";
         const parent = e.metadata?.parent;
-        maj(e.toolCallId, { id: e.toolCallId, nom: e.toolCallName, libelle, etat: "en_cours", debut: Date.now(), ...(parent ? { parent } : {}) });
+        maj(e.toolCallId, { id: e.toolCallId, nom: e.toolCallName, libelle, etat: "en_cours", debut: Date.now(),
+          ...(parent ? { parent } : {}), ...(e.metadata?.groupe ? { groupe: e.metadata.groupe } : {}) });
         break;
       }
       case "TOOL_CALL_ARGS": args[e.toolCallId] = (args[e.toolCallId] || "") + e.delta; break;
@@ -99,6 +100,7 @@ export async function demanderEnFlux(chemin, corps, { onEtape, onTexte, onRelect
   const lire = lecteurAgUi({ onEtape, onTexte, onRelecture, onOutil, onMission, onDebut: (id) => { tour = id; } });
   const entetes = { Accept: "text/event-stream", ...entetesPerimetre() };
   let reponse = await fetch(`${API()}${chemin}`, {
+    credentials: "include",
     method: "POST", headers: { "Content-Type": "application/json", ...entetes }, body: JSON.stringify(corps), signal,
   });
   if (!reponse.ok || !reponse.body) throw await erreurFlux(reponse);
@@ -116,7 +118,7 @@ export async function demanderEnFlux(chemin, corps, { onEtape, onTexte, onRelect
       if (estArret(err) || signal?.aborted) {
         // ponytail: un arrêt avant RUN_STARTED (premières millisecondes) ne peut pas viser le tour ; il se termine
         if (tour && !(err.message === "tour arrêté")) {
-          await fetch(`${API()}/tours/${tour}/arreter`, { method: "POST", headers: entetesPerimetre() }).catch(() => {});
+          await fetch(`${API()}/tours/${tour}/arreter`, { method: "POST", headers: entetesPerimetre(), credentials: "include" }).catch(() => {});
         }
         throw err;
       }
@@ -127,7 +129,7 @@ export async function demanderEnFlux(chemin, corps, { onEtape, onTexte, onRelect
       await attendre(PAUSES_REPRISE[essai], signal);
       essai += 1;
       const depuis = dernierId != null ? encodeURIComponent(dernierId) : lus;
-      reponse = await fetch(`${API()}/tours/${tour}/flux?depuis=${depuis}`, { headers: entetes, signal })
+      reponse = await fetch(`${API()}/tours/${tour}/flux?depuis=${depuis}`, { headers: entetes, signal, credentials: "include" })
         .catch((e) => (estArret(e) ? Promise.reject(e) : { ok: false, status: 0 }));
       if (reponse.status === 404) throw Object.assign(err, { tourEnCours: true }); // tour oublié : l'appelant relit
       if (!reponse.ok || !reponse.body) reponse = { ok: false, body: { getReader: () => ({ read: () => Promise.reject(err) }) } };
@@ -172,6 +174,38 @@ export function grouperConsultations(ops) {
   return (ops || []).filter((o) => o.outil?.nom === "consulter_jumeau").map((c) => ({
     ...c, sous: ops.filter((o) => o.outil?.parent && o.outil.parent === c.outil.arguments?.jumeau),
   }));
+}
+
+// Les appels consécutifs du même outil sont une seule action visible : « lire le code… » reste une ligne
+// jusqu'à ce qu'un autre outil (ou une consultation) prenne la main. Les enfants d'une consultation gardent
+// leur parent et ne sont jamais fusionnés avec le niveau supérieur.
+export function grouperOperationsConsecutives(ops) {
+  const groupes = [];
+  for (const op of ops || []) {
+    const outil = op.outil;
+    const nom = outil?.nom;
+    const parent = outil?.parent || "";
+    const cle = nom && nom !== "consulter_jumeau" ? `${nom}|${parent}` : null;
+    const dernier = groupes[groupes.length - 1];
+    if (!cle || !dernier || dernier._cle !== cle) {
+      groupes.push({ ...op, _cle: cle, outils: outil ? [outil] : [], nombre: outil ? 1 : 0 });
+      continue;
+    }
+    const outils = [...dernier.outils, outil];
+    const enCours = outils.some((o) => o.etat === "en_cours");
+    const choisi = [...outils].reverse().find((o) => o.etat === "en_cours") || outils[outils.length - 1];
+    const durees = outils.map((o) => o.duree).filter((d) => typeof d === "number");
+    groupes[groupes.length - 1] = {
+      ...dernier,
+      outil: choisi,
+      outils,
+      nombre: outils.length,
+      status: enCours ? "running" : "done",
+      duree: durees.length ? durees.reduce((a, b) => a + b, 0) : null,
+      sources: [...new Set([...(dernier.sources || []), ...(op.sources || [])])],
+    };
+  }
+  return groupes;
 }
 
 export function resumeConsultations(ops) {

@@ -43,24 +43,32 @@ def types_de_sources(conn, jumeau_id):
 
 
 def creer_jumeau(conn, jumeau):
-    """Crée le jumeau d'un progiciel (sans code, donc sans ingestion qui le crée) ; idempotent."""
+    """Crée le jumeau d'un progiciel ou d'un écosystème, avec son type et son identité optionnelle."""
     conn.execute(
-        "INSERT INTO jumeau (id, tenant_id, nom, equipe, domaine, mission) "
-        "VALUES (%s, %s, %s, %s, coalesce(%s, 'À confirmer'), %s) ON CONFLICT (id) DO UPDATE SET "
+        "INSERT INTO jumeau (id, tenant_id, nom, equipe, domaine, mission, type, application_id, "
+        "perimetre, perimetre_id, identifiants) VALUES (%s, %s, %s, %s, coalesce(%s, 'À confirmer'), %s, "
+        "coalesce(%s, 'APPLICATION'), %s, %s, %s, %s) ON CONFLICT (id) DO UPDATE SET "
         "nom = EXCLUDED.nom, equipe = EXCLUDED.equipe, domaine = coalesce(%s, jumeau.domaine), "
-        "mission = coalesce(%s, jumeau.mission) WHERE jumeau.tenant_id = EXCLUDED.tenant_id",
+        "mission = coalesce(%s, jumeau.mission), type = EXCLUDED.type, "
+        "application_id = coalesce(EXCLUDED.application_id, jumeau.application_id), "
+        "perimetre = coalesce(EXCLUDED.perimetre, jumeau.perimetre), "
+        "perimetre_id = coalesce(EXCLUDED.perimetre_id, jumeau.perimetre_id), "
+        "identifiants = jumeau.identifiants || EXCLUDED.identifiants "
+        "WHERE jumeau.tenant_id = EXCLUDED.tenant_id",
         (jumeau["id"], jumeau["tenant_id"], jumeau["nom"], jumeau["equipe"], jumeau.get("domaine"),
-         jumeau.get("mission"), jumeau.get("domaine"), jumeau.get("mission")))
+         jumeau.get("mission"), jumeau.get("type"), jumeau.get("application_id"),
+         jumeau.get("perimetre"), jumeau.get("perimetre_id") or None,
+         Jsonb(jumeau.get("identifiants") or {}), jumeau.get("domaine"), jumeau.get("mission")))
 
 
 def enregistrer(conn, jumeau, source, claims, activite):
     """Upsert du jumeau, de la source, des Claims et de leurs preuves ; clôture les Claims non revus.
 
     Un Claim clos puis réobservé repart en PROPOSED/M2 : sa validation portait sur une période révolue.
+    Une extraction vide reste un succès technique et met la source à jour, mais n'est pas une preuve d'absence :
+    elle ne clôt donc aucune connaissance existante de cette source.
     ponytail: clôture sur tout le jumeau, valable tant qu'il n'a qu'une source de code ; filtrer par source en phase 1.
     """
-    if not claims:
-        raise ValueError("aucun claim : ingestion refusée pour ne pas clôturer le jumeau")
     t = jumeau["tenant_id"]
     with conn.transaction():
         conn.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (jumeau["id"],))
@@ -68,26 +76,38 @@ def enregistrer(conn, jumeau, source, claims, activite):
         if existant and existant[0] != t:
             raise PermissionError(f"jumeau {jumeau['id']} appartient à un autre tenant")
         conn.execute(
-            "INSERT INTO jumeau (id, tenant_id, nom, equipe, domaine, mission) "
-            "VALUES (%s, %s, %s, %s, coalesce(%s, 'À confirmer'), %s) ON CONFLICT (id) DO UPDATE SET "
+            "INSERT INTO jumeau (id, tenant_id, nom, equipe, domaine, mission, type, application_id, "
+            "perimetre, perimetre_id, identifiants) VALUES (%s, %s, %s, %s, coalesce(%s, 'À confirmer'), %s, "
+            "coalesce(%s, 'APPLICATION'), %s, %s, %s, %s) ON CONFLICT (id) DO UPDATE SET "
             "nom = EXCLUDED.nom, equipe = EXCLUDED.equipe, "
-            "domaine = coalesce(%s, jumeau.domaine), mission = coalesce(%s, jumeau.mission)",
+            "domaine = coalesce(%s, jumeau.domaine), mission = coalesce(%s, jumeau.mission), "
+            "type = EXCLUDED.type, application_id = coalesce(EXCLUDED.application_id, jumeau.application_id), "
+            "perimetre = coalesce(EXCLUDED.perimetre, jumeau.perimetre), "
+            "perimetre_id = coalesce(EXCLUDED.perimetre_id, jumeau.perimetre_id), "
+            "identifiants = jumeau.identifiants || EXCLUDED.identifiants",
             (jumeau["id"], t, jumeau["nom"], jumeau["equipe"], jumeau.get("domaine"), jumeau.get("mission"),
-             jumeau.get("domaine"), jumeau.get("mission")))
+             jumeau.get("type"), jumeau.get("application_id"), jumeau.get("perimetre"),
+             jumeau.get("perimetre_id") or None,
+             Jsonb(jumeau.get("identifiants") or {}), jumeau.get("domaine"), jumeau.get("mission")))
         source_id = conn.execute(
             "INSERT INTO source (tenant_id, jumeau_id, type, nom, emplacement, curseur, copie, index_code, branche, "
-            "url, secret_ref, configuration, troncature) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+            "url, secret_ref, configuration, troncature, exploration) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
             "ON CONFLICT (jumeau_id, nom) DO UPDATE SET emplacement = EXCLUDED.emplacement, "
             "curseur = EXCLUDED.curseur, copie = EXCLUDED.copie, index_code = EXCLUDED.index_code, "
             "branche = coalesce(EXCLUDED.branche, source.branche), url = coalesce(EXCLUDED.url, source.url), "
             "secret_ref = coalesce(EXCLUDED.secret_ref, source.secret_ref), "
             "configuration = coalesce(EXCLUDED.configuration, source.configuration), "
-            "troncature = EXCLUDED.troncature RETURNING id",
+            "troncature = EXCLUDED.troncature, "
+            "exploration = coalesce(EXCLUDED.exploration, source.exploration) RETURNING id",
             (t, jumeau["id"], source["type"], source["nom"], source["emplacement"], source["curseur"],
              source.get("copie"), source.get("index_code"), source.get("branche"), source.get("url"),
              source.get("secret_ref"),
              Jsonb(source["configuration"]) if source.get("configuration") else None,
-             Jsonb(source["troncature"]) if source.get("troncature") else None)).fetchone()[0]
+             Jsonb(source["troncature"]) if source.get("troncature") else None,
+             Jsonb(source["exploration"]) if source.get("exploration") else None)).fetchone()[0]
+        if not claims:
+            return
         tronque = bool(source.get("troncature"))
         vus = []
         for c in claims:
@@ -133,10 +153,11 @@ def _remplacer_preuves(conn, source_id, claim_id, chemin):
 def _lier_preuve(conn, tenant, source_id, claim_id, p, activite):
     _remplacer_preuves(conn, source_id, claim_id, p["chemin"])
     conn.execute(
-        "INSERT INTO preuve (tenant_id, source_id, type, locator, chemin, sha, ligne_debut, ligne_fin, hash, activite) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (source_id, locator) DO NOTHING",
+        "INSERT INTO preuve (tenant_id, source_id, type, locator, chemin, sha, ligne_debut, ligne_fin, hash, activite, "
+        "confidentialite) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+        "ON CONFLICT (source_id, locator) DO NOTHING",
         (tenant, source_id, p.get("type", "CODE"), p["locator"], p["chemin"], p["sha"], p["ligne_debut"],
-         p["ligne_fin"], p["hash"], Jsonb(activite)))
+         p["ligne_fin"], p["hash"], Jsonb(activite), p.get("confidentialite", "INTERNAL")))
     conn.execute(
         "INSERT INTO claim_preuve (claim_id, preuve_id) "
         "SELECT %s, id FROM preuve WHERE source_id = %s AND locator = %s ON CONFLICT DO NOTHING",
@@ -220,8 +241,8 @@ def sources_du_jumeau(conn, jumeau_id):
     """Les dépôts du jumeau, chacun sur sa branche, au dernier commit ingéré."""
     with conn.cursor(row_factory=dict_row) as cur:
         return cur.execute(
-            "SELECT id, nom, emplacement, curseur, copie, index_code, branche, url, secret_ref, configuration FROM source "
-            "WHERE jumeau_id = %s AND type = 'GIT' ORDER BY nom", (jumeau_id,)).fetchall()
+            "SELECT id, nom, emplacement, curseur, copie, index_code, branche, url, secret_ref, configuration, "
+            "exploration FROM source WHERE jumeau_id = %s AND type = 'GIT' ORDER BY nom", (jumeau_id,)).fetchall()
 
 
 def maj_index(conn, source_id, copie, index_code):
@@ -269,6 +290,14 @@ def jumeau_par_id(conn, jumeau_id):
     with conn.cursor(row_factory=dict_row) as cur:
         return cur.execute("SELECT id, tenant_id, nom, equipe, domaine, mission FROM jumeau WHERE id = %s",
                            (jumeau_id,)).fetchone()
+
+
+def jumeau_carte(conn, jumeau_id):
+    """Identité complète pour la carte de catalogue : type, application_id, périmètre, identifiants."""
+    with conn.cursor(row_factory=dict_row) as cur:
+        return cur.execute(
+            "SELECT id, tenant_id, nom, equipe, domaine, mission, type, application_id, perimetre, "
+            "perimetre_id, identifiants FROM jumeau WHERE id = %s", (jumeau_id,)).fetchone()
 
 
 def reviser(conn, claim_id, acteur, decision, motif, proposee_de=None):

@@ -59,6 +59,8 @@ def preuve(depot, sha, chemin, lignes, debut, fin):
 
 def _motif_route(route):
     """cbm normalise les paramètres (`/jumeaux/{jid}` → `/jumeaux/{}`) : `{}` accepte tout nom de paramètre."""
+    if not route:
+        return re.compile(r"""["']["']""")  # @router.post("") : route racine du routeur
     corps = r"\{[^}]*\}".join(re.escape(morceau) for morceau in route.split("{}"))
     return re.compile(rf"""["']{corps}["']""")  # chaîne complète : /items ne se prouve pas par /items/{id}
 
@@ -95,9 +97,14 @@ def _chemin_complet(prefixe, route):
 
 
 def _avec_prefixes(routes):
-    """cbm signale le préfixe de routeur d'un gestionnaire par une entrée « ANY » sur le même fichier et la même ligne."""
+    """cbm signale le préfixe de routeur d'un gestionnaire par une entrée « ANY » sur le même fichier et la même ligne.
+
+    Un lecteur AST peut aussi fournir directement ``prefixe`` (routeur construit dans une fonction) ; il prime
+    sur l'absence d'entrée CBM et n'est jamais écrasé par ``None``.
+    """
     prefixes = {(r["chemin"], r["debut"]): r["route"] for r in routes if r.get("methode") == "ANY"}
-    return [{**r, "prefixe": prefixes.get((r["chemin"], r["debut"]))} for r in routes]
+    return [{**r, "prefixe": prefixes.get((r["chemin"], r["debut"]), r.get("prefixe"))}
+            for r in routes]
 
 
 def _jeton(predicat, cle, transformer=lambda v: v, filtre=lambda l, v: True, ligne_index=False):
@@ -125,7 +132,9 @@ DECLARATION_IMAGE = re.compile(r"^\s*(image\s*:|FROM\s)", re.IGNORECASE)
 
 EXTRACTEURS = {
     "routes": _route,
-    "paquets": _jeton("DEPEND_DE", "paquet"),
+    # Un paquet présent dans un manifeste ou dans le graphe Package de CBM est une déclaration structurelle.
+    # Il ne devient DEPEND_DE que lorsqu'un import, un appel ou un binding en prouve réellement l'usage.
+    "paquets": _jeton("DECLARE_DEPENDANCE", "paquet"),
     # Une variable est située par l'index (ou sa déclaration), jamais par la règle qui la vérifie.
     "variables": _variable,
     # « docker.io/library/mongo » s'écrit « image: mongo:7.0 » (compose) ou « FROM mongo » (Dockerfile).

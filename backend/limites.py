@@ -59,8 +59,8 @@ def fenetre_tours() -> int:
 def verifier_cors(origines, app_env=None):
     """Refuse le joker CORS en production : les origines autorisées doivent y être explicites.
 
-    L'authentification de Méridian passe par des en-têtes (pas de cookie), donc `allow_credentials=False` ;
-    le joker reste acceptable en développement, jamais en production.
+    L'authentification locale utilise un cookie de session : les origines doivent être explicites
+    en production pour que `allow_credentials=True` reste sûr.
     """
     propres = [str(o).strip() for o in (origines.split(",") if isinstance(origines, str) else origines)
                if str(o).strip()]

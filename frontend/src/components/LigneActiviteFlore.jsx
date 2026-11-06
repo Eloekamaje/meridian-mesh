@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { grouperConsultations, resumeConsultations } from "@/lib/fluxFlore";
+import { grouperConsultations, grouperOperationsConsecutives, resumeConsultations } from "@/lib/fluxFlore";
 import ArtefactPlanification, { artefactDepuisOutil } from "./ArtefactPlanification";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { CaretDown, CheckCircle, CircleNotch, WarningCircle } from "@phosphor-icons/react";
@@ -19,6 +19,12 @@ import { CaretDown, CheckCircle, CircleNotch, WarningCircle } from "@phosphor-ic
 // interprétés). Tant que Flore travaille et qu'il y a des outils, la liste est dépliée ; elle se replie à la fin.
 
 const secondes = (d) => (d == null ? "" : `${String(d).replace(".", ",")} s`);
+const OUTILS_CODE = new Set([
+  "lire_code", "chercher_texte", "chercher_symbole", "tracer_appels", "suivre_appels",
+  "historique_du_code", "ce_qui_a_change", "architecture",
+]);
+const nomAffiche = (nom) => (OUTILS_CODE.has(nom) ? nom.replaceAll("_", "-") : nom);
+const argumentVisible = (outil, _enCours) => !OUTILS_CODE.has(outil?.nom);
 const premierArgument = (args) => {
   const v = args && typeof args === "object" ? Object.values(args).find((x) => typeof x === "string" || typeof x === "number") : null;
   return v == null ? "" : String(v).slice(0, 60);
@@ -27,27 +33,47 @@ const premierArgument = (args) => {
 function LigneOutil({ op, testid }) {
   const [detail, setDetail] = useState(false);
   const { outil } = op;
-  const enCours = op.status === "running";
+  const outils = op.outils || (outil ? [outil] : []);
+  const enCours = op.status === "running" || outils.some((o) => o.etat === "en_cours");
   const Icone = outil.etat === "erreur" ? WarningCircle : enCours ? CircleNotch : CheckCircle;
   return (
     <div data-testid={testid}>
       <button type="button" onClick={() => setDetail((d) => !d)} aria-expanded={detail}
-        title={op.label} aria-label={`${op.label} — ${outil.nom}${detail ? "" : ", voir le détail"}`}
+        title={op.label} aria-label={`${op.label} — ${nomAffiche(outil.nom)}${detail ? "" : ", voir le détail"}`}
         className="flex w-full items-start gap-2 rounded text-left hover:text-[#CBD5E1] focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#60A5FA]/60">
         <Icone size={12} aria-hidden="true" className={`mt-0.5 shrink-0 ${enCours ? "animate-spin text-[#60A5FA] motion-reduce:animate-none"
           : outil.etat === "erreur" ? "text-[#F87171]" : "text-[#60A5FA]/70"}`} />
         <span className="min-w-0 flex-1 truncate">
           <span className={enCours ? "text-[#D8E2EA]" : "text-[#7C93A8]"}>{op.label}</span>{" "}
-          <span className="font-code text-[11px] text-[#93C5FD]/80">{outil.nom}</span>{" "}
-          <span className="font-code text-[11px] text-[#64748B]">{premierArgument(outil.arguments)}</span>
+          <span className="font-code text-[11px] text-[#93C5FD]/80">{nomAffiche(outil.nom)}</span>{" "}
+          {argumentVisible(outil, enCours) && (
+            <span className="font-code text-[11px] text-[#64748B]">{premierArgument(outil.arguments)}</span>
+          )}
+          {outils.length > 1 && (
+            <span className="font-code text-[10px] text-[#64748B]"> · {outils.length} appels</span>
+          )}
         </span>
-        <span className="shrink-0 font-code text-[10px] text-[#64748B]">{enCours ? "en cours…" : secondes(outil.duree)}</span>
+        <span className="shrink-0 font-code text-[10px] text-[#64748B]">{enCours ? "en cours…" : secondes(op.duree ?? outil.duree)}</span>
       </button>
       {detail && (
         <div className="ml-5 mt-1 space-y-1 border-l border-[#60A5FA]/25 pl-2 font-code text-[11px] text-[#94A3B8]" data-testid={`${testid}-detail`}>
-          {outil.arguments != null && <pre className="whitespace-pre-wrap break-words">{JSON.stringify(outil.arguments, null, 1)}</pre>}
-          {outil.extrait ? <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words text-[#7C93A8]">{outil.extrait}</pre>
-            : !enCours && <span>Aucun résultat lisible.</span>}
+          {outils.length === 1 && outil.arguments != null && argumentVisible(outil, enCours) && (
+            <pre className="whitespace-pre-wrap break-words">{JSON.stringify(outil.arguments, null, 1)}</pre>
+          )}
+          {outils.length > 1 ? (
+            <div className="space-y-0.5">
+              {outils.map((appel, i) => (
+                <div key={appel.id || i} className="flex gap-2">
+                  <span className="text-[#64748B]">{i + 1}.</span>
+                  <span className="text-[#94A3B8]">{OUTILS_CODE.has(appel.nom) ? "Détail du code masqué." : premierArgument(appel.arguments) || "appel"}</span>
+                </div>
+              ))}
+            </div>
+          ) : OUTILS_CODE.has(outil.nom) ? (
+            <span>Détail du code masqué.</span>
+          ) : outil.extrait ? (
+            <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words text-[#7C93A8]">{outil.extrait}</pre>
+          ) : !enCours && <span>Aucun résultat lisible.</span>}
         </div>
       )}
     </div>
@@ -98,7 +124,11 @@ function LigneConsultation({ op, sous, testid }) {
           {mission.constat && <span> — {mission.constat}</span>}
         </div>
       )}
-      {enCours && actuel && <div className="ml-5 truncate text-[11px] text-[#7C93A8]">{`${actuel.label}${actuel.outil.arguments ? ` ${premierArgument(actuel.outil.arguments)}` : ""}`}</div>}
+      {enCours && actuel && (
+        <div className="ml-5 truncate text-[11px] text-[#7C93A8]">
+          {`${actuel.label}${argumentVisible(actuel.outil, enCours) && actuel.outil.arguments ? ` ${premierArgument(actuel.outil.arguments)}` : ""}`}
+        </div>
+      )}
       {enCours && silence >= SILENCE && <div className="ml-5 text-[11px] text-[#64748B]">{`aucune nouvelle depuis ${silence} s : toujours en cours`}</div>}
     </div>
   );
@@ -114,6 +144,7 @@ export default function LigneActiviteFlore({ activite, testid = "flore-activite"
   const ouvert = choix ?? (enCours && ops.some((o) => o.outil));
   const courante = [...ops].reverse().find((o) => o.status === "running") || ops[ops.length - 1];
   const consultations = grouperConsultations(ops);
+  const operationsAffichees = grouperOperationsConsecutives(ops);
   const sousOutils = new Set(consultations.flatMap((c) => c.sous.map((s) => s.outil.id)));
   const consultationEnCours = consultations.some((c) => !c.outil.mission && c.outil.etat === "en_cours");
   const libelle = (enCours && consultationEnCours && resumeConsultations(ops)) || courante?.label || "Flore réfléchit…";
@@ -178,7 +209,7 @@ export default function LigneActiviteFlore({ activite, testid = "flore-activite"
 
       {ouvert && (
         <div className="mt-1.5 space-y-1.5 border-l border-white/[0.08] pl-3 text-xs" data-testid={`${testid}-detail`}>
-          {ops.map((o, i) => (sousOutils.has(o.outil?.id) ? null
+          {operationsAffichees.map((o, i) => (sousOutils.has(o.outil?.id) ? null
             : o.outil?.nom === "consulter_jumeau" ? <LigneConsultation key={o.outil.id} op={o} sous={consultations.find((c) => c.outil.id === o.outil.id).sous} testid={`${testid}-consultation-${i}`} />
             : o.outil ? <LigneOutil key={o.outil.id} op={o} testid={`${testid}-outil-${i}`} /> : (
             <div key={`${i}-${o.label}`} className="flex items-start gap-2">

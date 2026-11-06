@@ -1,3 +1,5 @@
+> **Note (2026-11-03) :** ce document est une photographie historique datée. L’état consolidé et les écarts sont dans [MERIDIAN_Architecture_Master_v1.md](../MERIDIAN_Architecture_Master_v1.md).
+
 # État d'avancement cognitif
 
 **Date :** 2026-11-01

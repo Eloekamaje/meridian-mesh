@@ -8,7 +8,7 @@ import tarfile
 import pytest
 
 from meridian.adapters.outbound.connectors import cbm
-from meridian.adapters.outbound.postgres import depot
+from meridian.adapters.outbound.postgres import code_index_store, depot
 from meridian.adapters.outbound.connectors import index_store
 from meridian.adapters.outbound.connectors import ingerer
 from meridian.adapters.outbound.connectors.index_store import IndexStoreError, LocalIndexStore, NullIndexStore, S3IndexStore, depuis_env
@@ -276,6 +276,19 @@ def _ingerer_sans_binaire(monkeypatch, tmp_path):
     monkeypatch.setattr(cbm, "indexer", lambda copie, nom: nom)
     monkeypatch.setattr(cbm, "interroger", lambda projet: (resultat_ingestion(), {}))
     monkeypatch.setattr(cbm, "retirer_ancien", lambda ancien, actuel: True)
+    monkeypatch.setattr(ingerer.legacy_index, "indexer_legacy", lambda *a, **k: {
+        "providers": ["cbm", "python"],
+        "fichiers_decouverts": ["requirements.txt"],
+        "observations": [{
+            "provider": "cbm", "parser": "cbm-graph", "parser_version": "1",
+            "file": "requirements.txt", "language": "", "kind": "cbm_package",
+            "symbol": "fastapi", "start": 1, "end": 1, "commit": k["commit"],
+            "attributes": {}, "confidence": 1.0, "status": "extracted",
+        }],
+        "couvertures": [{"file": "requirements.txt", "statut": "indexe"}],
+        "liens": [], "packs": [], "claims_promouvables": [],
+        "compteurs": {"indexe": 1}, "erreurs": [],
+    })
 
 
 @besoin_pg
@@ -295,6 +308,23 @@ def test_l_ingestion_sauve_l_artefact_et_nettoie_l_ancien(conn, depot_git, tmp_p
     assert second["sha"] != premier["sha"]
     assert (tmp_path / "index" / JUMEAU["tenant_id"] / depot_git.name / second["sha"]).is_dir()
     assert not (tmp_path / "index" / JUMEAU["tenant_id"] / depot_git.name / premier["sha"]).exists()
+
+
+@besoin_pg
+def test_l_ingestion_publie_l_index_federe_dans_la_portee_du_depot(conn, depot_git, tmp_path, monkeypatch):
+    _ingerer_sans_binaire(monkeypatch, tmp_path)
+    monkeypatch.setenv("JUMEAU_INDEX_STORE", "none")
+
+    ingerer.ingerer(conn, JUMEAU, depot_git)
+
+    observations = code_index_store.lire_observations(conn, JUMEAU["tenant_id"], JUMEAU["id"])
+    couverture = code_index_store.lire_couverture(conn, JUMEAU["tenant_id"], JUMEAU["id"])
+    assert [(o["file"], o["symbol"]) for o in observations] == [
+        (f"{depot_git.name}/requirements.txt", "fastapi")]
+    assert [c["file"] for c in couverture] == [f"{depot_git.name}/requirements.txt"]
+    source = depot.source_du_jumeau(conn, JUMEAU["id"], depot_git.name)
+    assert source["exploration"]["providers"] == ["cbm", "python"]
+    assert source["exploration"]["couverture"] == {"indexe": 1}
 
 
 @besoin_pg

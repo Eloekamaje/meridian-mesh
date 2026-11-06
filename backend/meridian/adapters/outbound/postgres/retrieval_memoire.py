@@ -23,6 +23,7 @@ contenu normalisé, pas seulement sur le texte exact.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+from dataclasses import replace
 from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
@@ -478,12 +479,23 @@ def _twin_autorise(conn: Any, tenant: str, twin_id: str) -> bool:
     return _texte(ligne.get("tenant_id")) == tenant
 
 
-def _candidats_claims(conn: Any, tenant: str, twin_ids: list[str]) -> list[dict]:
+def _candidats_claims(
+    conn: Any, tenant: str, twin_ids: list[str], consommateur: Any = None,
+    twin_proprietaire: str | None = None,
+) -> list[dict]:
     resultat: list[dict] = []
     for twin_id in twin_ids:
         if not _twin_autorise(conn, tenant, twin_id):
             continue
-        lignes = connaissance.connaissances(conn, twin_id, limite=_MAX_CLAIMS)
+        # La vue propriétaire n'est ouverte que pour le Twin explicitement sélectionné ; tout
+        # autre Twin passe par `claim_share`, avec le consommateur tel quel.
+        consommateur_twin = (
+            replace(consommateur, twin_id=twin_id)
+            if consommateur is not None and twin_proprietaire == twin_id
+            else consommateur
+        )
+        lignes = connaissance.connaissances(
+            conn, twin_id, limite=_MAX_CLAIMS, consommateur=consommateur_twin)
         for claim in lignes or []:
             if not isinstance(claim, Mapping):
                 continue
@@ -720,7 +732,7 @@ def _classer(
 def recuperer(
     conn: Any, tenant_id: Any, *, question: Any = "", twin_ids: Any = (),
     situation_id: Any = None, scope: Any = None, scope_id: Any = None, limite: Any = 12,
-    proximite: Any = None,
+    proximite: Any = None, consommateur: Any = None, twin_proprietaire: str | None = None,
 ) -> list[CandidatMemoire]:
     """Récupère et classe les souvenirs pertinents du tenant, sans modèle ni réseau.
 
@@ -729,6 +741,10 @@ def recuperer(
     learnings sont lus dans le dépôt d'entreprise ; un learning ancré sur la situation ou un
     Twin reste candidat même sans recouvrement lexical. Les Claims ne sont lus que pour des
     ``twin_ids`` explicites, après vérification que chaque Twin appartient au tenant.
+
+    Avec un ``consommateur``, les Claims des Twins qui ne sont pas ``twin_proprietaire``
+    passent par ``claim_share`` : seuls les Claims partagés sont lus. Le Twin explicitement
+    désigné comme propriétaire garde la vue propriétaire.
 
     ``proximite`` est optionnel : mapping ``identifiant -> score`` (``[0, 1]``) ou distance en
     sauts (``> 1``). Faute de provider sémantique, la pertinence reste lexicale. Les doublons
@@ -739,6 +755,7 @@ def recuperer(
     texte_question = _texte(question, 4000)
     twins_liste = _liste_ids(twin_ids)
     twins = set(twins_liste)
+    proprietaire = _texte(twin_proprietaire, 200) or None
     situation = _texte(situation_id, 200) or None
     scope_valide = _scope(scope)
     scope_id_valide = _texte(scope_id, 200) or None
@@ -751,7 +768,7 @@ def recuperer(
     bruts.extend(_candidats_durables(conn, tenant, tokens, scope_valide, scope_id_valide))
     bruts.extend(_candidats_annotations(conn, tenant, tokens, twins, situation))
     bruts.extend(_candidats_learnings(conn, tenant, tokens, twins, situation))
-    bruts.extend(_candidats_claims(conn, tenant, twins_liste))
+    bruts.extend(_candidats_claims(conn, tenant, twins_liste, consommateur, proprietaire))
     return _classer(
         _dedupliquer(bruts), texte_question, scope=scope_valide, scope_id=scope_id_valide,
         twin_ids=twins, situation_id=situation, limite=borne, proximite=proximite,

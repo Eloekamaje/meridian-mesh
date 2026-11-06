@@ -20,12 +20,16 @@ def _masquer(lignes):
     return _RE_CHAINES.sub(blanc, _RE_COMMENTAIRES.sub(blanc, contenu)).split("\n")
 
 
-PREDICATS = frozenset({"DEPEND_DE", "EXPOSE", "LIT_VARIABLE", "EXECUTE_IMAGE"})
+PREDICATS = frozenset({
+    "DECLARE_DEPENDANCE", "DEPEND_DE", "EXPOSE", "LIT_VARIABLE", "EXECUTE_IMAGE",
+    "APPELLE", "COPIE", "EXECUTE", "LIT_DATASET", "REFERENCE",
+    "TABLE", "STOCKE_DANS", "COMPOSANT_JEE", "INJECTE", "INTERFACE_UTILISATEUR",
+})
 VERIFIE, NON_APPUYE = "verifie", "non_appuye"
 _VERBES = ("get", "post", "put", "delete", "patch")
 
 
-# --- DEPEND_DE : nom de paquet en mot entier, casse et séparateurs -/_/. équivalents (PEP 503) ----
+# --- Dépendance déclarée ou utilisée : paquet en mot entier, séparateurs PEP 503 équivalents --------
 def _depend_de(objet: str, lignes: list[str]) -> bool:
     parties = [re.escape(p) for p in re.split(r"[-_.]+", objet.strip()) if p]
     if not parties:
@@ -57,6 +61,7 @@ def _expose(objet: str, lignes: list[str]) -> bool:
     if not m:
         return False
     verbe, cible = m.group(1).lower(), _segments(m.group(2))
+    cible_brute = m.group(2)
     # ponytail: lignes jointes (décorateur sur plusieurs lignes) → une plage qui porte deux routes
     # distinctes peut valider le croisement méthode/chemin ; resserrer par décorateur si on le constate
     texte = "\n".join(lignes)
@@ -71,7 +76,7 @@ def _expose(objet: str, lignes: list[str]) -> bool:
     # segments entiers, correspond ; un chemin de ligne vide ("/") ne vaut que pour la racine citée
     for chemin in _LITTERAL_RE.findall(texte):
         segs = _segments(chemin)
-        if (segs and cible[-len(segs):] == segs) or (not segs and not cible):
+        if (segs and cible[-len(segs):] == segs) or (not segs and (not cible or cible_brute.endswith("/"))):
             return True
     return False
 
@@ -119,16 +124,217 @@ def _execute_image(objet: str, lignes: list[str]) -> bool:
     return False
 
 
+# --- Prédicats legacy structurels (ADR 0026) : une ligne suffit à les établir -----------------------
+# Insensibles à la casse, mais mots entiers ; les lignes de commentaire legacy (*, //*, --, #) sont ignorées.
+_FIN_NOM = r"(?![\w-]|\.[\w-])"  # ni suffixe de nom, ni qualification supplémentaire (ACME.CLIENTS != ACME.CLIENTS.X)
+_PREFIXES_COMMENTAIRE = ("*", "//*", "--", "#")
+
+
+def _lignes_legacy(lignes: list[str]) -> list[str]:
+    return [l for l in lignes if not l.lstrip().startswith(_PREFIXES_COMMENTAIRE)]
+
+
+def _motif_legacy(motif: str, objet: str) -> re.Pattern:
+    return re.compile(motif.format(nom=re.escape(objet.strip())) + _FIN_NOM, re.I)
+
+
+def _appelle(objet: str, lignes: list[str]) -> bool:
+    if not objet.strip():
+        return False
+    motifs = [
+        _motif_legacy(r"\bCALL\s+(?:FUNCTION\s+)?['\"]?{nom}['\"]?", objet),
+        _motif_legacy(r"\bCALLP\s+['\"]?{nom}['\"]?", objet),
+        _motif_legacy(r"\bCALLB\s+['\"]?{nom}['\"]?", objet),
+        _motif_legacy(r"\bEXSR\s+['\"]?{nom}['\"]?", objet),
+    ]
+    return any(m.search(l) for l in _lignes_legacy(lignes) for m in motifs)
+
+
+def _copie(objet: str, lignes: list[str]) -> bool:
+    if not objet.strip():
+        return False
+    motif = _motif_legacy(r"\bCOPY\s+['\"]?{nom}['\"]?", objet)
+    return any(motif.search(l) for l in _lignes_legacy(lignes))
+
+
+def _execute(objet: str, lignes: list[str]) -> bool:
+    if not objet.strip():
+        return False
+    motifs = [
+        _motif_legacy(r"\bEXEC\s+PGM\s*=\s*['\"]?{nom}['\"]?", objet),
+        _motif_legacy(r"\bEXEC\s+PROC\s*=\s*['\"]?{nom}['\"]?", objet),
+        _motif_legacy(r"\bPROGRAM-ID\s*\.\s*['\"]?{nom}['\"]?", objet),
+    ]
+    return any(m.search(l) for l in _lignes_legacy(lignes) for m in motifs)
+
+
+def _lit_dataset(objet: str, lignes: list[str]) -> bool:
+    if not objet.strip():
+        return False
+    motifs = [
+        _motif_legacy(r"\bDSN\s*=\s*['\"]?{nom}['\"]?", objet),
+        _motif_legacy(r"\bASSIGN\s+TO\s+['\"]?{nom}['\"]?", objet),
+    ]
+    return any(m.search(l) for l in _lignes_legacy(lignes) for m in motifs)
+
+
+def _reference(objet: str, lignes: list[str]) -> bool:
+    if not objet.strip():
+        return False
+    motif = _motif_legacy(r"\bREFERENCES\s+['\"]?{nom}['\"]?", objet)
+    return any(motif.search(l) for l in _lignes_legacy(lignes))
+
+
+# --- Prédicats legacy composés (ADR 0027) : la ligne citée doit établir le lien, pas seulement
+# l'avoir observé. Les commentaires sont masqués, mais les chaînes restent lisibles : c'est souvent
+# dans « … » que figure la table, l'action ou le type cité.
+def _sans_commentaires(lignes: list[str]) -> list[str]:
+    """Même nombre de lignes, commentaires remplacés par des espaces ; les chaînes restent intactes."""
+    texte = "\n".join(lignes) if isinstance(lignes, list) else str(lignes)
+    masque = list(texte)
+    i, guillemet = 0, ""
+    while i < len(texte):
+        caractere = texte[i]
+        if guillemet:
+            if caractere == "\\":
+                i += 2
+                continue
+            if caractere == guillemet:
+                guillemet = ""
+            i += 1
+            continue
+        if caractere in "\"'`":
+            guillemet = caractere
+            i += 1
+            continue
+        fin = None
+        if texte.startswith("//", i):
+            fin = texte.find("\n", i)
+        elif texte.startswith("/*", i):
+            fin = texte.find("*/", i + 2)
+            fin = len(texte) if fin < 0 else fin + 2
+        elif texte.startswith("<!--", i):
+            fin = texte.find("-->", i + 4)
+            fin = len(texte) if fin < 0 else fin + 3
+        elif texte.startswith("<%--", i):
+            fin = texte.find("--%>", i + 4)
+            fin = len(texte) if fin < 0 else fin + 4
+        elif texte.startswith("--", i):
+            fin = texte.find("\n", i)
+        elif caractere in "#*" and not texte[:i].rsplit("\n", 1)[-1].strip():
+            fin = texte.find("\n", i)
+        if fin is None:
+            i += 1
+            continue
+        fin = len(texte) if fin < 0 else fin
+        for position in range(i, fin):
+            if masque[position] != "\n":
+                masque[position] = " "
+        i = fin
+    return "".join(masque).split("\n")
+
+
+def _lignes_propres(lignes: list[str]) -> list[str]:
+    return [ligne for ligne in _sans_commentaires(lignes) if ligne.strip()]
+
+
+_ANNOTATION = r"@(?:[\w.]+\.)?"
+_FIN_CHEMIN = r"(?![\w./-])"
+
+
+def _motif_table(objet: str) -> str:
+    """Nom de table échappé, avec guillemets/crochets facultatifs et un schéma qualifiant unique."""
+    parties = [re.escape(partie) for partie in objet.strip().split(".") if partie]
+    if not parties:
+        return ""
+    if len(parties) == 1:
+        partie = rf"[\"'`\[]?{parties[0]}[\"'`\]]?"
+        return rf"(?:[\w\"`\[]+[\"'`\]]?\s*\.\s*)?{partie}"
+    return r"\s*\.\s*".join(rf"[\"'`\[]?{partie}[\"'`\]]?" for partie in parties)
+
+
+def _table(objet: str, lignes: list[str]) -> bool:
+    """CREATE TABLE <objet> ou @Table(... <objet> ...)."""
+    if not objet.strip():
+        return False
+    nom = re.escape(objet.strip())
+    cible = _motif_table(objet)
+    motifs = [
+        re.compile(rf"\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?{cible}"
+                   + _FIN_NOM, re.I),
+        re.compile(rf"{_ANNOTATION}Table\s*\([^)]*\bname\s*=\s*[\"']{nom}[\"']", re.I),
+        re.compile(rf"{_ANNOTATION}Table\s*\([^)]*\bvalue\s*=\s*[\"']{nom}[\"']", re.I),
+        re.compile(rf"{_ANNOTATION}Table\s*\(\s*[\"']{nom}[\"']", re.I),
+    ]
+    return any(motif.search(ligne) for ligne in _lignes_propres(lignes) for motif in motifs)
+
+
+def _stocke_dans(objet: str, lignes: list[str]) -> bool:
+    """La table est prouvée par la ligne qui la déclare, pas par l'entité qui la mentionne."""
+    return _table(objet, lignes)
+
+
+def _composant_jee(objet: str, lignes: list[str]) -> bool:
+    """@Stateless (ou @MessageDriven…) ou l'élément XML correspondant (<session>, <message-driven>…)."""
+    if not objet.strip():
+        return False
+    nom = re.escape(objet.strip())
+    motifs = [
+        re.compile(rf"{_ANNOTATION}{nom}" + _FIN_NOM, re.I),
+        re.compile(rf"<(?:\w+:)?{nom}" + _FIN_NOM, re.I),
+    ]
+    return any(motif.search(ligne) for ligne in _lignes_propres(lignes) for motif in motifs)
+
+
+_INJECTIONS = r"EJB|Autowired|Inject|PersistenceContext|PersistenceUnit"
+
+
+def _injecte(objet: str, lignes: list[str]) -> bool:
+    """Le type injecté et l'annotation d'injection sur le champ cité, ou la ressource XML localisée."""
+    if not objet.strip():
+        return False
+    nom = re.escape(objet.strip())
+    texte = "\n".join(_lignes_propres(lignes))
+    type_ = rf"(?<![\w.]){nom}(?![\w-]|\.[\w-])"
+    annotation = rf"{_ANNOTATION}(?:{_INJECTIONS})\b"
+    if re.search(annotation + rf"[^;]{{0,400}}?{type_}", texte, re.I):
+        return True
+    ressource = (rf"<(?:\w+:)?resource-ref\b[\s\S]*?"
+                 rf"<(?:\w+:)?res-type>\s*{nom}\s*</(?:\w+:)?res-type>")
+    return bool(re.search(ressource, texte, re.I))
+
+
+def _interface_utilisateur(objet: str, lignes: list[str]) -> bool:
+    """Formulaire, include, forward ou import JSP dont l'attribut localisé cite l'action/page."""
+    if not objet.strip():
+        return False
+    nom = re.escape(objet.strip())
+    texte = "\n".join(_lignes_propres(lignes))
+    formes = [
+        rf"<(?:\w+:)?form\b[^>]*\baction\s*=\s*[\"']?{nom}[\"']?",
+        rf"<(?:\w+:)?include\b[^>]*\b(?:page|file)\s*=\s*[\"']?{nom}[\"']?",
+        rf"<(?:\w+:)?forward\b[^>]*\bpage\s*=\s*[\"']?{nom}[\"']?",
+        rf"<c:import\b[^>]*\b(?:url|value|page)\s*=\s*[\"']?{nom}[\"']?",
+        rf"<%@\s*include\b[^>]*\bfile\s*=\s*[\"']?{nom}[\"']?",
+    ]
+    return any(re.search(forme + _FIN_CHEMIN, texte, re.I | re.S) for forme in formes)
+
+
 _RECETTES = {
-    "DEPEND_DE": _depend_de, "EXPOSE": _expose,
+    "DECLARE_DEPENDANCE": _depend_de, "DEPEND_DE": _depend_de, "EXPOSE": _expose,
     "LIT_VARIABLE": _lit_variable, "EXECUTE_IMAGE": _execute_image,
+    "APPELLE": _appelle, "COPIE": _copie, "EXECUTE": _execute,
+    "LIT_DATASET": _lit_dataset, "REFERENCE": _reference,
+    "TABLE": _table, "STOCKE_DANS": _stocke_dans,
+    "COMPOSANT_JEE": _composant_jee, "INJECTE": _injecte,
+    "INTERFACE_UTILISATEUR": _interface_utilisateur,
 }
 
 
 def recette(predicat: str, objet: str, lignes: list[str]) -> str | None:
     """'verifie' si les lignes citées (au commit) contiennent bien l'objet, 'non_appuye' sinon ;
     None si aucune recette pour ce prédicat."""
-    verifier = _RECETTES.get(predicat)
+    verifier = _RECETTES.get((predicat or "").upper())
     if verifier is None:
         return None
     propres = [l for l in (lignes or []) if isinstance(l, str) and l.strip()]

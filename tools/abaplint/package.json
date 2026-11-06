@@ -1,0 +1,18 @@
+{
+  "name": "meridian-abaplint",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Analyseur sémantique ABAP pour Méridian, basé sur @abaplint/core (AST réel, sans regex).",
+  "type": "commonjs",
+  "main": "analyze.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "install-deps": "npm install --no-audit --no-fund",
+    "analyze": "node analyze.js"
+  },
+  "dependencies": {
+    "@abaplint/core": "2.120.92"
+  }
+}

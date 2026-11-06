@@ -12,6 +12,7 @@ import os
 import ipaddress
 import re
 import subprocess
+import urllib.error
 import urllib.request
 from urllib.parse import quote, urlparse
 from datetime import datetime, timezone
@@ -19,6 +20,7 @@ from pathlib import Path
 
 from meridian.adapters.outbound.connectors import auth_source
 from meridian.adapters.outbound.postgres import depot
+from meridian.domain import import_identite
 from meridian.adapters.outbound.connectors import index_store
 from meridian.adapters.outbound.connectors import lecteurs
 from meridian.adapters.outbound.mongo import registre
@@ -61,6 +63,14 @@ PREFIXE_VAULT = os.environ.get("JUMEAU_VAULT_PREFIXE", "meridian/")
 PREFIXE_ENV = "MERIDIAN_"
 BRANCHE_VALIDE = re.compile(r"[A-Za-z0-9._/-]+")
 DELAI_GIT = 30
+
+
+class SecretAbsent(RuntimeError):
+    """Le secret est référencé en base mais absent du coffre (jeton révoqué ou Vault recréé)."""
+
+
+class CoffreIndisponible(RuntimeError):
+    """Le coffre de secrets est injoignable ou refuse l'accès."""
 
 
 def url_depot(config):
@@ -110,8 +120,15 @@ def _vault(chemin, donnees=None):
     requete = urllib.request.Request(f"{adresse}/v1/{montage}/data/{quote(chemin)}", data=corps,
                                      headers={"X-Vault-Token": os.environ["VAULT_TOKEN"],
                                               "Content-Type": "application/json"})
-    with urllib.request.urlopen(requete, timeout=10) as r:
-        return json.load(r)["data"]
+    try:
+        with urllib.request.urlopen(requete, timeout=10) as r:
+            return json.load(r)["data"]
+    except urllib.error.HTTPError as e:
+        if e.code == 404 and donnees is None:
+            raise SecretAbsent("secret absent du coffre : redéclarez la connexion") from e
+        raise CoffreIndisponible("coffre de secrets indisponible ou accès refusé") from e
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        raise CoffreIndisponible("coffre de secrets injoignable") from e
 
 
 def deposer_jeton(chemin, jeton):
@@ -134,7 +151,11 @@ def resoudre_secret(reference):
             raise RuntimeError(f"variable non autorisée ou absente (préfixe {PREFIXE_ENV} requis)")
         return os.environ[nom]
     chemin, _, cle = (reference[6:] if reference.startswith("vault:") else reference).partition("#")
-    return _vault(chemin)["data"][cle or "jeton"]
+    donnees = _vault(chemin).get("data") or {}
+    champ = cle or "jeton"
+    if champ not in donnees:
+        raise SecretAbsent("secret incomplet dans le coffre : redéclarez la connexion")
+    return donnees[champ]
 
 
 def env_git(jeton):
@@ -237,6 +258,15 @@ def cloner(config, cible):
 
 async def _etat(db, cid, **champs):
     await db.commandes.update_one({"id": cid}, {"$set": {f"naissance.{k}": v for k, v in champs.items()}})
+    if "etat" not in champs:
+        return
+    find_one = getattr(db.commandes, "find_one", None)
+    if find_one is None:
+        return
+    commande = await find_one({"id": cid}, {"_id": 0, "jumeau_id": 1})
+    jid = (commande or {}).get("jumeau_id")
+    if jid:
+        await db.jumeaux.update_one({"id": jid}, {"$set": {"naissance_etat": champs["etat"]}})
 
 
 def depots_de(config):
@@ -288,10 +318,68 @@ SUBSTANCES_SANS_CODE = (("datadog", "Datadog (interfaces observées)"),
                         ("otlp", "APM / Gateway OTLP (traces observées)"),
                         ("confluence", "Confluence (documentation)"))
 
+TYPES_TWIN = ("APPLICATION", "TEAM", "RESOURCE", "SUPPLIER", "ECOSYSTEM")
+TYPE_PAR_DEFAUT = "APPLICATION"
+
+# Sources qui fondent la naissance d'un Twin non applicatif (ADR-0030). GitHub n'y est jamais requis.
+SOURCES_PAR_TYPE = {
+    "TEAM": ("confluence", "sharepoint", "servicenow", "teams"),
+    "ECOSYSTEM": ("confluence", "sharepoint", "servicenow", "teams"),
+    "RESOURCE": ("servicenow", "contrat", "export_fournisseur", "fournisseur", "supplier_export"),
+    "SUPPLIER": ("servicenow", "contrat", "export_fournisseur", "fournisseur", "supplier_export"),
+}
+LIBELLES_SOURCES = {
+    "TEAM": "Confluence, SharePoint, ServiceNow ou Teams (GitHub n'est pas requis)",
+    "ECOSYSTEM": "Confluence, SharePoint, ServiceNow ou Teams (GitHub n'est pas requis)",
+    "RESOURCE": "CMDB, ServiceNow, contrat ou export fournisseur",
+    "SUPPLIER": "CMDB, ServiceNow, contrat ou export fournisseur",
+}
+
 
 def _systeme(connecteur):
     """« cmdb » est le même système que ServiceNow dans le catalogue."""
     return "servicenow" if connecteur == "cmdb" else connecteur
+
+
+def type_jumeau(commande):
+    """Type du Twin demandé ; une commande sans type reste une APPLICATION (compatibilité ADR-0030)."""
+    jumeau = commande.get("jumeau") or {}
+    declare = jumeau.get("type") or TYPE_PAR_DEFAUT
+    type_ = str(declare).strip().upper()
+    if type_ not in TYPES_TWIN:
+        raise ValueError(f"Type de Twin inconnu : {declare!r} (types attendus : {', '.join(TYPES_TWIN)}).")
+    return type_
+
+
+def _connecteur(source):
+    return _systeme(str((source or {}).get("connecteur") or "").strip().lower())
+
+
+def sources_pretes(commande):
+    return [s for s in (commande.get("sources") or []) if (s or {}).get("statut") == "prete"]
+
+
+def regle_naissance(commande):
+    """Valide la naissance sans code selon le type de Twin et rend (type, sources fondatrices).
+
+    APPLICATION conserve les règles historiques : ServiceNow ancre l'identité, une source de substance
+    (Datadog, OTLP ou Confluence) la documente. TEAM/ECOSYSTEM naissent depuis une source documentaire ou ITSM,
+    RESOURCE/SUPPLIER depuis CMDB, ServiceNow, un contrat ou un export fournisseur — jamais depuis GitHub seul.
+    """
+    type_ = type_jumeau(commande)
+    if type_ == TYPE_PAR_DEFAUT:
+        ancre, substance = substance_sans_code(commande)
+        return type_, [ancre, substance]
+    pretes = sources_pretes(commande)
+    autorisees = [s for s in pretes if _connecteur(s) in SOURCES_PAR_TYPE[type_]]
+    if not autorisees:
+        attendues = LIBELLES_SOURCES[type_]
+        if not pretes:
+            raise ValueError(f"Un Twin {type_} exige au moins une source prête : {attendues}.")
+        vues = ", ".join(sorted({_connecteur(s) or "inconnue" for s in pretes}))
+        raise ValueError(f"Un Twin {type_} ne peut pas naître depuis ces sources ({vues}) : "
+                         f"il exige {attendues}.")
+    return type_, autorisees
 
 
 def substance_sans_code(commande):
@@ -313,12 +401,21 @@ def substance_sans_code(commande):
 async def _naitre_sans_code(conn, db, commande, jumeau_id, rediger):
     cid = commande["id"]
     try:
-        substance_sans_code(commande)
+        type_, _ = regle_naissance(commande)
     except ValueError as e:
-        await _etat(db, cid, etat="sans_substance", message=str(e), etapes=[])
+        # Une APPLICATION incomplète reste « sans substance » (compatibilité) ; un autre type est refusé.
+        declare = str((commande.get("jumeau") or {}).get("type") or TYPE_PAR_DEFAUT).strip().upper()
+        etat = "sans_substance" if declare == TYPE_PAR_DEFAUT else "echec"
+        await _etat(db, cid, etat=etat, message=str(e), etapes=[])
         return
     j = commande["jumeau"]
-    jumeau = {"id": jumeau_id, "tenant_id": "local", "nom": j["nom"], "equipe": j.get("proprietaire") or "non précisée",
+    perimetre = j.get("perimetre") or ""
+    jumeau = {"id": jumeau_id, "tenant_id": "local", "nom": j["nom"], "type": type_,
+              "application_id": j.get("application_id") or None,
+              "perimetre": perimetre,
+              "perimetre_id": j.get("perimetre_id") or import_identite.slug_perimetre(perimetre),
+              "identifiants": dict(j.get("identifiants") or {}),
+              "equipe": j.get("proprietaire") or "non précisée",
               "domaine": j.get("domaine") or "Non classé", "mission": j.get("mission") or ""}
     etapes = []
     await _etat(db, cid, etat="en_cours", etapes=[], debut=datetime.now(timezone.utc).isoformat())
@@ -331,6 +428,7 @@ async def _naitre_sans_code(conn, db, commande, jumeau_id, rediger):
         await _gardien().veiller(conn, db, jumeau_id, **({"rediger": rediger} if rediger else {}))
         etapes.append({"etape": "fiche", "quand": datetime.now(timezone.utc).isoformat()})
         await _etat(db, cid, etat="ne", etapes=etapes, depots=[], fin=datetime.now(timezone.utc).isoformat())
+        _publier_manifeste(conn, commande, jumeau)
     except Exception as e:
         journal.exception("naissance sans code de %s", jumeau_id)
         await _etat(db, cid, etat="echec", message=str(e)[:200] if isinstance(e, (RuntimeError, ValueError))
@@ -346,6 +444,8 @@ def _verifier_sources(commande):
     for l in lecteurs.lecteurs_de(rangs):
         try:
             l.version_courante()
+        except (SecretAbsent, CoffreIndisponible):
+            raise
         except Exception as e:
             raise RuntimeError(f"la source {l.nom} ne répond pas : naissance reportée") from e
 
@@ -364,10 +464,29 @@ def _declarer_sources(conn, jumeau, commande):
             depot.declarer_source(conn, jumeau, connecteurs.source_de_otlp(s))
 
 
+def _publier_manifeste(conn, commande, jumeau):
+    """Le manifeste est un effet secondaire de la naissance : son échec ne défait pas la naissance."""
+    try:
+        from meridian.adapters.outbound.postgres import relations_naissance
+        relations_naissance.celebrer_naissance(
+            conn, commande, jumeau, acteur="naissance", naissance_etat="ne")
+    except Exception:  # noqa: BLE001 - la commande reste `ne`, le manifeste sera rejoué
+        journal.warning("manifeste de naissance non publié pour %s",
+                        (jumeau or {}).get("id"), exc_info=True)
+
+
 async def naitre(conn, db, commande, jumeau_id, rediger=None):
     """Clone et ingère chaque dépôt (chacun sur sa branche), puis registre et fiche vivante ; progression
-    enregistrée dans la commande (`naissance`)."""
+    enregistrée dans la commande (`naissance`). Les Twins TEAM/ECOSYSTEM/RESOURCE/SUPPLIER naissent sans code."""
     cid = commande["id"]
+    try:
+        type_ = type_jumeau(commande)
+    except ValueError as e:
+        await _etat(db, cid, etat="echec", message=str(e)[:200], etapes=[])
+        return
+    if type_ != TYPE_PAR_DEFAUT:
+        await _naitre_sans_code(conn, db, commande, jumeau_id, rediger)
+        return
     try:
         configs = sources_de_code(commande)
     except ValueError as e:
@@ -377,7 +496,13 @@ async def naitre(conn, db, commande, jumeau_id, rediger=None):
         await _naitre_sans_code(conn, db, commande, jumeau_id, rediger)
         return
     j = commande["jumeau"]
-    jumeau = {"id": jumeau_id, "tenant_id": "local", "nom": j["nom"], "equipe": j.get("proprietaire") or "non précisée",
+    perimetre = j.get("perimetre") or ""
+    jumeau = {"id": jumeau_id, "tenant_id": "local", "nom": j["nom"], "type": type_,
+              "application_id": j.get("application_id") or None,
+              "perimetre": perimetre,
+              "perimetre_id": j.get("perimetre_id") or import_identite.slug_perimetre(perimetre),
+              "identifiants": dict(j.get("identifiants") or {}),
+              "equipe": j.get("proprietaire") or "non précisée",
               "domaine": j.get("domaine") or "Non classé", "mission": j.get("mission") or ""}
     etapes = []
 
@@ -403,6 +528,7 @@ async def naitre(conn, db, commande, jumeau_id, rediger=None):
         await _gardien().veiller(conn, db, jumeau_id, **({"rediger": rediger} if rediger else {}))
         await franchir("fiche")
         await _etat(db, cid, etat="ne", depots=[c.name for c in chemins], fin=datetime.now(timezone.utc).isoformat())
+        _publier_manifeste(conn, commande, jumeau)
     except Exception as e:
         journal.exception("naissance de %s", jumeau_id)
         await _etat(db, cid, etat="echec", message=str(e)[:200] if isinstance(e, (RuntimeError, ValueError))

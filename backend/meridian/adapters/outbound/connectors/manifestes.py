@@ -1,7 +1,8 @@
 """Dépendances déclarées dans les manifestes, lues au commit ingéré (complète codebase-memory-mcp).
 
 codebase-memory-mcp relie les dépendances de `requirements.txt` ou `go.mod`, pas celles de `pyproject.toml` ni de
-`package.json`. On les lit ici ; l'adaptateur les vérifie ensuite à leur ligne, comme toute autre preuve.
+`package.json`. On les lit ici ; l'adaptateur les vérifie ensuite à leur ligne comme `DECLARE_DEPENDANCE`, jamais
+comme `DEPEND_DE` : être présent dans un manifeste ne prouve pas que l'application utilise effectivement le paquet.
 Seules les dépendances d'exécution comptent (pas les outils de développement).
 """
 import json

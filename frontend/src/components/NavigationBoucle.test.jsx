@@ -100,6 +100,18 @@ test("la barre latérale expose l'entrée Cognition", async () => {
   await act(async () => { monte.racine.unmount(); });
 });
 
+test("la barre latérale expose la revue de publication", async () => {
+  const monte = monter(<SidebarGauche mode="bureau" />);
+  await rendre(monte);
+
+  const revue = monte.hote.querySelector('[data-testid="nav-revue-publication"]');
+  expect(revue).not.toBeNull();
+  expect(revue.getAttribute("href")).toBe("/revue-publication");
+  expect(revue.textContent).toContain("Revue de publication");
+
+  await act(async () => { monte.racine.unmount(); });
+});
+
 test("la barre supérieure expose l'entrée Boucle", async () => {
   const monte = monter(<Topbar />);
   await rendre(monte);

@@ -10,36 +10,36 @@ import re
 
 from meridian.adapters.outbound.postgres import connaissance
 from meridian.adapters.outbound.connectors.source_git import lire_au_sha
-
-# (clé, titre de section dans la fiche, prédicat de la connaissance, type de Claim)
-QUESTIONS = [
-    ("sert", "À quoi elle sert", "REALISE_CAPACITE", "CAPABILITY"),
-    ("pour_qui", "Pour qui, dans quels parcours", "SERT_ACTEUR", "PROCESS_STEP"),
-    ("informations", "Les informations qu'elle détient", "DETIENT", "DATA_FLOW"),
-    ("regles", "Les règles qu'elle applique", "APPLIQUE_REGLE", "BUSINESS_RULE"),
-    ("echanges", "Avec qui elle échange", "ECHANGE_AVEC", "DATA_FLOW"),
-    ("vie", "Comment elle vit", None, None),
-    ("inconnu", "Ce que l'on ne sait pas encore", None, None),
-]
-PREDICATS = {q[2] for q in QUESTIONS if q[2]}
-# Sections de la fiche vivante, du plus court au plus détaillé (méthode comprendre-application, « Fiche vivante »).
-PRESENTATION = [
-    ("trente", "En 30 secondes"),
-    ("journee", "Une journée avec elle"),
-    ("faire", "Ce qu'elle permet de faire"),
-    ("regles", "Les règles à retenir"),
-    ("garde", "Ce qu'elle garde"),
-    ("avec", "Avec qui elle travaille"),
-    ("ignore", "D'où je le sais, et ce que j'ignore"),
-]
+from meridian.domain.comprehension import PREDICATS, PRESENTATION, QUESTIONS
 RE_PUCE = re.compile(r"^\s*[-*]\s+(.*)")
+RE_CLAIM_ID = re.compile(r"\[claim:(\d+)\]")
+RE_CLAIM = re.compile(r"\s*\[claim:\d+\]")
 
 
 def _propre(texte):
-    """Texte lisible : sans citations ni gras Markdown."""
+    """Texte lisible : sans citations, sans marqueurs de Claim ni gras Markdown."""
+    texte = RE_CLAIM.sub("", texte)
     texte = re.sub(r"\s*`[^`]*#L\d+[^`]*`", "", texte)
     texte = re.sub(r"\s+(et|,)\s*$", "", texte.replace("**", "")).strip(" ;,")
     return " ".join(texte.split())
+
+
+def claims_cites(fiche):
+    """Identifiants de Claim cités dans la fiche, triés et sans doublon."""
+    return sorted({int(m.group(1)) for m in RE_CLAIM_ID.finditer(str(fiche or ""))})
+
+
+def puces_avec_claims(fiche):
+    """Puces de la fiche avec les Claims qui les soutiennent, pour lier l'affichage au modèle."""
+    resultat = []
+    for ligne in str(fiche or "").splitlines():
+        puce = RE_PUCE.match(ligne)
+        if not puce:
+            continue
+        texte = puce.group(1)
+        ids = [int(m.group(1)) for m in RE_CLAIM_ID.finditer(texte)]
+        resultat.append({"texte": _propre(texte), "claim_ids": ids})
+    return resultat
 
 
 def lire_fiche(fiche, titres=PRESENTATION):

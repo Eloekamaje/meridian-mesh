@@ -23,7 +23,12 @@ import Travaux from "@/pages/Travaux";
 import TravailDetail from "@/pages/TravailDetail";
 import Jumeaux from "@/pages/Jumeaux";
 import RevueJumeau from "@/pages/RevueJumeau";
+import RevuePublication from "@/pages/RevuePublication";
 import Administration from "@/pages/Administration";
+import Preferences from "@/pages/Preferences";
+import Login from "@/pages/Login";
+import Signup from "@/pages/Signup";
+import AuthGate from "@/components/AuthGate";
 
 // Pages de laboratoire (graphe, échelle) : hors du produit livré — disponibles en développement, ou avec REACT_APP_LABO=1
 const LABO = process.env.NODE_ENV !== "production" || process.env.REACT_APP_LABO === "1";
@@ -41,6 +46,9 @@ const RedirectFicheJumeau = () => {
 export function RoutesProduit() {
   return (
     <Routes>
+      <Route path="/login" element={<Login />} />
+      <Route path="/signup" element={<Signup />} />
+      <Route element={<AuthGate />}>
       <Route element={<Layout />}>
         {/* « Aujourd'hui » est l'entrée du produit : / et /aujourdhui ouvrent les actualités et situations. L'Atlas reste l'exploration. */}
         <Route path="/" element={<Navigate to="/actualites" replace />} />
@@ -64,18 +72,21 @@ export function RoutesProduit() {
         <Route path="/travaux" element={<Travaux />} />
         <Route path="/travaux/:cid" element={<TravailDetail />} />
         <Route path="/jumeaux" element={<Jumeaux />} />
+        <Route path="/revue-publication" element={<RevuePublication />} />
         <Route path="/jumeaux/:jid/revue" element={<RevueJumeau />} />
         {/* Anciennes adresses de la fiche d'un jumeau né du code : même fiche que les autres jumeaux */}
         <Route path="/jumeau-reel" element={<Navigate to="/jumeaux" replace />} />
         <Route path="/jumeau-reel/:jid" element={<RedirectFicheJumeau />} />
         <Route path="/commande/:cid" element={<Commande />} />
         <Route path="/administration" element={<Administration />} />
+        <Route path="/preferences" element={<Preferences />} />
         <Route path="/carte" element={<Navigate to="/atlas" replace />} />
         <Route path="/cases" element={<Navigate to="/travaux" replace />} />
         <Route path="/cases/:cid" element={<RedirectTravail />} />
         <Route path="/decisions" element={<Navigate to="/travaux" replace />} />
         <Route path="/change-lab" element={<Navigate to="/travaux/case-olympiade" replace />} />
         <Route path="/registry" element={<Navigate to="/jumeaux" replace />} />
+      </Route>
       </Route>
     </Routes>
   );

@@ -24,8 +24,11 @@ import auth as auth_identite
 from meridian.adapters.outbound.neo4j import graph_store
 from meridian.adapters.outbound.postgres import (
     calibration,
+    community_store,
+    documentation as documentation_reader,
     decision_cognitive,
     portefeuille,
+    recherche_refutation,
     retrieval_memoire,
     rls,
     session_memoire,
@@ -199,6 +202,42 @@ class RuntimeAnalysePostgres(RuntimeAnalyse):
             if contexte is not None:
                 contexte["fermer"]()
 
+    async def rechercher_refutation(
+        self,
+        tenant: str,
+        *,
+        question: str,
+        twin_ids: Sequence[str] = (),
+        limite: int = 20,
+    ) -> dict:
+        return await self.avec_connexion(
+            tenant,
+            lambda conn: recherche_refutation.rechercher(
+                conn, tenant, question=question, twin_ids=tuple(twin_ids), limite=limite),
+        )
+
+    async def recuperer_documentation(
+        self, tenant: str, *, question: str, twin_ids: Sequence[str] = (),
+        acteur: str = "", role: str = "", espace: str = "",
+    ) -> list[dict]:
+        try:
+            return await documentation_reader.chercher(
+                tenant, question, twin_ids=tuple(twin_ids),
+                acteur=acteur, role=role, espace=espace)
+        except Exception:
+            return []
+
+    async def recuperer_communautes(
+        self, tenant: str, *, question: str, acteur: str = "",
+        role: str = "", espace: str = "",
+    ) -> list[dict]:
+        try:
+            return await asyncio.to_thread(
+                community_store.chercher, tenant, question,
+                acteur=acteur, role=role, espace=espace)
+        except Exception:
+            return []
+
     async def recuperer_memoire(
         self,
         tenant: str,
@@ -210,13 +249,16 @@ class RuntimeAnalysePostgres(RuntimeAnalyse):
         scope_id: str | None = None,
         limite: int = 12,
         proximite: dict[str, float] | None = None,
+        consommateur: Any = None,
+        twin_proprietaire: str | None = None,
     ) -> list[dict]:
         return await self.avec_connexion(
             tenant,
             lambda conn: retrieval_memoire.recuperer(
                 conn, tenant, question=question, twin_ids=tuple(twin_ids),
                 situation_id=situation_id, scope=scope, scope_id=scope_id,
-                limite=limite, proximite=proximite),
+                limite=limite, proximite=proximite, consommateur=consommateur,
+                twin_proprietaire=twin_proprietaire),
         )
 
     def enrichir_pack(

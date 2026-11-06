@@ -28,6 +28,7 @@ async function boucle(controller, cible) {
   while (!controller.signal.aborted) {
     try {
       const reponse = await fetch(`${API()}/evenements`, {
+        credentials: "include",
         headers: { Accept: "text/event-stream", ...entetes(cible) },
         signal: controller.signal,
         cache: "no-store",

@@ -1,9 +1,11 @@
 import { FloppyDisk } from "@phosphor-icons/react";
 import { BoutonRetour } from "@/components/EntetePage";
-import { ETAPES_COMMANDE } from "@/lib/sources";
+import { ETAPES_COMMANDE, LIBELLES_TYPE_TWIN, candidatDe, identifiantMetier, typeTwin } from "@/lib/sources";
 
 export default function EnteteCommande({ commande, sauvegarde, onQuitter, onEtape, peutContinuer = true }) {
   const j = commande.jumeau;
+  const type = typeTwin(j);
+  const identifiant = identifiantMetier(j);
   return (
     <div className="border-b border-[rgba(148,163,184,0.16)] px-4 py-3 sm:px-8 sm:py-3.5" data-testid="commande-entete">
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
@@ -11,9 +13,13 @@ export default function EnteteCommande({ commande, sauvegarde, onQuitter, onEtap
           <BoutonRetour label="Quitter" onClick={onQuitter} testid="commande-quitter-btn" />
           <div className="min-w-0">
             <h1 className="font-display text-base font-bold leading-snug tracking-tight text-[#F2F6F8] sm:text-xl" data-testid="commande-titre">Commande du jumeau {j.nom || "…"}</h1>
-            <p className="font-code text-[11px] text-[#7C93A8]">
-              {commande.id} · App ID {j.application_id || "à définir"} ·{" "}
-              {sauvegarde === "encours" ? (
+            <p className="font-code text-[11px] text-[#7C93A8]" data-testid="commande-identite-resume">
+              {commande.id || "Nouvelle commande"} · <span data-testid="entete-type" title={LIBELLES_TYPE_TWIN[type]}>{type}</span>
+              {identifiant && <> · {identifiant.label} <span data-testid="entete-identifiant">{identifiant.valeur || (type === "APPLICATION" && candidatDe(j) ? "candidat" : "à définir")}</span></>}
+              {" · "}
+              {!commande.id ? (
+                <span>Non enregistré</span>
+              ) : sauvegarde === "encours" ? (
                 <span className="text-[#F2B84B]">Enregistrement…</span>
               ) : sauvegarde ? (
                 <span className="text-[#34D399]">Brouillon enregistré</span>

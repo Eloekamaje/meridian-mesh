@@ -7,10 +7,13 @@ from meridian.application import commandes
 
 
 class Store:
-    def __init__(self, doc, *, jumeau_existe=False, insertion=True):
+    def __init__(self, doc, *, jumeau_existe=False, insertion=True,
+                 jumeaux_existants=(), applications_existantes=()):
         self.doc = doc
         self._jumeau_existe = jumeau_existe
         self._insertion = insertion
+        self._jumeaux_existants = set(jumeaux_existants)
+        self._applications_existantes = set(applications_existantes)
         self.insertions = []
         self.lancements = []
         self.echecs = []
@@ -19,7 +22,10 @@ class Store:
         return self.doc
 
     async def jumeau_existe(self, jid):
-        return self._jumeau_existe
+        return self._jumeau_existe or jid in self._jumeaux_existants
+
+    async def application_id_existe(self, application_id):
+        return application_id in self._applications_existantes
 
     async def inserer_jumeau(self, doc):
         self.insertions.append(doc)
@@ -179,10 +185,14 @@ def test_lancement_reussi_cree_le_jumeau_met_a_jour_la_commande_et_demarre_la_na
 
     nouveau = store.insertions[0]
     assert nouveau["id"] == "paiements"
+    assert nouveau["type"] == "APPLICATION"
+    assert nouveau["application_id"] == "paiements"
+    assert nouveau["perimetre"] == "" and nouveau["identifiants"] == {}
     assert nouveau["nom"] == "Paiements"
     assert nouveau["proprietaire"] == "Équipe paiements"
     assert nouveau["sources"] == {"github": True}
-    assert nouveau["couverture"] == 29
+    assert nouveau["naissance_etat"] == "en_cours"
+    assert nouveau["couverture"] == 0  # aucune couverture inventée avant l'ingestion
 
     cid, patch = store.lancements[0]
     assert cid == "c1" and patch["etat"] == "lancee"
@@ -195,6 +205,106 @@ def test_lancement_reussi_cree_le_jumeau_met_a_jour_la_commande_et_demarre_la_na
     assert commande["jumeau"]["nom"] == "Paiements"
     assert commande["sources"] == [source, {"id": "s2", "connecteur": "jira", "nom": "suivi",
                                             "statut": "a_configurer"}]
+
+
+def test_lancement_team_sans_application_id_utilise_le_twin_id_comme_identifiant():
+    store = Store(_doc(jumeau={"type_twin": "TEAM", "twin_id": "equipe-paiements",
+                               "nom": "Équipe paiements", "proprietaire": "DSI"}))
+    resultat = _lancer(store, Runtime())
+    assert resultat["jumeau_id"] == "equipe-paiements"
+    nouveau = store.insertions[0]
+    assert nouveau["id"] == "equipe-paiements"
+    assert nouveau["type"] == "TEAM"
+    assert nouveau["application_id"] is None
+    assert "candidat" not in nouveau
+
+
+def test_lancement_ecosystem_conserve_perimetre_et_identifiants():
+    store = Store(_doc(jumeau={
+        "type_twin": "ECOSYSTEM", "twin_id": "ecosysteme-paiements",
+        "nom": "Écosystème paiements", "proprietaire": "DSI",
+        "perimetre": "Paiements Europe",
+        "identifiants": {"team_id": "eq-paiements", "confluence": "PAY"},
+    }))
+    resultat = _lancer(store, Runtime())
+    assert resultat["jumeau_id"] == "ecosysteme-paiements"
+    nouveau = store.insertions[0]
+    assert nouveau["type"] == "ECOSYSTEM"
+    assert nouveau["perimetre"] == "Paiements Europe"
+    assert nouveau["identifiants"] == {"team_id": "eq-paiements", "confluence": "PAY"}
+
+
+def test_lancement_resource_derive_l_identifiant_externe_si_twin_id_absent():
+    store = Store(_doc(jumeau={
+        "type_twin": "RESOURCE", "nom": "Base CRM", "proprietaire": "Infra",
+        "identifiants": {"resource_id": "ci-4242"},
+    }))
+    resultat = _lancer(store, Runtime())
+    assert resultat["jumeau_id"] == "ci-4242"
+    nouveau = store.insertions[0]
+    assert nouveau["type"] == "RESOURCE"
+    assert nouveau["identifiants"] == {"resource_id": "ci-4242"}
+
+
+def test_lancement_supplier_accepte_un_twin_id_genere_ou_fourni():
+    store = Store(_doc(jumeau={
+        "type_twin": "SUPPLIER", "twin_id": "fournisseur-ovh",
+        "nom": "OVH", "proprietaire": "Achats",
+        "identifiants": {"supplier_code": "OVH-FR"},
+    }))
+    resultat = _lancer(store, Runtime())
+    assert resultat["jumeau_id"] == "fournisseur-ovh"
+    assert store.insertions[0]["type"] == "SUPPLIER"
+
+
+def test_lancement_application_avec_twin_id_distinct_de_l_application_id():
+    store = Store(_doc(jumeau={
+        "type_twin": "APPLICATION", "twin_id": "twin-paiements",
+        "application_id": "paiements", "nom": "Paiements", "proprietaire": "Équipe",
+    }))
+    resultat = _lancer(store, Runtime())
+    assert resultat["jumeau_id"] == "twin-paiements"
+    nouveau = store.insertions[0]
+    assert nouveau["id"] == "twin-paiements" and nouveau["application_id"] == "paiements"
+
+
+def test_lancement_application_candidate_sans_application_id():
+    store = Store(_doc(jumeau={
+        "type_twin": "APPLICATION", "twin_id": "app-candidate",
+        "application_id": "", "candidat": True,
+        "nom": "Application candidate", "proprietaire": "Équipe",
+    }))
+    resultat = _lancer(store, Runtime())
+    assert resultat["jumeau_id"] == "app-candidate"
+    nouveau = store.insertions[0]
+    assert nouveau["type"] == "APPLICATION"
+    assert nouveau["application_id"] is None and nouveau["candidat"] is True
+
+
+def test_lancement_refuse_un_doublon_de_twin_id_meme_avec_une_autre_application():
+    store = Store(_doc(jumeau={
+        "type_twin": "APPLICATION", "twin_id": "twin-paiements",
+        "application_id": "paiements", "nom": "Paiements", "proprietaire": "Équipe",
+    }), jumeaux_existants={"twin-paiements"})
+    with pytest.raises(commandes.JumeauExistant, match="déjà cet identifiant"):
+        _lancer(store, Runtime())
+
+
+def test_lancement_refuse_un_application_id_deja_pris_meme_avec_un_nouveau_twin_id():
+    store = Store(_doc(jumeau={
+        "type_twin": "APPLICATION", "twin_id": "twin-nouveau",
+        "application_id": "paiements", "nom": "Paiements", "proprietaire": "Équipe",
+    }), applications_existantes={"paiements"})
+    with pytest.raises(commandes.JumeauExistant, match="déjà cet identifiant"):
+        _lancer(store, Runtime())
+
+
+def test_lancement_team_n_interroge_pas_l_unicite_d_un_application_id_vide():
+    store = Store(_doc(jumeau={
+        "type_twin": "TEAM", "twin_id": "equipe-paiements",
+        "application_id": "", "nom": "Équipe paiements", "proprietaire": "DSI",
+    }), applications_existantes={""})
+    assert _lancer(store, Runtime())["jumeau_id"] == "equipe-paiements"
 
 
 def test_echec_de_naissance_met_a_jour_la_commande_et_notifie():

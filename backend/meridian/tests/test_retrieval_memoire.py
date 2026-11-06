@@ -11,8 +11,10 @@ from meridian.adapters.outbound.postgres import depot
 from meridian.adapters.outbound.postgres import entreprise_depot
 from meridian.adapters.outbound.postgres import memoire_durable
 from meridian.adapters.outbound.postgres import memoire_org
+from meridian.adapters.outbound.postgres import partage
 from meridian.adapters.outbound.postgres.retrieval_memoire import CandidatMemoire, RetrievalMemoireInvalide, enrichir_pack, recuperer
-from meridian.tests.conftest import besoin_pg
+from meridian.domain.partage import Consommateur
+from meridian.tests.conftest import ACTIVITE, JUMEAU, SOURCE, besoin_pg, claim
 
 TENANT = "banque"
 AUTRE_TENANT = "assurance"
@@ -198,6 +200,32 @@ def test_claims_seulement_sur_twins_explicites_et_du_tenant(sources_factices):
     assert [candidat.id for candidat in resultat if candidat.source == "claim"] == ["7"]
     appels_claims = [appel for appel in etat["appels"] if appel[0] == "claim"]
     assert [appel[1] for appel in appels_claims] == ["twin-1"]
+
+
+def test_le_consommateur_est_transmis_aux_claims(sources_factices):
+    etat = sources_factices
+    etat["twins"]["twin-1"] = {"id": "twin-1", "tenant_id": TENANT}
+    etat["claims"]["twin-1"] = [CLAIM]
+    consommateur = Consommateur(TENANT, portfolio_id="paiement")
+    recuperer(object(), TENANT, question="delai carte", twin_ids=["twin-1"],
+              consommateur=consommateur)
+    appel = [a for a in etat["appels"] if a[0] == "claim"][-1]
+    # Sans Twin propriétaire sélectionné, le consommateur garde son identité : la lecture
+    # des Claims passe par `claim_share`.
+    assert appel[2]["consommateur"].twin_id == ""
+    assert appel[2]["consommateur"].portfolio_id == "paiement"
+
+
+def test_le_twin_proprietaire_selectionne_recoit_la_vue_proprietaire(sources_factices):
+    etat = sources_factices
+    etat["twins"]["twin-1"] = {"id": "twin-1", "tenant_id": TENANT}
+    etat["claims"]["twin-1"] = [CLAIM]
+    consommateur = Consommateur(TENANT, portfolio_id="paiement")
+    recuperer(object(), TENANT, question="delai carte", twin_ids=["twin-1"],
+              consommateur=consommateur, twin_proprietaire="twin-1")
+    appel = [a for a in etat["appels"] if a[0] == "claim"][-1]
+    assert appel[2]["consommateur"].twin_id == "twin-1"
+    assert appel[2]["consommateur"].portfolio_id == "paiement"
 
 
 def test_aucun_secret_dans_les_candidats(sources_factices):
@@ -391,6 +419,56 @@ def test_recuperer_ignore_une_memoire_durable_expiree(conn):
 
     assert recuperer(
         conn, TENANT, question="delai carte", scope="situation", scope_id="sit-1") == []
+
+
+def _claim_du_twin(conn):
+    """Un Claim privé du Twin propriétaire, avec sa preuve, dans un schéma de test."""
+    depot.enregistrer(conn, JUMEAU, SOURCE, [claim("delai carte")], ACTIVITE)
+    return conn.execute(
+        "SELECT id FROM claim WHERE jumeau_id = %s AND objet = %s",
+        (JUMEAU["id"], "delai carte")).fetchone()[0]
+
+
+@besoin_pg
+def test_claim_prive_invisible_pour_un_consommateur_non_proprietaire(conn):
+    _claim_du_twin(conn)
+    consommateur = Consommateur(TENANT, twin_id="twin-consommateur")
+
+    resultat = recuperer(
+        conn, TENANT, question="delai carte", twin_ids=[JUMEAU["id"]],
+        consommateur=consommateur)
+
+    assert [candidat for candidat in resultat if candidat.source == "claim"] == []
+
+
+@besoin_pg
+def test_claim_partage_visible_pour_un_consommateur_non_proprietaire(conn):
+    claim_id = _claim_du_twin(conn)
+    partage.accorder(
+        conn, TENANT, claim_id, "TENANT", TENANT, "SUMMARY", granted_by="alice")
+    consommateur = Consommateur(TENANT, twin_id="twin-consommateur")
+
+    resultat = recuperer(
+        conn, TENANT, question="delai carte", twin_ids=[JUMEAU["id"]],
+        consommateur=consommateur)
+
+    claims = [candidat for candidat in resultat if candidat.source == "claim"]
+    assert [candidat.id for candidat in claims] == [str(claim_id)]
+    assert claims[0].preuves == ()  # SUMMARY ne transporte pas la preuve
+
+
+@besoin_pg
+def test_twin_proprietaire_selectionne_garde_la_vue_proprietaire(conn):
+    claim_id = _claim_du_twin(conn)
+    consommateur = Consommateur(TENANT, twin_id="twin-consommateur")
+
+    resultat = recuperer(
+        conn, TENANT, question="delai carte", twin_ids=[JUMEAU["id"]],
+        consommateur=consommateur, twin_proprietaire=JUMEAU["id"])
+
+    claims = [candidat for candidat in resultat if candidat.source == "claim"]
+    assert [candidat.id for candidat in claims] == [str(claim_id)]
+    assert claims[0].preuves == ("git://tbt@sha1:requirements.txt#L3-L3",)
 
 
 def test_proximite_graphe_optionnelle_departage_a_contenu_egal(sources_factices):

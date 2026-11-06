@@ -24,6 +24,19 @@ Index des décisions d'architecture de Méridian.
 | [0018](0018-suppression-effective-personas-polaris.md) | Suppression effective des personas et de Polaris | accepted | 2026-10-31 |
 | [0019](0019-source-travail-generique-planification.md) | Capacité, charge, prévision et budget : domaine générique, trackers comme adapters | accepted | 2026-11-01 |
 | [0020](0020-roles-projet-lentilles.md) | Rôles projet et lentilles, pas de modèles ni de personas par rôle | accepted | 2026-11-01 |
+| [0021](0021-retrieval-unifie.md) | Retrieval unifié et preuve documentaire | proposed | 2026-11-03 |
+| [0022](0022-graphe-projection.md) | Le graphe est une projection Postgres | proposed | 2026-11-03 |
+| [0023](0023-acl-retrieval.md) | ACL de retrieval fail-closed | proposed | 2026-11-03 |
+| [0024](0024-embeddings-scale.md) | Cycle de vie des embeddings | proposed | 2026-11-03 |
+| [0025](0025-graphrag-communautes.md) | GraphRAG local/global | proposed | 2026-11-03 |
+| [0026](0026-predicats-legacy-structurels.md) | Prédicats legacy structurels prouvables | accepted | 2026-11-03 |
+| [0027](0027-predicats-legacy-composes.md) | Prédicats legacy composés | accepted | 2026-11-03 |
+| [0028](0028-analyseurs-semantiques-externes.md) | Analyseurs sémantiques legacy externes | accepted | 2026-11-03 |
+| [0029](0029-conducteur-tour-unique.md) | Conducteur de tour unique | accepted | 2026-11-03 |
+| [0030](0030-ecosysteme-tiers-identite.md) | Écosystème tiers et identité des ressources | accepted | 2026-11-04 |
+| [0031](0031-naissance-relationnelle.md) | Naissance relationnelle : déclaration, résolution et confirmation gouvernée | proposed | 2026-11-05 |
+| [0032](0032-decouverte-liens.md) | Découverte des liens : résolution de destination et cas non résolus | proposed | 2026-11-06 |
+| [0033](0033-liens-composants.md) | Liens entre composants : producteurs, consommateurs et soupçons | proposed | 2026-11-06 |
 
 ## Règles
 

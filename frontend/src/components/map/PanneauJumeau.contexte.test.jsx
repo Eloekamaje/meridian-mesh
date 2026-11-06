@@ -121,6 +121,77 @@ test("affiche le contexte cognitif du twin et permet de dépasser trois faits", 
   await act(async () => { montage.racine.unmount(); });
 });
 
+test("affiche le manifeste et les propositions de relation du Twin", async () => {
+  localStorage.setItem("meridian.tenant", "banque");
+  api.post.mockResolvedValue({ data: {} });
+  api.get.mockImplementation((url) => {
+    if (url.includes("/manifeste")) {
+      return Promise.resolve({ data: { manifeste: {
+        status: "PROVISIONAL",
+        exposures: [{ operation: "GET /articles", portee: "SERVICE" }],
+        consumptions: [{ logical_ref: "GET /articles" }],
+        unknowns: ["binding serveur absent"],
+      } } });
+    }
+    if (url.includes("/relations")) {
+      return Promise.resolve({ data: { propositions: [{
+        id: "r1", consumer_id: "app-crm", provider_id: "app-pay", object: "GET /articles",
+        state: "supposee", mode: "PROPOSED", confidence: 0.8, evidence_ids: ["claim:1"],
+        consumer_owner: "Alice", provider_owner: "Bob", unknowns: [],
+        transport: "HTTP", portee: "SERVICE", via: "gateway:articles",
+      }] } });
+    }
+    if (url.includes("/resolutions")) {
+      return Promise.resolve({ data: { resolutions: [{
+        id: "case-1", reference: "${billing.base-url}",
+        missing_evidence: "propriété absente", next_check: "manifeste de déploiement",
+        owner: "Équipe plateforme",
+        candidates: [{
+          id: "c1", twin_id: "comptes", service: "comptes-api", confidence: 0.8,
+          reason: "la route correspond au service", source: "AGENT", status: "proposed",
+        }],
+      }] } });
+    }
+    return Promise.resolve({ data: {} });
+  });
+  const montage = monter();
+
+  await rendre(montage);
+  await act(async () => {});
+
+  const section = montage.hote.querySelector('[data-testid="rubrique-relations-cognitives"]');
+  expect(section).not.toBeNull();
+  await act(async () => { section.querySelector('[data-testid="rubrique-relations-cognitives-bascule"]').click(); });
+  const manifeste = montage.hote.querySelector('[data-testid="twin-manifeste"]');
+  expect(manifeste.textContent).toContain("provisoire");
+  expect(manifeste.textContent).toContain("1 exposition");
+  expect(manifeste.querySelector('[data-testid="twin-manifeste-portees"]').textContent).toContain("1 éligible");
+  const relation = montage.hote.querySelector('[data-testid="relation-r1"]');
+  expect(relation.textContent).toContain("app-crm → app-pay");
+  expect(relation.textContent).toContain("proposée");
+  expect(relation.textContent).toContain("HTTP · service");
+  expect(relation.textContent).toContain("via gateway:articles");
+  expect(relation.textContent).toContain("Alice");
+  expect(relation.textContent).toContain("1 preuve");
+  const enquete = montage.hote.querySelector('[data-testid="twin-resolutions"]');
+  expect(enquete.textContent).toContain("Enquêtes ouvertes");
+  expect(enquete.textContent).toContain("${billing.base-url}");
+  expect(enquete.textContent).toContain("manifeste de déploiement");
+  const candidat = montage.hote.querySelector('[data-testid="candidat-c1"]');
+  expect(candidat.textContent).toContain("comptes");
+  expect(candidat.textContent).toContain("la route correspond au service");
+
+  const accepter = [...candidat.querySelectorAll("button")].find((b) => b.textContent === "Accepter");
+  await act(async () => { accepter.click(); });
+  expect(api.post).toHaveBeenCalledWith(
+    "/boucle/resolutions/case-1/revue",
+    { candidate_id: "c1", decision: "accepter", motif: "" },
+    { headers: { "X-Tenant": "banque" } }
+  );
+
+  await act(async () => { montage.racine.unmount(); });
+});
+
 test("lit le tenant depuis l'URL et n'affiche rien sans contexte", async () => {
   api.post.mockResolvedValue({ data: { profil: { libelle: "Architecte" } } });
   const montage = monter("/atlas?tenant=assurance");

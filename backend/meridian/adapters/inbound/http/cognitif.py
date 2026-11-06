@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from contextlib import nullcontext
 from dataclasses import replace
 from typing import Any
@@ -25,6 +26,7 @@ from meridian.adapters.inbound.http import boucle as boucle_routes
 from meridian.adapters.outbound import analyse_runtime
 from meridian.application import analyse_service
 from meridian.application.analyse_service import ConfigurationManquante
+from meridian.application import decouverte_liens as decouverte_liens_app
 from meridian.application import evaluation_cognitive
 from meridian.adapters.outbound.postgres import execution_depot as depot
 from meridian.application.execution.modele import CommandeExecution, ConflitIdempotence, QuotaDepasse
@@ -34,6 +36,11 @@ from meridian.adapters.outbound.postgres import boucle
 from meridian.adapters.outbound.postgres import calibration
 from meridian.domain import contrefactuel
 from meridian.adapters.outbound.postgres import decision_cognitive
+from meridian.adapters.outbound.postgres import calibration_croyances as calibration_croyances_pg
+from meridian.adapters.outbound.postgres import dossiers_raisonnement
+from meridian.application import calibration_croyances as calibration_croyances_app
+from meridian.domain import epistemie as epistemie_domaine
+from meridian.adapters.outbound.postgres import dossiers_raisonnement
 from meridian.adapters.outbound.postgres import entreprise_depot
 from meridian.application import evaluation_outils
 from meridian.application import evaluation_profils
@@ -44,12 +51,17 @@ from meridian.adapters.outbound.postgres import outcomes
 from meridian.adapters.outbound.postgres import portefeuille
 from meridian.adapters.outbound.postgres import retention
 from meridian.application import resolveur_contexte
+from meridian.adapters.outbound.postgres import relations_naissance as relations_naissance_pg
+from meridian.adapters.outbound.postgres import decouverte_liens as decouverte_liens_pg
 from meridian.adapters.outbound.postgres import session_memoire
+from meridian.adapters.outbound.llm import investigateur_liens
 from meridian.adapters.outbound.postgres import rls
 from meridian.adapters.outbound.postgres import valeur as valeur_module
 from meridian.adapters.outbound.postgres import specialiste_decouverte
 from meridian.adapters.outbound.postgres import specialiste_impact
+from meridian.application import specialiste_critique
 from meridian.application import specialiste_preuve
+from meridian.application import specialiste_risque
 from meridian.domain import specialistes
 from meridian.domain import temporalite
 from meridian.adapters.outbound.postgres import twins_types
@@ -94,6 +106,28 @@ class CreationOutcome(BaseModel):
     conditions_reutilisation: list[str] = Field(default_factory=list)
     prediction_id: str | None = Field(None, max_length=128)
     succes: bool | None = None
+    dossier_id: str | None = Field(None, max_length=128)
+    belief_ids: list[str] = Field(default_factory=list)
+
+
+class RevueRelation(BaseModel):
+    decision: str = Field(pattern="^(confirmer|contester)$")
+    motif: str = Field("", max_length=2000)
+
+
+class ResolutionResolue(BaseModel):
+    evidence_ids: list[str] = Field(default_factory=list)
+
+
+class RevueResolution(BaseModel):
+    candidate_id: str = Field(min_length=1, max_length=128)
+    decision: str = Field(pattern="^(accepter|rejeter)$")
+    motif: str = Field("", max_length=2000)
+
+
+class ObservationRelation(BaseModel):
+    evidence_ids: list[str] = Field(default_factory=list)
+    observed_at: str = Field("", max_length=80)
 
 
 class ReutilisationLearning(BaseModel):
@@ -122,6 +156,8 @@ class AnalyseSpecialistes(BaseModel):
     claim_ids: list[str] = Field(default_factory=list)
     profondeur: int = 2
     specialistes: list[str] = Field(default_factory=lambda: ["decouverte", "preuve", "impact", "outcome"])
+    dossier: dict[str, Any] | None = None
+    reponse: dict[str, Any] | None = None
 
 
 class AnalyseCognitive(AnalyseSpecialistes):
@@ -374,6 +410,153 @@ async def claims_twin(
     return {"tenant": tenant, "claims": boucle_routes._assainir(claims)}
 
 
+@router.get("/twins/{twin_id}/manifeste")
+async def manifeste_twin(
+    twin_id: str,
+    request: Request,
+    acteur: str = Depends(auth_identite.acteur),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    boucle_routes._verifier_espace(x_espace)
+    tenant = boucle_routes._tenant(request, x_tenant)
+    manifestes = await _avec_connexion(
+        tenant, lambda conn: relations_naissance_pg.lire_manifestes(conn, tenant))
+    manifeste = next((m for m in manifestes if m.twin_id == twin_id), None)
+    if manifeste is None:
+        raise HTTPException(404, "Manifeste de naissance introuvable")
+    return {"tenant": tenant, "manifeste": manifeste.as_dict()}
+
+
+@router.get("/relations")
+async def lister_relations(
+    request: Request,
+    twin_id: str | None = Query(None, max_length=128),
+    state: str | None = Query(None, max_length=32),
+    limite: int = Query(200, ge=1, le=1000),
+    acteur: str = Depends(auth_identite.acteur),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    boucle_routes._verifier_espace(x_espace)
+    tenant = boucle_routes._tenant(request, x_tenant)
+    propositions = await _avec_connexion(
+        tenant, lambda conn: relations_naissance_pg.lister_propositions(
+            conn, tenant, twin_id=twin_id, state=state, limite=limite))
+    return {"tenant": tenant, "propositions": propositions}
+
+
+@router.post("/relations/{relation_id}/revue")
+async def revue_relation(
+    relation_id: str,
+    payload: RevueRelation,
+    request: Request,
+    acteur: str = Depends(auth_identite.acteur),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    boucle_routes._verifier_espace(x_espace)
+    tenant = boucle_routes._tenant(request, x_tenant)
+    relation = await _avec_connexion(
+        tenant, lambda conn: relations_naissance_pg.review_proposition(
+            conn, tenant, relation_id, decision=payload.decision, acteur=acteur,
+            motif=payload.motif))
+    reponse = {"tenant": tenant, "relation": relation.as_dict()}
+    if relation.state == "validation":
+        reponse["message"] = "En attente du second propriétaire pour confirmer cette relation critique."
+    return reponse
+
+
+@router.get("/resolutions")
+async def lister_resolutions(
+    request: Request,
+    twin_id: str | None = Query(None, max_length=128),
+    status: str | None = Query(None, max_length=32),
+    limite: int = Query(200, ge=1, le=1000),
+    acteur: str = Depends(auth_identite.acteur),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    boucle_routes._verifier_espace(x_espace)
+    tenant = boucle_routes._tenant(request, x_tenant)
+    cas = await _avec_connexion(
+        tenant, lambda conn: decouverte_liens_pg.lister_resolution_cases(
+            conn, tenant, twin_id=twin_id, status=status, limite=limite))
+    return {"tenant": tenant, "resolutions": cas}
+
+
+@router.post("/resolutions/{case_id}/resoudre")
+async def resoudre_resolution(
+    case_id: str,
+    payload: ResolutionResolue,
+    request: Request,
+    acteur: str = Depends(auth_identite.acteur),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    boucle_routes._verifier_espace(x_espace)
+    tenant = boucle_routes._tenant(request, x_tenant)
+    cas = await _avec_connexion(
+        tenant, lambda conn: decouverte_liens_pg.resoudre_case(
+            conn, tenant, case_id, evidence_ids=payload.evidence_ids))
+    return {"tenant": tenant, "resolution": cas}
+
+
+@router.post("/resolutions/{case_id}/investiguer")
+async def investiguer_resolution(
+    case_id: str,
+    request: Request,
+    acteur: str = Depends(auth_identite.acteur),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    boucle_routes._verifier_espace(x_espace)
+    tenant = boucle_routes._tenant(request, x_tenant)
+    case, bindings, manifests = await _avec_connexion(
+        tenant, lambda conn: decouverte_liens_pg.contexte_investigation(conn, tenant, case_id))
+    case = await decouverte_liens_app.investiguer_resolution_async(
+        case, bindings, manifests, investigateur_liens.InvestigateurAgent())
+    await _avec_connexion(
+        tenant, lambda conn: decouverte_liens_pg.enregistrer_resolution_case(conn, case))
+    return {"tenant": tenant, "resolution": case.as_dict()}
+
+
+@router.post("/resolutions/{case_id}/revue")
+async def revue_resolution(
+    case_id: str,
+    payload: RevueResolution,
+    request: Request,
+    acteur: str = Depends(auth_identite.acteur),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    boucle_routes._verifier_espace(x_espace)
+    tenant = boucle_routes._tenant(request, x_tenant)
+    cas = await _avec_connexion(
+        tenant, lambda conn: decouverte_liens_pg.revoir_case(
+            conn, tenant, case_id, payload.candidate_id, payload.decision, acteur,
+            motif=payload.motif))
+    return {"tenant": tenant, "resolution": cas}
+
+
+@router.post("/relations/{relation_id}/observation")
+async def observer_relation(
+    relation_id: str,
+    payload: ObservationRelation,
+    request: Request,
+    acteur: str = Depends(auth_identite.acteur),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    boucle_routes._verifier_espace(x_espace)
+    tenant = boucle_routes._tenant(request, x_tenant)
+    relation = await _avec_connexion(
+        tenant, lambda conn: relations_naissance_pg.observer_proposition(
+            conn, tenant, relation_id, evidence_ids=payload.evidence_ids,
+            observed_at=payload.observed_at))
+    return {"tenant": tenant, "relation": relation.as_dict()}
+
+
 @router.post("/outcomes", status_code=201)
 async def creer_outcome(
     payload: CreationOutcome,
@@ -397,9 +580,45 @@ async def creer_outcome(
                 conn, tenant, payload.prediction_id, payload.succes))
         except Exception:
             prediction = None
+    revisions = []
+    if payload.dossier_id and payload.belief_ids and payload.succes is not None:
+        def resoudre_croyances(conn):
+            dossier = dossiers_raisonnement.lire(conn, tenant, payload.dossier_id)
+            if dossier is None:
+                return []
+            beliefs = list(dossier.get("beliefs") or ())
+            sorties = []
+            for belief_id in payload.belief_ids:
+                belief = next((b for b in beliefs if b.get("id") == belief_id), None)
+                if belief is None:
+                    continue
+                croyance, revision = calibration_croyances_app.resoudre(
+                    epistemie_domaine.Belief(**belief), outcome=payload.succes,
+                    motif=f"outcome {resultat['outcome'].get('id')}", acteur=acteur,
+                    preuve=(payload.preuve_ids or [""])[0])
+                beliefs = [croyance.as_dict() if b.get("id") == belief_id else b for b in beliefs]
+                dossier["beliefs"] = beliefs
+                dossier["revisions"] = [*(dossier.get("revisions") or ()), revision.as_dict()]
+                calibration = calibration_croyances_pg.resoudre(
+                    conn, tenant, payload.dossier_id, belief_id, payload.succes)
+                if calibration is None:
+                    calibration_croyances_pg.enregistrer(
+                        conn, tenant, payload.dossier_id, belief)
+                    calibration = calibration_croyances_pg.resoudre(
+                        conn, tenant, payload.dossier_id, belief_id, payload.succes)
+                sorties.append({"belief": croyance.as_dict(), "revision": revision.as_dict(),
+                                "calibration": calibration})
+            dossiers_raisonnement.enregistrer(
+                conn, tenant, dossier, dossier.get("travail_id") or "")
+            return sorties
+        try:
+            revisions = await _avec_connexion(tenant, resoudre_croyances)
+        except Exception:
+            revisions = []
     return {"tenant": tenant, "outcome": boucle_routes._assainir(resultat["outcome"]),
             "learning": boucle_routes._assainir(resultat["learning"]),
-            "prediction": boucle_routes._assainir(prediction.as_dict()) if prediction is not None else None}
+            "prediction": boucle_routes._assainir(prediction.as_dict()) if prediction is not None else None,
+            "revisions": revisions}
 
 
 @router.get("/learnings")
@@ -526,6 +745,8 @@ _SPECIALISTES = {
     "preuve": specialiste_preuve.SpecialistePreuve,
     "impact": specialiste_impact.SpecialisteImpact,
     "outcome": specialiste_impact.SpecialisteOutcome,
+    "critique": specialiste_critique.SpecialisteCritique,
+    "risque": specialiste_risque.SpecialisteRisque,
 }
 
 
@@ -593,9 +814,21 @@ async def analyser_specialistes(
     base = specialistes.ContexteSpecialiste(
         tenant=tenant, question=payload.question, situation_id=payload.situation_id,
         twin_ids=tuple(payload.twin_ids), application_id=payload.application_id,
-        claim_ids=tuple(payload.claim_ids), profondeur=payload.profondeur)
+        claim_ids=tuple(payload.claim_ids), profondeur=payload.profondeur,
+        dossier=payload.dossier, reponse=payload.reponse)
     dossiers = await _lancer_specialistes(noms, base, tenant, dsn)
     return _fusionner_dossiers(dossiers, tenant)
+
+
+async def _persister_dossier_raisonnement(tenant: str, dossier) -> None:
+    dsn = os.environ.get("JUMEAU_PG_DSN")
+    if not dsn or not dossier:
+        return
+    try:
+        await asyncio.to_thread(
+            dossiers_raisonnement.enregistrer_dsn, dsn, tenant, dossier)
+    except Exception:
+        logger.debug("dossier de raisonnement non persisté", exc_info=True)
 
 
 @router.post("/analyser")
@@ -610,9 +843,13 @@ async def analyser_cognitif(
     boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
     try:
-        return await analyse_service.executer(
+        resultat = await analyse_service.executer(
             tenant=tenant, acteur=acteur, payload=payload,
-            runtime=_runtime_analyse())
+            runtime=_runtime_analyse(),
+            acteur_contexte=await auth_identite.contexte_acteur(acteur))
+        await _persister_dossier_raisonnement(
+            tenant, resultat.get("dossier_raisonnement"))
+        return resultat
     except HTTPException:
         raise
     except ValueError as exc:

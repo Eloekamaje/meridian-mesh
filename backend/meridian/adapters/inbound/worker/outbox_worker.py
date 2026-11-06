@@ -21,6 +21,7 @@ import threading
 import psycopg
 
 from meridian.adapters.outbound.neo4j import graph_store
+from meridian.adapters.outbound.postgres import decouverte_naissance as decouverte_naissance_pg
 from meridian.adapters.outbound.postgres import rls
 from meridian.adapters.outbound.postgres.execution_defaults import DispatcherOutbox
 from meridian.adapters.outbound.neo4j.projecteur_graphe import ProjecteurGraphe
@@ -95,7 +96,18 @@ def principal() -> None:
             raise SystemExit(
                 "worker outbox : GRAPH_STORE=neo4j requis (un store mémoire perdrait les projections)")
         projecteur = ProjecteurGraphe(graphe["store"])
-        publieurs = {"graph.synchroniser": projecteur.traiter, "graph.sync": projecteur.traiter}
+
+        def traiter_twin_born(ligne):
+            tenant_ligne = str(ligne.get("tenant_id") or tenant or "")
+            with _connexion(dsn, tenant_ligne or None) as conn:
+                return decouverte_naissance_pg.traiter_twin_born(
+                    conn, ligne.get("payload") or {})
+
+        publieurs = {
+            "graph.synchroniser": projecteur.traiter,
+            "graph.sync": projecteur.traiter,
+            "twin.born": traiter_twin_born,
+        }
         if os.environ.get("JUMEAU_SQS_QUEUE_URL") or os.environ.get("JUMEAU_EVENTBRIDGE_BUS") \
                 or os.environ.get("JUMEAU_EVENTBRIDGE_BUS_NAME"):
             from meridian.adapters.outbound.aws.adapters import publieur_depuis_env

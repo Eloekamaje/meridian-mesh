@@ -95,6 +95,9 @@ TEXTES = {".txt", ".text", ".md", ".markdown", ".csv", ".tsv", ".json", ".jsonl"
 HTML = {".html", ".htm"}
 PDF = {".pdf"}
 DOCX = {".docx"}
+IMAGES = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+IMAGE_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+               ".gif": "image/gif", ".webp": "image/webp"}
 XLSX = {".xlsx"}
 # Formats dont anydoc sait rendre la grille : les autres (dont .tsv, absent d'anydoc) restent du texte seul.
 TABLEURS = {".csv", ".xls", ".xlsx", ".xlsb", ".ods"}
@@ -103,13 +106,14 @@ TABLEURS = {".csv", ".xls", ".xlsx", ".xlsb", ".ods"}
 ANYDOC_EXT = {".doc", ".docx", ".ppt", ".pptx", ".pps", ".ppsx", ".pot", ".xls", ".xlsx", ".xlsb",
               ".odt", ".ods", ".odp", ".rtf", ".epub", ".csv", ".pdf"}
 ZIPS = {"docx", "xlsx", "pptx", "ppsx", "pot", "odt", "ods", "odp", "epub"}
-EXTENSIONS = TEXTES | HTML | ANYDOC_EXT
+EXTENSIONS = TEXTES | HTML | ANYDOC_EXT | IMAGES
 
 LIBELLES = {".pdf": "PDF", ".doc": "Word (hérité)", ".docx": "Word", ".ppt": "PowerPoint (hérité)",
             ".pptx": "PowerPoint", ".pps": "PowerPoint", ".ppsx": "PowerPoint", ".pot": "PowerPoint",
             ".xls": "Excel (hérité)", ".xlsx": "Excel", ".xlsb": "Excel", ".odt": "OpenDocument",
             ".ods": "OpenDocument", ".odp": "OpenDocument", ".rtf": "RTF", ".epub": "EPUB", ".csv": "CSV",
-            ".html": "HTML", ".htm": "HTML", ".tsv": "TSV", ".json": "JSON", ".md": "Markdown", ".txt": "Texte"}
+            ".html": "HTML", ".htm": "HTML", ".tsv": "TSV", ".json": "JSON", ".md": "Markdown", ".txt": "Texte",
+            ".jpg": "Image JPEG", ".jpeg": "Image JPEG", ".png": "Image PNG", ".gif": "Image GIF", ".webp": "Image WebP"}
 FORMATS_LIBELLES = {"doc": "Word (hérité)", "docx": "Word", "ppt": "PowerPoint (hérité)", "pptx": "PowerPoint",
                     "pps": "PowerPoint", "ppsx": "PowerPoint", "pot": "PowerPoint", "xls": "Excel (hérité)",
                     "xlsx": "Excel", "xlsb": "Excel", "odt": "OpenDocument", "ods": "OpenDocument",
@@ -514,7 +518,27 @@ def analyser(nom: str, mime: str, data: bytes) -> dict:
     if ext not in EXTENSIONS:
         raise PieceRefusee(f"Format non pris en charge : {ext or 'sans extension'}. "
                            "Formats acceptés : PDF, Word, PowerPoint, Excel, OpenDocument, RTF, EPUB, "
-                           "texte, Markdown, CSV, JSON, HTML.")
+                           "texte, Markdown, CSV, JSON, HTML, images JPEG/PNG/GIF/WebP.")
+    if ext in IMAGES:
+        if not modele_externe_autorise():
+            raise PieceRefusee("L’analyse d’image envoie la pièce à un modèle externe : "
+                               "activez PIECES_ENVOI_MODELE_EXTERNE=1 pour ce Travail.")
+        from meridian.adapters.outbound import vision as vision_adapter
+        if not vision_adapter.disponible():
+            raise PieceRefusee("Aucun provider Vision configuré (Bedrock ou DeepSeek).")
+        try:
+            texte = vision_adapter.decrire(
+                data, mime or IMAGE_TYPES.get(ext, "image/jpeg"),
+                "Transcris tout le texte visible, puis décris les éléments utiles du document.")
+        except Exception as e:
+            raise PieceRefusee("Lecture de l’image impossible par le provider Vision.") from e
+        texte = texte.replace("\x00", "").strip()
+        texte, tronque = _borner(texte)
+        etat = "tronque" if tronque else ("lu" if texte else "vide")
+        return {"texte": texte, "etat": etat,
+                "note": f"Texte d’image tronqué à {MAX_CARACTERES} caractères." if tronque else "",
+                "tronque": tronque, "caracteres": len(texte), "pages": None,
+                "type_libelle": libelle_type(nom, mime), "tables": []}
     if anydoc is not None and ext in ANYDOC_EXT:
         resultat = _analyser_anydoc(ext, data)
         resultat["tables"] = _tables_structurees(ext, data)

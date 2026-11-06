@@ -6,10 +6,16 @@ Les références (`vault:`/`env:`) restent la seule chose stockée.
 from __future__ import annotations
 
 import os
+import re
 from typing import Any, Mapping
 
 AUTH_PAT = "pat"
 AUTH_AUCUNE = "aucune"
+_RE_REFERENCE = re.compile(
+    r"(?:vault:[\w./-]+(?:#[\w./-]+)?|env:[A-Za-z_][A-Za-z0-9_]*"
+    r"|(?:aws|secretsmanager):[A-Za-z0-9/_+=.@:-]{1,512}(?:#[A-Za-z0-9._-]{1,128})?)",
+    re.IGNORECASE,
+)
 
 
 class AuthSourceInvalide(ValueError):
@@ -18,6 +24,14 @@ class AuthSourceInvalide(ValueError):
 
 def _texte(valeur: Any) -> str:
     return str(valeur or "").strip()
+
+
+def _reference(valeur: Any) -> str:
+    texte = _texte(valeur)
+    if texte and not _RE_REFERENCE.fullmatch(texte):
+        raise AuthSourceInvalide(
+            "référence de secret attendue (vault:…, env:…, aws:… ou secretsmanager:…)")
+    return texte
 
 
 def _mode(config: Mapping[str, Any]) -> str:
@@ -33,7 +47,7 @@ def champs_source(config: Mapping[str, Any]) -> dict:
     """Champs sûrs à persister sur la source : aucune valeur de secret."""
     mode = _mode(config)
     if mode == AUTH_PAT:
-        reference = _texte(config.get("secret_ref") or config.get("secret"))
+        reference = _reference(config.get("secret_ref") or config.get("secret"))
         return {"auth_mode": AUTH_PAT, **({"secret_ref": reference} if reference else {})}
     return {"auth_mode": AUTH_AUCUNE}
 
@@ -62,12 +76,14 @@ class PATSource(AuthSource):
     def token(self) -> str | None:
         if not self.reference:
             return None
+        from meridian.adapters.outbound.connectors.naissance import CoffreIndisponible, SecretAbsent, resoudre_secret
         try:
             if self.reference.lower().startswith(("aws:", "secretsmanager:")):
                 from meridian.adapters.outbound.aws.adapters import secrets_depuis_env
                 return secrets_depuis_env().resoudre(self.reference)
-            from meridian.adapters.outbound.connectors.naissance import resoudre_secret
             return resoudre_secret(self.reference)
+        except (SecretAbsent, CoffreIndisponible):
+            raise
         except Exception as exc:  # noqa: BLE001 - jamais le secret dans l'erreur
             raise AuthSourceInvalide("PAT introuvable ou refusé") from exc
 
@@ -78,7 +94,7 @@ def depuis_config(config: Mapping[str, Any] | None) -> AuthSource:
     mode = _mode(config)
     if mode == AUTH_AUCUNE:
         return SansAuth()
-    return PATSource(_texte(config.get("secret_ref") or config.get("secret")))
+    return PATSource(_reference(config.get("secret_ref") or config.get("secret")))
 
 
 def configuration_pour_source(base: Mapping[str, Any] | None) -> dict:

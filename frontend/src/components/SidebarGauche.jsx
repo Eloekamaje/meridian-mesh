@@ -12,12 +12,16 @@ import {
   X,
   Sparkle, 
   ArrowsClockwise,
-  Brain
+  Brain,
+  SlidersHorizontal,
+  SignOut,
+  ShieldCheck
 } from "@phosphor-icons/react";
 import api from "@/lib/api";
 import { resultatsRecherche, estConversation, PARAM_CONVERSATIONS } from "@/lib/conversationFlore";
 import { useContexte } from "@/lib/contexte";
 import { useIdentite } from "@/lib/identite";
+import { usePerimetre } from "@/lib/perimetre";
 import { useEvenements } from "@/lib/evenements";
 import Notifications from "@/components/Notifications";
 import logoComplet from "@/assets/logo/meridian-logo-clair.png";
@@ -30,13 +34,16 @@ const NAV_ITEMS = [
   { to: "/cognition", label: "Cognition", icon: Brain, testid: "nav-cognition" },
   { to: "/travaux", label: "Travaux", icon: Briefcase, testid: "nav-travaux" },
   { to: "/jumeaux", label: "Jumeaux", icon: CirclesThree, testid: "nav-jumeaux" },
+  { to: "/revue-publication", label: "Revue de publication", icon: ShieldCheck, testid: "nav-revue-publication" },
   { to: "/administration", label: "Administration", icon: GearSix, testid: "nav-administration" },
+  { to: "/preferences", label: "Préférences", icon: SlidersHorizontal, testid: "nav-preferences" },
 ];
 
 export default function SidebarGauche({ mode = "bureau", onOuvrir, onFermer }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { basculerFlore, repliAuto } = useContexte();
+  const { authMode, deconnecter } = usePerimetre();
 
   // État replié : mémorisé dans le localStorage pour confort utilisateur.
   const [replieMemo, setReplieMemo] = useState(() => {
@@ -317,6 +324,12 @@ export default function SidebarGauche({ mode = "bureau", onOuvrir, onFermer }) {
                 </div>
               </div>
             </div>
+            {authMode !== "demo" && (
+              <button type="button" onClick={deconnecter} title="Se déconnecter" aria-label="Se déconnecter"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[#7C93A8] hover:bg-white/[0.06] hover:text-white">
+                <SignOut size={14} />
+              </button>
+            )}
           </div>
         ) : (
           <div className="flex flex-col items-center">

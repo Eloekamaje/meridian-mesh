@@ -40,6 +40,7 @@ jest.mock("@/pages/Travaux", () => mockPage("page-travaux"));
 jest.mock("@/pages/TravailDetail", () => mockPage("page-travail-detail"));
 jest.mock("@/pages/Jumeaux", () => mockPage("page-jumeaux"));
 jest.mock("@/pages/RevueJumeau", () => mockPage("page-revue-jumeau"));
+jest.mock("@/pages/RevuePublication", () => mockPage("page-revue-publication"));
 jest.mock("@/pages/Administration", () => mockPage("page-administration"));
 
 global.IS_REACT_ACT_ENVIRONMENT = true;
@@ -111,6 +112,14 @@ test("/atlas reste accessible comme route d'exploration", async () => {
   expect(hote.querySelector('[data-testid="chemin"]').textContent).toBe("/atlas");
   expect(hote.querySelector('[data-testid="page-atlas"]')).not.toBeNull();
   expect(hote.querySelector('[data-testid="page-actualites"]')).toBeNull();
+  await fermer(racine);
+});
+
+test("/revue-publication ouvre l'écran de revue de publication", async () => {
+  const { hote, racine } = await ouvrir("/revue-publication");
+  expect(hote.querySelector('[data-testid="chemin"]').textContent).toBe("/revue-publication");
+  expect(hote.querySelector('[data-testid="page-revue-publication"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="page-revue-jumeau"]')).toBeNull();
   await fermer(racine);
 });
 

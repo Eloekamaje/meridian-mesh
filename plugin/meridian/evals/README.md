@@ -292,3 +292,19 @@ scénario, de checklist, de data pack ou de configuration invalide.
 
 Les commandes, résultats et limites de la session du 2026-11-01 sont consignés dans
 [`PILOT-2026-11-01.md`](PILOT-2026-11-01.md).
+
+## Benchmark conversationnel Flore
+
+Le dossier [`conversations/`](conversations/) contient un benchmark multi-tours qui
+rejoue de vraies conversations sur l'API Méridian (`/cases`, `/cases/{id}/messages`) et
+les compare à un assistant générique. Il note des critères déterministes (faits,
+preuves, abstention, sécurité) et fait juger les transcriptions à l'aveugle avec un
+contexte de référence.
+
+```bash
+backend/.venv/bin/python plugin/meridian/evals/conversations/run.py \
+  --runs 3 --output /tmp/meridian-conversations
+```
+
+Voir [`conversations/README.md`](conversations/README.md) pour le protocole, le format
+des scénarios et les limites.

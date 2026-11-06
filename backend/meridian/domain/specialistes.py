@@ -64,6 +64,8 @@ class ContexteSpecialiste:
     conn: Any = None
     store: Any = None
     executeur: Any = None
+    dossier: Any = None
+    reponse: Any = None
 
     def __post_init__(self):
         if not _texte(self.tenant, 128):
@@ -87,6 +89,8 @@ class ContexteSpecialiste:
             "claim_ids": list(self.claim_ids),
             "profondeur": self.profondeur,
             "maintenant": self.maintenant,
+            "dossier": dict(self.dossier) if isinstance(self.dossier, Mapping) else self.dossier,
+            "reponse": dict(self.reponse) if isinstance(self.reponse, Mapping) else self.reponse,
         }
 
 

@@ -23,7 +23,7 @@ __all__ = [
     "valider_competences",
 ]
 
-SPECIALISTES = ("decouverte", "preuve", "impact", "outcome", "outil")
+SPECIALISTES = ("decouverte", "preuve", "impact", "outcome", "outil", "critique", "risque")
 _COMPETENCES_GENERALES = ("rechercher_memoire", "verifier_preuve")
 _POSTURES_COMPETENCES = {
     "lire_interfaces": ("explorateur", "investigateur", "concepteur"),
@@ -40,6 +40,11 @@ _POSTURES_COMPETENCES = {
     "qualifier_donnee": ("investigateur", "concepteur", "operateur"),
     "rechercher_memoire": ("explorateur", "investigateur", "facilitateur"),
     "rediger_adr": ("concepteur", "facilitateur", "gardien"),
+    "formuler_probleme": ("explorateur", "investigateur", "facilitateur"),
+    "comparer_options": ("concepteur", "facilitateur", "gardien"),
+    "critiquer_conception": ("investigateur", "gardien"),
+    "planifier_validation": ("concepteur", "operateur", "gardien"),
+    "qualifier_demande": ("explorateur", "investigateur", "facilitateur"),
 }
 _INDICES_COMPETENCES = {
     "interface": ("lire_interfaces",),
@@ -84,6 +89,17 @@ _INDICES_COMPETENCES = {
     "adr": ("rediger_adr",),
     "architecture": ("rediger_adr",),
     "architectures": ("rediger_adr",),
+    "probleme": ("formuler_probleme",),
+    "cadrage": ("formuler_probleme",),
+    "option": ("comparer_options", "faciliter_decision"),
+    "options": ("comparer_options", "faciliter_decision"),
+    "compromis": ("comparer_options",),
+    "critique": ("critiquer_conception", "detecter_contradiction"),
+    "revue": ("critiquer_conception", "verifier_preuve"),
+    "validation": ("planifier_validation", "verifier_preuve"),
+    "hypothese": ("planifier_validation", "verifier_preuve"),
+    "demande": ("qualifier_demande",),
+    "clarification": ("qualifier_demande",),
 }
 
 
@@ -375,6 +391,61 @@ CATALOGUE_COMPETENCES = (
         sorties="extraits mémoire reliés",
         lecture_seule=True,
         eval=("résultat sourcé", "tenant respecté"),
+    ),
+    Competence(
+        id="formuler_probleme",
+        nom="Formuler le problème",
+        description="Distinguer la demande littérale du problème réel, exposer les contraintes et les inconnues.",
+        specialiste="outil",
+        outils=("cadre", "questions"),
+        entrees="demande et contexte",
+        sorties="problème formulé, contraintes, questions bloquantes",
+        lecture_seule=True,
+        eval=("problème explicite", "questions utiles"),
+    ),
+    Competence(
+        id="comparer_options",
+        nom="Comparer des options",
+        description="Produire et comparer des options réelles avec leurs avantages, risques et conséquences.",
+        specialiste="impact",
+        outils=("options", "criteres"),
+        entrees="objectif, contraintes et critères",
+        sorties="options comparées",
+        lecture_seule=True,
+        eval=("au moins deux options", "risques exposés"),
+    ),
+    Competence(
+        id="critiquer_conception",
+        nom="Critiquer une conception",
+        description="Challenger un livrable sans le réécrire : findings, sévérité, dissensus et remédiation.",
+        specialiste="critique",
+        outils=("rubrique", "preuve", "risque"),
+        entrees="livrable, cadre, preuves et rubrique",
+        sorties="findings classés",
+        lecture_seule=True,
+        eval=("findings actionnables", "dissensus conservé"),
+    ),
+    Competence(
+        id="planifier_validation",
+        nom="Planifier la validation",
+        description="Transformer les hypothèses en tests, mesures ou expériences réfutables.",
+        specialiste="preuve",
+        outils=("hypothese", "mesure", "outcome"),
+        entrees="hypothèses et critères",
+        sorties="plan de validation",
+        lecture_seule=True,
+        eval=("hypothèse reliée à un test", "critère de réussite"),
+    ),
+    Competence(
+        id="qualifier_demande",
+        nom="Qualifier une demande",
+        description="Qualifier le but, l'enjeu, l'ambiguïté, la réversibilité et la sensibilité d'une demande.",
+        specialiste="outil",
+        outils=("niveaux", "risque", "clarification"),
+        entrees="question et contexte",
+        sorties="demande qualifiée",
+        lecture_seule=True,
+        eval=("niveau justifié", "questions non bloquantes évitées"),
     ),
     Competence(
         id="rediger_adr",

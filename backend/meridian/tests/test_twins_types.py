@@ -1,4 +1,7 @@
 """Twins non applicatifs : création idempotente, lecture, liste et Claims prouvés attachés."""
+import importlib.util
+from pathlib import Path
+
 import pytest
 
 from meridian.adapters.outbound.postgres import depot
@@ -9,6 +12,15 @@ TENANT = "banque"
 AUTRE_TENANT = "assurance"
 PROCESS_ID = "process-cartes"
 PROCESS_NOM = "Traiter une demande de carte"
+RACINE = Path(__file__).resolve().parents[3]
+
+
+def _migration():
+    chemin = RACINE / "scripts" / "migrer-twins-types.py"
+    spec = importlib.util.spec_from_file_location("migrer_twins_types", chemin)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def creer_process(conn, twin_id=PROCESS_ID, nom=PROCESS_NOM, tenant=TENANT, acteur="alice"):
@@ -281,3 +293,67 @@ def test_application_autorisee_seulement_si_absente(conn):
             conn, TENANT, "app-nouvelle", "PROCESS", "Nouvelle application", acteur="alice")
 
     assert twins_types.lire_twin(conn, TENANT, "app-nouvelle")["type"] == "APPLICATION"
+
+
+@besoin_pg
+def test_application_id_nullable_pour_les_types_ecosysteme(conn):
+    for rang, type_ in enumerate(("TEAM", "ECOSYSTEM", "RESOURCE", "SUPPLIER")):
+        twin = twins_types.creer_twin(
+            conn, TENANT, f"twin-{rang}", type_, f"Twin {type_}", acteur="alice")
+        assert twin["type"] == type_
+
+    lignes = conn.execute(
+        "SELECT type, application_id, perimetre, identifiants FROM jumeau ORDER BY type").fetchall()
+    assert [ligne[0] for ligne in lignes] == ["ECOSYSTEM", "RESOURCE", "SUPPLIER", "TEAM"]
+    assert all(ligne[1] is None for ligne in lignes)
+    assert all(ligne[2] is None for ligne in lignes)
+    assert all(ligne[3] == {} for ligne in lignes)
+
+    conn.execute(
+        "INSERT INTO jumeau (id, tenant_id, nom, equipe, type, application_id) "
+        "VALUES ('app-1', %s, 'Application 1', 'equipe', 'APPLICATION', 'app-id-1')", (TENANT,))
+    conn.execute(
+        "INSERT INTO jumeau (id, tenant_id, nom, equipe, type) "
+        "VALUES ('app-2', %s, 'Application 2', 'equipe', 'APPLICATION')", (TENANT,))
+    with pytest.raises(Exception):
+        conn.execute(
+            "INSERT INTO jumeau (id, tenant_id, nom, equipe, type, application_id) "
+            "VALUES ('app-3', %s, 'Application 3', 'equipe', 'APPLICATION', 'app-id-1')",
+            (TENANT,))
+
+
+@besoin_pg
+def test_ancien_twin_reste_lisible_et_migration_idempotente(conn):
+    conn.execute(
+        "INSERT INTO jumeau (id, tenant_id, nom, equipe) VALUES (%s, %s, %s, %s)",
+        ("ancien-app", TENANT, "Ancienne application", "equipe-legacy"))
+    avant = twins_types.lire_twin(conn, TENANT, "ancien-app")
+    assert avant["type"] == "APPLICATION"
+    assert conn.execute(
+        "SELECT application_id FROM jumeau WHERE id = 'ancien-app'").fetchone()[0] is None
+
+    depot.appliquer_schema(conn)
+    assert twins_types.lire_twin(conn, TENANT, "ancien-app") == avant
+
+    twins_types.creer_twin(conn, TENANT, "equipe-cartes", "TEAM", "Équipe cartes", acteur="alice")
+    migration = _migration()
+    premier = migration.migrer(conn)
+    second = migration.migrer(conn)
+    assert premier == second == {
+        "dry_run": True, "a_migrer": 1, "migres": 0, "ids": ["ancien-app"]}
+    assert conn.execute(
+        "SELECT application_id FROM jumeau WHERE id = 'ancien-app'").fetchone()[0] is None
+
+    applique = migration.migrer(conn, appliquer=True)
+    assert applique == {
+        "dry_run": False, "a_migrer": 1, "migres": 1, "ids": ["ancien-app"]}
+    assert conn.execute(
+        "SELECT type, application_id FROM jumeau WHERE id = 'ancien-app'").fetchone() == (
+            "APPLICATION", "ancien-app")
+    assert twins_types.lire_twin(conn, TENANT, "ancien-app") == avant
+    assert conn.execute(
+        "SELECT application_id FROM jumeau WHERE id = 'equipe-cartes'").fetchone()[0] is None
+
+    assert migration.migrer(conn) == {
+        "dry_run": True, "a_migrer": 0, "migres": 0, "ids": []}
+    assert migration.migrer(conn, appliquer=True)["migres"] == 0

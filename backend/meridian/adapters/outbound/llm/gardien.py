@@ -14,11 +14,13 @@ import logging
 import os
 import hashlib
 import re
+from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import psycopg
 from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
 from pydantic import BaseModel, Field
 from strands import Agent
 
@@ -31,7 +33,7 @@ from meridian.adapters.outbound.postgres import (
 )
 from meridian.adapters.outbound.redis import notifications_impacts
 from meridian.application import impacts_situations, initiatives_auto, methodes
-from meridian.domain import schemas
+from meridian.domain import comprehension, schemas
 from meridian.adapters.outbound.connectors.ingerer import ingerer
 from meridian.adapters.outbound.connectors.source_git import sha_courant
 
@@ -198,11 +200,15 @@ def situation(jumeau, version, sigs, commits, recit):
     }
 
 
-def enregistrer_fiche(conn, jumeau_id, sha, contenu):
+def enregistrer_fiche(conn, jumeau_id, sha, contenu, *, questions=None, couverture=None, claims=None):
+    """Enregistre la fiche et son adossement : statuts des sept questions et Claims cités."""
     conn.execute(
-        "INSERT INTO fiche_vivante (jumeau_id, sha, contenu) VALUES (%s, %s, %s) "
-        "ON CONFLICT (jumeau_id, sha) DO UPDATE SET contenu = EXCLUDED.contenu, cree_le = now()",
-        (jumeau_id, sha, contenu))
+        "INSERT INTO fiche_vivante (jumeau_id, sha, contenu, questions, couverture, claims) "
+        "VALUES (%s, %s, %s, %s, %s, %s) "
+        "ON CONFLICT (jumeau_id, sha) DO UPDATE SET contenu = EXCLUDED.contenu, "
+        "questions = EXCLUDED.questions, couverture = EXCLUDED.couverture, claims = EXCLUDED.claims, "
+        "cree_le = now()",
+        (jumeau_id, sha, contenu, Jsonb(questions or []), Jsonb(couverture or {}), Jsonb(claims or [])))
 
 
 DELAI_FICHE_SANS_CODE = timedelta(hours=12)
@@ -215,9 +221,27 @@ def fiche_recente(conn, jumeau_id, delai):
 
 
 def fiche_courante(conn, jumeau_id):
-    r = conn.execute("SELECT sha, contenu FROM fiche_vivante WHERE jumeau_id = %s ORDER BY cree_le DESC LIMIT 1",
-                     (jumeau_id,)).fetchone()
-    return {"sha": r[0], "contenu": r[1]} if r else None
+    """Dernière fiche, avec ses statuts, ses Claims cités et l'état de péremption de ces Claims."""
+    with conn.cursor(row_factory=dict_row) as cur:
+        r = cur.execute(
+            "SELECT sha, contenu, questions, couverture, claims, cree_le FROM fiche_vivante "
+            "WHERE jumeau_id = %s ORDER BY cree_le DESC LIMIT 1", (jumeau_id,)).fetchone()
+    if not r:
+        return None
+    claims = [int(x) for x in (r["claims"] or []) if str(x).isdigit()]
+    stale = False
+    if claims:
+        vivants = conn.execute(
+            "SELECT count(*) FROM claim WHERE id = ANY(%s) AND valide_jusqua IS NULL "
+            "AND statut NOT IN ('INVALIDATED', 'SUPERSEDED', 'CONTESTED')", (claims,)).fetchone()[0]
+        stale = vivants != len(claims)
+    return {
+        **r,
+        "questions": r["questions"] or [],
+        "couverture": r["couverture"] or {},
+        "claims": claims,
+        "stale": stale,
+    }
 
 
 async def _rediger(ctx, dsn, sigs, commits):
@@ -229,7 +253,18 @@ async def _rediger(ctx, dsn, sigs, commits):
     """
     # Fil vierge à chaque passe : une passe précédente ne doit pas dicter la fiche (méthode à jour, code relu).
     a = agent.construire(ctx, dsn, session=None, budget=agent.Budget(**BUDGET_PASSE))
-    fiche = str(await a.invoke_async(CONSIGNE_FICHE)).strip()
+    consigne = CONSIGNE_FICHE
+    if ctx.get("questions"):
+        lignes = [
+            f"- {q['cle']} : {q['statut']}"
+            + (f" (claims {', '.join(str(x) for x in q['claim_ids'])})" if q.get("claim_ids") else "")
+            for q in ctx["questions"]
+        ]
+        consigne += (
+            "\n\nStatuts des sept questions (la fiche doit les rendre ; une question sans réponse "
+            "reste dans « Ce que l'on ne sait pas encore ») :\n" + "\n".join(lignes)
+        )
+    fiche = str(await a.invoke_async(consigne)).strip()
     invalides = contradicteur.citations_invalides(fiche, ctx["sources"], ctx.get("lecteurs", ()))
     if invalides:
         fiche = str(await a.invoke_async(contradicteur.consigne_revision(
@@ -518,12 +553,21 @@ async def veiller(conn, db, jumeau_id, chemins=None, rediger=_rediger):
            "claims": [c for c in connaissance.connaissances(conn, jumeau_id, limite=500)
                       if (c.get("verification") or {}).get("etat") not in schemas.NON_TENUES],
            "acteur": "gardien", "profil": {"nom": "Gardien du jumeau", "role": "veille automatique"}}
+    statuts = comprehension.statuts_depuis_claims(ctx["claims"])
+    ctx["questions"] = [asdict(statut) for statut in statuts]
+    ctx["couverture"] = comprehension.couverture(statuts)
     try:
         fiche, recit = await rediger(ctx, os.environ.get("JUMEAU_PG_DSN", ""), sigs, commits)
     except Exception:
         journal.warning("gardien %s : rédaction impossible, reprise à la passe suivante", jumeau_id, exc_info=True)
         return {**bilan, "fiche": False}
-    enregistrer_fiche(conn, jumeau_id, version, fiche)
+    cites = comprendre.claims_cites(fiche)
+    if not cites:  # le modèle a omis les marqueurs : la fiche reste liée aux Claims qui l'ont nourrie
+        cites = sorted({cid for q in ctx["questions"] for cid in q.get("claim_ids", ())})
+    enregistrer_fiche(
+        conn, jumeau_id, version, fiche,
+        questions=ctx["questions"], couverture=ctx["couverture"], claims=cites,
+    )
     try:
         journal.info("gardien %s : consolidation %s", jumeau_id, await consolider(conn, jumeau_id))
     except Exception:  # la consolidation se rattrape à la passe suivante ; la fiche est déjà enregistrée

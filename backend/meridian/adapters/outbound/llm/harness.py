@@ -19,6 +19,7 @@ from typing import Any
 from strands.tools.tools import AgentTool
 from strands.types._events import ToolResultEvent
 
+from meridian.application.decision_tour import AppelOutil, DecisionInvalide, DecisionTour, valider as valider_decision
 from meridian.domain.capacites import ManifesteOutil, RegistreCapacites
 
 _JOUR = 500
@@ -123,6 +124,10 @@ def manifestes_decouverte() -> list[ManifesteOutil]:
             mode_preuve="DECLARED",
             source="builtin",
             allowlist=("meridian.builtin",),
+            usage={"quand": "Chercher une capacité ou une méthode dans le catalogue visible.",
+                   "ne_pas": "Ne pas exécuter l'outil trouvé sans lire son contrat.",
+                   "sortie": "Une liste bornée de méthodes visibles."},
+            presentation={"libelle": "Je cherche une méthode disponible…", "groupe": "méthodes", "ordre": 1},
         ),
         ManifesteOutil(
             nom="decrire_outil",
@@ -140,6 +145,10 @@ def manifestes_decouverte() -> list[ManifesteOutil]:
             mode_preuve="DECLARED",
             source="builtin",
             allowlist=("meridian.builtin",),
+            usage={"quand": "Lire le contrat complet d'une méthode avant de l'appeler.",
+                   "ne_pas": "Ne pas appeler une méthode dont le contrat est absent ou hors portée.",
+                   "sortie": "Le contrat, les schémas et la portée de la méthode."},
+            presentation={"libelle": "Je lis le contrat d'une méthode…", "groupe": "méthodes", "ordre": 2},
         ),
     ]
 
@@ -274,11 +283,24 @@ class _OutilHarness(AgentTool):
         self._callback = callback
         self._asynchrone = inspect.iscoroutinefunction(callback)
         self._approuves = frozenset(approuves)
+        description = manifeste.description
+        usage = manifeste.usage if isinstance(manifeste.usage, Mapping) else {}
+        if usage.get("quand"):
+            description += f"\nQuand l'utiliser : {usage['quand']}"
+        if usage.get("ne_pas"):
+            description += f"\nNe pas l'utiliser : {usage['ne_pas']}"
         self._spec = {
             "name": manifeste.nom,
-            "description": manifeste.description,
+            "description": description,
             "inputSchema": copy.deepcopy(manifeste.as_dict()["schema_entree"]),
         }
+        self._presentation = dict(getattr(manifeste, "presentation", {}) or {})
+        if self._presentation.get("libelle") or self._presentation.get("groupe"):
+            from meridian.application import progression
+            if self._presentation.get("libelle"):
+                progression.LIBELLES_OUTILS.setdefault(manifeste.nom, self._presentation["libelle"])
+            if self._presentation.get("groupe"):
+                progression.GROUPES_OUTILS.setdefault(manifeste.nom, self._presentation["groupe"])
 
     @property
     def tool_name(self) -> str:
@@ -287,6 +309,10 @@ class _OutilHarness(AgentTool):
     @property
     def tool_spec(self) -> dict:
         return self._spec
+
+    @property
+    def presentation(self) -> dict:
+        return dict(self._presentation)
 
     @property
     def tool_type(self) -> str:
@@ -340,6 +366,7 @@ class Harness:
         perimetre: str | None = None,
         audit: list[dict] | None = None,
         audit_sink: Any = None,
+        budget_outils: int | None = None,
     ) -> None:
         self.registre = registre if registre is not None else RegistreCapacites()
         self.adaptateurs = dict(adaptateurs or {})
@@ -349,6 +376,7 @@ class Harness:
         self.perimetre = perimetre
         self.audit_sink = audit_sink
         self._audit: list[dict] = audit if isinstance(audit, list) else []
+        self._budget_outils = None if budget_outils is None else max(0, int(budget_outils))
         self._decouverte: dict[str, Callable] = {
             "rechercher_outil": self._rechercher,
             "decrire_outil": self._decrire,
@@ -466,11 +494,30 @@ class Harness:
         return await self._appeler_avec(self._callable(nom), nom, arguments, timeout_ms,
                                         approuves=approuves)
 
+    def _valider_decision(self, nom: str, arguments: Mapping | None = None) -> None:
+        """Le point d'appel est une DecisionTour : aucun outil hors contrat ne s'exécute."""
+        if self._budget_outils is None:
+            return
+        decision = DecisionTour(
+            action="outil",
+            appels=(AppelOutil(nom, dict(arguments or {})),),
+        )
+        autorises = set(self.adaptateurs) | set(self._decouverte)
+        try:
+            valider_decision(
+                decision,
+                outils_autorises=autorises,
+                budget_outils=self._budget_outils,
+            )
+        except DecisionInvalide as erreur:
+            raise OutilNonApprouve(str(erreur)) from erreur
+
     async def _appeler_avec(self, callback: Callable | None, nom: str,
                             arguments: Mapping | None = None, timeout_ms: Any = None,
                             *, approuves: Iterable[str] | None = None) -> Any:
         arguments_expurges = arguments
         manifeste = self._verifier(nom, approuves, callback)
+        self._valider_decision(nom, _arguments(arguments))
         essaies = _arguments(arguments)
         timeout = manifeste.timeout_ms if timeout_ms is None else timeout_ms
         _secondes(timeout)
@@ -493,6 +540,7 @@ class Harness:
                            approuves: Iterable[str] | None = None) -> Any:
         arguments_expurges = arguments
         manifeste = self._verifier(nom, approuves, callback)
+        self._valider_decision(nom, _arguments(arguments))
         essaies = _arguments(arguments)
         debut = time.perf_counter()
         try:

@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS source (
     id          bigserial PRIMARY KEY,
     tenant_id   text NOT NULL,
     jumeau_id   text NOT NULL REFERENCES jumeau(id),
-    type        text NOT NULL CHECK (type IN ('GIT', 'DOCUMENTATION')),
+    type        text NOT NULL CHECK (type IN ('GIT', 'DOCUMENTATION', 'SHAREPOINT', 'TEAMS')),
     nom         text NOT NULL,
     emplacement text NOT NULL,
     curseur     text,
@@ -22,6 +22,45 @@ CREATE TABLE IF NOT EXISTS source (
 );
 
 -- Preuve = Entity W3C PROV ; `activite` = Activity (extracteur, version). Pas de copie du contenu : hash seulement.
+CREATE TABLE IF NOT EXISTS graph_community (
+    tenant_id    text NOT NULL,
+    community_id text NOT NULL,
+    level        int NOT NULL DEFAULT 1,
+    membres      text[] NOT NULL DEFAULT '{}',
+    domaines     text[] NOT NULL DEFAULT '{}',
+    relations    int NOT NULL DEFAULT 0,
+    rapport      text NOT NULL,
+    fingerprint  text NOT NULL DEFAULT '',
+    acl          jsonb NOT NULL DEFAULT '{}'::jsonb,
+    embedding    double precision[],
+    updated_at   timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, community_id, level)
+);
+CREATE INDEX IF NOT EXISTS graph_community_tenant ON graph_community (tenant_id, relations DESC);
+
+CREATE TABLE IF NOT EXISTS document_chunk (
+    id              bigserial PRIMARY KEY,
+    tenant_id       text NOT NULL,
+    source_id       bigint REFERENCES source(id) ON DELETE CASCADE,
+    twin_id         text,
+    document_ref    text NOT NULL,
+    version         text NOT NULL,
+    ordinal         int NOT NULL CHECK (ordinal >= 0),
+    section         text NOT NULL DEFAULT '',
+    titre           text NOT NULL DEFAULT '',
+    texte           text NOT NULL,
+    texte_hash      text NOT NULL DEFAULT '',
+    locator         text NOT NULL,
+    acl             jsonb NOT NULL DEFAULT '{}'::jsonb,
+    embedding       double precision[],
+    embedding_model text,
+    embedding_dim   int,
+    updated_at      timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (tenant_id, source_id, document_ref, version, ordinal)
+);
+CREATE INDEX IF NOT EXISTS document_chunk_tenant ON document_chunk (tenant_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS document_chunk_twin ON document_chunk (tenant_id, twin_id);
+
 CREATE TABLE IF NOT EXISTS preuve (
     id          bigserial PRIMARY KEY,
     tenant_id   text NOT NULL,
@@ -85,12 +124,18 @@ ALTER TABLE claim ADD COLUMN IF NOT EXISTS origine text NOT NULL DEFAULT 'INGEST
 
 -- Fiche vivante : rédigée par le gardien à chaque commit, relue par Flore au début de chaque conversation.
 CREATE TABLE IF NOT EXISTS fiche_vivante (
-    jumeau_id text NOT NULL REFERENCES jumeau(id),
-    sha       text NOT NULL,
-    contenu   text NOT NULL,
-    cree_le   timestamptz NOT NULL DEFAULT now(),
+    jumeau_id  text NOT NULL REFERENCES jumeau(id),
+    sha        text NOT NULL,
+    contenu    text NOT NULL,
+    questions  jsonb NOT NULL DEFAULT '[]'::jsonb,
+    couverture jsonb NOT NULL DEFAULT '{}'::jsonb,
+    claims     jsonb NOT NULL DEFAULT '[]'::jsonb,
+    cree_le    timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (jumeau_id, sha)
 );
+ALTER TABLE fiche_vivante ADD COLUMN IF NOT EXISTS questions jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE fiche_vivante ADD COLUMN IF NOT EXISTS couverture jsonb NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE fiche_vivante ADD COLUMN IF NOT EXISTS claims jsonb NOT NULL DEFAULT '[]'::jsonb;
 
 -- Plusieurs dépôts par jumeau, chacun sur sa branche ; URL et référence du jeton (jamais le jeton) pour le gardien.
 ALTER TABLE source ADD COLUMN IF NOT EXISTS branche text;
@@ -99,9 +144,11 @@ ALTER TABLE source ADD COLUMN IF NOT EXISTS url text;
 ALTER TABLE source ADD COLUMN IF NOT EXISTS secret_ref text;
 -- Configuration d'une source runtime (OTLP) : url, secret_ref, environnement, fréquence ; jamais le secret brut.
 ALTER TABLE source ADD COLUMN IF NOT EXISTS configuration jsonb;
+-- Rapport d'exploration de la source : providers, volumes, couverture et inconnues (jamais un secret).
+ALTER TABLE source ADD COLUMN IF NOT EXISTS exploration jsonb;
 -- Sources branchées autres que le code (lecteurs, OTLP) : le CHECK d'origine ne connaît que GIT et DOCUMENTATION.
 ALTER TABLE source DROP CONSTRAINT IF EXISTS source_type_check;
-ALTER TABLE source ADD CONSTRAINT source_type_check CHECK (type IN ('GIT', 'DOCUMENTATION', 'CONFLUENCE', 'JIRA', 'SERVICENOW', 'DATADOG', 'OTLP'));
+ALTER TABLE source ADD CONSTRAINT source_type_check CHECK (type IN ('GIT', 'DOCUMENTATION', 'CONFLUENCE', 'SHAREPOINT', 'JIRA', 'SERVICENOW', 'DATADOG', 'OTLP', 'TEAMS'));
 
 -- Quelles sources observent encore chaque Claim : il n'est clos que quand plus aucune ne le voit.
 CREATE TABLE IF NOT EXISTS claim_source (
@@ -172,13 +219,19 @@ CREATE OR REPLACE FUNCTION systeme_de_preuve(type_preuve text, chemin text, type
     SELECT lower(coalesce(type_source, ''))
 $$ LANGUAGE sql IMMUTABLE;
 -- Les prédicats que l'ingestion **du code** peut établir (même liste que connaissance.PROUVABLES) : dépendance, route
--- exposée, variable lue, image exécutée. Pour les autres — ce que l'application fait pour le métier, les règles, les
--- acteurs, les échanges — une ligne de code ne dit rien : elle peut citer la phrase, pas l'établir.
+-- exposée, variable lue, image exécutée, les liens legacy directement lisibles sur une ligne (appel, copie,
+-- exécution, dataset, référence SQL — ADR 0026), et les liens legacy composés dont la ligne citée établit le lien
+-- (table, stockage, composant, injection, interface — ADR 0027). Pour les autres — ce que l'application fait pour le
+-- métier, les règles, les acteurs, les échanges, ou les liens legacy dont la preuve n'est pas localisée sur la bonne
+-- ligne — une ligne de code ne dit rien : elle peut citer la phrase, pas l'établir.
 -- Cette autorité est celle des sources (Sources v1 §2) : sur ce qu'elle *fait*, le code l'emporte ; sur ce qu'elle
 -- *doit faire*, la documentation l'emporte. Une hypothèse prouvée uniquement par du code reste donc M1 ; une
 -- connaissance établie par une source documentaire garde toute l'échelle, M3 compris.
 CREATE OR REPLACE FUNCTION predicat_prouvable(predicat text) RETURNS boolean AS $$
-    SELECT upper(coalesce(predicat, '')) IN ('DEPEND_DE', 'EXPOSE', 'LIT_VARIABLE', 'EXECUTE_IMAGE')
+    SELECT upper(coalesce(predicat, '')) IN (
+        'DECLARE_DEPENDANCE', 'DEPEND_DE', 'EXPOSE', 'LIT_VARIABLE', 'EXECUTE_IMAGE',
+        'APPELLE', 'COPIE', 'EXECUTE', 'LIT_DATASET', 'REFERENCE',
+        'TABLE', 'STOCKE_DANS', 'COMPOSANT_JEE', 'INJECTE', 'INTERFACE_UTILISATEUR')
 $$ LANGUAGE sql IMMUTABLE;
 -- APPLIQUE_REGLE et DETIENT sortent de M1 si la recette de forme est « ok » ET le juge dit « selon » / « recoupe »
 -- (même règle que connaissance.etabli_par_la_forme) : la forme seule ou le juge seul ne suffisent pas.
@@ -459,8 +512,18 @@ CREATE INDEX IF NOT EXISTS identity_decision_tenant_jumeau
 -- parcours, situations) est possédée par le graph store (ADR-0007).
 -- Aucune projection du même objet entre les deux stores.
 -- ---------------------------------------------------------------------------
-ALTER TABLE jumeau ADD COLUMN IF NOT EXISTS type text NOT NULL DEFAULT 'APPLICATION'
-    CHECK (type IN ('APPLICATION', 'PROCESS', 'CAPABILITY', 'JOURNEY', 'ORGANIZATION', 'PRODUCT', 'DATA_DOMAIN'));
+ALTER TABLE jumeau ADD COLUMN IF NOT EXISTS type text NOT NULL DEFAULT 'APPLICATION';
+ALTER TABLE jumeau ADD COLUMN IF NOT EXISTS application_id text;
+ALTER TABLE jumeau ADD COLUMN IF NOT EXISTS perimetre text;
+ALTER TABLE jumeau ADD COLUMN IF NOT EXISTS perimetre_id text;
+ALTER TABLE jumeau ADD COLUMN IF NOT EXISTS identifiants jsonb NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE jumeau DROP CONSTRAINT IF EXISTS jumeau_type_check;
+ALTER TABLE jumeau ADD CONSTRAINT jumeau_type_check
+    CHECK (type IN ('APPLICATION', 'PROCESS', 'CAPABILITY', 'JOURNEY', 'ORGANIZATION', 'PRODUCT',
+                    'DATA_DOMAIN', 'RESOURCE', 'SUPPLIER', 'TEAM', 'ECOSYSTEM'));
+-- L'id applicatif est une identité optionnelle : unique seulement quand il existe.
+CREATE UNIQUE INDEX IF NOT EXISTS jumeau_application_id_unique
+    ON jumeau (application_id) WHERE application_id IS NOT NULL;
 ALTER TABLE claim ADD COLUMN IF NOT EXISTS mode text NOT NULL DEFAULT 'DECLARED'
     CHECK (mode IN ('DECLARED', 'OBSERVED', 'INFERRED', 'PROPOSED', 'CONFIRMED'));
 
@@ -1241,3 +1304,155 @@ CREATE TABLE IF NOT EXISTS planification_artefact (
     cree_le     timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (tenant_id, id)
 );
+
+-- Dossier de raisonnement : la trace persistante d'un tour, au-delà du fil Mongo.
+-- Le JSONB porte les artefacts (demande, cadre, constats, options, critique, décision, validation) ;
+-- les colonnes sorties servent aux lectures et aux audits sans ouvrir le document complet.
+CREATE TABLE IF NOT EXISTS dossier_raisonnement (
+    id          text PRIMARY KEY,
+    tenant_id   text NOT NULL,
+    travail_id  text,
+    question    text NOT NULL,
+    niveau      text NOT NULL DEFAULT 'N0',
+    statut      text NOT NULL DEFAULT 'reponse',
+    fingerprint text,
+    trace_id    text,
+    dossier     jsonb NOT NULL,
+    cree_le     timestamptz NOT NULL DEFAULT now(),
+    maj_le      timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS dossier_raisonnement_tenant_maj
+    ON dossier_raisonnement (tenant_id, maj_le DESC);
+CREATE INDEX IF NOT EXISTS dossier_raisonnement_travail
+    ON dossier_raisonnement (tenant_id, travail_id, maj_le DESC);
+
+-- Calibration des croyances : confiance annoncée vs outcome observé.
+-- Une ligne non résolue n'entre pas dans le Brier ; une résolution ne modifie jamais la croyance
+-- elle-même, elle est traitée par le noyau et laisse une BeliefRevision.
+CREATE TABLE IF NOT EXISTS belief_calibration (
+    id               text PRIMARY KEY,
+    tenant_id        text NOT NULL,
+    dossier_id       text NOT NULL,
+    belief_id        text NOT NULL,
+    confidence       double precision NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
+    predicted_statut text NOT NULL,
+    outcome          boolean,
+    cree_le          timestamptz NOT NULL DEFAULT now(),
+    resolue_le       timestamptz
+);
+CREATE INDEX IF NOT EXISTS belief_calibration_tenant
+    ON belief_calibration (tenant_id, cree_le DESC);
+CREATE INDEX IF NOT EXISTS belief_calibration_dossier
+    ON belief_calibration (tenant_id, dossier_id, belief_id);
+
+-- ---------------------------------------------------------------------------
+-- Index legacy fédéré : observations des sidecars, couverture explicite par
+-- fichier et liens prouvés. Aucune Claim ici ; les lectures sont toujours
+-- bornées au couple (tenant_id, jumeau_id).
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS code_observation (
+    tenant_id      text NOT NULL,
+    jumeau_id      text NOT NULL,
+    provider       text NOT NULL,
+    parser         text NOT NULL DEFAULT '',
+    parser_version text NOT NULL DEFAULT '',
+    file           text NOT NULL,
+    language       text NOT NULL DEFAULT '',
+    kind           text NOT NULL,
+    symbol         text NOT NULL,
+    start_line     int NOT NULL DEFAULT 0 CHECK (start_line >= 0),
+    end_line       int NOT NULL DEFAULT 0 CHECK (end_line >= 0),
+    commit_sha     text NOT NULL DEFAULT '',
+    attributes     jsonb NOT NULL DEFAULT '{}'::jsonb,
+    confidence     numeric(3, 2) NOT NULL DEFAULT 1.0 CHECK (confidence >= 0 AND confidence <= 1),
+    status         text NOT NULL DEFAULT 'extracted'
+                   CHECK (status IN ('extracted', 'inferred', 'ambiguous', 'conflict')),
+    fingerprint    text NOT NULL,
+    updated_at     timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (tenant_id, jumeau_id, provider, file, kind, symbol, start_line, end_line)
+);
+CREATE INDEX IF NOT EXISTS code_observation_fichier
+    ON code_observation (tenant_id, jumeau_id, file);
+CREATE INDEX IF NOT EXISTS code_observation_kind
+    ON code_observation (tenant_id, jumeau_id, kind);
+
+CREATE TABLE IF NOT EXISTS code_coverage (
+    tenant_id  text NOT NULL,
+    jumeau_id  text NOT NULL,
+    file       text NOT NULL,
+    language   text NOT NULL DEFAULT '',
+    parser     text NOT NULL DEFAULT '',
+    status     text NOT NULL DEFAULT 'non_supporte'
+               CHECK (status IN ('indexe', 'partiel', 'non_supporte', 'ignore', 'tronque', 'conflit')),
+    reason     text NOT NULL DEFAULT '',
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, jumeau_id, file)
+);
+CREATE INDEX IF NOT EXISTS code_coverage_statut
+    ON code_coverage (tenant_id, jumeau_id, status);
+
+CREATE TABLE IF NOT EXISTS code_link (
+    tenant_id      text NOT NULL,
+    jumeau_id      text NOT NULL,
+    kind           text NOT NULL,
+    source_file    text NOT NULL,
+    source_symbol  text NOT NULL,
+    target_file    text NOT NULL,
+    target_symbol  text NOT NULL,
+    attributes     jsonb NOT NULL DEFAULT '{}'::jsonb,
+    confidence     numeric(3, 2) NOT NULL DEFAULT 1.0 CHECK (confidence >= 0 AND confidence <= 1),
+    status         text NOT NULL DEFAULT 'linked'
+                   CHECK (status IN ('linked', 'inferred', 'ambiguous')),
+    evidence       jsonb NOT NULL DEFAULT '{}'::jsonb,
+    fingerprint    text NOT NULL,
+    updated_at     timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (tenant_id, jumeau_id, kind, source_file, source_symbol, target_file, target_symbol)
+);
+CREATE INDEX IF NOT EXISTS code_link_kind
+    ON code_link (tenant_id, jumeau_id, kind);
+
+-- Partage de connaissance : un Claim reste privé par défaut ; `claim_share` est le seul acte de partage.
+-- `confidentialite` est une propriété du Claim et de sa preuve : un partage ne peut jamais élever la visibilité.
+ALTER TABLE claim ADD COLUMN IF NOT EXISTS confidentialite text NOT NULL DEFAULT 'INTERNAL'
+    CHECK (confidentialite IN ('PUBLIC', 'INTERNAL', 'CONFIDENTIAL', 'SECRET'));
+ALTER TABLE preuve ADD COLUMN IF NOT EXISTS confidentialite text NOT NULL DEFAULT 'INTERNAL'
+    CHECK (confidentialite IN ('PUBLIC', 'INTERNAL', 'CONFIDENTIAL', 'SECRET'));
+
+CREATE TABLE IF NOT EXISTS claim_share (
+    id          bigserial PRIMARY KEY,
+    tenant_id   text NOT NULL,
+    claim_id    bigint NOT NULL REFERENCES claim(id) ON DELETE CASCADE,
+    scope_type  text NOT NULL CHECK (scope_type IN ('TEAM', 'TWIN', 'PORTFOLIO', 'TENANT')),
+    scope_id    text NOT NULL,
+    projection  text NOT NULL DEFAULT 'SUMMARY' CHECK (projection IN ('SUMMARY', 'EVIDENCE')),
+    granted_by  text NOT NULL,
+    reviewed_by text,
+    valid_from  timestamptz NOT NULL DEFAULT now(),
+    valid_to    timestamptz,
+    revoked_at  timestamptz,
+    revoked_by  text,
+    reason      text,
+    created_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS claim_share_claim
+    ON claim_share (tenant_id, claim_id) WHERE revoked_at IS NULL;
+CREATE INDEX IF NOT EXISTS claim_share_scope
+    ON claim_share (tenant_id, scope_type, scope_id) WHERE revoked_at IS NULL;
+-- `EXTERNAL` est un scope opt-in : le domaine le refuse tant que JUMEAU_EXTERNAL_PUBLICATION ne l'ouvre pas.
+ALTER TABLE claim_share DROP CONSTRAINT IF EXISTS claim_share_scope_type_check;
+ALTER TABLE claim_share ADD CONSTRAINT claim_share_scope_type_check
+    CHECK (scope_type IN ('TEAM', 'TWIN', 'PORTFOLIO', 'TENANT', 'EXTERNAL'));
+
+-- Trace de revue d'une publication : qui a approuvé ou rejeté, quand et pourquoi. Le partage reste la
+-- source de vérité de la visibilité ; cette table garde la décision humaine qui l'a autorisée.
+CREATE TABLE IF NOT EXISTS publication_review (
+    id          bigserial PRIMARY KEY,
+    tenant_id   text NOT NULL,
+    share_id    bigint NOT NULL REFERENCES claim_share(id) ON DELETE CASCADE,
+    reviewer    text NOT NULL,
+    decision    text NOT NULL CHECK (decision IN ('APPROVED', 'REJECTED')),
+    reason      text,
+    reviewed_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS publication_review_tenant_share
+    ON publication_review (tenant_id, share_id);
