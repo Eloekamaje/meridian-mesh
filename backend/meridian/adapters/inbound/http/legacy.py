@@ -350,7 +350,24 @@ async def root():
 
 @api_router.get("/health")
 async def health():
+    from meridian.adapters.outbound import embeddings
+
     etat = dependances.etat()
+    try:
+        emb = embeddings.statut()
+    except Exception:
+        emb = {"semantique": False, "detail": "statut embeddings indisponible"}
+    etat["dependances"].append({
+        "nom": "embeddings",
+        "statut": "ok" if emb.get("semantique") else "absent",
+        "requis": False,
+        "requis_pour": ["retrieval sémantique", "RAG documentaire"],
+        "detail": emb.get("detail") or "provider d'embeddings non configuré",
+    })
+    if not emb.get("semantique"):
+        etat["manquantes"].append("embeddings")
+        if etat["status"] == "ok":
+            etat["status"] = "degraded"
     return {"status": etat["status"], "service": "meridian",
             "dependances": etat["dependances"], "manquantes": etat["manquantes"]}
 

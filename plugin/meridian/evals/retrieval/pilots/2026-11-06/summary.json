@@ -1,0 +1,145 @@
+{
+  "statut": {
+    "provider": "bedrock",
+    "modele": "amazon.titan-embed-text-v2:0",
+    "dimension": 1024,
+    "semantique": true,
+    "detail": "provider=bedrock modele=amazon.titan-embed-text-v2:0 region=ca-central-1"
+  },
+  "evaluation": {
+    "lexical": {
+      "n": 12,
+      "hit1": 0.75,
+      "hitk": 0.75,
+      "mrr": 0.797
+    },
+    "hybride": {
+      "n": 12,
+      "hit1": 1.0,
+      "hitk": 1.0,
+      "mrr": 1.0
+    },
+    "resultats": [
+      {
+        "id": "corriger-article",
+        "categorie": "regles",
+        "question": "Qui a le droit de corriger un texte déjà publié ?",
+        "attendu": "conduit-regles",
+        "rang_lexical": 9,
+        "rang_hybride": 1,
+        "premier_lexical": "conduit-articles",
+        "premier_hybride": "conduit-regles"
+      },
+      {
+        "id": "proteger-mots-de-passe",
+        "categorie": "securite",
+        "question": "Comment les mots de passe sont-ils protégés ?",
+        "attendu": "conduit-comptes",
+        "rang_lexical": 1,
+        "rang_hybride": 1,
+        "premier_lexical": "conduit-comptes",
+        "premier_hybride": "conduit-comptes"
+      },
+      {
+        "id": "ou-sont-les-donnees",
+        "categorie": "donnees",
+        "question": "Où sont conservées les données de l'application ?",
+        "attendu": "conduit-donnees",
+        "rang_lexical": 1,
+        "rang_hybride": 1,
+        "premier_lexical": "conduit-donnees",
+        "premier_hybride": "conduit-donnees"
+      },
+      {
+        "id": "garder-article",
+        "categorie": "parcours",
+        "question": "Comment un lecteur peut-il garder un article pour plus tard ?",
+        "attendu": "conduit-favoris",
+        "rang_lexical": 1,
+        "rang_hybride": 1,
+        "premier_lexical": "conduit-favoris",
+        "premier_hybride": "conduit-favoris"
+      },
+      {
+        "id": "titre-dans-adresse",
+        "categorie": "contenu",
+        "question": "Que devient le titre dans l'adresse d'un article ?",
+        "attendu": "conduit-articles",
+        "rang_lexical": 1,
+        "rang_hybride": 1,
+        "premier_lexical": "conduit-articles",
+        "premier_hybride": "conduit-articles"
+      },
+      {
+        "id": "prouver-identite",
+        "categorie": "securite",
+        "question": "Comment un utilisateur prouve-t-il son identité ?",
+        "attendu": "conduit-comptes",
+        "rang_lexical": 5,
+        "rang_hybride": 1,
+        "premier_lexical": "meridian-preuve",
+        "premier_hybride": "conduit-comptes"
+      },
+      {
+        "id": "bibliotheques-python",
+        "categorie": "architecture",
+        "question": "Quelles bibliothèques Python font tourner l'application ?",
+        "attendu": "conduit-dependances",
+        "rang_lexical": 4,
+        "rang_hybride": 1,
+        "premier_lexical": "conduit-articles",
+        "premier_hybride": "conduit-dependances"
+      },
+      {
+        "id": "retirer-commentaire",
+        "categorie": "interaction",
+        "question": "Qui peut retirer un commentaire ?",
+        "attendu": "conduit-commentaires",
+        "rang_lexical": 1,
+        "rang_hybride": 1,
+        "premier_lexical": "conduit-commentaires",
+        "premier_hybride": "conduit-commentaires"
+      },
+      {
+        "id": "limites-exploitation",
+        "categorie": "limites",
+        "question": "Que ne dit pas le dépôt sur l'exploitation réelle ?",
+        "attendu": "conduit-limites",
+        "rang_lexical": 1,
+        "rang_hybride": 1,
+        "premier_lexical": "conduit-limites",
+        "premier_hybride": "conduit-limites"
+      },
+      {
+        "id": "claim-sans-preuve",
+        "categorie": "epistemologie",
+        "question": "Pourquoi un claim sans preuve n'est-il pas accepté ?",
+        "attendu": "meridian-preuve",
+        "rang_lexical": 1,
+        "rang_hybride": 1,
+        "premier_lexical": "meridian-preuve",
+        "premier_hybride": "meridian-preuve"
+      },
+      {
+        "id": "role-du-mesh",
+        "categorie": "architecture",
+        "question": "Quel est le rôle du Mesh dans Méridian ?",
+        "attendu": "meridian-mesh",
+        "rang_lexical": 1,
+        "rang_hybride": 1,
+        "premier_lexical": "meridian-mesh",
+        "premier_hybride": "meridian-mesh"
+      },
+      {
+        "id": "usages-sociaux",
+        "categorie": "parcours",
+        "question": "Quels usages sociaux propose la plateforme ?",
+        "attendu": "conduit-plateforme",
+        "rang_lexical": 1,
+        "rang_hybride": 1,
+        "premier_lexical": "conduit-plateforme",
+        "premier_hybride": "conduit-plateforme"
+      }
+    ]
+  }
+}

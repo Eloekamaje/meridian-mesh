@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import os
 
-__all__ = ["EmbeddingIndisponible", "embed", "modele"]
+__all__ = ["EmbeddingIndisponible", "embed", "modele", "statut"]
 
 
 class EmbeddingIndisponible(RuntimeError):
@@ -30,6 +30,41 @@ def modele() -> str:
     if provider == "openai" and os.getenv("OPENAI_API_KEY"):
         return os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
     return "lexical-only"
+
+
+def statut() -> dict:
+    """État lisible du retrieval sémantique, sans appel réseau ni secret."""
+    provider = _provider()
+    modele_id = modele()
+    dimension = 0
+    if modele_id != "lexical-only":
+        if provider == "bedrock":
+            dimension = int(os.getenv("BEDROCK_EMBEDDING_DIMENSIONS", "1024"))
+        elif provider == "openai":
+            dimension = 1536
+    disponible = False
+    detail = "retrieval lexical + graphe seulement"
+    if modele_id != "lexical-only":
+        try:
+            if provider == "bedrock":
+                from meridian.adapters.outbound import bedrock_router
+                disponible = bedrock_router.session().get_credentials() is not None
+                detail = f"provider=bedrock modele={modele_id} region={bedrock_router.region()}"
+            elif provider == "openai":
+                disponible = bool(os.getenv("OPENAI_API_KEY"))
+                detail = f"provider=openai modele={modele_id}"
+        except Exception:
+            disponible = False
+            detail = f"provider={provider} credentials indisponibles"
+    if modele_id == "lexical-only":
+        detail = "aucun provider d'embeddings configuré"
+    return {
+        "provider": provider,
+        "modele": modele_id,
+        "dimension": dimension,
+        "semantique": disponible,
+        "detail": detail,
+    }
 
 
 def _openai(textes: list[str]) -> list[list[float]]:

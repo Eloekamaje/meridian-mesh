@@ -76,3 +76,39 @@ Les dimensions ne sont pas mélangeables :
 - OpenAI `text-embedding-3-small` : 1536.
 
 Après un changement de modèle, vider `document_chunk` et relancer le backfill.
+
+## Mise en service locale (Bedrock Titan)
+
+```bash
+# 1. Colonnes d'embedding sur une base existante
+backend/.venv/bin/python scripts/migrer-document-chunk.py
+
+# 2. Vérifier le provider et les similarités de paraphrases
+backend/.venv/bin/python scripts/verifier-embeddings.py
+
+# 3. Ré-embedder les chunks absents ou d'un autre modèle
+backend/.venv/bin/python scripts/reembedder-documentation.py --tenant demo
+
+# 4. Mesurer lexical vs hybride
+backend/.venv/bin/python plugin/meridian/evals/retrieval/run.py --output /tmp/retrieval
+```
+
+`/api/health` expose une dépendance `embeddings` avec `provider`, `modele`, `dimension`
+et `semantique`. Sans provider, le retrieval continue en lexical + graphe et le statut
+est `absent` ; aucune erreur silencieuse : `chunk_store` journalise désormais les échecs
+d'indexation, de recherche et d'ACL.
+
+Le pilote local 2026-11-06 (Titan V2, 1024 dimensions) passe de **75 % à 100 % de
+Hit@1** et de **0,797 à 1,000 de MRR** sur 12 requêtes paraphrasées. Détail :
+`plugin/meridian/evals/retrieval/PILOT-2026-11-06.md`.
+
+## Accès chat et embeddings : deux vérifications distinctes
+
+Les embeddings Titan ont été validés en `ca-central-1` (1024 dimensions). L'accès aux
+modèles de **chat** est indépendant : sur le compte réel, `ca.amazon.nova-lite-v1:0`
+fonctionne en streaming et avec tool use, tandis que les modèles Anthropic sont bloqués
+par le formulaire d'usage ou l'instrument de paiement Marketplace. Voir
+[`aws-bedrock-target.md`](aws-bedrock-target.md)
+et le pilote [`PILOT-2026-11-06-bedrock.md`](../../plugin/meridian/evals/conversations/PILOT-2026-11-06-bedrock.md).
+
+Floci ne remplace pas cette vérification : son Bedrock Runtime est un stub.

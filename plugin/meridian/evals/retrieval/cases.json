@@ -1,0 +1,157 @@
+{
+  "schema": "meridian.retrieval/1",
+  "description": "Benchmark de retrieval documentaire : lexical + graphe vs hybride avec embeddings Bedrock. Les textes sont synthétiques et portent sur Conduit et Méridian.",
+  "chunks": [
+    {
+      "id": "conduit-plateforme",
+      "titre": "Conduit — plateforme éditoriale",
+      "section": "Vue d'ensemble",
+      "texte": "Conduit est une plateforme éditoriale : des auteurs publient des articles, des lecteurs les consultent, les commentent, les mettent en favori et suivent leurs auteurs. Elle gère aussi les comptes, les profils et les mots-clés.",
+      "twin_id": "conduit"
+    },
+    {
+      "id": "conduit-comptes",
+      "titre": "Conduit — comptes et authentification",
+      "section": "Sécurité",
+      "texte": "Les comptes sont protégés par un mot de passe haché avec bcrypt via passlib. L'authentification vérifie l'adresse électronique et le mot de passe, puis remet un jeton JWT d'une semaine. Un refresh permet de renouveler la session.",
+      "twin_id": "conduit"
+    },
+    {
+      "id": "conduit-articles",
+      "titre": "Conduit — articles et adresses",
+      "section": "Contenu",
+      "texte": "Un article possède un titre, une description et un corps. Son adresse publique est un slug dérivé du titre ; deux titres identiques produisent une adresse unique. L'auteur peut modifier le contenu et les mots-clés.",
+      "twin_id": "conduit"
+    },
+    {
+      "id": "conduit-regles",
+      "titre": "Conduit — règles métier",
+      "section": "Règles",
+      "texte": "Seul l'auteur peut modifier ou supprimer son article. Le nom public et l'adresse électronique sont uniques. Un article ne peut être mis en favori qu'une fois par lecteur ; un auteur ne peut pas s'abonner à lui-même ni suivre deux fois la même personne.",
+      "twin_id": "conduit"
+    },
+    {
+      "id": "conduit-favoris",
+      "titre": "Conduit — favoris et fil personnel",
+      "section": "Parcours lecteur",
+      "texte": "Un lecteur peut conserver un article dans ses favoris pour le retrouver plus tard. Les favoris et les auteurs suivis alimentent un fil d'actualité personnel, filtrable par mot-clé ou auteur.",
+      "twin_id": "conduit"
+    },
+    {
+      "id": "conduit-commentaires",
+      "titre": "Conduit — commentaires",
+      "section": "Interaction",
+      "texte": "Les commentaires sont attachés à un article et visibles sous celui-ci. Leur auteur peut les retirer ; un administrateur peut aussi les supprimer. Les commentaires ne sont pas des articles et ne modifient pas le slug.",
+      "twin_id": "conduit"
+    },
+    {
+      "id": "conduit-dependances",
+      "titre": "Conduit — dépendances techniques",
+      "section": "Architecture",
+      "texte": "Conduit utilise FastAPI et Uvicorn pour le service web, Pydantic pour la validation, databases et asyncpg pour PostgreSQL, Alembic pour les migrations, Passlib et bcrypt pour les mots de passe, PyJWT pour les jetons et Loguru pour les journaux.",
+      "twin_id": "conduit"
+    },
+    {
+      "id": "conduit-donnees",
+      "titre": "Conduit — données conservées",
+      "section": "Données",
+      "texte": "PostgreSQL conserve les comptes, les articles, les commentaires, les mots-clés, les favoris et les abonnements. Aucun entrepôt d'audience ni journal de connexions n'est présent dans le schéma décrit.",
+      "twin_id": "conduit"
+    },
+    {
+      "id": "conduit-limites",
+      "titre": "Conduit — ce que le dépôt ne dit pas",
+      "section": "Limites",
+      "texte": "Le dépôt ne contient pas l'hébergement réel, les volumes traités, les consommateurs de l'API, la version déployée ni la criticité pour l'entreprise. Ces points doivent être confirmés par l'exploitation et l'équipe Contenus.",
+      "twin_id": "conduit"
+    },
+    {
+      "id": "meridian-mesh",
+      "titre": "Méridian — rôle du Mesh",
+      "section": "Architecture",
+      "texte": "Méridian relie des jumeaux, des claims et des preuves. Le Mesh est une couche de compréhension et de confrontation ; il n'est ni une source première ni un outil de vérification. Les humains gouvernent les décisions.",
+      "twin_id": "meridian"
+    },
+    {
+      "id": "meridian-preuve",
+      "titre": "Méridian — claims et preuves",
+      "section": "Épistémologie",
+      "texte": "Un claim sans preuve localisée reste une inconnue. Une preuve porte le dépôt, le fichier, les lignes et un hash de citation. Une validation d'interface ne prouve pas la protection serveur, et une dépendance déclarée ne prouve pas son usage.",
+      "twin_id": "meridian"
+    }
+  ],
+  "queries": [
+    {
+      "id": "corriger-article",
+      "question": "Qui a le droit de corriger un texte déjà publié ?",
+      "attendu": "conduit-regles",
+      "categorie": "regles"
+    },
+    {
+      "id": "proteger-mots-de-passe",
+      "question": "Comment les mots de passe sont-ils protégés ?",
+      "attendu": "conduit-comptes",
+      "categorie": "securite"
+    },
+    {
+      "id": "ou-sont-les-donnees",
+      "question": "Où sont conservées les données de l'application ?",
+      "attendu": "conduit-donnees",
+      "categorie": "donnees"
+    },
+    {
+      "id": "garder-article",
+      "question": "Comment un lecteur peut-il garder un article pour plus tard ?",
+      "attendu": "conduit-favoris",
+      "categorie": "parcours"
+    },
+    {
+      "id": "titre-dans-adresse",
+      "question": "Que devient le titre dans l'adresse d'un article ?",
+      "attendu": "conduit-articles",
+      "categorie": "contenu"
+    },
+    {
+      "id": "prouver-identite",
+      "question": "Comment un utilisateur prouve-t-il son identité ?",
+      "attendu": "conduit-comptes",
+      "categorie": "securite"
+    },
+    {
+      "id": "bibliotheques-python",
+      "question": "Quelles bibliothèques Python font tourner l'application ?",
+      "attendu": "conduit-dependances",
+      "categorie": "architecture"
+    },
+    {
+      "id": "retirer-commentaire",
+      "question": "Qui peut retirer un commentaire ?",
+      "attendu": "conduit-commentaires",
+      "categorie": "interaction"
+    },
+    {
+      "id": "limites-exploitation",
+      "question": "Que ne dit pas le dépôt sur l'exploitation réelle ?",
+      "attendu": "conduit-limites",
+      "categorie": "limites"
+    },
+    {
+      "id": "claim-sans-preuve",
+      "question": "Pourquoi un claim sans preuve n'est-il pas accepté ?",
+      "attendu": "meridian-preuve",
+      "categorie": "epistemologie"
+    },
+    {
+      "id": "role-du-mesh",
+      "question": "Quel est le rôle du Mesh dans Méridian ?",
+      "attendu": "meridian-mesh",
+      "categorie": "architecture"
+    },
+    {
+      "id": "usages-sociaux",
+      "question": "Quels usages sociaux propose la plateforme ?",
+      "attendu": "conduit-plateforme",
+      "categorie": "parcours"
+    }
+  ]
+}
