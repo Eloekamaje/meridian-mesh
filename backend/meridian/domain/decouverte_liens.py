@@ -72,6 +72,19 @@ def _instant(valeur) -> str:
     return texte
 
 
+def _instant_optionnel(valeur, champ: str) -> str:
+    texte = str(valeur or "").strip()
+    if not texte:
+        return ""
+    try:
+        instant = datetime.fromisoformat(texte.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError(f"{champ} : date ISO attendue") from exc
+    if instant.tzinfo is None:
+        raise ValueError(f"{champ} : fuseau horaire attendu")
+    return instant.astimezone(timezone.utc).isoformat(timespec="seconds")
+
+
 def _identifiant(valeur, prefixe="resolution") -> str:
     texte = _texte(valeur, "identifiant", 1000)
     return f"{prefixe}-{hashlib.sha256(texte.encode('utf-8')).hexdigest()[:16]}"
@@ -238,6 +251,7 @@ class ResolutionCase:
     status: str = "open"
     missing_evidence: str = ""
     next_check: str = ""
+    next_check_at: str = ""
     owner: str = ""
     attempts: int = 0
     created_at: str = ""
@@ -258,6 +272,8 @@ class ResolutionCase:
             self.missing_evidence, "missing_evidence", 1000, obligatoire=False))
         object.__setattr__(self, "next_check", _texte(
             self.next_check, "next_check", 1000, obligatoire=False))
+        object.__setattr__(self, "next_check_at", _instant_optionnel(
+            self.next_check_at, "next_check_at"))
         object.__setattr__(self, "owner", _texte(self.owner, "owner", 200, obligatoire=False))
         object.__setattr__(self, "attempts", max(0, int(self.attempts or 0)))
         object.__setattr__(self, "created_at", _instant(self.created_at))
@@ -278,6 +294,7 @@ class ResolutionCase:
             "twin_id": self.twin_id, "reference": self.reference,
             "environment": self.environment, "status": self.status,
             "missing_evidence": self.missing_evidence, "next_check": self.next_check,
+            "next_check_at": self.next_check_at,
             "owner": self.owner, "attempts": self.attempts,
             "created_at": self.created_at, "updated_at": self.updated_at,
             "evidence_ids": list(self.evidence_ids), "candidates": list(self.candidates),
@@ -290,6 +307,6 @@ class ResolutionCase:
             raise ValueError("cas de résolution : objet attendu")
         return cls(**{cle: valeur.get(cle) for cle in (
             "tenant_id", "twin_id", "reference", "environment", "status",
-            "missing_evidence", "next_check", "owner", "attempts",
+            "missing_evidence", "next_check", "next_check_at", "owner", "attempts",
             "created_at", "updated_at", "evidence_ids", "candidates",
             "target_twin_id", "resolved_at", "id")})

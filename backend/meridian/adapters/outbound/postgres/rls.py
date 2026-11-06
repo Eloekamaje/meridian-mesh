@@ -84,6 +84,7 @@ TABLES = (
     "outil_audit",
     "valeur",
     "memoire_durable",
+    "memoire_prospective",
     "prediction_calibration",
     "execution_run",
     "execution_evenement",

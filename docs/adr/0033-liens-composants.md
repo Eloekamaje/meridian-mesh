@@ -164,6 +164,10 @@ rien : elle transporte les preuves, la portée, les inconnues et la prochaine v�
 | `backend/meridian/adapters/outbound/connectors/corpus_liens.py` | chargement d'un corpus JSON et des racines locales |
 | `backend/meridian/adapters/outbound/postgres/decouverte_naissance.py` | `twin.born` local, réingestion et réconciliation globale |
 | `backend/meridian/adapters/outbound/connectors/ingerer.py` | ingestion Git/CBM et rafraîchissement des liens du Twin |
+| `backend/meridian/domain/memoire_prospective.py` | intentions, échéances, priorités et statuts |
+| `backend/meridian/adapters/outbound/postgres/memoire_prospective.py` | store, échéances dues, clôture, report et purge |
+| `backend/meridian/adapters/outbound/postgres/outcomes.py` | réutilisation mesurée des Learnings et métriques |
+| `backend/meridian/adapters/outbound/postgres/retrieval_memoire.py` | retrieval des intentions dues et statistiques de réutilisation |
 | `backend/meridian/adapters/inbound/worker/reconciliation_worker.py` | boucle de réconciliation, arrêt propre |
 | `backend/meridian/adapters/outbound/connectors/java_source.py` | `extraire(fichier, texte)` réutilisable sans disque |
 | `scripts/decouvrir-liens-composants.py` | CLI multi-dépôts, niveaux de sources, JSON, sans base |
@@ -172,7 +176,10 @@ rien : elle transporte les preuves, la portée, les inconnues et la prochaine v�
 | `scripts/worker-reconciliation.py` | worker périodique, dry-run ou `--apply` |
 | `scripts/meridian-reconciliation-worker.service` | unité systemd de réconciliation |
 | `backend/meridian/tests/test_moteur_liens.py` | jeu d'or de quatorze cas |
-| `backend/meridian/tests/test_decouverte_naissance.py` | dix cas : naissance locale, CBM, lecture bornée, réingestion et réconciliation globale |
+| `backend/meridian/tests/test_decouverte_naissance.py` | onze cas : naissance locale, CBM, lecture bornée, réingestion et réconciliation globale |
+| `backend/meridian/tests/test_memoire_prospective.py` | six cas : contrat, échéances, clôture, report et purge |
+| `backend/meridian/tests/test_outcomes.py` | neuf cas : outcomes, Learnings et réutilisation mesurée |
+| `backend/meridian/tests/test_retrieval_memoire.py` | dix-huit cas : sources, intentions dues, classement et secrets |
 | `backend/meridian/tests/test_politique_decouverte.py` | sept cas de politique de sources |
 | `backend/meridian/tests/test_evaluation_liens.py` | trois cas de mesure |
 | `backend/meridian/tests/test_corpus_liens.py` | trois cas de corpus labellisé |
@@ -261,7 +268,9 @@ Le fixture vérifie :
 37. namespace Kubernetes et chemin backend des rewrites d'ingress modélisés ;
 38. JNDI extrait depuis `@Resource`/`@EJB` et relié aux listeners JMS/KAFKA par binding ;
 39. pas de store dédié aux liens tant que les objets d'entreprise suffisent ;
-40. rafraîchissement incrémental par `reconcilier_twin` après réingestion et par `twin.born` à la naissance, réconciliation globale périodique.
+40. rafraîchissement incrémental par `reconcilier_twin` après réingestion et par `twin.born` à la naissance, réconciliation globale périodique ;
+41. mémoire prospective unifiée (`Intention`) reliant cas, échéances et retrieval ;
+42. réutilisation des Learnings mesurée par résultat, outcome et preuves, avec métriques.
 
 ---
 

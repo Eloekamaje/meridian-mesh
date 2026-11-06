@@ -79,6 +79,32 @@ def test_revue_d_une_relation_retourne_l_etat(monkeypatch):
     assert r.json()["relation"]["state"] == "confirmee"
 
 
+def test_creer_et_lister_une_intention(monkeypatch):
+    async def creer(tenant, action):
+        return {"id": "intention-1", "objet": "vérifier le certificat",
+                "statut": "a_faire", "echeance": "2026-11-10T09:00:00+00:00"}
+
+    monkeypatch.setattr(cognitif, "_avec_connexion", creer)
+    r = _client().post(
+        "/api/boucle/intentions",
+        json={"objet": "vérifier le certificat",
+              "echeance": "2026-11-10T09:00:00+00:00"},
+        headers={"X-Tenant": "banque"})
+
+    assert r.status_code == 201, r.text
+    assert r.json()["intention"]["id"] == "intention-1"
+
+    async def lister(tenant, action):
+        return [{"id": "intention-1", "objet": "vérifier le certificat",
+                 "statut": "a_faire"}]
+
+    monkeypatch.setattr(cognitif, "_avec_connexion", lister)
+    r = _client().get("/api/boucle/intentions", headers={"X-Tenant": "banque"})
+
+    assert r.status_code == 200, r.text
+    assert r.json()["intentions"][0]["id"] == "intention-1"
+
+
 def test_lister_les_resolutions_utilise_le_tenant(monkeypatch):
     vus = {}
 

@@ -682,6 +682,31 @@ CREATE TABLE IF NOT EXISTS memoire_durable (
 CREATE INDEX IF NOT EXISTS memoire_durable_scope ON memoire_durable (tenant_id, scope, scope_id);
 CREATE INDEX IF NOT EXISTS memoire_durable_expire ON memoire_durable (tenant_id, expire_le);
 
+-- Mémoire prospective : intentions datées, distinctes des souvenirs du passé.
+CREATE TABLE IF NOT EXISTS memoire_prospective (
+    tenant_id    text NOT NULL,
+    id           text NOT NULL,
+    scope        text NOT NULL CHECK (scope IN ('tenant', 'user', 'session', 'twin', 'situation')),
+    scope_id     text NOT NULL DEFAULT '',
+    objet        text NOT NULL,
+    echeance     timestamptz NOT NULL,
+    source       text NOT NULL DEFAULT '',
+    owner        text NOT NULL DEFAULT '',
+    statut       text NOT NULL DEFAULT 'a_faire'
+                 CHECK (statut IN ('a_faire', 'en_cours', 'fait', 'annule', 'expire')),
+    priorite     text NOT NULL DEFAULT 'normale'
+                 CHECK (priorite IN ('basse', 'normale', 'haute', 'critique')),
+    evidence_ids jsonb NOT NULL DEFAULT '[]'::jsonb,
+    donnees      jsonb NOT NULL DEFAULT '{}'::jsonb,
+    cree_le      timestamptz NOT NULL DEFAULT now(),
+    maj_le       timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, id)
+);
+CREATE INDEX IF NOT EXISTS memoire_prospective_echeance
+    ON memoire_prospective (tenant_id, statut, echeance);
+CREATE INDEX IF NOT EXISTS memoire_prospective_scope
+    ON memoire_prospective (tenant_id, scope, scope_id);
+
 -- ---------------------------------------------------------------------------
 -- Calibration : confiance annoncée et outcome observé d'une décision.
 -- ---------------------------------------------------------------------------

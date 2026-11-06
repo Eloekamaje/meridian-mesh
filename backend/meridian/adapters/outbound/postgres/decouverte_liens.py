@@ -7,20 +7,22 @@ et reprenable.
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import datetime, timezone
-
-from psycopg.rows import dict_row
+from datetime import datetime, timedelta, timezone
 
 from meridian.adapters.outbound.postgres import entreprise_depot
+from meridian.adapters.outbound.postgres import memoire_prospective
 from meridian.adapters.outbound.postgres import relations_naissance as relations_pg
 from meridian.application import decouverte_liens as resolution
 from meridian.domain.decouverte_liens import Binding, ResolutionCase
+from meridian.domain.memoire_prospective import Intention
 from meridian.domain.naissance_relationnelle import Consommation, PropositionRelation
 
 _FAMILLE_BINDING = "sources_preuves"
 _TYPE_BINDING = "ARTIFACT"
 _FAMILLE_CASE = "connaissance"
 _TYPE_CASE = "UNKNOWN"
+DELAI_CASE = timedelta(days=7)
+DELAI_REEVALUATION = timedelta(days=1)
 
 
 def _identifiant_binding(tenant_id: str, binding: Binding) -> str:
@@ -56,12 +58,49 @@ def lire_bindings(conn, tenant_id: str, *, environment: str | None = None,
     return sortie
 
 
+def _synchroniser_intention(conn, case: ResolutionCase) -> None:
+    """Une échéance de cas devient une intention ; la clôture du cas clôt le rappel."""
+    source = f"case:{case.id}"
+    existantes = memoire_prospective.lister(
+        conn, case.tenant_id, scope="twin", scope_id=case.twin_id,
+        source=source, limite=100)
+    ouvertes = [ligne for ligne in existantes
+                if ligne.get("statut") in ("a_faire", "en_cours")]
+    if case.status != "open" or not case.next_check_at:
+        statut = "fait" if case.status == "resolved" else "annule"
+        for ligne in ouvertes:
+            memoire_prospective.clore(
+                conn, case.tenant_id, ligne["id"], statut=statut,
+                acteur="resolution-case", motif=f"cas {case.status}")
+        return
+    intention = Intention(
+        tenant_id=case.tenant_id,
+        objet=case.next_check or f"Résoudre {case.reference}",
+        echeance=case.next_check_at,
+        scope="twin", scope_id=case.twin_id, source=source,
+        owner=case.owner, evidence_ids=case.evidence_ids,
+        donnees={"case_id": case.id, "reference": case.reference,
+                 "environment": case.environment},
+    )
+    for ligne in ouvertes:
+        if ligne["id"] != intention.id:
+            memoire_prospective.clore(
+                conn, case.tenant_id, ligne["id"], statut="annule",
+                acteur="resolution-case", motif="échéance remplacée")
+    memoire_prospective.creer(conn, intention)
+
+
 def enregistrer_resolution_case(conn, case: ResolutionCase) -> dict:
-    return entreprise_depot.enregistrer_objet(conn, case.tenant_id, {
+    if case.status == "open" and case.next_check and not case.next_check_at:
+        case = replace(case, next_check_at=(
+            datetime.now(timezone.utc) + DELAI_CASE).isoformat(timespec="seconds"))
+    resultat = entreprise_depot.enregistrer_objet(conn, case.tenant_id, {
         "id": case.id, "famille": _FAMILLE_CASE, "type": _TYPE_CASE, "mode": "PROPOSED",
         "titre": f"Résolution ouverte — {case.reference}",
         "donnees": case.as_dict(),
     })
+    _synchroniser_intention(conn, case)
+    return resultat
 
 
 def lire_resolution_case(conn, tenant_id: str, case_id: str) -> ResolutionCase:
@@ -108,6 +147,7 @@ def resoudre_case(conn, tenant_id: str, case_id: str, *,
     case = ResolutionCase.depuis_dict(donnees)
     resolue = replace(case, status="resolved", attempts=case.attempts + 1,
                       target_twin_id=target_twin_id or case.target_twin_id,
+                      next_check_at="",
                       resolved_at=datetime.now(timezone.utc).isoformat(),
                       updated_at=datetime.now(timezone.utc).isoformat(),
                       evidence_ids=tuple(dict.fromkeys([*case.evidence_ids,
@@ -178,8 +218,12 @@ def revoir_case(conn, tenant_id: str, case_id: str, candidate_id: str, decision:
             case = replace(
                 case, status="open", target_twin_id="", resolved_at="",
                 next_check=verification.next_check or "binding accepté mais destination non résolue",
+                next_check_at=(datetime.now(timezone.utc) + DELAI_REEVALUATION
+                               ).isoformat(timespec="seconds"),
                 updated_at=datetime.now(timezone.utc).isoformat())
         else:
             relation = _proposition_depuis_case(conn, tenant_id, case)
+    if case.status == "resolved":
+        case = replace(case, next_check_at="")
     enregistrer_resolution_case(conn, case)
     return {**case.as_dict(), "relation": relation}

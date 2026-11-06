@@ -39,6 +39,7 @@ from meridian.adapters.outbound.postgres import connaissance
 from meridian.adapters.outbound.postgres import depot
 from meridian.adapters.outbound.postgres import entreprise_depot
 from meridian.adapters.outbound.postgres import memoire_durable
+from meridian.adapters.outbound.postgres import memoire_prospective
 from meridian.domain import tenant as tenant_module
 
 __all__ = [
@@ -48,15 +49,16 @@ __all__ = [
     "recuperer",
 ]
 
-SOURCES = ("durable", "annotation", "learning", "claim")
+SOURCES = ("durable", "annotation", "learning", "claim", "intention")
 _MAX_DURABLE = 100
 _MAX_OBJETS = 200
 _MAX_CLAIMS = 100
 _MAX_CANDIDATS = 100
 _MAX_AJOUTS = 100
-_AUTORITE = {"claim": 1.0, "learning": 0.9, "annotation": 0.6, "durable": 0.5}
-_CONFIANCE_DEFAUT = {"durable": 0.5, "annotation": 0.5, "learning": 0.8, "claim": 0.5}
-_ORDRE_SOURCE = {"claim": 0, "learning": 1, "annotation": 2, "durable": 3}
+_AUTORITE = {"claim": 1.0, "learning": 0.9, "intention": 0.7, "annotation": 0.6, "durable": 0.5}
+_CONFIANCE_DEFAUT = {"durable": 0.5, "annotation": 0.5, "learning": 0.8,
+                     "claim": 0.5, "intention": 0.7}
+_ORDRE_SOURCE = {"claim": 0, "learning": 1, "intention": 2, "annotation": 3, "durable": 4}
 
 _MARQUEURS_SECRETS = ("password", "passwd", "secret", "token", "credential", "authorization")
 _CLES_SECRETES = frozenset({
@@ -451,6 +453,19 @@ def _candidats_learnings(
             continue
         scope, scope_id = _portee(
             liens_situations, liens_twins, twin_ids, situation_id, "learning")
+        reutilisations = [
+            entree for entree in (donnees.get("reutilisations") or ())
+            if isinstance(entree, Mapping)]
+        succes = sum(_texte(entree.get("resultat")).lower() == "succes"
+                     for entree in reutilisations)
+        echecs = sum(_texte(entree.get("resultat")).lower() == "echec"
+                     for entree in reutilisations)
+        donnees_candidat = _assainir_donnees(donnees)
+        donnees_candidat["reutilisation"] = {
+            "nombre": len(reutilisations), "succes": succes, "echecs": echecs,
+            "inconnus": len(reutilisations) - succes - echecs,
+            "taux_succes": (succes / (succes + echecs)) if succes + echecs else None,
+        }
         resultat.append({
             "id": _texte(ligne.get("id")),
             "source": "learning",
@@ -463,8 +478,47 @@ def _candidats_learnings(
             "confiance": _confiance(donnees.get("confiance"), _CONFIANCE_DEFAUT["learning"]),
             "preuves": _preuves(donnees.get("preuve_ids"), donnees.get("preuves"),
                                 donnees.get("preuve")),
-            "donnees": _assainir_donnees(donnees),
+            "donnees": donnees_candidat,
             "recence": _recence_ligne(ligne),
+        })
+    return resultat
+
+
+def _candidats_intentions(
+    conn: Any, tenant: str, tokens: set[str], twin_ids: set[str],
+    situation_id: str | None,
+) -> list[dict]:
+    resultat: list[dict] = []
+    for ligne in memoire_prospective.echeances(conn, tenant, limite=_MAX_OBJETS):
+        contenu = _texte(ligne.get("objet"))
+        scope = _texte(ligne.get("scope")) or "tenant"
+        scope_id = _texte(ligne.get("scope_id"))
+        ancre = ((scope == "situation" and situation_id and scope_id == situation_id)
+                 or (scope == "twin" and scope_id in twin_ids))
+        texte = _normaliser(" ".join((
+            contenu, _texte(ligne.get("source")), scope_id,
+            _json_stable(ligne.get("donnees") or {}),
+        )))
+        if tokens and not _couverture(tokens, texte) and not ancre:
+            continue
+        resultat.append({
+            "id": f"intention:{_texte(ligne.get('id'))}",
+            "source": "intention",
+            "classe": "intention",
+            "contenu": _assainir_texte(contenu),
+            "provenance": _assainir_texte(_texte(ligne.get("source")) or "intention"),
+            "scope": scope,
+            "scope_id": scope_id,
+            "confiance": _CONFIANCE_DEFAUT["intention"],
+            "preuves": tuple(ligne.get("evidence_ids") or ()),
+            "donnees": {
+                "echeance": _texte(ligne.get("echeance")),
+                "statut": _texte(ligne.get("statut")),
+                "priorite": _texte(ligne.get("priorite")),
+                "source": _texte(ligne.get("source")),
+            },
+            "recence": (_instant(ligne.get("updated_at"))
+                        or _instant(ligne.get("created_at"))),
         })
     return resultat
 
@@ -768,6 +822,7 @@ def recuperer(
     bruts.extend(_candidats_durables(conn, tenant, tokens, scope_valide, scope_id_valide))
     bruts.extend(_candidats_annotations(conn, tenant, tokens, twins, situation))
     bruts.extend(_candidats_learnings(conn, tenant, tokens, twins, situation))
+    bruts.extend(_candidats_intentions(conn, tenant, tokens, twins, situation))
     bruts.extend(_candidats_claims(conn, tenant, twins_liste, consommateur, proprietaire))
     return _classer(
         _dedupliquer(bruts), texte_question, scope=scope_valide, scope_id=scope_id_valide,

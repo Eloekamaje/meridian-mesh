@@ -24,6 +24,7 @@ __all__ = [
     "mesurer_et_capitaliser",
     "learnings_pour",
     "marquer_reutilise",
+    "metriques_reutilisation",
 ]
 
 _CHAMPS_TABLE = frozenset({
@@ -318,18 +319,24 @@ def learnings_pour(
 
 
 def marquer_reutilise(
-    conn: Any, tenant_id: Any, learning_id: Any, situation_id: Any, acteur: Any,
+    conn: Any, tenant_id: Any, learning_id: Any, situation_id: Any, acteur: Any, *,
+    resultat: Any = "inconnu", outcome_id: Any = None, preuve_ids: Any = (),
 ) -> dict:
-    """Ajoute une trace de réutilisation dans ``donnees`` sans modifier le sens canonique du Learning.
+    """Ajoute une trace de réutilisation mesurable dans ``donnees``.
 
-    Le dépôt canonique accepte la mise à jour complète d'un objet : les champs du Learning sont préservés et
-    seule la liste ``reutilisations`` est complétée. La situation peut être une situation nouvelle pas encore
-    persistée ; si elle existe dans le tenant, son type est vérifié.
+    Le dépôt canonique accepte la mise à jour complète d'un objet : les champs du
+    Learning sont préservés et seule la liste ``reutilisations`` est complétée.
+    ``resultat`` vaut ``succes``, ``echec`` ou ``inconnu`` ; ``outcome_id`` et
+    ``preuve_ids`` gardent le lien vers la mesure et ses preuves.
     """
     tenant = _tenant(tenant_id)
     identifiant = _texte_obligatoire(learning_id, "learning_id")
     situation = _texte_obligatoire(situation_id, "situation_id")
     acteur_final = _texte_obligatoire(acteur, "acteur")
+    resultat_final = _texte(resultat).lower() or "inconnu"
+    if resultat_final not in ("succes", "echec", "inconnu"):
+        raise ReutilisationRefusee(
+            "resultat attendu : succes, echec ou inconnu")
 
     learning = entreprise_depot.lire_objet(conn, tenant, identifiant)
     if learning is None:
@@ -346,6 +353,13 @@ def marquer_reutilise(
             f"(reçu {_texte(situation_lue.get('type')) or 'inconnu'})"
         )
 
+    outcome_final = _texte(outcome_id) or None
+    if outcome_final is not None:
+        outcome = entreprise_depot.lire_objet(conn, tenant, outcome_final)
+        if outcome is None or _texte(outcome.get("type")).upper() != "OUTCOME":
+            raise ReutilisationRefusee(
+                f"l'objet {outcome_final} n'est pas un OUTCOME du tenant")
+
     donnees = dict(_donnees(learning))
     existantes = donnees.get("reutilisations")
     reutilisations = list(existantes) if isinstance(existantes, (list, tuple)) else []
@@ -353,10 +367,69 @@ def marquer_reutilise(
         "situation_id": situation,
         "acteur": acteur_final,
         "le": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "resultat": resultat_final,
     }
+    if outcome_final:
+        entree["outcome_id"] = outcome_final
+    preuves = _liste_textes(preuve_ids)
+    if preuves:
+        entree["preuve_ids"] = preuves
     reutilisations.append(entree)
     donnees["reutilisations"] = reutilisations
 
     payload = {cle: valeur for cle, valeur in learning.items() if cle != "version"}
     payload["donnees"] = donnees
     return entreprise_depot.enregistrer_objet(conn, tenant, payload)
+
+
+def metriques_reutilisation(
+    conn: Any, tenant_id: Any, *, learning_id: Any = None, limite: Any = 100,
+) -> dict:
+    """Compte les réutilisations mesurées, par Learning et au total.
+
+    ``taux_succes`` ne porte que sur les réutilisations dont le résultat est
+    ``succes`` ou ``echec`` ; les réutilisations ``inconnu`` restent visibles mais
+    ne sont pas transformées en succès.
+    """
+    tenant = _tenant(tenant_id)
+    borne = _limite(limite)
+    identifiant = _texte(learning_id) or None
+    if identifiant:
+        ligne = entreprise_depot.lire_objet(conn, tenant, identifiant)
+        lignes = [ligne] if ligne is not None else []
+    else:
+        lignes = entreprise_depot.lister_objets(
+            conn, tenant, type_="LEARNING", limite=_MAX_LECTURE)
+    details = []
+    totaux = {"reutilisations": 0, "succes": 0, "echecs": 0, "inconnus": 0}
+    for ligne in lignes or []:
+        if _texte(ligne.get("type")).upper() != "LEARNING":
+            continue
+        donnees = _donnees(ligne)
+        reutilisations = donnees.get("reutilisations")
+        entries = [entree for entree in reutilisations or () if isinstance(entree, Mapping)]
+        succes = sum(_texte(entree.get("resultat")).lower() == "succes" for entree in entries)
+        echecs = sum(_texte(entree.get("resultat")).lower() == "echec" for entree in entries)
+        inconnus = sum(_texte(entree.get("resultat")).lower() not in ("succes", "echec")
+                       for entree in entries)
+        resolus = succes + echecs
+        details.append({
+            "learning_id": _texte(ligne.get("id")),
+            "enonce": _texte(donnees.get("enonce")) or _texte(ligne.get("titre")),
+            "reutilisations": len(entries),
+            "succes": succes,
+            "echecs": echecs,
+            "inconnus": inconnus,
+            "taux_succes": (succes / resolus) if resolus else None,
+            "derniere": max((_texte(entree.get("le")) for entree in entries), default=""),
+        })
+        totaux["reutilisations"] += len(entries)
+        totaux["succes"] += succes
+        totaux["echecs"] += echecs
+        totaux["inconnus"] += inconnus
+    details.sort(key=lambda detail: (-detail["reutilisations"],
+                                     -detail["succes"], detail["learning_id"]))
+    resolus = totaux["succes"] + totaux["echecs"]
+    totaux["taux_succes"] = (totaux["succes"] / resolus) if resolus else None
+    totaux["learnings"] = len(details)
+    return {"totaux": totaux, "learnings": details[:borne]}

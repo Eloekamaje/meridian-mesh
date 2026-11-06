@@ -1,5 +1,6 @@
 """Récupération mémoire : classement pur, portées et tenant, enrichissement et secrets."""
 from copy import deepcopy
+from datetime import datetime, timedelta, timezone
 import json
 from types import SimpleNamespace
 
@@ -11,6 +12,8 @@ from meridian.adapters.outbound.postgres import depot
 from meridian.adapters.outbound.postgres import entreprise_depot
 from meridian.adapters.outbound.postgres import memoire_durable
 from meridian.adapters.outbound.postgres import memoire_org
+from meridian.adapters.outbound.postgres import memoire_prospective
+from meridian.domain.memoire_prospective import Intention
 from meridian.adapters.outbound.postgres import partage
 from meridian.adapters.outbound.postgres.retrieval_memoire import CandidatMemoire, RetrievalMemoireInvalide, enrichir_pack, recuperer
 from meridian.domain.partage import Consommateur
@@ -89,10 +92,10 @@ def _learning(
 
 @pytest.fixture
 def sources_factices(monkeypatch):
-    """Remplace les quatre lectures par des sources en mémoire, sans base ni réseau."""
+    """Remplace les cinq lectures par des sources en mémoire, sans base ni réseau."""
     etat = {
         "durables": [], "annotations": [], "learnings": [], "claims": {},
-        "twins": {}, "appels": [],
+        "intentions": [], "twins": {}, "appels": [],
     }
 
     def lister(conn, tenant, **options):
@@ -114,9 +117,14 @@ def sources_factices(monkeypatch):
     def jumeau(conn, jumeau_id):
         return etat["twins"].get(jumeau_id)
 
+    def echeances(conn, tenant, **options):
+        etat["appels"].append(("intention", tenant, options))
+        return list(etat["intentions"])
+
     monkeypatch.setattr(memoire_durable, "lister", lister)
     monkeypatch.setattr(entreprise_depot, "lister_objets", objets)
     monkeypatch.setattr(connaissance, "connaissances", connaissances)
+    monkeypatch.setattr(memoire_prospective, "echeances", echeances)
     monkeypatch.setattr(depot, "jumeau_par_id", jumeau)
     return etat
 
@@ -147,7 +155,7 @@ def test_classement_phrase_couverture_autorite_et_determinisme(sources_factices)
     assert [candidat.score for candidat in premier] == sorted(
         (candidat.score for candidat in premier), reverse=True)
     assert "phrase exacte" in premier[0].raisons
-    assert all(candidat.source in {"durable", "annotation", "learning", "claim"}
+    assert all(candidat.source in {"durable", "annotation", "learning", "claim", "intention"}
                for candidat in premier)
 
 
@@ -406,6 +414,26 @@ def test_recuperer_relie_les_sources_et_isole_tenant_et_portee(conn):
     assert ("claim", str(claim_autre)) not in cles
     assert "assurance" not in json.dumps(
         [candidat.as_dict() for candidat in resultat], ensure_ascii=False)
+
+
+@besoin_pg
+def test_une_intention_due_est_candidate_mais_pas_une_future(conn):
+    maintenant = datetime.now(timezone.utc)
+    memoire_prospective.creer(conn, Intention(
+        tenant_id=TENANT, objet="vérifier le certificat de comptes",
+        echeance=(maintenant - timedelta(minutes=1)).isoformat(timespec="seconds"),
+        scope="twin", scope_id="twin-1", source="case:certificat"))
+    memoire_prospective.creer(conn, Intention(
+        tenant_id=TENANT, objet="certificat futur",
+        echeance=(maintenant + timedelta(days=2)).isoformat(timespec="seconds"),
+        scope="twin", scope_id="twin-1", source="case:futur"))
+
+    candidats = recuperer(
+        conn, TENANT, question="certificat comptes", twin_ids=["twin-1"], limite=10)
+
+    intentions = [candidat for candidat in candidats if candidat.source == "intention"]
+    assert [candidat.contenu for candidat in intentions] == [
+        "vérifier le certificat de comptes"]
 
 
 @besoin_pg

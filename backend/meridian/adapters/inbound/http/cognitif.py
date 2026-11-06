@@ -46,6 +46,8 @@ from meridian.application import evaluation_profils
 from meridian.application import consolidation_memoire
 from meridian.adapters.outbound.postgres import memoire_durable
 from meridian.adapters.outbound.postgres import memoire_org
+from meridian.adapters.outbound.postgres import memoire_prospective
+from meridian.domain.memoire_prospective import Intention
 from meridian.adapters.outbound.postgres import outcomes
 from meridian.adapters.outbound.postgres import portefeuille
 from meridian.adapters.outbound.postgres import retention
@@ -132,6 +134,9 @@ class ObservationRelation(BaseModel):
 
 class ReutilisationLearning(BaseModel):
     situation_id: str
+    resultat: str = "inconnu"
+    outcome_id: str | None = None
+    preuve_ids: list[str] = Field(default_factory=list)
 
 
 class CreationMemoire(BaseModel):
@@ -141,6 +146,27 @@ class CreationMemoire(BaseModel):
     twin_ids: list[str] = Field(default_factory=list)
     situation_ids: list[str] = Field(default_factory=list)
     confiance: float | None = None
+
+
+class CreationIntention(BaseModel):
+    objet: str = Field(min_length=1, max_length=1000)
+    echeance: str = Field(min_length=1, max_length=80)
+    scope: str = "tenant"
+    scope_id: str = ""
+    source: str = ""
+    owner: str = ""
+    priorite: str = "normale"
+    evidence_ids: list[str] = Field(default_factory=list)
+
+
+class ClotureIntention(BaseModel):
+    statut: str = "fait"
+    motif: str = ""
+
+
+class ReportIntention(BaseModel):
+    echeance: str = Field(min_length=1, max_length=80)
+    motif: str = ""
 
 
 class EvaluationSelections(BaseModel):
@@ -654,6 +680,22 @@ async def lister_learnings(
     return {"tenant": tenant, "learnings": boucle_routes._assainir(learnings)}
 
 
+@router.get("/learnings/metriques")
+async def metriques_learnings(
+    request: Request,
+    learning_id: str | None = Query(None, max_length=128),
+    limite: int = Query(100, ge=1, le=1000),
+    acteur: str = Depends(auth_identite.acteur),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    boucle_routes._verifier_espace(x_espace)
+    tenant = boucle_routes._tenant(request, x_tenant)
+    metriques = await _avec_connexion(tenant, lambda conn: outcomes.metriques_reutilisation(
+        conn, tenant, learning_id=learning_id, limite=limite))
+    return {"tenant": tenant, **boucle_routes._assainir(metriques)}
+
+
 @router.post("/learnings/{learning_id}/reutilisations", status_code=201)
 async def reutiliser_learning(
     learning_id: str,
@@ -666,7 +708,9 @@ async def reutiliser_learning(
     boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
     learning = await _avec_connexion(tenant, lambda conn: outcomes.marquer_reutilise(
-        conn, tenant, learning_id, payload.situation_id, acteur))
+        conn, tenant, learning_id, payload.situation_id, acteur,
+        resultat=payload.resultat, outcome_id=payload.outcome_id,
+        preuve_ids=payload.preuve_ids))
     return {"tenant": tenant, "learning": boucle_routes._assainir(learning)}
 
 
@@ -702,6 +746,97 @@ async def chercher_memoire(
     memoires = await _avec_connexion(tenant, lambda conn: memoire_org.chercher(
         conn, tenant, q, twin_ids=_ids(twin_ids), limite=limite))
     return {"tenant": tenant, "memoires": boucle_routes._assainir(memoires)}
+
+
+@router.post("/intentions", status_code=201)
+async def creer_intention(
+    payload: CreationIntention,
+    request: Request,
+    acteur: str = Depends(auth_identite.acteur),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    boucle_routes._verifier_espace(x_espace)
+    tenant = boucle_routes._tenant(request, x_tenant)
+    try:
+        intention = Intention(
+            tenant_id=tenant, objet=payload.objet, echeance=payload.echeance,
+            scope=payload.scope, scope_id=payload.scope_id, source=payload.source,
+            owner=payload.owner or acteur, priorite=payload.priorite,
+            evidence_ids=tuple(payload.evidence_ids))
+    except ValueError as erreur:
+        raise HTTPException(400, str(erreur)) from erreur
+    ligne = await _avec_connexion(
+        tenant, lambda conn: memoire_prospective.creer(conn, intention))
+    return {"tenant": tenant, "intention": boucle_routes._assainir(ligne)}
+
+
+@router.get("/intentions")
+async def lister_intentions(
+    request: Request,
+    scope: str | None = Query(None, max_length=32),
+    scope_id: str | None = Query(None, max_length=200),
+    statut: str | None = Query(None, max_length=32),
+    dues: bool = Query(False),
+    limite: int = Query(200, ge=1, le=1000),
+    acteur: str = Depends(auth_identite.acteur),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    boucle_routes._verifier_espace(x_espace)
+    tenant = boucle_routes._tenant(request, x_tenant)
+    if dues:
+        intentions = await _avec_connexion(
+            tenant, lambda conn: memoire_prospective.echeances(
+                conn, tenant, limite=limite))
+    else:
+        intentions = await _avec_connexion(
+            tenant, lambda conn: memoire_prospective.lister(
+                conn, tenant, scope=scope, scope_id=scope_id, statut=statut,
+                limite=limite))
+    return {"tenant": tenant, "intentions": boucle_routes._assainir(intentions)}
+
+
+@router.post("/intentions/{intention_id}/clore")
+async def clore_intention(
+    intention_id: str,
+    payload: ClotureIntention,
+    request: Request,
+    acteur: str = Depends(auth_identite.acteur),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    boucle_routes._verifier_espace(x_espace)
+    tenant = boucle_routes._tenant(request, x_tenant)
+    try:
+        intention = await _avec_connexion(
+            tenant, lambda conn: memoire_prospective.clore(
+                conn, tenant, intention_id, statut=payload.statut, acteur=acteur,
+                motif=payload.motif))
+    except memoire_prospective.MemoireProspectiveInvalide as erreur:
+        raise HTTPException(400, str(erreur)) from erreur
+    return {"tenant": tenant, "intention": boucle_routes._assainir(intention)}
+
+
+@router.post("/intentions/{intention_id}/reporter")
+async def reporter_intention(
+    intention_id: str,
+    payload: ReportIntention,
+    request: Request,
+    acteur: str = Depends(auth_identite.acteur),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    boucle_routes._verifier_espace(x_espace)
+    tenant = boucle_routes._tenant(request, x_tenant)
+    try:
+        intention = await _avec_connexion(
+            tenant, lambda conn: memoire_prospective.reporter(
+                conn, tenant, intention_id, payload.echeance, acteur=acteur,
+                motif=payload.motif))
+    except memoire_prospective.MemoireProspectiveInvalide as erreur:
+        raise HTTPException(400, str(erreur)) from erreur
+    return {"tenant": tenant, "intention": boucle_routes._assainir(intention)}
 
 
 @router.get("/attention")

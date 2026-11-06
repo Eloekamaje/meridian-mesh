@@ -11,6 +11,7 @@ import pytest
 
 from meridian.adapters.outbound.postgres import code_index_store
 from meridian.adapters.outbound.postgres import decouverte_liens as depot_liens
+from meridian.adapters.outbound.postgres import memoire_prospective
 from meridian.adapters.outbound.postgres import decouverte_naissance
 from meridian.adapters.outbound.postgres import relations_naissance as depot_relations
 from meridian.domain.code_index import Observation
@@ -210,6 +211,28 @@ def test_un_producteur_introuvable_ouvre_un_cas(conn):
     assert len(cas) == 1
     assert cas[0]["reference"] == "GET /reports/42"
     assert "aucun producteur" in cas[0]["missing_evidence"]
+
+
+def test_un_cas_ouvert_cree_une_intention_et_sa_resolution_la_clot(conn):
+    e = _manifeste("app-e", consomme=[(
+        "http://unknown-service/reports/42", "GET /reports/42")])
+    depot_relations.enregistrer_manifeste(conn, e)
+
+    decouverte_naissance.traiter_twin_born(conn, e.as_dict())
+
+    cas = depot_liens.lister_resolution_cases(conn, "banque", twin_id="app-e")
+    assert len(cas) == 1
+    intentions = memoire_prospective.lister(
+        conn, "banque", scope="twin", scope_id="app-e", source=f"case:{cas[0]['id']}")
+    assert len(intentions) == 1
+    assert intentions[0]["statut"] == "a_faire"
+    assert intentions[0]["echeance"]
+
+    depot_liens.resoudre_case(conn, "banque", cas[0]["id"])
+
+    intentions = memoire_prospective.lister(
+        conn, "banque", scope="twin", scope_id="app-e", source=f"case:{cas[0]['id']}")
+    assert intentions[0]["statut"] == "fait"
 
 
 def test_reconciliation_globale_dry_run_puis_apply(conn):

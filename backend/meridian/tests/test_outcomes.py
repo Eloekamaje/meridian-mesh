@@ -237,3 +237,31 @@ def test_marquer_reutilise_ajoute_audit_sans_changer_le_sens(conn):
     nouvelle = outcomes.marquer_reutilise(
         conn, TENANT, learning["id"], "sit-nouvelle", "veille")
     assert nouvelle["donnees"]["reutilisations"][-1]["situation_id"] == "sit-nouvelle"
+
+
+@besoin_pg
+def test_reutilisation_mesuree_et_metriques(conn):
+    situation, _, _, initiative = _chaine(conn, "mesure")
+    learning = outcomes.mesurer_et_capitaliser(
+        conn, TENANT, initiative.id, {"valeur": 1}, situation_ids=[situation.id],
+        enseignement="Leçon mesurable")["learning"]
+
+    outcomes.marquer_reutilise(
+        conn, TENANT, learning["id"], situation.id, "comité",
+        resultat="succes", preuve_ids=["preuve-1"])
+    outcomes.marquer_reutilise(
+        conn, TENANT, learning["id"], "sit-echec", "comité", resultat="echec")
+    outcomes.marquer_reutilise(
+        conn, TENANT, learning["id"], "sit-inconnue", "comité", resultat="inconnu")
+
+    metriques = outcomes.metriques_reutilisation(conn, TENANT)
+    detail = next(ligne for ligne in metriques["learnings"]
+                  if ligne["learning_id"] == learning["id"])
+    assert detail["reutilisations"] == 3
+    assert (detail["succes"], detail["echecs"], detail["inconnus"]) == (1, 1, 1)
+    assert detail["taux_succes"] == 0.5
+    assert metriques["totaux"]["taux_succes"] == 0.5
+
+    with pytest.raises(outcomes.ReutilisationRefusee, match="resultat"):
+        outcomes.marquer_reutilise(
+            conn, TENANT, learning["id"], situation.id, "comité", resultat="peut-être")

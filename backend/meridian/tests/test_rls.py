@@ -71,7 +71,7 @@ def test_toutes_les_tables_avec_tenant_sont_couvertes():
         "jumeau", "source", "preuve", "claim", "claim_share", "publication_review", "revue", "contradiction", "ancre", "consigne",
         "interface_contract", "interface_operation", "interface_binding", "interface_assertion",
         "discovery_run", "identity_decision", "objet_entreprise", "outil_audit",
-        "valeur", "memoire_durable", "prediction_calibration",
+        "valeur", "memoire_durable", "memoire_prospective", "prediction_calibration",
         "execution_run", "execution_evenement", "execution_outbox", "execution_timer",
         "execution_effet", "execution_approbation", "execution_etape",
         "source_schedule", "ingestion_run", "travail",

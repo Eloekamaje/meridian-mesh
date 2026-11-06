@@ -879,6 +879,29 @@ T+7 j     revalidation
   reste une preuve. `OutilAPM` fait de même pour les dépendances observées.
 - Le volet du Twin expose un bouton « Enquêter » et la raison d'arrêt.
 
+### Mémoire prospective
+
+- `domain/memoire_prospective.py` : `Intention` (objet, échéance, scope, source,
+  priorité, statut), avec refus d'une échéance sans fuseau.
+- `memoire_prospective.py` : création idempotente, lecture, échéances dues, clôture,
+  report et purge à 90 jours, toujours bornés au tenant.
+- Un cas de résolution ouvert avec `next_check` reçoit une échéance par défaut de 7 jours
+  et crée une intention `case:<id>` ; sa résolution la clôt, son abandon l'annule.
+- Une réévaluation de cas rouvre une intention à 1 jour.
+- Les échéances dues sont candidates au retrieval avec `source=intention`.
+- API : `POST/GET /boucle/intentions`, `POST /boucle/intentions/{id}/clore`,
+  `POST /boucle/intentions/{id}/reporter`.
+
+### Boucle Learning → réutilisation mesurée
+
+- `outcomes.marquer_reutilise` accepte `resultat` (`succes`, `echec`, `inconnu`),
+  `outcome_id` et `preuve_ids`.
+- `outcomes.metriques_reutilisation` rend les compteurs par Learning et au total ;
+  `taux_succes` ne porte que sur les réutilisations résolues.
+- `retrieval_memoire` expose `reutilisation` dans les données du candidat Learning.
+- API : `POST /boucle/learnings/{id}/reutilisations` et
+  `GET /boucle/learnings/metriques`.
+
 ### Dettes restantes
 
 **Bloquées par l'environnement**
@@ -941,6 +964,8 @@ T+7 j     revalidation
 | Store des liens | objets d'entreprise ; pas de store dédié tant que le volume le permet | **retenu — D-009** |
 | Rafraîchissement | `reconcilier_twin` après réingestion, `twin.born` à la naissance ; `reconcilier` global périodique | **retenu — D-010** |
 | Chargeurs de fichiers | règles de lecture partagées, parcours distincts | **retenu — D-011** |
+| Mémoire prospective | intentions datées, cas et retrieval, clôture/report/purge | **retenu — D-012** |
+| Réutilisation des Learnings | résultat mesuré, outcome et preuves, métriques | **retenu — D-013** |
 
 ### 16.2 Points encore ouverts
 
