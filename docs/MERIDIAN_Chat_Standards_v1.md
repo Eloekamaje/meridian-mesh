@@ -173,13 +173,21 @@ les trois incohérences du §2.
 Vercel AI SDK est écarté : il n'a pas de transport AG-UI, et sa plage de versions React (`~19.0.1`) exclut la nôtre
 (19.0.0).
 
-**Recommandation : CopilotKit**, pour trois raisons :
+**Recommandation initiale : CopilotKit**, pour trois raisons :
 - l'approbation et l'état partagé sont les capacités qui comptent pour Méridian, et il les fournit ;
 - il est natif AG-UI, alors que l'adaptateur assistant-ui est en 0.1 ;
 - OpenBot en montre l'usage réel.
 
+> **Décision finale (2026-11-06) : CopilotKit n'est pas retenu.** L'ancien chat Flore est conservé.
+> CopilotKit apporte des primitives utiles (tool renderers, frontend tools, human-in-the-loop, UI
+> générative), mais le chat existant couvre déjà la sémantique Méridian (preuves, claims, ACL, activité,
+> propositions, versions, canvas) et pèse moins lourd (pas de runtime Node, pas de Tailwind 4).
+> Les emprunts retenus sont intégrés directement dans le chat existant : rendu structuré des outils,
+> actions frontend (copier une référence, ouvrir un jumeau ou une pièce), confirmation explicite avant
+> validation d'une connaissance. Détail : § P2 ci-dessous.
+
 Le style Méridian se garde en habillant ses composants dans les écrans existants (règle « suivre l'existant ») :
-aucun nouvel écran. **Coût estimé par l'étude** : 3 à 5 jours pour réhabiller le fil.
+aucun nouvel écran.
 
 ---
 
@@ -245,9 +253,11 @@ Critère : les capacités 1, 2, 3 et 6 du §4 sont complètes.
 > **Avancement (2026-10-28).** Fait : `en_flux` parle AG-UI (`ag-ui-protocol` 1.0.0, traduction unique dans
 > `jumeau/protocole.py`, sortie identique à l'encodeur officiel) ; chaque outil réel est émis (début, arguments,
 > issue, durée, extrait) et affiché ligne par ligne, détail au clic (maquette `p2-protocole-v1`, option A).
-> **CopilotKit : proposé au retrait** (vérifié le 2026-10-28 : `@copilotkit/react-core` 1.83.0 publiée le jour même,
-> 31 dépendances et `maplibre-gl` exigée, serveur Node/Express ; l'interopérabilité est portée par AG-UI, et
-> l'adopter remplacerait les composants de P1). En attente de la décision de l'utilisateur.
+> **CopilotKit : retiré (décision 2026-11-06)** (vérifié le 2026-10-28 : `@copilotkit/react-core` 1.83.0 publiée
+> le jour même, 31 dépendances et `maplibre-gl` exigée, serveur Node/Express ; l'interopérabilité est portée par
+> AG-UI, et l'adopter remplacerait les composants de P1). Les emprunts retenus sont dans le chat existant :
+> rendu structuré des outils (`renduOutil.js`, `LigneActiviteFlore`), actions frontend (copier une référence,
+> ouvrir un jumeau ou une pièce), confirmation explicite avant validation d'une connaissance.
 > Fait ensuite : l'activité du tour est enregistrée avec la réponse ; un tour arrêté s'explique (outils faits, en
 > cours, texte écrit, « non relu », « Reprendre la réponse ») ; **reprise après coupure** (`flux.Tour` : seul
 > « Arrêter » arrête, `POST /api/tours/{id}/arreter` ; une coupure se renoue par `GET /api/tours/{id}/flux?depuis=n`) ;
@@ -255,7 +265,7 @@ Critère : les capacités 1, 2, 3 et 6 du §4 sont complètes.
 > permission « Valider », une seule exécution sous verrou Postgres, décision inscrite dans le message ; panneau
 > comme Travail). P2 est terminé côté fonctions ; l'écran reste à voir.
 - `en_flux` parle AG-UI.
-- La conversation passe sur CopilotKit, dans les écrans existants.
+- La conversation reste sur le chat Flore existant ; CopilotKit est écarté.
 - **Outils structurés** à l'écran.
 - **Approbation en ligne**, exécutée une fois côté serveur, dans le panneau comme dans le Travail.
 - **Reprise après coupure** (instantané des messages) et **explication d'un tour arrêté**.

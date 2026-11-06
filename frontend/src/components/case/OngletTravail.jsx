@@ -926,6 +926,7 @@ export default function OngletTravail({
                       onMessage={majMessage} onMessages={majMessages} onRelire={relire}
                       activite={activiteDuMessage(m)}
                       onOuvrirPiece={setPieceInspectee}
+                      onOuvrirJumeau={(id) => navigate(`/atlas?focus=${encodeURIComponent(id)}`)}
                       corps={
                     <CorpsMessageFlore
                       message={m}

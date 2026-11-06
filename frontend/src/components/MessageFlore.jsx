@@ -40,7 +40,7 @@ function ChoixVersion({ nav, libelle, onChoisir, bloque, testid }) {
 
 export function MessageFlore({
   message, index, prefixe, onMessage, onMessages, onRelire, bloque = false,
-  corps, activite, preuves, testid, children, onOuvrirPiece,
+  corps, activite, preuves, testid, children, onOuvrirPiece, onOuvrirJumeau,
 }) {
   const [pourquoi, setPourquoi] = useState(false);
   const [motif, setMotif] = useState("");
@@ -108,7 +108,8 @@ export function MessageFlore({
     <SchemasContexte.Provider value={message.schemas || []}>
     <PreuvesContexte.Provider value={contextePreuves}>
     <div className="space-y-2" data-testid={testid}>
-      {activite && <LigneActiviteFlore activite={activite} testid={testid ? `${testid}-activite` : undefined} />}
+      {activite && <LigneActiviteFlore activite={activite} testid={testid ? `${testid}-activite` : undefined}
+        onOuvrirJumeau={onOuvrirJumeau} onOuvrirPiece={onOuvrirPiece} />}
       {corpsRendu}
       {message.raisonnement && <RaisonnementFlore raisonnement={message.raisonnement} evaluation={message.evaluation_raisonnement} />}
       {message.interrompu && (

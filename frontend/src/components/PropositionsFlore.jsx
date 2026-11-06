@@ -8,9 +8,11 @@ const LIBELLES = { ACCEPTED: "Validée", CONTESTED: "Contestée" };
 
 export default function PropositionsFlore({ propositions, index, actif, bloque = false, onDecider }) {
   const [enCours, setEnCours] = useState(null);
+  const [confirmation, setConfirmation] = useState(null);
   if (!propositions?.length) return null;
   const decider = async (claim, decision) => {
     setEnCours(claim);
+    setConfirmation(null);
     try { await onDecider(claim, decision); } finally { setEnCours(null); }
   };
   return (
@@ -28,7 +30,8 @@ export default function PropositionsFlore({ propositions, index, actif, bloque =
             <>
               <div className="mt-1 text-[#7C93A8]">Effet : la connaissance quitte « proposée » ; validée, elle compte dans ce que le jumeau sait. Il faut la permission « Valider » sur ce jumeau.</div>
               <div className="mt-1.5 flex gap-2">
-                <button type="button" disabled={bloque || enCours === p.claim} onClick={() => decider(p.claim, "ACCEPTED")}
+                <button type="button" disabled={bloque || enCours === p.claim} onClick={() => setConfirmation(p.claim)}
+                  aria-expanded={confirmation === p.claim}
                   data-testid={`approuver-${index}-${p.claim}`}
                   className="rounded-md border border-[#34D399]/50 px-2.5 py-0.5 text-[#34D399] hover:bg-[#34D399]/10 disabled:opacity-50 focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#34D399]">
                   Valider
@@ -39,6 +42,24 @@ export default function PropositionsFlore({ propositions, index, actif, bloque =
                   Contester
                 </button>
               </div>
+              {confirmation === p.claim && (
+                <div className="mt-2 rounded-md border border-[#34D399]/40 bg-[#34D399]/[0.06] px-2.5 py-2" data-testid={`confirmation-${index}-${p.claim}`}>
+                  <p className="text-[11px] leading-relaxed text-[#CBD5E1]">
+                    Cette validation est définitive : la connaissance quittera « proposée » et comptera dans ce que le jumeau sait.
+                  </p>
+                  <div className="mt-1.5 flex gap-2">
+                    <button type="button" disabled={bloque || enCours === p.claim} onClick={() => decider(p.claim, "ACCEPTED")}
+                      data-testid={`confirmer-validation-${index}-${p.claim}`}
+                      className="rounded-md bg-[#34D399] px-2.5 py-0.5 text-[#071019] disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#34D399]">
+                      Confirmer la validation
+                    </button>
+                    <button type="button" onClick={() => setConfirmation(null)}
+                      className="rounded-md border border-white/20 px-2.5 py-0.5 text-[#D8E2EA] hover:border-white/40 focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#60A5FA]">
+                      Annuler
+                    </button>
+                  </div>
+                </div>
+              )}
             </>
           ) : (
             <div className="mt-1 text-[#7C93A8]">À trancher dans la revue du jumeau.</div>

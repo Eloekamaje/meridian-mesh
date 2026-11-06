@@ -3,6 +3,8 @@ import { grouperConsultations, grouperOperationsConsecutives, resumeConsultation
 import ArtefactPlanification, { artefactDepuisOutil } from "./ArtefactPlanification";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { CaretDown, CheckCircle, CircleNotch, WarningCircle } from "@phosphor-icons/react";
+import { toast } from "sonner";
+import { premierArgument, resumeOutil } from "@/lib/renduOutil";
 
 // Ligne d'activité de Flore — la même partout dans Méridian (panneau Flore, page Travail,
 // page Nouveau travail).
@@ -25,17 +27,29 @@ const OUTILS_CODE = new Set([
 ]);
 const nomAffiche = (nom) => (OUTILS_CODE.has(nom) ? nom.replaceAll("_", "-") : nom);
 const argumentVisible = (outil, _enCours) => !OUTILS_CODE.has(outil?.nom);
-const premierArgument = (args) => {
-  const v = args && typeof args === "object" ? Object.values(args).find((x) => typeof x === "string" || typeof x === "number") : null;
-  return v == null ? "" : String(v).slice(0, 60);
-};
 
-function LigneOutil({ op, testid }) {
+
+function LigneOutil({ op, testid, onOuvrirJumeau, onOuvrirPiece }) {
   const [detail, setDetail] = useState(false);
   const { outil } = op;
   const outils = op.outils || (outil ? [outil] : []);
   const enCours = op.status === "running" || outils.some((o) => o.etat === "en_cours");
   const Icone = outil.etat === "erreur" ? WarningCircle : enCours ? CircleNotch : CheckCircle;
+  const resume = resumeOutil(outil);
+  const connu = resume.titre !== (outil.nom || "");
+  const actions = resume.actions.filter((action) => action.type === "copier"
+    || (action.type === "jumeau" && onOuvrirJumeau)
+    || (action.type === "piece" && onOuvrirPiece));
+  const agir = (action) => {
+    if (action.type === "copier") {
+      navigator.clipboard?.writeText(action.texte);
+      toast.success("Référence copiée");
+    } else if (action.type === "jumeau") {
+      onOuvrirJumeau?.(action.id);
+    } else if (action.type === "piece") {
+      onOuvrirPiece?.(action.id);
+    }
+  };
   return (
     <div data-testid={testid}>
       <button type="button" onClick={() => setDetail((d) => !d)} aria-expanded={detail}
@@ -56,10 +70,7 @@ function LigneOutil({ op, testid }) {
         <span className="shrink-0 font-code text-[10px] text-[#64748B]">{enCours ? "en cours…" : secondes(op.duree ?? outil.duree)}</span>
       </button>
       {detail && (
-        <div className="ml-5 mt-1 space-y-1 border-l border-[#60A5FA]/25 pl-2 font-code text-[11px] text-[#94A3B8]" data-testid={`${testid}-detail`}>
-          {outils.length === 1 && outil.arguments != null && argumentVisible(outil, enCours) && (
-            <pre className="whitespace-pre-wrap break-words">{JSON.stringify(outil.arguments, null, 1)}</pre>
-          )}
+        <div className="ml-5 mt-1 space-y-1.5 border-l border-[#60A5FA]/25 pl-2 font-code text-[11px] text-[#94A3B8]" data-testid={`${testid}-detail`}>
           {outils.length > 1 ? (
             <div className="space-y-0.5">
               {outils.map((appel, i) => (
@@ -69,11 +80,41 @@ function LigneOutil({ op, testid }) {
                 </div>
               ))}
             </div>
-          ) : OUTILS_CODE.has(outil.nom) ? (
-            <span>Détail du code masqué.</span>
-          ) : outil.extrait ? (
-            <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words text-[#7C93A8]">{outil.extrait}</pre>
-          ) : !enCours && <span>Aucun résultat lisible.</span>}
+          ) : (
+            <>
+              {resume.detail && (
+                <p className="whitespace-pre-wrap break-words text-[#94A3B8]">{resume.detail}</p>
+              )}
+              {resume.champs.length > 0 && (
+                <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5">
+                  {resume.champs.map((champ) => (
+                    <div key={champ.label} className="contents">
+                      <dt className="text-[#64748B]">{champ.label}</dt>
+                      <dd className="break-words text-[#D8E2EA]">{champ.valeur}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
+              {actions.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 pt-0.5">
+                  {actions.map((action) => (
+                    <button key={`${action.type}-${action.id || action.texte}`} type="button" onClick={() => agir(action)}
+                      className="rounded border border-[#60A5FA]/30 px-2 py-0.5 text-[10px] text-[#93C5FD] transition-colors hover:bg-[#60A5FA]/10 focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#60A5FA]">
+                      {action.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {OUTILS_CODE.has(outil.nom) && <span>Détail du code masqué.</span>}
+              {!connu && outil.arguments != null && (
+                <pre className="whitespace-pre-wrap break-words">{JSON.stringify(outil.arguments, null, 1)}</pre>
+              )}
+              {!OUTILS_CODE.has(outil.nom) && outil.extrait && (
+                <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words text-[#7C93A8]">{outil.extrait}</pre>
+              )}
+              {!enCours && !connu && outil.arguments == null && !outil.extrait && <span>Aucun résultat lisible.</span>}
+            </>
+          )}
         </div>
       )}
     </div>
@@ -95,7 +136,7 @@ const CONFIANCES = { elevee: "élevée", moyenne: "moyenne", faible: "faible" };
 
 // Un jumeau consulté (Design System §85, carte d'expert ; §87, états) : sa mission, ce qu'il fait réellement
 // (ses outils, dessous), un chronomètre ; à la fin, confiance, nombre de preuves et constat.
-function LigneConsultation({ op, sous, testid }) {
+function LigneConsultation({ op, sous, testid, onOuvrirJumeau }) {
   const { outil } = op;
   const mission = outil.mission;
   const enCours = !mission && outil.etat === "en_cours";
@@ -113,6 +154,13 @@ function LigneConsultation({ op, sous, testid }) {
         <span className="min-w-0 flex-1">
           <span className={enCours ? "text-[#D8E2EA]" : "text-[#94A3B8]"}>{outil.arguments?.jumeau || "Jumeau"}</span>
           {outil.arguments?.mission && <span className="text-[#64748B]"> — {outil.arguments.mission}</span>}
+          {onOuvrirJumeau && outil.arguments?.jumeau && (
+            <button type="button" onClick={() => onOuvrirJumeau(outil.arguments.jumeau)}
+              title={`Ouvrir ${outil.arguments.jumeau} dans l'Atlas`}
+              className="ml-1 rounded border border-[#60A5FA]/25 px-1.5 py-0.5 font-code text-[9px] text-[#93C5FD] hover:bg-[#60A5FA]/10 focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#60A5FA]">
+              Atlas
+            </button>
+          )}
         </span>
         <span className="shrink-0 font-code text-[10px] text-[#64748B]">
           {enCours ? `${ecoule ?? 0} s…` : echec ? "n'a pas pu répondre" : `terminé${outil.duree != null ? ` · ${String(outil.duree).replace(".", ",")} s` : ""}`}
@@ -134,7 +182,7 @@ function LigneConsultation({ op, sous, testid }) {
   );
 }
 
-export default function LigneActiviteFlore({ activite, testid = "flore-activite" }) {
+export default function LigneActiviteFlore({ activite, testid = "flore-activite", onOuvrirJumeau, onOuvrirPiece }) {
   const [choix, setOuvert] = useState(null); // null : suit l'activité (dépliée en cours s'il y a des outils)
   const reduit = useReducedMotion();
   if (!activite) return null;
@@ -210,8 +258,8 @@ export default function LigneActiviteFlore({ activite, testid = "flore-activite"
       {ouvert && (
         <div className="mt-1.5 space-y-1.5 border-l border-white/[0.08] pl-3 text-xs" data-testid={`${testid}-detail`}>
           {operationsAffichees.map((o, i) => (sousOutils.has(o.outil?.id) ? null
-            : o.outil?.nom === "consulter_jumeau" ? <LigneConsultation key={o.outil.id} op={o} sous={consultations.find((c) => c.outil.id === o.outil.id).sous} testid={`${testid}-consultation-${i}`} />
-            : o.outil ? <LigneOutil key={o.outil.id} op={o} testid={`${testid}-outil-${i}`} /> : (
+            : o.outil?.nom === "consulter_jumeau" ? <LigneConsultation key={o.outil.id} op={o} sous={consultations.find((c) => c.outil.id === o.outil.id).sous} testid={`${testid}-consultation-${i}`} onOuvrirJumeau={onOuvrirJumeau} />
+            : o.outil ? <LigneOutil key={o.outil.id} op={o} testid={`${testid}-outil-${i}`} onOuvrirJumeau={onOuvrirJumeau} onOuvrirPiece={onOuvrirPiece} /> : (
             <div key={`${i}-${o.label}`} className="flex items-start gap-2">
               {o.status === "running" ? (
                 <CircleNotch size={12} className="mt-0.5 shrink-0 animate-spin text-[#60A5FA] motion-reduce:animate-none" aria-hidden="true" />

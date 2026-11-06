@@ -579,7 +579,7 @@ const LIBELLES_PORTEE_RELATION = {
   UNKNOWN: "non classée",
 };
 
-function ComparaisonDomaines({ a, b, statsDomaine }) {
+export function ComparaisonDomaines({ a, b, statsDomaine }) {
   const sa = statsDomaine(a);
   const sb = statsDomaine(b);
   if (!sa || !sb) return null;

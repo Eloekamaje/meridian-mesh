@@ -635,7 +635,8 @@ export default function FlorePanel() {
   const prefixe = travailId ? prefixeTravail(travailId) : null;
   const majMessage = (n, msg) => setMessages((ms) => { let k = -1; return ms.map((m) => (m.marqueur || ++k !== n ? m : msg)); });
   const actions = { prefixe, onMessage: majMessage, onMessages: setMessages, onRelire: () => relire(), bloque: chargement,
-    onTronquer: (n, texte) => setMessages((ms) => tronquerApres(ms, n, texte)) };
+    onTronquer: (n, texte) => setMessages((ms) => tronquerApres(ms, n, texte)),
+    onOuvrirJumeau: (id) => navigate(`/atlas?focus=${encodeURIComponent(id)}`) };
 
   if (lot) return <LotBar lot={lot} />;
 
