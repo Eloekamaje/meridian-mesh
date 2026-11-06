@@ -79,6 +79,36 @@ def test_mapping_du_gagnant_aveugle():
     assert rb.gagnant_reel("égalité", ("baseline", "flore")) == "égalité"
 
 
+def test_fournisseur_juge_independant_du_baseline():
+    rb = _module()
+    args = rb.parse_args([
+        "--fournisseur", "deepseek",
+        "--fournisseur-juge", "bedrock",
+        "--modele-juge", "mistral.mistral-large-2402-v1:0",
+    ])
+    assert args.fournisseur == "deepseek"
+    assert args.fournisseur_juge == "bedrock"
+    assert args.modele_juge == "mistral.mistral-large-2402-v1:0"
+
+
+def test_modele_bedrock_repond_sans_outils():
+    rb = _module()
+
+    class FauxClient:
+        def converse(self, **demande):
+            assert demande["modelId"] == "ca.amazon.nova-lite-v1:0"
+            assert demande["system"][0]["text"]
+            return {"output": {"message": {"content": [
+                        {"text": "<thinking>raisonnement</thinking>\n\nok"}]}},
+                    "usage": {"inputTokens": 3, "outputTokens": 1}}
+
+    modele = rb.ModeleBedrock("ca.amazon.nova-lite-v1:0")
+    modele._client = FauxClient()
+    texte, meta = modele.repondre([{"role": "user", "content": "bonjour"}])
+    assert texte == "ok"
+    assert meta["usage"]["inputTokens"] == 3
+
+
 def test_agregation_et_rapport():
     rb = _module()
     resultats = [

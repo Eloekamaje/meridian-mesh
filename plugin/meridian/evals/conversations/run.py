@@ -33,6 +33,10 @@ SCENARIOS_DEFAUT = Path(__file__).with_name("scenarios.json")
 API_DEFAUT = os.environ.get("MERIDIAN_API_URL", "http://127.0.0.1:8001/api")
 MODELE_DEFAUT = os.environ.get("DEEPSEEK_MODELE", "deepseek-chat")
 DEEPSEEK_URL = "https://api.deepseek.com/chat/completions"
+BEDROCK_CHAT_DEFAUT = (os.environ.get("BEDROCK_MODEL_CHAT")
+                       or os.environ.get("BEDROCK_MODELE")
+                       or "ca.amazon.nova-lite-v1:0")
+BEDROCK_JUGE_DEFAUT = os.environ.get("BEDROCK_MODEL_JUDGE") or "mistral.mistral-large-2402-v1:0"
 
 SYSTEME_BASELINE = """Tu es un assistant d'entreprise francophone, utile et concis.
 Tu n'as pas accès aux données internes de l'entreprise : applications, dépendances,
@@ -362,6 +366,64 @@ class ModeleSeul:
                        "usage": donnees.get("usage") or {}}
 
 
+class ModeleBedrock:
+    """Appel direct à Bedrock, sans outils ni connaissances Méridian.
+
+    Sert de baseline et de juge pour comparer Flore au **même fournisseur** de modèles.
+    Aucun secret n'est lu : les credentials viennent de la chaîne AWS standard.
+    """
+
+    def __init__(self, modele: str, region: str | None = None):
+        self.modele = modele
+        self.region = (region or os.environ.get("BEDROCK_REGION")
+                       or os.environ.get("AWS_REGION") or "ca-central-1")
+        self._client = None
+
+    def _converse(self):
+        if self._client is None:
+            import boto3
+            self._client = boto3.client("bedrock-runtime", region_name=self.region)
+        return self._client
+
+    def repondre(self, messages: list[dict], systeme: str = SYSTEME_BASELINE,
+                 max_tokens: int = 2200) -> tuple[str, dict]:
+        contenu = [{"role": message["role"],
+                    "content": [{"text": str(message["content"])}]}
+                   for message in messages]
+        demande = {
+            "modelId": self.modele,
+            "messages": contenu,
+            "inferenceConfig": {"maxTokens": max_tokens, "temperature": 0},
+        }
+        if systeme:
+            demande["system"] = [{"text": systeme}]
+        debut = time.monotonic()
+        try:
+            reponse = self._converse().converse(**demande)
+        except Exception as exc:
+            if "temperature" not in str(exc).lower():
+                raise BenchmarkErreur(
+                    f"modèle Bedrock en erreur ({type(exc).__name__}): {str(exc)[:300]}") from exc
+            # Les modèles récents peuvent refuser `temperature` : on réessaie sans ce champ.
+            demande["inferenceConfig"].pop("temperature", None)
+            try:
+                reponse = self._converse().converse(**demande)
+            except Exception as exc2:
+                raise BenchmarkErreur(
+                    f"modèle Bedrock en erreur ({type(exc2).__name__}): {str(exc2)[:300]}") from exc2
+        blocs = ((reponse.get("output") or {}).get("message") or {}).get("content") or []
+        texte = "".join(str(bloc.get("text") or "") for bloc in blocs if isinstance(bloc, dict))
+        texte = re.sub(r"<thinking>.*?</thinking>", "", texte,
+                       flags=re.IGNORECASE | re.DOTALL).strip()
+        return texte, {"duree_s": round(time.monotonic() - debut, 2),
+                       "usage": reponse.get("usage") or {}}
+
+
+def construire_modele(fournisseur: str, modele: str):
+    """Un modèle baseline/juge indépendamment du fournisseur de l'autre bras."""
+    return ModeleBedrock(modele) if fournisseur == "bedrock" else ModeleSeul(modele)
+
+
 def extraire_json(texte: str) -> dict | None:
     decodeur = json.JSONDecoder(strict=False)
     for position, caractere in enumerate(str(texte or "")):
@@ -382,7 +444,8 @@ def gagnant_reel(gagnant: str, ordre: tuple[str, str]) -> str:
     return ordre[0] if gagnant == "A" else ordre[1]
 
 
-def juger(modele: ModeleSeul, scenario: Scenario, transcriptions: Mapping[str, str]) -> dict:
+def juger(modele: ModeleSeul | ModeleBedrock, scenario: Scenario,
+          transcriptions: Mapping[str, str]) -> dict:
     """Juge à l'aveugle deux transcriptions ; renvoie le gagnant réel."""
     ordre = random.choice((("flore", "baseline"), ("baseline", "flore")))
     a, b = ordre
@@ -428,8 +491,9 @@ def _transcription(tours: list[dict]) -> str:
     return "\n\n".join(lignes)
 
 
-def executer_scenario(scenario: Scenario, client: ClientMeridian, baseline: ModeleSeul,
-                      run_id: str, faire_juger: bool = True) -> dict:
+def executer_scenario(scenario: Scenario, client: ClientMeridian,
+                      baseline: ModeleSeul | ModeleBedrock,
+                      run_id: str, faire_juger: bool = True, juge=None) -> dict:
     selection = list(scenario.context.get("twins") or ())
     cid = client.creer_case(scenario, run_id)
     historique_baseline: list[dict] = []
@@ -477,7 +541,7 @@ def executer_scenario(scenario: Scenario, client: ClientMeridian, baseline: Mode
         "duree_baseline_s": round(sum(tour.get("duree_s", 0) for tour in tours_baseline), 2),
     }
     if faire_juger:
-        resultat["juge"] = juger(baseline, scenario, {
+        resultat["juge"] = juger(juge or baseline, scenario, {
             "flore": _transcription(tours_flore),
             "baseline": _transcription(tours_baseline),
         })
@@ -545,10 +609,19 @@ def rapport_markdown(config: Mapping[str, Any], resultats: list[dict], agregat: 
         "",
         f"- Date : {config.get('date')}",
         f"- API : `{config.get('api_url')}`",
+        f"- Fournisseur baseline : `{config.get('fournisseur') or 'deepseek'}`",
         f"- Modèle baseline : `{config.get('modele')}`",
+        f"- Fournisseur juge : `{config.get('fournisseur_juge') or config.get('fournisseur') or 'deepseek'}`",
+        f"- Modèle juge : `{config.get('modele_juge') or config.get('modele')}`",
         f"- Scénarios uniques : **{agregat['scenarios_uniques']}**",
         f"- Runs évalués : **{agregat['n']}** ({config.get('runs')} par scénario)",
         f"- Commit : `{config.get('commit') or 'inconnu'}`",
+        "- Embeddings : " + next(
+            (str(d.get("detail") or "inconnu")
+             for d in (config.get("sante_api") or {}).get("dependances", [])
+             if d.get("nom") == "embeddings"),
+            "non renseignés",
+        ),
         "",
         "## Résumé",
         "",
@@ -648,7 +721,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     analyseur.add_argument("--password", default=os.environ.get("MERIDIAN_BENCH_PASSWORD", ""))
     analyseur.add_argument("--pilot-email", default=os.environ.get("MERIDIAN_BENCH_PILOT_EMAIL", ""))
     analyseur.add_argument("--pilot-password", default=os.environ.get("MERIDIAN_BENCH_PILOT_PASSWORD", ""))
-    analyseur.add_argument("--modele", default=MODELE_DEFAUT)
+    analyseur.add_argument("--fournisseur", choices=("deepseek", "bedrock"),
+                           default=os.environ.get("MERIDIAN_BENCH_FOURNISSEUR", "deepseek"),
+                           help="Fournisseur du baseline.")
+    analyseur.add_argument("--fournisseur-juge", choices=("deepseek", "bedrock"), default=None,
+                           help="Fournisseur du juge (défaut : celui du baseline).")
+    analyseur.add_argument("--modele", default=None,
+                           help="Modèle baseline (défaut selon le fournisseur).")
+    analyseur.add_argument("--modele-juge", default=None,
+                           help="Modèle juge (défaut : même fournisseur, modèle distinct si Bedrock).")
     analyseur.add_argument("--sans-juge", action="store_true")
     analyseur.add_argument("--dry-run", action="store_true")
     return analyseur.parse_args(argv)
@@ -675,7 +756,23 @@ def main(argv: list[str] | None = None) -> int:
     horodatage = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     sortie = args.output or (Path("/tmp") / f"meridian-conversations-{horodatage}")
     sortie.mkdir(parents=True, exist_ok=True)
-    baseline = ModeleSeul(args.modele)
+    try:
+        sante = requests.get(f"{args.api_url.rstrip('/')}/health", timeout=5).json()
+    except Exception:
+        sante = {}
+    fournisseur_juge = args.fournisseur_juge or args.fournisseur
+    modele_baseline = args.modele or (
+        BEDROCK_CHAT_DEFAUT if args.fournisseur == "bedrock" else MODELE_DEFAUT)
+    if args.modele_juge:
+        modele_juge = args.modele_juge
+    elif fournisseur_juge == "bedrock":
+        modele_juge = BEDROCK_JUGE_DEFAUT
+    else:
+        modele_juge = modele_baseline
+    baseline = construire_modele(args.fournisseur, modele_baseline)
+    juge = (baseline if (fournisseur_juge == args.fournisseur
+                         and modele_juge == modele_baseline)
+            else construire_modele(fournisseur_juge, modele_juge))
     client_demo = ClientMeridian(args.api_url, args.email, args.password)
     clients = {"demo": client_demo, "pilot": None}
     if args.pilot_email and args.pilot_password:
@@ -699,7 +796,7 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 resultat = executer_scenario(
                     scenario, client, baseline, f"{run_id}-{scenario.id}",
-                    faire_juger=not args.sans_juge)
+                    faire_juger=not args.sans_juge, juge=juge)
             except BenchmarkErreur as exc:
                 resultat = {
                     "id": scenario.id, "categorie": scenario.category,
@@ -720,10 +817,14 @@ def main(argv: list[str] | None = None) -> int:
     config = {
         "date": datetime.now(timezone.utc).isoformat(),
         "api_url": args.api_url,
-        "modele": args.modele,
+        "fournisseur": args.fournisseur,
+        "fournisseur_juge": fournisseur_juge,
+        "modele": modele_baseline,
+        "modele_juge": modele_juge,
         "runs": args.runs,
         "commit": _commit(),
         "scenarios": [scenario.id for scenario in scenarios],
+        "sante_api": sante,
     }
     (sortie / "summary.json").write_text(
         json.dumps({"config": config, "agregat": agregat, "resultats": resultats},

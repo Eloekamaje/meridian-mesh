@@ -1,0 +1,181 @@
+{
+  "config": {
+    "date": "2026-11-06T19:05:43.045629+00:00",
+    "api_url": "http://127.0.0.1:8001/api",
+    "fournisseur": "bedrock",
+    "modele": "openai.gpt-oss-120b-1:0",
+    "modele_juge": "mistral.mistral-large-2402-v1:0",
+    "runs": 3,
+    "commit": "f402fa1",
+    "scenarios": [
+      "conduit-capabilities",
+      "conduit-dependencies",
+      "conduit-business-rules",
+      "conduit-unknown-metric",
+      "conduit-false-premise",
+      "conduit-context-correction",
+      "conduit-compare",
+      "conduit-report",
+      "conduit-investigation",
+      "conduit-prompt-injection",
+      "pilot-tenant-isolation"
+    ],
+    "sante_api": {
+      "status": "ok",
+      "service": "meridian",
+      "dependances": [
+        {
+          "nom": "postgres",
+          "statut": "ok",
+          "requis": true,
+          "detail": "JUMEAU_PG_DSN ou JUMEAU_WORKER_PG_DSN"
+        },
+        {
+          "nom": "mongo",
+          "statut": "ok",
+          "requis": true,
+          "detail": "MONGO_URL et DB_NAME"
+        },
+        {
+          "nom": "git",
+          "statut": "ok",
+          "requis": true,
+          "detail": "binaire git dans PATH ou GIT_BIN"
+        },
+        {
+          "nom": "codebase-memory-mcp",
+          "statut": "ok",
+          "requis": false,
+          "requis_pour": [
+            "ingestion de code",
+            "outils de code"
+          ],
+          "detail": "CBM_BIN ou binaire codebase-memory-mcp dans PATH"
+        },
+        {
+          "nom": "modele",
+          "statut": "ok",
+          "requis": false,
+          "requis_pour": [
+            "Flore",
+            "Gardien"
+          ],
+          "detail": "mode=bedrock"
+        },
+        {
+          "nom": "anydoc",
+          "statut": "ok",
+          "requis": false,
+          "requis_pour": [
+            "extraction bureautique"
+          ],
+          "detail": "module Python firecrawl-anydoc"
+        },
+        {
+          "nom": "redis",
+          "statut": "absent",
+          "requis": false,
+          "requis_pour": [
+            "SSE/notifications"
+          ],
+          "detail": "REDIS_URL"
+        },
+        {
+          "nom": "neo4j",
+          "statut": "absent",
+          "requis": false,
+          "requis_pour": [
+            "projection graphe"
+          ],
+          "detail": "NEO4J_URI/NEO4J_URL ou GRAPH_STORE=neo4j"
+        },
+        {
+          "nom": "design-diagram",
+          "statut": "ok",
+          "requis": false,
+          "requis_pour": [
+            "compilation de diagrammes"
+          ],
+          "detail": "copie vendored du compilateur SVG"
+        },
+        {
+          "nom": "embeddings",
+          "statut": "ok",
+          "requis": false,
+          "requis_pour": [
+            "retrieval sémantique",
+            "RAG documentaire"
+          ],
+          "detail": "provider=bedrock modele=amazon.titan-embed-text-v2:0 region=us-east-1"
+        }
+      ],
+      "manquantes": [
+        "redis",
+        "neo4j"
+      ]
+    }
+  },
+  "agregat": {
+    "n": 33,
+    "scenarios_uniques": 11,
+    "flore_checks_ok": 26,
+    "baseline_checks_ok": 7,
+    "taux_flore": 0.788,
+    "taux_baseline": 0.212,
+    "pass_at_k_flore": 1.0,
+    "pass_at_k_baseline": 0.273,
+    "jugements": 33,
+    "victoires_flore": 22,
+    "defaites_flore": 7,
+    "egalites": 4,
+    "taux_victoire_flore": 0.667,
+    "ic95_victoire_flore": [
+      0.506,
+      0.828
+    ],
+    "duree_moyenne_flore_s": 22.226,
+    "duree_moyenne_baseline_s": 6.854,
+    "categories": {
+      "comprehension": {
+        "n": 9,
+        "flore_ok": 5,
+        "baseline_ok": 0
+      },
+      "calibration": {
+        "n": 3,
+        "flore_ok": 1,
+        "baseline_ok": 0
+      },
+      "adversarial": {
+        "n": 3,
+        "flore_ok": 3,
+        "baseline_ok": 0
+      },
+      "context": {
+        "n": 3,
+        "flore_ok": 2,
+        "baseline_ok": 0
+      },
+      "analyse": {
+        "n": 3,
+        "flore_ok": 3,
+        "baseline_ok": 0
+      },
+      "restitution": {
+        "n": 3,
+        "flore_ok": 3,
+        "baseline_ok": 0
+      },
+      "action": {
+        "n": 3,
+        "flore_ok": 3,
+        "baseline_ok": 3
+      },
+      "securite": {
+        "n": 6,
+        "flore_ok": 6,
+        "baseline_ok": 4
+      }
+    }
+  }
+}

@@ -1,0 +1,181 @@
+{
+  "config": {
+    "date": "2026-11-06T19:42:09.696576+00:00",
+    "api_url": "http://127.0.0.1:8001/api",
+    "fournisseur": "bedrock",
+    "modele": "us.moonshotai.kimi-k3",
+    "modele_juge": "mistral.mistral-large-2402-v1:0",
+    "runs": 1,
+    "commit": "f402fa1",
+    "scenarios": [
+      "conduit-capabilities",
+      "conduit-dependencies",
+      "conduit-business-rules",
+      "conduit-unknown-metric",
+      "conduit-false-premise",
+      "conduit-context-correction",
+      "conduit-compare",
+      "conduit-report",
+      "conduit-investigation",
+      "conduit-prompt-injection",
+      "pilot-tenant-isolation"
+    ],
+    "sante_api": {
+      "status": "ok",
+      "service": "meridian",
+      "dependances": [
+        {
+          "nom": "postgres",
+          "statut": "ok",
+          "requis": true,
+          "detail": "JUMEAU_PG_DSN ou JUMEAU_WORKER_PG_DSN"
+        },
+        {
+          "nom": "mongo",
+          "statut": "ok",
+          "requis": true,
+          "detail": "MONGO_URL et DB_NAME"
+        },
+        {
+          "nom": "git",
+          "statut": "ok",
+          "requis": true,
+          "detail": "binaire git dans PATH ou GIT_BIN"
+        },
+        {
+          "nom": "codebase-memory-mcp",
+          "statut": "ok",
+          "requis": false,
+          "requis_pour": [
+            "ingestion de code",
+            "outils de code"
+          ],
+          "detail": "CBM_BIN ou binaire codebase-memory-mcp dans PATH"
+        },
+        {
+          "nom": "modele",
+          "statut": "ok",
+          "requis": false,
+          "requis_pour": [
+            "Flore",
+            "Gardien"
+          ],
+          "detail": "mode=bedrock"
+        },
+        {
+          "nom": "anydoc",
+          "statut": "ok",
+          "requis": false,
+          "requis_pour": [
+            "extraction bureautique"
+          ],
+          "detail": "module Python firecrawl-anydoc"
+        },
+        {
+          "nom": "redis",
+          "statut": "absent",
+          "requis": false,
+          "requis_pour": [
+            "SSE/notifications"
+          ],
+          "detail": "REDIS_URL"
+        },
+        {
+          "nom": "neo4j",
+          "statut": "absent",
+          "requis": false,
+          "requis_pour": [
+            "projection graphe"
+          ],
+          "detail": "NEO4J_URI/NEO4J_URL ou GRAPH_STORE=neo4j"
+        },
+        {
+          "nom": "design-diagram",
+          "statut": "ok",
+          "requis": false,
+          "requis_pour": [
+            "compilation de diagrammes"
+          ],
+          "detail": "copie vendored du compilateur SVG"
+        },
+        {
+          "nom": "embeddings",
+          "statut": "ok",
+          "requis": false,
+          "requis_pour": [
+            "retrieval sémantique",
+            "RAG documentaire"
+          ],
+          "detail": "provider=bedrock modele=amazon.titan-embed-text-v2:0 region=us-east-1"
+        }
+      ],
+      "manquantes": [
+        "redis",
+        "neo4j"
+      ]
+    }
+  },
+  "agregat": {
+    "n": 11,
+    "scenarios_uniques": 11,
+    "flore_checks_ok": 9,
+    "baseline_checks_ok": 3,
+    "taux_flore": 0.818,
+    "taux_baseline": 0.273,
+    "pass_at_k_flore": 0.818,
+    "pass_at_k_baseline": 0.273,
+    "jugements": 11,
+    "victoires_flore": 8,
+    "defaites_flore": 1,
+    "egalites": 2,
+    "taux_victoire_flore": 0.727,
+    "ic95_victoire_flore": [
+      0.464,
+      0.99
+    ],
+    "duree_moyenne_flore_s": 87.426,
+    "duree_moyenne_baseline_s": 5.548,
+    "categories": {
+      "comprehension": {
+        "n": 3,
+        "flore_ok": 3,
+        "baseline_ok": 0
+      },
+      "calibration": {
+        "n": 1,
+        "flore_ok": 0,
+        "baseline_ok": 0
+      },
+      "adversarial": {
+        "n": 1,
+        "flore_ok": 1,
+        "baseline_ok": 0
+      },
+      "context": {
+        "n": 1,
+        "flore_ok": 1,
+        "baseline_ok": 0
+      },
+      "analyse": {
+        "n": 1,
+        "flore_ok": 1,
+        "baseline_ok": 0
+      },
+      "restitution": {
+        "n": 1,
+        "flore_ok": 0,
+        "baseline_ok": 0
+      },
+      "action": {
+        "n": 1,
+        "flore_ok": 1,
+        "baseline_ok": 1
+      },
+      "securite": {
+        "n": 2,
+        "flore_ok": 2,
+        "baseline_ok": 2
+      }
+    }
+  }
+}

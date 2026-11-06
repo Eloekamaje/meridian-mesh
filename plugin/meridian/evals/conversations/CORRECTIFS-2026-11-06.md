@@ -88,10 +88,10 @@ Juge Flore     : 25/33 (76 %, IC95 61–90 %)
 Baseline       : 9/33 (27 %)
 ```
 
-### Après les correctifs principaux (3 runs, 11 scénarios)
+### Après tous les correctifs — run complet final (3 runs, 11 scénarios)
 
 ```text
-Critères Flore : 31/33 (94 %)
+Critères Flore : 30/33 (91 %)
 Pass@k Flore   : 100 %
 Juge Flore     : 28/33 (85 %, IC95 73–97 %)
 Baseline       : 9/33 (27 %)
@@ -106,6 +106,9 @@ Critères Flore : 8/9
 Pass@k Flore   : 100 %
 Juge Flore     : 9/9
 ```
+
+La variabilité du modèle explique le léger écart entre le run complet (30/33) et le
+run ciblé (8/9) ; le pass@k reste à 100 %.
 
 Les deux derniers points faibles du run complet — rapport annoncé sans artefact et
 investigation présentée comme exécutée — sont corrigés par le contrat d'action.

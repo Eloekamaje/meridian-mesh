@@ -308,3 +308,43 @@ backend/.venv/bin/python plugin/meridian/evals/conversations/run.py \
 
 Voir [`conversations/README.md`](conversations/README.md) pour le protocole, le format
 des scénarios et les limites.
+
+Le pilote Bedrock réel du 2026-11-06 ([`conversations/PILOT-2026-11-06-bedrock.md`](conversations/PILOT-2026-11-06-bedrock.md))
+compare Flore et le même modèle Bedrock seul, avec un juge Mistral Large. Sur 33 runs,
+Flore obtient 13/33 aux critères déterministes et gagne 23 jugements sur 33 (70 %).
+Le modèle canadien disponible qui sait faire du tool use en streaming est Nova Lite ;
+les modèles Anthropic sont bloqués par le formulaire d'usage et l'instrument de paiement
+Marketplace. Les résultats restent donc **dépendants du modèle**, pas seulement du
+harness.
+
+Un second pilote, hors résidence canadienne, teste **GPT-OSS 120B** en `us-east-1` :
+26/33 (79 %) aux critères déterministes, pass@k 100 %, 22/33 au juge. GPT-OSS est un
+modèle Bedrock réel, outillé, qui fait tourner Flore de bout en bout ; mais il n'existe
+pas en `ca-central-1`. Voir
+[`conversations/PILOT-2026-11-06-gptoss-us-east-1.md`](conversations/PILOT-2026-11-06-gptoss-us-east-1.md).
+
+Un troisième pilote teste **Kimi K3** via les profils `us.`/`global.` (hors Canada) :
+9/11 (82 %) aux critères déterministes, 8/11 au juge, mais **87 s de moyenne** par
+scénario, jusqu'à 3,5 min. Qualité réelle, latence incompatible avec un chat temps réel.
+Voir [`conversations/PILOT-2026-11-06-kimi-k3-us-east-1.md`](conversations/PILOT-2026-11-06-kimi-k3-us-east-1.md).
+
+La **comparaison équitable** reprend les quatre modèles avec un juge unique (Mistral
+Large), 3×11 runs pour DeepSeek/GPT-OSS/Nova Lite et 1×11 pour Kimi K3, à température 0
+quand le modèle l'accepte : DeepSeek 33/33 (100 %) et 29/33 au juge, Kimi 11/11 et 10/11
+(101 s), GPT-OSS 24/33 (73 %) et 26/33 (79 %), Nova Lite 16/33 (48 %) et 21/33 (64 %).
+Voir [`conversations/PILOT-2026-11-06-equitable.md`](conversations/PILOT-2026-11-06-equitable.md).
+
+## Benchmark retrieval sémantique
+
+Le dossier [`retrieval/`](retrieval/) mesure l'apport des embeddings au retrieval
+documentaire : même corpus et mêmes requêtes paraphrasées, classement lexical + graphe
+contre classement hybride avec Bedrock Titan. Le pilote 2026-11-06 passe de **75 % à
+100 % de Hit@1** et de **0,797 à 1,000 de MRR**.
+
+```bash
+backend/.venv/bin/python plugin/meridian/evals/retrieval/run.py \
+  --output /tmp/meridian-retrieval
+```
+
+Voir [`retrieval/README.md`](retrieval/README.md) et
+[`retrieval/PILOT-2026-11-06.md`](retrieval/PILOT-2026-11-06.md).

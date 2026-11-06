@@ -1,0 +1,748 @@
+{
+  "protocole": {
+    "scenarios": 11,
+    "juge": "mistral.mistral-large-2402-v1:0",
+    "temperature": "0 sauf Kimi K3 (non supportée)",
+    "runs": {
+      "deepseek": 3,
+      "gptoss": 3,
+      "nova-lite": 3,
+      "kimi2": 1
+    },
+    "region_bedrock": "us-east-1"
+  },
+  "modeles": {
+    "deepseek": {
+      "libelle": "DeepSeek",
+      "config": {
+        "date": "2026-11-06T20:25:06.918692+00:00",
+        "api_url": "http://127.0.0.1:8001/api",
+        "fournisseur": "deepseek",
+        "fournisseur_juge": "bedrock",
+        "modele": "deepseek-chat",
+        "modele_juge": "mistral.mistral-large-2402-v1:0",
+        "runs": 3,
+        "commit": "f402fa1",
+        "scenarios": [
+          "conduit-capabilities",
+          "conduit-dependencies",
+          "conduit-business-rules",
+          "conduit-unknown-metric",
+          "conduit-false-premise",
+          "conduit-context-correction",
+          "conduit-compare",
+          "conduit-report",
+          "conduit-investigation",
+          "conduit-prompt-injection",
+          "pilot-tenant-isolation"
+        ],
+        "sante_api": {
+          "status": "ok",
+          "service": "meridian",
+          "dependances": [
+            {
+              "nom": "postgres",
+              "statut": "ok",
+              "requis": true,
+              "detail": "JUMEAU_PG_DSN ou JUMEAU_WORKER_PG_DSN"
+            },
+            {
+              "nom": "mongo",
+              "statut": "ok",
+              "requis": true,
+              "detail": "MONGO_URL et DB_NAME"
+            },
+            {
+              "nom": "git",
+              "statut": "ok",
+              "requis": true,
+              "detail": "binaire git dans PATH ou GIT_BIN"
+            },
+            {
+              "nom": "codebase-memory-mcp",
+              "statut": "ok",
+              "requis": false,
+              "requis_pour": [
+                "ingestion de code",
+                "outils de code"
+              ],
+              "detail": "CBM_BIN ou binaire codebase-memory-mcp dans PATH"
+            },
+            {
+              "nom": "modele",
+              "statut": "ok",
+              "requis": false,
+              "requis_pour": [
+                "Flore",
+                "Gardien"
+              ],
+              "detail": "mode=deepseek"
+            },
+            {
+              "nom": "anydoc",
+              "statut": "ok",
+              "requis": false,
+              "requis_pour": [
+                "extraction bureautique"
+              ],
+              "detail": "module Python firecrawl-anydoc"
+            },
+            {
+              "nom": "redis",
+              "statut": "absent",
+              "requis": false,
+              "requis_pour": [
+                "SSE/notifications"
+              ],
+              "detail": "REDIS_URL"
+            },
+            {
+              "nom": "neo4j",
+              "statut": "absent",
+              "requis": false,
+              "requis_pour": [
+                "projection graphe"
+              ],
+              "detail": "NEO4J_URI/NEO4J_URL ou GRAPH_STORE=neo4j"
+            },
+            {
+              "nom": "design-diagram",
+              "statut": "ok",
+              "requis": false,
+              "requis_pour": [
+                "compilation de diagrammes"
+              ],
+              "detail": "copie vendored du compilateur SVG"
+            },
+            {
+              "nom": "embeddings",
+              "statut": "ok",
+              "requis": false,
+              "requis_pour": [
+                "retrieval sémantique",
+                "RAG documentaire"
+              ],
+              "detail": "provider=bedrock modele=amazon.titan-embed-text-v2:0 region=ca-central-1"
+            }
+          ],
+          "manquantes": [
+            "redis",
+            "neo4j"
+          ]
+        }
+      },
+      "agregat": {
+        "n": 33,
+        "scenarios_uniques": 11,
+        "flore_checks_ok": 33,
+        "baseline_checks_ok": 9,
+        "taux_flore": 1.0,
+        "taux_baseline": 0.273,
+        "pass_at_k_flore": 1.0,
+        "pass_at_k_baseline": 0.273,
+        "jugements": 33,
+        "victoires_flore": 29,
+        "defaites_flore": 0,
+        "egalites": 4,
+        "taux_victoire_flore": 0.879,
+        "ic95_victoire_flore": [
+          0.767,
+          0.99
+        ],
+        "duree_moyenne_flore_s": 45.213,
+        "duree_moyenne_baseline_s": 3.151,
+        "categories": {
+          "comprehension": {
+            "n": 9,
+            "flore_ok": 9,
+            "baseline_ok": 0
+          },
+          "calibration": {
+            "n": 3,
+            "flore_ok": 3,
+            "baseline_ok": 0
+          },
+          "adversarial": {
+            "n": 3,
+            "flore_ok": 3,
+            "baseline_ok": 0
+          },
+          "context": {
+            "n": 3,
+            "flore_ok": 3,
+            "baseline_ok": 0
+          },
+          "analyse": {
+            "n": 3,
+            "flore_ok": 3,
+            "baseline_ok": 0
+          },
+          "restitution": {
+            "n": 3,
+            "flore_ok": 3,
+            "baseline_ok": 0
+          },
+          "action": {
+            "n": 3,
+            "flore_ok": 3,
+            "baseline_ok": 3
+          },
+          "securite": {
+            "n": 6,
+            "flore_ok": 6,
+            "baseline_ok": 6
+          }
+        }
+      }
+    },
+    "gptoss": {
+      "libelle": "GPT-OSS 120B",
+      "config": {
+        "date": "2026-11-06T20:43:39.273963+00:00",
+        "api_url": "http://127.0.0.1:8001/api",
+        "fournisseur": "bedrock",
+        "fournisseur_juge": "bedrock",
+        "modele": "openai.gpt-oss-120b-1:0",
+        "modele_juge": "mistral.mistral-large-2402-v1:0",
+        "runs": 3,
+        "commit": "f402fa1",
+        "scenarios": [
+          "conduit-capabilities",
+          "conduit-dependencies",
+          "conduit-business-rules",
+          "conduit-unknown-metric",
+          "conduit-false-premise",
+          "conduit-context-correction",
+          "conduit-compare",
+          "conduit-report",
+          "conduit-investigation",
+          "conduit-prompt-injection",
+          "pilot-tenant-isolation"
+        ],
+        "sante_api": {
+          "status": "ok",
+          "service": "meridian",
+          "dependances": [
+            {
+              "nom": "postgres",
+              "statut": "ok",
+              "requis": true,
+              "detail": "JUMEAU_PG_DSN ou JUMEAU_WORKER_PG_DSN"
+            },
+            {
+              "nom": "mongo",
+              "statut": "ok",
+              "requis": true,
+              "detail": "MONGO_URL et DB_NAME"
+            },
+            {
+              "nom": "git",
+              "statut": "ok",
+              "requis": true,
+              "detail": "binaire git dans PATH ou GIT_BIN"
+            },
+            {
+              "nom": "codebase-memory-mcp",
+              "statut": "ok",
+              "requis": false,
+              "requis_pour": [
+                "ingestion de code",
+                "outils de code"
+              ],
+              "detail": "CBM_BIN ou binaire codebase-memory-mcp dans PATH"
+            },
+            {
+              "nom": "modele",
+              "statut": "ok",
+              "requis": false,
+              "requis_pour": [
+                "Flore",
+                "Gardien"
+              ],
+              "detail": "mode=bedrock"
+            },
+            {
+              "nom": "anydoc",
+              "statut": "ok",
+              "requis": false,
+              "requis_pour": [
+                "extraction bureautique"
+              ],
+              "detail": "module Python firecrawl-anydoc"
+            },
+            {
+              "nom": "redis",
+              "statut": "absent",
+              "requis": false,
+              "requis_pour": [
+                "SSE/notifications"
+              ],
+              "detail": "REDIS_URL"
+            },
+            {
+              "nom": "neo4j",
+              "statut": "absent",
+              "requis": false,
+              "requis_pour": [
+                "projection graphe"
+              ],
+              "detail": "NEO4J_URI/NEO4J_URL ou GRAPH_STORE=neo4j"
+            },
+            {
+              "nom": "design-diagram",
+              "statut": "ok",
+              "requis": false,
+              "requis_pour": [
+                "compilation de diagrammes"
+              ],
+              "detail": "copie vendored du compilateur SVG"
+            },
+            {
+              "nom": "embeddings",
+              "statut": "ok",
+              "requis": false,
+              "requis_pour": [
+                "retrieval sémantique",
+                "RAG documentaire"
+              ],
+              "detail": "provider=bedrock modele=amazon.titan-embed-text-v2:0 region=us-east-1"
+            }
+          ],
+          "manquantes": [
+            "redis",
+            "neo4j"
+          ]
+        }
+      },
+      "agregat": {
+        "n": 33,
+        "scenarios_uniques": 11,
+        "flore_checks_ok": 24,
+        "baseline_checks_ok": 7,
+        "taux_flore": 0.727,
+        "taux_baseline": 0.212,
+        "pass_at_k_flore": 0.818,
+        "pass_at_k_baseline": 0.273,
+        "jugements": 33,
+        "victoires_flore": 26,
+        "defaites_flore": 4,
+        "egalites": 3,
+        "taux_victoire_flore": 0.788,
+        "ic95_victoire_flore": [
+          0.648,
+          0.927
+        ],
+        "duree_moyenne_flore_s": 23.185,
+        "duree_moyenne_baseline_s": 6.68,
+        "categories": {
+          "comprehension": {
+            "n": 9,
+            "flore_ok": 5,
+            "baseline_ok": 0
+          },
+          "calibration": {
+            "n": 3,
+            "flore_ok": 1,
+            "baseline_ok": 0
+          },
+          "adversarial": {
+            "n": 3,
+            "flore_ok": 0,
+            "baseline_ok": 0
+          },
+          "context": {
+            "n": 3,
+            "flore_ok": 3,
+            "baseline_ok": 0
+          },
+          "analyse": {
+            "n": 3,
+            "flore_ok": 3,
+            "baseline_ok": 0
+          },
+          "restitution": {
+            "n": 3,
+            "flore_ok": 3,
+            "baseline_ok": 0
+          },
+          "action": {
+            "n": 3,
+            "flore_ok": 3,
+            "baseline_ok": 3
+          },
+          "securite": {
+            "n": 6,
+            "flore_ok": 6,
+            "baseline_ok": 4
+          }
+        }
+      }
+    },
+    "nova-lite": {
+      "libelle": "Nova Lite",
+      "config": {
+        "date": "2026-11-06T21:02:17.737115+00:00",
+        "api_url": "http://127.0.0.1:8001/api",
+        "fournisseur": "bedrock",
+        "fournisseur_juge": "bedrock",
+        "modele": "amazon.nova-lite-v1:0",
+        "modele_juge": "mistral.mistral-large-2402-v1:0",
+        "runs": 3,
+        "commit": "d4ba50f",
+        "scenarios": [
+          "conduit-capabilities",
+          "conduit-dependencies",
+          "conduit-business-rules",
+          "conduit-unknown-metric",
+          "conduit-false-premise",
+          "conduit-context-correction",
+          "conduit-compare",
+          "conduit-report",
+          "conduit-investigation",
+          "conduit-prompt-injection",
+          "pilot-tenant-isolation"
+        ],
+        "sante_api": {
+          "status": "ok",
+          "service": "meridian",
+          "dependances": [
+            {
+              "nom": "postgres",
+              "statut": "ok",
+              "requis": true,
+              "detail": "JUMEAU_PG_DSN ou JUMEAU_WORKER_PG_DSN"
+            },
+            {
+              "nom": "mongo",
+              "statut": "ok",
+              "requis": true,
+              "detail": "MONGO_URL et DB_NAME"
+            },
+            {
+              "nom": "git",
+              "statut": "ok",
+              "requis": true,
+              "detail": "binaire git dans PATH ou GIT_BIN"
+            },
+            {
+              "nom": "codebase-memory-mcp",
+              "statut": "ok",
+              "requis": false,
+              "requis_pour": [
+                "ingestion de code",
+                "outils de code"
+              ],
+              "detail": "CBM_BIN ou binaire codebase-memory-mcp dans PATH"
+            },
+            {
+              "nom": "modele",
+              "statut": "ok",
+              "requis": false,
+              "requis_pour": [
+                "Flore",
+                "Gardien"
+              ],
+              "detail": "mode=bedrock"
+            },
+            {
+              "nom": "anydoc",
+              "statut": "ok",
+              "requis": false,
+              "requis_pour": [
+                "extraction bureautique"
+              ],
+              "detail": "module Python firecrawl-anydoc"
+            },
+            {
+              "nom": "redis",
+              "statut": "absent",
+              "requis": false,
+              "requis_pour": [
+                "SSE/notifications"
+              ],
+              "detail": "REDIS_URL"
+            },
+            {
+              "nom": "neo4j",
+              "statut": "absent",
+              "requis": false,
+              "requis_pour": [
+                "projection graphe"
+              ],
+              "detail": "NEO4J_URI/NEO4J_URL ou GRAPH_STORE=neo4j"
+            },
+            {
+              "nom": "design-diagram",
+              "statut": "ok",
+              "requis": false,
+              "requis_pour": [
+                "compilation de diagrammes"
+              ],
+              "detail": "copie vendored du compilateur SVG"
+            },
+            {
+              "nom": "embeddings",
+              "statut": "ok",
+              "requis": false,
+              "requis_pour": [
+                "retrieval sémantique",
+                "RAG documentaire"
+              ],
+              "detail": "provider=bedrock modele=amazon.titan-embed-text-v2:0 region=us-east-1"
+            }
+          ],
+          "manquantes": [
+            "redis",
+            "neo4j"
+          ]
+        }
+      },
+      "agregat": {
+        "n": 33,
+        "scenarios_uniques": 11,
+        "flore_checks_ok": 16,
+        "baseline_checks_ok": 7,
+        "taux_flore": 0.485,
+        "taux_baseline": 0.212,
+        "pass_at_k_flore": 0.636,
+        "pass_at_k_baseline": 0.273,
+        "jugements": 33,
+        "victoires_flore": 21,
+        "defaites_flore": 4,
+        "egalites": 8,
+        "taux_victoire_flore": 0.636,
+        "ic95_victoire_flore": [
+          0.472,
+          0.8
+        ],
+        "duree_moyenne_flore_s": 26.521,
+        "duree_moyenne_baseline_s": 3.261,
+        "categories": {
+          "comprehension": {
+            "n": 9,
+            "flore_ok": 2,
+            "baseline_ok": 0
+          },
+          "calibration": {
+            "n": 3,
+            "flore_ok": 3,
+            "baseline_ok": 0
+          },
+          "adversarial": {
+            "n": 3,
+            "flore_ok": 0,
+            "baseline_ok": 0
+          },
+          "context": {
+            "n": 3,
+            "flore_ok": 0,
+            "baseline_ok": 0
+          },
+          "analyse": {
+            "n": 3,
+            "flore_ok": 0,
+            "baseline_ok": 0
+          },
+          "restitution": {
+            "n": 3,
+            "flore_ok": 2,
+            "baseline_ok": 0
+          },
+          "action": {
+            "n": 3,
+            "flore_ok": 3,
+            "baseline_ok": 3
+          },
+          "securite": {
+            "n": 6,
+            "flore_ok": 6,
+            "baseline_ok": 4
+          }
+        }
+      }
+    },
+    "kimi2": {
+      "libelle": "Kimi K3",
+      "config": {
+        "date": "2026-11-06T21:25:19.780563+00:00",
+        "api_url": "http://127.0.0.1:8001/api",
+        "fournisseur": "bedrock",
+        "fournisseur_juge": "bedrock",
+        "modele": "us.moonshotai.kimi-k3",
+        "modele_juge": "mistral.mistral-large-2402-v1:0",
+        "runs": 1,
+        "commit": "d4ba50f",
+        "scenarios": [
+          "conduit-capabilities",
+          "conduit-dependencies",
+          "conduit-business-rules",
+          "conduit-unknown-metric",
+          "conduit-false-premise",
+          "conduit-context-correction",
+          "conduit-compare",
+          "conduit-report",
+          "conduit-investigation",
+          "conduit-prompt-injection",
+          "pilot-tenant-isolation"
+        ],
+        "sante_api": {
+          "status": "ok",
+          "service": "meridian",
+          "dependances": [
+            {
+              "nom": "postgres",
+              "statut": "ok",
+              "requis": true,
+              "detail": "JUMEAU_PG_DSN ou JUMEAU_WORKER_PG_DSN"
+            },
+            {
+              "nom": "mongo",
+              "statut": "ok",
+              "requis": true,
+              "detail": "MONGO_URL et DB_NAME"
+            },
+            {
+              "nom": "git",
+              "statut": "ok",
+              "requis": true,
+              "detail": "binaire git dans PATH ou GIT_BIN"
+            },
+            {
+              "nom": "codebase-memory-mcp",
+              "statut": "ok",
+              "requis": false,
+              "requis_pour": [
+                "ingestion de code",
+                "outils de code"
+              ],
+              "detail": "CBM_BIN ou binaire codebase-memory-mcp dans PATH"
+            },
+            {
+              "nom": "modele",
+              "statut": "ok",
+              "requis": false,
+              "requis_pour": [
+                "Flore",
+                "Gardien"
+              ],
+              "detail": "mode=bedrock"
+            },
+            {
+              "nom": "anydoc",
+              "statut": "ok",
+              "requis": false,
+              "requis_pour": [
+                "extraction bureautique"
+              ],
+              "detail": "module Python firecrawl-anydoc"
+            },
+            {
+              "nom": "redis",
+              "statut": "absent",
+              "requis": false,
+              "requis_pour": [
+                "SSE/notifications"
+              ],
+              "detail": "REDIS_URL"
+            },
+            {
+              "nom": "neo4j",
+              "statut": "absent",
+              "requis": false,
+              "requis_pour": [
+                "projection graphe"
+              ],
+              "detail": "NEO4J_URI/NEO4J_URL ou GRAPH_STORE=neo4j"
+            },
+            {
+              "nom": "design-diagram",
+              "statut": "ok",
+              "requis": false,
+              "requis_pour": [
+                "compilation de diagrammes"
+              ],
+              "detail": "copie vendored du compilateur SVG"
+            },
+            {
+              "nom": "embeddings",
+              "statut": "ok",
+              "requis": false,
+              "requis_pour": [
+                "retrieval sémantique",
+                "RAG documentaire"
+              ],
+              "detail": "provider=bedrock modele=amazon.titan-embed-text-v2:0 region=us-east-1"
+            }
+          ],
+          "manquantes": [
+            "redis",
+            "neo4j"
+          ]
+        }
+      },
+      "agregat": {
+        "n": 11,
+        "scenarios_uniques": 11,
+        "flore_checks_ok": 11,
+        "baseline_checks_ok": 3,
+        "taux_flore": 1.0,
+        "taux_baseline": 0.273,
+        "pass_at_k_flore": 1.0,
+        "pass_at_k_baseline": 0.273,
+        "jugements": 11,
+        "victoires_flore": 10,
+        "defaites_flore": 0,
+        "egalites": 1,
+        "taux_victoire_flore": 0.909,
+        "ic95_victoire_flore": [
+          0.739,
+          1.0
+        ],
+        "duree_moyenne_flore_s": 101.064,
+        "duree_moyenne_baseline_s": 5.102,
+        "categories": {
+          "comprehension": {
+            "n": 3,
+            "flore_ok": 3,
+            "baseline_ok": 0
+          },
+          "calibration": {
+            "n": 1,
+            "flore_ok": 1,
+            "baseline_ok": 0
+          },
+          "adversarial": {
+            "n": 1,
+            "flore_ok": 1,
+            "baseline_ok": 0
+          },
+          "context": {
+            "n": 1,
+            "flore_ok": 1,
+            "baseline_ok": 0
+          },
+          "analyse": {
+            "n": 1,
+            "flore_ok": 1,
+            "baseline_ok": 0
+          },
+          "restitution": {
+            "n": 1,
+            "flore_ok": 1,
+            "baseline_ok": 0
+          },
+          "action": {
+            "n": 1,
+            "flore_ok": 1,
+            "baseline_ok": 1
+          },
+          "securite": {
+            "n": 2,
+            "flore_ok": 2,
+            "baseline_ok": 2
+          }
+        }
+      }
+    }
+  }
+}

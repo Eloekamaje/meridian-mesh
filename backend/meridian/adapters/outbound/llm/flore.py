@@ -227,7 +227,8 @@ async def reviser(a, texte, verdict, chrono, emit, libelle=""):
     avant = texte
     try:
         with chrono.phase("agent"):
-            texte = str(await a.invoke_async(contradicteur.consigne_revision(verdict["problemes"]))).strip()
+            texte = sans_raisonnement(
+                await a.invoke_async(contradicteur.consigne_revision(verdict["problemes"])))
     except Exception:
         agent.journal.warning("révision impossible, première réponse conservée", exc_info=True)
         return avant, False
@@ -278,11 +279,23 @@ ETAPES = flux.LIBELLES_OUTILS
 EXTRAIT_OUTIL = flux.EXTRAIT_OUTIL
 
 
+sans_raisonnement = agent.sans_raisonnement
+
+
+def _modele_relecture(modele):
+    """Un relecteur distinct quand il est configuré : un modèle faible ne juge pas ses propres manques."""
+    try:
+        juge = agent.modele_juge()
+    except Exception:
+        return modele
+    return juge or modele
+
+
 async def executer(a, message, emit=None, chrono=None):
     """Le tour de l'agent ; avec `emit`, son brouillon et chacun de ses outils (début, arguments, issue, durée)
     partent au fil de l'eau. `chrono` reçoit l'instant du premier mot — la latence ressentie."""
     if emit is None:
-        return str(await a.invoke_async(message)).strip()
+        return sans_raisonnement(await a.invoke_async(message))
     resultat, suivi = None, flux.SuiviOutils(emit)
     async for e in a.stream_async(message):
         if "data" in e and isinstance(e["data"], str):
@@ -293,7 +306,7 @@ async def executer(a, message, emit=None, chrono=None):
             pass
         elif "result" in e:
             resultat = e["result"]
-    return str(resultat).strip()
+    return sans_raisonnement(resultat)
 
 
 async def _annoncer(emit, evenement):
@@ -402,7 +415,7 @@ async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=No
         # mais plus long ; fil séparé si elle gêne la mémoire.
         with chrono.phase("relecture"):
             verdict = await relire_sans_risque(
-                question, texte, ctx["sources"], ctx.get("profil"), modele,
+                question, texte, ctx["sources"], ctx.get("profil"), _modele_relecture(modele),
                 agent.CHARTE.read_text(encoding="utf-8"), ctx.get("lecteurs", []),
                 validees(ctx["claims"]), ctx.get("pieces"))
         texte, corrige = await reviser(a, texte, verdict, chrono, emit, jumeau_id)
@@ -531,7 +544,8 @@ async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=
         branches = [lecteur for ctx in ctxs.values() for lecteur in ctx.get("lecteurs", [])]
         with chrono.phase("relecture"):
             verdict = await relire_sans_risque(
-                question, texte, sources, profil, modele, agent.CHARTE.read_text(encoding="utf-8"), branches,
+                question, texte, sources, profil, _modele_relecture(modele),
+                agent.CHARTE.read_text(encoding="utf-8"), branches,
                 sum(validees(ctx["claims"]) for ctx in ctxs.values()), pieces_travail)
         texte, corrige = await reviser(a, texte, verdict, chrono, emit, "mobilisation")
         texte, _invalides_pieces = await asyncio.to_thread(retirer_citations_pieces, texte, pieces_travail)

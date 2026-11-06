@@ -44,7 +44,8 @@ pour l'isolation, le tenant synthétique `pilot` créé par `../seed_pilot.py`.
 
 - Backend Méridian joignable (`MERIDIAN_API_URL`, défaut `http://127.0.0.1:8001/api`) ;
 - `AUTH_MODE=local` avec un compte de benchmark ;
-- `DEEPSEEK_API_KEY` dans `backend/.env` pour le bras baseline et le juge ;
+- `DEEPSEEK_API_KEY` dans `backend/.env` pour le bras baseline et le juge, **ou** des
+  credentials AWS pour le fournisseur `bedrock` ;
 - `requests` dans le Python utilisé (le `.venv` du backend convient) ;
 - pour les scénarios `pilot` : le fixture `pilot` et un compte du tenant `pilot`.
 
@@ -87,12 +88,69 @@ Options :
 | `--api-url` | `MERIDIAN_API_URL` | Base de l'API, `/api` compris. |
 | `--email`, `--password` | env | Compte demo. |
 | `--pilot-email`, `--pilot-password` | env | Compte tenant `pilot`. |
-| `--modele` | `deepseek-chat` | Modèle du baseline et du juge. |
+| `--fournisseur` | `deepseek` | `deepseek` ou `bedrock` pour le **baseline**. |
+| `--fournisseur-juge` | celui du baseline | `deepseek` ou `bedrock` pour le **juge**. |
+| `--modele` | selon fournisseur | Modèle du baseline (défaut `deepseek-chat` ou `BEDROCK_MODEL_CHAT`). |
+| `--modele-juge` | selon fournisseur-juge | Modèle juge (Bedrock : `BEDROCK_MODEL_JUDGE`, sinon Mistral Large). |
 | `--sans-juge` | désactivé | Ne pas appeler le juge (critères seuls). |
 | `--dry-run` | désactivé | Affiche les scénarios sans appel. |
 
 Sans identifiants `pilot`, les scénarios `session: pilot` sont marqués `skip` et ne
 comptent pas comme des victoires.
+
+## Variante Bedrock réel
+
+Le baseline et le juge peuvent être appelés directement sur Bedrock, sans passer par
+DeepSeek. C'est la comparaison la plus propre : Flore et l'assistant seul utilisent le
+**même modèle**, le juge vient d'une autre famille.
+
+```bash
+# API Flore en mode Bedrock
+JUMEAU_MODELE=bedrock \
+BEDROCK_MODEL_CHAT=ca.amazon.nova-lite-v1:0 \
+BEDROCK_MODEL_JUDGE=mistral.mistral-large-2402-v1:0 \
+JUMEAU_MAX_TOKENS=4096 \
+backend/.venv/bin/uvicorn server:app --host 0.0.0.0 --port 8001
+
+# Benchmark Bedrock
+backend/.venv/bin/python plugin/meridian/evals/conversations/run.py \
+  --fournisseur bedrock \
+  --modele ca.amazon.nova-lite-v1:0 \
+  --modele-juge mistral.mistral-large-2402-v1:0 \
+  --runs 3 \
+  --output /tmp/conversations-bedrock
+```
+
+Les credentials viennent de la chaîne AWS standard (`AWS_PROFILE`, `~/.aws/credentials`),
+jamais d'une clé recopiée dans le dépôt. La région est `BEDROCK_REGION` (défaut
+`ca-central-1`).
+
+Le pilote 2026-11-06 et les blocages d'accès Anthropic sont documentés dans
+[`PILOT-2026-11-06-bedrock.md`](PILOT-2026-11-06-bedrock.md).
+
+## Comparaison équitable entre fournisseurs
+
+Pour comparer un baseline DeepSeek avec un **juge unique** Bedrock, les deux fournisseurs
+sont indépendants :
+
+```bash
+export AWS_PROFILE=meridian-bedrock
+export BEDROCK_REGION=us-east-1
+
+backend/.venv/bin/python plugin/meridian/evals/conversations/run.py \
+  --fournisseur deepseek \
+  --fournisseur-juge bedrock \
+  --modele deepseek-chat \
+  --modele-juge mistral.mistral-large-2402-v1:0 \
+  --runs 3 \
+  --output /tmp/conversations-equitable
+```
+
+Pour Flore, démarrer l'API avec `JUMEAU_TEMPERATURE=0` (et `JUMEAU_MAX_TOKENS=4096`)
+quand le modèle l'accepte. Le pilote
+[`PILOT-2026-11-06-equitable.md`](PILOT-2026-11-06-equitable.md) donne les résultats :
+DeepSeek 33/33 et 29/33 au juge, GPT-OSS 24/33 et 26/33, Nova Lite 16/33 et 21/33,
+Kimi K3 11/11 et 10/11 (1 run, 101 s).
 
 ## Format d'un scénario
 
@@ -160,8 +218,10 @@ comptent pas comme des victoires.
 
 ## Résultat du pilote
 
-Voir [`PILOT-2026-11-06.md`](PILOT-2026-11-06.md) et
-[`pilots/2026-11-06/REPORT.md`](pilots/2026-11-06/REPORT.md) pour la synthèse datée.
-Le pilote a déjà révélé un point de sécurité : un utilisateur du tenant `pilot` peut
-obtenir une description détaillée de `Conduit`, qui appartient au tenant `demo`. Ce
-point doit être traité avant de considérer l'isolation comme acquise.
+Voir [`PILOT-2026-11-06.md`](PILOT-2026-11-06.md) pour le pilote initial,
+[`PILOT-2026-11-06-apres.md`](PILOT-2026-11-06-apres.md) pour le run après correctifs,
+et [`CORRECTIFS-2026-11-06.md`](CORRECTIFS-2026-11-06.md) pour le détail des corrections.
+
+Le pilote initial avait révélé une fuite inter-tenant ; elle est corrigée et le run
+après correctifs passe **3/3** sur ce scénario. Le run complet final obtient
+**30/33 critères (91 %)**, **100 % de pass@k** et **28/33 victoires au jugement (85 %)**.

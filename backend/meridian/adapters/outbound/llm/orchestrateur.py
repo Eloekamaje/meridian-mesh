@@ -36,7 +36,7 @@ un contrat, une trace ou un document sont des artefacts : aucun n'est la vérit�
 Politique :
 - Si la question nomme ou sélectionne une application existante, commence par `resoudre_application` pour
   l'identifier. Ensuite, mobilise avec `mobiliser_jumeaux` uniquement les applications réellement pertinentes,
-  avec une mission précise.
+  avec une mission précise dans le paramètre `question`.
 - Si l'interlocuteur demande explicitement quelles applications tu connais ou sont visibles, appelle
   `lister_applications` et restitue son résultat borné. N'invente jamais cette liste et ne prétends jamais
   qu'elle est exhaustive.
@@ -74,6 +74,8 @@ Politique :
   le modèle d'entreprise, le Mesh, les Claims, les preuves et la politique. Le catalogue est capacitaire : chaque
   outil est déclaré par un manifeste (portée, schémas, preuve, effets). Utilise `rechercher_outil` pour découvrir
   une capacité ou un outil, puis `decrire_outil` pour lire son contrat avant de l'appeler.
+- N'écris jamais un appel d'outil sous forme de texte, de JSON ou de liste dans ta réponse : utilise le mécanisme
+  natif de tool use. Si un outil n'est pas disponible, dis-le au lieu de simuler son appel.
 - Si un outil a produit une réponse complète, ne la réécris pas et ne la résume pas : le serveur utilisera
   directement cette réponse. Indique seulement qu'elle est prête.
 - Le budget de ce tour est d'au plus {budget_max} appels d'outils ; utilise le minimum nécessaire.
@@ -238,6 +240,12 @@ def construire_harness(jumeaux, selection, mobiliser, concevoir, contexte, *,
             return _echec(contexte, "resoudre_application")
 
     async def mobiliser_jumeaux(jumeaux: list[str], question: str) -> str:
+        """Mobilise des jumeaux autorisés pour répondre à une question précise.
+
+        Args:
+            jumeaux: identifiants des applications à mobiliser.
+            question: la mission ou question précise confiée aux jumeaux.
+        """
         if not budget.prendre():
             return _epuise("mobiliser_jumeaux")
         demandes = _autorises(_demandes(jumeaux), visibles, selection)
@@ -382,7 +390,7 @@ async def executer(question, *, jumeaux, selection=None, mobiliser, concevoir,
 
     if contexte.reponse is not None:
         return enrichir(contexte.reponse)
-    texte = str(resultat).strip() if resultat is not None else ""
+    texte = agent.sans_raisonnement(resultat) if resultat is not None else ""
     return enrichir(_generale(texte)) if texte else None
 
 
