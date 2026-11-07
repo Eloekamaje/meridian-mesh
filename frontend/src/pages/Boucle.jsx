@@ -888,6 +888,18 @@ export default function Boucle() {
     setActionActive(actionId);
   };
 
+  // La création racine ne dépend d'aucune sélection : on ferme le détail courant
+  // pour que la modale s'ouvre sur un état propre, puis on restaure le focus
+  // sur le bouton d'en-tête à la fermeture.
+  const ouvrirCreationSituation = () => {
+    if (transition.enCours || enCoursRef.current || refRechargement.current) return;
+    refElementDeclencheurAction.current = document.activeElement;
+    reinitialiserTransition();
+    setSelection(null);
+    setDetail({ chargement: false, erreur: null, data: null });
+    setActionActive("creer_situation");
+  };
+
   const rechargerDetailSource = async (identifiant) => {
     refAbortVerification.current?.abort();
     const controleur = new AbortController();
@@ -946,9 +958,11 @@ export default function Boucle() {
 
   const executerTransition = async (valeurs) => {
     if (enCoursRef.current || refRechargement.current || transition.rechargement) return;
-    if (!actionCourante || !objetDetail) return;
-    const identifiant = idObjet(objetDetail);
-    if (!identifiant) {
+    if (!actionCourante) return;
+    const creationSituation = actionActive === "creer_situation";
+    if (!creationSituation && !objetDetail) return;
+    const identifiant = creationSituation ? null : idObjet(objetDetail);
+    if (!creationSituation && !identifiant) {
       setTransition((avant) => ({
         ...avant,
         erreur: "Cet objet n'a pas d'identifiant : la transition ne peut pas être enregistrée.",
@@ -963,7 +977,7 @@ export default function Boucle() {
       return;
     }
 
-    const { corps, erreur } = construireCorps(actionActive, valeurs, objetDetail);
+    const { corps, erreur } = construireCorps(actionActive, valeurs, objetDetail || {});
     if (erreur) {
       setTransition((avant) => ({ ...avant, erreur }));
       return;
@@ -985,7 +999,9 @@ export default function Boucle() {
     let cause = null;
     try {
       // Pas d'Idempotency-Key par défaut : le contrat A courant refuse les clés non vides.
-      reponse = await boucleApi[actionCourante.api](identifiant, corps);
+      reponse = creationSituation
+        ? await boucleApi.creerSituation(corps)
+        : await boucleApi[actionCourante.api](identifiant, corps);
     } catch (erreurApi) {
       cause = erreurApi;
     } finally {
@@ -994,6 +1010,19 @@ export default function Boucle() {
     }
 
     if (cause) {
+      if (creationSituation) {
+        const statut = cause?.response?.status;
+        const message = !cause?.response
+          ? "Résultat incertain : la situation n'a peut-être pas été créée. Vérifiez la liste avant de réessayer."
+          : messageErreurTransition(cause, "La situation n'a pas pu être créée.");
+        setTransition((avant) => ({
+          ...avant,
+          enCours: false,
+          erreur: message,
+        }));
+        if (statut === 409) actualiser();
+        return;
+      }
       const statut = cause?.response?.status;
       const resultatIncertain = !cause?.response || statut >= 500;
       const message = resultatIncertain
@@ -1008,6 +1037,56 @@ export default function Boucle() {
         await rechargerDetailSource(identifiant);
         actualiser();
       }
+      return;
+    }
+
+    if (creationSituation) {
+      const nouvelObjet = reponse?.data?.objet ?? null;
+      const nouvelleChaine = Array.isArray(reponse?.data?.chaine) ? reponse.data.chaine : null;
+      const nouvelHistorique = Array.isArray(reponse?.data?.historique) ? reponse.data.historique : null;
+      const identifiantCree = idObjet(nouvelObjet);
+
+      setActionActive(null);
+      if (!identifiantCree) {
+        setTransition({
+          enCours: false,
+          erreur: "La situation a été créée mais la réponse est incomplète. La liste a été actualisée.",
+          succes: null,
+          rechargement: false,
+          verificationErreur: "",
+        });
+        demanderRestaurationFocusAction();
+        actualiser();
+        return;
+      }
+
+      const chaine = nouvelleChaine && nouvelleChaine.length > 0 ? nouvelleChaine : [nouvelObjet];
+      setTransition({
+        enCours: false,
+        erreur: "",
+        succes: { action, objet: nouvelObjet },
+        rechargement: false,
+        verificationErreur: "",
+      });
+      demanderRestaurationFocusAction();
+
+      const objetsReponse = [nouvelObjet, ...(nouvelleChaine || [])]
+        .filter((objet) => idObjet(objet));
+      setObjets((avant) => objetsReponse.reduce((liste, objet) => fusionnerObjet(liste, objet), avant));
+      setSelection(nouvelObjet);
+      setDetail({
+        chargement: false,
+        erreur: null,
+        data: {
+          objet: nouvelObjet,
+          chaine,
+          historique: nouvelHistorique || [],
+        },
+      });
+      if (!nouvelleChaine || nouvelleChaine.length === 0 || !nouvelHistorique) {
+        rafraichirDetailSource(identifiantCree);
+      }
+      actualiser();
       return;
     }
 
@@ -1262,14 +1341,24 @@ export default function Boucle() {
                 La mémoire vivante de ce que l'entreprise observe, comprend, décide, tente et apprend.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={actualiser}
-              data-testid="boucle-actualiser"
-              className="flex h-8 items-center gap-1.5 rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2.5 text-xs text-[#94A3B8] transition-colors hover:text-[#F2F6F8]"
-            >
-              <ArrowsClockwise size={13} className={chargement ? "animate-spin" : ""} /> Actualiser
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={ouvrirCreationSituation}
+                data-testid="boucle-nouvelle-situation"
+                className="flex h-8 items-center gap-1.5 rounded-md bg-[#60A5FA] px-2.5 text-xs font-semibold text-[#071019] transition-colors hover:bg-[#93C5FD]"
+              >
+                <Lightbulb size={13} aria-hidden="true" /> Nouvelle situation
+              </button>
+              <button
+                type="button"
+                onClick={actualiser}
+                data-testid="boucle-actualiser"
+                className="flex h-8 items-center gap-1.5 rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2.5 text-xs text-[#94A3B8] transition-colors hover:text-[#F2F6F8]"
+              >
+                <ArrowsClockwise size={13} className={chargement ? "animate-spin" : ""} /> Actualiser
+              </button>
+            </div>
           </div>
         </header>
 
