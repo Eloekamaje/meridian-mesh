@@ -152,6 +152,7 @@ function installerApi(options = {}) {
     syntheseEnErreur = false,
   } = options;
   let courante = liste;
+  let detailsCourants = { ...details };
 
   api.get.mockImplementation((url, config) => {
     if (url === "/boucle/objets") {
@@ -165,7 +166,7 @@ function installerApi(options = {}) {
     const correspondance = url.match(/^\/boucle\/objets\/(.+)$/);
     if (correspondance) {
       const identifiant = decodeURIComponent(correspondance[1]);
-      if (details[identifiant]) return Promise.resolve({ data: details[identifiant] });
+      if (detailsCourants[identifiant]) return Promise.resolve({ data: detailsCourants[identifiant] });
       const objet = courante.find((element) => element.id === identifiant);
       return Promise.resolve({ data: { objet, chaine: [], historique: [] } });
     }
@@ -176,6 +177,9 @@ function installerApi(options = {}) {
     ajouter(objet) {
       if (!objet?.id) return;
       courante = [...courante.filter((element) => element.id !== objet.id), objet];
+    },
+    majDetail(identifiant, data) {
+      detailsCourants = { ...detailsCourants, [identifiant]: data };
     },
     liste: () => courante,
   };
@@ -878,6 +882,11 @@ test("lance une initiative depuis une décision tranchée et rafraîchit la sour
   };
   boucleApi.lancerInitiative.mockImplementation(() => {
     controleur.ajouter(nouvelle);
+    controleur.majDetail("dec-1", {
+      objet: decisionSource,
+      chaine: [situation, investigation, decisionSource],
+      historique: [{ version: 8, maj_le: "2026-10-30T12:00:00Z" }],
+    });
     return Promise.resolve({
       data: {
         objet: nouvelle,
@@ -912,7 +921,7 @@ test("lance une initiative depuis une décision tranchée et rafraîchit la sour
   const chaine = hote.querySelector('[data-testid="boucle-chaine"]');
   expect(chaine.querySelectorAll('[data-testid="boucle-chaine-etape"]')).toHaveLength(2);
   expect(chaine.textContent).not.toContain("Déployer le contrôle asynchrone");
-  expect(hote.querySelector('[data-testid="boucle-historique"]').textContent).toContain("Version 7");
+  expect(hote.querySelector('[data-testid="boucle-historique"]').textContent).toContain("Version 8");
   expect(document.activeElement).toBe(hote.querySelector('[data-testid="boucle-detail-fermer"]'));
 
   await act(async () => { racine.unmount(); });
@@ -943,6 +952,11 @@ test("mesure un outcome depuis une initiative et rafraîchit la source", async (
   };
   boucleApi.mesurerOutcome.mockImplementation(() => {
     controleur.ajouter(nouvelOutcome);
+    controleur.majDetail("ini-1", {
+      objet: initiativeSource,
+      chaine: [situation, investigation, decision, initiativeSource],
+      historique: [{ version: 5, maj_le: "2026-10-30T13:00:00Z" }],
+    });
     return Promise.resolve({
       data: {
         objet: nouvelOutcome,
@@ -981,7 +995,7 @@ test("mesure un outcome depuis une initiative et rafraîchit la source", async (
   const chaine = hote.querySelector('[data-testid="boucle-chaine"]');
   expect(chaine.querySelectorAll('[data-testid="boucle-chaine-etape"]')).toHaveLength(3);
   expect(chaine.textContent).not.toContain("out-2");
-  expect(hote.querySelector('[data-testid="boucle-historique"]').textContent).toContain("Version 4");
+  expect(hote.querySelector('[data-testid="boucle-historique"]').textContent).toContain("Version 5");
   expect(document.activeElement).toBe(hote.querySelector('[data-testid="boucle-action-outcome"]'));
 
   await act(async () => { racine.unmount(); });
@@ -1209,6 +1223,7 @@ test("après un 409, recharge le détail et propose la transition suivante", asy
 
 test("un GET détail lent ne réécrase pas le résultat d'une transition", async () => {
   let resoudreDetail;
+  let appelsDetail = 0;
   api.get.mockImplementation((url) => {
     if (url === "/boucle/objets") {
       return Promise.resolve({ data: { tenant: "local", objets } });
@@ -1216,7 +1231,13 @@ test("un GET détail lent ne réécrase pas le résultat d'une transition", asyn
     if (url === "/boucle/synthese") return Promise.resolve({ data: synthese });
     if (url === "/boucle/twins") return Promise.resolve({ data: { twins: [] } });
     if (url === "/boucle/objets/sit-1") {
-      return new Promise((resolve) => { resoudreDetail = resolve; });
+      appelsDetail += 1;
+      if (appelsDetail === 1) {
+        return new Promise((resolve) => { resoudreDetail = resolve; });
+      }
+      return Promise.resolve({
+        data: { objet: situation, chaine: [situation], historique: [] },
+      });
     }
     return Promise.resolve({ data: {} });
   });
@@ -1458,8 +1479,18 @@ test("un timeout ambigu affiche un message et recharge détail et liste", async 
   await act(async () => { racine.unmount(); });
 });
 
-test("pendant le rechargement après 409, la croix ferme la modale", async () => {
+test("pendant le rechargement après 409, la croix ferme puis le verrou persiste", async () => {
+  const tranchee = {
+    ...decisionProposee,
+    donnees: {
+      ...decisionProposee.donnees,
+      statut: "DECIDED",
+      acteur: "comité-cartes",
+      choix: "Automatiser",
+    },
+  };
   let appelsDetail = 0;
+  let resoudreRechargement;
   api.get.mockImplementation((url) => {
     if (url === "/boucle/objets") {
       return Promise.resolve({ data: { tenant: "local", objets: [...objets, decisionProposee] } });
@@ -1471,7 +1502,7 @@ test("pendant le rechargement après 409, la croix ferme la modale", async () =>
       if (appelsDetail === 1) {
         return Promise.resolve({ data: { objet: decisionProposee, chaine: [], historique: [] } });
       }
-      return new Promise(() => {});
+      return new Promise((resolve) => { resoudreRechargement = resolve; });
     }
     return Promise.resolve({ data: {} });
   });
@@ -1494,6 +1525,24 @@ test("pendant le rechargement après 409, la croix ferme la modale", async () =>
 
   expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).toBeNull();
   expect(hote.querySelector('[data-testid="boucle-detail"]')).not.toBeNull();
+  expect(document.activeElement).toBe(hote.querySelector('[data-testid="boucle-detail-fermer"]'));
+
+  await cliquerEnFocus(hote, "boucle-action-trancher");
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).toBeNull();
+
+  await act(async () => {
+    resoudreRechargement({
+      data: {
+        objet: tranchee,
+        chaine: [situation, investigation, tranchee],
+        historique: [],
+      },
+    });
+  });
+
+  expect(hote.querySelector('[data-testid="boucle-action-trancher"]')).toBeNull();
+  await cliquerEnFocus(hote, "boucle-action-initiative");
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
 
   await act(async () => { racine.unmount(); });
 });

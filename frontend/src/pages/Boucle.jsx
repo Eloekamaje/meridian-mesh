@@ -641,6 +641,7 @@ export default function Boucle() {
   const [detail, setDetail] = useState({ chargement: false, erreur: null, data: null });
   const refDetail = useRef(0);
   const enCoursRef = useRef(false);
+  const refRechargement = useRef(false);
   const refElementDeclencheur = useRef(null);
   const refIdentifiantDeclencheur = useRef(null);
   const refElementDeclencheurAction = useRef(null);
@@ -843,10 +844,38 @@ export default function Boucle() {
   }, [transition.enCours]);
 
   const ouvrirAction = (actionId) => {
-    if (transition.enCours || enCoursRef.current) return;
+    if (transition.enCours || enCoursRef.current || refRechargement.current) return;
     refElementDeclencheurAction.current = document.activeElement;
     reinitialiserTransition();
     setActionActive(actionId);
+  };
+
+  const rechargerDetailSource = async (identifiant) => {
+    refRechargement.current = true;
+    setTransition((avant) => ({ ...avant, rechargement: true }));
+    try {
+      await chargerDetail(identifiant);
+    } finally {
+      refRechargement.current = false;
+      setTransition((avant) => ({ ...avant, rechargement: false }));
+    }
+  };
+
+  // Rafraîchit l'historique/la chaîne de la source après une création, sans vider
+  // le panneau ni poser le verrou de rechargement. Best-effort : en cas d'échec,
+  // la version issue de la chaîne reste affichée.
+  const rafraichirDetailSource = (identifiant) => {
+    const jeton = refDetail.current;
+    api.get(`/boucle/objets/${encodeURIComponent(identifiant)}`, { params: { historique: true } })
+      .then((reponse) => {
+        if (refDetail.current !== jeton) return;
+        const data = reponse.data;
+        if (!data?.objet) return;
+        setDetail((avant) => ({ ...avant, chargement: false, erreur: null, data }));
+        setSelection((avant) => (idObjet(avant) === identifiant ? data.objet : avant));
+        setObjets((avant) => fusionnerObjet(avant, data.objet));
+      })
+      .catch(() => {});
   };
 
   const demanderRestaurationFocusAction = () => {
@@ -855,13 +884,14 @@ export default function Boucle() {
 
   const fermerAction = () => {
     if (transition.enCours || enCoursRef.current) return;
+    if (refRechargement.current) refElementDeclencheurAction.current = null;
     setActionActive(null);
     setTransition((avant) => ({ ...avant, erreur: "" }));
     demanderRestaurationFocusAction();
   };
 
   const executerTransition = async (valeurs) => {
-    if (enCoursRef.current || transition.rechargement) return;
+    if (enCoursRef.current || refRechargement.current || transition.rechargement) return;
     if (!actionCourante || !objetDetail) return;
     const identifiant = idObjet(objetDetail);
     if (!identifiant) {
@@ -915,12 +945,7 @@ export default function Boucle() {
         erreur: message,
       }));
       if (detailIncomplet || statut === 404 || statut === 409 || resultatIncertain) {
-        setTransition((avant) => ({ ...avant, rechargement: true }));
-        try {
-          await chargerDetail(identifiant);
-        } finally {
-          setTransition((avant) => ({ ...avant, rechargement: false }));
-        }
+        await rechargerDetailSource(identifiant);
         actualiser();
       }
       return;
@@ -936,6 +961,7 @@ export default function Boucle() {
       nouvelHistorique,
       ancienDetail: detail.data,
     });
+    const objetDifferent = idObjet(nouvelObjet) !== identifiant;
 
     setActionActive(null);
     setTransition({
@@ -965,13 +991,9 @@ export default function Boucle() {
           historique: detailSource.historique,
         },
       }));
+      if (objetDifferent) rafraichirDetailSource(identifiant);
     } else {
-      setTransition((avant) => ({ ...avant, rechargement: true }));
-      try {
-        await chargerDetail(identifiant);
-      } finally {
-        setTransition((avant) => ({ ...avant, rechargement: false }));
-      }
+      await rechargerDetailSource(identifiant);
     }
     actualiser();
   };

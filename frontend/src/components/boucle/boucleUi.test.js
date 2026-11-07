@@ -339,6 +339,22 @@ describe("detailSourceApresTransition", () => {
     }
   });
 
+  test("ne fabrique pas de source ni de chaîne quand l'enfant n'a pas de chaîne source", () => {
+    const enfant = { id: "ini-2", type: "INITIATIVE", titre: "Initiative" };
+    for (const chaine of [[], [situation, investigation], null, undefined]) {
+      const resultat = detailSourceApresTransition({
+        identifiant: "dec-1",
+        nouvelObjet: enfant,
+        nouvelleChaine: chaine,
+        nouvelHistorique: [{ version: 1 }],
+        ancienDetail,
+      });
+      expect(resultat.source).toBeNull();
+      expect(resultat.chaine).toEqual(ancienDetail.chaine);
+      expect(resultat.historique).toEqual(ancienDetail.historique);
+    }
+  });
+
   test("coupe la chaîne à la source et conserve son historique quand un enfant est créé", () => {
     const enfant = { id: "ini-2", type: "INITIATIVE", titre: "Initiative" };
     const source = {
