@@ -1068,7 +1068,8 @@ async def agir_situation(sid: str, payload: ActionSituation, acteur: str = Depen
         raise HTTPException(400, "Action inconnue")
     nouveau = mapping[payload.action]
     if nouveau is not None:
-        if situation.get("statut") != nouveau or situation.get("tenant_id") != tenant:
+        if (situation.get("statut") != nouveau or situation.get("tenant_id") != tenant
+                or not situation.get("maj_le")):
             maj_le = datetime.now(timezone.utc).isoformat()
             res = await db.situations.update_one(
                 {"id": sid, **_filtre_tenant(tenant)},
@@ -1104,6 +1105,7 @@ async def decider_situation(sid: str, payload: DecisionSituation, acteur: str = 
         situation.get("statut") == "décidée"
         and situation.get("decision") == decision
         and bool(situation.get("decidee_le"))
+        and bool(situation.get("maj_le"))
         and situation.get("decidee_par") == acteur
     )
     if not rejeu:
