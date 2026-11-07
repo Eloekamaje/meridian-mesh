@@ -30,15 +30,19 @@ Limites assumées :
 from __future__ import annotations
 
 from collections.abc import Mapping
+import copy
 from datetime import date, datetime
 from decimal import Decimal
 import inspect
 import math
-import unicodedata
-from urllib.parse import parse_qsl, unquote_plus, urlsplit
 
 from meridian.adapters.outbound.postgres import entreprise_depot
+from meridian.application import mapping_legacy as mapping
 from meridian.application.graphe_sync import arete_depuis_relation, twin_depuis_identite
+from meridian.domain.tenant import normaliser_slug
+from meridian.application.pont_securite import cle_sensible as _cle_sensible
+from meridian.application.pont_securite import hash_contenu
+from meridian.application.pont_securite import url_porte_un_secret as _url_porte_un_secret
 
 __all__ = [
     "DocumentInvalide",
@@ -49,23 +53,8 @@ __all__ = [
     "inspecter",
 ]
 
-_MARQUEURS_SECRETS = ("password", "passwd", "secret", "token", "credential", "authorization")
-_CLES_SECRETES = frozenset({
-    "pwd", "pass", "auth", "key", "apikey", "api_key", "api-key", "access_key", "accesskey",
-    "private_key", "privatekey", "client_secret", "clientsecret", "bearer", "password", "passwd",
-})
-
-_CHAMPS_SITUATION = (
-    "resume", "description", "question", "nature", "verbe", "score", "detectee", "indicateurs",
-    "decouverte_quoi", "decouverte_pourquoi", "reste_a_comprendre", "decisions_attendues",
-    "chronologie", "hypotheses", "contributions", "preuves", "synthese", "actions_proposees",
-    "opportunite", "decision", "relation_id",
-)
-_CHAMPS_INITIATIVE = (
-    "niveau", "genre", "declencheur", "raison", "quand", "periode", "perimetre", "preuves",
-    "confiance", "impact", "destinataire", "pourquoi_vous", "attendu", "travail_titre", "options",
-    "autonomie", "interruption", "reponse",
-)
+_CHAMPS_SITUATION = mapping.CHAMPS_SITUATION
+_CHAMPS_INITIATIVE = mapping.CHAMPS_INITIATIVE
 _CHAMPS_LIEN_INITIATIVE = (
     "travail_id", "jumeau_cible", "decision_id", "decision_ref", "situation_id", "investigation_id",
     "case_id",
@@ -84,19 +73,6 @@ class DocumentInvalide(ValueError):
     """Document legacy impossible à projeter sans deviner son contenu."""
 
 
-def _sans_accents(valeur) -> str:
-    decompose = unicodedata.normalize("NFKD", str(valeur or ""))
-    return "".join(c for c in decompose if not unicodedata.combining(c))
-
-
-def _normaliser_code(valeur) -> str:
-    texte = _sans_accents(valeur)
-    texte = "".join(c if c.isalnum() else "_" for c in texte).strip("_")
-    while "__" in texte:
-        texte = texte.replace("__", "_")
-    return texte.upper()
-
-
 def _texte_scalaire(valeur, champ: str, *, obligatoire: bool = True):
     if valeur is None:
         if obligatoire:
@@ -113,7 +89,12 @@ def _texte_scalaire(valeur, champ: str, *, obligatoire: bool = True):
 
 
 def _tenant(tenant) -> str:
-    return _texte_scalaire(tenant, "tenant_id")
+    texte = _texte_scalaire(tenant, "tenant_id")
+    try:
+        from meridian.domain.tenant import normaliser_slug
+        return normaliser_slug(texte)
+    except Exception as exc:
+        raise DocumentInvalide("tenant_id invalide") from exc
 
 
 def _document_et_tenant(document, tenant):
@@ -131,7 +112,13 @@ def _verifier_tenant(doc: Mapping, tenant: str) -> None:
     if declare is None:
         return
     texte = _texte_scalaire(declare, "tenant_id", obligatoire=False)
-    if texte and texte != tenant:
+    if not texte:
+        return
+    try:
+        texte = normaliser_slug(texte)
+    except Exception as exc:
+        raise DocumentInvalide("tenant_id invalide") from exc
+    if texte != tenant:
         raise PermissionError("document hors du tenant demandé")
 
 
@@ -142,7 +129,12 @@ def _meme_tenant(doc: Mapping, tenant: str) -> bool:
     if isinstance(declare, (bool, bytes, bytearray, Mapping, list, tuple, set, frozenset)):
         return False
     texte = str(declare).strip()
-    return not texte or texte == tenant
+    if not texte:
+        return True
+    try:
+        return normaliser_slug(texte) == tenant
+    except Exception:
+        return False
 
 
 def _identifiant(doc: Mapping) -> str:
@@ -172,27 +164,18 @@ def _titre_doc(doc: Mapping, identifiant: str) -> str:
     return identifiant
 
 
-def _cle_sensible(cle) -> bool:
-    normalisee = unquote_plus(str(cle)).strip().lower()
-    if normalisee.endswith(("_ref", "-ref", "_reference", "-reference")):
-        return False
-    compacte = normalisee.replace("-", "_")
-    if compacte in _CLES_SECRETES:
-        return True
-    if compacte.endswith("_key"):
-        return True
-    return any(marque in compacte for marque in _MARQUEURS_SECRETS)
-
-
-def _url_porte_un_secret(url: str) -> bool:
-    try:
-        parties = urlsplit(url)
-    except (ValueError, UnicodeError):
-        return True
-    if parties.username is not None or parties.password is not None or "@" in parties.netloc:
-        return True
-    return any(_cle_sensible(cle) and valeur not in ("", "***")
-               for cle, valeur in parse_qsl(parties.query, keep_blank_values=True))
+def _marquer_migration(objet: dict, collection: str, source_maj=None) -> dict:
+    """Pose le sceau qui autorise une mise à jour live ultérieure sans écraser un objet API."""
+    sans_pont = copy.deepcopy(objet)
+    sans_pont.pop("_pont", None)
+    sans_pont.pop("version", None)  # le pont ne transmet jamais la version
+    objet["donnees"]["_pont"] = {
+        "hash": hash_contenu(sans_pont),
+        "origine": "migration",
+        "source": {"collection": collection, "id": objet["id"]},
+        "source_maj_le": _iso(source_maj),
+    }
+    return objet
 
 
 def _jsonable(valeur):
@@ -313,12 +296,10 @@ def objet_depuis_situation(doc, tenant) -> dict:
     identifiant = _identifiant(doc)
 
     donnees = _copier(doc, _CHAMPS_SITUATION)
-    statut = _normaliser_code(doc.get("statut"))
-    if statut:
-        donnees["statut"] = statut
-    priorite = _normaliser_code(doc.get("priorite"))
-    if priorite:
-        donnees["priorite"] = priorite
+    if doc.get("statut") is not None:
+        donnees["statut"] = mapping.statut_situation(doc.get("statut"))
+    if doc.get("priorite") is not None:
+        donnees["priorite"] = mapping.priorite(doc.get("priorite"))
     twin_ids = _liste_ids(doc.get("twin_ids") if doc.get("twin_ids") is not None else doc.get("jumeaux"))
     if twin_ids:
         donnees["twin_ids"] = twin_ids
@@ -337,7 +318,9 @@ def objet_depuis_situation(doc, tenant) -> dict:
         ("observe_le", "detectee", "cree_le", "maj_le"),
         ("valide_depuis", "observe_le", "detectee", "cree_le", "maj_le"),
     ))
-    return objet
+    return _marquer_migration(
+        objet, "situations",
+        doc.get("maj_le") or doc.get("cree_le") or doc.get("detectee"))
 
 
 def _liens_initiative(doc: Mapping) -> dict:
@@ -365,12 +348,10 @@ def objet_depuis_initiative(doc, tenant) -> dict:
     identifiant = _identifiant(doc)
 
     donnees = _copier(doc, _CHAMPS_INITIATIVE)
-    statut = _normaliser_code(doc.get("statut"))
-    if statut:
-        donnees["statut"] = statut
-    urgence = _normaliser_code(doc.get("urgence"))
-    if urgence:
-        donnees["urgence"] = urgence
+    if doc.get("statut") is not None:
+        donnees["statut"] = mapping.statut_initiative(doc.get("statut"))
+    if doc.get("urgence") is not None:
+        donnees["urgence"] = mapping.priorite(doc.get("urgence"))
     twin_ids = _liste_ids(doc.get("twin_ids") if doc.get("twin_ids") is not None else doc.get("jumeaux"))
     if twin_ids:
         donnees["twin_ids"] = twin_ids
@@ -393,7 +374,9 @@ def objet_depuis_initiative(doc, tenant) -> dict:
         ("observe_le", "quand", "cree_le", "maj_le"),
         ("valide_depuis", "quand", "cree_le", "maj_le"),
     ))
-    return objet
+    return _marquer_migration(
+        objet, "initiatives",
+        doc.get("maj_le") or doc.get("quand") or doc.get("cree_le"))
 
 
 def twin_depuis_jumeau(doc, tenant):
