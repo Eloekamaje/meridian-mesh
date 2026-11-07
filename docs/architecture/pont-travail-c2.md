@@ -105,7 +105,9 @@ Choix retenu : **strict par défaut, adoption legacy opt-in, migration idempoten
   --tenant <tenant> --dry-run|--apply` estampille `situations`, `cases` et `initiatives`.
   Elle est idempotente, ramène `demo` vers `local` (sauf `--sans-alias`) et crée les index
   `(tenant_id, situations.0)` et `(tenant_id, situations)` (le second est le filet multikey
-  si Mongo refuse le chemin positionnel).
+  si Mongo refuse le chemin positionnel). **Cette migration doit tourner avant d'activer
+  le mode strict** ; sinon les documents historiques restent invisibles. L'adoption
+  mono-tenant est la voie de transition, pas un mode permanent.
 - Toutes les créations et mises à jour C2 posent `tenant_id` et `maj_le` :
   `cases.py` (création, PATCH, visite, décision, décision attendue, observations,
   maturation), `actualites.py`, `initiatives.py`, `legacy.py`.
