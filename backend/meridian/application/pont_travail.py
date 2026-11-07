@@ -18,13 +18,19 @@ Règles structurantes :
 """
 from __future__ import annotations
 
+import copy
 from collections.abc import Mapping
+from datetime import datetime, timedelta, timezone
+import os
 from typing import Any
 
 from meridian.application import pont_canonique as pont
 
 __all__ = [
+    "ADOPTION_ENV",
+    "LEGACY_TENANT_ENV",
     "candidat_boucle",
+    "candidats_boucle",
     "evenement_action_situation",
     "evenement_case_lie",
     "evenement_decision_situation",
@@ -34,34 +40,100 @@ __all__ = [
     "situation_liee",
 ]
 
+ADOPTION_ENV = "JUMEAU_LEGACY_TENANT_ADOPTION"
+LEGACY_TENANT_ENV = "JUMEAU_LEGACY_TENANT"
+_VALEURS_ACTIVES = frozenset({"1", "true", "vrai", "oui", "yes", "on"})
+_CHAMPS_DATE = ("maj_le", "cree_le", "detectee", "observe_le", "quand",
+                "decidee_le", "mesure_le")
+
 
 def _texte(valeur: Any) -> str:
     return "" if valeur is None else str(valeur).strip()
 
 
 def normaliser_tenant(tenant_id: Any) -> str:
-    """Valide et canonise un tenant ; ne fabrique jamais de tenant par défaut."""
-    return pont.normaliser_tenant(tenant_id)
+    """Valide et canonise un tenant ; ``demo`` et ``local`` sont le même tenant."""
+    tenant = pont.normaliser_tenant(tenant_id)
+    return "local" if tenant == "demo" else tenant
 
 
-def filtre_tenant(tenant_id: Any) -> dict[str, Any]:
-    """Filtre Mongo d'isolation tenant.
+def _tenant_aliases(tenant: str) -> list[str]:
+    return ["local", "demo"] if tenant == "local" else [tenant]
 
-    Les documents legacy antérieurs au P0 n'ont pas de ``tenant_id``. Les accepter comme
-    relevant du tenant courant est le compromis de reprise retenu : une migration
-    rétroactive massive est plus risquée qu'une normalisation applicative. Tout document
-    qui déclare un autre tenant est en revanche exclu.
+
+def _adoption_active(tenant: str) -> bool:
+    flag = str(os.environ.get(ADOPTION_ENV) or "").strip().lower()
+    legacy = str(os.environ.get(LEGACY_TENANT_ENV) or "").strip()
+    if flag not in _VALEURS_ACTIVES or not legacy:
+        return False
+    try:
+        return normaliser_tenant(legacy) == tenant
+    except pont.PontInvalide:
+        return False
+
+
+def filtre_tenant(tenant_id: Any, *, adoption: bool | None = None) -> dict[str, Any]:
+    """Filtre Mongo strict par tenant.
+
+    Par défaut un document sans ``tenant_id`` n'est visible par personne. L'adoption des
+    documents legacy non estampillés est opt-in et réservée au tenant de reprise configuré
+    par ``JUMEAU_LEGACY_TENANT`` ; un second tenant ne les voit jamais.
     """
     tenant = normaliser_tenant(tenant_id)
-    # `local` et `demo` désignent le même tenant de démonstration dans le legacy.
-    tenants = [tenant]
-    if tenant in {"local", "demo"}:
-        tenants = ["local", "demo"]
+    strict = {"tenant_id": {"$in": _tenant_aliases(tenant)}}
+    actif = _adoption_active(tenant) if adoption is None else bool(adoption)
+    if not actif:
+        return strict
     return {"$or": [
-        {"tenant_id": {"$in": tenants}},
+        strict,
         {"tenant_id": {"$exists": False}},
         {"tenant_id": None},
     ]}
+
+
+def _document_canonique(document: Any, tenant: str) -> dict[str, Any]:
+    """Copie un document legacy en ramenant un alias demo vers le tenant canonique."""
+    doc = copy.deepcopy(dict(document))
+    declare = _texte(doc.get("tenant_id"))
+    if declare and normaliser_tenant(declare) == tenant:
+        doc["tenant_id"] = tenant
+    return doc
+
+
+def _iso(valeur: Any) -> str | None:
+    if isinstance(valeur, datetime):
+        return valeur.isoformat()
+    texte = _texte(valeur)
+    if not texte:
+        return None
+    try:
+        return datetime.fromisoformat(texte.replace("Z", "+00:00")).isoformat()
+    except ValueError:
+        return None
+
+
+def _version_ancre(contexte: Mapping[str, Any], situation: Mapping[str, Any],
+                   maintenant: Any = None) -> dict[str, Any]:
+    """Snapshot d'ancre avec une version strictement antérieure à la Situation écrite."""
+    doc = copy.deepcopy(dict(contexte))
+    reference = (_iso(situation.get("maj_le")) or _iso(situation.get("cree_le"))
+                 or _iso(maintenant))
+    actuelle = next((_iso(doc.get(champ)) for champ in _CHAMPS_DATE if _iso(doc.get(champ))),
+                    None)
+    if reference and actuelle:
+        try:
+            if (datetime.fromisoformat(actuelle).timestamp()
+                    < datetime.fromisoformat(reference).timestamp()):
+                return doc
+        except ValueError:
+            pass
+    try:
+        base = (datetime.fromisoformat(reference) if reference
+                else datetime.now(timezone.utc))
+    except ValueError:
+        base = datetime.now(timezone.utc)
+    doc["maj_le"] = (base - timedelta(microseconds=1)).isoformat(timespec="microseconds")
+    return doc
 
 
 def situation_liee(case: Any) -> str | None:
@@ -98,10 +170,12 @@ def evenement_action_situation(situation: Any, action: Any, *, tenant_id: Any,
     statut = _texte(situation.get("statut"))
     if not statut:
         return None
+    tenant = normaliser_tenant(tenant_id or situation.get("tenant_id"))
+    doc = _document_canonique(situation, tenant)
     return pont.evenement_depuis_situation(
-        situation,
-        tenant_id=tenant_id,
-        source_event_id=_source_action(action, statut, situation.get("maj_le")),
+        doc,
+        tenant_id=tenant,
+        source_event_id=_source_action(action, statut, doc.get("maj_le")),
         maintenant=maintenant,
     )
 
@@ -114,11 +188,13 @@ def evenement_decision_situation(situation: Any, *, tenant_id: Any,
     decision = _texte(situation.get("decision"))
     if not decision:
         return None
+    tenant = normaliser_tenant(tenant_id or situation.get("tenant_id"))
+    doc = _document_canonique(situation, tenant)
     return pont.evenement_depuis_situation(
-        situation,
-        tenant_id=tenant_id,
+        doc,
+        tenant_id=tenant,
         source_event_id=_source_decision(
-            decision, situation.get("decidee_par"), situation.get("decidee_le")),
+            decision, doc.get("decidee_par"), doc.get("decidee_le")),
         maintenant=maintenant,
     )
 
@@ -141,16 +217,25 @@ def evenement_case_lie(case: Any, situation: Any, *, tenant_id: Any,
     if not situation_id or _texte(situation.get("id")) != situation_id:
         return None
     tenant = normaliser_tenant(tenant_id or case.get("tenant_id"))
-    contexte = (situation_contexte if isinstance(situation_contexte, Mapping)
-                else situation)
+    case_doc = _document_canonique(case, tenant)
+    situation_doc = _document_canonique(situation, tenant)
+    contexte_source = (_document_canonique(situation_contexte, tenant)
+                       if isinstance(situation_contexte, Mapping) else situation_doc)
+    contexte = _version_ancre(contexte_source, situation_doc, maintenant)
     # Le builder lève si le case ou le snapshot est incohérent : la route legacy reste
     # best-effort et journalise l'échec sans annuler l'écriture Mongo.
     objets = pont.objets_depuis_case(
-        case, tenant_id=tenant, situation=contexte, maintenant=maintenant)
+        case_doc, tenant_id=tenant, situation=contexte, maintenant=maintenant)
     if not any(objet.get("type") == "DECISION" for objet in objets):
         return None
+    utile = {cle: case_doc.get(cle) for cle in (
+        "id", "tenant_id", "titre", "situations", "decisions", "options",
+        "responsable", "objectif", "maj_le", "cree_le")}
+    source_event_id = "case:" + pont.hash_contenu(
+        {"case": utile, "situation": contexte})[:16]
     return pont.evenement_depuis_case(
-        case, tenant_id=tenant, situation=contexte, maintenant=maintenant)
+        case_doc, tenant_id=tenant, situation=contexte,
+        source_event_id=source_event_id, maintenant=maintenant)
 
 
 def _texte_legacy(valeur: Any) -> str:
@@ -222,23 +307,30 @@ def _dernier_rang_decision_case(case: Mapping[str, Any]) -> int:
     return dernier
 
 
-def candidat_boucle(case: Any, situation: Any = None) -> str | None:
-    """Objet canonique courant dérivable sans ambiguïté pour ce Travail.
+def candidats_boucle(case: Any, situation: Any = None) -> list[str]:
+    """Candidats d'objet courant, du plus précis au plus général.
 
-    Priorité : dernière décision du Travail, décision de la Situation, puis Investigation.
-    Aucune requête n'est faite ici : l'appelant lit une seule fois l'objet choisi.
+    L'appelant les lit dans l'ordre et s'arrête au premier objet canonique lisible.
     """
     situation_id = situation_liee(case)
     if not situation_id:
-        return None
+        return []
+    candidats: list[str] = []
     case_id = _texte(case.get("id"))
     dernier = _dernier_rang_decision_case(case)
     if case_id and dernier:
-        return pont.decision_case_id(case_id, dernier)
+        candidats.append(pont.decision_case_id(case_id, dernier))
     nombre = _nombre_decisions_situation(situation)
     if nombre:
-        return pont.decision_situation_id(situation_id, nombre)
-    return pont.investigation_id(situation_id)
+        candidats.append(pont.decision_situation_id(situation_id, nombre))
+    candidats.append(pont.investigation_id(situation_id))
+    return list(dict.fromkeys(candidats))
+
+
+def candidat_boucle(case: Any, situation: Any = None) -> str | None:
+    """Premier candidat canonique, ou ``None`` sans Situation liée."""
+    candidats = candidats_boucle(case, situation)
+    return candidats[0] if candidats else None
 
 
 def _statut(ligne: Mapping[str, Any]) -> str:
