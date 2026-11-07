@@ -229,3 +229,52 @@ def test_initiative_deja_materialisee_par_la_situation_est_compatible(conn):
     assert resultat["ecrits"] == ["ini-dec-sit-sit-pg-1-1"]
     assert entreprise_depot.lire_objet(
         conn, TENANT, "ini-dec-sit-sit-pg-1-1")["version"] == 2
+
+
+@besoin_pg
+def test_outcome_meme_quand_maj_le_croissant_est_applique(conn):
+    """Deux Outcomes même `quand` : `maj_le` arbitre la correction, pas `mesure_le`."""
+    pont_pg.appliquer_evenement(conn, _evenement(_situation(), "maj-1"))
+    initiative_id = "ini-dec-sit-sit-pg-1-1"
+    premier = pont.evenement_outcome(
+        tenant_id=TENANT, initiative_id=initiative_id,
+        mesure={"metrique": "delai", "valeur_observee": 7}, metrique="delai",
+        periode="2026-11", mesure_le="2026-11-05T09:00:00+00:00",
+        maj_le="2026-11-05T09:01:00+00:00", interpretation="version 1",
+        source_event_id="out-meme-quand-1")
+    second = pont.evenement_outcome(
+        tenant_id=TENANT, initiative_id=initiative_id,
+        mesure={"metrique": "delai", "valeur_observee": 8}, metrique="delai",
+        periode="2026-11", mesure_le="2026-11-05T09:00:00+00:00",
+        maj_le="2026-11-05T09:02:00+00:00", interpretation="version 2",
+        source_event_id="out-meme-quand-2")
+
+    pont_pg.appliquer_evenement(conn, premier)
+    pont_pg.appliquer_evenement(conn, second)
+
+    outcome = boucle.lire_boucle(conn, TENANT, premier["canonical_ids"][0])
+    assert outcome["donnees"]["interpretation"] == "version 2"
+    assert outcome["donnees"]["valeur_observee"] == 8
+    assert outcome["donnees"]["_pont"]["source_maj_le"] \
+        == "2026-11-05T09:02:00+00:00"
+
+
+@besoin_pg
+def test_outcome_sur_initiative_api_refuse_la_modification_du_parent(conn):
+    """Un Outcome n'écrase pas un parent sans provenance fiable (legacy/migration/exploitation)."""
+    from meridian.adapters.outbound.postgres import entreprise_depot
+
+    initiative = {
+        "id": "ini-api-1", "tenant_id": TENANT, "famille": "decision",
+        "type": "INITIATIVE", "mode": "DECLARED", "titre": "Initiative API",
+        "donnees": {"decision_id": "dec-api-1", "statut": "PLANNED"},
+    }
+    entreprise_depot.enregistrer_objet(conn, TENANT, initiative)
+    outcome = pont.evenement_outcome(
+        tenant_id=TENANT, initiative_id="ini-api-1",
+        mesure={"metrique": "delai", "valeur_observee": 4}, metrique="delai",
+        periode="2026-11", maj_le="2026-11-06T12:00:00+00:00",
+        source_event_id="out-api-parent")
+
+    with pytest.raises(pont.ConflitCanonique):
+        pont_pg.appliquer_evenement(conn, outcome)
