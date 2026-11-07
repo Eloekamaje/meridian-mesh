@@ -1149,6 +1149,21 @@ def test_audit_tourne_par_lot_de_1000():
     assert second == 1
 
 
+def test_maj_le_illisible_est_audite_et_ne_bloque_pas_la_migration():
+    observations, checkpoints, _col_obs, _col_cp = _depots([
+        {"tenant_id": TENANT, "id": "obs-bad", "maj_le": "hier"},
+        _observation("obs-1", maj_le="2026-11-05T09:02:00+00:00"),
+    ])
+    outbox = Outbox()
+    worker = _worker(observations, checkpoints, outbox)
+
+    bilan = asyncio.run(worker.une_passe())
+
+    assert bilan["outcomes"] == 1
+    assert asyncio.run(checkpoints.lire(TENANT)).id == "obs-1"
+    assert worker.metriques.mesure_auto_non_conformes == 1
+
+
 def test_backfill_garde_ne_starve_pas_500_legacy_plus_5_nouveaux():
     legacy = [
         _observation(f"old-{rang}", maj_le=f"2026-11-05T08:{rang // 60:02d}:{rang % 60:02d}+00:00")

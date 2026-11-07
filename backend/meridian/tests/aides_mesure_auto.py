@@ -81,6 +81,9 @@ def _evaluer_expr(expression, document):
         if isinstance(valeurs[0], datetime) and isinstance(valeurs[1], (int, float)):
             return valeurs[0] + timedelta(milliseconds=valeurs[1])
         return valeurs[0] + valeurs[1]
+    if "$ne" in expression:
+        gauche, droite = (_evaluer_expr(element, document) for element in expression["$ne"])
+        return gauche != droite
     if "$and" in expression:
         return all(_evaluer_expr(element, document) for element in expression["$and"])
     return False

@@ -432,11 +432,16 @@ class DepotObservationsMesure:
             "tenant_id": pont.normaliser_tenant(tenant),
             "id": {"$exists": True, "$type": "string", "$ne": ""},
             "maj_le": {"$exists": True},
-            "$or": [
-                {CHAMP_UTC: {"$exists": False}},
-                {"sequence_canonique": {"$exists": False}},
-                {"$expr": {"$gt": [
-                    date_maj, {"$add": ["$maj_le_utc", 1]}]}},
+            "$and": [
+                # Une date illisible est un défaut d'audit, pas une migration : elle ne doit
+                # jamais bloquer le tenant.
+                {"$expr": {"$ne": [date_maj, None]}},
+                {"$or": [
+                    {CHAMP_UTC: {"$exists": False}},
+                    {"sequence_canonique": {"$exists": False}},
+                    {"$expr": {"$gt": [
+                        date_maj, {"$add": ["$maj_le_utc", 1]}]}},
+                ]},
             ],
         }))
 
