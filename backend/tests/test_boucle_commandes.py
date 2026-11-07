@@ -1155,6 +1155,111 @@ def test_fusionner_donnees_refuse_un_secret_nouveau():
             conn, TENANT, "ini-legacy", {"token": "nouveau"}, version_attendue=1)
 
 
+def _semer_parents(magasin: "_Magasin", *, decision: bool = False) -> None:
+    magasin.objets[(TENANT, "sit-1")] = _objet(
+        "sit-1", type_="SITUATION", famille="emergence", mode="OBSERVED",
+        titre="Situation")
+    magasin.objets[(TENANT, "inv-1")] = _objet(
+        "inv-1", type_="INVESTIGATION", famille="investigation", mode="DECLARED",
+        titre="Investigation", donnees={"situation_id": "sit-1"})
+    if decision:
+        magasin.objets[(TENANT, "dec-1")] = _objet(
+            "dec-1", type_="DECISION", famille="decision", mode="DECLARED",
+            titre="Décision",
+            donnees={"investigation_id": "inv-1", "options": ["A"],
+                     "statut": "DECIDED", "acteur": "comité", "choix": "A"})
+
+
+def test_enregistrer_boucle_preserve_scenario_et_liens_inverses():
+    magasin = _Magasin()
+    _semer_parents(magasin)
+    magasin.objets[(TENANT, "dec-liens")] = _objet(
+        "dec-liens", type_="DECISION", famille="decision", mode="DECLARED",
+        titre="Décision", version=1,
+        donnees={
+            "investigation_id": "inv-1", "options": ["A"], "statut": "DECIDED",
+            "acteur": "comité", "choix": "A",
+            "scenario_id": "scn-1", "initiative_id": "ini-1",
+            "scenarios_rejetes": ["scn-0"],
+            "hypothesis_ids": ["hyp-1"], "expert_ids": ["exp-1"],
+            "scenario_ids": ["scn-1"], "signal_ids": ["sig-1"],
+            "expression_id": "expr-1", "opportunity_ids": ["opp-1"],
+            "risk_ids": ["risk-1"],
+            "_historique": [{"version": 1, "titre": "Ancienne"}],
+        })
+    conn = _Connexion(magasin)
+    decision = boucle.Decision(
+        id="dec-liens", tenant_id=TENANT, investigation_id="inv-1",
+        options=["A"], statut="DECIDED", acteur="comité", choix="A")
+
+    boucle.enregistrer_boucle(conn, TENANT, decision, historique=True)
+
+    relu = magasin.objets[(TENANT, "dec-liens")]
+    assert relu["donnees"]["scenario_id"] == "scn-1"
+    assert relu["donnees"]["initiative_id"] == "ini-1"
+    assert relu["donnees"]["scenarios_rejetes"] == ["scn-0"]
+    assert relu["donnees"]["hypothesis_ids"] == ["hyp-1"]
+    assert relu["donnees"]["expert_ids"] == ["exp-1"]
+    assert relu["donnees"]["scenario_ids"] == ["scn-1"]
+    assert relu["donnees"]["signal_ids"] == ["sig-1"]
+    assert relu["donnees"]["expression_id"] == "expr-1"
+    assert relu["donnees"]["opportunity_ids"] == ["opp-1"]
+    assert relu["donnees"]["risk_ids"] == ["risk-1"]
+    assert [entree["titre"] for entree in relu["donnees"]["_historique"]] == [
+        "Ancienne", "Décision"]
+
+
+def test_enregistrer_boucle_preserve_outcome_ids_et_liens_b():
+    magasin = _Magasin()
+    _semer_parents(magasin, decision=True)
+    magasin.objets[(TENANT, "ini-liens")] = _objet(
+        "ini-liens", type_="INITIATIVE", famille="decision", mode="DECLARED",
+        titre="Initiative", version=1,
+        donnees={
+            "decision_id": "dec-1", "outcome_ids": ["out-1"],
+            "scenario_ids": ["scn-1"], "hypothesis_ids": ["hyp-1"],
+            "expert_ids": ["exp-1"],
+            "_historique": [{"version": 1, "titre": "Ancienne"}],
+        })
+    conn = _Connexion(magasin)
+    initiative = boucle.Initiative(
+        id="ini-liens", tenant_id=TENANT, decision_id="dec-1", titre="Initiative")
+
+    boucle.enregistrer_boucle(conn, TENANT, initiative, historique=True)
+
+    relu = magasin.objets[(TENANT, "ini-liens")]
+    assert relu["donnees"]["outcome_ids"] == ["out-1"]
+    assert relu["donnees"]["scenario_ids"] == ["scn-1"]
+    assert relu["donnees"]["hypothesis_ids"] == ["hyp-1"]
+    assert relu["donnees"]["expert_ids"] == ["exp-1"]
+    assert [entree["titre"] for entree in relu["donnees"]["_historique"]] == [
+        "Ancienne", "Initiative"]
+
+
+def test_enregistrer_boucle_laisse_gagner_un_initiative_id_explicite():
+    magasin = _Magasin()
+    _semer_parents(magasin)
+    magasin.objets[(TENANT, "dec-liens")] = _objet(
+        "dec-liens", type_="DECISION", famille="decision", mode="DECLARED",
+        titre="Décision", version=1,
+        donnees={
+            "investigation_id": "inv-1", "options": ["A"], "statut": "DECIDED",
+            "acteur": "comité", "choix": "A",
+            "scenario_id": "scn-1", "initiative_id": "ini-1",
+        })
+    conn = _Connexion(magasin)
+    decision = boucle.Decision(
+        id="dec-liens", tenant_id=TENANT, investigation_id="inv-1",
+        options=["A"], statut="DECIDED", acteur="comité", choix="A",
+        initiative_id="ini-2")
+
+    boucle.enregistrer_boucle(conn, TENANT, decision)
+
+    relu = magasin.objets[(TENANT, "dec-liens")]
+    assert relu["donnees"]["initiative_id"] == "ini-2"
+    assert relu["donnees"]["scenario_id"] == "scn-1"
+
+
 def test_les_conflits_sont_declares_par_le_port():
     from meridian.adapters.outbound.postgres import entreprise_depot
     from meridian.ports.boucle import (ObjetExistant, ObjetInvalide,

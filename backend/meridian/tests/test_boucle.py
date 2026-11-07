@@ -468,3 +468,64 @@ def test_pg_enregistrer_boucle_fusionne_legacy_et_liens_b(conn):
     assert relu["donnees"]["risk_ids"] == ["risk-1"]
     assert [entree["titre"] for entree in relu["donnees"]["_historique"]] == [
         "Ancienne", "Avant"]
+
+
+@besoin_pg
+def test_pg_enregistrer_boucle_preserve_scenario_et_liens_inverses(conn):
+    sit = situation("sit-liens")
+    investigation = boucle.ouvrir_investigation(
+        sit, id="inv-liens", titre="Comprendre")
+    proposition = boucle.proposer_decision(investigation, ["A"], id="dec-liens")
+    decision = boucle.trancher_decision(proposition, "comité", "A")
+    boucle.enregistrer_boucle(conn, TENANT, [sit, investigation, decision])
+
+    version = entreprise_depot.lire_objet(conn, TENANT, "dec-liens")["version"]
+    boucle.fusionner_donnees(
+        conn, TENANT, "dec-liens",
+        {"scenario_id": "scn-1", "initiative_id": "ini-1",
+         "scenarios_rejetes": ["scn-0"], "hypothesis_ids": ["hyp-1"],
+         "expert_ids": ["exp-1"], "scenario_ids": ["scn-1"],
+         "signal_ids": ["sig-1"], "expression_id": "expr-1",
+         "opportunity_ids": ["opp-1"], "risk_ids": ["risk-1"]},
+        historique=False, version_attendue=version)
+
+    fresh = boucle.Decision(
+        id="dec-liens", tenant_id=TENANT, investigation_id="inv-liens",
+        options=["A"], statut="DECIDED", acteur="comité", choix="A",
+        decide_le=DATES["observe_le"])
+    boucle.enregistrer_boucle(conn, TENANT, fresh, historique=True)
+
+    relu = entreprise_depot.lire_objet(conn, TENANT, "dec-liens")
+    assert relu["donnees"]["scenario_id"] == "scn-1"
+    assert relu["donnees"]["initiative_id"] == "ini-1"
+    assert relu["donnees"]["scenarios_rejetes"] == ["scn-0"]
+    assert relu["donnees"]["hypothesis_ids"] == ["hyp-1"]
+    assert relu["donnees"]["expert_ids"] == ["exp-1"]
+    assert relu["donnees"]["scenario_ids"] == ["scn-1"]
+    assert relu["donnees"]["signal_ids"] == ["sig-1"]
+    assert relu["donnees"]["expression_id"] == "expr-1"
+    assert relu["donnees"]["opportunity_ids"] == ["opp-1"]
+    assert relu["donnees"]["risk_ids"] == ["risk-1"]
+    assert relu["donnees"]["_historique"]
+
+    initiative = boucle.lancer_initiative(decision, id="ini-liens", titre="Initiative")
+    boucle.enregistrer_boucle(conn, TENANT, initiative)
+    version = entreprise_depot.lire_objet(conn, TENANT, "ini-liens")["version"]
+    boucle.fusionner_donnees(
+        conn, TENANT, "ini-liens", {"outcome_ids": ["out-1"]},
+        ajouter=("outcome_ids",), historique=False, version_attendue=version)
+
+    fresh_init = boucle.Initiative(
+        id="ini-liens", tenant_id=TENANT, decision_id="dec-liens", titre="Initiative")
+    boucle.enregistrer_boucle(conn, TENANT, fresh_init)
+    relu_ini = entreprise_depot.lire_objet(conn, TENANT, "ini-liens")
+    assert relu_ini["donnees"]["outcome_ids"] == ["out-1"]
+
+    fresh_override = boucle.Decision(
+        id="dec-liens", tenant_id=TENANT, investigation_id="inv-liens",
+        options=["A"], statut="DECIDED", acteur="comité", choix="A",
+        decide_le=DATES["observe_le"], initiative_id="ini-2")
+    boucle.enregistrer_boucle(conn, TENANT, fresh_override)
+    relu_override = entreprise_depot.lire_objet(conn, TENANT, "dec-liens")
+    assert relu_override["donnees"]["initiative_id"] == "ini-2"
+    assert relu_override["donnees"]["scenario_id"] == "scn-1"
