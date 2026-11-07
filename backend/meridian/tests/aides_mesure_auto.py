@@ -7,9 +7,20 @@ multi-clés, la limite et les upserts ``$set``/``$setOnInsert``/``$inc``.
 from __future__ import annotations
 
 import copy
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 MANQUANT = object()
+
+
+def url_test_autorisee(url) -> bool:
+    """Refuse une URL Mongo de production pour les tests d'intégration."""
+    texte = str(url or "").strip().lower()
+    if not texte:
+        return False
+    if "localhost" in texte or "127.0.0.1" in texte or "[::1]" in texte:
+        return True
+    return any(marqueur in texte for marqueur in ("_test", "-test", "test_", "test-",
+                                                  "/test", "testdb"))
 
 
 def _type_mongo(valeur, type_attendu):
@@ -33,8 +44,54 @@ def _valeur(document, chemin):
     return valeur
 
 
+def _evaluer_expr(expression, document):
+    if isinstance(expression, str) and expression.startswith("$"):
+        valeur = _valeur(document, expression[1:])
+        return None if valeur is MANQUANT else valeur
+    if not isinstance(expression, dict):
+        return expression
+    if "$convert" in expression:
+        converti = expression["$convert"]
+        valeur = _evaluer_expr(converti.get("input"), document)
+        if valeur is None:
+            return converti.get("onNull")
+        if isinstance(valeur, datetime):
+            return valeur
+        if isinstance(valeur, date):
+            return datetime.combine(valeur, datetime.min.time())
+        if isinstance(valeur, str):
+            try:
+                return datetime.fromisoformat(valeur.replace("Z", "+00:00"))
+            except ValueError:
+                return converti.get("onError")
+        return converti.get("onError")
+    if "$gt" in expression or "$gte" in expression:
+        operateur = "$gt" if "$gt" in expression else "$gte"
+        gauche, droite = (_evaluer_expr(element, document) for element in expression[operateur])
+        try:
+            if gauche is None or droite is None:
+                return False
+            return gauche > droite if operateur == "$gt" else gauche >= droite
+        except TypeError:
+            return False
+    if "$add" in expression:
+        valeurs = [_evaluer_expr(element, document) for element in expression["$add"]]
+        if any(valeur is None for valeur in valeurs):
+            return None
+        if isinstance(valeurs[0], datetime) and isinstance(valeurs[1], (int, float)):
+            return valeurs[0] + timedelta(milliseconds=valeurs[1])
+        return valeurs[0] + valeurs[1]
+    if "$and" in expression:
+        return all(_evaluer_expr(element, document) for element in expression["$and"])
+    return False
+
+
 def _correspond(document, filtre):
     for cle, attendu in (filtre or {}).items():
+        if cle == "$expr":
+            if not _evaluer_expr(attendu, document):
+                return False
+            continue
         if cle == "$and":
             if not all(_correspond(document, partie) for partie in attendu):
                 return False
@@ -115,12 +172,17 @@ class CurseurMesure:
             tri = [(tri, sens)]
         elif isinstance(tri, tuple):
             tri = [tri]
+        def cle_tri(document, champ):
+            valeur = _valeur(document, champ)
+            if valeur is MANQUANT or valeur is None:
+                return (0, "")
+            if isinstance(valeur, (datetime, date)):
+                return (1, valeur.isoformat())
+            return (1, str(valeur))
+
         for champ, direction in reversed(list(tri)):
             self.documents.sort(
-                key=lambda document: (
-                    _valeur(document, champ) is not MANQUANT,
-                    _valeur(document, champ),
-                ),
+                key=lambda document: cle_tri(document, champ),
                 reverse=direction < 0,
             )
         return self

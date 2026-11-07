@@ -182,28 +182,44 @@ def document_ingestion(document: Mapping[str, Any]) -> dict[str, Any]:
         propre["id"] = identifiant
     maj_le = _instant_datetime(propre.get("maj_le"))
     if maj_le is not None:
-        maj_le = _millisecondes(maj_le)
+        # `maj_le` garde la microseconde pour C1 (corrections dans la même ms) ;
+        # `maj_le_utc` est la date BSON (ms) indexée pour le seek.
         propre["maj_le"] = canoniser_instant(maj_le)
-        propre[CHAMP_UTC] = maj_le
-    propre["sequence"] = sequence_canonique(
-        propre.get("sequence") if propre.get("sequence") is not None else propre.get("_id"))
+        propre[CHAMP_UTC] = _millisecondes(maj_le)
+    sequence = sequence_canonique(
+        propre.get("sequence_canonique")
+        if propre.get("sequence_canonique") is not None
+        else (propre.get("sequence") if propre.get("sequence") is not None
+              else propre.get("_id")))
+    propre["sequence"] = sequence
+    propre["sequence_canonique"] = sequence
     return propre
 
 
 def curseur_document(document: Mapping[str, Any]) -> CurseurObservation:
-    """Curseur d'un document ; lève ``ValueError`` si ``maj_le`` ou ``id`` manque."""
-    # Le champ canonique BSON Date (milliseconde) est l'arbitre du seek ; `maj_le` reste le
-    # contrat lisible pour le payload et les producteurs legacy.
-    maj_le = (canoniser_instant(document.get(CHAMP_UTC))
-              or canoniser_instant(document.get("maj_le")))
-    identifiant = _texte(document.get("id"))
-    if maj_le is None:
+    """Curseur d'un document ; lève ``ValueError`` si ``maj_le`` ou ``id`` manque.
+
+    La date effective est ``max(maj_le_utc, maj_le)`` : une correction legacy qui n'a mis à
+    jour que ``maj_le`` reste visible même si le backfill a posé un ``maj_le_utc`` plus ancien.
+    """
+    dates = [
+        _instant_datetime(document.get(CHAMP_UTC)),
+        _instant_datetime(document.get("maj_le")),
+    ]
+    dates = [valeur for valeur in dates if valeur is not None]
+    if not dates:
         raise ValueError("maj_le absent ou illisible")
+    # Le curseur de lecture est aligné sur la précision BSON Date (ms) ; le payload de
+    # l'événement garde `maj_le` en microsecondes pour que C1 voie les corrections.
+    maj_le = canoniser_instant(_millisecondes(max(dates)))
+    identifiant = _texte(document.get("id"))
     if not identifiant:
         raise ValueError("id d'observation absent")
     sequence = sequence_canonique(
-        document.get("sequence") if document.get("sequence") is not None
-        else document.get("_id"))
+        document.get("sequence_canonique")
+        if document.get("sequence_canonique") is not None
+        else (document.get("sequence") if document.get("sequence") is not None
+              else document.get("_id")))
     return CurseurObservation(maj_le=maj_le, sequence=sequence, id=identifiant)
 
 
@@ -228,75 +244,125 @@ class DepotObservationsMesure:
             {CHAMP_UTC: {"$gt": date_curseur}},
             {"$and": [
                 {CHAMP_UTC: date_curseur},
-                {"sequence": {"$gt": curseur.sequence}},
+                {"sequence_canonique": {"$gt": curseur.sequence}},
             ]},
             {"$and": [
                 {CHAMP_UTC: date_curseur},
-                {"sequence": curseur.sequence},
+                {"sequence_canonique": curseur.sequence},
                 {"id": {"$gt": curseur.id}},
             ]},
         ]
         return filtre
 
-    def _seuil_legacy(self, curseur: CurseurObservation | None) -> datetime | None:
-        if curseur is None:
-            return None
-        instant = _instant_datetime(curseur.maj_le)
-        return instant - _BORNE_BASSE if instant is not None else None
+    def _filtre_perime(self, tenant: str,
+                       curseur: CurseurObservation | None) -> dict[str, Any]:
+        """Corrections legacy : `maj_le` strictement plus récent que `maj_le_utc`."""
+        def date_maj_le() -> dict[str, Any]:
+            return {"$convert": {
+                "input": "$maj_le", "to": "date", "onError": None, "onNull": None}}
 
-    def _filtres_legacy(self, tenant: str,
-                        curseur: CurseurObservation | None) -> list[dict[str, Any]]:
+        # Une avance de moins d'une milliseconde est le résidu normal de la troncature BSON :
+        # on ne la considère pas comme une correction legacy (M2).
+        expr: dict[str, Any] = {"$gt": [
+            date_maj_le(), {"$add": ["$maj_le_utc", 1]}]}
+        if curseur is not None:
+            instant = _instant_datetime(curseur.maj_le)
+            if instant is not None:
+                expr = {"$and": [
+                    expr,
+                    {"$gt": [date_maj_le(), instant]},
+                ]}
+        return {
+            "tenant_id": pont.normaliser_tenant(tenant),
+            CHAMP_UTC: {"$exists": True},
+            "id": {"$exists": True, "$type": "string"},
+            "$expr": expr,
+        }
+
+    def _filtres_maj_le(self, tenant: str, curseur: CurseurObservation | None, *,
+                        avec_utc: bool, sans_sequence: bool = False) -> list[dict[str, Any]]:
+        """Filtre `maj_le >= curseur` pour les corrections legacy / documents non tie-breakés.
+
+        On compare les dates via ``$convert`` : les chaînes ISO (offset compris) et les BSON
+        Date sont ramenées au même instant, sans dépendre du format brut stocké. Le filtre
+        Python applique ensuite le tie-breaker séquence/id exact.
+        """
         tenant_normalise = pont.normaliser_tenant(tenant)
-        seuil = self._seuil_legacy(curseur)
-        base = {
+        base: dict[str, Any] = {
             "tenant_id": tenant_normalise,
-            CHAMP_UTC: {"$exists": False},
             "id": {"$exists": True, "$type": "string"},
         }
-        filtres: list[dict[str, Any]] = []
-        for type_mongo in ("string", "date"):
-            condition: dict[str, Any] = {"$exists": True, "$type": type_mongo}
-            if seuil is not None:
-                condition["$gte"] = (seuil.isoformat(timespec="microseconds")
-                                     if type_mongo == "string" else seuil)
-            filtres.append({**base, "maj_le": condition})
-        return filtres
+        if avec_utc:
+            base[CHAMP_UTC] = {"$exists": True}
+        else:
+            base[CHAMP_UTC] = {"$exists": False}
+        if sans_sequence:
+            base["sequence_canonique"] = {"$exists": False}
+        instant = _instant_datetime(curseur.maj_le) if curseur is not None else None
+        if instant is None:
+            return [{**base, "maj_le": {"$exists": True}}]
+        return [{
+            **base,
+            "maj_le": {"$exists": True},
+            "$expr": {"$gte": [
+                {"$convert": {
+                    "input": "$maj_le", "to": "date", "onError": None, "onNull": None}},
+                instant,
+            ]},
+        }]
 
     async def lister_apres(self, tenant: str, curseur: CurseurObservation | None = None,
                            limite: int = 100) -> list[dict[str, Any]]:
         borne = max(1, min(int(limite), _MAX_LOT))
         tenant_normalise = pont.normaliser_tenant(tenant)
-        documents: list[dict[str, Any]] = []
 
-        # 1. Seek d'index : les documents canoniques après le curseur, sans fenêtre glissante.
-        filtre_principal = self._filtre_principal(tenant_normalise, curseur)
-        cursor = self.collection.find(filtre_principal)
-        cursor = cursor.sort([(CHAMP_UTC, 1), ("sequence", 1), ("id", 1)]).limit(borne)
-        documents.extend(await cursor.to_list(borne))
-
-        # 2. Fallback legacy sans `maj_le_utc` : borné, ne peut pas cacher les résultats du seek.
-        for filtre in self._filtres_legacy(tenant_normalise, curseur):
+        # Les corrections legacy et les documents non backfillés sont prioritaires : on les
+        # draine avant le seek principal pour qu'un document canonique plus récent ne fasse
+        # jamais avancer le checkpoint au-delà d'une correction plus ancienne.
+        prioritaires: list[dict[str, Any]] = []
+        filtre_perime = self._filtre_perime(tenant_normalise, curseur)
+        cursor = self.collection.find(filtre_perime)
+        cursor = cursor.sort([("maj_le", 1), ("_id", 1)]).limit(borne)
+        prioritaires.extend(await cursor.to_list(borne))
+        for filtre in self._filtres_maj_le(
+                tenant_normalise, curseur, avec_utc=False):
             cursor = self.collection.find(filtre)
             cursor = cursor.sort([("maj_le", 1), ("_id", 1)]).limit(borne)
-            documents.extend(await cursor.to_list(borne))
+            prioritaires.extend(await cursor.to_list(borne))
+        for filtre in self._filtres_maj_le(
+                tenant_normalise, curseur, avec_utc=True, sans_sequence=True):
+            cursor = self.collection.find(filtre)
+            cursor = cursor.sort([("maj_le", 1), ("_id", 1)]).limit(borne)
+            prioritaires.extend(await cursor.to_list(borne))
 
         par_id: dict[str, tuple[CurseurObservation, dict[str, Any]]] = {}
-        for document in documents:
-            if not isinstance(document, Mapping):
-                continue
-            propre = canoniser_document(document)
-            identifiant = _texte(propre.get("id"))
-            if not identifiant:
-                continue
-            try:
-                position = curseur_document(propre)
-            except ValueError:
-                continue
-            if curseur is not None and position <= curseur:
-                continue
-            existant = par_id.get(identifiant)
-            if existant is None or position > existant[0]:
-                par_id[identifiant] = (position, propre)
+
+        def ajouter(documents: list[dict[str, Any]]) -> None:
+            for document in documents:
+                if not isinstance(document, Mapping):
+                    continue
+                propre = canoniser_document(document)
+                identifiant = _texte(propre.get("id"))
+                if not identifiant:
+                    continue
+                try:
+                    position = curseur_document(propre)
+                except ValueError:
+                    continue
+                if curseur is not None and position <= curseur:
+                    continue
+                existant = par_id.get(identifiant)
+                if existant is None or position > existant[0]:
+                    par_id[identifiant] = (position, propre)
+
+        ajouter(prioritaires)
+        if not par_id:
+            # Seek d'index : les documents canoniques après le curseur, sans fenêtre glissante.
+            filtre_principal = self._filtre_principal(tenant_normalise, curseur)
+            cursor = self.collection.find(filtre_principal)
+            cursor = cursor.sort(
+                [(CHAMP_UTC, 1), ("sequence_canonique", 1), ("id", 1)]).limit(borne)
+            ajouter(await cursor.to_list(borne))
         retenus = sorted(par_id.values(), key=lambda paire: paire[0])
         return [document for _position, document in retenus[:borne]]
 
@@ -304,11 +370,15 @@ class DepotObservationsMesure:
         """Backfill borné des documents legacy : écrit ``maj_le_utc`` et la séquence canonique."""
         tenant_normalise = pont.normaliser_tenant(tenant)
         borne = max(1, min(int(limite), _MAX_LOT))
+        date_maj = {"$convert": {
+            "input": "$maj_le", "to": "date", "onError": None, "onNull": None}}
         filtre = {
             "tenant_id": tenant_normalise,
             "$or": [
                 {CHAMP_UTC: {"$exists": False}},
-                {"sequence": {"$exists": False}},
+                {"sequence_canonique": {"$exists": False}},
+                {"$expr": {"$gt": [
+                    date_maj, {"$add": ["$maj_le_utc", 1]}]}},
             ],
         }
         cursor = self.collection.find(filtre).limit(borne)
@@ -320,21 +390,32 @@ class DepotObservationsMesure:
             propre = document_ingestion(document)
             if CHAMP_UTC not in propre:
                 continue
-            filtre = ({"_id": document.get("_id")}
-                      if document.get("_id") is not None
-                      else {"id": document.get("id")})
-            if filtre.get("id") is None and "_id" not in filtre:
+            base = ({"_id": document.get("_id")}
+                    if document.get("_id") is not None
+                    else {"id": document.get("id")})
+            if base.get("id") is None and "_id" not in base:
                 continue
+            # CAS : si un producteur a corrigé le document entre la lecture et l'écriture,
+            # on n'écrase pas sa correction ; il sera repris au backfill suivant.
+            conditions: list[dict[str, Any]] = [base]
+            for champ in ("maj_le", "sequence", "sequence_canonique"):
+                if champ in document:
+                    conditions.append({champ: document[champ]})
+                else:
+                    conditions.append({champ: {"$exists": False}})
             valeurs = {
                 "tenant_id": propre.get("tenant_id"),
                 "maj_le": propre.get("maj_le"),
                 CHAMP_UTC: propre[CHAMP_UTC],
                 "sequence": propre.get("sequence", ""),
+                "sequence_canonique": propre.get("sequence_canonique", ""),
             }
             if _texte(propre.get("id")):
                 valeurs["id"] = propre["id"]
-            await self.collection.update_one(filtre, {"$set": valeurs})
-            remplis += 1
+            resultat = await self.collection.update_one(
+                {"$and": conditions}, {"$set": valeurs}, upsert=False)
+            if int(getattr(resultat, "matched_count", 0) or 0) > 0:
+                remplis += 1
         return remplis
 
     async def compter_sans_maj_le_utc(self, tenant: str) -> int:
@@ -343,38 +424,64 @@ class DepotObservationsMesure:
             CHAMP_UTC: {"$exists": False},
         }))
 
-    async def compter_non_conformes(self, tenant: str) -> int:
-        """Compte les documents inexploitables : types, tenant non normalisé, dates illisibles.
+    async def compter_a_migrer(self, tenant: str) -> int:
+        """Documents à backfiller avant toute lecture : champs canoniques absents ou périmés."""
+        date_maj = {"$convert": {
+            "input": "$maj_le", "to": "date", "onError": None, "onNull": None}}
+        return int(await self.collection.count_documents({
+            "tenant_id": pont.normaliser_tenant(tenant),
+            "id": {"$exists": True, "$type": "string", "$ne": ""},
+            "maj_le": {"$exists": True},
+            "$or": [
+                {CHAMP_UTC: {"$exists": False}},
+                {"sequence_canonique": {"$exists": False}},
+                {"$expr": {"$gt": [
+                    date_maj, {"$add": ["$maj_le_utc", 1]}]}},
+            ],
+        }))
 
-        Le comptage est borné (``AUDIT_LIMITE``) pour rester un audit d'alerte, pas un scan de
-        production. Les documents insérés après le démarrage sont revus à chaque passe.
+    async def auditer_lot(self, tenant: str, apres_id: Any = None,
+                          limite: int = _AUDIT_LIMITE) -> tuple[int, Any, int]:
+        """Audit borné et rotatif : rend ``(défauts, dernier _id, documents lus)``.
+
+        Les documents d'un autre tenant (même mal normalisés, ex. ``Assurance``) sont ignorés :
+        l'audit de ``banque`` ne compte que les défauts de ``banque``. Le curseur ``apres_id``
+        (``_id`` Mongo brut) permet de faire tourner le scan entre les passes.
         """
         tenant_normalise = pont.normaliser_tenant(tenant)
-        filtre_types = {
-            "tenant_id": tenant_normalise,
-            "$or": [
-                {"id": {"$exists": False}},
-                {"id": ""},
-                {"id": {"$not": {"$type": "string"}}},
-                {"maj_le": {"$exists": False}},
-                {"$and": [
-                    {"maj_le": {"$not": {"$type": "string"}}},
-                    {"maj_le": {"$not": {"$type": "date"}}},
-                ]},
-            ],
-        }
-        total = int(await self.collection.count_documents(filtre_types))
-        cursor = self.collection.find({"tenant_id": {"$type": "string"}}).limit(_AUDIT_LIMITE)
-        async for document in cursor:
+        borne = max(1, min(int(limite), _AUDIT_LIMITE))
+        filtre: dict[str, Any] = {"tenant_id": {"$type": "string"}}
+        if apres_id is not None:
+            filtre["_id"] = {"$gt": apres_id}
+        cursor = self.collection.find(filtre).sort([("_id", 1)]).limit(borne)
+        documents = await cursor.to_list(borne)
+        total = 0
+        dernier = apres_id
+        for document in documents:
             if not isinstance(document, Mapping):
                 continue
+            dernier = document.get("_id", dernier)
             tenant_brut = _texte(document.get("tenant_id"))
-            if tenant_brut != tenant_normalise:
-                total += 1
+            try:
+                normalise = pont.normaliser_tenant(tenant_brut)
+            except pont.PontInvalide:
+                normalise = None
+            if normalise is not None and normalise != tenant_normalise:
                 continue
-            maj_le = _texte(document.get("maj_le"))
-            if maj_le and canoniser_instant(maj_le) is None:
+            defaut = normalise is None or tenant_brut != tenant_normalise
+            identifiant = document.get("id")
+            if not isinstance(identifiant, str) or not identifiant.strip():
+                defaut = True
+            maj_le = document.get("maj_le")
+            if maj_le is None or canoniser_instant(maj_le) is None:
+                defaut = True
+            if defaut:
                 total += 1
+        return total, dernier, len(documents)
+
+    async def compter_non_conformes(self, tenant: str) -> int:
+        """Audit borné d'une passe (compatibilité tests/exploitation)."""
+        total, _dernier, _lus = await self.auditer_lot(tenant)
         return total
 
     async def assurer_index(self) -> list[Any]:
@@ -499,7 +606,10 @@ class DepotCheckpointsMesure:
                 filtre, {"$set": document}, upsert=False)
             if int(getattr(resultat, "matched_count", 0) or 0) > 0:
                 return position
-        return await self.lire(tenant_normalise) or position
+        actuel = await self.lire(tenant_normalise)
+        if actuel is None:
+            raise RuntimeError("checkpoint non écrit après CAS")
+        return actuel
 
 
 class DepotRejetsMesure:

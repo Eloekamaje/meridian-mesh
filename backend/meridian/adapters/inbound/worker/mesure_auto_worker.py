@@ -205,6 +205,7 @@ class WorkerMesureAuto:
                 normalises.append(normalise)
         self.tenants = tuple(normalises) or ("local",)
         self.metriques = MetriquesMesureAuto()
+        self._audit_curseurs: dict[str, Any] = {}
         self._arret = asyncio.Event()
 
     # -- cycle de vie -------------------------------------------------------
@@ -222,20 +223,25 @@ class WorkerMesureAuto:
     # -- traitement ---------------------------------------------------------
 
     async def auditer(self) -> int:
-        """Compte les documents non conformes par tenant ; métrique d'alerte au démarrage."""
-        methode = getattr(self.observations, "compter_non_conformes", None)
-        if not callable(methode):
-            return 0
+        """Audit borné et rotatif par tenant ; métrique d'alerte à chaque passe."""
+        methode = getattr(self.observations, "auditer_lot", None)
         total = 0
         for tenant in self.tenants:
             try:
-                nombre = int(await methode(tenant))
+                if callable(methode):
+                    apres = self._audit_curseurs.get(tenant)
+                    nombre, dernier, lus = await methode(
+                        tenant, apres, mongo_mesure.AUDIT_LIMITE)
+                    self._audit_curseurs[tenant] = (
+                        dernier if lus >= mongo_mesure.AUDIT_LIMITE else None)
+                else:
+                    nombre = int(await self.observations.compter_non_conformes(tenant))
             except Exception as exc:  # noqa: BLE001 - l'audit ne bloque pas le worker
                 self.journal.warning(
                     "mesure_auto : audit des documents non conformes impossible tenant=%s : %s",
                     tenant, rediger_message(exc))
                 continue
-            total += nombre
+            total += int(nombre)
             if nombre:
                 self.journal.warning(
                     "mesure_auto_documents_non_conformes=%d tenant=%s", nombre, tenant)
@@ -299,6 +305,31 @@ class WorkerMesureAuto:
                 self.journal.warning(
                     "mesure_auto : backfill maj_le_utc en échec tenant=%s : %s",
                     tenant, rediger_message(exc))
+        compter = getattr(self.observations, "compter_a_migrer", None)
+        if callable(compter):
+            try:
+                a_migrer = int(await compter(tenant))
+            except Exception as exc:  # noqa: BLE001 - l'audit ne bloque pas le worker
+                a_migrer = 0
+                self.journal.warning(
+                    "mesure_auto : comptage des documents à migrer impossible tenant=%s : %s",
+                    tenant, rediger_message(exc))
+            if a_migrer:
+                # Garde de migration : on ne fait pas avancer le checkpoint tant que des
+                # corrections legacy ne sont pas backfillées dans les champs canoniques.
+                sans_utc = getattr(self.observations, "compter_sans_maj_le_utc", None)
+                if callable(sans_utc):
+                    try:
+                        nombre_sans_utc = int(await sans_utc(tenant))
+                    except Exception:  # noqa: BLE001
+                        nombre_sans_utc = -1
+                    self.journal.warning(
+                        "mesure_auto_documents_sans_maj_le_utc=%d tenant=%s",
+                        nombre_sans_utc, tenant)
+                self.journal.warning(
+                    "mesure_auto_documents_a_migrer=%d tenant=%s", a_migrer, tenant)
+                compteurs["echecs"] += 1
+                return compteurs
         documents = await self.observations.lister_apres(tenant, checkpoint, borne)
         for document in documents:
             compteurs["lues"] += 1

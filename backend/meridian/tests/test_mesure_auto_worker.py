@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from meridian.tests.aides_mesure_auto import CollectionMesure
+from meridian.tests.aides_mesure_auto import CollectionMesure, url_test_autorisee
 
 from meridian.adapters.inbound.worker import mesure_auto_worker
 from meridian.adapters.outbound.mongo import mesure_auto as mongo_mesure
@@ -934,11 +934,76 @@ def test_checkpoint_legacy_en_secondes_est_migre():
         == "2026-11-05T09:01:00.000000+00:00"
 
 
+def test_correction_meme_ms_sequence_bumpee_est_relue():
+    premier = mongo_mesure.document_ingestion(_observation(
+        "obs-1", maj_le="2026-11-05T09:01:00.123456+00:00"))
+    premier["sequence"] = "00000000000000000001"
+    premier["sequence_canonique"] = "00000000000000000001"
+    second = mongo_mesure.document_ingestion(_observation(
+        "obs-2", maj_le="2026-11-05T09:01:00.123789+00:00"))
+    second["sequence"] = "00000000000000000002"
+    second["sequence_canonique"] = "00000000000000000002"
+    collection = CollectionMesure([premier, second])
+    depot = mongo_mesure.DepotObservationsMesure(collection)
+
+    curseur = mongo_mesure.CurseurObservation(
+        maj_le="2026-11-05T09:01:00.123000+00:00",
+        sequence="00000000000000000001", id="obs-1")
+    documents = asyncio.run(depot.lister_apres(TENANT, curseur, 10))
+
+    assert [document["id"] for document in documents] == ["obs-2"]
+
+
+def test_correction_legacy_apres_backfill_est_relue_en_faux_mongo():
+    document = mongo_mesure.document_ingestion(_observation(
+        "obs-legacy", maj_le="2026-11-05T09:00:00+00:00"))
+    collection = CollectionMesure([document])
+    depot = mongo_mesure.DepotObservationsMesure(collection)
+    asyncio.run(depot.remplir_maj_le_utc(TENANT))
+    collection.documents[0]["maj_le"] = "2026-11-05T10:00:00+00:00"
+    curseur = mongo_mesure.CurseurObservation(
+        maj_le="2026-11-05T09:00:00.000000+00:00", id="curseur")
+
+    documents = asyncio.run(depot.lister_apres(TENANT, curseur, 10))
+
+    assert [element["id"] for element in documents] == ["obs-legacy"]
+
+
+def test_backfill_ne_regresse_pas_une_correction_concurrente():
+    class CollectionConcurrente(CollectionMesure):
+        def __init__(self, documents=None):
+            super().__init__(documents)
+            self.concurrent = False
+
+        async def update_one(self, filtre, modification, upsert=False):
+            if not self.concurrent:
+                self.concurrent = True
+                for document in self.documents:
+                    document["maj_le"] = "2026-11-05T10:30:00+00:00"
+            return await super().update_one(filtre, modification, upsert)
+
+    collection = CollectionConcurrente([
+        _observation("obs-1", maj_le="2026-11-05T10:00:00+00:00"),
+    ])
+    depot = mongo_mesure.DepotObservationsMesure(collection)
+
+    remplis = asyncio.run(depot.remplir_maj_le_utc(TENANT))
+
+    assert remplis == 0
+    assert collection.documents[0]["maj_le"] == "2026-11-05T10:30:00+00:00"
+
+
+def test_garde_url_mongo_refuse_la_production():
+    assert url_test_autorisee("mongodb://127.0.0.1:27017/db") is True
+    assert url_test_autorisee("mongodb://localhost:27017/meridian_test") is True
+    assert url_test_autorisee("mongodb://prod.example.com/meridian") is False
+
+
 def test_document_ingestion_tronque_maj_le_utc_a_la_milliseconde():
     propre = mongo_mesure.document_ingestion(_observation(
         "obs-ms", maj_le="2026-11-05T09:01:00.123456+00:00"))
 
-    assert propre["maj_le"] == "2026-11-05T09:01:00.123000+00:00"
+    assert propre["maj_le"] == "2026-11-05T09:01:00.123456+00:00"
     assert propre["maj_le_utc"].microsecond == 123000
     assert mongo_mesure.curseur_document(propre).maj_le \
         == "2026-11-05T09:01:00.123000+00:00"
@@ -1044,6 +1109,7 @@ def test_audit_compte_les_documents_non_conformes_sans_bloquer_le_flux():
     observations, checkpoints, _col_obs, _col_cp = _depots([
         malforme,
         _observation("obs-1", maj_le="2026-11-05T09:02:00+00:00"),
+        _observation("obs-assurance", tenant=AUTRE, maj_le="hier"),
     ])
     outbox = Outbox()
     worker = _worker(observations, checkpoints, outbox)
@@ -1053,6 +1119,59 @@ def test_audit_compte_les_documents_non_conformes_sans_bloquer_le_flux():
     assert bilan["outcomes"] == 1
     assert worker.metriques.mesure_auto_non_conformes == 1
     assert asyncio.run(checkpoints.lire(TENANT)).id == "obs-1"
+
+
+def test_audit_ignore_les_documents_d_un_autre_tenant():
+    observations, checkpoints, _col_obs, _col_cp = _depots([
+        _observation("obs-ok"),
+        _observation("obs-tenant", tenant="Banque"),
+        _observation("obs-maj", maj_le="hier"),
+        _observation("obs-assurance", tenant=AUTRE, maj_le="hier"),
+    ])
+    worker = _worker(observations, checkpoints, Outbox())
+
+    assert asyncio.run(worker.auditer()) == 2
+
+
+def test_audit_tourne_par_lot_de_1000():
+    valides = [
+        {**_observation(f"ok-{rang}"), "_id": f"{rang:04d}"}
+        for rang in range(1000)
+    ]
+    mauvais = {**_observation("ko", maj_le="hier"), "_id": "1000"}
+    observations, checkpoints, _col_obs, _col_cp = _depots(valides + [mauvais])
+    worker = _worker(observations, checkpoints, Outbox(), env={})
+
+    premier = asyncio.run(worker.auditer())
+    second = asyncio.run(worker.auditer())
+
+    assert premier == 0
+    assert second == 1
+
+
+def test_backfill_garde_ne_starve_pas_500_legacy_plus_5_nouveaux():
+    legacy = [
+        _observation(f"old-{rang}", maj_le=f"2026-11-05T08:{rang // 60:02d}:{rang % 60:02d}+00:00")
+        for rang in range(500)
+    ]
+    nouveaux = [
+        _observation(f"new-{rang}", maj_le=f"2026-11-05T09:0{rang + 1}:00+00:00")
+        for rang in range(5)
+    ]
+    observations, checkpoints, _col_obs, _col_cp = _depots(legacy + nouveaux)
+    outbox = Outbox()
+    worker = _worker(observations, checkpoints, outbox, lot=10)
+    asyncio.run(checkpoints.ecrire(TENANT, mongo_mesure.CurseurObservation(
+        maj_le="2026-11-05T09:00:00+00:00", id="curseur")))
+
+    premier = asyncio.run(worker.une_passe())
+    second = asyncio.run(worker.une_passe())
+
+    assert premier["outcomes"] == 0  # garde de migration : 5 docs restent à backfiller
+    assert second["outcomes"] == 5
+    assert {evenement["payload"]["mesure"]["observation_id"]
+            for evenement in outbox.evenements.values()} == {
+                f"new-{rang}" for rang in range(5)}
 
 
 def test_type_bracketing_date_et_offset_non_utc_sont_lus_et_ordonnes():
