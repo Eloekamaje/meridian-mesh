@@ -26,12 +26,13 @@ Le produit actuel combine trois modèles qui ne forment pas encore une seule cha
 | Modèle | Où | Rôle | Utilisé par |
 |---|---|---|---|
 | **Travail / Actualités (legacy)** | MongoDB `cases`, `situations`, `initiatives`, `relations` | Surface produit actuelle : histoires, travaux, décisions, passation, veille, priorités | `/actualites`, `/cases`, `/initiatives`, couche Situations de l’Atlas |
-| **Boucle canonique** | PostgreSQL `objet_entreprise`, `boucle.py` | Modèle d’entreprise validé : Situation → Investigation → Decision → Initiative → Outcome → Learning | `/boucle/objets` (lecture), `/boucle/outcomes`, backfill partiel `migration_canonique` (situations, initiatives) |
+| **Boucle canonique** | PostgreSQL `objet_entreprise`, `boucle.py` | Modèle d’entreprise validé : Situation → Investigation → Decision → Initiative → Outcome → Learning ; transitions et création d’une Situation racine exposées dans l’UI | `/boucle/objets` (lecture), `POST /boucle/situations` (création racine), transitions de l’UI Boucle, `/boucle/outcomes`, backfill partiel `migration_canonique` (situations, initiatives) |
 | **Dossier de raisonnement** | PostgreSQL `dossiers_raisonnement` | Trace cognitive d’une réponse : croyances, hypothèses, options, critique, décision de réponse, gates | `/boucle/analyser`, `/aurora`, page Cognition |
 
 Conséquence : le socle « Comprendre » est cohérent, mais l’exploitation vit encore dans le
-legacy et le raisonnement, tandis que la boucle canonique est surtout un modèle de lecture et
-de backfill. **C’est l’écart structurant principal.**
+legacy et le raisonnement, tandis que la boucle canonique est désormais opérable depuis l’UI
+(création d’une Situation racine et transitions jusqu’au Learning), tout en restant alimentée
+en parallèle par le backfill et le pont C2. **C’est l’écart structurant principal.**
 
 ---
 
@@ -164,17 +165,17 @@ Decision · Initiative · Outcome · Learning
 | Objet | Modèle | Persistance | Création live | Statut |
 |---|---|---|---|---|
 | **Signal** | Nom de famille `emergence` uniquement | Aucune | Aucune | **Absent** |
-| **Situation candidate** | `modele_entreprise.Situation` | `objet_entreprise` + backfill `migration_canonique` | Aucune API canonique de création ; le live crée des `situations` Mongo | **Partiel** |
+| **Situation candidate** | `modele_entreprise.Situation` | `objet_entreprise` + backfill `migration_canonique` | `POST /boucle/situations` et bouton « Nouvelle situation » dans Boucle ; le live crée encore des `situations` Mongo | **Partiel** |
 | **Expression** | Nom de famille `emergence` + `Situation.expression_id` | Aucune | Aucune | **Absent** |
 | **Opportunity** | `modele_entreprise.Opportunity` | `objet_entreprise` possible | Aucune instanciation hors tests ; sous-document `opportunite` legacy | **Partiel / absent du live** |
 | **Risk** | `modele_entreprise.Risk` | `objet_entreprise` possible | Aucune instanciation hors tests | **Partiel / absent du live** |
-| **Investigation** | `modele_entreprise.Investigation` | `objet_entreprise` possible, aucun flux live identifié | Aucune API canonique de création ; le live ouvre une situation Mongo | **Partiel** |
+| **Investigation** | `modele_entreprise.Investigation` | `objet_entreprise` possible | Créée par `POST /boucle/situations/{id}/investigations` (UI) ou par le pont C2 | **Partiel** |
 | **Hypothesis** | `dossier_raisonnement.Hypothese` + tableau `hypotheses` du case | Dossier / Mongo | Via raisonnement ou Travail, pas comme objet canonique | **Partiel** |
 | **Expert** | `profils.Profil`, spécialistes cognitifs | Aucune | Aucune | **Partiel** |
 | **ExpertContribution** | `Proposition`, contributions de mobilisation | Dossier de raisonnement / réponse | Pas d’objet canonique | **Partiel** |
 | **Scenario** | `contrefactuel.Option/Scenario`, planification | Aucune | Aucune persistance | **Partiel** |
-| **Decision** | `modele_entreprise.Decision` | `objet_entreprise` possible, aucun flux live identifié | Créée par le pont C2 depuis les décisions Travail | **Partiel** |
-| **Initiative** | `modele_entreprise.Initiative` | `objet_entreprise` + backfill `migration_canonique` | Créée par C3 après `POST /initiatives/{iid}/repondre` ; pas d’API/UI canonique autonome | **Partiel** |
+| **Decision** | `modele_entreprise.Decision` | `objet_entreprise` possible | Créée par le pont C2 ou par `POST /boucle/investigations/{id}/decisions` (UI) | **Partiel** |
+| **Initiative** | `modele_entreprise.Initiative` | `objet_entreprise` + backfill `migration_canonique` | Créée par C3 après `POST /initiatives/{iid}/repondre` ou par `POST /boucle/decisions/{id}/initiatives` (UI) | **Partiel** |
 | **Outcome** | `modele_entreprise.Outcome` | `objet_entreprise` | `POST /boucle/outcomes` ou worker D observations → Outcome ; exige une Initiative canonique | **Partiel** |
 | **Learning** | `modele_entreprise.Learning` | `objet_entreprise` | Via `/boucle/outcomes` ou `/raisonnement/apprentissage` | **Partiel** |
 
@@ -191,7 +192,7 @@ branchés dans le chemin de découverte et de revue.
 | **Atlas** | Géographie du Mesh | Navigation hiérarchique, focus, sélection, portes, couche Situations | Couche Situations encore legacy ; pas de lien direct vers la boucle canonique | **Solide** |
 | **Flore** | Interface conversationnelle d’exploitation | Contexte, citations, preuves, commandes, mobilisation des Twins | Pas de comparaison de scénarios, de requête « quels experts ont participé ? », ni d’action canonique sur la boucle | **Partiel** |
 | **Travail** | Espace investigation/décision/action | Conversation, pièces, hypothèses, options, décisions, passation, veille | Modèle Mongo ; crée les objets canoniques via le pont C2 | **Solide pour le travail, branché pour la boucle** |
-| **Boucle** | Boucle opérationnelle complète | Lecture des objets canoniques, synthèse, création d’Outcome et de Twin | Pas de création/transition pour Situation, Investigation, Decision, Initiative ; pas d’Opportunity/Risk/Scenario | **Partiel** |
+| **Boucle** | Boucle opérationnelle complète | Lecture des objets canoniques et synthèse ; création d’une Situation racine ; transitions Investigation → Decision → Initiative → Outcome → Learning ; création d’Outcome et de Twin | Pas de comparaison de Scénarios ni d’Opportunity/Risk ; édition et suppression non exposées | **Opérationnelle hors Scénarios** |
 | **Jumeaux** | Registre, revue, promotion | Fiche, revue, claims, contradictions, cartes | Extension P2/P3 à faire | **Solide** |
 | **Administration** | Sources, couverture, propriétaires, audit | Sources, santé, rôles, couverture, journal | Connecteurs live à valider | **Solide** |
 | **Cognition** | Dossier, croyances, mémoire, calibration | Approbations, mémoire, dossiers, calibration | Pas de mémoire de transformation interrogeable | **Solide / partiel** |
@@ -219,16 +220,21 @@ pas comme objets canoniques. `Opportunity` et `Risk` existent comme classes et s
 mais ne sont pas instanciés par le chemin de production. La vision fait pourtant de
 l’Opportunité un objet majeur.
 
-### 6.3 La boucle n’est pas encore opérable de bout en bout
+### 6.3 La boucle est opérable, mais pas encore complète
 
-`/boucle/objets` est en lecture. Les seules écritures canoniques exposées concernent Outcome
-et Learning (`POST /boucle/outcomes`, `/raisonnement/apprentissage`, réutilisation/promotion).
-Il n’existe pas d’API/UI pour :
+`/boucle/objets` est en lecture et l’UI Boucle expose désormais les écritures canoniques :
 
-- créer une Situation ou une Expression canonique ;
-- ouvrir une Investigation canonique ;
-- proposer puis trancher une Decision canonique ;
-- lancer une Initiative canonique ;
+- créer une Situation racine (`POST /boucle/situations`, bouton « Nouvelle situation ») ;
+- ouvrir une Investigation (`POST /boucle/situations/{id}/investigations`) ;
+- proposer puis trancher une Decision (`POST /boucle/investigations/{id}/decisions`,
+  `POST /boucle/decisions/{id}/trancher`) ;
+- lancer une Initiative (`POST /boucle/decisions/{id}/initiatives`) ;
+- mesurer un Outcome et capitaliser un Learning (`POST /boucle/initiatives/{id}/outcomes`,
+  `POST /boucle/outcomes/{id}/learnings`, `POST /boucle/investigations/{id}/learnings`).
+
+Il reste sans API/UI canonique :
+
+- créer une Expression canonique ;
 - comparer des Scénarios ;
 - rattacher une Expertise.
 
@@ -255,8 +261,9 @@ interrogeable comme un capital.
 1. **Unifier la chaîne** : choisir un parcours live (Situation → Investigation → Decision →
    Initiative → Outcome → Learning) et le brancher sur les objets canoniques, avec un identifiant
    unique et une trace visible dans Travail et Boucle.
-2. **Rendre la boucle opérable** : API et UI de création/transition pour Situation,
-   Investigation, Decision et Initiative ; pas seulement la lecture et l’Outcome.
+2. **Compléter la boucle opérable** : les transitions canoniques et la création d’une
+   Situation racine sont exposées dans l’UI ; il reste à comparer des Scénarios et à
+   rattacher l’Expertise.
 3. **Compléter les objets** : `Signal`, `Expression`, `Scenario`, `Hypothesis`, `Expert`,
    `ExpertContribution` ; rendre `Opportunity` et `Risk` opérationnels.
 4. **Relier Travail et canonique** : une décision consignée dans Travail doit créer ou mettre à

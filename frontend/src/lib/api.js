@@ -54,6 +54,9 @@ function posterTransition(chemin, corps, options) {
 // Transitions de la boucle canonique. Chaque méthode renvoie la promesse axios ;
 // le backend répond `{ objet, chaine }` et l'UI décide de la suite (sélection, rafraîchissement).
 export const boucleApi = {
+  async creerSituation(corps) {
+    return posterTransition("/boucle/situations", corps);
+  },
   async ouvrirInvestigation(situationId, corps, options) {
     return posterTransition(
       `/boucle/situations/${identifiantRequis(situationId, "identifiant de situation")}/investigations`,

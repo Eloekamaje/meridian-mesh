@@ -161,6 +161,18 @@ describe("configurationAction", () => {
     expect(configurationAction("capitaliser_learning", investigation).api)
       .toBe("capitaliserLearningDepuisInvestigation");
   });
+
+  test("la création de situation racine ne dépend d'aucun objet source", () => {
+    const action = configurationAction("creer_situation", null);
+
+    expect(action.api).toBe("creerSituation");
+    expect(action.typeSource).toBe("");
+    expect(action.champs.map((champ) => champ.nom)).toEqual([
+      "titre", "description", "resume", "priorite", "twin_ids", "mode",
+    ]);
+    expect(action.champs.find((champ) => champ.nom === "mode").options.map((option) => option.value))
+      .toEqual(["DECLARED", "OBSERVED", "INFERRED", "PROPOSED", "CONFIRMED"]);
+  });
 });
 
 describe("construireCorps", () => {
@@ -265,6 +277,37 @@ describe("construireCorps", () => {
     });
   });
 
+  test("crée une situation racine avec au moins un texte et convertit twin_ids", () => {
+    expect(construireCorps("creer_situation", {}).erreur)
+      .toContain("titre, une description ou un résumé");
+    expect(construireCorps("creer_situation", { titre: "   ", description: "\n" }).erreur)
+      .toContain("titre, une description ou un résumé");
+
+    const resultat = construireCorps("creer_situation", {
+      titre: "  Latence des paiements  ",
+      description: "  Les paiements ralentissent depuis R-118.  ",
+      resume: "  Trois flux concernés.  ",
+      priorite: "  haute  ",
+      twin_ids: " app-paiement, process-controle ,, ",
+      mode: "OBSERVED",
+    });
+    expect(resultat.corps).toEqual({
+      titre: "Latence des paiements",
+      description: "Les paiements ralentissent depuis R-118.",
+      resume: "Trois flux concernés.",
+      priorite: "haute",
+      twin_ids: ["app-paiement", "process-controle"],
+      mode: "OBSERVED",
+    });
+  });
+
+  test("accepte une situation décrite sans titre, comme le backend", () => {
+    expect(construireCorps("creer_situation", {
+      titre: "",
+      description: "  Un phénomène observé.  ",
+    }).corps).toEqual({ description: "Un phénomène observé." });
+  });
+
   test("une action inconnue est refusée sans lever", () => {
     expect(construireCorps("inconnue", {})).toEqual({ corps: null, erreur: "Action de boucle inconnue." });
   });
@@ -289,6 +332,13 @@ describe("messageErreurTransition", () => {
 
   test("retombe sur un message lisible", () => {
     expect(messageErreurTransition(new Error("réseau"), "Transition impossible.")).toBe("Transition impossible.");
+  });
+
+  test("explique les 400 et 503 sans détail exploitable", () => {
+    expect(messageErreurTransition({ response: { status: 400 } }))
+      .toBe("Les données envoyées sont invalides. Vérifiez le formulaire.");
+    expect(messageErreurTransition({ response: { status: 503 } }))
+      .toContain("indisponible");
   });
 });
 

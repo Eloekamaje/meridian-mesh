@@ -82,6 +82,21 @@ test("trancher rend un select avec les options proposées", async () => {
   await act(async () => { racine.unmount(); });
 });
 
+test("accepte des options libellées en objets, comme le mode de connaissance", async () => {
+  const actionCreation = configurationAction("creer_situation", null);
+  const { hote, racine } = monter();
+  await rendre(racine, { action: actionCreation });
+
+  const mode = hote.querySelector('[data-testid="boucle-transition-mode"]');
+  expect(mode.tagName).toBe("SELECT");
+  expect([...mode.options].map((option) => option.textContent))
+    .toEqual(["Sélectionner…", "Déclaré", "Observé", "Inféré", "Proposé", "Confirmé"]);
+  expect([...mode.options].map((option) => option.value))
+    .toEqual(["", "DECLARED", "OBSERVED", "INFERRED", "PROPOSED", "CONFIRMED"]);
+
+  await act(async () => { racine.unmount(); });
+});
+
 test("ferme par Échap, par le bouton et par le fond", async () => {
   const onFermer = jest.fn();
   const { hote, racine } = monter();

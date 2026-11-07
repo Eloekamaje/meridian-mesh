@@ -15,6 +15,58 @@ const STATUTS_INITIATIVE_ANNULEE = new Set([
   "CANCELLED", "ANNULEE", "ABANDONED", "ABANDONNEE",
 ]);
 
+const CHAMPS_CREER_SITUATION = [
+  {
+    nom: "titre",
+    label: "Titre de la situation",
+    type: "text",
+    maxLength: 500,
+    placeholder: "Latence des paiements sur les cartes",
+    aide: "Un titre, une description ou un résumé est obligatoire.",
+  },
+  {
+    nom: "description",
+    label: "Description (optionnel)",
+    type: "textarea",
+    rows: 3,
+    maxLength: 10000,
+    placeholder: "Ce qui est observé, où et depuis quand…",
+  },
+  {
+    nom: "resume",
+    label: "Résumé (optionnel)",
+    type: "textarea",
+    rows: 2,
+    maxLength: 5000,
+    placeholder: "La lecture courte qui rend la situation reconnaissable.",
+  },
+  {
+    nom: "priorite",
+    label: "Priorité (optionnel)",
+    type: "text",
+    maxLength: 64,
+    placeholder: "haute, P1, à qualifier…",
+  },
+  {
+    nom: "twin_ids",
+    label: "Twins liés (IDs séparés par une virgule, optionnel)",
+    type: "text",
+    placeholder: "app-paiement, process-controle",
+  },
+  {
+    nom: "mode",
+    label: "Mode de connaissance (optionnel)",
+    type: "select",
+    options: [
+      { value: "DECLARED", label: "Déclaré" },
+      { value: "OBSERVED", label: "Observé" },
+      { value: "INFERRED", label: "Inféré" },
+      { value: "PROPOSED", label: "Proposé" },
+      { value: "CONFIRMED", label: "Confirmé" },
+    ],
+  },
+];
+
 const CHAMPS_OUVRIR_INVESTIGATION = [
   {
     nom: "titre",
@@ -221,6 +273,13 @@ const CHAMPS_CAPITALISER_LEARNING = [
 ];
 
 export const ACTIONS_BOUCLE = Object.freeze({
+  creer_situation: Object.freeze({
+    id: "creer_situation",
+    titre: "Créer une situation racine",
+    description: "Formuler un phénomène observé qui ouvre une nouvelle chaîne canonique.",
+    api: "creerSituation",
+    champs: CHAMPS_CREER_SITUATION,
+  }),
   ouvrir_investigation: Object.freeze({
     id: "ouvrir_investigation",
     libelle: "Ouvrir une investigation",
@@ -448,6 +507,26 @@ function avecOptions(corps, valeurs, champs) {
 
 export function construireCorps(actionId, valeurs = {}, objet = {}) {
   switch (actionId) {
+    case "creer_situation": {
+      const titre = valeurNette(valeurs, "titre");
+      const description = valeurNette(valeurs, "description");
+      const resume = valeurNette(valeurs, "resume");
+      if (!titre && !description && !resume) {
+        return echec("Un titre, une description ou un résumé est obligatoire.");
+      }
+      const corps = {};
+      if (titre) corps.titre = titre;
+      if (description) corps.description = description;
+      if (resume) corps.resume = resume;
+      const priorite = valeurNette(valeurs, "priorite");
+      if (priorite) corps.priorite = priorite;
+      const twinIds = listeVirgules(valeurs, "twin_ids");
+      if (twinIds.length > 0) corps.twin_ids = twinIds;
+      const mode = valeurNette(valeurs, "mode").toUpperCase();
+      if (mode) corps.mode = mode;
+      return { corps };
+    }
+
     case "ouvrir_investigation": {
       const titre = valeurNette(valeurs, "titre");
       const question = valeurNette(valeurs, "question");
@@ -545,17 +624,23 @@ export function messageErreurTransition(erreur, defaut = "La transition n'a pas 
   }
 
   if (typeof detail === "string" && detail.trim()) return detail.trim();
+  if (reponse?.status === 400) {
+    return "Les données envoyées sont invalides. Vérifiez le formulaire.";
+  }
   if (reponse?.status === 404) {
     return "L'objet source est introuvable. Rechargez la boucle puis réessayez.";
   }
   if (reponse?.status === 409) {
-    return "Transition invalide : l'objet a peut-être déjà changé d'état. Rechargez la boucle.";
+    return "Conflit : l'objet existe peut-être déjà ou a changé d'état. Rechargez la boucle.";
   }
   if (reponse?.status === 422) {
     return "Certaines valeurs sont invalides. Vérifiez le formulaire.";
   }
   if (reponse?.status === 403) {
     return "Vous n'avez pas le droit d'effectuer cette transition.";
+  }
+  if (reponse?.status === 503) {
+    return "La boucle est momentanément indisponible. Réessayez dans un instant.";
   }
   return defaut;
 }

@@ -39,9 +39,13 @@ function Champ({ champ, valeur, onChange, desactive }) {
     return (
       <select {...communs} className={`${communs.className} h-9`}>
         <option value="">Sélectionner…</option>
-        {(champ.options || []).map((option) => (
-          <option key={option} value={option}>{option}</option>
-        ))}
+        {(champ.options || []).map((option) => {
+          const valeurOption = typeof option === "string" ? option : option.value;
+          const libelleOption = typeof option === "string" ? option : (option.label || option.value);
+          return (
+            <option key={valeurOption} value={valeurOption}>{libelleOption}</option>
+          );
+        })}
       </select>
     );
   }

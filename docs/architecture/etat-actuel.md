@@ -320,10 +320,11 @@ l'outbox canonique ; le worker C1 crée ou met à jour Situation, Investigation,
 Initiative, puis `GET /cases/{id}` expose la trace `boucle` au front. Le lot C3 enfile aussi
 `initiative.maj` après une réponse d'initiative : l'Initiative canonique parente des Outcomes
 existe donc sans insertion manuelle. Le lot D mesure les observations et crée des `Outcome`
-canoniques (le `Learning` reste une validation humaine).
+canoniques (le `Learning` reste une validation humaine). L'UI Boucle expose les transitions
+canoniques et, depuis C4a, la création d'une Situation racine via `POST /boucle/situations`.
 Le backfill `migration_canonique` et `/boucle/objets` restent disponibles. La chaîne est donc
-branchée, mais l'activation des workers, la migration tenant rétroactive et le parcours
-end-to-end supervisé restent à faire. Le détail est dans
+branchée et opérable depuis l'UI, mais l'activation des workers, la migration tenant rétroactive
+et le parcours end-to-end supervisé restent à faire. Le détail est dans
 [pont-travail-c2.md](pont-travail-c2.md) et [mesure-auto.md](mesure-auto.md).
 
 ### 3.7 Architecture cognitive
@@ -451,11 +452,11 @@ historique. Ils valent `twin.born` pour le résolveur, jamais une confirmation a
 |---|---|---|---|
 | **Claim** | fait sujet-prédicat-objet, avec mode, maturité et preuves | `DECLARED`, `OBSERVED`, `INFERRED`, `PROPOSED`, `CONFIRMED`, `SUPPORTED`, `STRENGTHENED`, `MATURE`, `CONTESTED`, `INVALIDATED`, `HISTORICAL` | Postgres `claim`, `preuve`, `claim_preuve` ; `/api/boucle/twins/{id}/claims` |
 | **Relation** | lien entre deux objets, distinct d’un claim | `supposee`, `observee`, `validation`, `confirmee`, `contestee`, `obsolete` | Postgres / Neo4j ; Atlas et revue |
-| **Situation** | phénomène émergent reliant Twins, signaux, claims ou impacts | `CANDIDATE`, puis qualification | `objet_entreprise` + backfill ; le live lit/écrit Mongo `situations` ; pas de création canonique exposée |
+| **Situation** | phénomène émergent reliant Twins, signaux, claims ou impacts | `CANDIDATE`, puis qualification | `objet_entreprise` + backfill ; création via `POST /api/boucle/situations` et bouton « Nouvelle situation » dans Boucle ; le live lit/écrit encore Mongo `situations` |
 | **Opportunity / Risk** | possibilité ou risque attaché à une situation | `DETECTED`, puis qualification | Classes de domaine testées ; aucune instanciation live identifiée ; sous-document `opportunite` legacy pour Opportunity, pas d’équivalent Risk |
-| **Investigation** | espace structuré de compréhension : question, hypothèses, preuves | `OPEN`, puis clôture | Créée par le pont C2 depuis une Situation de Travail ; lecture `/api/boucle/objets` |
-| **Decision** | décision humaine reliée à une investigation, avec options et rationale | `PROPOSED`, puis tranchée | Créée par le pont C2 depuis les décisions de Travail ; lecture `/api/boucle/objets` |
-| **Initiative** | traduction d’une décision en action suivie | `PLANNED`, puis exécution | Créée par C3 après une réponse d’initiative ; `objet_entreprise` + backfill, lecture `/api/boucle/objets` |
+| **Investigation** | espace structuré de compréhension : question, hypothèses, preuves | `OPEN`, puis clôture | Créée par le pont C2 ou par `POST /api/boucle/situations/{id}/investigations` (UI) ; lecture `/api/boucle/objets` |
+| **Decision** | décision humaine reliée à une investigation, avec options et rationale | `PROPOSED`, puis tranchée | Créée par le pont C2 ou par `POST /api/boucle/investigations/{id}/decisions` (UI) ; lecture `/api/boucle/objets` |
+| **Initiative** | traduction d’une décision en action suivie | `PLANNED`, puis exécution | Créée par C3 après une réponse d’initiative ou par `POST /api/boucle/decisions/{id}/initiatives` (UI) ; `objet_entreprise` + backfill, lecture `/api/boucle/objets` |
 | **Outcome** | mesure observée après une initiative | `OBSERVED` | `objet_entreprise`, `POST /api/boucle/outcomes` ou worker D ; exige une Initiative canonique |
 | **Learning** | connaissance généralisable issue d’un outcome ou d’une investigation | `PROPOSED`, promotion humaine | `objet_entreprise`, `/api/boucle/outcomes`, `/raisonnement/apprentissage` |
 | **Source** | système externe fournissant observations et artefacts | type, curseur, fraîcheur, secret_ref | Postgres `source`, workers d’ingestion |
@@ -706,7 +707,7 @@ la suite locale.
 | Capacité | État | Commentaire |
 |---|---|---|
 | Registre Twins | **solide** | Postgres + projection Mongo/Neo4j |
-| Situations / boucle canonique | **partielle** | Modèle/store/lecture + Outcome ; pont C2 Travail → canonique (Situation/Decision/Initiative), C3 Initiative canonique après réponse, mesure D → Outcome ; Learning humain ; workers et migration tenant à activer |
+| Situations / boucle canonique | **partielle** | Modèle/store, UI de lecture et transitions (création d’une Situation racine → Investigation → Decision → Initiative → Outcome → Learning) ; pont C2 Travail → canonique (Situation/Decision/Initiative), C3 Initiative canonique après réponse, mesure D → Outcome ; Learning humain ; workers et migration tenant à activer |
 | Signal, Expression, Scenario, Hypothesis, Expert | **absents comme objets canoniques** | Noms de famille, dossier de raisonnement ou profils ; voir [ecarts-vision.md](ecarts-vision.md) |
 | Claims, preuves, maturité | **solide** | contradictions et revue conservées |
 | Ingestion Git + CBM | **solide** | CBM à installer dans l’environnement cible |

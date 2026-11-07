@@ -31,6 +31,31 @@ describe("boucleApi", () => {
     poster.mockRestore();
   });
 
+  test("creerSituation poste la situation racine sans en-tête d'idempotence", async () => {
+    const corps = {
+      titre: "Latence des paiements",
+      description: "Les paiements ralentissent.",
+      resume: "Trois flux concernés.",
+      priorite: "haute",
+      twin_ids: ["app-paiement", "process-controle"],
+      mode: "OBSERVED",
+    };
+
+    await boucleApi.creerSituation(corps);
+
+    expect(poster).toHaveBeenCalledWith("/boucle/situations", corps, { timeout: 20000 });
+    expect(poster.mock.calls[0][2]).not.toHaveProperty("headers");
+  });
+
+  test("creerSituation propage l'erreur du backend sans la masquer", async () => {
+    const erreur = {
+      response: { status: 409, data: { detail: "objet déjà existant" } },
+    };
+    poster.mockRejectedValueOnce(erreur);
+
+    await expect(boucleApi.creerSituation({ titre: "Doublon" })).rejects.toBe(erreur);
+  });
+
   test.each([
     ["ouvrirInvestigation", "sit/1", "/boucle/situations/sit%2F1/investigations"],
     ["proposerDecision", "inv-1", "/boucle/investigations/inv-1/decisions"],
