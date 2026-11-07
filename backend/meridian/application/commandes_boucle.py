@@ -14,8 +14,9 @@ Les erreurs sont explicites :
 
 - :class:`SourceIntrouvable` : la source n'existe pas dans le tenant (l'API répond 404) ;
 - :class:`TransitionRefusee` : source incomplète, type incohérent ou version périmée (409) ;
-- :class:`meridian.adapters.outbound.postgres.entreprise_depot.ObjetExistant` et
-  ``VersionRefusee`` remontent du port et sont traduits en 409 par la couche HTTP.
+- :class:`meridian.ports.boucle.ObjetExistant` et
+  :class:`meridian.ports.boucle.VersionRefusee` remontent du port et sont traduits en 409
+  par la couche HTTP.
 """
 from __future__ import annotations
 
@@ -25,12 +26,14 @@ from collections.abc import Mapping
 from dataclasses import asdict, dataclass, is_dataclass
 from typing import Any
 
-from meridian.ports.boucle import BoucleStore
+from meridian.ports.boucle import BoucleStore, ObjetExistant, VersionRefusee
 
 __all__ = [
     "SourceIntrouvable",
     "TransitionRefusee",
     "ResultatTransition",
+    "ObjetExistant",
+    "VersionRefusee",
     "creer_situation",
     "ouvrir_investigation",
     "proposer_decision",
@@ -50,10 +53,10 @@ _LIBELLES = {
 }
 
 _LIENS_SOURCE = {
-    "INVESTIGATION": ("situation_id",),
-    "DECISION": ("investigation_id",),
-    "INITIATIVE": ("decision_id",),
-    "OUTCOME": ("initiative_id",),
+    "INVESTIGATION": (("situation_id",),),
+    "DECISION": (("investigation_id", "investigation_ref"),),
+    "INITIATIVE": (("decision_id", "decision_ref"),),
+    "OUTCOME": (("initiative_id", "initiative_ref"),),
 }
 
 _VIGNETTES = ("chaine", "historique")
@@ -100,6 +103,7 @@ def _valeur_source(source: Any, nom: str, defaut: Any = None) -> Any:
 def _source(
     depot: BoucleStore, conn: Any, tenant: str, identifiant: Any,
     type_attendu: str, role: str, *, for_update: bool = True,
+    exiger_options: bool = False,
 ) -> Any:
     """Charge la source en mapping, verrouillée, et vérifie type, tenant et liens requis."""
     identifiant = _texte(identifiant)
@@ -120,10 +124,11 @@ def _source(
             f"{role} {identifiant!r} appartient au tenant {tenant_source or 'inconnu'!r}, "
             f"attendu {tenant!r}"
         )
-    for champ in _LIENS_SOURCE.get(type_attendu, ()):
-        if not _texte(_valeur_source(source, champ)):
-            raise TransitionRefusee(f"{role} incomplète : {champ} manquant")
-    if type_attendu == "DECISION":
+    for aliases in _LIENS_SOURCE.get(type_attendu, ()):
+        if not any(_texte(_valeur_source(source, alias)) for alias in aliases):
+            raise TransitionRefusee(
+                f"{role} incomplète : {' ou '.join(aliases)} manquant")
+    if exiger_options and type_attendu == "DECISION":
         options = _valeur_source(source, "options")
         if isinstance(options, str):
             options = [options]
@@ -155,20 +160,25 @@ def _persister(
             historique=True, creer=creer)
 
 
+def _nettoyer(objet: Mapping[str, Any]) -> dict[str, Any]:
+    """Retire les vignettes de transport et ``_historique`` des données publiques."""
+    nettoye = {cle: valeur for cle, valeur in objet.items() if cle not in _VIGNETTES}
+    donnees = nettoye.get("donnees")
+    if isinstance(donnees, Mapping):
+        nettoye["donnees"] = {
+            cle: valeur for cle, valeur in donnees.items() if str(cle) != "_historique"
+        }
+    return nettoye
+
+
 def _relire(depot: BoucleStore, conn: Any, tenant: str, identifiant: str) -> ResultatTransition:
     """Relit l'objet et sa chaîne ; ``_historique`` reste dans ``historique``, pas dans ``objet``."""
     lu = depot.lire_boucle(conn, tenant, identifiant, historique=True, as_dict=True)
     if lu is None:
         raise TransitionRefusee(f"objet persisté introuvable : {identifiant}")
-    objet = {cle: valeur for cle, valeur in lu.items() if cle not in _VIGNETTES}
-    donnees = objet.get("donnees")
-    if isinstance(donnees, Mapping):
-        objet["donnees"] = {
-            cle: valeur for cle, valeur in donnees.items() if str(cle) != "_historique"
-        }
     return ResultatTransition(
-        objet=objet,
-        chaine=list(lu.get("chaine") or []),
+        objet=_nettoyer(lu),
+        chaine=[_nettoyer(element) for element in (lu.get("chaine") or [])],
         historique=list(lu.get("historique") or []),
     )
 
@@ -217,7 +227,9 @@ def trancher_decision(
 ) -> ResultatTransition:
     """Tranche une Decision ; seuls les champs canoniques changent, le legacy est préservé."""
     with depot.transaction(conn):
-        decision = _source(depot, conn, tenant_id, decision_id, "DECISION", "decision")
+        decision = _source(
+            depot, conn, tenant_id, decision_id, "DECISION", "decision",
+            exiger_options=True)
         objet = depot.trancher_decision(
             decision, acteur, choix, tenant_id=tenant_id, **champs)
         depot.fusionner_donnees(

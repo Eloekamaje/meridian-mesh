@@ -867,7 +867,7 @@ def enregistrer_boucle(
     canoniques (instances de ce module) plutôt que les lignes de `objet_entreprise`.
 
     ``creer=True`` impose une création exclusive : un identifiant déjà présent lève
-    :class:`meridian.adapters.outbound.postgres.entreprise_depot.ObjetExistant` et n'écrase rien.
+    :class:`meridian.ports.boucle.ObjetExistant` et n'écrase rien.
     """
     if tenant_id is not None and not isinstance(tenant_id, str):
         if objets is not None:
@@ -1039,7 +1039,7 @@ def fusionner_donnees(
     La ligne est verrouillée avant la fusion de l'historique. Les clés de ``ajouter`` sont
     concaténées aux listes existantes (sans doublon) au lieu d'être remplacées. La version de
     ``version_attendue`` rend l'écriture optimiste : une version périmée lève
-    :class:`meridian.adapters.outbound.postgres.entreprise_depot.VersionRefusee`.
+    :class:`meridian.ports.boucle.VersionRefusee`.
     """
     tenant = _texte(tenant_id, "tenant_id", obligatoire=True)
     identifiant = _texte(objet_id, "id", obligatoire=True)

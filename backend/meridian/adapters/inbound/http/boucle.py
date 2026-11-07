@@ -52,6 +52,7 @@ from meridian.application import commandes_boucle
 from meridian.domain import modele_entreprise
 from meridian.adapters.outbound.postgres import rls
 from meridian.domain.tenant import TenantError, exiger_tenant, normaliser_slug, resoudre_tenant
+from meridian.ports.boucle import ObjetExistant, ObjetInvalide, VersionRefusee
 from seed_data import ESPACES
 
 router = APIRouter(prefix="/boucle", tags=["boucle"])
@@ -103,6 +104,7 @@ class ReponseTransition(BaseModel):
 
 
 _REPONSES_TRANSITION = {
+    400: {"description": "Objet invalide (secret ou données non sérialisables)"},
     404: {"description": "Source absente du tenant"},
     409: {"description": "Transition refusée (état, choix, doublon, version périmée)"},
     422: {"description": "Corps invalide"},
@@ -114,8 +116,8 @@ _REPONSES_TRANSITION = {
 def _refuser_idempotence(
     idempotency_key: str | None = Header(None, alias="Idempotency-Key", max_length=200),
 ) -> None:
-    """Aucun stockage d'idempotence durable : refus explicite plutôt qu'un écho trompeur."""
-    if idempotency_key and idempotency_key.strip():
+    """Aucun stockage d'idempotence durable : refus explicite, même pour une valeur blanche."""
+    if idempotency_key is not None:
         raise HTTPException(
             501,
             "Idempotency-Key non pris en charge : aucun stockage d'idempotence durable "
@@ -132,8 +134,8 @@ class _CorpsTransition(BaseModel):
 class CreationSituation(_CorpsTransition):
     id: TexteIdentifiant | None = None
     titre: str | None = Field(None, max_length=500)
-    description: str | None = None
-    resume: str | None = None
+    description: str | None = Field(None, max_length=10000)
+    resume: str | None = Field(None, max_length=5000)
     statut: str | None = Field(None, max_length=64)
     priorite: str | None = Field(None, max_length=64)
     twin_ids: list[str] | None = None
@@ -144,7 +146,7 @@ class CreationSituation(_CorpsTransition):
     expression_id: str | None = None
     inconnues: list[str] | None = None
     mode: ModeCanonique | None = None
-    preuves: list[Any] | None = None
+    preuves: list[Any] | None = Field(None, max_length=100)
     confiance: float | None = Field(None, ge=0, le=1)
 
     @model_validator(mode="after")
@@ -158,8 +160,8 @@ class CreationSituation(_CorpsTransition):
 class OuvertureInvestigation(_CorpsTransition):
     id: TexteIdentifiant | None = None
     titre: str | None = Field(None, max_length=500)
-    question: str | None = None
-    resume: str | None = None
+    question: str | None = Field(None, max_length=2000)
+    resume: str | None = Field(None, max_length=5000)
     statut: str | None = Field(None, max_length=64)
     perimetre: str | None = None
     proprietaire: str | None = None
@@ -170,47 +172,49 @@ class OuvertureInvestigation(_CorpsTransition):
     ouverte_le: DateIso | None = None
     close_le: DateIso | None = None
     synthese: str | None = None
-    incertitudes: list[str] | None = None
-    preuves: list[Any] | None = None
+    incertitudes: list[str] | None = Field(None, max_length=50)
+    preuves: list[Any] | None = Field(None, max_length=100)
     mode: ModeCanonique | None = None
 
 
 class PropositionDecision(_CorpsTransition):
     id: TexteIdentifiant | None = None
     titre: str | None = Field(None, max_length=500)
-    resume: str | None = None
+    resume: str | None = Field(None, max_length=5000)
     options: list[TexteNonVide] = Field(..., min_length=1, max_length=50)
-    criteres: list[TexteNonVide] | None = None
-    incertitudes: list[TexteNonVide] | None = None
+    criteres: list[TexteNonVide] | None = Field(None, max_length=50)
+    incertitudes: list[TexteNonVide] | None = Field(None, max_length=50)
     rationale: str | None = None
-    preuves: list[Any] | None = None
+    preuves: list[Any] | None = Field(None, max_length=100)
     mode: ModeCanonique | None = None
 
 
 class TranchementDecision(_CorpsTransition):
-    # ``acteur`` reste accepté pour les clients existants mais n'est jamais utilisé :
-    # l'acteur enregistré vient de l'identité authentifiée (``Depends(acteur_courant)``).
-    acteur: TexteNonVide | None = None
-    acteur_declare: TexteNonVide | None = None
+    # ``acteur``/``acteur_declare`` restent acceptés pour les clients existants mais ne
+    # sont jamais utilisés : l'acteur enregistré vient de l'identité authentifiée
+    # (``Depends(acteur_courant)``). Le type est volontairement tolérant pour ne pas
+    # casser une UI encore porteuse du champ.
+    acteur: Any = None
+    acteur_declare: Any = None
     choix: TexteNonVide
     motif: str | None = None
     rationale: str | None = None
     decide_le: DateIso | None = None
-    preuves: list[Any] | None = None
+    preuves: list[Any] | None = Field(None, max_length=100)
     mode: ModeCanonique | None = None
 
 
 class LancementInitiative(_CorpsTransition):
     id: TexteIdentifiant | None = None
     titre: str | None = Field(None, max_length=500)
-    resume: str | None = None
+    resume: str | None = Field(None, max_length=5000)
     statut: str | None = Field(None, max_length=64)
     proprietaire: str | None = None
     perimetre: str | None = None
     outcome_attendu_ids: list[str] | None = None
     debut_le: DateIso | None = None
     fin_prevue_le: DateIso | None = None
-    preuves: list[Any] | None = None
+    preuves: list[Any] | None = Field(None, max_length=100)
     mode: ModeCanonique | None = None
 
 
@@ -230,15 +234,15 @@ def _mesure_renseignee(valeur: Any) -> bool:
 class MesureOutcome(_CorpsTransition):
     id: TexteIdentifiant | None = None
     titre: str | None = Field(None, max_length=500)
-    resume: str | None = None
+    resume: str | None = Field(None, max_length=5000)
     mesure: Any
-    metrique: str | None = None
+    metrique: str | None = Field(None, max_length=200)
     valeur_attendue: Any = None
-    interpretation: str | None = None
+    interpretation: str | None = Field(None, max_length=5000)
     mesure_le: DateIso | None = None
-    periode: str | None = None
+    periode: str | None = Field(None, max_length=100)
     statut: str | None = Field(None, max_length=64)
-    preuves: list[Any] | None = None
+    preuves: list[Any] | None = Field(None, max_length=100)
     mode: ModeCanonique | None = None
 
     @field_validator("mesure")
@@ -252,12 +256,12 @@ class MesureOutcome(_CorpsTransition):
 class CapitalisationLearning(_CorpsTransition):
     id: TexteIdentifiant | None = None
     titre: str | None = Field(None, max_length=500)
-    resume: str | None = None
-    enonce: TexteNonVide
-    scope: str | None = None
-    conditions_applicabilite: list[TexteNonVide] | None = None
+    resume: str | None = Field(None, max_length=5000)
+    enonce: TexteNonVide = Field(..., max_length=5000)
+    scope: str | None = Field(None, max_length=200)
+    conditions_applicabilite: list[TexteNonVide] | None = Field(None, max_length=50)
     related_claim_ids: list[str] | None = None
-    preuves: list[Any] | None = None
+    preuves: list[Any] | None = Field(None, max_length=100)
     # Acceptés pour compatibilité mais ignorés : le flux force PROPOSED / INFERRED.
     statut: str | None = Field(None, max_length=64)
     mode: ModeCanonique | None = None
@@ -426,7 +430,7 @@ async def _dans_le_thread(action):
         return await asyncio.to_thread(action)
     except HTTPException:
         raise
-    except entreprise_depot.ObjetInvalide as exc:
+    except ObjetInvalide as exc:
         raise HTTPException(400, str(exc)) from exc
     except psycopg.Error as exc:
         raise HTTPException(503, _DSN_INDISPONIBLE) from exc
@@ -652,16 +656,16 @@ async def _executer_transition(tenant: str, action, *, request: Request | None =
         raise
     except commandes_boucle.SourceIntrouvable as exc:
         raise HTTPException(404, str(exc)) from exc
-    except entreprise_depot.ObjetExistant as exc:
+    except ObjetExistant as exc:
         raise HTTPException(409, str(exc)) from exc
     except (commandes_boucle.TransitionRefusee, boucle.BoucleInvalide,
-            entreprise_depot.VersionRefusee) as exc:
+            VersionRefusee) as exc:
         raise HTTPException(409, str(exc)) from exc
     except psycopg.errors.UniqueViolation as exc:
         raise HTTPException(409, "objet déjà existant") from exc
     except modele_entreprise.ModeleInvalide as exc:
         raise HTTPException(422, str(exc)) from exc
-    except entreprise_depot.ObjetInvalide as exc:
+    except ObjetInvalide as exc:
         raise HTTPException(400, str(exc)) from exc
     except psycopg.Error as exc:
         correlation = None

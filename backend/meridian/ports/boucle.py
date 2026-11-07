@@ -12,6 +12,25 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
+__all__ = [
+    "BoucleStore",
+    "ObjetInvalide",
+    "ObjetExistant",
+    "VersionRefusee",
+]
+
+
+class ObjetInvalide(ValueError):
+    """Objet refusé avant toute écriture (validation, secret, JSON non sérialisable)."""
+
+
+class VersionRefusee(ObjetInvalide):
+    """La version attendue ne correspond plus à la version stockée."""
+
+
+class ObjetExistant(ObjetInvalide):
+    """Un objet ``(tenant_id, id)`` existe déjà et la création exclusive est demandée."""
+
 
 class BoucleStore(Protocol):
     """Surface minimale utilisée par :mod:`meridian.application.commandes_boucle`."""

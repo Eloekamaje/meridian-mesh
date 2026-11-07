@@ -18,6 +18,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from meridian.domain.modele_entreprise import FAMILLES, MODES, TYPES_PAR_FAMILLE
+from meridian.ports.boucle import ObjetExistant, ObjetInvalide, VersionRefusee
 
 _FAMILLES = frozenset(FAMILLES)
 _MODES = frozenset(MODES)
@@ -33,18 +34,6 @@ _CLES_SECRETES = frozenset({
     "pwd", "pass", "auth", "key", "apikey", "api_key", "api-key", "access_key", "accesskey",
     "private_key", "privatekey", "client_secret", "clientsecret", "bearer", "password", "passwd",
 })
-
-
-class ObjetInvalide(ValueError):
-    """Objet d'entreprise refusé avant toute écriture."""
-
-
-class VersionRefusee(ObjetInvalide):
-    """La version proposée recule par rapport à celle déjà stockée."""
-
-
-class ObjetExistant(ObjetInvalide):
-    """Un objet ``(tenant_id, id)`` existe déjà et la création exclusive est demandée."""
 
 
 def _normaliser(valeur, *, minuscule: bool = False) -> str:

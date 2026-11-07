@@ -746,19 +746,22 @@ def test_une_transition_invalide_est_409(monkeypatch, chemin, corps):
 @pytest.mark.parametrize(("chemin", "corps"), [
     ("/situations/sit-x/investigations", {"mode": "MAGIQUE"}),
     ("/situations/sit-x/investigations", {"champ_inconnu": "x"}),
+    ("/situations/sit-x/investigations", {"question": "x" * 2001}),
     ("/investigations/inv-x/decisions", {"options": []}),
     ("/investigations/inv-x/decisions", {"options": ["  "]}),
-    ("/decisions/dec-x/trancher", {"acteur": "   ", "choix": "A"}),
+    ("/decisions/dec-x/trancher", {"choix": "   "}),
     ("/decisions/dec-x/trancher", {"acteur": "a", "choix": ""}),
     ("/decisions/dec-x/trancher", {"choix": "A", "decide_le": "pas-une-date"}),
     ("/initiatives/ini-x/outcomes", {}),
     ("/initiatives/ini-x/outcomes", {"mesure": {}}),
     ("/initiatives/ini-x/outcomes", {"mesure": {"valeur": 1}, "mesure_le": "pas-une-date"}),
     ("/outcomes/out-x/learnings", {"enonce": "   "}),
+    ("/outcomes/out-x/learnings", {"enonce": "x" * 5001}),
     ("/investigations/inv-x/learnings", {}),
     ("/situations", {"statut": "CANDIDATE"}),
     ("/situations", {"titre": "Délai", "mode": "INCONNU"}),
     ("/situations", {"id": "   ", "titre": "Délai"}),
+    ("/situations", {"titre": "Délai", "description": "x" * 10001}),
 ])
 def test_une_validation_invalide_est_422(monkeypatch, chemin, corps):
     client, _ = _client(monkeypatch)
@@ -952,6 +955,98 @@ def test_une_initiative_incomplete_est_409_pas_422(monkeypatch):
     assert reponse.status_code == 409
 
 
+def test_une_initiative_avec_decision_ref_seul_est_acceptee(monkeypatch):
+    client, magasin = _client(monkeypatch)
+    _chaine(client)
+    donnees = magasin.objets[(TENANT, "ini-1")]["donnees"]
+    donnees.pop("decision_id", None)
+    donnees["decision_ref"] = "dec-1"
+
+    canonique = boucle.lire_boucle(_Connexion(magasin), TENANT, "ini-1", as_dict=False)
+    assert isinstance(canonique, boucle.Initiative)
+    assert canonique.decision_id == "dec-1"
+
+    reponse = _post(client, "/initiatives/ini-1/outcomes", {
+        "id": "out-ref", "mesure": {"valeur": 2}})
+
+    assert reponse.status_code == 201
+    assert reponse.json()["objet"]["donnees"]["initiative_id"] == "ini-1"
+
+
+def test_une_decision_avec_investigation_ref_seul_est_acceptee(monkeypatch):
+    client, magasin = _client(monkeypatch)
+    assert _post(client, "/situations", {"id": "sit-1", "titre": "Délai"}).status_code == 201
+    assert _post(client, "/situations/sit-1/investigations", {"id": "inv-1"}).status_code == 201
+    assert _post(client, "/investigations/inv-1/decisions", {
+        "id": "dec-1", "options": ["A"]}).status_code == 201
+    donnees = magasin.objets[(TENANT, "dec-1")]["donnees"]
+    donnees.pop("investigation_id", None)
+    donnees["investigation_ref"] = "inv-1"
+
+    reponse = _post(client, "/decisions/dec-1/trancher", {"choix": "A"})
+
+    assert reponse.status_code == 200
+    assert reponse.json()["objet"]["donnees"]["investigation_id"] == "inv-1"
+
+
+def test_lancer_initiative_accepte_une_decision_decidee_sans_options(monkeypatch):
+    client, magasin = _client(monkeypatch)
+    assert _post(client, "/situations", {"id": "sit-1", "titre": "Délai"}).status_code == 201
+    assert _post(client, "/situations/sit-1/investigations", {"id": "inv-1"}).status_code == 201
+    assert _post(client, "/investigations/inv-1/decisions", {
+        "id": "dec-1", "options": ["A"]}).status_code == 201
+    assert _post(client, "/decisions/dec-1/trancher", {"choix": "A"}).status_code == 200
+    magasin.objets[(TENANT, "dec-1")]["donnees"].pop("options", None)
+
+    reponse = _post(client, "/decisions/dec-1/initiatives", {"id": "ini-1"})
+
+    assert reponse.status_code == 201
+    assert reponse.json()["objet"]["donnees"]["decision_id"] == "dec-1"
+
+
+def test_un_acteur_declare_non_textuel_est_ignore(monkeypatch):
+    client, _ = _client(monkeypatch)
+    assert _post(client, "/situations", {"id": "sit-1", "titre": "Délai"}).status_code == 201
+    assert _post(client, "/situations/sit-1/investigations", {"id": "inv-1"}).status_code == 201
+    assert _post(client, "/investigations/inv-1/decisions", {
+        "id": "dec-1", "options": ["A"]}).status_code == 201
+
+    reponse = _post(client, "/decisions/dec-1/trancher", {
+        "acteur": {"x": 1}, "choix": "A"})
+
+    assert reponse.status_code == 200
+    assert reponse.json()["objet"]["donnees"]["acteur"] == "demo"
+
+
+def test_les_conflits_sont_declares_par_le_port():
+    from meridian.adapters.outbound.postgres import entreprise_depot
+    from meridian.ports.boucle import (ObjetExistant, ObjetInvalide,
+                                       VersionRefusee)
+
+    assert issubclass(ObjetExistant, ObjetInvalide)
+    assert issubclass(VersionRefusee, ObjetInvalide)
+    assert entreprise_depot.ObjetExistant is ObjetExistant
+    assert entreprise_depot.VersionRefusee is VersionRefusee
+
+
+def test_la_chaine_application_est_nettoyee_de_l_historique(monkeypatch):
+    source = _objet(
+        "dec-1", type_="DECISION", famille="decision", mode="DECLARED",
+        donnees={"investigation_id": "inv-1", "options": ["A"], "statut": "PROPOSED"})
+    chaine = [_objet(
+        "dec-1", type_="DECISION", famille="decision", mode="DECLARED",
+        donnees={"_historique": [{"version": 1}]})]
+    monkeypatch.setattr(boucle, "lire_boucle", Mock(
+        side_effect=[source, _lire_resultat("dec-1", "DECISION", chaine)]))
+    monkeypatch.setattr(boucle, "donnees_de", Mock(return_value={"statut": "DECIDED"}))
+    monkeypatch.setattr(boucle, "fusionner_donnees", Mock(return_value={}))
+
+    resultat = commandes_boucle.trancher_decision(
+        boucle, _ConnexionFactice(), TENANT, "dec-1", acteur="a", choix="A")
+
+    assert "_historique" not in resultat.chaine[0]["donnees"]
+
+
 def test_sans_version_supprime_la_cle_sans_forcer_un():
     decision = boucle.Decision(
         id="dec-1", tenant_id=TENANT, investigation_id="inv-1", options=["A"], version=7)
@@ -1026,6 +1121,17 @@ def test_idempotency_key_est_refusee_explicitement(monkeypatch):
 
     reponse = _post(client, "/situations", {"titre": "Délai"},
                     headers={"Idempotency-Key": "cle-inv-1"})
+
+    assert reponse.status_code == 501
+    assert not magasin.objets
+
+
+@pytest.mark.parametrize("valeur", ["", "   "])
+def test_idempotency_key_blanche_est_aussi_refusee(monkeypatch, valeur):
+    client, magasin = _client(monkeypatch)
+
+    reponse = _post(client, "/situations", {"titre": "Délai"},
+                    headers={"Idempotency-Key": valeur})
 
     assert reponse.status_code == 501
     assert not magasin.objets
