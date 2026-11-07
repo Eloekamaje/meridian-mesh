@@ -90,7 +90,8 @@ Choix retenu : **normalisation applicative, pas de migration rétroactive risqu�
 - les routes legacy d'action/décision posent `tenant_id` sur la Situation écrite et
   refusent (404) un document qui déclare un autre tenant ;
 - les lectures sont filtrées par tenant via `pont_travail.filtre_tenant` :
-  `tenant_id == courant` **ou** `tenant_id` absent/null. Le second cas est le compromis
+  `tenant_id == courant` (`local` et `demo` restent équivalents pour la démo) **ou**
+  `tenant_id` absent/null. Le second cas est le compromis
   de reprise pour les documents historiques : ils sont adoptés par le tenant courant à
   leur première écriture. Un document qui déclare explicitement un autre tenant est
   toujours exclu ;

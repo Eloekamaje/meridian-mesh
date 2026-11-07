@@ -416,3 +416,12 @@ def test_candidat_boucle_ignore_une_derniere_decision_blanche():
 
     assert pont_travail.candidat_boucle(case, une_situation()) == (
         pont.decision_case_id("case-1", 1))
+
+
+def test_filtre_tenant_accepte_les_documents_historiques_et_alias_demo():
+    local = pont_travail.filtre_tenant("local")
+    banque = pont_travail.filtre_tenant("banque")
+
+    assert {"tenant_id": {"$in": ["local", "demo"]}} in local["$or"]
+    assert {"tenant_id": {"$exists": False}} in local["$or"]
+    assert {"tenant_id": {"$in": ["banque"]}} in banque["$or"]

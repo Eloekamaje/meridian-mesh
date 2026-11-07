@@ -53,8 +53,12 @@ def filtre_tenant(tenant_id: Any) -> dict[str, Any]:
     qui déclare un autre tenant est en revanche exclu.
     """
     tenant = normaliser_tenant(tenant_id)
+    # `local` et `demo` désignent le même tenant de démonstration dans le legacy.
+    tenants = [tenant]
+    if tenant in {"local", "demo"}:
+        tenants = ["local", "demo"]
     return {"$or": [
-        {"tenant_id": tenant},
+        {"tenant_id": {"$in": tenants}},
         {"tenant_id": {"$exists": False}},
         {"tenant_id": None},
     ]}
