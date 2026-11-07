@@ -14,9 +14,19 @@ import {
   WarningCircle,
   X,
 } from "@phosphor-icons/react";
-import api from "@/lib/api";
+import api, { boucleApi } from "@/lib/api";
 import Depliable from "@/components/ui/Depliable";
 import IdentifiantCopiable from "@/components/ui/IdentifiantCopiable";
+import PanneauActions from "@/components/boucle/PanneauActions";
+import ModaleTransition from "@/components/boucle/ModaleTransition";
+import {
+  cleIdempotence,
+  configurationAction,
+  construireCorps,
+  fusionnerObjet,
+  idObjet as idObjetBoucle,
+  messageErreurTransition,
+} from "@/components/boucle/boucleUi";
 
 const STADES = [
   { type: "SITUATION", famille: "emergence", label: "Situations", court: "Situation", couleur: "#60A5FA", Icone: Lightbulb },
@@ -311,7 +321,19 @@ function EtapeChaine({ etape, index, dernier }) {
   );
 }
 
-function PanneauDetail({ objet, etat, chaine, historique, onFermer, onReessayer, onNaviguer, onOuvrirId }) {
+function PanneauDetail({
+  objet,
+  etat,
+  chaine,
+  historique,
+  onFermer,
+  onReessayer,
+  onNaviguer,
+  onOuvrirId,
+  onOuvrirObjet,
+  onAction,
+  transitionSucces,
+}) {
   if (!objet) return null;
 
   const stade = STADES_PAR_TYPE.get(typeObjet(objet));
@@ -408,6 +430,13 @@ function PanneauDetail({ objet, etat, chaine, historique, onFermer, onReessayer,
             </button>
           )}
         </div>
+
+        <PanneauActions
+          objet={objet}
+          succes={transitionSucces}
+          onAction={onAction}
+          onOuvrir={onOuvrirObjet}
+        />
 
         {(preuves.length > 0 || claims.length > 0 || outcomes.length > 0) && (
           <Depliable
@@ -624,6 +653,8 @@ export default function Boucle() {
   const [twinEnCours, setTwinEnCours] = useState(false);
   const [twinErreur, setTwinErreur] = useState("");
   const [twinSucces, setTwinSucces] = useState("");
+  const [actionActive, setActionActive] = useState(null);
+  const [transition, setTransition] = useState({ enCours: false, erreur: "", succes: null });
 
   useEffect(() => {
     let annule = false;
@@ -768,6 +799,7 @@ export default function Boucle() {
   const total = totalSynthese(synthese) ?? objets.length;
   const filtresActifs = Boolean(recherche.trim() || filtres.famille || filtres.type || filtres.mode);
   const objetDetail = detail.data?.objet || selection;
+  const actionCourante = actionActive ? configurationAction(actionActive, objetDetail) : null;
   const chaineDetail = Array.isArray(detail.data?.chaine)
     ? detail.data.chaine
     : Array.isArray(detail.data?.objet?.chaine) ? detail.data.objet.chaine : [];
@@ -791,6 +823,90 @@ export default function Boucle() {
     const connu = objets.find((objet) => idObjet(objet) === identifiant);
     setSelection(connu || { id: identifiant, type: "", famille: "" });
     chargerDetail(identifiant);
+  };
+
+  const fermerDetail = () => {
+    setSelection(null);
+    setActionActive(null);
+    setTransition({ enCours: false, erreur: "", succes: null });
+  };
+
+  const ouvrirAction = (actionId) => {
+    setTransition({ enCours: false, erreur: "", succes: null });
+    setActionActive(actionId);
+  };
+
+  const fermerAction = () => {
+    if (transition.enCours) return;
+    setActionActive(null);
+    setTransition((avant) => ({ ...avant, erreur: "" }));
+  };
+
+  const executerTransition = async (valeurs) => {
+    if (!actionCourante || !objetDetail) return;
+    const identifiant = idObjet(objetDetail);
+    if (!identifiant) {
+      setTransition((avant) => ({
+        ...avant,
+        erreur: "Cet objet n'a pas d'identifiant : la transition ne peut pas être enregistrée.",
+      }));
+      return;
+    }
+    if (!actionCourante.api || typeof boucleApi[actionCourante.api] !== "function") {
+      setTransition((avant) => ({
+        ...avant,
+        erreur: "Cette transition n'est pas disponible dans cette version de l'interface.",
+      }));
+      return;
+    }
+
+    const { corps, erreur } = construireCorps(actionActive, valeurs, objetDetail);
+    if (erreur) {
+      setTransition((avant) => ({ ...avant, erreur }));
+      return;
+    }
+
+    const action = actionActive;
+    setTransition((avant) => ({ ...avant, enCours: true, erreur: "" }));
+    try {
+      const reponse = await boucleApi[actionCourante.api](identifiant, corps, {
+        idempotencyKey: cleIdempotence(),
+      });
+      const nouvelObjet = reponse?.data?.objet ?? null;
+      const nouvelleChaine = Array.isArray(reponse?.data?.chaine) ? reponse.data.chaine : null;
+
+      setActionActive(null);
+      setTransition({
+        enCours: false,
+        erreur: "",
+        succes: nouvelObjet ? { action, objet: nouvelObjet } : { action, objet: null },
+      });
+
+      if (nouvelObjet && idObjetBoucle(nouvelObjet)) {
+        setObjets((avant) => fusionnerObjet(avant, nouvelObjet));
+        if (idObjetBoucle(nouvelObjet) === identifiant) {
+          setSelection(nouvelObjet);
+          setDetail((avant) => ({
+            ...avant,
+            chargement: false,
+            erreur: null,
+            data: {
+              ...(avant.data || {}),
+              objet: nouvelObjet,
+              chaine: nouvelleChaine || avant.data?.chaine || [],
+              historique: avant.data?.historique || [],
+            },
+          }));
+        }
+      }
+      actualiser();
+    } catch (cause) {
+      setTransition((avant) => ({
+        ...avant,
+        enCours: false,
+        erreur: messageErreurTransition(cause),
+      }));
+    }
   };
 
   const changerOutcome = (cle, valeur) => {
@@ -1517,10 +1633,24 @@ export default function Boucle() {
           etat={detail}
           chaine={chaineDetail}
           historique={historiqueDetail}
-          onFermer={() => setSelection(null)}
+          onFermer={fermerDetail}
           onReessayer={() => chargerDetail(idObjet(selection))}
           onNaviguer={navigate}
           onOuvrirId={ouvrirParId}
+          onOuvrirObjet={ouvrirObjet}
+          onAction={ouvrirAction}
+          transitionSucces={transition.succes}
+        />
+      )}
+
+      {actionCourante && (
+        <ModaleTransition
+          key={actionCourante.id}
+          action={actionCourante}
+          enCours={transition.enCours}
+          erreur={transition.erreur}
+          onFermer={fermerAction}
+          onSoumettre={executerTransition}
         />
       )}
     </div>

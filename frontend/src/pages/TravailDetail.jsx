@@ -11,6 +11,8 @@ import DecisionPassation from "@/components/case/DecisionPassation";
 import PartagerTravail from "@/components/case/PartagerTravail";
 import { BoutonRetour } from "@/components/EntetePage";
 import { useEcran } from "@/lib/ecran";
+import TraceCanonique from "@/components/boucle/TraceCanonique";
+import { traceCanoniqueDeTravail } from "@/components/boucle/boucleUi";
 
 // « Nouveau travail » est cette même page : un travail qui n'est pas encore né (pas d'identifiant), avec un fil vide et la même
 // saisie. Au premier envoi le travail naît et la conversation continue au même endroit — un seul chat pour tous les travaux.
@@ -92,6 +94,7 @@ export default function TravailDetail() {
   const t = TYPES_CASE[cas.type] || [cas.type, "#7C93A8"];
   const sens = SENSIBILITES[cas.sensibilite] || [cas.sensibilite || "interne", "#60A5FA"];
   const derniereEvolution = (cas.historique || []).slice(-1)[0];
+  const traceCanonique = traceCanoniqueDeTravail(cas);
 
   // L'entête, le bandeau « à revoir » et le voile de préparation vivent dans la même colonne que
   // le chat (passés en prop) : quand le Canvas s'ouvre, cette colonne rétrécit et eux avec elle,
@@ -177,6 +180,8 @@ export default function TravailDetail() {
           </div>}
         </div>
       </div>
+
+      <TraceCanonique trace={traceCanonique} />
 
       {cas.a_revoir && (
         <div className="shrink-0 px-8 pt-4">
