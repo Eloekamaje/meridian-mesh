@@ -16,6 +16,16 @@ function titreEtape(etape) {
     || "Étape sans titre";
 }
 
+function idEtape(etape) {
+  if (!etape || typeof etape !== "object") return "";
+  return texte(etape.id || etape.objet_id).trim();
+}
+
+function statutEtape(etape) {
+  if (!etape || typeof etape !== "object") return "";
+  return texte(etape.statut || etape.donnees?.statut).trim().toUpperCase();
+}
+
 export default function TraceCanonique({ trace, className = "" }) {
   if (!trace || (!trace.id && (!Array.isArray(trace.chaine) || trace.chaine.length === 0))) {
     return null;
@@ -71,6 +81,23 @@ export default function TraceCanonique({ trace, className = "" }) {
               <span className="max-w-[16rem] truncate text-[10px] text-[#CBD5E1]" title={titreEtape(etape)}>
                 {titreEtape(etape)}
               </span>
+              {idEtape(etape) && (
+                <code
+                  className="max-w-[10rem] truncate font-code text-[9px] text-[#7C93A8]"
+                  title={idEtape(etape)}
+                  data-testid="travail-boucle-etape-id"
+                >
+                  {idEtape(etape)}
+                </code>
+              )}
+              {statutEtape(etape) && (
+                <span
+                  className="rounded border border-[#60A5FA]/30 bg-[#60A5FA]/[0.06] px-1 py-px font-code text-[8px] uppercase tracking-wider text-[#93C5FD]"
+                  data-testid="travail-boucle-etape-statut"
+                >
+                  {statutEtape(etape)}
+                </span>
+              )}
               {index < chaine.length - 1 && (
                 <ArrowRight size={9} aria-hidden="true" className="shrink-0 text-[#7C93A8]" />
               )}

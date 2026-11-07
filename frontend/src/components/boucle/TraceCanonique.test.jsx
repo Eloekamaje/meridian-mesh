@@ -24,8 +24,8 @@ test("affiche l'identifiant, le statut et la chaîne canonique", async () => {
           id: "dec-1",
           statut: "DECIDED",
           chaine: [
-            { id: "sit-1", type: "SITUATION", titre: "Latence des paiements" },
-            { id: "inv-1", type: "INVESTIGATION", titre: "Comprendre le goulot" },
+            { id: "sit-1", type: "SITUATION", titre: "Latence des paiements", statut: "DECIDED" },
+            { id: "inv-1", type: "INVESTIGATION", titre: "Comprendre le goulot", statut: "OPEN" },
           ],
         }}
       />,
@@ -39,6 +39,32 @@ test("affiche l'identifiant, le statut et la chaîne canonique", async () => {
   expect(etapes).toHaveLength(2);
   expect(etapes[0].textContent).toContain("Latence des paiements");
   expect(etapes[0].textContent).toContain("SITUATION");
+  expect(etapes[0].querySelector('[data-testid="travail-boucle-etape-id"]').textContent).toBe("sit-1");
+  expect(etapes[0].querySelector('[data-testid="travail-boucle-etape-statut"]').textContent).toBe("DECIDED");
+  expect(etapes[1].querySelector('[data-testid="travail-boucle-etape-statut"]').textContent).toBe("OPEN");
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("lit le statut porté par donnees et omet les badges absents", async () => {
+  const { hote, racine } = monter();
+  await act(async () => {
+    racine.render(
+      <TraceCanonique
+        trace={{
+          id: "out-1",
+          chaine: [
+            { id: "out-1", donnees: { type: "OUTCOME", statut: "OBSERVED" }, titre: "Mesure" },
+            { id: "sit-1", type: "SITUATION", titre: "Situation" },
+          ],
+        }}
+      />,
+    );
+  });
+
+  const etapes = hote.querySelectorAll('[data-testid="travail-boucle-etape"]');
+  expect(etapes[0].querySelector('[data-testid="travail-boucle-etape-statut"]').textContent).toBe("OBSERVED");
+  expect(etapes[1].querySelector('[data-testid="travail-boucle-etape-statut"]')).toBeNull();
 
   await act(async () => { racine.unmount(); });
 });
