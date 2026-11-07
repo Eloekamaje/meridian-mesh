@@ -919,6 +919,21 @@ def test_checkpoint_legacy_en_secondes_ou_offset_est_matche_et_migre():
     assert collection.documents[0]["dernier_sequence"] == ""
 
 
+def test_checkpoint_legacy_en_secondes_est_migre():
+    collection = CollectionMesure([
+        {"_id": TENANT, "tenant_id": TENANT,
+         "dernier_maj_le": "2026-11-05T09:00:00+00:00", "dernier_id": "obs-1"},
+    ])
+    depot = mongo_mesure.DepotCheckpointsMesure(collection)
+
+    retour = asyncio.run(depot.ecrire(TENANT, mongo_mesure.CurseurObservation(
+        maj_le="2026-11-05T09:01:00+00:00", id="obs-2")))
+
+    assert retour.id == "obs-2"
+    assert collection.documents[0]["dernier_maj_le"] \
+        == "2026-11-05T09:01:00.000000+00:00"
+
+
 def test_tie_breaker_numerique_est_zero_padde():
     collection = CollectionMesure([
         {**_observation("obs-9", maj_le="2026-11-05T10:00:00+00:00"), "sequence": 9},
