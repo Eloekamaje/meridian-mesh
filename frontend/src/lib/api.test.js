@@ -16,6 +16,10 @@ test("entetesPerimetre n'envoie pas d'en-tête X-Tenant vide", () => {
   expect(entetesPerimetre()).not.toHaveProperty("X-Tenant");
 });
 
+test("le client HTTP borne les appels à 20 secondes", () => {
+  expect(api.defaults.timeout).toBe(20000);
+});
+
 describe("boucleApi", () => {
   let poster;
 
@@ -49,6 +53,11 @@ describe("boucleApi", () => {
       corps,
       { headers: { "Idempotency-Key": "cle-123" } },
     );
+  });
+
+  test("n'envoie aucun en-tête d'idempotence par défaut", async () => {
+    await boucleApi.ouvrirInvestigation("sit-1", { titre: "Comprendre" });
+    expect(poster.mock.calls[0][2]).toBeUndefined();
   });
 
   test("refuse un identifiant vide sans appeler le backend", async () => {

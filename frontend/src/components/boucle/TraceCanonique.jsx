@@ -35,7 +35,7 @@ export default function TraceCanonique({ trace, className = "" }) {
         </span>
         {trace.id && (
           <span className="flex min-w-0 items-center gap-1.5">
-            <span className="font-code text-[9px] uppercase tracking-wider text-[#526A80]">ID</span>
+            <span className="font-code text-[9px] uppercase tracking-wider text-[#7C93A8]">ID</span>
             <code
               className="truncate font-code text-[10px] text-[#BFDBFE]"
               title={trace.id}
@@ -72,7 +72,7 @@ export default function TraceCanonique({ trace, className = "" }) {
                 {titreEtape(etape)}
               </span>
               {index < chaine.length - 1 && (
-                <ArrowRight size={9} aria-hidden="true" className="shrink-0 text-[#526A80]" />
+                <ArrowRight size={9} aria-hidden="true" className="shrink-0 text-[#7C93A8]" />
               )}
             </li>
           ))}

@@ -5,8 +5,10 @@ import {
   construireCorps,
   decisionEstTranchee,
   fusionnerObjet,
+  idObjet,
   messageErreurTransition,
   statutObjet,
+  titreObjet,
 } from "./boucleUi";
 
 const situation = {
@@ -59,6 +61,23 @@ describe("statutObjet", () => {
   });
 });
 
+describe("identifiants et titres", () => {
+  test("idObjet retourne null pour un identifiant vide, sans confondre 0", () => {
+    expect(idObjet("")).toBeNull();
+    expect(idObjet("   ")).toBeNull();
+    expect(idObjet({ id: "" })).toBeNull();
+    expect(idObjet({ id: "  " })).toBeNull();
+    expect(idObjet("sit-1")).toBe("sit-1");
+    expect(idObjet({ id: 0 })).toBe("0");
+  });
+
+  test("titreObjet tolère un tableau et retombe sur l'identifiant", () => {
+    expect(titreObjet({ titre: ["Latence", { ignore: true }, "paiements"] })).toBe("Latence, paiements");
+    expect(titreObjet({ id: "sit-1" })).toBe("sit-1");
+    expect(titreObjet("")).toBe("Objet sans titre");
+  });
+});
+
 describe("decisionEstTranchee", () => {
   test("reconnaît un statut tranché même porté par donnees", () => {
     expect(decisionEstTranchee(decisionTranchee)).toBe(true);
@@ -86,9 +105,19 @@ describe("actionsPourObjet", () => {
       .toEqual(["capitaliser_learning"]);
   });
 
-  test("une décision proposée se tranche, une décision tranchée lance une initiative", () => {
+  test("une décision proposée se tranche", () => {
     expect(actionsPourObjet(decisionProposee).map((action) => action.id)).toEqual(["trancher_decision"]);
+  });
+
+  test("une décision tranchée lance une initiative", () => {
     expect(actionsPourObjet(decisionTranchee).map((action) => action.id)).toEqual(["lancer_initiative"]);
+  });
+
+  test("une décision déjà reliée à une initiative ne propose plus de la lancer", () => {
+    expect(actionsPourObjet({
+      ...decisionTranchee,
+      donnees: { ...decisionTranchee.donnees, initiative_id: "ini-1" },
+    })).toEqual([]);
   });
 
   test("une décision rejetée ne propose aucune action", () => {
@@ -117,6 +146,7 @@ describe("configurationAction", () => {
     expect(action.typeSource).toBe("DECISION");
     expect(champChoix.type).toBe("select");
     expect(champChoix.options).toEqual(["Automatiser", "Réorganiser"]);
+    expect(action.champs.some((champ) => champ.nom === "acteur")).toBe(false);
   });
 
   test("trancher retombe sur une saisie libre sans options connues", () => {
@@ -161,20 +191,19 @@ describe("construireCorps", () => {
     });
   });
 
-  test("tranche avec un acteur, un choix et un motif optionnel", () => {
-    expect(construireCorps("trancher_decision", { choix: "A" }, decisionProposee).erreur).toContain("acteur");
-    expect(construireCorps("trancher_decision", { acteur: "comité" }, decisionProposee).erreur).toContain("choix");
-    expect(construireCorps("trancher_decision", { acteur: "comité", choix: "Autre" }, decisionProposee).erreur)
+  test("tranche avec un choix et un motif optionnel, sans acteur envoyé", () => {
+    expect(construireCorps("trancher_decision", {}, decisionProposee).erreur).toContain("choix");
+    expect(construireCorps("trancher_decision", { choix: "Autre" }, decisionProposee).erreur)
       .toContain("options");
-    expect(construireCorps("trancher_decision", {
-      acteur: " comité-cartes ",
+    const resultat = construireCorps("trancher_decision", {
       choix: "Automatiser",
       motif: " Réduire le délai ",
-    }, decisionProposee).corps).toEqual({
-      acteur: "comité-cartes",
+    }, decisionProposee);
+    expect(resultat.corps).toEqual({
       choix: "Automatiser",
       motif: "Réduire le délai",
     });
+    expect(resultat.corps).not.toHaveProperty("acteur");
   });
 
   test("lance une initiative depuis une décision", () => {
@@ -207,13 +236,13 @@ describe("construireCorps", () => {
       cible: "200",
       periode: "2026-10",
       interpretation: "La latence baisse",
-      preuve_ids: "preuve-1, preuve-2",
+      preuves: "preuve-1, preuve-2",
     }).corps).toEqual({
       mesure: { metrique: "p95", valeur: 180.5, unite: "ms", source: "suivi-cartes" },
       valeur_attendue: 200,
       periode: "2026-10",
       interpretation: "La latence baisse",
-      preuve_ids: ["preuve-1", "preuve-2"],
+      preuves: ["preuve-1", "preuve-2"],
     });
   });
 

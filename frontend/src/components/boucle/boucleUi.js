@@ -87,15 +87,6 @@ const CHAMPS_PROPOSER_DECISION = [
 
 const CHAMPS_TRANCHER_DECISION = [
   {
-    nom: "acteur",
-    label: "Acteur qui tranche",
-    type: "text",
-    requis: true,
-    maxLength: 200,
-    placeholder: "comité-cartes",
-    aide: "La personne ou l'instance qui assume la décision.",
-  },
-  {
     nom: "choix",
     label: "Choix retenu",
     type: "text",
@@ -197,7 +188,7 @@ const CHAMPS_MESURER_OUTCOME = [
     placeholder: "Ce que la mesure établit, sans conclure au-delà…",
   },
   {
-    nom: "preuve_ids",
+    nom: "preuves",
     label: "Preuves (IDs séparés par une virgule, optionnel)",
     type: "text",
     placeholder: "preuve-1, preuve-2",
@@ -254,7 +245,7 @@ export const ACTIONS_BOUCLE = Object.freeze({
     id: "trancher_decision",
     libelle: "Trancher la décision",
     titre: "Trancher la décision",
-    description: "Enregistrer l'acteur, le choix retenu et son motif.",
+    description: "Enregistrer le choix retenu et son motif. L'acteur est l'utilisateur authentifié.",
     testid: "boucle-action-trancher",
     api: "trancherDecision",
     icone: "trancher",
@@ -296,6 +287,23 @@ export function texte(valeur) {
   return valeur == null ? "" : String(valeur);
 }
 
+export function sansAccents(valeur) {
+  return texte(valeur).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+export function texteAffichable(valeur) {
+  if (valeur == null) return "";
+  if (Array.isArray(valeur)) {
+    return valeur
+      .filter((element) => element == null || typeof element !== "object")
+      .map((element) => texte(element))
+      .filter(Boolean)
+      .join(", ");
+  }
+  if (typeof valeur === "object") return "";
+  return texte(valeur);
+}
+
 export function valeurDe(objet, ...cles) {
   if (!objet || typeof objet !== "object") return null;
   for (const cle of cles) {
@@ -308,10 +316,14 @@ export function valeurDe(objet, ...cles) {
 }
 
 export function idObjet(objet) {
-  if (typeof objet === "string") return objet;
+  if (typeof objet === "string") {
+    const identifiant = objet.trim();
+    return identifiant || null;
+  }
   if (!objet || typeof objet !== "object") return null;
   const identifiant = objet.id ?? objet._id;
-  return identifiant == null ? null : texte(identifiant);
+  if (identifiant == null || String(identifiant).trim() === "") return null;
+  return texte(identifiant);
 }
 
 export function typeObjet(objet) {
@@ -319,8 +331,8 @@ export function typeObjet(objet) {
 }
 
 export function titreObjet(objet) {
-  if (typeof objet === "string") return objet;
-  return texte(valeurDe(objet, "titre")) || idObjet(objet) || "Objet sans titre";
+  if (typeof objet === "string") return objet.trim() || "Objet sans titre";
+  return texteAffichable(valeurDe(objet, "titre")) || idObjet(objet) || "Objet sans titre";
 }
 
 export function statutObjet(objet) {
@@ -366,9 +378,10 @@ export function actionsPourObjet(objet) {
 
   if (type === "DECISION") {
     if (decisionEstRejetee(objet)) return [];
-    return decisionEstTranchee(objet)
-      ? [ACTIONS_BOUCLE.lancer_initiative]
-      : [ACTIONS_BOUCLE.trancher_decision];
+    if (decisionEstTranchee(objet)) {
+      return idObjet(valeurDe(objet, "initiative_id")) ? [] : [ACTIONS_BOUCLE.lancer_initiative];
+    }
+    return [ACTIONS_BOUCLE.trancher_decision];
   }
 
   if (type === "INITIATIVE") {
@@ -457,15 +470,13 @@ export function construireCorps(actionId, valeurs = {}, objet = {}) {
     }
 
     case "trancher_decision": {
-      const acteur = valeurNette(valeurs, "acteur");
       const choix = valeurNette(valeurs, "choix");
-      if (!acteur) return echec("L'acteur qui tranche est obligatoire.");
       if (!choix) return echec("Le choix retenu est obligatoire.");
       const options = listeOptions(objet);
       if (options.length > 0 && !options.some((option) => option.toLowerCase() === choix.toLowerCase())) {
         return echec("Le choix doit être l'une des options proposées.");
       }
-      return { corps: avecOptions({ acteur, choix }, valeurs, ["motif"]) };
+      return { corps: avecOptions({ choix }, valeurs, ["motif"]) };
     }
 
     case "lancer_initiative": {
@@ -498,8 +509,8 @@ export function construireCorps(actionId, valeurs = {}, objet = {}) {
       if (periode) corps.periode = periode;
       const interpretation = valeurNette(valeurs, "interpretation");
       if (interpretation) corps.interpretation = interpretation;
-      const preuves = listeVirgules(valeurs, "preuve_ids");
-      if (preuves.length > 0) corps.preuve_ids = preuves;
+      const preuves = listeVirgules(valeurs, "preuves");
+      if (preuves.length > 0) corps.preuves = preuves;
       return { corps };
     }
 
@@ -569,6 +580,8 @@ export function cleIdempotence() {
 }
 
 // Trace canonique portée par un Travail legacy, si le backend en expose une.
+// Contrat C2 attendu : cas.boucle = { id, statut, chaine }. Les formes plates
+// (boucle_id, boucle_statut, boucle_chaine) restent acceptées comme repli.
 // Plusieurs formes sont acceptées pour ne pas dépendre d'un seul contrat de sérialisation.
 export function traceCanoniqueDeTravail(cas) {
   if (!cas || typeof cas !== "object") return null;

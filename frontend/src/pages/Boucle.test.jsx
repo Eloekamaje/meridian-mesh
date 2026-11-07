@@ -716,7 +716,6 @@ test("ouvre une investigation depuis une situation, valide le formulaire et actu
       question: "Pourquoi les paiements ralentissent ?",
       perimetre: "paiements",
     },
-    expect.objectContaining({ idempotencyKey: expect.any(String) }),
   );
   expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).toBeNull();
   expect(hote.querySelector('[data-testid="boucle-transition-succes"]').textContent).toContain("inv-2");
@@ -760,7 +759,6 @@ test("propose une décision depuis une investigation", async () => {
       options: ["Automatiser", "Réorganiser"],
       criteres: ["coût", "délai"],
     },
-    expect.objectContaining({ idempotencyKey: expect.any(String) }),
   );
   expect(hote.querySelector('[data-testid="boucle-transition-succes"]').textContent).toContain("dec-2");
 
@@ -780,7 +778,11 @@ test("tranche une décision proposée puis expose l'action initiative", async ()
     },
   };
   boucleApi.trancherDecision.mockResolvedValue({
-    data: { objet: tranchee, chaine: [situation, investigation, tranchee] },
+    data: {
+      objet: tranchee,
+      chaine: [situation, investigation, tranchee],
+      historique: [{ version: 1, maj_le: "2026-10-30T10:00:00Z" }],
+    },
   });
 
   const { hote, racine } = monter();
@@ -791,9 +793,9 @@ test("tranche une décision proposée puis expose l'action initiative", async ()
   const choix = hote.querySelector('[data-testid="boucle-transition-choix"]');
   expect(choix.tagName).toBe("SELECT");
   expect([...choix.options].map((option) => option.value)).toEqual(["", "Automatiser", "Réorganiser"]);
+  expect(hote.querySelector('[data-testid="boucle-transition-acteur"]')).toBeNull();
 
   await act(async () => {
-    saisir(hote.querySelector('[data-testid="boucle-transition-acteur"]'), "  comité-cartes  ");
     saisir(hote.querySelector('[data-testid="boucle-transition-motif"]'), "  Réduire le délai  ");
   });
   await choisir(choix, "Automatiser");
@@ -801,11 +803,11 @@ test("tranche une décision proposée puis expose l'action initiative", async ()
 
   expect(boucleApi.trancherDecision).toHaveBeenCalledWith(
     "dec-prop",
-    { acteur: "comité-cartes", choix: "Automatiser", motif: "Réduire le délai" },
-    expect.objectContaining({ idempotencyKey: expect.any(String) }),
+    { choix: "Automatiser", motif: "Réduire le délai" },
   );
   expect(hote.querySelector('[data-testid="boucle-action-trancher"]')).toBeNull();
   expect(hote.querySelector('[data-testid="boucle-action-initiative"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-historique"]').textContent).toContain("Version 1");
 
   await act(async () => { racine.unmount(); });
 });
@@ -821,9 +823,6 @@ test("affiche l'erreur 409 d'une transition refusée et garde la saisie", async 
   await ouvrirObjet(hote, "dec-prop");
   await cliquer(hote, "boucle-action-trancher");
 
-  await act(async () => {
-    saisir(hote.querySelector('[data-testid="boucle-transition-acteur"]'), "comité-cartes");
-  });
   await choisir(hote.querySelector('[data-testid="boucle-transition-choix"]'), "Automatiser");
   await cliquer(hote, "boucle-transition-enregistrer");
 
@@ -831,12 +830,12 @@ test("affiche l'erreur 409 d'une transition refusée et garde la saisie", async 
   expect(hote.querySelector('[data-testid="boucle-transition-erreur"]').textContent)
     .toContain("décision déjà tranchée");
   expect(hote.querySelector('[data-testid="boucle-transition-enregistrer"]').disabled).toBe(false);
-  expect(hote.querySelector('[data-testid="boucle-transition-acteur"]').value).toBe("comité-cartes");
+  expect(hote.querySelector('[data-testid="boucle-transition-choix"]').value).toBe("Automatiser");
 
   await act(async () => { racine.unmount(); });
 });
 
-test("lance une initiative depuis une décision tranchée", async () => {
+test("lance une initiative depuis une décision tranchée et rafraîchit la source", async () => {
   const controleur = installerApi();
   const nouvelle = {
     id: "ini-2",
@@ -847,9 +846,18 @@ test("lance une initiative depuis une décision tranchée", async () => {
     donnees: { statut: "PLANNED" },
     version: 1,
   };
+  const decisionSource = {
+    ...decision,
+    donnees: { ...decision.donnees, initiative_id: "ini-2" },
+  };
   boucleApi.lancerInitiative.mockImplementation(() => {
     controleur.ajouter(nouvelle);
-    return Promise.resolve({ data: { objet: nouvelle, chaine: [situation, investigation, decision, nouvelle] } });
+    return Promise.resolve({
+      data: {
+        objet: nouvelle,
+        chaine: [situation, investigation, decisionSource, nouvelle],
+      },
+    });
   });
 
   const { hote, racine } = monter();
@@ -871,13 +879,14 @@ test("lance une initiative depuis une décision tranchée", async () => {
       proprietaire: "Alice",
       outcome_attendu_ids: ["out-attendu"],
     },
-    expect.objectContaining({ idempotencyKey: expect.any(String) }),
   );
+  expect(hote.querySelector('[data-testid="boucle-action-initiative"]')).toBeNull();
+  expect(hote.querySelector('[data-objet-id="ini-2"]')).not.toBeNull();
 
   await act(async () => { racine.unmount(); });
 });
 
-test("mesure un outcome depuis une initiative", async () => {
+test("mesure un outcome depuis une initiative et rafraîchit la source", async () => {
   const controleur = installerApi();
   const nouvelOutcome = {
     id: "out-2",
@@ -888,9 +897,18 @@ test("mesure un outcome depuis une initiative", async () => {
     donnees: { statut: "OBSERVED", metrique: "p95", valeur_observee: 180 },
     version: 1,
   };
+  const initiativeSource = {
+    ...initiative,
+    donnees: { ...initiative.donnees, outcome_ids: ["out-2"] },
+  };
   boucleApi.mesurerOutcome.mockImplementation(() => {
     controleur.ajouter(nouvelOutcome);
-    return Promise.resolve({ data: { objet: nouvelOutcome, chaine: [situation, investigation, decision, initiative, nouvelOutcome] } });
+    return Promise.resolve({
+      data: {
+        objet: nouvelOutcome,
+        chaine: [situation, investigation, decision, initiativeSource, nouvelOutcome],
+      },
+    });
   });
 
   const { hote, racine } = monter();
@@ -904,6 +922,7 @@ test("mesure un outcome depuis une initiative", async () => {
     saisir(hote.querySelector('[data-testid="boucle-transition-unite"]'), "ms");
     saisir(hote.querySelector('[data-testid="boucle-transition-cible"]'), "200");
     saisir(hote.querySelector('[data-testid="boucle-transition-periode"]'), "2026-10");
+    saisir(hote.querySelector('[data-testid="boucle-transition-preuves"]'), "preuve-1, preuve-2");
   });
   await cliquer(hote, "boucle-transition-enregistrer");
 
@@ -913,9 +932,11 @@ test("mesure un outcome depuis une initiative", async () => {
       mesure: { metrique: "p95", valeur: 180, unite: "ms" },
       valeur_attendue: 200,
       periode: "2026-10",
+      preuves: ["preuve-1", "preuve-2"],
     },
-    expect.objectContaining({ idempotencyKey: expect.any(String) }),
   );
+  await deplier(hote, "boucle-liens");
+  expect(hote.querySelector('[data-testid="boucle-outcomes"]').textContent).toContain("out-2");
 
   await act(async () => { racine.unmount(); });
 });
@@ -955,8 +976,343 @@ test("capitalise un learning depuis un outcome", async () => {
       scope: "paiements",
       conditions_applicabilite: ["volume stable", "charge nominale"],
     },
-    expect.objectContaining({ idempotencyKey: expect.any(String) }),
   );
+
+  await act(async () => { racine.unmount(); });
+});
+
+async function echap() {
+  await act(async () => {
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  });
+}
+
+test("capitalise un learning depuis une investigation", async () => {
+  const controleur = installerApi();
+  const nouveauLearning = {
+    id: "lea-inv-2",
+    famille: "resultat_apprentissage",
+    type: "LEARNING",
+    mode: "INFERRED",
+    titre: "L'enquête elle-même est réutilisable",
+    donnees: { statut: "PROPOSED", enonce: "L'enquête elle-même est réutilisable" },
+    version: 1,
+  };
+  boucleApi.capitaliserLearningDepuisInvestigation.mockImplementation(() => {
+    controleur.ajouter(nouveauLearning);
+    return Promise.resolve({
+      data: { objet: nouveauLearning, chaine: [situation, investigation, nouveauLearning] },
+    });
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "inv-1");
+  await cliquer(hote, "boucle-action-learning");
+
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-enonce"]'), "L'enquête elle-même est réutilisable");
+    saisir(hote.querySelector('[data-testid="boucle-transition-scope"]'), "paiements");
+    saisir(hote.querySelector('[data-testid="boucle-transition-conditions_applicabilite"]'), "volume stable");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(boucleApi.capitaliserLearningDepuisInvestigation).toHaveBeenCalledWith(
+    "inv-1",
+    {
+      enonce: "L'enquête elle-même est réutilisable",
+      scope: "paiements",
+      conditions_applicabilite: ["volume stable"],
+    },
+  );
+  expect(hote.querySelector('[data-testid="boucle-transition-succes"]').textContent)
+    .toContain("lea-inv-2");
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("Échap ferme la modale sans fermer le détail, et ne ferme rien pendant l'enregistrement", async () => {
+  installerApi();
+  let resoudre;
+  boucleApi.ouvrirInvestigation.mockImplementation(() => new Promise((resolve) => { resoudre = resolve; }));
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "sit-1");
+  await cliquer(hote, "boucle-action-investigation");
+
+  await echap();
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-detail"]')).not.toBeNull();
+
+  await cliquer(hote, "boucle-action-investigation");
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "Comprendre");
+    saisir(hote.querySelector('[data-testid="boucle-transition-question"]'), "Pourquoi ?");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+  await echap();
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-detail"]')).not.toBeNull();
+
+  await act(async () => {
+    resoudre({
+      data: {
+        objet: { ...investigation, id: "inv-lent" },
+        chaine: [situation, { ...investigation, id: "inv-lent" }],
+      },
+    });
+  });
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-detail"]')).not.toBeNull();
+
+  await echap();
+  expect(hote.querySelector('[data-testid="boucle-detail"]')).toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("la garde anti-double-submit n'envoie qu'une transition", async () => {
+  installerApi();
+  let resoudre;
+  boucleApi.ouvrirInvestigation.mockImplementation(() => new Promise((resolve) => { resoudre = resolve; }));
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "sit-1");
+  await cliquer(hote, "boucle-action-investigation");
+
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "Comprendre");
+    saisir(hote.querySelector('[data-testid="boucle-transition-question"]'), "Pourquoi ?");
+    const formulaire = hote.querySelector('[data-testid="boucle-transition-modale"] form');
+    formulaire.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    formulaire.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  });
+
+  expect(boucleApi.ouvrirInvestigation).toHaveBeenCalledTimes(1);
+  expect(boucleApi.ouvrirInvestigation.mock.calls[0]).toHaveLength(2);
+
+  await act(async () => {
+    resoudre({ data: { objet: { ...investigation, id: "inv-garde" }, chaine: [] } });
+  });
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("après un 409, recharge le détail et propose la transition suivante", async () => {
+  const tranchee = {
+    ...decisionProposee,
+    donnees: {
+      ...decisionProposee.donnees,
+      statut: "DECIDED",
+      acteur: "comité-cartes",
+      choix: "Automatiser",
+    },
+  };
+  let appelsDetail = 0;
+  api.get.mockImplementation((url) => {
+    if (url === "/boucle/objets") {
+      return Promise.resolve({ data: { tenant: "local", objets: [...objets, decisionProposee] } });
+    }
+    if (url === "/boucle/synthese") return Promise.resolve({ data: synthese });
+    if (url === "/boucle/twins") return Promise.resolve({ data: { twins: [] } });
+    if (url === "/boucle/objets/dec-prop") {
+      appelsDetail += 1;
+      const objet = appelsDetail === 1 ? decisionProposee : tranchee;
+      return Promise.resolve({
+        data: { objet, chaine: [situation, investigation, objet], historique: [] },
+      });
+    }
+    return Promise.resolve({ data: {} });
+  });
+  boucleApi.trancherDecision.mockRejectedValue({
+    response: { status: 409, data: { detail: "décision déjà tranchée" } },
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "dec-prop");
+  await cliquer(hote, "boucle-action-trancher");
+  await choisir(hote.querySelector('[data-testid="boucle-transition-choix"]'), "Automatiser");
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(hote.querySelector('[data-testid="boucle-transition-erreur"]').textContent)
+    .toContain("déjà tranchée");
+  expect(appelsDetail).toBe(2);
+  const appelsObjets = api.get.mock.calls.filter(([url]) => url === "/boucle/objets").length;
+  expect(appelsObjets).toBeGreaterThan(1);
+
+  await cliquer(hote, "boucle-transition-annuler");
+  expect(hote.querySelector('[data-testid="boucle-action-initiative"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-action-trancher"]')).toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("un GET détail lent ne réécrase pas le résultat d'une transition", async () => {
+  let resoudreDetail;
+  api.get.mockImplementation((url) => {
+    if (url === "/boucle/objets") {
+      return Promise.resolve({ data: { tenant: "local", objets } });
+    }
+    if (url === "/boucle/synthese") return Promise.resolve({ data: synthese });
+    if (url === "/boucle/twins") return Promise.resolve({ data: { twins: [] } });
+    if (url === "/boucle/objets/sit-1") {
+      return new Promise((resolve) => { resoudreDetail = resolve; });
+    }
+    return Promise.resolve({ data: {} });
+  });
+  const nouvelle = {
+    id: "inv-rapide",
+    famille: "investigation",
+    type: "INVESTIGATION",
+    mode: "DECLARED",
+    titre: "Investigation rapide",
+    donnees: { statut: "OPEN" },
+    version: 1,
+  };
+  boucleApi.ouvrirInvestigation.mockResolvedValue({
+    data: { objet: nouvelle, chaine: [situation, nouvelle] },
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "sit-1");
+  expect(typeof resoudreDetail).toBe("function");
+  await cliquer(hote, "boucle-action-investigation");
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "Investigation rapide");
+    saisir(hote.querySelector('[data-testid="boucle-transition-question"]'), "Pourquoi ?");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+  expect(hote.querySelector('[data-testid="boucle-transition-succes"]').textContent)
+    .toContain("inv-rapide");
+
+  await act(async () => {
+    resoudreDetail({
+      data: {
+        objet: { ...situation, titre: "Version périmée" },
+        chaine: [],
+        historique: [],
+      },
+    });
+  });
+
+  expect(hote.querySelector('[data-testid="boucle-detail-titre"]').textContent).not.toContain("Version périmée");
+  expect(hote.querySelector('[data-testid="boucle-transition-succes"]').textContent)
+    .toContain("inv-rapide");
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("le succès disparaît quand on change d'objet", async () => {
+  const controleur = installerApi();
+  const nouvelle = {
+    id: "inv-succes",
+    famille: "investigation",
+    type: "INVESTIGATION",
+    mode: "DECLARED",
+    titre: "Investigation",
+    donnees: { statut: "OPEN" },
+    version: 1,
+  };
+  boucleApi.ouvrirInvestigation.mockImplementation(() => {
+    controleur.ajouter(nouvelle);
+    return Promise.resolve({ data: { objet: nouvelle, chaine: [situation, nouvelle] } });
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "sit-1");
+  await cliquer(hote, "boucle-action-investigation");
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "Investigation");
+    saisir(hote.querySelector('[data-testid="boucle-transition-question"]'), "Pourquoi ?");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+  expect(hote.querySelector('[data-testid="boucle-transition-succes"]')).not.toBeNull();
+
+  await fermerDetail(hote);
+  await ouvrirObjet(hote, "inv-1");
+  expect(hote.querySelector('[data-testid="boucle-transition-succes"]')).toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("le détail piège le focus, le place sur la fermeture et le restitue à la carte", async () => {
+  installerApi();
+  const { hote, racine } = monter();
+  await rendre(racine);
+
+  const carte = hote.querySelector('[data-objet-id="sit-1"]');
+  await act(async () => { carte.focus(); carte.click(); });
+
+  const fermer = hote.querySelector('[data-testid="boucle-detail-fermer"]');
+  expect(document.activeElement).toBe(fermer);
+
+  const panneau = hote.querySelector('[data-testid="boucle-detail"] [role="dialog"]');
+  const focusables = [...panneau.querySelectorAll(
+    'a[href], button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])',
+  )];
+  const dernier = focusables[focusables.length - 1];
+  await act(async () => { dernier.focus(); });
+  await act(async () => {
+    panneau.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true }));
+  });
+  expect(document.activeElement).toBe(fermer);
+
+  await act(async () => { fermer.focus(); });
+  await act(async () => {
+    panneau.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true }));
+  });
+  expect(document.activeElement).toBe(dernier);
+
+  await echap();
+  expect(hote.querySelector('[data-testid="boucle-detail"]')).toBeNull();
+  expect(document.activeElement).toBe(carte);
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("après un 404, recharge le détail et affiche l'erreur de contexte", async () => {
+  let appelsDetail = 0;
+  api.get.mockImplementation((url) => {
+    if (url === "/boucle/objets") {
+      return Promise.resolve({ data: { tenant: "local", objets: [...objets, decisionProposee] } });
+    }
+    if (url === "/boucle/synthese") return Promise.resolve({ data: synthese });
+    if (url === "/boucle/twins") return Promise.resolve({ data: { twins: [] } });
+    if (url === "/boucle/objets/dec-prop") {
+      appelsDetail += 1;
+      if (appelsDetail === 1) {
+        return Promise.resolve({ data: { objet: decisionProposee, chaine: [], historique: [] } });
+      }
+      return Promise.reject({ response: { status: 404, data: { detail: "Objet introuvable" } } });
+    }
+    return Promise.resolve({ data: {} });
+  });
+  boucleApi.trancherDecision.mockRejectedValue({
+    response: { status: 404, data: { detail: "Objet introuvable" } },
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "dec-prop");
+  await cliquer(hote, "boucle-action-trancher");
+  await choisir(hote.querySelector('[data-testid="boucle-transition-choix"]'), "Automatiser");
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(appelsDetail).toBe(2);
+  expect(hote.querySelector('[data-testid="boucle-transition-erreur"]').textContent)
+    .toContain("Objet introuvable");
+
+  await cliquer(hote, "boucle-transition-annuler");
+  await deplier(hote, "boucle-chaine-section");
+  expect(hote.querySelector('[data-testid="boucle-detail-erreur"]').textContent)
+    .toContain("Objet introuvable");
 
   await act(async () => { racine.unmount(); });
 });

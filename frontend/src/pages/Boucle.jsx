@@ -20,12 +20,17 @@ import IdentifiantCopiable from "@/components/ui/IdentifiantCopiable";
 import PanneauActions from "@/components/boucle/PanneauActions";
 import ModaleTransition from "@/components/boucle/ModaleTransition";
 import {
-  cleIdempotence,
   configurationAction,
   construireCorps,
   fusionnerObjet,
-  idObjet as idObjetBoucle,
+  idObjet,
   messageErreurTransition,
+  sansAccents,
+  texte,
+  texteAffichable,
+  titreObjet,
+  typeObjet,
+  valeurDe,
 } from "@/components/boucle/boucleUi";
 
 const STADES = [
@@ -102,21 +107,6 @@ const CONTENEURS_COMPTES = [
   "synthese", "totaux", "totals", "donnees",
 ];
 
-const texte = (valeur) => (valeur == null ? "" : String(valeur));
-
-const sansAccents = (valeur) =>
-  texte(valeur).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-
-function valeurDe(objet, ...cles) {
-  for (const cle of cles) {
-    const directe = objet?.[cle];
-    if (directe !== undefined && directe !== null && directe !== "") return directe;
-    const donnee = objet?.donnees?.[cle];
-    if (donnee !== undefined && donnee !== null && donnee !== "") return donnee;
-  }
-  return null;
-}
-
 function idDeValeur(valeur) {
   if (valeur == null) return null;
   if (typeof valeur === "object") {
@@ -126,22 +116,8 @@ function idDeValeur(valeur) {
   return texte(valeur) || null;
 }
 
-function idObjet(objet) {
-  if (typeof objet === "string") return objet;
-  return idDeValeur(objet?.id ?? objet?._id);
-}
-
-function typeObjet(objet) {
-  return texte(valeurDe(objet, "type")).trim().toUpperCase();
-}
-
 function familleObjet(objet) {
   return texte(valeurDe(objet, "famille")).trim().toLowerCase();
-}
-
-function titreObjet(objet) {
-  if (typeof objet === "string") return objet;
-  return texteAffichable(valeurDe(objet, "titre")) || idObjet(objet) || "Objet sans titre";
 }
 
 function resumeObjet(objet) {
@@ -156,19 +132,6 @@ function dateLisible(valeur) {
   const date = new Date(valeur);
   if (Number.isNaN(date.getTime())) return texte(valeur);
   return date.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" });
-}
-
-function texteAffichable(valeur) {
-  if (valeur == null) return "";
-  if (Array.isArray(valeur)) {
-    return valeur
-      .filter((element) => element == null || typeof element !== "object")
-      .map((element) => texte(element))
-      .filter(Boolean)
-      .join(", ");
-  }
-  if (typeof valeur === "object") return "";
-  return texte(valeur);
 }
 
 function messageErreur(erreur, defaut = "La boucle est momentanément indisponible.") {
@@ -334,6 +297,32 @@ function PanneauDetail({
   onAction,
   transitionSucces,
 }) {
+  const panneauRef = useRef(null);
+
+  useEffect(() => {
+    const panneau = panneauRef.current;
+    if (!panneau) return undefined;
+    panneau.querySelector('[data-testid="boucle-detail-fermer"]')?.focus?.();
+    const surTabulation = (evenement) => {
+      if (evenement.key !== "Tab") return;
+      const focusables = [...panneau.querySelectorAll(
+        'a[href], button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])',
+      )];
+      if (focusables.length === 0) return;
+      const premier = focusables[0];
+      const dernier = focusables[focusables.length - 1];
+      if (evenement.shiftKey && document.activeElement === premier) {
+        evenement.preventDefault();
+        dernier.focus();
+      } else if (!evenement.shiftKey && document.activeElement === dernier) {
+        evenement.preventDefault();
+        premier.focus();
+      }
+    };
+    panneau.addEventListener("keydown", surTabulation);
+    return () => panneau.removeEventListener("keydown", surTabulation);
+  }, []);
+
   if (!objet) return null;
 
   const stade = STADES_PAR_TYPE.get(typeObjet(objet));
@@ -371,9 +360,11 @@ function PanneauDetail({
         aria-label="Fermer le détail"
         onClick={onFermer}
         data-testid="boucle-detail-fond"
+        tabIndex={-1}
         className="absolute inset-0 bg-black/55 backdrop-blur-[2px]"
       />
       <aside
+        ref={panneauRef}
         role="dialog"
         aria-modal="true"
         aria-label={`Détail de ${titreObjet(objet)}`}
@@ -641,6 +632,9 @@ export default function Boucle() {
   const [selection, setSelection] = useState(null);
   const [detail, setDetail] = useState({ chargement: false, erreur: null, data: null });
   const refDetail = useRef(0);
+  const enCoursRef = useRef(false);
+  const refElementDeclencheur = useRef(null);
+  const refElementDeclencheurAction = useRef(null);
   const [formulaireOutcome, setFormulaireOutcome] = useState(OUTCOME_INITIAL);
   const [outcomeEnCours, setOutcomeEnCours] = useState(false);
   const [outcomeErreur, setOutcomeErreur] = useState("");
@@ -724,11 +718,11 @@ export default function Boucle() {
   }, [rechargementTwins]);
 
   const chargerDetail = useCallback((identifiant) => {
-    if (!identifiant) return;
+    if (!identifiant) return Promise.resolve();
     const jeton = refDetail.current + 1;
     refDetail.current = jeton;
     setDetail({ chargement: true, erreur: null, data: null });
-    api.get(`/boucle/objets/${encodeURIComponent(identifiant)}`, { params: { historique: true } })
+    return api.get(`/boucle/objets/${encodeURIComponent(identifiant)}`, { params: { historique: true } })
       .then((reponse) => {
         if (refDetail.current !== jeton) return;
         setDetail({ chargement: false, erreur: null, data: reponse.data || null });
@@ -743,21 +737,19 @@ export default function Boucle() {
       });
   }, []);
 
+  const reinitialiserTransition = () => {
+    setTransition({ enCours: false, erreur: "", succes: null });
+  };
+
   const ouvrirObjet = (objet) => {
+    if (transition.enCours || enCoursRef.current) return;
+    refElementDeclencheur.current = document.activeElement;
+    reinitialiserTransition();
     setSelection(objet);
     const identifiant = idObjet(objet);
     if (identifiant) chargerDetail(identifiant);
     else setDetail({ chargement: false, erreur: null, data: null });
   };
-
-  useEffect(() => {
-    if (!selection) return undefined;
-    const fermer = (evenement) => {
-      if (evenement.key === "Escape") setSelection(null);
-    };
-    document.addEventListener("keydown", fermer);
-    return () => document.removeEventListener("keydown", fermer);
-  }, [selection]);
 
   const objetsFiltres = useMemo(() => {
     const requete = sansAccents(recherche.trim());
@@ -819,30 +811,46 @@ export default function Boucle() {
   const actualiser = () => setRechargement((valeur) => valeur + 1);
 
   const ouvrirParId = (identifiant) => {
-    if (!identifiant) return;
+    if (!identifiant || transition.enCours || enCoursRef.current) return;
+    refElementDeclencheur.current = document.activeElement;
+    reinitialiserTransition();
     const connu = objets.find((objet) => idObjet(objet) === identifiant);
     setSelection(connu || { id: identifiant, type: "", famille: "" });
     chargerDetail(identifiant);
   };
 
-  const fermerDetail = () => {
+  const fermerDetail = useCallback(() => {
+    if (transition.enCours || enCoursRef.current) return;
     setSelection(null);
     setActionActive(null);
     setTransition({ enCours: false, erreur: "", succes: null });
-  };
+  }, [transition.enCours]);
 
   const ouvrirAction = (actionId) => {
-    setTransition({ enCours: false, erreur: "", succes: null });
+    if (transition.enCours || enCoursRef.current) return;
+    refElementDeclencheurAction.current = document.activeElement;
+    reinitialiserTransition();
     setActionActive(actionId);
   };
 
+  const restaurerFocusAction = () => {
+    const declencheur = refElementDeclencheurAction.current;
+    refElementDeclencheurAction.current = null;
+    if (declencheur?.isConnected) {
+      declencheur.focus?.();
+      return;
+    }
+    document.querySelector('[data-testid="boucle-detail-fermer"]')?.focus?.();
+  };
+
   const fermerAction = () => {
-    if (transition.enCours) return;
     setActionActive(null);
     setTransition((avant) => ({ ...avant, erreur: "" }));
+    restaurerFocusAction();
   };
 
   const executerTransition = async (valeurs) => {
+    if (enCoursRef.current) return;
     if (!actionCourante || !objetDetail) return;
     const identifiant = idObjet(objetDetail);
     if (!identifiant) {
@@ -867,13 +875,17 @@ export default function Boucle() {
     }
 
     const action = actionActive;
+    enCoursRef.current = true;
+    refDetail.current += 1; // invalide un GET détail encore en vol
     setTransition((avant) => ({ ...avant, enCours: true, erreur: "" }));
     try {
-      const reponse = await boucleApi[actionCourante.api](identifiant, corps, {
-        idempotencyKey: cleIdempotence(),
-      });
+      // Pas d'Idempotency-Key par défaut : le contrat A courant refuse les clés non vides.
+      const reponse = await boucleApi[actionCourante.api](identifiant, corps);
       const nouvelObjet = reponse?.data?.objet ?? null;
       const nouvelleChaine = Array.isArray(reponse?.data?.chaine) ? reponse.data.chaine : null;
+      const nouvelHistorique = Array.isArray(reponse?.data?.historique) ? reponse.data.historique : null;
+      const source = (nouvelleChaine || []).find((etape) => idObjet(etape) === identifiant)
+        || (idObjet(nouvelObjet) === identifiant ? nouvelObjet : null);
 
       setActionActive(null);
       setTransition({
@@ -881,23 +893,29 @@ export default function Boucle() {
         erreur: "",
         succes: nouvelObjet ? { action, objet: nouvelObjet } : { action, objet: null },
       });
+      restaurerFocusAction();
 
-      if (nouvelObjet && idObjetBoucle(nouvelObjet)) {
-        setObjets((avant) => fusionnerObjet(avant, nouvelObjet));
-        if (idObjetBoucle(nouvelObjet) === identifiant) {
-          setSelection(nouvelObjet);
-          setDetail((avant) => ({
-            ...avant,
-            chargement: false,
-            erreur: null,
-            data: {
-              ...(avant.data || {}),
-              objet: nouvelObjet,
-              chaine: nouvelleChaine || avant.data?.chaine || [],
-              historique: avant.data?.historique || [],
-            },
-          }));
-        }
+      const objetsReponse = [nouvelObjet, ...(nouvelleChaine || [])]
+        .filter((objet) => idObjet(objet));
+      if (objetsReponse.length > 0) {
+        setObjets((avant) => objetsReponse.reduce((liste, objet) => fusionnerObjet(liste, objet), avant));
+      }
+
+      if (source) {
+        setSelection(source);
+        setDetail((avant) => ({
+          ...avant,
+          chargement: false,
+          erreur: null,
+          data: {
+            ...(avant.data || {}),
+            objet: source,
+            chaine: nouvelleChaine || avant.data?.chaine || [],
+            historique: nouvelHistorique || avant.data?.historique || [],
+          },
+        }));
+      } else {
+        await chargerDetail(identifiant);
       }
       actualiser();
     } catch (cause) {
@@ -906,8 +924,34 @@ export default function Boucle() {
         enCours: false,
         erreur: messageErreurTransition(cause),
       }));
+      const statut = cause?.response?.status;
+      if (statut === 404 || statut === 409) {
+        await chargerDetail(identifiant);
+        actualiser();
+      }
+    } finally {
+      enCoursRef.current = false;
     }
   };
+
+  useEffect(() => {
+    if (!selection) return undefined;
+    const surEchap = (evenement) => {
+      if (evenement.key !== "Escape") return;
+      if (actionActive || transition.enCours || enCoursRef.current) return;
+      fermerDetail();
+    };
+    document.addEventListener("keydown", surEchap);
+    return () => document.removeEventListener("keydown", surEchap);
+  }, [selection, actionActive, transition.enCours, fermerDetail]);
+
+  useEffect(() => {
+    if (selection) return;
+    const declencheur = refElementDeclencheur.current;
+    if (!declencheur) return;
+    refElementDeclencheur.current = null;
+    if (declencheur.isConnected) declencheur.focus?.();
+  }, [selection]);
 
   const changerOutcome = (cle, valeur) => {
     setFormulaireOutcome((avant) => ({ ...avant, [cle]: valeur }));
@@ -1049,7 +1093,11 @@ export default function Boucle() {
 
   return (
     <div className="h-full overflow-y-auto bg-[#071019] px-4 py-5 pb-20 sm:px-8 sm:py-8 lg:px-12" data-testid="boucle-page">
-      <div className="mx-auto max-w-[1500px]">
+      <div
+        className="mx-auto max-w-[1500px]"
+        inert={selection ? true : undefined}
+        aria-hidden={selection ? "true" : undefined}
+      >
         <header className="rise">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>

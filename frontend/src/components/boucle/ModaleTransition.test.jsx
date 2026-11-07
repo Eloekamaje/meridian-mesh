@@ -50,8 +50,12 @@ test("affiche les champs libellés, place le focus et soumet les valeurs", async
   await rendre(racine, { onSoumettre });
 
   expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+  expect(document.activeElement.tagName).toBe("INPUT");
   expect(document.activeElement.id).toBe("boucle-transition-titre");
+  expect(document.activeElement.labels[0].textContent).toContain("Titre");
   expect(hote.querySelector('label[for="boucle-transition-question"]').textContent).toContain("Question");
+  const ids = [...hote.querySelectorAll("[id]")].map((element) => element.id);
+  expect(new Set(ids).size).toBe(ids.length);
   expect(hote.querySelector('[data-testid="boucle-transition-titre"]').getAttribute("aria-required")).toBe("true");
 
   await act(async () => {
@@ -73,6 +77,7 @@ test("trancher rend un select avec les options proposées", async () => {
   expect(choix.tagName).toBe("SELECT");
   expect([...choix.options].map((option) => option.textContent))
     .toEqual(["Sélectionner…", "Automatiser", "Réorganiser"]);
+  expect(hote.querySelector('[data-testid="boucle-transition-acteur"]')).toBeNull();
 
   await act(async () => { racine.unmount(); });
 });
@@ -104,7 +109,7 @@ test("en cours d'enregistrement, désactive les champs et ignore la fermeture", 
   expect(hote.querySelector('[data-testid="boucle-transition-titre"]').disabled).toBe(true);
   expect(hote.querySelector('[data-testid="boucle-transition-enregistrer"]').disabled).toBe(true);
   expect(hote.querySelector('[data-testid="boucle-transition-enregistrer"]').textContent).toContain("Enregistrement");
-  expect(hote.querySelector('[data-testid="boucle-transition-fermer"]').disabled).toBe(true);
+  expect(hote.querySelector('[data-testid="boucle-transition-fermer"]').disabled).toBe(false);
 
   await act(async () => {
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));

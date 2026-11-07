@@ -1,7 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { CircleNotch, WarningCircle, X } from "@phosphor-icons/react";
-const texte = (valeur) => (valeur == null ? "" : String(valeur));
-
 function valeursInitiales(action) {
   const valeurs = {};
   for (const champ of action.champs) {
@@ -126,7 +124,7 @@ export default function ModaleTransition({
         ref={dialogue}
         role="dialog"
         aria-modal="true"
-        aria-labelledby="boucle-transition-titre"
+        aria-labelledby="boucle-transition-dialogue-titre"
         aria-describedby="boucle-transition-description"
         data-testid="boucle-transition-modale"
         className="relative flex max-h-[92vh] w-full max-w-xl flex-col overflow-y-auto rounded-t-2xl border border-[rgba(148,163,184,0.2)] bg-[#091420] px-5 py-5 shadow-2xl sm:rounded-2xl"
@@ -137,7 +135,7 @@ export default function ModaleTransition({
               Transition de boucle
             </div>
             <h2
-              id="boucle-transition-titre"
+              id="boucle-transition-dialogue-titre"
               className="mt-1 font-display text-lg font-black leading-tight text-[#F2F6F8]"
             >
               {action.titre}
@@ -149,10 +147,9 @@ export default function ModaleTransition({
           <button
             type="button"
             onClick={onFermer}
-            disabled={enCours}
             aria-label="Fermer le formulaire"
             data-testid="boucle-transition-fermer"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[rgba(148,163,184,0.18)] text-[#94A3B8] transition-colors hover:text-[#F2F6F8] disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[rgba(148,163,184,0.18)] text-[#94A3B8] transition-colors hover:text-[#F2F6F8]"
           >
             <X size={15} />
           </button>
