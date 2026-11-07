@@ -1,8 +1,9 @@
 """Boucle P1 canonique : Situation → Investigation → Decision → Initiative → Outcome → Learning.
 
 Ce module ne fait ni réseau ni agent. Il construit des objets canoniques reliés, valide leurs transitions et les
-persiste via :mod:`meridian.adapters.outbound.postgres.entreprise_depot`. Un Outcome exige une mesure et une Initiative ; un Learning exige un
-Outcome mesuré ou une Investigation. Tous les objets d'une boucle appartiennent au même tenant.
+persiste via :mod:`meridian.adapters.outbound.postgres.entreprise_depot`. Un Outcome exige une mesure et une
+Initiative ; un Learning exige un Outcome mesuré ou une Investigation. Tous les objets d'une boucle appartiennent
+au même tenant.
 """
 from __future__ import annotations
 
@@ -16,6 +17,7 @@ from typing import Any
 
 from meridian.adapters.outbound.postgres import entreprise_depot
 from meridian.domain import modele_entreprise as modele
+from meridian.domain.mesure import mesure_renseignee as _mesure_renseignee
 
 __all__ = [
     "BoucleInvalide", "TYPES_BOUCLE", "STATUT_DECISION_PROPOSEE", "STATUT_DECISION_TRANCHEE",
@@ -25,6 +27,7 @@ __all__ = [
     "ouvrir_investigation", "proposer_decision", "trancher_decision", "lancer_initiative",
     "mesurer_outcome", "capitaliser_learning",
     "enregistrer_boucle", "lire_boucle", "lire_par_id",
+    "transaction", "nouvelle_situation", "donnees_de", "fusionner_donnees",
 ]
 
 TYPES_BOUCLE = ("SITUATION", "INVESTIGATION", "DECISION", "INITIATIVE", "OUTCOME", "LEARNING")
@@ -49,6 +52,13 @@ _CHAMPS_TABLE = frozenset({
 })
 _CHAMPS_DATES = ("cree_le", "observe_le", "valide_depuis", "valide_jusqua")
 _MAX_HISTORIQUE = 50
+
+# Champs inverses maintenus par les autres producteurs (B) : un parent fraîchement
+# construit par A ne doit pas les effacer avec ses valeurs par défaut.
+_CHAMPS_INVERSES_B = frozenset({
+    "signal_ids", "expression_id", "opportunity_ids", "risk_ids",
+    "hypothesis_ids", "expert_ids", "scenario_ids",
+})
 
 
 class BoucleInvalide(modele.ModeleInvalide):
@@ -154,18 +164,6 @@ def _est_tranchee_statut(valeur: Any) -> bool:
 def est_decision_tranchee(decision: Any) -> bool:
     """Vrai si la décision porte un statut de décision tranchée."""
     return _est_tranchee_statut(_valeur(decision, "statut"))
-
-
-def _mesure_renseignee(mesure: Any) -> bool:
-    if mesure is None or isinstance(mesure, bool):
-        return False
-    if isinstance(mesure, str):
-        return bool(mesure.strip())
-    if isinstance(mesure, Mapping):
-        return any(_mesure_renseignee(element) for element in mesure.values())
-    if isinstance(mesure, (list, tuple, set, frozenset)):
-        return bool(mesure)
-    return True
 
 
 def _valeur_mesure(mesure: Any) -> Any:
@@ -515,8 +513,11 @@ def trancher_decision(
         "acteur": acteur_final,
         "choix": choix_final,
         "decide_le": _instant(decide_le),
-        "rationale": _texte(rationale if rationale is not None else motif),
     }
+    if rationale is not None or motif is not None:
+        valeur = _texte(rationale if rationale is not None else motif)
+        if valeur:
+            remplacements["rationale"] = valeur
     if preuves is not None:
         remplacements["preuves"] = preuves
     if mode is not None:
@@ -731,7 +732,7 @@ def _valider_pour_persistance(conn: Any, tenant: str, objets: list[Any]) -> None
             raise BoucleInvalide(f"type hors boucle : {type_objet or 'inconnu'}")
         if _tenant_de(objet) != tenant:
             raise BoucleInvalide(
-                f"objet { _id_de(objet) } du tenant {_tenant_de(objet)!r}, attendu {tenant!r}"
+                f"objet {_id_de(objet)} du tenant {_tenant_de(objet)!r}, attendu {tenant!r}"
             )
         attendu = _source_attendue(type_objet)
         if attendu is not None:
@@ -815,9 +816,13 @@ def _liens_inverses(objets: list[Any]) -> dict[str, dict[str, Any]]:
     return extras
 
 
+def _est_vide(valeur: Any) -> bool:
+    return valeur is None or valeur == "" or valeur == [] or valeur == () or valeur == {}
+
+
 def _persister(
     conn: Any, tenant: str, objet: Any, *, historique: bool, as_dict: bool,
-    extra_donnees: Mapping[str, Any] | None = None,
+    extra_donnees: Mapping[str, Any] | None = None, creer: bool = False,
 ) -> Any:
     payload = _payload_objet(objet)
     identifiant = _texte(payload.get("id"), "id", obligatoire=True)
@@ -830,15 +835,26 @@ def _persister(
             else:
                 donnees[cle] = valeur
         payload["donnees"] = donnees
-    if historique:
-        ancien = entreprise_depot.lire_objet(conn, tenant, identifiant)
+    with conn.transaction():
+        ancien = None
+        if not creer:
+            ancien = entreprise_depot.lire_objet(conn, tenant, identifiant, for_update=True)
         if ancien is not None:
-            donnees = dict(payload.get("donnees") or {})
-            versions = list((ancien.get("donnees") or {}).get("_historique") or [])
-            versions.append(_entree_historique(ancien))
-            donnees["_historique"] = versions[-_MAX_HISTORIQUE:]
+            existantes = dict(ancien.get("donnees") or {})
+            nouvelles = dict(payload.get("donnees") or {})
+            nouvelles.pop("_historique", None)
+            donnees = dict(existantes)
+            for cle, valeur in nouvelles.items():
+                if (cle in _CHAMPS_INVERSES_B and _est_vide(valeur)
+                        and not _est_vide(existantes.get(cle))):
+                    continue
+                donnees[cle] = valeur
+            if historique:
+                versions = list(existantes.get("_historique") or [])
+                versions.append(_entree_historique(ancien))
+                donnees["_historique"] = versions[-_MAX_HISTORIQUE:]
             payload["donnees"] = donnees
-    ligne = dict(entreprise_depot.enregistrer_objet(conn, tenant, payload))
+        ligne = dict(entreprise_depot.enregistrer_objet(conn, tenant, payload, creer=creer))
     if historique:
         ligne["historique"] = list((ligne.get("donnees") or {}).get("_historique") or [])
     if as_dict:
@@ -851,7 +867,7 @@ def _persister(
 
 def enregistrer_boucle(
     conn: Any, tenant_id: Any = None, objets: Any = None, *,
-    historique: bool = False, as_dict: bool = True,
+    historique: bool = False, as_dict: bool = True, creer: bool = False,
 ) -> Any:
     """Persiste une boucle d'objets canoniques et rend le ou les objets stockés.
 
@@ -860,6 +876,9 @@ def enregistrer_boucle(
     des mesures et de la décision tranchée. `historique=True` conserve les versions antérieures dans
     `donnees["_historique"]` et les expose dans la clé `historique` du retour. `as_dict=False` rend les objets
     canoniques (instances de ce module) plutôt que les lignes de `objet_entreprise`.
+
+    ``creer=True`` impose une création exclusive : un identifiant déjà présent lève
+    :class:`meridian.ports.boucle.ObjetExistant` et n'écrase rien.
     """
     if tenant_id is not None and not isinstance(tenant_id, str):
         if objets is not None:
@@ -898,7 +917,7 @@ def enregistrer_boucle(
     resultats = [
         _persister(
             conn, tenant, objet, historique=historique, as_dict=as_dict,
-            extra_donnees=extras.get(_id_de(objet)),
+            extra_donnees=extras.get(_id_de(objet)), creer=creer,
         )
         for objet in liste
     ]
@@ -936,16 +955,21 @@ def _objet_depuis_ligne(ligne: Mapping[str, Any]) -> Any:
     return classe(**valeurs)
 
 
+def _lien_ou_alias(ligne: Mapping[str, Any], principal: str, alias: str) -> str | None:
+    """Lit le lien canonique ou son alias legacy (``*_ref``)."""
+    return _texte_ou_none(_valeur(ligne, principal)) or _texte_ou_none(_valeur(ligne, alias))
+
+
 def _source_principale(ligne: Mapping[str, Any]) -> str | None:
     type_objet = _type_de(ligne)
     if type_objet == "INVESTIGATION":
         return _texte_ou_none(_valeur(ligne, "situation_id"))
     if type_objet == "DECISION":
-        return _texte_ou_none(_valeur(ligne, "investigation_id"))
+        return _lien_ou_alias(ligne, "investigation_id", "investigation_ref")
     if type_objet == "INITIATIVE":
-        return _texte_ou_none(_valeur(ligne, "decision_id"))
+        return _lien_ou_alias(ligne, "decision_id", "decision_ref")
     if type_objet == "OUTCOME":
-        return _texte_ou_none(_valeur(ligne, "initiative_id"))
+        return _lien_ou_alias(ligne, "initiative_id", "initiative_ref")
     if type_objet == "LEARNING":
         outcomes = _liste_ids(_valeur(ligne, "outcome_ids"), "outcome_ids")
         if outcomes:
@@ -975,13 +999,16 @@ def _chaine_lignes(conn: Any, tenant: str, ligne: Mapping[str, Any]) -> list[dic
 
 def lire_boucle(
     conn: Any, tenant_id: str, objet_id: str, *, historique: bool = False, as_dict: bool = True,
+    for_update: bool = False,
 ) -> Any:
     """Lit un objet de la boucle par `(tenant, id)`.
 
     Sans `historique`, rend l'objet courant (ligne ou objet canonique). Avec `historique=True`, ajoute au retour
     `chaine` (Situation → … → objet) et `historique` (versions conservées par `enregistrer_boucle`).
+    ``for_update=True`` verrouille la ligne principale jusqu'à la fin de la transaction courante ; la chaîne
+    n'est pas verrouillée.
     """
-    ligne = entreprise_depot.lire_objet(conn, tenant_id, objet_id)
+    ligne = entreprise_depot.lire_objet(conn, tenant_id, objet_id, for_update=for_update)
     if ligne is None:
         return None
     if not historique:
@@ -1001,3 +1028,59 @@ def lire_boucle(
 
 
 lire_par_id = lire_boucle
+
+
+def transaction(conn: Any) -> Any:
+    """Ouvre une transaction sur la connexion ; les appels imbriqués deviennent des savepoints."""
+    return conn.transaction()
+
+
+def nouvelle_situation(**champs: Any) -> Situation:
+    """Fabrique la Situation canonique utilisée par l'orchestration applicative."""
+    return Situation(**champs)
+
+
+def donnees_de(objet: Any) -> dict[str, Any]:
+    """Rend les champs canoniques d'un objet sous la forme attendue dans ``donnees``."""
+    return _payload_objet(objet)["donnees"]
+
+
+def fusionner_donnees(
+    conn: Any, tenant_id: Any, objet_id: Any, patch: Mapping[str, Any], *,
+    historique: bool = True, ajouter: Any = (), mode: str | None = None,
+    version_attendue: Any = None,
+) -> dict[str, Any]:
+    """Fusionne un patch dans ``donnees`` sans effacer les clés legacy de l'objet.
+
+    La ligne est verrouillée avant la fusion de l'historique. Les clés de ``ajouter`` sont
+    concaténées aux listes existantes (sans doublon) au lieu d'être remplacées. La version de
+    ``version_attendue`` rend l'écriture optimiste : une version périmée lève
+    :class:`meridian.ports.boucle.VersionRefusee`.
+    """
+    tenant = _texte(tenant_id, "tenant_id", obligatoire=True)
+    identifiant = _texte(objet_id, "id", obligatoire=True)
+    entreprise_depot.verifier_donnees(patch)
+    with conn.transaction():
+        ligne = entreprise_depot.lire_objet(conn, tenant, identifiant, for_update=True)
+        if ligne is None:
+            raise BoucleInvalide(f"objet introuvable : {identifiant}")
+        donnees = dict(ligne.get("donnees") or {})
+        if historique:
+            versions = list(donnees.get("_historique") or [])
+            versions.append(_entree_historique(ligne))
+            donnees["_historique"] = versions[-_MAX_HISTORIQUE:]
+        listes = frozenset(str(cle) for cle in ajouter)
+        for cle, valeur in patch.items():
+            if str(cle) == "_historique":
+                continue
+            if str(cle) in listes:
+                actuels = _liste_ids(donnees.get(cle), str(cle))
+                nouveaux = _liste_ids(valeur, str(cle))
+                donnees[cle] = actuels + [
+                    element for element in nouveaux if element not in actuels]
+            else:
+                donnees[cle] = copy.deepcopy(valeur)
+        attendue = version_attendue if version_attendue is not None else ligne.get("version")
+        return entreprise_depot.enregistrer_donnees(
+            conn, tenant, identifiant, donnees, mode=mode, version_attendue=attendue,
+            verifier_secrets=False)

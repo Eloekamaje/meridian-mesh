@@ -350,11 +350,11 @@ def test_rollback_si_le_troisieme_objet_echoue_aucun_objet_partiel(monkeypatch):
     vrai = entreprise_depot.enregistrer_objet
     compteur = {"appels": 0}
 
-    def echouer_au_troisieme(conn_, tenant, objet):
+    def echouer_au_troisieme(conn_, tenant, objet, **options):
         compteur["appels"] += 1
         if compteur["appels"] == 3:
             raise RuntimeError("panne injectée au 3e objet")
-        return vrai(conn_, tenant, objet)
+        return vrai(conn_, tenant, objet, **options)
 
     monkeypatch.setattr(entreprise_depot, "enregistrer_objet", echouer_au_troisieme)
 

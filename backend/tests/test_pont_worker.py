@@ -178,11 +178,11 @@ def test_rollback_au_troisieme_objet_marque_failed_puis_retry(monkeypatch):
         conn = ConnexionPont()
         compteur = {"appels": 0}
 
-        def echouer_au_troisieme(conn_, tenant, objet):
+        def echouer_au_troisieme(conn_, tenant, objet, **options):
             compteur["appels"] += 1
             if compteur["appels"] == 3:
                 raise RuntimeError("panne injectée au 3e objet")
-            return vrai(conn_, tenant, objet)
+            return vrai(conn_, tenant, objet, **options)
 
         monkeypatch.setattr(entreprise_depot, "enregistrer_objet", echouer_au_troisieme)
         worker = pont_worker.WorkerPont(
