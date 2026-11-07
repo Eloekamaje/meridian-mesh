@@ -957,7 +957,15 @@ async def _cases_lies_a_situation(sid: str, tenant: str) -> list[dict]:
         return []
     try:
         curseur = db.cases.find(
-            {"situations.0": sid, **_filtre_tenant(tenant)}, _PROJECTION_CASE_PONT)
+            {"$and": [
+                {"$or": [
+                    {"situations.0": sid},
+                    {"situations.0.id": sid},
+                    {"situations.0.situation_id": sid},
+                ]},
+                _filtre_tenant(tenant),
+            ]},
+            _PROJECTION_CASE_PONT)
         cases = await asyncio.wait_for(curseur.to_list(None), timeout=1.0)
     except asyncio.TimeoutError:
         journal_pont.warning("pont : lecture des travaux liés dépassée situation=%s", sid)

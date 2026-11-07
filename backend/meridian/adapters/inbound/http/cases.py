@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import Mapping
 from contextlib import asynccontextmanager
 import logging
 import os
@@ -359,6 +360,8 @@ def build_cases_router(deps):
             raise HTTPException(400, "Situation inconnue ou hors périmètre")
         resultat: list[str] = []
         for element in valeur:
+            if isinstance(element, Mapping):
+                element = element.get("id") or element.get("situation_id")
             if not isinstance(element, str) or not element.strip():
                 raise HTTPException(400, "Situation inconnue ou hors périmètre")
             identifiant = element.strip()
@@ -399,9 +402,17 @@ def build_cases_router(deps):
             valeur = case.get("situations")
             if valeur is None:
                 return []
-            if isinstance(valeur, (list, tuple)):
-                return [sid for sid in valeur if isinstance(sid, str) and sid.strip()]
-            return None  # forme invalide : le Travail n'est pas exposé
+            if not isinstance(valeur, (list, tuple)):
+                return None  # forme invalide : le Travail n'est pas exposé
+            resultat = []
+            for element in valeur:
+                if isinstance(element, Mapping):
+                    element = element.get("id") or element.get("situation_id")
+                if not isinstance(element, str) or not element.strip():
+                    return None
+                if element.strip() not in resultat:
+                    resultat.append(element.strip())
+            return resultat
 
         identifiants = sorted({
             sid for case in cases for sid in (references(case) or [])
@@ -552,26 +563,34 @@ def build_cases_router(deps):
                 return
         vue["boucle_id"] = candidats[0]
 
-    async def _pont_apres_case(case):
-        """Enfile les décisions du Travail, sans jamais faire échouer la route legacy."""
+    async def _evenement_case(case):
         try:
             tenant = _tenant_ecriture()
             situation = await _situation_liee_document(case)
             if not situation:
-                return
-            evenement = pont_travail.evenement_case_lie(
+                return None
+            return pont_travail.evenement_case_lie(
                 case, situation, tenant_id=tenant)
-            if not evenement:
-                return
-            collection = getattr(db, "pont_canonique", None)
-            if collection is None:
-                return
-            await pont_outbox.enfiler_lot_best_effort(
-                collection, [evenement], timeout=_PONT_ENQUEUE_TIMEOUT)
         except Exception:  # noqa: BLE001 - best-effort explicite
             journal_canonique.warning(
-                "pont : enqueue du case impossible case=%s", case.get("id"),
+                "pont : construction du case impossible case=%s", case.get("id"),
                 exc_info=True)
+            return None
+
+    async def _enfiler_pont(evenements):
+        evenements = [evenement for evenement in evenements if evenement]
+        collection = getattr(db, "pont_canonique", None)
+        if not evenements or collection is None:
+            return
+        try:
+            await pont_outbox.enfiler_lot_best_effort(
+                collection, evenements, timeout=_PONT_ENQUEUE_TIMEOUT)
+        except Exception:  # noqa: BLE001 - best-effort explicite
+            journal_canonique.warning("pont : enqueue impossible", exc_info=True)
+
+    async def _pont_apres_case(case):
+        """Enfile les décisions du Travail, sans jamais faire échouer la route legacy."""
+        await _enfiler_pont([await _evenement_case(case)])
 
     async def jumeaux_autorises(espace):
         tous = await jumeaux_du_tenant(db, _tenant_requete(), {"_id": 0, "id": 1})
@@ -1346,9 +1365,16 @@ def build_cases_router(deps):
         if portees.portee_de(case) == payload.portee:
             return await obtenir_case(cid, acteur, x_espace)
         now = datetime.now(timezone.utc).isoformat()
+        tenant = _tenant_ecriture()
         libelle = {"personnel": "réservé au responsable",
                    "entreprise": "partagé avec toute l'entreprise (dans les limites des droits de chacun)"}[payload.portee]
-        await db.cases.update_one({"id": cid}, {"$set": {"portee": payload.portee, "maj_le": now}, "$unset": {"equipe": ""}, "$push": {"historique": {"quand": now, "texte": f"Travail {libelle}"}}})
+        resultat = await db.cases.update_one(
+            {"id": cid, **pont_travail.filtre_tenant(tenant)},
+            {"$set": {"portee": payload.portee, "tenant_id": tenant, "maj_le": now},
+             "$unset": {"equipe": ""},
+             "$push": {"historique": {"quand": now, "texte": f"Travail {libelle}"}}})
+        if int(getattr(resultat, "matched_count", 0) or 0) == 0:
+            raise HTTPException(404, "Case introuvable")
         await journaler(acteur, espace["id"], "portée d'un travail", cid, payload.portee)
         return await obtenir_case(cid, acteur, x_espace)
 
@@ -1367,14 +1393,18 @@ def build_cases_router(deps):
             raise HTTPException(400, "Cette décision n'est pas attendue pour ce travail")
         maintenant = datetime.now(timezone.utc)
         now = maintenant.isoformat()
+        situation_modifiee = False
 
         async def maj_situation(champs):
+            nonlocal situation_modifiee
             resultat = await db.situations.update_one(
                 {"id": sid, **pont_travail.filtre_tenant(tenant)},
                 {"$set": {**champs, "tenant_id": tenant, "maj_le": now}},
             )
             if int(getattr(resultat, "matched_count", 0) or 0) == 0:
                 raise HTTPException(404, "Situation introuvable ou hors périmètre")
+            sit.update({**champs, "tenant_id": tenant, "maj_le": now})
+            situation_modifiee = True
 
         x = payload.texte.lower()
         decision_enregistree = False
@@ -1434,11 +1464,24 @@ def build_cases_router(deps):
             {"$set": {"maj_le": now, "tenant_id": tenant}, "$push": push})
         if int(getattr(resultat, "matched_count", 0) or 0) == 0:
             raise HTTPException(404, "Case introuvable")
+        evenements = []
+        if situation_modifiee:
+            if decision_enregistree:
+                evenement_situation = pont_travail.evenement_decision_situation(
+                    sit, tenant_id=tenant)
+            else:
+                evenement_situation = pont_travail.evenement_action_situation(
+                    sit, payload.texte, tenant_id=tenant)
+            if evenement_situation:
+                evenements.append(evenement_situation)
         if decision_enregistree:
             case_apres = await db.cases.find_one(
                 {"id": cid, **pont_travail.filtre_tenant(tenant)}, NO_ID)
             if case_apres:
-                await _pont_apres_case(case_apres)
+                evenement_case = await _evenement_case(case_apres)
+                if evenement_case:
+                    evenements.append(evenement_case)
+        await _enfiler_pont(evenements)
         await journaler(acteur, espace["id"], "décision attendue", cid, payload.texte[:120])
         rep = await obtenir_case(cid, acteur, x_espace)
         if lien:
@@ -1616,10 +1659,14 @@ def build_cases_router(deps):
             "risque": payload.risque,
             "statut": "a_evaluer",
         }
-        await db.cases.update_one(
-            {"id": cid},
-            {"$push": {"options": opt, "historique": {"quand": now, "texte": f"Option ajoutée — {opt['titre']}"}}, "$set": {"maj_le": now}},
+        tenant = _tenant_ecriture()
+        resultat = await db.cases.update_one(
+            {"id": cid, **pont_travail.filtre_tenant(tenant)},
+            {"$push": {"options": opt, "historique": {"quand": now, "texte": f"Option ajoutée — {opt['titre']}"}},
+             "$set": {"tenant_id": tenant, "maj_le": now}},
         )
+        if int(getattr(resultat, "matched_count", 0) or 0) == 0:
+            raise HTTPException(404, "Case introuvable")
         return opt
 
     @router.post("/cases/{cid}/livrables", status_code=201)
@@ -1676,10 +1723,14 @@ def build_cases_router(deps):
             phrases.append("Attention : une connaissance du Mesh a changé — ce résumé est à revoir.")
         resume = " ".join(phrases) or "Aucune compréhension consolidée pour l'instant."
         now = datetime.now(timezone.utc).isoformat()
-        await db.cases.update_one(
-            {"id": cid},
-            {"$set": {"resume": resume, "maj_le": now}, "$push": {"historique": {"quand": now, "texte": "Résumé actualisé par Flore"}}},
+        tenant = _tenant_ecriture()
+        resultat = await db.cases.update_one(
+            {"id": cid, **pont_travail.filtre_tenant(tenant)},
+            {"$set": {"resume": resume, "tenant_id": tenant, "maj_le": now},
+             "$push": {"historique": {"quand": now, "texte": "Résumé actualisé par Flore"}}},
         )
+        if int(getattr(resultat, "matched_count", 0) or 0) == 0:
+            raise HTTPException(404, "Case introuvable")
         return {"resume": resume}
 
     @router.post("/cases/{cid}/hypotheses", status_code=201)
@@ -1690,10 +1741,14 @@ def build_cases_router(deps):
             raise HTTPException(400, "Hypothèse vide")
         now = datetime.now(timezone.utc).isoformat()
         hyp = {"id": f"hyp-{len(case.get('hypotheses', [])) + 1}", "texte": payload.texte.strip(), "statut": "a_valider", "quand": now}
-        await db.cases.update_one(
-            {"id": cid},
-            {"$push": {"hypotheses": hyp, "historique": {"quand": now, "texte": f"Hypothèse ajoutée — {hyp['texte'][:80]}"}}, "$set": {"maj_le": now}},
+        tenant = _tenant_ecriture()
+        resultat = await db.cases.update_one(
+            {"id": cid, **pont_travail.filtre_tenant(tenant)},
+            {"$push": {"hypotheses": hyp, "historique": {"quand": now, "texte": f"Hypothèse ajoutée — {hyp['texte'][:80]}"}},
+             "$set": {"tenant_id": tenant, "maj_le": now}},
         )
+        if int(getattr(resultat, "matched_count", 0) or 0) == 0:
+            raise HTTPException(404, "Case introuvable")
         return hyp
 
     @router.post("/cases/{cid}/investigations", status_code=201)

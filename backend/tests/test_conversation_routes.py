@@ -46,6 +46,10 @@ class Collection:
 
     def _ok(self, d, f):
         for k, v in f.items():
+            if k == "$and":
+                if not all(self._ok(d, condition) for condition in v):
+                    return False
+                continue
             if k == "$or":
                 if not any(self._ok(d, condition) for condition in v):
                     return False
@@ -1588,8 +1592,11 @@ def test_une_decision_attendue_enfile_case_maj(monde):
 
     assert r.status_code == 200, r.text
     assert db.situations.docs[0]["statut"] == "poursuivie"
-    assert [evenement["operation"] for evenement in db.pont_canonique.documents] == ["case.maj"]
-    assert "dec-case-case-lie-1" in db.pont_canonique.documents[0]["canonical_ids"]
+    operations = [evenement["operation"] for evenement in db.pont_canonique.documents]
+    assert operations == ["situation.maj", "case.maj"]
+    case_event = next(e for e in db.pont_canonique.documents
+                      if e["operation"] == "case.maj")
+    assert "dec-case-case-lie-1" in case_event["canonical_ids"]
 
 
 def test_creation_accepte_plusieurs_situations_du_tenant(monde):
@@ -1647,3 +1654,99 @@ def test_un_case_non_estampille_est_adopte_par_le_seul_tenant_configure(monde, m
         assert client.get("/api/cases/trace").status_code == 404
     finally:
         tenant_context.reinitialiser(jeton)
+
+
+@pytest.mark.parametrize("texte,statut_canonique", [
+    ("Coïncidence", "DISMISSED"),
+    ("Ouvrir une investigation", "INVESTIGATING"),
+    ("Surveiller", "WATCHED"),
+    ("Demander des observations", "OBSERVING"),
+    ("Reporter", "DEFERRED"),
+    ("Écarter", "DISMISSED"),
+    ("Poursuivre", "DECIDED"),
+])
+def test_decision_attendue_enfile_toujours_la_situation(monde, texte, statut_canonique):
+    from aides_pont import CollectionPont, ConnexionPont
+
+    from meridian.adapters.outbound.postgres import entreprise_depot
+    from meridian.adapters.outbound.postgres import pont_canonique as pont_pg
+
+    client, db, _ = monde
+    db.situations.docs = [_situation_complete(
+        "sit-lie", decisions_attendues=[texte])]
+    db.cases.docs.append(_case_lie(decisions=[]))
+    db.pont_canonique = CollectionPont()
+
+    r = client.post("/api/cases/case-lie/decision-attendue",
+                    json={"texte": texte})
+
+    assert r.status_code == 200, r.text
+    evenements = db.pont_canonique.documents
+    assert evenements, "aucun événement canonique enfilé"
+    assert any(evenement["operation"] == "situation.maj" for evenement in evenements)
+
+    conn = ConnexionPont()
+    for evenement in evenements:
+        pont_pg.appliquer_evenement(conn, evenement)
+    situation = entreprise_depot.lire_objet(conn, "local", "sit-lie")
+    assert situation["donnees"]["statut"] == statut_canonique
+    if statut_canonique == "DECIDED":
+        assert entreprise_depot.lire_objet(
+            conn, "local", "dec-sit-sit-lie-1") is not None
+
+
+def test_get_case_avec_tenant_demo_lit_le_meme_objet_local(monde, monkeypatch):
+    client, db, _ = monde
+    case = _case_avec_decision()
+    case["tenant_id"] = "demo"
+    db.cases.docs.append(case)
+    db.situations.docs.append({"id": "sit-trace", "tenant_id": "demo",
+                               "statut": "décidée"})
+    appels = []
+
+    def lire(tenant, identifiant):
+        appels.append((tenant, identifiant))
+        return None
+
+    monkeypatch.setattr(cases_routes, "_lire_boucle_sync", lire)
+    jeton = tenant_context.definir("demo")
+    try:
+        r = client.get("/api/cases/trace")
+    finally:
+        tenant_context.reinitialiser(jeton)
+
+    assert r.status_code == 200, r.text
+    assert appels[0] == ("local", "dec-case-trace-1")
+
+
+def test_creation_accepte_une_situation_sous_forme_objet(monde):
+    client, db, _ = monde
+    db.situations.docs = [_situation_complete("sit-local")]
+
+    r = client.post("/api/cases", json={
+        "titre": "Legacy", "situations": [{"id": "sit-local"}],
+    })
+
+    assert r.status_code == 201, r.text
+    assert r.json()["situations"] == ["sit-local"]
+
+
+def test_un_case_legacy_avec_situation_objet_reste_lie(serveur, monkeypatch):
+    db = Db([])
+    db.jumeaux.docs = [{"id": "support"}]
+    db.situations.docs = [_situation_pont()]
+    db.cases.docs = [{
+        "id": "case-legacy", "tenant_id": TENANT_PONT, "titre": "Legacy",
+        "situations": [{"id": "sit-support"}], "options": [],
+        "decisions": [{"texte": "Automatiser", "par": "demo",
+                       "quand": "2026-11-06T10:00:00+00:00"}],
+        "maj_le": "2026-11-06T10:00:00+00:00",
+        "cree_le": "2026-11-05T09:00:00+00:00",
+    }]
+    client = _serveur_pont(serveur, monkeypatch, db)
+
+    r = client.post("/api/situations/sit-support/action", json={"action": "surveiller"},
+                    headers={"X-Espace": "espace-support"})
+
+    assert r.status_code == 200, r.text
+    assert any(e["operation"] == "case.maj" for e in db.pont_canonique.documents)

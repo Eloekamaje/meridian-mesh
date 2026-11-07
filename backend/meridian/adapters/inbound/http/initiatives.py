@@ -300,7 +300,8 @@ def build_initiatives_router(deps):
         jusqu = datetime.fromisoformat(d["jusqu_a"])
         mandat = ouverture_travail.message_flore_delegation(d, [noms.get(j, j) for j in d.get("jumeaux", [])], now)
         cid = f"case-{slugify(d['tache'])[:40]}-{int(datetime.now(timezone.utc).timestamp()) % 100000}"
-        dernier = await db.cases.find({}, {"_id": 0, "num": 1}).sort("num", -1).to_list(1)
+        dernier = await db.cases.find(
+            _filtre_tenant(), {"_id": 0, "num": 1}).sort("num", -1).to_list(1)
         num = (dernier[0]["num"] if dernier and dernier[0].get("num") else 40) + 1
         conversation = [mandat]
         if jusqu <= datetime.now(timezone.utc):
