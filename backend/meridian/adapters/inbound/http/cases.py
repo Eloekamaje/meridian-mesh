@@ -1725,10 +1725,16 @@ def build_cases_router(deps):
             "cree_le": now,
         }
         await db.situations.insert_one(situation)
-        await db.cases.update_one(
-            {"id": cid},
-            {"$push": {"situations": sid, "historique": {"quand": now, "texte": f"Investigation ouverte — {payload.texte.strip()[:80]}"}}, "$set": {"maj_le": now}},
+        tenant = _tenant_ecriture()
+        resultat = await db.cases.update_one(
+            {"id": cid, **pont_travail.filtre_tenant(tenant)},
+            {"$push": {"situations": sid,
+                       "historique": {"quand": now,
+                                      "texte": f"Investigation ouverte — {payload.texte.strip()[:80]}"}},
+             "$set": {"tenant_id": tenant, "maj_le": now}},
         )
+        if int(getattr(resultat, "matched_count", 0) or 0) == 0:
+            raise HTTPException(404, "Case introuvable")
         await journaler(acteur, espace["id"], "ouverture d'une investigation", sid, payload.texte.strip()[:120])
         situation.pop("_id", None)
         return situation
