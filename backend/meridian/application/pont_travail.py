@@ -34,10 +34,12 @@ __all__ = [
     "evenement_action_situation",
     "evenement_case_lie",
     "evenement_decision_situation",
+    "evenement_initiative_maj",
     "extraire_boucle",
     "filtre_tenant",
     "normaliser_tenant",
     "situation_liee",
+    "snapshot_investigation",
 ]
 
 ADOPTION_ENV = "JUMEAU_LEGACY_TENANT_ADOPTION"
@@ -252,6 +254,73 @@ def evenement_case_lie(case: Any, situation: Any, *, tenant_id: Any,
     return pont.evenement_depuis_case(
         case_doc, tenant_id=tenant, situation=contexte,
         source_event_id=source_event_id, maintenant=maintenant)
+
+
+def snapshot_investigation(situation: Any, *, tenant_id: Any = None) -> dict[str, Any]:
+    """Snapshot canonique de l'Investigation ``inv-{sid}`` dérivé de sa Situation.
+
+    C1 construit déjà cette Investigation depuis la Situation ; ce snapshot réutilise le
+    même builder pour que l'événement d'initiative porte exactement le même identifiant,
+    le même titre et le même statut, sans inventer de fait métier.
+    """
+    if not isinstance(situation, Mapping):
+        raise pont.PontInvalide("situation : document attendu")
+    tenant = normaliser_tenant(tenant_id or situation.get("tenant_id"))
+    doc = _document_canonique(situation, tenant)
+    sid = _texte(doc.get("id"))
+    if not sid:
+        raise pont.PontInvalide("situation sans id")
+    objets = pont.objets_depuis_situation(doc, tenant_id=tenant)
+    investigation = next(
+        (objet for objet in objets if objet.get("type") == "INVESTIGATION"), None)
+    if investigation is None:
+        raise pont.PontInvalide("investigation introuvable pour la situation")
+    donnees = investigation.get("donnees") or {}
+    return {
+        "id": _texte(investigation.get("id")) or pont.investigation_id(sid),
+        "tenant_id": _texte(investigation.get("tenant_id")) or tenant,
+        "situation_id": _texte(donnees.get("situation_id")) or sid,
+        "titre": _texte(investigation.get("titre")) or sid,
+        "statut": _texte(donnees.get("statut")) or "OPEN",
+    }
+
+
+def evenement_initiative_maj(initiative: Any, *, tenant_id: Any, situation: Any = None,
+                             investigation: Any = None,
+                             maintenant: Any = None) -> dict[str, Any]:
+    """Événement `initiative.maj` après une réponse d'initiative écrite dans Mongo.
+
+    Le payload embarque l'Initiative à jour et, si l'appelant les fournit, les snapshots de
+    la Situation liée et de son Investigation canonique. La provenance est le hash des
+    champs qui portent l'état (statut, réponse, décision, résumé, version) : un rejeu
+    identique réutilise le même identifiant d'outbox, une modification réelle en crée un
+    nouveau sans dépendre de la précision de l'horloge.
+    """
+    if not isinstance(initiative, Mapping):
+        raise pont.PontInvalide("initiative : document attendu")
+    if situation is not None and not isinstance(situation, Mapping):
+        raise pont.PontInvalide("situation : document attendu")
+    if investigation is not None and not isinstance(investigation, Mapping):
+        raise pont.PontInvalide("investigation : document attendu")
+    tenant = normaliser_tenant(tenant_id or initiative.get("tenant_id"))
+    initiative_doc = _document_canonique(initiative, tenant)
+    situation_doc = (_document_canonique(situation, tenant)
+                     if isinstance(situation, Mapping) else None)
+    investigation_doc = (_document_canonique(investigation, tenant)
+                         if isinstance(investigation, Mapping) else None)
+    utile = {cle: initiative_doc.get(cle) for cle in (
+        "id", "tenant_id", "titre", "statut", "genre", "raison", "reponse",
+        "decision_id", "decision_ref", "situation_id", "travail_id", "maj_le",
+        "cree_le")}
+    empreinte = pont.hash_contenu({
+        "initiative": utile,
+        "situation": situation_doc,
+        "investigation": investigation_doc,
+    })[:16]
+    return pont.evenement_depuis_initiative(
+        initiative_doc, tenant_id=tenant, situation=situation_doc,
+        investigation=investigation_doc,
+        source_event_id=f"initiative:{empreinte}", maintenant=maintenant)
 
 
 def _texte_legacy(valeur: Any) -> str:
