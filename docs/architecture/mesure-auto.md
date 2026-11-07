@@ -35,6 +35,7 @@ Collection : `mesure_auto_observations`. Chaque document porte explicitement son
   "id": "obs-2026-11-05-1",
   "tenant_id": "banque",
   "maj_le": "2026-11-05T09:01:00.000000+00:00",
+  "maj_le_utc": "2026-11-05T09:01:00.000000Z",
   "sequence": "00000000000000000042",
   "initiative_id": "ini-dec-case-c1-1",
   "metrique": "delai_moyen_jours",
@@ -52,8 +53,14 @@ Collection : `mesure_auto_observations`. Chaque document porte explicitement son
 - `maj_le` : date d'ingestion/dernière mise à jour, **UTC**, utilisée comme curseur. Une
   correction doit avancer `maj_le` pour être relue. Une chaîne ISO avec offset ou un BSON Date
   sont acceptés puis ramenés en UTC par l'adaptateur.
-- `sequence` : tie-breaker monotone optionnel (ULID, numéro producteur). À défaut, `_id` Mongo
-  sert de tie-breaker. Deux documents de la même microseconde restent ainsi ordonnés.
+- `maj_le_utc` : champ canonique **indexé** (BSON Date) écrit par `document_ingestion`. C'est lui
+  qui porte le seek d'index `(tenant_id, maj_le_utc, sequence, id)` ; il évite toute fenêtre
+  glissante et toute famine. Les documents legacy sans ce champ passent par un backfill borné et
+  un fallback explicitement borné.
+- `sequence` : tie-breaker monotone optionnel (ULID, numéro producteur). Les entiers `int`/`long`
+  sont zéro-paddés sur 20 chiffres (`9` → `000…009`) pour rester ordonnés lexicographiquement.
+  À défaut, `_id` Mongo sert de tie-breaker. Deux documents de la même microseconde restent ainsi
+  ordonnés.
 - `quand` : date de la mesure, utilisée pour la période et l'ordonnancement de l'Outcome.
 - `initiative_id` : initiative canonique, ou `decision_id` (l'identifiant d'initiative est alors
   dérivé exactement comme C1 : `ini-<decision_id>`).
@@ -99,12 +106,16 @@ Collection : `mesure_auto_checkpoints`. Un document par tenant, `_id` = tenant n
 
 Le worker lit les observations d'un tenant par curseur `(maj_le, sequence, id)` strictement
 supérieur au checkpoint. Le checkpoint est écrit en **CAS** : un worker lent ne peut pas faire
-régresser un curseur plus avancé. L'idempotence de l'outbox rend deux instances tolérantes, mais
-**une instance par tenant est la configuration supportée** (pas de bail distribué dans ce lot).
+régresser un curseur plus avancé. `--depuis` est canonisé en UTC ; une date illisible est refusée
+(code 2). L'idempotence de l'outbox rend deux instances tolérantes, mais **une instance par
+tenant est la configuration supportée** (pas de bail distribué dans ce lot).
 
-Deux types de `maj_le` sont lus : chaîne ISO (offset accepté) et BSON Date. L'adaptateur applique
-un **type bracketing** et une borne basse conservatrice (curseur − 1 jour), puis trie et filtre le
-curseur exact en Python.
+La lecture principale est un **seek d'index** sur `maj_le_utc > curseur` (avec le tie-breaker
+`sequence`/`id`). Elle ne peut pas être affamée par un stock de documents plus anciens, même avec
+500 documents avant le curseur et `--lot 10`. Les documents legacy sans `maj_le_utc` sont backfillés
+par lots bornés (`remplir_maj_le_utc`, 500 par passe) et lus par un fallback borné qui ne cache
+jamais les résultats du seek. Deux types de `maj_le` restent acceptés en fallback : chaîne ISO
+(offset accepté) et BSON Date.
 
 ## 4. Idempotence et corrections
 
@@ -134,40 +145,49 @@ PONT_KEY=... MONGO_URL=mongodb://127.0.0.1:27017 DB_NAME=meridian_db \
 scripts/dev-mesure-auto-worker.sh --une-passe --tenant banque --lot 100
 ```
 
-Options : `--once`/`--une-passe`, `--lot`, `--intervalle`, `--tenant` (répétable),
-`--mongo-url`, `--db-name`, `--depuis`.
+Options : `--once`/`--une-passe`, `--lot` (max 1000), `--intervalle`, `--tenant` (répétable),
+`--tentatives-max` (défaut 5), `--mongo-url`, `--db-name`, `--depuis` (ISO, canonisé).
 
 - **Flag** : `JUMEAU_MESURE_AUTO` désactivé par défaut. Sans lui, le worker ne lit rien et sort
   avec le code 0.
-- **Tenants** : `--tenant`, sinon `JUMEAU_WORKER_TENANTS`/`JUMEAU_WORKER_TENANT`, sinon `local`.
-  Chaque tenant a son checkpoint et ses événements ; aucun état n'est partagé.
+- **Tenants** : `--tenant`, sinon `JUMEAU_WORKER_TENANTS`/`JUMEAU_WORKER_TENANT`, sinon `local`
+  (un avertissement est émis si aucun tenant n'est explicite). Chaque tenant a son checkpoint et
+  ses événements ; aucun état n'est partagé.
 - **Postgres** : aucune dépendance. Le worker n'ouvre que des collections Mongo.
 - **Clé** : `PONT_KEY` est requis pour signer les événements ; sans elle, le worker refuse de
   démarrer (code 2).
 - **Enfilement** : le worker utilise `enfiler` (pas `enfiler_best_effort`) et classe l'erreur avec
   la même règle que C1 (`_est_permanent`).
-  - **Permanente** (`PontInvalide`, `SignatureInvalide`, collision, schéma, taille, observation
-    incomplète) : dead-letter dans `mesure_auto_rejets`, checkpoint avancé, alerte loguée.
-  - **Transitoire** (timeout/PyMongo, `quand`/`maj_le` futur, signature momentanément
-    indisponible) : le checkpoint **n'avance pas** ; l'observation est retentée. Après
-    `tentatives_max` (5 par défaut), elle est dead-letterée et le checkpoint avance.
-- **Audit** : au démarrage, `count_documents` compte les documents sans `id`/`maj_le` conformes
-  dans chaque tenant et logue `mesure_auto_documents_non_conformes`. Ces documents ne sont jamais
-  lus (filtre), donc ne bloquent pas le flux.
+  - **Permanente** (collision, schéma, taille, observation incomplète, erreur inattendue) :
+    dead-letter dans `mesure_auto_rejets`, checkpoint avancé seulement après écriture durable du
+    rejet. Si le dead-letter est indisponible, le lot échoue explicitement : aucun avancement
+    silencieux.
+  - **Transitoire d'infrastructure** (timeout/PyMongo, signature momentanément indisponible) :
+    le checkpoint **n'avance pas** ; reprises bornées par `--tentatives-max`, puis dead-letter et
+    avancement.
+  - **Horloge** (`quand`/`maj_le` futur) : **jamais dead-letterée** ; le checkpoint n'avance pas
+    et l'observation attend que l'horloge rattrape. Aucun compteur de passes de 25 s.
+- **Audit** : à **chaque passe**, `count_documents` + scan borné comptent les documents sans
+  `id`/`maj_le` conformes, au tenant non normalisé (`Banque`) et aux dates illisibles (`hier`).
+  Métrique `mesure_auto_documents_non_conformes` ; ces documents ne sont jamais lus, donc ne
+  bloquent pas le flux.
 - **Métriques de log** : `mesure_auto_lues`, `mesure_auto_outcomes`, `mesure_auto_doublons`,
-  `mesure_auto_rejets`, `mesure_auto_echecs`, `mesure_auto_non_conformes`.
+  `mesure_auto_rejets`, `mesure_auto_echecs`, `mesure_auto_non_conformes`,
+  `mesure_auto_dead_letter_echecs`.
 
 ### 5.1 Dead-letter
 
 Collection : `mesure_auto_rejets`. Clé = `sha256(tenant | observation_id | empreinte_contenu)`.
 Le document porte `tentatives`, `derniere_raison`, `permanent`, `etat` (`retry`/`dead`) et
-`maj_le`. Les messages sont bornés et expurgés (jetons Bearer/sk-/ghp_/xox, credentials d'URL)
-avant log ou stockage.
+`maj_le`. `tentatives` est créé par `$inc` à l'insertion (jamais aussi dans `$setOnInsert`, sinon
+Mongo lève `WriteError code 40`). Les messages sont bornés et expurgés (jetons
+Bearer/sk-/ghp_/xox, credentials d'URL) avant log ou stockage.
 
 ## 6. Exploitation, sécurité et validation
 
-- **JSON Schema** : `SCHEMA_OBSERVATION` est fourni par l'adaptateur. Le repo n'a pas de
-  convention de validateur Mongo ; `assurer_validateur()` tente un `collMod` avec
+- **JSON Schema** : `SCHEMA_OBSERVATION` est fourni par l'adaptateur (`required` de base
+  `tenant_id/id/maj_le/quand`, `anyOf` `initiative_id`/`decision_id`/`observation`). Le repo n'a
+  pas de convention de validateur Mongo ; `assurer_validateur()` tente un `collMod` avec
   `validationAction: "warn"` (best-effort, jamais bloquant). La validation applicative reste la
   source de vérité.
 - **ACL** :
@@ -189,5 +209,7 @@ avant log ou stockage.
 - Aucun `Learning` n'est produit, même quand l'Outcome est un écart majeur.
 - La mesure reste dépendante d'une initiative canonique existante côté Postgres : le worker
   enfile, le pont C1 applique. Si l'initiative n'existe pas, C1 rejette l'événement (permanent) ;
-  ce lot ne crée pas d'initiative.
+  ce lot ne crée pas d'initiative. C1 exige en outre que le parent ait une origine fiable
+  (`legacy`, `migration` ou `exploitation`) : un Outcome n'écrase pas une Initiative créée par
+  l'API canonique nue (`ConflitCanonique`).
 - Le worker ne supprime ni ne réécrit les observations : une correction passe par `maj_le`.
