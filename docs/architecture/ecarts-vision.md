@@ -173,7 +173,7 @@ Decision · Initiative · Outcome · Learning
 | **Hypothesis** | `dossier_raisonnement.Hypothese` + tableau `hypotheses` du case | Dossier / Mongo | Via raisonnement ou Travail, pas comme objet canonique | **Partiel** |
 | **Expert** | `profils.Profil`, spécialistes cognitifs | Aucune | Aucune | **Partiel** |
 | **ExpertContribution** | `Proposition`, contributions de mobilisation | Dossier de raisonnement / réponse | Pas d’objet canonique | **Partiel** |
-| **Scenario** | `objets_exploitation.Scenario`, `construction_objets_exploitation.nouveau_scenario` | `objet_entreprise` + liens inverses `scenario_ids` / `scenario_id` | `POST /boucle/scenarios`, `GET /boucle/scenarios`, `POST /boucle/scenarios/comparer` et UI Boucle | **Opérationnel** |
+| **Scenario** | `objets_exploitation.Scenario`, `construction_objets_exploitation.nouveau_scenario` | `objet_entreprise` + liens inverses `scenario_ids` / `scenario_id` | `POST /boucle/scenarios`, `GET /boucle/scenarios`, `POST /boucle/scenarios/comparer` et UI Boucle ; formulaire limité aux métriques principales, comparaison plafonnée à 50 | **Opérationnel, périmètre UI borné** |
 | **Decision** | `modele_entreprise.Decision` | `objet_entreprise` possible | Créée par le pont C2 ou par `POST /boucle/investigations/{id}/decisions` (UI) | **Partiel** |
 | **Initiative** | `modele_entreprise.Initiative` | `objet_entreprise` + backfill `migration_canonique` | Créée par C3 après `POST /initiatives/{iid}/repondre` ou par `POST /boucle/decisions/{id}/initiatives` (UI) | **Partiel** |
 | **Outcome** | `modele_entreprise.Outcome` | `objet_entreprise` | `POST /boucle/outcomes` ou worker D observations → Outcome ; exige une Initiative canonique | **Partiel** |
@@ -230,7 +230,9 @@ le chemin de production. La vision fait pourtant de l’Opportunité un objet ma
   `POST /boucle/decisions/{id}/trancher`) ;
 - lancer une Initiative (`POST /boucle/decisions/{id}/initiatives`) ;
 - créer, lister et comparer des Scénarios (`POST /boucle/scenarios`,
-  `GET /boucle/scenarios`, `POST /boucle/scenarios/comparer`) ;
+  `GET /boucle/scenarios`, `POST /boucle/scenarios/comparer`) ; la liste est filtrée
+  **directement** par `investigation_id`/`decision_id`, donc un scénario decision-only
+  n’apparaît pas sous l’investigation.
 - mesurer un Outcome et capitaliser un Learning (`POST /boucle/initiatives/{id}/outcomes`,
   `POST /boucle/outcomes/{id}/learnings`, `POST /boucle/investigations/{id}/learnings`).
 
