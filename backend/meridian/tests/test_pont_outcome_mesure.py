@@ -91,6 +91,35 @@ def test_maj_le_arbitre_une_correction_a_quand_egal(monkeypatch):
     assert ignores == []
 
 
+def test_correction_dans_la_meme_milliseconde_est_appliquee(monkeypatch):
+    """`maj_le` garde la microseconde pour C1 même si le curseur BSON est en ms."""
+    premier = _evenement(
+        maj_le="2026-11-05T09:01:00.123456+00:00",
+        mesure={"metrique": "delai", "valeur_observee": 7},
+        interpretation="version 1", source_event_id="ms-1")
+    second = _evenement(
+        maj_le="2026-11-05T09:01:00.123789+00:00",
+        mesure={"metrique": "delai", "valeur_observee": 8},
+        interpretation="version 2", source_event_id="ms-2")
+    outcome_premier = pont.objets_depuis_evenement(premier, tenant_id=TENANT)[0]
+    outcome_second = pont.objets_depuis_evenement(second, tenant_id=TENANT)[0]
+    assert outcome_premier["donnees"]["_pont"]["source_maj_le"] \
+        == "2026-11-05T09:01:00.123456+00:00"
+    assert outcome_second["donnees"]["_pont"]["source_maj_le"] \
+        == "2026-11-05T09:01:00.123789+00:00"
+
+    monkeypatch.setattr(
+        pont_pg.entreprise_depot, "lire_objet",
+        lambda _conn, _tenant, identifiant: copy.deepcopy(outcome_premier)
+        if identifiant == outcome_premier["id"] else None,
+    )
+    ecrits: list[str] = []
+    ignores: list[str] = []
+
+    assert pont_pg._doit_ecrire(None, TENANT, outcome_second, ecrits, ignores) is True
+    assert ignores == []
+
+
 def test_maj_le_egal_reste_strictement_ignore(monkeypatch):
     premier = _evenement(
         maj_le="2026-11-05T09:01:00+00:00",

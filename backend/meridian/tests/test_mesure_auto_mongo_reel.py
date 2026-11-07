@@ -7,15 +7,19 @@ Ils couvrent les régressions que le faux Mongo ne peut pas voir : conflit d'op�
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 import os
 import uuid
 
 import pytest
 
 from meridian.adapters.outbound.mongo import mesure_auto as mongo_mesure
+from meridian.tests.aides_mesure_auto import url_test_autorisee
 
-MONGO_URL = os.environ.get("MONGO_URL")
-pytestmark = pytest.mark.skipif(not MONGO_URL, reason="MONGO_URL non défini")
+MONGO_URL = os.environ.get("MONGO_TEST_URL") or os.environ.get("MONGO_URL")
+pytestmark = pytest.mark.skipif(
+    not MONGO_URL or not url_test_autorisee(MONGO_URL),
+    reason="MONGO_TEST_URL/MONGO_URL de test absent ou refusé (URL de production)")
 
 TENANT = "banque"
 
@@ -125,6 +129,91 @@ def test_audit_reel_compte_tenant_non_normalise_et_maj_illisible():
         depot = mongo_mesure.DepotObservationsMesure(collection)
 
         assert await depot.compter_non_conformes(TENANT) == 2
+
+    _scenario(scenario)
+
+
+def test_correction_legacy_apres_backfill_est_relue():
+    async def scenario(db):
+        collection = db[mongo_mesure.OBSERVATIONS]
+        await collection.insert_one(_observation(
+            "obs-legacy", "2026-11-05T09:00:00+00:00"))
+        depot = mongo_mesure.DepotObservationsMesure(collection)
+        assert await depot.remplir_maj_le_utc(TENANT) == 1
+
+        # Producteur legacy : seul `maj_le` avance, `maj_le_utc` reste à 09:00.
+        await collection.update_one(
+            {"id": "obs-legacy"}, {"$set": {"maj_le": "2026-11-05T10:00:00+00:00"}})
+        curseur = mongo_mesure.CurseurObservation(
+            maj_le="2026-11-05T09:00:00.000000+00:00", id="curseur")
+
+        documents = await depot.lister_apres(TENANT, curseur, 10)
+
+        assert [element["id"] for element in documents] == ["obs-legacy"]
+
+    _scenario(scenario)
+
+
+def test_audit_reel_ignore_les_autres_tenants():
+    async def scenario(db):
+        collection = db[mongo_mesure.OBSERVATIONS]
+        await collection.insert_many([
+            _observation("obs-ok", "2026-11-05T09:00:00+00:00"),
+            _observation("obs-banque-mal", "2026-11-05T09:00:00+00:00",
+                         tenant_id="Banque"),
+            _observation("obs-maj", "hier"),
+            _observation("obs-assurance", "hier", tenant_id="assurance"),
+        ])
+        depot = mongo_mesure.DepotObservationsMesure(collection)
+
+        assert await depot.compter_non_conformes(TENANT) == 2
+
+    _scenario(scenario)
+
+
+def test_sequence_int_avec_maj_le_utc_est_tiee_apres_curseur():
+    async def scenario(db):
+        collection = db[mongo_mesure.OBSERVATIONS]
+        documents = []
+        for rang, sequence in enumerate((9, 10, 11)):
+            document = _observation(
+                f"obs-{sequence}", "2026-11-05T10:00:00+00:00")
+            document["maj_le_utc"] = datetime(
+                2026, 11, 5, 10, 0, tzinfo=timezone.utc)
+            document["sequence"] = sequence
+            documents.append(document)
+        await collection.insert_many(documents)
+        depot = mongo_mesure.DepotObservationsMesure(collection)
+        tous = await depot.lister_apres(TENANT, None, 10)
+        assert [element["id"] for element in tous] == ["obs-9", "obs-10", "obs-11"]
+        curseur = mongo_mesure.CurseurObservation(
+            maj_le="2026-11-05T10:00:00.000000+00:00",
+            sequence=mongo_mesure.sequence_canonique(10), id="obs-10")
+
+        suite = await depot.lister_apres(TENANT, curseur, 10)
+
+        assert [element["id"] for element in suite] == ["obs-11"]
+
+    _scenario(scenario)
+
+
+def test_audit_reel_tourne_apres_1000_documents():
+    async def scenario(db):
+        collection = db[mongo_mesure.OBSERVATIONS]
+        valides = [
+            {**_observation(f"ok-{rang}", "2026-11-05T09:00:00+00:00"),
+             "_id": f"{rang:04d}"}
+            for rang in range(1000)
+        ]
+        mauvais = {**_observation("ko", "hier"), "_id": "1000"}
+        await collection.insert_many(valides + [mauvais])
+        depot = mongo_mesure.DepotObservationsMesure(collection)
+
+        premier, dernier, lus = await depot.auditer_lot(TENANT, None, 1000)
+        second, _dernier2, _lus2 = await depot.auditer_lot(TENANT, dernier, 1000)
+
+        assert (premier, lus) == (0, 1000)
+        assert second == 1
 
     _scenario(scenario)
 
