@@ -11,6 +11,8 @@ import DecisionPassation from "@/components/case/DecisionPassation";
 import PartagerTravail from "@/components/case/PartagerTravail";
 import { BoutonRetour } from "@/components/EntetePage";
 import { useEcran } from "@/lib/ecran";
+import TraceCanonique from "@/components/boucle/TraceCanonique";
+import { traceCanoniqueDeTravail } from "@/components/boucle/boucleUi";
 
 // « Nouveau travail » est cette même page : un travail qui n'est pas encore né (pas d'identifiant), avec un fil vide et la même
 // saisie. Au premier envoi le travail naît et la conversation continue au même endroit — un seul chat pour tous les travaux.
@@ -34,6 +36,8 @@ export default function TravailDetail() {
 
   // Un travail en veille montre d'abord sa note de passation et ses actions : la fenêtre « Sources & Jumeaux » ne les recouvre pas
   const [passationOuverte, setPassationOuverte] = useState(false);
+  const [traceBoucle, setTraceBoucle] = useState(null);
+  const traceDirecte = traceCanoniqueDeTravail(cas);
   const enVeille = !!cas?.veille;
   const peutDeposer = cas?.peut_deposer === true; // responsable ou participant : seul à pouvoir écrire
   const actionsMenu = peutDeposer && (cas?.a_revoir || cas?.peut_partager || (!enVeille && cas?.statut !== "clos"));
@@ -70,6 +74,37 @@ export default function TravailDetail() {
     }
   }, [cid, version]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (brouillon || !cas) {
+      setTraceBoucle(null);
+      return undefined;
+    }
+    const directe = traceCanoniqueDeTravail(cas);
+    const identifiant = cas.boucle_id || directe?.id;
+    const chaineDirecte = Array.isArray(directe?.chaine) ? directe.chaine : [];
+    setTraceBoucle(directe);
+    // Contrat C2 : cas.boucle = { id, statut, chaine }. Si C2 ne fournit que
+    // boucle_id, on reconstruit la trace via l'API de lecture de la boucle.
+    if (!identifiant || chaineDirecte.length > 0) return undefined;
+
+    let annule = false;
+    api.get(`/boucle/objets/${encodeURIComponent(identifiant)}`, { params: { historique: true } })
+      .then((reponse) => {
+        if (annule) return;
+        const objet = reponse.data?.objet || null;
+        const chaine = Array.isArray(reponse.data?.chaine) ? reponse.data.chaine : chaineDirecte;
+        setTraceBoucle({
+          id: String(objet?.id || identifiant),
+          statut: String(objet?.statut ?? objet?.donnees?.statut ?? directe?.statut ?? ""),
+          chaine,
+        });
+      })
+      .catch(() => {
+        if (!annule) setTraceBoucle(directe);
+      });
+    return () => { annule = true; };
+  }, [brouillon, cas?.id, cas?.boucle_id, traceDirecte?.id, traceDirecte?.statut, traceDirecte?.chaine?.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const maj = async (champs) => {
     try {
       const { data } = await api.patch(`/cases/${cid}`, champs);
@@ -92,6 +127,7 @@ export default function TravailDetail() {
   const t = TYPES_CASE[cas.type] || [cas.type, "#7C93A8"];
   const sens = SENSIBILITES[cas.sensibilite] || [cas.sensibilite || "interne", "#60A5FA"];
   const derniereEvolution = (cas.historique || []).slice(-1)[0];
+  const traceCanonique = traceBoucle || traceDirecte;
 
   // L'entête, le bandeau « à revoir » et le voile de préparation vivent dans la même colonne que
   // le chat (passés en prop) : quand le Canvas s'ouvre, cette colonne rétrécit et eux avec elle,
@@ -177,6 +213,8 @@ export default function TravailDetail() {
           </div>}
         </div>
       </div>
+
+      <TraceCanonique trace={traceCanonique} />
 
       {cas.a_revoir && (
         <div className="shrink-0 px-8 pt-4">

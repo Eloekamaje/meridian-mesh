@@ -14,9 +14,29 @@ import {
   WarningCircle,
   X,
 } from "@phosphor-icons/react";
-import api from "@/lib/api";
+import api, { boucleApi } from "@/lib/api";
 import Depliable from "@/components/ui/Depliable";
 import IdentifiantCopiable from "@/components/ui/IdentifiantCopiable";
+import PanneauActions from "@/components/boucle/PanneauActions";
+import ModaleTransition from "@/components/boucle/ModaleTransition";
+import {
+  configurationAction,
+  construireCorps,
+  detailSourceApresTransition,
+  fusionnerObjet,
+  idObjet,
+  messageErreurTransition,
+  sansAccents,
+  texte,
+  texteAffichable,
+  titreObjet,
+  typeObjet,
+  valeurDe,
+} from "@/components/boucle/boucleUi";
+
+const MESSAGE_VERIFICATION_INDISPONIBLE =
+  "Vérification de la source indisponible — vérifiez manuellement avant de réessayer.";
+const DELAI_VERIFICATION_MS = 10000;
 
 const STADES = [
   { type: "SITUATION", famille: "emergence", label: "Situations", court: "Situation", couleur: "#60A5FA", Icone: Lightbulb },
@@ -92,21 +112,6 @@ const CONTENEURS_COMPTES = [
   "synthese", "totaux", "totals", "donnees",
 ];
 
-const texte = (valeur) => (valeur == null ? "" : String(valeur));
-
-const sansAccents = (valeur) =>
-  texte(valeur).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-
-function valeurDe(objet, ...cles) {
-  for (const cle of cles) {
-    const directe = objet?.[cle];
-    if (directe !== undefined && directe !== null && directe !== "") return directe;
-    const donnee = objet?.donnees?.[cle];
-    if (donnee !== undefined && donnee !== null && donnee !== "") return donnee;
-  }
-  return null;
-}
-
 function idDeValeur(valeur) {
   if (valeur == null) return null;
   if (typeof valeur === "object") {
@@ -116,22 +121,8 @@ function idDeValeur(valeur) {
   return texte(valeur) || null;
 }
 
-function idObjet(objet) {
-  if (typeof objet === "string") return objet;
-  return idDeValeur(objet?.id ?? objet?._id);
-}
-
-function typeObjet(objet) {
-  return texte(valeurDe(objet, "type")).trim().toUpperCase();
-}
-
 function familleObjet(objet) {
   return texte(valeurDe(objet, "famille")).trim().toLowerCase();
-}
-
-function titreObjet(objet) {
-  if (typeof objet === "string") return objet;
-  return texteAffichable(valeurDe(objet, "titre")) || idObjet(objet) || "Objet sans titre";
 }
 
 function resumeObjet(objet) {
@@ -146,19 +137,6 @@ function dateLisible(valeur) {
   const date = new Date(valeur);
   if (Number.isNaN(date.getTime())) return texte(valeur);
   return date.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" });
-}
-
-function texteAffichable(valeur) {
-  if (valeur == null) return "";
-  if (Array.isArray(valeur)) {
-    return valeur
-      .filter((element) => element == null || typeof element !== "object")
-      .map((element) => texte(element))
-      .filter(Boolean)
-      .join(", ");
-  }
-  if (typeof valeur === "object") return "";
-  return texte(valeur);
 }
 
 function messageErreur(erreur, defaut = "La boucle est momentanément indisponible.") {
@@ -311,7 +289,49 @@ function EtapeChaine({ etape, index, dernier }) {
   );
 }
 
-function PanneauDetail({ objet, etat, chaine, historique, onFermer, onReessayer, onNaviguer, onOuvrirId }) {
+function PanneauDetail({
+  objet,
+  etat,
+  chaine,
+  historique,
+  onFermer,
+  onReessayer,
+  onNaviguer,
+  onOuvrirId,
+  onOuvrirObjet,
+  onAction,
+  transitionSucces,
+  modaleOuverte = false,
+  verificationSource = false,
+  verificationErreur = "",
+}) {
+  const panneauRef = useRef(null);
+  const identifiantPanneau = idObjet(objet);
+
+  useEffect(() => {
+    const panneau = panneauRef.current;
+    if (!panneau) return undefined;
+    panneau.querySelector('[data-testid="boucle-detail-fermer"]')?.focus?.();
+    const surTabulation = (evenement) => {
+      if (evenement.key !== "Tab") return;
+      const focusables = [...panneau.querySelectorAll(
+        'a[href], button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])',
+      )];
+      if (focusables.length === 0) return;
+      const premier = focusables[0];
+      const dernier = focusables[focusables.length - 1];
+      if (evenement.shiftKey && document.activeElement === premier) {
+        evenement.preventDefault();
+        dernier.focus();
+      } else if (!evenement.shiftKey && document.activeElement === dernier) {
+        evenement.preventDefault();
+        premier.focus();
+      }
+    };
+    panneau.addEventListener("keydown", surTabulation);
+    return () => panneau.removeEventListener("keydown", surTabulation);
+  }, [identifiantPanneau]);
+
   if (!objet) return null;
 
   const stade = STADES_PAR_TYPE.get(typeObjet(objet));
@@ -343,15 +363,22 @@ function PanneauDetail({ objet, etat, chaine, historique, onFermer, onReessayer,
   ].filter(([, contenu]) => contenu);
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end" data-testid="boucle-detail">
+    <div
+      className="fixed inset-0 z-50 flex justify-end"
+      data-testid="boucle-detail"
+      inert={modaleOuverte ? true : undefined}
+      aria-hidden={modaleOuverte ? "true" : undefined}
+    >
       <button
         type="button"
         aria-label="Fermer le détail"
         onClick={onFermer}
         data-testid="boucle-detail-fond"
+        tabIndex={-1}
         className="absolute inset-0 bg-black/55 backdrop-blur-[2px]"
       />
       <aside
+        ref={panneauRef}
         role="dialog"
         aria-modal="true"
         aria-label={`Détail de ${titreObjet(objet)}`}
@@ -408,6 +435,15 @@ function PanneauDetail({ objet, etat, chaine, historique, onFermer, onReessayer,
             </button>
           )}
         </div>
+
+        <PanneauActions
+          objet={objet}
+          succes={transitionSucces}
+          onAction={onAction}
+          onOuvrir={onOuvrirObjet}
+          verification={verificationSource}
+          verificationErreur={verificationErreur}
+        />
 
         {(preuves.length > 0 || claims.length > 0 || outcomes.length > 0) && (
           <Depliable
@@ -565,7 +601,7 @@ function PanneauDetail({ objet, etat, chaine, historique, onFermer, onReessayer,
           <dl className="mt-2 space-y-1.5 text-xs">
             <div className="flex gap-3">
               <dt className="w-28 shrink-0 text-[#7C93A8]">Version</dt>
-              <dd className="text-[#D8E2EA]">{texte(valeurDe(objet, "version")) || "—"}</dd>
+              <dd className="text-[#D8E2EA]" data-testid="boucle-version">{texte(valeurDe(objet, "version")) || "—"}</dd>
             </div>
             <div className="flex gap-3">
               <dt className="w-28 shrink-0 text-[#7C93A8]">Observé le</dt>
@@ -612,6 +648,14 @@ export default function Boucle() {
   const [selection, setSelection] = useState(null);
   const [detail, setDetail] = useState({ chargement: false, erreur: null, data: null });
   const refDetail = useRef(0);
+  const enCoursRef = useRef(false);
+  const refRechargement = useRef(false);
+  const refAbortVerification = useRef(null);
+  const refVerificationJeton = useRef(0);
+  const refElementDeclencheur = useRef(null);
+  const refIdentifiantDeclencheur = useRef(null);
+  const refElementDeclencheurAction = useRef(null);
+  const refRestaurationFocusAction = useRef(false);
   const [formulaireOutcome, setFormulaireOutcome] = useState(OUTCOME_INITIAL);
   const [outcomeEnCours, setOutcomeEnCours] = useState(false);
   const [outcomeErreur, setOutcomeErreur] = useState("");
@@ -624,6 +668,8 @@ export default function Boucle() {
   const [twinEnCours, setTwinEnCours] = useState(false);
   const [twinErreur, setTwinErreur] = useState("");
   const [twinSucces, setTwinSucces] = useState("");
+  const [actionActive, setActionActive] = useState(null);
+  const [transition, setTransition] = useState({ enCours: false, erreur: "", succes: null, rechargement: false, verificationErreur: "" });
 
   useEffect(() => {
     let annule = false;
@@ -692,41 +738,64 @@ export default function Boucle() {
     return () => { annule = true; };
   }, [rechargementTwins]);
 
-  const chargerDetail = useCallback((identifiant) => {
-    if (!identifiant) return;
+  const chargerDetail = useCallback((identifiant, options = {}) => {
+    if (!identifiant) return Promise.resolve(false);
+    const { signal, conserverDonnees = false, messageEchec } = options;
     const jeton = refDetail.current + 1;
     refDetail.current = jeton;
-    setDetail({ chargement: true, erreur: null, data: null });
-    api.get(`/boucle/objets/${encodeURIComponent(identifiant)}`, { params: { historique: true } })
+    if (conserverDonnees) {
+      setDetail((avant) => ({ ...avant, chargement: true, erreur: null }));
+    } else {
+      setDetail({ chargement: true, erreur: null, data: null });
+    }
+    return api.get(`/boucle/objets/${encodeURIComponent(identifiant)}`, {
+      params: { historique: true },
+      signal,
+    })
       .then((reponse) => {
-        if (refDetail.current !== jeton) return;
+        if (refDetail.current !== jeton) return null;
         setDetail({ chargement: false, erreur: null, data: reponse.data || null });
+        return true;
       })
       .catch((cause) => {
-        if (refDetail.current !== jeton) return;
-        setDetail({
+        if (refDetail.current !== jeton) return null;
+        const abandonne = signal?.aborted
+          || cause?.code === "ERR_CANCELED"
+          || cause?.name === "CanceledError";
+        const message = abandonne
+          ? MESSAGE_VERIFICATION_INDISPONIBLE
+          : messageErreur(cause, messageEchec || "Impossible de charger le détail de cet objet.");
+        setDetail((avant) => ({
           chargement: false,
-          erreur: messageErreur(cause, "Impossible de charger le détail de cet objet."),
-          data: null,
-        });
+          erreur: message,
+          data: conserverDonnees ? avant.data : null,
+        }));
+        return false;
       });
   }, []);
 
+  const reinitialiserTransition = () => {
+    setTransition((avant) => ({
+      enCours: false,
+      erreur: "",
+      succes: null,
+      rechargement: refRechargement.current,
+      verificationErreur: refRechargement.current ? avant.verificationErreur || "" : "",
+    }));
+  };
+
   const ouvrirObjet = (objet) => {
+    if (transition.enCours || enCoursRef.current) return;
+    if (!selection) {
+      refElementDeclencheur.current = document.activeElement;
+      refIdentifiantDeclencheur.current = idObjet(objet);
+    }
+    reinitialiserTransition();
     setSelection(objet);
     const identifiant = idObjet(objet);
     if (identifiant) chargerDetail(identifiant);
     else setDetail({ chargement: false, erreur: null, data: null });
   };
-
-  useEffect(() => {
-    if (!selection) return undefined;
-    const fermer = (evenement) => {
-      if (evenement.key === "Escape") setSelection(null);
-    };
-    document.addEventListener("keydown", fermer);
-    return () => document.removeEventListener("keydown", fermer);
-  }, [selection]);
 
   const objetsFiltres = useMemo(() => {
     const requete = sansAccents(recherche.trim());
@@ -768,6 +837,7 @@ export default function Boucle() {
   const total = totalSynthese(synthese) ?? objets.length;
   const filtresActifs = Boolean(recherche.trim() || filtres.famille || filtres.type || filtres.mode);
   const objetDetail = detail.data?.objet || selection;
+  const actionCourante = actionActive ? configurationAction(actionActive, objetDetail) : null;
   const chaineDetail = Array.isArray(detail.data?.chaine)
     ? detail.data.chaine
     : Array.isArray(detail.data?.objet?.chaine) ? detail.data.objet.chaine : [];
@@ -787,11 +857,254 @@ export default function Boucle() {
   const actualiser = () => setRechargement((valeur) => valeur + 1);
 
   const ouvrirParId = (identifiant) => {
-    if (!identifiant) return;
+    if (!identifiant || transition.enCours || enCoursRef.current) return;
+    if (!selection) {
+      refElementDeclencheur.current = document.activeElement;
+      refIdentifiantDeclencheur.current = identifiant;
+    }
+    reinitialiserTransition();
     const connu = objets.find((objet) => idObjet(objet) === identifiant);
     setSelection(connu || { id: identifiant, type: "", famille: "" });
     chargerDetail(identifiant);
   };
+
+  const fermerDetail = useCallback(() => {
+    if (transition.enCours || enCoursRef.current) return;
+    setSelection(null);
+    setActionActive(null);
+    setTransition((avant) => ({
+      enCours: false,
+      erreur: "",
+      succes: null,
+      rechargement: refRechargement.current,
+      verificationErreur: avant.verificationErreur || "",
+    }));
+  }, [transition.enCours]);
+
+  const ouvrirAction = (actionId) => {
+    if (transition.enCours || enCoursRef.current || refRechargement.current) return;
+    refElementDeclencheurAction.current = document.activeElement;
+    reinitialiserTransition();
+    setActionActive(actionId);
+  };
+
+  const rechargerDetailSource = async (identifiant) => {
+    refAbortVerification.current?.abort();
+    const controleur = new AbortController();
+    refAbortVerification.current = controleur;
+    const jetonVerification = refVerificationJeton.current + 1;
+    refVerificationJeton.current = jetonVerification;
+    const minuterie = setTimeout(() => controleur.abort(), DELAI_VERIFICATION_MS);
+    refRechargement.current = true;
+    setTransition((avant) => ({ ...avant, rechargement: true, verificationErreur: "" }));
+    try {
+      const ok = await chargerDetail(identifiant, {
+        signal: controleur.signal,
+        conserverDonnees: true,
+        messageEchec: MESSAGE_VERIFICATION_INDISPONIBLE,
+      });
+      if (ok === false) {
+        setTransition((avant) => ({ ...avant, verificationErreur: MESSAGE_VERIFICATION_INDISPONIBLE }));
+      }
+    } finally {
+      clearTimeout(minuterie);
+      if (refVerificationJeton.current !== jetonVerification) return;
+      if (refAbortVerification.current === controleur) refAbortVerification.current = null;
+      refRechargement.current = false;
+      setTransition((avant) => ({ ...avant, rechargement: false }));
+    }
+  };
+
+  // Rafraîchit l'historique/la chaîne de la source après une création, sans vider
+  // le panneau ni poser le verrou de rechargement. Best-effort : en cas d'échec,
+  // la version issue de la chaîne reste affichée.
+  const rafraichirDetailSource = (identifiant) => {
+    const jeton = refDetail.current;
+    api.get(`/boucle/objets/${encodeURIComponent(identifiant)}`, { params: { historique: true } })
+      .then((reponse) => {
+        if (refDetail.current !== jeton) return;
+        const data = reponse.data;
+        if (!data?.objet) return;
+        setDetail((avant) => ({ ...avant, chargement: false, erreur: null, data }));
+        setSelection((avant) => (idObjet(avant) === identifiant ? data.objet : avant));
+        setObjets((avant) => fusionnerObjet(avant, data.objet));
+      })
+      .catch(() => {});
+  };
+
+  const demanderRestaurationFocusAction = () => {
+    refRestaurationFocusAction.current = true;
+  };
+
+  const fermerAction = () => {
+    if (transition.enCours || enCoursRef.current) return;
+    if (refRechargement.current) refElementDeclencheurAction.current = null;
+    setActionActive(null);
+    setTransition((avant) => ({ ...avant, erreur: "" }));
+    demanderRestaurationFocusAction();
+  };
+
+  const executerTransition = async (valeurs) => {
+    if (enCoursRef.current || refRechargement.current || transition.rechargement) return;
+    if (!actionCourante || !objetDetail) return;
+    const identifiant = idObjet(objetDetail);
+    if (!identifiant) {
+      setTransition((avant) => ({
+        ...avant,
+        erreur: "Cet objet n'a pas d'identifiant : la transition ne peut pas être enregistrée.",
+      }));
+      return;
+    }
+    if (!actionCourante.api || typeof boucleApi[actionCourante.api] !== "function") {
+      setTransition((avant) => ({
+        ...avant,
+        erreur: "Cette transition n'est pas disponible dans cette version de l'interface.",
+      }));
+      return;
+    }
+
+    const { corps, erreur } = construireCorps(actionActive, valeurs, objetDetail);
+    if (erreur) {
+      setTransition((avant) => ({ ...avant, erreur }));
+      return;
+    }
+
+    const action = actionActive;
+    const detailIncomplet = detail.chargement || !detail.data;
+    enCoursRef.current = true;
+    refDetail.current += 1; // invalide un GET détail encore en vol
+    setTransition((avant) => ({
+      ...avant,
+      enCours: true,
+      erreur: "",
+      rechargement: false,
+      verificationErreur: "",
+    }));
+
+    let reponse = null;
+    let cause = null;
+    try {
+      // Pas d'Idempotency-Key par défaut : le contrat A courant refuse les clés non vides.
+      reponse = await boucleApi[actionCourante.api](identifiant, corps);
+    } catch (erreurApi) {
+      cause = erreurApi;
+    } finally {
+      // Le POST est terminé : on relâche le verrou AVANT tout rechargement de détail.
+      enCoursRef.current = false;
+    }
+
+    if (cause) {
+      const statut = cause?.response?.status;
+      const resultatIncertain = !cause?.response || statut >= 500;
+      const message = resultatIncertain
+        ? "Résultat incertain : la transition n'a pas confirmé son issue. Vérifiez l'état de l'objet avant de réessayer."
+        : messageErreurTransition(cause);
+      setTransition((avant) => ({
+        ...avant,
+        enCours: false,
+        erreur: message,
+      }));
+      if (detailIncomplet || statut === 404 || statut === 409 || resultatIncertain) {
+        await rechargerDetailSource(identifiant);
+        actualiser();
+      }
+      return;
+    }
+
+    const nouvelObjet = reponse?.data?.objet ?? null;
+    const nouvelleChaine = Array.isArray(reponse?.data?.chaine) ? reponse.data.chaine : null;
+    const nouvelHistorique = Array.isArray(reponse?.data?.historique) ? reponse.data.historique : null;
+    const detailSource = detailSourceApresTransition({
+      identifiant,
+      nouvelObjet,
+      nouvelleChaine,
+      nouvelHistorique,
+      ancienDetail: detail.data,
+    });
+    const objetDifferent = idObjet(nouvelObjet) !== identifiant;
+
+    setActionActive(null);
+    setTransition({
+      enCours: false,
+      erreur: "",
+      succes: nouvelObjet ? { action, objet: nouvelObjet } : { action, objet: null },
+      rechargement: false,
+      verificationErreur: "",
+    });
+    demanderRestaurationFocusAction();
+
+    const objetsReponse = [nouvelObjet, ...(nouvelleChaine || [])]
+      .filter((objet) => idObjet(objet));
+    if (objetsReponse.length > 0) {
+      setObjets((avant) => objetsReponse.reduce((liste, objet) => fusionnerObjet(liste, objet), avant));
+    }
+
+    if (detailSource.source) {
+      setSelection(detailSource.source);
+      setDetail((avant) => ({
+        ...avant,
+        chargement: false,
+        erreur: null,
+        data: {
+          ...(avant.data || {}),
+          objet: detailSource.source,
+          chaine: detailSource.chaine,
+          historique: detailSource.historique,
+        },
+      }));
+      if (objetDifferent) rafraichirDetailSource(identifiant);
+    } else {
+      await rechargerDetailSource(identifiant);
+    }
+    actualiser();
+  };
+
+  useEffect(() => {
+    if (!selection) return undefined;
+    const surEchap = (evenement) => {
+      if (evenement.key !== "Escape") return;
+      if (actionActive || transition.enCours || enCoursRef.current) return;
+      fermerDetail();
+    };
+    document.addEventListener("keydown", surEchap);
+    return () => document.removeEventListener("keydown", surEchap);
+  }, [selection, actionActive, transition.enCours, fermerDetail]);
+
+  useEffect(() => {
+    if (selection) return;
+    const declencheur = refElementDeclencheur.current;
+    const identifiantDeclencheur = refIdentifiantDeclencheur.current;
+    if (!declencheur && !identifiantDeclencheur) return;
+    refElementDeclencheur.current = null;
+    refIdentifiantDeclencheur.current = null;
+    if (declencheur?.isConnected) {
+      declencheur.focus?.();
+      return;
+    }
+    if (identifiantDeclencheur) {
+      const remplacant = [...document.querySelectorAll("[data-objet-id]")]
+        .find((element) => element.getAttribute("data-objet-id") === identifiantDeclencheur);
+      if (remplacant) {
+        remplacant.focus?.();
+        return;
+      }
+    }
+    document.querySelector('[data-testid="boucle-recherche"]')?.focus?.();
+  }, [selection]);
+
+  useEffect(() => {
+    if (actionActive || !refRestaurationFocusAction.current) return;
+    refRestaurationFocusAction.current = false;
+    const declencheur = refElementDeclencheurAction.current;
+    refElementDeclencheurAction.current = null;
+    if (declencheur?.isConnected) {
+      declencheur.focus?.();
+      return;
+    }
+    document.querySelector('[data-testid="boucle-detail-fermer"]')?.focus?.();
+  }, [actionActive, objetDetail?.id]);
+
+  useEffect(() => () => refAbortVerification.current?.abort(), []);
 
   const changerOutcome = (cle, valeur) => {
     setFormulaireOutcome((avant) => ({ ...avant, [cle]: valeur }));
@@ -933,7 +1246,11 @@ export default function Boucle() {
 
   return (
     <div className="h-full overflow-y-auto bg-[#071019] px-4 py-5 pb-20 sm:px-8 sm:py-8 lg:px-12" data-testid="boucle-page">
-      <div className="mx-auto max-w-[1500px]">
+      <div
+        className="mx-auto max-w-[1500px]"
+        inert={selection ? true : undefined}
+        aria-hidden={selection ? "true" : undefined}
+      >
         <header className="rise">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -1517,10 +1834,28 @@ export default function Boucle() {
           etat={detail}
           chaine={chaineDetail}
           historique={historiqueDetail}
-          onFermer={() => setSelection(null)}
+          onFermer={fermerDetail}
           onReessayer={() => chargerDetail(idObjet(selection))}
           onNaviguer={navigate}
           onOuvrirId={ouvrirParId}
+          onOuvrirObjet={ouvrirObjet}
+          onAction={ouvrirAction}
+          transitionSucces={transition.succes}
+          modaleOuverte={Boolean(actionActive)}
+          verificationSource={transition.rechargement}
+          verificationErreur={transition.verificationErreur}
+        />
+      )}
+
+      {actionCourante && (
+        <ModaleTransition
+          key={actionCourante.id}
+          action={actionCourante}
+          enCours={transition.enCours}
+          rechargement={transition.rechargement}
+          erreur={transition.erreur}
+          onFermer={fermerAction}
+          onSoumettre={executerTransition}
         />
       )}
     </div>

@@ -37,4 +37,72 @@ api.interceptors.response.use((reponse) => {
   return reponse;
 });
 
+function identifiantRequis(identifiant, nom = "identifiant") {
+  const valeur = String(identifiant || "").trim();
+  if (!valeur) throw new Error(`${nom} obligatoire`);
+  return encodeURIComponent(valeur);
+}
+
+function posterTransition(chemin, corps, options) {
+  const config = { timeout: 20000 };
+  if (options?.idempotencyKey) {
+    config.headers = { "Idempotency-Key": options.idempotencyKey };
+  }
+  return api.post(chemin, corps, config);
+}
+
+// Transitions de la boucle canonique. Chaque méthode renvoie la promesse axios ;
+// le backend répond `{ objet, chaine }` et l'UI décide de la suite (sélection, rafraîchissement).
+export const boucleApi = {
+  async ouvrirInvestigation(situationId, corps, options) {
+    return posterTransition(
+      `/boucle/situations/${identifiantRequis(situationId, "identifiant de situation")}/investigations`,
+      corps,
+      options,
+    );
+  },
+  async proposerDecision(investigationId, corps, options) {
+    return posterTransition(
+      `/boucle/investigations/${identifiantRequis(investigationId, "identifiant d'investigation")}/decisions`,
+      corps,
+      options,
+    );
+  },
+  async trancherDecision(decisionId, corps, options) {
+    return posterTransition(
+      `/boucle/decisions/${identifiantRequis(decisionId, "identifiant de décision")}/trancher`,
+      corps,
+      options,
+    );
+  },
+  async lancerInitiative(decisionId, corps, options) {
+    return posterTransition(
+      `/boucle/decisions/${identifiantRequis(decisionId, "identifiant de décision")}/initiatives`,
+      corps,
+      options,
+    );
+  },
+  async mesurerOutcome(initiativeId, corps, options) {
+    return posterTransition(
+      `/boucle/initiatives/${identifiantRequis(initiativeId, "identifiant d'initiative")}/outcomes`,
+      corps,
+      options,
+    );
+  },
+  async capitaliserLearningDepuisOutcome(outcomeId, corps, options) {
+    return posterTransition(
+      `/boucle/outcomes/${identifiantRequis(outcomeId, "identifiant d'outcome")}/learnings`,
+      corps,
+      options,
+    );
+  },
+  async capitaliserLearningDepuisInvestigation(investigationId, corps, options) {
+    return posterTransition(
+      `/boucle/investigations/${identifiantRequis(investigationId, "identifiant d'investigation")}/learnings`,
+      corps,
+      options,
+    );
+  },
+};
+
 export default api;
