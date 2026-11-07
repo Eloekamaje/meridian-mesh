@@ -275,12 +275,9 @@ const CHAMPS_CAPITALISER_LEARNING = [
 export const ACTIONS_BOUCLE = Object.freeze({
   creer_situation: Object.freeze({
     id: "creer_situation",
-    libelle: "Nouvelle situation",
     titre: "Créer une situation racine",
     description: "Formuler un phénomène observé qui ouvre une nouvelle chaîne canonique.",
-    testid: "boucle-action-creer-situation",
     api: "creerSituation",
-    icone: "situation",
     champs: CHAMPS_CREER_SITUATION,
   }),
   ouvrir_investigation: Object.freeze({

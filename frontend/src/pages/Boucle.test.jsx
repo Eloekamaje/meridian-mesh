@@ -726,6 +726,9 @@ test("crée une situation racine depuis l'en-tête, la sélectionne et actualise
 
   const { hote, racine } = monter();
   await rendre(racine);
+  const appelsObjets = () => api.get.mock.calls
+    .filter(([url]) => url === "/boucle/objets").length;
+  const appelsAvantCreation = appelsObjets();
 
   const bouton = hote.querySelector('[data-testid="boucle-nouvelle-situation"]');
   expect(bouton).not.toBeNull();
@@ -757,6 +760,8 @@ test("crée une situation racine depuis l'en-tête, la sélectionne et actualise
   expect(hote.querySelector('[data-objet-id="sit-2"]')).not.toBeNull();
   expect(hote.querySelector('[data-testid="boucle-detail-titre"]').textContent)
     .toContain("Dérive des encaissements");
+  expect(appelsObjets()).toBeGreaterThan(appelsAvantCreation);
+  expect(document.activeElement).toBe(hote.querySelector('[data-testid="boucle-detail-fermer"]'));
 
   await act(async () => { racine.unmount(); });
 });
@@ -797,16 +802,50 @@ test("ferme la création avec Échap et restitue le focus au bouton d'en-tête",
   await act(async () => { racine.unmount(); });
 });
 
+test("rend le contenu de la page inerte pendant la modale de création", async () => {
+  installerApi();
+  const { hote, racine } = monter();
+  await rendre(racine);
+
+  const contenu = hote.querySelector('[data-testid="boucle-contenu"]');
+  expect(contenu).not.toBeNull();
+  expect(contenu.hasAttribute("inert")).toBe(false);
+  expect(contenu.getAttribute("aria-hidden")).toBeNull();
+
+  await cliquer(hote, "boucle-nouvelle-situation");
+
+  const modale = hote.querySelector('[data-testid="boucle-transition-modale"]');
+  expect(modale).not.toBeNull();
+  expect(contenu.hasAttribute("inert")).toBe(true);
+  expect(contenu.getAttribute("aria-hidden")).toBe("true");
+  expect(contenu.contains(modale)).toBe(false);
+
+  await echap();
+
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).toBeNull();
+  expect(contenu.hasAttribute("inert")).toBe(false);
+  expect(contenu.getAttribute("aria-hidden")).toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
 test.each([
-  [400, { detail: "priorite invalide" }, "priorite invalide"],
-  [409, { detail: "objet déjà existant" }, "objet déjà existant"],
-  [503, {}, "indisponible"],
-])("affiche l'erreur %s de création et garde la saisie", async (statut, data, attendu) => {
+  [400, { detail: "priorite invalide" }, "priorite invalide", false],
+  [409, { detail: "objet déjà existant" }, "objet déjà existant", true],
+  [500, {}, "Résultat incertain", true],
+  [503, {}, "Résultat incertain", true],
+  [503, { detail: "Couche cognitive indisponible" }, "Couche cognitive indisponible", true],
+])("affiche l'erreur %s de création, garde la saisie et rafraîchit selon le statut", async (
+  statut, data, attendu, rafraichit,
+) => {
   installerApi();
   boucleApi.creerSituation.mockRejectedValue({ response: { status: statut, data } });
+  const appelsObjets = () => api.get.mock.calls
+    .filter(([url]) => url === "/boucle/objets").length;
 
   const { hote, racine } = monter();
   await rendre(racine);
+  const avant = appelsObjets();
   await cliquer(hote, "boucle-nouvelle-situation");
   await act(async () => {
     saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "Situation conservée");
@@ -820,6 +859,94 @@ test.each([
   expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
   expect(hote.querySelector('[data-testid="boucle-transition-titre"]').value).toBe("Situation conservée");
   expect(hote.querySelector('[data-testid="boucle-transition-enregistrer"]').disabled).toBe(false);
+  expect(appelsObjets()).toBe(avant + (rafraichit ? 1 : 0));
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("un échec réseau de création reste incertain, garde la modale et rafraîchit la liste", async () => {
+  installerApi();
+  boucleApi.creerSituation.mockRejectedValue(new Error("Network Error"));
+  const appelsObjets = () => api.get.mock.calls
+    .filter(([url]) => url === "/boucle/objets").length;
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  const avant = appelsObjets();
+  await cliquer(hote, "boucle-nouvelle-situation");
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "Situation incertaine");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  const alerte = hote.querySelector('[data-testid="boucle-transition-erreur"]');
+  expect(alerte).not.toBeNull();
+  expect(alerte.getAttribute("role")).toBe("alert");
+  expect(alerte.textContent).toContain("Résultat incertain");
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-transition-succes"]')).toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-detail"]')).toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-transition-titre"]').value).toBe("Situation incertaine");
+  expect(appelsObjets()).toBe(avant + 1);
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("utilise le dernier objet de la chaîne quand la réponse 2xx n'a pas d'objet", async () => {
+  const controleur = installerApi();
+  const nouvelle = {
+    id: "sit-depuis-chaine",
+    famille: "emergence",
+    type: "SITUATION",
+    mode: "DECLARED",
+    titre: "Situation issue de la chaîne",
+    donnees: { resume: "La réponse ne porte que la chaîne." },
+    version: 1,
+  };
+  boucleApi.creerSituation.mockImplementation(() => {
+    controleur.ajouter(nouvelle);
+    return Promise.resolve({ data: { chaine: [nouvelle] } });
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await cliquer(hote, "boucle-nouvelle-situation");
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "Situation issue de la chaîne");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).toBeNull();
+  expect(hote.querySelector('[data-objet-id="sit-depuis-chaine"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-detail-titre"]').textContent)
+    .toContain("Situation issue de la chaîne");
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("garde la modale ouverte quand la réponse 2xx ne contient aucun identifiant", async () => {
+  installerApi();
+  boucleApi.creerSituation.mockResolvedValue({ data: {} });
+  const appelsObjets = () => api.get.mock.calls
+    .filter(([url]) => url === "/boucle/objets").length;
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  const avant = appelsObjets();
+  await cliquer(hote, "boucle-nouvelle-situation");
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "Situation sans identifiant");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  const alerte = hote.querySelector('[data-testid="boucle-transition-erreur"]');
+  expect(alerte).not.toBeNull();
+  expect(alerte.getAttribute("role")).toBe("alert");
+  expect(alerte.textContent).toContain("identifiant");
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-transition-succes"]')).toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-detail"]')).toBeNull();
+  expect(appelsObjets()).toBe(avant + 1);
 
   await act(async () => { racine.unmount(); });
 });
