@@ -48,3 +48,4 @@ def test_la_proposition_herite_du_tenant_de_la_situation():
 
     assert proposition["tenant_id"] == "banque"
     assert db.initiatives.docs[proposition["id"]]["tenant_id"] == "banque"
+    assert db.initiatives.appels[0][0]["tenant_id"] == "banque"
