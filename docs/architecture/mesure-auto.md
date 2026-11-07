@@ -50,19 +50,19 @@ Collection : `mesure_auto_observations`. Chaque document porte explicitement son
 ```
 
 - `id` : identifiant stable de l'observation (chaîne, unique par tenant).
-- `maj_le` : date d'ingestion/dernière mise à jour, **UTC**, utilisée comme curseur. Une
-  correction doit avancer `maj_le` pour être relue. Une chaîne ISO avec offset ou un BSON Date
+- `maj_le` : date d'ingestion/dernière mise à jour, **UTC**, en **microsecondes** pour que C1
+  voie une correction même dans la même milliseconde. Une chaîne ISO avec offset ou un BSON Date
   sont acceptés puis ramenés en UTC par l'adaptateur.
-- `maj_le_utc` : champ canonique **indexé** (BSON Date) écrit par `document_ingestion`. C'est lui
-  qui porte le seek d'index `(tenant_id, maj_le_utc, sequence, id)` ; il évite toute fenêtre
-  glissante et toute famine. La précision BSON Date est la milliseconde : `document_ingestion`
-  tronque `maj_le_utc` à la ms et aligne `maj_le` dessus, pour que l'égalité de curseur soit
-  exacte. Les documents legacy sans ce champ passent par un backfill borné et un fallback
-  explicitement borné.
-- `sequence` : tie-breaker monotone optionnel (ULID, numéro producteur). Les entiers `int`/`long`
-  sont zéro-paddés sur 20 chiffres (`9` → `000…009`) pour rester ordonnés lexicographiquement.
-  À défaut, `_id` Mongo sert de tie-breaker. Deux documents de la même microseconde restent ainsi
-  ordonnés.
+- `maj_le_utc` : champ canonique **indexé** (BSON Date, précision ms) écrit par
+  `document_ingestion`. C'est lui qui porte le seek d'index
+  `(tenant_id, maj_le_utc, sequence_canonique, id)`. La date effective de lecture est
+  `max(maj_le_utc, maj_le)` : une correction legacy qui n'a mis à jour que `maj_le` reste visible.
+  Les documents legacy sans ce champ sont backfillés par lots bornés et lus par un fallback
+  `maj_le >= curseur` (comparaison `$convert`, offsets acceptés), jamais par une fenêtre fixe.
+- `sequence` / `sequence_canonique` : tie-breaker monotone. `document_ingestion` écrit
+  `sequence_canonique` (chaîne) et `sequence`; les entiers `int`/`long` sont zéro-paddés sur
+  20 chiffres (`9` → `000…009`). Le filtre/index utilisent `sequence_canonique`, jamais le type
+  brut. À défaut, `_id` Mongo sert de tie-breaker.
 - `quand` : date de la mesure, utilisée pour la période et l'ordonnancement de l'Outcome.
 - `initiative_id` : initiative canonique, ou `decision_id` (l'identifiant d'initiative est alors
   dérivé exactement comme C1 : `ini-<decision_id>`).
@@ -112,12 +112,16 @@ régresser un curseur plus avancé. `--depuis` est canonisé en UTC ; une date i
 (code 2). L'idempotence de l'outbox rend deux instances tolérantes, mais **une instance par
 tenant est la configuration supportée** (pas de bail distribué dans ce lot).
 
-La lecture principale est un **seek d'index** sur `maj_le_utc > curseur` (avec le tie-breaker
-`sequence`/`id`). Elle ne peut pas être affamée par un stock de documents plus anciens, même avec
-500 documents avant le curseur et `--lot 10`. Les documents legacy sans `maj_le_utc` sont backfillés
-par lots bornés (`remplir_maj_le_utc`, 500 par passe) et lus par un fallback borné qui ne cache
-jamais les résultats du seek. Deux types de `maj_le` restent acceptés en fallback : chaîne ISO
-(offset accepté) et BSON Date.
+La lecture principale est un **seek d'index** sur `maj_le_utc > curseur` (tie-breaker
+`sequence_canonique`/`id`). Elle ne peut pas être affamée par un stock de documents plus anciens,
+même avec 500 documents avant le curseur et `--lot 10`. Les corrections legacy (`maj_le` plus
+récent que `maj_le_utc` de plus d'une ms) sont prioritaires et drainées avant le seek principal ;
+le checkpoint n'avance jamais au-delà d'une correction non traitée. Une **garde de migration**
+(`compter_a_migrer`) empêche aussi le worker de lire tant que des documents valides manquent de
+`maj_le_utc`, de `sequence_canonique` ou sont périmés ; les documents réellement malformés sont
+laissés à l'audit et ne bloquent pas le flux. Les documents legacy sans `maj_le_utc` sont
+backfillés par lots bornés (`remplir_maj_le_utc`, 500 par passe, CAS sur les valeurs lues) et lus
+par un fallback `maj_le >= curseur` (`$convert`, chaîne ISO/offset ou BSON Date).
 
 ## 4. Idempotence et corrections
 
@@ -168,11 +172,16 @@ Options : `--once`/`--une-passe`, `--lot` (max 1000), `--intervalle`, `--tenant`
     le checkpoint **n'avance pas** ; reprises bornées par `--tentatives-max`, puis dead-letter et
     avancement.
   - **Horloge** (`quand`/`maj_le` futur) : **jamais dead-letterée** ; le checkpoint n'avance pas
-    et l'observation attend que l'horloge rattrape. Aucun compteur de passes de 25 s.
-- **Audit** : à **chaque passe**, `count_documents` + scan borné comptent les documents sans
-  `id`/`maj_le` conformes, au tenant non normalisé (`Banque`) et aux dates illisibles (`hier`).
-  Métrique `mesure_auto_documents_non_conformes` ; ces documents ne sont jamais lus, donc ne
-  bloquent pas le flux.
+    et l'observation attend que l'horloge rattrape. Aucun compteur de passes de 25 s. **Choix
+    produit** : tant que l'horloge n'a pas rattrapé, les observations suivantes du même tenant
+    sont différées avec elle ; c'est volontaire (pas de mesure dans le désordre).
+- **Audit** : à **chaque passe**, un scan borné et **rotatif** (`auditer_lot`, 1000 documents,
+  curseur `_id` entre passes) compte les documents du tenant courant sans `id`/`maj_le` conformes,
+  au tenant non normalisé (`Banque`) et aux dates illisibles (`hier`). Les documents d'un autre
+  tenant (même mal normalisés, `Assurance`) sont ignorés. Métrique
+  `mesure_auto_documents_non_conformes` ; ces documents ne sont jamais lus, donc ne bloquent pas
+  le flux. Coût : au plus 1000 documents par tenant et par passe, sans double comptage dans un
+  même lot ; un lot de 1000 conformes peut retarder la détection à la passe suivante.
 - **Métriques de log** : `mesure_auto_lues`, `mesure_auto_outcomes`, `mesure_auto_doublons`,
   `mesure_auto_rejets`, `mesure_auto_echecs`, `mesure_auto_non_conformes`,
   `mesure_auto_dead_letter_echecs`.
@@ -182,8 +191,9 @@ Options : `--once`/`--une-passe`, `--lot` (max 1000), `--intervalle`, `--tenant`
 Collection : `mesure_auto_rejets`. Clé = `sha256(tenant | observation_id | empreinte_contenu)`.
 Le document porte `tentatives`, `derniere_raison`, `permanent`, `etat` (`retry`/`dead`) et
 `maj_le`. `tentatives` est créé par `$inc` à l'insertion (jamais aussi dans `$setOnInsert`, sinon
-Mongo lève `WriteError code 40`). Les messages sont bornés et expurgés (jetons
-Bearer/sk-/ghp_/xox, credentials d'URL) avant log ou stockage.
+Mongo lève `WriteError code 40`). Le rejet durable est écrit **avant** l'avancement du
+checkpoint ; si le dead-letter est indisponible, le lot échoue explicitement. Les messages sont
+bornés et expurgés (jetons Bearer/sk-/ghp_/xox, credentials d'URL) avant log ou stockage.
 
 ## 6. Exploitation, sécurité et validation
 
@@ -203,6 +213,10 @@ Bearer/sk-/ghp_/xox, credentials d'URL) avant log ou stockage.
   Les preuves et liens restent dans le canonique, pas dans les logs.
 - **Instance unique** : une instance par tenant. Le CAS du checkpoint empêche une régression ;
   l'idempotence de l'outbox rend les doublons inoffensifs, mais aucun bail distribué n'est fourni.
+- **Tests d'intégration** : `MONGO_TEST_URL` (ou `MONGO_URL`) doit être local ou contenir un
+  marqueur de test (`_test`, `/test`, etc.) ; une URL de production est refusée par
+  `url_test_autorisee`. Les tests PG `@besoin_pg` sont ignorés si le DSN est absent **ou
+  injoignable**.
 
 ## 7. Limites assumées
 
@@ -214,4 +228,10 @@ Bearer/sk-/ghp_/xox, credentials d'URL) avant log ou stockage.
   ce lot ne crée pas d'initiative. C1 exige en outre que le parent ait une origine fiable
   (`legacy`, `migration` ou `exploitation`) : un Outcome n'écrase pas une Initiative créée par
   l'API canonique nue (`ConflitCanonique`).
+- **Correction dans la même milliseconde** : `maj_le` doit avancer (microseconde) pour que
+  `source_maj_le` soit strictement croissant côté C1 ; un simple bump de `sequence` ne suffit
+  pas à C1, il ne sert qu'au curseur du worker. Un producteur doit donc appeler
+  `document_ingestion` avec un `maj_le` strictement postérieur.
+- **Séquence négative** : non supportée par le tri lexicographique ; les producteurs doivent
+  fournir une séquence non négative (ULID, entier positif, ObjectId).
 - Le worker ne supprime ni ne réécrit les observations : une correction passe par `maj_le`.
