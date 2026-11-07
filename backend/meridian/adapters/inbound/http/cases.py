@@ -1,5 +1,6 @@
 import asyncio
 from contextlib import asynccontextmanager
+import logging
 import os
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
@@ -7,6 +8,7 @@ from inspect import Parameter, signature
 from typing import Literal, Optional
 from uuid import NAMESPACE_URL, uuid5
 
+import psycopg
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 
@@ -23,6 +25,9 @@ import veille as moteur_veille
 from meridian.adapters.inbound.http import flux as jumeau_flux
 from meridian.adapters.inbound.http.tenant_twins import jumeaux_du_tenant
 from meridian.adapters.outbound.mongo.travail import EcritureTravail
+from meridian.adapters.outbound.postgres import boucle as boucle_canonique
+from meridian.adapters.outbound.postgres import rls as rls_canonique
+from meridian.application import pont_travail
 from meridian.application import cadrage_conversationnel as cadrage_conv
 from meridian.application import tour_dialogue
 from meridian.application import dialogue as dialogue_service
@@ -39,8 +44,30 @@ from cases_fil import ajouter_routes_fil
 from meridian.adapters.inbound.http.pieces import ajouter_routes_pieces
 
 
+journal_canonique = logging.getLogger("meridian.cases.canonique")
+_TRACE_TIMEOUT = 3.0
+
+
 def _tenant_requete() -> str:
     return tenant_courant.courant_explicite() or os.environ.get("JUMEAU_TENANT") or "local"
+
+
+def _tenant_ecriture() -> str:
+    return pont_travail.normaliser_tenant(_tenant_requete())
+
+
+def _lire_boucle_sync(tenant: str, identifiant: str):
+    """Lit une fois l'objet canonique et sa chaîne ; sans DSN, la route legacy reste intacte."""
+    dsn = str(os.environ.get("JUMEAU_PG_DSN") or "").strip()
+    identifiant = str(identifiant or "").strip()
+    if not dsn or not identifiant:
+        return None
+    with psycopg.connect(dsn, connect_timeout=2) as conn:
+        if rls_canonique.est_actif():
+            with rls_canonique.contexte_tenant(conn, tenant):
+                return boucle_canonique.lire_boucle(
+                    conn, tenant, identifiant, historique=True)
+        return boucle_canonique.lire_boucle(conn, tenant, identifiant, historique=True)
 
 
 _VERROUS_TRAVAIL: dict[str, "asyncio.Lock"] = {}
@@ -314,7 +341,8 @@ def build_cases_router(deps):
         await pieces.reconcilier_compteurs(db)
 
     async def charger_case(cid: str, espace: dict, acteur_id: str = ""):
-        case = await db.cases.find_one({"id": cid}, NO_ID)
+        case = await db.cases.find_one(
+            {"id": cid, **pont_travail.filtre_tenant(_tenant_ecriture())}, NO_ID)
         if not case:
             raise HTTPException(404, "Case introuvable")
         if case.get("statut") == "conversation" and case.get("auteur") != acteur_id:
@@ -340,6 +368,49 @@ def build_cases_router(deps):
                     {"id": cid}, {"$set": {f"conversation.{index}.diagrammes": enrichi["diagrammes"]}})
                 conversation[index] = enrichi
         return case
+
+    async def _situation_liee_document(case):
+        """Situation de `situations[0]`, lue dans le même tenant que le Travail."""
+        sid = pont_travail.situation_liee(case)
+        if not sid:
+            return None
+        try:
+            return await db.situations.find_one(
+                {"id": sid, **pont_travail.filtre_tenant(_tenant_ecriture())}, NO_ID)
+        except Exception:  # noqa: BLE001 - la trace est un enrichissement, jamais un prérequis
+            journal_canonique.warning(
+                "trace canonique : situation illisible case=%s situation=%s",
+                case.get("id"), sid, exc_info=True)
+            return None
+
+    async def _ajouter_trace_canonique(vue):
+        """Ajoute `boucle` ou, à défaut, `boucle_id` ; ne bloque jamais la réponse legacy."""
+        candidat = pont_travail.candidat_boucle(vue, await _situation_liee_document(vue))
+        if not candidat:
+            return
+        try:
+            tenant = _tenant_ecriture()
+        except Exception:  # noqa: BLE001 - tenant legacy invalide : on ne lit pas le canonique
+            journal_canonique.warning(
+                "trace canonique : tenant invalide case=%s tenant=%r",
+                vue.get("id"), _tenant_requete())
+            vue["boucle_id"] = candidat
+            return
+        try:
+            ligne = await asyncio.wait_for(
+                asyncio.to_thread(_lire_boucle_sync, tenant, candidat),
+                timeout=_TRACE_TIMEOUT,
+            )
+        except Exception:  # noqa: BLE001 - panne Postgres/DSN : réponse legacy préservée
+            journal_canonique.warning(
+                "trace canonique indisponible case=%s id=%s tenant=%s",
+                vue.get("id"), candidat, tenant, exc_info=True)
+            ligne = None
+        trace = pont_travail.extraire_boucle(ligne)
+        if trace:
+            vue["boucle"] = trace
+        else:
+            vue["boucle_id"] = candidat
 
     async def jumeaux_autorises(espace):
         tous = await jumeaux_du_tenant(db, _tenant_requete(), {"_id": 0, "id": 1})
@@ -408,7 +479,8 @@ def build_cases_router(deps):
         _, espace = resoudre_perimetre(acteur, x_espace)
         tous = await jumeaux_du_tenant(db, _tenant_requete(), {"_id": 0, "id": 1})
         aut = autorisations(espace, [j["id"] for j in tous])
-        cases = await db.cases.find({}, NO_ID).to_list(200)
+        cases = await db.cases.find(
+            pont_travail.filtre_tenant(_tenant_ecriture()), NO_ID).to_list(200)
         visibles = [c for c in cases if (
             (not c.get("jumeaux") or any(j in aut for j in c["jumeaux"])) and portees.acces(c, acteur))]
         visibles = [vue_case(await materialiser_veille(c), aut) for c in visibles]
@@ -466,6 +538,7 @@ def build_cases_router(deps):
         num = (dernier[0]["num"] if dernier and dernier[0].get("num") else 40) + 1
         doc = {
             "id": cid,
+            "tenant_id": _tenant_ecriture(),
             "num": num,
             "titre": payload.titre.strip(),
             "type": payload.type,
@@ -557,7 +630,9 @@ def build_cases_router(deps):
             if visites.get(acteur):
                 miseajour[f"visites_precedentes.{acteur}"] = visites[acteur]
             await db.cases.update_one({"id": cid}, {"$set": miseajour})
-        return vue_case(case, aut)
+        vue = vue_case(case, aut)
+        await _ajouter_trace_canonique(vue)
+        return vue
 
     @router.patch("/cases/{cid}")
     async def maj_case(cid: str, payload: CasePatch, acteur: str = Depends(acteur_courant), x_espace: Optional[str] = Header(None)):
@@ -1369,6 +1444,7 @@ def build_cases_router(deps):
             n += 1
         situation = {
             "id": sid,
+            "tenant_id": _tenant_ecriture(),
             "verbe": "a_comprendre",
             "nature": "investigation",
             "type": "investigation",

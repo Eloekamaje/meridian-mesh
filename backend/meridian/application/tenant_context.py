@@ -6,6 +6,7 @@ le pose ici ; le proxy de double écriture le lit pour alimenter la colonne `tra
 from __future__ import annotations
 
 from contextvars import ContextVar, Token
+import os
 
 _COURANT: ContextVar[str | None] = ContextVar("meridian_tenant_courant", default=None)
 
@@ -24,3 +25,8 @@ def courant(defaut: str = "local") -> str:
 
 def courant_explicite() -> str | None:
     return _COURANT.get()
+
+
+def courant_ou_env(defaut: str = "local") -> str:
+    """Tenant de la requête, sinon ``JUMEAU_TENANT``, sinon le défaut de déploiement."""
+    return _COURANT.get() or os.environ.get("JUMEAU_TENANT") or defaut

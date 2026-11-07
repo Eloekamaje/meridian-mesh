@@ -8,6 +8,16 @@ import maturation
 import portee as portees
 import ouverture_travail
 from auth import acteur as acteur_courant
+from meridian.application import pont_travail
+from meridian.application import tenant_context
+
+
+def _tenant_ecriture() -> str:
+    return pont_travail.normaliser_tenant(tenant_context.courant_ou_env())
+
+
+def _filtre_tenant() -> dict:
+    return pont_travail.filtre_tenant(_tenant_ecriture())
 
 GENRES_A_TRAITER = {"a_confirmer", "investigation_recommandee", "decision_a_examiner", "action_proposee"}
 GENRES_RADAR = {"a_surveiller", "information"}
@@ -69,7 +79,8 @@ def build_initiatives_router(deps):
             veille = maturation.nouvelle_veille(init["titre"], maturation.confiance_depuis_libelle(init.get("confiance", "")))
             m = veille["maturation"]
             messages.append(maturation.message_flore_suivi(init["titre"], m["confiance_depart"], m["seuil"], m["plancher"], now))
-        existant = await db.cases.find_one({"origine.initiative_id": init["id"], "responsable": acteur}, NO_ID)
+        existant = await db.cases.find_one(
+            {"origine.initiative_id": init["id"], "responsable": acteur, **_filtre_tenant()}, NO_ID)
         if existant:
             maj = {"maj_le": now}
             if intention not in existant["origine"].get("intentions", []):
@@ -83,10 +94,10 @@ def build_initiatives_router(deps):
                 await db.cases.update_one({"id": existant["id"]}, {"$push": {"conversation": {"$each": suite}}, "$set": maj})
             return existant["id"], False
         cid = f"case-{slugify(init['titre'])[:40]}-{int(datetime.now(timezone.utc).timestamp()) % 100000}"
-        dernier = await db.cases.find({}, {"_id": 0, "num": 1}).sort("num", -1).to_list(1)
+        dernier = await db.cases.find(_filtre_tenant(), {"_id": 0, "num": 1}).sort("num", -1).to_list(1)
         num = (dernier[0]["num"] if dernier and dernier[0].get("num") else 40) + 1
         await db.cases.insert_one({
-            "id": cid, "num": num, "titre": init["titre"], "type": "investigation" if intention == "investiguer" else "decouverte", "statut": "ouvert",
+            "id": cid, "tenant_id": _tenant_ecriture(), "num": num, "titre": init["titre"], "type": "investigation" if intention == "investiguer" else "decouverte", "statut": "ouvert",
             "sensibilite": "interne", "portee": "personnel", "objectif": init.get("raison", ""), "resume": "", "prochaine_etape": "", "questions": [], "hypotheses": [],
             "jumeaux": init.get("jumeaux", []), "situations": [], "participants": [acteur], "responsable": acteur, "espace": espace["id"],
             "conversation": messages + (suite or []), "options": [], "decisions": [], "livrables": [], "a_revoir": False, "visites": {},
@@ -103,7 +114,7 @@ def build_initiatives_router(deps):
         if payload.intention not in ouverture_travail.INTENTIONS:
             raise HTTPException(400, "Intention inconnue")
         acteur, espace, aut = await contexte(acteur, x_espace)
-        init = await db.initiatives.find_one({"id": iid}, NO_ID)
+        init = await db.initiatives.find_one({"id": iid, **_filtre_tenant()}, NO_ID)
         if not init or not visible(init, acteur, espace, aut):
             raise HTTPException(404, "Initiative introuvable ou hors périmètre")
         cid, cree = await travail_de_initiative(init, payload.intention, acteur, espace)
@@ -112,7 +123,7 @@ def build_initiatives_router(deps):
     @router.get("/initiatives")
     async def lister_initiatives(vue: str = "toutes", acteur: str = Depends(acteur_courant), x_espace: Optional[str] = Header(None)):
         acteur, espace, aut = await contexte(acteur, x_espace)
-        toutes = await db.initiatives.find({}, NO_ID).to_list(200)
+        toutes = await db.initiatives.find(_filtre_tenant(), NO_ID).to_list(200)
         out = []
         for i in toutes:
             if not visible(i, acteur, espace, aut):
@@ -125,7 +136,9 @@ def build_initiatives_router(deps):
             if v == "suivis" and not (i.get("reponse") or {}).get("travail_id") and (i.get("reponse") or {}).get("par") == acteur:
                 # suivie avant que « suivre » n'ouvre une vérification : elle est rattachée à son travail à la première lecture
                 tid, _ = await travail_de_initiative(i, "suivre", acteur, espace)
-                await db.initiatives.update_one({"id": i["id"]}, {"$set": {"reponse.travail_id": tid}})
+                await db.initiatives.update_one(
+                    {"id": i["id"], **_filtre_tenant()},
+                    {"$set": {"reponse.travail_id": tid}})
                 i["reponse"]["travail_id"] = tid
             i["vue"] = v
             out.append(i)
@@ -135,7 +148,7 @@ def build_initiatives_router(deps):
     @router.get("/initiatives/compteurs")
     async def compteurs(acteur: str = Depends(acteur_courant), x_espace: Optional[str] = Header(None)):
         acteur, espace, aut = await contexte(acteur, x_espace)
-        toutes = await db.initiatives.find({}, NO_ID).to_list(200)
+        toutes = await db.initiatives.find(_filtre_tenant(), NO_ID).to_list(200)
         c = {"a_traiter": 0, "radar": 0, "suivis": 0}
         for i in toutes:
             if visible(i, acteur, espace, aut):
@@ -147,7 +160,7 @@ def build_initiatives_router(deps):
     @router.post("/initiatives/{iid}/repondre")
     async def repondre(iid: str, payload: ReponseInitiative, acteur: str = Depends(acteur_courant), x_espace: Optional[str] = Header(None)):
         acteur, espace, aut = await contexte(acteur, x_espace)
-        init = await db.initiatives.find_one({"id": iid}, NO_ID)
+        init = await db.initiatives.find_one({"id": iid, **_filtre_tenant()}, NO_ID)
         if not init or not visible(init, acteur, espace, aut):
             raise HTTPException(404, "Initiative introuvable ou hors périmètre")
         if init["statut"] != "en_attente":
@@ -171,7 +184,7 @@ def build_initiatives_router(deps):
             tid = payload.travail_id or init.get("travail_id")
             if not tid:
                 raise HTTPException(400, "Aucun travail cible")
-            case = await db.cases.find_one({"id": tid})
+            case = await db.cases.find_one({"id": tid, **_filtre_tenant()})
             if not case:
                 raise HTTPException(404, "Travail introuvable")
             if not portees.acces(case, acteur):
@@ -188,7 +201,9 @@ def build_initiatives_router(deps):
             statut = "acceptee"
             nature = "comparaison" if "comparer" in low else "validation" if "validation" in low or "valider" in low else "incertain" if ("ne sais pas" in low or "ne peux pas" in low) else "decision"
             suite = ouverture_travail.messages_reponse_initiative(init, choix, nature, now)
-            lie = await db.cases.find_one({"id": init["travail_id"]}, {"_id": 0, "id": 1}) if init.get("travail_id") else None
+            lie = (await db.cases.find_one(
+                {"id": init["travail_id"], **_filtre_tenant()}, {"_id": 0, "id": 1})
+                if init.get("travail_id") else None)
             if lie:
                 travail_cree = lie["id"]
                 await db.cases.update_one({"id": travail_cree}, {"$push": {"conversation": {"$each": suite}, "historique": {"quand": now, "texte": f"Proposition du Mesh traitée : {init['titre']}"}}, "$set": {"maj_le": now}})
@@ -198,17 +213,20 @@ def build_initiatives_router(deps):
                 await db.cases.update_one({"id": travail_cree}, {"$push": {"decisions": {"texte": choix, "type": "arbitrage", "quand": now, "par": acteur}}})
 
         reponse = {"choix": choix, "motif": payload.motif, "par": acteur, "quand": now, **({"travail_id": travail_cree} if travail_cree else {})}
-        await db.initiatives.update_one({"id": iid}, {"$set": {"statut": statut, "reponse": reponse, "maj_le": now}})
+        await db.initiatives.update_one(
+            {"id": iid, **_filtre_tenant()},
+            {"$set": {"statut": statut, "reponse": reponse, "maj_le": now}})
         await journaler(acteur, "reponse_initiative", iid, f"{choix}" + (f" — motif : {payload.motif}" if payload.motif else ""))
 
-        maj = await db.initiatives.find_one({"id": iid}, NO_ID)
+        maj = await db.initiatives.find_one({"id": iid, **_filtre_tenant()}, NO_ID)
         maj["vue"] = vue_de(maj)
         return {"initiative": maj, "travail_id": travail_cree}
 
     async def travail_de_delegation(d, acteur, espace):
         """Une délégation est un travail : Flore y dit le mandat reçu (tâche, périmètre, durée, ce qu'elle produira, les limites), et y rend compte.
         Idempotent : le travail est rattaché à la délégation (`travail_id`)."""
-        if d.get("travail_id") and await db.cases.find_one({"id": d["travail_id"]}, {"_id": 1}):
+        if d.get("travail_id") and await db.cases.find_one(
+                {"id": d["travail_id"], **_filtre_tenant()}, {"_id": 1}):
             return d["travail_id"]
         now = datetime.now(timezone.utc).isoformat()
         noms = {j["id"]: j["nom"] for j in await db.jumeaux.find({}, NO_ID).to_list(200)}
@@ -221,7 +239,7 @@ def build_initiatives_router(deps):
         if jusqu <= datetime.now(timezone.utc):
             conversation.append(ouverture_travail.message_flore_delegation_terminee(d, jusqu.isoformat()))
         await db.cases.insert_one({
-            "id": cid, "num": num, "titre": d["tache"], "type": "demande", "statut": "en_cours" if len(conversation) == 1 else "clos",
+            "id": cid, "tenant_id": _tenant_ecriture(), "num": num, "titre": d["tache"], "type": "demande", "statut": "en_cours" if len(conversation) == 1 else "clos",
             "sensibilite": "interne", "portee": "personnel", "objectif": d.get("livrable", ""), "resume": "", "prochaine_etape": "", "questions": [], "hypotheses": [],
             "jumeaux": d.get("jumeaux", []), "situations": [], "participants": [d["demandeur"]], "responsable": d["demandeur"], "espace": espace["id"],
             "conversation": conversation, "options": [], "decisions": [], "livrables": [], "a_revoir": False, "visites": {},

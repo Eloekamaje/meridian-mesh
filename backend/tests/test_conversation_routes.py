@@ -14,6 +14,9 @@ import limites
 import pieces
 from seed_data import ESPACES
 from meridian.adapters.inbound.http import flux
+from aides_pont import CollectionPont
+from meridian.application import pont_canonique as pont_canonique
+from meridian.application import tenant_context
 
 
 class Collection:
@@ -35,6 +38,9 @@ class Collection:
                 if "$ne" in v and (d.get(k) == v["$ne"]
                                    or (isinstance(d.get(k), list) and v["$ne"] in d.get(k))):
                     return False
+            elif isinstance(d.get(k), list) and not isinstance(v, (dict, list)) and v in d[k]:
+                # Mongo : un filtre scalaire matche l'appartenance à un tableau.
+                continue
             elif d.get(k) != v:
                 return False
         return True
@@ -125,6 +131,8 @@ class Db:
         self.preferences = Collection()
         self.pieces = Collection()  # pièces jointes du Travail (P4)
         self.relations, self.situations = Collection(), Collection()
+        self.initiatives = Collection()
+        self.pont_canonique = CollectionPont()
 
 
 def un_fil():
@@ -796,3 +804,452 @@ def test_une_situation_autorisee_journalise_dans_l_espace(serveur, monkeypatch):
                     headers={"X-Espace": "espace-support"})
     assert r.status_code == 200
     assert captures == [("demo", "espace-support", "décision", "sit-support")]
+
+
+# ---- pont Travail → canonique C2 : actions/décisions et trace de GET /cases ----
+PONT_KEY = "cle-de-test-pont-canonique-32"
+TENANT_PONT = "banque"
+
+
+@pytest.fixture(autouse=True)
+def _cles_du_pont(monkeypatch):
+    monkeypatch.setenv(pont_canonique.PONT_KEY_ENV, PONT_KEY)
+    monkeypatch.setenv(pont_canonique.PONT_KEY_INTERNE_ENV, "cle-de-test-pont-interne-32")
+
+
+async def _jumeaux_pont(db, tenant, projection=None, limite=200):
+    return [{"id": "support"}]
+
+
+def _situation_pont(**champs):
+    doc = {
+        "id": "sit-support",
+        "tenant_id": TENANT_PONT,
+        "titre": "Latence du support",
+        "statut": "active",
+        "priorite": "haute",
+        "jumeaux": ["support"],
+        "cree_le": "2026-11-05T09:00:00+00:00",
+    }
+    doc.update(champs)
+    return doc
+
+
+class OutboxEnPanne:
+    async def update_one(self, *args, **kwargs):
+        raise RuntimeError("Mongo indisponible")
+
+
+def _serveur_pont(serveur, monkeypatch, db):
+    monkeypatch.setenv("JUMEAU_TENANT", TENANT_PONT)
+    monkeypatch.setattr(serveur, "resoudre_perimetre", resoudre_perimetre)
+    monkeypatch.setattr(serveur, "autorisations", droits)
+    monkeypatch.setattr(serveur, "jumeaux_du_tenant", _jumeaux_pont)
+    monkeypatch.setattr(serveur, "db", db)
+
+    async def rien(*a, **k):
+        return None
+    monkeypatch.setattr(serveur, "journaler", rien)
+    return _client_serveur(serveur)
+
+
+def test_une_action_de_situation_enfile_l_evenement_canonique(serveur, monkeypatch):
+    db = Db([])
+    db.jumeaux.docs = [{"id": "support"}]
+    db.situations.docs = [_situation_pont()]
+    client = _serveur_pont(serveur, monkeypatch, db)
+
+    r = client.post("/api/situations/sit-support/action", json={"action": "surveiller"},
+                    headers={"X-Espace": "espace-support"})
+
+    assert r.status_code == 200, r.text
+    assert len(db.pont_canonique.documents) == 1
+    evenement = db.pont_canonique.documents[0]
+    assert evenement["operation"] == "situation.maj"
+    assert evenement["tenant_id"] == TENANT_PONT
+    assert evenement["payload"]["situation"]["statut"] == "surveillée"
+    assert evenement["payload"]["situation"]["tenant_id"] == TENANT_PONT
+
+
+def test_une_decision_de_situation_enfile_la_situation_et_le_case_lie(serveur, monkeypatch):
+    db = Db([])
+    db.jumeaux.docs = [{"id": "support"}]
+    db.situations.docs = [_situation_pont()]
+    db.cases.docs = [{
+        "id": "case-support",
+        "tenant_id": TENANT_PONT,
+        "titre": "Travail support",
+        "situations": ["sit-support"],
+        "decisions": [{"texte": "Automatiser la réponse", "par": "demo",
+                       "quand": "2026-11-06T10:00:00+00:00"}],
+        "maj_le": "2026-11-06T10:00:00+00:00",
+    }]
+    client = _serveur_pont(serveur, monkeypatch, db)
+
+    r = client.post("/api/situations/sit-support/decision",
+                    json={"decision": "Automatiser la réponse"},
+                    headers={"X-Espace": "espace-support"})
+
+    assert r.status_code == 200, r.text
+    operations = {evenement["operation"] for evenement in db.pont_canonique.documents}
+    assert operations == {"situation.maj", "case.maj"}
+    situation = next(e for e in db.pont_canonique.documents
+                     if e["operation"] == "situation.maj")
+    assert situation["payload"]["situation"]["statut"] == "décidée"
+    assert situation["payload"]["situation"]["decidee_par"] == "demo"
+    case = next(e for e in db.pont_canonique.documents if e["operation"] == "case.maj")
+    assert "dec-case-case-support-1" in case["canonical_ids"]
+
+
+def test_un_case_sans_situation_ou_non_lie_ne_produit_aucun_objet(serveur, monkeypatch):
+    db = Db([])
+    db.jumeaux.docs = [{"id": "support"}]
+    db.situations.docs = [_situation_pont()]
+    db.cases.docs = [
+        {"id": "sans-situation", "tenant_id": TENANT_PONT, "situations": [],
+         "decisions": [{"texte": "A", "par": "demo"}]},
+        {"id": "autre-situation", "tenant_id": TENANT_PONT, "situations": ["sit-autre"],
+         "decisions": [{"texte": "B", "par": "demo"}]},
+    ]
+    client = _serveur_pont(serveur, monkeypatch, db)
+
+    r = client.post("/api/situations/sit-support/decision",
+                    json={"decision": "Décider"},
+                    headers={"X-Espace": "espace-support"})
+
+    assert r.status_code == 200, r.text
+    assert [e["operation"] for e in db.pont_canonique.documents] == ["situation.maj"]
+
+
+def test_une_panne_de_l_outbox_ne_casse_pas_la_route_legacy(serveur, monkeypatch):
+    db = Db([])
+    db.jumeaux.docs = [{"id": "support"}]
+    db.situations.docs = [_situation_pont()]
+    db.pont_canonique = OutboxEnPanne()
+    client = _serveur_pont(serveur, monkeypatch, db)
+
+    r = client.post("/api/situations/sit-support/decision", json={"decision": "Décider"},
+                    headers={"X-Espace": "espace-support"})
+
+    assert r.status_code == 200, r.text
+    assert db.situations.docs[0]["statut"] == "décidée"
+    assert db.situations.docs[0]["decision"] == "Décider"
+
+
+def test_le_rejeu_d_une_decision_ne_cree_pas_de_doublon(serveur, monkeypatch):
+    db = Db([])
+    db.jumeaux.docs = [{"id": "support"}]
+    db.situations.docs = [_situation_pont()]
+    client = _serveur_pont(serveur, monkeypatch, db)
+
+    premier = client.post("/api/situations/sit-support/decision",
+                          json={"decision": "Décider"}, headers={"X-Espace": "espace-support"})
+    decide_le = db.situations.docs[0]["decidee_le"]
+    second = client.post("/api/situations/sit-support/decision",
+                         json={"decision": "Décider"}, headers={"X-Espace": "espace-support"})
+
+    assert premier.status_code == second.status_code == 200
+    assert len(db.pont_canonique.documents) == 1
+    assert db.situations.docs[0]["decidee_le"] == decide_le
+
+
+def test_une_situation_d_un_autre_tenant_reste_invisible(serveur, monkeypatch):
+    db = Db([])
+    db.jumeaux.docs = [{"id": "support"}]
+    db.situations.docs = [_situation_pont(tenant_id="assurance")]
+    client = _serveur_pont(serveur, monkeypatch, db)
+
+    assert client.post("/api/situations/sit-support/action", json={"action": "surveiller"},
+                       headers={"X-Espace": "espace-support"}).status_code == 404
+    assert client.post("/api/situations/sit-support/decision", json={"decision": "x"},
+                       headers={"X-Espace": "espace-support"}).status_code == 404
+    assert db.situations.docs[0]["statut"] == "active"
+    assert db.pont_canonique.documents == []
+
+
+def test_une_situation_legacy_sans_tenant_est_adoptee_a_l_ecriture(serveur, monkeypatch):
+    db = Db([])
+    db.jumeaux.docs = [{"id": "support"}]
+    db.situations.docs = [_situation_pont()]
+    db.situations.docs[0].pop("tenant_id")
+    client = _serveur_pont(serveur, monkeypatch, db)
+
+    r = client.post("/api/situations/sit-support/action", json={"action": "surveiller"},
+                    headers={"X-Espace": "espace-support"})
+
+    assert r.status_code == 200, r.text
+    assert db.situations.docs[0]["tenant_id"] == TENANT_PONT
+    assert db.pont_canonique.documents[0]["tenant_id"] == TENANT_PONT
+
+
+def _ligne_boucle(identifiant, type_, titre=None, statut=None):
+    ligne = {"id": identifiant, "type": type_, "titre": titre, "donnees": {}}
+    if statut:
+        ligne["donnees"]["statut"] = statut
+    return ligne
+
+
+def _case_avec_decision(case_id="trace", situation_id="sit-trace"):
+    return {
+        "id": case_id,
+        "tenant_id": "local",
+        "titre": "Travail tracé",
+        "responsable": "demo",
+        "portee": "personnel",
+        "jumeaux": [],
+        "conversation": [],
+        "historique": [],
+        "decisions": [{"texte": "Automatiser", "par": "demo",
+                       "quand": "2026-11-06T10:00:00+00:00"}],
+        "situations": [situation_id],
+        "maj_le": "2026-11-06T10:00:00+00:00",
+    }
+
+
+def test_get_case_expose_la_trace_canonique_complete(monde, monkeypatch):
+    client, db, _ = monde
+    db.cases.docs.append(_case_avec_decision())
+    db.situations.docs.append({"id": "sit-trace", "statut": "décidée"})
+    appels = []
+
+    def lire(tenant, identifiant):
+        appels.append((tenant, identifiant))
+        return {
+            "id": "dec-case-trace-1",
+            "type": "DECISION",
+            "titre": "Automatiser",
+            "donnees": {"statut": "DECIDED", "secret": "ne-doit-pas-sortir"},
+            "chaine": [
+                _ligne_boucle("sit-trace", "SITUATION", "Latence", "DECIDED"),
+                _ligne_boucle("inv-sit-trace", "INVESTIGATION", "Comprendre", "OPEN"),
+                _ligne_boucle("dec-case-trace-1", "DECISION", "Automatiser", "DECIDED"),
+            ],
+        }
+
+    monkeypatch.setattr(cases_routes, "_lire_boucle_sync", lire)
+
+    r = client.get("/api/cases/trace")
+
+    assert r.status_code == 200, r.text
+    vue = r.json()
+    assert vue["titre"] == "Travail tracé"
+    assert vue["boucle"] == {
+        "id": "dec-case-trace-1",
+        "statut": "DECIDED",
+        "chaine": [
+            {"id": "sit-trace", "type": "SITUATION", "titre": "Latence",
+             "statut": "DECIDED"},
+            {"id": "inv-sit-trace", "type": "INVESTIGATION", "titre": "Comprendre",
+             "statut": "OPEN"},
+            {"id": "dec-case-trace-1", "type": "DECISION", "titre": "Automatiser",
+             "statut": "DECIDED"},
+        ],
+    }
+    assert appels == [("local", "dec-case-trace-1")]
+    assert "secret" not in r.text
+
+
+def test_get_case_expose_boucle_id_si_l_objet_canonique_est_absent(monde, monkeypatch):
+    client, db, _ = monde
+    db.cases.docs.append(_case_avec_decision())
+    monkeypatch.setattr(cases_routes, "_lire_boucle_sync", lambda tenant, identifiant: None)
+
+    vue = client.get("/api/cases/trace").json()
+
+    assert "boucle" not in vue
+    assert vue["boucle_id"] == "dec-case-trace-1"
+    assert vue["titre"] == "Travail tracé"
+
+
+def test_get_case_sans_situation_n_expose_aucune_boucle(monde, monkeypatch):
+    client, db, _ = monde
+    case = _case_avec_decision()
+    case["situations"] = []
+    db.cases.docs.append(case)
+    monkeypatch.setattr(
+        cases_routes, "_lire_boucle_sync",
+        lambda *a: pytest.fail("aucune lecture canonique sans situation liée"))
+
+    vue = client.get("/api/cases/trace").json()
+
+    assert "boucle" not in vue and "boucle_id" not in vue
+    assert vue["titre"] == "Travail tracé"
+
+
+def test_une_erreur_postgres_preserve_la_reponse_legacy(monde, monkeypatch):
+    client, db, _ = monde
+    db.cases.docs.append(_case_avec_decision())
+
+    def en_panne(tenant, identifiant):
+        raise RuntimeError("Postgres indisponible")
+
+    monkeypatch.setattr(cases_routes, "_lire_boucle_sync", en_panne)
+
+    r = client.get("/api/cases/trace")
+
+    assert r.status_code == 200, r.text
+    vue = r.json()
+    assert vue["titre"] == "Travail tracé"
+    assert vue["boucle_id"] == "dec-case-trace-1"
+    assert "boucle" not in vue
+
+
+def test_sans_dsn_postgres_la_route_reste_legacy_et_donne_un_id(monde, monkeypatch):
+    client, db, _ = monde
+    db.cases.docs.append(_case_avec_decision())
+    db.situations.docs.append({"id": "sit-trace", "statut": "active"})
+    monkeypatch.delenv("JUMEAU_PG_DSN", raising=False)
+
+    r = client.get("/api/cases/trace")
+
+    assert r.status_code == 200, r.text
+    vue = r.json()
+    assert vue["titre"] == "Travail tracé"
+    assert vue["boucle_id"] == "dec-case-trace-1"
+    assert "boucle" not in vue
+
+
+def test_get_case_ne_lit_pas_un_case_d_un_autre_tenant(monde, monkeypatch):
+    client, db, _ = monde
+    case = _case_avec_decision()
+    case["tenant_id"] = "assurance"
+    db.cases.docs.append(case)
+    jeton = tenant_context.definir("banque")
+    try:
+        r = client.get("/api/cases/trace")
+    finally:
+        tenant_context.reinitialiser(jeton)
+
+    assert r.status_code == 404
+
+
+def test_la_trace_canonique_est_lue_avec_le_tenant_de_la_requete(monde, monkeypatch):
+    client, db, _ = monde
+    case = _case_avec_decision()
+    case["tenant_id"] = "banque"
+    db.cases.docs.append(case)
+    appels = []
+
+    def lire(tenant, identifiant):
+        appels.append((tenant, identifiant))
+        return None
+
+    monkeypatch.setattr(cases_routes, "_lire_boucle_sync", lire)
+    monkeypatch.setattr(cases_routes, "jumeaux_du_tenant", _jumeaux_pont)
+    jeton = tenant_context.definir("banque")
+    try:
+        r = client.get("/api/cases/trace")
+    finally:
+        tenant_context.reinitialiser(jeton)
+
+    assert r.status_code == 200, r.text
+    assert appels == [("banque", "dec-case-trace-1")]
+    assert r.json()["boucle_id"] == "dec-case-trace-1"
+
+
+def test_le_rejeu_d_une_action_ne_cree_pas_de_doublon(serveur, monkeypatch):
+    db = Db([])
+    db.jumeaux.docs = [{"id": "support"}]
+    db.situations.docs = [_situation_pont()]
+    client = _serveur_pont(serveur, monkeypatch, db)
+
+    premier = client.post("/api/situations/sit-support/action", json={"action": "surveiller"},
+                          headers={"X-Espace": "espace-support"})
+    second = client.post("/api/situations/sit-support/action", json={"action": "surveiller"},
+                         headers={"X-Espace": "espace-support"})
+
+    assert premier.status_code == second.status_code == 200
+    assert len(db.pont_canonique.documents) == 1
+
+
+def test_l_action_examiner_ne_cree_ni_ecriture_ni_evenement(serveur, monkeypatch):
+    db = Db([])
+    db.jumeaux.docs = [{"id": "support"}]
+    db.situations.docs = [_situation_pont()]
+    client = _serveur_pont(serveur, monkeypatch, db)
+
+    r = client.post("/api/situations/sit-support/action", json={"action": "examiner"},
+                    headers={"X-Espace": "espace-support"})
+
+    assert r.status_code == 200 and r.json()["statut"] is None
+    assert db.situations.docs[0]["statut"] == "active"
+    assert db.pont_canonique.documents == []
+
+
+def test_un_case_lie_sans_decision_ne_produit_pas_d_evenement_case(serveur, monkeypatch):
+    db = Db([])
+    db.jumeaux.docs = [{"id": "support"}]
+    db.situations.docs = [_situation_pont()]
+    db.cases.docs = [{"id": "case-vide", "tenant_id": TENANT_PONT,
+                      "situations": ["sit-support"], "decisions": []}]
+    client = _serveur_pont(serveur, monkeypatch, db)
+
+    r = client.post("/api/situations/sit-support/action", json={"action": "surveiller"},
+                    headers={"X-Espace": "espace-support"})
+
+    assert r.status_code == 200, r.text
+    assert [e["operation"] for e in db.pont_canonique.documents] == ["situation.maj"]
+
+
+def test_la_creation_d_un_travail_porte_le_tenant(monde, monkeypatch):
+    client, db, _ = monde
+    jeton = tenant_context.definir("banque")
+    try:
+        r = client.post("/api/cases", json={"titre": "Travail tenant"})
+    finally:
+        tenant_context.reinitialiser(jeton)
+
+    assert r.status_code == 201, r.text
+    cree = next(d for d in db.cases.docs if d["id"] == r.json()["id"])
+    assert cree["tenant_id"] == "banque"
+
+
+def test_la_liste_des_travaux_isole_les_tenants(monde):
+    client, db, _ = monde
+    base = {"responsable": "demo", "portee": "personnel", "jumeaux": [],
+            "conversation": [], "historique": []}
+    db.cases.docs = [
+        {**base, "id": "case-banque", "titre": "Banque", "tenant_id": "banque"},
+        {**base, "id": "case-assurance", "titre": "Assurance", "tenant_id": "assurance"},
+    ]
+    jeton = tenant_context.definir("banque")
+    try:
+        r = client.get("/api/cases")
+    finally:
+        tenant_context.reinitialiser(jeton)
+
+    assert r.status_code == 200, r.text
+    assert [c["id"] for c in r.json()] == ["case-banque"]
+
+
+def test_get_case_retombe_sur_la_decision_de_la_situation(monde, monkeypatch):
+    client, db, _ = monde
+    case = _case_avec_decision()
+    case["decisions"] = []
+    case["situations"] = ["sit-trace"]
+    db.cases.docs.append(case)
+    db.situations.docs.append({
+        "id": "sit-trace", "tenant_id": "local", "statut": "décidée",
+        "decision": "Automatiser", "decisions": [{"texte": "Automatiser"}],
+    })
+    appels = []
+
+    def lire(tenant, identifiant):
+        appels.append(identifiant)
+        return {
+            "id": identifiant, "type": "DECISION", "titre": "Automatiser",
+            "donnees": {"statut": "DECIDED"},
+            "chaine": [
+                _ligne_boucle("sit-trace", "SITUATION", "Latence", "DECIDED"),
+                _ligne_boucle("inv-sit-trace", "INVESTIGATION", "Comprendre", "OPEN"),
+                _ligne_boucle(identifiant, "DECISION", "Automatiser", "DECIDED"),
+            ],
+        }
+
+    monkeypatch.setattr(cases_routes, "_lire_boucle_sync", lire)
+
+    vue = client.get("/api/cases/trace").json()
+
+    assert appels == ["dec-sit-sit-trace-1"]
+    assert vue["boucle"]["id"] == "dec-sit-sit-trace-1"
+    assert vue["boucle"]["statut"] == "DECIDED"
