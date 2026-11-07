@@ -36,6 +36,7 @@ __all__ = [
     "cle_pont",
     "cle_sensible",
     "hash_contenu",
+    "rediger_message",
     "signer_evenement",
     "signature",
     "url_porte_un_secret",
@@ -110,6 +111,37 @@ def url_porte_un_secret(url: str) -> bool:
         cle_sensible(cle) and valeur not in ("", "***")
         for cle, valeur in parse_qsl(parties.query, keep_blank_values=True)
     )
+
+
+_URL_EMBEDDEE = re.compile(r"(?i)\b[a-z][a-z0-9+.-]*://[^\s<>'\"]+")
+_PARAMETRE = re.compile(r"(?i)([?&])([^=&\s#]+)=([^&\s#]*)")
+
+
+def rediger_message(valeur: Any, limite: int = 300) -> str:
+    """Message borné et expurgé pour les logs best-effort.
+
+    Les URLs à credentials ou à paramètre sensible sont retirées entières ; les
+    paramètres de requête sensibles (`password`, `token`, …) sont masqués même sans
+    schéma d'URL. `token_count` n'est pas un secret et reste lisible.
+    """
+    texte = "" if valeur is None else str(valeur).strip()
+    if not texte:
+        texte = type(valeur).__name__
+
+    def _url(match: re.Match[str]) -> str:
+        url = match.group(0)
+        return "[redacted]" if url_porte_un_secret(url) else url
+
+    texte = _URL_EMBEDDEE.sub(_url, texte)
+
+    def _parametre(match: re.Match[str]) -> str:
+        prefixe, cle, valeur_brute = match.groups()
+        if cle_sensible(cle) and valeur_brute not in ("", "***"):
+            return f"{prefixe}{cle}=[redacted]"
+        return match.group(0)
+
+    texte = _PARAMETRE.sub(_parametre, texte)
+    return texte[:max(1, int(limite))]
 
 
 def assainir(valeur: Any) -> Any:

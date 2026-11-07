@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
@@ -10,9 +11,17 @@ import portee as portees
 import ouverture_travail
 from auth import acteur as acteur_courant
 from meridian.adapters.outbound.mongo import pont_canonique as pont_outbox
+from meridian.application import pont_securite as securite
 from meridian.application import pont_travail
 from meridian.application import tenant_context
 from meridian.domain.tenant import TenantError
+
+journal = logging.getLogger("meridian.initiatives")
+
+
+def _resume_erreur(exc: BaseException, limite: int = 200) -> str:
+    """Message borné et expurgé : le pont ne journalise jamais une URL porteuse de secret."""
+    return securite.rediger_message(exc, limite=limite)
 
 
 def _tenant_ecriture() -> str:
@@ -83,6 +92,52 @@ def build_initiatives_router(deps):
                     collection, [evenement], timeout=2.0)
         except Exception:  # noqa: BLE001 - le pont ne casse jamais la route
             return
+
+    async def enfiler_initiative(initiative, tenant):
+        """Enfile `initiative.maj` après l'écriture Mongo ; best-effort, budget global ≈ 2 s.
+
+        L'Initiative canonique est la parente des Outcomes : sans elle, la mesure D ne peut
+        pas rattacher son Outcome. Une panne de construction, de signature, d'outbox ou un
+        timeout est journalisé (expurgé) et ne défait jamais l'écriture Mongo.
+        """
+        iid = initiative.get("id")
+        try:
+            async with asyncio.timeout(2.0):
+                situation = None
+                sid = initiative.get("situation_id")
+                if isinstance(sid, dict):
+                    sid = sid.get("id")
+                sid = str(sid).strip() if sid is not None else ""
+                if sid:
+                    situation = await asyncio.wait_for(
+                        db.situations.find_one(
+                            {"id": sid, **pont_travail.filtre_tenant(tenant)}, NO_ID),
+                        timeout=1.0)
+                investigation = (
+                    pont_travail.snapshot_investigation(situation, tenant_id=tenant)
+                    if situation else None)
+                evenement = pont_travail.evenement_initiative_maj(
+                    initiative, tenant_id=tenant, situation=situation,
+                    investigation=investigation)
+                collection = getattr(db, "pont_canonique", None)
+                if evenement and collection is None:
+                    journal.warning(
+                        "initiative.maj non enfilé : collection pont_canonique "
+                        "absente initiative=%s", iid)
+                    return
+                if evenement:
+                    resultats = await pont_outbox.enfiler_lot_best_effort(
+                        collection, [evenement], timeout=1.5)
+                    if not resultats:
+                        journal.warning(
+                            "initiative.maj non enfilé dans le budget imparti initiative=%s",
+                            iid)
+                    elif any(resultat is None for resultat in resultats):
+                        journal.warning(
+                            "initiative.maj non enfilé par l'outbox initiative=%s", iid)
+        except Exception as exc:  # noqa: BLE001 - le pont ne casse jamais la route
+            journal.warning("initiative.maj non enfilé initiative=%s : %s",
+                            iid, _resume_erreur(exc))
 
     def visible(init, acteur, espace, aut):
         return not (init.get("jumeaux") and not any(j in aut for j in init["jumeaux"]))
@@ -199,6 +254,9 @@ def build_initiatives_router(deps):
 
     @router.post("/initiatives/{iid}/repondre")
     async def repondre(iid: str, payload: ReponseInitiative, acteur: str = Depends(acteur_courant), x_espace: Optional[str] = Header(None)):
+        choix = str(payload.choix).strip()
+        if not choix:
+            raise HTTPException(400, "Choix obligatoire")
         acteur, espace, aut = await contexte(acteur, x_espace)
         init = await db.initiatives.find_one({"id": iid, **_filtre_tenant()}, NO_ID)
         if not init or not visible(init, acteur, espace, aut):
@@ -208,7 +266,6 @@ def build_initiatives_router(deps):
 
         now = datetime.now(timezone.utc).isoformat()
         tenant = _tenant_ecriture()
-        choix = payload.choix
         low = choix.lower()
         travail_cree = None
 
@@ -277,15 +334,24 @@ def build_initiatives_router(deps):
                     await enfiler_case(case_apres, tenant)
 
         reponse = {"choix": choix, "motif": payload.motif, "par": acteur, "quand": now, **({"travail_id": travail_cree} if travail_cree else {})}
+        maj_le = datetime.now(timezone.utc).isoformat()
         resultat = await db.initiatives.update_one(
-            {"id": iid, **_filtre_tenant()},
+            {"id": iid, "statut": "en_attente", **_filtre_tenant()},
             {"$set": {"statut": statut, "reponse": reponse,
-                      "tenant_id": tenant, "maj_le": now}})
+                      "tenant_id": tenant, "maj_le": maj_le}})
         if int(getattr(resultat, "matched_count", 0) or 0) == 0:
-            raise HTTPException(404, "Initiative introuvable ou hors périmètre")
-        await journaler(acteur, "reponse_initiative", iid, f"{choix}" + (f" — motif : {payload.motif}" if payload.motif else ""))
+            # Réponse concurrente : une autre requête a consommé l'état `en_attente`.
+            raise HTTPException(409, "Cette initiative a déjà reçu une réponse")
 
         maj = await db.initiatives.find_one({"id": iid, **_filtre_tenant()}, NO_ID)
+        if maj:
+            # La réponse change l'état de l'Initiative : c'est le moment où l'Initiative
+            # canonique parente des Outcomes D doit exister.
+            await enfiler_initiative(maj, tenant)
+        await journaler(acteur, "reponse_initiative", iid, f"{choix}" + (f" — motif : {payload.motif}" if payload.motif else ""))
+
+        if not maj:
+            raise HTTPException(404, "Initiative introuvable ou hors périmètre")
         maj["vue"] = vue_de(maj)
         return {"initiative": maj, "travail_id": travail_cree}
 
