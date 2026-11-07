@@ -13,7 +13,23 @@ from meridian.adapters.outbound.postgres import depot
 os.environ.setdefault("PIECES_EXTRACTION_PROCESSUS", "0")
 
 DSN = os.environ.get("JUMEAU_PG_DSN")
-besoin_pg = pytest.mark.skipif(not DSN, reason="JUMEAU_PG_DSN non défini")
+
+
+def _pg_joignable() -> bool:
+    """Évite 12 erreurs de fixture quand le DSN est défini mais injoignable."""
+    if not DSN:
+        return False
+    try:
+        import psycopg
+
+        with psycopg.connect(DSN, connect_timeout=2):
+            return True
+    except Exception:  # noqa: BLE001 - un DSN injoignable vaut skip, pas erreur
+        return False
+
+
+besoin_pg = pytest.mark.skipif(
+    not _pg_joignable(), reason="JUMEAU_PG_DSN non défini ou Postgres injoignable")
 
 
 @pytest.fixture(autouse=True)
