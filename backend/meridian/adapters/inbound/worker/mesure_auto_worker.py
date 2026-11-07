@@ -11,19 +11,23 @@ l'outbox ``pont_canonique``. C'est le worker C1 qui applique ensuite les Outcome
 Le flag ``JUMEAU_MESURE_AUTO`` est **désactivé par défaut** : sans lui, le worker ne lit rien et
 le reste du système est inchangé.
 
-Idempotence et reprise :
+Idempotence, corrections et reprise :
 
 - le checkpoint est un document par tenant dans ``mesure_auto_checkpoints`` (dernier
-  ``maj_le`` et dernier ``id`` traités) ;
+  ``(maj_le, sequence, id)`` traité), avancé par CAS ;
 - un rejeu ré-enfile les mêmes événements, que l'outbox C1 déduplique par ``_id`` déterministe ;
-- une observation mise à jour (nouveau ``maj_le``) est relue ; son empreinte change, donc elle
-  produit un nouvel événement qui met à jour le même Outcome canonique ;
-- une observation incomplète est ignorée avec sa raison dans les logs, et le checkpoint avance :
-  elle ne bloque pas le flux tant qu'elle n'est pas corrigée avec un nouveau ``maj_le`` ;
-- une panne d'enfilage n'avance pas le checkpoint : l'observation sera rejouée.
+- une observation mise à jour (nouveau ``maj_le``) est relue ; l'empreinte du payload complet
+  change, donc elle produit un nouvel événement qui met à jour le même Outcome canonique sans
+  collision d'idempotence ;
+- une erreur **permanente** (schéma, taille, collision, signature) va en dead-letter dans
+  ``mesure_auto_rejets`` et le checkpoint avance ;
+- une erreur **transitoire** (Mongo, ``quand``/``maj_le`` futur) n'avance pas le checkpoint et est
+  retentée ; après ``tentatives_max`` elle est dead-letterée ;
+- un document sans ``id``/``maj_le`` n'est pas lu (filtre Mongo) et est compté par l'audit de
+  démarrage : il ne bloque jamais le tenant.
 
 Métriques de log : ``mesure_auto_lues``, ``mesure_auto_outcomes``, ``mesure_auto_doublons``,
-``mesure_auto_ignores``, ``mesure_auto_echecs``.
+``mesure_auto_rejets``, ``mesure_auto_echecs``, ``mesure_auto_non_conformes``.
 """
 from __future__ import annotations
 
@@ -33,11 +37,13 @@ from datetime import datetime, timezone
 import inspect
 import logging
 import os
+import re
 import signal
 import sys
 from collections.abc import Mapping
 from typing import Any
 
+from meridian.adapters.inbound.worker.pont_worker import _est_permanent
 from meridian.adapters.outbound.mongo import mesure_auto as mongo_mesure
 from meridian.adapters.outbound.mongo import pont_canonique as pont_mongo
 from meridian.application import mesure_auto
@@ -81,6 +87,21 @@ def _texte(valeur: Any) -> str:
     return "" if valeur is None else str(valeur).strip()
 
 
+_JETON_SENSIBLE = re.compile(
+    r"(?i)(?:\bbearer\s+[A-Za-z0-9_.~+/=-]{8,}|\bsk-[A-Za-z0-9_-]{8,}|"
+    r"\bgh[pousr]_[A-Za-z0-9]{10,}|\bxox[baprs]-[A-Za-z0-9-]{10,})"
+)
+_URL_SECRET = re.compile(r"(?i)(://[^/\s:@]+:)[^@/\s]+@")
+
+
+def rediger_message(valeur: Any, limite: int = 300) -> str:
+    """Message d'erreur borné et expurgé avant tout log ou dead-letter."""
+    texte = _texte(valeur)
+    texte = _URL_SECRET.sub(r"\1[redacted]@", texte)
+    texte = _JETON_SENSIBLE.sub("[redacted]", texte)
+    return texte[:limite]
+
+
 def _tenants(explicites: Any = None, env: Mapping[str, str] | None = None) -> tuple[str, ...]:
     """Tenants du worker : CLI prioritaire, puis environnement, puis ``local`` (un seul tenant)."""
     source = os.environ if env is None else env
@@ -119,6 +140,8 @@ class MetriquesMesureAuto:
         self.mesure_auto_doublons = 0
         self.mesure_auto_ignores = 0
         self.mesure_auto_echecs = 0
+        self.mesure_auto_rejets = 0
+        self.mesure_auto_non_conformes = 0
 
     def ajouter(self, compteurs: Mapping[str, Any]) -> None:
         self.mesure_auto_lues += int(compteurs.get("lues") or 0)
@@ -126,6 +149,7 @@ class MetriquesMesureAuto:
         self.mesure_auto_doublons += int(compteurs.get("doublons") or 0)
         self.mesure_auto_ignores += int(compteurs.get("ignores") or 0)
         self.mesure_auto_echecs += int(compteurs.get("echecs") or 0)
+        self.mesure_auto_rejets += int(compteurs.get("rejets") or 0)
 
     def instantane(self) -> dict[str, int]:
         return {
@@ -134,22 +158,27 @@ class MetriquesMesureAuto:
             "mesure_auto_doublons": self.mesure_auto_doublons,
             "mesure_auto_ignores": self.mesure_auto_ignores,
             "mesure_auto_echecs": self.mesure_auto_echecs,
+            "mesure_auto_rejets": self.mesure_auto_rejets,
+            "mesure_auto_non_conformes": self.mesure_auto_non_conformes,
         }
 
 
 class WorkerMesureAuto:
     """Une passe par tenant ; aucun état partagé entre tenants."""
 
-    def __init__(self, observations, checkpoints, enfiler, *, tenants: Any = None,
-                 tenant: Any = None, lot: int = 100, intervalle: float = 5.0,
-                 env: Mapping[str, str] | None = None, journal_=None,
-                 maintenant: Any = None, depuis: Any = None,
-                 mesurer=None):
+    def __init__(self, observations, checkpoints, enfiler, *, rejets=None,
+                 tenants: Any = None, tenant: Any = None, lot: int = 100,
+                 intervalle: float = 5.0, env: Mapping[str, str] | None = None,
+                 journal_=None, maintenant: Any = None, depuis: Any = None,
+                 mesurer=None, tentatives_max: int = 5):
         self.observations = observations
         self.checkpoints = checkpoints
         self.enfiler = enfiler
+        self.rejets = rejets
         self.env = env
         self.journal = journal_ or journal
+        self.tentatives_max = max(1, int(tentatives_max))
+        self._audit_fait = False
         self.lot = max(1, int(lot))
         self.intervalle = max(0.05, float(intervalle))
         self.maintenant = maintenant
@@ -186,64 +215,140 @@ class WorkerMesureAuto:
 
     # -- traitement ---------------------------------------------------------
 
-    async def _avancer(self, tenant: str, document: Mapping[str, Any]) -> bool:
-        maj_le = _texte(document.get("maj_le"))
-        identifiant = _texte(document.get("id"))
-        if not maj_le or not identifiant:
-            self.journal.warning(
-                "mesure_auto : observation sans maj_le/id, checkpoint non avancé tenant=%s",
-                tenant)
-            return False
+    async def auditer(self) -> int:
+        """Compte les documents non conformes par tenant ; métrique d'alerte au démarrage."""
+        methode = getattr(self.observations, "compter_non_conformes", None)
+        if not callable(methode):
+            return 0
+        total = 0
+        for tenant in self.tenants:
+            try:
+                nombre = int(await methode(tenant))
+            except Exception as exc:  # noqa: BLE001 - l'audit ne bloque pas le worker
+                self.journal.warning(
+                    "mesure_auto : audit des documents non conformes impossible tenant=%s : %s",
+                    tenant, rediger_message(exc))
+                continue
+            total += nombre
+            if nombre:
+                self.journal.warning(
+                    "mesure_auto_documents_non_conformes=%d tenant=%s", nombre, tenant)
+        self.metriques.mesure_auto_non_conformes = total
+        return total
+
+    async def _avancer(self, tenant: str, curseur: "mongo_mesure.CurseurObservation") -> bool:
         try:
-            await self.checkpoints.ecrire(tenant, maj_le, identifiant)
-        except Exception:  # noqa: BLE001 - le rejeu est idempotent, on réessaiera
-            self.journal.exception(
-                "mesure_auto : checkpoint non écrit tenant=%s observation=%s",
-                tenant, identifiant)
+            await self.checkpoints.ecrire(tenant, curseur)
+        except Exception as exc:  # noqa: BLE001 - le rejeu est idempotent, on réessaiera
+            self.journal.warning(
+                "mesure_auto : checkpoint non écrit tenant=%s observation=%s : %s",
+                tenant, curseur.id, rediger_message(exc))
             return False
         return True
 
+    async def _rejeter(self, tenant: str, document: Mapping[str, Any], raison: Any, *,
+                       permanent: bool) -> bool:
+        """Enregistre un rejet ; rend ``True`` si l'observation peut être dépassée."""
+        raison_propre = rediger_message(raison)
+        if self.rejets is None:
+            return bool(permanent)
+        try:
+            return bool(await self.rejets.enregistrer(
+                tenant, document, raison_propre, permanent=permanent,
+                tentatives_max=self.tentatives_max))
+        except Exception as exc:  # noqa: BLE001 - un dead-letter indisponible ne bloque pas le flux
+            self.journal.warning(
+                "mesure_auto : dead-letter indisponible tenant=%s observation=%s : %s",
+                tenant, _texte(document.get("id")), rediger_message(exc))
+            return bool(permanent)
+
     async def _traiter_tenant(self, tenant: str, borne: int) -> dict[str, Any]:
-        compteurs = {"lues": 0, "outcomes": 0, "doublons": 0, "ignores": 0, "echecs": 0}
-        checkpoint = await self.checkpoints.lire(tenant) or {}
-        maj_le = _texte(checkpoint.get("dernier_maj_le")) or self.depuis
-        identifiant = _texte(checkpoint.get("dernier_id"))
-        documents = await self.observations.lister_apres(
-            tenant, maj_le, identifiant, borne)
+        compteurs = {
+            "lues": 0, "outcomes": 0, "doublons": 0, "ignores": 0, "echecs": 0,
+            "rejets": 0,
+        }
+        checkpoint = await self.checkpoints.lire(tenant)
+        if checkpoint is None and self.depuis:
+            checkpoint = mongo_mesure.CurseurObservation(maj_le=self.depuis)
+        documents = await self.observations.lister_apres(tenant, checkpoint, borne)
         for document in documents:
             compteurs["lues"] += 1
+            identifiant = _texte(document.get("id"))
+            try:
+                curseur = mongo_mesure.curseur_document(document)
+            except ValueError as exc:
+                # Le filtre Mongo exclut ces documents ; on ne bloque jamais le tenant.
+                compteurs["echecs"] += 1
+                self.journal.warning(
+                    "mesure_auto : document sans curseur lisible tenant=%s : %s",
+                    tenant, rediger_message(exc))
+                break
             resultat = self.mesurer(
                 document, tenant_id=tenant, maintenant=self._maintenant())
             if not resultat.produit:
-                compteurs["ignores"] += 1
+                permanent = not resultat.transitoire
+                depasse = await self._rejeter(
+                    tenant, document, resultat.raison, permanent=permanent)
+                if permanent or depasse:
+                    compteurs["rejets"] += 1
+                    self.journal.warning(
+                        "mesure_auto : observation écartée tenant=%s observation=%s "
+                        "permanent=%s raison=%s",
+                        tenant, identifiant, permanent, rediger_message(resultat.raison))
+                    if not await self._avancer(tenant, curseur):
+                        compteurs["echecs"] += 1
+                        break
+                    continue
+                compteurs["echecs"] += 1
                 self.journal.warning(
-                    "mesure_auto : observation ignorée tenant=%s observation=%s raison=%s",
-                    tenant, _texte(document.get("id")), resultat.raison)
-                if not await self._avancer(tenant, document):
-                    compteurs["echecs"] += 1
-                    break
-                continue
+                    "mesure_auto : observation transitoire, checkpoint conservé "
+                    "tenant=%s observation=%s raison=%s",
+                    tenant, identifiant, rediger_message(resultat.raison))
+                break
             try:
                 reponse = self.enfiler(resultat.evenement)
                 if inspect.isawaitable(reponse):
                     reponse = await reponse
-            except Exception as exc:  # noqa: BLE001 - une panne d'enfilage ne tue pas le worker
+            except Exception as exc:  # noqa: BLE001 - classer avant de décider
+                # Une signature absente/indisponible est environnementale : elle peut se
+                # corriger sans perdre la mesure, même si C1 la classe « permanente ».
+                permanent = (False if isinstance(exc, pont.SignatureInvalide)
+                             else _est_permanent(exc))
+                depasse = await self._rejeter(
+                    tenant, document, exc, permanent=permanent)
+                if permanent or depasse:
+                    compteurs["rejets"] += 1
+                    self.journal.warning(
+                        "mesure_auto : enfilage refusé définitivement tenant=%s "
+                        "observation=%s permanent=%s raison=%s",
+                        tenant, identifiant, permanent, rediger_message(exc))
+                    if not await self._avancer(tenant, curseur):
+                        compteurs["echecs"] += 1
+                        break
+                    continue
                 compteurs["echecs"] += 1
                 self.journal.warning(
-                    "mesure_auto : enfilage en échec tenant=%s observation=%s : %s",
-                    tenant, _texte(document.get("id")), str(exc)[:300])
+                    "mesure_auto : enfilage transitoire, checkpoint conservé tenant=%s "
+                    "observation=%s raison=%s",
+                    tenant, identifiant, rediger_message(exc))
                 break
             if reponse is None:
+                # Une réponse vide est traitée comme transitoire : nouvel essai borné.
+                depasse = await self._rejeter(
+                    tenant, document, "enfilage sans réponse", permanent=False)
+                if depasse:
+                    compteurs["rejets"] += 1
+                    if not await self._avancer(tenant, curseur):
+                        compteurs["echecs"] += 1
+                        break
+                    continue
                 compteurs["echecs"] += 1
-                self.journal.warning(
-                    "mesure_auto : enfilage best-effort sans réponse tenant=%s observation=%s",
-                    tenant, _texte(document.get("id")))
                 break
             if isinstance(reponse, Mapping) and reponse.get("cree"):
                 compteurs["outcomes"] += 1
             else:
                 compteurs["doublons"] += 1
-            if not await self._avancer(tenant, document):
+            if not await self._avancer(tenant, curseur):
                 compteurs["echecs"] += 1
                 break
         return compteurs
@@ -252,27 +357,37 @@ class WorkerMesureAuto:
         if not self.actif():
             return {
                 "actif": False, "lues": 0, "outcomes": 0, "doublons": 0,
-                "ignores": 0, "echecs": 0, "tenants": {},
+                "ignores": 0, "echecs": 0, "rejets": 0, "tenants": {},
             }
+        if not self._audit_fait:
+            self._audit_fait = True
+            await self.auditer()
         borne = min(self.lot, max(1, int(limite or self.lot)))
-        total = {"lues": 0, "outcomes": 0, "doublons": 0, "ignores": 0, "echecs": 0}
+        total = {
+            "lues": 0, "outcomes": 0, "doublons": 0, "ignores": 0, "echecs": 0,
+            "rejets": 0,
+        }
         par_tenant: dict[str, dict[str, Any]] = {}
         for tenant in self.tenants:
             try:
                 compteurs = await self._traiter_tenant(tenant, borne)
-            except Exception:  # noqa: BLE001 - un tenant en panne ne bloque pas les autres
-                self.journal.exception("mesure_auto : passe en échec tenant=%s", tenant)
+            except Exception as exc:  # noqa: BLE001 - un tenant en panne ne bloque pas les autres
+                self.journal.warning(
+                    "mesure_auto : passe en échec tenant=%s : %s",
+                    tenant, rediger_message(exc))
                 compteurs = {"lues": 0, "outcomes": 0, "doublons": 0, "ignores": 0,
-                             "echecs": 1}
+                             "echecs": 1, "rejets": 0}
             par_tenant[tenant] = compteurs
             for cle in total:
                 total[cle] += compteurs[cle]
         self.metriques.ajouter(total)
         self.journal.info(
             "mesure_auto_lues=%d mesure_auto_outcomes=%d mesure_auto_doublons=%d "
-            "mesure_auto_ignores=%d mesure_auto_echecs=%d tenants=%s",
+            "mesure_auto_ignores=%d mesure_auto_echecs=%d mesure_auto_rejets=%d "
+            "mesure_auto_non_conformes=%d tenants=%s",
             total["lues"], total["outcomes"], total["doublons"], total["ignores"],
-            total["echecs"], ",".join(self.tenants))
+            total["echecs"], total["rejets"], self.metriques.mesure_auto_non_conformes,
+            ",".join(self.tenants))
         return {"actif": True, **total, "tenants": par_tenant}
 
     async def une_passe(self, limite: int | None = None) -> dict[str, Any]:
@@ -282,8 +397,9 @@ class WorkerMesureAuto:
         while not self._arret.is_set():
             try:
                 await self.traiter_lot()
-            except Exception:  # noqa: BLE001 - une passe ne tue pas le worker
-                self.journal.exception("mesure_auto : passe en échec")
+            except Exception as exc:  # noqa: BLE001 - une passe ne tue pas le worker
+                self.journal.warning(
+                    "mesure_auto : passe en échec : %s", rediger_message(exc))
             try:
                 await asyncio.wait_for(self._arret.wait(), timeout=self.intervalle)
             except asyncio.TimeoutError:
@@ -353,14 +469,23 @@ def principal(argv: list[str] | None = None) -> int:
                 database[mongo_mesure.OBSERVATIONS])
             checkpoints = mongo_mesure.DepotCheckpointsMesure(
                 database[mongo_mesure.CHECKPOINTS])
+            rejets = mongo_mesure.DepotRejetsMesure(database[mongo_mesure.REJETS])
             outbox = pont_mongo.DepotPontCanonique(database[pont_mongo.COLLECTION])
-            for depot in (observations, outbox):
+            for depot in (observations, rejets, outbox):
                 try:
                     await depot.assurer_index()
-                except Exception:  # noqa: BLE001 - un index est une optimisation
-                    journal.exception("mesure_auto : création d'index impossible")
+                except Exception as exc:  # noqa: BLE001 - un index est une optimisation
+                    journal.warning(
+                        "mesure_auto : création d'index impossible : %s",
+                        rediger_message(exc))
+            try:
+                await observations.assurer_validateur()
+            except Exception as exc:  # noqa: BLE001 - validateur indicatif
+                journal.warning(
+                    "mesure_auto : validateur Mongo indisponible : %s",
+                    rediger_message(exc))
             worker = WorkerMesureAuto(
-                observations, checkpoints, outbox.enfiler_best_effort,
+                observations, checkpoints, outbox.enfiler, rejets=rejets,
                 tenants=tenants, lot=arguments.lot, intervalle=arguments.intervalle,
                 depuis=arguments.depuis)
 

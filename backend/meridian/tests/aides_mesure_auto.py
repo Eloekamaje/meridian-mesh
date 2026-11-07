@@ -7,8 +7,21 @@ multi-clés, la limite et les upserts ``$set``/``$setOnInsert``/``$inc``.
 from __future__ import annotations
 
 import copy
+from datetime import date, datetime
 
 MANQUANT = object()
+
+
+def _type_mongo(valeur, type_attendu):
+    if type_attendu == "string":
+        return isinstance(valeur, str)
+    if type_attendu == "date":
+        return isinstance(valeur, (datetime, date))
+    if type_attendu in {"int", "long"}:
+        return isinstance(valeur, int) and not isinstance(valeur, bool)
+    if type_attendu == "double":
+        return isinstance(valeur, float)
+    return False
 
 
 def _valeur(document, chemin):
@@ -30,6 +43,10 @@ def _correspond(document, filtre):
             if not any(_correspond(document, partie) for partie in attendu):
                 return False
             continue
+        if cle == "$nor":
+            if any(_correspond(document, partie) for partie in attendu):
+                return False
+            continue
         valeur = _valeur(document, cle)
         if (isinstance(attendu, dict)
                 and any(str(operateur).startswith("$") for operateur in attendu)):
@@ -42,6 +59,16 @@ def _correspond(document, filtre):
                     return False
                 if operateur == "$exists" and (valeur is not MANQUANT) != bool(reference):
                     return False
+                if operateur == "$not":
+                    if valeur is not MANQUANT and _correspond(
+                            {cle: valeur}, {cle: reference}):
+                        return False
+                    continue
+                if operateur == "$type":
+                    types = reference if isinstance(reference, list) else [reference]
+                    if not any(_type_mongo(valeur, type_) for type_ in types):
+                        return False
+                    continue
                 if operateur == "$gt" and not (valeur is not MANQUANT and valeur is not None
                                                and valeur > reference):
                     return False
@@ -139,6 +166,11 @@ class CollectionMesure:
                 return copy.deepcopy(document)
         return None
 
+    async def count_documents(self, filtre=None):
+        self.appels.append(("count_documents", copy.deepcopy(filtre)))
+        return sum(1 for document in self.documents
+                   if _correspond(document, filtre or {}))
+
     async def update_one(self, filtre, modification, upsert=False):
         self.appels.append(("update_one", copy.deepcopy(filtre), copy.deepcopy(modification),
                             upsert))
@@ -160,7 +192,11 @@ class CollectionMesure:
                 continue
             document[cle] = copy.deepcopy(valeur)
         document.update(copy.deepcopy((modification or {}).get("$setOnInsert") or {}))
-        document.update(copy.deepcopy((modification or {}).get("$set") or {}))
+        _appliquer(document, modification or {})
+        identifiant = document.get("_id")
+        if identifiant is not None and any(
+                existant.get("_id") == identifiant for existant in self.documents):
+            raise RuntimeError("duplicate key")
         self.documents.append(document)
         return type("Resultat", (), {
             "upserted_id": document.get("_id"), "matched_count": 0, "modified_count": 0,

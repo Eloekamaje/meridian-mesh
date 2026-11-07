@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+from datetime import datetime, timezone
 
 import pytest
 
@@ -70,16 +71,17 @@ class Outbox:
 
 
 def _worker(observations, checkpoints, outbox, *, tenants=(TENANT,), lot=100,
-            env=None, depuis=None):
+            env=None, depuis=None, rejets=None, maintenant=None):
     return mesure_auto_worker.WorkerMesureAuto(
         observations=observations,
         checkpoints=checkpoints,
         enfiler=outbox.enfiler,
+        rejets=rejets,
         tenants=tenants,
         lot=lot,
         env=env if env is not None else {mesure_auto_worker.FLAG_ENV: "1"},
         depuis=depuis,
-        maintenant=lambda: "2026-11-07T12:00:00+00:00",
+        maintenant=maintenant or (lambda: "2026-11-07T12:00:00+00:00"),
     )
 
 
@@ -188,8 +190,8 @@ def test_flag_on_enfile_les_outcomes_et_avance_le_checkpoint():
     assert outbox.operations() == [pont.OPERATION_OUTCOME, pont.OPERATION_OUTCOME]
     assert {e["tenant_id"] for e in outbox.evenements.values()} == {TENANT}
     checkpoint = asyncio.run(checkpoints.lire(TENANT))
-    assert checkpoint["dernier_id"] == "obs-2"
-    assert checkpoint["dernier_maj_le"] == "2026-11-05T09:02:00+00:00"
+    assert checkpoint.id == "obs-2"
+    assert checkpoint.maj_le == "2026-11-05T09:02:00.000000+00:00"
 
 
 def test_rejeu_ne_cree_pas_de_doublon():
@@ -227,7 +229,7 @@ def test_checkpoint_non_avance_si_l_enfilage_echoue():
     second = asyncio.run(worker.une_passe())
 
     assert second["outcomes"] == 2
-    assert asyncio.run(checkpoints.lire(TENANT))["dernier_id"] == "obs-2"
+    assert asyncio.run(checkpoints.lire(TENANT)).id == "obs-2"
 
 
 def test_observation_incomplete_est_ignoree_mais_le_checkpoint_avance():
@@ -243,9 +245,9 @@ def test_observation_incomplete_est_ignoree_mais_le_checkpoint_avance():
     bilan = asyncio.run(worker.une_passe())
 
     assert bilan["lues"] == 2
-    assert bilan["ignores"] == 1 and bilan["outcomes"] == 1
+    assert bilan["rejets"] == 1 and bilan["outcomes"] == 1
     assert len(outbox.evenements) == 1
-    assert asyncio.run(checkpoints.lire(TENANT))["dernier_id"] == "obs-2"
+    assert asyncio.run(checkpoints.lire(TENANT)).id == "obs-2"
 
 
 def test_lot_borne_et_reprise_au_tour_suivant():
@@ -319,8 +321,8 @@ def test_deux_tenants_ne_partagent_ni_evenement_ni_checkpoint():
     assert {e["tenant_id"] for e in outbox.evenements.values()} == {TENANT, AUTRE}
     cp_banque = asyncio.run(checkpoints.lire(TENANT))
     cp_assurance = asyncio.run(checkpoints.lire(AUTRE))
-    assert cp_banque["dernier_id"] == "obs-banque"
-    assert cp_assurance["dernier_id"] == "obs-assurance"
+    assert cp_banque.id == "obs-banque"
+    assert cp_assurance.id == "obs-assurance"
 
 
 def test_un_document_du_mauvais_tenant_est_refuse_meme_s_il_est_lu():
@@ -364,9 +366,10 @@ def test_depot_observations_filtre_tenant_et_curseur():
     ])
     depot = mongo_mesure.DepotObservationsMesure(collection)
 
-    premier = asyncio.run(depot.lister_apres(TENANT, None, None, 10))
+    premier = asyncio.run(depot.lister_apres(TENANT, None, 10))
     second = asyncio.run(depot.lister_apres(
-        TENANT, "2026-11-05T09:00:00+00:00", "obs-1", 10))
+        TENANT, mongo_mesure.CurseurObservation(
+            maj_le="2026-11-05T09:00:00.000000+00:00", id="obs-1"), 10))
 
     assert [document["id"] for document in premier] == ["obs-1", "obs-2"]
     assert [document["id"] for document in second] == ["obs-2"]
@@ -378,11 +381,13 @@ def test_depot_checkpoints_lit_et_ecrit_un_document_par_tenant():
     depot = mongo_mesure.DepotCheckpointsMesure(collection)
 
     assert asyncio.run(depot.lire(TENANT)) is None
-    asyncio.run(depot.ecrire(TENANT, "2026-11-05T09:01:00+00:00", "obs-2"))
-    asyncio.run(depot.ecrire(AUTRE, "2026-11-06T09:00:00+00:00", "obs-9"))
+    asyncio.run(depot.ecrire(TENANT, mongo_mesure.CurseurObservation(
+        maj_le="2026-11-05T09:01:00+00:00", id="obs-2")))
+    asyncio.run(depot.ecrire(AUTRE, mongo_mesure.CurseurObservation(
+        maj_le="2026-11-06T09:00:00+00:00", id="obs-9")))
 
-    assert asyncio.run(depot.lire(TENANT))["dernier_id"] == "obs-2"
-    assert asyncio.run(depot.lire(AUTRE))["dernier_id"] == "obs-9"
+    assert asyncio.run(depot.lire(TENANT)).id == "obs-2"
+    assert asyncio.run(depot.lire(AUTRE)).id == "obs-9"
     assert len(collection.documents) == 2
 
 
@@ -390,9 +395,11 @@ def test_depot_checkpoints_refuse_un_curseur_incomplet():
     depot = mongo_mesure.DepotCheckpointsMesure(CollectionMesure())
 
     with pytest.raises(ValueError):
-        asyncio.run(depot.ecrire(TENANT, "", "obs-1"))
+        asyncio.run(depot.ecrire(TENANT, mongo_mesure.CurseurObservation(
+            maj_le="", id="obs-1")))
     with pytest.raises(ValueError):
-        asyncio.run(depot.ecrire(TENANT, "2026-11-05T09:00:00+00:00", ""))
+        asyncio.run(depot.ecrire(TENANT, mongo_mesure.CurseurObservation(
+            maj_le="2026-11-05T09:00:00+00:00", id="")))
 
 
 def test_depot_observations_borne_et_indexe():
@@ -402,7 +409,7 @@ def test_depot_observations_borne_et_indexe():
     ])
     depot = mongo_mesure.DepotObservationsMesure(collection)
 
-    lot = asyncio.run(depot.lister_apres(TENANT, None, None, 1))
+    lot = asyncio.run(depot.lister_apres(TENANT, None, 1))
     index = asyncio.run(depot.assurer_index())
 
     assert [document["id"] for document in lot] == ["obs-1"]
@@ -438,7 +445,8 @@ def test_worker_normalise_et_deduplique_les_tenants():
     assert worker.metriques.instantane() == {
         "mesure_auto_lues": 0, "mesure_auto_outcomes": 0,
         "mesure_auto_doublons": 0, "mesure_auto_ignores": 0,
-        "mesure_auto_echecs": 0,
+        "mesure_auto_echecs": 0, "mesure_auto_rejets": 0,
+        "mesure_auto_non_conformes": 0,
     }
 
 
@@ -455,8 +463,11 @@ def test_avancer_refuse_un_curseur_incomplet_ou_une_panne_de_checkpoint():
     observations, checkpoints, _col_obs, _col_cp = _depots()
     worker = _worker(observations, checkpoints, Outbox())
 
-    assert asyncio.run(worker._avancer(TENANT, {"id": "obs-1"})) is False
-    assert asyncio.run(worker._avancer(TENANT, {"maj_le": "2026-11-05T09:00:00+00:00"})) is False
+    assert asyncio.run(worker._avancer(
+        TENANT, mongo_mesure.CurseurObservation(maj_le="", id="obs-1"))) is False
+    assert asyncio.run(worker._avancer(
+        TENANT, mongo_mesure.CurseurObservation(
+            maj_le="2026-11-05T09:00:00+00:00", id=""))) is False
 
     class CheckpointsEnPanne:
         async def lire(self, tenant):
@@ -469,7 +480,8 @@ def test_avancer_refuse_un_curseur_incomplet_ou_une_panne_de_checkpoint():
         observations, CheckpointsEnPanne(), Outbox().enfiler,
         tenants=(TENANT,), env={mesure_auto_worker.FLAG_ENV: "1"})
     assert asyncio.run(worker._avancer(
-        TENANT, {"id": "obs-1", "maj_le": "2026-11-05T09:00:00+00:00"})) is False
+        TENANT, mongo_mesure.CurseurObservation(
+            maj_le="2026-11-05T09:00:00+00:00", id="obs-1"))) is False
 
 
 def test_une_panne_sur_un_tenant_ne_bloque_pas_les_autres():
@@ -477,11 +489,10 @@ def test_une_panne_sur_un_tenant_ne_bloque_pas_les_autres():
         def __init__(self, depot_autre):
             self.depot_autre = depot_autre
 
-        async def lister_apres(self, tenant, maj_le=None, identifiant=None, limite=100):
+        async def lister_apres(self, tenant, curseur=None, limite=100):
             if tenant == TENANT:
                 raise RuntimeError("lecture impossible pour ce tenant")
-            return await self.depot_autre.lister_apres(
-                tenant, maj_le, identifiant, limite)
+            return await self.depot_autre.lister_apres(tenant, curseur, limite)
 
     autre = mongo_mesure.DepotObservationsMesure(CollectionMesure([
         _observation("obs-assurance", AUTRE, initiative_id="ini-dec-case-c9-1"),
@@ -511,7 +522,7 @@ def test_depuis_est_utilise_si_le_checkpoint_est_absent():
     bilan = asyncio.run(worker.une_passe())
 
     assert bilan["lues"] == 1 and bilan["outcomes"] == 1
-    assert asyncio.run(checkpoints.lire(TENANT))["dernier_id"] == "obs-2"
+    assert asyncio.run(checkpoints.lire(TENANT)).id == "obs-2"
 
 
 def test_tourner_s_arrete_proprement():
@@ -654,3 +665,270 @@ def test_cli_interruption_retourne_0(monkeypatch):
     monkeypatch.setattr(mesure_auto_worker.asyncio, "run", interrompre)
 
     assert mesure_auto_worker.principal(["--once", "--tenant", TENANT]) == 0
+
+
+# ---------------------------------------------------------------------------
+# Revue lot D : dead-letter, transitoire, audit, type bracketing, CAS
+# ---------------------------------------------------------------------------
+
+
+class OutboxCollision(Outbox):
+    """Outbox qui refuse un événement comme le ferait C1 sur collision d'idempotence."""
+
+    def __init__(self, observation_id="obs-1"):
+        super().__init__()
+        self.observation_id = observation_id
+
+    async def enfiler(self, evenement):
+        if evenement["payload"]["mesure"].get("observation_id") == self.observation_id:
+            raise pont.PontInvalide("collision d'idempotence sur _id")
+        return await super().enfiler(evenement)
+
+
+class OutboxTransitoire(Outbox):
+    def __init__(self, pannes=2):
+        super().__init__()
+        self.pannes = pannes
+
+    async def enfiler(self, evenement):
+        if self.pannes > 0:
+            self.pannes -= 1
+            raise RuntimeError("PyMongoError: timeout")
+        return await super().enfiler(evenement)
+
+
+class OutboxStrict(Outbox):
+    """Reproduit C1 : même `_id` avec un payload différent = collision permanente."""
+
+    async def enfiler(self, evenement):
+        existant = self.evenements.get(evenement["_id"])
+        if existant is not None and existant["payload"] != evenement["payload"]:
+            raise pont.PontInvalide(
+                f"collision d'idempotence sur _id {evenement['_id']!r}")
+        return await super().enfiler(evenement)
+
+
+def test_correction_d_interpretation_produit_un_nouvel_evenement_et_continue():
+    observations, checkpoints, col_obs, _col_cp = _depots([
+        _observation("obs-1", interpretation="version 1"),
+    ])
+    outbox = OutboxStrict()
+    worker = _worker(observations, checkpoints, outbox)
+    asyncio.run(worker.une_passe())
+
+    # Correction de l'interprétation seule, puis une observation suivante.
+    col_obs.documents[0]["interpretation"] = "version 2"
+    col_obs.documents[0]["maj_le"] = "2026-11-05T09:02:00+00:00"
+    col_obs.documents.append(_observation(
+        "obs-2", maj_le="2026-11-05T09:03:00+00:00"))
+
+    bilan = asyncio.run(worker.une_passe())
+
+    assert bilan["rejets"] == 0
+    assert bilan["outcomes"] == 2
+    assert len(outbox.evenements) == 3  # v1, v2, obs-2
+    assert asyncio.run(checkpoints.lire(TENANT)).id == "obs-2"
+
+
+def _rejets():
+    collection = CollectionMesure()
+    return mongo_mesure.DepotRejetsMesure(collection), collection
+
+
+def test_collision_permanente_est_dead_letter_et_obs_suivante_traitee():
+    observations, checkpoints, _col_obs, _col_cp = _depots([
+        _observation("obs-1"),
+        _observation("obs-2", maj_le="2026-11-05T09:02:00+00:00"),
+    ])
+    rejets, col_rejets = _rejets()
+    outbox = OutboxCollision("obs-1")
+    worker = _worker(observations, checkpoints, outbox, rejets=rejets)
+
+    bilan = asyncio.run(worker.une_passe())
+
+    assert bilan["rejets"] == 1
+    assert bilan["outcomes"] == 1
+    assert set(outbox.evenements)  # obs-2 est bien enfilée
+    assert asyncio.run(checkpoints.lire(TENANT)).id == "obs-2"
+    rejet = next(document for document in col_rejets.documents
+                 if document["observation_id"] == "obs-1")
+    assert rejet["etat"] == "dead" and rejet["permanent"] is True
+
+
+def test_erreur_transitoire_ne_avance_pas_puis_dead_letter_apres_borne():
+    observations, checkpoints, _col_obs, _col_cp = _depots([
+        _observation("obs-1"),
+    ])
+    rejets, col_rejets = _rejets()
+    outbox = OutboxTransitoire(pannes=2)
+    worker = mesure_auto_worker.WorkerMesureAuto(
+        observations, checkpoints, outbox.enfiler, rejets=rejets,
+        tenants=(TENANT,), lot=10, tentatives_max=2,
+        env={mesure_auto_worker.FLAG_ENV: "1"},
+        maintenant=lambda: "2026-11-07T12:00:00+00:00")
+
+    premier = asyncio.run(worker.une_passe())
+    assert premier["echecs"] == 1
+    assert asyncio.run(checkpoints.lire(TENANT)) is None
+
+    second = asyncio.run(worker.une_passe())
+    assert second["rejets"] == 1
+    assert asyncio.run(checkpoints.lire(TENANT)).id == "obs-1"
+    assert col_rejets.documents[0]["etat"] == "dead"
+
+
+def test_signature_indisponible_est_transitoire_et_ne_perd_pas_la_mesure():
+    observations, checkpoints, _col_obs, _col_cp = _depots([_observation("obs-1")])
+    rejets, _col_rejets = _rejets()
+    appels = {"n": 0}
+
+    async def enfiler(evenement):
+        appels["n"] += 1
+        if appels["n"] == 1:
+            raise pont.SignatureInvalide("PONT_KEY indisponible")
+        return {"id": evenement["_id"], "cree": True}
+
+    worker = mesure_auto_worker.WorkerMesureAuto(
+        observations, checkpoints, enfiler, rejets=rejets,
+        tenants=(TENANT,), env={mesure_auto_worker.FLAG_ENV: "1"},
+        maintenant=lambda: "2026-11-07T12:00:00+00:00")
+
+    premier = asyncio.run(worker.une_passe())
+    assert premier["echecs"] == 1
+    assert asyncio.run(checkpoints.lire(TENANT)) is None
+
+    second = asyncio.run(worker.une_passe())
+    assert second["outcomes"] == 1
+    assert asyncio.run(checkpoints.lire(TENANT)).id == "obs-1"
+
+
+def test_quand_futur_bloque_le_checkpoint_puis_passe_apres_correction_horloge():
+    observations, checkpoints, _col_obs, _col_cp = _depots([
+        _observation(
+            "obs-1",
+            maj_le="2026-11-07T11:59:00+00:00",
+            quand="2026-11-07T12:06:00+00:00",
+        ),
+    ])
+    rejets, _col_rejets = _rejets()
+    outbox = Outbox()
+    worker = _worker(observations, checkpoints, outbox, rejets=rejets)
+
+    premier = asyncio.run(worker.une_passe())
+
+    assert premier["echecs"] == 1
+    assert asyncio.run(checkpoints.lire(TENANT)) is None
+    assert outbox.evenements == {}
+
+    worker.maintenant = lambda: "2026-11-07T12:10:00+00:00"
+    second = asyncio.run(worker.une_passe())
+
+    assert second["outcomes"] == 1
+    assert asyncio.run(checkpoints.lire(TENANT)).id == "obs-1"
+
+
+def test_audit_compte_les_documents_non_conformes_sans_bloquer_le_flux():
+    malforme = {"tenant_id": TENANT, "maj_le": "2026-11-05T09:00:00+00:00"}
+    observations, checkpoints, _col_obs, _col_cp = _depots([
+        malforme,
+        _observation("obs-1", maj_le="2026-11-05T09:02:00+00:00"),
+    ])
+    outbox = Outbox()
+    worker = _worker(observations, checkpoints, outbox)
+
+    bilan = asyncio.run(worker.une_passe())
+
+    assert bilan["outcomes"] == 1
+    assert worker.metriques.mesure_auto_non_conformes == 1
+    assert asyncio.run(checkpoints.lire(TENANT)).id == "obs-1"
+
+
+def test_type_bracketing_date_et_offset_non_utc_sont_lus_et_ordonnes():
+    collection = CollectionMesure([
+        _observation("obs-offset", maj_le="2026-11-05T12:00:00+02:00"),
+        _observation("obs-date", maj_le=datetime(2026, 11, 5, 10, 0, 1, tzinfo=timezone.utc)),
+        _observation("obs-late", maj_le="2026-11-05T10:00:02+00:00"),
+    ])
+    depot = mongo_mesure.DepotObservationsMesure(collection)
+
+    documents = asyncio.run(depot.lister_apres(TENANT, None, 10))
+
+    assert [document["id"] for document in documents] == [
+        "obs-offset", "obs-date", "obs-late"]
+    assert documents[0]["maj_le"] == "2026-11-05T10:00:00.000000+00:00"
+
+
+def test_tie_breaker_mongo_ordonne_deux_documents_de_la_meme_seconde():
+    collection = CollectionMesure([
+        # Insertion volontairement inversée : `_id` est le tie-breaker monotone.
+        {**_observation("obs-b", maj_le="2026-11-05T10:00:00+00:00"), "_id": "002"},
+        {**_observation("obs-a", maj_le="2026-11-05T10:00:00+00:00"), "_id": "001"},
+    ])
+    depot = mongo_mesure.DepotObservationsMesure(collection)
+
+    documents = asyncio.run(depot.lister_apres(TENANT, None, 10))
+
+    assert [document["id"] for document in documents] == ["obs-a", "obs-b"]
+    premier = mongo_mesure.CurseurObservation(
+        maj_le=documents[0]["maj_le"], sequence="001", id="obs-a")
+    suite = asyncio.run(depot.lister_apres(TENANT, premier, 10))
+    assert [document["id"] for document in suite] == ["obs-b"]
+
+
+def test_checkpoint_ne_regresse_jamais():
+    collection = CollectionMesure()
+    depot = mongo_mesure.DepotCheckpointsMesure(collection)
+    recent = mongo_mesure.CurseurObservation(
+        maj_le="2026-11-05T10:00:02+00:00", id="obs-2")
+    ancien = mongo_mesure.CurseurObservation(
+        maj_le="2026-11-05T10:00:01+00:00", id="obs-1")
+
+    asyncio.run(depot.ecrire(TENANT, recent))
+    asyncio.run(depot.ecrire(TENANT, ancien))
+
+    assert asyncio.run(depot.lire(TENANT)).id == "obs-2"
+
+
+def test_rejets_permanent_transitoire_et_compteur():
+    collection = CollectionMesure()
+    depot = mongo_mesure.DepotRejetsMesure(collection)
+    permanent = _observation("obs-permanent")
+    transitoire = _observation("obs-transitoire")
+
+    assert asyncio.run(depot.enregistrer(
+        TENANT, permanent, "schéma invalide", permanent=True)) is True
+    assert asyncio.run(depot.enregistrer(
+        TENANT, transitoire, "timeout", permanent=False, tentatives_max=2)) is False
+    assert asyncio.run(depot.enregistrer(
+        TENANT, transitoire, "timeout", permanent=False, tentatives_max=2)) is True
+    assert asyncio.run(depot.compter(TENANT, "dead")) == 2
+
+
+def test_rediger_message_expurge_les_jetons_et_urls():
+    message = mesure_auto_worker.rediger_message(
+        "Bearer abcdefghijklmnop sk-1234567890 mongodb://user:secret@host/db")
+
+    assert "abcdefghijklmnop" not in message
+    assert "sk-1234567890" not in message
+    assert "secret" not in message
+    assert "[redacted]" in message
+
+
+def test_validateur_json_schema_est_pose_si_la_base_expose_command():
+    class Base:
+        def __init__(self):
+            self.commandes = []
+
+        async def command(self, commande):
+            self.commandes.append(commande)
+            return {"ok": 1}
+
+    class Collection:
+        database = Base()
+        name = mongo_mesure.OBSERVATIONS
+
+    depot = mongo_mesure.DepotObservationsMesure(Collection())
+
+    assert asyncio.run(depot.assurer_validateur()) is True
+    assert depot.collection.database.commandes[0]["collMod"] == mongo_mesure.OBSERVATIONS
+    assert "validator" in depot.collection.database.commandes[0]
