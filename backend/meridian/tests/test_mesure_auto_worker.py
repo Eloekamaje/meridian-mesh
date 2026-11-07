@@ -418,6 +418,7 @@ def test_depot_observations_borne_et_indexe():
 
     assert [document["id"] for document in lot] == ["obs-1"]
     assert len(index) == 2 and collection.index[0][0][0] == ("tenant_id", 1)
+    assert ("sequence_canonique", 1) in collection.index[0][0]
 
 
 # ---------------------------------------------------------------------------

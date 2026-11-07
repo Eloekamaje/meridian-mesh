@@ -492,7 +492,7 @@ class DepotObservationsMesure:
     async def assurer_index(self) -> list[Any]:
         resultats = []
         resultats.append(await self.collection.create_index(
-            [("tenant_id", 1), (CHAMP_UTC, 1), ("sequence", 1), ("id", 1)],
+            [("tenant_id", 1), (CHAMP_UTC, 1), ("sequence_canonique", 1), ("id", 1)],
             name="mesure_auto_observations_curseur",
         ))
         resultats.append(await self.collection.create_index(
