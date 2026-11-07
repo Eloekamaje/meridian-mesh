@@ -97,3 +97,37 @@ test("une transition sur le même objet n'affiche pas de bouton d'ouverture", as
 
   await act(async () => { racine.unmount(); });
 });
+
+test("pendant la vérification, les actions sont désactivées avec un message", async () => {
+  const onAction = jest.fn();
+  const { hote, racine } = monter();
+  await rendre(racine, {
+    objet: { id: "sit-1", type: "SITUATION", titre: "Latence" },
+    onAction,
+    verification: true,
+  });
+
+  expect(hote.querySelector('[data-testid="boucle-verification-source"]').textContent)
+    .toContain("Vérification de la source");
+  const bouton = hote.querySelector('[data-testid="boucle-action-investigation"]');
+  expect(bouton.disabled).toBe(true);
+  expect(bouton.getAttribute("aria-disabled")).toBe("true");
+  await act(async () => { bouton.click(); });
+  expect(onAction).not.toHaveBeenCalled();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("une vérification indisponible affiche l'alerte et réactive les actions", async () => {
+  const { hote, racine } = monter();
+  await rendre(racine, {
+    objet: { id: "sit-1", type: "SITUATION", titre: "Latence" },
+    verificationErreur: "Vérification de la source indisponible — vérifiez manuellement.",
+  });
+
+  expect(hote.querySelector('[data-testid="boucle-verification-erreur"]').textContent)
+    .toContain("Vérification de la source indisponible");
+  expect(hote.querySelector('[data-testid="boucle-action-investigation"]').disabled).toBe(false);
+
+  await act(async () => { racine.unmount(); });
+});

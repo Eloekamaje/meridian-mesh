@@ -37,7 +37,14 @@ function libelleObjet(objet) {
   return [type, identifiant].filter(Boolean).join(" ");
 }
 
-export default function PanneauActions({ objet, succes, onAction, onOuvrir }) {
+export default function PanneauActions({
+  objet,
+  succes,
+  onAction,
+  onOuvrir,
+  verification = false,
+  verificationErreur = "",
+}) {
   if (!objet) return null;
 
   const actions = actionsPourObjet(objet);
@@ -77,6 +84,26 @@ export default function PanneauActions({ objet, succes, onAction, onOuvrir }) {
         )}
       </div>
 
+      {verification && (
+        <p
+          role="status"
+          data-testid="boucle-verification-source"
+          className="mt-3 rounded-md border border-[#60A5FA]/25 bg-[#60A5FA]/[0.06] px-2.5 py-1.5 text-[11px] text-[#BFDBFE]"
+        >
+          Vérification de la source…
+        </p>
+      )}
+
+      {!verification && verificationErreur && (
+        <p
+          role="alert"
+          data-testid="boucle-verification-erreur"
+          className="mt-3 rounded-md border border-[#F87171]/30 bg-[#F87171]/[0.06] px-2.5 py-1.5 text-[11px] text-[#FCA5A5]"
+        >
+          {verificationErreur}
+        </p>
+      )}
+
       {succes && (
         <div
           role="status"
@@ -114,9 +141,11 @@ export default function PanneauActions({ objet, succes, onAction, onOuvrir }) {
                 key={action.id}
                 type="button"
                 onClick={() => onAction(action.id)}
+                disabled={verification}
+                aria-disabled={verification ? "true" : undefined}
                 data-testid={action.testid}
-                title={action.description}
-                className="flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[11px] font-semibold transition-colors"
+                title={verification ? "Vérification de la source…" : action.description}
+                className="flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[11px] font-semibold transition-colors disabled:cursor-wait disabled:opacity-50"
                 style={{
                   borderColor: `${couleur}55`,
                   backgroundColor: `${couleur}0F`,

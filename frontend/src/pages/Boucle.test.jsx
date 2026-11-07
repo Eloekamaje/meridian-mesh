@@ -878,6 +878,7 @@ test("lance une initiative depuis une décision tranchée et rafraîchit la sour
   };
   const decisionSource = {
     ...decision,
+    version: 8,
     donnees: { ...decision.donnees, initiative_id: "ini-2" },
   };
   boucleApi.lancerInitiative.mockImplementation(() => {
@@ -922,6 +923,7 @@ test("lance une initiative depuis une décision tranchée et rafraîchit la sour
   expect(chaine.querySelectorAll('[data-testid="boucle-chaine-etape"]')).toHaveLength(2);
   expect(chaine.textContent).not.toContain("Déployer le contrôle asynchrone");
   expect(hote.querySelector('[data-testid="boucle-historique"]').textContent).toContain("Version 8");
+  expect(hote.querySelector('[data-testid="boucle-version"]').textContent).toBe("8");
   expect(document.activeElement).toBe(hote.querySelector('[data-testid="boucle-detail-fermer"]'));
 
   await act(async () => { racine.unmount(); });
@@ -948,6 +950,7 @@ test("mesure un outcome depuis une initiative et rafraîchit la source", async (
   };
   const initiativeSource = {
     ...initiative,
+    version: 5,
     donnees: { ...initiative.donnees, outcome_ids: ["out-2"] },
   };
   boucleApi.mesurerOutcome.mockImplementation(() => {
@@ -996,6 +999,7 @@ test("mesure un outcome depuis une initiative et rafraîchit la source", async (
   expect(chaine.querySelectorAll('[data-testid="boucle-chaine-etape"]')).toHaveLength(3);
   expect(chaine.textContent).not.toContain("out-2");
   expect(hote.querySelector('[data-testid="boucle-historique"]').textContent).toContain("Version 5");
+  expect(hote.querySelector('[data-testid="boucle-version"]').textContent).toBe("5");
   expect(document.activeElement).toBe(hote.querySelector('[data-testid="boucle-action-outcome"]'));
 
   await act(async () => { racine.unmount(); });
@@ -1526,6 +1530,10 @@ test("pendant le rechargement après 409, la croix ferme puis le verrou persiste
   expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).toBeNull();
   expect(hote.querySelector('[data-testid="boucle-detail"]')).not.toBeNull();
   expect(document.activeElement).toBe(hote.querySelector('[data-testid="boucle-detail-fermer"]'));
+  expect(hote.querySelector('[data-testid="boucle-verification-source"]').textContent)
+    .toContain("Vérification de la source");
+  expect(hote.querySelector('[data-testid="boucle-action-trancher"]').disabled).toBe(true);
+  expect(hote.querySelector('[data-testid="boucle-action-trancher"]').getAttribute("aria-disabled")).toBe("true");
 
   await cliquerEnFocus(hote, "boucle-action-trancher");
   expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).toBeNull();
@@ -1540,6 +1548,7 @@ test("pendant le rechargement après 409, la croix ferme puis le verrou persiste
     });
   });
 
+  expect(hote.querySelector('[data-testid="boucle-verification-source"]')).toBeNull();
   expect(hote.querySelector('[data-testid="boucle-action-trancher"]')).toBeNull();
   await cliquerEnFocus(hote, "boucle-action-initiative");
   expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
@@ -1585,6 +1594,121 @@ test("pendant le rechargement après un succès sans chaîne source, le détail 
   expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).toBeNull();
   await cliquer(hote, "boucle-detail-fermer");
   expect(hote.querySelector('[data-testid="boucle-detail"]')).toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("un GET de vérification suspendu est abandonné et libère le verrou", async () => {
+  jest.useFakeTimers();
+  try {
+    let appelsDetail = 0;
+    api.get.mockImplementation((url, config) => {
+      if (url === "/boucle/objets") {
+        return Promise.resolve({ data: { tenant: "local", objets: [...objets, decisionProposee] } });
+      }
+      if (url === "/boucle/synthese") return Promise.resolve({ data: synthese });
+      if (url === "/boucle/twins") return Promise.resolve({ data: { twins: [] } });
+      if (url === "/boucle/objets/dec-prop") {
+        appelsDetail += 1;
+        if (appelsDetail === 1) {
+          return Promise.resolve({ data: { objet: decisionProposee, chaine: [], historique: [] } });
+        }
+        return new Promise((resolve, reject) => {
+          const annuler = () => reject(Object.assign(new Error("aborted"), {
+            name: "CanceledError",
+            code: "ERR_CANCELED",
+          }));
+          if (config?.signal?.aborted) annuler();
+          else config?.signal?.addEventListener("abort", annuler);
+        });
+      }
+      return Promise.resolve({ data: {} });
+    });
+    boucleApi.trancherDecision.mockRejectedValue({
+      response: { status: 409, data: { detail: "décision déjà tranchée" } },
+    });
+
+    const { hote, racine } = monter();
+    await rendre(racine);
+    await ouvrirObjet(hote, "dec-prop");
+    await cliquerEnFocus(hote, "boucle-action-trancher");
+    await choisir(hote.querySelector('[data-testid="boucle-transition-choix"]'), "Automatiser");
+    await cliquer(hote, "boucle-transition-enregistrer");
+
+    const croix = hote.querySelector('[data-testid="boucle-transition-fermer"]');
+    await act(async () => { croix.click(); });
+    expect(hote.querySelector('[data-testid="boucle-verification-source"]')).not.toBeNull();
+    expect(hote.querySelector('[data-testid="boucle-action-trancher"]').disabled).toBe(true);
+
+    await act(async () => {
+      jest.advanceTimersByTime(10000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(hote.querySelector('[data-testid="boucle-verification-source"]')).toBeNull();
+    expect(hote.querySelector('[data-testid="boucle-verification-erreur"]').textContent)
+      .toContain("Vérification de la source indisponible");
+    expect(hote.querySelector('[data-testid="boucle-action-trancher"]').disabled).toBe(false);
+    expect(hote.querySelector('[data-testid="boucle-action-trancher"]').getAttribute("aria-disabled")).toBeNull();
+
+    await cliquerEnFocus(hote, "boucle-action-trancher");
+    expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+
+    await act(async () => { racine.unmount(); });
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+test("un échec du GET de fond conserve la chaîne et le panneau source", async () => {
+  let appelsDetail = 0;
+  const decisionSource = {
+    ...decision,
+    version: 8,
+    donnees: { ...decision.donnees, initiative_id: "ini-fond" },
+  };
+  api.get.mockImplementation((url) => {
+    if (url === "/boucle/objets") return Promise.resolve({ data: { tenant: "local", objets } });
+    if (url === "/boucle/synthese") return Promise.resolve({ data: synthese });
+    if (url === "/boucle/twins") return Promise.resolve({ data: { twins: [] } });
+    if (url === "/boucle/objets/dec-1") {
+      appelsDetail += 1;
+      if (appelsDetail === 1) {
+        return Promise.resolve({
+          data: {
+            objet: decision,
+            chaine: [situation, investigation, decision],
+            historique: [{ version: 7, maj_le: "2026-10-30T10:00:00Z" }],
+          },
+        });
+      }
+      return Promise.reject(new Error("fond indisponible"));
+    }
+    return Promise.resolve({ data: {} });
+  });
+  boucleApi.lancerInitiative.mockResolvedValue({
+    data: {
+      objet: { id: "ini-fond", type: "INITIATIVE", titre: "Initiative", donnees: { statut: "PLANNED" } },
+      chaine: [situation, investigation, decisionSource, { id: "ini-fond", type: "INITIATIVE", titre: "Initiative" }],
+    },
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "dec-1");
+  await cliquerEnFocus(hote, "boucle-action-initiative");
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "Initiative");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(hote.querySelector('[data-testid="boucle-detail"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-detail-titre"]').textContent).not.toBe("");
+  expect(hote.querySelector('[data-testid="boucle-historique"]').textContent).toContain("Version 7");
+  await deplier(hote, "boucle-chaine-section");
+  expect(hote.querySelector('[data-testid="boucle-chaine"]').querySelectorAll('[data-testid="boucle-chaine-etape"]'))
+    .toHaveLength(2);
 
   await act(async () => { racine.unmount(); });
 });

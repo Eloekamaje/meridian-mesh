@@ -34,6 +34,10 @@ import {
   valeurDe,
 } from "@/components/boucle/boucleUi";
 
+const MESSAGE_VERIFICATION_INDISPONIBLE =
+  "Vérification de la source indisponible — vérifiez manuellement avant de réessayer.";
+const DELAI_VERIFICATION_MS = 10000;
+
 const STADES = [
   { type: "SITUATION", famille: "emergence", label: "Situations", court: "Situation", couleur: "#60A5FA", Icone: Lightbulb },
   { type: "INVESTIGATION", famille: "investigation", label: "Investigations", court: "Investigation", couleur: "#38BDF8", Icone: MagnifyingGlass },
@@ -298,6 +302,8 @@ function PanneauDetail({
   onAction,
   transitionSucces,
   modaleOuverte = false,
+  verificationSource = false,
+  verificationErreur = "",
 }) {
   const panneauRef = useRef(null);
   const identifiantPanneau = idObjet(objet);
@@ -435,6 +441,8 @@ function PanneauDetail({
           succes={transitionSucces}
           onAction={onAction}
           onOuvrir={onOuvrirObjet}
+          verification={verificationSource}
+          verificationErreur={verificationErreur}
         />
 
         {(preuves.length > 0 || claims.length > 0 || outcomes.length > 0) && (
@@ -593,7 +601,7 @@ function PanneauDetail({
           <dl className="mt-2 space-y-1.5 text-xs">
             <div className="flex gap-3">
               <dt className="w-28 shrink-0 text-[#7C93A8]">Version</dt>
-              <dd className="text-[#D8E2EA]">{texte(valeurDe(objet, "version")) || "—"}</dd>
+              <dd className="text-[#D8E2EA]" data-testid="boucle-version">{texte(valeurDe(objet, "version")) || "—"}</dd>
             </div>
             <div className="flex gap-3">
               <dt className="w-28 shrink-0 text-[#7C93A8]">Observé le</dt>
@@ -642,6 +650,8 @@ export default function Boucle() {
   const refDetail = useRef(0);
   const enCoursRef = useRef(false);
   const refRechargement = useRef(false);
+  const refAbortVerification = useRef(null);
+  const refVerificationJeton = useRef(0);
   const refElementDeclencheur = useRef(null);
   const refIdentifiantDeclencheur = useRef(null);
   const refElementDeclencheurAction = useRef(null);
@@ -659,7 +669,7 @@ export default function Boucle() {
   const [twinErreur, setTwinErreur] = useState("");
   const [twinSucces, setTwinSucces] = useState("");
   const [actionActive, setActionActive] = useState(null);
-  const [transition, setTransition] = useState({ enCours: false, erreur: "", succes: null, rechargement: false });
+  const [transition, setTransition] = useState({ enCours: false, erreur: "", succes: null, rechargement: false, verificationErreur: "" });
 
   useEffect(() => {
     let annule = false;
@@ -728,28 +738,50 @@ export default function Boucle() {
     return () => { annule = true; };
   }, [rechargementTwins]);
 
-  const chargerDetail = useCallback((identifiant) => {
-    if (!identifiant) return Promise.resolve();
+  const chargerDetail = useCallback((identifiant, options = {}) => {
+    if (!identifiant) return Promise.resolve(false);
+    const { signal, conserverDonnees = false, messageEchec } = options;
     const jeton = refDetail.current + 1;
     refDetail.current = jeton;
-    setDetail({ chargement: true, erreur: null, data: null });
-    return api.get(`/boucle/objets/${encodeURIComponent(identifiant)}`, { params: { historique: true } })
+    if (conserverDonnees) {
+      setDetail((avant) => ({ ...avant, chargement: true, erreur: null }));
+    } else {
+      setDetail({ chargement: true, erreur: null, data: null });
+    }
+    return api.get(`/boucle/objets/${encodeURIComponent(identifiant)}`, {
+      params: { historique: true },
+      signal,
+    })
       .then((reponse) => {
-        if (refDetail.current !== jeton) return;
+        if (refDetail.current !== jeton) return null;
         setDetail({ chargement: false, erreur: null, data: reponse.data || null });
+        return true;
       })
       .catch((cause) => {
-        if (refDetail.current !== jeton) return;
-        setDetail({
+        if (refDetail.current !== jeton) return null;
+        const abandonne = signal?.aborted
+          || cause?.code === "ERR_CANCELED"
+          || cause?.name === "CanceledError";
+        const message = abandonne
+          ? MESSAGE_VERIFICATION_INDISPONIBLE
+          : messageErreur(cause, messageEchec || "Impossible de charger le détail de cet objet.");
+        setDetail((avant) => ({
           chargement: false,
-          erreur: messageErreur(cause, "Impossible de charger le détail de cet objet."),
-          data: null,
-        });
+          erreur: message,
+          data: conserverDonnees ? avant.data : null,
+        }));
+        return false;
       });
   }, []);
 
   const reinitialiserTransition = () => {
-    setTransition({ enCours: false, erreur: "", succes: null, rechargement: false });
+    setTransition((avant) => ({
+      enCours: false,
+      erreur: "",
+      succes: null,
+      rechargement: refRechargement.current,
+      verificationErreur: refRechargement.current ? avant.verificationErreur || "" : "",
+    }));
   };
 
   const ouvrirObjet = (objet) => {
@@ -840,7 +872,13 @@ export default function Boucle() {
     if (transition.enCours || enCoursRef.current) return;
     setSelection(null);
     setActionActive(null);
-    setTransition({ enCours: false, erreur: "", succes: null });
+    setTransition((avant) => ({
+      enCours: false,
+      erreur: "",
+      succes: null,
+      rechargement: refRechargement.current,
+      verificationErreur: avant.verificationErreur || "",
+    }));
   }, [transition.enCours]);
 
   const ouvrirAction = (actionId) => {
@@ -851,11 +889,27 @@ export default function Boucle() {
   };
 
   const rechargerDetailSource = async (identifiant) => {
+    refAbortVerification.current?.abort();
+    const controleur = new AbortController();
+    refAbortVerification.current = controleur;
+    const jetonVerification = refVerificationJeton.current + 1;
+    refVerificationJeton.current = jetonVerification;
+    const minuterie = setTimeout(() => controleur.abort(), DELAI_VERIFICATION_MS);
     refRechargement.current = true;
-    setTransition((avant) => ({ ...avant, rechargement: true }));
+    setTransition((avant) => ({ ...avant, rechargement: true, verificationErreur: "" }));
     try {
-      await chargerDetail(identifiant);
+      const ok = await chargerDetail(identifiant, {
+        signal: controleur.signal,
+        conserverDonnees: true,
+        messageEchec: MESSAGE_VERIFICATION_INDISPONIBLE,
+      });
+      if (ok === false) {
+        setTransition((avant) => ({ ...avant, verificationErreur: MESSAGE_VERIFICATION_INDISPONIBLE }));
+      }
     } finally {
+      clearTimeout(minuterie);
+      if (refVerificationJeton.current !== jetonVerification) return;
+      if (refAbortVerification.current === controleur) refAbortVerification.current = null;
       refRechargement.current = false;
       setTransition((avant) => ({ ...avant, rechargement: false }));
     }
@@ -919,7 +973,13 @@ export default function Boucle() {
     const detailIncomplet = detail.chargement || !detail.data;
     enCoursRef.current = true;
     refDetail.current += 1; // invalide un GET détail encore en vol
-    setTransition((avant) => ({ ...avant, enCours: true, erreur: "", rechargement: false }));
+    setTransition((avant) => ({
+      ...avant,
+      enCours: true,
+      erreur: "",
+      rechargement: false,
+      verificationErreur: "",
+    }));
 
     let reponse = null;
     let cause = null;
@@ -969,6 +1029,7 @@ export default function Boucle() {
       erreur: "",
       succes: nouvelObjet ? { action, objet: nouvelObjet } : { action, objet: null },
       rechargement: false,
+      verificationErreur: "",
     });
     demanderRestaurationFocusAction();
 
@@ -1042,6 +1103,8 @@ export default function Boucle() {
     }
     document.querySelector('[data-testid="boucle-detail-fermer"]')?.focus?.();
   }, [actionActive, objetDetail?.id]);
+
+  useEffect(() => () => refAbortVerification.current?.abort(), []);
 
   const changerOutcome = (cle, valeur) => {
     setFormulaireOutcome((avant) => ({ ...avant, [cle]: valeur }));
@@ -1779,6 +1842,8 @@ export default function Boucle() {
           onAction={ouvrirAction}
           transitionSucces={transition.succes}
           modaleOuverte={Boolean(actionActive)}
+          verificationSource={transition.rechargement}
+          verificationErreur={transition.verificationErreur}
         />
       )}
 
