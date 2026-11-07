@@ -153,7 +153,7 @@ Decision · Initiative · Outcome · Learning
 | **Maturer** | Observation → Hypothèse → Claim → renforcé → mature ; multi-source, historique, fréquence, cohérence temporelle, contradictions, qualité des preuves, expertise, confiance | Maturité des Claims, contradictions conservées, calibration confiance/outcome, spécialiste preuve, score d’attention | `connaissance.py`, `calibration_croyances.py`, `specialiste_preuve.py`, `attention.py` | Pas de pipeline de maturation des phénomènes ; pas de Signal/Observation/Hypothesis canonique ; pas d’agrégation fréquence/temporalité ; promotion encore peu outillée | **Partiel** | P0/P1 |
 | **Exprimer** | Formuler une lecture du réel : faits, hypothèses, preuves, incertitudes, confiance ; types opportunité/risque/anomalie/dérive/contradiction/changement/simplification/duplication/comportement | Histoires `Actualités` (legacy) avec récit, « pourquoi maintenant », reste à comprendre, opportunité ; `Situation.expression_id` | `actualites.py`, `Actualites.jsx`, `modele_entreprise.py` | Pas de classe `Expression` ; pas de typologie canonique ; pas de lien canonique Situation → Expression → Opportunity/Risk ; surface alimentée par Mongo legacy | **Partiel / legacy** | P0 |
 | **Investiguer** | Investigation structurée : contexte, problème, preuves, timeline, hypothèses concurrentes, experts, contradictions, sous-questions, découvertes, scénarios | Travail/case : hypothèses, options, investigations, décisions, passation, veille ; dossier de raisonnement : croyances, hypothèses, options, critique, gates ; contrats d’investigation et spécialistes | `cases.py`, `dossier_raisonnement.py`, `noyau_raisonnement.py`, `investigation.py`, `specialistes.py` | Investigation canonique créée par le pont C2 depuis Travail ; pas d'objet Hypothesis/Expert/ExpertContribution canonique ; pas d’UI investigation unifiée ; les experts sont des profils/spécialistes, pas des experts métier avec contributions | **Partiel** | P0/P1 |
-| **Décider** | Options/scénarios évalués (valeur, coût, complexité, risque, dépendances, délai, impacts client/employé/réglementaire, réversibilité, confiance) ; décision humaine tracée | Décision legacy dans Travail + note de passation ; `Decision` canonique et transitions ; contrefactuel pur ; scénarios de capacité | `cases.py`, `DecisionPassation.jsx`, `boucle.py`, `contrefactuel.py`, `planification/scenario.py` | Pas d’objet Scenario canonique ; pas de comparaison intégrée à la décision ; décision canonique créée par le pont C2 ; critères non homogènes | **Partiel** | P0/P1 |
+| **Décider** | Options/scénarios évalués (valeur, coût, complexité, risque, dépendances, délai, impacts client/employé/réglementaire, réversibilité, confiance) ; décision humaine tracée | Décision legacy dans Travail + note de passation ; `Decision` canonique et transitions ; `Scenario` canonique avec comparaison déterministe dans la Boucle ; contrefactuel pur ; scénarios de capacité | `cases.py`, `DecisionPassation.jsx`, `objets_exploitation.py`, `commandes_boucle.py`, `boucle.py`, `contrefactuel.py`, `planification/scenario.py` | Scénarios canoniques et comparaison exposés ; pas de scénarios de capacité reliés à la décision ; la décision ne sélectionne pas encore explicitement un scénario ; critères non homogènes | **Partiel** | P0/P1 |
 | **Agir** | Décision → initiative ; étapes, responsables, dépendances, plan, critères de succès, traçabilité | Planification capacité/charge/prévision/budget ; initiatives legacy ; `Initiative` canonique créée par C3 après réponse ; connecteur Jira ; délégations | `application/planification/*`, `initiatives.py`, `legacy.py`, `boucle.py`, `initiatives_auto.py` | Pas d’API/UI canonique de création ou de transition d’Initiative ; planification et boucle non reliées ; Jira live partiel ; Azure DevOps non identifié ; pas de plan d’action canonique | **Partiel** | P0/P1 |
 | **Mesurer** | Observer les conséquences réelles, comparer attendu/observé, détecter les effets secondaires | `Outcome` canonique + `/boucle/outcomes` ; worker D observations → Outcome ; note de passation + veille legacy ; calibration ; observations de Twins | `outcomes.py`, `mesure_auto.py`, `cognitif.py`, `cases.py` (veille), `moteur_veille`, `calibration_croyances.py` | Mesure automatique branchée sur observations, mais pas encore sur le chemin veille legacy complet ; dépend d’une Initiative canonique ; deux chemins de mesure non unifiés | **Partiel** | P1 |
 | **Apprendre** | Mémoire de transformation : quelles recommandations ont marché, récurrences, effets secondaires, dépendances sous-estimées, valeur | Learning canonique, retrieval, réutilisation mesurée, calibration, consolidation mémoire, propositions depuis dossier | `outcomes.py`, `retrieval_memoire.py`, `apprentissage_raisonnement.py`, `consolidation_memoire.py`, `cognitif.py` | Pas de mémoire de transformation interrogeable ; pas de détection de patterns ; réutilisation non enregistrée automatiquement ; promotion humaine ; pas de lien veille legacy → Learning canonique | **Partiel / embryonnaire** | P1 |
@@ -173,7 +173,7 @@ Decision · Initiative · Outcome · Learning
 | **Hypothesis** | `dossier_raisonnement.Hypothese` + tableau `hypotheses` du case | Dossier / Mongo | Via raisonnement ou Travail, pas comme objet canonique | **Partiel** |
 | **Expert** | `profils.Profil`, spécialistes cognitifs | Aucune | Aucune | **Partiel** |
 | **ExpertContribution** | `Proposition`, contributions de mobilisation | Dossier de raisonnement / réponse | Pas d’objet canonique | **Partiel** |
-| **Scenario** | `contrefactuel.Option/Scenario`, planification | Aucune | Aucune persistance | **Partiel** |
+| **Scenario** | `objets_exploitation.Scenario`, `construction_objets_exploitation.nouveau_scenario` | `objet_entreprise` + liens inverses `scenario_ids` / `scenario_id` | `POST /boucle/scenarios`, `GET /boucle/scenarios`, `POST /boucle/scenarios/comparer` et UI Boucle | **Opérationnel** |
 | **Decision** | `modele_entreprise.Decision` | `objet_entreprise` possible | Créée par le pont C2 ou par `POST /boucle/investigations/{id}/decisions` (UI) | **Partiel** |
 | **Initiative** | `modele_entreprise.Initiative` | `objet_entreprise` + backfill `migration_canonique` | Créée par C3 après `POST /initiatives/{iid}/repondre` ou par `POST /boucle/decisions/{id}/initiatives` (UI) | **Partiel** |
 | **Outcome** | `modele_entreprise.Outcome` | `objet_entreprise` | `POST /boucle/outcomes` ou worker D observations → Outcome ; exige une Initiative canonique | **Partiel** |
@@ -192,7 +192,7 @@ branchés dans le chemin de découverte et de revue.
 | **Atlas** | Géographie du Mesh | Navigation hiérarchique, focus, sélection, portes, couche Situations | Couche Situations encore legacy ; pas de lien direct vers la boucle canonique | **Solide** |
 | **Flore** | Interface conversationnelle d’exploitation | Contexte, citations, preuves, commandes, mobilisation des Twins | Pas de comparaison de scénarios, de requête « quels experts ont participé ? », ni d’action canonique sur la boucle | **Partiel** |
 | **Travail** | Espace investigation/décision/action | Conversation, pièces, hypothèses, options, décisions, passation, veille | Modèle Mongo ; crée les objets canoniques via le pont C2 | **Solide pour le travail, branché pour la boucle** |
-| **Boucle** | Boucle opérationnelle complète | Lecture des objets canoniques et synthèse ; création d’une Situation racine ; transitions Investigation → Decision → Initiative → Outcome → Learning ; création d’Outcome et de Twin | Pas de comparaison de Scénarios ni d’Opportunity/Risk ; édition et suppression non exposées | **Opérationnelle hors Scénarios** |
+| **Boucle** | Boucle opérationnelle complète | Lecture des objets canoniques et synthèse ; création d’une Situation racine ; transitions Investigation → Decision → Initiative → Outcome → Learning ; création et comparaison de Scénarios ; création d’Outcome et de Twin | Pas d’Opportunity/Risk opérationnels ; édition et suppression non exposées ; la décision ne sélectionne pas encore un scénario | **Opérationnelle hors Opportunity/Risk** |
 | **Jumeaux** | Registre, revue, promotion | Fiche, revue, claims, contradictions, cartes | Extension P2/P3 à faire | **Solide** |
 | **Administration** | Sources, couverture, propriétaires, audit | Sources, santé, rôles, couverture, journal | Connecteurs live à valider | **Solide** |
 | **Cognition** | Dossier, croyances, mémoire, calibration | Approbations, mémoire, dossiers, calibration | Pas de mémoire de transformation interrogeable | **Solide / partiel** |
@@ -215,10 +215,10 @@ en production (workers, migration tenant rétroactive, RLS).
 
 ### 6.2 Les objets de l’exploitation manquent
 
-`Signal`, `Expression`, `Scenario`, `Hypothesis`, `Expert` et `ExpertContribution` n’existent
-pas comme objets canoniques. `Opportunity` et `Risk` existent comme classes et sont testés,
-mais ne sont pas instanciés par le chemin de production. La vision fait pourtant de
-l’Opportunité un objet majeur.
+`Signal`, `Expression`, `Hypothesis`, `Expert` et `ExpertContribution` n’existent pas comme
+objets canoniques. `Scenario` est désormais canonique et comparable dans la Boucle.
+`Opportunity` et `Risk` existent comme classes et sont testés, mais ne sont pas instanciés par
+le chemin de production. La vision fait pourtant de l’Opportunité un objet majeur.
 
 ### 6.3 La boucle est opérable, mais pas encore complète
 
@@ -229,13 +229,14 @@ l’Opportunité un objet majeur.
 - proposer puis trancher une Decision (`POST /boucle/investigations/{id}/decisions`,
   `POST /boucle/decisions/{id}/trancher`) ;
 - lancer une Initiative (`POST /boucle/decisions/{id}/initiatives`) ;
+- créer, lister et comparer des Scénarios (`POST /boucle/scenarios`,
+  `GET /boucle/scenarios`, `POST /boucle/scenarios/comparer`) ;
 - mesurer un Outcome et capitaliser un Learning (`POST /boucle/initiatives/{id}/outcomes`,
   `POST /boucle/outcomes/{id}/learnings`, `POST /boucle/investigations/{id}/learnings`).
 
 Il reste sans API/UI canonique :
 
 - créer une Expression canonique ;
-- comparer des Scénarios ;
 - rattacher une Expertise.
 
 ### 6.4 La maturation et l’expression ne sont pas un pipeline
@@ -261,10 +262,10 @@ interrogeable comme un capital.
 1. **Unifier la chaîne** : choisir un parcours live (Situation → Investigation → Decision →
    Initiative → Outcome → Learning) et le brancher sur les objets canoniques, avec un identifiant
    unique et une trace visible dans Travail et Boucle.
-2. **Compléter la boucle opérable** : les transitions canoniques et la création d’une
-   Situation racine sont exposées dans l’UI ; il reste à comparer des Scénarios et à
-   rattacher l’Expertise.
-3. **Compléter les objets** : `Signal`, `Expression`, `Scenario`, `Hypothesis`, `Expert`,
+2. **Compléter la boucle opérable** : les transitions canoniques, la création d’une
+   Situation racine et la comparaison de Scénarios sont exposées dans l’UI ; il reste à
+   rattacher l’Expertise et à relier les scénarios de capacité à la décision.
+3. **Compléter les objets** : `Signal`, `Expression`, `Hypothesis`, `Expert`,
    `ExpertContribution` ; rendre `Opportunity` et `Risk` opérationnels.
 4. **Relier Travail et canonique** : une décision consignée dans Travail doit créer ou mettre à
    jour la `Decision` canonique ; la veille doit produire des `Outcome` et des `Learning`
@@ -278,8 +279,9 @@ interrogeable comme un capital.
    ce qui peut mieux fonctionner.
 7. **Orchestration des experts** : experts métier, processus, employés, clients, stratégie,
    avec méthodes, preuves, responsabilités et contributions traçables.
-8. **Comparaison de scénarios** : valeur, coût, complexité, risque, dépendances, délai, impacts,
-   réversibilité, confiance ; intégrée à la Decision.
+8. **Comparaison de scénarios enrichie** : valeur, coût, complexité, risque, dépendances, délai,
+   impacts, réversibilité, confiance ; la comparaison canonique existe, il reste à l’intégrer à
+   la décision et aux scénarios de capacité.
 9. **Aujourd’hui canonique** : surface d’attention alimentée par les objets canoniques, avec
    « Pourquoi Méridian pense cela ».
 10. **Actions Flore** : lancer une investigation, comparer des scénarios, interroger les experts,
