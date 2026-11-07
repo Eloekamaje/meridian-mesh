@@ -116,10 +116,11 @@ La lecture principale est un **seek d'index** sur `maj_le_utc > curseur` (tie-br
 `sequence_canonique`/`id`). Elle ne peut pas être affamée par un stock de documents plus anciens,
 même avec 500 documents avant le curseur et `--lot 10`. Les corrections legacy (`maj_le` plus
 récent que `maj_le_utc` de plus d'une ms) sont prioritaires et drainées avant le seek principal ;
-le checkpoint n'avance jamais au-delà d'une correction non traitée. Une **garde de migration**
-(`compter_a_migrer`) empêche aussi le worker de lire tant que des documents valides manquent de
-`maj_le_utc`, de `sequence_canonique` ou sont périmés ; les documents réellement malformés sont
-laissés à l'audit et ne bloquent pas le flux. Les documents legacy sans `maj_le_utc` sont
+le checkpoint n'avance jamais au-delà d'une correction non traitée ; si tous les prioritaires
+sont déjà traités, le seek principal reprend. Une **garde de migration** (`compter_a_migrer`)
+empêche aussi le worker de lire tant que des documents valides manquent de `maj_le_utc`, de
+`sequence_canonique` ou sont périmés. Les documents réellement malformés (id absent, `maj_le`
+illisible) sont laissés à l'audit et ne bloquent jamais le flux. Les documents legacy sans `maj_le_utc` sont
 backfillés par lots bornés (`remplir_maj_le_utc`, 500 par passe, CAS sur les valeurs lues) et lus
 par un fallback `maj_le >= curseur` (`$convert`, chaîne ISO/offset ou BSON Date).
 
