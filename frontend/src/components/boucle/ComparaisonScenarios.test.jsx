@@ -240,6 +240,38 @@ test("plafonne la sélection à 50 scénarios", async () => {
   await act(async () => { racine.unmount(); });
 });
 
+test("un changement d'objet invalide une comparaison en vol", async () => {
+  const autreObjet = { ...investigation, id: "inv-2", titre: "Autre investigation" };
+  let resoudreComparaison;
+  boucleApi.comparerScenarios.mockImplementation(
+    () => new Promise((resolve) => { resoudreComparaison = resolve; }),
+  );
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await act(async () => {
+    hote.querySelector('[data-testid="boucle-comparaison-lancer"]').click();
+  });
+  expect(hote.querySelector('[data-testid="boucle-comparaison-lancer"]').textContent)
+    .toContain("Comparaison");
+
+  await act(async () => {
+    racine.render(<ComparaisonScenarios objet={autreObjet} />);
+  });
+  expect(boucleApi.listerScenarios).toHaveBeenLastCalledWith({ investigation_id: "inv-2" });
+  expect(hote.querySelector('[data-testid="boucle-comparaison-lancer"]').textContent)
+    .toBe("Comparer");
+
+  await act(async () => {
+    resoudreComparaison({ data: comparaison() });
+  });
+  expect(hote.querySelector('[data-testid="boucle-comparaison-resultat"]')).toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-comparaison-lancer"]').textContent)
+    .toBe("Comparer");
+
+  await act(async () => { racine.unmount(); });
+});
+
 test("le tableau est accessible et expose les en-têtes de colonnes", async () => {
   const { hote, racine } = monter();
   await rendre(racine);

@@ -76,11 +76,13 @@ export default function ComparaisonScenarios({ objet }) {
   useEffect(() => {
     if (!pertinent) return undefined;
     let annule = false;
+    jetonComparaison.current += 1;
     setEtat({ chargement: true, erreur: "", scenarios: [] });
     setSelection([]);
     setReference("");
     setComparaison(null);
     setComparaisonErreur("");
+    setComparaisonEnCours(false);
     setSelectionErreur("");
     const params = type === "INVESTIGATION"
       ? { investigation_id: identifiant }

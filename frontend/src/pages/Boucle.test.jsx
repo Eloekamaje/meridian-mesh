@@ -1132,6 +1132,51 @@ test("un échec 5xx de création de scénario reste incertain et garde la modale
   await act(async () => { racine.unmount(); });
 });
 
+test("affiche une erreur si le rafraîchissement du parent échoue", async () => {
+  const scenario = {
+    id: "scenario-refresh", famille: "decision", type: "SCENARIO",
+    mode: "PROPOSED", titre: "Scénario rafraîchi", donnees: {}, version: 1,
+  };
+  let rafraichissementEchoue = false;
+  api.get.mockImplementation((url) => {
+    if (url === "/boucle/objets") {
+      return Promise.resolve({ data: { tenant: "local", objets } });
+    }
+    if (url === "/boucle/synthese") return Promise.resolve({ data: synthese });
+    if (url === "/boucle/twins") return Promise.resolve({ data: { twins: [] } });
+    const detail = url.match(/^\/boucle\/objets\/(.+)$/);
+    if (detail) {
+      const identifiant = decodeURIComponent(detail[1]);
+      if (identifiant === "inv-1" && rafraichissementEchoue) {
+        return Promise.reject(new Error("fond indisponible"));
+      }
+      const objet = identifiant === "inv-1" ? investigation : scenario;
+      return Promise.resolve({ data: { objet, chaine: [], historique: [] } });
+    }
+    return Promise.resolve({ data: {} });
+  });
+  boucleApi.creerScenario.mockImplementation(() => {
+    rafraichissementEchoue = true;
+    return Promise.resolve({
+      data: { objet: scenario, chaine: [investigation, scenario], historique: [] },
+    });
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "inv-1");
+  await cliquer(hote, "boucle-action-creer-scenario");
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "Scénario rafraîchi");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(hote.querySelector('[data-testid="boucle-verification-erreur"]').textContent)
+    .toContain("lien inverse");
+
+  await act(async () => { racine.unmount(); });
+});
+
 test("affiche la comparaison des scénarios dans le détail d'une investigation", async () => {
   installerApi();
   boucleApi.listerScenarios.mockResolvedValue({
