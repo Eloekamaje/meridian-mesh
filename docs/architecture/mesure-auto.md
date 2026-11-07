@@ -55,8 +55,10 @@ Collection : `mesure_auto_observations`. Chaque document porte explicitement son
   sont acceptés puis ramenés en UTC par l'adaptateur.
 - `maj_le_utc` : champ canonique **indexé** (BSON Date) écrit par `document_ingestion`. C'est lui
   qui porte le seek d'index `(tenant_id, maj_le_utc, sequence, id)` ; il évite toute fenêtre
-  glissante et toute famine. Les documents legacy sans ce champ passent par un backfill borné et
-  un fallback explicitement borné.
+  glissante et toute famine. La précision BSON Date est la milliseconde : `document_ingestion`
+  tronque `maj_le_utc` à la ms et aligne `maj_le` dessus, pour que l'égalité de curseur soit
+  exacte. Les documents legacy sans ce champ passent par un backfill borné et un fallback
+  explicitement borné.
 - `sequence` : tie-breaker monotone optionnel (ULID, numéro producteur). Les entiers `int`/`long`
   sont zéro-paddés sur 20 chiffres (`9` → `000…009`) pour rester ordonnés lexicographiquement.
   À défaut, `_id` Mongo sert de tie-breaker. Deux documents de la même microseconde restent ainsi
