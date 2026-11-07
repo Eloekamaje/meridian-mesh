@@ -21,18 +21,16 @@ worker de sauter une réécriture identique sans faire monter la version ni l'hi
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from dataclasses import asdict, is_dataclass
+from dataclasses import asdict
 from datetime import date, datetime, timezone
-from decimal import Decimal
-from enum import Enum
 import copy
 import hashlib
-import json
 import re
 import unicodedata
 from typing import Any
-from urllib.parse import parse_qsl, unquote_plus, urlsplit
 
+from meridian.application import mapping_legacy as mapping
+from meridian.application import pont_securite as securite
 from meridian.domain import modele_entreprise as modele
 from meridian.domain.tenant import TenantError, normaliser_slug
 
@@ -40,6 +38,7 @@ __all__ = [
     "ConflitCanonique",
     "ETATS",
     "OPERATION_CASE",
+    "PONT_KEY_ENV",
     "OPERATION_INITIATIVE",
     "OPERATION_LEARNING",
     "OPERATION_OBJETS",
@@ -48,10 +47,13 @@ __all__ = [
     "OPERATIONS",
     "ORIGINE_LEGACY",
     "PontInvalide",
+    "SignatureInvalide",
     "TenantMismatch",
     "assainir",
     "backoff_secondes",
     "cle_idempotence",
+    "cle_sensible",
+    "collection_attendue",
     "construire_evenement",
     "construire_objets",
     "decision_case_id",
@@ -80,8 +82,14 @@ __all__ = [
     "objets_depuis_evenement",
     "outcome_id",
     "priorite_canonique",
+    "signature",
+    "signer_evenement",
+    "source_maj_le",
     "statut_canonique",
+    "statut_initiative_canonique",
     "valider_tenant",
+    "verifier_evenement",
+    "verifier_source_evenement",
 ]
 
 OPERATION_SITUATION = "situation.maj"
@@ -99,14 +107,9 @@ OPERATIONS = (
     OPERATION_LEARNING,
     OPERATION_OBJETS,
 )
-ETATS = ("pending", "done", "failed")
+ETATS = ("pending", "done", "failed", "dead")
 ORIGINE_LEGACY = "legacy"
-
-_MARQUEURS_SECRETS = ("password", "passwd", "secret", "token", "credential", "authorization")
-_CLES_SECRETES = frozenset({
-    "pwd", "pass", "auth", "key", "apikey", "api_key", "api-key", "access_key", "accesskey",
-    "private_key", "privatekey", "client_secret", "clientsecret", "bearer", "password", "passwd",
-})
+ORIGINE_MIGRATION = "migration"
 _CHAMPS_TABLE = frozenset({
     "id", "tenant_id", "famille", "type", "mode", "titre", "donnees", "version",
     "observe_le", "valide_depuis", "valide_jusqua", "cree_le", "maj_le",
@@ -128,21 +131,13 @@ _MODE_DEFAUT = {
     "LEARNING": "INFERRED",
 }
 
-# Champs legacy recopiés dans `donnees` : liste fermée, jamais le document entier.
-_CHAMPS_SITUATION = (
-    "nature", "type", "verbe", "score", "detectee", "indicateurs", "decouverte_quoi",
-    "decouverte_pourquoi", "reste_a_comprendre", "decisions_attendues", "chronologie",
-    "hypotheses", "contributions", "preuves", "synthese", "actions_proposees", "opportunite",
-    "decidee_le", "statut_legacy", "priorite_legacy",
-)
+# Champs legacy recopiés dans `donnees` : liste fermée, partagée avec la migration.
+_CHAMPS_SITUATION = mapping.CHAMPS_SITUATION
 _CHAMPS_CASE = (
     "objectif", "resume", "prochaine_etape", "type", "genre", "num", "responsable",
     "sensibilite", "portee", "origine", "veille",
 )
-_CHAMPS_INITIATIVE = (
-    "raison", "urgence", "genre", "confiance", "declencheur", "source", "situation_id",
-    "quand", "reponse", "travail_id",
-)
+_CHAMPS_INITIATIVE = mapping.CHAMPS_INITIATIVE
 
 
 class PontInvalide(ValueError):
@@ -155,6 +150,60 @@ class TenantMismatch(PontInvalide):
 
 class ConflitCanonique(PontInvalide):
     """Un identifiant canonique existe déjà avec une origine non légacy : on n'écrase pas."""
+
+
+class SignatureInvalide(PontInvalide):
+    """Signature HMAC absente ou invalide : l'événement n'est pas authentifié."""
+
+
+PONT_KEY_ENV = securite.PONT_KEY_ENV
+cle_sensible = securite.cle_sensible
+
+
+def assainir(valeur: Any) -> Any:
+    try:
+        return securite.assainir(valeur)
+    except ValueError as exc:
+        raise PontInvalide(str(exc)) from exc
+
+
+def hash_contenu(valeur: Any) -> str:
+    try:
+        return securite.hash_contenu(valeur)
+    except ValueError as exc:
+        raise PontInvalide(str(exc)) from exc
+
+
+def signer_evenement(evenement: Mapping[str, Any], cle: Any = None) -> dict[str, Any]:
+    try:
+        return securite.signer_evenement(evenement, cle)
+    except securite.SignatureInvalide as exc:
+        raise SignatureInvalide(str(exc)) from exc
+    except ValueError as exc:
+        raise SignatureInvalide(f"événement non signable : {exc}") from exc
+
+
+def verifier_evenement(evenement: Mapping[str, Any], cle: Any = None) -> dict[str, Any]:
+    try:
+        return securite.verifier_evenement(evenement, cle)
+    except securite.SignatureInvalide as exc:
+        raise SignatureInvalide(str(exc)) from exc
+    except ValueError as exc:
+        raise SignatureInvalide(f"événement non vérifiable : {exc}") from exc
+
+
+def signature(evenement: Mapping[str, Any], cle: Any = None) -> str:
+    try:
+        return securite.signature(evenement, cle)
+    except securite.SignatureInvalide as exc:
+        raise SignatureInvalide(str(exc)) from exc
+
+
+def cle_pont(cle: Any = None) -> str:
+    try:
+        return securite.charger_cle(cle)
+    except securite.SignatureInvalide as exc:
+        raise SignatureInvalide(str(exc)) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -209,9 +258,7 @@ def _mapping(valeur: Any) -> dict[str, Any]:
 
 
 def _cle(valeur: Any) -> str:
-    texte = unicodedata.normalize("NFKD", str(valeur or ""))
-    texte = "".join(c for c in texte if not unicodedata.combining(c)).lower()
-    return re.sub(r"[^a-z0-9]+", " ", texte).strip()
+    return mapping.cle(valeur)
 
 
 def normaliser_tenant(tenant_id: Any) -> str:
@@ -225,80 +272,6 @@ def normaliser_tenant(tenant_id: Any) -> str:
 
 
 valider_tenant = normaliser_tenant
-
-
-def _cle_sensible(cle: Any) -> bool:
-    normalisee = unquote_plus(str(cle)).strip().lower()
-    if normalisee.endswith(("_ref", "-ref", "_reference", "-reference")):
-        return False
-    compacte = normalisee.replace("-", "_")
-    if compacte in _CLES_SECRETES:
-        return True
-    if compacte.endswith("_key"):
-        return True
-    return any(marque in compacte for marque in _MARQUEURS_SECRETS)
-
-
-def _url_porte_un_secret(url: str) -> bool:
-    try:
-        parties = urlsplit(url)
-    except (ValueError, UnicodeError):
-        return True
-    if parties.username is not None or parties.password is not None or "@" in parties.netloc:
-        return True
-    return any(
-        _cle_sensible(cle) and valeur not in ("", "***")
-        for cle, valeur in parse_qsl(parties.query, keep_blank_values=True)
-    )
-
-
-def assainir(valeur: Any) -> Any:
-    """Copie JSON stricte, sans clé sensible ni URL porteuse de secret.
-
-    La fonction est volontairement récursive et fermée : un type inconnu devient sa forme
-    textuelle, jamais un objet BSON opaque. Les documents legacy ne sont donc jamais copiés
-    en entier dans l'outbox.
-    """
-    if valeur is None or isinstance(valeur, (bool, int, str)):
-        if isinstance(valeur, str) and _url_porte_un_secret(valeur):
-            return "[redacted]"
-        return valeur
-    if isinstance(valeur, float):
-        if valeur != valeur or valeur in (float("inf"), float("-inf")):
-            raise PontInvalide("nombre non fini")
-        return valeur
-    if isinstance(valeur, Decimal):
-        return float(valeur)
-    if isinstance(valeur, (datetime, date)):
-        return valeur.isoformat()
-    if isinstance(valeur, Enum):
-        return assainir(valeur.value)
-    if is_dataclass(valeur) and not isinstance(valeur, type):
-        return assainir(asdict(valeur))
-    if isinstance(valeur, Mapping):
-        sortie: dict[str, Any] = {}
-        for cle, element in valeur.items():
-            if str(cle) == "_id" or _cle_sensible(cle):
-                continue
-            sortie[str(cle)] = assainir(element)
-        return sortie
-    if isinstance(valeur, (list, tuple)):
-        return [assainir(element) for element in valeur]
-    if isinstance(valeur, (set, frozenset)):
-        elements = [assainir(element) for element in valeur]
-        return sorted(elements, key=lambda element: json.dumps(
-            element, ensure_ascii=False, sort_keys=True, default=str))
-    if isinstance(valeur, (bytes, bytearray)):
-        return valeur.decode("utf-8", errors="replace")
-    return str(valeur)
-
-
-def hash_contenu(valeur: Any) -> str:
-    """Hash stable (JSON trié) du contenu assaini ; sert à l'idempotence et au skip d'écriture."""
-    charge = assainir(valeur)
-    texte = json.dumps(charge, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
-                       allow_nan=False)
-    return hashlib.sha256(texte.encode("utf-8")).hexdigest()
 
 
 def identifiant_evenement(tenant_id: Any, operation: Any, canonical_id: Any,
@@ -319,7 +292,8 @@ def identifiant_evenement(tenant_id: Any, operation: Any, canonical_id: Any,
 cle_idempotence = identifiant_evenement
 
 
-def backoff_secondes(tentatives: Any, *, base: int = 5, maximum: int = 3600) -> int:
+def backoff_secondes(tentatives: Any, *, base: int = 5, maximum: int = 3600,
+                     jitter: float = 0.0) -> int:
     """Backoff exponentiel borné : base, 2×base, 4×base… sans dépasser ``maximum``."""
     if isinstance(tentatives, bool):
         raise PontInvalide("tentatives doit être un entier positif")
@@ -331,7 +305,12 @@ def backoff_secondes(tentatives: Any, *, base: int = 5, maximum: int = 3600) -> 
         nombre = 1
     if nombre > 32:  # évite un entier géant pour un compteur corrompu
         return int(maximum)
-    return min(int(maximum), int(base) * (2 ** (nombre - 1)))
+    delai = min(int(maximum), int(base) * (2 ** (nombre - 1)))
+    if jitter:
+        import random
+        amplitude = min(0.5, max(0.0, float(jitter)))
+        delai = int(delai * (1.0 + random.uniform(-amplitude, amplitude)))
+    return max(1, min(int(maximum), delai))
 
 
 def _slug_identifiant(valeur: Any, defaut: str = "na") -> str:
@@ -362,9 +341,16 @@ def initiative_id(decision_id: Any) -> str:
     return f"ini-{_texte(decision_id)}"
 
 
-def outcome_id(initiative_id_: Any, metrique: Any, periode: Any = "") -> str:
+def outcome_id(initiative_id_: Any, metrique: Any, periode: Any = "",
+               mesure_le: Any = None, empreinte: Any = None) -> str:
+    if _texte(periode):
+        suffixe = _slug_identifiant(periode, "sans-periode")
+    else:
+        # Sans période, deux mesures de la même métrique ne doivent pas partager le même ID.
+        suffixe = ("sans-periode-" + _slug_identifiant(
+            _texte(mesure_le) or _texte(empreinte) or "na"))
     return (f"out-{_texte(initiative_id_)}-{_slug_identifiant(metrique, 'metrique')}-"
-            f"{_slug_identifiant(periode, 'sans-periode')}")
+            f"{suffixe}")
 
 
 def learning_id(source_id: Any) -> str:
@@ -375,64 +361,18 @@ def learning_id(source_id: Any) -> str:
 # Statuts, priorités, dates
 # ---------------------------------------------------------------------------
 
-_STATUTS = {
-    "active": "CANDIDATE",
-    "candidate": "CANDIDATE",
-    "en observation": "OBSERVING",
-    "observing": "OBSERVING",
-    "surveillee": "WATCHED",
-    "watched": "WATCHED",
-    "en investigation": "INVESTIGATING",
-    "investigating": "INVESTIGATING",
-    "qualifiee": "QUALIFIED",
-    "qualified": "QUALIFIED",
-    "decidee": "DECIDED",
-    "decided": "DECIDED",
-    "poursuivie": "DECIDED",
-    "reportee": "DEFERRED",
-    "deferred": "DEFERRED",
-    "ecartee": "DISMISSED",
-    "classee": "DISMISSED",
-    "ignoree": "DISMISSED",
-    "dismissed": "DISMISSED",
-    "archivee": "ARCHIVED",
-    "archived": "ARCHIVED",
-}
-
-_PRIORITES = {
-    "critique": "HAUTE",
-    "critical": "HAUTE",
-    "haute": "HAUTE",
-    "high": "HAUTE",
-    "normale": "MOYENNE",
-    "normal": "MOYENNE",
-    "moyenne": "MOYENNE",
-    "moyen": "MOYENNE",
-    "medium": "MOYENNE",
-    "basse": "BASSE",
-    "bas": "BASSE",
-    "low": "BASSE",
-}
-
-
 def statut_canonique(valeur: Any) -> str:
-    """Traduit un statut legacy (accents/casse/espaces) vers le vocabulaire canonique."""
-    cle = _cle(valeur)
-    if not cle:
-        return "CANDIDATE"
-    if cle in _STATUTS:
-        return _STATUTS[cle]
-    # Un code déjà canonique traverse sans être réinterprété.
-    if re.fullmatch(r"[A-Z][A-Z0-9_]*", _texte(valeur)):
-        return _texte(valeur)
-    return "CANDIDATE"
+    """Traduit un statut de situation legacy vers le vocabulaire canonique partagé."""
+    return mapping.statut_situation(valeur)
+
+
+def statut_initiative_canonique(valeur: Any) -> str:
+    """Traduit un statut d'initiative legacy vers le vocabulaire canonique partagé."""
+    return mapping.statut_initiative(valeur)
 
 
 def priorite_canonique(valeur: Any) -> str:
-    cle = _cle(valeur)
-    if not cle:
-        return "MOYENNE"
-    return _PRIORITES.get(cle, "MOYENNE")
+    return mapping.priorite(valeur)
 
 
 def _iso(valeur: Any, defaut: str | None = None) -> str | None:
@@ -496,7 +436,9 @@ def _copier_champs(doc: Mapping[str, Any], champs: Iterable[str]) -> dict[str, A
 
 def _serialiser(objet: Any, evenement: Mapping[str, Any] | None = None,
                 extra_donnees: Mapping[str, Any] | None = None,
-                type_attendu: str | None = None) -> dict[str, Any]:
+                type_attendu: str | None = None, source_maj_le: Any = None,
+                origine: str = ORIGINE_LEGACY,
+                source_objet: Mapping[str, Any] | None = None) -> dict[str, Any]:
     if isinstance(objet, Mapping):
         data = copy.deepcopy(dict(objet))
     else:
@@ -545,12 +487,16 @@ def _serialiser(objet: Any, evenement: Mapping[str, Any] | None = None,
         if valeur:
             payload[champ] = _iso(valeur, _texte(valeur))
 
+    source_maj = (_iso(source_maj_le)
+                  or _iso((evenement or {}).get("source_maj_le"))
+                  or _iso((evenement or {}).get("cree_le")))
     payload["donnees"]["_pont"] = {
         "hash": hash_contenu(payload),
-        "origine": ORIGINE_LEGACY,
+        "origine": _texte(origine) or ORIGINE_LEGACY,
         "event_id": _texte((evenement or {}).get("_id")),
         "operation": _texte((evenement or {}).get("operation")),
-        "source": assainir((evenement or {}).get("source") or {}),
+        "source_maj_le": source_maj,
+        "source": assainir(source_objet or (evenement or {}).get("source") or {}),
     }
     return payload
 
@@ -649,13 +595,35 @@ def _investigation_pour_decision(tenant: str, situation_id_: str,
     }, mode="DECLARED", **_dates(reference))
 
 
+_STATUTS_DECISION_PROPOSEE = frozenset({
+    "proposee", "propose", "proposed", "en attente", "a trancher", "a decider",
+    "en examen", "pending",
+})
+_STATUTS_DECISION_TRANCHEE = frozenset({
+    "decidee", "decide", "decided", "tranchee", "tranche", "arbitree", "arbitrage",
+})
+
+
 def _decision_tranchee(investigation: Any, texte_decision: Any, options: Any, acteur: Any,
                        decide_le: Any, rationale: Any, identifiant: str,
                        evenement: Mapping[str, Any] | None, reference: str,
-                       extra_donnees: Mapping[str, Any] | None = None) -> dict[str, Any]:
+                       extra_donnees: Mapping[str, Any] | None = None,
+                       source_maj_le: Any = None,
+                       statut_decision: Any = None,
+                       source_objet: Mapping[str, Any] | None = None) -> dict[str, Any]:
     texte = _texte_legacy(texte_decision)
+    acteur_texte = _texte_legacy(acteur)
+    statut_brut = _cle(statut_decision)
+    explicitement_proposee = statut_brut in _STATUTS_DECISION_PROPOSEE
+    explicitement_tranchee = statut_brut in _STATUTS_DECISION_TRANCHEE
+    # Sans acteur humain, on ne promeut jamais en DECIDED : la décision reste PROPOSED.
+    proposee = explicitement_proposee or not acteur_texte
+    if explicitement_tranchee and not acteur_texte:
+        proposee = True
+    if not texte and not _textes(options):
+        raise PontInvalide("décision sans texte ni option")
     if not texte:
-        raise PontInvalide("décision sans texte")
+        texte = _textes(options)[0]
     options_normalisees = _textes(options)
     if not options_normalisees:
         options_normalisees = [texte]
@@ -674,18 +642,20 @@ def _decision_tranchee(investigation: Any, texte_decision: Any, options: Any, ac
         "options": options_normalisees,
         "criteres": [],
         "incertitudes": [],
-        "statut": "DECIDED",
-        "acteur": _texte_legacy(acteur) or ORIGINE_LEGACY,
-        "choix": texte,
-        "decide_le": _iso(decide_le, reference),
+        "statut": "PROPOSED" if proposee else "DECIDED",
+        "acteur": None if proposee else acteur_texte,
+        "choix": None if proposee else texte,
+        "decide_le": None if proposee else _iso(decide_le, reference),
         "rationale": _texte_legacy(rationale),
+        "statut_legacy": _texte_legacy(statut_decision),
     }
     donnees.update(extra_donnees or {})
     donnees["options"] = options_normalisees
-    donnees["choix_hors_options"] = hors_options
+    donnees["choix_hors_options"] = bool(hors_options and not proposee)
     decision = _objet("DECISION", identifiant, tenant, titre, donnees,
                       mode="DECLARED", **_dates(reference))
-    return _serialiser(decision, evenement)
+    return _serialiser(decision, evenement, source_maj_le=source_maj_le,
+                       source_objet=source_objet)
 
 
 def _donnee(objet: Any, nom: str) -> Any:
@@ -704,7 +674,7 @@ def _decisions_situation(doc: Mapping[str, Any], statut: str = "") -> list[dict[
         for element in brut:
             if isinstance(element, Mapping):
                 texte = element.get("texte") or element.get("decision")
-                if _texte_legacy(texte):
+                if _texte_legacy(texte) or _textes(element.get("options")):
                     decisions.append(dict(element))
             elif _texte_legacy(element):
                 decisions.append({"texte": _texte_legacy(element)})
@@ -719,6 +689,7 @@ def _decisions_situation(doc: Mapping[str, Any], statut: str = "") -> list[dict[
             "par": doc.get("decidee_par"),
             "quand": doc.get("decidee_le"),
             "motif": doc.get("decision_motif"),
+            "statut": doc.get("statut"),
         })
     return decisions
 
@@ -736,8 +707,13 @@ def objets_depuis_situation(situation: Any, *, tenant_id: Any = None,
     cree = _date_depuis(doc, ("cree_le", "detectee", "observe_le", "maj_le"), reference)
     observe = _date_depuis(doc, ("observe_le", "detectee", "cree_le", "maj_le"), cree)
     valide = _date_depuis(doc, ("valide_depuis", "detectee", "cree_le", "maj_le"), observe)
+    source_maj = _date_depuis(doc, ("maj_le", "cree_le", "detectee", "observe_le"), reference)
+    source_situation = {"collection": "situations", "id": sid,
+                        "hash": hash_contenu(doc)}
     titre = _titre(doc, sid)
-    description = (_texte_legacy(doc.get("resume")) or _texte_legacy(doc.get("decouverte_quoi"))
+    description_explicite = _texte_legacy(doc.get("description"))
+    description = (description_explicite or _texte_legacy(doc.get("resume"))
+                   or _texte_legacy(doc.get("decouverte_quoi"))
                    or _texte_legacy(doc.get("question")) or titre)
 
     statut = statut_canonique(doc.get("statut"))
@@ -746,7 +722,6 @@ def objets_depuis_situation(situation: Any, *, tenant_id: Any = None,
     resume = _texte_legacy(doc.get("resume")) or description
     donnees_situation = {
         "titre": titre,
-        "description": description,
         "resume": resume,
         "statut": statut,
         "priorite": priorite,
@@ -758,13 +733,26 @@ def objets_depuis_situation(situation: Any, *, tenant_id: Any = None,
         "inconnues": _textes(doc.get("reste_a_comprendre")),
     }
     donnees_situation.update(_copier_champs(doc, _CHAMPS_SITUATION))
+    # Les champs dérivés sont reposés après la copie : un `resume`/`description` legacy
+    # non scalaire ne doit jamais remplacer la valeur texte calculée.
+    donnees_situation["resume"] = resume
+    question_explicite = _texte_legacy(doc.get("question"))
+    if question_explicite:
+        donnees_situation["question"] = question_explicite
+    else:
+        donnees_situation.pop("question", None)
+    if description_explicite:
+        donnees_situation["description"] = description_explicite
+    else:
+        donnees_situation.pop("description", None)
     donnees_situation["statut_legacy"] = _texte(doc.get("statut"))
     donnees_situation["priorite_legacy"] = _texte(doc.get("priorite"))
     donnees_situation["jumeaux"] = list(twin_ids)
     situation_canonique = _objet(
         "SITUATION", sid, tenant, titre, donnees_situation, mode="DECLARED",
         cree_le=cree, observe_le=observe, valide_depuis=valide)
-    objets = [_serialiser(situation_canonique, evenement)]
+    objets = [_serialiser(situation_canonique, evenement, source_maj_le=source_maj,
+                          source_objet=source_situation)]
 
     question = _texte_legacy(doc.get("question")) or description
     investigation = _objet(
@@ -776,7 +764,8 @@ def objets_depuis_situation(situation: Any, *, tenant_id: Any = None,
             "statut": "CLOSED" if statut in {"DISMISSED", "ARCHIVED"} else "OPEN",
             "incertitudes": [],
         }, mode="DECLARED", cree_le=cree, observe_le=observe, valide_depuis=valide)
-    objets.append(_serialiser(investigation, evenement))
+    objets.append(_serialiser(investigation, evenement, source_maj_le=source_maj,
+                              source_objet=source_situation))
 
     decisions: list[dict[str, Any]] = []
     for rang, decision_doc in enumerate(_decisions_situation(doc, statut), 1):
@@ -791,12 +780,17 @@ def objets_depuis_situation(situation: Any, *, tenant_id: Any = None,
             identifiant, evenement, reference,
             extra_donnees={"situation_id": sid, "investigation_id": investigation_id(sid),
                            "rang": rang},
+            source_maj_le=source_maj,
+            statut_decision=decision_doc.get("statut") or decision_doc.get("etat"),
+            source_objet=source_situation,
         )
         objets.append(decision)
         decisions.append(decision)
 
-    if _cle(doc.get("statut")) == "poursuivie" and decisions:
-        decision_source = decisions[-1]
+    decision_finale = decisions[-1] if decisions else None
+    if (_cle(doc.get("statut")) == "poursuivie" and decision_finale
+            and (decision_finale.get("donnees") or {}).get("statut") == "DECIDED"):
+        decision_source = decision_finale
         titre_initiative = (_texte(doc.get("initiative_titre"))
                             or f"Mettre en œuvre — {titre}")
         initiative = _objet(
@@ -809,7 +803,8 @@ def objets_depuis_situation(situation: Any, *, tenant_id: Any = None,
                 "statut": "PLANNED",
                 "outcome_attendu_ids": [],
             }, mode="DECLARED", cree_le=cree, observe_le=observe, valide_depuis=valide)
-        objets.append(_serialiser(initiative, evenement))
+        objets.append(_serialiser(initiative, evenement, source_maj_le=source_maj,
+                                  source_objet=source_situation))
 
     return _ordonner(objets)
 
@@ -839,12 +834,18 @@ def objets_depuis_case(case: Any, *, tenant_id: Any = None,
         # ADR-0008 : un case sans Situation liée ne produit aucun objet canonique.
         return []
     reference = _instant_reference(evenement, maintenant)
+    source_maj = _date_depuis(doc, ("maj_le", "cree_le"), reference)
+    source_case = {"collection": "cases", "id": cid, "hash": hash_contenu(doc)}
 
     objets: list[dict[str, Any]] = []
     investigation_pour_decision = investigation
     if situation is not None:
+        snapshot = _document(situation, "situation")
+        if _texte(snapshot.get("id")) != sid:
+            raise PontInvalide(
+                f"snapshot de situation {snapshot.get('id')!r} incompatible avec situations[0] {sid!r}")
         contexte = objets_depuis_situation(
-            situation, tenant_id=tenant, evenement=evenement, maintenant=maintenant)
+            snapshot, tenant_id=tenant, evenement=evenement, maintenant=maintenant)
         # Le case apporte sa propre décision : la situation liée ne sert que d'ancre.
         objets.extend(objet for objet in contexte
                       if objet.get("type") in {"SITUATION", "INVESTIGATION"})
@@ -854,9 +855,16 @@ def objets_depuis_case(case: Any, *, tenant_id: Any = None,
              and objet.get("id") == investigation_id(sid)),
             None,
         )
-    if investigation_pour_decision is None:
-        investigation_pour_decision = _investigation_pour_decision(
-            tenant, sid, doc, evenement, reference)
+    if isinstance(investigation, Mapping):
+        if _texte(investigation.get("id")) != investigation_id(sid):
+            raise PontInvalide(
+                f"investigation {investigation.get('id')!r} incompatible avec inv-{sid}")
+        if _texte(investigation.get("situation_id")) not in ("", sid):
+            raise PontInvalide("investigation liée à une autre situation")
+    if investigation_pour_decision is None and situation is None:
+        raise PontInvalide(
+            "case avec situation liée sans snapshot de Situation ni Investigation : "
+            "enqueue la Situation avant le case")
 
     options_case = [element.get("titre") if isinstance(element, Mapping) else element
                     for element in _liste(doc.get("options"))]
@@ -868,10 +876,11 @@ def objets_depuis_case(case: Any, *, tenant_id: Any = None,
             quand = decision_doc.get("quand") or doc.get("maj_le") or doc.get("cree_le")
             motif = decision_doc.get("motif") or doc.get("objectif")
             type_decision = decision_doc.get("type")
+            statut_decision = decision_doc.get("statut") or decision_doc.get("etat")
         else:
             texte, options, acteur, quand = decision_doc, options_case, doc.get("responsable"), doc.get("cree_le")
-            motif, type_decision = doc.get("objectif"), None
-        if not _texte(texte):
+            motif, type_decision, statut_decision = doc.get("objectif"), None, None
+        if not _texte_legacy(texte) and not _textes(options):
             continue
         identifiant = decision_case_id(cid, rang)
         objets.append(_decision_tranchee(
@@ -880,6 +889,9 @@ def objets_depuis_case(case: Any, *, tenant_id: Any = None,
             extra_donnees={"case_id": cid, "situation_id": sid,
                            "investigation_id": investigation_id(sid),
                            "decision_type": _texte_legacy(type_decision), "rang": rang},
+            source_maj_le=source_maj,
+            statut_decision=statut_decision,
+            source_objet=source_case,
         ))
     return _ordonner(objets)
 
@@ -900,14 +912,23 @@ def objets_depuis_initiative(initiative: Any, *, tenant_id: Any = None,
     choix = _texte_legacy(reponse.get("choix"))
     decision_declaree = _texte_legacy(doc.get("decision_id") or doc.get("decision_ref"))
 
-    acceptee = statut in {"acceptee", "accepte", "suivi", "suivie", "acceptee avec travail"}
-    refusee = statut in {"refusee", "refuse", "rejetee", "rejetee"}
+    acceptee = statut in {"acceptee", "accepte", "suivi", "suivie",
+                          "acceptee avec travail"}
+    refusee = statut in {"refusee", "refuse", "rejetee", "rejete"}
     if not acceptee and not refusee:
         return []
+
+    source_maj = _date_depuis(doc, ("maj_le", "quand", "cree_le"), reference)
+    source_initiative = {"collection": "initiatives", "id": iid,
+                         "hash": hash_contenu(doc)}
+    sid = _texte(doc.get("situation_id"))
 
     if decision_declaree:
         if not acceptee:
             return []
+        if situation is not None and sid and _texte(_document(situation).get("id")) != sid:
+            raise PontInvalide(
+                f"snapshot de situation incompatible avec situation_id {sid!r}")
         cree = _date_depuis(doc, ("cree_le", "quand", "maj_le"), reference)
         observe = _date_depuis(doc, ("observe_le", "quand", "cree_le", "maj_le"), cree)
         valide = _date_depuis(doc, ("valide_depuis", "quand", "cree_le", "maj_le"), observe)
@@ -927,7 +948,9 @@ def objets_depuis_initiative(initiative: Any, *, tenant_id: Any = None,
                 "outcome_attendu_ids": [],
                 "initiative_source_id": iid,
             }, mode="DECLARED", cree_le=cree, observe_le=observe, valide_depuis=valide)
-        objets.append(_serialiser(initiative_canonique, evenement))
+        objets.append(_serialiser(initiative_canonique, evenement,
+                                  source_maj_le=source_maj,
+                                  source_objet=source_initiative))
         return _ordonner(objets)
 
     # Garde C0a : sans décision humaine, une proposition `init-*` ne devient pas une Initiative.
@@ -936,24 +959,37 @@ def objets_depuis_initiative(initiative: Any, *, tenant_id: Any = None,
 
     objets: list[dict[str, Any]] = []
     investigation_pour_decision = investigation
-    sid = _texte(doc.get("situation_id"))
     if situation is not None:
+        snapshot = _document(situation, "situation")
+        if not sid:
+            sid = _texte(snapshot.get("id"))
+        if _texte(snapshot.get("id")) != sid:
+            raise PontInvalide(
+                f"snapshot de situation {snapshot.get('id')!r} incompatible avec {sid!r}")
         contexte = objets_depuis_situation(
-            situation, tenant_id=tenant, evenement=evenement, maintenant=maintenant)
+            snapshot, tenant_id=tenant, evenement=evenement, maintenant=maintenant)
         # La réponse à une proposition apporte sa propre décision : l'ancre ne la duplique pas.
         objets.extend(objet for objet in contexte
                       if objet.get("type") in {"SITUATION", "INVESTIGATION"})
-        if not sid:
-            sid = _texte((situation or {}).get("id"))
         investigation_pour_decision = next(
             (objet for objet in objets
              if objet.get("type") == "INVESTIGATION"
              and objet.get("id") == investigation_id(sid)),
             None,
         )
+    if isinstance(investigation, Mapping):
+        if _texte(investigation.get("id")) != investigation_id(sid):
+            raise PontInvalide(
+                f"investigation {investigation.get('id')!r} incompatible avec inv-{sid}")
+        if _texte(investigation.get("situation_id")) not in ("", sid):
+            raise PontInvalide("investigation liée à une autre situation")
+    if investigation_pour_decision is None and situation is None:
+        raise PontInvalide(
+            "réponse d'initiative sans snapshot de Situation ni Investigation : "
+            "enqueue la Situation avant l'initiative")
     if investigation_pour_decision is None:
         if not sid:
-            return []
+            raise PontInvalide("initiative sans situation_id ni snapshot")
         investigation_pour_decision = _investigation_pour_decision(
             tenant, sid, doc, evenement, reference)
 
@@ -964,10 +1000,13 @@ def objets_depuis_initiative(initiative: Any, *, tenant_id: Any = None,
         doc.get("raison"), identifiant_decision, evenement, reference,
         extra_donnees={"initiative_source_id": iid, "situation_id": sid,
                        "decision_source": "initiative"},
+        source_maj_le=source_maj,
+        statut_decision="decidee",
+        source_objet=source_initiative,
     )
     objets.append(decision)
 
-    if acceptee:
+    if acceptee and (decision.get("donnees") or {}).get("statut") == "DECIDED":
         titre = _titre(doc, iid)
         initiative_canonique = _objet(
             "INITIATIVE", initiative_id(decision["id"]), tenant, titre, {
@@ -979,7 +1018,9 @@ def objets_depuis_initiative(initiative: Any, *, tenant_id: Any = None,
                 "outcome_attendu_ids": [],
                 "initiative_source_id": iid,
             }, mode="DECLARED", **_dates(reference))
-        objets.append(_serialiser(initiative_canonique, evenement))
+        objets.append(_serialiser(initiative_canonique, evenement,
+                                  source_maj_le=source_maj,
+                                  source_objet=source_initiative))
     return _ordonner(objets)
 
 
@@ -1001,12 +1042,14 @@ def objets_depuis_outcome(payload: Any, *, tenant_id: Any = None,
     mesure = donnees.get("mesure")
     if not initiative:
         raise PontInvalide("initiative_id obligatoire pour un Outcome")
-    if mesure in (None, "", [], {}):
-        raise PontInvalide("mesure obligatoire pour un Outcome")
+    if isinstance(mesure, bool) or mesure in (None, "", [], {}):
+        raise PontInvalide("mesure obligatoire pour un Outcome (booléen refusé)")
     reference = _instant_reference(evenement, maintenant)
     metrique = _texte(donnees.get("metrique")) or _metrique_mesure(mesure)
     periode = _texte(donnees.get("periode"))
-    identifiant = outcome_id(initiative, metrique, periode)
+    mesure_le = _iso(donnees.get("mesure_le"))
+    identifiant = outcome_id(initiative, metrique, periode, mesure_le=mesure_le,
+                             empreinte=hash_contenu(mesure)[:8])
     outcome = _objet(
         "OUTCOME", identifiant, tenant, metrique or "Outcome", {
             "initiative_id": initiative,
@@ -1021,7 +1064,9 @@ def objets_depuis_outcome(payload: Any, *, tenant_id: Any = None,
             "periode": periode,
             "mesure_le": _iso(donnees.get("mesure_le"), reference),
         }, mode="OBSERVED", **_dates(reference))
-    return [_serialiser(outcome, evenement)]
+    return [_serialiser(outcome, evenement,
+                        source_maj_le=mesure_le or (evenement or {}).get("source_maj_le"),
+                        source_objet=(evenement or {}).get("source"))]
 
 
 def objets_depuis_learning(payload: Any, *, tenant_id: Any = None,
@@ -1063,8 +1108,12 @@ def objets_depuis_learning(payload: Any, *, tenant_id: Any = None,
             "statut": "PROPOSED",
             "source_id": source_id,
             "source_type": source_type,
+            "situation_id": _texte(donnees.get("situation_id")) or None,
+            "initiative_id": _texte(donnees.get("initiative_id")) or None,
         }, mode="INFERRED", **_dates(reference))
-    return [_serialiser(learning, evenement)]
+    return [_serialiser(learning, evenement,
+                        source_maj_le=(evenement or {}).get("source_maj_le"),
+                        source_objet=(evenement or {}).get("source"))]
 
 
 def objets_depuis_objets(payload: Any, *, tenant_id: Any = None,
@@ -1083,7 +1132,13 @@ def objets_depuis_objets(payload: Any, *, tenant_id: Any = None,
             raise TenantMismatch("objet canonique hors du tenant de l'événement")
         candidat = copy.deepcopy(dict(objet))
         candidat["tenant_id"] = tenant
-        resultat.append(_serialiser(candidat, evenement))
+        pont_existant = (candidat.get("donnees") or {}).get("_pont")
+        source_maj = (pont_existant.get("source_maj_le")
+                      if isinstance(pont_existant, Mapping) else None)
+        source_objet = (pont_existant.get("source")
+                        if isinstance(pont_existant, Mapping) else None)
+        resultat.append(_serialiser(candidat, evenement, source_maj_le=source_maj,
+                                    source_objet=source_objet))
     return _ordonner(resultat)
 
 
@@ -1166,16 +1221,95 @@ def _source_event_id(doc: Mapping[str, Any], explicite: Any = None) -> str:
             or _texte(doc.get("quand")) or hash_contenu(doc)[:16])
 
 
+def _maj_doc(doc: Any, defaut: str) -> str:
+    if not isinstance(doc, Mapping):
+        return defaut
+    return _date_depuis(
+        doc, ("maj_le", "cree_le", "detectee", "observe_le", "quand", "decidee_le",
+              "mesure_le"), defaut)
+
+
+def _source_maj_le(operation: str, payload: Mapping[str, Any],
+                   source_event_id: Any, defaut: str) -> str:
+    if operation == OPERATION_SITUATION:
+        doc = payload.get("situation")
+    elif operation == OPERATION_CASE:
+        doc = payload.get("case")
+    elif operation == OPERATION_INITIATIVE:
+        doc = payload.get("initiative")
+    elif operation == OPERATION_OUTCOME:
+        doc = payload
+    else:
+        doc = {}
+    return _maj_doc(doc, _iso(source_event_id) or defaut)
+
+
+def verifier_source_evenement(evenement: Mapping[str, Any]) -> None:
+    """Vérifie collection/id/hash de provenance et la restriction du producteur interne."""
+    operation = _operation_normalisee(evenement.get("operation"))
+    canonical_id = _texte(evenement.get("canonical_id"))
+    source = evenement.get("source")
+    if not isinstance(source, Mapping):
+        raise PontInvalide("source obligatoire")
+    collection = _texte(source.get("collection"))
+    attendue = _collection_attendue(operation)
+    if collection != attendue:
+        raise PontInvalide(
+            f"source.collection {collection!r} inattendue pour {operation} "
+            f"(attendu {attendue!r})")
+    if _texte(source.get("id")) != canonical_id:
+        raise PontInvalide(
+            f"source.id {source.get('id')!r} incohérent avec canonical_id {canonical_id!r}")
+    empreinte = hash_contenu(evenement.get("payload"))
+    if _texte(source.get("hash")) != empreinte:
+        raise PontInvalide("source.hash ne correspond pas au payload")
+    if _texte(evenement.get("hash")) and _texte(evenement.get("hash")) != empreinte:
+        raise PontInvalide("hash d'événement divergent du payload")
+    if operation == OPERATION_OBJETS and not bool(source.get("interne")):
+        raise PontInvalide("objets.upsert exige source.interne=true")
+
+
+def _collection_attendue(operation: str) -> str:
+    return {
+        OPERATION_SITUATION: "situations",
+        OPERATION_CASE: "cases",
+        OPERATION_INITIATIVE: "initiatives",
+        OPERATION_OUTCOME: "pont",
+        OPERATION_LEARNING: "pont",
+        OPERATION_OBJETS: "pont_interne",
+    }[operation]
+
+
+collection_attendue = _collection_attendue
+source_maj_le = _source_maj_le
+
+
 def construire_evenement(operation: Any, tenant_id: Any, canonical_id: Any, payload: Any, *,
                          source: Mapping[str, Any] | None = None,
                          source_event_id: Any = None,
                          canonical_ids: Iterable[str] | None = None,
                          maintenant: Any = None) -> dict[str, Any]:
-    """Construit un document d'outbox complet, avec identifiant et canonical_ids déterministes."""
+    """Construit un document d'outbox signé, avec identifiant et canonical_ids déterministes."""
     tenant = normaliser_tenant(tenant_id)
     operation_texte = _operation_normalisee(operation)
     identifiant = identifiant_evenement(tenant, operation_texte, canonical_id, source_event_id)
     instant = _instant_reference(None, maintenant)
+    payload_assaini = assainir(payload)
+    if not isinstance(payload_assaini, Mapping):
+        raise PontInvalide("payload : objet attendu")
+    source_final = dict(assainir(source or {}))
+    collection = _texte(source_final.get("collection")) or _collection_attendue(operation_texte)
+    if operation_texte == OPERATION_OBJETS:
+        if collection != "pont_interne" or not bool(source_final.get("interne")):
+            raise PontInvalide(
+                "objets.upsert est réservé au producteur interne "
+                "(source.collection=pont_interne, source.interne=true)")
+    source_final["collection"] = collection
+    source_final["id"] = _texte(source_final.get("id")) or _texte(canonical_id)
+    source_final["hash"] = hash_contenu(payload_assaini)
+    source_maj_le = _source_maj_le(operation_texte, payload_assaini,
+                                   source_event_id, instant)
+    source_final["source_maj_le"] = source_maj_le
     evenement: dict[str, Any] = {
         "_id": identifiant,
         "tenant_id": tenant,
@@ -1183,10 +1317,12 @@ def construire_evenement(operation: Any, tenant_id: Any, canonical_id: Any, payl
         "canonical_id": _texte(canonical_id),
         "canonical_ids": [],
         "source_event_id": _iso(source_event_id) or _texte(source_event_id),
-        "payload": assainir(payload),
-        "source": assainir(source or {}),
+        "source_maj_le": source_maj_le,
+        "payload": payload_assaini,
+        "source": source_final,
         "etat": "pending",
         "tentatives": 0,
+        "disponible_le": instant,
         "prochaine_tentative": None,
         "derniere_erreur": None,
         "cree_le": instant,
@@ -1196,13 +1332,18 @@ def construire_evenement(operation: Any, tenant_id: Any, canonical_id: Any, payl
         "fencing_token": 0,
     }
     objets = objets_depuis_evenement(evenement, tenant_id=tenant, maintenant=instant)
+    ids = [objet["id"] for objet in objets]
+    if operation_texte in {OPERATION_OBJETS, OPERATION_SITUATION, OPERATION_OUTCOME,
+                           OPERATION_LEARNING} and _texte(canonical_id) not in ids:
+        raise PontInvalide(
+            f"canonical_id {canonical_id!r} absent des objets construits {ids!r}")
     if canonical_ids is None:
-        evenement["canonical_ids"] = [objet["id"] for objet in objets]
+        evenement["canonical_ids"] = ids
     else:
         evenement["canonical_ids"] = (
             [canonical_ids] if isinstance(canonical_ids, str) else list(canonical_ids))
     evenement["hash"] = hash_contenu(evenement["payload"])
-    return evenement
+    return signer_evenement(evenement)
 
 
 def evenement_depuis_situation(situation: Any, *, tenant_id: Any = None,
@@ -1267,8 +1408,13 @@ def evenement_outcome(*, tenant_id: Any, initiative_id: Any, mesure: Any,
                       source_event_id: Any = None, maintenant: Any = None,
                       source: Mapping[str, Any] | None = None) -> dict[str, Any]:
     tenant = normaliser_tenant(tenant_id)
+    if isinstance(mesure, bool):
+        raise PontInvalide("mesure booléenne refusée")
     metrique_finale = _texte(metrique) or _metrique_mesure(mesure)
-    identifiant = outcome_id(initiative_id, metrique_finale, periode)
+    mesure_le_iso = _iso(mesure_le)
+    identifiant = outcome_id(
+        initiative_id, metrique_finale, periode,
+        mesure_le=mesure_le_iso, empreinte=hash_contenu(mesure)[:8])
     payload = {
         "initiative_id": _texte(initiative_id),
         "mesure": mesure,
@@ -1276,7 +1422,7 @@ def evenement_outcome(*, tenant_id: Any, initiative_id: Any, mesure: Any,
         "periode": _texte(periode),
         "valeur_attendue": valeur_attendue,
         "interpretation": interpretation,
-        "mesure_le": mesure_le,
+        "mesure_le": mesure_le_iso,
         "decision_id": decision_id,
     }
     return construire_evenement(

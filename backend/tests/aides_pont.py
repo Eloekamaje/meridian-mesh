@@ -97,8 +97,10 @@ class CurseurPont:
         elif isinstance(tri, tuple):
             tri = [tri]
         for champ, sens in reversed(list(tri)):
+            # Mongo trie null/absent AVANT les dates : le fake doit reproduire ce comportement.
             self.documents.sort(
-                key=lambda document: (document.get(champ) is None, document.get(champ)), reverse=sens < 0)
+                key=lambda document: (document.get(champ) is not None, document.get(champ)),
+                reverse=sens < 0)
         return self
 
     def limit(self, nombre):
@@ -142,6 +144,10 @@ class CollectionPont:
         self.appels.append(("count_documents", copy.deepcopy(filtre)))
         return sum(1 for d in self.documents if _correspond(d, filtre))
 
+    async def create_index(self, cles, **options):
+        self.appels.append(("create_index", copy.deepcopy(cles), dict(options)))
+        return options.get("name") or "index"
+
     async def update_one(self, filtre, modification, upsert=False):
         self.appels.append(("update_one", copy.deepcopy(filtre), copy.deepcopy(modification), upsert))
         for document in self.documents:
@@ -181,7 +187,7 @@ class CollectionPont:
                 [sort] if isinstance(sort, tuple) else list(sort))
             for champ, sens in reversed(tri):
                 documents.sort(
-                    key=lambda document: (document.get(champ) is None, document.get(champ)),
+                    key=lambda document: (document.get(champ) is not None, document.get(champ)),
                     reverse=sens < 0)
         if not documents:
             if not upsert:

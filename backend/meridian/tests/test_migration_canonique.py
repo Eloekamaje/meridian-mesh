@@ -193,8 +193,9 @@ def test_mapping_situation_normalise_statuts_dates_et_liens_sans_secret():
     assert objet["observe_le"] == "2026-10-30T09:00:00+00:00"
     assert objet["valide_depuis"] == "2026-10-30T09:00:00+00:00"
     assert objet["version"] == 1
-    assert objet["donnees"]["statut"] == "ACTIVE"
+    assert objet["donnees"]["statut"] == "CANDIDATE"
     assert objet["donnees"]["priorite"] == "HAUTE"
+    assert objet["donnees"]["_pont"]["origine"] == "migration"
     assert objet["donnees"]["twin_ids"] == ["paiements", "comptes"]
     assert objet["donnees"]["resume"] == SITUATION["resume"]
 
@@ -208,8 +209,9 @@ def test_mapping_initiative_conserve_les_liens_declares_et_rien_d_autre():
     assert (objet["id"], objet["famille"], objet["type"], objet["mode"]) == (
         "init-contrat", "decision", "INITIATIVE", "DECLARED")
     assert objet["observe_le"] == "2026-08-26T08:41:00+00:00"
-    assert objet["donnees"]["statut"] == "EN_ATTENTE"
+    assert objet["donnees"]["statut"] == "PROPOSED"
     assert objet["donnees"]["urgence"] == "HAUTE"
+    assert objet["donnees"]["_pont"]["origine"] == "migration"
     assert objet["donnees"]["twin_ids"] == ["paiements", "comptes"]
     assert objet["donnees"]["travail_id"] == "case-olympiade"
     assert objet["donnees"]["jumeau_cible"] == "conformite"

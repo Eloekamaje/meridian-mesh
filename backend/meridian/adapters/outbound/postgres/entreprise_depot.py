@@ -11,12 +11,14 @@ from datetime import date, datetime, time
 from decimal import Decimal
 import json
 import unicodedata
-from urllib.parse import parse_qsl, unquote_plus, urlsplit
 
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
+from meridian.application.pont_securite import cle_sensible as _cle_sensible
+from meridian.application.pont_securite import url_porte_un_secret as _url_porte_un_secret
 from meridian.domain.modele_entreprise import FAMILLES, MODES, TYPES_PAR_FAMILLE
+from meridian.domain.tenant import TenantError, normaliser_slug
 
 _FAMILLES = frozenset(FAMILLES)
 _MODES = frozenset(MODES)
@@ -26,13 +28,6 @@ _CHAMPS_OBJET = frozenset({
     "id", "tenant_id", "famille", "type", "mode", "titre", "donnees", "version",
     "observe_le", "valide_depuis", "valide_jusqua", "cree_le", "maj_le",
 })
-
-_MARQUEURS_SECRETS = ("password", "passwd", "secret", "token", "credential", "authorization")
-_CLES_SECRETES = frozenset({
-    "pwd", "pass", "auth", "key", "apikey", "api_key", "api-key", "access_key", "accesskey",
-    "private_key", "privatekey", "client_secret", "clientsecret", "bearer", "password", "passwd",
-})
-
 
 class ObjetInvalide(ValueError):
     """Objet d'entreprise refusé avant toute écriture."""
@@ -61,30 +56,11 @@ def _texte_obligatoire(valeur, champ: str) -> str:
 
 
 def _tenant(tenant_id) -> str:
-    return _texte_obligatoire(tenant_id, "tenant_id")
-
-
-def _cle_sensible(cle) -> bool:
-    normalisee = unquote_plus(str(cle)).strip().lower()
-    if normalisee.endswith(("_ref", "-ref", "_reference", "-reference")):
-        return False
-    compacte = normalisee.replace("-", "_")
-    if compacte in _CLES_SECRETES:
-        return True
-    if compacte.endswith("_key"):
-        return True
-    return any(marque in compacte for marque in _MARQUEURS_SECRETS)
-
-
-def _url_porte_un_secret(url: str) -> bool:
+    texte = _texte_obligatoire(tenant_id, "tenant_id")
     try:
-        parties = urlsplit(url)
-    except (ValueError, UnicodeError):
-        return True
-    if parties.username is not None or parties.password is not None or "@" in parties.netloc:
-        return True
-    return any(_cle_sensible(cle) and valeur not in ("", "***")
-               for cle, valeur in parse_qsl(parties.query, keep_blank_values=True))
+        return normaliser_slug(texte)
+    except TenantError as exc:
+        raise ObjetInvalide(str(exc)) from exc
 
 
 def _verifier_secrets(valeur, chemin: str = "donnees") -> None:
