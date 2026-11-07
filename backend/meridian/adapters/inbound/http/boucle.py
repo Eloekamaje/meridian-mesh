@@ -52,7 +52,12 @@ from meridian.application import commandes_boucle
 from meridian.domain import modele_entreprise
 from meridian.domain.mesure import mesure_renseignee as _mesure_renseignee
 from meridian.adapters.outbound.postgres import rls
-from meridian.domain.tenant import TenantError, exiger_tenant, normaliser_slug, resoudre_tenant
+from meridian.domain.tenant import (
+    TenantError,
+    exiger_tenant,
+    normaliser_tenant_canonique,
+    resoudre_tenant,
+)
 from meridian.ports.boucle import ObjetExistant, ObjetInvalide, VersionRefusee
 from seed_data import ESPACES
 
@@ -282,11 +287,13 @@ def _tenant(request: Request, x_tenant: str | None) -> str:
     try:
         if authentifie is not None:
             contexte = resoudre_tenant(authentifie, auth_mode=mode)
-            if x_tenant is not None and normaliser_slug(x_tenant) != contexte.id:
+            if (x_tenant is not None
+                    and normaliser_tenant_canonique(x_tenant)
+                    != normaliser_tenant_canonique(contexte.id)):
                 raise HTTPException(403, "Tenant différent de l'identité authentifiée")
         else:
             contexte = resoudre_tenant(x_tenant, auth_mode=mode)
-        tenant = exiger_tenant(contexte).id
+        tenant = normaliser_tenant_canonique(exiger_tenant(contexte).id)
     except TenantError as exc:
         raise HTTPException(exc.status_code, str(exc)) from exc
     request.state.tenant = tenant

@@ -18,6 +18,7 @@ autres bases). Le worker utilise un utilisateur distinct en lecture/claim sur la
 """
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping
 import copy
 from datetime import datetime, timedelta, timezone
@@ -42,6 +43,7 @@ __all__ = [
     "assurer_index",
     "depuis_environnement",
     "enfiler_best_effort",
+    "enfiler_lot_best_effort",
 ]
 
 COLLECTION = "pont_canonique"
@@ -458,6 +460,34 @@ async def enfiler_best_effort(collection, evenement: Mapping[str, Any],
     return await DepotPontCanonique(
         collection, horloge=horloge, cle=cle,
         cle_interne=cle_interne).enfiler_best_effort(evenement)
+
+
+async def enfiler_lot_best_effort(collection, evenements, *, timeout: float = 2.0,
+                                  horloge=None, cle=None,
+                                  cle_interne=None) -> list[dict[str, Any] | None]:
+    """Enfile un lot sous **un seul** budget de temps, sans jamais lever.
+
+    Les événements sont enfilés en parallèle : le budget ne dépend pas du nombre de cases
+    liés. Un timeout annule l'attente des tâches Mongo ; la route legacy reste acquise.
+    """
+    evenements = [evenement for evenement in (evenements or []) if evenement]
+    if collection is None or not evenements:
+        return []
+
+    async def un(evenement):
+        try:
+            return await enfiler_best_effort(
+                collection, evenement, horloge=horloge, cle=cle, cle_interne=cle_interne)
+        except Exception:  # noqa: BLE001 - le lot entier reste best-effort
+            journal.exception("pont : enqueue d'un événement en échec")
+            return None
+
+    try:
+        async with asyncio.timeout(max(0.1, float(timeout))):
+            return list(await asyncio.gather(*(un(evenement) for evenement in evenements)))
+    except TimeoutError:
+        journal.warning("pont : budget d'enqueue dépassé (%s événements)", len(evenements))
+        return []
 
 
 async def assurer_index(collection) -> None:

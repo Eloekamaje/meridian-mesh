@@ -242,21 +242,24 @@ def _doit_ecrire(conn: Any, tenant: str, objet: dict[str, Any],
         valider_objet(objet)
         ecrits.append(identifiant)
         return True
-    if not _origine_compatible(existant, objet):
-        raise ConflitCanonique(
-            f"identifiant canonique {identifiant!r} déjà écrit par une autre "
-            "origine/source : le pont n'écrase pas cet objet")
     source_maj_existante = _source_maj_objet(existant)
     source_maj_nouvelle = _source_maj_objet(objet)
     if source_maj_existante and not source_maj_nouvelle:
         raise pont.PontInvalide(
             f"objet {identifiant!r} : source_maj_le absente face à une version datée")
+    # Un snapshot plus ancien est ignoré AVANT le jugement d'origine : une ancre stale
+    # d'un producteur non legacy ne doit pas partir en dead-letter ni perdre les décisions
+    # du case qu'elle accompagne.
     if (source_maj_existante and source_maj_nouvelle
             and not _plus_recent(source_maj_nouvelle, source_maj_existante)):
         ignores.append(identifiant)
         journal.info("pont : événement non plus récent ignoré objet=%s source=%s <= %s",
                      identifiant, source_maj_nouvelle, source_maj_existante)
         return False
+    if not _origine_compatible(existant, objet):
+        raise ConflitCanonique(
+            f"identifiant canonique {identifiant!r} déjà écrit par une autre "
+            "origine/source : le pont n'écrase pas cet objet")
     if _hash_objet(existant) and _hash_objet(existant) == _hash_objet(objet):
         ignores.append(identifiant)
         return False

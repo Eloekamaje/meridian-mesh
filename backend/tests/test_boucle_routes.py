@@ -241,3 +241,15 @@ def test_la_synthese_compte_par_famille_type_et_mode_sans_contenu(monkeypatch):
     assert resultat["types"] == {"DECISION": 1, "SITUATION": 2}
     assert resultat["modes"] == {"DECLARED": 1, "OBSERVED": 2}
     assert "hunter2" not in json.dumps(resultat)
+
+
+def test_l_entete_demo_est_canonise_local_pour_le_canonique(monkeypatch):
+    client, connexion = _client(monkeypatch, [_objet("sit-local", tenant="local")])
+
+    reponse = client.get("/api/boucle/objets/sit-local", headers={"X-Tenant": "demo"})
+
+    assert reponse.status_code == 200, reponse.text
+    assert reponse.json()["tenant"] == "local"
+    assert reponse.json()["objet"]["id"] == "sit-local"
+    assert all(requete[1][0] == "local" for requete in connexion.requetes
+               if requete[1])

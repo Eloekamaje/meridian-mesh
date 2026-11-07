@@ -19,7 +19,7 @@ from psycopg.types.json import Jsonb
 from meridian.application.pont_securite import cle_sensible as _cle_sensible
 from meridian.application.pont_securite import url_porte_un_secret as _url_porte_un_secret
 from meridian.domain.modele_entreprise import FAMILLES, MODES, TYPES_PAR_FAMILLE
-from meridian.domain.tenant import TenantError, normaliser_slug
+from meridian.domain.tenant import TenantError, normaliser_tenant_canonique
 from meridian.ports.boucle import ObjetExistant, ObjetInvalide, VersionRefusee
 
 _FAMILLES = frozenset(FAMILLES)
@@ -55,7 +55,7 @@ def _texte_obligatoire(valeur, champ: str) -> str:
 def _tenant(tenant_id) -> str:
     texte = _texte_obligatoire(tenant_id, "tenant_id")
     try:
-        return normaliser_slug(texte)
+        return normaliser_tenant_canonique(texte)
     except TenantError as exc:
         raise ObjetInvalide(str(exc)) from exc
 

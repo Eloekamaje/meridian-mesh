@@ -47,5 +47,8 @@ async def proposer(db, situation: dict[str, Any]) -> dict[str, Any] | None:
     collection = getattr(db, "initiatives", None)
     if collection is None:
         return None
-    await collection.update_one({"id": doc["id"]}, {"$setOnInsert": doc}, upsert=True)
+    filtre = {"id": doc["id"]}
+    if doc.get("tenant_id"):
+        filtre["tenant_id"] = doc["tenant_id"]
+    await collection.update_one(filtre, {"$setOnInsert": doc}, upsert=True)
     return doc

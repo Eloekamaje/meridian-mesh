@@ -28,6 +28,7 @@ import pieces  # noqa: E402
 from meridian.adapters.inbound.http.cases import build_cases_router  # noqa: E402
 from meridian.adapters.inbound.http.tenant_twins import jumeau_du_tenant, jumeaux_du_tenant  # noqa: E402
 from meridian.application import tenant_context as tenant_courant  # noqa: E402
+from meridian.domain.tenant import TenantError  # noqa: E402
 from meridian.adapters.inbound.http.actualites import build_actualites_router  # noqa: E402
 from meridian.adapters.inbound.http.initiatives import build_initiatives_router  # noqa: E402
 from meridian.adapters.inbound.http.planification import construire_router as construire_planification_router  # noqa: E402
@@ -42,6 +43,8 @@ from meridian.adapters.outbound.llm import design_diagram  # noqa: E402
 from meridian.domain import dossier_raisonnement as domaine_dossier  # noqa: E402
 from meridian.adapters.inbound.http.mesh_vue import build_mesh_vue_router  # noqa: E402
 from meridian.adapters.inbound.http.boucle import router as boucle_router, _tenant as resoudre_tenant_boucle  # noqa: E402
+from meridian.adapters.outbound.mongo import pont_canonique as pont_outbox  # noqa: E402
+from meridian.application import pont_travail  # noqa: E402
 from meridian.adapters.inbound.http.cognitif import router as cognitif_router  # noqa: E402
 from meridian.adapters.inbound.http.runs import construire_router as construire_runs_router
 from meridian.adapters.inbound.http.code_index import construire_router as construire_code_index_router
@@ -115,8 +118,26 @@ client = AsyncIOMotorClient(os.environ["MONGO_URL"])
 db = client[os.environ["DB_NAME"]]
 
 
+journal_pont = logging.getLogger("meridian.pont_travail.legacy")
+_PONT_ENQUEUE_TIMEOUT = 2.0
+
+
 def _tenant_requete() -> str:
-    return tenant_courant.courant_explicite() or os.environ.get("JUMEAU_TENANT") or "local"
+    return tenant_courant.courant_requete()
+
+
+def _tenant_isole() -> str:
+    """Tenant de la requête, validé comme slug : jamais de repli silencieux en écriture."""
+    try:
+        return pont_travail.normaliser_tenant(_tenant_requete())
+    except TenantError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+def _filtre_tenant(tenant: str) -> dict:
+    return pont_travail.filtre_tenant(tenant)
 
 
 app = FastAPI(title="Méridian")
@@ -924,13 +945,90 @@ async def examiner_jumeau(jid: str, acteur: str = Depends(auth_identite.acteur),
 
 # ---------- Situations (Radar & Investigations) ----------
 
+_PROJECTION_CASE_PONT = {
+    "_id": 0, "id": 1, "tenant_id": 1, "titre": 1, "situations": 1, "decisions": 1,
+    "options": 1, "responsable": 1, "objectif": 1, "maj_le": 1, "cree_le": 1,
+}
+
+
+async def _cases_lies_a_situation(sid: str, tenant: str) -> list[dict]:
+    """Travaux dont `situations[0]` est cette Situation (ADR-0008 : seul le premier lien compte)."""
+    if not sid:
+        return []
+    try:
+        curseur = db.cases.find(
+            {"$and": [
+                {"$or": [
+                    {"situations.0": sid},
+                    {"situations.0.id": sid},
+                    {"situations.0.situation_id": sid},
+                ]},
+                _filtre_tenant(tenant),
+            ]},
+            _PROJECTION_CASE_PONT)
+        cases = await asyncio.wait_for(curseur.to_list(None), timeout=1.0)
+    except asyncio.TimeoutError:
+        journal_pont.warning("pont : lecture des travaux liés dépassée situation=%s", sid)
+        return []
+    except Exception:  # noqa: BLE001 - le pont ne bloque jamais la route legacy
+        journal_pont.warning("pont : lecture des travaux liés impossible situation=%s", sid,
+                             exc_info=True)
+        return []
+    return [case for case in cases if pont_travail.situation_liee(case) == sid]
+
+
+async def _enfiler_evenements_pont(evenements: list[dict], tenant: str) -> None:
+    """Enfile les événements dans l'outbox C1, sans jamais faire échouer l'écriture legacy."""
+    collection = getattr(db, "pont_canonique", None)
+    if collection is None:
+        return
+    await pont_outbox.enfiler_lot_best_effort(
+        collection, evenements, timeout=_PONT_ENQUEUE_TIMEOUT)
+
+
+async def _pont_apres_situation(situation: dict, tenant: str, *, action: str | None = None,
+                                situation_avant: dict | None = None) -> None:
+    """Construit puis enfile l'événement de Situation et les événements des Travaux liés."""
+    try:
+        if action is not None:
+            evenement_situation = pont_travail.evenement_action_situation(
+                situation, action, tenant_id=tenant)
+        else:
+            evenement_situation = pont_travail.evenement_decision_situation(
+                situation, tenant_id=tenant)
+    except Exception:  # noqa: BLE001 - une construction invalide ne casse pas le legacy
+        journal_pont.exception("pont : construction d'événement en échec situation=%s",
+                               situation.get("id"))
+        return
+    evenements = [evenement_situation] if evenement_situation else []
+    sid = pont_travail.situation_liee({"situations": [situation.get("id")]})
+    try:
+        cases_lies = await asyncio.wait_for(
+            _cases_lies_a_situation(sid, tenant), timeout=1.0)
+    except asyncio.TimeoutError:
+        journal_pont.warning("pont : lecture des travaux liés dépassée situation=%s", sid)
+        cases_lies = []
+    for case in cases_lies:
+        try:
+            evenement_case = pont_travail.evenement_case_lie(
+                case, situation, tenant_id=tenant, situation_contexte=situation_avant)
+        except Exception:  # noqa: BLE001 - un case incomplet ne bloque pas les autres
+            journal_pont.warning(
+                "pont : case ignoré (snapshot incomplet) situation=%s case=%s",
+                situation.get("id"), case.get("id"), exc_info=True)
+            continue
+        if evenement_case:
+            evenements.append(evenement_case)
+    await _enfiler_evenements_pont(evenements, tenant)
+
+
 @api_router.get("/situations")
 async def lister_situations(acteur: str = Depends(auth_identite.acteur), x_espace: Optional[str] = Header(None)):
     _, espace = resoudre_perimetre(acteur, x_espace)
     tous = await jumeaux_du_tenant(db, _tenant_requete(), {"_id": 0, "id": 1, "nom": 1})
     aut = autorisations(espace, [j["id"] for j in tous])
     nom_vers_id = {j["nom"]: j["id"] for j in tous}
-    docs = await db.situations.find({}, NO_ID).to_list(200)
+    docs = await db.situations.find(_filtre_tenant(_tenant_isole()), NO_ID).to_list(200)
     out = [f for f in (filtre_situation(d, aut, nom_vers_id) for d in docs) if f]
     out.sort(key=lambda s: s.get("score", 0), reverse=True)
     return out
@@ -942,7 +1040,8 @@ async def obtenir_situation(sid: str, acteur: str = Depends(auth_identite.acteur
     tous = await jumeaux_du_tenant(db, _tenant_requete(), {"_id": 0, "id": 1, "nom": 1})
     aut = autorisations(espace, [j["id"] for j in tous])
     nom_vers_id = {j["nom"]: j["id"] for j in tous}
-    doc = await db.situations.find_one({"id": sid}, NO_ID)
+    doc = await db.situations.find_one(
+        {"id": sid, **_filtre_tenant(_tenant_isole())}, NO_ID)
     if not doc:
         raise HTTPException(404, "Situation introuvable")
     filtre = filtre_situation(doc, aut, nom_vers_id)
@@ -956,7 +1055,8 @@ async def situation_dans_perimetre(sid: str, espace: dict):
 
     La lecture peut montrer une situation partiellement visible ; décider ou agir engage tous ses jumeaux, donc un
     périmètre partiel ne suffit pas."""
-    doc = await db.situations.find_one({"id": sid}, NO_ID)
+    doc = await db.situations.find_one(
+        {"id": sid, **_filtre_tenant(_tenant_isole())}, NO_ID)
     if not doc:
         raise HTTPException(404, "Situation introuvable")
     tous = await jumeaux_du_tenant(db, _tenant_requete(), {"_id": 0, "id": 1})
@@ -975,15 +1075,26 @@ class ActionSituation(BaseModel):
 async def agir_situation(sid: str, payload: ActionSituation, acteur: str = Depends(auth_identite.acteur),
                          x_espace: Optional[str] = Header(None)):
     _, espace = resoudre_perimetre(acteur, x_espace)
-    await situation_dans_perimetre(sid, espace)
+    situation = await situation_dans_perimetre(sid, espace)
+    tenant = _tenant_isole()
     mapping = {"ignorer": "ignorée", "surveiller": "surveillée", "investiguer": "en investigation", "examiner": None, "coincidence": "classée", "observer": "en observation", "qualifier": "qualifiée"}
     if payload.action not in mapping:
         raise HTTPException(400, "Action inconnue")
     nouveau = mapping[payload.action]
     if nouveau is not None:
-        res = await db.situations.update_one({"id": sid}, {"$set": {"statut": nouveau}})
-        if res.matched_count == 0:
-            raise HTTPException(404, "Situation introuvable")
+        if (situation.get("statut") != nouveau or situation.get("tenant_id") != tenant
+                or not situation.get("maj_le")):
+            maj_le = datetime.now(timezone.utc).isoformat()
+            res = await db.situations.update_one(
+                {"id": sid, **_filtre_tenant(tenant)},
+                {"$set": {"statut": nouveau, "tenant_id": tenant, "maj_le": maj_le}},
+            )
+            if res.matched_count == 0:
+                raise HTTPException(404, "Situation introuvable")
+            situation = {**situation, "statut": nouveau, "tenant_id": tenant,
+                         "maj_le": maj_le}
+        # Best-effort : un rejeu retrouve le même _id d'outbox, l'écriture legacy reste acquise.
+        await _pont_apres_situation(situation, tenant, action=payload.action)
     await journaler(acteur, espace["id"], f"situation : {payload.action}", sid, "")
     return {"ok": True, "statut": nouveau}
 
@@ -995,15 +1106,47 @@ class DecisionSituation(BaseModel):
 @api_router.post("/situations/{sid}/decision")
 async def decider_situation(sid: str, payload: DecisionSituation, acteur: str = Depends(auth_identite.acteur), x_espace: Optional[str] = Header(None)):
     _, espace = resoudre_perimetre(acteur, x_espace)
-    await situation_dans_perimetre(sid, espace)
-    res = await db.situations.update_one(
-        {"id": sid},
-        {"$set": {"statut": "décidée", "decision": payload.decision, "decidee_le": datetime.now(timezone.utc).isoformat()}},
+    situation = await situation_dans_perimetre(sid, espace)
+    tenant = _tenant_isole()
+    decision = payload.decision.strip()
+    if not decision:
+        raise HTTPException(400, "Décision vide")
+    # Un rejeu conserve le premier horodatage et le premier acteur : la clé d'idempotence
+    # de l'outbox reste stable et aucune décision canonique n'est dupliquée.
+    rejeu = (
+        situation.get("statut") == "décidée"
+        and situation.get("decision") == decision
+        and bool(situation.get("decidee_le"))
+        and bool(situation.get("maj_le"))
+        and situation.get("decidee_par") == acteur
     )
-    if res.matched_count == 0:
-        raise HTTPException(404, "Situation introuvable")
-    await journaler(acteur, espace["id"], "décision", sid, payload.decision)
-    return {"ok": True, "decision": payload.decision}
+    if not rejeu:
+        decidee_le = datetime.now(timezone.utc).isoformat()
+        res = await db.situations.update_one(
+            {"id": sid, **_filtre_tenant(tenant)},
+            {"$set": {
+                "statut": "décidée",
+                "decision": decision,
+                "decidee_le": decidee_le,
+                "decidee_par": acteur,
+                "tenant_id": tenant,
+                "maj_le": decidee_le,
+            }},
+        )
+        if res.matched_count == 0:
+            raise HTTPException(404, "Situation introuvable")
+        situation = {
+            **situation,
+            "statut": "décidée",
+            "decision": decision,
+            "decidee_le": decidee_le,
+            "decidee_par": acteur,
+            "tenant_id": tenant,
+            "maj_le": decidee_le,
+        }
+    await _pont_apres_situation(situation, tenant)
+    await journaler(acteur, espace["id"], "décision", sid, decision)
+    return {"ok": True, "decision": decision}
 
 
 # ---------- Relations (mémoire du Mesh) ----------
@@ -1035,7 +1178,8 @@ async def lister_decisions(acteur: str = Depends(auth_identite.acteur), x_espace
     aut = autorisations(espace, [j["id"] for j in tous])
     nom_vers_id = {j["nom"]: j["id"] for j in tous}
     situations = await db.situations.find(
-        {"verbe": "a_decider", "statut": {"$nin": ["ignorée", "classée", "décidée"]}}, NO_ID
+        {"verbe": "a_decider", "statut": {"$nin": ["ignorée", "classée", "décidée"]},
+         **_filtre_tenant(_tenant_isole())}, NO_ID
     ).to_list(50)
     situations = [f for f in (filtre_situation(s, aut, nom_vers_id) for s in situations) if f]
     tous_jumeaux = await jumeaux_du_tenant(db, _tenant_requete())

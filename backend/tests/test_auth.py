@@ -116,3 +116,20 @@ def test_demo_pose_le_tenant_x_tenant_pour_les_ecritures(monkeypatch):
     client = _client_tenant()
     assert client.get("/api/tenant", headers={"X-Tenant": "Demo"}).json() == {
         "tenant": None, "contexte": "demo"}
+
+
+def test_le_tenant_de_requete_ne_retombe_pas_sur_local_hors_demo(monkeypatch):
+    from meridian.domain.tenant import TenantRequis
+
+    monkeypatch.delenv("JUMEAU_TENANT", raising=False)
+    monkeypatch.setenv("AUTH_MODE", "proxy")
+    with pytest.raises(TenantRequis):
+        tenant_context.courant_requete()
+
+
+def test_le_tenant_de_requete_garde_le_repli_demo(monkeypatch):
+    monkeypatch.delenv("JUMEAU_TENANT", raising=False)
+    monkeypatch.delenv("APP_ENV", raising=False)
+    monkeypatch.setenv("AUTH_MODE", "demo")
+
+    assert tenant_context.courant_requete() == "local"
