@@ -523,6 +523,10 @@ WEB_PROVIDER=none
 | Évaluation retrieval | absente | P1 |
 | Multi-utilisateurs | partiel | P2 |
 
+Ce tableau couvre les écarts **techniques**. Les écarts **produit** — boucle vivante, objets de
+la vision, surfaces, experts, mémoire de transformation — sont détaillés dans
+[ecarts-vision.md](architecture/ecarts-vision.md).
+
 ---
 
 ## 17. ADR et décisions

@@ -3,6 +3,7 @@
 ## Point d’entrée
 
 - **État actuel et reste à faire :** [etat-actuel.md](architecture/etat-actuel.md)
+- **Écarts avec la vision :** [ecarts-vision.md](architecture/ecarts-vision.md)
 - **Diagramme d’architecture actuelle :** [architecture-etat-actuel.html](diagrammes/architecture-etat-actuel.html)
 - **Diagramme des mémoires :** [memoire-agent.html](diagrammes/memoire-agent.html)
 - **Diagramme cognitif :** [architecture-cognitive.html](diagrammes/architecture-cognitive.html)

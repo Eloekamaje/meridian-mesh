@@ -1,6 +1,6 @@
 # Diagrammes Méridian
 
-Quatre références autonomes pour les schémas de Méridian Mesh, et le contrat de style que le rendu React `SchemaSvg` doit reprendre.
+Huit références autonomes pour les schémas de Méridian Mesh, et le contrat de style que le rendu React `SchemaSvg` doit reprendre.
 
 | Fichier | Type | Sujet |
 |---|---|---|
@@ -134,7 +134,7 @@ Le rendu applicatif par défaut passe par l'**auteur design-diagram** ; le compi
 - **Cognition** : 9 étapes verticales, 9 flux. Le dossier de raisonnement est le point focal ; la boucle d’apprentissage revient du Learning vers le contexte, sans court-circuiter la critique ni les gates.
 - **Cycle de vie du Twin** : 9 étapes verticales, 9 flux. `twin.born` est l’événement pivot ; la veille revient vers l’ingestion sans changer l’identité. `legacy.born` est une passe de reconstruction, jamais une promotion.
 - **Séquence** : 5 lignes de vie (maximum de la skill). `Relecture` est le juge d'appui, sans outils ; la réponse finale est l'étiquette `RÉPONSE CITÉE`, et le Canvas est signalé en note, pas comme une sixième ligne de vie.
-- **Dépendances** : 8 nœuds, 11 arêtes, badge de fan-in sur chaque nœud. `Dépôts Git` concentre 3 dépendances entrantes. Le seul cycle est réel : le jumeau `Méridian` indexe le code qui contient `Flore`, d'où le retour `Méridian → Flore` en accent pointillé.
+- **Dépendances** : 8 nœuds, 11 arêtes, badge de fan-in sur chaque nœud. `Dépôts Git` concentre 3 dépendances entrantes. Le seul cycle est réel : le Twin qui représente le produit `Méridian` — et non la plateforme — indexe le code qui contient `Flore`, d'où le retour `Produit Méridian → Flore` en accent pointillé.
 
 ## Validation
 

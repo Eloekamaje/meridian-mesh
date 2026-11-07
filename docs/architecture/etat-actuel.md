@@ -3,7 +3,8 @@
 > **Photographie :** 6 novembre 2026, commit `d2d9f9b`.
 > Ce document décrit ce qui existe réellement dans le dépôt ; il ne décrit pas la cible.
 > Les documents de vision et les PRD restent la cible ; ce fichier est la carte de l’état
-> courant et la matrice de traçabilité vers le code et les tests.
+> courant et la matrice de traçabilité vers le code et les tests. Les écarts produit détaillés
+> sont dans [ecarts-vision.md](ecarts-vision.md).
 
 ## 0. Comment lire ce document
 
@@ -19,8 +20,13 @@ Une phrase sans code derrière reste une cible, même si elle est déjà dans un
 
 ## 1. Résumé exécutif
 
-Méridian est une plateforme de compréhension et de décision sur un système d’information.
-Elle relie quatre couches qui étaient souvent séparées :
+Méridian est un **système d’intelligence vivante de l’entreprise**. Sa cible est la boucle
+**Découvrir → Maturer → Exprimer → Investiguer → Décider → Agir → Mesurer → Apprendre**,
+mécanique opérationnelle du triptyque **Découvrir · Comprendre · Décider**. **Méridian n’est
+pas un Twin** : les Twins sont des représentations d’entités de l’entreprise, pas la
+plateforme elle-même (voir 3.10).
+
+Dans le code actuel, elle s’appuie sur quatre couches qui étaient souvent séparées :
 
 1. **un modèle d’entreprise canonique** (Twins, situations, décisions, initiatives, outcomes,
    learnings, claims, preuves) ;
@@ -308,6 +314,14 @@ Modules :
 - `application/planification/*` : capacité, charge, prévision, budget ;
 - frontend `pages/Boucle.jsx` et `pages/Travail.jsx`.
 
+**Lecture importante.** La boucle canonique ci-dessus est un modèle Postgres validé, mais le
+chemin live Travail/Actualités utilise encore les collections Mongo `cases`, `situations` et
+`initiatives`. Certains objets canoniques (situations, initiatives) sont alimentés par le
+backfill `migration_canonique` et exposés en lecture (`/boucle/objets`) ; les seules écritures
+canoniques exposées concernent Outcome, Learning et leur réutilisation. Une décision prise dans
+Travail ne crée donc pas encore de `Decision` canonique. Le détail est dans
+[ecarts-vision.md](ecarts-vision.md).
+
 ### 3.7 Architecture cognitive
 
 ![Architecture cognitive de Méridian](../diagrammes/architecture-cognitive.png)
@@ -367,7 +381,7 @@ Limites actuelles :
 - il n’y a pas encore de révision automatique des croyances à partir d’un outcome : la
   révision est proposée, pas appliquée.
 
-### 3.8 Le Twin Méridian : identité, naissance, vie
+### 3.8 Le Twin : identité, naissance, vie
 
 ![Cycle de vie d’un Twin](../diagrammes/cycle-vie-twin.png)
 
@@ -376,7 +390,8 @@ Limites actuelles :
 
 Un Twin est une **représentation vivante** d’une entité de l’entreprise, pas seulement
 d’une application. Son identité est stable ; ses connaissances, ses liens et ses sources
-évoluent autour d’elle.
+évoluent autour d’elle. **Méridian n’est pas un Twin** : c’est la plateforme qui maintient
+ces représentations. Le cas du `meridian` de test/backfill est traité en 3.10.
 
 **Identité**
 
@@ -432,16 +447,21 @@ historique. Ils valent `twin.born` pour le résolveur, jamais une confirmation a
 |---|---|---|---|
 | **Claim** | fait sujet-prédicat-objet, avec mode, maturité et preuves | `DECLARED`, `OBSERVED`, `INFERRED`, `PROPOSED`, `CONFIRMED`, `SUPPORTED`, `STRENGTHENED`, `MATURE`, `CONTESTED`, `INVALIDATED`, `HISTORICAL` | Postgres `claim`, `preuve`, `claim_preuve` ; `/api/boucle/twins/{id}/claims` |
 | **Relation** | lien entre deux objets, distinct d’un claim | `supposee`, `observee`, `validation`, `confirmee`, `contestee`, `obsolete` | Postgres / Neo4j ; Atlas et revue |
-| **Situation** | phénomène émergent reliant Twins, signaux, claims ou impacts | `CANDIDATE`, puis qualification | `objet_entreprise`, API Boucle, frontend |
-| **Opportunity / Risk** | possibilité ou risque attaché à une situation | `DETECTED`, puis qualification | `objet_entreprise` |
-| **Investigation** | espace structuré de compréhension : question, hypothèses, preuves | `OPEN`, puis clôture | `objet_entreprise`, `/api/boucle/objets` |
-| **Decision** | décision humaine reliée à une investigation, avec options et rationale | `PROPOSED`, puis tranchée | `objet_entreprise`, `/api/boucle/decisions` |
-| **Initiative** | traduction d’une décision en action suivie | `PLANNED`, puis exécution | `objet_entreprise`, planification |
-| **Outcome** | mesure observée après une initiative | `OBSERVED` | `objet_entreprise`, `outcomes.py` |
-| **Learning** | connaissance généralisable issue d’un outcome ou d’une investigation | `PROPOSED`, promotion humaine | `objet_entreprise`, `apprentissage_raisonnement.py` |
+| **Situation** | phénomène émergent reliant Twins, signaux, claims ou impacts | `CANDIDATE`, puis qualification | `objet_entreprise` + backfill ; le live lit/écrit Mongo `situations` ; pas de création canonique exposée |
+| **Opportunity / Risk** | possibilité ou risque attaché à une situation | `DETECTED`, puis qualification | Classes de domaine testées ; aucune instanciation live identifiée ; sous-document `opportunite` legacy pour Opportunity, pas d’équivalent Risk |
+| **Investigation** | espace structuré de compréhension : question, hypothèses, preuves | `OPEN`, puis clôture | `objet_entreprise` possible, aucun flux live identifié ; lecture `/api/boucle/objets` ; le live ouvre une situation Mongo |
+| **Decision** | décision humaine reliée à une investigation, avec options et rationale | `PROPOSED`, puis tranchée | `objet_entreprise` possible, aucun flux live identifié ; lecture seule ; le live écrit une décision de case Mongo |
+| **Initiative** | traduction d’une décision en action suivie | `PLANNED`, puis exécution | `objet_entreprise` + backfill, lecture seule ; initiatives live dans Mongo |
+| **Outcome** | mesure observée après une initiative | `OBSERVED` | `objet_entreprise`, `POST /api/boucle/outcomes` ; exige une Initiative canonique |
+| **Learning** | connaissance généralisable issue d’un outcome ou d’une investigation | `PROPOSED`, promotion humaine | `objet_entreprise`, `/api/boucle/outcomes`, `/raisonnement/apprentissage` |
 | **Source** | système externe fournissant observations et artefacts | type, curseur, fraîcheur, secret_ref | Postgres `source`, workers d’ingestion |
 | **Domain** | domaine métier ou de données | stable | `objet_entreprise` / graphe |
 | **Annotation** | mémoire organisationnelle déclarée | déclarée | `memoire_org`, `objet_entreprise` |
+
+Objets de la vision qui ne sont pas encore des objets d’entreprise canoniques :
+**Signal**, **Expression**, **Scenario**, **Hypothesis**, **Expert**, **ExpertContribution**.
+Le dossier de raisonnement porte des hypothèses et des options, mais ce ne sont pas les objets
+durables décrits par le Domain Model. Voir [ecarts-vision.md](ecarts-vision.md).
 
 Règles transverses :
 
@@ -452,21 +472,32 @@ Règles transverses :
 - les contradictions ne sont jamais écrasées ;
 - un objet sans preuve reste `PROPOSED`/`suggere`, jamais `CONFIRMED`.
 
-### 3.10 Méridian comme Twin
+### 3.10 Méridian n’est pas un Twin
 
-Méridian peut être ingéré comme un **Twin de son propre Mesh** (`meridian`), avec le dépôt
-`meridian-mesh` comme source. C’est le cas d’usage de self-hosting :
+**Méridian est un système d’intelligence vivante de l’entreprise**, pas un Twin. La vision le
+définit comme un **système d’exploitation cognitif** : il observe, comprend, fait émerger,
+investigue, décide, agit, mesure et apprend. Le Mesh, les Twins, les Claims, les sources, les
+relations et l’Atlas sont sa **fondation cognitive** ; ils ne sont pas le produit visible.
 
-- le code de la plateforme est indexé par CBM et le code-index fédéré ;
-- les ADR, la documentation et les rapports sont des sources documentaires ;
-- les claims, preuves, interfaces et liens de Méridian sont visibles dans l’Atlas ;
-- la revue, la mémoire et les liens peuvent être exercés sur le produit lui-même.
+```text
+Découvrir → Maturer → Exprimer → Investiguer → Décider → Agir → Mesurer → Apprendre
+```
 
-Ce qui est **implémenté** : identité du Twin, ingestion du dépôt, claims/preuves, code-index,
-graphe, Atlas, revue, mémoire. Ce qui reste **partiel ou cible** : mise à jour autonome de la
-documentation, auto-promotion d’un Twin, benchmark de self-compréhension et boucle complète
-“le produit se maintient lui-même”. La documentation de ce dépôt reste rédigée et revue
-manuellement ; elle n’est pas générée automatiquement par le Twin `meridian`.
+Un Twin représente une **entité de l’entreprise** (application, processus, capacité, parcours,
+organisation, produit, domaine de données, ressource, fournisseur, équipe ou écosystème).
+Flore est l’interface conversationnelle d’exploitation ; **Flore n’est ni Méridian ni un
+Twin**. Atlas est la géographie du Mesh ; il n’est pas le produit.
+
+Le `meridian` qui apparaît dans la fixture de `test_flore.py` ou dans un backfill local
+historique (`docs/cognitive/ETAT.md`) est une **donnée de test ou de déploiement**. Ce n’est
+ni un concept produit, ni une identité définie par la vision.
+
+**Ce que Méridian n’est pas** : un Knowledge Graph, une CMDB augmentée, un outil
+d’observabilité, un outil de documentation, un assistant conversationnel, un outil de process
+mining, un moteur de recherche, un outil d’architecture, une plateforme multi-agents ou un
+simple Digital Twin. Il peut incorporer certaines de ces capacités ; la différence est la
+boucle complète d’observation, de maturation, d’investigation, de décision, de mesure et
+d’apprentissage.
 
 ---
 
@@ -510,6 +541,73 @@ principales :
 | `POST /api/boucle/resolutions/{id}/enqueter` | enquête bornée |
 | `GET/POST /api/boucle/intentions` | mémoire prospective |
 | `GET /api/boucle/learnings/metriques` | réutilisation mesurée |
+
+### 5.1 Cycle d’une requête
+
+**Analyse cognitive (`POST /api/boucle/analyser`)**
+
+```text
+cognitif.analyser_cognitif
+  → analyse_service.executer
+      → resolveur_contexte.resoudre
+      → composition.planifier (profil, méthodes, compétences, spécialistes)
+      → spécialistes (découverte, preuve, impact, outcome selon le plan)
+      → retrieval_memoire.recuperer + enrichir_pack
+      → epistemie.faits_depuis_recherche
+      → noyau_raisonnement.preparer_dossier
+      → reponse_cognitive.composer
+      → noyau_raisonnement.completer_dossier
+      → evaluation_raisonnement.evaluer
+  → dossiers_raisonnement.enregistrer_dsn
+```
+
+**Travail / Aurora (`POST /api/aurora/demander`)**
+
+```text
+legacy.aurora_demander
+  → generer_tour
+  → generer_reponse_flore
+  → noyau_raisonnement.preparer_dossier / completer_dossier
+  → réponse située, citations et artefacts
+```
+
+**Ingestion d’une source Git**
+
+```text
+source_worker / POST /boucle/sources/{id}/ingest
+  → ingerer.ingerer
+      → cbm.indexer / cbm.interroger
+      → legacy_index.indexer_legacy
+      → code_index_store.remplacer_source
+      → decouverte_naissance.reconcilier_twin
+```
+
+**Naissance et liens**
+
+```text
+relations_naissance.celebrer_naissance
+  → manifeste_depuis_claims
+  → emettre_twin_born
+  → decouverte_naissance.traiter_twin_born
+      → extractions_depuis_manifests + cbm_liens.extraire_observations
+      → moteur_liens.moteur_liens
+      → propositions / ResolutionCase
+      → revue humaine
+```
+
+### 5.2 Où regarder pour modifier quoi
+
+| Objectif | Point d’entrée |
+|---|---|
+| Ajouter/modifier une route HTTP | `backend/meridian/adapters/inbound/http/*.py` |
+| Changer la naissance ou le manifeste | `application/relations_naissance.py`, `postgres/relations_naissance.py` |
+| Changer l’appariement des liens | `application/moteur_liens.py`, `domain/chemins.py` |
+| Ajouter une source d’extraction | `adapters/outbound/connectors/*` puis mapper dans `decouverte_composants.py` |
+| Ajouter une mémoire | domaine + store Postgres + `retrieval_memoire.py` + tests |
+| Changer le pipeline cognitif | `application/noyau_raisonnement.py`, `domain/dossier_raisonnement.py` |
+| Changer l’ingestion | `connectors/ingerer.py`, `legacy_index.py`, `code_index_store.py` |
+| Changer l’Atlas ou la revue | `frontend/src/pages`, `frontend/src/components/map` |
+| Ajouter un worker | `adapters/inbound/worker/` + script `scripts/` + unité systemd |
 
 ---
 
@@ -603,7 +701,9 @@ la suite locale.
 
 | Capacité | État | Commentaire |
 |---|---|---|
-| Registre Twins / situations | **solide** | Postgres + projection Mongo/Neo4j |
+| Registre Twins | **solide** | Postgres + projection Mongo/Neo4j |
+| Situations / boucle canonique | **partielle** | Modèle/store/lecture + Outcome ; le live Travail/Actualités utilise Mongo ; création/transition non exposée |
+| Signal, Expression, Scenario, Hypothesis, Expert | **absents comme objets canoniques** | Noms de famille, dossier de raisonnement ou profils ; voir [ecarts-vision.md](ecarts-vision.md) |
 | Claims, preuves, maturité | **solide** | contradictions et revue conservées |
 | Ingestion Git + CBM | **solide** | CBM à installer dans l’environnement cible |
 | Liens HTTP/JMS/SOAP | **solide** | revue humaine, contradictions |
@@ -642,7 +742,6 @@ dépôt. Une ligne sans test est explicitement une cible ou une couverture parti
 | Workers source/outbox/travail/planification | `adapters/inbound/worker/*` | `test_worker_rls.py`, `test_index_versionne.py` | **Partiel**, déploiement à superviser |
 | Projection Neo4j | `adapters/outbound/neo4j/*`, `graphe_sync.py` | `test_graphe_neo4j.py`, `test_graphe_sync.py` | **Implémenté**, activable |
 | Planification capacité/prévision | `application/planification/*`, connecteurs | `test_planification_*` | **Implémenté**, connecteurs live partiels |
-| Méridian comme Twin | `ingerer.py`, `registre`, `seed_data.py` | `test_flore.py`, `test_registre.py` | **Partiel**, self-hosting manuel |
 | Couverture CBM Go/PHP/Ruby/batch | CBM externe | aucun test de couverture réelle | **Cible** |
 | Corpus de production / shadow mode | absent | aucun | **Cible** |
 | Mémoire paramétrique / sensorielle | absente | aucun | **Cible / non retenu** |
@@ -656,6 +755,7 @@ dépôt. Une ligne sans test est explicitement une cible ou une couverture parti
 
 | Dette | Pourquoi | Critère d’acceptation |
 |---|---|---|
+| Unification live/canonique | Travail/Actualités (Mongo) et boucle canonique (Postgres) sont deux chaînes | un parcours Situation → Learning avec un identifiant unique, visible dans Travail et Boucle |
 | Corpus de production labellisé + shadow mode | les mesures actuelles portent sur un corpus de test | précision/rappel/fausses certitudes sur un jeu réel, revue aveugle |
 | Activation RLS + workers multi-tenant | RLS existe mais `JUMEAU_RLS=0` par défaut | policies actives, tests d’isolation, workers en contexte ou bypass explicite |
 | Déploiement supervisé des workers | les runs restent `QUEUED` sans worker | source/outbox/travail/reconciliation supervisés, redémarrage testé |
@@ -722,6 +822,7 @@ dépôt. Une ligne sans test est explicitement une cible ou une couverture parti
 
 ## 12. Références
 
+- [Écarts avec la vision](ecarts-vision.md)
 - [Architecture maître](../MERIDIAN_Architecture_Master_v1.md)
 - [Diagramme d’architecture actuelle](../diagrammes/architecture-etat-actuel.html)
 - [Diagramme des mémoires](../diagrammes/memoire-agent.html)

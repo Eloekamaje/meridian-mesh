@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg viewBox="0 0 1000 1080" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="twin-title twin-desc" id="cycle-vie-twin-root">
-        <title id="twin-title">Cycle de vie d’un Twin Méridian</title>
+        <title id="twin-title">Cycle de vie d’un Twin</title>
         <desc id="twin-desc">Neuf étapes : commande de naissance, préalables, sources et ingestion, claims et preuves, manifeste, twin.born, découverte locale, revue humaine et promotion, Twin confirmé et veille.</desc>
         <defs>
       <style>#cycle-vie-twin-root { --color-paper: #071019;

@@ -1,24 +1,94 @@
 # Méridian
 
 > **État actuel et reste à faire :** [docs/architecture/etat-actuel.md](docs/architecture/etat-actuel.md).
+> **Écarts avec la vision :** [docs/architecture/ecarts-vision.md](docs/architecture/ecarts-vision.md).
 > **Architecture de référence :** [docs/MERIDIAN_Architecture_Master_v1.md](docs/MERIDIAN_Architecture_Master_v1.md).
 > Ce README décrit le produit, l’usage et les points d’entrée ; le document d’état actuel décrit
 > l’implémentation réelle, la matrice de traçabilité doc → code → test et les dettes restantes.
 
-**Méridian** est une plateforme de compréhension et de décision sur un système d'information. Elle n'est pas un simple graphe de topologie : le système est organisé autour de **Situations** (incidents, changements, découvertes) et suit le paradigme **Découvrir → Comprendre → Décider**.
+**Méridian** est un **système d’intelligence vivante de l’entreprise**. Sa fondation cognitive est un réseau de **Twins** — représentations d’entités de l’entreprise (application, processus, capacité, parcours, organisation, produit, domaine de données, ressource, fournisseur, équipe, écosystème) — et de connaissances reliées : **Claims**, preuves, sources et relations ; le **Mesh** et l’**Atlas** les rendent navigables. Le système est organisé autour de **Situations** (incidents, changements, découvertes) et suit la boucle **Découvrir → Maturer → Exprimer → Investiguer → Décider → Agir → Mesurer → Apprendre**, mécanique opérationnelle du triptyque **Découvrir · Comprendre · Décider**.
 
-> Dans Méridian, sélectionner le SI revient à donner du contexte à Aurora. Interroger Aurora revient à transformer la vue du SI.
+**Ce que Méridian n’est pas.** Méridian n’est pas un Twin. Flore est l’interface conversationnelle, pas Méridian ; Atlas est la géographie du Mesh, pas le produit. Méridian n’est pas non plus un simple Knowledge Graph, une CMDB augmentée, un outil d’observabilité, de documentation, de process mining, de recherche ou d’architecture, un assistant conversationnel, une plateforme multi-agents ou un Digital Twin. Il peut incorporer certaines de ces capacités ; sa différence est la boucle complète d’observation, de maturation, d’investigation, de décision, de mesure et d’apprentissage.
+
+> Dans Méridian, sélectionner le SI revient à donner du contexte à Flore. Interroger Flore revient à transformer la vue du SI.
+
+## La cible et l’écart
+
+Méridian doit permettre à l’entreprise de passer de la découverte à l’amélioration continue.
+La question utile n’est donc pas « quelles pages existent ? », mais **où en est la boucle
+vivante**.
+
+| Génération | Cible | État réel | Ce qui existe déjà |
+|---|---|---|---|
+| **Méridian 1 — Comprendre** | Représentation vivante et fiable de l’entreprise : Twins, Mesh, Claims, sources, découverte, relations, Atlas, compréhension | **Solide sur le socle ; partiel sur la couverture** | Twins typés, ingestion Git/CBM, claims et preuves, liens entre composants, Atlas, revue humaine |
+| **Méridian 2 — Exploiter** | Transformer la compréhension en attention, investigation et décision : maturation, expressions, risques/opportunités, experts, investigations, scénarios, Flore, priorisation | **Partiel** | Travail, Flore, Actualités, décisions/passation/veille, dossiers de raisonnement, planification. Mais le chemin live et la boucle canonique ne sont pas unifiés |
+| **Méridian 3 — Améliorer** | Mesurer les décisions, apprendre des résultats et améliorer continuellement : initiatives, outcomes, apprentissage, mémoire de transformation | **Embryonnaire** | Outcome/Learning, calibration, réutilisation mesurée, veille. Pas encore de mémoire de transformation interrogeable ni de collecte automatique |
+
+**Statuts** : *Solide* = branché dans un chemin réel et testé ; *Partiel* = code présent mais
+chaîne produit incomplète ; *Embryonnaire* = début de boucle, pas encore exploitable.
+
+### L’expérience cible
+
+- **Aujourd’hui** — une file d’attention qui explique pourquoi chaque sujet compte, ce qui est
+  prouvé, ce qui reste incertain et ce qui demande une décision.
+- **Atlas** — la géographie du Mesh : où le phénomène se produit, quelles entités et relations
+  sont touchées, quelle propagation est possible.
+- **Flore** — la conversation avec l’entreprise vivante : expliquer, prouver, lancer une
+  investigation, comparer des scénarios, suivre un outcome.
+- **Travail** — l’espace où une situation devient investigation, décision, initiative et
+  résultat, avec une chaîne de preuve continue.
+- **Boucle** — la lecture de bout en bout : Situation → Expression → Investigation → Décision →
+  Initiative → Outcome → Learning.
+
+**Lecture honnête.** Méridian sait aujourd’hui découvrir et comprendre un SI, et commence à
+exploiter cette compréhension dans le Travail, Flore et l’Atlas. Il ne sait pas encore dérouler
+la boucle complète de façon canonique et homogène : une décision prise dans Travail ne crée pas
+de `Decision` canonique, et un `Outcome` canonique exige une `Initiative` canonique que le
+chemin live ne crée pas encore.
+
+**Ce qui manque en priorité**
+
+- **Unifier la chaîne** : Travail/Actualités (Mongo legacy), boucle canonique (Postgres) et
+  dossier de raisonnement doivent converger vers un même parcours traçable. Une même Situation
+  doit garder un identifiant unique de la découverte jusqu’au Learning.
+- **Rendre la boucle opérable** : API et UI de création/transition pour Signal → Situation →
+  Expression → Investigation → Décision → Initiative → Outcome → Learning, pas seulement la
+  lecture et l’Outcome.
+- **Compléter les objets** : `Signal`, `Expression`, `Scenario`, `Hypothesis`, `Expert`,
+  `ExpertContribution` ; rendre `Opportunity` et `Risk` opérationnels.
+- **Brancher la mesure et l’apprentissage** sur les décisions et les sources réelles, avec
+  attendu/observé et effets secondaires.
+- **Construire la mémoire de transformation** et les actions Flore : comparer des scénarios,
+  lancer une investigation, interroger les experts, reviser un outcome.
+
+Le détail — étape par étape, objet par objet, surface par surface — est dans
+[docs/architecture/ecarts-vision.md](docs/architecture/ecarts-vision.md).
+
+## Sommaire
+
+- [La cible et l’écart](#la-cible-et-lécart)
+- [Les espaces](#les-espaces)
+- [Flore / Aurora](#flore--aurora--copilote-contextuel)
+- [Ce qui est déjà solide](#ce-qui-est-déjà-solide)
+- [Architecture visuelle](#architecture-visuelle)
+- [Pile technique](#pile-technique)
+- [Démarrage](#démarrage)
+- [Découverte, mémoire et agentique](#découverte-mémoire-et-agentique)
+- [API principale](#api-principale)
+- [Tests](#tests)
+- [Reste à faire](#reste-à-faire)
 
 ## Les espaces
 
-| Page | Rôle |
-|---|---|
-| **Aujourd'hui** (`/`) | Observatoire : nouvelles connaissances, anomalies, flux d'activité temps réel |
-| **Atlas** (`/atlas`) | Carte 2D cartographique à zoom sémantique avec territoires stables (façon Google Maps) |
-| **Investigations** (`/investigations`) | Approfondissement : relations, comportements, contradictions, hypothèses |
-| **Décisions** (`/decisions`) | Change Lab : simulation de scénarios de changement |
-| **Jumeaux** (`/jumeaux`) | Registre des jumeaux numériques (admission, administration) |
-| **Administration** (`/administration`) | Sources, couverture, propriétaires, journal d'audit |
+| Page | Route | Rôle |
+|---|---|---|
+| **Aujourd'hui** | `/actualites`, `/aujourdhui` ; `/` y redirige | Observatoire : nouvelles connaissances, anomalies, activité |
+| **Atlas** | `/atlas` | Carte 2D à zoom sémantique, territoires et portes |
+| **Travaux** | `/travaux`, `/travaux/:cid` ; `/investigations` et `/decisions` y redirigent | Fil de travail, pièces, décisions et livrables |
+| **Boucle** | `/boucle` | Lecture de la boucle canonique, synthèse, création d’Outcome et de Twin ; création/transition des autres objets à venir |
+| **Cognition** | `/cognition` | Dossier de raisonnement, croyances, évaluation |
+| **Jumeaux** | `/jumeaux`, `/jumeaux/:jid/revue` | Registre, revue et promotion des Twins |
+| **Administration** | `/administration` | Sources, couverture, propriétaires, journal d'audit |
 
 ## L'Atlas — navigation hiérarchique
 
@@ -29,7 +99,7 @@ Règle essentielle : **sélectionner ≠ prendre le focus**.
 | Action | Domaine | Jumeau |
 |---|---|---|
 | Survol | Aperçu (jumeaux, découvertes, relations) | Aperçu rapide (mission, état, couverture) |
-| Clic | Sélection dans le contexte Aurora | Sélection dans le contexte Aurora |
+| Clic | Sélection dans le contexte Flore | Sélection dans le contexte Flore |
 | Double-clic | **Focus** : entrée dans le domaine | **Focus** : vue locale radiale du jumeau |
 | Molette avant | Entrée progressive dans l'élément survolé | Idem |
 | Molette arrière | Retour au Mesh | Retour au domaine |
@@ -44,13 +114,15 @@ Règle essentielle : **sélectionner ≠ prendre le focus**.
 - **Périmètre de travail** : un domaine peut devenir un filtre de travail volontaire (distinct de la sécurité RBAC).
 - **Liens profonds** : l'URL reflète le contexte (`?domaine=X&interne=1&jumeau=Y&sel=Z`) — partageable et restaurable.
 
-## Aurora — copilote contextuel
+## Flore / Aurora — copilote contextuel
 
-Barre persistante en bas de l'application, **synchronisée bidirectionnellement avec l'Atlas** :
+**Flore** est le nom visible du copilote dans le Travail ; l’API historique reste
+`/api/aurora`. La barre est persistante en bas de l’application, **synchronisée
+bidirectionnellement avec l’Atlas** :
 
-- **Atlas → Aurora** : toute sélection (clic, Maj+clic, lasso, domaine) met à jour le contexte actif d'Aurora (chips avec retrait individuel) et propose des intentions : *Comprendre leurs relations · Dépendances inconnues · Analyser un changement · Points critiques · Optimiser ce parcours · Ouvrir une investigation*.
-- **Aurora → Atlas** : Aurora commande la carte (éclairer des relations, isoler un parcours, naviguer vers un domaine) et propose des voisins pertinents avec justification — jamais sans confirmation (*Ajouter au contexte / Examiner / Ignorer*).
-- **Focus visuel ≠ sélection analytique** : entrer dans un domaine conserve la sélection ; Aurora propose alors de la conserver, la retirer ou d'ajouter les jumeaux du domaine.
+- **Atlas → Flore** : toute sélection (clic, Maj+clic, lasso, domaine) met à jour le contexte actif de Flore (chips avec retrait individuel) et propose des intentions : *Comprendre leurs relations · Dépendances inconnues · Analyser un changement · Points critiques · Optimiser ce parcours · Ouvrir une investigation*.
+- **Flore → Atlas** : Flore commande la carte (éclairer des relations, isoler un parcours, naviguer vers un domaine) et propose des voisins pertinents avec justification — jamais sans confirmation (*Ajouter au contexte / Examiner / Ignorer*).
+- **Focus visuel ≠ sélection analytique** : entrer dans un domaine conserve la sélection ; Flore propose alors de la conserver, la retirer ou d'ajouter les jumeaux du domaine.
 - Réponses **calculées depuis le vrai Mesh** (toujours filtrées par les autorisations serveur) : recherche plein texte avec scoring de pertinence, scénarios prescriptés pour le parcours de démonstration, accusé de contexte sans analyse automatique.
 - **Mentions et commandes** : dans le Travail, `@Nom` ouvre la liste des jumeaux visibles et route explicitement la question vers celui qui est mentionné (les droits serveur filtrent toujours) ; `/resumer`, `/investiguer`, `/decision`, `/preuves`, `/pieces` et `/aide` remplissent une consigne explicite, que l'on relit avant l'envoi. Aucune commande n'exécute une action cachée.
 - **Sources & Jumeaux** : le volet est groupé en **Jumeaux** (ceux du Travail et ceux réellement consultés, avec badge et sources), **Preuves du dossier** (démonstration) et **Pièces jointes**. Toutes les rubriques et sous-rubriques sont **pliées par défaut** ; un clic les ouvre. Il s'ouvre une fois quand une réponse apporte une source, puis reste fermé si l'utilisateur le referme. Les preuves d'une réponse restent sous le message (pastilles), pas dans ce volet.
@@ -61,9 +133,9 @@ Barre persistante en bas de l'application, **synchronisée bidirectionnellement 
 
 En mode `demo` (local), l'acteur vaut `demo` et le périmètre se pilote via le sélecteur d'espace de la barre supérieure, envoyé au backend par l'en-tête `X-Espace`. En production, `AUTH_MODE=proxy` ou `oidc` authentifie l'acteur côté serveur. **Tout le filtrage est fait côté serveur** — les données non autorisées ne quittent jamais l'API.
 
-Niveaux d'autorisation par jumeau : `existence` → `résumé` → `preuves` → `complet`. Aurora refuse les questions hors périmètre et filtre ses analyses au niveau « résumé » minimum.
+Niveaux d'autorisation par jumeau : `existence` → `résumé` → `preuves` → `complet`. Flore refuse les questions hors périmètre et filtre ses analyses au niveau « résumé » minimum.
 
-## Ce que Méridian sait faire aujourd’hui
+## Ce qui est déjà solide
 
 - **Comprendre un SI** : Twins, situations, relations, preuves, claims, maturité, contradictions.
 - **Découvrir les liens entre composants** : code, contrats, configuration, Kubernetes/Helm,
@@ -72,9 +144,11 @@ Niveaux d'autorisation par jumeau : `existence` → `résumé` → `preuves` →
   read-only, budgets, arrêt explicite, revue humaine.
 - **Mémoire multi-niveaux** : mémoire de travail, épisodique, sémantique, procédurale,
   relationnelle, réflexive, prospective, organisationnelle et documentaire.
-- **Boucle décisionnelle** : Situation → Investigation → Décision → Initiative → Outcome →
-  Learning, avec calibration et réutilisation mesurée.
-- **Planifier** : capacité, charge, prévision, budget, synchronisation Jira/Azure DevOps.
+- **Boucle canonique (lecture/backfill)** : Situation → Investigation → Décision → Initiative →
+  Outcome → Learning, avec transitions validées, calibration et réutilisation mesurée. Le
+  chemin Travail/Actualités utilise encore son modèle Mongo ; l’unification est l’écart P0.
+- **Planifier** : capacité, charge, prévision, budget, adaptateurs de synchronisation ;
+  connecteur Jira présent, Azure DevOps non identifié.
 - **Gouverner** : auth `proxy`/`oidc`, RBAC serveur, tenant, RLS opt-in, rétention, export,
   suppression.
 
@@ -176,6 +250,13 @@ impasse, et produit des candidats. Il ne confirme rien : la revue humaine reste 
 de confirmation. Le détail est dans
 [docs/architecture/etat-actuel.md](docs/architecture/etat-actuel.md).
 
+**Méridian n’est pas un Twin.** C’est un système d’intelligence vivante de l’entreprise :
+le Mesh, les Twins, les Claims, les sources et l’Atlas sont sa fondation cognitive, mais la
+valeur est la boucle complète **Découvrir → Maturer → Exprimer → Investiguer → Décider →
+Agir → Mesurer → Apprendre**. Flore est l’interface conversationnelle, pas Méridian ; Atlas
+est la géographie du Mesh, pas le produit. Le `meridian` des tests ou d’un backfill local est
+une donnée de déploiement, pas un concept produit.
+
 ## Démarrage
 
 ```bash
@@ -203,8 +284,18 @@ Neo4j est optionnel pour la projection graphe :
 `NEO4J_PASSWORD`).
 
 Le schéma Postgres est idempotent (`depot.appliquer_schema`, `schema.sql`) et appliqué par les
-workers et les scripts de maintenance. Sur une base neuve, lancer une fois un worker ou un
-script qui applique le schéma avant la première écriture.
+workers et les scripts de maintenance. Sur une base neuve, l’appliquer une fois avant la
+première écriture :
+
+```bash
+cd backend
+.venv/bin/python - <<'PY'
+import os, psycopg
+from meridian.adapters.outbound.postgres import depot
+with psycopg.connect(os.environ["JUMEAU_PG_DSN"]) as conn:
+    depot.appliquer_schema(conn)
+PY
+```
 
 Variables principales : `JUMEAU_PG_DSN`, `MONGO_URL`, `DB_NAME`, `REDIS_URL`,
 `JUMEAU_MODELE`, `CBM_BIN`, `AUTH_MODE` (`demo` en local, `proxy`/`oidc` en production) et
@@ -367,8 +458,10 @@ python -m evaluation_pieces --docs docs.json --questions questions.jsonl --k 4
 - Mongo du compose de démonstration est **local** (127.0.0.1, sans auth). Pour un déploiement partagé :
   `docker compose --env-file .env.prod -f docker-compose.prod.yml up -d` (Mongo `--auth`, Redis mot de passe,
   Postgres, ports en boucle locale) ; copier `.env.prod.example` vers `.env.prod` et renseigner les secrets.
-- `starlette>=1.6,<2` est requis par le middleware de limite de corps ; les embeddings/pgvector restent une
-  décision d'infrastructure fondée sur `evaluation_pieces`.
+- `starlette>=1.6,<2` est requis par le middleware de limite de corps ; les embeddings
+  utilisent Bedrock ou OpenAI et sont stockés en `double precision[]`. Sans provider, le
+  retrieval reste lexical + graphe ; pgvector reste une option d’infrastructure, pas un
+  prérequis.
 
 ## Canvas des documents
 
@@ -430,13 +523,31 @@ Au 6 novembre 2026, la suite complète donne **2 977 tests passés et 4 ignorés
 tests dépendants de l’environnement (timing heartbeat, quota LLM simulé, données `demo` et
 périmètre de naissance).
 
+## Documentation
+
+- **État actuel, composants, Twin, cognition, mémoire et dettes :**
+  [docs/architecture/etat-actuel.md](docs/architecture/etat-actuel.md)
+- **Écarts avec la vision, objet par objet et étape par étape :**
+  [docs/architecture/ecarts-vision.md](docs/architecture/ecarts-vision.md)
+- **Index de la documentation :** [docs/README.md](docs/README.md)
+- **Découverte des liens et boucle agentique :**
+  [docs/architecture/decouverte-liens-agentique.md](docs/architecture/decouverte-liens-agentique.md)
+- **ADR :** [docs/adr/README.md](docs/adr/README.md)
+- **Architecture maître :**
+  [docs/MERIDIAN_Architecture_Master_v1.md](docs/MERIDIAN_Architecture_Master_v1.md)
+- **Diagrammes :** [docs/diagrammes/README.md](docs/diagrammes/README.md)
+
 ## Reste à faire
 
 La liste détaillée, avec critères d’acceptation, est dans
 [docs/architecture/etat-actuel.md](docs/architecture/etat-actuel.md), section « Reste à faire ».
+Les écarts produit par rapport à la vision sont dans
+[docs/architecture/ecarts-vision.md](docs/architecture/ecarts-vision.md).
 
 ### P0 — avant pilote réel
 
+- unification du chemin live (Travail/Actualités) et de la boucle canonique en une seule chaîne
+  Situation → Investigation → Décision → Initiative → Outcome → Learning ;
 - corpus de production labellisé + shadow mode ;
 - activation RLS et validation des workers multi-tenant ;
 - déploiement supervisé des workers source/outbox/travail/réconciliation ;
@@ -464,4 +575,6 @@ La liste détaillée, avec critères d’acceptation, est dans
 - observabilité (métriques, traces, coûts, files) ;
 - versionnement formel du schéma Postgres ;
 - réduction de la double écriture Mongo/Postgres ;
-- performance grands graphes et retrieval.
+- performance grands graphes et retrieval ;
+- instrumentation de la boucle complète Découvrir → Maturer → Exprimer → Investiguer →
+  Décider → Agir → Mesurer → Apprendre.
