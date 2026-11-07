@@ -7,9 +7,9 @@ Les six transitions canoniques sont exposées en POST : Situation → Investigat
 Initiative → Outcome → Learning. Une transition charge sa source, applique la règle pure,
 persiste avec historique et renvoie l'objet créé avec sa chaîne.
 
-``Idempotency-Key`` est accepté et renvoyé, mais aucun stockage d'idempotence n'est encore
-branché : un rejeu avec la même clé crée une nouvelle version ou un nouvel objet. Les
-transitions d'état déjà consommées restent refusées en 409.
+``Idempotency-Key`` n'est pas accepté silencieusement : aucun stockage d'idempotence durable
+n'étant branché, toute requête qui fournit cet en-tête est refusée en 501. Les transitions
+d'état déjà consommées restent refusées en 409.
 
 Le tenant est résolu par :mod:`meridian.domain.tenant`. En mode demo seulement, l'absence de
 ``X-Tenant`` vaut ``local`` ; hors demo (proxy, OIDC, production), l'en-tête est obligatoire et un
@@ -20,6 +20,7 @@ refusé. ``X-Espace`` reste un contexte de lecture, jamais une identité.
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Mapping
 from datetime import date, datetime
 from decimal import Decimal
@@ -31,7 +32,7 @@ import unicodedata
 from urllib.parse import parse_qsl, unquote_plus, urlsplit
 
 import psycopg
-from fastapi import APIRouter, Header, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from psycopg.rows import dict_row
 from pydantic import (
     AfterValidator,
@@ -43,6 +44,7 @@ from pydantic import (
     model_validator,
 )
 
+from auth import acteur as acteur_courant
 from meridian.adapters.outbound.postgres import boucle
 from meridian.adapters.outbound.postgres import entreprise_depot
 from meridian.adapters.outbound.neo4j import graph_store
@@ -53,6 +55,7 @@ from meridian.domain.tenant import TenantError, exiger_tenant, normaliser_slug, 
 from seed_data import ESPACES
 
 router = APIRouter(prefix="/boucle", tags=["boucle"])
+journal = logging.getLogger("meridian")
 
 _DSN_MANQUANT = "Couche cognitive non configurée (JUMEAU_PG_DSN)"
 _DSN_INDISPONIBLE = "Couche cognitive indisponible"
@@ -70,6 +73,54 @@ def _mode_canonique(valeur: str) -> str:
 
 ModeCanonique = Annotated[str, AfterValidator(_mode_canonique)]
 TexteNonVide = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+TexteIdentifiant = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)
+]
+
+
+def _date_iso(valeur: str) -> str:
+    texte = str(valeur).strip()
+    try:
+        datetime.fromisoformat(texte.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError("date ISO 8601 attendue") from exc
+    return texte
+
+
+DateIso = Annotated[str, AfterValidator(_date_iso)]
+
+
+class ReponseTransition(BaseModel):
+    """Contrat stable des POST de transition ; ``objet`` et ``chaine`` restent l'interface UI."""
+
+    tenant: str
+    objet: dict[str, Any]
+    type: str
+    role: str
+    chaine: list[dict[str, Any]]
+    historique: list[dict[str, Any]] = Field(default_factory=list)
+    idempotency_key: str | None = None
+
+
+_REPONSES_TRANSITION = {
+    404: {"description": "Source absente du tenant"},
+    409: {"description": "Transition refusée (état, choix, doublon, version périmée)"},
+    422: {"description": "Corps invalide"},
+    501: {"description": "Idempotency-Key non pris en charge"},
+    503: {"description": "Postgres indisponible"},
+}
+
+
+def _refuser_idempotence(
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key", max_length=200),
+) -> None:
+    """Aucun stockage d'idempotence durable : refus explicite plutôt qu'un écho trompeur."""
+    if idempotency_key and idempotency_key.strip():
+        raise HTTPException(
+            501,
+            "Idempotency-Key non pris en charge : aucun stockage d'idempotence durable "
+            "n'est configuré",
+        )
 
 
 class _CorpsTransition(BaseModel):
@@ -79,7 +130,7 @@ class _CorpsTransition(BaseModel):
 
 
 class CreationSituation(_CorpsTransition):
-    id: str | None = Field(None, min_length=1, max_length=128)
+    id: TexteIdentifiant | None = None
     titre: str | None = Field(None, max_length=500)
     description: str | None = None
     resume: str | None = None
@@ -105,7 +156,7 @@ class CreationSituation(_CorpsTransition):
 
 
 class OuvertureInvestigation(_CorpsTransition):
-    id: str | None = Field(None, min_length=1, max_length=128)
+    id: TexteIdentifiant | None = None
     titre: str | None = Field(None, max_length=500)
     question: str | None = None
     resume: str | None = None
@@ -116,8 +167,8 @@ class OuvertureInvestigation(_CorpsTransition):
     hypothesis_ids: list[str] | None = None
     expert_ids: list[str] | None = None
     scenario_ids: list[str] | None = None
-    ouverte_le: str | None = None
-    close_le: str | None = None
+    ouverte_le: DateIso | None = None
+    close_le: DateIso | None = None
     synthese: str | None = None
     incertitudes: list[str] | None = None
     preuves: list[Any] | None = None
@@ -125,36 +176,40 @@ class OuvertureInvestigation(_CorpsTransition):
 
 
 class PropositionDecision(_CorpsTransition):
-    id: str | None = Field(None, min_length=1, max_length=128)
+    id: TexteIdentifiant | None = None
     titre: str | None = Field(None, max_length=500)
     resume: str | None = None
-    options: list[TexteNonVide] = Field(..., min_length=1)
+    options: list[TexteNonVide] = Field(..., min_length=1, max_length=50)
     criteres: list[TexteNonVide] | None = None
     incertitudes: list[TexteNonVide] | None = None
+    rationale: str | None = None
     preuves: list[Any] | None = None
     mode: ModeCanonique | None = None
 
 
 class TranchementDecision(_CorpsTransition):
-    acteur: TexteNonVide
+    # ``acteur`` reste accepté pour les clients existants mais n'est jamais utilisé :
+    # l'acteur enregistré vient de l'identité authentifiée (``Depends(acteur_courant)``).
+    acteur: TexteNonVide | None = None
+    acteur_declare: TexteNonVide | None = None
     choix: TexteNonVide
     motif: str | None = None
     rationale: str | None = None
-    decide_le: str | None = None
+    decide_le: DateIso | None = None
     preuves: list[Any] | None = None
     mode: ModeCanonique | None = None
 
 
 class LancementInitiative(_CorpsTransition):
-    id: str | None = Field(None, min_length=1, max_length=128)
+    id: TexteIdentifiant | None = None
     titre: str | None = Field(None, max_length=500)
     resume: str | None = None
     statut: str | None = Field(None, max_length=64)
     proprietaire: str | None = None
     perimetre: str | None = None
     outcome_attendu_ids: list[str] | None = None
-    debut_le: str | None = None
-    fin_prevue_le: str | None = None
+    debut_le: DateIso | None = None
+    fin_prevue_le: DateIso | None = None
     preuves: list[Any] | None = None
     mode: ModeCanonique | None = None
 
@@ -173,14 +228,14 @@ def _mesure_renseignee(valeur: Any) -> bool:
 
 
 class MesureOutcome(_CorpsTransition):
-    id: str | None = Field(None, min_length=1, max_length=128)
+    id: TexteIdentifiant | None = None
     titre: str | None = Field(None, max_length=500)
     resume: str | None = None
     mesure: Any
     metrique: str | None = None
     valeur_attendue: Any = None
     interpretation: str | None = None
-    mesure_le: str | None = None
+    mesure_le: DateIso | None = None
     periode: str | None = None
     statut: str | None = Field(None, max_length=64)
     preuves: list[Any] | None = None
@@ -195,7 +250,7 @@ class MesureOutcome(_CorpsTransition):
 
 
 class CapitalisationLearning(_CorpsTransition):
-    id: str | None = Field(None, min_length=1, max_length=128)
+    id: TexteIdentifiant | None = None
     titre: str | None = Field(None, max_length=500)
     resume: str | None = None
     enonce: TexteNonVide
@@ -203,6 +258,7 @@ class CapitalisationLearning(_CorpsTransition):
     conditions_applicabilite: list[TexteNonVide] | None = None
     related_claim_ids: list[str] | None = None
     preuves: list[Any] | None = None
+    # Acceptés pour compatibilité mais ignorés : le flux force PROPOSED / INFERRED.
     statut: str | None = Field(None, max_length=64)
     mode: ModeCanonique | None = None
 
@@ -579,7 +635,7 @@ async def graphe_chemins(
 # --------------------------------------------------------------------------- #
 
 
-async def _executer_transition(tenant: str, action):
+async def _executer_transition(tenant: str, action, *, request: Request | None = None):
     """Ouvre une connexion tenant-scoped et traduit les erreurs métier en HTTP."""
     dsn = _dsn()
 
@@ -596,79 +652,97 @@ async def _executer_transition(tenant: str, action):
         raise
     except commandes_boucle.SourceIntrouvable as exc:
         raise HTTPException(404, str(exc)) from exc
-    except (commandes_boucle.TransitionRefusee, boucle.BoucleInvalide) as exc:
+    except entreprise_depot.ObjetExistant as exc:
         raise HTTPException(409, str(exc)) from exc
+    except (commandes_boucle.TransitionRefusee, boucle.BoucleInvalide,
+            entreprise_depot.VersionRefusee) as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except psycopg.errors.UniqueViolation as exc:
+        raise HTTPException(409, "objet déjà existant") from exc
     except modele_entreprise.ModeleInvalide as exc:
         raise HTTPException(422, str(exc)) from exc
     except entreprise_depot.ObjetInvalide as exc:
         raise HTTPException(400, str(exc)) from exc
     except psycopg.Error as exc:
+        correlation = None
+        if request is not None:
+            correlation = (getattr(request.state, "request_id", None)
+                           or getattr(request.state, "correlation_id", None))
+        journal.warning(
+            "boucle transition indisponible tenant=%s correlation=%s: %s",
+            tenant, correlation or "-", exc.__class__.__name__)
         raise HTTPException(503, _DSN_INDISPONIBLE) from exc
 
 
 def _reponse_transition(
     tenant: str, resultat: commandes_boucle.ResultatTransition, role: str,
-    idempotency_key: str | None = None,
 ) -> dict:
-    """Rend l'objet créé sous son rôle et sous ``objet``, avec sa chaîne et son historique."""
+    """Rend l'objet créé avec son type, sa chaîne et son historique."""
     objet = _objet_public(resultat.objet)
-    reponse = {
+    return {
         "tenant": tenant,
         "objet": objet,
-        role: objet,
+        "type": str(objet.get("type") or role.upper()),
+        "role": role,
         "chaine": [_objet_public(element) for element in resultat.chaine],
         "historique": _assainir(resultat.historique),
+        "idempotency_key": None,
     }
-    if idempotency_key and idempotency_key.strip():
-        reponse["idempotency_key"] = idempotency_key.strip()
-    return reponse
 
 
-@router.post("/situations", status_code=201)
+@router.post("/situations", status_code=201, response_model=ReponseTransition,
+             responses=_REPONSES_TRANSITION)
 async def creer_situation(
     payload: CreationSituation,
     request: Request,
-    idempotency_key: str | None = Header(None, alias="Idempotency-Key", max_length=200),
+    idempotence: None = Depends(_refuser_idempotence),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
-    """Crée une Situation racine (seed explicite) ; un identifiant existant est refusé en 409."""
+    """Crée une Situation racine ; un identifiant existant est refusé en 409.
+
+    ``X-Espace`` reste un contexte de lecture : il est validé puis ignoré sur les POST.
+    """
     _verifier_espace(x_espace)
     tenant = _tenant(request, x_tenant)
     resultat = await _executer_transition(
         tenant,
         lambda conn: commandes_boucle.creer_situation(
             boucle, conn, tenant, **payload.model_dump(exclude_none=True)),
+        request=request,
     )
-    return _reponse_transition(tenant, resultat, "situation", idempotency_key)
+    return _reponse_transition(tenant, resultat, "situation")
 
 
-@router.post("/situations/{sid}/investigations", status_code=201)
+@router.post("/situations/{sid}/investigations", status_code=201,
+             response_model=ReponseTransition, responses=_REPONSES_TRANSITION)
 async def ouvrir_investigation(
     sid: str,
     payload: OuvertureInvestigation,
     request: Request,
-    idempotency_key: str | None = Header(None, alias="Idempotency-Key", max_length=200),
+    idempotence: None = Depends(_refuser_idempotence),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
-    """Ouvre une Investigation sur une Situation du tenant."""
+    """Ouvre une Investigation sur une Situation du tenant ; ``X-Espace`` est ignoré."""
     _verifier_espace(x_espace)
     tenant = _tenant(request, x_tenant)
     resultat = await _executer_transition(
         tenant,
         lambda conn: commandes_boucle.ouvrir_investigation(
             boucle, conn, tenant, sid, **payload.model_dump(exclude_none=True)),
+        request=request,
     )
-    return _reponse_transition(tenant, resultat, "investigation", idempotency_key)
+    return _reponse_transition(tenant, resultat, "investigation")
 
 
-@router.post("/investigations/{iid}/decisions", status_code=201)
+@router.post("/investigations/{iid}/decisions", status_code=201,
+             response_model=ReponseTransition, responses=_REPONSES_TRANSITION)
 async def proposer_decision(
     iid: str,
     payload: PropositionDecision,
     request: Request,
-    idempotency_key: str | None = Header(None, alias="Idempotency-Key", max_length=200),
+    idempotence: None = Depends(_refuser_idempotence),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
@@ -681,40 +755,48 @@ async def proposer_decision(
     def proposer(conn):
         return commandes_boucle.proposer_decision(boucle, conn, tenant, iid, options, **champs)
 
-    resultat = await _executer_transition(tenant, proposer)
-    return _reponse_transition(tenant, resultat, "decision", idempotency_key)
+    resultat = await _executer_transition(tenant, proposer, request=request)
+    return _reponse_transition(tenant, resultat, "decision")
 
 
-@router.post("/decisions/{did}/trancher")
+@router.post("/decisions/{did}/trancher", response_model=ReponseTransition,
+             responses=_REPONSES_TRANSITION)
 async def trancher_decision(
     did: str,
     payload: TranchementDecision,
     request: Request,
-    idempotency_key: str | None = Header(None, alias="Idempotency-Key", max_length=200),
+    acteur: str = Depends(acteur_courant),
+    idempotence: None = Depends(_refuser_idempotence),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
-    """Tranche une Decision proposée ; l'ancienne version reste dans ``historique``."""
+    """Tranche une Decision proposée ; l'acteur vient de l'identité, jamais du corps.
+
+    L'ancienne version reste dans ``historique``. Un ``acteur`` ou ``acteur_declare`` fourni
+    par le client est accepté pour compatibilité mais ignoré.
+    """
     _verifier_espace(x_espace)
     tenant = _tenant(request, x_tenant)
     champs = payload.model_dump(exclude_none=True)
-    acteur = champs.pop("acteur")
+    champs.pop("acteur", None)
+    champs.pop("acteur_declare", None)
     choix = champs.pop("choix")
 
     def trancher(conn):
         return commandes_boucle.trancher_decision(
             boucle, conn, tenant, did, acteur=acteur, choix=choix, **champs)
 
-    resultat = await _executer_transition(tenant, trancher)
-    return _reponse_transition(tenant, resultat, "decision", idempotency_key)
+    resultat = await _executer_transition(tenant, trancher, request=request)
+    return _reponse_transition(tenant, resultat, "decision")
 
 
-@router.post("/decisions/{did}/initiatives", status_code=201)
+@router.post("/decisions/{did}/initiatives", status_code=201,
+             response_model=ReponseTransition, responses=_REPONSES_TRANSITION)
 async def lancer_initiative(
     did: str,
     payload: LancementInitiative,
     request: Request,
-    idempotency_key: str | None = Header(None, alias="Idempotency-Key", max_length=200),
+    idempotence: None = Depends(_refuser_idempotence),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
@@ -725,16 +807,18 @@ async def lancer_initiative(
         tenant,
         lambda conn: commandes_boucle.lancer_initiative(
             boucle, conn, tenant, did, **payload.model_dump(exclude_none=True)),
+        request=request,
     )
-    return _reponse_transition(tenant, resultat, "initiative", idempotency_key)
+    return _reponse_transition(tenant, resultat, "initiative")
 
 
-@router.post("/initiatives/{iid}/outcomes", status_code=201)
+@router.post("/initiatives/{iid}/outcomes", status_code=201,
+             response_model=ReponseTransition, responses=_REPONSES_TRANSITION)
 async def mesurer_outcome(
     iid: str,
     payload: MesureOutcome,
     request: Request,
-    idempotency_key: str | None = Header(None, alias="Idempotency-Key", max_length=200),
+    idempotence: None = Depends(_refuser_idempotence),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
@@ -747,45 +831,49 @@ async def mesurer_outcome(
     def mesurer(conn):
         return commandes_boucle.mesurer_outcome(boucle, conn, tenant, iid, mesure, **champs)
 
-    resultat = await _executer_transition(tenant, mesurer)
-    return _reponse_transition(tenant, resultat, "outcome", idempotency_key)
+    resultat = await _executer_transition(tenant, mesurer, request=request)
+    return _reponse_transition(tenant, resultat, "outcome")
 
 
-@router.post("/outcomes/{oid}/learnings", status_code=201)
+@router.post("/outcomes/{oid}/learnings", status_code=201,
+             response_model=ReponseTransition, responses=_REPONSES_TRANSITION)
 async def capitaliser_learning_depuis_outcome(
     oid: str,
     payload: CapitalisationLearning,
     request: Request,
-    idempotency_key: str | None = Header(None, alias="Idempotency-Key", max_length=200),
+    idempotence: None = Depends(_refuser_idempotence),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
-    """Capitalise un Learning depuis un Outcome mesuré du tenant."""
+    """Capitalise un Learning depuis un Outcome mesuré ; statut/mode sont forcés côté serveur."""
     _verifier_espace(x_espace)
     tenant = _tenant(request, x_tenant)
     resultat = await _executer_transition(
         tenant,
         lambda conn: commandes_boucle.capitaliser_learning_depuis_outcome(
             boucle, conn, tenant, oid, **payload.model_dump(exclude_none=True)),
+        request=request,
     )
-    return _reponse_transition(tenant, resultat, "learning", idempotency_key)
+    return _reponse_transition(tenant, resultat, "learning")
 
 
-@router.post("/investigations/{iid}/learnings", status_code=201)
+@router.post("/investigations/{iid}/learnings", status_code=201,
+             response_model=ReponseTransition, responses=_REPONSES_TRANSITION)
 async def capitaliser_learning_depuis_investigation(
     iid: str,
     payload: CapitalisationLearning,
     request: Request,
-    idempotency_key: str | None = Header(None, alias="Idempotency-Key", max_length=200),
+    idempotence: None = Depends(_refuser_idempotence),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
-    """Capitalise un Learning directement depuis une Investigation du tenant."""
+    """Capitalise un Learning depuis une Investigation ; statut/mode sont forcés côté serveur."""
     _verifier_espace(x_espace)
     tenant = _tenant(request, x_tenant)
     resultat = await _executer_transition(
         tenant,
         lambda conn: commandes_boucle.capitaliser_learning_depuis_investigation(
             boucle, conn, tenant, iid, **payload.model_dump(exclude_none=True)),
+        request=request,
     )
-    return _reponse_transition(tenant, resultat, "learning", idempotency_key)
+    return _reponse_transition(tenant, resultat, "learning")

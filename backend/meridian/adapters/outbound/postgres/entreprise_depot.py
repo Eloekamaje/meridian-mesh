@@ -13,6 +13,7 @@ import json
 import unicodedata
 from urllib.parse import parse_qsl, unquote_plus, urlsplit
 
+import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
@@ -40,6 +41,10 @@ class ObjetInvalide(ValueError):
 
 class VersionRefusee(ObjetInvalide):
     """La version proposée recule par rapport à celle déjà stockée."""
+
+
+class ObjetExistant(ObjetInvalide):
+    """Un objet ``(tenant_id, id)`` existe déjà et la création exclusive est demandée."""
 
 
 def _normaliser(valeur, *, minuscule: bool = False) -> str:
@@ -224,12 +229,15 @@ def _ligne(ligne) -> dict:
     return {cle: _valeur(valeur) for cle, valeur in ligne.items()}
 
 
-def enregistrer_objet(conn, tenant_id, objet) -> dict:
+def enregistrer_objet(conn, tenant_id, objet, *, creer=False) -> dict:
     """Upsert un objet d'entreprise pour un tenant ; rend la ligne stockée.
 
     La version augmente d'elle-même quand elle n'est pas fournie ; une version inférieure à celle déjà stockée est
     refusée (`VersionRefusee`). `cree_le` est immuable après la création. `valide_jusqua` peut être remis à NULL en
     le passant explicitement. Les données doivent être du JSON strict et ne porter aucun secret.
+
+    Avec ``creer=True``, l'écriture est strictement une création : un identifiant déjà présent (même course
+    concurrente) lève :class:`ObjetExistant` au lieu d'écraser l'objet.
     """
     tenant = _tenant(tenant_id)
     saisi = _objet_saisi(objet)
@@ -239,6 +247,9 @@ def enregistrer_objet(conn, tenant_id, objet) -> dict:
             existant = cur.execute(
                 "SELECT * FROM objet_entreprise WHERE tenant_id = %s AND id = %s FOR UPDATE",
                 (tenant, saisi["id"])).fetchone()
+
+            if creer and existant is not None:
+                raise ObjetExistant(f"objet déjà existant : {saisi['id']}")
 
             if existant is None:
                 for champ in ("famille", "type", "mode"):
@@ -254,13 +265,24 @@ def enregistrer_objet(conn, tenant_id, objet) -> dict:
                 valide_jusqua = saisi.get("valide_jusqua")
                 cree_le = saisi.get("cree_le")
                 _verifier_periode(valide_depuis, valide_jusqua)
-                ligne = cur.execute(
+                requete = (
                     "INSERT INTO objet_entreprise "
                     "(id, tenant_id, famille, type, mode, titre, donnees, version, observe_le, valide_depuis, "
                     "valide_jusqua, cree_le) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, coalesce(%s, now()), "
-                    "coalesce(%s, least(now(), coalesce(%s, now()))), %s, coalesce(%s, now())) RETURNING *",
-                    (saisi["id"], tenant, famille, type_, mode, titre, Jsonb(donnees), version,
-                     observe_le, valide_depuis, valide_jusqua, valide_jusqua, cree_le)).fetchone()
+                    "coalesce(%s, least(now(), coalesce(%s, now()))), %s, coalesce(%s, now()))"
+                )
+                if creer:
+                    requete += " ON CONFLICT (tenant_id, id) DO NOTHING"
+                requete += " RETURNING *"
+                try:
+                    ligne = cur.execute(
+                        requete,
+                        (saisi["id"], tenant, famille, type_, mode, titre, Jsonb(donnees), version,
+                         observe_le, valide_depuis, valide_jusqua, valide_jusqua, cree_le)).fetchone()
+                except psycopg.errors.UniqueViolation as exc:
+                    raise ObjetExistant(f"objet déjà existant : {saisi['id']}") from exc
+                if creer and ligne is None:
+                    raise ObjetExistant(f"objet déjà existant : {saisi['id']}")
             else:
                 famille = saisi.get("famille", existant["famille"])
                 type_ = saisi.get("type", existant["type"])
@@ -289,15 +311,59 @@ def enregistrer_objet(conn, tenant_id, objet) -> dict:
     return _ligne(ligne)
 
 
-def lire_objet(conn, tenant_id, objet_id) -> dict | None:
-    """Lit un objet du tenant ; `None` s'il n'existe pas dans ce tenant."""
+def lire_objet(conn, tenant_id, objet_id, *, for_update=False) -> dict | None:
+    """Lit un objet du tenant ; `None` s'il n'existe pas dans ce tenant.
+
+    ``for_update=True`` verrouille la ligne jusqu'à la fin de la transaction courante.
+    """
     tenant = _tenant(tenant_id)
     identifiant = _texte_obligatoire(objet_id, "id")
+    requete = "SELECT * FROM objet_entreprise WHERE tenant_id = %s AND id = %s"
+    if for_update:
+        requete += " FOR UPDATE"
     with conn.cursor(row_factory=dict_row) as cur:
-        ligne = cur.execute(
-            "SELECT * FROM objet_entreprise WHERE tenant_id = %s AND id = %s",
-            (tenant, identifiant)).fetchone()
+        ligne = cur.execute(requete, (tenant, identifiant)).fetchone()
     return _ligne(ligne) if ligne is not None else None
+
+
+def enregistrer_donnees(
+    conn, tenant_id, objet_id, donnees, *, mode=None, version_attendue=None,
+) -> dict:
+    """Met à jour uniquement ``donnees`` (et le mode) d'un objet existant.
+
+    La fusion des clés legacy est faite par l'appelant. ``version_attendue`` rend l'écriture
+    optimiste : une version différente lève :class:`VersionRefusee` sans rien écrire.
+    """
+    tenant = _tenant(tenant_id)
+    identifiant = _texte_obligatoire(objet_id, "id")
+    donnees_json = _donnees_json(donnees)
+    if mode is not None:
+        mode = _normaliser(mode)
+        if mode not in _MODES:
+            raise ObjetInvalide(f"mode inconnu : {mode!r}")
+    conditions = "tenant_id = %s AND id = %s"
+    parametres = [Jsonb(donnees_json), mode, tenant, identifiant]
+    if version_attendue is not None:
+        try:
+            attendue = int(version_attendue)
+        except (TypeError, ValueError) as exc:
+            raise ObjetInvalide("version_attendue doit être un entier positif") from exc
+        if attendue < 1:
+            raise ObjetInvalide("version_attendue doit être un entier positif")
+        conditions += " AND version = %s"
+        parametres.append(attendue)
+    with conn.transaction():
+        with conn.cursor(row_factory=dict_row) as cur:
+            ligne = cur.execute(
+                "UPDATE objet_entreprise SET donnees = %s, mode = coalesce(%s, mode), "
+                "version = version + 1, maj_le = now() WHERE " + conditions + " RETURNING *",
+                tuple(parametres)).fetchone()
+            if ligne is None:
+                if version_attendue is not None:
+                    raise VersionRefusee(
+                        f"version périmée pour {identifiant!r} (attendue {version_attendue})")
+                raise ObjetInvalide(f"objet introuvable : {identifiant}")
+    return _ligne(ligne)
 
 
 def lister_objets(conn, tenant_id, famille=None, type_=None, mode=None, limite=100) -> list[dict]:

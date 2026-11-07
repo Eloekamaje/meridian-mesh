@@ -15,13 +15,24 @@ import pytest
 from fastapi import APIRouter, FastAPI
 from fastapi.testclient import TestClient
 
+from auth import acteur as acteur_courant
 from meridian.adapters.inbound.http import boucle as boucle_routes
-from meridian.adapters.outbound.postgres import boucle
+from meridian.adapters.outbound.postgres import boucle, rls
 from meridian.application import commandes_boucle
 
 TENANT = "local"
 BASE = "/api/boucle"
 MAINTENANT = "2026-10-01T08:00:00+00:00"
+CHAMPS_LEGACY = {
+    "niveau": "strategique",
+    "genre": "a_confirmer",
+    "raison": "migré du legacy",
+    "quand": "2026-10-01T08:00:00+00:00",
+    "travail_id": "case-1",
+    "jumeau_cible": "paiements",
+    "urgence": "haute",
+    "reponse": {"par": "paiements"},
+}
 
 
 def _objet(
@@ -120,6 +131,11 @@ class _Connexion:
             self.magasin.objets = instantane
             raise
 
+    def execute(self, sql, params=()):
+        """Utilisé par ``rls.contexte_tenant`` pour poser le tenant local."""
+        self.requetes.append((" ".join(str(sql).split()), tuple(params)))
+        return None
+
     def cursor(self, row_factory=None):
         return _Curseur(self)
 
@@ -139,6 +155,8 @@ class _Connexion:
 
         if sql.startswith("INSERT INTO objet_entreprise"):
             identifiant, tenant, famille, type_, mode, titre, donnees, version = params[:8]
+            if "ON CONFLICT" in sql and (tenant, identifiant) in self.magasin.objets:
+                return []
             observe_le, valide_depuis, valide_jusqua, _, cree_le = params[8:]
             observe_le = observe_le or MAINTENANT
             ligne = _objet(
@@ -149,6 +167,22 @@ class _Connexion:
             ligne["valide_depuis"] = valide_depuis or observe_le
             ligne["valide_jusqua"] = valide_jusqua
             ligne["cree_le"] = cree_le or observe_le
+            self.magasin.objets[(tenant, identifiant)] = ligne
+            return [copy.deepcopy(ligne)]
+
+        if sql.startswith("UPDATE objet_entreprise SET donnees = %s"):
+            donnees, mode, tenant, identifiant = params[:4]
+            version_attendue = params[4] if "AND version = %s" in sql else None
+            ancien = self.magasin.objets.get((tenant, identifiant))
+            if ancien is None:
+                return []
+            if version_attendue is not None and ancien["version"] != version_attendue:
+                return []
+            ligne = copy.deepcopy(ancien)
+            ligne["donnees"] = _donnees(donnees)
+            if mode:
+                ligne["mode"] = mode
+            ligne["version"] = ancien["version"] + 1
             self.magasin.objets[(tenant, identifiant)] = ligne
             return [copy.deepcopy(ligne)]
 
@@ -205,21 +239,24 @@ class _Magasin:
         self.objets: dict[tuple[str, str], dict] = {}
 
 
-def _app() -> TestClient:
+def _app(acteur: str = "demo") -> TestClient:
     app = FastAPI()
+    app.dependency_overrides[acteur_courant] = lambda: acteur
     api = APIRouter(prefix="/api")
     api.include_router(boucle_routes.router)
     app.include_router(api)
     return TestClient(app)
 
 
-def _client(monkeypatch, magasin: _Magasin | None = None) -> tuple[TestClient, _Magasin]:
+def _client(
+    monkeypatch, magasin: _Magasin | None = None, *, acteur: str = "demo",
+) -> tuple[TestClient, _Magasin]:
     magasin = magasin or _Magasin()
     monkeypatch.delenv("AUTH_MODE", raising=False)
     monkeypatch.delenv("APP_ENV", raising=False)
     monkeypatch.setenv("JUMEAU_PG_DSN", "postgresql://test/test")
     monkeypatch.setattr(boucle_routes.psycopg, "connect", lambda *_, **__: _Connexion(magasin))
-    return _app(), magasin
+    return _app(acteur), magasin
 
 
 def _post(client: TestClient, chemin: str, corps: dict | None = None, **kwargs):
@@ -292,8 +329,8 @@ class _ConnexionFactice:
 
 
 def test_ouvrir_investigation_charge_la_source_puis_persiste(monkeypatch):
-    situation = _situation()
-    lire = Mock(side_effect=[situation, _lire_resultat(
+    source = _objet("sit-1", type_="SITUATION", famille="emergence", mode="OBSERVED")
+    lire = Mock(side_effect=[source, _lire_resultat(
         "inv-1", "INVESTIGATION", [_objet("sit-1")])])
     enregistrer = Mock(return_value=[])
     monkeypatch.setattr(boucle, "lire_boucle", lire)
@@ -306,12 +343,14 @@ def test_ouvrir_investigation_charge_la_source_puis_persiste(monkeypatch):
     assert resultat.objet["id"] == "inv-1"
     assert [element["type"] for element in resultat.chaine] == ["SITUATION"]
     assert resultat.historique == []
-    assert conn.transactions == 1
-    assert lire.call_args_list[0].kwargs["as_dict"] is False
+    assert conn.transactions == 2
+    assert lire.call_args_list[0].kwargs["as_dict"] is True
+    assert lire.call_args_list[0].kwargs["for_update"] is True
     objets = enregistrer.call_args.kwargs["objets"]
     assert enregistrer.call_args.kwargs["historique"] is True
-    assert [objet.id for objet in objets] == ["inv-1"]
-    assert objets[0].situation_id == "sit-1"
+    assert enregistrer.call_args.kwargs["creer"] is True
+    assert [objet["id"] for objet in objets] == ["inv-1"]
+    assert objets[0]["situation_id"] == "sit-1"
 
 
 @pytest.mark.parametrize(("appel", "role"), [
@@ -333,79 +372,92 @@ def test_une_source_absente_leve_source_introuvable_sans_persister(monkeypatch, 
     monkeypatch.setattr(boucle, "enregistrer_boucle", enregistrer)
 
     with pytest.raises(commandes_boucle.SourceIntrouvable) as erreur:
-        appel(None)
+        appel(_ConnexionFactice())
 
     assert erreur.value.role == role
     enregistrer.assert_not_called()
 
 
 def test_trancher_une_decision_deja_tranchee_est_refuse(monkeypatch):
-    decision = boucle.Decision(
-        id="dec-1", tenant_id=TENANT, investigation_id="inv-1", options=["A"],
-        statut="DECIDED", acteur="comité", choix="A")
+    decision = _objet(
+        "dec-1", type_="DECISION", famille="decision", mode="DECLARED",
+        donnees={"investigation_id": "inv-1", "options": ["A"],
+                 "statut": "DECIDED", "acteur": "comité", "choix": "A"})
     monkeypatch.setattr(boucle, "lire_boucle", Mock(return_value=decision))
     enregistrer = Mock()
     monkeypatch.setattr(boucle, "enregistrer_boucle", enregistrer)
 
     with pytest.raises(boucle.BoucleInvalide):
-        commandes_boucle.trancher_decision(boucle, None, TENANT, "dec-1", acteur="autre", choix="A")
+        commandes_boucle.trancher_decision(
+            boucle, _ConnexionFactice(), TENANT, "dec-1", acteur="autre", choix="A")
 
     enregistrer.assert_not_called()
 
 
-def test_trancher_strippe_la_version_pour_incrementer_l_historique(monkeypatch):
-    decision = boucle.Decision(
-        id="dec-1", tenant_id=TENANT, investigation_id="inv-1", options=["A"], version=5)
+def test_trancher_utilise_la_version_lue_pour_l_ecriture_optimiste(monkeypatch):
+    source = _objet(
+        "dec-1", type_="DECISION", famille="decision", mode="DECLARED", version=5,
+        donnees={"investigation_id": "inv-1", "options": ["A"], "statut": "PROPOSED"})
     monkeypatch.setattr(boucle, "lire_boucle", Mock(
-        side_effect=[decision, _lire_resultat("dec-1", "DECISION")]))
-    enregistrer = Mock(return_value=[])
-    monkeypatch.setattr(boucle, "enregistrer_boucle", enregistrer)
+        side_effect=[source, _lire_resultat("dec-1", "DECISION")]))
+    patch = {"statut": "DECIDED", "acteur": "comité", "choix": "A"}
+    monkeypatch.setattr(boucle, "donnees_de", Mock(return_value=patch))
+    fusionner = Mock(return_value={})
+    monkeypatch.setattr(boucle, "fusionner_donnees", fusionner)
     conn = _ConnexionFactice()
 
     commandes_boucle.trancher_decision(
         boucle, conn, TENANT, "dec-1", acteur="comité", choix="A")
 
     assert conn.transactions == 1
-    objets = enregistrer.call_args.kwargs["objets"]
-    assert len(objets) == 1
-    assert objets[0].version == 1
-    assert objets[0].statut == "DECIDED"
+    assert fusionner.call_args.args[2] == "dec-1"
+    assert fusionner.call_args.args[3] == patch
+    assert fusionner.call_args.kwargs["historique"] is True
+    assert fusionner.call_args.kwargs["version_attendue"] == 5
 
 
-def test_lancer_initiative_persiste_aussi_la_decision_pour_le_lien_inverse(monkeypatch):
-    decision = boucle.Decision(
-        id="dec-1", tenant_id=TENANT, investigation_id="inv-1", options=["A"],
-        statut="DECIDED", acteur="comité", choix="A", version=2)
+def test_lancer_initiative_persiste_uniquement_l_initiative_et_le_lien(monkeypatch):
+    source = _objet(
+        "dec-1", type_="DECISION", famille="decision", mode="DECLARED", version=2,
+        donnees={"investigation_id": "inv-1", "options": ["A"],
+                 "statut": "DECIDED", "acteur": "comité", "choix": "A"})
     monkeypatch.setattr(boucle, "lire_boucle", Mock(
-        side_effect=[decision, _lire_resultat("ini-1", "INITIATIVE")]))
+        side_effect=[source, _lire_resultat("ini-1", "INITIATIVE")]))
     enregistrer = Mock(return_value=[])
     monkeypatch.setattr(boucle, "enregistrer_boucle", enregistrer)
+    fusionner = Mock(return_value={})
+    monkeypatch.setattr(boucle, "fusionner_donnees", fusionner)
     conn = _ConnexionFactice()
 
     commandes_boucle.lancer_initiative(boucle, conn, TENANT, "dec-1", id="ini-1")
 
-    assert conn.transactions == 1
+    assert conn.transactions == 2
     objets = enregistrer.call_args.kwargs["objets"]
-    assert [objet.type for objet in objets] == ["DECISION", "INITIATIVE"]
-    assert objets[0].version == 1
-    assert objets[1].decision_id == "dec-1"
+    assert enregistrer.call_args.kwargs["creer"] is True
+    assert [objet["type"] for objet in objets] == ["INITIATIVE"]
+    assert objets[0]["decision_id"] == "dec-1"
+    assert fusionner.call_args.args[3] == {"initiative_id": "ini-1"}
+    assert fusionner.call_args.kwargs["version_attendue"] == 2
 
 
 def test_mesurer_outcome_refuse_une_mesure_vide(monkeypatch):
-    initiative = boucle.Initiative(
-        id="ini-1", tenant_id=TENANT, decision_id="dec-1", titre="Automatiser")
+    initiative = _objet(
+        "ini-1", type_="INITIATIVE", famille="decision", mode="DECLARED",
+        donnees={"decision_id": "dec-1"})
     monkeypatch.setattr(boucle, "lire_boucle", Mock(return_value=initiative))
     enregistrer = Mock()
     monkeypatch.setattr(boucle, "enregistrer_boucle", enregistrer)
 
     with pytest.raises(boucle.BoucleInvalide):
-        commandes_boucle.mesurer_outcome(boucle, None, TENANT, "ini-1", {})
+        commandes_boucle.mesurer_outcome(
+            boucle, _ConnexionFactice(), TENANT, "ini-1", {})
     enregistrer.assert_not_called()
 
 
 def test_capitaliser_depuis_investigation_relie_la_source(monkeypatch):
-    investigation = boucle.Investigation(
-        id="inv-1", tenant_id=TENANT, situation_id="sit-1", titre="Comprendre")
+    investigation = _objet(
+        "inv-1", type_="INVESTIGATION", famille="investigation", mode="DECLARED",
+        donnees={"situation_id": "sit-1"})
     monkeypatch.setattr(boucle, "lire_boucle", Mock(
         side_effect=[investigation, _lire_resultat("lea-1", "LEARNING")]))
     enregistrer = Mock(return_value=[])
@@ -416,14 +468,15 @@ def test_capitaliser_depuis_investigation_relie_la_source(monkeypatch):
         boucle, conn, TENANT, "inv-1", id="lea-1", enonce="L'enquête est réutilisable")
 
     assert resultat.objet["id"] == "lea-1"
-    assert conn.transactions == 1
+    assert conn.transactions == 2
     objets = enregistrer.call_args.kwargs["objets"]
-    assert objets[0].investigation_ids == ["inv-1"]
-    assert objets[0].outcome_ids == []
+    assert enregistrer.call_args.kwargs["creer"] is True
+    assert objets[0]["investigation_ids"] == ["inv-1"]
+    assert objets[0]["outcome_ids"] == []
 
 
 def test_une_source_d_un_autre_tenant_est_refusee(monkeypatch):
-    situation = _situation(tenant="banque")
+    situation = _objet("sit-1", tenant="banque")
     monkeypatch.setattr(boucle, "lire_boucle", Mock(return_value=situation))
     enregistrer = Mock()
     monkeypatch.setattr(boucle, "enregistrer_boucle", enregistrer)
@@ -436,8 +489,9 @@ def test_une_source_d_un_autre_tenant_est_refusee(monkeypatch):
 
 
 def test_une_source_de_mauvais_type_est_refusee(monkeypatch):
-    investigation = boucle.Investigation(
-        id="inv-1", tenant_id=TENANT, situation_id="sit-1", titre="Comprendre")
+    investigation = _objet(
+        "inv-1", type_="INVESTIGATION", famille="investigation", mode="DECLARED",
+        donnees={"situation_id": "sit-1"})
     monkeypatch.setattr(boucle, "lire_boucle", Mock(return_value=investigation))
     enregistrer = Mock()
     monkeypatch.setattr(boucle, "enregistrer_boucle", enregistrer)
@@ -454,7 +508,8 @@ def test_une_source_sans_identifiant_est_introuvable(monkeypatch):
     monkeypatch.setattr(boucle, "lire_boucle", lire)
 
     with pytest.raises(commandes_boucle.SourceIntrouvable):
-        commandes_boucle.ouvrir_investigation(boucle, None, TENANT, "   ")
+        commandes_boucle.ouvrir_investigation(
+            boucle, _ConnexionFactice(), TENANT, "   ")
 
     lire.assert_not_called()
 
@@ -465,7 +520,7 @@ def test_une_source_sans_identifiant_est_introuvable(monkeypatch):
 
 
 def test_la_chaine_complete_est_operationnelle(monkeypatch):
-    client, _ = _client(monkeypatch)
+    client, _ = _client(monkeypatch, acteur="comité-cartes")
     identifiants = _chaine(client)
 
     situation = client.get(f"{BASE}/objets/{identifiants['situation']}").json()["objet"]
@@ -504,12 +559,16 @@ def test_chaine_retournee_par_chaque_transition(monkeypatch):
         "id": "sit-1", "titre": "Délai", "description": "Le délai dépasse la cible"})
     assert situation.status_code == 201
     assert [objet["type"] for objet in situation.json()["chaine"]] == ["SITUATION"]
-    assert situation.json()["objet"] == situation.json()["situation"]
+    assert situation.json()["type"] == "SITUATION"
+    assert situation.json()["role"] == "situation"
+    assert situation.json()["objet"]["id"] == "sit-1"
+    assert situation.json()["idempotency_key"] is None
 
     investigation = _post(client, "/situations/sit-1/investigations", {"id": "inv-1"})
     assert investigation.status_code == 201
     assert [objet["type"] for objet in investigation.json()["chaine"]] == [
         "SITUATION", "INVESTIGATION"]
+    assert investigation.json()["objet"]["type"] == "INVESTIGATION"
 
     decision = _post(client, "/investigations/inv-1/decisions", {
         "id": "dec-1", "options": ["Automatiser"]})
@@ -522,7 +581,8 @@ def test_chaine_retournee_par_chaque_transition(monkeypatch):
     assert tranchee.status_code == 200
     assert [objet["type"] for objet in tranchee.json()["chaine"]] == [
         "SITUATION", "INVESTIGATION", "DECISION"]
-    assert tranchee.json()["decision"]["version"] == 2
+    assert tranchee.json()["objet"]["version"] == 2
+    assert "_historique" not in tranchee.json()["objet"]["donnees"]
     assert len(tranchee.json()["historique"]) == 1
     assert tranchee.json()["historique"][0]["version"] == 1
     assert tranchee.json()["historique"][0]["donnees"]["statut"] == "PROPOSED"
@@ -549,6 +609,17 @@ def test_chaine_retournee_par_chaque_transition(monkeypatch):
     assert learning_investigation.status_code == 201
     assert [objet["type"] for objet in learning_investigation.json()["chaine"]] == [
         "SITUATION", "INVESTIGATION", "LEARNING"]
+
+
+def test_la_reponse_de_transition_a_un_contrat_stable(monkeypatch):
+    client, _ = _client(monkeypatch)
+
+    reponse = _post(client, "/situations", {"titre": "Délai"})
+
+    assert reponse.status_code == 201
+    assert set(reponse.json()) == {
+        "tenant", "objet", "type", "role", "chaine", "historique", "idempotency_key",
+    }
 
 
 @pytest.mark.parametrize(("chemin", "corps"), [
@@ -596,7 +667,7 @@ def test_une_situation_sans_titre_prend_la_description(monkeypatch):
         "id": "sit-1", "description": "Le délai dépasse la cible"})
 
     assert reponse.status_code == 201
-    assert reponse.json()["situation"]["titre"] == "Le délai dépasse la cible"
+    assert reponse.json()["objet"]["titre"] == "Le délai dépasse la cible"
 
 
 def test_une_erreur_de_persistance_ne_laisse_pas_de_chaine_partielle(monkeypatch):
@@ -611,10 +682,10 @@ def test_une_erreur_de_persistance_ne_laisse_pas_de_chaine_partielle(monkeypatch
     avant = copy.deepcopy(magasin.objets[(TENANT, "dec-1")])
     vrai = boucle.entreprise_depot.enregistrer_objet
 
-    def enregistrer_avec_echec(conn, tenant, payload):
+    def enregistrer_avec_echec(conn, tenant, payload, *, creer=False):
         if payload.get("type") == "INITIATIVE":
             raise psycopg.OperationalError("échec simulé")
-        return vrai(conn, tenant, payload)
+        return vrai(conn, tenant, payload, creer=creer)
 
     monkeypatch.setattr(boucle.entreprise_depot, "enregistrer_objet", enregistrer_avec_echec)
 
@@ -623,6 +694,26 @@ def test_une_erreur_de_persistance_ne_laisse_pas_de_chaine_partielle(monkeypatch
     assert reponse.status_code == 503
     assert magasin.objets[(TENANT, "dec-1")] == avant
     assert (TENANT, "ini-1") not in magasin.objets
+
+
+def test_une_erreur_de_lien_annule_la_creation(monkeypatch):
+    client, magasin = _client(monkeypatch)
+    assert _post(client, "/situations", {
+        "id": "sit-1", "titre": "Délai"}).status_code == 201
+    assert _post(client, "/situations/sit-1/investigations", {"id": "inv-1"}).status_code == 201
+    assert _post(client, "/investigations/inv-1/decisions", {
+        "id": "dec-1", "options": ["Automatiser"]}).status_code == 201
+    assert _post(client, "/decisions/dec-1/trancher", {
+        "choix": "Automatiser"}).status_code == 200
+    avant = copy.deepcopy(magasin.objets[(TENANT, "dec-1")])
+    monkeypatch.setattr(boucle, "fusionner_donnees", Mock(
+        side_effect=psycopg.OperationalError("échec du lien")))
+
+    reponse = _post(client, "/decisions/dec-1/initiatives", {"id": "ini-1"})
+
+    assert reponse.status_code == 503
+    assert (TENANT, "ini-1") not in magasin.objets
+    assert magasin.objets[(TENANT, "dec-1")] == avant
 
 
 def test_une_decision_deja_tranchee_est_409(monkeypatch):
@@ -659,12 +750,15 @@ def test_une_transition_invalide_est_409(monkeypatch, chemin, corps):
     ("/investigations/inv-x/decisions", {"options": ["  "]}),
     ("/decisions/dec-x/trancher", {"acteur": "   ", "choix": "A"}),
     ("/decisions/dec-x/trancher", {"acteur": "a", "choix": ""}),
+    ("/decisions/dec-x/trancher", {"choix": "A", "decide_le": "pas-une-date"}),
     ("/initiatives/ini-x/outcomes", {}),
     ("/initiatives/ini-x/outcomes", {"mesure": {}}),
+    ("/initiatives/ini-x/outcomes", {"mesure": {"valeur": 1}, "mesure_le": "pas-une-date"}),
     ("/outcomes/out-x/learnings", {"enonce": "   "}),
     ("/investigations/inv-x/learnings", {}),
     ("/situations", {"statut": "CANDIDATE"}),
     ("/situations", {"titre": "Délai", "mode": "INCONNU"}),
+    ("/situations", {"id": "   ", "titre": "Délai"}),
 ])
 def test_une_validation_invalide_est_422(monkeypatch, chemin, corps):
     client, _ = _client(monkeypatch)
@@ -672,6 +766,18 @@ def test_une_validation_invalide_est_422(monkeypatch, chemin, corps):
     reponse = _post(client, chemin, corps)
 
     assert reponse.status_code == 422
+
+
+def test_x_espace_est_valide_puis_ignore_sur_les_post(monkeypatch):
+    client, _ = _client(monkeypatch)
+
+    reponse = _post(client, "/situations", {"titre": "Délai"},
+                    headers={"X-Espace": "espace-paiements"})
+    assert reponse.status_code == 201
+
+    inconnu = _post(client, "/situations", {"titre": "Autre"},
+                    headers={"X-Espace": "espace-inconnu"})
+    assert inconnu.status_code == 400
 
 
 def test_sans_dsn_les_post_repondent_503(monkeypatch):
@@ -702,17 +808,227 @@ def test_postgres_indisponible_est_503(monkeypatch):
     assert reponse.status_code == 503
 
 
-def test_idempotency_key_est_acceptee_et_renvoyee(monkeypatch):
-    client, _ = _client(monkeypatch)
+def test_un_id_existant_ne_surcharge_pas_un_objet(monkeypatch):
+    client, magasin = _client(monkeypatch)
     assert _post(client, "/situations", {
-        "id": "sit-1", "titre": "Délai", "description": "Le délai dépasse la cible"}).status_code == 201
+        "id": "sit-victime", "titre": "Victime"}).status_code == 201
+    avant = copy.deepcopy(magasin.objets[(TENANT, "sit-victime")])
+    assert _post(client, "/situations", {
+        "id": "sit-source", "titre": "Source"}).status_code == 201
 
-    reponse = _post(client, "/situations/sit-1/investigations", {"id": "inv-1"},
-                    headers={"Idempotency-Key": "cle-inv-1"})
+    reponse = _post(client, "/situations/sit-source/investigations", {
+        "id": "sit-victime", "titre": "Écrasement"})
+
+    assert reponse.status_code == 409
+    assert magasin.objets[(TENANT, "sit-victime")] == avant
+
+
+def test_les_donnees_legacy_survivent_aux_transitions(monkeypatch):
+    client, magasin = _client(monkeypatch)
+    _chaine(client)
+    magasin.objets[(TENANT, "ini-1")]["donnees"].update(copy.deepcopy(CHAMPS_LEGACY))
+
+    assert _post(client, "/initiatives/ini-1/outcomes", {
+        "id": "out-2", "mesure": {"valeur": 3}}).status_code == 201
+    initiative = client.get(f"{BASE}/objets/ini-1").json()["objet"]
+    assert initiative["donnees"]["outcome_ids"] == ["out-1", "out-2"]
+    for cle, valeur in CHAMPS_LEGACY.items():
+        assert initiative["donnees"][cle] == valeur
+
+    assert _post(client, "/investigations/inv-1/decisions", {
+        "id": "dec-2", "options": ["A"]}).status_code == 201
+    magasin.objets[(TENANT, "dec-2")]["donnees"].update(copy.deepcopy(CHAMPS_LEGACY))
+    assert _post(client, "/decisions/dec-2/trancher", {"choix": "A"}).status_code == 200
+    decision = client.get(f"{BASE}/objets/dec-2").json()["objet"]
+    assert decision["donnees"]["statut"] == "DECIDED"
+    for cle, valeur in CHAMPS_LEGACY.items():
+        assert decision["donnees"][cle] == valeur
+
+
+def test_une_lecture_perimee_est_refusee_en_409(monkeypatch):
+    client, magasin = _client(monkeypatch)
+    _chaine(client)
+    assert _post(client, "/investigations/inv-1/decisions", {
+        "id": "dec-2", "options": ["A"]}).status_code == 201
+    perime = copy.deepcopy(magasin.objets[(TENANT, "dec-2")])
+    assert _post(client, "/decisions/dec-2/trancher", {"choix": "A"}).status_code == 200
+    etat = copy.deepcopy(magasin.objets[(TENANT, "dec-2")])
+    vrai_lire = boucle.lire_boucle
+
+    def lire_perime(conn, tenant, objet_id, **kwargs):
+        if objet_id == "dec-2" and not kwargs.get("historique"):
+            return copy.deepcopy(perime)
+        return vrai_lire(conn, tenant, objet_id, **kwargs)
+
+    monkeypatch.setattr(boucle, "lire_boucle", lire_perime)
+
+    reponse = _post(client, "/decisions/dec-2/trancher", {"choix": "A"})
+
+    assert reponse.status_code == 409
+    assert magasin.objets[(TENANT, "dec-2")] == etat
+
+
+def test_les_outcomes_sont_ajoutes_sans_perte_de_lien(monkeypatch):
+    client, _ = _client(monkeypatch)
+    _chaine(client)
+
+    assert _post(client, "/initiatives/ini-1/outcomes", {
+        "id": "out-2", "mesure": {"valeur": 3}}).status_code == 201
+
+    initiative = client.get(f"{BASE}/objets/ini-1").json()["objet"]
+    assert initiative["donnees"]["outcome_ids"] == ["out-1", "out-2"]
+
+
+def test_une_decision_ne_peut_avoir_deux_initiatives(monkeypatch):
+    client, _ = _client(monkeypatch)
+    _chaine(client)
+
+    reponse = _post(client, "/decisions/dec-1/initiatives", {"id": "ini-2"})
+
+    assert reponse.status_code == 409
+
+
+def test_l_acteur_authentifie_prime_sur_le_corps(monkeypatch):
+    client, _ = _client(monkeypatch, acteur="alice")
+    assert _post(client, "/situations", {"id": "sit-1", "titre": "Délai"}).status_code == 201
+    assert _post(client, "/situations/sit-1/investigations", {"id": "inv-1"}).status_code == 201
+    assert _post(client, "/investigations/inv-1/decisions", {
+        "id": "dec-1", "options": ["A"]}).status_code == 201
+
+    reponse = _post(client, "/decisions/dec-1/trancher", {
+        "acteur": "pirate", "choix": "A"})
+
+    assert reponse.status_code == 200
+    decision = client.get(f"{BASE}/objets/dec-1").json()["objet"]
+    assert decision["donnees"]["acteur"] == "alice"
+
+
+def test_un_learning_force_statut_et_mode(monkeypatch):
+    client, _ = _client(monkeypatch)
+    _chaine(client)
+
+    reponse = _post(client, "/outcomes/out-1/learnings", {
+        "id": "lea-force", "enonce": "Leçon",
+        "statut": "CONFIRMED", "mode": "DECLARED"})
 
     assert reponse.status_code == 201
-    assert reponse.json()["idempotency_key"] == "cle-inv-1"
-    assert reponse.json()["investigation"]["id"] == "inv-1"
+    learning = client.get(f"{BASE}/objets/lea-force").json()["objet"]
+    assert learning["donnees"]["statut"] == "PROPOSED"
+    assert learning["mode"] == "INFERRED"
+
+
+def test_une_decision_incomplete_est_409_pas_422(monkeypatch):
+    client, magasin = _client(monkeypatch)
+    _chaine(client)
+    assert _post(client, "/investigations/inv-1/decisions", {
+        "id": "dec-2", "options": ["A"]}).status_code == 201
+    del magasin.objets[(TENANT, "dec-2")]["donnees"]["investigation_id"]
+
+    reponse = _post(client, "/decisions/dec-2/trancher", {"choix": "A"})
+
+    assert reponse.status_code == 409
+
+
+def test_une_decision_sans_options_est_409(monkeypatch):
+    client, magasin = _client(monkeypatch)
+    _chaine(client)
+    assert _post(client, "/investigations/inv-1/decisions", {
+        "id": "dec-2", "options": ["A"]}).status_code == 201
+    magasin.objets[(TENANT, "dec-2")]["donnees"]["options"] = []
+
+    reponse = _post(client, "/decisions/dec-2/trancher", {"choix": "A"})
+
+    assert reponse.status_code == 409
+
+
+def test_une_initiative_incomplete_est_409_pas_422(monkeypatch):
+    client, magasin = _client(monkeypatch)
+    _chaine(client)
+    del magasin.objets[(TENANT, "ini-1")]["donnees"]["decision_id"]
+
+    reponse = _post(client, "/initiatives/ini-1/outcomes", {
+        "id": "out-x", "mesure": {"valeur": 1}})
+
+    assert reponse.status_code == 409
+
+
+def test_sans_version_supprime_la_cle_sans_forcer_un():
+    decision = boucle.Decision(
+        id="dec-1", tenant_id=TENANT, investigation_id="inv-1", options=["A"], version=7)
+
+    charge = commandes_boucle._sans_version(decision)
+
+    assert "version" not in charge
+
+
+def test_le_contexte_rls_est_applique(monkeypatch):
+    client, _ = _client(monkeypatch)
+    monkeypatch.setenv("JUMEAU_RLS", "1")
+    appels = []
+    vrai = rls.contexte_tenant
+
+    @contextmanager
+    def espion(conn, tenant):
+        appels.append(tenant)
+        with vrai(conn, tenant) as identifiant:
+            yield identifiant
+
+    monkeypatch.setattr(boucle_routes.rls, "contexte_tenant", espion)
+
+    reponse = _post(client, "/situations", {"titre": "Délai"})
+
+    assert reponse.status_code == 201
+    assert appels == [TENANT]
+
+
+def test_trancher_sans_motif_conserve_le_rationale(monkeypatch):
+    client, _ = _client(monkeypatch)
+    assert _post(client, "/situations", {"id": "sit-1", "titre": "Délai"}).status_code == 201
+    assert _post(client, "/situations/sit-1/investigations", {"id": "inv-1"}).status_code == 201
+    assert _post(client, "/investigations/inv-1/decisions", {
+        "id": "dec-1", "options": ["A"], "rationale": "raison initiale"}).status_code == 201
+
+    assert _post(client, "/decisions/dec-1/trancher", {"choix": "A"}).status_code == 200
+
+    decision = client.get(f"{BASE}/objets/dec-1").json()["objet"]
+    assert decision["donnees"]["rationale"] == "raison initiale"
+
+
+def test_trancher_avec_un_motif_vide_conserve_le_rationale(monkeypatch):
+    client, _ = _client(monkeypatch)
+    assert _post(client, "/situations", {"id": "sit-1", "titre": "Délai"}).status_code == 201
+    assert _post(client, "/situations/sit-1/investigations", {"id": "inv-1"}).status_code == 201
+    assert _post(client, "/investigations/inv-1/decisions", {
+        "id": "dec-1", "options": ["A"], "rationale": "raison initiale"}).status_code == 201
+
+    assert _post(client, "/decisions/dec-1/trancher", {
+        "choix": "A", "motif": "   "}).status_code == 200
+
+    decision = client.get(f"{BASE}/objets/dec-1").json()["objet"]
+    assert decision["donnees"]["rationale"] == "raison initiale"
+
+
+def test_une_unique_violation_est_409(monkeypatch):
+    client, _ = _client(monkeypatch)
+
+    def echec(*_, **__):
+        raise psycopg.errors.UniqueViolation("doublon")
+
+    monkeypatch.setattr(boucle.entreprise_depot, "enregistrer_objet", echec)
+
+    reponse = _post(client, "/situations", {"titre": "Délai"})
+
+    assert reponse.status_code == 409
+
+
+def test_idempotency_key_est_refusee_explicitement(monkeypatch):
+    client, magasin = _client(monkeypatch)
+
+    reponse = _post(client, "/situations", {"titre": "Délai"},
+                    headers={"Idempotency-Key": "cle-inv-1"})
+
+    assert reponse.status_code == 501
+    assert not magasin.objets
 
 
 def test_les_lectures_existantes_restent_disponibles(monkeypatch):
