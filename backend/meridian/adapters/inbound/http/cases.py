@@ -577,6 +577,19 @@ def build_cases_router(deps):
                 exc_info=True)
             return None
 
+    async def _evenement_situation(sit, texte, *, decision, tenant):
+        try:
+            if decision:
+                return pont_travail.evenement_decision_situation(
+                    sit, tenant_id=tenant)
+            return pont_travail.evenement_action_situation(
+                sit, texte, tenant_id=tenant)
+        except Exception:  # noqa: BLE001 - best-effort explicite
+            journal_canonique.warning(
+                "pont : construction de la situation impossible situation=%s",
+                sit.get("id"), exc_info=True)
+            return None
+
     async def _enfiler_pont(evenements):
         evenements = [evenement for evenement in evenements if evenement]
         collection = getattr(db, "pont_canonique", None)
@@ -1466,12 +1479,8 @@ def build_cases_router(deps):
             raise HTTPException(404, "Case introuvable")
         evenements = []
         if situation_modifiee:
-            if decision_enregistree:
-                evenement_situation = pont_travail.evenement_decision_situation(
-                    sit, tenant_id=tenant)
-            else:
-                evenement_situation = pont_travail.evenement_action_situation(
-                    sit, payload.texte, tenant_id=tenant)
+            evenement_situation = await _evenement_situation(
+                sit, payload.texte, decision=decision_enregistree, tenant=tenant)
             if evenement_situation:
                 evenements.append(evenement_situation)
         if decision_enregistree:

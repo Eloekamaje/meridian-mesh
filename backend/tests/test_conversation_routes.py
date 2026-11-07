@@ -1695,6 +1695,31 @@ def test_decision_attendue_enfile_toujours_la_situation(monde, texte, statut_can
             conn, "local", "dec-sit-sit-lie-1") is not None
 
 
+def test_decision_attendue_reste_best_effort_si_la_construction_echoue(monde, monkeypatch):
+    from aides_pont import CollectionPont
+
+    from meridian.application import pont_travail
+
+    client, db, _ = monde
+    db.situations.docs = [_situation_complete(
+        "sit-lie", decisions_attendues=["Coïncidence"])]
+    db.cases.docs.append(_case_lie(decisions=[]))
+    db.pont_canonique = CollectionPont()
+
+    def _construction_impossible(*args, **kwargs):
+        raise RuntimeError("construction impossible")
+
+    monkeypatch.setattr(
+        pont_travail, "evenement_action_situation", _construction_impossible)
+
+    r = client.post("/api/cases/case-lie/decision-attendue",
+                    json={"texte": "Coïncidence"})
+
+    assert r.status_code == 200, r.text
+    assert db.situations.docs[0]["statut"] == "classée"
+    assert db.pont_canonique.documents == []
+
+
 def test_get_case_avec_tenant_demo_lit_le_meme_objet_local(monde, monkeypatch):
     client, db, _ = monde
     case = _case_avec_decision()
