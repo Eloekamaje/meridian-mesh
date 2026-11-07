@@ -1137,8 +1137,9 @@ def objets_depuis_outcome(payload: Any, *, tenant_id: Any = None,
     if origine and origine not in {ORIGINE_LEGACY, ORIGINE_MIGRATION, ORIGINE_EXPLOITATION}:
         raise PontInvalide(f"origine d'Outcome inconnue : {origine!r}")
     # La date d'ingestion arbitre les corrections ; `mesure_le` garde le sens de la mesure.
+    # Sans `maj_le`, on conserve l'ordre historique (mesure_le puis source de l'événement).
     maj_le = _iso(donnees.get("maj_le"))
-    source_maj = (maj_le or (evenement or {}).get("source_maj_le") or mesure_le)
+    source_maj = (maj_le or mesure_le or (evenement or {}).get("source_maj_le"))
     return [_serialiser(outcome, evenement,
                         source_maj_le=source_maj,
                         origine=origine or ORIGINE_LEGACY,
