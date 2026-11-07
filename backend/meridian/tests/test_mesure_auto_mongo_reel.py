@@ -144,6 +144,7 @@ def test_correction_legacy_apres_backfill_est_relue():
         # Producteur legacy : seul `maj_le` avance, `maj_le_utc` reste à 09:00.
         await collection.update_one(
             {"id": "obs-legacy"}, {"$set": {"maj_le": "2026-11-05T10:00:00+00:00"}})
+        assert await depot.compter_a_migrer(TENANT) == 1
         curseur = mongo_mesure.CurseurObservation(
             maj_le="2026-11-05T09:00:00.000000+00:00", id="curseur")
 
