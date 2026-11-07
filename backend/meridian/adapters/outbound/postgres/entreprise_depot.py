@@ -224,6 +224,11 @@ def _ligne(ligne) -> dict:
     return {cle: _valeur(valeur) for cle, valeur in ligne.items()}
 
 
+def ligne_publique(ligne) -> dict:
+    """Rend une ligne Postgres sérialisable en JSON (Decimal, datetime et date convertis)."""
+    return _ligne(ligne)
+
+
 def enregistrer_objet(conn, tenant_id, objet) -> dict:
     """Upsert un objet d'entreprise pour un tenant ; rend la ligne stockée.
 

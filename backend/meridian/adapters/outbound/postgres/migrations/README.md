@@ -8,5 +8,8 @@ Les évolutions des bases existantes vivent dans ce répertoire, un fichier par 
 lexicographique ; chaque migration doit donc être réexécutable sans erreur (`IF NOT EXISTS`,
 `ADD COLUMN IF NOT EXISTS`, etc.).
 
-Révision courante : `0001_objets_exploitation` — index des liens des objets d'exploitation et de
-l'empreinte des Signaux. Aucune table n'est ajoutée : les objets restent dans `objet_entreprise`.
+Révision courante : `0001_objets_exploitation` — index non partiels des liens pour `lister`, index GIN
+des Situations d'un Signal et index de recherche de l'empreinte des Signaux. L'unicité de l'empreinte
+est appliquée par l'adaptateur avec un verrou consultatif, pas par un index unique (les bases
+historiques peuvent déjà contenir des doublons). Aucune table n'est ajoutée : les objets restent dans
+`objet_entreprise`.
