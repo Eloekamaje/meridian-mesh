@@ -19,12 +19,13 @@ from meridian.adapters.outbound.postgres import entreprise_depot
 from meridian.adapters.outbound.postgres import objets_exploitation
 from meridian.domain import modele_entreprise as modele
 from meridian.domain.construction_objets_exploitation import nouveau_scenario as _nouveau_scenario
+from meridian.domain.objets_exploitation import Scenario
 from meridian.domain.mesure import mesure_renseignee as _mesure_renseignee
 
 __all__ = [
     "BoucleInvalide", "TYPES_BOUCLE", "STATUT_DECISION_PROPOSEE", "STATUT_DECISION_TRANCHEE",
     "STATUT_INITIATIVE", "STATUT_OUTCOME", "STATUT_LEARNING",
-    "Situation", "Investigation", "Decision", "Initiative", "Outcome", "Learning",
+    "Situation", "Investigation", "Decision", "Scenario", "Initiative", "Outcome", "Learning",
     "est_decision_tranchee",
     "ouvrir_investigation", "proposer_decision", "trancher_decision", "lancer_initiative",
     "mesurer_outcome", "capitaliser_learning",
@@ -33,7 +34,10 @@ __all__ = [
     "nouveau_scenario", "enregistrer_objets", "lister_objets_exploitation",
 ]
 
-TYPES_BOUCLE = ("SITUATION", "INVESTIGATION", "DECISION", "INITIATIVE", "OUTCOME", "LEARNING")
+TYPES_BOUCLE = (
+    "SITUATION", "INVESTIGATION", "DECISION", "SCENARIO",
+    "INITIATIVE", "OUTCOME", "LEARNING",
+)
 STATUT_DECISION_PROPOSEE = "PROPOSED"
 STATUT_DECISION_TRANCHEE = "DECIDED"
 STATUT_INITIATIVE = "PLANNED"
@@ -45,6 +49,7 @@ _MODE_DEFAUT = {
     "SITUATION": "OBSERVED",
     "INVESTIGATION": "DECLARED",
     "DECISION": "DECLARED",
+    "SCENARIO": "PROPOSED",
     "INITIATIVE": "DECLARED",
     "OUTCOME": "OBSERVED",
     "LEARNING": "INFERRED",
@@ -323,6 +328,7 @@ class Decision(modele.Decision, _LiensBoucle):
     acteur: str | None = None
     incertitudes: list[str] = field(default_factory=list)
     CHAMPS_LIENS = ("situation_id", "investigation_id", "initiative_id")
+    CHAMPS_LIENS_MULTIPLES = ("scenario_ids", "scenarios_rejetes")
 
     def __post_init__(self) -> None:
         self.resume = _texte(self.resume) or _texte(self.rationale)
@@ -430,6 +436,7 @@ _CLASSES = {
     "SITUATION": Situation,
     "INVESTIGATION": Investigation,
     "DECISION": Decision,
+    "SCENARIO": Scenario,
     "INITIATIVE": Initiative,
     "OUTCOME": Outcome,
     "LEARNING": Learning,
@@ -742,6 +749,46 @@ def _valider_pour_persistance(conn: Any, tenant: str, objets: list[Any]) -> None
         if attendu is not None:
             champ, type_source = attendu
             _resoudre_source(conn, tenant, par_id, _valeur(objet, champ), champ, type_source)
+        if type_objet == "SCENARIO":
+            investigation_id = _texte_ou_none(_valeur(objet, "investigation_id"))
+            decision_id = _texte_ou_none(_valeur(objet, "decision_id"))
+            if not investigation_id and not decision_id:
+                raise BoucleInvalide("un scénario exige investigation_id ou decision_id")
+            if investigation_id:
+                _resoudre_source(
+                    conn, tenant, par_id, investigation_id,
+                    "investigation_id", "INVESTIGATION")
+            decision_investigation = None
+            if decision_id:
+                decision = _resoudre_source(
+                    conn, tenant, par_id, decision_id, "decision_id", "DECISION")
+                decision_investigation = _lien_ou_alias(
+                    decision, "investigation_id", "investigation_ref")
+                if (
+                    investigation_id and decision_investigation
+                    and decision_investigation != investigation_id
+                ):
+                    raise BoucleInvalide(
+                        f"la décision {decision_id!r} appartient à l'investigation "
+                        f"{decision_investigation!r}, pas à {investigation_id!r}"
+                    )
+            investigation_reference = investigation_id or decision_investigation
+            for hypothesis_id in _liste_ids(
+                _valeur(objet, "hypothesis_ids"), "hypothesis_ids"
+            ):
+                hypothesis = _resoudre_source(
+                    conn, tenant, par_id, hypothesis_id,
+                    "hypothesis_ids", "HYPOTHESIS")
+                hypothesis_investigation = _texte_ou_none(
+                    _valeur(hypothesis, "investigation_id"))
+                if (
+                    investigation_reference and hypothesis_investigation
+                    and hypothesis_investigation != investigation_reference
+                ):
+                    raise BoucleInvalide(
+                        f"l'hypothèse {hypothesis_id!r} appartient à l'investigation "
+                        f"{hypothesis_investigation!r}, pas à {investigation_reference!r}"
+                    )
         if type_objet == "DECISION" and est_decision_tranchee(objet):
             for champ in ("acteur", "choix", "decide_le"):
                 if not _valeur(objet, champ):
@@ -806,6 +853,16 @@ def _liens_inverses(objets: list[Any]) -> dict[str, dict[str, Any]]:
             initiative_id = _texte_ou_none(_valeur(objet, "initiative_id"))
             if initiative_id:
                 extras.setdefault(initiative_id, {}).setdefault("outcome_ids", []).append(identifiant)
+        elif type_objet == "SCENARIO":
+            investigation_id = _texte_ou_none(_valeur(objet, "investigation_id"))
+            decision_id = _texte_ou_none(_valeur(objet, "decision_id"))
+            if investigation_id:
+                extras.setdefault(investigation_id, {}).setdefault(
+                    "scenario_ids", []).append(identifiant)
+            if decision_id:
+                extra_decision = extras.setdefault(decision_id, {})
+                extra_decision.setdefault("scenario_ids", []).append(identifiant)
+                extra_decision.setdefault("scenario_id", identifiant)
     for objet in objets:
         identifiant = _id_de(objet)
         extra = extras.get(identifiant)
@@ -833,9 +890,13 @@ def _persister(
     if extra_donnees:
         donnees = dict(payload.get("donnees") or {})
         for cle, valeur in extra_donnees.items():
-            if cle == "outcome_ids":
+            if cle in {"outcome_ids", "scenario_ids"}:
                 actuels = _liste_ids(donnees.get(cle), cle)
-                donnees[cle] = actuels + [element for element in valeur if element not in actuels]
+                donnees[cle] = actuels + [
+                    element for element in valeur if element not in actuels
+                ]
+            elif cle == "scenario_id" and _texte_ou_none(donnees.get(cle)):
+                continue
             else:
                 donnees[cle] = valeur
         payload["donnees"] = donnees
@@ -851,6 +912,14 @@ def _persister(
             for cle, valeur in nouvelles.items():
                 if (cle in _CHAMPS_INVERSES_LIES and _est_vide(valeur)
                         and not _est_vide(existantes.get(cle))):
+                    continue
+                if cle in {"scenario_ids", "outcome_ids"} and isinstance(valeur, list):
+                    actuels = _liste_ids(existantes.get(cle), cle)
+                    donnees[cle] = actuels + [
+                        element for element in valeur if element not in actuels
+                    ]
+                    continue
+                if cle == "scenario_id" and _texte_ou_none(existantes.get(cle)):
                     continue
                 donnees[cle] = valeur
             if historique:
@@ -970,6 +1039,9 @@ def _source_principale(ligne: Mapping[str, Any]) -> str | None:
         return _texte_ou_none(_valeur(ligne, "situation_id"))
     if type_objet == "DECISION":
         return _lien_ou_alias(ligne, "investigation_id", "investigation_ref")
+    if type_objet == "SCENARIO":
+        return _lien_ou_alias(ligne, "decision_id", "decision_ref") or _texte_ou_none(
+            _valeur(ligne, "investigation_id"))
     if type_objet == "INITIATIVE":
         return _lien_ou_alias(ligne, "decision_id", "decision_ref")
     if type_objet == "OUTCOME":

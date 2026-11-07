@@ -224,6 +224,43 @@ def test_un_objet_hors_tenant_est_404_et_l_historique_ajoute_la_chaine(monkeypat
     json.dumps(reponse.json())
 
 
+def test_la_chaine_d_un_scenario_sous_decision_est_complete(monkeypatch):
+    situation = _objet("sit-1", type_="SITUATION")
+    investigation = _objet(
+        "inv-1", famille="investigation", type_="INVESTIGATION", mode="DECLARED",
+        situation_id="sit-1")
+    decision = _objet(
+        "dec-1", famille="decision", type_="DECISION", mode="DECLARED",
+        investigation_id="inv-1")
+    scenario = _objet(
+        "scn-1", famille="decision", type_="SCENARIO", mode="PROPOSED",
+        titre="Scénario", investigation_id="inv-1", decision_id="dec-1")
+    client, _ = _client(monkeypatch, [situation, investigation, decision, scenario])
+
+    reponse = client.get("/api/boucle/objets/scn-1", params={"historique": "true"})
+
+    assert reponse.status_code == 200
+    assert [element["type"] for element in reponse.json()["chaine"]] == [
+        "SITUATION", "INVESTIGATION", "DECISION", "SCENARIO",
+    ]
+
+
+def test_la_chaine_d_un_scenario_sous_investigation_s_arrete_a_l_investigation(monkeypatch):
+    investigation = _objet(
+        "inv-seul", famille="investigation", type_="INVESTIGATION", mode="DECLARED")
+    scenario = _objet(
+        "scn-inv", famille="decision", type_="SCENARIO", mode="PROPOSED",
+        titre="Scénario", investigation_id="inv-seul")
+    client, _ = _client(monkeypatch, [investigation, scenario])
+
+    reponse = client.get("/api/boucle/objets/scn-inv", params={"historique": "true"})
+
+    assert reponse.status_code == 200
+    assert [element["type"] for element in reponse.json()["chaine"]] == [
+        "INVESTIGATION", "SCENARIO",
+    ]
+
+
 def test_la_synthese_compte_par_famille_type_et_mode_sans_contenu(monkeypatch):
     objets = [
         _objet("sit-1", tenant="local", password="hunter2"),

@@ -16,6 +16,7 @@ from fastapi import APIRouter, FastAPI
 from fastapi.testclient import TestClient
 
 from meridian.adapters.inbound.http import boucle as boucle_routes
+from meridian.adapters.outbound.postgres import boucle
 from meridian.application import commandes_boucle
 from meridian.domain import construction_objets_exploitation
 from meridian.domain.objets_exploitation import ObjetsExploitationInvalide
@@ -203,7 +204,14 @@ class _Connexion:
 
 
 def test_creer_scenario_lie_a_une_investigation_et_met_a_jour_le_parent():
-    store = _Store([_parent("INVESTIGATION", "inv-1")])
+    store = _Store([
+        _parent("INVESTIGATION", "inv-1"),
+        {
+            "id": "hyp-1", "tenant_id": TENANT, "famille": "investigation",
+            "type": "HYPOTHESIS", "mode": "PROPOSED", "titre": "Hypothèse",
+            "donnees": {"investigation_id": "inv-1"}, "version": 1,
+        },
+    ])
 
     resultat = commandes_boucle.creer_scenario(
         store, _Connexion(), TENANT,
@@ -285,6 +293,71 @@ def test_plusieurs_scenarios_peuvent_comparer_une_meme_decision():
     assert [scenario["titre"] for scenario in comparison["scenarios"]] == [
         "Automatiser", "Réorganiser",
     ]
+
+
+def test_scenario_est_un_type_canonique_de_la_famille_decision():
+    from meridian.domain import modele_entreprise as modele
+
+    assert "SCENARIO" in modele.TYPES_OBJET
+    assert modele.famille_de("SCENARIO") == "decision"
+
+
+def test_decision_canonique_porte_scenario_ids_et_scenario_id():
+    decision = boucle.Decision(
+        id="dec-1", tenant_id=TENANT, investigation_id="inv-1",
+        statut="PROPOSED", scenario_id="s1", scenario_ids=["s2"],
+    )
+    assert decision.scenario_ids == ["s2", "s1"]
+    assert decision.scenario_id == "s1"
+    assert decision.liens["scenario_ids"] == ["s2", "s1"]
+
+
+def test_creer_scenario_refuse_une_decision_d_un_autre_investigation():
+    store = _Store([
+        _parent("INVESTIGATION", "inv-1"),
+        _parent("INVESTIGATION", "inv-2"),
+        _parent("DECISION", "dec-2", investigation_id="inv-2"),
+    ])
+
+    with pytest.raises(commandes_boucle.TransitionRefusee):
+        commandes_boucle.creer_scenario(
+            store, _Connexion(), TENANT, titre="Incohérent",
+            investigation_id="inv-1", decision_id="dec-2")
+
+    assert all(
+        objet.get("type") != "SCENARIO" for objet in store.objets.values())
+    assert store.objets["inv-1"]["donnees"].get("scenario_ids") is None
+    assert store.objets["dec-2"]["donnees"].get("scenario_id") is None
+
+
+def test_nouveau_scenario_refuse_la_meme_incoherence_au_domaine():
+    with pytest.raises(ObjetsExploitationInvalide):
+        construction_objets_exploitation.nouveau_scenario(
+            investigation=_parent("INVESTIGATION", "inv-1"),
+            decision=_parent("DECISION", "dec-2", investigation_id="inv-2"),
+            titre="Incohérent",
+        )
+
+
+def test_creer_scenario_refuse_une_hypothese_d_une_autre_investigation():
+    store = _Store([
+        _parent("INVESTIGATION", "inv-1"),
+        {
+            "id": "hyp-autre",
+            "tenant_id": TENANT,
+            "famille": "investigation",
+            "type": "HYPOTHESIS",
+            "mode": "PROPOSED",
+            "titre": "Hypothèse",
+            "donnees": {"investigation_id": "inv-2"},
+            "version": 1,
+        },
+    ])
+
+    with pytest.raises(commandes_boucle.TransitionRefusee):
+        commandes_boucle.creer_scenario(
+            store, _Connexion(), TENANT, titre="Hypothèse invalide",
+            investigation_id="inv-1", hypothesis_ids=["hyp-autre"])
 
 
 def test_creer_scenario_exige_au_moins_un_parent():
@@ -399,6 +472,36 @@ def test_comparer_une_reference_nulle_ne_divisionne_pas_par_zero():
     assert ecart["sens"] == "hausse"
 
 
+def test_lister_et_comparer_ne_traversent_pas_le_tenant():
+    store = _Store([
+        {**_scenario_row("s-autre"), "tenant_id": AUTRE_TENANT},
+        _scenario_row("s-local"),
+    ])
+
+    assert [scenario["id"] for scenario in commandes_boucle.lister_scenarios(
+        store, _Connexion(), TENANT)] == ["s-local"]
+    with pytest.raises(commandes_boucle.SourceIntrouvable):
+        commandes_boucle.comparer_scenarios(
+            store, _Connexion(), TENANT, ["s-local", "s-autre"])
+
+
+def test_resume_scenario_ne_fabrique_pas_de_valeurs_categoriques_absentes():
+    row = {"id": "s1", "titre": "Sans catégories", "donnees": {}}
+    resume = commandes_boucle._resume_scenario(row)
+    assert resume["statut"] is None
+    assert resume["reversibilite"] is None
+
+    store = _Store([
+        {**row, "tenant_id": TENANT, "famille": "decision", "type": "SCENARIO", "version": 1},
+        {"id": "s2", "titre": "Autre", "tenant_id": TENANT, "famille": "decision",
+         "type": "SCENARIO", "donnees": {}, "version": 1},
+    ])
+    resultat = commandes_boucle.comparer_scenarios(
+        store, _Connexion(), TENANT, ["s1", "s2"])
+    assert resultat["scenarios"][1]["ecarts"]["statut"]["identique"] is None
+    assert resultat["scenarios"][1]["ecarts"]["reversibilite"]["identique"] is None
+
+
 def test_comparer_refuse_moins_de_deux_ids_les_doublons_et_les_absents():
     store = _store_comparaison()
     for ids in (["s1"], []):
@@ -445,9 +548,19 @@ def _client(monkeypatch) -> TestClient:
 
 def _resultat_scenario(identifiant="scenario-1") -> commandes_boucle.ResultatTransition:
     objet = _scenario_row(identifiant)
+    situation = {
+        "id": "sit-1", "tenant_id": TENANT, "famille": "emergence",
+        "type": "SITUATION", "mode": "OBSERVED", "titre": "Situation",
+        "donnees": {}, "version": 1,
+    }
     return commandes_boucle.ResultatTransition(
         objet=objet,
-        chaine=[_parent("INVESTIGATION", "inv-1"), objet],
+        chaine=[
+            situation,
+            _parent("INVESTIGATION", "inv-1"),
+            _parent("DECISION", "dec-1"),
+            objet,
+        ],
         historique=[],
     )
 
@@ -484,7 +597,9 @@ def test_post_scenario_retourne_le_contrat_de_creation(monkeypatch):
     assert corps["objet"]["type"] == "SCENARIO"
     assert corps["type"] == "SCENARIO"
     assert corps["role"] == "scenario"
-    assert [element["type"] for element in corps["chaine"]] == ["INVESTIGATION", "SCENARIO"]
+    assert [element["type"] for element in corps["chaine"]] == [
+        "SITUATION", "INVESTIGATION", "DECISION", "SCENARIO",
+    ]
     assert corps["idempotency_key"] is None
     assert appels[0][0] == TENANT
     assert appels[0][1]["investigation_id"] == "inv-1"
@@ -508,6 +623,20 @@ def test_post_scenario_valide_le_corps_avant_la_base(monkeypatch, corps):
     assert client.post(f"{BASE}/scenarios", json=corps).status_code == 422
 
 
+def test_post_scenario_incoherent_est_refuse_en_409(monkeypatch):
+    client = _client(monkeypatch)
+
+    def refuser(*_, **__):
+        raise commandes_boucle.TransitionRefusee(
+            "la décision appartient à une autre investigation")
+
+    monkeypatch.setattr(boucle_routes.commandes_boucle, "creer_scenario", refuser)
+    reponse = client.post(f"{BASE}/scenarios", json={
+        "titre": "Incohérent", "investigation_id": "inv-1", "decision_id": "dec-2"})
+    assert reponse.status_code == 409
+    assert "autre investigation" in reponse.json()["detail"]
+
+
 def test_post_scenario_refuse_une_cle_d_idempotence(monkeypatch):
     client = _client(monkeypatch)
     reponse = client.post(
@@ -516,6 +645,33 @@ def test_post_scenario_refuse_une_cle_d_idempotence(monkeypatch):
         headers={"Idempotency-Key": "cle-1"},
     )
     assert reponse.status_code == 501
+
+
+def test_post_comparer_refuse_une_cle_d_idempotence(monkeypatch):
+    client = _client(monkeypatch)
+    reponse = client.post(
+        f"{BASE}/scenarios/comparer",
+        json={"scenario_ids": ["s1", "s2"]},
+        headers={"Idempotency-Key": "cle-1"},
+    )
+    assert reponse.status_code == 501
+
+
+def test_get_scenarios_accepte_un_filtre_vide(monkeypatch):
+    client = _client(monkeypatch)
+    appels = []
+
+    def lister(depot, conn, tenant, **champs):
+        appels.append(champs)
+        return []
+
+    monkeypatch.setattr(boucle_routes.commandes_boucle, "lister_scenarios", lister)
+    reponse = client.get(f"{BASE}/scenarios", params={
+        "investigation_id": "  ", "decision_id": ""})
+
+    assert reponse.status_code == 200
+    assert reponse.json()["scenarios"] == []
+    assert appels == [{"investigation_id": "  ", "decision_id": "", "limite": 100}]
 
 
 @pytest.mark.parametrize(("erreur", "statut"), [

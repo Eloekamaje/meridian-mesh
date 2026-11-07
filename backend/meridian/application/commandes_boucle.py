@@ -51,8 +51,11 @@ _LIBELLES = {
     "situation": "Situation",
     "investigation": "Investigation",
     "decision": "Décision",
+    "scenario": "Scénario",
+    "hypothesis": "Hypothèse",
     "initiative": "Initiative",
     "outcome": "Outcome",
+    "learning": "Learning",
 }
 
 _LIENS_SOURCE = {
@@ -339,14 +342,14 @@ def _resume_scenario(ligne: Any) -> dict[str, Any]:
     return {
         "id": _texte(_valeur_source(ligne, "id")),
         "titre": _texte(_valeur_source(ligne, "titre")),
-        "statut": _texte(_valeur_source(ligne, "statut")) or "DRAFT",
+        "statut": _texte(_valeur_source(ligne, "statut")) or None,
         "investigation_id": _texte(_valeur_source(ligne, "investigation_id")) or None,
         "decision_id": _texte(_valeur_source(ligne, "decision_id")) or None,
         "valeur_estimee": _nombre_scenario(_valeur_source(ligne, "valeur_estimee")),
         "cout_estime": _nombre_scenario(_valeur_source(ligne, "cout_estime")),
         "delai_jours": _nombre_scenario(_valeur_source(ligne, "delai_jours")),
         "risque": _nombre_scenario(_valeur_source(ligne, "risque")),
-        "reversibilite": _texte(_valeur_source(ligne, "reversibilite")) or "REVERSIBLE",
+        "reversibilite": _texte(_valeur_source(ligne, "reversibilite")) or None,
         "complexite": _nombre_scenario(_valeur_source(ligne, "complexite")),
     }
 
@@ -365,10 +368,16 @@ def _ecarts_scenario(reference: Mapping[str, Any], scenario: Mapping[str, Any]) 
             sens = "identique" if delta == 0 else ("hausse" if delta > 0 else "baisse")
         ecarts[nom] = {"delta": delta, "delta_pct": delta_pct, "sens": sens}
     for nom in ("reversibilite", "statut"):
+        reference_valeur = reference.get(nom)
+        scenario_valeur = scenario.get(nom)
         ecarts[nom] = {
-            "reference": reference.get(nom),
-            "scenario": scenario.get(nom),
-            "identique": reference.get(nom) == scenario.get(nom),
+            "reference": reference_valeur,
+            "scenario": scenario_valeur,
+            "identique": (
+                reference_valeur == scenario_valeur
+                if reference_valeur is not None and scenario_valeur is not None
+                else None
+            ),
         }
     return ecarts
 
@@ -382,15 +391,23 @@ def _avec_ecarts(
 def _chaine_scenario(
     parents: list[Any], resultat: ResultatTransition,
 ) -> ResultatTransition:
-    """Reconstruit la chaîne Investigation/Decision → Scenario, sans doublon."""
+    """Conserve la chaîne complète relue, avec repli parents immédiats et dédoublonnage."""
+    sources = list(resultat.chaine or [])
+    if not sources or (len(sources) == 1 and parents):
+        sources = [*parents, *sources]
+    if not sources:
+        sources = [resultat.objet]
     chaine: list[dict[str, Any]] = []
     vus: set[str] = set()
-    for objet in [*parents, resultat.objet]:
+    for objet in sources:
         identifiant = _texte(_valeur_source(objet, "id"))
         if not identifiant or identifiant in vus:
             continue
         vus.add(identifiant)
         chaine.append(_nettoyer(objet) if isinstance(objet, Mapping) else objet)
+    identifiant_scenario = _texte(_valeur_source(resultat.objet, "id"))
+    if identifiant_scenario and identifiant_scenario not in vus:
+        chaine.append(resultat.objet)
     return ResultatTransition(
         objet=resultat.objet, chaine=chaine, historique=resultat.historique)
 
@@ -417,6 +434,40 @@ def creer_scenario(
             decision = _source(
                 depot, conn, tenant_id, decision_id, "DECISION", "decision")
             parents.append(decision)
+        decision_investigation = (
+            _texte(_valeur_source(decision, "investigation_id"))
+            or _texte(_valeur_source(decision, "investigation_ref"))
+        ) if decision is not None else ""
+        if investigation_id and decision_investigation and decision_investigation != investigation_id:
+            raise TransitionRefusee(
+                f"la décision {decision_id!r} appartient à l'investigation "
+                f"{decision_investigation!r}, pas à {investigation_id!r}"
+            )
+        investigation_reference = investigation_id or decision_investigation
+        hypotheses = champs.get("hypothesis_ids") or []
+        if isinstance(hypotheses, str):
+            hypotheses = [hypotheses]
+        for hypothesis_id in hypotheses:
+            identifiant_hypothese = _texte(hypothesis_id)
+            if not identifiant_hypothese:
+                continue
+            hypothesis = depot.lire_boucle(
+                conn, tenant_id, identifiant_hypothese, as_dict=True)
+            if hypothesis is None:
+                raise SourceIntrouvable("hypothesis", identifiant_hypothese)
+            if _texte(_valeur_source(hypothesis, "type")).upper() != "HYPOTHESIS":
+                raise TransitionRefusee(
+                    f"hypothesis {identifiant_hypothese!r} n'est pas une hypothèse")
+            hypothesis_investigation = _texte(
+                _valeur_source(hypothesis, "investigation_id"))
+            if not investigation_reference or (
+                hypothesis_investigation
+                and hypothesis_investigation != investigation_reference
+            ):
+                raise TransitionRefusee(
+                    f"l'hypothèse {identifiant_hypothese!r} n'appartient pas "
+                    f"à l'investigation {investigation_reference or 'du scénario'!r}"
+                )
         identifiant = _texte(champs.pop("id", None)) or f"scenario-{uuid.uuid4().hex[:12]}"
         objet = depot.nouveau_scenario(
             investigation=investigation, decision=decision,
