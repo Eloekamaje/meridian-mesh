@@ -57,6 +57,15 @@ export const boucleApi = {
   async creerSituation(corps) {
     return posterTransition("/boucle/situations", corps);
   },
+  async creerScenario(corps) {
+    return posterTransition("/boucle/scenarios", corps);
+  },
+  async listerScenarios(params) {
+    return api.get("/boucle/scenarios", { params, timeout: 20000 });
+  },
+  async comparerScenarios(corps) {
+    return posterTransition("/boucle/scenarios/comparer", corps);
+  },
   async ouvrirInvestigation(situationId, corps, options) {
     return posterTransition(
       `/boucle/situations/${identifiantRequis(situationId, "identifiant de situation")}/investigations`,

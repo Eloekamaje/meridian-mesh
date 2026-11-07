@@ -42,14 +42,20 @@ __all__ = [
     "mesurer_outcome",
     "capitaliser_learning_depuis_outcome",
     "capitaliser_learning_depuis_investigation",
+    "creer_scenario",
+    "lister_scenarios",
+    "comparer_scenarios",
 ]
 
 _LIBELLES = {
     "situation": "Situation",
     "investigation": "Investigation",
     "decision": "Décision",
+    "scenario": "Scénario",
+    "hypothesis": "Hypothèse",
     "initiative": "Initiative",
     "outcome": "Outcome",
+    "learning": "Learning",
 }
 
 _LIENS_SOURCE = {
@@ -315,3 +321,214 @@ def capitaliser_learning_depuis_investigation(
         objet = depot.capitaliser_learning(investigation, tenant_id=tenant_id, **champs)
         _persister(depot, conn, tenant_id, [objet], creer=True)
         return _relire(depot, conn, tenant_id, objet.id)
+
+
+_METRIQUES_SCENARIO = (
+    "valeur_estimee", "cout_estime", "delai_jours", "complexite", "risque",
+)
+
+
+def _nombre_scenario(valeur: Any) -> float | None:
+    if valeur is None or isinstance(valeur, bool):
+        return None
+    try:
+        return float(valeur)
+    except (TypeError, ValueError):
+        return None
+
+
+def _resume_scenario(ligne: Any) -> dict[str, Any]:
+    """Rend les attributs comparables d'un scénario, sans exposer ses données internes."""
+    return {
+        "id": _texte(_valeur_source(ligne, "id")),
+        "titre": _texte(_valeur_source(ligne, "titre")),
+        "statut": _texte(_valeur_source(ligne, "statut")) or None,
+        "investigation_id": _texte(_valeur_source(ligne, "investigation_id")) or None,
+        "decision_id": _texte(_valeur_source(ligne, "decision_id")) or None,
+        "valeur_estimee": _nombre_scenario(_valeur_source(ligne, "valeur_estimee")),
+        "cout_estime": _nombre_scenario(_valeur_source(ligne, "cout_estime")),
+        "delai_jours": _nombre_scenario(_valeur_source(ligne, "delai_jours")),
+        "risque": _nombre_scenario(_valeur_source(ligne, "risque")),
+        "reversibilite": _texte(_valeur_source(ligne, "reversibilite")) or None,
+        "complexite": _nombre_scenario(_valeur_source(ligne, "complexite")),
+    }
+
+
+def _ecarts_scenario(reference: Mapping[str, Any], scenario: Mapping[str, Any]) -> dict[str, Any]:
+    """Calcule des écarts déterministes ; ``None`` reste ``None``, sans faux zéro."""
+    ecarts: dict[str, Any] = {}
+    for nom in _METRIQUES_SCENARIO:
+        valeur_reference = reference.get(nom)
+        valeur = scenario.get(nom)
+        delta = delta_pct = sens = None
+        if valeur_reference is not None and valeur is not None:
+            delta = round(float(valeur) - float(valeur_reference), 6)
+            if float(valeur_reference) != 0.0:
+                delta_pct = round(delta / float(valeur_reference) * 100.0, 2)
+            sens = "identique" if delta == 0 else ("hausse" if delta > 0 else "baisse")
+        ecarts[nom] = {"delta": delta, "delta_pct": delta_pct, "sens": sens}
+    for nom in ("reversibilite", "statut"):
+        reference_valeur = reference.get(nom)
+        scenario_valeur = scenario.get(nom)
+        ecarts[nom] = {
+            "reference": reference_valeur,
+            "scenario": scenario_valeur,
+            "identique": (
+                reference_valeur == scenario_valeur
+                if reference_valeur is not None and scenario_valeur is not None
+                else None
+            ),
+        }
+    return ecarts
+
+
+def _avec_ecarts(
+    reference: Mapping[str, Any], scenario: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {**scenario, "ecarts": _ecarts_scenario(reference, scenario)}
+
+
+def _chaine_scenario(
+    parents: list[Any], resultat: ResultatTransition,
+) -> ResultatTransition:
+    """Conserve la chaîne complète relue, avec repli parents immédiats et dédoublonnage."""
+    sources = list(resultat.chaine or [])
+    if not sources or (len(sources) == 1 and parents):
+        sources = [*parents, *sources]
+    if not sources:
+        sources = [resultat.objet]
+    chaine: list[dict[str, Any]] = []
+    vus: set[str] = set()
+    for objet in sources:
+        identifiant = _texte(_valeur_source(objet, "id"))
+        if not identifiant or identifiant in vus:
+            continue
+        vus.add(identifiant)
+        chaine.append(_nettoyer(objet) if isinstance(objet, Mapping) else objet)
+    identifiant_scenario = _texte(_valeur_source(resultat.objet, "id"))
+    if identifiant_scenario and identifiant_scenario not in vus:
+        chaine.append(resultat.objet)
+    return ResultatTransition(
+        objet=resultat.objet, chaine=chaine, historique=resultat.historique)
+
+
+def creer_scenario(
+    depot: BoucleStore, conn: Any, tenant_id: str, **champs: Any,
+) -> ResultatTransition:
+    """Crée un Scénario rattaché à une Investigation et/ou une Decision du tenant."""
+    investigation_id = _texte(champs.pop("investigation_id", None))
+    decision_id = _texte(champs.pop("decision_id", None))
+    if not investigation_id and not decision_id:
+        raise TransitionRefusee("un scénario exige investigation_id ou decision_id")
+
+    parents: list[Any] = []
+    with depot.transaction(conn):
+        investigation = None
+        decision = None
+        if investigation_id:
+            investigation = _source(
+                depot, conn, tenant_id, investigation_id,
+                "INVESTIGATION", "investigation")
+            parents.append(investigation)
+        if decision_id:
+            decision = _source(
+                depot, conn, tenant_id, decision_id, "DECISION", "decision")
+            parents.append(decision)
+        decision_investigation = (
+            _texte(_valeur_source(decision, "investigation_id"))
+            or _texte(_valeur_source(decision, "investigation_ref"))
+        ) if decision is not None else ""
+        if investigation_id and decision_investigation and decision_investigation != investigation_id:
+            raise TransitionRefusee(
+                f"la décision {decision_id!r} appartient à l'investigation "
+                f"{decision_investigation!r}, pas à {investigation_id!r}"
+            )
+        investigation_reference = investigation_id or decision_investigation
+        hypotheses = champs.get("hypothesis_ids") or []
+        if isinstance(hypotheses, str):
+            hypotheses = [hypotheses]
+        for hypothesis_id in hypotheses:
+            identifiant_hypothese = _texte(hypothesis_id)
+            if not identifiant_hypothese:
+                continue
+            hypothesis = depot.lire_boucle(
+                conn, tenant_id, identifiant_hypothese, as_dict=True)
+            if hypothesis is None:
+                raise SourceIntrouvable("hypothesis", identifiant_hypothese)
+            if _texte(_valeur_source(hypothesis, "type")).upper() != "HYPOTHESIS":
+                raise TransitionRefusee(
+                    f"hypothesis {identifiant_hypothese!r} n'est pas une hypothèse")
+            hypothesis_investigation = _texte(
+                _valeur_source(hypothesis, "investigation_id"))
+            if not investigation_reference or (
+                hypothesis_investigation
+                and hypothesis_investigation != investigation_reference
+            ):
+                raise TransitionRefusee(
+                    f"l'hypothèse {identifiant_hypothese!r} n'appartient pas "
+                    f"à l'investigation {investigation_reference or 'du scénario'!r}"
+                )
+        identifiant = _texte(champs.pop("id", None)) or f"scenario-{uuid.uuid4().hex[:12]}"
+        objet = depot.nouveau_scenario(
+            investigation=investigation, decision=decision,
+            tenant_id=tenant_id, id=identifiant, **champs)
+        depot.enregistrer_objets(conn, tenant_id, objets=[objet], as_dict=False)
+        resultat = _relire(depot, conn, tenant_id, identifiant)
+        parents_relus = []
+        for parent in parents:
+            parent_id = _texte(_valeur_source(parent, "id"))
+            frais = depot.lire_boucle(conn, tenant_id, parent_id, as_dict=True)
+            parents_relus.append(frais or parent)
+    return _chaine_scenario(parents_relus, resultat)
+
+
+def lister_scenarios(
+    depot: BoucleStore, conn: Any, tenant_id: str, *,
+    investigation_id: Any = None, decision_id: Any = None, limite: int = 100,
+) -> list[dict[str, Any]]:
+    """Liste les Scénarios du tenant, filtrés par Investigation et/ou Decision."""
+    lignes = depot.lister_objets_exploitation(
+        conn, tenant_id, type_="SCENARIO",
+        investigation_id=_texte(investigation_id) or None,
+        decision_id=_texte(decision_id) or None,
+        limite=limite, as_dict=True,
+    )
+    return [_resume_scenario(ligne) for ligne in lignes]
+
+
+def comparer_scenarios(
+    depot: BoucleStore, conn: Any, tenant_id: str, scenario_ids: Any,
+    reference_id: Any = None,
+) -> dict[str, Any]:
+    """Compare des Scénarios du tenant à une référence, sans simulation inventée.
+
+    ``application.planification.scenario.comparer`` simule des deltas de capacité et de
+    prévision : son mapping vers les attributs canoniques n'est pas fidèle. La comparaison
+    reste donc déterministe sur valeur, coût, délai, complexité, risque, réversibilité et
+    statut, avec des écarts ``None`` dès qu'une donnée manque.
+    """
+    ids = [_texte(element) for element in (scenario_ids or [])]
+    ids = [element for element in ids if element]
+    if len(ids) < 2:
+        raise TransitionRefusee("au moins deux scénarios sont nécessaires pour comparer")
+    if len(set(ids)) != len(ids):
+        raise TransitionRefusee("identifiants de scénarios dupliqués")
+    reference = _texte(reference_id) or ids[0]
+    if reference not in ids:
+        raise TransitionRefusee("la référence doit appartenir aux scénarios comparés")
+
+    resumes: list[dict[str, Any]] = []
+    for identifiant in ids:
+        ligne = depot.lire_boucle(conn, tenant_id, identifiant, as_dict=True)
+        if ligne is None or _texte(_valeur_source(ligne, "type")).upper() != "SCENARIO":
+            raise SourceIntrouvable("scénario", identifiant)
+        resumes.append(_resume_scenario(ligne))
+
+    reference_resume = next(
+        scenario for scenario in resumes if scenario["id"] == reference)
+    return {
+        "reference": reference_resume,
+        "scenarios": [
+            _avec_ecarts(reference_resume, scenario) for scenario in resumes
+        ],
+    }

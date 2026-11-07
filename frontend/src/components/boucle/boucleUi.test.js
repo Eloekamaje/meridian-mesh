@@ -96,29 +96,31 @@ describe("actionsPourObjet", () => {
     expect(actionsPourObjet(situation).map((action) => action.id)).toEqual(["ouvrir_investigation"]);
   });
 
-  test("une investigation ouverte propose une décision et un learning", () => {
+  test("une investigation ouverte propose une décision, un scénario et un learning", () => {
     expect(actionsPourObjet(investigation).map((action) => action.id))
-      .toEqual(["proposer_decision", "capitaliser_learning"]);
+      .toEqual(["proposer_decision", "creer_scenario", "capitaliser_learning"]);
   });
 
-  test("une investigation fermée ne propose plus de décision", () => {
+  test("une investigation fermée permet encore de décrire un scénario", () => {
     expect(actionsPourObjet({ ...investigation, donnees: { statut: "CLOSED" } }).map((action) => action.id))
-      .toEqual(["capitaliser_learning"]);
+      .toEqual(["creer_scenario", "capitaliser_learning"]);
   });
 
-  test("une décision proposée se tranche", () => {
-    expect(actionsPourObjet(decisionProposee).map((action) => action.id)).toEqual(["trancher_decision"]);
+  test("une décision proposée se tranche et peut porter un scénario", () => {
+    expect(actionsPourObjet(decisionProposee).map((action) => action.id))
+      .toEqual(["trancher_decision", "creer_scenario"]);
   });
 
-  test("une décision tranchée lance une initiative", () => {
-    expect(actionsPourObjet(decisionTranchee).map((action) => action.id)).toEqual(["lancer_initiative"]);
+  test("une décision tranchée lance une initiative et peut porter un scénario", () => {
+    expect(actionsPourObjet(decisionTranchee).map((action) => action.id))
+      .toEqual(["lancer_initiative", "creer_scenario"]);
   });
 
-  test("une décision déjà reliée à une initiative ne propose plus de la lancer", () => {
+  test("une décision déjà reliée à une initiative garde la création de scénario", () => {
     expect(actionsPourObjet({
       ...decisionTranchee,
       donnees: { ...decisionTranchee.donnees, initiative_id: "ini-1" },
-    })).toEqual([]);
+    }).map((action) => action.id)).toEqual(["creer_scenario"]);
   });
 
   test("une décision rejetée ne propose aucune action", () => {
@@ -172,6 +174,22 @@ describe("configurationAction", () => {
     ]);
     expect(action.champs.find((champ) => champ.nom === "mode").options.map((option) => option.value))
       .toEqual(["DECLARED", "OBSERVED", "INFERRED", "PROPOSED", "CONFIRMED"]);
+  });
+
+  test("la création de scénario expose les métriques et listes attendues", () => {
+    const action = configurationAction("creer_scenario", investigation);
+
+    expect(action.api).toBe("creerScenario");
+    expect(action.typeSource).toBe("INVESTIGATION");
+    expect(action.champs.map((champ) => champ.nom)).toEqual([
+      "titre", "description", "hypothesis_ids", "actions", "valeur_estimee",
+      "cout_estime", "delai_jours", "risque", "complexite", "confiance",
+      "dependances", "impacts", "preuves", "reversibilite", "statut",
+    ]);
+    expect(action.champs.find((champ) => champ.nom === "reversibilite").options)
+      .toEqual(["REVERSIBLE", "PARTIELLE", "IRREVERSIBLE"]);
+    expect(action.champs.find((champ) => champ.nom === "statut").options)
+      .toEqual(["DRAFT", "PROPOSED", "EVALUATED", "SELECTED", "REJECTED", "ARCHIVED"]);
   });
 });
 
@@ -306,6 +324,83 @@ describe("construireCorps", () => {
       titre: "",
       description: "  Un phénomène observé.  ",
     }).corps).toEqual({ description: "Un phénomène observé." });
+  });
+
+  test("crée un scénario depuis une investigation avec métriques et listes CSV", () => {
+    expect(construireCorps("creer_scenario", {}, investigation).erreur).toContain("titre");
+    const resultat = construireCorps("creer_scenario", {
+      titre: "  Automatiser la pièce  ",
+      description: "  Supprimer la ressaisie  ",
+      hypothesis_ids: " hyp-1, hyp-2 ,, ",
+      actions: " Automatiser \n Contrôler ",
+      valeur_estimee: "12000",
+      cout_estime: "4500,5",
+      delai_jours: "30",
+      risque: "0,2",
+      complexite: "0,4",
+      confiance: "0,8",
+      dependances: "api-paiement, equipe-cartes",
+      impacts: "client=baisse, risque=mitige",
+      preuves: "preuve-1, preuve-2",
+      reversibilite: "PARTIELLE",
+      statut: "PROPOSED",
+    }, investigation);
+
+    expect(resultat.corps).toEqual({
+      titre: "Automatiser la pièce",
+      description: "Supprimer la ressaisie",
+      investigation_id: "inv-1",
+      hypothesis_ids: ["hyp-1", "hyp-2"],
+      actions: ["Automatiser", "Contrôler"],
+      valeur_estimee: 12000,
+      cout_estime: 4500.5,
+      delai_jours: 30,
+      risque: 0.2,
+      complexite: 0.4,
+      confiance: 0.8,
+      dependances: ["api-paiement", "equipe-cartes"],
+      impacts: { client: "baisse", risque: "mitige" },
+      preuves: ["preuve-1", "preuve-2"],
+      reversibilite: "PARTIELLE",
+      statut: "PROPOSED",
+    });
+  });
+
+  test("crée un scénario depuis une décision et valide les bornes", () => {
+    expect(construireCorps("creer_scenario", { titre: "Réorganiser" }, decisionProposee).corps)
+      .toEqual({ titre: "Réorganiser", decision_id: "dec-1" });
+    expect(construireCorps("creer_scenario", {
+      titre: "Scénario", valeur_estimee: "beaucoup",
+    }, investigation).erreur).toContain("valeur");
+    expect(construireCorps("creer_scenario", {
+      titre: "Scénario", cout_estime: "-1",
+    }, investigation).erreur).toContain("coût");
+    expect(construireCorps("creer_scenario", {
+      titre: "Scénario", delai_jours: "1.5",
+    }, investigation).erreur).toContain("délai");
+    expect(construireCorps("creer_scenario", {
+      titre: "Scénario", risque: "1.2",
+    }, investigation).erreur).toContain("risque");
+    expect(construireCorps("creer_scenario", {
+      titre: "Scénario", complexite: "1.2",
+    }, investigation).erreur).toContain("complexité");
+    expect(construireCorps("creer_scenario", {
+      titre: "Scénario", confiance: "1.2",
+    }, investigation).erreur).toContain("confiance");
+    expect(construireCorps("creer_scenario", {
+      titre: "Scénario", impacts: "client",
+    }, investigation).erreur).toContain("impact");
+    expect(construireCorps("creer_scenario", {
+      titre: "Scénario", reversibilite: "PEUT_ETRE",
+    }, investigation).erreur).toContain("réversibilité");
+    expect(construireCorps("creer_scenario", {
+      titre: "Scénario", statut: "INCONNU",
+    }, investigation).erreur).toContain("statut");
+  });
+
+  test("refuse un scénario sans investigation ni décision", () => {
+    expect(construireCorps("creer_scenario", { titre: "Sans parent" }, {}).erreur)
+      .toContain("investigation ou une décision");
   });
 
   test("une action inconnue est refusée sans lever", () => {

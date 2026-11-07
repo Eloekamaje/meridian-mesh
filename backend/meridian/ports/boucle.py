@@ -49,6 +49,19 @@ class BoucleStore(Protocol):
 
     def nouvelle_situation(self, **champs: Any) -> Any: ...
 
+    def nouveau_scenario(self, **champs: Any) -> Any: ...
+
+    def enregistrer_objets(
+        self, conn: Any, tenant_id: Any = None, objets: Any = None, *,
+        historique: bool = False, as_dict: bool = True,
+    ) -> Any: ...
+
+    def lister_objets_exploitation(
+        self, conn: Any, tenant_id: str, *, type_: str | None = None,
+        investigation_id: str | None = None, decision_id: str | None = None,
+        limite: int = 100, as_dict: bool = True,
+    ) -> list[Any]: ...
+
     def donnees_de(self, objet: Any) -> dict[str, Any]: ...
 
     def fusionner_donnees(

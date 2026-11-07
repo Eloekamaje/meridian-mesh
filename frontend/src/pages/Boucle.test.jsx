@@ -14,6 +14,9 @@ jest.mock("@/lib/api", () => ({
   default: { get: jest.fn(), post: jest.fn() },
   boucleApi: {
     creerSituation: jest.fn(),
+    creerScenario: jest.fn(),
+    listerScenarios: jest.fn(),
+    comparerScenarios: jest.fn(),
     ouvrirInvestigation: jest.fn(),
     proposerDecision: jest.fn(),
     trancherDecision: jest.fn(),
@@ -220,6 +223,7 @@ beforeEach(() => {
   api.post.mockReset();
   api.post.mockResolvedValue({ data: {} });
   Object.values(boucleApi).forEach((methode) => methode.mockReset());
+  boucleApi.listerScenarios.mockResolvedValue({ data: { scenarios: [] } });
 });
 
 afterEach(() => {
@@ -982,6 +986,241 @@ test("rafraîchit le détail de la situation quand la réponse ne porte pas sa c
   expect(hote.querySelector('[data-testid="boucle-detail-titre"]').textContent)
     .toContain("Situation à recharger");
   expect(hote.querySelector('[data-objet-id="sit-reponse-mince"]')).not.toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("crée un scénario depuis une investigation, le sélectionne et rafraîchit le parent", async () => {
+  const controleur = installerApi({
+    details: {
+      "inv-1": { objet: investigation, chaine: [situation, investigation], historique: [] },
+    },
+  });
+  const scenario = {
+    id: "scenario-2",
+    famille: "decision",
+    type: "SCENARIO",
+    mode: "PROPOSED",
+    titre: "Automatiser la pièce",
+    donnees: {
+      investigation_id: "inv-1",
+      statut: "PROPOSED",
+      valeur_estimee: 12000,
+      cout_estime: 4500.5,
+      delai_jours: 30,
+      risque: 0.2,
+      reversibilite: "PARTIELLE",
+    },
+    version: 1,
+  };
+  boucleApi.creerScenario.mockImplementation(() => {
+    controleur.ajouter(scenario);
+    return Promise.resolve({ data: { objet: scenario, chaine: [investigation, scenario] } });
+  });
+  const appelsObjets = () => api.get.mock.calls
+    .filter(([url]) => url === "/boucle/objets").length;
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  const avant = appelsObjets();
+  await ouvrirObjet(hote, "inv-1");
+  await cliquer(hote, "boucle-action-creer-scenario");
+
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+  expect(document.activeElement?.id).toBe("boucle-transition-titre");
+
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "  Automatiser la pièce  ");
+    saisir(hote.querySelector('[data-testid="boucle-transition-description"]'), "  Supprimer la ressaisie  ");
+    saisir(hote.querySelector('[data-testid="boucle-transition-hypothesis_ids"]'), " h-1, h-2 ");
+    saisir(hote.querySelector('[data-testid="boucle-transition-actions"]'), " Automatiser\nContrôler ");
+    saisir(hote.querySelector('[data-testid="boucle-transition-valeur_estimee"]'), "12000");
+    saisir(hote.querySelector('[data-testid="boucle-transition-cout_estime"]'), "4500,5");
+    saisir(hote.querySelector('[data-testid="boucle-transition-delai_jours"]'), "30");
+    saisir(hote.querySelector('[data-testid="boucle-transition-risque"]'), "0,2");
+    saisir(hote.querySelector('[data-testid="boucle-transition-complexite"]'), "0,4");
+    saisir(hote.querySelector('[data-testid="boucle-transition-confiance"]'), "0,8");
+    saisir(hote.querySelector('[data-testid="boucle-transition-dependances"]'), "api-paiement, equipe-cartes");
+    saisir(hote.querySelector('[data-testid="boucle-transition-impacts"]'), "client=baisse, risque=mitige");
+    saisir(hote.querySelector('[data-testid="boucle-transition-preuves"]'), "preuve-1, preuve-2");
+  });
+  await choisir(hote.querySelector('[data-testid="boucle-transition-reversibilite"]'), "PARTIELLE");
+  await choisir(hote.querySelector('[data-testid="boucle-transition-statut"]'), "PROPOSED");
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(boucleApi.creerScenario).toHaveBeenCalledWith({
+    titre: "Automatiser la pièce",
+    description: "Supprimer la ressaisie",
+    investigation_id: "inv-1",
+    hypothesis_ids: ["h-1", "h-2"],
+    actions: ["Automatiser", "Contrôler"],
+    valeur_estimee: 12000,
+    cout_estime: 4500.5,
+    delai_jours: 30,
+    risque: 0.2,
+    complexite: 0.4,
+    confiance: 0.8,
+    dependances: ["api-paiement", "equipe-cartes"],
+    impacts: { client: "baisse", risque: "mitige" },
+    preuves: ["preuve-1", "preuve-2"],
+    reversibilite: "PARTIELLE",
+    statut: "PROPOSED",
+  });
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).toBeNull();
+  expect(hote.querySelector('[data-objet-id="scenario-2"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-detail-titre"]').textContent)
+    .toContain("Automatiser la pièce");
+  expect(api.get).toHaveBeenCalledWith(
+    "/boucle/objets/inv-1",
+    { params: { historique: true } },
+  );
+  expect(appelsObjets()).toBeGreaterThan(avant);
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("valide le titre d'un scénario et conserve la modale sur erreur API", async () => {
+  installerApi();
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "inv-1");
+  await cliquer(hote, "boucle-action-creer-scenario");
+
+  await cliquer(hote, "boucle-transition-enregistrer");
+  expect(boucleApi.creerScenario).not.toHaveBeenCalled();
+  expect(hote.querySelector('[data-testid="boucle-transition-erreur"]').textContent)
+    .toContain("titre du scénario");
+
+  boucleApi.creerScenario.mockRejectedValue({
+    response: { status: 422, data: { detail: "valeur_estimee invalide" } },
+  });
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "Scénario");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-transition-erreur"]').textContent)
+    .toContain("valeur_estimee invalide");
+  expect(hote.querySelector('[data-testid="boucle-transition-titre"]').value).toBe("Scénario");
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("un échec 5xx de création de scénario reste incertain et garde la modale", async () => {
+  installerApi();
+  boucleApi.creerScenario.mockRejectedValue({ response: { status: 503, data: {} } });
+  const appelsObjets = () => api.get.mock.calls
+    .filter(([url]) => url === "/boucle/objets").length;
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  const avant = appelsObjets();
+  await ouvrirObjet(hote, "inv-1");
+  await cliquer(hote, "boucle-action-creer-scenario");
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "Scénario incertain");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-transition-erreur"]').textContent)
+    .toContain("Résultat incertain");
+  expect(hote.querySelector('[data-testid="boucle-transition-titre"]').value).toBe("Scénario incertain");
+  expect(appelsObjets()).toBeGreaterThan(avant);
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("affiche une erreur si le rafraîchissement du parent échoue", async () => {
+  const scenario = {
+    id: "scenario-refresh", famille: "decision", type: "SCENARIO",
+    mode: "PROPOSED", titre: "Scénario rafraîchi", donnees: {}, version: 1,
+  };
+  let rafraichissementEchoue = false;
+  api.get.mockImplementation((url) => {
+    if (url === "/boucle/objets") {
+      return Promise.resolve({ data: { tenant: "local", objets } });
+    }
+    if (url === "/boucle/synthese") return Promise.resolve({ data: synthese });
+    if (url === "/boucle/twins") return Promise.resolve({ data: { twins: [] } });
+    const detail = url.match(/^\/boucle\/objets\/(.+)$/);
+    if (detail) {
+      const identifiant = decodeURIComponent(detail[1]);
+      if (identifiant === "inv-1" && rafraichissementEchoue) {
+        return Promise.reject(new Error("fond indisponible"));
+      }
+      const objet = identifiant === "inv-1" ? investigation : scenario;
+      return Promise.resolve({ data: { objet, chaine: [], historique: [] } });
+    }
+    return Promise.resolve({ data: {} });
+  });
+  boucleApi.creerScenario.mockImplementation(() => {
+    rafraichissementEchoue = true;
+    return Promise.resolve({
+      data: { objet: scenario, chaine: [investigation, scenario], historique: [] },
+    });
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "inv-1");
+  await cliquer(hote, "boucle-action-creer-scenario");
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "Scénario rafraîchi");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(hote.querySelector('[data-testid="boucle-verification-erreur"]').textContent)
+    .toContain("lien inverse");
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("affiche la comparaison des scénarios dans le détail d'une investigation", async () => {
+  installerApi();
+  boucleApi.listerScenarios.mockResolvedValue({
+    data: {
+      scenarios: [
+        {
+          id: "s1", titre: "Automatiser", statut: "PROPOSED",
+          valeur_estimee: 100, cout_estime: 50, delai_jours: 10,
+          risque: 0.2, reversibilite: "REVERSIBLE", complexite: 0.4,
+        },
+        {
+          id: "s2", titre: "Réorganiser", statut: "DRAFT",
+          valeur_estimee: 120, cout_estime: null, delai_jours: 8,
+          risque: 0.3, reversibilite: "PARTIELLE", complexite: 0.5,
+        },
+      ],
+    },
+  });
+  boucleApi.comparerScenarios.mockResolvedValue({
+    data: {
+      reference: { id: "s1", titre: "Automatiser" },
+      scenarios: [
+        { id: "s1", titre: "Automatiser", statut: "PROPOSED", valeur_estimee: 100, ecarts: {} },
+        {
+          id: "s2", titre: "Réorganiser", statut: "DRAFT", valeur_estimee: 120,
+          ecarts: { valeur_estimee: { delta: 20, delta_pct: 20, sens: "hausse" } },
+        },
+      ],
+    },
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "inv-1");
+
+  expect(boucleApi.listerScenarios).toHaveBeenCalledWith({ investigation_id: "inv-1" });
+  expect(hote.querySelector('[data-testid="boucle-comparaison"]')).not.toBeNull();
+  await cliquer(hote, "boucle-comparaison-lancer");
+  expect(boucleApi.comparerScenarios).toHaveBeenCalledWith({
+    scenario_ids: ["s1", "s2"],
+    reference_id: "s1",
+  });
+  expect(hote.querySelector('[data-testid="boucle-comparaison-resultat"]').textContent)
+    .toContain("Réorganiser");
 
   await act(async () => { racine.unmount(); });
 });

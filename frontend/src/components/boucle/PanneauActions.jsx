@@ -19,6 +19,7 @@ const ICONES = {
   outcome: ChartLineUp,
   learning: BookOpen,
   situation: Lightbulb,
+  scenario: Scales,
 };
 
 const COULEURS = {
@@ -29,6 +30,7 @@ const COULEURS = {
   outcome: "#34D399",
   learning: "#A78BFA",
   situation: "#60A5FA",
+  scenario: "#F2B84B",
 };
 
 function libelleObjet(objet) {

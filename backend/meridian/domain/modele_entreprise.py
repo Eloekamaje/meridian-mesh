@@ -747,6 +747,7 @@ class Decision(ObjetEntreprise):
     investigation_id: str = ""
     investigation_ref: str = ""
     scenario_id: str | None = None
+    scenario_ids: list[str] = field(default_factory=list)
     scenarios_rejetes: list[str] = field(default_factory=list)
     options: list[str] = field(default_factory=list)
     criteres: list[str] = field(default_factory=list)
@@ -762,6 +763,9 @@ class Decision(ObjetEntreprise):
         ) or ""
         super().__post_init__()
         self.scenario_id = _identifiant_lien(self.scenario_id, "scenario_id", obligatoire=False)
+        self.scenario_ids = _liste_ids(self.scenario_ids, "scenario_ids")
+        if self.scenario_id and self.scenario_id not in self.scenario_ids:
+            self.scenario_ids.append(self.scenario_id)
         self.scenarios_rejetes = _liste_ids(self.scenarios_rejetes, "scenarios_rejetes")
         self.options = [str(o).strip() for o in _liste(self.options) if str(o).strip()]
         self.criteres = [str(c).strip() for c in _liste(self.criteres) if str(c).strip()]

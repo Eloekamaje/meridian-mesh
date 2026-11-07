@@ -321,7 +321,8 @@ Initiative, puis `GET /cases/{id}` expose la trace `boucle` au front. Le lot C3 
 `initiative.maj` après une réponse d'initiative : l'Initiative canonique parente des Outcomes
 existe donc sans insertion manuelle. Le lot D mesure les observations et crée des `Outcome`
 canoniques (le `Learning` reste une validation humaine). L'UI Boucle expose les transitions
-canoniques et, depuis C4a, la création d'une Situation racine via `POST /boucle/situations`.
+canoniques, la création d'une Situation racine via `POST /boucle/situations` (C4a) et, depuis
+C4b, la création et la comparaison de Scénarios via `/boucle/scenarios`.
 Le backfill `migration_canonique` et `/boucle/objets` restent disponibles. La chaîne est donc
 branchée et opérable depuis l'UI, mais l'activation des workers, la migration tenant rétroactive
 et le parcours end-to-end supervisé restent à faire. Le détail est dans
@@ -456,6 +457,7 @@ historique. Ils valent `twin.born` pour le résolveur, jamais une confirmation a
 | **Opportunity / Risk** | possibilité ou risque attaché à une situation | `DETECTED`, puis qualification | Classes de domaine testées ; aucune instanciation live identifiée ; sous-document `opportunite` legacy pour Opportunity, pas d’équivalent Risk |
 | **Investigation** | espace structuré de compréhension : question, hypothèses, preuves | `OPEN`, puis clôture | Créée par le pont C2 ou par `POST /api/boucle/situations/{id}/investigations` (UI) ; lecture `/api/boucle/objets` |
 | **Decision** | décision humaine reliée à une investigation, avec options et rationale | `PROPOSED`, puis tranchée | Créée par le pont C2 ou par `POST /api/boucle/investigations/{id}/decisions` (UI) ; lecture `/api/boucle/objets` |
+| **Scenario** | option d’action comparable, rattachée à une Investigation et/ou une Decision | `DRAFT`, `PROPOSED`, `EVALUATED`, `SELECTED`, `REJECTED`, `ARCHIVED` | `objet_entreprise` + liens inverses `scenario_ids` (liste) / `scenario_id` (premier scénario historique, promu au premier restant s’il est retiré, sinon `None`) ; `POST/GET /api/boucle/scenarios`, `POST /api/boucle/scenarios/comparer` et UI Boucle ; filtre de liste direct, formulaire aux champs principaux, comparaison plafonnée à 50 |
 | **Initiative** | traduction d’une décision en action suivie | `PLANNED`, puis exécution | Créée par C3 après une réponse d’initiative ou par `POST /api/boucle/decisions/{id}/initiatives` (UI) ; `objet_entreprise` + backfill, lecture `/api/boucle/objets` |
 | **Outcome** | mesure observée après une initiative | `OBSERVED` | `objet_entreprise`, `POST /api/boucle/outcomes` ou worker D ; exige une Initiative canonique |
 | **Learning** | connaissance généralisable issue d’un outcome ou d’une investigation | `PROPOSED`, promotion humaine | `objet_entreprise`, `/api/boucle/outcomes`, `/raisonnement/apprentissage` |
@@ -464,7 +466,7 @@ historique. Ils valent `twin.born` pour le résolveur, jamais une confirmation a
 | **Annotation** | mémoire organisationnelle déclarée | déclarée | `memoire_org`, `objet_entreprise` |
 
 Objets de la vision qui ne sont pas encore des objets d’entreprise canoniques :
-**Signal**, **Expression**, **Scenario**, **Hypothesis**, **Expert**, **ExpertContribution**.
+**Signal**, **Expression**, **Hypothesis**, **Expert**, **ExpertContribution**.
 Le dossier de raisonnement porte des hypothèses et des options, mais ce ne sont pas les objets
 durables décrits par le Domain Model. Voir [ecarts-vision.md](ecarts-vision.md).
 
@@ -708,7 +710,8 @@ la suite locale.
 |---|---|---|
 | Registre Twins | **solide** | Postgres + projection Mongo/Neo4j |
 | Situations / boucle canonique | **partielle** | Modèle/store, UI de lecture et transitions (création d’une Situation racine → Investigation → Decision → Initiative → Outcome → Learning) ; pont C2 Travail → canonique (Situation/Decision/Initiative), C3 Initiative canonique après réponse, mesure D → Outcome ; Learning humain ; workers et migration tenant à activer |
-| Signal, Expression, Scenario, Hypothesis, Expert | **absents comme objets canoniques** | Noms de famille, dossier de raisonnement ou profils ; voir [ecarts-vision.md](ecarts-vision.md) |
+| Scénarios canoniques | **opérationnelle, périmètre UI borné** | Création depuis Investigation/Decision, liste filtrée directement par parent, comparaison déterministe avec écarts et référence ; UI Boucle ; `scenario_ids` pluriel et `scenario_id` = premier scénario historique (promu au premier restant s’il est retiré, sinon `None`) ; formulaire de création exposant titre, description, hypothèses/actions, valeur, coût, délai, risque, complexité, confiance, dépendances, impacts, preuves, réversibilité et statut ; comparaison plafonnée à 50 ; reste à relier les scénarios de capacité et la sélection dans la décision |
+| Signal, Expression, Hypothesis, Expert | **absents comme objets canoniques** | Noms de famille, dossier de raisonnement ou profils ; voir [ecarts-vision.md](ecarts-vision.md) |
 | Claims, preuves, maturité | **solide** | contradictions et revue conservées |
 | Ingestion Git + CBM | **solide** | CBM à installer dans l’environnement cible |
 | Liens HTTP/JMS/SOAP | **solide** | revue humaine, contradictions |
