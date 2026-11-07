@@ -1238,6 +1238,92 @@ def test_decimal_nan_est_refuse():
         pont.assainir({"valeur": Decimal("NaN")})
 
 
+def test_id_modifie_avec_signature_valide_est_refuse_a_l_application():
+    evenement = _evenement_situation(source_event_id="maj-1")
+    evenement["_id"] = "id-forge-signe"
+    evenement = pont.signer_evenement(evenement)
+
+    with pytest.raises(pont.PontInvalide):
+        pont_pg.appliquer_evenement(ConnexionPont(), evenement)
+
+
+def test_evenement_sans_source_maj_est_refuse():
+    evenement = _evenement_situation(source_event_id="maj-1")
+    evenement.pop("source_maj_le")
+    evenement = pont.signer_evenement(evenement)
+
+    async def scenario():
+        depot = pont_mongo.DepotPontCanonique(CollectionPont())
+        with pytest.raises(pont.PontInvalide):
+            await depot.enfiler(evenement)
+
+    asyncio.run(scenario())
+    with pytest.raises(pont.PontInvalide):
+        pont_pg.appliquer_evenement(ConnexionPont(), evenement)
+
+
+def test_les_ids_retournes_sont_les_objets_reellement_construits():
+    evenement = _evenement_situation(source_event_id="maj-1")
+    evenement["canonical_ids"] = ["sit-1"]
+    evenement = pont.signer_evenement(evenement)
+
+    resultat = pont_pg.appliquer_evenement(ConnexionPont(), evenement)
+
+    assert resultat["canonical_ids"] == [
+        "sit-1", "inv-sit-1", "dec-sit-sit-1-1", "ini-dec-sit-sit-1-1"]
+
+
+def test_source_maj_future_sur_evenement_signe_est_refusee():
+    evenement = _evenement_situation(source_event_id="maj-1")
+    evenement["source_maj_le"] = "2099-01-01T00:00:00+00:00"
+    evenement = pont.signer_evenement(evenement)
+
+    with pytest.raises(pont.PontInvalide):
+        pont_pg.appliquer_evenement(ConnexionPont(), evenement)
+
+
+def test_evenement_id_retourne_n_est_pas_ecrase_par_la_boucle_de_verrous():
+    evenement = _evenement_situation(source_event_id="maj-1")
+    resultat = pont_pg.appliquer_evenement(ConnexionPont(), evenement)
+
+    assert resultat["evenement_id"] == evenement["_id"]
+
+
+def test_canonical_id_incoherent_refuse_a_l_application_meme_signe():
+    evenement = _evenement_case(CASE, situation=SITUATION, source_event_id="case-1")
+    operation = evenement["operation"]
+    evenement["canonical_id"] = "sit-1"
+    evenement["_id"] = pont.identifiant_evenement(
+        TENANT, operation, "sit-1", evenement["source_event_id"])
+    evenement["source"]["id"] = "sit-1"
+    evenement["source"]["hash"] = pont.hash_contenu(evenement["payload"])
+    evenement["hash"] = pont.hash_contenu(evenement["payload"])
+    evenement = pont.signer_evenement(evenement)
+
+    with pytest.raises(pont.PontInvalide):
+        pont_pg.appliquer_evenement(ConnexionPont(), evenement)
+
+
+def test_parent_b_exploitation_sans_pont_est_accepte_pour_un_outcome():
+    conn = ConnexionPont()
+    pont_pg.appliquer_evenement(
+        conn, _evenement_situation(SITUATION, source_event_id="maj-a"))
+    ligne = conn.stock[(TENANT, "ini-dec-sit-sit-1-1")]
+    ligne["donnees"] = {
+        cle: valeur for cle, valeur in ligne["donnees"].items() if cle != "_pont"
+    }
+    ligne["donnees"]["origine"] = "exploitation"
+    outcome = pont.evenement_outcome(
+        tenant_id=TENANT, initiative_id="ini-dec-sit-sit-1-1",
+        mesure={"metrique": "delai", "valeur": 2}, metrique="delai",
+        periode="2026-11", source_event_id="out-b")
+
+    pont_pg.appliquer_evenement(conn, outcome)
+
+    parent = boucle.lire_boucle(conn, TENANT, "ini-dec-sit-sit-1-1")
+    assert outcome["canonical_ids"][0] in parent["donnees"]["outcome_ids"]
+
+
 def test_objets_explicites_sont_ordonnes_et_estampilles_du_hash_pont():
     situation = boucle.Situation(
         id="sit-2", tenant_id=TENANT, titre="Situation", description="desc",

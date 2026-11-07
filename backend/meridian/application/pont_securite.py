@@ -189,9 +189,16 @@ cle_interne = charger_cle_interne
 
 
 def _charge_signable(evenement: Mapping[str, Any]) -> dict[str, Any]:
-    charge = {cle: valeur for cle, valeur in evenement.items()
-              if cle not in CHAMPS_MUTABLES}
-    return assainir(charge)
+    charge = dict(evenement)
+    identifiant = charge.pop("_id", None)
+    contenu = {cle: valeur for cle, valeur in charge.items()
+               if cle not in CHAMPS_MUTABLES}
+    # `assainir` supprime `_id` : on canonicalise donc explicitement l'identifiant
+    # d'événement dans une enveloppe dédiée, sinon il ne serait pas authentifié.
+    return {
+        "id_evenement": None if identifiant is None else str(identifiant),
+        "contenu": assainir(contenu),
+    }
 
 
 def signature(evenement: Mapping[str, Any], cle: Any = None) -> str:

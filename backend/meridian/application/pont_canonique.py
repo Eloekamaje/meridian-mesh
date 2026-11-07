@@ -45,6 +45,7 @@ __all__ = [
     "OPERATION_OUTCOME",
     "OPERATION_SITUATION",
     "OPERATIONS",
+    "ORIGINE_EXPLOITATION",
     "ORIGINE_LEGACY",
     "PONT_KEY_INTERNE_ENV",
     "PontInvalide",
@@ -112,6 +113,7 @@ OPERATIONS = (
 ETATS = ("pending", "done", "failed", "dead")
 ORIGINE_LEGACY = "legacy"
 ORIGINE_MIGRATION = "migration"
+ORIGINE_EXPLOITATION = "exploitation"
 _CHAMPS_TABLE = frozenset({
     "id", "tenant_id", "famille", "type", "mode", "titre", "donnees", "version",
     "observe_le", "valide_depuis", "valide_jusqua", "cree_le", "maj_le",
@@ -1303,9 +1305,35 @@ def _source_maj_le(operation: str, payload: Mapping[str, Any],
 
 
 def verifier_source_evenement(evenement: Mapping[str, Any]) -> None:
-    """Vérifie collection/id/hash de provenance et la restriction du producteur interne."""
+    """Vérifie identifiant, provenance, ordre source et restriction du producteur interne."""
     operation = _operation_normalisee(evenement.get("operation"))
+    tenant = normaliser_tenant(evenement.get("tenant_id"))
     canonical_id = _texte(evenement.get("canonical_id"))
+    identifiant = _texte(evenement.get("_id"))
+    attendu = identifiant_evenement(
+        tenant, operation, canonical_id, evenement.get("source_event_id"))
+    if not identifiant or identifiant != attendu:
+        raise PontInvalide(
+            f"_id {identifiant!r} non conforme à la clé d'idempotence {attendu!r}")
+    source_maj = _iso(evenement.get("source_maj_le"))
+    if not source_maj:
+        raise PontInvalide("source_maj_le obligatoire et ISO")
+    if _est_futur(source_maj, datetime.now(timezone.utc).isoformat(timespec="seconds")):
+        raise PontInvalide(f"source_maj_le {source_maj!r} dans le futur")
+    payload = evenement.get("payload")
+    if not isinstance(payload, Mapping):
+        raise PontInvalide("payload : objet attendu")
+    principal = _identifiant_principal(operation, payload)
+    if principal is not None and principal != canonical_id:
+        raise PontInvalide(
+            f"canonical_id {canonical_id!r} incohérent avec l'id principal {principal!r}")
+    if operation in {OPERATION_OBJETS, OPERATION_OUTCOME, OPERATION_LEARNING}:
+        ids = {objet["id"] for objet in objets_depuis_evenement(
+            evenement, tenant_id=tenant)}
+        if canonical_id not in ids:
+            raise PontInvalide(
+                f"canonical_id {canonical_id!r} absent des objets construits "
+                f"{sorted(ids)!r}")
     source = evenement.get("source")
     if not isinstance(source, Mapping):
         raise PontInvalide("source obligatoire")

@@ -274,11 +274,7 @@ def test_un_echec_de_terminer_par_fencing_n_ecrase_pas_l_etat(monkeypatch):
 
     class DepotFencing:
         def __init__(self):
-            self.evenement = pont.signer_evenement({
-                "_id": "evt-1", "etat": "pending", "lock_token": "jeton-a",
-                "locked_until": "2026-11-06T12:00:00+00:00", "canonical_ids": ["sit-1"],
-                "tentatives": 0,
-            })
+            self.evenement = _evenement()
             self.termine = False
             self._servi = False
 
@@ -435,8 +431,7 @@ def test_une_panne_de_reprise_ou_de_terminer_ne_remonte_pas(monkeypatch):
             if self._servi:
                 return []
             self._servi = True
-            return [pont.signer_evenement(
-                {"_id": "evt-1", "lock_token": "jeton", "canonical_ids": []})]
+            return [_evenement()]
 
         async def terminer(self, *args, **kwargs):
             raise RuntimeError("terminaison indisponible")
@@ -467,8 +462,7 @@ def test_une_panne_d_echouer_ne_remonte_pas(monkeypatch):
             if self._servi:
                 return []
             self._servi = True
-            return [pont.signer_evenement(
-                {"_id": "evt-1", "lock_token": "jeton", "canonical_ids": []})]
+            return [_evenement()]
 
         async def echouer(self, *args, **kwargs):
             raise RuntimeError("échec indisponible")
@@ -530,6 +524,43 @@ def test_worker_reclame_un_evenement_a_la_fois_et_verifie_le_bail(monkeypatch):
     assert bilan["traites"] == 2 and bilan["reussis"] == 2
     assert sequence == ["claim", "bail", "apply", "terminer",
                         "claim", "bail", "apply", "terminer"]
+
+
+def test_worker_refuse_un_id_modifie_meme_signe(monkeypatch):
+    monkeypatch.setenv(pont_worker.FLAG_ENV, "1")
+
+    class Depot:
+        def __init__(self):
+            self._servi = False
+            self.permanent = None
+
+        async def reprendre_expires(self):
+            return 0
+
+        async def reclamer(self, *args, **kwargs):
+            if self._servi:
+                return None
+            self._servi = True
+            evenement = _evenement()
+            evenement["_id"] = "id-forge-signe"
+            return pont.signer_evenement(evenement)
+
+        async def echouer(self, identifiant, jeton, erreur, **kwargs):
+            self.permanent = kwargs.get("permanent")
+            return True
+
+        async def statistiques(self):
+            return {}
+
+    depot = Depot()
+    worker = pont_worker.WorkerPont(
+        depot, lambda ev: pytest.fail("ne doit pas être appliqué"),
+        worker_id="worker-a")
+
+    bilan = asyncio.run(worker.une_passe())
+
+    assert bilan["echecs"] == 1
+    assert depot.permanent is True
 
 
 def test_worker_n_applique_pas_si_le_bail_est_perdu(monkeypatch):

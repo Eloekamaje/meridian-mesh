@@ -108,6 +108,61 @@ def test_decisions_proposees_ne_sont_pas_promues(conn):
 
 
 @besoin_pg
+def test_id_modifie_meme_signe_est_refuse(conn):
+    evenement = _evenement(_situation(), "maj-1")
+    evenement["_id"] = "id-forge-signe"
+    evenement = pont.signer_evenement(evenement)
+
+    with pytest.raises(pont.PontInvalide):
+        pont_pg.appliquer_evenement(conn, evenement)
+
+
+@besoin_pg
+def test_source_maj_absente_est_refusee(conn):
+    evenement = _evenement(_situation(), "maj-1")
+    evenement.pop("source_maj_le")
+    evenement = pont.signer_evenement(evenement)
+
+    with pytest.raises(pont.PontInvalide):
+        pont_pg.appliquer_evenement(conn, evenement)
+
+
+@besoin_pg
+def test_canonical_id_incoherent_est_refuse(conn):
+    evenement = _evenement(_situation(), "maj-1")
+    evenement["canonical_id"] = "sit-incoherent"
+    evenement["_id"] = pont.identifiant_evenement(
+        TENANT, evenement["operation"], "sit-incoherent", evenement["source_event_id"])
+    evenement["source"]["id"] = "sit-incoherent"
+    evenement["source"]["hash"] = pont.hash_contenu(evenement["payload"])
+    evenement["hash"] = pont.hash_contenu(evenement["payload"])
+    evenement = pont.signer_evenement(evenement)
+
+    with pytest.raises(pont.PontInvalide):
+        pont_pg.appliquer_evenement(conn, evenement)
+
+
+@besoin_pg
+def test_parent_exploitation_sans_pont_est_accepte(conn):
+    pont_pg.appliquer_evenement(conn, _evenement(_situation(), "maj-1"))
+    parent = entreprise_depot.lire_objet(conn, TENANT, "ini-dec-sit-sit-pg-1-1")
+    parent["donnees"] = {
+        cle: valeur for cle, valeur in parent["donnees"].items() if cle != "_pont"
+    }
+    parent["donnees"]["origine"] = "exploitation"
+    entreprise_depot.enregistrer_objet(conn, TENANT, parent)
+    outcome = pont.evenement_outcome(
+        tenant_id=TENANT, initiative_id="ini-dec-sit-sit-pg-1-1",
+        mesure={"metrique": "delai", "valeur": 2}, metrique="delai",
+        periode="2026-11", source_event_id="out-exploitation")
+
+    pont_pg.appliquer_evenement(conn, outcome)
+
+    apres = entreprise_depot.lire_objet(conn, TENANT, "ini-dec-sit-sit-pg-1-1")
+    assert outcome["canonical_ids"][0] in apres["donnees"]["outcome_ids"]
+
+
+@besoin_pg
 def test_initiative_deja_materialisee_par_la_situation_est_compatible(conn):
     pont_pg.appliquer_evenement(conn, _evenement(_situation(), "maj-1"))
     initiative = {

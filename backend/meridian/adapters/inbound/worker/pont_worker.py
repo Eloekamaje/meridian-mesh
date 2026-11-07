@@ -242,6 +242,7 @@ class WorkerPont:
             try:
                 pont.verifier_evenement(
                     evenement, pont.cle_pour_evenement(evenement))
+                pont.verifier_source_evenement(evenement)
                 if not await self._verifier_bail(evenement):
                     ignores += 1
                     self.journal.warning(

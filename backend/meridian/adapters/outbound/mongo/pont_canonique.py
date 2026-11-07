@@ -152,10 +152,8 @@ class DepotPontCanonique:
         document["hash"] = calculé_source
         if pont._texte(document["source"].get("hash")) not in ("", calculé_source):
             raise pont.PontInvalide("source.hash divergent du payload")
-        if "source_maj_le" not in document:
-            document["source_maj_le"] = pont._source_maj_le(
-                operation, document["payload"], document["source_event_id"],
-                _instant(document.get("cree_le") or self._maintenant()))
+        if not pont._iso(document.get("source_maj_le")):
+            raise pont.PontInvalide("source_maj_le obligatoire et ISO")
         self._verifier_source(document, operation, canonical_id)
         instant = _instant(document.get("cree_le") or self._maintenant())
         document["cree_le"] = instant
