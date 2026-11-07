@@ -15,6 +15,79 @@ const STATUTS_INITIATIVE_ANNULEE = new Set([
   "CANCELLED", "ANNULEE", "ABANDONED", "ABANDONNEE",
 ]);
 
+const CHAMPS_CREER_SCENARIO = [
+  {
+    nom: "titre",
+    label: "Titre du scénario",
+    type: "text",
+    requis: true,
+    maxLength: 500,
+    placeholder: "Automatiser la pièce",
+    aide: "Une option d'action comparable, rattachée à l'investigation ou à la décision.",
+  },
+  {
+    nom: "description",
+    label: "Description (optionnel)",
+    type: "textarea",
+    rows: 2,
+    maxLength: 10000,
+    placeholder: "Ce que ce scénario change, pour qui et à quelles conditions…",
+  },
+  {
+    nom: "hypothesis_ids",
+    label: "Hypothèses liées (IDs séparés par une virgule, optionnel)",
+    type: "text",
+    placeholder: "hyp-1, hyp-2",
+  },
+  {
+    nom: "actions",
+    label: "Actions (une par ligne ou séparées par une virgule, optionnel)",
+    type: "textarea",
+    rows: 2,
+    placeholder: "Automatiser\nContrôler",
+  },
+  {
+    nom: "valeur_estimee",
+    label: "Valeur estimée (optionnel)",
+    type: "text",
+    inputMode: "decimal",
+    placeholder: "12000",
+  },
+  {
+    nom: "cout_estime",
+    label: "Coût estimé (optionnel)",
+    type: "text",
+    inputMode: "decimal",
+    placeholder: "4500",
+  },
+  {
+    nom: "delai_jours",
+    label: "Délai en jours (optionnel)",
+    type: "text",
+    inputMode: "numeric",
+    placeholder: "30",
+  },
+  {
+    nom: "risque",
+    label: "Risque (0 à 1, optionnel)",
+    type: "text",
+    inputMode: "decimal",
+    placeholder: "0.2",
+  },
+  {
+    nom: "reversibilite",
+    label: "Réversibilité (optionnel)",
+    type: "select",
+    options: ["REVERSIBLE", "PARTIELLE", "IRREVERSIBLE"],
+  },
+  {
+    nom: "statut",
+    label: "Statut (optionnel)",
+    type: "select",
+    options: ["DRAFT", "PROPOSED", "EVALUATED", "SELECTED", "REJECTED", "ARCHIVED"],
+  },
+];
+
 const CHAMPS_CREER_SITUATION = [
   {
     nom: "titre",
@@ -280,6 +353,16 @@ export const ACTIONS_BOUCLE = Object.freeze({
     api: "creerSituation",
     champs: CHAMPS_CREER_SITUATION,
   }),
+  creer_scenario: Object.freeze({
+    id: "creer_scenario",
+    libelle: "Créer un scénario",
+    titre: "Créer un scénario",
+    description: "Décrire une option d'action comparable, avec ses métriques et sa réversibilité.",
+    testid: "boucle-action-creer-scenario",
+    api: "creerScenario",
+    icone: "scenario",
+    champs: CHAMPS_CREER_SCENARIO,
+  }),
   ouvrir_investigation: Object.freeze({
     id: "ouvrir_investigation",
     libelle: "Ouvrir une investigation",
@@ -431,6 +514,7 @@ export function actionsPourObjet(objet) {
   if (type === "INVESTIGATION") {
     const actions = [];
     if (!STATUTS_INVESTIGATION_FERMES.has(statut)) actions.push(ACTIONS_BOUCLE.proposer_decision);
+    actions.push(ACTIONS_BOUCLE.creer_scenario);
     actions.push(ACTIONS_BOUCLE.capitaliser_learning);
     return actions;
   }
@@ -438,9 +522,13 @@ export function actionsPourObjet(objet) {
   if (type === "DECISION") {
     if (decisionEstRejetee(objet)) return [];
     if (decisionEstTranchee(objet)) {
-      return idObjet(valeurDe(objet, "initiative_id")) ? [] : [ACTIONS_BOUCLE.lancer_initiative];
+      const actions = idObjet(valeurDe(objet, "initiative_id"))
+        ? []
+        : [ACTIONS_BOUCLE.lancer_initiative];
+      actions.push(ACTIONS_BOUCLE.creer_scenario);
+      return actions;
     }
-    return [ACTIONS_BOUCLE.trancher_decision];
+    return [ACTIONS_BOUCLE.trancher_decision, ACTIONS_BOUCLE.creer_scenario];
   }
 
   if (type === "INITIATIVE") {
@@ -492,6 +580,32 @@ function listeVirgules(valeurs, nom) {
     .filter(Boolean);
 }
 
+function listeLignesOuVirgules(valeurs, nom) {
+  return valeurNette(valeurs, nom)
+    .split(/[\r\n,]+/)
+    .map((element) => element.trim())
+    .filter(Boolean);
+}
+
+function nombreOptionnel(valeurs, nom, libelle, { entier = false, maximum = null } = {}) {
+  const brut = valeurNette(valeurs, nom).replace(",", ".");
+  if (!brut) return { valeur: null };
+  if (!Number.isFinite(Number(brut))) {
+    return { erreur: `${libelle} doit être un nombre positif.` };
+  }
+  const nombre = Number(brut);
+  if (entier && !Number.isInteger(nombre)) {
+    return { erreur: `${libelle} doit être un entier positif.` };
+  }
+  if (nombre < 0) {
+    return { erreur: `${libelle} doit être un nombre positif.` };
+  }
+  if (maximum !== null && nombre > maximum) {
+    return { erreur: `${libelle} doit être un nombre entre 0 et 1.` };
+  }
+  return { valeur: nombre };
+}
+
 function echec(message) {
   return { corps: null, erreur: message };
 }
@@ -524,6 +638,59 @@ export function construireCorps(actionId, valeurs = {}, objet = {}) {
       if (twinIds.length > 0) corps.twin_ids = twinIds;
       const mode = valeurNette(valeurs, "mode").toUpperCase();
       if (mode) corps.mode = mode;
+      return { corps };
+    }
+
+    case "creer_scenario": {
+      const titre = valeurNette(valeurs, "titre");
+      if (!titre) return echec("Le titre du scénario est obligatoire.");
+      const typeSource = typeObjet(objet);
+      const identifiantSource = idObjet(objet);
+      const investigationId = typeSource === "INVESTIGATION"
+        ? identifiantSource
+        : valeurNette(valeurs, "investigation_id");
+      const decisionId = typeSource === "DECISION"
+        ? identifiantSource
+        : valeurNette(valeurs, "decision_id");
+      if (!investigationId && !decisionId) {
+        return echec("Un scénario doit être rattaché à une investigation ou une décision.");
+      }
+
+      const corps = { titre };
+      const description = valeurNette(valeurs, "description");
+      if (description) corps.description = description;
+      if (investigationId) corps.investigation_id = investigationId;
+      if (decisionId) corps.decision_id = decisionId;
+      const hypotheses = listeLignesOuVirgules(valeurs, "hypothesis_ids");
+      if (hypotheses.length > 0) corps.hypothesis_ids = hypotheses;
+      const actions = listeLignesOuVirgules(valeurs, "actions");
+      if (actions.length > 0) corps.actions = actions;
+
+      for (const [nom, libelle, options] of [
+        ["valeur_estimee", "La valeur estimée", {}],
+        ["cout_estime", "Le coût estimé", {}],
+        ["delai_jours", "Le délai", { entier: true }],
+        ["risque", "Le risque", { maximum: 1 }],
+      ]) {
+        const resultat = nombreOptionnel(valeurs, nom, libelle, options);
+        if (resultat.erreur) return echec(resultat.erreur);
+        if (resultat.valeur !== null) corps[nom] = resultat.valeur;
+      }
+
+      const reversibilite = valeurNette(valeurs, "reversibilite").toUpperCase();
+      if (reversibilite) {
+        if (!["REVERSIBLE", "PARTIELLE", "IRREVERSIBLE"].includes(reversibilite)) {
+          return echec("La réversibilité doit être REVERSIBLE, PARTIELLE ou IRREVERSIBLE.");
+        }
+        corps.reversibilite = reversibilite;
+      }
+      const statut = valeurNette(valeurs, "statut").toUpperCase();
+      if (statut) {
+        if (!["DRAFT", "PROPOSED", "EVALUATED", "SELECTED", "REJECTED", "ARCHIVED"].includes(statut)) {
+          return echec("Le statut du scénario est inconnu.");
+        }
+        corps.statut = statut;
+      }
       return { corps };
     }
 

@@ -47,6 +47,48 @@ describe("boucleApi", () => {
     expect(poster.mock.calls[0][2]).not.toHaveProperty("headers");
   });
 
+  test("creerScenario poste le scénario rattaché sans en-tête d'idempotence", async () => {
+    const corps = {
+      titre: "Automatiser la pièce",
+      investigation_id: "inv-1",
+      valeur_estimee: 12000,
+      reversibilite: "PARTIELLE",
+    };
+
+    await boucleApi.creerScenario(corps);
+
+    expect(poster).toHaveBeenCalledWith("/boucle/scenarios", corps, { timeout: 20000 });
+    expect(poster.mock.calls[0][2]).not.toHaveProperty("headers");
+  });
+
+  test("comparerScenarios poste les ids et la référence", async () => {
+    const corps = { scenario_ids: ["s1", "s2"], reference_id: "s2" };
+
+    await boucleApi.comparerScenarios(corps);
+
+    expect(poster).toHaveBeenCalledWith("/boucle/scenarios/comparer", corps, { timeout: 20000 });
+  });
+
+  test("listerScenarios interroge la liste avec les filtres et le timeout des transitions", async () => {
+    const get = jest.spyOn(api, "get").mockResolvedValue({ data: { scenarios: [] } });
+
+    await boucleApi.listerScenarios({ investigation_id: "inv/1" });
+
+    expect(get).toHaveBeenCalledWith("/boucle/scenarios", {
+      params: { investigation_id: "inv/1" },
+      timeout: 20000,
+    });
+    get.mockRestore();
+  });
+
+  test("les erreurs de scénario sont propagées sans être masquées", async () => {
+    const erreur = { response: { status: 404, data: { detail: "Scénario introuvable" } } };
+    poster.mockRejectedValueOnce(erreur);
+
+    await expect(boucleApi.comparerScenarios({ scenario_ids: ["s1", "s2"] }))
+      .rejects.toBe(erreur);
+  });
+
   test("creerSituation propage l'erreur du backend sans la masquer", async () => {
     const erreur = {
       response: { status: 409, data: { detail: "objet déjà existant" } },

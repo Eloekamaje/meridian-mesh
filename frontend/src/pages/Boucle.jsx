@@ -18,6 +18,7 @@ import api, { boucleApi } from "@/lib/api";
 import Depliable from "@/components/ui/Depliable";
 import IdentifiantCopiable from "@/components/ui/IdentifiantCopiable";
 import PanneauActions from "@/components/boucle/PanneauActions";
+import ComparaisonScenarios from "@/components/boucle/ComparaisonScenarios";
 import ModaleTransition from "@/components/boucle/ModaleTransition";
 import {
   configurationAction,
@@ -444,6 +445,8 @@ function PanneauDetail({
           verification={verificationSource}
           verificationErreur={verificationErreur}
         />
+
+        <ComparaisonScenarios objet={objet} />
 
         {(preuves.length > 0 || claims.length > 0 || outcomes.length > 0) && (
           <Depliable
@@ -942,6 +945,18 @@ export default function Boucle() {
       .catch(() => {});
   };
 
+  // Rafraîchit la liste après la création d'un scénario, sans toucher au détail
+  // du scénario sélectionné : le parent doit seulement exposer son lien inverse.
+  const rafraichirObjetListe = (identifiant) => {
+    if (!identifiant) return;
+    api.get(`/boucle/objets/${encodeURIComponent(identifiant)}`, { params: { historique: true } })
+      .then((reponse) => {
+        if (!reponse.data?.objet) return;
+        setObjets((avant) => fusionnerObjet(avant, reponse.data.objet));
+      })
+      .catch(() => {});
+  };
+
   const demanderRestaurationFocusAction = () => {
     refRestaurationFocusAction.current = true;
   };
@@ -958,6 +973,7 @@ export default function Boucle() {
     if (enCoursRef.current || refRechargement.current || transition.rechargement) return;
     if (!actionCourante) return;
     const creationSituation = actionActive === "creer_situation";
+    const creationScenario = actionActive === "creer_scenario";
     if (!creationSituation && !objetDetail) return;
     const identifiant = creationSituation ? null : idObjet(objetDetail);
     if (!creationSituation && !identifiant) {
@@ -999,7 +1015,9 @@ export default function Boucle() {
       // Pas d'Idempotency-Key par défaut : le contrat A courant refuse les clés non vides.
       reponse = creationSituation
         ? await boucleApi.creerSituation(corps)
-        : await boucleApi[actionCourante.api](identifiant, corps);
+        : creationScenario
+          ? await boucleApi.creerScenario(corps)
+          : await boucleApi[actionCourante.api](identifiant, corps);
     } catch (erreurApi) {
       cause = erreurApi;
     } finally {
@@ -1094,6 +1112,57 @@ export default function Boucle() {
       if (!nouvelleChaine || nouvelleChaine.length === 0 || !nouvelHistorique) {
         rafraichirDetailSource(identifiantCree);
       }
+      actualiser();
+      return;
+    }
+
+    if (creationScenario) {
+      const nouvelObjet = reponse?.data?.objet ?? null;
+      const nouvelleChaine = Array.isArray(reponse?.data?.chaine) ? reponse.data.chaine : null;
+      const nouvelHistorique = Array.isArray(reponse?.data?.historique) ? reponse.data.historique : null;
+      const dernierDeChaine = nouvelleChaine && nouvelleChaine.length > 0
+        ? nouvelleChaine[nouvelleChaine.length - 1]
+        : null;
+      const objetCree = nouvelObjet || dernierDeChaine;
+      const scenarioId = idObjet(objetCree);
+
+      if (!scenarioId) {
+        setTransition((avant) => ({
+          ...avant,
+          enCours: false,
+          erreur: "Le scénario a été créé mais la réponse ne contient aucun identifiant exploitable. Vérifiez la liste avant de réessayer.",
+        }));
+        actualiser();
+        return;
+      }
+
+      const chaine = nouvelleChaine && nouvelleChaine.length > 0 ? nouvelleChaine : [objetCree];
+      setActionActive(null);
+      setTransition({
+        enCours: false,
+        erreur: "",
+        succes: { action, objet: objetCree },
+        rechargement: false,
+        verificationErreur: "",
+      });
+      refElementDeclencheurAction.current = null;
+      demanderRestaurationFocusAction();
+
+      const objetsReponse = [objetCree, ...(nouvelleChaine || [])]
+        .filter((objet) => idObjet(objet));
+      setObjets((avant) => objetsReponse.reduce((liste, objet) => fusionnerObjet(liste, objet), avant));
+      setSelection(objetCree);
+      setDetail({
+        chargement: false,
+        erreur: null,
+        data: {
+          objet: objetCree,
+          chaine,
+          historique: nouvelHistorique || [],
+        },
+      });
+      // Le parent est relu en arrière-plan pour exposer son lien inverse scenario_ids/scenario_id.
+      rafraichirObjetListe(identifiant);
       actualiser();
       return;
     }
