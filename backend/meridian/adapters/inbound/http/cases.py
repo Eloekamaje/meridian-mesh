@@ -438,8 +438,10 @@ def build_cases_router(deps):
         try:
             return await _situations_visibles(
                 ids, strict=True, message="Situation inconnue ou hors périmètre")
-        except HTTPException:
-            raise HTTPException(400, "Situation inconnue ou hors périmètre") from None
+        except HTTPException as exc:
+            if exc.status_code == 404:
+                raise HTTPException(400, "Situation inconnue ou hors périmètre") from None
+            raise
 
     async def charger_case(cid: str, espace: dict, acteur_id: str = ""):
         case = await db.cases.find_one(
