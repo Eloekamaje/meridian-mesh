@@ -110,7 +110,7 @@ class DepotPontCanonique:
 
     def _verifier_source(self, document: Mapping[str, Any], operation: str,
                          canonical_id: str) -> None:
-        pont.verifier_source_evenement(document)
+        pont.verifier_source_evenement(document, maintenant=self._maintenant())
 
     def _normaliser(self, evenement: Mapping[str, Any]) -> dict[str, Any]:
         if not isinstance(evenement, Mapping):
@@ -155,6 +155,8 @@ class DepotPontCanonique:
         if not pont._iso(document.get("source_maj_le")):
             raise pont.PontInvalide("source_maj_le obligatoire et ISO")
         self._verifier_source(document, operation, canonical_id)
+        # La preuve est déjà vérifiée juste au-dessus ; l'horloge injectée reste utilisée
+        # pour rendre le refus d'une date future indépendant de l'heure système en test.
         instant = _instant(document.get("cree_le") or self._maintenant())
         document["cree_le"] = instant
         document["maj_le"] = instant

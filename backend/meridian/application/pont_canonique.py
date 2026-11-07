@@ -1304,7 +1304,8 @@ def _source_maj_le(operation: str, payload: Mapping[str, Any],
     return _maj_doc(doc, _iso(source_event_id) or defaut)
 
 
-def verifier_source_evenement(evenement: Mapping[str, Any]) -> None:
+def verifier_source_evenement(evenement: Mapping[str, Any],
+                              maintenant: Any = None) -> None:
     """Vérifie identifiant, provenance, ordre source et restriction du producteur interne."""
     operation = _operation_normalisee(evenement.get("operation"))
     tenant = normaliser_tenant(evenement.get("tenant_id"))
@@ -1318,7 +1319,9 @@ def verifier_source_evenement(evenement: Mapping[str, Any]) -> None:
     source_maj = _iso(evenement.get("source_maj_le"))
     if not source_maj:
         raise PontInvalide("source_maj_le obligatoire et ISO")
-    if _est_futur(source_maj, datetime.now(timezone.utc).isoformat(timespec="seconds")):
+    reference = (_iso(maintenant)
+                 or datetime.now(timezone.utc).isoformat(timespec="seconds"))
+    if _est_futur(source_maj, reference):
         raise PontInvalide(f"source_maj_le {source_maj!r} dans le futur")
     payload = evenement.get("payload")
     if not isinstance(payload, Mapping):

@@ -153,6 +153,10 @@ def _origine_compatible(existant: Any, objet: Mapping[str, Any]) -> bool:
         if normalisee not in {
                 pont.ORIGINE_LEGACY, pont.ORIGINE_MIGRATION, pont.ORIGINE_EXPLOITATION}:
             return False
+        if normalisee == pont.ORIGINE_EXPLOITATION:
+            # B est un écrivain canonique de confiance : sa source `exploitation/<id>`
+            # ne coïncide pas avec la source legacy du parent qu'il met à jour.
+            return True
         if not source_existante:
             # Objets écrits par une version antérieure du pont, sans source mémorisée.
             return True
@@ -327,7 +331,7 @@ def appliquer_evenement(conn: Any, evenement: Mapping[str, Any], *,
         raise pont.PontInvalide("événement attendu")
     pont.verifier_evenement(
         evenement, pont.cle_pour_evenement(evenement, cle, cle_interne))
-    pont.verifier_source_evenement(evenement)
+    pont.verifier_source_evenement(evenement, maintenant=maintenant)
     tenant = pont.normaliser_tenant(tenant_id or evenement.get("tenant_id"))
     if tenant_id is not None and pont._texte(evenement.get("tenant_id")):
         if pont.normaliser_tenant(evenement["tenant_id"]) != tenant:

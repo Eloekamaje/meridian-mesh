@@ -143,13 +143,13 @@ def test_canonical_id_incoherent_est_refuse(conn):
 
 
 @besoin_pg
-def test_parent_exploitation_sans_pont_est_accepte(conn):
+def test_parent_exploitation_marker_est_accepte(conn):
     pont_pg.appliquer_evenement(conn, _evenement(_situation(), "maj-1"))
     parent = entreprise_depot.lire_objet(conn, TENANT, "ini-dec-sit-sit-pg-1-1")
-    parent["donnees"] = {
-        cle: valeur for cle, valeur in parent["donnees"].items() if cle != "_pont"
+    parent["donnees"]["_pont"] = {
+        "origine": "exploitation",
+        "source": {"collection": "exploitation", "id": "ini-dec-sit-sit-pg-1-1"},
     }
-    parent["donnees"]["origine"] = "exploitation"
     entreprise_depot.enregistrer_objet(conn, TENANT, parent)
     outcome = pont.evenement_outcome(
         tenant_id=TENANT, initiative_id="ini-dec-sit-sit-pg-1-1",
@@ -160,6 +160,56 @@ def test_parent_exploitation_sans_pont_est_accepte(conn):
 
     apres = entreprise_depot.lire_objet(conn, TENANT, "ini-dec-sit-sit-pg-1-1")
     assert outcome["canonical_ids"][0] in apres["donnees"]["outcome_ids"]
+
+
+@besoin_pg
+def test_croise_b_parent_exploitation_marque_puis_live_c1(conn):
+    """A crée le parent, B ajoute Expression/Opportunity, C1 met à jour le parent."""
+    try:
+        from meridian.adapters.outbound.postgres import objets_exploitation
+        from meridian.domain import construction_objets_exploitation as construction
+    except ImportError:
+        pytest.skip("lot B non mergé : test croisé B → C1 en attente")
+
+    situation = boucle.Situation(
+        id="sit-b-cross", tenant_id=TENANT, titre="Situation B/C1",
+        description="Créée par A", statut="CANDIDATE", priorite="MOYENNE",
+        cree_le=DATE, observe_le=DATE, valide_depuis=DATE)
+    investigation = boucle.ouvrir_investigation(
+        situation, id="inv-b-cross", titre="Comprendre B/C1")
+    boucle.enregistrer_boucle(conn, TENANT, [situation, investigation])
+
+    expression = construction.nouvelle_expression(
+        situation, tenant_id=TENANT, formulation="Expression B")
+    opportunity = construction.nouvelle_opportunite(
+        expression, situation=situation, titre="Opportunité B")
+    objets_exploitation.enregistrer_objets_exploitation(
+        conn, TENANT, [expression, opportunity])
+
+    parent = entreprise_depot.lire_objet(conn, TENANT, "sit-b-cross")
+    marqueur = (parent.get("donnees") or {}).get("_pont")
+    if not (isinstance(marqueur, dict) and marqueur.get("origine") == "exploitation"):
+        pytest.skip(
+            "B _persister_parent ne pose pas encore _pont.origine=exploitation : "
+            "test croisé B → C1 en attente")
+    assert marqueur["source"] == {
+        "collection": "exploitation", "id": "sit-b-cross"}
+
+    live = {
+        "id": "sit-b-cross", "tenant_id": TENANT, "titre": "Situation B/C1",
+        "resume": "Mise à jour C1", "statut": "en observation",
+        "priorite": "haute", "maj_le": "2026-11-06T12:00:00+00:00",
+        "cree_le": DATE, "jumeaux": ["paiements"],
+    }
+    resultat = pont_pg.appliquer_evenement(
+        conn, pont.evenement_depuis_situation(
+            live, source_event_id="c1-parent",
+            maintenant="2026-11-06T12:00:00+00:00"))
+
+    apres = entreprise_depot.lire_objet(conn, TENANT, "sit-b-cross")
+    assert "sit-b-cross" in resultat["ecrits"]
+    assert apres["donnees"]["expression_id"] == expression.id
+    assert apres["donnees"]["statut"] == "OBSERVING"
 
 
 @besoin_pg

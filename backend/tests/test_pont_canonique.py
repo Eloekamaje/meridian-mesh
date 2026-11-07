@@ -1304,15 +1304,15 @@ def test_canonical_id_incoherent_refuse_a_l_application_meme_signe():
         pont_pg.appliquer_evenement(ConnexionPont(), evenement)
 
 
-def test_parent_b_exploitation_sans_pont_est_accepte_pour_un_outcome():
+def test_parent_b_exploitation_marker_est_accepte_pour_un_outcome():
     conn = ConnexionPont()
     pont_pg.appliquer_evenement(
         conn, _evenement_situation(SITUATION, source_event_id="maj-a"))
     ligne = conn.stock[(TENANT, "ini-dec-sit-sit-1-1")]
-    ligne["donnees"] = {
-        cle: valeur for cle, valeur in ligne["donnees"].items() if cle != "_pont"
+    ligne["donnees"]["_pont"] = {
+        "origine": "exploitation",
+        "source": {"collection": "exploitation", "id": "ini-dec-sit-sit-1-1"},
     }
-    ligne["donnees"]["origine"] = "exploitation"
     outcome = pont.evenement_outcome(
         tenant_id=TENANT, initiative_id="ini-dec-sit-sit-1-1",
         mesure={"metrique": "delai", "valeur": 2}, metrique="delai",

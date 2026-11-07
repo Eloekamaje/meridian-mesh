@@ -242,7 +242,9 @@ class WorkerPont:
             try:
                 pont.verifier_evenement(
                     evenement, pont.cle_pour_evenement(evenement))
-                pont.verifier_source_evenement(evenement)
+                reference = (self.maintenant() if callable(self.maintenant)
+                             else self.maintenant)
+                pont.verifier_source_evenement(evenement, maintenant=reference)
                 if not await self._verifier_bail(evenement):
                     ignores += 1
                     self.journal.warning(
