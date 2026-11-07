@@ -6,6 +6,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 SCHEMA = Path(__file__).with_name("schema.sql")
+MIGRATIONS = Path(__file__).with_name("migrations")
 
 
 VERROU_SCHEMA = 4242
@@ -15,6 +16,10 @@ def appliquer_schema(conn):
     with conn.transaction():
         conn.execute("SELECT pg_advisory_xact_lock(%s)", (VERROU_SCHEMA,))
         conn.execute(SCHEMA.read_text())
+        # Migrations SQL idempotentes, une révision par fichier. Le dépôt n'utilise pas Alembic :
+        # schema.sql reste le socle complet et ces fichiers ajoutent les évolutions aux bases existantes.
+        for migration in sorted(MIGRATIONS.glob("*.sql")):
+            conn.execute(migration.read_text())
 
 
 def recalculer_maturites(conn):

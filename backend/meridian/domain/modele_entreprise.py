@@ -622,8 +622,11 @@ class Opportunity(ObjetEntreprise):
     type_opportunite: str = ""
     valeur_potentielle: Any = None
     situation_id: str | None = None
+    expression_id: str | None = None
     investigation_id: str | None = None
     proprietaire: str | None = None
+    auteur: str | None = None
+    justification: str = ""
     twin_ids: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
@@ -633,10 +636,13 @@ class Opportunity(ObjetEntreprise):
         self.statut = _normaliser_statut(self.statut) or "DETECTED"
         self.type_opportunite = _normaliser_statut(self.type_opportunite)
         self.situation_id = _identifiant_lien(self.situation_id, "situation_id", obligatoire=False)
+        self.expression_id = _identifiant_lien(self.expression_id, "expression_id", obligatoire=False)
         self.investigation_id = _identifiant_lien(
             self.investigation_id, "investigation_id", obligatoire=False
         )
         self.proprietaire = _texte_ou_none(self.proprietaire)
+        self.auteur = _texte_ou_none(self.auteur)
+        self.justification = str(self.justification or "").strip()
         self.twin_ids = _liste_ids(self.twin_ids, "twin_ids")
 
 
@@ -654,8 +660,13 @@ class Risk(ObjetEntreprise):
     severite: str = ""
     exposition: float | None = None
     situation_id: str | None = None
+    expression_id: str | None = None
     investigation_id: str | None = None
     proprietaire: str | None = None
+    auteur: str | None = None
+    justification: str = ""
+    propagation: str = ""
+    horizon: str = ""
     controles: list[str] = field(default_factory=list)
     twin_ids: list[str] = field(default_factory=list)
 
@@ -669,10 +680,15 @@ class Risk(ObjetEntreprise):
         self.exposition = _probabilite(self.exposition, "exposition")
         self.severite = _normaliser_statut(self.severite)
         self.situation_id = _identifiant_lien(self.situation_id, "situation_id", obligatoire=False)
+        self.expression_id = _identifiant_lien(self.expression_id, "expression_id", obligatoire=False)
         self.investigation_id = _identifiant_lien(
             self.investigation_id, "investigation_id", obligatoire=False
         )
         self.proprietaire = _texte_ou_none(self.proprietaire)
+        self.auteur = _texte_ou_none(self.auteur)
+        self.justification = str(self.justification or "").strip()
+        self.propagation = str(self.propagation or "").strip()
+        self.horizon = str(self.horizon or "").strip()
         self.controles = _liste_ids(self.controles, "controles")
         self.twin_ids = _liste_ids(self.twin_ids, "twin_ids")
 
