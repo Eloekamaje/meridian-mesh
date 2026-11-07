@@ -53,11 +53,12 @@ _CHAMPS_TABLE = frozenset({
 _CHAMPS_DATES = ("cree_le", "observe_le", "valide_depuis", "valide_jusqua")
 _MAX_HISTORIQUE = 50
 
-# Champs inverses maintenus par les autres producteurs (B) : un parent fraîchement
-# construit par A ne doit pas les effacer avec ses valeurs par défaut.
-_CHAMPS_INVERSES_B = frozenset({
+# Liens inverses maintenus par les autres producteurs (B) et par A : un parent
+# fraîchement construit ne doit pas les effacer avec ses valeurs par défaut.
+_CHAMPS_INVERSES_LIES = frozenset({
     "signal_ids", "expression_id", "opportunity_ids", "risk_ids",
     "hypothesis_ids", "expert_ids", "scenario_ids",
+    "scenario_id", "initiative_id", "outcome_ids", "scenarios_rejetes",
 })
 
 
@@ -845,7 +846,7 @@ def _persister(
             nouvelles.pop("_historique", None)
             donnees = dict(existantes)
             for cle, valeur in nouvelles.items():
-                if (cle in _CHAMPS_INVERSES_B and _est_vide(valeur)
+                if (cle in _CHAMPS_INVERSES_LIES and _est_vide(valeur)
                         and not _est_vide(existantes.get(cle))):
                     continue
                 donnees[cle] = valeur
