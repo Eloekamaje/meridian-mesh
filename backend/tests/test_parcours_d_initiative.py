@@ -47,6 +47,13 @@ besoin_services = pytest.mark.skipif(
     reason="MONGO_URL et JUMEAU_PG_DSN locaux requis pour le parcours C3/D réel",
 )
 
+
+@pytest.fixture(autouse=True)
+def _cle_pont(monkeypatch):
+    """Le parcours réel doit passer avec seulement MONGO_URL et JUMEAU_PG_DSN."""
+    monkeypatch.setenv(pont.PONT_KEY_ENV, "cle-de-test-pont-canonique-32")
+
+
 IID = "init-parcours-c3"
 SID = "sit-parcours-c3"
 METRIQUE = "delai_moyen_jours"
