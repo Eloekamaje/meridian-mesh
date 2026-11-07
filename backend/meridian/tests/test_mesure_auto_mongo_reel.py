@@ -133,6 +133,28 @@ def test_audit_reel_compte_tenant_non_normalise_et_maj_illisible():
     _scenario(scenario)
 
 
+def test_maj_le_utc_chaine_est_backfille_et_ne_leve_pas():
+    async def scenario(db):
+        collection = db[mongo_mesure.OBSERVATIONS]
+        document = _observation("obs-chaine", "2026-11-05T09:00:00+00:00")
+        document["maj_le_utc"] = "2026-11-05T09:00:00.000000+00:00"
+        document["sequence_canonique"] = "00000000000000000001"
+        await collection.insert_one(document)
+        depot = mongo_mesure.DepotObservationsMesure(collection)
+
+        assert await depot.compter_a_migrer(TENANT) == 1
+        assert (await depot.auditer_lot(TENANT))[0] == 1
+        documents = await depot.lister_apres(TENANT, None, 10)
+        assert [element["id"] for element in documents] == ["obs-chaine"]
+        assert await depot.remplir_maj_le_utc(TENANT) == 1
+        document = await collection.find_one({"id": "obs-chaine"})
+        assert isinstance(document["maj_le_utc"], datetime)
+        assert await depot.compter_a_migrer(TENANT) == 0
+        assert (await depot.auditer_lot(TENANT))[0] == 0
+
+    _scenario(scenario)
+
+
 def test_correction_legacy_apres_backfill_est_relue():
     async def scenario(db):
         collection = db[mongo_mesure.OBSERVATIONS]

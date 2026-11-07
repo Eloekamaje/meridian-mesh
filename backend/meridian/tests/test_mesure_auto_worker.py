@@ -1150,6 +1150,35 @@ def test_audit_tourne_par_lot_de_1000():
     assert second == 1
 
 
+def test_maj_le_utc_chaine_est_backfille_et_ne_bloque_pas():
+    document = mongo_mesure.document_ingestion(_observation(
+        "obs-chaine", maj_le="2026-11-05T09:00:00+00:00"))
+    document["maj_le_utc"] = "2026-11-05T09:00:00.000000+00:00"  # chaîne legacy
+    collection = CollectionMesure([document])
+    depot = mongo_mesure.DepotObservationsMesure(collection)
+
+    assert asyncio.run(depot.compter_a_migrer(TENANT)) == 1
+    assert asyncio.run(depot.auditer_lot(TENANT))[0] == 1
+    assert asyncio.run(depot.lister_apres(TENANT, None, 10))[0]["id"] == "obs-chaine"
+    assert asyncio.run(depot.remplir_maj_le_utc(TENANT)) == 1
+    assert isinstance(collection.documents[0]["maj_le_utc"], datetime)
+    assert asyncio.run(depot.compter_a_migrer(TENANT)) == 0
+
+
+def test_worker_maj_le_utc_chaine_est_backfille_et_traite():
+    document = mongo_mesure.document_ingestion(_observation(
+        "obs-chaine", maj_le="2026-11-05T09:02:00+00:00"))
+    document["maj_le_utc"] = "2026-11-05T09:02:00.000000+00:00"
+    observations, checkpoints, _col_obs, _col_cp = _depots([document])
+    outbox = Outbox()
+    worker = _worker(observations, checkpoints, outbox)
+
+    premier = asyncio.run(worker.une_passe())
+
+    assert premier["outcomes"] == 1
+    assert asyncio.run(checkpoints.lire(TENANT)).id == "obs-chaine"
+
+
 def test_maj_le_illisible_est_audite_et_ne_bloque_pas_la_migration():
     observations, checkpoints, _col_obs, _col_cp = _depots([
         {"tenant_id": TENANT, "id": "obs-bad", "maj_le": "hier"},

@@ -129,6 +129,17 @@ def _millisecondes(valeur: datetime) -> datetime:
     return valeur.replace(microsecond=(valeur.microsecond // 1000) * 1000)
 
 
+def _expr_date_utc() -> dict[str, Any]:
+    """Convertit `maj_le_utc` en Date sans jamais faire échouer l'agrégation.
+
+    Le champ est censé être un BSON Date, mais un producteur legacy peut y écrire une chaîne
+    (ou une valeur illisible). ``$convert`` avec ``onError/onNull`` rend ``null`` au lieu de
+    laisser Mongo lever ``$add only supports numeric or date types``.
+    """
+    return {"$convert": {
+        "input": f"${CHAMP_UTC}", "to": "date", "onError": None, "onNull": None}}
+
+
 def sequence_canonique(valeur: Any) -> str:
     """Tie-breaker comparable lexicographiquement.
 
@@ -264,7 +275,7 @@ class DepotObservationsMesure:
         # Une avance de moins d'une milliseconde est le résidu normal de la troncature BSON :
         # on ne la considère pas comme une correction legacy (M2).
         expr: dict[str, Any] = {"$gt": [
-            date_maj_le(), {"$add": ["$maj_le_utc", 1]}]}
+            date_maj_le(), {"$add": [_expr_date_utc(), 1]}]}
         if curseur is not None:
             instant = _instant_datetime(curseur.maj_le)
             if instant is not None:
@@ -277,6 +288,14 @@ class DepotObservationsMesure:
             CHAMP_UTC: {"$exists": True},
             "id": {"$exists": True, "$type": "string"},
             "$expr": expr,
+        }
+
+    def _filtre_utc_non_date(self, tenant: str) -> dict[str, Any]:
+        """Documents dont `maj_le_utc` n'est pas un BSON Date (chaîne, nombre…)."""
+        return {
+            "tenant_id": pont.normaliser_tenant(tenant),
+            CHAMP_UTC: {"$exists": True, "$not": {"$type": "date"}},
+            "id": {"$exists": True, "$type": "string"},
         }
 
     def _filtres_maj_le(self, tenant: str, curseur: CurseurObservation | None, *,
@@ -322,6 +341,9 @@ class DepotObservationsMesure:
         prioritaires: list[dict[str, Any]] = []
         filtre_perime = self._filtre_perime(tenant_normalise, curseur)
         cursor = self.collection.find(filtre_perime)
+        cursor = cursor.sort([("maj_le", 1), ("_id", 1)]).limit(borne)
+        prioritaires.extend(await cursor.to_list(borne))
+        cursor = self.collection.find(self._filtre_utc_non_date(tenant_normalise))
         cursor = cursor.sort([("maj_le", 1), ("_id", 1)]).limit(borne)
         prioritaires.extend(await cursor.to_list(borne))
         for filtre in self._filtres_maj_le(
@@ -377,8 +399,12 @@ class DepotObservationsMesure:
             "$or": [
                 {CHAMP_UTC: {"$exists": False}},
                 {"sequence_canonique": {"$exists": False}},
+                {"$and": [
+                    {CHAMP_UTC: {"$exists": True}},
+                    {CHAMP_UTC: {"$not": {"$type": "date"}}},
+                ]},
                 {"$expr": {"$gt": [
-                    date_maj, {"$add": ["$maj_le_utc", 1]}]}},
+                    date_maj, {"$add": [_expr_date_utc(), 1]}]}},
             ],
         }
         cursor = self.collection.find(filtre).limit(borne)
@@ -439,8 +465,12 @@ class DepotObservationsMesure:
                 {"$or": [
                     {CHAMP_UTC: {"$exists": False}},
                     {"sequence_canonique": {"$exists": False}},
+                    {"$and": [
+                        {CHAMP_UTC: {"$exists": True}},
+                        {CHAMP_UTC: {"$not": {"$type": "date"}}},
+                    ]},
                     {"$expr": {"$gt": [
-                        date_maj, {"$add": ["$maj_le_utc", 1]}]}},
+                        date_maj, {"$add": [_expr_date_utc(), 1]}]}},
                 ]},
             ],
         }))
@@ -479,6 +509,9 @@ class DepotObservationsMesure:
                 defaut = True
             maj_le = document.get("maj_le")
             if maj_le is None or canoniser_instant(maj_le) is None:
+                defaut = True
+            maj_le_utc = document.get(CHAMP_UTC)
+            if maj_le_utc is not None and not isinstance(maj_le_utc, datetime):
                 defaut = True
             if defaut:
                 total += 1

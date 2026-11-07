@@ -35,7 +35,7 @@ Collection : `mesure_auto_observations`. Chaque document porte explicitement son
   "id": "obs-2026-11-05-1",
   "tenant_id": "banque",
   "maj_le": "2026-11-05T09:01:00.000000+00:00",
-  "maj_le_utc": "2026-11-05T09:01:00.000000Z",
+  "maj_le_utc": {"$date": "2026-11-05T09:01:00.000Z"},
   "sequence": "00000000000000000042",
   "initiative_id": "ini-dec-case-c1-1",
   "metrique": "delai_moyen_jours",
