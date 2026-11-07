@@ -28,6 +28,7 @@ import pieces  # noqa: E402
 from meridian.adapters.inbound.http.cases import build_cases_router  # noqa: E402
 from meridian.adapters.inbound.http.tenant_twins import jumeau_du_tenant, jumeaux_du_tenant  # noqa: E402
 from meridian.application import tenant_context as tenant_courant  # noqa: E402
+from meridian.domain.tenant import TenantError  # noqa: E402
 from meridian.adapters.inbound.http.actualites import build_actualites_router  # noqa: E402
 from meridian.adapters.inbound.http.initiatives import build_initiatives_router  # noqa: E402
 from meridian.adapters.inbound.http.planification import construire_router as construire_planification_router  # noqa: E402
@@ -122,12 +123,17 @@ _PONT_ENQUEUE_TIMEOUT = 2.0
 
 
 def _tenant_requete() -> str:
-    return tenant_courant.courant_explicite() or os.environ.get("JUMEAU_TENANT") or "local"
+    return tenant_courant.courant_requete()
 
 
 def _tenant_isole() -> str:
     """Tenant de la requête, validé comme slug : jamais de repli silencieux en écriture."""
-    return pont_travail.normaliser_tenant(_tenant_requete())
+    try:
+        return pont_travail.normaliser_tenant(_tenant_requete())
+    except TenantError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 def _filtre_tenant(tenant: str) -> dict:
@@ -939,16 +945,23 @@ async def examiner_jumeau(jid: str, acteur: str = Depends(auth_identite.acteur),
 
 # ---------- Situations (Radar & Investigations) ----------
 
+_PROJECTION_CASE_PONT = {
+    "_id": 0, "id": 1, "tenant_id": 1, "titre": 1, "situations": 1, "decisions": 1,
+    "options": 1, "responsable": 1, "objectif": 1, "maj_le": 1, "cree_le": 1,
+}
+
+
 async def _cases_lies_a_situation(sid: str, tenant: str) -> list[dict]:
     """Travaux dont `situations[0]` est cette Situation (ADR-0008 : seul le premier lien compte)."""
     if not sid:
         return []
     try:
-        # `$exists` reste compris par les deux stores de cases (Mongo et Postgres documentaire) ;
-        # l'appartenance à `situations` est filtrée en Python pour rester identique partout.
         curseur = db.cases.find(
-            {"situations": {"$exists": True}, **_filtre_tenant(tenant)}, NO_ID)
-        cases = await curseur.to_list(200)
+            {"situations.0": sid, **_filtre_tenant(tenant)}, _PROJECTION_CASE_PONT)
+        cases = await asyncio.wait_for(curseur.to_list(None), timeout=1.0)
+    except asyncio.TimeoutError:
+        journal_pont.warning("pont : lecture des travaux liés dépassée situation=%s", sid)
+        return []
     except Exception:  # noqa: BLE001 - le pont ne bloque jamais la route legacy
         journal_pont.warning("pont : lecture des travaux liés impossible situation=%s", sid,
                              exc_info=True)
@@ -961,20 +974,8 @@ async def _enfiler_evenements_pont(evenements: list[dict], tenant: str) -> None:
     collection = getattr(db, "pont_canonique", None)
     if collection is None:
         return
-    for evenement in evenements:
-        if not evenement:
-            continue
-        try:
-            await asyncio.wait_for(
-                pont_outbox.enfiler_best_effort(collection, evenement),
-                timeout=_PONT_ENQUEUE_TIMEOUT,
-            )
-        except asyncio.TimeoutError:  # noqa: PERF203 - une route legacy ne patiente pas
-            journal_pont.warning("pont : enqueue dépassé tenant=%s id=%s", tenant,
-                                 evenement.get("_id"))
-        except Exception:  # noqa: BLE001 - best-effort explicite
-            journal_pont.exception("pont : enqueue en échec tenant=%s id=%s", tenant,
-                                   evenement.get("_id"))
+    await pont_outbox.enfiler_lot_best_effort(
+        collection, evenements, timeout=_PONT_ENQUEUE_TIMEOUT)
 
 
 async def _pont_apres_situation(situation: dict, tenant: str, *, action: str | None = None,
@@ -993,7 +994,13 @@ async def _pont_apres_situation(situation: dict, tenant: str, *, action: str | N
         return
     evenements = [evenement_situation] if evenement_situation else []
     sid = pont_travail.situation_liee({"situations": [situation.get("id")]})
-    for case in await _cases_lies_a_situation(sid, tenant):
+    try:
+        cases_lies = await asyncio.wait_for(
+            _cases_lies_a_situation(sid, tenant), timeout=1.0)
+    except asyncio.TimeoutError:
+        journal_pont.warning("pont : lecture des travaux liés dépassée situation=%s", sid)
+        cases_lies = []
+    for case in cases_lies:
         try:
             evenement_case = pont_travail.evenement_case_lie(
                 case, situation, tenant_id=tenant, situation_contexte=situation_avant)
@@ -1061,7 +1068,6 @@ async def agir_situation(sid: str, payload: ActionSituation, acteur: str = Depen
                          x_espace: Optional[str] = Header(None)):
     _, espace = resoudre_perimetre(acteur, x_espace)
     situation = await situation_dans_perimetre(sid, espace)
-    situation_avant = situation
     tenant = _tenant_isole()
     mapping = {"ignorer": "ignorée", "surveiller": "surveillée", "investiguer": "en investigation", "examiner": None, "coincidence": "classée", "observer": "en observation", "qualifier": "qualifiée"}
     if payload.action not in mapping:
@@ -1080,8 +1086,7 @@ async def agir_situation(sid: str, payload: ActionSituation, acteur: str = Depen
             situation = {**situation, "statut": nouveau, "tenant_id": tenant,
                          "maj_le": maj_le}
         # Best-effort : un rejeu retrouve le même _id d'outbox, l'écriture legacy reste acquise.
-        await _pont_apres_situation(
-            situation, tenant, action=payload.action, situation_avant=situation_avant)
+        await _pont_apres_situation(situation, tenant, action=payload.action)
     await journaler(acteur, espace["id"], f"situation : {payload.action}", sid, "")
     return {"ok": True, "statut": nouveau}
 
@@ -1094,7 +1099,6 @@ class DecisionSituation(BaseModel):
 async def decider_situation(sid: str, payload: DecisionSituation, acteur: str = Depends(auth_identite.acteur), x_espace: Optional[str] = Header(None)):
     _, espace = resoudre_perimetre(acteur, x_espace)
     situation = await situation_dans_perimetre(sid, espace)
-    situation_avant = situation
     tenant = _tenant_isole()
     decision = payload.decision.strip()
     if not decision:
@@ -1132,7 +1136,7 @@ async def decider_situation(sid: str, payload: DecisionSituation, acteur: str = 
             "tenant_id": tenant,
             "maj_le": decidee_le,
         }
-    await _pont_apres_situation(situation, tenant, situation_avant=situation_avant)
+    await _pont_apres_situation(situation, tenant)
     await journaler(acteur, espace["id"], "décision", sid, decision)
     return {"ok": True, "decision": decision}
 

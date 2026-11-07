@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -8,12 +9,19 @@ import maturation
 import portee as portees
 import ouverture_travail
 from auth import acteur as acteur_courant
+from meridian.adapters.outbound.mongo import pont_canonique as pont_outbox
 from meridian.application import pont_travail
 from meridian.application import tenant_context
+from meridian.domain.tenant import TenantError
 
 
 def _tenant_ecriture() -> str:
-    return pont_travail.normaliser_tenant(tenant_context.courant_ou_env())
+    try:
+        return pont_travail.normaliser_tenant(tenant_context.courant_ou_env())
+    except TenantError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 def _filtre_tenant() -> dict:
@@ -55,6 +63,27 @@ def build_initiatives_router(deps):
         aut = autorisations(espace, [j["id"] for j in tous])
         return acteur, espace, aut
 
+    async def enfiler_case(case, tenant):
+        """Enfile les décisions du Travail ; best-effort, jamais bloquant pour la réponse."""
+        try:
+            sid = pont_travail.situation_liee(case)
+            if not sid:
+                return
+            situation = await asyncio.wait_for(
+                db.situations.find_one(
+                    {"id": sid, **pont_travail.filtre_tenant(tenant)}, NO_ID),
+                timeout=1.0)
+            if not situation:
+                return
+            evenement = pont_travail.evenement_case_lie(
+                case, situation, tenant_id=tenant)
+            collection = getattr(db, "pont_canonique", None)
+            if evenement and collection is not None:
+                await pont_outbox.enfiler_lot_best_effort(
+                    collection, [evenement], timeout=2.0)
+        except Exception:  # noqa: BLE001 - le pont ne casse jamais la route
+            return
+
     def visible(init, acteur, espace, aut):
         return not (init.get("jumeaux") and not any(j in aut for j in init["jumeaux"]))
 
@@ -79,25 +108,36 @@ def build_initiatives_router(deps):
             veille = maturation.nouvelle_veille(init["titre"], maturation.confiance_depuis_libelle(init.get("confiance", "")))
             m = veille["maturation"]
             messages.append(maturation.message_flore_suivi(init["titre"], m["confiance_depart"], m["seuil"], m["plancher"], now))
+        tenant = _tenant_ecriture()
         existant = await db.cases.find_one(
             {"origine.initiative_id": init["id"], "responsable": acteur, **_filtre_tenant()}, NO_ID)
         if existant:
-            maj = {"maj_le": now}
+            maj = {"maj_le": now, "tenant_id": tenant}
             if intention not in existant["origine"].get("intentions", []):
                 if veille and not existant.get("veille"):
                     maj["veille"] = veille
                 else:
                     messages = messages[:1]
-                await db.cases.update_one({"id": existant["id"]}, {"$push": {"conversation": {"$each": messages + (suite or [])}, "historique": {"quand": now, "texte": f"Proposition du Mesh reprise — {intention}"}},
-                                                                   "$addToSet": {"origine.intentions": intention}, "$set": maj})
+                resultat = await db.cases.update_one(
+                    {"id": existant["id"], **_filtre_tenant()},
+                    {"$push": {"conversation": {"$each": messages + (suite or [])},
+                               "historique": {"quand": now,
+                                              "texte": f"Proposition du Mesh reprise — {intention}"}},
+                     "$addToSet": {"origine.intentions": intention}, "$set": maj})
+                if int(getattr(resultat, "matched_count", 0) or 0) == 0:
+                    raise HTTPException(404, "Travail introuvable")
             elif suite:
-                await db.cases.update_one({"id": existant["id"]}, {"$push": {"conversation": {"$each": suite}}, "$set": maj})
+                resultat = await db.cases.update_one(
+                    {"id": existant["id"], **_filtre_tenant()},
+                    {"$push": {"conversation": {"$each": suite}}, "$set": maj})
+                if int(getattr(resultat, "matched_count", 0) or 0) == 0:
+                    raise HTTPException(404, "Travail introuvable")
             return existant["id"], False
         cid = f"case-{slugify(init['titre'])[:40]}-{int(datetime.now(timezone.utc).timestamp()) % 100000}"
         dernier = await db.cases.find(_filtre_tenant(), {"_id": 0, "num": 1}).sort("num", -1).to_list(1)
         num = (dernier[0]["num"] if dernier and dernier[0].get("num") else 40) + 1
         await db.cases.insert_one({
-            "id": cid, "tenant_id": _tenant_ecriture(), "num": num, "titre": init["titre"], "type": "investigation" if intention == "investiguer" else "decouverte", "statut": "ouvert",
+            "id": cid, "tenant_id": tenant, "num": num, "titre": init["titre"], "type": "investigation" if intention == "investiguer" else "decouverte", "statut": "ouvert",
             "sensibilite": "interne", "portee": "personnel", "objectif": init.get("raison", ""), "resume": "", "prochaine_etape": "", "questions": [], "hypotheses": [],
             "jumeaux": init.get("jumeaux", []), "situations": [], "participants": [acteur], "responsable": acteur, "espace": espace["id"],
             "conversation": messages + (suite or []), "options": [], "decisions": [], "livrables": [], "a_revoir": False, "visites": {},
@@ -167,6 +207,7 @@ def build_initiatives_router(deps):
             raise HTTPException(409, "Cette initiative a déjà reçu une réponse")
 
         now = datetime.now(timezone.utc).isoformat()
+        tenant = _tenant_ecriture()
         choix = payload.choix
         low = choix.lower()
         travail_cree = None
@@ -193,7 +234,13 @@ def build_initiatives_router(deps):
             jumeaux = sorted(set(case.get("jumeaux", [])) | set(init.get("jumeaux", [])))
             ajout = ouverture_travail.message_flore_initiative(init, "comprendre", now)
             ajout["texte"] = "J'ai ajouté à ce travail une proposition du Mesh.\n\n" + ajout["texte"]
-            await db.cases.update_one({"id": tid}, {"$set": {"historique": histo, "jumeaux": jumeaux, "maj_le": now}, "$push": {"conversation": ajout}})
+            resultat = await db.cases.update_one(
+                {"id": tid, **_filtre_tenant()},
+                {"$set": {"historique": histo, "jumeaux": jumeaux,
+                          "tenant_id": tenant, "maj_le": now},
+                 "$push": {"conversation": ajout}})
+            if int(getattr(resultat, "matched_count", 0) or 0) == 0:
+                raise HTTPException(404, "Travail introuvable")
             travail_cree = tid
         else:
             # Toute autre réponse acceptée (choisir une option, comparer, demander une validation) se passe DANS un travail :
@@ -206,16 +253,36 @@ def build_initiatives_router(deps):
                 if init.get("travail_id") else None)
             if lie:
                 travail_cree = lie["id"]
-                await db.cases.update_one({"id": travail_cree}, {"$push": {"conversation": {"$each": suite}, "historique": {"quand": now, "texte": f"Proposition du Mesh traitée : {init['titre']}"}}, "$set": {"maj_le": now}})
+                resultat = await db.cases.update_one(
+                    {"id": travail_cree, **_filtre_tenant()},
+                    {"$push": {"conversation": {"$each": suite},
+                               "historique": {"quand": now,
+                                              "texte": f"Proposition du Mesh traitée : {init['titre']}"}},
+                     "$set": {"tenant_id": tenant, "maj_le": now}})
+                if int(getattr(resultat, "matched_count", 0) or 0) == 0:
+                    raise HTTPException(404, "Travail introuvable")
             else:
                 travail_cree, _ = await travail_de_initiative(init, "decider", acteur, espace, suite=suite)
             if nature == "decision":
-                await db.cases.update_one({"id": travail_cree}, {"$push": {"decisions": {"texte": choix, "type": "arbitrage", "quand": now, "par": acteur}}})
+                resultat = await db.cases.update_one(
+                    {"id": travail_cree, **_filtre_tenant()},
+                    {"$push": {"decisions": {"texte": choix, "type": "arbitrage",
+                                             "quand": now, "par": acteur}},
+                     "$set": {"tenant_id": tenant, "maj_le": now}})
+                if int(getattr(resultat, "matched_count", 0) or 0) == 0:
+                    raise HTTPException(404, "Travail introuvable")
+                case_apres = await db.cases.find_one(
+                    {"id": travail_cree, **_filtre_tenant()}, NO_ID)
+                if case_apres:
+                    await enfiler_case(case_apres, tenant)
 
         reponse = {"choix": choix, "motif": payload.motif, "par": acteur, "quand": now, **({"travail_id": travail_cree} if travail_cree else {})}
-        await db.initiatives.update_one(
+        resultat = await db.initiatives.update_one(
             {"id": iid, **_filtre_tenant()},
-            {"$set": {"statut": statut, "reponse": reponse, "maj_le": now}})
+            {"$set": {"statut": statut, "reponse": reponse,
+                      "tenant_id": tenant, "maj_le": now}})
+        if int(getattr(resultat, "matched_count", 0) or 0) == 0:
+            raise HTTPException(404, "Initiative introuvable ou hors périmètre")
         await journaler(acteur, "reponse_initiative", iid, f"{choix}" + (f" — motif : {payload.motif}" if payload.motif else ""))
 
         maj = await db.initiatives.find_one({"id": iid, **_filtre_tenant()}, NO_ID)

@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from meridian.adapters.outbound.travail_store import travail_store
 from meridian.application import pont_travail
 from meridian.application import tenant_context
+from meridian.domain.tenant import TenantError
 
 import maturation
 import portee as portees
@@ -18,7 +19,12 @@ from auth import acteur as acteur_courant
 
 
 def _tenant_ecriture() -> str:
-    return pont_travail.normaliser_tenant(tenant_context.courant_ou_env())
+    try:
+        return pont_travail.normaliser_tenant(tenant_context.courant_ou_env())
+    except TenantError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 def _filtre_tenant() -> dict:
@@ -649,16 +655,18 @@ def build_actualites_router(deps):
             deja = existant["origine"].get("intentions", [])
             if payload.intention not in deja:
                 msg = ouverture_travail.message_flore(payload.intention, histoire, rapport, situation, maintenant)
-                maj = {"maj_le": maintenant}
+                maj = {"maj_le": maintenant, "tenant_id": _tenant_ecriture()}
                 messages = [msg]
                 if veille_suivi and not existant.get("veille"):
                     maj["veille"] = veille_suivi
                     messages.append(message_suivi)
-                await db.cases.update_one(
-                    {"id": existant["id"]},
+                resultat = await db.cases.update_one(
+                    {"id": existant["id"], **_filtre_tenant()},
                     {"$push": {"conversation": {"$each": messages}, "historique": {"quand": maintenant, "texte": {"investiguer": "Investigation ouverte", "suivre": "Mise sous vérification", "comprendre": "Situation présentée"}[payload.intention]}},
                      "$addToSet": {"origine.intentions": payload.intention}, "$set": maj},
                 )
+                if int(getattr(resultat, "matched_count", 0) or 0) == 0:
+                    raise HTTPException(404, "Travail introuvable")
             return {"id": existant["id"], "cree": False}
         base = slugify(histoire["titre"])[:60] or "travail"
         cid, n = base, 2

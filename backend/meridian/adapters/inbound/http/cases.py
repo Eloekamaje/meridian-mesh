@@ -2,6 +2,7 @@ import asyncio
 from contextlib import asynccontextmanager
 import logging
 import os
+import time
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from inspect import Parameter, signature
@@ -24,6 +25,7 @@ from seed_data import EPICS, EPIC_PAR_REF
 import veille as moteur_veille
 from meridian.adapters.inbound.http import flux as jumeau_flux
 from meridian.adapters.inbound.http.tenant_twins import jumeaux_du_tenant
+from meridian.adapters.outbound.mongo import pont_canonique as pont_outbox
 from meridian.adapters.outbound.mongo.travail import EcritureTravail
 from meridian.adapters.outbound.postgres import boucle as boucle_canonique
 from meridian.adapters.outbound.postgres import rls as rls_canonique
@@ -34,6 +36,7 @@ from meridian.application import dialogue as dialogue_service
 from meridian.application import diagrammes as diagrammes_module
 from meridian.application import preferences as preferences_service
 from meridian.application import tenant_context as tenant_courant
+from meridian.domain.tenant import TenantError
 from meridian.adapters.outbound import retrieval_chat
 from meridian.adapters.outbound.redis import partage
 from meridian.application import noyau_raisonnement
@@ -46,28 +49,37 @@ from meridian.adapters.inbound.http.pieces import ajouter_routes_pieces
 
 journal_canonique = logging.getLogger("meridian.cases.canonique")
 _TRACE_TIMEOUT = 3.0
+_PONT_ENQUEUE_TIMEOUT = 2.0
 
 
 def _tenant_requete() -> str:
-    return tenant_courant.courant_explicite() or os.environ.get("JUMEAU_TENANT") or "local"
+    return tenant_courant.courant_requete()
 
 
 def _tenant_ecriture() -> str:
-    return pont_travail.normaliser_tenant(_tenant_requete())
+    try:
+        return pont_travail.normaliser_tenant(_tenant_requete())
+    except TenantError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 def _lire_boucle_sync(tenant: str, identifiant: str):
-    """Lit une fois l'objet canonique et sa chaîne ; sans DSN, la route legacy reste intacte."""
+    """Lit l'objet canonique et sa chaîne sous timeout SQL ; sans DSN, la route reste legacy."""
     dsn = str(os.environ.get("JUMEAU_PG_DSN") or "").strip()
     identifiant = str(identifiant or "").strip()
     if not dsn or not identifiant:
         return None
-    with psycopg.connect(dsn, connect_timeout=2) as conn:
-        if rls_canonique.est_actif():
-            with rls_canonique.contexte_tenant(conn, tenant):
-                return boucle_canonique.lire_boucle(
-                    conn, tenant, identifiant, historique=True)
-        return boucle_canonique.lire_boucle(conn, tenant, identifiant, historique=True)
+    # Une connexion par lecture (pas de pool partagé dans cette route) avec des timeouts SQL
+    # explicites : une base lente ne peut pas retenir la requête HTTP au-delà du budget.
+    options = "-c statement_timeout=2000 -c lock_timeout=1000"
+    with psycopg.connect(dsn, connect_timeout=2, options=options) as conn:
+        # Le GUC est posé même si JUMEAU_RLS est absent : sans policy il est sans effet, avec
+        # policy il évite une lecture vide quand la défense en profondeur est active.
+        with rls_canonique.contexte_tenant(conn, tenant):
+            return boucle_canonique.lire_boucle(
+                conn, tenant, identifiant, historique=True)
 
 
 _VERROUS_TRAVAIL: dict[str, "asyncio.Lock"] = {}
@@ -340,11 +352,104 @@ def build_cases_router(deps):
         """Après les migrations de server.py (dont celle des sections) : recale les réservations de quota orphelines."""
         await pieces.reconcilier_compteurs(db)
 
+    def _ids_situations(valeur) -> list[str]:
+        if valeur is None:
+            return []
+        if isinstance(valeur, (str, bytes)) or not isinstance(valeur, (list, tuple)):
+            raise HTTPException(400, "Situation inconnue ou hors périmètre")
+        resultat: list[str] = []
+        for element in valeur:
+            if not isinstance(element, str) or not element.strip():
+                raise HTTPException(400, "Situation inconnue ou hors périmètre")
+            identifiant = element.strip()
+            if identifiant not in resultat:
+                resultat.append(identifiant)
+        return resultat
+
+    async def _situations_visibles(ids, *, strict: bool, message: str):
+        ids = _ids_situations(ids)
+        if not ids:
+            return []
+        tenant = _tenant_ecriture()
+        try:
+            documents = await asyncio.wait_for(
+                db.situations.find(
+                    {"id": {"$in": ids}, **pont_travail.filtre_tenant(tenant)}, NO_ID
+                ).to_list(len(ids)),
+                timeout=1.0,
+            )
+        except asyncio.TimeoutError:
+            journal_canonique.warning("situations : lecture des références dépassée")
+            raise HTTPException(404, message) from None
+        except HTTPException:
+            raise
+        except Exception:  # noqa: BLE001 - une lecture de référence ne fuit jamais
+            journal_canonique.warning("situations : lecture des références impossible",
+                                      exc_info=True)
+            raise HTTPException(404, message) from None
+        connus = {str(document.get("id")) for document in documents}
+        manquants = [identifiant for identifiant in ids if identifiant not in connus]
+        if strict and manquants:
+            raise HTTPException(404, message)
+        return [identifiant for identifiant in ids if identifiant in connus]
+
+    async def _filtrer_situations_lot(cases):
+        """Filtre les références d'un lot de Travaux en une seule requête."""
+        def references(case):
+            valeur = case.get("situations")
+            if valeur is None:
+                return []
+            if isinstance(valeur, (list, tuple)):
+                return [sid for sid in valeur if isinstance(sid, str) and sid.strip()]
+            return None  # forme invalide : le Travail n'est pas exposé
+
+        identifiants = sorted({
+            sid for case in cases for sid in (references(case) or [])
+        })
+        if not identifiants:
+            return [case for case in cases if references(case) is not None]
+        try:
+            documents = await asyncio.wait_for(
+                db.situations.find(
+                    {"id": {"$in": identifiants},
+                     **pont_travail.filtre_tenant(_tenant_ecriture())}, NO_ID
+                ).to_list(len(identifiants)),
+                timeout=1.0,
+            )
+        except Exception:  # noqa: BLE001 - ne jamais exposer une référence non validée
+            journal_canonique.warning("situations : filtrage du lot impossible",
+                                      exc_info=True)
+            return [case for case in cases if not case.get("situations")]
+        connus = {str(document.get("id")) for document in documents}
+        resultat = []
+        for case in cases:
+            demande = references(case)
+            if demande is None:
+                continue
+            visibles = [sid for sid in demande if sid in connus]
+            if len(visibles) != len(demande):
+                continue
+            case["situations"] = visibles
+            resultat.append(case)
+        return resultat
+
+    async def _valider_situations_payload(ids):
+        """Validation d'écriture : un id inconnu ou hors tenant est refusé sans le révéler."""
+        try:
+            return await _situations_visibles(
+                ids, strict=True, message="Situation inconnue ou hors périmètre")
+        except HTTPException:
+            raise HTTPException(400, "Situation inconnue ou hors périmètre") from None
+
     async def charger_case(cid: str, espace: dict, acteur_id: str = ""):
         case = await db.cases.find_one(
             {"id": cid, **pont_travail.filtre_tenant(_tenant_ecriture())}, NO_ID)
         if not case:
             raise HTTPException(404, "Case introuvable")
+        # Les références legacy peuvent être forgées : aucune situation hors tenant ne doit
+        # rester attachée au Travail, même pour une lecture.
+        case["situations"] = await _situations_visibles(
+            case.get("situations") or [], strict=True, message="Case introuvable")
         if case.get("statut") == "conversation" and case.get("auteur") != acteur_id:
             raise HTTPException(404, "Case introuvable")  # privée à son auteur : on ne révèle pas qu'elle existe
         tous = await jumeaux_du_tenant(db, _tenant_requete(), {"_id": 0, "id": 1})
@@ -375,8 +480,16 @@ def build_cases_router(deps):
         if not sid:
             return None
         try:
-            return await db.situations.find_one(
-                {"id": sid, **pont_travail.filtre_tenant(_tenant_ecriture())}, NO_ID)
+            return await asyncio.wait_for(
+                db.situations.find_one(
+                    {"id": sid, **pont_travail.filtre_tenant(_tenant_ecriture())}, NO_ID),
+                timeout=1.0,
+            )
+        except asyncio.TimeoutError:
+            journal_canonique.warning(
+                "trace canonique : situation illisible (timeout) case=%s situation=%s",
+                case.get("id"), sid)
+            return None
         except Exception:  # noqa: BLE001 - la trace est un enrichissement, jamais un prérequis
             journal_canonique.warning(
                 "trace canonique : situation illisible case=%s situation=%s",
@@ -385,8 +498,14 @@ def build_cases_router(deps):
 
     async def _ajouter_trace_canonique(vue):
         """Ajoute `boucle` ou, à défaut, `boucle_id` ; ne bloque jamais la réponse legacy."""
-        candidat = pont_travail.candidat_boucle(vue, await _situation_liee_document(vue))
-        if not candidat:
+        try:
+            candidats = pont_travail.candidats_boucle(
+                vue, await _situation_liee_document(vue))
+        except Exception:  # noqa: BLE001 - la trace n'est jamais un prérequis
+            journal_canonique.warning(
+                "trace canonique : candidats illisibles case=%s", vue.get("id"))
+            return
+        if not candidats:
             return
         try:
             tenant = _tenant_ecriture()
@@ -394,23 +513,63 @@ def build_cases_router(deps):
             journal_canonique.warning(
                 "trace canonique : tenant invalide case=%s tenant=%r",
                 vue.get("id"), _tenant_requete())
-            vue["boucle_id"] = candidat
+            vue["boucle_id"] = candidats[0]
             return
+        fin_budget = time.monotonic() + _TRACE_TIMEOUT
+        for candidat in candidats:
+            reste = fin_budget - time.monotonic()
+            if reste <= 0:
+                break
+            try:
+                ligne = await asyncio.wait_for(
+                    asyncio.to_thread(_lire_boucle_sync, tenant, candidat),
+                    timeout=reste,
+                )
+            except psycopg.Error:
+                # DSN absent/injoignable : pas de traceback dans les logs HTTP.
+                journal_canonique.warning(
+                    "trace canonique indisponible case=%s id=%s tenant=%s",
+                    vue.get("id"), candidat, tenant)
+                break
+            except Exception:  # noqa: BLE001 - panne Postgres/DSN : réponse legacy préservée
+                journal_canonique.warning(
+                    "trace canonique indisponible case=%s id=%s tenant=%s",
+                    vue.get("id"), candidat, tenant)
+                break
+            if not ligne:
+                continue
+            try:
+                trace = pont_travail.extraire_boucle(ligne)
+            except Exception:  # noqa: BLE001 - une ligne inattendue n'ajoute rien
+                journal_canonique.warning(
+                    "trace canonique : ligne illisible case=%s id=%s",
+                    vue.get("id"), candidat)
+                continue
+            if trace:
+                vue["boucle"] = trace
+                return
+        vue["boucle_id"] = candidats[0]
+
+    async def _pont_apres_case(case):
+        """Enfile les décisions du Travail, sans jamais faire échouer la route legacy."""
         try:
-            ligne = await asyncio.wait_for(
-                asyncio.to_thread(_lire_boucle_sync, tenant, candidat),
-                timeout=_TRACE_TIMEOUT,
-            )
-        except Exception:  # noqa: BLE001 - panne Postgres/DSN : réponse legacy préservée
+            tenant = _tenant_ecriture()
+            situation = await _situation_liee_document(case)
+            if not situation:
+                return
+            evenement = pont_travail.evenement_case_lie(
+                case, situation, tenant_id=tenant)
+            if not evenement:
+                return
+            collection = getattr(db, "pont_canonique", None)
+            if collection is None:
+                return
+            await pont_outbox.enfiler_lot_best_effort(
+                collection, [evenement], timeout=_PONT_ENQUEUE_TIMEOUT)
+        except Exception:  # noqa: BLE001 - best-effort explicite
             journal_canonique.warning(
-                "trace canonique indisponible case=%s id=%s tenant=%s",
-                vue.get("id"), candidat, tenant, exc_info=True)
-            ligne = None
-        trace = pont_travail.extraire_boucle(ligne)
-        if trace:
-            vue["boucle"] = trace
-        else:
-            vue["boucle_id"] = candidat
+                "pont : enqueue du case impossible case=%s", case.get("id"),
+                exc_info=True)
 
     async def jumeaux_autorises(espace):
         tous = await jumeaux_du_tenant(db, _tenant_requete(), {"_id": 0, "id": 1})
@@ -483,6 +642,7 @@ def build_cases_router(deps):
             pont_travail.filtre_tenant(_tenant_ecriture()), NO_ID).to_list(200)
         visibles = [c for c in cases if (
             (not c.get("jumeaux") or any(j in aut for j in c["jumeaux"])) and portees.acces(c, acteur))]
+        visibles = await _filtrer_situations_lot(visibles)
         visibles = [vue_case(await materialiser_veille(c), aut) for c in visibles]
         if not inclure_conversations:  # les Travaux conservés ; les conversations (de l'auteur seul) sur demande
             visibles = [c for c in visibles if c.get("statut") != "conversation"]
@@ -522,6 +682,7 @@ def build_cases_router(deps):
     @router.post("/cases", status_code=201)
     async def creer_case(payload: CaseCreate, acteur: str = Depends(acteur_courant), x_espace: Optional[str] = Header(None)):
         _, espace = resoudre_perimetre(acteur, x_espace)
+        situations = await _valider_situations_payload(payload.situations)
         base = slugify(payload.titre) or "case"
         cid = base
         n = 2
@@ -534,11 +695,14 @@ def build_cases_router(deps):
         if payload.statut not in (None, "conversation"):
             raise HTTPException(400, "Statut de création inconnu")
         responsable = acteur
-        dernier = await db.cases.find({}, {"_id": 0, "num": 1}).sort("num", -1).to_list(1)
+        tenant = _tenant_ecriture()
+        dernier = await db.cases.find(
+            pont_travail.filtre_tenant(tenant), {"_id": 0, "num": 1}
+        ).sort("num", -1).to_list(1)
         num = (dernier[0]["num"] if dernier and dernier[0].get("num") else 40) + 1
         doc = {
             "id": cid,
-            "tenant_id": _tenant_ecriture(),
+            "tenant_id": tenant,
             "num": num,
             "titre": payload.titre.strip(),
             "type": payload.type,
@@ -551,7 +715,7 @@ def build_cases_router(deps):
             "questions": [],
             "hypotheses": [],
             "jumeaux": payload.jumeaux,
-            "situations": payload.situations,
+            "situations": situations,
             "participants": [acteur],
             "responsable": responsable,
             "portee": payload.portee,
@@ -626,10 +790,17 @@ def build_cases_router(deps):
             case["jumeaux_participants"] = []
 
         if not recente:
-            miseajour = {f"visites.{acteur}": datetime.now(timezone.utc).isoformat()}
+            visite_le = datetime.now(timezone.utc).isoformat()
+            miseajour = {f"visites.{acteur}": visite_le}
             if visites.get(acteur):
                 miseajour[f"visites_precedentes.{acteur}"] = visites[acteur]
-            await db.cases.update_one({"id": cid}, {"$set": miseajour})
+            tenant = _tenant_ecriture()
+            resultat = await db.cases.update_one(
+                {"id": cid, **pont_travail.filtre_tenant(tenant)},
+                {"$set": {**miseajour, "tenant_id": tenant, "maj_le": visite_le}},
+            )
+            if int(getattr(resultat, "matched_count", 0) or 0) == 0:
+                raise HTTPException(404, "Case introuvable")
         vue = vue_case(case, aut)
         await _ajouter_trace_canonique(vue)
         return vue
@@ -647,9 +818,12 @@ def build_cases_router(deps):
             raise HTTPException(403, "Seul le responsable du travail peut modifier les jumeaux, le statut ou la sensibilité")
         if champs.get("statut") == "conversation":
             raise HTTPException(400, "Un travail ne redevient pas une conversation")
+        if "situations" in champs:
+            champs["situations"] = await _valider_situations_payload(champs["situations"])
         if not champs:
             return vue_case(case, await jumeaux_autorises(espace))
         now = datetime.now(timezone.utc).isoformat()
+        tenant = _tenant_ecriture()
         histo = []
         if "statut" in champs and champs["statut"] != case.get("statut"):
             histo.append({"quand": now, "texte": f"Statut : {case.get('statut')} → {champs['statut']}"})
@@ -659,11 +833,17 @@ def build_cases_router(deps):
             histo.append({"quand": now, "texte": "Contexte SI ajusté"})
         if "a_revoir" in champs and champs["a_revoir"] is False and case.get("a_revoir"):
             histo.append({"quand": now, "texte": "Revue effectuée — hypothèses confirmées à jour"})
-        update = {"$set": {**champs, "maj_le": now}}
+        update = {"$set": {**champs, "tenant_id": tenant, "maj_le": now}}
         if histo:
             update["$push"] = {"historique": {"$each": histo}}
-        await db.cases.update_one({"id": cid}, update)
-        return vue_case(await db.cases.find_one({"id": cid}, NO_ID), await jumeaux_autorises(espace))
+        resultat = await db.cases.update_one(
+            {"id": cid, **pont_travail.filtre_tenant(tenant)}, update)
+        if int(getattr(resultat, "matched_count", 0) or 0) == 0:
+            raise HTTPException(404, "Case introuvable")
+        return vue_case(
+            await db.cases.find_one(
+                {"id": cid, **pont_travail.filtre_tenant(tenant)}, NO_ID),
+            await jumeaux_autorises(espace))
 
     @router.delete("/cases/{cid}", status_code=204)
     async def supprimer_conversation(cid: str, acteur: str = Depends(acteur_courant), x_espace: Optional[str] = Header(None)):
@@ -1071,7 +1251,17 @@ def build_cases_router(deps):
         if passation:
             # Flore enregistre la décision DANS la conversation et dit ce qu'elle va surveiller
             push["conversation"] = moteur_veille.message_flore_decision(dec["texte"], maj["veille"]["passation"], now)
-        await db.cases.update_one({"id": cid}, {"$push": push, "$set": maj})
+        tenant = _tenant_ecriture()
+        resultat = await db.cases.update_one(
+            {"id": cid, **pont_travail.filtre_tenant(tenant)},
+            {"$push": push, "$set": {**maj, "tenant_id": tenant}},
+        )
+        if int(getattr(resultat, "matched_count", 0) or 0) == 0:
+            raise HTTPException(404, "Case introuvable")
+        case_apres = await db.cases.find_one(
+            {"id": cid, **pont_travail.filtre_tenant(tenant)}, NO_ID)
+        if case_apres:
+            await _pont_apres_case(case_apres)
         await journaler(acteur, espace["id"], "décision sur un case", cid, payload.texte.strip()[:120])
         return dec
 
@@ -1081,7 +1271,11 @@ def build_cases_router(deps):
         de revue à 30 jours. Les cibles chiffrées et les seuils restent à la personne : Flore n'invente pas de mesure."""
         _, espace = resoudre_perimetre(acteur, x_espace)
         case = await charger_case(cid, espace, acteur)
-        sit = await db.situations.find_one({"id": (case.get("situations") or [None])[0]}, NO_ID) if case.get("situations") else None
+        sit = None
+        if case.get("situations"):
+            sit = await _situation_liee_document(case)
+            if sit is None:
+                raise HTTPException(404, "Situation introuvable ou hors périmètre")
         decision = (case.get("decisions") or [{}])[-1].get("texte") or (sit or {}).get("decision") or ""
         pq = (sit or {}).get("decouverte_pourquoi") or []
         hyp = [pq] if isinstance(pq, str) else list(pq)
@@ -1104,8 +1298,10 @@ def build_cases_router(deps):
             raise HTTPException(404, "Jumeau inconnu")
         maintenant = datetime.now(timezone.utc)
         quand = payload.quand or maintenant.isoformat()
+        tenant = _tenant_ecriture()
         acheminees = []
-        async for c in db.cases.find({"veille.statut": "en_veille"}, NO_ID):
+        async for c in db.cases.find(
+                {"veille.statut": "en_veille", **pont_travail.filtre_tenant(tenant)}, NO_ID):
             v = c["veille"]
             if c.get("jumeaux") and payload.jumeau not in c["jumeaux"]:
                 continue
@@ -1114,7 +1310,10 @@ def build_cases_router(deps):
                 if payload.relation_id and payload.relation_id == m.get("relation_id") and payload.effet is not None and -40 <= payload.effet <= 40 and payload.texte.strip():
                     obs = {"id": f"m{len(m.get('observations', [])) + 1}-{int(maintenant.timestamp() * 1000)}", "quand": quand, "jumeau": payload.jumeau, "source": payload.source,
                            "effet": payload.effet, "texte": payload.texte.strip()}
-                    await db.cases.update_one({"id": c["id"]}, {"$push": {"veille.maturation.observations": obs}})
+                    await db.cases.update_one(
+                        {"id": c["id"], **pont_travail.filtre_tenant(tenant)},
+                        {"$push": {"veille.maturation.observations": obs},
+                         "$set": {"tenant_id": tenant, "maj_le": maintenant.isoformat()}})
                     acheminees.append({"travail_id": c["id"], "cible": "confiance", "observation": obs["id"]})
                 continue
             if not payload.indicateur:
@@ -1125,7 +1324,10 @@ def build_cases_router(deps):
             if cible and (payload.valeur is not None or payload.conclusion.strip()):
                 obs = {"id": f"{int(maintenant.timestamp() * 1000)}", "cible": cible, "jumeau": payload.jumeau, "valeur": payload.valeur, "unite": payload.unite, "conclusion": payload.conclusion,
                        "source": payload.source, "quand": quand}
-                await db.cases.update_one({"id": c["id"]}, {"$push": {"veille.observations": obs}})
+                await db.cases.update_one(
+                    {"id": c["id"], **pont_travail.filtre_tenant(tenant)},
+                    {"$push": {"veille.observations": obs},
+                     "$set": {"tenant_id": tenant, "maj_le": maintenant.isoformat()}})
                 acheminees.append({"travail_id": c["id"], "cible": cible, "observation": obs["id"]})
         await journaler(acteur, espace["id"], "observation d'un jumeau", payload.jumeau, f"{len(acheminees)} veille(s) concernée(s)")
         return {"acheminees": acheminees}
@@ -1154,12 +1356,24 @@ def build_cases_router(deps):
         (statut de la situation, confirmation de la relation, décision enregistrée), écrits dans la conversation."""
         _, espace = resoudre_perimetre(acteur, x_espace)
         case = await charger_case(cid, espace, acteur)
+        tenant = _tenant_ecriture()
         sid = (case.get("situations") or [None])[0]
-        sit = await db.situations.find_one({"id": sid}, NO_ID) if sid else None
-        if not sit or payload.texte not in (sit.get("decisions_attendues") or []):
+        sit = await _situation_liee_document(case) if sid else None
+        if not sit:
+            raise HTTPException(404, "Situation introuvable ou hors périmètre")
+        if payload.texte not in (sit.get("decisions_attendues") or []):
             raise HTTPException(400, "Cette décision n'est pas attendue pour ce travail")
         maintenant = datetime.now(timezone.utc)
         now = maintenant.isoformat()
+
+        async def maj_situation(champs):
+            resultat = await db.situations.update_one(
+                {"id": sid, **pont_travail.filtre_tenant(tenant)},
+                {"$set": {**champs, "tenant_id": tenant, "maj_le": now}},
+            )
+            if int(getattr(resultat, "matched_count", 0) or 0) == 0:
+                raise HTTPException(404, "Situation introuvable ou hors périmètre")
+
         x = payload.texte.lower()
         decision_enregistree = False
         lien = None
@@ -1172,32 +1386,32 @@ def build_cases_router(deps):
             await db.relations.update_one({"id": rel["id"]}, {"$set": {"etat": "confirmee"}, "$addToSet": {"confirmee_par": "Validation humaine"}})
             reponse = "Relation confirmée. Je l'ajoute à la mémoire du Mesh : elle n'est plus un phénomène possible."
         elif "coïncidence" in x:
-            await db.situations.update_one({"id": sid}, {"$set": {"statut": "classée"}})
+            await maj_situation({"statut": "classée"})
             reponse = "Classée comme coïncidence. Je garde la trace de ce choix pour ne pas la reproposer sans élément nouveau."
         elif "investigation" in x:
-            await db.situations.update_one({"id": sid}, {"$set": {"statut": "en investigation"}})
+            await maj_situation({"statut": "en investigation"})
             reponse = "Investigation ouverte : ce travail en devient le dossier. Je peux formuler les hypothèses concurrentes et lister les preuves qui manquent."
         elif "surveiller" in x:
-            await db.situations.update_one({"id": sid}, {"$set": {"statut": "surveillée"}})
+            await maj_situation({"statut": "surveillée"})
             reponse = "Je la mets sous surveillance : je reviendrai vers vous si ma compréhension change."
         elif "observations" in x:
-            await db.situations.update_one({"id": sid}, {"$set": {"statut": "en observation"}})
+            await maj_situation({"statut": "en observation"})
             reponse = "J'ai demandé des observations supplémentaires aux jumeaux concernés. Je vous préviens dès qu'elles arrivent."
         elif "poursuivre" in x:
-            await db.situations.update_one({"id": sid}, {"$set": {"statut": "poursuivie", "decision": payload.texte, "decidee_le": now}})
+            await maj_situation({"statut": "poursuivie", "decision": payload.texte, "decidee_le": now})
             decision_enregistree = True
             reponse = "Opportunité retenue. Pour savoir si elle tient ses promesses, je propose de consigner ce que vous en attendez : gain visé, risques à surveiller, date de revue. Ensuite, je l'observerai pour vous."
         elif "reporter" in x:
-            await db.situations.update_one({"id": sid}, {"$set": {"statut": "reportée", "decidee_le": now}})
+            await maj_situation({"statut": "reportée", "decidee_le": now})
             reponse = "Reportée. Je la garde en mémoire et je vous la représenterai si la situation change (fenêtre qui se referme, ou nouveau signal)."
         elif "écarter" in x:
-            await db.situations.update_one({"id": sid}, {"$set": {"statut": "écartée", "decidee_le": now}})
+            await maj_situation({"statut": "écartée", "decidee_le": now})
             reponse = "Écartée. Je garde la trace de ce choix pour ne pas la reproposer sans élément nouveau."
         elif "admettre" in x:
             lien = "/jumeaux"
             reponse = "L'admission d'un jumeau se décide depuis sa revue : je vous y envoie."
         else:
-            await db.situations.update_one({"id": sid}, {"$set": {"statut": "décidée", "decision": payload.texte, "decidee_le": now}})
+            await maj_situation({"statut": "décidée", "decision": payload.texte, "decidee_le": now})
             decision_enregistree = True
             reponse = "Décision enregistrée. Méridian apprend de ce choix, et je la garde dans la mémoire de ce travail. Voulez-vous consigner ce que vous en attendez, pour que je la surveille ?"
         moi = {"role": "utilisateur", "texte": payload.texte, "quand": now}
@@ -1209,10 +1423,20 @@ def build_cases_router(deps):
             push["decisions"] = {"texte": payload.texte, "type": "arbitrage", "quand": now, "par": acteur}
         # le message qui portait les décisions attendues reçoit sa réponse (les réponses rapides disparaissent), puis la conversation s'allonge
         await db.cases.update_one(
-            {"id": cid}, {"$set": {"conversation.$[q].reponse": payload.texte}},
+            {"id": cid, **pont_travail.filtre_tenant(tenant)},
+            {"$set": {"conversation.$[q].reponse": payload.texte, "tenant_id": tenant}},
             array_filters=[{"q.decisions": {"$exists": True}, "q.reponse": {"$exists": False}}],
         )
-        await db.cases.update_one({"id": cid}, {"$set": {"maj_le": now}, "$push": push})
+        resultat = await db.cases.update_one(
+            {"id": cid, **pont_travail.filtre_tenant(tenant)},
+            {"$set": {"maj_le": now, "tenant_id": tenant}, "$push": push})
+        if int(getattr(resultat, "matched_count", 0) or 0) == 0:
+            raise HTTPException(404, "Case introuvable")
+        if decision_enregistree:
+            case_apres = await db.cases.find_one(
+                {"id": cid, **pont_travail.filtre_tenant(tenant)}, NO_ID)
+            if case_apres:
+                await _pont_apres_case(case_apres)
         await journaler(acteur, espace["id"], "décision attendue", cid, payload.texte[:120])
         rep = await obtenir_case(cid, acteur, x_espace)
         if lien:
@@ -1237,14 +1461,28 @@ def build_cases_router(deps):
             n = len(v["maturation"].get("observations", [])) + 1
             obs = {"id": f"m{n}-{int(datetime.now(timezone.utc).timestamp() * 1000)}", "quand": payload.quand or datetime.now(timezone.utc).isoformat(), "jumeau": payload.jumeau,
                    "source": payload.source, "effet": payload.effet, "texte": payload.texte.strip()}
-            await db.cases.update_one({"id": cid}, {"$push": {"veille.maturation.observations": obs}})
+            tenant = _tenant_ecriture()
+            resultat = await db.cases.update_one(
+                {"id": cid, **pont_travail.filtre_tenant(tenant)},
+                {"$push": {"veille.maturation.observations": obs},
+                 "$set": {"tenant_id": tenant,
+                          "maj_le": datetime.now(timezone.utc).isoformat()}})
+            if int(getattr(resultat, "matched_count", 0) or 0) == 0:
+                raise HTTPException(404, "Case introuvable")
             return obs
         p = v.get("passation") or {}
         cibles = {x["id"] for k in ("attendus", "risques", "inconnues") for x in p.get(k, [])}
         if payload.cible not in cibles:
             raise HTTPException(400, "Cible inconnue dans la note de passation")
         obs = {"id": f"{int(datetime.now(timezone.utc).timestamp() * 1000)}", **payload.model_dump(exclude={"quand"}), "quand": payload.quand or datetime.now(timezone.utc).isoformat()}
-        await db.cases.update_one({"id": cid}, {"$push": {"veille.observations": obs}})
+        tenant = _tenant_ecriture()
+        resultat = await db.cases.update_one(
+            {"id": cid, **pont_travail.filtre_tenant(tenant)},
+            {"$push": {"veille.observations": obs},
+             "$set": {"tenant_id": tenant,
+                      "maj_le": datetime.now(timezone.utc).isoformat()}})
+        if int(getattr(resultat, "matched_count", 0) or 0) == 0:
+            raise HTTPException(404, "Case introuvable")
         return obs
 
     async def agir_sur_maturation(cid, case, v, action, espace, acteur, x_espace):
@@ -1273,8 +1511,13 @@ def build_cases_router(deps):
         elif action == "ecarter":
             texte_flore = "Écarté. Je garde la trace des indices contraires pour ne pas le reproposer sans élément nouveau. Je n'ai plus rien à vérifier ici."
             maj.update({"veille.statut": "terminee", "statut": "clos"})
+            tenant = _tenant_ecriture()
             for sid in case.get("situations") or []:
-                await db.situations.update_one({"id": sid}, {"$set": {"statut": "classée"}})
+                resultat = await db.situations.update_one(
+                    {"id": sid, **pont_travail.filtre_tenant(tenant)},
+                    {"$set": {"statut": "classée", "tenant_id": tenant, "maj_le": now}})
+                if int(getattr(resultat, "matched_count", 0) or 0) == 0:
+                    raise HTTPException(404, "Situation introuvable ou hors périmètre")
             push_extra["decisions"] = {"texte": f"Écarter : {sujet}", "type": "arbitrage", "quand": now, "par": acteur}
             histo = "Vérification terminée — écarté"
         else:
@@ -1282,12 +1525,26 @@ def build_cases_router(deps):
             histo = "Vérification poursuivie"
         moi = {"role": "utilisateur", "texte": libelle, "quand": now}
         flore = {"role": "flore", "comportement": "expliquer", "texte": texte_flore, "quand": now}
+        tenant = _tenant_ecriture()
         # la question reçoit sa réponse (les réponses rapides disparaissent) ; MongoDB refuse de modifier et d'allonger la conversation dans un même ordre
         await db.cases.update_one(
-            {"id": cid}, {"$set": {**maj, "conversation.$[q].reponse": action}, "$push": {"historique": {"quand": now, "texte": histo}}},
+            {"id": cid, **pont_travail.filtre_tenant(tenant)},
+            {"$set": {**maj, "tenant_id": tenant, "conversation.$[q].reponse": action},
+             "$push": {"historique": {"quand": now, "texte": histo}}},
             array_filters=[{"q.reponses": {"$exists": True}, "q.reponse": {"$exists": False}}],
         )
-        await db.cases.update_one({"id": cid}, {"$push": {"conversation": {"$each": [moi, flore]}, **({"decisions": push_extra["decisions"]} if push_extra else {})}})
+        resultat = await db.cases.update_one(
+            {"id": cid, **pont_travail.filtre_tenant(tenant)},
+            {"$set": {"tenant_id": tenant},
+             "$push": {"conversation": {"$each": [moi, flore]},
+                       **({"decisions": push_extra["decisions"]} if push_extra else {})}})
+        if int(getattr(resultat, "matched_count", 0) or 0) == 0:
+            raise HTTPException(404, "Case introuvable")
+        if push_extra.get("decisions"):
+            case_apres = await db.cases.find_one(
+                {"id": cid, **pont_travail.filtre_tenant(tenant)}, NO_ID)
+            if case_apres:
+                await _pont_apres_case(case_apres)
         await journaler(acteur, espace["id"], f"vérification : {action}", cid, sujet[:120])
         return await obtenir_case(cid, acteur, x_espace)
 
@@ -1325,12 +1582,20 @@ def build_cases_router(deps):
             maj = {"veille.statut": "terminee", "statut": "clos", "veille.revue_faite_le": now, "maj_le": now}
             histo = "Veille terminée — décision close"
         flore = {"role": "flore", "comportement": "expliquer", "texte": texte_flore, "quand": now}
+        tenant = _tenant_ecriture()
         # la question de revue reçoit sa réponse (les réponses rapides disparaissent)
         await db.cases.update_one(
-            {"id": cid}, {"$set": {**maj, "conversation.$[q].reponse": payload.action}, "$push": {"historique": {"quand": now, "texte": histo}}},
+            {"id": cid, **pont_travail.filtre_tenant(tenant)},
+            {"$set": {**maj, "tenant_id": tenant, "conversation.$[q].reponse": payload.action},
+             "$push": {"historique": {"quand": now, "texte": histo}}},
             array_filters=[{"q.reponses": {"$exists": True}, "q.reponse": {"$exists": False}}],
         )
-        await db.cases.update_one({"id": cid}, {"$push": {"conversation": {"$each": [moi, flore]}}})
+        resultat = await db.cases.update_one(
+            {"id": cid, **pont_travail.filtre_tenant(tenant)},
+            {"$set": {"tenant_id": tenant},
+             "$push": {"conversation": {"$each": [moi, flore]}}})
+        if int(getattr(resultat, "matched_count", 0) or 0) == 0:
+            raise HTTPException(404, "Case introuvable")
         await journaler(acteur, espace["id"], f"veille : décision {payload.action}", cid, "")
         return await obtenir_case(cid, acteur, x_espace)
 
