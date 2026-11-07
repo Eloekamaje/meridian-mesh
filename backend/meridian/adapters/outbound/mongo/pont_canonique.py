@@ -89,20 +89,24 @@ def _liste_tenants(tenants: Any) -> list[str]:
 class DepotPontCanonique:
     """Adaptateur Mongo de l'outbox ``pont_canonique`` (API async compatible Motor)."""
 
-    def __init__(self, collection, *, horloge=None, cle=None,
+    def __init__(self, collection, *, horloge=None, cle=None, cle_interne=None,
                  tentatives_max: int = _DEFAUT_TENTATIVES_MAX):
         if collection is None:
             raise ValueError("collection pont_canonique obligatoire")
         self.collection = collection
         self._horloge = horloge or _instant
         self.cle = cle
+        self.cle_interne = cle_interne
         self.tentatives_max = max(1, int(tentatives_max))
 
     def _maintenant(self) -> str:
         return _instant(self._horloge())
 
+    def _cle_evenement(self, document: Mapping[str, Any]):
+        return pont.cle_pour_evenement(document, self.cle, self.cle_interne)
+
     def _verifier_authenticite(self, document: Mapping[str, Any]) -> None:
-        pont.verifier_evenement(document, self.cle)
+        pont.verifier_evenement(document, self._cle_evenement(document))
 
     def _verifier_source(self, document: Mapping[str, Any], operation: str,
                          canonical_id: str) -> None:
@@ -167,7 +171,19 @@ class DepotPontCanonique:
         document.pop("dead_le", None)
         document.pop("done_le", None)
         # Le document normalisé est re-signé : le worker vérifie exactement ce qui est stocké.
-        return pont.signer_evenement(document, self.cle)
+        return pont.signer_evenement(document, self._cle_evenement(document))
+
+    async def _verifier_collision(self, document: Mapping[str, Any]) -> None:
+        existant = await self.collection.find_one({"_id": document["_id"]})
+        if existant is None:
+            return
+        hash_existant = pont._texte(existant.get("hash"))
+        if not hash_existant:
+            hash_existant = pont.hash_contenu(existant.get("payload"))
+        if hash_existant != document["hash"]:
+            raise pont.PontInvalide(
+                f"collision d'idempotence sur _id {document['_id']!r} : "
+                "le document existant a un contenu différent")
 
     async def enfiler(self, evenement: Mapping[str, Any]) -> dict[str, Any]:
         """Insère l'événement s'il n'existe pas ; ne touche jamais un document existant."""
@@ -176,9 +192,12 @@ class DepotPontCanonique:
             resultat = await self.collection.update_one(
                 {"_id": document["_id"]}, {"$setOnInsert": document}, upsert=True)
         except _DuplicateKeyError:  # course entre deux producteurs : l'idempotence gagne
+            await self._verifier_collision(document)
             return {"id": document["_id"], "cree": False, "document": document}
         cree = bool(getattr(resultat, "upserted_id", None)) or (
             int(getattr(resultat, "matched_count", 0) or 0) == 0)
+        if not cree:
+            await self._verifier_collision(document)
         return {"id": document["_id"], "cree": cree, "document": document}
 
     async def enfiler_best_effort(self, evenement: Mapping[str, Any]) -> dict[str, Any] | None:
@@ -292,7 +311,7 @@ class DepotPontCanonique:
     async def echouer(self, identifiant: str, lock_token: str, erreur: Any, *,
                       base: int = _DEFAUT_BASE_BACKOFF,
                       maximum: int = _DEFAUT_BACKOFF_MAX,
-                      permanent: bool = False, jitter: float = 0.0,
+                      permanent: bool = False, jitter: float = 0.2,
                       maintenant: Any = None) -> bool:
         """Marque ``failed`` (transitoire) ou ``dead`` (permanent), avec backoff borné."""
         instant = _instant(maintenant or self._maintenant())
@@ -425,17 +444,20 @@ OutboxPont = DepotPontCanonique
 
 
 def depuis_environnement(mongo_client, base: str | None = None, *,
-                         cle=None) -> DepotPontCanonique:
+                         cle=None, cle_interne=None) -> DepotPontCanonique:
     """Ouvre la collection depuis un client Motor/AsyncIOMotorClient injecté."""
     base = base or "meridian_db"
-    return DepotPontCanonique(mongo_client[base][COLLECTION], cle=cle)
+    return DepotPontCanonique(
+        mongo_client[base][COLLECTION], cle=cle, cle_interne=cle_interne)
 
 
 async def enfiler_best_effort(collection, evenement: Mapping[str, Any],
-                              *, horloge=None, cle=None) -> dict[str, Any] | None:
+                              *, horloge=None, cle=None,
+                              cle_interne=None) -> dict[str, Any] | None:
     """Enqueue best-effort sans lever : utilisé par les routes legacy C2/C3."""
     return await DepotPontCanonique(
-        collection, horloge=horloge, cle=cle).enfiler_best_effort(evenement)
+        collection, horloge=horloge, cle=cle,
+        cle_interne=cle_interne).enfiler_best_effort(evenement)
 
 
 async def assurer_index(collection) -> None:

@@ -16,11 +16,13 @@ from meridian.adapters.outbound.postgres import pont_canonique as pont_pg
 from meridian.application import pont_canonique as pont
 
 CLE_PONT = "cle-de-test-pont-canonique-32"
+CLE_INTERNE = "cle-de-test-pont-interne-32"
 
 
 @pytest.fixture(autouse=True)
 def _cle_pont(monkeypatch):
     monkeypatch.setenv(pont.PONT_KEY_ENV, CLE_PONT)
+    monkeypatch.setenv(pont.PONT_KEY_INTERNE_ENV, CLE_INTERNE)
 
 
 TENANT = "banque"
@@ -338,6 +340,8 @@ def test_le_lot_est_borne_et_les_metriques_sont_nommees(monkeypatch, caplog):
     texte = caplog.text
     assert "pont_apply_duration_seconds" in texte
     assert "pont_events_pending" in texte
+    assert "pont_events_failed" in texte
+    assert "pont_events_dead" in texte
     assert "pont_lag_seconds" in texte
 
 

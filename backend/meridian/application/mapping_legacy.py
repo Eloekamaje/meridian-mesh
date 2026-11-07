@@ -103,6 +103,7 @@ STATUTS_INITIATIVE = {
     "rejete": "DISMISSED",
     "rejected": "DISMISSED",
     "en cours": "IN_PROGRESS",
+    "in progress": "IN_PROGRESS",
     "demarree": "IN_PROGRESS",
     "started": "IN_PROGRESS",
     "active": "IN_PROGRESS",
@@ -143,7 +144,7 @@ PRIORITES = {
 }
 
 _ANCIENNE_ECHELLE = {
-    "p0": "CRITIQUE",
+    "p0": "HAUTE",
     "p1": "HAUTE",
     "p2": "MOYENNE",
     "p3": "BASSE",

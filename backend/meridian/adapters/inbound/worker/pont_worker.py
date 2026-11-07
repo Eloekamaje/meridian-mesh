@@ -80,6 +80,18 @@ def _est_permanent(exc: BaseException) -> bool:
     return any(classe.__name__ in _PERMANENTS for classe in type(exc).__mro__)
 
 
+def _kwargs_acceptes(methode, kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Filtre les kwargs selon la signature réelle, sans avaler un TypeError interne."""
+    try:
+        parametres = inspect.signature(methode).parameters
+    except (TypeError, ValueError):
+        return kwargs
+    if any(parametre.kind == inspect.Parameter.VAR_KEYWORD
+           for parametre in parametres.values()):
+        return kwargs
+    return {cle: valeur for cle, valeur in kwargs.items() if cle in parametres}
+
+
 class MetriquesPont:
     """Compteurs minimaux, nommés comme les métriques attendues par l'exploitation."""
 
@@ -93,6 +105,8 @@ class MetriquesPont:
 
     def evenement(self, duree: float) -> None:
         self._durees.append(max(0.0, float(duree)))
+        if len(self._durees) > 1000:  # borne mémoire du worker longue durée
+            del self._durees[:-1000]
 
     def lot(self, statistiques: Mapping[str, Any] | None) -> None:
         statistiques = statistiques or {}
@@ -168,19 +182,15 @@ class WorkerPont:
     async def _reclamer_un(self) -> dict[str, Any] | None:
         methode = getattr(self.depot, "reclamer", None)
         if callable(methode):
-            try:
-                resultat = methode(
-                    self.worker_id, bail_secondes=self.bail_secondes,
-                    tenants=self.tenants or None)
-            except TypeError:
-                resultat = methode(self.worker_id, bail_secondes=self.bail_secondes)
+            kwargs = _kwargs_acceptes(methode, {
+                "bail_secondes": self.bail_secondes, "tenants": self.tenants or None})
+            resultat = methode(self.worker_id, **kwargs)
         else:
             methode = self.depot.reclamer_lot
-            try:
-                lot = methode(self.worker_id, limite=1, bail_secondes=self.bail_secondes,
-                              tenants=self.tenants or None)
-            except TypeError:
-                lot = methode(self.worker_id, limite=1, bail_secondes=self.bail_secondes)
+            kwargs = _kwargs_acceptes(methode, {
+                "limite": 1, "bail_secondes": self.bail_secondes,
+                "tenants": self.tenants or None})
+            lot = methode(self.worker_id, **kwargs)
             if inspect.isawaitable(lot):
                 lot = await lot
             resultat = (list(lot or []) or [None])[0]
@@ -230,7 +240,8 @@ class WorkerPont:
             jeton = evenement.get("lock_token")
             debut = time.perf_counter()
             try:
-                pont.verifier_evenement(evenement)
+                pont.verifier_evenement(
+                    evenement, pont.cle_pour_evenement(evenement))
                 if not await self._verifier_bail(evenement):
                     ignores += 1
                     self.journal.warning(
@@ -248,14 +259,10 @@ class WorkerPont:
                     "pont_failed_total=%d evenement=%s permanent=%s : %s",
                     self.metriques.pont_failed_total, identifiant, permanent, message)
                 try:
+                    kwargs = _kwargs_acceptes(
+                        self.depot.echouer, {"permanent": permanent})
                     await self.depot.echouer(
-                        identifiant, jeton, message, permanent=permanent)
-                except TypeError:
-                    try:
-                        await self.depot.echouer(identifiant, jeton, message)
-                    except Exception:  # noqa: BLE001
-                        self.journal.exception(
-                            "pont : impossible de marquer l'échec evenement=%s", identifiant)
+                        identifiant, jeton, message, **kwargs)
                 except Exception:  # noqa: BLE001
                     self.journal.exception(
                         "pont : impossible de marquer l'échec evenement=%s", identifiant)
@@ -264,8 +271,10 @@ class WorkerPont:
                 if isinstance(resultat, Mapping):
                     canonical_ids = resultat.get("canonical_ids")
                 try:
+                    kwargs = _kwargs_acceptes(self.depot.terminer, {
+                        "canonical_ids": canonical_ids, "resultat": resultat})
                     termine = await self.depot.terminer(
-                        identifiant, jeton, canonical_ids=canonical_ids, resultat=resultat)
+                        identifiant, jeton, **kwargs)
                 except Exception:  # noqa: BLE001
                     termine = False
                     self.journal.exception(
@@ -285,9 +294,11 @@ class WorkerPont:
 
         await self._statistiques()
         self.journal.info(
-            "pont_events_pending=%d pont_lag_seconds=%.3f pont_failed_total=%d "
+            "pont_events_pending=%d pont_events_failed=%d pont_events_dead=%d "
+            "pont_lag_seconds=%.3f pont_failed_total=%d "
             "traites=%d reussis=%d echecs=%d ignores=%d",
-            self.metriques.pont_events_pending, self.metriques.pont_lag_seconds,
+            self.metriques.pont_events_pending, self.metriques.pont_events_failed,
+            self.metriques.pont_events_dead, self.metriques.pont_lag_seconds,
             self.metriques.pont_failed_total, traites, reussis, echecs, ignores)
         return {
             "actif": True,
@@ -348,6 +359,7 @@ def principal(argv: list[str] | None = None) -> int:
         return 0
     try:
         pont.cle_pont()
+        pont.cle_interne()
     except pont.SignatureInvalide as exc:
         print(str(exc), file=sys.stderr)
         return 2

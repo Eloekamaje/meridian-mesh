@@ -46,12 +46,14 @@ __all__ = [
     "OPERATION_SITUATION",
     "OPERATIONS",
     "ORIGINE_LEGACY",
+    "PONT_KEY_INTERNE_ENV",
     "PontInvalide",
     "SignatureInvalide",
     "TenantMismatch",
     "assainir",
     "backoff_secondes",
     "cle_idempotence",
+    "cle_pour_evenement",
     "cle_sensible",
     "collection_attendue",
     "construire_evenement",
@@ -157,6 +159,7 @@ class SignatureInvalide(PontInvalide):
 
 
 PONT_KEY_ENV = securite.PONT_KEY_ENV
+PONT_KEY_INTERNE_ENV = securite.PONT_KEY_INTERNE_ENV
 cle_sensible = securite.cle_sensible
 
 
@@ -204,6 +207,26 @@ def cle_pont(cle: Any = None) -> str:
         return securite.charger_cle(cle)
     except securite.SignatureInvalide as exc:
         raise SignatureInvalide(str(exc)) from exc
+
+
+def cle_interne(cle: Any = None) -> str:
+    try:
+        return securite.charger_cle_interne(cle)
+    except securite.SignatureInvalide as exc:
+        raise SignatureInvalide(str(exc)) from exc
+
+
+def cle_pour_evenement(evenement: Mapping[str, Any], cle_legacy: Any = None,
+                       cle_interne_: Any = None) -> str:
+    """Clé attendue selon l'opération : interne pour `objets.upsert`, legacy sinon."""
+    try:
+        operation = _operation_normalisee(evenement.get("operation"))
+    except PontInvalide:
+        # L'opération inconnue sera refusée par la validation de provenance ; la
+        # pré-vérification de signature ne doit pas masquer ce diagnostic.
+        return cle_pont(cle_legacy)
+    return (cle_interne(cle_interne_) if operation == OPERATION_OBJETS
+            else cle_pont(cle_legacy))
 
 
 # ---------------------------------------------------------------------------
@@ -290,6 +313,20 @@ def identifiant_evenement(tenant_id: Any, operation: Any, canonical_id: Any,
 
 
 cle_idempotence = identifiant_evenement
+
+
+def _est_futur(valeur: Any, reference: Any, tolerance_secondes: int = 300) -> bool:
+    """Vrai si une date source dépasse la référence au-delà de la tolérance de clock skew."""
+    gauche = _iso(valeur)
+    droite = _iso(reference)
+    if not gauche or not droite:
+        return False
+    try:
+        return (datetime.fromisoformat(gauche.replace("Z", "+00:00")).timestamp()
+                > datetime.fromisoformat(droite.replace("Z", "+00:00")).timestamp()
+                + int(tolerance_secondes))
+    except ValueError:
+        return False
 
 
 def backoff_secondes(tentatives: Any, *, base: int = 5, maximum: int = 3600,
@@ -490,6 +527,10 @@ def _serialiser(objet: Any, evenement: Mapping[str, Any] | None = None,
     source_maj = (_iso(source_maj_le)
                   or _iso((evenement or {}).get("source_maj_le"))
                   or _iso((evenement or {}).get("cree_le")))
+    reference = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    if source_maj and _est_futur(source_maj, reference):
+        raise PontInvalide(
+            f"source_maj_le {source_maj!r} dans le futur par rapport à {reference!r}")
     payload["donnees"]["_pont"] = {
         "hash": hash_contenu(payload),
         "origine": _texte(origine) or ORIGINE_LEGACY,
@@ -616,8 +657,9 @@ def _decision_tranchee(investigation: Any, texte_decision: Any, options: Any, ac
     statut_brut = _cle(statut_decision)
     explicitement_proposee = statut_brut in _STATUTS_DECISION_PROPOSEE
     explicitement_tranchee = statut_brut in _STATUTS_DECISION_TRANCHEE
-    # Sans acteur humain, on ne promeut jamais en DECIDED : la décision reste PROPOSED.
-    proposee = explicitement_proposee or not acteur_texte
+    choix_absent = not texte
+    # Sans acteur humain ou sans choix explicite, la décision reste PROPOSED.
+    proposee = explicitement_proposee or not acteur_texte or choix_absent
     if explicitement_tranchee and not acteur_texte:
         proposee = True
     if not texte and not _textes(options):
@@ -720,18 +762,20 @@ def objets_depuis_situation(situation: Any, *, tenant_id: Any = None,
     priorite = priorite_canonique(doc.get("priorite"))
     twin_ids = _ids(doc.get("twin_ids") if doc.get("twin_ids") is not None else doc.get("jumeaux"))
     resume = _texte_legacy(doc.get("resume")) or description
-    donnees_situation = {
-        "titre": titre,
-        "resume": resume,
-        "statut": statut,
-        "priorite": priorite,
-        "twin_ids": twin_ids,
-        "signal_ids": _ids(doc.get("signal_ids")),
-        "claim_ids": _ids(doc.get("claim_ids")),
-        "opportunite_ids": _ids(doc.get("opportunite_ids")),
-        "risk_ids": _ids(doc.get("risk_ids")),
-        "inconnues": _textes(doc.get("reste_a_comprendre")),
-    }
+    donnees_situation = {"titre": titre, "resume": resume}
+    if doc.get("statut") is not None:
+        donnees_situation["statut"] = statut
+    if doc.get("priorite") is not None:
+        donnees_situation["priorite"] = priorite
+    source_twins = doc.get("twin_ids") if doc.get("twin_ids") is not None else doc.get("jumeaux")
+    if source_twins is not None:
+        donnees_situation["twin_ids"] = twin_ids
+    for champ, source in (("signal_ids", "signal_ids"), ("claim_ids", "claim_ids"),
+                          ("opportunite_ids", "opportunite_ids"), ("risk_ids", "risk_ids"),
+                          ("inconnues", "reste_a_comprendre")):
+        if doc.get(source) is not None:
+            donnees_situation[champ] = (_textes(doc.get(source)) if champ == "inconnues"
+                                        else _ids(doc.get(source)))
     donnees_situation.update(_copier_champs(doc, _CHAMPS_SITUATION))
     # Les champs dérivés sont reposés après la copie : un `resume`/`description` legacy
     # non scalaire ne doit jamais remplacer la valeur texte calculée.
@@ -745,9 +789,12 @@ def objets_depuis_situation(situation: Any, *, tenant_id: Any = None,
         donnees_situation["description"] = description_explicite
     else:
         donnees_situation.pop("description", None)
-    donnees_situation["statut_legacy"] = _texte(doc.get("statut"))
-    donnees_situation["priorite_legacy"] = _texte(doc.get("priorite"))
-    donnees_situation["jumeaux"] = list(twin_ids)
+    if doc.get("statut") is not None:
+        donnees_situation["statut_legacy"] = _texte(doc.get("statut"))
+    if doc.get("priorite") is not None:
+        donnees_situation["priorite_legacy"] = _texte(doc.get("priorite"))
+    if source_twins is not None:
+        donnees_situation["jumeaux"] = list(twin_ids)
     situation_canonique = _objet(
         "SITUATION", sid, tenant, titre, donnees_situation, mode="DECLARED",
         cree_le=cree, observe_le=observe, valide_depuis=valide)
@@ -809,6 +856,17 @@ def objets_depuis_situation(situation: Any, *, tenant_id: Any = None,
     return _ordonner(objets)
 
 
+def _exiger_snapshot_complet(situation: Any) -> dict[str, Any]:
+    """Un snapshot embarqué doit être complet : pas de titre=id/statut=CANDIDATE par défaut."""
+    doc = _document(situation, "situation")
+    manquants = [champ for champ in ("titre", "statut", "priorite")
+                 if not _texte_legacy(doc.get(champ))]
+    if manquants:
+        raise PontInvalide(
+            f"snapshot de situation incomplet (manquants : {', '.join(manquants)})")
+    return doc
+
+
 def _premier_id(valeur: Any) -> str:
     elements = _liste(valeur)
     if not elements:
@@ -840,7 +898,7 @@ def objets_depuis_case(case: Any, *, tenant_id: Any = None,
     objets: list[dict[str, Any]] = []
     investigation_pour_decision = investigation
     if situation is not None:
-        snapshot = _document(situation, "situation")
+        snapshot = _exiger_snapshot_complet(situation)
         if _texte(snapshot.get("id")) != sid:
             raise PontInvalide(
                 f"snapshot de situation {snapshot.get('id')!r} incompatible avec situations[0] {sid!r}")
@@ -926,9 +984,11 @@ def objets_depuis_initiative(initiative: Any, *, tenant_id: Any = None,
     if decision_declaree:
         if not acceptee:
             return []
-        if situation is not None and sid and _texte(_document(situation).get("id")) != sid:
-            raise PontInvalide(
-                f"snapshot de situation incompatible avec situation_id {sid!r}")
+        if situation is not None:
+            snapshot = _exiger_snapshot_complet(situation)
+            if sid and _texte(snapshot.get("id")) != sid:
+                raise PontInvalide(
+                    f"snapshot de situation incompatible avec situation_id {sid!r}")
         cree = _date_depuis(doc, ("cree_le", "quand", "maj_le"), reference)
         observe = _date_depuis(doc, ("observe_le", "quand", "cree_le", "maj_le"), cree)
         valide = _date_depuis(doc, ("valide_depuis", "quand", "cree_le", "maj_le"), observe)
@@ -960,7 +1020,7 @@ def objets_depuis_initiative(initiative: Any, *, tenant_id: Any = None,
     objets: list[dict[str, Any]] = []
     investigation_pour_decision = investigation
     if situation is not None:
-        snapshot = _document(situation, "situation")
+        snapshot = _exiger_snapshot_complet(situation)
         if not sid:
             sid = _texte(snapshot.get("id"))
         if _texte(snapshot.get("id")) != sid:
@@ -1132,11 +1192,9 @@ def objets_depuis_objets(payload: Any, *, tenant_id: Any = None,
             raise TenantMismatch("objet canonique hors du tenant de l'événement")
         candidat = copy.deepcopy(dict(objet))
         candidat["tenant_id"] = tenant
-        pont_existant = (candidat.get("donnees") or {}).get("_pont")
-        source_maj = (pont_existant.get("source_maj_le")
-                      if isinstance(pont_existant, Mapping) else None)
-        source_objet = (pont_existant.get("source")
-                        if isinstance(pont_existant, Mapping) else None)
+        # Le producteur ne fixe jamais l'ordre : la date de référence vient de l'événement.
+        source_maj = (evenement or {}).get("source_maj_le")
+        source_objet = (evenement or {}).get("source")
         resultat.append(_serialiser(candidat, evenement, source_maj_le=source_maj,
                                     source_objet=source_objet))
     return _ordonner(resultat)
@@ -1269,6 +1327,18 @@ def verifier_source_evenement(evenement: Mapping[str, Any]) -> None:
         raise PontInvalide("objets.upsert exige source.interne=true")
 
 
+def _identifiant_principal(operation: str, payload: Mapping[str, Any]) -> str | None:
+    cle = {
+        OPERATION_SITUATION: "situation",
+        OPERATION_CASE: "case",
+        OPERATION_INITIATIVE: "initiative",
+    }.get(operation)
+    if not cle:
+        return None
+    document = payload.get(cle)
+    return _texte(document.get("id")) if isinstance(document, Mapping) else ""
+
+
 def _collection_attendue(operation: str) -> str:
     return {
         OPERATION_SITUATION: "situations",
@@ -1304,6 +1374,10 @@ def construire_evenement(operation: Any, tenant_id: Any, canonical_id: Any, payl
             raise PontInvalide(
                 "objets.upsert est réservé au producteur interne "
                 "(source.collection=pont_interne, source.interne=true)")
+    principal = _identifiant_principal(operation_texte, payload_assaini)
+    if principal is not None and principal != _texte(canonical_id):
+        raise PontInvalide(
+            f"canonical_id {canonical_id!r} incohérent avec l'id principal {principal!r}")
     source_final["collection"] = collection
     source_final["id"] = _texte(source_final.get("id")) or _texte(canonical_id)
     source_final["hash"] = hash_contenu(payload_assaini)
@@ -1343,7 +1417,8 @@ def construire_evenement(operation: Any, tenant_id: Any, canonical_id: Any, payl
         evenement["canonical_ids"] = (
             [canonical_ids] if isinstance(canonical_ids, str) else list(canonical_ids))
     evenement["hash"] = hash_contenu(evenement["payload"])
-    return signer_evenement(evenement)
+    cle_signature = (cle_interne() if operation_texte == OPERATION_OBJETS else None)
+    return signer_evenement(evenement, cle_signature)
 
 
 def evenement_depuis_situation(situation: Any, *, tenant_id: Any = None,

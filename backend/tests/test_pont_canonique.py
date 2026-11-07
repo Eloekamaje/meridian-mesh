@@ -22,11 +22,13 @@ from meridian.adapters.outbound.postgres import pont_canonique as pont_pg
 from meridian.application import pont_canonique as pont
 
 CLE_PONT = "cle-de-test-pont-canonique-32"
+CLE_INTERNE = "cle-de-test-pont-interne-32"
 
 
 @pytest.fixture(autouse=True)
 def _cle_pont(monkeypatch):
     monkeypatch.setenv(pont.PONT_KEY_ENV, CLE_PONT)
+    monkeypatch.setenv(pont.PONT_KEY_INTERNE_ENV, CLE_INTERNE)
 
 
 TENANT = "banque"
@@ -995,6 +997,245 @@ def test_learning_transmet_situation_et_initiative():
 
 def test_tenant_normalise_la_casse_mixte():
     assert pont.normaliser_tenant("BANQUE") == "banque"
+
+
+def test_deux_evenements_au_meme_timestamp_ne_s_ecrasent_pas_alternativement():
+    situation_b = {**SITUATION, "decision": "B", "statut": "poursuivie",
+                   "maj_le": "2026-11-06T12:00:00+00:00"}
+    situation_c = {**SITUATION, "decision": "C", "statut": "poursuivie",
+                   "maj_le": "2026-11-06T12:00:00+00:00"}
+    conn = ConnexionPont()
+
+    pont_pg.appliquer_evenement(
+        conn, _evenement_situation(situation_b, source_event_id="b"))
+    version = conn.stock[(TENANT, "dec-sit-sit-1-1")]["version"]
+    resultat = pont_pg.appliquer_evenement(
+        conn, _evenement_situation(situation_c, source_event_id="c"))
+
+    assert resultat["ecrits"] == []
+    assert boucle.lire_boucle(conn, TENANT, "dec-sit-sit-1-1")["donnees"]["choix"] == "B"
+    assert conn.stock[(TENANT, "dec-sit-sit-1-1")]["version"] == version
+
+
+def test_source_maj_future_est_refusee():
+    future = {**SITUATION, "maj_le": "2099-01-01T00:00:00+00:00"}
+    with pytest.raises(pont.PontInvalide):
+        _evenement_situation(future, source_event_id="futur-1")
+
+
+def test_migration_plus_recente_que_le_live_ne_regresse_pas():
+    situation_migration = {**SITUATION, "maj_le": "2026-11-06T12:00:00+00:00"}
+    payload = migration_canonique.objet_depuis_situation(situation_migration, TENANT)
+    conn = ConnexionPont()
+    entreprise_depot.enregistrer_objet(conn, TENANT, payload)
+    avant = copy.deepcopy(conn.stock[(TENANT, "sit-1")])
+
+    live = {**SITUATION, "statut": "en observation",
+            "maj_le": "2026-11-06T08:00:00+00:00"}
+    resultat = pont_pg.appliquer_evenement(
+        conn, _evenement_situation(live, source_event_id="live-vieux"))
+
+    assert resultat["ecrits"] == []
+    assert conn.stock[(TENANT, "sit-1")] == avant
+
+
+def test_snapshot_de_situation_incomplet_est_refuse():
+    partiel = {"id": "sit-1", "maj_le": "2026-11-06T12:00:00+00:00"}
+    with pytest.raises(pont.PontInvalide):
+        _evenement_case(CASE, situation=partiel, source_event_id="partiel-1")
+
+
+def test_options_avec_acteur_mais_sans_choix_restent_proposees():
+    situation = {
+        **SITUATION, "statut": "décidée",
+        "decisions": [{"statut": "proposee", "options": ["Option A"],
+                       "par": "alice"}],
+    }
+    situation.pop("decision", None)
+    situation.pop("decidee_par", None)
+    objets = pont.objets_depuis_evenement(
+        _evenement_situation(situation, source_event_id="options-1"))
+
+    assert [objet["type"] for objet in objets] == [
+        "SITUATION", "INVESTIGATION", "DECISION"]
+    assert objets[-1]["donnees"]["statut"] == "PROPOSED"
+    assert "INITIATIVE" not in [objet["type"] for objet in objets]
+
+
+def test_initiative_issue_d_une_decision_deja_materialisee_est_compatible():
+    conn = ConnexionPont()
+    pont_pg.appliquer_evenement(
+        conn, _evenement_situation(SITUATION, source_event_id="maj-a"))
+    initiative = {
+        "id": "init-autre", "tenant_id": TENANT, "titre": "Suite",
+        "statut": "acceptee", "decision_id": "dec-sit-sit-1-1",
+        "maj_le": "2026-11-06T12:00:00+00:00", "cree_le": DATE,
+    }
+
+    resultat = pont_pg.appliquer_evenement(
+        conn, _evenement_initiative(initiative, source_event_id="init-1"))
+
+    assert resultat["ecrits"] == ["ini-dec-sit-sit-1-1"]
+    assert conn.stock[(TENANT, "ini-dec-sit-sit-1-1")]["version"] == 2
+
+
+def test_un_objet_interne_futur_ne_fixe_pas_l_ordre():
+    situation_payload = pont.objets_depuis_situation(SITUATION)[0]
+    situation_payload["donnees"]["_pont"] = {
+        "source_maj_le": "2099-01-01T00:00:00+00:00",
+        "source": {"collection": "pont_interne", "id": "sit-1"},
+    }
+    evenement = pont.construire_evenement(
+        pont.OPERATION_OBJETS, TENANT, "sit-1", {"objets": [situation_payload]},
+        source={"collection": "pont_interne", "id": "sit-1", "interne": True},
+        source_event_id="interne-futur")
+    objet = pont.objets_depuis_evenement(evenement)[0]
+
+    assert objet["donnees"]["_pont"]["source_maj_le"] < "2099"
+
+
+def test_upsert_interne_refuse_un_objet_migre():
+    payload = migration_canonique.objet_depuis_situation(
+        {**SITUATION, "maj_le": DATE}, TENANT)
+    conn = ConnexionPont()
+    entreprise_depot.enregistrer_objet(conn, TENANT, payload)
+    objet = pont.objets_depuis_situation(SITUATION)[0]
+    evenement = pont.construire_evenement(
+        pont.OPERATION_OBJETS, TENANT, "sit-1", {"objets": [objet]},
+        source={"collection": "pont_interne", "id": "sit-1", "interne": True},
+        source_event_id="interne-migration")
+
+    with pytest.raises(pont.ConflitCanonique):
+        pont_pg.appliquer_evenement(conn, evenement)
+
+
+def test_id_modifie_sans_resignature_est_refuse():
+    evenement = _evenement_situation(source_event_id="maj-1")
+    evenement["_id"] = "id-forge-sans-signature"
+
+    async def scenario():
+        depot = pont_mongo.DepotPontCanonique(CollectionPont())
+        with pytest.raises(pont.PontInvalide):
+            await depot.enfiler(evenement)
+
+    asyncio.run(scenario())
+
+
+def test_jitter_du_backoff_reste_borne():
+    for _ in range(50):
+        delai = pont.backoff_secondes(3, base=5, maximum=10, jitter=0.5)
+        assert 1 <= delai <= 10
+
+
+def test_les_cles_legacy_et_interne_sont_separees():
+    async def scenario():
+        collection = CollectionPont()
+        depot = pont_mongo.DepotPontCanonique(
+            collection, cle=CLE_PONT, cle_interne=CLE_INTERNE)
+        legacy = _evenement_situation(source_event_id="maj-1")
+        legacy_signe_interne = pont.signer_evenement(legacy, CLE_INTERNE)
+        with pytest.raises(pont.PontInvalide):
+            await depot.enfiler(legacy_signe_interne)
+
+        situation_payload = pont.objets_depuis_situation(SITUATION)[0]
+        interne = pont.construire_evenement(
+            pont.OPERATION_OBJETS, TENANT, "sit-1", {"objets": [situation_payload]},
+            source={"collection": "pont_interne", "id": "sit-1", "interne": True},
+            source_event_id="interne-1")
+        interne_signe_legacy = pont.signer_evenement(interne, CLE_PONT)
+        with pytest.raises(pont.PontInvalide):
+            await depot.enfiler(interne_signe_legacy)
+
+    asyncio.run(scenario())
+
+
+def test_meme_id_avec_payload_divergent_est_refuse():
+    async def scenario():
+        collection = CollectionPont()
+        depot = pont_mongo.DepotPontCanonique(collection)
+        premier = _evenement_situation(source_event_id="maj-1")
+        await depot.enfiler(premier)
+        divergent = _evenement_situation(
+            {**SITUATION, "decision": "Autre"}, source_event_id="maj-1")
+        with pytest.raises(pont.PontInvalide):
+            await depot.enfiler(divergent)
+
+    asyncio.run(scenario())
+
+
+def test_case_avec_canonical_id_incoherent_est_refuse():
+    with pytest.raises(pont.PontInvalide):
+        pont.construire_evenement(
+            pont.OPERATION_CASE, TENANT, "sit-1", {"case": CASE, "situation": SITUATION},
+            source_event_id="case-incoherent")
+
+
+def test_p0_et_in_progress_suivent_le_vocabulaire_partage():
+    assert pont.priorite_canonique("p0") == "HAUTE"
+    assert pont.statut_initiative_canonique("in progress") == "IN_PROGRESS"
+
+
+def test_parent_et_outcome_dans_un_meme_upsert_interne():
+    conn = ConnexionPont()
+    pont_pg.appliquer_evenement(
+        conn, _evenement_situation(SITUATION, source_event_id="maj-a"))
+    initiative = copy.deepcopy(conn.stock[(TENANT, "ini-dec-sit-sit-1-1")])
+    initiative.pop("version", None)
+    outcome = pont.objets_depuis_outcome({
+        "initiative_id": "ini-dec-sit-sit-1-1",
+        "mesure": {"metrique": "delai", "valeur": 2},
+        "metrique": "delai", "periode": "2026-11",
+    }, tenant_id=TENANT)[0]
+    evenement = pont.construire_evenement(
+        pont.OPERATION_OBJETS, TENANT, "ini-dec-sit-sit-1-1",
+        {"objets": [initiative, outcome]},
+        source={"collection": "pont_interne", "id": "ini-dec-sit-sit-1-1",
+                "interne": True},
+        source_event_id="parent-outcome")
+
+    resultat = pont_pg.appliquer_evenement(conn, evenement)
+
+    parent = boucle.lire_boucle(conn, TENANT, "ini-dec-sit-sit-1-1")
+    assert outcome["id"] in parent["donnees"]["outcome_ids"]
+    assert "ini-dec-sit-sit-1-1" in resultat["ecrits"]
+
+
+def test_decision_decidee_avec_acteur_non_humain_est_refusee():
+    decision = {
+        "id": "dec-robot", "tenant_id": TENANT, "famille": "decision",
+        "type": "DECISION", "mode": "DECLARED", "titre": "Décision",
+        "donnees": {
+            "investigation_id": "inv-x", "statut": "DECIDED", "acteur": "robot",
+            "choix": "A", "decide_le": DATE, "options": ["A"],
+        },
+    }
+    evenement = pont.construire_evenement(
+        pont.OPERATION_OBJETS, TENANT, "dec-robot", {"objets": [decision]},
+        source={"collection": "pont_interne", "id": "dec-robot", "interne": True},
+        source_event_id="robot-1")
+
+    with pytest.raises(pont.PontInvalide):
+        pont_pg.appliquer_evenement(ConnexionPont(), evenement)
+
+
+def test_verrous_consultatif_par_objet_et_redaction_ajustee():
+    conn = ConnexionPont()
+    evenement = _evenement_situation(source_event_id="maj-1")
+    pont_pg.appliquer_evenement(conn, evenement)
+
+    assert {identifiant for _, identifiant in conn.verrous} == set(
+        evenement["canonical_ids"])
+    assert pont.cle_sensible("token_count") is False
+    assert pont.cle_sensible("authorization_status") is False
+    assert pont.cle_sensible("access_token") is True
+    assert pont.cle_sensible("secret_value") is True
+
+
+def test_decimal_nan_est_refuse():
+    from decimal import Decimal
+
+    with pytest.raises(pont.PontInvalide):
+        pont.assainir({"valeur": Decimal("NaN")})
 
 
 def test_objets_explicites_sont_ordonnes_et_estampilles_du_hash_pont():

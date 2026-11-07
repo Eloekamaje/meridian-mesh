@@ -248,6 +248,10 @@ class CurseurPostgres:
         if requete.startswith("SELECT set_config"):
             self.resultat = (parametres[0] if parametres else "",)
             return self
+        if requete.startswith("SELECT pg_advisory_xact_lock"):
+            self.conn.verrous.append(tuple(parametres))
+            self.resultat = None
+            return self
         if requete.startswith("SELECT current_schema()"):
             self.resultat = ("public",)
             return self
@@ -310,6 +314,7 @@ class ConnexionPont:
     def __init__(self):
         self.stock = {}
         self.ecritures = []
+        self.verrous = []
         self._snapshots = []
 
     def transaction(self):

@@ -26,10 +26,13 @@ from urllib.parse import parse_qsl, unquote_plus, urlsplit
 
 __all__ = [
     "PONT_KEY_ENV",
+    "PONT_KEY_INTERNE_ENV",
     "SECRET_MARKERS",
     "SignatureInvalide",
     "assainir",
     "charger_cle",
+    "charger_cle_interne",
+    "cle_interne",
     "cle_pont",
     "cle_sensible",
     "hash_contenu",
@@ -40,6 +43,7 @@ __all__ = [
 ]
 
 PONT_KEY_ENV = "PONT_KEY"
+PONT_KEY_INTERNE_ENV = "PONT_KEY_INTERNE"
 SECRET_MARKERS = ("password", "passwd", "secret", "token", "credential", "authorization")
 # Métadonnées de claim/retry : mutables sans invalider la signature du contenu.
 CHAMPS_MUTABLES = frozenset({
@@ -65,8 +69,15 @@ def _camel_vers_snake(cle: str) -> str:
     return texte.lower()
 
 
+_SEGMENTS_SECRETS_FINAUX = frozenset({
+    "token", "secret", "password", "passwd", "credential", "authorization", "bearer",
+    "auth", "pwd", "pass",
+})
+_SEGMENTS_SECRETS_INITIAUX = frozenset({"secret", "password", "passwd", "credential"})
+
+
 def cle_sensible(cle: Any) -> bool:
-    """Vrai pour une clé qui peut porter un secret, y compris camelCase et `key_id`."""
+    """Vrai pour une clé qui peut porter un secret, sans sur-rédiger `token_count`."""
     normalisee = unquote_plus(str(cle)).strip()
     if not normalisee:
         return False
@@ -74,11 +85,18 @@ def cle_sensible(cle: Any) -> bool:
         return False
     snake = _camel_vers_snake(normalisee).replace("-", "_")
     compacte = snake.replace("_", "")
+    segments = [segment for segment in snake.split("_") if segment]
     if compacte in _CLES_SECRETES or snake in _CLES_SECRETES:
         return True
-    if "key" in snake.split("_") or snake.endswith("_key") or snake.endswith("_key_id"):
+    if "key" in segments or "keyid" in segments or snake.endswith(("_key", "_key_id")):
         return True
-    return any(marque in snake for marque in SECRET_MARKERS)
+    if segments and segments[-1] in _SEGMENTS_SECRETS_FINAUX:
+        return True
+    if (segments and segments[0] == "authorization"
+            and segments[-1] not in {"status", "type", "name"}):
+        return True
+    return bool(segments and len(segments) > 1
+                and segments[0] in _SEGMENTS_SECRETS_INITIAUX)
 
 
 def url_porte_un_secret(url: str) -> bool:
@@ -105,6 +123,8 @@ def assainir(valeur: Any) -> Any:
             raise ValueError("nombre non fini")
         return valeur
     if isinstance(valeur, Decimal):
+        if not valeur.is_finite():
+            raise ValueError("Decimal non fini")
         return float(valeur)
     if isinstance(valeur, (datetime, date)):
         return valeur.isoformat()
@@ -151,6 +171,21 @@ def charger_cle(cle: Any = None) -> str:
 
 
 cle_pont = charger_cle
+
+
+def charger_cle_interne(cle: Any = None) -> str:
+    """Clé HMAC du producteur interne `objets.upsert`, distincte de la clé legacy."""
+    texte = str(cle or "").strip()
+    if not texte:
+        import os
+        texte = str(os.environ.get(PONT_KEY_INTERNE_ENV) or "").strip()
+    if len(texte) < 16:
+        raise SignatureInvalide(
+            f"{PONT_KEY_INTERNE_ENV} absent ou trop court (16 caractères minimum)")
+    return texte
+
+
+cle_interne = charger_cle_interne
 
 
 def _charge_signable(evenement: Mapping[str, Any]) -> dict[str, Any]:

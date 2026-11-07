@@ -46,6 +46,11 @@ class ObjetCanoniqueInvalide(pont.PontInvalide):
     """L'objet sérialisé ne peut pas être instancié dans sa dataclass canonique."""
 
 
+ACTEURS_NON_HUMAINS = frozenset({
+    "robot", "system", "système", "systeme", "automate", "auto", "legacy", "machine",
+})
+
+
 _LISTES_FUSIONNEES = frozenset({
     "outcome_ids", "outcome_attendu_ids", "investigation_ids", "twin_ids", "signal_ids",
     "claim_ids", "opportunite_ids", "risk_ids", "preuves", "conditions_applicabilite",
@@ -107,43 +112,72 @@ def _hash_objet(ligne: Any) -> str | None:
     return valeur if isinstance(valeur, str) and valeur else None
 
 
-def _plus_ancien(gauche: str, droite: str) -> bool:
+def _plus_recent(gauche: str, droite: str) -> bool:
+    """Vrai si `gauche` est strictement plus récent que `droite`.
+
+    Une égalité n'est jamais « plus récent » : deux événements au même timestamp sont
+    départagés par l'ordre d'arrivée, jamais par « dernier écrivain gagne ».
+    """
     try:
         return (datetime.fromisoformat(gauche.replace("Z", "+00:00"))
-                < datetime.fromisoformat(droite.replace("Z", "+00:00")))
+                > datetime.fromisoformat(droite.replace("Z", "+00:00")))
     except (TypeError, ValueError):
-        return gauche < droite
+        return gauche > droite
 
 
 def _origine_compatible(existant: Any, objet: Mapping[str, Any]) -> bool:
     origine = origine_objet(existant)
-    if origine:
-        normalisee = origine.lower()
-        if normalisee == pont.ORIGINE_MIGRATION:
-            return True
-        if normalisee == pont.ORIGINE_LEGACY:
-            source_existante = _source_objet(existant)
-            source_nouvelle = _source_objet(objet)
-            if source_existante and source_nouvelle:
-                return (
-                    pont._texte(source_existante.get("collection"))
-                    == pont._texte(source_nouvelle.get("collection"))
-                    and pont._texte(source_existante.get("id"))
-                    == pont._texte(source_nouvelle.get("id"))
-                )
-            return True
-        return False
-    donnees = _donnees(existant)
-    if str(donnees.get("origine") or "").strip().lower() == pont.ORIGINE_MIGRATION:
-        return True
     source_existante = _source_objet(existant)
     source_nouvelle = _source_objet(objet)
-    return bool(
-        source_existante and source_nouvelle
-        and pont._texte(source_existante.get("collection"))
-        == pont._texte(source_nouvelle.get("collection"))
-        and pont._texte(source_existante.get("id")) == pont._texte(source_nouvelle.get("id"))
-    )
+    collection_nouvelle = pont._texte(source_nouvelle.get("collection"))
+
+    if collection_nouvelle == "pont_interne":
+        # Un producteur interne peut corriger un objet legacy, jamais un objet migré/API.
+        return bool(origine and origine.lower() == pont.ORIGINE_LEGACY)
+
+    # Une Initiative déjà matérialisée par la Situation et une Initiative issue d'une
+    # proposition legacy partagent le même ID `ini-{decision_id}` : c'est la même action.
+    if (pont._texte((existant or {}).get("type")).upper() == "INITIATIVE"
+            and pont._texte(objet.get("type")).upper() == "INITIATIVE"):
+        decision_existante = pont._texte(_donnees(existant).get("decision_id"))
+        decision_nouvelle = pont._texte((objet.get("donnees") or {}).get("decision_id"))
+        source_legacy = bool(
+            (origine and origine.lower() in {pont.ORIGINE_LEGACY, pont.ORIGINE_MIGRATION})
+            or source_existante)
+        if source_legacy and decision_existante and decision_existante == decision_nouvelle:
+            return True
+
+    if origine:
+        normalisee = origine.lower()
+        if normalisee not in {pont.ORIGINE_LEGACY, pont.ORIGINE_MIGRATION}:
+            return False
+        if not source_existante:
+            # Objets écrits par une version antérieure du pont, sans source mémorisée.
+            return True
+        if source_nouvelle:
+            return (
+                pont._texte(source_existante.get("collection"))
+                == pont._texte(source_nouvelle.get("collection"))
+                and pont._texte(source_existante.get("id"))
+                == pont._texte(source_nouvelle.get("id"))
+            )
+        return False
+
+    if str(_donnees(existant).get("origine") or "").strip().lower() == pont.ORIGINE_MIGRATION:
+        return bool(
+            source_existante and source_nouvelle
+            and pont._texte(source_existante.get("collection"))
+            == collection_nouvelle
+            and pont._texte(source_existante.get("id"))
+            == pont._texte(source_nouvelle.get("id"))
+        )
+    if source_existante and source_nouvelle:
+        return (
+            pont._texte(source_existante.get("collection")) == collection_nouvelle
+            and pont._texte(source_existante.get("id"))
+            == pont._texte(source_nouvelle.get("id"))
+        )
+    return False
 
 
 def _origine_fiable(ligne: Any) -> bool:
@@ -180,10 +214,17 @@ def valider_objet(objet: Any) -> Any:
         raise ObjetCanoniqueInvalide("objet canonique attendu")
     identifiant = pont._texte(objet.get("id")) or "?"
     try:
-        return boucle._objet_depuis_ligne(objet)
+        instance = boucle._objet_depuis_ligne(objet)
     except Exception as exc:  # noqa: BLE001 - toute invalidité est permanente
         raise ObjetCanoniqueInvalide(
             f"objet canonique invalide {identifiant} : {exc}") from exc
+    if getattr(instance, "type", "") == "DECISION" and \
+            getattr(instance, "statut", "") == "DECIDED":
+        acteur = str(getattr(instance, "acteur", "") or "").strip()
+        if not acteur or acteur.casefold() in ACTEURS_NON_HUMAINS:
+            raise ObjetCanoniqueInvalide(
+                f"décision {identifiant} DECIDED sans acteur humain vérifiable")
+    return instance
 
 
 def _doit_ecrire(conn: Any, tenant: str, objet: dict[str, Any],
@@ -196,14 +237,14 @@ def _doit_ecrire(conn: Any, tenant: str, objet: dict[str, Any],
         return True
     if not _origine_compatible(existant, objet):
         raise ConflitCanonique(
-            f"identifiant canonique {identifiant!r} déjà utilisé sans origine "
-            "legacy/migration : le pont n'écrase pas un objet canonique")
+            f"identifiant canonique {identifiant!r} déjà écrit par une autre "
+            "origine/source : le pont n'écrase pas cet objet")
     source_maj_existante = _source_maj_objet(existant)
     source_maj_nouvelle = _source_maj_objet(objet)
     if (source_maj_existante and source_maj_nouvelle
-            and _plus_ancien(source_maj_nouvelle, source_maj_existante)):
+            and not _plus_recent(source_maj_nouvelle, source_maj_existante)):
         ignores.append(identifiant)
-        journal.info("pont : événement plus ancien ignoré objet=%s source=%s < %s",
+        journal.info("pont : événement non plus récent ignoré objet=%s source=%s <= %s",
                      identifiant, source_maj_nouvelle, source_maj_existante)
         return False
     if _hash_objet(existant) and _hash_objet(existant) == _hash_objet(objet):
@@ -225,8 +266,8 @@ def _copie_ligne(ligne: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _ajouter_parent_outcome(conn: Any, tenant: str, objet: dict[str, Any],
-                            objets_evenement: list[dict[str, Any]],
-                            a_ecrire: list[dict[str, Any]]) -> None:
+                            a_ecrire: list[dict[str, Any]],
+                            ecrits: list[str]) -> None:
     if objet.get("type") != "OUTCOME":
         return
     initiative_id = pont._texte((objet.get("donnees") or {}).get("initiative_id"))
@@ -235,23 +276,24 @@ def _ajouter_parent_outcome(conn: Any, tenant: str, objet: dict[str, Any],
     parent = next((candidat for candidat in a_ecrire
                    if candidat.get("id") == initiative_id), None)
     if parent is None:
-        parent = next((candidat for candidat in objets_evenement
-                       if candidat.get("id") == initiative_id), None)
-    if parent is None:
+        # Toujours relire la ligne Postgres : le parent peut avoir été ignoré par le filtre
+        # de hash/staleness et contenir des champs de migration à ne pas perdre.
         ligne = entreprise_depot.lire_objet(conn, tenant, initiative_id)
         if ligne is None:
             return
         parent = _copie_ligne(ligne)
-    if not _origine_fiable(parent):
-        raise ConflitCanonique(
-            f"initiative {initiative_id!r} sans origine legacy/migration : "
-            "un Outcome ne modifie pas un objet canonique API")
-    parent = copy.deepcopy(parent)
+        if not _origine_fiable(parent):
+            raise ConflitCanonique(
+                f"initiative {initiative_id!r} sans origine legacy/migration : "
+                "un Outcome ne modifie pas un objet canonique API")
+        parent["donnees"] = _fusionner_donnees(
+            parent.get("donnees"), {"outcome_ids": [objet["id"]]})
+        valider_objet(parent)
+        a_ecrire.append(parent)
+        ecrits.append(initiative_id)
+        return
     parent["donnees"] = _fusionner_donnees(
         parent.get("donnees"), {"outcome_ids": [objet["id"]]})
-    valider_objet(parent)
-    if not any(candidat.get("id") == initiative_id for candidat in a_ecrire):
-        a_ecrire.append(parent)
 
 
 def _appliquer_objets(conn: Any, tenant: str, objets: list[dict[str, Any]],
@@ -264,7 +306,7 @@ def _appliquer_objets(conn: Any, tenant: str, objets: list[dict[str, Any]],
             a_ecrire.append(objet)
     for objet in list(a_ecrire):
         if objet.get("type") == "OUTCOME":
-            _ajouter_parent_outcome(conn, tenant, objet, objets, a_ecrire)
+            _ajouter_parent_outcome(conn, tenant, objet, a_ecrire, ecrits)
     if a_ecrire:
         boucle.enregistrer_boucle(
             conn, tenant_id=tenant, objets=a_ecrire, historique=True)
@@ -273,11 +315,12 @@ def _appliquer_objets(conn: Any, tenant: str, objets: list[dict[str, Any]],
 
 def appliquer_evenement(conn: Any, evenement: Mapping[str, Any], *,
                         tenant_id: Any = None, maintenant: Any = None,
-                        cle: Any = None) -> dict[str, Any]:
+                        cle: Any = None, cle_interne: Any = None) -> dict[str, Any]:
     """Appliquer un événement d'outbox ; vérifie signature, provenance et tenant avant écriture."""
     if not isinstance(evenement, Mapping):
         raise pont.PontInvalide("événement attendu")
-    pont.verifier_evenement(evenement, cle)
+    pont.verifier_evenement(
+        evenement, pont.cle_pour_evenement(evenement, cle, cle_interne))
     pont.verifier_source_evenement(evenement)
     tenant = pont.normaliser_tenant(tenant_id or evenement.get("tenant_id"))
     if tenant_id is not None and pont._texte(evenement.get("tenant_id")):
@@ -303,6 +346,36 @@ def appliquer_evenement(conn: Any, evenement: Mapping[str, Any], *,
         }
 
     with conn.transaction():
+        # Un événement Situation globalement plus ancien/égal est ignoré en bloc : sinon une
+        # sous-partie manquante (Investigation) serait créée alors que la Situation est stale.
+        operation = pont.normaliser_operation(evenement.get("operation"))
+        if operation == pont.OPERATION_SITUATION:
+            situation = next((objet for objet in objets
+                              if objet.get("type") == "SITUATION"), None)
+            if situation is not None:
+                existant = entreprise_depot.lire_objet(conn, tenant, situation["id"])
+                source_maj_existante = _source_maj_objet(existant)
+                source_maj_evenement = pont._iso(evenement.get("source_maj_le"))
+                if (source_maj_existante and source_maj_evenement
+                        and not _plus_recent(source_maj_evenement, source_maj_existante)):
+                    journal.info(
+                        "pont : événement Situation non plus récent ignoré en bloc "
+                        "objet=%s source=%s <= %s", situation["id"],
+                        source_maj_evenement, source_maj_existante)
+                    return {
+                        "evenement_id": identifiant,
+                        "tenant": tenant,
+                        "canonical_ids": canonical_ids,
+                        "ecrits": [],
+                        "ignores": list(canonical_ids),
+                    }
+        # Verrou consultatif par (tenant, canonical_id) : deux workers qui auraient tous deux
+        # passé le pré-check de bail sérialisent leur application ; le second relit l'état
+        # et sera ignoré par source_maj/hash.
+        for identifiant in sorted({objet["id"] for objet in objets}):
+            conn.execute(
+                "SELECT pg_advisory_xact_lock(hashtext(%s), hashtext(%s))",
+                (tenant, identifiant))
         # Le GUC est posé systématiquement : sans policy il est sans effet, avec policy il
         # évite les écritures refusées/invisibles quand JUMEAU_RLS n'est pas propagé.
         with rls.contexte_tenant(conn, tenant):

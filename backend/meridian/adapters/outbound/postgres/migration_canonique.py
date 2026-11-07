@@ -53,17 +53,8 @@ __all__ = [
     "inspecter",
 ]
 
-_CHAMPS_SITUATION = (
-    "resume", "description", "question", "nature", "verbe", "score", "detectee", "indicateurs",
-    "decouverte_quoi", "decouverte_pourquoi", "reste_a_comprendre", "decisions_attendues",
-    "chronologie", "hypotheses", "contributions", "preuves", "synthese", "actions_proposees",
-    "opportunite", "decision", "relation_id",
-)
-_CHAMPS_INITIATIVE = (
-    "niveau", "genre", "declencheur", "raison", "quand", "periode", "perimetre", "preuves",
-    "confiance", "impact", "destinataire", "pourquoi_vous", "attendu", "travail_titre", "options",
-    "autonomie", "interruption", "reponse",
-)
+_CHAMPS_SITUATION = mapping.CHAMPS_SITUATION
+_CHAMPS_INITIATIVE = mapping.CHAMPS_INITIATIVE
 _CHAMPS_LIEN_INITIATIVE = (
     "travail_id", "jumeau_cible", "decision_id", "decision_ref", "situation_id", "investigation_id",
     "case_id",
@@ -173,14 +164,16 @@ def _titre_doc(doc: Mapping, identifiant: str) -> str:
     return identifiant
 
 
-def _marquer_migration(objet: dict, collection: str) -> dict:
+def _marquer_migration(objet: dict, collection: str, source_maj=None) -> dict:
     """Pose le sceau qui autorise une mise à jour live ultérieure sans écraser un objet API."""
     sans_pont = copy.deepcopy(objet)
     sans_pont.pop("_pont", None)
+    sans_pont.pop("version", None)  # le pont ne transmet jamais la version
     objet["donnees"]["_pont"] = {
         "hash": hash_contenu(sans_pont),
         "origine": "migration",
         "source": {"collection": collection, "id": objet["id"]},
+        "source_maj_le": _iso(source_maj),
     }
     return objet
 
@@ -325,7 +318,9 @@ def objet_depuis_situation(doc, tenant) -> dict:
         ("observe_le", "detectee", "cree_le", "maj_le"),
         ("valide_depuis", "observe_le", "detectee", "cree_le", "maj_le"),
     ))
-    return _marquer_migration(objet, "situations")
+    return _marquer_migration(
+        objet, "situations",
+        doc.get("maj_le") or doc.get("cree_le") or doc.get("detectee"))
 
 
 def _liens_initiative(doc: Mapping) -> dict:
@@ -379,7 +374,9 @@ def objet_depuis_initiative(doc, tenant) -> dict:
         ("observe_le", "quand", "cree_le", "maj_le"),
         ("valide_depuis", "quand", "cree_le", "maj_le"),
     ))
-    return _marquer_migration(objet, "initiatives")
+    return _marquer_migration(
+        objet, "initiatives",
+        doc.get("maj_le") or doc.get("quand") or doc.get("cree_le"))
 
 
 def twin_depuis_jumeau(doc, tenant):
