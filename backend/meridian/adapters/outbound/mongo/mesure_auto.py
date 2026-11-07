@@ -124,6 +124,11 @@ def _instant_datetime(valeur: Any) -> datetime | None:
     return datetime.fromisoformat(instant)
 
 
+def _millisecondes(valeur: datetime) -> datetime:
+    """BSON Date a une précision milliseconde : le curseur doit matcher exactement."""
+    return valeur.replace(microsecond=(valeur.microsecond // 1000) * 1000)
+
+
 def sequence_canonique(valeur: Any) -> str:
     """Tie-breaker comparable lexicographiquement.
 
@@ -177,7 +182,8 @@ def document_ingestion(document: Mapping[str, Any]) -> dict[str, Any]:
         propre["id"] = identifiant
     maj_le = _instant_datetime(propre.get("maj_le"))
     if maj_le is not None:
-        propre["maj_le"] = canoniser_instant(propre.get("maj_le"))
+        maj_le = _millisecondes(maj_le)
+        propre["maj_le"] = canoniser_instant(maj_le)
         propre[CHAMP_UTC] = maj_le
     propre["sequence"] = sequence_canonique(
         propre.get("sequence") if propre.get("sequence") is not None else propre.get("_id"))
@@ -186,7 +192,10 @@ def document_ingestion(document: Mapping[str, Any]) -> dict[str, Any]:
 
 def curseur_document(document: Mapping[str, Any]) -> CurseurObservation:
     """Curseur d'un document ; lève ``ValueError`` si ``maj_le`` ou ``id`` manque."""
-    maj_le = canoniser_instant(document.get("maj_le"))
+    # Le champ canonique BSON Date (milliseconde) est l'arbitre du seek ; `maj_le` reste le
+    # contrat lisible pour le payload et les producteurs legacy.
+    maj_le = (canoniser_instant(document.get(CHAMP_UTC))
+              or canoniser_instant(document.get("maj_le")))
     identifiant = _texte(document.get("id"))
     if maj_le is None:
         raise ValueError("maj_le absent ou illisible")

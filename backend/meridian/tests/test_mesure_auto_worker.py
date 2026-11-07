@@ -934,6 +934,16 @@ def test_checkpoint_legacy_en_secondes_est_migre():
         == "2026-11-05T09:01:00.000000+00:00"
 
 
+def test_document_ingestion_tronque_maj_le_utc_a_la_milliseconde():
+    propre = mongo_mesure.document_ingestion(_observation(
+        "obs-ms", maj_le="2026-11-05T09:01:00.123456+00:00"))
+
+    assert propre["maj_le"] == "2026-11-05T09:01:00.123000+00:00"
+    assert propre["maj_le_utc"].microsecond == 123000
+    assert mongo_mesure.curseur_document(propre).maj_le \
+        == "2026-11-05T09:01:00.123000+00:00"
+
+
 def test_tie_breaker_numerique_est_zero_padde():
     collection = CollectionMesure([
         {**_observation("obs-9", maj_le="2026-11-05T10:00:00+00:00"), "sequence": 9},
