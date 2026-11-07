@@ -224,9 +224,20 @@ def _ligne(ligne) -> dict:
     return {cle: _valeur(valeur) for cle, valeur in ligne.items()}
 
 
-def ligne_publique(ligne) -> dict:
-    """Rend une ligne Postgres sérialisable en JSON (Decimal, datetime et date convertis)."""
-    return _ligne(ligne)
+def ligne_publique(ligne, *, inclure_historique: bool = False) -> dict:
+    """Rend une ligne Postgres sérialisable en JSON (Decimal, datetime et date convertis).
+
+    Par défaut, ``donnees["_historique"]`` est retiré : l'historique n'est exposé que par la clé
+    ``historique`` des lectures qui le demandent explicitement.
+    """
+    resultat = _ligne(ligne)
+    if not inclure_historique:
+        donnees = resultat.get("donnees")
+        if isinstance(donnees, dict):
+            donnees = dict(donnees)
+            donnees.pop("_historique", None)
+            resultat["donnees"] = donnees
+    return resultat
 
 
 def enregistrer_objet(conn, tenant_id, objet) -> dict:
