@@ -1,12 +1,21 @@
-"""API de lecture de la boucle canonique d'entreprise.
+"""API de lecture et de transition de la boucle canonique d'entreprise.
 
-Lecture seule : les objets sont lus dans ``objet_entreprise`` (Postgres) via
-:mod:`meridian.adapters.outbound.postgres.entreprise_depot` et :mod:`meridian.adapters.outbound.postgres.boucle`. Aucune route n'écrit.
+Les objets sont lus dans ``objet_entreprise`` (Postgres) via
+:mod:`meridian.adapters.outbound.postgres.entreprise_depot` et
+:mod:`meridian.adapters.outbound.postgres.boucle`.
+Les six transitions canoniques sont exposées en POST : Situation → Investigation → Decision →
+Initiative → Outcome → Learning. Une transition charge sa source, applique la règle pure,
+persiste avec historique et renvoie l'objet créé avec sa chaîne.
 
-Le tenant est résolu par :mod:`meridian.domain.tenant`. En mode demo seulement, l'absence de ``X-Tenant`` vaut ``local`` ;
-hors demo (proxy, OIDC, production), l'en-tête est obligatoire et un en-tête vide ou invalide est refusé. Aucun repli
-silencieux n'est fait en production. Si un tenant authentifié est déjà posé sur ``request.state.tenant``, il fait foi
-et un ``X-Tenant`` différent est refusé. ``X-Espace`` reste un contexte de lecture, jamais une identité.
+``Idempotency-Key`` est accepté et renvoyé, mais aucun stockage d'idempotence n'est encore
+branché : un rejeu avec la même clé crée une nouvelle version ou un nouvel objet. Les
+transitions d'état déjà consommées restent refusées en 409.
+
+Le tenant est résolu par :mod:`meridian.domain.tenant`. En mode demo seulement, l'absence de
+``X-Tenant`` vaut ``local`` ; hors demo (proxy, OIDC, production), l'en-tête est obligatoire et un
+en-tête vide ou invalide est refusé. Aucun repli silencieux n'est fait en production. Si un tenant
+authentifié est déjà posé sur ``request.state.tenant``, il fait foi et un ``X-Tenant`` différent est
+refusé. ``X-Espace`` reste un contexte de lecture, jamais une identité.
 """
 from __future__ import annotations
 
@@ -17,16 +26,27 @@ from decimal import Decimal
 import math
 import os
 import re
+from typing import Annotated, Any
 import unicodedata
 from urllib.parse import parse_qsl, unquote_plus, urlsplit
 
 import psycopg
 from fastapi import APIRouter, Header, HTTPException, Query, Request
 from psycopg.rows import dict_row
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 from meridian.adapters.outbound.postgres import boucle
 from meridian.adapters.outbound.postgres import entreprise_depot
 from meridian.adapters.outbound.neo4j import graph_store
+from meridian.application import commandes_boucle
 from meridian.domain import modele_entreprise
 from meridian.adapters.outbound.postgres import rls
 from meridian.domain.tenant import TenantError, exiger_tenant, normaliser_slug, resoudre_tenant
@@ -39,6 +59,153 @@ _DSN_INDISPONIBLE = "Couche cognitive indisponible"
 _FAMILLES = frozenset(modele_entreprise.FAMILLES)
 _MODES = frozenset(modele_entreprise.MODES)
 _TYPES = frozenset(modele_entreprise.TYPES_OBJET)
+
+
+def _mode_canonique(valeur: str) -> str:
+    texte = str(valeur or "").strip().upper()
+    if texte not in _MODES:
+        raise ValueError(f"mode inconnu : {valeur!r} (attendus : {', '.join(sorted(_MODES))})")
+    return texte
+
+
+ModeCanonique = Annotated[str, AfterValidator(_mode_canonique)]
+TexteNonVide = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+
+
+class _CorpsTransition(BaseModel):
+    """Corps JSON strict : un champ inconnu est une erreur de contrat (422)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class CreationSituation(_CorpsTransition):
+    id: str | None = Field(None, min_length=1, max_length=128)
+    titre: str | None = Field(None, max_length=500)
+    description: str | None = None
+    resume: str | None = None
+    statut: str | None = Field(None, max_length=64)
+    priorite: str | None = Field(None, max_length=64)
+    twin_ids: list[str] | None = None
+    signal_ids: list[str] | None = None
+    claim_ids: list[str] | None = None
+    opportunite_ids: list[str] | None = None
+    risk_ids: list[str] | None = None
+    expression_id: str | None = None
+    inconnues: list[str] | None = None
+    mode: ModeCanonique | None = None
+    preuves: list[Any] | None = None
+    confiance: float | None = Field(None, ge=0, le=1)
+
+    @model_validator(mode="after")
+    def _texte_racine(self):
+        textes = (self.titre, self.description, self.resume)
+        if not any(texte and texte.strip() for texte in textes):
+            raise ValueError("titre, description ou resume obligatoire")
+        return self
+
+
+class OuvertureInvestigation(_CorpsTransition):
+    id: str | None = Field(None, min_length=1, max_length=128)
+    titre: str | None = Field(None, max_length=500)
+    question: str | None = None
+    resume: str | None = None
+    statut: str | None = Field(None, max_length=64)
+    perimetre: str | None = None
+    proprietaire: str | None = None
+    twin_ids: list[str] | None = None
+    hypothesis_ids: list[str] | None = None
+    expert_ids: list[str] | None = None
+    scenario_ids: list[str] | None = None
+    ouverte_le: str | None = None
+    close_le: str | None = None
+    synthese: str | None = None
+    incertitudes: list[str] | None = None
+    preuves: list[Any] | None = None
+    mode: ModeCanonique | None = None
+
+
+class PropositionDecision(_CorpsTransition):
+    id: str | None = Field(None, min_length=1, max_length=128)
+    titre: str | None = Field(None, max_length=500)
+    resume: str | None = None
+    options: list[TexteNonVide] = Field(..., min_length=1)
+    criteres: list[TexteNonVide] | None = None
+    incertitudes: list[TexteNonVide] | None = None
+    preuves: list[Any] | None = None
+    mode: ModeCanonique | None = None
+
+
+class TranchementDecision(_CorpsTransition):
+    acteur: TexteNonVide
+    choix: TexteNonVide
+    motif: str | None = None
+    rationale: str | None = None
+    decide_le: str | None = None
+    preuves: list[Any] | None = None
+    mode: ModeCanonique | None = None
+
+
+class LancementInitiative(_CorpsTransition):
+    id: str | None = Field(None, min_length=1, max_length=128)
+    titre: str | None = Field(None, max_length=500)
+    resume: str | None = None
+    statut: str | None = Field(None, max_length=64)
+    proprietaire: str | None = None
+    perimetre: str | None = None
+    outcome_attendu_ids: list[str] | None = None
+    debut_le: str | None = None
+    fin_prevue_le: str | None = None
+    preuves: list[Any] | None = None
+    mode: ModeCanonique | None = None
+
+
+def _mesure_renseignee(valeur: Any) -> bool:
+    """Même règle que le domaine : une mesure vide n'est pas une mesure."""
+    if valeur is None or isinstance(valeur, bool):
+        return False
+    if isinstance(valeur, str):
+        return bool(valeur.strip())
+    if isinstance(valeur, Mapping):
+        return any(_mesure_renseignee(element) for element in valeur.values())
+    if isinstance(valeur, (list, tuple, set, frozenset)):
+        return bool(valeur)
+    return True
+
+
+class MesureOutcome(_CorpsTransition):
+    id: str | None = Field(None, min_length=1, max_length=128)
+    titre: str | None = Field(None, max_length=500)
+    resume: str | None = None
+    mesure: Any
+    metrique: str | None = None
+    valeur_attendue: Any = None
+    interpretation: str | None = None
+    mesure_le: str | None = None
+    periode: str | None = None
+    statut: str | None = Field(None, max_length=64)
+    preuves: list[Any] | None = None
+    mode: ModeCanonique | None = None
+
+    @field_validator("mesure")
+    @classmethod
+    def _mesure_non_vide(cls, valeur: Any) -> Any:
+        if not _mesure_renseignee(valeur):
+            raise ValueError("une mesure non vide est obligatoire")
+        return valeur
+
+
+class CapitalisationLearning(_CorpsTransition):
+    id: str | None = Field(None, min_length=1, max_length=128)
+    titre: str | None = Field(None, max_length=500)
+    resume: str | None = None
+    enonce: TexteNonVide
+    scope: str | None = None
+    conditions_applicabilite: list[TexteNonVide] | None = None
+    related_claim_ids: list[str] | None = None
+    preuves: list[Any] | None = None
+    statut: str | None = Field(None, max_length=64)
+    mode: ModeCanonique | None = None
+
 
 _MARQUEURS_SECRETS = ("password", "passwd", "secret", "token", "credential", "authorization")
 _CLES_SECRETES = frozenset({
@@ -403,3 +570,222 @@ async def graphe_chemins(
     )
     return {"tenant": tenant, "source": source.strip(), "cible": cible.strip(),
             "profondeur": profondeur, "mode": mode, "chemins": _assainir(chemins)}
+
+
+# --------------------------------------------------------------------------- #
+# Transitions canoniques : Situation → Investigation → Decision → Initiative →
+# Outcome → Learning. La règle vit dans le domaine ; l'API orchestre et traduit
+# les erreurs (404 source absente, 409 transition refusée, 422 corps invalide).
+# --------------------------------------------------------------------------- #
+
+
+async def _executer_transition(tenant: str, action):
+    """Ouvre une connexion tenant-scoped et traduit les erreurs métier en HTTP."""
+    dsn = _dsn()
+
+    def executer():
+        with psycopg.connect(dsn, connect_timeout=5) as conn:
+            if rls.est_actif():
+                with rls.contexte_tenant(conn, tenant):
+                    return action(conn)
+            return action(conn)
+
+    try:
+        return await asyncio.to_thread(executer)
+    except HTTPException:
+        raise
+    except commandes_boucle.SourceIntrouvable as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except (commandes_boucle.TransitionRefusee, boucle.BoucleInvalide) as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except modele_entreprise.ModeleInvalide as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except entreprise_depot.ObjetInvalide as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except psycopg.Error as exc:
+        raise HTTPException(503, _DSN_INDISPONIBLE) from exc
+
+
+def _reponse_transition(
+    tenant: str, resultat: commandes_boucle.ResultatTransition, role: str,
+    idempotency_key: str | None = None,
+) -> dict:
+    """Rend l'objet créé sous son rôle et sous ``objet``, avec sa chaîne et son historique."""
+    objet = _objet_public(resultat.objet)
+    reponse = {
+        "tenant": tenant,
+        "objet": objet,
+        role: objet,
+        "chaine": [_objet_public(element) for element in resultat.chaine],
+        "historique": _assainir(resultat.historique),
+    }
+    if idempotency_key and idempotency_key.strip():
+        reponse["idempotency_key"] = idempotency_key.strip()
+    return reponse
+
+
+@router.post("/situations", status_code=201)
+async def creer_situation(
+    payload: CreationSituation,
+    request: Request,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key", max_length=200),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Crée une Situation racine (seed explicite) ; un identifiant existant est refusé en 409."""
+    _verifier_espace(x_espace)
+    tenant = _tenant(request, x_tenant)
+    resultat = await _executer_transition(
+        tenant,
+        lambda conn: commandes_boucle.creer_situation(
+            boucle, conn, tenant, **payload.model_dump(exclude_none=True)),
+    )
+    return _reponse_transition(tenant, resultat, "situation", idempotency_key)
+
+
+@router.post("/situations/{sid}/investigations", status_code=201)
+async def ouvrir_investigation(
+    sid: str,
+    payload: OuvertureInvestigation,
+    request: Request,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key", max_length=200),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Ouvre une Investigation sur une Situation du tenant."""
+    _verifier_espace(x_espace)
+    tenant = _tenant(request, x_tenant)
+    resultat = await _executer_transition(
+        tenant,
+        lambda conn: commandes_boucle.ouvrir_investigation(
+            boucle, conn, tenant, sid, **payload.model_dump(exclude_none=True)),
+    )
+    return _reponse_transition(tenant, resultat, "investigation", idempotency_key)
+
+
+@router.post("/investigations/{iid}/decisions", status_code=201)
+async def proposer_decision(
+    iid: str,
+    payload: PropositionDecision,
+    request: Request,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key", max_length=200),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Propose une Decision non tranchée sur une Investigation du tenant."""
+    _verifier_espace(x_espace)
+    tenant = _tenant(request, x_tenant)
+    champs = payload.model_dump(exclude_none=True)
+    options = champs.pop("options")
+
+    def proposer(conn):
+        return commandes_boucle.proposer_decision(boucle, conn, tenant, iid, options, **champs)
+
+    resultat = await _executer_transition(tenant, proposer)
+    return _reponse_transition(tenant, resultat, "decision", idempotency_key)
+
+
+@router.post("/decisions/{did}/trancher")
+async def trancher_decision(
+    did: str,
+    payload: TranchementDecision,
+    request: Request,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key", max_length=200),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Tranche une Decision proposée ; l'ancienne version reste dans ``historique``."""
+    _verifier_espace(x_espace)
+    tenant = _tenant(request, x_tenant)
+    champs = payload.model_dump(exclude_none=True)
+    acteur = champs.pop("acteur")
+    choix = champs.pop("choix")
+
+    def trancher(conn):
+        return commandes_boucle.trancher_decision(
+            boucle, conn, tenant, did, acteur=acteur, choix=choix, **champs)
+
+    resultat = await _executer_transition(tenant, trancher)
+    return _reponse_transition(tenant, resultat, "decision", idempotency_key)
+
+
+@router.post("/decisions/{did}/initiatives", status_code=201)
+async def lancer_initiative(
+    did: str,
+    payload: LancementInitiative,
+    request: Request,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key", max_length=200),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Lance une Initiative depuis une Decision tranchée du tenant."""
+    _verifier_espace(x_espace)
+    tenant = _tenant(request, x_tenant)
+    resultat = await _executer_transition(
+        tenant,
+        lambda conn: commandes_boucle.lancer_initiative(
+            boucle, conn, tenant, did, **payload.model_dump(exclude_none=True)),
+    )
+    return _reponse_transition(tenant, resultat, "initiative", idempotency_key)
+
+
+@router.post("/initiatives/{iid}/outcomes", status_code=201)
+async def mesurer_outcome(
+    iid: str,
+    payload: MesureOutcome,
+    request: Request,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key", max_length=200),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Mesure un Outcome sur une Initiative du tenant ; une mesure vide est refusée en 422."""
+    _verifier_espace(x_espace)
+    tenant = _tenant(request, x_tenant)
+    champs = payload.model_dump(exclude_none=True)
+    mesure = champs.pop("mesure")
+
+    def mesurer(conn):
+        return commandes_boucle.mesurer_outcome(boucle, conn, tenant, iid, mesure, **champs)
+
+    resultat = await _executer_transition(tenant, mesurer)
+    return _reponse_transition(tenant, resultat, "outcome", idempotency_key)
+
+
+@router.post("/outcomes/{oid}/learnings", status_code=201)
+async def capitaliser_learning_depuis_outcome(
+    oid: str,
+    payload: CapitalisationLearning,
+    request: Request,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key", max_length=200),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Capitalise un Learning depuis un Outcome mesuré du tenant."""
+    _verifier_espace(x_espace)
+    tenant = _tenant(request, x_tenant)
+    resultat = await _executer_transition(
+        tenant,
+        lambda conn: commandes_boucle.capitaliser_learning_depuis_outcome(
+            boucle, conn, tenant, oid, **payload.model_dump(exclude_none=True)),
+    )
+    return _reponse_transition(tenant, resultat, "learning", idempotency_key)
+
+
+@router.post("/investigations/{iid}/learnings", status_code=201)
+async def capitaliser_learning_depuis_investigation(
+    iid: str,
+    payload: CapitalisationLearning,
+    request: Request,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key", max_length=200),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Capitalise un Learning directement depuis une Investigation du tenant."""
+    _verifier_espace(x_espace)
+    tenant = _tenant(request, x_tenant)
+    resultat = await _executer_transition(
+        tenant,
+        lambda conn: commandes_boucle.capitaliser_learning_depuis_investigation(
+            boucle, conn, tenant, iid, **payload.model_dump(exclude_none=True)),
+    )
+    return _reponse_transition(tenant, resultat, "learning", idempotency_key)
