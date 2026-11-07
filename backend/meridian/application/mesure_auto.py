@@ -98,11 +98,14 @@ class ObservationIncomplete(MesureAutoInvalide):
 class ObservationTransitoire(MesureAutoInvalide):
     """L'observation est valide mais momentanément inexploitable (horloge, signature).
 
-    Le worker ne doit pas avancer son checkpoint : la mesure sera retentée.
+    Le worker ne doit pas avancer son checkpoint : la mesure sera retentée. ``horloge``
+    distingue une horloge producteur en avance (ne jamais dead-letterer) d'une panne
+    d'infrastructure (reprises bornées).
     """
 
-    def __init__(self, raison: str):
+    def __init__(self, raison: str, *, horloge: bool = False):
         self.raison = str(raison).strip() or "observation momentanément inexploitable"
+        self.horloge = bool(horloge)
         super().__init__(self.raison)
 
 
@@ -154,6 +157,7 @@ class ResultatMesure:
     evenement: dict[str, Any] | None = None
     raison: str | None = None
     transitoire: bool = False
+    horloge: bool = False
 
     @property
     def produit(self) -> bool:
@@ -314,7 +318,7 @@ def _quand(document: Mapping[str, Any], maintenant: Any = None) -> str:
         raise ObservationIncomplete("quand absent ou illisible")
     if _est_futur(instant, _reference(maintenant)):
         # Une horloge producteur en avance peut se corriger : ne pas perdre la mesure.
-        raise ObservationTransitoire("quand dans le futur")
+        raise ObservationTransitoire("quand dans le futur", horloge=True)
     return instant
 
 
@@ -323,7 +327,7 @@ def _maj_le(document: Mapping[str, Any], maintenant: Any = None) -> str:
     if instant is None:
         raise ObservationIncomplete("maj_le absent ou illisible")
     if _est_futur(instant, _reference(maintenant)):
-        raise ObservationTransitoire("maj_le dans le futur")
+        raise ObservationTransitoire("maj_le dans le futur", horloge=True)
     return instant
 
 
@@ -404,6 +408,10 @@ def _metrique(document: Mapping[str, Any], attendu: Any = None) -> str:
     if texte:
         return texte
     if isinstance(attendu, Mapping):
+        cible = _texte(attendu.get("id") or attendu.get("cible_id"))
+        if cible:
+            # L'identifiant de cible est stable ; l'indicateur reste dans le payload.
+            return f"attendu:{cible}"
         texte = _texte(attendu.get("indicateur") or attendu.get("metrique")
                        or attendu.get("metric"))
         if texte:
@@ -559,9 +567,11 @@ def _normaliser_veille(document: Mapping[str, Any], *, tenant_id: Any = None,
     decision_id: str | None = None
     if cible in attendus:
         attendu_brut = attendus[cible]
-        metrique = _texte(attendu_brut.get("indicateur"))
-        if not metrique:
+        indicateur = _texte(attendu_brut.get("indicateur"))
+        if not indicateur:
             raise ObservationIncomplete("attendu de veille sans indicateur")
+        # La métrique canonique reste stable même si le libellé de l'indicateur change.
+        metrique = f"attendu:{cible}"
         valeur = _nombre(observation.get("valeur"))
         if valeur is None:
             raise ObservationIncomplete("valeur observée non numérique pour un attendu")
@@ -575,7 +585,7 @@ def _normaliser_veille(document: Mapping[str, Any], *, tenant_id: Any = None,
         unite = _unite_commune(attendu_brut, observation, "attendu")
         attendu = {
             "id": cible,
-            "indicateur": metrique,
+            "indicateur": indicateur,
             "sens": sens,
             "depart": _nombre_ou_none(depart),
             "cible": _nombre_ou_none(cible_valeur),
@@ -594,7 +604,7 @@ def _normaliser_veille(document: Mapping[str, Any], *, tenant_id: Any = None,
         sens = attendu["sens"]
         atteint = valeur >= cible_valeur if sens == "hausse" else valeur <= cible_valeur
         interpretation = (
-            f"{metrique} : {observe_texte} observé, "
+            f"{indicateur} : {observe_texte} observé, "
             f"{'objectif atteint' if atteint else 'objectif non atteint'} "
             f"(cible {attendu_texte}, départ {_avec_unite(depart, unite)})."
         )
@@ -773,12 +783,17 @@ def evenement_depuis_observation(observation: ObservationMesure, *,
     )
 
 
-def _classer_erreur_pont(exc: BaseException) -> bool:
-    """Vrai si l'erreur C1 est transitoire/environnementale plutôt que schéma."""
+def _classer_erreur_pont(exc: BaseException) -> tuple[bool, bool]:
+    """Rend ``(transitoire, horloge)`` pour une erreur du pont C1.
+
+    Une signature indisponible est environnementale (transitoire, pas horloge). Un
+    ``source_maj_le`` futur est une horloge en avance : il ne doit jamais être dead-letteré.
+    """
     if isinstance(exc, pont.SignatureInvalide):
-        return True
+        return True, False
     message = str(exc).lower()
-    return any(mot in message for mot in ("futur", "future", "signature", "horloge"))
+    horloge = any(mot in message for mot in ("futur", "future", "horloge"))
+    return (horloge or "signature" in message), horloge
 
 
 def mesurer_observation(document: Any, *, tenant_id: Any = None,
@@ -790,17 +805,26 @@ def mesurer_observation(document: Any, *, tenant_id: Any = None,
             document, tenant_id=tenant_id, initiative_id=initiative_id,
             maintenant=maintenant)
     except ObservationTransitoire as exc:
-        return ResultatMesure(raison=exc.raison, transitoire=True)
+        return ResultatMesure(
+            raison=exc.raison, transitoire=True, horloge=exc.horloge)
     except ObservationIncomplete as exc:
         return ResultatMesure(raison=exc.raison)
     except pont.PontInvalide as exc:
         return ResultatMesure(raison=str(exc))
+    except Exception as exc:  # noqa: BLE001 - dead-letter, jamais de blocage silencieux
+        return ResultatMesure(
+            raison=f"erreur inattendue : {type(exc).__name__} : {exc}")
     try:
         evenement = evenement_depuis_observation(observation, maintenant=maintenant)
     except pont.SignatureInvalide as exc:
         return ResultatMesure(mesure=observation, raison=str(exc), transitoire=True)
     except pont.PontInvalide as exc:
+        transitoire, horloge = _classer_erreur_pont(exc)
         return ResultatMesure(
             mesure=observation, raison=str(exc),
-            transitoire=_classer_erreur_pont(exc))
+            transitoire=transitoire, horloge=horloge)
+    except Exception as exc:  # noqa: BLE001 - dead-letter, jamais de blocage silencieux
+        return ResultatMesure(
+            mesure=observation,
+            raison=f"erreur inattendue : {type(exc).__name__} : {exc}")
     return ResultatMesure(mesure=observation, evenement=evenement)

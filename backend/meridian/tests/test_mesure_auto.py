@@ -260,7 +260,8 @@ def test_veille_attendu_mappe_attendu_et_observe():
     assert resultat.produit is True
     mesure = resultat.mesure
     assert mesure.type_observation == "attendu"
-    assert mesure.metrique == "Délai moyen"
+    assert mesure.metrique == "attendu:att-1"
+    assert mesure.attendu["indicateur"] == "Délai moyen"
     assert mesure.attendu["cible"] == 5 and mesure.attendu["depart"] == 10
     assert mesure.observe == {"valeur": 7, "unite": "j", "conclusion": ""}
     assert mesure.effets_secondaires == ()
@@ -623,6 +624,7 @@ def test_signature_invalide_est_transitoire(monkeypatch):
 
     assert resultat.produit is False
     assert resultat.transitoire is True
+    assert resultat.horloge is False
 
 
 def test_erreur_c1_future_est_transitoire(monkeypatch):
@@ -647,3 +649,16 @@ def test_erreur_c1_de_schema_reste_permanente(monkeypatch):
 
     assert resultat.produit is False
     assert resultat.transitoire is False
+
+
+def test_erreur_inattendue_est_dead_letteree_sans_bloquer(monkeypatch):
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("bug inattendu")
+
+    monkeypatch.setattr(mesure_auto, "normaliser_observation", boom)
+
+    resultat = mesure_auto.mesurer_observation(_observation())
+
+    assert resultat.produit is False
+    assert resultat.transitoire is False
+    assert "inattendue" in resultat.raison.lower()
