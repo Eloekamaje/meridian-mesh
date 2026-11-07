@@ -52,9 +52,8 @@ def _texte(valeur: Any) -> str:
 
 
 def normaliser_tenant(tenant_id: Any) -> str:
-    """Valide et canonise un tenant ; ``demo`` et ``local`` sont le même tenant."""
-    tenant = pont.normaliser_tenant(tenant_id)
-    return "local" if tenant == "demo" else tenant
+    """Valide et canonise un tenant via l'autorité unique du domaine."""
+    return pont.normaliser_tenant(tenant_id)
 
 
 def _tenant_aliases(tenant: str) -> list[str]:
@@ -199,6 +198,22 @@ def evenement_decision_situation(situation: Any, *, tenant_id: Any,
     )
 
 
+def _completer_snapshot(situation_id: str, contexte: Mapping[str, Any]) -> dict[str, Any]:
+    """Complète les champs optionnels exigés par l'ancre C1 sans inventer de fait métier.
+
+    Le builder Situation utilise déjà l'identifiant comme titre et CANDIDATE/MOYENNE par
+    défaut. Le snapshot d'ancre doit produire exactement la même forme pour ne pas être
+    silencieusement écarté quand un document legacy n'a ni titre ni priorité.
+    """
+    doc = copy.deepcopy(dict(contexte))
+    for champ, defaut in (("titre", situation_id), ("statut", "candidate"),
+                          ("priorite", "normale")):
+        valeur = doc.get(champ)
+        if not isinstance(valeur, str) or not valeur.strip():
+            doc[champ] = defaut
+    return doc
+
+
 def evenement_case_lie(case: Any, situation: Any, *, tenant_id: Any,
                        situation_contexte: Any = None,
                        maintenant: Any = None) -> dict[str, Any] | None:
@@ -222,6 +237,7 @@ def evenement_case_lie(case: Any, situation: Any, *, tenant_id: Any,
     contexte_source = (_document_canonique(situation_contexte, tenant)
                        if isinstance(situation_contexte, Mapping) else situation_doc)
     contexte = _version_ancre(contexte_source, situation_doc, maintenant)
+    contexte = _completer_snapshot(situation_id, contexte)
     # Le builder lève si le case ou le snapshot est incohérent : la route legacy reste
     # best-effort et journalise l'échec sans annuler l'écriture Mongo.
     objets = pont.objets_depuis_case(

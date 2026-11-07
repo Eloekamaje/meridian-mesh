@@ -32,7 +32,7 @@ from typing import Any
 from meridian.application import mapping_legacy as mapping
 from meridian.application import pont_securite as securite
 from meridian.domain import modele_entreprise as modele
-from meridian.domain.tenant import TenantError, normaliser_slug
+from meridian.domain.tenant import TenantError, normaliser_tenant_canonique
 
 __all__ = [
     "ConflitCanonique",
@@ -291,7 +291,7 @@ def normaliser_tenant(tenant_id: Any) -> str:
     if tenant_id is None or not _texte(tenant_id):
         raise PontInvalide("tenant_id obligatoire")
     try:
-        return normaliser_slug(tenant_id)
+        return normaliser_tenant_canonique(tenant_id)
     except TenantError as exc:
         raise PontInvalide(str(exc)) from exc
 
@@ -1385,6 +1385,37 @@ collection_attendue = _collection_attendue
 source_maj_le = _source_maj_le
 
 
+def _canoniser_tenant_document(document: Any, tenant: str) -> None:
+    """Ramène l'alias demo d'un document du payload vers le tenant canonique."""
+    if not isinstance(document, Mapping):
+        return
+    declare = _texte(document.get("tenant_id"))
+    if not declare:
+        return
+    try:
+        if normaliser_tenant_canonique(declare) == tenant:
+            document["tenant_id"] = tenant
+    except TenantError:
+        # Un tenant invalide reste tel quel : la vérification de provenance le refusera.
+        return
+
+
+def _canoniser_payload_tenants(payload: Any, tenant: str) -> Any:
+    """Canonise les alias demo des documents embarqués avant hash/signature."""
+    if not isinstance(payload, Mapping):
+        return payload
+    copie = copy.deepcopy(dict(payload))
+    for cle in ("situation", "case", "initiative", "investigation"):
+        _canoniser_tenant_document(copie.get(cle), tenant)
+    objets = copie.get("objets")
+    if isinstance(objets, (list, tuple)):
+        copie["objets"] = [copy.deepcopy(objet) if isinstance(objet, Mapping) else objet
+                           for objet in objets]
+        for objet in copie["objets"]:
+            _canoniser_tenant_document(objet, tenant)
+    return copie
+
+
 def construire_evenement(operation: Any, tenant_id: Any, canonical_id: Any, payload: Any, *,
                          source: Mapping[str, Any] | None = None,
                          source_event_id: Any = None,
@@ -1398,6 +1429,7 @@ def construire_evenement(operation: Any, tenant_id: Any, canonical_id: Any, payl
     payload_assaini = assainir(payload)
     if not isinstance(payload_assaini, Mapping):
         raise PontInvalide("payload : objet attendu")
+    payload_assaini = _canoniser_payload_tenants(payload_assaini, tenant)
     source_final = dict(assainir(source or {}))
     collection = _texte(source_final.get("collection")) or _collection_attendue(operation_texte)
     if operation_texte == OPERATION_OBJETS:

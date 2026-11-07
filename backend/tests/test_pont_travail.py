@@ -692,3 +692,43 @@ def test_une_nouvelle_decision_sans_bump_de_maj_le_est_bien_appliquee():
         conn, TENANT, pont.decision_case_id("case-1", 1)) is not None
     assert entreprise_depot.lire_objet(
         conn, TENANT, pont.decision_case_id("case-1", 2)) is not None
+
+
+def test_le_boundary_canonique_centralise_demo_vers_local():
+    from meridian.domain import tenant as domaine_tenant
+
+    assert domaine_tenant.normaliser_tenant_canonique("demo") == "local"
+    assert domaine_tenant.normaliser_tenant_canonique("Demo") == "local"
+    assert domaine_tenant.normaliser_tenant_canonique("banque") == "banque"
+    assert pont.normaliser_tenant("demo") == "local"
+    situation = une_situation(tenant_id="demo", maj_le=DATE)
+    evenement = pont.evenement_depuis_situation(
+        situation, tenant_id="demo", source_event_id="demo-1", maintenant=DATE)
+    assert evenement["tenant_id"] == "local"
+    assert evenement["payload"]["situation"]["tenant_id"] == "local"
+
+
+def test_une_situation_incomplete_ne_perd_pas_les_decisions_du_case():
+    from aides_pont import ConnexionPont
+
+    from meridian.adapters.outbound.postgres import entreprise_depot
+    from meridian.adapters.outbound.postgres import pont_canonique as pont_pg
+
+    avant = une_situation()
+    for champ in ("titre", "priorite", "statut"):
+        avant.pop(champ, None)
+    apres = une_situation(maj_le=DECIDE_LE)
+    evenement_case = pont_travail.evenement_case_lie(
+        un_case(), apres, tenant_id=TENANT, situation_contexte=avant,
+        maintenant=DECIDE_LE)
+
+    assert evenement_case is not None
+    objets = _objets(evenement_case)
+    situation = next(objet for objet in objets if objet["type"] == "SITUATION")
+    assert situation["titre"] == "sit-1"
+    assert situation["donnees"]["priorite"] == "MOYENNE"
+
+    conn = ConnexionPont()
+    pont_pg.appliquer_evenement(conn, evenement_case, maintenant=DECIDE_LE)
+    assert entreprise_depot.lire_objet(
+        conn, TENANT, pont.decision_case_id("case-1", 1)) is not None
