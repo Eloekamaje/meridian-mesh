@@ -19,6 +19,7 @@ Révisions :
 - `0001_objets_exploitation` — index partiels initiaux des liens et de l'empreinte des Signaux.
 - `0002_objets_exploitation_index_v2` — remplace les index partiels de liens par des index non partiels
   utilisables par `lister_objets_exploitation`, et ajoute l'index GIN des `situation_ids` d'un Signal.
+- `0003_objets_exploitation_expression_index` — index non partiel du filtre `expression_id` de `lister`.
   L'unicité de l'empreinte reste applicative : un verrou consultatif sérialise les inserts concurrents,
   mais aucun index unique n'est posé, car une base historique peut déjà contenir des doublons. Un
   backfill de dédoublonnage est un prérequis avant toute contrainte unique future.
