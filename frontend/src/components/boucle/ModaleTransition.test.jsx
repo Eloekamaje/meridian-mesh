@@ -118,6 +118,30 @@ test("en cours d'enregistrement, désactive les champs et ignore la fermeture", 
     hote.querySelector('[data-testid="boucle-transition-fermer"]').click();
   });
   expect(onFermer).not.toHaveBeenCalled();
+  expect(document.activeElement).toBe(hote.querySelector('[data-testid="boucle-transition-modale"]'));
+  await act(async () => {
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true }));
+  });
+  expect(document.activeElement).toBe(hote.querySelector('[data-testid="boucle-transition-modale"]'));
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("pendant une vérification, l'envoi est bloqué mais la fermeture reste possible", async () => {
+  const onFermer = jest.fn();
+  const { hote, racine } = monter();
+  await rendre(racine, { rechargement: true, onFermer });
+
+  const enregistrer = hote.querySelector('[data-testid="boucle-transition-enregistrer"]');
+  expect(enregistrer.disabled).toBe(true);
+  expect(enregistrer.textContent).toContain("Vérification");
+  expect(hote.querySelector('[data-testid="boucle-transition-fermer"]').disabled).toBe(false);
+  expect(hote.querySelector('[data-testid="boucle-transition-annuler"]').disabled).toBe(false);
+
+  await act(async () => {
+    hote.querySelector('[data-testid="boucle-transition-fermer"]').click();
+  });
+  expect(onFermer).toHaveBeenCalledTimes(1);
 
   await act(async () => { racine.unmount(); });
 });

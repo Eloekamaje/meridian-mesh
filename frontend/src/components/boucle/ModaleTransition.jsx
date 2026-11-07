@@ -62,6 +62,7 @@ function Champ({ champ, valeur, onChange, desactive }) {
 export default function ModaleTransition({
   action,
   enCours = false,
+  rechargement = false,
   erreur = "",
   onFermer,
   onSoumettre,
@@ -70,9 +71,14 @@ export default function ModaleTransition({
   const dialogue = useRef(null);
 
   useEffect(() => {
-    const champ = dialogue.current?.querySelector("input, textarea, select");
+    if (!dialogue.current) return;
+    if (enCours) {
+      dialogue.current.focus();
+      return;
+    }
+    const champ = dialogue.current.querySelector("input, textarea, select");
     if (champ) champ.focus();
-  }, []);
+  }, [enCours]);
 
   useEffect(() => {
     const surTouche = (evenement) => {
@@ -85,7 +91,10 @@ export default function ModaleTransition({
       const focusables = [...dialogue.current.querySelectorAll(
         "input:not(:disabled), textarea:not(:disabled), select:not(:disabled), button:not(:disabled)",
       )];
-      if (focusables.length === 0) return;
+      if (focusables.length === 0) {
+        evenement.preventDefault();
+        return;
+      }
       const premier = focusables[0];
       const dernier = focusables[focusables.length - 1];
       if (evenement.shiftKey && document.activeElement === premier) {
@@ -106,7 +115,7 @@ export default function ModaleTransition({
 
   const soumettre = (evenement) => {
     evenement.preventDefault();
-    if (enCours) return;
+    if (enCours || rechargement) return;
     onSoumettre(valeurs);
   };
 
@@ -123,6 +132,7 @@ export default function ModaleTransition({
       <div
         ref={dialogue}
         role="dialog"
+        tabIndex={-1}
         aria-modal="true"
         aria-labelledby="boucle-transition-dialogue-titre"
         aria-describedby="boucle-transition-description"
@@ -156,7 +166,7 @@ export default function ModaleTransition({
           </button>
         </div>
 
-        <form onSubmit={soumettre} noValidate aria-busy={enCours} className="mt-4">
+        <form onSubmit={soumettre} noValidate aria-busy={enCours || rechargement} className="mt-4">
           <div className="space-y-3">
             {action.champs.map((champ) => (
               <div key={champ.nom}>
@@ -204,12 +214,12 @@ export default function ModaleTransition({
             </button>
             <button
               type="submit"
-              disabled={enCours}
+              disabled={enCours || rechargement}
               data-testid="boucle-transition-enregistrer"
               className="flex h-8 items-center gap-1.5 rounded-md bg-[#60A5FA] px-3 text-xs font-semibold text-[#071019] transition-colors hover:bg-[#93C5FD] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {enCours && <CircleNotch size={12} className="animate-spin" aria-hidden="true" />}
-              {enCours ? "Enregistrement…" : "Enregistrer"}
+              {(enCours || rechargement) && <CircleNotch size={12} className="animate-spin" aria-hidden="true" />}
+              {enCours ? "Enregistrement…" : rechargement ? "Vérification…" : "Enregistrer"}
             </button>
           </div>
         </form>

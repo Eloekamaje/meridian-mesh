@@ -22,6 +22,7 @@ import ModaleTransition from "@/components/boucle/ModaleTransition";
 import {
   configurationAction,
   construireCorps,
+  detailSourceApresTransition,
   fusionnerObjet,
   idObjet,
   messageErreurTransition,
@@ -641,6 +642,7 @@ export default function Boucle() {
   const refDetail = useRef(0);
   const enCoursRef = useRef(false);
   const refElementDeclencheur = useRef(null);
+  const refIdentifiantDeclencheur = useRef(null);
   const refElementDeclencheurAction = useRef(null);
   const refRestaurationFocusAction = useRef(false);
   const [formulaireOutcome, setFormulaireOutcome] = useState(OUTCOME_INITIAL);
@@ -656,7 +658,7 @@ export default function Boucle() {
   const [twinErreur, setTwinErreur] = useState("");
   const [twinSucces, setTwinSucces] = useState("");
   const [actionActive, setActionActive] = useState(null);
-  const [transition, setTransition] = useState({ enCours: false, erreur: "", succes: null });
+  const [transition, setTransition] = useState({ enCours: false, erreur: "", succes: null, rechargement: false });
 
   useEffect(() => {
     let annule = false;
@@ -746,12 +748,15 @@ export default function Boucle() {
   }, []);
 
   const reinitialiserTransition = () => {
-    setTransition({ enCours: false, erreur: "", succes: null });
+    setTransition({ enCours: false, erreur: "", succes: null, rechargement: false });
   };
 
   const ouvrirObjet = (objet) => {
     if (transition.enCours || enCoursRef.current) return;
-    refElementDeclencheur.current = document.activeElement;
+    if (!selection) {
+      refElementDeclencheur.current = document.activeElement;
+      refIdentifiantDeclencheur.current = idObjet(objet);
+    }
     reinitialiserTransition();
     setSelection(objet);
     const identifiant = idObjet(objet);
@@ -820,7 +825,10 @@ export default function Boucle() {
 
   const ouvrirParId = (identifiant) => {
     if (!identifiant || transition.enCours || enCoursRef.current) return;
-    refElementDeclencheur.current = document.activeElement;
+    if (!selection) {
+      refElementDeclencheur.current = document.activeElement;
+      refIdentifiantDeclencheur.current = identifiant;
+    }
     reinitialiserTransition();
     const connu = objets.find((objet) => idObjet(objet) === identifiant);
     setSelection(connu || { id: identifiant, type: "", famille: "" });
@@ -853,7 +861,7 @@ export default function Boucle() {
   };
 
   const executerTransition = async (valeurs) => {
-    if (enCoursRef.current) return;
+    if (enCoursRef.current || transition.rechargement) return;
     if (!actionCourante || !objetDetail) return;
     const identifiant = idObjet(objetDetail);
     if (!identifiant) {
@@ -881,57 +889,21 @@ export default function Boucle() {
     const detailIncomplet = detail.chargement || !detail.data;
     enCoursRef.current = true;
     refDetail.current += 1; // invalide un GET détail encore en vol
-    setTransition((avant) => ({ ...avant, enCours: true, erreur: "" }));
+    setTransition((avant) => ({ ...avant, enCours: true, erreur: "", rechargement: false }));
+
+    let reponse = null;
+    let cause = null;
     try {
       // Pas d'Idempotency-Key par défaut : le contrat A courant refuse les clés non vides.
-      const reponse = await boucleApi[actionCourante.api](identifiant, corps);
-      const nouvelObjet = reponse?.data?.objet ?? null;
-      const nouvelleChaine = Array.isArray(reponse?.data?.chaine) ? reponse.data.chaine : null;
-      const nouvelHistorique = Array.isArray(reponse?.data?.historique) ? reponse.data.historique : null;
-      const indexSource = (nouvelleChaine || []).findIndex((etape) => idObjet(etape) === identifiant);
-      const source = indexSource >= 0
-        ? nouvelleChaine[indexSource]
-        : (idObjet(nouvelObjet) === identifiant ? nouvelObjet : null);
-      const memeObjet = idObjet(nouvelObjet) === identifiant;
-      // La chaîne A va de la racine jusqu'à l'enfant créé, et l'historique de la réponse
-      // est celui de l'enfant : on coupe à la source et on garde SON historique.
-      const chaineSource = source && !memeObjet && indexSource >= 0
-        ? nouvelleChaine.slice(0, indexSource + 1)
-        : nouvelleChaine;
-      const historiqueSource = memeObjet ? nouvelHistorique : null;
+      reponse = await boucleApi[actionCourante.api](identifiant, corps);
+    } catch (erreurApi) {
+      cause = erreurApi;
+    } finally {
+      // Le POST est terminé : on relâche le verrou AVANT tout rechargement de détail.
+      enCoursRef.current = false;
+    }
 
-      setActionActive(null);
-      setTransition({
-        enCours: false,
-        erreur: "",
-        succes: nouvelObjet ? { action, objet: nouvelObjet } : { action, objet: null },
-      });
-      demanderRestaurationFocusAction();
-
-      const objetsReponse = [nouvelObjet, ...(nouvelleChaine || [])]
-        .filter((objet) => idObjet(objet));
-      if (objetsReponse.length > 0) {
-        setObjets((avant) => objetsReponse.reduce((liste, objet) => fusionnerObjet(liste, objet), avant));
-      }
-
-      if (source) {
-        setSelection(source);
-        setDetail((avant) => ({
-          ...avant,
-          chargement: false,
-          erreur: null,
-          data: {
-            ...(avant.data || {}),
-            objet: source,
-            chaine: chaineSource || avant.data?.chaine || [],
-            historique: historiqueSource || avant.data?.historique || [],
-          },
-        }));
-      } else {
-        await chargerDetail(identifiant);
-      }
-      actualiser();
-    } catch (cause) {
+    if (cause) {
       const statut = cause?.response?.status;
       const resultatIncertain = !cause?.response || statut >= 500;
       const message = resultatIncertain
@@ -943,12 +915,65 @@ export default function Boucle() {
         erreur: message,
       }));
       if (detailIncomplet || statut === 404 || statut === 409 || resultatIncertain) {
-        await chargerDetail(identifiant);
+        setTransition((avant) => ({ ...avant, rechargement: true }));
+        try {
+          await chargerDetail(identifiant);
+        } finally {
+          setTransition((avant) => ({ ...avant, rechargement: false }));
+        }
         actualiser();
       }
-    } finally {
-      enCoursRef.current = false;
+      return;
     }
+
+    const nouvelObjet = reponse?.data?.objet ?? null;
+    const nouvelleChaine = Array.isArray(reponse?.data?.chaine) ? reponse.data.chaine : null;
+    const nouvelHistorique = Array.isArray(reponse?.data?.historique) ? reponse.data.historique : null;
+    const detailSource = detailSourceApresTransition({
+      identifiant,
+      nouvelObjet,
+      nouvelleChaine,
+      nouvelHistorique,
+      ancienDetail: detail.data,
+    });
+
+    setActionActive(null);
+    setTransition({
+      enCours: false,
+      erreur: "",
+      succes: nouvelObjet ? { action, objet: nouvelObjet } : { action, objet: null },
+      rechargement: false,
+    });
+    demanderRestaurationFocusAction();
+
+    const objetsReponse = [nouvelObjet, ...(nouvelleChaine || [])]
+      .filter((objet) => idObjet(objet));
+    if (objetsReponse.length > 0) {
+      setObjets((avant) => objetsReponse.reduce((liste, objet) => fusionnerObjet(liste, objet), avant));
+    }
+
+    if (detailSource.source) {
+      setSelection(detailSource.source);
+      setDetail((avant) => ({
+        ...avant,
+        chargement: false,
+        erreur: null,
+        data: {
+          ...(avant.data || {}),
+          objet: detailSource.source,
+          chaine: detailSource.chaine,
+          historique: detailSource.historique,
+        },
+      }));
+    } else {
+      setTransition((avant) => ({ ...avant, rechargement: true }));
+      try {
+        await chargerDetail(identifiant);
+      } finally {
+        setTransition((avant) => ({ ...avant, rechargement: false }));
+      }
+    }
+    actualiser();
   };
 
   useEffect(() => {
@@ -965,9 +990,23 @@ export default function Boucle() {
   useEffect(() => {
     if (selection) return;
     const declencheur = refElementDeclencheur.current;
-    if (!declencheur) return;
+    const identifiantDeclencheur = refIdentifiantDeclencheur.current;
+    if (!declencheur && !identifiantDeclencheur) return;
     refElementDeclencheur.current = null;
-    if (declencheur.isConnected) declencheur.focus?.();
+    refIdentifiantDeclencheur.current = null;
+    if (declencheur?.isConnected) {
+      declencheur.focus?.();
+      return;
+    }
+    if (identifiantDeclencheur) {
+      const remplacant = [...document.querySelectorAll("[data-objet-id]")]
+        .find((element) => element.getAttribute("data-objet-id") === identifiantDeclencheur);
+      if (remplacant) {
+        remplacant.focus?.();
+        return;
+      }
+    }
+    document.querySelector('[data-testid="boucle-recherche"]')?.focus?.();
   }, [selection]);
 
   useEffect(() => {
@@ -1726,6 +1765,7 @@ export default function Boucle() {
           key={actionCourante.id}
           action={actionCourante}
           enCours={transition.enCours}
+          rechargement={transition.rechargement}
           erreur={transition.erreur}
           onFermer={fermerAction}
           onSoumettre={executerTransition}

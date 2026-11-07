@@ -570,6 +570,36 @@ export function fusionnerObjet(objets, objet) {
   return copie;
 }
 
+// Réponse A : la chaîne va de la racine jusqu'à l'enfant créé, et l'historique
+// est celui de l'objet retourné. Pour la source, on coupe la chaîne à son index
+// et on ne reprend l'historique de la réponse que si c'est le même objet.
+// Une chaîne vide, absente ou sans la source ne doit jamais effacer l'ancienne.
+export function detailSourceApresTransition({
+  identifiant,
+  nouvelObjet,
+  nouvelleChaine,
+  nouvelHistorique,
+  ancienDetail,
+}) {
+  const chaine = Array.isArray(nouvelleChaine) ? nouvelleChaine : null;
+  const indexSource = chaine
+    ? chaine.findIndex((etape) => idObjet(etape) === identifiant)
+    : -1;
+  const memeObjet = idObjet(nouvelObjet) === identifiant;
+  const source = indexSource >= 0
+    ? chaine[indexSource]
+    : (memeObjet ? nouvelObjet : null);
+  const chaineSource = indexSource >= 0
+    ? (memeObjet ? chaine : chaine.slice(0, indexSource + 1))
+    : null;
+
+  return {
+    source,
+    chaine: chaineSource ?? ancienDetail?.chaine ?? [],
+    historique: (memeObjet ? nouvelHistorique : null) ?? ancienDetail?.historique ?? [],
+  };
+}
+
 let compteurIdempotence = 0;
 
 export function cleIdempotence() {

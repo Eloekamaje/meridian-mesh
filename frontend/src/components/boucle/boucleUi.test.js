@@ -4,6 +4,7 @@ import {
   configurationAction,
   construireCorps,
   decisionEstTranchee,
+  detailSourceApresTransition,
   fusionnerObjet,
   idObjet,
   messageErreurTransition,
@@ -314,5 +315,45 @@ describe("cleIdempotence", () => {
     const cle = cleIdempotence();
     expect(typeof cle).toBe("string");
     expect(cle.length).toBeGreaterThan(8);
+  });
+});
+
+describe("detailSourceApresTransition", () => {
+  const ancienDetail = {
+    chaine: [situation, investigation, decisionProposee],
+    historique: [{ version: 3, maj_le: "2026-10-30T10:00:00Z" }],
+  };
+
+  test("conserve l'ancienne chaîne si la réponse n'en contient pas la source", () => {
+    for (const chaine of [[], [situation, investigation], null, undefined]) {
+      const resultat = detailSourceApresTransition({
+        identifiant: "dec-1",
+        nouvelObjet: decisionTranchee,
+        nouvelleChaine: chaine,
+        nouvelHistorique: [{ version: 9 }],
+        ancienDetail,
+      });
+      expect(resultat.source.id).toBe("dec-1");
+      expect(resultat.chaine).toEqual(ancienDetail.chaine);
+      expect(resultat.historique).toEqual([{ version: 9 }]);
+    }
+  });
+
+  test("coupe la chaîne à la source et conserve son historique quand un enfant est créé", () => {
+    const enfant = { id: "ini-2", type: "INITIATIVE", titre: "Initiative" };
+    const source = {
+      ...decisionTranchee,
+      donnees: { ...decisionTranchee.donnees, initiative_id: "ini-2" },
+    };
+    const resultat = detailSourceApresTransition({
+      identifiant: "dec-1",
+      nouvelObjet: enfant,
+      nouvelleChaine: [situation, investigation, source, enfant],
+      nouvelHistorique: [{ version: 1 }],
+      ancienDetail,
+    });
+    expect(resultat.source).toEqual(source);
+    expect(resultat.chaine).toEqual([situation, investigation, source]);
+    expect(resultat.historique).toEqual(ancienDetail.historique);
   });
 });
