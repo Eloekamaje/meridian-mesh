@@ -22,3 +22,16 @@ Révisions :
   L'unicité de l'empreinte reste applicative : un verrou consultatif sérialise les inserts concurrents,
   mais aucun index unique n'est posé, car une base historique peut déjà contenir des doublons. Un
   backfill de dédoublonnage est un prérequis avant toute contrainte unique future.
+
+## Exécution en production
+
+`appliquer_schema` exécute le DDL dans une transaction et prend un verrou `SHARE` sur
+`objet_entreprise`. En production, poser un `lock_timeout` de session (par exemple
+`SET lock_timeout = '5s'`) avant l'application, prévoir une fenêtre de maintenance courte et
+relancer l'application si le timeout est atteint. Le `lock_timeout` n'est pas posé par le code :
+il casserait les suites parallèles qui partagent les mêmes catalogues.
+
+Pour éviter le verrou bloquant, appliquer les index hors ligne avec
+`scripts/creer-index-objets-exploitation-concurrently.sql` (`CREATE INDEX CONCURRENTLY`, aucun
+`BEGIN`), puis démarrer l'application. Ce script n'est volontairement pas dans ce répertoire :
+`appliquer_schema` exécuterait son contenu en transaction, ce que `CONCURRENTLY` interdit.
