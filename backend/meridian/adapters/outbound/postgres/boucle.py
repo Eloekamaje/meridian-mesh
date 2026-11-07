@@ -16,7 +16,9 @@ import uuid
 from typing import Any
 
 from meridian.adapters.outbound.postgres import entreprise_depot
+from meridian.adapters.outbound.postgres import objets_exploitation
 from meridian.domain import modele_entreprise as modele
+from meridian.domain.construction_objets_exploitation import nouveau_scenario as _nouveau_scenario
 from meridian.domain.mesure import mesure_renseignee as _mesure_renseignee
 
 __all__ = [
@@ -28,6 +30,7 @@ __all__ = [
     "mesurer_outcome", "capitaliser_learning",
     "enregistrer_boucle", "lire_boucle", "lire_par_id",
     "transaction", "nouvelle_situation", "donnees_de", "fusionner_donnees",
+    "nouveau_scenario", "enregistrer_objets", "lister_objets_exploitation",
 ]
 
 TYPES_BOUCLE = ("SITUATION", "INVESTIGATION", "DECISION", "INITIATIVE", "OUTCOME", "LEARNING")
@@ -1039,6 +1042,33 @@ def transaction(conn: Any) -> Any:
 def nouvelle_situation(**champs: Any) -> Situation:
     """Fabrique la Situation canonique utilisée par l'orchestration applicative."""
     return Situation(**champs)
+
+
+def nouveau_scenario(**champs: Any) -> Any:
+    """Fabrique un Scénario canonique sans faire dépendre l'application du domaine concret."""
+    return _nouveau_scenario(**champs)
+
+
+def enregistrer_objets(
+    conn: Any, tenant_id: Any = None, objets: Any = None, *,
+    historique: bool = False, as_dict: bool = True,
+) -> Any:
+    """Persiste des objets d'exploitation, dont les Scénarios, avec leurs liens inverses."""
+    return objets_exploitation.enregistrer_objets_exploitation(
+        conn, tenant_id, objets, historique=historique, as_dict=as_dict,
+    )
+
+
+def lister_objets_exploitation(
+    conn: Any, tenant_id: str, *, type_: str | None = None,
+    investigation_id: str | None = None, decision_id: str | None = None,
+    limite: int = 100, as_dict: bool = True,
+) -> list[Any]:
+    """Liste les objets d'exploitation du tenant, filtrés par type et par parent."""
+    return objets_exploitation.lister_objets_exploitation(
+        conn, tenant_id, type_=type_, investigation_id=investigation_id,
+        decision_id=decision_id, limite=limite, as_dict=as_dict,
+    )
 
 
 def donnees_de(objet: Any) -> dict[str, Any]:

@@ -5,7 +5,9 @@ Les objets sont lus dans ``objet_entreprise`` (Postgres) via
 :mod:`meridian.adapters.outbound.postgres.boucle`.
 Les six transitions canoniques sont exposées en POST : Situation → Investigation → Decision →
 Initiative → Outcome → Learning. Une transition charge sa source, applique la règle pure,
-persiste avec historique et renvoie l'objet créé avec sa chaîne.
+persiste avec historique et renvoie l'objet créé avec sa chaîne. Les Scénarios canoniques
+disposent en plus d'une création (`POST /boucle/scenarios`), d'une liste filtrée
+(`GET /boucle/scenarios`) et d'une comparaison déterministe (`POST /boucle/scenarios/comparer`).
 
 ``Idempotency-Key`` n'est pas accepté silencieusement : aucun stockage d'idempotence durable
 n'étant branché, toute requête qui fournit cet en-tête est refusée en 501. Les transitions
@@ -258,6 +260,45 @@ class CapitalisationLearning(_CorpsTransition):
     # Acceptés pour compatibilité mais ignorés : le flux force PROPOSED / INFERRED.
     statut: str | None = Field(None, max_length=64)
     mode: ModeCanonique | None = None
+
+
+class CreationScenario(_CorpsTransition):
+    titre: TexteNonVide = Field(..., max_length=500)
+    description: str | None = Field(None, max_length=10000)
+    investigation_id: TexteIdentifiant | None = None
+    decision_id: TexteIdentifiant | None = None
+    hypothesis_ids: list[TexteNonVide] | None = Field(None, max_length=100)
+    actions: list[TexteNonVide] | None = Field(None, max_length=100)
+    valeur_estimee: float | None = Field(None, ge=0)
+    cout_estime: float | None = Field(None, ge=0)
+    complexite: float | None = Field(None, ge=0, le=1)
+    risque: float | None = Field(None, ge=0, le=1)
+    dependances: list[TexteNonVide] | None = Field(None, max_length=100)
+    delai_jours: int | None = Field(None, ge=0)
+    impacts: dict[str, str] | None = None
+    reversibilite: str | None = Field(None, max_length=32)
+    statut: str | None = Field(None, max_length=64)
+    preuves: list[Any] | None = Field(None, max_length=100)
+    confiance: float | None = Field(None, ge=0, le=1)
+
+    @model_validator(mode="after")
+    def _parent_obligatoire(self):
+        if not (self.investigation_id or self.decision_id):
+            raise ValueError("investigation_id ou decision_id obligatoire")
+        return self
+
+
+class ComparaisonScenarios(_CorpsTransition):
+    scenario_ids: list[TexteIdentifiant] = Field(..., min_length=2, max_length=50)
+    reference_id: TexteIdentifiant | None = None
+
+    @model_validator(mode="after")
+    def _ids_coherents(self):
+        if len(set(self.scenario_ids)) != len(self.scenario_ids):
+            raise ValueError("scenario_ids ne doit pas contenir de doublon")
+        if self.reference_id is not None and self.reference_id not in self.scenario_ids:
+            raise ValueError("reference_id doit appartenir à scenario_ids")
+        return self
 
 
 _MARQUEURS_SECRETS = ("password", "passwd", "secret", "token", "credential", "authorization")
@@ -876,3 +917,66 @@ async def capitaliser_learning_depuis_investigation(
         request=request,
     )
     return _reponse_transition(tenant, resultat, "learning")
+
+
+@router.post("/scenarios", status_code=201, response_model=ReponseTransition,
+             responses=_REPONSES_TRANSITION)
+async def creer_scenario(
+    payload: CreationScenario,
+    request: Request,
+    idempotence: None = Depends(_refuser_idempotence),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Crée un Scénario rattaché à une Investigation et/ou une Decision du tenant."""
+    _verifier_espace(x_espace)
+    tenant = _tenant(request, x_tenant)
+    resultat = await _executer_transition(
+        tenant,
+        lambda conn: commandes_boucle.creer_scenario(
+            boucle, conn, tenant, **payload.model_dump(exclude_none=True)),
+        request=request,
+    )
+    return _reponse_transition(tenant, resultat, "scenario")
+
+
+@router.get("/scenarios")
+async def lister_scenarios(
+    request: Request,
+    investigation_id: str | None = Query(None, max_length=128),
+    decision_id: str | None = Query(None, max_length=128),
+    limite: int = Query(100, ge=1, le=1000),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Liste les Scénarios du tenant, filtrés par Investigation et/ou Decision."""
+    _verifier_espace(x_espace)
+    tenant = _tenant(request, x_tenant)
+    scenarios = await _executer_transition(
+        tenant,
+        lambda conn: commandes_boucle.lister_scenarios(
+            boucle, conn, tenant, investigation_id=investigation_id,
+            decision_id=decision_id, limite=limite),
+        request=request,
+    )
+    return {"tenant": tenant, "scenarios": _assainir(scenarios)}
+
+
+@router.post("/scenarios/comparer")
+async def comparer_scenarios(
+    payload: ComparaisonScenarios,
+    request: Request,
+    idempotence: None = Depends(_refuser_idempotence),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Compare des Scénarios du tenant à une référence et rend les écarts canoniques."""
+    _verifier_espace(x_espace)
+    tenant = _tenant(request, x_tenant)
+    resultat = await _executer_transition(
+        tenant,
+        lambda conn: commandes_boucle.comparer_scenarios(
+            boucle, conn, tenant, payload.scenario_ids, payload.reference_id),
+        request=request,
+    )
+    return {"tenant": tenant, **_assainir(resultat)}
