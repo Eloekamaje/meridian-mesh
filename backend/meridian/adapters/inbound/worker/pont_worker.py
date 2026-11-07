@@ -48,8 +48,8 @@ DSN_OPTIONS = "-c statement_timeout=30000 -c lock_timeout=5000"
 _VALEURS_ACTIVES = {"1", "true", "vrai", "oui", "yes", "on"}
 _PERMANENTS = frozenset({
     "PontInvalide", "SignatureInvalide", "TenantMismatch", "ConflitCanonique",
-    "ObjetCanoniqueInvalide", "DataError", "IntegrityError", "ProgrammingError",
-    "NotNullViolation", "ForeignKeyViolation", "CheckViolation",
+    "ObjetCanoniqueInvalide", "BoucleInvalide", "DataError", "IntegrityError",
+    "ProgrammingError", "NotNullViolation", "ForeignKeyViolation", "CheckViolation",
 })
 
 journal = logging.getLogger("meridian.pont_worker")

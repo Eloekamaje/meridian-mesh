@@ -1,7 +1,6 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
 import logging
-import re
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
@@ -12,19 +11,17 @@ import portee as portees
 import ouverture_travail
 from auth import acteur as acteur_courant
 from meridian.adapters.outbound.mongo import pont_canonique as pont_outbox
+from meridian.application import pont_securite as securite
 from meridian.application import pont_travail
 from meridian.application import tenant_context
 from meridian.domain.tenant import TenantError
 
 journal = logging.getLogger("meridian.initiatives")
-_URL_SECRET = re.compile(r"(?i)(://[^/\s:@]+:)[^@/\s]+@")
 
 
 def _resume_erreur(exc: BaseException, limite: int = 200) -> str:
     """Message borné et expurgé : le pont ne journalise jamais une URL porteuse de secret."""
-    texte = str(exc).strip() or type(exc).__name__
-    texte = _URL_SECRET.sub(r"\1[redacted]@", texte)
-    return texte[:limite]
+    return securite.rediger_message(exc, limite=limite)
 
 
 def _tenant_ecriture() -> str:
@@ -123,7 +120,12 @@ def build_initiatives_router(deps):
                     initiative, tenant_id=tenant, situation=situation,
                     investigation=investigation)
                 collection = getattr(db, "pont_canonique", None)
-                if evenement and collection is not None:
+                if evenement and collection is None:
+                    journal.warning(
+                        "initiative.maj non enfilé : collection pont_canonique "
+                        "absente initiative=%s", iid)
+                    return
+                if evenement:
                     resultats = await pont_outbox.enfiler_lot_best_effort(
                         collection, [evenement], timeout=1.5)
                     if not resultats:
@@ -252,6 +254,9 @@ def build_initiatives_router(deps):
 
     @router.post("/initiatives/{iid}/repondre")
     async def repondre(iid: str, payload: ReponseInitiative, acteur: str = Depends(acteur_courant), x_espace: Optional[str] = Header(None)):
+        choix = str(payload.choix).strip()
+        if not choix:
+            raise HTTPException(400, "Choix obligatoire")
         acteur, espace, aut = await contexte(acteur, x_espace)
         init = await db.initiatives.find_one({"id": iid, **_filtre_tenant()}, NO_ID)
         if not init or not visible(init, acteur, espace, aut):
@@ -261,7 +266,6 @@ def build_initiatives_router(deps):
 
         now = datetime.now(timezone.utc).isoformat()
         tenant = _tenant_ecriture()
-        choix = payload.choix
         low = choix.lower()
         travail_cree = None
 
@@ -330,12 +334,14 @@ def build_initiatives_router(deps):
                     await enfiler_case(case_apres, tenant)
 
         reponse = {"choix": choix, "motif": payload.motif, "par": acteur, "quand": now, **({"travail_id": travail_cree} if travail_cree else {})}
+        maj_le = datetime.now(timezone.utc).isoformat()
         resultat = await db.initiatives.update_one(
-            {"id": iid, **_filtre_tenant()},
+            {"id": iid, "statut": "en_attente", **_filtre_tenant()},
             {"$set": {"statut": statut, "reponse": reponse,
-                      "tenant_id": tenant, "maj_le": now}})
+                      "tenant_id": tenant, "maj_le": maj_le}})
         if int(getattr(resultat, "matched_count", 0) or 0) == 0:
-            raise HTTPException(404, "Initiative introuvable ou hors périmètre")
+            # Réponse concurrente : une autre requête a consommé l'état `en_attente`.
+            raise HTTPException(409, "Cette initiative a déjà reçu une réponse")
 
         maj = await db.initiatives.find_one({"id": iid, **_filtre_tenant()}, NO_ID)
         if maj:

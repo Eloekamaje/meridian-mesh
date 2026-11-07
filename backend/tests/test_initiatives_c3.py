@@ -7,6 +7,7 @@ Ces tests n'ouvrent ni Mongo réel ni Postgres : ils fixent le contrat du builde
 from __future__ import annotations
 
 import asyncio
+import copy
 from contextlib import contextmanager
 import time
 from types import SimpleNamespace
@@ -24,6 +25,7 @@ from meridian.adapters.outbound.postgres import boucle as pg_boucle
 from meridian.adapters.outbound.postgres import entreprise_depot
 from meridian.adapters.outbound.postgres import pont_canonique as pont_pg
 from meridian.application import pont_canonique as pont
+from meridian.application import pont_securite as securite
 from meridian.application import pont_travail
 from meridian.application import tenant_context
 
@@ -66,7 +68,7 @@ def un_initiative(**champs):
         "statut": "en_attente",
         "genre": "a_confirmer",
         "jumeaux": [],
-        "confiance": 70,
+        "confiance": "Élevée",
         "situation_id": SID,
         "reponse": {"choix": "Créer un nouveau travail", "par": "demo",
                     "quand": REPONSE_LE},
@@ -146,6 +148,34 @@ def test_evenement_initiative_maj_canonise_demo_vers_local():
     assert evenement["payload"]["initiative"]["tenant_id"] == "local"
     assert evenement["payload"]["situation"]["tenant_id"] == "local"
     assert all(objet["tenant_id"] == "local" for objet in _objets(evenement))
+
+
+def test_evenement_initiative_maj_normalise_une_situation_id_dict():
+    situation = un_situation()
+    initiative = un_initiative(statut="acceptee", situation_id={"id": SID})
+
+    evenement = pont_travail.evenement_initiative_maj(
+        initiative, tenant_id=TENANT, situation=situation, maintenant=REPONSE_LE)
+
+    assert evenement["payload"]["initiative"]["situation_id"] == SID
+    assert [objet["type"] for objet in _objets(evenement)] == [
+        "SITUATION", "INVESTIGATION", "DECISION", "INITIATIVE"]
+
+
+def test_rediger_message_expurge_les_secrets_des_urls_et_requetes():
+    message = securite.rediger_message(
+        "échec mongodb://alice:motdepasse@mongo/db?password=secret&token=abc")
+    requete = securite.rediger_message(
+        "GET /api/x?token=abc&password=secret&page=2")
+
+    assert "motdepasse" not in message
+    assert "secret" not in message
+    assert "abc" not in message
+    assert "token=abc" not in requete
+    assert "password=secret" not in requete
+    assert "page=2" in requete
+    assert "[redacted]" in requete
+    assert securite.cle_sensible("token_count") is False
 
 
 def test_evenement_initiative_maj_refuse_un_document_non_mapping():
@@ -246,6 +276,127 @@ def test_repondre_enfile_initiative_maj_avec_le_snapshot_de_la_situation():
     assert evenement["payload"]["situation"]["id"] == SID
     assert evenement["payload"]["investigation"]["id"] == pont.investigation_id(SID)
     assert evenement["payload"]["initiative"]["maj_le"] == db.initiatives.docs[0]["maj_le"]
+
+
+@pytest.mark.parametrize("choix", ["", "   "])
+def test_repondre_refuse_un_choix_vide_ou_blanc_sans_ecriture(choix):
+    db = _db()
+    client = _client(db)
+
+    r = _repondre(client, choix)
+
+    assert r.status_code == 400, r.text
+    assert db.initiatives.docs[0]["statut"] == "en_attente"
+    assert db.pont_canonique.documents == []
+
+
+def test_un_second_appel_ne_produit_qu_un_evenement():
+    db = _db()
+    client = _client(db)
+
+    assert _repondre(client).status_code == 200
+    second = _repondre(client, "Ignorer")
+
+    assert second.status_code == 409
+    assert len(db.pont_canonique.documents) == 1
+    assert db.pont_canonique.documents[0]["payload"]["initiative"]["statut"] == "acceptee"
+
+
+def test_une_course_sur_l_update_atomique_rend_409_sans_evenement(monkeypatch):
+    db = _db()
+    client = _client(db)
+
+    async def _update_perdu(*args, **kwargs):
+        return SimpleNamespace(matched_count=0)
+
+    monkeypatch.setattr(db.initiatives, "update_one", _update_perdu)
+
+    r = _repondre(client, "Ignorer")
+
+    assert r.status_code == 409, r.text
+    assert db.pont_canonique.documents == []
+
+
+@pytest.mark.parametrize("choix,types_attendus", [
+    ("suivre", ["SITUATION", "INVESTIGATION", "DECISION", "INITIATIVE"]),
+    ("Surveiller", ["SITUATION", "INVESTIGATION", "DECISION", "INITIATIVE"]),
+    ("Créer un nouveau travail",
+     ["SITUATION", "INVESTIGATION", "DECISION", "INITIATIVE"]),
+    ("comparer", ["SITUATION", "INVESTIGATION", "DECISION", "INITIATIVE"]),
+    ("ne sais pas", ["SITUATION", "INVESTIGATION", "DECISION", "INITIATIVE"]),
+    ("ajouter", ["SITUATION", "INVESTIGATION", "DECISION", "INITIATIVE"]),
+    ("Ignorer", ["SITUATION", "INVESTIGATION", "DECISION"]),
+    ("rejeter", ["SITUATION", "INVESTIGATION", "DECISION"]),
+])
+def test_repondre_couvre_les_huit_branches(choix, types_attendus):
+    case = {
+        "id": "case-existant", "tenant_id": TENANT, "portee": "entreprise",
+        "jumeaux": [], "historique": [], "conversation": [],
+    }
+    db = _db(cases=[case])
+    client = _client(db)
+    complement = {"travail_id": "case-existant"} if choix == "ajouter" else {}
+
+    r = _repondre(client, choix, **complement)
+
+    assert r.status_code == 200, r.text
+    assert len(db.pont_canonique.documents) == 1
+    assert [objet["type"] for objet in _objets(db.pont_canonique.documents[0])] == (
+        types_attendus)
+
+
+def test_collection_outbox_absente_logue_un_warning(caplog):
+    db = _db()
+    del db.pont_canonique
+    client = _client(db)
+
+    with caplog.at_level("WARNING", logger="meridian.initiatives"):
+        r = _repondre(client)
+
+    assert r.status_code == 200, r.text
+    assert db.initiatives.docs[0]["statut"] == "acceptee"
+    assert "collection pont_canonique absente" in caplog.text
+
+
+def test_depot_outbox_conserve_le_premier_document_en_cas_de_collision_reelle():
+    evenement = pont_travail.evenement_initiative_maj(
+        un_initiative(statut="acceptee"), tenant_id=TENANT,
+        situation=un_situation(), maintenant=REPONSE_LE)
+    autre = copy.deepcopy(evenement)
+    autre["payload"]["initiative"]["titre"] = "Autre titre"
+    autre["hash"] = pont.hash_contenu(autre["payload"])
+    autre["source"]["hash"] = autre["hash"]
+    autre = pont.signer_evenement(autre)
+    collection = CollectionPont()
+    depot = pont_mongo.DepotPontCanonique(collection)
+
+    asyncio.run(depot.enfiler(evenement))
+    with pytest.raises(pont.PontInvalide, match="collision"):
+        asyncio.run(depot.enfiler(autre))
+
+    assert len(collection.documents) == 1
+    assert collection.documents[0]["payload"]["initiative"]["titre"] == (
+        evenement["payload"]["initiative"]["titre"])
+
+
+def test_l_outbox_expurge_les_secrets_dans_ses_logs(caplog):
+    evenement = pont_travail.evenement_initiative_maj(
+        un_initiative(statut="acceptee"), tenant_id=TENANT,
+        situation=un_situation(), maintenant=REPONSE_LE)
+
+    class CollectionEnPanne(CollectionPont):
+        async def update_one(self, *args, **kwargs):
+            raise RuntimeError(
+                "panne mongodb://alice:motdepasse@mongo/db?token=abc")
+
+    with caplog.at_level("ERROR", logger="meridian.pont_canonique.mongo"):
+        resultat = asyncio.run(pont_mongo.enfiler_best_effort(
+            CollectionEnPanne(), evenement))
+
+    assert resultat is None
+    assert "motdepasse" not in caplog.text
+    assert "token=abc" not in caplog.text
+    assert "[redacted]" in caplog.text
 
 
 def test_repondre_refus_enfile_aussi_l_initiative_maj():

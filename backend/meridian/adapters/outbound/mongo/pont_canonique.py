@@ -27,6 +27,7 @@ import uuid
 from typing import Any
 
 from meridian.application import pont_canonique as pont
+from meridian.application import pont_securite as securite
 
 try:  # pymongo est une dépendance de production ; les tests unitaires peuvent s'en passer.
     from pymongo.errors import DuplicateKeyError as _DuplicateKeyError
@@ -206,8 +207,11 @@ class DepotPontCanonique:
         """Variante pour les routes legacy : une panne Mongo ne casse jamais l'écriture métier."""
         try:
             return await self.enfiler(evenement)
-        except Exception:  # noqa: BLE001 - best-effort explicite
-            journal.exception("pont : enqueue best-effort en échec ; le legacy continue")
+        except Exception as exc:  # noqa: BLE001 - best-effort explicite
+            # Pas de traceback : il contiendrait le message d'origine, potentiellement
+            # porteur d'une URL Mongo à credentials. Le message est borné et expurgé.
+            journal.error("pont : enqueue best-effort en échec : %s",
+                          securite.rediger_message(exc))
             return None
 
     async def reclamer(self, worker_id: str, *, bail_secondes: int = 60,
@@ -478,8 +482,9 @@ async def enfiler_lot_best_effort(collection, evenements, *, timeout: float = 2.
         try:
             return await enfiler_best_effort(
                 collection, evenement, horloge=horloge, cle=cle, cle_interne=cle_interne)
-        except Exception:  # noqa: BLE001 - le lot entier reste best-effort
-            journal.exception("pont : enqueue d'un événement en échec")
+        except Exception as exc:  # noqa: BLE001 - le lot entier reste best-effort
+            journal.error("pont : enqueue d'un événement en échec : %s",
+                          securite.rediger_message(exc))
             return None
 
     try:

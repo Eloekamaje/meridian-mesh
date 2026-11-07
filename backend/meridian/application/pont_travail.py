@@ -304,6 +304,12 @@ def evenement_initiative_maj(initiative: Any, *, tenant_id: Any, situation: Any 
         raise pont.PontInvalide("investigation : document attendu")
     tenant = normaliser_tenant(tenant_id or initiative.get("tenant_id"))
     initiative_doc = _document_canonique(initiative, tenant)
+    situation_liee_id = initiative_doc.get("situation_id")
+    if isinstance(situation_liee_id, Mapping):
+        situation_liee_id = (situation_liee_id.get("id")
+                             or situation_liee_id.get("situation_id"))
+    if situation_liee_id is not None:
+        initiative_doc["situation_id"] = _texte(situation_liee_id)
     situation_doc = (_document_canonique(situation, tenant)
                      if isinstance(situation, Mapping) else None)
     investigation_doc = (_document_canonique(investigation, tenant)

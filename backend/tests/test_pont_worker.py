@@ -14,6 +14,7 @@ from meridian.adapters.outbound.mongo import pont_canonique as pont_mongo
 from meridian.adapters.outbound.postgres import entreprise_depot
 from meridian.adapters.outbound.postgres import pont_canonique as pont_pg
 from meridian.application import pont_canonique as pont
+from meridian.application import pont_travail
 
 CLE_PONT = "cle-de-test-pont-canonique-32"
 CLE_INTERNE = "cle-de-test-pont-interne-32"
@@ -131,6 +132,44 @@ def test_une_erreur_marque_failed_et_ne_remonte_pas(monkeypatch):
     assert collection.documents[0]["tentatives"] == 1
     assert "panne applicative" in collection.documents[0]["derniere_erreur"]
     assert collection.documents[0]["prochaine_tentative"] > instant()
+
+
+def test_une_initiative_sans_decision_canonique_est_permanente(monkeypatch):
+    """Caractérise la dépendance d'ordre C0a/C1 : une décision absente va en dead-letter."""
+    monkeypatch.setenv(pont_worker.FLAG_ENV, "1")
+
+    async def scenario():
+        collection = CollectionPont()
+        depot = pont_mongo.DepotPontCanonique(collection, horloge=lambda: instant())
+        initiative = {
+            "id": "init-orpheline",
+            "tenant_id": TENANT,
+            "titre": "Initiative orpheline",
+            "statut": "acceptee",
+            "decision_id": "dec-absente",
+            "situation_id": "sit-1",
+            "reponse": {"choix": "Créer un nouveau travail", "par": "alice",
+                        "quand": "2026-11-06T10:00:00+00:00"},
+            "maj_le": "2026-11-06T10:00:00+00:00",
+            "cree_le": "2026-11-05T09:00:00+00:00",
+        }
+        evenement = pont_travail.evenement_initiative_maj(
+            initiative, tenant_id=TENANT, situation=_situation(), maintenant=instant())
+        await depot.enfiler(evenement)
+        conn = ConnexionPont()
+        worker = pont_worker.WorkerPont(
+            depot, lambda ev: pont_pg.appliquer_evenement(conn, ev),
+            worker_id="worker-a", env={pont_worker.FLAG_ENV: "1"},
+            maintenant=lambda: instant())
+        bilan = await worker.une_passe()
+        return collection, bilan
+
+    collection, bilan = asyncio.run(scenario())
+
+    assert bilan["echecs"] == 1
+    assert collection.documents[0]["etat"] == "dead"
+    assert collection.documents[0]["tentatives"] == 1
+    assert "decision_id introuvable" in collection.documents[0]["derniere_erreur"]
 
 
 def test_un_evenement_failed_est_repris_apres_l_echeance(monkeypatch):
