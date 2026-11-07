@@ -5,12 +5,14 @@ import json
 import pytest
 
 from meridian.adapters.outbound.postgres import migration_canonique
+from meridian.adapters.outbound.postgres.boucle import Initiative, Situation, lire_boucle
 from meridian.domain.graphe import GrapheMemoire
 from meridian.adapters.outbound.postgres.migration_canonique import DocumentInvalide, inspecter, objet_depuis_initiative, objet_depuis_situation, twin_depuis_jumeau
 
 TENANT = "banque"
 SECRET = "hunter2-ne-doit-jamais-fuiter"
 NOW = "2026-10-30T10:00:00+00:00"
+DECISION_ID = "dec-contrat"
 
 SITUATION = {
     "id": "sit-cartes",
@@ -37,7 +39,19 @@ INITIATIVE = {
     "raison": "Le code et le trafic observé divergent.",
     "travail_id": "case-olympiade",
     "jumeau_cible": "conformite",
+    "decision_id": DECISION_ID,
     "secret": SECRET,
+}
+
+INITIATIVE_SANS_DECISION = {
+    "id": "init-sit-cartes",
+    "tenant_id": TENANT,
+    "titre": "Traiter : Délai de traitement en hausse",
+    "raison": "Le délai dépasse la cible.",
+    "statut": "en_attente",
+    "urgence": "haute",
+    "jumeaux": ["paiements", "comptes"],
+    "situation_id": "sit-cartes",
 }
 
 JUMEAU_A = {
@@ -215,8 +229,17 @@ def test_mapping_initiative_conserve_les_liens_declares_et_rien_d_autre():
     assert objet["donnees"]["twin_ids"] == ["paiements", "comptes"]
     assert objet["donnees"]["travail_id"] == "case-olympiade"
     assert objet["donnees"]["jumeau_cible"] == "conformite"
-    assert "decision_id" not in objet["donnees"]
+    assert objet["donnees"]["decision_id"] == DECISION_ID
     assert SECRET not in json.dumps(objet, ensure_ascii=False)
+
+
+def test_mapping_initiative_sans_decision_est_refusee():
+    with pytest.raises(DocumentInvalide, match="initiative_sans_decision"):
+        objet_depuis_initiative(INITIATIVE_SANS_DECISION, TENANT)
+
+    avec_reference = {**INITIATIVE_SANS_DECISION, "decision_ref": "dec-contrat"}
+    objet = objet_depuis_initiative(avec_reference, TENANT)
+    assert objet["donnees"]["decision_ref"] == "dec-contrat"
 
 
 def test_mapping_refuse_un_autre_tenant_et_un_document_sans_id():
@@ -242,8 +265,8 @@ def test_twin_depuis_jumeau_passe_par_graphe_sync_sans_copier_les_secrets():
 
 
 def test_dry_run_compte_sans_ecrire_dans_postgres_ni_dans_le_graphe():
-    db = _Db(situations=[SITUATION], initiatives=[INITIATIVE], jumeaux=[JUMEAU_A, JUMEAU_B],
-             relations=[RELATION])
+    db = _Db(situations=[SITUATION], initiatives=[INITIATIVE, INITIATIVE_SANS_DECISION],
+             jumeaux=[JUMEAU_A, JUMEAU_B], relations=[RELATION])
     conn, store = _Connexion(), GrapheMemoire()
 
     rapport = _inspecter(db, dry_run=True, conn=conn, store=store)
@@ -254,7 +277,11 @@ def test_dry_run_compte_sans_ecrire_dans_postgres_ni_dans_le_graphe():
         "situations": 1,
         "initiatives": 1,
         "relations": 1,
-        "ignores": [],
+        "ignores": [{
+            "type": "initiative",
+            "id": "init-sit-cartes",
+            "raison": "initiative_sans_decision",
+        }],
         "erreurs": [],
     }
     assert conn.stock == {}
@@ -283,6 +310,35 @@ def test_mode_reel_ecrit_les_objets_et_les_relations():
     assert arete.preuve_ids == ("p1",)
 
 
+def test_initiative_sans_decision_n_est_jamais_projetee():
+    db = _Db(initiatives=[INITIATIVE_SANS_DECISION])
+    conn, store = _Connexion(), GrapheMemoire()
+
+    simulation = _inspecter(db, dry_run=True)
+    rapport = _inspecter(db, dry_run=False, conn=conn, store=store)
+
+    assert simulation["initiatives"] == 0 and rapport["initiatives"] == 0
+    assert simulation["ignores"] == rapport["ignores"] == [{
+        "type": "initiative",
+        "id": "init-sit-cartes",
+        "raison": "initiative_sans_decision",
+    }]
+    assert conn.stock == {}
+
+
+def test_objets_migres_sont_relisibles_par_la_boucle():
+    db = _Db(situations=[SITUATION], initiatives=[INITIATIVE, INITIATIVE_SANS_DECISION])
+    conn, store = _Connexion(), GrapheMemoire()
+
+    _inspecter(db, dry_run=False, conn=conn, store=store)
+
+    situation = lire_boucle(conn, TENANT, "sit-cartes", as_dict=False)
+    initiative = lire_boucle(conn, TENANT, "init-contrat", as_dict=False)
+    assert isinstance(situation, Situation) and situation.type == "SITUATION"
+    assert isinstance(initiative, Initiative) and initiative.decision_id == DECISION_ID
+    assert lire_boucle(conn, TENANT, "init-sit-cartes", as_dict=False) is None
+
+
 def test_relation_orpheline_est_comptee_sans_casser_les_valides():
     orpheline = {**RELATION, "id": "r-orpheline", "cible": "absent"}
     db = _Db(jumeaux=[JUMEAU_A, JUMEAU_B], relations=[RELATION, orpheline])
@@ -298,8 +354,8 @@ def test_relation_orpheline_est_comptee_sans_casser_les_valides():
 
 
 def test_deux_passages_sont_idempotents_et_ne_font_pas_monter_la_version():
-    db = _Db(situations=[SITUATION], initiatives=[INITIATIVE], jumeaux=[JUMEAU_A, JUMEAU_B],
-             relations=[RELATION])
+    db = _Db(situations=[SITUATION], initiatives=[INITIATIVE, INITIATIVE_SANS_DECISION],
+             jumeaux=[JUMEAU_A, JUMEAU_B], relations=[RELATION])
     conn, store = _Connexion(), GrapheMemoire()
 
     premier = _inspecter(db, dry_run=False, conn=conn, store=store)

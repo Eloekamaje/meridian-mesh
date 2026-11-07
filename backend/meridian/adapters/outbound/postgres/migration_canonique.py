@@ -19,6 +19,8 @@ Limites assumées :
 
 - les documents `cases` ne sont pas projetés dans ce lot : leur forme de travail n'a pas d'équivalent canonique
   direct et les convertir inventerait une sémantique ;
+- une initiative sans `decision_id` ni `decision_ref` (par exemple une proposition `init-*` encore `en_attente`)
+  n'est pas une Initiative canonique : elle est ignorée avec la raison `initiative_sans_decision` ;
 - une relation dont une extrémité n'existe ni dans `jumeaux` ni déjà dans le store est comptée comme orpheline,
   jamais écrite ;
 - la version source, quand elle existe, est conservée ; sinon la version canonique reste `1` pour qu'un second
@@ -341,7 +343,8 @@ def objet_depuis_initiative(doc, tenant) -> dict:
     """Projette une initiative Mongo en objet canonique `decision/INITIATIVE`.
 
     Les liens éventuels (`travail_id`, `jumeau_cible`, `decision_id`, etc.) ne sont copiés que s'ils sont présents
-    dans le document. Aucun `decision_id` n'est déduit d'un texte ou d'un titre.
+    dans le document. Aucun `decision_id` n'est déduit d'un texte ou d'un titre : une proposition sans décision
+    déclarée n'est pas une Initiative canonique et est refusée avec `initiative_sans_decision`.
     """
     if not isinstance(doc, Mapping):
         raise DocumentInvalide("document attendu")
@@ -357,7 +360,10 @@ def objet_depuis_initiative(doc, tenant) -> dict:
     twin_ids = _liste_ids(doc.get("twin_ids") if doc.get("twin_ids") is not None else doc.get("jumeaux"))
     if twin_ids:
         donnees["twin_ids"] = twin_ids
-    donnees.update(_liens_initiative(doc))
+    liens = _liens_initiative(doc)
+    donnees.update(liens)
+    if not liens.get("decision_id") and not liens.get("decision_ref"):
+        raise DocumentInvalide("initiative_sans_decision")
 
     objet = {
         "id": identifiant,
