@@ -17,15 +17,15 @@ besoin_pg = pytest.mark.skipif(not DSN, reason="JUMEAU_PG_DSN non défini")
 @besoin_pg
 def test_lire_boucle_sync_pose_le_guc_et_lit_la_chaine(monkeypatch):
     tenant = f"test-{uuid.uuid4().hex[:10]}"
-    identifiant = f"dec-test-{uuid.uuid4().hex[:8]}"
+    identifiant = f"sit-test-{uuid.uuid4().hex[:8]}"
     objet = {
         "id": identifiant,
         "tenant_id": tenant,
-        "famille": "decision",
-        "type": "DECISION",
+        "famille": "emergence",
+        "type": "SITUATION",
         "mode": "DECLARED",
-        "titre": "Décision live",
-        "donnees": {"statut": "DECIDED", "choix": "A", "acteur": "test"},
+        "titre": "Situation live",
+        "donnees": {"statut": "CANDIDATE"},
     }
     with psycopg.connect(DSN, autocommit=True) as conn:
         depot.appliquer_schema(conn)
