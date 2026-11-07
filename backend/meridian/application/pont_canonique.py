@@ -1127,12 +1127,20 @@ def objets_depuis_outcome(payload: Any, *, tenant_id: Any = None,
     }
     if "effets_secondaires" in donnees:
         contenu["effets_secondaires"] = list(_liste(donnees.get("effets_secondaires")))
+    decision_id = _texte(donnees.get("decision_id"))
+    if decision_id:
+        contenu["decision_id"] = decision_id
     outcome = _objet(
         "OUTCOME", identifiant, tenant, metrique or "Outcome", contenu,
         mode="OBSERVED", **_dates(reference))
-    origine = _texte((_mapping((evenement or {}).get("source")).get("origine")))
+    origine = _texte(_mapping((evenement or {}).get("source")).get("origine")).lower()
+    if origine and origine not in {ORIGINE_LEGACY, ORIGINE_MIGRATION, ORIGINE_EXPLOITATION}:
+        raise PontInvalide(f"origine d'Outcome inconnue : {origine!r}")
+    # La date d'ingestion arbitre les corrections ; `mesure_le` garde le sens de la mesure.
+    maj_le = _iso(donnees.get("maj_le"))
+    source_maj = (maj_le or (evenement or {}).get("source_maj_le") or mesure_le)
     return [_serialiser(outcome, evenement,
-                        source_maj_le=mesure_le or (evenement or {}).get("source_maj_le"),
+                        source_maj_le=source_maj,
                         origine=origine or ORIGINE_LEGACY,
                         source_objet=(evenement or {}).get("source"))]
 
@@ -1516,7 +1524,8 @@ def evenement_depuis_initiative(initiative: Any, *, tenant_id: Any = None,
 def evenement_outcome(*, tenant_id: Any, initiative_id: Any, mesure: Any,
                       metrique: Any = None, periode: Any = "",
                       valeur_attendue: Any = None, interpretation: Any = None,
-                      mesure_le: Any = None, decision_id: Any = None,
+                      mesure_le: Any = None, maj_le: Any = None,
+                      decision_id: Any = None,
                       effets_secondaires: Any = None, origine: Any = None,
                       source_event_id: Any = None, maintenant: Any = None,
                       source: Mapping[str, Any] | None = None) -> dict[str, Any]:
@@ -1538,11 +1547,16 @@ def evenement_outcome(*, tenant_id: Any, initiative_id: Any, mesure: Any,
         "mesure_le": mesure_le_iso,
         "decision_id": decision_id,
     }
+    maj_le_iso = _iso(maj_le)
+    if maj_le_iso:
+        payload["maj_le"] = maj_le_iso
     if effets_secondaires is not None:
         payload["effets_secondaires"] = list(_liste(effets_secondaires))
     source_final = dict(source or {"collection": "pont", "id": identifiant})
-    origine_texte = _texte(origine)
+    origine_texte = _texte(origine).lower()
     if origine_texte:
+        if origine_texte not in {ORIGINE_LEGACY, ORIGINE_MIGRATION, ORIGINE_EXPLOITATION}:
+            raise PontInvalide(f"origine d'Outcome inconnue : {origine_texte!r}")
         # L'origine voyage dans la provenance : le payload reste le contrat de mesure.
         source_final["origine"] = origine_texte
     return construire_evenement(
