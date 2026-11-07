@@ -65,6 +65,8 @@ export default function ComparaisonScenarios({ objet }) {
   const [comparaison, setComparaison] = useState(null);
   const [comparaisonErreur, setComparaisonErreur] = useState("");
   const [comparaisonEnCours, setComparaisonEnCours] = useState(false);
+  const [selectionErreur, setSelectionErreur] = useState("");
+  const jetonComparaison = useRef(0);
 
   useEffect(() => {
     monte.current = true;
@@ -79,6 +81,7 @@ export default function ComparaisonScenarios({ objet }) {
     setReference("");
     setComparaison(null);
     setComparaisonErreur("");
+    setSelectionErreur("");
     const params = type === "INVESTIGATION"
       ? { investigation_id: identifiant }
       : { decision_id: identifiant };
@@ -89,9 +92,13 @@ export default function ComparaisonScenarios({ objet }) {
         const scenarios = Array.isArray(reponse?.data?.scenarios)
           ? reponse.data.scenarios
           : [];
+        const identifiants = scenarios.map(identifiantScenario).filter(Boolean);
         setEtat({ chargement: false, erreur: "", scenarios });
-        setSelection(scenarios.map(identifiantScenario).filter(Boolean));
-        setReference(identifiantScenario(scenarios[0]) || "");
+        setSelection(identifiants.slice(0, 50));
+        if (identifiants.length > 50) {
+          setSelectionErreur("La comparaison est limitée à 50 scénarios.");
+        }
+        setReference(identifiants[0] || "");
       })
       .catch((cause) => {
         if (annule) return;
@@ -108,9 +115,26 @@ export default function ComparaisonScenarios({ objet }) {
   if (!pertinent) return null;
 
   const referenceEffective = selection.includes(reference) ? reference : (selection[0] || "");
-  const basculer = (scenarioId) => {
+  const invaliderComparaison = () => {
+    jetonComparaison.current += 1;
     setComparaison(null);
     setComparaisonErreur("");
+    setComparaisonEnCours(false);
+  };
+  const changerReference = (valeur) => {
+    invaliderComparaison();
+    setReference(valeur);
+  };
+  const basculer = (scenarioId) => {
+    jetonComparaison.current += 1;
+    setComparaison(null);
+    setComparaisonErreur("");
+    setComparaisonEnCours(false);
+    if (!selection.includes(scenarioId) && selection.length >= 50) {
+      setSelectionErreur("La comparaison est limitée à 50 scénarios.");
+      return;
+    }
+    setSelectionErreur("");
     setSelection((avant) => (
       avant.includes(scenarioId)
         ? avant.filter((element) => element !== scenarioId)
@@ -120,6 +144,8 @@ export default function ComparaisonScenarios({ objet }) {
 
   const comparer = async () => {
     if (selection.length < 2 || comparaisonEnCours) return;
+    const jeton = jetonComparaison.current + 1;
+    jetonComparaison.current = jeton;
     setComparaisonEnCours(true);
     setComparaisonErreur("");
     try {
@@ -127,14 +153,16 @@ export default function ComparaisonScenarios({ objet }) {
         scenario_ids: selection,
         ...(referenceEffective ? { reference_id: referenceEffective } : {}),
       });
-      if (!monte.current) return;
+      if (!monte.current || jeton !== jetonComparaison.current) return;
       setComparaison(reponse?.data || null);
     } catch (cause) {
-      if (!monte.current) return;
+      if (!monte.current || jeton !== jetonComparaison.current) return;
       setComparaisonErreur(messageErreurTransition(
         cause, "La comparaison des scénarios n'a pas pu être calculée."));
     } finally {
-      if (monte.current) setComparaisonEnCours(false);
+      if (monte.current && jeton === jetonComparaison.current) {
+        setComparaisonEnCours(false);
+      }
     }
   };
 
@@ -216,7 +244,7 @@ export default function ComparaisonScenarios({ objet }) {
                     <span className="min-w-0">
                       <span className="block truncate">{titreScenario(scenario)}</span>
                       <span className="block font-code text-[9px] text-[#7C93A8]">
-                        {texte(scenario.statut) || "DRAFT"}
+                        {texte(scenario.statut) || "statut inconnu"}
                         {scenario.valeur_estimee !== null && scenario.valeur_estimee !== undefined
                           ? ` · valeur ${formaterNombre(scenario.valeur_estimee)}`
                           : ""}
@@ -245,7 +273,7 @@ export default function ComparaisonScenarios({ objet }) {
               <select
                 id="boucle-comparaison-reference"
                 value={referenceEffective}
-                onChange={(evenement) => setReference(evenement.target.value)}
+                onChange={(evenement) => changerReference(evenement.target.value)}
                 disabled={selection.length === 0}
                 data-testid="boucle-comparaison-reference"
                 className="mt-1 h-8 rounded-md border border-[rgba(148,163,184,0.18)] bg-[#0B1620] px-2 text-xs text-[#F2F6F8] focus:border-[#60A5FA]/60 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
@@ -270,6 +298,15 @@ export default function ComparaisonScenarios({ objet }) {
               {comparaisonEnCours ? "Comparaison…" : "Comparer"}
             </button>
           </div>
+          {selectionErreur && (
+            <p
+              role="alert"
+              data-testid="boucle-comparaison-selection-erreur"
+              className="mt-2 rounded-md border border-[#F87171]/30 bg-[#F87171]/[0.06] px-2.5 py-1.5 text-[11px] text-[#FCA5A5]"
+            >
+              {selectionErreur}
+            </p>
+          )}
         </>
       )}
 

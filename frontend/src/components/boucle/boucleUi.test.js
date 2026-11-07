@@ -183,7 +183,8 @@ describe("configurationAction", () => {
     expect(action.typeSource).toBe("INVESTIGATION");
     expect(action.champs.map((champ) => champ.nom)).toEqual([
       "titre", "description", "hypothesis_ids", "actions", "valeur_estimee",
-      "cout_estime", "delai_jours", "risque", "reversibilite", "statut",
+      "cout_estime", "delai_jours", "risque", "complexite", "confiance",
+      "dependances", "impacts", "preuves", "reversibilite", "statut",
     ]);
     expect(action.champs.find((champ) => champ.nom === "reversibilite").options)
       .toEqual(["REVERSIBLE", "PARTIELLE", "IRREVERSIBLE"]);
@@ -336,6 +337,11 @@ describe("construireCorps", () => {
       cout_estime: "4500,5",
       delai_jours: "30",
       risque: "0,2",
+      complexite: "0,4",
+      confiance: "0,8",
+      dependances: "api-paiement, equipe-cartes",
+      impacts: "client=baisse, risque=mitige",
+      preuves: "preuve-1, preuve-2",
       reversibilite: "PARTIELLE",
       statut: "PROPOSED",
     }, investigation);
@@ -350,6 +356,11 @@ describe("construireCorps", () => {
       cout_estime: 4500.5,
       delai_jours: 30,
       risque: 0.2,
+      complexite: 0.4,
+      confiance: 0.8,
+      dependances: ["api-paiement", "equipe-cartes"],
+      impacts: { client: "baisse", risque: "mitige" },
+      preuves: ["preuve-1", "preuve-2"],
       reversibilite: "PARTIELLE",
       statut: "PROPOSED",
     });
@@ -370,6 +381,15 @@ describe("construireCorps", () => {
     expect(construireCorps("creer_scenario", {
       titre: "Scénario", risque: "1.2",
     }, investigation).erreur).toContain("risque");
+    expect(construireCorps("creer_scenario", {
+      titre: "Scénario", complexite: "1.2",
+    }, investigation).erreur).toContain("complexité");
+    expect(construireCorps("creer_scenario", {
+      titre: "Scénario", confiance: "1.2",
+    }, investigation).erreur).toContain("confiance");
+    expect(construireCorps("creer_scenario", {
+      titre: "Scénario", impacts: "client",
+    }, investigation).erreur).toContain("impact");
     expect(construireCorps("creer_scenario", {
       titre: "Scénario", reversibilite: "PEUT_ETRE",
     }, investigation).erreur).toContain("réversibilité");

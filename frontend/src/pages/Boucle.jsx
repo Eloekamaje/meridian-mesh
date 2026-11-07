@@ -954,7 +954,13 @@ export default function Boucle() {
         if (!reponse.data?.objet) return;
         setObjets((avant) => fusionnerObjet(avant, reponse.data.objet));
       })
-      .catch(() => {});
+      .catch(() => {
+        setTransition((avant) => ({
+          ...avant,
+          verificationErreur:
+            "Le lien inverse du parent n'a pas pu être rafraîchi. Rechargez la boucle.",
+        }));
+      });
   };
 
   const demanderRestaurationFocusAction = () => {

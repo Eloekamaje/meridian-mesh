@@ -179,6 +179,67 @@ test("annonce les erreurs de liste et de comparaison", async () => {
   await act(async () => { second.racine.unmount(); });
 });
 
+test("changer la référence efface l'ancienne comparaison et invalide une réponse en vol", async () => {
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await act(async () => {
+    hote.querySelector('[data-testid="boucle-comparaison-lancer"]').click();
+  });
+  expect(hote.querySelector('[data-testid="boucle-comparaison-resultat"]')).not.toBeNull();
+
+  await act(async () => {
+    const reference = hote.querySelector('[data-testid="boucle-comparaison-reference"]');
+    reference.value = "s2";
+    reference.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(hote.querySelector('[data-testid="boucle-comparaison-resultat"]')).toBeNull();
+
+  let resoudre;
+  boucleApi.comparerScenarios.mockImplementation(
+    () => new Promise((resolve) => { resoudre = resolve; }),
+  );
+  await act(async () => {
+    hote.querySelector('[data-testid="boucle-comparaison-lancer"]').click();
+  });
+  await act(async () => {
+    const reference = hote.querySelector('[data-testid="boucle-comparaison-reference"]');
+    reference.value = "s1";
+    reference.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await act(async () => {
+    resoudre({ data: comparaison() });
+  });
+  expect(hote.querySelector('[data-testid="boucle-comparaison-resultat"]')).toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("plafonne la sélection à 50 scénarios", async () => {
+  const nombreux = Array.from({ length: 51 }, (_, index) => ({
+    ...scenarios[0],
+    id: `s-${index}`,
+    titre: `Scénario ${index}`,
+  }));
+  boucleApi.listerScenarios.mockResolvedValue({ data: { scenarios: nombreux } });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+
+  const coches = [...hote.querySelectorAll('[data-testid^="boucle-comparaison-scenario-"]')]
+    .filter((input) => input.checked);
+  expect(coches).toHaveLength(50);
+  expect(hote.querySelector('[data-testid="boucle-comparaison-selection-erreur"]').textContent)
+    .toContain("50");
+
+  await act(async () => {
+    hote.querySelector('[data-testid="boucle-comparaison-scenario-s-50"]').click();
+  });
+  expect([...hote.querySelectorAll('[data-testid^="boucle-comparaison-scenario-"]')]
+    .filter((input) => input.checked)).toHaveLength(50);
+
+  await act(async () => { racine.unmount(); });
+});
+
 test("le tableau est accessible et expose les en-têtes de colonnes", async () => {
   const { hote, racine } = monter();
   await rendre(racine);

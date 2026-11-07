@@ -75,6 +75,38 @@ const CHAMPS_CREER_SCENARIO = [
     placeholder: "0.2",
   },
   {
+    nom: "complexite",
+    label: "Complexité (0 à 1, optionnel)",
+    type: "text",
+    inputMode: "decimal",
+    placeholder: "0.4",
+  },
+  {
+    nom: "confiance",
+    label: "Confiance (0 à 1, optionnel)",
+    type: "text",
+    inputMode: "decimal",
+    placeholder: "0.7",
+  },
+  {
+    nom: "dependances",
+    label: "Dépendances (séparées par une virgule, optionnel)",
+    type: "text",
+    placeholder: "api-paiement, equipe-cartes",
+  },
+  {
+    nom: "impacts",
+    label: "Impacts clé=valeur (séparés par une virgule, optionnel)",
+    type: "text",
+    placeholder: "client=baisse, risque=mitige",
+  },
+  {
+    nom: "preuves",
+    label: "Preuves (IDs séparés par une virgule, optionnel)",
+    type: "text",
+    placeholder: "preuve-1, preuve-2",
+  },
+  {
     nom: "reversibilite",
     label: "Réversibilité (optionnel)",
     type: "select",
@@ -647,10 +679,10 @@ export function construireCorps(actionId, valeurs = {}, objet = {}) {
       const typeSource = typeObjet(objet);
       const identifiantSource = idObjet(objet);
       const investigationId = typeSource === "INVESTIGATION"
-        ? identifiantSource
+        ? (identifiantSource || valeurNette(valeurs, "investigation_id"))
         : valeurNette(valeurs, "investigation_id");
       const decisionId = typeSource === "DECISION"
-        ? identifiantSource
+        ? (identifiantSource || valeurNette(valeurs, "decision_id"))
         : valeurNette(valeurs, "decision_id");
       if (!investigationId && !decisionId) {
         return echec("Un scénario doit être rattaché à une investigation ou une décision.");
@@ -665,12 +697,33 @@ export function construireCorps(actionId, valeurs = {}, objet = {}) {
       if (hypotheses.length > 0) corps.hypothesis_ids = hypotheses;
       const actions = listeLignesOuVirgules(valeurs, "actions");
       if (actions.length > 0) corps.actions = actions;
+      const dependances = listeVirgules(valeurs, "dependances");
+      if (dependances.length > 0) corps.dependances = dependances;
+      const preuves = listeVirgules(valeurs, "preuves");
+      if (preuves.length > 0) corps.preuves = preuves;
+
+      const impacts = {};
+      for (const element of listeVirgules(valeurs, "impacts")) {
+        const separateur = element.indexOf("=");
+        if (separateur <= 0 || separateur === element.length - 1) {
+          return echec("Un impact doit être au format clé=valeur.");
+        }
+        const cleImpact = element.slice(0, separateur).trim();
+        const valeurImpact = element.slice(separateur + 1).trim();
+        if (!cleImpact || !valeurImpact) {
+          return echec("Un impact doit être au format clé=valeur.");
+        }
+        impacts[cleImpact] = valeurImpact;
+      }
+      if (Object.keys(impacts).length > 0) corps.impacts = impacts;
 
       for (const [nom, libelle, options] of [
         ["valeur_estimee", "La valeur estimée", {}],
         ["cout_estime", "Le coût estimé", {}],
         ["delai_jours", "Le délai", { entier: true }],
         ["risque", "Le risque", { maximum: 1 }],
+        ["complexite", "La complexité", { maximum: 1 }],
+        ["confiance", "La confiance", { maximum: 1 }],
       ]) {
         const resultat = nombreOptionnel(valeurs, nom, libelle, options);
         if (resultat.erreur) return echec(resultat.erreur);

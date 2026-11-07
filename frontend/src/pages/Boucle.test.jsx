@@ -1038,6 +1038,11 @@ test("crée un scénario depuis une investigation, le sélectionne et rafraîchi
     saisir(hote.querySelector('[data-testid="boucle-transition-cout_estime"]'), "4500,5");
     saisir(hote.querySelector('[data-testid="boucle-transition-delai_jours"]'), "30");
     saisir(hote.querySelector('[data-testid="boucle-transition-risque"]'), "0,2");
+    saisir(hote.querySelector('[data-testid="boucle-transition-complexite"]'), "0,4");
+    saisir(hote.querySelector('[data-testid="boucle-transition-confiance"]'), "0,8");
+    saisir(hote.querySelector('[data-testid="boucle-transition-dependances"]'), "api-paiement, equipe-cartes");
+    saisir(hote.querySelector('[data-testid="boucle-transition-impacts"]'), "client=baisse, risque=mitige");
+    saisir(hote.querySelector('[data-testid="boucle-transition-preuves"]'), "preuve-1, preuve-2");
   });
   await choisir(hote.querySelector('[data-testid="boucle-transition-reversibilite"]'), "PARTIELLE");
   await choisir(hote.querySelector('[data-testid="boucle-transition-statut"]'), "PROPOSED");
@@ -1053,6 +1058,11 @@ test("crée un scénario depuis une investigation, le sélectionne et rafraîchi
     cout_estime: 4500.5,
     delai_jours: 30,
     risque: 0.2,
+    complexite: 0.4,
+    confiance: 0.8,
+    dependances: ["api-paiement", "equipe-cartes"],
+    impacts: { client: "baisse", risque: "mitige" },
+    preuves: ["preuve-1", "preuve-2"],
     reversibilite: "PARTIELLE",
     statut: "PROPOSED",
   });
