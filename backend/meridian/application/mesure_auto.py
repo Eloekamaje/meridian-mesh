@@ -30,13 +30,18 @@ Deux formes d'observation sont acceptées :
 
 Règles structurantes :
 
+- ``id`` et ``maj_le`` sont obligatoires ; ``maj_le`` est la date d'ingestion UTC qui arbitre les
+  corrections (``quand`` reste la date de la mesure) ;
 - aucune mesure vide, booléenne, non numérique quand la veille l'exige, ni de cible inconnue ;
   une observation incomplète ne produit **rien** et expose sa raison ;
 - le tenant est normalisé et jamais deviné : un document sans tenant, ou dont les tenants se
   contredisent, est refusé ;
-- l'identifiant d'événement est déterministe (tenant + Outcome canonique + source + empreinte de
-  la mesure) ; un rejeu produit le même événement, une mesure modifiée produit un nouvel
-  événement qui met à jour le même Outcome ;
+- l'identifiant d'événement est déterministe (tenant + Outcome canonique + source + empreinte du
+  payload complet) ; un rejeu produit le même événement, une correction (même ``quand``, nouveau
+  ``maj_le`` ou contenu modifié) produit un nouvel événement qui met à jour le même Outcome ;
+- une observation de veille doit porter un lien canonique **explicite** (``initiative_id`` ou
+  ``decision_id``) : aucune décision legacy n'est devinée ;
+- le payload sérialisé est borné à 256 Kio ;
 - l'origine canonique est ``exploitation`` : ce n'est ni un backfill ni une saisie API ;
 - **aucun Learning n'est produit** : la capitalisation reste une décision humaine.
 """
@@ -46,7 +51,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from datetime import timezone
+import json
 import math
+import re
 from typing import Any
 
 from meridian.application import pont_canonique as pont
@@ -55,6 +62,7 @@ from meridian.domain.mesure import mesure_renseignee
 __all__ = [
     "ObservationIncomplete",
     "ObservationMesure",
+    "ObservationTransitoire",
     "ResultatMesure",
     "empreinte_observation",
     "evenement_depuis_observation",
@@ -64,13 +72,12 @@ __all__ = [
 ]
 
 _MAX_INTERPRETATION = 5000
+_MAX_SERIALISE = 256 * 1024
 _TOLERANCE_FUTUR_SECONDES = 300
+_RE_PERIODE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
+_RE_PLAGE = re.compile(
+    r"^(\d{4}-(?:0[1-9]|1[0-2])-\d{2})/(\d{4}-(?:0[1-9]|1[0-2])-\d{2})$")
 
-# Mêmes statuts de décision proposée que le pont C1 : une décision non tranchée ne produit
-# jamais d'initiative canonique, donc aucune mesure ne peut lui être rattachée.
-_STATUTS_DECISION_PROPOSEE = frozenset({
-    "proposee", "propose", "proposed", "en attente", "a trancher", "a decider", "brouillon",
-})
 _CLES_VALEUR = ("valeur_observee", "valeur", "observed_value", "value", "resultat", "résultat")
 _CLES_ATTENDU = ("attendu", "valeur_attendue", "expected")
 _CLES_OBSERVE = ("observe", "valeur_observee", "observed", "resultat")
@@ -88,6 +95,17 @@ class ObservationIncomplete(MesureAutoInvalide):
         super().__init__(self.raison)
 
 
+class ObservationTransitoire(MesureAutoInvalide):
+    """L'observation est valide mais momentanément inexploitable (horloge, signature).
+
+    Le worker ne doit pas avancer son checkpoint : la mesure sera retentée.
+    """
+
+    def __init__(self, raison: str):
+        self.raison = str(raison).strip() or "observation momentanément inexploitable"
+        super().__init__(self.raison)
+
+
 @dataclass(frozen=True)
 class ObservationMesure:
     """Observation normalisée, prête à être transformée en Outcome canonique."""
@@ -102,6 +120,7 @@ class ObservationMesure:
     effets_secondaires: tuple[dict[str, Any], ...]
     periode: str
     mesure_le: str
+    maj_le: str
     interpretation: str
     valeur_attendue: Any
     valeur_observee: Any
@@ -134,6 +153,7 @@ class ResultatMesure:
     mesure: ObservationMesure | None = None
     evenement: dict[str, Any] | None = None
     raison: str | None = None
+    transitoire: bool = False
 
     @property
     def produit(self) -> bool:
@@ -161,8 +181,8 @@ def _liste(valeur: Any) -> list[Any]:
     return [valeur]
 
 
-def _instant(valeur: Any) -> str | None:
-    """ISO UTC à la seconde, ou ``None`` si la valeur n'est pas une date lisible."""
+def _instant(valeur: Any, *, precis: bool = False) -> str | None:
+    """ISO UTC (secondes ou microsecondes), ou ``None`` si la valeur est illisible."""
     if valeur is None:
         return None
     if isinstance(valeur, datetime):
@@ -179,7 +199,8 @@ def _instant(valeur: Any) -> str | None:
             return None
     if horodatage.tzinfo is None:
         horodatage = horodatage.replace(tzinfo=timezone.utc)
-    return horodatage.astimezone(timezone.utc).isoformat(timespec="seconds")
+    return horodatage.astimezone(timezone.utc).isoformat(
+        timespec="microseconds" if precis else "seconds")
 
 
 def _est_futur(instant: str, reference: str | None) -> bool:
@@ -282,21 +303,47 @@ def _source(document: Mapping[str, Any], observation_id: str,
     return dict(pont.assainir(source))
 
 
+def _reference(maintenant: Any = None) -> str:
+    return _instant(maintenant) or datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
 def _quand(document: Mapping[str, Any], maintenant: Any = None) -> str:
     brut = document.get("quand") or document.get("observe_le") or document.get("mesure_le")
     instant = _instant(brut)
     if instant is None:
         raise ObservationIncomplete("quand absent ou illisible")
-    reference = _instant(maintenant) or datetime.now(timezone.utc).isoformat(timespec="seconds")
-    if _est_futur(instant, reference):
-        raise ObservationIncomplete("quand dans le futur")
+    if _est_futur(instant, _reference(maintenant)):
+        # Une horloge producteur en avance peut se corriger : ne pas perdre la mesure.
+        raise ObservationTransitoire("quand dans le futur")
+    return instant
+
+
+def _maj_le(document: Mapping[str, Any], maintenant: Any = None) -> str:
+    instant = _instant(document.get("maj_le"), precis=True)
+    if instant is None:
+        raise ObservationIncomplete("maj_le absent ou illisible")
+    if _est_futur(instant, _reference(maintenant)):
+        raise ObservationTransitoire("maj_le dans le futur")
     return instant
 
 
 def _periode(document: Mapping[str, Any], quand: str) -> str:
     explicite = _texte(document.get("periode"))
     if explicite:
-        return explicite
+        if _RE_PERIODE.fullmatch(explicite):
+            return explicite
+        plage = _RE_PLAGE.fullmatch(explicite)
+        if plage:
+            try:
+                debut = date.fromisoformat(plage.group(1))
+                fin = date.fromisoformat(plage.group(2))
+            except ValueError as exc:
+                raise ObservationIncomplete(f"periode invalide : {explicite}") from exc
+            if debut <= fin:
+                return explicite
+        raise ObservationIncomplete(
+            f"periode invalide : {explicite!r} (attendu AAAA-MM ou AAAA-MM-JJ/AAAA-MM-JJ)")
+    # `quand` est déjà normalisé en UTC : la période par défaut est le mois UTC.
     horodatage = datetime.fromisoformat(quand.replace("Z", "+00:00"))
     return horodatage.strftime("%Y-%m")
 
@@ -323,21 +370,14 @@ def _effets_secondaires(document: Mapping[str, Any]) -> tuple[dict[str, Any], ..
     return tuple(effets)
 
 
-def _decision_tranchee(decision: Any) -> bool:
-    if not isinstance(decision, Mapping):
-        return bool(_texte(decision))
-    statut = _texte(decision.get("statut") or decision.get("etat")).lower()
-    if statut in _STATUTS_DECISION_PROPOSEE:
-        return False
-    choix = _texte(decision.get("texte") or decision.get("decision") or decision.get("choix"))
-    options = [element for element in _liste(decision.get("options")) if _texte(element)]
-    acteur = _texte(decision.get("par") or decision.get("acteur") or decision.get("acteur_id"))
-    return bool((choix or options) and acteur)
+def _initiative(document: Mapping[str, Any], *, explicite: Any = None) -> tuple[str, str | None]:
+    """Lien canonique explicite uniquement : aucune devinette de décision legacy.
 
-
-def _initiative(document: Mapping[str, Any], *, explicite: Any = None,
-                case: Mapping[str, Any] | None = None,
-                decisions: Any = None) -> tuple[str, str | None]:
+    Le producteur fournit soit ``initiative_id``, soit ``decision_id`` (l'identifiant
+    d'initiative est alors dérivé exactement comme C1). Une observation projetée depuis la
+    veille legacy doit donc embarquer ce lien ; les règles de « dernière décision » ne sont pas
+    dupliquées ici.
+    """
     candidats = [
         _texte(candidat)
         for candidat in (explicite, document.get("initiative_id"),
@@ -346,24 +386,17 @@ def _initiative(document: Mapping[str, Any], *, explicite: Any = None,
     ]
     if len(set(candidats)) > 1:
         raise ObservationIncomplete("initiative_id incohérent entre observation et contexte")
-    if candidats:
-        return candidats[0], None
     decision_id = _texte(document.get("decision_id") or document.get("decision_ref"))
+    if candidats:
+        initiative = candidats[0]
+        if decision_id and pont.initiative_id(decision_id) != initiative:
+            raise ObservationIncomplete(
+                "initiative_id incohérent avec decision_id")
+        return initiative, decision_id or None
     if decision_id:
         return pont.initiative_id(decision_id), decision_id
-    case = _mapping(case)
-    case_id = _texte(document.get("case_id") or case.get("id"))
-    liste_decisions = _liste(decisions if decisions is not None else case.get("decisions"))
-    if case_id and liste_decisions:
-        rang = len(liste_decisions)
-        if not _decision_tranchee(liste_decisions[-1]):
-            raise ObservationIncomplete(
-                "décision non tranchée : aucune initiative canonique à mesurer")
-        identifiant = pont.decision_case_id(case_id, rang)
-        return pont.initiative_id(identifiant), identifiant
     raise ObservationIncomplete(
-        "initiative_id introuvable : fournir initiative_id, decision_id ou une décision "
-        "tranchée reliée au case")
+        "initiative_id ou decision_id explicite requis pour rattacher la mesure")
 
 
 def _metrique(document: Mapping[str, Any], attendu: Any = None) -> str:
@@ -411,6 +444,7 @@ def _normaliser_generique(document: Mapping[str, Any], *, tenant_id: Any = None,
                           initiative_id: Any = None, maintenant: Any = None) -> ObservationMesure:
     tenant = _tenant_depuis([document.get("tenant_id"), document.get("tenant")], tenant_id)
     identifiant = _observation_id_generique(document)
+    maj_le = _maj_le(document, maintenant)
     quand = _quand(document, maintenant)
     periode = _periode(document, quand)
     attendu = next(
@@ -427,7 +461,7 @@ def _normaliser_generique(document: Mapping[str, Any], *, tenant_id: Any = None,
     effets = _effets_secondaires(document)
     initiative, decision_id = _initiative(document, explicite=initiative_id)
     source = _source(document, identifiant)
-    valeur_attendue = attendu
+    valeur_attendue = _valeur_dans(attendu)
     interpretation = _interpretation(document, metrique, attendu, observe, effets)
     return ObservationMesure(
         tenant_id=tenant,
@@ -440,6 +474,7 @@ def _normaliser_generique(document: Mapping[str, Any], *, tenant_id: Any = None,
         effets_secondaires=effets,
         periode=periode,
         mesure_le=quand,
+        maj_le=maj_le,
         interpretation=interpretation,
         valeur_attendue=valeur_attendue,
         valeur_observee=valeur_observee,
@@ -471,6 +506,25 @@ def _entrees(passation: Mapping[str, Any], cle: str) -> dict[str, dict[str, Any]
     return resultat
 
 
+def _normaliser_unite(valeur: Any) -> str:
+    return _texte(valeur).casefold()
+
+
+def _unite_commune(reference: Mapping[str, Any], observation: Mapping[str, Any],
+                   role: str) -> str:
+    unite_reference = _texte(reference.get("unite"))
+    unite_observation = _texte(observation.get("unite"))
+    if (unite_reference and unite_observation
+            and _normaliser_unite(unite_reference) != _normaliser_unite(unite_observation)):
+        raise ObservationIncomplete(
+            f"unités incompatibles pour {role} : {unite_reference!r} vs "
+            f"{unite_observation!r}")
+    unite = unite_reference or unite_observation
+    if not unite:
+        raise ObservationIncomplete(f"unité absente pour {role}")
+    return unite
+
+
 def _normaliser_veille(document: Mapping[str, Any], *, tenant_id: Any = None,
                       initiative_id: Any = None, maintenant: Any = None) -> ObservationMesure:
     case = _mapping(document.get("case"))
@@ -490,6 +544,7 @@ def _normaliser_veille(document: Mapping[str, Any], *, tenant_id: Any = None,
         [document.get("tenant_id"), observation.get("tenant_id"), case.get("tenant_id")],
         tenant_id,
     )
+    maj_le = _maj_le(document, maintenant)
     quand = _quand(observation, maintenant)
     periode = _periode(document, quand)
     cible = _texte(observation.get("cible"))
@@ -514,11 +569,14 @@ def _normaliser_veille(document: Mapping[str, Any], *, tenant_id: Any = None,
         cible_valeur = _nombre(attendu_brut.get("cible"))
         if depart is None or cible_valeur is None:
             raise ObservationIncomplete("attendu de veille non numérique (départ/cible)")
-        unite = _texte(attendu_brut.get("unite")) or _texte(observation.get("unite"))
+        sens = _texte(attendu_brut.get("sens")).lower()
+        if sens not in {"hausse", "baisse"}:
+            raise ObservationIncomplete("sens d'attendu invalide (hausse/baisse requis)")
+        unite = _unite_commune(attendu_brut, observation, "attendu")
         attendu = {
             "id": cible,
             "indicateur": metrique,
-            "sens": _texte(attendu_brut.get("sens")) or "hausse",
+            "sens": sens,
             "depart": _nombre_ou_none(depart),
             "cible": _nombre_ou_none(cible_valeur),
             "unite": unite,
@@ -551,10 +609,12 @@ def _normaliser_veille(document: Mapping[str, Any], *, tenant_id: Any = None,
         seuil = _nombre(risque.get("seuil"))
         if seuil is None:
             raise ObservationIncomplete("seuil de risque non numérique")
-        sens = "baisse" if _texte(risque.get("sens")).lower() == "baisse" else "hausse"
-        unite = _texte(risque.get("unite")) or _texte(observation.get("unite"))
+        sens = _texte(risque.get("sens")).lower()
+        if sens not in {"hausse", "baisse"}:
+            raise ObservationIncomplete("sens de risque invalide (hausse/baisse requis)")
+        unite = _unite_commune(risque, observation, "risque")
         franchi = valeur > seuil if sens == "hausse" else valeur < seuil
-        metrique = f"risque:{libelle}"
+        metrique = f"risque:{cible}"
         attendu = {
             "id": cible,
             "texte": libelle,
@@ -594,7 +654,7 @@ def _normaliser_veille(document: Mapping[str, Any], *, tenant_id: Any = None,
         conclusion = _texte(observation.get("conclusion"))
         if not conclusion:
             raise ObservationIncomplete("conclusion absente pour une inconnue levée")
-        metrique = f"inconnue:{libelle}"
+        metrique = f"inconnue:{cible}"
         attendu = None
         observe = conclusion
         valeur_observee = conclusion
@@ -604,8 +664,7 @@ def _normaliser_veille(document: Mapping[str, Any], *, tenant_id: Any = None,
     else:
         raise ObservationIncomplete(f"cible de veille inconnue : {cible}")
 
-    initiative, decision_id = _initiative(
-        document, explicite=initiative_id, case=case, decisions=case.get("decisions"))
+    initiative, decision_id = _initiative(document, explicite=initiative_id)
     source = _source(document, identifiant, type_defaut="veille")
     nom_source = _texte(observation.get("source"))
     if nom_source and not _texte(source.get("nom")):
@@ -624,6 +683,7 @@ def _normaliser_veille(document: Mapping[str, Any], *, tenant_id: Any = None,
         effets_secondaires=effets,
         periode=periode,
         mesure_le=quand,
+        maj_le=maj_le,
         interpretation=interpretation[:_MAX_INTERPRETATION],
         valeur_attendue=valeur_attendue,
         valeur_observee=valeur_observee,
@@ -637,37 +697,38 @@ def _normaliser_veille(document: Mapping[str, Any], *, tenant_id: Any = None,
 # ---------------------------------------------------------------------------
 
 
+def _verifier_taille(observation: ObservationMesure) -> None:
+    payload = outcome_depuis_observation(observation)
+    taille = len(json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8"))
+    if taille > _MAX_SERIALISE:
+        raise ObservationIncomplete(
+            f"observation trop volumineuse ({taille} octets > {_MAX_SERIALISE})")
+
+
 def normaliser_observation(document: Any, *, tenant_id: Any = None,
                            initiative_id: Any = None,
                            maintenant: Any = None) -> ObservationMesure:
-    """Normalise une observation ou lève :class:`ObservationIncomplete`."""
+    """Normalise une observation ou lève :class:`ObservationIncomplete`.
+
+    Une observation valide mais momentanément inexploitable (``quand`` futur) lève
+    :class:`ObservationTransitoire` : le worker ne doit pas avancer son checkpoint.
+    """
     if not isinstance(document, Mapping):
         raise ObservationIncomplete("observation absente : document attendu")
     if _est_observation_veille(document):
-        return _normaliser_veille(
+        observation = _normaliser_veille(
             document, tenant_id=tenant_id, initiative_id=initiative_id,
             maintenant=maintenant)
-    return _normaliser_generique(
-        document, tenant_id=tenant_id, initiative_id=initiative_id, maintenant=maintenant)
-
-
-def empreinte_observation(observation: ObservationMesure) -> str:
-    """Empreinte stable du contenu mesuré : identifie une version de l'observation."""
-    return pont.hash_contenu({
-        "tenant_id": observation.tenant_id,
-        "observation_id": observation.observation_id,
-        "initiative_id": observation.initiative_id,
-        "metrique": observation.metrique,
-        "attendu": observation.attendu,
-        "observe": observation.observe,
-        "effets_secondaires": list(observation.effets_secondaires),
-        "periode": observation.periode,
-        "mesure_le": observation.mesure_le,
-    })[:16]
+    else:
+        observation = _normaliser_generique(
+            document, tenant_id=tenant_id, initiative_id=initiative_id,
+            maintenant=maintenant)
+    _verifier_taille(observation)
+    return observation
 
 
 def outcome_depuis_observation(observation: ObservationMesure) -> dict[str, Any]:
-    """Payload C1 de l'Outcome (attendu, observé, effets secondaires, période)."""
+    """Payload C1 complet de l'Outcome (attendu, observé, effets, période, ingestion)."""
     return {
         "initiative_id": observation.initiative_id,
         "mesure": observation.mesure,
@@ -676,25 +737,33 @@ def outcome_depuis_observation(observation: ObservationMesure) -> dict[str, Any]
         "valeur_attendue": observation.valeur_attendue,
         "interpretation": observation.interpretation,
         "mesure_le": observation.mesure_le,
+        "maj_le": observation.maj_le,
         "decision_id": observation.decision_id,
         "effets_secondaires": list(observation.effets_secondaires),
     }
 
 
+def empreinte_observation(observation: ObservationMesure) -> str:
+    """Empreinte du payload complet : toute correction change l'identifiant d'événement."""
+    return pont.hash_contenu(outcome_depuis_observation(observation))[:16]
+
+
 def evenement_depuis_observation(observation: ObservationMesure, *,
                                  maintenant: Any = None) -> dict[str, Any]:
     """Événement d'outbox C1 signé, d'origine ``exploitation``."""
+    payload = outcome_depuis_observation(observation)
     return pont.evenement_outcome(
         tenant_id=observation.tenant_id,
-        initiative_id=observation.initiative_id,
-        mesure=observation.mesure,
-        metrique=observation.metrique,
-        periode=observation.periode,
-        valeur_attendue=observation.valeur_attendue,
-        interpretation=observation.interpretation,
-        mesure_le=observation.mesure_le,
-        decision_id=observation.decision_id,
-        effets_secondaires=list(observation.effets_secondaires),
+        initiative_id=payload["initiative_id"],
+        mesure=payload["mesure"],
+        metrique=payload["metrique"],
+        periode=payload["periode"],
+        valeur_attendue=payload["valeur_attendue"],
+        interpretation=payload["interpretation"],
+        mesure_le=payload["mesure_le"],
+        maj_le=payload["maj_le"],
+        decision_id=payload["decision_id"],
+        effets_secondaires=payload["effets_secondaires"],
         origine=pont.ORIGINE_EXPLOITATION,
         source_event_id=(
             f"mesure-auto:{observation.type_observation}:{observation.observation_id}:"
@@ -702,6 +771,14 @@ def evenement_depuis_observation(observation: ObservationMesure, *,
         ),
         maintenant=maintenant,
     )
+
+
+def _classer_erreur_pont(exc: BaseException) -> bool:
+    """Vrai si l'erreur C1 est transitoire/environnementale plutôt que schéma."""
+    if isinstance(exc, pont.SignatureInvalide):
+        return True
+    message = str(exc).lower()
+    return any(mot in message for mot in ("futur", "future", "signature", "horloge"))
 
 
 def mesurer_observation(document: Any, *, tenant_id: Any = None,
@@ -712,12 +789,18 @@ def mesurer_observation(document: Any, *, tenant_id: Any = None,
         observation = normaliser_observation(
             document, tenant_id=tenant_id, initiative_id=initiative_id,
             maintenant=maintenant)
+    except ObservationTransitoire as exc:
+        return ResultatMesure(raison=exc.raison, transitoire=True)
     except ObservationIncomplete as exc:
         return ResultatMesure(raison=exc.raison)
     except pont.PontInvalide as exc:
         return ResultatMesure(raison=str(exc))
     try:
         evenement = evenement_depuis_observation(observation, maintenant=maintenant)
+    except pont.SignatureInvalide as exc:
+        return ResultatMesure(mesure=observation, raison=str(exc), transitoire=True)
     except pont.PontInvalide as exc:
-        return ResultatMesure(mesure=observation, raison=str(exc))
+        return ResultatMesure(
+            mesure=observation, raison=str(exc),
+            transitoire=_classer_erreur_pont(exc))
     return ResultatMesure(mesure=observation, evenement=evenement)

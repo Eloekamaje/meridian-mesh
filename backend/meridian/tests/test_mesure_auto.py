@@ -76,6 +76,7 @@ def _veille_observation(cible, **champs):
         "_id": "proj-c1-o-1",
         "id": "proj-c1-o-1",
         "tenant_id": TENANT,
+        "initiative_id": INITIATIVE,
         "maj_le": "2026-11-05T09:01:00+00:00",
         "case": {
             "id": "c1",
@@ -120,8 +121,10 @@ def test_observation_complete_produit_un_outcome_avec_attendu_observe_effets_et_
 
     outcome = pont.objets_depuis_evenement(evenement, tenant_id=TENANT)[0]
     assert outcome["type"] == "OUTCOME"
-    assert outcome["donnees"]["valeur_attendue"] == {"valeur": 5, "unite": "j"}
+    assert outcome["donnees"]["valeur_attendue"] == 5
+    assert outcome["donnees"]["mesure"]["attendu"] == {"valeur": 5, "unite": "j"}
     assert outcome["donnees"]["valeur_observee"] == 7
+    assert outcome["donnees"]["_pont"]["source_maj_le"] == "2026-11-05T09:01:00+00:00"
     assert outcome["donnees"]["effets_secondaires"] == [
         {"type": "rework", "libelle": "reprises", "observe": 3},
     ]
@@ -130,8 +133,9 @@ def test_observation_complete_produit_un_outcome_avec_attendu_observe_effets_et_
 
 
 def test_id_deterministe_et_rejeu_produit_le_meme_evenement():
-    premier = mesure_auto.mesurer_observation(_observation())
-    second = mesure_auto.mesurer_observation(_observation())
+    maintenant = "2026-11-07T12:00:00+00:00"
+    premier = mesure_auto.mesurer_observation(_observation(), maintenant=maintenant)
+    second = mesure_auto.mesurer_observation(_observation(), maintenant=maintenant)
 
     assert premier.produit and second.produit
     assert premier.evenement["_id"] == second.evenement["_id"]
@@ -170,7 +174,7 @@ def test_la_mesure_porte_la_source_de_l_observation_et_l_origine_exploitation():
     assert "token" not in json.dumps(mesure).lower()
 
 
-@pytest.mark.parametrize("champ", ["id", "tenant_id", "quand"])
+@pytest.mark.parametrize("champ", ["id", "tenant_id", "quand", "maj_le"])
 def test_observation_incomplete_ne_produit_rien_et_expose_la_raison(champ):
     document = _observation()
     document.pop(champ)
@@ -271,7 +275,7 @@ def test_veille_risque_franchi_produit_un_effet_secondaire_materialise():
     assert resultat.produit is True
     mesure = resultat.mesure
     assert mesure.type_observation == "risque"
-    assert mesure.metrique == "risque:Rejets de paiement"
+    assert mesure.metrique == "risque:risque-1"
     assert mesure.attendu["seuil"] == 3
     assert mesure.effets_secondaires == ({
         "type": "risque_materialise",
@@ -300,7 +304,7 @@ def test_veille_inconnue_levee():
     assert resultat.produit is True
     mesure = resultat.mesure
     assert mesure.type_observation == "inconnue"
-    assert mesure.metrique == "inconnue:Cause racine des reprises"
+    assert mesure.metrique == "inconnue:inc-1"
     assert mesure.attendu is None
     assert mesure.observe == "Le cache sature."
 
@@ -338,14 +342,28 @@ def test_veille_attendu_sans_valeur_numerique_ne_produit_rien():
     assert "numérique" in resultat.raison.lower() or "numerique" in resultat.raison.lower()
 
 
-def test_veille_sans_decision_tranchee_ne_produit_rien():
+def test_veille_sans_lien_canonique_explicite_ne_produit_rien():
     document = _veille_observation("att-1")
-    document["case"]["decisions"] = [{"texte": "Peut-être", "statut": "proposee"}]
+    document.pop("initiative_id")
+    # Le case contient pourtant une décision et un responsable : aucune devinette.
+    assert document["case"]["decisions"][0]["par"] == "alice"
 
     resultat = mesure_auto.mesurer_observation(document)
 
     assert resultat.produit is False
-    assert "décision" in resultat.raison.lower() or "decision" in resultat.raison.lower()
+    assert "initiative" in resultat.raison.lower() or "decision" in resultat.raison.lower()
+
+
+def test_veille_decision_id_explicite_derive_l_initiative():
+    document = _veille_observation("att-1")
+    document.pop("initiative_id")
+    document["decision_id"] = "dec-case-c1-1"
+
+    resultat = mesure_auto.mesurer_observation(document)
+
+    assert resultat.produit is True
+    assert resultat.mesure.initiative_id == "ini-dec-case-c1-1"
+    assert resultat.mesure.decision_id == "dec-case-c1-1"
 
 
 def test_veille_observation_sans_id_ne_produit_rien():
@@ -405,6 +423,18 @@ def test_initiative_incoherente_entre_argument_et_document():
     assert "initiative" in resultat.raison.lower()
 
 
+def test_initiative_et_decision_id_doivent_etre_coherents():
+    coherent = mesure_auto.mesurer_observation(
+        _observation(decision_id="dec-case-c1-1"))
+    incoherent = mesure_auto.mesurer_observation(
+        _observation(decision_id="dec-case-autre-1"))
+
+    assert coherent.produit is True
+    assert coherent.mesure.decision_id == "dec-case-c1-1"
+    assert incoherent.produit is False
+    assert "incohérent" in incoherent.raison.lower()
+
+
 def test_source_textuelle_est_normalisee():
     resultat = mesure_auto.mesurer_observation(_observation(source="datadog:prod"))
 
@@ -446,3 +476,174 @@ def test_evenement_outcome_sans_origine_reste_legacy():
 
     outcome = pont.objets_depuis_evenement(evenement, tenant_id=TENANT)[0]
     assert outcome["donnees"]["_pont"]["origine"] == pont.ORIGINE_LEGACY
+
+
+# ---------------------------------------------------------------------------
+# Corrections, idempotence et bornes (revue lot D)
+# ---------------------------------------------------------------------------
+
+
+def test_une_correction_d_interpretation_change_l_id_d_evenement():
+    premier = mesure_auto.mesurer_observation(_observation(interpretation="version 1"))
+    second = mesure_auto.mesurer_observation(_observation(
+        interpretation="version 2",
+        maj_le="2026-11-05T09:02:00.123456+00:00"))
+
+    assert premier.produit and second.produit
+    assert premier.evenement["canonical_id"] == second.evenement["canonical_id"]
+    assert premier.evenement["_id"] != second.evenement["_id"]
+    assert second.evenement["payload"]["maj_le"] == "2026-11-05T09:02:00.123456+00:00"
+    assert second.evenement["source_maj_le"] == "2026-11-05T09:02:00.123456+00:00"
+
+
+def test_une_correction_de_source_change_l_id_d_evenement():
+    premier = mesure_auto.mesurer_observation(_observation(source={"type": "twin", "nom": "a"}))
+    second = mesure_auto.mesurer_observation(_observation(
+        source={"type": "twin", "nom": "b"}, maj_le="2026-11-05T09:02:00+00:00"))
+
+    assert premier.evenement["_id"] != second.evenement["_id"]
+
+
+def test_quand_futur_est_marque_transitoire():
+    resultat = mesure_auto.mesurer_observation(
+        _observation(quand="2026-11-07T12:06:00+00:00"),
+        maintenant="2026-11-07T12:00:00+00:00")
+
+    assert resultat.produit is False
+    assert resultat.transitoire is True
+    assert "futur" in resultat.raison.lower()
+
+
+def test_maj_le_futur_est_marque_transitoire():
+    resultat = mesure_auto.mesurer_observation(
+        _observation(maj_le="2026-11-07T12:06:00+00:00"),
+        maintenant="2026-11-07T12:00:00+00:00")
+
+    assert resultat.produit is False
+    assert resultat.transitoire is True
+
+
+@pytest.mark.parametrize("periode", [
+    "2026-13", "2026-1", "2026-11-01", "2026-11-07/2026-11-01", "2026-02-30/2026-03-01",
+])
+def test_periode_invalide_ne_produit_rien(periode):
+    resultat = mesure_auto.mesurer_observation(_observation(periode=periode))
+
+    assert resultat.produit is False
+    assert "periode" in resultat.raison.lower()
+
+
+def test_periode_plage_valide_est_acceptee():
+    resultat = mesure_auto.mesurer_observation(
+        _observation(periode="2026-11-01/2026-11-07"))
+
+    assert resultat.produit is True
+    assert resultat.mesure.periode == "2026-11-01/2026-11-07"
+
+
+def test_periode_derivee_en_utc():
+    document = _observation(quand="2026-11-01T00:30:00+02:00")
+    document.pop("periode")
+
+    resultat = mesure_auto.mesurer_observation(document)
+
+    assert resultat.produit is True
+    assert resultat.mesure.periode == "2026-10"
+
+
+@pytest.mark.parametrize("champ", ["sens", "unite"])
+def test_veille_attendu_exige_sens_et_unite(champ):
+    document = _veille_observation("att-1")
+    if champ == "sens":
+        document["case"]["veille"]["passation"]["attendus"][0].pop("sens")
+    else:
+        document["case"]["veille"]["passation"]["attendus"][0].pop("unite")
+        document["observation"].pop("unite", None)
+
+    resultat = mesure_auto.mesurer_observation(document)
+
+    assert resultat.produit is False
+    assert ("sens" if champ == "sens" else "unité") in resultat.raison.lower()
+
+
+def test_veille_unites_incompatibles_refusees():
+    document = _veille_observation("att-1")
+    document["observation"]["unite"] = "heures"
+
+    resultat = mesure_auto.mesurer_observation(document)
+
+    assert resultat.produit is False
+    assert "unités" in resultat.raison.lower()
+
+
+def test_veille_risque_exige_sens_et_unite():
+    document = _veille_observation("risque-1", valeur=5, unite="%")
+    document["case"]["veille"]["passation"]["risques"][0].pop("sens")
+
+    resultat = mesure_auto.mesurer_observation(document)
+
+    assert resultat.produit is False
+    assert "sens" in resultat.raison.lower()
+
+
+def test_observation_trop_volumineuse_est_refusee():
+    document = _observation(effets_secondaires=[{"blob": "x" * (300 * 1024)}])
+
+    resultat = mesure_auto.mesurer_observation(document)
+
+    assert resultat.produit is False
+    assert "volumineuse" in resultat.raison.lower()
+
+
+def test_decision_id_est_recopie_dans_l_outcome():
+    resultat = mesure_auto.mesurer_observation(_observation(decision_id="dec-case-c1-1"))
+    outcome = pont.objets_depuis_evenement(
+        resultat.evenement, tenant_id=TENANT)[0]
+
+    assert outcome["donnees"]["decision_id"] == "dec-case-c1-1"
+    assert resultat.evenement["payload"]["decision_id"] == "dec-case-c1-1"
+
+
+def test_origine_inconnue_est_refusee():
+    with pytest.raises(pont.PontInvalide):
+        pont.evenement_outcome(
+            tenant_id=TENANT, initiative_id=INITIATIVE,
+            mesure={"metrique": "delai", "valeur": 2}, metrique="delai",
+            periode="2026-11", source_event_id="out-origine",
+            origine="api-canonique")
+
+
+def test_signature_invalide_est_transitoire(monkeypatch):
+    def signature_invalide(*_args, **_kwargs):
+        raise pont.SignatureInvalide("PONT_KEY absent")
+
+    monkeypatch.setattr(mesure_auto.pont, "evenement_outcome", signature_invalide)
+
+    resultat = mesure_auto.mesurer_observation(_observation())
+
+    assert resultat.produit is False
+    assert resultat.transitoire is True
+
+
+def test_erreur_c1_future_est_transitoire(monkeypatch):
+    def futur(*_args, **_kwargs):
+        raise pont.PontInvalide("source_maj_le dans le futur")
+
+    monkeypatch.setattr(mesure_auto.pont, "evenement_outcome", futur)
+
+    resultat = mesure_auto.mesurer_observation(_observation())
+
+    assert resultat.produit is False
+    assert resultat.transitoire is True
+
+
+def test_erreur_c1_de_schema_reste_permanente(monkeypatch):
+    def schema(*_args, **_kwargs):
+        raise pont.PontInvalide("mesure obligatoire")
+
+    monkeypatch.setattr(mesure_auto.pont, "evenement_outcome", schema)
+
+    resultat = mesure_auto.mesurer_observation(_observation())
+
+    assert resultat.produit is False
+    assert resultat.transitoire is False
