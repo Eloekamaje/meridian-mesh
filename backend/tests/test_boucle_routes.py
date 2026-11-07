@@ -245,6 +245,28 @@ def test_la_chaine_d_un_scenario_sous_decision_est_complete(monkeypatch):
     ]
 
 
+def test_la_chaine_d_un_scenario_relie_seulement_a_une_decision_est_complete(monkeypatch):
+    situation = _objet("sit-1", type_="SITUATION")
+    investigation = _objet(
+        "inv-1", famille="investigation", type_="INVESTIGATION", mode="DECLARED",
+        situation_id="sit-1")
+    decision = _objet(
+        "dec-1", famille="decision", type_="DECISION", mode="DECLARED",
+        investigation_id="inv-1")
+    scenario = _objet(
+        "scn-decision", famille="decision", type_="SCENARIO", mode="PROPOSED",
+        titre="Scénario", decision_id="dec-1")
+    client, _ = _client(monkeypatch, [situation, investigation, decision, scenario])
+
+    reponse = client.get(
+        "/api/boucle/objets/scn-decision", params={"historique": "true"})
+
+    assert reponse.status_code == 200
+    assert [element["type"] for element in reponse.json()["chaine"]] == [
+        "SITUATION", "INVESTIGATION", "DECISION", "SCENARIO",
+    ]
+
+
 def test_la_chaine_d_un_scenario_sous_investigation_s_arrete_a_l_investigation(monkeypatch):
     investigation = _objet(
         "inv-seul", famille="investigation", type_="INVESTIGATION", mode="DECLARED")
