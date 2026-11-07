@@ -435,3 +435,36 @@ def test_pg_rls_isole_objet_entreprise_avec_un_role_non_superuser(conn):
                 entreprise_depot.enregistrer_objet(conn, "tenant-b", {
                     "id": "ob-2", "tenant_id": "tenant-b", "famille": "emergence",
                     "type": "SITUATION", "mode": "OBSERVED", "titre": "B2"})
+
+
+@besoin_pg
+def test_pg_enregistrer_boucle_fusionne_legacy_et_liens_b(conn):
+    entreprise_depot.enregistrer_objet(conn, TENANT, {
+        "id": "sit-pg-fusion", "tenant_id": TENANT, "famille": "emergence",
+        "type": "SITUATION", "mode": "OBSERVED", "titre": "Avant",
+        "donnees": {
+            "legacy": "conservé",
+            "signal_ids": ["sig-1"],
+            "expression_id": "expr-1",
+            "opportunity_ids": ["opp-1"],
+            "risk_ids": ["risk-1"],
+            "_historique": [{"version": 1, "titre": "Ancienne"}],
+        }})
+
+    situation = boucle.Situation(
+        id="sit-pg-fusion", tenant_id=TENANT, titre="Après",
+        description="Nouvelle description", priorite="HAUTE")
+    boucle.enregistrer_boucle(conn, TENANT, situation, historique=True)
+
+    relu = entreprise_depot.lire_objet(conn, TENANT, "sit-pg-fusion")
+    assert relu["titre"] == "Après"
+    assert relu["version"] == 2
+    assert relu["donnees"]["description"] == "Nouvelle description"
+    assert relu["donnees"]["priorite"] == "HAUTE"
+    assert relu["donnees"]["legacy"] == "conservé"
+    assert relu["donnees"]["signal_ids"] == ["sig-1"]
+    assert relu["donnees"]["expression_id"] == "expr-1"
+    assert relu["donnees"]["opportunity_ids"] == ["opp-1"]
+    assert relu["donnees"]["risk_ids"] == ["risk-1"]
+    assert [entree["titre"] for entree in relu["donnees"]["_historique"]] == [
+        "Ancienne", "Avant"]

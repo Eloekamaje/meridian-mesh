@@ -19,6 +19,7 @@ from auth import acteur as acteur_courant
 from meridian.adapters.inbound.http import boucle as boucle_routes
 from meridian.adapters.outbound.postgres import boucle, rls
 from meridian.application import commandes_boucle
+from meridian.ports.boucle import ObjetInvalide
 
 TENANT = "local"
 BASE = "/api/boucle"
@@ -970,6 +971,8 @@ def test_une_initiative_avec_decision_ref_seul_est_acceptee(monkeypatch):
         "id": "out-ref", "mesure": {"valeur": 2}})
 
     assert reponse.status_code == 201
+    assert [objet["type"] for objet in reponse.json()["chaine"]] == [
+        "SITUATION", "INVESTIGATION", "DECISION", "INITIATIVE", "OUTCOME"]
     assert reponse.json()["objet"]["donnees"]["initiative_id"] == "ini-1"
 
 
@@ -1016,6 +1019,140 @@ def test_un_acteur_declare_non_textuel_est_ignore(monkeypatch):
 
     assert reponse.status_code == 200
     assert reponse.json()["objet"]["donnees"]["acteur"] == "demo"
+
+
+def test_lancer_initiative_sur_decision_avec_investigation_ref_seul(monkeypatch):
+    client, magasin = _client(monkeypatch)
+    assert _post(client, "/situations", {"id": "sit-1", "titre": "Délai"}).status_code == 201
+    assert _post(client, "/situations/sit-1/investigations", {"id": "inv-1"}).status_code == 201
+    assert _post(client, "/investigations/inv-1/decisions", {
+        "id": "dec-1", "options": ["A"]}).status_code == 201
+    assert _post(client, "/decisions/dec-1/trancher", {"choix": "A"}).status_code == 200
+    donnees = magasin.objets[(TENANT, "dec-1")]["donnees"]
+    donnees.pop("investigation_id", None)
+    donnees["investigation_ref"] = "inv-1"
+
+    reponse = _post(client, "/decisions/dec-1/initiatives", {"id": "ini-1"})
+
+    assert reponse.status_code == 201
+    assert [objet["type"] for objet in reponse.json()["chaine"]] == [
+        "SITUATION", "INVESTIGATION", "DECISION", "INITIATIVE"]
+
+
+def test_capitaliser_learning_sur_outcome_avec_initiative_ref_seul(monkeypatch):
+    client, magasin = _client(monkeypatch)
+    _chaine(client)
+    donnees = magasin.objets[(TENANT, "out-1")]["donnees"]
+    donnees.pop("initiative_id", None)
+    donnees["initiative_ref"] = "ini-1"
+
+    reponse = _post(client, "/outcomes/out-1/learnings", {
+        "id": "lea-ref", "enonce": "Leçon"})
+
+    assert reponse.status_code == 201
+    assert [objet["type"] for objet in reponse.json()["chaine"]] == [
+        "SITUATION", "INVESTIGATION", "DECISION", "INITIATIVE", "OUTCOME", "LEARNING"]
+
+
+def test_des_liens_decision_contradictoires_sont_409(monkeypatch):
+    client, magasin = _client(monkeypatch)
+    _chaine(client)
+    donnees = magasin.objets[(TENANT, "ini-1")]["donnees"]
+    donnees["decision_id"] = "dec-1"
+    donnees["decision_ref"] = "dec-2"
+
+    reponse = _post(client, "/initiatives/ini-1/outcomes", {
+        "id": "out-x", "mesure": {"valeur": 1}})
+
+    assert reponse.status_code == 409
+
+
+def test_des_liens_investigation_contradictoires_sont_409(monkeypatch):
+    client, magasin = _client(monkeypatch)
+    assert _post(client, "/situations", {"id": "sit-1", "titre": "Délai"}).status_code == 201
+    assert _post(client, "/situations/sit-1/investigations", {"id": "inv-1"}).status_code == 201
+    assert _post(client, "/investigations/inv-1/decisions", {
+        "id": "dec-1", "options": ["A"]}).status_code == 201
+    donnees = magasin.objets[(TENANT, "dec-1")]["donnees"]
+    donnees["investigation_id"] = "inv-1"
+    donnees["investigation_ref"] = "inv-2"
+
+    reponse = _post(client, "/decisions/dec-1/trancher", {"choix": "A"})
+
+    assert reponse.status_code == 409
+
+
+def test_des_liens_initiative_contradictoires_sont_409(monkeypatch):
+    client, magasin = _client(monkeypatch)
+    _chaine(client)
+    donnees = magasin.objets[(TENANT, "out-1")]["donnees"]
+    donnees["initiative_id"] = "ini-1"
+    donnees["initiative_ref"] = "ini-2"
+
+    reponse = _post(client, "/outcomes/out-1/learnings", {"enonce": "Leçon"})
+
+    assert reponse.status_code == 409
+
+
+def test_enregistrer_boucle_fusionne_les_donnees_existantes():
+    magasin = _Magasin()
+    magasin.objets[(TENANT, "sit-fusion")] = _objet(
+        "sit-fusion", type_="SITUATION", famille="emergence", mode="OBSERVED",
+        titre="Avant", version=1,
+        donnees={
+            "legacy": "conservé",
+            "signal_ids": ["sig-1"],
+            "expression_id": "expr-1",
+            "opportunity_ids": ["opp-1"],
+            "risk_ids": ["risk-1"],
+            "_historique": [{"version": 1, "titre": "Ancienne"}],
+        })
+    conn = _Connexion(magasin)
+    situation = boucle.Situation(
+        id="sit-fusion", tenant_id=TENANT, titre="Après",
+        description="Nouvelle description")
+
+    boucle.enregistrer_boucle(conn, TENANT, situation, historique=True)
+
+    relu = magasin.objets[(TENANT, "sit-fusion")]
+    assert relu["titre"] == "Après"
+    assert relu["donnees"]["description"] == "Nouvelle description"
+    assert relu["donnees"]["legacy"] == "conservé"
+    assert relu["donnees"]["signal_ids"] == ["sig-1"]
+    assert relu["donnees"]["expression_id"] == "expr-1"
+    assert relu["donnees"]["opportunity_ids"] == ["opp-1"]
+    assert relu["donnees"]["risk_ids"] == ["risk-1"]
+    assert [entree["titre"] for entree in relu["donnees"]["_historique"]] == [
+        "Ancienne", "Avant"]
+    assert relu["version"] == 2
+
+
+def test_fusionner_donnees_preserve_une_cle_legacy_sensible():
+    magasin = _Magasin()
+    magasin.objets[(TENANT, "ini-legacy")] = _objet(
+        "ini-legacy", type_="INITIATIVE", famille="decision", mode="DECLARED",
+        donnees={"decision_id": "dec-1", "token": "legacy-valeur"}, version=1)
+    conn = _Connexion(magasin)
+
+    boucle.fusionner_donnees(
+        conn, TENANT, "ini-legacy", {"outcome_ids": ["out-1"]},
+        historique=True, ajouter=("outcome_ids",), version_attendue=1)
+
+    relu = magasin.objets[(TENANT, "ini-legacy")]
+    assert relu["donnees"]["token"] == "legacy-valeur"
+    assert relu["donnees"]["outcome_ids"] == ["out-1"]
+
+
+def test_fusionner_donnees_refuse_un_secret_nouveau():
+    magasin = _Magasin()
+    magasin.objets[(TENANT, "ini-legacy")] = _objet(
+        "ini-legacy", type_="INITIATIVE", famille="decision", mode="DECLARED",
+        donnees={"decision_id": "dec-1"}, version=1)
+    conn = _Connexion(magasin)
+
+    with pytest.raises(ObjetInvalide):
+        boucle.fusionner_donnees(
+            conn, TENANT, "ini-legacy", {"token": "nouveau"}, version_attendue=1)
 
 
 def test_les_conflits_sont_declares_par_le_port():

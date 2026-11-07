@@ -50,6 +50,7 @@ from meridian.adapters.outbound.postgres import entreprise_depot
 from meridian.adapters.outbound.neo4j import graph_store
 from meridian.application import commandes_boucle
 from meridian.domain import modele_entreprise
+from meridian.domain.mesure import mesure_renseignee as _mesure_renseignee
 from meridian.adapters.outbound.postgres import rls
 from meridian.domain.tenant import TenantError, exiger_tenant, normaliser_slug, resoudre_tenant
 from meridian.ports.boucle import ObjetExistant, ObjetInvalide, VersionRefusee
@@ -216,19 +217,6 @@ class LancementInitiative(_CorpsTransition):
     fin_prevue_le: DateIso | None = None
     preuves: list[Any] | None = Field(None, max_length=100)
     mode: ModeCanonique | None = None
-
-
-def _mesure_renseignee(valeur: Any) -> bool:
-    """Même règle que le domaine : une mesure vide n'est pas une mesure."""
-    if valeur is None or isinstance(valeur, bool):
-        return False
-    if isinstance(valeur, str):
-        return bool(valeur.strip())
-    if isinstance(valeur, Mapping):
-        return any(_mesure_renseignee(element) for element in valeur.values())
-    if isinstance(valeur, (list, tuple, set, frozenset)):
-        return bool(valeur)
-    return True
 
 
 class MesureOutcome(_CorpsTransition):

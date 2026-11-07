@@ -17,6 +17,7 @@ from typing import Any
 
 from meridian.adapters.outbound.postgres import entreprise_depot
 from meridian.domain import modele_entreprise as modele
+from meridian.domain.mesure import mesure_renseignee as _mesure_renseignee
 
 __all__ = [
     "BoucleInvalide", "TYPES_BOUCLE", "STATUT_DECISION_PROPOSEE", "STATUT_DECISION_TRANCHEE",
@@ -51,6 +52,13 @@ _CHAMPS_TABLE = frozenset({
 })
 _CHAMPS_DATES = ("cree_le", "observe_le", "valide_depuis", "valide_jusqua")
 _MAX_HISTORIQUE = 50
+
+# Champs inverses maintenus par les autres producteurs (B) : un parent fraîchement
+# construit par A ne doit pas les effacer avec ses valeurs par défaut.
+_CHAMPS_INVERSES_B = frozenset({
+    "signal_ids", "expression_id", "opportunity_ids", "risk_ids",
+    "hypothesis_ids", "expert_ids", "scenario_ids",
+})
 
 
 class BoucleInvalide(modele.ModeleInvalide):
@@ -156,18 +164,6 @@ def _est_tranchee_statut(valeur: Any) -> bool:
 def est_decision_tranchee(decision: Any) -> bool:
     """Vrai si la décision porte un statut de décision tranchée."""
     return _est_tranchee_statut(_valeur(decision, "statut"))
-
-
-def _mesure_renseignee(mesure: Any) -> bool:
-    if mesure is None or isinstance(mesure, bool):
-        return False
-    if isinstance(mesure, str):
-        return bool(mesure.strip())
-    if isinstance(mesure, Mapping):
-        return any(_mesure_renseignee(element) for element in mesure.values())
-    if isinstance(mesure, (list, tuple, set, frozenset)):
-        return bool(mesure)
-    return True
 
 
 def _valeur_mesure(mesure: Any) -> Any:
@@ -820,6 +816,10 @@ def _liens_inverses(objets: list[Any]) -> dict[str, dict[str, Any]]:
     return extras
 
 
+def _est_vide(valeur: Any) -> bool:
+    return valeur is None or valeur == "" or valeur == [] or valeur == () or valeur == {}
+
+
 def _persister(
     conn: Any, tenant: str, objet: Any, *, historique: bool, as_dict: bool,
     extra_donnees: Mapping[str, Any] | None = None, creer: bool = False,
@@ -835,15 +835,26 @@ def _persister(
             else:
                 donnees[cle] = valeur
         payload["donnees"] = donnees
-    if historique:
-        ancien = entreprise_depot.lire_objet(conn, tenant, identifiant)
+    with conn.transaction():
+        ancien = None
+        if not creer:
+            ancien = entreprise_depot.lire_objet(conn, tenant, identifiant, for_update=True)
         if ancien is not None:
-            donnees = dict(payload.get("donnees") or {})
-            versions = list((ancien.get("donnees") or {}).get("_historique") or [])
-            versions.append(_entree_historique(ancien))
-            donnees["_historique"] = versions[-_MAX_HISTORIQUE:]
+            existantes = dict(ancien.get("donnees") or {})
+            nouvelles = dict(payload.get("donnees") or {})
+            nouvelles.pop("_historique", None)
+            donnees = dict(existantes)
+            for cle, valeur in nouvelles.items():
+                if (cle in _CHAMPS_INVERSES_B and _est_vide(valeur)
+                        and not _est_vide(existantes.get(cle))):
+                    continue
+                donnees[cle] = valeur
+            if historique:
+                versions = list(existantes.get("_historique") or [])
+                versions.append(_entree_historique(ancien))
+                donnees["_historique"] = versions[-_MAX_HISTORIQUE:]
             payload["donnees"] = donnees
-    ligne = dict(entreprise_depot.enregistrer_objet(conn, tenant, payload, creer=creer))
+        ligne = dict(entreprise_depot.enregistrer_objet(conn, tenant, payload, creer=creer))
     if historique:
         ligne["historique"] = list((ligne.get("donnees") or {}).get("_historique") or [])
     if as_dict:
@@ -944,16 +955,21 @@ def _objet_depuis_ligne(ligne: Mapping[str, Any]) -> Any:
     return classe(**valeurs)
 
 
+def _lien_ou_alias(ligne: Mapping[str, Any], principal: str, alias: str) -> str | None:
+    """Lit le lien canonique ou son alias legacy (``*_ref``)."""
+    return _texte_ou_none(_valeur(ligne, principal)) or _texte_ou_none(_valeur(ligne, alias))
+
+
 def _source_principale(ligne: Mapping[str, Any]) -> str | None:
     type_objet = _type_de(ligne)
     if type_objet == "INVESTIGATION":
         return _texte_ou_none(_valeur(ligne, "situation_id"))
     if type_objet == "DECISION":
-        return _texte_ou_none(_valeur(ligne, "investigation_id"))
+        return _lien_ou_alias(ligne, "investigation_id", "investigation_ref")
     if type_objet == "INITIATIVE":
-        return _texte_ou_none(_valeur(ligne, "decision_id"))
+        return _lien_ou_alias(ligne, "decision_id", "decision_ref")
     if type_objet == "OUTCOME":
-        return _texte_ou_none(_valeur(ligne, "initiative_id"))
+        return _lien_ou_alias(ligne, "initiative_id", "initiative_ref")
     if type_objet == "LEARNING":
         outcomes = _liste_ids(_valeur(ligne, "outcome_ids"), "outcome_ids")
         if outcomes:
@@ -1043,6 +1059,7 @@ def fusionner_donnees(
     """
     tenant = _texte(tenant_id, "tenant_id", obligatoire=True)
     identifiant = _texte(objet_id, "id", obligatoire=True)
+    entreprise_depot.verifier_donnees(patch)
     with conn.transaction():
         ligne = entreprise_depot.lire_objet(conn, tenant, identifiant, for_update=True)
         if ligne is None:
@@ -1065,4 +1082,5 @@ def fusionner_donnees(
                 donnees[cle] = copy.deepcopy(valeur)
         attendue = version_attendue if version_attendue is not None else ligne.get("version")
         return entreprise_depot.enregistrer_donnees(
-            conn, tenant, identifiant, donnees, mode=mode, version_attendue=attendue)
+            conn, tenant, identifiant, donnees, mode=mode, version_attendue=attendue,
+            verifier_secrets=False)

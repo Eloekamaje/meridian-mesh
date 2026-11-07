@@ -125,9 +125,17 @@ def _source(
             f"attendu {tenant!r}"
         )
     for aliases in _LIENS_SOURCE.get(type_attendu, ()):
-        if not any(_texte(_valeur_source(source, alias)) for alias in aliases):
+        trouvees = [
+            (alias, _texte(_valeur_source(source, alias)))
+            for alias in aliases
+            if _texte(_valeur_source(source, alias))
+        ]
+        if not trouvees:
             raise TransitionRefusee(
                 f"{role} incomplète : {' ou '.join(aliases)} manquant")
+        if len({valeur for _, valeur in trouvees}) > 1:
+            details = ", ".join(f"{alias}={valeur!r}" for alias, valeur in trouvees)
+            raise TransitionRefusee(f"{role} : liens contradictoires ({details})")
     if exiger_options and type_attendu == "DECISION":
         options = _valeur_source(source, "options")
         if isinstance(options, str):

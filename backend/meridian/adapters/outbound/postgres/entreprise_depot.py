@@ -98,10 +98,22 @@ def _donnees_json(valeur) -> object:
     if valeur is None:
         return {}
     _verifier_secrets(valeur)
+    return _donnees_json_permissif(valeur)
+
+
+def _donnees_json_permissif(valeur) -> object:
+    """Sérialise en JSON strict sans revalider les secrets (corpus legacy déjà stocké)."""
+    if valeur is None:
+        return {}
     try:
         return json.loads(json.dumps(valeur, ensure_ascii=False, allow_nan=False))
     except (TypeError, ValueError) as exc:
         raise ObjetInvalide("donnees non sérialisables en JSON") from exc
+
+
+def verifier_donnees(valeur) -> object:
+    """Valide un JSON de données (sérialisation et secrets) sans écrire."""
+    return _donnees_json(valeur)
 
 
 def _version(valeur) -> int | None:
@@ -227,6 +239,9 @@ def enregistrer_objet(conn, tenant_id, objet, *, creer=False) -> dict:
 
     Avec ``creer=True``, l'écriture est strictement une création : un identifiant déjà présent (même course
     concurrente) lève :class:`ObjetExistant` au lieu d'écraser l'objet.
+
+    Sur une course concurrente, même avec ``creer=False``, une ``UniqueViolation`` sur ``(tenant_id, id)``
+    est convertie en :class:`ObjetExistant` ; l'appelant peut alors relire et rejouer en mise à jour.
     """
     tenant = _tenant(tenant_id)
     saisi = _objet_saisi(objet)
@@ -317,15 +332,18 @@ def lire_objet(conn, tenant_id, objet_id, *, for_update=False) -> dict | None:
 
 def enregistrer_donnees(
     conn, tenant_id, objet_id, donnees, *, mode=None, version_attendue=None,
+    verifier_secrets=True,
 ) -> dict:
     """Met à jour uniquement ``donnees`` (et le mode) d'un objet existant.
 
     La fusion des clés legacy est faite par l'appelant. ``version_attendue`` rend l'écriture
     optimiste : une version différente lève :class:`VersionRefusee` sans rien écrire.
+    ``verifier_secrets=False`` réserve la validation des secrets aux seules clés nouvelles
+    (fusion d'un corpus legacy déjà stocké).
     """
     tenant = _tenant(tenant_id)
     identifiant = _texte_obligatoire(objet_id, "id")
-    donnees_json = _donnees_json(donnees)
+    donnees_json = _donnees_json(donnees) if verifier_secrets else _donnees_json_permissif(donnees)
     if mode is not None:
         mode = _normaliser(mode)
         if mode not in _MODES:
