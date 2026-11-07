@@ -26,12 +26,13 @@ Le produit actuel combine trois modèles qui ne forment pas encore une seule cha
 | Modèle | Où | Rôle | Utilisé par |
 |---|---|---|---|
 | **Travail / Actualités (legacy)** | MongoDB `cases`, `situations`, `initiatives`, `relations` | Surface produit actuelle : histoires, travaux, décisions, passation, veille, priorités | `/actualites`, `/cases`, `/initiatives`, couche Situations de l’Atlas |
-| **Boucle canonique** | PostgreSQL `objet_entreprise`, `boucle.py` | Modèle d’entreprise validé : Situation → Investigation → Decision → Initiative → Outcome → Learning | `/boucle/objets` (lecture), `/boucle/outcomes`, backfill partiel `migration_canonique` (situations, initiatives) |
+| **Boucle canonique** | PostgreSQL `objet_entreprise`, `boucle.py` | Modèle d’entreprise validé : Situation → Investigation → Decision → Initiative → Outcome → Learning ; transitions et création d’une Situation racine exposées dans l’UI | `/boucle/objets` (lecture), `POST /boucle/situations` (création racine), transitions de l’UI Boucle, `/boucle/outcomes`, backfill partiel `migration_canonique` (situations, initiatives) |
 | **Dossier de raisonnement** | PostgreSQL `dossiers_raisonnement` | Trace cognitive d’une réponse : croyances, hypothèses, options, critique, décision de réponse, gates | `/boucle/analyser`, `/aurora`, page Cognition |
 
 Conséquence : le socle « Comprendre » est cohérent, mais l’exploitation vit encore dans le
-legacy et le raisonnement, tandis que la boucle canonique est surtout un modèle de lecture et
-de backfill. **C’est l’écart structurant principal.**
+legacy et le raisonnement, tandis que la boucle canonique est désormais opérable depuis l’UI
+(création d’une Situation racine et transitions jusqu’au Learning), tout en restant alimentée
+en parallèle par le backfill et le pont C2. **C’est l’écart structurant principal.**
 
 ---
 
