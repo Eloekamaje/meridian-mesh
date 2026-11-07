@@ -296,8 +296,10 @@ function PanneauDetail({
   onOuvrirObjet,
   onAction,
   transitionSucces,
+  modaleOuverte = false,
 }) {
   const panneauRef = useRef(null);
+  const identifiantPanneau = idObjet(objet);
 
   useEffect(() => {
     const panneau = panneauRef.current;
@@ -321,7 +323,7 @@ function PanneauDetail({
     };
     panneau.addEventListener("keydown", surTabulation);
     return () => panneau.removeEventListener("keydown", surTabulation);
-  }, []);
+  }, [identifiantPanneau]);
 
   if (!objet) return null;
 
@@ -354,7 +356,12 @@ function PanneauDetail({
   ].filter(([, contenu]) => contenu);
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end" data-testid="boucle-detail">
+    <div
+      className="fixed inset-0 z-50 flex justify-end"
+      data-testid="boucle-detail"
+      inert={modaleOuverte ? true : undefined}
+      aria-hidden={modaleOuverte ? "true" : undefined}
+    >
       <button
         type="button"
         aria-label="Fermer le détail"
@@ -635,6 +642,7 @@ export default function Boucle() {
   const enCoursRef = useRef(false);
   const refElementDeclencheur = useRef(null);
   const refElementDeclencheurAction = useRef(null);
+  const refRestaurationFocusAction = useRef(false);
   const [formulaireOutcome, setFormulaireOutcome] = useState(OUTCOME_INITIAL);
   const [outcomeEnCours, setOutcomeEnCours] = useState(false);
   const [outcomeErreur, setOutcomeErreur] = useState("");
@@ -833,20 +841,15 @@ export default function Boucle() {
     setActionActive(actionId);
   };
 
-  const restaurerFocusAction = () => {
-    const declencheur = refElementDeclencheurAction.current;
-    refElementDeclencheurAction.current = null;
-    if (declencheur?.isConnected) {
-      declencheur.focus?.();
-      return;
-    }
-    document.querySelector('[data-testid="boucle-detail-fermer"]')?.focus?.();
+  const demanderRestaurationFocusAction = () => {
+    refRestaurationFocusAction.current = true;
   };
 
   const fermerAction = () => {
+    if (transition.enCours || enCoursRef.current) return;
     setActionActive(null);
     setTransition((avant) => ({ ...avant, erreur: "" }));
-    restaurerFocusAction();
+    demanderRestaurationFocusAction();
   };
 
   const executerTransition = async (valeurs) => {
@@ -875,6 +878,7 @@ export default function Boucle() {
     }
 
     const action = actionActive;
+    const detailIncomplet = detail.chargement || !detail.data;
     enCoursRef.current = true;
     refDetail.current += 1; // invalide un GET détail encore en vol
     setTransition((avant) => ({ ...avant, enCours: true, erreur: "" }));
@@ -884,8 +888,17 @@ export default function Boucle() {
       const nouvelObjet = reponse?.data?.objet ?? null;
       const nouvelleChaine = Array.isArray(reponse?.data?.chaine) ? reponse.data.chaine : null;
       const nouvelHistorique = Array.isArray(reponse?.data?.historique) ? reponse.data.historique : null;
-      const source = (nouvelleChaine || []).find((etape) => idObjet(etape) === identifiant)
-        || (idObjet(nouvelObjet) === identifiant ? nouvelObjet : null);
+      const indexSource = (nouvelleChaine || []).findIndex((etape) => idObjet(etape) === identifiant);
+      const source = indexSource >= 0
+        ? nouvelleChaine[indexSource]
+        : (idObjet(nouvelObjet) === identifiant ? nouvelObjet : null);
+      const memeObjet = idObjet(nouvelObjet) === identifiant;
+      // La chaîne A va de la racine jusqu'à l'enfant créé, et l'historique de la réponse
+      // est celui de l'enfant : on coupe à la source et on garde SON historique.
+      const chaineSource = source && !memeObjet && indexSource >= 0
+        ? nouvelleChaine.slice(0, indexSource + 1)
+        : nouvelleChaine;
+      const historiqueSource = memeObjet ? nouvelHistorique : null;
 
       setActionActive(null);
       setTransition({
@@ -893,7 +906,7 @@ export default function Boucle() {
         erreur: "",
         succes: nouvelObjet ? { action, objet: nouvelObjet } : { action, objet: null },
       });
-      restaurerFocusAction();
+      demanderRestaurationFocusAction();
 
       const objetsReponse = [nouvelObjet, ...(nouvelleChaine || [])]
         .filter((objet) => idObjet(objet));
@@ -910,8 +923,8 @@ export default function Boucle() {
           data: {
             ...(avant.data || {}),
             objet: source,
-            chaine: nouvelleChaine || avant.data?.chaine || [],
-            historique: nouvelHistorique || avant.data?.historique || [],
+            chaine: chaineSource || avant.data?.chaine || [],
+            historique: historiqueSource || avant.data?.historique || [],
           },
         }));
       } else {
@@ -919,13 +932,17 @@ export default function Boucle() {
       }
       actualiser();
     } catch (cause) {
+      const statut = cause?.response?.status;
+      const resultatIncertain = !cause?.response || statut >= 500;
+      const message = resultatIncertain
+        ? "Résultat incertain : la transition n'a pas confirmé son issue. Vérifiez l'état de l'objet avant de réessayer."
+        : messageErreurTransition(cause);
       setTransition((avant) => ({
         ...avant,
         enCours: false,
-        erreur: messageErreurTransition(cause),
+        erreur: message,
       }));
-      const statut = cause?.response?.status;
-      if (statut === 404 || statut === 409) {
+      if (detailIncomplet || statut === 404 || statut === 409 || resultatIncertain) {
         await chargerDetail(identifiant);
         actualiser();
       }
@@ -952,6 +969,18 @@ export default function Boucle() {
     refElementDeclencheur.current = null;
     if (declencheur.isConnected) declencheur.focus?.();
   }, [selection]);
+
+  useEffect(() => {
+    if (actionActive || !refRestaurationFocusAction.current) return;
+    refRestaurationFocusAction.current = false;
+    const declencheur = refElementDeclencheurAction.current;
+    refElementDeclencheurAction.current = null;
+    if (declencheur?.isConnected) {
+      declencheur.focus?.();
+      return;
+    }
+    document.querySelector('[data-testid="boucle-detail-fermer"]')?.focus?.();
+  }, [actionActive, objetDetail?.id]);
 
   const changerOutcome = (cle, valeur) => {
     setFormulaireOutcome((avant) => ({ ...avant, [cle]: valeur }));
@@ -1688,6 +1717,7 @@ export default function Boucle() {
           onOuvrirObjet={ouvrirObjet}
           onAction={ouvrirAction}
           transitionSucces={transition.succes}
+          modaleOuverte={Boolean(actionActive)}
         />
       )}
 

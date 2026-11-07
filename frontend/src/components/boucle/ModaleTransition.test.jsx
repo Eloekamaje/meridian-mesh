@@ -109,10 +109,13 @@ test("en cours d'enregistrement, désactive les champs et ignore la fermeture", 
   expect(hote.querySelector('[data-testid="boucle-transition-titre"]').disabled).toBe(true);
   expect(hote.querySelector('[data-testid="boucle-transition-enregistrer"]').disabled).toBe(true);
   expect(hote.querySelector('[data-testid="boucle-transition-enregistrer"]').textContent).toContain("Enregistrement");
-  expect(hote.querySelector('[data-testid="boucle-transition-fermer"]').disabled).toBe(false);
+  expect(hote.querySelector('[data-testid="boucle-transition-fermer"]').disabled).toBe(true);
 
   await act(async () => {
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  });
+  await act(async () => {
+    hote.querySelector('[data-testid="boucle-transition-fermer"]').click();
   });
   expect(onFermer).not.toHaveBeenCalled();
 

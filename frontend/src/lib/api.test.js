@@ -16,8 +16,8 @@ test("entetesPerimetre n'envoie pas d'en-tête X-Tenant vide", () => {
   expect(entetesPerimetre()).not.toHaveProperty("X-Tenant");
 });
 
-test("le client HTTP borne les appels à 20 secondes", () => {
-  expect(api.defaults.timeout).toBe(20000);
+test("le timeout de 20 secondes est réservé aux transitions, pas au client global", () => {
+  expect(api.defaults.timeout).toBe(0);
 });
 
 describe("boucleApi", () => {
@@ -42,7 +42,7 @@ describe("boucleApi", () => {
   ])("%s poste le corps vers %s", async (methode, identifiant, chemin) => {
     const corps = { exemple: true };
     await boucleApi[methode](identifiant, corps);
-    expect(poster).toHaveBeenCalledWith(chemin, corps, undefined);
+    expect(poster).toHaveBeenCalledWith(chemin, corps, { timeout: 20000 });
   });
 
   test("ajoute une clé d'idempotence quand elle est fournie", async () => {
@@ -51,13 +51,14 @@ describe("boucleApi", () => {
     expect(poster).toHaveBeenCalledWith(
       "/boucle/situations/sit-1/investigations",
       corps,
-      { headers: { "Idempotency-Key": "cle-123" } },
+      { timeout: 20000, headers: { "Idempotency-Key": "cle-123" } },
     );
   });
 
   test("n'envoie aucun en-tête d'idempotence par défaut", async () => {
     await boucleApi.ouvrirInvestigation("sit-1", { titre: "Comprendre" });
-    expect(poster.mock.calls[0][2]).toBeUndefined();
+    expect(poster.mock.calls[0][2]).toEqual({ timeout: 20000 });
+    expect(poster.mock.calls[0][2]).not.toHaveProperty("headers");
   });
 
   test("refuse un identifiant vide sans appeler le backend", async () => {

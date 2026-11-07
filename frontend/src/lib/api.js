@@ -5,7 +5,6 @@ import axios from "axios";
 const api = axios.create({
   baseURL: `${process.env.REACT_APP_BACKEND_URL || ""}/api`,
   withCredentials: true,
-  timeout: 20000,
 });
 
 // Le périmètre de lecture, partagé par axios et par les réponses au fil de l'eau (fetch).
@@ -45,10 +44,11 @@ function identifiantRequis(identifiant, nom = "identifiant") {
 }
 
 function posterTransition(chemin, corps, options) {
-  const entetes = options?.idempotencyKey
-    ? { headers: { "Idempotency-Key": options.idempotencyKey } }
-    : undefined;
-  return api.post(chemin, corps, entetes);
+  const config = { timeout: 20000 };
+  if (options?.idempotencyKey) {
+    config.headers = { "Idempotency-Key": options.idempotencyKey };
+  }
+  return api.post(chemin, corps, config);
 }
 
 // Transitions de la boucle canonique. Chaque méthode renvoie la promesse axios ;

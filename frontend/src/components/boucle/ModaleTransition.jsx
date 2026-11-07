@@ -147,9 +147,10 @@ export default function ModaleTransition({
           <button
             type="button"
             onClick={onFermer}
+            disabled={enCours}
             aria-label="Fermer le formulaire"
             data-testid="boucle-transition-fermer"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[rgba(148,163,184,0.18)] text-[#94A3B8] transition-colors hover:text-[#F2F6F8]"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[rgba(148,163,184,0.18)] text-[#94A3B8] transition-colors hover:text-[#F2F6F8] disabled:cursor-not-allowed disabled:opacity-50"
           >
             <X size={15} />
           </button>
