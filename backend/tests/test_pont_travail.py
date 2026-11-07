@@ -425,3 +425,31 @@ def test_filtre_tenant_accepte_les_documents_historiques_et_alias_demo():
     assert {"tenant_id": {"$in": ["local", "demo"]}} in local["$or"]
     assert {"tenant_id": {"$exists": False}} in local["$or"]
     assert {"tenant_id": {"$in": ["banque"]}} in banque["$or"]
+
+
+def test_la_trace_lue_par_c1_respecte_le_contrat_du_front():
+    from aides_pont import ConnexionPont
+
+    from meridian.adapters.outbound.postgres import boucle as boucle_pg
+    from meridian.adapters.outbound.postgres import pont_canonique as pont_pg
+
+    situation = une_situation(
+        statut="décidée", decision="Automatiser", decidee_par="alice",
+        decidee_le=DECIDE_LE, maj_le=DECIDE_LE,
+        options=[{"titre": "Automatiser"}])
+    evenement = pont_travail.evenement_decision_situation(
+        situation, tenant_id=TENANT, maintenant=DECIDE_LE)
+    conn = ConnexionPont()
+
+    resultat = pont_pg.appliquer_evenement(conn, evenement, maintenant=DECIDE_LE)
+    identifiant = pont.decision_situation_id("sit-1", 1)
+    assert identifiant in resultat["ecrits"]
+
+    ligne = boucle_pg.lire_boucle(conn, TENANT, identifiant, historique=True)
+    trace = pont_travail.extraire_boucle(ligne)
+
+    assert trace["id"] == identifiant
+    assert trace["statut"] == "DECIDED"
+    assert [etape["type"] for etape in trace["chaine"]] == [
+        "SITUATION", "INVESTIGATION", "DECISION"]
+    assert all({"id", "type"} <= set(etape) for etape in trace["chaine"])
