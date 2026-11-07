@@ -278,7 +278,7 @@ def _ajouter_parent_outcome(conn: Any, tenant: str, objet: dict[str, Any],
     if parent is None:
         # Toujours relire la ligne Postgres : le parent peut avoir été ignoré par le filtre
         # de hash/staleness et contenir des champs de migration à ne pas perdre.
-        ligne = entreprise_depot.lire_objet(conn, tenant, initiative_id)
+        ligne = entreprise_depot.lire_objet(conn, tenant, initiative_id, for_update=True)
         if ligne is None:
             return
         parent = _copie_ligne(ligne)
