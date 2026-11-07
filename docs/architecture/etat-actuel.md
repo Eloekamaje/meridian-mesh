@@ -314,13 +314,15 @@ Modules :
 - `application/planification/*` : capacité, charge, prévision, budget ;
 - frontend `pages/Boucle.jsx` et `pages/Travail.jsx`.
 
-**Lecture importante.** La boucle canonique ci-dessus est un modèle Postgres validé, mais le
-chemin live Travail/Actualités utilise encore les collections Mongo `cases`, `situations` et
-`initiatives`. Certains objets canoniques (situations, initiatives) sont alimentés par le
-backfill `migration_canonique` et exposés en lecture (`/boucle/objets`) ; les seules écritures
-canoniques exposées concernent Outcome, Learning et leur réutilisation. Une décision prise dans
-Travail ne crée donc pas encore de `Decision` canonique. Le détail est dans
-[ecarts-vision.md](ecarts-vision.md).
+**Lecture importante.** Le live Travail/Actualités continue d'écrire dans MongoDB `cases`,
+`situations` et `initiatives`, mais le pont C2 enfile désormais les actions et décisions vers
+l'outbox canonique ; le worker C1 crée ou met à jour Situation, Investigation, Decision,
+Initiative, puis `GET /cases/{id}` expose la trace `boucle` au front. Le lot D mesure les
+observations et crée des `Outcome` canoniques (le `Learning` reste une validation humaine).
+Le backfill `migration_canonique` et `/boucle/objets` restent disponibles. La chaîne est donc
+branchée, mais l'activation des workers, la migration tenant rétroactive et le parcours
+end-to-end supervisé restent à faire. Le détail est dans
+[pont-travail-c2.md](pont-travail-c2.md) et [mesure-auto.md](mesure-auto.md).
 
 ### 3.7 Architecture cognitive
 
@@ -702,7 +704,7 @@ la suite locale.
 | Capacité | État | Commentaire |
 |---|---|---|
 | Registre Twins | **solide** | Postgres + projection Mongo/Neo4j |
-| Situations / boucle canonique | **partielle** | Modèle/store/lecture + Outcome ; le live Travail/Actualités utilise Mongo ; création/transition non exposée |
+| Situations / boucle canonique | **partielle** | Modèle/store/lecture + Outcome ; pont C2 Travail → canonique (Situation/Decision/Initiative) et mesure D → Outcome ; Learning humain ; workers et migration tenant à activer |
 | Signal, Expression, Scenario, Hypothesis, Expert | **absents comme objets canoniques** | Noms de famille, dossier de raisonnement ou profils ; voir [ecarts-vision.md](ecarts-vision.md) |
 | Claims, preuves, maturité | **solide** | contradictions et revue conservées |
 | Ingestion Git + CBM | **solide** | CBM à installer dans l’environnement cible |
@@ -755,7 +757,7 @@ dépôt. Une ligne sans test est explicitement une cible ou une couverture parti
 
 | Dette | Pourquoi | Critère d’acceptation |
 |---|---|---|
-| Unification live/canonique | Travail/Actualités (Mongo) et boucle canonique (Postgres) sont deux chaînes | un parcours Situation → Learning avec un identifiant unique, visible dans Travail et Boucle |
+| Unification live/canonique | le pont C2 relie Travail au canonique, mais les workers et la migration tenant ne sont pas encore activés en production | un parcours Situation → Decision → Outcome piloté depuis Travail, trace canonique visible, worker supervisé ; Learning reste une validation humaine |
 | Corpus de production labellisé + shadow mode | les mesures actuelles portent sur un corpus de test | précision/rappel/fausses certitudes sur un jeu réel, revue aveugle |
 | Activation RLS + workers multi-tenant | RLS existe mais `JUMEAU_RLS=0` par défaut | policies actives, tests d’isolation, workers en contexte ou bypass explicite |
 | Déploiement supervisé des workers | les runs restent `QUEUED` sans worker | source/outbox/travail/reconciliation supervisés, redémarrage testé |
