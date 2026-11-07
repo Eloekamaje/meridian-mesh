@@ -186,7 +186,7 @@ def test_flag_on_enfile_les_outcomes_et_avance_le_checkpoint():
     assert bilan["actif"] is True
     assert bilan["lues"] == 2
     assert bilan["outcomes"] == 2
-    assert bilan["doublons"] == 0 and bilan["ignores"] == 0 and bilan["echecs"] == 0
+    assert bilan["doublons"] == 0 and bilan["echecs"] == 0
     assert outbox.operations() == [pont.OPERATION_OUTCOME, pont.OPERATION_OUTCOME]
     assert {e["tenant_id"] for e in outbox.evenements.values()} == {TENANT}
     checkpoint = asyncio.run(checkpoints.lire(TENANT))
@@ -240,7 +240,8 @@ def test_observation_incomplete_est_ignoree_mais_le_checkpoint_avance():
         _observation("obs-2", maj_le="2026-11-05T09:02:00+00:00"),
     ])
     outbox = Outbox()
-    worker = _worker(observations, checkpoints, outbox)
+    rejets, _col_rejets = _rejets()
+    worker = _worker(observations, checkpoints, outbox, rejets=rejets)
 
     bilan = asyncio.run(worker.une_passe())
 
@@ -275,8 +276,11 @@ def test_un_document_avec_une_autre_maj_le_est_relu_et_mis_a_jour():
     worker = _worker(observations, checkpoints, outbox)
     asyncio.run(worker.une_passe())
 
-    col_obs.documents[0]["observe"] = 8
-    col_obs.documents[0]["maj_le"] = "2026-11-06T09:00:00+00:00"
+    col_obs.documents[0] = mongo_mesure.document_ingestion({
+        **col_obs.documents[0],
+        "observe": 8,
+        "maj_le": "2026-11-06T09:00:00+00:00",
+    })
     bilan = asyncio.run(worker.une_passe())
 
     assert bilan["outcomes"] == 1
@@ -444,9 +448,9 @@ def test_worker_normalise_et_deduplique_les_tenants():
     assert worker.tenants == ("banque", "assurance")
     assert worker.metriques.instantane() == {
         "mesure_auto_lues": 0, "mesure_auto_outcomes": 0,
-        "mesure_auto_doublons": 0, "mesure_auto_ignores": 0,
+        "mesure_auto_doublons": 0,
         "mesure_auto_echecs": 0, "mesure_auto_rejets": 0,
-        "mesure_auto_non_conformes": 0,
+        "mesure_auto_non_conformes": 0, "mesure_auto_dead_letter_echecs": 0,
     }
 
 
@@ -717,10 +721,13 @@ def test_correction_d_interpretation_produit_un_nouvel_evenement_et_continue():
     asyncio.run(worker.une_passe())
 
     # Correction de l'interprétation seule, puis une observation suivante.
-    col_obs.documents[0]["interpretation"] = "version 2"
-    col_obs.documents[0]["maj_le"] = "2026-11-05T09:02:00+00:00"
-    col_obs.documents.append(_observation(
-        "obs-2", maj_le="2026-11-05T09:03:00+00:00"))
+    col_obs.documents[0] = mongo_mesure.document_ingestion({
+        **col_obs.documents[0],
+        "interpretation": "version 2",
+        "maj_le": "2026-11-05T09:02:00+00:00",
+    })
+    col_obs.documents.append(mongo_mesure.document_ingestion(_observation(
+        "obs-2", maj_le="2026-11-05T09:03:00+00:00")))
 
     bilan = asyncio.run(worker.une_passe())
 
@@ -733,6 +740,32 @@ def test_correction_d_interpretation_produit_un_nouvel_evenement_et_continue():
 def _rejets():
     collection = CollectionMesure()
     return mongo_mesure.DepotRejetsMesure(collection), collection
+
+
+def test_dead_letter_est_durable_avant_l_avancement_du_checkpoint():
+    incomplete = _observation("obs-1")
+    incomplete.pop("observe")
+    observations, checkpoints, _col_obs, _col_cp = _depots([
+        incomplete,
+        _observation("obs-2", maj_le="2026-11-05T09:02:00+00:00"),
+    ])
+    rejets, col_rejets = _rejets()
+
+    class CheckpointsVerifiant:
+        async def lire(self, tenant):
+            return await checkpoints.lire(tenant)
+
+        async def ecrire(self, tenant, curseur):
+            assert any(document.get("etat") == "dead" for document in col_rejets.documents), \
+                "le dead-letter doit être écrit avant le checkpoint"
+            return await checkpoints.ecrire(tenant, curseur)
+
+    worker = _worker(observations, CheckpointsVerifiant(), Outbox(), rejets=rejets)
+
+    bilan = asyncio.run(worker.une_passe())
+
+    assert bilan["rejets"] == 1 and bilan["outcomes"] == 1
+    assert asyncio.run(checkpoints.lire(TENANT)).id == "obs-2"
 
 
 def test_collision_permanente_est_dead_letter_et_obs_suivante_traitee():
@@ -802,7 +835,7 @@ def test_signature_indisponible_est_transitoire_et_ne_perd_pas_la_mesure():
     assert asyncio.run(checkpoints.lire(TENANT)).id == "obs-1"
 
 
-def test_quand_futur_bloque_le_checkpoint_puis_passe_apres_correction_horloge():
+def test_quand_futur_ne_consomme_pas_les_tentatives_et_attend_l_horloge():
     observations, checkpoints, _col_obs, _col_cp = _depots([
         _observation(
             "obs-1",
@@ -810,21 +843,175 @@ def test_quand_futur_bloque_le_checkpoint_puis_passe_apres_correction_horloge():
             quand="2026-11-07T12:06:00+00:00",
         ),
     ])
-    rejets, _col_rejets = _rejets()
+    rejets, col_rejets = _rejets()
     outbox = Outbox()
-    worker = _worker(observations, checkpoints, outbox, rejets=rejets)
+    worker = mesure_auto_worker.WorkerMesureAuto(
+        observations, checkpoints, outbox.enfiler, rejets=rejets,
+        tenants=(TENANT,), tentatives_max=1,
+        env={mesure_auto_worker.FLAG_ENV: "1"},
+        maintenant=lambda: "2026-11-07T12:00:00+00:00")
 
-    premier = asyncio.run(worker.une_passe())
-
-    assert premier["echecs"] == 1
-    assert asyncio.run(checkpoints.lire(TENANT)) is None
-    assert outbox.evenements == {}
+    # Six passes (30 s à intervalle 5 s, bien moins que +6 min) : jamais de dead-letter.
+    for _ in range(6):
+        bilan = asyncio.run(worker.une_passe())
+        assert bilan["echecs"] == 1
+        assert asyncio.run(checkpoints.lire(TENANT)) is None
+        assert outbox.evenements == {}
+    assert all(document.get("etat") == "retry" for document in col_rejets.documents)
 
     worker.maintenant = lambda: "2026-11-07T12:10:00+00:00"
     second = asyncio.run(worker.une_passe())
 
     assert second["outcomes"] == 1
     assert asyncio.run(checkpoints.lire(TENANT)).id == "obs-1"
+
+
+def test_dead_letter_indisponible_ne_fait_pas_avancer_le_checkpoint():
+    incomplete = _observation("obs-1")
+    incomplete.pop("observe")
+    observations, checkpoints, _col_obs, _col_cp = _depots([incomplete])
+    outbox = Outbox()
+
+    class RejetsEnPanne:
+        async def enregistrer(self, *args, **kwargs):
+            raise RuntimeError("mongo indisponible")
+
+    worker = _worker(observations, checkpoints, outbox, rejets=RejetsEnPanne())
+
+    bilan = asyncio.run(worker.une_passe())
+
+    assert bilan["echecs"] == 1
+    assert asyncio.run(checkpoints.lire(TENANT)) is None
+    assert outbox.evenements == {}
+    assert worker.metriques.mesure_auto_dead_letter_echecs == 1
+
+
+def test_avancer_echoue_si_le_checkpoint_retourne_un_curseur_plus_ancien():
+    observations, checkpoints, _col_obs, _col_cp = _depots()
+    worker = _worker(observations, checkpoints, Outbox())
+
+    class CheckpointsAnciens:
+        async def ecrire(self, tenant, curseur):
+            return mongo_mesure.CurseurObservation(
+                maj_le="2026-11-05T09:00:00.000000+00:00", id="obs-old")
+
+    worker.checkpoints = CheckpointsAnciens()
+    assert asyncio.run(worker._avancer(
+        TENANT, mongo_mesure.CurseurObservation(
+            maj_le="2026-11-05T09:01:00.000000+00:00", id="obs-new"))) is False
+
+
+def test_checkpoint_legacy_en_secondes_ou_offset_est_matche_et_migre():
+    collection = CollectionMesure([
+        {"_id": TENANT, "tenant_id": TENANT,
+         "dernier_maj_le": "2026-11-05T11:00:00+02:00", "dernier_id": "obs-1"},
+    ])
+    depot = mongo_mesure.DepotCheckpointsMesure(collection)
+
+    assert asyncio.run(depot.lire(TENANT)).maj_le \
+        == "2026-11-05T09:00:00.000000+00:00"
+    retour = asyncio.run(depot.ecrire(TENANT, mongo_mesure.CurseurObservation(
+        maj_le="2026-11-05T09:01:00+00:00", id="obs-2")))
+
+    assert retour.id == "obs-2"
+    assert collection.documents[0]["dernier_maj_le"] \
+        == "2026-11-05T09:01:00.000000+00:00"
+    assert collection.documents[0]["dernier_sequence"] == ""
+
+
+def test_tie_breaker_numerique_est_zero_padde():
+    collection = CollectionMesure([
+        {**_observation("obs-9", maj_le="2026-11-05T10:00:00+00:00"), "sequence": 9},
+        {**_observation("obs-10", maj_le="2026-11-05T10:00:00+00:00"), "sequence": 10},
+        {**_observation("obs-11", maj_le="2026-11-05T10:00:00+00:00"), "sequence": 11},
+    ])
+    depot = mongo_mesure.DepotObservationsMesure(collection)
+
+    documents = asyncio.run(depot.lister_apres(TENANT, None, 10))
+
+    assert [document["id"] for document in documents] == ["obs-9", "obs-10", "obs-11"]
+    assert mongo_mesure.sequence_canonique(9) < mongo_mesure.sequence_canonique(10)
+    curseur = mongo_mesure.CurseurObservation(
+        maj_le=documents[1]["maj_le"],
+        sequence=mongo_mesure.sequence_canonique(10), id="obs-10")
+    assert [document["id"] for document in
+            asyncio.run(depot.lister_apres(TENANT, curseur, 10))] == ["obs-11"]
+
+
+def test_seek_index_ne_starve_pas_500_documents_avant_le_curseur():
+    avant = [
+        mongo_mesure.document_ingestion(_observation(
+            f"old-{rang}", maj_le=f"2026-11-05T08:{rang // 60:02d}:{rang % 60:02d}+00:00"))
+        for rang in range(500)
+    ]
+    apres = [
+        mongo_mesure.document_ingestion(_observation(
+            f"new-{rang}", maj_le=f"2026-11-05T09:0{rang + 1}:00+00:00"))
+        for rang in range(5)
+    ]
+    collection = CollectionMesure(avant + apres)
+    depot = mongo_mesure.DepotObservationsMesure(collection)
+    curseur = mongo_mesure.CurseurObservation(
+        maj_le="2026-11-05T09:00:00.000000+00:00", id="curseur")
+
+    documents = asyncio.run(depot.lister_apres(TENANT, curseur, 10))
+
+    assert [document["id"] for document in documents] == [
+        "new-0", "new-1", "new-2", "new-3", "new-4"]
+
+
+def test_audit_compte_tenant_non_normalise_et_maj_le_illisible():
+    observations, checkpoints, _col_obs, _col_cp = _depots([
+        _observation("obs-ok"),
+        _observation("obs-tenant", tenant="Banque"),
+        _observation("obs-maj", maj_le="hier"),
+    ])
+    worker = _worker(observations, checkpoints, Outbox())
+
+    total = asyncio.run(worker.auditer())
+
+    assert total == 2
+    assert worker.metriques.mesure_auto_non_conformes == 2
+
+
+def test_audit_est_refait_a_chaque_passe():
+    observations, checkpoints, col_obs, _col_cp = _depots([_observation("obs-1")])
+    worker = _worker(observations, checkpoints, Outbox())
+    asyncio.run(worker.une_passe())
+
+    col_obs.documents.append({
+        "tenant_id": TENANT, "id": "",
+        "maj_le": "2026-11-05T09:00:00+00:00",
+    })
+    asyncio.run(worker.une_passe())
+
+    assert worker.metriques.mesure_auto_non_conformes == 1
+
+
+def test_depuis_est_canonise_et_invalide_refuse():
+    observations, checkpoints, _col_obs, _col_cp = _depots()
+    worker = mesure_auto_worker.WorkerMesureAuto(
+        observations, checkpoints, Outbox().enfiler, tenants=(TENANT,),
+        env={mesure_auto_worker.FLAG_ENV: "1"},
+        depuis="2026-11-05T11:00:00+02:00")
+    assert worker.depuis == "2026-11-05T09:00:00.000000+00:00"
+
+    with pytest.raises(ValueError):
+        mesure_auto_worker.WorkerMesureAuto(
+            observations, checkpoints, Outbox().enfiler, tenants=(TENANT,),
+            env={mesure_auto_worker.FLAG_ENV: "1"}, depuis="hier")
+
+
+def test_cli_depuis_invalide_retourne_2(monkeypatch, capsys):
+    monkeypatch.setenv(mesure_auto_worker.FLAG_ENV, "1")
+    monkeypatch.setenv(pont.PONT_KEY_ENV, CLE)
+    monkeypatch.setenv("MONGO_URL", "mongodb://faux")
+
+    code = mesure_auto_worker.principal(["--once", "--depuis", "hier"])
+
+    capture = capsys.readouterr()
+    assert code == 2
+    assert "depuis" in capture.err.lower()
 
 
 def test_audit_compte_les_documents_non_conformes_sans_bloquer_le_flux():

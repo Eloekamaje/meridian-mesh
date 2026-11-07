@@ -14,17 +14,22 @@ le reste du système est inchangé.
 Idempotence, corrections et reprise :
 
 - le checkpoint est un document par tenant dans ``mesure_auto_checkpoints`` (dernier
-  ``(maj_le, sequence, id)`` traité), avancé par CAS ;
+  ``(maj_le, sequence, id)`` traité), avancé par CAS ; la lecture principale seeke l'index
+  canonique ``maj_le_utc`` et backfille les documents legacy par lots bornés ;
 - un rejeu ré-enfile les mêmes événements, que l'outbox C1 déduplique par ``_id`` déterministe ;
 - une observation mise à jour (nouveau ``maj_le``) est relue ; l'empreinte du payload complet
   change, donc elle produit un nouvel événement qui met à jour le même Outcome canonique sans
   collision d'idempotence ;
-- une erreur **permanente** (schéma, taille, collision, signature) va en dead-letter dans
-  ``mesure_auto_rejets`` et le checkpoint avance ;
-- une erreur **transitoire** (Mongo, ``quand``/``maj_le`` futur) n'avance pas le checkpoint et est
+- une erreur **permanente** (schéma, taille, collision, erreur inattendue) va en dead-letter
+  dans ``mesure_auto_rejets`` et le checkpoint avance ;
+- une erreur **transitoire** d'infrastructure (Mongo, signature) n'avance pas le checkpoint et est
   retentée ; après ``tentatives_max`` elle est dead-letterée ;
-- un document sans ``id``/``maj_le`` n'est pas lu (filtre Mongo) et est compté par l'audit de
-  démarrage : il ne bloque jamais le tenant.
+- une erreur d'**horloge** (``quand``/``maj_le`` futur) n'est jamais dead-letterée : elle attend
+  que l'horloge rattrape, sans consommer les tentatives ;
+- un document sans ``id``/``maj_le`` n'est pas lu (filtre Mongo) et est compté par l'audit à
+  chaque passe : il ne bloque jamais le tenant ;
+- si le dead-letter est indisponible sur une erreur permanente, le lot échoue explicitement :
+  aucun checkpoint n'avance en silence.
 
 Métriques de log : ``mesure_auto_lues``, ``mesure_auto_outcomes``, ``mesure_auto_doublons``,
 ``mesure_auto_rejets``, ``mesure_auto_echecs``, ``mesure_auto_non_conformes``.
@@ -138,16 +143,15 @@ class MetriquesMesureAuto:
         self.mesure_auto_lues = 0
         self.mesure_auto_outcomes = 0
         self.mesure_auto_doublons = 0
-        self.mesure_auto_ignores = 0
         self.mesure_auto_echecs = 0
         self.mesure_auto_rejets = 0
         self.mesure_auto_non_conformes = 0
+        self.mesure_auto_dead_letter_echecs = 0
 
     def ajouter(self, compteurs: Mapping[str, Any]) -> None:
         self.mesure_auto_lues += int(compteurs.get("lues") or 0)
         self.mesure_auto_outcomes += int(compteurs.get("outcomes") or 0)
         self.mesure_auto_doublons += int(compteurs.get("doublons") or 0)
-        self.mesure_auto_ignores += int(compteurs.get("ignores") or 0)
         self.mesure_auto_echecs += int(compteurs.get("echecs") or 0)
         self.mesure_auto_rejets += int(compteurs.get("rejets") or 0)
 
@@ -156,10 +160,10 @@ class MetriquesMesureAuto:
             "mesure_auto_lues": self.mesure_auto_lues,
             "mesure_auto_outcomes": self.mesure_auto_outcomes,
             "mesure_auto_doublons": self.mesure_auto_doublons,
-            "mesure_auto_ignores": self.mesure_auto_ignores,
             "mesure_auto_echecs": self.mesure_auto_echecs,
             "mesure_auto_rejets": self.mesure_auto_rejets,
             "mesure_auto_non_conformes": self.mesure_auto_non_conformes,
+            "mesure_auto_dead_letter_echecs": self.mesure_auto_dead_letter_echecs,
         }
 
 
@@ -178,11 +182,13 @@ class WorkerMesureAuto:
         self.env = env
         self.journal = journal_ or journal
         self.tentatives_max = max(1, int(tentatives_max))
-        self._audit_fait = False
         self.lot = max(1, int(lot))
         self.intervalle = max(0.05, float(intervalle))
         self.maintenant = maintenant
-        self.depuis = _texte(depuis) or None
+        self.depuis = (mongo_mesure.canoniser_instant(depuis)
+                       if _texte(depuis) else None)
+        if _texte(depuis) and self.depuis is None:
+            raise ValueError("depuis invalide : date ISO attendue")
         self.mesurer = mesurer or mesure_auto.mesurer_observation
         candidats = tenants if tenants is not None else tenant
         if candidats is None:
@@ -238,38 +244,61 @@ class WorkerMesureAuto:
 
     async def _avancer(self, tenant: str, curseur: "mongo_mesure.CurseurObservation") -> bool:
         try:
-            await self.checkpoints.ecrire(tenant, curseur)
+            retour = await self.checkpoints.ecrire(tenant, curseur)
         except Exception as exc:  # noqa: BLE001 - le rejeu est idempotent, on réessaiera
             self.journal.warning(
                 "mesure_auto : checkpoint non écrit tenant=%s observation=%s : %s",
                 tenant, curseur.id, rediger_message(exc))
             return False
+        if retour is not None and retour < curseur:
+            self.journal.warning(
+                "mesure_auto : checkpoint non avancé tenant=%s demandé=%s obtenu=%s",
+                tenant, curseur, retour)
+            return False
         return True
 
     async def _rejeter(self, tenant: str, document: Mapping[str, Any], raison: Any, *,
-                       permanent: bool) -> bool:
-        """Enregistre un rejet ; rend ``True`` si l'observation peut être dépassée."""
+                       permanent: bool, compter_tentative: bool = True) -> bool:
+        """Enregistre un rejet ; rend ``True`` si l'observation peut être dépassée.
+
+        Un dead-letter indisponible ne doit **jamais** faire avancer le checkpoint en
+        silence : on rend ``False`` et le worker échoue explicitement le lot.
+        """
         raison_propre = rediger_message(raison)
         if self.rejets is None:
-            return bool(permanent)
+            self.journal.warning(
+                "mesure_auto_dead_letter_echecs=1 tenant=%s observation=%s raison=%s",
+                tenant, _texte(document.get("id")), raison_propre)
+            self.metriques.mesure_auto_dead_letter_echecs += 1
+            return False
         try:
             return bool(await self.rejets.enregistrer(
                 tenant, document, raison_propre, permanent=permanent,
-                tentatives_max=self.tentatives_max))
-        except Exception as exc:  # noqa: BLE001 - un dead-letter indisponible ne bloque pas le flux
+                tentatives_max=self.tentatives_max,
+                compter_tentative=compter_tentative))
+        except Exception as exc:  # noqa: BLE001 - journal de secours, pas d'avancement
             self.journal.warning(
-                "mesure_auto : dead-letter indisponible tenant=%s observation=%s : %s",
-                tenant, _texte(document.get("id")), rediger_message(exc))
-            return bool(permanent)
+                "mesure_auto_dead_letter_echecs=1 tenant=%s observation=%s raison=%s : %s",
+                tenant, _texte(document.get("id")), raison_propre, rediger_message(exc))
+            self.metriques.mesure_auto_dead_letter_echecs += 1
+            return False
 
     async def _traiter_tenant(self, tenant: str, borne: int) -> dict[str, Any]:
         compteurs = {
-            "lues": 0, "outcomes": 0, "doublons": 0, "ignores": 0, "echecs": 0,
-            "rejets": 0,
+            "lues": 0, "outcomes": 0, "doublons": 0, "echecs": 0, "rejets": 0,
         }
         checkpoint = await self.checkpoints.lire(tenant)
         if checkpoint is None and self.depuis:
             checkpoint = mongo_mesure.CurseurObservation(maj_le=self.depuis)
+        # Backfill borné : les documents legacy sans `maj_le_utc` rejoignent le seek d'index.
+        remplir = getattr(self.observations, "remplir_maj_le_utc", None)
+        if callable(remplir):
+            try:
+                await remplir(tenant, mongo_mesure.BACKFILL_LOT)
+            except Exception as exc:  # noqa: BLE001 - le fallback legacy reste disponible
+                self.journal.warning(
+                    "mesure_auto : backfill maj_le_utc en échec tenant=%s : %s",
+                    tenant, rediger_message(exc))
         documents = await self.observations.lister_apres(tenant, checkpoint, borne)
         for document in documents:
             compteurs["lues"] += 1
@@ -277,19 +306,20 @@ class WorkerMesureAuto:
             try:
                 curseur = mongo_mesure.curseur_document(document)
             except ValueError as exc:
-                # Le filtre Mongo exclut ces documents ; on ne bloque jamais le tenant.
+                # L'adaptateur filtre déjà ces documents ; on n'arrête pas les autres.
                 compteurs["echecs"] += 1
                 self.journal.warning(
                     "mesure_auto : document sans curseur lisible tenant=%s : %s",
                     tenant, rediger_message(exc))
-                break
+                continue
             resultat = self.mesurer(
                 document, tenant_id=tenant, maintenant=self._maintenant())
             if not resultat.produit:
                 permanent = not resultat.transitoire
                 depasse = await self._rejeter(
-                    tenant, document, resultat.raison, permanent=permanent)
-                if permanent or depasse:
+                    tenant, document, resultat.raison, permanent=permanent,
+                    compter_tentative=not resultat.horloge)
+                if depasse:
                     compteurs["rejets"] += 1
                     self.journal.warning(
                         "mesure_auto : observation écartée tenant=%s observation=%s "
@@ -301,9 +331,10 @@ class WorkerMesureAuto:
                     continue
                 compteurs["echecs"] += 1
                 self.journal.warning(
-                    "mesure_auto : observation transitoire, checkpoint conservé "
-                    "tenant=%s observation=%s raison=%s",
-                    tenant, identifiant, rediger_message(resultat.raison))
+                    "mesure_auto : observation conservée tenant=%s observation=%s "
+                    "permanent=%s horloge=%s raison=%s",
+                    tenant, identifiant, permanent, resultat.horloge,
+                    rediger_message(resultat.raison))
                 break
             try:
                 reponse = self.enfiler(resultat.evenement)
@@ -316,7 +347,7 @@ class WorkerMesureAuto:
                              else _est_permanent(exc))
                 depasse = await self._rejeter(
                     tenant, document, exc, permanent=permanent)
-                if permanent or depasse:
+                if depasse:
                     compteurs["rejets"] += 1
                     self.journal.warning(
                         "mesure_auto : enfilage refusé définitivement tenant=%s "
@@ -328,9 +359,9 @@ class WorkerMesureAuto:
                     continue
                 compteurs["echecs"] += 1
                 self.journal.warning(
-                    "mesure_auto : enfilage transitoire, checkpoint conservé tenant=%s "
-                    "observation=%s raison=%s",
-                    tenant, identifiant, rediger_message(exc))
+                    "mesure_auto : enfilage conservé tenant=%s observation=%s "
+                    "permanent=%s raison=%s",
+                    tenant, identifiant, permanent, rediger_message(exc))
                 break
             if reponse is None:
                 # Une réponse vide est traitée comme transitoire : nouvel essai borné.
@@ -357,15 +388,13 @@ class WorkerMesureAuto:
         if not self.actif():
             return {
                 "actif": False, "lues": 0, "outcomes": 0, "doublons": 0,
-                "ignores": 0, "echecs": 0, "rejets": 0, "tenants": {},
+                "echecs": 0, "rejets": 0, "tenants": {},
             }
-        if not self._audit_fait:
-            self._audit_fait = True
-            await self.auditer()
+        # Audit à chaque passe : les documents insérés après le démarrage sont vus.
+        await self.auditer()
         borne = min(self.lot, max(1, int(limite or self.lot)))
         total = {
-            "lues": 0, "outcomes": 0, "doublons": 0, "ignores": 0, "echecs": 0,
-            "rejets": 0,
+            "lues": 0, "outcomes": 0, "doublons": 0, "echecs": 0, "rejets": 0,
         }
         par_tenant: dict[str, dict[str, Any]] = {}
         for tenant in self.tenants:
@@ -375,7 +404,7 @@ class WorkerMesureAuto:
                 self.journal.warning(
                     "mesure_auto : passe en échec tenant=%s : %s",
                     tenant, rediger_message(exc))
-                compteurs = {"lues": 0, "outcomes": 0, "doublons": 0, "ignores": 0,
+                compteurs = {"lues": 0, "outcomes": 0, "doublons": 0,
                              "echecs": 1, "rejets": 0}
             par_tenant[tenant] = compteurs
             for cle in total:
@@ -383,9 +412,9 @@ class WorkerMesureAuto:
         self.metriques.ajouter(total)
         self.journal.info(
             "mesure_auto_lues=%d mesure_auto_outcomes=%d mesure_auto_doublons=%d "
-            "mesure_auto_ignores=%d mesure_auto_echecs=%d mesure_auto_rejets=%d "
+            "mesure_auto_echecs=%d mesure_auto_rejets=%d "
             "mesure_auto_non_conformes=%d tenants=%s",
-            total["lues"], total["outcomes"], total["doublons"], total["ignores"],
+            total["lues"], total["outcomes"], total["doublons"],
             total["echecs"], total["rejets"], self.metriques.mesure_auto_non_conformes,
             ",".join(self.tenants))
         return {"actif": True, **total, "tenants": par_tenant}
@@ -420,7 +449,10 @@ def _analyseur() -> argparse.ArgumentParser:
     parseur.add_argument("--intervalle", type=float, default=5.0,
                          help="secondes entre deux passes (défaut : 5)")
     parseur.add_argument("--lot", type=int, default=100,
-                         help="observations par tenant et par passe (défaut : 100)")
+                         help="observations par tenant et par passe (défaut : 100, max 1000)")
+    parseur.add_argument("--tentatives-max", type=int, default=5,
+                         help="reprises d'une erreur transitoire avant dead-letter "
+                              "(défaut : 5)")
     parseur.add_argument("--tenant", action="append", default=None, metavar="SLUG",
                          help="tenant à traiter (répétable ; sinon JUMEAU_WORKER_TENANTS)")
     parseur.add_argument("--mongo-url", default=None, help="URL Mongo (défaut : MONGO_URL)")
@@ -456,6 +488,18 @@ def principal(argv: list[str] | None = None) -> int:
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
+    depuis = None
+    if arguments.depuis:
+        depuis = mongo_mesure.canoniser_instant(arguments.depuis)
+        if depuis is None:
+            print("--depuis invalide : date ISO attendue", file=sys.stderr)
+            return 2
+    if (not arguments.tenant
+            and not os.environ.get(_TENANTS_ENV)
+            and not os.environ.get(_TENANT_ENV)):
+        print("mesure_auto : aucun tenant explicite, repli sur 'local'", file=sys.stderr)
+    lot = max(1, min(int(arguments.lot), 1000))
+    tentatives_max = max(1, int(arguments.tentatives_max))
 
     from motor.motor_asyncio import AsyncIOMotorClient
 
@@ -486,8 +530,8 @@ def principal(argv: list[str] | None = None) -> int:
                     rediger_message(exc))
             worker = WorkerMesureAuto(
                 observations, checkpoints, outbox.enfiler, rejets=rejets,
-                tenants=tenants, lot=arguments.lot, intervalle=arguments.intervalle,
-                depuis=arguments.depuis)
+                tenants=tenants, lot=lot, intervalle=arguments.intervalle,
+                depuis=depuis, tentatives_max=tentatives_max)
 
             def arreter(signum, frame):
                 worker.arreter()

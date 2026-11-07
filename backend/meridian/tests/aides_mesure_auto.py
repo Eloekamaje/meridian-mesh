@@ -145,6 +145,19 @@ class CurseurMesure:
             raise StopAsyncIteration
 
 
+def _verifier_operateurs(modification):
+    """Mongo refuse deux opérateurs sur le même champ (WriteError code 40)."""
+    vus = {}
+    for operateur, champs in (modification or {}).items():
+        if operateur not in {"$set", "$setOnInsert", "$inc", "$unset"}:
+            continue
+        for cle in champs:
+            if cle in vus:
+                raise RuntimeError(
+                    f"WriteError code 40 : champ {cle!r} dans {vus[cle]} et {operateur}")
+            vus[cle] = operateur
+
+
 class CollectionMesure:
     """Collection Mongo minimale, synchrone en interne mais API async (Motor)."""
 
@@ -174,6 +187,7 @@ class CollectionMesure:
     async def update_one(self, filtre, modification, upsert=False):
         self.appels.append(("update_one", copy.deepcopy(filtre), copy.deepcopy(modification),
                             upsert))
+        _verifier_operateurs(modification)
         for document in self.documents:
             if _correspond(document, filtre or {}):
                 _appliquer(document, modification)
