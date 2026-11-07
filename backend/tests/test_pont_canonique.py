@@ -1349,3 +1349,28 @@ def test_objets_explicites_sont_ordonnes_et_estampilles_du_hash_pont():
     assert all(objet["donnees"]["_pont"]["origine"] == "legacy" for objet in objets)
     assert all(re.fullmatch(r"[0-9a-f]{64}", objet["donnees"]["_pont"]["hash"]) for objet in objets)
     assert all("version" not in objet for objet in objets)
+
+
+def test_un_objet_stale_est_ignore_avant_le_conflit_d_origine():
+    conn = ConnexionPont()
+    existant = {
+        "id": "sit-1", "tenant_id": TENANT, "famille": "emergence", "type": "SITUATION",
+        "mode": "DECLARED", "titre": "Version canonique",
+        "donnees": {"_pont": {"origine": "api-canonique", "hash": "x" * 64,
+                              "source_maj_le": "2026-11-06T10:00:00+00:00"}},
+        "version": 4, "observe_le": DATE, "valide_depuis": DATE, "cree_le": DATE,
+        "maj_le": "2026-11-06T10:00:00+00:00",
+    }
+    conn.stock[(TENANT, "sit-1")] = copy.deepcopy(existant)
+    stale = {
+        "id": "sit-1", "tenant_id": TENANT, "famille": "emergence", "type": "SITUATION",
+        "mode": "DECLARED", "titre": "Snapshot ancien",
+        "donnees": {"_pont": {"origine": "legacy", "hash": "y" * 64,
+                              "source_maj_le": "2026-11-05T09:00:00+00:00"}},
+    }
+    ecrits, ignores = [], []
+
+    assert pont_pg._doit_ecrire(conn, TENANT, stale, ecrits, ignores) is False
+    assert ecrits == []
+    assert ignores == ["sit-1"]
+    assert conn.stock[(TENANT, "sit-1")] == existant
