@@ -238,3 +238,41 @@ def test_frequence_et_derniere_pull():
                              maintenant) is True
     assert pulls_runtime.intervalle({"configuration": {"frequence": "quotidienne"}}) == 86400
     assert pulls_runtime.intervalle({"configuration": {"frequence": "inconnue"}}) == 3600
+
+
+class _SituationsFausses:
+    def __init__(self, existing=None):
+        self.existing = existing
+        self.filtres = []
+        self.remplacements = []
+
+    async def find_one(self, filtre, projection=None):
+        return self.existing
+
+    async def update_many(self, filtre, maj):
+        self.filtres.append(filtre)
+        return None
+
+    async def replace_one(self, filtre, document, upsert=False):
+        self.remplacements.append(document)
+        return None
+
+
+class _DbSituation:
+    def __init__(self, existing=None):
+        self.situations = _SituationsFausses(existing)
+
+
+def test_la_publication_propage_le_tenant_et_ne_l_ecrase_pas():
+    db = _DbSituation()
+    asyncio.run(pulls_runtime._publier_situation(
+        db, {"id": "sit-interfaces-comptes-run-1", "tenant_id": "banque"}))
+
+    assert db.situations.filtres[0]["tenant_id"] == "banque"
+    assert db.situations.remplacements[0]["tenant_id"] == "banque"
+
+    heritage = _DbSituation({"tenant_id": "assurance"})
+    asyncio.run(pulls_runtime._publier_situation(
+        heritage, {"id": "sit-interfaces-comptes-run-2"}))
+
+    assert heritage.situations.remplacements[0]["tenant_id"] == "assurance"

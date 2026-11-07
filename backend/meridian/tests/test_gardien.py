@@ -319,3 +319,11 @@ def test_decouverte_interface_rejouee_apres_erreur(monkeypatch):
     monkeypatch.setattr(interfaces_depot, "derniers_runs",
                         lambda *a, **k: [{"status": "ok"}])
     assert gardien._decouverte_a_rejouer(object(), {"tenant_id": "t", "id": "j"}) is False
+
+
+def test_la_situation_du_gardien_porte_le_tenant_du_jumeau():
+    jumeau = {"id": "tbt", "nom": "TBT", "tenant_id": "banque"}
+    s = gardien.situation(jumeau, "abcdef1234567890",
+                          gardien.signaux(AVANT, APRES), COMMITS, None)
+
+    assert s["tenant_id"] == "banque"
