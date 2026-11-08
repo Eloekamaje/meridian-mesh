@@ -15,6 +15,58 @@ const STATUTS_INITIATIVE_ANNULEE = new Set([
   "CANCELLED", "ANNULEE", "ABANDONED", "ABANDONNEE",
 ]);
 
+const TYPES_EXPRESSION = [
+  "OPPORTUNITE", "RISQUE", "PLAINTE", "BESOIN", "IDEE", "ANOMALIE", "DERIVE",
+  "CONTRADICTION", "CHANGEMENT", "SIMPLIFICATION", "DUPLICATION", "COMPORTEMENT",
+];
+
+const CHAMPS_CREER_EXPRESSION = [
+  {
+    nom: "formulation",
+    label: "Formulation",
+    type: "textarea",
+    requis: true,
+    rows: 3,
+    maxLength: 10000,
+    placeholder: "Ce que nous formulons de ce phénomène, avec nos mots et nos doutes…",
+    aide: "La lecture datée d'une situation, distincte d'une hypothèse ou d'une décision.",
+  },
+  {
+    nom: "type_expression",
+    label: "Type d'expression",
+    type: "select",
+    options: TYPES_EXPRESSION,
+  },
+  {
+    nom: "canal",
+    label: "Canal (optionnel)",
+    type: "text",
+    maxLength: 200,
+    placeholder: "entretien, atelier, observation terrain…",
+  },
+  {
+    nom: "auteur",
+    label: "Auteur (optionnel)",
+    type: "text",
+    maxLength: 200,
+    placeholder: "Alice Martin",
+  },
+  {
+    nom: "inconnues",
+    label: "Inconnues (une par ligne ou séparées par une virgule, optionnel)",
+    type: "textarea",
+    rows: 2,
+    placeholder: "volume réel\ncharge de fin de mois",
+  },
+  {
+    nom: "confiance",
+    label: "Confiance (0 à 1, optionnel)",
+    type: "text",
+    inputMode: "decimal",
+    placeholder: "0.7",
+  },
+];
+
 const CHAMPS_CREER_SCENARIO = [
   {
     nom: "titre",
@@ -385,6 +437,16 @@ export const ACTIONS_BOUCLE = Object.freeze({
     api: "creerSituation",
     champs: CHAMPS_CREER_SITUATION,
   }),
+  creer_expression: Object.freeze({
+    id: "creer_expression",
+    libelle: "Exprimer la situation",
+    titre: "Exprimer la situation",
+    description: "Formuler la lecture datée du phénomène, avec son type, ses inconnues et sa confiance.",
+    testid: "boucle-action-creer-expression",
+    api: "creerExpression",
+    icone: "expression",
+    champs: CHAMPS_CREER_EXPRESSION,
+  }),
   creer_scenario: Object.freeze({
     id: "creer_scenario",
     libelle: "Créer un scénario",
@@ -541,7 +603,13 @@ export function actionsPourObjet(objet) {
   const type = typeObjet(objet);
   const statut = statutObjet(objet);
 
-  if (type === "SITUATION") return [ACTIONS_BOUCLE.ouvrir_investigation];
+  if (type === "SITUATION") {
+    const actions = [ACTIONS_BOUCLE.ouvrir_investigation];
+    if (!texte(valeurDe(objet, "expression_id", "expression")).trim()) {
+      actions.push(ACTIONS_BOUCLE.creer_expression);
+    }
+    return actions;
+  }
 
   if (type === "INVESTIGATION") {
     const actions = [];
@@ -670,6 +738,29 @@ export function construireCorps(actionId, valeurs = {}, objet = {}) {
       if (twinIds.length > 0) corps.twin_ids = twinIds;
       const mode = valeurNette(valeurs, "mode").toUpperCase();
       if (mode) corps.mode = mode;
+      return { corps };
+    }
+
+    case "creer_expression": {
+      const formulation = valeurNette(valeurs, "formulation");
+      if (!formulation) return echec("La formulation est obligatoire.");
+      const corps = { formulation };
+      const typeExpression = valeurNette(valeurs, "type_expression").toUpperCase();
+      if (typeExpression) {
+        if (!TYPES_EXPRESSION.includes(typeExpression)) {
+          return echec("Le type d'expression est inconnu.");
+        }
+        corps.type_expression = typeExpression;
+      }
+      const canal = valeurNette(valeurs, "canal");
+      if (canal) corps.canal = canal;
+      const auteur = valeurNette(valeurs, "auteur");
+      if (auteur) corps.auteur = auteur;
+      const inconnues = listeLignesOuVirgules(valeurs, "inconnues");
+      if (inconnues.length > 0) corps.inconnues = inconnues;
+      const confiance = nombreOptionnel(valeurs, "confiance", "La confiance", { maximum: 1 });
+      if (confiance.erreur) return echec(confiance.erreur);
+      if (confiance.valeur !== null) corps.confiance = confiance.valeur;
       return { corps };
     }
 
