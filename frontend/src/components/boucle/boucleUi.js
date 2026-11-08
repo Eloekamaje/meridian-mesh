@@ -159,18 +159,6 @@ const CHAMPS_QUALIFIER_OBJET = [
     inputMode: "decimal",
     placeholder: "0.6",
   },
-  {
-    nom: "mode",
-    label: "Mode de connaissance (optionnel)",
-    type: "select",
-    options: [
-      { value: "DECLARED", label: "Déclaré" },
-      { value: "OBSERVED", label: "Observé" },
-      { value: "INFERRED", label: "Inféré" },
-      { value: "PROPOSED", label: "Proposé" },
-      { value: "CONFIRMED", label: "Confirmé" },
-    ],
-  },
 ];
 
 const CHAMPS_QUALIFIER_OPPORTUNITE = CHAMPS_QUALIFIER_OBJET;

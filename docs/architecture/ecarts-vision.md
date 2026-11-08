@@ -308,9 +308,10 @@ Il reste sans API/UI canonique :
   et `enregistrer_boucle` refuse toujours ces types B.
 - UI : actions « Qualifier une opportunité » / « Qualifier un risque » sur une Expression
   `PROPOSED` ou `CONFIRMED` ; formulaire `ModaleTransition` avec titre, description, valeur
-  potentielle, probabilité, impact, horizon, critères, preuves, confiance et mode ; actions
-  de changement de statut avec les seules transitions autorisées, sélection/refetch après
-  création et rafraîchissement du lien inverse de l'Expression.
+  potentielle, probabilité, impact, horizon, critères, preuves et confiance (`mode` reste un
+  champ API, défaut `INFERRED`, non exposé dans ce formulaire) ; actions de changement de
+  statut avec les seules transitions autorisées, sélection/refetch après création et
+  rafraîchissement du lien inverse de l'Expression.
 - Limites : qualification manuelle uniquement, aucun pipeline automatique
   Signal/Situation → Expression → Opportunité/Risque, pas de score composite, pas de
   suppression, pas de rattachement automatique à une Investigation, une Decision ou un

@@ -1338,7 +1338,6 @@ test("qualifie une expression en opportunité, la sélectionne et rafraîchit le
     saisir(hote.querySelector('[data-testid="boucle-transition-preuves"]'), "preuve-1");
     saisir(hote.querySelector('[data-testid="boucle-transition-confiance"]'), "0,6");
   });
-  await choisir(hote.querySelector('[data-testid="boucle-transition-mode"]'), "INFERRED");
   await cliquer(hote, "boucle-transition-enregistrer");
 
   expect(boucleApi.creerOpportunite).toHaveBeenCalledWith("expr-1", {
@@ -1351,7 +1350,6 @@ test("qualifie une expression en opportunité, la sélectionne et rafraîchit le
     criteres: ["faisable", "mesurable"],
     preuves: ["preuve-1"],
     confiance: 0.6,
-    mode: "INFERRED",
   });
   expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).toBeNull();
   expect(hote.querySelector('[data-objet-id="opportunity-1"]')).not.toBeNull();

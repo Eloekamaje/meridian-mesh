@@ -297,11 +297,9 @@ describe("configurationAction", () => {
     expect(action.typeSource).toBe("EXPRESSION");
     expect(action.champs.map((champ) => champ.nom)).toEqual([
       "titre", "description", "valeur_potentielle", "probabilite", "impact",
-      "horizon", "criteres", "preuves", "confiance", "mode",
+      "horizon", "criteres", "preuves", "confiance",
     ]);
     expect(action.champs.find((champ) => champ.nom === "titre").requis).toBe(true);
-    expect(action.champs.find((champ) => champ.nom === "mode").options.map((o) => o.value))
-      .toEqual(["DECLARED", "OBSERVED", "INFERRED", "PROPOSED", "CONFIRMED"]);
   });
 
   test("la qualification d'un risque expose le même contrat", () => {
@@ -311,7 +309,7 @@ describe("configurationAction", () => {
     expect(action.typeSource).toBe("EXPRESSION");
     expect(action.champs.map((champ) => champ.nom)).toEqual([
       "titre", "description", "valeur_potentielle", "probabilite", "impact",
-      "horizon", "criteres", "preuves", "confiance", "mode",
+      "horizon", "criteres", "preuves", "confiance",
     ]);
   });
 
@@ -586,7 +584,6 @@ describe("construireCorps", () => {
       criteres: "faisable\nmesurable",
       preuves: "preuve-1, preuve-2",
       confiance: "0,6",
-      mode: "INFERRED",
       statut: "CONFIRMED",
     });
 
@@ -600,7 +597,6 @@ describe("construireCorps", () => {
       criteres: ["faisable", "mesurable"],
       preuves: ["preuve-1", "preuve-2"],
       confiance: 0.6,
-      mode: "INFERRED",
     });
     expect(resultat.corps).not.toHaveProperty("statut");
     expect(resultat.corps).not.toHaveProperty("expression_id");
