@@ -37,4 +37,180 @@ api.interceptors.response.use((reponse) => {
   return reponse;
 });
 
+function identifiantRequis(identifiant, nom = "identifiant") {
+  const valeur = String(identifiant || "").trim();
+  if (!valeur) throw new Error(`${nom} obligatoire`);
+  return encodeURIComponent(valeur);
+}
+
+function posterTransition(chemin, corps, options) {
+  const config = { timeout: 20000 };
+  if (options?.idempotencyKey) {
+    config.headers = { "Idempotency-Key": options.idempotencyKey };
+  }
+  return api.post(chemin, corps, config);
+}
+
+// Transitions de la boucle canonique. Chaque méthode renvoie la promesse axios ;
+// le backend répond `{ objet, chaine }` et l'UI décide de la suite (sélection, rafraîchissement).
+export const boucleApi = {
+  async creerSituation(corps) {
+    return posterTransition("/boucle/situations", corps);
+  },
+  async creerScenario(corps) {
+    return posterTransition("/boucle/scenarios", corps);
+  },
+  async creerExpression(situationId, corps) {
+    return posterTransition(
+      `/boucle/situations/${identifiantRequis(situationId, "identifiant de situation")}/expressions`,
+      corps,
+    );
+  },
+  async creerOpportunite(expressionId, corps) {
+    return posterTransition(
+      `/boucle/expressions/${identifiantRequis(expressionId, "identifiant d'expression")}/opportunities`,
+      corps,
+    );
+  },
+  async creerRisque(expressionId, corps) {
+    return posterTransition(
+      `/boucle/expressions/${identifiantRequis(expressionId, "identifiant d'expression")}/risks`,
+      corps,
+    );
+  },
+  async listerOpportunites(expressionId, params) {
+    return api.get(
+      `/boucle/expressions/${identifiantRequis(expressionId, "identifiant d'expression")}/opportunities`,
+      { params, timeout: 20000 },
+    );
+  },
+  async listerRisques(expressionId, params) {
+    return api.get(
+      `/boucle/expressions/${identifiantRequis(expressionId, "identifiant d'expression")}/risks`,
+      { params, timeout: 20000 },
+    );
+  },
+  async changerStatutOpportunite(opportuniteId, corps) {
+    return posterTransition(
+      `/boucle/opportunities/${identifiantRequis(opportuniteId, "identifiant d'opportunité")}/statut`,
+      corps,
+    );
+  },
+  async changerStatutRisque(risqueId, corps) {
+    return posterTransition(
+      `/boucle/risks/${identifiantRequis(risqueId, "identifiant de risque")}/statut`,
+      corps,
+    );
+  },
+  async creerHypothese(investigationId, corps) {
+    return posterTransition(
+      `/boucle/investigations/${identifiantRequis(investigationId, "identifiant d'investigation")}/hypotheses`,
+      corps,
+    );
+  },
+  async creerSignal(corps) {
+    return posterTransition("/boucle/signals", corps);
+  },
+  async creerSignalSituation(situationId, corps) {
+    return posterTransition(
+      `/boucle/situations/${identifiantRequis(situationId, "identifiant de situation")}/signals`,
+      corps,
+    );
+  },
+  async listerSignaux(params) {
+    return api.get("/boucle/signals", { params, timeout: 20000 });
+  },
+  async listerHypotheses(params) {
+    return api.get("/boucle/hypotheses", { params, timeout: 20000 });
+  },
+  async changerStatutHypothese(hypotheseId, corps) {
+    return posterTransition(
+      `/boucle/hypotheses/${identifiantRequis(hypotheseId, "identifiant d'hypothèse")}/statut`,
+      corps,
+    );
+  },
+  async creerExpert(corps) {
+    return posterTransition("/boucle/experts", corps);
+  },
+  async listerExperts(params) {
+    return api.get("/boucle/experts", { params, timeout: 20000 });
+  },
+  async creerContributionInvestigation(investigationId, corps) {
+    return posterTransition(
+      `/boucle/investigations/${identifiantRequis(investigationId, "identifiant d'investigation")}/contributions`,
+      corps,
+    );
+  },
+  async creerContributionHypothese(hypotheseId, corps) {
+    return posterTransition(
+      `/boucle/hypotheses/${identifiantRequis(hypotheseId, "identifiant d'hypothèse")}/contributions`,
+      corps,
+    );
+  },
+  async listerContributions(params) {
+    return api.get("/boucle/contributions", { params, timeout: 20000 });
+  },
+  async changerStatutContribution(contributionId, corps) {
+    return posterTransition(
+      `/boucle/contributions/${identifiantRequis(contributionId, "identifiant de contribution")}/statut`,
+      corps,
+    );
+  },
+  async listerScenarios(params) {
+    return api.get("/boucle/scenarios", { params, timeout: 20000 });
+  },
+  async comparerScenarios(corps) {
+    return posterTransition("/boucle/scenarios/comparer", corps);
+  },
+  async ouvrirInvestigation(situationId, corps, options) {
+    return posterTransition(
+      `/boucle/situations/${identifiantRequis(situationId, "identifiant de situation")}/investigations`,
+      corps,
+      options,
+    );
+  },
+  async proposerDecision(investigationId, corps, options) {
+    return posterTransition(
+      `/boucle/investigations/${identifiantRequis(investigationId, "identifiant d'investigation")}/decisions`,
+      corps,
+      options,
+    );
+  },
+  async trancherDecision(decisionId, corps, options) {
+    return posterTransition(
+      `/boucle/decisions/${identifiantRequis(decisionId, "identifiant de décision")}/trancher`,
+      corps,
+      options,
+    );
+  },
+  async lancerInitiative(decisionId, corps, options) {
+    return posterTransition(
+      `/boucle/decisions/${identifiantRequis(decisionId, "identifiant de décision")}/initiatives`,
+      corps,
+      options,
+    );
+  },
+  async mesurerOutcome(initiativeId, corps, options) {
+    return posterTransition(
+      `/boucle/initiatives/${identifiantRequis(initiativeId, "identifiant d'initiative")}/outcomes`,
+      corps,
+      options,
+    );
+  },
+  async capitaliserLearningDepuisOutcome(outcomeId, corps, options) {
+    return posterTransition(
+      `/boucle/outcomes/${identifiantRequis(outcomeId, "identifiant d'outcome")}/learnings`,
+      corps,
+      options,
+    );
+  },
+  async capitaliserLearningDepuisInvestigation(investigationId, corps, options) {
+    return posterTransition(
+      `/boucle/investigations/${identifiantRequis(investigationId, "identifiant d'investigation")}/learnings`,
+      corps,
+      options,
+    );
+  },
+};
+
 export default api;

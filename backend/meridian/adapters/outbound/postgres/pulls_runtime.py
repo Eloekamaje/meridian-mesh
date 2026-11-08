@@ -178,10 +178,18 @@ def tirer(conn, jumeau, source) -> dict:
 
 async def _publier_situation(db, situation: dict) -> None:
     """Publie la situation d'interface et archive les précédentes du même jumeau (comme le gardien)."""
+    if not situation.get("tenant_id"):
+        existant = await db.situations.find_one(
+            {"id": situation["id"]}, {"tenant_id": 1})
+        if existant and existant.get("tenant_id"):
+            situation["tenant_id"] = existant["tenant_id"]
     prefixe = situation["id"].rsplit("-", 1)[0] + "-"
+    filtre_archive = {"id": {"$regex": f"^{re.escape(prefixe)}",
+                             "$ne": situation["id"]}, "statut": "active"}
+    if situation.get("tenant_id"):
+        filtre_archive["tenant_id"] = situation["tenant_id"]
     await db.situations.update_many(
-        {"id": {"$regex": f"^{re.escape(prefixe)}", "$ne": situation["id"]}, "statut": "active"},
-        {"$set": {"statut": "archivee"}})
+        filtre_archive, {"$set": {"statut": "archivee"}})
     await db.situations.replace_one({"id": situation["id"]}, situation, upsert=True)
     try:
         await initiatives_auto.proposer(db, situation)
@@ -225,6 +233,8 @@ async def tirer_et_publier(db, conn, jumeau, sources=None, force=False) -> list[
         try:
             situation = impacts_situations.situation_depuis_run(run, jumeau)
             if situation:
+                if isinstance(jumeau, dict) and jumeau.get("tenant_id"):
+                    situation["tenant_id"] = jumeau["tenant_id"]
                 await _publier_situation(db, situation)
                 await notifications_impacts.publier_notification(db, jumeau, run, situation)
         except Exception as erreur:  # noqa: BLE001 - la publication se rejoue à la passe suivante

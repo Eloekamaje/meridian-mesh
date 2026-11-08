@@ -30,6 +30,7 @@ __all__ = [
     "absence",
     "exiger_tenant",
     "normaliser_slug",
+    "normaliser_tenant_canonique",
     "resoudre_tenant",
 ]
 
@@ -113,6 +114,17 @@ def normaliser_slug(valeur) -> str:
             "tenant : slug attendu (minuscules, chiffres, séparateurs . _ -, sans séparateur aux extrémités)"
         )
     return texte
+
+
+def normaliser_tenant_canonique(valeur) -> str:
+    """Tenant unique du **modèle canonique** : l'alias de démo ``demo`` vaut ``local``.
+
+    Cette fonction est la seule autorité de l'alias. ``resoudre_tenant`` garde son
+    comportement d'authentification (il peut rendre ``demo``), mais toute frontière
+    canonique (objet_entreprise, événements C1, trace C2) appelle celle-ci.
+    """
+    tenant = normaliser_slug(valeur)
+    return TENANT_DEFAUT_DEMO if tenant == "demo" else tenant
 
 
 def resoudre_tenant(x_tenant: str | None, auth_mode: str | None = None) -> TenantContext:

@@ -38,3 +38,14 @@ def test_une_situation_normale_ne_cree_rien():
     db = Db()
     assert asyncio.run(initiatives_auto.proposer(db, _situation("normale"))) is None
     assert db.initiatives.docs == {}
+
+
+def test_la_proposition_herite_du_tenant_de_la_situation():
+    db = Db()
+    situation = {**_situation(), "tenant_id": "banque"}
+
+    proposition = asyncio.run(initiatives_auto.proposer(db, situation))
+
+    assert proposition["tenant_id"] == "banque"
+    assert db.initiatives.docs[proposition["id"]]["tenant_id"] == "banque"
+    assert db.initiatives.appels[0][0]["tenant_id"] == "banque"

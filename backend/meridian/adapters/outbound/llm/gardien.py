@@ -179,6 +179,7 @@ def situation(jumeau, version, sigs, commits, recit):
              + ["Le changement est-il déjà en production ? L'exploitation peut le confirmer."])
     return {
         "id": f"sit-gardien-{jumeau['id']}-{version[:12]}",
+        **({"tenant_id": jumeau["tenant_id"]} if jumeau.get("tenant_id") else {}),
         "verbe": "a_comprendre",
         "nature": "changement",
         "type": "changement",
@@ -292,9 +293,16 @@ def fiche_du_sha(conn, jumeau_id, sha):
 
 async def publier(db, sit):
     """Publie la situation du changement et archive les précédentes du même jumeau (le fil ne s'encombre pas)."""
+    if not sit.get("tenant_id"):
+        existant = await db.situations.find_one({"id": sit["id"]}, {"tenant_id": 1})
+        if existant and existant.get("tenant_id"):
+            sit["tenant_id"] = existant["tenant_id"]
     prefixe = sit["id"].rsplit("-", 1)[0] + "-"
-    await db.situations.update_many({"id": {"$regex": f"^{re.escape(prefixe)}", "$ne": sit["id"]}, "statut": "active"},
-                                    {"$set": {"statut": "archivee"}})
+    filtre_archive = {"id": {"$regex": f"^{re.escape(prefixe)}", "$ne": sit["id"]},
+                      "statut": "active"}
+    if sit.get("tenant_id"):
+        filtre_archive["tenant_id"] = sit["tenant_id"]
+    await db.situations.update_many(filtre_archive, {"$set": {"statut": "archivee"}})
     await db.situations.replace_one({"id": sit["id"]}, sit, upsert=True)
     try:
         await initiatives_auto.proposer(db, sit)

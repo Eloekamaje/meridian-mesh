@@ -759,9 +759,17 @@ class Opportunity(ObjetEntreprise):
     statut: str = "DETECTED"
     type_opportunite: str = ""
     valeur_potentielle: Any = None
+    probabilite: float | None = None
+    impact: str = ""
+    horizon: str = ""
+    criteres: list[str] = field(default_factory=list)
+    motif: str = ""
     situation_id: str | None = None
+    expression_id: str | None = None
     investigation_id: str | None = None
     proprietaire: str | None = None
+    auteur: str | None = None
+    justification: str = ""
     twin_ids: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
@@ -770,11 +778,19 @@ class Opportunity(ObjetEntreprise):
         self.description = str(self.description or "").strip()
         self.statut = _normaliser_statut(self.statut) or "DETECTED"
         self.type_opportunite = _normaliser_statut(self.type_opportunite)
+        self.probabilite = _probabilite(self.probabilite, "probabilite")
+        self.impact = str(self.impact or "").strip()
+        self.horizon = str(self.horizon or "").strip()
+        self.criteres = [str(c).strip() for c in _liste(self.criteres) if str(c).strip()]
+        self.motif = str(self.motif or "").strip()
         self.situation_id = _identifiant_lien(self.situation_id, "situation_id", obligatoire=False)
+        self.expression_id = _identifiant_lien(self.expression_id, "expression_id", obligatoire=False)
         self.investigation_id = _identifiant_lien(
             self.investigation_id, "investigation_id", obligatoire=False
         )
         self.proprietaire = _texte_ou_none(self.proprietaire)
+        self.auteur = _texte_ou_none(self.auteur)
+        self.justification = str(self.justification or "").strip()
         self.twin_ids = _liste_ids(self.twin_ids, "twin_ids")
 
 
@@ -791,9 +807,18 @@ class Risk(ObjetEntreprise):
     probabilite: float | None = None
     severite: str = ""
     exposition: float | None = None
+    impact: str = ""
+    valeur_potentielle: Any = None
+    criteres: list[str] = field(default_factory=list)
+    motif: str = ""
     situation_id: str | None = None
+    expression_id: str | None = None
     investigation_id: str | None = None
     proprietaire: str | None = None
+    auteur: str | None = None
+    justification: str = ""
+    propagation: str = ""
+    horizon: str = ""
     controles: list[str] = field(default_factory=list)
     twin_ids: list[str] = field(default_factory=list)
 
@@ -806,11 +831,19 @@ class Risk(ObjetEntreprise):
         self.probabilite = _probabilite(self.probabilite, "probabilite")
         self.exposition = _probabilite(self.exposition, "exposition")
         self.severite = _normaliser_statut(self.severite)
+        self.impact = str(self.impact or "").strip()
+        self.criteres = [str(c).strip() for c in _liste(self.criteres) if str(c).strip()]
+        self.motif = str(self.motif or "").strip()
         self.situation_id = _identifiant_lien(self.situation_id, "situation_id", obligatoire=False)
+        self.expression_id = _identifiant_lien(self.expression_id, "expression_id", obligatoire=False)
         self.investigation_id = _identifiant_lien(
             self.investigation_id, "investigation_id", obligatoire=False
         )
         self.proprietaire = _texte_ou_none(self.proprietaire)
+        self.auteur = _texte_ou_none(self.auteur)
+        self.justification = str(self.justification or "").strip()
+        self.propagation = str(self.propagation or "").strip()
+        self.horizon = str(self.horizon or "").strip()
         self.controles = _liste_ids(self.controles, "controles")
         self.twin_ids = _liste_ids(self.twin_ids, "twin_ids")
 
@@ -983,6 +1016,7 @@ class Decision(ObjetEntreprise):
     investigation_id: str = ""
     investigation_ref: str = ""
     scenario_id: str | None = None
+    scenario_ids: list[str] = field(default_factory=list)
     scenarios_rejetes: list[str] = field(default_factory=list)
     options: list[str] = field(default_factory=list)
     criteres: list[str] = field(default_factory=list)
@@ -998,6 +1032,9 @@ class Decision(ObjetEntreprise):
         ) or ""
         super().__post_init__()
         self.scenario_id = _identifiant_lien(self.scenario_id, "scenario_id", obligatoire=False)
+        self.scenario_ids = _liste_ids(self.scenario_ids, "scenario_ids")
+        if self.scenario_id and self.scenario_id not in self.scenario_ids:
+            self.scenario_ids.append(self.scenario_id)
         self.scenarios_rejetes = _liste_ids(self.scenarios_rejetes, "scenarios_rejetes")
         self.options = [str(o).strip() for o in _liste(self.options) if str(o).strip()]
         self.criteres = [str(c).strip() for c in _liste(self.criteres) if str(c).strip()]

@@ -11,12 +11,17 @@ from datetime import date, datetime, time
 from decimal import Decimal
 import json
 import unicodedata
-from urllib.parse import parse_qsl, unquote_plus, urlsplit
 
+import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
+from meridian.application.pont_securite import cle_sensible as _cle_sensible
+from meridian.application.pont_securite import jeton_sensible as _jeton_sensible
+from meridian.application.pont_securite import url_porte_un_secret as _url_porte_un_secret
 from meridian.domain.modele_entreprise import FAMILLES, MODES, TYPES_PAR_FAMILLE
+from meridian.domain.tenant import TenantError, normaliser_tenant_canonique
+from meridian.ports.boucle import ObjetExistant, ObjetInvalide, VersionRefusee
 
 _FAMILLES = frozenset(FAMILLES)
 _MODES = frozenset(MODES)
@@ -27,19 +32,7 @@ _CHAMPS_OBJET = frozenset({
     "observe_le", "valide_depuis", "valide_jusqua", "cree_le", "maj_le",
 })
 
-_MARQUEURS_SECRETS = ("password", "passwd", "secret", "token", "credential", "authorization")
-_CLES_SECRETES = frozenset({
-    "pwd", "pass", "auth", "key", "apikey", "api_key", "api-key", "access_key", "accesskey",
-    "private_key", "privatekey", "client_secret", "clientsecret", "bearer", "password", "passwd",
-})
 
-
-class ObjetInvalide(ValueError):
-    """Objet d'entreprise refusé avant toute écriture."""
-
-
-class VersionRefusee(ObjetInvalide):
-    """La version proposée recule par rapport à celle déjà stockée."""
 
 
 def _normaliser(valeur, *, minuscule: bool = False) -> str:
@@ -61,30 +54,17 @@ def _texte_obligatoire(valeur, champ: str) -> str:
 
 
 def _tenant(tenant_id) -> str:
-    return _texte_obligatoire(tenant_id, "tenant_id")
-
-
-def _cle_sensible(cle) -> bool:
-    normalisee = unquote_plus(str(cle)).strip().lower()
-    if normalisee.endswith(("_ref", "-ref", "_reference", "-reference")):
-        return False
-    compacte = normalisee.replace("-", "_")
-    if compacte in _CLES_SECRETES:
-        return True
-    if compacte.endswith("_key"):
-        return True
-    return any(marque in compacte for marque in _MARQUEURS_SECRETS)
-
-
-def _url_porte_un_secret(url: str) -> bool:
+    texte = _texte_obligatoire(tenant_id, "tenant_id")
+    if _jeton_sensible(texte):
+        raise ObjetInvalide("tenant : secret refusé")
     try:
-        parties = urlsplit(url)
-    except (ValueError, UnicodeError):
-        return True
-    if parties.username is not None or parties.password is not None or "@" in parties.netloc:
-        return True
-    return any(_cle_sensible(cle) and valeur not in ("", "***")
-               for cle, valeur in parse_qsl(parties.query, keep_blank_values=True))
+        tenant = normaliser_tenant_canonique(texte)
+    except TenantError as exc:
+        raise ObjetInvalide(str(exc)) from exc
+    # L'alias demo→local ne doit pas réintroduire un jeton via la valeur normalisée.
+    if _jeton_sensible(tenant):
+        raise ObjetInvalide("tenant : secret refusé")
+    return tenant
 
 
 def _verifier_secrets(valeur, chemin: str = "donnees") -> None:
@@ -96,7 +76,9 @@ def _verifier_secrets(valeur, chemin: str = "donnees") -> None:
     elif isinstance(valeur, (list, tuple)):
         for rang, element in enumerate(valeur):
             _verifier_secrets(element, f"{chemin}[{rang}]")
-    elif isinstance(valeur, str) and _url_porte_un_secret(valeur):
+    elif isinstance(valeur, str) and (
+        _url_porte_un_secret(valeur) or _jeton_sensible(valeur)
+    ):
         raise ObjetInvalide(f"{chemin} : URL ou secret refusé")
 
 
@@ -104,10 +86,22 @@ def _donnees_json(valeur) -> object:
     if valeur is None:
         return {}
     _verifier_secrets(valeur)
+    return _donnees_json_permissif(valeur)
+
+
+def _donnees_json_permissif(valeur) -> object:
+    """Sérialise en JSON strict sans revalider les secrets (corpus legacy déjà stocké)."""
+    if valeur is None:
+        return {}
     try:
         return json.loads(json.dumps(valeur, ensure_ascii=False, allow_nan=False))
     except (TypeError, ValueError) as exc:
         raise ObjetInvalide("donnees non sérialisables en JSON") from exc
+
+
+def verifier_donnees(valeur) -> object:
+    """Valide un JSON de données (sérialisation et secrets) sans écrire."""
+    return _donnees_json(valeur)
 
 
 def _version(valeur) -> int | None:
@@ -175,7 +169,10 @@ def _objet_saisi(objet) -> dict:
                 break
     if not isinstance(objet, Mapping):
         raise ObjetInvalide("objet d'entreprise attendu")
-    saisi = {"id": _texte_obligatoire(objet.get("id"), "id")}
+    identifiant = _texte_obligatoire(objet.get("id"), "id")
+    if _jeton_sensible(identifiant):
+        raise ObjetInvalide("id : secret refusé")
+    saisi = {"id": identifiant}
     if "famille" in objet:
         famille = _normaliser(objet.get("famille"), minuscule=True)
         if famille not in _FAMILLES:
@@ -197,7 +194,10 @@ def _objet_saisi(objet) -> dict:
         else:
             raise ObjetInvalide(f"mode inconnu : {mode!r}")
     if "titre" in objet:
-        saisi["titre"] = "" if objet.get("titre") is None else str(objet["titre"]).strip()
+        titre = "" if objet.get("titre") is None else str(objet["titre"]).strip()
+        if _jeton_sensible(titre):
+            raise ObjetInvalide("titre : secret refusé")
+        saisi["titre"] = titre
     if "donnees" in objet:
         saisi["donnees"] = _donnees_json(objet["donnees"])
     else:
@@ -224,12 +224,34 @@ def _ligne(ligne) -> dict:
     return {cle: _valeur(valeur) for cle, valeur in ligne.items()}
 
 
-def enregistrer_objet(conn, tenant_id, objet) -> dict:
+def ligne_publique(ligne, *, inclure_historique: bool = False) -> dict:
+    """Rend une ligne Postgres sérialisable en JSON (Decimal, datetime et date convertis).
+
+    Par défaut, ``donnees["_historique"]`` est retiré : l'historique n'est exposé que par la clé
+    ``historique`` des lectures qui le demandent explicitement.
+    """
+    resultat = _ligne(ligne)
+    if not inclure_historique:
+        donnees = resultat.get("donnees")
+        if isinstance(donnees, dict):
+            donnees = dict(donnees)
+            donnees.pop("_historique", None)
+            resultat["donnees"] = donnees
+    return resultat
+
+
+def enregistrer_objet(conn, tenant_id, objet, *, creer=False) -> dict:
     """Upsert un objet d'entreprise pour un tenant ; rend la ligne stockée.
 
     La version augmente d'elle-même quand elle n'est pas fournie ; une version inférieure à celle déjà stockée est
     refusée (`VersionRefusee`). `cree_le` est immuable après la création. `valide_jusqua` peut être remis à NULL en
     le passant explicitement. Les données doivent être du JSON strict et ne porter aucun secret.
+
+    Avec ``creer=True``, l'écriture est strictement une création : un identifiant déjà présent (même course
+    concurrente) lève :class:`ObjetExistant` au lieu d'écraser l'objet.
+
+    Sur une course concurrente, même avec ``creer=False``, une ``UniqueViolation`` sur ``(tenant_id, id)``
+    est convertie en :class:`ObjetExistant` ; l'appelant peut alors relire et rejouer en mise à jour.
     """
     tenant = _tenant(tenant_id)
     saisi = _objet_saisi(objet)
@@ -239,6 +261,9 @@ def enregistrer_objet(conn, tenant_id, objet) -> dict:
             existant = cur.execute(
                 "SELECT * FROM objet_entreprise WHERE tenant_id = %s AND id = %s FOR UPDATE",
                 (tenant, saisi["id"])).fetchone()
+
+            if creer and existant is not None:
+                raise ObjetExistant(f"objet déjà existant : {saisi['id']}")
 
             if existant is None:
                 for champ in ("famille", "type", "mode"):
@@ -254,13 +279,24 @@ def enregistrer_objet(conn, tenant_id, objet) -> dict:
                 valide_jusqua = saisi.get("valide_jusqua")
                 cree_le = saisi.get("cree_le")
                 _verifier_periode(valide_depuis, valide_jusqua)
-                ligne = cur.execute(
+                requete = (
                     "INSERT INTO objet_entreprise "
                     "(id, tenant_id, famille, type, mode, titre, donnees, version, observe_le, valide_depuis, "
                     "valide_jusqua, cree_le) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, coalesce(%s, now()), "
-                    "coalesce(%s, least(now(), coalesce(%s, now()))), %s, coalesce(%s, now())) RETURNING *",
-                    (saisi["id"], tenant, famille, type_, mode, titre, Jsonb(donnees), version,
-                     observe_le, valide_depuis, valide_jusqua, valide_jusqua, cree_le)).fetchone()
+                    "coalesce(%s, least(now(), coalesce(%s, now()))), %s, coalesce(%s, now()))"
+                )
+                if creer:
+                    requete += " ON CONFLICT (tenant_id, id) DO NOTHING"
+                requete += " RETURNING *"
+                try:
+                    ligne = cur.execute(
+                        requete,
+                        (saisi["id"], tenant, famille, type_, mode, titre, Jsonb(donnees), version,
+                         observe_le, valide_depuis, valide_jusqua, valide_jusqua, cree_le)).fetchone()
+                except psycopg.errors.UniqueViolation as exc:
+                    raise ObjetExistant(f"objet déjà existant : {saisi['id']}") from exc
+                if creer and ligne is None:
+                    raise ObjetExistant(f"objet déjà existant : {saisi['id']}")
             else:
                 famille = saisi.get("famille", existant["famille"])
                 type_ = saisi.get("type", existant["type"])
@@ -289,15 +325,62 @@ def enregistrer_objet(conn, tenant_id, objet) -> dict:
     return _ligne(ligne)
 
 
-def lire_objet(conn, tenant_id, objet_id) -> dict | None:
-    """Lit un objet du tenant ; `None` s'il n'existe pas dans ce tenant."""
+def lire_objet(conn, tenant_id, objet_id, *, for_update=False) -> dict | None:
+    """Lit un objet du tenant ; `None` s'il n'existe pas dans ce tenant.
+
+    ``for_update=True`` verrouille la ligne jusqu'à la fin de la transaction courante.
+    """
     tenant = _tenant(tenant_id)
     identifiant = _texte_obligatoire(objet_id, "id")
+    requete = "SELECT * FROM objet_entreprise WHERE tenant_id = %s AND id = %s"
+    if for_update:
+        requete += " FOR UPDATE"
     with conn.cursor(row_factory=dict_row) as cur:
-        ligne = cur.execute(
-            "SELECT * FROM objet_entreprise WHERE tenant_id = %s AND id = %s",
-            (tenant, identifiant)).fetchone()
+        ligne = cur.execute(requete, (tenant, identifiant)).fetchone()
     return _ligne(ligne) if ligne is not None else None
+
+
+def enregistrer_donnees(
+    conn, tenant_id, objet_id, donnees, *, mode=None, version_attendue=None,
+    verifier_secrets=True,
+) -> dict:
+    """Met à jour uniquement ``donnees`` (et le mode) d'un objet existant.
+
+    La fusion des clés legacy est faite par l'appelant. ``version_attendue`` rend l'écriture
+    optimiste : une version différente lève :class:`VersionRefusee` sans rien écrire.
+    ``verifier_secrets=False`` réserve la validation des secrets aux seules clés nouvelles
+    (fusion d'un corpus legacy déjà stocké).
+    """
+    tenant = _tenant(tenant_id)
+    identifiant = _texte_obligatoire(objet_id, "id")
+    donnees_json = _donnees_json(donnees) if verifier_secrets else _donnees_json_permissif(donnees)
+    if mode is not None:
+        mode = _normaliser(mode)
+        if mode not in _MODES:
+            raise ObjetInvalide(f"mode inconnu : {mode!r}")
+    conditions = "tenant_id = %s AND id = %s"
+    parametres = [Jsonb(donnees_json), mode, tenant, identifiant]
+    if version_attendue is not None:
+        try:
+            attendue = int(version_attendue)
+        except (TypeError, ValueError) as exc:
+            raise ObjetInvalide("version_attendue doit être un entier positif") from exc
+        if attendue < 1:
+            raise ObjetInvalide("version_attendue doit être un entier positif")
+        conditions += " AND version = %s"
+        parametres.append(attendue)
+    with conn.transaction():
+        with conn.cursor(row_factory=dict_row) as cur:
+            ligne = cur.execute(
+                "UPDATE objet_entreprise SET donnees = %s, mode = coalesce(%s, mode), "
+                "version = version + 1, maj_le = now() WHERE " + conditions + " RETURNING *",
+                tuple(parametres)).fetchone()
+            if ligne is None:
+                if version_attendue is not None:
+                    raise VersionRefusee(
+                        f"version périmée pour {identifiant!r} (attendue {version_attendue})")
+                raise ObjetInvalide(f"objet introuvable : {identifiant}")
+    return _ligne(ligne)
 
 
 def lister_objets(conn, tenant_id, famille=None, type_=None, mode=None, limite=100) -> list[dict]:

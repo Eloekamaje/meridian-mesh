@@ -1,6 +1,6 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import api from "@/lib/api";
+import api, { boucleApi } from "@/lib/api";
 import Boucle from "./Boucle";
 
 const mockNavigate = jest.fn();
@@ -12,6 +12,29 @@ jest.mock("react-router-dom", () => ({
 jest.mock("@/lib/api", () => ({
   __esModule: true,
   default: { get: jest.fn(), post: jest.fn() },
+  boucleApi: {
+    creerSituation: jest.fn(),
+    creerScenario: jest.fn(),
+    creerExpression: jest.fn(),
+    creerOpportunite: jest.fn(),
+    creerRisque: jest.fn(),
+    creerHypothese: jest.fn(),
+    listerOpportunites: jest.fn(),
+    listerRisques: jest.fn(),
+    listerHypotheses: jest.fn(),
+    changerStatutOpportunite: jest.fn(),
+    changerStatutRisque: jest.fn(),
+    changerStatutHypothese: jest.fn(),
+    listerScenarios: jest.fn(),
+    comparerScenarios: jest.fn(),
+    ouvrirInvestigation: jest.fn(),
+    proposerDecision: jest.fn(),
+    trancherDecision: jest.fn(),
+    lancerInitiative: jest.fn(),
+    mesurerOutcome: jest.fn(),
+    capitaliserLearningDepuisOutcome: jest.fn(),
+    capitaliserLearningDepuisInvestigation: jest.fn(),
+  },
 }));
 
 global.IS_REACT_ACT_ENVIRONMENT = true;
@@ -56,6 +79,17 @@ const decision = {
   maj_le: "2026-10-30T10:00:00Z",
 };
 
+const decisionProposee = {
+  ...decision,
+  id: "dec-prop",
+  titre: "Faut-il automatiser le contrôle ?",
+  donnees: {
+    statut: "PROPOSED",
+    options: ["Automatiser", "Réorganiser"],
+    criteres: ["coût", "délai"],
+  },
+};
+
 const initiative = {
   id: "ini-1",
   famille: "decision",
@@ -97,6 +131,88 @@ const learning = {
   maj_le: "2026-10-30T13:00:00Z",
 };
 
+const expressionProposee = {
+  id: "expr-1",
+  famille: "emergence",
+  type: "EXPRESSION",
+  mode: "DECLARED",
+  titre: "Automatiser la ressaisie",
+  donnees: {
+    situation_id: "sit-1",
+    type_expression: "OPPORTUNITE",
+    formulation: "Automatiser la ressaisie",
+    passage: "",
+    statut: "PROPOSED",
+    confiance: 0.7,
+  },
+  version: 1,
+  observe_le: "2026-10-30T10:00:00Z",
+  maj_le: "2026-10-30T10:00:00Z",
+};
+
+const opportunite = {
+  id: "opportunity-1",
+  famille: "emergence",
+  type: "OPPORTUNITY",
+  mode: "INFERRED",
+  titre: "Automatiser la ressaisie",
+  donnees: {
+    statut: "DETECTED",
+    expression_id: "expr-1",
+    situation_id: "sit-1",
+    valeur_potentielle: 12000,
+    probabilite: 0.7,
+    impact: "Deux ETP libérés",
+    horizon: "90 jours",
+    criteres: ["faisable", "mesurable"],
+    preuves: ["preuve-1"],
+  },
+  version: 1,
+  observe_le: "2026-11-07T10:00:00Z",
+  maj_le: "2026-11-07T10:00:00Z",
+};
+
+const risque = {
+  id: "risk-1",
+  famille: "emergence",
+  type: "RISK",
+  mode: "INFERRED",
+  titre: "Dépendance fournisseur",
+  donnees: {
+    statut: "DETECTED",
+    expression_id: "expr-1",
+    situation_id: "sit-1",
+    probabilite: 0.4,
+    impact: "Arrêt des paiements",
+    horizon: "6 mois",
+    criteres: ["criticité"],
+  },
+  version: 1,
+  observe_le: "2026-11-07T10:00:00Z",
+  maj_le: "2026-11-07T10:00:00Z",
+};
+
+const hypothese = {
+  id: "hypothesis-1",
+  famille: "investigation",
+  type: "HYPOTHESIS",
+  mode: "PROPOSED",
+  titre: "Le contrôle synchrone bloque les paiements",
+  donnees: {
+    statut: "OPEN",
+    investigation_id: "inv-1",
+    enonce: "Le contrôle synchrone bloque les paiements",
+    conditions_test: ["mesurer le p95"],
+    claim_ids_soutenants: ["claim-1"],
+    claim_ids_opposants: ["claim-2"],
+    preuves: ["preuve-1"],
+    confiance: 0.6,
+  },
+  version: 1,
+  observe_le: "2026-11-07T10:00:00Z",
+  maj_le: "2026-11-07T10:00:00Z",
+};
+
 const objets = [situation, investigation, decision, initiative, outcome, learning];
 
 const synthese = {
@@ -131,10 +247,12 @@ function installerApi(options = {}) {
     objetsPourRequete,
     syntheseEnErreur = false,
   } = options;
+  let courante = liste;
+  let detailsCourants = { ...details };
 
   api.get.mockImplementation((url, config) => {
     if (url === "/boucle/objets") {
-      const resultat = objetsPourRequete ? objetsPourRequete(liste, config?.params || {}) : liste;
+      const resultat = objetsPourRequete ? objetsPourRequete(courante, config?.params || {}) : courante;
       return Promise.resolve({ data: { tenant: "local", objets: resultat } });
     }
     if (url === "/boucle/synthese") {
@@ -144,12 +262,23 @@ function installerApi(options = {}) {
     const correspondance = url.match(/^\/boucle\/objets\/(.+)$/);
     if (correspondance) {
       const identifiant = decodeURIComponent(correspondance[1]);
-      if (details[identifiant]) return Promise.resolve({ data: details[identifiant] });
-      const objet = liste.find((element) => element.id === identifiant);
+      if (detailsCourants[identifiant]) return Promise.resolve({ data: detailsCourants[identifiant] });
+      const objet = courante.find((element) => element.id === identifiant);
       return Promise.resolve({ data: { objet, chaine: [], historique: [] } });
     }
     return Promise.resolve({ data: {} });
   });
+
+  return {
+    ajouter(objet) {
+      if (!objet?.id) return;
+      courante = [...courante.filter((element) => element.id !== objet.id), objet];
+    },
+    majDetail(identifiant, data) {
+      detailsCourants = { ...detailsCourants, [identifiant]: data };
+    },
+    liste: () => courante,
+  };
 }
 
 function monter() {
@@ -185,6 +314,8 @@ beforeEach(() => {
   mockNavigate.mockReset();
   api.post.mockReset();
   api.post.mockResolvedValue({ data: {} });
+  Object.values(boucleApi).forEach((methode) => methode.mockReset());
+  boucleApi.listerScenarios.mockResolvedValue({ data: { scenarios: [] } });
 });
 
 afterEach(() => {
@@ -407,6 +538,7 @@ test("crée un outcome, bloque les saisies invalides et recharge la liste", asyn
     saisir(hote.querySelector('[data-testid="boucle-outcome-valeur"]'), "180");
     saisir(hote.querySelector('[data-testid="boucle-outcome-unite"]'), "ms");
     saisir(hote.querySelector('[data-testid="boucle-outcome-cible"]'), "200");
+    saisir(hote.querySelector('[data-testid="boucle-outcome-preuves"]'), "preuve-1, preuve-2");
   });
   await act(async () => { enregistrer().click(); });
 
@@ -415,6 +547,7 @@ test("crée un outcome, bloque les saisies invalides et recharge la liste", asyn
     mesure: { metrique: "p95", valeur: 180, unite: "ms" },
     enseignement: "Le contrôle asynchrone réduit la latence.",
     cible: 200,
+    preuve_ids: ["preuve-1", "preuve-2"],
   });
   expect(hote.querySelector('[data-testid="boucle-outcome-succes"]').textContent).toContain("out-2");
   expect(hote.querySelector('[data-testid="boucle-outcome-succes"]').textContent).toContain("lea-2");
@@ -444,9 +577,8 @@ test("montre les preuves, claims et outcomes exposés et ouvre un outcome lié",
   const { hote, racine } = monter();
   await rendre(racine);
 
-  await act(async () => {
-    hote.querySelector('[data-objet-id="out-1"]').click();
-  });
+  const carte = hote.querySelector('[data-objet-id="out-1"]');
+  await act(async () => { carte.focus(); carte.click(); });
 
   const boutonLiens = hote.querySelector('[data-testid="boucle-liens-bouton"]');
   expect(boutonLiens).not.toBeNull();
@@ -475,6 +607,10 @@ test("montre les preuves, claims et outcomes exposés et ouvre un outcome lié",
   });
   expect(api.get).toHaveBeenCalledWith("/boucle/objets/out-2", { params: { historique: true } });
   expect(hote.querySelector('[data-testid="boucle-detail-titre"]').textContent).toContain("Outcome lié");
+  expect(document.activeElement).toBe(hote.querySelector('[data-testid="boucle-detail-fermer"]'));
+
+  await cliquer(hote, "boucle-detail-fermer");
+  expect(document.activeElement?.getAttribute("data-objet-id")).toBe("out-1");
 
   await act(async () => { racine.unmount(); });
 });
@@ -558,6 +694,2283 @@ test("affiche l'erreur de l'API quand la création du twin échoue", async () =>
 
   expect(hote.querySelector('[data-testid="boucle-twin-erreur"]').textContent).toContain("changement de type refusé");
   expect(hote.querySelector('[data-testid="boucle-twin-succes"]')).toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+async function ouvrirObjet(hote, identifiant) {
+  await act(async () => {
+    hote.querySelector(`[data-objet-id="${identifiant}"]`).click();
+  });
+}
+
+async function fermerDetail(hote) {
+  const bouton = hote.querySelector('[data-testid="boucle-detail-fermer"]');
+  if (bouton) await act(async () => { bouton.click(); });
+}
+
+async function cliquer(hote, testid) {
+  const element = hote.querySelector(`[data-testid="${testid}"]`);
+  expect(element).not.toBeNull();
+  await act(async () => { element.click(); });
+}
+
+async function cliquerEnFocus(hote, testid) {
+  const element = hote.querySelector(`[data-testid="${testid}"]`);
+  expect(element).not.toBeNull();
+  await act(async () => { element.focus(); element.click(); });
+}
+
+async function choisir(select, valeur) {
+  select.value = valeur;
+  await act(async () => {
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+
+test("affiche le panneau d'actions selon le type et le statut de l'objet", async () => {
+  installerApi({ liste: [...objets, decisionProposee] });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+
+  await ouvrirObjet(hote, "sit-1");
+  expect(hote.querySelector('[data-testid="boucle-actions"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-action-investigation"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-action-proposer-decision"]')).toBeNull();
+  await fermerDetail(hote);
+
+  await ouvrirObjet(hote, "inv-1");
+  expect(hote.querySelector('[data-testid="boucle-action-proposer-decision"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-action-learning"]')).not.toBeNull();
+
+  const investigationFermee = { ...investigation, id: "inv-close", donnees: { statut: "CLOSED" } };
+  await fermerDetail(hote);
+  api.get.mockImplementation((url) => {
+    if (url === "/boucle/objets") {
+      return Promise.resolve({ data: { tenant: "local", objets: [...objets, decisionProposee, investigationFermee] } });
+    }
+    if (url === "/boucle/synthese") return Promise.resolve({ data: synthese });
+    const correspondance = url.match(/^\/boucle\/objets\/(.+)$/);
+    if (correspondance) {
+      const identifiant = decodeURIComponent(correspondance[1]);
+      const objet = [...objets, decisionProposee, investigationFermee].find((element) => element.id === identifiant);
+      return Promise.resolve({ data: { objet, chaine: [], historique: [] } });
+    }
+    return Promise.resolve({ data: {} });
+  });
+  await act(async () => { hote.querySelector('[data-testid="boucle-actualiser"]').click(); });
+  await ouvrirObjet(hote, "inv-close");
+  expect(hote.querySelector('[data-testid="boucle-action-proposer-decision"]')).toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-action-learning"]')).not.toBeNull();
+
+  await fermerDetail(hote);
+  await ouvrirObjet(hote, "dec-prop");
+  expect(hote.querySelector('[data-testid="boucle-action-trancher"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-action-initiative"]')).toBeNull();
+
+  await fermerDetail(hote);
+  await ouvrirObjet(hote, "dec-1");
+  expect(hote.querySelector('[data-testid="boucle-action-initiative"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-action-trancher"]')).toBeNull();
+
+  await fermerDetail(hote);
+  await ouvrirObjet(hote, "ini-1");
+  expect(hote.querySelector('[data-testid="boucle-action-outcome"]')).not.toBeNull();
+
+  await fermerDetail(hote);
+  await ouvrirObjet(hote, "out-1");
+  expect(hote.querySelector('[data-testid="boucle-action-learning"]')).not.toBeNull();
+
+  await fermerDetail(hote);
+  await ouvrirObjet(hote, "lea-1");
+  expect(hote.querySelector('[data-testid="boucle-action-learning"]')).toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-actions-termine"]')).not.toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("crée une situation racine depuis l'en-tête, la sélectionne et actualise la liste", async () => {
+  const controleur = installerApi();
+  const nouvelle = {
+    id: "sit-2",
+    famille: "emergence",
+    type: "SITUATION",
+    mode: "OBSERVED",
+    titre: "Dérive des encaissements",
+    donnees: {
+      description: "Les encaissements dérivent depuis la nouvelle règle.",
+      resume: "Trois flux concernés.",
+      priorite: "haute",
+      twin_ids: ["app-paiement", "process-controle"],
+    },
+    version: 1,
+  };
+  boucleApi.creerSituation.mockImplementation(() => {
+    controleur.ajouter(nouvelle);
+    return Promise.resolve({
+      data: {
+        tenant: "local",
+        objet: nouvelle,
+        type: "SITUATION",
+        role: "situation",
+        chaine: [nouvelle],
+        historique: [],
+      },
+    });
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  const appelsObjets = () => api.get.mock.calls
+    .filter(([url]) => url === "/boucle/objets").length;
+  const appelsAvantCreation = appelsObjets();
+
+  const bouton = hote.querySelector('[data-testid="boucle-nouvelle-situation"]');
+  expect(bouton).not.toBeNull();
+  await act(async () => { bouton.focus(); bouton.click(); });
+
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-detail"]')).toBeNull();
+  expect(document.activeElement?.id).toBe("boucle-transition-titre");
+
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "  Dérive des encaissements  ");
+    saisir(hote.querySelector('[data-testid="boucle-transition-description"]'), "  Les encaissements dérivent depuis la nouvelle règle.  ");
+    saisir(hote.querySelector('[data-testid="boucle-transition-resume"]'), "  Trois flux concernés.  ");
+    saisir(hote.querySelector('[data-testid="boucle-transition-priorite"]'), "  haute  ");
+    saisir(hote.querySelector('[data-testid="boucle-transition-twin_ids"]'), " app-paiement, process-controle ");
+  });
+  await choisir(hote.querySelector('[data-testid="boucle-transition-mode"]'), "OBSERVED");
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(boucleApi.creerSituation).toHaveBeenCalledWith({
+    titre: "Dérive des encaissements",
+    description: "Les encaissements dérivent depuis la nouvelle règle.",
+    resume: "Trois flux concernés.",
+    priorite: "haute",
+    twin_ids: ["app-paiement", "process-controle"],
+    mode: "OBSERVED",
+  });
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).toBeNull();
+  expect(hote.querySelector('[data-objet-id="sit-2"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-detail-titre"]').textContent)
+    .toContain("Dérive des encaissements");
+  expect(appelsObjets()).toBeGreaterThan(appelsAvantCreation);
+  expect(document.activeElement).toBe(hote.querySelector('[data-testid="boucle-detail-fermer"]'));
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("refuse une situation sans titre, description ni résumé", async () => {
+  installerApi();
+  const { hote, racine } = monter();
+  await rendre(racine);
+
+  await cliquer(hote, "boucle-nouvelle-situation");
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(boucleApi.creerSituation).not.toHaveBeenCalled();
+  const alerte = hote.querySelector('[data-testid="boucle-transition-erreur"]');
+  expect(alerte).not.toBeNull();
+  expect(alerte.getAttribute("role")).toBe("alert");
+  expect(alerte.textContent).toContain("titre, une description ou un résumé");
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("ferme la création avec Échap et restitue le focus au bouton d'en-tête", async () => {
+  installerApi();
+  const { hote, racine } = monter();
+  await rendre(racine);
+
+  const bouton = hote.querySelector('[data-testid="boucle-nouvelle-situation"]');
+  await act(async () => { bouton.focus(); bouton.click(); });
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+
+  await echap();
+
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).toBeNull();
+  expect(document.activeElement).toBe(bouton);
+  expect(boucleApi.creerSituation).not.toHaveBeenCalled();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("rend le contenu de la page inerte pendant la modale de création", async () => {
+  installerApi();
+  const { hote, racine } = monter();
+  await rendre(racine);
+
+  const contenu = hote.querySelector('[data-testid="boucle-contenu"]');
+  expect(contenu).not.toBeNull();
+  expect(contenu.hasAttribute("inert")).toBe(false);
+  expect(contenu.getAttribute("aria-hidden")).toBeNull();
+
+  await cliquer(hote, "boucle-nouvelle-situation");
+
+  const modale = hote.querySelector('[data-testid="boucle-transition-modale"]');
+  expect(modale).not.toBeNull();
+  expect(contenu.hasAttribute("inert")).toBe(true);
+  expect(contenu.getAttribute("aria-hidden")).toBe("true");
+  expect(contenu.contains(modale)).toBe(false);
+
+  await echap();
+
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).toBeNull();
+  expect(contenu.hasAttribute("inert")).toBe(false);
+  expect(contenu.getAttribute("aria-hidden")).toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test.each([
+  [400, { detail: "priorite invalide" }, "priorite invalide", false],
+  [409, { detail: "objet déjà existant" }, "objet déjà existant", true],
+  [500, {}, "Résultat incertain", true],
+  [503, {}, "Résultat incertain", true],
+  [503, { detail: "Couche cognitive indisponible" }, "Couche cognitive indisponible", true],
+])("affiche l'erreur %s de création, garde la saisie et rafraîchit selon le statut", async (
+  statut, data, attendu, rafraichit,
+) => {
+  installerApi();
+  boucleApi.creerSituation.mockRejectedValue({ response: { status: statut, data } });
+  const appelsObjets = () => api.get.mock.calls
+    .filter(([url]) => url === "/boucle/objets").length;
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  const avant = appelsObjets();
+  await cliquer(hote, "boucle-nouvelle-situation");
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "Situation conservée");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  const alerte = hote.querySelector('[data-testid="boucle-transition-erreur"]');
+  expect(alerte).not.toBeNull();
+  expect(alerte.getAttribute("role")).toBe("alert");
+  expect(alerte.textContent).toContain(attendu);
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-transition-titre"]').value).toBe("Situation conservée");
+  expect(hote.querySelector('[data-testid="boucle-transition-enregistrer"]').disabled).toBe(false);
+  expect(appelsObjets()).toBe(avant + (rafraichit ? 1 : 0));
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("un échec réseau de création reste incertain, garde la modale et rafraîchit la liste", async () => {
+  installerApi();
+  boucleApi.creerSituation.mockRejectedValue(new Error("Network Error"));
+  const appelsObjets = () => api.get.mock.calls
+    .filter(([url]) => url === "/boucle/objets").length;
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  const avant = appelsObjets();
+  await cliquer(hote, "boucle-nouvelle-situation");
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "Situation incertaine");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  const alerte = hote.querySelector('[data-testid="boucle-transition-erreur"]');
+  expect(alerte).not.toBeNull();
+  expect(alerte.getAttribute("role")).toBe("alert");
+  expect(alerte.textContent).toContain("Résultat incertain");
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-transition-succes"]')).toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-detail"]')).toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-transition-titre"]').value).toBe("Situation incertaine");
+  expect(appelsObjets()).toBe(avant + 1);
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("utilise le dernier objet de la chaîne quand la réponse 2xx n'a pas d'objet", async () => {
+  const controleur = installerApi();
+  const nouvelle = {
+    id: "sit-depuis-chaine",
+    famille: "emergence",
+    type: "SITUATION",
+    mode: "DECLARED",
+    titre: "Situation issue de la chaîne",
+    donnees: { resume: "La réponse ne porte que la chaîne." },
+    version: 1,
+  };
+  boucleApi.creerSituation.mockImplementation(() => {
+    controleur.ajouter(nouvelle);
+    return Promise.resolve({ data: { chaine: [nouvelle] } });
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await cliquer(hote, "boucle-nouvelle-situation");
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "Situation issue de la chaîne");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).toBeNull();
+  expect(hote.querySelector('[data-objet-id="sit-depuis-chaine"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-detail-titre"]').textContent)
+    .toContain("Situation issue de la chaîne");
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("garde la modale ouverte quand la réponse 2xx ne contient aucun identifiant", async () => {
+  installerApi();
+  boucleApi.creerSituation.mockResolvedValue({ data: {} });
+  const appelsObjets = () => api.get.mock.calls
+    .filter(([url]) => url === "/boucle/objets").length;
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  const avant = appelsObjets();
+  await cliquer(hote, "boucle-nouvelle-situation");
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "Situation sans identifiant");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  const alerte = hote.querySelector('[data-testid="boucle-transition-erreur"]');
+  expect(alerte).not.toBeNull();
+  expect(alerte.getAttribute("role")).toBe("alert");
+  expect(alerte.textContent).toContain("identifiant");
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-transition-succes"]')).toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-detail"]')).toBeNull();
+  expect(appelsObjets()).toBe(avant + 1);
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("rafraîchit le détail de la situation quand la réponse ne porte pas sa chaîne", async () => {
+  const controleur = installerApi();
+  const nouvelle = {
+    id: "sit-reponse-mince",
+    famille: "emergence",
+    type: "SITUATION",
+    mode: "DECLARED",
+    titre: "Situation à recharger",
+    donnees: { resume: "Réponse sans chaîne." },
+    version: 1,
+  };
+  boucleApi.creerSituation.mockImplementation(() => {
+    controleur.ajouter(nouvelle);
+    return Promise.resolve({ data: { objet: nouvelle } });
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await cliquer(hote, "boucle-nouvelle-situation");
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "Situation à recharger");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(api.get).toHaveBeenCalledWith(
+    "/boucle/objets/sit-reponse-mince",
+    { params: { historique: true } },
+  );
+  expect(hote.querySelector('[data-testid="boucle-detail-titre"]').textContent)
+    .toContain("Situation à recharger");
+  expect(hote.querySelector('[data-objet-id="sit-reponse-mince"]')).not.toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("crée un scénario depuis une investigation, le sélectionne et rafraîchit le parent", async () => {
+  const controleur = installerApi({
+    details: {
+      "inv-1": { objet: investigation, chaine: [situation, investigation], historique: [] },
+    },
+  });
+  const scenario = {
+    id: "scenario-2",
+    famille: "decision",
+    type: "SCENARIO",
+    mode: "PROPOSED",
+    titre: "Automatiser la pièce",
+    donnees: {
+      investigation_id: "inv-1",
+      statut: "PROPOSED",
+      valeur_estimee: 12000,
+      cout_estime: 4500.5,
+      delai_jours: 30,
+      risque: 0.2,
+      reversibilite: "PARTIELLE",
+    },
+    version: 1,
+  };
+  boucleApi.creerScenario.mockImplementation(() => {
+    controleur.ajouter(scenario);
+    return Promise.resolve({ data: { objet: scenario, chaine: [investigation, scenario] } });
+  });
+  const appelsObjets = () => api.get.mock.calls
+    .filter(([url]) => url === "/boucle/objets").length;
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  const avant = appelsObjets();
+  await ouvrirObjet(hote, "inv-1");
+  await cliquer(hote, "boucle-action-creer-scenario");
+
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+  expect(document.activeElement?.id).toBe("boucle-transition-titre");
+
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "  Automatiser la pièce  ");
+    saisir(hote.querySelector('[data-testid="boucle-transition-description"]'), "  Supprimer la ressaisie  ");
+    saisir(hote.querySelector('[data-testid="boucle-transition-hypothesis_ids"]'), " h-1, h-2 ");
+    saisir(hote.querySelector('[data-testid="boucle-transition-actions"]'), " Automatiser\nContrôler ");
+    saisir(hote.querySelector('[data-testid="boucle-transition-valeur_estimee"]'), "12000");
+    saisir(hote.querySelector('[data-testid="boucle-transition-cout_estime"]'), "4500,5");
+    saisir(hote.querySelector('[data-testid="boucle-transition-delai_jours"]'), "30");
+    saisir(hote.querySelector('[data-testid="boucle-transition-risque"]'), "0,2");
+    saisir(hote.querySelector('[data-testid="boucle-transition-complexite"]'), "0,4");
+    saisir(hote.querySelector('[data-testid="boucle-transition-confiance"]'), "0,8");
+    saisir(hote.querySelector('[data-testid="boucle-transition-dependances"]'), "api-paiement, equipe-cartes");
+    saisir(hote.querySelector('[data-testid="boucle-transition-impacts"]'), "client=baisse, risque=mitige");
+    saisir(hote.querySelector('[data-testid="boucle-transition-preuves"]'), "preuve-1, preuve-2");
+  });
+  await choisir(hote.querySelector('[data-testid="boucle-transition-reversibilite"]'), "PARTIELLE");
+  await choisir(hote.querySelector('[data-testid="boucle-transition-statut"]'), "PROPOSED");
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(boucleApi.creerScenario).toHaveBeenCalledWith({
+    titre: "Automatiser la pièce",
+    description: "Supprimer la ressaisie",
+    investigation_id: "inv-1",
+    hypothesis_ids: ["h-1", "h-2"],
+    actions: ["Automatiser", "Contrôler"],
+    valeur_estimee: 12000,
+    cout_estime: 4500.5,
+    delai_jours: 30,
+    risque: 0.2,
+    complexite: 0.4,
+    confiance: 0.8,
+    dependances: ["api-paiement", "equipe-cartes"],
+    impacts: { client: "baisse", risque: "mitige" },
+    preuves: ["preuve-1", "preuve-2"],
+    reversibilite: "PARTIELLE",
+    statut: "PROPOSED",
+  });
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).toBeNull();
+  expect(hote.querySelector('[data-objet-id="scenario-2"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-detail-titre"]').textContent)
+    .toContain("Automatiser la pièce");
+  expect(api.get).toHaveBeenCalledWith(
+    "/boucle/objets/inv-1",
+    { params: { historique: true } },
+  );
+  expect(appelsObjets()).toBeGreaterThan(avant);
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("exprime une situation, la sélectionne et rafraîchit le parent", async () => {
+  const controleur = installerApi();
+  const expression = {
+    id: "expr-2",
+    famille: "emergence",
+    type: "EXPRESSION",
+    mode: "DECLARED",
+    titre: "Automatiser la ressaisie",
+    donnees: {
+      situation_id: "sit-1",
+      type_expression: "OPPORTUNITE",
+      formulation: "Automatiser la ressaisie",
+      canal: "entretien",
+      auteur: "Alice",
+      inconnues: ["volume réel"],
+      confiance: 0.8,
+      statut: "PROPOSED",
+    },
+    version: 1,
+  };
+  boucleApi.creerExpression.mockImplementation(() => {
+    controleur.ajouter(expression);
+    return Promise.resolve({
+      data: { objet: expression, chaine: [situation, expression], historique: [] },
+    });
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "sit-1");
+  await cliquerEnFocus(hote, "boucle-action-creer-expression");
+
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-contenu"]').hasAttribute("inert")).toBe(true);
+  expect(document.activeElement?.id).toBe("boucle-transition-formulation");
+
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-formulation"]'), "  Automatiser la ressaisie  ");
+    saisir(hote.querySelector('[data-testid="boucle-transition-canal"]'), "  entretien  ");
+    saisir(hote.querySelector('[data-testid="boucle-transition-auteur"]'), "  Alice  ");
+    saisir(hote.querySelector('[data-testid="boucle-transition-inconnues"]'), " volume réel ");
+    saisir(hote.querySelector('[data-testid="boucle-transition-confiance"]'), "0,8");
+  });
+  await choisir(hote.querySelector('[data-testid="boucle-transition-type_expression"]'), "OPPORTUNITE");
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(boucleApi.creerExpression).toHaveBeenCalledWith("sit-1", {
+    formulation: "Automatiser la ressaisie",
+    type_expression: "OPPORTUNITE",
+    canal: "entretien",
+    auteur: "Alice",
+    inconnues: ["volume réel"],
+    confiance: 0.8,
+  });
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).toBeNull();
+  expect(hote.querySelector('[data-objet-id="expr-2"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-detail-titre"]').textContent)
+    .toContain("Automatiser la ressaisie");
+  const precisions = hote.querySelector('[data-testid="boucle-precisions"]');
+  expect(precisions.textContent).toContain("OPPORTUNITE");
+  expect(precisions.textContent).toContain("Automatiser la ressaisie");
+  expect(precisions.textContent).toContain("entretien");
+  expect(precisions.textContent).toContain("Alice");
+  expect(precisions.textContent).toContain("volume réel");
+  expect(hote.querySelector('[data-testid="boucle-section-expression"]')).not.toBeNull();
+  expect(api.get).toHaveBeenCalledWith(
+    "/boucle/objets/sit-1",
+    { params: { historique: true } },
+  );
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("n'expose pas l'action Exprimer sur une situation déjà exprimée", async () => {
+  const situationExprimee = {
+    ...situation,
+    donnees: { ...situation.donnees, expression_id: "expr-1" },
+  };
+  installerApi({ liste: [situationExprimee, ...objets.slice(1)] });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "sit-1");
+
+  expect(hote.querySelector('[data-testid="boucle-action-creer-expression"]')).toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-action-investigation"]')).not.toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("garde la modale d'expression sur un conflit 409 et rafraîchit la source", async () => {
+  installerApi();
+  boucleApi.creerExpression.mockRejectedValue({
+    response: { status: 409, data: { detail: "Expression déjà existante" } },
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "sit-1");
+  await cliquer(hote, "boucle-action-creer-expression");
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-formulation"]'), "Doublon");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  const alerte = hote.querySelector('[data-testid="boucle-transition-erreur"]');
+  expect(alerte).not.toBeNull();
+  expect(alerte.getAttribute("role")).toBe("alert");
+  expect(alerte.textContent).toContain("Expression déjà existante");
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-transition-formulation"]').value).toBe("Doublon");
+  expect(api.get).toHaveBeenCalledWith(
+    "/boucle/objets/sit-1",
+    { params: { historique: true } },
+  );
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("refuse une expression sans formulation sans appeler le backend", async () => {
+  installerApi();
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "sit-1");
+  await cliquer(hote, "boucle-action-creer-expression");
+
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(boucleApi.creerExpression).not.toHaveBeenCalled();
+  const alerte = hote.querySelector('[data-testid="boucle-transition-erreur"]');
+  expect(alerte).not.toBeNull();
+  expect(alerte.textContent).toContain("formulation");
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("ferme l'expression avec Échap et restitue le focus sur l'action", async () => {
+  installerApi();
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "sit-1");
+  const bouton = hote.querySelector('[data-testid="boucle-action-creer-expression"]');
+  await act(async () => { bouton.focus(); bouton.click(); });
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+
+  await echap();
+
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).toBeNull();
+  expect(document.activeElement).toBe(bouton);
+  expect(boucleApi.creerExpression).not.toHaveBeenCalled();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("qualifie une expression en opportunité, la sélectionne et rafraîchit le parent", async () => {
+  const controleur = installerApi({ liste: [situation, expressionProposee] });
+  boucleApi.creerOpportunite.mockImplementation((expressionId, corps) => {
+    expect(expressionId).toBe("expr-1");
+    controleur.ajouter(opportunite);
+    return Promise.resolve({
+      data: {
+        objet: opportunite,
+        chaine: [situation, expressionProposee, opportunite],
+        historique: [],
+      },
+    });
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "expr-1");
+
+  expect(hote.querySelector('[data-testid="boucle-action-qualifier-opportunite"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-action-qualifier-risque"]')).not.toBeNull();
+  await cliquerEnFocus(hote, "boucle-action-qualifier-opportunite");
+
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+  expect(document.activeElement?.id).toBe("boucle-transition-titre");
+
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "  Automatiser la ressaisie  ");
+    saisir(hote.querySelector('[data-testid="boucle-transition-description"]'), "  Supprimer la double saisie.  ");
+    saisir(hote.querySelector('[data-testid="boucle-transition-valeur_potentielle"]'), "12000");
+    saisir(hote.querySelector('[data-testid="boucle-transition-probabilite"]'), "0,7");
+    saisir(hote.querySelector('[data-testid="boucle-transition-impact"]'), "Deux ETP libérés");
+    saisir(hote.querySelector('[data-testid="boucle-transition-horizon"]'), " 90 jours ");
+    saisir(hote.querySelector('[data-testid="boucle-transition-criteres"]'), "faisable\nmesurable");
+    saisir(hote.querySelector('[data-testid="boucle-transition-preuves"]'), "preuve-1");
+    saisir(hote.querySelector('[data-testid="boucle-transition-confiance"]'), "0,6");
+  });
+  expect(hote.querySelector('[data-testid="boucle-transition-type_risque"]')).toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-transition-severite"]')).toBeNull();
+  await choisir(hote.querySelector('[data-testid="boucle-transition-type_opportunite"]'), "AUTOMATION");
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(boucleApi.creerOpportunite).toHaveBeenCalledWith("expr-1", {
+    titre: "Automatiser la ressaisie",
+    description: "Supprimer la double saisie.",
+    valeur_potentielle: 12000,
+    probabilite: 0.7,
+    impact: "Deux ETP libérés",
+    horizon: "90 jours",
+    criteres: ["faisable", "mesurable"],
+    preuves: ["preuve-1"],
+    confiance: 0.6,
+    type_opportunite: "AUTOMATION",
+  });
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).toBeNull();
+  expect(hote.querySelector('[data-objet-id="opportunity-1"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-detail-titre"]').textContent)
+    .toContain("Automatiser la ressaisie");
+  const precisions = hote.querySelector('[data-testid="boucle-precisions"]');
+  expect(precisions.textContent).toContain("12000");
+  expect(precisions.textContent).toContain("0.7");
+  expect(precisions.textContent).toContain("Deux ETP libérés");
+  expect(precisions.textContent).toContain("90 jours");
+  expect(precisions.textContent).toContain("faisable");
+  expect(hote.querySelector('[data-testid="boucle-section-opportunity"]')).not.toBeNull();
+  expect(api.get).toHaveBeenCalledWith(
+    "/boucle/objets/expr-1",
+    { params: { historique: true } },
+  );
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("qualifie une expression en risque et le sélectionne", async () => {
+  const controleur = installerApi({ liste: [situation, expressionProposee] });
+  boucleApi.creerRisque.mockImplementation(() => {
+    controleur.ajouter(risque);
+    return Promise.resolve({
+      data: {
+        objet: risque,
+        chaine: [situation, expressionProposee, risque],
+        historique: [],
+      },
+    });
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "expr-1");
+  await cliquer(hote, "boucle-action-qualifier-risque");
+
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "Dépendance fournisseur");
+    saisir(hote.querySelector('[data-testid="boucle-transition-probabilite"]'), "0,4");
+    saisir(hote.querySelector('[data-testid="boucle-transition-impact"]'), "Arrêt des paiements");
+    saisir(hote.querySelector('[data-testid="boucle-transition-horizon"]'), "6 mois");
+    saisir(hote.querySelector('[data-testid="boucle-transition-criteres"]'), "criticité");
+  });
+  expect(hote.querySelector('[data-testid="boucle-transition-type_opportunite"]')).toBeNull();
+  await choisir(hote.querySelector('[data-testid="boucle-transition-type_risque"]'), "FOURNISSEUR");
+  await choisir(hote.querySelector('[data-testid="boucle-transition-severite"]'), "HAUTE");
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(boucleApi.creerRisque).toHaveBeenCalledWith("expr-1", {
+    titre: "Dépendance fournisseur",
+    probabilite: 0.4,
+    impact: "Arrêt des paiements",
+    horizon: "6 mois",
+    criteres: ["criticité"],
+    type_risque: "FOURNISSEUR",
+    severite: "HAUTE",
+  });
+  expect(hote.querySelector('[data-objet-id="risk-1"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-section-risk"]')).not.toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("garde la modale de qualification sur un conflit 409", async () => {
+  installerApi({ liste: [situation, expressionProposee] });
+  boucleApi.creerOpportunite.mockRejectedValue({
+    response: { status: 409, data: { detail: "Opportunité déjà existante" } },
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "expr-1");
+  await cliquer(hote, "boucle-action-qualifier-opportunite");
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "Doublon");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  const alerte = hote.querySelector('[data-testid="boucle-transition-erreur"]');
+  expect(alerte).not.toBeNull();
+  expect(alerte.textContent).toContain("Opportunité déjà existante");
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-transition-titre"]').value).toBe("Doublon");
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("refuse une qualification sans titre sans appeler le backend", async () => {
+  installerApi({ liste: [situation, expressionProposee] });
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "expr-1");
+  await cliquer(hote, "boucle-action-qualifier-opportunite");
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(boucleApi.creerOpportunite).not.toHaveBeenCalled();
+  expect(hote.querySelector('[data-testid="boucle-transition-erreur"]').textContent)
+    .toContain("titre");
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("n'expose pas les qualifications sur une expression rejetée", async () => {
+  installerApi({
+    liste: [situation, {
+      ...expressionProposee,
+      donnees: { ...expressionProposee.donnees, statut: "REJECTED" },
+    }],
+  });
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "expr-1");
+
+  expect(hote.querySelector('[data-testid="boucle-action-qualifier-opportunite"]')).toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-action-qualifier-risque"]')).toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("change le statut d'une opportunité et met à jour la sélection", async () => {
+  const controleur = installerApi({ liste: [situation, expressionProposee, opportunite] });
+  const maj = {
+    ...opportunite,
+    donnees: { ...opportunite.donnees, statut: "QUALIFIED", justification: "Preuves suffisantes" },
+    version: 2,
+    maj_le: "2026-11-07T12:00:00Z",
+  };
+  boucleApi.changerStatutOpportunite.mockImplementation((identifiant, corps) => {
+    expect(identifiant).toBe("opportunity-1");
+    expect(corps).toEqual({
+      statut: "QUALIFIED", motif: "Preuves suffisantes", preuves: ["preuve-2"],
+    });
+    controleur.ajouter(maj);
+    return Promise.resolve({
+      data: {
+        objet: maj,
+        chaine: [situation, expressionProposee, maj],
+        historique: [{ version: 1, donnees: { statut: "DETECTED" } }],
+      },
+    });
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "opportunity-1");
+  await cliquer(hote, "boucle-action-statut-opportunite");
+
+  const selectStatut = hote.querySelector('[data-testid="boucle-transition-statut"]');
+  expect([...selectStatut.options].map((option) => option.value)).toEqual([
+    "", "MATURING", "QUALIFIED", "REJECTED", "DORMANT",
+  ]);
+  await choisir(selectStatut, "QUALIFIED");
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-motif"]'), "  Preuves suffisantes  ");
+    saisir(hote.querySelector('[data-testid="boucle-transition-preuves"]'), "preuve-2");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-detail-statut"]').textContent)
+    .toContain("QUALIFIED");
+  expect(hote.querySelector('[data-objet-id="opportunity-1"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-transition-succes"]')).not.toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("un 409 de transition de statut garde la modale ouverte", async () => {
+  installerApi({ liste: [situation, expressionProposee, opportunite] });
+  boucleApi.changerStatutOpportunite.mockRejectedValue({
+    response: { status: 409, data: { detail: "transition refusée" } },
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "opportunity-1");
+  await cliquer(hote, "boucle-action-statut-opportunite");
+  await choisir(hote.querySelector('[data-testid="boucle-transition-statut"]'), "MATURING");
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(hote.querySelector('[data-testid="boucle-transition-erreur"]').textContent)
+    .toContain("transition refusée");
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+
+test("formule une hypothèse depuis une investigation, la sélectionne et rafraîchit le parent", async () => {
+  const controleur = installerApi({ liste: [situation, investigation] });
+  boucleApi.creerHypothese.mockImplementation((investigationId, corps) => {
+    expect(investigationId).toBe("inv-1");
+    expect(corps).toEqual({
+      enonce: "Le contrôle synchrone bloque les paiements",
+      conditions_test: ["mesurer le p95", "comparer trois flux"],
+      claim_ids_soutenants: ["claim-1"],
+      claim_ids_opposants: ["claim-2"],
+      preuves: ["preuve-1"],
+      confiance: 0.6,
+    });
+    controleur.ajouter(hypothese);
+    return Promise.resolve({
+      data: {
+        objet: hypothese,
+        chaine: [situation, investigation, hypothese],
+        historique: [],
+      },
+    });
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "inv-1");
+
+  expect(hote.querySelector('[data-testid="boucle-action-creer-hypothese"]')).not.toBeNull();
+  await cliquerEnFocus(hote, "boucle-action-creer-hypothese");
+
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+  expect(document.activeElement?.id).toBe("boucle-transition-enonce");
+  expect(hote.querySelector('[data-testid="boucle-transition-statut"]')).toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-transition-mode"]')).toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-transition-expert_id"]')).toBeNull();
+
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-enonce"]'), "  Le contrôle synchrone bloque les paiements  ");
+    saisir(hote.querySelector('[data-testid="boucle-transition-conditions_test"]'), "mesurer le p95\ncomparer trois flux");
+    saisir(hote.querySelector('[data-testid="boucle-transition-claim_ids_soutenants"]'), "claim-1");
+    saisir(hote.querySelector('[data-testid="boucle-transition-claim_ids_opposants"]'), "claim-2");
+    saisir(hote.querySelector('[data-testid="boucle-transition-preuves"]'), "preuve-1");
+    saisir(hote.querySelector('[data-testid="boucle-transition-confiance"]'), "0,6");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).toBeNull();
+  expect(hote.querySelector('[data-objet-id="hypothesis-1"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-section-hypothesis"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-detail-titre"]').textContent)
+    .toContain("Le contrôle synchrone bloque les paiements");
+  const precisions = hote.querySelector('[data-testid="boucle-precisions"]');
+  expect(precisions.textContent).toContain("mesurer le p95");
+  expect(precisions.textContent).toContain("claim-1");
+  expect(precisions.textContent).toContain("claim-2");
+  await deplier(hote, "boucle-chaine-section");
+  expect(hote.querySelector('[data-testid="boucle-chaine-etape"]')).not.toBeNull();
+  expect(api.get).toHaveBeenCalledWith(
+    "/boucle/objets/inv-1",
+    { params: { historique: true } },
+  );
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("accorde au féminin le message d'une hypothèse créée sans identifiant", async () => {
+  installerApi({ liste: [situation, investigation] });
+  boucleApi.creerHypothese.mockResolvedValue({
+    data: { objet: null, chaine: [], historique: [] },
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "inv-1");
+  await cliquer(hote, "boucle-action-creer-hypothese");
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-enonce"]'), "Hypothèse");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  const alerte = hote.querySelector('[data-testid="boucle-transition-erreur"]');
+  expect(alerte).not.toBeNull();
+  expect(alerte.textContent).toContain("L'hypothèse a été créée");
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("refuse une hypothèse sans énoncé sans appeler le backend", async () => {
+  installerApi({ liste: [situation, investigation] });
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "inv-1");
+  await cliquer(hote, "boucle-action-creer-hypothese");
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(boucleApi.creerHypothese).not.toHaveBeenCalled();
+  expect(hote.querySelector('[data-testid="boucle-transition-erreur"]').textContent)
+    .toContain("énoncé");
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("garde la modale d'hypothèse sur un conflit 409", async () => {
+  installerApi({ liste: [situation, investigation] });
+  boucleApi.creerHypothese.mockRejectedValue({
+    response: { status: 409, data: { detail: "transition refusée" } },
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "inv-1");
+  await cliquer(hote, "boucle-action-creer-hypothese");
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-enonce"]'), "Hypothèse");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(hote.querySelector('[data-testid="boucle-transition-erreur"]').textContent)
+    .toContain("transition refusée");
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-transition-enonce"]').value).toBe("Hypothèse");
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("change le statut d'une hypothèse et met à jour la sélection", async () => {
+  const controleur = installerApi({ liste: [situation, investigation, hypothese] });
+  const maj = {
+    ...hypothese,
+    donnees: {
+      ...hypothese.donnees,
+      statut: "STRENGTHENED",
+      motif: "Trois mesures concordantes",
+    },
+    version: 2,
+    maj_le: "2026-11-07T12:00:00Z",
+  };
+  boucleApi.changerStatutHypothese.mockImplementation((identifiant, corps) => {
+    expect(identifiant).toBe("hypothesis-1");
+    expect(corps).toEqual({
+      vers: "STRENGTHENED", motif: "Trois mesures concordantes",
+    });
+    controleur.ajouter(maj);
+    return Promise.resolve({
+      data: {
+        objet: maj,
+        chaine: [situation, investigation, maj],
+        historique: [{ version: 1, donnees: { statut: "OPEN" } }],
+      },
+    });
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "hypothesis-1");
+  await cliquer(hote, "boucle-action-statut-hypothese");
+
+  const selectStatut = hote.querySelector('[data-testid="boucle-transition-vers"]');
+  expect([...selectStatut.options].map((option) => option.value)).toEqual([
+    "", "STRENGTHENED", "WEAKENED", "REJECTED", "CONFIRMED",
+  ]);
+  await choisir(selectStatut, "STRENGTHENED");
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-motif"]'), "  Trois mesures concordantes  ");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-detail-statut"]').textContent)
+    .toContain("STRENGTHENED");
+  expect(hote.querySelector('[data-objet-id="hypothesis-1"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-transition-succes"]')).not.toBeNull();
+  await deplier(hote, "boucle-chaine-section");
+  expect(hote.querySelector('[data-testid="boucle-chaine"]')).not.toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("bloque CONFIRMED sans preuve dans la modale d'hypothèse", async () => {
+  const sansPreuve = {
+    ...hypothese,
+    donnees: { ...hypothese.donnees, preuves: [] },
+  };
+  installerApi({ liste: [situation, investigation, sansPreuve] });
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "hypothesis-1");
+  await cliquer(hote, "boucle-action-statut-hypothese");
+  await choisir(hote.querySelector('[data-testid="boucle-transition-vers"]'), "CONFIRMED");
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(boucleApi.changerStatutHypothese).not.toHaveBeenCalled();
+  expect(hote.querySelector('[data-testid="boucle-transition-erreur"]').textContent)
+    .toContain("preuve");
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("accepte CONFIRMED avec une preuve saisie", async () => {
+  const sansPreuve = {
+    ...hypothese,
+    donnees: { ...hypothese.donnees, preuves: [] },
+  };
+  const maj = {
+    ...hypothese,
+    donnees: {
+      ...hypothese.donnees,
+      statut: "CONFIRMED",
+      preuves: ["preuve-2"],
+    },
+    version: 2,
+  };
+  installerApi({ liste: [situation, investigation, sansPreuve] });
+  boucleApi.changerStatutHypothese.mockResolvedValue({
+    data: {
+      objet: maj,
+      chaine: [situation, investigation, maj],
+      historique: [],
+    },
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "hypothesis-1");
+  await cliquer(hote, "boucle-action-statut-hypothese");
+  await choisir(hote.querySelector('[data-testid="boucle-transition-vers"]'), "CONFIRMED");
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-preuves"]'), "preuve-2");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(boucleApi.changerStatutHypothese).toHaveBeenCalledWith(
+    "hypothesis-1", { vers: "CONFIRMED", preuves: ["preuve-2"] });
+  expect(hote.querySelector('[data-testid="boucle-detail-statut"]').textContent)
+    .toContain("CONFIRMED");
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("valide le titre d'un scénario et conserve la modale sur erreur API", async () => {
+  installerApi();
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "inv-1");
+  await cliquer(hote, "boucle-action-creer-scenario");
+
+  await cliquer(hote, "boucle-transition-enregistrer");
+  expect(boucleApi.creerScenario).not.toHaveBeenCalled();
+  expect(hote.querySelector('[data-testid="boucle-transition-erreur"]').textContent)
+    .toContain("titre du scénario");
+
+  boucleApi.creerScenario.mockRejectedValue({
+    response: { status: 422, data: { detail: "valeur_estimee invalide" } },
+  });
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "Scénario");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-transition-erreur"]').textContent)
+    .toContain("valeur_estimee invalide");
+  expect(hote.querySelector('[data-testid="boucle-transition-titre"]').value).toBe("Scénario");
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("un échec 5xx de création de scénario reste incertain et garde la modale", async () => {
+  installerApi();
+  boucleApi.creerScenario.mockRejectedValue({ response: { status: 503, data: {} } });
+  const appelsObjets = () => api.get.mock.calls
+    .filter(([url]) => url === "/boucle/objets").length;
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  const avant = appelsObjets();
+  await ouvrirObjet(hote, "inv-1");
+  await cliquer(hote, "boucle-action-creer-scenario");
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "Scénario incertain");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-transition-erreur"]').textContent)
+    .toContain("Résultat incertain");
+  expect(hote.querySelector('[data-testid="boucle-transition-titre"]').value).toBe("Scénario incertain");
+  expect(appelsObjets()).toBeGreaterThan(avant);
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("affiche une erreur si le rafraîchissement du parent échoue", async () => {
+  const scenario = {
+    id: "scenario-refresh", famille: "decision", type: "SCENARIO",
+    mode: "PROPOSED", titre: "Scénario rafraîchi", donnees: {}, version: 1,
+  };
+  let rafraichissementEchoue = false;
+  api.get.mockImplementation((url) => {
+    if (url === "/boucle/objets") {
+      return Promise.resolve({ data: { tenant: "local", objets } });
+    }
+    if (url === "/boucle/synthese") return Promise.resolve({ data: synthese });
+    if (url === "/boucle/twins") return Promise.resolve({ data: { twins: [] } });
+    const detail = url.match(/^\/boucle\/objets\/(.+)$/);
+    if (detail) {
+      const identifiant = decodeURIComponent(detail[1]);
+      if (identifiant === "inv-1" && rafraichissementEchoue) {
+        return Promise.reject(new Error("fond indisponible"));
+      }
+      const objet = identifiant === "inv-1" ? investigation : scenario;
+      return Promise.resolve({ data: { objet, chaine: [], historique: [] } });
+    }
+    return Promise.resolve({ data: {} });
+  });
+  boucleApi.creerScenario.mockImplementation(() => {
+    rafraichissementEchoue = true;
+    return Promise.resolve({
+      data: { objet: scenario, chaine: [investigation, scenario], historique: [] },
+    });
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "inv-1");
+  await cliquer(hote, "boucle-action-creer-scenario");
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "Scénario rafraîchi");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(hote.querySelector('[data-testid="boucle-verification-erreur"]').textContent)
+    .toContain("lien inverse");
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("affiche la comparaison des scénarios dans le détail d'une investigation", async () => {
+  installerApi();
+  boucleApi.listerScenarios.mockResolvedValue({
+    data: {
+      scenarios: [
+        {
+          id: "s1", titre: "Automatiser", statut: "PROPOSED",
+          valeur_estimee: 100, cout_estime: 50, delai_jours: 10,
+          risque: 0.2, reversibilite: "REVERSIBLE", complexite: 0.4,
+        },
+        {
+          id: "s2", titre: "Réorganiser", statut: "DRAFT",
+          valeur_estimee: 120, cout_estime: null, delai_jours: 8,
+          risque: 0.3, reversibilite: "PARTIELLE", complexite: 0.5,
+        },
+      ],
+    },
+  });
+  boucleApi.comparerScenarios.mockResolvedValue({
+    data: {
+      reference: { id: "s1", titre: "Automatiser" },
+      scenarios: [
+        { id: "s1", titre: "Automatiser", statut: "PROPOSED", valeur_estimee: 100, ecarts: {} },
+        {
+          id: "s2", titre: "Réorganiser", statut: "DRAFT", valeur_estimee: 120,
+          ecarts: { valeur_estimee: { delta: 20, delta_pct: 20, sens: "hausse" } },
+        },
+      ],
+    },
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "inv-1");
+
+  expect(boucleApi.listerScenarios).toHaveBeenCalledWith({ investigation_id: "inv-1" });
+  expect(hote.querySelector('[data-testid="boucle-comparaison"]')).not.toBeNull();
+  await cliquer(hote, "boucle-comparaison-lancer");
+  expect(boucleApi.comparerScenarios).toHaveBeenCalledWith({
+    scenario_ids: ["s1", "s2"],
+    reference_id: "s1",
+  });
+  expect(hote.querySelector('[data-testid="boucle-comparaison-resultat"]').textContent)
+    .toContain("Réorganiser");
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("ouvre une investigation depuis une situation, valide le formulaire et actualise la boucle", async () => {
+  const controleur = installerApi();
+  const nouvelle = {
+    id: "inv-2",
+    famille: "investigation",
+    type: "INVESTIGATION",
+    mode: "DECLARED",
+    titre: "Comprendre la latence",
+    donnees: { question: "Pourquoi les paiements ralentissent ?", statut: "OPEN" },
+    version: 1,
+  };
+  boucleApi.ouvrirInvestigation.mockImplementation(() => {
+    controleur.ajouter(nouvelle);
+    return Promise.resolve({ data: { objet: nouvelle, chaine: [situation, nouvelle] } });
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  const carte = hote.querySelector('[data-objet-id="sit-1"]');
+  await act(async () => { carte.focus(); carte.click(); });
+  await cliquer(hote, "boucle-action-investigation");
+
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+  expect(document.activeElement?.id).toBe("boucle-transition-titre");
+
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "  Comprendre la latence  ");
+    saisir(hote.querySelector('[data-testid="boucle-transition-question"]'), "  Pourquoi les paiements ralentissent ?  ");
+    saisir(hote.querySelector('[data-testid="boucle-transition-perimetre"]'), "paiements");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(boucleApi.ouvrirInvestigation).toHaveBeenCalledWith(
+    "sit-1",
+    {
+      titre: "Comprendre la latence",
+      question: "Pourquoi les paiements ralentissent ?",
+      perimetre: "paiements",
+    },
+  );
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-transition-succes"]').textContent).toContain("inv-2");
+  expect(hote.querySelector('[data-objet-id="inv-2"]')).not.toBeNull();
+
+  await cliquer(hote, "boucle-transition-succes-ouvrir");
+  expect(hote.querySelector('[data-testid="boucle-detail-titre"]').textContent).toContain("Comprendre la latence");
+  await cliquer(hote, "boucle-detail-fermer");
+  expect(document.activeElement?.getAttribute("data-objet-id")).toBe("sit-1");
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("propose une décision depuis une investigation", async () => {
+  const controleur = installerApi();
+  const nouvelle = {
+    id: "dec-2",
+    famille: "decision",
+    type: "DECISION",
+    mode: "DECLARED",
+    titre: "Choisir le levier",
+    donnees: { statut: "PROPOSED", options: ["Automatiser", "Réorganiser"] },
+    version: 1,
+  };
+  boucleApi.proposerDecision.mockImplementation(() => {
+    controleur.ajouter(nouvelle);
+    return Promise.resolve({ data: { objet: nouvelle, chaine: [situation, investigation, nouvelle] } });
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "inv-1");
+  await cliquer(hote, "boucle-action-proposer-decision");
+
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "Choisir le levier");
+    saisir(hote.querySelector('[data-testid="boucle-transition-options"]'), "Automatiser\nRéorganiser");
+    saisir(hote.querySelector('[data-testid="boucle-transition-criteres"]'), "coût\ndélai");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(boucleApi.proposerDecision).toHaveBeenCalledWith(
+    "inv-1",
+    {
+      titre: "Choisir le levier",
+      options: ["Automatiser", "Réorganiser"],
+      criteres: ["coût", "délai"],
+    },
+  );
+  expect(hote.querySelector('[data-testid="boucle-transition-succes"]').textContent).toContain("dec-2");
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("tranche une décision proposée puis expose l'action initiative", async () => {
+  installerApi({ liste: [...objets, decisionProposee] });
+  const tranchee = {
+    ...decisionProposee,
+    donnees: {
+      ...decisionProposee.donnees,
+      statut: "DECIDED",
+      acteur: "comité-cartes",
+      choix: "Automatiser",
+      rationale: "Réduire le délai",
+    },
+  };
+  boucleApi.trancherDecision.mockResolvedValue({
+    data: {
+      objet: tranchee,
+      chaine: [situation, investigation, tranchee],
+      historique: [{ version: 1, maj_le: "2026-10-30T10:00:00Z" }],
+    },
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "dec-prop");
+  await cliquerEnFocus(hote, "boucle-action-trancher");
+
+  const choix = hote.querySelector('[data-testid="boucle-transition-choix"]');
+  expect(choix.tagName).toBe("SELECT");
+  expect([...choix.options].map((option) => option.value)).toEqual(["", "Automatiser", "Réorganiser"]);
+  expect(hote.querySelector('[data-testid="boucle-transition-acteur"]')).toBeNull();
+
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-motif"]'), "  Réduire le délai  ");
+  });
+  await choisir(choix, "Automatiser");
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(boucleApi.trancherDecision).toHaveBeenCalledWith(
+    "dec-prop",
+    { choix: "Automatiser", motif: "Réduire le délai" },
+  );
+  expect(hote.querySelector('[data-testid="boucle-action-trancher"]')).toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-action-initiative"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-historique"]').textContent).toContain("Version 1");
+  expect(document.activeElement).toBe(hote.querySelector('[data-testid="boucle-detail-fermer"]'));
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("affiche l'erreur 409 d'une transition refusée et garde la saisie", async () => {
+  installerApi({ liste: [...objets, decisionProposee] });
+  boucleApi.trancherDecision.mockRejectedValue({
+    response: { status: 409, data: { detail: "décision déjà tranchée : transition refusée" } },
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "dec-prop");
+  await cliquerEnFocus(hote, "boucle-action-trancher");
+
+  await choisir(hote.querySelector('[data-testid="boucle-transition-choix"]'), "Automatiser");
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-transition-erreur"]').textContent)
+    .toContain("décision déjà tranchée");
+  expect(hote.querySelector('[data-testid="boucle-transition-enregistrer"]').disabled).toBe(false);
+  expect(hote.querySelector('[data-testid="boucle-transition-choix"]').value).toBe("Automatiser");
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("lance une initiative depuis une décision tranchée et rafraîchit la source", async () => {
+  const controleur = installerApi({
+    details: {
+      "dec-1": {
+        objet: decision,
+        chaine: [situation, investigation, decision],
+        historique: [{ version: 7, maj_le: "2026-10-30T10:00:00Z" }],
+      },
+    },
+  });
+  const nouvelle = {
+    id: "ini-2",
+    famille: "decision",
+    type: "INITIATIVE",
+    mode: "DECLARED",
+    titre: "Déployer le contrôle asynchrone",
+    donnees: { statut: "PLANNED" },
+    version: 1,
+  };
+  const decisionSource = {
+    ...decision,
+    version: 8,
+    donnees: { ...decision.donnees, initiative_id: "ini-2" },
+  };
+  boucleApi.lancerInitiative.mockImplementation(() => {
+    controleur.ajouter(nouvelle);
+    controleur.majDetail("dec-1", {
+      objet: decisionSource,
+      chaine: [situation, investigation, decisionSource],
+      historique: [{ version: 8, maj_le: "2026-10-30T12:00:00Z" }],
+    });
+    return Promise.resolve({
+      data: {
+        objet: nouvelle,
+        chaine: [situation, investigation, decisionSource, nouvelle],
+      },
+    });
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "dec-1");
+  await cliquerEnFocus(hote, "boucle-action-initiative");
+
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "Déployer le contrôle asynchrone");
+    saisir(hote.querySelector('[data-testid="boucle-transition-proprietaire"]'), "Alice");
+    saisir(hote.querySelector('[data-testid="boucle-transition-outcome_attendu_ids"]'), "out-attendu");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(boucleApi.lancerInitiative).toHaveBeenCalledWith(
+    "dec-1",
+    {
+      titre: "Déployer le contrôle asynchrone",
+      proprietaire: "Alice",
+      outcome_attendu_ids: ["out-attendu"],
+    },
+  );
+  expect(hote.querySelector('[data-testid="boucle-action-initiative"]')).toBeNull();
+  expect(hote.querySelector('[data-objet-id="ini-2"]')).not.toBeNull();
+  await deplier(hote, "boucle-chaine-section");
+  const chaine = hote.querySelector('[data-testid="boucle-chaine"]');
+  expect(chaine.querySelectorAll('[data-testid="boucle-chaine-etape"]')).toHaveLength(2);
+  expect(chaine.textContent).not.toContain("Déployer le contrôle asynchrone");
+  expect(hote.querySelector('[data-testid="boucle-historique"]').textContent).toContain("Version 8");
+  expect(hote.querySelector('[data-testid="boucle-version"]').textContent).toBe("8");
+  expect(document.activeElement).toBe(hote.querySelector('[data-testid="boucle-detail-fermer"]'));
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("mesure un outcome depuis une initiative et rafraîchit la source", async () => {
+  const controleur = installerApi({
+    details: {
+      "ini-1": {
+        objet: initiative,
+        chaine: [situation, investigation, decision, initiative],
+        historique: [{ version: 4, maj_le: "2026-10-30T11:00:00Z" }],
+      },
+    },
+  });
+  const nouvelOutcome = {
+    id: "out-2",
+    famille: "resultat_apprentissage",
+    type: "OUTCOME",
+    mode: "OBSERVED",
+    titre: "p95",
+    donnees: { statut: "OBSERVED", metrique: "p95", valeur_observee: 180 },
+    version: 1,
+  };
+  const initiativeSource = {
+    ...initiative,
+    version: 5,
+    donnees: { ...initiative.donnees, outcome_ids: ["out-2"] },
+  };
+  boucleApi.mesurerOutcome.mockImplementation(() => {
+    controleur.ajouter(nouvelOutcome);
+    controleur.majDetail("ini-1", {
+      objet: initiativeSource,
+      chaine: [situation, investigation, decision, initiativeSource],
+      historique: [{ version: 5, maj_le: "2026-10-30T13:00:00Z" }],
+    });
+    return Promise.resolve({
+      data: {
+        objet: nouvelOutcome,
+        chaine: [situation, investigation, decision, initiativeSource, nouvelOutcome],
+      },
+    });
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "ini-1");
+  await cliquerEnFocus(hote, "boucle-action-outcome");
+
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-metrique"]'), "p95");
+    saisir(hote.querySelector('[data-testid="boucle-transition-valeur"]'), "180");
+    saisir(hote.querySelector('[data-testid="boucle-transition-unite"]'), "ms");
+    saisir(hote.querySelector('[data-testid="boucle-transition-cible"]'), "200");
+    saisir(hote.querySelector('[data-testid="boucle-transition-periode"]'), "2026-10");
+    saisir(hote.querySelector('[data-testid="boucle-transition-preuves"]'), "preuve-1, preuve-2");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(boucleApi.mesurerOutcome).toHaveBeenCalledWith(
+    "ini-1",
+    {
+      mesure: { metrique: "p95", valeur: 180, unite: "ms" },
+      valeur_attendue: 200,
+      periode: "2026-10",
+      preuves: ["preuve-1", "preuve-2"],
+    },
+  );
+  await deplier(hote, "boucle-liens");
+  expect(hote.querySelector('[data-testid="boucle-outcomes"]').textContent).toContain("out-2");
+  await deplier(hote, "boucle-chaine-section");
+  const chaine = hote.querySelector('[data-testid="boucle-chaine"]');
+  expect(chaine.querySelectorAll('[data-testid="boucle-chaine-etape"]')).toHaveLength(3);
+  expect(chaine.textContent).not.toContain("out-2");
+  expect(hote.querySelector('[data-testid="boucle-historique"]').textContent).toContain("Version 5");
+  expect(hote.querySelector('[data-testid="boucle-version"]').textContent).toBe("5");
+  expect(document.activeElement).toBe(hote.querySelector('[data-testid="boucle-action-outcome"]'));
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("capitalise un learning depuis un outcome", async () => {
+  const controleur = installerApi();
+  const nouveauLearning = {
+    id: "lea-2",
+    famille: "resultat_apprentissage",
+    type: "LEARNING",
+    mode: "INFERRED",
+    titre: "Un contrôle synchrone amplifie les incidents",
+    donnees: { statut: "PROPOSED", enonce: "Un contrôle synchrone amplifie les incidents" },
+    version: 1,
+  };
+  boucleApi.capitaliserLearningDepuisOutcome.mockImplementation(() => {
+    controleur.ajouter(nouveauLearning);
+    return Promise.resolve({ data: { objet: nouveauLearning, chaine: [situation, investigation, decision, initiative, outcome, nouveauLearning] } });
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "out-1");
+  await cliquer(hote, "boucle-action-learning");
+
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-enonce"]'), "Un contrôle synchrone amplifie les incidents");
+    saisir(hote.querySelector('[data-testid="boucle-transition-scope"]'), "paiements");
+    saisir(hote.querySelector('[data-testid="boucle-transition-conditions_applicabilite"]'), "volume stable\ncharge nominale");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(boucleApi.capitaliserLearningDepuisOutcome).toHaveBeenCalledWith(
+    "out-1",
+    {
+      enonce: "Un contrôle synchrone amplifie les incidents",
+      scope: "paiements",
+      conditions_applicabilite: ["volume stable", "charge nominale"],
+    },
+  );
+
+  await act(async () => { racine.unmount(); });
+});
+
+async function echap() {
+  await act(async () => {
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  });
+}
+
+test("capitalise un learning depuis une investigation", async () => {
+  const controleur = installerApi();
+  const nouveauLearning = {
+    id: "lea-inv-2",
+    famille: "resultat_apprentissage",
+    type: "LEARNING",
+    mode: "INFERRED",
+    titre: "L'enquête elle-même est réutilisable",
+    donnees: { statut: "PROPOSED", enonce: "L'enquête elle-même est réutilisable" },
+    version: 1,
+  };
+  boucleApi.capitaliserLearningDepuisInvestigation.mockImplementation(() => {
+    controleur.ajouter(nouveauLearning);
+    return Promise.resolve({
+      data: { objet: nouveauLearning, chaine: [situation, investigation, nouveauLearning] },
+    });
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "inv-1");
+  await cliquer(hote, "boucle-action-learning");
+
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-enonce"]'), "L'enquête elle-même est réutilisable");
+    saisir(hote.querySelector('[data-testid="boucle-transition-scope"]'), "paiements");
+    saisir(hote.querySelector('[data-testid="boucle-transition-conditions_applicabilite"]'), "volume stable");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(boucleApi.capitaliserLearningDepuisInvestigation).toHaveBeenCalledWith(
+    "inv-1",
+    {
+      enonce: "L'enquête elle-même est réutilisable",
+      scope: "paiements",
+      conditions_applicabilite: ["volume stable"],
+    },
+  );
+  expect(hote.querySelector('[data-testid="boucle-transition-succes"]').textContent)
+    .toContain("lea-inv-2");
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("Échap ferme la modale sans fermer le détail, et ne ferme rien pendant l'enregistrement", async () => {
+  installerApi();
+  let resoudre;
+  boucleApi.ouvrirInvestigation.mockImplementation(() => new Promise((resolve) => { resoudre = resolve; }));
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "sit-1");
+  await cliquer(hote, "boucle-action-investigation");
+
+  await echap();
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-detail"]')).not.toBeNull();
+
+  await cliquer(hote, "boucle-action-investigation");
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "Comprendre");
+    saisir(hote.querySelector('[data-testid="boucle-transition-question"]'), "Pourquoi ?");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+  await echap();
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-detail"]')).not.toBeNull();
+
+  await act(async () => {
+    resoudre({
+      data: {
+        objet: { ...investigation, id: "inv-lent" },
+        chaine: [situation, { ...investigation, id: "inv-lent" }],
+      },
+    });
+  });
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-detail"]')).not.toBeNull();
+
+  await echap();
+  expect(hote.querySelector('[data-testid="boucle-detail"]')).toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("la garde anti-double-submit n'envoie qu'une transition", async () => {
+  installerApi();
+  let resoudre;
+  boucleApi.ouvrirInvestigation.mockImplementation(() => new Promise((resolve) => { resoudre = resolve; }));
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "sit-1");
+  await cliquer(hote, "boucle-action-investigation");
+
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "Comprendre");
+    saisir(hote.querySelector('[data-testid="boucle-transition-question"]'), "Pourquoi ?");
+    const formulaire = hote.querySelector('[data-testid="boucle-transition-modale"] form');
+    formulaire.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    formulaire.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  });
+
+  expect(boucleApi.ouvrirInvestigation).toHaveBeenCalledTimes(1);
+  expect(boucleApi.ouvrirInvestigation.mock.calls[0]).toHaveLength(2);
+  const croix = hote.querySelector('[data-testid="boucle-transition-fermer"]');
+  expect(croix.disabled).toBe(true);
+  await act(async () => { croix.click(); });
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-detail"]').getAttribute("aria-hidden")).toBe("true");
+  expect(hote.querySelector('[data-testid="boucle-detail"]').hasAttribute("inert")).toBe(true);
+
+  await act(async () => {
+    resoudre({ data: { objet: { ...investigation, id: "inv-garde" }, chaine: [] } });
+  });
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-detail"]').getAttribute("aria-hidden")).toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-detail"]').hasAttribute("inert")).toBe(false);
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("après un 409, recharge le détail et propose la transition suivante", async () => {
+  const tranchee = {
+    ...decisionProposee,
+    donnees: {
+      ...decisionProposee.donnees,
+      statut: "DECIDED",
+      acteur: "comité-cartes",
+      choix: "Automatiser",
+    },
+  };
+  let appelsDetail = 0;
+  api.get.mockImplementation((url) => {
+    if (url === "/boucle/objets") {
+      return Promise.resolve({ data: { tenant: "local", objets: [...objets, decisionProposee] } });
+    }
+    if (url === "/boucle/synthese") return Promise.resolve({ data: synthese });
+    if (url === "/boucle/twins") return Promise.resolve({ data: { twins: [] } });
+    if (url === "/boucle/objets/dec-prop") {
+      appelsDetail += 1;
+      const objet = appelsDetail === 1 ? decisionProposee : tranchee;
+      return Promise.resolve({
+        data: { objet, chaine: [situation, investigation, objet], historique: [] },
+      });
+    }
+    return Promise.resolve({ data: {} });
+  });
+  boucleApi.trancherDecision.mockRejectedValue({
+    response: { status: 409, data: { detail: "décision déjà tranchée" } },
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "dec-prop");
+  await cliquerEnFocus(hote, "boucle-action-trancher");
+  await choisir(hote.querySelector('[data-testid="boucle-transition-choix"]'), "Automatiser");
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(hote.querySelector('[data-testid="boucle-transition-erreur"]').textContent)
+    .toContain("déjà tranchée");
+  expect(appelsDetail).toBe(2);
+  const appelsObjets = api.get.mock.calls.filter(([url]) => url === "/boucle/objets").length;
+  expect(appelsObjets).toBeGreaterThan(1);
+
+  await cliquer(hote, "boucle-transition-annuler");
+  expect(hote.querySelector('[data-testid="boucle-action-initiative"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-action-trancher"]')).toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("un GET détail lent ne réécrase pas le résultat d'une transition", async () => {
+  let resoudreDetail;
+  let appelsDetail = 0;
+  api.get.mockImplementation((url) => {
+    if (url === "/boucle/objets") {
+      return Promise.resolve({ data: { tenant: "local", objets } });
+    }
+    if (url === "/boucle/synthese") return Promise.resolve({ data: synthese });
+    if (url === "/boucle/twins") return Promise.resolve({ data: { twins: [] } });
+    if (url === "/boucle/objets/sit-1") {
+      appelsDetail += 1;
+      if (appelsDetail === 1) {
+        return new Promise((resolve) => { resoudreDetail = resolve; });
+      }
+      return Promise.resolve({
+        data: { objet: situation, chaine: [situation], historique: [] },
+      });
+    }
+    return Promise.resolve({ data: {} });
+  });
+  const nouvelle = {
+    id: "inv-rapide",
+    famille: "investigation",
+    type: "INVESTIGATION",
+    mode: "DECLARED",
+    titre: "Investigation rapide",
+    donnees: { statut: "OPEN" },
+    version: 1,
+  };
+  boucleApi.ouvrirInvestigation.mockResolvedValue({
+    data: { objet: nouvelle, chaine: [situation, nouvelle] },
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "sit-1");
+  expect(typeof resoudreDetail).toBe("function");
+  await cliquer(hote, "boucle-action-investigation");
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "Investigation rapide");
+    saisir(hote.querySelector('[data-testid="boucle-transition-question"]'), "Pourquoi ?");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+  expect(hote.querySelector('[data-testid="boucle-transition-succes"]').textContent)
+    .toContain("inv-rapide");
+
+  await act(async () => {
+    resoudreDetail({
+      data: {
+        objet: { ...situation, titre: "Version périmée" },
+        chaine: [],
+        historique: [],
+      },
+    });
+  });
+
+  expect(hote.querySelector('[data-testid="boucle-detail-titre"]').textContent).not.toContain("Version périmée");
+  expect(hote.querySelector('[data-testid="boucle-transition-succes"]').textContent)
+    .toContain("inv-rapide");
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("le succès disparaît quand on change d'objet", async () => {
+  const controleur = installerApi();
+  const nouvelle = {
+    id: "inv-succes",
+    famille: "investigation",
+    type: "INVESTIGATION",
+    mode: "DECLARED",
+    titre: "Investigation",
+    donnees: { statut: "OPEN" },
+    version: 1,
+  };
+  boucleApi.ouvrirInvestigation.mockImplementation(() => {
+    controleur.ajouter(nouvelle);
+    return Promise.resolve({ data: { objet: nouvelle, chaine: [situation, nouvelle] } });
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "sit-1");
+  await cliquer(hote, "boucle-action-investigation");
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "Investigation");
+    saisir(hote.querySelector('[data-testid="boucle-transition-question"]'), "Pourquoi ?");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+  expect(hote.querySelector('[data-testid="boucle-transition-succes"]')).not.toBeNull();
+
+  await fermerDetail(hote);
+  await ouvrirObjet(hote, "inv-1");
+  expect(hote.querySelector('[data-testid="boucle-transition-succes"]')).toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("le détail piège le focus, le place sur la fermeture et le restitue à la carte", async () => {
+  installerApi();
+  const { hote, racine } = monter();
+  await rendre(racine);
+
+  const carte = hote.querySelector('[data-objet-id="sit-1"]');
+  await act(async () => { carte.focus(); carte.click(); });
+
+  const fermer = hote.querySelector('[data-testid="boucle-detail-fermer"]');
+  expect(document.activeElement).toBe(fermer);
+
+  const panneau = hote.querySelector('[data-testid="boucle-detail"] [role="dialog"]');
+  const focusables = [...panneau.querySelectorAll(
+    'a[href], button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])',
+  )];
+  const dernier = focusables[focusables.length - 1];
+  await act(async () => { dernier.focus(); });
+  await act(async () => {
+    panneau.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true }));
+  });
+  expect(document.activeElement).toBe(fermer);
+
+  await act(async () => { fermer.focus(); });
+  await act(async () => {
+    panneau.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true }));
+  });
+  expect(document.activeElement).toBe(dernier);
+
+  await echap();
+  expect(hote.querySelector('[data-testid="boucle-detail"]')).toBeNull();
+  expect(document.activeElement).toBe(carte);
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("après un 404, recharge le détail et affiche l'erreur de contexte", async () => {
+  let appelsDetail = 0;
+  api.get.mockImplementation((url) => {
+    if (url === "/boucle/objets") {
+      return Promise.resolve({ data: { tenant: "local", objets: [...objets, decisionProposee] } });
+    }
+    if (url === "/boucle/synthese") return Promise.resolve({ data: synthese });
+    if (url === "/boucle/twins") return Promise.resolve({ data: { twins: [] } });
+    if (url === "/boucle/objets/dec-prop") {
+      appelsDetail += 1;
+      if (appelsDetail === 1) {
+        return Promise.resolve({ data: { objet: decisionProposee, chaine: [], historique: [] } });
+      }
+      return Promise.reject({ response: { status: 404, data: { detail: "Objet introuvable" } } });
+    }
+    return Promise.resolve({ data: {} });
+  });
+  boucleApi.trancherDecision.mockRejectedValue({
+    response: { status: 404, data: { detail: "Objet introuvable" } },
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "dec-prop");
+  await cliquerEnFocus(hote, "boucle-action-trancher");
+  await choisir(hote.querySelector('[data-testid="boucle-transition-choix"]'), "Automatiser");
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(appelsDetail).toBe(2);
+  expect(hote.querySelector('[data-testid="boucle-transition-erreur"]').textContent)
+    .toContain("Objet introuvable");
+
+  await cliquer(hote, "boucle-transition-annuler");
+  await deplier(hote, "boucle-chaine-section");
+  expect(hote.querySelector('[data-testid="boucle-detail-erreur"]').textContent)
+    .toContain("Objet introuvable");
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("un 422 pendant un GET détail lent recharge le panneau", async () => {
+  let appelsDetail = 0;
+  let resoudreLent;
+  api.get.mockImplementation((url) => {
+    if (url === "/boucle/objets") {
+      return Promise.resolve({ data: { tenant: "local", objets } });
+    }
+    if (url === "/boucle/synthese") return Promise.resolve({ data: synthese });
+    if (url === "/boucle/twins") return Promise.resolve({ data: { twins: [] } });
+    if (url === "/boucle/objets/sit-1") {
+      appelsDetail += 1;
+      if (appelsDetail === 1) {
+        return new Promise((resolve) => { resoudreLent = resolve; });
+      }
+      return Promise.resolve({
+        data: {
+          objet: { ...situation, titre: "Source rechargée" },
+          chaine: [],
+          historique: [],
+        },
+      });
+    }
+    return Promise.resolve({ data: {} });
+  });
+  boucleApi.ouvrirInvestigation.mockRejectedValue({
+    response: {
+      status: 422,
+      data: { detail: [{ loc: ["body", "titre"], msg: "Champ requis" }] },
+    },
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "sit-1");
+  await cliquer(hote, "boucle-action-investigation");
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "Comprendre");
+    saisir(hote.querySelector('[data-testid="boucle-transition-question"]'), "Pourquoi ?");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(hote.querySelector('[data-testid="boucle-transition-erreur"]').textContent)
+    .toContain("titre : Champ requis");
+  expect(appelsDetail).toBe(2);
+  expect(hote.querySelector('[data-testid="boucle-detail-titre"]').textContent)
+    .toContain("Source rechargée");
+
+  await act(async () => {
+    resoudreLent({
+      data: { objet: { ...situation, titre: "Version périmée" }, chaine: [], historique: [] },
+    });
+  });
+  expect(hote.querySelector('[data-testid="boucle-detail-titre"]').textContent)
+    .toContain("Source rechargée");
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("un timeout ambigu affiche un message et recharge détail et liste", async () => {
+  installerApi();
+  boucleApi.ouvrirInvestigation.mockRejectedValue(new Error("timeout of 20000ms exceeded"));
+  const appelsDetail = () => api.get.mock.calls.filter(([url]) => url === "/boucle/objets/sit-1").length;
+  const appelsObjets = () => api.get.mock.calls.filter(([url]) => url === "/boucle/objets").length;
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "sit-1");
+  const avantDetail = appelsDetail();
+  const avantObjets = appelsObjets();
+
+  await cliquer(hote, "boucle-action-investigation");
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "Comprendre");
+    saisir(hote.querySelector('[data-testid="boucle-transition-question"]'), "Pourquoi ?");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(hote.querySelector('[data-testid="boucle-transition-erreur"]').textContent)
+    .toContain("Résultat incertain");
+  expect(appelsDetail()).toBe(avantDetail + 1);
+  expect(appelsObjets()).toBeGreaterThan(avantObjets);
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("pendant le rechargement après 409, la croix ferme puis le verrou persiste", async () => {
+  const tranchee = {
+    ...decisionProposee,
+    donnees: {
+      ...decisionProposee.donnees,
+      statut: "DECIDED",
+      acteur: "comité-cartes",
+      choix: "Automatiser",
+    },
+  };
+  let appelsDetail = 0;
+  let resoudreRechargement;
+  api.get.mockImplementation((url) => {
+    if (url === "/boucle/objets") {
+      return Promise.resolve({ data: { tenant: "local", objets: [...objets, decisionProposee] } });
+    }
+    if (url === "/boucle/synthese") return Promise.resolve({ data: synthese });
+    if (url === "/boucle/twins") return Promise.resolve({ data: { twins: [] } });
+    if (url === "/boucle/objets/dec-prop") {
+      appelsDetail += 1;
+      if (appelsDetail === 1) {
+        return Promise.resolve({ data: { objet: decisionProposee, chaine: [], historique: [] } });
+      }
+      return new Promise((resolve) => { resoudreRechargement = resolve; });
+    }
+    return Promise.resolve({ data: {} });
+  });
+  boucleApi.trancherDecision.mockRejectedValue({
+    response: { status: 409, data: { detail: "décision déjà tranchée" } },
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "dec-prop");
+  await cliquerEnFocus(hote, "boucle-action-trancher");
+  await choisir(hote.querySelector('[data-testid="boucle-transition-choix"]'), "Automatiser");
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(hote.querySelector('[data-testid="boucle-transition-enregistrer"]').textContent)
+    .toContain("Vérification");
+  const croix = hote.querySelector('[data-testid="boucle-transition-fermer"]');
+  expect(croix.disabled).toBe(false);
+  await act(async () => { croix.click(); });
+
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-detail"]')).not.toBeNull();
+  expect(document.activeElement).toBe(hote.querySelector('[data-testid="boucle-detail-fermer"]'));
+  expect(hote.querySelector('[data-testid="boucle-verification-source"]').textContent)
+    .toContain("Vérification de la source");
+  expect(hote.querySelector('[data-testid="boucle-action-trancher"]').disabled).toBe(true);
+  expect(hote.querySelector('[data-testid="boucle-action-trancher"]').getAttribute("aria-disabled")).toBe("true");
+
+  await cliquerEnFocus(hote, "boucle-action-trancher");
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).toBeNull();
+
+  await act(async () => {
+    resoudreRechargement({
+      data: {
+        objet: tranchee,
+        chaine: [situation, investigation, tranchee],
+        historique: [],
+      },
+    });
+  });
+
+  expect(hote.querySelector('[data-testid="boucle-verification-source"]')).toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-action-trancher"]')).toBeNull();
+  await cliquerEnFocus(hote, "boucle-action-initiative");
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("pendant le rechargement après un succès sans chaîne source, le détail reste fermable", async () => {
+  let appelsDetail = 0;
+  api.get.mockImplementation((url) => {
+    if (url === "/boucle/objets") return Promise.resolve({ data: { tenant: "local", objets } });
+    if (url === "/boucle/synthese") return Promise.resolve({ data: synthese });
+    if (url === "/boucle/twins") return Promise.resolve({ data: { twins: [] } });
+    if (url === "/boucle/objets/dec-1") {
+      appelsDetail += 1;
+      if (appelsDetail === 1) {
+        return Promise.resolve({ data: { objet: decision, chaine: [], historique: [] } });
+      }
+      return new Promise(() => {});
+    }
+    return Promise.resolve({ data: {} });
+  });
+  const nouvelle = {
+    id: "ini-sans-chaine",
+    famille: "decision",
+    type: "INITIATIVE",
+    mode: "DECLARED",
+    titre: "Initiative",
+    donnees: { statut: "PLANNED" },
+    version: 1,
+  };
+  boucleApi.lancerInitiative.mockResolvedValue({ data: { objet: nouvelle, chaine: [] } });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "dec-1");
+  await cliquerEnFocus(hote, "boucle-action-initiative");
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "Initiative");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).toBeNull();
+  await cliquer(hote, "boucle-detail-fermer");
+  expect(hote.querySelector('[data-testid="boucle-detail"]')).toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("un GET de vérification suspendu est abandonné et libère le verrou", async () => {
+  jest.useFakeTimers();
+  try {
+    let appelsDetail = 0;
+    api.get.mockImplementation((url, config) => {
+      if (url === "/boucle/objets") {
+        return Promise.resolve({ data: { tenant: "local", objets: [...objets, decisionProposee] } });
+      }
+      if (url === "/boucle/synthese") return Promise.resolve({ data: synthese });
+      if (url === "/boucle/twins") return Promise.resolve({ data: { twins: [] } });
+      if (url === "/boucle/objets/dec-prop") {
+        appelsDetail += 1;
+        if (appelsDetail === 1) {
+          return Promise.resolve({ data: { objet: decisionProposee, chaine: [], historique: [] } });
+        }
+        return new Promise((resolve, reject) => {
+          const annuler = () => reject(Object.assign(new Error("aborted"), {
+            name: "CanceledError",
+            code: "ERR_CANCELED",
+          }));
+          if (config?.signal?.aborted) annuler();
+          else config?.signal?.addEventListener("abort", annuler);
+        });
+      }
+      return Promise.resolve({ data: {} });
+    });
+    boucleApi.trancherDecision.mockRejectedValue({
+      response: { status: 409, data: { detail: "décision déjà tranchée" } },
+    });
+
+    const { hote, racine } = monter();
+    await rendre(racine);
+    await ouvrirObjet(hote, "dec-prop");
+    await cliquerEnFocus(hote, "boucle-action-trancher");
+    await choisir(hote.querySelector('[data-testid="boucle-transition-choix"]'), "Automatiser");
+    await cliquer(hote, "boucle-transition-enregistrer");
+
+    const croix = hote.querySelector('[data-testid="boucle-transition-fermer"]');
+    await act(async () => { croix.click(); });
+    expect(hote.querySelector('[data-testid="boucle-verification-source"]')).not.toBeNull();
+    expect(hote.querySelector('[data-testid="boucle-action-trancher"]').disabled).toBe(true);
+
+    await act(async () => {
+      jest.advanceTimersByTime(10000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(hote.querySelector('[data-testid="boucle-verification-source"]')).toBeNull();
+    expect(hote.querySelector('[data-testid="boucle-verification-erreur"]').textContent)
+      .toContain("Vérification de la source indisponible");
+    expect(hote.querySelector('[data-testid="boucle-action-trancher"]').disabled).toBe(false);
+    expect(hote.querySelector('[data-testid="boucle-action-trancher"]').getAttribute("aria-disabled")).toBeNull();
+
+    await cliquerEnFocus(hote, "boucle-action-trancher");
+    expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+
+    await act(async () => { racine.unmount(); });
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+test("un échec du GET de fond conserve la chaîne et le panneau source", async () => {
+  let appelsDetail = 0;
+  const decisionSource = {
+    ...decision,
+    version: 8,
+    donnees: { ...decision.donnees, initiative_id: "ini-fond" },
+  };
+  api.get.mockImplementation((url) => {
+    if (url === "/boucle/objets") return Promise.resolve({ data: { tenant: "local", objets } });
+    if (url === "/boucle/synthese") return Promise.resolve({ data: synthese });
+    if (url === "/boucle/twins") return Promise.resolve({ data: { twins: [] } });
+    if (url === "/boucle/objets/dec-1") {
+      appelsDetail += 1;
+      if (appelsDetail === 1) {
+        return Promise.resolve({
+          data: {
+            objet: decision,
+            chaine: [situation, investigation, decision],
+            historique: [{ version: 7, maj_le: "2026-10-30T10:00:00Z" }],
+          },
+        });
+      }
+      return Promise.reject(new Error("fond indisponible"));
+    }
+    return Promise.resolve({ data: {} });
+  });
+  boucleApi.lancerInitiative.mockResolvedValue({
+    data: {
+      objet: { id: "ini-fond", type: "INITIATIVE", titre: "Initiative", donnees: { statut: "PLANNED" } },
+      chaine: [situation, investigation, decisionSource, { id: "ini-fond", type: "INITIATIVE", titre: "Initiative" }],
+    },
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "dec-1");
+  await cliquerEnFocus(hote, "boucle-action-initiative");
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "Initiative");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(hote.querySelector('[data-testid="boucle-detail"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-detail-titre"]').textContent).not.toBe("");
+  expect(hote.querySelector('[data-testid="boucle-historique"]').textContent).toContain("Version 7");
+  await deplier(hote, "boucle-chaine-section");
+  expect(hote.querySelector('[data-testid="boucle-chaine"]').querySelectorAll('[data-testid="boucle-chaine-etape"]'))
+    .toHaveLength(2);
 
   await act(async () => { racine.unmount(); });
 });

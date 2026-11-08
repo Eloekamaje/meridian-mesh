@@ -1,8 +1,9 @@
 """Boucle P1 canonique : Situation → Investigation → Decision → Initiative → Outcome → Learning.
 
 Ce module ne fait ni réseau ni agent. Il construit des objets canoniques reliés, valide leurs transitions et les
-persiste via :mod:`meridian.adapters.outbound.postgres.entreprise_depot`. Un Outcome exige une mesure et une Initiative ; un Learning exige un
-Outcome mesuré ou une Investigation. Tous les objets d'une boucle appartiennent au même tenant.
+persiste via :mod:`meridian.adapters.outbound.postgres.entreprise_depot`. Un Outcome exige une mesure et une
+Initiative ; un Learning exige un Outcome mesuré ou une Investigation. Tous les objets d'une boucle appartiennent
+au même tenant.
 """
 from __future__ import annotations
 
@@ -16,22 +17,59 @@ from typing import Any
 
 from meridian.adapters.outbound.postgres import entreprise_depot
 from meridian.adapters.outbound.postgres import journal_episodes
+from meridian.adapters.outbound.postgres import objets_exploitation
 from meridian.domain import modele_entreprise as modele
+from meridian.domain.construction_objets_exploitation import (
+    muer_contribution as _muer_contribution,
+    muer_hypothese as _muer_hypothese,
+    muer_opportunite as _muer_opportunite,
+    muer_risque as _muer_risque,
+    nouveau_risque as _nouveau_risque,
+    nouveau_scenario as _nouveau_scenario,
+    nouveau_signal as _nouveau_signal,
+    nouvel_expert as _nouvel_expert,
+    nouvelle_contribution as _nouvelle_contribution,
+    nouvelle_expression as _nouvelle_expression,
+    nouvelle_hypothese as _nouvelle_hypothese,
+    nouvelle_opportunite as _nouvelle_opportunite,
+)
+from meridian.domain.objets_exploitation import (
+    Expert,
+    ExpertContribution,
+    Expression,
+    Hypothesis as HypothesisExploitation,
+    Scenario,
+    Signal,
+)
+from meridian.domain.mesure import mesure_renseignee as _mesure_renseignee
 
 __all__ = [
-    "BoucleInvalide", "TYPES_BOUCLE", "TYPES_COMPLEMENTAIRES", "TRANSITIONS_NEED",
+    "BoucleInvalide", "TYPES_BOUCLE", "TYPES_COMPLEMENTAIRES", "TYPES_LECTURE",
+    "TRANSITIONS_NEED",
     "STATUT_DECISION_PROPOSEE", "STATUT_DECISION_TRANCHEE",
     "STATUT_INITIATIVE", "STATUT_OUTCOME", "STATUT_LEARNING",
-    "Situation", "Investigation", "Decision", "Initiative", "Outcome", "Learning",
+    "Situation", "Investigation", "Decision", "Scenario", "Initiative", "Outcome", "Learning",
     "Unknown", "Hypothesis", "Need", "Opportunity", "Belief",
     "est_decision_tranchee",
     "ouvrir_investigation", "proposer_decision", "trancher_decision", "lancer_initiative",
     "mesurer_outcome", "capitaliser_learning", "transiter_need",
     "revalider", "revoir",
     "enregistrer_boucle", "lire_boucle", "lire_par_id",
+    "transaction", "nouvelle_situation", "donnees_de", "fusionner_donnees",
+    "nouveau_scenario", "nouvelle_expression", "nouvelle_hypothese",
+    "nouvelle_opportunite", "nouveau_risque", "nouveau_signal",
+    "nouvel_expert", "nouvelle_contribution",
+    "muer_hypothese", "muer_opportunite", "muer_risque", "muer_contribution",
+    "enregistrer_objets", "lister_objets_exploitation",
 ]
 
-TYPES_BOUCLE = ("SITUATION", "INVESTIGATION", "DECISION", "INITIATIVE", "OUTCOME", "LEARNING")
+# Types canoniques **écrits** par ``enregistrer_boucle``. Les objets d'exploitation
+# (dont EXPRESSION) sont persistés par ``enregistrer_objets`` et seulement **lus** ici :
+# les mélanger élargirait à tort le contrat d'écriture de la boucle.
+TYPES_BOUCLE = (
+    "SITUATION", "INVESTIGATION", "DECISION", "INITIATIVE",
+    "OUTCOME", "LEARNING", "SCENARIO",
+)
 TYPES_COMPLEMENTAIRES = ("UNKNOWN", "HYPOTHESIS", "NEED", "OPPORTUNITY", "BELIEF")
 TRANSITIONS_NEED = modele.TRANSITIONS_NEED
 STATUT_DECISION_PROPOSEE = "PROPOSED"
@@ -47,6 +85,7 @@ _MODE_DEFAUT = {
     "SITUATION": "OBSERVED",
     "INVESTIGATION": "DECLARED",
     "DECISION": "DECLARED",
+    "SCENARIO": "PROPOSED",
     "INITIATIVE": "DECLARED",
     "OUTCOME": "OBSERVED",
     "LEARNING": "INFERRED",
@@ -62,6 +101,14 @@ _CHAMPS_TABLE = frozenset({
 })
 _CHAMPS_DATES = ("cree_le", "observe_le", "valide_depuis", "valide_jusqua")
 _MAX_HISTORIQUE = 50
+
+# Liens inverses maintenus par les autres producteurs (B) et par A : un parent
+# fraîchement construit ne doit pas les effacer avec ses valeurs par défaut.
+_CHAMPS_INVERSES_LIES = frozenset({
+    "signal_ids", "expression_id", "opportunity_ids", "risk_ids",
+    "hypothesis_ids", "expert_ids", "scenario_ids",
+    "scenario_id", "initiative_id", "outcome_ids", "scenarios_rejetes",
+})
 
 
 class BoucleInvalide(modele.ModeleInvalide):
@@ -167,18 +214,6 @@ def _est_tranchee_statut(valeur: Any) -> bool:
 def est_decision_tranchee(decision: Any) -> bool:
     """Vrai si la décision porte un statut de décision tranchée."""
     return _est_tranchee_statut(_valeur(decision, "statut"))
-
-
-def _mesure_renseignee(mesure: Any) -> bool:
-    if mesure is None or isinstance(mesure, bool):
-        return False
-    if isinstance(mesure, str):
-        return bool(mesure.strip())
-    if isinstance(mesure, Mapping):
-        return any(_mesure_renseignee(element) for element in mesure.values())
-    if isinstance(mesure, (list, tuple, set, frozenset)):
-        return bool(mesure)
-    return True
 
 
 def _valeur_mesure(mesure: Any) -> Any:
@@ -338,6 +373,7 @@ class Decision(modele.Decision, _LiensBoucle):
     acteur: str | None = None
     incertitudes: list[str] = field(default_factory=list)
     CHAMPS_LIENS = ("situation_id", "investigation_id", "initiative_id")
+    CHAMPS_LIENS_MULTIPLES = ("scenario_ids", "scenarios_rejetes")
 
     def __post_init__(self) -> None:
         self.resume = _texte(self.resume) or _texte(self.rationale)
@@ -554,7 +590,23 @@ _CLASSES = {
     "NEED": Need,
     "OPPORTUNITY": Opportunity,
     "BELIEF": Belief,
+    "SCENARIO": Scenario,
 }
+
+# Lecture seule des types d'exploitation : EXPRESSION est lisible dans une chaîne
+# canonique sans devenir un type d'écriture de ``enregistrer_boucle``. Cette table est
+# l'unique source de ``TYPES_LECTURE`` et sert à valider toute lecture canonique.
+_CLASSES_LECTURE = {
+    **_CLASSES,
+    "SIGNAL": Signal,
+    "EXPRESSION": Expression,
+    "HYPOTHESIS": HypothesisExploitation,
+    "EXPERT": Expert,
+    "EXPERT_CONTRIBUTION": ExpertContribution,
+    "OPPORTUNITY": modele.Opportunity,
+    "RISK": modele.Risk,
+}
+TYPES_LECTURE = tuple(_CLASSES_LECTURE)
 
 
 def ouvrir_investigation(
@@ -638,8 +690,11 @@ def trancher_decision(
         "acteur": acteur_final,
         "choix": choix_final,
         "decide_le": _instant(decide_le),
-        "rationale": _texte(rationale if rationale is not None else motif),
     }
+    if rationale is not None or motif is not None:
+        valeur = _texte(rationale if rationale is not None else motif)
+        if valeur:
+            remplacements["rationale"] = valeur
     if preuves is not None:
         remplacements["preuves"] = preuves
     if mode is not None:
@@ -936,12 +991,52 @@ def _valider_pour_persistance(conn: Any, tenant: str, objets: list[Any]) -> None
             raise BoucleInvalide(f"type hors boucle : {type_objet or 'inconnu'}")
         if _tenant_de(objet) != tenant:
             raise BoucleInvalide(
-                f"objet { _id_de(objet) } du tenant {_tenant_de(objet)!r}, attendu {tenant!r}"
+                f"objet {_id_de(objet)} du tenant {_tenant_de(objet)!r}, attendu {tenant!r}"
             )
         attendu = _source_attendue(type_objet)
         if attendu is not None:
             champ, type_source = attendu
             _resoudre_source(conn, tenant, par_id, _valeur(objet, champ), champ, type_source)
+        if type_objet == "SCENARIO":
+            investigation_id = _texte_ou_none(_valeur(objet, "investigation_id"))
+            decision_id = _texte_ou_none(_valeur(objet, "decision_id"))
+            if not investigation_id and not decision_id:
+                raise BoucleInvalide("un scénario exige investigation_id ou decision_id")
+            if investigation_id:
+                _resoudre_source(
+                    conn, tenant, par_id, investigation_id,
+                    "investigation_id", "INVESTIGATION")
+            decision_investigation = None
+            if decision_id:
+                decision = _resoudre_source(
+                    conn, tenant, par_id, decision_id, "decision_id", "DECISION")
+                decision_investigation = _lien_ou_alias(
+                    decision, "investigation_id", "investigation_ref")
+                if (
+                    investigation_id and decision_investigation
+                    and decision_investigation != investigation_id
+                ):
+                    raise BoucleInvalide(
+                        f"la décision {decision_id!r} appartient à l'investigation "
+                        f"{decision_investigation!r}, pas à {investigation_id!r}"
+                    )
+            investigation_reference = investigation_id or decision_investigation
+            for hypothesis_id in _liste_ids(
+                _valeur(objet, "hypothesis_ids"), "hypothesis_ids"
+            ):
+                hypothesis = _resoudre_source(
+                    conn, tenant, par_id, hypothesis_id,
+                    "hypothesis_ids", "HYPOTHESIS")
+                hypothesis_investigation = _texte_ou_none(
+                    _valeur(hypothesis, "investigation_id"))
+                if (
+                    investigation_reference and hypothesis_investigation
+                    and hypothesis_investigation != investigation_reference
+                ):
+                    raise BoucleInvalide(
+                        f"l'hypothèse {hypothesis_id!r} appartient à l'investigation "
+                        f"{hypothesis_investigation!r}, pas à {investigation_reference!r}"
+                    )
         if type_objet == "DECISION" and est_decision_tranchee(objet):
             for champ in ("acteur", "choix", "decide_le"):
                 if not _valeur(objet, champ):
@@ -1035,6 +1130,16 @@ def _liens_inverses(objets: list[Any]) -> dict[str, dict[str, Any]]:
             initiative_id = _texte_ou_none(_valeur(objet, "initiative_id"))
             if initiative_id:
                 extras.setdefault(initiative_id, {}).setdefault("outcome_ids", []).append(identifiant)
+        elif type_objet == "SCENARIO":
+            investigation_id = _texte_ou_none(_valeur(objet, "investigation_id"))
+            decision_id = _texte_ou_none(_valeur(objet, "decision_id"))
+            if investigation_id:
+                extras.setdefault(investigation_id, {}).setdefault(
+                    "scenario_ids", []).append(identifiant)
+            if decision_id:
+                extra_decision = extras.setdefault(decision_id, {})
+                extra_decision.setdefault("scenario_ids", []).append(identifiant)
+                extra_decision.setdefault("scenario_id", identifiant)
     for objet in objets:
         identifiant = _id_de(objet)
         extra = extras.get(identifiant)
@@ -1049,30 +1154,57 @@ def _liens_inverses(objets: list[Any]) -> dict[str, dict[str, Any]]:
     return extras
 
 
+def _est_vide(valeur: Any) -> bool:
+    return valeur is None or valeur == "" or valeur == [] or valeur == () or valeur == {}
+
+
 def _persister(
     conn: Any, tenant: str, objet: Any, *, historique: bool, as_dict: bool,
-    extra_donnees: Mapping[str, Any] | None = None,
+    extra_donnees: Mapping[str, Any] | None = None, creer: bool = False,
 ) -> Any:
     payload = _payload_objet(objet)
     identifiant = _texte(payload.get("id"), "id", obligatoire=True)
     if extra_donnees:
         donnees = dict(payload.get("donnees") or {})
         for cle, valeur in extra_donnees.items():
-            if cle == "outcome_ids":
+            if cle in {"outcome_ids", "scenario_ids"}:
                 actuels = _liste_ids(donnees.get(cle), cle)
-                donnees[cle] = actuels + [element for element in valeur if element not in actuels]
+                donnees[cle] = actuels + [
+                    element for element in valeur if element not in actuels
+                ]
+            elif cle == "scenario_id" and _texte_ou_none(donnees.get(cle)):
+                continue
             else:
                 donnees[cle] = valeur
         payload["donnees"] = donnees
-    if historique:
-        ancien = entreprise_depot.lire_objet(conn, tenant, identifiant)
+    with conn.transaction():
+        ancien = None
+        if not creer:
+            ancien = entreprise_depot.lire_objet(conn, tenant, identifiant, for_update=True)
         if ancien is not None:
-            donnees = dict(payload.get("donnees") or {})
-            versions = list((ancien.get("donnees") or {}).get("_historique") or [])
-            versions.append(_entree_historique(ancien))
-            donnees["_historique"] = versions[-_MAX_HISTORIQUE:]
+            existantes = dict(ancien.get("donnees") or {})
+            nouvelles = dict(payload.get("donnees") or {})
+            nouvelles.pop("_historique", None)
+            donnees = dict(existantes)
+            for cle, valeur in nouvelles.items():
+                if (cle in _CHAMPS_INVERSES_LIES and _est_vide(valeur)
+                        and not _est_vide(existantes.get(cle))):
+                    continue
+                if cle in {"scenario_ids", "outcome_ids"} and isinstance(valeur, list):
+                    actuels = _liste_ids(existantes.get(cle), cle)
+                    donnees[cle] = actuels + [
+                        element for element in valeur if element not in actuels
+                    ]
+                    continue
+                if cle == "scenario_id" and _texte_ou_none(existantes.get(cle)):
+                    continue
+                donnees[cle] = valeur
+            if historique:
+                versions = list(existantes.get("_historique") or [])
+                versions.append(_entree_historique(ancien))
+                donnees["_historique"] = versions[-_MAX_HISTORIQUE:]
             payload["donnees"] = donnees
-    ligne = dict(entreprise_depot.enregistrer_objet(conn, tenant, payload))
+        ligne = dict(entreprise_depot.enregistrer_objet(conn, tenant, payload, creer=creer))
     if historique:
         ligne["historique"] = list((ligne.get("donnees") or {}).get("_historique") or [])
     if as_dict:
@@ -1118,7 +1250,7 @@ def _consigner_evenement(conn: Any, tenant: str, objet: Any, resultat: Any, raci
 
 def enregistrer_boucle(
     conn: Any, tenant_id: Any = None, objets: Any = None, *,
-    historique: bool = False, as_dict: bool = True,
+    historique: bool = False, as_dict: bool = True, creer: bool = False,
 ) -> Any:
     """Persiste une boucle d'objets canoniques et rend le ou les objets stockés.
 
@@ -1127,6 +1259,9 @@ def enregistrer_boucle(
     des mesures et de la décision tranchée. `historique=True` conserve les versions antérieures dans
     `donnees["_historique"]` et les expose dans la clé `historique` du retour. `as_dict=False` rend les objets
     canoniques (instances de ce module) plutôt que les lignes de `objet_entreprise`.
+
+    ``creer=True`` impose une création exclusive : un identifiant déjà présent lève
+    :class:`meridian.ports.boucle.ObjetExistant` et n'écrase rien.
     """
     if tenant_id is not None and not isinstance(tenant_id, str):
         if objets is not None:
@@ -1167,7 +1302,7 @@ def enregistrer_boucle(
     for objet in liste:
         resultat = _persister(
             conn, tenant, objet, historique=historique, as_dict=as_dict,
-            extra_donnees=extras.get(_id_de(objet)),
+            extra_donnees=extras.get(_id_de(objet)), creer=creer,
         )
         _consigner_evenement(conn, tenant, objet, resultat, racine)
         resultats.append(resultat)
@@ -1180,9 +1315,9 @@ def enregistrer_boucle(
 
 def _objet_depuis_ligne(ligne: Mapping[str, Any]) -> Any:
     type_objet = _type_de(ligne)
-    classe = _CLASSES.get(type_objet)
-    if classe is None:
+    if type_objet not in TYPES_LECTURE:
         raise BoucleInvalide(f"type hors boucle : {type_objet or 'inconnu'}")
+    classe = _CLASSES_LECTURE[type_objet]
     noms = {champ.name for champ in fields(classe)}
     donnees = {
         cle: copy.deepcopy(valeur) for cle, valeur in (ligne.get("donnees") or {}).items()
@@ -1205,16 +1340,50 @@ def _objet_depuis_ligne(ligne: Mapping[str, Any]) -> Any:
     return classe(**valeurs)
 
 
+def _lien_ou_alias(ligne: Mapping[str, Any], principal: str, alias: str) -> str | None:
+    """Lit le lien canonique ou son alias legacy (``*_ref``)."""
+    return _texte_ou_none(_valeur(ligne, principal)) or _texte_ou_none(_valeur(ligne, alias))
+
+
 def _source_principale(ligne: Mapping[str, Any]) -> str | None:
     type_objet = _type_de(ligne)
+    if type_objet in {"OPPORTUNITY", "RISK"}:
+        # L'Expression est la source de vérité du rattachement ; la Situation dénormalisée
+        # et l'Investigation restent des replis pour les créations humaines tracées.
+        return (
+            _texte_ou_none(_valeur(ligne, "expression_id"))
+            or _texte_ou_none(_valeur(ligne, "situation_id"))
+            or _texte_ou_none(_valeur(ligne, "investigation_id"))
+        )
+    if type_objet == "EXPRESSION":
+        return _texte_ou_none(_valeur(ligne, "situation_id"))
+    if type_objet == "SIGNAL":
+        situations = _liste_ids(_valeur(ligne, "situation_ids"), "situation_ids")
+        return situations[0] if len(situations) == 1 else None
+    if type_objet == "HYPOTHESIS":
+        return _texte_ou_none(_valeur(ligne, "investigation_id"))
+    if type_objet == "EXPERT":
+        # Le registre n'a pas de parent : la chaîne se réduit à l'Expert lui-même.
+        return None
+    if type_objet == "EXPERT_CONTRIBUTION":
+        # Une contribution ciblant une hypothèse expose la chaîne complète
+        # INVESTIGATION → HYPOTHESIS → CONTRIBUTION ; sinon elle se rattache
+        # directement à l'Investigation qui la porte.
+        return (
+            _texte_ou_none(_valeur(ligne, "hypothesis_id"))
+            or _texte_ou_none(_valeur(ligne, "investigation_id"))
+        )
     if type_objet == "INVESTIGATION":
         return _texte_ou_none(_valeur(ligne, "situation_id"))
     if type_objet == "DECISION":
-        return _texte_ou_none(_valeur(ligne, "investigation_id"))
+        return _lien_ou_alias(ligne, "investigation_id", "investigation_ref")
+    if type_objet == "SCENARIO":
+        return _lien_ou_alias(ligne, "decision_id", "decision_ref") or _texte_ou_none(
+            _valeur(ligne, "investigation_id"))
     if type_objet == "INITIATIVE":
-        return _texte_ou_none(_valeur(ligne, "decision_id"))
+        return _lien_ou_alias(ligne, "decision_id", "decision_ref")
     if type_objet == "OUTCOME":
-        return _texte_ou_none(_valeur(ligne, "initiative_id"))
+        return _lien_ou_alias(ligne, "initiative_id", "initiative_ref")
     if type_objet == "LEARNING":
         outcomes = _liste_ids(_valeur(ligne, "outcome_ids"), "outcome_ids")
         if outcomes:
@@ -1259,13 +1428,16 @@ def _chaine_lignes(conn: Any, tenant: str, ligne: Mapping[str, Any]) -> list[dic
 
 def lire_boucle(
     conn: Any, tenant_id: str, objet_id: str, *, historique: bool = False, as_dict: bool = True,
+    for_update: bool = False,
 ) -> Any:
     """Lit un objet de la boucle par `(tenant, id)`.
 
     Sans `historique`, rend l'objet courant (ligne ou objet canonique). Avec `historique=True`, ajoute au retour
     `chaine` (Situation → … → objet) et `historique` (versions conservées par `enregistrer_boucle`).
+    ``for_update=True`` verrouille la ligne principale jusqu'à la fin de la transaction courante ; la chaîne
+    n'est pas verrouillée.
     """
-    ligne = entreprise_depot.lire_objet(conn, tenant_id, objet_id)
+    ligne = entreprise_depot.lire_objet(conn, tenant_id, objet_id, for_update=for_update)
     if ligne is None:
         return None
     if not historique:
@@ -1285,3 +1457,153 @@ def lire_boucle(
 
 
 lire_par_id = lire_boucle
+
+
+def transaction(conn: Any) -> Any:
+    """Ouvre une transaction sur la connexion ; les appels imbriqués deviennent des savepoints."""
+    return conn.transaction()
+
+
+def nouvelle_situation(**champs: Any) -> Situation:
+    """Fabrique la Situation canonique utilisée par l'orchestration applicative."""
+    return Situation(**champs)
+
+
+def nouveau_scenario(**champs: Any) -> Any:
+    """Fabrique un Scénario canonique sans faire dépendre l'application du domaine concret."""
+    return _nouveau_scenario(**champs)
+
+
+def nouvelle_expression(**champs: Any) -> Any:
+    """Fabrique une Expression canonique sans faire dépendre l'application du domaine concret."""
+    situation = champs.pop("situation", None)
+    return _nouvelle_expression(situation, **champs)
+
+
+def nouvelle_opportunite(**champs: Any) -> Any:
+    """Fabrique une Opportunity canonique sans exposer le constructeur de domaine."""
+    expression = champs.pop("expression", None)
+    return _nouvelle_opportunite(expression, **champs)
+
+
+def nouveau_risque(**champs: Any) -> Any:
+    """Fabrique un Risk canonique sans exposer le constructeur de domaine."""
+    expression = champs.pop("expression", None)
+    return _nouveau_risque(expression, **champs)
+
+
+def nouvelle_hypothese(**champs: Any) -> Any:
+    """Fabrique une Hypothesis canonique sans exposer le constructeur de domaine."""
+    investigation = champs.pop("investigation", None)
+    return _nouvelle_hypothese(investigation, **champs)
+
+
+def nouveau_signal(**champs: Any) -> Any:
+    """Fabrique un Signal canonique sans exposer le constructeur de domaine."""
+    return _nouveau_signal(**champs)
+
+
+def nouvel_expert(**champs: Any) -> Any:
+    """Fabrique un Expert canonique sans exposer le constructeur de domaine."""
+    return _nouvel_expert(**champs)
+
+
+def nouvelle_contribution(**champs: Any) -> Any:
+    """Fabrique une contribution canonique sans exposer le constructeur de domaine."""
+    expert = champs.pop("expert", None)
+    return _nouvelle_contribution(expert, **champs)
+
+
+def muer_opportunite(opportunite: Any, vers: str, **champs: Any) -> Any:
+    """Applique une transition de statut d'Opportunity, sans muter la source."""
+    return _muer_opportunite(opportunite, vers, **champs)
+
+
+def muer_risque(risque: Any, vers: str, **champs: Any) -> Any:
+    """Applique une transition de statut de Risk, sans muter la source."""
+    return _muer_risque(risque, vers, **champs)
+
+
+def muer_hypothese(hypothese: Any, vers: str, **champs: Any) -> Any:
+    """Applique une transition de statut de Hypothesis, sans muter la source."""
+    return _muer_hypothese(hypothese, vers, **champs)
+
+
+def muer_contribution(contribution: Any, vers: str, **champs: Any) -> Any:
+    """Applique une transition de statut de contribution, sans muter la source."""
+    return _muer_contribution(contribution, vers, **champs)
+
+
+def enregistrer_objets(
+    conn: Any, tenant_id: Any = None, objets: Any = None, *,
+    historique: bool = False, as_dict: bool = True,
+) -> Any:
+    """Persiste des objets d'exploitation, dont les Scénarios, avec leurs liens inverses."""
+    return objets_exploitation.enregistrer_objets_exploitation(
+        conn, tenant_id, objets, historique=historique, as_dict=as_dict,
+    )
+
+
+def lister_objets_exploitation(
+    conn: Any, tenant_id: str, *, type_: str | None = None,
+    situation_id: str | None = None, investigation_id: str | None = None,
+    decision_id: str | None = None, expression_id: str | None = None,
+    expert_id: str | None = None, hypothesis_id: str | None = None,
+    domaine: str | None = None, type_signal: str | None = None,
+    statut: str | None = None, limite: int = 100, as_dict: bool = True,
+) -> list[Any]:
+    """Liste les objets d'exploitation du tenant, filtrés par type, parent et statut."""
+    return objets_exploitation.lister_objets_exploitation(
+        conn, tenant_id, type_=type_, situation_id=situation_id,
+        investigation_id=investigation_id, decision_id=decision_id,
+        expression_id=expression_id, expert_id=expert_id,
+        hypothesis_id=hypothesis_id, domaine=domaine,
+        type_signal=type_signal, statut=statut,
+        limite=limite, as_dict=as_dict,
+    )
+
+
+def donnees_de(objet: Any) -> dict[str, Any]:
+    """Rend les champs canoniques d'un objet sous la forme attendue dans ``donnees``."""
+    return _payload_objet(objet)["donnees"]
+
+
+def fusionner_donnees(
+    conn: Any, tenant_id: Any, objet_id: Any, patch: Mapping[str, Any], *,
+    historique: bool = True, ajouter: Any = (), mode: str | None = None,
+    version_attendue: Any = None,
+) -> dict[str, Any]:
+    """Fusionne un patch dans ``donnees`` sans effacer les clés legacy de l'objet.
+
+    La ligne est verrouillée avant la fusion de l'historique. Les clés de ``ajouter`` sont
+    concaténées aux listes existantes (sans doublon) au lieu d'être remplacées. La version de
+    ``version_attendue`` rend l'écriture optimiste : une version périmée lève
+    :class:`meridian.ports.boucle.VersionRefusee`.
+    """
+    tenant = _texte(tenant_id, "tenant_id", obligatoire=True)
+    identifiant = _texte(objet_id, "id", obligatoire=True)
+    entreprise_depot.verifier_donnees(patch)
+    with conn.transaction():
+        ligne = entreprise_depot.lire_objet(conn, tenant, identifiant, for_update=True)
+        if ligne is None:
+            raise BoucleInvalide(f"objet introuvable : {identifiant}")
+        donnees = dict(ligne.get("donnees") or {})
+        if historique:
+            versions = list(donnees.get("_historique") or [])
+            versions.append(_entree_historique(ligne))
+            donnees["_historique"] = versions[-_MAX_HISTORIQUE:]
+        listes = frozenset(str(cle) for cle in ajouter)
+        for cle, valeur in patch.items():
+            if str(cle) == "_historique":
+                continue
+            if str(cle) in listes:
+                actuels = _liste_ids(donnees.get(cle), str(cle))
+                nouveaux = _liste_ids(valeur, str(cle))
+                donnees[cle] = actuels + [
+                    element for element in nouveaux if element not in actuels]
+            else:
+                donnees[cle] = copy.deepcopy(valeur)
+        attendue = version_attendue if version_attendue is not None else ligne.get("version")
+        return entreprise_depot.enregistrer_donnees(
+            conn, tenant, identifiant, donnees, mode=mode, version_attendue=attendue,
+            verifier_secrets=False)

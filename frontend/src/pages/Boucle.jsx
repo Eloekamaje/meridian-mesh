@@ -5,33 +5,64 @@ import {
   ArrowUpRight,
   BookOpen,
   ChartLineUp,
+  ChatCircleText,
   CircleNotch,
   Compass,
   Lightbulb,
   MagnifyingGlass,
-  PlusCircle,
   RocketLaunch,
   Scales,
+  UserCircle,
   WarningCircle,
   X,
 } from "@phosphor-icons/react";
-import api from "@/lib/api";
+import api, { boucleApi } from "@/lib/api";
 import Depliable from "@/components/ui/Depliable";
 import IdentifiantCopiable from "@/components/ui/IdentifiantCopiable";
+import PanneauActions from "@/components/boucle/PanneauActions";
+import ComparaisonScenarios from "@/components/boucle/ComparaisonScenarios";
+import ModaleTransition from "@/components/boucle/ModaleTransition";
+import {
+  configurationAction,
+  construireCorps,
+  detailSourceApresTransition,
+  fusionnerObjet,
+  idObjet,
+  messageErreurTransition,
+  sansAccents,
+  statutObjet,
+  texte,
+  texteAffichable,
+  titreObjet,
+  typeObjet,
+  TYPES_LECTURE,
+  valeurDe,
+} from "@/components/boucle/boucleUi";
+
+const MESSAGE_VERIFICATION_INDISPONIBLE =
+  "Vérification de la source indisponible — vérifiez manuellement avant de réessayer.";
+const DELAI_VERIFICATION_MS = 10000;
 
 const STADES = [
+  { type: "SIGNAL", famille: "emergence", label: "Signaux", court: "Signal", couleur: "#F472B6", Icone: Lightbulb },
   { type: "SITUATION", famille: "emergence", label: "Situations", court: "Situation", couleur: "#60A5FA", Icone: Lightbulb },
+  { type: "EXPRESSION", famille: "emergence", label: "Expressions", court: "Expression", couleur: "#22D3EE", Icone: Lightbulb },
+  { type: "OPPORTUNITY", famille: "emergence", label: "Opportunités", court: "Opportunité", couleur: "#34D399", Icone: ArrowUpRight },
+  { type: "RISK", famille: "emergence", label: "Risques", court: "Risque", couleur: "#F87171", Icone: WarningCircle },
   { type: "INVESTIGATION", famille: "investigation", label: "Investigations", court: "Investigation", couleur: "#38BDF8", Icone: MagnifyingGlass },
+  { type: "HYPOTHESIS", famille: "investigation", label: "Hypothèses", court: "Hypothèse", couleur: "#C084FC", Icone: Lightbulb },
+  { type: "EXPERT", famille: "investigation", label: "Experts", court: "Expert", couleur: "#2DD4BF", Icone: UserCircle },
+  { type: "EXPERT_CONTRIBUTION", famille: "investigation", label: "Contributions", court: "Contribution", couleur: "#5EEAD4", Icone: ChatCircleText },
   { type: "DECISION", famille: "decision", label: "Décisions", court: "Décision", couleur: "#F2B84B", Icone: Scales },
   { type: "INITIATIVE", famille: "decision", label: "Initiatives", court: "Initiative", couleur: "#FB923C", Icone: RocketLaunch },
   { type: "OUTCOME", famille: "resultat_apprentissage", label: "Outcomes", court: "Outcome", couleur: "#34D399", Icone: ChartLineUp },
   { type: "LEARNING", famille: "resultat_apprentissage", label: "Learnings", court: "Learning", couleur: "#A78BFA", Icone: BookOpen },
-];
+].filter((stade) => TYPES_LECTURE.includes(stade.type));
 
 const STADES_PAR_TYPE = new Map(STADES.map((stade) => [stade.type, stade]));
 
 const FAMILLES = [
-  { value: "emergence", label: "Émergence — situations" },
+  { value: "emergence", label: "Émergence — signaux, situations, expressions, opportunités et risques" },
   { value: "investigation", label: "Investigation" },
   { value: "decision", label: "Décision — décisions et initiatives" },
   { value: "resultat_apprentissage", label: "Résultat — outcomes et learnings" },
@@ -57,73 +88,6 @@ const MODES = [
 ];
 
 const MODES_LABEL = new Map(MODES);
-
-const TYPES_CREATION = STADES.filter((stade) =>
-  ["SITUATION", "INVESTIGATION", "DECISION", "INITIATIVE"].includes(stade.type)
-);
-
-const OBJET_INITIAL = { type: "SITUATION", titre: "", mode: "", donnees: "" };
-
-// Actions de transition proposées par type d'objet, avec les champs attendus par
-// POST /boucle/objets/{id}/transition (champ `donnees` de la requête).
-const TRANSITIONS = {
-  SITUATION: [
-    {
-      action: "ouvrir_investigation",
-      libelle: "Ouvrir une investigation",
-      description: "Crée une investigation reliée à cette situation.",
-      champs: [
-        { cle: "question", libelle: "Question à instruire (optionnel)" },
-        { cle: "titre", libelle: "Titre (optionnel)" },
-      ],
-    },
-  ],
-  INVESTIGATION: [
-    {
-      action: "proposer_decision",
-      libelle: "Proposer une décision",
-      description: "Propose une décision à trancher, reliée à cette investigation.",
-      champs: [
-        { cle: "options", libelle: "Options (séparées par une virgule)", requis: true, liste: true },
-        { cle: "titre", libelle: "Titre (optionnel)" },
-      ],
-    },
-  ],
-  DECISION: [
-    {
-      action: "trancher",
-      libelle: "Trancher la décision",
-      description: "Enregistre le choix retenu et l'acteur qui tranche.",
-      champs: [
-        { cle: "acteur", libelle: "Acteur qui tranche", requis: true },
-        { cle: "choix", libelle: "Choix retenu", requis: true },
-        { cle: "motif", libelle: "Motif (optionnel)", type: "textarea" },
-      ],
-    },
-    {
-      action: "lancer_initiative",
-      libelle: "Lancer une initiative",
-      description: "Crée une initiative à partir de la décision tranchée.",
-      champs: [
-        { cle: "titre", libelle: "Titre (optionnel)" },
-        { cle: "resume", libelle: "Résumé (optionnel)", type: "textarea" },
-      ],
-    },
-  ],
-  INITIATIVE: [
-    {
-      action: "mesurer_outcome",
-      libelle: "Mesurer un outcome",
-      description: "Enregistre la mesure observée pour cette initiative.",
-      champs: [
-        { cle: "metrique", libelle: "Métrique", requis: true, mesure: true },
-        { cle: "valeur", libelle: "Valeur mesurée", requis: true, numerique: true, mesure: true },
-        { cle: "unite", libelle: "Unité (optionnel)", mesure: true },
-        { cle: "interpretation", libelle: "Interprétation (optionnel)", type: "textarea" },
-      ],
-    },
-  ],
-};
 
 const OUTCOME_INITIAL = {
   initiative_id: "",
@@ -160,21 +124,6 @@ const CONTENEURS_COMPTES = [
   "synthese", "totaux", "totals", "donnees",
 ];
 
-const texte = (valeur) => (valeur == null ? "" : String(valeur));
-
-const sansAccents = (valeur) =>
-  texte(valeur).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-
-function valeurDe(objet, ...cles) {
-  for (const cle of cles) {
-    const directe = objet?.[cle];
-    if (directe !== undefined && directe !== null && directe !== "") return directe;
-    const donnee = objet?.donnees?.[cle];
-    if (donnee !== undefined && donnee !== null && donnee !== "") return donnee;
-  }
-  return null;
-}
-
 function idDeValeur(valeur) {
   if (valeur == null) return null;
   if (typeof valeur === "object") {
@@ -184,22 +133,8 @@ function idDeValeur(valeur) {
   return texte(valeur) || null;
 }
 
-function idObjet(objet) {
-  if (typeof objet === "string") return objet;
-  return idDeValeur(objet?.id ?? objet?._id);
-}
-
-function typeObjet(objet) {
-  return texte(valeurDe(objet, "type")).trim().toUpperCase();
-}
-
 function familleObjet(objet) {
   return texte(valeurDe(objet, "famille")).trim().toLowerCase();
-}
-
-function titreObjet(objet) {
-  if (typeof objet === "string") return objet;
-  return texteAffichable(valeurDe(objet, "titre")) || idObjet(objet) || "Objet sans titre";
 }
 
 function resumeObjet(objet) {
@@ -214,19 +149,6 @@ function dateLisible(valeur) {
   const date = new Date(valeur);
   if (Number.isNaN(date.getTime())) return texte(valeur);
   return date.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" });
-}
-
-function texteAffichable(valeur) {
-  if (valeur == null) return "";
-  if (Array.isArray(valeur)) {
-    return valeur
-      .filter((element) => element == null || typeof element !== "object")
-      .map((element) => texte(element))
-      .filter(Boolean)
-      .join(", ");
-  }
-  if (typeof valeur === "object") return "";
-  return texte(valeur);
 }
 
 function messageErreur(erreur, defaut = "La boucle est momentanément indisponible.") {
@@ -301,34 +223,6 @@ function compteSynthese(synthese, stade) {
 
 function totalSynthese(synthese) {
   return trouverNombre(synthese, ["total", "nb_objets", "nombre_objets", "total_objets", "compte_total"]);
-}
-
-// Transforme la saisie du mini-formulaire d'une transition en `donnees` de la requête.
-// Les champs marqués `mesure` sont regroupés dans un objet `mesure` (mesurer_outcome).
-function construireDonneesTransition(spec, valeurs) {
-  const donnees = {};
-  const mesure = {};
-  for (const champ of spec.champs) {
-    const brut = texte(valeurs[champ.cle]).trim();
-    if (!brut) {
-      if (champ.requis) return { erreur: `« ${champ.libelle} » est obligatoire.` };
-      continue;
-    }
-    let valeur = brut;
-    if (champ.numerique) {
-      const nombre = Number(brut.replace(",", "."));
-      if (!Number.isFinite(nombre)) return { erreur: `« ${champ.libelle} » doit être un nombre.` };
-      valeur = nombre;
-    }
-    if (champ.liste) {
-      valeur = brut.split(",").map((element) => element.trim()).filter(Boolean);
-      if (valeur.length === 0) return { erreur: `« ${champ.libelle} » est obligatoire.` };
-    }
-    if (champ.mesure) mesure[champ.cle] = valeur;
-    else donnees[champ.cle] = valeur;
-  }
-  if (Object.keys(mesure).length > 0) donnees.mesure = mesure;
-  return { donnees };
 }
 
 function CarteObjet({ objet, stade, actif, onOuvrir }) {
@@ -407,21 +301,48 @@ function EtapeChaine({ etape, index, dernier }) {
   );
 }
 
-function PanneauDetail({ objet, etat, chaine, historique, onFermer, onReessayer, onNaviguer, onOuvrirId, onActualiser }) {
-  const [actionOuverte, setActionOuverte] = useState("");
-  const [champsTransition, setChampsTransition] = useState({});
-  const [transitionEnCours, setTransitionEnCours] = useState(false);
-  const [transitionErreur, setTransitionErreur] = useState("");
-  const [transitionSucces, setTransitionSucces] = useState("");
-  const identifiantCourant = idObjet(objet);
+function PanneauDetail({
+  objet,
+  etat,
+  chaine,
+  historique,
+  onFermer,
+  onReessayer,
+  onNaviguer,
+  onOuvrirId,
+  onOuvrirObjet,
+  onAction,
+  transitionSucces,
+  modaleOuverte = false,
+  verificationSource = false,
+  verificationErreur = "",
+}) {
+  const panneauRef = useRef(null);
+  const identifiantPanneau = idObjet(objet);
 
   useEffect(() => {
-    setActionOuverte("");
-    setChampsTransition({});
-    setTransitionEnCours(false);
-    setTransitionErreur("");
-    setTransitionSucces("");
-  }, [identifiantCourant]);
+    const panneau = panneauRef.current;
+    if (!panneau) return undefined;
+    panneau.querySelector('[data-testid="boucle-detail-fermer"]')?.focus?.();
+    const surTabulation = (evenement) => {
+      if (evenement.key !== "Tab") return;
+      const focusables = [...panneau.querySelectorAll(
+        'a[href], button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])',
+      )];
+      if (focusables.length === 0) return;
+      const premier = focusables[0];
+      const dernier = focusables[focusables.length - 1];
+      if (evenement.shiftKey && document.activeElement === premier) {
+        evenement.preventDefault();
+        dernier.focus();
+      } else if (!evenement.shiftKey && document.activeElement === dernier) {
+        evenement.preventDefault();
+        premier.focus();
+      }
+    };
+    panneau.addEventListener("keydown", surTabulation);
+    return () => panneau.removeEventListener("keydown", surTabulation);
+  }, [identifiantPanneau]);
 
   if (!objet) return null;
 
@@ -435,8 +356,6 @@ function PanneauDetail({ objet, etat, chaine, historique, onFermer, onReessayer,
   const outcomes = listeIdentifiants(objet, "outcome_ids", "outcome_id");
   const mode = texte(valeurDe(objet, "mode")).toUpperCase();
   const resume = resumeObjet(objet);
-  const transitions = TRANSITIONS[typeObjet(objet)] || [];
-  const specActive = transitions.find((spec) => spec.action === actionOuverte) || null;
   const resumeChaine = etat.chargement
     ? "Chargement du contexte…"
     : etat.erreur
@@ -446,6 +365,49 @@ function PanneauDetail({ objet, etat, chaine, historique, onFermer, onReessayer,
         : "Aucune chaîne amont · afficher";
   const precisions = [
     ["Statut", texteAffichable(valeurDe(objet, "statut"))],
+    ["Type de signal", texteAffichable(valeurDe(objet, "type_signal"))],
+    ["Source", texteAffichable(valeurDe(objet, "source"))],
+    ["Intensité", texteAffichable(valeurDe(objet, "intensite"))],
+    ["Détecté le", dateLisible(valeurDe(objet, "detecte_le"))
+      || texteAffichable(valeurDe(objet, "detecte_le"))],
+    ["Confiance", texteAffichable(valeurDe(objet, "confiance"))],
+    ["Situations", texteAffichable(valeurDe(objet, "situation_ids"))],
+    ["Signaux", texteAffichable(valeurDe(objet, "signal_ids"))],
+    ["Type d'expression", texteAffichable(valeurDe(objet, "type_expression"))],
+    ["Formulation", texteAffichable(valeurDe(objet, "formulation"))],
+    ["Canal", texteAffichable(valeurDe(objet, "canal"))],
+    ["Auteur", texteAffichable(valeurDe(objet, "auteur"))],
+    ["Inconnues", texteAffichable(valeurDe(objet, "inconnues"))],
+    ["Énoncé", texteAffichable(valeurDe(objet, "enonce"))],
+    ["Conditions de test", texteAffichable(valeurDe(objet, "conditions_test"))],
+    ["Claims soutenants", texteAffichable(valeurDe(objet, "claim_ids_soutenants"))],
+    ["Claims opposants", texteAffichable(valeurDe(objet, "claim_ids_opposants"))],
+    ["Expert", texteAffichable(valeurDe(objet, "expert_id"))],
+    ["Domaine", texteAffichable(valeurDe(objet, "domaine"))],
+    ["Rôle", texteAffichable(valeurDe(objet, "role"))],
+    ["Méthodes", texteAffichable(valeurDe(objet, "methodes"))],
+    ["Responsabilités", texteAffichable(valeurDe(objet, "responsabilites"))],
+    ["Périmètre", texteAffichable(valeurDe(objet, "perimetre"))],
+    ["Sources autorisées", texteAffichable(valeurDe(objet, "sources_autorisees"))],
+    ["Outils autorisés", texteAffichable(valeurDe(objet, "outils_autorises"))],
+    ["Limites", texteAffichable(valeurDe(objet, "limites"))],
+    ["Contenu", texteAffichable(valeurDe(objet, "contenu"))],
+    ["Constats", texteAffichable(valeurDe(objet, "constats"))],
+    ["Claims proposés", texteAffichable(valeurDe(objet, "claim_ids_proposes"))],
+    ["Hypothèses soutenues", texteAffichable(valeurDe(objet, "hypothesis_ids_soutenues"))],
+    ["Hypothèses contestées", texteAffichable(valeurDe(objet, "hypothesis_ids_contestees"))],
+    ["Contribution le", dateLisible(valeurDe(objet, "contribution_le"))
+      || texteAffichable(valeurDe(objet, "contribution_le"))],
+    ["Type d'opportunité", texteAffichable(valeurDe(objet, "type_opportunite"))],
+    ["Type de risque", texteAffichable(valeurDe(objet, "type_risque"))],
+    ["Valeur potentielle", texteAffichable(valeurDe(objet, "valeur_potentielle"))],
+    ["Probabilité", texteAffichable(valeurDe(objet, "probabilite"))],
+    ["Impact", texteAffichable(valeurDe(objet, "impact"))],
+    ["Horizon", texteAffichable(valeurDe(objet, "horizon"))],
+    ["Critères", texteAffichable(valeurDe(objet, "criteres"))],
+    ["Sévérité", texteAffichable(valeurDe(objet, "severite"))],
+    ["Motif", texteAffichable(valeurDe(objet, "motif"))],
+    ["Justification", texteAffichable(valeurDe(objet, "justification"))],
     ["Choix", texteAffichable(valeurDe(objet, "choix"))],
     ["Acteur", texteAffichable(valeurDe(objet, "acteur"))],
     ["Métrique", texteAffichable(valeurDe(objet, "metrique"))],
@@ -455,60 +417,23 @@ function PanneauDetail({ objet, etat, chaine, historique, onFermer, onReessayer,
     ["Propriétaire", texteAffichable(valeurDe(objet, "proprietaire"))],
   ].filter(([, contenu]) => contenu);
 
-  const basculerTransition = (spec) => {
-    setTransitionErreur("");
-    setTransitionSucces("");
-    setChampsTransition({});
-    setActionOuverte(actionOuverte === spec.action ? "" : spec.action);
-  };
-
-  const changerChampTransition = (cle, valeur) => {
-    setChampsTransition((avant) => ({ ...avant, [cle]: valeur }));
-    if (transitionErreur) setTransitionErreur("");
-  };
-
-  const lancerTransition = async (evenement) => {
-    evenement.preventDefault();
-    if (!specActive || !identifiant) return;
-    setTransitionErreur("");
-    setTransitionSucces("");
-    const { donnees, erreur: erreurValidation } = construireDonneesTransition(specActive, champsTransition);
-    if (erreurValidation) {
-      setTransitionErreur(erreurValidation);
-      return;
-    }
-    setTransitionEnCours(true);
-    try {
-      const reponse = await api.post(
-        `/boucle/objets/${encodeURIComponent(identifiant)}/transition`,
-        { action: specActive.action, donnees },
-      );
-      const identifiantNouveau = texte(reponse.data?.id).trim();
-      setTransitionSucces(
-        identifiantNouveau
-          ? `${specActive.libelle} enregistrée — objet ${identifiantNouveau}. La liste est actualisée.`
-          : `${specActive.libelle} enregistrée. La liste est actualisée.`,
-      );
-      setActionOuverte("");
-      setChampsTransition({});
-      onActualiser?.(identifiant);
-    } catch (cause) {
-      setTransitionErreur(messageErreur(cause, "La transition a été refusée par la boucle."));
-    } finally {
-      setTransitionEnCours(false);
-    }
-  };
-
   return (
-    <div className="fixed inset-0 z-50 flex justify-end" data-testid="boucle-detail">
+    <div
+      className="fixed inset-0 z-50 flex justify-end"
+      data-testid="boucle-detail"
+      inert={modaleOuverte ? true : undefined}
+      aria-hidden={modaleOuverte ? "true" : undefined}
+    >
       <button
         type="button"
         aria-label="Fermer le détail"
         onClick={onFermer}
         data-testid="boucle-detail-fond"
+        tabIndex={-1}
         className="absolute inset-0 bg-black/55 backdrop-blur-[2px]"
       />
       <aside
+        ref={panneauRef}
         role="dialog"
         aria-modal="true"
         aria-label={`Détail de ${titreObjet(objet)}`}
@@ -520,6 +445,14 @@ function PanneauDetail({ objet, etat, chaine, historique, onFermer, onReessayer,
               {stade && <span style={{ color: stade.couleur }}>{stade.label}</span>}
               {!stade && <span className="text-[#94A3B8]">{typeObjet(objet) || "Objet"}</span>}
               {mode && <span className="rounded border border-[rgba(148,163,184,0.2)] px-1.5 py-px text-[#94A3B8]">{MODES_LABEL.get(mode) || mode}</span>}
+              {statutObjet(objet) && (
+                <span
+                  data-testid="boucle-detail-statut"
+                  className="rounded border border-[rgba(148,163,184,0.2)] px-1.5 py-px text-[#94A3B8]"
+                >
+                  {statutObjet(objet)}
+                </span>
+              )}
             </div>
             <h2 className="mt-2 font-display text-lg font-black leading-tight text-[#F2F6F8]" data-testid="boucle-detail-titre">
               {titreObjet(objet)}
@@ -566,105 +499,16 @@ function PanneauDetail({ objet, etat, chaine, historique, onFermer, onReessayer,
           )}
         </div>
 
-        {transitions.length > 0 && identifiant && (
-          <section className="mt-5" aria-labelledby="boucle-transitions-titre" data-testid="boucle-transitions">
-            <h3 id="boucle-transitions-titre" className="font-code text-[10px] uppercase tracking-[0.22em] text-[#94A3B8]">
-              Faire transiter
-            </h3>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {transitions.map((spec) => (
-                <button
-                  key={spec.action}
-                  type="button"
-                  onClick={() => basculerTransition(spec)}
-                  aria-expanded={actionOuverte === spec.action}
-                  data-testid={`boucle-transition-${spec.action}`}
-                  className={`rounded-md border px-2.5 py-1.5 text-[11px] font-semibold transition-colors ${
-                    actionOuverte === spec.action
-                      ? "border-[#60A5FA]/60 bg-[#60A5FA]/10 text-[#BFDBFE]"
-                      : "border-[rgba(148,163,184,0.2)] text-[#D8E2EA] hover:border-[#60A5FA]/40 hover:text-[#F2F6F8]"
-                  }`}
-                >
-                  {spec.libelle}
-                </button>
-              ))}
-            </div>
+        <PanneauActions
+          objet={objet}
+          succes={transitionSucces}
+          onAction={onAction}
+          onOuvrir={onOuvrirObjet}
+          verification={verificationSource}
+          verificationErreur={verificationErreur}
+        />
 
-            {specActive && (
-              <form
-                onSubmit={lancerTransition}
-                noValidate
-                className="mt-3 rounded-lg border border-[rgba(148,163,184,0.16)] bg-[#0B1620] p-3"
-                data-testid={`boucle-transition-form-${specActive.action}`}
-              >
-                <p className="text-[11px] leading-relaxed text-[#7C93A8]">{specActive.description}</p>
-                <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                  {specActive.champs.map((champ) => (
-                    <div key={champ.cle} className={champ.type === "textarea" ? "sm:col-span-2" : ""}>
-                      <label
-                        htmlFor={`boucle-transition-${specActive.action}-${champ.cle}`}
-                        className="block font-code text-[9px] uppercase tracking-wider text-[#7C93A8]"
-                      >
-                        {champ.libelle}
-                      </label>
-                      {champ.type === "textarea" ? (
-                        <textarea
-                          id={`boucle-transition-${specActive.action}-${champ.cle}`}
-                          value={champsTransition[champ.cle] || ""}
-                          onChange={(evenement) => changerChampTransition(champ.cle, evenement.target.value)}
-                          rows={2}
-                          data-testid={`boucle-transition-champ-${champ.cle}`}
-                          className="mt-1 w-full rounded-md border border-[rgba(148,163,184,0.16)] bg-[#091420] px-2.5 py-1.5 text-xs text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#60A5FA]/60 focus:outline-none"
-                        />
-                      ) : (
-                        <input
-                          id={`boucle-transition-${specActive.action}-${champ.cle}`}
-                          type="text"
-                          inputMode={champ.numerique ? "decimal" : undefined}
-                          value={champsTransition[champ.cle] || ""}
-                          onChange={(evenement) => changerChampTransition(champ.cle, evenement.target.value)}
-                          required={Boolean(champ.requis)}
-                          autoComplete="off"
-                          data-testid={`boucle-transition-champ-${champ.cle}`}
-                          className="mt-1 h-8 w-full rounded-md border border-[rgba(148,163,184,0.16)] bg-[#091420] px-2.5 text-xs text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#60A5FA]/60 focus:outline-none"
-                        />
-                      )}
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <button
-                    type="submit"
-                    disabled={transitionEnCours}
-                    data-testid={`boucle-transition-valider-${specActive.action}`}
-                    className="flex h-7 items-center gap-1.5 rounded-md bg-[#60A5FA] px-3 text-[11px] font-semibold text-[#071019] transition-colors hover:bg-[#93C5FD] disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {transitionEnCours ? "Transition…" : "Valider la transition"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => basculerTransition(specActive)}
-                    data-testid="boucle-transition-annuler"
-                    className="h-7 rounded-md border border-[rgba(148,163,184,0.2)] px-2.5 text-[11px] text-[#94A3B8] transition-colors hover:text-[#F2F6F8]"
-                  >
-                    Annuler
-                  </button>
-                </div>
-              </form>
-            )}
-
-            {transitionErreur && (
-              <p role="alert" data-testid="boucle-transition-erreur" className="mt-2 flex items-start gap-1.5 text-xs text-[#FCA5A5]">
-                <WarningCircle size={13} className="mt-0.5 shrink-0" /> {transitionErreur}
-              </p>
-            )}
-            {transitionSucces && (
-              <p role="status" data-testid="boucle-transition-succes" className="mt-2 text-xs text-[#6EE7B7]">
-                {transitionSucces}
-              </p>
-            )}
-          </section>
-        )}
+        <ComparaisonScenarios objet={objet} />
 
         {(preuves.length > 0 || claims.length > 0 || outcomes.length > 0) && (
           <Depliable
@@ -822,7 +666,7 @@ function PanneauDetail({ objet, etat, chaine, historique, onFermer, onReessayer,
           <dl className="mt-2 space-y-1.5 text-xs">
             <div className="flex gap-3">
               <dt className="w-28 shrink-0 text-[#7C93A8]">Version</dt>
-              <dd className="text-[#D8E2EA]">{texte(valeurDe(objet, "version")) || "—"}</dd>
+              <dd className="text-[#D8E2EA]" data-testid="boucle-version">{texte(valeurDe(objet, "version")) || "—"}</dd>
             </div>
             <div className="flex gap-3">
               <dt className="w-28 shrink-0 text-[#7C93A8]">Observé le</dt>
@@ -869,6 +713,14 @@ export default function Boucle() {
   const [selection, setSelection] = useState(null);
   const [detail, setDetail] = useState({ chargement: false, erreur: null, data: null });
   const refDetail = useRef(0);
+  const enCoursRef = useRef(false);
+  const refRechargement = useRef(false);
+  const refAbortVerification = useRef(null);
+  const refVerificationJeton = useRef(0);
+  const refElementDeclencheur = useRef(null);
+  const refIdentifiantDeclencheur = useRef(null);
+  const refElementDeclencheurAction = useRef(null);
+  const refRestaurationFocusAction = useRef(false);
   const [formulaireOutcome, setFormulaireOutcome] = useState(OUTCOME_INITIAL);
   const [outcomeEnCours, setOutcomeEnCours] = useState(false);
   const [outcomeErreur, setOutcomeErreur] = useState("");
@@ -881,10 +733,12 @@ export default function Boucle() {
   const [twinEnCours, setTwinEnCours] = useState(false);
   const [twinErreur, setTwinErreur] = useState("");
   const [twinSucces, setTwinSucces] = useState("");
-  const [formulaireObjet, setFormulaireObjet] = useState(OBJET_INITIAL);
-  const [objetEnCours, setObjetEnCours] = useState(false);
-  const [objetErreur, setObjetErreur] = useState("");
-  const [objetSucces, setObjetSucces] = useState("");
+  const [actionActive, setActionActive] = useState(null);
+  const [actionGlobale, setActionGlobale] = useState(false);
+  const [actionSource, setActionSource] = useState(null);
+  const [expertsDisponibles, setExpertsDisponibles] = useState([]);
+  const [expertsErreur, setExpertsErreur] = useState("");
+  const [transition, setTransition] = useState({ enCours: false, erreur: "", succes: null, rechargement: false, verificationErreur: "" });
 
   useEffect(() => {
     let annule = false;
@@ -953,41 +807,66 @@ export default function Boucle() {
     return () => { annule = true; };
   }, [rechargementTwins]);
 
-  const chargerDetail = useCallback((identifiant) => {
-    if (!identifiant) return;
+  const chargerDetail = useCallback((identifiant, options = {}) => {
+    if (!identifiant) return Promise.resolve(false);
+    const { signal, conserverDonnees = false, messageEchec } = options;
     const jeton = refDetail.current + 1;
     refDetail.current = jeton;
-    setDetail({ chargement: true, erreur: null, data: null });
-    api.get(`/boucle/objets/${encodeURIComponent(identifiant)}`, { params: { historique: true } })
+    if (conserverDonnees) {
+      setDetail((avant) => ({ ...avant, chargement: true, erreur: null }));
+    } else {
+      setDetail({ chargement: true, erreur: null, data: null });
+    }
+    return api.get(`/boucle/objets/${encodeURIComponent(identifiant)}`, {
+      params: { historique: true },
+      signal,
+    })
       .then((reponse) => {
-        if (refDetail.current !== jeton) return;
+        if (refDetail.current !== jeton) return null;
         setDetail({ chargement: false, erreur: null, data: reponse.data || null });
+        return true;
       })
       .catch((cause) => {
-        if (refDetail.current !== jeton) return;
-        setDetail({
+        if (refDetail.current !== jeton) return null;
+        const abandonne = signal?.aborted
+          || cause?.code === "ERR_CANCELED"
+          || cause?.name === "CanceledError";
+        const message = abandonne
+          ? MESSAGE_VERIFICATION_INDISPONIBLE
+          : messageErreur(cause, messageEchec || "Impossible de charger le détail de cet objet.");
+        setDetail((avant) => ({
           chargement: false,
-          erreur: messageErreur(cause, "Impossible de charger le détail de cet objet."),
-          data: null,
-        });
+          erreur: message,
+          data: conserverDonnees ? avant.data : null,
+        }));
+        return false;
       });
   }, []);
 
+  const reinitialiserTransition = () => {
+    setTransition((avant) => ({
+      enCours: false,
+      erreur: "",
+      succes: null,
+      rechargement: refRechargement.current,
+      verificationErreur: refRechargement.current ? avant.verificationErreur || "" : "",
+    }));
+  };
+
   const ouvrirObjet = (objet) => {
+    if (transition.enCours || enCoursRef.current) return;
+    if (!selection) {
+      refElementDeclencheur.current = document.activeElement;
+      refIdentifiantDeclencheur.current = idObjet(objet);
+    }
+    reinitialiserTransition();
+    setActionGlobale(false);
+    setActionSource(null);
     setSelection(objet);
     const identifiant = idObjet(objet);
     if (identifiant) chargerDetail(identifiant);
     else setDetail({ chargement: false, erreur: null, data: null });
   };
-
-  useEffect(() => {
-    if (!selection) return undefined;
-    const fermer = (evenement) => {
-      if (evenement.key === "Escape") setSelection(null);
-    };
-    document.addEventListener("keydown", fermer);
-    return () => document.removeEventListener("keydown", fermer);
-  }, [selection]);
 
   const objetsFiltres = useMemo(() => {
     const requete = sansAccents(recherche.trim());
@@ -1029,6 +908,13 @@ export default function Boucle() {
   const total = totalSynthese(synthese) ?? objets.length;
   const filtresActifs = Boolean(recherche.trim() || filtres.famille || filtres.type || filtres.mode);
   const objetDetail = detail.data?.objet || selection;
+  const actionCourante = actionActive
+    ? configurationAction(
+      actionActive,
+      actionGlobale ? null : actionSource,
+      { experts: expertsDisponibles },
+    )
+    : null;
   const chaineDetail = Array.isArray(detail.data?.chaine)
     ? detail.data.chaine
     : Array.isArray(detail.data?.objet?.chaine) ? detail.data.objet.chaine : [];
@@ -1048,69 +934,637 @@ export default function Boucle() {
   const actualiser = () => setRechargement((valeur) => valeur + 1);
 
   const ouvrirParId = (identifiant) => {
-    if (!identifiant) return;
+    if (!identifiant || transition.enCours || enCoursRef.current) return;
+    if (!selection) {
+      refElementDeclencheur.current = document.activeElement;
+      refIdentifiantDeclencheur.current = identifiant;
+    }
+    reinitialiserTransition();
+    setActionGlobale(false);
+    setActionSource(null);
     const connu = objets.find((objet) => idObjet(objet) === identifiant);
     setSelection(connu || { id: identifiant, type: "", famille: "" });
     chargerDetail(identifiant);
   };
 
-  const changerObjet = (cle, valeur) => {
-    setFormulaireObjet((avant) => ({ ...avant, [cle]: valeur }));
-    if (objetErreur) setObjetErreur("");
+  const fermerDetail = useCallback(() => {
+    if (transition.enCours || enCoursRef.current) return;
+    // Invalide un GET détail encore en vol et efface l'ancien objet : le bouton
+    // global ne doit jamais hériter de la Situation qui vient d'être fermée.
+    refDetail.current += 1;
+    setSelection(null);
+    setDetail({ chargement: false, erreur: null, data: null });
+    setActionActive(null);
+    setActionGlobale(false);
+    setActionSource(null);
+    setTransition((avant) => ({
+      enCours: false,
+      erreur: "",
+      succes: null,
+      rechargement: refRechargement.current,
+      verificationErreur: avant.verificationErreur || "",
+    }));
+  }, [transition.enCours]);
+
+  const ouvrirAction = (actionId) => {
+    if (transition.enCours || enCoursRef.current || refRechargement.current) return;
+    refElementDeclencheurAction.current = document.activeElement;
+    reinitialiserTransition();
+    setActionGlobale(false);
+    // Fige la source au moment de l'ouverture : un rafraîchissement du détail
+    // pendant la saisie ne peut pas changer l'id/le type de la cible soumise.
+    setActionSource(objetDetail || null);
+    setActionActive(actionId);
   };
 
-  const creerObjet = async (evenement) => {
-    evenement.preventDefault();
-    setObjetErreur("");
-    setObjetSucces("");
+  // La création racine ne dépend d'aucune sélection. Le bouton d'en-tête n'est
+  // atteignable que lorsque le détail est fermé : aucun reset de sélection n'est
+  // nécessaire ici, le conteneur principal devient simplement inerte avec la modale.
+  const ouvrirCreationSituation = () => {
+    if (transition.enCours || enCoursRef.current || refRechargement.current) return;
+    refElementDeclencheurAction.current = document.activeElement;
+    reinitialiserTransition();
+    setActionGlobale(false);
+    setActionSource(null);
+    setActionActive("creer_situation");
+  };
 
-    const type = texte(formulaireObjet.type).trim().toUpperCase();
-    const titre = texte(formulaireObjet.titre).trim();
-    const mode = texte(formulaireObjet.mode).trim().toUpperCase();
-    const brut = texte(formulaireObjet.donnees).trim();
+  const ouvrirCreationSignalGlobal = () => {
+    if (transition.enCours || enCoursRef.current || refRechargement.current) return;
+    refElementDeclencheurAction.current = document.activeElement;
+    reinitialiserTransition();
+    // Intention explicite : même si un ancien détail traîne, la route globale est
+    // choisie et situation_ids reste éditable.
+    setActionGlobale(true);
+    setActionSource(null);
+    setActionActive("creer_signal");
+  };
 
-    if (!TYPES_CREATION.some((stade) => stade.type === type)) {
-      setObjetErreur("Le type est obligatoire : situation, investigation, décision ou initiative.");
-      return;
-    }
-    if (!titre) {
-      setObjetErreur("Le titre est obligatoire.");
-      return;
-    }
-    let donnees = {};
-    if (brut) {
-      try {
-        donnees = JSON.parse(brut);
-      } catch {
-        setObjetErreur("Les données doivent être un JSON valide (laisser vide sinon).");
-        return;
-      }
-      if (!donnees || typeof donnees !== "object" || Array.isArray(donnees)) {
-        setObjetErreur("Les données doivent former un objet JSON (« {…} »).");
-        return;
-      }
-    }
+  const ouvrirCreationExpert = () => {
+    if (transition.enCours || enCoursRef.current || refRechargement.current) return;
+    refElementDeclencheurAction.current = document.activeElement;
+    reinitialiserTransition();
+    setActionGlobale(false);
+    setActionSource(null);
+    setActionActive("inscrire_expert");
+  };
 
-    const corps = { type, titre, donnees };
-    if (mode) corps.mode = mode;
-
-    setObjetEnCours(true);
+  const chargerExperts = useCallback(async () => {
+    setExpertsErreur("");
     try {
-      const reponse = await api.post("/boucle/objets", corps);
-      const identifiant = texte(reponse.data?.id ?? reponse.data?.objet?.id).trim();
-      setObjetSucces(
-        identifiant
-          ? `Objet ${identifiant} créé. La liste et la synthèse sont actualisées.`
-          : "Objet créé. La liste et la synthèse sont actualisées.",
+      const reponse = await boucleApi.listerExperts({ statut: "ACTIVE", limite: 100 });
+      const experts = Array.isArray(reponse?.data?.experts) ? reponse.data.experts : [];
+      setExpertsDisponibles(experts);
+    } catch {
+      setExpertsDisponibles([]);
+      setExpertsErreur(
+        "Le registre des experts est indisponible. Vérifiez la connexion puis réessayez.",
       );
-      setFormulaireObjet({ ...OBJET_INITIAL });
-      actualiser();
-    } catch (cause) {
-      setObjetErreur(messageErreur(cause, "L'objet n'a pas pu être créé."));
+    }
+  }, []);
+
+  const rechargerDetailSource = async (identifiant) => {
+    refAbortVerification.current?.abort();
+    const controleur = new AbortController();
+    refAbortVerification.current = controleur;
+    const jetonVerification = refVerificationJeton.current + 1;
+    refVerificationJeton.current = jetonVerification;
+    const minuterie = setTimeout(() => controleur.abort(), DELAI_VERIFICATION_MS);
+    refRechargement.current = true;
+    setTransition((avant) => ({ ...avant, rechargement: true, verificationErreur: "" }));
+    try {
+      const ok = await chargerDetail(identifiant, {
+        signal: controleur.signal,
+        conserverDonnees: true,
+        messageEchec: MESSAGE_VERIFICATION_INDISPONIBLE,
+      });
+      if (ok === false) {
+        setTransition((avant) => ({ ...avant, verificationErreur: MESSAGE_VERIFICATION_INDISPONIBLE }));
+      }
     } finally {
-      setObjetEnCours(false);
+      clearTimeout(minuterie);
+      if (refVerificationJeton.current !== jetonVerification) return;
+      if (refAbortVerification.current === controleur) refAbortVerification.current = null;
+      refRechargement.current = false;
+      setTransition((avant) => ({ ...avant, rechargement: false }));
     }
   };
+
+  // Rafraîchit l'historique/la chaîne de la source après une création, sans vider
+  // le panneau ni poser le verrou de rechargement. Best-effort : en cas d'échec,
+  // la version issue de la chaîne reste affichée.
+  const rafraichirDetailSource = (identifiant) => {
+    const jeton = refDetail.current;
+    api.get(`/boucle/objets/${encodeURIComponent(identifiant)}`, { params: { historique: true } })
+      .then((reponse) => {
+        if (refDetail.current !== jeton) return;
+        const data = reponse.data;
+        if (!data?.objet) return;
+        setDetail((avant) => ({ ...avant, chargement: false, erreur: null, data }));
+        setSelection((avant) => (idObjet(avant) === identifiant ? data.objet : avant));
+        setObjets((avant) => fusionnerObjet(avant, data.objet));
+      })
+      .catch(() => {});
+  };
+
+  // Rafraîchit la liste après la création d'un scénario, sans toucher au détail
+  // du scénario sélectionné : le parent doit seulement exposer son lien inverse.
+  const rafraichirObjetListe = (identifiant) => {
+    if (!identifiant) return;
+    api.get(`/boucle/objets/${encodeURIComponent(identifiant)}`, { params: { historique: true } })
+      .then((reponse) => {
+        if (!reponse.data?.objet) return;
+        setObjets((avant) => fusionnerObjet(avant, reponse.data.objet));
+      })
+      .catch(() => {
+        setTransition((avant) => ({
+          ...avant,
+          verificationErreur:
+            "Le lien inverse du parent n'a pas pu être rafraîchi. Rechargez la boucle.",
+        }));
+      });
+  };
+
+  const demanderRestaurationFocusAction = () => {
+    refRestaurationFocusAction.current = true;
+  };
+
+  const fermerAction = () => {
+    if (transition.enCours || enCoursRef.current) return;
+    if (refRechargement.current) refElementDeclencheurAction.current = null;
+    setActionActive(null);
+    setActionGlobale(false);
+    setActionSource(null);
+    setExpertsErreur("");
+    setTransition((avant) => ({ ...avant, erreur: "" }));
+    demanderRestaurationFocusAction();
+  };
+
+  const executerTransition = async (valeurs) => {
+    if (enCoursRef.current || refRechargement.current || transition.rechargement) return;
+    if (!actionCourante) return;
+    if (actionActive === "solliciter_expert" && expertsErreur) {
+      setTransition((avant) => ({ ...avant, erreur: expertsErreur }));
+      return;
+    }
+    const creationSituation = actionActive === "creer_situation";
+    const creationExpert = actionActive === "inscrire_expert";
+    const creationRacine = creationSituation || creationExpert;
+    const creationScenario = actionActive === "creer_scenario";
+    const creationExpression = actionActive === "creer_expression";
+    const creationOpportunite = actionActive === "qualifier_opportunite";
+    const creationRisque = actionActive === "qualifier_risque";
+    const creationHypothese = actionActive === "creer_hypothese";
+    const creationSignal = actionActive === "creer_signal";
+    const signalGlobal = creationSignal && actionGlobale;
+    const sourceAction = signalGlobal ? null : actionSource;
+    if (!creationRacine && !signalGlobal && !sourceAction) return;
+    const identifiant = creationRacine || signalGlobal ? null : idObjet(sourceAction);
+    if (!creationRacine && !signalGlobal && !identifiant) {
+      setTransition((avant) => ({
+        ...avant,
+        erreur: "Cet objet n'a pas d'identifiant : la transition ne peut pas être enregistrée.",
+      }));
+      return;
+    }
+    if (!actionCourante.api || typeof boucleApi[actionCourante.api] !== "function") {
+      setTransition((avant) => ({
+        ...avant,
+        erreur: "Cette transition n'est pas disponible dans cette version de l'interface.",
+      }));
+      return;
+    }
+
+    const { corps, erreur } = construireCorps(
+      actionActive, valeurs, signalGlobal ? {} : (sourceAction || {}));
+    if (erreur) {
+      setTransition((avant) => ({ ...avant, erreur }));
+      return;
+    }
+
+    const action = actionActive;
+    const detailIncomplet = detail.chargement || !detail.data;
+    enCoursRef.current = true;
+    refDetail.current += 1; // invalide un GET détail encore en vol
+    setTransition((avant) => ({
+      ...avant,
+      enCours: true,
+      erreur: "",
+      rechargement: false,
+      verificationErreur: "",
+    }));
+
+    let reponse = null;
+    let cause = null;
+    try {
+      // Pas d'Idempotency-Key par défaut : le contrat A courant refuse les clés non vides.
+      reponse = creationSituation
+        ? await boucleApi.creerSituation(corps)
+        : creationExpert
+          ? await boucleApi.creerExpert(corps)
+          : creationScenario
+            ? await boucleApi.creerScenario(corps)
+            : creationOpportunite
+              ? await boucleApi.creerOpportunite(identifiant, corps)
+              : creationRisque
+                ? await boucleApi.creerRisque(identifiant, corps)
+                : creationHypothese
+                  ? await boucleApi.creerHypothese(identifiant, corps)
+                  : creationSignal
+                    ? (identifiant
+                      ? await boucleApi.creerSignalSituation(identifiant, corps)
+                      : await boucleApi.creerSignal(corps))
+                    : creationExpression
+                      ? await boucleApi.creerExpression(identifiant, corps)
+                      : await boucleApi[actionCourante.api](identifiant, corps);
+    } catch (erreurApi) {
+      cause = erreurApi;
+    } finally {
+      // Le POST est terminé : on relâche le verrou AVANT tout rechargement de détail.
+      enCoursRef.current = false;
+    }
+
+    if (cause) {
+      if (creationSignal && signalGlobal) {
+        const statut = cause?.response?.status;
+        const resultatIncertain = !cause?.response || statut >= 500;
+        const message = resultatIncertain && !cause?.response
+          ? "Résultat incertain : le signal n'a pas confirmé son issue. Vérifiez la liste avant de réessayer."
+          : messageErreurTransition(cause, "Le signal n'a pas pu être enregistré.");
+        setTransition((avant) => ({
+          ...avant,
+          enCours: false,
+          erreur: message,
+        }));
+        if (statut === 409 || resultatIncertain) actualiser();
+        return;
+      }
+      if (creationRacine) {
+        const statut = cause?.response?.status;
+        const resultatIncertain = !cause?.response || statut >= 500;
+        const detail = cause?.response?.data?.detail;
+        const detail503 = statut === 503 && typeof detail === "string" && detail.trim()
+          ? detail.trim()
+          : "";
+        const quoi = creationExpert ? "l'expert" : "la situation";
+        const message = resultatIncertain
+          ? (detail503
+            ? `Résultat incertain : ${detail503}`
+            : `Résultat incertain : ${quoi} n'a peut-être pas été créé. Vérifiez la liste avant de réessayer.`)
+          : messageErreurTransition(
+            cause,
+            creationExpert
+              ? "L'expert n'a pas pu être créé."
+              : "La situation n'a pas pu être créée.",
+          );
+        setTransition((avant) => ({
+          ...avant,
+          enCours: false,
+          erreur: message,
+        }));
+        if (statut === 409 || resultatIncertain) actualiser();
+        return;
+      }
+      const statut = cause?.response?.status;
+      const resultatIncertain = !cause?.response || statut >= 500;
+      const message = resultatIncertain
+        ? "Résultat incertain : la transition n'a pas confirmé son issue. Vérifiez l'état de l'objet avant de réessayer."
+        : messageErreurTransition(cause);
+      setTransition((avant) => ({
+        ...avant,
+        enCours: false,
+        erreur: message,
+      }));
+      if (detailIncomplet || statut === 404 || statut === 409 || resultatIncertain) {
+        await rechargerDetailSource(identifiant);
+        actualiser();
+      }
+      return;
+    }
+
+    if (creationRacine) {
+      const nouvelObjet = reponse?.data?.objet ?? null;
+      const nouvelleChaine = Array.isArray(reponse?.data?.chaine) ? reponse.data.chaine : null;
+      const nouvelHistorique = Array.isArray(reponse?.data?.historique) ? reponse.data.historique : null;
+      const dernierDeChaine = nouvelleChaine && nouvelleChaine.length > 0
+        ? nouvelleChaine[nouvelleChaine.length - 1]
+        : null;
+      const objetCree = nouvelObjet || dernierDeChaine;
+      const identifiantCree = idObjet(objetCree);
+
+      if (!identifiantCree) {
+        setTransition((avant) => ({
+          ...avant,
+          enCours: false,
+          erreur: creationExpert
+            ? "L'expert a été créé mais la réponse ne contient aucun identifiant exploitable. Vérifiez la liste avant de réessayer."
+            : "La situation a été créée mais la réponse ne contient aucun identifiant exploitable. Vérifiez la liste avant de réessayer.",
+        }));
+        actualiser();
+        return;
+      }
+
+      const chaine = nouvelleChaine && nouvelleChaine.length > 0 ? nouvelleChaine : [objetCree];
+      setActionActive(null);
+      setActionGlobale(false);
+      setActionSource(null);
+      setTransition({
+        enCours: false,
+        erreur: "",
+        succes: { action, objet: objetCree },
+        rechargement: false,
+        verificationErreur: "",
+      });
+      // Le bouton d'en-tête devient inerte avec la sélection : on ne le refocalise pas.
+      refElementDeclencheurAction.current = null;
+      demanderRestaurationFocusAction();
+
+      const objetsReponse = [objetCree, ...(nouvelleChaine || [])]
+        .filter((objet) => idObjet(objet));
+      setObjets((avant) => objetsReponse.reduce((liste, objet) => fusionnerObjet(liste, objet), avant));
+      setSelection(objetCree);
+      setDetail({
+        chargement: false,
+        erreur: null,
+        data: {
+          objet: objetCree,
+          chaine,
+          historique: nouvelHistorique || [],
+        },
+      });
+      if (!nouvelleChaine || nouvelleChaine.length === 0 || !nouvelHistorique) {
+        rafraichirDetailSource(identifiantCree);
+      }
+      actualiser();
+      return;
+    }
+
+    if (creationScenario) {
+      const nouvelObjet = reponse?.data?.objet ?? null;
+      const nouvelleChaine = Array.isArray(reponse?.data?.chaine) ? reponse.data.chaine : null;
+      const nouvelHistorique = Array.isArray(reponse?.data?.historique) ? reponse.data.historique : null;
+      const dernierDeChaine = nouvelleChaine && nouvelleChaine.length > 0
+        ? nouvelleChaine[nouvelleChaine.length - 1]
+        : null;
+      const objetCree = nouvelObjet || dernierDeChaine;
+      const scenarioId = idObjet(objetCree);
+
+      if (!scenarioId) {
+        setTransition((avant) => ({
+          ...avant,
+          enCours: false,
+          erreur: "Le scénario a été créé mais la réponse ne contient aucun identifiant exploitable. Vérifiez la liste avant de réessayer.",
+        }));
+        actualiser();
+        return;
+      }
+
+      const chaine = nouvelleChaine && nouvelleChaine.length > 0 ? nouvelleChaine : [objetCree];
+      setActionActive(null);
+      setActionGlobale(false);
+      setActionSource(null);
+      setTransition({
+        enCours: false,
+        erreur: "",
+        succes: { action, objet: objetCree },
+        rechargement: false,
+        verificationErreur: "",
+      });
+      refElementDeclencheurAction.current = null;
+      demanderRestaurationFocusAction();
+
+      const objetsReponse = [objetCree, ...(nouvelleChaine || [])]
+        .filter((objet) => idObjet(objet));
+      setObjets((avant) => objetsReponse.reduce((liste, objet) => fusionnerObjet(liste, objet), avant));
+      setSelection(objetCree);
+      setDetail({
+        chargement: false,
+        erreur: null,
+        data: {
+          objet: objetCree,
+          chaine,
+          historique: nouvelHistorique || [],
+        },
+      });
+      // Le parent est relu en arrière-plan pour exposer son lien inverse scenario_ids/scenario_id.
+      rafraichirObjetListe(identifiant);
+      actualiser();
+      return;
+    }
+
+    if (creationOpportunite || creationRisque || creationHypothese || creationSignal) {
+      const nouvelObjet = reponse?.data?.objet ?? null;
+      const nouvelleChaine = Array.isArray(reponse?.data?.chaine) ? reponse.data.chaine : null;
+      const nouvelHistorique = Array.isArray(reponse?.data?.historique) ? reponse.data.historique : null;
+      const dernierDeChaine = nouvelleChaine && nouvelleChaine.length > 0
+        ? nouvelleChaine[nouvelleChaine.length - 1]
+        : null;
+      const objetCree = nouvelObjet || dernierDeChaine;
+      const identifiantCree = idObjet(objetCree);
+      const libelleCreation = creationOpportunite
+        ? "L'opportunité"
+        : creationRisque
+          ? "Le risque"
+          : creationSignal ? "Le signal" : "L'hypothèse";
+      const accordCreation = creationRisque || creationSignal ? "" : "e";
+
+      if (!identifiantCree) {
+        setTransition((avant) => ({
+          ...avant,
+          enCours: false,
+          erreur: `${libelleCreation} a été créé${accordCreation} mais la réponse ne contient aucun identifiant exploitable. Vérifiez la liste avant de réessayer.`,
+        }));
+        actualiser();
+        return;
+      }
+
+      const chaine = nouvelleChaine && nouvelleChaine.length > 0 ? nouvelleChaine : [objetCree];
+      setActionActive(null);
+      setActionGlobale(false);
+      setActionSource(null);
+      setTransition({
+        enCours: false,
+        erreur: "",
+        succes: { action, objet: objetCree },
+        rechargement: false,
+        verificationErreur: "",
+      });
+      refElementDeclencheurAction.current = null;
+      demanderRestaurationFocusAction();
+
+      const objetsReponse = [objetCree, ...(nouvelleChaine || [])]
+        .filter((objet) => idObjet(objet));
+      setObjets((avant) => objetsReponse.reduce((liste, objet) => fusionnerObjet(liste, objet), avant));
+      setSelection(objetCree);
+      setDetail({
+        chargement: false,
+        erreur: null,
+        data: {
+          objet: objetCree,
+          chaine,
+          historique: nouvelHistorique || [],
+        },
+      });
+      // Le parent est relu en arrière-plan pour exposer son lien inverse
+      // (opportunity_ids/risk_ids pour une Expression, hypothesis_ids pour une Investigation).
+      rafraichirObjetListe(identifiant);
+      actualiser();
+      return;
+    }
+
+    if (creationExpression) {
+      const nouvelObjet = reponse?.data?.objet ?? null;
+      const nouvelleChaine = Array.isArray(reponse?.data?.chaine) ? reponse.data.chaine : null;
+      const nouvelHistorique = Array.isArray(reponse?.data?.historique) ? reponse.data.historique : null;
+      const dernierDeChaine = nouvelleChaine && nouvelleChaine.length > 0
+        ? nouvelleChaine[nouvelleChaine.length - 1]
+        : null;
+      const objetCree = nouvelObjet || dernierDeChaine;
+      const expressionId = idObjet(objetCree);
+
+      if (!expressionId) {
+        setTransition((avant) => ({
+          ...avant,
+          enCours: false,
+          erreur: "L'expression a été créée mais la réponse ne contient aucun identifiant exploitable. Vérifiez la liste avant de réessayer.",
+        }));
+        actualiser();
+        return;
+      }
+
+      const chaine = nouvelleChaine && nouvelleChaine.length > 0 ? nouvelleChaine : [objetCree];
+      setActionActive(null);
+      setActionGlobale(false);
+      setActionSource(null);
+      setTransition({
+        enCours: false,
+        erreur: "",
+        succes: { action, objet: objetCree },
+        rechargement: false,
+        verificationErreur: "",
+      });
+      refElementDeclencheurAction.current = null;
+      demanderRestaurationFocusAction();
+
+      const objetsReponse = [objetCree, ...(nouvelleChaine || [])]
+        .filter((objet) => idObjet(objet));
+      setObjets((avant) => objetsReponse.reduce((liste, objet) => fusionnerObjet(liste, objet), avant));
+      setSelection(objetCree);
+      setDetail({
+        chargement: false,
+        erreur: null,
+        data: {
+          objet: objetCree,
+          chaine,
+          historique: nouvelHistorique || [],
+        },
+      });
+      // La situation est relue en arrière-plan pour exposer son lien inverse expression_id.
+      rafraichirObjetListe(identifiant);
+      actualiser();
+      return;
+    }
+
+    const nouvelObjet = reponse?.data?.objet ?? null;
+    const nouvelleChaine = Array.isArray(reponse?.data?.chaine) ? reponse.data.chaine : null;
+    const nouvelHistorique = Array.isArray(reponse?.data?.historique) ? reponse.data.historique : null;
+    const detailSource = detailSourceApresTransition({
+      identifiant,
+      nouvelObjet,
+      nouvelleChaine,
+      nouvelHistorique,
+      ancienDetail: detail.data,
+    });
+    const objetDifferent = idObjet(nouvelObjet) !== identifiant;
+
+    setActionActive(null);
+    setActionGlobale(false);
+    setActionSource(null);
+    setTransition({
+      enCours: false,
+      erreur: "",
+      succes: nouvelObjet ? { action, objet: nouvelObjet } : { action, objet: null },
+      rechargement: false,
+      verificationErreur: "",
+    });
+    demanderRestaurationFocusAction();
+
+    const objetsReponse = [nouvelObjet, ...(nouvelleChaine || [])]
+      .filter((objet) => idObjet(objet));
+    if (objetsReponse.length > 0) {
+      setObjets((avant) => objetsReponse.reduce((liste, objet) => fusionnerObjet(liste, objet), avant));
+    }
+
+    if (detailSource.source) {
+      setSelection(detailSource.source);
+      setDetail((avant) => ({
+        ...avant,
+        chargement: false,
+        erreur: null,
+        data: {
+          ...(avant.data || {}),
+          objet: detailSource.source,
+          chaine: detailSource.chaine,
+          historique: detailSource.historique,
+        },
+      }));
+      if (objetDifferent) rafraichirDetailSource(identifiant);
+    } else {
+      await rechargerDetailSource(identifiant);
+    }
+    actualiser();
+  };
+
+  useEffect(() => {
+    if (!selection) return undefined;
+    const surEchap = (evenement) => {
+      if (evenement.key !== "Escape") return;
+      if (actionActive || transition.enCours || enCoursRef.current) return;
+      fermerDetail();
+    };
+    document.addEventListener("keydown", surEchap);
+    return () => document.removeEventListener("keydown", surEchap);
+  }, [selection, actionActive, transition.enCours, fermerDetail]);
+
+  useEffect(() => {
+    if (actionActive === "solliciter_expert") chargerExperts();
+  }, [actionActive, chargerExperts]);
+
+  useEffect(() => {
+    if (selection) return;
+    const declencheur = refElementDeclencheur.current;
+    const identifiantDeclencheur = refIdentifiantDeclencheur.current;
+    if (!declencheur && !identifiantDeclencheur) return;
+    refElementDeclencheur.current = null;
+    refIdentifiantDeclencheur.current = null;
+    if (declencheur?.isConnected) {
+      declencheur.focus?.();
+      return;
+    }
+    if (identifiantDeclencheur) {
+      const remplacant = [...document.querySelectorAll("[data-objet-id]")]
+        .find((element) => element.getAttribute("data-objet-id") === identifiantDeclencheur);
+      if (remplacant) {
+        remplacant.focus?.();
+        return;
+      }
+    }
+    document.querySelector('[data-testid="boucle-recherche"]')?.focus?.();
+  }, [selection]);
+
+  useEffect(() => {
+    if (actionActive || !refRestaurationFocusAction.current) return;
+    refRestaurationFocusAction.current = false;
+    const declencheur = refElementDeclencheurAction.current;
+    refElementDeclencheurAction.current = null;
+    if (declencheur?.isConnected) {
+      declencheur.focus?.();
+      return;
+    }
+    document.querySelector('[data-testid="boucle-detail-fermer"]')?.focus?.();
+  }, [actionActive, objetDetail?.id]);
+
+  useEffect(() => () => refAbortVerification.current?.abort(), []);
 
   const changerOutcome = (cle, valeur) => {
     setFormulaireOutcome((avant) => ({ ...avant, [cle]: valeur }));
@@ -1252,7 +1706,12 @@ export default function Boucle() {
 
   return (
     <div className="h-full overflow-y-auto bg-[#071019] px-4 py-5 pb-20 sm:px-8 sm:py-8 lg:px-12" data-testid="boucle-page">
-      <div className="mx-auto max-w-[1500px]">
+      <div
+        className="mx-auto max-w-[1500px]"
+        data-testid="boucle-contenu"
+        inert={selection || actionActive ? true : undefined}
+        aria-hidden={selection || actionActive ? "true" : undefined}
+      >
         <header className="rise">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -1264,125 +1723,42 @@ export default function Boucle() {
                 La mémoire vivante de ce que l'entreprise observe, comprend, décide, tente et apprend.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={actualiser}
-              data-testid="boucle-actualiser"
-              className="flex h-8 items-center gap-1.5 rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2.5 text-xs text-[#94A3B8] transition-colors hover:text-[#F2F6F8]"
-            >
-              <ArrowsClockwise size={13} className={chargement ? "animate-spin" : ""} /> Actualiser
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={ouvrirCreationSituation}
+                data-testid="boucle-nouvelle-situation"
+                className="flex h-8 items-center gap-1.5 rounded-md bg-[#60A5FA] px-2.5 text-xs font-semibold text-[#071019] transition-colors hover:bg-[#93C5FD]"
+              >
+                <Lightbulb size={13} aria-hidden="true" /> Nouvelle situation
+              </button>
+              <button
+                type="button"
+                onClick={ouvrirCreationSignalGlobal}
+                data-testid="boucle-nouveau-signal"
+                className="flex h-8 items-center gap-1.5 rounded-md border border-[#F472B6]/40 bg-[#F472B6]/[0.08] px-2.5 text-xs font-semibold text-[#F9A8D4] transition-colors hover:bg-[#F472B6]/15"
+              >
+                <Lightbulb size={13} aria-hidden="true" /> Enregistrer un signal
+              </button>
+              <button
+                type="button"
+                onClick={ouvrirCreationExpert}
+                data-testid="boucle-nouveau-expert"
+                className="flex h-8 items-center gap-1.5 rounded-md border border-[#2DD4BF]/40 bg-[#2DD4BF]/[0.08] px-2.5 text-xs font-semibold text-[#5EEAD4] transition-colors hover:bg-[#2DD4BF]/15"
+              >
+                <UserCircle size={13} aria-hidden="true" /> Inscrire un expert
+              </button>
+              <button
+                type="button"
+                onClick={actualiser}
+                data-testid="boucle-actualiser"
+                className="flex h-8 items-center gap-1.5 rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] px-2.5 text-xs text-[#94A3B8] transition-colors hover:text-[#F2F6F8]"
+              >
+                <ArrowsClockwise size={13} className={chargement ? "animate-spin" : ""} /> Actualiser
+              </button>
+            </div>
           </div>
         </header>
-
-        <section
-          className="rise mt-5 rounded-xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-4"
-          aria-labelledby="boucle-creation-titre"
-          data-testid="boucle-objet-form"
-        >
-          <div className="flex items-start gap-2">
-            <PlusCircle size={14} className="mt-0.5 shrink-0 text-[#60A5FA]" />
-            <div className="min-w-0">
-              <h2 id="boucle-creation-titre" className="font-code text-[10px] uppercase tracking-[0.22em] text-[#94A3B8]">
-                Créer un objet de la boucle
-              </h2>
-              <p className="mt-1 text-xs leading-relaxed text-[#7C93A8]">
-                Une situation observée, une investigation, une décision proposée ou une initiative entre dans la
-                boucle ; le panneau de détail permet ensuite de la faire transiter.
-              </p>
-            </div>
-          </div>
-
-          <form onSubmit={creerObjet} noValidate className="mt-3">
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-              <div>
-                <label htmlFor="boucle-creation-type" className="block font-code text-[9px] uppercase tracking-wider text-[#7C93A8]">
-                  Type
-                </label>
-                <select
-                  id="boucle-creation-type"
-                  value={formulaireObjet.type}
-                  onChange={(evenement) => changerObjet("type", evenement.target.value)}
-                  required
-                  data-testid="boucle-creation-type"
-                  className="mt-1 h-8 w-full rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0B1620] px-2 text-xs text-[#D8E2EA] focus:border-[#60A5FA]/60 focus:outline-none"
-                >
-                  {TYPES_CREATION.map((stade) => (
-                    <option key={stade.type} value={stade.type}>{stade.court}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="lg:col-span-2">
-                <label htmlFor="boucle-creation-titre-champ" className="block font-code text-[9px] uppercase tracking-wider text-[#7C93A8]">
-                  Titre
-                </label>
-                <input
-                  id="boucle-creation-titre-champ"
-                  value={formulaireObjet.titre}
-                  onChange={(evenement) => changerObjet("titre", evenement.target.value)}
-                  required
-                  autoComplete="off"
-                  placeholder="Ce qui est observé, investigué, décidé ou lancé…"
-                  data-testid="boucle-creation-titre"
-                  className="mt-1 h-8 w-full rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0B1620] px-2.5 text-xs text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#60A5FA]/60 focus:outline-none"
-                />
-              </div>
-              <div>
-                <label htmlFor="boucle-creation-mode" className="block font-code text-[9px] uppercase tracking-wider text-[#7C93A8]">
-                  Mode (optionnel)
-                </label>
-                <select
-                  id="boucle-creation-mode"
-                  value={formulaireObjet.mode}
-                  onChange={(evenement) => changerObjet("mode", evenement.target.value)}
-                  data-testid="boucle-creation-mode"
-                  className="mt-1 h-8 w-full rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0B1620] px-2 text-xs text-[#D8E2EA] focus:border-[#60A5FA]/60 focus:outline-none"
-                >
-                  <option value="">Par défaut</option>
-                  {MODES.map(([valeur, libelle]) => (
-                    <option key={valeur} value={valeur}>{libelle}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="sm:col-span-2 lg:col-span-4">
-                <label htmlFor="boucle-creation-donnees" className="block font-code text-[9px] uppercase tracking-wider text-[#7C93A8]">
-                  Données JSON (optionnel)
-                </label>
-                <textarea
-                  id="boucle-creation-donnees"
-                  value={formulaireObjet.donnees}
-                  onChange={(evenement) => changerObjet("donnees", evenement.target.value)}
-                  rows={2}
-                  spellCheck={false}
-                  placeholder='{"resume": "…", "twin_ids": ["app-…"]}'
-                  data-testid="boucle-creation-donnees"
-                  className="mt-1 w-full rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0B1620] px-2.5 py-2 font-code text-xs text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#60A5FA]/60 focus:outline-none"
-                />
-              </div>
-            </div>
-
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <button
-                type="submit"
-                disabled={objetEnCours}
-                data-testid="boucle-creation-enregistrer"
-                className="flex h-8 items-center gap-1.5 rounded-md bg-[#60A5FA] px-3 text-xs font-semibold text-[#071019] transition-colors hover:bg-[#93C5FD] disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {objetEnCours ? "Création…" : "Créer l'objet"}
-              </button>
-              {objetErreur && (
-                <p role="alert" data-testid="boucle-creation-erreur" className="text-xs text-[#FCA5A5]">
-                  {objetErreur}
-                </p>
-              )}
-              {objetSucces && (
-                <p role="status" data-testid="boucle-creation-succes" className="text-xs text-[#6EE7B7]">
-                  {objetSucces}
-                </p>
-              )}
-            </div>
-          </form>
-        </section>
 
         <section
           className="rise mt-5 rounded-xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-4"
@@ -1871,7 +2247,7 @@ export default function Boucle() {
             </p>
             <p className="mt-1 text-xs text-[#7C93A8]">
               {objets.length === 0 && !filtresActifs
-                ? "Les situations, investigations, décisions, initiatives, outcomes et learnings apparaîtront ici."
+                ? "Les signaux, situations, expressions, investigations, décisions, initiatives, outcomes et learnings apparaîtront ici."
                 : "Élargissez la recherche ou réinitialisez les filtres."}
             </p>
             {filtresActifs && (
@@ -1945,11 +2321,32 @@ export default function Boucle() {
           etat={detail}
           chaine={chaineDetail}
           historique={historiqueDetail}
-          onFermer={() => setSelection(null)}
+          onFermer={fermerDetail}
           onReessayer={() => chargerDetail(idObjet(selection))}
           onNaviguer={navigate}
           onOuvrirId={ouvrirParId}
-          onActualiser={(identifiant) => { actualiser(); chargerDetail(identifiant); }}
+          onOuvrirObjet={ouvrirObjet}
+          onAction={ouvrirAction}
+          transitionSucces={transition.succes}
+          modaleOuverte={Boolean(actionActive)}
+          verificationSource={transition.rechargement}
+          verificationErreur={transition.verificationErreur}
+        />
+      )}
+
+      {actionCourante && (
+        <ModaleTransition
+          key={actionCourante.id}
+          action={actionCourante}
+          enCours={transition.enCours}
+          rechargement={transition.rechargement}
+          erreur={transition.erreur}
+          erreurChargement={actionActive === "solliciter_expert" ? expertsErreur : ""}
+          onFermer={fermerAction}
+          onSoumettre={executerTransition}
+          onReessayerChargement={
+            actionActive === "solliciter_expert" ? chargerExperts : undefined
+          }
         />
       )}
     </div>

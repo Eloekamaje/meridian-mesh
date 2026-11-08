@@ -1,6 +1,6 @@
 # Méridian — état actuel et reste à faire
 
-> **Photographie :** 6 novembre 2026, commit `d2d9f9b`.
+> **Photographie :** 8 novembre 2026, commit `3873448` + lots C5c/C5d/C5e.
 > Ce document décrit ce qui existe réellement dans le dépôt ; il ne décrit pas la cible.
 > Les documents de vision et les PRD restent la cible ; ce fichier est la carte de l’état
 > courant et la matrice de traçabilité vers le code et les tests. Les écarts produit détaillés
@@ -318,13 +318,55 @@ Modules :
 - `application/planification/*` : capacité, charge, prévision, budget ;
 - frontend `pages/Boucle.jsx` et `pages/Travail.jsx`.
 
-**Lecture importante.** La boucle canonique ci-dessus est un modèle Postgres validé, mais le
-chemin live Travail/Actualités utilise encore les collections Mongo `cases`, `situations` et
-`initiatives`. Certains objets canoniques (situations, initiatives) sont alimentés par le
-backfill `migration_canonique` et exposés en lecture (`/boucle/objets`) ; les seules écritures
-canoniques exposées concernent Outcome, Learning et leur réutilisation. Une décision prise dans
-Travail ne crée donc pas encore de `Decision` canonique. Le détail est dans
-[ecarts-vision.md](ecarts-vision.md).
+**Lecture importante.** Le live Travail/Actualités continue d'écrire dans MongoDB `cases`,
+`situations` et `initiatives`, mais le pont C2 enfile désormais les actions et décisions vers
+l'outbox canonique ; le worker C1 crée ou met à jour Situation, Investigation, Decision,
+Initiative, puis `GET /cases/{id}` expose la trace `boucle` au front. Le lot C3 enfile aussi
+`initiative.maj` après une réponse d'initiative : l'Initiative canonique parente des Outcomes
+existe donc sans insertion manuelle. Le lot D mesure les observations et crée des `Outcome`
+canoniques (le `Learning` reste une validation humaine). L'UI Boucle expose les transitions
+canoniques, la création d'une Situation racine via `POST /boucle/situations` (C4a), depuis
+C4b la création et la comparaison de Scénarios via `/boucle/scenarios`, et depuis C5a
+l'Expression canonique unique d'une Situation via
+`POST /boucle/situations/{id}/expressions` (index unique 1:1 en base, lien
+`Situation.expression_id` posé uniquement par le serveur). Depuis C5b, une Expression
+`PROPOSED`/`CONFIRMED` peut être qualifiée manuellement en `Opportunity` ou `Risk`
+(`POST /boucle/expressions/{id}/opportunities|risks`), avec statut initial `DETECTED`,
+changement de statut contrôlé par le cycle canonique et liens inverses
+`Expression.opportunity_ids`/`risk_ids`. Depuis C5c, une Investigation peut porter des
+`Hypothesis` canoniques (`POST /boucle/investigations/{id}/hypotheses`,
+`GET /boucle/hypotheses`, `POST /boucle/hypotheses/{id}/statut`) avec statut initial
+`OPEN`, conditions de test, claims soutenants/opposants, preuves et lien inverse
+`Investigation.hypothesis_ids` ; `CONFIRMED` exige une preuve, une Investigation fermée
+est refusée en 409, et `expert_id` reste non accepté en entrée HTTP et absent du
+formulaire : le rattachement d'un expert se fait par une contribution C5e, pas par ce
+champ. Depuis C5d, un `Signal` canonique peut être créé globalement ou
+depuis une ou plusieurs Situations (`POST /boucle/signals`,
+`POST /boucle/situations/{id}/signals`, `GET /boucle/signals`), avec source obligatoire,
+empreinte SHA-256 serveur, statut initial `DETECTED`, mode `OBSERVED` et liens inverses
+`Situation.signal_ids` ; un doublon d'empreinte répond 409. La chaîne n'expose
+`SITUATION → SIGNAL` que lorsqu'une seule Situation est liée. Les contrôles de sécurité
+refusent les jetons connus dans le `titre` persisté, l'`id` fourni, le `tenant` brut et
+normalisé, et toutes les chaînes de `donnees` ; pour `Bearer`, un jeton alphabétique est
+classé prose selon une liste technique courte ou un suffixe morphologique, et un composé
+(`-`, `/`, `_`, `.`) n'est prose que si **tous** ses segments le sont.
+Depuis C5e, un `Expert` canonique peut être inscrit au registre
+(`POST /boucle/experts`, `GET /boucle/experts` filtré par domaine/statut) avec statut
+`ACTIVE` et mode `DECLARED` forcés ; une `ExpertContribution` peut être déclarée depuis une
+Investigation ouverte ou une Hypothesis
+(`POST /boucle/investigations/{id}/contributions`,
+`POST /boucle/hypotheses/{id}/contributions`, `GET /boucle/contributions`,
+`POST /boucle/contributions/{id}/statut`). Le statut initial est `PROPOSED` ; le cycle
+`PROPOSED → ACCEPTED|REJECTED|ARCHIVED`, puis `ACCEPTED|REJECTED → ARCHIVED` est validé.
+L'invariant « hypothèse du même parent » est rejoué dans le domaine, la commande et la
+persistance. C5e n'expose **pas** de route de changement de statut Expert et ne collecte
+aucune contribution automatiquement.
+Le détail du pont est dans [pont-hypotheses-c5c.md](pont-hypotheses-c5c.md),
+[pont-signaux-c5d.md](pont-signaux-c5d.md) et [pont-experts-c5e.md](pont-experts-c5e.md).
+Le backfill `migration_canonique` et `/boucle/objets` restent disponibles. La chaîne est donc
+branchée et opérable depuis l'UI, mais l'activation des workers, la migration tenant rétroactive
+et le parcours end-to-end supervisé restent à faire. Le détail est dans
+[pont-travail-c2.md](pont-travail-c2.md) et [mesure-auto.md](mesure-auto.md).
 
 ### 3.7 Architecture cognitive
 
@@ -451,21 +493,41 @@ historique. Ils valent `twin.born` pour le résolveur, jamais une confirmation a
 |---|---|---|---|
 | **Claim** | fait sujet-prédicat-objet, avec mode, maturité et preuves | `DECLARED`, `OBSERVED`, `INFERRED`, `PROPOSED`, `CONFIRMED`, `SUPPORTED`, `STRENGTHENED`, `MATURE`, `CONTESTED`, `INVALIDATED`, `HISTORICAL` | Postgres `claim`, `preuve`, `claim_preuve` ; `/api/boucle/twins/{id}/claims` |
 | **Relation** | lien entre deux objets, distinct d’un claim | `supposee`, `observee`, `validation`, `confirmee`, `contestee`, `obsolete` | Postgres / Neo4j ; Atlas et revue |
-| **Situation** | phénomène émergent reliant Twins, signaux, claims ou impacts | `CANDIDATE`, puis qualification | `objet_entreprise` + backfill ; le live lit/écrit Mongo `situations` ; pas de création canonique exposée |
-| **Opportunity / Risk** | possibilité ou risque attaché à une situation | `DETECTED`, puis qualification | Classes de domaine testées ; aucune instanciation live identifiée ; sous-document `opportunite` legacy pour Opportunity, pas d’équivalent Risk |
-| **Investigation** | espace structuré de compréhension : question, hypothèses, preuves | `OPEN`, puis clôture | `objet_entreprise` possible, aucun flux live identifié ; lecture `/api/boucle/objets` ; le live ouvre une situation Mongo |
-| **Decision** | décision humaine reliée à une investigation, avec options et rationale | `PROPOSED`, puis tranchée | `objet_entreprise` possible, aucun flux live identifié ; lecture seule ; le live écrit une décision de case Mongo |
-| **Initiative** | traduction d’une décision en action suivie | `PLANNED`, puis exécution | `objet_entreprise` + backfill, lecture seule ; initiatives live dans Mongo |
-| **Outcome** | mesure observée après une initiative | `OBSERVED` | `objet_entreprise`, `POST /api/boucle/outcomes` ; exige une Initiative canonique |
+| **Situation** | phénomène émergent reliant Twins, signaux, claims ou impacts | `CANDIDATE`, puis qualification | `objet_entreprise` + backfill ; création via `POST /api/boucle/situations` et bouton « Nouvelle situation » dans Boucle ; le live lit/écrit encore Mongo `situations` |
+| **Expression** | lecture datée et typée d’une Situation, avec inconnues et confiance | `PROPOSED`, puis confirmation humaine | `objet_entreprise` + lien inverse `Situation.expression_id` (serveur uniquement) + index unique 1:1 `objet_entreprise_expression_situation_unique` ; `POST /api/boucle/situations/{id}/expressions` et action « Exprimer la situation » dans Boucle ; une seule Expression par Situation |
+| **Opportunity / Risk** | possibilité ou risque attaché à une situation, qualifié depuis une Expression | `DETECTED`, puis cycle `DETECTED → QUALIFIED` ou `MATURING`, `MATURING → QUALIFIED`, `QUALIFIED → INVESTIGATING` ou `SCENARIOS_AVAILABLE`, `INVESTIGATING → SCENARIOS_AVAILABLE` ou `DECIDED`, `SCENARIOS_AVAILABLE → DECIDED`, `DECIDED → INITIATED`, `INITIATED → MEASURED`, `MEASURED → LEARNED` ; `REJECTED`/`DORMANT` sont des sorties avant les états terminaux et `DORMANT → MATURING` ou `REJECTED` | `objet_entreprise` + liens inverses `Expression.opportunity_ids`/`risk_ids` ; `POST/GET /api/boucle/expressions/{id}/opportunities` et `/risks`, `POST /api/boucle/opportunities/{id}/statut` et `/risks/{id}/statut`, actions UI ; création seulement depuis une Expression `PROPOSED`/`CONFIRMED` (sinon 409) ; qualification manuelle uniquement |
+| **Investigation** | espace structuré de compréhension : question, hypothèses, preuves | `OPEN`, puis clôture | Créée par le pont C2 ou par `POST /api/boucle/situations/{id}/investigations` (UI) ; lecture `/api/boucle/objets` |
+| **Hypothesis** | explication testable, rattachée à une Investigation | `OPEN`, puis `STRENGTHENED`/`WEAKENED`, sortie `REJECTED` ou `CONFIRMED` (preuve obligatoire) | `objet_entreprise` + lien inverse `Investigation.hypothesis_ids` ; `POST /api/boucle/investigations/{id}/hypotheses`, `GET /api/boucle/hypotheses`, `POST /api/boucle/hypotheses/{id}/statut` et actions UI ; création seulement depuis une Investigation |
+| **Expert** | capacité spécialisée de raisonnement, avec domaine, méthodes, mandat et limites | `ACTIVE` à l'inscription ; aucun cycle de statut exposé en C5e | `objet_entreprise` + registre `POST/GET /api/boucle/experts` et formulaire « Inscrire un expert » ; `statut=ACTIVE`, `mode=DECLARED` et `id`/`tenant_id` sont serveur ; objet racine sans chaîne amont |
+| **ExpertContribution** | contribution datée d'un Expert à une Investigation ou une Hypothesis | `PROPOSED`, puis `ACCEPTED`/`REJECTED`, sortie `ARCHIVED` | `objet_entreprise` + lien inverse `Investigation.expert_ids` ; `POST /api/boucle/investigations/{id}/contributions`, `POST /api/boucle/hypotheses/{id}/contributions`, `GET /api/boucle/contributions`, `POST /api/boucle/contributions/{id}/statut` et actions UI ; invariant hypothèse du même parent ; pas de `contribution_ids` dans le modèle |
+| **Decision** | décision humaine reliée à une investigation, avec options et rationale | `PROPOSED`, puis tranchée | Créée par le pont C2 ou par `POST /api/boucle/investigations/{id}/decisions` (UI) ; lecture `/api/boucle/objets` |
+| **Scenario** | option d’action comparable, rattachée à une Investigation et/ou une Decision | `DRAFT`, `PROPOSED`, `EVALUATED`, `SELECTED`, `REJECTED`, `ARCHIVED` | `objet_entreprise` + liens inverses `scenario_ids` (liste) / `scenario_id` (premier scénario historique, promu au premier restant s’il est retiré, sinon `None`) ; `POST/GET /api/boucle/scenarios`, `POST /api/boucle/scenarios/comparer` et UI Boucle ; filtre de liste direct, formulaire aux champs principaux, comparaison plafonnée à 50 |
+| **Initiative** | traduction d’une décision en action suivie | `PLANNED`, puis exécution | Créée par C3 après une réponse d’initiative ou par `POST /api/boucle/decisions/{id}/initiatives` (UI) ; `objet_entreprise` + backfill, lecture `/api/boucle/objets` |
+| **Outcome** | mesure observée après une initiative | `OBSERVED` | `objet_entreprise`, `POST /api/boucle/outcomes` ou worker D ; exige une Initiative canonique |
 | **Learning** | connaissance généralisable issue d’un outcome ou d’une investigation | `PROPOSED`, promotion humaine | `objet_entreprise`, `/api/boucle/outcomes`, `/raisonnement/apprentissage` |
 | **Source** | système externe fournissant observations et artefacts | type, curseur, fraîcheur, secret_ref | Postgres `source`, workers d’ingestion |
 | **Domain** | domaine métier ou de données | stable | `objet_entreprise` / graphe |
 | **Annotation** | mémoire organisationnelle déclarée | déclarée | `memoire_org`, `objet_entreprise` |
 
-Objets de la vision qui ne sont pas encore des objets d’entreprise canoniques :
-**Signal**, **Expression**, **Scenario**, **Hypothesis**, **Expert**, **ExpertContribution**.
-Le dossier de raisonnement porte des hypothèses et des options, mais ce ne sont pas les objets
-durables décrits par le Domain Model. Voir [ecarts-vision.md](ecarts-vision.md).
+Objets de la vision qui sont des objets d’entreprise canoniques : **Expert** et
+**ExpertContribution** le sont depuis C5e, en inscription, contribution, liste, lecture et
+transition de contribution.
+`Signal` est canonique depuis C5d, créé manuellement en global ou depuis une ou plusieurs
+Situations, avec empreinte serveur et liens inverses `Situation.signal_ids` ; il est lisible
+dans la chaîne `SITUATION → SIGNAL` lorsque la liste des Situations contient exactement un
+élément, et sans chaîne amont sinon. C5d n'expose pas de route de changement de statut.
+`Expression` est canonique depuis C5a (une Expression par Situation, lisible dans la chaîne
+`SITUATION → EXPRESSION`). `Opportunity` et `Risk` sont canoniques depuis C5b, qualifiés
+manuellement depuis une Expression et lisibles dans la chaîne
+`SITUATION → EXPRESSION → OPPORTUNITY|RISK`. `Hypothesis` est canonique depuis C5c,
+formulée manuellement depuis une Investigation et lisible dans la chaîne
+`SITUATION → INVESTIGATION → HYPOTHESIS`. `Expert` et `ExpertContribution` sont canoniques
+depuis C5e : registre déclaratif, contribution manuelle depuis une Investigation ouverte ou
+une Hypothesis, chaîne
+`SITUATION → INVESTIGATION (→ HYPOTHESIS) → EXPERT_CONTRIBUTION`, sans route de statut
+Expert ni collecte automatique. Le dossier de raisonnement porte aussi des
+hypothèses et des options internes, distinctes de l’objet durable décrit par le Domain
+Model. Voir [ecarts-vision.md](ecarts-vision.md).
 
 Règles transverses :
 
@@ -710,8 +772,13 @@ la suite locale.
 | Capacité | État | Commentaire |
 |---|---|---|
 | Registre Twins | **solide** | Postgres + projection Mongo/Neo4j |
-| Situations / boucle canonique | **partielle** | Modèle/store/lecture + Outcome ; le live Travail/Actualités utilise Mongo ; création/transition non exposée |
-| Signal, Expression, Scenario, Hypothesis, Expert | **absents comme objets canoniques** | Noms de famille, dossier de raisonnement ou profils ; voir [ecarts-vision.md](ecarts-vision.md) |
+| Situations / boucle canonique | **partielle** | Modèle/store, UI de lecture et transitions (création d’une Situation racine → Investigation → Decision → Initiative → Outcome → Learning) ; pont C2 Travail → canonique (Situation/Decision/Initiative), C3 Initiative canonique après réponse, mesure D → Outcome ; Learning humain ; workers et migration tenant à activer |
+| Scénarios canoniques | **opérationnelle, périmètre UI borné** | Création depuis Investigation/Decision, liste filtrée directement par parent, comparaison déterministe avec écarts et référence ; UI Boucle ; `scenario_ids` pluriel et `scenario_id` = premier scénario historique (promu au premier restant s’il est retiré, sinon `None`) ; formulaire de création exposant titre, description, hypothèses/actions, valeur, coût, délai, risque, complexité, confiance, dépendances, impacts, preuves, réversibilité et statut ; comparaison plafonnée à 50 ; reste à relier les scénarios de capacité et la sélection dans la décision |
+| Expression canonique | **opérationnelle, une par Situation** | `POST /api/boucle/situations/{id}/expressions`, action « Exprimer la situation » dans Boucle ; champs type, formulation, canal, auteur, inconnues, confiance ; statut forcé `PROPOSED` ; doublon 409 ; index unique 1:1 en base ; chaîne `SITUATION → EXPRESSION` ; `enregistrer_boucle` reste réservé aux types canoniques |
+| Opportunités / risques canoniques | **opérationnels depuis une Expression, périmètre UI borné** | `POST /api/boucle/expressions/{id}/opportunities` et `/risks` (statut forcé `DETECTED`, Expression `PROPOSED`/`CONFIRMED` seulement sinon 409, Expression verrouillée, lien inverse atomique), `GET` filtré par Expression, `POST /api/boucle/opportunities/{id}/statut` et `/risks/{id}/statut` (cycle canonique, 409/422/404 ; mauvais type 422), UI de qualification et de transition ; chaîne `SITUATION → EXPRESSION → OPPORTUNITY`/`RISK` ; `enregistrer_boucle` refuse toujours ces types B ; qualification manuelle, pas de pipeline automatique |
+| Hypothèses canoniques | **opérationnelle depuis une Investigation, périmètre UI borné** | `POST /api/boucle/investigations/{id}/hypotheses` (statut forcé `OPEN`, mode `PROPOSED`, Investigation ouverte et verrouillée sinon 409, lien inverse atomique), `GET /api/boucle/hypotheses` filtré par Investigation/statut, `POST /api/boucle/hypotheses/{id}/statut` (cycle `OPEN → STRENGTHENED|WEAKENED|REJECTED|CONFIRMED`, 409/422/404/400/501/503), UI de formulation et de transition, blocage UI de `CONFIRMED` sans preuve ; chaîne `SITUATION → INVESTIGATION → HYPOTHESIS` ; `enregistrer_boucle` refuse toujours ce type ; `expert_id` non accepté en entrée (le rattachement passe par `ExpertContribution` C5e) ; formulation manuelle, pas de pipeline automatique depuis les Claims ; voir [pont-hypotheses-c5c.md](pont-hypotheses-c5c.md) |
+| Signaux canoniques | **opérationnels en création/liste/lecture, périmètre UI borné** | `POST /api/boucle/signals`, `POST /api/boucle/situations/{id}/signals` (statut forcé `DETECTED`, mode `OBSERVED`, source obligatoire, empreinte SHA-256 serveur, doublon 409, Situation(s) verrouillée(s), lien inverse `signal_ids` atomique), `GET /api/boucle/signals` filtré par Situation/type/statut, UI globale et contextuelle ; contrôles anti-jeton sur `titre`, `id`, `tenant` brut/normalisé et `donnees`, avec prose `Bearer` par forme (liste technique + suffixe, composés `- / _ .` tous prose) ; chaîne `SITUATION → SIGNAL` seulement si une seule Situation, sinon objet sans amont ; `enregistrer_boucle` refuse toujours ce type ; aucune route de changement de statut en C5d ; création manuelle, pas de pipeline de détection ; voir [pont-signaux-c5d.md](pont-signaux-c5d.md) |
+| Expert, ExpertContribution | **opérationnels en inscription/contribution/lecture, périmètre UI borné** | `POST /api/boucle/experts` (nom + domaine obligatoires, `statut=ACTIVE` et `mode=DECLARED` forcés, `id`/`tenant_id`/`statut`/`mode` client refusés 422), `GET /api/boucle/experts` filtré par domaine/statut/tenant ; `POST /api/boucle/investigations/{id}/contributions` et `POST /api/boucle/hypotheses/{id}/contributions` (statut initial `PROPOSED`, mode `DECLARED`, Investigation ouverte sinon 409, Expert et source verrouillés, lien inverse `Investigation.expert_ids` atomique, invariant hypothèse du même parent 409), `GET /api/boucle/contributions` filtré par expert/investigation/hypothèse/statut, `POST /api/boucle/contributions/{id}/statut` (cycle `PROPOSED → ACCEPTED|REJECTED|ARCHIVED`, `ACCEPTED|REJECTED → ARCHIVED`, 409/422/404/400/501/503) ; chaînes `EXPERT` et `SITUATION → INVESTIGATION (→ HYPOTHESIS) → EXPERT_CONTRIBUTION` ; UI registre, sollicitation depuis Investigation/Hypothèse, stades et transitions ; `enregistrer_boucle` refuse toujours ces types ; pas de route de statut Expert, pas de collecte automatique ; voir [pont-experts-c5e.md](pont-experts-c5e.md) |
 | Claims, preuves, maturité | **solide** | contradictions et revue conservées |
 | Ingestion Git + CBM | **solide** | CBM à installer dans l’environnement cible |
 | Liens HTTP/JMS/SOAP | **solide** | revue humaine, contradictions |
@@ -765,7 +832,7 @@ dépôt. Une ligne sans test est explicitement une cible ou une couverture parti
 
 | Dette | Pourquoi | Critère d’acceptation |
 |---|---|---|
-| Unification live/canonique | Travail/Actualités (Mongo) et boucle canonique (Postgres) sont deux chaînes | un parcours Situation → Learning avec un identifiant unique, visible dans Travail et Boucle |
+| Unification live/canonique | le pont C2 relie Travail au canonique, mais les workers et la migration tenant ne sont pas encore activés en production | un parcours Situation → Decision → Outcome piloté depuis Travail, trace canonique visible, worker supervisé ; Learning reste une validation humaine |
 | Corpus de production labellisé + shadow mode | les mesures actuelles portent sur un corpus de test | précision/rappel/fausses certitudes sur un jeu réel, revue aveugle |
 | Activation RLS + workers multi-tenant | RLS existe mais `JUMEAU_RLS=0` par défaut | policies actives, tests d’isolation, workers en contexte ou bypass explicite |
 | Déploiement supervisé des workers | les runs restent `QUEUED` sans worker | source/outbox/travail/reconciliation supervisés, redémarrage testé |

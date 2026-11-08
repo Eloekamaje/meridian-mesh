@@ -7,12 +7,28 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 
 from meridian.adapters.outbound.travail_store import travail_store
+from meridian.application import pont_travail
+from meridian.application import tenant_context
+from meridian.domain.tenant import TenantError
 
 import maturation
 import portee as portees
 import ouverture_travail
 import veille as moteur_veille
 from auth import acteur as acteur_courant
+
+
+def _tenant_ecriture() -> str:
+    try:
+        return pont_travail.normaliser_tenant(tenant_context.courant_ou_env())
+    except TenantError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+def _filtre_tenant() -> dict:
+    return pont_travail.filtre_tenant(_tenant_ecriture())
 
 
 class OuvertureTravail(BaseModel):
@@ -191,7 +207,7 @@ def build_actualites_router(deps):
             return ts is not None and debut <= ts < fin
 
         # --- Situations : découvertes, contradictions, incidents ---
-        async for s in db.situations.find({}, NO_ID):
+        async for s in db.situations.find(_filtre_tenant(), NO_ID):
             f = filtre_situation(s, aut, nom_vers_id)
             if not f:
                 continue
@@ -470,7 +486,7 @@ def build_actualites_router(deps):
         rapport = None
 
         if hid.startswith("sit-"):
-            s = await db.situations.find_one({"id": hid[4:]}, NO_ID)
+            s = await db.situations.find_one({"id": hid[4:], **_filtre_tenant()}, NO_ID)
             if not s:
                 raise HTTPException(404, "Actualité introuvable")
             f = filtre_situation(s, aut, nom_vers_id)
@@ -622,7 +638,8 @@ def build_actualites_router(deps):
         if hid.startswith("case-"):
             return {"id": hid[5:], "cree": False}  # c'est déjà un travail : on le reprend
         _, espace = resoudre_perimetre(acteur, x_espace)
-        situation = await db.situations.find_one({"id": hid[4:]}, NO_ID) if hid.startswith("sit-") else None
+        situation = (await db.situations.find_one({"id": hid[4:], **_filtre_tenant()}, NO_ID)
+                     if hid.startswith("sit-") else None)
         maintenant = datetime.now(timezone.utc).isoformat()
         # « Suivre » : la vérification est une veille AVANT la décision (le phénomène mûrit) ; Flore dit ce qu'elle guette
         veille_suivi, message_suivi = None, None
@@ -632,30 +649,33 @@ def build_actualites_router(deps):
             veille_suivi = maturation.nouvelle_veille(histoire["titre"], depart, relation["id"] if relation else None)
             m = veille_suivi["maturation"]
             message_suivi = maturation.message_flore_suivi(histoire["titre"], depart, m["seuil"], m["plancher"], maintenant)
-        existant = await db.cases.find_one({"origine.histoire_id": hid, "responsable": acteur}, NO_ID)
+        existant = await db.cases.find_one(
+            {"origine.histoire_id": hid, "responsable": acteur, **_filtre_tenant()}, NO_ID)
         if existant:
             deja = existant["origine"].get("intentions", [])
             if payload.intention not in deja:
                 msg = ouverture_travail.message_flore(payload.intention, histoire, rapport, situation, maintenant)
-                maj = {"maj_le": maintenant}
+                maj = {"maj_le": maintenant, "tenant_id": _tenant_ecriture()}
                 messages = [msg]
                 if veille_suivi and not existant.get("veille"):
                     maj["veille"] = veille_suivi
                     messages.append(message_suivi)
-                await db.cases.update_one(
-                    {"id": existant["id"]},
+                resultat = await db.cases.update_one(
+                    {"id": existant["id"], **_filtre_tenant()},
                     {"$push": {"conversation": {"$each": messages}, "historique": {"quand": maintenant, "texte": {"investiguer": "Investigation ouverte", "suivre": "Mise sous vérification", "comprendre": "Situation présentée"}[payload.intention]}},
                      "$addToSet": {"origine.intentions": payload.intention}, "$set": maj},
                 )
+                if int(getattr(resultat, "matched_count", 0) or 0) == 0:
+                    raise HTTPException(404, "Travail introuvable")
             return {"id": existant["id"], "cree": False}
         base = slugify(histoire["titre"])[:60] or "travail"
         cid, n = base, 2
         while await db.cases.find_one({"id": cid}):
             cid, n = f"{base}-{n}", n + 1
-        dernier = await db.cases.find({}, {"_id": 0, "num": 1}).sort("num", -1).to_list(1)
+        dernier = await db.cases.find(_filtre_tenant(), {"_id": 0, "num": 1}).sort("num", -1).to_list(1)
         num = (dernier[0]["num"] if dernier and dernier[0].get("num") else 40) + 1
         doc = {
-            "id": cid, "num": num, "titre": histoire["titre"], "type": ouverture_travail.type_travail(histoire.get("genre", "")), "statut": "ouvert",
+            "id": cid, "tenant_id": _tenant_ecriture(), "num": num, "titre": histoire["titre"], "type": ouverture_travail.type_travail(histoire.get("genre", "")), "statut": "ouvert",
             "sensibilite": "interne", "portee": "personnel", "objectif": histoire.get("recit") or histoire["titre"], "resume": "", "prochaine_etape": "",
             "questions": [], "hypotheses": [], "jumeaux": histoire.get("jumeaux", []), "situations": [hid[4:]] if situation else [],
             "participants": [acteur], "responsable": acteur, "espace": espace["id"],

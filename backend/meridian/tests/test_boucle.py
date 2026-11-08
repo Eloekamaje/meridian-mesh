@@ -1,11 +1,14 @@
 """Boucle P1 canonique : liens, transitions, mesures, tenants et persistance Postgres."""
 import json
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
+import psycopg
 import pytest
 
-from meridian.adapters.outbound.postgres import boucle
+from meridian.adapters.outbound.postgres import boucle, entreprise_depot, rls
 from meridian.domain.modele_entreprise import ModeleInvalide
-from meridian.tests.conftest import besoin_pg
+from meridian.tests.conftest import DSN, besoin_pg
 
 TENANT = "banque"
 AUTRE_TENANT = "assurance"
@@ -254,3 +257,275 @@ def test_objets_et_boucle_serialisables_en_json():
         "SITUATION", "INVESTIGATION", "DECISION", "INITIATIVE", "OUTCOME", "LEARNING"]
     assert boucle_json[4]["mesure"]["valeur"] == 4.2
     assert boucle_json[5]["outcome_ids"] == [objets[4].id]
+
+
+# --------------------------------------------------------------------------- #
+# Façade Postgres réelle : création exclusive, verrous, version et RLS.
+# --------------------------------------------------------------------------- #
+
+
+def _schema(conn) -> str:
+    return conn.execute("SELECT current_schema()").fetchone()[0]
+
+
+@besoin_pg
+def test_pg_creation_exclusive_refuse_un_doublon(conn):
+    objet = {
+        "id": "sit-pg-doublon", "tenant_id": TENANT, "famille": "emergence",
+        "type": "SITUATION", "mode": "OBSERVED", "titre": "Original",
+        "donnees": {"description": "avant"},
+    }
+    cree = entreprise_depot.enregistrer_objet(conn, TENANT, objet, creer=True)
+    assert cree["version"] == 1
+
+    with pytest.raises(entreprise_depot.ObjetExistant):
+        entreprise_depot.enregistrer_objet(
+            conn, TENANT,
+            {**objet, "titre": "Écrasement", "donnees": {"description": "après"}},
+            creer=True)
+
+    relu = entreprise_depot.lire_objet(conn, TENANT, "sit-pg-doublon")
+    assert relu["titre"] == "Original"
+    assert relu["donnees"] == {"description": "avant"}
+    assert relu["version"] == 1
+
+
+@besoin_pg
+def test_pg_deux_creations_concurrentes_du_meme_id(conn):
+    schema = _schema(conn)
+    barrier = threading.Barrier(2)
+    resultats = []
+
+    def creer(connexion, marqueur):
+        barrier.wait(timeout=15)
+        try:
+            entreprise_depot.enregistrer_objet(
+                connexion, TENANT,
+                {"id": "sit-pg-course", "tenant_id": TENANT, "famille": "emergence",
+                 "type": "SITUATION", "mode": "OBSERVED", "titre": marqueur,
+                 "donnees": {"marqueur": marqueur}}, creer=True)
+            resultats.append(("ok", marqueur))
+        except entreprise_depot.ObjetExistant:
+            resultats.append(("conflit", marqueur))
+
+    def creer_sur_nouvelle_connexion(marqueur):
+        with psycopg.connect(DSN, autocommit=True) as connexion:
+            connexion.execute(f"SET search_path TO {schema}")
+            creer(connexion, marqueur)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futurs = [
+            pool.submit(creer, conn, "a"),
+            pool.submit(creer_sur_nouvelle_connexion, "b"),
+        ]
+        for futur in futurs:
+            futur.result(timeout=15)
+
+    assert sorted(statut for statut, _ in resultats) == ["conflit", "ok"]
+    assert entreprise_depot.lire_objet(conn, TENANT, "sit-pg-course") is not None
+
+
+@besoin_pg
+def test_pg_enregistrer_donnees_refuse_une_version_perimee(conn):
+    entreprise_depot.enregistrer_objet(conn, TENANT, {
+        "id": "dec-pg-version", "tenant_id": TENANT, "famille": "decision",
+        "type": "DECISION", "mode": "DECLARED", "titre": "Décision",
+        "donnees": {"investigation_id": "inv-1", "options": ["A"],
+                    "statut": "PROPOSED", "legacy": "avant"}})
+
+    ligne = entreprise_depot.enregistrer_donnees(
+        conn, TENANT, "dec-pg-version",
+        {"investigation_id": "inv-1", "options": ["A"], "statut": "DECIDED",
+         "legacy": "après"},
+        version_attendue=1)
+    assert ligne["version"] == 2
+
+    with pytest.raises(entreprise_depot.VersionRefusee):
+        entreprise_depot.enregistrer_donnees(
+            conn, TENANT, "dec-pg-version",
+            {"investigation_id": "inv-1", "options": ["A"], "statut": "ÉCRASÉ",
+             "legacy": "jamais"},
+            version_attendue=1)
+
+    relu = entreprise_depot.lire_objet(conn, TENANT, "dec-pg-version")
+    assert relu["version"] == 2
+    assert relu["donnees"]["statut"] == "DECIDED"
+    assert relu["donnees"]["legacy"] == "après"
+
+
+@besoin_pg
+def test_pg_for_update_bloque_un_update_concurrent(conn):
+    entreprise_depot.enregistrer_objet(conn, TENANT, {
+        "id": "sit-pg-lock", "tenant_id": TENANT, "famille": "emergence",
+        "type": "SITUATION", "mode": "OBSERVED", "titre": "Verrou",
+        "donnees": {"description": "initial"}})
+    schema = _schema(conn)
+
+    with conn.transaction():
+        verrouille = entreprise_depot.lire_objet(
+            conn, TENANT, "sit-pg-lock", for_update=True)
+        assert verrouille is not None
+        with psycopg.connect(DSN, autocommit=True) as autre:
+            autre.execute(f"SET search_path TO {schema}")
+            autre.execute("SET lock_timeout = '250ms'")
+            with pytest.raises(psycopg.errors.LockNotAvailable):
+                entreprise_depot.enregistrer_donnees(
+                    autre, TENANT, "sit-pg-lock",
+                    {"description": "concurrent"}, version_attendue=1)
+
+    relu = entreprise_depot.lire_objet(conn, TENANT, "sit-pg-lock")
+    assert relu["donnees"]["description"] == "initial"
+
+
+@besoin_pg
+def test_pg_fusionner_donnees_preserve_le_legacy(conn):
+    legacy = {
+        "decision_id": "dec-1", "niveau": "strategique", "genre": "a_confirmer",
+        "raison": "legacy", "quand": "2026-10-01T08:00:00+00:00",
+        "travail_id": "case-1", "jumeau_cible": "paiements",
+        "urgence": "haute", "reponse": {"par": "paiements"},
+    }
+    entreprise_depot.enregistrer_objet(conn, TENANT, {
+        "id": "ini-pg-legacy", "tenant_id": TENANT, "famille": "decision",
+        "type": "INITIATIVE", "mode": "DECLARED", "titre": "Initiative",
+        "donnees": legacy})
+
+    ligne = boucle.fusionner_donnees(
+        conn, TENANT, "ini-pg-legacy", {"outcome_ids": ["out-1"]},
+        historique=True, ajouter=("outcome_ids",), version_attendue=1)
+    assert ligne["version"] == 2
+
+    relu = entreprise_depot.lire_objet(conn, TENANT, "ini-pg-legacy")
+    for cle, valeur in legacy.items():
+        assert relu["donnees"][cle] == valeur
+    assert relu["donnees"]["outcome_ids"] == ["out-1"]
+    assert relu["donnees"]["_historique"][0]["version"] == 1
+    assert relu["donnees"]["_historique"][0]["donnees"]["niveau"] == "strategique"
+
+
+@besoin_pg
+def test_pg_rls_isole_objet_entreprise_avec_un_role_non_superuser(conn):
+    role = rls.role_courant(conn)
+    if not role["superuser"]:
+        pytest.skip("SET ROLE de vérification nécessite un rôle superuser de test")
+    surveillant = conn.execute(
+        "SELECT 1 FROM pg_roles WHERE rolname = 'pg_monitor' "
+        "AND NOT rolsuper AND NOT rolbypassrls"
+    ).fetchone()
+    if surveillant is None:
+        pytest.skip("rôle pg_monitor indisponible")
+
+    rls.activer(conn, tables=("objet_entreprise",))
+    entreprise_depot.enregistrer_objet(conn, "tenant-a", {
+        "id": "oa", "tenant_id": "tenant-a", "famille": "emergence",
+        "type": "SITUATION", "mode": "OBSERVED", "titre": "A"})
+    entreprise_depot.enregistrer_objet(conn, "tenant-b", {
+        "id": "ob", "tenant_id": "tenant-b", "famille": "emergence",
+        "type": "SITUATION", "mode": "OBSERVED", "titre": "B"})
+    schema = _schema(conn)
+    conn.execute(f"GRANT USAGE ON SCHEMA {schema} TO pg_monitor")
+    conn.execute("GRANT SELECT, INSERT, UPDATE ON objet_entreprise TO pg_monitor")
+
+    with conn.transaction():
+        conn.execute("SET LOCAL ROLE pg_monitor")
+        with rls.contexte_tenant(conn, "tenant-a"):
+            assert entreprise_depot.lire_objet(conn, "tenant-a", "oa") is not None
+            assert entreprise_depot.lire_objet(conn, "tenant-b", "ob") is None
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                entreprise_depot.enregistrer_objet(conn, "tenant-b", {
+                    "id": "ob-2", "tenant_id": "tenant-b", "famille": "emergence",
+                    "type": "SITUATION", "mode": "OBSERVED", "titre": "B2"})
+
+
+@besoin_pg
+def test_pg_enregistrer_boucle_fusionne_legacy_et_liens_b(conn):
+    entreprise_depot.enregistrer_objet(conn, TENANT, {
+        "id": "sit-pg-fusion", "tenant_id": TENANT, "famille": "emergence",
+        "type": "SITUATION", "mode": "OBSERVED", "titre": "Avant",
+        "donnees": {
+            "legacy": "conservé",
+            "signal_ids": ["sig-1"],
+            "expression_id": "expr-1",
+            "opportunity_ids": ["opp-1"],
+            "risk_ids": ["risk-1"],
+            "_historique": [{"version": 1, "titre": "Ancienne"}],
+        }})
+
+    situation = boucle.Situation(
+        id="sit-pg-fusion", tenant_id=TENANT, titre="Après",
+        description="Nouvelle description", priorite="HAUTE")
+    boucle.enregistrer_boucle(conn, TENANT, situation, historique=True)
+
+    relu = entreprise_depot.lire_objet(conn, TENANT, "sit-pg-fusion")
+    assert relu["titre"] == "Après"
+    assert relu["version"] == 2
+    assert relu["donnees"]["description"] == "Nouvelle description"
+    assert relu["donnees"]["priorite"] == "HAUTE"
+    assert relu["donnees"]["legacy"] == "conservé"
+    assert relu["donnees"]["signal_ids"] == ["sig-1"]
+    assert relu["donnees"]["expression_id"] == "expr-1"
+    assert relu["donnees"]["opportunity_ids"] == ["opp-1"]
+    assert relu["donnees"]["risk_ids"] == ["risk-1"]
+    assert [entree["titre"] for entree in relu["donnees"]["_historique"]] == [
+        "Ancienne", "Avant"]
+
+
+@besoin_pg
+def test_pg_enregistrer_boucle_preserve_scenario_et_liens_inverses(conn):
+    sit = situation("sit-liens")
+    investigation = boucle.ouvrir_investigation(
+        sit, id="inv-liens", titre="Comprendre")
+    proposition = boucle.proposer_decision(investigation, ["A"], id="dec-liens")
+    decision = boucle.trancher_decision(proposition, "comité", "A")
+    boucle.enregistrer_boucle(conn, TENANT, [sit, investigation, decision])
+
+    version = entreprise_depot.lire_objet(conn, TENANT, "dec-liens")["version"]
+    boucle.fusionner_donnees(
+        conn, TENANT, "dec-liens",
+        {"scenario_id": "scn-1", "initiative_id": "ini-1",
+         "scenarios_rejetes": ["scn-0"], "hypothesis_ids": ["hyp-1"],
+         "expert_ids": ["exp-1"], "scenario_ids": ["scn-1"],
+         "signal_ids": ["sig-1"], "expression_id": "expr-1",
+         "opportunity_ids": ["opp-1"], "risk_ids": ["risk-1"]},
+        historique=False, version_attendue=version)
+
+    fresh = boucle.Decision(
+        id="dec-liens", tenant_id=TENANT, investigation_id="inv-liens",
+        options=["A"], statut="DECIDED", acteur="comité", choix="A",
+        decide_le=DATES["observe_le"])
+    boucle.enregistrer_boucle(conn, TENANT, fresh, historique=True)
+
+    relu = entreprise_depot.lire_objet(conn, TENANT, "dec-liens")
+    assert relu["donnees"]["scenario_id"] == "scn-1"
+    assert relu["donnees"]["initiative_id"] == "ini-1"
+    assert relu["donnees"]["scenarios_rejetes"] == ["scn-0"]
+    assert relu["donnees"]["hypothesis_ids"] == ["hyp-1"]
+    assert relu["donnees"]["expert_ids"] == ["exp-1"]
+    assert relu["donnees"]["scenario_ids"] == ["scn-1"]
+    assert relu["donnees"]["signal_ids"] == ["sig-1"]
+    assert relu["donnees"]["expression_id"] == "expr-1"
+    assert relu["donnees"]["opportunity_ids"] == ["opp-1"]
+    assert relu["donnees"]["risk_ids"] == ["risk-1"]
+    assert relu["donnees"]["_historique"]
+
+    initiative = boucle.lancer_initiative(decision, id="ini-liens", titre="Initiative")
+    boucle.enregistrer_boucle(conn, TENANT, initiative)
+    version = entreprise_depot.lire_objet(conn, TENANT, "ini-liens")["version"]
+    boucle.fusionner_donnees(
+        conn, TENANT, "ini-liens", {"outcome_ids": ["out-1"]},
+        ajouter=("outcome_ids",), historique=False, version_attendue=version)
+
+    fresh_init = boucle.Initiative(
+        id="ini-liens", tenant_id=TENANT, decision_id="dec-liens", titre="Initiative")
+    boucle.enregistrer_boucle(conn, TENANT, fresh_init)
+    relu_ini = entreprise_depot.lire_objet(conn, TENANT, "ini-liens")
+    assert relu_ini["donnees"]["outcome_ids"] == ["out-1"]
+
+    fresh_override = boucle.Decision(
+        id="dec-liens", tenant_id=TENANT, investigation_id="inv-liens",
+        options=["A"], statut="DECIDED", acteur="comité", choix="A",
+        decide_le=DATES["observe_le"], initiative_id="ini-2")
+    boucle.enregistrer_boucle(conn, TENANT, fresh_override)
+    relu_override = entreprise_depot.lire_objet(conn, TENANT, "dec-liens")
+    assert relu_override["donnees"]["initiative_id"] == "ini-2"
+    assert relu_override["donnees"]["scenario_id"] == "scn-1"
