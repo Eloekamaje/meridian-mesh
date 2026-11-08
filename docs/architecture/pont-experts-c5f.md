@@ -96,11 +96,43 @@ produites. La validation est rejouée dans l'adaptateur, donc un appel direct à
 `enregistrer_objets_exploitation` ne peut pas la contourner.
 
 La route Hypothèse dérive l'Investigation avant la validation
-(`_deriver_contributions_hypothese`), puis les hypothèses citées sont collectées avec les
-parents et verrouillées dans la même requête triée par identifiant. La validation réutilise
-`par_id` et `_resoudre` : aucune requête par citation valide. L'ordre de verrouillage C5e
+(`_deriver_contributions_hypothese`). Les hypothèses citées sont ensuite **pré-validées
+sans verrou** en une seule requête (`_collecter_ids_hypotheses_citees`, `ANY`) avant
+d'entrer dans le lot verrouillé. Cette pré-validation refuse une citation invalide en 422
+avant tout verrou sur l'hypothèse citée : deux contributions concurrentes qui se citent en
+investigations croisées ne peuvent donc pas former le cycle de verrous
+`H_A → H_B` / `H_B → H_A` (auparavant `DeadlockDetected` → 503). Les IDs valides sont
+ensuite verrouillés avec les parents dans la même requête triée par identifiant ; la
+validation post-verrou reste en défense en profondeur. La validation réutilise `par_id` et
+`_resoudre` : aucune requête par citation valide. L'ordre de verrouillage C5e
 (`_deriver_contributions_hypothese` avant `_collecter_ids_parents`/`_lire_verrouilles`)
 est conservé.
+
+### Compatibilité des contributions C5e antérieures
+
+Les contributions créées avant C5f peuvent porter des `hypothesis_ids_soutenues` ou
+`hypothesis_ids_contestees` jamais validés. **Aucune migration automatique n'est
+exécutée.** Comme `changer_statut_contribution` rejoue `_valider_pour_persistance`, une
+telle ligne répond 422 sur `POST /api/boucle/contributions/{cid}/statut` tant que la
+citation n'est pas corrigée. Chemin de remédiation :
+
+1. exécuter l'audit read-only
+   `psql "$JUMEAU_PG_DSN" -f scripts/auditer-citations-contributions.sql` ;
+2. pour chaque ligne retournée, vérifier la citation métier ;
+3. corriger **hors API** `donnees.hypothesis_ids_soutenues` /
+   `donnees.hypothesis_ids_contestees` (retirer l'identifiant invalide ou le remplacer par
+   une hypothèse de la même Investigation), avec trace opérateur ;
+4. relancer l'audit puis la transition.
+
+L'audit est strictement `SELECT` ; il ne répare rien et ne modifie aucune ligne.
+
+### Sémantique de `motif`
+
+`motif` absent ou `null` conserve le motif existant. Une chaîne vide (ou composée
+d'espaces, normalisée en chaîne vide) **efface explicitement** le motif. `preuves`
+suit la même logique de remplacement : `null` conserve, une liste vide efface. Ce choix
+aligne `muer_expert` sur `muer_hypothese` et `muer_contribution` ; il est verrouillé par
+un test de domaine.
 
 ## UI
 
