@@ -150,9 +150,9 @@ Decision · Initiative · Outcome · Learning
 | Étape | Cible | Existant | Preuve code | Écart | Statut | Priorité |
 |---|---|---|---|---|---|---|
 | **Découvrir** | Observer applications, services, API, données, messages, dépendances, règles, processus, équipes, documents, changements, incidents, usages, parcours, tâches, événements | Twins 11 types, ingestion multi-sources, CBM, claims/preuves, liens, Atlas, revue | `modele_entreprise.py`, `ingerer.py`, `cbm_liens.py`, `moteur_liens.py` | Couverture inégale : code/topologie solides, métier/parcours/tâches/employés/clients peu outillés ; connecteurs live et CBM à valider | **Solide sur le code ; partiel sur le métier et les usages** | P1 couverture, P0 CBM/live |
-| **Maturer** | Observation → Hypothèse → Claim → renforcé → mature ; multi-source, historique, fréquence, cohérence temporelle, contradictions, qualité des preuves, expertise, confiance | Maturité des Claims, contradictions conservées, calibration confiance/outcome, spécialiste preuve, score d’attention | `connaissance.py`, `calibration_croyances.py`, `specialiste_preuve.py`, `attention.py` | Pas de pipeline de maturation des phénomènes ; pas de Signal/Observation/Hypothesis canonique ; pas d’agrégation fréquence/temporalité ; promotion encore peu outillée | **Partiel** | P0/P1 |
+| **Maturer** | Observation → Hypothèse → Claim → renforcé → mature ; multi-source, historique, fréquence, cohérence temporelle, contradictions, qualité des preuves, expertise, confiance | Maturité des Claims, contradictions conservées, calibration confiance/outcome, spécialiste preuve, score d’attention ; `Hypothesis` canonique depuis C5c avec cycle de renforcement/affaiblissement/confirmation | `connaissance.py`, `calibration_croyances.py`, `specialiste_preuve.py`, `attention.py`, `objets_exploitation.py` | Pas de pipeline automatique de maturation des phénomènes ; pas de `Signal`/`Observation` canonique ; pas d’agrégation fréquence/temporalité ; promotion encore peu outillée | **Partiel** | P0/P1 |
 | **Exprimer** | Formuler une lecture du réel : faits, hypothèses, preuves, incertitudes, confiance ; types opportunité/risque/anomalie/dérive/contradiction/changement/simplification/duplication/comportement | Histoires `Actualités` (legacy) avec récit, « pourquoi maintenant », reste à comprendre, opportunité ; `Expression` canonique et `Situation.expression_id` (C5a) ; qualification manuelle d'une Expression en `Opportunity`/`Risk` (C5b) | `actualites.py`, `Actualites.jsx`, `objets_exploitation.py`, `commandes_boucle.py`, `boucle.py`, `Boucle.jsx` | La classe, la typologie, une Expression unique par Situation et la qualification canonique en opportunité/risque sont opérationnelles ; pas de pipeline automatique Expression → Opportunity/Risk ; surface `Actualités` encore alimentée par Mongo legacy | **Partiel** | P0 |
-| **Investiguer** | Investigation structurée : contexte, problème, preuves, timeline, hypothèses concurrentes, experts, contradictions, sous-questions, découvertes, scénarios | Travail/case : hypothèses, options, investigations, décisions, passation, veille ; dossier de raisonnement : croyances, hypothèses, options, critique, gates ; contrats d’investigation et spécialistes | `cases.py`, `dossier_raisonnement.py`, `noyau_raisonnement.py`, `investigation.py`, `specialistes.py` | Investigation canonique créée par le pont C2 depuis Travail ; pas d'objet Hypothesis/Expert/ExpertContribution canonique ; pas d’UI investigation unifiée ; les experts sont des profils/spécialistes, pas des experts métier avec contributions | **Partiel** | P0/P1 |
+| **Investiguer** | Investigation structurée : contexte, problème, preuves, timeline, hypothèses concurrentes, experts, contradictions, sous-questions, découvertes, scénarios | Travail/case : hypothèses, options, investigations, décisions, passation, veille ; dossier de raisonnement : croyances, hypothèses, options, critique, gates ; contrats d’investigation et spécialistes ; `Hypothesis` canonique depuis C5c | `cases.py`, `dossier_raisonnement.py`, `noyau_raisonnement.py`, `investigation.py`, `specialistes.py`, `objets_exploitation.py` | Investigation canonique créée par le pont C2 depuis Travail ; Hypothesis canonique créée manuellement depuis une Investigation ; pas d'objet Expert/ExpertContribution canonique ; pas d’UI investigation unifiée ; les experts sont des profils/spécialistes, pas des experts métier avec contributions | **Partiel** | P0/P1 |
 | **Décider** | Options/scénarios évalués (valeur, coût, complexité, risque, dépendances, délai, impacts client/employé/réglementaire, réversibilité, confiance) ; décision humaine tracée | Décision legacy dans Travail + note de passation ; `Decision` canonique et transitions ; `Scenario` canonique avec comparaison déterministe dans la Boucle ; contrefactuel pur ; scénarios de capacité | `cases.py`, `DecisionPassation.jsx`, `objets_exploitation.py`, `commandes_boucle.py`, `boucle.py`, `contrefactuel.py`, `planification/scenario.py` | Scénarios canoniques et comparaison exposés ; pas de scénarios de capacité reliés à la décision ; la décision ne sélectionne pas encore explicitement un scénario ; critères non homogènes | **Partiel** | P0/P1 |
 | **Agir** | Décision → initiative ; étapes, responsables, dépendances, plan, critères de succès, traçabilité | Planification capacité/charge/prévision/budget ; initiatives legacy ; `Initiative` canonique créée par C3 après réponse ; connecteur Jira ; délégations | `application/planification/*`, `initiatives.py`, `legacy.py`, `boucle.py`, `initiatives_auto.py` | Pas d’API/UI canonique de création ou de transition d’Initiative ; planification et boucle non reliées ; Jira live partiel ; Azure DevOps non identifié ; pas de plan d’action canonique | **Partiel** | P0/P1 |
 | **Mesurer** | Observer les conséquences réelles, comparer attendu/observé, détecter les effets secondaires | `Outcome` canonique + `/boucle/outcomes` ; worker D observations → Outcome ; note de passation + veille legacy ; calibration ; observations de Twins | `outcomes.py`, `mesure_auto.py`, `cognitif.py`, `cases.py` (veille), `moteur_veille`, `calibration_croyances.py` | Mesure automatique branchée sur observations, mais pas encore sur le chemin veille legacy complet ; dépend d’une Initiative canonique ; deux chemins de mesure non unifiés | **Partiel** | P1 |
@@ -170,7 +170,7 @@ Decision · Initiative · Outcome · Learning
 | **Opportunity** | `modele_entreprise.Opportunity` | `objet_entreprise` + lien inverse `Expression.opportunity_ids` | `POST /api/boucle/expressions/{id}/opportunities`, `GET /api/boucle/expressions/{id}/opportunities`, `POST /api/boucle/opportunities/{id}/statut` et actions « Qualifier une opportunité » / « Changer le statut » dans Boucle | **Opérationnel depuis une Expression, périmètre UI borné** |
 | **Risk** | `modele_entreprise.Risk` | `objet_entreprise` + lien inverse `Expression.risk_ids` | `POST /api/boucle/expressions/{id}/risks`, `GET /api/boucle/expressions/{id}/risks`, `POST /api/boucle/risks/{id}/statut` et actions « Qualifier un risque » / « Changer le statut » dans Boucle | **Opérationnel depuis une Expression, périmètre UI borné** |
 | **Investigation** | `modele_entreprise.Investigation` | `objet_entreprise` possible | Créée par `POST /boucle/situations/{id}/investigations` (UI) ou par le pont C2 | **Partiel** |
-| **Hypothesis** | `dossier_raisonnement.Hypothese` + tableau `hypotheses` du case | Dossier / Mongo | Via raisonnement ou Travail, pas comme objet canonique | **Partiel** |
+| **Hypothesis** | `objets_exploitation.Hypothesis`, `construction_objets_exploitation.nouvelle_hypothese` | `objet_entreprise` + lien inverse `Investigation.hypothesis_ids` | `POST /api/boucle/investigations/{iid}/hypotheses`, `GET /api/boucle/hypotheses`, `POST /api/boucle/hypotheses/{hid}/statut` et actions « Formuler une hypothèse » / « Changer le statut » dans Boucle ; statut initial `OPEN`, cycle `OPEN → STRENGTHENED|WEAKENED|REJECTED|CONFIRMED` | **Opérationnel depuis une Investigation, périmètre UI borné** |
 | **Expert** | `profils.Profil`, spécialistes cognitifs | Aucune | Aucune | **Partiel** |
 | **ExpertContribution** | `Proposition`, contributions de mobilisation | Dossier de raisonnement / réponse | Pas d’objet canonique | **Partiel** |
 | **Scenario** | `objets_exploitation.Scenario`, `construction_objets_exploitation.nouveau_scenario` | `objet_entreprise` + liens inverses `scenario_ids` / `scenario_id` | `POST /boucle/scenarios`, `GET /boucle/scenarios`, `POST /boucle/scenarios/comparer` et UI Boucle ; formulaire de création exposant titre, description, hypothèses/actions, valeur, coût, délai, risque, complexité, confiance, dépendances, impacts, preuves, réversibilité et statut ; comparaison plafonnée à 50 | **Opérationnel, périmètre UI borné** |
@@ -215,12 +215,16 @@ en production (workers, migration tenant rétroactive, RLS).
 
 ### 6.2 Les objets de l’exploitation manquent
 
-`Signal`, `Hypothesis`, `Expert` et `ExpertContribution` n’existent pas comme objets
-canoniques. `Expression` est désormais canonique, créable depuis une Situation (C5a), et
-`Scenario` est canonique et comparable dans la Boucle. `Opportunity` et `Risk` sont
-opérationnels depuis une Expression (C5b) : qualification manuelle, statut initial
-`DETECTED`, cycle de maturation et liens inverses. La vision fait pourtant de l’Opportunité
-un objet majeur et attend encore un pipeline automatique de détection/qualification.
+`Signal`, `Expert` et `ExpertContribution` n’existent pas comme objets canoniques.
+`Expression` est désormais canonique, créable depuis une Situation (C5a), et `Scenario`
+est canonique et comparable dans la Boucle. `Opportunity` et `Risk` sont opérationnels
+depuis une Expression (C5b) : qualification manuelle, statut initial `DETECTED`, cycle de
+maturation et liens inverses. `Hypothesis` est canonique depuis C5c, créable depuis une
+Investigation, avec conditions de test, claims soutenants/opposants, expert associé,
+cycle de renforcement/affaiblissement/rejet/confirmation et lien inverse
+`Investigation.hypothesis_ids` ; la confirmation exige une preuve. La vision fait pourtant
+de l’Opportunité un objet majeur et attend encore un pipeline automatique de
+détection/qualification et de formulation d’hypothèses.
 
 ### 6.3 La boucle est opérable, mais pas encore complète
 
@@ -234,6 +238,9 @@ un objet majeur et attend encore un pipeline automatique de détection/qualifica
   actions « Qualifier une opportunité » / « Qualifier un risque ») et faire évoluer leur
   statut (`POST /boucle/opportunities/{id}/statut`, `POST /boucle/risks/{id}/statut`) ;
 - ouvrir une Investigation (`POST /boucle/situations/{id}/investigations`) ;
+- formuler une Hypothèse depuis une Investigation
+  (`POST /boucle/investigations/{id}/hypotheses`, `GET /boucle/hypotheses`) et faire
+  évoluer son statut (`POST /boucle/hypotheses/{id}/statut`) ;
 - proposer puis trancher une Decision (`POST /boucle/investigations/{id}/decisions`,
   `POST /boucle/decisions/{id}/trancher`) ;
 - lancer une Initiative (`POST /boucle/decisions/{id}/initiatives`) ;
@@ -246,7 +253,7 @@ un objet majeur et attend encore un pipeline automatique de détection/qualifica
 
 Il reste sans API/UI canonique :
 
-- rattacher une Expertise.
+- rattacher une Expertise (`Expert`, `ExpertContribution`) et formuler un `Signal`.
 
 #### Contrat C5a — Expression canonique
 
@@ -337,14 +344,57 @@ Il reste sans API/UI canonique :
   porter le contrat ; `valeur_potentielle` est revalidée à la persistance et
   `probabilite` reste borné.
 
+#### Contrat C5c — Hypothèse canonique depuis une Investigation
+
+- `POST /api/boucle/investigations/{iid}/hypotheses` répond 201 avec l'enveloppe
+  `{tenant, objet, type: "HYPOTHESIS", role: "hypothese", chaine, historique}`.
+- Corps strict `extra="forbid"` : `enonce` obligatoire (non vide), `conditions_test`,
+  `claim_ids_soutenants`, `claim_ids_opposants`, `expert_id`, `preuves`, `confiance`
+  (0..1). Le serveur force `statut=OPEN` et `mode=PROPOSED` ; `statut`, `mode`, `id`,
+  `investigation_id` et tout champ inconnu sont refusés en 422.
+- L'Investigation est verrouillée (`FOR UPDATE`), doit appartenir au tenant et être de
+  type `INVESTIGATION` (une autre source est refusée en 422) ; absente ou hors tenant 404.
+  L'Hypothèse et le lien inverse `Investigation.hypothesis_ids` sont écrits dans la même
+  transaction : un échec du lien ne laisse aucun objet ni lien partiel. Une Investigation
+  peut porter plusieurs Hypothèses.
+- `GET /api/boucle/hypotheses` liste les Hypothèses du tenant, filtrables par
+  `investigation_id` et `statut`, avec `limite` 1..1000. Une Investigation filtrée
+  absente ou hors tenant répond 404 ; un statut inconnu 422.
+- `POST /api/boucle/hypotheses/{hid}/statut` répond 200 avec l'enveloppe de transition.
+  Corps `{vers, motif?, preuves?}`. Cycle canonique :
+  `OPEN → {STRENGTHENED, WEAKENED, REJECTED, CONFIRMED}`,
+  `STRENGTHENED → {WEAKENED, REJECTED, CONFIRMED}`,
+  `WEAKENED → {STRENGTHENED, REJECTED, CONFIRMED}`, `CONFIRMED` et `REJECTED` terminaux.
+  Une transition non autorisée est un 409 ; un statut inconnu, un `CONFIRMED` sans preuve
+  (ni nouvelle ni existante) et un identifiant d'un autre type sont des 422 ; une cible
+  absente ou hors tenant est un 404 ; un secret ou des données non sérialisables sont un
+  400 ; `Idempotency-Key` est refusé en 501 ; Postgres indisponible est un 503.
+- Lecture : `HYPOTHESIS` est ajouté à `_CLASSES_LECTURE`, donc à `TYPES_LECTURE`, jamais à
+  `TYPES_BOUCLE`. `_source_principale` suit `investigation_id`.
+  `GET /api/boucle/objets/{id}?historique=true` renvoie donc
+  `[SITUATION, INVESTIGATION, HYPOTHESIS]` quand l'Investigation est elle-même rattachée
+  à une Situation. `enregistrer_boucle` refuse toujours `HYPOTHESIS`.
+- Duplication assumée de `TRANSITIONS_HYPOTHESIS` côté domaine et de
+  `TRANSITIONS_HYPOTHESE` côté UI (`frontend/src/components/boucle/boucleUi.js`), comme
+  pour C5b : aucun endpoint n'expose la table, les deux copies doivent rester
+  synchronisées et un test frontend vérifie la table exacte.
+- UI : action « Formuler une hypothèse » sur une Investigation ouverte, formulaire
+  `ModaleTransition` (énoncé, conditions de test, claims soutenants/opposants, expert,
+  preuves, confiance), sélection/refetch du parent après création, affichage de la chaîne,
+  action « Changer le statut » limitée aux transitions autorisées, et blocage côté UI de
+  `CONFIRMED` sans preuve avec un message explicite.
+- Limites : formulation manuelle uniquement, aucun pipeline automatique Claims → Hypothesis,
+  pas de rattachement automatique aux Experts/Contributions, pas de suppression.
+
 ### 6.4 La maturation et l’expression ne sont pas un pipeline
 
 Les Claims ont une maturité et une calibration. Le passage **phénomène → hypothèse →
-expression → opportunité/risque** n’est pas un pipeline canonique : l’Expression et sa
-qualification manuelle en Opportunity/Risk sont canoniques (C5a/C5b), mais la maturation
-automatique et la dérivation depuis les Claims restent soit dans le legacy Mongo, soit dans
-le dossier de raisonnement. La « maturation » au sens de la vision reste à construire
-au-dessus des Claims.
+expression → opportunité/risque** n’est pas un pipeline canonique : l’Expression, sa
+qualification manuelle en Opportunity/Risk et la formulation manuelle d’Hypotheses depuis
+une Investigation sont canoniques (C5a/C5b/C5c), mais la maturation automatique et la
+dérivation depuis les Claims restent soit dans le legacy Mongo, soit dans le dossier de
+raisonnement. La « maturation » au sens de la vision reste à construire au-dessus des
+Claims.
 
 ### 6.5 La mémoire de transformation n’est pas une capacité produit
 
@@ -365,8 +415,9 @@ interrogeable comme un capital.
 2. **Compléter la boucle opérable** : les transitions canoniques, la création d’une
    Situation racine et la comparaison de Scénarios sont exposées dans l’UI ; il reste à
    rattacher l’Expertise et à relier les scénarios de capacité à la décision.
-3. **Compléter les objets** : `Signal`, `Hypothesis`, `Expert`, `ExpertContribution` ;
-   rendre `Opportunity` et `Risk` opérationnels et les relier à `Expression`.
+3. **Compléter les objets** : `Signal`, `Expert`, `ExpertContribution` ; `Hypothesis` est
+   canonique depuis C5c, `Opportunity` et `Risk` depuis C5b ; relier les hypothèses aux
+   Experts/Contributions et construire la maturation automatique.
 4. **Relier Travail et canonique** : une décision consignée dans Travail doit créer ou mettre à
    jour la `Decision` canonique ; la veille doit produire des `Outcome` et des `Learning`
    canoniques.
