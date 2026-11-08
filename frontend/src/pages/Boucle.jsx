@@ -1230,12 +1230,13 @@ export default function Boucle() {
       const libelleCreation = creationOpportunite
         ? "L'opportunité"
         : creationRisque ? "Le risque" : "L'hypothèse";
+      const accordCreation = creationRisque ? "" : "e";
 
       if (!identifiantCree) {
         setTransition((avant) => ({
           ...avant,
           enCours: false,
-          erreur: `${libelleCreation} a été créé mais la réponse ne contient aucun identifiant exploitable. Vérifiez la liste avant de réessayer.`,
+          erreur: `${libelleCreation} a été créé${accordCreation} mais la réponse ne contient aucun identifiant exploitable. Vérifiez la liste avant de réessayer.`,
         }));
         actualiser();
         return;
@@ -1266,7 +1267,8 @@ export default function Boucle() {
           historique: nouvelHistorique || [],
         },
       });
-      // L'expression est relue en arrière-plan pour exposer opportunity_ids/risk_ids.
+      // Le parent est relu en arrière-plan pour exposer son lien inverse
+      // (opportunity_ids/risk_ids pour une Expression, hypothesis_ids pour une Investigation).
       rafraichirObjetListe(identifiant);
       actualiser();
       return;

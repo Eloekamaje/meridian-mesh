@@ -282,12 +282,6 @@ const CHAMPS_CREER_HYPOTHESE = [
     placeholder: "claim-3",
   },
   {
-    nom: "expert_id",
-    label: "Expert associé (optionnel)",
-    type: "text",
-    placeholder: "expert-paiements",
-  },
-  {
     nom: "preuves",
     label: "Preuves initiales (IDs séparés par une virgule, optionnel)",
     type: "text",
@@ -1147,8 +1141,8 @@ function corpsHypothese(valeurs) {
     const claims = listeVirgules(valeurs, nom);
     if (claims.length > 0) corps[cle] = claims;
   }
-  const expert = valeurNette(valeurs, "expert_id");
-  if (expert) corps.expert_id = expert;
+  // ``expert_id`` reste dans le domaine pour C5e, mais n'est pas exposé par le
+  // formulaire tant qu'aucune route EXPERT n'existe.
   const preuves = listeVirgules(valeurs, "preuves");
   if (preuves.length > 0) corps.preuves = preuves;
 

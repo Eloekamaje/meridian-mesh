@@ -112,7 +112,6 @@ const hypothese = {
     conditions_test: ["mesurer le p95"],
     claim_ids_soutenants: ["claim-1"],
     claim_ids_opposants: ["claim-2"],
-    expert_id: "expert-1",
     preuves: ["preuve-1"],
     confiance: 0.6,
   },
@@ -395,7 +394,7 @@ describe("configurationAction", () => {
     expect(action.typeSource).toBe("INVESTIGATION");
     expect(action.champs.map((champ) => champ.nom)).toEqual([
       "enonce", "conditions_test", "claim_ids_soutenants",
-      "claim_ids_opposants", "expert_id", "preuves", "confiance",
+      "claim_ids_opposants", "preuves", "confiance",
     ]);
     expect(action.champs.find((champ) => champ.nom === "enonce").requis).toBe(true);
   });
@@ -794,7 +793,6 @@ describe("construireCorps", () => {
       conditions_test: ["mesurer le p95", "comparer trois flux"],
       claim_ids_soutenants: ["claim-1", "claim-2"],
       claim_ids_opposants: ["claim-3"],
-      expert_id: "expert-1",
       preuves: ["preuve-1", "preuve-2"],
       confiance: 0.6,
     });
@@ -802,6 +800,7 @@ describe("construireCorps", () => {
     expect(resultat.corps).not.toHaveProperty("id");
     expect(resultat.corps).not.toHaveProperty("investigation_id");
     expect(resultat.corps).not.toHaveProperty("mode");
+    expect(resultat.corps).not.toHaveProperty("expert_id");
 
     expect(construireCorps("creer_hypothese", {
       enonce: "Hypothèse", confiance: "1.2",

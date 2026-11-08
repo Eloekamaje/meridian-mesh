@@ -205,7 +205,6 @@ const hypothese = {
     conditions_test: ["mesurer le p95"],
     claim_ids_soutenants: ["claim-1"],
     claim_ids_opposants: ["claim-2"],
-    expert_id: "expert-1",
     preuves: ["preuve-1"],
     confiance: 0.6,
   },
@@ -1579,7 +1578,6 @@ test("formule une hypothèse depuis une investigation, la sélectionne et rafra�
       conditions_test: ["mesurer le p95", "comparer trois flux"],
       claim_ids_soutenants: ["claim-1"],
       claim_ids_opposants: ["claim-2"],
-      expert_id: "expert-1",
       preuves: ["preuve-1"],
       confiance: 0.6,
     });
@@ -1604,13 +1602,13 @@ test("formule une hypothèse depuis une investigation, la sélectionne et rafra�
   expect(document.activeElement?.id).toBe("boucle-transition-enonce");
   expect(hote.querySelector('[data-testid="boucle-transition-statut"]')).toBeNull();
   expect(hote.querySelector('[data-testid="boucle-transition-mode"]')).toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-transition-expert_id"]')).toBeNull();
 
   await act(async () => {
     saisir(hote.querySelector('[data-testid="boucle-transition-enonce"]'), "  Le contrôle synchrone bloque les paiements  ");
     saisir(hote.querySelector('[data-testid="boucle-transition-conditions_test"]'), "mesurer le p95\ncomparer trois flux");
     saisir(hote.querySelector('[data-testid="boucle-transition-claim_ids_soutenants"]'), "claim-1");
     saisir(hote.querySelector('[data-testid="boucle-transition-claim_ids_opposants"]'), "claim-2");
-    saisir(hote.querySelector('[data-testid="boucle-transition-expert_id"]'), "expert-1");
     saisir(hote.querySelector('[data-testid="boucle-transition-preuves"]'), "preuve-1");
     saisir(hote.querySelector('[data-testid="boucle-transition-confiance"]'), "0,6");
   });
@@ -1625,13 +1623,34 @@ test("formule une hypothèse depuis une investigation, la sélectionne et rafra�
   expect(precisions.textContent).toContain("mesurer le p95");
   expect(precisions.textContent).toContain("claim-1");
   expect(precisions.textContent).toContain("claim-2");
-  expect(precisions.textContent).toContain("expert-1");
   await deplier(hote, "boucle-chaine-section");
   expect(hote.querySelector('[data-testid="boucle-chaine-etape"]')).not.toBeNull();
   expect(api.get).toHaveBeenCalledWith(
     "/boucle/objets/inv-1",
     { params: { historique: true } },
   );
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("accorde au féminin le message d'une hypothèse créée sans identifiant", async () => {
+  installerApi({ liste: [situation, investigation] });
+  boucleApi.creerHypothese.mockResolvedValue({
+    data: { objet: null, chaine: [], historique: [] },
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "inv-1");
+  await cliquer(hote, "boucle-action-creer-hypothese");
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-enonce"]'), "Hypothèse");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  const alerte = hote.querySelector('[data-testid="boucle-transition-erreur"]');
+  expect(alerte).not.toBeNull();
+  expect(alerte.textContent).toContain("L'hypothèse a été créée");
 
   await act(async () => { racine.unmount(); });
 });
