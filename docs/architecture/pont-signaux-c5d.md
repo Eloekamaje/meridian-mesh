@@ -43,6 +43,15 @@ La date ISO est utilisée telle que fournie (après normalisation de texte, pas 
 reformattage sémantique de fuseau) : deux écritures différentes de la même instantanéité
 peuvent donc produire deux empreintes distinctes.
 
+**Piège documenté — date serveur hors empreinte.** Lorsque `detecte_le` est absent,
+l'empreinte utilise la chaîne vide, mais le domaine renseigne `detecte_le` avec l'instant
+d'observation pour l'affichage. Rejouer la réponse créée en renvoyant ce `detecte_le`
+serveur transforme donc la date implicite en date explicite : l'empreinte diffère et un
+**second Signal** est créé (201), au lieu du 409 attendu pour un double clic sans date.
+L'UI ne renvoie jamais la date d'un objet existant dans un nouveau formulaire, mais un
+client API qui rejoue la réponse complète doit omettre `detecte_le` pour conserver
+l'idempotence. C'est une limite assumée du contrat C5d, caractérisée par un test.
+
 ## Chaîne et persistance
 
 ```text
@@ -80,7 +89,9 @@ Erreurs :
 - 404 : Situation absente ou hors tenant ;
 - 409 : empreinte de Signal déjà connue (doublon) ;
 - 422 : validation, type inconnu, champ serveur ou champ inconnu ;
-- 400 : secret dans `preuves`/données non sérialisables, ou JSON malformé ;
+- 400 : secret dans `preuves`/données non sérialisables, jeton brut (`Bearer`, `sk-`,
+  `ghp_`, `xox…`) dans n'importe quelle chaîne persistée (source, libellé, description,
+  preuves), ou JSON malformé ;
 - 501 : `Idempotency-Key` (aucun stockage d'idempotence durable) ;
 - 503 : Postgres indisponible.
 
@@ -109,8 +120,12 @@ formulaire de statut.
 - Domaine : normalisation et déterminisme de l'empreinte, indépendance à l'horloge.
 - Commandes : création globale, depuis une Situation, multi-Situation, liens inverses,
   doublon, champs serveur, 404, atomicité.
-- HTTP : contrat 201, validation 422, doublon 409, secret/non-JSON 400, 501, 503, liste
-  filtrée et isolation tenant.
+- HTTP : contrat 201, validation 422, doublon 409, secret/non-JSON/jeton brut 400, 501, 503,
+  liste filtrée et isolation tenant.
+- Sécurité : les jetons bruts (`Bearer`, `sk-`, `ghp_`, `xox…`) sont refusés avant écriture
+  dans `preuves`, `source`, `libelle` et `description` ; la réponse HTTP les masque aussi.
+- Rejeu : un test caractérise le second Signal créé lorsqu'on renvoie explicitement le
+  `detecte_le` serveur d'une première création sans date.
 - Postgres réel (opt-in `JUMEAU_PG_DSN`) : chaîne `SITUATION → SIGNAL`, absence de chaîne
   multi/global, concurrence par threads avec une seule écriture, isolation tenant,
   atomicité du lien inverse.
@@ -126,5 +141,10 @@ formulaire de statut.
   erreur, mais l'UI n'affiche alors aucune étape amont.
 - L'empreinte est volontairement textuelle : deux dates équivalentes écrites différemment
   restent deux composantes différentes.
+- La date serveur remplie quand `detecte_le` est absent n'entre pas dans l'empreinte
+  initiale ; rejouer cette date dans une nouvelle requête crée un second Signal (piège
+  documenté ci-dessus, non corrigé sans changer le contrat).
+- Les jetons bruts sont refusés à l'écriture ; un corpus legacy déjà stocké reste masqué
+  en lecture mais n'est pas migré.
 - Pas de rattachement automatique des Signaux aux Expressions, Investigations ou
   Décisions au-delà de `situation_ids` et des liens libres.

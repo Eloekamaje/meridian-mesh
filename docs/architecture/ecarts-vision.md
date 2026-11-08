@@ -421,8 +421,9 @@ Il reste sans API/UI canonique :
 - `GET /api/boucle/signals` liste les Signaux du tenant, filtrés par `situation_id`,
   `type_signal` et `statut`, avec `limite` 1..1000. Une Situation filtrée absente ou hors
   tenant répond 404 ; un type ou un statut inconnu 422.
-- Erreurs : 404 Situation absente/hors tenant, 409 doublon d'empreinte, 422 validation,
-  400 secret/JSON malformé, 501 `Idempotency-Key`, 503 Postgres.
+- Erreurs : 404 Situation absente/hors tenant, 409 doublon d'empreinte (exception dédiée,
+  indépendante du message), 422 validation, 400 secret/jeton brut/JSON malformé, 501
+  `Idempotency-Key`, 503 Postgres.
 - Lecture : `SIGNAL` est ajouté à `_CLASSES_LECTURE`, donc à `TYPES_LECTURE`, jamais à
   `TYPES_BOUCLE`. `_source_principale` ne suit `situation_ids[0]` que si la liste contient
   exactement un élément ; un Signal multi-Situation ou global est sans chaîne amont.
@@ -436,6 +437,9 @@ Il reste sans API/UI canonique :
   traduction lisible du 409 doublon.
 - Limites : création manuelle uniquement, aucune détection automatique, aucune fusion,
   aucun rejet/suppression, aucune promotion automatique vers Expression ou Hypothesis.
+  La date serveur posée quand `detecte_le` est absent n'entre pas dans l'empreinte
+  initiale : la rejouer explicitement crée un second Signal (piège documenté dans
+  [pont-signaux-c5d.md](pont-signaux-c5d.md)).
 
 ### 6.4 La maturation et l’expression ne sont pas un pipeline
 
