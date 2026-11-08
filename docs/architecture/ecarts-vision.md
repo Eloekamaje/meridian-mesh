@@ -171,7 +171,7 @@ Decision · Initiative · Outcome · Learning
 | **Risk** | `modele_entreprise.Risk` | `objet_entreprise` + lien inverse `Expression.risk_ids` | `POST /api/boucle/expressions/{id}/risks`, `GET /api/boucle/expressions/{id}/risks`, `POST /api/boucle/risks/{id}/statut` et actions « Qualifier un risque » / « Changer le statut » dans Boucle | **Opérationnel depuis une Expression, périmètre UI borné** |
 | **Investigation** | `modele_entreprise.Investigation` | `objet_entreprise` possible | Créée par `POST /boucle/situations/{id}/investigations` (UI) ou par le pont C2 | **Partiel** |
 | **Hypothesis** | `objets_exploitation.Hypothesis`, `construction_objets_exploitation.nouvelle_hypothese` | `objet_entreprise` + lien inverse `Investigation.hypothesis_ids` | `POST /api/boucle/investigations/{iid}/hypotheses`, `GET /api/boucle/hypotheses`, `POST /api/boucle/hypotheses/{hid}/statut` et actions « Formuler une hypothèse » / « Changer le statut » dans Boucle ; statut initial `OPEN`, cycle `OPEN → STRENGTHENED|WEAKENED|REJECTED|CONFIRMED` | **Opérationnel depuis une Investigation, périmètre UI borné** |
-| **Expert** | `objets_exploitation.Expert`, `construction_objets_exploitation.nouvel_expert` | `objet_entreprise` ; objet racine sans lien inverse | `POST /api/boucle/experts`, `GET /api/boucle/experts` et formulaire « Inscrire un expert » dans Boucle ; statut `ACTIVE`, mode `DECLARED` et identifiants serveur ; aucune route de changement de statut en C5e | **Opérationnel en inscription/liste/lecture, périmètre UI borné** |
+| **Expert** | `objets_exploitation.Expert`, `construction_objets_exploitation.nouvel_expert`, `muer_expert` | `objet_entreprise` ; objet racine sans lien inverse | `POST /api/boucle/experts`, `GET /api/boucle/experts`, `POST /api/boucle/experts/{id}/statut` et formulaires « Inscrire un expert » / « Changer le statut » dans Boucle ; statut `ACTIVE`, mode `DECLARED` et identifiants serveur ; cycle `ACTIVE ↔ INACTIVE`, `ACTIVE|INACTIVE → ARCHIVED`, `ARCHIVED` terminal | **Opérationnel en inscription/liste/lecture/administration, périmètre UI borné** |
 | **ExpertContribution** | `objets_exploitation.ExpertContribution`, `construction_objets_exploitation.nouvelle_contribution` | `objet_entreprise` + lien inverse `Investigation.expert_ids` | `POST /api/boucle/investigations/{id}/contributions`, `POST /api/boucle/hypotheses/{id}/contributions`, `GET /api/boucle/contributions`, `POST /api/boucle/contributions/{id}/statut` et actions UI ; statut initial `PROPOSED`, invariant hypothèse du même parent, pas de `contribution_ids` | **Opérationnel en contribution/liste/lecture/transition, périmètre UI borné** |
 | **Scenario** | `objets_exploitation.Scenario`, `construction_objets_exploitation.nouveau_scenario` | `objet_entreprise` + liens inverses `scenario_ids` / `scenario_id` | `POST /boucle/scenarios`, `GET /boucle/scenarios`, `POST /boucle/scenarios/comparer` et UI Boucle ; formulaire de création exposant titre, description, hypothèses/actions, valeur, coût, délai, risque, complexité, confiance, dépendances, impacts, preuves, réversibilité et statut ; comparaison plafonnée à 50 | **Opérationnel, périmètre UI borné** |
 | **Decision** | `modele_entreprise.Decision` | `objet_entreprise` possible | Créée par le pont C2 ou par `POST /boucle/investigations/{id}/decisions` (UI) | **Partiel** |
@@ -220,8 +220,10 @@ depuis C5d en création, liste et lecture (global ou rattaché à une ou plusieu
 Situations), mais sans cycle de statut exposé ni pipeline de détection. `Expert` et
 `ExpertContribution` le sont depuis C5e : registre déclaratif, contribution manuelle
 depuis une Investigation ouverte ou une Hypothesis, transition `PROPOSED → ACCEPTED |
-REJECTED | ARCHIVED` et lecture de chaîne ; il n’existe pas encore de route de statut
-Expert ni de collecte automatique. `Expression` est désormais canonique, créable depuis
+REJECTED | ARCHIVED` et lecture de chaîne. Depuis C5f, le statut Expert est administrable
+(`POST /experts/{id}/statut`) et les hypothèses citées par une contribution sont des
+liens validés (existence, type, tenant et même Investigation) ; la collecte automatique
+reste absente. `Expression` est désormais canonique, créable depuis
 une Situation (C5a), et `Scenario` est canonique et comparable dans la Boucle.
 `Opportunity` et `Risk` sont opérationnels depuis une Expression (C5b) : qualification
 manuelle, statut initial `DETECTED`, cycle de maturation et liens inverses. `Hypothesis`
@@ -264,8 +266,8 @@ détection/qualification et de formulation d’hypothèses.
 
 Il reste sans API/UI canonique :
 
-- l’édition et le changement de statut du registre Expert ;
-- la collecte automatique de contributions et la résolution des claims/hypothèses cités ;
+- l’édition et la suppression du registre Expert (le statut est administrable depuis C5f) ;
+- la collecte automatique de contributions et la résolution des claims proposés ;
 - l’UI investigation unifiée qui rassemblerait hypothèses, experts et contributions dans
   un même dossier.
 
@@ -463,8 +465,9 @@ Il reste sans API/UI canonique :
   `statut=ACTIVE`, `mode=DECLARED`, `id` et `tenant_id` ; un client qui les envoie est
   refusé en 422. La chaîne est `[EXPERT]`.
 - `GET /api/boucle/experts` liste le tenant, filtrable par `domaine`, `statut`
-  (`ACTIVE|INACTIVE|ARCHIVED`) et `limite` 1..1000. Aucune route de changement de statut
-  Expert n'est exposée en C5e.
+  (`ACTIVE|INACTIVE|ARCHIVED`) et `limite` 1..1000. Depuis C5f,
+  `POST /api/boucle/experts/{eid}/statut` administre le cycle de vie (voir le contrat
+  C5f ci-dessous).
 - `POST /api/boucle/investigations/{iid}/contributions` répond 201 avec
   `{..., type: "EXPERT_CONTRIBUTION", role: "contribution"}`. Corps strict :
   `expert_id` et `contenu` obligatoires ; `hypothesis_id` optionnel, plus `constats`,
@@ -504,9 +507,29 @@ Il reste sans API/UI canonique :
   de contribution complet, stades/compteurs/filtre EXPERT et EXPERT_CONTRIBUTION, panneau
   détail avec chaîne, action de statut limitée aux transitions autorisées avec motif et
   preuves, modale accessible (`dialog`, focus, Tab, Escape, fond `inert`).
-- Limites : pas de statut Expert, pas d'édition/suppression du registre, pas de collecte
-  automatique, pas de résolution des claims/hypothèses cités, pas de `contribution_ids`.
-  Voir [pont-experts-c5e.md](pont-experts-c5e.md).
+- Limites : pas d'édition/suppression du registre, pas de collecte automatique, pas de
+  résolution des `claim_ids_proposes`, pas de `contribution_ids`. Voir
+  [pont-experts-c5e.md](pont-experts-c5e.md).
+
+#### Contrat C5f — Cycle de vie Expert et liens de contribution validés
+
+- `POST /api/boucle/experts/{eid}/statut` accepte `{vers, motif?, preuves?}` et répond
+  200 `ReponseTransition` (`type=EXPERT`, `role=expert`). Cycle :
+  `ACTIVE ↔ INACTIVE`, `ACTIVE|INACTIVE → ARCHIVED`, `ARCHIVED` terminal. Transition
+  non autorisée 409 ; statut inconnu, mauvais type ou validation 422 ; expert absent ou
+  hors tenant 404 ; JSON malformé ou secret 400 ; `Idempotency-Key` 501 ; Postgres
+  indisponible 503. Le motif et les preuves sont conservés, la version précédente reste
+  dans `historique`.
+- `hypothesis_ids_soutenues` et `hypothesis_ids_contestees` d'une
+  `EXPERT_CONTRIBUTION` sont désormais des liens validés : chaque identifiant doit
+  exister, être une `HYPOTHESIS`, appartenir au même tenant et à la même Investigation
+  que la contribution. Toute violation est un 422 **avant écriture** ; aucun lien inverse
+  ni contribution partielle n'est produit en cas d'échec. L'invariant est rejoué dans
+  l'adaptateur de persistance, y compris pour un appel direct.
+- UI : action « Changer le statut » sur un EXPERT non terminal, options limitées aux
+  transitions autorisées, formulaire motif/preuves, modale accessible existante.
+  Les tables `TRANSITIONS_EXPERT` (backend) et `TRANSITIONS_EXPERT` (frontend,
+  `boucleUi.js`) sont dupliquées et vérifiées par des tests.
 
 ### 6.4 La maturation et l’expression ne sont pas un pipeline
 
@@ -514,9 +537,9 @@ Les Claims ont une maturité et une calibration. Le passage **phénomène → hy
 expression → opportunité/risque** n’est pas un pipeline canonique : le `Signal` (C5d),
 l’Expression, sa qualification manuelle en Opportunity/Risk et la formulation manuelle
 d’Hypotheses depuis une Investigation sont canoniques (C5a/C5b/C5c/C5d), et les
-contributions d’experts (C5e) sont des apports déclarés, mais la maturation
-automatique et la dérivation depuis les Claims restent soit dans le legacy Mongo, soit dans
-le dossier de raisonnement. La « maturation » au sens de la vision reste à construire
+contributions d’experts (C5e/C5f) sont des apports déclarés dont les hypothèses citées
+sont validées, mais la maturation automatique et la dérivation depuis les Claims restent
+soit dans le legacy Mongo, soit dans le dossier de raisonnement. La « maturation » au sens de la vision reste à construire
 au-dessus des Claims.
 
 ### 6.5 La mémoire de transformation n’est pas une capacité produit
@@ -537,14 +560,14 @@ interrogeable comme un capital.
    unique et une trace visible dans Travail et Boucle.
 2. **Compléter la boucle opérable** : les transitions canoniques, la création d’une
    Situation racine et la comparaison de Scénarios sont exposées dans l’UI ; les experts et
-   leurs contributions sont désormais inscrits et déclarés depuis la Boucle ; il reste à
-   administrer le registre (statut Expert) et à relier les scénarios de capacité à la décision.
+   leurs contributions sont inscrits, déclarés et administrés depuis la Boucle (statut
+   Expert depuis C5f) ; il reste à relier les scénarios de capacité à la décision.
 3. **Compléter les objets** : `Signal` est canonique depuis C5d en création/liste/lecture
    (sans cycle de statut), `Expert` et `ExpertContribution` depuis C5e (inscription,
-   contribution, transition de contribution, sans collecte automatique) ; `Hypothesis` est
-   canonique depuis C5c, `Opportunity` et `Risk` depuis C5b ; relier les hypothèses aux
-   contributions par des liens validés plutôt que des identifiants déclaratifs et construire
-   la maturation automatique.
+   contribution, transition de contribution, sans collecte automatique) avec statut Expert
+   administrable et liens de contribution validés depuis C5f ; `Hypothesis` est
+   canonique depuis C5c, `Opportunity` et `Risk` depuis C5b ; construire la maturation
+   automatique et la collecte automatique de contributions.
 4. **Relier Travail et canonique** : une décision consignée dans Travail doit créer ou mettre à
    jour la `Decision` canonique ; la veille doit produire des `Outcome` et des `Learning`
    canoniques.
