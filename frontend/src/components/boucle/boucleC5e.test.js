@@ -80,15 +80,22 @@ describe("C5e — cycle et lecture des experts", () => {
     }).map((action) => action.id)).not.toContain("solliciter_expert");
   });
 
-  test("une contribution propose ses transitions de statut, un expert aucune", () => {
+  test("une contribution et un expert proposent leurs transitions de statut", () => {
     expect(actionsPourObjet(contribution).map((action) => action.id)).toEqual(
       ["changer_statut_contribution"]);
     expect(actionsPourObjet(contribution).map((action) => action.testid)).toEqual(
       ["boucle-action-statut-contribution"]);
-    expect(actionsPourObjet(expert)).toEqual([]);
+    expect(actionsPourObjet(expert).map((action) => action.id)).toEqual(
+      ["changer_statut_expert"]);
+    expect(actionsPourObjet(expert).map((action) => action.testid)).toEqual(
+      ["boucle-action-statut-expert"]);
     expect(actionsPourObjet({
       ...contribution,
       donnees: { ...contribution.donnees, statut: "ARCHIVED" },
+    })).toEqual([]);
+    expect(actionsPourObjet({
+      ...expert,
+      donnees: { ...expert.donnees, statut: "ARCHIVED" },
     })).toEqual([]);
   });
 

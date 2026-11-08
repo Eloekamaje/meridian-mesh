@@ -73,6 +73,8 @@ class BoucleStore(Protocol):
 
     def muer_contribution(self, contribution: Any, vers: str, **champs: Any) -> Any: ...
 
+    def muer_expert(self, expert: Any, vers: str, **champs: Any) -> Any: ...
+
     def enregistrer_objets(
         self, conn: Any, tenant_id: Any = None, objets: Any = None, *,
         historique: bool = False, as_dict: bool = True,

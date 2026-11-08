@@ -70,6 +70,7 @@ __all__ = [
     "changer_statut_hypothese",
     "creer_expert",
     "lister_experts",
+    "changer_statut_expert",
     "creer_contribution_investigation",
     "creer_contribution_hypothese",
     "lister_contributions",
@@ -797,8 +798,8 @@ def creer_expert(
     """Inscrit un Expert dans le registre du tenant.
 
     Le serveur force ``statut=ACTIVE`` et ``mode=DECLARED`` ; ``id``, ``tenant_id``,
-    ``statut`` et ``mode`` fournis par le client sont refusés (422). Aucune route de
-    changement de statut Expert n'est exposée en C5e : le registre se lit et s'inscrit.
+    ``statut`` et ``mode`` fournis par le client sont refusés (422). Depuis C5f, le
+    statut se change ensuite via ``changer_statut_expert``.
     """
     _refuser_champs_serveur(champs, _CHAMPS_SERVEUR_EXPERT, "expert")
     nom = _texte(champs.pop("nom", None))
@@ -832,6 +833,25 @@ def lister_experts(
         conn, tenant_id, type_="EXPERT",
         domaine=_texte(domaine) or None, statut=statut_normalise,
         limite=limite, as_dict=True,
+    )
+
+
+def changer_statut_expert(
+    depot: BoucleStore, conn: Any, tenant_id: str, expert_id: str,
+    statut: str, *, motif: Any = None, preuves: Any = None,
+) -> ResultatTransition:
+    """Fait évoluer un Expert selon ``TRANSITIONS_EXPERT``.
+
+    Une transition non autorisée est un 409 ; un statut inconnu, un identifiant d'un
+    autre type ou une valeur invalide restent des refus de contrat (422) avant toute
+    écriture. Un expert absent ou hors tenant est un 404. Le motif et les preuves sont
+    conservés et la version précédente reste dans ``historique``.
+    """
+    return _changer_statut_objet(
+        depot, conn, tenant_id, expert_id, statut,
+        type_attendu="EXPERT", role="expert",
+        statuts=STATUTS_EXPERT, muter=depot.muer_expert,
+        motif=motif, preuves=preuves,
     )
 
 

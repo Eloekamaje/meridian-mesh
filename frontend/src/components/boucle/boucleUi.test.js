@@ -11,6 +11,7 @@ import {
   statutObjet,
   statutsSuivants,
   titreObjet,
+  TRANSITIONS_EXPERT,
   TRANSITIONS_HYPOTHESE,
   TRANSITIONS_OPPORTUNITE,
   TRANSITIONS_RISQUE,
@@ -1071,5 +1072,78 @@ describe("detailSourceApresTransition", () => {
     expect(resultat.source).toEqual(source);
     expect(resultat.chaine).toEqual([situation, investigation, source]);
     expect(resultat.historique).toEqual(ancienDetail.historique);
+  });
+});
+
+describe("cycle de vie Expert (C5f)", () => {
+  const expert = {
+    id: "expert-1",
+    type: "EXPERT",
+    famille: "investigation",
+    titre: "Camille Martin",
+    donnees: {
+      nom: "Camille Martin",
+      domaine: "Cartes bancaires",
+      statut: "ACTIVE",
+      preuves: [],
+    },
+  };
+
+  test("la table des transitions Expert reste synchronisée avec le backend", () => {
+    expect(TRANSITIONS_EXPERT).toEqual({
+      ACTIVE: ["INACTIVE", "ARCHIVED"],
+      INACTIVE: ["ACTIVE", "ARCHIVED"],
+      ARCHIVED: [],
+    });
+    expect(statutsSuivants("EXPERT", "ACTIVE")).toEqual(["INACTIVE", "ARCHIVED"]);
+    expect(statutsSuivants("EXPERT", "INACTIVE")).toEqual(["ACTIVE", "ARCHIVED"]);
+    expect(statutsSuivants("EXPERT", "ARCHIVED")).toEqual([]);
+  });
+
+  test("un expert actif ou inactif propose le changement de statut, un archivé non", () => {
+    expect(actionsPourObjet(expert).map((action) => action.id))
+      .toEqual(["changer_statut_expert"]);
+    expect(actionsPourObjet({
+      ...expert,
+      donnees: { ...expert.donnees, statut: "INACTIVE" },
+    }).map((action) => action.id)).toEqual(["changer_statut_expert"]);
+    expect(actionsPourObjet({
+      ...expert,
+      donnees: { ...expert.donnees, statut: "ARCHIVED" },
+    })).toEqual([]);
+  });
+
+  test("la configuration expose seulement les transitions autorisées", () => {
+    const action = configurationAction("changer_statut_expert", expert);
+    const champVers = action.champs.find((champ) => champ.nom === "vers");
+
+    expect(action.api).toBe("changerStatutExpert");
+    expect(action.typeSource).toBe("EXPERT");
+    expect(champVers.type).toBe("select");
+    expect(champVers.options).toEqual(["INACTIVE", "ARCHIVED"]);
+    expect(configurationAction("changer_statut_expert", {
+      ...expert,
+      donnees: { ...expert.donnees, statut: "ARCHIVED" },
+    }).api).toBeNull();
+  });
+
+  test("construit le corps avec motif et preuves, sans accepter une transition refusée", () => {
+    expect(construireCorps("changer_statut_expert", {
+      vers: "inactive",
+      motif: "  Congé longue durée  ",
+      preuves: "doc://rh, doc://contrat",
+    }, expert)).toEqual({
+      corps: {
+        vers: "INACTIVE",
+        motif: "Congé longue durée",
+        preuves: ["doc://rh", "doc://contrat"],
+      },
+    });
+
+    const refuse = construireCorps("changer_statut_expert", {
+      vers: "ACTIVE",
+    }, expert);
+    expect(refuse.corps).toBeNull();
+    expect(refuse.erreur).toContain("transition de statut refusée");
   });
 });

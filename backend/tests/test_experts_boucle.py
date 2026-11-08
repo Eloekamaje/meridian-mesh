@@ -289,6 +289,10 @@ class _Store:
         return construction_objets_exploitation.muer_contribution(
             contribution, vers, **champs)
 
+    def muer_expert(self, expert, vers, **champs):
+        return construction_objets_exploitation.muer_expert(
+            expert, vers, **champs)
+
     def enregistrer_boucle(self, conn, tenant_id=None, objets=None, **kwargs):
         objets = list(objets or [])
         self.enregistres_boucle.extend(copy.deepcopy(objets))
@@ -554,6 +558,63 @@ def test_lister_experts_refuse_un_statut_inconnu():
     store = _Store([_expert_row()])
     with pytest.raises(ObjetsExploitationInvalide):
         commandes_boucle.lister_experts(store, _Connexion(), TENANT, statut="MAGIQUE")
+
+
+def test_changer_statut_expert_persiste_chaque_etape_avec_motif_et_preuves():
+    store = _Store([_expert_row("expert-1")])
+
+    inactif = commandes_boucle.changer_statut_expert(
+        store, _Connexion(), TENANT, "expert-1", "inactive",
+        motif="  Congé longue durée  ", preuves=["doc://rh"])
+
+    assert inactif.objet["donnees"]["statut"] == "INACTIVE"
+    assert inactif.objet["donnees"]["motif"] == "Congé longue durée"
+    assert inactif.objet["donnees"]["preuves"] == ["doc://rh"]
+    assert inactif.historique[-1]["donnees"]["statut"] == "ACTIVE"
+
+    actif = commandes_boucle.changer_statut_expert(
+        store, _Connexion(), TENANT, "expert-1", "ACTIVE")
+    assert actif.objet["donnees"]["statut"] == "ACTIVE"
+
+    archive = commandes_boucle.changer_statut_expert(
+        store, _Connexion(), TENANT, "expert-1", "ARCHIVED")
+    assert archive.objet["donnees"]["statut"] == "ARCHIVED"
+
+    with pytest.raises(commandes_boucle.TransitionRefusee):
+        commandes_boucle.changer_statut_expert(
+            store, _Connexion(), TENANT, "expert-1", "INACTIVE")
+    assert store.objets["expert-1"]["donnees"]["statut"] == "ARCHIVED"
+
+
+def test_changer_statut_expert_refuse_un_statut_inconnu_avant_ecriture():
+    store = _Store([_expert_row("expert-1")])
+
+    with pytest.raises(ObjetsExploitationInvalide):
+        commandes_boucle.changer_statut_expert(
+            store, _Connexion(), TENANT, "expert-1", "MAGIQUE")
+
+    assert store.enregistres_objets == []
+    assert store.objets["expert-1"]["donnees"]["statut"] == "ACTIVE"
+
+
+def test_changer_statut_expert_absent_hors_tenant_ou_mauvais_type():
+    store = _Store([
+        _expert_row("expert-1"),
+        _expert_row("expert-autre", tenant=AUTRE_TENANT),
+        _hypothesis_row("hypothesis-1"),
+    ])
+
+    with pytest.raises(commandes_boucle.SourceIntrouvable):
+        commandes_boucle.changer_statut_expert(
+            store, _Connexion(), TENANT, "expert-absent", "INACTIVE")
+    with pytest.raises(commandes_boucle.SourceIntrouvable):
+        commandes_boucle.changer_statut_expert(
+            store, _Connexion(), TENANT, "expert-autre", "INACTIVE")
+    with pytest.raises(ObjetsExploitationInvalide):
+        commandes_boucle.changer_statut_expert(
+            store, _Connexion(), TENANT, "hypothesis-1", "INACTIVE")
+
+    assert store.enregistres_objets == []
 
 
 # --------------------------------------------------------------------------- #
@@ -1087,6 +1148,133 @@ def test_get_experts_refuse_un_statut_inconnu(monkeypatch):
     assert reponse.status_code == 422
 
 
+def _resultat_expert_statut(statut: str = "INACTIVE", **donnees):
+    expert = _expert_row("expert-1", statut=statut, **donnees)
+    return commandes_boucle.ResultatTransition(
+        objet=expert, chaine=[expert],
+        historique=[{"donnees": {"statut": "ACTIVE"}}])
+
+
+def test_post_statut_expert_retourne_le_contrat_c5f(monkeypatch):
+    client = _client(monkeypatch)
+    appels = []
+
+    def changer(depot, conn, tenant, expert_id, vers, *, motif=None, preuves=None):
+        appels.append((tenant, expert_id, vers, motif, preuves))
+        return _resultat_expert_statut(
+            motif="Congé longue durée", preuves=["doc://rh"])
+
+    monkeypatch.setattr(
+        boucle_routes.commandes_boucle, "changer_statut_expert", changer)
+    reponse = client.post(
+        f"{BASE}/experts/expert-1/statut",
+        json={
+            "vers": "  inactive  ",
+            "motif": "  Congé longue durée  ",
+            "preuves": ["doc://rh"],
+        },
+        headers={"X-Tenant": "banque"},
+    )
+
+    assert reponse.status_code == 200, reponse.text
+    corps = reponse.json()
+    assert corps["tenant"] == "banque"
+    assert corps["objet"]["type"] == "EXPERT"
+    assert corps["type"] == "EXPERT"
+    assert corps["role"] == "expert"
+    assert corps["objet"]["donnees"]["statut"] == "INACTIVE"
+    assert appels == [(
+        "banque", "expert-1", "inactive", "Congé longue durée", ["doc://rh"])]
+
+
+@pytest.mark.parametrize("corps", [
+    {},
+    {"vers": "   "},
+    {"vers": "INACTIVE", "statut": "ACTIVE"},
+    {"vers": "INACTIVE", "mode": "DECLARED"},
+    {"vers": "INACTIVE", "id": "expert-2"},
+    {"vers": "INACTIVE", "tenant_id": "autre"},
+    {"vers": "INACTIVE", "champ_inconnu": True},
+])
+def test_post_statut_expert_valide_le_corps(monkeypatch, corps):
+    client = _client(monkeypatch)
+    monkeypatch.setattr(
+        boucle_routes.commandes_boucle, "changer_statut_expert",
+        lambda *_, **__: pytest.fail("la commande ne doit pas être appelée"))
+    reponse = client.post(f"{BASE}/experts/expert-1/statut", json=corps)
+    assert reponse.status_code == 422, reponse.text
+
+
+def test_post_statut_expert_traduit_404_409_422_400_503(monkeypatch):
+    client = _client(monkeypatch)
+    for erreur, statut in [
+        (commandes_boucle.SourceIntrouvable("expert", "expert-x"), 404),
+        (commandes_boucle.TransitionRefusee("transition refusée"), 409),
+        (ObjetsExploitationInvalide("statut inconnu"), 422),
+        (ObjetInvalide("secret refusé"), 400),
+        (psycopg.OperationalError("panne"), 503),
+    ]:
+        def echouer(*_, _erreur=erreur, **__):
+            raise _erreur
+
+        monkeypatch.setattr(
+            boucle_routes.commandes_boucle, "changer_statut_expert", echouer)
+        reponse = client.post(
+            f"{BASE}/experts/expert-1/statut", json={"vers": "INACTIVE"})
+        assert reponse.status_code == statut, reponse.text
+        assert "Traceback" not in reponse.text
+
+
+def test_post_statut_expert_json_malforme_ou_non_objet_repond_400(monkeypatch):
+    client = _client(monkeypatch)
+    for contenu in (b"{pas du json", b"[]"):
+        reponse = client.post(
+            f"{BASE}/experts/expert-1/statut",
+            content=contenu,
+            headers={"Content-Type": "application/json"},
+        )
+        assert reponse.status_code == 400, reponse.text
+
+
+def test_post_statut_expert_refuse_une_cle_d_idempotence(monkeypatch):
+    client = _client(monkeypatch)
+    reponse = client.post(
+        f"{BASE}/experts/expert-1/statut",
+        json={"vers": "INACTIVE"},
+        headers={"Idempotency-Key": "cle-1"},
+    )
+    assert reponse.status_code == 501
+
+
+def test_post_statut_expert_ne_laisse_pas_passer_un_secret(monkeypatch):
+    client = _client(monkeypatch)
+    resultat = _resultat_expert_statut()
+    resultat.objet["donnees"]["preuves"] = [{"password": "s3cr3t"}]
+    monkeypatch.setattr(
+        boucle_routes.commandes_boucle, "changer_statut_expert",
+        lambda *_, **__: resultat)
+
+    reponse = client.post(
+        f"{BASE}/experts/expert-1/statut", json={"vers": "INACTIVE"})
+
+    assert reponse.status_code == 200, reponse.text
+    assert "s3cr3t" not in reponse.text
+    assert reponse.json()["objet"]["donnees"]["preuves"] == [{"password": "***"}]
+
+
+def test_openapi_documente_le_changement_de_statut_expert(monkeypatch):
+    client = _client(monkeypatch)
+    specification = client.get("/openapi.json").json()
+    route = specification["paths"][f"{BASE}/experts/{{eid}}/statut"]["post"]
+    schema = route["requestBody"]["content"]["application/json"]["schema"]
+
+    assert schema["required"] == ["vers"]
+    assert set(schema["properties"]) == {"vers", "motif", "preuves"}
+    assert route["responses"]["200"]["content"]["application/json"]["schema"]
+    assert "501" in route["responses"]
+    assert "503" in route["responses"]
+
+
 def test_post_contribution_investigation_retourne_le_contrat(monkeypatch):
     client = _client(monkeypatch)
     appels = []
@@ -1499,6 +1687,8 @@ def test_pg_registre_experts_et_contribution_depuis_investigation(monkeypatch):
             depot.appliquer_schema(conn)
             _pg_situation(tenant)
             _pg_investigation(tenant)
+        hypothese = _pg_hypothese(
+            tenant, "inv-c5e", enonce="La règle est contournée")
 
         expert = client.post(
             f"{BASE}/experts",
@@ -1533,7 +1723,7 @@ def test_pg_registre_experts_et_contribution_depuis_investigation(monkeypatch):
                 "contenu": "La règle est contournée par le canal agence",
                 "constats": ["La pièce est saisie après validation"],
                 "claim_ids_proposes": ["claim-3"],
-                "hypothesis_ids_soutenues": ["hypothesis-1"],
+                "hypothesis_ids_soutenues": [hypothese.objet["id"]],
                 "inconnues": ["volume réel"],
                 "confiance": 0.7,
             },
@@ -1927,6 +2117,320 @@ def test_pg_derivation_hypothese_seule_a_la_persistance(monkeypatch):
                 investigation_id="inv-c5e")
         assert investigation["donnees"]["expert_ids"] == [expert.objet["id"]]
         assert [objet["id"] for objet in liste] == ["contribution-hypothese-seule"]
+    finally:
+        _nettoyer(tenant)
+
+
+@besoin_pg
+def test_pg_cycle_de_vie_expert_administrable(monkeypatch):
+    tenant = f"c5f-{uuid.uuid4().hex[:10]}"
+    autre = f"{tenant}-autre"
+    client = _client_pg(monkeypatch)
+    try:
+        with psycopg.connect(DSN, autocommit=True) as conn:
+            depot.appliquer_schema(conn)
+            _pg_situation(tenant)
+            _pg_investigation(tenant)
+        expert = _pg_expert(tenant)
+        expert_id = expert.objet["id"]
+        expert_autre = _pg_expert(autre)
+
+        actifs = client.get(
+            f"{BASE}/experts", params={"statut": "ACTIVE"},
+            headers={"X-Tenant": tenant})
+        assert [objet["id"] for objet in actifs.json()["experts"]] == [expert_id]
+
+        inactif = client.post(
+            f"{BASE}/experts/{expert_id}/statut",
+            json={
+                "vers": "INACTIVE",
+                "motif": "  Congé longue durée  ",
+                "preuves": ["doc://rh"],
+            },
+            headers={"X-Tenant": tenant},
+        )
+        assert inactif.status_code == 200, inactif.text
+        assert inactif.json()["objet"]["donnees"]["statut"] == "INACTIVE"
+        assert inactif.json()["objet"]["donnees"]["motif"] == "Congé longue durée"
+        assert inactif.json()["objet"]["donnees"]["preuves"] == ["doc://rh"]
+        assert inactif.json()["historique"][-1]["donnees"]["statut"] == "ACTIVE"
+
+        inactifs = client.get(
+            f"{BASE}/experts", params={"statut": "INACTIVE"},
+            headers={"X-Tenant": tenant})
+        assert [objet["id"] for objet in inactifs.json()["experts"]] == [expert_id]
+
+        for cible in ("ACTIVE", "ARCHIVED"):
+            reponse = client.post(
+                f"{BASE}/experts/{expert_id}/statut",
+                json={"vers": cible}, headers={"X-Tenant": tenant})
+            assert reponse.status_code == 200, reponse.text
+            assert reponse.json()["objet"]["donnees"]["statut"] == cible
+
+        terminal = client.post(
+            f"{BASE}/experts/{expert_id}/statut",
+            json={"vers": "INACTIVE"}, headers={"X-Tenant": tenant})
+        assert terminal.status_code == 409, terminal.text
+
+        inconnu = client.post(
+            f"{BASE}/experts/{expert_id}/statut",
+            json={"vers": "MAGIQUE"}, headers={"X-Tenant": tenant})
+        assert inconnu.status_code == 422, inconnu.text
+
+        hypothese = _pg_hypothese(tenant, "inv-c5e")
+        mauvais_type = client.post(
+            f"{BASE}/experts/{hypothese.objet['id']}/statut",
+            json={"vers": "INACTIVE"}, headers={"X-Tenant": tenant})
+        assert mauvais_type.status_code == 422, mauvais_type.text
+
+        absent = client.post(
+            f"{BASE}/experts/expert-absent/statut",
+            json={"vers": "INACTIVE"}, headers={"X-Tenant": tenant})
+        assert absent.status_code == 404, absent.text
+
+        hors_tenant = client.post(
+            f"{BASE}/experts/{expert_autre.objet['id']}/statut",
+            json={"vers": "INACTIVE"}, headers={"X-Tenant": tenant})
+        assert hors_tenant.status_code == 404, hors_tenant.text
+
+        with psycopg.connect(DSN) as conn:
+            ligne = boucle.lire_boucle(conn, tenant, expert_id, historique=True)
+        assert ligne["donnees"]["statut"] == "ARCHIVED"
+        assert len(ligne["historique"]) == 3
+    finally:
+        _nettoyer(tenant)
+        _nettoyer(autre)
+
+
+@besoin_pg
+def test_pg_contribution_cite_hypotheses_validees_des_deux_routes(monkeypatch):
+    tenant = f"c5f-{uuid.uuid4().hex[:10]}"
+    client = _client_pg(monkeypatch)
+    try:
+        with psycopg.connect(DSN, autocommit=True) as conn:
+            depot.appliquer_schema(conn)
+            _pg_situation(tenant)
+            _pg_investigation(tenant)
+        expert = _pg_expert(tenant)
+        soutenue = _pg_hypothese(tenant, "inv-c5e", enonce="Soutenue")
+        contestee = _pg_hypothese(tenant, "inv-c5e", enonce="Contestée")
+        source = _pg_hypothese(tenant, "inv-c5e", enonce="Source")
+
+        depuis_investigation = client.post(
+            f"{BASE}/investigations/inv-c5e/contributions",
+            json={
+                "expert_id": expert.objet["id"],
+                "contenu": "Depuis l'investigation",
+                "hypothesis_ids_soutenues": [soutenue.objet["id"]],
+                "hypothesis_ids_contestees": [contestee.objet["id"]],
+            },
+            headers={"X-Tenant": tenant},
+        )
+        assert depuis_investigation.status_code == 201, depuis_investigation.text
+        donnees = depuis_investigation.json()["objet"]["donnees"]
+        assert donnees["hypothesis_ids_soutenues"] == [soutenue.objet["id"]]
+        assert donnees["hypothesis_ids_contestees"] == [contestee.objet["id"]]
+
+        depuis_hypothese = client.post(
+            f"{BASE}/hypotheses/{source.objet['id']}/contributions",
+            json={
+                "expert_id": expert.objet["id"],
+                "contenu": "Depuis l'hypothèse",
+                "hypothesis_ids_soutenues": [soutenue.objet["id"]],
+                "hypothesis_ids_contestees": [contestee.objet["id"]],
+            },
+            headers={"X-Tenant": tenant},
+        )
+        assert depuis_hypothese.status_code == 201, depuis_hypothese.text
+        donnees = depuis_hypothese.json()["objet"]["donnees"]
+        assert donnees["investigation_id"] == "inv-c5e"
+        assert donnees["hypothesis_ids_soutenues"] == [soutenue.objet["id"]]
+        assert donnees["hypothesis_ids_contestees"] == [contestee.objet["id"]]
+
+        with psycopg.connect(DSN) as conn:
+            nombre = conn.execute(
+                "SELECT count(*) FROM objet_entreprise "
+                "WHERE tenant_id = %s AND type = 'EXPERT_CONTRIBUTION'",
+                (tenant,),
+            ).fetchone()[0]
+        assert nombre == 2
+    finally:
+        _nettoyer(tenant)
+
+
+@pytest.mark.parametrize("champ", [
+    "hypothesis_ids_soutenues", "hypothesis_ids_contestees",
+])
+@besoin_pg
+def test_pg_contribution_cite_hypothese_inconnue_refusee_sans_ecriture(
+    monkeypatch, champ,
+):
+    tenant = f"c5f-{uuid.uuid4().hex[:10]}"
+    client = _client_pg(monkeypatch)
+    try:
+        with psycopg.connect(DSN, autocommit=True) as conn:
+            depot.appliquer_schema(conn)
+            _pg_situation(tenant)
+            _pg_investigation(tenant)
+        expert = _pg_expert(tenant)
+        corps = {
+            "expert_id": expert.objet["id"],
+            "contenu": "Citation inconnue",
+            champ: ["hypothesis-inconnue"],
+        }
+
+        reponse = client.post(
+            f"{BASE}/investigations/inv-c5e/contributions",
+            json=corps, headers={"X-Tenant": tenant})
+        assert reponse.status_code == 422, reponse.text
+        assert "introuvable" in reponse.json()["detail"]
+
+        with psycopg.connect(DSN) as conn:
+            nombre = conn.execute(
+                "SELECT count(*) FROM objet_entreprise "
+                "WHERE tenant_id = %s AND type = 'EXPERT_CONTRIBUTION'",
+                (tenant,),
+            ).fetchone()[0]
+            investigation = boucle.lire_boucle(
+                conn, tenant, "inv-c5e", as_dict=True)
+        assert nombre == 0
+        assert investigation["donnees"]["expert_ids"] == []
+    finally:
+        _nettoyer(tenant)
+
+
+@besoin_pg
+def test_pg_contribution_cite_hypothese_autre_tenant_refusee(monkeypatch):
+    tenant = f"c5f-{uuid.uuid4().hex[:10]}"
+    autre = f"{tenant}-autre"
+    client = _client_pg(monkeypatch)
+    try:
+        with psycopg.connect(DSN, autocommit=True) as conn:
+            depot.appliquer_schema(conn)
+            _pg_situation(tenant)
+            _pg_investigation(tenant)
+            _pg_situation(autre)
+            _pg_investigation(autre, investigation_id="inv-autre")
+        expert = _pg_expert(tenant)
+        hypothese_autre = _pg_hypothese(autre, "inv-autre")
+
+        reponse = client.post(
+            f"{BASE}/investigations/inv-c5e/contributions",
+            json={
+                "expert_id": expert.objet["id"],
+                "contenu": "Contribution inter-tenant",
+                "hypothesis_ids_soutenues": [hypothese_autre.objet["id"]],
+            },
+            headers={"X-Tenant": tenant},
+        )
+        assert reponse.status_code == 422, reponse.text
+
+        with psycopg.connect(DSN) as conn:
+            nombre = conn.execute(
+                "SELECT count(*) FROM objet_entreprise "
+                "WHERE tenant_id = %s AND type = 'EXPERT_CONTRIBUTION'",
+                (tenant,),
+            ).fetchone()[0]
+            investigation = boucle.lire_boucle(
+                conn, tenant, "inv-c5e", as_dict=True)
+        assert nombre == 0
+        assert investigation["donnees"]["expert_ids"] == []
+    finally:
+        _nettoyer(tenant)
+        _nettoyer(autre)
+
+
+@besoin_pg
+def test_pg_contribution_cite_hypothese_autre_investigation_refusee_des_deux_routes(
+    monkeypatch,
+):
+    tenant = f"c5f-{uuid.uuid4().hex[:10]}"
+    client = _client_pg(monkeypatch)
+    try:
+        with psycopg.connect(DSN, autocommit=True) as conn:
+            depot.appliquer_schema(conn)
+            _pg_situation(tenant)
+            _pg_investigation(tenant, investigation_id="inv-1")
+            _pg_investigation(tenant, investigation_id="inv-2")
+        expert = _pg_expert(tenant)
+        source = _pg_hypothese(tenant, "inv-1", enonce="Source")
+        hors_parent = _pg_hypothese(tenant, "inv-2", enonce="Hors parent")
+
+        depuis_investigation = client.post(
+            f"{BASE}/investigations/inv-1/contributions",
+            json={
+                "expert_id": expert.objet["id"],
+                "contenu": "Citation hors investigation",
+                "hypothesis_ids_soutenues": [hors_parent.objet["id"]],
+            },
+            headers={"X-Tenant": tenant},
+        )
+        assert depuis_investigation.status_code == 422, depuis_investigation.text
+        assert "appartient" in depuis_investigation.json()["detail"]
+
+        depuis_hypothese = client.post(
+            f"{BASE}/hypotheses/{source.objet['id']}/contributions",
+            json={
+                "expert_id": expert.objet["id"],
+                "contenu": "Citation hors investigation depuis hypothèse",
+                "hypothesis_ids_contestees": [hors_parent.objet["id"]],
+            },
+            headers={"X-Tenant": tenant},
+        )
+        assert depuis_hypothese.status_code == 422, depuis_hypothese.text
+        assert "appartient" in depuis_hypothese.json()["detail"]
+
+        with psycopg.connect(DSN) as conn:
+            nombre = conn.execute(
+                "SELECT count(*) FROM objet_entreprise "
+                "WHERE tenant_id = %s AND type = 'EXPERT_CONTRIBUTION'",
+                (tenant,),
+            ).fetchone()[0]
+            investigation = boucle.lire_boucle(
+                conn, tenant, "inv-1", as_dict=True)
+        assert nombre == 0
+        assert investigation["donnees"]["expert_ids"] == []
+    finally:
+        _nettoyer(tenant)
+
+
+@besoin_pg
+def test_pg_appel_direct_cite_hypothese_invalide_refuse_sans_ecriture():
+    tenant = f"c5f-{uuid.uuid4().hex[:10]}"
+    try:
+        with psycopg.connect(DSN, autocommit=True) as conn:
+            depot.appliquer_schema(conn)
+            _pg_situation(tenant)
+            _pg_investigation(tenant, investigation_id="inv-1")
+            _pg_investigation(tenant, investigation_id="inv-2")
+        expert = _pg_expert(tenant)
+        hors_parent = _pg_hypothese(tenant, "inv-2")
+
+        contournement = {
+            "id": "contribution-citation-directe",
+            "tenant_id": tenant,
+            "famille": "investigation",
+            "type": "EXPERT_CONTRIBUTION",
+            "mode": "DECLARED",
+            **DATES,
+            "expert_id": expert.objet["id"],
+            "investigation_id": "inv-1",
+            "contenu": "Écriture directe avec citation invalide",
+            "statut": "PROPOSED",
+            "hypothesis_ids_soutenues": [hors_parent.objet["id"]],
+        }
+        with psycopg.connect(DSN) as conn, \
+                pytest.raises(ObjetsExploitationInvalide) as levee:
+            objets_exploitation.enregistrer_objets_exploitation(
+                conn, tenant, contournement)
+        assert "appartient" in str(levee.value)
+
+        with psycopg.connect(DSN) as conn:
+            assert boucle.lire_boucle(
+                conn, tenant, "contribution-citation-directe") is None
+            investigation = boucle.lire_boucle(
+                conn, tenant, "inv-1", as_dict=True)
+        assert investigation["donnees"]["expert_ids"] == []
     finally:
         _nettoyer(tenant)
 

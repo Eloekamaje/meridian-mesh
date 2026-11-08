@@ -70,6 +70,14 @@ export const TRANSITIONS_CONTRIBUTION = Object.freeze({
   ARCHIVED: Object.freeze([]),
 });
 
+// Cycle C5f du registre Expert : duplication assumée depuis
+// backend/meridian/domain/objets_exploitation.py (TRANSITIONS_EXPERT).
+export const TRANSITIONS_EXPERT = Object.freeze({
+  ACTIVE: Object.freeze(["INACTIVE", "ARCHIVED"]),
+  INACTIVE: Object.freeze(["ACTIVE", "ARCHIVED"]),
+  ARCHIVED: Object.freeze([]),
+});
+
 export function statutsSuivants(type, statut) {
   const typeNormalise = texte(type).trim().toUpperCase();
   const transitions = typeNormalise === "RISK"
@@ -78,7 +86,9 @@ export function statutsSuivants(type, statut) {
       ? TRANSITIONS_OPPORTUNITE
       : typeNormalise === "HYPOTHESIS"
         ? TRANSITIONS_HYPOTHESE
-        : typeNormalise === "EXPERT_CONTRIBUTION" ? TRANSITIONS_CONTRIBUTION : null;
+        : typeNormalise === "EXPERT_CONTRIBUTION"
+          ? TRANSITIONS_CONTRIBUTION
+          : typeNormalise === "EXPERT" ? TRANSITIONS_EXPERT : null;
   if (!transitions) return [];
   return [...(transitions[statutObjet({ statut })] || [])];
 }
@@ -517,6 +527,29 @@ const CHAMPS_CHANGER_STATUT_CONTRIBUTION = [
     label: "Preuves (IDs séparés par une virgule, optionnel)",
     type: "text",
     placeholder: "preuve-1, preuve-2",
+  },
+];
+
+const CHAMPS_CHANGER_STATUT_EXPERT = [
+  {
+    nom: "vers",
+    label: "Nouveau statut",
+    type: "select",
+    requis: true,
+    options: [],
+  },
+  {
+    nom: "motif",
+    label: "Motif (optionnel)",
+    type: "textarea",
+    rows: 2,
+    placeholder: "Pourquoi ce changement d'activité…",
+  },
+  {
+    nom: "preuves",
+    label: "Preuves (IDs séparés par une virgule, optionnel)",
+    type: "text",
+    placeholder: "doc://rh, preuve-1",
   },
 ];
 
@@ -1059,6 +1092,16 @@ export const ACTIONS_BOUCLE = Object.freeze({
     icone: "statut",
     champs: CHAMPS_CHANGER_STATUT_CONTRIBUTION,
   }),
+  changer_statut_expert: Object.freeze({
+    id: "changer_statut_expert",
+    libelle: "Changer le statut",
+    titre: "Changer le statut de l'expert",
+    description: "Activer, désactiver ou archiver l'expert selon son cycle de vie canonique.",
+    testid: "boucle-action-statut-expert",
+    api: "changerStatutExpert",
+    icone: "statut",
+    champs: CHAMPS_CHANGER_STATUT_EXPERT,
+  }),
   creer_signal: Object.freeze({
     id: "creer_signal",
     libelle: "Enregistrer un signal",
@@ -1278,8 +1321,9 @@ export function actionsPourObjet(objet) {
   }
 
   if (type === "EXPERT") {
-    // C5e n'expose pas de route de changement de statut Expert : le registre se lit.
-    return [];
+    return statutsSuivants(type, statut).length > 0
+      ? [ACTIONS_BOUCLE.changer_statut_expert]
+      : [];
   }
 
   if (type === "DECISION") {
@@ -1331,6 +1375,13 @@ export function configurationAction(actionId, objet, options = {}) {
     if (suivants.length === 0) api = null;
   }
   if (actionId === "changer_statut_contribution") {
+    const suivants = statutsSuivants(typeSource, statutObjet(objet));
+    champs = champs.map((champ) => (
+      champ.nom === "vers" ? { ...champ, options: suivants } : champ
+    ));
+    if (suivants.length === 0) api = null;
+  }
+  if (actionId === "changer_statut_expert") {
     const suivants = statutsSuivants(typeSource, statutObjet(objet));
     champs = champs.map((champ) => (
       champ.nom === "vers" ? { ...champ, options: suivants } : champ
@@ -1700,6 +1751,22 @@ export function construireCorps(actionId, valeurs = {}, objet = {}) {
       const vers = valeurNette(valeurs, "vers").toUpperCase();
       if (!vers) return echec("Le statut cible est obligatoire.");
       const autorises = statutsSuivants("EXPERT_CONTRIBUTION", statutObjet(objet));
+      if (!autorises.includes(vers)) {
+        return echec(
+          `transition de statut refusée : ${statutObjet(objet) || "?"} → ${vers}.`);
+      }
+      const corps = { vers };
+      const motif = valeurNette(valeurs, "motif");
+      if (motif) corps.motif = motif;
+      const preuves = listeVirgules(valeurs, "preuves");
+      if (preuves.length > 0) corps.preuves = preuves;
+      return { corps };
+    }
+
+    case "changer_statut_expert": {
+      const vers = valeurNette(valeurs, "vers").toUpperCase();
+      if (!vers) return echec("Le statut cible est obligatoire.");
+      const autorises = statutsSuivants("EXPERT", statutObjet(objet));
       if (!autorises.includes(vers)) {
         return echec(
           `transition de statut refusée : ${statutObjet(objet) || "?"} → ${vers}.`);
