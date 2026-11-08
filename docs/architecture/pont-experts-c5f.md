@@ -108,6 +108,23 @@ validation post-verrou reste en défense en profondeur. La validation réutilise
 (`_deriver_contributions_hypothese` avant `_collecter_ids_parents`/`_lire_verrouilles`)
 est conservé.
 
+### Ordre de verrouillage Investigation → Hypothesis
+
+Tous les écrivains HTTP d'hypothèse suivent désormais le même ordre :
+
+- création de contribution : `Investigation → Hypothesis → Expert` ;
+- changement de statut d'hypothèse : `Investigation → Hypothesis` (pré-lecture sans
+  verrou du parent, verrouillage de l'Investigation, puis de l'Hypothesis, puis
+  revérification que le parent n'a pas changé) ;
+- changement de statut de contribution : `Contribution → Investigation → Hypothesis`
+  (les parents sont pré-verrouillés dans l'ordre commun ; l'adaptateur les relocke en
+  no-op).
+
+L'adaptateur, lorsqu'il est appelé directement, conserve son verrouillage global trié par
+identifiant. Les commandes HTTP ayant déjà posé `Investigation → Hypothesis`, ce relock
+est un no-op dans leurs transactions ; aucun chemin HTTP ne verrouille plus Hypothesis
+avant Investigation.
+
 ### Compatibilité des contributions C5e antérieures
 
 Les contributions créées avant C5f peuvent porter des `hypothesis_ids_soutenues` ou
@@ -120,8 +137,8 @@ citation n'est pas corrigée. Chemin de remédiation :
    `psql "$JUMEAU_PG_DSN" -f scripts/auditer-citations-contributions.sql` ;
 2. pour chaque ligne retournée, vérifier la citation métier ;
 3. corriger **hors API** `donnees.hypothesis_ids_soutenues` /
-   `donnees.hypothesis_ids_contestees` (retirer l'identifiant invalide ou le remplacer par
-   une hypothèse de la même Investigation), avec trace opérateur ;
+   `donnees.hypothesis_ids_contestees` : retirer l'identifiant invalide ou le
+   substituer par une hypothèse de la même Investigation, avec trace opérateur ;
 4. relancer l'audit puis la transition.
 
 L'audit est strictement `SELECT` ; il ne répare rien et ne modifie aucune ligne.
@@ -149,13 +166,28 @@ un test de domaine.
 ## Tests
 
 - Domaine : table explicite, transitions autorisées/refusées, statut inconnu, absence de
-  mutation, motif/preuves/mode.
-- Commandes : persistance, historique, 404/409/422, isolation tenant.
+  mutation, motif/preuves/mode, sémantique `motif` absent/vide.
+- Commandes : persistance, historique, 404/409/422, isolation tenant, transitions
+  identiques 409.
 - HTTP : contrat `ReponseTransition`, corps strict, 400/404/409/422/501/503, OpenAPI.
 - Postgres réels : cycle de vie complet, hypothèse citée inconnue, autre tenant, autre
   Investigation, routes Investigation et Hypothèse, absence d'écriture partielle, appel
   direct à la persistance.
-- Frontend : `api.test.js`, `boucleUi.test.js`, `BoucleC5eExperts.test.jsx`.
+- Audit SQL : une liste `null` n'est pas un faux positif ; une liste tableau avec
+  citation fantôme est détectée.
+- Citations invalides concurrentes : 6 paires × 2 routes, répétées, uniquement des 422,
+  **0×503** (pré-validation non verrouillée).
+- Citation valide + statut d'hypothèse concurrents : contribution `H1` citant `H2` et
+  `POST /hypotheses/H2/statut`, puis contribution depuis `H1` et statut de `H1` sans
+  citation ; 3 itérations par scénario, statuts `{200, 201}`, **0×503**, une seule
+  contribution et une seule transition par paire.
+- Ordre de verrouillage vérifié par les tests de commande :
+  `Investigation → Hypothesis → Expert` pour la création de contribution,
+  `Investigation → Hypothesis` pour le statut d'hypothèse, et
+  `Contribution → Investigation → Hypothesis` pour le statut de contribution (les
+  parents sont pré-verrouillés dans l'ordre commun, l'adaptateur les relocke en no-op).
+- Frontend : `api.test.js`, `boucleUi.test.js`, `BoucleC5eExperts.test.jsx`
+  (dont 400/404/409/422/503 et erreur réseau).
 
 ## Limites
 
