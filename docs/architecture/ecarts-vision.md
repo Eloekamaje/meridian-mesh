@@ -256,7 +256,11 @@ Il reste sans API/UI canonique :
 - `GET /api/boucle/objets/{eid}?historique=true` renvoie la chaîne
   `[SITUATION, EXPRESSION]`.
 - L'écriture passe par le port d'exploitation ; `enregistrer_boucle` continue de refuser
-  `EXPRESSION` (lecture seulement, via `TYPES_LECTURE`).
+  `EXPRESSION`. La lecture est validée par `TYPES_LECTURE`, dérivé de la vraie source
+  `_CLASSES_LECTURE` (classes canoniques + `Expression`).
+- L'index unique partiel `objet_entreprise_expression_situation_unique` garantit le 1:1
+  même hors de l'application. `Situation.expression_id` n'est jamais accepté en entrée :
+  le lien inverse est posé uniquement par `creer_expression`.
 
 ### 6.4 La maturation et l’expression ne sont pas un pipeline
 
