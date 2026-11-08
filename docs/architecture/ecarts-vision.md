@@ -291,7 +291,8 @@ Il reste sans API/UI canonique :
 - `POST /api/boucle/opportunities/{oid}/statut` et `POST /api/boucle/risks/{rid}/statut`
   répondent 200 avec l'enveloppe de transition. Corps `{statut, motif?, preuves?}` ;
   `maj_le` est posé par le serveur et la version précédente reste dans `historique`. Le
-  motif courant est conservé dans `justification`. Transition non autorisée 409, statut
+  motif courant est conservé dans `motif` ; `justification` reste la trace de création.
+  Transition non autorisée 409, statut
   inconnu 422, source absente/hors tenant 404, secret/non-JSON 400, `Idempotency-Key` 501,
   Postgres indisponible 503.
 - Le domaine ne portait pas de table de transitions avant C5b : `TRANSITIONS_OPPORTUNITE`

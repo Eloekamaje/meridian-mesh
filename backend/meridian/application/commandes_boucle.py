@@ -544,8 +544,8 @@ def changer_statut_opportunite(
     """Fait évoluer une Opportunity selon ``TRANSITIONS_OPPORTUNITE``.
 
     Une transition refusée est un 409 ; un statut inconnu reste une erreur de contrat
-    (422) avant toute écriture. Le motif courant est conservé dans ``justification`` et
-    la version précédente dans ``historique``.
+    (422) avant toute écriture. Le motif courant est conservé dans ``motif`` et la version
+    précédente dans ``historique``.
     """
     return _changer_statut_objet(
         depot, conn, tenant_id, opportunite_id, statut,

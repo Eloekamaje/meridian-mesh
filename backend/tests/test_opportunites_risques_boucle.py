@@ -463,7 +463,8 @@ def test_muer_opportunite_rend_un_nouvel_objet_avec_le_motif():
 
     assert changee is not opportunite
     assert changee.statut == "QUALIFIED"
-    assert changee.justification == "Preuves suffisantes"
+    assert changee.motif == "Preuves suffisantes"
+    assert changee.justification == ""
     assert changee.preuves == ["preuve-2"]
     assert opportunite.statut == "DETECTED"
 
@@ -640,7 +641,7 @@ def test_changer_statut_opportunite_valide_puis_refuse_une_transition_invalide()
         statut="QUALIFIED", motif="Preuves suffisantes", preuves=["preuve-2"])
 
     assert resultat.objet["donnees"]["statut"] == "QUALIFIED"
-    assert resultat.objet["donnees"]["justification"] == "Preuves suffisantes"
+    assert resultat.objet["donnees"]["motif"] == "Preuves suffisantes"
     assert resultat.objet["donnees"]["preuves"] == ["preuve-2"]
     assert resultat.historique[-1]["donnees"]["statut"] == "DETECTED"
 
@@ -659,7 +660,7 @@ def test_changer_statut_risque_valide_puis_refuse_une_transition_invalide():
         statut="MATURING", motif="Qualification en cours")
 
     assert resultat.objet["donnees"]["statut"] == "MATURING"
-    assert resultat.objet["donnees"]["justification"] == "Qualification en cours"
+    assert resultat.objet["donnees"]["motif"] == "Qualification en cours"
 
     with pytest.raises(commandes_boucle.TransitionRefusee):
         commandes_boucle.changer_statut_risque(

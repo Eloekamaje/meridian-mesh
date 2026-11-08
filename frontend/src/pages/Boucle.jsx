@@ -371,6 +371,7 @@ function PanneauDetail({
     ["Horizon", texteAffichable(valeurDe(objet, "horizon"))],
     ["Critères", texteAffichable(valeurDe(objet, "criteres"))],
     ["Sévérité", texteAffichable(valeurDe(objet, "severite"))],
+    ["Motif", texteAffichable(valeurDe(objet, "motif"))],
     ["Justification", texteAffichable(valeurDe(objet, "justification"))],
     ["Choix", texteAffichable(valeurDe(objet, "choix"))],
     ["Acteur", texteAffichable(valeurDe(objet, "acteur"))],

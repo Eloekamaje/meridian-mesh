@@ -625,6 +625,7 @@ class Opportunity(ObjetEntreprise):
     impact: str = ""
     horizon: str = ""
     criteres: list[str] = field(default_factory=list)
+    motif: str = ""
     situation_id: str | None = None
     expression_id: str | None = None
     investigation_id: str | None = None
@@ -643,6 +644,7 @@ class Opportunity(ObjetEntreprise):
         self.impact = str(self.impact or "").strip()
         self.horizon = str(self.horizon or "").strip()
         self.criteres = [str(c).strip() for c in _liste(self.criteres) if str(c).strip()]
+        self.motif = str(self.motif or "").strip()
         self.situation_id = _identifiant_lien(self.situation_id, "situation_id", obligatoire=False)
         self.expression_id = _identifiant_lien(self.expression_id, "expression_id", obligatoire=False)
         self.investigation_id = _identifiant_lien(
@@ -670,6 +672,7 @@ class Risk(ObjetEntreprise):
     impact: str = ""
     valeur_potentielle: Any = None
     criteres: list[str] = field(default_factory=list)
+    motif: str = ""
     situation_id: str | None = None
     expression_id: str | None = None
     investigation_id: str | None = None
@@ -692,6 +695,7 @@ class Risk(ObjetEntreprise):
         self.severite = _normaliser_statut(self.severite)
         self.impact = str(self.impact or "").strip()
         self.criteres = [str(c).strip() for c in _liste(self.criteres) if str(c).strip()]
+        self.motif = str(self.motif or "").strip()
         self.situation_id = _identifiant_lien(self.situation_id, "situation_id", obligatoire=False)
         self.expression_id = _identifiant_lien(self.expression_id, "expression_id", obligatoire=False)
         self.investigation_id = _identifiant_lien(
