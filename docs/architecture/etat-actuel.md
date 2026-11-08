@@ -454,6 +454,7 @@ historique. Ils valent `twin.born` pour le résolveur, jamais une confirmation a
 | **Claim** | fait sujet-prédicat-objet, avec mode, maturité et preuves | `DECLARED`, `OBSERVED`, `INFERRED`, `PROPOSED`, `CONFIRMED`, `SUPPORTED`, `STRENGTHENED`, `MATURE`, `CONTESTED`, `INVALIDATED`, `HISTORICAL` | Postgres `claim`, `preuve`, `claim_preuve` ; `/api/boucle/twins/{id}/claims` |
 | **Relation** | lien entre deux objets, distinct d’un claim | `supposee`, `observee`, `validation`, `confirmee`, `contestee`, `obsolete` | Postgres / Neo4j ; Atlas et revue |
 | **Situation** | phénomène émergent reliant Twins, signaux, claims ou impacts | `CANDIDATE`, puis qualification | `objet_entreprise` + backfill ; création via `POST /api/boucle/situations` et bouton « Nouvelle situation » dans Boucle ; le live lit/écrit encore Mongo `situations` |
+| **Expression** | lecture datée et typée d’une Situation, avec inconnues et confiance | `PROPOSED`, puis confirmation humaine | `objet_entreprise` + lien inverse `Situation.expression_id` ; `POST /api/boucle/situations/{id}/expressions` et action « Exprimer la situation » dans Boucle ; une seule Expression par Situation |
 | **Opportunity / Risk** | possibilité ou risque attaché à une situation | `DETECTED`, puis qualification | Classes de domaine testées ; aucune instanciation live identifiée ; sous-document `opportunite` legacy pour Opportunity, pas d’équivalent Risk |
 | **Investigation** | espace structuré de compréhension : question, hypothèses, preuves | `OPEN`, puis clôture | Créée par le pont C2 ou par `POST /api/boucle/situations/{id}/investigations` (UI) ; lecture `/api/boucle/objets` |
 | **Decision** | décision humaine reliée à une investigation, avec options et rationale | `PROPOSED`, puis tranchée | Créée par le pont C2 ou par `POST /api/boucle/investigations/{id}/decisions` (UI) ; lecture `/api/boucle/objets` |
@@ -466,9 +467,11 @@ historique. Ils valent `twin.born` pour le résolveur, jamais une confirmation a
 | **Annotation** | mémoire organisationnelle déclarée | déclarée | `memoire_org`, `objet_entreprise` |
 
 Objets de la vision qui ne sont pas encore des objets d’entreprise canoniques :
-**Signal**, **Expression**, **Hypothesis**, **Expert**, **ExpertContribution**.
-Le dossier de raisonnement porte des hypothèses et des options, mais ce ne sont pas les objets
-durables décrits par le Domain Model. Voir [ecarts-vision.md](ecarts-vision.md).
+**Signal**, **Hypothesis**, **Expert**, **ExpertContribution**.
+`Expression` est canonique depuis C5a (une Expression par Situation, lisible dans la chaîne
+`SITUATION → EXPRESSION`). Le dossier de raisonnement porte des hypothèses et des options,
+mais ce ne sont pas les objets durables décrits par le Domain Model. Voir
+[ecarts-vision.md](ecarts-vision.md).
 
 Règles transverses :
 
@@ -711,7 +714,8 @@ la suite locale.
 | Registre Twins | **solide** | Postgres + projection Mongo/Neo4j |
 | Situations / boucle canonique | **partielle** | Modèle/store, UI de lecture et transitions (création d’une Situation racine → Investigation → Decision → Initiative → Outcome → Learning) ; pont C2 Travail → canonique (Situation/Decision/Initiative), C3 Initiative canonique après réponse, mesure D → Outcome ; Learning humain ; workers et migration tenant à activer |
 | Scénarios canoniques | **opérationnelle, périmètre UI borné** | Création depuis Investigation/Decision, liste filtrée directement par parent, comparaison déterministe avec écarts et référence ; UI Boucle ; `scenario_ids` pluriel et `scenario_id` = premier scénario historique (promu au premier restant s’il est retiré, sinon `None`) ; formulaire de création exposant titre, description, hypothèses/actions, valeur, coût, délai, risque, complexité, confiance, dépendances, impacts, preuves, réversibilité et statut ; comparaison plafonnée à 50 ; reste à relier les scénarios de capacité et la sélection dans la décision |
-| Signal, Expression, Hypothesis, Expert | **absents comme objets canoniques** | Noms de famille, dossier de raisonnement ou profils ; voir [ecarts-vision.md](ecarts-vision.md) |
+| Expression canonique | **opérationnelle, une par Situation** | `POST /api/boucle/situations/{id}/expressions`, action « Exprimer la situation » dans Boucle ; champs type, formulation, canal, auteur, inconnues, confiance ; statut forcé `PROPOSED` ; doublon 409 ; chaîne `SITUATION → EXPRESSION` ; `enregistrer_boucle` reste réservé aux types canoniques |
+| Signal, Hypothesis, Expert | **absents comme objets canoniques** | Noms de famille, dossier de raisonnement ou profils ; voir [ecarts-vision.md](ecarts-vision.md) |
 | Claims, preuves, maturité | **solide** | contradictions et revue conservées |
 | Ingestion Git + CBM | **solide** | CBM à installer dans l’environnement cible |
 | Liens HTTP/JMS/SOAP | **solide** | revue humaine, contradictions |
