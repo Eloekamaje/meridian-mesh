@@ -40,6 +40,48 @@ SANS_ECRITURE_AVEC_PIECES = (
 )
 FILS = agent.FilsActifs()
 
+MOTS_PEDAGOGIQUES = (
+    "pedagogique", "etat des lieux", "diagnostic", "verdict", "ecart", "decision", "decide",
+    "recommandation", "options", "etat reel", "ce qui manque", "que manque",
+)
+def question_pedagogique(question):
+    """Vrai quand la question demande un diagnostic, un écart ou une décision : le gabarit s'applique."""
+    texte = unicodedata.normalize("NFKD", str(question or "").lower())
+    texte = "".join(c for c in texte if not unicodedata.combining(c))
+    return any(mot in texte for mot in MOTS_PEDAGOGIQUES)
+
+
+async def garantir_reponse_pedagogique(a, question, dessin, texte, emit=None, chrono=None, pedagogique=None):
+    """La composition de l'outil fait foi ; sinon, le texte manuel est conservé. Aucun rejeu."""
+    return dessin.reponse_pedagogique if dessin and dessin.reponse_pedagogique else texte
+
+
+def _sans_schema_ascii(texte):
+    """Retire un bloc de code qui redessine le schéma en ASCII quand le vrai schéma est déjà produit."""
+    sortie, dedans, bloc, fence = [], False, [], ""
+    for ligne in str(texte or "").splitlines(keepends=True):
+        if ligne.strip().startswith("```"):
+            if dedans:
+                contenu = "".join(bloc)
+                ascii_schema = (
+                    not fence.strip().lower().startswith("```mermaid")
+                    and any(marque in contenu for marque in ("✅", "⚠️", "⛔", "❔"))
+                    and any(marque in contenu for marque in ("→", "->", "-->"))
+                )
+                if not ascii_schema:
+                    sortie.append(fence + contenu + "```\n")
+                dedans, bloc, fence = False, [], ""
+            else:
+                dedans, fence = True, ligne
+            continue
+        if dedans:
+            bloc.append(ligne)
+        else:
+            sortie.append(ligne)
+    if dedans:
+        sortie.append(fence + "".join(bloc) + "```\n")
+    return "".join(sortie)
+
 
 def bloc_donnees_pieces(pieces_prompt="", avertissement=""):
     """Le contenu des pièces reste une donnée balisée, jamais une instruction du prompt système."""
@@ -355,7 +397,7 @@ def dessin_pour(ctx):
 def avec_schema(texte, dessin):
     """Le schéma dessiné par le harness prend place après le premier paragraphe (la réponse d'abord)."""
     bloc = dessin.bloc() if dessin else ""
-    if not bloc:
+    if not bloc or "```mermaid" in texte:
         return texte
     tete, sep, reste = texte.partition("\n\n")
     return f"{tete}\n\n{bloc}\n\n{reste}" if sep else f"{texte}\n\n{bloc}"
@@ -367,7 +409,7 @@ def _indisponible(nom, raison):
 
 
 async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=None, trace=None, emit=None,
-                   autoriser_ecriture=False):
+                   autoriser_ecriture=False, pedagogique=None, enveloppe=None):
     """Réponse de Flore mobilisant un jumeau réel, ou None si `jumeau_id` n'est pas un jumeau réel ingéré.
 
     Dans un Travail (`travail` et `db`), Flore reçoit son état et les outils pour y écrire (plan, hypothèses,
@@ -380,6 +422,8 @@ async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=No
         ctx, dsn = await asyncio.to_thread(_contexte, jumeau_id, acteur, profil)
     if not ctx:
         return None
+    if enveloppe:
+        ctx["demande"] = enveloppe
     if travail and db is not None:  # les pièces jointes du Travail, dans les droits déjà vérifiés par l'appelant
         from pieces import du_travail, sections_pour_prompt_detail
         ctx["pieces"] = await du_travail(db, travail)
@@ -403,12 +447,17 @@ async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=No
         if ecriture:
             ctx["travail"] = etat_texte(await ecriture.etat())
         ctx["dessin"] = dessin = dessin_pour(ctx) if ctx["sources"] else None
+        pedagogique = question_pedagogique(question) if pedagogique is None else bool(pedagogique)
+        ctx["pedagogique"] = pedagogique
         supplement = ({"outils_pieces": lambda b: agent.outils_pieces(db, travail, b, journal_pieces)}
                       if ctx.get("pieces") else {})
         a = agent.construire(ctx, dsn, session=connaissance.id_session(jumeau_id, cle), modele=modele,
                              ecriture=ecriture, **supplement)
         with chrono.phase("agent"):
             texte = await executer(a, message, emit, chrono)
+            texte = await garantir_reponse_pedagogique(a, question, dessin, texte, emit, chrono, pedagogique)
+            if dessin and dessin.structure and not dessin.reponse_pedagogique:
+                texte = _sans_schema_ascii(texte)
         await _annoncer(emit, {"type": "relecture"})
         # Relecture avant envoi ; une seule révision au plus.
         # ponytail: la consigne de révision reste dans le fil (brouillon, critique, correction) : historique cohérent,
@@ -418,7 +467,10 @@ async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=No
                 question, texte, ctx["sources"], ctx.get("profil"), _modele_relecture(modele),
                 agent.CHARTE.read_text(encoding="utf-8"), ctx.get("lecteurs", []),
                 validees(ctx["claims"]), ctx.get("pieces"))
-        texte, corrige = await reviser(a, texte, verdict, chrono, emit, jumeau_id)
+        if dessin and (pedagogique or dessin.reponse_pedagogique):  # composition ou refus explicite : pas de révision
+            corrige = False
+        else:
+            texte, corrige = await reviser(a, texte, verdict, chrono, emit, jumeau_id)
         texte, invalides_pieces = await asyncio.to_thread(retirer_citations_pieces, texte, ctx.get("pieces"))
         if trace is not None and invalides_pieces:
             trace["invalides"] = [*trace.get("invalides", []), *invalides_pieces]
@@ -429,8 +481,9 @@ async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=No
             if trace is not None:
                 trace.update(texte=texte, invalides=[*trace.get("invalides", []), *invalides])
             fraiches = await asyncio.to_thread(contradicteur.fraicheur, texte, ctx.get("lecteurs", []))
-            texte = avec_schema(schemas.verifier(texte, {c["id"]: c for c in ctx["claims"] if c.get("id")},
-                                                 deja_dessine=bool(dessin and dessin.mermaid)), dessin)
+            if not (dessin and (pedagogique or dessin.reponse_pedagogique)):  # rien à réinsérer
+                texte = avec_schema(schemas.verifier(texte, {c["id"]: c for c in ctx["claims"] if c.get("id")},
+                                                     deja_dessine=bool(dessin and dessin.mermaid)), dessin)
         reponse = vers_reponse_flore(ctx["jumeau"], ctx["sources"], texte, invalides, fraiches)
         if dessin and dessin.preuves:  # chaque flèche du schéma renvoie à sa ligne, dans le volet des preuves
             reponse["preuves"] = (reponse["preuves"] + dessin.preuves)[:MAX_PREUVES + len(dessin.preuves)]
@@ -439,6 +492,9 @@ async def repondre(jumeau_id, question, acteur, travail=None, profil=None, db=No
         usage["cout"] = mesure.cout(usage)
         usage["modele"] = modele.get_config().get("model_id", "inconnu") if modele else "inconnu"
         reponse["usage"] = usage
+        # Portée groundedness (C7) : les sources réellement consultées, pour le contrat de
+        # citation du tour — clé interne, retirée par `generer_tour` avant publication.
+        reponse["_sources"] = ctx["sources"]
         reponse["relecture_etat"] = etat = etat_relecture(verdict, corrige)
         reponse["relu"], reponse["corrige"] = etat == "relue", corrige
         reponse["pieces_selection"] = ctx.get("pieces_selection") or []
@@ -478,7 +534,7 @@ async def _cartes(ctxs, dsn, db, relations=None):
 
 
 async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=None, emit=None,
-                    autoriser_ecriture=False):
+                    autoriser_ecriture=False, pedagogique=None, enveloppe=None):
     """Réponse de Flore qui mobilise plusieurs jumeaux réels (étoile) ; None si aucun n'est un jumeau réel ingéré.
 
     Seuls `jumeau_ids` (déjà filtrés par le serveur selon les droits) sont mobilisables. Avec des pièces jointes,
@@ -493,6 +549,7 @@ async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=
                 ctxs[jid], dsn = ctx, dsn_jumeau
     if not ctxs:
         return None
+    pedagogique = question_pedagogique(question) if pedagogique is None else bool(pedagogique)
     pieces_travail, pieces_prompt, pieces_selection, journal_pieces = [], "", [], []
     if travail and db is not None:
         from pieces import du_travail, sections_pour_prompt_detail
@@ -528,17 +585,25 @@ async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=
         if pieces_travail:
             outils += agent.outils_pieces(db, travail, budget, journal_pieces)
         if dessin:
-            outils.append(agent.outil_dessin(dessin, budget))
+            if not pedagogique:  # en mode pédagogique, la composition est le seul outil de dessin
+                outils.append(agent.outil_dessin(dessin, budget))
+            outils.append(agent.outil_reponse_pedagogique(dessin, budget))
         if ecriture:
             outils += agent.outils_travail(ecriture, budget, verifier, pieces_travail)
-        a = mobilisation.orchestrateur(modele, mobilisation.prompt(etat), outils)
+        a = mobilisation.orchestrateur(modele, mobilisation.prompt(etat, enveloppe), outils)
         # Durée bornée : chaque outil a son plafond, mais pas le nombre de tours de l'orchestratrice.
         with chrono.phase("cartes"):
             cartes = await _cartes(ctxs, dsn, db, relations)
+
+        async def _tour():
+            texte = await executer(a, mobilisation.demande(cartes, question, pieces_prompt), emit, chrono)
+            texte = await garantir_reponse_pedagogique(a, question, dessin, texte, emit, chrono, pedagogique)
+            if dessin and dessin.structure and not dessin.reponse_pedagogique:
+                texte = _sans_schema_ascii(texte)
+            return texte
+
         with chrono.phase("agent"):
-            texte = await asyncio.wait_for(
-                executer(a, mobilisation.demande(cartes, question, pieces_prompt), emit, chrono),
-                mobilisation.DUREE_MAX)
+            texte = await asyncio.wait_for(_tour(), mobilisation.DUREE_MAX)
         await _annoncer(emit, {"type": "relecture"})
         sources = [s for ctx in ctxs.values() for s in ctx["sources"]]
         branches = [lecteur for ctx in ctxs.values() for lecteur in ctx.get("lecteurs", [])]
@@ -547,14 +612,18 @@ async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=
                 question, texte, sources, profil, _modele_relecture(modele),
                 agent.CHARTE.read_text(encoding="utf-8"), branches,
                 sum(validees(ctx["claims"]) for ctx in ctxs.values()), pieces_travail)
-        texte, corrige = await reviser(a, texte, verdict, chrono, emit, "mobilisation")
+        if dessin and (pedagogique or dessin.reponse_pedagogique):  # composition ou refus explicite : pas de révision
+            corrige = False
+        else:
+            texte, corrige = await reviser(a, texte, verdict, chrono, emit, "mobilisation")
         texte, _invalides_pieces = await asyncio.to_thread(retirer_citations_pieces, texte, pieces_travail)
         chrono.agent(a)  # « outils » comprend la consultation des jumeaux (leur propre modèle et leurs outils)
         with chrono.phase("controles"):
             invalides = await asyncio.to_thread(contradicteur.citations_invalides, texte, sources, branches)
-            texte = avec_schema(schemas.verifier(texte, {c["id"]: c for ctx in ctxs.values() for c in ctx["claims"]
-                                                         if c.get("id")}, relations,
-                                                 deja_dessine=bool(dessin and dessin.mermaid)), dessin)
+            if not (dessin and (pedagogique or dessin.reponse_pedagogique)):  # rien à réinsérer
+                texte = avec_schema(schemas.verifier(texte, {c["id"]: c for ctx in ctxs.values() for c in ctx["claims"]
+                                                             if c.get("id")}, relations,
+                                                     deja_dessine=bool(dessin and dessin.mermaid)), dessin)
             tout = "\n".join([texte, *(p for c in mob.contributions.values() for p in c.preuves)])
             fraiches = await asyncio.to_thread(contradicteur.fraicheur, tout, branches)
         # Preuves de chaque jumeau, étiquetées à son nom, prises à tour de rôle : le volet ne se remplit pas avec
@@ -588,6 +657,9 @@ async def mobiliser(jumeau_ids, question, acteur, travail=None, profil=None, db=
         usage["cout"] = mesure.cout(usage)
         usage["modele"] = modele.get_config().get("model_id", "inconnu") if modele else "inconnu"
         reponse["usage"] = usage
+        # Portée groundedness (C7) : les sources de tous les jumeaux mobilisés, concaténées —
+        # clé interne, retirée par `generer_tour` avant publication.
+        reponse["_sources"] = tous["sources"]
         if proposees := [p for ctx in ctxs.values() for p in ctx.get("proposees", [])]:
             reponse["a_approuver"] = proposees  # proposées par les sous-agents : chacune à trancher
         agent.journal.info("durées mobilisation %s : %s", list(ctxs), reponse["durees"])

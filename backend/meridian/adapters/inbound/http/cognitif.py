@@ -25,6 +25,7 @@ import auth as auth_identite
 from meridian.adapters.inbound.http import boucle as boucle_routes
 from meridian.adapters.outbound import analyse_runtime
 from meridian.application import analyse_service
+from meridian.application import pipeline_unifie
 from meridian.application.analyse_service import ConfigurationManquante
 from meridian.application import decouverte_liens as decouverte_liens_app
 from meridian.application import evaluation_cognitive
@@ -200,6 +201,9 @@ class AnalyseCognitive(AnalyseSpecialistes):
     decision_id: str | None = Field(None, max_length=200)
     confidence: float | None = None
     max_tokens: int | None = Field(None, ge=200, le=20000)
+    # D9 — le profil d'effort du pipeline unifié est admis sur la charge, mais la
+    # route `/analyser` est l'alias « mode analyse » : elle force `approfondi`.
+    effort: str | None = Field(None, max_length=20)
 
 
 class DemandeComposition(BaseModel):
@@ -990,12 +994,17 @@ async def analyser_cognitif(
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
-    """Résout le profil, compose les spécialistes et rend une réponse située sur un socle unique."""
+    """Alias du pipeline unifié (D9) : `/demander` à effort `approfondi` forcé.
+
+    Même machine que le tour conversationnel — la sortie garde sa forme :
+    réponse **et** dossier de raisonnement, persisté comme avant.
+    """
     boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
     try:
-        resultat = await analyse_service.executer(
-            tenant=tenant, acteur=acteur, payload=payload,
+        resultat = await pipeline_unifie.executer_approfondi(
+            tenant=tenant, acteur=acteur,
+            payload=payload.model_copy(update={"effort": "approfondi"}),
             runtime=_runtime_analyse(),
             acteur_contexte=await auth_identite.contexte_acteur(acteur))
         await _persister_dossier_raisonnement(
@@ -1031,7 +1040,10 @@ async def analyser_durable(
     commande = CommandeExecution(
         tenant_id=tenant,
         type="cognitif.analyser",
-        payload={"analyse": payload.model_dump(), "espace": x_espace},
+        # D9 — même alias que `/analyser` : le run durable force l'effort
+        # approfondi du pipeline unifié, qu'il s'exécute maintenant ou plus tard.
+        payload={"analyse": payload.model_copy(
+            update={"effort": "approfondi"}).model_dump(), "espace": x_espace},
         idempotency_key=cle,
         acteur=acteur,
     )

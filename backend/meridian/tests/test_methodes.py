@@ -15,6 +15,13 @@ def test_lire_une_methode_renvoie_ses_consignes_sans_l_entete():
     assert texte and not texte.startswith("---") and "description:" not in texte
 
 
+def test_la_methode_reponse_pedagogique_est_disponible():
+    noms = {m["nom"] for m in methodes.catalogue()}
+    assert "reponse-pedagogique" in noms
+    texte = methodes.lire("reponse-pedagogique")
+    assert texte and "verdict" in texte.lower() and "trois constats" in texte.lower()
+
+
 def test_methode_inconnue_ou_chemin_detourne():
     assert methodes.lire("inconnue") is None
     assert methodes.lire("../charte_flore") is None

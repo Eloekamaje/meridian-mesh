@@ -587,6 +587,45 @@ END $$ LANGUAGE plpgsql;
 CREATE OR REPLACE TRIGGER claim_accepte_exige_preuve BEFORE INSERT OR UPDATE OF statut ON claim
     FOR EACH ROW EXECUTE FUNCTION claim_accepte_exige_preuve();
 
+-- B6 : un NEED ne vaut que s'il est réfutable, et un besoin QUALIFIE ou
+-- CORROBORE nomme son porteur. Même patron que claim_accepte_exige_preuve,
+-- appliqué à objet_entreprise (le statut vit dans donnees).
+CREATE OR REPLACE FUNCTION need_exige_refutation() RETURNS trigger AS $$
+BEGIN
+    IF NEW.type = 'NEED' AND NEW.mode IN ('PROPOSED', 'CONFIRMED')
+       AND NULLIF(TRIM(COALESCE(NEW.donnees->>'refutable_par', '')), '') IS NULL THEN
+        RAISE EXCEPTION 'NEED % : PROPOSED/CONFIRMED sans refutable_par', NEW.id;
+    END IF;
+    IF NEW.type = 'NEED' AND COALESCE(NEW.donnees->>'statut', '') IN ('QUALIFIE', 'CORROBORE')
+       AND NULLIF(TRIM(COALESCE(NEW.donnees->>'porteur', '')), '') IS NULL THEN
+        RAISE EXCEPTION 'NEED % : statut avancé sans porteur', NEW.id;
+    END IF;
+    RETURN NEW;
+END $$ LANGUAGE plpgsql;
+CREATE OR REPLACE TRIGGER need_exige_refutation BEFORE INSERT OR UPDATE ON objet_entreprise
+    FOR EACH ROW EXECUTE FUNCTION need_exige_refutation();
+
+-- C2 : un BELIEF issu du raisonnement n'existe que s'il est adossé à au moins
+-- un claim — sans appui vérifiable, c'est du texte, pas une inférence. Son
+-- statut reste borné à ACTIF/REVISE/CADUC. Même patron que
+-- need_exige_refutation (le statut vit dans donnees).
+CREATE OR REPLACE FUNCTION belief_exige_appui() RETURNS trigger AS $$
+BEGIN
+    IF NEW.type = 'BELIEF' AND COALESCE(NULLIF(TRIM(NEW.donnees->>'statut'), ''), 'ACTIF')
+       NOT IN ('ACTIF', 'REVISE', 'CADUC') THEN
+        RAISE EXCEPTION 'BELIEF % : statut inconnu', NEW.id;
+    END IF;
+    IF NEW.type = 'BELIEF' AND COALESCE(NULLIF(TRIM(NEW.donnees->>'source'), ''), 'RAISONNEMENT')
+       = 'RAISONNEMENT'
+       AND (jsonb_typeof(NEW.donnees->'claim_ids') IS DISTINCT FROM 'array'
+            OR jsonb_array_length(NEW.donnees->'claim_ids') = 0) THEN
+        RAISE EXCEPTION 'BELIEF % : RAISONNEMENT sans claim lié', NEW.id;
+    END IF;
+    RETURN NEW;
+END $$ LANGUAGE plpgsql;
+CREATE OR REPLACE TRIGGER belief_exige_appui BEFORE INSERT OR UPDATE ON objet_entreprise
+    FOR EACH ROW EXECUTE FUNCTION belief_exige_appui();
+
 -- ---------------------------------------------------------------------------
 -- Audit des appels d'outils (ADR-0004) : append-only, tenant-scopé, sans
 -- contenu sensible. Une ligne par découverte, chargement ou appel ; jamais de
@@ -615,6 +654,32 @@ CREATE UNIQUE INDEX IF NOT EXISTS outil_audit_idempotence
 CREATE OR REPLACE TRIGGER outil_audit_immuable BEFORE UPDATE OR DELETE ON outil_audit
     FOR EACH ROW EXECUTE FUNCTION immuable();
 CREATE OR REPLACE TRIGGER outil_audit_sans_truncate BEFORE TRUNCATE ON outil_audit
+    FOR EACH STATEMENT EXECUTE FUNCTION immuable();
+
+-- ---------------------------------------------------------------------------
+-- D1 : journal d'épisodes append-only. Chaque écriture d'objet canonique
+-- (enregistrer_boucle) consigne un événement ; la chaîne d'objets devient une
+-- vue sur les événements. Mêmes garanties qu'outil_audit : jamais de mise à
+-- jour, de suppression ni de TRUNCATE.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS evenement_episode (
+    id         bigserial PRIMARY KEY,
+    tenant_id  text NOT NULL,
+    episode_id text NOT NULL,
+    objet_type text NOT NULL,
+    objet_id   text NOT NULL,
+    action     text NOT NULL,
+    donnees    jsonb NOT NULL DEFAULT '{}'::jsonb,
+    acteur     text,
+    quand      timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS evenement_episode_tenant_episode_quand
+    ON evenement_episode (tenant_id, episode_id, quand DESC);
+CREATE INDEX IF NOT EXISTS evenement_episode_objet
+    ON evenement_episode (objet_id);
+CREATE OR REPLACE TRIGGER evenement_episode_immuable BEFORE UPDATE OR DELETE ON evenement_episode
+    FOR EACH ROW EXECUTE FUNCTION immuable();
+CREATE OR REPLACE TRIGGER evenement_episode_sans_truncate BEFORE TRUNCATE ON evenement_episode
     FOR EACH STATEMENT EXECUTE FUNCTION immuable();
 
 -- ---------------------------------------------------------------------------
@@ -722,6 +787,20 @@ CREATE TABLE IF NOT EXISTS prediction_calibration (
 );
 CREATE INDEX IF NOT EXISTS prediction_calibration_decision
     ON prediction_calibration (tenant_id, decision_id);
+
+-- C4 : prédictions datées ({sujet, probabilite, echeance, source}) résolues
+-- contre les outcomes réels — statut 'ouverte' puis 'resolue' + issue.
+ALTER TABLE prediction_calibration ADD COLUMN IF NOT EXISTS sujet text;
+ALTER TABLE prediction_calibration ADD COLUMN IF NOT EXISTS echeance timestamptz;
+ALTER TABLE prediction_calibration ADD COLUMN IF NOT EXISTS source text;
+ALTER TABLE prediction_calibration ADD COLUMN IF NOT EXISTS statut text NOT NULL DEFAULT 'ouverte';
+ALTER TABLE prediction_calibration ADD COLUMN IF NOT EXISTS issue text;
+UPDATE prediction_calibration
+   SET statut = 'resolue',
+       issue = CASE WHEN outcome THEN 'succes' ELSE 'echec' END
+ WHERE outcome IS NOT NULL AND statut = 'ouverte';
+CREATE INDEX IF NOT EXISTS prediction_calibration_echeance
+    ON prediction_calibration (tenant_id, echeance) WHERE outcome IS NULL;
 
 -- ---------------------------------------------------------------------------
 -- Exécution durable : runs, événements, outbox et timers.
@@ -1481,3 +1560,48 @@ CREATE TABLE IF NOT EXISTS publication_review (
 );
 CREATE INDEX IF NOT EXISTS publication_review_tenant_share
     ON publication_review (tenant_id, share_id);
+
+-- ---------------------------------------------------------------------------
+-- Épilogue de requête (plan Cognition IA, C8) : chaque tour de Flore laisse un
+-- événement — hash de la question (jamais le texte), classe de réponse, verdict
+-- de la sonde B8, preuves consultées, confiance, citations vérifiées et non
+-- résolues (groundedness C7), modèle, jetons et durée. ``inconnu_question``
+-- alimente le détecteur B7 ``question_non_tranchee``.
+-- Journal append-only : une ligne ne se corrige ni ne s'efface.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS evenement_requete (
+    id                  bigserial PRIMARY KEY,
+    tenant_id           text NOT NULL,
+    question_hash       text NOT NULL,
+    classe              text,
+    verdict_sonde       text,
+    preuves_consultees  integer NOT NULL DEFAULT 0,
+    confiance           double precision,
+    citations_verifiees integer,
+    non_resolues        integer,
+    inconnu_question    boolean NOT NULL DEFAULT false,
+    inconnu_raison      text,
+    episode_id          text,
+    quand               timestamptz NOT NULL DEFAULT now(),
+    model               text,
+    tokens              integer,
+    duree_ms            double precision
+);
+CREATE INDEX IF NOT EXISTS evenement_requete_tenant_quand
+    ON evenement_requete (tenant_id, quand DESC);
+CREATE OR REPLACE TRIGGER evenement_requete_immuable BEFORE UPDATE OR DELETE ON evenement_requete
+    FOR EACH ROW EXECUTE FUNCTION immuable();
+CREATE OR REPLACE TRIGGER evenement_requete_sans_truncate BEFORE TRUNCATE ON evenement_requete
+    FOR EACH STATEMENT EXECUTE FUNCTION immuable();
+
+-- ---------------------------------------------------------------------------
+-- D3 : revue graduée par risque (human-on-the-loop, révocable). Le claim porte
+-- son document de routage : ``donnees.revue_niveau`` (AUTO_VISIBLE / ATTENTION
+-- / BLOQUANT), ``donnees.revocable_jusqua`` (auto-accept révocable J+30),
+-- ``donnees.bloque`` = 'revue_requise' pour les bloquants, ``revoque_*`` pour
+-- les révocations. L'auto-accept écrit sa revue avant le statut comme toute
+-- revue ; le routage est aussi tracé dans ``outil_audit`` — jamais de silencieux.
+-- ---------------------------------------------------------------------------
+ALTER TABLE claim ADD COLUMN IF NOT EXISTS donnees jsonb NOT NULL DEFAULT '{}'::jsonb;
+CREATE INDEX IF NOT EXISTS claim_revue_niveau
+    ON claim (tenant_id, (donnees->>'revue_niveau')) WHERE donnees ? 'revue_niveau';

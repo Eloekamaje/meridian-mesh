@@ -15,26 +15,34 @@ import uuid
 from typing import Any
 
 from meridian.adapters.outbound.postgres import entreprise_depot
+from meridian.adapters.outbound.postgres import journal_episodes
 from meridian.domain import modele_entreprise as modele
 
 __all__ = [
-    "BoucleInvalide", "TYPES_BOUCLE", "STATUT_DECISION_PROPOSEE", "STATUT_DECISION_TRANCHEE",
+    "BoucleInvalide", "TYPES_BOUCLE", "TYPES_COMPLEMENTAIRES", "TRANSITIONS_NEED",
+    "STATUT_DECISION_PROPOSEE", "STATUT_DECISION_TRANCHEE",
     "STATUT_INITIATIVE", "STATUT_OUTCOME", "STATUT_LEARNING",
     "Situation", "Investigation", "Decision", "Initiative", "Outcome", "Learning",
+    "Unknown", "Hypothesis", "Need", "Opportunity", "Belief",
     "est_decision_tranchee",
     "ouvrir_investigation", "proposer_decision", "trancher_decision", "lancer_initiative",
-    "mesurer_outcome", "capitaliser_learning",
+    "mesurer_outcome", "capitaliser_learning", "transiter_need",
+    "revalider", "revoir",
     "enregistrer_boucle", "lire_boucle", "lire_par_id",
 ]
 
 TYPES_BOUCLE = ("SITUATION", "INVESTIGATION", "DECISION", "INITIATIVE", "OUTCOME", "LEARNING")
+TYPES_COMPLEMENTAIRES = ("UNKNOWN", "HYPOTHESIS", "NEED", "OPPORTUNITY", "BELIEF")
+TRANSITIONS_NEED = modele.TRANSITIONS_NEED
 STATUT_DECISION_PROPOSEE = "PROPOSED"
 STATUT_DECISION_TRANCHEE = "DECIDED"
 STATUT_INITIATIVE = "PLANNED"
 STATUT_OUTCOME = "OBSERVED"
 STATUT_LEARNING = "PROPOSED"
 
-_ORDRE = {type_: rang for rang, type_ in enumerate(TYPES_BOUCLE)}
+_ORDRE = {
+    type_: rang for rang, type_ in enumerate(TYPES_BOUCLE + TYPES_COMPLEMENTAIRES)
+}
 _MODE_DEFAUT = {
     "SITUATION": "OBSERVED",
     "INVESTIGATION": "DECLARED",
@@ -42,6 +50,11 @@ _MODE_DEFAUT = {
     "INITIATIVE": "DECLARED",
     "OUTCOME": "OBSERVED",
     "LEARNING": "INFERRED",
+    "UNKNOWN": "PROPOSED",
+    "HYPOTHESIS": "PROPOSED",
+    "NEED": "PROPOSED",
+    "OPPORTUNITY": "INFERRED",
+    "BELIEF": "INFERRED",
 }
 _CHAMPS_TABLE = frozenset({
     "id", "tenant_id", "famille", "type", "mode", "titre", "donnees", "version",
@@ -296,6 +309,7 @@ class Investigation(modele.Investigation, _LiensBoucle):
     mode: str = "DECLARED"
     resume: str = ""
     situation_id: str | None = None
+    episode_id: str | None = None
     incertitudes: list[str] = field(default_factory=list)
     CHAMPS_LIENS = ("situation_id",)
 
@@ -304,6 +318,7 @@ class Investigation(modele.Investigation, _LiensBoucle):
         _dater(self)
         super().__post_init__()
         self.situation_id = _texte_ou_none(self.situation_id)
+        self.episode_id = _texte_ou_none(self.episode_id)
         if not self.situation_id:
             raise BoucleInvalide("une Investigation exige situation_id")
         self.incertitudes = _liste_textes(self.incertitudes, "incertitudes")
@@ -317,6 +332,8 @@ class Decision(modele.Decision, _LiensBoucle):
     titre: str = ""
     resume: str = ""
     situation_id: str | None = None
+    episode_id: str | None = None
+    travail_id: str | None = None
     choix: str | None = None
     acteur: str | None = None
     incertitudes: list[str] = field(default_factory=list)
@@ -329,6 +346,8 @@ class Decision(modele.Decision, _LiensBoucle):
         _dater(self)
         super().__post_init__()
         self.situation_id = _texte_ou_none(self.situation_id)
+        self.episode_id = _texte_ou_none(self.episode_id)
+        self.travail_id = _texte_ou_none(self.travail_id)
         self.choix = _texte_ou_none(self.choix)
         self.acteur = _texte_ou_none(self.acteur)
         self.incertitudes = _liste_textes(self.incertitudes, "incertitudes")
@@ -424,6 +443,105 @@ class Learning(modele.Learning, _LiensBoucle):
             raise BoucleInvalide("un Learning exige un énoncé")
 
 
+@dataclass
+class Unknown(modele.Unknown, _LiensBoucle):
+    """Besoin épistémique persisté : une question ouverte, sa tentative et sa résolution."""
+
+    mode: str = "PROPOSED"
+    titre: str = ""
+    resume: str = ""
+    CHAMPS_LIENS = ("resolution_claim_id",)
+
+    def __post_init__(self) -> None:
+        self.resume = _texte(self.resume) or _texte(self.question)
+        if not self.titre:
+            self.titre = _texte(self.question)
+        _dater(self)
+        super().__post_init__()
+
+
+@dataclass
+class Hypothesis(modele.Hypothesis, _LiensBoucle):
+    """Hypothèse rivale persistée ; TESTEE ou RETENUE exige au moins une rivale."""
+
+    mode: str = "PROPOSED"
+    titre: str = ""
+    resume: str = ""
+    CHAMPS_LIENS = ("situation_id", "need_id")
+    CHAMPS_LIENS_MULTIPLES = ("rival_ids",)
+
+    def __post_init__(self) -> None:
+        self.resume = _texte(self.resume) or _texte(self.enonce)
+        if not self.titre:
+            self.titre = _texte(self.enonce)
+        _dater(self)
+        super().__post_init__()
+
+
+@dataclass
+class Need(modele.Need, _LiensBoucle):
+    """Besoin ouvert persisté ; `refutable_par` reste obligatoire, comme dans le modèle."""
+
+    mode: str = "PROPOSED"
+    resume: str = ""
+    CHAMPS_LIENS = (
+        "situation_id", "unknown_id", "opportunity_id", "risk_id", "intention_id",
+    )
+    CHAMPS_LIENS_MULTIPLES = ("hypothese_ids", "twin_ids", "claim_ids")
+
+    def __post_init__(self) -> None:
+        self.resume = _texte(self.resume) or _texte(self.ecart)
+        if not self.titre:
+            self.titre = _texte(self.ecart) or _texte(self.exigence) or "Besoin"
+        _dater(self)
+        super().__post_init__()
+
+
+@dataclass
+class Opportunity(modele.Opportunity, _LiensBoucle):
+    """Opportunité persistée : ses preuves sont les claims cités (`claim_ids`)."""
+
+    mode: str = "INFERRED"
+    resume: str = ""
+    signature: str = ""
+    claim_ids: list[str] = field(default_factory=list)
+    CHAMPS_LIENS = ("situation_id", "investigation_id")
+    CHAMPS_LIENS_MULTIPLES = ("twin_ids", "claim_ids")
+
+    def __post_init__(self) -> None:
+        self.resume = _texte(self.resume) or _texte(self.description)
+        if not self.description:
+            self.description = self.resume
+        _dater(self)
+        super().__post_init__()
+        if not self.titre:
+            self.titre = _texte(self.description) or "Opportunité"
+        self.signature = _texte(self.signature)
+        self.claim_ids = _liste_ids(self.claim_ids, "claim_ids")
+
+
+@dataclass
+class Belief(modele.Belief, _LiensBoucle):
+    """Inférence révisable persistée ; un belief RAISONNEMENT exige au moins un claim lié."""
+
+    mode: str = "INFERRED"
+    titre: str = ""
+    resume: str = ""
+    acteur: str | None = None
+    revalide_par: str | None = None
+    CHAMPS_LIENS = ("sujet_id", "dossier_id")
+    CHAMPS_LIENS_MULTIPLES = ("claim_ids",)
+
+    def __post_init__(self) -> None:
+        self.resume = _texte(self.resume) or _texte(self.enonce)
+        if not self.titre:
+            self.titre = _texte(self.enonce)[:160] or "Belief"
+        _dater(self)
+        super().__post_init__()
+        self.acteur = _texte_ou_none(self.acteur)
+        self.revalide_par = _texte_ou_none(self.revalide_par)
+
+
 _CLASSES = {
     "SITUATION": Situation,
     "INVESTIGATION": Investigation,
@@ -431,6 +549,11 @@ _CLASSES = {
     "INITIATIVE": Initiative,
     "OUTCOME": Outcome,
     "LEARNING": Learning,
+    "UNKNOWN": Unknown,
+    "HYPOTHESIS": Hypothesis,
+    "NEED": Need,
+    "OPPORTUNITY": Opportunity,
+    "BELIEF": Belief,
 }
 
 
@@ -652,6 +775,88 @@ def capitaliser_learning(
     return Learning(**valeurs)
 
 
+def transiter_need(
+    need: Any, vers: Any, *, motif: str | None = None, tenant_id: str | None = None,
+    **champs: Any,
+) -> Need:
+    """Fait transiter un NEED selon `TRANSITIONS_NEED` ; l'objet source n'est pas muté.
+
+    `champs` complète le besoin avant la transition (un porteur, une exigence ou
+    des claims peuvent y être ajoutés pour satisfaire les prérequis de QUALIFIE).
+    La réouverture depuis REFUTE ou PERIME exige `motif` et incrémente la version.
+    """
+    _exiger_type(need, "NEED", "need")
+    _verifier_tenant(need, tenant_id)
+    copie = _construire(Need, need)
+    if champs:
+        copie = _construire(Need, copie, **champs)
+    try:
+        return copie.transiter(vers, motif=motif)
+    except modele.ModeleInvalide as exc:
+        raise BoucleInvalide(str(exc)) from exc
+
+
+def _lire_belief(conn: Any, tenant: str, belief_id: Any) -> Mapping[str, Any]:
+    identifiant = _texte(belief_id, "belief_id", obligatoire=True)
+    ligne = entreprise_depot.lire_objet(conn, tenant, identifiant)
+    if ligne is None:
+        raise BoucleInvalide(f"belief introuvable : {identifiant}")
+    type_objet = _type_de(ligne)
+    if type_objet != "BELIEF":
+        raise BoucleInvalide(
+            f"{identifiant} n'est pas un BELIEF (reçu {type_objet or 'type inconnu'})"
+        )
+    return ligne
+
+
+def _reconstruire_belief(ligne: Mapping[str, Any], **remplacements: Any) -> Belief:
+    objet = _construire(Belief, ligne, **remplacements)
+    # La réécriture passe par un upsert : la version avance d'elle-même.
+    objet.version = int(_valeur(ligne, "version") or 0) + 1
+    return objet
+
+
+def revalider(
+    conn: Any, tenant: Any, belief_id: Any, acteur: Any = None,
+) -> dict[str, Any]:
+    """Revalide un BELIEF persisté : `revalide_le` repart à maintenant, statut ACTIF.
+
+    La confiance effective repart alors de sa valeur initiale. Un belief CADUC
+    ne peut pas être revalidé. La version précédente est conservée dans
+    `donnees["_historique"]` (audit C2).
+    """
+    tenant_id = _texte(tenant, "tenant_id", obligatoire=True)
+    ligne = _lire_belief(conn, tenant_id, belief_id)
+    if _normaliser_statut(_valeur(ligne, "statut")) == "CADUC":
+        raise BoucleInvalide("un BELIEF CADUC ne peut pas être revalidé")
+    objet = _reconstruire_belief(
+        ligne, statut="ACTIF", revalide_le=_instant(),
+        revalide_par=_texte_ou_none(acteur),
+    )
+    return enregistrer_boucle(conn, tenant_id, objet, historique=True)
+
+
+def revoir(
+    conn: Any, tenant: Any, belief_id: Any, raison: Any = None,
+    acteur: Any = None,
+) -> dict[str, Any]:
+    """Marque un BELIEF persisté comme REVISE ; `raison` est obligatoire.
+
+    Tant que le belief n'est pas revalidé, sa confiance effective est nulle.
+    Un belief CADUC ne peut pas être révisé.
+    """
+    tenant_id = _texte(tenant, "tenant_id", obligatoire=True)
+    motif = _texte(raison, "raison", obligatoire=True)
+    ligne = _lire_belief(conn, tenant_id, belief_id)
+    if _normaliser_statut(_valeur(ligne, "statut")) == "CADUC":
+        raise BoucleInvalide("un BELIEF CADUC ne peut pas être révisé")
+    objet = _reconstruire_belief(
+        ligne, statut="REVISE", motif_revision=motif,
+        acteur=_texte_ou_none(acteur),
+    )
+    return enregistrer_boucle(conn, tenant_id, objet, historique=True)
+
+
 def _ressemble_objet(valeur: Mapping) -> bool:
     return "id" in valeur and ("type" in valeur or "famille" in valeur)
 
@@ -768,6 +973,35 @@ def _valider_pour_persistance(conn: Any, tenant: str, objets: list[Any]) -> None
                 _resoudre_source(
                     conn, tenant, par_id, identifiant, "investigation_ids", "INVESTIGATION"
                 )
+        if type_objet == "NEED":
+            if not _texte_ou_none(_valeur(objet, "refutable_par")):
+                raise BoucleInvalide("un NEED exige refutable_par")
+            statut_need = _normaliser_statut(_valeur(objet, "statut"))
+            if statut_need in {"QUALIFIE", "CORROBORE"} and not _texte_ou_none(
+                _valeur(objet, "porteur")
+            ):
+                raise BoucleInvalide(f"un NEED {statut_need} exige un porteur")
+        if type_objet == "HYPOTHESIS":
+            statut_hypothese = _normaliser_statut(_valeur(objet, "statut"))
+            if statut_hypothese in {"TESTEE", "RETENUE"} and not _liste_ids(
+                _valeur(objet, "rival_ids"), "rival_ids"
+            ):
+                raise BoucleInvalide(
+                    f"une HYPOTHESIS {statut_hypothese} exige au moins une rivale"
+                )
+        if type_objet == "BELIEF":
+            statut_belief = _normaliser_statut(_valeur(objet, "statut"))
+            if statut_belief and statut_belief not in modele.STATUTS_BELIEF:
+                raise BoucleInvalide(f"statut de BELIEF inconnu : {statut_belief!r}")
+            source_belief = (
+                _normaliser_statut(_valeur(objet, "source")) or "RAISONNEMENT"
+            )
+            if source_belief == "RAISONNEMENT" and not _liste_ids(
+                _valeur(objet, "claim_ids"), "claim_ids"
+            ):
+                raise BoucleInvalide(
+                    "un BELIEF RAISONNEMENT exige au moins un claim lié"
+                )
 
 
 def _entree_historique(ligne: Mapping[str, Any]) -> dict[str, Any]:
@@ -849,6 +1083,39 @@ def _persister(
     return retour
 
 
+def _episode_racine(liste: list[Any]) -> str:
+    """Racine déterministe de la boucle : `situation_id` du premier objet, sinon son identifiant."""
+    premier = liste[0]
+    return _texte_ou_none(_valeur(premier, "situation_id")) or _id_de(premier)
+
+
+def _consigner_evenement(conn: Any, tenant: str, objet: Any, resultat: Any, racine: str) -> None:
+    """Journalise l'écriture dans `evenement_episode`, dans la même connexion ; jamais bloquant."""
+    try:
+        type_objet = _type_de(resultat) or _type_de(objet)
+        version = _valeur(resultat, "version")
+        journal_episodes.consigner(conn, tenant, {
+            "episode_id": (
+                _texte_ou_none(_valeur(resultat, "episode_id"))
+                or _texte_ou_none(_valeur(objet, "episode_id"))
+                or racine
+            ),
+            "objet_type": type_objet,
+            "objet_id": _id_de(resultat),
+            "action": "cree" if version in (None, 1) else "transition",
+            "donnees": {
+                "statut": _texte_ou_none(
+                    _valeur(resultat, "statut") or _valeur(objet, "statut")),
+                "type": type_objet,
+                "lien_cause": _source_principale(resultat) or _source_principale(objet),
+            },
+            "acteur": _texte_ou_none(
+                _valeur(resultat, "acteur") or _valeur(objet, "acteur")),
+        })
+    except Exception:
+        pass  # le journal d'épisodes ne bloque jamais la boucle
+
+
 def enregistrer_boucle(
     conn: Any, tenant_id: Any = None, objets: Any = None, *,
     historique: bool = False, as_dict: bool = True,
@@ -895,13 +1162,15 @@ def enregistrer_boucle(
 
     _valider_pour_persistance(conn, tenant, liste)
     extras = _liens_inverses(liste)
-    resultats = [
-        _persister(
+    racine = _episode_racine(liste)
+    resultats = []
+    for objet in liste:
+        resultat = _persister(
             conn, tenant, objet, historique=historique, as_dict=as_dict,
             extra_donnees=extras.get(_id_de(objet)),
         )
-        for objet in liste
-    ]
+        _consigner_evenement(conn, tenant, objet, resultat, racine)
+        resultats.append(resultat)
     if simple:
         return resultats[0]
     if mapping_roles and paires is not None:
@@ -953,6 +1222,21 @@ def _source_principale(ligne: Mapping[str, Any]) -> str | None:
         investigations = _liste_ids(_valeur(ligne, "investigation_ids"), "investigation_ids")
         if investigations:
             return investigations[0]
+    if type_objet == "NEED":
+        return (
+            _texte_ou_none(_valeur(ligne, "situation_id"))
+            or _texte_ou_none(_valeur(ligne, "unknown_id"))
+        )
+    if type_objet == "HYPOTHESIS":
+        return (
+            _texte_ou_none(_valeur(ligne, "situation_id"))
+            or _texte_ou_none(_valeur(ligne, "need_id"))
+        )
+    if type_objet == "BELIEF":
+        return (
+            _texte_ou_none(_valeur(ligne, "dossier_id"))
+            or _texte_ou_none(_valeur(ligne, "sujet_id"))
+        )
     return None
 
 

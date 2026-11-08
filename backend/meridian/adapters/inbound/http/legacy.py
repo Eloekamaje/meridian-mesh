@@ -15,6 +15,7 @@ import signal
 import sys
 import logging
 import threading
+import time
 import unicodedata
 from pathlib import Path
 from uuid import uuid4
@@ -35,8 +36,16 @@ from meridian.adapters.inbound.http.raisonnement import construire_router as con
 from meridian.application.planification import outils as planification_outils  # noqa: E402
 from meridian.application import dependances  # noqa: E402
 from meridian.application import noyau_raisonnement  # noqa: E402
+from meridian.application import contrat_question, pipeline_unifie  # noqa: E402
 from meridian.application.tour_reponse import enveloppe as enveloppe_tour  # noqa: E402
-from meridian.application import contrat_action, contrat_preuve, contrat_securite  # noqa: E402
+from meridian.application import contrat_action, contrat_groundedness, contrat_preuve, contrat_securite  # noqa: E402
+from meridian.adapters.outbound import analyse_runtime  # noqa: E402
+from meridian.adapters.inbound.http import cognitif as cognitif_routes  # noqa: E402
+from meridian.application import sonde_evidence  # noqa: E402
+from meridian.adapters.outbound.postgres import pg_recherche as jumeau_pg_recherche  # noqa: E402
+from meridian.adapters.outbound.postgres import memoire_durable as jumeau_memoire_durable  # noqa: E402
+from meridian.adapters.outbound.postgres import evenements_requete as jumeau_evenements_requete  # noqa: E402
+from meridian.adapters.outbound.neo4j import graph_store as jumeau_graph_store  # noqa: E402
 from meridian.application import diagrammes as diagrammes_module  # noqa: E402
 from meridian.adapters.outbound.llm import design_diagram  # noqa: E402
 from meridian.domain import dossier_raisonnement as domaine_dossier  # noqa: E402
@@ -62,6 +71,7 @@ from meridian.domain import import_identite as jumeau_import_identite
 from meridian.adapters.outbound.mongo.commandes_depot import CommandesDepot  # noqa: E402
 from meridian.adapters.outbound.mongo import travail_proxy  # noqa: E402
 from meridian.adapters.outbound.naissance_runtime import NaissanceRuntimeLocal  # noqa: E402
+from meridian.application import contexte_demande  # noqa: E402
 from meridian.application.commandes import (  # noqa: E402
     CHAMPS_SECRETS, CommandeIntrouvable, CommandeModifiee, EtapeInvalide,
     JumeauExistant, LancementRefuse, NaissanceIndisponible,
@@ -1095,6 +1105,11 @@ class AuroraDemande(BaseModel):
     question: str = ""
     selection: list = []
     domaine: Optional[str] = None
+    # D9 — l'entrée unifiée : `{question, effort?}`. `effort` (leger|standard|
+    # approfondi) borne le profil du tour ; absent, c'est le contrat B9 qui
+    # décide. `profondeur` est une option du « mode analyse ».
+    effort: Optional[str] = None
+    profondeur: Optional[int] = Field(None, ge=1, le=6)
 
 
 ETAT_REL_LABELS = {"observee": "observée", "supposee": "supposée", "validation": "validation A2A", "contestee": "contestée", "obsolete": "obsolète", "confirmee": "confirmée"}
@@ -1800,10 +1815,202 @@ def _persister_audit_orchestration(reponse, acteur, tenant=None):
         logger.debug("audit orchestrateur non planifié")
 
 
-async def generer_reponse_flore(contexte, question, selection, domaine, acteur, x_espace, travail=None, emit=None, *, tenant=None, contexte_raisonnement=None, session=None):
+# --- B8 — sonde de preuve pré-raisonnement -------------------------------------
+# Bornée (~200 ms, timeouts) et fail-soft : la sonde ne peut ni retarder longtemps ni
+# casser un tour. Les trois sondes sont câblées ici sur les vraies requêtes ; la logique
+# de verdict reste pure dans application/sonde_evidence.py.
+
+SONDE_DELAI_S = 0.25
+
+
+def _sonde_graphe(tenant_id, conn):
+    """Sonde graphe câblée sur Neo4j quand il est configuré ; ``None`` sinon (jamais lancée).
+
+    Un indice par jumeau nommé dans la question qui a des voisins dans le graphe.
+    """
+    try:
+        configuration = jumeau_graph_store.depuis_environnement()
+    except Exception:
+        return None
+    if configuration.get("mode") != "neo4j":
+        return None
+
+    def sonder(question):
+        contexte = jumeau_graph_store.ouvrir()
+        try:
+            store = contexte["store"]
+            trouvees = []
+            for jumeau in jumeau_pg_recherche.rechercher_jumeaux(conn, tenant_id, question, limite=3):
+                voisins = store.voisins(tenant_id, jumeau["id"], profondeur=1)
+                if voisins:
+                    nom = jumeau.get("nom") or jumeau["id"]
+                    trouvees.append({
+                        "id": jumeau["id"], "score": jumeau.get("score"),
+                        "titre": f"{nom} · {len(voisins)} relation(s) dans le graphe",
+                        "voisins": len(voisins)})
+            return trouvees
+        finally:
+            contexte["fermer"]()
+    return sonder
+
+
+def _sonder_synchrone(dsn, tenant_id, question):
+    """Les sondes câblées sur les vraies requêtes, dans une connexion bornée (exécutée en thread)."""
+    with psycopg.connect(dsn, connect_timeout=2) as conn:
+        lexicale = lambda q: (  # noqa: E731
+            jumeau_pg_recherche.rechercher_claims(conn, tenant_id, q, limite=5)
+            + jumeau_pg_recherche.rechercher_jumeaux(conn, tenant_id, q, limite=5))
+        memoire = lambda q: jumeau_memoire_durable.chercher(conn, tenant_id, q, limite=5)  # noqa: E731
+        return sonde_evidence.sonder(
+            question, recherche_lexicale=lexicale,
+            graphe=_sonde_graphe(tenant_id, conn), memoire=memoire)
+
+
+async def _sonder_tour(question, tenant_id):
+    """B8 — la sonde pré-raisonnement ; ``None`` si indisponible (le pipeline continue sans)."""
+    dsn = os.environ.get("JUMEAU_PG_DSN")
+    if not dsn or not str(question or "").strip():
+        return None
+    try:
+        return await asyncio.wait_for(
+            asyncio.to_thread(_sonder_synchrone, dsn, tenant_id, question),
+            timeout=SONDE_DELAI_S)
+    except Exception:
+        logger.debug("sonde pré-raisonnement indisponible", exc_info=True)
+        return None
+
+
+def _consigner_epilogue(reponse, question, travail, tenant, duree_ms):
+    """C8 — épilogue de requête : un événement par tour, en tâche de fond ; jamais bloquant.
+
+    ``inconnu_question`` porte la réponse non concluante — le détecteur B7
+    ``question_non_tranchee`` pourra consommer ces événements (lien documenté, non câblé).
+    """
+    if not isinstance(reponse, dict):
+        return
+    dsn = os.environ.get("JUMEAU_PG_DSN")
+    if not dsn:
+        return
+    tenant_id = str(tenant or _tenant_requete())[:128] or "local"
+    try:
+        evenement = jumeau_evenements_requete.construire(
+            reponse, question=question, episode_id=travail, duree_ms=duree_ms)
+    except Exception:
+        logger.debug("épilogue de requête non construit")
+        return
+
+    def ecrire():
+        try:
+            with psycopg.connect(dsn, connect_timeout=3, autocommit=True) as conn:
+                jumeau_evenements_requete.consigner(conn, tenant_id, evenement)
+        except Exception:
+            logger.debug("épilogue de requête non consigné")
+
+    try:
+        threading.Thread(target=ecrire, name="epilogue-requete", daemon=True).start()
+    except Exception:
+        logger.debug("épilogue de requête non planifié")
+
+
+def _runtime_analyse():
+    """Runtime du « mode analyse » (D9) : la même implémentation que `/analyser`."""
+    return analyse_runtime.RuntimeAnalysePostgres()
+
+
+def _reponse_depuis_analyse(resultat):
+    """La sortie `demander` du profil approfondi : la réponse, jamais le dossier.
+
+    Le dossier est persisté côté serveur ; la réponse ne garde qu'un résumé de
+    traçabilité (`analyse.dossier_id`, spécialistes, évaluation) — `/analyser`
+    reste la route qui rend le dossier complet.
+    """
+    if not isinstance(resultat, dict):
+        return None
+    reponse = dict(resultat.get("reponse") or {})
+    if reponse.get("comportement") == "clarifier":
+        corps = {
+            "comportement": "clarifier",
+            "reponse": str(reponse.get("reponse") or ""),
+            "questions": list(reponse.get("questions") or ()),
+            "preuves": list(reponse.get("preuves") or ()),
+            "contributions": [], "jumeaux_participants": [],
+        }
+    else:
+        socle = dict(reponse.get("socle") or {})
+        points = []
+        for faits in (reponse.get("lecture") or {}).values():
+            for fait in faits or ():
+                titre = str((fait or {}).get("titre") or (fait or {}).get("resume") or "").strip()
+                if titre and titre not in points:
+                    points.append(titre)
+        lignes = [f"- {point}" for point in points[:8]]
+        recommandation = str(
+            (reponse.get("decision_support") or {}).get("recommandation") or "").strip()
+        if recommandation:
+            lignes.append(f"\nRecommandation : {recommandation}")
+        avertissements = [
+            str(avertissement) for avertissement
+            in (reponse.get("avertissements") or ())][:4]
+        if avertissements:
+            lignes.append("\nLimites : " + "; ".join(avertissements))
+        corps = {
+            "comportement": "repondre",
+            "reponse": "\n".join(lignes) or
+                "Analyse approfondie terminée ; le dossier détaille les constats.",
+            "preuves": list(socle.get("preuves") or ()),
+            "contributions": [], "jumeaux_participants": [],
+        }
+    dossier_raisonnement = dict(resultat.get("dossier_raisonnement") or {})
+    corps["effort"] = str(resultat.get("effort") or "approfondi")
+    corps["analyse"] = {
+        "statut": dossier_raisonnement.get("statut")
+            or (resultat.get("dossier") or {}).get("statut"),
+        "dossier_id": dossier_raisonnement.get("id") or None,
+        "specialistes": list(resultat.get("specialistes_executes") or ()),
+        "qualite": resultat.get("qualite"),
+        "evaluation": resultat.get("evaluation"),
+    }
+    return corps
+
+
+async def _tour_approfondi(question, *, selection, domaine, profondeur, session,
+                           acteur, tenant, contexte_raisonnement, sonde, contrat):
+    """D9 — la branche approfondie du pipeline unifié : la machine profonde de
+    `/analyser`, réutilisée telle quelle ; seule la sortie diffère (réponse).
+
+    `None` quand la couche cognitive est indisponible : le tour retombe alors
+    sur le pipeline conversationnel, déjà à budget élargi par le contrat.
+    """
+    tenant_id = str(tenant or _tenant_requete())
+    try:
+        resultat = await pipeline_unifie.executer_approfondi(
+            tenant_id, str(acteur or "demo"),
+            pipeline_unifie.charge_analyse(
+                question, effort="approfondi", sonde=sonde, contrat=contrat,
+                twin_ids=list(selection or ()), domaine=domaine,
+                profondeur=profondeur,
+                session_id=session if isinstance(session, str) else None),
+            runtime=_runtime_analyse(), acteur_contexte=contexte_raisonnement)
+    except Exception:
+        logger.debug("pipeline unifié : mode analyse indisponible", exc_info=True)
+        return None
+    reponse = _reponse_depuis_analyse(resultat)
+    if reponse is None:
+        return None
+    try:
+        await cognitif_routes._persister_dossier_raisonnement(
+            tenant_id, resultat.get("dossier_raisonnement"))
+    except Exception:
+        logger.debug("dossier de raisonnement non persisté", exc_info=True)
+    return reponse
+
+
+async def generer_reponse_flore(contexte, question, selection, domaine, acteur, x_espace, travail=None, emit=None, *, tenant=None, contexte_raisonnement=None, session=None, effort=None, profondeur=None):
     contexte_raisonnement = dict(contexte_raisonnement or {})
     contexte_raisonnement.setdefault("acteur", acteur)
     contexte_raisonnement.update(await auth_identite.contexte_acteur(acteur))
+    pedagogue = jumeau_flore.question_pedagogique(question)
+    enveloppe = contexte_demande.construire(question, contexte_raisonnement, pedagogique=pedagogue)
     if not await limites.autoriser(f"tours:{acteur}", limites.maxi_tours(), limites.fenetre_tours()):
         raise HTTPException(429, "Trop de tours Flore en peu de temps ; réessayez dans un instant")
     if not str(question or "").strip():
@@ -1812,6 +2019,7 @@ async def generer_reponse_flore(contexte, question, selection, domaine, acteur, 
             "reponse": "Pose-moi une question : je ne peux pas traiter un message vide.",
             "questions": [], "preuves": [], "contributions": [],
             "jumeaux_participants": [], "orchestration": {"outils": [], "erreurs": []},
+            "effort": contrat_question.LEGER,
         }, "modele")
     _, espace = resoudre_perimetre(acteur, x_espace)
     tous = await jumeaux_du_tenant(db, _tenant_requete())
@@ -1826,16 +2034,85 @@ async def generer_reponse_flore(contexte, question, selection, domaine, acteur, 
     # Aucun routeur d'intention hardcodé n'est consulté ici.
     candidats = [j for j in tous if j.get("reel") and j["id"] in aut and niveau_au_moins(aut[j["id"]], "complet")]
 
+    # B8 — sonde pré-raisonnement (bornée ~200 ms, fail-soft), avant `executer_raisonne` :
+    # « trivial » produit une réponse déterministe sans appel au modèle (0 token) ;
+    # « clair »/« incertain » continuent le pipeline et le verdict alimente le contexte
+    # de raisonnement (`contexte["sonde"]`, consommé par le contrat de preuve B9) ainsi
+    # que la réponse (métrique `sonde.verdict`) et l'épilogue (C8).
+    sonde = await _sonder_tour(question, tenant or _tenant_requete())
+    if sonde and sonde.get("verdict") == "trivial":
+        reponse_triviale = sonde_evidence.reponse_triviale(sonde)
+        # D9 — l'effort effectif accompagne même le court-circuit : trivial ne
+        # consomme aucune analyse et la réponse le mesure.
+        reponse_triviale["effort"] = contrat_question.LEGER
+        return marquer_origine(reponse_triviale, "sonde")
+    if sonde:
+        contexte_raisonnement["sonde"] = sonde
+
+    # D9 — profil d'effort unifié (`contrat_question.contrat_pour`, B9) : le
+    # contrat pilote le budget du noyau pour tous les chemins du tour, et en
+    # approfondi bascule le tour sur le « mode analyse » — la même machine que
+    # `/analyser`, sans code copié. Un effort demandé hors profil est ignoré.
+    effort_demande = str(effort or "").strip().lower()
+    contrat_tour = (
+        pipeline_unifie.contrat_effort(question, effort=effort, sonde=sonde)
+        if sonde or effort_demande in pipeline_unifie.EFFORTS else None)
+    effort_tour = (contrat_tour or {}).get("effort") or "standard"
+    if contrat_tour:
+        contexte_raisonnement["contrat"] = contrat_tour
+
+    sources_tour = []
+
+    def _collecter_sources(reponse):
+        """C7 — les sources réellement consultées par le(s) jumeau(x) : retirées du corps de
+        la réponse (portée interne) et conservées pour le contrat groundedness du tour."""
+        if not isinstance(reponse, dict):
+            return
+        for source in reponse.pop("_sources", None) or ():
+            if source not in sources_tour:
+                sources_tour.append(source)
+
+    def finaliser(reponse):
+        """Verdict de la sonde (métrique B8), effort effectif (D9) et portée des
+        sources (C7) sur la réponse du tour ; `generer_tour` retire `_sources`
+        avant publication."""
+        if isinstance(reponse, dict):
+            if sonde:
+                reponse.setdefault("sonde", sonde)
+            reponse.setdefault("effort", effort_tour)
+            if sources_tour:
+                reponse.setdefault("_sources", list(sources_tour))
+        return reponse
+
     async def mobiliser_orchestre(ids, mission):
         ids = [i for i in ids if i in aut and i in {j["id"] for j in candidats}]
         if not ids:
             return None
         if len(ids) == 1:
-            return await jumeau_flore.repondre(ids[0], mission, acteur, travail, profil=None, db=db, emit=emit)
-        return await jumeau_flore.mobiliser(ids, mission, acteur, travail, profil=None, db=db, emit=emit)
+            reponse = await jumeau_flore.repondre(ids[0], mission, acteur, travail, profil=None, db=db, emit=emit,
+                                                  pedagogique=pedagogue, enveloppe=enveloppe)
+        else:
+            reponse = await jumeau_flore.mobiliser(ids, mission, acteur, travail, profil=None, db=db, emit=emit,
+                                                   pedagogique=pedagogue, enveloppe=enveloppe)
+        _collecter_sources(reponse)
+        return reponse
 
     async def concevoir_orchestre(question_conception):
         return await jumeau_conception.repondre(question_conception, {"type": "concevoir", "greenfield": True})
+
+    # D9 — effort approfondi : le « mode analyse » du pipeline unifié — la même
+    # machine profonde que `/analyser`, qui rend ici sa seule réponse (le
+    # dossier est persisté, pas publié dans le tour).
+    if effort_tour == "approfondi":
+        reponse_analyse = await _tour_approfondi(
+            question, selection=sel, domaine=domaine, profondeur=profondeur,
+            session=session, acteur=acteur, tenant=tenant,
+            contexte_raisonnement=contexte_raisonnement, sonde=sonde,
+            contrat=contrat_tour)
+        if reponse_analyse is not None:
+            return finaliser(marquer_origine(reponse_analyse, "analyse"))
+        # Machine profonde indisponible : le tour continue à budget élargi —
+        # le contrat (effort approfondi) module déjà `noyau.planifier`.
 
     # Moteur principal unique : la sélection explicite est un contexte borné, pas un second cerveau.
     # Si aucun modèle n'est disponible, la sélection garde son repli déterministe ci-dessous.
@@ -1845,15 +2122,15 @@ async def generer_reponse_flore(contexte, question, selection, domaine, acteur, 
         session=session)
     if reponse_orchestree:
         _persister_audit_orchestration(reponse_orchestree, acteur, tenant)
-        return marquer_origine(reponse_orchestree, "modele")
+        return finaliser(marquer_origine(reponse_orchestree, "modele"))
     if not sel:
-        return marquer_origine({
+        return finaliser(marquer_origine({
             "comportement": "signaler",
             "reponse": "Je n'ai pas pu interpréter et traiter cette demande : l'orchestrateur général est "
                        "indisponible. Aucun jumeau n'a été mobilisé et aucune conclusion n'est tirée.",
             "preuves": [], "contributions": [], "jumeaux_participants": [],
             "orchestration": {"outils": [], "erreurs": ["orchestrateur indisponible"]},
-        }, "repli")
+        }, "repli"))
     # Repli déterministe de sélection : utilisé seulement si le moteur principal est indisponible.
     reels = [j["id"] for j in tous if j.get("reel") and j["id"] in sel and niveau_au_moins(aut[j["id"]], "complet")]
     resolution = None
@@ -1876,11 +2153,14 @@ async def generer_reponse_flore(contexte, question, selection, domaine, acteur, 
                 "raisonnement": dossier_selection.as_dict(),
                 "raisonnement_statut": "clarification_requise",
             }
-            return marquer_origine(dossier_selection.reponse, "modele")
+            return finaliser(marquer_origine(dossier_selection.reponse, "modele"))
         if len(reels) == 1:
-            reponse_jumeau = await jumeau_flore.repondre(reels[0], question, acteur, travail, profil=None, db=db, emit=emit)
+            reponse_jumeau = await jumeau_flore.repondre(reels[0], question, acteur, travail, profil=None, db=db,
+                                                         emit=emit, pedagogique=pedagogue, enveloppe=enveloppe)
         else:
-            reponse_jumeau = await jumeau_flore.mobiliser(reels, question, acteur, travail, profil=None, db=db, emit=emit)
+            reponse_jumeau = await jumeau_flore.mobiliser(reels, question, acteur, travail, profil=None, db=db,
+                                                          emit=emit, pedagogique=pedagogue, enveloppe=enveloppe)
+        _collecter_sources(reponse_jumeau)
         if reponse_jumeau:
             dossier_selection = noyau_raisonnement.completer_dossier(
                 dossier_selection, reponse_jumeau, strict=False)
@@ -1898,14 +2178,17 @@ async def generer_reponse_flore(contexte, question, selection, domaine, acteur, 
                     **dossier_selection.reponse,
                     "raisonnement": dossier_selection.as_dict(),
                 }
-            return marquer_origine(
-                _poser_resolution(dossier_selection.reponse, resolution), "modele")
+            return finaliser(marquer_origine(
+                _poser_resolution(dossier_selection.reponse, resolution), "modele"))
     if sel:
         intent = intention_selection(q)
         if intent:
-            return marquer_origine(await reponse_selection(intent, sel, aut, tous, id_vers_nom), "scenario")
-        return marquer_origine(await reponse_selection(None, sel, aut, tous, id_vers_nom), "scenario")
-    return marquer_origine(_poser_resolution(dict(AURORA_FALLBACK), resolution), "repli")
+            return finaliser(marquer_origine(
+                await reponse_selection(intent, sel, aut, tous, id_vers_nom), "scenario"))
+        return finaliser(marquer_origine(
+            await reponse_selection(None, sel, aut, tous, id_vers_nom), "scenario"))
+    return finaliser(marquer_origine(
+        _poser_resolution(dict(AURORA_FALLBACK), resolution), "repli"))
 
 
 async def generer_tour(*args, **kwargs):
@@ -1913,6 +2196,7 @@ async def generer_tour(*args, **kwargs):
     # `cases.py` sonde la signature : le wrapper accepte **kwargs, mais le générateur
     # sous-jacent ne connaît pas ce drapeau. Il ne doit pas lui être transmis.
     kwargs.pop("autoriser_ecriture", None)
+    debut = time.monotonic()
     question = args[1] if len(args) > 1 else str(kwargs.get("question") or "")
     refus = contrat_securite.refuser_si_injection(question)
     if refus is not None:
@@ -1920,6 +2204,16 @@ async def generer_tour(*args, **kwargs):
     reponse = await generer_reponse_flore(*args, **kwargs)
     reponse = contrat_action.appliquer(question, reponse)
     reponse = contrat_preuve.appliquer(reponse)
+    # C7 — les citations sont vérifiées contre les dépôts réellement consultés par les
+    # jumeaux mobilisés ; sans source, régime ``non_verifiees`` (jamais de fausse
+    # vérification). `_sources` est une portée interne, retirée avant publication.
+    sources = reponse.pop("_sources", None) if isinstance(reponse, dict) else None
+    resoudre = jumeau_connaissance.resoudre_citations(sources) if sources else None
+    reponse = contrat_groundedness.appliquer(reponse, resoudre=resoudre)
+    # C8 — épilogue de requête : un événement par tour, en tâche de fond, jamais bloquant.
+    travail_episode = kwargs.get("travail") or (args[6] if len(args) > 6 else None)
+    _consigner_epilogue(reponse, question, travail_episode, kwargs.get("tenant"),
+                        (time.monotonic() - debut) * 1000)
     return enveloppe_tour(reponse)
 
 
@@ -1988,8 +2282,11 @@ async def decouvrir_interfaces_du_jumeau(jid: str, acteur: str = Depends(auth_id
 @api_router.post("/aurora/demander")
 async def aurora_demander(payload: AuroraDemande, acteur: str = Depends(auth_identite.acteur), x_espace: Optional[str] = Header(None),
                           x_tenant: Optional[str] = Header(None)):
+    """Entrée unifiée du pipeline (D9) : `{question, effort?}` — `/analyser` est
+    le même appel à effort `approfondi` forcé, avec le dossier en plus."""
     reponse = await generer_tour(payload.contexte, payload.question, payload.selection, payload.domaine, acteur, x_espace,
-                                    tenant=x_tenant)
+                                    tenant=x_tenant, effort=payload.effort,
+                                    profondeur=payload.profondeur)
     return await design_diagram.enrichir_reponse(reponse)
 
 
@@ -2000,7 +2297,8 @@ async def aurora_demander_flux(payload: AuroraDemande, acteur: str = Depends(aut
     async def repondre(emit):
         reponse = await generer_tour(
             payload.contexte, payload.question, payload.selection, payload.domaine, acteur, x_espace,
-            emit=emit, tenant=x_tenant)
+            emit=emit, tenant=x_tenant, effort=payload.effort,
+            profondeur=payload.profondeur)
         return await design_diagram.enrichir_reponse(reponse)
 
     return jumeau_flux.en_flux(repondre, proprietaire=acteur)

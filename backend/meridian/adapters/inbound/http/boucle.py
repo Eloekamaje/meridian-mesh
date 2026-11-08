@@ -25,7 +25,11 @@ from fastapi import APIRouter, Header, HTTPException, Query, Request
 from psycopg.rows import dict_row
 
 from meridian.adapters.outbound.postgres import boucle
+from meridian.adapters.outbound.postgres import calibration
 from meridian.adapters.outbound.postgres import entreprise_depot
+from meridian.adapters.outbound.postgres import journal_episodes
+from meridian.adapters.outbound.postgres import metriques_revue
+from meridian.adapters.outbound.postgres import revue_graduee
 from meridian.adapters.outbound.neo4j import graph_store
 from meridian.domain import modele_entreprise
 from meridian.adapters.outbound.postgres import rls
@@ -205,6 +209,8 @@ async def _dans_le_thread(action):
         raise
     except entreprise_depot.ObjetInvalide as exc:
         raise HTTPException(400, str(exc)) from exc
+    except modele_entreprise.ModeleInvalide as exc:
+        raise HTTPException(422, str(exc)) from exc
     except psycopg.Error as exc:
         raise HTTPException(503, _DSN_INDISPONIBLE) from exc
 
@@ -403,3 +409,327 @@ async def graphe_chemins(
     )
     return {"tenant": tenant, "source": source.strip(), "cible": cible.strip(),
             "profondeur": profondeur, "mode": mode, "chemins": _assainir(chemins)}
+
+
+# --- B1 : écriture canonique (création + transitions) ---
+
+import inspect as _inspect
+from pydantic import BaseModel as _BaseModel, Field as _Field
+
+_PREFIXES_ID = {
+    "SITUATION": "sit-", "INVESTIGATION": "inv-", "DECISION": "dec-",
+    "INITIATIVE": "ini-", "OUTCOME": "out-", "LEARNING": "ler-",
+    "UNKNOWN": "unk-", "HYPOTHESIS": "hyp-", "NEED": "need-",
+}
+_TYPES_CREATION = (
+    "SITUATION", "INVESTIGATION", "DECISION", "INITIATIVE",
+    "UNKNOWN", "HYPOTHESIS", "NEED",
+)
+_MODES_CREATION = {"SITUATION": "OBSERVED"}
+
+_ACTIONS_TRANSITION = {
+    "ouvrir_investigation": ("SITUATION", boucle.ouvrir_investigation),
+    "proposer_decision": ("INVESTIGATION", boucle.proposer_decision),
+    "trancher": ("DECISION", boucle.trancher_decision),
+    "lancer_initiative": ("DECISION", boucle.lancer_initiative),
+    "mesurer_outcome": ("INITIATIVE", boucle.mesurer_outcome),
+    "transiter_need": ("NEED", boucle.transiter_need),
+}
+
+
+class _ObjetCree(_BaseModel):
+    type: str
+    titre: str = ""
+    donnees: dict = _Field(default_factory=dict)
+    mode: str | None = None
+
+
+class _TransitionDemande(_BaseModel):
+    action: str
+    donnees: dict = _Field(default_factory=dict)
+
+
+@router.post("/objets", status_code=201)
+async def creer_objet(
+    request: Request,
+    payload: _ObjetCree,
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Crée un objet canonique de la boucle (Situation, Investigation, Decision, Initiative)
+    ou un objet complémentaire (Unknown, Hypothesis, Need)."""
+    _verifier_espace(x_espace)
+    tenant = _tenant(request, x_tenant)
+    type_objet = str(payload.type or "").strip().upper()
+    if type_objet not in _TYPES_CREATION:
+        raise HTTPException(
+            422, f"type non créable : {type_objet!r} (créables : {list(_TYPES_CREATION)})")
+    mode = (payload.mode or _MODES_CREATION.get(type_objet, "PROPOSED")).upper()
+    if mode not in _MODES:
+        raise HTTPException(422, f"mode inconnu : {mode!r}")
+    dsn = _dsn()
+
+    def ecrire():
+        classe = boucle._CLASSES[type_objet]
+        params = set(_inspect.signature(classe).parameters)
+        valeurs = {
+            cle: valeur
+            for cle, valeur in {"titre": payload.titre, "mode": mode, **dict(payload.donnees)}.items()
+            if cle in params
+        }
+        if "tenant_id" in params:
+            valeurs["tenant_id"] = tenant
+        objet = classe(id=boucle._nouvel_id(_PREFIXES_ID[type_objet]), **valeurs)
+        with psycopg.connect(dsn, connect_timeout=5) as conn:
+            if rls.est_actif():
+                with rls.contexte_tenant(conn, tenant):
+                    return boucle.enregistrer_boucle(conn, tenant, objet)
+            return boucle.enregistrer_boucle(conn, tenant, objet)
+
+    resultat = await _dans_le_thread(ecrire)
+    return _assainir(resultat)
+
+
+@router.post("/objets/{objet_id}/transition", status_code=201)
+async def transition_objet(
+    objet_id: str,
+    request: Request,
+    payload: _TransitionDemande,
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Fait transiter un objet : ouvrir_investigation, proposer_decision, trancher,
+    lancer_initiative, mesurer_outcome, transiter_need — la chaîne est validée par le dépôt."""
+    _verifier_espace(x_espace)
+    tenant = _tenant(request, x_tenant)
+    entree = _ACTIONS_TRANSITION.get(str(payload.action or "").strip())
+    if entree is None:
+        raise HTTPException(
+            422, f"action inconnue : {payload.action!r} (connues : {list(_ACTIONS_TRANSITION)})")
+    type_attendu, fonction = entree
+    dsn = _dsn()
+
+    def ecrire():
+        with psycopg.connect(dsn, connect_timeout=5) as conn:
+            if rls.est_actif():
+                with rls.contexte_tenant(conn, tenant):
+                    return _transiter(conn)
+            return _transiter(conn)
+
+    def _transiter(conn):
+        source = boucle.lire_boucle(conn, tenant, objet_id, as_dict=True)
+        if source is None:
+            raise HTTPException(404, "Objet introuvable")
+        nouvel = fonction(source, tenant_id=tenant, **dict(payload.donnees))
+        return boucle.enregistrer_boucle(conn, tenant, nouvel)
+
+    resultat = await _dans_le_thread(ecrire)
+    return _assainir(resultat)
+
+
+# --- D1 : journal d'épisodes (lecture du journal append-only) ---
+
+
+@router.get("/episodes")
+async def lister_episodes(
+    request: Request,
+    limite: int = Query(50, ge=1, le=500),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Liste les derniers épisodes du tenant, groupés par ``episode_id``, du plus récent au plus ancien."""
+    _verifier_espace(x_espace)
+    tenant = _tenant(request, x_tenant)
+    dsn = _dsn()
+
+    def lire():
+        with psycopg.connect(dsn, connect_timeout=5) as conn:
+            if rls.est_actif():
+                with rls.contexte_tenant(conn, tenant):
+                    return journal_episodes.episodes(conn, tenant, limite)
+            return journal_episodes.episodes(conn, tenant, limite)
+
+    resultat = await _dans_le_thread(lire)
+    return {"tenant": tenant, "episodes": _assainir(resultat)}
+
+
+@router.get("/episodes/{episode_id}")
+async def lire_episode(
+    episode_id: str,
+    request: Request,
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Rend les événements d'un épisode du tenant, dans l'ordre d'écriture ; 404 s'il est inconnu."""
+    _verifier_espace(x_espace)
+    tenant = _tenant(request, x_tenant)
+    episode = episode_id.strip()
+    if not episode or len(episode) > 256:
+        raise HTTPException(400, "episode_id invalide")
+    dsn = _dsn()
+
+    def lire():
+        with psycopg.connect(dsn, connect_timeout=5) as conn:
+            if rls.est_actif():
+                with rls.contexte_tenant(conn, tenant):
+                    return journal_episodes.lire_episode(conn, tenant, episode)
+            return journal_episodes.lire_episode(conn, tenant, episode)
+
+    evenements = await _dans_le_thread(lire)
+    if not evenements:
+        raise HTTPException(404, "Épisode introuvable")
+    return {"tenant": tenant, "episode": episode, "evenements": _assainir(evenements)}
+
+
+# --- C4 : calibration des prédictions (Brier + IC de Wilson) ---
+
+
+@router.get("/calibration")
+async def boucle_calibration(
+    request: Request,
+    minimum: int = Query(10, ge=1, le=1000),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Brier des prédictions résolues + IC de Wilson du taux observé, tenant-scopé.
+
+    ``brier``, ``taux`` et ``ic95`` sont ``null`` tant que ``n`` est sous
+    ``minimum`` : jamais un nombre sans effectif. ``par_source`` décline la
+    même mesure par source de prédiction.
+    """
+    _verifier_espace(x_espace)
+    tenant = _tenant(request, x_tenant)
+    dsn = _dsn()
+
+    def lire():
+        with psycopg.connect(dsn, connect_timeout=5) as conn:
+            if rls.est_actif():
+                with rls.contexte_tenant(conn, tenant):
+                    return calibration.score_brier(conn, tenant, minimum=minimum)
+            return calibration.score_brier(conn, tenant, minimum=minimum)
+
+    resultat = await _dans_le_thread(lire)
+    return {"tenant": tenant, **_assainir(resultat)}
+
+
+# --- C3 : métriques de la revue humaine (taux + délai, jamais sans n) ---
+
+
+@router.get("/revue/metriques")
+async def revue_metriques(
+    request: Request,
+    jours: int = Query(30, ge=1, le=366),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Taux accepté/corrigé/refusé et délai médian de la revue humaine, tenant-scopés.
+
+    ``n`` = claims décidés dans la fenêtre ; ``taux_*`` et ``ic95`` sont ``null``
+    tant que ``n`` est sous ``minimum`` — jamais un ratio sans effectif. Revue
+    vide : comptes à 0, mesures à ``null``, jamais de 500.
+    """
+    _verifier_espace(x_espace)
+    tenant = _tenant(request, x_tenant)
+    dsn = _dsn()
+
+    def lire():
+        with psycopg.connect(dsn, connect_timeout=5) as conn:
+            if rls.est_actif():
+                with rls.contexte_tenant(conn, tenant):
+                    return metriques_revue.metriques(conn, tenant, jours=jours)
+            return metriques_revue.metriques(conn, tenant, jours=jours)
+
+    resultat = await _dans_le_thread(lire)
+    return {"tenant": tenant, **_assainir(resultat)}
+
+
+# --- D3 : revue graduée par risque (répartition des niveaux, lecture seule) ---
+
+
+@router.get("/revue/niveaux")
+async def revue_niveaux(
+    request: Request,
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Répartition des niveaux de revue du tenant : ``AUTO_VISIBLE`` /
+    ``ATTENTION`` / ``BLOQUANT``, auto-acceptés encore révocables et révoqués,
+    pour les claims et les propositions. Comptes seuls — jamais de ratio.
+    """
+    _verifier_espace(x_espace)
+    tenant = _tenant(request, x_tenant)
+    dsn = _dsn()
+
+    def lire():
+        with psycopg.connect(dsn, connect_timeout=5) as conn:
+            if rls.est_actif():
+                with rls.contexte_tenant(conn, tenant):
+                    return revue_graduee.niveaux(conn, tenant)
+            return revue_graduee.niveaux(conn, tenant)
+
+    resultat = await _dans_le_thread(lire)
+    return {"tenant": tenant, **_assainir(resultat)}
+
+
+# --- D8 : Twin comme projection des claims ---
+
+from meridian.adapters.outbound.postgres import projection_twin as _projection_twin
+
+
+@router.get("/twins/{twin_id}/projection")
+async def twin_projection(
+    twin_id: str,
+    request: Request,
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Projection calculée du twin : capacités, dépendances, dépendants, couverture,
+    fraîcheur et état épistémique — tout se déduit des claims ; la ligne ``jumeau``
+    ne fournit que l'identité (nom, équipe, type). ``None`` → 404 tenant-scopé.
+    """
+    _verifier_espace(x_espace)
+    tenant = _tenant(request, x_tenant)
+    if not twin_id.strip() or len(twin_id) > 128:
+        raise HTTPException(400, "twin_id invalide")
+    dsn = _dsn()
+
+    def lire():
+        with psycopg.connect(dsn, connect_timeout=5) as conn:
+            if rls.est_actif():
+                with rls.contexte_tenant(conn, tenant):
+                    return _projection_twin.projeter(conn, tenant, twin_id.strip())
+            return _projection_twin.projeter(conn, tenant, twin_id.strip())
+
+    resultat = await _dans_le_thread(lire)
+    if resultat is None:
+        raise HTTPException(404, "Twin introuvable")
+    return {"tenant": tenant, "twin": twin_id.strip(),
+            "projection": _assainir(resultat)}
+
+
+@router.get("/twins/{twin_id}/projection/ecarts")
+async def twin_projection_ecarts(
+    twin_id: str,
+    request: Request,
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Écarts entre la ligne ``jumeau`` stockée et la projection des claims :
+    ``stocke``, ``calcule`` et la liste des champs qui divergent."""
+    _verifier_espace(x_espace)
+    tenant = _tenant(request, x_tenant)
+    if not twin_id.strip() or len(twin_id) > 128:
+        raise HTTPException(400, "twin_id invalide")
+    dsn = _dsn()
+
+    def lire():
+        with psycopg.connect(dsn, connect_timeout=5) as conn:
+            if rls.est_actif():
+                with rls.contexte_tenant(conn, tenant):
+                    return _projection_twin.ecarts(conn, tenant, twin_id.strip())
+            return _projection_twin.ecarts(conn, tenant, twin_id.strip())
+
+    resultat = await _dans_le_thread(lire)
+    if resultat is None:
+        raise HTTPException(404, "Twin introuvable")
+    return {"tenant": tenant, "twin": twin_id.strip(), **_assainir(resultat)}

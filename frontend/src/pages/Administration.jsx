@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Database, CheckCircle, Clock, Users, Scroll, Check, Minus, MagnifyingGlass } from "@phosphor-icons/react";
+import { Database, CheckCircle, Clock, Users, Scroll, Check, Minus, MagnifyingGlass, ClipboardText } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { usePerimetre } from "@/lib/perimetre";
@@ -15,14 +15,24 @@ const SOURCES = [
   ["documentation", "Documentation"],
 ];
 
+const pct = (v) => (v === null || v === undefined ? "—" : `${Math.round(v * 100)} %`);
+
+const VERDICTS = [
+  ["accepte", "Acceptées", "#34D399", "acceptes", "taux_accepte"],
+  ["corrige", "Corrigées", "#F2B84B", "corriges", "taux_corrige"],
+  ["refuse", "Refusées", "#F87171", "refuses", "taux_refuse"],
+];
+
 export default function Administration() {
   const [jumeaux, setJumeaux] = useState([]);
   const [journal, setJournal] = useState([]);
+  const [revue, setRevue] = useState(null);
   const [recherche, setRecherche] = useState("");
   const { version } = usePerimetre();
   useEffect(() => {
     api.get("/jumeaux").then((r) => setJumeaux(r.data)).catch(() => {});
     api.get("/journal").then((r) => setJournal(r.data)).catch(() => {});
+    api.get("/boucle/revue/metriques").then((r) => setRevue(r.data)).catch(() => {});
   }, [version]);
 
   // La recherche filtre les deux listes par jumeau (nom, propriétaire, domaine)
@@ -147,6 +157,53 @@ export default function Administration() {
               </li>
             ))}
           </ul>
+        </section>
+
+        <section className="rise col-span-12 rounded-xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-5 lg:col-span-6" style={{ animationDelay: "270ms" }} data-testid="admin-revue">
+          <h2 className="flex items-center gap-2 font-code text-[10px] uppercase tracking-[0.25em] text-[#7C93A8]">
+            <ClipboardText size={14} className="text-[#60A5FA]" /> Revue humaine · {revue?.jours ?? 30} jours
+          </h2>
+          <div className="mt-3 flex items-baseline gap-2">
+            <span className="font-display text-4xl font-black text-[#F2F6F8]" data-testid="revue-taux-accepte">
+              {revue ? pct(revue.taux_accepte) : "—"}
+            </span>
+            <span className="font-code text-[10px] text-[#7C93A8]">acceptées</span>
+            {revue && (
+              <span className="ml-auto font-code text-[10px] text-[#7C93A8]" data-testid="revue-effectif">
+                n = {revue.n}{revue.n < (revue.minimum ?? 5) ? ` · mesure insuffisante (min ${revue.minimum ?? 5})` : ""}
+              </span>
+            )}
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {VERDICTS.map(([cle, libelle, couleur, champN, champTaux]) => (
+              <span key={cle} className="rounded border border-[rgba(148,163,184,0.16)] bg-[rgba(148,163,184,0.07)] px-2.5 py-1 font-code text-[11px] text-[#D8E2EA]" data-testid={`revue-${cle}`}>
+                <span style={{ color: couleur }}>●</span> {libelle} · {revue ? revue[champN] ?? 0 : "—"} · {revue ? pct(revue[champTaux]) : "—"}
+              </span>
+            ))}
+          </div>
+          <p className="mt-3 font-code text-[11px] text-[#7C93A8]" data-testid="revue-delai">
+            Délai médian de revue : {revue && revue.delai_revu_median_heures !== null && revue.delai_revu_median_heures !== undefined
+              ? `${revue.delai_revu_median_heures} h`
+              : "—"}
+            <span className="ml-3">en attente : {revue ? revue.en_attente : "—"}</span>
+          </p>
+          <div className="mt-4 flex h-10 items-end gap-[2px]" data-testid="revue-serie" aria-label="Revues par jour">
+            {(revue?.par_jour ?? []).map((j, _i, jours) => {
+              const max = Math.max(1, ...jours.map((d) => d.total || 0));
+              return (
+                <div key={j.jour} title={`${j.jour} — ${j.total} revue(s) : ${j.acceptes} acceptée(s), ${j.corriges} corrigée(s), ${j.refuses} refusée(s)`}
+                  className="min-w-[3px] flex-1 rounded-sm"
+                  style={{
+                    height: `${Math.max(j.total ? 12 : 0, (j.total / max) * 100)}%`,
+                    backgroundColor: j.refuses ? "#F87171" : j.corriges ? "#F2B84B" : "#34D399",
+                    opacity: j.total ? 1 : 0.18,
+                  }} />
+              );
+            })}
+            {revue && (revue.par_jour || []).length === 0 && (
+              <span className="text-[11px] text-[#7C93A8]">Aucune revue sur la période.</span>
+            )}
+          </div>
         </section>
 
         <section className="rise col-span-12 rounded-xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-5" style={{ animationDelay: "300ms" }} data-testid="admin-journal">

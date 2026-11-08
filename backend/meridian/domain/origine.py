@@ -14,11 +14,12 @@ ORIGINES = {
     "recherche": "recherche plein texte",
     "repli": "aucune réponse calculée",
     "refus": "question hors périmètre",
+    "sonde": "réponse de la sonde de preuve (déterministe, sans modèle)",
 }
 
 # Seule une réponse calculée par le modèle peut porter des indicateurs : tous les autres chemins les écrivent à la
 # main (confiance 80, couverture 70…), et un chiffre écrit d'avance n'est pas une mesure.
-ORIGINES_SANS_MESURE = frozenset({"scenario", "repli", "registre", "recherche", "refus"})
+ORIGINES_SANS_MESURE = frozenset({"scenario", "repli", "registre", "recherche", "refus", "sonde"})
 
 
 def marquer_origine(reponse, origine):

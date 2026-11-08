@@ -9,7 +9,7 @@ import asyncio
 from types import SimpleNamespace
 from typing import Any, Mapping
 
-from meridian.application import composition, epistemie as epistemie_application, evaluation_cognitive, evaluation_raisonnement, noyau_raisonnement, reponse_cognitive
+from meridian.application import composition, contrat_question, epistemie as epistemie_application, evaluation_cognitive, evaluation_raisonnement, noyau_raisonnement, reponse_cognitive
 from meridian.application import resolveur_contexte
 from meridian.application.execution.modele import AnnulationExecution, ApprobationRequise
 from meridian.domain import contexte as contexte_module
@@ -95,6 +95,32 @@ async def executer(tenant: str, acteur: str, payload: Mapping[str, Any] | Any, *
     verifier()
     p = _objet(payload)
 
+    # D9 — profil d'effort unifié (fusion /demander + /analyser) : ce service est
+    # le « mode analyse » de la machine, son effort nominal est approfondi. Un
+    # profil demandé est borné aux efforts du contrat B9 ; une sonde éventuelle
+    # produit le contrat qui pilote le budget du noyau (`planifier`, facteur
+    # d'effort) — sans sonde ni demande, le service reste sur son profil nominal.
+    sonde = getattr(p, "sonde", None)
+    sonde = dict(sonde) if isinstance(sonde, Mapping) else None
+    contrat = dict(getattr(p, "contrat", None) or {})
+    if sonde is not None and not contrat.get("effort"):
+        contrat = contrat_question.contrat_pour(p.question, sonde)
+    demande_effort = str(getattr(p, "effort", None) or "").strip().lower()
+    if demande_effort in contrat_question.EFFORTS:
+        effort = demande_effort
+    elif str(contrat.get("effort") or "").strip().lower() in contrat_question.EFFORTS:
+        effort = str(contrat["effort"]).strip().lower()
+    else:
+        effort = contrat_question.APPROFONDI
+    if sonde is not None:
+        # La sonde est la preuve du tour : sa formulation énonce l'effort
+        # effectif, pas seulement celui déduit du verdict.
+        contrat_effort = contrat_question.contrat_pour(
+            p.question, sonde, effort=effort)
+    else:
+        contrat_effort = {**contrat, "effort": effort}
+    facteur_effort = contrat_question.FACTEURS_EFFORT.get(effort, 1.0)
+
     async def resoudre_contexte():
         profil_demande = p.profil if runtime.mode_auth() == "demo" else None
         if not profil_demande and acteur_contexte:
@@ -172,7 +198,10 @@ async def executer(tenant: str, acteur: str, payload: Mapping[str, Any] | Any, *
             }
             valeur_locale = agregat["valeur"]
         else:
-            noms_local = list(plan.specialistes_socle)
+            # Effort leger : budget minimal — aucun spécialiste n'est lancé, le
+            # dossier le dit explicitement.
+            noms_local = (list(plan.specialistes_socle)
+                          if effort != contrat_question.LEGER else [])
             base = specialistes.ContexteSpecialiste(
                 tenant=tenant, question=p.question, situation_id=p.situation_id,
                 twin_ids=tuple(twin_ids), application_id=p.application_id,
@@ -182,7 +211,10 @@ async def executer(tenant: str, acteur: str, payload: Mapping[str, Any] | Any, *
             dossier_local = _fusionner_dossiers(dossiers, tenant, runtime) if dossiers else {
                 "tenant": tenant, "statut": "partiel", "propositions": [],
                 "specialistes": [],
-                "limites": ["aucun spécialiste mobilisé par la composition"],
+                "limites": [
+                    "aucun spécialiste mobilisé (effort leger)"
+                    if effort == contrat_question.LEGER and not noms_local
+                    else "aucun spécialiste mobilisé par la composition"],
             }
         return {"dossier": dossier_local, "noms": noms_local, "valeur": valeur_locale}
 
@@ -196,7 +228,10 @@ async def executer(tenant: str, acteur: str, payload: Mapping[str, Any] | Any, *
     verifier()
 
     async def composer_reponse():
-        max_tokens = max(200, min(int(getattr(p, "max_tokens", None) or 6000), 20000))
+        # Le budget de contexte suit l'effort : approfondi lit deux fois plus
+        # large que le nominal, leger la moitié — `max_tokens` explicite prime.
+        max_tokens = max(200, min(int(getattr(p, "max_tokens", None)
+                                        or round(6000 * facteur_effort)), 20000))
         proximite = runtime.proximite_graphe(tenant, twin_ids)
         entites = tuple(getattr(contexte_resolu, "entites", ()) or ())
         contexte_pack = contexte_module.construire(
@@ -261,6 +296,10 @@ async def executer(tenant: str, acteur: str, payload: Mapping[str, Any] | Any, *
                 "twin_ids": tuple(twin_ids), "situation_id": p.situation_id,
                 "application_id": p.application_id, "sans_questions": True,
                 **(dict(acteur_contexte or {})),
+                # Le contrat du run (effort effectif) est posé en dernier : c'est
+                # lui qui pilote le budget du noyau, pas un contrat hérité.
+                "contrat": contrat_effort,
+                **({"sonde": sonde} if sonde else {}),
             },
             pack_contexte=contexte_pack, dossier_specialistes=dossier_contexte if "dossier_contexte" in locals() else dossier,
             plan_composition=plan, tenant=tenant)
@@ -357,6 +396,9 @@ async def executer(tenant: str, acteur: str, payload: Mapping[str, Any] | Any, *
     socle = reponse_dict.get("socle") or {}
     resultat = {
         "tenant": tenant,
+        # D9 — l'effort réellement appliqué accompagne la réponse : on peut
+        # vérifier qu'un tour trivial n'a pas consommé d'analyse.
+        "effort": effort,
         "scope": ("enterprise" if global_scope and not p.domaine else "portfolio")
         if global_scope else "application",
         "domaine": p.domaine,

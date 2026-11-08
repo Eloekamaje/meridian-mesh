@@ -1,5 +1,6 @@
 import asyncio
 from contextlib import asynccontextmanager
+import logging
 import os
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
@@ -23,6 +24,7 @@ import veille as moteur_veille
 from meridian.adapters.inbound.http import flux as jumeau_flux
 from meridian.adapters.inbound.http.tenant_twins import jumeaux_du_tenant
 from meridian.adapters.outbound.mongo.travail import EcritureTravail
+from meridian.adapters.outbound.mongo import travail_proxy
 from meridian.application import cadrage_conversationnel as cadrage_conv
 from meridian.application import tour_dialogue
 from meridian.application import dialogue as dialogue_service
@@ -37,6 +39,9 @@ from meridian.domain.partage import Consommateur
 from meridian.adapters.outbound.llm import design_diagram
 from cases_fil import ajouter_routes_fil
 from meridian.adapters.inbound.http.pieces import ajouter_routes_pieces
+
+
+logger = logging.getLogger("meridian")
 
 
 def _tenant_requete() -> str:
@@ -292,6 +297,35 @@ async def _persister_dossier_raisonnement(tenant, dossier, travail_id=""):
             dossier, travail_id or "")
     except Exception:
         return
+
+
+async def _miroir_decision_canonique(case, dec):
+    """B3 : la décision prise dans Travail est recopiée en objet canonique `DECISION`.
+
+    Actif sous `JUMEAU_TRAVAIL_DUAL_WRITE` (ou `JUMEAU_TRAVAIL_WRITE=postgres`).
+    Best-effort : une erreur Postgres ne doit jamais faire échouer la décision
+    Travail — la boucle canonique reste un miroir tant que le pilote legacy tourne.
+    """
+    if not (travail_proxy.double_ecriture_active() or travail_proxy.ecriture_postgres()):
+        return
+    dsn = os.environ.get("JUMEAU_PG_DSN")
+    if not dsn:
+        return
+    try:
+        import psycopg
+        from meridian.adapters.outbound.postgres import decision_travail, rls
+        tenant = _tenant_requete()
+
+        def ecrire():
+            with psycopg.connect(dsn, connect_timeout=5, autocommit=True) as conn:
+                if rls.est_actif():
+                    with rls.contexte_tenant(conn, tenant):
+                        return decision_travail.enregistrer_decision_travail(conn, tenant, case, dec)
+                return decision_travail.enregistrer_decision_travail(conn, tenant, case, dec)
+
+        await asyncio.to_thread(ecrire)
+    except Exception:
+        logger.warning("Décision Travail non recopiée dans la boucle canonique", exc_info=True)
 
 
 def build_cases_router(deps):
@@ -979,7 +1013,7 @@ def build_cases_router(deps):
     @router.post("/cases/{cid}/decisions", status_code=201)
     async def decider_case(cid: str, payload: DecisionCase, acteur: str = Depends(acteur_courant), x_espace: Optional[str] = Header(None)):
         _, espace = resoudre_perimetre(acteur, x_espace)
-        await charger_case(cid, espace, acteur)
+        case = await charger_case(cid, espace, acteur)
         if not payload.texte.strip():
             raise HTTPException(400, "Décision vide")
         now = datetime.now(timezone.utc).isoformat()
@@ -998,6 +1032,7 @@ def build_cases_router(deps):
             push["conversation"] = moteur_veille.message_flore_decision(dec["texte"], maj["veille"]["passation"], now)
         await db.cases.update_one({"id": cid}, {"$push": push, "$set": maj})
         await journaler(acteur, espace["id"], "décision sur un case", cid, payload.texte.strip()[:120])
+        await _miroir_decision_canonique(case, dec)
         return dec
 
     @router.get("/cases/{cid}/passation/brouillon")

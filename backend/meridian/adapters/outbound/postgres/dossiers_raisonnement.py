@@ -13,6 +13,7 @@ from psycopg.types.json import Jsonb
 
 __all__ = [
     "enregistrer",
+    "enregistrer_beliefs",
     "enregistrer_dsn",
     "lire",
     "lire_dsn",
@@ -61,7 +62,32 @@ def enregistrer(conn, tenant: str, dossier: Any, travail_id: str = "") -> str:
         "WHERE dossier_raisonnement.tenant_id = EXCLUDED.tenant_id",
         valeurs,
     )
+    try:
+        # Savepoint : un échec de persistance des beliefs annule les beliefs
+        # seuls, jamais le dossier ni la calibration de la transaction parente.
+        with conn.transaction():
+            enregistrer_beliefs(conn, tenant, dossier)
+    except Exception:
+        pass  # un belief non persisté ne bloque jamais le tour
     return valeurs[0]
+
+
+def enregistrer_beliefs(conn, tenant: str, dossier: Any) -> list[str]:
+    """Persiste les conclusions tenues du dossier comme objets BELIEF canoniques (C2).
+
+    Chaque belief produit est lié au claim qui l'appuie ; l'écriture passe par
+    `enregistrer_boucle` avec historique. Rend les identifiants persistés.
+    """
+    from meridian.adapters.outbound.postgres import boucle as boucle_pg
+    from meridian.application import beliefs as beliefs_application
+
+    objets = beliefs_application.beliefs_persistables(dossier, tenant=tenant)
+    if not objets:
+        return []
+    resultats = boucle_pg.enregistrer_boucle(conn, tenant, objets, historique=True)
+    if not isinstance(resultats, list):
+        resultats = [resultats]
+    return [str(resultat.get("id") or "") for resultat in resultats]
 
 
 def enregistrer_dsn(dsn: str, tenant: str, dossier: Any, travail_id: str = "") -> str:

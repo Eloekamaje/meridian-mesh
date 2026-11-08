@@ -23,6 +23,7 @@ __all__ = [
     "NIVEAUX",
     "REVERSIBILITES",
     "SEVERITES",
+    "SOURCES_CADRE",
     "STATUTS_TOUR",
     "VERDICTS",
     "Cadre",
@@ -56,6 +57,9 @@ REVERSIBILITES = ("reversible", "couteuse", "irreversible")
 SEVERITES = ("info", "avertissement", "majeure", "critique")
 VERDICTS = ("pass", "conditional", "fail")
 CRITIQUE_NIVEAUX = ("N3", "N4")
+# Qui a produit le cadrage : la qualification par mots-clés (fallback) ou le
+# contrat de preuve calculé depuis la sonde (B9) — sert à mesurer la bascule.
+SOURCES_CADRE = ("qualifier", "contrat")
 
 _ORDRES = {
     "N0": 0, "N1": 1, "N2": 2, "N3": 3, "N4": 4,
@@ -309,10 +313,14 @@ class Cadre:
     risques: tuple[str, ...] = ()
     questions_bloquantes: tuple[str, ...] = ()
     questions_non_bloquantes: tuple[str, ...] = ()
+    source: str = "qualifier"
 
     def __post_init__(self):
         if not _texte(self.objectif):
             raise ValueError("cadre : objectif obligatoire")
+        source = _texte(self.source, 40).lower()
+        object.__setattr__(
+            self, "source", source if source in SOURCES_CADRE else "qualifier")
         object.__setattr__(self, "objectif", _texte(self.objectif))
         object.__setattr__(self, "perimetre", _texte(self.perimetre, 1000))
         object.__setattr__(self, "contraintes", _textes(self.contraintes))
@@ -346,6 +354,7 @@ class Cadre:
             "risques": list(self.risques),
             "questions_bloquantes": list(self.questions_bloquantes),
             "questions_non_bloquantes": list(self.questions_non_bloquantes),
+            "source": self.source,
         }
 
 
@@ -626,6 +635,9 @@ class DossierRaisonnement:
     decision: Decision | None = None
     validation: tuple[Validation, ...] = ()
     reponse: dict = field(default_factory=dict)
+    # Contrat de preuve B9 : ce qui trancherait la question, calculé depuis la
+    # sonde. Vide quand le cadrage vient du fallback `qualifier` par mots-clés.
+    contrat: dict = field(default_factory=dict)
     statut: str = "reponse"
     trace_id: str = ""
     gates: tuple[Gate, ...] = ()
@@ -674,6 +686,7 @@ class DossierRaisonnement:
         object.__setattr__(self, "beliefs", beliefs)
         object.__setattr__(self, "revisions", revisions)
         object.__setattr__(self, "reponse", _mapping(self.reponse))
+        object.__setattr__(self, "contrat", _mapping(self.contrat))
         object.__setattr__(self, "statut", statut)
         object.__setattr__(self, "gates", tuple(
             g if isinstance(g, Gate) else Gate(**_mapping(g)) for g in self.gates or ()))
@@ -712,6 +725,7 @@ class DossierRaisonnement:
             "decision": self.decision.as_dict() if self.decision else None,
             "validation": [v.as_dict() for v in self.validation],
             "reponse": dict(self.reponse),
+            "contrat": dict(self.contrat),
             "statut": self.statut,
             "trace_id": self.trace_id,
             "gates": [g.as_dict() for g in self.gates],

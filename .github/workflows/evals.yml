@@ -1,0 +1,23 @@
+name: evals
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  gold-deterministe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Dépendances
+        run: pip install -r backend/requirements.txt
+      - name: Jeu d'or — auto-contrôle (doit être 10/10, mode référence)
+        working-directory: backend
+        run: python -m meridian.application.evaluation_gold
+      - name: Jeu d'or + invariants — chemin réel et contrôles négatifs
+        working-directory: backend
+        run: python -m pytest meridian/tests/test_gold_regles.py meridian/tests/test_evaluation_gold.py -q

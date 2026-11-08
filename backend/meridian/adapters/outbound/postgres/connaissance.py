@@ -301,3 +301,27 @@ def autoportrait(jumeau, claims):
 def id_session(jumeau_id, acteur):
     """Un fil par membre et par jumeau (espace personnel) ; haché : sûr comme nom de dossier, sans collision."""
     return hashlib.sha256(f"{jumeau_id}\x00{acteur}".encode()).hexdigest()[:32]
+
+
+def resoudre_citations(sources):
+    """Résolveur de citations ``code`` pour la groundedness (application/groundedness.noter).
+
+    Le fichier doit exister au SHA ingéré et porter les lignes citées ; tout échec de
+    résolution autre qu'un absent compté renvoie ``indetermine`` plutôt que de trancher faux.
+    """
+    from meridian.application import groundedness
+    sources_liste = list(sources or [])
+
+    def resoudre(cite: dict) -> str:
+        if cite.get("type") != "code":
+            return groundedness.INDETERMINE
+        try:
+            source = resoudre_source(sources_liste, cite["depot"], cite["chemin"])
+            lire_code(source, cite["chemin"], cite["debut"], cite["fin"])
+        except (LookupError, ValueError):
+            return groundedness.NON_RESOLU
+        except Exception:  # noqa: BLE001 - un résolveur ne tranche jamais faux
+            return groundedness.INDETERMINE
+        return groundedness.RESOLU
+
+    return resoudre

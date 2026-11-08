@@ -9,6 +9,7 @@ import {
   Compass,
   Lightbulb,
   MagnifyingGlass,
+  PlusCircle,
   RocketLaunch,
   Scales,
   WarningCircle,
@@ -56,6 +57,73 @@ const MODES = [
 ];
 
 const MODES_LABEL = new Map(MODES);
+
+const TYPES_CREATION = STADES.filter((stade) =>
+  ["SITUATION", "INVESTIGATION", "DECISION", "INITIATIVE"].includes(stade.type)
+);
+
+const OBJET_INITIAL = { type: "SITUATION", titre: "", mode: "", donnees: "" };
+
+// Actions de transition proposées par type d'objet, avec les champs attendus par
+// POST /boucle/objets/{id}/transition (champ `donnees` de la requête).
+const TRANSITIONS = {
+  SITUATION: [
+    {
+      action: "ouvrir_investigation",
+      libelle: "Ouvrir une investigation",
+      description: "Crée une investigation reliée à cette situation.",
+      champs: [
+        { cle: "question", libelle: "Question à instruire (optionnel)" },
+        { cle: "titre", libelle: "Titre (optionnel)" },
+      ],
+    },
+  ],
+  INVESTIGATION: [
+    {
+      action: "proposer_decision",
+      libelle: "Proposer une décision",
+      description: "Propose une décision à trancher, reliée à cette investigation.",
+      champs: [
+        { cle: "options", libelle: "Options (séparées par une virgule)", requis: true, liste: true },
+        { cle: "titre", libelle: "Titre (optionnel)" },
+      ],
+    },
+  ],
+  DECISION: [
+    {
+      action: "trancher",
+      libelle: "Trancher la décision",
+      description: "Enregistre le choix retenu et l'acteur qui tranche.",
+      champs: [
+        { cle: "acteur", libelle: "Acteur qui tranche", requis: true },
+        { cle: "choix", libelle: "Choix retenu", requis: true },
+        { cle: "motif", libelle: "Motif (optionnel)", type: "textarea" },
+      ],
+    },
+    {
+      action: "lancer_initiative",
+      libelle: "Lancer une initiative",
+      description: "Crée une initiative à partir de la décision tranchée.",
+      champs: [
+        { cle: "titre", libelle: "Titre (optionnel)" },
+        { cle: "resume", libelle: "Résumé (optionnel)", type: "textarea" },
+      ],
+    },
+  ],
+  INITIATIVE: [
+    {
+      action: "mesurer_outcome",
+      libelle: "Mesurer un outcome",
+      description: "Enregistre la mesure observée pour cette initiative.",
+      champs: [
+        { cle: "metrique", libelle: "Métrique", requis: true, mesure: true },
+        { cle: "valeur", libelle: "Valeur mesurée", requis: true, numerique: true, mesure: true },
+        { cle: "unite", libelle: "Unité (optionnel)", mesure: true },
+        { cle: "interpretation", libelle: "Interprétation (optionnel)", type: "textarea" },
+      ],
+    },
+  ],
+};
 
 const OUTCOME_INITIAL = {
   initiative_id: "",
@@ -235,6 +303,34 @@ function totalSynthese(synthese) {
   return trouverNombre(synthese, ["total", "nb_objets", "nombre_objets", "total_objets", "compte_total"]);
 }
 
+// Transforme la saisie du mini-formulaire d'une transition en `donnees` de la requête.
+// Les champs marqués `mesure` sont regroupés dans un objet `mesure` (mesurer_outcome).
+function construireDonneesTransition(spec, valeurs) {
+  const donnees = {};
+  const mesure = {};
+  for (const champ of spec.champs) {
+    const brut = texte(valeurs[champ.cle]).trim();
+    if (!brut) {
+      if (champ.requis) return { erreur: `« ${champ.libelle} » est obligatoire.` };
+      continue;
+    }
+    let valeur = brut;
+    if (champ.numerique) {
+      const nombre = Number(brut.replace(",", "."));
+      if (!Number.isFinite(nombre)) return { erreur: `« ${champ.libelle} » doit être un nombre.` };
+      valeur = nombre;
+    }
+    if (champ.liste) {
+      valeur = brut.split(",").map((element) => element.trim()).filter(Boolean);
+      if (valeur.length === 0) return { erreur: `« ${champ.libelle} » est obligatoire.` };
+    }
+    if (champ.mesure) mesure[champ.cle] = valeur;
+    else donnees[champ.cle] = valeur;
+  }
+  if (Object.keys(mesure).length > 0) donnees.mesure = mesure;
+  return { donnees };
+}
+
 function CarteObjet({ objet, stade, actif, onOuvrir }) {
   const mode = texte(valeurDe(objet, "mode")).toUpperCase();
   const version = valeurDe(objet, "version");
@@ -311,7 +407,22 @@ function EtapeChaine({ etape, index, dernier }) {
   );
 }
 
-function PanneauDetail({ objet, etat, chaine, historique, onFermer, onReessayer, onNaviguer, onOuvrirId }) {
+function PanneauDetail({ objet, etat, chaine, historique, onFermer, onReessayer, onNaviguer, onOuvrirId, onActualiser }) {
+  const [actionOuverte, setActionOuverte] = useState("");
+  const [champsTransition, setChampsTransition] = useState({});
+  const [transitionEnCours, setTransitionEnCours] = useState(false);
+  const [transitionErreur, setTransitionErreur] = useState("");
+  const [transitionSucces, setTransitionSucces] = useState("");
+  const identifiantCourant = idObjet(objet);
+
+  useEffect(() => {
+    setActionOuverte("");
+    setChampsTransition({});
+    setTransitionEnCours(false);
+    setTransitionErreur("");
+    setTransitionSucces("");
+  }, [identifiantCourant]);
+
   if (!objet) return null;
 
   const stade = STADES_PAR_TYPE.get(typeObjet(objet));
@@ -324,6 +435,8 @@ function PanneauDetail({ objet, etat, chaine, historique, onFermer, onReessayer,
   const outcomes = listeIdentifiants(objet, "outcome_ids", "outcome_id");
   const mode = texte(valeurDe(objet, "mode")).toUpperCase();
   const resume = resumeObjet(objet);
+  const transitions = TRANSITIONS[typeObjet(objet)] || [];
+  const specActive = transitions.find((spec) => spec.action === actionOuverte) || null;
   const resumeChaine = etat.chargement
     ? "Chargement du contexte…"
     : etat.erreur
@@ -341,6 +454,50 @@ function PanneauDetail({ objet, etat, chaine, historique, onFermer, onReessayer,
     ["Période", texteAffichable(valeurDe(objet, "periode"))],
     ["Propriétaire", texteAffichable(valeurDe(objet, "proprietaire"))],
   ].filter(([, contenu]) => contenu);
+
+  const basculerTransition = (spec) => {
+    setTransitionErreur("");
+    setTransitionSucces("");
+    setChampsTransition({});
+    setActionOuverte(actionOuverte === spec.action ? "" : spec.action);
+  };
+
+  const changerChampTransition = (cle, valeur) => {
+    setChampsTransition((avant) => ({ ...avant, [cle]: valeur }));
+    if (transitionErreur) setTransitionErreur("");
+  };
+
+  const lancerTransition = async (evenement) => {
+    evenement.preventDefault();
+    if (!specActive || !identifiant) return;
+    setTransitionErreur("");
+    setTransitionSucces("");
+    const { donnees, erreur: erreurValidation } = construireDonneesTransition(specActive, champsTransition);
+    if (erreurValidation) {
+      setTransitionErreur(erreurValidation);
+      return;
+    }
+    setTransitionEnCours(true);
+    try {
+      const reponse = await api.post(
+        `/boucle/objets/${encodeURIComponent(identifiant)}/transition`,
+        { action: specActive.action, donnees },
+      );
+      const identifiantNouveau = texte(reponse.data?.id).trim();
+      setTransitionSucces(
+        identifiantNouveau
+          ? `${specActive.libelle} enregistrée — objet ${identifiantNouveau}. La liste est actualisée.`
+          : `${specActive.libelle} enregistrée. La liste est actualisée.`,
+      );
+      setActionOuverte("");
+      setChampsTransition({});
+      onActualiser?.(identifiant);
+    } catch (cause) {
+      setTransitionErreur(messageErreur(cause, "La transition a été refusée par la boucle."));
+    } finally {
+      setTransitionEnCours(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end" data-testid="boucle-detail">
@@ -408,6 +565,106 @@ function PanneauDetail({ objet, etat, chaine, historique, onFermer, onReessayer,
             </button>
           )}
         </div>
+
+        {transitions.length > 0 && identifiant && (
+          <section className="mt-5" aria-labelledby="boucle-transitions-titre" data-testid="boucle-transitions">
+            <h3 id="boucle-transitions-titre" className="font-code text-[10px] uppercase tracking-[0.22em] text-[#94A3B8]">
+              Faire transiter
+            </h3>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {transitions.map((spec) => (
+                <button
+                  key={spec.action}
+                  type="button"
+                  onClick={() => basculerTransition(spec)}
+                  aria-expanded={actionOuverte === spec.action}
+                  data-testid={`boucle-transition-${spec.action}`}
+                  className={`rounded-md border px-2.5 py-1.5 text-[11px] font-semibold transition-colors ${
+                    actionOuverte === spec.action
+                      ? "border-[#60A5FA]/60 bg-[#60A5FA]/10 text-[#BFDBFE]"
+                      : "border-[rgba(148,163,184,0.2)] text-[#D8E2EA] hover:border-[#60A5FA]/40 hover:text-[#F2F6F8]"
+                  }`}
+                >
+                  {spec.libelle}
+                </button>
+              ))}
+            </div>
+
+            {specActive && (
+              <form
+                onSubmit={lancerTransition}
+                noValidate
+                className="mt-3 rounded-lg border border-[rgba(148,163,184,0.16)] bg-[#0B1620] p-3"
+                data-testid={`boucle-transition-form-${specActive.action}`}
+              >
+                <p className="text-[11px] leading-relaxed text-[#7C93A8]">{specActive.description}</p>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                  {specActive.champs.map((champ) => (
+                    <div key={champ.cle} className={champ.type === "textarea" ? "sm:col-span-2" : ""}>
+                      <label
+                        htmlFor={`boucle-transition-${specActive.action}-${champ.cle}`}
+                        className="block font-code text-[9px] uppercase tracking-wider text-[#7C93A8]"
+                      >
+                        {champ.libelle}
+                      </label>
+                      {champ.type === "textarea" ? (
+                        <textarea
+                          id={`boucle-transition-${specActive.action}-${champ.cle}`}
+                          value={champsTransition[champ.cle] || ""}
+                          onChange={(evenement) => changerChampTransition(champ.cle, evenement.target.value)}
+                          rows={2}
+                          data-testid={`boucle-transition-champ-${champ.cle}`}
+                          className="mt-1 w-full rounded-md border border-[rgba(148,163,184,0.16)] bg-[#091420] px-2.5 py-1.5 text-xs text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#60A5FA]/60 focus:outline-none"
+                        />
+                      ) : (
+                        <input
+                          id={`boucle-transition-${specActive.action}-${champ.cle}`}
+                          type="text"
+                          inputMode={champ.numerique ? "decimal" : undefined}
+                          value={champsTransition[champ.cle] || ""}
+                          onChange={(evenement) => changerChampTransition(champ.cle, evenement.target.value)}
+                          required={Boolean(champ.requis)}
+                          autoComplete="off"
+                          data-testid={`boucle-transition-champ-${champ.cle}`}
+                          className="mt-1 h-8 w-full rounded-md border border-[rgba(148,163,184,0.16)] bg-[#091420] px-2.5 text-xs text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#60A5FA]/60 focus:outline-none"
+                        />
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <button
+                    type="submit"
+                    disabled={transitionEnCours}
+                    data-testid={`boucle-transition-valider-${specActive.action}`}
+                    className="flex h-7 items-center gap-1.5 rounded-md bg-[#60A5FA] px-3 text-[11px] font-semibold text-[#071019] transition-colors hover:bg-[#93C5FD] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {transitionEnCours ? "Transition…" : "Valider la transition"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => basculerTransition(specActive)}
+                    data-testid="boucle-transition-annuler"
+                    className="h-7 rounded-md border border-[rgba(148,163,184,0.2)] px-2.5 text-[11px] text-[#94A3B8] transition-colors hover:text-[#F2F6F8]"
+                  >
+                    Annuler
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {transitionErreur && (
+              <p role="alert" data-testid="boucle-transition-erreur" className="mt-2 flex items-start gap-1.5 text-xs text-[#FCA5A5]">
+                <WarningCircle size={13} className="mt-0.5 shrink-0" /> {transitionErreur}
+              </p>
+            )}
+            {transitionSucces && (
+              <p role="status" data-testid="boucle-transition-succes" className="mt-2 text-xs text-[#6EE7B7]">
+                {transitionSucces}
+              </p>
+            )}
+          </section>
+        )}
 
         {(preuves.length > 0 || claims.length > 0 || outcomes.length > 0) && (
           <Depliable
@@ -624,6 +881,10 @@ export default function Boucle() {
   const [twinEnCours, setTwinEnCours] = useState(false);
   const [twinErreur, setTwinErreur] = useState("");
   const [twinSucces, setTwinSucces] = useState("");
+  const [formulaireObjet, setFormulaireObjet] = useState(OBJET_INITIAL);
+  const [objetEnCours, setObjetEnCours] = useState(false);
+  const [objetErreur, setObjetErreur] = useState("");
+  const [objetSucces, setObjetSucces] = useState("");
 
   useEffect(() => {
     let annule = false;
@@ -793,6 +1054,64 @@ export default function Boucle() {
     chargerDetail(identifiant);
   };
 
+  const changerObjet = (cle, valeur) => {
+    setFormulaireObjet((avant) => ({ ...avant, [cle]: valeur }));
+    if (objetErreur) setObjetErreur("");
+  };
+
+  const creerObjet = async (evenement) => {
+    evenement.preventDefault();
+    setObjetErreur("");
+    setObjetSucces("");
+
+    const type = texte(formulaireObjet.type).trim().toUpperCase();
+    const titre = texte(formulaireObjet.titre).trim();
+    const mode = texte(formulaireObjet.mode).trim().toUpperCase();
+    const brut = texte(formulaireObjet.donnees).trim();
+
+    if (!TYPES_CREATION.some((stade) => stade.type === type)) {
+      setObjetErreur("Le type est obligatoire : situation, investigation, décision ou initiative.");
+      return;
+    }
+    if (!titre) {
+      setObjetErreur("Le titre est obligatoire.");
+      return;
+    }
+    let donnees = {};
+    if (brut) {
+      try {
+        donnees = JSON.parse(brut);
+      } catch {
+        setObjetErreur("Les données doivent être un JSON valide (laisser vide sinon).");
+        return;
+      }
+      if (!donnees || typeof donnees !== "object" || Array.isArray(donnees)) {
+        setObjetErreur("Les données doivent former un objet JSON (« {…} »).");
+        return;
+      }
+    }
+
+    const corps = { type, titre, donnees };
+    if (mode) corps.mode = mode;
+
+    setObjetEnCours(true);
+    try {
+      const reponse = await api.post("/boucle/objets", corps);
+      const identifiant = texte(reponse.data?.id ?? reponse.data?.objet?.id).trim();
+      setObjetSucces(
+        identifiant
+          ? `Objet ${identifiant} créé. La liste et la synthèse sont actualisées.`
+          : "Objet créé. La liste et la synthèse sont actualisées.",
+      );
+      setFormulaireObjet({ ...OBJET_INITIAL });
+      actualiser();
+    } catch (cause) {
+      setObjetErreur(messageErreur(cause, "L'objet n'a pas pu être créé."));
+    } finally {
+      setObjetEnCours(false);
+    }
+  };
+
   const changerOutcome = (cle, valeur) => {
     setFormulaireOutcome((avant) => ({ ...avant, [cle]: valeur }));
   };
@@ -955,6 +1274,115 @@ export default function Boucle() {
             </button>
           </div>
         </header>
+
+        <section
+          className="rise mt-5 rounded-xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-4"
+          aria-labelledby="boucle-creation-titre"
+          data-testid="boucle-objet-form"
+        >
+          <div className="flex items-start gap-2">
+            <PlusCircle size={14} className="mt-0.5 shrink-0 text-[#60A5FA]" />
+            <div className="min-w-0">
+              <h2 id="boucle-creation-titre" className="font-code text-[10px] uppercase tracking-[0.22em] text-[#94A3B8]">
+                Créer un objet de la boucle
+              </h2>
+              <p className="mt-1 text-xs leading-relaxed text-[#7C93A8]">
+                Une situation observée, une investigation, une décision proposée ou une initiative entre dans la
+                boucle ; le panneau de détail permet ensuite de la faire transiter.
+              </p>
+            </div>
+          </div>
+
+          <form onSubmit={creerObjet} noValidate className="mt-3">
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              <div>
+                <label htmlFor="boucle-creation-type" className="block font-code text-[9px] uppercase tracking-wider text-[#7C93A8]">
+                  Type
+                </label>
+                <select
+                  id="boucle-creation-type"
+                  value={formulaireObjet.type}
+                  onChange={(evenement) => changerObjet("type", evenement.target.value)}
+                  required
+                  data-testid="boucle-creation-type"
+                  className="mt-1 h-8 w-full rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0B1620] px-2 text-xs text-[#D8E2EA] focus:border-[#60A5FA]/60 focus:outline-none"
+                >
+                  {TYPES_CREATION.map((stade) => (
+                    <option key={stade.type} value={stade.type}>{stade.court}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="lg:col-span-2">
+                <label htmlFor="boucle-creation-titre-champ" className="block font-code text-[9px] uppercase tracking-wider text-[#7C93A8]">
+                  Titre
+                </label>
+                <input
+                  id="boucle-creation-titre-champ"
+                  value={formulaireObjet.titre}
+                  onChange={(evenement) => changerObjet("titre", evenement.target.value)}
+                  required
+                  autoComplete="off"
+                  placeholder="Ce qui est observé, investigué, décidé ou lancé…"
+                  data-testid="boucle-creation-titre"
+                  className="mt-1 h-8 w-full rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0B1620] px-2.5 text-xs text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#60A5FA]/60 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label htmlFor="boucle-creation-mode" className="block font-code text-[9px] uppercase tracking-wider text-[#7C93A8]">
+                  Mode (optionnel)
+                </label>
+                <select
+                  id="boucle-creation-mode"
+                  value={formulaireObjet.mode}
+                  onChange={(evenement) => changerObjet("mode", evenement.target.value)}
+                  data-testid="boucle-creation-mode"
+                  className="mt-1 h-8 w-full rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0B1620] px-2 text-xs text-[#D8E2EA] focus:border-[#60A5FA]/60 focus:outline-none"
+                >
+                  <option value="">Par défaut</option>
+                  {MODES.map(([valeur, libelle]) => (
+                    <option key={valeur} value={valeur}>{libelle}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="sm:col-span-2 lg:col-span-4">
+                <label htmlFor="boucle-creation-donnees" className="block font-code text-[9px] uppercase tracking-wider text-[#7C93A8]">
+                  Données JSON (optionnel)
+                </label>
+                <textarea
+                  id="boucle-creation-donnees"
+                  value={formulaireObjet.donnees}
+                  onChange={(evenement) => changerObjet("donnees", evenement.target.value)}
+                  rows={2}
+                  spellCheck={false}
+                  placeholder='{"resume": "…", "twin_ids": ["app-…"]}'
+                  data-testid="boucle-creation-donnees"
+                  className="mt-1 w-full rounded-md border border-[rgba(148,163,184,0.16)] bg-[#0B1620] px-2.5 py-2 font-code text-xs text-[#F2F6F8] placeholder:text-[#7C93A8] focus:border-[#60A5FA]/60 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="submit"
+                disabled={objetEnCours}
+                data-testid="boucle-creation-enregistrer"
+                className="flex h-8 items-center gap-1.5 rounded-md bg-[#60A5FA] px-3 text-xs font-semibold text-[#071019] transition-colors hover:bg-[#93C5FD] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {objetEnCours ? "Création…" : "Créer l'objet"}
+              </button>
+              {objetErreur && (
+                <p role="alert" data-testid="boucle-creation-erreur" className="text-xs text-[#FCA5A5]">
+                  {objetErreur}
+                </p>
+              )}
+              {objetSucces && (
+                <p role="status" data-testid="boucle-creation-succes" className="text-xs text-[#6EE7B7]">
+                  {objetSucces}
+                </p>
+              )}
+            </div>
+          </form>
+        </section>
 
         <section
           className="rise mt-5 rounded-xl border border-[rgba(148,163,184,0.16)] bg-[#0F1D28] p-4"
@@ -1521,6 +1949,7 @@ export default function Boucle() {
           onReessayer={() => chargerDetail(idObjet(selection))}
           onNaviguer={navigate}
           onOuvrirId={ouvrirParId}
+          onActualiser={(identifiant) => { actualiser(); chargerDetail(identifiant); }}
         />
       )}
     </div>

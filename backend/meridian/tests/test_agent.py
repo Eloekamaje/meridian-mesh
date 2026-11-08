@@ -71,7 +71,7 @@ def test_agent_a_les_outils_attendus_et_aucun_outil_de_validation(tmp_path, monk
     noms = set(a.tool_names)
     assert noms == {"mes_connaissances", "architecture", "chercher_texte", "chercher_symbole",
                     "tracer_appels", "suivre_appels", "lire_code", "proposer_connaissance", "fusionner_connaissances", "signaler_contradiction",
-                    "consulter_methode", "ancrer_connaissance", "recouper_connaissance",
+                    "consulter_methode", "etat_produit", "ancrer_connaissance", "recouper_connaissance",
                     "historique_du_code", "ce_qui_a_change",
                     "planification_capacite", "planification_prevision",
                     "planification_budget", "planification_alertes",
@@ -214,6 +214,181 @@ def test_le_prompt_rappelle_de_dessiner_quand_le_schema_est_possible():
     assert "illustrer-fonctionnalite" in prompt
     assert "dessiner_schema" in prompt
     assert "une seule entrée" in prompt
+    assert "trois constats au plus" in prompt
+    assert "repondre_pedagogiquement" in prompt
+
+
+def test_le_prompt_porte_la_demande_d_origine_et_le_role():
+    prompt = agent.prompt_systeme({**CONTEXTE, "demande": {
+        "question_origine": "Quel est le prochain incrément ?",
+        "role": "Product Owner",
+        "decision": "Choisir l'incrément",
+        "niveau": "produit",
+        "perimetre": "master",
+        "contraintes": ["Spring Boot + Vue"],
+        "criteres_succes": ["testable"],
+        "contrat": "verdict + schéma + tests",
+    }})
+    assert "Demande d'origine" in prompt
+    assert "Product Owner" in prompt
+    assert "Niveau attendu : produit" in prompt
+    assert "Quel est le prochain incrément ?" in prompt
+
+
+def test_en_mode_pedagogique_le_seul_outil_de_dessin_est_la_composition():
+    from meridian.domain import schemas
+    ctx = {**CONTEXTE, "dessin": schemas.Dessin({}, lambda c: ([], "", "")), "pedagogique": True}
+    noms = {t.tool_name for t in agent.outils(ctx, "dsn", "m", agent.Budget())}
+    assert "repondre_pedagogiquement" in noms
+    assert "dessiner_schema" not in noms
+    assert "seul outil de dessin" in agent.prompt_systeme(ctx)
+
+
+def test_repondre_pedagogiquement_compose_la_reponse_et_le_schema():
+    from meridian.domain import schemas
+    d = schemas.Dessin({812: {"statut": "PROPOSED", "verification": {"etat": "verifie"}}},
+                       lambda c: (_ for _ in ()).throw(LookupError(c)))
+    outil = agent.outil_reponse_pedagogique(d, agent.Budget())
+    texte = outil(
+        verdict="Le backend a le socle ; le front-end est une maquette.",
+        type="architecture", titre="Socle",
+        boites=[{"id": "home", "libelle": "Accueil", "statut": "partiel"},
+                {"id": "api", "libelle": "API", "statut": "ok"}],
+        fleches=[{"de": "home", "vers": "api", "fondement": "c:812"}],
+        groupes=[{"libelle": "Front-end", "ids": ["home"]}, {"libelle": "Backend", "ids": ["api"]}],
+        constats=[{"fait": "L'accueil est partiel.", "preuve": "c:812"}],
+        consequence="On ne peut pas ajouter des tâches sur une maquette.",
+        decision="Rendre le socle réel d'abord.",
+        conditions=["Brancher /me", "Câbler les créations"],
+        tests=["Accueil réel", "Création réelle", "Tableau réel"],
+    )
+    assert "**Verdict" in texte and "```mermaid" in texte
+    assert "**Constats**" in texte and "**Décision**" in texte and "**Tests**" in texte
+    assert texte.count("1.") == 1
+    assert d.reponse_pedagogique == texte
+    assert d.structure["rendu"] == "mermaid"
+
+
+def test_repondre_pedagogiquement_accepte_une_architecture_sans_fleche():
+    """Une boîte annotée reste visible sans flèche : on montre une absence sans inventer de lien."""
+    from meridian.domain import schemas
+    d = schemas.Dessin({}, lambda c: ([], "", ""))
+    outil = agent.outil_reponse_pedagogique(d, agent.Budget())
+    texte = outil(
+        verdict="Le socle est partiel.", type="architecture", titre="État",
+        boites=[{"id": "home", "libelle": "Accueil", "statut": "partiel"},
+                {"id": "task", "libelle": "Tâche", "statut": "absent"}],
+        fleches=[],
+        groupes=[{"libelle": "Front-end", "ids": ["home"]},
+                 {"libelle": "Backend", "ids": ["task"]}],
+        constats=[{"fait": "L'accueil est partiel."}],
+        consequence="On ne peut pas conclure.", decision="Livrer le socle.",
+        conditions=["Condition A", "Condition B"], tests=["Test 1", "Test 2", "Test 3"],
+    )
+    assert "**Verdict" in texte and "```mermaid" in texte
+    assert "Accueil ⚠️" in texte and "Tâche ⛔" in texte
+    assert d.reponse_pedagogique == texte
+
+
+def test_repondre_pedagogiquement_survit_a_un_budget_d_exploration_epuise():
+    """La composition est la réponse finale : l'exploration ne doit pas la condamner (budget séparé)."""
+    from meridian.domain import schemas
+    d = schemas.Dessin({812: {"statut": "PROPOSED", "verification": {"etat": "verifie"}}},
+                       lambda c: (_ for _ in ()).throw(LookupError(c)))
+    budget = agent.Budget(outils=0)
+    outil = agent.outil_reponse_pedagogique(d, budget)
+    texte = outil(
+        verdict="Le backend a le socle ; le front-end est une maquette.",
+        type="architecture", titre="Socle",
+        boites=[{"id": "home", "libelle": "Accueil", "statut": "partiel"},
+                {"id": "api", "libelle": "API", "statut": "ok"}],
+        fleches=[{"de": "home", "vers": "api", "fondement": "c:812"}],
+        groupes=[{"libelle": "Front-end", "ids": ["home"]}, {"libelle": "Backend", "ids": ["api"]}],
+        constats=[{"fait": "L'accueil est partiel.", "preuve": "c:812"}],
+        consequence="On ne peut pas ajouter des tâches sur une maquette.",
+        decision="Rendre le socle réel d'abord.",
+        conditions=["Brancher /me", "Câbler les créations"],
+        tests=["Accueil réel", "Création réelle", "Tableau réel"],
+    )
+    assert "**Verdict" in texte and "```mermaid" in texte
+    assert d.reponse_pedagogique == texte
+
+
+def test_repondre_pedagogiquement_capacites_projette_le_schema():
+    from meridian.domain import schemas
+    d = schemas.Dessin({812: {"statut": "PROPOSED", "verification": {"etat": "verifie"}}},
+                       lambda c: (_ for _ in ()).throw(LookupError(c)))
+    outil = agent.outil_reponse_pedagogique(d, agent.Budget())
+    capacites = [
+        {"id": "inscription", "libelle": "Inscription", "statut": "ok", "expose": True,
+         "consomme": True, "cablage": True, "donnee": True,
+         "exposition_fondement": "c:812", "donnee_fondement": "c:812"},
+        {"id": "tache", "libelle": "Tâche", "statut": "absent", "expose": False},
+    ]
+    texte = outil(
+        verdict="Verdict.", type="", titre="", boites=[], fleches=[],
+        constats=[{"fait": "f"}], consequence="c", decision="d",
+        conditions=["a", "b"], tests=["1", "2", "3"],
+        capacites=capacites,
+    )
+    assert "Inscription ✅" in texte and "Tâche ⛔" in texte
+    assert d.structure["type"] == "architecture"
+    assert [b["id"] for b in d.structure["boites"]] == ["cap_inscription", "cap_tache", "api", "donnees"]
+    assert [f["de"] for f in d.structure["fleches"]] == ["cap_inscription", "api"]
+
+
+def test_repondre_pedagogiquement_refuse_une_structure_incomplete():
+    from meridian.domain import schemas
+    d = schemas.Dessin({}, lambda c: ([], "", ""))
+    outil = agent.outil_reponse_pedagogique(d, agent.Budget())
+    resultat = outil(
+        verdict="v", type="architecture", titre="t", boites=[], fleches=[],
+        constats=[{"fait": "f"}], consequence="c", decision="d",
+        conditions=["a", "b"], tests=["1", "2"],
+    )
+    assert "trois tests" in resultat
+
+
+def test_repondre_pedagogiquement_exige_des_groupes_pour_une_architecture():
+    from meridian.domain import schemas
+    d = schemas.Dessin({}, lambda c: ([], "", ""))
+    outil = agent.outil_reponse_pedagogique(d, agent.Budget())
+    resultat = outil(
+        verdict="v", type="architecture", titre="t",
+        boites=[{"id": "home", "libelle": "Accueil", "statut": "ok"}], fleches=[],
+        constats=[{"fait": "f"}], consequence="c", decision="d",
+        conditions=["a", "b"], tests=["1", "2", "3"],
+    )
+    assert "groupée" in resultat
+
+
+def test_repondre_pedagogiquement_limite_une_architecture_a_huit_boites():
+    from meridian.domain import schemas
+    d = schemas.Dessin({}, lambda c: ([], "", ""))
+    outil = agent.outil_reponse_pedagogique(d, agent.Budget())
+    boites = [{"id": f"b{i}", "libelle": f"B{i}", "statut": "ok"} for i in range(9)]
+    resultat = outil(
+        verdict="v", type="architecture", titre="t", boites=boites, fleches=[],
+        groupes=[{"libelle": "Front-end", "ids": [b["id"] for b in boites[:4]]},
+                 {"libelle": "Backend", "ids": [b["id"] for b in boites[4:]]}],
+        constats=[{"fait": "f"}], consequence="c", decision="d",
+        conditions=["a", "b"], tests=["1", "2", "3"],
+    )
+    assert "8 boîtes" in resultat
+
+
+def test_repondre_pedagogiquement_exige_deux_groupes_en_architecture():
+    from meridian.domain import schemas
+    d = schemas.Dessin({}, lambda c: ([], "", ""))
+    outil = agent.outil_reponse_pedagogique(d, agent.Budget())
+    resultat = outil(
+        verdict="v", type="architecture", titre="t",
+        boites=[{"id": "home", "libelle": "Accueil", "statut": "ok"}], fleches=[],
+        groupes=[{"libelle": "Front-end", "ids": ["home"]}],
+        constats=[{"fait": "f"}], consequence="c", decision="d",
+        conditions=["a", "b"], tests=["1", "2", "3"],
+    )
+    assert "au moins deux groupes" in resultat
 
 
 def test_un_index_absent_est_dit_comme_tel_et_non_comme_une_panne(monkeypatch):

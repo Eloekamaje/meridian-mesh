@@ -10,6 +10,7 @@ import os
 import re
 
 import requests
+from urllib.parse import urlparse
 
 from meridian.domain import capacites
 
@@ -80,11 +81,25 @@ def search(requete: str, *, nombre: int = 5, contenu: bool = False) -> dict:
     }
 
 
+def _domaines_autorises() -> frozenset:
+    """JUMEAU_DOMAINES_WEB : allowlist CSV d'égress web (vide = pas de restriction,
+    comportement historique). Documentée dans .env.floci.example / .env.prod.example."""
+    brut = os.environ.get("JUMEAU_DOMAINES_WEB") or ""
+    return frozenset(d.strip().lower() for d in brut.split(",") if d.strip())
+
+
 def fetch(url: str) -> dict:
-    """Lit une page publique via DeepSeek Fetch ; l'URL est validée avant l'appel."""
+    """Lit une page publique via DeepSeek Fetch ; l'URL est validée avant l'appel,
+    puis filtrée sur l'allowlist de domaines quand JUMEAU_DOMAINES_WEB est configuré."""
     cible = str(url or "").strip()
     if not _RE_URL.fullmatch(cible):
         raise ValueError("URL HTTP(S) attendue")
+    domaines = _domaines_autorises()
+    if domaines:
+        hote = (urlparse(cible).hostname or "").lower()
+        if hote not in domaines and not any(
+                hote.endswith("." + domaine) for domaine in domaines):
+            raise ValueError(f"domaine hors allowlist : {hote!r}")
     resultat = _post("/v1/tools/fetch", {"url": cible}, timeout=30)
     return {
         "url": cible,

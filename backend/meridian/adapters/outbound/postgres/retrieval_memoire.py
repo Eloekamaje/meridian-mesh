@@ -19,6 +19,23 @@ approximée par le lexical. ``proximite`` est optionnelle et se lit soit dans un
 ``1/(1+d)``), soit dans les données du candidat ; sans information de graphe, elle retombe sur
 l'ancrage Twin/Situation. La déduplication porte sur l'identité de Claim, de preuve et de
 contenu normalisé, pas seulement sur le texte exact.
+
+Pondération (plan Cognition IA, C1)
+-----------------------------------
+Le score est ensuite multiplié par deux facteurs mesurés, jamais par un jugement
+interprétatif :
+
+- ``learning`` : ``0.5 + taux_succes``, borné ``[0.5, 1.5]``. Le taux se lit dans
+  ``donnees.reutilisation.taux_succes`` (recomputé à la lecture) puis dans les champs
+  mesurés ``taux_succes``, ``taux_reussite`` et ``taux``. ``None`` — jamais réutilisé —
+  vaut ``0.5``, donc un facteur neutre ``1.0`` : l'absence de mesure ne pénalise pas.
+- ``statut`` : tout candidat portant un statut du vocabulaire de connaissance
+  (``donnees.statut``) est modulé — ``ACCEPTED``/``CONFIRMED`` ``1.0``, ``PROPOSED``
+  ``0.8``, ``HISTORICAL`` ``0.7``, ``SUPERSEDED`` ``0.6``, ``CONTESTED`` ``0.5``,
+  ``INVALIDATED`` ``0.4``. Un statut inconnu ou absent reste neutre. ``CONTESTED`` et
+  ``INVALIDATED`` restent candidats, déclassés ; le paramètre ``statuts`` de
+  :func:`recuperer` borne la sélection aux statuts demandés et lève le déclassement de
+  ceux explicitement demandés.
 """
 from __future__ import annotations
 
@@ -59,6 +76,21 @@ _AUTORITE = {"claim": 1.0, "learning": 0.9, "intention": 0.7, "annotation": 0.6,
 _CONFIANCE_DEFAUT = {"durable": 0.5, "annotation": 0.5, "learning": 0.8,
                      "claim": 0.5, "intention": 0.7}
 _ORDRE_SOURCE = {"claim": 0, "learning": 1, "intention": 2, "annotation": 3, "durable": 4}
+
+# Pondération C1 : le taux de succès mesuré d'un learning module son score en
+# ``0.5 + taux``, borné [0.5, 1.5] ; jamais réutilisé, le facteur reste neutre (1.0).
+_TAUX_SUCCES_NEUTRE = 0.5
+_FACTEUR_SUCCES_MIN = 0.5
+_FACTEUR_SUCCES_MAX = 1.5
+# Rang par statut de connaissance : ACCEPTED/CONFIRMED dominent PROPOSED ;
+# CONTESTED et INVALIDATED sont déclassés sauf demande explicite via ``statuts``.
+_FACTEUR_STATUT = {
+    "ACCEPTED": 1.0, "CONFIRMED": 1.0, "SUPPORTED": 1.0, "STRENGTHENED": 1.0,
+    "MATURE": 1.0, "DECLARED": 1.0, "OBSERVED": 1.0, "INFERRED": 1.0,
+    "PROPOSED": 0.8, "HISTORICAL": 0.7, "SUPERSEDED": 0.6,
+    "CONTESTED": 0.5, "INVALIDATED": 0.4,
+}
+_STATUTS_DECLASSES = frozenset({"CONTESTED", "INVALIDATED"})
 
 _MARQUEURS_SECRETS = ("password", "passwd", "secret", "token", "credential", "authorization")
 _CLES_SECRETES = frozenset({
@@ -347,6 +379,7 @@ def _portee(
 
 def _candidats_durables(
     conn: Any, tenant: str, tokens: set[str], scope: str | None, scope_id: str | None,
+    acteur: str | None = None,
 ) -> list[dict]:
     lignes = memoire_durable.lister(
         conn, tenant, scope=scope, scope_id=scope_id, limite=_MAX_DURABLE)
@@ -354,6 +387,11 @@ def _candidats_durables(
     resultat: list[dict] = []
     for ligne in lignes or []:
         if not isinstance(ligne, Mapping):
+            continue
+        # ACL : une entrée scope="user" n'est lisible que par son scope_id (= l'acteur
+        # consommateur). Sans acteur, toute mémoire utilisateur est masquée — fail-closed.
+        if (_texte(ligne.get("scope")) or "session") == "user" and (
+                not acteur or _texte(ligne.get("scope_id")) != acteur):
             continue
         expiration = _instant(ligne.get("expire_le"))
         if expiration and expiration <= maintenant:
@@ -704,10 +742,55 @@ def _proximite_brut(brut: Mapping, proximite: Mapping | None) -> float | None:
     return None
 
 
+def _statut_connaissance(brut: Mapping) -> str:
+    """Statut du vocabulaire de connaissance porté par le candidat, sinon ``""``.
+
+    Le statut vit dans ``donnees.statut`` (claims comme objets d'entreprise) ; un
+    statut hors vocabulaire — p. ex. ``a_faire`` d'une intention — ne module rien.
+    """
+    donnees = brut.get("donnees")
+    if not isinstance(donnees, Mapping):
+        return ""
+    statut = _texte(donnees.get("statut"), 60).upper()
+    return statut if statut in _FACTEUR_STATUT else ""
+
+
+def _facteur_statut(statut: str, demandes: frozenset[str] | None) -> float:
+    """Facteur de rang du statut ; un statut déclassé demandé explicitement vaut 1.0."""
+    if not statut:
+        return 1.0
+    if (statut in _STATUTS_DECLASSES and demandes is not None
+            and statut in demandes):
+        return 1.0
+    return _FACTEUR_STATUT.get(statut, 1.0)
+
+
+def _taux_succes_learning(brut: Mapping) -> float | None:
+    """Taux de réussite mesuré d'un learning candidat ; ``None`` jamais réutilisé.
+
+    Le taux se lit d'abord dans ``donnees.reutilisation.taux_succes`` (recomputé à la
+    lecture depuis ``reutilisations``), puis dans les champs mesurés ``taux_succes``,
+    ``taux_reussite`` et ``taux`` (p. ex. les learnings de signature, C5). Une valeur
+    hors ``[0, 1]`` n'est pas une mesure : elle est ignorée.
+    """
+    donnees = brut.get("donnees")
+    donnees = donnees if isinstance(donnees, Mapping) else {}
+    reutilisation = donnees.get("reutilisation")
+    reutilisation = reutilisation if isinstance(reutilisation, Mapping) else {}
+    for valeur in (reutilisation.get("taux_succes"), donnees.get("taux_succes"),
+                   donnees.get("taux_reussite"), donnees.get("taux")):
+        if valeur is None:
+            continue
+        taux = _nombre(valeur, -1.0)
+        if 0.0 <= taux <= 1.0:
+            return taux
+    return None
+
+
 def _classer(
     bruts: list[dict], question: str, *, scope: str | None, scope_id: str | None,
     twin_ids: set[str], situation_id: str | None, limite: int,
-    proximite: Mapping | None = None,
+    proximite: Mapping | None = None, statuts: frozenset[str] | None = None,
 ) -> list[CandidatMemoire]:
     if not bruts:
         return []
@@ -717,6 +800,9 @@ def _classer(
     maximum = max(recences, default=0.0)
     classes: list[CandidatMemoire] = []
     for brut in bruts:
+        statut = _statut_connaissance(brut)
+        if statuts is not None and statut and statut not in statuts:
+            continue
         texte = _normaliser(" ".join((
             _texte(brut.get("contenu")), _texte(brut.get("provenance")),
             _texte(brut.get("classe")), _texte(brut.get("scope")),
@@ -740,10 +826,18 @@ def _classer(
         prox = _proximite_brut(brut, proximite)
         if prox is None:
             prox = 1.0 if contexte else 0.0
+        # Pondération C1 : statut de connaissance, puis taux de succès mesuré du
+        # learning — des facteurs appliqués au score, pas des éliminations.
+        taux_succes = (
+            _taux_succes_learning(brut) if brut["source"] == "learning" else None)
+        facteur = _facteur_statut(statut, statuts)
+        if taux_succes is not None:
+            facteur *= max(_FACTEUR_SUCCES_MIN, min(
+                _FACTEUR_SUCCES_MAX, _TAUX_SUCCES_NEUTRE + taux_succes))
         score = round(
-            3.0 * (1.0 if phrase else 0.0) + 2.5 * couverture + 2.0 * prox + 1.2 * autorite
-            + 1.0 * portee + 0.8 * portee_id + 0.7 * contexte
-            + 1.0 * confiance + 0.5 * recence,
+            (3.0 * (1.0 if phrase else 0.0) + 2.5 * couverture + 2.0 * prox
+             + 1.2 * autorite + 1.0 * portee + 0.8 * portee_id + 0.7 * contexte
+             + 1.0 * confiance + 0.5 * recence) * facteur,
             6,
         )
         raisons: list[str] = []
@@ -763,6 +857,10 @@ def _classer(
         raisons.append(f"confiance {confiance:.2f}")
         if recence > 0:
             raisons.append("récence")
+        if taux_succes is not None:
+            raisons.append(f"taux succès {taux_succes:.2f}")
+        if statut:
+            raisons.append(f"statut {statut}")
         classes.append(CandidatMemoire(
             id=_texte(brut.get("id")),
             source=brut["source"],
@@ -787,6 +885,7 @@ def recuperer(
     conn: Any, tenant_id: Any, *, question: Any = "", twin_ids: Any = (),
     situation_id: Any = None, scope: Any = None, scope_id: Any = None, limite: Any = 12,
     proximite: Any = None, consommateur: Any = None, twin_proprietaire: str | None = None,
+    statuts: Any = None,
 ) -> list[CandidatMemoire]:
     """Récupère et classe les souvenirs pertinents du tenant, sans modèle ni réseau.
 
@@ -804,6 +903,13 @@ def recuperer(
     sauts (``> 1``). Faute de provider sémantique, la pertinence reste lexicale. Les doublons
     d'id, de Claim, de preuve et de contenu normalisé sont fusionnés, les secrets sont retirés
     et le résultat est borné par ``limite``.
+
+    Le score est pondéré (C1) : un learning est multiplié par ``0.5 + taux_succes``
+    mesuré (neutre sans mesure) et un candidat portant un statut de connaissance par
+    son facteur de statut — ``ACCEPTED``/``CONFIRMED`` ``1.0``, ``PROPOSED`` ``0.8``,
+    ``CONTESTED``/``INVALIDATED`` déclassés. ``statuts`` borne les candidats porteurs
+    d'un statut aux valeurs demandées ; demander explicitement ``CONTESTED`` ou
+    ``INVALIDATED`` lève leur déclassement.
     """
     tenant = _tenant(tenant_id)
     texte_question = _texte(question, 4000)
@@ -816,10 +922,17 @@ def recuperer(
     borne = _limite(limite)
     if proximite is not None and not isinstance(proximite, Mapping):
         raise RetrievalMemoireInvalide("proximite : mapping identifiant -> score attendu")
+    statuts_demandes: frozenset[str] | None = None
+    if statuts is not None:
+        statuts_demandes = frozenset(
+            valeur for valeur in
+            (_texte(element, 60).upper() for element in _liste(statuts)) if valeur)
     tokens = _tokens_utiles(texte_question)
 
     bruts: list[dict] = []
-    bruts.extend(_candidats_durables(conn, tenant, tokens, scope_valide, scope_id_valide))
+    bruts.extend(_candidats_durables(
+        conn, tenant, tokens, scope_valide, scope_id_valide,
+        acteur=_texte(consommateur, 200) or None))
     bruts.extend(_candidats_annotations(conn, tenant, tokens, twins, situation))
     bruts.extend(_candidats_learnings(conn, tenant, tokens, twins, situation))
     bruts.extend(_candidats_intentions(conn, tenant, tokens, twins, situation))
@@ -827,6 +940,7 @@ def recuperer(
     return _classer(
         _dedupliquer(bruts), texte_question, scope=scope_valide, scope_id=scope_id_valide,
         twin_ids=twins, situation_id=situation, limite=borne, proximite=proximite,
+        statuts=statuts_demandes,
     )
 
 
