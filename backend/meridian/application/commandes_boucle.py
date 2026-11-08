@@ -32,6 +32,7 @@ from meridian.domain.objets_exploitation import (
     STATUTS_RISQUE,
     ObjetsExploitationInvalide,
     TransitionObjetRefusee,
+    _PREFIXES,
 )
 
 __all__ = [
@@ -101,6 +102,7 @@ class DoublonExploitation(TransitionRefusee):
 
 
 STATUT_EXPRESSION = "PROPOSED"
+STATUTS_EXPRESSION_QUALIFIABLES = ("PROPOSED", "CONFIRMED")
 
 
 @dataclass(frozen=True)
@@ -425,17 +427,22 @@ def _creation_depuis_expression(
     depot: BoucleStore, conn: Any, tenant_id: str, expression_id: Any,
     *,
     fabrique: Any,
-    prefixe: str,
+    type_objet: str,
     libelle: str,
     statut_initial: str,
     champs: dict[str, Any],
 ) -> ResultatTransition:
     _refuser_statut_client(champs, libelle)
     _exiger_titre(champs, libelle)
-    identifiant = _texte(champs.pop("id", None))
     with depot.transaction(conn):
         expression = _source_expression(depot, conn, tenant_id, expression_id)
-        identifiant = identifiant or f"{prefixe}-{uuid.uuid4().hex[:12]}"
+        statut_expression = _texte(_valeur_source(expression, "statut")).upper()
+        if statut_expression not in STATUTS_EXPRESSION_QUALIFIABLES:
+            raise TransitionRefusee(
+                f"expression {_texte(expression_id)!r} non qualifiable : statut "
+                f"{statut_expression or 'inconnu'} (attendus : "
+                f"{', '.join(STATUTS_EXPRESSION_QUALIFIABLES)})")
+        identifiant = f"{_PREFIXES[type_objet]}-{uuid.uuid4().hex[:12]}"
         if depot.lire_boucle(conn, tenant_id, identifiant, as_dict=True) is not None:
             raise DoublonExploitation(
                 f"{libelle} déjà existant : l'identifiant {identifiant!r} est déjà utilisé")
@@ -451,14 +458,15 @@ def creer_opportunite(
 ) -> ResultatTransition:
     """Crée une Opportunity depuis une Expression verrouillée, statut initial ``DETECTED``.
 
-    L'Expression est la seule source acceptée ; elle est verrouillée pour sérialiser les
-    créations concurrentes. Le statut client est refusé, et la persistance d'exploitation
-    écrit l'objet et ``Expression.opportunity_ids`` dans la même transaction.
+    L'Expression est la seule source acceptée et doit être ``PROPOSED`` ou ``CONFIRMED``
+    (sinon 409) ; elle est verrouillée pour sérialiser les créations concurrentes. Le statut
+    client est refusé, et la persistance d'exploitation écrit l'objet et
+    ``Expression.opportunity_ids`` dans la même transaction.
     """
     return _creation_depuis_expression(
         depot, conn, tenant_id, expression_id,
         fabrique=depot.nouvelle_opportunite,
-        prefixe="opportunity",
+        type_objet="OPPORTUNITY",
         libelle="opportunité",
         statut_initial=STATUT_OPPORTUNITE_INITIAL,
         champs=dict(champs),
@@ -468,11 +476,14 @@ def creer_opportunite(
 def creer_risque(
     depot: BoucleStore, conn: Any, tenant_id: str, expression_id: str, **champs: Any,
 ) -> ResultatTransition:
-    """Crée un Risk depuis une Expression verrouillée, statut initial ``DETECTED``."""
+    """Crée un Risk depuis une Expression verrouillée, statut initial ``DETECTED``.
+
+    Même règle : l'Expression doit être ``PROPOSED`` ou ``CONFIRMED`` (sinon 409).
+    """
     return _creation_depuis_expression(
         depot, conn, tenant_id, expression_id,
         fabrique=depot.nouveau_risque,
-        prefixe="risk",
+        type_objet="RISK",
         libelle="risque",
         statut_initial=STATUT_RISQUE_INITIAL,
         champs=dict(champs),
@@ -511,6 +522,33 @@ def lister_risques(
         depot, conn, tenant_id, expression_id, type_objet="RISK", limite=limite)
 
 
+def _source_statut(
+    depot: BoucleStore, conn: Any, tenant: str, identifiant: Any,
+    type_attendu: str, role: str,
+) -> Any:
+    """Charge l'objet verrouillé d'une route de statut ; un autre type est un 422.
+
+    Un identifiant inconnu ou hors tenant reste un 404. Le type incorrect n'est pas une
+    transition refusée : c'est une erreur de contrat sur la ressource demandée.
+    """
+    identifiant = _texte(identifiant)
+    if not identifiant:
+        raise SourceIntrouvable(role, identifiant)
+    source = depot.lire_boucle(
+        conn, tenant, identifiant, as_dict=True, for_update=True)
+    if source is None:
+        raise SourceIntrouvable(role, identifiant)
+    type_trouve = _texte(_valeur_source(source, "type")).upper()
+    if type_trouve != type_attendu:
+        raise ObjetsExploitationInvalide(
+            f"{role} {identifiant!r} doit être de type {type_attendu} "
+            f"(reçu {type_trouve or 'inconnu'})")
+    tenant_source = _texte(_valeur_source(source, "tenant_id"))
+    if tenant_source != tenant:
+        raise SourceIntrouvable(role, identifiant)
+    return source
+
+
 def _changer_statut_objet(
     depot: BoucleStore, conn: Any, tenant_id: str, identifiant: Any,
     statut: Any, *,
@@ -526,7 +564,7 @@ def _changer_statut_objet(
         raise ObjetsExploitationInvalide(
             f"statut inconnu : {statut!r} (attendus : {', '.join(statuts)})")
     with depot.transaction(conn):
-        source = _source(
+        source = _source_statut(
             depot, conn, tenant_id, identifiant, type_attendu, role)
         try:
             objet = muter(source, cible, motif=motif, preuves=preuves)

@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import copy
 import os
+import threading
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager, nullcontext
 from dataclasses import asdict, is_dataclass
 
@@ -24,6 +26,7 @@ from meridian.adapters.inbound.http import boucle as boucle_routes
 from meridian.adapters.outbound.postgres import boucle, depot, objets_exploitation, rls
 from meridian.application import commandes_boucle
 from meridian.domain import construction_objets_exploitation
+from meridian.domain import modele_entreprise as modele
 from meridian.domain import objets_exploitation as domaine
 from meridian.domain.modele_entreprise import ModeleInvalide
 from meridian.domain.objets_exploitation import ObjetsExploitationInvalide, TransitionObjetRefusee
@@ -35,6 +38,11 @@ BASE = "/api/boucle"
 CHAMPS = {
     "id", "tenant_id", "famille", "type", "mode", "titre", "version",
     "observe_le", "valide_depuis", "valide_jusqua", "cree_le", "maj_le",
+}
+DATES = {
+    "cree_le": "2026-11-07T00:00:00+00:00",
+    "observe_le": "2026-11-07T00:00:00+00:00",
+    "valide_depuis": "2026-11-07T00:00:00+00:00",
 }
 DSN = os.environ.get("JUMEAU_PG_DSN")
 besoin_pg = pytest.mark.skipif(not DSN, reason="JUMEAU_PG_DSN non défini")
@@ -355,6 +363,8 @@ class _Connexion:
 def test_les_transitions_reutilisent_les_statuts_canoniques():
     assert set(domaine.TRANSITIONS_OPPORTUNITE) == set(domaine.STATUTS_OPPORTUNITE)
     assert set(domaine.TRANSITIONS_RISQUE) == set(domaine.STATUTS_RISQUE)
+    assert domaine.TRANSITIONS_RISQUE is not domaine.TRANSITIONS_OPPORTUNITE
+    assert domaine.TRANSITIONS_RISQUE == domaine.TRANSITIONS_OPPORTUNITE
     assert "QUALIFIED" in domaine.TRANSITIONS_OPPORTUNITE["DETECTED"]
     assert domaine.TRANSITIONS_OPPORTUNITE["LEARNED"] == ()
     assert domaine.TRANSITIONS_OPPORTUNITE["REJECTED"] == ()
@@ -607,6 +617,34 @@ def test_creation_refuse_les_champs_invalides_avant_persistance(
 
 @pytest.mark.parametrize("fabrique", [
     commandes_boucle.creer_opportunite, commandes_boucle.creer_risque])
+@pytest.mark.parametrize("statut_expression", ["PROPOSED", "CONFIRMED"])
+def test_creation_accepte_une_expression_qualifiable(fabrique, statut_expression):
+    store = _Store([_expression_row(statut=statut_expression)])
+
+    resultat = fabrique(
+        store, _Connexion(), TENANT, "expr-1", titre="Qualifiable")
+
+    assert resultat.objet["donnees"]["statut"] == "DETECTED"
+    assert resultat.objet["donnees"]["expression_id"] == "expr-1"
+
+
+@pytest.mark.parametrize("fabrique", [
+    commandes_boucle.creer_opportunite, commandes_boucle.creer_risque])
+@pytest.mark.parametrize("statut_expression", ["REJECTED", "ARCHIVED"])
+def test_creation_refuse_une_expression_non_qualifiable(fabrique, statut_expression):
+    store = _Store([_expression_row(statut=statut_expression)])
+
+    with pytest.raises(commandes_boucle.TransitionRefusee) as levee:
+        fabrique(store, _Connexion(), TENANT, "expr-1", titre="Non qualifiable")
+
+    assert statut_expression in str(levee.value)
+    assert store.enregistres_objets == []
+    assert not [objet for objet in store.objets.values()
+                if objet["type"] in {"OPPORTUNITY", "RISK"}]
+
+
+@pytest.mark.parametrize("fabrique", [
+    commandes_boucle.creer_opportunite, commandes_boucle.creer_risque])
 def test_creation_annule_tout_si_le_lien_inverse_echoue(fabrique):
     store = _Store([_situation_row(), _expression_row()])
     store.echec_lien = True
@@ -620,17 +658,17 @@ def test_creation_annule_tout_si_le_lien_inverse_echoue(fabrique):
     assert store.objets["expr-1"]["donnees"]["risk_ids"] == []
 
 
-def test_creation_refuse_un_identifiant_deja_present():
-    store = _Store([_situation_row(), _expression_row(),
-                    _opportunity_row(identifiant="opportunity-fixe")])
+@pytest.mark.parametrize(("fabrique", "type_objet"), [
+    (commandes_boucle.creer_opportunite, "OPPORTUNITY"),
+    (commandes_boucle.creer_risque, "RISK"),
+])
+def test_creation_genere_un_identifiant_avec_le_prefixe_du_domaine(fabrique, type_objet):
+    store = _Store([_expression_row()])
 
-    with pytest.raises(commandes_boucle.DoublonExploitation):
-        commandes_boucle.creer_opportunite(
-            store, _Connexion(), TENANT, "expr-1",
-            id="opportunity-fixe", titre="Doublon")
+    resultat = fabrique(
+        store, _Connexion(), TENANT, "expr-1", titre="Préfixe serveur")
 
-    assert store.objets["opportunity-fixe"]["donnees"]["titre"] == (
-        "Automatiser la ressaisie")
+    assert resultat.objet["id"].startswith(f"{domaine._PREFIXES[type_objet]}-")
 
 
 def test_changer_statut_opportunite_valide_puis_refuse_une_transition_invalide():
@@ -695,6 +733,26 @@ def test_changement_de_statut_inconnu_ou_hors_tenant_est_404(fabrique):
                  statut="QUALIFIED")
 
 
+def test_changement_de_statut_refuse_un_mauvais_type_en_422():
+    store = _Store([
+        _situation_row(), _expression_row(), _opportunity_row(), _risk_row(),
+    ])
+
+    with pytest.raises(ObjetsExploitationInvalide) as levee:
+        commandes_boucle.changer_statut_risque(
+            store, _Connexion(), TENANT, "opportunity-1", statut="MATURING")
+
+    assert "RISK" in str(levee.value)
+    assert store.enregistres_objets == []
+
+    with pytest.raises(ObjetsExploitationInvalide) as levee:
+        commandes_boucle.changer_statut_opportunite(
+            store, _Connexion(), TENANT, "risk-1", statut="MATURING")
+
+    assert "OPPORTUNITY" in str(levee.value)
+    assert store.enregistres_objets == []
+
+
 def test_lister_opportunites_et_risques_filtre_par_expression_et_tenant():
     store = _Store([
         _situation_row(),
@@ -725,6 +783,20 @@ def test_lister_opportunites_expression_absente_est_404():
     with pytest.raises(commandes_boucle.SourceIntrouvable):
         commandes_boucle.lister_opportunites(
             store, _Connexion(), TENANT, "expr-absent")
+
+
+def test_les_listes_acceptent_une_expression_archivee():
+    """La règle PROPOSED/CONFIRMED ne concerne que la création, pas les GET/listes."""
+    store = _Store([
+        _expression_row(statut="ARCHIVED"),
+        _opportunity_row(),
+        _risk_row(),
+    ])
+
+    assert [objet["id"] for objet in commandes_boucle.lister_opportunites(
+        store, _Connexion(), TENANT, "expr-1")] == ["opportunity-1"]
+    assert [objet["id"] for objet in commandes_boucle.lister_risques(
+        store, _Connexion(), TENANT, "expr-1")] == ["risk-1"]
 
 
 # --------------------------------------------------------------------------- #
@@ -851,6 +923,9 @@ def test_post_risque_retourne_le_contrat_c5b(monkeypatch):
     {"titre": "Valide", "confiance": 1.2},
     {"titre": "Valide", "valeur_potentielle": -1},
     {"titre": "Valide", "champ_inconnu": True},
+    {"titre": "Valide", "id": "client-id"},
+    {"titre": "Valide", "expression_id": "expr-1"},
+    {"titre": "Valide", "situation_id": "sit-1"},
 ])
 def test_post_creation_valide_le_corps_avant_la_commande(monkeypatch, chemin, methode, corps):
     client = _client(monkeypatch)
@@ -1039,6 +1114,7 @@ def test_post_statut_traduit_404_409_422_503(monkeypatch, chemin, methode):
         (commandes_boucle.SourceIntrouvable("opportunité", "x"), 404),
         (commandes_boucle.TransitionRefusee("transition refusée"), 409),
         (ObjetsExploitationInvalide("statut inconnu"), 422),
+        (ObjetInvalide("secret refusé"), 400),
         (psycopg.OperationalError("panne"), 503),
     ]:
         def echouer(*_, _erreur=erreur, **__):
@@ -1169,6 +1245,24 @@ def test_pg_creation_opportunite_et_risque_chaines_liens_et_transitions(monkeypa
         assert [objet["id"] for objet in liste_opportunites.json()["opportunites"]] == [
             opportunite_id]
 
+        mauvais_type = client.post(
+            f"{BASE}/risks/{opportunite_id}/statut",
+            json={"statut": "MATURING"},
+            headers={"X-Tenant": tenant},
+        )
+        assert mauvais_type.status_code == 422, mauvais_type.text
+
+        secret = client.post(
+            f"{BASE}/opportunities/{opportunite_id}/statut",
+            json={"statut": "MATURING", "preuves": [{"password": "s3cr3t"}]},
+            headers={"X-Tenant": tenant},
+        )
+        assert secret.status_code == 400, secret.text
+        with psycopg.connect(DSN) as conn:
+            assert boucle.lire_boucle(
+                conn, tenant, opportunite_id, as_dict=True
+            )["donnees"]["statut"] == "DETECTED"
+
         transition = client.post(
             f"{BASE}/opportunities/{opportunite_id}/statut",
             json={"statut": "QUALIFIED", "motif": "Preuves suffisantes",
@@ -1217,6 +1311,157 @@ def test_pg_creation_opportunite_et_risque_chaines_liens_et_transitions(monkeypa
             with pytest.raises(boucle.BoucleInvalide):
                 boucle.enregistrer_boucle(conn, tenant, objets=[objet], historique=True)
 
+    finally:
+        _nettoyer(tenant)
+
+
+def _pg_parent_expression(
+    tenant: str, *, situation_id: str = "sit-1", expression_id: str = "expr-1",
+    statut: str = "PROPOSED",
+):
+    """Crée une Situation et une Expression réelles ; applique le schéma au préalable."""
+    with psycopg.connect(DSN) as conn:
+        situation = {**_situation_row(situation_id), "tenant_id": tenant}
+        boucle.enregistrer_boucle(conn, tenant, objets=[situation], historique=True)
+        expression = construction_objets_exploitation.nouvelle_expression(
+            situation, id=expression_id, formulation=f"Expression {expression_id}")
+        objets_exploitation.enregistrer_objets_exploitation(conn, tenant, [expression])
+        if statut != "PROPOSED":
+            expression.statut = statut
+            objets_exploitation.enregistrer_objets_exploitation(conn, tenant, [expression])
+        return expression
+
+
+@besoin_pg
+def test_pg_creation_exige_une_expression_qualifiable(monkeypatch):
+    tenant = f"c5b-{uuid.uuid4().hex[:10]}"
+    client = _client_pg(monkeypatch)
+    try:
+        with psycopg.connect(DSN, autocommit=True) as conn:
+            depot.appliquer_schema(conn)
+
+        attendus = {
+            "PROPOSED": 201,
+            "CONFIRMED": 201,
+            "REJECTED": 409,
+            "ARCHIVED": 409,
+        }
+        for statut, attendu in attendus.items():
+            suffixe = statut.lower()
+            _pg_parent_expression(
+                tenant, situation_id=f"sit-{suffixe}",
+                expression_id=f"expr-{suffixe}", statut=statut)
+            reponse = client.post(
+                f"{BASE}/expressions/expr-{suffixe}/opportunities",
+                json={"titre": f"Opportunité {statut}"},
+                headers={"X-Tenant": tenant},
+            )
+            assert reponse.status_code == attendu, (statut, reponse.text)
+
+        with psycopg.connect(DSN) as conn:
+            nombre = conn.execute(
+                "SELECT count(*) FROM objet_entreprise "
+                "WHERE tenant_id = %s AND type = 'OPPORTUNITY'",
+                (tenant,),
+            ).fetchone()[0]
+        assert nombre == 2
+    finally:
+        _nettoyer(tenant)
+
+
+@besoin_pg
+def test_pg_plusieurs_opportunites_sur_la_meme_expression():
+    tenant = f"c5b-{uuid.uuid4().hex[:10]}"
+    try:
+        with psycopg.connect(DSN, autocommit=True) as conn:
+            depot.appliquer_schema(conn)
+        expression = _pg_parent_expression(tenant)
+
+        with psycopg.connect(DSN) as conn:
+            premiere = commandes_boucle.creer_opportunite(
+                boucle, conn, tenant, expression.id, titre="Opportunité A")
+            seconde = commandes_boucle.creer_opportunite(
+                boucle, conn, tenant, expression.id, titre="Opportunité B")
+
+        with psycopg.connect(DSN) as conn:
+            expression_lue = boucle.lire_boucle(
+                conn, tenant, expression.id, as_dict=True)
+        assert sorted(expression_lue["donnees"]["opportunity_ids"]) == sorted([
+            premiere.objet["id"], seconde.objet["id"],
+        ])
+    finally:
+        _nettoyer(tenant)
+
+
+@besoin_pg
+def test_pg_deux_creations_concurrentes_laissent_deux_opportunites():
+    tenant = f"c5b-{uuid.uuid4().hex[:10]}"
+    try:
+        with psycopg.connect(DSN, autocommit=True) as conn:
+            depot.appliquer_schema(conn)
+        expression = _pg_parent_expression(tenant)
+
+        barriere = threading.Barrier(2)
+
+        def creer(titre: str) -> str:
+            barriere.wait(timeout=10)
+            with psycopg.connect(DSN) as conn:
+                resultat = commandes_boucle.creer_opportunite(
+                    boucle, conn, tenant, expression.id, titre=titre)
+                return resultat.objet["id"]
+
+        with ThreadPoolExecutor(max_workers=2) as executeur:
+            futurs = [
+                executeur.submit(creer, "Opportunité concurrente A"),
+                executeur.submit(creer, "Opportunité concurrente B"),
+            ]
+            ids = [futur.result(timeout=30) for futur in futurs]
+
+        assert len(ids) == 2
+        assert len(set(ids)) == 2
+        with psycopg.connect(DSN) as conn:
+            expression_lue = boucle.lire_boucle(
+                conn, tenant, expression.id, as_dict=True)
+            nombre = conn.execute(
+                "SELECT count(*) FROM objet_entreprise "
+                "WHERE tenant_id = %s AND type = 'OPPORTUNITY'",
+                (tenant,),
+            ).fetchone()[0]
+        assert sorted(expression_lue["donnees"]["opportunity_ids"]) == sorted(ids)
+        assert nombre == 2
+    finally:
+        _nettoyer(tenant)
+
+
+@pytest.mark.parametrize(("classe", "type_objet"), [
+    (modele.Opportunity, "OPPORTUNITY"),
+    (modele.Risk, "RISK"),
+])
+@besoin_pg
+def test_pg_la_persistance_refuse_une_valeur_potentielle_negative(classe, type_objet):
+    tenant = f"c5b-{uuid.uuid4().hex[:10]}"
+    try:
+        with psycopg.connect(DSN, autocommit=True) as conn:
+            depot.appliquer_schema(conn)
+        expression = _pg_parent_expression(tenant)
+
+        objet = classe(
+            id=f"{type_objet.lower()}-negatif",
+            tenant_id=tenant,
+            titre="Valeur potentielle négative",
+            expression_id=expression.id,
+            valeur_potentielle=-5,
+            auteur="a",
+            justification="j",
+            **DATES,
+        )
+        with psycopg.connect(DSN) as conn:
+            with pytest.raises(ObjetsExploitationInvalide) as levee:
+                objets_exploitation.enregistrer_objets_exploitation(
+                    conn, tenant, objet)
+        assert "valeur_potentielle" in str(levee.value)
+        with psycopg.connect(DSN) as conn:
+            assert boucle.lire_boucle(conn, tenant, objet.id) is None
     finally:
         _nettoyer(tenant)
 

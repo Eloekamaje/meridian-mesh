@@ -861,8 +861,9 @@ async def creer_opportunite(
     """Qualifie une Expression en Opportunité du tenant, statut initial ``DETECTED``.
 
     ``statut`` est absent du corps : le serveur le force et un client qui l'envoie est
-    refusé en 422. L'Expression est verrouillée pendant la création, et son lien inverse
-    ``opportunity_ids`` est écrit dans la même transaction.
+    refusé en 422. L'Expression doit être ``PROPOSED`` ou ``CONFIRMED`` (sinon 409) ; elle
+    est verrouillée pendant la création, et son lien inverse ``opportunity_ids`` est écrit
+    dans la même transaction.
     """
     _verifier_espace(x_espace)
     tenant = _tenant(request, x_tenant)
@@ -885,7 +886,10 @@ async def creer_risque(
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
-    """Qualifie une Expression en Risque du tenant, statut initial ``DETECTED``."""
+    """Qualifie une Expression en Risque du tenant, statut initial ``DETECTED``.
+
+    Même règle que l'opportunité : Expression ``PROPOSED``/``CONFIRMED`` seulement.
+    """
     _verifier_espace(x_espace)
     tenant = _tenant(request, x_tenant)
     resultat = await _executer_transition(
@@ -949,9 +953,9 @@ async def changer_statut_opportunite(
 ):
     """Fait évoluer une Opportunité selon le cycle canonique C5b.
 
-    Une transition non autorisée est un 409, un statut inconnu un 422, une source absente
-    ou hors tenant un 404. ``maj_le`` est posé par le serveur et la version précédente
-    reste dans ``historique``.
+    Une transition non autorisée est un 409, un statut inconnu ou un identifiant d'un autre
+    type un 422, une source absente ou hors tenant un 404. ``maj_le`` est posé par le
+    serveur et la version précédente reste dans ``historique``.
     """
     _verifier_espace(x_espace)
     tenant = _tenant(request, x_tenant)
