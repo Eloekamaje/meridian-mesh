@@ -621,6 +621,10 @@ class Opportunity(ObjetEntreprise):
     statut: str = "DETECTED"
     type_opportunite: str = ""
     valeur_potentielle: Any = None
+    probabilite: float | None = None
+    impact: str = ""
+    horizon: str = ""
+    criteres: list[str] = field(default_factory=list)
     situation_id: str | None = None
     expression_id: str | None = None
     investigation_id: str | None = None
@@ -635,6 +639,10 @@ class Opportunity(ObjetEntreprise):
         self.description = str(self.description or "").strip()
         self.statut = _normaliser_statut(self.statut) or "DETECTED"
         self.type_opportunite = _normaliser_statut(self.type_opportunite)
+        self.probabilite = _probabilite(self.probabilite, "probabilite")
+        self.impact = str(self.impact or "").strip()
+        self.horizon = str(self.horizon or "").strip()
+        self.criteres = [str(c).strip() for c in _liste(self.criteres) if str(c).strip()]
         self.situation_id = _identifiant_lien(self.situation_id, "situation_id", obligatoire=False)
         self.expression_id = _identifiant_lien(self.expression_id, "expression_id", obligatoire=False)
         self.investigation_id = _identifiant_lien(
@@ -659,6 +667,9 @@ class Risk(ObjetEntreprise):
     probabilite: float | None = None
     severite: str = ""
     exposition: float | None = None
+    impact: str = ""
+    valeur_potentielle: Any = None
+    criteres: list[str] = field(default_factory=list)
     situation_id: str | None = None
     expression_id: str | None = None
     investigation_id: str | None = None
@@ -679,6 +690,8 @@ class Risk(ObjetEntreprise):
         self.probabilite = _probabilite(self.probabilite, "probabilite")
         self.exposition = _probabilite(self.exposition, "exposition")
         self.severite = _normaliser_statut(self.severite)
+        self.impact = str(self.impact or "").strip()
+        self.criteres = [str(c).strip() for c in _liste(self.criteres) if str(c).strip()]
         self.situation_id = _identifiant_lien(self.situation_id, "situation_id", obligatoire=False)
         self.expression_id = _identifiant_lien(self.expression_id, "expression_id", obligatoire=False)
         self.investigation_id = _identifiant_lien(

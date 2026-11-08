@@ -27,6 +27,12 @@ from dataclasses import asdict, dataclass, is_dataclass
 from typing import Any
 
 from meridian.ports.boucle import BoucleStore, ObjetExistant, VersionRefusee
+from meridian.domain.objets_exploitation import (
+    STATUTS_OPPORTUNITE,
+    STATUTS_RISQUE,
+    ObjetsExploitationInvalide,
+    TransitionObjetRefusee,
+)
 
 __all__ = [
     "SourceIntrouvable",
@@ -44,6 +50,12 @@ __all__ = [
     "capitaliser_learning_depuis_outcome",
     "capitaliser_learning_depuis_investigation",
     "creer_expression",
+    "creer_opportunite",
+    "creer_risque",
+    "lister_opportunites",
+    "lister_risques",
+    "changer_statut_opportunite",
+    "changer_statut_risque",
     "creer_scenario",
     "lister_scenarios",
     "comparer_scenarios",
@@ -367,6 +379,193 @@ def creer_expression(
                 "Situation déjà exprimée : une Expression existe déjà pour cette Situation"
             ) from exc
         return _relire(depot, conn, tenant_id, objet.id)
+
+
+STATUT_OPPORTUNITE_INITIAL = "DETECTED"
+STATUT_RISQUE_INITIAL = "DETECTED"
+
+
+def _refuser_statut_client(champs: dict[str, Any], libelle: str) -> None:
+    """Le statut initial est serveur ; un statut client est un refus de contrat (422)."""
+    if "statut" in champs:
+        raise ObjetsExploitationInvalide(
+            f"statut interdit à la création d'un {libelle} : le serveur force "
+            f"{STATUT_OPPORTUNITE_INITIAL}")
+
+
+def _exiger_titre(champs: dict[str, Any], libelle: str) -> None:
+    if not _texte(champs.get("titre")):
+        raise ObjetsExploitationInvalide(f"titre obligatoire pour un {libelle}")
+
+
+def _source_expression(
+    depot: BoucleStore, conn: Any, tenant: str, expression_id: Any, *,
+    for_update: bool = True,
+) -> Any:
+    """Charge une Expression du tenant ; une autre source est un refus de contrat (422)."""
+    identifiant = _texte(expression_id)
+    if not identifiant:
+        raise SourceIntrouvable("expression", identifiant)
+    source = depot.lire_boucle(
+        conn, tenant, identifiant, as_dict=True, for_update=for_update)
+    if source is None:
+        raise SourceIntrouvable("expression", identifiant)
+    type_trouve = _texte(_valeur_source(source, "type")).upper()
+    if type_trouve != "EXPRESSION":
+        raise ObjetsExploitationInvalide(
+            f"expression {identifiant!r} doit être de type EXPRESSION "
+            f"(reçu {type_trouve or 'inconnu'})")
+    tenant_source = _texte(_valeur_source(source, "tenant_id"))
+    if tenant_source != tenant:
+        raise SourceIntrouvable("expression", identifiant)
+    return source
+
+
+def _creation_depuis_expression(
+    depot: BoucleStore, conn: Any, tenant_id: str, expression_id: Any,
+    *,
+    fabrique: Any,
+    prefixe: str,
+    libelle: str,
+    statut_initial: str,
+    champs: dict[str, Any],
+) -> ResultatTransition:
+    _refuser_statut_client(champs, libelle)
+    _exiger_titre(champs, libelle)
+    identifiant = _texte(champs.pop("id", None))
+    with depot.transaction(conn):
+        expression = _source_expression(depot, conn, tenant_id, expression_id)
+        identifiant = identifiant or f"{prefixe}-{uuid.uuid4().hex[:12]}"
+        if depot.lire_boucle(conn, tenant_id, identifiant, as_dict=True) is not None:
+            raise DoublonExploitation(
+                f"{libelle} déjà existant : l'identifiant {identifiant!r} est déjà utilisé")
+        objet = fabrique(
+            expression=expression, tenant_id=tenant_id, id=identifiant,
+            statut=statut_initial, **champs)
+        depot.enregistrer_objets(conn, tenant_id, objets=[objet], as_dict=False)
+        return _relire(depot, conn, tenant_id, identifiant)
+
+
+def creer_opportunite(
+    depot: BoucleStore, conn: Any, tenant_id: str, expression_id: str, **champs: Any,
+) -> ResultatTransition:
+    """Crée une Opportunity depuis une Expression verrouillée, statut initial ``DETECTED``.
+
+    L'Expression est la seule source acceptée ; elle est verrouillée pour sérialiser les
+    créations concurrentes. Le statut client est refusé, et la persistance d'exploitation
+    écrit l'objet et ``Expression.opportunity_ids`` dans la même transaction.
+    """
+    return _creation_depuis_expression(
+        depot, conn, tenant_id, expression_id,
+        fabrique=depot.nouvelle_opportunite,
+        prefixe="opportunity",
+        libelle="opportunité",
+        statut_initial=STATUT_OPPORTUNITE_INITIAL,
+        champs=dict(champs),
+    )
+
+
+def creer_risque(
+    depot: BoucleStore, conn: Any, tenant_id: str, expression_id: str, **champs: Any,
+) -> ResultatTransition:
+    """Crée un Risk depuis une Expression verrouillée, statut initial ``DETECTED``."""
+    return _creation_depuis_expression(
+        depot, conn, tenant_id, expression_id,
+        fabrique=depot.nouveau_risque,
+        prefixe="risk",
+        libelle="risque",
+        statut_initial=STATUT_RISQUE_INITIAL,
+        champs=dict(champs),
+    )
+
+
+def _lister_enfants_expression(
+    depot: BoucleStore, conn: Any, tenant_id: str, expression_id: Any,
+    *, type_objet: str, limite: int,
+) -> list[dict[str, Any]]:
+    expression = _source_expression(
+        depot, conn, tenant_id, expression_id, for_update=False)
+    identifiant = _texte(_valeur_source(expression, "id"))
+    return depot.lister_objets_exploitation(
+        conn, tenant_id, type_=type_objet, expression_id=identifiant,
+        limite=limite, as_dict=True,
+    )
+
+
+def lister_opportunites(
+    depot: BoucleStore, conn: Any, tenant_id: str, expression_id: str,
+    *, limite: int = 100,
+) -> list[dict[str, Any]]:
+    """Liste les Opportunities d'une Expression du tenant, bornées par ``limite``."""
+    return _lister_enfants_expression(
+        depot, conn, tenant_id, expression_id,
+        type_objet="OPPORTUNITY", limite=limite)
+
+
+def lister_risques(
+    depot: BoucleStore, conn: Any, tenant_id: str, expression_id: str,
+    *, limite: int = 100,
+) -> list[dict[str, Any]]:
+    """Liste les Risks d'une Expression du tenant, bornés par ``limite``."""
+    return _lister_enfants_expression(
+        depot, conn, tenant_id, expression_id, type_objet="RISK", limite=limite)
+
+
+def _changer_statut_objet(
+    depot: BoucleStore, conn: Any, tenant_id: str, identifiant: Any,
+    statut: Any, *,
+    type_attendu: str,
+    role: str,
+    statuts: tuple[str, ...],
+    muter: Any,
+    motif: Any = None,
+    preuves: Any = None,
+) -> ResultatTransition:
+    cible = _texte(statut).upper()
+    if cible not in statuts:
+        raise ObjetsExploitationInvalide(
+            f"statut inconnu : {statut!r} (attendus : {', '.join(statuts)})")
+    with depot.transaction(conn):
+        source = _source(
+            depot, conn, tenant_id, identifiant, type_attendu, role)
+        try:
+            objet = muter(source, cible, motif=motif, preuves=preuves)
+        except TransitionObjetRefusee as exc:
+            raise TransitionRefusee(str(exc)) from exc
+        depot.enregistrer_objets(
+            conn, tenant_id, objets=[objet], as_dict=False, historique=True)
+        return _relire(depot, conn, tenant_id, _texte(identifiant))
+
+
+def changer_statut_opportunite(
+    depot: BoucleStore, conn: Any, tenant_id: str, opportunite_id: str,
+    statut: str, *, motif: Any = None, preuves: Any = None,
+) -> ResultatTransition:
+    """Fait évoluer une Opportunity selon ``TRANSITIONS_OPPORTUNITE``.
+
+    Une transition refusée est un 409 ; un statut inconnu reste une erreur de contrat
+    (422) avant toute écriture. Le motif courant est conservé dans ``justification`` et
+    la version précédente dans ``historique``.
+    """
+    return _changer_statut_objet(
+        depot, conn, tenant_id, opportunite_id, statut,
+        type_attendu="OPPORTUNITY", role="opportunité",
+        statuts=STATUTS_OPPORTUNITE, muter=depot.muer_opportunite,
+        motif=motif, preuves=preuves,
+    )
+
+
+def changer_statut_risque(
+    depot: BoucleStore, conn: Any, tenant_id: str, risque_id: str,
+    statut: str, *, motif: Any = None, preuves: Any = None,
+) -> ResultatTransition:
+    """Fait évoluer un Risk selon ``TRANSITIONS_RISQUE`` (même contrat que l'opportunité)."""
+    return _changer_statut_objet(
+        depot, conn, tenant_id, risque_id, statut,
+        type_attendu="RISK", role="risque",
+        statuts=STATUTS_RISQUE, muter=depot.muer_risque,
+        motif=motif, preuves=preuves,
+    )
 
 
 _METRIQUES_SCENARIO = (
