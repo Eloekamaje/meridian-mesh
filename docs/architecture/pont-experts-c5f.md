@@ -125,6 +125,12 @@ identifiant. Les commandes HTTP ayant déjà posé `Investigation → Hypothesis
 est un no-op dans leurs transactions ; aucun chemin HTTP ne verrouille plus Hypothesis
 avant Investigation.
 
+**Appels directs** : `enregistrer_objets_exploitation` ne doit **pas** être appelé
+directement en concurrence avec les routes HTTP. Son ordre de verrouillage trié par
+identifiant n'est pas aligné sur `Investigation → Hypothesis` ; les écrivains
+applicatifs doivent passer par les commandes HTTP, qui pré-verrouillent dans l'ordre
+commun. L'appel direct reste réservé aux tests, backfills et scripts mono-écrivain.
+
 ### Compatibilité des contributions C5e antérieures
 
 Les contributions créées avant C5f peuvent porter des `hypothesis_ids_soutenues` ou
@@ -140,6 +146,14 @@ citation n'est pas corrigée. Chemin de remédiation :
    `donnees.hypothesis_ids_contestees` : retirer l'identifiant invalide ou le
    substituer par une hypothèse de la même Investigation, avec trace opérateur ;
 4. relancer l'audit puis la transition.
+
+L'audit couvre les tableaux de citations (fantômes, autre tenant, mauvais type, autre
+Investigation) **et** les formes scalaires non nulles (`"ghost-string"`, nombre, booléen,
+objet). Ces dernières ne sont pas des tableaux mais bloquent aussi la transition en 422 :
+elles apparaissent avec la valeur scalaire dans `hypothesis_id` et
+`motif_refus = "forme invalide (hypothesis_ids_soutenues|contestees)"`. Une liste `null`
+n'est pas signalée. Une sortie vide signifie donc qu'aucune contribution à tableau ou
+forme scalaire connue n'est bloquée.
 
 L'audit est strictement `SELECT` ; il ne répare rien et ne modifie aucune ligne.
 
@@ -174,7 +188,8 @@ un test de domaine.
   Investigation, routes Investigation et Hypothèse, absence d'écriture partielle, appel
   direct à la persistance.
 - Audit SQL : une liste `null` n'est pas un faux positif ; une liste tableau avec
-  citation fantôme est détectée.
+  citation fantôme et une forme scalaire non nulle sont détectées ; le filtre tenant
+  `meridian.audit_tenant` est vérifié.
 - Citations invalides concurrentes : 6 paires × 2 routes, répétées, uniquement des 422,
   **0×503** (pré-validation non verrouillée).
 - Citation valide + statut d'hypothèse concurrents : contribution `H1` citant `H2` et
@@ -192,6 +207,9 @@ un test de domaine.
 ## Limites
 
 - Pas d'édition ni de suppression du registre : seul le statut est administrable.
+- `enregistrer_objets_exploitation` ne doit pas être appelé directement en concurrence
+  avec les routes HTTP : son verrouillage trié par identifiant n'est pas aligné sur
+  `Investigation → Hypothesis`. Les écrivains applicatifs passent par les commandes.
 - Pas de collecte automatique de contributions.
 - Les `claim_ids_proposes` restent des références déclaratives non résolues ; seules les
   hypothèses soutenues/contestées sont validées.

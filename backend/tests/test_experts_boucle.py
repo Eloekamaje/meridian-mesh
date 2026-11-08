@@ -3025,5 +3025,45 @@ def test_audit_citations_ignore_les_listes_null_et_detecte_les_fantomes():
         assert len(lignes_fantomes) == 1
         assert lignes_fantomes[0][2] == "hypothesis-fantome"
         assert lignes_fantomes[0][7].startswith("hypothèse absente")
+
+        with psycopg.connect(DSN, autocommit=True) as conn:
+            conn.execute(
+                "UPDATE objet_entreprise SET donnees = donnees || %s::jsonb "
+                "WHERE tenant_id = %s AND id = %s",
+                ('{"hypothesis_ids_soutenues": "ghost-string"}',
+                 tenant, contribution_id),
+            )
+        with psycopg.connect(DSN) as conn:
+            lignes_scalaires = [
+                ligne for ligne in conn.execute(sql).fetchall()
+                if ligne[0] == tenant and ligne[1] == contribution_id
+            ]
+        assert len(lignes_scalaires) == 1
+        assert lignes_scalaires[0][2] == "ghost-string"
+        assert lignes_scalaires[0][7] == (
+            "forme invalide (hypothesis_ids_soutenues)")
+
+        with psycopg.connect(DSN) as conn:
+            conn.execute(
+                "SELECT set_config('meridian.audit_tenant', %s, false)",
+                ("autre-tenant",),
+            )
+            lignes_autre_tenant = [
+                ligne for ligne in conn.execute(sql).fetchall()
+                if ligne[0] == tenant and ligne[1] == contribution_id
+            ]
+        assert lignes_autre_tenant == []
+
+        with psycopg.connect(DSN) as conn:
+            conn.execute(
+                "SELECT set_config('meridian.audit_tenant', %s, false)",
+                (tenant,),
+            )
+            lignes_tenant = [
+                ligne for ligne in conn.execute(sql).fetchall()
+                if ligne[0] == tenant and ligne[1] == contribution_id
+            ]
+        assert len(lignes_tenant) == 1
+        assert lignes_tenant[0][2] == "ghost-string"
     finally:
         _nettoyer(tenant)
