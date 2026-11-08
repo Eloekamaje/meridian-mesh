@@ -61,11 +61,17 @@ class BoucleStore(Protocol):
 
     def nouveau_signal(self, **champs: Any) -> Any: ...
 
+    def nouvel_expert(self, **champs: Any) -> Any: ...
+
+    def nouvelle_contribution(self, expert: Any = None, **champs: Any) -> Any: ...
+
     def muer_opportunite(self, opportunite: Any, vers: str, **champs: Any) -> Any: ...
 
     def muer_risque(self, risque: Any, vers: str, **champs: Any) -> Any: ...
 
     def muer_hypothese(self, hypothese: Any, vers: str, **champs: Any) -> Any: ...
+
+    def muer_contribution(self, contribution: Any, vers: str, **champs: Any) -> Any: ...
 
     def enregistrer_objets(
         self, conn: Any, tenant_id: Any = None, objets: Any = None, *,
@@ -76,8 +82,9 @@ class BoucleStore(Protocol):
         self, conn: Any, tenant_id: str, *, type_: str | None = None,
         situation_id: str | None = None, investigation_id: str | None = None,
         decision_id: str | None = None, expression_id: str | None = None,
-        type_signal: str | None = None, statut: str | None = None,
-        limite: int = 100, as_dict: bool = True,
+        expert_id: str | None = None, hypothesis_id: str | None = None,
+        domaine: str | None = None, type_signal: str | None = None,
+        statut: str | None = None, limite: int = 100, as_dict: bool = True,
     ) -> list[Any]: ...
 
     def donnees_de(self, objet: Any) -> dict[str, Any]: ...

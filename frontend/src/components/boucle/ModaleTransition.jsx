@@ -68,11 +68,14 @@ export default function ModaleTransition({
   enCours = false,
   rechargement = false,
   erreur = "",
+  erreurChargement = "",
   onFermer,
   onSoumettre,
+  onReessayerChargement,
 }) {
   const [valeurs, setValeurs] = useState(() => valeursInitiales(action));
   const dialogue = useRef(null);
+  const soumissionBloquee = Boolean(erreurChargement);
 
   useEffect(() => {
     if (!dialogue.current) return;
@@ -119,7 +122,7 @@ export default function ModaleTransition({
 
   const soumettre = (evenement) => {
     evenement.preventDefault();
-    if (enCours || rechargement) return;
+    if (enCours || rechargement || soumissionBloquee) return;
     onSoumettre(valeurs);
   };
 
@@ -171,6 +174,29 @@ export default function ModaleTransition({
         </div>
 
         <form onSubmit={soumettre} noValidate aria-busy={enCours || rechargement} className="mt-4">
+          {erreurChargement && (
+            <div
+              role="alert"
+              data-testid="boucle-transition-erreur-chargement"
+              className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-[#F87171]/30 bg-[#F87171]/[0.06] px-2.5 py-2 text-xs text-[#FCA5A5]"
+            >
+              <span className="flex items-start gap-1.5">
+                <WarningCircle size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
+                <span>{erreurChargement}</span>
+              </span>
+              {onReessayerChargement && (
+                <button
+                  type="button"
+                  onClick={onReessayerChargement}
+                  disabled={enCours}
+                  data-testid="boucle-transition-reessayer"
+                  className="h-7 rounded-md border border-[#F87171]/40 px-2.5 text-[11px] font-semibold text-[#FCA5A5] transition-colors hover:bg-[#F87171]/10 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Réessayer
+                </button>
+              )}
+            </div>
+          )}
           <div className="space-y-3">
             {action.champs.map((champ) => (
               <div key={champ.nom}>
@@ -218,7 +244,7 @@ export default function ModaleTransition({
             </button>
             <button
               type="submit"
-              disabled={enCours || rechargement}
+              disabled={enCours || rechargement || soumissionBloquee}
               data-testid="boucle-transition-enregistrer"
               className="flex h-8 items-center gap-1.5 rounded-md bg-[#60A5FA] px-3 text-xs font-semibold text-[#071019] transition-colors hover:bg-[#93C5FD] disabled:cursor-not-allowed disabled:opacity-50"
             >

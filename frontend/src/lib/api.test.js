@@ -281,4 +281,110 @@ describe("boucleApi", () => {
     await expect(boucleApi.mesurerOutcome("", {})).rejects.toThrow("identifiant");
     expect(poster).not.toHaveBeenCalled();
   });
+
+  test("creerExpert poste le registre sans en-tête d'idempotence", async () => {
+    const corps = {
+      nom: "Camille Martin",
+      domaine: "Cartes bancaires",
+      role: "Expert métier",
+      methodes: ["Entretien"],
+    };
+
+    await boucleApi.creerExpert(corps);
+
+    expect(poster).toHaveBeenCalledWith("/boucle/experts", corps, { timeout: 20000 });
+    expect(poster.mock.calls[0][2]).not.toHaveProperty("headers");
+  });
+
+  test("listerExperts interroge le registre avec domaine, statut et limite", async () => {
+    const get = jest.spyOn(api, "get").mockResolvedValue({ data: { experts: [] } });
+
+    await boucleApi.listerExperts({ domaine: "Cartes", statut: "ACTIVE", limite: 25 });
+
+    expect(get).toHaveBeenCalledWith("/boucle/experts", {
+      params: { domaine: "Cartes", statut: "ACTIVE", limite: 25 },
+      timeout: 20000,
+    });
+    get.mockRestore();
+  });
+
+  test("creerContributionInvestigation poste la contribution rattachée", async () => {
+    const corps = {
+      expert_id: "expert-1",
+      contenu: "La règle est contournée",
+      hypothesis_id: "hypothesis-1",
+      confiance: 0.7,
+    };
+
+    await boucleApi.creerContributionInvestigation("inv/1", corps);
+
+    expect(poster).toHaveBeenCalledWith(
+      "/boucle/investigations/inv%2F1/contributions",
+      corps,
+      { timeout: 20000 },
+    );
+    expect(poster.mock.calls[0][2]).not.toHaveProperty("headers");
+  });
+
+  test("creerContributionHypothese poste la contribution rattachée", async () => {
+    const corps = { expert_id: "expert-1", contenu: "Contribution" };
+
+    await boucleApi.creerContributionHypothese("hypothesis/1", corps);
+
+    expect(poster).toHaveBeenCalledWith(
+      "/boucle/hypotheses/hypothesis%2F1/contributions",
+      corps,
+      { timeout: 20000 },
+    );
+    expect(poster.mock.calls[0][2]).not.toHaveProperty("headers");
+  });
+
+  test("listerContributions interroge la liste avec tous les filtres", async () => {
+    const get = jest.spyOn(api, "get").mockResolvedValue({
+      data: { contributions: [] },
+    });
+
+    await boucleApi.listerContributions({
+      expert_id: "expert-1",
+      investigation_id: "inv-1",
+      hypothesis_id: "hypothesis-1",
+      statut: "PROPOSED",
+      limite: 25,
+    });
+
+    expect(get).toHaveBeenCalledWith("/boucle/contributions", {
+      params: {
+        expert_id: "expert-1",
+        investigation_id: "inv-1",
+        hypothesis_id: "hypothesis-1",
+        statut: "PROPOSED",
+        limite: 25,
+      },
+      timeout: 20000,
+    });
+    get.mockRestore();
+  });
+
+  test("changerStatutContribution poste la transition sans en-tête d'idempotence", async () => {
+    const corps = { vers: "ACCEPTED", motif: "Relecture", preuves: ["preuve-1"] };
+
+    await boucleApi.changerStatutContribution("contribution/1", corps);
+
+    expect(poster).toHaveBeenCalledWith(
+      "/boucle/contributions/contribution%2F1/statut",
+      corps,
+      { timeout: 20000 },
+    );
+    expect(poster.mock.calls[0][2]).not.toHaveProperty("headers");
+  });
+
+  test("refuse une contribution sans identifiant de source", async () => {
+    await expect(
+      boucleApi.creerContributionInvestigation("", { expert_id: "e", contenu: "c" }),
+    ).rejects.toThrow("identifiant");
+    await expect(
+      boucleApi.creerContributionHypothese("   ", { expert_id: "e", contenu: "c" }),
+    ).rejects.toThrow("identifiant");
+    expect(poster).not.toHaveBeenCalled();
+  });
 });

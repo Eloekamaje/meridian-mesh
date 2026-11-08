@@ -129,6 +129,33 @@ export const boucleApi = {
       corps,
     );
   },
+  async creerExpert(corps) {
+    return posterTransition("/boucle/experts", corps);
+  },
+  async listerExperts(params) {
+    return api.get("/boucle/experts", { params, timeout: 20000 });
+  },
+  async creerContributionInvestigation(investigationId, corps) {
+    return posterTransition(
+      `/boucle/investigations/${identifiantRequis(investigationId, "identifiant d'investigation")}/contributions`,
+      corps,
+    );
+  },
+  async creerContributionHypothese(hypotheseId, corps) {
+    return posterTransition(
+      `/boucle/hypotheses/${identifiantRequis(hypotheseId, "identifiant d'hypothèse")}/contributions`,
+      corps,
+    );
+  },
+  async listerContributions(params) {
+    return api.get("/boucle/contributions", { params, timeout: 20000 });
+  },
+  async changerStatutContribution(contributionId, corps) {
+    return posterTransition(
+      `/boucle/contributions/${identifiantRequis(contributionId, "identifiant de contribution")}/statut`,
+      corps,
+    );
+  },
   async listerScenarios(params) {
     return api.get("/boucle/scenarios", { params, timeout: 20000 });
   },

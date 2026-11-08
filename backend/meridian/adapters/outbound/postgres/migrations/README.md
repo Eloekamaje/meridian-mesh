@@ -27,6 +27,9 @@ Révisions :
   `(tenant_id, donnees->>'situation_id')` pour une Expression au plus par Situation (C5a). L'index
   non unique du filtre `expression_id` de `0003` est conservé. Une base historique contenant déjà
   plusieurs Expressions pour une même Situation doit être dédoublonnée avant d'appliquer la révision.
+- `0005_objets_exploitation_hypothesis_index` — index non partiel du filtre `hypothesis_id` de
+  `lister_objets_exploitation`, utilisé par `GET /api/boucle/contributions` et par la chaîne
+  `INVESTIGATION → HYPOTHESIS → EXPERT_CONTRIBUTION` (C5e).
 
 ## Exécution en production
 

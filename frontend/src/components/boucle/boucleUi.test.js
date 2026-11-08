@@ -169,11 +169,11 @@ describe("actionsPourObjet", () => {
     }).map((action) => action.id)).toEqual(["creer_signal", "ouvrir_investigation"]);
   });
 
-  test("une investigation ouverte propose hypothèse, décision, scénario et learning", () => {
+  test("une investigation ouverte propose hypothèse, expert, décision, scénario et learning", () => {
     expect(actionsPourObjet(investigation).map((action) => action.id))
       .toEqual([
-        "creer_hypothese", "proposer_decision", "creer_scenario",
-        "capitaliser_learning",
+        "creer_hypothese", "solliciter_expert", "proposer_decision",
+        "creer_scenario", "capitaliser_learning",
       ]);
   });
 
@@ -223,14 +223,14 @@ describe("actionsPourObjet", () => {
     }
   });
 
-  test("une hypothèse propose ses transitions de statut jusqu'à un état terminal", () => {
+  test("une hypothèse propose ses transitions de statut et la sollicitation d'un expert", () => {
     expect(actionsPourObjet(hypothese).map((action) => action.id))
-      .toEqual(["changer_statut_hypothese"]);
+      .toEqual(["changer_statut_hypothese", "solliciter_expert"]);
     for (const statut of ["CONFIRMED", "REJECTED"]) {
       expect(actionsPourObjet({
         ...hypothese,
         donnees: { ...hypothese.donnees, statut },
-      })).toEqual([]);
+      }).map((action) => action.id)).toEqual(["solliciter_expert"]);
     }
   });
 

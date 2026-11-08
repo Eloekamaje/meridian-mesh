@@ -54,8 +54,9 @@ chemin live ne crée pas encore.
 - **Rendre la boucle opérable** : API et UI de création/transition pour Signal → Situation →
   Expression → Investigation → Décision → Initiative → Outcome → Learning, pas seulement la
   lecture et l’Outcome.
-- **Compléter les objets** : `Signal`, `Expression`, `Scenario`, `Hypothesis`, `Expert`,
-  `ExpertContribution` ; rendre `Opportunity` et `Risk` opérationnels.
+- **Compléter les objets** : `Signal`, `Expression`, `Scenario`, `Hypothesis`, `Expert` et
+  `ExpertContribution` sont canoniques ; il reste à administrer le registre Expert, à
+  résoudre les liens cités par les contributions et à automatiser la maturation.
 - **Brancher la mesure et l’apprentissage** sur les décisions et les sources réelles, avec
   attendu/observé et effets secondaires.
 - **Construire la mémoire de transformation** et les actions Flore : comparer des scénarios,

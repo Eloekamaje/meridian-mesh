@@ -477,6 +477,7 @@ def test_creer_hypothese_refuse_une_source_qui_n_est_pas_une_investigation():
 
 @pytest.mark.parametrize("statut", [
     "CLOSED", "CLOSE", "CLOTUREE", "FERMEE", "ARCHIVED", "ARCHIVEE", "closed",
+    "COMPLETED", "COMPLETED_WITH_GAPS", "BUDGET_EXHAUSTED", "FAILED", "CANCELLED",
 ])
 def test_creer_hypothese_refuse_une_investigation_fermee(statut):
     store = _Store([_investigation_row(statut=statut)])
@@ -749,7 +750,7 @@ def test_post_hypothese_valide_le_corps_avant_la_commande(monkeypatch, corps):
 
 
 def test_post_hypothese_expert_id_refuse_sans_ecriture(monkeypatch):
-    """C5e réserve expert_id : le champ est inconnu du corps et aucune commande ne part."""
+    """``expert_id`` reste hors du corps : C5e rattache les experts par contribution."""
     client = _client(monkeypatch)
     monkeypatch.setattr(
         boucle_routes.commandes_boucle, "creer_hypothese",

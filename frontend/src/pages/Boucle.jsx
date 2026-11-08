@@ -5,12 +5,14 @@ import {
   ArrowUpRight,
   BookOpen,
   ChartLineUp,
+  ChatCircleText,
   CircleNotch,
   Compass,
   Lightbulb,
   MagnifyingGlass,
   RocketLaunch,
   Scales,
+  UserCircle,
   WarningCircle,
   X,
 } from "@phosphor-icons/react";
@@ -49,6 +51,8 @@ const STADES = [
   { type: "RISK", famille: "emergence", label: "Risques", court: "Risque", couleur: "#F87171", Icone: WarningCircle },
   { type: "INVESTIGATION", famille: "investigation", label: "Investigations", court: "Investigation", couleur: "#38BDF8", Icone: MagnifyingGlass },
   { type: "HYPOTHESIS", famille: "investigation", label: "Hypothèses", court: "Hypothèse", couleur: "#C084FC", Icone: Lightbulb },
+  { type: "EXPERT", famille: "investigation", label: "Experts", court: "Expert", couleur: "#2DD4BF", Icone: UserCircle },
+  { type: "EXPERT_CONTRIBUTION", famille: "investigation", label: "Contributions", court: "Contribution", couleur: "#5EEAD4", Icone: ChatCircleText },
   { type: "DECISION", famille: "decision", label: "Décisions", court: "Décision", couleur: "#F2B84B", Icone: Scales },
   { type: "INITIATIVE", famille: "decision", label: "Initiatives", court: "Initiative", couleur: "#FB923C", Icone: RocketLaunch },
   { type: "OUTCOME", famille: "resultat_apprentissage", label: "Outcomes", court: "Outcome", couleur: "#34D399", Icone: ChartLineUp },
@@ -379,6 +383,21 @@ function PanneauDetail({
     ["Claims soutenants", texteAffichable(valeurDe(objet, "claim_ids_soutenants"))],
     ["Claims opposants", texteAffichable(valeurDe(objet, "claim_ids_opposants"))],
     ["Expert", texteAffichable(valeurDe(objet, "expert_id"))],
+    ["Domaine", texteAffichable(valeurDe(objet, "domaine"))],
+    ["Rôle", texteAffichable(valeurDe(objet, "role"))],
+    ["Méthodes", texteAffichable(valeurDe(objet, "methodes"))],
+    ["Responsabilités", texteAffichable(valeurDe(objet, "responsabilites"))],
+    ["Périmètre", texteAffichable(valeurDe(objet, "perimetre"))],
+    ["Sources autorisées", texteAffichable(valeurDe(objet, "sources_autorisees"))],
+    ["Outils autorisés", texteAffichable(valeurDe(objet, "outils_autorises"))],
+    ["Limites", texteAffichable(valeurDe(objet, "limites"))],
+    ["Contenu", texteAffichable(valeurDe(objet, "contenu"))],
+    ["Constats", texteAffichable(valeurDe(objet, "constats"))],
+    ["Claims proposés", texteAffichable(valeurDe(objet, "claim_ids_proposes"))],
+    ["Hypothèses soutenues", texteAffichable(valeurDe(objet, "hypothesis_ids_soutenues"))],
+    ["Hypothèses contestées", texteAffichable(valeurDe(objet, "hypothesis_ids_contestees"))],
+    ["Contribution le", dateLisible(valeurDe(objet, "contribution_le"))
+      || texteAffichable(valeurDe(objet, "contribution_le"))],
     ["Type d'opportunité", texteAffichable(valeurDe(objet, "type_opportunite"))],
     ["Type de risque", texteAffichable(valeurDe(objet, "type_risque"))],
     ["Valeur potentielle", texteAffichable(valeurDe(objet, "valeur_potentielle"))],
@@ -717,6 +736,8 @@ export default function Boucle() {
   const [actionActive, setActionActive] = useState(null);
   const [actionGlobale, setActionGlobale] = useState(false);
   const [actionSource, setActionSource] = useState(null);
+  const [expertsDisponibles, setExpertsDisponibles] = useState([]);
+  const [expertsErreur, setExpertsErreur] = useState("");
   const [transition, setTransition] = useState({ enCours: false, erreur: "", succes: null, rechargement: false, verificationErreur: "" });
 
   useEffect(() => {
@@ -888,7 +909,11 @@ export default function Boucle() {
   const filtresActifs = Boolean(recherche.trim() || filtres.famille || filtres.type || filtres.mode);
   const objetDetail = detail.data?.objet || selection;
   const actionCourante = actionActive
-    ? configurationAction(actionActive, actionGlobale ? null : actionSource)
+    ? configurationAction(
+      actionActive,
+      actionGlobale ? null : actionSource,
+      { experts: expertsDisponibles },
+    )
     : null;
   const chaineDetail = Array.isArray(detail.data?.chaine)
     ? detail.data.chaine
@@ -975,6 +1000,29 @@ export default function Boucle() {
     setActionActive("creer_signal");
   };
 
+  const ouvrirCreationExpert = () => {
+    if (transition.enCours || enCoursRef.current || refRechargement.current) return;
+    refElementDeclencheurAction.current = document.activeElement;
+    reinitialiserTransition();
+    setActionGlobale(false);
+    setActionSource(null);
+    setActionActive("inscrire_expert");
+  };
+
+  const chargerExperts = useCallback(async () => {
+    setExpertsErreur("");
+    try {
+      const reponse = await boucleApi.listerExperts({ statut: "ACTIVE", limite: 100 });
+      const experts = Array.isArray(reponse?.data?.experts) ? reponse.data.experts : [];
+      setExpertsDisponibles(experts);
+    } catch {
+      setExpertsDisponibles([]);
+      setExpertsErreur(
+        "Le registre des experts est indisponible. Vérifiez la connexion puis réessayez.",
+      );
+    }
+  }, []);
+
   const rechargerDetailSource = async (identifiant) => {
     refAbortVerification.current?.abort();
     const controleur = new AbortController();
@@ -1047,6 +1095,7 @@ export default function Boucle() {
     setActionActive(null);
     setActionGlobale(false);
     setActionSource(null);
+    setExpertsErreur("");
     setTransition((avant) => ({ ...avant, erreur: "" }));
     demanderRestaurationFocusAction();
   };
@@ -1054,7 +1103,13 @@ export default function Boucle() {
   const executerTransition = async (valeurs) => {
     if (enCoursRef.current || refRechargement.current || transition.rechargement) return;
     if (!actionCourante) return;
+    if (actionActive === "solliciter_expert" && expertsErreur) {
+      setTransition((avant) => ({ ...avant, erreur: expertsErreur }));
+      return;
+    }
     const creationSituation = actionActive === "creer_situation";
+    const creationExpert = actionActive === "inscrire_expert";
+    const creationRacine = creationSituation || creationExpert;
     const creationScenario = actionActive === "creer_scenario";
     const creationExpression = actionActive === "creer_expression";
     const creationOpportunite = actionActive === "qualifier_opportunite";
@@ -1063,9 +1118,9 @@ export default function Boucle() {
     const creationSignal = actionActive === "creer_signal";
     const signalGlobal = creationSignal && actionGlobale;
     const sourceAction = signalGlobal ? null : actionSource;
-    if (!creationSituation && !signalGlobal && !sourceAction) return;
-    const identifiant = creationSituation || signalGlobal ? null : idObjet(sourceAction);
-    if (!creationSituation && !signalGlobal && !identifiant) {
+    if (!creationRacine && !signalGlobal && !sourceAction) return;
+    const identifiant = creationRacine || signalGlobal ? null : idObjet(sourceAction);
+    if (!creationRacine && !signalGlobal && !identifiant) {
       setTransition((avant) => ({
         ...avant,
         erreur: "Cet objet n'a pas d'identifiant : la transition ne peut pas être enregistrée.",
@@ -1105,21 +1160,23 @@ export default function Boucle() {
       // Pas d'Idempotency-Key par défaut : le contrat A courant refuse les clés non vides.
       reponse = creationSituation
         ? await boucleApi.creerSituation(corps)
-        : creationScenario
-          ? await boucleApi.creerScenario(corps)
-          : creationOpportunite
-            ? await boucleApi.creerOpportunite(identifiant, corps)
-            : creationRisque
-              ? await boucleApi.creerRisque(identifiant, corps)
-              : creationHypothese
-                ? await boucleApi.creerHypothese(identifiant, corps)
-                : creationSignal
-                  ? (identifiant
-                    ? await boucleApi.creerSignalSituation(identifiant, corps)
-                    : await boucleApi.creerSignal(corps))
-                  : creationExpression
-                    ? await boucleApi.creerExpression(identifiant, corps)
-                    : await boucleApi[actionCourante.api](identifiant, corps);
+        : creationExpert
+          ? await boucleApi.creerExpert(corps)
+          : creationScenario
+            ? await boucleApi.creerScenario(corps)
+            : creationOpportunite
+              ? await boucleApi.creerOpportunite(identifiant, corps)
+              : creationRisque
+                ? await boucleApi.creerRisque(identifiant, corps)
+                : creationHypothese
+                  ? await boucleApi.creerHypothese(identifiant, corps)
+                  : creationSignal
+                    ? (identifiant
+                      ? await boucleApi.creerSignalSituation(identifiant, corps)
+                      : await boucleApi.creerSignal(corps))
+                    : creationExpression
+                      ? await boucleApi.creerExpression(identifiant, corps)
+                      : await boucleApi[actionCourante.api](identifiant, corps);
     } catch (erreurApi) {
       cause = erreurApi;
     } finally {
@@ -1142,18 +1199,24 @@ export default function Boucle() {
         if (statut === 409 || resultatIncertain) actualiser();
         return;
       }
-      if (creationSituation) {
+      if (creationRacine) {
         const statut = cause?.response?.status;
         const resultatIncertain = !cause?.response || statut >= 500;
         const detail = cause?.response?.data?.detail;
         const detail503 = statut === 503 && typeof detail === "string" && detail.trim()
           ? detail.trim()
           : "";
+        const quoi = creationExpert ? "l'expert" : "la situation";
         const message = resultatIncertain
           ? (detail503
             ? `Résultat incertain : ${detail503}`
-            : "Résultat incertain : la situation n'a peut-être pas été créée. Vérifiez la liste avant de réessayer.")
-          : messageErreurTransition(cause, "La situation n'a pas pu être créée.");
+            : `Résultat incertain : ${quoi} n'a peut-être pas été créé. Vérifiez la liste avant de réessayer.`)
+          : messageErreurTransition(
+            cause,
+            creationExpert
+              ? "L'expert n'a pas pu être créé."
+              : "La situation n'a pas pu être créée.",
+          );
         setTransition((avant) => ({
           ...avant,
           enCours: false,
@@ -1179,7 +1242,7 @@ export default function Boucle() {
       return;
     }
 
-    if (creationSituation) {
+    if (creationRacine) {
       const nouvelObjet = reponse?.data?.objet ?? null;
       const nouvelleChaine = Array.isArray(reponse?.data?.chaine) ? reponse.data.chaine : null;
       const nouvelHistorique = Array.isArray(reponse?.data?.historique) ? reponse.data.historique : null;
@@ -1193,7 +1256,9 @@ export default function Boucle() {
         setTransition((avant) => ({
           ...avant,
           enCours: false,
-          erreur: "La situation a été créée mais la réponse ne contient aucun identifiant exploitable. Vérifiez la liste avant de réessayer.",
+          erreur: creationExpert
+            ? "L'expert a été créé mais la réponse ne contient aucun identifiant exploitable. Vérifiez la liste avant de réessayer."
+            : "La situation a été créée mais la réponse ne contient aucun identifiant exploitable. Vérifiez la liste avant de réessayer.",
         }));
         actualiser();
         return;
@@ -1462,6 +1527,10 @@ export default function Boucle() {
   }, [selection, actionActive, transition.enCours, fermerDetail]);
 
   useEffect(() => {
+    if (actionActive === "solliciter_expert") chargerExperts();
+  }, [actionActive, chargerExperts]);
+
+  useEffect(() => {
     if (selection) return;
     const declencheur = refElementDeclencheur.current;
     const identifiantDeclencheur = refIdentifiantDeclencheur.current;
@@ -1670,6 +1739,14 @@ export default function Boucle() {
                 className="flex h-8 items-center gap-1.5 rounded-md border border-[#F472B6]/40 bg-[#F472B6]/[0.08] px-2.5 text-xs font-semibold text-[#F9A8D4] transition-colors hover:bg-[#F472B6]/15"
               >
                 <Lightbulb size={13} aria-hidden="true" /> Enregistrer un signal
+              </button>
+              <button
+                type="button"
+                onClick={ouvrirCreationExpert}
+                data-testid="boucle-nouveau-expert"
+                className="flex h-8 items-center gap-1.5 rounded-md border border-[#2DD4BF]/40 bg-[#2DD4BF]/[0.08] px-2.5 text-xs font-semibold text-[#5EEAD4] transition-colors hover:bg-[#2DD4BF]/15"
+              >
+                <UserCircle size={13} aria-hidden="true" /> Inscrire un expert
               </button>
               <button
                 type="button"
@@ -2264,8 +2341,12 @@ export default function Boucle() {
           enCours={transition.enCours}
           rechargement={transition.rechargement}
           erreur={transition.erreur}
+          erreurChargement={actionActive === "solliciter_expert" ? expertsErreur : ""}
           onFermer={fermerAction}
           onSoumettre={executerTransition}
+          onReessayerChargement={
+            actionActive === "solliciter_expert" ? chargerExperts : undefined
+          }
         />
       )}
     </div>

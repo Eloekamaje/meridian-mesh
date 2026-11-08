@@ -10,6 +10,8 @@ const STATUTS_DECISION_REJETEE = new Set([
 ]);
 const STATUTS_INVESTIGATION_FERMES = new Set([
   "CLOSED", "CLOSE", "CLOTUREE", "FERMEE", "ARCHIVED", "ARCHIVEE",
+  // États terminaux réellement produits par le runtime d'investigation.
+  "COMPLETED", "COMPLETED_WITH_GAPS", "BUDGET_EXHAUSTED", "FAILED", "CANCELLED",
 ]);
 const STATUTS_INITIATIVE_ANNULEE = new Set([
   "CANCELLED", "ANNULEE", "ABANDONED", "ABANDONNEE",
@@ -59,13 +61,24 @@ export const TRANSITIONS_HYPOTHESE = Object.freeze({
   REJECTED: Object.freeze([]),
 });
 
+// Cycle C5e des contributions d'expert : duplication assumée depuis
+// backend/meridian/domain/objets_exploitation.py, comme les tables C5b/C5c.
+export const TRANSITIONS_CONTRIBUTION = Object.freeze({
+  PROPOSED: Object.freeze(["ACCEPTED", "REJECTED", "ARCHIVED"]),
+  ACCEPTED: Object.freeze(["ARCHIVED"]),
+  REJECTED: Object.freeze(["ARCHIVED"]),
+  ARCHIVED: Object.freeze([]),
+});
+
 export function statutsSuivants(type, statut) {
   const typeNormalise = texte(type).trim().toUpperCase();
   const transitions = typeNormalise === "RISK"
     ? TRANSITIONS_RISQUE
     : typeNormalise === "OPPORTUNITY"
       ? TRANSITIONS_OPPORTUNITE
-      : typeNormalise === "HYPOTHESIS" ? TRANSITIONS_HYPOTHESE : null;
+      : typeNormalise === "HYPOTHESIS"
+        ? TRANSITIONS_HYPOTHESE
+        : typeNormalise === "EXPERT_CONTRIBUTION" ? TRANSITIONS_CONTRIBUTION : null;
   if (!transitions) return [];
   return [...(transitions[statutObjet({ statut })] || [])];
 }
@@ -94,8 +107,8 @@ export const TYPES_SIGNAL = Object.freeze([
 ]);
 export const TYPES_LECTURE = Object.freeze([
   "SIGNAL", "SITUATION", "EXPRESSION", "OPPORTUNITY", "RISK",
-  "INVESTIGATION", "HYPOTHESIS", "SCENARIO", "DECISION", "INITIATIVE",
-  "OUTCOME", "LEARNING",
+  "INVESTIGATION", "HYPOTHESIS", "EXPERT", "EXPERT_CONTRIBUTION",
+  "SCENARIO", "DECISION", "INITIATIVE", "OUTCOME", "LEARNING",
 ]);
 
 const CHAMPS_CREER_EXPRESSION = [
@@ -329,6 +342,181 @@ const CHAMPS_CHANGER_STATUT_HYPOTHESE = [
     type: "text",
     placeholder: "preuve-1, preuve-2",
     aide: "Une hypothèse CONFIRMED exige au moins une preuve.",
+  },
+];
+
+const CHAMPS_INSCRIRE_EXPERT = [
+  {
+    nom: "nom",
+    label: "Nom de l'expert",
+    type: "text",
+    requis: true,
+    maxLength: 500,
+    placeholder: "Camille Martin",
+    aide: "Le registre est déclaratif : le serveur force le statut ACTIVE et le mode DECLARED.",
+  },
+  {
+    nom: "domaine",
+    label: "Domaine",
+    type: "text",
+    requis: true,
+    maxLength: 500,
+    placeholder: "Cartes bancaires",
+    aide: "Le domaine rend l'expert trouvable dans le registre.",
+  },
+  {
+    nom: "role",
+    label: "Rôle (optionnel)",
+    type: "text",
+    maxLength: 500,
+    placeholder: "Expert métier, architecte, risk-manager…",
+  },
+  {
+    nom: "methodes",
+    label: "Méthodes (une par ligne ou séparées par une virgule, optionnel)",
+    type: "textarea",
+    rows: 2,
+    placeholder: "Entretien\nAnalyse de dossier",
+  },
+  {
+    nom: "responsabilites",
+    label: "Responsabilités (séparées par une virgule, optionnel)",
+    type: "textarea",
+    rows: 2,
+    placeholder: "Valider les règles de gestion",
+  },
+  {
+    nom: "perimetre",
+    label: "Périmètre (optionnel)",
+    type: "text",
+    maxLength: 2000,
+    placeholder: "Équipe cartes, trois flux",
+  },
+  {
+    nom: "sources_autorisees",
+    label: "Sources autorisées (séparées par une virgule, optionnel)",
+    type: "text",
+    placeholder: "Confluence, Jira",
+  },
+  {
+    nom: "outils_autorises",
+    label: "Outils autorisés (séparés par une virgule, optionnel)",
+    type: "text",
+    placeholder: "lecture, export",
+  },
+  {
+    nom: "limites",
+    label: "Limites (séparées par une virgule, optionnel)",
+    type: "textarea",
+    rows: 2,
+    placeholder: "Pas d'accès aux données clients",
+  },
+  {
+    nom: "preuves",
+    label: "Preuves (IDs séparés par une virgule, optionnel)",
+    type: "text",
+    placeholder: "preuve-1, preuve-2",
+  },
+  {
+    nom: "confiance",
+    label: "Confiance (0 à 1, optionnel)",
+    type: "text",
+    inputMode: "decimal",
+    placeholder: "0.7",
+  },
+];
+
+const CHAMPS_SOLLICITER_EXPERT = [
+  {
+    nom: "expert_id",
+    label: "Expert",
+    type: "select",
+    requis: true,
+    options: [],
+    aide: "Seuls les experts du registre du tenant sont proposés.",
+  },
+  {
+    nom: "contenu",
+    label: "Contribution",
+    type: "textarea",
+    requis: true,
+    rows: 3,
+    maxLength: 10000,
+    placeholder: "Ce que l'expert apporte, avec ses constats et ses doutes…",
+  },
+  {
+    nom: "constats",
+    label: "Constats (un par ligne ou séparés par une virgule, optionnel)",
+    type: "textarea",
+    rows: 2,
+    placeholder: "La pièce est saisie après validation",
+  },
+  {
+    nom: "claim_ids_proposes",
+    label: "Claims proposés (IDs séparés par une virgule, optionnel)",
+    type: "text",
+    placeholder: "claim-1, claim-2",
+  },
+  {
+    nom: "hypothesis_ids_soutenues",
+    label: "Hypothèses soutenues (IDs séparés par une virgule, optionnel)",
+    type: "text",
+    placeholder: "hypothesis-1",
+  },
+  {
+    nom: "hypothesis_ids_contestees",
+    label: "Hypothèses contestées (IDs séparés par une virgule, optionnel)",
+    type: "text",
+    placeholder: "hypothesis-2",
+  },
+  {
+    nom: "inconnues",
+    label: "Inconnues (séparées par une virgule, optionnel)",
+    type: "textarea",
+    rows: 2,
+    placeholder: "volume réel",
+  },
+  {
+    nom: "contribution_le",
+    label: "Contribution le (ISO 8601, optionnel)",
+    type: "text",
+    placeholder: "2026-11-08T10:00:00+00:00",
+  },
+  {
+    nom: "preuves",
+    label: "Preuves (IDs séparés par une virgule, optionnel)",
+    type: "text",
+    placeholder: "doc://entretien, preuve-1",
+  },
+  {
+    nom: "confiance",
+    label: "Confiance (0 à 1, optionnel)",
+    type: "text",
+    inputMode: "decimal",
+    placeholder: "0.6",
+  },
+];
+
+const CHAMPS_CHANGER_STATUT_CONTRIBUTION = [
+  {
+    nom: "vers",
+    label: "Nouveau statut",
+    type: "select",
+    requis: true,
+    options: [],
+  },
+  {
+    nom: "motif",
+    label: "Motif (optionnel)",
+    type: "textarea",
+    rows: 2,
+    placeholder: "Pourquoi cette décision de lecture…",
+  },
+  {
+    nom: "preuves",
+    label: "Preuves (IDs séparés par une virgule, optionnel)",
+    type: "text",
+    placeholder: "preuve-1, preuve-2",
   },
 ];
 
@@ -841,6 +1029,36 @@ export const ACTIONS_BOUCLE = Object.freeze({
     icone: "statut",
     champs: CHAMPS_CHANGER_STATUT_HYPOTHESE,
   }),
+  inscrire_expert: Object.freeze({
+    id: "inscrire_expert",
+    libelle: "Inscrire un expert",
+    titre: "Inscrire un expert",
+    description: "Enregistrer un expert métier avec son domaine, ses méthodes et ses limites.",
+    testid: "boucle-nouveau-expert",
+    api: "creerExpert",
+    icone: "expert",
+    champs: CHAMPS_INSCRIRE_EXPERT,
+  }),
+  solliciter_expert: Object.freeze({
+    id: "solliciter_expert",
+    libelle: "Solliciter un expert",
+    titre: "Solliciter un expert",
+    description: "Enregistrer une contribution d'expert rattachée à l'investigation ou à l'hypothèse.",
+    testid: "boucle-action-solliciter-expert",
+    api: "creerContributionInvestigation",
+    icone: "expert",
+    champs: CHAMPS_SOLLICITER_EXPERT,
+  }),
+  changer_statut_contribution: Object.freeze({
+    id: "changer_statut_contribution",
+    libelle: "Statuer sur la contribution",
+    titre: "Statuer sur la contribution d'expert",
+    description: "Accepter, rejeter ou archiver la contribution selon son cycle canonique.",
+    testid: "boucle-action-statut-contribution",
+    api: "changerStatutContribution",
+    icone: "statut",
+    champs: CHAMPS_CHANGER_STATUT_CONTRIBUTION,
+  }),
   creer_signal: Object.freeze({
     id: "creer_signal",
     libelle: "Enregistrer un signal",
@@ -1037,6 +1255,7 @@ export function actionsPourObjet(objet) {
     const actions = [];
     if (!STATUTS_INVESTIGATION_FERMES.has(statut)) {
       actions.push(ACTIONS_BOUCLE.creer_hypothese);
+      actions.push(ACTIONS_BOUCLE.solliciter_expert);
       actions.push(ACTIONS_BOUCLE.proposer_decision);
     }
     actions.push(ACTIONS_BOUCLE.creer_scenario);
@@ -1045,9 +1264,22 @@ export function actionsPourObjet(objet) {
   }
 
   if (type === "HYPOTHESIS") {
-    return statutsSuivants(type, statut).length > 0
+    const actions = statutsSuivants(type, statut).length > 0
       ? [ACTIONS_BOUCLE.changer_statut_hypothese]
       : [];
+    actions.push(ACTIONS_BOUCLE.solliciter_expert);
+    return actions;
+  }
+
+  if (type === "EXPERT_CONTRIBUTION") {
+    return statutsSuivants(type, statut).length > 0
+      ? [ACTIONS_BOUCLE.changer_statut_contribution]
+      : [];
+  }
+
+  if (type === "EXPERT") {
+    // C5e n'expose pas de route de changement de statut Expert : le registre se lit.
+    return [];
   }
 
   if (type === "DECISION") {
@@ -1071,15 +1303,15 @@ export function actionsPourObjet(objet) {
   return [];
 }
 
-export function configurationAction(actionId, objet) {
+export function configurationAction(actionId, objet, options = {}) {
   const base = ACTIONS_BOUCLE[actionId];
   if (!base) return null;
 
   const typeSource = typeObjet(objet);
-  const options = listeOptions(objet);
+  const optionsListe = listeOptions(objet);
   let champs = base.champs.map((champ) => (
-    champ.nom === "choix" && options.length > 0
-      ? { ...champ, type: "select", options }
+    champ.nom === "choix" && optionsListe.length > 0
+      ? { ...champ, type: "select", options: optionsListe }
       : champ
   ));
 
@@ -1097,6 +1329,30 @@ export function configurationAction(actionId, objet) {
       champ.nom === "vers" ? { ...champ, options: suivants } : champ
     ));
     if (suivants.length === 0) api = null;
+  }
+  if (actionId === "changer_statut_contribution") {
+    const suivants = statutsSuivants(typeSource, statutObjet(objet));
+    champs = champs.map((champ) => (
+      champ.nom === "vers" ? { ...champ, options: suivants } : champ
+    ));
+    if (suivants.length === 0) api = null;
+  }
+  if (actionId === "solliciter_expert") {
+    const experts = (Array.isArray(options.experts) ? options.experts : [])
+      .map((expert) => (
+        expert && typeof expert === "object" && "value" in expert
+          ? expert
+          : { value: idObjet(expert), label: titreObjet(expert) }
+      ))
+      .filter((expert) => expert.value);
+    champs = champs.map((champ) => (
+      champ.nom === "expert_id"
+        ? { ...champ, type: "select", options: experts }
+        : champ
+    ));
+    if (typeSource === "INVESTIGATION") api = "creerContributionInvestigation";
+    else if (typeSource === "HYPOTHESIS") api = "creerContributionHypothese";
+    else api = null;
   }
   if (actionId === "capitaliser_learning") {
     if (typeSource === "OUTCOME") api = "capitaliserLearningDepuisOutcome";
@@ -1239,8 +1495,8 @@ function corpsHypothese(valeurs) {
     const claims = listeVirgules(valeurs, nom);
     if (claims.length > 0) corps[cle] = claims;
   }
-  // ``expert_id`` reste dans le domaine pour C5e, mais n'est pas exposé par le
-  // formulaire tant qu'aucune route EXPERT n'existe.
+  // ``expert_id`` n'est pas exposé par le formulaire : depuis C5e, le rattachement
+  // d'un expert passe par une contribution sur l'investigation ou l'hypothèse.
   const preuves = listeVirgules(valeurs, "preuves");
   if (preuves.length > 0) corps.preuves = preuves;
 
@@ -1390,6 +1646,71 @@ export function construireCorps(actionId, valeurs = {}, objet = {}) {
 
     case "changer_statut_hypothese":
       return corpsChangementStatutHypothese(valeurs, objet);
+
+    case "inscrire_expert": {
+      const nom = valeurNette(valeurs, "nom");
+      if (!nom) return echec("Le nom de l'expert est obligatoire.");
+      const domaine = valeurNette(valeurs, "domaine");
+      if (!domaine) return echec("Le domaine de l'expert est obligatoire.");
+      const corps = { nom, domaine };
+      for (const champ of ["role", "perimetre"]) {
+        const valeur = valeurNette(valeurs, champ);
+        if (valeur) corps[champ] = valeur;
+      }
+      for (const champ of ["methodes", "responsabilites", "limites"]) {
+        const elements = listeLignesOuVirgules(valeurs, champ);
+        if (elements.length > 0) corps[champ] = elements;
+      }
+      for (const champ of ["sources_autorisees", "outils_autorises", "preuves"]) {
+        const elements = listeVirgules(valeurs, champ);
+        if (elements.length > 0) corps[champ] = elements;
+      }
+      const confiance = nombreOptionnel(valeurs, "confiance", "La confiance", { maximum: 1 });
+      if (confiance.erreur) return echec(confiance.erreur);
+      if (confiance.valeur !== null) corps.confiance = confiance.valeur;
+      return { corps };
+    }
+
+    case "solliciter_expert": {
+      const expertId = valeurNette(valeurs, "expert_id");
+      if (!expertId) return echec("L'expert est obligatoire.");
+      const contenu = valeurNette(valeurs, "contenu");
+      if (!contenu) return echec("Le contenu de la contribution est obligatoire.");
+      const corps = { expert_id: expertId, contenu };
+      for (const champ of ["constats", "inconnues"]) {
+        const elements = listeLignesOuVirgules(valeurs, champ);
+        if (elements.length > 0) corps[champ] = elements;
+      }
+      for (const champ of [
+        "claim_ids_proposes", "hypothesis_ids_soutenues",
+        "hypothesis_ids_contestees", "preuves",
+      ]) {
+        const elements = listeVirgules(valeurs, champ);
+        if (elements.length > 0) corps[champ] = elements;
+      }
+      const contributionLe = valeurNette(valeurs, "contribution_le");
+      if (contributionLe) corps.contribution_le = contributionLe;
+      const confiance = nombreOptionnel(valeurs, "confiance", "La confiance", { maximum: 1 });
+      if (confiance.erreur) return echec(confiance.erreur);
+      if (confiance.valeur !== null) corps.confiance = confiance.valeur;
+      return { corps };
+    }
+
+    case "changer_statut_contribution": {
+      const vers = valeurNette(valeurs, "vers").toUpperCase();
+      if (!vers) return echec("Le statut cible est obligatoire.");
+      const autorises = statutsSuivants("EXPERT_CONTRIBUTION", statutObjet(objet));
+      if (!autorises.includes(vers)) {
+        return echec(
+          `transition de statut refusée : ${statutObjet(objet) || "?"} → ${vers}.`);
+      }
+      const corps = { vers };
+      const motif = valeurNette(valeurs, "motif");
+      if (motif) corps.motif = motif;
+      const preuves = listeVirgules(valeurs, "preuves");
+      if (preuves.length > 0) corps.preuves = preuves;
+      return { corps };
+    }
 
     case "creer_scenario": {
       const titre = valeurNette(valeurs, "titre");
@@ -1559,6 +1880,10 @@ export function messageErreurTransition(erreur, defaut = "La transition n'a pas 
       return champ && message ? `${champ} : ${message}` : message;
     }).filter(Boolean);
     if (messages.length > 0) return messages.join(" · ");
+  }
+
+  if (reponse?.status === 501) {
+    return "Idempotency-Key non pris en charge : réessayez sans clé d'idempotence.";
   }
 
   if (typeof detail === "string" && detail.trim()) {
