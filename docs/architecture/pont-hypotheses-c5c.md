@@ -7,9 +7,10 @@
 
 `Hypothesis` est un objet d'entreprise canonique (`famille = investigation`) qui porte une
 explication testable, ses conditions de test, ses claims soutenants et opposants, des
-preuves et un cycle de statut. Le domaine conserve aussi `expert_id`, mais ce champ est
-réservé à C5e : il n'est pas accepté en entrée HTTP et n'apparaît pas dans le formulaire
-tant qu'aucune route `EXPERT` n'existe. Il ne remplace pas les hypothèses internes du dossier de raisonnement :
+preuves et un cycle de statut. Le domaine conserve aussi `expert_id`, mais ce champ n'est
+pas accepté en entrée HTTP et n'apparaît pas dans le formulaire : depuis C5e, le
+rattachement d'un expert passe par une `ExpertContribution`, jamais par ce champ. Il ne
+remplace pas les hypothèses internes du dossier de raisonnement :
 c'est l'objet durable rattaché à une Investigation canonique.
 
 ## Chaîne et persistance
@@ -54,7 +55,8 @@ répond 422.
 Corps de création strict (`extra="forbid"`) : `enonce` obligatoire, `conditions_test`,
 `claim_ids_soutenants`, `claim_ids_opposants`, `preuves`, `confiance` (0..1).
 `statut`, `mode`, `id`, `investigation_id` et `expert_id` ne sont jamais acceptés du
-client (422) ; `expert_id` reste réservé à C5e.
+client (422) ; `expert_id` reste non accepté, le rattachement passant par une
+`ExpertContribution` C5e.
 
 Corps de transition : `vers` obligatoire, `motif` et `preuves` optionnels.
 
@@ -62,7 +64,8 @@ Corps de transition : `vers` obligatoire, `motif` et `preuves` optionnels.
 
 - Action « Formuler une hypothèse » depuis une Investigation ouverte.
 - Formulaire `ModaleTransition` : énoncé, conditions de test, claims soutenants/opposants,
-  preuves, confiance. Le champ expert reste réservé à C5e et n'est pas affiché.
+  preuves, confiance. Le champ expert n'est pas affiché : le rattachement passe par une
+  `ExpertContribution` C5e.
 - Sélection de l'hypothèse créée, ajout à la liste, refetch du parent pour exposer
   `hypothesis_ids`, affichage de la chaîne.
 - Action « Changer le statut » limitée aux seules transitions autorisées.
@@ -71,8 +74,9 @@ Corps de transition : `vers` obligatoire, `motif` et `preuves` optionnels.
 ## Limites
 
 - Formulation manuelle uniquement : aucun pipeline automatique Claims → Hypothesis.
-- Pas encore de rattachement aux `Expert` / `ExpertContribution` : `expert_id` existe dans
-  le domaine mais reste réservé à C5e, non exposé par l'API ni par l'UI.
+- Pas encore de rattachement direct aux `Expert` / `ExpertContribution` par `expert_id` :
+  le champ existe dans le domaine mais n'est pas exposé ; C5e fournit à la place des
+  contributions rattachées à l'investigation ou à l'hypothèse.
 - Pas de suppression ni de fusion d'hypothèses concurrentes.
 - La table de transitions est dupliquée côté domaine et côté UI, comme pour C5b ; un test
   frontend vérifie la copie exacte.
