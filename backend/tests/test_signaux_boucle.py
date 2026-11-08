@@ -480,6 +480,10 @@ def test_un_jeton_brut_est_refuse_a_l_ecriture(charge):
     "Bearer configuration",
     "Bearer verification",
     "Bearer validation",
+    "Bearer authentication-based",
+    "Bearer authentication/authorization",
+    "Bearer authentication_based",
+    "Bearer implementation-based",
     "sk-learn-tutorial",
     "github_pat_missing",
 ])
@@ -488,8 +492,15 @@ def test_la_prose_legitime_n_est_pas_un_jeton(texte):
     entreprise_depot.verifier_donnees({"description": texte})
 
 
+def test_un_jeton_alpha_finissant_par_un_suffixe_technique_est_classe_prose():
+    """Limite assumée : `...er` est un suffixe technique, donc ce faux négatif est prose."""
+    assert jeton_sensible("Bearer abcdefghijklmner") is False
+    entreprise_depot.verifier_donnees({"description": "Bearer abcdefghijklmner"})
+
+
 @pytest.mark.parametrize("texte", [
     "Bearer abcdefghijklmnop",
+    "Bearer abc-defghijklmnop",
     "sk-abc123456789012345",
     "sk-proj-abc123456789012345",
     "ghp_abc1234567890",
@@ -1288,6 +1299,75 @@ def test_pg_sept_mots_bearer_de_prose_sont_acceptes_et_non_masques(monkeypatch):
                 (tenant,),
             ).fetchone()[0]
         assert nombre == len(mots)
+    finally:
+        _nettoyer(tenant)
+
+
+@besoin_pg
+def test_pg_bearer_composes_de_prose_sont_acceptes_et_non_masques(monkeypatch):
+    tenant = f"c5d-{uuid.uuid4().hex[:10]}"
+    client = _client_pg(monkeypatch)
+    descriptions = (
+        "Bearer authentication-based",
+        "Bearer authentication/authorization",
+        "Bearer authentication_based",
+        "Bearer implementation-based",
+    )
+    try:
+        with psycopg.connect(DSN, autocommit=True) as conn:
+            depot.appliquer_schema(conn)
+
+        for rang, description in enumerate(descriptions):
+            reponse = client.post(
+                f"{BASE}/signals",
+                json={
+                    "libelle": f"Composé {rang}",
+                    "source": f"source-compose-{rang}",
+                    "description": description,
+                },
+                headers={"X-Tenant": tenant},
+            )
+            assert reponse.status_code == 201, (description, reponse.text)
+            assert reponse.json()["objet"]["donnees"]["description"] == description
+
+        with psycopg.connect(DSN) as conn:
+            nombre = conn.execute(
+                "SELECT count(*) FROM objet_entreprise "
+                "WHERE tenant_id = %s AND type = 'SIGNAL'",
+                (tenant,),
+            ).fetchone()[0]
+        assert nombre == len(descriptions)
+    finally:
+        _nettoyer(tenant)
+
+
+@besoin_pg
+def test_pg_bearer_compose_mixte_jeton_prose_refuse_400_sans_ecriture(monkeypatch):
+    tenant = f"c5d-{uuid.uuid4().hex[:10]}"
+    client = _client_pg(monkeypatch)
+    description = "Bearer abc-defghijklmnop"
+    try:
+        with psycopg.connect(DSN, autocommit=True) as conn:
+            depot.appliquer_schema(conn)
+
+        reponse = client.post(
+            f"{BASE}/signals",
+            json={
+                "libelle": "Composé mixte",
+                "source": "source-mixte",
+                "description": description,
+            },
+            headers={"X-Tenant": tenant},
+        )
+        assert reponse.status_code == 400, reponse.text
+
+        with psycopg.connect(DSN) as conn:
+            nombre = conn.execute(
+                "SELECT count(*) FROM objet_entreprise "
+                "WHERE tenant_id = %s AND type = 'SIGNAL'",
+                (tenant,),
+            ).fetchone()[0]
+        assert nombre == 0
     finally:
         _nettoyer(tenant)
 

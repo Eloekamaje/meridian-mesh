@@ -95,21 +95,27 @@ Erreurs :
   libellé, description, preuves…). Formes reconnues : JWT `eyJ…`, `gh[pousr]_…`,
   `github_pat_…`, `sk-`/`sk-proj-` d'au moins 16 caractères après le préfixe et contenant
   au moins un chiffre (`sk-abc123456789012345` est refusé), `xox[baprs]-…`, `AKIA…`, et
-  `Bearer <jeton>`. Pour `Bearer`, le token capturé est de la **prose** si, en minuscules,
-  il appartient à une courte liste technique (`authentication`, `authorization`, `token`,
-  `scheme`, `header`, `flow`, `type`, `credentials`, `access`, `request`, `response`,
-  `client`, `server`, `resource`, `endpoint`, `method`, `framework`, `library`,
+  `Bearer <jeton>`. Pour `Bearer`, le token capturé est de la **prose** si, en
+  minuscules, il appartient à une courte liste technique (`authentication`, `authorization`,
+  `token`, `scheme`, `header`, `flow`, `type`, `credentials`, `access`, `request`,
+  `response`, `client`, `server`, `resource`, `endpoint`, `method`, `framework`, `library`,
   `interface`, `application`, `service`, `system`, `security`, `support`, `usage`, `mode`,
   `policy`, `standard`, `protocol`, `format`) **ou** s'il est purement alphabétique et se
   termine par un suffixe technique (`tion`, `sion`, `ment`, `ity`, `ance`, `ence`, `ing`,
   `ed`, `al`, `ive`, `ous`, `able`, `ible`, `er`, `or`, `ics`, `ology`, `graphy`, `ness`,
-  `ship`, `hood`, `ism`, `ist`, `ize`, `ise`). Ainsi `implementation`, `documentation`,
-  `specification`, `interoperability`, `configuration`, `verification`, `validation`
-  passent, tandis que `Bearer abcdefghijklmnop` reste refusé. `sk-learn-tutorial` est
-  accepté. Un identifiant long contenant un chiffre (`sk-mon-projet-2026-01`) peut être
-  refusé : faux positif assumé. Le masquage HTTP utilise la même détection stricte, donc
-  la prose `Bearer authentication` reste lisible. La détection n'est **pas exhaustive** :
-  un secret opaque sans préfixe connu peut passer (limite caractérisée par test) ;
+  `ship`, `hood`, `ism`, `ist`, `ize`, `ise`). Un composé est découpé sur `-`, `/`, `_`
+  et `.` ; il est prose seulement si **tous** ses segments non vides le sont. Ainsi
+  `implementation`, `documentation`, `specification`, `interoperability`,
+  `configuration`, `verification`, `validation`, `authentication-based`,
+  `authentication/authorization`, `authentication_based` et `implementation-based`
+  passent, tandis que `Bearer abcdefghijklmnop` et `Bearer abc-defghijklmnop` restent
+  refusés. `sk-learn-tutorial` est accepté. Un identifiant long contenant un chiffre
+  (`sk-mon-projet-2026-01`) peut être refusé : faux positif assumé. Le masquage HTTP
+  utilise la même détection stricte, donc la prose `Bearer authentication` reste lisible.
+  La détection n'est **pas exhaustive** : un secret opaque sans préfixe connu peut passer
+  (limite caractérisée par test). Un jeton purement alphabétique finissant par un suffixe
+  technique (`…er`, `…tion`, etc.) est classé prose même s'il ressemble à un jeton : faux
+  négatif assumé, caractérisé par test ;
 - 501 : `Idempotency-Key` (aucun stockage d'idempotence durable) ;
 - 503 : Postgres indisponible.
 
@@ -146,12 +152,22 @@ formulaire de statut.
   avec la même politique. La prose `Bearer authentication`/`Bearer implementation`/
   `Bearer documentation`/`Bearer specification` et `sk-learn-tutorial` reste acceptée.
 - Migration legacy : un document dont le titre porte un jeton n'est pas migré ; le
-  rapport le compte dans `erreurs`, sans crash ni réécriture.
+  rapport le compte dans `erreurs`, sans crash ni réécriture. Le cas `id`/`donnees` legacy
+  n'est pas couvert par un test dédié.
 - Limite : un secret opaque sans préfixe connu peut passer ; un test 201 le caractérise.
+- Faux négatif de forme : un jeton purement alphabétique finissant par un suffixe
+  technique (`Bearer abcdefghijklmner`) est classé prose ; test unitaire dédié.
 - `titre` : la colonne texte est contrôlée séparément de `donnees`, avec les mêmes motifs.
 - `id` et `tenant` : un jeton dans l'identifiant fourni, le tenant brut ou le tenant
   normalisé (`demo→local`) est refusé avant persistance ; les identifiants normaux
   (`sit-…`, `dec-…`, `local`, `demo`) restent acceptés.
+- Périmètre des contrôles : ils s'appliquent à la persistance canonique
+  `objet_entreprise` via `entreprise_depot`. Les autres stores (mémoire, dossiers,
+  sessions, Mongo legacy) ne sont pas couverts par cette barrière.
+- Migration legacy : le cas testé est un `titre` porteur de jeton, non migré et reporté
+  dans `erreurs`. Les documents legacy dont l'`id` ou les `donnees` portent un jeton ne
+  sont pas couverts spécifiquement par ce test ; la politique de skip reste la même
+  lorsqu'ils atteignent la persistance canonique.
 - Rejeu : un test caractérise le second Signal créé lorsqu'on renvoie explicitement le
   `detecte_le` serveur d'une première création sans date.
 - Postgres réel (opt-in `JUMEAU_PG_DSN`) : chaîne `SITUATION → SIGNAL`, absence de chaîne

@@ -152,15 +152,22 @@ _SUFFIXES_PROSE_BEARER = (
 )
 
 
-def _bearer_est_prose(jeton: str) -> bool:
-    """Un mot alphabétique minuscule à suffixe technique est de la prose, pas un jeton."""
-    minuscule = jeton.lower()
+def _segment_bearer_est_prose(segment: str) -> bool:
+    minuscule = segment.lower()
     if minuscule in _MOTS_PROSE_BEARER:
         return True
     return (
         re.fullmatch(r"[a-z]+", minuscule) is not None
         and minuscule.endswith(_SUFFIXES_PROSE_BEARER)
     )
+
+
+def _bearer_est_prose(jeton: str) -> bool:
+    """Tous les segments d'un composé (séparés par - / _ .) doivent être de la prose."""
+    segments = [segment for segment in re.split(r"[-/_.]", jeton) if segment]
+    if not segments:
+        return False
+    return all(_segment_bearer_est_prose(segment) for segment in segments)
 
 
 def jeton_sensible(valeur: Any) -> bool:
