@@ -1879,7 +1879,7 @@ def test_pg_liste_filtre_et_tri_deterministe():
 
 
 @besoin_pg
-def test_pg_derivation_hypothese_seule_a_la_persistance():
+def test_pg_derivation_hypothese_seule_a_la_persistance(monkeypatch):
     """Un appel direct avec hypothesis_id seul dérive investigation_id et le lien inverse."""
     tenant = f"c5e-{uuid.uuid4().hex[:10]}"
     try:
@@ -1889,6 +1889,15 @@ def test_pg_derivation_hypothese_seule_a_la_persistance():
             _pg_investigation(tenant)
         expert = _pg_expert(tenant)
         hypothese = _pg_hypothese(tenant, "inv-c5e")
+        appels_verrouillage: list[set[str]] = []
+        verrouiller = objets_exploitation._lire_verrouilles
+
+        def espion_verrouillage(conn, tenant_appel, identifiants):
+            appels_verrouillage.append(set(identifiants))
+            return verrouiller(conn, tenant_appel, identifiants)
+
+        monkeypatch.setattr(
+            objets_exploitation, "_lire_verrouilles", espion_verrouillage)
 
         contribution = {
             "id": "contribution-hypothese-seule",
@@ -1908,6 +1917,8 @@ def test_pg_derivation_hypothese_seule_a_la_persistance():
 
         assert enregistre["donnees"]["hypothesis_id"] == hypothese.objet["id"]
         assert enregistre["donnees"]["investigation_id"] == "inv-c5e"
+        assert appels_verrouillage, "la persistance doit verrouiller les parents"
+        assert "inv-c5e" in appels_verrouillage[0]
 
         with psycopg.connect(DSN) as conn:
             investigation = boucle.lire_boucle(conn, tenant, "inv-c5e", as_dict=True)
