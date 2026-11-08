@@ -28,6 +28,8 @@ from typing import Any
 
 from meridian.ports.boucle import BoucleStore, ObjetExistant, VersionRefusee
 from meridian.domain.objets_exploitation import (
+    STATUTS_EXPERT,
+    STATUTS_EXPERT_CONTRIBUTION,
     STATUTS_HYPOTHESIS,
     STATUTS_OPPORTUNITE,
     STATUTS_RISQUE,
@@ -66,6 +68,12 @@ __all__ = [
     "creer_hypothese",
     "lister_hypotheses",
     "changer_statut_hypothese",
+    "creer_expert",
+    "lister_experts",
+    "creer_contribution_investigation",
+    "creer_contribution_hypothese",
+    "lister_contributions",
+    "changer_statut_contribution",
     "creer_signal",
     "lister_signaux",
     "creer_scenario",
@@ -79,6 +87,8 @@ _LIBELLES = {
     "decision": "Décision",
     "scenario": "Scénario",
     "hypothesis": "Hypothèse",
+    "expert": "Expert",
+    "contribution": "Contribution",
     "signal": "Signal",
     "initiative": "Initiative",
     "outcome": "Outcome",
@@ -559,9 +569,9 @@ def lister_risques(
 
 def _source_statut(
     depot: BoucleStore, conn: Any, tenant: str, identifiant: Any,
-    type_attendu: str, role: str,
+    type_attendu: str, role: str, *, for_update: bool = True,
 ) -> Any:
-    """Charge l'objet verrouillé d'une route de statut ; un autre type est un 422.
+    """Charge l'objet d'une route de statut ; un autre type est un 422.
 
     Un identifiant inconnu ou hors tenant reste un 404. Le type incorrect n'est pas une
     transition refusée : c'est une erreur de contrat sur la ressource demandée.
@@ -570,7 +580,7 @@ def _source_statut(
     if not identifiant:
         raise SourceIntrouvable(role, identifiant)
     source = depot.lire_boucle(
-        conn, tenant, identifiant, as_dict=True, for_update=True)
+        conn, tenant, identifiant, as_dict=True, for_update=for_update)
     if source is None:
         raise SourceIntrouvable(role, identifiant)
     type_trouve = _texte(_valeur_source(source, "type")).upper()
@@ -757,6 +767,228 @@ def changer_statut_hypothese(
         depot.enregistrer_objets(
             conn, tenant_id, objets=[objet], as_dict=False, historique=True)
         return _relire(depot, conn, tenant_id, _texte(hypothese_id))
+
+
+STATUT_EXPERT_INITIAL = "ACTIVE"
+MODE_EXPERT_INITIAL = "DECLARED"
+STATUT_CONTRIBUTION_INITIAL = "PROPOSED"
+MODE_CONTRIBUTION_INITIAL = "DECLARED"
+_CHAMPS_SERVEUR_EXPERT = ("statut", "mode", "id", "tenant_id")
+_CHAMPS_SERVEUR_CONTRIBUTION = ("statut", "mode", "id", "tenant_id", "investigation_id")
+
+
+def _refuser_champs_serveur(
+    champs: dict[str, Any], interdits: tuple[str, ...], libelle: str,
+) -> None:
+    """Refuse un champ dont la valeur est décidée par le serveur (422)."""
+    for champ in interdits:
+        if champ in champs:
+            raise ObjetsExploitationInvalide(
+                f"{champ} interdit à la création d'un {libelle} : le serveur le décide")
+
+
+def creer_expert(
+    depot: BoucleStore, conn: Any, tenant_id: str, **champs: Any,
+) -> ResultatTransition:
+    """Inscrit un Expert dans le registre du tenant.
+
+    Le serveur force ``statut=ACTIVE`` et ``mode=DECLARED`` ; ``id``, ``tenant_id``,
+    ``statut`` et ``mode`` fournis par le client sont refusés (422). Aucune route de
+    changement de statut Expert n'est exposée en C5e : le registre se lit et s'inscrit.
+    """
+    _refuser_champs_serveur(champs, _CHAMPS_SERVEUR_EXPERT, "expert")
+    nom = _texte(champs.pop("nom", None))
+    domaine = _texte(champs.pop("domaine", None))
+    if not nom:
+        raise ObjetsExploitationInvalide("nom obligatoire")
+    if not domaine:
+        raise ObjetsExploitationInvalide("domaine obligatoire")
+    identifiant = f"{_PREFIXES['EXPERT']}-{uuid.uuid4().hex[:12]}"
+    with depot.transaction(conn):
+        objet = depot.nouvel_expert(
+            nom=nom, domaine=domaine, tenant_id=tenant_id, id=identifiant,
+            statut=STATUT_EXPERT_INITIAL, mode=MODE_EXPERT_INITIAL, **champs)
+        depot.enregistrer_objets(conn, tenant_id, objets=[objet], as_dict=False)
+        return _relire(depot, conn, tenant_id, identifiant)
+
+
+def lister_experts(
+    depot: BoucleStore, conn: Any, tenant_id: str, *,
+    domaine: Any = None, statut: Any = None, limite: int = 100,
+) -> list[dict[str, Any]]:
+    """Liste les Experts du tenant, filtrés par domaine et statut."""
+    statut_normalise = None
+    if _texte(statut):
+        statut_normalise = _texte(statut).upper()
+        if statut_normalise not in STATUTS_EXPERT:
+            raise ObjetsExploitationInvalide(
+                f"statut inconnu : {statut!r} "
+                f"(attendus : {', '.join(STATUTS_EXPERT)})")
+    return depot.lister_objets_exploitation(
+        conn, tenant_id, type_="EXPERT",
+        domaine=_texte(domaine) or None, statut=statut_normalise,
+        limite=limite, as_dict=True,
+    )
+
+
+def _refuser_investigation_fermee(source: Any, identifiant: Any) -> None:
+    statut = _texte(_valeur_source(source, "statut")).upper()
+    if statut in STATUTS_INVESTIGATION_FERMES:
+        raise TransitionRefusee(
+            f"investigation {_texte(identifiant)!r} fermée : statut "
+            f"{statut or 'inconnu'} ; une contribution ne peut être enregistrée que "
+            "sur une investigation ouverte")
+
+
+def _creer_contribution(
+    depot: BoucleStore, conn: Any, tenant_id: str, investigation: Any, *,
+    hypothesis: Any = None, champs: dict[str, Any], libelle: str,
+) -> ResultatTransition:
+    """Crée une contribution après verrouillage de l'investigation et de l'expert.
+
+    ``champs`` ne porte jamais ``statut``, ``mode``, ``id``, ``tenant_id`` ni
+    ``investigation_id`` : ces valeurs sont serveur ou dérivées de la route. Quand une
+    hypothèse est fournie, elle doit appartenir à l'investigation verrouillée (409).
+    """
+    _refuser_champs_serveur(champs, _CHAMPS_SERVEUR_CONTRIBUTION, libelle)
+    expert_id = _texte(champs.pop("expert_id", None))
+    if not expert_id:
+        raise ObjetsExploitationInvalide("expert_id obligatoire")
+    contenu = _texte(champs.get("contenu"))
+    if not contenu:
+        raise ObjetsExploitationInvalide("contenu obligatoire")
+    investigation_id = _texte(_valeur_source(investigation, "id"))
+    if hypothesis is not None:
+        parent = _texte(_valeur_source(hypothesis, "investigation_id"))
+        if parent != investigation_id:
+            raise TransitionRefusee(
+                f"l'hypothèse {_texte(_valeur_source(hypothesis, 'id'))!r} appartient à "
+                f"l'investigation {parent or 'inconnue'!r}, pas à "
+                f"{investigation_id!r}")
+    expert = _source_statut(
+        depot, conn, tenant_id, expert_id, "EXPERT", "expert")
+    identifiant = f"{_PREFIXES['EXPERT_CONTRIBUTION']}-{uuid.uuid4().hex[:12]}"
+    if depot.lire_boucle(conn, tenant_id, identifiant, as_dict=True) is not None:
+        raise DoublonExploitation(
+            "contribution déjà existante : l'identifiant "
+            f"{identifiant!r} est déjà utilisé")
+    objet = depot.nouvelle_contribution(
+        expert=expert, investigation=investigation, hypothesis=hypothesis,
+        tenant_id=tenant_id, id=identifiant,
+        statut=STATUT_CONTRIBUTION_INITIAL, mode=MODE_CONTRIBUTION_INITIAL,
+        **champs)
+    depot.enregistrer_objets(conn, tenant_id, objets=[objet], as_dict=False)
+    return _relire(depot, conn, tenant_id, identifiant)
+
+
+def creer_contribution_investigation(
+    depot: BoucleStore, conn: Any, tenant_id: str, investigation_id: str,
+    **champs: Any,
+) -> ResultatTransition:
+    """Enregistre une contribution d'expert à une Investigation du tenant.
+
+    L'Investigation est verrouillée et doit être ouverte (sinon 409). Une hypothèse
+    optionnelle doit appartenir à cette investigation (sinon 409). Le statut initial
+    ``PROPOSED`` et le mode ``DECLARED`` sont serveur. L'Expert est verrouillé et doit
+    exister dans le même tenant (sinon 404).
+    """
+    hypothesis_id = _texte(champs.pop("hypothesis_id", None))
+    with depot.transaction(conn):
+        investigation = _source_investigation(
+            depot, conn, tenant_id, investigation_id, for_update=True)
+        _refuser_investigation_fermee(investigation, investigation_id)
+        hypothesis = None
+        if hypothesis_id:
+            hypothesis = _source_statut(
+                depot, conn, tenant_id, hypothesis_id, "HYPOTHESIS", "hypothèse")
+        return _creer_contribution(
+            depot, conn, tenant_id, investigation,
+            hypothesis=hypothesis, champs=dict(champs),
+            libelle="contribution",
+        )
+
+
+def creer_contribution_hypothese(
+    depot: BoucleStore, conn: Any, tenant_id: str, hypothesis_id: str,
+    **champs: Any,
+) -> ResultatTransition:
+    """Enregistre une contribution d'expert ciblant une Hypothesis du tenant.
+
+    L'investigation est dérivée de l'hypothèse verrouillée ; elle doit exister et être
+    ouverte (sinon 409). ``hypothesis_id`` et ``investigation_id`` sont refusés dans le
+    corps : la route les décide.
+    """
+    if "hypothesis_id" in champs:
+        raise ObjetsExploitationInvalide(
+            "hypothesis_id interdit : la route décide l'hypothèse ciblée")
+    with depot.transaction(conn):
+        # Ordre de verrouillage commun aux deux routes : Investigation d'abord, puis
+        # Hypothesis, puis Expert. L'hypothèse est lue sans verrou pour découvrir son
+        # parent, puis relue verrouillée : deux contributions concurrentes ne peuvent
+        # pas se bloquer en ordre inverse.
+        apercu = _source_statut(
+            depot, conn, tenant_id, hypothesis_id, "HYPOTHESIS", "hypothèse",
+            for_update=False)
+        investigation_id = _texte(_valeur_source(apercu, "investigation_id"))
+        if not investigation_id:
+            raise TransitionRefusee(
+                f"hypothèse {_texte(hypothesis_id)!r} incomplète : investigation_id manquant")
+        investigation = _source_investigation(
+            depot, conn, tenant_id, investigation_id, for_update=True)
+        hypothesis = _source_statut(
+            depot, conn, tenant_id, hypothesis_id, "HYPOTHESIS", "hypothèse",
+            for_update=True)
+        parent = _texte(_valeur_source(hypothesis, "investigation_id"))
+        if parent != investigation_id:
+            raise TransitionRefusee(
+                f"hypothèse {_texte(hypothesis_id)!r} déplacée vers l'investigation "
+                f"{parent or 'inconnue'!r} pendant la transaction")
+        _refuser_investigation_fermee(investigation, investigation_id)
+        return _creer_contribution(
+            depot, conn, tenant_id, investigation,
+            hypothesis=hypothesis, champs=dict(champs),
+            libelle="contribution",
+        )
+
+
+def lister_contributions(
+    depot: BoucleStore, conn: Any, tenant_id: str, *,
+    expert_id: Any = None, investigation_id: Any = None,
+    hypothesis_id: Any = None, statut: Any = None, limite: int = 100,
+) -> list[dict[str, Any]]:
+    """Liste les contributions du tenant, filtrées et triées de façon déterministe."""
+    statut_normalise = None
+    if _texte(statut):
+        statut_normalise = _texte(statut).upper()
+        if statut_normalise not in STATUTS_EXPERT_CONTRIBUTION:
+            raise ObjetsExploitationInvalide(
+                f"statut inconnu : {statut!r} "
+                f"(attendus : {', '.join(STATUTS_EXPERT_CONTRIBUTION)})")
+    return depot.lister_objets_exploitation(
+        conn, tenant_id, type_="EXPERT_CONTRIBUTION",
+        expert_id=_texte(expert_id) or None,
+        investigation_id=_texte(investigation_id) or None,
+        hypothesis_id=_texte(hypothesis_id) or None,
+        statut=statut_normalise, limite=limite, as_dict=True,
+    )
+
+
+def changer_statut_contribution(
+    depot: BoucleStore, conn: Any, tenant_id: str, contribution_id: str,
+    statut: str, *, motif: Any = None, preuves: Any = None,
+) -> ResultatTransition:
+    """Fait évoluer une contribution selon ``TRANSITIONS_EXPERT_CONTRIBUTION``.
+
+    Une transition non autorisée est un 409 ; un statut inconnu ou un mauvais type est
+    un 422 ; une contribution absente ou hors tenant est un 404. Le motif et les preuves
+    sont conservés avec la version précédente dans ``historique``.
+    """
+    return _changer_statut_objet(
+        depot, conn, tenant_id, contribution_id, statut,
+        type_attendu="EXPERT_CONTRIBUTION", role="contribution",
+        statuts=STATUTS_EXPERT_CONTRIBUTION, muter=depot.muer_contribution,
+        motif=motif, preuves=preuves,
+    )
 
 
 STATUT_SIGNAL_INITIAL = "DETECTED"

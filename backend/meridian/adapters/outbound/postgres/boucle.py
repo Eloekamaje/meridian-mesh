@@ -19,17 +19,27 @@ from meridian.adapters.outbound.postgres import entreprise_depot
 from meridian.adapters.outbound.postgres import objets_exploitation
 from meridian.domain import modele_entreprise as modele
 from meridian.domain.construction_objets_exploitation import (
+    muer_contribution as _muer_contribution,
     muer_hypothese as _muer_hypothese,
     muer_opportunite as _muer_opportunite,
     muer_risque as _muer_risque,
     nouveau_risque as _nouveau_risque,
     nouveau_scenario as _nouveau_scenario,
     nouveau_signal as _nouveau_signal,
+    nouvel_expert as _nouvel_expert,
+    nouvelle_contribution as _nouvelle_contribution,
     nouvelle_expression as _nouvelle_expression,
     nouvelle_hypothese as _nouvelle_hypothese,
     nouvelle_opportunite as _nouvelle_opportunite,
 )
-from meridian.domain.objets_exploitation import Expression, Hypothesis, Scenario, Signal
+from meridian.domain.objets_exploitation import (
+    Expert,
+    ExpertContribution,
+    Expression,
+    Hypothesis,
+    Scenario,
+    Signal,
+)
 from meridian.domain.mesure import mesure_renseignee as _mesure_renseignee
 
 __all__ = [
@@ -44,7 +54,8 @@ __all__ = [
     "transaction", "nouvelle_situation", "donnees_de", "fusionner_donnees",
     "nouveau_scenario", "nouvelle_expression", "nouvelle_hypothese",
     "nouvelle_opportunite", "nouveau_risque", "nouveau_signal",
-    "muer_hypothese", "muer_opportunite", "muer_risque",
+    "nouvel_expert", "nouvelle_contribution",
+    "muer_hypothese", "muer_opportunite", "muer_risque", "muer_contribution",
     "enregistrer_objets", "lister_objets_exploitation",
 ]
 
@@ -467,6 +478,8 @@ _CLASSES_LECTURE = {
     "SIGNAL": Signal,
     "EXPRESSION": Expression,
     "HYPOTHESIS": Hypothesis,
+    "EXPERT": Expert,
+    "EXPERT_CONTRIBUTION": ExpertContribution,
     "OPPORTUNITY": modele.Opportunity,
     "RISK": modele.Risk,
 }
@@ -1080,6 +1093,17 @@ def _source_principale(ligne: Mapping[str, Any]) -> str | None:
         return situations[0] if len(situations) == 1 else None
     if type_objet == "HYPOTHESIS":
         return _texte_ou_none(_valeur(ligne, "investigation_id"))
+    if type_objet == "EXPERT":
+        # Le registre n'a pas de parent : la chaîne se réduit à l'Expert lui-même.
+        return None
+    if type_objet == "EXPERT_CONTRIBUTION":
+        # Une contribution ciblant une hypothèse expose la chaîne complète
+        # INVESTIGATION → HYPOTHESIS → CONTRIBUTION ; sinon elle se rattache
+        # directement à l'Investigation qui la porte.
+        return (
+            _texte_ou_none(_valeur(ligne, "hypothesis_id"))
+            or _texte_ou_none(_valeur(ligne, "investigation_id"))
+        )
     if type_objet == "INVESTIGATION":
         return _texte_ou_none(_valeur(ligne, "situation_id"))
     if type_objet == "DECISION":
@@ -1195,6 +1219,17 @@ def nouveau_signal(**champs: Any) -> Any:
     return _nouveau_signal(**champs)
 
 
+def nouvel_expert(**champs: Any) -> Any:
+    """Fabrique un Expert canonique sans exposer le constructeur de domaine."""
+    return _nouvel_expert(**champs)
+
+
+def nouvelle_contribution(**champs: Any) -> Any:
+    """Fabrique une contribution canonique sans exposer le constructeur de domaine."""
+    expert = champs.pop("expert", None)
+    return _nouvelle_contribution(expert, **champs)
+
+
 def muer_opportunite(opportunite: Any, vers: str, **champs: Any) -> Any:
     """Applique une transition de statut d'Opportunity, sans muter la source."""
     return _muer_opportunite(opportunite, vers, **champs)
@@ -1208,6 +1243,11 @@ def muer_risque(risque: Any, vers: str, **champs: Any) -> Any:
 def muer_hypothese(hypothese: Any, vers: str, **champs: Any) -> Any:
     """Applique une transition de statut de Hypothesis, sans muter la source."""
     return _muer_hypothese(hypothese, vers, **champs)
+
+
+def muer_contribution(contribution: Any, vers: str, **champs: Any) -> Any:
+    """Applique une transition de statut de contribution, sans muter la source."""
+    return _muer_contribution(contribution, vers, **champs)
 
 
 def enregistrer_objets(
@@ -1224,14 +1264,17 @@ def lister_objets_exploitation(
     conn: Any, tenant_id: str, *, type_: str | None = None,
     situation_id: str | None = None, investigation_id: str | None = None,
     decision_id: str | None = None, expression_id: str | None = None,
-    type_signal: str | None = None, statut: str | None = None,
-    limite: int = 100, as_dict: bool = True,
+    expert_id: str | None = None, hypothesis_id: str | None = None,
+    domaine: str | None = None, type_signal: str | None = None,
+    statut: str | None = None, limite: int = 100, as_dict: bool = True,
 ) -> list[Any]:
     """Liste les objets d'exploitation du tenant, filtrés par type, parent et statut."""
     return objets_exploitation.lister_objets_exploitation(
         conn, tenant_id, type_=type_, situation_id=situation_id,
         investigation_id=investigation_id, decision_id=decision_id,
-        expression_id=expression_id, type_signal=type_signal, statut=statut,
+        expression_id=expression_id, expert_id=expert_id,
+        hypothesis_id=hypothesis_id, domaine=domaine,
+        type_signal=type_signal, statut=statut,
         limite=limite, as_dict=as_dict,
     )
 

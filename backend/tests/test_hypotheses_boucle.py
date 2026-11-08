@@ -749,7 +749,7 @@ def test_post_hypothese_valide_le_corps_avant_la_commande(monkeypatch, corps):
 
 
 def test_post_hypothese_expert_id_refuse_sans_ecriture(monkeypatch):
-    """C5e réserve expert_id : le champ est inconnu du corps et aucune commande ne part."""
+    """``expert_id`` reste hors du corps : C5e rattache les experts par contribution."""
     client = _client(monkeypatch)
     monkeypatch.setattr(
         boucle_routes.commandes_boucle, "creer_hypothese",

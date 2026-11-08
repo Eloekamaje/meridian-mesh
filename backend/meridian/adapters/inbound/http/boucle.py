@@ -365,9 +365,9 @@ class ChangementStatutObjet(_CorpsTransition):
 class CreationHypothese(_CorpsTransition):
     """Corps C5c strict : statut, mode, id et liens sont serveur uniquement.
 
-    ``expert_id`` reste porté par le domaine pour C5e, mais n'est pas exposé tant
-    qu'aucune route EXPERT n'existe : le client qui l'envoie est refusé par
-    ``extra="forbid"`` (422).
+    ``expert_id`` reste hors du corps : depuis C5e, le rattachement d'un expert
+    passe par une ``ExpertContribution``, pas par l'hypothèse. Le client qui l'envoie
+    est refusé par ``extra="forbid"`` (422).
     """
 
     enonce: TexteNonVide = Field(..., max_length=5000)
@@ -379,6 +379,53 @@ class CreationHypothese(_CorpsTransition):
 
 
 class ChangementStatutHypothese(_CorpsTransition):
+    vers: TexteNonVide = Field(..., max_length=64)
+    motif: TexteNettoye | None = Field(None, max_length=5000)
+    preuves: list[Any] | None = Field(None, max_length=100)
+
+
+class CreationExpert(_CorpsTransition):
+    """Corps C5e strict : statut, mode, id et tenant sont serveur uniquement."""
+
+    nom: TexteNonVide = Field(..., max_length=500)
+    domaine: TexteNonVide = Field(..., max_length=500)
+    role: str | None = Field(None, max_length=500)
+    methodes: list[TexteNonVide] | None = Field(None, max_length=100)
+    responsabilites: list[TexteNonVide] | None = Field(None, max_length=100)
+    perimetre: str | None = Field(None, max_length=2000)
+    sources_autorisees: list[TexteNonVide] | None = Field(None, max_length=100)
+    outils_autorises: list[TexteNonVide] | None = Field(None, max_length=100)
+    limites: list[TexteNonVide] | None = Field(None, max_length=100)
+    preuves: list[Any] | None = Field(None, max_length=100)
+    confiance: float | None = Field(None, ge=0, le=1)
+
+
+class _CreationContribution(_CorpsTransition):
+    """Champs communs d'une contribution : statut, mode, id et tenant sont serveur."""
+
+    expert_id: TexteIdentifiant
+    contenu: TexteNonVide = Field(..., max_length=10000)
+    constats: list[TexteNonVide] | None = Field(None, max_length=100)
+    claim_ids_proposes: list[TexteIdentifiant] | None = Field(None, max_length=100)
+    hypothesis_ids_soutenues: list[TexteIdentifiant] | None = Field(None, max_length=100)
+    hypothesis_ids_contestees: list[TexteIdentifiant] | None = Field(None, max_length=100)
+    inconnues: list[TexteNonVide] | None = Field(None, max_length=100)
+    contribution_le: DateIso | None = None
+    preuves: list[Any] | None = Field(None, max_length=100)
+    confiance: float | None = Field(None, ge=0, le=1)
+
+
+class CreationContributionInvestigation(_CreationContribution):
+    """Depuis une Investigation : ``hypothesis_id`` cible une hypothèse de ce parent."""
+
+    hypothesis_id: TexteIdentifiant | None = None
+
+
+class CreationContributionHypothese(_CreationContribution):
+    """Depuis une Hypothesis : l'investigation et l'hypothèse sont décidées par la route."""
+
+
+class ChangementStatutContribution(_CorpsTransition):
     vers: TexteNonVide = Field(..., max_length=64)
     motif: TexteNettoye | None = Field(None, max_length=5000)
     preuves: list[Any] | None = Field(None, max_length=100)
@@ -429,6 +476,50 @@ _OPENAPI_CORPS_SIGNAL = {
         },
     },
 }
+
+
+async def _corps_strict(request: Request, modele_corps: type[BaseModel]) -> BaseModel:
+    """Valide un JSON strict en distinguant un corps malformé (400) d'un champ invalide (422)."""
+    corps = await request.body()
+    try:
+        donnees = json.loads(corps)
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise HTTPException(400, "Corps JSON invalide") from exc
+    if not isinstance(donnees, dict):
+        raise HTTPException(400, "Corps JSON invalide : objet attendu")
+    try:
+        return modele_corps.model_validate(donnees)
+    except ValidationError as exc:
+        raise RequestValidationError(exc.errors()) from exc
+
+
+async def _corps_contribution_investigation(
+    request: Request,
+) -> CreationContributionInvestigation:
+    return await _corps_strict(request, CreationContributionInvestigation)
+
+
+async def _corps_contribution_hypothese(
+    request: Request,
+) -> CreationContributionHypothese:
+    return await _corps_strict(request, CreationContributionHypothese)
+
+
+def _openapi_corps(modele_corps: type[BaseModel]) -> dict:
+    return {
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/json": {"schema": modele_corps.model_json_schema()},
+            },
+        },
+    }
+
+
+_OPENAPI_CORPS_CONTRIBUTION_INVESTIGATION = _openapi_corps(
+    CreationContributionInvestigation)
+_OPENAPI_CORPS_CONTRIBUTION_HYPOTHESE = _openapi_corps(
+    CreationContributionHypothese)
 
 
 class ComparaisonScenarios(_CorpsTransition):
@@ -1087,7 +1178,8 @@ async def creer_hypothese(
 
     ``statut``, ``mode``, ``id`` et ``investigation_id`` sont absents du corps : le
     serveur force ``OPEN``/``PROPOSED`` et un client qui les envoie est refusé en 422.
-    ``expert_id`` est également refusé tant que C5e n'expose pas les Experts.
+    ``expert_id`` est également refusé : depuis C5e, le rattachement d'un expert passe
+    par une ``ExpertContribution``, jamais par le champ de l'hypothèse.
     L'Investigation doit être ouverte (sinon 409), est verrouillée et son lien inverse
     ``hypothesis_ids`` est écrit dans la même transaction.
     """
@@ -1152,6 +1244,163 @@ async def changer_statut_hypothese(
         request=request,
     )
     return _reponse_transition(tenant, resultat, "hypothese")
+
+
+@router.post("/experts", status_code=201,
+             response_model=ReponseTransition, responses=_REPONSES_TRANSITION)
+async def creer_expert(
+    payload: CreationExpert,
+    request: Request,
+    idempotence: None = Depends(_refuser_idempotence),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Inscrit un Expert au registre du tenant.
+
+    ``statut`` (``ACTIVE``), ``mode`` (``DECLARED``), ``id`` et ``tenant_id`` sont
+    serveur : un client qui les envoie est refusé en 422. Aucune route de changement
+    de statut Expert n'existe en C5e.
+    """
+    _verifier_espace(x_espace)
+    tenant = _tenant(request, x_tenant)
+    resultat = await _executer_transition(
+        tenant,
+        lambda conn: commandes_boucle.creer_expert(
+            boucle, conn, tenant, **payload.model_dump(exclude_none=True)),
+        request=request,
+    )
+    return _reponse_transition(tenant, resultat, "expert")
+
+
+@router.get("/experts")
+async def lister_experts(
+    request: Request,
+    domaine: str | None = Query(None, max_length=500),
+    statut: str | None = Query(None, max_length=64),
+    limite: int = Query(100, ge=1, le=1000),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Liste les Experts du tenant, filtrés par domaine et statut."""
+    _verifier_espace(x_espace)
+    tenant = _tenant(request, x_tenant)
+    experts = await _executer_transition(
+        tenant,
+        lambda conn: commandes_boucle.lister_experts(
+            boucle, conn, tenant, domaine=domaine, statut=statut, limite=limite),
+        request=request,
+    )
+    return {"tenant": tenant, "experts": _assainir(experts)}
+
+
+@router.post("/investigations/{iid}/contributions", status_code=201,
+             response_model=ReponseTransition, responses=_REPONSES_TRANSITION,
+             openapi_extra=_OPENAPI_CORPS_CONTRIBUTION_INVESTIGATION)
+async def creer_contribution_investigation(
+    iid: str,
+    request: Request,
+    payload: CreationContributionInvestigation = Depends(_corps_contribution_investigation),
+    idempotence: None = Depends(_refuser_idempotence),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Enregistre une contribution d'expert à une Investigation du tenant.
+
+    ``statut`` (``PROPOSED``), ``mode`` (``DECLARED``), ``id``, ``tenant_id`` et
+    ``investigation_id`` sont serveur. L'Investigation doit être ouverte (sinon 409) ;
+    une ``hypothesis_id`` fournie doit appartenir à cette investigation (sinon 409).
+    L'Expert doit exister dans le même tenant (sinon 404).
+    """
+    _verifier_espace(x_espace)
+    tenant = _tenant(request, x_tenant)
+    resultat = await _executer_transition(
+        tenant,
+        lambda conn: commandes_boucle.creer_contribution_investigation(
+            boucle, conn, tenant, iid, **payload.model_dump(exclude_none=True)),
+        request=request,
+    )
+    return _reponse_transition(tenant, resultat, "contribution")
+
+
+@router.post("/hypotheses/{hid}/contributions", status_code=201,
+             response_model=ReponseTransition, responses=_REPONSES_TRANSITION,
+             openapi_extra=_OPENAPI_CORPS_CONTRIBUTION_HYPOTHESE)
+async def creer_contribution_hypothese(
+    hid: str,
+    request: Request,
+    payload: CreationContributionHypothese = Depends(_corps_contribution_hypothese),
+    idempotence: None = Depends(_refuser_idempotence),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Enregistre une contribution d'expert ciblant une Hypothesis du tenant.
+
+    L'investigation est dérivée de l'hypothèse et doit être ouverte (sinon 409).
+    ``hypothesis_id`` et ``investigation_id`` sont refusés dans le corps (422).
+    """
+    _verifier_espace(x_espace)
+    tenant = _tenant(request, x_tenant)
+    resultat = await _executer_transition(
+        tenant,
+        lambda conn: commandes_boucle.creer_contribution_hypothese(
+            boucle, conn, tenant, hid, **payload.model_dump(exclude_none=True)),
+        request=request,
+    )
+    return _reponse_transition(tenant, resultat, "contribution")
+
+
+@router.get("/contributions")
+async def lister_contributions(
+    request: Request,
+    expert_id: str | None = Query(None, max_length=128),
+    investigation_id: str | None = Query(None, max_length=128),
+    hypothesis_id: str | None = Query(None, max_length=128),
+    statut: str | None = Query(None, max_length=64),
+    limite: int = Query(100, ge=1, le=1000),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Liste les contributions du tenant, filtrées par expert, parent et statut."""
+    _verifier_espace(x_espace)
+    tenant = _tenant(request, x_tenant)
+    contributions = await _executer_transition(
+        tenant,
+        lambda conn: commandes_boucle.lister_contributions(
+            boucle, conn, tenant, expert_id=expert_id,
+            investigation_id=investigation_id, hypothesis_id=hypothesis_id,
+            statut=statut, limite=limite),
+        request=request,
+    )
+    return {"tenant": tenant, "contributions": _assainir(contributions)}
+
+
+@router.post("/contributions/{cid}/statut", response_model=ReponseTransition,
+             responses=_REPONSES_TRANSITION)
+async def changer_statut_contribution(
+    cid: str,
+    payload: ChangementStatutContribution,
+    request: Request,
+    idempotence: None = Depends(_refuser_idempotence),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Fait évoluer une contribution selon le cycle C5e.
+
+    Une transition non autorisée est un 409 ; un statut inconnu ou un identifiant d'un
+    autre type un 422 ; une contribution absente ou hors tenant un 404. Le motif et les
+    preuves sont conservés et la version précédente reste dans ``historique``.
+    """
+    _verifier_espace(x_espace)
+    tenant = _tenant(request, x_tenant)
+    champs = payload.model_dump(exclude_none=True)
+    vers = champs.pop("vers")
+    resultat = await _executer_transition(
+        tenant,
+        lambda conn: commandes_boucle.changer_statut_contribution(
+            boucle, conn, tenant, cid, vers, **champs),
+        request=request,
+    )
+    return _reponse_transition(tenant, resultat, "contribution")
 
 
 @router.post("/signals", status_code=201,
