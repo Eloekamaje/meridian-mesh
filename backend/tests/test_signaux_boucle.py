@@ -453,6 +453,21 @@ def test_creer_signal_situation_absente_ou_hors_tenant_est_404():
     assert store.enregistres_objets == []
 
 
+def test_creer_signal_refuse_une_source_qui_n_est_pas_une_situation():
+    source = {
+        "id": "inv-1", "tenant_id": TENANT, "famille": "investigation",
+        "type": "INVESTIGATION", "mode": "DECLARED", "titre": "",
+        "donnees": {}, "version": 1,
+    }
+    store = _Store([source])
+    with pytest.raises(ObjetsExploitationInvalide) as levee:
+        commandes_boucle.creer_signal(
+            store, _Connexion(), TENANT, situation_id="inv-1",
+            libelle="Signal", source="source")
+    assert "SITUATION" in str(levee.value)
+    assert store.enregistres_objets == []
+
+
 def test_creer_signal_depuis_une_situation_refuse_une_autre_situation_dans_le_corps():
     store = _Store([_situation_row("sit-1"), _situation_row("sit-2")])
     with pytest.raises(ObjetsExploitationInvalide):
@@ -1104,6 +1119,11 @@ def test_pg_second_tenant_ne_voit_ni_ne_relie_les_signaux(monkeypatch):
             headers={"X-Tenant": autre},
         )
         assert liste.status_code == 404
+
+        liste_autre = client.get(
+            f"{BASE}/signals", headers={"X-Tenant": autre})
+        assert liste_autre.status_code == 200
+        assert liste_autre.json()["signaux"] == []
 
         with psycopg.connect(DSN) as conn:
             assert boucle.lire_boucle(conn, autre, "sit-c5d") is None
