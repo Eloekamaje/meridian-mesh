@@ -39,6 +39,47 @@ test("propose l'action correspondant à une situation", async () => {
   await act(async () => { racine.unmount(); });
 });
 
+test("une expression propose les qualifications, une opportunité son statut", async () => {
+  const onAction = jest.fn();
+  const { hote, racine } = monter();
+  await rendre(racine, {
+    objet: {
+      id: "expr-1",
+      type: "EXPRESSION",
+      titre: "Automatiser",
+      donnees: { statut: "PROPOSED" },
+    },
+    onAction,
+  });
+
+  const opportunite = hote.querySelector('[data-testid="boucle-action-qualifier-opportunite"]');
+  const risque = hote.querySelector('[data-testid="boucle-action-qualifier-risque"]');
+  expect(opportunite).not.toBeNull();
+  expect(risque).not.toBeNull();
+
+  await act(async () => { opportunite.click(); });
+  expect(onAction).toHaveBeenCalledWith("qualifier_opportunite");
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("une opportunité propose son changement de statut", async () => {
+  const { hote, racine } = monter();
+  await rendre(racine, {
+    objet: {
+      id: "opportunity-1",
+      type: "OPPORTUNITY",
+      titre: "Automatiser",
+      donnees: { statut: "DETECTED" },
+    },
+  });
+
+  expect(hote.querySelector('[data-testid="boucle-action-statut-opportunite"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-action-qualifier-opportunite"]')).toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
 test("un learning sans action affiche la fin de chaîne", async () => {
   const { hote, racine } = monter();
   await rendre(racine, {
