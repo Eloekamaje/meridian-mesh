@@ -122,6 +122,65 @@ describe("boucleApi", () => {
     expect(poster.mock.calls[0][2]).not.toHaveProperty("headers");
   });
 
+  test("creerSignal poste un signal global sans en-tête d'idempotence", async () => {
+    const corps = {
+      libelle: "Dépendance nouvelle",
+      source: "git://depot",
+      type_signal: "CHANGEMENT",
+      description: "Paquet non maintenu",
+      intensite: 0.7,
+      detecte_le: "2026-11-08T10:00:00+00:00",
+      situation_ids: ["sit-1", "sit-2"],
+      entite_ids: ["app-paiement"],
+      liens: { depends_on: ["app-cartes"] },
+      preuves: ["preuve-1"],
+      confiance: 0.6,
+    };
+
+    await boucleApi.creerSignal(corps);
+
+    expect(poster).toHaveBeenCalledWith("/boucle/signals", corps, { timeout: 20000 });
+    expect(poster.mock.calls[0][2]).not.toHaveProperty("headers");
+  });
+
+  test("creerSignalSituation poste le signal rattaché sans en-tête d'idempotence", async () => {
+    const corps = {
+      libelle: "Latence en hausse",
+      source: "suivi-cartes",
+    };
+
+    await boucleApi.creerSignalSituation("sit/1", corps);
+
+    expect(poster).toHaveBeenCalledWith(
+      "/boucle/situations/sit%2F1/signals",
+      corps,
+      { timeout: 20000 },
+    );
+    expect(poster.mock.calls[0][2]).not.toHaveProperty("headers");
+  });
+
+  test("listerSignaux interroge la liste filtrée avec le timeout des transitions", async () => {
+    const get = jest.spyOn(api, "get").mockResolvedValue({ data: { signaux: [] } });
+
+    await boucleApi.listerSignaux({
+      situation_id: "sit/1",
+      type_signal: "ANOMALIE",
+      statut: "DETECTED",
+      limite: 25,
+    });
+
+    expect(get).toHaveBeenCalledWith("/boucle/signals", {
+      params: {
+        situation_id: "sit/1",
+        type_signal: "ANOMALIE",
+        statut: "DETECTED",
+        limite: 25,
+      },
+      timeout: 20000,
+    });
+    get.mockRestore();
+  });
+
   test("listerHypotheses interroge la liste avec investigation, statut et limite", async () => {
     const get = jest.spyOn(api, "get").mockResolvedValue({ data: { hypotheses: [] } });
 

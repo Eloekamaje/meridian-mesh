@@ -33,6 +33,7 @@ import {
   texteAffichable,
   titreObjet,
   typeObjet,
+  TYPES_LECTURE,
   valeurDe,
 } from "@/components/boucle/boucleUi";
 
@@ -41,6 +42,7 @@ const MESSAGE_VERIFICATION_INDISPONIBLE =
 const DELAI_VERIFICATION_MS = 10000;
 
 const STADES = [
+  { type: "SIGNAL", famille: "emergence", label: "Signaux", court: "Signal", couleur: "#F472B6", Icone: Lightbulb },
   { type: "SITUATION", famille: "emergence", label: "Situations", court: "Situation", couleur: "#60A5FA", Icone: Lightbulb },
   { type: "EXPRESSION", famille: "emergence", label: "Expressions", court: "Expression", couleur: "#22D3EE", Icone: Lightbulb },
   { type: "OPPORTUNITY", famille: "emergence", label: "Opportunités", court: "Opportunité", couleur: "#34D399", Icone: ArrowUpRight },
@@ -51,12 +53,12 @@ const STADES = [
   { type: "INITIATIVE", famille: "decision", label: "Initiatives", court: "Initiative", couleur: "#FB923C", Icone: RocketLaunch },
   { type: "OUTCOME", famille: "resultat_apprentissage", label: "Outcomes", court: "Outcome", couleur: "#34D399", Icone: ChartLineUp },
   { type: "LEARNING", famille: "resultat_apprentissage", label: "Learnings", court: "Learning", couleur: "#A78BFA", Icone: BookOpen },
-];
+].filter((stade) => TYPES_LECTURE.includes(stade.type));
 
 const STADES_PAR_TYPE = new Map(STADES.map((stade) => [stade.type, stade]));
 
 const FAMILLES = [
-  { value: "emergence", label: "Émergence — situations, expressions, opportunités et risques" },
+  { value: "emergence", label: "Émergence — signaux, situations, expressions, opportunités et risques" },
   { value: "investigation", label: "Investigation" },
   { value: "decision", label: "Décision — décisions et initiatives" },
   { value: "resultat_apprentissage", label: "Résultat — outcomes et learnings" },
@@ -359,6 +361,11 @@ function PanneauDetail({
         : "Aucune chaîne amont · afficher";
   const precisions = [
     ["Statut", texteAffichable(valeurDe(objet, "statut"))],
+    ["Type de signal", texteAffichable(valeurDe(objet, "type_signal"))],
+    ["Source", texteAffichable(valeurDe(objet, "source"))],
+    ["Intensité", texteAffichable(valeurDe(objet, "intensite"))],
+    ["Détecté le", texteAffichable(valeurDe(objet, "detecte_le"))],
+    ["Situations", texteAffichable(valeurDe(objet, "situation_ids"))],
     ["Type d'expression", texteAffichable(valeurDe(objet, "type_expression"))],
     ["Formulation", texteAffichable(valeurDe(objet, "formulation"))],
     ["Canal", texteAffichable(valeurDe(objet, "canal"))],
@@ -934,6 +941,13 @@ export default function Boucle() {
     setActionActive("creer_situation");
   };
 
+  const ouvrirCreationSignalGlobal = () => {
+    if (transition.enCours || enCoursRef.current || refRechargement.current) return;
+    refElementDeclencheurAction.current = document.activeElement;
+    reinitialiserTransition();
+    setActionActive("creer_signal");
+  };
+
   const rechargerDetailSource = async (identifiant) => {
     refAbortVerification.current?.abort();
     const controleur = new AbortController();
@@ -1017,9 +1031,11 @@ export default function Boucle() {
     const creationOpportunite = actionActive === "qualifier_opportunite";
     const creationRisque = actionActive === "qualifier_risque";
     const creationHypothese = actionActive === "creer_hypothese";
-    if (!creationSituation && !objetDetail) return;
-    const identifiant = creationSituation ? null : idObjet(objetDetail);
-    if (!creationSituation && !identifiant) {
+    const creationSignal = actionActive === "creer_signal";
+    const signalGlobal = creationSignal && typeObjet(objetDetail) !== "SITUATION";
+    if (!creationSituation && !signalGlobal && !objetDetail) return;
+    const identifiant = creationSituation || signalGlobal ? null : idObjet(objetDetail);
+    if (!creationSituation && !signalGlobal && !identifiant) {
       setTransition((avant) => ({
         ...avant,
         erreur: "Cet objet n'a pas d'identifiant : la transition ne peut pas être enregistrée.",
@@ -1066,9 +1082,13 @@ export default function Boucle() {
               ? await boucleApi.creerRisque(identifiant, corps)
               : creationHypothese
                 ? await boucleApi.creerHypothese(identifiant, corps)
-                : creationExpression
-                  ? await boucleApi.creerExpression(identifiant, corps)
-                  : await boucleApi[actionCourante.api](identifiant, corps);
+                : creationSignal
+                  ? (identifiant
+                    ? await boucleApi.creerSignalSituation(identifiant, corps)
+                    : await boucleApi.creerSignal(corps))
+                  : creationExpression
+                    ? await boucleApi.creerExpression(identifiant, corps)
+                    : await boucleApi[actionCourante.api](identifiant, corps);
     } catch (erreurApi) {
       cause = erreurApi;
     } finally {
@@ -1077,6 +1097,20 @@ export default function Boucle() {
     }
 
     if (cause) {
+      if (creationSignal && signalGlobal) {
+        const statut = cause?.response?.status;
+        const resultatIncertain = !cause?.response || statut >= 500;
+        const message = resultatIncertain && !cause?.response
+          ? "Résultat incertain : le signal n'a pas confirmé son issue. Vérifiez la liste avant de réessayer."
+          : messageErreurTransition(cause, "Le signal n'a pas pu être enregistré.");
+        setTransition((avant) => ({
+          ...avant,
+          enCours: false,
+          erreur: message,
+        }));
+        if (statut === 409 || resultatIncertain) actualiser();
+        return;
+      }
       if (creationSituation) {
         const statut = cause?.response?.status;
         const resultatIncertain = !cause?.response || statut >= 500;
@@ -1218,7 +1252,7 @@ export default function Boucle() {
       return;
     }
 
-    if (creationOpportunite || creationRisque || creationHypothese) {
+    if (creationOpportunite || creationRisque || creationHypothese || creationSignal) {
       const nouvelObjet = reponse?.data?.objet ?? null;
       const nouvelleChaine = Array.isArray(reponse?.data?.chaine) ? reponse.data.chaine : null;
       const nouvelHistorique = Array.isArray(reponse?.data?.historique) ? reponse.data.historique : null;
@@ -1229,8 +1263,10 @@ export default function Boucle() {
       const identifiantCree = idObjet(objetCree);
       const libelleCreation = creationOpportunite
         ? "L'opportunité"
-        : creationRisque ? "Le risque" : "L'hypothèse";
-      const accordCreation = creationRisque ? "" : "e";
+        : creationRisque
+          ? "Le risque"
+          : creationSignal ? "Le signal" : "L'hypothèse";
+      const accordCreation = creationRisque || creationSignal ? "" : "e";
 
       if (!identifiantCree) {
         setTransition((avant) => ({
@@ -1585,6 +1621,14 @@ export default function Boucle() {
                 className="flex h-8 items-center gap-1.5 rounded-md bg-[#60A5FA] px-2.5 text-xs font-semibold text-[#071019] transition-colors hover:bg-[#93C5FD]"
               >
                 <Lightbulb size={13} aria-hidden="true" /> Nouvelle situation
+              </button>
+              <button
+                type="button"
+                onClick={ouvrirCreationSignalGlobal}
+                data-testid="boucle-nouveau-signal"
+                className="flex h-8 items-center gap-1.5 rounded-md border border-[#F472B6]/40 bg-[#F472B6]/[0.08] px-2.5 text-xs font-semibold text-[#F9A8D4] transition-colors hover:bg-[#F472B6]/15"
+              >
+                <Lightbulb size={13} aria-hidden="true" /> Enregistrer un signal
               </button>
               <button
                 type="button"
@@ -2085,7 +2129,7 @@ export default function Boucle() {
             </p>
             <p className="mt-1 text-xs text-[#7C93A8]">
               {objets.length === 0 && !filtresActifs
-                ? "Les situations, expressions, investigations, décisions, initiatives, outcomes et learnings apparaîtront ici."
+                ? "Les signaux, situations, expressions, investigations, décisions, initiatives, outcomes et learnings apparaîtront ici."
                 : "Élargissez la recherche ou réinitialisez les filtres."}
             </p>
             {filtresActifs && (

@@ -25,6 +25,7 @@ const ICONES = {
   opportunite: Lightbulb,
   risque: WarningCircle,
   hypothese: Lightbulb,
+  signal: Lightbulb,
   statut: ArrowRight,
 };
 
@@ -41,6 +42,7 @@ const COULEURS = {
   opportunite: "#34D399",
   risque: "#F87171",
   hypothese: "#C084FC",
+  signal: "#F472B6",
   statut: "#A78BFA",
 };
 
