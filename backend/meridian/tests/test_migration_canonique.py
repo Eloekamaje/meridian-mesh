@@ -402,6 +402,23 @@ def test_document_invalide_est_ignore_sans_fuite_de_secret():
     assert rapport["erreurs"] == []
 
 
+def test_document_legacy_titre_jeton_est_non_migre_et_rapporte():
+    jeton = "Bearer abcdefghijklmnop"
+    document = {**SITUATION, "id": "sit-jeton", "titre": jeton}
+    db = _Db(situations=[document])
+    conn, store = _Connexion(), GrapheMemoire()
+
+    rapport = _inspecter(db, dry_run=False, conn=conn, store=store)
+
+    assert rapport["situations"] == 0
+    assert len(rapport["erreurs"]) == 1
+    assert rapport["erreurs"][0]["id"] == "sit-jeton"
+    assert "titre" in rapport["erreurs"][0]["raison"]
+    assert (TENANT, "sit-jeton") not in conn.stock
+    assert jeton not in json.dumps(rapport, ensure_ascii=False)
+    assert jeton not in json.dumps(list(conn.stock.values()), ensure_ascii=False, default=str)
+
+
 def test_relations_vers_graphe_ne_recopie_pas_les_citations_de_preuve():
     aretes, erreurs = migration_canonique.relations_vers_graphe([RELATION], TENANT)
     memes_aretes, memes_erreurs = migration_canonique.relations_vers_graphe(TENANT, [RELATION])

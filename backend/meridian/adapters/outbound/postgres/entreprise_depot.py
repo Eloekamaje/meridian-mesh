@@ -55,10 +55,16 @@ def _texte_obligatoire(valeur, champ: str) -> str:
 
 def _tenant(tenant_id) -> str:
     texte = _texte_obligatoire(tenant_id, "tenant_id")
+    if _jeton_sensible(texte):
+        raise ObjetInvalide("tenant : secret refusé")
     try:
-        return normaliser_tenant_canonique(texte)
+        tenant = normaliser_tenant_canonique(texte)
     except TenantError as exc:
         raise ObjetInvalide(str(exc)) from exc
+    # L'alias demo→local ne doit pas réintroduire un jeton via la valeur normalisée.
+    if _jeton_sensible(tenant):
+        raise ObjetInvalide("tenant : secret refusé")
+    return tenant
 
 
 def _verifier_secrets(valeur, chemin: str = "donnees") -> None:
@@ -163,7 +169,10 @@ def _objet_saisi(objet) -> dict:
                 break
     if not isinstance(objet, Mapping):
         raise ObjetInvalide("objet d'entreprise attendu")
-    saisi = {"id": _texte_obligatoire(objet.get("id"), "id")}
+    identifiant = _texte_obligatoire(objet.get("id"), "id")
+    if _jeton_sensible(identifiant):
+        raise ObjetInvalide("id : secret refusé")
+    saisi = {"id": identifiant}
     if "famille" in objet:
         famille = _normaliser(objet.get("famille"), minuscule=True)
         if famille not in _FAMILLES:

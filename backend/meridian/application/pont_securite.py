@@ -131,17 +131,48 @@ MOTIF_JETON_SENSIBLE = re.compile(
     r"|\bsk-(?:proj-)?(?=[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]{16,}"
     r"|\bxox[baprs]-[A-Za-z0-9-]{10,}"
     r"|\bAKIA[0-9A-Z]{16}"
-    r"|\bBearer\s+"
-    r"(?!(?:authentication|authorization|token|tokens|scheme|header|headers|flow|"
-    r"type|credentials|access|request|response)\b)"
-    r"[A-Za-z0-9._~+/=-]{12,}"
     r")"
 )
+
+_MOTIF_BEARER = re.compile(r"(?i)\bBearer\s+([A-Za-z0-9._~+/=-]{12,})")
+
+# Liste volontairement courte : elle couvre les mots techniques fréquents, mais la
+# décision principale est morphologique (suffixe technique), pas une liste fermée.
+_MOTS_PROSE_BEARER = frozenset({
+    "authentication", "authorization", "token", "tokens", "scheme", "header",
+    "headers", "flow", "type", "credentials", "access", "request", "response",
+    "client", "server", "resource", "endpoint", "method", "framework", "library",
+    "interface", "application", "service", "system", "security", "support", "usage",
+    "mode", "policy", "standard", "protocol", "format",
+})
+_SUFFIXES_PROSE_BEARER = (
+    "tion", "sion", "ment", "ity", "ance", "ence", "ing", "ed", "al", "ive",
+    "ous", "able", "ible", "er", "or", "ics", "ology", "graphy", "ness", "ship",
+    "hood", "ism", "ist", "ize", "ise",
+)
+
+
+def _bearer_est_prose(jeton: str) -> bool:
+    """Un mot alphabétique minuscule à suffixe technique est de la prose, pas un jeton."""
+    minuscule = jeton.lower()
+    if minuscule in _MOTS_PROSE_BEARER:
+        return True
+    return (
+        re.fullmatch(r"[a-z]+", minuscule) is not None
+        and minuscule.endswith(_SUFFIXES_PROSE_BEARER)
+    )
 
 
 def jeton_sensible(valeur: Any) -> bool:
     """Vrai pour une chaîne contenant un jeton brut au sens de la détection stricte."""
-    return isinstance(valeur, str) and bool(MOTIF_JETON_SENSIBLE.search(valeur))
+    if not isinstance(valeur, str):
+        return False
+    if MOTIF_JETON_SENSIBLE.search(valeur):
+        return True
+    return any(
+        not _bearer_est_prose(match.group(1))
+        for match in _MOTIF_BEARER.finditer(valeur)
+    )
 
 
 _URL_EMBEDDEE = re.compile(r"(?i)\b[a-z][a-z0-9+.-]*://[^\s<>'\"]+")

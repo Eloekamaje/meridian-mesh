@@ -473,6 +473,13 @@ def test_un_jeton_brut_est_refuse_a_l_ecriture(charge):
     "The Bearer authorization scheme",
     "Bearer token",
     "Bearer headers",
+    "The Bearer implementation is documented",
+    "Bearer documentation",
+    "Bearer specification",
+    "Bearer interoperability",
+    "Bearer configuration",
+    "Bearer verification",
+    "Bearer validation",
     "sk-learn-tutorial",
     "github_pat_missing",
 ])
@@ -1249,9 +1256,50 @@ def test_pg_prose_bearer_et_source_sk_learn_sont_acceptees(monkeypatch):
 
 
 @besoin_pg
+def test_pg_sept_mots_bearer_de_prose_sont_acceptes_et_non_masques(monkeypatch):
+    tenant = f"c5d-{uuid.uuid4().hex[:10]}"
+    client = _client_pg(monkeypatch)
+    mots = (
+        "implementation", "documentation", "specification", "interoperability",
+        "configuration", "verification", "validation",
+    )
+    try:
+        with psycopg.connect(DSN, autocommit=True) as conn:
+            depot.appliquer_schema(conn)
+
+        for rang, mot in enumerate(mots):
+            description = f"The Bearer {mot} is documented"
+            reponse = client.post(
+                f"{BASE}/signals",
+                json={
+                    "libelle": f"Prose {rang}",
+                    "source": f"source-{rang}",
+                    "description": description,
+                },
+                headers={"X-Tenant": tenant},
+            )
+            assert reponse.status_code == 201, (mot, reponse.text)
+            assert reponse.json()["objet"]["donnees"]["description"] == description
+
+        with psycopg.connect(DSN) as conn:
+            nombre = conn.execute(
+                "SELECT count(*) FROM objet_entreprise "
+                "WHERE tenant_id = %s AND type = 'SIGNAL'",
+                (tenant,),
+            ).fetchone()[0]
+        assert nombre == len(mots)
+    finally:
+        _nettoyer(tenant)
+
+
+@besoin_pg
 @pytest.mark.parametrize("jeton", [
     "Bearer abcdefghijklmnop",
     "ghp_abc1234567890",
+    "sk-abc123456789012345",
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9",
+    "xoxb-abcdefghijkl",
+    "AKIA1234567890ABCDEF",
 ])
 def test_pg_titre_avec_jeton_refuse_400_sans_ecriture(monkeypatch, jeton):
     tenant = f"c5d-{uuid.uuid4().hex[:10]}"
@@ -1274,6 +1322,92 @@ def test_pg_titre_avec_jeton_refuse_400_sans_ecriture(monkeypatch, jeton):
                 (tenant,),
             ).fetchone()[0]
         assert nombre == 0
+    finally:
+        _nettoyer(tenant)
+
+
+@besoin_pg
+def test_pg_id_jeton_refuse_400_sans_ecriture(monkeypatch):
+    tenant = f"c5d-{uuid.uuid4().hex[:10]}"
+    client = _client_pg(monkeypatch)
+    jeton = "sk-abc123456789012345"
+    try:
+        with psycopg.connect(DSN, autocommit=True) as conn:
+            depot.appliquer_schema(conn)
+
+        reponse = client.post(
+            f"{BASE}/situations",
+            json={"id": jeton, "titre": "Situation"},
+            headers={"X-Tenant": tenant},
+        )
+        assert reponse.status_code == 400, reponse.text
+        assert jeton not in reponse.text
+
+        with psycopg.connect(DSN) as conn:
+            nombre = conn.execute(
+                "SELECT count(*) FROM objet_entreprise WHERE tenant_id = %s",
+                (tenant,),
+            ).fetchone()[0]
+        assert nombre == 0
+    finally:
+        _nettoyer(tenant)
+
+
+@besoin_pg
+def test_pg_tenant_jeton_refuse_400_sans_ecriture(monkeypatch):
+    tenant = "sk-abc123456789012345"
+    client = _client_pg(monkeypatch)
+    try:
+        with psycopg.connect(DSN, autocommit=True) as conn:
+            depot.appliquer_schema(conn)
+
+        reponse = client.post(
+            f"{BASE}/situations",
+            json={"titre": "Situation"},
+            headers={"X-Tenant": tenant},
+        )
+        assert reponse.status_code == 400, reponse.text
+        assert tenant not in reponse.text
+
+        with psycopg.connect(DSN) as conn:
+            nombre = conn.execute(
+                "SELECT count(*) FROM objet_entreprise WHERE tenant_id = %s",
+                (tenant,),
+            ).fetchone()[0]
+        assert nombre == 0
+    finally:
+        _nettoyer(tenant)
+
+
+@besoin_pg
+def test_pg_secret_opaque_sans_prefixe_est_une_limite_documentee(monkeypatch):
+    tenant = f"c5d-{uuid.uuid4().hex[:10]}"
+    client = _client_pg(monkeypatch)
+    opaque = "z9Q2mK8vT4xR7pL1nB6c"
+    try:
+        with psycopg.connect(DSN, autocommit=True) as conn:
+            depot.appliquer_schema(conn)
+
+        reponse = client.post(
+            f"{BASE}/signals",
+            json={
+                "libelle": "Secret opaque",
+                "source": "source",
+                "preuves": [opaque],
+            },
+            headers={"X-Tenant": tenant},
+        )
+        assert reponse.status_code == 201, reponse.text
+        assert reponse.json()["objet"]["donnees"]["preuves"] == [opaque]
+        assert opaque in reponse.text
+
+        with psycopg.connect(DSN) as conn:
+            nombre = conn.execute(
+                "SELECT count(*) FROM objet_entreprise "
+                "WHERE tenant_id = %s AND type = 'SIGNAL'",
+                (tenant,),
+            ).fetchone()[0]
+        assert nombre == 1
     finally:
         _nettoyer(tenant)
 
