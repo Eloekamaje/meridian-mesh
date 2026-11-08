@@ -36,6 +36,7 @@ __all__ = [
     "cle_pont",
     "cle_sensible",
     "hash_contenu",
+    "jeton_sensible",
     "rediger_message",
     "signer_evenement",
     "signature",
@@ -111,6 +112,20 @@ def url_porte_un_secret(url: str) -> bool:
         cle_sensible(cle) and valeur not in ("", "***")
         for cle, valeur in parse_qsl(parties.query, keep_blank_values=True)
     )
+
+
+# Jetons bruts qui ne sont ni des clés JSON ni des URLs à credentials : ils doivent
+# être refusés à l'écriture et masqués en lecture. Politique unique partagée par le
+# dépôt canonique et la couche HTTP.
+JETON_SENSIBLE = re.compile(
+    r"(?i)(?:\bbearer\s+[A-Za-z0-9_.~+/=-]{12,}|\bsk-[A-Za-z0-9_-]{8,}|"
+    r"\bgh[pousr]_[A-Za-z0-9]{10,}|\bxox[baprs]-[A-Za-z0-9-]{10,})"
+)
+
+
+def jeton_sensible(valeur: Any) -> bool:
+    """Vrai pour une chaîne contenant un jeton brut reconnaissable (Bearer, sk-, ghp_…)."""
+    return isinstance(valeur, str) and bool(JETON_SENSIBLE.search(valeur))
 
 
 _URL_EMBEDDEE = re.compile(r"(?i)\b[a-z][a-z0-9+.-]*://[^\s<>'\"]+")

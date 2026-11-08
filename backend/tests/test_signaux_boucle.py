@@ -27,11 +27,18 @@ from fastapi import APIRouter, FastAPI
 from fastapi.testclient import TestClient
 
 from meridian.adapters.inbound.http import boucle as boucle_routes
-from meridian.adapters.outbound.postgres import boucle, depot, objets_exploitation, rls
+from meridian.adapters.outbound.postgres import (
+    boucle,
+    depot,
+    entreprise_depot,
+    objets_exploitation,
+    rls,
+)
 from meridian.application import commandes_boucle
 from meridian.domain import construction_objets_exploitation
 from meridian.domain.modele_entreprise import ModeleInvalide
 from meridian.domain.objets_exploitation import (
+    DoublonEmpreinteSignal,
     ObjetsExploitationInvalide,
     empreinte_signal,
 )
@@ -219,7 +226,7 @@ class _Store:
                         and existant.get("id") != ligne["id"]
                         and (existant.get("donnees") or {}).get("fingerprint") == empreinte
                     ):
-                        raise ObjetsExploitationInvalide(
+                        raise DoublonEmpreinteSignal(
                             f"empreinte de Signal déjà connue : {empreinte!r}")
             self.objets[ligne["id"]] = ligne
             if self.echec_lien:
@@ -298,6 +305,16 @@ def test_empreinte_signal_sans_date_ne_depend_pas_de_l_horloge():
         **arguments, detecte_le=None)
     assert empreinte_signal(**arguments, detecte_le=None) != empreinte_signal(
         **arguments, detecte_le="2026-11-07T00:00:00+00:00")
+
+
+def test_empreinte_signal_normalise_nfkc_et_accents():
+    compose = empreinte_signal(
+        source="Café", type_signal="OBSERVATION", libelle="Dérive")
+    decompose = empreinte_signal(
+        source="Cafe\u0301", type_signal="observation", libelle="De\u0301rive")
+    assert compose == decompose
+    assert compose != empreinte_signal(
+        source="Cafe", type_signal="OBSERVATION", libelle="Derive")
 
 
 def test_empreinte_signal_change_avec_chaque_composante():
@@ -403,6 +420,51 @@ def test_deux_signaux_differents_par_la_source_ne_sont_pas_des_doublons():
 
     assert len([objet for objet in store.objets.values()
                 if objet["type"] == "SIGNAL"]) == 2
+
+
+def test_doublon_empreinte_structure_ne_depend_pas_du_message(monkeypatch):
+    store = _Store()
+
+    def echouer(*_, **__):
+        raise DoublonEmpreinteSignal("formulation totalement inédite")
+
+    monkeypatch.setattr(store, "enregistrer_objets", echouer)
+
+    with pytest.raises(commandes_boucle.DoublonExploitation) as levee:
+        commandes_boucle.creer_signal(
+            store, _Connexion(), TENANT, libelle="Signal", source="source")
+
+    assert "formulation totalement inédite" in str(levee.value)
+
+
+def test_rejeu_du_detecte_le_serveur_cree_un_second_signal():
+    """Caractérise le piège documenté : la date serveur n'entre pas dans l'empreinte initiale."""
+    store = _Store()
+    premier = commandes_boucle.creer_signal(
+        store, _Connexion(), TENANT, libelle="Signal", source="source")
+    date_serveur = premier.objet["donnees"]["detecte_le"]
+    assert date_serveur
+
+    second = commandes_boucle.creer_signal(
+        store, _Connexion(), TENANT, libelle="Signal", source="source",
+        detecte_le=date_serveur)
+
+    assert second.objet["id"] != premier.objet["id"]
+    assert len([objet for objet in store.objets.values()
+                if objet["type"] == "SIGNAL"]) == 2
+
+
+@pytest.mark.parametrize("charge", [
+    {"preuves": ["sk-abc123456789012345"]},
+    {"preuves": ["Bearer abcdefghijklmnop"]},
+    {"preuves": ["ghp_abc1234567890"]},
+    {"source": "sk-abc123456789012345"},
+    {"libelle": "Bearer abcdefghijklmnop"},
+    {"description": "ghp_abc1234567890"},
+])
+def test_un_jeton_brut_est_refuse_a_l_ecriture(charge):
+    with pytest.raises(ObjetInvalide):
+        entreprise_depot.verifier_donnees(charge)
 
 
 @pytest.mark.parametrize("champs", [
@@ -678,6 +740,7 @@ def test_post_signal_depuis_situation_force_la_situation(monkeypatch):
     {"libelle": "Signal", "source": "source", "fingerprint": "client-fingerprint"},
     {"libelle": "Signal", "source": "source", "confiance": 1.2},
     {"libelle": "Signal", "source": "source", "intensite": 1.2},
+    {"libelle": "Signal", "source": "source", "detecte_le": "pas-une-date"},
     {"libelle": "Signal", "source": "source", "champ_inconnu": True},
 ])
 def test_post_signal_valide_le_corps_avant_la_commande(monkeypatch, corps):
@@ -1055,6 +1118,88 @@ def test_pg_signal_secret_refuse_sans_ecriture(monkeypatch):
         assert nombre == 0
     finally:
         _nettoyer(tenant)
+
+
+@besoin_pg
+@pytest.mark.parametrize("jeton", [
+    "sk-abc123456789012345",
+    "Bearer abcdefghijklmnop",
+    "ghp_abc1234567890",
+])
+def test_pg_jeton_brut_dans_preuves_refuse_400_sans_ecriture(monkeypatch, jeton):
+    tenant = f"c5d-{uuid.uuid4().hex[:10]}"
+    client = _client_pg(monkeypatch)
+    try:
+        with psycopg.connect(DSN, autocommit=True) as conn:
+            depot.appliquer_schema(conn)
+
+        reponse = client.post(
+            f"{BASE}/signals",
+            json={
+                "libelle": "Signal avec jeton",
+                "source": "source",
+                "preuves": [jeton],
+            },
+            headers={"X-Tenant": tenant},
+        )
+        assert reponse.status_code == 400, reponse.text
+        assert jeton not in reponse.text
+
+        with psycopg.connect(DSN) as conn:
+            nombre = conn.execute(
+                "SELECT count(*) FROM objet_entreprise "
+                "WHERE tenant_id = %s AND type = 'SIGNAL'",
+                (tenant,),
+            ).fetchone()[0]
+        assert nombre == 0
+    finally:
+        _nettoyer(tenant)
+
+
+@besoin_pg
+def test_pg_signal_global_multi_situation_hors_tenant_404_sans_ecriture(monkeypatch):
+    tenant = f"c5d-{uuid.uuid4().hex[:10]}"
+    autre = f"{tenant}-autre"
+    client = _client_pg(monkeypatch)
+    try:
+        with psycopg.connect(DSN, autocommit=True) as conn:
+            depot.appliquer_schema(conn)
+
+        assert client.post(
+            f"{BASE}/situations",
+            json={"id": "sit-local", "titre": "Situation locale"},
+            headers={"X-Tenant": tenant},
+        ).status_code == 201
+        assert client.post(
+            f"{BASE}/situations",
+            json={"id": "sit-autre", "titre": "Situation autre tenant"},
+            headers={"X-Tenant": autre},
+        ).status_code == 201
+
+        reponse = client.post(
+            f"{BASE}/signals",
+            json={
+                "libelle": "Signal multi-tenant",
+                "source": "source",
+                "situation_ids": ["sit-local", "sit-autre"],
+            },
+            headers={"X-Tenant": tenant},
+        )
+        assert reponse.status_code == 404, reponse.text
+
+        with psycopg.connect(DSN) as conn:
+            nombre = conn.execute(
+                "SELECT count(*) FROM objet_entreprise "
+                "WHERE tenant_id = %s AND type = 'SIGNAL'",
+                (tenant,),
+            ).fetchone()[0]
+            situation = boucle.lire_boucle(
+                conn, tenant, "sit-local", as_dict=True)
+        assert nombre == 0
+        assert situation["donnees"]["signal_ids"] == []
+    finally:
+        _nettoyer(tenant)
+        _nettoyer(autre)
 
 
 @besoin_pg

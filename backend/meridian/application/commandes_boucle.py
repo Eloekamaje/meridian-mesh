@@ -34,6 +34,7 @@ from meridian.domain.objets_exploitation import (
     STATUTS_SIGNAL,
     TRANSITIONS_HYPOTHESIS,
     TYPES_SIGNAL,
+    DoublonEmpreinteSignal,
     ObjetsExploitationInvalide,
     TransitionObjetRefusee,
     _PREFIXES,
@@ -857,10 +858,8 @@ def creer_signal(
         )
         try:
             depot.enregistrer_objets(conn, tenant_id, objets=[objet], as_dict=False)
-        except ObjetsExploitationInvalide as exc:
-            if "empreinte" in str(exc).lower() and "signal" in str(exc).lower():
-                raise DoublonExploitation(str(exc)) from exc
-            raise
+        except DoublonEmpreinteSignal as exc:
+            raise DoublonExploitation(str(exc)) from exc
         return _relire(depot, conn, tenant_id, identifiant_objet)
 
 

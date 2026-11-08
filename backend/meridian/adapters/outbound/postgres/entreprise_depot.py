@@ -17,6 +17,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from meridian.application.pont_securite import cle_sensible as _cle_sensible
+from meridian.application.pont_securite import jeton_sensible as _jeton_sensible
 from meridian.application.pont_securite import url_porte_un_secret as _url_porte_un_secret
 from meridian.domain.modele_entreprise import FAMILLES, MODES, TYPES_PAR_FAMILLE
 from meridian.domain.tenant import TenantError, normaliser_tenant_canonique
@@ -69,7 +70,9 @@ def _verifier_secrets(valeur, chemin: str = "donnees") -> None:
     elif isinstance(valeur, (list, tuple)):
         for rang, element in enumerate(valeur):
             _verifier_secrets(element, f"{chemin}[{rang}]")
-    elif isinstance(valeur, str) and _url_porte_un_secret(valeur):
+    elif isinstance(valeur, str) and (
+        _url_porte_un_secret(valeur) or _jeton_sensible(valeur)
+    ):
         raise ObjetInvalide(f"{chemin} : URL ou secret refusé")
 
 

@@ -31,7 +31,6 @@ from datetime import date, datetime
 from decimal import Decimal
 import math
 import os
-import re
 from typing import Annotated, Any
 import unicodedata
 from urllib.parse import parse_qsl, unquote_plus, urlsplit
@@ -56,6 +55,7 @@ from meridian.adapters.outbound.postgres import boucle
 from meridian.adapters.outbound.postgres import entreprise_depot
 from meridian.adapters.outbound.neo4j import graph_store
 from meridian.application import commandes_boucle
+from meridian.application.pont_securite import jeton_sensible
 from meridian.domain import modele_entreprise
 from meridian.domain.mesure import mesure_renseignee as _mesure_renseignee
 from meridian.domain.objets_exploitation import TYPES_EXPRESSION, TYPES_SIGNAL
@@ -449,10 +449,6 @@ _CLES_SECRETES = frozenset({
     "pwd", "pass", "auth", "key", "apikey", "api_key", "api-key", "access_key", "accesskey",
     "private_key", "privatekey", "client_secret", "clientsecret", "bearer", "password", "passwd",
 })
-_JETON_SENSIBLE = re.compile(
-    r"(?i)(?:\bbearer\s+[A-Za-z0-9_.~+/=-]{12,}|\bsk-[A-Za-z0-9_-]{8,}|"
-    r"\bgh[pousr]_[A-Za-z0-9]{10,}|\bxox[baprs]-[A-Za-z0-9-]{10,})"
-)
 
 
 def _normaliser(valeur, *, minuscule: bool = False) -> str:
@@ -584,7 +580,7 @@ def _assainir(valeur):
     if isinstance(valeur, (datetime, date)):
         return valeur.isoformat()
     if isinstance(valeur, str):
-        if _JETON_SENSIBLE.search(valeur) or _url_porte_un_secret(valeur):
+        if jeton_sensible(valeur) or _url_porte_un_secret(valeur):
             return "***"
         return valeur
     if isinstance(valeur, float) and not math.isfinite(valeur):
