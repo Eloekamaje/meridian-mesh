@@ -349,13 +349,17 @@ class ChangementStatutObjet(_CorpsTransition):
 
 
 class CreationHypothese(_CorpsTransition):
-    """Corps C5c strict : statut, mode, id et liens sont serveur uniquement."""
+    """Corps C5c strict : statut, mode, id et liens sont serveur uniquement.
+
+    ``expert_id`` reste porté par le domaine pour C5e, mais n'est pas exposé tant
+    qu'aucune route EXPERT n'existe : le client qui l'envoie est refusé par
+    ``extra="forbid"`` (422).
+    """
 
     enonce: TexteNonVide = Field(..., max_length=5000)
     conditions_test: list[TexteNonVide] | None = Field(None, max_length=100)
     claim_ids_soutenants: list[TexteNonVide] | None = Field(None, max_length=100)
     claim_ids_opposants: list[TexteNonVide] | None = Field(None, max_length=100)
-    expert_id: TexteIdentifiant | None = None
     preuves: list[Any] | None = Field(None, max_length=100)
     confiance: float | None = Field(None, ge=0, le=1)
 
@@ -1026,8 +1030,9 @@ async def creer_hypothese(
 
     ``statut``, ``mode``, ``id`` et ``investigation_id`` sont absents du corps : le
     serveur force ``OPEN``/``PROPOSED`` et un client qui les envoie est refusé en 422.
-    L'Investigation est verrouillée et son lien inverse ``hypothesis_ids`` est écrit
-    dans la même transaction.
+    ``expert_id`` est également refusé tant que C5e n'expose pas les Experts.
+    L'Investigation doit être ouverte (sinon 409), est verrouillée et son lien inverse
+    ``hypothesis_ids`` est écrit dans la même transaction.
     """
     _verifier_espace(x_espace)
     tenant = _tenant(request, x_tenant)

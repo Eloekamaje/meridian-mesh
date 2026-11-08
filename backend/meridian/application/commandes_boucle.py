@@ -392,6 +392,9 @@ STATUT_OPPORTUNITE_INITIAL = "DETECTED"
 STATUT_RISQUE_INITIAL = "DETECTED"
 STATUT_HYPOTHESE_INITIAL = "OPEN"
 MODE_HYPOTHESE_INITIAL = "PROPOSED"
+STATUTS_INVESTIGATION_FERMES = frozenset({
+    "CLOSED", "CLOSE", "CLOTUREE", "FERMEE", "ARCHIVED", "ARCHIVEE",
+})
 _CHAMPS_SERVEUR_HYPOTHESE = ("statut", "id")
 
 
@@ -660,6 +663,13 @@ def creer_hypothese(
     with depot.transaction(conn):
         investigation = _source_investigation(
             depot, conn, tenant_id, investigation_id, for_update=True)
+        statut_investigation = _texte(
+            _valeur_source(investigation, "statut")).upper()
+        if statut_investigation in STATUTS_INVESTIGATION_FERMES:
+            raise TransitionRefusee(
+                f"investigation {_texte(investigation_id)!r} fermée : statut "
+                f"{statut_investigation or 'inconnu'} ; une hypothèse ne peut être "
+                "formulée que sur une investigation ouverte")
         identifiant = f"{_PREFIXES['HYPOTHESIS']}-{uuid.uuid4().hex[:12]}"
         if depot.lire_boucle(conn, tenant_id, identifiant, as_dict=True) is not None:
             raise DoublonExploitation(

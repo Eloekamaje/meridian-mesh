@@ -475,6 +475,35 @@ def test_creer_hypothese_refuse_une_source_qui_n_est_pas_une_investigation():
     assert store.enregistres_objets == []
 
 
+@pytest.mark.parametrize("statut", [
+    "CLOSED", "CLOSE", "CLOTUREE", "FERMEE", "ARCHIVED", "ARCHIVEE", "closed",
+])
+def test_creer_hypothese_refuse_une_investigation_fermee(statut):
+    store = _Store([_investigation_row(statut=statut)])
+
+    with pytest.raises(commandes_boucle.TransitionRefusee) as levee:
+        commandes_boucle.creer_hypothese(
+            store, _Connexion(), TENANT, "inv-1", enonce="Hypothèse")
+
+    assert "fermée" in str(levee.value)
+    assert statut.upper() in str(levee.value)
+    assert store.enregistres_objets == []
+    assert not [objet for objet in store.objets.values()
+                if objet["type"] == "HYPOTHESIS"]
+    assert store.objets["inv-1"]["donnees"]["hypothesis_ids"] == []
+
+
+def test_creer_hypothese_accepte_une_investigation_ouverte():
+    store = _Store([_investigation_row(statut="open")])
+
+    resultat = commandes_boucle.creer_hypothese(
+        store, _Connexion(), TENANT, "inv-1", enonce="Hypothèse")
+
+    assert resultat.objet["donnees"]["statut"] == "OPEN"
+    assert store.objets["inv-1"]["donnees"]["hypothesis_ids"] == [
+        resultat.objet["id"]]
+
+
 def test_creer_hypothese_annule_tout_si_le_lien_inverse_echoue():
     store = _Store([_situation_row(), _investigation_row()])
     store.echec_lien = True
@@ -670,7 +699,6 @@ def test_post_hypothese_retourne_le_contrat_c5c(monkeypatch):
         "conditions_test": ["mesurer le p95"],
         "claim_ids_soutenants": ["claim-1"],
         "claim_ids_opposants": ["claim-2"],
-        "expert_id": "expert-1",
         "preuves": ["preuve-1"],
         "confiance": 0.6,
     })
@@ -691,7 +719,6 @@ def test_post_hypothese_retourne_le_contrat_c5c(monkeypatch):
     assert appels[0][2]["conditions_test"] == ["mesurer le p95"]
     assert appels[0][2]["claim_ids_soutenants"] == ["claim-1"]
     assert appels[0][2]["claim_ids_opposants"] == ["claim-2"]
-    assert appels[0][2]["expert_id"] == "expert-1"
     assert appels[0][2]["preuves"] == ["preuve-1"]
     assert appels[0][2]["confiance"] == 0.6
     assert "statut" not in appels[0][2]
@@ -707,6 +734,7 @@ def test_post_hypothese_retourne_le_contrat_c5c(monkeypatch):
     {"enonce": "Valide", "id": "client-id"},
     {"enonce": "Valide", "investigation_id": "inv-1"},
     {"enonce": "Valide", "mode": "OBSERVED"},
+    {"enonce": "Valide", "expert_id": "expert-1"},
     {"enonce": "Valide", "confiance": 1.2},
     {"enonce": "Valide", "conditions_test": ["   "]},
     {"enonce": "Valide", "champ_inconnu": True},
@@ -718,6 +746,22 @@ def test_post_hypothese_valide_le_corps_avant_la_commande(monkeypatch, corps):
         lambda *_, **__: pytest.fail("la commande ne doit pas être appelée"),
     )
     assert client.post(f"{BASE}/investigations/inv-1/hypotheses", json=corps).status_code == 422
+
+
+def test_post_hypothese_expert_id_refuse_sans_ecriture(monkeypatch):
+    """C5e réserve expert_id : le champ est inconnu du corps et aucune commande ne part."""
+    client = _client(monkeypatch)
+    monkeypatch.setattr(
+        boucle_routes.commandes_boucle, "creer_hypothese",
+        lambda *_, **__: pytest.fail("aucune écriture ne doit être tentée"),
+    )
+
+    reponse = client.post(
+        f"{BASE}/investigations/inv-1/hypotheses",
+        json={"enonce": "Hypothèse", "expert_id": "expert-1"},
+    )
+
+    assert reponse.status_code == 422
 
 
 def test_post_hypothese_traduit_les_erreurs(monkeypatch):
@@ -944,10 +988,10 @@ def _client_pg(monkeypatch) -> TestClient:
 
 
 def _nettoyer(tenant: str) -> None:
-    with psycopg.connect(DSN, autocommit=True) as conn:
-        with rls.contexte_tenant(conn, tenant):
-            conn.execute(
-                "DELETE FROM objet_entreprise WHERE tenant_id = %s", (tenant,))
+    with psycopg.connect(DSN, autocommit=True) as conn, \
+            rls.contexte_tenant(conn, tenant):
+        conn.execute(
+            "DELETE FROM objet_entreprise WHERE tenant_id = %s", (tenant,))
 
 
 def _pg_investigation(
@@ -1098,6 +1142,140 @@ def test_pg_creation_hypothese_chaine_liens_et_transitions(monkeypatch):
 
 
 @besoin_pg
+def test_pg_http_investigation_fermee_refusee_et_ouverte_acceptee(monkeypatch):
+    tenant = f"c5c-{uuid.uuid4().hex[:10]}"
+    client = _client_pg(monkeypatch)
+    try:
+        with psycopg.connect(DSN, autocommit=True) as conn:
+            depot.appliquer_schema(conn)
+
+        assert client.post(
+            f"{BASE}/situations",
+            json={"id": "sit-c5c", "titre": "Latence des paiements"},
+            headers={"X-Tenant": tenant},
+        ).status_code == 201
+        investigation_fermee = client.post(
+            f"{BASE}/situations/sit-c5c/investigations",
+            json={
+                "id": "inv-fermee",
+                "titre": "Investigation fermée",
+                "question": "Pourquoi les paiements ralentissent-ils ?",
+                "statut": "CLOSED",
+            },
+            headers={"X-Tenant": tenant},
+        )
+        assert investigation_fermee.status_code == 201, investigation_fermee.text
+
+        refusee = client.post(
+            f"{BASE}/investigations/inv-fermee/hypotheses",
+            json={"enonce": "Hypothèse interdite"},
+            headers={"X-Tenant": tenant},
+        )
+        assert refusee.status_code == 409, refusee.text
+
+        with psycopg.connect(DSN) as conn:
+            nombre = conn.execute(
+                "SELECT count(*) FROM objet_entreprise "
+                "WHERE tenant_id = %s AND type = 'HYPOTHESIS'",
+                (tenant,),
+            ).fetchone()[0]
+            investigation = boucle.lire_boucle(
+                conn, tenant, "inv-fermee", as_dict=True)
+        assert nombre == 0
+        assert investigation["donnees"]["hypothesis_ids"] == []
+
+        investigation_ouverte = client.post(
+            f"{BASE}/situations/sit-c5c/investigations",
+            json={
+                "id": "inv-ouverte",
+                "titre": "Investigation ouverte",
+                "question": "Quel contrôle bloque les paiements ?",
+                "statut": "OPEN",
+            },
+            headers={"X-Tenant": tenant},
+        )
+        assert investigation_ouverte.status_code == 201, investigation_ouverte.text
+
+        acceptee = client.post(
+            f"{BASE}/investigations/inv-ouverte/hypotheses",
+            json={"enonce": "Le contrôle synchrone bloque les paiements"},
+            headers={"X-Tenant": tenant},
+        )
+        assert acceptee.status_code == 201, acceptee.text
+        identifiant = acceptee.json()["objet"]["id"]
+
+        with psycopg.connect(DSN) as conn:
+            investigation = boucle.lire_boucle(
+                conn, tenant, "inv-ouverte", as_dict=True)
+        assert investigation["donnees"]["hypothesis_ids"] == [identifiant]
+    finally:
+        _nettoyer(tenant)
+
+
+@besoin_pg
+def test_pg_creation_hypothese_secret_refusee_sans_ecriture(monkeypatch):
+    tenant = f"c5c-{uuid.uuid4().hex[:10]}"
+    client = _client_pg(monkeypatch)
+    try:
+        with psycopg.connect(DSN, autocommit=True) as conn:
+            depot.appliquer_schema(conn)
+            _pg_investigation(tenant)
+
+        reponse = client.post(
+            f"{BASE}/investigations/inv-c5c/hypotheses",
+            json={
+                "enonce": "Hypothèse avec secret",
+                "preuves": [{"password": "s3cr3t"}],
+            },
+            headers={"X-Tenant": tenant},
+        )
+        assert reponse.status_code == 400, reponse.text
+
+        with psycopg.connect(DSN) as conn:
+            nombre = conn.execute(
+                "SELECT count(*) FROM objet_entreprise "
+                "WHERE tenant_id = %s AND type = 'HYPOTHESIS'",
+                (tenant,),
+            ).fetchone()[0]
+            investigation = boucle.lire_boucle(
+                conn, tenant, "inv-c5c", as_dict=True)
+        assert nombre == 0
+        assert investigation["donnees"]["hypothesis_ids"] == []
+    finally:
+        _nettoyer(tenant)
+
+
+@besoin_pg
+def test_pg_http_expert_id_refuse_sans_ecriture(monkeypatch):
+    tenant = f"c5c-{uuid.uuid4().hex[:10]}"
+    client = _client_pg(monkeypatch)
+    try:
+        with psycopg.connect(DSN, autocommit=True) as conn:
+            depot.appliquer_schema(conn)
+            _pg_investigation(tenant)
+
+        reponse = client.post(
+            f"{BASE}/investigations/inv-c5c/hypotheses",
+            json={"enonce": "Hypothèse C5e", "expert_id": "expert-1"},
+            headers={"X-Tenant": tenant},
+        )
+        assert reponse.status_code == 422, reponse.text
+
+        with psycopg.connect(DSN) as conn:
+            nombre = conn.execute(
+                "SELECT count(*) FROM objet_entreprise "
+                "WHERE tenant_id = %s AND type = 'HYPOTHESIS'",
+                (tenant,),
+            ).fetchone()[0]
+            investigation = boucle.lire_boucle(
+                conn, tenant, "inv-c5c", as_dict=True)
+        assert nombre == 0
+        assert investigation["donnees"]["hypothesis_ids"] == []
+    finally:
+        _nettoyer(tenant)
+
+
+@besoin_pg
 def test_pg_creation_est_atomique_si_le_lien_inverse_echoue(monkeypatch):
     tenant = f"c5c-{uuid.uuid4().hex[:10]}"
     try:
@@ -1109,11 +1287,10 @@ def test_pg_creation_est_atomique_si_le_lien_inverse_echoue(monkeypatch):
             raise RuntimeError("échec simulé du lien inverse")
 
         monkeypatch.setattr(objets_exploitation, "_persister_parent", echouer)
-        with psycopg.connect(DSN) as conn:
-            with pytest.raises(RuntimeError):
-                commandes_boucle.creer_hypothese(
-                    boucle, conn, tenant, "inv-c5c",
-                    enonce="Hypothèse partielle", confiance=0.5)
+        with psycopg.connect(DSN) as conn, pytest.raises(RuntimeError):
+            commandes_boucle.creer_hypothese(
+                boucle, conn, tenant, "inv-c5c",
+                enonce="Hypothèse partielle", confiance=0.5)
 
         with psycopg.connect(DSN) as conn:
             nombre = conn.execute(
