@@ -24,11 +24,12 @@ from meridian.domain.construction_objets_exploitation import (
     muer_risque as _muer_risque,
     nouveau_risque as _nouveau_risque,
     nouveau_scenario as _nouveau_scenario,
+    nouveau_signal as _nouveau_signal,
     nouvelle_expression as _nouvelle_expression,
     nouvelle_hypothese as _nouvelle_hypothese,
     nouvelle_opportunite as _nouvelle_opportunite,
 )
-from meridian.domain.objets_exploitation import Expression, Hypothesis, Scenario
+from meridian.domain.objets_exploitation import Expression, Hypothesis, Scenario, Signal
 from meridian.domain.mesure import mesure_renseignee as _mesure_renseignee
 
 __all__ = [
@@ -42,7 +43,7 @@ __all__ = [
     "enregistrer_boucle", "lire_boucle", "lire_par_id",
     "transaction", "nouvelle_situation", "donnees_de", "fusionner_donnees",
     "nouveau_scenario", "nouvelle_expression", "nouvelle_hypothese",
-    "nouvelle_opportunite", "nouveau_risque",
+    "nouvelle_opportunite", "nouveau_risque", "nouveau_signal",
     "muer_hypothese", "muer_opportunite", "muer_risque",
     "enregistrer_objets", "lister_objets_exploitation",
 ]
@@ -463,6 +464,7 @@ _CLASSES = {
 # l'unique source de ``TYPES_LECTURE`` et sert à valider toute lecture canonique.
 _CLASSES_LECTURE = {
     **_CLASSES,
+    "SIGNAL": Signal,
     "EXPRESSION": Expression,
     "HYPOTHESIS": Hypothesis,
     "OPPORTUNITY": modele.Opportunity,
@@ -1073,6 +1075,9 @@ def _source_principale(ligne: Mapping[str, Any]) -> str | None:
         )
     if type_objet == "EXPRESSION":
         return _texte_ou_none(_valeur(ligne, "situation_id"))
+    if type_objet == "SIGNAL":
+        situations = _liste_ids(_valeur(ligne, "situation_ids"), "situation_ids")
+        return situations[0] if len(situations) == 1 else None
     if type_objet == "HYPOTHESIS":
         return _texte_ou_none(_valeur(ligne, "investigation_id"))
     if type_objet == "INVESTIGATION":
@@ -1185,6 +1190,11 @@ def nouvelle_hypothese(**champs: Any) -> Any:
     return _nouvelle_hypothese(investigation, **champs)
 
 
+def nouveau_signal(**champs: Any) -> Any:
+    """Fabrique un Signal canonique sans exposer le constructeur de domaine."""
+    return _nouveau_signal(**champs)
+
+
 def muer_opportunite(opportunite: Any, vers: str, **champs: Any) -> Any:
     """Applique une transition de statut d'Opportunity, sans muter la source."""
     return _muer_opportunite(opportunite, vers, **champs)
@@ -1212,14 +1222,16 @@ def enregistrer_objets(
 
 def lister_objets_exploitation(
     conn: Any, tenant_id: str, *, type_: str | None = None,
-    investigation_id: str | None = None, decision_id: str | None = None,
-    expression_id: str | None = None, statut: str | None = None,
+    situation_id: str | None = None, investigation_id: str | None = None,
+    decision_id: str | None = None, expression_id: str | None = None,
+    type_signal: str | None = None, statut: str | None = None,
     limite: int = 100, as_dict: bool = True,
 ) -> list[Any]:
     """Liste les objets d'exploitation du tenant, filtrés par type, parent et statut."""
     return objets_exploitation.lister_objets_exploitation(
-        conn, tenant_id, type_=type_, investigation_id=investigation_id,
-        decision_id=decision_id, expression_id=expression_id, statut=statut,
+        conn, tenant_id, type_=type_, situation_id=situation_id,
+        investigation_id=investigation_id, decision_id=decision_id,
+        expression_id=expression_id, type_signal=type_signal, statut=statut,
         limite=limite, as_dict=as_dict,
     )
 

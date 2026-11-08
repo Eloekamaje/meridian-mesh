@@ -31,10 +31,13 @@ from meridian.domain.objets_exploitation import (
     STATUTS_HYPOTHESIS,
     STATUTS_OPPORTUNITE,
     STATUTS_RISQUE,
+    STATUTS_SIGNAL,
     TRANSITIONS_HYPOTHESIS,
+    TYPES_SIGNAL,
     ObjetsExploitationInvalide,
     TransitionObjetRefusee,
     _PREFIXES,
+    empreinte_signal,
 )
 
 __all__ = [
@@ -62,6 +65,8 @@ __all__ = [
     "creer_hypothese",
     "lister_hypotheses",
     "changer_statut_hypothese",
+    "creer_signal",
+    "lister_signaux",
     "creer_scenario",
     "lister_scenarios",
     "comparer_scenarios",
@@ -73,6 +78,7 @@ _LIBELLES = {
     "decision": "Décision",
     "scenario": "Scénario",
     "hypothesis": "Hypothèse",
+    "signal": "Signal",
     "initiative": "Initiative",
     "outcome": "Outcome",
     "learning": "Learning",
@@ -121,6 +127,23 @@ class ResultatTransition:
 
 def _texte(valeur: Any) -> str:
     return "" if valeur is None else str(valeur).strip()
+
+
+def _liste_ids_signal(valeur: Any, champ: str) -> list[str]:
+    """Normalise une liste d'identifiants, sans accepter une chaîne vide."""
+    if valeur is None:
+        return []
+    elements = [valeur] if isinstance(valeur, (str, Mapping)) else list(valeur)
+    resultat: list[str] = []
+    for element in elements:
+        if isinstance(element, Mapping):
+            element = element.get("id")
+        identifiant = _texte(element)
+        if not identifiant:
+            raise ObjetsExploitationInvalide(f"{champ} contient un identifiant vide")
+        if identifiant not in resultat:
+            resultat.append(identifiant)
+    return resultat
 
 
 def _valeur_source(source: Any, nom: str, defaut: Any = None) -> Any:
@@ -733,6 +756,147 @@ def changer_statut_hypothese(
         depot.enregistrer_objets(
             conn, tenant_id, objets=[objet], as_dict=False, historique=True)
         return _relire(depot, conn, tenant_id, _texte(hypothese_id))
+
+
+STATUT_SIGNAL_INITIAL = "DETECTED"
+MODE_SIGNAL_INITIAL = "OBSERVED"
+_CHAMPS_SERVEUR_SIGNAL = ("statut", "mode", "id", "tenant_id", "fingerprint")
+
+
+def _source_situation(
+    depot: BoucleStore, conn: Any, tenant: str, situation_id: Any, *,
+    for_update: bool = True,
+) -> Any:
+    """Charge une Situation du tenant ; absente ou hors tenant vaut 404."""
+    identifiant = _texte(situation_id)
+    if not identifiant:
+        raise SourceIntrouvable("situation", identifiant)
+    source = depot.lire_boucle(
+        conn, tenant, identifiant, as_dict=True, for_update=for_update)
+    if source is None:
+        raise SourceIntrouvable("situation", identifiant)
+    type_trouve = _texte(_valeur_source(source, "type")).upper()
+    if type_trouve != "SITUATION":
+        raise ObjetsExploitationInvalide(
+            f"situation {identifiant!r} doit être de type SITUATION "
+            f"(reçu {type_trouve or 'inconnu'})"
+        )
+    tenant_source = _texte(_valeur_source(source, "tenant_id"))
+    if tenant_source != tenant:
+        raise SourceIntrouvable("situation", identifiant)
+    return source
+
+
+def creer_signal(
+    depot: BoucleStore, conn: Any, tenant_id: str, *,
+    situation_id: Any = None, **champs: Any,
+) -> ResultatTransition:
+    """Crée un Signal global ou rattaché à une ou plusieurs Situations du tenant.
+
+    Le serveur force ``statut=DETECTED`` et ``mode=OBSERVED`` : un statut, un mode, un
+    identifiant, un tenant ou une empreinte fournis par le client sont refusés (422).
+    L'empreinte est calculée avant toute écriture ; deux créations identiques, avec ou
+    sans ``detecte_le``, produisent un :class:`DoublonExploitation` (409), y compris
+    sous concurrence grâce au verrou consultatif de la persistance. Les Situations sont
+    verrouillées et leurs liens inverses ``signal_ids`` sont écrits dans la même
+    transaction.
+    """
+    for champ in _CHAMPS_SERVEUR_SIGNAL:
+        if champ in champs:
+            raise ObjetsExploitationInvalide(
+                f"{champ} interdit à la création d'un signal : le serveur force "
+                f"statut={STATUT_SIGNAL_INITIAL}, mode={MODE_SIGNAL_INITIAL}, "
+                "id, tenant_id et fingerprint")
+
+    libelle = _texte(champs.pop("libelle", None))
+    source = _texte(champs.pop("source", None))
+    if not libelle:
+        raise ObjetsExploitationInvalide("libelle obligatoire")
+    if not source:
+        raise ObjetsExploitationInvalide("source obligatoire")
+    type_signal = _texte(champs.pop("type_signal", "OBSERVATION")).upper() or "OBSERVATION"
+    if type_signal not in TYPES_SIGNAL:
+        raise ObjetsExploitationInvalide(
+            f"type_signal inconnu : {type_signal!r} "
+            f"(attendus : {', '.join(TYPES_SIGNAL)})"
+        )
+    detecte_le = champs.pop("detecte_le", None)
+    demandees = _liste_ids_signal(champs.pop("situation_ids", None), "situation_ids")
+
+    if situation_id is not None:
+        identifiant = _texte(situation_id)
+        if not identifiant:
+            raise SourceIntrouvable("situation", identifiant)
+        if demandees and demandees != [identifiant]:
+            raise ObjetsExploitationInvalide(
+                "situation_ids doit correspondre exactement à la Situation de la route")
+        situations = [identifiant]
+    else:
+        situations = demandees
+
+    empreinte = empreinte_signal(
+        source=source, type_signal=type_signal, libelle=libelle,
+        detecte_le=detecte_le,
+    )
+
+    with depot.transaction(conn):
+        for identifiant in sorted(set(situations)):
+            _source_situation(depot, conn, tenant_id, identifiant, for_update=True)
+        identifiant_objet = f"{_PREFIXES['SIGNAL']}-{uuid.uuid4().hex[:12]}"
+        if depot.lire_boucle(
+            conn, tenant_id, identifiant_objet, as_dict=True) is not None:
+            raise DoublonExploitation(
+                "signal déjà existant : l'identifiant "
+                f"{identifiant_objet!r} est déjà utilisé")
+        objet = depot.nouveau_signal(
+            libelle=libelle, source=source, tenant_id=tenant_id,
+            id=identifiant_objet, type_signal=type_signal,
+            statut=STATUT_SIGNAL_INITIAL, mode=MODE_SIGNAL_INITIAL,
+            fingerprint=empreinte, detecte_le=detecte_le or None,
+            situation_ids=situations, **champs,
+        )
+        try:
+            depot.enregistrer_objets(conn, tenant_id, objets=[objet], as_dict=False)
+        except ObjetsExploitationInvalide as exc:
+            if "empreinte" in str(exc).lower() and "signal" in str(exc).lower():
+                raise DoublonExploitation(str(exc)) from exc
+            raise
+        return _relire(depot, conn, tenant_id, identifiant_objet)
+
+
+def lister_signaux(
+    depot: BoucleStore, conn: Any, tenant_id: str, *,
+    situation_id: Any = None, type_signal: Any = None, statut: Any = None,
+    limite: int = 100,
+) -> list[dict[str, Any]]:
+    """Liste les Signaux du tenant, filtrés par Situation, type et statut."""
+    type_normalise = None
+    if _texte(type_signal):
+        type_normalise = _texte(type_signal).upper()
+        if type_normalise not in TYPES_SIGNAL:
+            raise ObjetsExploitationInvalide(
+                f"type_signal inconnu : {type_signal!r} "
+                f"(attendus : {', '.join(TYPES_SIGNAL)})"
+            )
+    statut_normalise = None
+    if _texte(statut):
+        statut_normalise = _texte(statut).upper()
+        if statut_normalise not in STATUTS_SIGNAL:
+            raise ObjetsExploitationInvalide(
+                f"statut inconnu : {statut!r} "
+                f"(attendus : {', '.join(STATUTS_SIGNAL)})"
+            )
+    situation = None
+    if _texte(situation_id):
+        situation = _source_situation(
+            depot, conn, tenant_id, situation_id, for_update=False)
+    return depot.lister_objets_exploitation(
+        conn, tenant_id, type_="SIGNAL",
+        situation_id=(
+            _texte(_valeur_source(situation, "id")) if situation else None),
+        type_signal=type_normalise, statut=statut_normalise,
+        limite=limite, as_dict=True,
+    )
 
 
 _METRIQUES_SCENARIO = (

@@ -59,6 +59,8 @@ class BoucleStore(Protocol):
 
     def nouvelle_hypothese(self, **champs: Any) -> Any: ...
 
+    def nouveau_signal(self, **champs: Any) -> Any: ...
+
     def muer_opportunite(self, opportunite: Any, vers: str, **champs: Any) -> Any: ...
 
     def muer_risque(self, risque: Any, vers: str, **champs: Any) -> Any: ...
@@ -72,8 +74,9 @@ class BoucleStore(Protocol):
 
     def lister_objets_exploitation(
         self, conn: Any, tenant_id: str, *, type_: str | None = None,
-        investigation_id: str | None = None, decision_id: str | None = None,
-        expression_id: str | None = None, statut: str | None = None,
+        situation_id: str | None = None, investigation_id: str | None = None,
+        decision_id: str | None = None, expression_id: str | None = None,
+        type_signal: str | None = None, statut: str | None = None,
         limite: int = 100, as_dict: bool = True,
     ) -> list[Any]: ...
 
