@@ -325,7 +325,11 @@ canoniques, la création d'une Situation racine via `POST /boucle/situations` (C
 C4b la création et la comparaison de Scénarios via `/boucle/scenarios`, et depuis C5a
 l'Expression canonique unique d'une Situation via
 `POST /boucle/situations/{id}/expressions` (index unique 1:1 en base, lien
-`Situation.expression_id` posé uniquement par le serveur).
+`Situation.expression_id` posé uniquement par le serveur). Depuis C5b, une Expression
+`PROPOSED`/`CONFIRMED` peut être qualifiée manuellement en `Opportunity` ou `Risk`
+(`POST /boucle/expressions/{id}/opportunities|risks`), avec statut initial `DETECTED`,
+changement de statut contrôlé par le cycle canonique et liens inverses
+`Expression.opportunity_ids`/`risk_ids`.
 Le backfill `migration_canonique` et `/boucle/objets` restent disponibles. La chaîne est donc
 branchée et opérable depuis l'UI, mais l'activation des workers, la migration tenant rétroactive
 et le parcours end-to-end supervisé restent à faire. Le détail est dans
@@ -458,7 +462,7 @@ historique. Ils valent `twin.born` pour le résolveur, jamais une confirmation a
 | **Relation** | lien entre deux objets, distinct d’un claim | `supposee`, `observee`, `validation`, `confirmee`, `contestee`, `obsolete` | Postgres / Neo4j ; Atlas et revue |
 | **Situation** | phénomène émergent reliant Twins, signaux, claims ou impacts | `CANDIDATE`, puis qualification | `objet_entreprise` + backfill ; création via `POST /api/boucle/situations` et bouton « Nouvelle situation » dans Boucle ; le live lit/écrit encore Mongo `situations` |
 | **Expression** | lecture datée et typée d’une Situation, avec inconnues et confiance | `PROPOSED`, puis confirmation humaine | `objet_entreprise` + lien inverse `Situation.expression_id` (serveur uniquement) + index unique 1:1 `objet_entreprise_expression_situation_unique` ; `POST /api/boucle/situations/{id}/expressions` et action « Exprimer la situation » dans Boucle ; une seule Expression par Situation |
-| **Opportunity / Risk** | possibilité ou risque attaché à une situation | `DETECTED`, puis qualification | Classes de domaine testées ; aucune instanciation live identifiée ; sous-document `opportunite` legacy pour Opportunity, pas d’équivalent Risk |
+| **Opportunity / Risk** | possibilité ou risque attaché à une situation, qualifié depuis une Expression | `DETECTED`, puis cycle `MATURING → QUALIFIED → INVESTIGATING → SCENARIOS_AVAILABLE → DECIDED → INITIATED → MEASURED → LEARNED`, avec `REJECTED`/`DORMANT` | `objet_entreprise` + liens inverses `Expression.opportunity_ids`/`risk_ids` ; `POST/GET /api/boucle/expressions/{id}/opportunities` et `/risks`, `POST /api/boucle/opportunities/{id}/statut` et `/risks/{id}/statut`, actions UI ; qualification manuelle uniquement |
 | **Investigation** | espace structuré de compréhension : question, hypothèses, preuves | `OPEN`, puis clôture | Créée par le pont C2 ou par `POST /api/boucle/situations/{id}/investigations` (UI) ; lecture `/api/boucle/objets` |
 | **Decision** | décision humaine reliée à une investigation, avec options et rationale | `PROPOSED`, puis tranchée | Créée par le pont C2 ou par `POST /api/boucle/investigations/{id}/decisions` (UI) ; lecture `/api/boucle/objets` |
 | **Scenario** | option d’action comparable, rattachée à une Investigation et/ou une Decision | `DRAFT`, `PROPOSED`, `EVALUATED`, `SELECTED`, `REJECTED`, `ARCHIVED` | `objet_entreprise` + liens inverses `scenario_ids` (liste) / `scenario_id` (premier scénario historique, promu au premier restant s’il est retiré, sinon `None`) ; `POST/GET /api/boucle/scenarios`, `POST /api/boucle/scenarios/comparer` et UI Boucle ; filtre de liste direct, formulaire aux champs principaux, comparaison plafonnée à 50 |
@@ -472,8 +476,10 @@ historique. Ils valent `twin.born` pour le résolveur, jamais une confirmation a
 Objets de la vision qui ne sont pas encore des objets d’entreprise canoniques :
 **Signal**, **Hypothesis**, **Expert**, **ExpertContribution**.
 `Expression` est canonique depuis C5a (une Expression par Situation, lisible dans la chaîne
-`SITUATION → EXPRESSION`). Le dossier de raisonnement porte des hypothèses et des options,
-mais ce ne sont pas les objets durables décrits par le Domain Model. Voir
+`SITUATION → EXPRESSION`). `Opportunity` et `Risk` sont canoniques depuis C5b, qualifiés
+manuellement depuis une Expression et lisibles dans la chaîne
+`SITUATION → EXPRESSION → OPPORTUNITY|RISK`. Le dossier de raisonnement porte des hypothèses
+et des options, mais ce ne sont pas les objets durables décrits par le Domain Model. Voir
 [ecarts-vision.md](ecarts-vision.md).
 
 Règles transverses :
@@ -718,6 +724,7 @@ la suite locale.
 | Situations / boucle canonique | **partielle** | Modèle/store, UI de lecture et transitions (création d’une Situation racine → Investigation → Decision → Initiative → Outcome → Learning) ; pont C2 Travail → canonique (Situation/Decision/Initiative), C3 Initiative canonique après réponse, mesure D → Outcome ; Learning humain ; workers et migration tenant à activer |
 | Scénarios canoniques | **opérationnelle, périmètre UI borné** | Création depuis Investigation/Decision, liste filtrée directement par parent, comparaison déterministe avec écarts et référence ; UI Boucle ; `scenario_ids` pluriel et `scenario_id` = premier scénario historique (promu au premier restant s’il est retiré, sinon `None`) ; formulaire de création exposant titre, description, hypothèses/actions, valeur, coût, délai, risque, complexité, confiance, dépendances, impacts, preuves, réversibilité et statut ; comparaison plafonnée à 50 ; reste à relier les scénarios de capacité et la sélection dans la décision |
 | Expression canonique | **opérationnelle, une par Situation** | `POST /api/boucle/situations/{id}/expressions`, action « Exprimer la situation » dans Boucle ; champs type, formulation, canal, auteur, inconnues, confiance ; statut forcé `PROPOSED` ; doublon 409 ; index unique 1:1 en base ; chaîne `SITUATION → EXPRESSION` ; `enregistrer_boucle` reste réservé aux types canoniques |
+| Opportunités / risques canoniques | **opérationnels depuis une Expression, périmètre UI borné** | `POST /api/boucle/expressions/{id}/opportunities` et `/risks` (statut forcé `DETECTED`, Expression verrouillée, lien inverse atomique), `GET` filtré par Expression, `POST /api/boucle/opportunities/{id}/statut` et `/risks/{id}/statut` (cycle canonique, 409/422/404), UI de qualification et de transition ; chaîne `SITUATION → EXPRESSION → OPPORTUNITY`/`RISK` ; `enregistrer_boucle` refuse toujours ces types B ; qualification manuelle, pas de pipeline automatique |
 | Signal, Hypothesis, Expert | **absents comme objets canoniques** | Noms de famille, dossier de raisonnement ou profils ; voir [ecarts-vision.md](ecarts-vision.md) |
 | Claims, preuves, maturité | **solide** | contradictions et revue conservées |
 | Ingestion Git + CBM | **solide** | CBM à installer dans l’environnement cible |
