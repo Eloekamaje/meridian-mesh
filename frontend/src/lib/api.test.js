@@ -101,6 +101,21 @@ describe("boucleApi", () => {
     get.mockRestore();
   });
 
+  test("listerOpportunites et listerRisques filtrent par expression", async () => {
+    const get = jest.spyOn(api, "get").mockResolvedValue({ data: {} });
+
+    await boucleApi.listerOpportunites("expr/1", { limite: 25 });
+    await boucleApi.listerRisques("expr/1");
+
+    expect(get).toHaveBeenNthCalledWith(
+      1, "/boucle/expressions/expr%2F1/opportunities",
+      { params: { limite: 25 }, timeout: 20000 });
+    expect(get).toHaveBeenNthCalledWith(
+      2, "/boucle/expressions/expr%2F1/risks",
+      { params: undefined, timeout: 20000 });
+    get.mockRestore();
+  });
+
   test("les erreurs de scénario sont propagées sans être masquées", async () => {
     const erreur = { response: { status: 404, data: { detail: "Scénario introuvable" } } };
     poster.mockRejectedValueOnce(erreur);
@@ -121,6 +136,10 @@ describe("boucleApi", () => {
   test.each([
     ["ouvrirInvestigation", "sit/1", "/boucle/situations/sit%2F1/investigations"],
     ["creerExpression", "sit/1", "/boucle/situations/sit%2F1/expressions"],
+    ["creerOpportunite", "expr/1", "/boucle/expressions/expr%2F1/opportunities"],
+    ["creerRisque", "expr/1", "/boucle/expressions/expr%2F1/risks"],
+    ["changerStatutOpportunite", "opportunity/1", "/boucle/opportunities/opportunity%2F1/statut"],
+    ["changerStatutRisque", "risk/1", "/boucle/risks/risk%2F1/statut"],
     ["proposerDecision", "inv-1", "/boucle/investigations/inv-1/decisions"],
     ["trancherDecision", "dec-1", "/boucle/decisions/dec-1/trancher"],
     ["lancerInitiative", "dec-1", "/boucle/decisions/dec-1/initiatives"],

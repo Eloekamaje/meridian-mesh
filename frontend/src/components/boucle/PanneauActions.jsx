@@ -8,6 +8,7 @@ import {
   MagnifyingGlass,
   RocketLaunch,
   Scales,
+  WarningCircle,
 } from "@phosphor-icons/react";
 import { actionsPourObjet, idObjet, statutObjet, titreObjet, typeObjet } from "./boucleUi";
 
@@ -21,6 +22,9 @@ const ICONES = {
   situation: Lightbulb,
   expression: Lightbulb,
   scenario: Scales,
+  opportunite: Lightbulb,
+  risque: WarningCircle,
+  statut: ArrowRight,
 };
 
 const COULEURS = {
@@ -33,7 +37,14 @@ const COULEURS = {
   situation: "#60A5FA",
   expression: "#22D3EE",
   scenario: "#F2B84B",
+  opportunite: "#34D399",
+  risque: "#F87171",
+  statut: "#A78BFA",
 };
+
+const TYPES_FEMININS = new Set([
+  "SITUATION", "INVESTIGATION", "DECISION", "INITIATIVE", "EXPRESSION", "OPPORTUNITY",
+]);
 
 function libelleObjet(objet) {
   const type = typeObjet(objet);
@@ -57,9 +68,7 @@ export default function PanneauActions({
   const identifiantSucces = succes?.objet ? idObjet(succes.objet) : null;
   const nouvelObjet = Boolean(identifiantSucces && identifiantSucces !== identifiantCourant);
   const typeSucces = succes?.objet ? typeObjet(succes.objet) : "";
-  const accord = ["SITUATION", "INVESTIGATION", "DECISION", "INITIATIVE"].includes(typeSucces)
-    ? "e"
-    : "";
+  const accord = TYPES_FEMININS.has(typeSucces) ? "e" : "";
 
   return (
     <section

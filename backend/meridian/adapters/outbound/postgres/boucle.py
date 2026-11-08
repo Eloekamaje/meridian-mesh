@@ -19,8 +19,12 @@ from meridian.adapters.outbound.postgres import entreprise_depot
 from meridian.adapters.outbound.postgres import objets_exploitation
 from meridian.domain import modele_entreprise as modele
 from meridian.domain.construction_objets_exploitation import (
+    muer_opportunite as _muer_opportunite,
+    muer_risque as _muer_risque,
+    nouveau_risque as _nouveau_risque,
     nouveau_scenario as _nouveau_scenario,
     nouvelle_expression as _nouvelle_expression,
+    nouvelle_opportunite as _nouvelle_opportunite,
 )
 from meridian.domain.objets_exploitation import Expression, Scenario
 from meridian.domain.mesure import mesure_renseignee as _mesure_renseignee
@@ -35,8 +39,9 @@ __all__ = [
     "mesurer_outcome", "capitaliser_learning",
     "enregistrer_boucle", "lire_boucle", "lire_par_id",
     "transaction", "nouvelle_situation", "donnees_de", "fusionner_donnees",
-    "nouveau_scenario", "nouvelle_expression", "enregistrer_objets",
-    "lister_objets_exploitation",
+    "nouveau_scenario", "nouvelle_expression", "nouvelle_opportunite", "nouveau_risque",
+    "muer_opportunite", "muer_risque",
+    "enregistrer_objets", "lister_objets_exploitation",
 ]
 
 # Types canoniques **écrits** par ``enregistrer_boucle``. Les objets d'exploitation
@@ -453,7 +458,12 @@ _CLASSES = {
 # Lecture seule des types d'exploitation : EXPRESSION est lisible dans une chaîne
 # canonique sans devenir un type d'écriture de ``enregistrer_boucle``. Cette table est
 # l'unique source de ``TYPES_LECTURE`` et sert à valider toute lecture canonique.
-_CLASSES_LECTURE = {**_CLASSES, "EXPRESSION": Expression}
+_CLASSES_LECTURE = {
+    **_CLASSES,
+    "EXPRESSION": Expression,
+    "OPPORTUNITY": modele.Opportunity,
+    "RISK": modele.Risk,
+}
 TYPES_LECTURE = tuple(_CLASSES_LECTURE)
 
 
@@ -1049,6 +1059,14 @@ def _lien_ou_alias(ligne: Mapping[str, Any], principal: str, alias: str) -> str 
 
 def _source_principale(ligne: Mapping[str, Any]) -> str | None:
     type_objet = _type_de(ligne)
+    if type_objet in {"OPPORTUNITY", "RISK"}:
+        # L'Expression est la source de vérité du rattachement ; la Situation dénormalisée
+        # et l'Investigation restent des replis pour les créations humaines tracées.
+        return (
+            _texte_ou_none(_valeur(ligne, "expression_id"))
+            or _texte_ou_none(_valeur(ligne, "situation_id"))
+            or _texte_ou_none(_valeur(ligne, "investigation_id"))
+        )
     if type_objet == "EXPRESSION":
         return _texte_ou_none(_valeur(ligne, "situation_id"))
     if type_objet == "INVESTIGATION":
@@ -1143,6 +1161,28 @@ def nouvelle_expression(**champs: Any) -> Any:
     return _nouvelle_expression(situation, **champs)
 
 
+def nouvelle_opportunite(**champs: Any) -> Any:
+    """Fabrique une Opportunity canonique sans exposer le constructeur de domaine."""
+    expression = champs.pop("expression", None)
+    return _nouvelle_opportunite(expression, **champs)
+
+
+def nouveau_risque(**champs: Any) -> Any:
+    """Fabrique un Risk canonique sans exposer le constructeur de domaine."""
+    expression = champs.pop("expression", None)
+    return _nouveau_risque(expression, **champs)
+
+
+def muer_opportunite(opportunite: Any, vers: str, **champs: Any) -> Any:
+    """Applique une transition de statut d'Opportunity, sans muter la source."""
+    return _muer_opportunite(opportunite, vers, **champs)
+
+
+def muer_risque(risque: Any, vers: str, **champs: Any) -> Any:
+    """Applique une transition de statut de Risk, sans muter la source."""
+    return _muer_risque(risque, vers, **champs)
+
+
 def enregistrer_objets(
     conn: Any, tenant_id: Any = None, objets: Any = None, *,
     historique: bool = False, as_dict: bool = True,
@@ -1156,12 +1196,14 @@ def enregistrer_objets(
 def lister_objets_exploitation(
     conn: Any, tenant_id: str, *, type_: str | None = None,
     investigation_id: str | None = None, decision_id: str | None = None,
+    expression_id: str | None = None,
     limite: int = 100, as_dict: bool = True,
 ) -> list[Any]:
     """Liste les objets d'exploitation du tenant, filtrés par type et par parent."""
     return objets_exploitation.lister_objets_exploitation(
         conn, tenant_id, type_=type_, investigation_id=investigation_id,
-        decision_id=decision_id, limite=limite, as_dict=as_dict,
+        decision_id=decision_id, expression_id=expression_id,
+        limite=limite, as_dict=as_dict,
     )
 
 

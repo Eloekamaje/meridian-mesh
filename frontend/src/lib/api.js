@@ -66,6 +66,42 @@ export const boucleApi = {
       corps,
     );
   },
+  async creerOpportunite(expressionId, corps) {
+    return posterTransition(
+      `/boucle/expressions/${identifiantRequis(expressionId, "identifiant d'expression")}/opportunities`,
+      corps,
+    );
+  },
+  async creerRisque(expressionId, corps) {
+    return posterTransition(
+      `/boucle/expressions/${identifiantRequis(expressionId, "identifiant d'expression")}/risks`,
+      corps,
+    );
+  },
+  async listerOpportunites(expressionId, params) {
+    return api.get(
+      `/boucle/expressions/${identifiantRequis(expressionId, "identifiant d'expression")}/opportunities`,
+      { params, timeout: 20000 },
+    );
+  },
+  async listerRisques(expressionId, params) {
+    return api.get(
+      `/boucle/expressions/${identifiantRequis(expressionId, "identifiant d'expression")}/risks`,
+      { params, timeout: 20000 },
+    );
+  },
+  async changerStatutOpportunite(opportuniteId, corps) {
+    return posterTransition(
+      `/boucle/opportunities/${identifiantRequis(opportuniteId, "identifiant d'opportunité")}/statut`,
+      corps,
+    );
+  },
+  async changerStatutRisque(risqueId, corps) {
+    return posterTransition(
+      `/boucle/risks/${identifiantRequis(risqueId, "identifiant de risque")}/statut`,
+      corps,
+    );
+  },
   async listerScenarios(params) {
     return api.get("/boucle/scenarios", { params, timeout: 20000 });
   },

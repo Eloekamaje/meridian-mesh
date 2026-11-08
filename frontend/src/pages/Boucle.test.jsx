@@ -16,6 +16,12 @@ jest.mock("@/lib/api", () => ({
     creerSituation: jest.fn(),
     creerScenario: jest.fn(),
     creerExpression: jest.fn(),
+    creerOpportunite: jest.fn(),
+    creerRisque: jest.fn(),
+    listerOpportunites: jest.fn(),
+    listerRisques: jest.fn(),
+    changerStatutOpportunite: jest.fn(),
+    changerStatutRisque: jest.fn(),
     listerScenarios: jest.fn(),
     comparerScenarios: jest.fn(),
     ouvrirInvestigation: jest.fn(),
@@ -120,6 +126,67 @@ const learning = {
   version: 1,
   observe_le: "2026-10-30T13:00:00Z",
   maj_le: "2026-10-30T13:00:00Z",
+};
+
+const expressionProposee = {
+  id: "expr-1",
+  famille: "emergence",
+  type: "EXPRESSION",
+  mode: "DECLARED",
+  titre: "Automatiser la ressaisie",
+  donnees: {
+    situation_id: "sit-1",
+    type_expression: "OPPORTUNITE",
+    formulation: "Automatiser la ressaisie",
+    passage: "",
+    statut: "PROPOSED",
+    confiance: 0.7,
+  },
+  version: 1,
+  observe_le: "2026-10-30T10:00:00Z",
+  maj_le: "2026-10-30T10:00:00Z",
+};
+
+const opportunite = {
+  id: "opportunity-1",
+  famille: "emergence",
+  type: "OPPORTUNITY",
+  mode: "INFERRED",
+  titre: "Automatiser la ressaisie",
+  donnees: {
+    statut: "DETECTED",
+    expression_id: "expr-1",
+    situation_id: "sit-1",
+    valeur_potentielle: 12000,
+    probabilite: 0.7,
+    impact: "Deux ETP libérés",
+    horizon: "90 jours",
+    criteres: ["faisable", "mesurable"],
+    preuves: ["preuve-1"],
+  },
+  version: 1,
+  observe_le: "2026-11-07T10:00:00Z",
+  maj_le: "2026-11-07T10:00:00Z",
+};
+
+const risque = {
+  id: "risk-1",
+  famille: "emergence",
+  type: "RISK",
+  mode: "INFERRED",
+  titre: "Dépendance fournisseur",
+  donnees: {
+    statut: "DETECTED",
+    expression_id: "expr-1",
+    situation_id: "sit-1",
+    probabilite: 0.4,
+    impact: "Arrêt des paiements",
+    horizon: "6 mois",
+    criteres: ["criticité"],
+  },
+  version: 1,
+  observe_le: "2026-11-07T10:00:00Z",
+  maj_le: "2026-11-07T10:00:00Z",
 };
 
 const objets = [situation, investigation, decision, initiative, outcome, learning];
@@ -1234,6 +1301,249 @@ test("ferme l'expression avec Échap et restitue le focus sur l'action", async (
 
   await act(async () => { racine.unmount(); });
 });
+
+test("qualifie une expression en opportunité, la sélectionne et rafraîchit le parent", async () => {
+  const controleur = installerApi({ liste: [situation, expressionProposee] });
+  boucleApi.creerOpportunite.mockImplementation((expressionId, corps) => {
+    expect(expressionId).toBe("expr-1");
+    controleur.ajouter(opportunite);
+    return Promise.resolve({
+      data: {
+        objet: opportunite,
+        chaine: [situation, expressionProposee, opportunite],
+        historique: [],
+      },
+    });
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "expr-1");
+
+  expect(hote.querySelector('[data-testid="boucle-action-qualifier-opportunite"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-action-qualifier-risque"]')).not.toBeNull();
+  await cliquerEnFocus(hote, "boucle-action-qualifier-opportunite");
+
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+  expect(document.activeElement?.id).toBe("boucle-transition-titre");
+
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "  Automatiser la ressaisie  ");
+    saisir(hote.querySelector('[data-testid="boucle-transition-description"]'), "  Supprimer la double saisie.  ");
+    saisir(hote.querySelector('[data-testid="boucle-transition-valeur_potentielle"]'), "12000");
+    saisir(hote.querySelector('[data-testid="boucle-transition-probabilite"]'), "0,7");
+    saisir(hote.querySelector('[data-testid="boucle-transition-impact"]'), "Deux ETP libérés");
+    saisir(hote.querySelector('[data-testid="boucle-transition-horizon"]'), " 90 jours ");
+    saisir(hote.querySelector('[data-testid="boucle-transition-criteres"]'), "faisable\nmesurable");
+    saisir(hote.querySelector('[data-testid="boucle-transition-preuves"]'), "preuve-1");
+    saisir(hote.querySelector('[data-testid="boucle-transition-confiance"]'), "0,6");
+  });
+  expect(hote.querySelector('[data-testid="boucle-transition-type_risque"]')).toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-transition-severite"]')).toBeNull();
+  await choisir(hote.querySelector('[data-testid="boucle-transition-type_opportunite"]'), "AUTOMATION");
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(boucleApi.creerOpportunite).toHaveBeenCalledWith("expr-1", {
+    titre: "Automatiser la ressaisie",
+    description: "Supprimer la double saisie.",
+    valeur_potentielle: 12000,
+    probabilite: 0.7,
+    impact: "Deux ETP libérés",
+    horizon: "90 jours",
+    criteres: ["faisable", "mesurable"],
+    preuves: ["preuve-1"],
+    confiance: 0.6,
+    type_opportunite: "AUTOMATION",
+  });
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).toBeNull();
+  expect(hote.querySelector('[data-objet-id="opportunity-1"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-detail-titre"]').textContent)
+    .toContain("Automatiser la ressaisie");
+  const precisions = hote.querySelector('[data-testid="boucle-precisions"]');
+  expect(precisions.textContent).toContain("12000");
+  expect(precisions.textContent).toContain("0.7");
+  expect(precisions.textContent).toContain("Deux ETP libérés");
+  expect(precisions.textContent).toContain("90 jours");
+  expect(precisions.textContent).toContain("faisable");
+  expect(hote.querySelector('[data-testid="boucle-section-opportunity"]')).not.toBeNull();
+  expect(api.get).toHaveBeenCalledWith(
+    "/boucle/objets/expr-1",
+    { params: { historique: true } },
+  );
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("qualifie une expression en risque et le sélectionne", async () => {
+  const controleur = installerApi({ liste: [situation, expressionProposee] });
+  boucleApi.creerRisque.mockImplementation(() => {
+    controleur.ajouter(risque);
+    return Promise.resolve({
+      data: {
+        objet: risque,
+        chaine: [situation, expressionProposee, risque],
+        historique: [],
+      },
+    });
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "expr-1");
+  await cliquer(hote, "boucle-action-qualifier-risque");
+
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "Dépendance fournisseur");
+    saisir(hote.querySelector('[data-testid="boucle-transition-probabilite"]'), "0,4");
+    saisir(hote.querySelector('[data-testid="boucle-transition-impact"]'), "Arrêt des paiements");
+    saisir(hote.querySelector('[data-testid="boucle-transition-horizon"]'), "6 mois");
+    saisir(hote.querySelector('[data-testid="boucle-transition-criteres"]'), "criticité");
+  });
+  expect(hote.querySelector('[data-testid="boucle-transition-type_opportunite"]')).toBeNull();
+  await choisir(hote.querySelector('[data-testid="boucle-transition-type_risque"]'), "FOURNISSEUR");
+  await choisir(hote.querySelector('[data-testid="boucle-transition-severite"]'), "HAUTE");
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(boucleApi.creerRisque).toHaveBeenCalledWith("expr-1", {
+    titre: "Dépendance fournisseur",
+    probabilite: 0.4,
+    impact: "Arrêt des paiements",
+    horizon: "6 mois",
+    criteres: ["criticité"],
+    type_risque: "FOURNISSEUR",
+    severite: "HAUTE",
+  });
+  expect(hote.querySelector('[data-objet-id="risk-1"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-section-risk"]')).not.toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("garde la modale de qualification sur un conflit 409", async () => {
+  installerApi({ liste: [situation, expressionProposee] });
+  boucleApi.creerOpportunite.mockRejectedValue({
+    response: { status: 409, data: { detail: "Opportunité déjà existante" } },
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "expr-1");
+  await cliquer(hote, "boucle-action-qualifier-opportunite");
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-titre"]'), "Doublon");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  const alerte = hote.querySelector('[data-testid="boucle-transition-erreur"]');
+  expect(alerte).not.toBeNull();
+  expect(alerte.textContent).toContain("Opportunité déjà existante");
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-transition-titre"]').value).toBe("Doublon");
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("refuse une qualification sans titre sans appeler le backend", async () => {
+  installerApi({ liste: [situation, expressionProposee] });
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "expr-1");
+  await cliquer(hote, "boucle-action-qualifier-opportunite");
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(boucleApi.creerOpportunite).not.toHaveBeenCalled();
+  expect(hote.querySelector('[data-testid="boucle-transition-erreur"]').textContent)
+    .toContain("titre");
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("n'expose pas les qualifications sur une expression rejetée", async () => {
+  installerApi({
+    liste: [situation, {
+      ...expressionProposee,
+      donnees: { ...expressionProposee.donnees, statut: "REJECTED" },
+    }],
+  });
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "expr-1");
+
+  expect(hote.querySelector('[data-testid="boucle-action-qualifier-opportunite"]')).toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-action-qualifier-risque"]')).toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("change le statut d'une opportunité et met à jour la sélection", async () => {
+  const controleur = installerApi({ liste: [situation, expressionProposee, opportunite] });
+  const maj = {
+    ...opportunite,
+    donnees: { ...opportunite.donnees, statut: "QUALIFIED", justification: "Preuves suffisantes" },
+    version: 2,
+    maj_le: "2026-11-07T12:00:00Z",
+  };
+  boucleApi.changerStatutOpportunite.mockImplementation((identifiant, corps) => {
+    expect(identifiant).toBe("opportunity-1");
+    expect(corps).toEqual({
+      statut: "QUALIFIED", motif: "Preuves suffisantes", preuves: ["preuve-2"],
+    });
+    controleur.ajouter(maj);
+    return Promise.resolve({
+      data: {
+        objet: maj,
+        chaine: [situation, expressionProposee, maj],
+        historique: [{ version: 1, donnees: { statut: "DETECTED" } }],
+      },
+    });
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "opportunity-1");
+  await cliquer(hote, "boucle-action-statut-opportunite");
+
+  const selectStatut = hote.querySelector('[data-testid="boucle-transition-statut"]');
+  expect([...selectStatut.options].map((option) => option.value)).toEqual([
+    "", "MATURING", "QUALIFIED", "REJECTED", "DORMANT",
+  ]);
+  await choisir(selectStatut, "QUALIFIED");
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-motif"]'), "  Preuves suffisantes  ");
+    saisir(hote.querySelector('[data-testid="boucle-transition-preuves"]'), "preuve-2");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-detail-statut"]').textContent)
+    .toContain("QUALIFIED");
+  expect(hote.querySelector('[data-objet-id="opportunity-1"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-transition-succes"]')).not.toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("un 409 de transition de statut garde la modale ouverte", async () => {
+  installerApi({ liste: [situation, expressionProposee, opportunite] });
+  boucleApi.changerStatutOpportunite.mockRejectedValue({
+    response: { status: 409, data: { detail: "transition refusée" } },
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "opportunity-1");
+  await cliquer(hote, "boucle-action-statut-opportunite");
+  await choisir(hote.querySelector('[data-testid="boucle-transition-statut"]'), "MATURING");
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(hote.querySelector('[data-testid="boucle-transition-erreur"]').textContent)
+    .toContain("transition refusée");
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
 
 test("valide le titre d'un scénario et conserve la modale sur erreur API", async () => {
   installerApi();

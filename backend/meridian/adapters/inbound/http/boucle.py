@@ -96,6 +96,7 @@ def _type_expression_canonique(valeur: str) -> str:
 ModeCanonique = Annotated[str, AfterValidator(_mode_canonique)]
 TypeExpression = Annotated[str, AfterValidator(_type_expression_canonique)]
 TexteNonVide = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+TexteNettoye = Annotated[str, StringConstraints(strip_whitespace=True)]
 TexteIdentifiant = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)
 ]
@@ -315,6 +316,36 @@ class CreationExpression(_CorpsTransition):
     preuves: list[Any] | None = Field(None, max_length=100)
     confiance: float | None = Field(None, ge=0, le=1)
     mode: ModeCanonique = "DECLARED"
+
+
+class _CreationObjetExpression(_CorpsTransition):
+    """Corps C5b commun : ``statut``, ``id`` et les liens sont serveur uniquement."""
+
+    titre: TexteNonVide = Field(..., max_length=500)
+    description: str | None = Field(None, max_length=10000)
+    valeur_potentielle: float | None = Field(None, ge=0)
+    probabilite: float | None = Field(None, ge=0, le=1)
+    impact: str | None = Field(None, max_length=2000)
+    horizon: str | None = Field(None, max_length=200)
+    criteres: list[TexteNonVide] | None = Field(None, max_length=100)
+    preuves: list[Any] | None = Field(None, max_length=100)
+    confiance: float | None = Field(None, ge=0, le=1)
+    mode: ModeCanonique = "INFERRED"
+
+
+class CreationOpportunite(_CreationObjetExpression):
+    type_opportunite: str | None = Field(None, max_length=64)
+
+
+class CreationRisque(_CreationObjetExpression):
+    type_risque: str | None = Field(None, max_length=64)
+    severite: str | None = Field(None, max_length=32)
+
+
+class ChangementStatutObjet(_CorpsTransition):
+    statut: TexteNonVide = Field(..., max_length=64)
+    motif: TexteNettoye | None = Field(None, max_length=5000)
+    preuves: list[Any] | None = Field(None, max_length=100)
 
 
 class ComparaisonScenarios(_CorpsTransition):
@@ -815,6 +846,152 @@ async def creer_expression(
         request=request,
     )
     return _reponse_transition(tenant, resultat, "expression")
+
+
+@router.post("/expressions/{eid}/opportunities", status_code=201,
+             response_model=ReponseTransition, responses=_REPONSES_TRANSITION)
+async def creer_opportunite(
+    eid: str,
+    payload: CreationOpportunite,
+    request: Request,
+    idempotence: None = Depends(_refuser_idempotence),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Qualifie une Expression en Opportunité du tenant, statut initial ``DETECTED``.
+
+    ``statut`` est absent du corps : le serveur le force et un client qui l'envoie est
+    refusé en 422. L'Expression doit être ``PROPOSED`` ou ``CONFIRMED`` (sinon 409) ; elle
+    est verrouillée pendant la création, et son lien inverse ``opportunity_ids`` est écrit
+    dans la même transaction.
+    """
+    _verifier_espace(x_espace)
+    tenant = _tenant(request, x_tenant)
+    resultat = await _executer_transition(
+        tenant,
+        lambda conn: commandes_boucle.creer_opportunite(
+            boucle, conn, tenant, eid, **payload.model_dump(exclude_none=True)),
+        request=request,
+    )
+    return _reponse_transition(tenant, resultat, "opportunite")
+
+
+@router.post("/expressions/{eid}/risks", status_code=201,
+             response_model=ReponseTransition, responses=_REPONSES_TRANSITION)
+async def creer_risque(
+    eid: str,
+    payload: CreationRisque,
+    request: Request,
+    idempotence: None = Depends(_refuser_idempotence),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Qualifie une Expression en Risque du tenant, statut initial ``DETECTED``.
+
+    Même règle que l'opportunité : Expression ``PROPOSED``/``CONFIRMED`` seulement.
+    """
+    _verifier_espace(x_espace)
+    tenant = _tenant(request, x_tenant)
+    resultat = await _executer_transition(
+        tenant,
+        lambda conn: commandes_boucle.creer_risque(
+            boucle, conn, tenant, eid, **payload.model_dump(exclude_none=True)),
+        request=request,
+    )
+    return _reponse_transition(tenant, resultat, "risque")
+
+
+@router.get("/expressions/{eid}/opportunities")
+async def lister_opportunites(
+    eid: str,
+    request: Request,
+    limite: int = Query(100, ge=1, le=1000),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Liste les Opportunités d'une Expression du tenant, bornées par ``limite``."""
+    _verifier_espace(x_espace)
+    tenant = _tenant(request, x_tenant)
+    opportunites = await _executer_transition(
+        tenant,
+        lambda conn: commandes_boucle.lister_opportunites(
+            boucle, conn, tenant, eid, limite=limite),
+        request=request,
+    )
+    return {"tenant": tenant, "opportunites": _assainir(opportunites)}
+
+
+@router.get("/expressions/{eid}/risks")
+async def lister_risques(
+    eid: str,
+    request: Request,
+    limite: int = Query(100, ge=1, le=1000),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Liste les Risques d'une Expression du tenant, bornés par ``limite``."""
+    _verifier_espace(x_espace)
+    tenant = _tenant(request, x_tenant)
+    risques = await _executer_transition(
+        tenant,
+        lambda conn: commandes_boucle.lister_risques(
+            boucle, conn, tenant, eid, limite=limite),
+        request=request,
+    )
+    return {"tenant": tenant, "risques": _assainir(risques)}
+
+
+@router.post("/opportunities/{oid}/statut", response_model=ReponseTransition,
+             responses=_REPONSES_TRANSITION)
+async def changer_statut_opportunite(
+    oid: str,
+    payload: ChangementStatutObjet,
+    request: Request,
+    idempotence: None = Depends(_refuser_idempotence),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Fait évoluer une Opportunité selon le cycle canonique C5b.
+
+    Une transition non autorisée est un 409, un statut inconnu ou un identifiant d'un autre
+    type un 422, une source absente ou hors tenant un 404. ``maj_le`` est posé par le
+    serveur et la version précédente reste dans ``historique``.
+    """
+    _verifier_espace(x_espace)
+    tenant = _tenant(request, x_tenant)
+    champs = payload.model_dump(exclude_none=True)
+    statut = champs.pop("statut")
+    resultat = await _executer_transition(
+        tenant,
+        lambda conn: commandes_boucle.changer_statut_opportunite(
+            boucle, conn, tenant, oid, statut, **champs),
+        request=request,
+    )
+    return _reponse_transition(tenant, resultat, "opportunite")
+
+
+@router.post("/risks/{rid}/statut", response_model=ReponseTransition,
+             responses=_REPONSES_TRANSITION)
+async def changer_statut_risque(
+    rid: str,
+    payload: ChangementStatutObjet,
+    request: Request,
+    idempotence: None = Depends(_refuser_idempotence),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Fait évoluer un Risque selon le même cycle et les mêmes erreurs que l'opportunité."""
+    _verifier_espace(x_espace)
+    tenant = _tenant(request, x_tenant)
+    champs = payload.model_dump(exclude_none=True)
+    statut = champs.pop("statut")
+    resultat = await _executer_transition(
+        tenant,
+        lambda conn: commandes_boucle.changer_statut_risque(
+            boucle, conn, tenant, rid, statut, **champs),
+        request=request,
+    )
+    return _reponse_transition(tenant, resultat, "risque")
 
 
 @router.post("/situations/{sid}/investigations", status_code=201,

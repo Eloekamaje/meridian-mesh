@@ -9,7 +9,10 @@ import {
   idObjet,
   messageErreurTransition,
   statutObjet,
+  statutsSuivants,
   titreObjet,
+  TRANSITIONS_OPPORTUNITE,
+  TRANSITIONS_RISQUE,
 } from "./boucleUi";
 
 const situation = {
@@ -53,6 +56,48 @@ const decisionTranchee = {
 const initiative = { id: "ini-1", type: "INITIATIVE", famille: "decision", titre: "Automatiser" };
 const outcome = { id: "out-1", type: "OUTCOME", famille: "resultat_apprentissage", titre: "Latence basse" };
 const learning = { id: "lea-1", type: "LEARNING", famille: "resultat_apprentissage", titre: "Leçon" };
+
+const expressionProposee = {
+  id: "expr-1",
+  type: "EXPRESSION",
+  famille: "emergence",
+  titre: "Automatiser la ressaisie",
+  donnees: {
+    statut: "PROPOSED",
+    situation_id: "sit-1",
+    type_expression: "OPPORTUNITE",
+    formulation: "Automatiser la ressaisie",
+  },
+};
+
+const opportunite = {
+  id: "opportunity-1",
+  type: "OPPORTUNITY",
+  famille: "emergence",
+  titre: "Automatiser la ressaisie",
+  donnees: {
+    statut: "DETECTED",
+    valeur_potentielle: 12000,
+    probabilite: 0.7,
+    impact: "Deux ETP libérés",
+    horizon: "90 jours",
+    criteres: ["faisable", "mesurable"],
+  },
+};
+
+const risque = {
+  id: "risk-1",
+  type: "RISK",
+  famille: "emergence",
+  titre: "Dépendance fournisseur",
+  donnees: {
+    statut: "DETECTED",
+    probabilite: 0.4,
+    impact: "Arrêt des paiements",
+    horizon: "6 mois",
+    criteres: ["criticité"],
+  },
+};
 
 describe("statutObjet", () => {
   test("normalise le statut porté par donnees et retire les accents", () => {
@@ -141,10 +186,65 @@ describe("actionsPourObjet", () => {
     expect(actionsPourObjet(outcome).map((action) => action.id)).toEqual(["capitaliser_learning"]);
   });
 
+  test("une expression proposée peut être qualifiée en opportunité ou en risque", () => {
+    expect(actionsPourObjet(expressionProposee).map((action) => action.id))
+      .toEqual(["qualifier_opportunite", "qualifier_risque"]);
+  });
+
+  test("une expression rejetée ou archivée ne propose plus de qualification", () => {
+    for (const statut of ["REJECTED", "ARCHIVED"]) {
+      expect(actionsPourObjet({
+        ...expressionProposee,
+        donnees: { ...expressionProposee.donnees, statut },
+      })).toEqual([]);
+    }
+  });
+
+  test("une opportunité propose ses transitions de statut, un risk aussi", () => {
+    expect(actionsPourObjet(opportunite).map((action) => action.id))
+      .toEqual(["changer_statut_opportunite"]);
+    expect(actionsPourObjet(risque).map((action) => action.id))
+      .toEqual(["changer_statut_risque"]);
+    expect(actionsPourObjet({
+      ...opportunite,
+      donnees: { ...opportunite.donnees, statut: "LEARNED" },
+    })).toEqual([]);
+  });
+
   test("un learning clôt la boucle et un type inconnu n'offre rien", () => {
     expect(actionsPourObjet(learning)).toEqual([]);
     expect(actionsPourObjet({ type: "TWIN" })).toEqual([]);
     expect(actionsPourObjet(null)).toEqual([]);
+  });
+});
+
+describe("tables de transitions", () => {
+  test("les tables sont explicites, copiées et synchronisées", () => {
+    const attendu = {
+      DETECTED: ["MATURING", "QUALIFIED", "REJECTED", "DORMANT"],
+      MATURING: ["QUALIFIED", "REJECTED", "DORMANT"],
+      QUALIFIED: ["INVESTIGATING", "SCENARIOS_AVAILABLE", "REJECTED", "DORMANT"],
+      INVESTIGATING: ["SCENARIOS_AVAILABLE", "DECIDED", "REJECTED", "DORMANT"],
+      SCENARIOS_AVAILABLE: ["DECIDED", "REJECTED", "DORMANT"],
+      DECIDED: ["INITIATED", "REJECTED", "DORMANT"],
+      INITIATED: ["MEASURED", "REJECTED"],
+      MEASURED: ["LEARNED"],
+      LEARNED: [],
+      REJECTED: [],
+      DORMANT: ["MATURING", "REJECTED"],
+    };
+    expect(TRANSITIONS_OPPORTUNITE).toEqual(attendu);
+    expect(TRANSITIONS_RISQUE).toEqual(attendu);
+    expect(TRANSITIONS_RISQUE).not.toBe(TRANSITIONS_OPPORTUNITE);
+  });
+});
+
+describe("statutsSuivants", () => {
+  test("reprend le cycle canonique et rend une liste vide pour un état terminal", () => {
+    expect(statutsSuivants("OPPORTUNITY", "DETECTED"))
+      .toEqual(["MATURING", "QUALIFIED", "REJECTED", "DORMANT"]);
+    expect(statutsSuivants("RISK", "LEARNED")).toEqual([]);
+    expect(statutsSuivants("OPPORTUNITY", "")).toEqual([]);
   });
 });
 
@@ -211,6 +311,47 @@ describe("configurationAction", () => {
       .toEqual(["REVERSIBLE", "PARTIELLE", "IRREVERSIBLE"]);
     expect(action.champs.find((champ) => champ.nom === "statut").options)
       .toEqual(["DRAFT", "PROPOSED", "EVALUATED", "SELECTED", "REJECTED", "ARCHIVED"]);
+  });
+
+  test("la qualification d'une opportunité expose les champs C5b", () => {
+    const action = configurationAction("qualifier_opportunite", expressionProposee);
+
+    expect(action.api).toBe("creerOpportunite");
+    expect(action.typeSource).toBe("EXPRESSION");
+    expect(action.champs.map((champ) => champ.nom)).toEqual([
+      "titre", "description", "valeur_potentielle", "probabilite", "impact",
+      "horizon", "criteres", "preuves", "confiance", "type_opportunite",
+    ]);
+    expect(action.champs.find((champ) => champ.nom === "titre").requis).toBe(true);
+    expect(action.champs.find((champ) => champ.nom === "type_opportunite").options)
+      .toContain("AUTOMATION");
+  });
+
+  test("la qualification d'un risque expose le même contrat", () => {
+    const action = configurationAction("qualifier_risque", expressionProposee);
+
+    expect(action.api).toBe("creerRisque");
+    expect(action.typeSource).toBe("EXPRESSION");
+    expect(action.champs.map((champ) => champ.nom)).toEqual([
+      "titre", "description", "valeur_potentielle", "probabilite", "impact",
+      "horizon", "criteres", "preuves", "confiance", "type_risque", "severite",
+    ]);
+    expect(action.champs.find((champ) => champ.nom === "type_risque").options)
+      .toContain("FOURNISSEUR");
+    expect(action.champs.find((champ) => champ.nom === "severite").options)
+      .toEqual(["FAIBLE", "MOYENNE", "HAUTE", "CRITIQUE"]);
+  });
+
+  test("le changement de statut ne propose que les transitions autorisées", () => {
+    const action = configurationAction("changer_statut_opportunite", opportunite);
+
+    expect(action.api).toBe("changerStatutOpportunite");
+    expect(action.typeSource).toBe("OPPORTUNITY");
+    expect(action.champs.find((champ) => champ.nom === "statut").type).toBe("select");
+    expect(action.champs.find((champ) => champ.nom === "statut").options)
+      .toEqual(["MATURING", "QUALIFIED", "REJECTED", "DORMANT"]);
+    expect(configurationAction("changer_statut_risque", risque).api)
+      .toBe("changerStatutRisque");
   });
 });
 
@@ -456,6 +597,107 @@ describe("construireCorps", () => {
   test("refuse un scénario sans investigation ni décision", () => {
     expect(construireCorps("creer_scenario", { titre: "Sans parent" }, {}).erreur)
       .toContain("investigation ou une décision");
+  });
+
+  test("qualifie une opportunité avec les champs C5b, sans statut ni lien client", () => {
+    expect(construireCorps("qualifier_opportunite", {}).erreur)
+      .toContain("titre de l'opportunité");
+
+    const resultat = construireCorps("qualifier_opportunite", {
+      titre: "  Automatiser la ressaisie  ",
+      description: "  Supprimer la double saisie.  ",
+      valeur_potentielle: "12000",
+      probabilite: "0,7",
+      impact: "Deux ETP libérés",
+      horizon: " 90 jours ",
+      criteres: "faisable\nmesurable",
+      preuves: "preuve-1, preuve-2",
+      confiance: "0,6",
+      type_opportunite: "automation",
+      type_risque: "FOURNISSEUR",
+      severite: "HAUTE",
+      statut: "CONFIRMED",
+    });
+
+    expect(resultat.corps).toEqual({
+      titre: "Automatiser la ressaisie",
+      description: "Supprimer la double saisie.",
+      valeur_potentielle: 12000,
+      probabilite: 0.7,
+      impact: "Deux ETP libérés",
+      horizon: "90 jours",
+      criteres: ["faisable", "mesurable"],
+      preuves: ["preuve-1", "preuve-2"],
+      confiance: 0.6,
+      type_opportunite: "AUTOMATION",
+    });
+    expect(resultat.corps).not.toHaveProperty("statut");
+    expect(resultat.corps).not.toHaveProperty("expression_id");
+    expect(resultat.corps).not.toHaveProperty("situation_id");
+    expect(resultat.corps).not.toHaveProperty("type_risque");
+    expect(resultat.corps).not.toHaveProperty("severite");
+  });
+
+  test("qualifie un risque et valide les bornes", () => {
+    const resultat = construireCorps("qualifier_risque", {
+      titre: "Dépendance",
+      probabilite: "0,4",
+      valeur_potentielle: "50000",
+      impact: "Arrêt des paiements",
+      horizon: "6 mois",
+      criteres: "criticité, réversibilité",
+      type_risque: "fournisseur",
+      severite: "haute",
+      type_opportunite: "AUTOMATION",
+    });
+    expect(resultat.corps).toEqual({
+      titre: "Dépendance",
+      probabilite: 0.4,
+      valeur_potentielle: 50000,
+      impact: "Arrêt des paiements",
+      horizon: "6 mois",
+      criteres: ["criticité", "réversibilité"],
+      type_risque: "FOURNISSEUR",
+      severite: "HAUTE",
+    });
+    expect(resultat.corps).not.toHaveProperty("type_opportunite");
+
+    for (const champs of [
+      { probabilite: "1.2" },
+      { confiance: "-0.1" },
+      { valeur_potentielle: "-1" },
+      { type_risque: "MAGIQUE" },
+      { severite: "MAGIQUE" },
+    ]) {
+      expect(construireCorps("qualifier_risque", {
+        titre: "Risque", ...champs,
+      }).erreur).toBeTruthy();
+    }
+    expect(construireCorps("qualifier_opportunite", {
+      titre: "Opportunité", type_opportunite: "MAGIQUE",
+    }).erreur).toContain("type d'opportunité");
+  });
+
+  test("change un statut seulement vers une transition autorisée", () => {
+    expect(construireCorps("changer_statut_opportunite", {}, opportunite).erreur)
+      .toContain("statut");
+    expect(construireCorps("changer_statut_opportunite", {
+      statut: "LEARNED",
+    }, opportunite).erreur).toContain("transition");
+
+    expect(construireCorps("changer_statut_opportunite", {
+      statut: "QUALIFIED",
+      motif: "  Preuves suffisantes  ",
+      preuves: "preuve-2, preuve-3",
+    }, opportunite).corps).toEqual({
+      statut: "QUALIFIED",
+      motif: "Preuves suffisantes",
+      preuves: ["preuve-2", "preuve-3"],
+    });
+
+    expect(construireCorps("changer_statut_risque", {
+      statut: "MATURING",
+    }, risque).corps).toEqual({ statut: "MATURING" });
   });
 
   test("une action inconnue est refusée sans lever", () => {

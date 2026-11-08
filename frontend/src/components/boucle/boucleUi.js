@@ -14,11 +14,65 @@ const STATUTS_INVESTIGATION_FERMES = new Set([
 const STATUTS_INITIATIVE_ANNULEE = new Set([
   "CANCELLED", "ANNULEE", "ABANDONED", "ABANDONNEE",
 ]);
+const STATUTS_EXPRESSION_QUALIFIABLES = new Set(["PROPOSED", "CONFIRMED"]);
+
+// Les tables de transitions sont dupliquées depuis
+// backend/meridian/domain/objets_exploitation.py. Elles doivent rester synchronisées ;
+// aucun endpoint ne les expose (risque accepté, voir docs/architecture/ecarts-vision.md).
+export const TRANSITIONS_OPPORTUNITE = Object.freeze({
+  DETECTED: Object.freeze(["MATURING", "QUALIFIED", "REJECTED", "DORMANT"]),
+  MATURING: Object.freeze(["QUALIFIED", "REJECTED", "DORMANT"]),
+  QUALIFIED: Object.freeze(["INVESTIGATING", "SCENARIOS_AVAILABLE", "REJECTED", "DORMANT"]),
+  INVESTIGATING: Object.freeze(["SCENARIOS_AVAILABLE", "DECIDED", "REJECTED", "DORMANT"]),
+  SCENARIOS_AVAILABLE: Object.freeze(["DECIDED", "REJECTED", "DORMANT"]),
+  DECIDED: Object.freeze(["INITIATED", "REJECTED", "DORMANT"]),
+  INITIATED: Object.freeze(["MEASURED", "REJECTED"]),
+  MEASURED: Object.freeze(["LEARNED"]),
+  LEARNED: Object.freeze([]),
+  REJECTED: Object.freeze([]),
+  DORMANT: Object.freeze(["MATURING", "REJECTED"]),
+});
+// Copie explicite : même cycle que les opportunités, mais table distincte pour que
+// `statutsSuivants` valide le type RISK séparément. Doit rester synchronisée avec le
+// backend et avec TRANSITIONS_OPPORTUNITE.
+export const TRANSITIONS_RISQUE = Object.freeze({
+  DETECTED: Object.freeze(["MATURING", "QUALIFIED", "REJECTED", "DORMANT"]),
+  MATURING: Object.freeze(["QUALIFIED", "REJECTED", "DORMANT"]),
+  QUALIFIED: Object.freeze(["INVESTIGATING", "SCENARIOS_AVAILABLE", "REJECTED", "DORMANT"]),
+  INVESTIGATING: Object.freeze(["SCENARIOS_AVAILABLE", "DECIDED", "REJECTED", "DORMANT"]),
+  SCENARIOS_AVAILABLE: Object.freeze(["DECIDED", "REJECTED", "DORMANT"]),
+  DECIDED: Object.freeze(["INITIATED", "REJECTED", "DORMANT"]),
+  INITIATED: Object.freeze(["MEASURED", "REJECTED"]),
+  MEASURED: Object.freeze(["LEARNED"]),
+  LEARNED: Object.freeze([]),
+  REJECTED: Object.freeze([]),
+  DORMANT: Object.freeze(["MATURING", "REJECTED"]),
+});
+
+export function statutsSuivants(type, statut) {
+  const typeNormalise = texte(type).trim().toUpperCase();
+  const transitions = typeNormalise === "RISK"
+    ? TRANSITIONS_RISQUE
+    : typeNormalise === "OPPORTUNITY" ? TRANSITIONS_OPPORTUNITE : null;
+  if (!transitions) return [];
+  return [...(transitions[statutObjet({ statut })] || [])];
+}
 
 const TYPES_EXPRESSION = [
   "OPPORTUNITE", "RISQUE", "PLAINTE", "BESOIN", "IDEE", "ANOMALIE", "DERIVE",
   "CONTRADICTION", "CHANGEMENT", "SIMPLIFICATION", "DUPLICATION", "COMPORTEMENT",
 ];
+
+const TYPES_OPPORTUNITE = [
+  "AUTOMATION", "SIMPLIFICATION", "MODERNIZATION", "RATIONALIZATION", "COST_REDUCTION",
+  "CUSTOMER_EXPERIENCE", "EMPLOYEE_EXPERIENCE", "PROCESS_OPTIMIZATION", "DATA_OPTIMIZATION",
+  "CONSOLIDATION",
+];
+const TYPES_RISQUE = [
+  "OPERATIONNEL", "TECHNIQUE", "FOURNISSEUR", "REGLEMENTAIRE", "SECURITE", "FINANCIER",
+  "PROJET", "CONFORMITE", "CONTINUITE", "REPUTATION",
+];
+const SEVERITES_RISQUE = ["FAIBLE", "MOYENNE", "HAUTE", "CRITIQUE"];
 
 const CHAMPS_CREER_EXPRESSION = [
   {
@@ -64,6 +118,124 @@ const CHAMPS_CREER_EXPRESSION = [
     type: "text",
     inputMode: "decimal",
     placeholder: "0.7",
+  },
+];
+
+const CHAMPS_QUALIFIER_OBJET = [
+  {
+    nom: "titre",
+    label: "Titre",
+    type: "text",
+    requis: true,
+    maxLength: 500,
+    placeholder: "Automatiser la ressaisie",
+    aide: "Un titre qui rend l'objet reconnaissable dans la boucle.",
+  },
+  {
+    nom: "description",
+    label: "Description (optionnel)",
+    type: "textarea",
+    rows: 2,
+    maxLength: 10000,
+    placeholder: "Ce que cela change, pour qui et à quelles conditions…",
+  },
+  {
+    nom: "valeur_potentielle",
+    label: "Valeur potentielle (optionnel)",
+    type: "text",
+    inputMode: "decimal",
+    placeholder: "12000",
+  },
+  {
+    nom: "probabilite",
+    label: "Probabilité (0 à 1, optionnel)",
+    type: "text",
+    inputMode: "decimal",
+    placeholder: "0.7",
+  },
+  {
+    nom: "impact",
+    label: "Impact (optionnel)",
+    type: "textarea",
+    rows: 2,
+    maxLength: 2000,
+    placeholder: "Deux ETP libérés, arrêt des paiements…",
+  },
+  {
+    nom: "horizon",
+    label: "Horizon (optionnel)",
+    type: "text",
+    maxLength: 200,
+    placeholder: "90 jours, 6 mois…",
+  },
+  {
+    nom: "criteres",
+    label: "Critères (un par ligne ou séparés par une virgule, optionnel)",
+    type: "textarea",
+    rows: 2,
+    placeholder: "faisable\nmesurable",
+  },
+  {
+    nom: "preuves",
+    label: "Preuves (IDs séparés par une virgule, optionnel)",
+    type: "text",
+    placeholder: "preuve-1, preuve-2",
+  },
+  {
+    nom: "confiance",
+    label: "Confiance (0 à 1, optionnel)",
+    type: "text",
+    inputMode: "decimal",
+    placeholder: "0.6",
+  },
+];
+
+const CHAMPS_QUALIFIER_OPPORTUNITE = [
+  ...CHAMPS_QUALIFIER_OBJET,
+  {
+    nom: "type_opportunite",
+    label: "Type d'opportunité (optionnel)",
+    type: "select",
+    options: TYPES_OPPORTUNITE,
+  },
+];
+
+const CHAMPS_QUALIFIER_RISQUE = [
+  ...CHAMPS_QUALIFIER_OBJET,
+  {
+    nom: "type_risque",
+    label: "Type de risque (optionnel)",
+    type: "select",
+    options: TYPES_RISQUE,
+  },
+  {
+    nom: "severite",
+    label: "Sévérité (optionnel)",
+    type: "select",
+    options: SEVERITES_RISQUE,
+  },
+];
+
+const CHAMPS_CHANGER_STATUT = [
+  {
+    nom: "statut",
+    label: "Nouveau statut",
+    type: "select",
+    requis: true,
+    options: [],
+  },
+  {
+    nom: "motif",
+    label: "Motif (optionnel)",
+    type: "textarea",
+    rows: 2,
+    placeholder: "Pourquoi ce changement, et à quelles conditions il tient…",
+  },
+  {
+    nom: "preuves",
+    label: "Preuves (IDs séparés par une virgule, optionnel)",
+    type: "text",
+    placeholder: "preuve-1, preuve-2",
   },
 ];
 
@@ -447,6 +619,46 @@ export const ACTIONS_BOUCLE = Object.freeze({
     icone: "expression",
     champs: CHAMPS_CREER_EXPRESSION,
   }),
+  qualifier_opportunite: Object.freeze({
+    id: "qualifier_opportunite",
+    libelle: "Qualifier une opportunité",
+    titre: "Qualifier une opportunité",
+    description: "Transformer la lecture en opportunité canonique, avec sa valeur, son impact et ses critères.",
+    testid: "boucle-action-qualifier-opportunite",
+    api: "creerOpportunite",
+    icone: "opportunite",
+    champs: CHAMPS_QUALIFIER_OPPORTUNITE,
+  }),
+  qualifier_risque: Object.freeze({
+    id: "qualifier_risque",
+    libelle: "Qualifier un risque",
+    titre: "Qualifier un risque",
+    description: "Transformer la lecture en risque canonique, avec sa probabilité, son impact et son horizon.",
+    testid: "boucle-action-qualifier-risque",
+    api: "creerRisque",
+    icone: "risque",
+    champs: CHAMPS_QUALIFIER_RISQUE,
+  }),
+  changer_statut_opportunite: Object.freeze({
+    id: "changer_statut_opportunite",
+    libelle: "Changer le statut",
+    titre: "Changer le statut de l'opportunité",
+    description: "Faire évoluer l'opportunité selon son cycle de maturation canonique.",
+    testid: "boucle-action-statut-opportunite",
+    api: "changerStatutOpportunite",
+    icone: "statut",
+    champs: CHAMPS_CHANGER_STATUT,
+  }),
+  changer_statut_risque: Object.freeze({
+    id: "changer_statut_risque",
+    libelle: "Changer le statut",
+    titre: "Changer le statut du risque",
+    description: "Faire évoluer le risque selon son cycle de maturation canonique.",
+    testid: "boucle-action-statut-risque",
+    api: "changerStatutRisque",
+    icone: "statut",
+    champs: CHAMPS_CHANGER_STATUT,
+  }),
   creer_scenario: Object.freeze({
     id: "creer_scenario",
     libelle: "Créer un scénario",
@@ -611,6 +823,24 @@ export function actionsPourObjet(objet) {
     return actions;
   }
 
+  if (type === "EXPRESSION") {
+    return STATUTS_EXPRESSION_QUALIFIABLES.has(statut)
+      ? [ACTIONS_BOUCLE.qualifier_opportunite, ACTIONS_BOUCLE.qualifier_risque]
+      : [];
+  }
+
+  if (type === "OPPORTUNITY") {
+    return statutsSuivants(type, statut).length > 0
+      ? [ACTIONS_BOUCLE.changer_statut_opportunite]
+      : [];
+  }
+
+  if (type === "RISK") {
+    return statutsSuivants(type, statut).length > 0
+      ? [ACTIONS_BOUCLE.changer_statut_risque]
+      : [];
+  }
+
   if (type === "INVESTIGATION") {
     const actions = [];
     if (!STATUTS_INVESTIGATION_FERMES.has(statut)) actions.push(ACTIONS_BOUCLE.proposer_decision);
@@ -646,13 +876,20 @@ export function configurationAction(actionId, objet) {
 
   const typeSource = typeObjet(objet);
   const options = listeOptions(objet);
-  const champs = base.champs.map((champ) => (
+  let champs = base.champs.map((champ) => (
     champ.nom === "choix" && options.length > 0
       ? { ...champ, type: "select", options }
       : champ
   ));
 
   let api = base.api;
+  if (actionId === "changer_statut_opportunite" || actionId === "changer_statut_risque") {
+    const suivants = statutsSuivants(typeSource, statutObjet(objet));
+    champs = champs.map((champ) => (
+      champ.nom === "statut" ? { ...champ, options: suivants } : champ
+    ));
+    if (suivants.length === 0) api = null;
+  }
   if (actionId === "capitaliser_learning") {
     if (typeSource === "OUTCOME") api = "capitaliserLearningDepuisOutcome";
     else if (typeSource === "INVESTIGATION") api = "capitaliserLearningDepuisInvestigation";
@@ -719,6 +956,75 @@ function avecOptions(corps, valeurs, champs) {
   return resultat;
 }
 
+function corpsQualification(valeurs, libelle, type) {
+  const titre = valeurNette(valeurs, "titre");
+  if (!titre) {
+    return echec(`Le titre ${libelle === "opportunité" ? "de l'opportunité" : "du risque"} est obligatoire.`);
+  }
+  const corps = { titre };
+  for (const nom of ["description", "impact", "horizon"]) {
+    const valeur = valeurNette(valeurs, nom);
+    if (valeur) corps[nom] = valeur;
+  }
+  for (const [nom, libelleChamp, options] of [
+    ["valeur_potentielle", "La valeur potentielle", {}],
+    ["probabilite", "La probabilité", { maximum: 1 }],
+    ["confiance", "La confiance", { maximum: 1 }],
+  ]) {
+    const resultat = nombreOptionnel(valeurs, nom, libelleChamp, options);
+    if (resultat.erreur) return echec(resultat.erreur);
+    if (resultat.valeur !== null) corps[nom] = resultat.valeur;
+  }
+  const criteres = listeLignesOuVirgules(valeurs, "criteres");
+  if (criteres.length > 0) corps.criteres = criteres;
+  const preuves = listeVirgules(valeurs, "preuves");
+  if (preuves.length > 0) corps.preuves = preuves;
+
+  if (type === "OPPORTUNITY") {
+    const typeOpportunite = valeurNette(valeurs, "type_opportunite").toUpperCase();
+    if (typeOpportunite) {
+      if (!TYPES_OPPORTUNITE.includes(typeOpportunite)) {
+        return echec("Le type d'opportunité est inconnu.");
+      }
+      corps.type_opportunite = typeOpportunite;
+    }
+  } else if (type === "RISK") {
+    const typeRisque = valeurNette(valeurs, "type_risque").toUpperCase();
+    if (typeRisque) {
+      if (!TYPES_RISQUE.includes(typeRisque)) {
+        return echec("Le type de risque est inconnu.");
+      }
+      corps.type_risque = typeRisque;
+    }
+    const severite = valeurNette(valeurs, "severite").toUpperCase();
+    if (severite) {
+      if (!SEVERITES_RISQUE.includes(severite)) {
+        return echec("La sévérité du risque est inconnue.");
+      }
+      corps.severite = severite;
+    }
+  }
+
+  const mode = valeurNette(valeurs, "mode").toUpperCase();
+  if (mode) corps.mode = mode;
+  return { corps };
+}
+
+function corpsChangementStatut(type, valeurs, objet) {
+  const statut = valeurNette(valeurs, "statut").toUpperCase();
+  if (!statut) return echec("Le statut cible est obligatoire.");
+  const autorises = statutsSuivants(type, statutObjet(objet));
+  if (!autorises.includes(statut)) {
+    return echec(`transition de statut refusée : ${statutObjet(objet) || "?"} → ${statut}.`);
+  }
+  const corps = { statut };
+  const motif = valeurNette(valeurs, "motif");
+  if (motif) corps.motif = motif;
+  const preuves = listeVirgules(valeurs, "preuves");
+  if (preuves.length > 0) corps.preuves = preuves;
+  return { corps };
+}
+
 export function construireCorps(actionId, valeurs = {}, objet = {}) {
   switch (actionId) {
     case "creer_situation": {
@@ -763,6 +1069,18 @@ export function construireCorps(actionId, valeurs = {}, objet = {}) {
       if (confiance.valeur !== null) corps.confiance = confiance.valeur;
       return { corps };
     }
+
+    case "qualifier_opportunite":
+      return corpsQualification(valeurs, "opportunité", "OPPORTUNITY");
+
+    case "qualifier_risque":
+      return corpsQualification(valeurs, "risque", "RISK");
+
+    case "changer_statut_opportunite":
+      return corpsChangementStatut("OPPORTUNITY", valeurs, objet);
+
+    case "changer_statut_risque":
+      return corpsChangementStatut("RISK", valeurs, objet);
 
     case "creer_scenario": {
       const titre = valeurNette(valeurs, "titre");

@@ -28,6 +28,7 @@ import {
   idObjet,
   messageErreurTransition,
   sansAccents,
+  statutObjet,
   texte,
   texteAffichable,
   titreObjet,
@@ -42,6 +43,8 @@ const DELAI_VERIFICATION_MS = 10000;
 const STADES = [
   { type: "SITUATION", famille: "emergence", label: "Situations", court: "Situation", couleur: "#60A5FA", Icone: Lightbulb },
   { type: "EXPRESSION", famille: "emergence", label: "Expressions", court: "Expression", couleur: "#22D3EE", Icone: Lightbulb },
+  { type: "OPPORTUNITY", famille: "emergence", label: "Opportunités", court: "Opportunité", couleur: "#34D399", Icone: ArrowUpRight },
+  { type: "RISK", famille: "emergence", label: "Risques", court: "Risque", couleur: "#F87171", Icone: WarningCircle },
   { type: "INVESTIGATION", famille: "investigation", label: "Investigations", court: "Investigation", couleur: "#38BDF8", Icone: MagnifyingGlass },
   { type: "DECISION", famille: "decision", label: "Décisions", court: "Décision", couleur: "#F2B84B", Icone: Scales },
   { type: "INITIATIVE", famille: "decision", label: "Initiatives", court: "Initiative", couleur: "#FB923C", Icone: RocketLaunch },
@@ -52,7 +55,7 @@ const STADES = [
 const STADES_PAR_TYPE = new Map(STADES.map((stade) => [stade.type, stade]));
 
 const FAMILLES = [
-  { value: "emergence", label: "Émergence — situations et expressions" },
+  { value: "emergence", label: "Émergence — situations, expressions, opportunités et risques" },
   { value: "investigation", label: "Investigation" },
   { value: "decision", label: "Décision — décisions et initiatives" },
   { value: "resultat_apprentissage", label: "Résultat — outcomes et learnings" },
@@ -360,6 +363,16 @@ function PanneauDetail({
     ["Canal", texteAffichable(valeurDe(objet, "canal"))],
     ["Auteur", texteAffichable(valeurDe(objet, "auteur"))],
     ["Inconnues", texteAffichable(valeurDe(objet, "inconnues"))],
+    ["Type d'opportunité", texteAffichable(valeurDe(objet, "type_opportunite"))],
+    ["Type de risque", texteAffichable(valeurDe(objet, "type_risque"))],
+    ["Valeur potentielle", texteAffichable(valeurDe(objet, "valeur_potentielle"))],
+    ["Probabilité", texteAffichable(valeurDe(objet, "probabilite"))],
+    ["Impact", texteAffichable(valeurDe(objet, "impact"))],
+    ["Horizon", texteAffichable(valeurDe(objet, "horizon"))],
+    ["Critères", texteAffichable(valeurDe(objet, "criteres"))],
+    ["Sévérité", texteAffichable(valeurDe(objet, "severite"))],
+    ["Motif", texteAffichable(valeurDe(objet, "motif"))],
+    ["Justification", texteAffichable(valeurDe(objet, "justification"))],
     ["Choix", texteAffichable(valeurDe(objet, "choix"))],
     ["Acteur", texteAffichable(valeurDe(objet, "acteur"))],
     ["Métrique", texteAffichable(valeurDe(objet, "metrique"))],
@@ -397,6 +410,14 @@ function PanneauDetail({
               {stade && <span style={{ color: stade.couleur }}>{stade.label}</span>}
               {!stade && <span className="text-[#94A3B8]">{typeObjet(objet) || "Objet"}</span>}
               {mode && <span className="rounded border border-[rgba(148,163,184,0.2)] px-1.5 py-px text-[#94A3B8]">{MODES_LABEL.get(mode) || mode}</span>}
+              {statutObjet(objet) && (
+                <span
+                  data-testid="boucle-detail-statut"
+                  className="rounded border border-[rgba(148,163,184,0.2)] px-1.5 py-px text-[#94A3B8]"
+                >
+                  {statutObjet(objet)}
+                </span>
+              )}
             </div>
             <h2 className="mt-2 font-display text-lg font-black leading-tight text-[#F2F6F8]" data-testid="boucle-detail-titre">
               {titreObjet(objet)}
@@ -987,6 +1008,8 @@ export default function Boucle() {
     const creationSituation = actionActive === "creer_situation";
     const creationScenario = actionActive === "creer_scenario";
     const creationExpression = actionActive === "creer_expression";
+    const creationOpportunite = actionActive === "qualifier_opportunite";
+    const creationRisque = actionActive === "qualifier_risque";
     if (!creationSituation && !objetDetail) return;
     const identifiant = creationSituation ? null : idObjet(objetDetail);
     if (!creationSituation && !identifiant) {
@@ -1030,9 +1053,13 @@ export default function Boucle() {
         ? await boucleApi.creerSituation(corps)
         : creationScenario
           ? await boucleApi.creerScenario(corps)
-          : creationExpression
-            ? await boucleApi.creerExpression(identifiant, corps)
-            : await boucleApi[actionCourante.api](identifiant, corps);
+          : creationOpportunite
+            ? await boucleApi.creerOpportunite(identifiant, corps)
+            : creationRisque
+              ? await boucleApi.creerRisque(identifiant, corps)
+              : creationExpression
+                ? await boucleApi.creerExpression(identifiant, corps)
+                : await boucleApi[actionCourante.api](identifiant, corps);
     } catch (erreurApi) {
       cause = erreurApi;
     } finally {
@@ -1177,6 +1204,58 @@ export default function Boucle() {
         },
       });
       // Le parent est relu en arrière-plan pour exposer son lien inverse scenario_ids/scenario_id.
+      rafraichirObjetListe(identifiant);
+      actualiser();
+      return;
+    }
+
+    if (creationOpportunite || creationRisque) {
+      const nouvelObjet = reponse?.data?.objet ?? null;
+      const nouvelleChaine = Array.isArray(reponse?.data?.chaine) ? reponse.data.chaine : null;
+      const nouvelHistorique = Array.isArray(reponse?.data?.historique) ? reponse.data.historique : null;
+      const dernierDeChaine = nouvelleChaine && nouvelleChaine.length > 0
+        ? nouvelleChaine[nouvelleChaine.length - 1]
+        : null;
+      const objetCree = nouvelObjet || dernierDeChaine;
+      const identifiantCree = idObjet(objetCree);
+      const libelleCreation = creationOpportunite ? "L'opportunité" : "Le risque";
+
+      if (!identifiantCree) {
+        setTransition((avant) => ({
+          ...avant,
+          enCours: false,
+          erreur: `${libelleCreation} a été créé mais la réponse ne contient aucun identifiant exploitable. Vérifiez la liste avant de réessayer.`,
+        }));
+        actualiser();
+        return;
+      }
+
+      const chaine = nouvelleChaine && nouvelleChaine.length > 0 ? nouvelleChaine : [objetCree];
+      setActionActive(null);
+      setTransition({
+        enCours: false,
+        erreur: "",
+        succes: { action, objet: objetCree },
+        rechargement: false,
+        verificationErreur: "",
+      });
+      refElementDeclencheurAction.current = null;
+      demanderRestaurationFocusAction();
+
+      const objetsReponse = [objetCree, ...(nouvelleChaine || [])]
+        .filter((objet) => idObjet(objet));
+      setObjets((avant) => objetsReponse.reduce((liste, objet) => fusionnerObjet(liste, objet), avant));
+      setSelection(objetCree);
+      setDetail({
+        chargement: false,
+        erreur: null,
+        data: {
+          objet: objetCree,
+          chaine,
+          historique: nouvelHistorique || [],
+        },
+      });
+      // L'expression est relue en arrière-plan pour exposer opportunity_ids/risk_ids.
       rafraichirObjetListe(identifiant);
       actualiser();
       return;
