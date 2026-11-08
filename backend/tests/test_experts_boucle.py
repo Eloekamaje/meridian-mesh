@@ -2202,6 +2202,39 @@ def test_pg_cycle_de_vie_expert_administrable(monkeypatch):
         _nettoyer(autre)
 
 
+@pytest.mark.parametrize(("champ", "valeur"), [
+    ("motif", "ghp_abcdefghijkl"),
+    ("preuves", ["ghp_abcdefghijkl"]),
+])
+@besoin_pg
+def test_pg_secret_dans_statut_expert_refuse_sans_ecriture(
+    monkeypatch, champ, valeur,
+):
+    tenant = f"c5f-{uuid.uuid4().hex[:10]}"
+    client = _client_pg(monkeypatch)
+    try:
+        with psycopg.connect(DSN, autocommit=True) as conn:
+            depot.appliquer_schema(conn)
+        expert = _pg_expert(tenant)
+
+        reponse = client.post(
+            f"{BASE}/experts/{expert.objet['id']}/statut",
+            json={"vers": "INACTIVE", champ: valeur},
+            headers={"X-Tenant": tenant},
+        )
+        assert reponse.status_code == 400, reponse.text
+        assert "ghp_abcdefghijkl" not in reponse.text
+
+        with psycopg.connect(DSN) as conn:
+            ligne = boucle.lire_boucle(
+                conn, tenant, expert.objet["id"], historique=True)
+        assert ligne["donnees"]["statut"] == "ACTIVE"
+        assert ligne["version"] == 1
+        assert ligne["historique"] == []
+    finally:
+        _nettoyer(tenant)
+
+
 @besoin_pg
 def test_pg_contribution_cite_hypotheses_validees_des_deux_routes(monkeypatch):
     tenant = f"c5f-{uuid.uuid4().hex[:10]}"
