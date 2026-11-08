@@ -737,6 +737,7 @@ export default function Boucle() {
   const [actionGlobale, setActionGlobale] = useState(false);
   const [actionSource, setActionSource] = useState(null);
   const [expertsDisponibles, setExpertsDisponibles] = useState([]);
+  const [expertsErreur, setExpertsErreur] = useState("");
   const [transition, setTransition] = useState({ enCours: false, erreur: "", succes: null, rechargement: false, verificationErreur: "" });
 
   useEffect(() => {
@@ -1008,6 +1009,20 @@ export default function Boucle() {
     setActionActive("inscrire_expert");
   };
 
+  const chargerExperts = useCallback(async () => {
+    setExpertsErreur("");
+    try {
+      const reponse = await boucleApi.listerExperts({ statut: "ACTIVE", limite: 100 });
+      const experts = Array.isArray(reponse?.data?.experts) ? reponse.data.experts : [];
+      setExpertsDisponibles(experts);
+    } catch {
+      setExpertsDisponibles([]);
+      setExpertsErreur(
+        "Le registre des experts est indisponible. Vérifiez la connexion puis réessayez.",
+      );
+    }
+  }, []);
+
   const rechargerDetailSource = async (identifiant) => {
     refAbortVerification.current?.abort();
     const controleur = new AbortController();
@@ -1080,6 +1095,7 @@ export default function Boucle() {
     setActionActive(null);
     setActionGlobale(false);
     setActionSource(null);
+    setExpertsErreur("");
     setTransition((avant) => ({ ...avant, erreur: "" }));
     demanderRestaurationFocusAction();
   };
@@ -1087,6 +1103,10 @@ export default function Boucle() {
   const executerTransition = async (valeurs) => {
     if (enCoursRef.current || refRechargement.current || transition.rechargement) return;
     if (!actionCourante) return;
+    if (actionActive === "solliciter_expert" && expertsErreur) {
+      setTransition((avant) => ({ ...avant, erreur: expertsErreur }));
+      return;
+    }
     const creationSituation = actionActive === "creer_situation";
     const creationExpert = actionActive === "inscrire_expert";
     const creationRacine = creationSituation || creationExpert;
@@ -1507,19 +1527,8 @@ export default function Boucle() {
   }, [selection, actionActive, transition.enCours, fermerDetail]);
 
   useEffect(() => {
-    if (actionActive !== "solliciter_expert") return undefined;
-    let annule = false;
-    boucleApi.listerExperts({ statut: "ACTIVE", limite: 100 })
-      .then((reponse) => {
-        if (annule) return;
-        const experts = Array.isArray(reponse?.data?.experts) ? reponse.data.experts : [];
-        setExpertsDisponibles(experts);
-      })
-      .catch(() => {
-        if (!annule) setExpertsDisponibles([]);
-      });
-    return () => { annule = true; };
-  }, [actionActive]);
+    if (actionActive === "solliciter_expert") chargerExperts();
+  }, [actionActive, chargerExperts]);
 
   useEffect(() => {
     if (selection) return;
@@ -2332,8 +2341,12 @@ export default function Boucle() {
           enCours={transition.enCours}
           rechargement={transition.rechargement}
           erreur={transition.erreur}
+          erreurChargement={actionActive === "solliciter_expert" ? expertsErreur : ""}
           onFermer={fermerAction}
           onSoumettre={executerTransition}
+          onReessayerChargement={
+            actionActive === "solliciter_expert" ? chargerExperts : undefined
+          }
         />
       )}
     </div>

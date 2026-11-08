@@ -494,6 +494,39 @@ test("sollicite un expert depuis une hypothèse sans exposer les liens de la rou
   await act(async () => { racine.unmount(); });
 });
 
+test("affiche l'échec du registre des experts et permet de réessayer", async () => {
+  installerApi({ liste: [situation, investigation] });
+  boucleApi.listerExperts
+    .mockRejectedValueOnce({ response: { status: 503, data: {} } })
+    .mockResolvedValueOnce({ data: { experts: [expert] } });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "inv-1");
+  await cliquer(hote, "boucle-action-solliciter-expert");
+  await laisserPromesses();
+
+  const alerte = hote.querySelector(
+    '[data-testid="boucle-transition-erreur-chargement"]');
+  expect(alerte).not.toBeNull();
+  expect(alerte.getAttribute("role")).toBe("alert");
+  expect(alerte.textContent).toContain("registre des experts");
+  expect(hote.querySelector('[data-testid="boucle-transition-enregistrer"]').disabled)
+    .toBe(true);
+
+  await cliquer(hote, "boucle-transition-reessayer");
+  await laisserPromesses();
+
+  expect(hote.querySelector('[data-testid="boucle-transition-erreur-chargement"]'))
+    .toBeNull();
+  const selectExpert = hote.querySelector('[data-testid="boucle-transition-expert_id"]');
+  expect([...selectExpert.options].map((option) => option.value)).toContain("expert-1");
+  expect(hote.querySelector('[data-testid="boucle-transition-enregistrer"]').disabled)
+    .toBe(false);
+
+  await act(async () => { racine.unmount(); });
+});
+
 test("change le statut d'une contribution avec motif et preuves dans un dialogue accessible", async () => {
   const controleur = installerApi({ liste: [situation, investigation, contribution] });
   const acceptee = {

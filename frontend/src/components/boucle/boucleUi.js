@@ -10,6 +10,8 @@ const STATUTS_DECISION_REJETEE = new Set([
 ]);
 const STATUTS_INVESTIGATION_FERMES = new Set([
   "CLOSED", "CLOSE", "CLOTUREE", "FERMEE", "ARCHIVED", "ARCHIVEE",
+  // États terminaux réellement produits par le runtime d'investigation.
+  "COMPLETED", "COMPLETED_WITH_GAPS", "BUDGET_EXHAUSTED", "FAILED", "CANCELLED",
 ]);
 const STATUTS_INITIATIVE_ANNULEE = new Set([
   "CANCELLED", "ANNULEE", "ABANDONED", "ABANDONNEE",
@@ -1878,6 +1880,10 @@ export function messageErreurTransition(erreur, defaut = "La transition n'a pas 
       return champ && message ? `${champ} : ${message}` : message;
     }).filter(Boolean);
     if (messages.length > 0) return messages.join(" · ");
+  }
+
+  if (reponse?.status === 501) {
+    return "Idempotency-Key non pris en charge : réessayez sans clé d'idempotence.";
   }
 
   if (typeof detail === "string" && detail.trim()) {

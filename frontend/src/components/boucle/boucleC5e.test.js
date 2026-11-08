@@ -5,6 +5,7 @@ import {
   actionsPourObjet,
   configurationAction,
   construireCorps,
+  messageErreurTransition,
   statutsSuivants,
 } from "./boucleUi";
 
@@ -89,6 +90,28 @@ describe("C5e — cycle et lecture des experts", () => {
       ...contribution,
       donnees: { ...contribution.donnees, statut: "ARCHIVED" },
     })).toEqual([]);
+  });
+
+  test("les états terminaux du runtime d'investigation masquent les actions", () => {
+    for (const statut of [
+      "COMPLETED", "COMPLETED_WITH_GAPS", "BUDGET_EXHAUSTED", "FAILED", "CANCELLED",
+    ]) {
+      expect(actionsPourObjet({
+        ...investigation,
+        donnees: { ...investigation.donnees, statut },
+      }).map((action) => action.id)).not.toContain("solliciter_expert");
+    }
+  });
+
+  test("un 501 d'idempotence est traduit par un message spécifique", () => {
+    const message = messageErreurTransition({
+      response: {
+        status: 501,
+        data: { detail: "Idempotency-Key non pris en charge" },
+      },
+    });
+    expect(message).toContain("Idempotency-Key");
+    expect(message).toContain("sans clé");
   });
 });
 
