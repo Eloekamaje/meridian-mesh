@@ -90,16 +90,26 @@ Erreurs :
 - 409 : empreinte de Signal déjà connue (doublon) ;
 - 422 : validation, type inconnu, champ serveur ou champ inconnu ;
 - 400 : secret dans `preuves`/données non sérialisables, jeton brut au sens de la
-  détection stricte, ou JSON malformé. La détection couvre **le titre persisté et toutes
-  les chaînes de `donnees`** (source, libellé, description, preuves…) et reconnaît :
-  JWT `eyJ…`, `gh[pousr]_…`, `github_pat_…`, `sk-`/`sk-proj-` d'au moins 16 caractères
-  après le préfixe et contenant au moins un chiffre (`sk-abc123456789012345` est refusé),
-  `xox[baprs]-…`, `AKIA…`, et `Bearer <jeton>`. Les mots de prose courants après
-  `Bearer` (`authentication`, `authorization`, `token`, `scheme`, `header`, `flow`, `type`,
-  `credentials`, `access`, `request`, `response`) ne sont pas des jetons ; `sk-learn-tutorial`
-  est accepté. Un nom court contenant un chiffre (`sk-…-2026`) peut être refusé : faux
-  positif assumé au profit de la sécurité. Le masquage HTTP utilise la même détection
-  stricte, donc la prose `Bearer authentication` reste lisible ;
+  détection stricte, ou JSON malformé. La détection couvre **le `titre` persisté, l'`id`
+  fourni, le `tenant` (brut et normalisé) et toutes les chaînes de `donnees`** (source,
+  libellé, description, preuves…). Formes reconnues : JWT `eyJ…`, `gh[pousr]_…`,
+  `github_pat_…`, `sk-`/`sk-proj-` d'au moins 16 caractères après le préfixe et contenant
+  au moins un chiffre (`sk-abc123456789012345` est refusé), `xox[baprs]-…`, `AKIA…`, et
+  `Bearer <jeton>`. Pour `Bearer`, le token capturé est de la **prose** si, en minuscules,
+  il appartient à une courte liste technique (`authentication`, `authorization`, `token`,
+  `scheme`, `header`, `flow`, `type`, `credentials`, `access`, `request`, `response`,
+  `client`, `server`, `resource`, `endpoint`, `method`, `framework`, `library`,
+  `interface`, `application`, `service`, `system`, `security`, `support`, `usage`, `mode`,
+  `policy`, `standard`, `protocol`, `format`) **ou** s'il est purement alphabétique et se
+  termine par un suffixe technique (`tion`, `sion`, `ment`, `ity`, `ance`, `ence`, `ing`,
+  `ed`, `al`, `ive`, `ous`, `able`, `ible`, `er`, `or`, `ics`, `ology`, `graphy`, `ness`,
+  `ship`, `hood`, `ism`, `ist`, `ize`, `ise`). Ainsi `implementation`, `documentation`,
+  `specification`, `interoperability`, `configuration`, `verification`, `validation`
+  passent, tandis que `Bearer abcdefghijklmnop` reste refusé. `sk-learn-tutorial` est
+  accepté. Un identifiant long contenant un chiffre (`sk-mon-projet-2026-01`) peut être
+  refusé : faux positif assumé. Le masquage HTTP utilise la même détection stricte, donc
+  la prose `Bearer authentication` reste lisible. La détection n'est **pas exhaustive** :
+  un secret opaque sans préfixe connu peut passer (limite caractérisée par test) ;
 - 501 : `Idempotency-Key` (aucun stockage d'idempotence durable) ;
 - 503 : Postgres indisponible.
 
@@ -131,10 +141,17 @@ formulaire de statut.
 - HTTP : contrat 201, validation 422, doublon 409, secret/non-JSON/jeton brut 400, 501, 503,
   liste filtrée et isolation tenant.
 - Sécurité : les jetons bruts au sens de la détection stricte sont refusés avant écriture
-  dans le `titre` persisté et toutes les chaînes de `donnees` (`preuves`, `source`,
-  `libelle`, `description`…) ; la réponse HTTP les masque avec la même politique. La prose
-  `Bearer authentication`/`Bearer authorization` et `sk-learn-tutorial` reste acceptée.
+  dans le `titre` persisté, l'`id`, le `tenant` brut/normalisé et toutes les chaînes de
+  `donnees` (`preuves`, `source`, `libelle`, `description`…) ; la réponse HTTP les masque
+  avec la même politique. La prose `Bearer authentication`/`Bearer implementation`/
+  `Bearer documentation`/`Bearer specification` et `sk-learn-tutorial` reste acceptée.
+- Migration legacy : un document dont le titre porte un jeton n'est pas migré ; le
+  rapport le compte dans `erreurs`, sans crash ni réécriture.
+- Limite : un secret opaque sans préfixe connu peut passer ; un test 201 le caractérise.
 - `titre` : la colonne texte est contrôlée séparément de `donnees`, avec les mêmes motifs.
+- `id` et `tenant` : un jeton dans l'identifiant fourni, le tenant brut ou le tenant
+  normalisé (`demo→local`) est refusé avant persistance ; les identifiants normaux
+  (`sit-…`, `dec-…`, `local`, `demo`) restent acceptés.
 - Rejeu : un test caractérise le second Signal créé lorsqu'on renvoie explicitement le
   `detecte_le` serveur d'une première création sans date.
 - Postgres réel (opt-in `JUMEAU_PG_DSN`) : chaîne `SITUATION → SIGNAL`, absence de chaîne
@@ -158,6 +175,11 @@ formulaire de statut.
 - Les jetons bruts sont refusés à l'écriture selon une détection stricte ; un corpus
   legacy déjà stocké reste masqué en lecture mais n'est pas migré. La détection peut
   refuser un identifiant métier ressemblant à un jeton long contenant un chiffre
-  (`sk-mon-projet-2026` par exemple) : faux positif assumé.
+  (`sk-mon-projet-2026-01` par exemple) : faux positif assumé.
+- La détection couvre les formats de credentials connus, pas les secrets opaques sans
+  préfixe : un tel secret peut être accepté (limite caractérisée par test).
+- Migration legacy : un document dont le `titre` porte un jeton n'est pas migré ; le
+  backfill le compte dans `erreurs`, ne réécrit rien et ne migre aucun secret. Un dry-run
+  le signale de la même manière, sans écriture.
 - Pas de rattachement automatique des Signaux aux Expressions, Investigations ou
   Décisions au-delà de `situation_ids` et des liens libres.
