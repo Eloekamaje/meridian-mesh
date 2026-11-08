@@ -715,6 +715,51 @@ test("garde la modale de statut expert sur un 409 avec un message lisible", asyn
   await act(async () => { racine.unmount(); });
 });
 
+test.each([
+  [400, "Les données envoyées sont invalides."],
+  [404, "L'objet source est introuvable."],
+  [422, "Certaines valeurs sont invalides."],
+  [503, "Résultat incertain"],
+])("garde la modale de statut expert sur une erreur HTTP %s", async (statut, message) => {
+  installerApi({ liste: [situation, expert] });
+  boucleApi.changerStatutExpert.mockRejectedValue({
+    response: { status: statut, data: {} },
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "expert-1");
+  await cliquer(hote, "boucle-action-statut-expert");
+  await choisir(hote.querySelector('[data-testid="boucle-transition-vers"]'), "INACTIVE");
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(boucleApi.changerStatutExpert).toHaveBeenCalledTimes(1);
+  expect(hote.querySelector('[data-testid="boucle-transition-erreur"]').textContent)
+    .toContain(message);
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("garde la modale de statut expert sur une erreur réseau", async () => {
+  installerApi({ liste: [situation, expert] });
+  boucleApi.changerStatutExpert.mockRejectedValue(new Error("Network Error"));
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "expert-1");
+  await cliquer(hote, "boucle-action-statut-expert");
+  await choisir(hote.querySelector('[data-testid="boucle-transition-vers"]'), "INACTIVE");
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(boucleApi.changerStatutExpert).toHaveBeenCalledTimes(1);
+  expect(hote.querySelector('[data-testid="boucle-transition-erreur"]').textContent)
+    .toContain("Résultat incertain");
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
 test("affiche les stades et filtres EXPERT et EXPERT_CONTRIBUTION", async () => {
   installerApi({ liste: [situation, expert, contribution] });
   const { hote, racine } = monter();

@@ -263,28 +263,36 @@ const CHAMPS_QUALIFIER_RISQUE = [
   },
 ];
 
-const CHAMPS_CHANGER_STATUT = [
-  {
-    nom: "statut",
-    label: "Nouveau statut",
-    type: "select",
-    requis: true,
-    options: [],
-  },
-  {
-    nom: "motif",
-    label: "Motif (optionnel)",
-    type: "textarea",
-    rows: 2,
-    placeholder: "Pourquoi ce changement, et à quelles conditions il tient…",
-  },
-  {
+function champsChangementStatut(nom, options = {}) {
+  const preuves = {
     nom: "preuves",
     label: "Preuves (IDs séparés par une virgule, optionnel)",
     type: "text",
-    placeholder: "preuve-1, preuve-2",
-  },
-];
+    placeholder: options.preuvesPlaceholder || "preuve-1, preuve-2",
+  };
+  if (options.aidePreuves) preuves.aide = options.aidePreuves;
+  return [
+    {
+      nom,
+      label: "Nouveau statut",
+      type: "select",
+      requis: true,
+      options: [],
+    },
+    {
+      nom: "motif",
+      label: "Motif (optionnel)",
+      type: "textarea",
+      rows: 2,
+      placeholder: options.motifPlaceholder || "Pourquoi ce changement…",
+    },
+    preuves,
+  ];
+}
+
+const CHAMPS_CHANGER_STATUT = champsChangementStatut("statut", {
+  motifPlaceholder: "Pourquoi ce changement, et à quelles conditions il tient…",
+});
 
 const CHAMPS_CREER_HYPOTHESE = [
   {
@@ -331,29 +339,10 @@ const CHAMPS_CREER_HYPOTHESE = [
   },
 ];
 
-const CHAMPS_CHANGER_STATUT_HYPOTHESE = [
-  {
-    nom: "vers",
-    label: "Nouveau statut",
-    type: "select",
-    requis: true,
-    options: [],
-  },
-  {
-    nom: "motif",
-    label: "Motif (optionnel)",
-    type: "textarea",
-    rows: 2,
-    placeholder: "Pourquoi ce changement, et à quelles conditions il tient…",
-  },
-  {
-    nom: "preuves",
-    label: "Preuves (IDs séparés par une virgule, optionnel)",
-    type: "text",
-    placeholder: "preuve-1, preuve-2",
-    aide: "Une hypothèse CONFIRMED exige au moins une preuve.",
-  },
-];
+const CHAMPS_CHANGER_STATUT_HYPOTHESE = champsChangementStatut("vers", {
+  motifPlaceholder: "Pourquoi ce changement, et à quelles conditions il tient…",
+  aidePreuves: "Une hypothèse CONFIRMED exige au moins une preuve.",
+});
 
 const CHAMPS_INSCRIRE_EXPERT = [
   {
@@ -507,51 +496,14 @@ const CHAMPS_SOLLICITER_EXPERT = [
   },
 ];
 
-const CHAMPS_CHANGER_STATUT_CONTRIBUTION = [
-  {
-    nom: "vers",
-    label: "Nouveau statut",
-    type: "select",
-    requis: true,
-    options: [],
-  },
-  {
-    nom: "motif",
-    label: "Motif (optionnel)",
-    type: "textarea",
-    rows: 2,
-    placeholder: "Pourquoi cette décision de lecture…",
-  },
-  {
-    nom: "preuves",
-    label: "Preuves (IDs séparés par une virgule, optionnel)",
-    type: "text",
-    placeholder: "preuve-1, preuve-2",
-  },
-];
+const CHAMPS_CHANGER_STATUT_CONTRIBUTION = champsChangementStatut("vers", {
+  motifPlaceholder: "Pourquoi cette décision de lecture…",
+});
 
-const CHAMPS_CHANGER_STATUT_EXPERT = [
-  {
-    nom: "vers",
-    label: "Nouveau statut",
-    type: "select",
-    requis: true,
-    options: [],
-  },
-  {
-    nom: "motif",
-    label: "Motif (optionnel)",
-    type: "textarea",
-    rows: 2,
-    placeholder: "Pourquoi ce changement d'activité…",
-  },
-  {
-    nom: "preuves",
-    label: "Preuves (IDs séparés par une virgule, optionnel)",
-    type: "text",
-    placeholder: "doc://rh, preuve-1",
-  },
-];
+const CHAMPS_CHANGER_STATUT_EXPERT = champsChangementStatut("vers", {
+  motifPlaceholder: "Pourquoi ce changement d'activité…",
+  preuvesPlaceholder: "doc://rh, preuve-1",
+});
 
 const CHAMPS_CREER_SIGNAL = [
   {
@@ -1360,31 +1312,17 @@ export function configurationAction(actionId, objet, options = {}) {
   ));
 
   let api = base.api;
-  if (actionId === "changer_statut_opportunite" || actionId === "changer_statut_risque") {
+  const champStatut = {
+    changer_statut_opportunite: "statut",
+    changer_statut_risque: "statut",
+    changer_statut_hypothese: "vers",
+    changer_statut_contribution: "vers",
+    changer_statut_expert: "vers",
+  }[actionId];
+  if (champStatut) {
     const suivants = statutsSuivants(typeSource, statutObjet(objet));
     champs = champs.map((champ) => (
-      champ.nom === "statut" ? { ...champ, options: suivants } : champ
-    ));
-    if (suivants.length === 0) api = null;
-  }
-  if (actionId === "changer_statut_hypothese") {
-    const suivants = statutsSuivants(typeSource, statutObjet(objet));
-    champs = champs.map((champ) => (
-      champ.nom === "vers" ? { ...champ, options: suivants } : champ
-    ));
-    if (suivants.length === 0) api = null;
-  }
-  if (actionId === "changer_statut_contribution") {
-    const suivants = statutsSuivants(typeSource, statutObjet(objet));
-    champs = champs.map((champ) => (
-      champ.nom === "vers" ? { ...champ, options: suivants } : champ
-    ));
-    if (suivants.length === 0) api = null;
-  }
-  if (actionId === "changer_statut_expert") {
-    const suivants = statutsSuivants(typeSource, statutObjet(objet));
-    champs = champs.map((champ) => (
-      champ.nom === "vers" ? { ...champ, options: suivants } : champ
+      champ.nom === champStatut ? { ...champ, options: suivants } : champ
     ));
     if (suivants.length === 0) api = null;
   }
