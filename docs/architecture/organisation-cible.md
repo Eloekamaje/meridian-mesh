@@ -12,7 +12,8 @@ meridian/adapters/
   outbound/postgres/      dépôts, transactions, RLS
   outbound/mongo/         registre, travail
   outbound/neo4j/         GraphStore et projections
-  outbound/aws/           Secrets Manager, SQS/EventBridge, Scheduler
+  outbound/aws/           Secrets Manager (optionnel), SQS/EventBridge, Scheduler
+  outbound/connectors/    sources, PAT via Vault (`vault:…`)
   outbound/llm/           Strands/Bedrock
 meridian/composition.py   racine de composition
 server.py                 point d'entrée ASGI mince

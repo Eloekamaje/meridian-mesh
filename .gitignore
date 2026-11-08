@@ -91,6 +91,7 @@ frontend/node_modules/.cache/default-development/5.pack
 .env.*
 *.env
 !.env.prod.example
+!.env.floci.example
 credentials.json
 *.key
 .credentials

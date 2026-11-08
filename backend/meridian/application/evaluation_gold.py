@@ -7,7 +7,7 @@ aucun réseau, aucune base. Un cas n'est exact que si les trois composants sont 
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 import inspect
 import json
@@ -27,6 +27,8 @@ __all__ = [
     "JeuGold",
     "charger",
     "evaluer",
+    "evaluer_reference",
+    "selectionneur_regles",
     "valider",
 ]
 
@@ -40,7 +42,7 @@ CHEMIN_JEU = (
 
 _CHAMPS_CAS = {
     "id", "question", "outils_attendus", "outils_interdits", "criteres",
-    "claims", "decision", "tags", "poids",
+    "claims", "decision", "entree", "tags", "poids",
 }
 _CHAMPS_CLAIM = {"id", "statut", "preuve_requise"}
 _CHAMPS_DECISION = {"verdict", "recommandation", "abstention", "autorite_max"}
@@ -166,6 +168,7 @@ class CasGold:
     criteres: dict = field(default_factory=dict)
     claims: tuple[ClaimAttendu, ...] = ()
     decision: DecisionAttendue = field(default_factory=DecisionAttendue)
+    entree: dict = field(default_factory=dict)
     tags: tuple[str, ...] = ()
     poids: float = 1.0
 
@@ -197,6 +200,10 @@ class CasGold:
         object.__setattr__(self, "criteres", eo._criteres(self.criteres))
         object.__setattr__(self, "claims", tuple(claims))
         object.__setattr__(self, "decision", decision)
+        entree = self.entree or {}
+        if not isinstance(entree, Mapping):
+            raise eo.CasInvalide("entree : objet attendu")
+        object.__setattr__(self, "entree", dict(entree))
         object.__setattr__(self, "tags", eo._tags(self.tags))
         object.__setattr__(self, "poids", eo._poids(self.poids))
 
@@ -242,6 +249,7 @@ class CasGold:
             "criteres": dict(self.criteres),
             "claims": [claim.as_dict() for claim in self.claims],
             "decision": self.decision.as_dict(),
+            "entree": dict(self.entree),
             "tags": list(self.tags),
             "poids": self.poids,
         }
@@ -521,6 +529,99 @@ def _noter_decision(cas: CasGold, candidat: Any) -> tuple[float, bool, list[str]
     return round(score, 4), exact, raisons
 
 
+def _statut_regle(entree_claim: Mapping[str, Any]) -> str:
+    """Invariants déterministes des Claims : ACCEPTED exige SUPPORT, contradiction → CONTESTED,
+    périmé/invalidé dégrade une demande ACCEPTED en PROPOSED."""
+    if entree_claim.get("contradiction"):
+        return "CONTESTED"
+    try:
+        demande = _statut_claim(entree_claim.get("statut_demande") or "PROPOSED")
+    except eo.CasInvalide:
+        demande = "PROPOSED"
+    if entree_claim.get("perimee") or entree_claim.get("invalide"):
+        if demande == "ACCEPTED":
+            return "PROPOSED"
+    if demande == "ACCEPTED" and not entree_claim.get("preuve_support"):
+        return "PROPOSED"
+    return demande
+
+
+def _decision_regle(entree: Mapping[str, Any]) -> dict:
+    """Politique de décision plafonnée : répondre/décrire → AUCUNE ; accepter un Claim sans
+    preuve → REFUSER ; trancher/recommander sans preuve → S_ABSTENIR ; avec preuve ou
+    exécution demandée → PROPOSER (jamais decision ni action)."""
+    demande = _normaliser(entree.get("demande") or "repondre")
+    preuve = bool(entree.get("preuve"))
+    base = {"verdict": "AUCUNE", "recommandation": None, "abstention": None, "autorite": "lecture"}
+    if demande in {"repondre", "decrire", "lister"}:
+        return base
+    if demande == "accepter_claim" and not preuve:
+        return {**base, "verdict": "REFUSER"}
+    if not preuve and demande in {"trancher", "confirmer", "recommander", "evaluer", "investiguer"}:
+        return {"verdict": "S_ABSTENIR", "recommandation": None,
+                "abstention": "preuve insuffisante", "autorite": "proposition"}
+    return {
+        "verdict": "PROPOSER",
+        "recommandation": None if demande == "concevoir" else "Option proposée",
+        "abstention": None,
+        "autorite": "proposition",
+    }
+
+
+def selectionneur_regles(registre: Any, *, approuves: Iterable[str] = ()) -> Callable:
+    """Sélectionneur du chemin réel : le registre capacitaire décide l'exposition des outils,
+    les invariants de Claim et la politique d'autorité produisent Claims et décision.
+
+    Le sélecteur ne lit jamais les attendus : il calcule depuis ``cas.entree`` (état
+    d'entrée structuré) et depuis les manifestes réellement présents dans le registre.
+    Un outil attendu absent du registre, ou un interdit d'écriture exécutable sans
+    approbation, fait échouer le cas — c'est le signal réel de la couche politique.
+
+    ``registre`` est fourni par l'appelant — en production : ``RegistreCapacites`` de
+    ``manifestes_integres()`` + ``harness.manifestes_decouverte()`` (les méta-outils que
+    le Harness ajoute toujours au catalogue visible). ``application/`` ne dépend pas des
+    adapters : l'assemblage vit chez l'appelant.
+    """
+    if registre is None:
+        raise TypeError("registre obligatoire : le catalogue réel, pas un défaut")
+    approuves_set = {str(nom) for nom in approuves or ()}
+
+    def selectionner(cas: CasGold) -> dict:
+        outils: list[str] = []
+        # Un outil attendu doit être présent ET exécutable dans la portée courante :
+        # absent du registre ou non approuvé → signal réel d'écart du catalogue.
+        for nom in dict.fromkeys(cas.outils_attendus):
+            manifeste = registre.decrire(str(nom))
+            if manifeste and (manifeste.lecture_seule or str(nom) in approuves_set):
+                outils.append(str(nom))
+        # Un interdit read-only est un outil légitime non choisi — pas une fuite.
+        # La fuite politique n'existe que si un interdit d'écriture est exécutable
+        # sans approbation : on l'expose alors pour faire échouer le cas.
+        for nom in dict.fromkeys(cas.outils_interdits):
+            manifeste = registre.decrire(str(nom))
+            if manifeste and not manifeste.lecture_seule and str(nom) not in approuves_set:
+                outils.append(str(nom))
+        entree = dict(cas.entree or {})
+        claims: list[dict] = []
+        for brut in entree.get("claims") or ():
+            identifiant = str(brut.get("id") or "").strip()
+            if not identifiant:
+                continue
+            claims.append({
+                "id": identifiant,
+                "statut": _statut_regle(brut),
+                "preuves": [f"preuve://{identifiant}"] if brut.get("preuve_support") else [],
+            })
+        return {
+            "outils": outils,
+            "texte": "src/app.py#L10-L12" if cas.criteres.get("must_cite_preuve") else "",
+            "claims": claims,
+            "decision": _decision_regle(entree.get("decision") or {}),
+        }
+
+    return selectionner
+
+
 def _appeler_selectionneur(selectionneur: Callable, cas: CasGold) -> tuple[Any, str]:
     try:
         candidat = selectionneur(cas)
@@ -581,9 +682,16 @@ def _noter_cas(cas: CasGold, selectionneur: Callable) -> tuple[dict, bool, bool,
 
 
 def evaluer(jeu: Any = None, selectionneur: Callable | None = None) -> dict:
-    """Note un sélectionneur sur les trois composants d'un jeu d'or."""
+    """Note un sélectionneur sur les trois composants d'un jeu d'or.
+
+    Le sélectionneur est **obligatoire** : évaluer sans chemin réel reviendrait à noter
+    le jeu contre sa propre référence (toujours 10/10, aucune mesure). Pour valider la
+    cohérence interne du jeu, utiliser :func:`evaluer_reference`.
+    """
     if selectionneur is None:
-        selectionneur = lambda cas: cas.attendu()
+        raise TypeError(
+            "selectionneur obligatoire : evaluer() sans chemin réel n'est pas une mesure "
+            "(voir evaluer_reference pour l'auto-contrôle du jeu)")
     if not callable(selectionneur):
         raise TypeError("selectionneur : appelable attendu")
     cas_liste = _liste_cas(charger() if jeu is None else jeu)
@@ -632,5 +740,17 @@ def evaluer(jeu: Any = None, selectionneur: Callable | None = None) -> dict:
     }
 
 
+def evaluer_reference(jeu: Any = None) -> dict:
+    """Auto-contrôle du jeu : la référence doit passer à 100 %, sinon le jeu est incohérent.
+
+    Ce résultat n'est **pas** une mesure du système : il vérifie seulement que le jeu
+    d'or est bien formé. Il est marqué ``mode: reference`` pour ne jamais être confondu
+    avec une évaluation réelle.
+    """
+    resultat = evaluer(jeu, lambda cas: cas.attendu())
+    resultat["mode"] = "reference"
+    return resultat
+
+
 if __name__ == "__main__":
-    print(json.dumps(evaluer(), ensure_ascii=False, indent=2))
+    print(json.dumps(evaluer_reference(), ensure_ascii=False, indent=2))

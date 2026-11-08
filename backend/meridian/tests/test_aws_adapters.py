@@ -165,6 +165,7 @@ def test_scheduler_traduit_source_schedule_sans_secret():
     requete = client.creations[0]
     assert resultat["nom"] == requete["Name"] and resultat["etat"] == "active"
     assert requete["ScheduleExpression"] == "rate(2 minutes)"
+    assert aws_adapters.PlanificateurEventBridge("role", "target").expression(60) == "rate(1 minute)"
     assert requete["State"] == "ENABLED"
     assert requete["FlexibleTimeWindow"] == {"Mode": "OFF"}
     assert json.loads(requete["Target"]["Input"]) == {

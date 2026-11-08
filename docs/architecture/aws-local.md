@@ -7,6 +7,10 @@ ci-dessous ajoute une vérification de bout en bout contre moto, sans credential
 Services couverts : Secrets Manager (`GetSecretValue`), SQS (`SendMessage`), EventBridge (`PutEvents`) et
 EventBridge Scheduler (`CreateSchedule` / `UpdateSchedule`).
 
+> **Secrets :** Vault est le coffre principal de Méridian (`vault:…`). Ce harness
+> vérifie seulement l’**adaptateur AWS optionnel** Secrets Manager ; il ne remplace
+> pas Vault.
+
 ## Option 1 — moto en mémoire (recommandée)
 
 ```bash
@@ -47,6 +51,21 @@ backend/.venv/bin/python scripts/aws-local-smoke.py --endpoint "$AWS_ENDPOINT_UR
 Variables d'endpoint lues par les adapters : `AWS_ENDPOINT_URL`, ou par service
 `AWS_ENDPOINT_URL_SECRETS_MANAGER`, `AWS_ENDPOINT_URL_SQS`, `AWS_ENDPOINT_URL_EVENTS`,
 `AWS_ENDPOINT_URL_SCHEDULER`. En production, ne pas définir ces variables.
+
+## Option 3 — Floci, laboratoire AWS local complet
+
+Floci va au-delà du smoke Secrets/SQS/EventBridge/Scheduler : le stack
+[`infra/floci`](../../infra/floci) crée aussi S3, KMS, CloudWatch Logs et les rôles
+IAM, et `scripts/floci-smoke.py` exerce les adapters Méridian contre ces ressources.
+
+```bash
+scripts/dev-floci.sh up
+eval "$(scripts/dev-floci.sh env)"
+scripts/dev-floci.sh smoke
+```
+
+Le détail de l'architecture locale, des ressources et des limites (Bedrock reste un
+stub) est dans [floci-aws-local.md](floci-aws-local.md).
 
 ## Passage sur un vrai compte AWS
 

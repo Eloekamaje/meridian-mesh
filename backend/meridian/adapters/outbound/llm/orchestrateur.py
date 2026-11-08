@@ -3,7 +3,9 @@
 Le Mesh est une source consultable, jamais le point de départ obligatoire. L'agent choisit lui-même entre
 résoudre une application existante, mobiliser les jumeaux pertinents, concevoir une application absente, ou
 répondre directement. Aucune classification d'intention par expression régulière ni liste d'applications codée
-en dur : la décision appartient au modèle, dans le cadre de la politique système.
+en dur : la décision appartient au modèle, dans le cadre de la politique système. Exception assumée (D4) : les
+écritures de la boucle canonique ne relèvent pas du modèle — leur détection est déterministe
+(`meridian.application.intention_action`) et leur exécution exige une approbation explicite du Harness.
 """
 from __future__ import annotations
 
@@ -21,8 +23,10 @@ from meridian.adapters.outbound import deepseek
 from meridian.domain import capacites
 from meridian.domain import dossier_raisonnement as domaine_dossier
 from meridian.domain import identite
-from meridian.adapters.outbound.llm.harness import Harness
+from meridian.adapters.outbound.llm.harness import ErreurHarness, Harness, OutilNonApprouve
+from meridian.adapters.outbound.postgres import actions_canoniques
 from meridian.application import noyau_raisonnement
+from meridian.application.intention_action import intention_action
 from meridian.adapters.outbound.llm import critique_raisonnement
 
 journal = logging.getLogger("meridian.orchestrateur")
@@ -56,6 +60,8 @@ Politique :
   - d'une architecture cible ou d'une application inexistante, appelle `concevoir_architecture`.
   Ne te contente pas de décrire en texte le diagramme demandé. Quand un schéma est produit, limite le texte
   à 3 à 5 points utiles, sans répéter la structure déjà dessinée.
+- Pour un diagnostic, un état des lieux, un écart ou une décision, mobilise le jumeau concerné puis laisse-le
+  composer avec `repondre_pedagogiquement` ; ne réécris pas sa réponse et n'écris pas le schéma à la main.
 - Pour une question générale ou un conseil sans application, réponds toi-même, sans inventer de fait
   d'entreprise, de preuve, de citation ou de chiffre.
 - Pour toute énumération de dépendances, d'interfaces, de règles ou d'éléments de données, cite la
@@ -196,16 +202,35 @@ async def _appeler(callback, *arguments):
 
 
 def registre_defaut() -> capacites.RegistreCapacites:
-    """Le catalogue du tour : adaptateurs historiques + web DeepSeek si la clé est disponible."""
+    """Le catalogue du tour : adaptateurs historiques, actions canoniques déclarées (D4) et
+    web DeepSeek si la clé est disponible."""
     manifestes = list(capacites.manifestes_integres())
+    manifestes.extend(capacites.manifestes_action_canonique())
     if deepseek.disponible_web():
         manifestes.extend(deepseek.manifestes_web())
     return capacites.RegistreCapacites(manifestes)
 
 
+def _adaptateurs_actions(*, conn=None, dsn=None, tenant=None, acteur=None) -> dict:
+    """Les exécutants des écritures canoniques, liés à une connexion ouverte ou à un DSN.
+
+    Sans connexion ni DSN, aucun callable n'est déclaré : les manifestes restent inscrits au
+    catalogue (gouvernance) mais le Harness refuse l'appel comme outil non enregistré.
+    """
+    tenant_effectif = str(tenant or os.environ.get("JUMEAU_TENANT") or "local")
+    try:
+        if conn is not None:
+            return actions_canoniques.adaptateurs(conn, tenant_effectif, acteur)
+        if dsn:
+            return actions_canoniques.adaptateurs_dsn(dsn, tenant_effectif, acteur)
+    except Exception:
+        journal.warning("actions canoniques : adaptateurs indisponibles", exc_info=True)
+    return {}
+
+
 def construire_harness(jumeaux, selection, mobiliser, concevoir, contexte, *,
                        registre=None, approuves=(), tenant=None, acteur=None,
-                       perimetre=None, budget=None) -> Harness:
+                       perimetre=None, budget=None, dsn=None, conn=None) -> Harness:
     """Relie le registre capacitaire aux trois callables historiques, sans code arbitraire."""
     visibles = _identifiants(jumeaux)
     budget = budget if budget is not None else _Budget(6)
@@ -295,16 +320,18 @@ def construire_harness(jumeaux, selection, mobiliser, concevoir, contexte, *,
         contexte.reponse = reponse
         return "proposition prête"
 
+    adaptateurs = {
+        "lister_applications": lister_applications,
+        "resoudre_application": resoudre_application,
+        "mobiliser_jumeaux": mobiliser_jumeaux,
+        "concevoir_architecture": concevoir_architecture,
+        "rechercher_web": rechercher_web,
+        "lire_page": lire_page,
+    }
+    adaptateurs.update(_adaptateurs_actions(conn=conn, dsn=dsn, tenant=tenant, acteur=acteur))
     return Harness(
         registre if registre is not None else registre_defaut(),
-        {
-            "lister_applications": lister_applications,
-            "resoudre_application": resoudre_application,
-            "mobiliser_jumeaux": mobiliser_jumeaux,
-            "concevoir_architecture": concevoir_architecture,
-            "rechercher_web": rechercher_web,
-            "lire_page": lire_page,
-        },
+        adaptateurs,
         approuves=approuves,
         tenant=tenant,
         acteur=acteur,
@@ -315,13 +342,14 @@ def construire_harness(jumeaux, selection, mobiliser, concevoir, contexte, *,
 
 
 def outils(jumeaux, selection, mobiliser, concevoir, contexte, budget_max=6, *,
-           registre=None, approuves=(), tenant=None, acteur=None, perimetre=None):
+           registre=None, approuves=(), tenant=None, acteur=None, perimetre=None,
+           dsn=None, conn=None):
     """Les outils visibles du tour, liés au registre capacitaire et au budget."""
     budget = _Budget(budget_max)
     harnais = construire_harness(
         jumeaux, selection, mobiliser, concevoir, contexte,
         registre=registre, approuves=approuves, tenant=tenant, acteur=acteur,
-        perimetre=perimetre, budget=budget,
+        perimetre=perimetre, budget=budget, dsn=dsn, conn=conn,
     )
     tour = harnais.outils(contexte, budget, selection, tenant=tenant,
                           acteur=acteur, perimetre=perimetre, approuves=approuves)
@@ -350,17 +378,180 @@ def _generale(texte) -> dict:
     }
 
 
+# --- D4 — Flore opérateur : intentions d'action → objets canoniques via le Harness ----------
+#
+# La détection est volontairement déterministe (verbe d'action + entité de la boucle, dans
+# `meridian.application.intention_action`) : le modèle ne devient jamais l'autorité sur une
+# écriture. Une intention devient un plan de manifestes (`etapes`), chacun exécuté par le
+# Harness — qui exige son nom dans `approuves`. Sans approbation : aucune écriture, un refus
+# audité, une réponse « action proposée ».
+
+_LIBELLES_OBJETS = {"SITUATION": "Situation", "INVESTIGATION": "Investigation",
+                    "DECISION": "Décision", "INITIATIVE": "Initiative"}
+
+
+def _arguments_resolus(arguments, resultats) -> dict:
+    """Substitue « $n » par l'identifiant du résultat de l'étape n."""
+    resolus = {}
+    for cle, valeur in (arguments or {}).items():
+        if (isinstance(valeur, str) and valeur.startswith("$")
+                and valeur[1:].isdigit() and int(valeur[1:]) < len(resultats)):
+            source = resultats[int(valeur[1:])]
+            resolus[cle] = _champ(source, "id")
+        else:
+            resolus[cle] = valeur
+    return resolus
+
+
+def _objet_public(ligne) -> dict:
+    """L'objet canonique créé, cité dans la réponse : type, id, statut — traçable."""
+    ligne = ligne if isinstance(ligne, dict) else {}
+    donnees = ligne.get("donnees") if isinstance(ligne.get("donnees"), dict) else {}
+    return {
+        "id": ligne.get("id"),
+        "type": ligne.get("type") or donnees.get("type"),
+        "mode": ligne.get("mode"),
+        "titre": ligne.get("titre") or donnees.get("titre") or "",
+        "statut": ligne.get("statut") or donnees.get("statut") or "",
+        "version": ligne.get("version"),
+    }
+
+
+def _reponse_refus_action(manifestes) -> str:
+    liste = " et ".join(f"`{nom}`" for nom in manifestes)
+    return (
+        f"Action proposée, à approuver : {liste} écrirait dans la boucle canonique. "
+        "Approuve explicitement ces manifestes dans la portée et je les exécuterai ; "
+        "pour l'instant, rien n'a été écrit."
+    )
+
+
+def _reponse_objets_crees(objets) -> str:
+    cites = "; ".join(
+        f"{_LIBELLES_OBJETS.get(objet.get('type'), objet.get('type') or 'objet')} "
+        f"**{objet.get('id')}** (statut {objet.get('statut') or '—'})"
+        for objet in objets
+    )
+    titre = objets[-1].get("titre") if objets else ""
+    suffixe = f" — « {titre} »" if titre else ""
+    return f"J'ai écrit dans la boucle canonique : {cites}{suffixe}."
+
+
+async def _tour_action(question, intention, contexte, *, approuves=(), tenant=None,
+                       acteur=None, perimetre=None, dsn=None, conn=None) -> dict:
+    """Exécute une intention d'action : chaque manifeste passe par le Harness, sous approbation.
+
+    Le refus et l'exécution sont audités par le Harness (`contexte.audit`) ; la réponse cite
+    l'objet canonique créé (type, id, statut) ou dit explicitement ce qui attend approbation.
+    """
+    tenant_effectif = str(tenant or os.environ.get("JUMEAU_TENANT") or "local")
+    registre = capacites.RegistreCapacites(capacites.manifestes_action_canonique())
+    harnais = Harness(
+        registre,
+        _adaptateurs_actions(conn=conn, dsn=dsn, tenant=tenant_effectif, acteur=acteur),
+        approuves=approuves, tenant=tenant_effectif, acteur=acteur, perimetre=perimetre,
+        audit=contexte.audit)
+    manifeste = intention["manifeste"]
+
+    def enveloppe(corps):
+        corps.setdefault("preuves", [])
+        corps.setdefault("contributions", [])
+        corps.setdefault("jumeaux_participants", [])
+        corps["orchestration"] = {
+            "outils": list(contexte.outils),
+            "audit": list(contexte.audit),
+            "erreurs": list(contexte.erreurs),
+        }
+        corps.setdefault("action", {})
+        corps["action"].setdefault("manifeste", manifeste)
+        return corps
+
+    if not intention.get("complet"):
+        return enveloppe({
+            "comportement": "clarifier",
+            "reponse": (f"Pour `{manifeste}`, il me manque {intention['manquant']}. "
+                        "Précise-le et je reprendrai ; rien n'a été écrit."),
+            "action": {"statut": "incomplet", "manquant": intention["manquant"]},
+        })
+
+    etapes = intention["etapes"]
+    manquants = [nom for nom, _ in etapes if nom not in harnais.approuves]
+    if manquants:
+        try:  # le refus est audité par le Harness, comme toute écriture refusée
+            await harnais.appeler(manquants[0], {})
+        except ErreurHarness:
+            pass
+        return enveloppe({
+            "comportement": "signaler",
+            "reponse": _reponse_refus_action([nom for nom, _ in etapes]),
+            "a_approuver": [
+                {"manifeste": nom, "capacite": "agir",
+                 "arguments": {cle: valeur for cle, valeur in args.items()
+                               if not (isinstance(valeur, str) and valeur.startswith("$"))}}
+                for nom, args in etapes],
+            "action": {"statut": "a_approuver",
+                       "manifestes": [nom for nom, _ in etapes]},
+        })
+
+    resultats: list = []
+    for nom, args in etapes:
+        arguments = _arguments_resolus(args, resultats)
+        try:
+            # l'exécutant est synchrone : le thread préserve la boucle d'événements,
+            # l'audit du Harness reste tracé dans `contexte.audit`.
+            resultat = await asyncio.to_thread(harnais._appeler_sync, nom, arguments)
+        except OutilNonApprouve:  # défense en profondeur : le pré-contrôle doit déjà l'avoir vu
+            return enveloppe({
+                "comportement": "signaler",
+                "reponse": _reponse_refus_action([nom]),
+                "a_approuver": [{"manifeste": nom, "capacite": "agir", "arguments": arguments}],
+                "action": {"statut": "a_approuver", "manifestes": [nom]},
+            })
+        except Exception as erreur:
+            contexte.erreurs.append(f"{nom} : {type(erreur).__name__}")
+            return enveloppe({
+                "comportement": "signaler",
+                "reponse": (f"`{nom}` a été refusé à l'exécution : {erreur}. "
+                            "Vérifie les références de l'objet et réessaie."),
+                "action": {"statut": "erreur", "erreur": type(erreur).__name__},
+            })
+        _noter(contexte, nom, arguments)
+        resultats.append(resultat)
+
+    objets = [_objet_public(resultat) for resultat in resultats]
+    return enveloppe({
+        "comportement": "agir",
+        "reponse": _reponse_objets_crees(objets),
+        "objets": objets,
+        "action": {"statut": "executee", "manifestes": [nom for nom, _ in etapes],
+                   "objets": objets},
+    })
+
+
 async def executer(question, *, jumeaux, selection=None, mobiliser, concevoir,
-                   modele=None, budget_max=6, sans_questions=False, session=None) -> dict | None:
+                   modele=None, budget_max=6, sans_questions=False, session=None,
+                   approuves=(), tenant=None, acteur=None, perimetre=None,
+                   dsn=None, conn=None, detecter_action=True) -> dict | None:
     """Exécute un tour d'agent général ; None si aucun modèle n'est disponible ou si le tour échoue.
 
     La réponse d'un outil complet (mobilisation ou conception) est prioritaire sur le texte final du modèle.
+    Une intention d'action canonique (D4) court-circuite le modèle : le plan est déterministe
+    et chaque manifeste exige son approbation dans `approuves`. `detecter_action=False`
+    sert au texte enrichi du noyau (déjà passé par la détection sur la demande brute).
     """
+    contexte = Contexte()
+    intention = intention_action(question) if detecter_action else None
+    if intention is not None:
+        return await _tour_action(
+            question, intention, contexte, approuves=approuves, tenant=tenant,
+            acteur=acteur, perimetre=perimetre,
+            dsn=dsn or os.environ.get("JUMEAU_PG_DSN"), conn=conn)
     configure = _modele(modele)
     if configure is None:
         return None
-    contexte = Contexte()
-    tour = outils(jumeaux, selection, mobiliser, concevoir, contexte, budget_max)
+    tour = outils(jumeaux, selection, mobiliser, concevoir, contexte, budget_max,
+                  approuves=approuves, tenant=tenant, acteur=acteur, perimetre=perimetre,
+                  dsn=dsn or os.environ.get("JUMEAU_PG_DSN"), conn=conn)
     try:
         gestionnaire = agent.gestionnaire_session(session) if session else None
         conversation = (agent.SummarizingConversationManager(
@@ -392,6 +583,12 @@ async def executer(question, *, jumeaux, selection=None, mobiliser, concevoir,
         return enrichir(contexte.reponse)
     texte = agent.sans_raisonnement(resultat) if resultat is not None else ""
     return enrichir(_generale(texte)) if texte else None
+
+
+def _sans_chevrons(valeur: str) -> str:
+    """Neutralise les chevrons dans une valeur injectée dans un délimiteur <donnee> :
+    un document contenant « </donnee> » ne peut plus rompre l'enveloppe du prompt."""
+    return valeur.replace("<", "＜").replace(">", "＞")
 
 
 def _contexte_pour_prompt(cadre, plan, contexte=None) -> str:
@@ -446,9 +643,9 @@ def _contexte_pour_prompt(cadre, plan, contexte=None) -> str:
         if graphe_global.get("synthese"):
             lignes.append(f"- Synthèse du graphe : {graphe_global['synthese']}")
     for document in (contexte.get("documentation") or [])[:4]:
-        titre = str((document or {}).get("titre") or "").strip()
-        locator = str((document or {}).get("locator") or "").strip()
-        extrait = str((document or {}).get("extrait") or "").strip()
+        titre = _sans_chevrons(str((document or {}).get("titre") or "").strip())
+        locator = _sans_chevrons(str((document or {}).get("locator") or "").strip())
+        extrait = _sans_chevrons(str((document or {}).get("extrait") or "").strip())
         if extrait:
             lignes.append(
                 f"- <donnee source=\"{locator}\">Documentation {titre} : {extrait[:1000]}</donnee>")
@@ -472,16 +669,31 @@ def _contexte_pour_prompt(cadre, plan, contexte=None) -> str:
 
 async def executer_raisonne(question, *, jumeaux, selection=None, mobiliser, concevoir,
                             modele=None, budget_max=6, contexte=None, strict=False,
-                            session=None) -> dict | None:
+                            session=None, approuves=(), tenant=None, acteur=None,
+                            perimetre=None, dsn=None, conn=None) -> dict | None:
     """Exécute un tour sous le noyau de raisonnement.
 
     Le noyau peut interrompre avant l'appel au modèle pour demander une clarification. Si le tour
     continue, la réponse générée est critiquée et le dossier est attaché à la réponse. Le mode
     `strict=False` conserve le livrable partiel pour l'interface ; les gates restent visibles.
+
+    Une intention d'action canonique (D4) court-circuite le noyau : le plan est déterministe
+    et chaque manifeste d'écriture exige son nom dans `approuves` — le modèle n'y a pas
+    d'autorité. `approuves`, `tenant` et `acteur` peuvent aussi venir du `contexte`.
     """
     contexte_effectif = dict(contexte or {})
     contexte_effectif.setdefault("twin_ids", list(selection or ()))
     contexte_effectif.setdefault("question", str(question or ""))
+    approuves = tuple(approuves or ()) or tuple(contexte_effectif.get("approuves") or ())
+    tenant = tenant or contexte_effectif.get("tenant")
+    acteur = acteur or contexte_effectif.get("acteur")
+    intention = intention_action(question)
+    if intention is not None:
+        contexte_action = Contexte()
+        return await _tour_action(
+            question, intention, contexte_action, approuves=approuves, tenant=tenant,
+            acteur=acteur, perimetre=perimetre,
+            dsn=dsn or os.environ.get("JUMEAU_PG_DSN"), conn=conn)
     collecte = []
 
     async def mobiliser_collecte(ids, mission):
@@ -497,7 +709,8 @@ async def executer_raisonne(question, *, jumeaux, selection=None, mobiliser, con
             enrichie, jumeaux=jumeaux, selection=selection, mobiliser=mobiliser_collecte,
             concevoir=concevoir, modele=modele, budget_max=budget or budget_max,
             sans_questions=bool(contexte_effectif.get("sans_questions")),
-            session=session)
+            session=session, approuves=approuves, tenant=tenant, acteur=acteur,
+            perimetre=perimetre, dsn=dsn, conn=conn, detecter_action=False)
 
     critique = None
     if str(os.environ.get("JUMEAU_CRITIQUE_CROISEE") or "").lower() in {"1", "true", "oui", "yes"}:

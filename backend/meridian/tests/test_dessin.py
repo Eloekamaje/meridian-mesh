@@ -1,7 +1,9 @@
 """Schémas dessinés par le harness : l'agent choisit et nomme, chaque flèche est fondée, le harness écrit le Mermaid."""
+import asyncio
 import json
+
 from meridian.adapters.outbound.connectors import appels
-from meridian.adapters.outbound.llm import flore
+from meridian.adapters.outbound.llm import agent, flore
 from meridian.domain import schemas
 
 LIGNES = {"app/routes.py#L64-L64": ["    slug = get_slug_for_article(article.title)"],
@@ -57,6 +59,51 @@ def test_flux_avec_groupes_et_styles_poses_par_le_harness():
     assert 'depot -->|"écrit"| base' in d.mermaid and "linkStyle 0 stroke:#34D399" in d.mermaid
 
 
+def test_les_statuts_sont_affiches_dans_les_boites_et_la_structure():
+    d = dessin()
+    d.dessiner("architecture", "Socle", [
+        {"id": "home", "libelle": "Accueil", "statut": "partiel"},
+        {"id": "board", "libelle": "Tableau", "statut": "absent"},
+    ], [{"de": "home", "vers": "board", "fondement": "c:812"}])
+    assert "Accueil ⚠️" in d.mermaid
+    assert "Tableau ⛔" in d.mermaid
+    assert d.structure["boites"] == [
+        {"id": "home", "libelle": "Accueil", "statut": "partiel"},
+        {"id": "board", "libelle": "Tableau", "statut": "absent"},
+    ]
+
+
+def test_une_boite_annotee_sans_fleche_reste_visible_en_architecture():
+    d = dessin()
+    d.dessiner("architecture", "Socle", [
+        {"id": "home", "libelle": "Accueil", "statut": "partiel"},
+        {"id": "api", "libelle": "API", "statut": "ok"},
+        {"id": "task", "libelle": "Tâche", "statut": "absent"},
+    ], [{"de": "home", "vers": "api", "fondement": "c:812"}])
+    assert "Tâche ⛔" in d.mermaid
+    assert {b["id"] for b in d.structure["boites"]} == {"home", "api", "task"}
+
+
+def test_une_architecture_sans_fleche_montre_les_statuts():
+    d = dessin()
+    rapport = d.dessiner("architecture", "État", [
+        {"id": "home", "libelle": "Accueil", "statut": "partiel"},
+        {"id": "task", "libelle": "Tâche", "statut": "absent"},
+    ], [])
+    assert "Schéma prêt (0 flèche(s))" in rapport
+    assert "Accueil ⚠️" in d.mermaid and "Tâche ⛔" in d.mermaid
+    assert "statuts déclarés" in d.legende
+
+
+def test_une_fleche_ne_peut_pas_boucler_sur_la_meme_boite():
+    d = dessin()
+    rapport = d.dessiner("architecture", "Socle", BOITES, [
+        {"de": "route", "vers": "route", "fondement": "c:812"},
+    ])
+    assert "boucler" in rapport
+    assert d.mermaid is None
+
+
 def test_un_flux_a_une_seule_entree_ou_il_est_refuse():
     d = dessin()
     rapport = d.dessiner("flux", "", BOITES, [
@@ -83,6 +130,82 @@ def test_rien_de_fonde_rien_de_dessine_et_type_inconnu():
     assert "rien n'est dessiné" in d.dessiner("flux", "", BOITES, [{"de": "route", "vers": "base", "fondement": "x"}])
     assert d.bloc() == "" and d.structure is None
     assert "Type inconnu" in d.dessiner("camembert", "", BOITES, [])
+
+
+def test_la_question_pedagogique_est_detectee():
+    assert flore.question_pedagogique("Fais un état pédagogique de TaskAgile")
+    assert flore.question_pedagogique("Quel est l'écart entre le nom et le réel ?")
+    assert flore.question_pedagogique("Décide du prochain incrément")
+    assert not flore.question_pedagogique("Qui appelle cette fonction ?")
+
+
+class _AgentFactice:
+    """Agent minimal : enregistre les messages ; aucun tour de modèle n'est nécessaire au gate."""
+
+    def __init__(self):
+        self.messages = []
+
+    async def invoke_async(self, message):
+        self.messages.append(message)
+        return "brouillon"
+
+
+def composer_pedagogique(d):
+    """La composition que le modèle doit produire en appelant l'outil."""
+    outil = agent.outil_reponse_pedagogique(d, agent.Budget())
+    return outil(
+        verdict="Le socle est réel ; le reste est une maquette.", type="architecture", titre="Socle",
+        boites=[{"id": "route", "libelle": "Route", "statut": "ok"},
+                {"id": "depot", "libelle": "Dépôt", "statut": "absent"}],
+        fleches=[{"de": "route", "vers": "depot", "fondement": "c:812"}],
+        groupes=[{"libelle": "Front-end", "ids": ["route"]}, {"libelle": "Backend", "ids": ["depot"]}],
+        constats=[{"fait": "Une preuve.", "preuve": "c:812"}],
+        consequence="La décision change.", decision="Livrer le socle.",
+        conditions=["Condition A", "Condition B"], tests=["Test 1", "Test 2", "Test 3"],
+    )
+
+
+def test_le_gate_ne_rejoue_pas_et_garde_le_texte_manuel():
+    d = dessin()
+    a = _AgentFactice()
+    texte = asyncio.run(flore.garantir_reponse_pedagogique(
+        a, "Fais un diagnostic", d, "réponse libre"))
+    assert a.messages == []
+    assert texte == "réponse libre"
+
+
+def test_le_gate_prend_la_composition_de_l_outil():
+    d = dessin()
+    composer_pedagogique(d)
+    a = _AgentFactice()
+    texte = asyncio.run(flore.garantir_reponse_pedagogique(
+        a, "Fais un diagnostic", d, "réponse libre"))
+    assert a.messages == []
+    assert texte == d.reponse_pedagogique and "```mermaid" in texte
+
+
+def test_le_gate_ne_rejoue_pas_hors_diagnostic():
+    d = dessin()
+    a = _AgentFactice()
+    assert asyncio.run(flore.garantir_reponse_pedagogique(
+        a, "Qui appelle cette fonction ?", d, "texte")) == "texte"
+    assert a.messages == []
+
+
+def test_un_schema_ascii_est_retire_quand_le_vrai_schema_existe():
+    texte = "Avant.\n\n```\nInscription ✅ → POST /api/registrations → MySQL ❔\n```\n\nAprès."
+    sortie = flore._sans_schema_ascii(texte)
+    assert "Inscription" not in sortie
+    assert "Avant." in sortie and "Après." in sortie
+    mermaid = "Avant.\n\n```mermaid\nflowchart LR\nA[✅] --> B\n```\n\nAprès."
+    assert "flowchart" in flore._sans_schema_ascii(mermaid)
+
+
+def test_le_schema_deja_compose_n_est_pas_insere_deux_fois():
+    d = dessin()
+    d.dessiner("architecture", "", BOITES, [{"de": "route", "vers": "depot", "fondement": "c:812"}])
+    texte = "Verdict.\n\n" + d.bloc() + "\n\nSuite."
+    assert flore.avec_schema(texte, d) == texte
 
 
 def test_le_schema_prend_place_apres_le_premier_paragraphe():

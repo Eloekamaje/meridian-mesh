@@ -82,6 +82,8 @@ TABLES = (
     "identity_decision",
     "objet_entreprise",
     "outil_audit",
+    "evenement_episode",
+    "evenement_requete",
     "valeur",
     "memoire_durable",
     "memoire_prospective",

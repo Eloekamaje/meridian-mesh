@@ -93,9 +93,13 @@ backend/meridian/adapters/outbound
         ├── redis               SSE, état des tours, rate limiting
         ├── connectors          Git, Confluence, SharePoint, ServiceNow, Datadog, OTLP, CBM…
         ├── llm                 DeepSeek, Bedrock, planificateurs, exploration
-        ├── aws                 SQS/EventBridge/S3/Secrets Manager optionnels
+        ├── aws                 SQS/EventBridge/S3/Secrets Manager (adaptateur optionnel)
         └── stockage            artefacts d’index locaux ou S3/MinIO
 ```
+
+Les secrets d’accès sont lus dans **HashiCorp Vault** (`vault:…`) par
+`connectors/naissance.py`. Secrets Manager n’est qu’un adaptateur AWS optionnel ;
+Vault reste le coffre principal.
 
 ### 2.2 Stockages et source de vérité
 
@@ -730,6 +734,8 @@ scripts/reconcilier-liens.py --help
 scripts/worker-reconciliation.py --help
 scripts/evaluer-liens.py --help
 scripts/decouvrir-liens-composants.py --help
+scripts/dev-floci.sh up          # laboratoire AWS local Floci
+scripts/dev-floci.sh smoke
 ```
 
 ---
@@ -742,7 +748,9 @@ Au 6 novembre 2026 :
   l’environnement (timing heartbeat, quota LLM simulé, données `demo`, périmètre de naissance) ;
 - **`pyflakes` propre** sur les fichiers modifiés récents ;
 - suites dédiées : liens, CBM, chemins, secrets, lecture de fichiers, JNDI, mémoire
-  prospective, outcomes, retrieval, naissance, réconciliation.
+  prospective, outcomes, retrieval, naissance, réconciliation ;
+- **Floci smoke** : S3, SQS, EventBridge, Scheduler, Secrets, KMS, CloudWatch Logs et IAM
+  (11/11, adapters Méridian). Bedrock reste un stub et n’est pas validé par Floci.
 
 Commandes :
 
@@ -780,6 +788,8 @@ la suite locale.
 | Mémoire prospective | **solide** | API + retrieval ; worker de rappel à brancher |
 | Réutilisation des Learnings | **solide** | mesure manuelle/API ; enregistrement automatique à brancher |
 | Harness agentique | **opérationnel** | planificateur LLM live à valider |
+| Adapters AWS / Floci local | **opérationnel en local** | S3, SQS, EventBridge, Scheduler, Secrets Manager (adaptateur), KMS, Logs, IAM ; Bedrock stub, VPC non routé |
+| Secrets d’accès | **solide** | Vault KV v2 (`vault:…`) pour les PAT ; Secrets Manager optionnel ; auth IAM/Agent Vault à câbler |
 | Planification capacité/prévision | **opérationnel** | connecteurs réels à valider |
 | RLS multi-tenant | **disponible, non activé par défaut** | activation explicite et workers à vérifier |
 | Auth proxy/OIDC | **disponible** | `demo` interdit en production |
@@ -890,6 +900,8 @@ dépôt. Une ligne sans test est explicitement une cible ou une couverture parti
 ## 12. Références
 
 - [Écarts avec la vision](ecarts-vision.md)
+- [Architecture cible AWS](architecture-cible-aws.md)
+- [Laboratoire AWS local Floci](floci-aws-local.md)
 - [Architecture maître](../MERIDIAN_Architecture_Master_v1.md)
 - [Diagramme d’architecture actuelle](../diagrammes/architecture-etat-actuel.html)
 - [Diagramme des mémoires](../diagrammes/memoire-agent.html)

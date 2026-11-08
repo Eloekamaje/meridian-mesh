@@ -15,7 +15,7 @@ import urllib.request
 from urllib.parse import quote, urlencode
 
 from meridian.adapters.outbound.connectors.naissance import (
-    NOM_VALIDE, _hote_autorise, resoudre_secret,
+    CoffreIndisponible, NOM_VALIDE, SecretAbsent, _hote_autorise, resoudre_secret,
 )
 
 # ponytail: 300 dépôts les plus récemment mis à jour ; recherche GitHub si un compte en voit plus.

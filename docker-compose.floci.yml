@@ -1,0 +1,49 @@
+# Laboratoire AWS local pour Méridian.
+#
+# Floci expose les services AWS sur http://127.0.0.1:4566. Ce compose est
+# volontairement séparé du compose de démonstration : il ne démarre pas Méridian
+# et ne remplace aucun défaut de production.
+#
+#   docker compose -f docker-compose.floci.yml up -d
+#   scripts/dev-floci.sh apply
+#
+# Le socket Docker est monté pour les services Floci qui exécutent un vrai
+# conteneur (RDS, Neptune, ECS, EKS, Lambda, OpenSearch, UI). Il peut être retiré
+# si le laboratoire se limite à S3/SQS/EventBridge/Scheduler/Secrets/IAM/Logs.
+name: meridian-floci
+
+services:
+  floci:
+    image: ${FLOCI_IMAGE:-floci/floci:latest}
+    container_name: meridian-floci
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4566:4566"
+    environment:
+      FLOCI_DEFAULT_REGION: ${FLOCI_REGION:-ca-central-1}
+      FLOCI_DEFAULT_ACCOUNT_ID: ${FLOCI_ACCOUNT_ID:-000000000000}
+      FLOCI_STORAGE_MODE: ${FLOCI_STORAGE_MODE:-persistent}
+      # localhost.floci.io résout vers 127.0.0.1 sur l'hôte et vers Floci dans
+      # le réseau Compose (alias ci-dessous). C'est ce qui permet à la console
+      # sidecar de joindre Floci sans casser les URL renvoyées aux clients hôte.
+      FLOCI_HOSTNAME: ${FLOCI_HOSTNAME:-localhost.floci.io}
+      FLOCI_BASE_URL: ${FLOCI_BASE_URL:-http://localhost.floci.io:4566}
+      FLOCI_TLS_ENABLED: "false"
+      FLOCI_SERVICES_UI_ENABLED: "true"
+      FLOCI_SERVICES_UI_BIND_ADDRESS: "127.0.0.1"
+      FLOCI_SERVICES_UI_PORT: "4500"
+    volumes:
+      - floci_data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      floci:
+        aliases:
+          - localhost.floci.io
+
+networks:
+  floci:
+    name: meridian-floci
+
+volumes:
+  floci_data:
+    name: meridian-floci-data

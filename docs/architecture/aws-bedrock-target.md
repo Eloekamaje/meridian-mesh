@@ -1,5 +1,9 @@
 # Cible AWS et Bedrock — architecture de préparation
 
+> **Cible consolidée :** voir [architecture-cible-aws.md](architecture-cible-aws.md)
+> pour l’architecture AWS performance/agentique, les SLO et le plan de migration.
+> Ce document reste la référence Bedrock et résidence.
+
 ## Décision directrice
 
 Méridian reste un **système de raisonnement et de preuve**. Bedrock est le fournisseur de modèles
@@ -24,7 +28,7 @@ Aucun appel DeepSeek/OpenAI ne doit subsister dans le profil AWS bancaire.
 - RDS Postgres, Neptune ou Neo4j managé pour la projection ;
 - S3 pour pièces et artefacts ;
 - SQS/EventBridge pour outbox et ingestion ;
-- Secrets Manager + KMS ;
+- Vault (coffre principal) + KMS ; Secrets Manager en adaptateur optionnel ;
 - CloudWatch, X-Ray/OTel, CloudTrail ;
 - Bedrock via endpoint VPC/PrivateLink.
 
@@ -60,7 +64,7 @@ modèle/région ; elle ne doit jamais élargir les droits.
 ## Réseau et sécurité
 
 - Aucun accès public aux bases ni à Bedrock ;
-- VPC endpoints : Bedrock, S3, Secrets Manager, KMS, CloudWatch ;
+- VPC endpoints : Bedrock, S3, KMS, CloudWatch ; Vault via endpoint privé/VPN selon hébergement ;
 - IAM least privilege : `bedrock:InvokeModel`, `bedrock:Converse` sur les ARN des modèles ;
 - pas de clé API dans les variables d'environnement AWS ;
 - chiffrement KMS au repos et TLS en transit ;
@@ -76,7 +80,7 @@ modèle/région ; elle ne doit jamais élargir les droits.
 | Chunks, embeddings, communautés | RDS Postgres + pgvector si activé |
 | Pièces et artefacts | S3 |
 | Sessions et événements | Redis/ElastiCache + SQS |
-| Secrets | Secrets Manager |
+| Secrets | Vault KV v2 (principal) ; Secrets Manager optionnel |
 
 ## Workers
 
@@ -167,7 +171,8 @@ Conséquences :
 - les profils `global.*` et `us.*` routent hors Canada et ne doivent pas être utilisés
   pour le profil bancaire canadien ;
 - Floci ne peut pas valider cette matrice : son Bedrock Runtime est un stub. Voir
-  [`floci-evaluation.md`](floci-evaluation.md).
+  [`floci-evaluation.md`](floci-evaluation.md) et le laboratoire de plomberie
+  [`floci-aws-local.md`](floci-aws-local.md).
 
 Détail du pilote et résultats :
 [`plugin/meridian/evals/conversations/PILOT-2026-11-06-bedrock.md`](../../plugin/meridian/evals/conversations/PILOT-2026-11-06-bedrock.md).

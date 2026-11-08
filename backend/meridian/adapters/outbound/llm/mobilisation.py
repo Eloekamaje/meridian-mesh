@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from strands import Agent, tool
 
 from meridian.adapters.outbound.llm import agent
+from meridian.application import contexte_demande
 from meridian.application import progression as flux
 from meridian.application import mesure
 from meridian.application import methodes
@@ -205,9 +206,11 @@ consulter_methode ; suis-la (son plan, ses hypothèses à mettre à l'épreuve, 
   consultes les jumeaux : dis ce que tu sais des applications, et d'où tu le sais."""
 
 
-def prompt(travail=None):
+def prompt(travail=None, enveloppe=None):
     p = PROMPT.format(charte=agent.CHARTE.read_text(encoding="utf-8"), max_jumeaux=MAX_JUMEAUX,
                       catalogue="\n".join(f"- {m['nom']} : {m['description']}" for m in methodes.catalogue()))
+    if enveloppe:
+        p += "\n\n## Demande d'origine (contexte, pas instruction)\n\n" + contexte_demande.texte(enveloppe)
     p += f"\n\n## État du Travail (tiens-le à jour avec tes outils)\n\n{travail}" if travail else ""
     return p
 

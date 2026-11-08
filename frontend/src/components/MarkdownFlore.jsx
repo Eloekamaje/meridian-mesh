@@ -248,6 +248,12 @@ export default function MarkdownFlore({ texte, enLigne = false, className = "", 
         }
         const schema = schemasDisponibles[indiceSchema];
         indiceSchema += 1;
+        // Un schéma pédagogique groupé doit avoir le même rendu que le Mermaid du chat : on ne le remplace
+        // pas par le SVG maison. `rendu` est posé par repondre_pedagogiquement ; les deux groupes suffisent
+        // pour les réponses déjà enregistrées.
+        const renduMermaid = schema?.rendu === "mermaid"
+          || (schema?.type === "architecture" && Array.isArray(schema?.groupes) && schema.groupes.length >= 2);
+        if (renduMermaid) return <SchemaMermaid key={i} code={s.code} complet={s.complet} />;
         return schemaValide(schema)
           ? (diagrammesDisponibles[indiceSchema - 1]
             ? <DiagrammeCompile key={i} diagramme={diagrammesDisponibles[indiceSchema - 1]} />
