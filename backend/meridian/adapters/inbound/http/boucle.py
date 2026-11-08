@@ -505,6 +505,16 @@ async def _corps_contribution_hypothese(
     return await _corps_strict(request, CreationContributionHypothese)
 
 
+async def _corps_expert(request: Request) -> CreationExpert:
+    return await _corps_strict(request, CreationExpert)
+
+
+async def _corps_changement_statut_contribution(
+    request: Request,
+) -> ChangementStatutContribution:
+    return await _corps_strict(request, ChangementStatutContribution)
+
+
 def _openapi_corps(modele_corps: type[BaseModel]) -> dict:
     return {
         "requestBody": {
@@ -520,6 +530,8 @@ _OPENAPI_CORPS_CONTRIBUTION_INVESTIGATION = _openapi_corps(
     CreationContributionInvestigation)
 _OPENAPI_CORPS_CONTRIBUTION_HYPOTHESE = _openapi_corps(
     CreationContributionHypothese)
+_OPENAPI_CORPS_EXPERT = _openapi_corps(CreationExpert)
+_OPENAPI_CORPS_STATUT_CONTRIBUTION = _openapi_corps(ChangementStatutContribution)
 
 
 class ComparaisonScenarios(_CorpsTransition):
@@ -1247,10 +1259,11 @@ async def changer_statut_hypothese(
 
 
 @router.post("/experts", status_code=201,
-             response_model=ReponseTransition, responses=_REPONSES_TRANSITION)
+             response_model=ReponseTransition, responses=_REPONSES_TRANSITION,
+             openapi_extra=_OPENAPI_CORPS_EXPERT)
 async def creer_expert(
-    payload: CreationExpert,
     request: Request,
+    payload: CreationExpert = Depends(_corps_expert),
     idempotence: None = Depends(_refuser_idempotence),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),
@@ -1375,11 +1388,12 @@ async def lister_contributions(
 
 
 @router.post("/contributions/{cid}/statut", response_model=ReponseTransition,
-             responses=_REPONSES_TRANSITION)
+             responses=_REPONSES_TRANSITION,
+             openapi_extra=_OPENAPI_CORPS_STATUT_CONTRIBUTION)
 async def changer_statut_contribution(
     cid: str,
-    payload: ChangementStatutContribution,
     request: Request,
+    payload: ChangementStatutContribution = Depends(_corps_changement_statut_contribution),
     idempotence: None = Depends(_refuser_idempotence),
     x_espace: str | None = Header(None, max_length=64),
     x_tenant: str | None = Header(None, alias="X-Tenant"),

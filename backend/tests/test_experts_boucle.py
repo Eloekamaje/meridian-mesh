@@ -26,7 +26,6 @@ from meridian.adapters.inbound.http import boucle as boucle_routes
 from meridian.adapters.outbound.postgres import (
     boucle,
     depot,
-    entreprise_depot,
     objets_exploitation,
     rls,
 )
@@ -408,6 +407,16 @@ def test_muer_contribution_rend_un_nouvel_objet_avec_motif_et_preuve():
     assert contribution.statut == "PROPOSED"
 
 
+def test_muer_contribution_transmet_le_mode_sans_muter_la_source():
+    contribution = construction_objets_exploitation.nouvelle_contribution(
+        _expert_row(), investigation=_investigation_row(), contenu="Contribution")
+    changee = construction_objets_exploitation.muer_contribution(
+        contribution, "ACCEPTED", mode="CONFIRMED")
+
+    assert changee.mode == "CONFIRMED"
+    assert contribution.mode == "DECLARED"
+
+
 def test_muer_contribution_valide_les_statuts():
     contribution = construction_objets_exploitation.nouvelle_contribution(
         _expert_row(), investigation=_investigation_row(), contenu="Contribution")
@@ -451,6 +460,18 @@ def test_nouvel_expert_exige_nom_et_domaine():
         construction_objets_exploitation.nouvel_expert("", "Domaine", tenant_id=TENANT)
     with pytest.raises(ObjetsExploitationInvalide):
         construction_objets_exploitation.nouvel_expert("Nom", "", tenant_id=TENANT)
+
+
+def test_enregistrer_boucle_refuse_expert_et_contribution():
+    expert = construction_objets_exploitation.nouvel_expert(
+        "Expert", "Cartes", tenant_id=TENANT)
+    contribution = construction_objets_exploitation.nouvelle_contribution(
+        expert, investigation=_investigation_row(), contenu="Contribution")
+
+    for objet in (expert, contribution):
+        with pytest.raises(boucle.BoucleInvalide):
+            boucle.enregistrer_boucle(
+                None, TENANT, objets=[objet], as_dict=False)
 
 
 # --------------------------------------------------------------------------- #
@@ -620,6 +641,7 @@ def test_creer_contribution_refuse_une_hypothese_hors_investigation():
 
 @pytest.mark.parametrize("statut", [
     "CLOSED", "CLOSE", "CLOTUREE", "FERMEE", "ARCHIVED", "ARCHIVEE", "closed",
+    "COMPLETED", "COMPLETED_WITH_GAPS", "BUDGET_EXHAUSTED", "FAILED", "CANCELLED",
 ])
 def test_creer_contribution_refuse_une_investigation_fermee(statut):
     store = _Store([_investigation_row(statut=statut), _expert_row()])
@@ -993,6 +1015,26 @@ def test_post_expert_traduit_les_erreurs(monkeypatch):
         assert "Traceback" not in reponse.text
 
 
+def test_post_expert_json_malforme_repond_400(monkeypatch):
+    client = _client(monkeypatch)
+    reponse = client.post(
+        f"{BASE}/experts",
+        content=b"{pas du json",
+        headers={"Content-Type": "application/json"},
+    )
+    assert reponse.status_code == 400, reponse.text
+
+
+def test_post_expert_refuse_un_corps_json_non_objet_en_400(monkeypatch):
+    client = _client(monkeypatch)
+    reponse = client.post(
+        f"{BASE}/experts",
+        content=b"[]",
+        headers={"Content-Type": "application/json"},
+    )
+    assert reponse.status_code == 400, reponse.text
+
+
 def test_post_expert_refuse_une_cle_d_idempotence(monkeypatch):
     client = _client(monkeypatch)
     reponse = client.post(
@@ -1349,6 +1391,26 @@ def test_post_statut_contribution_traduit_404_409_422_400_503(monkeypatch):
         reponse = client.post(
             f"{BASE}/contributions/contribution-1/statut", json={"vers": "ACCEPTED"})
         assert reponse.status_code == statut
+
+
+def test_post_statut_contribution_json_malforme_repond_400(monkeypatch):
+    client = _client(monkeypatch)
+    reponse = client.post(
+        f"{BASE}/contributions/contribution-1/statut",
+        content=b"{pas du json",
+        headers={"Content-Type": "application/json"},
+    )
+    assert reponse.status_code == 400, reponse.text
+
+
+def test_post_statut_contribution_refuse_un_corps_json_non_objet_en_400(monkeypatch):
+    client = _client(monkeypatch)
+    reponse = client.post(
+        f"{BASE}/contributions/contribution-1/statut",
+        content=b"[]",
+        headers={"Content-Type": "application/json"},
+    )
+    assert reponse.status_code == 400, reponse.text
 
 
 def test_post_statut_contribution_refuse_une_cle_d_idempotence(monkeypatch):
@@ -1762,9 +1824,8 @@ def test_pg_second_tenant_ne_voit_ni_ne_relie_experts_et_contributions(monkeypat
 
 
 @besoin_pg
-def test_pg_liste_filtre_et_tri_deterministe(monkeypatch):
+def test_pg_liste_filtre_et_tri_deterministe():
     tenant = f"c5e-{uuid.uuid4().hex[:10]}"
-    client = _client_pg(monkeypatch)
     try:
         with psycopg.connect(DSN, autocommit=True) as conn:
             depot.appliquer_schema(conn)
@@ -1813,6 +1874,130 @@ def test_pg_liste_filtre_et_tri_deterministe(monkeypatch):
             experts_cartes = commandes_boucle.lister_experts(
                 boucle, conn, tenant, domaine="Cartes")
             assert [objet["id"] for objet in experts_cartes] == [expert_1.objet["id"]]
+    finally:
+        _nettoyer(tenant)
+
+
+@besoin_pg
+def test_pg_derivation_hypothese_seule_a_la_persistance():
+    """Un appel direct avec hypothesis_id seul dérive investigation_id et le lien inverse."""
+    tenant = f"c5e-{uuid.uuid4().hex[:10]}"
+    try:
+        with psycopg.connect(DSN, autocommit=True) as conn:
+            depot.appliquer_schema(conn)
+            _pg_situation(tenant)
+            _pg_investigation(tenant)
+        expert = _pg_expert(tenant)
+        hypothese = _pg_hypothese(tenant, "inv-c5e")
+
+        contribution = {
+            "id": "contribution-hypothese-seule",
+            "tenant_id": tenant,
+            "famille": "investigation",
+            "type": "EXPERT_CONTRIBUTION",
+            "mode": "DECLARED",
+            **DATES,
+            "expert_id": expert.objet["id"],
+            "hypothesis_id": hypothese.objet["id"],
+            "contenu": "Contribution dérivée à la persistance",
+            "statut": "PROPOSED",
+        }
+        with psycopg.connect(DSN) as conn:
+            enregistre = objets_exploitation.enregistrer_objets_exploitation(
+                conn, tenant, contribution)
+
+        assert enregistre["donnees"]["hypothesis_id"] == hypothese.objet["id"]
+        assert enregistre["donnees"]["investigation_id"] == "inv-c5e"
+
+        with psycopg.connect(DSN) as conn:
+            investigation = boucle.lire_boucle(conn, tenant, "inv-c5e", as_dict=True)
+            liste = objets_exploitation.lister_objets_exploitation(
+                conn, tenant, type_="EXPERT_CONTRIBUTION",
+                investigation_id="inv-c5e")
+        assert investigation["donnees"]["expert_ids"] == [expert.objet["id"]]
+        assert [objet["id"] for objet in liste] == ["contribution-hypothese-seule"]
+    finally:
+        _nettoyer(tenant)
+
+
+@pytest.mark.parametrize(("champ", "valeur"), [
+    ("nom", "ghp_abcdefghijkl"),
+    ("sources_autorisees", ["ghp_abcdefghijkl"]),
+])
+def test_pg_secret_dans_expert_refuse_sans_ecriture(champ, valeur):
+    tenant = f"c5e-{uuid.uuid4().hex[:10]}"
+    try:
+        with psycopg.connect(DSN, autocommit=True) as conn:
+            depot.appliquer_schema(conn)
+
+        expert = {
+            "id": "expert-secret",
+            "tenant_id": tenant,
+            "famille": "investigation",
+            "type": "EXPERT",
+            "mode": "DECLARED",
+            **DATES,
+            "nom": "Camille Martin",
+            "domaine": "Cartes",
+            champ: valeur,
+            "statut": "ACTIVE",
+        }
+        with psycopg.connect(DSN) as conn, pytest.raises(ObjetInvalide):
+            objets_exploitation.enregistrer_objets_exploitation(
+                conn, tenant, expert)
+
+        with psycopg.connect(DSN) as conn:
+            nombre = conn.execute(
+                "SELECT count(*) FROM objet_entreprise "
+                "WHERE tenant_id = %s AND type = 'EXPERT'",
+                (tenant,),
+            ).fetchone()[0]
+        assert nombre == 0
+    finally:
+        _nettoyer(tenant)
+
+
+@pytest.mark.parametrize(("champ", "valeur"), [
+    ("contenu", "ghp_abcdefghijkl"),
+    ("constats", ["ghp_abcdefghijkl"]),
+    ("inconnues", ["ghp_abcdefghijkl"]),
+    ("preuves", ["ghp_abcdefghijkl"]),
+])
+def test_pg_secret_dans_contribution_refuse_sans_ecriture(champ, valeur):
+    tenant = f"c5e-{uuid.uuid4().hex[:10]}"
+    try:
+        with psycopg.connect(DSN, autocommit=True) as conn:
+            depot.appliquer_schema(conn)
+            _pg_situation(tenant)
+            _pg_investigation(tenant)
+        expert = _pg_expert(tenant)
+
+        contribution = {
+            "id": "contribution-secret",
+            "tenant_id": tenant,
+            "famille": "investigation",
+            "type": "EXPERT_CONTRIBUTION",
+            "mode": "DECLARED",
+            **DATES,
+            "expert_id": expert.objet["id"],
+            "investigation_id": "inv-c5e",
+            "contenu": "Contribution avec secret",
+            champ: valeur,
+            "statut": "PROPOSED",
+        }
+        with psycopg.connect(DSN) as conn, pytest.raises(ObjetInvalide):
+            objets_exploitation.enregistrer_objets_exploitation(
+                conn, tenant, contribution)
+
+        with psycopg.connect(DSN) as conn:
+            nombre = conn.execute(
+                "SELECT count(*) FROM objet_entreprise "
+                "WHERE tenant_id = %s AND type = 'EXPERT_CONTRIBUTION'",
+                (tenant,),
+            ).fetchone()[0]
+            investigation = boucle.lire_boucle(conn, tenant, "inv-c5e", as_dict=True)
+        assert nombre == 0
+        assert investigation["donnees"]["expert_ids"] == []
     finally:
         _nettoyer(tenant)
 

@@ -477,6 +477,7 @@ def test_creer_hypothese_refuse_une_source_qui_n_est_pas_une_investigation():
 
 @pytest.mark.parametrize("statut", [
     "CLOSED", "CLOSE", "CLOTUREE", "FERMEE", "ARCHIVED", "ARCHIVEE", "closed",
+    "COMPLETED", "COMPLETED_WITH_GAPS", "BUDGET_EXHAUSTED", "FAILED", "CANCELLED",
 ])
 def test_creer_hypothese_refuse_une_investigation_fermee(statut):
     store = _Store([_investigation_row(statut=statut)])

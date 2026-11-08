@@ -428,6 +428,10 @@ STATUT_HYPOTHESE_INITIAL = "OPEN"
 MODE_HYPOTHESE_INITIAL = "PROPOSED"
 STATUTS_INVESTIGATION_FERMES = frozenset({
     "CLOSED", "CLOSE", "CLOTUREE", "FERMEE", "ARCHIVED", "ARCHIVEE",
+    # États terminaux réellement produits par le runtime d'investigation
+    # (adapters/outbound/postgres/investigations.py) : une contribution ne doit pas
+    # pouvoir être ajoutée après la fin d'un run.
+    "COMPLETED", "COMPLETED_WITH_GAPS", "BUDGET_EXHAUSTED", "FAILED", "CANCELLED",
 })
 _CHAMPS_SERVEUR_HYPOTHESE = ("statut", "id")
 
