@@ -21,8 +21,11 @@ __all__ = [
     "CHAMPS_TEMPORELS_OBLIGATOIRES", "ModeleInvalide",
     "famille_de", "est_twin_non_applicatif", "transitions_connaissance",
     "transition_autorisee", "verifier_transition",
-    "ObjetEntreprise", "Twin", "Claim", "Relation", "Situation", "Opportunity", "Risk",
-    "Investigation", "Decision", "Initiative", "Outcome", "Learning", "Source", "Domain",
+    "STATUTS_UNKNOWN", "STATUTS_HYPOTHESIS", "STATUTS_NEED", "TRANSITIONS_NEED",
+    "STATUTS_BELIEF", "SOURCES_BELIEF", "TRANSITIONS_BELIEF",
+    "ObjetEntreprise", "Twin", "Claim", "Relation", "Unknown", "Situation", "Opportunity",
+    "Risk", "Need", "Investigation", "Hypothesis", "Decision", "Initiative", "Outcome",
+    "Learning", "Source", "Domain", "Belief",
 ]
 
 
@@ -77,8 +80,10 @@ TYPES_PAR_FAMILLE = {
         "ORGANIZATION", "PRODUCT", "DATA_DOMAIN", "RESOURCE", "SUPPLIER", "ECOSYSTEM",
     ),
     "sources_preuves": ("SOURCE", "ARTIFACT", "OBSERVATION", "EVIDENCE"),
-    "connaissance": ("CLAIM", "RELATION", "RELATIONSHIP", "UNKNOWN", "CONTRADICTION"),
-    "emergence": ("SIGNAL", "SITUATION", "EXPRESSION", "OPPORTUNITY", "RISK"),
+    "connaissance": (
+        "CLAIM", "RELATION", "RELATIONSHIP", "UNKNOWN", "CONTRADICTION", "BELIEF",
+    ),
+    "emergence": ("SIGNAL", "SITUATION", "EXPRESSION", "OPPORTUNITY", "RISK", "NEED"),
     "investigation": ("INVESTIGATION", "HYPOTHESIS", "EXPERT", "EXPERT_CONTRIBUTION"),
     "decision": ("SCENARIO", "DECISION", "INITIATIVE"),
     "resultat_apprentissage": ("OUTCOME", "LEARNING"),
@@ -99,6 +104,33 @@ STATUTS_CLAIM = frozenset({
     "DECLARED", "OBSERVED", "INFERRED", "PROPOSED", "CONFIRMED", "SUPPORTED",
     "STRENGTHENED", "MATURE", "CONTESTED", "INVALIDATED", "HISTORICAL",
 })
+
+STATUTS_UNKNOWN = ("OUVERT", "EN_COURS", "RESOLU", "ABANDONNE")
+STATUTS_HYPOTHESIS = ("EMISE", "TESTEE", "RETENUE", "REFUTEE")
+STATUTS_NEED = ("OUVERT", "QUALIFIE", "CORROBORE", "ADRESSE", "REFUTE", "PERIME")
+STATUTS_BELIEF = ("ACTIF", "REVISE", "CADUC")
+SOURCES_BELIEF = ("RAISONNEMENT", "DETECTEUR", "HUMAIN")
+
+# Cycle de vie d'un besoin (plan Cognition IA, B6) : le chemin heureux est
+# OUVERT → QUALIFIE → CORROBORE → ADRESSE ; REFUTE et PERIME finissent la vie
+# active mais peuvent rouvrir un besoin (version+1, motif obligatoire).
+TRANSITIONS_NEED = {
+    "OUVERT": ("QUALIFIE", "REFUTE", "PERIME"),
+    "QUALIFIE": ("CORROBORE", "REFUTE", "PERIME"),
+    "CORROBORE": ("ADRESSE", "PERIME"),
+    "ADRESSE": ("PERIME",),
+    "REFUTE": ("OUVERT", "PERIME"),
+    "PERIME": ("OUVERT",),
+}
+
+# Cycle de vie d'un belief (plan Cognition IA, C2/D2) : un belief ACTIF peut être
+# révisé ou devenir caduc ; un belief REVISE peut être revalidé (ACTIF) ou
+# devenir caduc ; CADUC est terminal — une croyance morte ne ressuscite pas.
+TRANSITIONS_BELIEF = {
+    "ACTIF": ("REVISE", "CADUC"),
+    "REVISE": ("ACTIF", "CADUC"),
+    "CADUC": (),
+}
 
 ETATS_CONNAISSANCE = (
     "observation",
@@ -158,6 +190,15 @@ def _normaliser_statut(valeur: Any) -> str:
 
 def _normaliser_etat(valeur: Any) -> str:
     return _normaliser_cle(valeur, minuscule=True)
+
+
+def _statut_dans(valeur: Any, attendus: tuple[str, ...], defaut: str) -> str:
+    statut = _normaliser_statut(valeur) or defaut
+    if statut not in attendus:
+        raise ModeleInvalide(
+            f"statut inconnu : {valeur!r} (attendus : {', '.join(attendus)})"
+        )
+    return statut
 
 
 def _texte_obligatoire(valeur: Any, champ: str) -> str:
@@ -581,6 +622,103 @@ class Relation(ObjetEntreprise):
 
 
 @dataclass
+class Unknown(ObjetEntreprise):
+    """Besoin épistémique : une question sans réponse qui bloque une conclusion.
+
+    Tout Unknown est créé avec une intention de résolution ; passée son échéance
+    sans résolution, il remonte dans le fil d'attention plutôt que d'être enfoui.
+    """
+
+    famille: str = "connaissance"
+    type: str = "UNKNOWN"
+    question: str = ""
+    bloque: str = ""
+    statut: str = "OUVERT"
+    origine: str = ""
+    tentatives: list[str] = field(default_factory=list)
+    resolution_claim_id: str | None = None
+
+    def __post_init__(self) -> None:
+        self.question = _texte_obligatoire(self.question, "question")
+        super().__post_init__()
+        self.bloque = str(self.bloque or "").strip()
+        self.statut = _statut_dans(self.statut, STATUTS_UNKNOWN, "OUVERT")
+        self.origine = str(self.origine or "").strip()
+        self.tentatives = [
+            str(t).strip() for t in _liste(self.tentatives) if str(t).strip()
+        ]
+        self.resolution_claim_id = _identifiant_lien(
+            self.resolution_claim_id, "resolution_claim_id", obligatoire=False
+        )
+
+
+@dataclass
+class Belief(ObjetEntreprise):
+    """Inférence révisable persistée : un énoncé tenu pour vrai, adossé à des claims.
+
+    Distinct d'un Claim (assertion factuelle sourcée) : un Belief est une conclusion
+    du raisonnement, d'un détecteur ou d'un humain, dont la confiance s'érode sans
+    revalidation (`revalide_le`) et qui peut être révisé (`REVISE`) ou devenir caduc
+    (`CADUC`). Un belief issu du raisonnement exige au moins un claim d'appui :
+    sans ancrage vérifiable, c'est du texte, pas une inférence.
+    """
+
+    famille: str = "connaissance"
+    type: str = "BELIEF"
+    mode: str = "INFERRED"
+    enonce: str = ""
+    sujet_id: str | None = None
+    source: str = "RAISONNEMENT"
+    claim_ids: list[str] = field(default_factory=list)
+    revalide_le: str | None = None
+    statut: str = "ACTIF"
+    dossier_id: str | None = None
+    motif_revision: str = ""
+
+    def __post_init__(self) -> None:
+        self.enonce = _texte_obligatoire(self.enonce, "enonce")
+        super().__post_init__()
+        self.sujet_id = _identifiant_lien(self.sujet_id, "sujet_id", obligatoire=False)
+        self.source = _normaliser_statut(self.source) or "RAISONNEMENT"
+        if self.source not in SOURCES_BELIEF:
+            raise ModeleInvalide(
+                f"source de belief inconnue : {self.source!r} (attendues : {', '.join(SOURCES_BELIEF)})"
+            )
+        self.claim_ids = _liste_ids(self.claim_ids, "claim_ids")
+        if self.source == "RAISONNEMENT" and not self.claim_ids:
+            raise ModeleInvalide(
+                "un BELIEF de source RAISONNEMENT exige au moins un claim lié"
+            )
+        self.revalide_le = _normaliser_instant(self.revalide_le, "revalide_le") or self.cree_le
+        self.statut = _statut_dans(self.statut, STATUTS_BELIEF, "ACTIF")
+        self.dossier_id = _identifiant_lien(self.dossier_id, "dossier_id", obligatoire=False)
+        self.motif_revision = str(self.motif_revision or "").strip()
+
+    def revalider(self, instant: Any = None) -> "Belief":
+        """Revalide le belief : `revalide_le` repart et le statut redevient ACTIF.
+
+        La revalidation n'est pas une transition du cycle : elle rafraîchit un
+        belief ACTIF ou ramène un belief REVISE. Un belief CADUC ne peut pas être
+        revalidé — il faut en créer un nouveau.
+        """
+        if self.statut == "CADUC":
+            raise ModeleInvalide("un BELIEF CADUC ne peut pas être revalidé")
+        self.revalide_le = (
+            _normaliser_instant(instant, "revalide_le") or self.cree_le
+        )
+        self.statut = "ACTIF"
+        return self
+
+    def revoir(self, motif: Any) -> "Belief":
+        """Marque le belief REVISE : sa confiance effective tombe à zéro jusqu'à revalidation."""
+        if self.statut == "CADUC":
+            raise ModeleInvalide("un BELIEF CADUC ne peut pas être révisé")
+        self.motif_revision = _texte_obligatoire(motif, "motif de révision")
+        self.statut = "REVISE"
+        return self
+
+
+@dataclass
 class Situation(ObjetEntreprise):
     """Phénomène émergent reliant plusieurs Twins, signaux, Claims ou impacts."""
 
@@ -723,6 +861,90 @@ def _probabilite(valeur: Any, champ: str) -> float | None:
 
 
 @dataclass
+class Need(ObjetEntreprise):
+    """Besoin ouvert : un écart observé entre un état réel et un état requis.
+
+    Distinct d'un Claim (« ceci est vrai »), d'un Unknown (« on ne sait pas ») et
+    d'une Opportunity (« ceci pourrait être mieux »). Un besoin mûrit en
+    OPPORTUNITY ou RISK — jamais directement en décision. `refutable_par` est
+    obligatoire : un besoin qui ne dit pas ce qui le tuerait n'est pas un besoin.
+    """
+
+    famille: str = "emergence"
+    type: str = "NEED"
+    titre: str = ""
+    porteur: str = ""
+    exigence: str = ""
+    ecart: str = ""
+    statut: str = "OUVERT"
+    signature: str = ""
+    refutable_par: str = ""
+    situation_id: str | None = None
+    hypothese_ids: list[str] = field(default_factory=list)
+    unknown_id: str | None = None
+    opportunity_id: str | None = None
+    risk_id: str | None = None
+    intention_id: str | None = None
+    twin_ids: list[str] = field(default_factory=list)
+    claim_ids: list[str] = field(default_factory=list)
+    motif_reouverture: str = ""
+
+    def __post_init__(self) -> None:
+        self.refutable_par = _texte_obligatoire(self.refutable_par, "refutable_par")
+        super().__post_init__()
+        self.titre = str(self.titre or "").strip()
+        self.porteur = str(self.porteur or "").strip()
+        self.exigence = str(self.exigence or "").strip()
+        self.ecart = str(self.ecart or "").strip()
+        self.statut = _statut_dans(self.statut, STATUTS_NEED, "OUVERT")
+        self.signature = str(self.signature or "").strip()
+        self.situation_id = _identifiant_lien(
+            self.situation_id, "situation_id", obligatoire=False
+        )
+        self.hypothese_ids = _liste_ids(self.hypothese_ids, "hypothese_ids")
+        self.unknown_id = _identifiant_lien(self.unknown_id, "unknown_id", obligatoire=False)
+        self.opportunity_id = _identifiant_lien(
+            self.opportunity_id, "opportunity_id", obligatoire=False
+        )
+        self.risk_id = _identifiant_lien(self.risk_id, "risk_id", obligatoire=False)
+        self.intention_id = _identifiant_lien(
+            self.intention_id, "intention_id", obligatoire=False
+        )
+        self.twin_ids = _liste_ids(self.twin_ids, "twin_ids")
+        self.claim_ids = _liste_ids(self.claim_ids, "claim_ids")
+        self.motif_reouverture = str(self.motif_reouverture or "").strip()
+        if self.statut in {"QUALIFIE", "CORROBORE"} and not self.porteur:
+            raise ModeleInvalide(f"un NEED {self.statut} exige un porteur")
+
+    def transiter(self, vers: Any, motif: str | None = None) -> "Need":
+        """Fait transiter le besoin selon TRANSITIONS_NEED ; l'objet est muté.
+
+        QUALIFIE exige porteur, exigence, ecart, refutable_par et au moins un
+        claim lié ; CORROBORE exige un porteur. La réouverture depuis REFUTE ou
+        PERIME exige un motif et incrémente la version.
+        """
+        destination = _normaliser_statut(vers)
+        autorisees = TRANSITIONS_NEED.get(self.statut, ())
+        if destination not in autorisees:
+            raise ModeleInvalide(
+                f"transition NEED refusée : {self.statut} → {destination or vers}"
+            )
+        if self.statut in {"REFUTE", "PERIME"} and destination == "OUVERT":
+            self.motif_reouverture = _texte_obligatoire(motif, "motif de réouverture")
+            self.version += 1
+        if destination in {"QUALIFIE", "CORROBORE"} and not self.porteur:
+            raise ModeleInvalide(f"un NEED {destination} exige un porteur")
+        if destination == "QUALIFIE":
+            for champ in ("exigence", "ecart", "refutable_par"):
+                if not getattr(self, champ):
+                    raise ModeleInvalide(f"un NEED QUALIFIE exige {champ}")
+            if not self.claim_ids:
+                raise ModeleInvalide("un NEED QUALIFIE exige au moins un claim lié")
+        self.statut = destination
+        return self
+
+
+@dataclass
 class Investigation(ObjetEntreprise):
     """Espace structuré de compréhension : question, périmètre, hypothèses et preuves."""
 
@@ -753,6 +975,36 @@ class Investigation(ObjetEntreprise):
         self.ouverte_le = _normaliser_instant(self.ouverte_le, "ouverte_le") or self.observe_le
         self.close_le = _normaliser_instant(self.close_le, "close_le")
         self.synthese = str(self.synthese or "").strip()
+
+
+@dataclass
+class Hypothesis(ObjetEntreprise):
+    """Hypothèse rivale d'une investigation : une hypothèse sans rivale est une
+    conclusion déguisée. TESTEE ou RETENUE exige au moins une rivale déclarée."""
+
+    famille: str = "investigation"
+    type: str = "HYPOTHESIS"
+    enonce: str = ""
+    statut: str = "EMISE"
+    rival_ids: list[str] = field(default_factory=list)
+    preuve_discriminante: str = ""
+    situation_id: str | None = None
+    need_id: str | None = None
+
+    def __post_init__(self) -> None:
+        self.enonce = _texte_obligatoire(self.enonce, "enonce")
+        super().__post_init__()
+        self.statut = _statut_dans(self.statut, STATUTS_HYPOTHESIS, "EMISE")
+        self.rival_ids = _liste_ids(self.rival_ids, "rival_ids")
+        self.preuve_discriminante = str(self.preuve_discriminante or "").strip()
+        self.situation_id = _identifiant_lien(
+            self.situation_id, "situation_id", obligatoire=False
+        )
+        self.need_id = _identifiant_lien(self.need_id, "need_id", obligatoire=False)
+        if self.statut in {"TESTEE", "RETENUE"} and not self.rival_ids:
+            raise ModeleInvalide(
+                f"une HYPOTHESIS {self.statut} exige au moins une rivale"
+            )
 
 
 @dataclass

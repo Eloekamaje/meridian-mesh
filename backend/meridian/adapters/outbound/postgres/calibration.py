@@ -5,10 +5,20 @@ schéma). Une prédiction non résolue reste hors de toute mesure : le Brier et 
 tranches de confiance ne portent que sur les prédictions dont ``outcome`` est un
 booléen. Toutes les lectures et écritures sont filtrées par tenant ; aucun
 secret n'est journalisé ni renvoyé.
+
+C4 : les prédictions datées (``sujet``, ``echeance``, ``source``, ``statut``,
+``issue`` — colonnes ajoutées par le schéma) sont résolues contre les outcomes
+réels à leur échéance. ``enregistrer_prediction`` ouvre une prédiction datée ;
+``resoudre`` appelé sans identifiant rejoue, pour chaque prédiction échue, la
+même requête bornée que :mod:`resolution_besoins` sur la source de la
+prédiction ; ``score_brier`` rend le Brier avec son intervalle de Wilson —
+jamais un nombre sans ``n`` (``None`` sous le seuil). Sur un schéma sans les
+colonnes C4, l'écriture et la résolution retombent sur les sept colonnes
+historiques ; la résolution en masse refuse alors explicitement.
 """
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -16,6 +26,10 @@ import hashlib
 import math
 from typing import Any
 import uuid
+
+from meridian.adapters.outbound.postgres import (
+    detecteurs_besoins, entreprise_depot, signatures_besoins,
+)
 
 try:
     from psycopg.rows import dict_row as _dict_row
@@ -26,14 +40,18 @@ __all__ = [
     "CalibrationInvalide",
     "Prediction",
     "PredictionIntrouvable",
+    "MIN_RESOLUTIONS",
     "brier",
     "enregistrer",
+    "enregistrer_prediction",
     "identifiant_prediction",
     "lire",
     "lister",
     "rapport",
     "resoudre",
+    "resoudre_echues",
     "resume",
+    "score_brier",
 ]
 
 _COLONNES = (
@@ -45,9 +63,13 @@ _COLONNES = (
     "cree_le",
     "resolue_le",
 )
+_COLONNES_ETENDUES = _COLONNES + ("sujet", "echeance", "source", "statut", "issue")
 _SELECT = "SELECT " + ", ".join(_COLONNES) + " FROM prediction_calibration"
+_SELECT_ETENDU = (
+    "SELECT " + ", ".join(_COLONNES_ETENDUES) + " FROM prediction_calibration")
 _BORNES = ((0.0, 0.2), (0.2, 0.4), (0.4, 0.6), (0.6, 0.8), (0.8, 1.0))
 _TAILLE_MAX = 1000
+MIN_RESOLUTIONS = 10  # rapport refusé sous ce seuil : jamais un nombre sans n
 
 
 class CalibrationInvalide(ValueError):
@@ -60,7 +82,13 @@ class PredictionIntrouvable(LookupError):
 
 @dataclass(frozen=True)
 class Prediction:
-    """Une prédiction datée, tenant-scopée, avec son outcome éventuel."""
+    """Une prédiction datée, tenant-scopée, avec son outcome éventuel.
+
+    Les champs C4 (``sujet``, ``echeance``, ``source``, ``statut``, ``issue``)
+    sont remplis par :func:`enregistrer_prediction`, :func:`resoudre` et le
+    rapport de :func:`resoudre_echues` ; les lectures historiques (``lire``,
+    ``lister``) ne portent que les sept colonnes de base.
+    """
 
     id: str
     tenant: str
@@ -69,6 +97,11 @@ class Prediction:
     outcome: bool | None = None
     cree_le: Any = None
     resolue_le: Any = None
+    sujet: str = ""
+    echeance: Any = None
+    source: str = ""
+    statut: str = ""
+    issue: str | None = None
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -187,6 +220,34 @@ def _maintenant() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _date_ou_none(valeur: Any, champ: str) -> datetime | None:
+    """Date ISO ou ``datetime`` → ``datetime`` UTC ; ``None`` si absent, erreur sinon."""
+    if valeur is None:
+        return None
+    if isinstance(valeur, datetime):
+        instant = valeur
+    else:
+        try:
+            instant = datetime.fromisoformat(str(valeur).replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise CalibrationInvalide(f"{champ} : date ISO attendue") from exc
+    if instant.tzinfo is None:
+        instant = instant.replace(tzinfo=timezone.utc)
+    return instant
+
+
+def _minimum(valeur: Any) -> int:
+    if isinstance(valeur, bool):
+        raise CalibrationInvalide("minimum doit être un entier positif")
+    try:
+        borne = int(valeur)
+    except (TypeError, ValueError) as exc:
+        raise CalibrationInvalide("minimum doit être un entier positif") from exc
+    if borne < 1:
+        raise CalibrationInvalide("minimum doit être un entier positif")
+    return borne
+
+
 def _est_sqlite(conn: Any) -> bool:
     return type(conn).__module__.split(".", 1)[0] == "sqlite3"
 
@@ -270,6 +331,70 @@ def _prediction(ligne: Any) -> Prediction | None:
     )
 
 
+def _etendues(conn: Any) -> bool:
+    """Les colonnes C4 (``sujet``…) existent-elles ? Une absence n'est pas fatale :
+    l'écriture retombe sur les sept colonnes historiques."""
+    try:
+        if _est_sqlite(conn):
+            _executer(conn, "SELECT sujet FROM prediction_calibration WHERE 1 = 0")
+        else:
+            with conn.transaction():  # savepoint : un schéma ancien ne casse pas l'appelant
+                _executer(conn, "SELECT sujet FROM prediction_calibration WHERE 1 = 0")
+    except Exception:
+        return False
+    return True
+
+
+def _inserer(
+    conn: Any, tenant: str, identifiant: str, decision: str, confiance: float,
+    resultat: bool | None, cree_le: datetime, resolue_le: datetime | None, *,
+    sujet: str = "", echeance: datetime | None = None, source: str = "",
+) -> None:
+    """Insert tenant-scopé ; colonnes C4 quand le schéma les porte, sinon repli."""
+    if _etendues(conn):
+        statut = "resolue" if resultat is not None else "ouverte"
+        issue = None if resultat is None else ("succes" if resultat else "echec")
+        _executer(
+            conn,
+            "INSERT INTO prediction_calibration "
+            "(id, tenant_id, decision_id, confidence, outcome, cree_le, resolue_le, "
+            "sujet, echeance, source, statut, issue) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (identifiant, tenant, decision, confiance, resultat, cree_le, resolue_le,
+             sujet or None, echeance, source or None, statut, issue),
+        )
+        return
+    _executer(
+        conn,
+        "INSERT INTO prediction_calibration "
+        "(id, tenant_id, decision_id, confidence, outcome, cree_le, resolue_le) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+        (identifiant, tenant, decision, confiance, resultat, cree_le, resolue_le),
+    )
+
+
+def _marquer_resolue(
+    conn: Any, tenant: str, identifiant: str, resultat: bool, resolue_le: datetime,
+) -> str:
+    """UPDATE de résolution ; ``statut``/``issue`` renseignés quand le schéma les porte."""
+    issue = "succes" if resultat else "echec"
+    if _etendues(conn):
+        _executer(
+            conn,
+            "UPDATE prediction_calibration SET outcome = %s, resolue_le = %s, "
+            "statut = 'resolue', issue = %s WHERE tenant_id = %s AND id = %s",
+            (resultat, resolue_le, issue, tenant, identifiant),
+        )
+    else:
+        _executer(
+            conn,
+            "UPDATE prediction_calibration SET outcome = %s, resolue_le = %s "
+            "WHERE tenant_id = %s AND id = %s",
+            (resultat, resolue_le, tenant, identifiant),
+        )
+    return issue
+
+
 def enregistrer(
     conn: Any,
     tenant: Any,
@@ -292,13 +417,8 @@ def enregistrer(
     identifiant = _identifiant(id)
     cree_le = _maintenant()
     resolue_le = cree_le if resultat is not None else None
-    _executer(
-        conn,
-        "INSERT INTO prediction_calibration "
-        "(id, tenant_id, decision_id, confidence, outcome, cree_le, resolue_le) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-        (identifiant, tenant_propre, decision, confiance, resultat, cree_le, resolue_le),
-    )
+    _inserer(conn, tenant_propre, identifiant, decision, confiance, resultat,
+             cree_le, resolue_le)
     return Prediction(
         id=identifiant,
         tenant=tenant_propre,
@@ -307,15 +427,111 @@ def enregistrer(
         outcome=resultat,
         cree_le=cree_le,
         resolue_le=resolue_le,
+        statut="resolue" if resultat is not None else "ouverte",
+        issue=None if resultat is None else ("succes" if resultat else "echec"),
     )
 
 
-def resoudre(conn: Any, tenant: Any, id: Any, outcome: Any) -> Prediction:
-    """Renseigne l'outcome d'une prédiction du tenant et rend la ligne résolue.
+def enregistrer_prediction(
+    conn: Any,
+    tenant: Any,
+    prediction: Any = None,
+    *,
+    id: Any = None,
+    sujet: Any = None,
+    probabilite: Any = None,
+    echeance: Any = None,
+    source: Any = None,
+    decision_id: Any = None,
+    outcome: Any = None,
+) -> Prediction:
+    """Enregistre une prédiction datée ``{sujet, probabilite, echeance, source}``.
 
-    Une prédiction d'un autre tenant est introuvable : aucune lecture ni
-    écriture ne traverse la frontière du tenant.
+    La ligne est ouverte (``statut = 'ouverte'``) tant qu'``outcome`` n'est pas
+    fourni ; un outcome booléen la résout immédiatement (``issue`` =
+    ``succes``/``echec``). ``sujet`` nomme ce qui est prédit (un besoin, un
+    signal), ``source`` la sonde qui l'a émise ; ``decision_id`` prend ``sujet``
+    par défaut. ``prediction`` est un mapping de ces mêmes clés — les arguments
+    nommés priment. Sans ``id``, l'identifiant est déterministe : un rejeu du
+    même enregistrement vise la même ligne.
     """
+    donnees: dict = {}
+    if prediction is not None:
+        if not isinstance(prediction, Mapping):
+            raise CalibrationInvalide("prediction : mapping attendu")
+        donnees = dict(prediction)
+    for cle, valeur in (
+        ("id", id), ("sujet", sujet), ("probabilite", probabilite),
+        ("echeance", echeance), ("source", source),
+        ("decision_id", decision_id), ("outcome", outcome),
+    ):
+        if valeur is not None:
+            donnees[cle] = valeur
+    tenant_propre = _tenant(tenant)
+    sujet_final = _texte_obligatoire(donnees.get("sujet"), "sujet")
+    confiance = _confiance(
+        donnees["probabilite"] if "probabilite" in donnees else donnees.get("confidence"))
+    echeance_dt = _date_ou_none(donnees.get("echeance"), "echeance")
+    source_finale = _texte_obligatoire(donnees.get("source"), "source")
+    decision = _texte_obligatoire(
+        donnees.get("decision_id") or sujet_final, "decision_id")
+    resultat = _outcome_ou_none(donnees.get("outcome"))
+    identifiant = donnees.get("id")
+    if identifiant is None:
+        identifiant = identifiant_prediction(
+            tenant_propre,
+            f"{decision}|{sujet_final}|{source_finale}"
+            f"|{echeance_dt.isoformat() if echeance_dt else ''}",
+            confiance)
+    else:
+        identifiant = _id_existant(identifiant)
+    cree_le = _maintenant()
+    resolue_le = cree_le if resultat is not None else None
+    _inserer(conn, tenant_propre, identifiant, decision, confiance, resultat,
+             cree_le, resolue_le, sujet=sujet_final, echeance=echeance_dt,
+             source=source_finale)
+    return Prediction(
+        id=identifiant,
+        tenant=tenant_propre,
+        decision_id=decision,
+        confidence=confiance,
+        outcome=resultat,
+        cree_le=cree_le,
+        resolue_le=resolue_le,
+        sujet=sujet_final,
+        echeance=echeance_dt,
+        source=source_finale,
+        statut="resolue" if resultat is not None else "ouverte",
+        issue=None if resultat is None else ("succes" if resultat else "echec"),
+    )
+
+
+def resoudre(
+    conn: Any,
+    tenant: Any,
+    id: Any = None,
+    outcome: Any = None,
+    *,
+    maintenant: Any = None,
+    observateur: Callable | None = None,
+    limite: Any = None,
+) -> Prediction | dict:
+    """Résout une prédiction, ou toutes les prédictions échues si ``id`` est absent.
+
+    Forme unitaire ``resoudre(conn, tenant, id, outcome)`` : renseigne l'outcome
+    booléen de la prédiction du tenant — une prédiction d'un autre tenant est
+    introuvable : aucune lecture ni écriture ne traverse la frontière du tenant.
+
+    Forme passe ``resoudre(conn, tenant, maintenant=…)`` : délègue à
+    :func:`resoudre_echues`, qui juge chaque prédiction ouverte et échue contre
+    l'outcome réel de sa source.
+    """
+    if id is None:
+        if outcome is not None:
+            raise CalibrationInvalide("outcome sans prédiction ciblée")
+        return resoudre_echues(
+            conn, tenant, maintenant=maintenant, observateur=observateur,
+            limite=limite)
     tenant_propre = _tenant(tenant)
     identifiant = _id_existant(id)
     resultat = _outcome(outcome)
@@ -323,12 +539,7 @@ def resoudre(conn: Any, tenant: Any, id: Any, outcome: Any) -> Prediction:
     if prediction is None:
         raise PredictionIntrouvable("prédiction introuvable dans ce tenant")
     resolue_le = _maintenant()
-    _executer(
-        conn,
-        "UPDATE prediction_calibration SET outcome = %s, resolue_le = %s "
-        "WHERE tenant_id = %s AND id = %s",
-        (resultat, resolue_le, tenant_propre, identifiant),
-    )
+    issue = _marquer_resolue(conn, tenant_propre, identifiant, resultat, resolue_le)
     return Prediction(
         id=prediction.id,
         tenant=prediction.tenant,
@@ -337,7 +548,121 @@ def resoudre(conn: Any, tenant: Any, id: Any, outcome: Any) -> Prediction:
         outcome=resultat,
         cree_le=prediction.cree_le,
         resolue_le=resolue_le,
+        sujet=prediction.sujet,
+        echeance=prediction.echeance,
+        source=prediction.source,
+        statut="resolue",
+        issue=issue,
     )
+
+
+def _ligne_etendue(ligne: Any) -> dict:
+    return {nom: _champ(ligne, nom, rang) for rang, nom in enumerate(_COLONNES_ETENDUES)}
+
+
+def _signal_attendu_produit(
+    conn: Any, tenant: str, entree: Mapping, instant: datetime,
+) -> bool | None:
+    """Le signal attendu s'est-il produit ? ``None`` quand la source n'a pas de sonde.
+
+    Pour les paris de besoins (``source`` = signature de détecteur), l'événement
+    attendu est la disparition du signal d'origine : la même requête bornée que
+    :func:`resolution_besoins._signal_present` est rejouée sur le sujet de la
+    prédiction — ``True`` si le signal a disparu (besoin corroboré/résolu).
+    """
+    source = str(entree.get("source") or "")
+    if source not in detecteurs_besoins.SIGNATURES:
+        return None
+    sujet = str(entree.get("sujet") or "")
+    if not sujet:
+        raise CalibrationInvalide("prédiction sans sujet : signal introuvable")
+    # Import différé : resolution_besoins importe ce module pour y écrire les paris.
+    from meridian.adapters.outbound.postgres import resolution_besoins
+    objet = entreprise_depot.lire_objet(conn, tenant, sujet)
+    if objet is None:
+        raise CalibrationInvalide(f"sujet introuvable dans le tenant : {sujet}")
+    intention = {"donnees": {"signature": source}}
+    entree_besoin = {"objet": objet, "genre": str(objet.get("type") or "").upper()}
+    present = resolution_besoins._signal_present(
+        conn, tenant, entree_besoin, intention,
+        assertions=None, situations=None, claims=None,
+        seuil=detecteurs_besoins.SEUIL_RECURRENCE,
+        fenetre_jours=detecteurs_besoins.FENETRE_JOURS_DEFAUT,
+        instant=instant)
+    return not present
+
+
+def resoudre_echues(
+    conn: Any,
+    tenant: Any,
+    *,
+    maintenant: Any = None,
+    observateur: Callable | None = None,
+    limite: Any = None,
+) -> dict:
+    """Résout les prédictions ouvertes et échues contre leurs outcomes réels.
+
+    Chaque prédiction ``ouverte`` dont ``echeance <= maintenant`` est jugée :
+    l'événement attendu s'est-il produit ? ``observateur(conn, tenant, ligne)``
+    remplace la sonde par défaut quand il est fourni — le défaut rejoue la
+    requête bornée de :mod:`resolution_besoins` sur la ``source`` de la
+    prédiction ; ``None`` (source sans sonde) laisse la prédiction ouverte et la
+    compte dans ``ignorees``. Verdict : produit → ``issue = succes``, non
+    produit → ``issue = echec``. Fail-closed : une erreur par prédiction remonte
+    dans ``erreurs``, jamais avalée, et la prédiction reste ouverte pour la
+    passe suivante.
+    """
+    tenant_propre = _tenant(tenant)
+    instant = _date_ou_none(maintenant, "maintenant") or _maintenant()
+    if not _etendues(conn):
+        raise CalibrationInvalide(
+            "prédictions datées indisponibles : colonnes sujet/echeance/source "
+            "absentes du schéma")
+    lignes = _toutes(
+        conn,
+        _SELECT_ETENDU + " WHERE tenant_id = %s AND outcome IS NULL "
+        "AND echeance IS NOT NULL AND echeance <= %s "
+        "ORDER BY echeance, id LIMIT %s",
+        (tenant_propre, instant, _limite(limite)),
+    )
+    resolues: list[dict] = []
+    ignorees: list[dict] = []
+    erreurs: list[dict] = []
+    for ligne in lignes:
+        entree = _ligne_etendue(ligne)
+        try:
+            if observateur is not None:
+                produit = observateur(conn, tenant_propre, dict(entree))
+            else:
+                produit = _signal_attendu_produit(conn, tenant_propre, entree, instant)
+            if produit is None:
+                ignorees.append({
+                    "id": entree["id"], "sujet": entree.get("sujet"),
+                    "source": entree.get("source"),
+                    "raison": "source sans sonde bornée"})
+                continue
+            resoudre(conn, tenant_propre, entree["id"], bool(produit))
+            resolues.append({
+                "id": entree["id"], "sujet": entree.get("sujet"),
+                "source": entree.get("source"),
+                "issue": "succes" if produit else "echec"})
+        except Exception as exc:  # fail-closed : la prédiction reste ouverte, rejouée
+            erreurs.append({
+                "id": entree.get("id"), "sujet": entree.get("sujet"),
+                "source": entree.get("source"), "erreur": str(exc)})
+    succes = sum(1 for resolue in resolues if resolue["issue"] == "succes")
+    return {
+        "tenant": tenant_propre,
+        "maintenant": instant.isoformat(timespec="seconds"),
+        "resolues": resolues,
+        "ignorees": ignorees,
+        "erreurs": erreurs,
+        "totaux": {
+            "echues": len(lignes), "resolues": len(resolues),
+            "succes": succes, "echecs": len(resolues) - succes,
+            "ignorees": len(ignorees), "erreurs": len(erreurs),
+        },
+    }
 
 
 def lire(conn: Any, tenant: Any, id: Any) -> Prediction | None:
@@ -482,3 +807,77 @@ def resume(conn: Any, tenant: Any, decision_id: Any = None) -> dict:
         "taux_observe": _arrondi(taux),
         "ecart": _arrondi(ecart),
     }
+
+
+# --- C4 : mesure publiée — Brier + intervalle de Wilson, jamais sans n ---
+
+
+def _mesure_resolues(resolues: list[tuple[float, bool]], minimum: int) -> dict:
+    """Mesure d'un lot ``(confiance, outcome)`` : ``None`` tant que n < minimum."""
+    n = len(resolues)
+    succes = sum(1 for _, issue in resolues if issue)
+    mesure = {"n": n, "succes": succes, "minimum": minimum,
+              "brier": None, "taux": None, "ic95": None}
+    if n < minimum:
+        return mesure
+    mesure["brier"] = sum(
+        (confiance - (1.0 if issue else 0.0)) ** 2
+        for confiance, issue in resolues) / n
+    mesure["taux"] = succes / n
+    mesure["ic95"] = signatures_besoins.intervalle_wilson(succes, n)
+    return mesure
+
+
+def _par_source(
+    conn: Any, tenant: str, decision_id: Any, minimum: int,
+) -> dict[str, dict]:
+    """Même mesure par ``source`` ; vide sur un schéma sans la colonne."""
+    if not _etendues(conn):
+        return {}
+    conditions = ["tenant_id = %s", "outcome IS NOT NULL"]
+    parametres: list[Any] = [tenant]
+    if decision_id is not None:
+        conditions.append("decision_id = %s")
+        parametres.append(_texte_obligatoire(decision_id, "decision_id"))
+    lignes = _toutes(
+        conn,
+        "SELECT source, confidence, outcome FROM prediction_calibration WHERE "
+        + " AND ".join(conditions),
+        tuple(parametres),
+    )
+    groupes: dict[str, list[tuple[float, bool]]] = {}
+    for ligne in lignes:
+        source = str(_champ(ligne, "source", 0) or "") or "inconnue"
+        resolue = (_confiance_lue(_champ(ligne, "confidence", 1)),
+                   bool(_outcome_lu(_champ(ligne, "outcome", 2))))
+        groupes.setdefault(source, []).append(resolue)
+    return {
+        source: _mesure_resolues(predictions, minimum)
+        for source, predictions in sorted(groupes.items())
+    }
+
+
+def score_brier(
+    conn: Any, tenant: Any, *, decision_id: Any = None, minimum: Any = MIN_RESOLUTIONS,
+) -> dict:
+    """Score de Brier des résolutions du tenant + IC de Wilson sur le taux observé.
+
+    ``{"brier", "n", "succes", "taux", "ic95", "minimum", "non_resolues",
+    "par_source"}`` : ``brier``, ``taux`` et ``ic95`` sont ``None`` tant que le
+    nombre de résolutions ``n`` est sous ``minimum`` — jamais un nombre sans
+    ``n``. ``ic95`` est l'intervalle de Wilson à 95 % du taux de succès observé
+    (``{bas, haut, z}``). ``par_source`` décline la même mesure par ``source``
+    de prédiction quand le schéma porte la colonne, sinon ``{}``.
+    """
+    tenant_propre = _tenant(tenant)
+    borne = _minimum(minimum)
+    predictions = _predictions(conn, tenant_propre, decision_id)
+    resolues = [
+        (prediction.confidence, bool(prediction.outcome))
+        for prediction in predictions
+        if prediction.outcome is not None
+    ]
+    mesure = _mesure_resolues(resolues, borne)
+    mesure["non_resolues"] = len(predictions) - len(resolues)
+    mesure["par_source"] = _par_source(conn, tenant_propre, decision_id, borne)
+    return mesure

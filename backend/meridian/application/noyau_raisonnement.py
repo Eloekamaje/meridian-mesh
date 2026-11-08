@@ -13,12 +13,14 @@ import re
 import unicodedata
 
 from meridian.application import contexte_raisonnement as passerelle_contexte
+from meridian.application import contrat_question
 from meridian.application import epistemie as epistemie_application
 from meridian.application import gates_tour
 from meridian.application import evaluation_raisonnement
 from meridian.domain import dossier_raisonnement as domaine
 
 __all__ = [
+    "FACTEURS_EFFORT",
     "analyser_reponse",
     "cadrer",
     "critiquer_reponse",
@@ -291,6 +293,13 @@ def _objet_demande(question: str) -> str:
 
 
 def qualifier(question: str, contexte: Mapping | None = None) -> domaine.Demande:
+    """Qualification par mots-clés français — **fallback déprécié** (B9).
+
+    Quand ``contexte["sonde"]`` est présent, c'est le contrat de preuve
+    (:func:`contrat_question.contrat_pour`) qui pilote le cadrage et l'effort :
+    ``qualifier`` continue seulement de produire le niveau, le but et l'ambiguïté
+    consommés par les gates tant que la bascule est mesurée (``cadre.source``).
+    """
     contexte = _mapping(contexte)
     niveau, but, ambiguite, reversible, sensibilites, raisons = _niveau_demande(question, contexte)
     enjeu = _texte(contexte.get("enjeu"), 20).lower()
@@ -317,8 +326,23 @@ def qualifier(question: str, contexte: Mapping | None = None) -> domaine.Demande
     )
 
 
+def _contrat_du_contexte(question: str, contexte: Mapping) -> dict:
+    """Le contrat de preuve du tour : déjà injecté dans le contexte, ou calculé
+    depuis ``contexte["sonde"]`` (B8). Vide sans sonde — le cadrage retombe alors
+    sur la qualification par mots-clés."""
+    contrat = _mapping(contexte.get("contrat"))
+    if contrat.get("artefacts_requis") or contrat.get("effort"):
+        return contrat
+    sonde = contexte.get("sonde")
+    if isinstance(sonde, Mapping):
+        return contrat_question.contrat_pour(question, sonde)
+    return {}
+
+
 def cadrer(demande: domaine.Demande, contexte: Mapping | None = None) -> domaine.Cadre:
     contexte = _mapping(contexte)
+    # B9 — le contrat de preuve (quel artefact trancherait) prime sur les mots-clés.
+    contrat = _contrat_du_contexte(demande.question, contexte)
     questions = list(demande.questions)
     sans_questions = bool(contexte.get("sans_questions"))
     reponses = _textes(contexte.get("reponses_utilisateur"))
@@ -358,6 +382,11 @@ def cadrer(demande: domaine.Demande, contexte: Mapping | None = None) -> domaine
         inconnues = tuple(libelle for cle, libelle in champs if not contexte.get(cle))
     else:
         inconnues = ()
+    if contrat:
+        # Les manques rapportés par la sonde sont des inconnues factuelles, pas
+        # des questions à poser : c'est un artefact qui les tranchera.
+        inconnues = tuple(dict.fromkeys(
+            [*inconnues, *_textes(contrat.get("manque"))]))
     risques = list(_textes(contexte.get("risques")))
     if demande.but in {"concevoir", "decider", "agir"}:
         risques.extend([
@@ -366,9 +395,22 @@ def cadrer(demande: domaine.Demande, contexte: Mapping | None = None) -> domaine
         ])
     for sensibilite in demande.sensibilite:
         risques.append(f"risque spécifique au domaine : {sensibilite}")
+    if contrat.get("verdict") == "incertain":
+        risques.append(
+            "la sonde n'a pas tranché : la réponse peut viser une interprétation rivale")
+    perimetre = _texte(contexte.get("perimetre"), 1000)
+    if not perimetre and contrat:
+        requis = _liste_mapping(contrat.get("artefacts_requis"))
+        if requis:
+            perimetre = _texte(
+                "artefacts requis : " + "; ".join(
+                    f"{_texte(a.get('type'), 20)} — {_texte(a.get('sujet'), 240)}"
+                    for a in requis), 1000)
     return domaine.Cadre(
-        objectif=_texte(contexte.get("objectif")) or demande.question,
-        perimetre=_texte(contexte.get("perimetre"), 1000),
+        objectif=_texte(contexte.get("objectif"))
+                or _texte(contrat.get("formulation"), 1000)
+                or demande.question,
+        perimetre=perimetre,
         contraintes=_textes(contexte.get("contraintes")),
         criteres_succes=_textes(contexte.get("criteres_succes")),
         parties_prenantes=_textes(contexte.get("parties_prenantes") or contexte.get("utilisateurs")),
@@ -377,10 +419,24 @@ def cadrer(demande: domaine.Demande, contexte: Mapping | None = None) -> domaine
         risques=tuple(dict.fromkeys(risques)),
         questions_bloquantes=bloquantes,
         questions_non_bloquantes=non_bloquantes,
+        source="contrat" if contrat else "qualifier",
     )
 
 
-def planifier(demande: domaine.Demande, cadre: domaine.Cadre, plan_composition=None) -> domaine.PlanRaisonnement:
+# Effort du contrat de preuve (B9) → facteur appliqué au budget du tour :
+# l'incertitude coûte plus cher que la confirmation, jamais l'inverse. La table
+# vit dans `contrat_question` (D9) — le pipeline unifié et le service d'analyse
+# y lisent la même échelle.
+FACTEURS_EFFORT = contrat_question.FACTEURS_EFFORT
+
+
+def planifier(
+    demande: domaine.Demande,
+    cadre: domaine.Cadre,
+    plan_composition=None,
+    *,
+    contrat: Mapping | None = None,
+) -> domaine.PlanRaisonnement:
     operations = {
         "repondre": ("qualifier", "verifier", "expliquer"),
         "expliquer": ("qualifier", "expliquer"),
@@ -421,6 +477,42 @@ def planifier(demande: domaine.Demande, cadre: domaine.Cadre, plan_composition=N
     specialistes = ("preuve", "critique") if demande.niveau in {"N3", "N4"} else ("preuve",)
     if plan_composition is not None:
         specialistes = tuple(getattr(plan_composition, "specialistes", ())) or specialistes
+    budget = {
+        "clarifications": 2,
+        "critiques": 2,
+        "appels_outils": 12,
+        "secondes": 90 if demande.niveau in {"N3", "N4"} else 30,
+    }
+    conditions_arret = (
+        "question bloquante non résolue",
+        "budget épuisé",
+        "critique majeure non résolue",
+    ) if demande.niveau in {"N2", "N3", "N4"} else ("budget épuisé",)
+    justification = [
+        f"but={demande.but}",
+        f"niveau={demande.niveau}",
+        f"critique={critique}",
+    ]
+    # B9 — le contrat de preuve module l'effort : incertain → approfondi,
+    # clair → standard, trivial → leger ; et donne au tour un critère d'arrêt
+    # matériel (les artefacts qui trancheraient sont obtenus).
+    contrat = _mapping(contrat)
+    if contrat:
+        effort = _texte(contrat.get("effort"), 20).lower() or "standard"
+        facteur = FACTEURS_EFFORT.get(effort, 1.0)
+        if facteur != 1.0:
+            budget = {
+                cle: max(1, round(valeur * facteur))
+                if isinstance(valeur, (int, float)) and not isinstance(valeur, bool)
+                else valeur
+                for cle, valeur in budget.items()
+            }
+        if _liste_mapping(contrat.get("artefacts_requis")):
+            conditions_arret = (
+                "artefacts requis du contrat obtenus", *conditions_arret)
+        if effort == "approfondi" and seuil == "declared":
+            seuil = "observed"
+        justification.extend([f"effort={effort}", "source=contrat"])
     return domaine.PlanRaisonnement(
         niveau=demande.niveau,
         operations=operations,
@@ -429,22 +521,9 @@ def planifier(demande: domaine.Demande, cadre: domaine.Cadre, plan_composition=N
         specialistes=specialistes,
         seuil_preuve=seuil,
         niveau_critique=critique,
-        budget={
-            "clarifications": 2,
-            "critiques": 2,
-            "appels_outils": 12,
-            "secondes": 90 if demande.niveau in {"N3", "N4"} else 30,
-        },
-        conditions_arret=(
-            "question bloquante non résolue",
-            "budget épuisé",
-            "critique majeure non résolue",
-        ) if demande.niveau in {"N2", "N3", "N4"} else ("budget épuisé",),
-        justification=(
-            f"but={demande.but}",
-            f"niveau={demande.niveau}",
-            f"critique={critique}",
-        ),
+        budget=budget,
+        conditions_arret=conditions_arret,
+        justification=tuple(justification),
     )
 
 
@@ -654,12 +733,20 @@ def preparer_dossier(
 ) -> domaine.DossierRaisonnement:
     """Prépare le dossier avant la génération, avec le contexte et les constats déjà disponibles."""
     contexte = _mapping(contexte)
+    # B9 — le contrat de preuve, calculé une fois depuis la sonde et partagé par
+    # le cadrage (via le contexte) et la planification (paramètre dédié). Un
+    # contrat déjà posé dans le contexte (D9 — effort forcé par l'appelant)
+    # prime sur le calcul depuis la sonde, comme dans `_contrat_du_contexte`.
+    contrat = _contrat_du_contexte(question, contexte)
+    if contrat:
+        contexte = {**contexte, "contrat": contrat}
     demande = qualifier(question, contexte)
     cadre = cadrer(demande, contexte)
-    plan = planifier(demande, cadre, plan_composition)
+    plan = planifier(demande, cadre, plan_composition, contrat=contrat)
     dossier = domaine.DossierRaisonnement(
         question=question, tenant=tenant, travail_id=travail_id,
         demande=demande, cadre=cadre, plan=plan, trace_id=trace_id,
+        contrat=contrat,
     )
     passerelle_contexte.attacher(
         dossier, pack=pack_contexte, specialistes=dossier_specialistes,

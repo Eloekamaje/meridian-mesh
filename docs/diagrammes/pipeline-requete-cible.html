@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pipeline cognitif de requête — cible · Méridian</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper: #071019;
+      --color-paper-2: #0C1724;
+      --color-ink: #F2F6F8;
+      --color-muted: #7C93A8;
+      --color-soft: #94A3B8;
+      --color-rule: rgba(255,255,255,0.08);
+      --color-accent: #60A5FA;
+      --color-accent-tint: rgba(96,165,250,0.12);
+      --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      --font-serif: ui-serif, Georgia, "Times New Roman", serif;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 48px 32px;
+    }
+    .frame { max-width: 1240px; width: 100%; }
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 8px;
+    }
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--color-ink);
+      margin-bottom: 12px;
+    }
+    .lede { color: var(--color-muted); font-size: 0.92rem; max-width: 82ch; margin-bottom: 24px; }
+    .diagram-container { width: 100%; overflow-x: auto; }
+    svg { width: 100%; min-width: 1200px; display: block; }
+    @media print {
+      .diagram-container { overflow-x: visible; }
+      svg { min-width: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Cognition · traitement de requête · cible [B8 B9 C7 C8]</p>
+    <h1>Sonder avant de raisonner, vérifier avant de répondre, apprendre après</h1>
+    <p class="lede">Le pipeline actuel classe la question par mots-clés puis planifie — sans avoir regardé ce qu'il sait. La cible inverse l'ordre : une sonde bon marché établit d'abord l'incertitude, l'effort de raisonnement lui est proportionnel, la réponse reste un brouillon jusqu'à la vérification, et chaque requête laisse un signal au système. Le pipeline de requête <em>est</em> le détecteur de besoins.</p>
+
+    <div class="diagram-container">
+      <svg viewBox="0 0 1200 1040" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="prc-title prc-desc">
+        <title id="prc-title">Pipeline cognitif de requête — cible</title>
+        <desc id="prc-desc">Huit étapes : recevoir, sonder, router par incertitude, contrat de preuve, boucler avec replanning, vérifier la groundedness, répondre, apprendre. Boucle d'apprentissage de l'épilogue vers la sonde.</desc>
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#7C93A8"/>
+          </marker>
+          <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#60A5FA"/>
+          </marker>
+          <marker id="arrow-conteste" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#F2B84B"/>
+          </marker>
+        </defs>
+
+        <rect width="100%" height="100%" fill="#071019"/>
+
+        <!-- ===== Main flow arrows ===== -->
+        <line x1="330" y1="132" x2="330" y2="158" stroke="#7C93A8" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <line x1="330" y1="254" x2="330" y2="280" stroke="#7C93A8" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <line x1="330" y1="432" x2="330" y2="458" stroke="#7C93A8" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <line x1="330" y1="554" x2="330" y2="580" stroke="#7C93A8" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <line x1="330" y1="676" x2="330" y2="702" stroke="#7C93A8" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <line x1="330" y1="798" x2="330" y2="824" stroke="#60A5FA" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+
+        <!-- BOUCLER self-loop (right side of stage 5) -->
+        <path d="M610,516 H640 Q648,516 648,508 V496 Q648,488 640,488 H610" fill="none" stroke="#93C5FD" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="600" y="470" width="100" height="11" rx="2" fill="#071019"/>
+        <text x="650" y="479" fill="#93C5FD" font-size="7.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" text-anchor="middle">REPLANIFIÉ À CHAQUE OBSERVATION</text>
+
+        <!-- Learning loop: APPRENDRE back to SONDER -->
+        <path d="M620,868 H680 Q688,868 688,860 V200 Q688,192 680,192 H620" fill="none" stroke="#60A5FA" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+        <rect x="694" y="500" width="190" height="12" rx="2" fill="#071019"/>
+        <text x="789" y="509" fill="#60A5FA" font-size="8" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" text-anchor="middle">CHAQUE REQUÊTE INSTRUIT LA SUIVANTE</text>
+
+        <!-- Router branches -->
+        <line x1="620" y1="320" x2="700" y2="320" stroke="#4ADE80" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <line x1="620" y1="368" x2="700" y2="368" stroke="#F2B84B" stroke-width="1.2" stroke-dasharray="5 4" marker-end="url(#arrow-conteste)"/>
+        <line x1="330" y1="384" x2="330" y2="432" stroke="#7C93A8" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+        <!-- ===== Stages ===== -->
+
+        <!-- 1 RECEVOIR -->
+        <rect x="80" y="60" width="500" height="72" rx="6" fill="#071019"/>
+        <rect x="80" y="60" width="500" height="72" rx="6" fill="rgba(242,246,248,0.03)" stroke="rgba(242,246,248,0.3)" stroke-width="1"/>
+        <rect x="88" y="66" width="64" height="12" rx="2" fill="transparent" stroke="rgba(242,246,248,0.3)" stroke-width="0.8"/>
+        <text x="120" y="75" fill="#94A3B8" font-size="7" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" text-anchor="middle" letter-spacing="0.08em">RECEVOIR</text>
+        <text x="330" y="96" fill="#F2F6F8" font-size="12" font-weight="600" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" text-anchor="middle">Filtre injection — couche 1 sur 2</text>
+        <text x="330" y="114" fill="#7C93A8" font-size="9" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" text-anchor="middle">refus explicite · jamais la seule défense · RBAC serveur</text>
+
+        <!-- 2 SONDER -->
+        <rect x="80" y="158" width="500" height="96" rx="6" fill="#071019"/>
+        <rect x="80" y="158" width="500" height="96" rx="6" fill="rgba(96,165,250,0.08)" stroke="#60A5FA" stroke-width="1"/>
+        <rect x="88" y="164" width="76" height="12" rx="2" fill="transparent" stroke="rgba(96,165,250,0.6)" stroke-width="0.8"/>
+        <text x="126" y="173" fill="#60A5FA" font-size="7" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" text-anchor="middle" letter-spacing="0.08em">SONDER · B8</text>
+        <text x="330" y="194" fill="#F2F6F8" font-size="12" font-weight="600" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" text-anchor="middle">Sonde de preuve pré-raisonnement (~200 ms)</text>
+        <text x="330" y="212" fill="#7C93A8" font-size="9" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" text-anchor="middle">lexical + graphe + mémoire — AVANT tout raisonnement</text>
+        <text x="330" y="232" fill="#93C5FD" font-size="8.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" text-anchor="middle">verdict : trivial · clair · incertain</text>
+
+        <!-- 3 ROUTER -->
+        <rect x="80" y="280" width="500" height="104" rx="6" fill="#071019"/>
+        <rect x="80" y="280" width="500" height="104" rx="6" fill="#0C1724" stroke="#F2F6F8" stroke-width="1"/>
+        <rect x="88" y="286" width="60" height="12" rx="2" fill="transparent" stroke="rgba(242,246,248,0.4)" stroke-width="0.8"/>
+        <text x="118" y="295" fill="#94A3B8" font-size="7" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" text-anchor="middle" letter-spacing="0.08em">ROUTER</text>
+        <text x="330" y="316" fill="#F2F6F8" font-size="12" font-weight="600" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" text-anchor="middle">Par incertitude — jamais par intention</text>
+        <text x="330" y="336" fill="#4ADE80" font-size="9" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" text-anchor="middle">trivial → réponse déterministe, 0 token LLM</text>
+        <text x="330" y="354" fill="#F2B84B" font-size="9" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" text-anchor="middle">incertain → rivales → question discriminante ou sonde [D7]</text>
+        <text x="330" y="372" fill="#7C93A8" font-size="9" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" text-anchor="middle">clair → boucle agent bornée ↓</text>
+
+        <!-- branch boxes -->
+        <rect x="700" y="288" width="240" height="64" rx="6" fill="rgba(74,222,128,0.06)" stroke="#4ADE80" stroke-width="1"/>
+        <text x="820" y="314" fill="#F2F6F8" font-size="10.5" font-weight="600" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" text-anchor="middle">Réponse déterministe</text>
+        <text x="820" y="332" fill="#7C93A8" font-size="8.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" text-anchor="middle">lookup · id connu · fait direct — 0 token</text>
+
+        <rect x="700" y="364" width="240" height="64" rx="6" fill="rgba(242,184,75,0.06)" stroke="#F2B84B" stroke-width="1"/>
+        <text x="820" y="390" fill="#F2F6F8" font-size="10.5" font-weight="600" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" text-anchor="middle">Interprétations rivales</text>
+        <text x="820" y="408" fill="#7C93A8" font-size="8.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" text-anchor="middle">question à valeur maximale — pas « précisez ? »</text>
+
+        <!-- 4 CONTRAT -->
+        <rect x="80" y="432" width="500" height="72" rx="6" fill="#071019"/>
+        <rect x="80" y="432" width="500" height="72" rx="6" fill="rgba(96,165,250,0.08)" stroke="#60A5FA" stroke-width="1"/>
+        <rect x="88" y="438" width="96" height="12" rx="2" fill="transparent" stroke="rgba(96,165,250,0.6)" stroke-width="0.8"/>
+        <text x="136" y="447" fill="#60A5FA" font-size="7" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" text-anchor="middle" letter-spacing="0.08em">CONTRAT · B9</text>
+        <text x="330" y="468" fill="#F2F6F8" font-size="12" font-weight="600" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" text-anchor="middle">Contrat de preuve de la question</text>
+        <text x="330" y="486" fill="#7C93A8" font-size="9" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" text-anchor="middle">« quel artefact trancherait ? » — depuis la sonde, pas les mots-clés</text>
+
+        <!-- 5 BOUCLER -->
+        <rect x="80" y="504" width="500" height="72" rx="6" fill="#071019"/>
+        <rect x="80" y="504" width="500" height="72" rx="6" fill="#0C1724" stroke="#F2F6F8" stroke-width="1"/>
+        <rect x="88" y="510" width="60" height="12" rx="2" fill="transparent" stroke="rgba(242,246,248,0.4)" stroke-width="0.8"/>
+        <text x="118" y="519" fill="#94A3B8" font-size="7" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" text-anchor="middle" letter-spacing="0.08em">BOUCLER</text>
+        <text x="330" y="540" fill="#F2F6F8" font-size="12" font-weight="600" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" text-anchor="middle">État explicite, borné, replanifié</text>
+        <text x="330" y="558" fill="#7C93A8" font-size="9" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" text-anchor="middle">{connu · manquant · prochaine_sonde_moins_chère} — arrêt gain marginal &lt; coût</text>
+
+        <!-- 6 VÉRIFIER -->
+        <rect x="80" y="580" width="500" height="72" rx="6" fill="#071019"/>
+        <rect x="80" y="580" width="500" height="72" rx="6" fill="rgba(96,165,250,0.08)" stroke="#60A5FA" stroke-width="1"/>
+        <rect x="88" y="586" width="80" height="12" rx="2" fill="transparent" stroke="rgba(96,165,250,0.6)" stroke-width="0.8"/>
+        <text x="128" y="595" fill="#60A5FA" font-size="7" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" text-anchor="middle" letter-spacing="0.08em">VÉRIFIER · C7</text>
+        <text x="330" y="616" fill="#F2F6F8" font-size="12" font-weight="600" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" text-anchor="middle">La réponse est un brouillon jusqu'à groundedness</text>
+        <text x="330" y="634" fill="#7C93A8" font-size="9" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" text-anchor="middle">chaque fait → claim/preuve existant — non vérifiable = marqué incertain [A4]</text>
+
+        <!-- 7 RÉPONDRE -->
+        <rect x="80" y="702" width="500" height="72" rx="6" fill="#071019"/>
+        <rect x="80" y="702" width="500" height="72" rx="6" fill="rgba(242,246,248,0.03)" stroke="rgba(242,246,248,0.3)" stroke-width="1"/>
+        <rect x="88" y="708" width="64" height="12" rx="2" fill="transparent" stroke="rgba(242,246,248,0.3)" stroke-width="0.8"/>
+        <text x="120" y="717" fill="#94A3B8" font-size="7" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" text-anchor="middle" letter-spacing="0.08em">RÉPONDRE</text>
+        <text x="330" y="738" fill="#F2F6F8" font-size="12" font-weight="600" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" text-anchor="middle">Citations vérifiées + incertitudes explicites</text>
+        <text x="330" y="756" fill="#7C93A8" font-size="9" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" text-anchor="middle">confiance affichée · dégradation visible, jamais silencieuse</text>
+
+        <!-- 8 APPRENDRE -->
+        <rect x="80" y="824" width="500" height="88" rx="6" fill="#071019"/>
+        <rect x="80" y="824" width="500" height="88" rx="6" fill="rgba(96,165,250,0.1)" stroke="#60A5FA" stroke-width="1.4"/>
+        <rect x="88" y="830" width="80" height="12" rx="2" fill="transparent" stroke="rgba(96,165,250,0.6)" stroke-width="0.8"/>
+        <text x="128" y="839" fill="#60A5FA" font-size="7" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" text-anchor="middle" letter-spacing="0.08em">APPRENDRE · C8</text>
+        <text x="330" y="860" fill="#F2F6F8" font-size="12" font-weight="600" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" text-anchor="middle">L'épilogue est le début d'un apprentissage</text>
+        <text x="330" y="878" fill="#7C93A8" font-size="9" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" text-anchor="middle">non tranché → UNKNOWN · récurrence → NEED · pari → intention datée</text>
+        <text x="330" y="898" fill="#93C5FD" font-size="8.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" text-anchor="middle">sondes · preuves · confiance · non-résolu — événement complet journalisé</text>
+
+        <!-- ===== Right annotation column ===== -->
+        <rect x="940" y="60" width="220" height="240" rx="6" fill="rgba(242,246,248,0.02)" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+        <text x="956" y="84" fill="#94A3B8" font-size="8" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" letter-spacing="0.08em">CE QUI CHANGE</text>
+        <text x="956" y="110" fill="#7C93A8" font-size="8.5" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif">· preuve d'abord, taxonomie ensuite</text>
+        <text x="956" y="132" fill="#7C93A8" font-size="8.5" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif">· contrat de preuve, pas de classe</text>
+        <text x="956" y="146" fill="#7C93A8" font-size="8.5" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif">  d'intention</text>
+        <text x="956" y="168" fill="#7C93A8" font-size="8.5" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif">· replanning, pas plan injecté</text>
+        <text x="956" y="190" fill="#7C93A8" font-size="8.5" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif">· brouillon → vérifié, pas publié</text>
+        <text x="956" y="212" fill="#7C93A8" font-size="8.5" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif">· l'épilogue apprend</text>
+        <text x="956" y="242" fill="#94A3B8" font-size="8.5" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" font-style="italic">effort ∝ incertitude</text>
+        <text x="956" y="264" fill="#94A3B8" font-size="8.5" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" font-style="italic">~150k tokens → le nécessaire</text>
+
+        <rect x="940" y="320" width="220" height="240" rx="6" fill="rgba(242,246,248,0.02)" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+        <text x="956" y="344" fill="#94A3B8" font-size="8" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" letter-spacing="0.08em">BRIQUES RÉUTILISÉES</text>
+        <text x="956" y="370" fill="#7C93A8" font-size="8.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">enrichir_pack → sonde</text>
+        <text x="956" y="392" fill="#7C93A8" font-size="8.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">dossier → état de sonde</text>
+        <text x="956" y="406" fill="#7C93A8" font-size="8.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">  (faits, pas croyances)</text>
+        <text x="956" y="428" fill="#7C93A8" font-size="8.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">specialistes → parallèle</text>
+        <text x="956" y="450" fill="#7C93A8" font-size="8.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">contrat_preuve → A4 réel</text>
+        <text x="956" y="472" fill="#7C93A8" font-size="8.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">outil_audit → événement</text>
+        <text x="956" y="494" fill="#7C93A8" font-size="8.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">memoire_prospective →</text>
+        <text x="956" y="508" fill="#7C93A8" font-size="8.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">  paris datés</text>
+        <text x="956" y="538" fill="#94A3B8" font-size="8.5" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" font-style="italic">un rebranchage,</text>
+        <text x="956" y="552" fill="#94A3B8" font-size="8.5" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" font-style="italic">pas une refonte</text>
+
+        <rect x="940" y="580" width="220" height="180" rx="6" fill="rgba(242,246,248,0.02)" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+        <text x="956" y="604" fill="#94A3B8" font-size="8" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" letter-spacing="0.08em">MÉTRIQUES</text>
+        <text x="956" y="630" fill="#7C93A8" font-size="8.5" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif">% triviales sans token LLM</text>
+        <text x="956" y="652" fill="#7C93A8" font-size="8.5" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif">taux citations vérifiées</text>
+        <text x="956" y="674" fill="#7C93A8" font-size="8.5" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif">UNKNOWN créés / résolus</text>
+        <text x="956" y="696" fill="#7C93A8" font-size="8.5" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif">NEED par signature et</text>
+        <text x="956" y="712" fill="#7C93A8" font-size="8.5" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif">  taux de confirmation</text>
+        <text x="956" y="740" fill="#7C93A8" font-size="8.5" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif">questions discriminantes</text>
+      </svg>
+    </div>
+  </div>
+</body>
+</html>

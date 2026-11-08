@@ -178,6 +178,14 @@ Le cycle de vie d’un Twin (commande → préalables → sources → claims →
 [diagramme Twin](docs/diagrammes/cycle-vie-twin.html) ·
 [SVG](docs/diagrammes/cycle-vie-twin.svg).
 
+Le déploiement AWS cible (edge, VPC, ECS/Fargate, Aurora, Neo4j, Redis, S3, Bedrock,
+AgentCore, SQS/EventBridge) :
+
+![Déploiement AWS cible](docs/diagrammes/deploiement-aws.png)
+
+[Ouvrir en grand (HTML)](docs/diagrammes/deploiement-aws.html) ·
+[SVG](docs/diagrammes/deploiement-aws.svg)
+
 Les diagrammes sont produits avec le profil `diagram-design` `meridian` et validés par
 `self_check.py --offline` et `verify-geometry.py`.
 
@@ -283,6 +291,21 @@ yarn start
 Neo4j est optionnel pour la projection graphe :
 `scripts/dev-neo4j-light.sh up` (ou `docker compose -f docker-compose.neo4j.yml up -d` avec
 `NEO4J_PASSWORD`).
+
+### Laboratoire AWS local (Floci)
+
+Pour tester la plomberie AWS sans compte réel — S3, SQS, EventBridge, Scheduler,
+KMS, CloudWatch Logs et IAM ; Secrets Manager y est un adaptateur optionnel, Vault
+reste le coffre principal :
+
+```bash
+scripts/dev-floci.sh up
+eval "$(scripts/dev-floci.sh env)"
+scripts/dev-floci.sh smoke
+```
+
+Floci ne valide pas Bedrock : son runtime est un stub/proxy. Le détail est dans
+[docs/architecture/floci-aws-local.md](docs/architecture/floci-aws-local.md).
 
 Le schéma Postgres est idempotent (`depot.appliquer_schema`, `schema.sql`) et appliqué par les
 workers et les scripts de maintenance. Sur une base neuve, l’appliquer une fois avant la
@@ -530,6 +553,10 @@ périmètre de naissance).
   [docs/architecture/etat-actuel.md](docs/architecture/etat-actuel.md)
 - **Écarts avec la vision, objet par objet et étape par étape :**
   [docs/architecture/ecarts-vision.md](docs/architecture/ecarts-vision.md)
+- **Architecture cible AWS (performance et agentique) :**
+  [docs/architecture/architecture-cible-aws.md](docs/architecture/architecture-cible-aws.md)
+- **Laboratoire AWS local Floci :**
+  [docs/architecture/floci-aws-local.md](docs/architecture/floci-aws-local.md)
 - **Index de la documentation :** [docs/README.md](docs/README.md)
 - **Découverte des liens et boucle agentique :**
   [docs/architecture/decouverte-liens-agentique.md](docs/architecture/decouverte-liens-agentique.md)

@@ -673,7 +673,10 @@ def _terme_interdit_present(texte: str, terme: str, exceptions) -> bool:
 def grade_run(scenario: dict[str, Any], run: dict[str, Any]) -> list[dict[str, Any]]:
     """Évalue les critères objectifs d'un run sans notation subjective."""
     criteres: list[dict[str, Any]] = []
-    texte = run.get("result") or ""
+    # Les critères portent sur la sortie du modèle seule : `result` concatène le contrat
+    # déterministe et la prose, et les clés du contrat satisferaient les expected_terms à
+    # elles seules. prose_text présent (même vide) prime ; absent, on retombe sur result.
+    texte = run["prose_text"] if "prose_text" in run else (run.get("result") or "")
 
     for terme in scenario["expected_terms"]:
         present = _contains(texte, terme)

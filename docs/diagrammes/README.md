@@ -1,9 +1,10 @@
 # Diagrammes Méridian
 
-Huit références autonomes pour les schémas de Méridian Mesh, et le contrat de style que le rendu React `SchemaSvg` doit reprendre.
+Douze références autonomes pour les schémas de Méridian Mesh, et le contrat de style que le rendu React `SchemaSvg` doit reprendre.
 
 | Fichier | Type | Sujet |
 |---|---|---|
+| `deploiement-aws.html` | Architecture | Déploiement AWS cible : edge, VPC, ECS/Fargate, données, Bedrock/AgentCore, asynchrone |
 | `architecture.html` | Architecture | Du Travail aux jumeaux, puis au socle de preuve |
 | `architecture-etat-actuel.html` | Architecture | État actuel : surfaces, API, harness, liens, mémoire, stores, sources |
 | `memoire-agent.html` | Architecture | Les neuf mémoires de l’agent et le retrieval unifié |
@@ -12,6 +13,9 @@ Huit références autonomes pour les schémas de Méridian Mesh, et le contrat d
 | `sequence.html` | Sequence | Une question dans le Travail, du brouillon à la réponse citée |
 | `dependency.html` | Dependency graph | Jumeaux, dépôts, registre, pièces et claims |
 | `raisonnement-contexte-jumeaux.html` | Architecture | Photographie historique des écarts de raisonnement (2026-10) ; voir `architecture-cognitive.html` pour l’état courant |
+| `flore-jumeau-meridian.html` | Concepts | Carte des rôles : Flore la voix, Twins les capacités, Atlas la géographie, Méridian la boucle, humain l'autorité — cible [Plan Cognition IA](../MERIDIAN_Plan_Cognition_IA_v1.md) |
+| `pipeline-requete-cible.html` | Process | Traitement de requête cible : sonder → router par incertitude → contrat de preuve → boucler → vérifier → répondre → apprendre [B8 B9 C7 C8] |
+| `apprentissage-besoins.html` | Process | Boucle d'apprentissage des besoins : détecteurs → hypothèses rivales → cycle NEED → pari daté → outcome → poids de signatures [B6 B7 C5 C6 D7] |
 
 Les fichiers sont des SVG inline dans un HTML unique : aucun script, aucune image externe, aucune webfont, aucun appel réseau. Ils servent de référence éditoriale ; le rendu applicatif du chat est un SVG design-diagram compilé, affiché dans un viewport zoomable.
 
@@ -135,6 +139,7 @@ Le rendu applicatif par défaut passe par l'**auteur design-diagram** ; le compi
 - **Cycle de vie du Twin** : 9 étapes verticales, 9 flux. `twin.born` est l’événement pivot ; la veille revient vers l’ingestion sans changer l’identité. `legacy.born` est une passe de reconstruction, jamais une promotion.
 - **Séquence** : 5 lignes de vie (maximum de la skill). `Relecture` est le juge d'appui, sans outils ; la réponse finale est l'étiquette `RÉPONSE CITÉE`, et le Canvas est signalé en note, pas comme une sixième ligne de vie.
 - **Dépendances** : 8 nœuds, 11 arêtes, badge de fan-in sur chaque nœud. `Dépôts Git` concentre 3 dépendances entrantes. Le seul cycle est réel : le Twin qui représente le produit `Méridian` — et non la plateforme — indexe le code qui contient `Flore`, d'où le retour `Produit Méridian → Flore` en accent pointillé.
+- **Déploiement AWS** : 9 zones, icônes AWS officielles, chemins chaud (API → données/Bedrock) et froid (SQS/Scheduler → workers/AgentCore). AgentCore utilise l'icône Bedrock, faute d'icône dédiée dans le jeu local. Vault utilise son icône propre (non AWS) ; Secrets Manager est un adaptateur optionnel, non représenté comme coffre principal. Le détail est dans `architecture-cible-aws.md`.
 
 ## Validation
 
@@ -149,7 +154,8 @@ python3 .opencode/skills/diagram-design/scripts/self_check.py --offline docs/dia
 python3 .opencode/skills/diagram-design/scripts/self_check.py --offline docs/diagrammes/sequence.html
 python3 .opencode/skills/diagram-design/scripts/self_check.py --offline docs/diagrammes/dependency.html
 python3 .opencode/skills/diagram-design/scripts/self_check.py --offline docs/diagrammes/raisonnement-contexte-jumeaux.html
-python3 .opencode/skills/diagram-design/scripts/verify-geometry.py docs/diagrammes/architecture.html docs/diagrammes/architecture-etat-actuel.html docs/diagrammes/memoire-agent.html docs/diagrammes/architecture-cognitive.html docs/diagrammes/cycle-vie-twin.html docs/diagrammes/sequence.html docs/diagrammes/dependency.html docs/diagrammes/raisonnement-contexte-jumeaux.html
+python3 .opencode/skills/diagram-design/scripts/self_check.py --offline docs/diagrammes/deploiement-aws.html
+python3 .opencode/skills/diagram-design/scripts/verify-geometry.py docs/diagrammes/architecture.html docs/diagrammes/architecture-etat-actuel.html docs/diagrammes/memoire-agent.html docs/diagrammes/architecture-cognitive.html docs/diagrammes/cycle-vie-twin.html docs/diagrammes/sequence.html docs/diagrammes/dependency.html docs/diagrammes/raisonnement-contexte-jumeaux.html docs/diagrammes/deploiement-aws.html
 python3 .opencode/skills/diagram-design/scripts/lint-render.py docs/diagrammes/architecture-etat-actuel.html docs/diagrammes/memoire-agent.html docs/diagrammes/architecture-cognitive.html docs/diagrammes/cycle-vie-twin.html
 ```
 
@@ -169,6 +175,14 @@ Résultats du 6 novembre 2026 pour les quatre nouveaux schémas :
 | `verify-geometry.py` | 4 fichiers, 0 anomalie |
 | export | SVG autonome + PNG 2400 × 1442 |
 | `lint-render.py` | non exécuté : le script local ne résout toujours pas son chemin `output-spec.md` |
+
+Résultats du 7 novembre 2026 pour le déploiement AWS :
+
+| Contrôle | Résultat |
+|---|---|
+| `self_check.py --offline` | 1/1 fichier `OK` |
+| `verify-geometry.py` | 1 fichier, 0 anomalie |
+| export | SVG autonome + PNG 3600 × 2400 |
 
 `lint-render.py` exige Playwright et Chromium. S'ils sont absents, la validation s'arrête au contrôle statique et à la géométrie ; le README le signale plutôt que de le passer sous silence.
 

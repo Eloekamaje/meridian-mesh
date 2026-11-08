@@ -729,6 +729,75 @@ _SCHEMA_CONCEVOIR_SORTIE = {
     "required": ["titre", "resume", "hypotheses", "composants", "liens", "hors_scope"],
     "additionalProperties": False,
 }
+_SCHEMA_SITUATION_ENTREE = {
+    "type": "object",
+    "properties": {
+        "titre": {"type": "string", "description": "titre court de la situation observée"},
+        "resume": {"type": "string", "description": "résumé de ce qui est observé"},
+        "donnees": {"type": "object", "description": "champs libres de la situation"},
+    },
+    "required": ["titre"],
+    "additionalProperties": False,
+}
+_SCHEMA_INVESTIGATION_ENTREE = {
+    "type": "object",
+    "properties": {
+        "situation_id": {"type": "string", "description": "identifiant sit-… de la situation à instruire"},
+        "titre": {"type": "string"},
+        "question": {"type": "string", "description": "question que l'investigation doit trancher"},
+        "resume": {"type": "string"},
+    },
+    "required": ["situation_id"],
+    "additionalProperties": False,
+}
+_SCHEMA_DECISION_ENTREE = {
+    "type": "object",
+    "properties": {
+        "investigation_id": {"type": "string", "description": "identifiant inv-… de l'investigation"},
+        "options": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+        "criteres": {"type": "array", "items": {"type": "string"}},
+        "incertitudes": {"type": "array", "items": {"type": "string"}},
+        "titre": {"type": "string"},
+        "resume": {"type": "string"},
+    },
+    "required": ["investigation_id", "options"],
+    "additionalProperties": False,
+}
+_SCHEMA_TRANCHER_ENTREE = {
+    "type": "object",
+    "properties": {
+        "decision_id": {"type": "string", "description": "identifiant dec-… de la décision proposée"},
+        "choix": {"type": "string", "description": "option retenue, telle que déclarée dans la décision"},
+        "acteur": {"type": "string", "description": "qui tranche ; l'acteur du tour par défaut"},
+        "motif": {"type": "string", "description": "raison du choix"},
+    },
+    "required": ["decision_id", "choix"],
+    "additionalProperties": False,
+}
+_SCHEMA_INITIATIVE_ENTREE = {
+    "type": "object",
+    "properties": {
+        "decision_id": {"type": "string", "description": "identifiant dec-… de la décision tranchée"},
+        "titre": {"type": "string"},
+        "resume": {"type": "string"},
+    },
+    "required": ["decision_id"],
+    "additionalProperties": False,
+}
+_SCHEMA_OBJET_SORTIE = {
+    "type": "object",
+    "properties": {
+        "id": {"type": "string"},
+        "tenant_id": {"type": "string"},
+        "famille": {"type": "string"},
+        "type": {"type": "string"},
+        "mode": {"type": "string"},
+        "titre": {"type": "string"},
+        "donnees": {"type": "object"},
+    },
+    "required": ["id", "type"],
+    "additionalProperties": True,
+}
 
 
 def manifestes_integres() -> list[ManifesteOutil]:
@@ -846,4 +915,118 @@ __all__ = [
     "ManifesteOutil",
     "RegistreCapacites",
     "manifestes_integres",
+    "manifestes_action_canonique",
 ]
+
+
+def manifestes_ecriture_jumeau() -> list[ManifesteOutil]:
+    """Les écritures du jumeau : propositions de connaissance gouvernées (B4).
+
+    `lecture_seule=False` + `effets_de_bord` les rend invisibles du catalogue tant qu'elles ne
+    sont pas approuvées pour la portée. L'agent jumeau les exécute directement sous budget de
+    proposition ; le catalogue les déclare pour la gouvernance : une écriture non approuvée
+    ne doit être ni choisie ni exécutable.
+    """
+    def _ecriture(nom: str, description: str, capacite: str, effets: tuple[str, ...]) -> ManifesteOutil:
+        return ManifesteOutil(
+            nom=nom,
+            version="1.0.0",
+            description=description,
+            capacite=capacite,
+            schema_entree={"type": "object"},
+            schema_sortie={"type": "string"},
+            types_objets_ecrits=("Claim",),
+            lecture_seule=False,
+            effets_de_bord=effets,
+            cout=0.0,
+            timeout_ms=10000,
+            mode_preuve="DECLARED",
+            source="builtin",
+            allowlist=("meridian.builtin",),
+        )
+    return [
+        _ecriture(
+            "proposer_connaissance",
+            "Propose un Claim PROPOSED sur l'application, prouvé par des lignes de code ou une source.",
+            "maturer", ("claim_propose",)),
+        _ecriture(
+            "ancrer_connaissance",
+            "Ancre un Claim à des lignes de code citées — ajoute une preuve à un Claim existant.",
+            "prouver", ("preuve_ajoutee",)),
+        _ecriture(
+            "recouper_connaissance",
+            "Ajoute à un Claim une seconde source, d'un autre système, qui l'appuie.",
+            "prouver", ("preuve_ajoutee",)),
+        _ecriture(
+            "signaler_contradiction",
+            "Signale une contradiction entre deux preuves — à trancher par l'équipe.",
+            "observer", ("contradiction_signalee",)),
+        _ecriture(
+            "fusionner_connaissances",
+            "Fusionne deux Claims : l'un disparaît, ses preuves passent à l'autre. Écriture "
+            "destructive — exige une approbation explicite dans la portée.",
+            "maturer", ("claim_retire",)),
+    ]
+
+
+def manifestes_action_canonique() -> list[ManifesteOutil]:
+    """Les écritures de la boucle canonique (D4) : création et transitions gouvernées.
+
+    `lecture_seule=False` + `effets_de_bord` les rend invisibles du catalogue tant qu'elles ne
+    sont pas approuvées pour la portée — la même règle que les écritures du jumeau (B4). Chaque
+    manifeste correspond à une écriture du dépôt de boucle (B1) ; le Harness l'exécute sous
+    approbation explicite, jamais sur la seule autorité du modèle.
+    """
+    def _action(
+        nom: str, description: str, ecrits: tuple[str, ...], effets: tuple[str, ...],
+        schema_entree: dict, lus: tuple[str, ...] = (),
+    ) -> ManifesteOutil:
+        return ManifesteOutil(
+            nom=nom,
+            version="1.0.0",
+            description=description,
+            capacite="agir",
+            types_objets_lus=lus,
+            types_objets_ecrits=ecrits,
+            schema_entree=schema_entree,
+            schema_sortie=_SCHEMA_OBJET_SORTIE,
+            lecture_seule=False,
+            effets_de_bord=effets,
+            cout=0.0,
+            timeout_ms=10000,
+            mode_preuve="DECLARED",
+            source="builtin",
+            allowlist=("meridian.builtin",),
+            usage={
+                "quand": "L'interlocuteur demande explicitement cette écriture canonique.",
+                "ne_pas": "Ne pas exécuter sans approbation explicite dans la portée.",
+                "sortie": "L'objet canonique écrit (type, id, statut), cité dans la réponse.",
+            },
+            presentation={"libelle": f"J'exécute {nom}…", "groupe": "agir", "ordre": 1},
+        )
+    return [
+        _action(
+            "creer_situation",
+            "Crée une Situation canonique — le phénomène observé qui ouvre la boucle.",
+            ("Situation",), ("situation_creee",), _SCHEMA_SITUATION_ENTREE),
+        _action(
+            "ouvrir_investigation",
+            "Ouvre une Investigation reliée à une Situation du même tenant, avec la question à instruire.",
+            ("Investigation",), ("investigation_ouverte",), _SCHEMA_INVESTIGATION_ENTREE,
+            lus=("Situation",)),
+        _action(
+            "proposer_decision",
+            "Propose une Décision non tranchée, reliée à une Investigation, avec ses options.",
+            ("Decision",), ("decision_proposee",), _SCHEMA_DECISION_ENTREE,
+            lus=("Investigation",)),
+        _action(
+            "trancher_decision",
+            "Tranche une Décision proposée : un acteur retient un choix parmi les options déclarées.",
+            ("Decision",), ("decision_tranchee",), _SCHEMA_TRANCHER_ENTREE,
+            lus=("Decision",)),
+        _action(
+            "lancer_initiative",
+            "Lance une Initiative reliée à une Décision tranchée du même tenant.",
+            ("Initiative",), ("initiative_lancee",), _SCHEMA_INITIATIVE_ENTREE,
+            lus=("Decision",)),
+    ]

@@ -26,8 +26,10 @@ from meridian.adapters.outbound.connectors import cbm
 from meridian.adapters.outbound.postgres import connaissance
 from meridian.adapters.outbound import bedrock_router
 from meridian.adapters.outbound.llm import contradicteur
+from meridian.adapters.outbound.postgres import audit_harness
 from meridian.adapters.outbound.postgres import croisement
 from meridian.adapters.outbound.postgres import depot
+from meridian.application import contexte_demande
 from meridian.application import methodes
 from meridian.adapters.outbound.postgres import temps
 from meridian.adapters.outbound.postgres.connaissance import ancrer as ancrer_code
@@ -37,6 +39,7 @@ from meridian.adapters.outbound.connectors.lecteurs import NATURES, RE_CITATION_
 
 SESSIONS = Path(os.environ.get("JUMEAU_SESSIONS", Path.home() / ".local/share/meridian/sessions"))
 MAX_SORTIE = 6000  # caractères renvoyés au modèle par outil
+MAX_REPONSE_PEDAGOGIQUE = 3000  # corps + schéma d'une réponse pédagogique
 MAX_ARGUMENT = 200
 MAX_LECTURES_PIECE = 6  # lectures et recherches de pièces jointes par tour, tous outils confondus
 MAX_HITS_PIECES = 8  # sections rendues par chercher_pieces
@@ -51,11 +54,13 @@ class Budget:
     """Plafonds par réponse : bornent le coût et l'effet d'une injection qui relancerait les outils en boucle.
 
     L'écriture dans le Travail a son propre budget : une longue exploration ne doit jamais empêcher Flore
-    de consigner son plan et ce qu'elle a trouvé.
+    de consigner son plan et ce qu'elle a trouvé. La composition pédagogique a le sien : c'est la réponse
+    finale, elle ne doit pas être refusée parce que l'exploration a consommé tous les appels.
     """
 
-    def __init__(self, outils=25, propositions=3, ecritures=12):
+    def __init__(self, outils=25, propositions=3, ecritures=12, compositions=3):
         self.outils, self.propositions, self.ecritures = outils, propositions, ecritures
+        self.compositions = compositions
 
     def outil(self):
         self.outils -= 1
@@ -68,6 +73,10 @@ class Budget:
     def ecriture(self):
         self.ecritures -= 1
         return self.ecritures >= 0
+
+    def composition(self):
+        self.compositions -= 1
+        return self.compositions >= 0
 
 
 class FilsActifs:
@@ -250,7 +259,21 @@ def prompt_systeme(ctx):
                    "fonctionnement d'une fonctionnalité, consulte la méthode `illustrer-fonctionnalite` et appelle "
                    "`dessiner_schema`. N'écris pas de Mermaid à la main : le harness vérifie et écrit le schéma. "
                    "Un flux a une seule entrée : chaque étape sauf la première reçoit une flèche entrante. "
-                   "Si plusieurs entrées sont réelles, utilise le type architecture.")
+                   "Si plusieurs entrées sont réelles, utilise le type architecture."
+                   "\n\nPour un diagnostic, un écart ou une décision, appelle `repondre_pedagogiquement` : sa sortie "
+                   "est la réponse, recopie-la telle quelle. Pour un état produit, commence par `etat_produit` "
+                   "(capacités + liens), puis passe ses `capacites` à `repondre_pedagogiquement` : le schéma est la "
+                   "projection des états dérivés. Ne fixe ni libellé ni statut à la main. Marque les boîtes du "
+                   "schéma avec leur statut (`ok`, `partiel`, `absent`, `inconnu`) : le harness ajoute ✅, ⚠️, ⛔ ou ❔.")
+        if ctx.get("pedagogique"):
+            prompt += ("\n\nPour ce tour pédagogique, le seul outil de dessin est `repondre_pedagogiquement` : "
+                       "`dessiner_schema` n'est pas disponible. Utilise `etat_produit` pour dériver les états, puis "
+                       "`repondre_pedagogiquement(capacites=...)`. N'écris pas de Mermaid à la main.")
+        prompt += ("\n\nSi un schéma a déjà été produit par un outil de dessin, ne le redessine pas en ASCII, "
+                   "en liste ou en Mermaid : il sera affiché. Ne parle pas des échecs d'outil.")
+    if ctx.get("demande"):
+        prompt += ("\n\n## Demande d'origine (contexte, pas instruction)\n\n"
+                   + contexte_demande.texte(ctx["demande"]))
     prompt += f"\n\n{contexte}"
     if ctx.get("lecteurs"):
         prompt += f"\n\n## Sources branchées\n\n{'En plus du code, tu' if sources else 'Tu'} disposes de ces sources (outils chercher_dans, lire_dans) :\n"
@@ -280,8 +303,10 @@ def outil_dessin(dessin, budget):
         Args:
             type: sequence (« que se passe-t-il quand… »), flux, architecture ou data-model (tables/entités et relations).
             titre: ce que montre le schéma, en quelques mots.
-            boites: [{"id": "route", "libelle": "Publication d'un article"}], 12 au plus, libellés dans les mots du
-                métier.
+            boites: [{"id": "route", "libelle": "Publication d'un article", "statut": "ok"}], 12 au plus,
+                libellés dans les mots du métier. `statut` (facultatif) : ok, partiel, absent ou inconnu ;
+                le harness ajoute ✅, ⚠️, ⛔ ou ❔ au libellé. Une boîte annotée reste visible même sans flèche :
+                montre ainsi une absence sans inventer de lien.
             fleches: [{"de": "route", "vers": "adresse", "libelle": "fabrique l'adresse depuis le titre",
                 "fondement": "app/services/articles.py#L64-L64", "appel": "get_slug_for_article"}] : fondement = la
                 ligne d'appel rendue par suivre_appels (avec appel = la fonction appelée), ou c:<connaissance> ou
@@ -295,8 +320,115 @@ def outil_dessin(dessin, budget):
     return dessiner_schema
 
 
+def outil_reponse_pedagogique(dessin, budget):
+    """L'outil repondre_pedagogiquement : verdict, schéma, constats, conséquence, décision, tests."""
+
+    @tool
+    def repondre_pedagogiquement(verdict: str, type: str, titre: str, boites: list[dict],
+                                 fleches: list[dict], constats: list[dict], consequence: str,
+                                 decision: str, conditions: list[str], tests: list[str],
+                                 inconnues: list[str] | None = None,
+                                 groupes: list[dict] | None = None,
+                                 capacites: list[dict] | None = None) -> str:
+        """Compose la réponse pédagogique d'un diagnostic, d'un écart ou d'une décision.
+
+        Sa sortie est la réponse : recopie-la telle quelle, sans ajouter de texte avant ou après. Le schéma est
+        déjà dedans ; ne le réécris pas.
+
+        Args:
+            verdict: une phrase qui dit ce qui est vrai, ce qui ne l'est pas, et ce que cela change.
+            type: architecture (état d'un système) ou flux (parcours).
+            titre: ce que montre le schéma, en quelques mots.
+            boites: [{"id": "home", "libelle": "Accueil", "statut": "partiel"}], 8 au plus pour une
+                architecture pédagogique. Statuts : ok, partiel, absent, inconnu (le harness ajoute ✅, ⚠️, ⛔ ou ❔).
+            fleches: [{"de": "home", "vers": "api", "libelle": "appelle /me", "fondement": "c:16827"}],
+                20 au plus ; chaque flèche garde son fondement.
+            constats: [{"fait": "...", "preuve": "chemin#L1-L2 ou c:<id>"}], 1 à 3.
+            consequence: ce que cela change pour la décision ; ce qu'on ne peut pas conclure.
+            decision: une recommandation unique.
+            conditions: exactement deux conditions non négociables.
+            tests: exactement trois tests vérifiables.
+            inconnues: trois puces au plus, à trancher par l'équipe.
+            groupes: [{"libelle": "Front-end", "ids": ["home", "board"]}] pour regrouper les boîtes ;
+                obligatoire pour une architecture libre : au moins deux groupes (Front-end, Backend).
+            capacites: les états dérivés par `etat_produit` ; le tool projette le schéma (2 groupes, une boîte
+                par capacité, API et données) sans libellé ni statut codé en dur.
+        """
+        if not budget.composition():
+            return "Trois compositions ont déjà été tentées : corrige la structure dans un nouvel appel."
+        if capacites:
+            from meridian.application.etat_produit import projeter
+            schema = projeter(capacites, str(titre or "").strip() or "État produit")
+            type, titre = "architecture", schema["titre"]
+            boites, groupes, fleches = schema["boites"], schema["groupes"], schema["fleches"]
+        type = str(type or "").strip().lower()
+        constats = [c for c in (constats or []) if isinstance(c, dict) and str(c.get("fait") or "").strip()]
+        conditions = [str(c).strip() for c in (conditions or []) if str(c).strip()]
+        tests = [str(t).strip() for t in (tests or []) if str(t).strip()]
+        inconnues = [str(i).strip() for i in (inconnues or []) if str(i).strip()]
+        if not str(verdict or "").strip():
+            return "Verdict manquant : dis en une phrase ce qui est vrai et ce qui ne l'est pas."
+        if not 1 <= len(constats) <= 3:
+            return "Donne 1 à 3 constats, pas plus."
+        if len(conditions) != 2:
+            return "Donne exactement deux conditions non négociables."
+        if len(tests) != 3:
+            return "Donne exactement trois tests vérifiables."
+        if len(inconnues) > 3:
+            return "Donne au plus trois inconnues."
+        if type == "architecture":
+            if not groupes or len(groupes) < 2:
+                return ("Une architecture pédagogique doit être groupée : passe `groupes` avec au moins "
+                        "deux groupes (Front-end, Backend).")
+            if len(boites or []) > 8:
+                return (f"Trop de boîtes ({len(boites or [])}) : garde 8 boîtes maximum pour un schéma "
+                        "pédagogique.")
+        rapport = dessin.dessiner(type, titre, boites, fleches, groupes or ())
+        if not dessin.mermaid:
+            return rapport  # le modèle corrige le schéma
+        dessin.structure["rendu"] = "mermaid"  # l'interface dessine le Mermaid, pas le SVG maison
+        lignes = [f"**Verdict — {verdict.strip()}**", "", dessin.bloc().strip(), "", "**Constats**"]
+        for constat in constats:
+            preuve = str(constat.get("preuve") or "").strip().strip("`")
+            lignes.append(f"- {str(constat['fait']).strip()}" + (f" `{preuve}`" if preuve else ""))
+        lignes += ["", "**Conséquence**", str(consequence or "").strip(), "",
+                   "**Décision**", str(decision or "").strip(), "", "**Conditions**"]
+        lignes += [f"- {condition}" for condition in conditions]
+        lignes += ["", "**Tests**"] + [f"{i}. {test}" for i, test in enumerate(tests, 1)]
+        if inconnues:
+            lignes += ["", "**Inconnues**"] + [f"- {inconnue}" for inconnue in inconnues]
+        texte = "\n".join(lignes).strip()
+        if len(texte) > MAX_REPONSE_PEDAGOGIQUE:
+            return (f"Réponse trop longue ({len(texte)} caractères, maximum {MAX_REPONSE_PEDAGOGIQUE}) : "
+                    "raccourcis les constats et la conséquence, puis rappelle l'outil.")
+        dessin.reponse_pedagogique = texte  # le texte composé fait foi dans la réponse finale
+        return texte
+
+    return repondre_pedagogiquement
+
+
 def outils(ctx, dsn, nom_modele, budget):
     jumeau, sources, lecteurs = ctx["jumeau"], ctx["sources"], ctx.get("lecteurs") or []
+    approuves = {str(nom) for nom in (ctx.get("approuves") or ())}
+    _audit_tenant = str(ctx.get("tenant") or (jumeau or {}).get("tenant_id") or "inconnu")
+    _audit_acteur = str(ctx.get("acteur") or "inconnu")
+
+    def auditer_ecriture(conn, nom, arguments, statut, erreur=None):
+        """Trace l'écriture dans outil_audit — la même table immuable que celle du Harness."""
+        try:
+            audit_harness.AuditPostgres(conn, _audit_tenant, _audit_acteur).enregistrer({
+                "outil": nom, "capacite": "proposition", "arguments": arguments,
+                "statut": statut, "erreur": erreur})
+        except Exception:  # noqa: BLE001 - l'audit ne bloque jamais l'outil
+            journal.warning("audit %s impossible", nom, exc_info=True)
+
+    def auditer_refus_ecriture(nom, arguments):
+        """Trace le refus d'une écriture non approuvée — même quand elle n'a pas eu lieu."""
+        try:
+            with psycopg.connect(dsn, autocommit=True) as conn:
+                auditer_ecriture(conn, nom, arguments, "refuse")
+        except Exception:  # noqa: BLE001
+            journal.warning("audit refus %s impossible", nom)
 
     def lecture_autorisee():
         consommateur = ctx.get("consommateur")
@@ -464,6 +596,8 @@ def outils(ctx, dsn, nom_modele, budget):
                     source = connaissance.resoudre_source(sources, depot, chemin)
                     cid = connaissance.proposer(conn, jumeau, source, predicat, objet, type_claim, chemin, debut, fin,
                                                 justification, ctx["acteur"], nom_modele)
+                auditer_ecriture(conn, "proposer_connaissance", {
+                    "predicat": predicat, "objet": objet, "type_claim": type_claim}, "ok")
             # l'interlocuteur pourra la trancher dans la conversation (approbation en ligne) : seul un humain décide
             ctx["proposees"] = [*ctx.get("proposees", []), {"claim": cid, "jumeau": jumeau["id"], "nom": jumeau["nom"],
                                                             "predicat": predicat, "objet": objet}]
@@ -494,11 +628,17 @@ def outils(ctx, dsn, nom_modele, budget):
             retirer: identifiant de la connaissance redondante.
             raison: pourquoi elles disent la même chose.
         """
+        if "fusionner_connaissances" not in approuves:
+            auditer_refus_ecriture("fusionner_connaissances", {"garder": garder, "retirer": retirer})
+            return ("Fusion refusée : fusionner_connaissances n'est pas approuvé dans cette "
+                    "portée — une écriture destructive exige une approbation explicite.")
         if not budget.outil() or not budget.proposition():
             return "Plafond de cette réponse atteint."
         try:
             with psycopg.connect(dsn, autocommit=True) as conn:
                 depot.fusionner(conn, jumeau["id"], int(garder), int(retirer))
+                auditer_ecriture(conn, "fusionner_connaissances",
+                                 {"garder": garder, "retirer": retirer}, "ok")
             journal.info("fusion %s ← %s : %s", garder, retirer, raison[:200])
             return f"Connaissance {retirer} fusionnée dans {garder}."
         except ValueError as e:
@@ -523,6 +663,8 @@ def outils(ctx, dsn, nom_modele, budget):
         try:
             with psycopg.connect(dsn, autocommit=True) as conn:
                 nouvelle = ancrer_code(conn, jumeau, sources, int(connaissance), citation_code, raison)
+                auditer_ecriture(conn, "ancrer_connaissance",
+                                 {"connaissance": connaissance, "citation_code": citation_code}, "ok")
             return f"Connaissance {connaissance} ancrée à {citation_code}." if nouvelle else "Ancrage déjà enregistré."
         except (ValueError, LookupError) as e:
             return f"Ancrage refusé : {e}"
@@ -550,6 +692,8 @@ def outils(ctx, dsn, nom_modele, budget):
             with psycopg.connect(dsn, autocommit=True) as conn:
                 nouvelle = recouper_code(conn, jumeau, sources, lecteurs, int(connaissance), citation,
                                          raison, ctx["acteur"], nom_modele)
+                auditer_ecriture(conn, "recouper_connaissance",
+                                 {"connaissance": connaissance, "citation": citation}, "ok")
             return (f"Connaissance {connaissance} recoupée par {citation}." if nouvelle
                     else "Recoupement déjà enregistré.")
         except (ValueError, LookupError) as e:
@@ -575,6 +719,9 @@ def outils(ctx, dsn, nom_modele, budget):
             with psycopg.connect(dsn, autocommit=True) as conn:
                 cid = croisement.signaler(conn, jumeau, enonce, citation_a, citation_b, sources,
                                           ctx.get("lecteurs", []), ctx["acteur"])
+                auditer_ecriture(conn, "signaler_contradiction",
+                                 {"enonce": enonce[:200], "citation_a": citation_a,
+                                  "citation_b": citation_b}, "ok")
             return f"Contradiction {cid} signalée, en attente de décision de l'équipe."
         except ValueError as e:
             return f"Signalement refusé : {e}"
@@ -687,12 +834,34 @@ def outils(ctx, dsn, nom_modele, budget):
 
     dessin = ctx.get("dessin")
     dessiner_schema = outil_dessin(dessin, budget) if dessin else None
+    repondre_pedagogique = outil_reponse_pedagogique(dessin, budget) if dessin else None
+
+    @tool
+    def etat_produit(capacites: list[dict], liens: list[dict] | None = None,
+                     donnees_requises: list[str] | None = None) -> str:
+        """Dérive l'état produit de capacités et de liens, puis projette le schéma.
+
+        Args:
+            capacites: [{"id": "...", "libelle": "..."}].
+            liens: [{"de": "...", "vers": "...", "type": "EXPOSE_PAR|CONSOMME|CABLAGE|DETIENT",
+                "etat": "verifie|en_partie|...", "predicat": "APPELLE|HANDLER_VIDE|DONNEES_FIXES|STUB",
+                "preuve": "...", "appel": "..."}].
+            donnees_requises: ids des capacités qui exigent une donnée ; absent = toutes, vide = aucune.
+        """
+        if not budget.outil():
+            return EPUISE
+        from meridian.application.etat_produit import deriver, projeter
+        etats = deriver(capacites, liens or [], donnees_requises=donnees_requises)
+        return json.dumps({"capacites": [e.as_dict() for e in etats],
+                           "schema": projeter(etats)}, ensure_ascii=False)
 
     code = [architecture, chercher_texte, chercher_symbole, tracer_appels, suivre_appels, lire_code,
             historique_du_code, ce_qui_a_change, ancrer_connaissance]  # sans dépôt (progiciel), aucun outil de code : pas d'outil cassé
     return [mes_connaissances, proposer_connaissance, fusionner_connaissances, signaler_contradiction,
-            consulter_methode, *(code if sources else []), *([chercher_dans, lire_dans] if lecteurs else []),
-            *([recouper_connaissance] if sources or lecteurs else []), *([dessiner_schema] if dessin else [])]
+            consulter_methode, etat_produit, *(code if sources else []), *([chercher_dans, lire_dans] if lecteurs else []),
+            *([recouper_connaissance] if sources or lecteurs else []),
+            *([dessiner_schema] if dessin and not ctx.get("pedagogique") else []),
+            *([repondre_pedagogique] if dessin else [])]
 
 
 @tool
