@@ -11,6 +11,8 @@ import {
   statutObjet,
   statutsSuivants,
   titreObjet,
+  TRANSITIONS_OPPORTUNITE,
+  TRANSITIONS_RISQUE,
 } from "./boucleUi";
 
 const situation = {
@@ -216,6 +218,27 @@ describe("actionsPourObjet", () => {
   });
 });
 
+describe("tables de transitions", () => {
+  test("les tables sont explicites, copiées et synchronisées", () => {
+    const attendu = {
+      DETECTED: ["MATURING", "QUALIFIED", "REJECTED", "DORMANT"],
+      MATURING: ["QUALIFIED", "REJECTED", "DORMANT"],
+      QUALIFIED: ["INVESTIGATING", "SCENARIOS_AVAILABLE", "REJECTED", "DORMANT"],
+      INVESTIGATING: ["SCENARIOS_AVAILABLE", "DECIDED", "REJECTED", "DORMANT"],
+      SCENARIOS_AVAILABLE: ["DECIDED", "REJECTED", "DORMANT"],
+      DECIDED: ["INITIATED", "REJECTED", "DORMANT"],
+      INITIATED: ["MEASURED", "REJECTED"],
+      MEASURED: ["LEARNED"],
+      LEARNED: [],
+      REJECTED: [],
+      DORMANT: ["MATURING", "REJECTED"],
+    };
+    expect(TRANSITIONS_OPPORTUNITE).toEqual(attendu);
+    expect(TRANSITIONS_RISQUE).toEqual(attendu);
+    expect(TRANSITIONS_RISQUE).not.toBe(TRANSITIONS_OPPORTUNITE);
+  });
+});
+
 describe("statutsSuivants", () => {
   test("reprend le cycle canonique et rend une liste vide pour un état terminal", () => {
     expect(statutsSuivants("OPPORTUNITY", "DETECTED"))
@@ -297,9 +320,11 @@ describe("configurationAction", () => {
     expect(action.typeSource).toBe("EXPRESSION");
     expect(action.champs.map((champ) => champ.nom)).toEqual([
       "titre", "description", "valeur_potentielle", "probabilite", "impact",
-      "horizon", "criteres", "preuves", "confiance",
+      "horizon", "criteres", "preuves", "confiance", "type_opportunite",
     ]);
     expect(action.champs.find((champ) => champ.nom === "titre").requis).toBe(true);
+    expect(action.champs.find((champ) => champ.nom === "type_opportunite").options)
+      .toContain("AUTOMATION");
   });
 
   test("la qualification d'un risque expose le même contrat", () => {
@@ -309,8 +334,12 @@ describe("configurationAction", () => {
     expect(action.typeSource).toBe("EXPRESSION");
     expect(action.champs.map((champ) => champ.nom)).toEqual([
       "titre", "description", "valeur_potentielle", "probabilite", "impact",
-      "horizon", "criteres", "preuves", "confiance",
+      "horizon", "criteres", "preuves", "confiance", "type_risque", "severite",
     ]);
+    expect(action.champs.find((champ) => champ.nom === "type_risque").options)
+      .toContain("FOURNISSEUR");
+    expect(action.champs.find((champ) => champ.nom === "severite").options)
+      .toEqual(["FAIBLE", "MOYENNE", "HAUTE", "CRITIQUE"]);
   });
 
   test("le changement de statut ne propose que les transitions autorisées", () => {
@@ -584,6 +613,9 @@ describe("construireCorps", () => {
       criteres: "faisable\nmesurable",
       preuves: "preuve-1, preuve-2",
       confiance: "0,6",
+      type_opportunite: "automation",
+      type_risque: "FOURNISSEUR",
+      severite: "HAUTE",
       statut: "CONFIRMED",
     });
 
@@ -597,38 +629,53 @@ describe("construireCorps", () => {
       criteres: ["faisable", "mesurable"],
       preuves: ["preuve-1", "preuve-2"],
       confiance: 0.6,
+      type_opportunite: "AUTOMATION",
     });
     expect(resultat.corps).not.toHaveProperty("statut");
     expect(resultat.corps).not.toHaveProperty("expression_id");
     expect(resultat.corps).not.toHaveProperty("situation_id");
+    expect(resultat.corps).not.toHaveProperty("type_risque");
+    expect(resultat.corps).not.toHaveProperty("severite");
   });
 
   test("qualifie un risque et valide les bornes", () => {
-    expect(construireCorps("qualifier_risque", {
+    const resultat = construireCorps("qualifier_risque", {
       titre: "Dépendance",
       probabilite: "0,4",
       valeur_potentielle: "50000",
       impact: "Arrêt des paiements",
       horizon: "6 mois",
       criteres: "criticité, réversibilité",
-    }).corps).toEqual({
+      type_risque: "fournisseur",
+      severite: "haute",
+      type_opportunite: "AUTOMATION",
+    });
+    expect(resultat.corps).toEqual({
       titre: "Dépendance",
       probabilite: 0.4,
       valeur_potentielle: 50000,
       impact: "Arrêt des paiements",
       horizon: "6 mois",
       criteres: ["criticité", "réversibilité"],
+      type_risque: "FOURNISSEUR",
+      severite: "HAUTE",
     });
+    expect(resultat.corps).not.toHaveProperty("type_opportunite");
 
     for (const champs of [
       { probabilite: "1.2" },
       { confiance: "-0.1" },
       { valeur_potentielle: "-1" },
+      { type_risque: "MAGIQUE" },
+      { severite: "MAGIQUE" },
     ]) {
       expect(construireCorps("qualifier_risque", {
         titre: "Risque", ...champs,
       }).erreur).toBeTruthy();
     }
+    expect(construireCorps("qualifier_opportunite", {
+      titre: "Opportunité", type_opportunite: "MAGIQUE",
+    }).erreur).toContain("type d'opportunité");
   });
 
   test("change un statut seulement vers une transition autorisée", () => {

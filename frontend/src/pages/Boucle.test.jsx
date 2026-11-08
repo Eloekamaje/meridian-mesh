@@ -1338,6 +1338,9 @@ test("qualifie une expression en opportunité, la sélectionne et rafraîchit le
     saisir(hote.querySelector('[data-testid="boucle-transition-preuves"]'), "preuve-1");
     saisir(hote.querySelector('[data-testid="boucle-transition-confiance"]'), "0,6");
   });
+  expect(hote.querySelector('[data-testid="boucle-transition-type_risque"]')).toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-transition-severite"]')).toBeNull();
+  await choisir(hote.querySelector('[data-testid="boucle-transition-type_opportunite"]'), "AUTOMATION");
   await cliquer(hote, "boucle-transition-enregistrer");
 
   expect(boucleApi.creerOpportunite).toHaveBeenCalledWith("expr-1", {
@@ -1350,6 +1353,7 @@ test("qualifie une expression en opportunité, la sélectionne et rafraîchit le
     criteres: ["faisable", "mesurable"],
     preuves: ["preuve-1"],
     confiance: 0.6,
+    type_opportunite: "AUTOMATION",
   });
   expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).toBeNull();
   expect(hote.querySelector('[data-objet-id="opportunity-1"]')).not.toBeNull();
@@ -1395,6 +1399,9 @@ test("qualifie une expression en risque et le sélectionne", async () => {
     saisir(hote.querySelector('[data-testid="boucle-transition-horizon"]'), "6 mois");
     saisir(hote.querySelector('[data-testid="boucle-transition-criteres"]'), "criticité");
   });
+  expect(hote.querySelector('[data-testid="boucle-transition-type_opportunite"]')).toBeNull();
+  await choisir(hote.querySelector('[data-testid="boucle-transition-type_risque"]'), "FOURNISSEUR");
+  await choisir(hote.querySelector('[data-testid="boucle-transition-severite"]'), "HAUTE");
   await cliquer(hote, "boucle-transition-enregistrer");
 
   expect(boucleApi.creerRisque).toHaveBeenCalledWith("expr-1", {
@@ -1403,6 +1410,8 @@ test("qualifie une expression en risque et le sélectionne", async () => {
     impact: "Arrêt des paiements",
     horizon: "6 mois",
     criteres: ["criticité"],
+    type_risque: "FOURNISSEUR",
+    severite: "HAUTE",
   });
   expect(hote.querySelector('[data-objet-id="risk-1"]')).not.toBeNull();
   expect(hote.querySelector('[data-testid="boucle-section-risk"]')).not.toBeNull();
