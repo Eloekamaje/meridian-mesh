@@ -20,7 +20,7 @@ from fastapi import APIRouter, FastAPI
 from fastapi.testclient import TestClient
 
 from meridian.adapters.inbound.http import boucle as boucle_routes
-from meridian.adapters.outbound.postgres import boucle, depot, rls
+from meridian.adapters.outbound.postgres import boucle, depot, objets_exploitation, rls
 from meridian.application import commandes_boucle
 from meridian.domain import construction_objets_exploitation
 from meridian.domain.modele_entreprise import ModeleInvalide
@@ -719,6 +719,38 @@ def test_pg_un_secret_refuse_ne_laisse_aucune_expression_partielle(monkeypatch):
                 (tenant,),
             ).fetchone()
         assert lignes[0] == 0
+    finally:
+        _nettoyer(tenant)
+
+
+@besoin_pg
+def test_pg_un_echec_du_lien_inverse_annule_l_expression(monkeypatch):
+    tenant = f"c5a-{uuid.uuid4().hex[:10]}"
+    try:
+        with psycopg.connect(DSN, autocommit=True) as conn:
+            depot.appliquer_schema(conn)
+            situation = {**_situation_row(), "tenant_id": tenant}
+            boucle.enregistrer_boucle(conn, tenant, objets=[situation], historique=True)
+
+        def echouer(*_, **__):
+            raise RuntimeError("échec simulé du lien inverse")
+
+        monkeypatch.setattr(objets_exploitation, "_persister_parent", echouer)
+        with psycopg.connect(DSN) as conn:
+            with pytest.raises(RuntimeError):
+                commandes_boucle.creer_expression(
+                    boucle, conn, tenant, "sit-1",
+                    formulation="Expression partielle")
+
+        with psycopg.connect(DSN) as conn:
+            nombre = conn.execute(
+                "SELECT count(*) FROM objet_entreprise "
+                "WHERE tenant_id = %s AND type = 'EXPRESSION'",
+                (tenant,),
+            ).fetchone()[0]
+            situation_lue = boucle.lire_boucle(conn, tenant, "sit-1", as_dict=True)
+        assert nombre == 0
+        assert not situation_lue["donnees"].get("expression_id")
     finally:
         _nettoyer(tenant)
 
