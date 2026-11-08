@@ -1,6 +1,6 @@
 # Méridian — état actuel et reste à faire
 
-> **Photographie :** 6 novembre 2026, commit `d2d9f9b`.
+> **Photographie :** 8 novembre 2026, commit `ef2cf7a` + lot C5d.
 > Ce document décrit ce qui existe réellement dans le dépôt ; il ne décrit pas la cible.
 > Les documents de vision et les PRD restent la cible ; ce fichier est la carte de l’état
 > courant et la matrice de traçabilité vers le code et les tests. Les écarts produit détaillés
@@ -335,8 +335,14 @@ changement de statut contrôlé par le cycle canonique et liens inverses
 `OPEN`, conditions de test, claims soutenants/opposants, preuves et lien inverse
 `Investigation.hypothesis_ids` ; `CONFIRMED` exige une preuve, une Investigation fermée
 est refusée en 409, et `expert_id` reste réservé à C5e, non accepté en entrée HTTP et
-absent du formulaire.
-Le détail du pont est dans [pont-hypotheses-c5c.md](pont-hypotheses-c5c.md).
+absent du formulaire. Depuis C5d, un `Signal` canonique peut être créé globalement ou
+depuis une ou plusieurs Situations (`POST /boucle/signals`,
+`POST /boucle/situations/{id}/signals`, `GET /boucle/signals`), avec source obligatoire,
+empreinte SHA-256 serveur, statut initial `DETECTED`, mode `OBSERVED` et liens inverses
+`Situation.signal_ids` ; un doublon d'empreinte répond 409. La chaîne n'expose
+`SITUATION → SIGNAL` que lorsqu'une seule Situation est liée.
+Le détail du pont est dans [pont-hypotheses-c5c.md](pont-hypotheses-c5c.md) et
+[pont-signaux-c5d.md](pont-signaux-c5d.md).
 Le backfill `migration_canonique` et `/boucle/objets` restent disponibles. La chaîne est donc
 branchée et opérable depuis l'UI, mais l'activation des workers, la migration tenant rétroactive
 et le parcours end-to-end supervisé restent à faire. Le détail est dans
@@ -482,7 +488,11 @@ historique. Ils valent `twin.born` pour le résolveur, jamais une confirmation a
 | **Annotation** | mémoire organisationnelle déclarée | déclarée | `memoire_org`, `objet_entreprise` |
 
 Objets de la vision qui ne sont pas encore des objets d’entreprise canoniques :
-**Signal**, **Expert**, **ExpertContribution**.
+**Expert**, **ExpertContribution**.
+`Signal` est canonique depuis C5d, créé manuellement en global ou depuis une ou plusieurs
+Situations, avec empreinte serveur et liens inverses `Situation.signal_ids` ; il est lisible
+dans la chaîne `SITUATION → SIGNAL` lorsque la liste des Situations contient exactement un
+élément, et sans chaîne amont sinon. C5d n'expose pas de route de changement de statut.
 `Expression` est canonique depuis C5a (une Expression par Situation, lisible dans la chaîne
 `SITUATION → EXPRESSION`). `Opportunity` et `Risk` sont canoniques depuis C5b, qualifiés
 manuellement depuis une Expression et lisibles dans la chaîne
@@ -736,7 +746,8 @@ la suite locale.
 | Expression canonique | **opérationnelle, une par Situation** | `POST /api/boucle/situations/{id}/expressions`, action « Exprimer la situation » dans Boucle ; champs type, formulation, canal, auteur, inconnues, confiance ; statut forcé `PROPOSED` ; doublon 409 ; index unique 1:1 en base ; chaîne `SITUATION → EXPRESSION` ; `enregistrer_boucle` reste réservé aux types canoniques |
 | Opportunités / risques canoniques | **opérationnels depuis une Expression, périmètre UI borné** | `POST /api/boucle/expressions/{id}/opportunities` et `/risks` (statut forcé `DETECTED`, Expression `PROPOSED`/`CONFIRMED` seulement sinon 409, Expression verrouillée, lien inverse atomique), `GET` filtré par Expression, `POST /api/boucle/opportunities/{id}/statut` et `/risks/{id}/statut` (cycle canonique, 409/422/404 ; mauvais type 422), UI de qualification et de transition ; chaîne `SITUATION → EXPRESSION → OPPORTUNITY`/`RISK` ; `enregistrer_boucle` refuse toujours ces types B ; qualification manuelle, pas de pipeline automatique |
 | Hypothèses canoniques | **opérationnelle depuis une Investigation, périmètre UI borné** | `POST /api/boucle/investigations/{id}/hypotheses` (statut forcé `OPEN`, mode `PROPOSED`, Investigation ouverte et verrouillée sinon 409, lien inverse atomique), `GET /api/boucle/hypotheses` filtré par Investigation/statut, `POST /api/boucle/hypotheses/{id}/statut` (cycle `OPEN → STRENGTHENED|WEAKENED|REJECTED|CONFIRMED`, 409/422/404/400/501/503), UI de formulation et de transition, blocage UI de `CONFIRMED` sans preuve ; chaîne `SITUATION → INVESTIGATION → HYPOTHESIS` ; `enregistrer_boucle` refuse toujours ce type ; `expert_id` réservé à C5e, non accepté en entrée ; formulation manuelle, pas de pipeline automatique depuis les Claims ; voir [pont-hypotheses-c5c.md](pont-hypotheses-c5c.md) |
-| Signal, Expert, ExpertContribution | **absents comme objets canoniques** | Noms de famille, dossier de raisonnement ou profils ; voir [ecarts-vision.md](ecarts-vision.md) |
+| Signaux canoniques | **opérationnels en création/liste/lecture, périmètre UI borné** | `POST /api/boucle/signals`, `POST /api/boucle/situations/{id}/signals` (statut forcé `DETECTED`, mode `OBSERVED`, source obligatoire, empreinte SHA-256 serveur, doublon 409, Situation(s) verrouillée(s), lien inverse `signal_ids` atomique), `GET /api/boucle/signals` filtré par Situation/type/statut, UI globale et contextuelle ; chaîne `SITUATION → SIGNAL` seulement si une seule Situation, sinon objet sans amont ; `enregistrer_boucle` refuse toujours ce type ; aucune route de changement de statut en C5d ; création manuelle, pas de pipeline de détection ; voir [pont-signaux-c5d.md](pont-signaux-c5d.md) |
+| Expert, ExpertContribution | **absents comme objets canoniques** | Profils/spécialistes et dossier de raisonnement ; voir [ecarts-vision.md](ecarts-vision.md) |
 | Claims, preuves, maturité | **solide** | contradictions et revue conservées |
 | Ingestion Git + CBM | **solide** | CBM à installer dans l’environnement cible |
 | Liens HTTP/JMS/SOAP | **solide** | revue humaine, contradictions |
