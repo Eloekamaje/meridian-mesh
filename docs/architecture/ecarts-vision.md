@@ -257,7 +257,8 @@ Il reste sans API/UI canonique :
   `preuves`, `confiance` (0..1), `mode` (défaut `DECLARED`). Le serveur force
   `statut=PROPOSED` ; un `statut` client est refusé en 422.
 - Une Situation ne porte qu'une Expression : doublon 409, Situation absente ou hors tenant
-  404, secret/non-JSON 400, `Idempotency-Key` 501, Postgres indisponible 503.
+  404, secret ou données non sérialisables 400, JSON malformé 422 (validation FastAPI),
+  `Idempotency-Key` 501, Postgres indisponible 503.
 - `GET /api/boucle/objets/{eid}?historique=true` renvoie la chaîne
   `[SITUATION, EXPRESSION]`.
 - L'écriture passe par le port d'exploitation ; `enregistrer_boucle` continue de refuser
@@ -282,25 +283,41 @@ Il reste sans API/UI canonique :
   acceptés du client (422).
 - L'Expression source est verrouillée (`FOR UPDATE`), doit appartenir au tenant et être de
   type `EXPRESSION` (une autre source est refusée en 422) ; absente ou hors tenant 404.
-  L'objet et le lien inverse `Expression.opportunity_ids` / `Expression.risk_ids` sont
-  écrits dans la même transaction : un échec du lien ne laisse aucun objet ni lien partiel.
-  Une Expression peut porter plusieurs opportunités et plusieurs risques ; il n'existe pas
-  de contrainte d'unicité 1:1.
+  Elle doit être `PROPOSED` ou `CONFIRMED` : une Expression `REJECTED`/`ARCHIVED` est
+  refusée en 409 (`TransitionRefusee`), comme l'action UI. La règle ne s'applique pas aux
+  GET/listes. L'objet et le lien inverse `Expression.opportunity_ids` /
+  `Expression.risk_ids` sont écrits dans la même transaction : un échec du lien ne laisse
+  aucun objet ni lien partiel. Une Expression peut porter plusieurs opportunités et
+  plusieurs risques ; il n'existe pas de contrainte d'unicité 1:1.
 - `GET /api/boucle/expressions/{eid}/opportunities` et `/risks` listent les objets du
   tenant filtrés par `expression_id`, avec `limite` 1..1000.
 - `POST /api/boucle/opportunities/{oid}/statut` et `POST /api/boucle/risks/{rid}/statut`
   répondent 200 avec l'enveloppe de transition. Corps `{statut, motif?, preuves?}` ;
   `maj_le` est posé par le serveur et la version précédente reste dans `historique`. Le
-  motif courant est conservé dans `motif` ; `justification` reste la trace de création.
-  Transition non autorisée 409, statut
-  inconnu 422, source absente/hors tenant 404, secret/non-JSON 400, `Idempotency-Key` 501,
-  Postgres indisponible 503.
+  motif courant est conservé dans `motif` ; `justification` n'est pas modifiée et reste
+  vide pour une création depuis une Expression (la traçabilité vient de `expression_id`).
+  Transition non autorisée 409, statut inconnu 422, source absente/hors tenant 404,
+  identifiant d'un autre type sur la route de statut 422 (choix de contrat), secret ou
+  données non sérialisables 400, JSON malformé 422 (validation FastAPI),
+  `Idempotency-Key` 501, Postgres indisponible 503.
 - Le domaine ne portait pas de table de transitions avant C5b : `TRANSITIONS_OPPORTUNITE`
   et `TRANSITIONS_RISQUE` sont introduites à partir des états canoniques du Domain Model
-  (§ 20.3), sans ajouter d'état. Le cycle est
-  `DETECTED → MATURING → QUALIFIED → INVESTIGATING → SCENARIOS_AVAILABLE → DECIDED →
-  INITIATED → MEASURED → LEARNED`, avec `REJECTED` et `DORMANT` comme sorties avant les
-  états terminaux ; `LEARNED` et `REJECTED` sont terminaux.
+  (§ 20.3), sans ajouter d'état. Les deux tables sont des copies explicites. Cycle complet :
+  `DETECTED → {MATURING, QUALIFIED, REJECTED, DORMANT}`,
+  `MATURING → {QUALIFIED, REJECTED, DORMANT}`,
+  `QUALIFIED → {INVESTIGATING, SCENARIOS_AVAILABLE, REJECTED, DORMANT}`,
+  `INVESTIGATING → {SCENARIOS_AVAILABLE, DECIDED, REJECTED, DORMANT}`,
+  `SCENARIOS_AVAILABLE → {DECIDED, REJECTED, DORMANT}`,
+  `DECIDED → {INITIATED, REJECTED, DORMANT}`,
+  `INITIATED → {MEASURED, REJECTED}`, `MEASURED → {LEARNED}`,
+  `DORMANT → {MATURING, REJECTED}`. Les raccourcis `DETECTED → QUALIFIED` et
+  `QUALIFIED → SCENARIOS_AVAILABLE` sont donc autorisés ; `LEARNED` et `REJECTED` sont
+  terminaux.
+- Duplication assumée : la table des transitions existe côté domaine et côté UI
+  (`frontend/src/components/boucle/boucleUi.js`). Aucun endpoint ne l'expose et il n'y a
+  pas de promesse de source unique ; les deux copies doivent rester synchronisées et un
+  test frontend vérifie la table exacte. C'est un risque accepté pour éviter un aller-retour
+  réseau et un couplage de démarrage.
 - Lecture : `OPPORTUNITY` et `RISK` sont ajoutés à `_CLASSES_LECTURE`, donc à
   `TYPES_LECTURE`, jamais à `TYPES_BOUCLE`. `_source_principale` suit `expression_id`, puis
   `situation_id`, puis `investigation_id`. `GET /api/boucle/objets/{id}?historique=true`
@@ -308,15 +325,17 @@ Il reste sans API/UI canonique :
   et `enregistrer_boucle` refuse toujours ces types B.
 - UI : actions « Qualifier une opportunité » / « Qualifier un risque » sur une Expression
   `PROPOSED` ou `CONFIRMED` ; formulaire `ModaleTransition` avec titre, description, valeur
-  potentielle, probabilité, impact, horizon, critères, preuves et confiance (`mode` reste un
-  champ API, défaut `INFERRED`, non exposé dans ce formulaire) ; actions de changement de
-  statut avec les seules transitions autorisées, sélection/refetch après création et
-  rafraîchissement du lien inverse de l'Expression.
+  potentielle, probabilité, impact, horizon, critères, preuves, confiance, puis
+  `type_opportunite` pour l'opportunité ou `type_risque`/`severite` pour le risque (`mode`
+  reste un champ API, défaut `INFERRED`, non exposé dans ce formulaire) ; actions de
+  changement de statut avec les seules transitions autorisées, sélection/refetch après
+  création et rafraîchissement du lien inverse de l'Expression.
 - Limites : qualification manuelle uniquement, aucun pipeline automatique
   Signal/Situation → Expression → Opportunité/Risque, pas de score composite, pas de
   suppression, pas de rattachement automatique à une Investigation, une Decision ou un
   Scenario. `impact` et `criteres` sont des champs optionnels ajoutés aux dataclasses pour
-  porter le contrat ; `valeur_potentielle` et `probabilite` restent bornés.
+  porter le contrat ; `valeur_potentielle` est revalidée à la persistance et
+  `probabilite` reste borné.
 
 ### 6.4 La maturation et l’expression ne sont pas un pipeline
 
