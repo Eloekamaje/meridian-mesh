@@ -9,10 +9,14 @@ traductions d'erreurs sans dépendre d'un serveur. Le test Postgres est opt-in v
 from __future__ import annotations
 
 import copy
+import json
 import os
+import threading
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager, nullcontext
 from dataclasses import asdict, is_dataclass
+from types import SimpleNamespace
 
 import psycopg
 import pytest
@@ -145,9 +149,23 @@ class _Store:
         situation = champs.pop("situation")
         return construction_objets_exploitation.nouvelle_expression(situation, **champs)
 
+    def nouvelle_situation(self, **champs):
+        return boucle.Situation(**champs)
+
     def enregistrer_boucle(self, conn, tenant_id=None, objets=None, **kwargs):
-        self.enregistres_boucle.append(copy.deepcopy(list(objets or [])))
-        raise AssertionError("enregistrer_boucle ne doit pas persister une Expression")
+        objets = list(objets or [])
+        self.enregistres_boucle.extend(copy.deepcopy(objets))
+        liees = [
+            objet for objet in objets
+            if str(getattr(objet, "type", objet.get("type") if isinstance(objet, dict) else ""))
+            .upper() == "EXPRESSION"
+        ]
+        if liees:
+            raise AssertionError("enregistrer_boucle ne doit pas persister une Expression")
+        for objet in objets:
+            ligne = _ligne(objet)
+            self.objets[ligne["id"]] = ligne
+        return objets
 
     def enregistrer_objets(
         self, conn, tenant_id=None, objets=None, *, historique=False, as_dict=True,
@@ -253,6 +271,19 @@ def test_nouvelle_expression_refuse_une_situation_d_un_autre_type():
 # --------------------------------------------------------------------------- #
 # Commande
 # --------------------------------------------------------------------------- #
+
+
+def test_creer_situation_ignore_expression_id_direct():
+    store = _Store()
+
+    resultat = commandes_boucle.creer_situation(
+        store, _Connexion(), TENANT,
+        titre="Situation non exprimable",
+        expression_id="expr-client",
+    )
+
+    assert resultat.objet["type"] == "SITUATION"
+    assert not resultat.objet["donnees"].get("expression_id")
 
 
 def test_creer_expression_persiste_l_expression_et_le_lien_inverse():
@@ -372,6 +403,17 @@ def test_enregistrer_boucle_refuse_toujours_expression_et_types_lecture_l_accept
             None, TENANT, objets=[expression], as_dict=False)
 
 
+def test_types_boucle_et_lecture_ont_une_source_unique_et_un_ordre_exact():
+    assert boucle.TYPES_BOUCLE == (
+        "SITUATION", "INVESTIGATION", "DECISION", "INITIATIVE",
+        "OUTCOME", "LEARNING", "SCENARIO",
+    )
+    assert boucle.TYPES_LECTURE == (*boucle.TYPES_BOUCLE, "EXPRESSION")
+    assert set(boucle._CLASSES_LECTURE) == set(boucle.TYPES_LECTURE)
+    assert boucle._CLASSES_LECTURE["EXPRESSION"].__name__ == "Expression"
+    assert boucle._CLASSES_LECTURE["SCENARIO"].__name__ == "Scenario"
+
+
 # --------------------------------------------------------------------------- #
 # Routes HTTP
 # --------------------------------------------------------------------------- #
@@ -448,6 +490,23 @@ def test_post_expression_retourne_le_contrat_c5a(monkeypatch):
     assert appels[0][2]["confiance"] == 0.8
 
 
+def test_post_situation_refuse_expression_id_client(monkeypatch):
+    client = _client(monkeypatch)
+    monkeypatch.setattr(
+        boucle_routes.commandes_boucle, "creer_situation",
+        lambda *_, **__: pytest.fail("la situation ne doit pas être créée"),
+    )
+
+    reponse = client.post(f"{BASE}/situations", json={
+        "titre": "Situation non exprimable",
+        "expression_id": "expr-client",
+    })
+
+    assert reponse.status_code == 422
+    detail = json.dumps(reponse.json())
+    assert "expression_id" in detail
+
+
 def test_post_expression_utilise_idee_par_defaut(monkeypatch):
     client = _client(monkeypatch)
     appels = []
@@ -510,6 +569,33 @@ def test_post_expression_traduit_les_erreurs(monkeypatch):
             f"{BASE}/situations/sit-x/expressions", json={"formulation": "Valide"})
         assert reponse.status_code == statut
         assert "Traceback" not in reponse.text
+
+
+def test_unique_violation_expression_a_un_message_409_dedie():
+    dedie = SimpleNamespace(
+        diag=SimpleNamespace(constraint_name="objet_entreprise_expression_situation_unique"))
+    generique = SimpleNamespace(diag=SimpleNamespace(constraint_name="autre_contrainte"))
+
+    assert "Situation déjà exprimée" in boucle_routes._detail_unique_violation(dedie)
+    assert boucle_routes._detail_unique_violation(generique) == "objet déjà existant"
+
+
+def test_post_expression_mappe_unique_violation_expression_en_409(monkeypatch):
+    client = _client(monkeypatch)
+
+    class DoublonUnique(psycopg.errors.UniqueViolation):
+        diag = SimpleNamespace(
+            constraint_name="objet_entreprise_expression_situation_unique")
+
+    def echouer(*_, **__):
+        raise DoublonUnique("doublon")
+
+    monkeypatch.setattr(boucle_routes.commandes_boucle, "creer_expression", echouer)
+    reponse = client.post(
+        f"{BASE}/situations/sit-1/expressions", json={"formulation": "Valide"})
+
+    assert reponse.status_code == 409
+    assert "Situation déjà exprimée" in reponse.json()["detail"]
 
 
 def test_post_expression_refuse_une_cle_d_idempotence(monkeypatch):
@@ -666,7 +752,7 @@ def test_pg_creation_expression_et_lecture_de_la_chaine_situation_expression(mon
             headers={"X-Tenant": tenant},
         )
         assert doublon.status_code == 409
-        assert "Expression" in doublon.json()["detail"]
+        assert "Situation déjà exprimée" in doublon.json()["detail"]
         with psycopg.connect(DSN) as conn:
             nombre = conn.execute(
                 "SELECT count(*) FROM objet_entreprise "
@@ -681,6 +767,103 @@ def test_pg_creation_expression_et_lecture_de_la_chaine_situation_expression(mon
             headers={"X-Tenant": f"{tenant}-autre"},
         )
         assert hors_tenant.status_code == 404
+    finally:
+        _nettoyer(tenant)
+
+
+@besoin_pg
+def test_pg_migration_index_unique_expression_situation(monkeypatch):
+    tenant = f"c5a-{uuid.uuid4().hex[:10]}"
+    try:
+        with psycopg.connect(DSN, autocommit=True) as conn:
+            depot.appliquer_schema(conn)
+            unique = conn.execute(
+                "SELECT indexdef FROM pg_indexes "
+                "WHERE schemaname = current_schema() AND indexname = %s",
+                ("objet_entreprise_expression_situation_unique",),
+            ).fetchone()
+            filtre = conn.execute(
+                "SELECT indexdef FROM pg_indexes "
+                "WHERE schemaname = current_schema() AND indexname = %s",
+                ("objet_entreprise_exploitation_expression",),
+            ).fetchone()
+            situation = {**_situation_row(), "tenant_id": tenant}
+            boucle.enregistrer_boucle(conn, tenant, objets=[situation], historique=True)
+
+        assert unique is not None and "UNIQUE" in unique[0]
+        assert "donnees ->> 'situation_id'::text" in unique[0]
+        assert filtre is not None and "UNIQUE" not in filtre[0]
+
+        with psycopg.connect(DSN) as conn:
+            commandes_boucle.creer_expression(
+                boucle, conn, tenant, "sit-1", formulation="Première expression")
+
+        with psycopg.connect(DSN) as conn:
+            with pytest.raises(psycopg.errors.UniqueViolation) as levee:
+                conn.execute(
+                    "INSERT INTO objet_entreprise "
+                    "(id, tenant_id, famille, type, mode, titre, donnees) "
+                    "VALUES (%s, %s, 'emergence', 'EXPRESSION', 'DECLARED', '', %s::jsonb)",
+                    (
+                        "expr-doublon-direct",
+                        tenant,
+                        json.dumps({
+                            "situation_id": "sit-1",
+                            "type_expression": "IDEE",
+                            "formulation": "Deuxième expression directe",
+                        }),
+                    ),
+                )
+        assert levee.value.diag.constraint_name == (
+            "objet_entreprise_expression_situation_unique")
+    finally:
+        _nettoyer(tenant)
+
+
+@besoin_pg
+def test_pg_deux_creations_concurrentes_laissent_une_seule_expression():
+    tenant = f"c5a-{uuid.uuid4().hex[:10]}"
+    try:
+        with psycopg.connect(DSN, autocommit=True) as conn:
+            depot.appliquer_schema(conn)
+            situation = {**_situation_row(), "tenant_id": tenant}
+            boucle.enregistrer_boucle(conn, tenant, objets=[situation], historique=True)
+
+        barriere = threading.Barrier(2)
+
+        def tenter(formulation: str):
+            barriere.wait(timeout=10)
+            with psycopg.connect(DSN) as conn:
+                try:
+                    resultat = commandes_boucle.creer_expression(
+                        boucle, conn, tenant, "sit-1", formulation=formulation)
+                except commandes_boucle.DoublonExploitation as exc:
+                    return ("doublon", str(exc))
+                return ("succes", resultat.objet["id"])
+
+        with ThreadPoolExecutor(max_workers=2) as executeur:
+            futurs = [
+                executeur.submit(tenter, "Expression A"),
+                executeur.submit(tenter, "Expression B"),
+            ]
+            resultats = [futur.result(timeout=30) for futur in futurs]
+
+        succes = [resultat for resultat in resultats if resultat[0] == "succes"]
+        doublons = [resultat for resultat in resultats if resultat[0] == "doublon"]
+        assert len(succes) == 1
+        assert len(doublons) == 1
+        assert "Situation déjà exprimée" in doublons[0][1]
+        gagnante = succes[0][1]
+
+        with psycopg.connect(DSN) as conn:
+            nombre = conn.execute(
+                "SELECT count(*) FROM objet_entreprise "
+                "WHERE tenant_id = %s AND type = 'EXPRESSION'",
+                (tenant,),
+            ).fetchone()[0]
+            situation_lue = boucle.lire_boucle(conn, tenant, "sit-1", as_dict=True)
+        assert nombre == 1
+        assert situation_lue["donnees"]["expression_id"] == gagnante
     finally:
         _nettoyer(tenant)
 

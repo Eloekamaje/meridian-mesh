@@ -165,7 +165,6 @@ class CreationSituation(_CorpsTransition):
     claim_ids: list[str] | None = None
     opportunite_ids: list[str] | None = None
     risk_ids: list[str] | None = None
-    expression_id: str | None = None
     inconnues: list[str] | None = None
     mode: ModeCanonique | None = None
     preuves: list[Any] | None = Field(None, max_length=100)
@@ -705,6 +704,14 @@ async def graphe_chemins(
 # --------------------------------------------------------------------------- #
 
 
+def _detail_unique_violation(exc: psycopg.errors.UniqueViolation) -> str:
+    """Message 409 dédié quand l'index 1:1 Situation → Expression est heurté."""
+    contrainte = getattr(getattr(exc, "diag", None), "constraint_name", None)
+    if contrainte == "objet_entreprise_expression_situation_unique":
+        return "Situation déjà exprimée : une Expression existe déjà pour cette Situation"
+    return "objet déjà existant"
+
+
 async def _executer_transition(tenant: str, action, *, request: Request | None = None):
     """Ouvre une connexion tenant-scoped et traduit les erreurs métier en HTTP."""
     dsn = _dsn()
@@ -728,7 +735,7 @@ async def _executer_transition(tenant: str, action, *, request: Request | None =
             VersionRefusee) as exc:
         raise HTTPException(409, str(exc)) from exc
     except psycopg.errors.UniqueViolation as exc:
-        raise HTTPException(409, "objet déjà existant") from exc
+        raise HTTPException(409, _detail_unique_violation(exc)) from exc
     except modele_entreprise.ModeleInvalide as exc:
         raise HTTPException(422, str(exc)) from exc
     except ObjetInvalide as exc:

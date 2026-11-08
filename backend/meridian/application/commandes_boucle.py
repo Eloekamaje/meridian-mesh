@@ -210,6 +210,8 @@ def creer_situation(
     depot: BoucleStore, conn: Any, tenant_id: str, **champs: Any,
 ) -> ResultatTransition:
     """Crée une Situation racine ; un identifiant existant est refusé par le port (409)."""
+    # Le lien inverse est serveur : seule ``creer_expression`` pose ``expression_id``.
+    champs.pop("expression_id", None)
     identifiant = _texte(champs.pop("id", None)) or f"situation-{uuid.uuid4().hex[:12]}"
     if not _texte(champs.get("titre")):
         champs["titre"] = _texte(champs.get("description")) or _texte(champs.get("resume"))
@@ -350,11 +352,20 @@ def creer_expression(
         existante = _texte(_valeur_source(situation, "expression_id"))
         if existante:
             raise DoublonExploitation(
-                f"situation {situation_id!r} possède déjà une Expression {existante!r}")
+                f"Situation déjà exprimée : la situation {situation_id!r} "
+                f"possède déjà l'Expression {existante!r}")
         objet = depot.nouvelle_expression(
             situation=situation, tenant_id=tenant_id,
             statut=STATUT_EXPRESSION, **champs)
-        depot.enregistrer_objets(conn, tenant_id, objets=[objet], as_dict=False)
+        try:
+            depot.enregistrer_objets(conn, tenant_id, objets=[objet], as_dict=False)
+        except ObjetExistant as exc:
+            # L'index unique (tenant_id, situation_id) reste la seconde barrière
+            # derrière le verrou et le pré-check : le port convertit la
+            # UniqueViolation en ObjetExistant, que le contrat public expose en 409.
+            raise DoublonExploitation(
+                "Situation déjà exprimée : une Expression existe déjà pour cette Situation"
+            ) from exc
         return _relire(depot, conn, tenant_id, objet.id)
 
 

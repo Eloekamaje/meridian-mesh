@@ -43,10 +43,9 @@ __all__ = [
 # (dont EXPRESSION) sont persistés par ``enregistrer_objets`` et seulement **lus** ici :
 # les mélanger élargirait à tort le contrat d'écriture de la boucle.
 TYPES_BOUCLE = (
-    "SITUATION", "INVESTIGATION", "DECISION", "SCENARIO",
-    "INITIATIVE", "OUTCOME", "LEARNING",
+    "SITUATION", "INVESTIGATION", "DECISION", "INITIATIVE",
+    "OUTCOME", "LEARNING", "SCENARIO",
 )
-TYPES_LECTURE = (*TYPES_BOUCLE, "EXPRESSION")
 STATUT_DECISION_PROPOSEE = "PROPOSED"
 STATUT_DECISION_TRANCHEE = "DECIDED"
 STATUT_INITIATIVE = "PLANNED"
@@ -445,15 +444,17 @@ _CLASSES = {
     "SITUATION": Situation,
     "INVESTIGATION": Investigation,
     "DECISION": Decision,
-    "SCENARIO": Scenario,
     "INITIATIVE": Initiative,
     "OUTCOME": Outcome,
     "LEARNING": Learning,
+    "SCENARIO": Scenario,
 }
 
 # Lecture seule des types d'exploitation : EXPRESSION est lisible dans une chaîne
-# canonique sans devenir un type d'écriture de ``enregistrer_boucle``.
+# canonique sans devenir un type d'écriture de ``enregistrer_boucle``. Cette table est
+# l'unique source de ``TYPES_LECTURE`` et sert à valider toute lecture canonique.
 _CLASSES_LECTURE = {**_CLASSES, "EXPRESSION": Expression}
+TYPES_LECTURE = tuple(_CLASSES_LECTURE)
 
 
 def ouvrir_investigation(
@@ -1016,9 +1017,9 @@ def enregistrer_boucle(
 
 def _objet_depuis_ligne(ligne: Mapping[str, Any]) -> Any:
     type_objet = _type_de(ligne)
-    classe = _CLASSES_LECTURE.get(type_objet)
-    if classe is None:
+    if type_objet not in TYPES_LECTURE:
         raise BoucleInvalide(f"type hors boucle : {type_objet or 'inconnu'}")
+    classe = _CLASSES_LECTURE[type_objet]
     noms = {champ.name for champ in fields(classe)}
     donnees = {
         cle: copy.deepcopy(valeur) for cle, valeur in (ligne.get("donnees") or {}).items()
