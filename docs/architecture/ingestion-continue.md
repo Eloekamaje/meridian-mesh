@@ -62,7 +62,7 @@ prochaine échéance `source_schedule`.
 
 - ECS/Fargate pour l’API et les workers ; AWS Batch/EC2+EBS pour les gros index.
 - SQS pour la file, EventBridge Scheduler pour le polling, S3 pour les artefacts, RDS pour les runs,
-  Neo4j/Neptune pour le graphe, Secrets Manager pour les jetons.
+  Neo4j/Neptune pour le graphe, Vault pour les jetons (Secrets Manager en adaptateur optionnel).
 - Adapters optionnels dans `meridian/adapters/outbound/aws/adapters.py` : Secrets Manager (`aws:<secret>#champ`), publication
   SQS/EventBridge pour l'outbox, et mapping `source_schedule` → EventBridge Scheduler. boto3 n'est importé
   qu'au premier appel ; les tests utilisent des doubles, sans réseau. Aucun déploiement AWS n'est revendiqué.

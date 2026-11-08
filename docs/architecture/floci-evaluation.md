@@ -1,5 +1,10 @@
 # Floci — évaluation pour les tests AWS de Méridian
 
+> **Mise à jour :** Floci est désormais intégré comme **laboratoire AWS local de la
+> plomberie** Méridian (S3, SQS, EventBridge, Scheduler, Secrets, KMS, Logs, IAM).
+> Voir [floci-aws-local.md](floci-aws-local.md). La conclusion sur Bedrock reste
+> inchangée : Floci ne valide pas les modèles.
+
 ## Ce que c'est
 
 [Floci](https://github.com/floci-io/floci) est un émulateur AWS local sous licence MIT,
@@ -65,8 +70,8 @@ Pour le pilote Bedrock réel du 2026-11-06, **Floci n'a pas été utilisé** : i
 produit que des réponses factices et n'aurait pas prouvé l'accès au compte AWS. Le test
 réel est resté sur AWS, en `ca-central-1`, avec le profil par défaut de la machine.
 
-Floci reste une option pertinente pour un futur test CI de plomberie AWS. Si on l'ajoute,
-il doit être :
+Floci est maintenant utilisé comme **laboratoire AWS local de plomberie** :
+[floci-aws-local.md](floci-aws-local.md). Il reste :
 
 - opt-in (`AWS_ENDPOINT_URL=http://localhost:4566`, credentials factices) ;
 - sans changer le défaut de production ;
@@ -74,21 +79,23 @@ il doit être :
 - documenté comme « stub », pour qu'aucun rapport ne présente ses réponses comme un
   résultat Bedrock.
 
+Le laboratoire vérifie S3, SQS, EventBridge, Scheduler, Secrets Manager (adaptateur
+optionnel), KMS, CloudWatch Logs et IAM avec les adapters réels de Méridian. Vault
+reste le coffre principal. Bedrock reste validé sur le compte AWS réel, pas via Floci.
+
 ## Lancer Floci localement (rappel)
 
 ```bash
-docker compose up -d          # dans le dépôt Floci
-export AWS_ENDPOINT_URL=http://localhost:4566
-export AWS_ACCESS_KEY_ID=test
-export AWS_SECRET_ACCESS_KEY=test
-export AWS_DEFAULT_REGION=ca-central-1
+scripts/dev-floci.sh up
+eval "$(scripts/dev-floci.sh env)"
 
 aws bedrock-runtime converse \
   --model-id anthropic.claude-3-haiku-20240307-v1:0 \
   --messages '[{"role":"user","content":[{"text":"bonjour"}]}]'
 ```
 
-La réponse est celle du stub : elle ne prouve rien sur le modèle réel.
+La réponse est celle du stub : elle ne prouve rien sur le modèle réel. Le runbook
+complet est dans [floci-aws-local.md](floci-aws-local.md).
 
 ## Références
 

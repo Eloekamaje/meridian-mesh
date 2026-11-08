@@ -1,4 +1,7 @@
-> **Note de lecture (2026-11-03) :** ce document est une référence technique détaillée. Pour l’état consolidé, les écarts et les décisions ouvertes, lire d’abord [MERIDIAN_Architecture_Master_v1.md](MERIDIAN_Architecture_Master_v1.md).
+> **Note de lecture (2026-11-03) :** ce document est une référence technique détaillée. Pour l'état consolidé, les écarts et les décisions ouvertes, lire d'abord [MERIDIAN_Architecture_Master_v1.md](MERIDIAN_Architecture_Master_v1.md).
+>
+> **Cible AWS performance et agentique :** [architecture-cible-aws.md](architecture/architecture-cible-aws.md).
+> Elle arbitre les choix de compute, de stores, de workflows et de services AgentCore.
 
 # MÉRIDIAN — Technical Architecture
 ## Architecture technique cible pour un système d’intelligence vivante de l’entreprise
@@ -2142,7 +2145,8 @@ max data sensitivity
 
 # 65. Secrets
 
-- Secrets Manager ;
+- Vault (KV v2) comme coffre principal ;
+- AWS Secrets Manager en adaptateur optionnel ;
 - rotation ;
 - aucune credential dans prompts ;
 - short-lived credentials autant que possible.
@@ -2740,7 +2744,7 @@ Root cause candidate
 | Graph analytics | Neptune Analytics |
 | Search/vector | Amazon OpenSearch |
 | Cache | ElastiCache/Redis |
-| Secrets | AWS Secrets Manager |
+| Secrets | HashiCorp Vault (principal) ; AWS Secrets Manager (optionnel) |
 | Encryption | AWS KMS |
 | Observability | CloudWatch + OpenTelemetry + intégration Datadog |
 | Identity | Enterprise IdP / OIDC / SAML |

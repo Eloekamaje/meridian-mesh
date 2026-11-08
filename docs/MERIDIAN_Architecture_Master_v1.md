@@ -214,7 +214,7 @@ Les adapters traduisent ; ils ne portent pas la politique métier.
 | Neo4j | topologie du Mesh | projection cible |
 | Redis | SSE, verrous, limiteurs | état partagé |
 | S3/GridFS/local | pièces et artefacts | stockage binaire |
-| Vault/Secrets Manager | secrets | externe |
+| Vault (principal) / Secrets Manager (optionnel) | secrets | externe |
 
 ---
 
@@ -389,7 +389,7 @@ Ces ADR sont **proposed** : ils ne sont pas encore acceptés.
 - Bedrock uniquement dans le profil bancaire ;
 - `ca-central-1` par défaut ;
 - VPC privé, PrivateLink ;
-- RDS Postgres, Neptune/Neo4j, S3, SQS/EventBridge, Secrets Manager, KMS, CloudWatch ;
+- RDS Postgres, Neptune/Neo4j, S3, SQS/EventBridge, Vault (principal), KMS, CloudWatch ; Secrets Manager en adaptateur optionnel ;
 - ECS/Fargate ou EKS pour API, UI, workers ;
 - AgentCore possible plus tard, pas obligatoire.
 
@@ -420,6 +420,19 @@ WEB_PROVIDER=none
 
 1. machine préparatoire avec profil AWS, Bedrock seul ;
 2. AWS complet, réseau privé et workers managés.
+
+### Cible consolidée
+
+L’architecture AWS de référence pour la performance et les services agentic est
+[architecture-cible-aws.md](architecture/architecture-cible-aws.md) : chemins chaud
+et froid, SLO, choix de services, dimensionnement et migration en trois étapes.
+
+### Laboratoire local
+
+[Floci](architecture/floci-aws-local.md) porte la plomberie AWS locale : S3, SQS,
+EventBridge, Scheduler, Secrets Manager (adaptateur optionnel), KMS, CloudWatch Logs
+et IAM, avec Terraform et un smoke des adapters. Vault reste le coffre principal,
+hors Floci. Il ne valide pas Bedrock : son runtime est un stub/proxy.
 
 ### À faire
 

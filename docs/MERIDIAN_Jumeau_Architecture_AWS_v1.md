@@ -1,6 +1,13 @@
 # MÉRIDIAN — Architecture AWS du jumeau agentique
 ## EventBridge, Step Functions, AgentCore Runtime : de la commande d'un jumeau à sa veille continue
 
+> **Arbitrage :** cette proposition est une référence historique. La cible AWS
+> consolidée pour la performance et l’agentique est
+> [architecture-cible-aws.md](architecture/architecture-cible-aws.md). Les points
+> conservés : AgentCore Runtime/Gateway/Memory, MCP, S3 d’artefacts, identité et
+> policy. Les points révisés : Step Functions comme vérité, DocumentDB, Neptune,
+> AgentCore sur le chemin chaud.
+
 **Statut :** Proposition d'architecture de départ, à valider (sécurité, conformité, plateforme) ; variante sans AgentCore en §10  
 **Version :** 1.0  
 **Date :** 2026-10-27  

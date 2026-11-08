@@ -129,6 +129,7 @@ def _sans_commentaires(texte):
 TYPES = ("sequence", "flux", "architecture", "data-model")
 MAX_BOITES, MAX_FLECHES = 12, 20
 STYLE_CODE = ("stroke:#60A5FA,stroke-width:1.5px", "bleu = lu dans le code (ligne d'appel)")
+STATUTS = {"ok": "✅", "partiel": "⚠️", "absent": "⛔", "inconnu": "❔"}
 RE_CITATION_CODE = re.compile(r"^(?:(?P<depot>[\w.-]+):)?(?P<chemin>[^\s#:]+)#L(?P<debut>\d+)(?:-L(?P<fin>\d+))?$")
 
 
@@ -142,6 +143,12 @@ def _libelle(texte, longueur=60):
     return " ".join(re.sub(r"[\[\]{}()<>|\"`#;:%]", " ", str(texte or "")).split())[:longueur] or "?"
 
 
+def _avec_statut(boite):
+    """Le libellé d'une boîte, suivi de sa marque d'état quand elle en a une."""
+    marque = STATUTS.get(boite.get("statut") or "")
+    return f"{boite['libelle']} {marque}" if marque else boite["libelle"]
+
+
 class Dessin:
     """Le schéma d'une réponse : rendu par l'outil dessiner_schema, inséré par Flore après la relecture."""
 
@@ -149,6 +156,7 @@ class Dessin:
         # lire_lignes(citation) -> (lignes citées, locator git://, étiquette) ; ValueError/LookupError si introuvable.
         self.connaissances, self.lire_lignes = connaissances, lire_lignes
         self.mermaid, self.legende, self.preuves, self.structure = None, "", [], None
+        self.reponse_pedagogique = None
 
     def _fondement(self, fleche, boites):
         """(état, preuve affichable ou None) si la flèche est fondée, sinon (None, raison du refus)."""
@@ -177,12 +185,17 @@ class Dessin:
         tableau = {}
         for b in list(boites or [])[:MAX_BOITES]:
             ident = _id(b.get("id"))
-            tableau.setdefault(ident, {"id": ident, "libelle": _libelle(b.get("libelle") or b.get("id"))})
+            statut = b.get("statut") if b.get("statut") in STATUTS else None
+            tableau.setdefault(ident, {"id": ident, "libelle": _libelle(b.get("libelle") or b.get("id")),
+                                       "statut": statut})
         gardees, refus, preuves = [], [], []
         for i, f in enumerate(list(fleches or [])[:MAX_FLECHES], 1):
             f = {**f, "de": _id(f.get("de")), "vers": _id(f.get("vers"))}
             if f["de"] not in tableau or f["vers"] not in tableau:
                 refus.append(f"flèche {i} : boîte inconnue ({f['de']} ou {f['vers']})")
+                continue
+            if f["de"] == f["vers"]:
+                refus.append(f"flèche {i} : une flèche ne peut pas boucler sur la même boîte")
                 continue
             etat, info = self._fondement(f, tableau)
             if etat is None:
@@ -191,9 +204,13 @@ class Dessin:
             gardees.append((f, etat))
             if info:
                 preuves.append(info)
-        if not gardees:
-            return "Aucune flèche fondée : rien n'est dessiné. " + " ; ".join(refus)
         utilisees = {f[c] for f, _ in gardees for c in ("de", "vers")}
+        if type_ in {"architecture", "data-model"}:
+            # Une boîte annotée d'un statut reste visible sans flèche : c'est ainsi qu'on montre une absence
+            # (un écran non câblé, une tâche pas encore écrite) sans inventer de lien.
+            utilisees |= {i for i, boite in tableau.items() if boite.get("statut")}
+        if not gardees and not utilisees:
+            return "Aucune flèche fondée : rien n'est dessiné. " + " ; ".join(refus)
         if type_ == "flux":
             entrantes = {f["vers"] for f, _ in gardees}
             sources = [i for i in tableau if i in utilisees and i not in entrantes]
@@ -217,7 +234,10 @@ class Dessin:
                 absents = ", ".join(i for i in tableau if i in utilisees and i not in vus)
                 return (f"Flux discontinu : {absents} n'est relié à aucune entrée. "
                         "Relie toutes les étapes ou retire celles qui sont isolées.")
-        self.mermaid = (_sequence if type_ == "sequence" else _flux)(tableau, gardees, groupes)
+        if type_ == "sequence":
+            self.mermaid = _sequence(tableau, gardees, groupes)
+        else:
+            self.mermaid = _flux(tableau, gardees, groupes, utilisees)
         groupes_structure = []
         for groupe in list(groupes or [])[:6]:
             ids = [_id(i) for i in groupe.get("ids", []) if _id(i) in utilisees]
@@ -225,7 +245,8 @@ class Dessin:
                 groupes_structure.append({"libelle": _libelle(groupe.get("libelle")), "ids": ids})
         self.structure = {
             "type": type_, "titre": _libelle(titre, 80),
-            "boites": [{"id": i, "libelle": tableau[i]["libelle"]} for i in tableau if i in utilisees],
+            "boites": [{"id": i, "libelle": tableau[i]["libelle"], "statut": tableau[i]["statut"]}
+                       for i in tableau if i in utilisees],
             "fleches": [{"de": f["de"], "vers": f["vers"], "libelle": _libelle(f.get("libelle"), 64), "etat": e}
                         for f, e in gardees],
             "groupes": groupes_structure,
@@ -233,6 +254,8 @@ class Dessin:
         self.preuves = preuves  # le dernier schéma dessiné fait foi (une correction remplace le précédent)
         etats = {e for _, e in gardees}
         legende = ([STYLE_CODE[1]] if "code" in etats else []) + [STYLES[e][1] for e in STYLES if e in etats]
+        if not legende:
+            legende = ["statuts déclarés par l'analyse"]
         self.legende = (f"{_libelle(titre, 80)}. Légende : " if titre else "Légende : ") + " · ".join(legende) + (
             f" · {len(refus)} lien(s) non dessiné(s), faute de preuve" if refus else "")
         return (f"Schéma prêt ({len(gardees)} flèche(s)) : il sera affiché dans ta réponse, ne le recopie pas."
@@ -242,17 +265,18 @@ class Dessin:
         return f"```mermaid\n{self.mermaid}\n```\n{self.legende}." if self.mermaid else ""
 
 
-def _flux(tableau, gardees, groupes):
-    utilisees = {f[c] for f, _ in gardees for c in ("de", "vers")}
+def _flux(tableau, gardees, groupes, utilisees=None):
+    if utilisees is None:
+        utilisees = {f[c] for f, _ in gardees for c in ("de", "vers")}
     lignes, dans_groupe = ["flowchart LR"], set()
     for j, g in enumerate(list(groupes or [])[:6]):
         membres = [_id(i) for i in g.get("ids", []) if _id(i) in utilisees and _id(i) not in dans_groupe]
         if membres:
             lignes.append(f'  subgraph g{j}["{_libelle(g.get("libelle"))}"]')
-            lignes += [f'    {m}["{tableau[m]["libelle"]}"]' for m in membres]
+            lignes += [f'    {m}["{_avec_statut(tableau[m])}"]' for m in membres]
             lignes.append("  end")
             dans_groupe.update(membres)
-    lignes += [f'  {i}["{tableau[i]["libelle"]}"]' for i in tableau if i in utilisees and i not in dans_groupe]
+    lignes += [f'  {i}["{_avec_statut(tableau[i])}"]' for i in tableau if i in utilisees and i not in dans_groupe]
     lignes += [f'  {f["de"]} -->|"{_libelle(f.get("libelle"), 40)}"| {f["vers"]}' for f, _ in gardees]
     lignes += [f"  linkStyle {k} {(STYLE_CODE if e == 'code' else STYLES[e])[0]}" for k, (_, e) in enumerate(gardees)]
     return "\n".join(lignes)
@@ -260,6 +284,6 @@ def _flux(tableau, gardees, groupes):
 
 def _sequence(tableau, gardees, groupes):
     utilisees = list(dict.fromkeys(f[c] for f, _ in gardees for c in ("de", "vers")))
-    lignes = ["sequenceDiagram"] + [f"  participant {i} as {tableau[i]['libelle']}" for i in utilisees]
+    lignes = ["sequenceDiagram"] + [f"  participant {i} as {_avec_statut(tableau[i])}" for i in utilisees]
     lignes += [f"  {f['de']}->>{f['vers']}: {_libelle(f.get('libelle'), 50)}" for f, _ in gardees]
     return "\n".join(lignes)

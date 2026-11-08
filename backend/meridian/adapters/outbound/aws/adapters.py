@@ -295,7 +295,8 @@ class PlanificateurEventBridge:
             raise ValueError("intervalle_s doit être un entier positif") from None
         if secondes <= 0:
             raise ValueError("intervalle_s doit être un entier positif")
-        return f"rate({max(1, math.ceil(secondes / 60))} minutes)"
+        minutes = max(1, math.ceil(secondes / 60))
+        return f"rate({minutes} minute{'s' if minutes > 1 else ''})"
 
     def nom(self, tenant_id: str, source_id: int) -> str:
         tenant = _texte(tenant_id)

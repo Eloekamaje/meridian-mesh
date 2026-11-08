@@ -229,3 +229,26 @@
     .react-flow :is(button, select) { min-height: 0; min-width: 0; }
     input[type="checkbox"], input[type="radio"] { width: 24px; height: 24px; }
 }
+
+/* Schéma Mermaid : même carte et même palette Pele que le chat OpenCode (thème sombre). */
+[data-testid="schema-mermaid"] {
+  --pele-bg: #2e2e2e;
+  --pele-fg: #fafafa;
+  --pele-muted: #aeaeae;
+  --pele-line: #808080;
+  --pele-surface: #161616;
+  --pele-surface-alt: #3a3a3a;
+  --pele-border: #ffffff33;
+  --pele-accent: #a2bcff;
+  --pele-critical: #f17471;
+  --pele-error: #f17471;
+  --pele-font: "Inter", var(--font-sans);
+  --pele-font-mono: var(--font-mono);
+  --pele-radius: 6px;
+}
+[data-testid="schema-mermaid"] > svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
