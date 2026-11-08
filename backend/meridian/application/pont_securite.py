@@ -36,6 +36,7 @@ __all__ = [
     "cle_pont",
     "cle_sensible",
     "hash_contenu",
+    "jeton_sensible",
     "rediger_message",
     "signer_evenement",
     "signature",
@@ -110,6 +111,74 @@ def url_porte_un_secret(url: str) -> bool:
     return any(
         cle_sensible(cle) and valeur not in ("", "***")
         for cle, valeur in parse_qsl(parties.query, keep_blank_values=True)
+    )
+
+
+# Détection stricte des jetons bruts, distincte de la prose légitime. Elle sert à la
+# fois au refus d'écriture et au masquage HTTP :
+# - JWT `eyJ…` ;
+# - jetons GitHub `gh?_`/`github_pat_` ;
+# - clés `sk-`/`sk-proj-` longues contenant au moins un chiffre (`sk-learn-tutorial`
+#   reste accepté) ;
+# - jetons Slack `xox?-` ;
+# - clés AWS `AKIA…` ;
+# - `Bearer <jeton>` sauf les mots de prose courants (authentication, authorization…).
+MOTIF_JETON_SENSIBLE = re.compile(
+    r"(?i)(?:"
+    r"\beyJ[A-Za-z0-9_-]{10,}(?:\.[A-Za-z0-9_-]+){0,2}"
+    r"|\bgh[pousr]_[A-Za-z0-9]{10,}"
+    r"|\bgithub_pat_[A-Za-z0-9_]{20,}"
+    r"|\bsk-(?:proj-)?(?=[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]{16,}"
+    r"|\bxox[baprs]-[A-Za-z0-9-]{10,}"
+    r"|\bAKIA[0-9A-Z]{16}"
+    r")"
+)
+
+_MOTIF_BEARER = re.compile(r"(?i)\bBearer\s+([A-Za-z0-9._~+/=-]{12,})")
+
+# Liste volontairement courte : elle couvre les mots techniques fréquents, mais la
+# décision principale est morphologique (suffixe technique), pas une liste fermée.
+_MOTS_PROSE_BEARER = frozenset({
+    "authentication", "authorization", "token", "tokens", "scheme", "header",
+    "headers", "flow", "type", "credentials", "access", "request", "response",
+    "client", "server", "resource", "endpoint", "method", "framework", "library",
+    "interface", "application", "service", "system", "security", "support", "usage",
+    "mode", "policy", "standard", "protocol", "format",
+})
+_SUFFIXES_PROSE_BEARER = (
+    "tion", "sion", "ment", "ity", "ance", "ence", "ing", "ed", "al", "ive",
+    "ous", "able", "ible", "er", "or", "ics", "ology", "graphy", "ness", "ship",
+    "hood", "ism", "ist", "ize", "ise",
+)
+
+
+def _segment_bearer_est_prose(segment: str) -> bool:
+    minuscule = segment.lower()
+    if minuscule in _MOTS_PROSE_BEARER:
+        return True
+    return (
+        re.fullmatch(r"[a-z]+", minuscule) is not None
+        and minuscule.endswith(_SUFFIXES_PROSE_BEARER)
+    )
+
+
+def _bearer_est_prose(jeton: str) -> bool:
+    """Tous les segments d'un composé (séparés par - / _ .) doivent être de la prose."""
+    segments = [segment for segment in re.split(r"[-/_.]", jeton) if segment]
+    if not segments:
+        return False
+    return all(_segment_bearer_est_prose(segment) for segment in segments)
+
+
+def jeton_sensible(valeur: Any) -> bool:
+    """Vrai pour une chaîne contenant un jeton brut au sens de la détection stricte."""
+    if not isinstance(valeur, str):
+        return False
+    if MOTIF_JETON_SENSIBLE.search(valeur):
+        return True
+    return any(
+        not _bearer_est_prose(match.group(1))
+        for match in _MOTIF_BEARER.finditer(valeur)
     )
 
 

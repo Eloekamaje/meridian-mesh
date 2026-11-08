@@ -17,6 +17,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from meridian.application.pont_securite import cle_sensible as _cle_sensible
+from meridian.application.pont_securite import jeton_sensible as _jeton_sensible
 from meridian.application.pont_securite import url_porte_un_secret as _url_porte_un_secret
 from meridian.domain.modele_entreprise import FAMILLES, MODES, TYPES_PAR_FAMILLE
 from meridian.domain.tenant import TenantError, normaliser_tenant_canonique
@@ -54,10 +55,16 @@ def _texte_obligatoire(valeur, champ: str) -> str:
 
 def _tenant(tenant_id) -> str:
     texte = _texte_obligatoire(tenant_id, "tenant_id")
+    if _jeton_sensible(texte):
+        raise ObjetInvalide("tenant : secret refusé")
     try:
-        return normaliser_tenant_canonique(texte)
+        tenant = normaliser_tenant_canonique(texte)
     except TenantError as exc:
         raise ObjetInvalide(str(exc)) from exc
+    # L'alias demo→local ne doit pas réintroduire un jeton via la valeur normalisée.
+    if _jeton_sensible(tenant):
+        raise ObjetInvalide("tenant : secret refusé")
+    return tenant
 
 
 def _verifier_secrets(valeur, chemin: str = "donnees") -> None:
@@ -69,7 +76,9 @@ def _verifier_secrets(valeur, chemin: str = "donnees") -> None:
     elif isinstance(valeur, (list, tuple)):
         for rang, element in enumerate(valeur):
             _verifier_secrets(element, f"{chemin}[{rang}]")
-    elif isinstance(valeur, str) and _url_porte_un_secret(valeur):
+    elif isinstance(valeur, str) and (
+        _url_porte_un_secret(valeur) or _jeton_sensible(valeur)
+    ):
         raise ObjetInvalide(f"{chemin} : URL ou secret refusé")
 
 
@@ -160,7 +169,10 @@ def _objet_saisi(objet) -> dict:
                 break
     if not isinstance(objet, Mapping):
         raise ObjetInvalide("objet d'entreprise attendu")
-    saisi = {"id": _texte_obligatoire(objet.get("id"), "id")}
+    identifiant = _texte_obligatoire(objet.get("id"), "id")
+    if _jeton_sensible(identifiant):
+        raise ObjetInvalide("id : secret refusé")
+    saisi = {"id": identifiant}
     if "famille" in objet:
         famille = _normaliser(objet.get("famille"), minuscule=True)
         if famille not in _FAMILLES:
@@ -182,7 +194,10 @@ def _objet_saisi(objet) -> dict:
         else:
             raise ObjetInvalide(f"mode inconnu : {mode!r}")
     if "titre" in objet:
-        saisi["titre"] = "" if objet.get("titre") is None else str(objet["titre"]).strip()
+        titre = "" if objet.get("titre") is None else str(objet["titre"]).strip()
+        if _jeton_sensible(titre):
+            raise ObjetInvalide("titre : secret refusé")
+        saisi["titre"] = titre
     if "donnees" in objet:
         saisi["donnees"] = _donnees_json(objet["donnees"])
     else:

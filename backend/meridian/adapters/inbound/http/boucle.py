@@ -24,19 +24,20 @@ refusé. ``X-Espace`` reste un contexte de lecture, jamais une identité.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from collections.abc import Mapping
 from datetime import date, datetime
 from decimal import Decimal
 import math
 import os
-import re
 from typing import Annotated, Any
 import unicodedata
 from urllib.parse import parse_qsl, unquote_plus, urlsplit
 
 import psycopg
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from fastapi.exceptions import RequestValidationError
 from psycopg.rows import dict_row
 from pydantic import (
     AfterValidator,
@@ -44,6 +45,7 @@ from pydantic import (
     ConfigDict,
     Field,
     StringConstraints,
+    ValidationError,
     field_validator,
     model_validator,
 )
@@ -53,9 +55,10 @@ from meridian.adapters.outbound.postgres import boucle
 from meridian.adapters.outbound.postgres import entreprise_depot
 from meridian.adapters.outbound.neo4j import graph_store
 from meridian.application import commandes_boucle
+from meridian.application.pont_securite import jeton_sensible
 from meridian.domain import modele_entreprise
 from meridian.domain.mesure import mesure_renseignee as _mesure_renseignee
-from meridian.domain.objets_exploitation import TYPES_EXPRESSION
+from meridian.domain.objets_exploitation import TYPES_EXPRESSION, TYPES_SIGNAL
 from meridian.adapters.outbound.postgres import rls
 from meridian.domain.tenant import (
     TenantError,
@@ -93,8 +96,19 @@ def _type_expression_canonique(valeur: str) -> str:
     return texte
 
 
+def _type_signal_canonique(valeur: str) -> str:
+    texte = str(valeur or "").strip().upper()
+    if texte not in TYPES_SIGNAL:
+        raise ValueError(
+            f"type_signal inconnu : {valeur!r} "
+            f"(attendus : {', '.join(TYPES_SIGNAL)})"
+        )
+    return texte
+
+
 ModeCanonique = Annotated[str, AfterValidator(_mode_canonique)]
 TypeExpression = Annotated[str, AfterValidator(_type_expression_canonique)]
+TypeSignal = Annotated[str, AfterValidator(_type_signal_canonique)]
 TexteNonVide = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 TexteNettoye = Annotated[str, StringConstraints(strip_whitespace=True)]
 TexteIdentifiant = Annotated[
@@ -370,6 +384,53 @@ class ChangementStatutHypothese(_CorpsTransition):
     preuves: list[Any] | None = Field(None, max_length=100)
 
 
+class CreationSignal(_CorpsTransition):
+    """Corps C5d strict : statut, mode, id, tenant et empreinte sont serveur.
+
+    ``situation_ids`` est optionnel en global ; depuis
+    ``POST /situations/{sid}/signals`` la commande exige qu'il soit absent ou
+    exactement ``[sid]``. Aucun champ de statut n'est exposé : C5d ne fournit pas
+    de route de changement de statut.
+    """
+
+    libelle: TexteNonVide = Field(..., max_length=1000)
+    source: TexteNonVide = Field(..., max_length=2000)
+    type_signal: TypeSignal = "OBSERVATION"
+    description: str | None = Field(None, max_length=10000)
+    intensite: float | None = Field(None, ge=0, le=1)
+    detecte_le: DateIso | None = None
+    situation_ids: list[TexteIdentifiant] | None = Field(None, max_length=100)
+    entite_ids: list[TexteIdentifiant] | None = Field(None, max_length=100)
+    liens: dict[str, list[TexteIdentifiant]] | None = None
+    preuves: list[Any] | None = Field(None, max_length=100)
+    confiance: float | None = Field(None, ge=0, le=1)
+
+
+async def _corps_signal(request: Request) -> CreationSignal:
+    """Valide le JSON Signal en distinguant un corps malformé (400) d'un champ invalide (422)."""
+    corps = await request.body()
+    try:
+        donnees = json.loads(corps)
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise HTTPException(400, "Corps JSON invalide") from exc
+    if not isinstance(donnees, dict):
+        raise HTTPException(400, "Corps JSON invalide : objet attendu")
+    try:
+        return CreationSignal.model_validate(donnees)
+    except ValidationError as exc:
+        raise RequestValidationError(exc.errors()) from exc
+
+
+_OPENAPI_CORPS_SIGNAL = {
+    "requestBody": {
+        "required": True,
+        "content": {
+            "application/json": {"schema": CreationSignal.model_json_schema()},
+        },
+    },
+}
+
+
 class ComparaisonScenarios(_CorpsTransition):
     scenario_ids: list[TexteIdentifiant] = Field(..., min_length=2, max_length=50)
     reference_id: TexteIdentifiant | None = None
@@ -388,10 +449,6 @@ _CLES_SECRETES = frozenset({
     "pwd", "pass", "auth", "key", "apikey", "api_key", "api-key", "access_key", "accesskey",
     "private_key", "privatekey", "client_secret", "clientsecret", "bearer", "password", "passwd",
 })
-_JETON_SENSIBLE = re.compile(
-    r"(?i)(?:\bbearer\s+[A-Za-z0-9_.~+/=-]{12,}|\bsk-[A-Za-z0-9_-]{8,}|"
-    r"\bgh[pousr]_[A-Za-z0-9]{10,}|\bxox[baprs]-[A-Za-z0-9-]{10,})"
-)
 
 
 def _normaliser(valeur, *, minuscule: bool = False) -> str:
@@ -523,7 +580,7 @@ def _assainir(valeur):
     if isinstance(valeur, (datetime, date)):
         return valeur.isoformat()
     if isinstance(valeur, str):
-        if _JETON_SENSIBLE.search(valeur) or _url_porte_un_secret(valeur):
+        if jeton_sensible(valeur) or _url_porte_un_secret(valeur):
             return "***"
         return valeur
     if isinstance(valeur, float) and not math.isfinite(valeur):
@@ -1095,6 +1152,87 @@ async def changer_statut_hypothese(
         request=request,
     )
     return _reponse_transition(tenant, resultat, "hypothese")
+
+
+@router.post("/signals", status_code=201,
+             response_model=ReponseTransition, responses=_REPONSES_TRANSITION,
+             openapi_extra=_OPENAPI_CORPS_SIGNAL)
+async def creer_signal(
+    request: Request,
+    payload: CreationSignal = Depends(_corps_signal),
+    idempotence: None = Depends(_refuser_idempotence),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Enregistre un Signal global, éventuellement rattaché à plusieurs Situations.
+
+    ``statut`` (``DETECTED``), ``mode`` (``OBSERVED``), ``id``, ``tenant_id`` et
+    ``fingerprint`` sont serveur : un client qui les envoie est refusé en 422.
+    L'empreinte est calculée avant écriture ; un doublon répond 409. Une Situation
+    absente ou hors tenant répond 404. Aucune route de changement de statut n'existe
+    en C5d.
+    """
+    _verifier_espace(x_espace)
+    tenant = _tenant(request, x_tenant)
+    resultat = await _executer_transition(
+        tenant,
+        lambda conn: commandes_boucle.creer_signal(
+            boucle, conn, tenant, **payload.model_dump(exclude_none=True)),
+        request=request,
+    )
+    return _reponse_transition(tenant, resultat, "signal")
+
+
+@router.post("/situations/{sid}/signals", status_code=201,
+             response_model=ReponseTransition, responses=_REPONSES_TRANSITION,
+             openapi_extra=_OPENAPI_CORPS_SIGNAL)
+async def creer_signal_depuis_situation(
+    sid: str,
+    request: Request,
+    payload: CreationSignal = Depends(_corps_signal),
+    idempotence: None = Depends(_refuser_idempotence),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Enregistre un Signal rattaché à une Situation du tenant.
+
+    La Situation est forcée par la route ; un corps qui porte ``situation_ids`` doit
+    contenir exactement ``sid`` (sinon 422). Une Situation absente ou hors tenant
+    répond 404 avant toute écriture.
+    """
+    _verifier_espace(x_espace)
+    tenant = _tenant(request, x_tenant)
+    resultat = await _executer_transition(
+        tenant,
+        lambda conn: commandes_boucle.creer_signal(
+            boucle, conn, tenant, situation_id=sid,
+            **payload.model_dump(exclude_none=True)),
+        request=request,
+    )
+    return _reponse_transition(tenant, resultat, "signal")
+
+
+@router.get("/signals")
+async def lister_signaux(
+    request: Request,
+    situation_id: str | None = Query(None, max_length=128),
+    type_signal: TypeSignal | None = Query(None),
+    statut: str | None = Query(None, max_length=64),
+    limite: int = Query(100, ge=1, le=1000),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Liste les Signaux du tenant, filtrés par Situation, type et statut."""
+    _verifier_espace(x_espace)
+    tenant = _tenant(request, x_tenant)
+    signaux = await _executer_transition(
+        tenant,
+        lambda conn: commandes_boucle.lister_signaux(
+            boucle, conn, tenant, situation_id=situation_id,
+            type_signal=type_signal, statut=statut, limite=limite),
+        request=request,
+    )
+    return {"tenant": tenant, "signaux": _assainir(signaux)}
 
 
 @router.post("/situations/{sid}/investigations", status_code=201,

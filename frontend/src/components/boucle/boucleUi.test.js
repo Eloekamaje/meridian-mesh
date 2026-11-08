@@ -14,6 +14,8 @@ import {
   TRANSITIONS_HYPOTHESE,
   TRANSITIONS_OPPORTUNITE,
   TRANSITIONS_RISQUE,
+  TYPES_LECTURE,
+  TYPES_SIGNAL,
 } from "./boucleUi";
 
 const situation = {
@@ -155,16 +157,16 @@ describe("decisionEstTranchee", () => {
 });
 
 describe("actionsPourObjet", () => {
-  test("une situation non exprimée ouvre une investigation et peut être exprimée", () => {
+  test("une situation non exprimée ouvre une investigation, peut être exprimée et porter un signal", () => {
     expect(actionsPourObjet(situation).map((action) => action.id))
-      .toEqual(["ouvrir_investigation", "creer_expression"]);
+      .toEqual(["creer_signal", "ouvrir_investigation", "creer_expression"]);
   });
 
-  test("une situation déjà exprimée ne propose plus l'action Exprimer", () => {
+  test("une situation déjà exprimée propose toujours le signal", () => {
     expect(actionsPourObjet({
       ...situation,
       donnees: { ...situation.donnees, expression_id: "expr-1" },
-    }).map((action) => action.id)).toEqual(["ouvrir_investigation"]);
+    }).map((action) => action.id)).toEqual(["creer_signal", "ouvrir_investigation"]);
   });
 
   test("une investigation ouverte propose hypothèse, décision, scénario et learning", () => {
@@ -397,6 +399,46 @@ describe("configurationAction", () => {
       "claim_ids_opposants", "preuves", "confiance",
     ]);
     expect(action.champs.find((champ) => champ.nom === "enonce").requis).toBe(true);
+  });
+
+  test("le signal global expose la source de vérité des types et les champs C5d", () => {
+    const action = configurationAction("creer_signal", null);
+
+    expect(action.api).toBe("creerSignal");
+    expect(action.typeSource).toBe("");
+    expect(action.champs.map((champ) => champ.nom)).toEqual([
+      "libelle", "source", "type_signal", "description", "intensite",
+      "detecte_le", "situation_ids", "preuves", "confiance",
+    ]);
+    expect(action.champs.find((champ) => champ.nom === "libelle").requis).toBe(true);
+    expect(action.champs.find((champ) => champ.nom === "source").requis).toBe(true);
+    expect(action.champs.find((champ) => champ.nom === "type_signal").options)
+      .toEqual([...TYPES_SIGNAL]);
+  });
+
+  test("le signal depuis une situation force la route et masque situation_ids", () => {
+    const action = configurationAction("creer_signal", situation);
+
+    expect(action.api).toBe("creerSignalSituation");
+    expect(action.typeSource).toBe("SITUATION");
+    expect(action.champs.map((champ) => champ.nom)).not.toContain("situation_ids");
+  });
+
+  test("TYPES_SIGNAL est la source de vérité testable du domaine C5d", () => {
+    expect(TYPES_SIGNAL).toEqual([
+      "EVENEMENT", "CHANGEMENT", "DERIVE", "ANOMALIE", "CONTRADICTION",
+      "OPPORTUNITE", "RISQUE", "OBSERVATION",
+    ]);
+  });
+
+  test("TYPES_LECTURE contient SIGNAL et tous les stades canoniques", () => {
+    expect(TYPES_LECTURE).toContain("SIGNAL");
+    for (const type of [
+      "SITUATION", "EXPRESSION", "OPPORTUNITY", "RISK", "INVESTIGATION",
+      "HYPOTHESIS", "SCENARIO", "DECISION", "INITIATIVE", "OUTCOME", "LEARNING",
+    ]) {
+      expect(TYPES_LECTURE).toContain(type);
+    }
   });
 
   test("le changement de statut d'une hypothèse ne propose que ses transitions", () => {
@@ -810,6 +852,70 @@ describe("construireCorps", () => {
     }).erreur).toContain("confiance");
   });
 
+  test("enregistre un signal global avec tous les champs C5d et sans champ serveur", () => {
+    expect(construireCorps("creer_signal", {}).erreur).toContain("libellé");
+    expect(construireCorps("creer_signal", { libelle: "Signal" }).erreur)
+      .toContain("source");
+    expect(construireCorps("creer_signal", { libelle: "   ", source: "source" }).erreur)
+      .toContain("libellé");
+
+    const resultat = construireCorps("creer_signal", {
+      libelle: "  Dépendance nouvelle  ",
+      source: "  git://depot  ",
+      type_signal: "changement",
+      description: "  Paquet non maintenu  ",
+      intensite: "0,7",
+      detecte_le: " 2026-11-08T10:00:00+00:00 ",
+      situation_ids: " sit-1, sit-2 ,, ",
+      preuves: "preuve-1, preuve-2",
+      confiance: "0,6",
+      statut: "MATURE",
+      mode: "DECLARED",
+      id: "client-id",
+      fingerprint: "client-fingerprint",
+    }, null);
+
+    expect(resultat.corps).toEqual({
+      libelle: "Dépendance nouvelle",
+      source: "git://depot",
+      type_signal: "CHANGEMENT",
+      description: "Paquet non maintenu",
+      intensite: 0.7,
+      detecte_le: "2026-11-08T10:00:00+00:00",
+      situation_ids: ["sit-1", "sit-2"],
+      preuves: ["preuve-1", "preuve-2"],
+      confiance: 0.6,
+    });
+    for (const interdit of ("statut", "mode", "id", "fingerprint")) {
+      expect(resultat.corps).not.toHaveProperty(interdit);
+    }
+  });
+
+  test("enregistre un signal depuis une situation sans situation_ids dans le corps", () => {
+    const resultat = construireCorps("creer_signal", {
+      libelle: "Latence en hausse",
+      source: "suivi-cartes",
+      situation_ids: "sit-autre",
+    }, situation);
+
+    expect(resultat.corps).toEqual({
+      libelle: "Latence en hausse",
+      source: "suivi-cartes",
+    });
+  });
+
+  test("refuse un type de signal, une intensité ou une confiance invalides", () => {
+    expect(construireCorps("creer_signal", {
+      libelle: "Signal", source: "source", type_signal: "MAGIQUE",
+    }).erreur).toContain("type de signal");
+    expect(construireCorps("creer_signal", {
+      libelle: "Signal", source: "source", intensite: "1.2",
+    }).erreur).toContain("intensité");
+    expect(construireCorps("creer_signal", {
+      libelle: "Signal", source: "source", confiance: "1.2",
+    }).erreur).toContain("confiance");
+  });
+
   test("change le statut d'une hypothèse et bloque CONFIRMED sans preuve", () => {
     expect(construireCorps("changer_statut_hypothese", {}, hypothese).erreur)
       .toContain("statut");
@@ -853,6 +959,15 @@ describe("messageErreurTransition", () => {
     expect(messageErreurTransition({ response: { status: 404 } })).toContain("introuvable");
     expect(messageErreurTransition({ response: { status: 409, data: { detail: "déjà tranchée" } } }))
       .toBe("déjà tranchée");
+  });
+
+  test("traduit un doublon d'empreinte de signal en message lisible", () => {
+    expect(messageErreurTransition({
+      response: {
+        status: 409,
+        data: { detail: "empreinte de Signal déjà connue : 'abc123'" },
+      },
+    })).toBe("Signal déjà enregistré : un signal identique existe déjà.");
   });
 
   test("aplatit les erreurs de validation 422", () => {

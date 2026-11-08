@@ -108,6 +108,18 @@ export const boucleApi = {
       corps,
     );
   },
+  async creerSignal(corps) {
+    return posterTransition("/boucle/signals", corps);
+  },
+  async creerSignalSituation(situationId, corps) {
+    return posterTransition(
+      `/boucle/situations/${identifiantRequis(situationId, "identifiant de situation")}/signals`,
+      corps,
+    );
+  },
+  async listerSignaux(params) {
+    return api.get("/boucle/signals", { params, timeout: 20000 });
+  },
   async listerHypotheses(params) {
     return api.get("/boucle/hypotheses", { params, timeout: 20000 });
   },

@@ -86,6 +86,18 @@ const TYPES_RISQUE = [
 ];
 const SEVERITES_RISQUE = ["FAIBLE", "MOYENNE", "HAUTE", "CRITIQUE"];
 
+// Source de vérité C5d importable et testable : le backend reste l'autorité finale,
+// mais l'UI ne propose jamais un type que le domaine refuserait.
+export const TYPES_SIGNAL = Object.freeze([
+  "EVENEMENT", "CHANGEMENT", "DERIVE", "ANOMALIE", "CONTRADICTION",
+  "OPPORTUNITE", "RISQUE", "OBSERVATION",
+]);
+export const TYPES_LECTURE = Object.freeze([
+  "SIGNAL", "SITUATION", "EXPRESSION", "OPPORTUNITY", "RISK",
+  "INVESTIGATION", "HYPOTHESIS", "SCENARIO", "DECISION", "INITIATIVE",
+  "OUTCOME", "LEARNING",
+]);
+
 const CHAMPS_CREER_EXPRESSION = [
   {
     nom: "formulation",
@@ -317,6 +329,75 @@ const CHAMPS_CHANGER_STATUT_HYPOTHESE = [
     type: "text",
     placeholder: "preuve-1, preuve-2",
     aide: "Une hypothèse CONFIRMED exige au moins une preuve.",
+  },
+];
+
+const CHAMPS_CREER_SIGNAL = [
+  {
+    nom: "libelle",
+    label: "Libellé du signal",
+    type: "text",
+    requis: true,
+    maxLength: 1000,
+    placeholder: "Dépendance nouvelle détectée",
+    aide: "Un fait observé, distinct d'une hypothèse ou d'une décision.",
+  },
+  {
+    nom: "source",
+    label: "Source",
+    type: "text",
+    requis: true,
+    maxLength: 2000,
+    placeholder: "git://depot, incident-123, entretien…",
+    aide: "La provenance vérifiable du signal ; jamais un secret.",
+  },
+  {
+    nom: "type_signal",
+    label: "Type de signal",
+    type: "select",
+    options: TYPES_SIGNAL,
+  },
+  {
+    nom: "description",
+    label: "Description (optionnel)",
+    type: "textarea",
+    rows: 2,
+    maxLength: 10000,
+    placeholder: "Ce qui a été observé, où et depuis quand…",
+  },
+  {
+    nom: "intensite",
+    label: "Intensité (0 à 1, optionnel)",
+    type: "text",
+    inputMode: "decimal",
+    placeholder: "0.6",
+  },
+  {
+    nom: "detecte_le",
+    label: "Détecté le (ISO 8601, optionnel)",
+    type: "text",
+    placeholder: "2026-11-08T10:00:00+00:00",
+    aide: "Laisser vide laisse l'empreinte stable : un double clic ne crée pas deux signaux.",
+  },
+  {
+    nom: "situation_ids",
+    label: "Situations liées (IDs séparés par une virgule, optionnel)",
+    type: "text",
+    placeholder: "sit-1, sit-2",
+    aide: "Aucune situation = signal global ; plusieurs = pas de chaîne amont unique.",
+  },
+  {
+    nom: "preuves",
+    label: "Preuves (IDs séparés par une virgule, optionnel)",
+    type: "text",
+    placeholder: "preuve-1, preuve-2",
+  },
+  {
+    nom: "confiance",
+    label: "Confiance (0 à 1, optionnel)",
+    type: "text",
+    inputMode: "decimal",
+    placeholder: "0.5",
   },
 ];
 
@@ -760,6 +841,16 @@ export const ACTIONS_BOUCLE = Object.freeze({
     icone: "statut",
     champs: CHAMPS_CHANGER_STATUT_HYPOTHESE,
   }),
+  creer_signal: Object.freeze({
+    id: "creer_signal",
+    libelle: "Enregistrer un signal",
+    titre: "Enregistrer un signal",
+    description: "Consigner un événement, un changement ou une dérive observé, avec sa source.",
+    testid: "boucle-action-creer-signal",
+    api: "creerSignal",
+    icone: "signal",
+    champs: CHAMPS_CREER_SIGNAL,
+  }),
   creer_scenario: Object.freeze({
     id: "creer_scenario",
     libelle: "Créer un scénario",
@@ -917,7 +1008,7 @@ export function actionsPourObjet(objet) {
   const statut = statutObjet(objet);
 
   if (type === "SITUATION") {
-    const actions = [ACTIONS_BOUCLE.ouvrir_investigation];
+    const actions = [ACTIONS_BOUCLE.creer_signal, ACTIONS_BOUCLE.ouvrir_investigation];
     if (!texte(valeurDe(objet, "expression_id", "expression")).trim()) {
       actions.push(ACTIONS_BOUCLE.creer_expression);
     }
@@ -1011,6 +1102,13 @@ export function configurationAction(actionId, objet) {
     if (typeSource === "OUTCOME") api = "capitaliserLearningDepuisOutcome";
     else if (typeSource === "INVESTIGATION") api = "capitaliserLearningDepuisInvestigation";
     else api = null;
+  }
+  if (actionId === "creer_signal") {
+    const depuisSituation = typeSource === "SITUATION" && Boolean(idObjet(objet));
+    if (depuisSituation) {
+      champs = champs.filter((champ) => champ.nom !== "situation_ids");
+      api = "creerSignalSituation";
+    }
   }
 
   return { ...base, champs, api, typeSource };
@@ -1152,6 +1250,44 @@ function corpsHypothese(valeurs) {
   return { corps };
 }
 
+function corpsSignal(valeurs, objet) {
+  const libelle = valeurNette(valeurs, "libelle");
+  if (!libelle) return echec("Le libellé du signal est obligatoire.");
+  const source = valeurNette(valeurs, "source");
+  if (!source) return echec("La source du signal est obligatoire.");
+  const corps = { libelle, source };
+
+  const typeSignal = valeurNette(valeurs, "type_signal").toUpperCase();
+  if (typeSignal) {
+    if (!TYPES_SIGNAL.includes(typeSignal)) {
+      return echec("Le type de signal est inconnu.");
+    }
+    corps.type_signal = typeSignal;
+  }
+  for (const nom of ["description", "detecte_le"]) {
+    const valeur = valeurNette(valeurs, nom);
+    if (valeur) corps[nom] = valeur;
+  }
+  for (const [nom, libelleChamp] of [
+    ["intensite", "L'intensité"],
+    ["confiance", "La confiance"],
+  ]) {
+    const resultat = nombreOptionnel(valeurs, nom, libelleChamp, { maximum: 1 });
+    if (resultat.erreur) return echec(resultat.erreur);
+    if (resultat.valeur !== null) corps[nom] = resultat.valeur;
+  }
+  // Depuis une Situation, la route force le rattachement : le corps ne porte jamais
+  // situation_ids, même si un ancien état de formulaire en contenait.
+  if (typeObjet(objet) !== "SITUATION") {
+    const situations = listeVirgules(valeurs, "situation_ids");
+    if (situations.length > 0) corps.situation_ids = situations;
+  }
+  const preuves = listeVirgules(valeurs, "preuves");
+  if (preuves.length > 0) corps.preuves = preuves;
+
+  return { corps };
+}
+
 function corpsChangementStatutHypothese(valeurs, objet) {
   const vers = valeurNette(valeurs, "vers").toUpperCase();
   if (!vers) return echec("Le statut cible est obligatoire.");
@@ -1248,6 +1384,9 @@ export function construireCorps(actionId, valeurs = {}, objet = {}) {
 
     case "creer_hypothese":
       return corpsHypothese(valeurs);
+
+    case "creer_signal":
+      return corpsSignal(valeurs, objet);
 
     case "changer_statut_hypothese":
       return corpsChangementStatutHypothese(valeurs, objet);
@@ -1422,7 +1561,16 @@ export function messageErreurTransition(erreur, defaut = "La transition n'a pas 
     if (messages.length > 0) return messages.join(" · ");
   }
 
-  if (typeof detail === "string" && detail.trim()) return detail.trim();
+  if (typeof detail === "string" && detail.trim()) {
+    if (
+      reponse?.status === 409
+      && /signal/i.test(detail)
+      && /(empreinte|doublon|déjà|deja)/i.test(detail)
+    ) {
+      return "Signal déjà enregistré : un signal identique existe déjà.";
+    }
+    return detail.trim();
+  }
   if (reponse?.status === 400) {
     return "Les données envoyées sont invalides. Vérifiez le formulaire.";
   }
