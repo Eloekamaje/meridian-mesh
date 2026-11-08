@@ -220,9 +220,11 @@ en production (workers, migration tenant rétroactive, RLS).
 est canonique et comparable dans la Boucle. `Opportunity` et `Risk` sont opérationnels
 depuis une Expression (C5b) : qualification manuelle, statut initial `DETECTED`, cycle de
 maturation et liens inverses. `Hypothesis` est canonique depuis C5c, créable depuis une
-Investigation, avec conditions de test, claims soutenants/opposants, expert associé,
-cycle de renforcement/affaiblissement/rejet/confirmation et lien inverse
-`Investigation.hypothesis_ids` ; la confirmation exige une preuve. La vision fait pourtant
+Investigation, avec conditions de test, claims soutenants/opposants, cycle de
+renforcement/affaiblissement/rejet/confirmation et lien inverse
+`Investigation.hypothesis_ids` ; la confirmation exige une preuve. Le champ `expert_id`
+reste réservé à C5e : il n'est pas accepté en entrée HTTP et n'apparaît pas dans le
+formulaire. La vision fait pourtant
 de l’Opportunité un objet majeur et attend encore un pipeline automatique de
 détection/qualification et de formulation d’hypothèses.
 
@@ -349,11 +351,14 @@ Il reste sans API/UI canonique :
 - `POST /api/boucle/investigations/{iid}/hypotheses` répond 201 avec l'enveloppe
   `{tenant, objet, type: "HYPOTHESIS", role: "hypothese", chaine, historique}`.
 - Corps strict `extra="forbid"` : `enonce` obligatoire (non vide), `conditions_test`,
-  `claim_ids_soutenants`, `claim_ids_opposants`, `expert_id`, `preuves`, `confiance`
-  (0..1). Le serveur force `statut=OPEN` et `mode=PROPOSED` ; `statut`, `mode`, `id`,
-  `investigation_id` et tout champ inconnu sont refusés en 422.
+  `claim_ids_soutenants`, `claim_ids_opposants`, `preuves`, `confiance` (0..1). Le
+  serveur force `statut=OPEN` et `mode=PROPOSED` ; `statut`, `mode`, `id`,
+  `investigation_id`, `expert_id` et tout champ inconnu sont refusés en 422. `expert_id`
+  reste réservé à C5e tant qu'aucune route EXPERT n'existe.
 - L'Investigation est verrouillée (`FOR UPDATE`), doit appartenir au tenant et être de
   type `INVESTIGATION` (une autre source est refusée en 422) ; absente ou hors tenant 404.
+  Une Investigation fermée (`CLOSED`, `CLOSE`, `CLOTUREE`, `FERMEE`, `ARCHIVED`,
+  `ARCHIVEE`, insensible à la casse) est refusée en 409 avant toute écriture.
   L'Hypothèse et le lien inverse `Investigation.hypothesis_ids` sont écrits dans la même
   transaction : un échec du lien ne laisse aucun objet ni lien partiel. Une Investigation
   peut porter plusieurs Hypothèses.
@@ -379,12 +384,14 @@ Il reste sans API/UI canonique :
   pour C5b : aucun endpoint n'expose la table, les deux copies doivent rester
   synchronisées et un test frontend vérifie la table exacte.
 - UI : action « Formuler une hypothèse » sur une Investigation ouverte, formulaire
-  `ModaleTransition` (énoncé, conditions de test, claims soutenants/opposants, expert,
-  preuves, confiance), sélection/refetch du parent après création, affichage de la chaîne,
-  action « Changer le statut » limitée aux transitions autorisées, et blocage côté UI de
-  `CONFIRMED` sans preuve avec un message explicite.
+  `ModaleTransition` (énoncé, conditions de test, claims soutenants/opposants, preuves,
+  confiance), sélection/refetch du parent après création, affichage de la chaîne, action
+  « Changer le statut » limitée aux transitions autorisées, et blocage côté UI de
+  `CONFIRMED` sans preuve avec un message explicite. `expert_id` reste réservé à C5e et
+  n'est pas affiché.
 - Limites : formulation manuelle uniquement, aucun pipeline automatique Claims → Hypothesis,
-  pas de rattachement automatique aux Experts/Contributions, pas de suppression.
+  pas de rattachement aux Experts/Contributions (`expert_id` réservé à C5e), pas de
+  suppression.
 
 ### 6.4 La maturation et l’expression ne sont pas un pipeline
 
