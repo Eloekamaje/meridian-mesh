@@ -1,9 +1,9 @@
 """Preuves discriminantes persistées (plan Cognition IA, D7).
 
-Retrieval dédié aux hypothèses rivales — nouveau module, ``retrieval_memoire``
+Retrieval dédié aux conjectures rivales — nouveau module, ``retrieval_memoire``
 n'est pas modifié. Deux lectures bornées, aucune écriture, aucune IA :
 
-- :func:`preuves_discriminantes` : pour chaque HYPOTHESIS persistée, les
+- :func:`preuves_discriminantes` : pour chaque CONJECTURE persistée, les
   preuves/objets qui l'appuient **contre** ses rivales. Les objets de preuve
   sont les ``interface_assertion`` du couple ``(subject, predicate)`` porté par
   le NEED parent (via ``donnees.sujet_detection`` ou ``donnees.preuves``) et les
@@ -58,7 +58,7 @@ def _liste(valeur: Any) -> list:
 
 
 def _aplatir(ligne: Mapping) -> dict:
-    """Ligne ``objet_entreprise`` (ou dict plat) → dict Hypothesis-compatible."""
+    """Ligne ``objet_entreprise`` (ou dict plat) → dict Conjecture-compatible."""
     donnees = _donnees(ligne)
     return {
         "id": _texte(ligne.get("id")),
@@ -82,7 +82,7 @@ def _aplatir(ligne: Mapping) -> dict:
 
 def _lire_hypotheses(conn: Any, tenant: str, ids: Iterable | None) -> list[dict]:
     toutes = entreprise_depot.lister_objets(
-        conn, tenant, type_="HYPOTHESIS", limite=_LIMITE_LECTURE)
+        conn, tenant, type_="CONJECTURE", limite=_LIMITE_LECTURE)
     if ids is None:
         return toutes
     voulus = {_texte(i) for i in ids if _texte(i)}
@@ -106,11 +106,16 @@ def _besoin_par_id(besoins: Iterable[Mapping]) -> dict[str, dict]:
             if _texte(ligne.get("id"))}
 
 
+def _conjecture_ids(donnees: Mapping) -> list:
+    """Ids de conjectures d'un NEED : clé canonique puis clé legacy pré-renommage."""
+    return _liste(donnees.get("conjecture_ids") or donnees.get("hypothese_ids"))
+
+
 def _besoin_par_hypothese(besoins: Iterable[Mapping]) -> dict[str, dict]:
-    """hyp_id → NEED dont ``donnees.hypothese_ids`` la cite."""
+    """hyp_id → NEED dont ``donnees.conjecture_ids`` (ou legacy ``hypothese_ids``) la cite."""
     index: dict[str, dict] = {}
     for ligne in besoins or ():
-        for hyp_id in _liste(_donnees(ligne).get("hypothese_ids")):
+        for hyp_id in _conjecture_ids(_donnees(ligne)):
             identifiant = _texte(hyp_id)
             if identifiant and identifiant not in index:
                 index[identifiant] = ligne
@@ -278,7 +283,7 @@ def suggestions(
 
     ``need`` et ``hypotheses`` remplacent la lecture en base (mode READ) : le
     NEED est lu via ``entreprise_depot.lire_objet``, ses rivales via
-    ``donnees.hypothese_ids`` — le fil d'attention pourra ensuite appeler cette
+    ``donnees.conjecture_ids`` — le fil d'attention pourra ensuite appeler cette
     fonction à la passe, sans requête supplémentaire à câbler. Rend ``None`` si
     le NEED est introuvable, un dict à ``question`` vide si aucune rivale n'a de
     preuve discriminante.
@@ -290,8 +295,7 @@ def suggestions(
         return None
     donnees = _donnees(ligne)
     ids = [
-        _texte(i) for i in _liste(
-            donnees.get("hypothese_ids") or ligne.get("hypothese_ids"))
+        _texte(i) for i in _conjecture_ids(donnees) or _conjecture_ids(ligne)
         if _texte(i)]
     if hypotheses is not None:
         pool = [_aplatir(l) for l in hypotheses]

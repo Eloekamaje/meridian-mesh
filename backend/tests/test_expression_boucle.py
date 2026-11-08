@@ -409,8 +409,10 @@ def test_types_boucle_et_lecture_ont_une_source_unique_et_un_ordre_exact():
         "OUTCOME", "LEARNING", "SCENARIO",
     )
     assert boucle.TYPES_LECTURE == (
-        *boucle.TYPES_BOUCLE, "SIGNAL", "EXPRESSION", "HYPOTHESIS",
-        "EXPERT", "EXPERT_CONTRIBUTION", "OPPORTUNITY", "RISK")
+        "SITUATION", "INVESTIGATION", "DECISION", "INITIATIVE", "OUTCOME",
+        "LEARNING", "UNKNOWN", "CONJECTURE", "NEED", "OPPORTUNITY", "BELIEF",
+        "SCENARIO", "SIGNAL", "EXPRESSION", "HYPOTHESIS", "EXPERT",
+        "EXPERT_CONTRIBUTION", "RISK")
     assert set(boucle._CLASSES_LECTURE) == set(boucle.TYPES_LECTURE)
     assert boucle._CLASSES_LECTURE["SIGNAL"].__name__ == "Signal"
     assert boucle._CLASSES_LECTURE["EXPRESSION"].__name__ == "Expression"

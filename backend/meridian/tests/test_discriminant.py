@@ -15,7 +15,7 @@ MAINTENANT = datetime(2026, 11, 16, 9, 0, tzinfo=timezone.utc)
 
 def hypothese(identifiant, enonce, preuve, rival_ids, need_id="need-1", statut="EMISE"):
     return {"id": identifiant, "tenant_id": TENANT, "famille": "investigation",
-            "type": "HYPOTHESIS", "mode": "PROPOSED", "titre": identifiant,
+            "type": "CONJECTURE", "mode": "PROPOSED", "titre": identifiant,
             "donnees": {"enonce": enonce, "statut": statut,
                         "rival_ids": list(rival_ids),
                         "preuve_discriminante": preuve, "need_id": need_id}}
@@ -24,7 +24,7 @@ def hypothese(identifiant, enonce, preuve, rival_ids, need_id="need-1", statut="
 def need(identifiant="need-1", hypothese_ids=("h1", "h2", "h3"), **donnees):
     charge = {"statut": "OUVERT", "signature": "contournement",
               "sujet_detection": "app-cartes|CONSOMME",
-              "hypothese_ids": list(hypothese_ids),
+              "conjecture_ids": list(hypothese_ids),
               "refutable_par": "réconcilié 30 jours",
               "preuves": [{"source": "interface_assertion",
                            "subject": "app-cartes", "predicate": "CONSOMME",
@@ -119,6 +119,12 @@ def test_suggestions_need_sans_rivale_question_vide():
     res = discriminant.suggestions(
         None, TENANT, "need-1",
         need=need(hypothese_ids=[]), hypotheses=[])
+    # Rétro-lecture : la clé legacy ``hypothese_ids`` est acceptée à la place.
+    res_legacy = discriminant.suggestions(
+        None, TENANT, "need-1",
+        need=need(conjecture_ids=None, hypothese_ids=["h1", "h2", "h3"]),
+        hypotheses=lot_rivales())
+    assert set(res_legacy["rivales"]) == {"h1", "h2", "h3"}
     assert res["question"] == ""
     assert res["rivales"] == []
 
@@ -149,7 +155,7 @@ def test_discriminant_sur_hypotheses_persistees(conn):
         conn, TENANT, signature="contournement", maintenant=MAINTENANT)
     assert rapport["erreurs"] == []
     [cree] = rapport["crees"]
-    hyp_ids = cree["hypothese_ids"]
+    hyp_ids = cree["conjecture_ids"]
     assert len(hyp_ids) == 3
 
     res = discriminant.preuves_discriminantes(conn, TENANT, hyp_ids)

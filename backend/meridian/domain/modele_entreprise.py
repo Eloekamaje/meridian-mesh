@@ -21,11 +21,11 @@ __all__ = [
     "CHAMPS_TEMPORELS_OBLIGATOIRES", "ModeleInvalide",
     "famille_de", "est_twin_non_applicatif", "transitions_connaissance",
     "transition_autorisee", "verifier_transition",
-    "STATUTS_UNKNOWN", "STATUTS_HYPOTHESIS", "STATUTS_NEED", "TRANSITIONS_NEED",
+    "STATUTS_UNKNOWN", "STATUTS_CONJECTURE", "STATUTS_NEED", "TRANSITIONS_NEED",
     "STATUTS_BELIEF", "SOURCES_BELIEF", "TRANSITIONS_BELIEF",
     "ObjetEntreprise", "Twin", "Claim", "Relation", "Unknown", "Situation", "Opportunity",
-    "Risk", "Need", "Investigation", "Hypothesis", "Decision", "Initiative", "Outcome",
-    "Learning", "Source", "Domain", "Belief",
+    "Risk", "Need", "Investigation", "Conjecture", "Hypothesis", "Decision", "Initiative",
+    "Outcome", "Learning", "Source", "Domain", "Belief",
 ]
 
 
@@ -84,7 +84,9 @@ TYPES_PAR_FAMILLE = {
         "CLAIM", "RELATION", "RELATIONSHIP", "UNKNOWN", "CONTRADICTION", "BELIEF",
     ),
     "emergence": ("SIGNAL", "SITUATION", "EXPRESSION", "OPPORTUNITY", "RISK", "NEED"),
-    "investigation": ("INVESTIGATION", "HYPOTHESIS", "EXPERT", "EXPERT_CONTRIBUTION"),
+    "investigation": (
+        "INVESTIGATION", "HYPOTHESIS", "CONJECTURE", "EXPERT", "EXPERT_CONTRIBUTION",
+    ),
     "decision": ("SCENARIO", "DECISION", "INITIATIVE"),
     "resultat_apprentissage": ("OUTCOME", "LEARNING"),
     "interaction_gouvernance": (
@@ -106,7 +108,9 @@ STATUTS_CLAIM = frozenset({
 })
 
 STATUTS_UNKNOWN = ("OUVERT", "EN_COURS", "RESOLU", "ABANDONNE")
-STATUTS_HYPOTHESIS = ("EMISE", "TESTEE", "RETENUE", "REFUTEE")
+# Vocabulaire épistémique des conjectures rivales (collision §2.1 du plan de
+# convergence : HYPOTHESIS reste le type du workflow dev OPEN→CONFIRMED).
+STATUTS_CONJECTURE = ("EMISE", "TESTEE", "RETENUE", "REFUTEE")
 STATUTS_NEED = ("OUVERT", "QUALIFIE", "CORROBORE", "ADRESSE", "REFUTE", "PERIME")
 STATUTS_BELIEF = ("ACTIF", "REVISE", "CADUC")
 SOURCES_BELIEF = ("RAISONNEMENT", "DETECTEUR", "HUMAIN")
@@ -880,6 +884,9 @@ class Need(ObjetEntreprise):
     signature: str = ""
     refutable_par: str = ""
     situation_id: str | None = None
+    conjecture_ids: list[str] = field(default_factory=list)
+    # Clé legacy des CONJECTURE liées (donnees écrites avant le renommage) :
+    # lue à la construction puis fusionnée dans ``conjecture_ids``.
     hypothese_ids: list[str] = field(default_factory=list)
     unknown_id: str | None = None
     opportunity_id: str | None = None
@@ -901,7 +908,12 @@ class Need(ObjetEntreprise):
         self.situation_id = _identifiant_lien(
             self.situation_id, "situation_id", obligatoire=False
         )
-        self.hypothese_ids = _liste_ids(self.hypothese_ids, "hypothese_ids")
+        conjectures = _liste_ids(self.conjecture_ids, "conjecture_ids")
+        for identifiant in _liste_ids(self.hypothese_ids, "hypothese_ids"):
+            if identifiant not in conjectures:
+                conjectures.append(identifiant)
+        self.conjecture_ids = conjectures
+        self.hypothese_ids = []
         self.unknown_id = _identifiant_lien(self.unknown_id, "unknown_id", obligatoire=False)
         self.opportunity_id = _identifiant_lien(
             self.opportunity_id, "opportunity_id", obligatoire=False
@@ -978,12 +990,18 @@ class Investigation(ObjetEntreprise):
 
 
 @dataclass
-class Hypothesis(ObjetEntreprise):
-    """Hypothèse rivale d'une investigation : une hypothèse sans rivale est une
-    conclusion déguisée. TESTEE ou RETENUE exige au moins une rivale déclarée."""
+class Conjecture(ObjetEntreprise):
+    """Conjecture rivale d'un besoin ou d'une situation : une conjecture sans
+    rivale est une conclusion déguisée. TESTEE ou RETENUE exige au moins une
+    rivale déclarée.
+
+    Une conjecture devient une HYPOTHESIS (workflow, ``objets_exploitation``)
+    quand une investigation l'adopte — les deux types partagent la famille
+    ``investigation`` mais pas le cycle de vie.
+    """
 
     famille: str = "investigation"
-    type: str = "HYPOTHESIS"
+    type: str = "CONJECTURE"
     enonce: str = ""
     statut: str = "EMISE"
     rival_ids: list[str] = field(default_factory=list)
@@ -994,7 +1012,7 @@ class Hypothesis(ObjetEntreprise):
     def __post_init__(self) -> None:
         self.enonce = _texte_obligatoire(self.enonce, "enonce")
         super().__post_init__()
-        self.statut = _statut_dans(self.statut, STATUTS_HYPOTHESIS, "EMISE")
+        self.statut = _statut_dans(self.statut, STATUTS_CONJECTURE, "EMISE")
         self.rival_ids = _liste_ids(self.rival_ids, "rival_ids")
         self.preuve_discriminante = str(self.preuve_discriminante or "").strip()
         self.situation_id = _identifiant_lien(
@@ -1003,8 +1021,14 @@ class Hypothesis(ObjetEntreprise):
         self.need_id = _identifiant_lien(self.need_id, "need_id", obligatoire=False)
         if self.statut in {"TESTEE", "RETENUE"} and not self.rival_ids:
             raise ModeleInvalide(
-                f"une HYPOTHESIS {self.statut} exige au moins une rivale"
+                f"une CONJECTURE {self.statut} exige au moins une rivale"
             )
+
+
+# Alias de compatibilité arrière : le nom « Hypothesis » désignait l'objet
+# épistémique avant le renommage CONJECTURE (convergence §2.1). Le type stocké
+# reste CONJECTURE ; HYPOTHESIS appartient au workflow d'exploitation.
+Hypothesis = Conjecture
 
 
 @dataclass

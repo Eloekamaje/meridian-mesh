@@ -8,7 +8,7 @@ Trois signatures, aucune IA, aucune requête réseau — uniquement des requête
   conversations) : ``donnees->'conversation'``. Un appelant qui lit directement Mongo ``cases`` peut
   injecter ``reponses=[...]`` à la place.
 - ``contournement`` : sur un même couple ``(subject, predicate)`` de ``interface_assertion``, un objet
-  ``observed`` absent de l'ensemble ``declared`` signale un contournement — on émet trois HYPOTHESIS
+  ``observed`` absent de l'ensemble ``declared`` signale un contournement — on émet trois CONJECTURE
   rivales (EMISE) puis un NEED qui les relie.
 - ``recurrence`` : au moins ``seuil_recurrence`` SITUATION canoniques sur un même twin dans une fenêtre
   glissante de ``fenetre_jours`` jours produisent un NEED.
@@ -409,20 +409,20 @@ def _detecter_contournement(
              "une observation manuelle confirme l'absence de {obs} des flux réels"),
         ]
         try:
-            hypotheses = []
+            conjectures = []
             for rang, (enonce, preuve) in enumerate(gabarits):
-                hyp_id = _id_stable(
-                    "hyp", tenant, "contournement", sujet_detection, str(rang))
-                hypotheses.append(boucle.Hypothesis(
-                    id=hyp_id, tenant_id=tenant,
+                conj_id = _id_stable(
+                    "conj", tenant, "contournement", sujet_detection, str(rang))
+                conjectures.append(boucle.Conjecture(
+                    id=conj_id, tenant_id=tenant,
                     enonce=enonce.format(sujet=sujet, pred=predicat, obs=observe,
                                          decl=declare),
                     statut="EMISE",
                     preuve_discriminante=preuve.format(
                         obs=observe, jours=fenetre_jours)))
-            for rang, hypothese in enumerate(hypotheses):
-                hypothese.rival_ids = [
-                    autre.id for autre in hypotheses if autre.id != hypothese.id]
+            for rang, conjecture in enumerate(conjectures):
+                conjecture.rival_ids = [
+                    autre.id for autre in conjectures if autre.id != conjecture.id]
             need_id = _id_stable("need", tenant, "contournement", sujet_detection)
             facteur = signatures_besoins.poids_pour(poids_signatures, "contournement")
             need = boucle.Need(
@@ -438,7 +438,7 @@ def _detecter_contournement(
                     f"pendant {fenetre_jours} jours consécutifs, toutes les assertions "
                     f"'observed' de ({sujet}, {predicat}) restent incluses dans "
                     "l'ensemble 'declared'"),
-                hypothese_ids=[hypothese.id for hypothese in hypotheses],
+                conjecture_ids=[conjecture.id for conjecture in conjectures],
                 twin_ids=[sujet],
                 preuves=[{"source": "interface_assertion",
                           "subject": sujet, "predicate": predicat,
@@ -450,7 +450,7 @@ def _detecter_contournement(
             payload["poids_signature"] = facteur
             payload["confiance_detecteur"] = CONFIANCE_DETECTEUR
             persister(conn, tenant, [
-                dict(hypothese.to_dict()) for hypothese in hypotheses] + [payload])
+                dict(conjecture.to_dict()) for conjecture in conjectures] + [payload])
         except Exception as exc:
             erreurs.append({"signature": "contournement", "sujet": sujet_detection,
                             "erreur": str(exc)})
@@ -459,7 +459,7 @@ def _detecter_contournement(
         produits += 1
         crees.append({"signature": "contournement", "sujet": sujet_detection,
                       "id": need_id, "type": "NEED",
-                      "hypothese_ids": [hypothese.id for hypothese in hypotheses]})
+                      "conjecture_ids": [conjecture.id for conjecture in conjectures]})
 
 
 # --- Détecteur 3 : recurrence ---

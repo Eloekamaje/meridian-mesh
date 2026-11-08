@@ -49,7 +49,7 @@ __all__ = [
     "STATUT_DECISION_PROPOSEE", "STATUT_DECISION_TRANCHEE",
     "STATUT_INITIATIVE", "STATUT_OUTCOME", "STATUT_LEARNING",
     "Situation", "Investigation", "Decision", "Scenario", "Initiative", "Outcome", "Learning",
-    "Unknown", "Hypothesis", "Need", "Opportunity", "Belief",
+    "Unknown", "Conjecture", "Hypothesis", "Need", "Opportunity", "Belief",
     "est_decision_tranchee",
     "ouvrir_investigation", "proposer_decision", "trancher_decision", "lancer_initiative",
     "mesurer_outcome", "capitaliser_learning", "transiter_need",
@@ -70,7 +70,10 @@ TYPES_BOUCLE = (
     "SITUATION", "INVESTIGATION", "DECISION", "INITIATIVE",
     "OUTCOME", "LEARNING", "SCENARIO",
 )
-TYPES_COMPLEMENTAIRES = ("UNKNOWN", "HYPOTHESIS", "NEED", "OPPORTUNITY", "BELIEF")
+# HYPOTHESIS n'est pas un type complémentaire : depuis le renommage CONJECTURE
+# (convergence §2.1), il n'appartient qu'au workflow d'exploitation, écrit par
+# ``enregistrer_objets`` — jamais par ``enregistrer_boucle``.
+TYPES_COMPLEMENTAIRES = ("UNKNOWN", "CONJECTURE", "NEED", "OPPORTUNITY", "BELIEF")
 TRANSITIONS_NEED = modele.TRANSITIONS_NEED
 STATUT_DECISION_PROPOSEE = "PROPOSED"
 STATUT_DECISION_TRANCHEE = "DECIDED"
@@ -90,7 +93,7 @@ _MODE_DEFAUT = {
     "OUTCOME": "OBSERVED",
     "LEARNING": "INFERRED",
     "UNKNOWN": "PROPOSED",
-    "HYPOTHESIS": "PROPOSED",
+    "CONJECTURE": "PROPOSED",
     "NEED": "PROPOSED",
     "OPPORTUNITY": "INFERRED",
     "BELIEF": "INFERRED",
@@ -106,7 +109,7 @@ _MAX_HISTORIQUE = 50
 # fraîchement construit ne doit pas les effacer avec ses valeurs par défaut.
 _CHAMPS_INVERSES_LIES = frozenset({
     "signal_ids", "expression_id", "opportunity_ids", "risk_ids",
-    "hypothesis_ids", "expert_ids", "scenario_ids",
+    "hypothesis_ids", "conjecture_ids", "expert_ids", "scenario_ids",
     "scenario_id", "initiative_id", "outcome_ids", "scenarios_rejetes",
 })
 
@@ -497,8 +500,8 @@ class Unknown(modele.Unknown, _LiensBoucle):
 
 
 @dataclass
-class Hypothesis(modele.Hypothesis, _LiensBoucle):
-    """Hypothèse rivale persistée ; TESTEE ou RETENUE exige au moins une rivale."""
+class Conjecture(modele.Conjecture, _LiensBoucle):
+    """Conjecture rivale persistée ; TESTEE ou RETENUE exige au moins une rivale."""
 
     mode: str = "PROPOSED"
     titre: str = ""
@@ -514,6 +517,13 @@ class Hypothesis(modele.Hypothesis, _LiensBoucle):
         super().__post_init__()
 
 
+# Compatibilité arrière : ``boucle.Hypothesis`` désignait la conjecture
+# épistémique avant le renommage. HYPOTHESIS est désormais réservé au workflow
+# (``domain.objets_exploitation.Hypothesis``, importé ci-dessus en
+# ``HypothesisExploitation``).
+Hypothesis = Conjecture
+
+
 @dataclass
 class Need(modele.Need, _LiensBoucle):
     """Besoin ouvert persisté ; `refutable_par` reste obligatoire, comme dans le modèle."""
@@ -523,7 +533,7 @@ class Need(modele.Need, _LiensBoucle):
     CHAMPS_LIENS = (
         "situation_id", "unknown_id", "opportunity_id", "risk_id", "intention_id",
     )
-    CHAMPS_LIENS_MULTIPLES = ("hypothese_ids", "twin_ids", "claim_ids")
+    CHAMPS_LIENS_MULTIPLES = ("conjecture_ids", "twin_ids", "claim_ids")
 
     def __post_init__(self) -> None:
         self.resume = _texte(self.resume) or _texte(self.ecart)
@@ -586,7 +596,7 @@ _CLASSES = {
     "OUTCOME": Outcome,
     "LEARNING": Learning,
     "UNKNOWN": Unknown,
-    "HYPOTHESIS": Hypothesis,
+    "CONJECTURE": Conjecture,
     "NEED": Need,
     "OPPORTUNITY": Opportunity,
     "BELIEF": Belief,
@@ -596,6 +606,8 @@ _CLASSES = {
 # Lecture seule des types d'exploitation : EXPRESSION est lisible dans une chaîne
 # canonique sans devenir un type d'écriture de ``enregistrer_boucle``. Cette table est
 # l'unique source de ``TYPES_LECTURE`` et sert à valider toute lecture canonique.
+# ``HYPOTHESIS`` y reste mappé sur la classe workflow (convergence §2.1 : la
+# CONJECTURE épistémique est relue en ``Conjecture``, les deux cohabitent).
 _CLASSES_LECTURE = {
     **_CLASSES,
     "SIGNAL": Signal,
@@ -1076,13 +1088,13 @@ def _valider_pour_persistance(conn: Any, tenant: str, objets: list[Any]) -> None
                 _valeur(objet, "porteur")
             ):
                 raise BoucleInvalide(f"un NEED {statut_need} exige un porteur")
-        if type_objet == "HYPOTHESIS":
-            statut_hypothese = _normaliser_statut(_valeur(objet, "statut"))
-            if statut_hypothese in {"TESTEE", "RETENUE"} and not _liste_ids(
+        if type_objet == "CONJECTURE":
+            statut_conjecture = _normaliser_statut(_valeur(objet, "statut"))
+            if statut_conjecture in {"TESTEE", "RETENUE"} and not _liste_ids(
                 _valeur(objet, "rival_ids"), "rival_ids"
             ):
                 raise BoucleInvalide(
-                    f"une HYPOTHESIS {statut_hypothese} exige au moins une rivale"
+                    f"une CONJECTURE {statut_conjecture} exige au moins une rivale"
                 )
         if type_objet == "BELIEF":
             statut_belief = _normaliser_statut(_valeur(objet, "statut"))
@@ -1361,7 +1373,14 @@ def _source_principale(ligne: Mapping[str, Any]) -> str | None:
         situations = _liste_ids(_valeur(ligne, "situation_ids"), "situation_ids")
         return situations[0] if len(situations) == 1 else None
     if type_objet == "HYPOTHESIS":
-        return _texte_ou_none(_valeur(ligne, "investigation_id"))
+        # Workflow : le parent est l'Investigation. Le repli situation_id/need_id
+        # couvre les lignes épistémiques écrites avant la migration 0006 (depuis
+        # renommées CONJECTURE) : leur chaîne causale reste résoluble.
+        return (
+            _texte_ou_none(_valeur(ligne, "investigation_id"))
+            or _texte_ou_none(_valeur(ligne, "situation_id"))
+            or _texte_ou_none(_valeur(ligne, "need_id"))
+        )
     if type_objet == "EXPERT":
         # Le registre n'a pas de parent : la chaîne se réduit à l'Expert lui-même.
         return None
@@ -1396,7 +1415,7 @@ def _source_principale(ligne: Mapping[str, Any]) -> str | None:
             _texte_ou_none(_valeur(ligne, "situation_id"))
             or _texte_ou_none(_valeur(ligne, "unknown_id"))
         )
-    if type_objet == "HYPOTHESIS":
+    if type_objet == "CONJECTURE":
         return (
             _texte_ou_none(_valeur(ligne, "situation_id"))
             or _texte_ou_none(_valeur(ligne, "need_id"))

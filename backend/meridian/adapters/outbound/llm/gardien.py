@@ -545,7 +545,7 @@ async def veiller(conn, db, jumeau_id, chemins=None, rediger=_rediger):
     except Exception:  # poids neutres : la mesure se rejoue à la passe suivante
         journal.warning("gardien %s : mesure des signatures impossible, poids neutres",
                         jumeau_id, exc_info=True)
-    # B7 : détecteurs déterministes de besoins (NEED/UNKNOWN/HYPOTHESIS) — avant les retours précoces,
+    # B7 : détecteurs déterministes de besoins (NEED/UNKNOWN/CONJECTURE) — avant les retours précoces,
     # une passe sans changement Git doit quand même pouvoir laisser un besoin vivant.
     try:
         rapport_besoins = detecteurs_besoins.detecter(

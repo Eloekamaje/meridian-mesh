@@ -924,11 +924,14 @@ from pydantic import BaseModel as _BaseModel, Field as _Field
 _PREFIXES_ID = {
     "SITUATION": "sit-", "INVESTIGATION": "inv-", "DECISION": "dec-",
     "INITIATIVE": "ini-", "OUTCOME": "out-", "LEARNING": "ler-",
-    "UNKNOWN": "unk-", "HYPOTHESIS": "hyp-", "NEED": "need-",
+    "UNKNOWN": "unk-", "CONJECTURE": "conj-", "NEED": "need-",
 }
+# Types épistémiques créables par le chemin générique : CONJECTURE remplace
+# HYPOTHESIS (convergence §2.1) — une HYPOTHESIS workflow ne naît que par la
+# route typée ``POST /investigations/{iid}/hypotheses``.
 _TYPES_CREATION = (
     "SITUATION", "INVESTIGATION", "DECISION", "INITIATIVE",
-    "UNKNOWN", "HYPOTHESIS", "NEED",
+    "UNKNOWN", "CONJECTURE", "NEED",
 )
 _MODES_CREATION = {"SITUATION": "OBSERVED"}
 
@@ -962,7 +965,7 @@ async def creer_objet(
     x_tenant: str | None = Header(None, alias="X-Tenant"),
 ):
     """Crée un objet canonique de la boucle (Situation, Investigation, Decision, Initiative)
-    ou un objet complémentaire (Unknown, Hypothesis, Need)."""
+    ou un objet complémentaire (Unknown, Conjecture, Need)."""
     _verifier_espace(x_espace)
     tenant = _tenant(request, x_tenant)
     type_objet = str(payload.type or "").strip().upper()

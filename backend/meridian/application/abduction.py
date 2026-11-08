@@ -8,7 +8,7 @@ des trois mondes que le détecteur ``contournement`` (B7) écrit en ligne dans
 
 - :func:`rivaliser` prend une contrainte (un écart, typiquement le dict rendu par
   ``_contradictions_assertions`` : ``subject``/``predicate``/``declared``/
-  ``observed``/``excedent``) et rend 3-4 dicts **Hypothesis-compatibles** — les
+  ``observed``/``excedent``) et rend 3-4 dicts **Conjecture-compatibles** — les
   clés sont exactement les champs du modèle, les ``rival_ids`` sont croisés et
   chaque ``preuve_discriminante`` nomme l'observation qui distinguerait cette
   rivale des autres. Un indice qui mentionne un événement récent (déploiement,
@@ -185,7 +185,7 @@ def rivaliser(
     *,
     fenetre_jours: int = 30,
 ) -> list[dict]:
-    """Produit 3-4 hypothèses rivales (dicts Hypothesis-compatibles) qui s'excluent.
+    """Produit 3-4 conjectures rivales (dicts Conjecture-compatibles) qui s'excluent.
 
     ``contrainte`` est un mapping qui décrit l'écart ; les clés acceptées, par
     ordre de préférence : ``subject``|``sujet``, ``predicate``|``predicat``,
@@ -220,9 +220,9 @@ def rivaliser(
     sujet_detection = f"{sujet}|{predicat}"
     for rang, (_cle, enonce, preuve) in enumerate(gabarits):
         rivale = {
-            "id": _id_stable("hyp", tenant, signature, sujet_detection, str(rang)),
+            "id": _id_stable("conj", tenant, signature, sujet_detection, str(rang)),
             "famille": "investigation",
-            "type": "HYPOTHESIS",
+            "type": "CONJECTURE",
             "mode": "PROPOSED",
             "enonce": enonce.format(
                 sujet=sujet, pred=predicat, obs=observe, decl=declare,
