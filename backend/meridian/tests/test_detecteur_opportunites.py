@@ -90,7 +90,7 @@ def test_deux_applications_meme_capacite_produisent_une_opportunity():
     donnees = opp["donnees"]
     assert donnees["signature"] == "duplication"
     assert donnees["capacite_id"] == "cap-dossiers"
-    assert donnees["statut"] == "PROPOSED"
+    assert donnees["statut"] == "DETECTED"
     assert donnees["type_opportunite"] == "DUPLICATION"
     assert set(donnees["twin_ids"]) == {"app-cartes", "app-prets", "cap-dossiers"}
     assert set(donnees["claim_ids"]) == {"11", "22"}
@@ -237,7 +237,7 @@ def test_persistance_reelle_duplication(conn):
     donnees = relu["donnees"]
     assert donnees["signature"] == "duplication" and donnees["capacite_id"] == "cap-dossiers"
     assert set(donnees["twin_ids"]) == {"app-cartes", "app-prets", "cap-dossiers"}
-    assert donnees["statut"] == "PROPOSED"
+    assert donnees["statut"] == "DETECTED"
 
     second = detecteur_opportunites.detecter(conn, TENANT)
     assert second["crees"] == [] and second["erreurs"] == []
@@ -284,10 +284,12 @@ def test_twin_tres_connecte_produit_une_concentration():
     [cree] = rapport["crees"]
     assert cree["signature"] == "concentration_risque"
     assert cree["sujet"] == "app-noyau" and cree["dependants"] == 5
-    [opp] = depot.par_type("OPPORTUNITY")
-    donnees = opp["donnees"]
+    assert cree["type"] == "RISK"
+    [risque] = depot.par_type("RISK")
+    donnees = risque["donnees"]
     assert donnees["signature"] == "concentration_risque"
-    assert donnees["type_opportunite"] == "CONCENTRATION_RISQUE"
+    assert donnees["type_risque"] == "CONTINUITE"
+    assert donnees["statut"] == "DETECTED"
     assert donnees["sujet_detection"] == "app-noyau"
     assert donnees["degre_entrant"] == 5
     assert set(donnees["twin_ids"]) == {"app-noyau", *(f"app-{n}" for n in range(1, 6))}
@@ -321,8 +323,8 @@ def test_degre_entrant_pilote_impact_et_severite():
     depot = DepotMemoire()
     relations = [relation(n, f"app-{n}", "app-noyau") for n in range(1, 11)]
     rapport = detecter(depot, relations=relations)
-    [opp] = depot.par_type("OPPORTUNITY")
-    donnees = opp["donnees"]
+    [risque] = depot.par_type("RISK")
+    donnees = risque["donnees"]
     assert donnees["degre_entrant"] == 10
     assert donnees["severite"] == "CRITIQUE" and donnees["impact"] == 1.0
     assert rapport["crees"][0]["severite"] == "CRITIQUE"
@@ -338,7 +340,7 @@ def test_relations_non_confirmees_ne_concentrent_pas():
 # --- Signature dette_vs_usage (D6) ---
 
 
-def test_dette_et_usage_produisent_une_opportunity_dette_critique():
+def test_dette_et_usage_produisent_un_risk_technique():
     depot = DepotMemoire()
     relations = [relation(1, "app-a", "app-dette", predicat="APPELLE"),
                  relation(2, "app-b", "app-dette", predicat="APPELLE")]
@@ -348,10 +350,12 @@ def test_dette_et_usage_produisent_une_opportunity_dette_critique():
     assert rapport["totaux"] == {"crees": 1, "ignores": 0, "erreurs": 0}
     [cree] = rapport["crees"]
     assert cree["signature"] == "dette_vs_usage" and cree["sujet"] == "app-dette"
+    assert cree["type"] == "RISK"
     assert cree["usage"] == 2 and cree["signaux_dette"] == 1
-    [opp] = depot.par_type("OPPORTUNITY")
-    donnees = opp["donnees"]
-    assert donnees["type_opportunite"] == "DETTE_CRITIQUE"
+    [risque] = depot.par_type("RISK")
+    donnees = risque["donnees"]
+    assert donnees["type_risque"] == "TECHNIQUE"
+    assert donnees["statut"] == "DETECTED"
     assert donnees["sujet_detection"] == "app-dette"
     assert set(donnees["twin_ids"]) == {"app-dette", "app-a", "app-b"}
     assert set(donnees["claim_ids"]) == {"1", "2", "10"}
@@ -379,7 +383,7 @@ def test_situations_recentes_comptent_comme_usage():
                   situation("sit-2", ["app-dette"])]
     rapport = detecter(depot, signaux=signaux, situations=situations)
     assert rapport["totaux"]["crees"] == 1
-    donnees = depot.par_type("OPPORTUNITY")[0]["donnees"]
+    donnees = depot.par_type("RISK")[0]["donnees"]
     assert sorted(donnees["situation_ids"]) == ["sit-1", "sit-2"]
     assert donnees["usage"] == 2
 
@@ -449,7 +453,7 @@ def test_second_run_ne_recree_aucune_signature():
 
     second = detecteur_opportunites.detecter(
         None, TENANT, persister=depot,
-        opportunites=depot.par_type("OPPORTUNITY"), **kwargs)
+        opportunites=list(depot.objets.values()), **kwargs)
     assert second["totaux"]["crees"] == 0
     assert second["totaux"]["ignores"] == 2
 
@@ -499,11 +503,12 @@ def test_persistance_reelle_concentration_risque(conn):
     assert sorted(str(c) for c in cree["claim_ids"]) == sorted(str(c) for c in claim_ids)
 
     relu = boucle.lire_boucle(conn, TENANT, cree["id"])
-    assert relu["type"] == "OPPORTUNITY" and relu["famille"] == "emergence"
+    assert relu["type"] == "RISK" and relu["famille"] == "emergence"
     donnees = relu["donnees"]
     assert donnees["signature"] == "concentration_risque"
     assert donnees["sujet_detection"] == "app-noyau"
-    assert donnees["degre_entrant"] == 5 and donnees["statut"] == "PROPOSED"
+    assert donnees["type_risque"] == "CONTINUITE"
+    assert donnees["degre_entrant"] == 5 and donnees["statut"] == "DETECTED"
     assert set(donnees["twin_ids"]) == {"app-noyau", *dependants}
 
     second = detecteur_opportunites.detecter(conn, TENANT)
@@ -539,10 +544,50 @@ def test_persistance_reelle_dette_vs_usage(conn):
     assert cree["sujet"] == "app-dette" and cree["usage"] == 2
 
     relu = boucle.lire_boucle(conn, TENANT, cree["id"])
+    assert relu["type"] == "RISK"
     donnees = relu["donnees"]
-    assert donnees["type_opportunite"] == "DETTE_CRITIQUE"
+    assert donnees["type_risque"] == "TECHNIQUE"
     assert set(donnees["twin_ids"]) == {"app-dette", "app-cli-1", "app-cli-2"}
     assert str(claim["id"]) in [str(c) for c in donnees["claim_ids"]]
 
     second = detecteur_opportunites.detecter(conn, TENANT)
     assert not [c for c in second["crees"] if c["signature"] == "dette_vs_usage"]
+
+
+@besoin_pg
+def test_risk_detecte_suit_le_cycle_canonique(conn):
+    """Convergence §2.2 : un RISK de détecteur n'est plus gelé — il transite par le
+    chemin typé (DETECTED → MATURING) et se réécrit par le chemin B (signature +
+    claim_ids vaut trace)."""
+    from meridian.application import commandes_boucle
+    from meridian.adapters.outbound.postgres import objets_exploitation
+
+    _creer_dependances_acceptees(conn, [f"app-dep-{n}" for n in range(1, 6)], "app-noyau")
+    rapport = detecteur_opportunites.detecter(conn, TENANT)
+    assert rapport["erreurs"] == []
+    [cree] = rapport["crees"]
+
+    transition = commandes_boucle.changer_statut_risque(
+        boucle, conn, TENANT, cree["id"], "MATURING", motif="revue d'architecture")
+    assert transition.objet["donnees"]["statut"] == "MATURING"
+
+    # Le chemin B accepte la réécriture : signature + claim_ids vaut trace.
+    relue = boucle.lire_boucle(conn, TENANT, cree["id"])
+    reecrite = objets_exploitation.enregistrer_objets_exploitation(conn, TENANT, relue)
+    assert reecrite["donnees"]["statut"] == "MATURING"
+
+
+@besoin_pg
+def test_opportunity_detectee_suit_le_cycle_canonique(conn):
+    """Convergence §2.2 : une OPPORTUNITY de détecteur (statut DETECTED) transite
+    par le moteur typé au lieu d'être gelée."""
+    from meridian.application import commandes_boucle
+
+    _preparer_duplication(conn)
+    rapport = detecteur_opportunites.detecter(conn, TENANT)
+    assert rapport["erreurs"] == []
+    [cree] = rapport["crees"]
+
+    transition = commandes_boucle.changer_statut_opportunite(
+        boucle, conn, TENANT, cree["id"], "MATURING", motif="à qualifier")
+    assert transition.objet["donnees"]["statut"] == "MATURING"

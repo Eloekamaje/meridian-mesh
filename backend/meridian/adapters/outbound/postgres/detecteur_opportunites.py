@@ -16,18 +16,20 @@ Trois signatures, aucune IA, aucune requête réseau — uniquement des requête
   ``APPELLE``/``ECHANGE_AVEC`` confirmés vers lui + SITUATION canoniques récentes le citant).
   Dette sans usage, ou usage sans dette : rien — c'est l'intersection qui est critique.
 
-Chaque opportunité porte : ``signature``, ``sujet_detection``, ``twin_ids``, ``claim_ids``
-(preuves), statut ``PROPOSED`` (annexe B : une opportunité reste une proposition tant qu'aucun
-humain ne la qualifie). ``type_opportunite`` = ``DUPLICATION`` / ``CONCENTRATION_RISQUE`` /
-``DETTE_CRITIQUE``. L'objet produit reste une OPPORTUNITY — le type RISK canonique n'est pas dans
-la boucle de persistance (``enregistrer_boucle`` le refuserait).
+Chaque objet détecté porte : ``signature``, ``sujet_detection``, ``twin_ids``, ``claim_ids``
+(preuves), statut ``DETECTED`` — le premier état du cycle canonique d'émergence ; la
+qualification humaine (MATURING → QUALIFIED) reste le verrou d'autorité. ``duplication``
+produit une OPPORTUNITY (``type_opportunite=DUPLICATION``) ; ``concentration_risque`` et
+``dette_vs_usage`` produisent des RISK (``type_risque`` = ``CONTINUITE`` / ``TECHNIQUE``) —
+convergence §2.2 : la taxonomie dit la vérité sur la nature de l'objet.
 
-Quotas et dédup : au plus ``quota`` opportunités par run, toutes signatures confondues, jouées
-dans l'ordre ``duplication`` → ``concentration_risque`` → ``dette_vs_usage``. Une OPPORTUNITY
-déjà présente avec la même ``signature`` et le même sujet (``sujet_detection`` — ``capacite_id``
-pour les opportunités ``duplication`` antérieures), quel que soit son statut, n'est pas recréée :
-un détecteur ne rouvre jamais silencieusement une opportunité qualifiée ou close. Les
-identifiants sont déterministes (sha256 tenant+signature+sujet) : un second run ne crée rien.
+Quotas et dédup : au plus ``quota`` objets par run, toutes signatures confondues, jouées
+dans l'ordre ``duplication`` → ``concentration_risque`` → ``dette_vs_usage``. Un objet déjà
+présent avec la même ``signature`` et le même sujet (``sujet_detection`` — ``capacite_id``
+pour les opportunités ``duplication`` antérieures), quel que soit son type ou son statut,
+n'est pas recréé : un détecteur ne rouvre jamais silencieusement une détection qualifiée ou
+close. Les identifiants sont déterministes (sha256 tenant+signature+sujet) : un second run ne
+crée rien.
 
 Fail-closed : une opportunité refusée par le dépôt remonte dans ``erreurs`` du rapport, jamais
 avalée.
@@ -218,8 +220,13 @@ def _lire_situations(conn: Any, tenant: str, depuis: datetime) -> list[dict]:
         return []
 
 
-def _lire_opportunites_existantes(conn: Any, tenant: str) -> list[dict]:
-    return entreprise_depot.lister_objets(conn, tenant, type_="OPPORTUNITY", limite=1000)
+def _lire_detections_existantes(conn: Any, tenant: str) -> list[dict]:
+    """OPPORTUNITY et RISK confondus : la dédup couvre les deux types, y compris
+    les lignes migrées par la révision 0007."""
+    return (
+        entreprise_depot.lister_objets(conn, tenant, type_="OPPORTUNITY", limite=1000)
+        + entreprise_depot.lister_objets(conn, tenant, type_="RISK", limite=1000)
+    )
 
 
 # --- Normalisation des lignes (mode READ sans base : même contrat que les requêtes) ---
@@ -453,14 +460,16 @@ def _dettes_critiques(
 # --- Dédup ---
 
 
-def _sujets_connus(opportunites: Iterable[Mapping]) -> dict[tuple[str, str], str]:
-    """``(signature, sujet)`` → statut, pour les OPPORTUNITY du tenant (tous statuts).
+def _sujets_connus(objets: Iterable[Mapping]) -> dict[tuple[str, str], str]:
+    """``(signature, sujet)`` → statut, pour les objets détectés du tenant (tous statuts).
 
-    Le sujet est ``sujet_detection`` ; pour les opportunités ``duplication`` écrites avant
-    D6 (sans ``sujet_detection``), ``capacite_id`` fait foi.
+    OPPORTUNITY et RISK confondus : une signature ne se rejoue jamais, quel que
+    soit le type sous lequel elle a été persistée. Le sujet est ``sujet_detection`` ;
+    pour les opportunités ``duplication`` écrites avant D6 (sans ``sujet_detection``),
+    ``capacite_id`` fait foi.
     """
     connus: dict[tuple[str, str], str] = {}
-    for ligne in opportunites or ():
+    for ligne in objets or ():
         donnees = _donnees(ligne)
         signature = _texte(donnees.get("signature"))
         if signature not in SIGNATURES:
@@ -476,27 +485,34 @@ def _sujets_connus(opportunites: Iterable[Mapping]) -> dict[tuple[str, str], str
 # --- Écriture ---
 
 
-def _creer_opportunite(
+def _creer_detection(
     conn: Any, tenant: str, persister: Callable, *, signature: str, sujet: str,
-    titre: str, description: str, type_opportunite: str,
+    titre: str, description: str, type_objet: str,
     twin_ids: list, claim_ids: list, extras: Mapping,
-    erreurs: list,
+    erreurs: list, **champs: Any,
 ) -> str | None:
-    """Construit et persiste l'OPPORTUNITY ; rend son id, ``None`` si le dépôt refuse."""
-    opportunite_id = _id_stable("opp", tenant, signature, sujet)
+    """Construit et persiste l'objet détecté ; rend son id, ``None`` si le dépôt refuse.
+
+    ``type_objet`` vaut ``OPPORTUNITY`` (signature ``duplication``) ou ``RISK``
+    (signatures ``concentration_risque``/``dette_vs_usage``). Le statut est
+    toujours ``DETECTED``, premier état du cycle d'émergence canonique.
+    """
+    classe = boucle.Opportunity if type_objet == "OPPORTUNITY" else boucle.Risk
+    prefixe = "opp" if type_objet == "OPPORTUNITY" else "risk"
+    objet_id = _id_stable(prefixe, tenant, signature, sujet)
     try:
-        opportunite = boucle.Opportunity(
-            id=opportunite_id, tenant_id=tenant, titre=titre, description=description,
-            statut="PROPOSED", type_opportunite=type_opportunite, signature=signature,
-            twin_ids=twin_ids, claim_ids=claim_ids)
-        payload = dict(opportunite.to_dict())
+        objet = classe(
+            id=objet_id, tenant_id=tenant, titre=titre, description=description,
+            statut="DETECTED", signature=signature,
+            twin_ids=twin_ids, claim_ids=claim_ids, **champs)
+        payload = dict(objet.to_dict())
         payload["sujet_detection"] = sujet
         payload.update(dict(extras))
         persister(conn, tenant, payload)
     except Exception as exc:
         erreurs.append({"signature": signature, "sujet": sujet, "erreur": str(exc)})
         return None
-    return opportunite_id
+    return objet_id
 
 
 # --- Orchestration ---
@@ -529,7 +545,9 @@ def detecter(
     twin → twin (``dependant_id``/``jumeau_id``, ``cible_id``/``objet``, ``predicat``) ;
     ``signaux`` = claims de dette par twin (``twin_id``/``jumeau_id``, ``type``, ``predicat``,
     ``statut``) ; ``situations`` = lignes ``objet_entreprise`` SITUATION (``twin_ids`` dans
-    ``donnees`` ou au sommet). Une source non fournie avec ``conn=None`` vaut liste vide.
+    ``donnees`` ou au sommet) ; ``opportunites`` = lignes OPPORTUNITY **et** RISK déjà
+    persistées (la dédup couvre les deux types). Une source non fournie avec ``conn=None``
+    vaut liste vide.
 
     ``persister(conn, tenant, objet)`` écrit dans ``objet_entreprise`` (défaut :
     :func:`boucle.enregistrer_boucle`).
@@ -559,10 +577,10 @@ def detecter(
             return list(lot)
         return lecture(conn, tenant) if conn is not None else []
 
-    lignes_opportunites = (
+    lignes_existantes = (
         list(opportunites) if opportunites is not None
-        else _lire_opportunites_existantes(conn, tenant))
-    connus = _sujets_connus(lignes_opportunites)
+        else _lire_detections_existantes(conn, tenant))
+    connus = _sujets_connus(lignes_existantes)
     crees: list[dict] = []
     ignores: list[dict] = []
     erreurs: list[dict] = []
@@ -577,7 +595,7 @@ def detecter(
             statut_connu = connus.get((SIGNATURE, capacite_id))
             if statut_connu:
                 ignores.append({"signature": SIGNATURE, "sujet": capacite_id,
-                                "raison": f"opportunity déjà présente (statut {statut_connu})"})
+                                "raison": f"détection déjà présente (statut {statut_connu})"})
                 continue
             application_ids = sorted(groupe["applications"])
             claim_ids = groupe["claim_ids"]
@@ -585,7 +603,7 @@ def detecter(
             twin_ids = list(application_ids)
             if groupe["capacite_twin_id"]:
                 twin_ids.append(groupe["capacite_twin_id"])
-            opportunite_id = _creer_opportunite(
+            opportunite_id = _creer_detection(
                 conn, tenant, persister, signature=SIGNATURE, sujet=capacite_id,
                 titre=f"Duplication : « {capacite_nom} » réalisée par "
                       f"{len(application_ids)} applications",
@@ -593,13 +611,13 @@ def detecter(
                     f"{len(application_ids)} applications déclarent la même capacité "
                     f"« {capacite_nom} » ({', '.join(application_ids)}). Mutualiser ou "
                     "spécialiser l'une d'elles réduirait la redondance."),
-                type_opportunite="DUPLICATION",
+                type_objet="OPPORTUNITY", type_opportunite="DUPLICATION",
                 twin_ids=twin_ids, claim_ids=claim_ids,
                 extras={"capacite_id": capacite_id, "application_ids": application_ids},
                 erreurs=erreurs)
             if opportunite_id is None:
                 continue
-            connus[(SIGNATURE, capacite_id)] = "PROPOSED"
+            connus[(SIGNATURE, capacite_id)] = "DETECTED"
             produits += 1
             crees.append({"signature": SIGNATURE, "sujet": capacite_id,
                           "id": opportunite_id, "type": "OPPORTUNITY",
@@ -614,14 +632,14 @@ def detecter(
             statut_connu = connus.get((SIGNATURE_CONCENTRATION, cible_id))
             if statut_connu:
                 ignores.append({"signature": SIGNATURE_CONCENTRATION, "sujet": cible_id,
-                                "raison": f"opportunity déjà présente (statut {statut_connu})"})
+                                "raison": f"détection déjà présente (statut {statut_connu})"})
                 continue
             dependants = sorted(groupe["dependants"])
             degre = len(dependants)
             cible_nom = groupe["cible_nom"] or cible_id
             impact = round(min(1.0, degre / (min_dependants * 2)), 2)
-            severite = "CRITIQUE" if degre >= min_dependants * 2 else "ELEVEE"
-            opportunite_id = _creer_opportunite(
+            severite = "CRITIQUE" if degre >= min_dependants * 2 else "HAUTE"
+            risque_id = _creer_detection(
                 conn, tenant, persister, signature=SIGNATURE_CONCENTRATION, sujet=cible_id,
                 titre=f"Concentration de risque : {degre} twins dépendent de « {cible_nom} »",
                 description=(
@@ -629,17 +647,17 @@ def detecter(
                     f"({', '.join(dependants)}). « {cible_nom} » est un point unique de "
                     "défaillance : réduire le couplage ou prévoir un repli limiterait le "
                     "rayon d'un incident."),
-                type_opportunite="CONCENTRATION_RISQUE",
+                type_objet="RISK", type_risque="CONTINUITE", severite=severite,
                 twin_ids=[cible_id, *dependants], claim_ids=groupe["claim_ids"],
                 extras={"cible_id": cible_id, "dependant_ids": dependants,
-                        "degre_entrant": degre, "impact": impact, "severite": severite},
+                        "degre_entrant": degre, "impact": impact},
                 erreurs=erreurs)
-            if opportunite_id is None:
+            if risque_id is None:
                 continue
-            connus[(SIGNATURE_CONCENTRATION, cible_id)] = "PROPOSED"
+            connus[(SIGNATURE_CONCENTRATION, cible_id)] = "DETECTED"
             produits += 1
             crees.append({"signature": SIGNATURE_CONCENTRATION, "sujet": cible_id,
-                          "id": opportunite_id, "type": "OPPORTUNITY",
+                          "id": risque_id, "type": "RISK",
                           "dependants": degre, "severite": severite,
                           "claim_ids": groupe["claim_ids"]})
 
@@ -657,7 +675,7 @@ def detecter(
             statut_connu = connus.get((SIGNATURE_DETTE_USAGE, twin_id))
             if statut_connu:
                 ignores.append({"signature": SIGNATURE_DETTE_USAGE, "sujet": twin_id,
-                                "raison": f"opportunity déjà présente (statut {statut_connu})"})
+                                "raison": f"détection déjà présente (statut {statut_connu})"})
                 continue
             twin_nom = groupe["twin_nom"] or twin_id
             nb_dette = len(groupe["signaux"])
@@ -667,7 +685,7 @@ def detecter(
             impact = round(min(1.0, (nb_dette + usage_total) / 10), 2)
             claim_ids = _tri_ids(
                 [s["claim_id"] for s in groupe["signaux"]] + groupe["claim_ids_usage"])
-            opportunite_id = _creer_opportunite(
+            risque_id = _creer_detection(
                 conn, tenant, persister, signature=SIGNATURE_DETTE_USAGE, sujet=twin_id,
                 titre=f"Dette critique : « {twin_nom} » porte {nb_dette} signaux "
                       "de dette malgré un usage élevé",
@@ -677,7 +695,7 @@ def detecter(
                     f"{nb_appelants} twins l'appellent et {nb_situations} situations "
                     "récentes l'impliquent. Traiter cette dette protège un point encore "
                     "très sollicité."),
-                type_opportunite="DETTE_CRITIQUE",
+                type_objet="RISK", type_risque="TECHNIQUE",
                 twin_ids=[twin_id, *groupe["appelants"]], claim_ids=claim_ids,
                 extras={"twin_id": twin_id,
                         "claim_ids_dette": [
@@ -686,12 +704,12 @@ def detecter(
                         "situation_ids": groupe["situation_ids"],
                         "signaux_dette": nb_dette, "usage": usage_total, "impact": impact},
                 erreurs=erreurs)
-            if opportunite_id is None:
+            if risque_id is None:
                 continue
-            connus[(SIGNATURE_DETTE_USAGE, twin_id)] = "PROPOSED"
+            connus[(SIGNATURE_DETTE_USAGE, twin_id)] = "DETECTED"
             produits += 1
             crees.append({"signature": SIGNATURE_DETTE_USAGE, "sujet": twin_id,
-                          "id": opportunite_id, "type": "OPPORTUNITY",
+                          "id": risque_id, "type": "RISK",
                           "signaux_dette": nb_dette, "usage": usage_total,
                           "claim_ids": claim_ids})
     return {

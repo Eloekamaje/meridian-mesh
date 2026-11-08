@@ -40,6 +40,8 @@ from meridian.domain.objets_exploitation import (
     Hypothesis as HypothesisExploitation,
     Scenario,
     Signal,
+    STATUTS_OPPORTUNITE,
+    STATUTS_RISQUE,
 )
 from meridian.domain.mesure import mesure_renseignee as _mesure_renseignee
 
@@ -49,7 +51,7 @@ __all__ = [
     "STATUT_DECISION_PROPOSEE", "STATUT_DECISION_TRANCHEE",
     "STATUT_INITIATIVE", "STATUT_OUTCOME", "STATUT_LEARNING",
     "Situation", "Investigation", "Decision", "Scenario", "Initiative", "Outcome", "Learning",
-    "Unknown", "Conjecture", "Hypothesis", "Need", "Opportunity", "Belief",
+    "Unknown", "Conjecture", "Hypothesis", "Need", "Opportunity", "Risk", "Belief",
     "est_decision_tranchee",
     "ouvrir_investigation", "proposer_decision", "trancher_decision", "lancer_initiative",
     "mesurer_outcome", "capitaliser_learning", "transiter_need",
@@ -72,8 +74,10 @@ TYPES_BOUCLE = (
 )
 # HYPOTHESIS n'est pas un type complémentaire : depuis le renommage CONJECTURE
 # (convergence §2.1), il n'appartient qu'au workflow d'exploitation, écrit par
-# ``enregistrer_objets`` — jamais par ``enregistrer_boucle``.
-TYPES_COMPLEMENTAIRES = ("UNKNOWN", "CONJECTURE", "NEED", "OPPORTUNITY", "BELIEF")
+# ``enregistrer_objets`` — jamais par ``enregistrer_boucle``. RISK est ouvert à
+# l'écriture boucle depuis la phase 2 (convergence §2.2) : le détecteur y stocke
+# ses risques au lieu de les déguiser en OPPORTUNITY.
+TYPES_COMPLEMENTAIRES = ("UNKNOWN", "CONJECTURE", "NEED", "OPPORTUNITY", "RISK", "BELIEF")
 TRANSITIONS_NEED = modele.TRANSITIONS_NEED
 STATUT_DECISION_PROPOSEE = "PROPOSED"
 STATUT_DECISION_TRANCHEE = "DECIDED"
@@ -96,6 +100,7 @@ _MODE_DEFAUT = {
     "CONJECTURE": "PROPOSED",
     "NEED": "PROPOSED",
     "OPPORTUNITY": "INFERRED",
+    "RISK": "INFERRED",
     "BELIEF": "INFERRED",
 }
 _CHAMPS_TABLE = frozenset({
@@ -549,8 +554,6 @@ class Opportunity(modele.Opportunity, _LiensBoucle):
 
     mode: str = "INFERRED"
     resume: str = ""
-    signature: str = ""
-    claim_ids: list[str] = field(default_factory=list)
     CHAMPS_LIENS = ("situation_id", "investigation_id")
     CHAMPS_LIENS_MULTIPLES = ("twin_ids", "claim_ids")
 
@@ -562,8 +565,26 @@ class Opportunity(modele.Opportunity, _LiensBoucle):
         super().__post_init__()
         if not self.titre:
             self.titre = _texte(self.description) or "Opportunité"
-        self.signature = _texte(self.signature)
-        self.claim_ids = _liste_ids(self.claim_ids, "claim_ids")
+
+
+@dataclass
+class Risk(modele.Risk, _LiensBoucle):
+    """Risque persisté par le chemin boucle : comme l'opportunité, ses preuves
+    sont les claims cités par le détecteur (`claim_ids`)."""
+
+    mode: str = "INFERRED"
+    resume: str = ""
+    CHAMPS_LIENS = ("situation_id", "investigation_id")
+    CHAMPS_LIENS_MULTIPLES = ("twin_ids", "claim_ids")
+
+    def __post_init__(self) -> None:
+        self.resume = _texte(self.resume) or _texte(self.description)
+        if not self.description:
+            self.description = self.resume
+        _dater(self)
+        super().__post_init__()
+        if not self.titre:
+            self.titre = _texte(self.description) or "Risque"
 
 
 @dataclass
@@ -599,6 +620,7 @@ _CLASSES = {
     "CONJECTURE": Conjecture,
     "NEED": Need,
     "OPPORTUNITY": Opportunity,
+    "RISK": Risk,
     "BELIEF": Belief,
     "SCENARIO": Scenario,
 }
@@ -1095,6 +1117,18 @@ def _valider_pour_persistance(conn: Any, tenant: str, objets: list[Any]) -> None
             ):
                 raise BoucleInvalide(
                     f"une CONJECTURE {statut_conjecture} exige au moins une rivale"
+                )
+        if type_objet in {"OPPORTUNITY", "RISK"}:
+            # Vocabulaire de statut unique (convergence §2.2) : un statut hors
+            # taxonomie gèle l'objet pour le moteur de transitions — autant le
+            # refuser à l'écriture que de le découvrir à la transition.
+            statuts_emergence = (
+                STATUTS_OPPORTUNITE if type_objet == "OPPORTUNITY" else STATUTS_RISQUE
+            )
+            statut_emergence = _normaliser_statut(_valeur(objet, "statut"))
+            if statut_emergence and statut_emergence not in statuts_emergence:
+                raise BoucleInvalide(
+                    f"statut de {type_objet} inconnu : {statut_emergence!r}"
                 )
         if type_objet == "BELIEF":
             statut_belief = _normaliser_statut(_valeur(objet, "statut"))

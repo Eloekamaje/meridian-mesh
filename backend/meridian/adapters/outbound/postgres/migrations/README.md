@@ -35,6 +35,10 @@ Révisions :
   (`EMISE`/`TESTEE`/`RETENUE`/`REFUTEE`) ou qui portent `rival_ids`/`preuve_discriminante`/`need_id`
   changent de type ; les `HYPOTHESIS` workflow (statuts `OPEN`…) ne bougent pas. Renomme aussi la clé
   `donnees.hypothese_ids` des NEED en `conjecture_ids`.
+- `0007_detection_detected_risk` — unification OPPORTUNITY (convergence §2.2) : les OPPORTUNITY de
+  détecteur (`signature` présente) passent de `PROPOSED` à `DETECTED`, et les lignes des signatures
+  `concentration_risque`/`dette_vs_usage` deviennent des `RISK` avec `type_risque` canonique
+  (`CONTINUITE`/`TECHNIQUE`), `type_opportunite` consolidé, `severite` `ELEVEE`→`HAUTE`.
 
 ## Exécution en production
 

@@ -774,6 +774,10 @@ class Opportunity(ObjetEntreprise):
     proprietaire: str | None = None
     auteur: str | None = None
     justification: str = ""
+    # Provenance détecteur (convergence §2.2) : ``signature`` identifie le
+    # détecteur, ``claim_ids`` cite les preuves — les deux valent trace.
+    signature: str = ""
+    claim_ids: list[str] = field(default_factory=list)
     twin_ids: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
@@ -795,6 +799,8 @@ class Opportunity(ObjetEntreprise):
         self.proprietaire = _texte_ou_none(self.proprietaire)
         self.auteur = _texte_ou_none(self.auteur)
         self.justification = str(self.justification or "").strip()
+        self.signature = str(self.signature or "").strip()
+        self.claim_ids = _liste_ids(self.claim_ids, "claim_ids")
         self.twin_ids = _liste_ids(self.twin_ids, "twin_ids")
 
 
@@ -824,6 +830,9 @@ class Risk(ObjetEntreprise):
     propagation: str = ""
     horizon: str = ""
     controles: list[str] = field(default_factory=list)
+    # Provenance détecteur (convergence §2.2) : comme pour l'opportunité.
+    signature: str = ""
+    claim_ids: list[str] = field(default_factory=list)
     twin_ids: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
@@ -849,6 +858,8 @@ class Risk(ObjetEntreprise):
         self.propagation = str(self.propagation or "").strip()
         self.horizon = str(self.horizon or "").strip()
         self.controles = _liste_ids(self.controles, "controles")
+        self.signature = str(self.signature or "").strip()
+        self.claim_ids = _liste_ids(self.claim_ids, "claim_ids")
         self.twin_ids = _liste_ids(self.twin_ids, "twin_ids")
 
 

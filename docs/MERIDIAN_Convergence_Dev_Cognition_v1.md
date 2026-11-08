@@ -1,6 +1,12 @@
 # Méridian — Convergence Dev / Cognition v1
 
 > **Date :** 2026-11. **Statut :** analyse de conciliation, non approuvée.
+> **Avancement :** phase 1 faite (renommage `CONJECTURE`, migration 0006) ;
+> phase 2 faite (unification `OPPORTUNITY` — détecteur en `DETECTED`,
+> `signature`+`claim_ids` vaut trace, `RISK` ouvert dans `enregistrer_boucle`,
+> `concentration_risque`/`dette_vs_usage` retypés `RISK.CONTINUITE`/`TECHNIQUE`,
+> migration 0007). Les collisions §2.1 et §2.2 basculent en XFAIL dans
+> `test_collisions_monde`.
 > **Périmètre :** l'arbre fusionné du commit `3c82f21` (branche `jumeau-p4-confort`),
 > qui contient côte à côte le modèle d'exploitation canonique (« monde dev », ~146
 > commits) et la couche épistémique du plan Cognition IA A→D (« monde cognition »,
