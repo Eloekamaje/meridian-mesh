@@ -26,6 +26,7 @@ const ICONES = {
   risque: WarningCircle,
   hypothese: Lightbulb,
   signal: Lightbulb,
+  expert: Lightbulb,
   statut: ArrowRight,
 };
 
@@ -43,12 +44,13 @@ const COULEURS = {
   risque: "#F87171",
   hypothese: "#C084FC",
   signal: "#F472B6",
+  expert: "#2DD4BF",
   statut: "#A78BFA",
 };
 
 const TYPES_FEMININS = new Set([
   "SITUATION", "INVESTIGATION", "DECISION", "INITIATIVE", "EXPRESSION", "OPPORTUNITY",
-  "HYPOTHESIS",
+  "HYPOTHESIS", "EXPERT_CONTRIBUTION",
 ]);
 
 function libelleObjet(objet) {
