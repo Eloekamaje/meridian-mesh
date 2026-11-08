@@ -608,6 +608,7 @@ def _changer_statut_objet(
     muter: Any,
     motif: Any = None,
     preuves: Any = None,
+    verrouiller_parents: Any = None,
 ) -> ResultatTransition:
     cible = _texte(statut).upper()
     if cible not in statuts:
@@ -616,6 +617,8 @@ def _changer_statut_objet(
     with depot.transaction(conn):
         source = _source_statut(
             depot, conn, tenant_id, identifiant, type_attendu, role)
+        if verrouiller_parents is not None:
+            verrouiller_parents(depot, conn, tenant_id, source)
         try:
             objet = muter(source, cible, motif=motif, preuves=preuves)
         except TransitionObjetRefusee as exc:
@@ -761,8 +764,28 @@ def changer_statut_hypothese(
             f"statut inconnu : {statut!r} "
             f"(attendus : {', '.join(STATUTS_HYPOTHESIS)})")
     with depot.transaction(conn):
+        # Ordre de verrouillage commun à tous les écrivains d'hypothèse :
+        # Investigation d'abord, puis Hypothesis. L'hypothèse est lue sans verrou pour
+        # découvrir son parent, puis relue verrouillée : une contribution concurrente
+        # (I1 → H1) et un changement de statut (I1 → H2) ne se bloquent plus en ordre
+        # inverse. Le parent est revérifié après verrouillage.
+        apercu = _source_statut(
+            depot, conn, tenant_id, hypothese_id, "HYPOTHESIS", "hypothèse",
+            for_update=False)
+        investigation_id = _texte(_valeur_source(apercu, "investigation_id"))
+        if not investigation_id:
+            raise TransitionRefusee(
+                f"hypothèse {_texte(hypothese_id)!r} incomplète : "
+                "investigation_id manquant")
+        _source_investigation(
+            depot, conn, tenant_id, investigation_id, for_update=True)
         source = _source_statut(
             depot, conn, tenant_id, hypothese_id, "HYPOTHESIS", "hypothèse")
+        parent = _texte(_valeur_source(source, "investigation_id"))
+        if parent != investigation_id:
+            raise TransitionRefusee(
+                f"hypothèse {_texte(hypothese_id)!r} déplacée vers l'investigation "
+                f"{parent or 'inconnue'!r} pendant la transaction")
         actuel = _texte(_valeur_source(source, "statut")).upper() or "OPEN"
         if cible not in TRANSITIONS_HYPOTHESIS.get(actuel, ()):
             raise TransitionRefusee(
@@ -997,6 +1020,43 @@ def lister_contributions(
     )
 
 
+def _verrouiller_parents_contribution(
+    depot: BoucleStore, conn: Any, tenant_id: str, contribution: Any,
+) -> None:
+    """Verrouille Investigation puis Hypothesis d'une contribution.
+
+    Le verrou de la contribution est déjà tenu par ``_changer_statut_objet``. On
+    verrouille ensuite ses parents dans l'ordre commun aux écrivains d'hypothèse
+    (Investigation → Hypothesis) pour que l'adaptateur les relocke en no-op, au lieu
+    de les verrouiller dans son ordre trié par identifiant (Hypothesis avant
+    Investigation) et de risquer un cycle avec une création de contribution.
+    """
+    investigation_id = _texte(_valeur_source(contribution, "investigation_id"))
+    hypothesis_id = _texte(_valeur_source(contribution, "hypothesis_id"))
+    if not investigation_id and hypothesis_id:
+        # Ligne C5e incomplète : dériver le parent sans verrou avant de verrouiller
+        # l'Investigation, puis relire l'hypothèse verrouillée.
+        apercu = _source_statut(
+            depot, conn, tenant_id, hypothesis_id, "HYPOTHESIS", "hypothèse",
+            for_update=False)
+        investigation_id = _texte(_valeur_source(apercu, "investigation_id"))
+    if investigation_id:
+        _source_investigation(
+            depot, conn, tenant_id, investigation_id, for_update=True)
+    if hypothesis_id:
+        hypothesis = _source_statut(
+            depot, conn, tenant_id, hypothesis_id, "HYPOTHESIS", "hypothèse")
+        parent = _texte(_valeur_source(hypothesis, "investigation_id"))
+        if investigation_id and parent != investigation_id:
+            raise TransitionRefusee(
+                f"l'hypothèse {hypothesis_id!r} appartient à l'investigation "
+                f"{parent or 'inconnue'!r}, pas à {investigation_id!r}")
+        if not investigation_id and not parent:
+            raise TransitionRefusee(
+                f"hypothèse {hypothesis_id!r} incomplète : "
+                "investigation_id manquant")
+
+
 def changer_statut_contribution(
     depot: BoucleStore, conn: Any, tenant_id: str, contribution_id: str,
     statut: str, *, motif: Any = None, preuves: Any = None,
@@ -1005,13 +1065,15 @@ def changer_statut_contribution(
 
     Une transition non autorisée est un 409 ; un statut inconnu ou un mauvais type est
     un 422 ; une contribution absente ou hors tenant est un 404. Le motif et les preuves
-    sont conservés avec la version précédente dans ``historique``.
+    sont conservés avec la version précédente dans ``historique``. L'Investigation puis
+    l'Hypothèse parentes sont verrouillées dans cet ordre avant l'écriture.
     """
     return _changer_statut_objet(
         depot, conn, tenant_id, contribution_id, statut,
         type_attendu="EXPERT_CONTRIBUTION", role="contribution",
         statuts=STATUTS_EXPERT_CONTRIBUTION, muter=depot.muer_contribution,
         motif=motif, preuves=preuves,
+        verrouiller_parents=_verrouiller_parents_contribution,
     )
 
 

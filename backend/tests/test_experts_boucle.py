@@ -17,6 +17,8 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager, nullcontext
 from dataclasses import asdict, is_dataclass
+from pathlib import Path
+from typing import Any
 
 import psycopg
 import pytest
@@ -293,6 +295,10 @@ class _Store:
     def muer_expert(self, expert, vers, **champs):
         return construction_objets_exploitation.muer_expert(
             expert, vers, **champs)
+
+    def muer_hypothese(self, hypothese, vers, **champs):
+        return construction_objets_exploitation.muer_hypothese(
+            hypothese, vers, **champs)
 
     def enregistrer_boucle(self, conn, tenant_id=None, objets=None, **kwargs):
         objets = list(objets or [])
@@ -835,6 +841,41 @@ def test_creer_contribution_hypothese_verrouille_investigation_avant_hypothese()
         appel["objet_id"] for appel in store.appels_lire if appel["for_update"]
     ]
     assert verrouilles == ["inv-1", "hypothesis-1", "expert-1"]
+
+
+def test_changer_statut_hypothese_verrouille_investigation_avant_hypothese():
+    """Le statut d'hypothèse suit l'ordre Investigation → Hypothesis."""
+    store = _Store([
+        _situation_row(), _investigation_row(),
+        _hypothesis_row("hypothesis-1", investigation_id="inv-1"),
+    ])
+
+    commandes_boucle.changer_statut_hypothese(
+        store, _Connexion(), TENANT, "hypothesis-1", "STRENGTHENED")
+
+    verrouilles = [
+        appel["objet_id"] for appel in store.appels_lire if appel["for_update"]
+    ]
+    assert verrouilles == ["inv-1", "hypothesis-1"]
+
+
+def test_changer_statut_contribution_verrouille_investigation_avant_hypothese():
+    """Le statut de contribution verrouille la contribution, puis I1, puis H1."""
+    store = _Store([
+        _situation_row(), _investigation_row(),
+        _hypothesis_row("hypothesis-1", investigation_id="inv-1"), _expert_row(),
+        _contribution_row(
+            "contribution-1", investigation_id="inv-1",
+            hypothesis_id="hypothesis-1"),
+    ])
+
+    commandes_boucle.changer_statut_contribution(
+        store, _Connexion(), TENANT, "contribution-1", "ACCEPTED")
+
+    verrouilles = [
+        appel["objet_id"] for appel in store.appels_lire if appel["for_update"]
+    ]
+    assert verrouilles == ["contribution-1", "inv-1", "hypothesis-1"]
 
 
 def test_creer_contribution_hypothese_refuse_hypothesis_id_et_investigation_id():
@@ -2789,5 +2830,200 @@ def test_pg_citations_croisees_concurrentes_ne_produisent_jamais_503(
         assert nombre == 0
         assert investigation_a["donnees"]["expert_ids"] == []
         assert investigation_b["donnees"]["expert_ids"] == []
+    finally:
+        _nettoyer(tenant)
+
+
+def _executer_paire_contribution_statut(
+    monkeypatch, *, scenario: str, iterations: int = 3,
+) -> None:
+    """Contribution et changement de statut d'hypothèse en parallèle.
+
+    Les deux opérations se rencontrent sur Investigation → Hypothesis. Un latch avec
+    timeout (et non une attente infinie) laisse le test se terminer même quand le
+    correctif fait bloquer un des deux threads sur le verrou Investigation avant son
+    hook : on détecte uniquement les 503, pas un blocage de test.
+    """
+    tenant = f"c5f-{uuid.uuid4().hex[:10]}"
+    try:
+        with psycopg.connect(DSN, autocommit=True) as conn:
+            depot.appliquer_schema(conn)
+            _pg_situation(tenant)
+        expert = _pg_expert(tenant)
+
+        creer_original = commandes_boucle._creer_contribution
+        muer_original = boucle.muer_hypothese
+        latches: dict[str, Any] = {}
+
+        def creer_avec_latch(*args, **kwargs):
+            latches["contribution"].set()
+            latches["statut"].wait(timeout=0.3)
+            return creer_original(*args, **kwargs)
+
+        def muer_avec_latch(*args, **kwargs):
+            latches["statut"].set()
+            latches["contribution"].wait(timeout=0.3)
+            return muer_original(*args, **kwargs)
+
+        monkeypatch.setattr(
+            commandes_boucle, "_creer_contribution", creer_avec_latch)
+        monkeypatch.setattr(boucle, "muer_hypothese", muer_avec_latch)
+
+        for iteration in range(iterations):
+            investigation_id = f"inv-{scenario}-{iteration}"
+            _pg_investigation(tenant, investigation_id=investigation_id)
+            hypothese_1 = _pg_hypothese(
+                tenant, investigation_id, enonce=f"H1 {scenario} {iteration}")
+            hypothese_2 = _pg_hypothese(
+                tenant, investigation_id, enonce=f"H2 {scenario} {iteration}")
+
+            if scenario == "citation":
+                url_contribution = (
+                    f"{BASE}/hypotheses/{hypothese_1.objet['id']}/contributions")
+                corps_contribution = {
+                    "expert_id": expert.objet["id"],
+                    "contenu": "Contribution citant H2",
+                    "hypothesis_ids_soutenues": [hypothese_2.objet["id"]],
+                }
+                url_statut = (
+                    f"{BASE}/hypotheses/{hypothese_2.objet['id']}/statut")
+                hypothese_cible_statut = hypothese_2
+            else:
+                url_contribution = (
+                    f"{BASE}/investigations/{investigation_id}/contributions")
+                corps_contribution = {
+                    "expert_id": expert.objet["id"],
+                    "hypothesis_id": hypothese_1.objet["id"],
+                    "contenu": "Contribution depuis H1",
+                }
+                url_statut = (
+                    f"{BASE}/hypotheses/{hypothese_1.objet['id']}/statut")
+                hypothese_cible_statut = hypothese_1
+
+            latches = {
+                "contribution": threading.Event(),
+                "statut": threading.Event(),
+            }
+            barriere = threading.Barrier(2)
+            clients = [_client_pg(monkeypatch), _client_pg(monkeypatch)]
+            sorties: list[Any] = [None, None]
+            erreurs: list[Any] = [None, None]
+
+            def envoyer(rang):
+                try:
+                    barriere.wait(timeout=10)
+                    if rang == 0:
+                        reponse = clients[rang].post(
+                            url_contribution, json=corps_contribution,
+                            headers={"X-Tenant": tenant})
+                    else:
+                        reponse = clients[rang].post(
+                            url_statut, json={"vers": "STRENGTHENED"},
+                            headers={"X-Tenant": tenant})
+                    sorties[rang] = reponse.status_code
+                except Exception as exc:  # pragma: no cover - diagnostic
+                    erreurs[rang] = f"{type(exc).__name__}: {exc}"
+
+            threads = [
+                threading.Thread(target=envoyer, args=(rang,))
+                for rang in range(2)
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=30)
+
+            assert not any(thread.is_alive() for thread in threads), (
+                f"paire {scenario}/{iteration} bloquée au-delà de 30 s")
+            assert erreurs == [None, None], erreurs
+            assert sorted(sorties) == [200, 201], (
+                f"paire {scenario}/{iteration} : statuts {sorties!r}")
+
+            with psycopg.connect(DSN) as conn:
+                nombre = conn.execute(
+                    "SELECT count(*) FROM objet_entreprise "
+                    "WHERE tenant_id = %s AND type = 'EXPERT_CONTRIBUTION' "
+                    "AND donnees->>'investigation_id' = %s",
+                    (tenant, investigation_id),
+                ).fetchone()[0]
+                investigation = boucle.lire_boucle(
+                    conn, tenant, investigation_id, as_dict=True)
+                hypothese_mue = boucle.lire_boucle(
+                    conn, tenant, hypothese_cible_statut.objet["id"],
+                    historique=True)
+            assert nombre == 1
+            assert hypothese_mue["donnees"]["statut"] == "STRENGTHENED"
+            assert len(hypothese_mue["historique"]) == 1
+            assert investigation["donnees"]["expert_ids"] == [expert.objet["id"]]
+            hypotheses_liees = investigation["donnees"]["hypothesis_ids"]
+            assert len(hypotheses_liees) == len(set(hypotheses_liees)) == 2
+            assert set(hypotheses_liees) == {
+                hypothese_1.objet["id"], hypothese_2.objet["id"]}
+    finally:
+        _nettoyer(tenant)
+
+
+@besoin_pg
+def test_pg_citation_valide_et_statut_hypothese_concurrents_pas_de_503(monkeypatch):
+    """Contribution H1 citant H2 (valide) + statut de H2 : aucun 503."""
+    _executer_paire_contribution_statut(
+        monkeypatch, scenario="citation", iterations=3)
+
+
+@besoin_pg
+def test_pg_contribution_et_statut_meme_hypothese_concurrents_pas_de_503(monkeypatch):
+    """Contribution depuis H1 + statut de H1, sans citation : aucun 503."""
+    _executer_paire_contribution_statut(
+        monkeypatch, scenario="meme-hypothese", iterations=3)
+
+
+@besoin_pg
+def test_audit_citations_ignore_les_listes_null_et_detecte_les_fantomes():
+    tenant = f"c5f-{uuid.uuid4().hex[:10]}"
+    script = (
+        Path(__file__).resolve().parents[2]
+        / "scripts" / "auditer-citations-contributions.sql"
+    )
+    sql = script.read_text(encoding="utf-8")
+    try:
+        with psycopg.connect(DSN, autocommit=True) as conn:
+            depot.appliquer_schema(conn)
+            _pg_situation(tenant)
+            _pg_investigation(tenant)
+        expert = _pg_expert(tenant)
+        with psycopg.connect(DSN) as conn:
+            contribution = commandes_boucle.creer_contribution_investigation(
+                boucle, conn, tenant, "inv-c5e",
+                expert_id=expert.objet["id"], contenu="Contribution auditée")
+        contribution_id = contribution.objet["id"]
+
+        with psycopg.connect(DSN, autocommit=True) as conn:
+            conn.execute(
+                "UPDATE objet_entreprise SET donnees = donnees || %s::jsonb "
+                "WHERE tenant_id = %s AND id = %s",
+                ('{"hypothesis_ids_soutenues": null}', tenant, contribution_id),
+            )
+        with psycopg.connect(DSN) as conn:
+            lignes_null = [
+                ligne for ligne in conn.execute(sql).fetchall()
+                if ligne[0] == tenant and ligne[1] == contribution_id
+            ]
+        assert lignes_null == []
+
+        with psycopg.connect(DSN, autocommit=True) as conn:
+            conn.execute(
+                "UPDATE objet_entreprise SET donnees = donnees || %s::jsonb "
+                "WHERE tenant_id = %s AND id = %s",
+                ('{"hypothesis_ids_soutenues": ["hypothesis-fantome"]}',
+                 tenant, contribution_id),
+            )
+        with psycopg.connect(DSN) as conn:
+            lignes_fantomes = [
+                ligne for ligne in conn.execute(sql).fetchall()
+                if ligne[0] == tenant and ligne[1] == contribution_id
+            ]
+        assert len(lignes_fantomes) == 1
+        assert lignes_fantomes[0][2] == "hypothesis-fantome"
+        assert lignes_fantomes[0][7].startswith("hypothèse absente")
     finally:
         _nettoyer(tenant)
