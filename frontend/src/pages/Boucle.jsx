@@ -55,7 +55,7 @@ const STADES = [
 const STADES_PAR_TYPE = new Map(STADES.map((stade) => [stade.type, stade]));
 
 const FAMILLES = [
-  { value: "emergence", label: "Émergence — situations et expressions" },
+  { value: "emergence", label: "Émergence — situations, expressions, opportunités et risques" },
   { value: "investigation", label: "Investigation" },
   { value: "decision", label: "Décision — décisions et initiatives" },
   { value: "resultat_apprentissage", label: "Résultat — outcomes et learnings" },
