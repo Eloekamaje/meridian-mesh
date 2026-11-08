@@ -35,6 +35,7 @@ from meridian.adapters.outbound.postgres import (
     rls,
 )
 from meridian.application import commandes_boucle
+from meridian.application.pont_securite import jeton_sensible
 from meridian.domain import construction_objets_exploitation
 from meridian.domain.modele_entreprise import ModeleInvalide
 from meridian.domain.objets_exploitation import (
@@ -467,6 +468,33 @@ def test_un_jeton_brut_est_refuse_a_l_ecriture(charge):
         entreprise_depot.verifier_donnees(charge)
 
 
+@pytest.mark.parametrize("texte", [
+    "OAuth 2.0 Bearer authentication is required",
+    "The Bearer authorization scheme",
+    "Bearer token",
+    "Bearer headers",
+    "sk-learn-tutorial",
+    "github_pat_missing",
+])
+def test_la_prose_legitime_n_est_pas_un_jeton(texte):
+    assert jeton_sensible(texte) is False
+    entreprise_depot.verifier_donnees({"description": texte})
+
+
+@pytest.mark.parametrize("texte", [
+    "Bearer abcdefghijklmnop",
+    "sk-abc123456789012345",
+    "sk-proj-abc123456789012345",
+    "ghp_abc1234567890",
+    "github_pat_abcdefghijklmnopqrstuvwxyz012345",
+    "xoxb-abcdefghijkl",
+    "AKIA1234567890ABCDEF",
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9",
+])
+def test_les_jetons_stricts_sont_reconnus(texte):
+    assert jeton_sensible(texte) is True
+
+
 @pytest.mark.parametrize("champs", [
     {"statut": "MATURE"},
     {"mode": "DECLARED"},
@@ -815,6 +843,23 @@ def test_la_reponse_creation_signal_ne_laisse_pas_passer_un_secret(monkeypatch):
     assert reponse.json()["objet"]["donnees"]["preuves"] == [{"password": "***"}]
 
 
+def test_la_reponse_ne_masque_pas_la_prose_bearer(monkeypatch):
+    client = _client(monkeypatch)
+    prose = "OAuth 2.0 Bearer authentication is required"
+    resultat = _resultat()
+    resultat.objet["donnees"]["description"] = prose
+    monkeypatch.setattr(
+        boucle_routes.commandes_boucle, "creer_signal",
+        lambda *_, **__: resultat)
+
+    reponse = client.post(
+        f"{BASE}/signals", json={"libelle": "Signal", "source": "source"})
+
+    assert reponse.status_code == 201
+    assert prose in reponse.text
+    assert reponse.json()["objet"]["donnees"]["description"] == prose
+
+
 def test_sans_dsn_la_route_signal_repond_503(monkeypatch):
     monkeypatch.delenv("AUTH_MODE", raising=False)
     monkeypatch.delenv("APP_ENV", raising=False)
@@ -1149,6 +1194,83 @@ def test_pg_jeton_brut_dans_preuves_refuse_400_sans_ecriture(monkeypatch, jeton)
             nombre = conn.execute(
                 "SELECT count(*) FROM objet_entreprise "
                 "WHERE tenant_id = %s AND type = 'SIGNAL'",
+                (tenant,),
+            ).fetchone()[0]
+        assert nombre == 0
+    finally:
+        _nettoyer(tenant)
+
+
+@besoin_pg
+def test_pg_prose_bearer_et_source_sk_learn_sont_acceptees(monkeypatch):
+    tenant = f"c5d-{uuid.uuid4().hex[:10]}"
+    client = _client_pg(monkeypatch)
+    description = "OAuth 2.0 Bearer authentication is required"
+    scheme = "The Bearer authorization scheme"
+    try:
+        with psycopg.connect(DSN, autocommit=True) as conn:
+            depot.appliquer_schema(conn)
+
+        situation = client.post(
+            f"{BASE}/situations",
+            json={"id": "sit-prose", "titre": "Prose légitime",
+                  "description": description},
+            headers={"X-Tenant": tenant},
+        )
+        assert situation.status_code == 201, situation.text
+        assert situation.json()["objet"]["donnees"]["description"] == description
+
+        source = client.post(
+            f"{BASE}/signals",
+            json={"libelle": "Tutoriel", "source": "sk-learn-tutorial"},
+            headers={"X-Tenant": tenant},
+        )
+        assert source.status_code == 201, source.text
+        assert source.json()["objet"]["donnees"]["source"] == "sk-learn-tutorial"
+
+        prose = client.post(
+            f"{BASE}/signals",
+            json={"libelle": "Schéma", "source": "documentation",
+                  "description": scheme},
+            headers={"X-Tenant": tenant},
+        )
+        assert prose.status_code == 201, prose.text
+        assert prose.json()["objet"]["donnees"]["description"] == scheme
+
+        with psycopg.connect(DSN) as conn:
+            signaux = conn.execute(
+                "SELECT count(*) FROM objet_entreprise "
+                "WHERE tenant_id = %s AND type = 'SIGNAL'",
+                (tenant,),
+            ).fetchone()[0]
+        assert signaux == 2
+    finally:
+        _nettoyer(tenant)
+
+
+@besoin_pg
+@pytest.mark.parametrize("jeton", [
+    "Bearer abcdefghijklmnop",
+    "ghp_abc1234567890",
+])
+def test_pg_titre_avec_jeton_refuse_400_sans_ecriture(monkeypatch, jeton):
+    tenant = f"c5d-{uuid.uuid4().hex[:10]}"
+    client = _client_pg(monkeypatch)
+    try:
+        with psycopg.connect(DSN, autocommit=True) as conn:
+            depot.appliquer_schema(conn)
+
+        reponse = client.post(
+            f"{BASE}/situations",
+            json={"titre": jeton},
+            headers={"X-Tenant": tenant},
+        )
+        assert reponse.status_code == 400, reponse.text
+        assert jeton not in reponse.text
+
+        with psycopg.connect(DSN) as conn:
+            nombre = conn.execute(
+                "SELECT count(*) FROM objet_entreprise WHERE tenant_id = %s",
                 (tenant,),
             ).fetchone()[0]
         assert nombre == 0

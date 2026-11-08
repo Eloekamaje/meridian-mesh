@@ -185,7 +185,10 @@ def _objet_saisi(objet) -> dict:
         else:
             raise ObjetInvalide(f"mode inconnu : {mode!r}")
     if "titre" in objet:
-        saisi["titre"] = "" if objet.get("titre") is None else str(objet["titre"]).strip()
+        titre = "" if objet.get("titre") is None else str(objet["titre"]).strip()
+        if _jeton_sensible(titre):
+            raise ObjetInvalide("titre : secret refusé")
+        saisi["titre"] = titre
     if "donnees" in objet:
         saisi["donnees"] = _donnees_json(objet["donnees"])
     else:

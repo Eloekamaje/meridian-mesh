@@ -114,18 +114,34 @@ def url_porte_un_secret(url: str) -> bool:
     )
 
 
-# Jetons bruts qui ne sont ni des clés JSON ni des URLs à credentials : ils doivent
-# être refusés à l'écriture et masqués en lecture. Politique unique partagée par le
-# dépôt canonique et la couche HTTP.
-JETON_SENSIBLE = re.compile(
-    r"(?i)(?:\bbearer\s+[A-Za-z0-9_.~+/=-]{12,}|\bsk-[A-Za-z0-9_-]{8,}|"
-    r"\bgh[pousr]_[A-Za-z0-9]{10,}|\bxox[baprs]-[A-Za-z0-9-]{10,})"
+# Détection stricte des jetons bruts, distincte de la prose légitime. Elle sert à la
+# fois au refus d'écriture et au masquage HTTP :
+# - JWT `eyJ…` ;
+# - jetons GitHub `gh?_`/`github_pat_` ;
+# - clés `sk-`/`sk-proj-` longues contenant au moins un chiffre (`sk-learn-tutorial`
+#   reste accepté) ;
+# - jetons Slack `xox?-` ;
+# - clés AWS `AKIA…` ;
+# - `Bearer <jeton>` sauf les mots de prose courants (authentication, authorization…).
+MOTIF_JETON_SENSIBLE = re.compile(
+    r"(?i)(?:"
+    r"\beyJ[A-Za-z0-9_-]{10,}(?:\.[A-Za-z0-9_-]+){0,2}"
+    r"|\bgh[pousr]_[A-Za-z0-9]{10,}"
+    r"|\bgithub_pat_[A-Za-z0-9_]{20,}"
+    r"|\bsk-(?:proj-)?(?=[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]{16,}"
+    r"|\bxox[baprs]-[A-Za-z0-9-]{10,}"
+    r"|\bAKIA[0-9A-Z]{16}"
+    r"|\bBearer\s+"
+    r"(?!(?:authentication|authorization|token|tokens|scheme|header|headers|flow|"
+    r"type|credentials|access|request|response)\b)"
+    r"[A-Za-z0-9._~+/=-]{12,}"
+    r")"
 )
 
 
 def jeton_sensible(valeur: Any) -> bool:
-    """Vrai pour une chaîne contenant un jeton brut reconnaissable (Bearer, sk-, ghp_…)."""
-    return isinstance(valeur, str) and bool(JETON_SENSIBLE.search(valeur))
+    """Vrai pour une chaîne contenant un jeton brut au sens de la détection stricte."""
+    return isinstance(valeur, str) and bool(MOTIF_JETON_SENSIBLE.search(valeur))
 
 
 _URL_EMBEDDEE = re.compile(r"(?i)\b[a-z][a-z0-9+.-]*://[^\s<>'\"]+")
