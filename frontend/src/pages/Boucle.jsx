@@ -716,6 +716,7 @@ export default function Boucle() {
   const [twinSucces, setTwinSucces] = useState("");
   const [actionActive, setActionActive] = useState(null);
   const [actionGlobale, setActionGlobale] = useState(false);
+  const [actionSource, setActionSource] = useState(null);
   const [transition, setTransition] = useState({ enCours: false, erreur: "", succes: null, rechargement: false, verificationErreur: "" });
 
   useEffect(() => {
@@ -839,6 +840,7 @@ export default function Boucle() {
     }
     reinitialiserTransition();
     setActionGlobale(false);
+    setActionSource(null);
     setSelection(objet);
     const identifiant = idObjet(objet);
     if (identifiant) chargerDetail(identifiant);
@@ -886,7 +888,7 @@ export default function Boucle() {
   const filtresActifs = Boolean(recherche.trim() || filtres.famille || filtres.type || filtres.mode);
   const objetDetail = detail.data?.objet || selection;
   const actionCourante = actionActive
-    ? configurationAction(actionActive, actionGlobale ? null : objetDetail)
+    ? configurationAction(actionActive, actionGlobale ? null : actionSource)
     : null;
   const chaineDetail = Array.isArray(detail.data?.chaine)
     ? detail.data.chaine
@@ -914,6 +916,7 @@ export default function Boucle() {
     }
     reinitialiserTransition();
     setActionGlobale(false);
+    setActionSource(null);
     const connu = objets.find((objet) => idObjet(objet) === identifiant);
     setSelection(connu || { id: identifiant, type: "", famille: "" });
     chargerDetail(identifiant);
@@ -928,6 +931,7 @@ export default function Boucle() {
     setDetail({ chargement: false, erreur: null, data: null });
     setActionActive(null);
     setActionGlobale(false);
+    setActionSource(null);
     setTransition((avant) => ({
       enCours: false,
       erreur: "",
@@ -942,6 +946,9 @@ export default function Boucle() {
     refElementDeclencheurAction.current = document.activeElement;
     reinitialiserTransition();
     setActionGlobale(false);
+    // Fige la source au moment de l'ouverture : un rafraîchissement du détail
+    // pendant la saisie ne peut pas changer l'id/le type de la cible soumise.
+    setActionSource(objetDetail || null);
     setActionActive(actionId);
   };
 
@@ -953,6 +960,7 @@ export default function Boucle() {
     refElementDeclencheurAction.current = document.activeElement;
     reinitialiserTransition();
     setActionGlobale(false);
+    setActionSource(null);
     setActionActive("creer_situation");
   };
 
@@ -963,6 +971,7 @@ export default function Boucle() {
     // Intention explicite : même si un ancien détail traîne, la route globale est
     // choisie et situation_ids reste éditable.
     setActionGlobale(true);
+    setActionSource(null);
     setActionActive("creer_signal");
   };
 
@@ -1037,6 +1046,7 @@ export default function Boucle() {
     if (refRechargement.current) refElementDeclencheurAction.current = null;
     setActionActive(null);
     setActionGlobale(false);
+    setActionSource(null);
     setTransition((avant) => ({ ...avant, erreur: "" }));
     demanderRestaurationFocusAction();
   };
@@ -1052,8 +1062,9 @@ export default function Boucle() {
     const creationHypothese = actionActive === "creer_hypothese";
     const creationSignal = actionActive === "creer_signal";
     const signalGlobal = creationSignal && actionGlobale;
-    if (!creationSituation && !signalGlobal && !objetDetail) return;
-    const identifiant = creationSituation || signalGlobal ? null : idObjet(objetDetail);
+    const sourceAction = signalGlobal ? null : actionSource;
+    if (!creationSituation && !signalGlobal && !sourceAction) return;
+    const identifiant = creationSituation || signalGlobal ? null : idObjet(sourceAction);
     if (!creationSituation && !signalGlobal && !identifiant) {
       setTransition((avant) => ({
         ...avant,
@@ -1070,7 +1081,7 @@ export default function Boucle() {
     }
 
     const { corps, erreur } = construireCorps(
-      actionActive, valeurs, signalGlobal ? {} : (objetDetail || {}));
+      actionActive, valeurs, signalGlobal ? {} : (sourceAction || {}));
     if (erreur) {
       setTransition((avant) => ({ ...avant, erreur }));
       return;
@@ -1190,6 +1201,8 @@ export default function Boucle() {
 
       const chaine = nouvelleChaine && nouvelleChaine.length > 0 ? nouvelleChaine : [objetCree];
       setActionActive(null);
+      setActionGlobale(false);
+      setActionSource(null);
       setTransition({
         enCours: false,
         erreur: "",
@@ -1243,6 +1256,8 @@ export default function Boucle() {
 
       const chaine = nouvelleChaine && nouvelleChaine.length > 0 ? nouvelleChaine : [objetCree];
       setActionActive(null);
+      setActionGlobale(false);
+      setActionSource(null);
       setTransition({
         enCours: false,
         erreur: "",
@@ -1300,6 +1315,8 @@ export default function Boucle() {
 
       const chaine = nouvelleChaine && nouvelleChaine.length > 0 ? nouvelleChaine : [objetCree];
       setActionActive(null);
+      setActionGlobale(false);
+      setActionSource(null);
       setTransition({
         enCours: false,
         erreur: "",
@@ -1352,6 +1369,8 @@ export default function Boucle() {
 
       const chaine = nouvelleChaine && nouvelleChaine.length > 0 ? nouvelleChaine : [objetCree];
       setActionActive(null);
+      setActionGlobale(false);
+      setActionSource(null);
       setTransition({
         enCours: false,
         erreur: "",
@@ -1394,6 +1413,8 @@ export default function Boucle() {
     const objetDifferent = idObjet(nouvelObjet) !== identifiant;
 
     setActionActive(null);
+    setActionGlobale(false);
+    setActionSource(null);
     setTransition({
       enCours: false,
       erreur: "",
