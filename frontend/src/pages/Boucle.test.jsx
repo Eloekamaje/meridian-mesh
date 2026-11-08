@@ -18,10 +18,13 @@ jest.mock("@/lib/api", () => ({
     creerExpression: jest.fn(),
     creerOpportunite: jest.fn(),
     creerRisque: jest.fn(),
+    creerHypothese: jest.fn(),
     listerOpportunites: jest.fn(),
     listerRisques: jest.fn(),
+    listerHypotheses: jest.fn(),
     changerStatutOpportunite: jest.fn(),
     changerStatutRisque: jest.fn(),
+    changerStatutHypothese: jest.fn(),
     listerScenarios: jest.fn(),
     comparerScenarios: jest.fn(),
     ouvrirInvestigation: jest.fn(),
@@ -183,6 +186,28 @@ const risque = {
     impact: "Arrêt des paiements",
     horizon: "6 mois",
     criteres: ["criticité"],
+  },
+  version: 1,
+  observe_le: "2026-11-07T10:00:00Z",
+  maj_le: "2026-11-07T10:00:00Z",
+};
+
+const hypothese = {
+  id: "hypothesis-1",
+  famille: "investigation",
+  type: "HYPOTHESIS",
+  mode: "PROPOSED",
+  titre: "Le contrôle synchrone bloque les paiements",
+  donnees: {
+    statut: "OPEN",
+    investigation_id: "inv-1",
+    enonce: "Le contrôle synchrone bloque les paiements",
+    conditions_test: ["mesurer le p95"],
+    claim_ids_soutenants: ["claim-1"],
+    claim_ids_opposants: ["claim-2"],
+    expert_id: "expert-1",
+    preuves: ["preuve-1"],
+    confiance: 0.6,
   },
   version: 1,
   observe_le: "2026-11-07T10:00:00Z",
@@ -1544,6 +1569,226 @@ test("un 409 de transition de statut garde la modale ouverte", async () => {
   await act(async () => { racine.unmount(); });
 });
 
+
+test("formule une hypothèse depuis une investigation, la sélectionne et rafraîchit le parent", async () => {
+  const controleur = installerApi({ liste: [situation, investigation] });
+  boucleApi.creerHypothese.mockImplementation((investigationId, corps) => {
+    expect(investigationId).toBe("inv-1");
+    expect(corps).toEqual({
+      enonce: "Le contrôle synchrone bloque les paiements",
+      conditions_test: ["mesurer le p95", "comparer trois flux"],
+      claim_ids_soutenants: ["claim-1"],
+      claim_ids_opposants: ["claim-2"],
+      expert_id: "expert-1",
+      preuves: ["preuve-1"],
+      confiance: 0.6,
+    });
+    controleur.ajouter(hypothese);
+    return Promise.resolve({
+      data: {
+        objet: hypothese,
+        chaine: [situation, investigation, hypothese],
+        historique: [],
+      },
+    });
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "inv-1");
+
+  expect(hote.querySelector('[data-testid="boucle-action-creer-hypothese"]')).not.toBeNull();
+  await cliquerEnFocus(hote, "boucle-action-creer-hypothese");
+
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+  expect(document.activeElement?.id).toBe("boucle-transition-enonce");
+  expect(hote.querySelector('[data-testid="boucle-transition-statut"]')).toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-transition-mode"]')).toBeNull();
+
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-enonce"]'), "  Le contrôle synchrone bloque les paiements  ");
+    saisir(hote.querySelector('[data-testid="boucle-transition-conditions_test"]'), "mesurer le p95\ncomparer trois flux");
+    saisir(hote.querySelector('[data-testid="boucle-transition-claim_ids_soutenants"]'), "claim-1");
+    saisir(hote.querySelector('[data-testid="boucle-transition-claim_ids_opposants"]'), "claim-2");
+    saisir(hote.querySelector('[data-testid="boucle-transition-expert_id"]'), "expert-1");
+    saisir(hote.querySelector('[data-testid="boucle-transition-preuves"]'), "preuve-1");
+    saisir(hote.querySelector('[data-testid="boucle-transition-confiance"]'), "0,6");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).toBeNull();
+  expect(hote.querySelector('[data-objet-id="hypothesis-1"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-section-hypothesis"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-detail-titre"]').textContent)
+    .toContain("Le contrôle synchrone bloque les paiements");
+  const precisions = hote.querySelector('[data-testid="boucle-precisions"]');
+  expect(precisions.textContent).toContain("mesurer le p95");
+  expect(precisions.textContent).toContain("claim-1");
+  expect(precisions.textContent).toContain("claim-2");
+  expect(precisions.textContent).toContain("expert-1");
+  await deplier(hote, "boucle-chaine-section");
+  expect(hote.querySelector('[data-testid="boucle-chaine-etape"]')).not.toBeNull();
+  expect(api.get).toHaveBeenCalledWith(
+    "/boucle/objets/inv-1",
+    { params: { historique: true } },
+  );
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("refuse une hypothèse sans énoncé sans appeler le backend", async () => {
+  installerApi({ liste: [situation, investigation] });
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "inv-1");
+  await cliquer(hote, "boucle-action-creer-hypothese");
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(boucleApi.creerHypothese).not.toHaveBeenCalled();
+  expect(hote.querySelector('[data-testid="boucle-transition-erreur"]').textContent)
+    .toContain("énoncé");
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("garde la modale d'hypothèse sur un conflit 409", async () => {
+  installerApi({ liste: [situation, investigation] });
+  boucleApi.creerHypothese.mockRejectedValue({
+    response: { status: 409, data: { detail: "transition refusée" } },
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "inv-1");
+  await cliquer(hote, "boucle-action-creer-hypothese");
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-enonce"]'), "Hypothèse");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(hote.querySelector('[data-testid="boucle-transition-erreur"]').textContent)
+    .toContain("transition refusée");
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-transition-enonce"]').value).toBe("Hypothèse");
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("change le statut d'une hypothèse et met à jour la sélection", async () => {
+  const controleur = installerApi({ liste: [situation, investigation, hypothese] });
+  const maj = {
+    ...hypothese,
+    donnees: {
+      ...hypothese.donnees,
+      statut: "STRENGTHENED",
+      motif: "Trois mesures concordantes",
+    },
+    version: 2,
+    maj_le: "2026-11-07T12:00:00Z",
+  };
+  boucleApi.changerStatutHypothese.mockImplementation((identifiant, corps) => {
+    expect(identifiant).toBe("hypothesis-1");
+    expect(corps).toEqual({
+      vers: "STRENGTHENED", motif: "Trois mesures concordantes",
+    });
+    controleur.ajouter(maj);
+    return Promise.resolve({
+      data: {
+        objet: maj,
+        chaine: [situation, investigation, maj],
+        historique: [{ version: 1, donnees: { statut: "OPEN" } }],
+      },
+    });
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "hypothesis-1");
+  await cliquer(hote, "boucle-action-statut-hypothese");
+
+  const selectStatut = hote.querySelector('[data-testid="boucle-transition-vers"]');
+  expect([...selectStatut.options].map((option) => option.value)).toEqual([
+    "", "STRENGTHENED", "WEAKENED", "REJECTED", "CONFIRMED",
+  ]);
+  await choisir(selectStatut, "STRENGTHENED");
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-motif"]'), "  Trois mesures concordantes  ");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-detail-statut"]').textContent)
+    .toContain("STRENGTHENED");
+  expect(hote.querySelector('[data-objet-id="hypothesis-1"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-transition-succes"]')).not.toBeNull();
+  await deplier(hote, "boucle-chaine-section");
+  expect(hote.querySelector('[data-testid="boucle-chaine"]')).not.toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("bloque CONFIRMED sans preuve dans la modale d'hypothèse", async () => {
+  const sansPreuve = {
+    ...hypothese,
+    donnees: { ...hypothese.donnees, preuves: [] },
+  };
+  installerApi({ liste: [situation, investigation, sansPreuve] });
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "hypothesis-1");
+  await cliquer(hote, "boucle-action-statut-hypothese");
+  await choisir(hote.querySelector('[data-testid="boucle-transition-vers"]'), "CONFIRMED");
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(boucleApi.changerStatutHypothese).not.toHaveBeenCalled();
+  expect(hote.querySelector('[data-testid="boucle-transition-erreur"]').textContent)
+    .toContain("preuve");
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("accepte CONFIRMED avec une preuve saisie", async () => {
+  const sansPreuve = {
+    ...hypothese,
+    donnees: { ...hypothese.donnees, preuves: [] },
+  };
+  const maj = {
+    ...hypothese,
+    donnees: {
+      ...hypothese.donnees,
+      statut: "CONFIRMED",
+      preuves: ["preuve-2"],
+    },
+    version: 2,
+  };
+  installerApi({ liste: [situation, investigation, sansPreuve] });
+  boucleApi.changerStatutHypothese.mockResolvedValue({
+    data: {
+      objet: maj,
+      chaine: [situation, investigation, maj],
+      historique: [],
+    },
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "hypothesis-1");
+  await cliquer(hote, "boucle-action-statut-hypothese");
+  await choisir(hote.querySelector('[data-testid="boucle-transition-vers"]'), "CONFIRMED");
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-preuves"]'), "preuve-2");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(boucleApi.changerStatutHypothese).toHaveBeenCalledWith(
+    "hypothesis-1", { vers: "CONFIRMED", preuves: ["preuve-2"] });
+  expect(hote.querySelector('[data-testid="boucle-detail-statut"]').textContent)
+    .toContain("CONFIRMED");
+
+  await act(async () => { racine.unmount(); });
+});
 
 test("valide le titre d'un scénario et conserve la modale sur erreur API", async () => {
   installerApi();
