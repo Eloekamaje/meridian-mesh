@@ -13,6 +13,7 @@ import copy
 import os
 import threading
 import uuid
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager, nullcontext
 from dataclasses import asdict, is_dataclass
@@ -615,6 +616,18 @@ def test_changer_statut_expert_absent_hors_tenant_ou_mauvais_type():
             store, _Connexion(), TENANT, "hypothesis-1", "INACTIVE")
 
     assert store.enregistres_objets == []
+
+
+@pytest.mark.parametrize("statut", ["ACTIVE", "INACTIVE", "ARCHIVED"])
+def test_changer_statut_expert_refuse_une_transition_vers_le_meme_statut(statut):
+    store = _Store([_expert_row("expert-1", statut=statut)])
+
+    with pytest.raises(commandes_boucle.TransitionRefusee):
+        commandes_boucle.changer_statut_expert(
+            store, _Connexion(), TENANT, "expert-1", statut)
+
+    assert store.enregistres_objets == []
+    assert store.objets["expert-1"]["donnees"]["statut"] == statut
 
 
 # --------------------------------------------------------------------------- #
@@ -2291,6 +2304,34 @@ def test_pg_contribution_cite_hypotheses_validees_des_deux_routes(monkeypatch):
         _nettoyer(tenant)
 
 
+@besoin_pg
+def test_pg_statut_expert_refuse_les_transitions_identiques(monkeypatch):
+    tenant = f"c5f-{uuid.uuid4().hex[:10]}"
+    client = _client_pg(monkeypatch)
+    try:
+        with psycopg.connect(DSN, autocommit=True) as conn:
+            depot.appliquer_schema(conn)
+        expert = _pg_expert(tenant)
+        url = f"{BASE}/experts/{expert.objet['id']}/statut"
+        headers = {"X-Tenant": tenant}
+
+        for cible in ("ACTIVE", "INACTIVE", "ARCHIVED"):
+            if cible != "ACTIVE":
+                changement = client.post(
+                    url, json={"vers": cible}, headers=headers)
+                assert changement.status_code == 200, changement.text
+            identique = client.post(url, json={"vers": cible}, headers=headers)
+            assert identique.status_code == 409, identique.text
+
+        with psycopg.connect(DSN) as conn:
+            ligne = boucle.lire_boucle(
+                conn, tenant, expert.objet["id"], historique=True)
+        assert ligne["donnees"]["statut"] == "ARCHIVED"
+        assert len(ligne["historique"]) == 2
+    finally:
+        _nettoyer(tenant)
+
+
 @pytest.mark.parametrize("champ", [
     "hypothesis_ids_soutenues", "hypothesis_ids_contestees",
 ])
@@ -2626,5 +2667,127 @@ def test_pg_contributions_concurrentes_ne_se_bloquent_pas():
             investigation = boucle.lire_boucle(conn, tenant, "inv-c5e", as_dict=True)
         assert len(liste) == 2
         assert investigation["donnees"]["expert_ids"] == [expert.objet["id"]]
+    finally:
+        _nettoyer(tenant)
+
+
+@pytest.mark.parametrize("route", ["hypotheses", "investigations"])
+@besoin_pg
+def test_pg_citations_croisees_concurrentes_ne_produisent_jamais_503(
+    monkeypatch, route,
+):
+    """Deux contributions croisées doivent répondre 422, jamais 503 par deadlock.
+
+    Le verrou de la cible est pris par la commande avant l'adaptateur. Sans
+    pré-validation des citations, chaque transaction verrouille ensuite la cible de
+    l'autre : cycle H_A→H_B / H_B→H_A et DeadlockDetected. La pré-validation non
+    verrouillée doit refuser les citations croisées avant tout verrou.
+    """
+    tenant = f"c5f-{uuid.uuid4().hex[:10]}"
+    try:
+        with psycopg.connect(DSN, autocommit=True) as conn:
+            depot.appliquer_schema(conn)
+            _pg_situation(tenant)
+            _pg_investigation(tenant, investigation_id="inv-A")
+            _pg_investigation(tenant, investigation_id="inv-B")
+        expert_a = _pg_expert(tenant, nom="Expert A")
+        expert_b = _pg_expert(tenant, nom="Expert B")
+        hypothese_a = _pg_hypothese(tenant, "inv-A", enonce="Hypothèse A")
+        hypothese_b = _pg_hypothese(tenant, "inv-B", enonce="Hypothèse B")
+
+        if route == "hypotheses":
+            urls = [
+                f"{BASE}/hypotheses/{hypothese_a.objet['id']}/contributions",
+                f"{BASE}/hypotheses/{hypothese_b.objet['id']}/contributions",
+            ]
+            corps = [
+                {
+                    "expert_id": expert_a.objet["id"],
+                    "contenu": "A cite B",
+                    "hypothesis_ids_soutenues": [hypothese_b.objet["id"]],
+                },
+                {
+                    "expert_id": expert_b.objet["id"],
+                    "contenu": "B cite A",
+                    "hypothesis_ids_soutenues": [hypothese_a.objet["id"]],
+                },
+            ]
+        else:
+            urls = [
+                f"{BASE}/investigations/inv-A/contributions",
+                f"{BASE}/investigations/inv-B/contributions",
+            ]
+            corps = [
+                {
+                    "expert_id": expert_a.objet["id"],
+                    "hypothesis_id": hypothese_a.objet["id"],
+                    "contenu": "A cite B",
+                    "hypothesis_ids_soutenues": [hypothese_b.objet["id"]],
+                },
+                {
+                    "expert_id": expert_b.objet["id"],
+                    "hypothesis_id": hypothese_b.objet["id"],
+                    "contenu": "B cite A",
+                    "hypothesis_ids_soutenues": [hypothese_a.objet["id"]],
+                },
+            ]
+
+        barriere = {"courante": None}
+        creer_original = commandes_boucle._creer_contribution
+
+        def creer_avec_barriere(*args, **kwargs):
+            courante = barriere["courante"]
+            if courante is not None:
+                courante.wait(timeout=15)
+            return creer_original(*args, **kwargs)
+
+        monkeypatch.setattr(
+            commandes_boucle, "_creer_contribution", creer_avec_barriere)
+
+        resultats = []
+        for _ in range(6):
+            barriere["courante"] = threading.Barrier(2)
+            clients = [_client_pg(monkeypatch), _client_pg(monkeypatch)]
+            sorties = [None, None]
+            erreurs = [None, None]
+
+            def envoyer(rang):
+                try:
+                    reponse = clients[rang].post(
+                        urls[rang], json=corps[rang],
+                        headers={"X-Tenant": tenant})
+                    sorties[rang] = reponse.status_code
+                except Exception as exc:  # pragma: no cover - diagnostic
+                    erreurs[rang] = f"{type(exc).__name__}: {exc}"
+
+            threads = [
+                threading.Thread(target=envoyer, args=(rang,))
+                for rang in range(2)
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=30)
+            assert not any(thread.is_alive() for thread in threads), (
+                "requête concurrente bloquée au-delà de 30 s")
+            assert erreurs == [None, None], erreurs
+            resultats.extend(sorties)
+
+        compteur = Counter(resultats)
+        assert compteur == Counter({422: 12}), compteur
+
+        with psycopg.connect(DSN) as conn:
+            nombre = conn.execute(
+                "SELECT count(*) FROM objet_entreprise "
+                "WHERE tenant_id = %s AND type = 'EXPERT_CONTRIBUTION'",
+                (tenant,),
+            ).fetchone()[0]
+            investigation_a = boucle.lire_boucle(
+                conn, tenant, "inv-A", as_dict=True)
+            investigation_b = boucle.lire_boucle(
+                conn, tenant, "inv-B", as_dict=True)
+        assert nombre == 0
+        assert investigation_a["donnees"]["expert_ids"] == []
+        assert investigation_b["donnees"]["expert_ids"] == []
     finally:
         _nettoyer(tenant)
