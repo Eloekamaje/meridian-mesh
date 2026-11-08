@@ -89,9 +89,17 @@ Erreurs :
 - 404 : Situation absente ou hors tenant ;
 - 409 : empreinte de Signal déjà connue (doublon) ;
 - 422 : validation, type inconnu, champ serveur ou champ inconnu ;
-- 400 : secret dans `preuves`/données non sérialisables, jeton brut (`Bearer`, `sk-`,
-  `ghp_`, `xox…`) dans n'importe quelle chaîne persistée (source, libellé, description,
-  preuves), ou JSON malformé ;
+- 400 : secret dans `preuves`/données non sérialisables, jeton brut au sens de la
+  détection stricte, ou JSON malformé. La détection couvre **le titre persisté et toutes
+  les chaînes de `donnees`** (source, libellé, description, preuves…) et reconnaît :
+  JWT `eyJ…`, `gh[pousr]_…`, `github_pat_…`, `sk-`/`sk-proj-` d'au moins 16 caractères
+  après le préfixe et contenant au moins un chiffre (`sk-abc123456789012345` est refusé),
+  `xox[baprs]-…`, `AKIA…`, et `Bearer <jeton>`. Les mots de prose courants après
+  `Bearer` (`authentication`, `authorization`, `token`, `scheme`, `header`, `flow`, `type`,
+  `credentials`, `access`, `request`, `response`) ne sont pas des jetons ; `sk-learn-tutorial`
+  est accepté. Un nom court contenant un chiffre (`sk-…-2026`) peut être refusé : faux
+  positif assumé au profit de la sécurité. Le masquage HTTP utilise la même détection
+  stricte, donc la prose `Bearer authentication` reste lisible ;
 - 501 : `Idempotency-Key` (aucun stockage d'idempotence durable) ;
 - 503 : Postgres indisponible.
 
@@ -122,8 +130,11 @@ formulaire de statut.
   doublon, champs serveur, 404, atomicité.
 - HTTP : contrat 201, validation 422, doublon 409, secret/non-JSON/jeton brut 400, 501, 503,
   liste filtrée et isolation tenant.
-- Sécurité : les jetons bruts (`Bearer`, `sk-`, `ghp_`, `xox…`) sont refusés avant écriture
-  dans `preuves`, `source`, `libelle` et `description` ; la réponse HTTP les masque aussi.
+- Sécurité : les jetons bruts au sens de la détection stricte sont refusés avant écriture
+  dans le `titre` persisté et toutes les chaînes de `donnees` (`preuves`, `source`,
+  `libelle`, `description`…) ; la réponse HTTP les masque avec la même politique. La prose
+  `Bearer authentication`/`Bearer authorization` et `sk-learn-tutorial` reste acceptée.
+- `titre` : la colonne texte est contrôlée séparément de `donnees`, avec les mêmes motifs.
 - Rejeu : un test caractérise le second Signal créé lorsqu'on renvoie explicitement le
   `detecte_le` serveur d'une première création sans date.
 - Postgres réel (opt-in `JUMEAU_PG_DSN`) : chaîne `SITUATION → SIGNAL`, absence de chaîne
@@ -144,7 +155,9 @@ formulaire de statut.
 - La date serveur remplie quand `detecte_le` est absent n'entre pas dans l'empreinte
   initiale ; rejouer cette date dans une nouvelle requête crée un second Signal (piège
   documenté ci-dessus, non corrigé sans changer le contrat).
-- Les jetons bruts sont refusés à l'écriture ; un corpus legacy déjà stocké reste masqué
-  en lecture mais n'est pas migré.
+- Les jetons bruts sont refusés à l'écriture selon une détection stricte ; un corpus
+  legacy déjà stocké reste masqué en lecture mais n'est pas migré. La détection peut
+  refuser un identifiant métier ressemblant à un jeton long contenant un chiffre
+  (`sk-mon-projet-2026` par exemple) : faux positif assumé.
 - Pas de rattachement automatique des Signaux aux Expressions, Investigations ou
   Décisions au-delà de `situation_ids` et des liens libres.

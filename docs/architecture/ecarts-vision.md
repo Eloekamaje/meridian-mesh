@@ -423,7 +423,9 @@ Il reste sans API/UI canonique :
   tenant répond 404 ; un type ou un statut inconnu 422.
 - Erreurs : 404 Situation absente/hors tenant, 409 doublon d'empreinte (exception dédiée,
   indépendante du message), 422 validation, 400 secret/jeton brut/JSON malformé, 501
-  `Idempotency-Key`, 503 Postgres.
+  `Idempotency-Key`, 503 Postgres. Le contrôle de jeton strict s'applique au `titre`
+  persisté et à toutes les chaînes de `donnees` ; la prose `Bearer authentication` et
+  `sk-learn-tutorial` reste acceptée.
 - Lecture : `SIGNAL` est ajouté à `_CLASSES_LECTURE`, donc à `TYPES_LECTURE`, jamais à
   `TYPES_BOUCLE`. `_source_principale` ne suit `situation_ids[0]` que si la liste contient
   exactement un élément ; un Signal multi-Situation ou global est sans chaîne amont.
