@@ -1,20 +1,21 @@
 """Exécutants des actions canoniques de la boucle (D4) — les callables du Harness.
 
-Chaque fonction prend ``(conn, tenant, **args)`` et reprend la même logique que les routes
-B1 (``POST /boucle/objets`` et ``/transition``) : création d'une Situation, puis transitions
-Situation → Investigation → Decision → Initiative. Rien n'est écrit hors de ces cinq
-fonctions ; le Harness décide seul si elles peuvent être appelées (manifeste approuvé).
+Chaque fonction prend ``(conn, tenant, **args)`` et route via
+``commandes_boucle`` — le même orchestrateur transactionnel que les routes B1
+(source verrouillée ``FOR UPDATE``, statut/mode serveur, journal d'épisodes).
+Convergence §7 phase 3 : l'autorité est unique, quel que soit l'appelant.
+Le Harness décide seul si elles peuvent être appelées (manifeste approuvé).
 """
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-import inspect
 from typing import Any
 
 import psycopg
 
 from meridian.adapters.outbound.postgres import boucle
 from meridian.adapters.outbound.postgres import rls
+from meridian.application import commandes_boucle
 
 __all__ = [
     "NOMS_ACTIONS",
@@ -60,91 +61,69 @@ def _tenant(tenant: Any) -> str:
     return texte
 
 
-def _source(conn: Any, tenant: str, objet_id: Any, role: str) -> Mapping[str, Any]:
-    """Lit l'objet source de la transition ; lève LookupError s'il est absent du tenant."""
-    identifiant = _texte(objet_id)
-    if not identifiant:
-        raise boucle.BoucleInvalide(f"{role} : identifiant obligatoire")
-    ligne = boucle.lire_boucle(conn, tenant, identifiant, as_dict=True)
-    if ligne is None:
-        raise LookupError(f"{role} introuvable : {identifiant}")
-    return ligne
-
-
 def creer_situation(
     conn: Any, tenant: Any, titre: Any = "", donnees: Any = None, mode: Any = None,
 ) -> dict:
-    """Crée une Situation canonique — le même contrat que ``POST /boucle/objets`` (B1)."""
+    """Crée une Situation canonique — route ``commandes_boucle.creer_situation``."""
     tenant_id = _tenant(tenant)
     titre_texte = _texte(titre)
     if not titre_texte:
         raise boucle.BoucleInvalide("une Situation exige un titre")
     donnees_libres = dict(donnees) if isinstance(donnees, Mapping) else {}
-    classe = boucle.Situation
-    params = set(inspect.signature(classe).parameters)
-    valeurs = {
-        cle: valeur
-        for cle, valeur in {
-            "titre": titre_texte,
-            "resume": donnees_libres.pop("resume", titre_texte),
-            "mode": _texte(mode) or "OBSERVED",
-            **donnees_libres,
-        }.items()
-        if cle in params
+    champs = {
+        "titre": titre_texte,
+        "resume": donnees_libres.pop("resume", titre_texte),
+        "mode": _texte(mode) or "OBSERVED",
+        **donnees_libres,
     }
-    if "tenant_id" in params:
-        valeurs["tenant_id"] = tenant_id
-    objet = classe(id=boucle._nouvel_id("sit"), **valeurs)
     with _contexte(conn, tenant_id):
-        return boucle.enregistrer_boucle(conn, tenant_id, objet)
+        return commandes_boucle.creer_situation(
+            boucle, conn, tenant_id, **champs).objet
 
 
 def ouvrir_investigation(
     conn: Any, tenant: Any, situation_id: Any, **donnees: Any,
 ) -> dict:
-    """Ouvre une Investigation sur une Situation du tenant — transition B1 ``ouvrir_investigation``."""
+    """Ouvre une Investigation sur une Situation du tenant — route ``commandes_boucle``."""
     tenant_id = _tenant(tenant)
     with _contexte(conn, tenant_id):
-        source = _source(conn, tenant_id, situation_id, "situation")
-        nouvel = boucle.ouvrir_investigation(source, tenant_id=tenant_id, **donnees)
-        return boucle.enregistrer_boucle(conn, tenant_id, nouvel)
+        return commandes_boucle.ouvrir_investigation(
+            boucle, conn, tenant_id, _texte(situation_id), **donnees).objet
 
 
 def proposer_decision(
     conn: Any, tenant: Any, investigation_id: Any, options: Any = None,
     criteres: Any = None, incertitudes: Any = None, **donnees: Any,
 ) -> dict:
-    """Propose une Décision non tranchée — transition B1 ``proposer_decision``."""
+    """Propose une Décision non tranchée — route ``commandes_boucle.proposer_decision``."""
     tenant_id = _tenant(tenant)
+    champs = {"criteres": criteres, "incertitudes": incertitudes, **donnees}
+    champs = {cle: valeur for cle, valeur in champs.items() if valeur is not None}
     with _contexte(conn, tenant_id):
-        source = _source(conn, tenant_id, investigation_id, "investigation")
-        nouvel = boucle.proposer_decision(
-            source, options, criteres, incertitudes, tenant_id=tenant_id, **donnees)
-        return boucle.enregistrer_boucle(conn, tenant_id, nouvel)
+        return commandes_boucle.proposer_decision(
+            boucle, conn, tenant_id, _texte(investigation_id), options, **champs).objet
 
 
 def trancher_decision(
     conn: Any, tenant: Any, decision_id: Any, acteur: Any = None, choix: Any = None,
     **donnees: Any,
 ) -> dict:
-    """Tranche une Décision proposée — transition B1 ``trancher`` (``trancher_decision``)."""
+    """Tranche une Décision proposée — route ``commandes_boucle.trancher_decision``."""
     tenant_id = _tenant(tenant)
     with _contexte(conn, tenant_id):
-        source = _source(conn, tenant_id, decision_id, "décision")
-        nouvel = boucle.trancher_decision(
-            source, _texte(acteur), _texte(choix), tenant_id=tenant_id, **donnees)
-        return boucle.enregistrer_boucle(conn, tenant_id, nouvel)
+        return commandes_boucle.trancher_decision(
+            boucle, conn, tenant_id, _texte(decision_id),
+            acteur=_texte(acteur), choix=_texte(choix), **donnees).objet
 
 
 def lancer_initiative(
     conn: Any, tenant: Any, decision_id: Any, **donnees: Any,
 ) -> dict:
-    """Lance une Initiative sur une Décision tranchée — transition B1 ``lancer_initiative``."""
+    """Lance une Initiative sur une Décision tranchée — route ``commandes_boucle``."""
     tenant_id = _tenant(tenant)
     with _contexte(conn, tenant_id):
-        source = _source(conn, tenant_id, decision_id, "décision")
-        nouvel = boucle.lancer_initiative(source, tenant_id=tenant_id, **donnees)
-        return boucle.enregistrer_boucle(conn, tenant_id, nouvel)
+        return commandes_boucle.lancer_initiative(
+            boucle, conn, tenant_id, _texte(decision_id), **donnees).objet
 
 
 def adaptateurs(conn: Any, tenant: Any, acteur: Any = None) -> dict[str, Callable]:

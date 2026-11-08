@@ -39,6 +39,9 @@ Révisions :
   détecteur (`signature` présente) passent de `PROPOSED` à `DETECTED`, et les lignes des signatures
   `concentration_risque`/`dette_vs_usage` deviennent des `RISK` avec `type_risque` canonique
   (`CONTINUITE`/`TECHNIQUE`), `type_opportunite` consolidé, `severite` `ELEVEE`→`HAUTE`.
+- `0008_decision_parent` — interdiction de la DECISION orpheline (convergence §3.2) : les DECISION
+  sans `investigation_id` sont rattachées à l'INVESTIGATION de leur `episode_id` quand elle est
+  unique, sinon marquées `donnees.parent_manquant` (réparables uniquement en posant le lien).
 
 ## Exécution en production
 

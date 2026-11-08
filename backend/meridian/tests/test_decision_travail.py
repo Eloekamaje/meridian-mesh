@@ -50,12 +50,41 @@ class DepotFaux:
         return ligne
 
 
+_CHAMPS_TABLE = {
+    "id", "tenant_id", "famille", "type", "mode", "titre", "donnees", "version",
+    "observe_le", "valide_depuis", "valide_jusqua", "cree_le", "maj_le",
+}
+
+
+def _ligne_depuis_objet(objet):
+    """Dataclass de boucle (ou dict) → ligne ``objet_entreprise`` — mêmes règles
+    de rangement dans ``donnees`` que ``enregistrer_boucle``."""
+    charge = dict(objet.to_dict() if hasattr(objet, "to_dict") else objet)
+    donnees = dict(charge.get("donnees") or {})
+    for cle in list(charge):
+        if cle not in _CHAMPS_TABLE:
+            donnees[cle] = charge.pop(cle)
+    charge["donnees"] = donnees
+    return charge
+
+
+def _enregistrer_boucle_faux(depot):
+    """Stub de ``enregistrer_boucle`` : la connexion factice n'a pas de
+    ``transaction()`` — les objets sont rangés en lignes et persistés en mémoire."""
+    def enregistrer(conn, tenant, objets, **kwargs):
+        lot = objets if isinstance(objets, list) else [objets]
+        return [depot.enregistrer_objet(conn, tenant, _ligne_depuis_objet(o)) for o in lot]
+    return enregistrer
+
+
 @pytest.fixture
 def depot_faux(monkeypatch):
     depot = DepotFaux()
     monkeypatch.setattr(decision_travail.entreprise_depot, "lire_objet", depot.lire_objet)
     monkeypatch.setattr(decision_travail.entreprise_depot, "lister_objets", depot.lister_objets)
     monkeypatch.setattr(decision_travail.entreprise_depot, "enregistrer_objet", depot.enregistrer_objet)
+    monkeypatch.setattr(
+        decision_travail.boucle, "enregistrer_boucle", _enregistrer_boucle_faux(depot))
     return depot
 
 

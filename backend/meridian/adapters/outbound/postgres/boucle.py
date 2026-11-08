@@ -1130,6 +1130,13 @@ def _valider_pour_persistance(conn: Any, tenant: str, objets: list[Any]) -> None
                 raise BoucleInvalide(
                     f"statut de {type_objet} inconnu : {statut_emergence!r}"
                 )
+            # Registre de validation unique (convergence §7 phase 3) : les types
+            # partagés obéissent au même validateur que le chemin B — trace
+            # humaine ou détection prouvée, résolution des liens typés.
+            try:
+                objets_exploitation._valider_pour_persistance(conn, tenant, [objet])
+            except objets_exploitation.ObjetsExploitationInvalide as exc:
+                raise BoucleInvalide(str(exc)) from exc
         if type_objet == "BELIEF":
             statut_belief = _normaliser_statut(_valeur(objet, "statut"))
             if statut_belief and statut_belief not in modele.STATUTS_BELIEF:

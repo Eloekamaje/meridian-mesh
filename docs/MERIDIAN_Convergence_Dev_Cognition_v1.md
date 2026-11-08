@@ -5,8 +5,14 @@
 > phase 2 faite (unification `OPPORTUNITY` — détecteur en `DETECTED`,
 > `signature`+`claim_ids` vaut trace, `RISK` ouvert dans `enregistrer_boucle`,
 > `concentration_risque`/`dette_vs_usage` retypés `RISK.CONTINUITE`/`TECHNIQUE`,
-> migration 0007). Les collisions §2.1 et §2.2 basculent en XFAIL dans
-> `test_collisions_monde`.
+> migration 0007) ; phase 3 faite (`journal_episodes` branché dans
+> `enregistrer_objets_exploitation`, DECISION orpheline interdite — la chaîne
+> d'épisode est créée, migration 0008, validateur B délégué pour
+> OPPORTUNITY/RISK, `actions_canoniques` façade de `commandes_boucle`). Les
+> collisions §2.1, §2.2, §3.2 et §5.4 basculent en XFAIL dans
+> `test_collisions_monde` ; restent 7 (POST /objets) et 8 (attention), phase 4.
+> Reste différé : l'émission d'événement outbox signé par `decision_travail`
+> (§6 « un seul producteur ») et la fusion du régime SCENARIO.
 > **Périmètre :** l'arbre fusionné du commit `3c82f21` (branche `jumeau-p4-confort`),
 > qui contient côte à côte le modèle d'exploitation canonique (« monde dev », ~146
 > commits) et la couche épistémique du plan Cognition IA A→D (« monde cognition »,
