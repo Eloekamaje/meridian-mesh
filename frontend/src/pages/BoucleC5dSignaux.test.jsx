@@ -351,6 +351,71 @@ test("enregistre un signal depuis une situation, force la route et rafraîchit l
   await act(async () => { racine.unmount(); });
 });
 
+test("le bouton global reste global après fermeture d'une situation", async () => {
+  const controleur = installerApi({ liste: [situation] });
+  const signalCree = {
+    ...signalGlobal,
+    id: "signal-4",
+    titre: "Signal global mono-situation",
+    donnees: {
+      ...signalGlobal.donnees,
+      libelle: "Signal global mono-situation",
+      situation_ids: ["sit-1"],
+    },
+  };
+  const situationLiee = {
+    ...situation,
+    donnees: { ...situation.donnees, signal_ids: [signalCree.id] },
+  };
+  boucleApi.creerSignal.mockImplementation((corps) => {
+    expect(corps.situation_ids).toEqual(["sit-1"]);
+    controleur.ajouter(signalCree);
+    controleur.majDetail("sit-1", {
+      objet: situationLiee,
+      chaine: [situationLiee],
+      historique: [],
+    });
+    return Promise.resolve({
+      data: {
+        objet: signalCree,
+        chaine: [situationLiee, signalCree],
+        historique: [],
+      },
+    });
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "sit-1");
+  expect(hote.querySelector('[data-testid="boucle-detail"]')).not.toBeNull();
+  await cliquer(hote, "boucle-detail-fermer");
+  expect(hote.querySelector('[data-testid="boucle-detail"]')).toBeNull();
+
+  await cliquer(hote, "boucle-nouveau-signal");
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-transition-situation_ids"]')).not.toBeNull();
+
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-libelle"]'), "Signal global mono-situation");
+    saisir(hote.querySelector('[data-testid="boucle-transition-source"]'), "source-globale");
+    saisir(hote.querySelector('[data-testid="boucle-transition-situation_ids"]'), "sit-1");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(boucleApi.creerSignal).toHaveBeenCalledTimes(1);
+  expect(boucleApi.creerSignalSituation).not.toHaveBeenCalled();
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-detail-titre"]').textContent)
+    .toContain("Signal global mono-situation");
+
+  await deplier(hote, "boucle-chaine-section");
+  expect(hote.querySelectorAll('[data-testid="boucle-chaine-etape"]')).toHaveLength(1);
+  expect(hote.querySelector('[data-testid="boucle-chaine"]').textContent)
+    .toContain("Latence des paiements");
+
+  await act(async () => { racine.unmount(); });
+});
+
 test("refuse un signal sans libellé puis sans source sans appeler le backend", async () => {
   installerApi({ liste: [situation] });
   const { hote, racine } = monter();

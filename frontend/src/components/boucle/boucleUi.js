@@ -92,12 +92,10 @@ export const TYPES_SIGNAL = Object.freeze([
   "EVENEMENT", "CHANGEMENT", "DERIVE", "ANOMALIE", "CONTRADICTION",
   "OPPORTUNITE", "RISQUE", "OBSERVATION",
 ]);
-export const STATUTS_SIGNAL = Object.freeze([
-  "DETECTED", "QUALIFYING", "MATURING", "MATURE", "DISMISSED", "MERGED", "ARCHIVED",
-]);
 export const TYPES_LECTURE = Object.freeze([
   "SIGNAL", "SITUATION", "EXPRESSION", "OPPORTUNITY", "RISK",
-  "INVESTIGATION", "HYPOTHESIS", "DECISION", "INITIATIVE", "OUTCOME", "LEARNING",
+  "INVESTIGATION", "HYPOTHESIS", "SCENARIO", "DECISION", "INITIATIVE",
+  "OUTCOME", "LEARNING",
 ]);
 
 const CHAMPS_CREER_EXPRESSION = [
@@ -1290,7 +1288,8 @@ function corpsSignal(valeurs, objet) {
   return { corps };
 }
 
-function corpsChangementStatutHypothese(valeurs, objet) {  const vers = valeurNette(valeurs, "vers").toUpperCase();
+function corpsChangementStatutHypothese(valeurs, objet) {
+  const vers = valeurNette(valeurs, "vers").toUpperCase();
   if (!vers) return echec("Le statut cible est obligatoire.");
   const autorises = statutsSuivants("HYPOTHESIS", statutObjet(objet));
   if (!autorises.includes(vers)) {

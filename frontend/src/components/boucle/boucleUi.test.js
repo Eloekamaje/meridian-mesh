@@ -435,7 +435,7 @@ describe("configurationAction", () => {
     expect(TYPES_LECTURE).toContain("SIGNAL");
     for (const type of [
       "SITUATION", "EXPRESSION", "OPPORTUNITY", "RISK", "INVESTIGATION",
-      "HYPOTHESIS", "DECISION", "INITIATIVE", "OUTCOME", "LEARNING",
+      "HYPOTHESIS", "SCENARIO", "DECISION", "INITIATIVE", "OUTCOME", "LEARNING",
     ]) {
       expect(TYPES_LECTURE).toContain(type);
     }
