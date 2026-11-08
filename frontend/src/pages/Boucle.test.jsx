@@ -15,6 +15,7 @@ jest.mock("@/lib/api", () => ({
   boucleApi: {
     creerSituation: jest.fn(),
     creerScenario: jest.fn(),
+    creerExpression: jest.fn(),
     listerScenarios: jest.fn(),
     comparerScenarios: jest.fn(),
     ouvrirInvestigation: jest.fn(),
@@ -1075,6 +1076,161 @@ test("crée un scénario depuis une investigation, le sélectionne et rafraîchi
     { params: { historique: true } },
   );
   expect(appelsObjets()).toBeGreaterThan(avant);
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("exprime une situation, la sélectionne et rafraîchit le parent", async () => {
+  const controleur = installerApi();
+  const expression = {
+    id: "expr-2",
+    famille: "emergence",
+    type: "EXPRESSION",
+    mode: "DECLARED",
+    titre: "Automatiser la ressaisie",
+    donnees: {
+      situation_id: "sit-1",
+      type_expression: "OPPORTUNITE",
+      formulation: "Automatiser la ressaisie",
+      canal: "entretien",
+      auteur: "Alice",
+      inconnues: ["volume réel"],
+      confiance: 0.8,
+      statut: "PROPOSED",
+    },
+    version: 1,
+  };
+  boucleApi.creerExpression.mockImplementation(() => {
+    controleur.ajouter(expression);
+    return Promise.resolve({
+      data: { objet: expression, chaine: [situation, expression], historique: [] },
+    });
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "sit-1");
+  await cliquerEnFocus(hote, "boucle-action-creer-expression");
+
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-contenu"]').hasAttribute("inert")).toBe(true);
+  expect(document.activeElement?.id).toBe("boucle-transition-formulation");
+
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-formulation"]'), "  Automatiser la ressaisie  ");
+    saisir(hote.querySelector('[data-testid="boucle-transition-canal"]'), "  entretien  ");
+    saisir(hote.querySelector('[data-testid="boucle-transition-auteur"]'), "  Alice  ");
+    saisir(hote.querySelector('[data-testid="boucle-transition-inconnues"]'), " volume réel ");
+    saisir(hote.querySelector('[data-testid="boucle-transition-confiance"]'), "0,8");
+  });
+  await choisir(hote.querySelector('[data-testid="boucle-transition-type_expression"]'), "OPPORTUNITE");
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(boucleApi.creerExpression).toHaveBeenCalledWith("sit-1", {
+    formulation: "Automatiser la ressaisie",
+    type_expression: "OPPORTUNITE",
+    canal: "entretien",
+    auteur: "Alice",
+    inconnues: ["volume réel"],
+    confiance: 0.8,
+  });
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).toBeNull();
+  expect(hote.querySelector('[data-objet-id="expr-2"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-detail-titre"]').textContent)
+    .toContain("Automatiser la ressaisie");
+  const precisions = hote.querySelector('[data-testid="boucle-precisions"]');
+  expect(precisions.textContent).toContain("OPPORTUNITE");
+  expect(precisions.textContent).toContain("Automatiser la ressaisie");
+  expect(precisions.textContent).toContain("entretien");
+  expect(precisions.textContent).toContain("Alice");
+  expect(precisions.textContent).toContain("volume réel");
+  expect(hote.querySelector('[data-testid="boucle-section-expression"]')).not.toBeNull();
+  expect(api.get).toHaveBeenCalledWith(
+    "/boucle/objets/sit-1",
+    { params: { historique: true } },
+  );
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("n'expose pas l'action Exprimer sur une situation déjà exprimée", async () => {
+  const situationExprimee = {
+    ...situation,
+    donnees: { ...situation.donnees, expression_id: "expr-1" },
+  };
+  installerApi({ liste: [situationExprimee, ...objets.slice(1)] });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "sit-1");
+
+  expect(hote.querySelector('[data-testid="boucle-action-creer-expression"]')).toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-action-investigation"]')).not.toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("garde la modale d'expression sur un conflit 409 et rafraîchit la source", async () => {
+  installerApi();
+  boucleApi.creerExpression.mockRejectedValue({
+    response: { status: 409, data: { detail: "Expression déjà existante" } },
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "sit-1");
+  await cliquer(hote, "boucle-action-creer-expression");
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-formulation"]'), "Doublon");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  const alerte = hote.querySelector('[data-testid="boucle-transition-erreur"]');
+  expect(alerte).not.toBeNull();
+  expect(alerte.getAttribute("role")).toBe("alert");
+  expect(alerte.textContent).toContain("Expression déjà existante");
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-transition-formulation"]').value).toBe("Doublon");
+  expect(api.get).toHaveBeenCalledWith(
+    "/boucle/objets/sit-1",
+    { params: { historique: true } },
+  );
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("refuse une expression sans formulation sans appeler le backend", async () => {
+  installerApi();
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "sit-1");
+  await cliquer(hote, "boucle-action-creer-expression");
+
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(boucleApi.creerExpression).not.toHaveBeenCalled();
+  const alerte = hote.querySelector('[data-testid="boucle-transition-erreur"]');
+  expect(alerte).not.toBeNull();
+  expect(alerte.textContent).toContain("formulation");
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("ferme l'expression avec Échap et restitue le focus sur l'action", async () => {
+  installerApi();
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "sit-1");
+  const bouton = hote.querySelector('[data-testid="boucle-action-creer-expression"]');
+  await act(async () => { bouton.focus(); bouton.click(); });
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+
+  await echap();
+
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).toBeNull();
+  expect(document.activeElement).toBe(bouton);
+  expect(boucleApi.creerExpression).not.toHaveBeenCalled();
 
   await act(async () => { racine.unmount(); });
 });

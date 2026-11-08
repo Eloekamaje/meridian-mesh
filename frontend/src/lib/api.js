@@ -60,6 +60,12 @@ export const boucleApi = {
   async creerScenario(corps) {
     return posterTransition("/boucle/scenarios", corps);
   },
+  async creerExpression(situationId, corps) {
+    return posterTransition(
+      `/boucle/situations/${identifiantRequis(situationId, "identifiant de situation")}/expressions`,
+      corps,
+    );
+  },
   async listerScenarios(params) {
     return api.get("/boucle/scenarios", { params, timeout: 20000 });
   },

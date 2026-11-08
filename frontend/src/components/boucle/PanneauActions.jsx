@@ -19,6 +19,7 @@ const ICONES = {
   outcome: ChartLineUp,
   learning: BookOpen,
   situation: Lightbulb,
+  expression: Lightbulb,
   scenario: Scales,
 };
 
@@ -30,6 +31,7 @@ const COULEURS = {
   outcome: "#34D399",
   learning: "#A78BFA",
   situation: "#60A5FA",
+  expression: "#22D3EE",
   scenario: "#F2B84B",
 };
 

@@ -61,6 +61,26 @@ describe("boucleApi", () => {
     expect(poster.mock.calls[0][2]).not.toHaveProperty("headers");
   });
 
+  test("creerExpression poste l'expression rattachée sans en-tête d'idempotence", async () => {
+    const corps = {
+      type_expression: "OPPORTUNITE",
+      formulation: "Automatiser la ressaisie",
+      canal: "entretien",
+      auteur: "Alice",
+      inconnues: ["volume réel"],
+      confiance: 0.8,
+    };
+
+    await boucleApi.creerExpression("sit/1", corps);
+
+    expect(poster).toHaveBeenCalledWith(
+      "/boucle/situations/sit%2F1/expressions",
+      corps,
+      { timeout: 20000 },
+    );
+    expect(poster.mock.calls[0][2]).not.toHaveProperty("headers");
+  });
+
   test("comparerScenarios poste les ids et la référence", async () => {
     const corps = { scenario_ids: ["s1", "s2"], reference_id: "s2" };
 
@@ -100,6 +120,7 @@ describe("boucleApi", () => {
 
   test.each([
     ["ouvrirInvestigation", "sit/1", "/boucle/situations/sit%2F1/investigations"],
+    ["creerExpression", "sit/1", "/boucle/situations/sit%2F1/expressions"],
     ["proposerDecision", "inv-1", "/boucle/investigations/inv-1/decisions"],
     ["trancherDecision", "dec-1", "/boucle/decisions/dec-1/trancher"],
     ["lancerInitiative", "dec-1", "/boucle/decisions/dec-1/initiatives"],

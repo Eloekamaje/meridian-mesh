@@ -92,8 +92,16 @@ describe("decisionEstTranchee", () => {
 });
 
 describe("actionsPourObjet", () => {
-  test("une situation ouvre une investigation", () => {
-    expect(actionsPourObjet(situation).map((action) => action.id)).toEqual(["ouvrir_investigation"]);
+  test("une situation non exprimée ouvre une investigation et peut être exprimée", () => {
+    expect(actionsPourObjet(situation).map((action) => action.id))
+      .toEqual(["ouvrir_investigation", "creer_expression"]);
+  });
+
+  test("une situation déjà exprimée ne propose plus l'action Exprimer", () => {
+    expect(actionsPourObjet({
+      ...situation,
+      donnees: { ...situation.donnees, expression_id: "expr-1" },
+    }).map((action) => action.id)).toEqual(["ouvrir_investigation"]);
   });
 
   test("une investigation ouverte propose une décision, un scénario et un learning", () => {
@@ -176,6 +184,19 @@ describe("configurationAction", () => {
       .toEqual(["DECLARED", "OBSERVED", "INFERRED", "PROPOSED", "CONFIRMED"]);
   });
 
+  test("l'expression expose formulation, type, canal, auteur, inconnues et confiance", () => {
+    const action = configurationAction("creer_expression", situation);
+
+    expect(action.api).toBe("creerExpression");
+    expect(action.typeSource).toBe("SITUATION");
+    expect(action.champs.map((champ) => champ.nom)).toEqual([
+      "formulation", "type_expression", "canal", "auteur", "inconnues", "confiance",
+    ]);
+    expect(action.champs.find((champ) => champ.nom === "formulation").requis).toBe(true);
+    expect(action.champs.find((champ) => champ.nom === "type_expression").options)
+      .toContain("OPPORTUNITE");
+  });
+
   test("la création de scénario expose les métriques et listes attendues", () => {
     const action = configurationAction("creer_scenario", investigation);
 
@@ -235,6 +256,40 @@ describe("construireCorps", () => {
       motif: "Réduire le délai",
     });
     expect(resultat.corps).not.toHaveProperty("acteur");
+  });
+
+  test("exprime une situation avec les champs C5a, sans statut client", () => {
+    expect(construireCorps("creer_expression", {}).erreur).toContain("formulation");
+    expect(construireCorps("creer_expression", { formulation: "   " }).erreur)
+      .toContain("formulation");
+
+    const resultat = construireCorps("creer_expression", {
+      formulation: "  Automatiser la ressaisie  ",
+      type_expression: "opportunite",
+      canal: "  entretien  ",
+      auteur: "  Alice  ",
+      inconnues: "volume réel\ncharge de fin de mois",
+      confiance: "0,8",
+      statut: "CONFIRMED",
+    });
+    expect(resultat.corps).toEqual({
+      formulation: "Automatiser la ressaisie",
+      type_expression: "OPPORTUNITE",
+      canal: "entretien",
+      auteur: "Alice",
+      inconnues: ["volume réel", "charge de fin de mois"],
+      confiance: 0.8,
+    });
+    expect(resultat.corps).not.toHaveProperty("statut");
+  });
+
+  test("refuse un type d'expression inconnu et une confiance hors bornes", () => {
+    expect(construireCorps("creer_expression", {
+      formulation: "Valide", type_expression: "MAGIQUE",
+    }).erreur).toContain("type d'expression");
+    expect(construireCorps("creer_expression", {
+      formulation: "Valide", confiance: "1.2",
+    }).erreur).toContain("confiance");
   });
 
   test("lance une initiative depuis une décision", () => {

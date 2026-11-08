@@ -23,6 +23,10 @@ Révisions :
   L'unicité de l'empreinte reste applicative : un verrou consultatif sérialise les inserts concurrents,
   mais aucun index unique n'est posé, car une base historique peut déjà contenir des doublons. Un
   backfill de dédoublonnage est un prérequis avant toute contrainte unique future.
+- `0004_objets_exploitation_expression_situation_unique` — index unique partiel
+  `(tenant_id, donnees->>'situation_id')` pour une Expression au plus par Situation (C5a). L'index
+  non unique du filtre `expression_id` de `0003` est conservé. Une base historique contenant déjà
+  plusieurs Expressions pour une même Situation doit être dédoublonnée avant d'appliquer la révision.
 
 ## Exécution en production
 

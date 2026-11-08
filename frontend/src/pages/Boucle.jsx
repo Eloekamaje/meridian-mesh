@@ -41,6 +41,7 @@ const DELAI_VERIFICATION_MS = 10000;
 
 const STADES = [
   { type: "SITUATION", famille: "emergence", label: "Situations", court: "Situation", couleur: "#60A5FA", Icone: Lightbulb },
+  { type: "EXPRESSION", famille: "emergence", label: "Expressions", court: "Expression", couleur: "#22D3EE", Icone: Lightbulb },
   { type: "INVESTIGATION", famille: "investigation", label: "Investigations", court: "Investigation", couleur: "#38BDF8", Icone: MagnifyingGlass },
   { type: "DECISION", famille: "decision", label: "Décisions", court: "Décision", couleur: "#F2B84B", Icone: Scales },
   { type: "INITIATIVE", famille: "decision", label: "Initiatives", court: "Initiative", couleur: "#FB923C", Icone: RocketLaunch },
@@ -51,7 +52,7 @@ const STADES = [
 const STADES_PAR_TYPE = new Map(STADES.map((stade) => [stade.type, stade]));
 
 const FAMILLES = [
-  { value: "emergence", label: "Émergence — situations" },
+  { value: "emergence", label: "Émergence — situations et expressions" },
   { value: "investigation", label: "Investigation" },
   { value: "decision", label: "Décision — décisions et initiatives" },
   { value: "resultat_apprentissage", label: "Résultat — outcomes et learnings" },
@@ -354,6 +355,11 @@ function PanneauDetail({
         : "Aucune chaîne amont · afficher";
   const precisions = [
     ["Statut", texteAffichable(valeurDe(objet, "statut"))],
+    ["Type d'expression", texteAffichable(valeurDe(objet, "type_expression"))],
+    ["Formulation", texteAffichable(valeurDe(objet, "formulation"))],
+    ["Canal", texteAffichable(valeurDe(objet, "canal"))],
+    ["Auteur", texteAffichable(valeurDe(objet, "auteur"))],
+    ["Inconnues", texteAffichable(valeurDe(objet, "inconnues"))],
     ["Choix", texteAffichable(valeurDe(objet, "choix"))],
     ["Acteur", texteAffichable(valeurDe(objet, "acteur"))],
     ["Métrique", texteAffichable(valeurDe(objet, "metrique"))],
@@ -980,6 +986,7 @@ export default function Boucle() {
     if (!actionCourante) return;
     const creationSituation = actionActive === "creer_situation";
     const creationScenario = actionActive === "creer_scenario";
+    const creationExpression = actionActive === "creer_expression";
     if (!creationSituation && !objetDetail) return;
     const identifiant = creationSituation ? null : idObjet(objetDetail);
     if (!creationSituation && !identifiant) {
@@ -1023,7 +1030,9 @@ export default function Boucle() {
         ? await boucleApi.creerSituation(corps)
         : creationScenario
           ? await boucleApi.creerScenario(corps)
-          : await boucleApi[actionCourante.api](identifiant, corps);
+          : creationExpression
+            ? await boucleApi.creerExpression(identifiant, corps)
+            : await boucleApi[actionCourante.api](identifiant, corps);
     } catch (erreurApi) {
       cause = erreurApi;
     } finally {
@@ -1168,6 +1177,57 @@ export default function Boucle() {
         },
       });
       // Le parent est relu en arrière-plan pour exposer son lien inverse scenario_ids/scenario_id.
+      rafraichirObjetListe(identifiant);
+      actualiser();
+      return;
+    }
+
+    if (creationExpression) {
+      const nouvelObjet = reponse?.data?.objet ?? null;
+      const nouvelleChaine = Array.isArray(reponse?.data?.chaine) ? reponse.data.chaine : null;
+      const nouvelHistorique = Array.isArray(reponse?.data?.historique) ? reponse.data.historique : null;
+      const dernierDeChaine = nouvelleChaine && nouvelleChaine.length > 0
+        ? nouvelleChaine[nouvelleChaine.length - 1]
+        : null;
+      const objetCree = nouvelObjet || dernierDeChaine;
+      const expressionId = idObjet(objetCree);
+
+      if (!expressionId) {
+        setTransition((avant) => ({
+          ...avant,
+          enCours: false,
+          erreur: "L'expression a été créée mais la réponse ne contient aucun identifiant exploitable. Vérifiez la liste avant de réessayer.",
+        }));
+        actualiser();
+        return;
+      }
+
+      const chaine = nouvelleChaine && nouvelleChaine.length > 0 ? nouvelleChaine : [objetCree];
+      setActionActive(null);
+      setTransition({
+        enCours: false,
+        erreur: "",
+        succes: { action, objet: objetCree },
+        rechargement: false,
+        verificationErreur: "",
+      });
+      refElementDeclencheurAction.current = null;
+      demanderRestaurationFocusAction();
+
+      const objetsReponse = [objetCree, ...(nouvelleChaine || [])]
+        .filter((objet) => idObjet(objet));
+      setObjets((avant) => objetsReponse.reduce((liste, objet) => fusionnerObjet(liste, objet), avant));
+      setSelection(objetCree);
+      setDetail({
+        chargement: false,
+        erreur: null,
+        data: {
+          objet: objetCree,
+          chaine,
+          historique: nouvelHistorique || [],
+        },
+      });
+      // La situation est relue en arrière-plan pour exposer son lien inverse expression_id.
       rafraichirObjetListe(identifiant);
       actualiser();
       return;
@@ -1933,7 +1993,7 @@ export default function Boucle() {
             </p>
             <p className="mt-1 text-xs text-[#7C93A8]">
               {objets.length === 0 && !filtresActifs
-                ? "Les situations, investigations, décisions, initiatives, outcomes et learnings apparaîtront ici."
+                ? "Les situations, expressions, investigations, décisions, initiatives, outcomes et learnings apparaîtront ici."
                 : "Élargissez la recherche ou réinitialisez les filtres."}
             </p>
             {filtresActifs && (
