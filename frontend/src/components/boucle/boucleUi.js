@@ -49,11 +49,23 @@ export const TRANSITIONS_RISQUE = Object.freeze({
   DORMANT: Object.freeze(["MATURING", "REJECTED"]),
 });
 
+// Cycle C5c des hypothèses : duplication assumée depuis
+// backend/meridian/domain/objets_exploitation.py, comme les tables C5b.
+export const TRANSITIONS_HYPOTHESE = Object.freeze({
+  OPEN: Object.freeze(["STRENGTHENED", "WEAKENED", "REJECTED", "CONFIRMED"]),
+  STRENGTHENED: Object.freeze(["WEAKENED", "REJECTED", "CONFIRMED"]),
+  WEAKENED: Object.freeze(["STRENGTHENED", "REJECTED", "CONFIRMED"]),
+  CONFIRMED: Object.freeze([]),
+  REJECTED: Object.freeze([]),
+});
+
 export function statutsSuivants(type, statut) {
   const typeNormalise = texte(type).trim().toUpperCase();
   const transitions = typeNormalise === "RISK"
     ? TRANSITIONS_RISQUE
-    : typeNormalise === "OPPORTUNITY" ? TRANSITIONS_OPPORTUNITE : null;
+    : typeNormalise === "OPPORTUNITY"
+      ? TRANSITIONS_OPPORTUNITE
+      : typeNormalise === "HYPOTHESIS" ? TRANSITIONS_HYPOTHESE : null;
   if (!transitions) return [];
   return [...(transitions[statutObjet({ statut })] || [])];
 }
@@ -236,6 +248,75 @@ const CHAMPS_CHANGER_STATUT = [
     label: "Preuves (IDs séparés par une virgule, optionnel)",
     type: "text",
     placeholder: "preuve-1, preuve-2",
+  },
+];
+
+const CHAMPS_CREER_HYPOTHESE = [
+  {
+    nom: "enonce",
+    label: "Énoncé de l'hypothèse",
+    type: "textarea",
+    requis: true,
+    rows: 3,
+    maxLength: 5000,
+    placeholder: "Le contrôle synchrone sur le flux cartes amplifie les ralentissements…",
+    aide: "Une explication testable, distincte d'une opinion ou d'une expression.",
+  },
+  {
+    nom: "conditions_test",
+    label: "Conditions de test (une par ligne ou séparées par une virgule, optionnel)",
+    type: "textarea",
+    rows: 2,
+    placeholder: "mesurer le p95 sur trois flux\ncomparer avant/après la règle R-118",
+  },
+  {
+    nom: "claim_ids_soutenants",
+    label: "Claims soutenants (IDs séparés par une virgule, optionnel)",
+    type: "text",
+    placeholder: "claim-1, claim-2",
+  },
+  {
+    nom: "claim_ids_opposants",
+    label: "Claims opposants (IDs séparés par une virgule, optionnel)",
+    type: "text",
+    placeholder: "claim-3",
+  },
+  {
+    nom: "preuves",
+    label: "Preuves initiales (IDs séparés par une virgule, optionnel)",
+    type: "text",
+    placeholder: "preuve-1, preuve-2",
+  },
+  {
+    nom: "confiance",
+    label: "Confiance (0 à 1, optionnel)",
+    type: "text",
+    inputMode: "decimal",
+    placeholder: "0.5",
+  },
+];
+
+const CHAMPS_CHANGER_STATUT_HYPOTHESE = [
+  {
+    nom: "vers",
+    label: "Nouveau statut",
+    type: "select",
+    requis: true,
+    options: [],
+  },
+  {
+    nom: "motif",
+    label: "Motif (optionnel)",
+    type: "textarea",
+    rows: 2,
+    placeholder: "Pourquoi ce changement, et à quelles conditions il tient…",
+  },
+  {
+    nom: "preuves",
+    label: "Preuves (IDs séparés par une virgule, optionnel)",
+    type: "text",
+    placeholder: "preuve-1, preuve-2",
+    aide: "Une hypothèse CONFIRMED exige au moins une preuve.",
   },
 ];
 
@@ -659,6 +740,26 @@ export const ACTIONS_BOUCLE = Object.freeze({
     icone: "statut",
     champs: CHAMPS_CHANGER_STATUT,
   }),
+  creer_hypothese: Object.freeze({
+    id: "creer_hypothese",
+    libelle: "Formuler une hypothèse",
+    titre: "Formuler une hypothèse",
+    description: "Proposer une explication testable, avec ses conditions de test et ses claims.",
+    testid: "boucle-action-creer-hypothese",
+    api: "creerHypothese",
+    icone: "hypothese",
+    champs: CHAMPS_CREER_HYPOTHESE,
+  }),
+  changer_statut_hypothese: Object.freeze({
+    id: "changer_statut_hypothese",
+    libelle: "Changer le statut",
+    titre: "Changer le statut de l'hypothèse",
+    description: "Renforcer, affaiblir, rejeter ou confirmer l'hypothèse selon son cycle canonique.",
+    testid: "boucle-action-statut-hypothese",
+    api: "changerStatutHypothese",
+    icone: "statut",
+    champs: CHAMPS_CHANGER_STATUT_HYPOTHESE,
+  }),
   creer_scenario: Object.freeze({
     id: "creer_scenario",
     libelle: "Créer un scénario",
@@ -843,10 +944,19 @@ export function actionsPourObjet(objet) {
 
   if (type === "INVESTIGATION") {
     const actions = [];
-    if (!STATUTS_INVESTIGATION_FERMES.has(statut)) actions.push(ACTIONS_BOUCLE.proposer_decision);
+    if (!STATUTS_INVESTIGATION_FERMES.has(statut)) {
+      actions.push(ACTIONS_BOUCLE.creer_hypothese);
+      actions.push(ACTIONS_BOUCLE.proposer_decision);
+    }
     actions.push(ACTIONS_BOUCLE.creer_scenario);
     actions.push(ACTIONS_BOUCLE.capitaliser_learning);
     return actions;
+  }
+
+  if (type === "HYPOTHESIS") {
+    return statutsSuivants(type, statut).length > 0
+      ? [ACTIONS_BOUCLE.changer_statut_hypothese]
+      : [];
   }
 
   if (type === "DECISION") {
@@ -887,6 +997,13 @@ export function configurationAction(actionId, objet) {
     const suivants = statutsSuivants(typeSource, statutObjet(objet));
     champs = champs.map((champ) => (
       champ.nom === "statut" ? { ...champ, options: suivants } : champ
+    ));
+    if (suivants.length === 0) api = null;
+  }
+  if (actionId === "changer_statut_hypothese") {
+    const suivants = statutsSuivants(typeSource, statutObjet(objet));
+    champs = champs.map((champ) => (
+      champ.nom === "vers" ? { ...champ, options: suivants } : champ
     ));
     if (suivants.length === 0) api = null;
   }
@@ -1010,6 +1127,53 @@ function corpsQualification(valeurs, libelle, type) {
   return { corps };
 }
 
+function corpsHypothese(valeurs) {
+  const enonce = valeurNette(valeurs, "enonce");
+  if (!enonce) return echec("L'énoncé de l'hypothèse est obligatoire.");
+  const corps = { enonce };
+
+  const conditions = listeLignesOuVirgules(valeurs, "conditions_test");
+  if (conditions.length > 0) corps.conditions_test = conditions;
+  for (const [nom, cle] of [
+    ["claim_ids_soutenants", "claim_ids_soutenants"],
+    ["claim_ids_opposants", "claim_ids_opposants"],
+  ]) {
+    const claims = listeVirgules(valeurs, nom);
+    if (claims.length > 0) corps[cle] = claims;
+  }
+  // ``expert_id`` reste dans le domaine pour C5e, mais n'est pas exposé par le
+  // formulaire tant qu'aucune route EXPERT n'existe.
+  const preuves = listeVirgules(valeurs, "preuves");
+  if (preuves.length > 0) corps.preuves = preuves;
+
+  const confiance = nombreOptionnel(valeurs, "confiance", "La confiance", { maximum: 1 });
+  if (confiance.erreur) return echec(confiance.erreur);
+  if (confiance.valeur !== null) corps.confiance = confiance.valeur;
+  return { corps };
+}
+
+function corpsChangementStatutHypothese(valeurs, objet) {
+  const vers = valeurNette(valeurs, "vers").toUpperCase();
+  if (!vers) return echec("Le statut cible est obligatoire.");
+  const autorises = statutsSuivants("HYPOTHESIS", statutObjet(objet));
+  if (!autorises.includes(vers)) {
+    return echec(
+      `transition de statut refusée : ${statutObjet(objet) || "?"} → ${vers}.`);
+  }
+  const corps = { vers };
+  const motif = valeurNette(valeurs, "motif");
+  if (motif) corps.motif = motif;
+  const preuves = listeVirgules(valeurs, "preuves");
+  if (preuves.length > 0) corps.preuves = preuves;
+  if (vers === "CONFIRMED" && preuves.length === 0) {
+    const existantes = valeurDe(objet, "preuves");
+    if (!Array.isArray(existantes) || existantes.length === 0) {
+      return echec("Une hypothèse CONFIRMED exige au moins une preuve.");
+    }
+  }
+  return { corps };
+}
+
 function corpsChangementStatut(type, valeurs, objet) {
   const statut = valeurNette(valeurs, "statut").toUpperCase();
   if (!statut) return echec("Le statut cible est obligatoire.");
@@ -1081,6 +1245,12 @@ export function construireCorps(actionId, valeurs = {}, objet = {}) {
 
     case "changer_statut_risque":
       return corpsChangementStatut("RISK", valeurs, objet);
+
+    case "creer_hypothese":
+      return corpsHypothese(valeurs);
+
+    case "changer_statut_hypothese":
+      return corpsChangementStatutHypothese(valeurs, objet);
 
     case "creer_scenario": {
       const titre = valeurNette(valeurs, "titre");

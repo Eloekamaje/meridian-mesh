@@ -348,6 +348,28 @@ class ChangementStatutObjet(_CorpsTransition):
     preuves: list[Any] | None = Field(None, max_length=100)
 
 
+class CreationHypothese(_CorpsTransition):
+    """Corps C5c strict : statut, mode, id et liens sont serveur uniquement.
+
+    ``expert_id`` reste porté par le domaine pour C5e, mais n'est pas exposé tant
+    qu'aucune route EXPERT n'existe : le client qui l'envoie est refusé par
+    ``extra="forbid"`` (422).
+    """
+
+    enonce: TexteNonVide = Field(..., max_length=5000)
+    conditions_test: list[TexteNonVide] | None = Field(None, max_length=100)
+    claim_ids_soutenants: list[TexteNonVide] | None = Field(None, max_length=100)
+    claim_ids_opposants: list[TexteNonVide] | None = Field(None, max_length=100)
+    preuves: list[Any] | None = Field(None, max_length=100)
+    confiance: float | None = Field(None, ge=0, le=1)
+
+
+class ChangementStatutHypothese(_CorpsTransition):
+    vers: TexteNonVide = Field(..., max_length=64)
+    motif: TexteNettoye | None = Field(None, max_length=5000)
+    preuves: list[Any] | None = Field(None, max_length=100)
+
+
 class ComparaisonScenarios(_CorpsTransition):
     scenario_ids: list[TexteIdentifiant] = Field(..., min_length=2, max_length=50)
     reference_id: TexteIdentifiant | None = None
@@ -992,6 +1014,87 @@ async def changer_statut_risque(
         request=request,
     )
     return _reponse_transition(tenant, resultat, "risque")
+
+
+@router.post("/investigations/{iid}/hypotheses", status_code=201,
+             response_model=ReponseTransition, responses=_REPONSES_TRANSITION)
+async def creer_hypothese(
+    iid: str,
+    payload: CreationHypothese,
+    request: Request,
+    idempotence: None = Depends(_refuser_idempotence),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Formule une Hypothèse initiale sur une Investigation du tenant.
+
+    ``statut``, ``mode``, ``id`` et ``investigation_id`` sont absents du corps : le
+    serveur force ``OPEN``/``PROPOSED`` et un client qui les envoie est refusé en 422.
+    ``expert_id`` est également refusé tant que C5e n'expose pas les Experts.
+    L'Investigation doit être ouverte (sinon 409), est verrouillée et son lien inverse
+    ``hypothesis_ids`` est écrit dans la même transaction.
+    """
+    _verifier_espace(x_espace)
+    tenant = _tenant(request, x_tenant)
+    resultat = await _executer_transition(
+        tenant,
+        lambda conn: commandes_boucle.creer_hypothese(
+            boucle, conn, tenant, iid, **payload.model_dump(exclude_none=True)),
+        request=request,
+    )
+    return _reponse_transition(tenant, resultat, "hypothese")
+
+
+@router.get("/hypotheses")
+async def lister_hypotheses(
+    request: Request,
+    investigation_id: str | None = Query(None, max_length=128),
+    statut: str | None = Query(None, max_length=64),
+    limite: int = Query(100, ge=1, le=1000),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Liste les Hypothèses du tenant, filtrées par Investigation et statut."""
+    _verifier_espace(x_espace)
+    tenant = _tenant(request, x_tenant)
+    hypotheses = await _executer_transition(
+        tenant,
+        lambda conn: commandes_boucle.lister_hypotheses(
+            boucle, conn, tenant, investigation_id=investigation_id,
+            statut=statut, limite=limite),
+        request=request,
+    )
+    return {"tenant": tenant, "hypotheses": _assainir(hypotheses)}
+
+
+@router.post("/hypotheses/{hid}/statut", response_model=ReponseTransition,
+             responses=_REPONSES_TRANSITION)
+async def changer_statut_hypothese(
+    hid: str,
+    payload: ChangementStatutHypothese,
+    request: Request,
+    idempotence: None = Depends(_refuser_idempotence),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Fait évoluer une Hypothèse selon le cycle canonique C5c.
+
+    Une transition non autorisée est un 409, un statut inconnu ou un ``CONFIRMED`` sans
+    preuve un 422, une cible absente ou hors tenant un 404, un identifiant d'un autre
+    type un 422. ``maj_le`` est posé par le serveur et la version précédente reste dans
+    ``historique``.
+    """
+    _verifier_espace(x_espace)
+    tenant = _tenant(request, x_tenant)
+    champs = payload.model_dump(exclude_none=True)
+    vers = champs.pop("vers")
+    resultat = await _executer_transition(
+        tenant,
+        lambda conn: commandes_boucle.changer_statut_hypothese(
+            boucle, conn, tenant, hid, vers, **champs),
+        request=request,
+    )
+    return _reponse_transition(tenant, resultat, "hypothese")
 
 
 @router.post("/situations/{sid}/investigations", status_code=201,

@@ -28,8 +28,10 @@ from typing import Any
 
 from meridian.ports.boucle import BoucleStore, ObjetExistant, VersionRefusee
 from meridian.domain.objets_exploitation import (
+    STATUTS_HYPOTHESIS,
     STATUTS_OPPORTUNITE,
     STATUTS_RISQUE,
+    TRANSITIONS_HYPOTHESIS,
     ObjetsExploitationInvalide,
     TransitionObjetRefusee,
     _PREFIXES,
@@ -57,6 +59,9 @@ __all__ = [
     "lister_risques",
     "changer_statut_opportunite",
     "changer_statut_risque",
+    "creer_hypothese",
+    "lister_hypotheses",
+    "changer_statut_hypothese",
     "creer_scenario",
     "lister_scenarios",
     "comparer_scenarios",
@@ -385,6 +390,12 @@ def creer_expression(
 
 STATUT_OPPORTUNITE_INITIAL = "DETECTED"
 STATUT_RISQUE_INITIAL = "DETECTED"
+STATUT_HYPOTHESE_INITIAL = "OPEN"
+MODE_HYPOTHESE_INITIAL = "PROPOSED"
+STATUTS_INVESTIGATION_FERMES = frozenset({
+    "CLOSED", "CLOSE", "CLOTUREE", "FERMEE", "ARCHIVED", "ARCHIVEE",
+})
+_CHAMPS_SERVEUR_HYPOTHESE = ("statut", "id")
 
 
 def _refuser_statut_client(champs: dict[str, Any], libelle: str) -> None:
@@ -604,6 +615,124 @@ def changer_statut_risque(
         statuts=STATUTS_RISQUE, muter=depot.muer_risque,
         motif=motif, preuves=preuves,
     )
+
+
+def _source_investigation(
+    depot: BoucleStore, conn: Any, tenant: str, investigation_id: Any, *,
+    for_update: bool = True,
+) -> Any:
+    """Charge une Investigation du tenant ; une autre source est un refus de contrat (422)."""
+    identifiant = _texte(investigation_id)
+    if not identifiant:
+        raise SourceIntrouvable("investigation", identifiant)
+    source = depot.lire_boucle(
+        conn, tenant, identifiant, as_dict=True, for_update=for_update)
+    if source is None:
+        raise SourceIntrouvable("investigation", identifiant)
+    type_trouve = _texte(_valeur_source(source, "type")).upper()
+    if type_trouve != "INVESTIGATION":
+        raise ObjetsExploitationInvalide(
+            f"investigation {identifiant!r} doit être de type INVESTIGATION "
+            f"(reçu {type_trouve or 'inconnu'})"
+        )
+    tenant_source = _texte(_valeur_source(source, "tenant_id"))
+    if tenant_source != tenant:
+        raise SourceIntrouvable("investigation", identifiant)
+    return source
+
+
+def creer_hypothese(
+    depot: BoucleStore, conn: Any, tenant_id: str, investigation_id: str,
+    **champs: Any,
+) -> ResultatTransition:
+    """Formule une Hypothesis initiale (``OPEN``/``PROPOSED``) sur une Investigation.
+
+    L'Investigation est verrouillée : la création et le lien inverse
+    ``Investigation.hypothesis_ids`` sont écrits dans la même transaction. Le statut et
+    le mode initiaux sont serveur : un ``statut`` ou un ``id`` client est refusé (422),
+    et un ``mode`` de commande est ignoré au profit de ``PROPOSED``.
+    """
+    for champ in _CHAMPS_SERVEUR_HYPOTHESE:
+        if champ in champs:
+            raise ObjetsExploitationInvalide(
+                f"{champ} interdit à la création d'une hypothèse : le serveur force "
+                f"statut={STATUT_HYPOTHESE_INITIAL}, mode={MODE_HYPOTHESE_INITIAL}")
+    # Le mode initial est serveur : une valeur de commande (chemin interne) est ignorée,
+    # le contrat HTTP la refuse avant d'arriver ici (extra="forbid").
+    champs.pop("mode", None)
+    with depot.transaction(conn):
+        investigation = _source_investigation(
+            depot, conn, tenant_id, investigation_id, for_update=True)
+        statut_investigation = _texte(
+            _valeur_source(investigation, "statut")).upper()
+        if statut_investigation in STATUTS_INVESTIGATION_FERMES:
+            raise TransitionRefusee(
+                f"investigation {_texte(investigation_id)!r} fermée : statut "
+                f"{statut_investigation or 'inconnu'} ; une hypothèse ne peut être "
+                "formulée que sur une investigation ouverte")
+        identifiant = f"{_PREFIXES['HYPOTHESIS']}-{uuid.uuid4().hex[:12]}"
+        if depot.lire_boucle(conn, tenant_id, identifiant, as_dict=True) is not None:
+            raise DoublonExploitation(
+                "hypothèse déjà existante : l'identifiant "
+                f"{identifiant!r} est déjà utilisé")
+        objet = depot.nouvelle_hypothese(
+            investigation=investigation, tenant_id=tenant_id, id=identifiant,
+            statut=STATUT_HYPOTHESE_INITIAL, mode=MODE_HYPOTHESE_INITIAL, **champs)
+        depot.enregistrer_objets(conn, tenant_id, objets=[objet], as_dict=False)
+        return _relire(depot, conn, tenant_id, identifiant)
+
+
+def lister_hypotheses(
+    depot: BoucleStore, conn: Any, tenant_id: str, *,
+    investigation_id: Any = None, statut: Any = None, limite: int = 100,
+) -> list[dict[str, Any]]:
+    """Liste les Hypothèses du tenant, filtrées par Investigation et statut."""
+    statut_normalise = None
+    if _texte(statut):
+        statut_normalise = _texte(statut).upper()
+        if statut_normalise not in STATUTS_HYPOTHESIS:
+            raise ObjetsExploitationInvalide(
+                f"statut inconnu : {statut!r} "
+                f"(attendus : {', '.join(STATUTS_HYPOTHESIS)})")
+    investigation = None
+    if _texte(investigation_id):
+        investigation = _source_investigation(
+            depot, conn, tenant_id, investigation_id, for_update=False)
+    return depot.lister_objets_exploitation(
+        conn, tenant_id, type_="HYPOTHESIS",
+        investigation_id=(
+            _texte(_valeur_source(investigation, "id")) if investigation else None),
+        statut=statut_normalise, limite=limite, as_dict=True,
+    )
+
+
+def changer_statut_hypothese(
+    depot: BoucleStore, conn: Any, tenant_id: str, hypothese_id: str,
+    statut: str, *, motif: Any = None, preuves: Any = None,
+) -> ResultatTransition:
+    """Fait évoluer une Hypothesis selon ``TRANSITIONS_HYPOTHESIS``.
+
+    Une transition non autorisée est un 409 ; un statut inconnu et un ``CONFIRMED``
+    sans preuve restent des refus de domaine (422). Le motif courant est conservé dans
+    ``motif`` et la version précédente dans l'historique.
+    """
+    cible = _texte(statut).upper()
+    if cible not in STATUTS_HYPOTHESIS:
+        raise ObjetsExploitationInvalide(
+            f"statut inconnu : {statut!r} "
+            f"(attendus : {', '.join(STATUTS_HYPOTHESIS)})")
+    with depot.transaction(conn):
+        source = _source_statut(
+            depot, conn, tenant_id, hypothese_id, "HYPOTHESIS", "hypothèse")
+        actuel = _texte(_valeur_source(source, "statut")).upper() or "OPEN"
+        if cible not in TRANSITIONS_HYPOTHESIS.get(actuel, ()):
+            raise TransitionRefusee(
+                f"transition d'hypothèse refusée : {actuel} → {cible}")
+        objet = depot.muer_hypothese(
+            source, cible, motif=motif, preuves=preuves)
+        depot.enregistrer_objets(
+            conn, tenant_id, objets=[objet], as_dict=False, historique=True)
+        return _relire(depot, conn, tenant_id, _texte(hypothese_id))
 
 
 _METRIQUES_SCENARIO = (

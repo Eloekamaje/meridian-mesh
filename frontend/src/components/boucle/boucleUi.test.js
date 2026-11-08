@@ -11,6 +11,7 @@ import {
   statutObjet,
   statutsSuivants,
   titreObjet,
+  TRANSITIONS_HYPOTHESE,
   TRANSITIONS_OPPORTUNITE,
   TRANSITIONS_RISQUE,
 } from "./boucleUi";
@@ -99,6 +100,23 @@ const risque = {
   },
 };
 
+const hypothese = {
+  id: "hypothesis-1",
+  type: "HYPOTHESIS",
+  famille: "investigation",
+  titre: "Le contrôle synchrone bloque les paiements",
+  donnees: {
+    statut: "OPEN",
+    investigation_id: "inv-1",
+    enonce: "Le contrôle synchrone bloque les paiements",
+    conditions_test: ["mesurer le p95"],
+    claim_ids_soutenants: ["claim-1"],
+    claim_ids_opposants: ["claim-2"],
+    preuves: ["preuve-1"],
+    confiance: 0.6,
+  },
+};
+
 describe("statutObjet", () => {
   test("normalise le statut porté par donnees et retire les accents", () => {
     expect(statutObjet({ donnees: { statut: "Décidée" } })).toBe("DECIDEE");
@@ -149,9 +167,12 @@ describe("actionsPourObjet", () => {
     }).map((action) => action.id)).toEqual(["ouvrir_investigation"]);
   });
 
-  test("une investigation ouverte propose une décision, un scénario et un learning", () => {
+  test("une investigation ouverte propose hypothèse, décision, scénario et learning", () => {
     expect(actionsPourObjet(investigation).map((action) => action.id))
-      .toEqual(["proposer_decision", "creer_scenario", "capitaliser_learning"]);
+      .toEqual([
+        "creer_hypothese", "proposer_decision", "creer_scenario",
+        "capitaliser_learning",
+      ]);
   });
 
   test("une investigation fermée permet encore de décrire un scénario", () => {
@@ -200,6 +221,17 @@ describe("actionsPourObjet", () => {
     }
   });
 
+  test("une hypothèse propose ses transitions de statut jusqu'à un état terminal", () => {
+    expect(actionsPourObjet(hypothese).map((action) => action.id))
+      .toEqual(["changer_statut_hypothese"]);
+    for (const statut of ["CONFIRMED", "REJECTED"]) {
+      expect(actionsPourObjet({
+        ...hypothese,
+        donnees: { ...hypothese.donnees, statut },
+      })).toEqual([]);
+    }
+  });
+
   test("une opportunité propose ses transitions de statut, un risk aussi", () => {
     expect(actionsPourObjet(opportunite).map((action) => action.id))
       .toEqual(["changer_statut_opportunite"]);
@@ -237,6 +269,16 @@ describe("tables de transitions", () => {
     expect(TRANSITIONS_RISQUE).toEqual(attendu);
     expect(TRANSITIONS_RISQUE).not.toBe(TRANSITIONS_OPPORTUNITE);
   });
+
+  test("la table des hypothèses reste explicite et terminale après confirmation", () => {
+    expect(TRANSITIONS_HYPOTHESE).toEqual({
+      OPEN: ["STRENGTHENED", "WEAKENED", "REJECTED", "CONFIRMED"],
+      STRENGTHENED: ["WEAKENED", "REJECTED", "CONFIRMED"],
+      WEAKENED: ["STRENGTHENED", "REJECTED", "CONFIRMED"],
+      CONFIRMED: [],
+      REJECTED: [],
+    });
+  });
 });
 
 describe("statutsSuivants", () => {
@@ -245,6 +287,9 @@ describe("statutsSuivants", () => {
       .toEqual(["MATURING", "QUALIFIED", "REJECTED", "DORMANT"]);
     expect(statutsSuivants("RISK", "LEARNED")).toEqual([]);
     expect(statutsSuivants("OPPORTUNITY", "")).toEqual([]);
+    expect(statutsSuivants("HYPOTHESIS", "OPEN"))
+      .toEqual(["STRENGTHENED", "WEAKENED", "REJECTED", "CONFIRMED"]);
+    expect(statutsSuivants("HYPOTHESIS", "CONFIRMED")).toEqual([]);
   });
 });
 
@@ -340,6 +385,31 @@ describe("configurationAction", () => {
       .toContain("FOURNISSEUR");
     expect(action.champs.find((champ) => champ.nom === "severite").options)
       .toEqual(["FAIBLE", "MOYENNE", "HAUTE", "CRITIQUE"]);
+  });
+
+  test("la formulation d'une hypothèse expose les champs C5c depuis une investigation", () => {
+    const action = configurationAction("creer_hypothese", investigation);
+
+    expect(action.api).toBe("creerHypothese");
+    expect(action.typeSource).toBe("INVESTIGATION");
+    expect(action.champs.map((champ) => champ.nom)).toEqual([
+      "enonce", "conditions_test", "claim_ids_soutenants",
+      "claim_ids_opposants", "preuves", "confiance",
+    ]);
+    expect(action.champs.find((champ) => champ.nom === "enonce").requis).toBe(true);
+  });
+
+  test("le changement de statut d'une hypothèse ne propose que ses transitions", () => {
+    const action = configurationAction("changer_statut_hypothese", hypothese);
+
+    expect(action.api).toBe("changerStatutHypothese");
+    expect(action.typeSource).toBe("HYPOTHESIS");
+    expect(action.champs.find((champ) => champ.nom === "vers").options)
+      .toEqual(["STRENGTHENED", "WEAKENED", "REJECTED", "CONFIRMED"]);
+    expect(configurationAction("changer_statut_hypothese", {
+      ...hypothese,
+      donnees: { ...hypothese.donnees, statut: "CONFIRMED" },
+    }).api).toBeNull();
   });
 
   test("le changement de statut ne propose que les transitions autorisées", () => {
@@ -698,6 +768,79 @@ describe("construireCorps", () => {
     expect(construireCorps("changer_statut_risque", {
       statut: "MATURING",
     }, risque).corps).toEqual({ statut: "MATURING" });
+  });
+
+  test("formule une hypothèse avec les champs C5c, sans statut ni liens serveur", () => {
+    expect(construireCorps("creer_hypothese", {}).erreur)
+      .toContain("énoncé");
+
+    const resultat = construireCorps("creer_hypothese", {
+      enonce: "  Le contrôle synchrone bloque les paiements  ",
+      conditions_test: "mesurer le p95\ncomparer trois flux",
+      claim_ids_soutenants: "claim-1, claim-2",
+      claim_ids_opposants: " claim-3 ",
+      expert_id: " expert-1 ",
+      preuves: "preuve-1, preuve-2",
+      confiance: "0,6",
+      statut: "CONFIRMED",
+      id: "client-id",
+      investigation_id: "inv-autre",
+      mode: "OBSERVED",
+    });
+
+    expect(resultat.corps).toEqual({
+      enonce: "Le contrôle synchrone bloque les paiements",
+      conditions_test: ["mesurer le p95", "comparer trois flux"],
+      claim_ids_soutenants: ["claim-1", "claim-2"],
+      claim_ids_opposants: ["claim-3"],
+      preuves: ["preuve-1", "preuve-2"],
+      confiance: 0.6,
+    });
+    expect(resultat.corps).not.toHaveProperty("statut");
+    expect(resultat.corps).not.toHaveProperty("id");
+    expect(resultat.corps).not.toHaveProperty("investigation_id");
+    expect(resultat.corps).not.toHaveProperty("mode");
+    expect(resultat.corps).not.toHaveProperty("expert_id");
+
+    expect(construireCorps("creer_hypothese", {
+      enonce: "Hypothèse", confiance: "1.2",
+    }).erreur).toContain("confiance");
+    expect(construireCorps("creer_hypothese", {
+      enonce: "Hypothèse", confiance: "-0.1",
+    }).erreur).toContain("confiance");
+  });
+
+  test("change le statut d'une hypothèse et bloque CONFIRMED sans preuve", () => {
+    expect(construireCorps("changer_statut_hypothese", {}, hypothese).erreur)
+      .toContain("statut");
+    expect(construireCorps("changer_statut_hypothese", {
+      vers: "OPEN",
+    }, hypothese).erreur).toContain("transition");
+    expect(construireCorps("changer_statut_hypothese", {
+      vers: "CONFIRMED",
+    }, { ...hypothese, donnees: { ...hypothese.donnees, preuves: [] } }).erreur)
+      .toContain("preuve");
+
+    expect(construireCorps("changer_statut_hypothese", {
+      vers: "CONFIRMED",
+    }, hypothese).corps).toEqual({ vers: "CONFIRMED" });
+
+    expect(construireCorps("changer_statut_hypothese", {
+      vers: "CONFIRMED",
+      preuves: "preuve-2",
+      motif: "  Trois mesures concordantes  ",
+    }, { ...hypothese, donnees: { ...hypothese.donnees, preuves: [] } }).corps)
+      .toEqual({
+        vers: "CONFIRMED",
+        preuves: ["preuve-2"],
+        motif: "Trois mesures concordantes",
+      });
+
+    expect(construireCorps("changer_statut_hypothese", {
+      vers: "WEAKENED", motif: "Contradiction observée",
+    }, hypothese).corps).toEqual({
+      vers: "WEAKENED", motif: "Contradiction observée",
+    });
   });
 
   test("une action inconnue est refusée sans lever", () => {

@@ -102,6 +102,21 @@ export const boucleApi = {
       corps,
     );
   },
+  async creerHypothese(investigationId, corps) {
+    return posterTransition(
+      `/boucle/investigations/${identifiantRequis(investigationId, "identifiant d'investigation")}/hypotheses`,
+      corps,
+    );
+  },
+  async listerHypotheses(params) {
+    return api.get("/boucle/hypotheses", { params, timeout: 20000 });
+  },
+  async changerStatutHypothese(hypotheseId, corps) {
+    return posterTransition(
+      `/boucle/hypotheses/${identifiantRequis(hypotheseId, "identifiant d'hypothèse")}/statut`,
+      corps,
+    );
+  },
   async listerScenarios(params) {
     return api.get("/boucle/scenarios", { params, timeout: 20000 });
   },

@@ -101,6 +101,54 @@ describe("boucleApi", () => {
     get.mockRestore();
   });
 
+  test("creerHypothese poste l'hypothèse rattachée sans en-tête d'idempotence", async () => {
+    const corps = {
+      enonce: "Le contrôle synchrone bloque les paiements",
+      conditions_test: ["mesurer le p95"],
+      claim_ids_soutenants: ["claim-1"],
+      claim_ids_opposants: ["claim-2"],
+      expert_id: "expert-1",
+      preuves: ["preuve-1"],
+      confiance: 0.6,
+    };
+
+    await boucleApi.creerHypothese("inv/1", corps);
+
+    expect(poster).toHaveBeenCalledWith(
+      "/boucle/investigations/inv%2F1/hypotheses",
+      corps,
+      { timeout: 20000 },
+    );
+    expect(poster.mock.calls[0][2]).not.toHaveProperty("headers");
+  });
+
+  test("listerHypotheses interroge la liste avec investigation, statut et limite", async () => {
+    const get = jest.spyOn(api, "get").mockResolvedValue({ data: { hypotheses: [] } });
+
+    await boucleApi.listerHypotheses({
+      investigation_id: "inv/1", statut: "OPEN", limite: 25,
+    });
+
+    expect(get).toHaveBeenCalledWith("/boucle/hypotheses", {
+      params: { investigation_id: "inv/1", statut: "OPEN", limite: 25 },
+      timeout: 20000,
+    });
+    get.mockRestore();
+  });
+
+  test("changerStatutHypothese poste la transition sans en-tête d'idempotence", async () => {
+    const corps = { vers: "CONFIRMED", preuves: ["preuve-1"] };
+
+    await boucleApi.changerStatutHypothese("hypothesis/1", corps);
+
+    expect(poster).toHaveBeenCalledWith(
+      "/boucle/hypotheses/hypothesis%2F1/statut",
+      corps,
+      { timeout: 20000 },
+    );
+    expect(poster.mock.calls[0][2]).not.toHaveProperty("headers");
+  });
+
   test("listerOpportunites et listerRisques filtrent par expression", async () => {
     const get = jest.spyOn(api, "get").mockResolvedValue({ data: {} });
 
@@ -138,8 +186,10 @@ describe("boucleApi", () => {
     ["creerExpression", "sit/1", "/boucle/situations/sit%2F1/expressions"],
     ["creerOpportunite", "expr/1", "/boucle/expressions/expr%2F1/opportunities"],
     ["creerRisque", "expr/1", "/boucle/expressions/expr%2F1/risks"],
+    ["creerHypothese", "inv/1", "/boucle/investigations/inv%2F1/hypotheses"],
     ["changerStatutOpportunite", "opportunity/1", "/boucle/opportunities/opportunity%2F1/statut"],
     ["changerStatutRisque", "risk/1", "/boucle/risks/risk%2F1/statut"],
+    ["changerStatutHypothese", "hypothesis/1", "/boucle/hypotheses/hypothesis%2F1/statut"],
     ["proposerDecision", "inv-1", "/boucle/investigations/inv-1/decisions"],
     ["trancherDecision", "dec-1", "/boucle/decisions/dec-1/trancher"],
     ["lancerInitiative", "dec-1", "/boucle/decisions/dec-1/initiatives"],

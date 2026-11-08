@@ -46,6 +46,7 @@ const STADES = [
   { type: "OPPORTUNITY", famille: "emergence", label: "Opportunités", court: "Opportunité", couleur: "#34D399", Icone: ArrowUpRight },
   { type: "RISK", famille: "emergence", label: "Risques", court: "Risque", couleur: "#F87171", Icone: WarningCircle },
   { type: "INVESTIGATION", famille: "investigation", label: "Investigations", court: "Investigation", couleur: "#38BDF8", Icone: MagnifyingGlass },
+  { type: "HYPOTHESIS", famille: "investigation", label: "Hypothèses", court: "Hypothèse", couleur: "#C084FC", Icone: Lightbulb },
   { type: "DECISION", famille: "decision", label: "Décisions", court: "Décision", couleur: "#F2B84B", Icone: Scales },
   { type: "INITIATIVE", famille: "decision", label: "Initiatives", court: "Initiative", couleur: "#FB923C", Icone: RocketLaunch },
   { type: "OUTCOME", famille: "resultat_apprentissage", label: "Outcomes", court: "Outcome", couleur: "#34D399", Icone: ChartLineUp },
@@ -363,6 +364,11 @@ function PanneauDetail({
     ["Canal", texteAffichable(valeurDe(objet, "canal"))],
     ["Auteur", texteAffichable(valeurDe(objet, "auteur"))],
     ["Inconnues", texteAffichable(valeurDe(objet, "inconnues"))],
+    ["Énoncé", texteAffichable(valeurDe(objet, "enonce"))],
+    ["Conditions de test", texteAffichable(valeurDe(objet, "conditions_test"))],
+    ["Claims soutenants", texteAffichable(valeurDe(objet, "claim_ids_soutenants"))],
+    ["Claims opposants", texteAffichable(valeurDe(objet, "claim_ids_opposants"))],
+    ["Expert", texteAffichable(valeurDe(objet, "expert_id"))],
     ["Type d'opportunité", texteAffichable(valeurDe(objet, "type_opportunite"))],
     ["Type de risque", texteAffichable(valeurDe(objet, "type_risque"))],
     ["Valeur potentielle", texteAffichable(valeurDe(objet, "valeur_potentielle"))],
@@ -1010,6 +1016,7 @@ export default function Boucle() {
     const creationExpression = actionActive === "creer_expression";
     const creationOpportunite = actionActive === "qualifier_opportunite";
     const creationRisque = actionActive === "qualifier_risque";
+    const creationHypothese = actionActive === "creer_hypothese";
     if (!creationSituation && !objetDetail) return;
     const identifiant = creationSituation ? null : idObjet(objetDetail);
     if (!creationSituation && !identifiant) {
@@ -1057,9 +1064,11 @@ export default function Boucle() {
             ? await boucleApi.creerOpportunite(identifiant, corps)
             : creationRisque
               ? await boucleApi.creerRisque(identifiant, corps)
-              : creationExpression
-                ? await boucleApi.creerExpression(identifiant, corps)
-                : await boucleApi[actionCourante.api](identifiant, corps);
+              : creationHypothese
+                ? await boucleApi.creerHypothese(identifiant, corps)
+                : creationExpression
+                  ? await boucleApi.creerExpression(identifiant, corps)
+                  : await boucleApi[actionCourante.api](identifiant, corps);
     } catch (erreurApi) {
       cause = erreurApi;
     } finally {
@@ -1209,7 +1218,7 @@ export default function Boucle() {
       return;
     }
 
-    if (creationOpportunite || creationRisque) {
+    if (creationOpportunite || creationRisque || creationHypothese) {
       const nouvelObjet = reponse?.data?.objet ?? null;
       const nouvelleChaine = Array.isArray(reponse?.data?.chaine) ? reponse.data.chaine : null;
       const nouvelHistorique = Array.isArray(reponse?.data?.historique) ? reponse.data.historique : null;
@@ -1218,13 +1227,16 @@ export default function Boucle() {
         : null;
       const objetCree = nouvelObjet || dernierDeChaine;
       const identifiantCree = idObjet(objetCree);
-      const libelleCreation = creationOpportunite ? "L'opportunité" : "Le risque";
+      const libelleCreation = creationOpportunite
+        ? "L'opportunité"
+        : creationRisque ? "Le risque" : "L'hypothèse";
+      const accordCreation = creationRisque ? "" : "e";
 
       if (!identifiantCree) {
         setTransition((avant) => ({
           ...avant,
           enCours: false,
-          erreur: `${libelleCreation} a été créé mais la réponse ne contient aucun identifiant exploitable. Vérifiez la liste avant de réessayer.`,
+          erreur: `${libelleCreation} a été créé${accordCreation} mais la réponse ne contient aucun identifiant exploitable. Vérifiez la liste avant de réessayer.`,
         }));
         actualiser();
         return;
@@ -1255,7 +1267,8 @@ export default function Boucle() {
           historique: nouvelHistorique || [],
         },
       });
-      // L'expression est relue en arrière-plan pour exposer opportunity_ids/risk_ids.
+      // Le parent est relu en arrière-plan pour exposer son lien inverse
+      // (opportunity_ids/risk_ids pour une Expression, hypothesis_ids pour une Investigation).
       rafraichirObjetListe(identifiant);
       actualiser();
       return;
