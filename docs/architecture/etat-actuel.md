@@ -1,6 +1,6 @@
 # Méridian — état actuel et reste à faire
 
-> **Photographie :** 8 novembre 2026, commit `ef2cf7a` + lots C5c/C5d/C5e.
+> **Photographie :** 8 novembre 2026, commit `3873448` + lots C5c/C5d/C5e.
 > Ce document décrit ce qui existe réellement dans le dépôt ; il ne décrit pas la cible.
 > Les documents de vision et les PRD restent la cible ; ce fichier est la carte de l’état
 > courant et la matrice de traçabilité vers le code et les tests. Les écarts produit détaillés

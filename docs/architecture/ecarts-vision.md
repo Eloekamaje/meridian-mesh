@@ -1,6 +1,6 @@
 # Méridian — écarts avec la vision
 
-> **Photographie :** 8 novembre 2026, HEAD `ef2cf7a` + lot C5d.
+> **Photographie :** 8 novembre 2026, HEAD `3873448` + lots C5c/C5d/C5e.
 > **Cible :** [Product Vision](../MÉRIDIAN%20%E2%80%94%20Product%20Vision%20%26%20Operating%20Model.md),
 > [Product Blueprint](../MERIDIAN_Product_Blueprint_v1.md),
 > [Domain Model](../MERIDIAN_Domain_Model_Information_Architecture_v1.md).
@@ -371,7 +371,8 @@ Il reste sans API/UI canonique :
 - L'Investigation est verrouillée (`FOR UPDATE`), doit appartenir au tenant et être de
   type `INVESTIGATION` (une autre source est refusée en 422) ; absente ou hors tenant 404.
   Une Investigation fermée (`CLOSED`, `CLOSE`, `CLOTUREE`, `FERMEE`, `ARCHIVED`,
-  `ARCHIVEE`, insensible à la casse) est refusée en 409 avant toute écriture.
+  `ARCHIVEE`, `COMPLETED`, `COMPLETED_WITH_GAPS`, `BUDGET_EXHAUSTED`, `FAILED`,
+  `CANCELLED`, insensible à la casse) est refusée en 409 avant toute écriture.
   L'Hypothèse et le lien inverse `Investigation.hypothesis_ids` sont écrits dans la même
   transaction : un échec du lien ne laisse aucun objet ni lien partiel. Une Investigation
   peut porter plusieurs Hypothèses.

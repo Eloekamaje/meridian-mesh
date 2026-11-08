@@ -48,8 +48,10 @@ Corps strict (`extra="forbid"`) : `expert_id` et `contenu` obligatoires ; option
 en 422. Depuis une Hypothesis, `hypothesis_id` est également refusé : la route le décide.
 
 L'Investigation est verrouillée (`FOR UPDATE`) et doit être ouverte. Les statuts fermés
-reconnus sont `CLOSED`, `CLOSE`, `CLOTUREE`, `FERMEE`, `ARCHIVED`, `ARCHIVEE`,
-insensibles à la casse. L'Expert est verrouillé et doit exister dans le même tenant.
+reconnus sont `CLOSED`, `CLOSE`, `CLOTUREE`, `FERMEE`, `ARCHIVED`, `ARCHIVEE`, ainsi que
+les états terminaux du runtime `COMPLETED`, `COMPLETED_WITH_GAPS`, `BUDGET_EXHAUSTED`,
+`FAILED` et `CANCELLED`, insensibles à la casse. L'Expert est verrouillé et doit exister
+dans le même tenant.
 Absent ou hors tenant : 404. Mauvais type : 422.
 
 ### Invariant fort hypothèse / investigation
@@ -109,6 +111,9 @@ continue de les refuser.
 | `POST` | `/api/boucle/hypotheses/{hid}/contributions` | 201 `ReponseTransition` |
 | `GET` | `/api/boucle/contributions?expert_id=&investigation_id=&hypothesis_id=&statut=&limite=` | liste tenant triée |
 | `POST` | `/api/boucle/contributions/{cid}/statut` | 200 `ReponseTransition` |
+
+Tous les POST C5e passent par `_corps_strict` : un JSON malformé ou un corps non-objet
+répond **400** avant toute commande ; un champ inconnu ou invalide répond 422.
 
 Erreurs transverses : 400 pour un JSON malformé, un secret ou des données non
 sérialisables ; 501 pour `Idempotency-Key` (aucun stockage d'idempotence durable) ; 503

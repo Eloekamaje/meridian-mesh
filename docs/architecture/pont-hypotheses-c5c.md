@@ -25,7 +25,8 @@ SITUATION → INVESTIGATION → HYPOTHESIS
 - Création exclusive depuis une Investigation **ouverte** : le serveur force
   `statut=OPEN` et `mode=PROPOSED`. Une autre source est refusée en 422, une Investigation
   absente ou hors tenant en 404, et une Investigation fermée (`CLOSED`, `CLOSE`,
-  `CLOTUREE`, `FERMEE`, `ARCHIVED`, `ARCHIVEE`, insensible à la casse) en 409 avant toute
+  `CLOTUREE`, `FERMEE`, `ARCHIVED`, `ARCHIVEE`, `COMPLETED`, `COMPLETED_WITH_GAPS`,
+  `BUDGET_EXHAUSTED`, `FAILED`, `CANCELLED`, insensible à la casse) en 409 avant toute
   écriture.
 - Lecture : `HYPOTHESIS` est dans `_CLASSES_LECTURE` / `TYPES_LECTURE`, jamais dans
   `TYPES_BOUCLE`. `enregistrer_boucle` refuse toujours ce type.
