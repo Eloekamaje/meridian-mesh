@@ -1,7 +1,8 @@
 # Pont C5e — Experts canoniques et contributions
 
 > **Statut :** opérationnel en inscription, contribution, liste, lecture et transition de
-> contribution, périmètre UI borné.
+> contribution, périmètre UI borné. Le cycle de vie Expert et la validation des liens de
+> contribution sont livrés par C5f ; voir [pont-experts-c5f.md](pont-experts-c5f.md).
 > **Dernière mise à jour :** 8 novembre 2026.
 
 ## Objet
@@ -26,9 +27,10 @@ le port, les routes, la lecture de chaîne et l'UI, sans pipeline de collecte au
 - Le serveur force `statut=ACTIVE` et `mode=DECLARED`. `id`, `tenant_id`, `statut` et
   `mode` fournis par le client sont refusés en 422 (`extra="forbid"`).
 - `nom` et `domaine` sont obligatoires et non vides ; les listes vides sont ignorées.
-- Aucune route de changement de statut Expert n'existe en C5e : un expert inactif ou
-  archivé se gère hors du périmètre de ce lot. Le registre est donc **inscriptible et
-  lisible**, pas encore administrable depuis l'UI.
+- C5e n'exposait pas de route de changement de statut Expert. Depuis C5f, le registre est
+  administrable via `POST /api/boucle/experts/{eid}/statut` (cycle
+  `ACTIVE ↔ INACTIVE`, `ACTIVE|INACTIVE → ARCHIVED`, `ARCHIVED` terminal) et l'UI expose
+  l'action correspondante ; voir [pont-experts-c5f.md](pont-experts-c5f.md).
 - Un EXPERT est un objet racine : sa chaîne canonique est `[EXPERT]`, sans amont.
 
 ## Contributions
@@ -64,6 +66,16 @@ Si seule l'Hypothesis est fournie, son `investigation_id` est dérivé pour comp
 contribution et la chaîne. L'invariant est rejoué dans le constructeur de domaine **et**
 dans l'adaptateur de persistance : un appel direct à `enregistrer_objets_exploitation` ne
 peut pas le contourner.
+
+### Liens de contribution validés (C5f)
+
+Depuis C5f, `hypothesis_ids_soutenues` et `hypothesis_ids_contestees` ne sont plus des
+références déclaratives : chaque identifiant doit exister, être de type `HYPOTHESIS`,
+appartenir au même tenant et à la même Investigation que la contribution. Une violation
+répond 422 avant toute écriture, sans contribution partielle ni mise à jour de
+`Investigation.expert_ids`. La validation est rejouée dans l'adaptateur de persistance,
+y compris pour un appel direct. Les hypothèses citées sont chargées et verrouillées avec
+les parents dans le même ordre trié, sans requête par identifiant.
 
 ### Liens inverses
 
@@ -107,6 +119,7 @@ continue de les refuser.
 |---|---|---|
 | `POST` | `/api/boucle/experts` | 201 `ReponseTransition` (`type=EXPERT`, `role=expert`) |
 | `GET` | `/api/boucle/experts?domaine=&statut=&limite=` | liste tenant |
+| `POST` | `/api/boucle/experts/{eid}/statut` | 200 `ReponseTransition` (`role=expert`, C5f) |
 | `POST` | `/api/boucle/investigations/{iid}/contributions` | 201 `ReponseTransition` (`role=contribution`) |
 | `POST` | `/api/boucle/hypotheses/{hid}/contributions` | 201 `ReponseTransition` |
 | `GET` | `/api/boucle/contributions?expert_id=&investigation_id=&hypothesis_id=&statut=&limite=` | liste tenant triée |
@@ -133,20 +146,21 @@ n'est renvoyé.
   (liens inverses). Les stades `EXPERT` et `EXPERT_CONTRIBUTION` apparaissent dans les
   sections, les compteurs et le filtre de type.
 - Le panneau détail affiche les champs du registre et de la contribution, ainsi que la
-  chaîne amont. L'action de statut n'est proposée que sur une contribution non terminale,
-  avec un `select` limité aux transitions autorisées, un motif et des preuves.
+  chaîne amont. Les actions de statut ne sont proposées que sur un EXPERT ou une
+  contribution non terminale, avec un `select` limité aux transitions autorisées, un motif
+  et des preuves.
 - Accessibilité : la modale existante fournit `role="dialog"`, `aria-modal`, le focus
   initial, la boucle Tab, la fermeture par `Escape` et le fond `inert`.
 
 ## Limites assumées
 
-- Pas de route de changement de statut Expert, ni d'édition ou de suppression du registre.
+- Pas d'édition ou de suppression du registre : le statut est administrable depuis C5f,
+  le contenu ne l'est pas.
 - Pas de collecte automatique de contributions : tout est déclaré manuellement.
 - `expert_id` reste refusé sur `POST /investigations/{iid}/hypotheses` : le rattachement
   passe par une contribution, pas par le champ de l'hypothèse.
 - Pas de liste inverse `contribution_ids` sur l'Investigation (le modèle ne la porte pas).
-- Pas de résolution automatique des `claim_ids_proposes`, `hypothesis_ids_soutenues` ou
-  `hypothesis_ids_contestees` : ce sont des références déclaratives, pas encore des liens
-  validés.
+- Les `hypothesis_ids_soutenues`/`hypothesis_ids_contestees` sont validés depuis C5f ; les
+  `claim_ids_proposes` restent des références déclaratives non résolues.
 - Les tables `TRANSITIONS_EXPERT_CONTRIBUTION` (backend) et `TRANSITIONS_CONTRIBUTION`
   (frontend) sont dupliquées ; aucun endpoint ne les expose. Un test vérifie chaque table.

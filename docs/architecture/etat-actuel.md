@@ -1,6 +1,6 @@
 # Méridian — état actuel et reste à faire
 
-> **Photographie :** 8 novembre 2026, commit `3873448` + lots C5c/C5d/C5e.
+> **Photographie :** 8 novembre 2026, commit `3873448` + lots C5c/C5d/C5e/C5f.
 > Ce document décrit ce qui existe réellement dans le dépôt ; il ne décrit pas la cible.
 > Les documents de vision et les PRD restent la cible ; ce fichier est la carte de l’état
 > courant et la matrice de traçabilité vers le code et les tests. Les écarts produit détaillés
@@ -355,10 +355,16 @@ Investigation ouverte ou une Hypothesis
 `POST /boucle/contributions/{id}/statut`). Le statut initial est `PROPOSED` ; le cycle
 `PROPOSED → ACCEPTED|REJECTED|ARCHIVED`, puis `ACCEPTED|REJECTED → ARCHIVED` est validé.
 L'invariant « hypothèse du même parent » est rejoué dans le domaine, la commande et la
-persistance. C5e n'expose **pas** de route de changement de statut Expert et ne collecte
-aucune contribution automatiquement.
-Le détail du pont est dans [pont-hypotheses-c5c.md](pont-hypotheses-c5c.md),
-[pont-signaux-c5d.md](pont-signaux-c5d.md) et [pont-experts-c5e.md](pont-experts-c5e.md).
+persistance. Depuis C5f, le statut Expert est administrable
+(`POST /boucle/experts/{id}/statut`, cycle `ACTIVE ↔ INACTIVE`,
+`ACTIVE|INACTIVE → ARCHIVED`, `ARCHIVED` terminal) et les listes
+`hypothesis_ids_soutenues`/`hypothesis_ids_contestees` sont des liens validés : chaque
+hypothèse citée doit exister, être du même tenant et appartenir à la même Investigation
+que la contribution, sinon 422 avant écriture. C5f ne collecte toujours aucune
+contribution automatiquement.
+Le détail des ponts est dans [pont-hypotheses-c5c.md](pont-hypotheses-c5c.md),
+[pont-signaux-c5d.md](pont-signaux-c5d.md), [pont-experts-c5e.md](pont-experts-c5e.md)
+et [pont-experts-c5f.md](pont-experts-c5f.md).
 Le backfill `migration_canonique` et `/boucle/objets` restent disponibles. La chaîne est donc
 branchée et opérable depuis l'UI, mais l'activation des workers, la migration tenant rétroactive
 et le parcours end-to-end supervisé restent à faire. Le détail est dans
@@ -494,8 +500,8 @@ historique. Ils valent `twin.born` pour le résolveur, jamais une confirmation a
 | **Opportunity / Risk** | possibilité ou risque attaché à une situation, qualifié depuis une Expression | `DETECTED`, puis cycle `DETECTED → QUALIFIED` ou `MATURING`, `MATURING → QUALIFIED`, `QUALIFIED → INVESTIGATING` ou `SCENARIOS_AVAILABLE`, `INVESTIGATING → SCENARIOS_AVAILABLE` ou `DECIDED`, `SCENARIOS_AVAILABLE → DECIDED`, `DECIDED → INITIATED`, `INITIATED → MEASURED`, `MEASURED → LEARNED` ; `REJECTED`/`DORMANT` sont des sorties avant les états terminaux et `DORMANT → MATURING` ou `REJECTED` | `objet_entreprise` + liens inverses `Expression.opportunity_ids`/`risk_ids` ; `POST/GET /api/boucle/expressions/{id}/opportunities` et `/risks`, `POST /api/boucle/opportunities/{id}/statut` et `/risks/{id}/statut`, actions UI ; création seulement depuis une Expression `PROPOSED`/`CONFIRMED` (sinon 409) ; qualification manuelle uniquement |
 | **Investigation** | espace structuré de compréhension : question, hypothèses, preuves | `OPEN`, puis clôture | Créée par le pont C2 ou par `POST /api/boucle/situations/{id}/investigations` (UI) ; lecture `/api/boucle/objets` |
 | **Hypothesis** | explication testable, rattachée à une Investigation | `OPEN`, puis `STRENGTHENED`/`WEAKENED`, sortie `REJECTED` ou `CONFIRMED` (preuve obligatoire) | `objet_entreprise` + lien inverse `Investigation.hypothesis_ids` ; `POST /api/boucle/investigations/{id}/hypotheses`, `GET /api/boucle/hypotheses`, `POST /api/boucle/hypotheses/{id}/statut` et actions UI ; création seulement depuis une Investigation |
-| **Expert** | capacité spécialisée de raisonnement, avec domaine, méthodes, mandat et limites | `ACTIVE` à l'inscription ; aucun cycle de statut exposé en C5e | `objet_entreprise` + registre `POST/GET /api/boucle/experts` et formulaire « Inscrire un expert » ; `statut=ACTIVE`, `mode=DECLARED` et `id`/`tenant_id` sont serveur ; objet racine sans chaîne amont |
-| **ExpertContribution** | contribution datée d'un Expert à une Investigation ou une Hypothesis | `PROPOSED`, puis `ACCEPTED`/`REJECTED`, sortie `ARCHIVED` | `objet_entreprise` + lien inverse `Investigation.expert_ids` ; `POST /api/boucle/investigations/{id}/contributions`, `POST /api/boucle/hypotheses/{id}/contributions`, `GET /api/boucle/contributions`, `POST /api/boucle/contributions/{id}/statut` et actions UI ; invariant hypothèse du même parent ; pas de `contribution_ids` dans le modèle |
+| **Expert** | capacité spécialisée de raisonnement, avec domaine, méthodes, mandat et limites | `ACTIVE` à l'inscription ; cycle C5f `ACTIVE ↔ INACTIVE`, `ACTIVE|INACTIVE → ARCHIVED`, `ARCHIVED` terminal | `objet_entreprise` + registre `POST/GET /api/boucle/experts`, `POST /api/boucle/experts/{id}/statut` et formulaires « Inscrire un expert » / « Changer le statut » ; `statut=ACTIVE`, `mode=DECLARED` et `id`/`tenant_id` sont serveur à la création ; objet racine sans chaîne amont |
+| **ExpertContribution** | contribution datée d'un Expert à une Investigation ou une Hypothesis | `PROPOSED`, puis `ACCEPTED`/`REJECTED`, sortie `ARCHIVED` | `objet_entreprise` + lien inverse `Investigation.expert_ids` ; `POST /api/boucle/investigations/{id}/contributions`, `POST /api/boucle/hypotheses/{id}/contributions`, `GET /api/boucle/contributions`, `POST /api/boucle/contributions/{id}/statut` et actions UI ; invariant hypothèse du même parent ; hypothèses soutenues/contestées validées (existence, type HYPOTHESIS, tenant et même Investigation, sinon 422) ; pas de `contribution_ids` dans le modèle |
 | **Decision** | décision humaine reliée à une investigation, avec options et rationale | `PROPOSED`, puis tranchée | Créée par le pont C2 ou par `POST /api/boucle/investigations/{id}/decisions` (UI) ; lecture `/api/boucle/objets` |
 | **Scenario** | option d’action comparable, rattachée à une Investigation et/ou une Decision | `DRAFT`, `PROPOSED`, `EVALUATED`, `SELECTED`, `REJECTED`, `ARCHIVED` | `objet_entreprise` + liens inverses `scenario_ids` (liste) / `scenario_id` (premier scénario historique, promu au premier restant s’il est retiré, sinon `None`) ; `POST/GET /api/boucle/scenarios`, `POST /api/boucle/scenarios/comparer` et UI Boucle ; filtre de liste direct, formulaire aux champs principaux, comparaison plafonnée à 50 |
 | **Initiative** | traduction d’une décision en action suivie | `PLANNED`, puis exécution | Créée par C3 après une réponse d’initiative ou par `POST /api/boucle/decisions/{id}/initiatives` (UI) ; `objet_entreprise` + backfill, lecture `/api/boucle/objets` |
@@ -506,8 +512,9 @@ historique. Ils valent `twin.born` pour le résolveur, jamais une confirmation a
 | **Annotation** | mémoire organisationnelle déclarée | déclarée | `memoire_org`, `objet_entreprise` |
 
 Objets de la vision qui sont des objets d’entreprise canoniques : **Expert** et
-**ExpertContribution** le sont depuis C5e, en inscription, contribution, liste, lecture et
-transition de contribution.
+**ExpertContribution** le sont depuis C5e, en inscription, contribution, liste, lecture,
+transition de contribution et, depuis C5f, administration du statut Expert et validation
+des hypothèses citées.
 `Signal` est canonique depuis C5d, créé manuellement en global ou depuis une ou plusieurs
 Situations, avec empreinte serveur et liens inverses `Situation.signal_ids` ; il est lisible
 dans la chaîne `SITUATION → SIGNAL` lorsque la liste des Situations contient exactement un
@@ -520,8 +527,9 @@ formulée manuellement depuis une Investigation et lisible dans la chaîne
 `SITUATION → INVESTIGATION → HYPOTHESIS`. `Expert` et `ExpertContribution` sont canoniques
 depuis C5e : registre déclaratif, contribution manuelle depuis une Investigation ouverte ou
 une Hypothesis, chaîne
-`SITUATION → INVESTIGATION (→ HYPOTHESIS) → EXPERT_CONTRIBUTION`, sans route de statut
-Expert ni collecte automatique. Le dossier de raisonnement porte aussi des
+`SITUATION → INVESTIGATION (→ HYPOTHESIS) → EXPERT_CONTRIBUTION`. Depuis C5f, le statut
+Expert est administrable et les hypothèses citées par une contribution sont validées ;
+la collecte automatique reste absente. Le dossier de raisonnement porte aussi des
 hypothèses et des options internes, distinctes de l’objet durable décrit par le Domain
 Model. Voir [ecarts-vision.md](ecarts-vision.md).
 
@@ -770,7 +778,7 @@ la suite locale.
 | Opportunités / risques canoniques | **opérationnels depuis une Expression, périmètre UI borné** | `POST /api/boucle/expressions/{id}/opportunities` et `/risks` (statut forcé `DETECTED`, Expression `PROPOSED`/`CONFIRMED` seulement sinon 409, Expression verrouillée, lien inverse atomique), `GET` filtré par Expression, `POST /api/boucle/opportunities/{id}/statut` et `/risks/{id}/statut` (cycle canonique, 409/422/404 ; mauvais type 422), UI de qualification et de transition ; chaîne `SITUATION → EXPRESSION → OPPORTUNITY`/`RISK` ; `enregistrer_boucle` refuse toujours ces types B ; qualification manuelle, pas de pipeline automatique |
 | Hypothèses canoniques | **opérationnelle depuis une Investigation, périmètre UI borné** | `POST /api/boucle/investigations/{id}/hypotheses` (statut forcé `OPEN`, mode `PROPOSED`, Investigation ouverte et verrouillée sinon 409, lien inverse atomique), `GET /api/boucle/hypotheses` filtré par Investigation/statut, `POST /api/boucle/hypotheses/{id}/statut` (cycle `OPEN → STRENGTHENED|WEAKENED|REJECTED|CONFIRMED`, 409/422/404/400/501/503), UI de formulation et de transition, blocage UI de `CONFIRMED` sans preuve ; chaîne `SITUATION → INVESTIGATION → HYPOTHESIS` ; `enregistrer_boucle` refuse toujours ce type ; `expert_id` non accepté en entrée (le rattachement passe par `ExpertContribution` C5e) ; formulation manuelle, pas de pipeline automatique depuis les Claims ; voir [pont-hypotheses-c5c.md](pont-hypotheses-c5c.md) |
 | Signaux canoniques | **opérationnels en création/liste/lecture, périmètre UI borné** | `POST /api/boucle/signals`, `POST /api/boucle/situations/{id}/signals` (statut forcé `DETECTED`, mode `OBSERVED`, source obligatoire, empreinte SHA-256 serveur, doublon 409, Situation(s) verrouillée(s), lien inverse `signal_ids` atomique), `GET /api/boucle/signals` filtré par Situation/type/statut, UI globale et contextuelle ; contrôles anti-jeton sur `titre`, `id`, `tenant` brut/normalisé et `donnees`, avec prose `Bearer` par forme (liste technique + suffixe, composés `- / _ .` tous prose) ; chaîne `SITUATION → SIGNAL` seulement si une seule Situation, sinon objet sans amont ; `enregistrer_boucle` refuse toujours ce type ; aucune route de changement de statut en C5d ; création manuelle, pas de pipeline de détection ; voir [pont-signaux-c5d.md](pont-signaux-c5d.md) |
-| Expert, ExpertContribution | **opérationnels en inscription/contribution/lecture, périmètre UI borné** | `POST /api/boucle/experts` (nom + domaine obligatoires, `statut=ACTIVE` et `mode=DECLARED` forcés, `id`/`tenant_id`/`statut`/`mode` client refusés 422), `GET /api/boucle/experts` filtré par domaine/statut/tenant ; `POST /api/boucle/investigations/{id}/contributions` et `POST /api/boucle/hypotheses/{id}/contributions` (statut initial `PROPOSED`, mode `DECLARED`, Investigation ouverte sinon 409, Expert et source verrouillés, lien inverse `Investigation.expert_ids` atomique, invariant hypothèse du même parent 409), `GET /api/boucle/contributions` filtré par expert/investigation/hypothèse/statut, `POST /api/boucle/contributions/{id}/statut` (cycle `PROPOSED → ACCEPTED|REJECTED|ARCHIVED`, `ACCEPTED|REJECTED → ARCHIVED`, 409/422/404/400/501/503) ; chaînes `EXPERT` et `SITUATION → INVESTIGATION (→ HYPOTHESIS) → EXPERT_CONTRIBUTION` ; UI registre, sollicitation depuis Investigation/Hypothèse, stades et transitions ; `enregistrer_boucle` refuse toujours ces types ; pas de route de statut Expert, pas de collecte automatique ; voir [pont-experts-c5e.md](pont-experts-c5e.md) |
+| Expert, ExpertContribution | **opérationnels en inscription/contribution/lecture/administration, périmètre UI borné** | `POST /api/boucle/experts` (nom + domaine obligatoires, `statut=ACTIVE` et `mode=DECLARED` forcés, `id`/`tenant_id`/`statut`/`mode` client refusés 422), `GET /api/boucle/experts` filtré par domaine/statut/tenant, `POST /api/boucle/experts/{id}/statut` (cycle C5f `ACTIVE ↔ INACTIVE`, `ACTIVE|INACTIVE → ARCHIVED`, `ARCHIVED` terminal, 409/422/404/400/501/503) ; `POST /api/boucle/investigations/{id}/contributions` et `POST /api/boucle/hypotheses/{id}/contributions` (statut initial `PROPOSED`, mode `DECLARED`, Investigation ouverte sinon 409, Expert et source verrouillés, lien inverse `Investigation.expert_ids` atomique, invariant hypothèse du même parent 409, hypothèses citées validées → 422), `GET /api/boucle/contributions` filtré par expert/investigation/hypothèse/statut, `POST /api/boucle/contributions/{id}/statut` (cycle `PROPOSED → ACCEPTED|REJECTED|ARCHIVED`, `ACCEPTED|REJECTED → ARCHIVED`, 409/422/404/400/501/503) ; chaînes `EXPERT` et `SITUATION → INVESTIGATION (→ HYPOTHESIS) → EXPERT_CONTRIBUTION` ; UI registre, sollicitation depuis Investigation/Hypothèse, stades, transitions Expert et contribution ; `enregistrer_boucle` refuse toujours ces types ; pas de collecte automatique ; voir [pont-experts-c5e.md](pont-experts-c5e.md) et [pont-experts-c5f.md](pont-experts-c5f.md) |
 | Claims, preuves, maturité | **solide** | contradictions et revue conservées |
 | Ingestion Git + CBM | **solide** | CBM à installer dans l’environnement cible |
 | Liens HTTP/JMS/SOAP | **solide** | revue humaine, contradictions |

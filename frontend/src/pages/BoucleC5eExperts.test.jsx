@@ -23,6 +23,7 @@ jest.mock("@/lib/api", () => ({
     creerSignalSituation: jest.fn(),
     creerExpert: jest.fn(),
     listerExperts: jest.fn(),
+    changerStatutExpert: jest.fn(),
     creerContributionInvestigation: jest.fn(),
     creerContributionHypothese: jest.fn(),
     listerContributions: jest.fn(),
@@ -614,6 +615,146 @@ test("garde la modale de contribution sur un 409 avec un message lisible", async
 
   expect(hote.querySelector('[data-testid="boucle-transition-erreur"]').textContent)
     .toContain("transition de contribution refusée");
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("change le statut d'un expert avec motif et preuves dans un dialogue accessible", async () => {
+  const controleur = installerApi({ liste: [situation, expert] });
+  const inactif = {
+    ...expert,
+    donnees: {
+      ...expert.donnees,
+      statut: "INACTIVE",
+      motif: "Congé longue durée",
+      preuves: ["doc://rh"],
+    },
+  };
+  boucleApi.changerStatutExpert.mockImplementation((identifiant, corps) => {
+    expect(identifiant).toBe("expert-1");
+    expect(corps).toEqual({
+      vers: "INACTIVE",
+      motif: "Congé longue durée",
+      preuves: ["doc://rh"],
+    });
+    controleur.ajouter(inactif);
+    return Promise.resolve({
+      data: {
+        objet: inactif,
+        chaine: [inactif],
+        historique: [{ donnees: { statut: "ACTIVE" } }],
+      },
+    });
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "expert-1");
+
+  expect(hote.querySelector('[data-testid="boucle-action-statut-expert"]')).not.toBeNull();
+  await cliquer(hote, "boucle-action-statut-expert");
+  const modale = hote.querySelector('[data-testid="boucle-transition-modale"]');
+  expect(modale.getAttribute("role")).toBe("dialog");
+  expect(modale.getAttribute("aria-modal")).toBe("true");
+  expect(hote.querySelector('[data-testid="boucle-contenu"]').getAttribute("inert"))
+    .not.toBeNull();
+  const select = hote.querySelector('[data-testid="boucle-transition-vers"]');
+  expect([...select.options].map((option) => option.value))
+    .toEqual(["", "INACTIVE", "ARCHIVED"]);
+  expect(hote.querySelector('[data-testid="boucle-transition-statut"]')).toBeNull();
+
+  await choisir(select, "INACTIVE");
+  await act(async () => {
+    saisir(hote.querySelector('[data-testid="boucle-transition-motif"]'),
+      "  Congé longue durée  ");
+    saisir(hote.querySelector('[data-testid="boucle-transition-preuves"]'), "doc://rh");
+  });
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(boucleApi.changerStatutExpert).toHaveBeenCalledTimes(1);
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).toBeNull();
+  expect(hote.querySelector('[data-testid="boucle-detail-statut"]').textContent)
+    .toContain("INACTIVE");
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("un expert archivé n'expose plus le changement de statut", async () => {
+  installerApi({
+    liste: [situation, {
+      ...expert,
+      donnees: { ...expert.donnees, statut: "ARCHIVED" },
+    }],
+  });
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "expert-1");
+
+  expect(hote.querySelector('[data-testid="boucle-action-statut-expert"]')).toBeNull();
+  await act(async () => { racine.unmount(); });
+});
+
+test("garde la modale de statut expert sur un 409 avec un message lisible", async () => {
+  installerApi({ liste: [situation, expert] });
+  boucleApi.changerStatutExpert.mockRejectedValue({
+    response: { status: 409, data: { detail: "transition d'expert refusée" } },
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "expert-1");
+  await cliquer(hote, "boucle-action-statut-expert");
+  await choisir(hote.querySelector('[data-testid="boucle-transition-vers"]'), "ARCHIVED");
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(hote.querySelector('[data-testid="boucle-transition-erreur"]').textContent)
+    .toContain("transition d'expert refusée");
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test.each([
+  [400, "Les données envoyées sont invalides."],
+  [404, "L'objet source est introuvable."],
+  [422, "Certaines valeurs sont invalides."],
+  [503, "Résultat incertain"],
+])("garde la modale de statut expert sur une erreur HTTP %s", async (statut, message) => {
+  installerApi({ liste: [situation, expert] });
+  boucleApi.changerStatutExpert.mockRejectedValue({
+    response: { status: statut, data: {} },
+  });
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "expert-1");
+  await cliquer(hote, "boucle-action-statut-expert");
+  await choisir(hote.querySelector('[data-testid="boucle-transition-vers"]'), "INACTIVE");
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(boucleApi.changerStatutExpert).toHaveBeenCalledTimes(1);
+  expect(hote.querySelector('[data-testid="boucle-transition-erreur"]').textContent)
+    .toContain(message);
+  expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
+
+  await act(async () => { racine.unmount(); });
+});
+
+test("garde la modale de statut expert sur une erreur réseau", async () => {
+  installerApi({ liste: [situation, expert] });
+  boucleApi.changerStatutExpert.mockRejectedValue(new Error("Network Error"));
+
+  const { hote, racine } = monter();
+  await rendre(racine);
+  await ouvrirObjet(hote, "expert-1");
+  await cliquer(hote, "boucle-action-statut-expert");
+  await choisir(hote.querySelector('[data-testid="boucle-transition-vers"]'), "INACTIVE");
+  await cliquer(hote, "boucle-transition-enregistrer");
+
+  expect(boucleApi.changerStatutExpert).toHaveBeenCalledTimes(1);
+  expect(hote.querySelector('[data-testid="boucle-transition-erreur"]').textContent)
+    .toContain("Résultat incertain");
   expect(hote.querySelector('[data-testid="boucle-transition-modale"]')).not.toBeNull();
 
   await act(async () => { racine.unmount(); });

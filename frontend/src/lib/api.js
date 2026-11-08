@@ -135,6 +135,12 @@ export const boucleApi = {
   async listerExperts(params) {
     return api.get("/boucle/experts", { params, timeout: 20000 });
   },
+  async changerStatutExpert(expertId, corps) {
+    return posterTransition(
+      `/boucle/experts/${identifiantRequis(expertId, "identifiant d'expert")}/statut`,
+      corps,
+    );
+  },
   async creerContributionInvestigation(investigationId, corps) {
     return posterTransition(
       `/boucle/investigations/${identifiantRequis(investigationId, "identifiant d'investigation")}/contributions`,

@@ -378,6 +378,26 @@ describe("boucleApi", () => {
     expect(poster.mock.calls[0][2]).not.toHaveProperty("headers");
   });
 
+  test("changerStatutExpert poste la transition sans en-tête d'idempotence", async () => {
+    const corps = { vers: "INACTIVE", motif: "Congé", preuves: ["doc://rh"] };
+
+    await boucleApi.changerStatutExpert("expert/1", corps);
+
+    expect(poster).toHaveBeenCalledWith(
+      "/boucle/experts/expert%2F1/statut",
+      corps,
+      { timeout: 20000 },
+    );
+    expect(poster.mock.calls[0][2]).not.toHaveProperty("headers");
+  });
+
+  test("changerStatutExpert refuse un identifiant vide", async () => {
+    await expect(
+      boucleApi.changerStatutExpert("   ", { vers: "INACTIVE" }),
+    ).rejects.toThrow("identifiant d'expert");
+    expect(poster).not.toHaveBeenCalled();
+  });
+
   test("refuse une contribution sans identifiant de source", async () => {
     await expect(
       boucleApi.creerContributionInvestigation("", { expert_id: "e", contenu: "c" }),

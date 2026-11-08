@@ -431,6 +431,14 @@ class ChangementStatutContribution(_CorpsTransition):
     preuves: list[Any] | None = Field(None, max_length=100)
 
 
+class ChangementStatutExpert(_CorpsTransition):
+    """Corps C5f strict : ``vers`` obligatoire, motif et preuves optionnels."""
+
+    vers: TexteNonVide = Field(..., max_length=64)
+    motif: TexteNettoye | None = Field(None, max_length=5000)
+    preuves: list[Any] | None = Field(None, max_length=100)
+
+
 class CreationSignal(_CorpsTransition):
     """Corps C5d strict : statut, mode, id, tenant et empreinte sont serveur.
 
@@ -515,6 +523,12 @@ async def _corps_changement_statut_contribution(
     return await _corps_strict(request, ChangementStatutContribution)
 
 
+async def _corps_changement_statut_expert(
+    request: Request,
+) -> ChangementStatutExpert:
+    return await _corps_strict(request, ChangementStatutExpert)
+
+
 def _openapi_corps(modele_corps: type[BaseModel]) -> dict:
     return {
         "requestBody": {
@@ -532,6 +546,7 @@ _OPENAPI_CORPS_CONTRIBUTION_HYPOTHESE = _openapi_corps(
     CreationContributionHypothese)
 _OPENAPI_CORPS_EXPERT = _openapi_corps(CreationExpert)
 _OPENAPI_CORPS_STATUT_CONTRIBUTION = _openapi_corps(ChangementStatutContribution)
+_OPENAPI_CORPS_STATUT_EXPERT = _openapi_corps(ChangementStatutExpert)
 
 
 class ComparaisonScenarios(_CorpsTransition):
@@ -1271,8 +1286,8 @@ async def creer_expert(
     """Inscrit un Expert au registre du tenant.
 
     ``statut`` (``ACTIVE``), ``mode`` (``DECLARED``), ``id`` et ``tenant_id`` sont
-    serveur : un client qui les envoie est refusé en 422. Aucune route de changement
-    de statut Expert n'existe en C5e.
+    serveur : un client qui les envoie est refusé en 422. Depuis C5f, le statut se
+    change ensuite via ``POST /experts/{eid}/statut``.
     """
     _verifier_espace(x_espace)
     tenant = _tenant(request, x_tenant)
@@ -1304,6 +1319,38 @@ async def lister_experts(
         request=request,
     )
     return {"tenant": tenant, "experts": _assainir(experts)}
+
+
+@router.post("/experts/{eid}/statut", response_model=ReponseTransition,
+             responses=_REPONSES_TRANSITION,
+             openapi_extra=_OPENAPI_CORPS_STATUT_EXPERT)
+async def changer_statut_expert(
+    eid: str,
+    request: Request,
+    payload: ChangementStatutExpert = Depends(_corps_changement_statut_expert),
+    idempotence: None = Depends(_refuser_idempotence),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Fait évoluer un Expert selon le cycle de vie C5f.
+
+    ``ACTIVE`` et ``INACTIVE`` basculent entre eux ou vers ``ARCHIVED`` ; ``ARCHIVED``
+    est terminal. Une transition non autorisée est un 409 ; un statut inconnu ou un
+    identifiant d'un autre type un 422 ; un expert absent ou hors tenant un 404. Le
+    motif et les preuves sont conservés et la version précédente reste dans
+    ``historique``.
+    """
+    _verifier_espace(x_espace)
+    tenant = _tenant(request, x_tenant)
+    champs = payload.model_dump(exclude_none=True)
+    vers = champs.pop("vers")
+    resultat = await _executer_transition(
+        tenant,
+        lambda conn: commandes_boucle.changer_statut_expert(
+            boucle, conn, tenant, eid, vers, **champs),
+        request=request,
+    )
+    return _reponse_transition(tenant, resultat, "expert")
 
 
 @router.post("/investigations/{iid}/contributions", status_code=201,

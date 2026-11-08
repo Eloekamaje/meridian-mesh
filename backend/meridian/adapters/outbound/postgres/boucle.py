@@ -20,6 +20,7 @@ from meridian.adapters.outbound.postgres import objets_exploitation
 from meridian.domain import modele_entreprise as modele
 from meridian.domain.construction_objets_exploitation import (
     muer_contribution as _muer_contribution,
+    muer_expert as _muer_expert,
     muer_hypothese as _muer_hypothese,
     muer_opportunite as _muer_opportunite,
     muer_risque as _muer_risque,
@@ -56,6 +57,7 @@ __all__ = [
     "nouvelle_opportunite", "nouveau_risque", "nouveau_signal",
     "nouvel_expert", "nouvelle_contribution",
     "muer_hypothese", "muer_opportunite", "muer_risque", "muer_contribution",
+    "muer_expert",
     "enregistrer_objets", "lister_objets_exploitation",
 ]
 
@@ -1248,6 +1250,11 @@ def muer_hypothese(hypothese: Any, vers: str, **champs: Any) -> Any:
 def muer_contribution(contribution: Any, vers: str, **champs: Any) -> Any:
     """Applique une transition de statut de contribution, sans muter la source."""
     return _muer_contribution(contribution, vers, **champs)
+
+
+def muer_expert(expert: Any, vers: str, **champs: Any) -> Any:
+    """Applique une transition de statut d'Expert, sans muter la source."""
+    return _muer_expert(expert, vers, **champs)
 
 
 def enregistrer_objets(
