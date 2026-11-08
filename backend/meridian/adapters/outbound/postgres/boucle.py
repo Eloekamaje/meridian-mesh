@@ -18,12 +18,16 @@ from typing import Any
 from meridian.adapters.outbound.postgres import entreprise_depot
 from meridian.adapters.outbound.postgres import objets_exploitation
 from meridian.domain import modele_entreprise as modele
-from meridian.domain.construction_objets_exploitation import nouveau_scenario as _nouveau_scenario
-from meridian.domain.objets_exploitation import Scenario
+from meridian.domain.construction_objets_exploitation import (
+    nouveau_scenario as _nouveau_scenario,
+    nouvelle_expression as _nouvelle_expression,
+)
+from meridian.domain.objets_exploitation import Expression, Scenario
 from meridian.domain.mesure import mesure_renseignee as _mesure_renseignee
 
 __all__ = [
-    "BoucleInvalide", "TYPES_BOUCLE", "STATUT_DECISION_PROPOSEE", "STATUT_DECISION_TRANCHEE",
+    "BoucleInvalide", "TYPES_BOUCLE", "TYPES_LECTURE", "STATUT_DECISION_PROPOSEE",
+    "STATUT_DECISION_TRANCHEE",
     "STATUT_INITIATIVE", "STATUT_OUTCOME", "STATUT_LEARNING",
     "Situation", "Investigation", "Decision", "Scenario", "Initiative", "Outcome", "Learning",
     "est_decision_tranchee",
@@ -31,13 +35,18 @@ __all__ = [
     "mesurer_outcome", "capitaliser_learning",
     "enregistrer_boucle", "lire_boucle", "lire_par_id",
     "transaction", "nouvelle_situation", "donnees_de", "fusionner_donnees",
-    "nouveau_scenario", "enregistrer_objets", "lister_objets_exploitation",
+    "nouveau_scenario", "nouvelle_expression", "enregistrer_objets",
+    "lister_objets_exploitation",
 ]
 
+# Types canoniques **écrits** par ``enregistrer_boucle``. Les objets d'exploitation
+# (dont EXPRESSION) sont persistés par ``enregistrer_objets`` et seulement **lus** ici :
+# les mélanger élargirait à tort le contrat d'écriture de la boucle.
 TYPES_BOUCLE = (
     "SITUATION", "INVESTIGATION", "DECISION", "SCENARIO",
     "INITIATIVE", "OUTCOME", "LEARNING",
 )
+TYPES_LECTURE = (*TYPES_BOUCLE, "EXPRESSION")
 STATUT_DECISION_PROPOSEE = "PROPOSED"
 STATUT_DECISION_TRANCHEE = "DECIDED"
 STATUT_INITIATIVE = "PLANNED"
@@ -441,6 +450,10 @@ _CLASSES = {
     "OUTCOME": Outcome,
     "LEARNING": Learning,
 }
+
+# Lecture seule des types d'exploitation : EXPRESSION est lisible dans une chaîne
+# canonique sans devenir un type d'écriture de ``enregistrer_boucle``.
+_CLASSES_LECTURE = {**_CLASSES, "EXPRESSION": Expression}
 
 
 def ouvrir_investigation(
@@ -1003,7 +1016,7 @@ def enregistrer_boucle(
 
 def _objet_depuis_ligne(ligne: Mapping[str, Any]) -> Any:
     type_objet = _type_de(ligne)
-    classe = _CLASSES.get(type_objet)
+    classe = _CLASSES_LECTURE.get(type_objet)
     if classe is None:
         raise BoucleInvalide(f"type hors boucle : {type_objet or 'inconnu'}")
     noms = {champ.name for champ in fields(classe)}
@@ -1035,6 +1048,8 @@ def _lien_ou_alias(ligne: Mapping[str, Any], principal: str, alias: str) -> str 
 
 def _source_principale(ligne: Mapping[str, Any]) -> str | None:
     type_objet = _type_de(ligne)
+    if type_objet == "EXPRESSION":
+        return _texte_ou_none(_valeur(ligne, "situation_id"))
     if type_objet == "INVESTIGATION":
         return _texte_ou_none(_valeur(ligne, "situation_id"))
     if type_objet == "DECISION":
@@ -1119,6 +1134,12 @@ def nouvelle_situation(**champs: Any) -> Situation:
 def nouveau_scenario(**champs: Any) -> Any:
     """Fabrique un Scénario canonique sans faire dépendre l'application du domaine concret."""
     return _nouveau_scenario(**champs)
+
+
+def nouvelle_expression(**champs: Any) -> Any:
+    """Fabrique une Expression canonique sans faire dépendre l'application du domaine concret."""
+    situation = champs.pop("situation", None)
+    return _nouvelle_expression(situation, **champs)
 
 
 def enregistrer_objets(

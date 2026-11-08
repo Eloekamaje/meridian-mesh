@@ -8,6 +8,8 @@ Initiative → Outcome → Learning. Une transition charge sa source, applique l
 persiste avec historique et renvoie l'objet créé avec sa chaîne. Les Scénarios canoniques
 disposent en plus d'une création (`POST /boucle/scenarios`), d'une liste filtrée
 (`GET /boucle/scenarios`) et d'une comparaison déterministe (`POST /boucle/scenarios/comparer`).
+Le stade « Exprimer » dispose de sa création (`POST /boucle/situations/{id}/expressions`) :
+une Expression canonique unique par Situation, lisible dans la chaîne.
 
 ``Idempotency-Key`` n'est pas accepté silencieusement : aucun stockage d'idempotence durable
 n'étant branché, toute requête qui fournit cet en-tête est refusée en 501. Les transitions
@@ -53,6 +55,7 @@ from meridian.adapters.outbound.neo4j import graph_store
 from meridian.application import commandes_boucle
 from meridian.domain import modele_entreprise
 from meridian.domain.mesure import mesure_renseignee as _mesure_renseignee
+from meridian.domain.objets_exploitation import TYPES_EXPRESSION
 from meridian.adapters.outbound.postgres import rls
 from meridian.domain.tenant import (
     TenantError,
@@ -80,7 +83,18 @@ def _mode_canonique(valeur: str) -> str:
     return texte
 
 
+def _type_expression_canonique(valeur: str) -> str:
+    texte = str(valeur or "").strip().upper()
+    if texte not in TYPES_EXPRESSION:
+        raise ValueError(
+            f"type_expression inconnu : {valeur!r} "
+            f"(attendus : {', '.join(TYPES_EXPRESSION)})"
+        )
+    return texte
+
+
 ModeCanonique = Annotated[str, AfterValidator(_mode_canonique)]
+TypeExpression = Annotated[str, AfterValidator(_type_expression_canonique)]
 TexteNonVide = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 TexteIdentifiant = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)
@@ -286,6 +300,22 @@ class CreationScenario(_CorpsTransition):
         if not (self.investigation_id or self.decision_id):
             raise ValueError("investigation_id ou decision_id obligatoire")
         return self
+
+
+class CreationExpression(_CorpsTransition):
+    """Corps C5a strict : ``statut`` n'est pas admis, le serveur force ``PROPOSED``."""
+
+    type_expression: TypeExpression = "IDEE"
+    formulation: TexteNonVide = Field(..., max_length=10000)
+    canal: str | None = Field(None, max_length=200)
+    auteur: str | None = Field(None, max_length=200)
+    exprime_le: DateIso | None = None
+    claim_ids: list[TexteNonVide] | None = Field(None, max_length=100)
+    hypothesis_ids: list[TexteNonVide] | None = Field(None, max_length=100)
+    inconnues: list[TexteNonVide] | None = Field(None, max_length=100)
+    preuves: list[Any] | None = Field(None, max_length=100)
+    confiance: float | None = Field(None, ge=0, le=1)
+    mode: ModeCanonique = "DECLARED"
 
 
 class ComparaisonScenarios(_CorpsTransition):
@@ -752,6 +782,32 @@ async def creer_situation(
         request=request,
     )
     return _reponse_transition(tenant, resultat, "situation")
+
+
+@router.post("/situations/{sid}/expressions", status_code=201,
+             response_model=ReponseTransition, responses=_REPONSES_TRANSITION)
+async def creer_expression(
+    sid: str,
+    payload: CreationExpression,
+    request: Request,
+    idempotence: None = Depends(_refuser_idempotence),
+    x_espace: str | None = Header(None, max_length=64),
+    x_tenant: str | None = Header(None, alias="X-Tenant"),
+):
+    """Formule l'unique Expression canonique d'une Situation du tenant.
+
+    ``statut`` est absent du corps : un client qui l'envoie est refusé en 422 et le
+    serveur persiste toujours ``PROPOSED``. Une Situation déjà exprimée répond 409.
+    """
+    _verifier_espace(x_espace)
+    tenant = _tenant(request, x_tenant)
+    resultat = await _executer_transition(
+        tenant,
+        lambda conn: commandes_boucle.creer_expression(
+            boucle, conn, tenant, sid, **payload.model_dump(exclude_none=True)),
+        request=request,
+    )
+    return _reponse_transition(tenant, resultat, "expression")
 
 
 @router.post("/situations/{sid}/investigations", status_code=201,

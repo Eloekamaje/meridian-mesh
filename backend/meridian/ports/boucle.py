@@ -51,6 +51,8 @@ class BoucleStore(Protocol):
 
     def nouveau_scenario(self, **champs: Any) -> Any: ...
 
+    def nouvelle_expression(self, **champs: Any) -> Any: ...
+
     def enregistrer_objets(
         self, conn: Any, tenant_id: Any = None, objets: Any = None, *,
         historique: bool = False, as_dict: bool = True,

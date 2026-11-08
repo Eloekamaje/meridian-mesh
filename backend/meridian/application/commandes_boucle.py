@@ -31,6 +31,7 @@ from meridian.ports.boucle import BoucleStore, ObjetExistant, VersionRefusee
 __all__ = [
     "SourceIntrouvable",
     "TransitionRefusee",
+    "DoublonExploitation",
     "ResultatTransition",
     "ObjetExistant",
     "VersionRefusee",
@@ -42,6 +43,7 @@ __all__ = [
     "mesurer_outcome",
     "capitaliser_learning_depuis_outcome",
     "capitaliser_learning_depuis_investigation",
+    "creer_expression",
     "creer_scenario",
     "lister_scenarios",
     "comparer_scenarios",
@@ -80,6 +82,13 @@ class SourceIntrouvable(LookupError):
 
 class TransitionRefusee(ValueError):
     """L'orchestration refuse la transition avant ou après l'appel du port."""
+
+
+class DoublonExploitation(TransitionRefusee):
+    """La source porte déjà l'objet d'exploitation exclusif demandé (409, jamais 422)."""
+
+
+STATUT_EXPRESSION = "PROPOSED"
 
 
 @dataclass(frozen=True)
@@ -320,6 +329,32 @@ def capitaliser_learning_depuis_investigation(
             depot, conn, tenant_id, investigation_id, "INVESTIGATION", "investigation")
         objet = depot.capitaliser_learning(investigation, tenant_id=tenant_id, **champs)
         _persister(depot, conn, tenant_id, [objet], creer=True)
+        return _relire(depot, conn, tenant_id, objet.id)
+
+
+def creer_expression(
+    depot: BoucleStore, conn: Any, tenant_id: str, situation_id: str, **champs: Any,
+) -> ResultatTransition:
+    """Formule une Expression unique sur une Situation du même tenant.
+
+    La Situation est verrouillée : deux créations concurrentes observent le même
+    ``expression_id``, la seconde est refusée en :class:`DoublonExploitation`. Le statut
+    est toujours ``PROPOSED``, jamais celui du client. La persistance passe par le port
+    d'exploitation (type B) qui écrit l'Expression et le lien inverse dans une seule
+    transaction ; ``enregistrer_boucle`` reste réservé aux types canoniques.
+    """
+    champs.pop("statut", None)
+    with depot.transaction(conn):
+        situation = _source(
+            depot, conn, tenant_id, situation_id, "SITUATION", "situation")
+        existante = _texte(_valeur_source(situation, "expression_id"))
+        if existante:
+            raise DoublonExploitation(
+                f"situation {situation_id!r} possède déjà une Expression {existante!r}")
+        objet = depot.nouvelle_expression(
+            situation=situation, tenant_id=tenant_id,
+            statut=STATUT_EXPRESSION, **champs)
+        depot.enregistrer_objets(conn, tenant_id, objets=[objet], as_dict=False)
         return _relire(depot, conn, tenant_id, objet.id)
 
 
