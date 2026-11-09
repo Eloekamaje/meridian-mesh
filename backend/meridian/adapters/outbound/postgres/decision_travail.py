@@ -1,8 +1,11 @@
 """Recopie canonique d'une décision prise dans l'interface Travail (B3).
 
-`decider_case` écrit la décision dans Mongo puis appelle ce module quand la
-double écriture Travail est active. La même décision devient un objet
-`DECISION` de `objet_entreprise`, toujours tranché par le verdict humain —
+Depuis la levée d'ADR-0008, `decider_case` n'appelle plus ce module : l'outbox
+C1 est le producteur unique (convergence §6), y compris pour les cases
+orphelins via leur ancre synthétique (`pont_travail.evenement_case_orphelin`).
+Ce module reste l'adaptateur d'écriture directe pour les backfills et les tests
+d'intégration de la chaîne — la même décision devient un objet `DECISION` de
+`objet_entreprise`, toujours tranché par le verdict humain —
 jamais auto-confirmé.
 
 L'identifiant d'épisode fait la corrélation Mongo ↔ Postgres : repris du case
