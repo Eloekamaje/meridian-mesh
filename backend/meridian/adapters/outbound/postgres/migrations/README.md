@@ -42,6 +42,9 @@ Révisions :
 - `0008_decision_parent` — interdiction de la DECISION orpheline (convergence §3.2) : les DECISION
   sans `investigation_id` sont rattachées à l'INVESTIGATION de leur `episode_id` quand elle est
   unique, sinon marquées `donnees.parent_manquant` (réparables uniquement en posant le lien).
+- `0009_attention_index` — index partiel `(tenant_id, type) WHERE donnees ? 'attention'` pour le fil
+  d'attention unifié (convergence §5.5) : le store canonique `donnees.attention` reste lisible sans
+  parcours jsonb complet.
 
 ## Exécution en production
 

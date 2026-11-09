@@ -843,6 +843,41 @@ async def reporter_intention(
     return {"tenant": tenant, "intention": boucle_routes._assainir(intention)}
 
 
+def _fusionner_intentions_echues(conn, tenant: str, type_: str, objets: list) -> list:
+    """Signale les objets ciblés par une intention échue du store canonique.
+
+    ``donnees.attention`` reste la marque persistée par la balaye cognition ; une
+    intention ``memoire_prospective`` arrivée à échéance projette le même
+    signalement sur sa cible — lecture seule, rien n'est réécrit (convergence
+    §5.5 : un seul store, les consommateurs sont des projections).
+    """
+    par_id = {str(objet["id"]): objet for objet in objets if objet.get("id")}
+    for intention in memoire_prospective.echeances(conn, tenant, limite=100):
+        if intention.get("scope") != "situation":
+            continue
+        cible = str(intention.get("scope_id") or "")
+        if not cible:
+            continue
+        ligne = par_id.get(cible)
+        if ligne is None:
+            ligne = entreprise_depot.lire_objet(conn, tenant, cible)
+            if ligne is None or ligne.get("type") != type_:
+                continue
+            ligne = dict(ligne)
+            par_id[cible] = ligne
+            objets.append(ligne)
+        donnees = dict(ligne.get("donnees") or {})
+        if donnees.get("attention"):
+            continue
+        donnees["attention"] = {
+            "raison": "intention_expiree",
+            "intention_id": intention.get("id"),
+            "depuis": intention.get("echeance"),
+        }
+        ligne["donnees"] = donnees
+    return objets
+
+
 @router.get("/attention")
 async def attention_du_jour(
     request: Request,
@@ -854,12 +889,16 @@ async def attention_du_jour(
 ):
     boucle_routes._verifier_espace(x_espace)
     tenant = boucle_routes._tenant(request, x_tenant)
-    objets = await _avec_connexion(tenant, lambda conn: entreprise_depot.lister_objets(
-        conn, tenant, type_=type_, limite=1000))
+    objets, intentions = await _avec_connexion(tenant, lambda conn: (
+        _fusionner_intentions_echues(
+            conn, tenant, type_,
+            entreprise_depot.lister_objets(conn, tenant, type_=type_, limite=1000)),
+        memoire_prospective.echeances(conn, tenant, limite=100)))
     classes = attention.classer(objets, limite=limite)
     for item in classes:
         item.pop("objet", None)
     return {"tenant": tenant, "objets": boucle_routes._assainir(classes),
+            "intentions_echues": boucle_routes._assainir(intentions),
             "resume": attention.resume_attention(objets)}
 
 

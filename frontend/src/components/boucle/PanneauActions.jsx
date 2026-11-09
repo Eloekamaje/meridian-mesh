@@ -10,7 +10,7 @@ import {
   Scales,
   WarningCircle,
 } from "@phosphor-icons/react";
-import { actionsPourObjet, idObjet, statutObjet, titreObjet, typeObjet } from "./boucleUi";
+import { actionsPourObjet, idObjet, statutObjet, texteAffichable, titreObjet, typeObjet, valeurDe } from "./boucleUi";
 
 const ICONES = {
   investigation: MagnifyingGlass,
@@ -71,6 +71,10 @@ export default function PanneauActions({
 
   const actions = actionsPourObjet(objet);
   const type = typeObjet(objet);
+  const attention = valeurDe(objet, "attention");
+  const raisonAttention = attention && typeof attention === "object"
+    ? texteAffichable(attention.raison).replace(/_/g, " ")
+    : "";
   const identifiantCourant = idObjet(objet);
   const identifiantSucces = succes?.objet ? idObjet(succes.objet) : null;
   const nouvelObjet = Boolean(identifiantSucces && identifiantSucces !== identifiantCourant);
@@ -103,6 +107,17 @@ export default function PanneauActions({
           </span>
         )}
       </div>
+
+      {attention && (
+        <p
+          role="status"
+          data-testid="boucle-attention"
+          className="mt-3 flex items-center gap-1.5 rounded-md border border-[#F2B84B]/30 bg-[#F2B84B]/[0.06] px-2.5 py-1.5 text-[11px] text-[#F2B84B]"
+        >
+          <WarningCircle size={13} className="shrink-0" aria-hidden="true" />
+          Cet objet demande votre attention{raisonAttention ? ` : ${raisonAttention}` : ""}.
+        </p>
+      )}
 
       {verification && (
         <p

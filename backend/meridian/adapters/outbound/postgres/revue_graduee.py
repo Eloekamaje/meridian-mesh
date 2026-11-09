@@ -1,9 +1,11 @@
 """Revue graduée par risque (plan Cognition IA, D3) — human-on-the-loop, révocable.
 
 Toutes les propositions ne méritent pas la même revue. Ce module classe
-déterministement chaque claim ``PROPOSED`` et chaque proposition
-``objet_entreprise`` (``mode='PROPOSED'`` portant ``donnees.type_claim``) en
-trois niveaux :
+déterministement chaque claim ``PROPOSED``, chaque proposition
+``objet_entreprise`` (``mode='PROPOSED'`` portant ``donnees.type_claim``) et —
+convergence §3.4 — chaque proposition **workflow** (``HYPOTHESIS``
+``mode='PROPOSED'``, ``SCENARIO`` et ``EXPERT_CONTRIBUTION``
+``statut='PROPOSED'``) en trois niveaux :
 
 - ``BLOQUANT`` : la proposition touche un twin critique (domaines
   ``paiements``/``risque``, packs en lecture seule), un prédicat sensible
@@ -19,6 +21,9 @@ trois niveaux :
   reste **révocable** pendant ``REVOCABLE_JOURS`` jours
   (``donnees.revocable_jusqua``) : une revue postérieure peut l'invalider via
   :func:`revoquer`, qui bascule le claim en ``CONTESTED`` et journalise.
+  Pour les propositions workflow, l'auto-accept est une **marque** seule :
+  ``mode`` et ``statut`` restent gouvernés par le moteur de transitions
+  canonique — la revue classifie, elle ne tranche pas à sa place.
 
 Jamais de silencieux : chaque auto-accept et chaque révocation est tracée dans
 ``outil_audit`` (via :mod:`audit_harness`) et comptée dans le rapport rendu par
@@ -80,6 +85,21 @@ MARQUEURS_SENSIBLES = ("DECI", "SUPPR", "SECUR")
 SOURCES_DIRECTES = frozenset({"GIT", "DOCUMENTATION"})
 VERIFICATIONS_SURES = ("verifie", "selon", "recoupe")
 _CHAMPS_TWINS = ("twin_ids", "twins", "jumeau_ids", "application_ids")
+
+# Types workflow dont l'objet proposé relève de la revue (convergence §3.4) :
+# HYPOTHESIS proposée (``mode``), contributions et scénarios en attente
+# (``donnees.statut``). La revue les classifie et les marque ; leur transition
+# reste gouvernée par le moteur canonique.
+_TYPES_WORKFLOW_PROPOSITION = frozenset({
+    "HYPOTHESIS", "SCENARIO", "EXPERT_CONTRIBUTION"})
+
+# Ce qui rend une ligne ``objet_entreprise`` routable : proposition de claim
+# (``type_claim`` en mode PROPOSED) ou proposition workflow.
+_PREDICAT_PROPOSITION = (
+    "((mode = 'PROPOSED' AND donnees ? 'type_claim') "
+    "OR (type = 'HYPOTHESIS' AND mode = 'PROPOSED') "
+    "OR (type IN ('SCENARIO', 'EXPERT_CONTRIBUTION') "
+    "AND donnees->>'statut' = 'PROPOSED'))")
 
 
 class RevueGradueeInvalide(ValueError):
@@ -370,9 +390,9 @@ def _propositions_a_router(conn: Any, tenant: str, depuis: datetime) -> list[dic
     with conn.cursor(row_factory=dict_row) as cur:
         return cur.execute(
             "SELECT id, type, mode, titre, donnees, cree_le FROM objet_entreprise "
-            "WHERE tenant_id = %s AND mode = 'PROPOSED' AND valide_jusqua IS NULL "
-            "AND cree_le >= %s AND donnees ? 'type_claim' "
-            "AND NOT (donnees ? 'revue_niveau') ORDER BY id",
+            "WHERE tenant_id = %s AND valide_jusqua IS NULL "
+            "AND cree_le >= %s AND NOT (donnees ? 'revue_niveau') "
+            f"AND {_PREDICAT_PROPOSITION} ORDER BY id",
             (tenant, depuis)).fetchall()
 
 
@@ -470,10 +490,18 @@ def _router_proposition(conn: Any, audit: Any, tenant: str, ligne: Mapping,
         patch = {"revue_niveau": AUTO_VISIBLE, "auto_accepte": True,
                  "revocable_jusqua": revocable,
                  "revue_le": maintenant.isoformat(timespec="seconds")}
-        conn.execute(
-            "UPDATE objet_entreprise SET mode = 'CONFIRMED', donnees = donnees || %s, "
-            "maj_le = %s WHERE tenant_id = %s AND id = %s",
-            (Jsonb(patch), maintenant, tenant, objet_id))
+        if ligne.get("type") in _TYPES_WORKFLOW_PROPOSITION:
+            # Workflow : la revue marque, le moteur de transitions tranche —
+            # mode et statut ne bougent pas.
+            conn.execute(
+                "UPDATE objet_entreprise SET donnees = donnees || %s, maj_le = %s "
+                "WHERE tenant_id = %s AND id = %s",
+                (Jsonb(patch), maintenant, tenant, objet_id))
+        else:
+            conn.execute(
+                "UPDATE objet_entreprise SET mode = 'CONFIRMED', donnees = donnees || %s, "
+                "maj_le = %s WHERE tenant_id = %s AND id = %s",
+                (Jsonb(patch), maintenant, tenant, objet_id))
         statut_audit = _tracer(
             audit, "auto_accept_objet",
             {"objet_id": objet_id, "type": ligne.get("type"),
@@ -564,24 +592,37 @@ def _revoquer_claim(conn: Any, audit: Any, tenant: str, claim_id: int,
 def _revoquer_objet(conn: Any, audit: Any, tenant: str, objet_id: str,
                     acteur: str, raison: str, maintenant: datetime) -> dict:
     ligne = conn.execute(
-        "SELECT mode, donnees FROM objet_entreprise WHERE tenant_id = %s AND id = %s "
+        "SELECT type, mode, donnees FROM objet_entreprise WHERE tenant_id = %s AND id = %s "
         "AND valide_jusqua IS NULL FOR UPDATE", (tenant, objet_id)).fetchone()
     if ligne is None:
         raise LookupError(f"objet {objet_id} : inconnu du tenant")
-    donnees = dict(ligne[1] or {})
+    workflow = ligne[0] in _TYPES_WORKFLOW_PROPOSITION
+    donnees = dict(ligne[2] or {})
     fin = _dt(donnees.get("revocable_jusqua"))
-    if (ligne[0] != "CONFIRMED" or donnees.get("revue_niveau") != AUTO_VISIBLE
-            or donnees.get("revoque_le") or fin is None):
+    auto_accepte = (donnees.get("revue_niveau") == AUTO_VISIBLE
+                    and donnees.get("auto_accepte") and not donnees.get("revoque_le")
+                    and fin is not None)
+    eligible = auto_accepte if workflow else ligne[1] == "CONFIRMED" and auto_accepte
+    if not eligible:
         raise RevocationRefusee(f"objet {objet_id} : pas un auto-accept révocable")
     if fin <= maintenant:
         raise RevocationRefusee(
             f"objet {objet_id} : fenêtre révocable close le {fin.isoformat(timespec='seconds')}")
-    conn.execute(
-        "UPDATE objet_entreprise SET mode = 'PROPOSED', donnees = donnees || %s, maj_le = %s "
-        "WHERE tenant_id = %s AND id = %s",
-        (Jsonb({"revoque_le": maintenant.isoformat(timespec="seconds"),
-                "revoque_par": acteur, "revoque_raison": raison,
-                "statut_revue": "CONTESTED"}), maintenant, tenant, objet_id))
+    patch = {"revoque_le": maintenant.isoformat(timespec="seconds"),
+             "revoque_par": acteur, "revoque_raison": raison,
+             "statut_revue": "CONTESTED"}
+    if workflow:
+        # La proposition workflow n'a jamais changé de mode : la révocation
+        # la marque contestée, la transition suivante reste humaine.
+        conn.execute(
+            "UPDATE objet_entreprise SET donnees = donnees || %s, maj_le = %s "
+            "WHERE tenant_id = %s AND id = %s",
+            (Jsonb(patch), maintenant, tenant, objet_id))
+    else:
+        conn.execute(
+            "UPDATE objet_entreprise SET mode = 'PROPOSED', donnees = donnees || %s, maj_le = %s "
+            "WHERE tenant_id = %s AND id = %s",
+            (Jsonb(patch), maintenant, tenant, objet_id))
     statut_audit = _tracer(
         audit, "revocation_objet",
         {"objet_id": objet_id, "acteur": acteur, "raison": raison}, maintenant)
@@ -655,9 +696,11 @@ def _repartition_objets(conn: Any, tenant: str, maintenant: datetime) -> dict:
         lignes = cur.execute(
             "SELECT coalesce(donnees->>'revue_niveau', '') AS niveau, mode, "
             "donnees->>'revocable_jusqua' AS revocable, "
-            "(donnees ? 'revoque_le') AS revoque, count(*) AS n "
+            "(donnees ? 'revoque_le') AS revoque, "
+            "(donnees->>'auto_accepte') = 'true' AS auto_accepte, count(*) AS n "
             "FROM objet_entreprise WHERE tenant_id = %s AND valide_jusqua IS NULL "
-            "AND donnees ? 'type_claim' GROUP BY 1, mode, revocable, revoque",
+            f"AND ({_PREDICAT_PROPOSITION} OR donnees ? 'revue_niveau') "
+            "GROUP BY 1, mode, revocable, revoque, auto_accepte",
             (tenant,)).fetchall()
     rep = {"total": 0, AUTO_VISIBLE: 0, ATTENTION: 0, BLOQUANT: 0,
            "auto_acceptes": 0, "revocables": 0, "revoques": 0, "sans_niveau": 0}
@@ -669,11 +712,11 @@ def _repartition_objets(conn: Any, tenant: str, maintenant: datetime) -> dict:
             rep[niveau] += n
         else:
             rep["sans_niveau"] += n
-        if niveau == AUTO_VISIBLE and ligne.get("mode") == "CONFIRMED":
+        if niveau == AUTO_VISIBLE and ligne.get("auto_accepte"):
             rep["auto_acceptes"] += n
         if ligne.get("revoque"):
             rep["revoques"] += n
-        elif (ligne.get("mode") == "CONFIRMED" and niveau == AUTO_VISIBLE
+        elif (ligne.get("auto_accepte") and niveau == AUTO_VISIBLE
                 and (fin := _dt(ligne.get("revocable"))) is not None and fin > maintenant):
             rep["revocables"] += n
     return rep

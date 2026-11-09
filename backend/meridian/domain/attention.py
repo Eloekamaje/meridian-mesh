@@ -6,7 +6,9 @@ explicable de 0 à 100 dont chaque point est justifié par une composante nommé
 - priorité métier (HAUTE / MOYENNE / BASSE) ;
 - confiance déclarée ;
 - récence de l'observation ;
-- impact, contradictions, nouveauté et décisions non tranchées lorsqu'ils sont présents.
+- impact, contradictions, nouveauté et décisions non tranchées lorsqu'ils sont présents ;
+- signalement de la couche cognition (``donnees.attention``), le canal
+  canonique du fil d'attention (convergence §5.5).
 
 La déduplication repose sur une empreinte stable : type + jumeaux liés + titre/résumé normalisés.
 Le titre et le résumé ne sortent jamais en clair de l'empreinte, qui n'est qu'un condensat SHA-256.
@@ -31,6 +33,7 @@ _POIDS_IMPACT = 8
 _POIDS_CONTRADICTIONS = 6
 _POIDS_NOUVEAUTE = 3
 _POIDS_DECISIONS = 3
+_POIDS_SIGNALEMENT = 10
 
 _PRIORITES = {
     "HAUTE": "HAUTE", "HAUT": "HAUTE", "HIGH": "HAUTE", "URGENTE": "HAUTE", "URGENT": "HAUTE",
@@ -303,6 +306,21 @@ def _decisions_non_tranchees(objet: Any) -> int:
     return min(_POIDS_DECISIONS, int(quantite))
 
 
+def _signalement(objet: Any) -> str | None:
+    """Raison du signalement posé par la couche cognition (``donnees.attention``).
+
+    ``None`` quand l'objet n'est pas signalé ; sinon la raison normalisée
+    (``intention_expiree`` → ``intention expiree``), ou ``"signale"`` quand le
+    drapeau est présent sans raison explicite.
+    """
+    brut = _valeur(objet, "attention")
+    if isinstance(brut, Mapping):
+        if not brut:
+            return None
+        return _nom(brut.get("raison")) or "signale"
+    return "signale" if _verite(brut) else None
+
+
 def _raison(libelle: str, points: int) -> str:
     return f"{libelle} (+{points})"
 
@@ -312,6 +330,7 @@ def score(objet: Any, *, maintenant: Any = None) -> dict:
     instant = _maintenant(maintenant)
     priorite = _priorite(objet)
     confiance = _confiance(objet)
+    signalement = _signalement(objet)
     composantes = {
         "priorite": _POIDS_PRIORITE[priorite],
         "confiance": int(round(_POIDS_CONFIANCE * confiance)),
@@ -320,6 +339,7 @@ def score(objet: Any, *, maintenant: Any = None) -> dict:
         "contradictions": _points_contradictions(objet),
         "nouveaute": _points_nouveaute(objet),
         "decisions_non_tranchees": _decisions_non_tranchees(objet),
+        "attention": _POIDS_SIGNALEMENT if signalement else 0,
     }
     raisons = [
         _raison(f"priorité {priorite}", composantes["priorite"]),
@@ -330,6 +350,8 @@ def score(objet: Any, *, maintenant: Any = None) -> dict:
         _raison("nouveauté", composantes["nouveaute"]),
         _raison("décisions non tranchées", composantes["decisions_non_tranchees"]),
     ]
+    if signalement:
+        raisons.insert(0, _raison(f"signalé ({signalement})", composantes["attention"]))
     raisons = [raison for raison in raisons if not raison.endswith("(+0)")]
     total = max(0, min(100, sum(composantes.values())))
     return {
@@ -352,7 +374,7 @@ def _limite(valeur: Any) -> int:
 
 def _candidat(objet: Any, evaluation: dict, empreinte: str) -> dict:
     identifiant = _identifiant(objet)
-    return {
+    candidat = {
         "id": identifiant,
         "original_id": identifiant,
         "signature": empreinte,
@@ -365,6 +387,10 @@ def _candidat(objet: Any, evaluation: dict, empreinte: str) -> dict:
         "composantes": evaluation["composantes"],
         "objet": objet,
     }
+    signalement = _signalement(objet)
+    if signalement:
+        candidat["attention"] = signalement
+    return candidat
 
 
 def classer(objets: Iterable[Any], *, limite: int = 50, maintenant: Any = None) -> list[dict]:
@@ -452,6 +478,7 @@ def resume_attention(objets: Iterable[Any], *, maintenant: Any = None, acteur: A
         "total": len(selection),
         "total_brut": len(liste),
         "dedoublonnes": len(liste) - len(selection),
+        "signales": sum(1 for item in selection if item["composantes"].get("attention")),
         "par_priorite": par_priorite,
         "par_type": par_type,
     }

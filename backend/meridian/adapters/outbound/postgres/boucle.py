@@ -118,6 +118,14 @@ _CHAMPS_INVERSES_LIES = frozenset({
     "scenario_id", "initiative_id", "outcome_ids", "scenarios_rejetes",
 })
 
+# Drapeaux transitoires : ils décrivent l'état courant posé par leur producteur
+# (``attention`` est le canal canonique du fil d'attention — convergence §5.5).
+# Une réécriture canonique qui ne les repose pas les efface : le merge de
+# ``_persister`` ne doit pas faire survivre un signalement périmé à un belief
+# revalidé ou à une situation requalifiée. ``fusionner_donnees`` — le chemin des
+# producteurs — écrit hors ``_persister`` et n'est pas concerné.
+_CHAMPS_TRANSIENTS = frozenset({"attention"})
+
 
 class BoucleInvalide(modele.ModeleInvalide):
     """Une étape de la boucle ne respecte pas ses liens, son tenant ou son état."""
@@ -609,7 +617,29 @@ class Belief(modele.Belief, _LiensBoucle):
         self.revalide_par = _texte_ou_none(self.revalide_par)
 
 
+# Types instantiables par le chemin générique ``POST /objets`` : les types
+# épistémiques et SITUATION. INVESTIGATION, DECISION, INITIATIVE, OUTCOME,
+# LEARNING et SCENARIO ne naissent que par les routes typées de la boucle ou les
+# producteurs internes (convergence §3.1) — les garder ici permettrait une
+# DECISION déjà tranchée ou un OUTCOME sans mesure, hors gouvernance. OPPORTUNITY,
+# RISK et BELIEF restent écrits par leurs producteurs via ``enregistrer_boucle``.
 _CLASSES = {
+    "SITUATION": Situation,
+    "UNKNOWN": Unknown,
+    "CONJECTURE": Conjecture,
+    "NEED": Need,
+}
+
+# Lecture seule des types d'exploitation : EXPRESSION est lisible dans une chaîne
+# canonique sans devenir un type d'écriture de ``enregistrer_boucle``. Cette table est
+# l'unique source de ``TYPES_LECTURE`` et sert à valider toute lecture canonique.
+# ``HYPOTHESIS`` y reste mappé sur la classe workflow (convergence §2.1 : la
+# CONJECTURE épistémique est relue en ``Conjecture``, les deux cohabitent).
+# Ordre épinglé : ``TYPES_LECTURE`` est la source unique de validation des types
+# lus — la séquence historique (boucle d'abord, complémentaires ensuite, lecture
+# exploitation en dernier) est conservée pour rester stable en dépit de la
+# restriction de ``_CLASSES``.
+_CLASSES_LECTURE = {
     "SITUATION": Situation,
     "INVESTIGATION": Investigation,
     "DECISION": Decision,
@@ -619,26 +649,15 @@ _CLASSES = {
     "UNKNOWN": Unknown,
     "CONJECTURE": Conjecture,
     "NEED": Need,
-    "OPPORTUNITY": Opportunity,
-    "RISK": Risk,
+    "OPPORTUNITY": modele.Opportunity,
+    "RISK": modele.Risk,
     "BELIEF": Belief,
     "SCENARIO": Scenario,
-}
-
-# Lecture seule des types d'exploitation : EXPRESSION est lisible dans une chaîne
-# canonique sans devenir un type d'écriture de ``enregistrer_boucle``. Cette table est
-# l'unique source de ``TYPES_LECTURE`` et sert à valider toute lecture canonique.
-# ``HYPOTHESIS`` y reste mappé sur la classe workflow (convergence §2.1 : la
-# CONJECTURE épistémique est relue en ``Conjecture``, les deux cohabitent).
-_CLASSES_LECTURE = {
-    **_CLASSES,
     "SIGNAL": Signal,
     "EXPRESSION": Expression,
     "HYPOTHESIS": HypothesisExploitation,
     "EXPERT": Expert,
     "EXPERT_CONTRIBUTION": ExpertContribution,
-    "OPPORTUNITY": modele.Opportunity,
-    "RISK": modele.Risk,
 }
 TYPES_LECTURE = tuple(_CLASSES_LECTURE)
 
@@ -1252,6 +1271,8 @@ def _persister(
                 if cle == "scenario_id" and _texte_ou_none(existantes.get(cle)):
                     continue
                 donnees[cle] = valeur
+            for cle in _CHAMPS_TRANSIENTS - set(nouvelles):
+                donnees.pop(cle, None)
             if historique:
                 versions = list(existantes.get("_historique") or [])
                 versions.append(_entree_historique(ancien))

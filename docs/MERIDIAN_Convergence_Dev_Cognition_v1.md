@@ -8,11 +8,20 @@
 > migration 0007) ; phase 3 faite (`journal_episodes` branché dans
 > `enregistrer_objets_exploitation`, DECISION orpheline interdite — la chaîne
 > d'épisode est créée, migration 0008, validateur B délégué pour
-> OPPORTUNITY/RISK, `actions_canoniques` façade de `commandes_boucle`). Les
-> collisions §2.1, §2.2, §3.2 et §5.4 basculent en XFAIL dans
-> `test_collisions_monde` ; restent 7 (POST /objets) et 8 (attention), phase 4.
+> OPPORTUNITY/RISK, `actions_canoniques` façade de `commandes_boucle`) ; phase 4
+> faite (`POST /objets` restreint aux types épistémiques et SITUATION —
+> `statut`/`mode`/`id` serveur refusés en 422, `_CLASSES` réduit au registre de
+> création générique, transition générique sous verrou `FOR UPDATE` ; canal
+> d'attention unifié — `domain/attention.score` lit `donnees.attention`,
+> `GET /attention` fusionne les intentions échues, `PanneauActions` affiche le
+> drapeau, les drapeaux transitoires sont effacés par les réécritures
+> canoniques, migration 0009 indexe le store ; `revue_graduee` étendue aux
+> propositions workflow — HYPOTHESIS/SCENARIO/EXPERT_CONTRIBUTION proposés,
+> classés et marqués sans toucher `mode`/`statut`). Les 8 collisions basculent
+> en XFAIL dans `test_collisions_monde`.
 > Reste différé : l'émission d'événement outbox signé par `decision_travail`
-> (§6 « un seul producteur ») et la fusion du régime SCENARIO.
+> (§6 « un seul producteur ») et la fusion du régime SCENARIO — la phase 5
+> (registre de sweeps du gardien, index restants) reste à faire.
 > **Périmètre :** l'arbre fusionné du commit `3c82f21` (branche `jumeau-p4-confort`),
 > qui contient côte à côte le modèle d'exploitation canonique (« monde dev », ~146
 > commits) et la couche épistémique du plan Cognition IA A→D (« monde cognition »,
