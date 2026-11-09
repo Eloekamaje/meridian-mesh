@@ -87,10 +87,17 @@ rigoureuse sur la provenance ; opencode a montré une fuite de trace interne.
 4. **Le corpus fonctionne** : 4 questions ont suffi à discriminer les trois
    agents sur 6 axes — le plan de test est validé comme instrument.
 
-## Suites proposées
+## Suites proposées — et résolution de Q2
 
-- Rejouer Q2 après ajustement de `cadrage_conversationnel` (seuil de
-  clarification : demander seulement quand la réponse *dépend* de la
-  précision, pas par défaut).
+- **Q2 résolu** : la cause n'était pas `cadrage_conversationnel` mais
+  `noyau_raisonnement._niveau_demande` — un domaine sensible (`Paiements`→
+  `finance`) montait `expliquer` de N1 à N3, et l'ambiguïté N3 était calculée
+  sur les slots de **conception** (périmètre/contraintes/critères vides →
+  0,93) puis 4 questions de cadrage émises → `clarifier`. Fix : le bump
+  sensible ne s'applique plus aux buts `expliquer`/`repondre` — la sensibilité
+  reste portée par `sensibilite`/`risques`, la clarification reste active pour
+  `concevoir`/`decider`/`agir` (vérifié : N3/N4 + questions conservées).
+  Rejeu bout-en-bout : `comportement: "repondre"`, réponse bornée honnête
+  (« aucun fait vérifié » — juste, `paiements` est une fixture synthétique).
 - Ajouter au corpus : requête hors périmètre + injection + multi-tour
   (S6/S7), pour tester les axes où les généralistes n'ont pas de contrat.
