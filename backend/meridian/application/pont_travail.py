@@ -33,6 +33,7 @@ __all__ = [
     "candidats_boucle",
     "evenement_action_situation",
     "evenement_case_lie",
+    "evenement_case_orphelin",
     "evenement_decision_situation",
     "evenement_initiative_maj",
     "extraire_boucle",
@@ -253,6 +254,58 @@ def evenement_case_lie(case: Any, situation: Any, *, tenant_id: Any,
         {"case": utile, "situation": contexte})[:16]
     return pont.evenement_depuis_case(
         case_doc, tenant_id=tenant, situation=contexte,
+        source_event_id=source_event_id, maintenant=maintenant)
+
+
+def _id_situation_synthetique(tenant: str, case_id: str) -> str:
+    """Identifiant déterministe de l'ancre d'un case orphelin — même entrée, même id."""
+    return f"sit-{pont.hash_contenu({'case': case_id, 'tenant': tenant})[:16]}"
+
+
+def evenement_case_orphelin(case: Any, *, tenant_id: Any,
+                            maintenant: Any = None) -> dict[str, Any] | None:
+    """Événement `case.maj` d'un case **sans Situation liée** — levée d'ADR-0008.
+
+    Le producteur unique (convergence §6) doit couvrir tous les cases décidés :
+    sans ancre, l'outbox ne produisait rien et le miroir direct
+    `_miroir_decision_canonique` restait le second producteur. L'ancre est une
+    Situation **synthétique** : identifiant déterministe ``sit-{hash(tenant,
+    case)}`` — le replay est idempotent, chaque décision du même case rejoint la
+    même chaîne SITUATION → INVESTIGATION → DECISION. L'événement embarque le
+    snapshot dans ``situations[0]`` du document case transporté ; le document
+    Mongo stocké n'est pas modifié. Un case sans décision exploitable n'émet
+    rien.
+    """
+    if not isinstance(case, Mapping):
+        raise pont.PontInvalide("case : document attendu")
+    tenant = normaliser_tenant(tenant_id or case.get("tenant_id"))
+    case_doc = _document_canonique(case, tenant)
+    cid = _texte(case_doc.get("id"))
+    if not cid:
+        return None
+    situation_id = _id_situation_synthetique(tenant, cid)
+    contexte = _completer_snapshot(situation_id, {
+        "id": situation_id,
+        "tenant_id": tenant,
+        "titre": _texte(case_doc.get("titre")) or f"Case {cid}",
+        "statut": "candidate",
+        "priorite": "normale",
+        "maj_le": _iso(case_doc.get("maj_le")) or _iso(case_doc.get("cree_le")),
+        "ancre": "synthetique",
+    })
+    charge = dict(case_doc)
+    charge["situations"] = [situation_id]
+    objets = pont.objets_depuis_case(
+        charge, tenant_id=tenant, situation=contexte, maintenant=maintenant)
+    if not any(objet.get("type") == "DECISION" for objet in objets):
+        return None
+    utile = {cle: case_doc.get(cle) for cle in (
+        "id", "tenant_id", "titre", "decisions", "options",
+        "responsable", "objectif", "maj_le", "cree_le")}
+    source_event_id = "case-orphelin:" + pont.hash_contenu(
+        {"case": utile, "situation": contexte})[:16]
+    return pont.evenement_depuis_case(
+        charge, tenant_id=tenant, situation=contexte,
         source_event_id=source_event_id, maintenant=maintenant)
 
 

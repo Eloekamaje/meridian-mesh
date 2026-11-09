@@ -336,37 +336,6 @@ async def _persister_dossier_raisonnement(tenant, dossier, travail_id=""):
         return
 
 
-async def _miroir_decision_canonique(case, dec):
-    """B3 : la décision prise dans Travail est recopiée en objet canonique `DECISION`.
-
-    Repli du producteur unique : l'outbox C1 porte la décision des cases liés à
-    une Situation ; ce chemin ne sert que pour les cases orphelins, qu'ADR-0008
-    exclut de l'outbox (convergence §6). Actif sous `JUMEAU_TRAVAIL_DUAL_WRITE`
-    (ou `JUMEAU_TRAVAIL_WRITE=postgres`). Best-effort : une erreur Postgres ne
-    doit jamais faire échouer la décision Travail.
-    """
-    if not (travail_proxy.double_ecriture_active() or travail_proxy.ecriture_postgres()):
-        return
-    dsn = os.environ.get("JUMEAU_PG_DSN")
-    if not dsn:
-        return
-    try:
-        import psycopg
-        from meridian.adapters.outbound.postgres import decision_travail, rls
-        tenant = _tenant_requete()
-
-        def ecrire():
-            with psycopg.connect(dsn, connect_timeout=5, autocommit=True) as conn:
-                if rls.est_actif():
-                    with rls.contexte_tenant(conn, tenant):
-                        return decision_travail.enregistrer_decision_travail(conn, tenant, case, dec)
-                return decision_travail.enregistrer_decision_travail(conn, tenant, case, dec)
-
-        await asyncio.to_thread(ecrire)
-    except Exception:
-        logger.warning("Décision Travail non recopiée dans la boucle canonique", exc_info=True)
-
-
 def build_cases_router(deps):
     db = deps["db"]
     resoudre_perimetre = deps["resoudre_perimetre"]
@@ -601,7 +570,11 @@ def build_cases_router(deps):
             tenant = _tenant_ecriture()
             situation = await _situation_liee_document(case)
             if not situation:
-                return None
+                # Levée d'ADR-0008 : un case orphelin reçoit une ancre
+                # synthétique déterministe — l'outbox C1 couvre aussi ces
+                # décisions (convergence §6, un seul producteur).
+                return pont_travail.evenement_case_orphelin(
+                    case, tenant_id=tenant)
             return pont_travail.evenement_case_lie(
                 case, situation, tenant_id=tenant)
         except Exception:  # noqa: BLE001 - best-effort explicite
@@ -1335,13 +1308,12 @@ def build_cases_router(deps):
             raise HTTPException(404, "Case introuvable")
         case_apres = await db.cases.find_one(
             {"id": cid, **pont_travail.filtre_tenant(tenant)}, NO_ID)
-        evenement = await _pont_apres_case(case_apres) if case_apres else None
+        if case_apres:
+            # Un seul producteur (convergence §6) : l'outbox C1 porte la
+            # DECISION des cases liés comme des orphelins (ancre synthétique,
+            # ADR-0008 levée).
+            await _pont_apres_case(case_apres)
         await journaler(acteur, espace["id"], "décision sur un case", cid, payload.texte.strip()[:120])
-        if evenement is None:
-            # Un seul producteur (convergence §6) : l'outbox C1 porte la DECISION
-            # quand le case est lié ; le miroir direct ne subsiste que pour les
-            # cases sans Situation liée, que ADR-0008 exclut de l'outbox.
-            await _miroir_decision_canonique(case_apres or case, dec)
         return dec
 
     @router.get("/cases/{cid}/passation/brouillon")

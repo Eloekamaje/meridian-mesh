@@ -25,11 +25,11 @@
 > `ctx["poids_signatures"]`, isolation try/except et rapport par sweep
 > conservés — migration 0009 index `attention`, migration 0010 index
 > `signature`/`sujet_detection`).
-> Reste différé : l'émission outbox de `decision_travail` est faite pour les
-> cases liés (§6 — `_pont_apres_case` rend l'événement produit ; le miroir
-> direct `_miroir_decision_canonique` n'écrit plus que pour les cases sans
-> Situation liée, qu'ADR-0008 exclut de l'outbox : lever cette exclusion reste
-> le chantier qui supprimera le second producteur). Le régime SCENARIO est
+> Producteur unique achevé : ADR-0008 levée — `evenement_case_orphelin` crée
+> une ancre Situation synthétique déterministe (`sit-{hash(tenant, case)}`),
+> l'outbox C1 produit la chaîne complète pour tout case décidé, le miroir
+> `_miroir_decision_canonique` est supprimé (`decision_travail` reste
+> l'adaptateur des backfills). Le régime SCENARIO est
 > fusionné : `enregistrer_boucle` délègue la validation à
 > `objets_exploitation._valider_pour_persistance` (registre unique, `par_id`
 > préserve les liens intra-lot) et contrôle `STATUTS_SCENARIO` à l'écriture —

@@ -278,3 +278,48 @@ def test_outcome_sur_initiative_api_refuse_la_modification_du_parent(conn):
 
     with pytest.raises(pont.ConflitCanonique):
         pont_pg.appliquer_evenement(conn, outcome)
+
+
+@besoin_pg
+def test_case_orphelin_produit_chaine_ancre_synthetique_idempotente(conn):
+    """Levée d'ADR-0008 : un case sans Situation liée reçoit une ancre
+    synthétique déterministe — l'outbox produit toute la chaîne."""
+    from meridian.application import pont_travail
+
+    case = {
+        "id": "case-orp-pg", "tenant_id": TENANT, "titre": "Traiter la dette",
+        "decisions": [{"texte": "Automatiser", "type": "action",
+                       "quand": DECIDE_LE, "par": "comité"}],
+        "options": [{"titre": "Automatiser"}],
+        "maj_le": DECIDE_LE, "cree_le": DATE,
+    }
+    evenement = pont_travail.evenement_case_orphelin(case, tenant_id=TENANT)
+    assert evenement is not None
+    sid = pont_travail._id_situation_synthetique(TENANT, "case-orp-pg")
+
+    resultat = pont_pg.appliquer_evenement(conn, evenement)
+    assert resultat["ecrits"]
+
+    situation = entreprise_depot.lire_objet(conn, TENANT, sid)
+    assert situation["type"] == "SITUATION"
+    assert situation["titre"] == "Traiter la dette"
+    investigation = entreprise_depot.lire_objet(conn, TENANT, f"inv-{sid}")
+    assert investigation["type"] == "INVESTIGATION"
+    decision = entreprise_depot.lire_objet(conn, TENANT, "dec-case-case-orp-pg-1")
+    assert decision["type"] == "DECISION"
+    assert decision["donnees"]["choix"] == "Automatiser"
+    assert decision["donnees"]["investigation_id"] == f"inv-{sid}"
+
+    # Idempotent : le même événement relu n'écrit plus rien.
+    rejoue = pont_pg.appliquer_evenement(conn, evenement)
+    assert rejoue["ecrits"] == []
+
+
+@besoin_pg
+def test_case_orphelin_sans_decision_nemet_rien():
+    """Un case orphelin sans décision exploitable ne produit aucun événement."""
+    from meridian.application import pont_travail
+
+    case = {"id": "case-orp-vide", "tenant_id": TENANT, "titre": "Sans décision",
+            "maj_le": DECIDE_LE}
+    assert pont_travail.evenement_case_orphelin(case, tenant_id=TENANT) is None
