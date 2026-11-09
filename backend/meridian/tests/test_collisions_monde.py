@@ -1,15 +1,14 @@
 """Tests de caractérisation des collisions dev/cognition.
 
 Référence : ``docs/MERIDIAN_Convergence_Dev_Cognition_v1.md`` (§2, §3, §5).
-Chaque test ``test_collision_<n>_<sujet>`` épingle le comportement **actuel** du
-monde fusionné — qu'il soit correct ou cassé. Les failles sont documentées par
-``pytest.raises`` ou des asserts négatifs explicites ; elles portent toutes
-``@pytest.mark.xfail(strict=False)`` :
+Chaque test ``test_collision_<n>_<sujet>`` épingle le comportement **divergent**
+de l'ancien monde fusionné — l'assert documente la collision elle-même. Après
+les phases 1-5 du plan §7, toutes ont basculé en XFAIL (la collision est
+corrigée) ; elles portent désormais ``@pytest.mark.xfail(strict=True)`` :
 
-- aujourd'hui le test **passe** (rapporté XPASS) — la collision est reproduite ;
-- quand la conciliation (phases 1-4 du plan §7) corrigera le comportement,
-  l'assert épinglé échouera et le test **basculera en XFAIL** — le signal qu'il
-  faut réécrire la caractérisation pour épingler le nouveau comportement.
+- **XFAIL** — état sain : l'assert épinglé échoue, la divergence est résolue ;
+- **XPASS** — régression : l'ancien comportement divergent est de retour, la
+  suite échoue (``strict=True``), signal de réécrire la caractérisation.
 
 Base réelle requise (``JUMEAU_PG_DSN``, fixture ``conn`` = schéma jetable par
 test) ; les identifiants sont préfixés ``col-`` pour rester repérables.
@@ -84,7 +83,7 @@ def _chaine(conn, *, titre="collision"):
 
 @besoin_pg
 @pytest.mark.xfail(
-    strict=False,
+    strict=True,
     reason="COLLISION-1 (doc §2.1) : la lecture canonique construit la classe "
     "workflow pour une HYPOTHESIS épistémique — phase 1 (CONJECTURE) doit faire "
     "basculer ce test")
@@ -149,7 +148,7 @@ def test_collision_1b_hypothese_workflow_relue_correctement(conn):
 
 
 @pytest.mark.xfail(
-    strict=False,
+    strict=True,
     reason="COLLISION-2 (doc §5.3) : branche morte dans _source_principale — "
     "le nettoyage de phase 1 doit faire basculer ce test")
 def test_collision_2_source_principale_branche_morte():
@@ -174,7 +173,7 @@ def test_collision_2_source_principale_branche_morte():
 
 @besoin_pg
 @pytest.mark.xfail(
-    strict=False,
+    strict=True,
     reason="COLLISION-2 (doc §5.3) : l'épisode d'une HYPOTHESIS épistémique perd "
     "son lien causal à cause de la branche morte — le nettoyage doit faire "
     "basculer ce test")
@@ -204,7 +203,7 @@ def test_collision_2b_episode_sans_lien_causal(conn):
 
 @besoin_pg
 @pytest.mark.xfail(
-    strict=False,
+    strict=True,
     reason="COLLISION-3 (doc §2.2) : OPPORTUNITY PROPOSED gelée et invisible "
     "aux routes typées — phase 2 (unification) doit faire basculer ce test")
 def test_collision_3_opportunity_detectee_gelee(conn):
@@ -255,7 +254,7 @@ def test_collision_3_opportunity_detectee_gelee(conn):
 
 @besoin_pg
 @pytest.mark.xfail(
-    strict=False,
+    strict=True,
     reason="COLLISION-4 (doc §2.2) : RISK refusé par enregistrer_boucle — "
     "l'ouverture prévue en phase 2 doit faire basculer ce test")
 def test_collision_4_risk_refuse_par_enregistrer_boucle(conn):
@@ -290,7 +289,7 @@ def test_collision_4_risk_refuse_par_enregistrer_boucle(conn):
 
 @besoin_pg
 @pytest.mark.xfail(
-    strict=False,
+    strict=True,
     reason="COLLISION-5 (doc §3.2) : DECISION orpheline irréparable par le "
     "chemin canonique — le choix « un seul producteur outbox » doit faire "
     "basculer ce test")
@@ -335,7 +334,7 @@ def test_collision_5_decision_orpheline(conn):
 
 @besoin_pg
 @pytest.mark.xfail(
-    strict=False,
+    strict=True,
     reason="COLLISION-6 (doc §5.4) : /episodes aveugle aux écritures typées — "
     "le branchement du journal en phase 3 doit faire basculer ce test")
 def test_collision_6_episodes_aveugle_aux_ecritures_typees(conn):
@@ -379,7 +378,7 @@ def test_collision_6_episodes_aveugle_aux_ecritures_typees(conn):
 
 @besoin_pg
 @pytest.mark.xfail(
-    strict=False,
+    strict=True,
     reason="COLLISION-7 (doc §3.1/§5.10) : POST /objets sans statut serveur ni "
     "verrou — la restriction prévue doit faire basculer ce test")
 def test_collision_7_post_objets_sans_verrou(conn):
@@ -411,7 +410,7 @@ def test_collision_7_post_objets_sans_verrou(conn):
 
 
 @pytest.mark.xfail(
-    strict=False,
+    strict=True,
     reason="COLLISION-7 (doc §3.1) : la transition générique lit sa source sans "
     "FOR UPDATE — l'unification d'autorité doit faire basculer ce test")
 def test_collision_7b_transition_generique_sans_verrou():
@@ -436,7 +435,7 @@ def test_collision_7b_transition_generique_sans_verrou():
 
 @besoin_pg
 @pytest.mark.xfail(
-    strict=False,
+    strict=True,
     reason="COLLISION-8 (doc §5.5) : deux canaux attention disjoints — "
     "l'unification en phase 4 doit faire basculer ce test")
 def test_collision_8_double_canal_attention(conn):

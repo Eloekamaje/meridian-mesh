@@ -18,7 +18,9 @@
 > canoniques, migration 0009 indexe le store ; `revue_graduee` étendue aux
 > propositions workflow — HYPOTHESIS/SCENARIO/EXPERT_CONTRIBUTION proposés,
 > classés et marqués sans toucher `mode`/`statut`). Les 8 collisions basculent
-> en XFAIL dans `test_collisions_monde` ; phase 5 faite (registre `SWEEPS`
+> en XFAIL dans `test_collisions_monde` — les sentinelles sont passées en
+> `xfail(strict=True)` : un retour de l'ancienne divergence produit XPASS et
+> fait échouer la suite ; phase 5 faite (registre `SWEEPS`
 > ordonné `{nom, flag, fn}` dans `gardien.veiller` — dépendance 4→5 via
 > `ctx["poids_signatures"]`, isolation try/except et rapport par sweep
 > conservés — migration 0009 index `attention`, migration 0010 index
